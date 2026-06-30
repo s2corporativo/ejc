@@ -13,7 +13,7 @@ from app.core.database import get_db, AsyncSessionLocal
 from app.core.security import get_current_user, require_roles
 from app.models.user import User
 from app.models.rag import KnowledgeDoc, KnowledgeChunk, FonteIngestao
-from app.services.ai_service import buscar_contexto_rag
+from app.services.ai_service import buscar_contexto_rag, _RESTRICTED_CATS
 from app.services.embedding_service import gerar_embeddings, disponivel as emb_disponivel
 from app.schemas.common import MsgResponse
 from app.core.ai_brain import ai_brain
@@ -249,11 +249,14 @@ async def buscar(
                 JOIN knowledge_docs d ON d.id = c.doc_id
                 WHERE d.deleted_at IS NULL AND c.embedding IS NOT NULL
                 AND 1 - (c.embedding <=> CAST(:v AS vector)) >= 0.60
+                AND (d.categoria <> ALL(:restr_cats) OR d.client_id = :scope_cli)
             """
             if cats:
                 sql += " AND d.categoria = ANY(:cats)"
             sql += " ORDER BY c.embedding <=> CAST(:v AS vector) LIMIT :lim"
-            params = {"v": vec, "lim": limite}
+            # Endpoint geral de busca → fail-closed: sem escopo de cliente,
+            # conteúdo restrito (peças/precedentes internos) é excluído (LGPD/EOAB).
+            params = {"v": vec, "lim": limite, "restr_cats": _RESTRICTED_CATS, "scope_cli": ""}
             if cats:
                 params["cats"] = cats
             rows = (await db.execute(sqltext(sql), params)).mappings().all()
