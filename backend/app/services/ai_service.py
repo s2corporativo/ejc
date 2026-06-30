@@ -56,8 +56,23 @@ Não invente informações ausentes do texto. Marque incertezas explicitamente."
 
 # ── Busca RAG (pgvector) ──────────────────────────────────────────────────────
 
+# ── Isolamento por cliente (Fase 3B / LGPD / EOAB art. 25) ────────────────────
+# Categorias RESTRITAS = conteúdo derivado de casos de clientes (peças/precedentes
+# internos): só recuperáveis no escopo do próprio cliente. Demais categorias
+# (legislação, súmulas, jurisprudência, doutrina) são públicas/globais.
+_RESTRICTED_CATS = ["peca_interna", "peca_escritorio", "precedente_interno"]
+# Fail-closed: sem escopo de cliente (scope_cli=""), o conteúdo restrito é
+# EXCLUÍDO da busca — fecha o vazamento cruzado entre clientes.
+_FILTRO_ESCOPO_RAG = "AND (kd.categoria <> ALL(:restr_cats) OR kd.client_id = :scope_cli)"
 
-async def _fundir_lexical(db, consulta, semanticos, limite, categorias):
+# RAG-04: limiar mínimo de similaridade na busca semântica — evita que matches
+# fracos/irrelevantes entrem como "fonte" e poluam o contexto da IA (risco de
+# alucinação). Similaridade = 1 - distância de cosseno. min_sim 0.55 → max_dist 0.45.
+_RAG_MIN_SIM = 0.55
+_RAG_MAX_DIST = 1.0 - _RAG_MIN_SIM
+
+
+async def _fundir_lexical(db, consulta, semanticos, limite, categorias, scope_client_id=None):
     """Busca híbrida: funde ranking SEMÂNTICO (pgvector) + LEXICAL (pg_trgm) via
     Reciprocal Rank Fusion (RRF). Aditivo — se a parte lexical falhar, devolve o
     semântico intacto. k=60 é o padrão de RRF."""
@@ -72,7 +87,8 @@ async def _fundir_lexical(db, consulta, semanticos, limite, categorias):
         fusion[cid] = fusion.get(cid, 0.0) + 1.0 / (K + rank + 1)
         meta[cid] = r
     try:
-        params = {"q": consulta[:300], "lim": max(limite * 3, 12)}
+        params = {"q": consulta[:300], "lim": max(limite * 3, 12),
+                  "restr_cats": _RESTRICTED_CATS, "scope_cli": scope_client_id or ""}
         filtro = ""
         if categorias:
             filtro = "AND kd.categoria = ANY(:cats)"
@@ -85,6 +101,7 @@ async def _fundir_lexical(db, consulta, semanticos, limite, categorias):
             WHERE kd.deleted_at IS NULL
               AND similarity(kc.conteudo, :q) > 0.05
               {filtro}
+              {_FILTRO_ESCOPO_RAG}
             ORDER BY sim DESC
             LIMIT :lim
         """)
@@ -108,6 +125,7 @@ async def buscar_contexto_rag(
     db: AsyncSession, consulta: str, limite: int = 6,
     categorias: list[str] | None = None,
     modo_or: bool = False,
+    scope_client_id: str | None = None,
 ) -> list[dict]:
     """
     Busca semântica na base de conhecimento via pgvector.
@@ -127,7 +145,8 @@ async def buscar_contexto_rag(
         vetores = await gerar_embeddings([consulta], modo="query")
         if vetores:
             vec = vetores[0]
-            params_v: dict = {"vec": str(vec), "lim": limite}
+            params_v: dict = {"vec": str(vec), "lim": limite, "max_dist": _RAG_MAX_DIST,
+                              "restr_cats": _RESTRICTED_CATS, "scope_cli": scope_client_id or ""}
             filtro_cat_v = ""
             if categorias:
                 filtro_cat_v = "AND kd.categoria = ANY(:cats)"
@@ -139,7 +158,9 @@ async def buscar_contexto_rag(
                 JOIN knowledge_docs kd ON kd.id = kc.doc_id
                 WHERE kd.deleted_at IS NULL
                   AND kc.embedding IS NOT NULL
+                  AND (kc.embedding <=> :vec) <= :max_dist
                   {filtro_cat_v}
+                  {_FILTRO_ESCOPO_RAG}
                 ORDER BY kc.embedding <=> :vec
                 LIMIT :lim
             """)
@@ -152,7 +173,7 @@ async def buscar_contexto_rag(
                     for r in rows_v
                 ]
                 if resultados:
-                    return await _fundir_lexical(db, consulta, resultados, limite, categorias)
+                    return await _fundir_lexical(db, consulta, resultados, limite, categorias, scope_client_id)
                 # Sem vetores gravados ainda → cai no textual abaixo
             except Exception as e:
                 logger.warning(f"Busca vetorial falhou, usando textual: {e}")
@@ -176,6 +197,8 @@ async def buscar_contexto_rag(
     if categorias:
         filtro_cat = "AND kd.categoria = ANY(:cats)"
         params["cats"] = categorias
+    params["restr_cats"] = _RESTRICTED_CATS
+    params["scope_cli"] = scope_client_id or ""
 
     sql = text(f"""
         SELECT kc.id, kc.conteudo, kd.titulo, kd.categoria, kd.fonte
@@ -184,6 +207,7 @@ async def buscar_contexto_rag(
         WHERE kd.deleted_at IS NULL
           {cond_termos}
           {filtro_cat}
+          {_FILTRO_ESCOPO_RAG}
         LIMIT :lim
     """)
     try:
