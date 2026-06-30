@@ -18,7 +18,9 @@ from app.core.config import get_settings
 from app.core.security import get_current_user, ROLE_LEVEL
 from app.models.user import User
 from app.models.document import Document
+from app.models.case import Case
 from app.models.audit_log import criar_audit_log
+from app.core.ownership import verificar_acesso_caso, is_gestao
 from app.schemas.common import MsgResponse
 import asyncio
 from app.services.ocr_service import extrair_texto
@@ -197,6 +199,19 @@ async def listar(
     # Esconder confidenciais de quem não pode ver
     if ROLE_LEVEL.get(cu.role.value, 0) < ROLE_LEVEL["socio"]:
         q = q.where(Document.confidencialidade.in_(["normal", "interno"]))
+    # Ownership por caso (IDOR): não-gestão só vê docs dos seus casos
+    # (responsável/auxiliar), de casos sem dono (legado/triagem) ou sem caso.
+    # Espelha a semântica de core.ownership.verificar_acesso_caso.
+    if not is_gestao(cu):
+        casos_visiveis = select(Case.id).where(
+            Case.deleted_at.is_(None),
+            (
+                (Case.advogado_responsavel_id == cu.id)
+                | (Case.advogado_auxiliar_id == cu.id)
+                | (Case.advogado_responsavel_id.is_(None) & Case.advogado_auxiliar_id.is_(None))
+            ),
+        )
+        q = q.where(Document.case_id.is_(None) | Document.case_id.in_(casos_visiveis))
     if case_id:
         q = q.where(Document.case_id == case_id)
     if client_id:
@@ -240,6 +255,10 @@ async def download(
     if not d:
         raise HTTPException(status_code=404, detail="Documento não encontrado")
 
+    # Ownership (IDOR): documento de um caso só é acessível a quem tem o caso.
+    if d.case_id:
+        await verificar_acesso_caso(db, cu, d.case_id)
+
     if not _pode_acessar_confidencial(cu, d.confidencialidade.value):
         raise HTTPException(
             status_code=403,
@@ -276,6 +295,9 @@ async def remover(
     )).scalar_one_or_none()
     if not d:
         raise HTTPException(status_code=404, detail="Documento não encontrado")
+    # Ownership (IDOR): só quem tem o caso pode remover o documento dele.
+    if d.case_id:
+        await verificar_acesso_caso(db, cu, d.case_id)
     d.deleted_at = datetime.now(timezone.utc)
     await criar_audit_log(db, cu.id, cu.role.value, "DELETE", "documents", doc_id)
     await db.commit()
