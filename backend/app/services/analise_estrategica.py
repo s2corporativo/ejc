@@ -106,6 +106,7 @@ async def analisar_caso(
     partes_existentes: str = "",
     numero_processo: str = "",
     area: str = "",
+    nomes_proteger: list[str] | None = None,
     db=None,
 ) -> dict:
     """
@@ -115,7 +116,7 @@ async def analisar_caso(
     Se `db` for fornecido, ancora a análise na base RAG (anti-alucinação).
     """
     from app.services.ai_gateway import chat
-    from app.services.sanitizer import sanitizar_pii
+    from app.services.sanitizer import sanitizar_pii, validar_sem_pii
 
     # Montar contexto
     partes_ctx = []
@@ -161,12 +162,22 @@ async def analisar_caso(
         except Exception as _e:
             logger.warning("RAG grounding indisponivel: %s", _e)
 
-    # sanitizar_pii retorna (texto, bool) — usar apenas o texto
-    resultado_sanitizacao = sanitizar_pii(contexto)
-    if isinstance(resultado_sanitizacao, tuple):
-        contexto_sanitizado = resultado_sanitizacao[0]
-    else:
-        contexto_sanitizado = resultado_sanitizacao
+    # LGPD — sanitiza (inclui nomes do caso via nomes_proteger) e aplica a
+    # SEGUNDA BARREIRA (validar_sem_pii) ANTES de qualquer envio ao LLM. Se sobrar
+    # PII estrutural (CPF/CNPJ/processo/e-mail), aborta — não vaza pra nuvem.
+    resultado_sanitizacao = sanitizar_pii(contexto, nomes_proteger)
+    contexto_sanitizado = (
+        resultado_sanitizacao[0] if isinstance(resultado_sanitizacao, tuple)
+        else resultado_sanitizacao
+    )
+
+    residual = validar_sem_pii(contexto_sanitizado)
+    if residual:
+        logger.error("PII residual na analise estrategica: %s", residual)
+        return {
+            "erro": f"Dados pessoais detectados ({', '.join(residual)}). "
+                    "Remova CPF/CNPJ/numero de processo do texto e tente novamente."
+        }
 
     prompt_final = PROMPT_ANALISE.format(contexto=contexto_sanitizado)
 

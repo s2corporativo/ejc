@@ -657,15 +657,23 @@ async def analisar_caso_ia(
 ):
     import json as _json
     from app.services.analise_estrategica import analisar_caso
+    from app.core.ownership import verificar_acesso_caso
 
-    result = await db.execute(select(Case).where(Case.id == case_id))
-    case = result.scalar_one_or_none()
-    if not case:
-        raise HTTPException(status_code=404, detail='Caso nao encontrado')
+    # Ownership (IDOR): só quem tem o caso pode disparar a análise estratégica.
+    case = await verificar_acesso_caso(db, current_user, case_id)
 
-    partes_str = getattr(case, 'parte_contraria', None) or ''
-    if partes_str:
-        partes_str = f'Parte contraria: {partes_str}'
+    parte_contraria = getattr(case, 'parte_contraria', None) or ''
+    partes_str = f'Parte contraria: {parte_contraria}' if parte_contraria else ''
+
+    # Nomes próprios a mascarar antes do LLM (LGPD): parte contrária + cliente.
+    nomes_proteger = [n for n in [parte_contraria] if n]
+    if getattr(case, 'client_id', None):
+        _cli_nome = (await db.execute(
+            text("SELECT COALESCE(nome, razao_social, nome_fantasia) FROM clients WHERE id = :id"),
+            {"id": case.client_id},
+        )).scalar()
+        if _cli_nome:
+            nomes_proteger.append(_cli_nome)
 
     area_val = ''
     raw_area = getattr(case, 'area', None)
@@ -680,6 +688,7 @@ async def analisar_caso_ia(
         partes_existentes=partes_str,
         numero_processo=getattr(case, 'numero_processo', '') or '',
         area=area_val,
+        nomes_proteger=nomes_proteger,
         db=db,
     )
 
