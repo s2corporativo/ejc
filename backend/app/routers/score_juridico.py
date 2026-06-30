@@ -33,6 +33,7 @@ async def listar_scores(
     db: AsyncSession = Depends(get_db),
     cu: User = Depends(get_current_user),
 ):
+    await verificar_acesso_caso(db, cu, case_id)  # IDOR (auditoria 2026-06-30)
     r = await db.execute(
         text("""
             SELECT id, tipo, pedido, causa_de_pedir, fundamentacao, provas,

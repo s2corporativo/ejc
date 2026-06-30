@@ -6,6 +6,7 @@ from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncSession
 from app.core.database import get_db
 from app.core.security import get_current_user, ROLE_LEVEL
+from app.core.ownership import verificar_acesso_caso
 from sqlalchemy import select as sa_select
 from app.models.case import Case
 from app.models.user import User
@@ -27,6 +28,7 @@ async def get_indice(
     db: AsyncSession = Depends(get_db),
     cu: User = Depends(get_current_user),
 ):
+    await verificar_acesso_caso(db, cu, case_id)  # IDOR (auditoria 2026-06-30)
     atual = await db.execute(
         text("SELECT indice_risco, risco_nivel, risco_fatores FROM cases WHERE id = :id"),
         {"id": case_id},
@@ -51,6 +53,7 @@ async def recalcular(
     db: AsyncSession = Depends(get_db),
     cu: User = Depends(get_current_user),
 ):
+    await verificar_acesso_caso(db, cu, case_id)  # IDOR (auditoria 2026-06-30)
     # Calcular baseado em dados objetivos
     r = await db.execute(
         text("""
