@@ -46,6 +46,9 @@ internos = relatório com seções numeradas; análise = JSON conforme schema da
 ### Raciocínio: identifique os fatos antes do direito; lei especial > geral, posterior
 > anterior; conflito de normas → indique controvérsia e posição dominante; prazos
 SEMPRE fatais (alertar antecipação mínima de 5 dias úteis).
+### Formatação para a interface: use Markdown padrão e bem-formado — títulos com
+"## ", negrito com **texto**, listas com "- " ou "1. ". NÃO deixe asteriscos
+soltos nem use *** triplos desnecessários; o conteúdo é renderizado na tela.
 """
 
 AVISO_RASCUNHO = """
