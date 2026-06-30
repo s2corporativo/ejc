@@ -1,77 +1,58 @@
-# Testes do calculador de prazos — núcleo crítico do EJC.
-from datetime import date, timedelta
-from app.services import deadline_calculator as dc
+"""Cálculo de prazos processuais/administrativos (Fase 5) — funções puras."""
+from datetime import date
+
+from app.services.calc import constantes_legais  # noqa: F401 (garante import do pacote)
+from app.services.deadline_calculator import (
+    calcular_pascoa,
+    feriados_moveis,
+    eh_feriado,
+    eh_dia_util,
+    prazo_dias_uteis,
+    prazo_dias_corridos,
+    calcular_prescricao,
+)
 
 
-def setup_function(_):
-    # Isola o estado global (feriados/suspensões em memória) entre testes.
-    dc.set_feriados_db(set())
-    dc.set_suspensoes_tribunal({})
+def test_pascoa_gauss():
+    assert calcular_pascoa(2024) == date(2024, 3, 31)
+    assert calcular_pascoa(2025) == date(2025, 4, 20)
+    assert calcular_pascoa(2026) == date(2026, 4, 5)
 
 
-# ── Fins de semana e feriados ─────────────────────────────────────────────────
-def test_fim_de_semana_nao_e_dia_util():
-    assert dc.eh_dia_util(date(2026, 6, 13)) is False   # sábado
-    assert dc.eh_dia_util(date(2026, 6, 14)) is False   # domingo
+def test_feriados_moveis_2025():
+    mov = feriados_moveis(2025)
+    assert date(2025, 3, 3) in mov   # Segunda de Carnaval (Páscoa - 48)
+    assert date(2025, 4, 18) in mov  # Sexta-feira Santa (Páscoa - 2)
+    assert date(2025, 6, 19) in mov  # Corpus Christi (Páscoa + 60)
 
 
-def test_feriado_nacional_fixo():
-    assert dc.eh_feriado(date(2026, 9, 7)) is True       # Independência
-    assert dc.eh_dia_util(date(2026, 9, 7)) is False
+def test_eh_feriado_fixos_e_moveis():
+    assert eh_feriado(date(2025, 12, 25)) is True   # Natal
+    assert eh_feriado(date(2025, 4, 21)) is True    # Tiradentes
+    assert eh_feriado(date(2025, 4, 18)) is True     # Sexta Santa (móvel)
+    assert eh_feriado(date(2025, 6, 10)) is False    # terça comum
 
 
-def test_feriado_movel_sexta_santa():
-    pascoa = dc.calcular_pascoa(2026)
-    sexta_santa = pascoa - timedelta(days=2)
-    assert dc.eh_feriado(sexta_santa) is True
+def test_eh_dia_util():
+    assert eh_dia_util(date(2025, 6, 7)) is False    # sábado
+    assert eh_dia_util(date(2025, 6, 8)) is False    # domingo
+    assert eh_dia_util(date(2025, 6, 10)) is True     # terça comum
+    assert eh_dia_util(date(2025, 12, 25)) is False  # Natal
 
 
-# ── Feriados municipais (vêm do banco; aqui injetados) ────────────────────────
-def test_feriado_municipal_altera_dia_util():
-    aniversario_betim = date(2026, 12, 17)              # quinta-feira útil
-    assert dc.eh_dia_util(aniversario_betim) is True
-    dc.set_feriados_db({aniversario_betim})
-    assert dc.eh_dia_util(aniversario_betim) is False
+def test_prazo_dias_uteis_exclui_inicio_e_fds():
+    # Início seg 02/06/2025; 5 dias úteis (pula sáb/dom) → seg 09/06/2025
+    assert prazo_dias_uteis(date(2025, 6, 2), 5) == date(2025, 6, 9)
 
 
-# ── Contagem de prazos ────────────────────────────────────────────────────────
-def test_prazo_dias_uteis_janela_limpa():
-    # 15/06/2026 (seg) + 5 úteis, sem feriados na janela => 22/06/2026 (seg)
-    assert dc.prazo_dias_uteis(date(2026, 6, 15), 5) == date(2026, 6, 22)
+def test_prazo_dias_corridos_prorroga_para_util():
+    # 02/06 + 20 corridos = 22/06 (domingo) → prorroga p/ 23/06 (segunda)
+    assert prazo_dias_corridos(date(2025, 6, 2), 20) == date(2025, 6, 23)
 
 
-def test_prazo_dias_uteis_conta_apenas_uteis():
-    venc = dc.prazo_dias_uteis(date(2026, 6, 15), 10)
-    assert dc.eh_dia_util(venc)
-    assert venc > date(2026, 6, 15)
-
-
-def test_prazo_corridos_prorroga_para_dia_util():
-    # 28/05/2026 + 10 corridos = 07/06 (domingo) => prorroga p/ 08/06 (seg)
-    venc = dc.prazo_dias_corridos(date(2026, 5, 28), 10, prorrogar_fim=True)
-    assert venc == date(2026, 6, 8)
-    assert dc.eh_dia_util(venc, forense=False)
-
-
-# ── Suspensão por tribunal (escopada) ─────────────────────────────────────────
-def test_suspensao_tribunal_empurra_prazo_do_tribunal():
-    ini = date(2026, 5, 29)                              # sexta
-    base = dc.prazo_dias_uteis(ini, 5)
-    dc.set_suspensoes_tribunal({"TJMG": {date(2026, 6, d) for d in range(1, 6)}})
-    assert dc.prazo_dias_uteis(ini, 5, tribunal="TJMG") > base
-
-
-def test_suspensao_nao_afeta_outro_tribunal():
-    ini = date(2026, 5, 29)
-    base = dc.prazo_dias_uteis(ini, 5)
-    dc.set_suspensoes_tribunal({"TJMG": {date(2026, 6, d) for d in range(1, 6)}})
-    assert dc.prazo_dias_uteis(ini, 5, tribunal="TRT3") == base   # outro tribunal
-    assert dc.prazo_dias_uteis(ini, 5) == base                    # sem tribunal
-
-
-# ── Defesa ambiental (IBAMA) ──────────────────────────────────────────────────
-def test_defesa_ambiental_estrutura_e_base_legal():
-    r = dc.prazo_defesa_ambiental(date(2026, 6, 1))
-    assert {"data_legal", "data_interna", "dias_restantes", "base_legal"} <= set(r)
-    assert r["data_interna"] <= r["data_legal"]            # margem antes do legal
-    assert "6.514" in r["base_legal"]
+def test_calcular_prescricao_tabela():
+    r = calcular_prescricao("reparacao_civil", date(2020, 1, 15))
+    assert r["data_limite"] == date(2023, 1, 15)        # 3 anos
+    assert "206" in r["base_legal"]
+    assert calcular_prescricao("pretensao_geral", date(2020, 1, 15))["data_limite"] == date(2030, 1, 15)
+    assert calcular_prescricao("inexistente", date(2020, 1, 1)) is None

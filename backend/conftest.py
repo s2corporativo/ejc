@@ -1,4 +1,5 @@
-# Garante que o pacote `app` seja importável ao rodar pytest a partir de backend/
-import os, sys
-sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+# conftest.py — garante ambiente de teste (dev: SECRET_KEY efêmera, sem .env).
+# Estar na raiz do backend coloca `app` no sys.path (import mode prepend do pytest).
+import os
+
 os.environ.setdefault("APP_ENV", "development")
