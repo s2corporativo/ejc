@@ -16,8 +16,10 @@ ALERT_COOLDOWN_S="${ALERT_COOLDOWN_S:-3600}"    # no máximo 1 alerta/hora
 log() { echo "[$(date '+%F %T')] $*" >> "$LOG_FILE"; }
 
 # Lê UMA variável do .env sem sourcear o arquivo inteiro (mais seguro).
+# `|| true` no fim: variável ausente (grep sem match) NÃO pode matar o script
+# sob `set -euo pipefail` — retorna vazio e segue.
 envval() {
-  grep -E "^$1=" "$ENV_FILE" 2>/dev/null | head -1 | cut -d= -f2- | sed 's/^"//; s/"$//; s/^'"'"'//; s/'"'"'$//'
+  grep -E "^$1=" "$ENV_FILE" 2>/dev/null | head -1 | cut -d= -f2- | sed 's/^"//; s/"$//; s/^'"'"'//; s/'"'"'$//' || true
 }
 
 # Envia e-mail de alerta via SMTP (STARTTLS na 587). Falha silenciosa (só loga).
