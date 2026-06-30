@@ -19,6 +19,7 @@ from app.core.security import get_current_user, require_roles, ROLE_LEVEL
 from app.models.user import User
 from app.models.case import Case
 from app.models.audit_log import criar_audit_log
+from app.core.ownership import verificar_acesso_caso, is_gestao
 from app.models.especializado import (
     EmpresarialCase, EmpresarialTipo, EmpresarialStatus,
     CivelCase, CivelTipo, CivelStatus,
@@ -42,16 +43,26 @@ router = APIRouter(tags=["Ramos Jurídicos"])
 # HELPERS COMUNS
 # ════════════════════════════════════════════════════════════════════════════
 async def _get_case(db: AsyncSession, case_id: str, user: User) -> Case:
-    """Retorna o caso validando existência e visibilidade por perfil."""
-    c = (await db.execute(
-        select(Case).where(Case.id == case_id, Case.deleted_at.is_(None))
-    )).scalar_one_or_none()
-    if not c:
-        raise HTTPException(404, "Caso não encontrado")
-    if ROLE_LEVEL.get(user.role.value, 0) < ROLE_LEVEL["socio"]:
-        if c.advogado_responsavel_id != user.id:
-            raise HTTPException(403, "Sem permissão para este caso")
-    return c
+    """Valida existência + ownership do caso (gate canônico, inclui auxiliar e
+    salvaguarda anti-lockout). Fonte única: core.ownership.verificar_acesso_caso."""
+    return await verificar_acesso_caso(db, user, case_id)
+
+
+def _serialize(obj) -> dict:
+    """Serializa um modelo ORM em dict SEM vazar `_sa_instance_state`."""
+    return {c.key: getattr(obj, c.key) for c in obj.__table__.columns}
+
+
+def _casos_visiveis_subq(cu: User):
+    """Subquery dos IDs de casos visíveis ao usuário (espelha verificar_acesso_caso)."""
+    return select(Case.id).where(
+        Case.deleted_at.is_(None),
+        (
+            (Case.advogado_responsavel_id == cu.id)
+            | (Case.advogado_auxiliar_id == cu.id)
+            | (Case.advogado_responsavel_id.is_(None) & Case.advogado_auxiliar_id.is_(None))
+        ),
+    )
 
 
 # ── CRUD compartilhado ────────────────────────────────────────────────────────
@@ -60,14 +71,17 @@ async def _get_case(db: AsyncSession, case_id: str, user: User) -> Case:
 # estes helpers. Comportamento preservado: filtro por tipo, soft-delete, audit
 # log, whitelist de colunas no patch.
 async def _crud_listar(Model, db: AsyncSession, tipo: Optional[str],
-                       limit: int, offset: int) -> dict:
+                       limit: int, offset: int, cu: User) -> dict:
     q = select(Model).where(Model.deleted_at.is_(None))
     if tipo and hasattr(Model, "tipo"):
         q = q.where(Model.tipo == tipo)
+    # Ownership por caso (IDOR): não-gestão só vê registros dos seus casos.
+    if not is_gestao(cu):
+        q = q.where(Model.case_id.in_(_casos_visiveis_subq(cu)))
     rows = (await db.execute(
         q.order_by(Model.created_at.desc()).limit(limit).offset(offset)
     )).scalars().all()
-    return {"data": [r.__dict__ for r in rows]}
+    return {"data": [_serialize(r) for r in rows]}
 
 
 async def _crud_atualizar(Model, table: str, item_id: str, body: dict,
@@ -77,6 +91,8 @@ async def _crud_atualizar(Model, table: str, item_id: str, body: dict,
     )).scalar_one_or_none()
     if not obj:
         raise HTTPException(404, "Registro não encontrado")
+    # Ownership por caso (IDOR): só edita registros de casos a que tem acesso.
+    await verificar_acesso_caso(db, cu, obj.case_id)
     allowed = {c.key for c in Model.__table__.columns
                if c.key not in ("id", "case_id", "created_at")}
     for k, v in body.items():
@@ -84,7 +100,7 @@ async def _crud_atualizar(Model, table: str, item_id: str, body: dict,
             setattr(obj, k, v)
     await criar_audit_log(db, cu.id, cu.role.value, "UPDATE", table, item_id)
     await db.commit()
-    return obj.__dict__
+    return _serialize(obj)
 
 
 async def _crud_remover(Model, table: str, item_id: str,
@@ -95,6 +111,8 @@ async def _crud_remover(Model, table: str, item_id: str,
     )).scalar_one_or_none()
     if not obj:
         raise HTTPException(404)
+    # Ownership por caso (IDOR): só remove registros de casos a que tem acesso.
+    await verificar_acesso_caso(db, cu, obj.case_id)
     obj.deleted_at = sqlfunc.now()
     await criar_audit_log(db, cu.id, cu.role.value, "DELETE", table, item_id)
     await db.commit()
@@ -146,7 +164,7 @@ async def emp_listar(
     cu: User = Depends(get_current_user),
     tipo: Optional[str] = None,
     limit: int = Query(50, ge=1, le=200), offset: int = Query(0, ge=0),):
-    return await _crud_listar(EmpresarialCase, db, tipo, limit, offset)
+    return await _crud_listar(EmpresarialCase, db, tipo, limit, offset, cu)
 
 @router.post("/empresarial", status_code=201)
 async def emp_criar(body: EmpresarialIn, db: AsyncSession = Depends(get_db),
@@ -258,7 +276,7 @@ async def civ_listar(db: AsyncSession = Depends(get_db),
                      cu: User = Depends(get_current_user),
                      tipo: Optional[str] = None,
                      limit: int = 50, offset: int = 0):
-    return await _crud_listar(CivelCase, db, tipo, limit, offset)
+    return await _crud_listar(CivelCase, db, tipo, limit, offset, cu)
 
 @router.post("/civel", status_code=201)
 async def civ_criar(body: CivelIn, db: AsyncSession = Depends(get_db),
@@ -405,7 +423,7 @@ async def pen_listar(db: AsyncSession = Depends(get_db),
                      cu: User = Depends(get_current_user),
                      fase: Optional[str] = None,
                      limit: int = 50, offset: int = 0):
-    return await _crud_listar(PenalCase, db, fase, limit, offset)
+    return await _crud_listar(PenalCase, db, fase, limit, offset, cu)
 
 @router.post("/penal", status_code=201)
 async def pen_criar(body: PenalIn, db: AsyncSession = Depends(get_db),
@@ -568,7 +586,7 @@ async def trab_listar(db: AsyncSession = Depends(get_db),
                       cu: User = Depends(get_current_user),
                       tipo: Optional[str] = None,
                       limit: int = 50, offset: int = 0):
-    return await _crud_listar(TrabalhistaCase, db, tipo, limit, offset)
+    return await _crud_listar(TrabalhistaCase, db, tipo, limit, offset, cu)
 
 @router.post("/trabalhista-esp", status_code=201)
 async def trab_criar(body: TrabalhistaIn, db: AsyncSession = Depends(get_db),
@@ -703,7 +721,7 @@ async def adm_listar(db: AsyncSession = Depends(get_db),
                      cu: User = Depends(get_current_user),
                      tipo: Optional[str] = None,
                      limit: int = 50, offset: int = 0):
-    return await _crud_listar(AdminCase, db, tipo, limit, offset)
+    return await _crud_listar(AdminCase, db, tipo, limit, offset, cu)
 
 @router.post("/admin-esp", status_code=201)
 async def adm_criar(body: AdminIn, db: AsyncSession = Depends(get_db),
@@ -1345,7 +1363,7 @@ async def ban_listar(db: AsyncSession = Depends(get_db),
                      cu: User = Depends(get_current_user),
                      tipo: Optional[str] = None,
                      limit: int = 50, offset: int = 0):
-    return await _crud_listar(BancarioCase, db, tipo, limit, offset)
+    return await _crud_listar(BancarioCase, db, tipo, limit, offset, cu)
 
 @router.post("/bancario", status_code=201)
 async def ban_criar(body: BancarioIn, db: AsyncSession = Depends(get_db),
