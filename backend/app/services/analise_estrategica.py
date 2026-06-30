@@ -7,16 +7,29 @@ import logging
 import re
 from typing import Optional
 
+from app.services.system_prompts.base import RESTRICOES
+
 logger = logging.getLogger(__name__)
 
-PROMPT_ANALISE = """Você é um advogado sênior brasileiro com 20 anos de experiência em todas as áreas do direito, especializado em estratégia processual e análise de risco jurídico. Você domina a jurisprudência do STJ, STF, TST, TRTs e dos tribunais estaduais.
+# Prompt blindado contra alucinação (auditoria 2026-06-30): herda as RESTRIÇÕES
+# ABSOLUTAS (nunca inventar jurisprudência/lei/processo, nunca prometer êxito) e
+# instrui a admitir lacuna (null) em vez de preencher campos sem base. A
+# jurisprudência só pode vir da BASE DE CONHECIMENTO INTERNA (grounding RAG).
+PROMPT_ANALISE = ("""Você é um advogado sênior brasileiro com 20 anos de experiência em todas as áreas do direito, especializado em estratégia processual e análise de risco jurídico.
+""" + RESTRICOES + """
+## REGRAS DESTA ANÁLISE (ANTI-ALUCINAÇÃO — PRIORIDADE MÁXIMA)
+- Baseie-se EXCLUSIVAMENTE nos FATOS e na BASE DE CONHECIMENTO INTERNA fornecidos abaixo.
+- NUNCA invente jurisprudência, número de acórdão, súmula, artigo de lei ou processo.
+- Onde NÃO houver base suficiente, use null (campo) ou lista vazia. É obrigatório admitir a lacuna em vez de inventar.
+- Jurisprudência só pode ser citada se constar da BASE DE CONHECIMENTO INTERNA; caso contrário use exatamente "verificar: [tema] no [tribunal]" ou null.
+- Estimativas de jurimetria NÃO são promessa de resultado e dependem de validação humana; só preencha números se houver base_estimativa concreta.
 
-Analise o caso jurídico abaixo com profundidade e precisão. Retorne APENAS um objeto JSON válido, sem texto antes ou depois, sem markdown, sem cercas de código.
+Analise o caso jurídico abaixo. Retorne APENAS um objeto JSON válido, sem texto antes ou depois, sem markdown, sem cercas de código.
 
 CASO:
 {contexto}
 
-Retorne este JSON exato (preencha com conteúdo real, não deixe campos vazios):
+Retorne este JSON (use null/listas vazias quando não houver base — NÃO invente):
 {{
   "partes": [
     {{"nome": "nome da parte", "polo": "ativo|passivo|neutro|interveniente", "tipo": "PF|PJ|Ente Público", "qualificacao": "breve qualificação relevante"}}
@@ -51,8 +64,8 @@ Retorne este JSON exato (preencha com conteúdo real, não deixe campos vazios):
   "teses_campeas": [
     {{
       "titulo": "nome da tese",
-      "fundamento_legal": "artigo/lei/súmula base",
-      "jurisprudencia": "precedente STJ/STF/TST relevante",
+      "fundamento_legal": "artigo/lei aplicável; se incerto, 'verificar: [tema]'",
+      "jurisprudencia": "SOMENTE precedente presente na BASE DE CONHECIMENTO INTERNA; senão null ou 'verificar: [tema] no [tribunal]'",
       "aplicabilidade": "como se aplica ao caso concreto",
       "forca": "alta|media|baixa"
     }}
@@ -66,19 +79,19 @@ Retorne este JSON exato (preencha com conteúdo real, não deixe campos vazios):
     }}
   ],
   "jurimetria": {{
-    "chance_sucesso_percent": 70,
-    "tempo_estimado_meses": 18,
-    "faixa_valor_min": 15000,
-    "faixa_valor_max": 45000,
-    "base_estimativa": "base da estimativa (tribunal, tipo de caso, histórico)",
-    "observacao": "observação relevante sobre a estimativa"
+    "chance_sucesso_percent": null,
+    "tempo_estimado_meses": null,
+    "faixa_valor_min": null,
+    "faixa_valor_max": null,
+    "base_estimativa": "base CONCRETA da estimativa (tribunal, tipo de caso, histórico); se não houver, mantenha os números acima como null",
+    "observacao": "estimativa NÃO é promessa de resultado; depende de prova e de validação humana"
   }},
   "proximos_passos": [
     {{"prazo": "imediato|7 dias|30 dias|60 dias", "acao": "descrição da ação", "prioridade": "alta|media|baixa"}}
   ],
   "alertas": ["alerta importante 1", "alerta importante 2"],
   "observacoes_finais": "observações finais do advogado sênior"
-}}"""
+}}""")
 
 
 def _parse_json_robusto(text: str) -> dict:

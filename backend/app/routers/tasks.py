@@ -14,8 +14,10 @@ from app.core.database import get_db
 from app.core.security import get_current_user
 from app.models.user import User
 from app.models.task import Task, TaskStatus
+from app.models.case import Case
 from app.models.notification import Notification
 from app.schemas.common import MsgResponse
+from app.core.ownership import verificar_acesso_caso, is_gestao
 
 router = APIRouter(prefix="/tasks", tags=["Tarefas"])
 
@@ -50,6 +52,24 @@ async def listar(
         q = q.where(Task.case_id == case_id)
     if minhas:
         q = q.where(Task.responsavel_id == cu.id)
+    # IDOR (auditoria 2026-06-30): não-gestão só vê tarefas dos seus casos
+    # (responsável/auxiliar), de casos sem dono, sem caso, ou onde é
+    # responsável/criador. Espelha core.ownership.verificar_acesso_caso.
+    if not is_gestao(cu):
+        casos_visiveis = select(Case.id).where(
+            Case.deleted_at.is_(None),
+            (
+                (Case.advogado_responsavel_id == cu.id)
+                | (Case.advogado_auxiliar_id == cu.id)
+                | (Case.advogado_responsavel_id.is_(None) & Case.advogado_auxiliar_id.is_(None))
+            ),
+        )
+        q = q.where(
+            Task.case_id.is_(None)
+            | Task.case_id.in_(casos_visiveis)
+            | (Task.responsavel_id == cu.id)
+            | (Task.criado_por == cu.id)
+        )
     q = q.order_by(Task.data_limite.asc().nullslast(), Task.created_at)
     rows = (await db.execute(q)).scalars().all()
     return {"data": [
@@ -67,6 +87,8 @@ async def criar(
     db: AsyncSession = Depends(get_db),
     cu: User = Depends(get_current_user),
 ):
+    if payload.case_id:
+        await verificar_acesso_caso(db, cu, payload.case_id)
     t = Task(id=str(uuid4()), criado_por=cu.id, **payload.model_dump())
     db.add(t)
     # Notificar o responsável (se não for o próprio criador)
@@ -91,6 +113,8 @@ async def atualizar(
     ))).scalar_one_or_none()
     if not t:
         raise HTTPException(status_code=404, detail="Tarefa não encontrada")
+    if t.case_id:
+        await verificar_acesso_caso(db, cu, t.case_id)
     mud = payload.model_dump(exclude_unset=True)
     if "status" in mud:
         if mud["status"] not in [s.value for s in TaskStatus]:
@@ -114,6 +138,8 @@ async def remover(
     ))).scalar_one_or_none()
     if not t:
         raise HTTPException(status_code=404, detail="Tarefa não encontrada")
+    if t.case_id:
+        await verificar_acesso_caso(db, cu, t.case_id)
     t.deleted_at = datetime.now(timezone.utc)
     await db.commit()
     return MsgResponse(detail="Tarefa removida")

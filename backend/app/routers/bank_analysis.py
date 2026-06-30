@@ -18,6 +18,7 @@ from app.models.user import User
 from app.models.bank_analysis import BankAnalysis, BankTransaction, BankAbusiveCharge
 from app.services.bank_statement import parse_extrato, detectar_abusivas
 from app.services import bank_report
+from app.core.ownership import verificar_acesso_caso, is_gestao
 
 router = APIRouter(prefix="/bank-analysis", tags=["Análise Bancária (Extratos)"])
 settings = get_settings()
@@ -109,14 +110,22 @@ async def listar(
     page: int = Query(1, ge=1), page_size: int = Query(20, ge=1, le=100),
     db: AsyncSession = Depends(get_db), cu: User = Depends(get_current_user),
 ):
-    total = (await db.execute(text(
-        "SELECT count(*) FROM bank_analyses WHERE deleted_at IS NULL"))).scalar()
-    rows = (await db.execute(text("""
+    # IDOR (auditoria 2026-06-30): não-gestão só vê as próprias análises
+    # (extrato bancário = dado sensível do cliente).
+    escopo = "" if is_gestao(cu) else " AND created_by = :uid"
+    params = {"l": page_size, "o": (page - 1) * page_size}
+    if not is_gestao(cu):
+        params["uid"] = cu.id
+    total = (await db.execute(
+        text(f"SELECT count(*) FROM bank_analyses WHERE deleted_at IS NULL{escopo}"),
+        ({"uid": cu.id} if not is_gestao(cu) else {}),
+    )).scalar()
+    rows = (await db.execute(text(f"""
         SELECT id, banco, formato, arquivo_nome, periodo_inicio, periodo_fim,
                total_transacoes, total_abusivo, qtd_abusivas, status, created_at
-        FROM bank_analyses WHERE deleted_at IS NULL
+        FROM bank_analyses WHERE deleted_at IS NULL{escopo}
         ORDER BY created_at DESC LIMIT :l OFFSET :o
-    """), {"l": page_size, "o": (page - 1) * page_size})).mappings().all()
+    """), params)).mappings().all()
     return {"total": total, "page": page, "data": [dict(r) for r in rows]}
 
 
@@ -127,6 +136,11 @@ async def detalhe(analysis_id: str, db: AsyncSession = Depends(get_db),
         BankAnalysis.id == analysis_id, BankAnalysis.deleted_at.is_(None)))).scalar_one_or_none()
     if not a:
         raise HTTPException(404, "Análise não encontrada")
+    # IDOR: análise vinculada a caso exige acesso ao caso; órfã → gestão/criador.
+    if a.case_id:
+        await verificar_acesso_caso(db, cu, a.case_id)
+    elif not (is_gestao(cu) or a.created_by == cu.id):
+        raise HTTPException(403, "Sem permissão para esta análise")
     txs = (await db.execute(select(BankTransaction).where(
         BankTransaction.analysis_id == analysis_id).order_by(BankTransaction.data))).scalars().all()
     chs = (await db.execute(select(BankAbusiveCharge).where(
@@ -171,6 +185,15 @@ async def documento(analysis_id: str, payload: dict = Body(default={}),
 @router.delete("/{analysis_id}")
 async def remover(analysis_id: str, db: AsyncSession = Depends(get_db),
                   cu: User = Depends(get_current_user)):
+    a = (await db.execute(select(BankAnalysis).where(
+        BankAnalysis.id == analysis_id, BankAnalysis.deleted_at.is_(None)))).scalar_one_or_none()
+    if not a:
+        raise HTTPException(404, "Análise não encontrada")
+    # IDOR: só gestão, dono do caso ou criador pode apagar.
+    if a.case_id:
+        await verificar_acesso_caso(db, cu, a.case_id)
+    elif not (is_gestao(cu) or a.created_by == cu.id):
+        raise HTTPException(403, "Sem permissão para esta análise")
     await db.execute(text("UPDATE bank_analyses SET deleted_at = :n WHERE id = :i"),
                      {"n": datetime.now(timezone.utc), "i": analysis_id})
     await db.commit()

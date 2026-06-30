@@ -88,6 +88,9 @@ async def inadimplencia_alertas(
     db: AsyncSession = Depends(get_db),
     cu: User = Depends(get_current_user),
 ):
+    # IDOR/sigilo (auditoria 2026-06-30): inadimplência exposta só a gestão/financeiro.
+    if cu.role not in ("admin", "superadmin", "socio", "financeiro"):
+        raise HTTPException(403, "Acesso restrito a gestão/financeiro")
     from app.services.inadimplencia_service import listar_alertas
     return await listar_alertas(db, resolved=resolved, nivel=nivel, limit=limit)
 

@@ -93,7 +93,7 @@ async def resolver_cliente(
 async def verificar_conflito(
     req: ConflitoCheckRequest,
     db: AsyncSession = Depends(get_db),
-    cu: User = Depends(get_current_user),
+    cu: User = Depends(_req_clientes),
 ):
     """
     Verificação OBRIGATÓRIA antes de cadastrar cliente/caso (EOAB arts. 34-35).

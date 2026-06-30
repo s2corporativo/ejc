@@ -361,12 +361,32 @@ async def upload_para_drive(
     }
 
 
+async def _gate_drive_doc(db: AsyncSession, cu: User, file_id: str):
+    """Gate IDOR para docs do Google Drive (auditoria 2026-06-30).
+    Resolve a linha em `documents` pelo drive_file_id e exige acesso ao caso
+    (verificar_acesso_caso) ou, p/ doc sem caso, ser gestão ou o criador."""
+    from sqlalchemy import text as sql_text
+    row = (await db.execute(sql_text(
+        "SELECT id, case_id, created_by FROM documents "
+        "WHERE drive_file_id = :fid AND deleted_at IS NULL LIMIT 1"
+    ), {"fid": file_id})).mappings().first()
+    if not row:
+        raise HTTPException(404, "Documento não encontrado")
+    if row.get("case_id"):
+        await verificar_acesso_caso(db, cu, row["case_id"])
+    elif not (is_gestao(cu) or row.get("created_by") == cu.id):
+        raise HTTPException(403, "Sem permissão para este documento")
+    return row
+
+
 @router.get("/drive/{file_id}/link")
 async def link_documento(
     file_id: str,
+    db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
     """Retorna link de visualização e download de um documento no Drive."""
+    await _gate_drive_doc(db, current_user, file_id)
     try:
         info = gd.get_file_link(file_id)
         return {
@@ -381,9 +401,11 @@ async def link_documento(
 @router.get("/drive/{file_id}/download")
 async def download_documento(
     file_id: str,
+    db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
     """Proxy de download — baixa do Drive e retorna ao cliente."""
+    await _gate_drive_doc(db, current_user, file_id)
     from fastapi.responses import Response
     try:
         content, mime = gd.download_file(file_id)

@@ -8,9 +8,15 @@ o VictoryVault (async) sem await — nunca funcionavam — e referenciavam um ca
 corretos (id, tipo_documento, area_juridica, descricao).
 """
 from typing import Dict, Any, List, Optional
-from jinja2 import Template
+from jinja2.sandbox import SandboxedEnvironment
 
 from app.core.victory_vault import vault, ModeloDocumento
+
+# Ambiente Jinja2 EM SANDBOX (corrige SSTI/RCE — auditoria 2026-06-30).
+# O conteúdo do template vem do banco (Victory Vault, editável por usuário) e os
+# dados são arbitrários; o `Template` padrão permitia acesso a __class__/__globals__
+# → execução de código. O SandboxedEnvironment bloqueia atributos/chamadas inseguros.
+_SANDBOX = SandboxedEnvironment(autoescape=False)
 
 
 class DocumentTemplateEngine:
@@ -18,7 +24,7 @@ class DocumentTemplateEngine:
         modelo: Optional[ModeloDocumento] = await vault.get_modelo_por_id(template_id)
         if not modelo:
             raise ValueError(f"Modelo de documento com ID {template_id} não encontrado.")
-        return Template(modelo.conteudo_template).render(**data)
+        return _SANDBOX.from_string(modelo.conteudo_template).render(**(data or {}))
 
     async def list_available_templates(self, area_juridica: Optional[str] = None) -> List[Dict[str, str]]:
         modelos = await vault.get_modelos_documentos(area_juridica=area_juridica)
