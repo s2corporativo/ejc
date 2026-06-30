@@ -25,10 +25,31 @@ jobs:
           cache-dependency-path: backend/requirements.txt
       - name: Instalar dependências
         run: pip install -r requirements.txt
-      - name: Rodar testes
+      - name: Rodar testes (unitários + segurança, sem banco)
         env:
           APP_ENV: development
-        run: python -m pytest tests -q
+        # Escopo deste job: testes que validam a reaplicação de segurança e a
+        # lógica pura (sem banco/rede). Os testes de INTEGRAÇÃO (test_auth,
+        # test_casos, test_honorarios, test_prazos, test_seguranca,
+        # test_case_context_precedentes) exigem Postgres e rodarão num CI de
+        # integração com serviço de banco (staging — Bloco 3). Testes de
+        # correções de IA fora deste escopo (test_legal_base, test_documento_service)
+        # entram no PR de hardening de IA.
+        run: >
+          python -m pytest -q
+          tests/test_ownership.py
+          tests/test_rag_isolation.py
+          tests/test_sanitizer.py
+          tests/test_security.py
+          tests/test_security_service.py
+          tests/test_citation_check.py
+          tests/test_calc_custas.py
+          tests/test_calc_prescricao.py
+          tests/test_calc_trabalhista.py
+          tests/test_tax_tables.py
+          tests/test_deadline_calculator.py
+          tests/test_document_format.py
+          tests/test_smoke.py
 
   frontend-build:
     name: Frontend — typecheck + build
