@@ -1,0 +1,361 @@
+# ── app/main.py ───────────────────────────────────────────────────────────────
+# EJC v3.0 — Ecossistema Jurídico Clovis
+# Ponto de entrada FastAPI.
+#
+# ⚠️ CORREÇÃO P0-1 do v2: AuthMiddleware AGORA É REGISTRADO.
+#    No v2 o middleware existia mas nunca era adicionado ao app —
+#    37 routers ficavam públicos. Aqui: app.add_middleware(AuthMiddleware).
+#
+# ⚠️ CORREÇÃO P0-3: scheduler só inicia se ENABLE_SCHEDULER=true
+#    (Dockerfile usa --workers 1; nunca aumentar sem desligar o gate).
+# ─────────────────────────────────────────────────────────────────────────────
+from __future__ import annotations
+import logging
+from contextlib import asynccontextmanager
+
+from fastapi import FastAPI, Request
+from fastapi.middleware.cors import CORSMiddleware
+from fastapi.middleware.gzip import GZipMiddleware
+from fastapi.responses import JSONResponse
+
+from app.core.config import get_settings
+from app.core.database import check_db
+from app.core.auth_middleware import AuthMiddleware
+from app.services.scheduler import start_scheduler, stop_scheduler
+from app.core.rate_limit import limiter
+from slowapi import _rate_limit_exceeded_handler
+from slowapi.errors import RateLimitExceeded
+
+# Routers
+from app.routers import agenda_eventos
+from app.routers import ai
+from app.routers import ai_skills
+from app.routers import ai_tools
+from app.routers import analise_bancaria
+from app.routers import analytics
+from app.routers import areas
+from app.routers import atendimentos
+from app.routers import atividades
+from app.routers import audit
+from app.routers import auth
+from app.routers import bank_analysis
+from app.routers import calculadoras
+from app.routers import calendar_feed
+from app.routers import case_partes
+from app.routers import cases
+from app.routers import caso_areas
+from app.routers import centro_custos
+from app.routers import cerebro
+from app.routers import checklists
+from app.routers import clients
+from app.routers import compliance
+from app.routers import consumidor_monitor
+from app.routers import conteudo
+from app.routers import contratos_societarios
+from app.routers import conversao_caso
+from app.routers import curadoria_renomada
+from app.routers import dashboard
+from app.routers import data_room
+from app.routers import data_room_v4
+from app.routers import datajud
+from app.routers import deadlines
+from app.routers import despesas
+from app.routers import diario_oficial
+from app.routers import diplomacia_v3
+from app.routers import documento_ia
+from app.routers import documents
+from app.routers import dossie_cliente
+from app.routers import dossie_estrategico
+from app.routers import environmental
+from app.routers import etiquetas
+from app.routers import evolution_webhook
+from app.routers import exito_rateio
+from app.routers import export
+from app.routers import extratos
+from app.routers import fees
+from app.routers import financeiro_consolidado
+from app.routers import gestao_societaria
+from app.routers import honorarios_calc
+from app.routers import ia_defensiva
+from app.routers import ia_especializada
+from app.routers import ia_governanca
+from app.routers import ia_saude
+from app.routers import indice_risco
+from app.routers import intelligence_v3
+from app.routers import intimacoes
+from app.routers import jurimetria
+from app.routers import jurisprudencia_externa
+from app.routers import jurisprudencia_interna
+from app.routers import kanban
+from app.routers import legal_docs
+from app.routers import licitacao_auditoria
+from app.routers import mediacao
+from app.routers import memoria_institucional
+from app.routers import mensagens
+from app.routers import movimentos
+from app.routers import noticias
+from app.routers import notifications
+from app.routers import novos_modulos
+from app.routers import office_contracts
+from app.routers import partner_withdrawals
+from app.routers import peca_geracao
+from app.routers import peca_geracao_router
+from app.routers import pending_items
+from app.routers import pix
+from app.routers import portal
+from app.routers import processes
+from app.routers import procuracoes
+from app.routers import produtividade
+from app.routers import prompts
+from app.routers import prompts_juridicos
+from app.routers import qualidade
+from app.routers import rag
+from app.routers import regulatorio
+from app.routers import ramos
+from app.routers import relatorio
+from app.routers import relatorio_cliente
+from app.routers import sala_de_guerra
+from app.routers import sala_de_guerra_v3
+from app.routers import score_juridico
+from app.routers import search
+from app.routers import signatures
+from app.routers import sumulas
+from app.routers import suspensoes
+from app.routers import tasks
+from app.routers import templates
+from app.routers import teses
+from app.routers import teses_v4
+from app.routers import timesheet
+from app.routers import trash
+from app.routers import users
+from app.routers import utils
+from app.routers import validador_juridico
+from app.routers import veredito_ia_router
+from app.routers import verse
+from app.routers import victory_vault_router
+from app.routers import webhooks
+from app.routers import whatsapp
+from app.routers import wiki
+from app.routers import workflow
+
+
+# Ativa a arquitetura orientada a eventos (P1): importar registra os @on subscribers.
+from app.services import event_subscribers as _event_subscribers  # noqa: F401
+
+logging.basicConfig(
+    level=logging.INFO,
+    format="%(asctime)s [%(levelname)s] %(name)s: %(message)s",
+)
+logger = logging.getLogger("ejc")
+settings = get_settings()
+
+# ── Sentry (desabilitado se SENTRY_DSN vazio) ─────────────────────────────────
+if settings.SENTRY_DSN:
+    import sentry_sdk
+    from sentry_sdk.integrations.fastapi import FastApiIntegration
+    from sentry_sdk.integrations.sqlalchemy import SqlalchemyIntegration
+    sentry_sdk.init(
+        dsn=settings.SENTRY_DSN,
+        environment=settings.APP_ENV,
+        traces_sample_rate=0.1,       # 10% das transações para performance
+        profiles_sample_rate=0.05,
+        integrations=[FastApiIntegration(), SqlalchemyIntegration()],
+        send_default_pii=False,       # LGPD: sem PII nos eventos Sentry
+    )
+    logger.info("[EJC] Sentry inicializado")
+
+
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    # Startup
+    db_ok = await check_db()
+    logger.info(f"[EJC] Banco de dados: {'OK' if db_ok else 'FALHA'}")
+    # Carrega feriados municipais/estaduais da tabela `feriados` para o
+    # calculador de prazos (caso contrário só os nacionais entram na conta).
+    from app.services.deadline_calculator import carregar_feriados_db
+    try:
+        n_fer = await carregar_feriados_db()
+    except Exception as e:
+        logger.warning(f"[EJC] Feriados não carregados: {e}")
+        n_fer = 0
+    logger.info(f"[EJC] Feriados municipais/estaduais carregados: {n_fer}")
+    from app.services.deadline_calculator import carregar_suspensoes_db
+    try:
+        n_susp = await carregar_suspensoes_db()
+    except Exception as e:
+        logger.warning(f"[EJC] Suspensões não carregadas: {e}")
+        n_susp = 0
+    logger.info(f"[EJC] Suspensões de tribunal carregadas: {n_susp} dia(s)")
+    if settings.ENABLE_SCHEDULER:
+        start_scheduler()
+    logger.info(f"[EJC] v3.0 iniciado — ambiente: {settings.APP_ENV}")
+    yield
+    # Shutdown
+    stop_scheduler()
+    logger.info("[EJC] Encerrado.")
+
+
+app = FastAPI(
+    title="EJC — Ecossistema Jurídico Clovis",
+    description="Sistema de gestão jurídica — De Paula Teixeira Advogados",
+    version="3.0.0",
+    lifespan=lifespan,
+    docs_url="/api/docs" if settings.APP_ENV != "production" else None,
+    redoc_url=None,
+    openapi_url="/api/openapi.json" if settings.APP_ENV != "production" else None,
+)
+
+# ── Rate limiting (slowapi) — por IP real (respeita X-Forwarded-For) ─────────
+app.state.limiter = limiter
+app.add_exception_handler(RateLimitExceeded, _rate_limit_exceeded_handler)
+
+# ── Middlewares (ordem importa: CORS por fora, Auth por dentro) ───────────────
+app.add_middleware(AuthMiddleware)          # ← P0-1 CORRIGIDO: registrado!
+
+# Compressão GZip (>500 bytes): reduz payload JSON em 70-85%. Fica entre
+# CORS (externo) e Auth (interno) — não altera a lógica de autorização.
+app.add_middleware(GZipMiddleware, minimum_size=500)
+
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=settings.cors_origins_list,   # via .env — nunca "*" em prod
+    allow_credentials=True,
+    allow_methods=["GET", "POST", "PATCH", "DELETE", "OPTIONS"],
+    allow_headers=["Authorization", "Content-Type"],
+)
+
+# ── Routers (todos sob /api) ──────────────────────────────────────────────────
+API = "/api"
+app.include_router(agenda_eventos.router, prefix=API)
+app.include_router(ai.router, prefix=API)
+app.include_router(ai_skills.router, prefix=API)
+app.include_router(ai_tools.router, prefix=API)
+app.include_router(analise_bancaria.router, prefix=API)
+app.include_router(analytics.router, prefix=API)
+app.include_router(areas.router, prefix=API)
+app.include_router(atendimentos.router, prefix=API)
+app.include_router(atividades.router, prefix=API)
+app.include_router(audit.router, prefix=API)
+app.include_router(auth.router, prefix=API)
+app.include_router(bank_analysis.router, prefix=API)
+app.include_router(calculadoras.router, prefix=API)
+app.include_router(calendar_feed.router, prefix=API)
+app.include_router(case_partes.router, prefix=API)
+app.include_router(cases.router, prefix=API)
+app.include_router(caso_areas.router, prefix=API)
+app.include_router(centro_custos.router, prefix=API)
+app.include_router(cerebro.router, prefix=API)
+app.include_router(checklists.router, prefix=API)
+app.include_router(clients.router, prefix=API)
+app.include_router(compliance.router, prefix=API)
+app.include_router(consumidor_monitor.router, prefix=API)
+app.include_router(conteudo.router, prefix=API)
+app.include_router(contratos_societarios.router, prefix=API)
+app.include_router(conversao_caso.router, prefix=API)
+app.include_router(curadoria_renomada.router, prefix=API)
+app.include_router(dashboard.router, prefix=API)
+app.include_router(data_room.router, prefix=API)
+app.include_router(data_room_v4.router, prefix=API)
+app.include_router(datajud.router, prefix=API)
+app.include_router(deadlines.router, prefix=API)
+app.include_router(despesas.router, prefix=API)
+app.include_router(diario_oficial.router, prefix=API)
+app.include_router(diplomacia_v3.router, prefix=API)
+app.include_router(documento_ia.router, prefix=API)
+app.include_router(documents.router, prefix=API)
+app.include_router(dossie_cliente.router, prefix=API)
+app.include_router(dossie_estrategico.router, prefix=API)
+app.include_router(environmental.router, prefix=API)
+app.include_router(etiquetas.router, prefix=API)
+app.include_router(evolution_webhook.router, prefix=API)
+app.include_router(exito_rateio.router, prefix=API)
+app.include_router(export.router, prefix=API)
+app.include_router(extratos.router, prefix=API)
+app.include_router(fees.router, prefix=API)
+app.include_router(financeiro_consolidado.router, prefix=API)
+app.include_router(gestao_societaria.router, prefix=API)
+app.include_router(honorarios_calc.router, prefix=API)
+app.include_router(ia_defensiva.router, prefix=API)
+app.include_router(ia_especializada.router, prefix=API)
+app.include_router(ia_governanca.router, prefix=API)
+app.include_router(ia_saude.router, prefix=API)
+app.include_router(indice_risco.router, prefix=API)
+app.include_router(intelligence_v3.router, prefix=API)
+app.include_router(intimacoes.router, prefix=API)
+app.include_router(jurimetria.router, prefix=API)
+app.include_router(jurisprudencia_externa.router, prefix=API)
+app.include_router(jurisprudencia_interna.router, prefix=API)
+app.include_router(kanban.router, prefix=API)
+app.include_router(legal_docs.router, prefix=API)
+app.include_router(licitacao_auditoria.router, prefix=API)
+app.include_router(mediacao.router, prefix=API)
+app.include_router(memoria_institucional.router, prefix=API)
+app.include_router(mensagens.router, prefix=API)
+app.include_router(movimentos.router, prefix=API)
+app.include_router(noticias.router, prefix=API)
+app.include_router(notifications.router, prefix=API)
+app.include_router(novos_modulos.router, prefix=API)
+app.include_router(office_contracts.router, prefix=API)
+app.include_router(partner_withdrawals.router, prefix=API)
+app.include_router(peca_geracao.router, prefix=API)
+app.include_router(peca_geracao_router.router, prefix=API)
+app.include_router(pending_items.router, prefix=API)
+app.include_router(pix.router, prefix=API)
+app.include_router(portal.router, prefix=API)
+app.include_router(processes.router, prefix=API)
+app.include_router(procuracoes.router, prefix=API)
+app.include_router(produtividade.router, prefix=API)
+app.include_router(prompts.router, prefix=API)
+app.include_router(prompts_juridicos.router, prefix=API)
+app.include_router(qualidade.router, prefix=API)
+app.include_router(rag.router, prefix=API)
+app.include_router(regulatorio.router, prefix=API)
+app.include_router(ramos.router, prefix=API)
+app.include_router(relatorio.router, prefix=API)
+app.include_router(relatorio_cliente.router, prefix=API)
+app.include_router(sala_de_guerra.router, prefix=API)
+app.include_router(sala_de_guerra_v3.router, prefix=API)
+app.include_router(score_juridico.router, prefix=API)
+app.include_router(search.router, prefix=API)
+app.include_router(signatures.router, prefix=API)
+app.include_router(sumulas.router, prefix=API)
+app.include_router(suspensoes.router, prefix=API)
+app.include_router(tasks.router, prefix=API)
+app.include_router(templates.router, prefix=API)
+app.include_router(teses.router, prefix=API)
+app.include_router(teses_v4.router, prefix=API)
+app.include_router(timesheet.router, prefix=API)
+app.include_router(trash.router, prefix=API)
+app.include_router(users.router, prefix=API)
+app.include_router(utils.router, prefix=API)
+app.include_router(validador_juridico.router, prefix=API)
+app.include_router(veredito_ia_router.router, prefix=API)
+app.include_router(verse.router, prefix=API)
+app.include_router(victory_vault_router.router, prefix=API)
+app.include_router(webhooks.router, prefix=API)
+app.include_router(whatsapp.router, prefix=API)
+app.include_router(wiki.router, prefix=API)
+app.include_router(workflow.router, prefix=API)
+
+
+
+
+# ── Health check (público — usado pelo Docker healthcheck) ────────────────────
+@app.get("/api/health")
+async def health():
+    db_ok = await check_db()
+    return {
+        "status": "ok" if db_ok else "degraded",
+        "version": "3.0.0",
+        "database": db_ok,
+    }
+
+
+# ── Exception handler global (nunca vazar stack trace) ────────────────────────
+@app.exception_handler(Exception)
+async def global_exception_handler(request: Request, exc: Exception):
+    logger.error(f"Erro não tratado em {request.url.path}: {exc}", exc_info=True)
+    return JSONResponse(
+        status_code=500,
+        content={"detail": "Erro interno. A equipe foi notificada."},
+    )

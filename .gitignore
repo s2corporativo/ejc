@@ -1,0 +1,58 @@
+# ───────── SEGREDOS — NUNCA versionar ─────────
+.env
+.env.*
+*.env
+!.env.example
+!**/.env.example
+vps-tools/.env
+
+# Chaves e credenciais
+*.pem
+*.key
+*.p12
+*.pfx
+*service-account*.json
+credentials*.json
+rclone.conf
+**/rclone.conf
+
+# ───────── Backups / arquivos temporários (lixo) ─────────
+*.bak
+*.bak.*
+*.orig
+*.old
+*.tgz
+*.tar.gz
+*.zip
+*.dump
+*.sql
+*.sql.gz
+*.log
+
+# ───────── Python ─────────
+__pycache__/
+**/__pycache__/
+*.py[cod]
+*.egg-info/
+.venv/
+.venv-codex/
+**/.venv*/
+venv/
+.pytest_cache/
+.mypy_cache/
+
+# ───────── Node / frontend ─────────
+node_modules/
+**/node_modules/
+frontend/dist/
+dist/
+.vite/
+
+# ───────── Dados, uploads e backups runtime ─────────
+**/uploads/
+backups/
+
+# ───────── Config local / temporários ─────────
+.claude/
+.DS_Store
+Thumbs.db

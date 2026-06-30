@@ -1,0 +1,538 @@
+# ── app/routers/legal_docs.py ────────────────────────────────────────────────
+# Peças jurídicas com HITL ENFORÇADO:
+# ai_generated=True NÃO avança para aprovada/final sem human_reviewed=True.
+# Bloqueio em nível de código — não apenas UI.
+from __future__ import annotations
+import logging
+from datetime import datetime, timezone
+from uuid import uuid4
+from typing import Optional
+
+from fastapi import APIRouter, Depends, HTTPException, Query, BackgroundTasks
+from sqlalchemy import select, func as sqlfunc, or_
+from sqlalchemy.ext.asyncio import AsyncSession
+
+from app.core.database import get_db
+from app.core.security import get_current_user
+from app.core.ownership import verificar_acesso_caso
+from app.models.user import User
+from app.models.legal_doc import LegalDoc, PecaStatus
+from app.models.ai_log import AILog, AIStatusHITL
+from app.models.rag import KnowledgeDoc
+from app.models.audit_log import criar_audit_log
+from app.services.case_intel import indexar_peca_rag
+from app.services.document_format import padronizar_documento_juridico
+from app.services.validador_juridico_service import ValidacaoInput, validar_rascunho_juridico
+from app.schemas.legal_doc import (
+    LegalDocCreate, LegalDocUpdate, LegalDocRevisao,
+    LegalDocResponse, LegalDocDetail,
+)
+from app.schemas.common import MsgResponse
+
+router = APIRouter(prefix="/legal-docs", tags=["Peças Jurídicas"])
+
+STATUS_EXIGE_REVISAO = {"aprovada", "final", "protocolada"}
+STATUS_EXIGE_VALIDACAO = {"aprovada", "final", "protocolada"}
+VALIDACAO_SCORE_MINIMO = 75
+
+# Status "pronto para protocolar" → dispara checklist pré-protocolo (#CHK gatilho 2).
+_STATUS_PRE_PROTOCOLO = {"aprovada", "final"}
+
+
+
+
+def _status_value(status) -> str | None:
+    if status is None:
+        return None
+    return status.value if hasattr(status, "value") else str(status)
+
+
+def _parse_score(prompt: str | None) -> int | None:
+    import re
+    m = re.search(r"score_confianca\s*[:=]\s*(\d{1,3})", prompt or "", re.I)
+    if not m:
+        return None
+    return max(0, min(100, int(m.group(1))))
+
+
+def _parse_veredito(prompt: str | None) -> str | None:
+    import re
+    m = re.search(r"veredito\s*[:=]\s*([^\n\r]+)", prompt or "", re.I)
+    return m.group(1).strip()[:80] if m else None
+
+
+async def _ultima_validacao_peca(db: AsyncSession, doc: LegalDoc) -> dict:
+    marcador = f"LEGAL_DOC_ID:{doc.id}"
+    q = select(AILog).where(
+        AILog.prompt_sanitizado.ilike(f"%{marcador}%"),
+        or_(
+            AILog.resposta.ilike("%RELATORIO DE VALIDACAO JURIDICA%"),
+            AILog.prompt_sanitizado.ilike("%RELATORIO DE VALIDACAO JURIDICA%"),
+            AILog.prompt_sanitizado.ilike("%VALIDACAO JURIDICA%"),
+        ),
+    ).order_by(AILog.created_at.desc())
+    log = (await db.execute(q.limit(1))).scalar_one_or_none()
+    if not log:
+        return {
+            "status": "sem_validacao",
+            "apto_fluxo": False,
+            "score": None,
+            "veredito": None,
+            "ai_log_id": None,
+            "hitl": None,
+            "motivo": "Execute a validacao juridica da peca e marque o log como revisado ou aplicado.",
+        }
+    score = _parse_score(log.prompt_sanitizado)
+    veredito = _parse_veredito(log.prompt_sanitizado)
+    hitl = _status_value(log.status_hitl)
+    revisada = hitl in ("revisado", "aplicado")
+    score_ok = score is not None and score >= VALIDACAO_SCORE_MINIMO
+    bloqueada = (veredito or "").upper().startswith("BLOQUEAR")
+    apto = revisada and score_ok and not bloqueada
+    if apto:
+        status = "validada"
+        motivo = "Validacao juridica revisada/aplicada e score minimo atendido."
+    elif not revisada:
+        status = "pendente_revisao"
+        motivo = "Validacao gerada, mas ainda nao marcada como revisada ou aplicada no HITL."
+    elif not score_ok:
+        status = "score_baixo"
+        motivo = f"Score inferior ao minimo de {VALIDACAO_SCORE_MINIMO}/100."
+    else:
+        status = "bloqueada"
+        motivo = "Veredito operacional bloqueia o avanco ate correcao."
+    return {
+        "status": status,
+        "apto_fluxo": apto,
+        "score": score,
+        "score_minimo": VALIDACAO_SCORE_MINIMO,
+        "veredito": veredito,
+        "ai_log_id": log.id,
+        "hitl": hitl,
+        "created_at": log.created_at,
+        "motivo": motivo,
+    }
+
+
+async def _bloquear_sem_validacao(db: AsyncSession, doc: LegalDoc, novo_status: str | None):
+    if novo_status not in STATUS_EXIGE_VALIDACAO:
+        return
+    validacao = await _ultima_validacao_peca(db, doc)
+    if not validacao.get("apto_fluxo"):
+        raise HTTPException(
+            status_code=422,
+            detail=(
+                "Peca bloqueada por controle de qualidade: para aprovar/finalizar/protocolar, "
+                f"e necessario validacao juridica revisada ou aplicada com score minimo de "
+                f"{VALIDACAO_SCORE_MINIMO}/100. Status atual: {validacao.get('status')}. "
+                f"{validacao.get('motivo')}"
+            ),
+        )
+
+
+_JURIS_CATEGORIAS = {
+    "jurisprudencia", "jurisprudencia_tjmg_acordaos", "jurisprudencia_tjmg_juizados",
+    "sentencas_jec_tjmg", "fonaje_enunciados", "stj_juizados", "datajud_metadados",
+    "sumula_stf", "sumula_stj", "sumula_tst",
+}
+_CITACAO_CNJ_RE = r"\b\d{7}-\d{2}\.\d{4}\.\d\.\d{2}\.\d{4}\b"
+_URL_OFICIAL_RE = r"https?://[^\s)\]]*(?:tjmg\.jus\.br|cnj\.jus\.br|stj\.jus\.br|stf\.jus\.br|fonaje\.amb\.com\.br)[^\s)\]]*"
+_LINHA_JURIS_RE = r"\b(jurisprudencia|jurisprudencial|acordao|ementa|relator|turma recursal|camara|tjmg|stj|stf|resp|aresp|agint|sumula)\b"
+
+
+def _linhas_jurisprudenciais(conteudo: str) -> list[str]:
+    import re
+    linhas = []
+    for linha in (conteudo or "").splitlines():
+        limpa = linha.strip()
+        if len(limpa) < 12:
+            continue
+        if re.search(r"\b(sem|nao ha|não há|inexistente)\s+(citacao\s+de\s+)?jurisprud", limpa, flags=re.I):
+            continue
+        if re.search(_LINHA_JURIS_RE, limpa, flags=re.I):
+            linhas.append(limpa[:500])
+    return linhas
+
+
+async def _fonte_juris_validada(db: AsyncSession, *, numero: str | None = None, url: str | None = None) -> bool:
+    if not numero and not url:
+        return False
+    q = select(KnowledgeDoc).where(KnowledgeDoc.deleted_at.is_(None), KnowledgeDoc.categoria.in_(_JURIS_CATEGORIAS))
+    if numero:
+        q = q.where(or_(KnowledgeDoc.fonte.ilike(f"%{numero}%"), KnowledgeDoc.extra["numero_processo"].astext == numero))
+    if url:
+        q = q.where(KnowledgeDoc.fonte.ilike(f"%{url[:240]}%"))
+    rows = (await db.execute(q.limit(10))).scalars().all()
+    for d in rows:
+        ex = d.extra or {}
+        if ex.get("fonte_validada") is True and ex.get("confidence_level") in ("alta", "media") and ex.get("rag_status") in ("aprovado", "disponivel"):
+            return True
+    return False
+
+
+async def _auditar_jurisprudencia_peca(db: AsyncSession, conteudo: str) -> dict:
+    import re
+    numeros = sorted(set(re.findall(_CITACAO_CNJ_RE, conteudo or "")))
+    urls = sorted(set(re.findall(_URL_OFICIAL_RE, conteudo or "", flags=re.I)))
+    linhas = _linhas_jurisprudenciais(conteudo or "")
+    problemas: list[str] = []
+    validadas: list[str] = []
+
+    for numero in numeros:
+        if await _fonte_juris_validada(db, numero=numero):
+            validadas.append(numero)
+        else:
+            problemas.append(f"Jurisprudencia com processo {numero} nao localizada na base validada.")
+    for url in urls:
+        if await _fonte_juris_validada(db, url=url):
+            validadas.append(url)
+        else:
+            problemas.append(f"Fonte oficial citada nao esta cadastrada/validada na base: {url[:160]}")
+
+    # Se a peca fala em jurisprudencia/acordao/sumula sem numero, URL oficial ou sumula identificada, bloquear.
+    linhas_sem_id = []
+    for linha in linhas:
+        tem_numero = re.search(_CITACAO_CNJ_RE, linha)
+        tem_url = re.search(_URL_OFICIAL_RE, linha, flags=re.I)
+        tem_sumula_id = re.search(r"\b[Ss]umula\s+(?:vinculante\s+)?\d+\b", linha)
+        if not (tem_numero or tem_url or tem_sumula_id):
+            linhas_sem_id.append(linha)
+    if linhas_sem_id:
+        problemas.append("Ha citacao jurisprudencial sem numero/link oficial/sumula identificada: " + linhas_sem_id[0][:220])
+
+    return {
+        "apto": not problemas,
+        "problemas": problemas,
+        "citacoes_validadas": validadas,
+        "citacoes_detectadas": {"processos": numeros, "urls": urls, "linhas_jurisprudenciais": len(linhas)},
+        "regra": "Peca final nao pode citar jurisprudencia como confirmada sem fonte validada na base MG/JEC/RAG.",
+    }
+
+
+async def _bloquear_jurisprudencia_nao_validada(db: AsyncSession, doc: LegalDoc, novo_status: str | None):
+    if novo_status not in STATUS_EXIGE_VALIDACAO:
+        return
+    auditoria = await _auditar_jurisprudencia_peca(db, doc.conteudo or "")
+    if not auditoria.get("apto"):
+        raise HTTPException(
+            status_code=422,
+            detail={
+                "mensagem": "Peca bloqueada: jurisprudencia citada sem validacao oficial na base.",
+                "auditoria_jurisprudencia": auditoria,
+            },
+        )
+
+
+async def _bg_checklist_protocolo(case_id: str, user_id: str):
+    """Antes do protocolo: gera checklist por legislação (rascunho HITL). Fail-safe."""
+    from app.core.database import AsyncSessionLocal
+    from app.services.checklist_ia import gerar_checklist_ia
+    try:
+        async with AsyncSessionLocal() as bgdb:
+            await gerar_checklist_ia(bgdb, case_id, "pre_protocolo", user_id)
+    except Exception as e:
+        logging.getLogger("ejc.legal_docs").warning(f"checklist pre_protocolo falhou: {e}")
+
+
+@router.get("/")
+async def listar(
+    page: int = Query(1, ge=1), page_size: int = Query(20, ge=1, le=100),
+    case_id: Optional[str] = None,
+    status_f: Optional[str] = Query(None, alias="status"),
+    db: AsyncSession = Depends(get_db),
+    cu: User = Depends(get_current_user),
+):
+    q = select(LegalDoc).where(LegalDoc.deleted_at.is_(None))
+    if case_id:
+        q = q.where(LegalDoc.case_id == case_id)
+    if status_f:
+        q = q.where(LegalDoc.status == status_f)
+    q = q.order_by(LegalDoc.created_at.desc())
+
+    total = (await db.execute(
+        select(sqlfunc.count()).select_from(q.subquery())
+    )).scalar()
+    rows = (await db.execute(
+        q.offset((page - 1) * page_size).limit(page_size)
+    )).scalars().all()
+    data = []
+    for d in rows:
+        item = LegalDocResponse.model_validate(d).model_dump(mode="json")
+        item["validacao_juridica"] = await _ultima_validacao_peca(db, d)
+        data.append(item)
+    return {"data": data, "total": total, "page": page, "page_size": page_size}
+
+
+@router.post("/", response_model=LegalDocDetail, status_code=201)
+async def criar(
+    payload: LegalDocCreate,
+    background: BackgroundTasks,
+    db: AsyncSession = Depends(get_db),
+    cu: User = Depends(get_current_user),
+):
+    if getattr(payload, "case_id", None):
+        await verificar_acesso_caso(db, cu, payload.case_id)
+    dados = payload.model_dump()
+    dados["titulo"] = padronizar_documento_juridico(dados.get("titulo", ""))[:255]
+    dados["conteudo"] = padronizar_documento_juridico(dados.get("conteudo", ""))
+    d = LegalDoc(
+        id=str(uuid4()), created_by=cu.id,
+        **dados,
+    )
+    db.add(d)
+    await criar_audit_log(
+        db, cu.id, cu.role.value, "CREATE", "legal_docs", d.id,
+        detalhes=f"IA={payload.ai_generated}",
+    )
+    await db.commit()
+    await db.refresh(d)
+    # ETAPA 2 — produção interna alimenta a RAG (sanitizada, classificada).
+    background.add_task(indexar_peca_rag, d.id)
+    return d
+
+
+@router.get("/{doc_id}")
+async def detalhe(
+    doc_id: str,
+    db: AsyncSession = Depends(get_db),
+    cu: User = Depends(get_current_user),
+):
+    d = (await db.execute(
+        select(LegalDoc).where(
+            LegalDoc.id == doc_id, LegalDoc.deleted_at.is_(None)
+        )
+    )).scalar_one_or_none()
+    if not d:
+        raise HTTPException(status_code=404, detail="Peça não encontrada")
+    item = LegalDocDetail.model_validate(d).model_dump(mode="json")
+    item["validacao_juridica"] = await _ultima_validacao_peca(db, d)
+    return item
+
+
+@router.get("/{doc_id}/validacao")
+async def status_validacao_juridica(
+    doc_id: str,
+    db: AsyncSession = Depends(get_db),
+    cu: User = Depends(get_current_user),
+):
+    d = (await db.execute(select(LegalDoc).where(LegalDoc.id == doc_id, LegalDoc.deleted_at.is_(None)))).scalar_one_or_none()
+    if not d:
+        raise HTTPException(status_code=404, detail="Peça não encontrada")
+    if d.case_id:
+        await verificar_acesso_caso(db, cu, d.case_id)
+    return await _ultima_validacao_peca(db, d)
+
+
+@router.post("/{doc_id}/validar")
+async def validar_peca_juridica(
+    doc_id: str,
+    db: AsyncSession = Depends(get_db),
+    cu: User = Depends(get_current_user),
+):
+    d = (await db.execute(select(LegalDoc).where(LegalDoc.id == doc_id, LegalDoc.deleted_at.is_(None)))).scalar_one_or_none()
+    if not d:
+        raise HTTPException(status_code=404, detail="Peça não encontrada")
+    if d.case_id:
+        await verificar_acesso_caso(db, cu, d.case_id)
+    payload = ValidacaoInput(
+        rascunho=d.conteudo,
+        tipo_documento=_status_value(d.tipo_peca) or "peca_juridica",
+        area=None,
+        rito=None,
+        fase="fluxo_peca_pre_finalizacao",
+        documentos=[f"LEGAL_DOC_ID:{d.id}", f"TITULO:{d.titulo}", f"STATUS_ATUAL:{_status_value(d.status)}"],
+        case_id=d.case_id,
+        nivel_inteligencia="alto",
+    )
+    resultado = await validar_rascunho_juridico(payload, db=db, user_id=cu.id)
+    await criar_audit_log(db, cu.id, cu.role.value, "VALIDACAO_JURIDICA", "legal_docs", doc_id, detalhes=f"score={resultado.get('score_confianca')}")
+    await db.commit()
+    return resultado
+
+
+@router.patch("/{doc_id}", response_model=LegalDocDetail)
+async def atualizar(
+    doc_id: str, payload: LegalDocUpdate,
+    background: BackgroundTasks,
+    db: AsyncSession = Depends(get_db),
+    cu: User = Depends(get_current_user),
+):
+    d = (await db.execute(
+        select(LegalDoc).where(
+            LegalDoc.id == doc_id, LegalDoc.deleted_at.is_(None)
+        )
+    )).scalar_one_or_none()
+    if not d:
+        raise HTTPException(status_code=404, detail="Peça não encontrada")
+    if d.case_id:
+        await verificar_acesso_caso(db, cu, d.case_id)
+
+    mudancas = payload.model_dump(exclude_unset=True)
+    if "titulo" in mudancas and mudancas["titulo"] is not None:
+        mudancas["titulo"] = padronizar_documento_juridico(mudancas["titulo"])[:255]
+    if "conteudo" in mudancas and mudancas["conteudo"] is not None:
+        mudancas["conteudo"] = padronizar_documento_juridico(mudancas["conteudo"])
+
+    # ── BLOQUEIO HITL (em código, não só UI) ───────────────────────────
+    novo_status = mudancas.get("status")
+    if (novo_status in STATUS_EXIGE_REVISAO
+            and d.ai_generated and not d.human_reviewed):
+        raise HTTPException(
+            status_code=422,
+            detail="Peca gerada por IA exige revisao humana registrada antes de aprovar (use POST /legal-docs/{id}/revisar). Provimento OAB 205/2021.",
+        )
+    await _bloquear_sem_validacao(db, d, novo_status)
+    await _bloquear_jurisprudencia_nao_validada(db, d, novo_status)
+
+    # Edição de conteúdo incrementa versão
+    if "conteudo" in mudancas and mudancas["conteudo"] != d.conteudo:
+        d.versao += 1
+
+    status_antigo = d.status.value if hasattr(d.status, "value") else d.status
+    for k, v in mudancas.items():
+        setattr(d, k, v)
+    await criar_audit_log(db, cu.id, cu.role.value, "UPDATE", "legal_docs", doc_id)
+    await db.commit()
+    await db.refresh(d)
+    # #CHK gatilho 2 — ao APROVAR/FINALIZAR a peça (pronta p/ protocolo), gera o
+    # checklist pré-protocolo (rascunho HITL) em background. Só na transição.
+    ns = mudancas.get("status")
+    ns = ns.value if hasattr(ns, "value") else ns
+    if ns in _STATUS_PRE_PROTOCOLO and status_antigo not in _STATUS_PRE_PROTOCOLO and d.case_id:
+        background.add_task(_bg_checklist_protocolo, d.case_id, cu.id)
+    return d
+
+
+@router.get("/{doc_id}/jurisprudencia-check")
+async def checar_jurisprudencia_peca(
+    doc_id: str,
+    db: AsyncSession = Depends(get_db),
+    cu: User = Depends(get_current_user),
+):
+    d = (await db.execute(select(LegalDoc).where(LegalDoc.id == doc_id, LegalDoc.deleted_at.is_(None)))).scalar_one_or_none()
+    if not d:
+        raise HTTPException(status_code=404, detail="Peça não encontrada")
+    if d.case_id:
+        await verificar_acesso_caso(db, cu, d.case_id)
+    return await _auditar_jurisprudencia_peca(db, d.conteudo or "")
+
+
+@router.post("/{doc_id}/revisar", response_model=LegalDocDetail)
+async def revisar(
+    doc_id: str, payload: LegalDocRevisao,
+    background: BackgroundTasks,
+    db: AsyncSession = Depends(get_db),
+    cu: User = Depends(get_current_user),
+):
+    """Registro de revisão humana — desbloqueia aprovação de peça IA."""
+    d = (await db.execute(
+        select(LegalDoc).where(
+            LegalDoc.id == doc_id, LegalDoc.deleted_at.is_(None)
+        )
+    )).scalar_one_or_none()
+    if not d:
+        raise HTTPException(status_code=404, detail="Peça não encontrada")
+    if d.case_id:
+        await verificar_acesso_caso(db, cu, d.case_id)
+
+    d.human_reviewed = payload.aprovado
+    d.revisor_id = cu.id
+    d.revisado_em = datetime.now(timezone.utc)
+    d.notas_revisao = payload.notas
+    d.status = PecaStatus.corrigida if payload.aprovado else PecaStatus.em_revisao
+
+    await criar_audit_log(
+        db, cu.id, cu.role.value, "REVISAO_HITL", "legal_docs", doc_id,
+        detalhes=f"aprovado={payload.aprovado}",
+    )
+    await db.commit()
+    await db.refresh(d)
+    # ETAPA 2 — re-indexa a versão revisada (qualidade validada) na RAG.
+    if payload.aprovado:
+        background.add_task(indexar_peca_rag, doc_id)
+    return d
+
+
+@router.delete("/{doc_id}", response_model=MsgResponse)
+async def remover(
+    doc_id: str,
+    db: AsyncSession = Depends(get_db),
+    cu: User = Depends(get_current_user),
+):
+    d = (await db.execute(
+        select(LegalDoc).where(
+            LegalDoc.id == doc_id, LegalDoc.deleted_at.is_(None)
+        )
+    )).scalar_one_or_none()
+    if not d:
+        raise HTTPException(status_code=404, detail="Peça não encontrada")
+    if d.case_id:
+        await verificar_acesso_caso(db, cu, d.case_id)
+    d.deleted_at = datetime.now(timezone.utc)
+    await criar_audit_log(db, cu.id, cu.role.value, "DELETE", "legal_docs", doc_id)
+    await db.commit()
+    return MsgResponse(detail="Peça removida")
+
+
+# ═══ Exportação em PDF timbrado (logo institucional embutido) ═══
+from fastapi.responses import Response
+from app.services.pdf_service import peca_para_pdf_async
+
+
+@router.get("/{doc_id}/pdf")
+async def exportar_pdf(
+    doc_id: str,
+    db: AsyncSession = Depends(get_db),
+    cu: User = Depends(get_current_user),
+):
+    d = (await db.execute(
+        select(LegalDoc).where(LegalDoc.id == doc_id, LegalDoc.deleted_at.is_(None))
+    )).scalar_one_or_none()
+    if not d:
+        raise HTTPException(status_code=404, detail="Peça não encontrada")
+
+    if d.case_id:
+        await verificar_acesso_caso(db, cu, d.case_id)
+
+    status_atual = _status_value(d.status)
+    validacao = await _ultima_validacao_peca(db, d)
+    pronto_protocolo = status_atual in STATUS_EXIGE_VALIDACAO and validacao.get("apto_fluxo")
+    if not pronto_protocolo:
+        raise HTTPException(
+            status_code=422,
+            detail=(
+                "PDF de protocolo bloqueado: a peca precisa estar aprovada/final/protocolada "
+                "e ter validacao juridica revisada ou aplicada com score minimo antes da exportacao final. "
+                f"Status da peca: {status_atual}. Validacao: {validacao.get('status')}. "
+                f"{validacao.get('motivo')}"
+            ),
+        )
+
+    auditoria_juris = await _auditar_jurisprudencia_peca(db, d.conteudo or "")
+    if not auditoria_juris.get("apto"):
+        raise HTTPException(
+            status_code=422,
+            detail={
+                "mensagem": "PDF de protocolo bloqueado: jurisprudencia citada sem validacao oficial na base.",
+                "auditoria_jurisprudencia": auditoria_juris,
+            },
+        )
+
+    titulo = padronizar_documento_juridico(d.titulo)
+    conteudo = padronizar_documento_juridico(d.conteudo)
+
+    try:
+        pdf_bytes = await peca_para_pdf_async(titulo, conteudo, pronto_protocolo=True)
+    except RuntimeError as e:
+        raise HTTPException(status_code=503, detail=str(e))
+
+    await criar_audit_log(db, cu.id, cu.role.value, "DOWNLOAD", "legal_docs",
+                          doc_id, detalhes="Exportacao PDF protocolo")
+    await db.commit()
+
+    safe_name = "".join(c if c.isalnum() or c in " -_" else "_" for c in titulo)[:60]
+    return Response(
+        content=pdf_bytes, media_type="application/pdf",
+        headers={"Content-Disposition": f'attachment; filename="{safe_name}.pdf"'},
+    )
+

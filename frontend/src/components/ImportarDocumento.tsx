@@ -1,0 +1,312 @@
+// ── src/components/ImportarDocumento.tsx ─────────────────────────────────────
+// Importação inteligente de documento no intake de Casos. Upload PDF/DOCX/imagem
+// → /api/documentos-ia/analisar (OCR + extração + diagnóstico) → pré-preenche o
+// formulário do caso e exibe a análise. Tudo é MINUTA (revisão obrigatória OAB).
+import { useRef, useState } from "react";
+import {
+  UploadCloud,
+  FileSearch,
+  AlertTriangle,
+  CheckCircle2,
+  ScrollText,
+} from "lucide-react";
+import api from "../lib/api";
+
+type Patch = Record<string, any>;
+
+function Bloco({ titulo, itens }: { titulo: string; itens?: string[] }) {
+  if (!itens || itens.length === 0) return null;
+  return (
+    <div>
+      <p className="text-[11px] font-semibold text-slate-500 uppercase tracking-wide mb-1">
+        {titulo}
+      </p>
+      <ul className="list-disc list-inside text-xs text-slate-700 space-y-0.5">
+        {itens.map((x, i) => (
+          <li key={i}>{x}</li>
+        ))}
+      </ul>
+    </div>
+  );
+}
+
+export default function ImportarDocumento({
+  onPrefill,
+}: {
+  onPrefill: (p: Patch) => void;
+}) {
+  const ref = useRef<HTMLInputElement>(null);
+  const [loading, setLoading] = useState(false);
+  const [erro, setErro] = useState("");
+  const [d, setD] = useState<any>(null);
+
+  const analisar = async (file: File) => {
+    setLoading(true);
+    setErro("");
+    setD(null);
+    try {
+      const fd = new FormData();
+      fd.append("file", file);
+      const { data } = await api.post("/documentos-ia/analisar", fd, {
+        headers: { "Content-Type": "multipart/form-data" },
+      });
+      setD(data);
+      // Pré-preenche o formulário do caso com o que foi extraído
+      const ip = data.identificacao_processual || {};
+      const pa = data.partes || {};
+      const cl = data.classificacao || {};
+      const re = data.resumo_executivo || {};
+      const AREA_OK = [
+        "civil",
+        "trabalhista",
+        "consumidor",
+        "familia",
+        "ambiental",
+        "criminal",
+        "previdenciario",
+        "empresarial",
+        "tributario",
+      ];
+      const patch: Patch = {};
+      const titulo = cl.materia || re.fatos?.slice(0, 70);
+      if (titulo) patch.titulo = titulo;
+      if (cl.area && AREA_OK.includes(cl.area)) patch.area = cl.area;
+      if (ip.numero_processo) patch.numero_processo = ip.numero_processo;
+      if (ip.tribunal) patch.tribunal = ip.tribunal;
+      if (ip.comarca) patch.comarca = ip.comarca;
+      if (ip.vara) patch.vara = ip.vara;
+      if (pa.reu) patch.parte_contraria = pa.reu;
+      if (data.valor_causa_estimado)
+        patch.valor_causa = data.valor_causa_estimado;
+      if (re.fatos) patch.descricao_fatos = re.fatos;
+      if (cl.complexidade)
+        patch.prioridade =
+          cl.complexidade === "alta"
+            ? "alta"
+            : cl.complexidade === "baixa"
+              ? "baixa"
+              : "media";
+      const dp2 = data.dados_pessoais || {};
+      patch._extracao = {
+        identificacao_processual: ip,
+        partes: pa,
+        classificacao: cl,
+        dados_pessoais: dp2,
+      };
+      patch._cliente_candidato = {
+        nome: pa.autor || "",
+        cpf: dp2.cpf || "",
+        cnpj: dp2.cnpj || "",
+      };
+      onPrefill(patch);
+    } catch (e: any) {
+      setErro(e.response?.data?.detail || "Falha ao analisar o documento.");
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const ip = d?.identificacao_processual || {};
+  const pa = d?.partes || {};
+  const dp = d?.dados_pessoais || {};
+  const cl = d?.classificacao || {};
+  const re = d?.resumo_executivo || {};
+  const di = d?.diagnostico || {};
+  const br = d?.brechas_processuais || {};
+  const es = d?.estrategia || {};
+  const ho = d?.honorarios_sugeridos || {};
+
+  return (
+    <div className="card p-4 mb-5 border-l-4 border-bronze bg-bronze-50/20">
+      <div className="flex items-center gap-2 mb-1">
+        <FileSearch size={16} className="text-bronze" />
+        <h3 className="font-serif font-semibold text-navy text-sm">
+          Importação inteligente (IA)
+        </h3>
+      </div>
+      <p className="text-xs text-slate-500 mb-3">
+        Envie a petição, sentença, contrato ou processo digitalizado. A IA lê
+        (OCR), extrai partes, número, área e produz um diagnóstico — e
+        pré-preenche o caso. Tudo é minuta: revise.
+      </p>
+
+      <input
+        ref={ref}
+        type="file"
+        accept=".pdf,.docx,.png,.jpg,.jpeg,.tiff,.webp,application/pdf,image/*"
+        className="hidden"
+        onChange={(e) => {
+          const f = e.target.files?.[0];
+          if (f) analisar(f);
+        }}
+      />
+      <button
+        onClick={() => ref.current?.click()}
+        disabled={loading}
+        className="btn-gold text-sm"
+      >
+        <UploadCloud size={15} />{" "}
+        {loading ? "Analisando documento…" : "Enviar documento"}
+      </button>
+      {erro && <p className="text-xs text-red-600 mt-2">{erro}</p>}
+
+      {d && (
+        <div className="mt-4 space-y-3 text-sm">
+          <div className="flex items-center gap-2 text-emerald-700 text-xs">
+            <CheckCircle2 size={14} /> Campos do caso pré-preenchidos — confira
+            abaixo e ajuste.
+          </div>
+
+          {/* Identificação + partes */}
+          <div className="grid sm:grid-cols-2 gap-2 text-xs">
+            {ip.numero_processo && (
+              <p>
+                <b>Processo:</b> {ip.numero_processo}
+              </p>
+            )}
+            {ip.tribunal && (
+              <p>
+                <b>Tribunal:</b> {ip.tribunal}
+              </p>
+            )}
+            {ip.comarca && (
+              <p>
+                <b>Comarca:</b> {ip.comarca}
+              </p>
+            )}
+            {ip.vara && (
+              <p>
+                <b>Vara:</b> {ip.vara}
+              </p>
+            )}
+            {pa.autor && (
+              <p>
+                <b>Autor:</b> {pa.autor}
+              </p>
+            )}
+            {pa.reu && (
+              <p>
+                <b>Réu:</b> {pa.reu}
+              </p>
+            )}
+            {cl.area && (
+              <p>
+                <b>Área:</b> {cl.area}
+                {cl.subarea ? ` · ${cl.subarea}` : ""}
+              </p>
+            )}
+            {cl.complexidade && (
+              <p>
+                <b>Complexidade:</b> {cl.complexidade}
+              </p>
+            )}
+            {(dp.cpf || dp.cnpj) && (
+              <p>
+                <b>Doc:</b> {dp.cpf || dp.cnpj}
+              </p>
+            )}
+          </div>
+
+          {re.fatos && (
+            <div className="bg-white rounded-lg p-3 border border-bronze-pale">
+              <p className="text-[11px] font-semibold text-slate-500 uppercase mb-1 flex items-center gap-1">
+                <ScrollText size={12} /> Resumo executivo
+              </p>
+              <p className="text-xs text-slate-700">{re.fatos}</p>
+              {re.pedidos && (
+                <p className="text-xs text-slate-600 mt-1">
+                  <b>Pedidos:</b> {re.pedidos}
+                </p>
+              )}
+              {re.situacao_processual && (
+                <p className="text-xs text-slate-600 mt-1">
+                  <b>Situação:</b> {re.situacao_processual}
+                </p>
+              )}
+            </div>
+          )}
+
+          <div className="grid sm:grid-cols-2 gap-3">
+            <Bloco titulo="Pontos fortes" itens={di.pontos_fortes} />
+            <Bloco
+              titulo="Pontos fracos / riscos"
+              itens={[...(di.pontos_fracos || []), ...(di.riscos || [])]}
+            />
+          </div>
+
+          {/* Brechas processuais */}
+          {br.nulidades?.length ||
+          br.teses_defensivas?.length ||
+          br.prescricao ||
+          br.falhas_documentais?.length ? (
+            <div className="bg-amber-50/60 rounded-lg p-3 border border-amber-200">
+              <p className="text-[11px] font-semibold text-amber-800 uppercase mb-1 flex items-center gap-1">
+                <AlertTriangle size={12} /> Brechas processuais (verificar)
+              </p>
+              {br.prescricao && (
+                <p className="text-xs text-slate-700">
+                  <b>Prescrição:</b> {br.prescricao}
+                </p>
+              )}
+              {br.decadencia && (
+                <p className="text-xs text-slate-700">
+                  <b>Decadência:</b> {br.decadencia}
+                </p>
+              )}
+              <Bloco titulo="Nulidades" itens={br.nulidades} />
+              <Bloco
+                titulo="Falhas documentais"
+                itens={br.falhas_documentais}
+              />
+              <Bloco titulo="Teses defensivas" itens={br.teses_defensivas} />
+            </div>
+          ) : null}
+
+          <div className="grid sm:grid-cols-2 gap-3">
+            <Bloco
+              titulo="Medidas / ações cabíveis"
+              itens={[...(es.medidas_cabiveis || []), ...(es.acoes || [])]}
+            />
+            <Bloco titulo="Provas a produzir" itens={es.producao_de_provas} />
+          </div>
+
+          {(ho.recomendado || ho.minimo) && (
+            <div className="bg-white rounded-lg p-3 border border-bronze-pale text-xs">
+              <p className="text-[11px] font-semibold text-slate-500 uppercase mb-1">
+                Honorários sugeridos (tabela OAB — referência)
+              </p>
+              <div className="grid grid-cols-3 gap-2">
+                <p>
+                  <b>Mínimo:</b>
+                  <br />
+                  {ho.minimo || "—"}
+                </p>
+                <p>
+                  <b>Recomendado:</b>
+                  <br />
+                  {ho.recomendado || "—"}
+                </p>
+                <p>
+                  <b>Estratégico:</b>
+                  <br />
+                  {ho.estrategico || "—"}
+                </p>
+              </div>
+              {ho.contrato_sugerido && (
+                <p className="mt-1">
+                  <b>Contrato:</b> {ho.contrato_sugerido}
+                </p>
+              )}
+            </div>
+          )}
+
+          {d._aviso && (
+            <p className="text-[11px] text-amber-700 border-t border-amber-100 pt-2">
+              ⚠ {d._aviso}
+            </p>
+          )}
+        </div>
+      )}
+    </div>
+  );
+}

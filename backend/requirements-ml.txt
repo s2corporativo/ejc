@@ -1,0 +1,13 @@
+# ── EJC — Dependências opcionais de Machine Learning ─────────────────────────
+# Busca semântica RAG com modelo multilingual (português jurídico).
+# Instalar no container backend APÓS requirements.txt:
+#   pip install -r requirements-ml.txt
+#
+# Modelo: intfloat/multilingual-e5-base (768d, multilingual, ~450MB)
+# Requerimentos de hardware: 2GB RAM; GPU opcional (CPU funciona).
+# ─────────────────────────────────────────────────────────────────────────────
+
+sentence-transformers==3.0.1     # wrapper do HuggingFace para embeddings locais
+# PyTorch CPU é instalado no Dockerfile antes deste arquivo.
+transformers==4.42.4             # tokenizers e modelos HuggingFace
+huggingface-hub==0.24.5          # download do modelo intfloat/multilingual-e5-base

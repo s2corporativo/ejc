@@ -1,0 +1,73 @@
+# ── EJC v3.0 — Dependências Python ───────────────────────────────────────────
+# Stack: FastAPI async + asyncpg + SQLAlchemy 2 async + Alembic + Groq + pgvector
+
+# ── Framework web ─────────────────────────────────────────
+fastapi==0.111.0
+uvicorn[standard]==0.29.0
+
+# ── Banco de dados (async) ────────────────────────────────
+sqlalchemy[asyncio]==2.0.30
+asyncpg==0.29.0                  # driver async PostgreSQL
+psycopg2-binary==2.9.9           # driver sync p/ Alembic migrations
+aiosqlite==0.20.0                # fallback/local
+alembic==1.13.1                  # migrations
+pgvector==0.3.2                  # extensão vetorial (RAG)
+
+# ── Validação e configuração ──────────────────────────────
+pydantic==2.7.4
+pydantic-settings==2.3.1
+email-validator==2.2.0
+
+# ── Autenticação e segurança ──────────────────────────────
+PyJWT>=2.8.0 # JWT tokens
+bcrypt==4.1.3                    # hash de senha (passlib descontinuado)
+cryptography==42.0.8
+slowapi==0.1.9                   # rate limiting por IP (login, reset, busca)
+
+# ── Processamento de documentos / PDF / OCR ───────────────
+python-multipart==0.0.9          # uploads de arquivo
+python-magic==0.4.27             # detecção de tipo de arquivo
+python-docx==1.1.2               # leitura/escrita DOCX
+PyMuPDF==1.24.5                  # leitura/extração de texto PDF
+Pillow==10.4.0                   # imagens
+pytesseract==0.3.10              # OCR imagens (requer tesseract no SO)
+
+# ── Geração de PDF (peças timbradas) ──────────────────────
+weasyprint==62.1                 # HTML → PDF
+pydyf==0.10.0                    # par compatível com weasyprint 62.x
+jinja2==3.1.4                    # templates HTML/PDF
+markdown==3.6                    # peças markdown → HTML → PDF
+
+# ── IA — Groq ─────────────────────────────────────────────
+groq==0.9.0                      # cliente oficial Groq API
+
+# ── Observabilidade — Sentry ──────────────────────────────
+sentry-sdk[fastapi]==2.8.0       # rastreamento de erros (desabilitado se SENTRY_DSN="")
+
+# ── Agendamento (alertas) ─────────────────────────────────
+APScheduler==3.10.4
+
+# ── Notificações push (PWA) ───────────────────────────────
+pywebpush==2.0.0                 # Web Push
+
+# ── Utilitários ───────────────────────────────────────────
+httpx==0.27.0                    # cliente HTTP async (integrações)
+aiofiles==23.2.1                 # I/O de arquivos async
+python-dateutil==2.9.0
+pytz==2024.1
+structlog==24.1.0                # logs estruturados
+
+# ── Testes ────────────────────────────────────────────────
+pytest==8.2.0
+pytest-asyncio==0.23.7
+tenacity==9.0.0
+cachetools>=5.3.0
+google-api-python-client>=2.100.0
+google-auth>=2.22.0
+beautifulsoup4
+lxml
+anthropic>=0.40.0
+openpyxl
+pyotp>=2.9.0
+fpdf2==2.7.9                    # PDF (visual_law_pdf) — dep ausente corrigida 28/06
+reportlab==4.2.0                # PDF (visual_law_templates) — dep ausente corrigida 28/06

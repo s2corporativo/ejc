@@ -1,0 +1,111 @@
+# ── EJC v3.0 — Docker Compose (produção Contabo) ─────────────────────────────
+# Backend bound a 127.0.0.1 — acesso externo SOMENTE via Nginx (TLS).
+# Limites de recursos: isolam o EJC para não derrubar S2/VerdeLimp no mesmo VPS.
+services:
+  db:
+    image: pgvector/pgvector:pg16
+    container_name: ejc_db
+    restart: unless-stopped
+    mem_limit: 1536m
+    memswap_limit: 2g
+    cpus: 1.5
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-ejc_user}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?defina POSTGRES_PASSWORD no .env}
+      POSTGRES_DB: ${POSTGRES_DB:-ejc_db}
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-ejc_user} -d ${POSTGRES_DB:-ejc_db}"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    networks:
+      - ejc_net
+    # Porta NÃO exposta ao host — apenas rede interna Docker
+
+  backend:
+    build:
+      context: ./backend
+      target: runtime-base
+    container_name: ejc_backend
+    restart: unless-stopped
+    mem_limit: 3g
+    memswap_limit: 4g
+    cpus: 3
+    env_file: .env
+    environment:
+      EMBEDDINGS_ENABLED: "true"
+      EMBEDDINGS_PROVIDER: "http"
+      EMBEDDINGS_API_URL: "http://embeddings:8010/embed"
+      DATABASE_URL: postgresql+asyncpg://${POSTGRES_USER:-ejc_user}:${POSTGRES_PASSWORD}@db:5432/${POSTGRES_DB:-ejc_db}
+      DATABASE_URL_SYNC: postgresql://${POSTGRES_USER:-ejc_user}:${POSTGRES_PASSWORD}@db:5432/${POSTGRES_DB:-ejc_db}
+    volumes:
+      - uploads:/app/uploads
+    ports:
+      - "127.0.0.1:8000:8000"   # só localhost — Nginx faz o proxy
+    depends_on:
+      db:
+        condition: service_healthy
+      embeddings:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8000/api/health')"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 20s
+    networks:
+      - ejc_net
+
+  embeddings:
+    build:
+      context: ./backend
+      target: ml
+    container_name: ejc_embeddings
+    restart: unless-stopped
+    mem_limit: 2g
+    memswap_limit: 3g
+    cpus: 1.5
+    env_file: .env
+    environment:
+      EMBEDDINGS_ENABLED: "true"
+      EMBEDDINGS_PROVIDER: "local"
+      DATABASE_URL: postgresql+asyncpg://${POSTGRES_USER:-ejc_user}:${POSTGRES_PASSWORD}@db:5432/${POSTGRES_DB:-ejc_db}
+      DATABASE_URL_SYNC: postgresql://${POSTGRES_USER:-ejc_user}:${POSTGRES_PASSWORD}@db:5432/${POSTGRES_DB:-ejc_db}
+    volumes:
+      - uploads:/app/uploads
+    command: ["uvicorn", "app.services.embeddings_api:app", "--host", "0.0.0.0", "--port", "8010", "--workers", "1"]
+    depends_on:
+      db:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8010/health')"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 80s
+    networks:
+      - ejc_net
+
+  frontend:
+    build: ./frontend
+    container_name: ejc_frontend
+    restart: unless-stopped
+    mem_limit: 256m
+    cpus: 0.5
+    ports:
+      - "127.0.0.1:8080:80"     # Nginx host faz proxy p/ cá
+    depends_on:
+      - backend
+    networks:
+      - ejc_net
+
+volumes:
+  pgdata:
+  uploads:
+
+networks:
+  ejc_net:
+    name: backend_ejc_net
+    driver: bridge

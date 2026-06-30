@@ -1,0 +1,265 @@
+# ── app/routers/prompts_juridicos.py ──────────────────────────────────────────
+# Biblioteca de Prompts Jurídicos — CRUD + execução via AI Gateway.
+# Prompts têm {{variavel}} como placeholders, substituídos na hora de executar.
+from __future__ import annotations
+import json
+import re
+from uuid import uuid4
+from datetime import datetime, timezone
+from typing import Optional
+
+from fastapi import APIRouter, Depends, HTTPException, Query
+from pydantic import BaseModel, Field
+from sqlalchemy import select, or_, func
+from sqlalchemy.ext.asyncio import AsyncSession
+
+from app.core.database import get_db
+from app.core.security import get_current_user, ROLE_LEVEL
+from app.models.user import User
+from app.models.prompt_juridico import PromptJuridico, PromptCategoria
+
+router = APIRouter(prefix="/prompts-juridicos", tags=["Biblioteca de Prompts"])
+
+# ── Schemas ───────────────────────────────────────────────────────────────────
+
+class PromptIn(BaseModel):
+    titulo:    str = Field(min_length=3, max_length=200)
+    categoria: PromptCategoria
+    conteudo:  str = Field(min_length=20)
+    descricao: Optional[str] = None
+    tags:      Optional[str] = None
+    favorito:  bool = False
+    publico:   bool = True
+
+
+class PromptPatch(BaseModel):
+    titulo:    Optional[str] = None
+    categoria: Optional[PromptCategoria] = None
+    conteudo:  Optional[str] = None
+    descricao: Optional[str] = None
+    tags:      Optional[str] = None
+    favorito:  Optional[bool] = None
+    publico:   Optional[bool] = None
+
+
+class ExecutarPromptReq(BaseModel):
+    variaveis:   dict = {}    # {"variavel1": "valor1", "variavel2": "valor2"}
+    case_id:     Optional[str] = None
+    task_type:   str = "analise_juridica"   # task_type para o AI Gateway
+    temperature: float = Field(0.3, ge=0.0, le=1.0)
+    max_tokens:  int = Field(2048, ge=256, le=8192)
+    avaliacao:   Optional[int] = Field(None, ge=1, le=5)   # feedback após execução
+
+
+# ── Helpers ───────────────────────────────────────────────────────────────────
+
+_PLACEHOLDER = re.compile(r"\{\{(\w+)\}\}")
+
+def _preencher_variaveis(template: str, variaveis: dict) -> str:
+    def sub(m):
+        key = m.group(1)
+        return variaveis.get(key, m.group(0))
+    return _PLACEHOLDER.sub(sub, template)
+
+def _extrair_variaveis(conteudo: str) -> list[str]:
+    return sorted(set(_PLACEHOLDER.findall(conteudo)))
+
+def _pode_editar(user: User) -> bool:
+    return ROLE_LEVEL.get(user.role.value, 0) >= ROLE_LEVEL["advogado"]
+
+def _out(p: PromptJuridico) -> dict:
+    return {
+        "id": p.id, "titulo": p.titulo,
+        "categoria": p.categoria.value if hasattr(p.categoria, "value") else p.categoria,
+        "conteudo": p.conteudo, "descricao": p.descricao,
+        "variaveis": _extrair_variaveis(p.conteudo),
+        "tags": p.tags, "favorito": p.favorito, "publico": p.publico,
+        "vezes_executado": p.vezes_executado, "versao": p.versao,
+        "avaliacao_media": p.avaliacao_media,
+        "created_at": p.created_at.isoformat() if p.created_at else None,
+        "updated_at": p.updated_at.isoformat() if p.updated_at else None,
+    }
+
+
+# ── Endpoints ─────────────────────────────────────────────────────────────────
+
+@router.get("")
+async def listar_prompts(
+    categoria: Optional[str] = Query(None),
+    favorito:  Optional[bool] = Query(None),
+    busca:     Optional[str]  = Query(None),
+    page:      int = Query(1, ge=1),
+    per_page:  int = Query(20, ge=1, le=100),
+    db:        AsyncSession = Depends(get_db),
+    cu:        User = Depends(get_current_user),
+):
+    q = select(PromptJuridico).where(PromptJuridico.deleted_at.is_(None))
+
+    # Usuários não-staff só veem prompts públicos
+    if ROLE_LEVEL.get(cu.role.value, 0) < ROLE_LEVEL["estagiario"]:
+        q = q.where(PromptJuridico.publico.is_(True))
+
+    if categoria:
+        q = q.where(PromptJuridico.categoria == categoria)
+    if favorito is not None:
+        q = q.where(PromptJuridico.favorito.is_(favorito))
+    if busca:
+        t = f"%{busca}%"
+        q = q.where(or_(
+            PromptJuridico.titulo.ilike(t),
+            PromptJuridico.descricao.ilike(t),
+            PromptJuridico.tags.ilike(t),
+        ))
+
+    q = q.order_by(PromptJuridico.favorito.desc(), PromptJuridico.vezes_executado.desc())
+    total = (await db.execute(select(func.count()).select_from(q.subquery()))).scalar() or 0
+    items = (await db.execute(q.offset((page - 1) * per_page).limit(per_page))).scalars().all()
+    return {"total": total, "page": page, "per_page": per_page, "items": [_out(p) for p in items]}
+
+
+@router.post("", status_code=201)
+async def criar_prompt(
+    req: PromptIn,
+    db: AsyncSession = Depends(get_db),
+    cu: User = Depends(get_current_user),
+):
+    if not _pode_editar(cu):
+        raise HTTPException(403, "Permissão insuficiente")
+    variaveis_json = json.dumps(_extrair_variaveis(req.conteudo))
+    p = PromptJuridico(
+        id=str(uuid4()),
+        created_by=cu.id,
+        variaveis=variaveis_json,
+        **req.model_dump(),
+    )
+    db.add(p)
+    await db.commit()
+    return _out(p)
+
+
+@router.get("/{prompt_id}")
+async def obter_prompt(
+    prompt_id: str,
+    db: AsyncSession = Depends(get_db),
+    cu: User = Depends(get_current_user),
+):
+    p = (await db.execute(
+        select(PromptJuridico).where(
+            PromptJuridico.id == prompt_id,
+            PromptJuridico.deleted_at.is_(None),
+        )
+    )).scalar_one_or_none()
+    if not p:
+        raise HTTPException(404, "Prompt não encontrado")
+    return _out(p)
+
+
+@router.patch("/{prompt_id}")
+async def atualizar_prompt(
+    prompt_id: str,
+    req: PromptPatch,
+    db: AsyncSession = Depends(get_db),
+    cu: User = Depends(get_current_user),
+):
+    if not _pode_editar(cu):
+        raise HTTPException(403)
+    p = (await db.execute(
+        select(PromptJuridico).where(
+            PromptJuridico.id == prompt_id,
+            PromptJuridico.deleted_at.is_(None),
+        )
+    )).scalar_one_or_none()
+    if not p:
+        raise HTTPException(404)
+
+    dados = req.model_dump(exclude_none=True)
+    for campo, valor in dados.items():
+        setattr(p, campo, valor)
+
+    if "conteudo" in dados:
+        p.variaveis = json.dumps(_extrair_variaveis(p.conteudo))
+        p.versao = (p.versao or 1) + 1
+
+    p.updated_at = datetime.now(timezone.utc)
+    await db.commit()
+    return _out(p)
+
+
+@router.delete("/{prompt_id}", status_code=204)
+async def remover_prompt(
+    prompt_id: str,
+    db: AsyncSession = Depends(get_db),
+    cu: User = Depends(get_current_user),
+):
+    if ROLE_LEVEL.get(cu.role.value, 0) < ROLE_LEVEL["socio"]:
+        raise HTTPException(403, "Apenas sócios podem remover prompts")
+    p = (await db.execute(
+        select(PromptJuridico).where(
+            PromptJuridico.id == prompt_id,
+            PromptJuridico.deleted_at.is_(None),
+        )
+    )).scalar_one_or_none()
+    if not p:
+        raise HTTPException(404)
+    p.deleted_at = datetime.now(timezone.utc)
+    await db.commit()
+
+
+@router.post("/{prompt_id}/executar")
+async def executar_prompt(
+    prompt_id: str,
+    req: ExecutarPromptReq,
+    db: AsyncSession = Depends(get_db),
+    cu: User = Depends(get_current_user),
+):
+    """
+    Executa o prompt preenchendo as variáveis e enviando ao AI Gateway.
+    As variáveis {{nome}} são substituídas pelos valores fornecidos.
+    Resultado é RASCUNHO — revisão humana obrigatória (HITL).
+    """
+    from app.services.ai_gateway import chat as gw_chat
+    from app.services.sanitizer import sanitizar_pii
+
+    p = (await db.execute(
+        select(PromptJuridico).where(
+            PromptJuridico.id == prompt_id,
+            PromptJuridico.deleted_at.is_(None),
+        )
+    )).scalar_one_or_none()
+    if not p:
+        raise HTTPException(404, "Prompt não encontrado")
+
+    # Preenche variáveis
+    conteudo_preenchido = _preencher_variaveis(p.conteudo, req.variaveis)
+
+    # Sanitiza PII antes de enviar à IA
+    conteudo_sanitizado, houve_pii = sanitizar_pii(conteudo_preenchido, [])
+
+    try:
+        resp = await gw_chat(
+            messages=[{"role": "user", "content": conteudo_sanitizado}],
+            task_type=req.task_type,
+            temperature=req.temperature,
+            max_tokens=req.max_tokens,
+        )
+    except Exception as e:
+        raise HTTPException(502, f"IA indisponível: {str(e)[:200]}")
+
+    # Atualiza métricas de uso
+    p.vezes_executado = (p.vezes_executado or 0) + 1
+    p.ultima_execucao = datetime.now(timezone.utc)
+    if req.avaliacao:
+        cnt = p.vezes_executado
+        prev = p.avaliacao_media or req.avaliacao
+        p.avaliacao_media = round((prev * (cnt - 1) + req.avaliacao) / cnt, 2)
+    await db.commit()
+
+    return {
+        "resposta":    resp.texto,
+        "modelo":      resp.modelo,
+        "provedor":    resp.provedor,
+        "fallback":    resp.fallback_ativado,
+        "pii_removida": houve_pii,
+        "prompt_id":   prompt_id,
+        "aviso": "⚠️ RASCUNHO gerado por IA — revisão obrigatória antes de usar.",
+    }
