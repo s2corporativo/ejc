@@ -6,6 +6,7 @@ from __future__ import annotations
 import hashlib
 import hmac
 from datetime import datetime, timedelta
+from zoneinfo import ZoneInfo
 
 from fastapi import APIRouter, HTTPException, Response
 from sqlalchemy import select
@@ -46,7 +47,7 @@ async def feed_ics(user_id: str, token: str):
             raise HTTPException(status_code=404)
 
         # Próximos 120 dias: audiências (todas) + prazos alta/crítica
-        hoje = datetime.utcnow().date()
+        hoje = datetime.now(ZoneInfo("America/Sao_Paulo")).date()
         rows = (await db.execute(
             select(Deadline).where(
                 Deadline.responsavel_id == user_id,

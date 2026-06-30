@@ -12,6 +12,7 @@ class DeadlineCreate(BaseModel):
     data_intimacao: Optional[date] = None
     dias_prazo: Optional[int] = None         # se informado: calcula
     dias_uteis: bool = True                  # CPC=úteis; admin=corridos
+    tribunal: Optional[str] = None           # suspensões por tribunal (portarias)
     base_legal: Optional[str] = None
     descricao: Optional[str] = None
     case_id: Optional[str] = None
@@ -45,3 +46,4 @@ class CalcularPrazoRequest(BaseModel):
     data_inicio: date
     dias: int
     dias_uteis: bool = True
+    tribunal: Optional[str] = None           # suspensões por tribunal (portarias)

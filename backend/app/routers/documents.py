@@ -164,8 +164,11 @@ async def upload(
     ocr_text = None
     try:
         ocr_text = await _asyncio.to_thread(extrair_texto, full_path, mime_real)
-    except Exception:
-        pass
+    except Exception as e:
+        import logging as _logging
+        _logging.getLogger(__name__).warning(
+            "OCR falhou no upload doc %s: %s", doc_id, e
+        )
 
     d = Document(
         id=doc_id, titulo=titulo, tipo=tipo,
