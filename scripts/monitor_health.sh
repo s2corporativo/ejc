@@ -54,13 +54,15 @@ send_alert() {
   rm -f "$msg"
 }
 
-# true (0) se já passou o cooldown desde o último alerta.
+# true (0) se já passou o cooldown desde o último alerta DAQUELE tipo.
+# Uso: pode_alertar <chave>  (ex.: down, disco, backup) — cooldown por chave.
 pode_alertar() {
-  local agora last
+  local key="${1:-default}" f agora last
+  f="${STATE_LAST_ALERT}_${key}"
   agora="$(date +%s)"
-  last="$(cat "$STATE_LAST_ALERT" 2>/dev/null || echo 0)"
+  last="$(cat "$f" 2>/dev/null || echo 0)"
   if [ $(( agora - last )) -ge "$ALERT_COOLDOWN_S" ]; then
-    echo "$agora" > "$STATE_LAST_ALERT"
+    echo "$agora" > "$f"
     return 0
   fi
   return 1
@@ -107,8 +109,33 @@ else
   marca="api=${api_final:-sem_resposta} frontend=${front_final:-sem_resposta}"
   log "AINDA INDISPONIVEL apos restart: $marca"
   touch "$STATE_DOWN"
-  if pode_alertar; then
+  if pode_alertar down; then
     send_alert "[EJC] Sistema INDISPONIVEL" \
       "O EJC continua fora do ar mesmo apos o reinicio automatico.\nStatus: ${marca}\nDominio: https://ejc.depaulateixeira.adv.br\n\nAcoes: na VPS, rode 'docker ps' e 'docker logs ejc_backend --tail 50'."
+  fi
+fi
+
+# ── Disco quase cheio (independente da saúde do app) ──────────────────────────
+# Disco cheio derruba banco, uploads e a própria geração de backup.
+disk_pct="$(df -P / | awk 'NR==2 {gsub("%","",$5); print $5}' 2>/dev/null || echo 0)"
+if [ "${disk_pct:-0}" -ge "${DISK_ALERT_PCT:-90}" ]; then
+  log "DISCO alto: ${disk_pct}% (limite ${DISK_ALERT_PCT:-90}%)"
+  if pode_alertar disco; then
+    send_alert "[EJC] Disco quase cheio (${disk_pct}%)" \
+      "O disco da VPS esta em ${disk_pct}% (limite ${DISK_ALERT_PCT:-90}%).\nRisco: banco, uploads e BACKUP podem falhar.\n\nAcoes: limpar backups/logs antigos, imagens Docker (docker system prune), ou ampliar o disco."
+  fi
+fi
+
+# ── Frescor do backup (protege o que consertamos: backup que restaura) ────────
+# Alerta se NENHUM dump .sql.gz foi gerado nas últimas ~26h (backup diário falhou).
+BACKUP_DIR_M="${BACKUP_DIR_M:-/opt/ejc/backups}"
+if [ -d "$BACKUP_DIR_M" ]; then
+  recente="$(find "$BACKUP_DIR_M" -maxdepth 1 -name '*.sql.gz' -mmin "-${BACKUP_MAX_AGE_MIN:-1560}" 2>/dev/null | head -1)"
+  if [ -z "$recente" ]; then
+    log "BACKUP desatualizado: nenhum .sql.gz em $BACKUP_DIR_M nas ultimas $(( ${BACKUP_MAX_AGE_MIN:-1560} / 60 ))h"
+    if pode_alertar backup; then
+      send_alert "[EJC] Backup do banco NAO esta atualizado" \
+        "Nenhum backup (.sql.gz) foi gerado nas ultimas $(( ${BACKUP_MAX_AGE_MIN:-1560} / 60 ))h em ${BACKUP_DIR_M}.\nO backup diario (cron 02h, scripts/backup.sh) pode ter falhado.\n\nAcoes: rodar 'bash /opt/ejc/scripts/backup.sh' manualmente e verificar o log/disco/rclone."
+    fi
   fi
 fi
