@@ -1,0 +1,718 @@
+# ── app/services/ai_service.py ───────────────────────────────────────────────
+# Serviço de IA — Groq (llama3-70b) com:
+#  1. Sanitização LGPD obrigatória (sanitizer.py)
+#  2. RAG: recuperação de jurisprudências/súmulas do pgvector
+#  3. Anti-alucinação: resposta DEVE citar fontes da base; sem fonte = declarado
+#  4. AI log gravado em toda chamada (HITL rastreável)
+#  5. Saída SEMPRE marcada como rascunho — revisão humana obrigatória (OAB)
+# ─────────────────────────────────────────────────────────────────────────────
+from __future__ import annotations
+import logging
+from uuid import uuid4
+from typing import Optional
+
+from groq import AsyncGroq
+from sqlalchemy import text
+from sqlalchemy.ext.asyncio import AsyncSession
+
+from app.core.config import get_settings
+from app.services.sanitizer import sanitizar_pii, validar_sem_pii
+from app.services.case_context import montar_dossie
+from app.models.ai_log import AILog, AITipoUso, AIStatusHITL
+
+logger = logging.getLogger(__name__)
+settings = get_settings()
+
+# Cliente Groq (singleton lazy)
+_client: Optional[AsyncGroq] = None
+
+def get_groq() -> AsyncGroq:
+    global _client
+    if _client is None:
+        if not settings.GROQ_API_KEY:
+            raise RuntimeError(
+                "GROQ_API_KEY não configurada no .env — IA desabilitada"
+            )
+        _client = AsyncGroq(api_key=settings.GROQ_API_KEY)
+    return _client
+
+
+# ── Prompts mestres ───────────────────────────────────────────────────────────
+
+SYSTEM_ANALISE_CASO = """Você é um assistente jurídico de um escritório de advocacia brasileiro.
+Sua função é analisar fatos descritos pelo advogado e sugerir TESES JURÍDICAS POSSÍVEIS.
+
+REGRAS ABSOLUTAS:
+1. Use APENAS as fontes fornecidas no contexto [FONTES]. NUNCA invente súmulas, artigos ou julgados.
+2. Se as fontes não cobrirem o tema, declare explicitamente: "Sem base verificável na base de conhecimento para: [tema]".
+3. NUNCA afirme que uma tese "vai ganhar" ou prometa resultado (vedação OAB).
+4. Cite a fonte exata de cada afirmação: [Fonte N].
+5. Responda em português jurídico claro e estruturado.
+
+FORMATO DA RESPOSTA:
+## Teses Possíveis
+1. **[Nome da tese]** — fundamentação com [Fonte N]
+## Base Legal Aplicável
+- Dispositivos citados nas fontes
+## Súmulas e Precedentes
+- Apenas os presentes nas fontes
+## Riscos e Pontos de Atenção
+- Fragilidades da tese
+## Documentos Recomendados
+- O que o advogado deve reunir
+
+⚠️ Esta análise é um RASCUNHO gerado por IA. Revisão por advogado é OBRIGATÓRIA antes de qualquer uso."""
+
+
+SYSTEM_RESUMO_DOC = """Você resume documentos jurídicos em português.
+Estruture: 1) Do que se trata, 2) Pontos principais, 3) Prazos mencionados, 4) Próximos passos sugeridos.
+Não invente informações ausentes do texto. Marque incertezas explicitamente."""
+
+
+# ── Busca RAG (pgvector) ──────────────────────────────────────────────────────
+
+
+# ── Isolamento por cliente (Fase 3B / LGPD / EOAB art. 25) ────────────────────
+# Categorias RESTRITAS = conteúdo derivado de casos de clientes (peças/precedentes
+# internos): só recuperáveis no escopo do próprio cliente. Demais categorias
+# (legislação, súmulas, jurisprudência, doutrina) são públicas/globais.
+_RESTRICTED_CATS = ["peca_interna", "peca_escritorio", "precedente_interno"]
+# Fail-closed: sem escopo de cliente (scope_cli=""), o conteúdo restrito é
+# EXCLUÍDO da busca — fecha o vazamento cruzado entre clientes.
+_FILTRO_ESCOPO_RAG = "AND (kd.categoria <> ALL(:restr_cats) OR kd.client_id = :scope_cli)"
+
+# RAG-04: limiar mínimo de similaridade na busca semântica — evita que matches
+# fracos/irrelevantes entrem como "fonte" e poluam o contexto da IA (risco de
+# alucinação). Similaridade = 1 - distância de cosseno. min_sim 0.55 → max_dist 0.45.
+_RAG_MIN_SIM = 0.55
+_RAG_MAX_DIST = 1.0 - _RAG_MIN_SIM
+
+
+async def _fundir_lexical(db, consulta, semanticos, limite, categorias, scope_client_id=None):
+    """Busca híbrida: funde ranking SEMÂNTICO (pgvector) + LEXICAL (pg_trgm) via
+    Reciprocal Rank Fusion (RRF). Aditivo — se a parte lexical falhar, devolve o
+    semântico intacto. k=60 é o padrão de RRF."""
+    from sqlalchemy import text as _text
+    K = 60
+    fusion = {}
+    meta = {}
+    for rank, r in enumerate(semanticos):
+        cid = r.get("chunk_id")
+        if cid is None:
+            continue
+        fusion[cid] = fusion.get(cid, 0.0) + 1.0 / (K + rank + 1)
+        meta[cid] = r
+    try:
+        params = {"q": consulta[:300], "lim": max(limite * 3, 12),
+                  "restr_cats": _RESTRICTED_CATS, "scope_cli": scope_client_id or ""}
+        filtro = ""
+        if categorias:
+            filtro = "AND kd.categoria = ANY(:cats)"
+            params["cats"] = categorias
+        sql = _text(f"""
+            SELECT kc.id, kc.conteudo, kd.titulo, kd.categoria, kd.fonte,
+                   similarity(kc.conteudo, :q) AS sim
+            FROM knowledge_chunks kc
+            JOIN knowledge_docs kd ON kd.id = kc.doc_id
+            WHERE kd.deleted_at IS NULL
+              AND similarity(kc.conteudo, :q) > 0.05
+              {filtro}
+              {_FILTRO_ESCOPO_RAG}
+            ORDER BY sim DESC
+            LIMIT :lim
+        """)
+        rows = await db.execute(sql, params)
+        for rank, r in enumerate(rows):
+            cid = r.id
+            fusion[cid] = fusion.get(cid, 0.0) + 1.0 / (K + rank + 1)
+            if cid not in meta:
+                meta[cid] = {"chunk_id": r.id, "conteudo": r.conteudo, "titulo": r.titulo,
+                             "categoria": r.categoria, "fonte": r.fonte, "score": round(float(r.sim), 4)}
+    except Exception as _e:
+        logger.warning(f"Fusao lexical (RRF) falhou, mantendo semantico: {_e}")
+        return semanticos
+    ordenados = sorted(fusion.items(), key=lambda kv: kv[1], reverse=True)
+    saida = []
+    for cid, _s in ordenados[:limite]:
+        item = dict(meta[cid]); item["rrf"] = round(_s, 5); saida.append(item)
+    return saida
+
+async def buscar_contexto_rag(
+    db: AsyncSession, consulta: str, limite: int = 6,
+    categorias: list[str] | None = None,
+    modo_or: bool = False,
+    scope_client_id: str | None = None,
+) -> list[dict]:
+    """
+    Busca semântica na base de conhecimento via pgvector.
+    Fallback: se não houver embeddings, usa busca textual (ILIKE) nas súmulas.
+
+    modo_or=True: casa qualquer termo (OR) em vez de todos (AND). Útil para
+    precedentes internos, onde a relevância parcial é valiosa e os textos
+    raramente repetem o vocabulário exato do caso novo.
+    """
+    # Tentativa 0: busca SEMÂNTICA via pgvector (se embeddings habilitados).
+    # Usa distância de cosseno (operador <=> do pgvector). Cai no textual se
+    # indisponível ou em erro. Esta é a busca "por significado" — encontra
+    # precedentes mesmo quando o vocabulário do caso novo difere do registrado.
+    from app.services.embedding_service import disponivel as _emb_on, gerar_embeddings
+    if _emb_on():
+        # modo="query": protocolo E5 — consultas levam prefixo "query: "
+        vetores = await gerar_embeddings([consulta], modo="query")
+        if vetores:
+            vec = vetores[0]
+            params_v: dict = {"vec": str(vec), "lim": limite, "max_dist": _RAG_MAX_DIST,
+                              "restr_cats": _RESTRICTED_CATS, "scope_cli": scope_client_id or ""}
+            filtro_cat_v = ""
+            if categorias:
+                filtro_cat_v = "AND kd.categoria = ANY(:cats)"
+                params_v["cats"] = categorias
+            sql_v = text(f"""
+                SELECT kc.id, kc.conteudo, kd.titulo, kd.categoria, kd.fonte,
+                       (kc.embedding <=> :vec) AS dist
+                FROM knowledge_chunks kc
+                JOIN knowledge_docs kd ON kd.id = kc.doc_id
+                WHERE kd.deleted_at IS NULL
+                  AND kc.embedding IS NOT NULL
+                  AND (kc.embedding <=> :vec) <= :max_dist
+                  {filtro_cat_v}
+                  {_FILTRO_ESCOPO_RAG}
+                ORDER BY kc.embedding <=> :vec
+                LIMIT :lim
+            """)
+            try:
+                rows_v = await db.execute(sql_v, params_v)
+                resultados = [
+                    {"chunk_id": r.id, "conteudo": r.conteudo, "titulo": r.titulo,
+                     "categoria": r.categoria, "fonte": r.fonte,
+                     "score": round(1 - r.dist, 4)}   # cosine similarity
+                    for r in rows_v
+                ]
+                if resultados:
+                    return await _fundir_lexical(db, consulta, resultados, limite, categorias, scope_client_id)
+                # Sem vetores gravados ainda → cai no textual abaixo
+            except Exception as e:
+                logger.warning(f"Busca vetorial falhou, usando textual: {e}")
+
+    # Tentativa 1: busca textual nos chunks (funciona sem embeddings)
+    termos = [t for t in consulta.replace(",", " ").split() if len(t) >= 3][:8]
+    params: dict = {"lim": limite}
+    cond_termos = ""
+    if termos:
+        partes = []
+        for i, termo in enumerate(termos):
+            partes.append(f"kc.conteudo ILIKE :t{i}")
+            params[f"t{i}"] = f"%{termo}%"
+        juntor = " OR " if modo_or else " AND "
+        cond_termos = "AND (" + juntor.join(partes) + ")"
+    else:
+        params["q"] = f"%{consulta[:100]}%"
+        cond_termos = "AND kc.conteudo ILIKE :q"
+
+    filtro_cat = ""
+    if categorias:
+        filtro_cat = "AND kd.categoria = ANY(:cats)"
+        params["cats"] = categorias
+    params["restr_cats"] = _RESTRICTED_CATS
+    params["scope_cli"] = scope_client_id or ""
+
+    sql = text(f"""
+        SELECT kc.id, kc.conteudo, kd.titulo, kd.categoria, kd.fonte
+        FROM knowledge_chunks kc
+        JOIN knowledge_docs kd ON kd.id = kc.doc_id
+        WHERE kd.deleted_at IS NULL
+          {cond_termos}
+          {filtro_cat}
+          {_FILTRO_ESCOPO_RAG}
+        LIMIT :lim
+    """)
+    try:
+        rows = await db.execute(sql, params)
+        return [
+            {
+                "chunk_id": r.id, "conteudo": r.conteudo,
+                "titulo": r.titulo, "categoria": r.categoria, "fonte": r.fonte,
+            }
+            for r in rows
+        ]
+    except Exception as e:
+        logger.warning(f"RAG search falhou: {e}")
+        return []
+
+
+def _formatar_fontes(fontes: list[dict]) -> str:
+    if not fontes:
+        return "[FONTES]\nNenhuma fonte encontrada na base de conhecimento.\n"
+    linhas = ["[FONTES]"]
+    for i, f in enumerate(fontes, start=1):
+        linhas.append(
+            f"[Fonte {i}] {f['titulo']} ({f['categoria']}"
+            + (f" — {f['fonte']}" if f.get('fonte') else "")
+            + f")\n{f['conteudo'][:800]}\n"
+        )
+    return "\n".join(linhas)
+
+
+# ── Seleção de modelo por tamanho de contexto ─────────────────────────────────
+
+def _modelo_para_prompt(prompt: str) -> str:
+    """
+    Groq llama3-70b-8192 tem janela de 8 192 tokens (~32 000 chars).
+    Quando o prompt excede 20 000 chars, usa llama-3.1-70b-versatile
+    (128k tokens) para evitar truncamento silencioso de dossiês grandes.
+    Os dois modelos ficam na mesma API Groq — sem custo extra de chave.
+    """
+    if len(prompt) > 20_000:
+        modelo = settings.GROQ_MODEL_LARGE
+        logger.info(f"[IA] Prompt grande ({len(prompt)} chars) → {modelo}")
+        return modelo
+    return settings.GROQ_MODEL
+
+
+# ── Funções principais ────────────────────────────────────────────────────────
+
+async def analisar_caso(
+    db: AsyncSession,
+    user_id: str,
+    descricao_fatos: str,
+    area: str,
+    nomes_proteger: list[str] | None = None,
+    case_id: str | None = None,
+) -> dict:
+    """
+    Análise de caso novo → sugestão de teses.
+    Pipeline completo: sanitiza → RAG → Groq → log → resposta marcada como rascunho.
+    """
+    if not settings.AI_ENABLED:
+        return {"erro": "IA desabilitada na configuração"}
+
+    # 1. SANITIZAÇÃO LGPD (obrigatória)
+    texto_limpo, houve_pii = sanitizar_pii(descricao_fatos, nomes_proteger)
+    residual = validar_sem_pii(texto_limpo)
+    if residual:
+        # Segunda barreira: PII residual detectada → abortar
+        logger.error(f"PII residual após sanitização: {residual}")
+        return {
+            "erro": f"Dados pessoais detectados ({', '.join(residual)}). "
+                    "Remova CPF/CNPJ/nº processo do texto e tente novamente."
+        }
+
+    # Escopo de isolamento do RAG (Fase 3B): client_id do caso libera APENAS as
+    # peças/precedentes do próprio cliente (fail-closed quando não há caso).
+    scope_cli = None
+    if case_id:
+        scope_cli = (await db.execute(
+            text("SELECT client_id FROM cases WHERE id = :id AND deleted_at IS NULL"),
+            {"id": case_id},
+        )).scalar()
+
+    # 2. RAG — recuperar contexto da base
+    fontes = await buscar_contexto_rag(
+        db, texto_limpo, limite=6,
+        categorias=None,  # busca em todas; filtrar por área em fase 2
+        scope_client_id=scope_cli,
+    )
+    contexto = _formatar_fontes(fontes)
+
+    # 2.a PRECEDENTES INTERNOS — casos já encerrados do próprio escritório.
+    # Busca dedicada para garantir que a experiência acumulada da firma apareça,
+    # mesmo que as fontes legais dominem o ranking textual.
+    precedentes = await buscar_contexto_rag(
+        db, texto_limpo, limite=3, categorias=["precedente_interno"],
+        modo_or=True,   # relevância parcial é útil: poucos precedentes, vocabulário variado
+        scope_client_id=scope_cli,   # só precedentes do próprio cliente (LGPD/EOAB)
+    )
+    contexto_precedentes = ""
+    if precedentes:
+        linhas = ["[PRECEDENTES INTERNOS DO ESCRITÓRIO — casos já encerrados]"]
+        for i, p in enumerate(precedentes, start=1):
+            linhas.append(f"[Precedente {i}] {p['titulo']}\n{p['conteudo'][:600]}\n")
+        contexto_precedentes = "\n".join(linhas) + "\n\n"
+
+    # 2.b INTERLIGAÇÃO — se há case_id, carregar o dossiê consolidado do caso.
+    # Isso faz a IA "enxergar" todo o sistema: cliente, ramo especializado,
+    # prazos, honorários, peças e histórico — já sanitizado (LGPD).
+    dossie_txt = ""
+    nomes_caso: list[str] = []
+    if case_id:
+        dossie = await montar_dossie(db, case_id, incluir_pecas=True, sanitizar=True)
+        if dossie:
+            dossie_txt = dossie["texto"] + "\n\n"
+            nomes_caso = dossie["nomes_proteger"]
+            # Re-sanitizar os fatos colados com os nomes descobertos no dossiê
+            if nomes_caso:
+                texto_limpo, _ = sanitizar_pii(texto_limpo, nomes_caso)
+
+    # 3. Chamada Groq
+    prompt_usuario = (
+        f"ÁREA JURÍDICA: {area}\n\n"
+        f"{dossie_txt}"
+        f"{contexto_precedentes}"
+        f"{contexto}\n\n"
+        f"FATOS DO CASO (sanitizados):\n{texto_limpo}\n\n"
+        f"Analise considerando TODO o contexto do dossiê acima (prazos, dados "
+        f"especializados, peças já produzidas) e os precedentes internos do "
+        f"escritório, e sugira as teses possíveis seguindo o formato."
+    )
+
+    modelo_usar = _modelo_para_prompt(prompt_usuario)
+    try:
+        client = get_groq()
+        resp = await client.chat.completions.create(
+            model=modelo_usar,
+            messages=[
+                {"role": "system", "content": SYSTEM_ANALISE_CASO},
+                {"role": "user",   "content": prompt_usuario},
+            ],
+            temperature=0.2,   # baixa: precisão > criatividade
+            max_tokens=2048,
+            timeout=settings.GROQ_TIMEOUT,
+        )
+        resposta = resp.choices[0].message.content
+        usage = resp.usage
+    except Exception as e:
+        logger.error(f"Groq API falhou: {e}")
+        return {"erro": f"Falha na IA: {str(e)[:200]}"}
+
+    # 4. AI LOG (rastreabilidade LGPD + HITL)
+    log = AILog(
+        id=str(uuid4()),
+        user_id=user_id,
+        case_id=case_id,
+        tipo_uso=AITipoUso.analise_caso,
+        modelo=modelo_usar,
+        prompt_sanitizado=prompt_usuario[:8000],
+        pii_removida=houve_pii,
+        resposta=resposta,
+        fontes_rag="; ".join(f["chunk_id"] for f in fontes) or None,
+        tokens_input=usage.prompt_tokens if usage else None,
+        tokens_output=usage.completion_tokens if usage else None,
+        status_hitl=AIStatusHITL.gerado,
+    )
+    db.add(log)
+    await db.commit()
+
+    # 5. Resposta — SEMPRE marcada como rascunho
+    return {
+        "ai_log_id": log.id,
+        "resposta": resposta,
+        "fontes_usadas": len(fontes),
+        "pii_removida": houve_pii,
+        "aviso": "⚠️ RASCUNHO gerado por IA — revisão por advogado OBRIGATÓRIA "
+                 "antes de qualquer uso (Provimento OAB 205/2021).",
+        "status_hitl": "gerado",
+    }
+
+
+async def resumir_documento(
+    db: AsyncSession, user_id: str, texto_documento: str,
+    case_id: str | None = None,
+) -> dict:
+    """Resume documento (intimação, decisão) — mesma pipeline de segurança."""
+    if not settings.AI_ENABLED:
+        return {"erro": "IA desabilitada"}
+
+    texto_limpo, houve_pii = sanitizar_pii(texto_documento[:12000])
+
+    try:
+        client = get_groq()
+        resp = await client.chat.completions.create(
+            model=settings.GROQ_MODEL,
+            messages=[
+                {"role": "system", "content": SYSTEM_RESUMO_DOC},
+                {"role": "user",   "content": texto_limpo},
+            ],
+            temperature=0.1,
+            max_tokens=1024,
+            timeout=settings.GROQ_TIMEOUT,
+        )
+        resposta = resp.choices[0].message.content
+    except Exception as e:
+        return {"erro": f"Falha na IA: {str(e)[:200]}"}
+
+    log = AILog(
+        id=str(uuid4()), user_id=user_id, case_id=case_id,
+        tipo_uso=AITipoUso.resumo_documento, modelo=settings.GROQ_MODEL,
+        prompt_sanitizado=texto_limpo[:8000], pii_removida=houve_pii,
+        resposta=resposta, status_hitl=AIStatusHITL.gerado,
+    )
+    db.add(log)
+    await db.commit()
+
+    return {
+        "ai_log_id": log.id, "resposta": resposta,
+        "aviso": "⚠️ Resumo gerado por IA — confira com o documento original.",
+    }
+
+
+async def _log_ai(db, user_id, tipo_uso_str, prompt, resposta,
+                  pii, fontes, resp_groq, case_id):
+    """Helper de log para as funções ECJ — mesmo padrão do analisar_caso."""
+    usage = getattr(resp_groq, "usage", None)
+    log = AILog(
+        id=str(uuid4()), user_id=user_id, case_id=case_id,
+        tipo_uso=AITipoUso(tipo_uso_str),
+        modelo=settings.GROQ_MODEL,
+        prompt_sanitizado=prompt[:8000],
+        pii_removida=pii,
+        resposta=resposta,
+        fontes_rag="; ".join(f["chunk_id"] for f in fontes) or None if fontes else None,
+        tokens_input=usage.prompt_tokens if usage else None,
+        tokens_output=usage.completion_tokens if usage else None,
+        status_hitl=AIStatusHITL.gerado,
+    )
+    db.add(log)
+    await db.commit()
+
+
+# ═══════════════════════════════════════════════════════════════════════════
+# MELHORIAS ECJ — Inteligência Jurídica (Groq llama3-70b existente)
+# Todas as saídas: rascunho HITL, sanitização LGPD, fontes citadas.
+# ═══════════════════════════════════════════════════════════════════════════
+
+SYSTEM_TESES_OCULTAS = """Você é um advogado sênior brasileiro revisor de estratégia.
+Sua função: identificar TESES ADICIONAIS que o advogado pode não ter percebido.
+
+REGRAS ABSOLUTAS:
+- NUNCA invente jurisprudência, súmula ou artigo de lei. Use APENAS as fontes fornecidas em [Fonte N] ou conhecimento consolidado citando o dispositivo exato.
+- Se não houver fonte para uma tese, escreva "(verificar jurisprudência)".
+- NUNCA prometa êxito.
+
+FORMATO DA RESPOSTA (obrigatório):
+## Teses identificadas
+
+### 🔴 Alta relevância
+- **[nome da tese]**: fundamento legal + por que se aplica + prova necessária
+
+### 🟡 Média relevância
+(mesmo formato)
+
+### ⚪ Baixa relevância / acessórias
+(mesmo formato)
+
+## Pedidos acessórios possíveis
+(lista: juros, correção, honorários sucumbenciais, tutela, etc.)
+
+Cite [Fonte N] sempre que usar material fornecido."""
+
+SYSTEM_AUDITOR_PECA = """Você é um auditor técnico de peças jurídicas brasileiras.
+Analise a peça e produza um RELATÓRIO DE AUDITORIA.
+
+REGRAS:
+- NUNCA invente lei ou jurisprudência. Aponte ausências, não preencha com invenção.
+- Seja específico: cite o trecho problemático.
+
+FORMATO (obrigatório):
+## Pontuação técnica: X/100
+
+## ✅ Pontos fortes
+## ⚠️ Omissões detectadas
+(requisitos processuais, pedidos sem fundamento, fundamentos sem pedido)
+## ❌ Inconsistências
+(contradições internas, valores divergentes, datas conflitantes)
+## 📋 Estrutura
+(endereçamento, qualificação, fatos, direito, pedidos, valor da causa, provas)
+## 🔧 Recomendações de correção
+(lista priorizada)
+
+Pontuação: estrutura 30pts, fundamentação 30pts, coerência 20pts, completude 20pts."""
+
+SYSTEM_AUDIENCIA = """Você é um preparador de audiências de um escritório brasileiro.
+Com base no caso fornecido, gere o KIT DE PREPARAÇÃO.
+
+REGRAS: nunca invente fatos não fornecidos; nunca prometa resultado.
+
+FORMATO (obrigatório):
+## Resumo do caso (5 linhas)
+## 💪 Pontos fortes a explorar
+## ⚠️ Pontos fracos / riscos (e como mitigar)
+## ❓ Perguntas sugeridas
+### Para a parte contrária
+### Para testemunhas
+## 🚫 Perguntas a EVITAR (que abrem flanco)
+## 📌 Checklist do dia
+(documentos a levar, propostas de acordo: faixa sugerida se aplicável)"""
+
+
+async def detectar_teses_ocultas(
+    db, user_id: str, descricao_fatos: str, area: str,
+    tese_principal: str | None = None,
+    nomes_proteger: list[str] | None = None,
+    case_id: str | None = None,
+) -> dict:
+    """Detector de Teses Ocultas — ranking por relevância."""
+    texto, pii = sanitizar_pii(descricao_fatos, nomes_proteger or [])
+    residual = validar_sem_pii(texto)
+    if residual:
+        return {"erro": f"Sanitização incompleta: {residual}. Revise o texto."}
+
+    fontes = await buscar_contexto_rag(db, f"{area} {texto[:200]}", limite=6)
+    contexto = _formatar_fontes(fontes)
+
+    user_msg = (
+        f"Área: {area}\n"
+        f"Tese principal já considerada: {tese_principal or 'não informada'}\n\n"
+        f"FATOS (sanitizados):\n{texto}\n\n"
+        f"FONTES DA BASE INTERNA:\n{contexto}"
+    )
+    try:
+        client = get_groq()
+        resp = await client.chat.completions.create(
+            model=settings.GROQ_MODEL,
+            messages=[
+                {"role": "system", "content": SYSTEM_TESES_OCULTAS},
+                {"role": "user", "content": user_msg},
+            ],
+            temperature=0.3, max_tokens=2000,
+        )
+        conteudo = resp.choices[0].message.content
+        await _log_ai(db, user_id, "analise_caso", user_msg, conteudo,
+                      pii, fontes, resp, case_id)
+        return {
+            "resposta": conteudo,
+            "fontes_usadas": len(fontes),
+            "pii_removida": pii,
+            "aviso": "⚠️ RASCUNHO — teses exigem verificação e validação do advogado (HITL).",
+        }
+    except Exception as e:
+        logger.error(f"Groq teses ocultas: {e}")
+        return {"erro": "Serviço de IA indisponível no momento"}
+
+
+async def auditar_peca(
+    db, user_id: str, conteudo_peca: str, tipo_peca: str,
+    case_id: str | None = None,
+) -> dict:
+    """Auditor de Petições — pontuação técnica + omissões."""
+    texto, pii = sanitizar_pii(conteudo_peca, [])
+    user_msg = f"Tipo de peça: {tipo_peca}\n\nPEÇA (sanitizada):\n{texto[:12000]}"
+    try:
+        client = get_groq()
+        resp = await client.chat.completions.create(
+            model=settings.GROQ_MODEL,
+            messages=[
+                {"role": "system", "content": SYSTEM_AUDITOR_PECA},
+                {"role": "user", "content": user_msg},
+            ],
+            temperature=0.2, max_tokens=2000,
+        )
+        conteudo = resp.choices[0].message.content
+        await _log_ai(db, user_id, "outro", user_msg[:4000], conteudo,
+                      pii, [], resp, case_id)
+        return {
+            "resposta": conteudo, "pii_removida": pii,
+            "aviso": "⚠️ Auditoria automática — não substitui a revisão do advogado.",
+        }
+    except Exception as e:
+        logger.error(f"Groq auditor: {e}")
+        return {"erro": "Serviço de IA indisponível no momento"}
+
+
+async def preparar_audiencia(
+    db, user_id: str, resumo_caso: str, tipo_audiencia: str,
+    nomes_proteger: list[str] | None = None,
+    case_id: str | None = None,
+) -> dict:
+    """Assistente de Audiência — kit de preparação."""
+    texto, pii = sanitizar_pii(resumo_caso, nomes_proteger or [])
+    user_msg = f"Tipo de audiência: {tipo_audiencia}\n\nCASO (sanitizado):\n{texto[:8000]}"
+    try:
+        client = get_groq()
+        resp = await client.chat.completions.create(
+            model=settings.GROQ_MODEL,
+            messages=[
+                {"role": "system", "content": SYSTEM_AUDIENCIA},
+                {"role": "user", "content": user_msg},
+            ],
+            temperature=0.3, max_tokens=2000,
+        )
+        conteudo = resp.choices[0].message.content
+        await _log_ai(db, user_id, "outro", user_msg[:4000], conteudo,
+                      pii, [], resp, case_id)
+        return {
+            "resposta": conteudo, "pii_removida": pii,
+            "aviso": "⚠️ Material preparatório — adapte à sua estratégia.",
+        }
+    except Exception as e:
+        logger.error(f"Groq audiência: {e}")
+        return {"erro": "Serviço de IA indisponível no momento"}
+
+
+SYSTEM_ANALISE_CONTRATO = """Você é um advogado contratualista brasileiro revisando uma minuta.
+Produza um RELATÓRIO DE ANÁLISE CONTRATUAL para apoio à decisão do advogado.
+
+REGRAS INVIOLÁVEIS:
+- NUNCA invente dispositivo de lei, súmula ou número de artigo. Use APENAS o que
+  estiver em [FONTES]; se não houver base, escreva "verificar base legal".
+- Aponte riscos e lacunas; não os preencha com invenção.
+- Cite o trecho/cláusula problemática ao apontar cada ponto.
+- Não afirme que uma cláusula é "nula" em definitivo — diga "possivelmente
+  abusiva/questionável" e remeta à análise do advogado.
+
+FORMATO (obrigatório):
+## Resumo do objeto
+## ⚠️ Cláusulas de risco / possivelmente abusivas
+(para cada uma: trecho, risco, e — se houver em [FONTES] — base legal)
+## 🕳️ Lacunas e proteções ausentes
+(garantias, multas, rescisão, foro, LGPD, reajuste, caso fortuito)
+## ⚖️ Desequilíbrios entre as partes
+## 🔧 Sugestões de ajuste (priorizadas)
+
+Use exclusivamente as [FONTES] fornecidas para qualquer afirmação legal."""
+
+
+async def analisar_contrato(
+    db: AsyncSession, user_id: str, texto_contrato: str,
+    tipo_contrato: str = "geral",
+    nomes_proteger: list[str] | None = None,
+    case_id: str | None = None,
+) -> dict:
+    """Análise de contrato (Bloco E) — sanitiza → RAG (CC/CDC) → Groq → log HITL.
+
+    Saída é MINUTA de análise: o advogado revisa antes de qualquer uso.
+    """
+    if not settings.AI_ENABLED:
+        return {"erro": "IA desabilitada na configuração"}
+
+    # 1) Sanitização LGPD (dupla barreira, como nas demais funções)
+    texto, pii = sanitizar_pii(texto_contrato, nomes_proteger or [])
+    residual = validar_sem_pii(texto)
+    if residual:
+        logger.error(f"PII residual após sanitização (contrato): {residual}")
+        return {"erro": "Não foi possível sanitizar dados pessoais com segurança."}
+
+    # 2) Recuperação no RAG — legislação relevante (CC, CDC) por termos do contrato
+    consulta = f"{tipo_contrato} contrato cláusula abusiva rescisão multa garantia"
+    fontes = await buscar_contexto_rag(
+        db, consulta, limite=6, categorias=["legislacao"]
+    )
+    bloco_fontes = _formatar_fontes(fontes)
+
+    user_msg = (
+        f"Tipo de contrato: {tipo_contrato}\n\n{bloco_fontes}\n\n"
+        f"CONTRATO (sanitizado):\n{texto[:12000]}"
+    )
+    try:
+        client = get_groq()
+        resp = await client.chat.completions.create(
+            model=settings.GROQ_MODEL,
+            messages=[
+                {"role": "system", "content": SYSTEM_ANALISE_CONTRATO},
+                {"role": "user", "content": user_msg},
+            ],
+            temperature=0.2, max_tokens=2200,
+        )
+        conteudo = resp.choices[0].message.content
+        await _log_ai(db, user_id, "outro", user_msg[:4000], conteudo,
+                      pii, fontes, resp, case_id)
+        return {
+            "resposta": conteudo,
+            "pii_removida": pii,
+            "fontes": [{"titulo": f["titulo"], "categoria": f["categoria"],
+                        "fonte": f.get("fonte")} for f in fontes],
+            "aviso": "⚠️ Análise automática (minuta) — não substitui a revisão "
+                     "do advogado responsável. Base legal limitada às fontes citadas.",
+        }
+    except Exception as e:
+        logger.error(f"Groq contrato: {e}")
+        return {"erro": "Serviço de IA indisponível no momento"}

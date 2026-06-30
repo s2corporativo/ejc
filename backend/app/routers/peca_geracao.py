@@ -1,0 +1,125 @@
+"""
+Router: Geração de peças jurídicas com pipeline 7 etapas + SSE streaming.
+"""
+from __future__ import annotations
+
+from fastapi import APIRouter, Depends, HTTPException, Query
+from fastapi.responses import StreamingResponse
+from pydantic import BaseModel, Field
+from sqlalchemy import select
+from sqlalchemy.ext.asyncio import AsyncSession
+from typing import Optional
+
+from app.core.database import get_db
+from app.core.security import get_current_user, ROLE_LEVEL
+from app.models.user import User
+from app.models.ai_log import AILog
+from app.services.peca_service import gerar_peca_pipeline, TIPOS_PECA, AREAS_DIREITO
+
+router = APIRouter(prefix="/pecas", tags=["Geração de Peças"])
+
+
+class GerarPecaRequest(BaseModel):
+    tipo_peca: str = Field(..., description=f"Tipo: {', '.join(TIPOS_PECA.keys())}")
+    area_direito: str = Field(..., description=f"Área: {', '.join(AREAS_DIREITO)}")
+    descricao_fatos: str = Field(..., min_length=50, max_length=10000)
+    pedidos: str = Field(..., min_length=10, max_length=3000)
+    nomes_proteger: list[str] = Field(default=[], description="Nomes para anonimizar (LGPD)")
+    case_id: Optional[str] = None
+    instrucoes_adicionais: Optional[str] = Field(None, max_length=1000)
+
+
+@router.post("/gerar")
+async def gerar_peca(
+    req: GerarPecaRequest,
+    db: AsyncSession = Depends(get_db),
+    cu: User = Depends(get_current_user),
+):
+    """
+    Pipeline 7 etapas para geração de peças jurídicas com SSE streaming.
+    Retorna Server-Sent Events: step(1-7) → concluido com o documento completo.
+    """
+    if ROLE_LEVEL.get(cu.role.value, 0) < ROLE_LEVEL["estagiario"]:
+        raise HTTPException(403, "Acesso negado")
+
+    if req.tipo_peca not in TIPOS_PECA:
+        raise HTTPException(422, f"Tipo inválido. Use: {', '.join(TIPOS_PECA.keys())}")
+
+    if req.area_direito not in AREAS_DIREITO:
+        raise HTTPException(422, f"Área inválida. Use: {', '.join(AREAS_DIREITO)}")
+
+    async def stream():
+        try:
+            async for chunk in gerar_peca_pipeline(
+                db=db,
+                user_id=cu.id,
+                tipo_peca=req.tipo_peca,
+                area_direito=req.area_direito,
+                descricao_fatos=req.descricao_fatos,
+                pedidos=req.pedidos,
+                nomes_proteger=req.nomes_proteger,
+                case_id=req.case_id,
+                instrucoes_adicionais=req.instrucoes_adicionais,
+            ):
+                yield chunk
+        except Exception as e:
+            import json
+            yield f"event: erro\ndata: {json.dumps({'detail': str(e)[:300]}, ensure_ascii=False)}\n\n"
+
+    return StreamingResponse(
+        stream(),
+        media_type="text/event-stream",
+        headers={
+            "Cache-Control": "no-cache",
+            "X-Accel-Buffering": "no",
+        },
+    )
+
+
+@router.get("/")
+async def listar_pecas(
+    page: int = Query(1, ge=1),
+    page_size: int = Query(20, ge=1, le=100),
+    case_id: Optional[str] = None,
+    db: AsyncSession = Depends(get_db),
+    cu: User = Depends(get_current_user),
+):
+    """Lista peças geradas pelo usuário (logs com tipo elaboracao_peca)."""
+    from app.models.ai_log import AITipoUso
+    from sqlalchemy import func as sqlfunc
+
+    q = select(AILog).where(AILog.tipo_uso == AITipoUso.redacao_peca)
+
+    if ROLE_LEVEL.get(cu.role.value, 0) < ROLE_LEVEL["socio"]:
+        q = q.where(AILog.user_id == cu.id)
+
+    if case_id:
+        q = q.where(AILog.case_id == case_id)
+
+    q = q.order_by(AILog.created_at.desc())
+
+    total = (await db.execute(
+        select(sqlfunc.count()).select_from(q.subquery())
+    )).scalar()
+    rows = (await db.execute(
+        q.offset((page - 1) * page_size).limit(page_size)
+    )).scalars().all()
+
+    return {
+        "data": [
+            {
+                "id": l.id,
+                "case_id": l.case_id,
+                "modelo": l.modelo,
+                "status_hitl": l.status_hitl.value,
+                "pii_removida": l.pii_removida,
+                "tokens_input": l.tokens_input,
+                "tokens_output": l.tokens_output,
+                "created_at": l.created_at,
+            }
+            for l in rows
+        ],
+        "total": total,
+        "page": page,
+        "page_size": page_size,
+    }

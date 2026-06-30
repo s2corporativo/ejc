@@ -1,0 +1,53 @@
+# ── app/models/ai_log.py ─────────────────────────────────────────────────────
+# Registro de TODO uso de IA (Groq). LGPD + OAB compliance.
+# prompt_sanitizado = o que foi enviado (SEM PII); status HITL rastreado.
+from __future__ import annotations
+from sqlalchemy import Column, String, DateTime, Enum as SAEnum, func, Text, Boolean, Integer, Numeric, ForeignKey
+from sqlalchemy.orm import relationship
+from app.core.database import Base
+import enum
+
+
+class AIStatusHITL(str, enum.Enum):
+    gerado    = "gerado"        # IA respondeu, ninguém revisou
+    revisado  = "revisado"      # humano revisou
+    aplicado  = "aplicado"      # advogado aplicou ao caso/peça
+    descartado = "descartado"
+
+
+class AITipoUso(str, enum.Enum):
+    analise_caso    = "analise_caso"      # sugestão de teses
+    redacao_peca    = "redacao_peca"
+    consulta_rag    = "consulta_rag"
+    resumo_documento = "resumo_documento"
+    outro           = "outro"
+
+
+class AILog(Base):
+    __tablename__ = "ai_logs"
+
+    id      = Column(String(36), primary_key=True)
+    user_id = Column(String(36), ForeignKey("users.id"), nullable=False, index=True)
+    case_id = Column(String(36), nullable=True, index=True)
+
+    tipo_uso = Column(SAEnum(AITipoUso), nullable=False)
+    modelo   = Column(String(50), nullable=False)   # ex: llama3-70b-8192
+
+    # LGPD: registramos apenas o prompt SANITIZADO (sem PII)
+    prompt_sanitizado  = Column(Text, nullable=False)
+    pii_removida       = Column(Boolean, default=False)  # flag: houve remoção?
+    resposta           = Column(Text, nullable=True)
+    fontes_rag         = Column(Text, nullable=True)     # chunks usados (rastreabilidade)
+    tokens_input       = Column(Integer, nullable=True)
+    tokens_output      = Column(Integer, nullable=True)
+    # Custo estimado da chamada em R$ (0 p/ Ollama local; calculado p/ Groq)
+    custo_estimado     = Column(Numeric(12, 6), nullable=True)
+
+    # HITL
+    status_hitl  = Column(SAEnum(AIStatusHITL), nullable=False, default=AIStatusHITL.gerado, index=True)
+    revisado_por = Column(String(36), nullable=True)
+    revisado_em  = Column(DateTime(timezone=True), nullable=True)
+
+    created_at = Column(DateTime(timezone=True), server_default=func.now(), index=True)
+
+    user = relationship("User", foreign_keys=[user_id], back_populates="ai_logs")

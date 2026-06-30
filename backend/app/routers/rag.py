@@ -1,0 +1,431 @@
+# ── app/routers/rag.py ───────────────────────────────────────────────────────
+# Base de conhecimento RAG: ingestão de docs + consulta.
+from datetime import datetime, timezone
+from uuid import uuid4
+from typing import Optional
+
+from fastapi import APIRouter, Depends, HTTPException, Query, BackgroundTasks, UploadFile, File, Form
+from pydantic import BaseModel
+from sqlalchemy import select, update, func as sqlfunc
+from sqlalchemy.ext.asyncio import AsyncSession
+
+from app.core.database import get_db, AsyncSessionLocal
+from app.core.security import get_current_user, require_roles
+from app.models.user import User
+from app.models.rag import KnowledgeDoc, KnowledgeChunk, FonteIngestao
+from app.services.ai_service import buscar_contexto_rag, _RESTRICTED_CATS
+from app.services.embedding_service import gerar_embeddings, disponivel as emb_disponivel
+from app.schemas.common import MsgResponse
+
+router = APIRouter(prefix="/rag", tags=["Base de Conhecimento"])
+
+
+@router.get("/stats")
+async def stats_conhecimento(db: AsyncSession = Depends(get_db), cu: User = Depends(get_current_user)):
+    """Contagens da base de conhecimento (dashboard de Conhecimento)."""
+    from sqlalchemy import text as _t
+    total_docs = (await db.execute(_t("SELECT count(*) FROM knowledge_docs WHERE deleted_at IS NULL"))).scalar() or 0
+    total_chunks = (await db.execute(_t("SELECT count(*) FROM knowledge_chunks"))).scalar() or 0
+    com_emb = (await db.execute(_t("SELECT count(*) FROM knowledge_chunks WHERE embedding IS NOT NULL"))).scalar() or 0
+    rows = (await db.execute(_t(
+        "SELECT categoria, count(*) AS n FROM knowledge_docs WHERE deleted_at IS NULL "
+        "GROUP BY categoria ORDER BY n DESC"))).all()
+    return {
+        "total_docs": total_docs, "total_chunks": total_chunks, "chunks_indexados": com_emb,
+        "por_categoria": [{"categoria": r[0] or "outros", "total": r[1]} for r in rows],
+    }
+
+
+class IngestRequest(BaseModel):
+    titulo: str
+    categoria: str   # legislacao|sumula_stf|sumula_stj|sumula_tst|jurisprudencia|precedente_interno|doutrina
+    conteudo: str
+    fonte: Optional[str] = None
+    tribunal: Optional[str] = None
+
+
+def _chunk_texto(texto: str, tam: int = 1200, overlap: int = 150) -> list[str]:
+    """Chunking simples por caracteres com sobreposição."""
+    if len(texto) <= tam:
+        return [texto]
+    chunks, i = [], 0
+    while i < len(texto):
+        chunks.append(texto[i:i + tam])
+        i += tam - overlap
+    return chunks
+
+
+import re as _re
+
+
+async def _ingerir_texto(db, background_tasks, titulo, categoria, conteudo, fonte=None, tribunal=None):
+    """Núcleo de ingestão reutilizado por /ingest, /ingest-pdf e /ingest-url."""
+    if len(conteudo.strip()) < 50:
+        raise HTTPException(status_code=422, detail="Conteúdo extraído muito curto (< 50 caracteres)")
+    status_inicial = "pendente" if emb_disponivel() else "sem_embeddings"
+    doc = KnowledgeDoc(
+        id=str(uuid4()), titulo=titulo, categoria=categoria,
+        fonte=fonte, tribunal=tribunal, status_indexacao=status_inicial,
+    )
+    db.add(doc)
+    await db.flush()
+    chunks = _chunk_texto(conteudo)
+    for i, ch in enumerate(chunks):
+        db.add(KnowledgeChunk(id=str(uuid4()), doc_id=doc.id, chunk_index=i, conteudo=ch, embedding=None))
+    await db.commit()
+    if emb_disponivel():
+        background_tasks.add_task(_indexar_doc_bg, doc.id)
+    return {"id": doc.id, "chunks": len(chunks), "status_indexacao": doc.status_indexacao,
+            "embeddings_pendentes": emb_disponivel(),
+            "detail": f"Documento ingerido ({len(chunks)} trechos)"}
+
+
+@router.post("/ingest-pdf", status_code=201)
+async def ingerir_pdf(
+    background_tasks: BackgroundTasks,
+    file: UploadFile = File(...),
+    titulo: str = Form(...),
+    categoria: str = Form(...),
+    tribunal: Optional[str] = Form(None),
+    db: AsyncSession = Depends(get_db),
+    cu: User = Depends(require_roles(["superadmin", "admin", "socio", "advogado"])),
+):
+    """Extrai texto de um PDF (PyMuPDF) e ingere na base RAG."""
+    try:
+        import fitz
+    except Exception:
+        raise HTTPException(500, "Extração de PDF indisponível no servidor")
+    raw = await file.read()
+    try:
+        texto = ""
+        with fitz.open(stream=raw, filetype="pdf") as pdf:
+            for page in pdf:
+                texto += page.get_text()
+    except Exception as e:
+        raise HTTPException(422, f"Falha ao ler o PDF: {str(e)[:120]}")
+    return await _ingerir_texto(db, background_tasks, titulo, categoria, texto,
+                                fonte=file.filename, tribunal=tribunal)
+
+
+@router.post("/ingest-url", status_code=201)
+async def ingerir_url(
+    background_tasks: BackgroundTasks,
+    url: str = Form(...),
+    titulo: str = Form(...),
+    categoria: str = Form(...),
+    tribunal: Optional[str] = Form(None),
+    db: AsyncSession = Depends(get_db),
+    cu: User = Depends(require_roles(["superadmin", "admin", "socio", "advogado"])),
+):
+    """Busca uma URL pública, extrai o texto (remove HTML) e ingere na base RAG."""
+    import httpx
+    if not url.startswith(("http://", "https://")):
+        raise HTTPException(422, "URL inválida")
+    try:
+        async with httpx.AsyncClient(timeout=20, follow_redirects=True) as cli:
+            resp = await cli.get(url, headers={"User-Agent": "Mozilla/5.0 EJC-RAG"})
+            resp.raise_for_status()
+            html = resp.text
+    except Exception as e:
+        raise HTTPException(422, f"Falha ao buscar a URL: {str(e)[:120]}")
+    # remove scripts/styles e tags
+    html = _re.sub(r"<(script|style)[^>]*>.*?</\1>", " ", html, flags=_re.S | _re.I)
+    texto = _re.sub(r"<[^>]+>", " ", html)
+    texto = _re.sub(r"&[a-zA-Z#0-9]+;", " ", texto)
+    texto = _re.sub(r"\s+", " ", texto).strip()
+    return await _ingerir_texto(db, background_tasks, titulo, categoria, texto,
+                                fonte=url, tribunal=tribunal)
+
+
+async def _indexar_doc_bg(doc_id: str) -> None:
+    """Gera embeddings dos chunks de um doc em segundo plano (nova sessão DB).
+
+    A sessão da request já foi fechada quando esta task roda, por isso abrimos
+    uma sessão própria. Idempotente: só preenche chunks com embedding ainda nulo.
+    """
+    if not emb_disponivel():
+        return
+    async with AsyncSessionLocal() as db:
+        chunks = (await db.execute(
+            select(KnowledgeChunk)
+            .where(KnowledgeChunk.doc_id == doc_id,
+                   KnowledgeChunk.embedding.is_(None))
+            .order_by(KnowledgeChunk.chunk_index)
+        )).scalars().all()
+        if not chunks:
+            await db.execute(
+                update(KnowledgeDoc)
+                .where(KnowledgeDoc.id == doc_id)
+                .values(status_indexacao="indexado")
+            )
+            await db.commit()
+            return
+        vetores = await gerar_embeddings([c.conteudo for c in chunks])
+        if vetores:
+            for ch, v in zip(chunks, vetores):
+                ch.embedding = v
+            novo_status = "indexado"
+        else:
+            novo_status = "sem_embeddings"
+        await db.execute(
+            update(KnowledgeDoc)
+            .where(KnowledgeDoc.id == doc_id)
+            .values(status_indexacao=novo_status)
+        )
+        await db.commit()
+
+
+@router.post("/ingest", status_code=201)
+async def ingerir(
+    req: IngestRequest,
+    background_tasks: BackgroundTasks,
+    db: AsyncSession = Depends(get_db),
+    cu: User = Depends(require_roles(["superadmin", "admin", "socio", "advogado"])),
+):
+    """
+    Ingere documento na base de conhecimento.
+    O texto fica disponível imediatamente para busca TEXTUAL.
+    Os embeddings (busca semântica) são gerados em segundo plano via
+    BackgroundTasks — sem Celery/Redis (tudo local). O campo
+    `status_indexacao` reflete o progresso (pendente → indexado).
+    """
+    if len(req.conteudo.strip()) < 50:
+        raise HTTPException(status_code=422, detail="Conteúdo muito curto")
+
+    # Status honesto: 'pendente' só faz sentido se a vetorização vai rodar.
+    status_inicial = "pendente" if emb_disponivel() else "sem_embeddings"
+    doc = KnowledgeDoc(
+        id=str(uuid4()), titulo=req.titulo, categoria=req.categoria,
+        fonte=req.fonte, tribunal=req.tribunal,
+        status_indexacao=status_inicial,
+    )
+    db.add(doc)
+    await db.flush()   # doc precisa existir antes dos chunks (FK)
+
+    chunks = _chunk_texto(req.conteudo)
+    for i, c in enumerate(chunks):
+        db.add(KnowledgeChunk(
+            id=str(uuid4()), doc_id=doc.id, chunk_index=i, conteudo=c,
+            embedding=None,   # preenchido em background
+        ))
+    await db.commit()
+
+    # Agenda a vetorização para depois de a resposta ser enviada (não bloqueia).
+    if emb_disponivel():
+        background_tasks.add_task(_indexar_doc_bg, doc.id)
+
+    return {
+        "id": doc.id, "chunks": len(chunks),
+        "status_indexacao": doc.status_indexacao,
+        "embeddings_pendentes": emb_disponivel(),
+        "detail": "Documento ingerido (embeddings em segundo plano)",
+    }
+
+
+@router.get("/buscar")
+async def buscar(
+    q: str = Query(..., min_length=3),
+    limite: int = Query(6, ge=1, le=20),
+    categoria: Optional[str] = None,
+    db: AsyncSession = Depends(get_db),
+    cu: User = Depends(get_current_user),
+):
+    """Consulta a base de conhecimento (textual; semântica na fase 2)."""
+    cats = [categoria] if categoria else None
+    modo = "textual"
+
+    # Busca SEMÂNTICA (pgvector cosine) quando embeddings ativos
+    if emb_disponivel():
+        vetores = await gerar_embeddings([q], modo="query")  # E5: prefixo "query:" na consulta
+        if vetores:
+            from sqlalchemy import text as sqltext
+            vec = "[" + ",".join(f"{x:.6f}" for x in vetores[0]) + "]"
+            sql = """
+                SELECT c.id AS chunk_id, c.conteudo, d.titulo, d.categoria,
+                       1 - (c.embedding <=> CAST(:v AS vector)) AS score
+                FROM knowledge_chunks c
+                JOIN knowledge_docs d ON d.id = c.doc_id
+                WHERE d.deleted_at IS NULL AND c.embedding IS NOT NULL
+                AND 1 - (c.embedding <=> CAST(:v AS vector)) >= 0.60
+                AND (d.categoria <> ALL(:restr_cats) OR d.client_id = :scope_cli)
+            """
+            if cats:
+                sql += " AND d.categoria = ANY(:cats)"
+            sql += " ORDER BY c.embedding <=> CAST(:v AS vector) LIMIT :lim"
+            # Endpoint geral de busca → fail-closed: sem escopo de cliente,
+            # conteúdo restrito (peças/precedentes internos) é excluído (LGPD/EOAB).
+            params = {"v": vec, "lim": limite, "restr_cats": _RESTRICTED_CATS, "scope_cli": ""}
+            if cats:
+                params["cats"] = cats
+            rows = (await db.execute(sqltext(sql), params)).mappings().all()
+            if rows:
+                modo = "semantica"
+                return {
+                    "query": q, "modo": modo,
+                    "resultados": [dict(r) for r in rows],
+                }
+
+    resultados = await buscar_contexto_rag(db, q, limite=limite, categorias=cats)
+    return {"query": q, "modo": modo, "resultados": resultados}
+
+
+@router.get("/docs")
+async def listar_docs(
+    page: int = Query(1, ge=1), page_size: int = Query(20, ge=1, le=100),
+    categoria: Optional[str] = None,
+    db: AsyncSession = Depends(get_db),
+    cu: User = Depends(get_current_user),
+):
+    q = select(KnowledgeDoc).where(KnowledgeDoc.deleted_at.is_(None))
+    if categoria:
+        q = q.where(KnowledgeDoc.categoria == categoria)
+    q = q.order_by(KnowledgeDoc.created_at.desc())
+
+    total = (await db.execute(
+        select(sqlfunc.count()).select_from(q.subquery())
+    )).scalar()
+    rows = (await db.execute(
+        q.offset((page - 1) * page_size).limit(page_size)
+    )).scalars().all()
+    return {
+        "data": [
+            {"id": d.id, "titulo": d.titulo, "categoria": d.categoria,
+             "fonte": d.fonte, "created_at": d.created_at}
+            for d in rows
+        ],
+        "total": total, "page": page, "page_size": page_size,
+    }
+
+
+@router.delete("/docs/{doc_id}", response_model=MsgResponse)
+async def remover_doc(
+    doc_id: str,
+    db: AsyncSession = Depends(get_db),
+    cu: User = Depends(require_roles(["superadmin", "admin", "socio"])),
+):
+    d = (await db.execute(
+        select(KnowledgeDoc).where(
+            KnowledgeDoc.id == doc_id, KnowledgeDoc.deleted_at.is_(None)
+        )
+    )).scalar_one_or_none()
+    if not d:
+        raise HTTPException(status_code=404, detail="Documento não encontrado")
+    d.deleted_at = datetime.now(timezone.utc)
+    await db.commit()
+    return MsgResponse(detail="Documento removido da base")
+
+
+@router.get("/monitor-legislativo")
+async def monitor_legislativo(
+    q: Optional[str] = None,
+    casa: Optional[str] = Query(None, description="camara | senado"),
+    limit: int = Query(30, ge=1, le=100),
+    db: AsyncSession = Depends(get_db),
+    cu: User = Depends(get_current_user),
+):
+    """Radar legislativo (Bloco E): proposições recentes (Câmara + Senado) já
+    ingeridas no RAG. Filtra por palavra-chave e casa; ordena por recência.
+    Inclui o frescor da ingestão (última execução dos jobs)."""
+    query = select(KnowledgeDoc).where(
+        KnowledgeDoc.deleted_at.is_(None),
+        KnowledgeDoc.categoria == "proposicao_legislativa",
+    )
+    if q:
+        query = query.where(KnowledgeDoc.titulo.ilike(f"%{q}%"))
+    if casa in ("camara", "senado"):
+        # filtro no JSONB extra->>'casa'
+        query = query.where(KnowledgeDoc.extra["casa"].astext == casa)
+    query = query.order_by(
+        sqlfunc.coalesce(KnowledgeDoc.atualizado_em, KnowledgeDoc.created_at).desc()
+    )
+    rows = (await db.execute(query.limit(limit))).scalars().all()
+
+    proposicoes = []
+    for d in rows:
+        ex = d.extra or {}
+        proposicoes.append({
+            "titulo": d.titulo, "fonte": d.fonte,
+            "casa": ex.get("casa"), "sigla": ex.get("sigla"),
+            "ano": ex.get("ano"), "numero": ex.get("numero"),
+            "atualizado_em": d.atualizado_em or d.created_at,
+        })
+
+    # frescor da ingestão (jobs camara/senado)
+    fontes = (await db.execute(
+        select(FonteIngestao).where(FonteIngestao.slug.in_(["camara", "senado"]))
+    )).scalars().all()
+    ingestao = [{
+        "fonte": f.slug, "ultima_execucao": f.ultima_execucao,
+        "status": f.ultimo_status, "registros_total": f.registros_total,
+    } for f in fontes]
+
+    return {
+        "total": len(proposicoes),
+        "filtro": {"q": q, "casa": casa},
+        "proposicoes": proposicoes,
+        "ingestao": ingestao,
+        "nota": "Proposições ingeridas automaticamente (jobs diários Câmara/Senado). "
+                "Ementa para triagem — texto integral nos portais oficiais.",
+    }
+
+
+# ── Destilação RAG com gate humano (#15) ─────────────────────────────────────
+class IngerirAILogRequest(BaseModel):
+    categoria: str = "conhecimento_ia"
+    titulo_override: str | None = None
+
+@router.post("/ingerir-ai-log/{log_id}", summary="Destila output de IA aprovado para o RAG")
+async def ingerir_ai_log_aprovado(
+    log_id: str,
+    req: IngerirAILogRequest,
+    db: AsyncSession = Depends(get_db),
+    cu: User = Depends(get_current_user),
+):
+    """
+    Gate humano de destilação: advogado aprova um output de IA (ai_log)
+    e ele é ingerido no RAG como conhecimento institucional.
+    REGRA: só outputs com status HITL 'revisado' ou 'aplicado' podem ser ingeridos.
+    """
+    from app.models.ai_log import AILog, AIStatusHITL
+    from app.services.ingestion_service import upsert_documento
+
+    log = (await db.execute(
+        select(AILog).where(AILog.id == log_id, AILog.user_id == cu.id)
+    )).scalar_one_or_none()
+
+    if not log:
+        raise HTTPException(status_code=404, detail="AI log não encontrado")
+    if log.status_hitl not in (AIStatusHITL.revisado, AIStatusHITL.aplicado):
+        raise HTTPException(
+            status_code=400,
+            detail=f"Somente outputs com status 'revisado' ou 'aplicado' podem ser ingeridos. Status atual: {log.status_hitl}"
+        )
+    if not log.resposta or len(log.resposta.strip()) < 50:
+        raise HTTPException(status_code=400, detail="Output muito curto para ingestão")
+
+    titulo = req.titulo_override or f"IA {log.tipo_uso.value} — {log.created_at.strftime('%d/%m/%Y')}"
+    fonte  = f"ejc_ia_{log.tipo_uso.value}"
+    chave  = f"ai_log_{log.id}"
+
+    resultado = await upsert_documento(
+        db,
+        titulo=titulo,
+        categoria=req.categoria,
+        conteudo=log.resposta,
+        chave_origem=chave,
+        fonte=fonte,
+    )
+    await db.commit()
+
+    # Estima chunks para retorno informativo
+    chunks_estimados = len(_chunk_texto(log.resposta))
+
+    return {
+        "ok": True,
+        "ai_log_id": log_id,
+        "resultado_upsert": resultado,   # "novo" | "atualizado" | "inalterado"
+        "chunks_estimados": chunks_estimados,
+        "categoria": req.categoria,
+        "titulo": titulo,
+        "aviso": "Output ingerido no RAG como conhecimento institucional. Disponível nas próximas consultas.",
+    }

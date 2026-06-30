@@ -1,0 +1,49 @@
+# ── Segredos / ambiente ──────────────────────────────────────────────
+.env
+*.env
+**/.env
+!.env.example
+!**/.env.example
+vps-tools/.env
+
+# Chaves e credenciais
+*.pem
+*.key
+*.p12
+*.pfx
+*-service-account*.json
+credentials*.json
+
+# ── Dependências / builds ────────────────────────────────────────────
+node_modules/
+**/node_modules/
+backend/.venv/
+backend/.venv-codex/
+**/.venv*/
+__pycache__/
+**/__pycache__/
+*.pyc
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+frontend/dist/
+dist/
+
+# ── Artefatos / backups / resíduos (não versionar) ───────────────────
+*.tgz
+*.tar.gz
+*.zip
+*.dump
+*.sql
+*.sql.gz
+*.log
+uploads/
+backups/
+_QUARENTENA/
+vps-tools/generated/
+_session_componentes_bronze/
+
+# ── Backups locais de arquivos ───────────────────────────────────────
+*.bak
+*.old
+*.orig
