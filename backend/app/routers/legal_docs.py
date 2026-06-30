@@ -14,7 +14,8 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.database import get_db
 from app.core.security import get_current_user
-from app.core.ownership import verificar_acesso_caso
+from app.core.ownership import verificar_acesso_caso, is_gestao
+from app.models.case import Case
 from app.models.user import User
 from app.models.legal_doc import LegalDoc, PecaStatus
 from app.models.ai_log import AILog, AIStatusHITL
@@ -243,6 +244,18 @@ async def listar(
     cu: User = Depends(get_current_user),
 ):
     q = select(LegalDoc).where(LegalDoc.deleted_at.is_(None))
+    # Ownership por caso (IDOR): não-gestão só vê peças dos seus casos
+    # (responsável/auxiliar/sem-dono) ou sem caso vinculado.
+    if not is_gestao(cu):
+        casos_visiveis = select(Case.id).where(
+            Case.deleted_at.is_(None),
+            (
+                (Case.advogado_responsavel_id == cu.id)
+                | (Case.advogado_auxiliar_id == cu.id)
+                | (Case.advogado_responsavel_id.is_(None) & Case.advogado_auxiliar_id.is_(None))
+            ),
+        )
+        q = q.where(LegalDoc.case_id.is_(None) | LegalDoc.case_id.in_(casos_visiveis))
     if case_id:
         q = q.where(LegalDoc.case_id == case_id)
     if status_f:
@@ -304,6 +317,9 @@ async def detalhe(
     )).scalar_one_or_none()
     if not d:
         raise HTTPException(status_code=404, detail="Peça não encontrada")
+    # Ownership (IDOR): peça vinculada a caso só é visível a quem tem o caso.
+    if d.case_id:
+        await verificar_acesso_caso(db, cu, d.case_id)
     item = LegalDocDetail.model_validate(d).model_dump(mode="json")
     item["validacao_juridica"] = await _ultima_validacao_peca(db, d)
     return item

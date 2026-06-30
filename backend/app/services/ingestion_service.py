@@ -151,6 +151,8 @@ async def upsert_documento(
     fonte: str | None = None,
     tribunal: str | None = None,
     extra: dict | None = None,
+    client_id: str | None = None,
+    case_id: str | None = None,
 ) -> str:
     """Insere/atualiza um documento na base de conhecimento, de forma idempotente.
 
@@ -190,6 +192,8 @@ async def upsert_documento(
         existente.fonte = fonte
         existente.tribunal = tribunal
         existente.extra = extra
+        existente.client_id = client_id
+        existente.case_id = case_id
         existente.hash_conteudo = h
         existente.atualizado_em = agora
         doc_id = existente.id
@@ -199,6 +203,7 @@ async def upsert_documento(
         db.add(KnowledgeDoc(
             id=doc_id, titulo=titulo, categoria=categoria,
             fonte=fonte, tribunal=tribunal, extra=extra,
+            client_id=client_id, case_id=case_id,
             chave_origem=chave_origem, hash_conteudo=h, atualizado_em=agora,
         ))
         await db.flush()   # FK: doc antes dos chunks

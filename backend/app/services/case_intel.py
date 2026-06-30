@@ -19,6 +19,7 @@ from sqlalchemy import text
 from app.core.config import get_settings
 from app.core.database import AsyncSessionLocal
 from app.models.case import Case, CaseMovimento
+from app.models.client import Client
 from app.models.legal_doc import LegalDoc
 from app.models.ai_log import AILog, AITipoUso, AIStatusHITL
 from app.services.ai_gateway import chat as gw_chat, GatewayResponse
@@ -308,8 +309,29 @@ async def indexar_peca_rag(legal_doc_id: str) -> None:
             conteudo = (d.conteudo or "").strip()
             if len(conteudo) < 50:
                 return
-            # LGPD — NUNCA indexar PII na RAG.
-            limpo, _ = sanitizar_pii(conteudo)
+
+            # Escopo de isolamento (Fase 3B) + nomes a proteger na sanitização.
+            client_id = None
+            nomes_proteger: list[str] = []
+            if d.case_id:
+                caso = await db.get(Case, d.case_id)
+                if caso:
+                    client_id = caso.client_id
+                    if getattr(caso, "parte_contraria", None):
+                        nomes_proteger.append(caso.parte_contraria)
+                    if caso.client_id:
+                        cli = await db.get(Client, caso.client_id)
+                        if cli:
+                            for n in (getattr(cli, "nome", None),
+                                      getattr(cli, "razao_social", None),
+                                      getattr(cli, "nome_fantasia", None)):
+                                if n:
+                                    nomes_proteger.append(n)
+
+            # LGPD — NUNCA indexar PII na RAG. Mascara também nomes próprios
+            # (cliente, parte contrária) — antes a indexação vazava nomes
+            # identificáveis na base GLOBAL (laudo RAG-02).
+            limpo, _ = sanitizar_pii(conteudo, nomes_proteger or None)
 
             meta: dict = {
                 "tipo_peca": getattr(d.tipo_peca, "value", None) or str(d.tipo_peca or ""),
@@ -334,6 +356,7 @@ async def indexar_peca_rag(legal_doc_id: str) -> None:
                 db, titulo=(d.titulo or f"Peça {legal_doc_id[:8]}"),
                 categoria="peca_interna", conteudo=limpo,
                 chave_origem=f"legaldoc:{d.id}", fonte="escritorio", extra=meta,
+                client_id=client_id, case_id=d.case_id,
             )
             await db.commit()
             logger.info(f"[case_intel] Peça indexada na RAG ({res}): {legal_doc_id}")

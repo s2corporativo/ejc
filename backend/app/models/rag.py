@@ -22,6 +22,12 @@ class KnowledgeDoc(Base):
     tribunal  = Column(String(20),  nullable=True)
     extra     = Column(JSONB, nullable=True)
 
+    # Isolamento por cliente/caso (Fase 3B / migration 055): conteúdo RESTRITO
+    # (peças/precedentes internos) só é recuperável no escopo do próprio cliente.
+    # NULL = conteúdo PÚBLICO/global (legislação, súmulas, jurisprudência, doutrina).
+    client_id = Column(String(36), nullable=True, index=True)
+    case_id   = Column(String(36), nullable=True, index=True)
+
     # Ingestão automática (migration 006): rastreabilidade + dedup idempotente
     chave_origem  = Column(String(255), nullable=True, index=True)  # URN/nº CNJ/código
     hash_conteudo = Column(String(40),  nullable=True)              # SHA-1 normalizado
