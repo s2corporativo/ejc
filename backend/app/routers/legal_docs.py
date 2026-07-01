@@ -25,7 +25,7 @@ from app.services.case_intel import indexar_peca_rag
 from app.services.document_format import padronizar_documento_juridico
 from app.services.validador_juridico_service import ValidacaoInput, validar_rascunho_juridico
 from app.schemas.legal_doc import (
-    LegalDocCreate, LegalDocUpdate, LegalDocRevisao,
+    LegalDocCreate, LegalDocUpdate, LegalDocRevisao, LegalDocAprovacao,
     LegalDocResponse, LegalDocDetail,
 )
 from app.schemas.common import MsgResponse
@@ -466,6 +466,62 @@ async def revisar(
     # ETAPA 2 — re-indexa a versão revisada (qualidade validada) na RAG.
     if payload.aprovado:
         background.add_task(indexar_peca_rag, doc_id)
+    return d
+
+
+@router.patch("/{doc_id}/aprovar", response_model=LegalDocDetail)
+async def aprovar(
+    doc_id: str, payload: LegalDocAprovacao,
+    background: BackgroundTasks,
+    db: AsyncSession = Depends(get_db),
+    cu: User = Depends(get_current_user),
+):
+    """BUG-08: aprovação HITL da peça.
+
+    Registra a revisão humana (human_reviewed) e avança o status para 'aprovada'.
+    Peça gerada por IA (ai_generated) EXIGE observações de revisão — sem elas,
+    a aprovação é recusada (422). Mantém os gates de qualidade existentes
+    (validação jurídica + jurisprudência) coerentes com o fluxo do PATCH.
+    """
+    d = (await db.execute(
+        select(LegalDoc).where(
+            LegalDoc.id == doc_id, LegalDoc.deleted_at.is_(None)
+        )
+    )).scalar_one_or_none()
+    if not d:
+        raise HTTPException(status_code=404, detail="Peça não encontrada")
+    if d.case_id:
+        await verificar_acesso_caso(db, cu, d.case_id)
+
+    observacoes = (payload.observacoes or "").strip()
+    if d.ai_generated and not observacoes:
+        raise HTTPException(
+            status_code=422,
+            detail="Peças geradas por IA exigem observações de revisão humana",
+        )
+
+    # Gates de qualidade (mesmos do PATCH) antes de chegar a 'aprovada'.
+    novo_status = PecaStatus.aprovada.value
+    await _bloquear_sem_validacao(db, d, novo_status)
+    await _bloquear_jurisprudencia_nao_validada(db, d, novo_status)
+
+    status_antigo = _status_value(d.status)
+    d.human_reviewed = True
+    d.revisor_id = cu.id
+    d.revisado_em = datetime.now(timezone.utc)
+    d.notas_revisao = observacoes or d.notas_revisao
+    d.status = PecaStatus.aprovada
+
+    await criar_audit_log(
+        db, cu.id, cu.role.value, "APROVAR_HITL", "legal_docs", doc_id,
+        detalhes=f"ai_generated={d.ai_generated}",
+    )
+    await db.commit()
+    await db.refresh(d)
+    # Re-indexa a versão aprovada na RAG e dispara checklist pré-protocolo.
+    background.add_task(indexar_peca_rag, doc_id)
+    if status_antigo not in _STATUS_PRE_PROTOCOLO and d.case_id:
+        background.add_task(_bg_checklist_protocolo, d.case_id, cu.id)
     return d
 
 

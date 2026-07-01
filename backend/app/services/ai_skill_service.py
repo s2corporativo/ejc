@@ -73,6 +73,8 @@ async def executar_skill(
     custo = ai_gateway._custo_brl(resp.modelo, inp, out) if provider == "anthropic" else 0.0
 
     prompt_san = query[:500].replace("'", "''")
+    from app.models.ai_log import normalizar_modelo_ia  # BUG-22: nome canônico
+    modelo_log = f"{resp.provedor}/{resp.modelo}" if resp.provedor else resp.modelo
     try:
         await db.execute(text("""
             INSERT INTO ai_logs
@@ -84,7 +86,7 @@ async def executar_skill(
                  :prompt, :ti, :to, :custo, 'gerado', now())
         """), {
             "id": str(uuid4()), "uid": user_id, "cid": case_id,
-            "modelo": f"{resp.provedor}/{resp.modelo}",
+            "modelo": normalizar_modelo_ia(modelo_log),
             "prompt": prompt_san, "ti": inp, "to": out, "custo": custo,
         })
         await db.commit()

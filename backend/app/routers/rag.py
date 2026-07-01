@@ -38,6 +38,37 @@ async def stats_conhecimento(db: AsyncSession = Depends(get_db), cu: User = Depe
     }
 
 
+@router.get("/status")
+async def status_indexacao_rag(
+    db: AsyncSession = Depends(get_db), cu: User = Depends(get_current_user)
+):
+    """BUG-04: estado real da vetorização da base RAG.
+
+    Deriva de `knowledge_docs.status_indexacao` (indexado→vetorizado). Não
+    re-embeda nada — apenas reporta. Usado pelo painel de Conhecimento.
+    """
+    from sqlalchemy import text as _t
+    rows = (await db.execute(_t(
+        "SELECT status_indexacao AS s, count(*) AS n "
+        "FROM knowledge_docs WHERE deleted_at IS NULL "
+        "GROUP BY status_indexacao"
+    ))).all()
+    vetorizado = sem_vetor = erro = 0
+    for s, n in rows:
+        if s == "indexado":
+            vetorizado += n
+        elif s == "erro":
+            erro += n
+        else:  # pendente | sem_embeddings | NULL
+            sem_vetor += n
+    return {
+        "vetorizado": vetorizado,
+        "sem_vetor": sem_vetor,
+        "erro": erro,
+        "total": vetorizado + sem_vetor + erro,
+    }
+
+
 class IngestRequest(BaseModel):
     titulo: str
     categoria: str   # legislacao_geral|legislacao_ambiental|legislacao_administrativa|legislacao_trabalhista|legislacao_tributaria|legislacao_bancaria|sumula_tjmg|sumula_stf|sumula_stj|sumula_tst|jurisprudencia_tjmg|jurisprudencia_stj|jurisprudencia_tst|jurisprudencia_carf|jurisprudencia_tcu|precedente_interno|doutrina|tese_vitoriosa|modelo_documento_juridico

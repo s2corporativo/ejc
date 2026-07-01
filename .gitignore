@@ -47,3 +47,6 @@ _session_componentes_bronze/
 *.bak
 *.old
 *.orig
+
+# temporários de deploy (auditoria 01/07)
+vps-tools/_*

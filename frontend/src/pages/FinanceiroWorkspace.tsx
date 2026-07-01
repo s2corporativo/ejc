@@ -15,6 +15,7 @@ import DespesasRecorrentes from "./DespesasRecorrentes";
 import OfficeContracts from "./OfficeContracts";
 import Sociedade from "./Sociedade";
 import EstimadorHonorarios from "../components/EstimadorHonorarios";
+import ErrorBoundary from "../components/ErrorBoundary";
 import { PageHeader } from "../components/UI";
 
 const TABS = [
@@ -56,13 +57,15 @@ export default function FinanceiroWorkspace() {
         </div>
       </div>
       <div className="min-w-0">
-        {tab === "visao" && <FinanceiroDashboard />}
-        {tab === "honorarios" && <Honorarios />}
-        {tab === "despesas" && <Despesas />}
-        {tab === "recorrentes" && <DespesasRecorrentes />}
-        {tab === "contratos" && <OfficeContracts />}
-        {tab === "societaria" && <Sociedade />}
-        {tab === "estimador" && <EstimadorHonorarios />}
+        <ErrorBoundary key={tab}>
+          {tab === "visao" && <FinanceiroDashboard />}
+          {tab === "honorarios" && <Honorarios />}
+          {tab === "despesas" && <Despesas />}
+          {tab === "recorrentes" && <DespesasRecorrentes />}
+          {tab === "contratos" && <OfficeContracts />}
+          {tab === "societaria" && <Sociedade />}
+          {tab === "estimador" && <EstimadorHonorarios />}
+        </ErrorBoundary>
       </div>
     </div>
   );

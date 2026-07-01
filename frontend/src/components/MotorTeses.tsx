@@ -41,17 +41,27 @@ export default function MotorTeses({ caso }: { caso: any }) {
     setErro("");
     setR(null);
     try {
-      const { data } = await api.post("/teses/motor", {
-        area: caso.area,
-        descricao_fatos: caso.descricao_fatos,
-        case_id: caso.id,
-        polo,
-      });
+      const { data } = await api.post(
+        "/teses/motor",
+        {
+          area: caso.area,
+          descricao_fatos: caso.descricao_fatos,
+          case_id: caso.id,
+          polo,
+        },
+        { signal: AbortSignal.timeout(30000) },
+      );
       setR(data);
     } catch (e: any) {
+      const isTimeout =
+        e?.code === "ERR_CANCELED" ||
+        e?.name === "CanceledError" ||
+        e?.name === "TimeoutError";
       setErro(
-        e.response?.data?.detail ||
-          "Falha ao gerar teses (a IA pode estar indisponível).",
+        isTimeout
+          ? "A geração de teses demorou mais que o esperado (30s) e foi interrompida. Tente novamente."
+          : e.response?.data?.detail ||
+              "Falha ao gerar teses (a IA pode estar indisponível).",
       );
     } finally {
       setLoading(false);

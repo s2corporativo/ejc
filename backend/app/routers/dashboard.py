@@ -55,10 +55,13 @@ async def dashboard(
     """))
     casos_status = {row[0]: row[1] for row in r}
 
-    # Casos por área
+    # Casos por área (BUG-06/BUG-10): MESMO conjunto das demais contagens —
+    # todos os casos não-deletados, sem excluir status. Antes excluía
+    # 'encerrado'/'arquivado', o que fazia áreas (ex.: trabalhista) sumirem do
+    # gráfico e divergir do total do header. deleted_at IS NULL é o único filtro.
     r = await db.execute(text("""
         SELECT area, COUNT(*) FROM cases
-        WHERE deleted_at IS NULL AND status NOT IN ('encerrado','arquivado')
+        WHERE deleted_at IS NULL
         GROUP BY area ORDER BY COUNT(*) DESC
     """))
     casos_area = [{"area": row[0], "total": row[1]} for row in r]
@@ -134,7 +137,11 @@ async def dashboard(
         "casos": {
             "por_status": casos_status,
             "por_area": casos_area,
-            "ativos": casos_status.get("ativo", 0) + casos_status.get("triagem", 0),
+            # BUG-06/BUG-10: definição canônica única (== GET /cases/stats):
+            # total não-deletado, ativos = tudo que não é 'encerrado'.
+            "total": sum(casos_status.values()),
+            "encerrados": casos_status.get("encerrado", 0),
+            "ativos": sum(casos_status.values()) - casos_status.get("encerrado", 0),
         },
         "prazos": {"vencidos": pv, "criticos_3d": pc, "proximos_7d": p7},
         "financeiro": {

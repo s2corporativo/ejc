@@ -179,6 +179,10 @@ async def upsert_documento(
 
     chunks = chunk_texto(conteudo)
     vetores = await gerar_embeddings(chunks)   # None se embeddings desligados
+    # BUG-04: status coerente com o resultado real da vetorização.
+    # 'indexado' só quando os chunks foram efetivamente embedados; senão 'pendente'
+    # (embeddings desligados/indisponíveis) — nunca fica 'pendente' com vetor pronto.
+    status_novo = "indexado" if vetores else "pendente"
 
     if existente:
         if existente.hash_conteudo == h:
@@ -196,6 +200,7 @@ async def upsert_documento(
         existente.case_id = case_id
         existente.hash_conteudo = h
         existente.atualizado_em = agora
+        existente.status_indexacao = status_novo
         doc_id = existente.id
         resultado = "atualizado"
     else:
@@ -205,6 +210,7 @@ async def upsert_documento(
             fonte=fonte, tribunal=tribunal, extra=extra,
             client_id=client_id, case_id=case_id,
             chave_origem=chave_origem, hash_conteudo=h, atualizado_em=agora,
+            status_indexacao=status_novo,
         ))
         await db.flush()   # FK: doc antes dos chunks
         resultado = "novo"

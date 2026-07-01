@@ -99,7 +99,8 @@ interface SalaData {
   risco: {
     indice: number | null;
     nivel: string | null;
-    fatores: string | null;
+    // jsonb no backend: pode vir string, lista, objeto {} ou null
+    fatores: unknown;
   };
 }
 
@@ -116,6 +117,59 @@ const RISCO_COLOR: Record<string, string> = {
   medio: "text-yellow-500",
   baixo: "text-green-500",
 };
+
+const SEM_FATORES = "Nenhum fator de risco cadastrado.";
+
+/**
+ * `cases.risco_fatores` é jsonb no backend: na prática costuma vir como objeto
+ * vazio `{}`, mas também pode ser string, lista de strings ou lista de objetos.
+ * Converte qualquer forma para texto Markdown, tratando vazio explicitamente
+ * (evita renderizar "[object Object]" — BUG-02).
+ */
+function fatoresRiscoToText(fatores: unknown): string {
+  if (fatores == null) return SEM_FATORES;
+
+  if (typeof fatores === "string") {
+    const t = fatores.trim();
+    return t.length ? t : SEM_FATORES;
+  }
+
+  if (Array.isArray(fatores)) {
+    if (fatores.length === 0) return SEM_FATORES;
+    const linhas = fatores
+      .map((item) => {
+        if (item == null) return "";
+        if (typeof item === "string") return item.trim();
+        if (typeof item === "object") {
+          const obj = item as Record<string, unknown>;
+          const desc =
+            typeof obj.descricao === "string"
+              ? obj.descricao
+              : typeof obj.fator === "string"
+                ? obj.fator
+                : JSON.stringify(obj);
+          const nivel =
+            typeof obj.nivel === "string" ? ` (${obj.nivel})` : "";
+          return `${desc}${nivel}`.trim();
+        }
+        return String(item);
+      })
+      .filter((l) => l.length > 0)
+      .map((l) => `- ${l}`);
+    return linhas.length ? linhas.join("\n") : SEM_FATORES;
+  }
+
+  if (typeof fatores === "object") {
+    // Objeto genérico (incluindo `{}`, que é truthy). Se vazio → sem fatores.
+    const entries = Object.entries(fatores as Record<string, unknown>);
+    if (entries.length === 0) return SEM_FATORES;
+    return entries
+      .map(([k, v]) => `- **${k}:** ${typeof v === "object" ? JSON.stringify(v) : String(v)}`)
+      .join("\n");
+  }
+
+  return String(fatores);
+}
 
 function Stat({
   label,
@@ -662,14 +716,15 @@ export default function SalaDeGuerra() {
           </Section>
 
           {/* Risco */}
-          {risco.fatores && (
-            <Section
-              title="Fatores de Risco"
-              icon={<TrendingUp className="w-4 h-4" />}
-            >
-              <Markdown source={risco.fatores} className="text-sm text-zinc-600" />
-            </Section>
-          )}
+          <Section
+            title="Fatores de Risco"
+            icon={<TrendingUp className="w-4 h-4" />}
+          >
+            <Markdown
+              source={fatoresRiscoToText(risco.fatores)}
+              className="text-sm text-zinc-600"
+            />
+          </Section>
         </div>
       </div>
     </div>

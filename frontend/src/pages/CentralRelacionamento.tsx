@@ -18,15 +18,21 @@ import { AtendimentoStats } from "../components/Dashboards";
 
 interface FunilData {
   total_cadastros: number;
-  taxa_conversao_geral: number;
+  // já vem na escala 0–100 (ou null) do backend
+  taxa_conversao_geral: number | null;
   por_estagio: Record<string, number>;
   por_origem: {
     origem: string;
     total: number;
     convertidos: number;
-    taxa_conversao: number;
+    taxa_conversao: number | null;
   }[];
   nota?: string;
+}
+
+// Formata taxa 0–100 → "NN%"; null/NaN/Infinity → "—"
+function fmtTaxa(v?: number | null): string {
+  return Number.isFinite(v) ? `${Math.round(v as number)}%` : "—";
 }
 
 interface ClienteRecente {
@@ -137,9 +143,7 @@ export default function CentralRelacionamento() {
 
   const ativos = funil?.por_estagio?.ativo ?? 0;
   const leadCount = funil?.por_estagio?.lead ?? leads.length;
-  const taxa = funil?.taxa_conversao_geral
-    ? Math.round(funil.taxa_conversao_geral * 100)
-    : 0;
+  const taxa = fmtTaxa(funil?.taxa_conversao_geral);
 
   const openWA = (phone: string, nome: string) => {
     const d = phone.replace(/\D/g, "");
@@ -212,7 +216,7 @@ export default function CentralRelacionamento() {
         />
         <StatCard
           label="Taxa de conversão"
-          value={`${taxa}%`}
+          value={taxa}
           icon={TrendingUp}
           color="blue"
           sub="leads → ativos"
@@ -296,7 +300,7 @@ export default function CentralRelacionamento() {
                       {o.total}
                     </span>
                     <span className="text-slate-400 text-xs ml-1">
-                      · {Math.round((o.taxa_conversao ?? 0) * 100)}%
+                      · {fmtTaxa(o.taxa_conversao)}
                     </span>
                   </div>
                 </div>

@@ -24,6 +24,7 @@ from app.services.documental import gerar_documentos_iniciais
 from app.models.case_parte import CaseParte
 from app.models.caso_area import CasoArea
 from app.services.movimento_ia import traduzir_movimento
+from app.services.ia_parser import titulo_e_json_bruto
 from app.schemas.case import (
     CaseCreate, CaseUpdate, CaseResponse, CaseDetail, MovimentoCreate,
 )
@@ -94,6 +95,48 @@ async def listar(
     }
 
 
+@router.get("/stats")
+async def stats_casos(
+    db: AsyncSession = Depends(get_db),
+    cu: User = Depends(get_current_user),
+):
+    """BUG-06/BUG-10: fonte ÚNICA de contagem de casos p/ o dashboard.
+
+    TODAS as agregações (total, ativos, encerrados e por_area) filtram
+    `deleted_at IS NULL` sobre o MESMO conjunto e respeitam a visibilidade do
+    usuário — elimina divergência entre header/cards e o gráfico por área.
+    - ativos    = status != 'encerrado'
+    - encerrados = status == 'encerrado'
+    - por_area  = contagem por área sobre o MESMO conjunto (nenhuma área some).
+    """
+    base = _filtro_visibilidade(
+        select(Case).where(Case.deleted_at.is_(None)), cu
+    ).subquery()
+
+    total = (await db.execute(
+        select(sqlfunc.count()).select_from(base)
+    )).scalar() or 0
+    encerrados = (await db.execute(
+        select(sqlfunc.count()).select_from(base)
+        .where(base.c.status == CaseStatus.encerrado.value)
+    )).scalar() or 0
+    ativos = total - encerrados
+
+    rows = (await db.execute(
+        select(base.c.area, sqlfunc.count())
+        .select_from(base)
+        .group_by(base.c.area)
+    )).all()
+    por_area = {(r[0].value if hasattr(r[0], "value") else r[0]): r[1] for r in rows}
+
+    return {
+        "total": total,
+        "ativos": ativos,
+        "encerrados": encerrados,
+        "por_area": por_area,
+    }
+
+
 @router.post("/", response_model=CaseDetail, status_code=201)
 async def criar(
     payload: CaseCreate,
@@ -103,6 +146,13 @@ async def criar(
         ["superadmin", "admin", "socio", "advogado", "advogado_auxiliar", "secretaria"]
     )),  # M16 (auditoria 2026-06-30): criar caso = equipe jurídica/gestão/intake
 ):
+    # BUG-03: rejeita título que é JSON/código cru de IA não parseado.
+    if titulo_e_json_bruto(payload.titulo):
+        raise HTTPException(
+            status_code=422,
+            detail="Título inválido — resposta de IA não parseada",
+        )
+
     # Validar cliente
     client = (await db.execute(
         select(Client).where(
@@ -220,9 +270,28 @@ async def atualizar(
         event_bus.emitir, "caso.atualizado", "case", case_id,
         {"mudancas": list(mudancas.keys()), "status": mudancas.get("status")}, cu.id,
     )
+    # BUG-16: ao VINCULAR/alterar o CNJ do caso, sincroniza prazos do DataJud
+    # em background (rascunho/HITL, dedup por referencia_datajud). Fail-safe.
+    if "numero_processo" in mudancas and mudancas["numero_processo"]:
+        background.add_task(_bg_sync_prazos_datajud, case_id, (mudancas["numero_processo"] or "").strip())
     # NB: o aprendizado institucional (memória+tese) é disparado pelo fluxo
     # canônico POST /cases/{id}/encerrar (com pós-mortem), não pelo PATCH.
     return c
+
+
+async def _bg_sync_prazos_datajud(case_id: str, numero_cnj: str) -> None:
+    """Background: sincroniza prazos do DataJud ao vincular um CNJ. Fail-safe."""
+    from app.core.database import AsyncSessionLocal
+    from app.services.datajud_service import sincronizar_prazos_datajud
+    try:
+        async with AsyncSessionLocal() as bgdb:
+            await sincronizar_prazos_datajud(case_id, numero_cnj, bgdb)
+            await bgdb.commit()
+    except Exception:
+        import logging
+        logging.getLogger("ejc.cases").warning(
+            f"[BUG-16] sync prazos DataJud falhou p/ caso {case_id}", exc_info=True
+        )
 
 
 @router.delete("/{case_id}", response_model=MsgResponse)

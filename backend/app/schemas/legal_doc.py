@@ -20,6 +20,10 @@ class LegalDocRevisao(BaseModel):
     aprovado: bool
     notas: Optional[str] = None
 
+class LegalDocAprovacao(BaseModel):
+    # BUG-08: aprovação HITL. Para peça ai_generated, observacoes é obrigatório.
+    observacoes: Optional[str] = None
+
 class LegalDocResponse(BaseModel):
     id: str
     titulo: str

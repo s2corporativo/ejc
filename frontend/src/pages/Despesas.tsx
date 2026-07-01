@@ -469,6 +469,12 @@ export default function Despesas() {
                       setForm({ ...form, valor: e.target.value })
                     }
                   />
+                  {form.valor.trim() !== "" &&
+                    (parseFloat(form.valor) || 0) === 0 && (
+                      <p className="mt-1 text-xs text-amber-600">
+                        Valor igual a R$ 0,00 — confirme se está correto.
+                      </p>
+                    )}
                 </div>
                 <div>
                   <label className="block text-xs font-medium text-slate-600 mb-1">

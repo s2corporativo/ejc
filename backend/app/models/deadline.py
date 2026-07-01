@@ -57,6 +57,12 @@ class Deadline(Base):
     responsavel_id = Column(String(36), ForeignKey("users.id"), nullable=True, index=True)
     observacoes    = Column(Text, nullable=True)
 
+    # BUG-16: origem do prazo e rastreabilidade DataJud.
+    # origem: 'manual' (default) | 'datajud'. referencia_datajud: chave de dedup
+    # do movimento (hash CNJ+movimento) — evita reimportar o mesmo prazo.
+    origem             = Column(String(20), nullable=False, server_default="manual")
+    referencia_datajud = Column(String(64), nullable=True, index=True)
+
     created_at = Column(DateTime(timezone=True), server_default=func.now())
     updated_at = Column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now())
     deleted_at = Column(DateTime(timezone=True), nullable=True)

@@ -43,6 +43,11 @@ export default function Pecas() {
     doc: LegalDoc;
     notas: string;
   } | null>(null);
+  const [aprovacao, setAprovacao] = useState<{
+    doc: LegalDoc;
+    observacoes: string;
+  } | null>(null);
+  const [aprovando, setAprovando] = useState(false);
   const [form, setForm] = useState<any>({
     tipo_peca: "peticao_inicial",
     ai_generated: false,
@@ -121,6 +126,26 @@ export default function Pecas() {
     });
     setRevisao(null);
     load();
+  };
+
+  // BUG-08 (HITL): aprovação humana obrigatória de peças geradas por IA.
+  // Único caminho para aprovar peça de IA; exige observações não vazias.
+  const aprovarPeca = async () => {
+    if (!aprovacao) return;
+    const observacoes = aprovacao.observacoes.trim();
+    if (!observacoes) return;
+    setAprovando(true);
+    try {
+      await api.patch(`/legal-docs/${aprovacao.doc.id}/aprovar`, {
+        observacoes,
+      });
+      setAprovacao(null);
+      load();
+    } catch (e: any) {
+      alert(e.response?.data?.detail || "Falha ao aprovar peça");
+    } finally {
+      setAprovando(false);
+    }
   };
 
   const avancarStatus = async (doc: LegalDoc, status: string) => {
@@ -319,6 +344,19 @@ export default function Pecas() {
                         Revisar
                       </button>
                     )}
+                    {p.ai_generated &&
+                      p.status !== "aprovada" &&
+                      p.status !== "versao_final" && (
+                        <button
+                          className="btn-ghost px-2 py-1 text-emerald-700 text-xs"
+                          title="Revisão humana obrigatória (HITL) para aprovar peça de IA"
+                          onClick={() =>
+                            setAprovacao({ doc: p, observacoes: "" })
+                          }
+                        >
+                          Revisar e Aprovar
+                        </button>
+                      )}
                     {(p.human_reviewed || !p.ai_generated) &&
                       p.status === "corrigida" &&
                       p.validacao_juridica?.apto_fluxo && (
@@ -453,6 +491,41 @@ export default function Pecas() {
             onClick={() => registrarRevisao(true)}
           >
             <ShieldCheck size={15} /> Aprovar revisão
+          </button>
+        </div>
+      </Modal>
+      {/* Aprovação HITL de peça gerada por IA (BUG-08) */}
+      <Modal
+        open={!!aprovacao}
+        onClose={() => setAprovacao(null)}
+        title="Revisar e aprovar peça de IA"
+      >
+        <p className="text-sm text-slate-600 mb-3">
+          Você está prestes a aprovar a peça{" "}
+          <strong>{aprovacao?.doc.titulo}</strong>, gerada com auxílio de IA. A
+          revisão humana é obrigatória: descreva as observações da sua análise.
+          Ao aprovar, você assume a responsabilidade técnica pelo conteúdo.
+        </p>
+        <textarea
+          className="input min-h-[120px]"
+          placeholder="Observações da revisão (obrigatório)"
+          value={aprovacao?.observacoes || ""}
+          onChange={(e) =>
+            aprovacao &&
+            setAprovacao({ ...aprovacao, observacoes: e.target.value })
+          }
+        />
+        <div className="flex justify-end gap-2 mt-4">
+          <button className="btn-ghost" onClick={() => setAprovacao(null)}>
+            Cancelar
+          </button>
+          <button
+            className="btn-primary"
+            disabled={aprovando || !aprovacao?.observacoes.trim()}
+            onClick={aprovarPeca}
+          >
+            <ShieldCheck size={15} />{" "}
+            {aprovando ? "Aprovando..." : "Aprovar peça"}
           </button>
         </div>
       </Modal>

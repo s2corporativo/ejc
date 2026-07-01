@@ -44,6 +44,10 @@ async def funil(db: AsyncSession, user: User) -> dict:
     total = sum(por_estagio.values())
     convertidos = por_estagio["ativo"]
 
+    # BUG-07: taxas SEMPRE na escala 0–100 (já em %), e None quando não há base
+    # (divisão por zero). O frontend consome o valor direto, sem multiplicar por
+    # 100 — antes a dupla multiplicação produzia "10000%".
+
     canais = []
     for canal, o in por_origem.items():
         canais.append({

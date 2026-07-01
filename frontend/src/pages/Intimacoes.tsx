@@ -1,21 +1,42 @@
 import { useEffect, useState } from "react";
 import { Inbox, RefreshCw, CheckCircle2, ExternalLink } from "lucide-react";
 import { useNavigate } from "react-router-dom";
+import { format } from "date-fns";
+import { ptBR } from "date-fns/locale";
 import api from "../lib/api";
+
+interface StatusCaptura {
+  executado_em: string | null;
+  sucesso: boolean | null;
+  intimacoes_encontradas: number | null;
+  erro: string | null;
+}
 
 export default function Intimacoes() {
   const nav = useNavigate();
   const [items, setItems] = useState<any[]>([]);
   const [pendentes, setPendentes] = useState(true);
   const [loading, setLoading] = useState(false);
+  const [status, setStatus] = useState<StatusCaptura | null>(null);
 
   const load = () =>
     api
       .get(`/intimacoes/?apenas_pendentes=${pendentes}`)
       .then((r) => setItems(r.data.data));
+
+  const loadStatus = () =>
+    api
+      .get<StatusCaptura>("/intimacoes/status-captura")
+      .then((r) => setStatus(r.data))
+      .catch(() => setStatus(null));
+
   useEffect(() => {
     load();
   }, [pendentes]);
+
+  useEffect(() => {
+    loadStatus();
+  }, []);
 
   const capturar = async () => {
     setLoading(true);
@@ -23,6 +44,7 @@ export default function Intimacoes() {
       const { data } = await api.post("/intimacoes/capturar-agora");
       alert(data.detail);
       load();
+      loadStatus();
     } catch (e: any) {
       alert(e.response?.data?.detail || "Configure sua OAB no menu do avatar");
     } finally {
@@ -51,6 +73,57 @@ export default function Intimacoes() {
             Capturar agora
           </button>
         </div>
+      </div>
+
+      {/* Status da última captura automática (DJEN) */}
+      <div className="card mb-5 flex flex-wrap items-center justify-between gap-3 p-4">
+        <div className="flex items-center gap-3">
+          <span
+            className={`inline-block h-2.5 w-2.5 shrink-0 rounded-full ${
+              status?.executado_em == null
+                ? "bg-slate-300"
+                : status?.sucesso
+                  ? "bg-emerald-500"
+                  : "bg-red-500"
+            }`}
+          />
+          <div className="text-sm">
+            {status?.executado_em == null ? (
+              <p className="text-slate-500">
+                Captura automática ainda não executada.
+              </p>
+            ) : (
+              <>
+                <p className="font-medium text-slate-700">
+                  Última captura em{" "}
+                  {format(
+                    new Date(status.executado_em),
+                    "dd/MM/yyyy 'às' HH:mm",
+                    { locale: ptBR },
+                  )}
+                </p>
+                {status.sucesso ? (
+                  <p className="text-xs text-slate-500">
+                    {status.intimacoes_encontradas ?? 0} intimação(ões)
+                    encontrada(s).
+                  </p>
+                ) : (
+                  <p className="text-xs text-red-600">
+                    Falha: {status.erro || "erro desconhecido"}
+                  </p>
+                )}
+              </>
+            )}
+          </div>
+        </div>
+        <button
+          className="btn-ghost"
+          disabled={loading}
+          onClick={capturar}
+        >
+          <RefreshCw size={14} className={loading ? "animate-spin" : ""} />
+          Capturar agora
+        </button>
       </div>
 
       <div className="card divide-y divide-slate-100">

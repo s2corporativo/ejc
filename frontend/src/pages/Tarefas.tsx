@@ -130,6 +130,9 @@ export default function Tarefas() {
   const nomeUser = (id?: string) =>
     users.find((u) => u.id === id)?.full_name?.split(" ")[0] ?? null;
 
+  const nomeCompletoUser = (id?: string) =>
+    users.find((u) => u.id === id)?.full_name ?? undefined;
+
   const stats = {
     total: tasks.length,
     fazer: tasks.filter((t) => t.status === "a_fazer").length,
@@ -282,9 +285,14 @@ export default function Tarefas() {
                           </span>
                         )}
                         {t.responsavel_id && (
-                          <span className="text-[10px] text-slate-400 flex items-center gap-1">
-                            <User className="w-2.5 h-2.5" />{" "}
-                            {nomeUser(t.responsavel_id)}
+                          <span
+                            title={nomeCompletoUser(t.responsavel_id)}
+                            className="text-[10px] text-slate-400 flex items-center gap-1"
+                          >
+                            <User className="w-2.5 h-2.5 shrink-0" />{" "}
+                            <span className="truncate max-w-[7rem]">
+                              {nomeUser(t.responsavel_id)}
+                            </span>
                           </span>
                         )}
                       </div>

@@ -13,11 +13,14 @@ import {
 import api from "../lib/api";
 import ExtratoSocio from "../components/ExtratoSocio";
 
-const fmtMoney = (v: number) =>
-  v?.toLocaleString("pt-BR", { style: "currency", currency: "BRL" }) ??
-  "R$ 0,00";
+const fmtMoney = (v?: number | null) =>
+  (Number.isFinite(v) ? (v as number) : 0).toLocaleString("pt-BR", {
+    style: "currency",
+    currency: "BRL",
+  });
 
-const fmtPct = (v: number) => `${(v * 100).toFixed(1)}%`;
+const fmtPct = (v?: number | null) =>
+  Number.isFinite(v) ? `${((v as number) * 100).toFixed(1)}%` : "—";
 
 interface Socio {
   id: string;
@@ -209,13 +212,13 @@ export default function Sociedade() {
   };
 
   // KPIs
-  const totalDistrib = distrib.reduce((a, d) => a + d.valor_total, 0);
+  const totalDistrib = distrib.reduce((a, d) => a + (d.valor_total ?? 0), 0);
   const totalSaquesPagos = withdrawals
     .filter((w) => w.status === "paid")
-    .reduce((a, w) => a + w.net_value, 0);
+    .reduce((a, w) => a + (w.net_value ?? 0), 0);
   const totalSaquesPendentes = withdrawals
     .filter((w) => w.status === "pending")
-    .reduce((a, w) => a + w.gross_value, 0);
+    .reduce((a, w) => a + (w.gross_value ?? 0), 0);
 
   if (loading)
     return (

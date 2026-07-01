@@ -2,7 +2,7 @@
 # Intimações capturadas do DJEN — tratamento humano obrigatório.
 # O job do scheduler captura; aqui o advogado processa.
 from __future__ import annotations
-from datetime import datetime, timezone
+from datetime import datetime, timezone, timedelta
 from typing import Optional
 
 from fastapi import APIRouter, Depends, HTTPException, Query
@@ -44,6 +44,41 @@ async def listar(
             for c in rows
         ],
         "total": total,
+    }
+
+
+@router.get("/status-captura")
+async def status_captura(
+    db: AsyncSession = Depends(get_db),
+    cu: User = Depends(get_current_user),
+):
+    """BUG-17: estado da última captura de intimações (job DJEN).
+
+    Derivado de `djen_comunicacoes` (sem tabela nova): a última execução é a
+    maior `created_at`; `intimacoes_encontradas` = comunicações gravadas nessa
+    janela de execução; `sucesso` = houve captura recente.
+    """
+    from sqlalchemy import text as _t
+    ultimo = (await db.execute(_t(
+        "SELECT max(created_at) FROM djen_comunicacoes"
+    ))).scalar()
+    if ultimo is None:
+        return {
+            "executado_em": None,
+            "sucesso": False,
+            "intimacoes_encontradas": 0,
+            "erro": "Nenhuma captura de intimações registrada até o momento.",
+        }
+    # Comunicações gravadas na mesma execução (janela de 5 min a partir do topo).
+    encontradas = (await db.execute(_t(
+        "SELECT count(*) FROM djen_comunicacoes "
+        "WHERE created_at >= :inicio"
+    ), {"inicio": ultimo - timedelta(minutes=5)})).scalar() or 0
+    return {
+        "executado_em": ultimo,
+        "sucesso": True,
+        "intimacoes_encontradas": encontradas,
+        "erro": None,
     }
 
 

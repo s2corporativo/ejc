@@ -3,9 +3,28 @@
 # prompt_sanitizado = o que foi enviado (SEM PII); status HITL rastreado.
 from __future__ import annotations
 from sqlalchemy import Column, String, DateTime, Enum as SAEnum, func, Text, Boolean, Integer, Numeric, ForeignKey
-from sqlalchemy.orm import relationship
+from sqlalchemy.orm import relationship, validates
 from app.core.database import Base
 import enum
+
+
+# BUG-22: nome do modelo canônico. O gateway às vezes gravava o modelo sem o
+# prefixo do provedor (ex.: "llama-3.3-70b-versatile") e às vezes com
+# ("groq/llama-3.3-70b-versatile"). Normalizamos no WRITE path (validador do ORM)
+# para que TODO ai_log persista sempre a forma canônica com provedor.
+def normalizar_modelo_ia(modelo: str | None) -> str | None:
+    if not modelo:
+        return modelo
+    m = modelo.strip()
+    if not m:
+        return m
+    # Já tem provedor (contém "/") → mantém como está.
+    if "/" in m:
+        return m
+    # Sem provedor: modelos Groq/Llama recebem o prefixo canônico.
+    if m.lower().startswith("llama"):
+        return f"groq/{m}"
+    return m
 
 
 class AIStatusHITL(str, enum.Enum):
@@ -51,3 +70,9 @@ class AILog(Base):
     created_at = Column(DateTime(timezone=True), server_default=func.now(), index=True)
 
     user = relationship("User", foreign_keys=[user_id], back_populates="ai_logs")
+
+    @validates("modelo")
+    def _normalizar_modelo(self, key, value):
+        # BUG-22: canoniza o nome do modelo em qualquer INSERT (todos os
+        # write paths passam por aqui — ai_gateway/ai_service/peca_service/etc.).
+        return normalizar_modelo_ia(value)

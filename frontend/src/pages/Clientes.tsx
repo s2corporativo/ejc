@@ -1,5 +1,6 @@
 import { toast } from "../components/Toast";
 import { useEffect, useState } from "react";
+import { Link } from "react-router-dom";
 import { Plus, Search, ShieldAlert } from "lucide-react";
 import api from "../lib/api";
 import type { Client, Paged } from "../types";
@@ -87,7 +88,7 @@ export default function Clientes() {
     <div>
       <PageHeader
         title="Clientes"
-        subtitle={`${data?.total ?? 0} cadastrados`}
+        subtitle={`${data?.total ?? 0} ${(data?.total ?? 0) === 1 ? "cadastrado" : "cadastrados"}`}
         actions={
           <button className="btn-gold" onClick={() => setModal(true)}>
             <Plus size={16} /> Novo cliente
@@ -128,7 +129,12 @@ export default function Clientes() {
               {data.data.map((c) => (
                 <tr key={c.id} className="hover:bg-slate-50">
                   <td className="px-4 py-3 font-medium text-navy">
-                    {c.nome || c.razao_social}
+                    <Link
+                      to={`/clientes/${c.id}`}
+                      className="hover:text-bronze hover:underline"
+                    >
+                      {c.nome || c.razao_social}
+                    </Link>
                   </td>
                   <td className="px-4 py-3">{c.tipo}</td>
                   <td className="px-4 py-3 text-slate-500">

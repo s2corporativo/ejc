@@ -40,11 +40,13 @@ import {
   ShieldCheck,
   Sparkles,
   Sun,
+  Swords,
   Trash2,
   Users,
   Wallet,
   X,
 } from "lucide-react";
+import { toast } from "./Toast";
 import CommandPalette from "./CommandPalette";
 import OnboardingTour from "./OnboardingTour";
 import SecurityMenu from "./SecurityMenu";
@@ -62,6 +64,7 @@ type NavItem = {
   group: string;
   roles?: string[];
   end?: boolean;
+  onClick?: () => void;
 };
 
 const NAV: NavItem[] = [
@@ -95,6 +98,14 @@ const NAV: NavItem[] = [
     group: "Juridico",
   },
   { to: "/tarefas", label: "Tarefas", icon: CheckSquare, group: "Juridico" },
+  {
+    to: "/casos?filtro=ativos",
+    label: "Sala de Guerra",
+    icon: Swords,
+    group: "Juridico",
+    onClick: () =>
+      toast.info("Selecione um caso para acessar a Sala de Guerra"),
+  },
   { to: "/ramos", label: "Ramos do Direito", icon: Scale, group: "Juridico" },
 
   // ── Produção ──
@@ -421,13 +432,16 @@ export default function Layout() {
                 )}
                 {(collapsed || isOpen) && (
                   <div className="space-y-1">
-                    {items.map(({ to, label, icon: Icon, end }) => {
+                    {items.map(({ to, label, icon: Icon, end, onClick }) => {
                       const content = (
                         <NavLink
                           key={to}
                           to={to}
                           end={end}
-                          onClick={() => setMenuOpen(false)}
+                          onClick={() => {
+                            setMenuOpen(false);
+                            onClick?.();
+                          }}
                           className={({ isActive }) =>
                             cn(
                               "group flex h-10 items-center gap-3 rounded-lg px-3 text-sm font-medium transition-all",

@@ -185,6 +185,8 @@ function CalendarView({ items }: { items: Activity[] }) {
       <div className="flex items-center justify-between px-4 py-3 border-b border-slate-100">
         <button
           onClick={prevMonth}
+          aria-label="Mês anterior"
+          title="Mês anterior"
           className="p-1.5 hover:bg-slate-100 rounded-lg transition-colors text-slate-500"
         >
           ◂
@@ -194,6 +196,8 @@ function CalendarView({ items }: { items: Activity[] }) {
         </h3>
         <button
           onClick={nextMonth}
+          aria-label="Próximo mês"
+          title="Próximo mês"
           className="p-1.5 hover:bg-slate-100 rounded-lg transition-colors text-slate-500"
         >
           ▸
@@ -523,18 +527,23 @@ export default function CentralAtividades() {
         <div className="flex gap-2">
           <button
             onClick={() => setView("lista")}
+            aria-label="Visualização em lista"
+            title="Lista"
             className={`p-2 rounded-lg border transition-colors ${view === "lista" ? "bg-navy text-white border-navy" : "bg-white text-slate-500 border-slate-200 hover:border-slate-300"}`}
           >
             <List className="w-4 h-4" />
           </button>
           <button
             onClick={() => setView("calendario")}
+            aria-label="Visualização em calendário"
+            title="Calendário"
             className={`p-2 rounded-lg border transition-colors ${view === "calendario" ? "bg-navy text-white border-navy" : "bg-white text-slate-500 border-slate-200 hover:border-slate-300"}`}
           >
             <Calendar className="w-4 h-4" />
           </button>
           <button
             onClick={() => setView("timeline")}
+            aria-label="Visualização em timeline"
             title="Timeline"
             className={`p-2 rounded-lg border transition-colors ${view === "timeline" ? "bg-navy text-white border-navy" : "bg-white text-slate-500 border-slate-200 hover:border-slate-300"}`}
           >
@@ -542,6 +551,7 @@ export default function CentralAtividades() {
           </button>
           <button
             onClick={() => setView("kanban")}
+            aria-label="Visualização em quadro"
             title="Quadro"
             className={`p-2 rounded-lg border transition-colors ${view === "kanban" ? "bg-navy text-white border-navy" : "bg-white text-slate-500 border-slate-200 hover:border-slate-300"}`}
           >
@@ -687,6 +697,8 @@ export default function CentralAtividades() {
               </h3>
               <button
                 onClick={() => setModal(false)}
+                aria-label="Fechar"
+                title="Fechar"
                 className="text-slate-400 hover:text-slate-600"
               >
                 <X className="w-4 h-4" />

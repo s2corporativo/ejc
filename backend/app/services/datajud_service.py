@@ -6,7 +6,7 @@ from __future__ import annotations
 import hashlib
 import logging
 import re
-from datetime import datetime
+from datetime import datetime, timezone
 from uuid import uuid4
 
 import httpx
@@ -285,4 +285,83 @@ async def _criar_deadline_automatico(
     # Atualiza metadados de sucesso
     case.last_synced_at = datetime.now(timezone.utc)
     case.sync_pending = False
-    return inseridos
+
+
+# ── BUG-16: sincronização de PRAZOS a partir do DataJud ──────────────────────
+def _ref_datajud(numero_cnj: str, data: str, titulo: str) -> str:
+    """Chave estável de dedup de prazo: hash(CNJ|data|titulo)."""
+    n = re.sub(r"\D", "", numero_cnj or "")
+    return hashlib.sha1(f"{n}|{data}|{titulo}".encode()).hexdigest()[:32]
+
+
+async def sincronizar_prazos_datajud(
+    caso_id: str, numero_cnj: str, db: AsyncSession
+) -> dict:
+    """Puxa movimentos do DataJud e cria prazos (deadlines) não-duplicados.
+
+    - Dedup por `referencia_datajud` (hash CNJ|data|titulo) — nunca reimporta
+      o mesmo prazo.
+    - Cada prazo é RASCUNHO/HITL: origem='datajud', exige revisão do advogado.
+    - Fail-safe: se o DataJud estiver indisponível/sem movimentos, retorna 0 sem
+      quebrar o fluxo que a chamou.
+
+    Retorna {"criados": int, "encontrados": int, "erro": str|None}.
+    """
+    from app.models.deadline import Deadline
+
+    if not numero_cnj:
+        return {"criados": 0, "encontrados": 0, "erro": "Caso sem número CNJ."}
+
+    try:
+        info = await consultar_processo(numero_cnj)
+    except Exception as e:
+        logger.warning(f"[DataJud] consulta de prazos falhou p/ {numero_cnj}: {e}")
+        return {"criados": 0, "encontrados": 0, "erro": str(e)[:200]}
+
+    if not info or not info.get("movimentos"):
+        return {"criados": 0, "encontrados": 0, "erro": None}
+
+    # Responsável do caso (para atribuir o prazo).
+    case = (await db.execute(
+        select(Case).where(Case.id == caso_id)
+    )).scalar_one_or_none()
+    responsavel_id = getattr(case, "advogado_responsavel_id", None) if case else None
+
+    # Referências já importadas (dedup por referencia_datajud).
+    from sqlalchemy import text as _text
+    refs_existentes = set((await db.execute(_text(
+        "SELECT referencia_datajud FROM deadlines "
+        "WHERE case_id = :cid AND referencia_datajud IS NOT NULL"
+    ), {"cid": caso_id})).scalars().all())
+
+    criados = 0
+    encontrados = 0
+    for mov in info["movimentos"]:
+        data_ev = datetime.fromisoformat(mov["data"]) if mov.get("data") else None
+        prazos = _detectar_prazos_criticos(mov["descricao"], data_ev)
+        for p in prazos:
+            encontrados += 1
+            ref = _ref_datajud(numero_cnj, mov.get("data", ""), p["titulo"])
+            if ref in refs_existentes:
+                continue
+            db.add(Deadline(
+                id=str(uuid4()),
+                case_id=caso_id,
+                titulo=p["titulo"],
+                descricao=(
+                    f"[ALERTA AUTOMÁTICO — DataJud]\n"
+                    f"Movimento: {mov['descricao'][:200]}\n"
+                    f"{p['aviso']}\n"
+                    f"⚠️ Revisar e confirmar o prazo antes de qualquer uso (HITL/OAB)."
+                ),
+                data_prazo=p["data_prazo"],
+                tipo=p["tipo"],
+                status="pendente",
+                responsavel_id=responsavel_id,
+                origem="datajud",
+                referencia_datajud=ref,
+            ))
+            refs_existentes.add(ref)
+            criados += 1
+
+    return {"criados": criados, "encontrados": encontrados, "erro": None}

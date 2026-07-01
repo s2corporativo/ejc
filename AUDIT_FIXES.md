@@ -15,42 +15,42 @@ Legenda de status: ⬜ pendente · 🟡 em andamento · ✅ código pronto · �
 ## GRUPO 1 — CRÍTICOS
 | ID | Descrição | Status | Notas |
 |----|-----------|--------|-------|
-| BUG-01 | Aba "Societária" — tela branca (crash React) + ErrorBoundary | ⬜ | frontend |
-| BUG-02 | Sala de Guerra — `[object Object]` em Fatores de Risco | ⬜ | front+shape backend |
-| BUG-03 | Título de caso com JSON bruto da IA (DPT-2026-0013) | ⬜ | backend + fix dado |
-| BUG-04 | Base RAG — 5.009 documentos "sem_vetor" | ⬜ | script + rodar na VPS |
-| BUG-05 | Botão WhatsApp redireciona para `/` | ⬜ | frontend/rota |
+| BUG-01 | Aba "Societária" — tela branca (crash React) + ErrorBoundary | 🚀 | ErrorBoundary + guardas Number.isFinite em Sociedade |
+| BUG-02 | Sala de Guerra — `[object Object]` em Fatores de Risco | 🚀 | `fatoresRiscoToText` (jsonb vazio → "Nenhum fator...") |
+| BUG-03 | Título de caso com JSON bruto da IA (DPT-2026-0013) | 🚀 | ia_parser + 422 + dado corrigido |
+| BUG-04 | Base RAG — 5.009 documentos "sem_vetor" | 🚀 | reconciliado (5009 vetorizado, 0 sem_vetor) + pipeline + /rag/status |
+| BUG-05 | Botão WhatsApp redireciona para `/` | 🚀 | rota `/whatsapp` + página |
 
 ## GRUPO 2 — ALTOS
 | ID | Descrição | Status | Notas |
 |----|-----------|--------|-------|
-| BUG-06 | Contagem inconsistente de casos | ⬜ | endpoint stats unificado |
-| BUG-07 | Taxa de conversão = 10000% (div/0) | ⬜ | back+front |
-| BUG-08 | HITL 0% — fluxo formal de aprovação de peças IA | ⬜ | migração + endpoints + UI |
-| BUG-09 | Perfis duplicados "Clóvis José Soares" | ⬜ | dedup + unique constraint |
-| BUG-10 | Gráfico de áreas omite caso Trabalhista | ⬜ | junto de BUG-06 |
+| BUG-06 | Contagem inconsistente de casos | 🚀 | `/cases/stats` unificado (deleted_at IS NULL) |
+| BUG-07 | Taxa de conversão = 10000% (div/0) | 🚀 | backend 0–100/null + front sem ×100 |
+| BUG-08 | HITL 0% — fluxo formal de aprovação de peças IA | 🚀 | `PATCH /legal-docs/{id}/aprovar` (campos já existiam) + UI |
+| BUG-09 | Perfis duplicados "Clóvis José Soares" | ⛔ | script pronto; aguarda confirmação (reassign+desativar) |
+| BUG-10 | Gráfico de áreas omite caso Trabalhista | 🚀 | por_area inclui trabalhista |
 
 ## GRUPO 3 — MÉDIOS
 | ID | Descrição | Status | Notas |
 |----|-----------|--------|-------|
-| BUG-11 | Sala de Guerra sem rota no menu lateral | ⬜ | sidebar |
-| BUG-12 | Despesas recorrentes R$0,00 — validação | ⬜ | form |
-| BUG-13 | Dados de teste em produção | ⬜ | script UPDATE (arquivar) |
-| BUG-14 | Casos encerrados sem mensagem ao adicionar | ⬜ | frontend |
-| BUG-15 | IA "Gerar teses" — loading infinito | ⬜ | timeout 30s |
-| BUG-16 | Prazos não importam do DataJud | ⬜ | serviço sync |
-| BUG-17 | Intimações sem status/timestamp de captura | ⬜ | endpoint + UI |
+| BUG-11 | Sala de Guerra sem rota no menu lateral | 🚀 | item na sidebar + toast |
+| BUG-12 | Despesas recorrentes R$0,00 — validação | 🚀 | aviso âmbar em Despesas |
+| BUG-13 | Dados de teste em produção | ⛔ | script pronto; aguarda confirmação (arquivar ~11 casos) |
+| BUG-14 | Casos encerrados sem mensagem ao adicionar | 🚀 | banner + reabrir |
+| BUG-15 | IA "Gerar teses" — loading infinito | 🚀 | AbortSignal.timeout(30s) |
+| BUG-16 | Prazos não importam do DataJud | 🚀 | sincronizar_prazos_datajud + endpoints + migração 057 |
+| BUG-17 | Intimações sem status/timestamp de captura | 🚀 | `/intimacoes/status-captura` + card |
 
 ## GRUPO 4 — BAIXOS / UX
 | ID | Descrição | Status | Notas |
 |----|-----------|--------|-------|
-| BUG-18 | Documento "ddd" | ⬜ | via BUG-13 |
-| BUG-19 | "1 cadastrados" — concordância | ⬜ | frontend |
-| BUG-20 | Nome de responsável truncado | ⬜ | tooltip |
-| BUG-21 | Numeração de casos com lacunas — soft delete | ⬜ | migração + código |
-| BUG-22 | Modelo IA com/sem prefixo "groq/" | ⬜ | logger |
-| BUG-23 | Botões de ícone sem aria-label (Atividades) | ⬜ | a11y |
-| BUG-24 | Clientes sem deep link | ⬜ | rota |
+| BUG-18 | Documento "ddd" | 🚀 | renomeado |
+| BUG-19 | "1 cadastrados" — concordância | 🚀 | pluralização |
+| BUG-20 | Nome de responsável truncado | 🚀 | tooltip + truncate |
+| BUG-21 | Numeração de casos com lacunas — soft delete | 🚀 | delete já é soft (deleted_at); listagens filtram |
+| BUG-22 | Modelo IA com/sem prefixo "groq/" | 🚀 | validator no ORM + write paths + dado normalizado |
+| BUG-23 | Botões de ícone sem aria-label (Atividades) | 🚀 | aria-label/title |
+| BUG-24 | Clientes sem deep link | 🚀 | rota `/clientes/:id` |
 
 ---
 
@@ -66,4 +66,21 @@ Legenda de status: ⬜ pendente · 🟡 em andamento · ✅ código pronto · �
 
 ## Log de execução
 - 2026-07-01 — Início. Ambiente mapeado; SSH VPS OK; DB produção = container `ejc_db` (pgvector pg16). Tracker criado.
-- 2026-07-01 — Agentes de código (frontend + backend) despachados em paralelo. Recon read-only de produção concluído (acima). Backend agent corrigido quanto a BUG-04/09/21 via mensagem.
+- 2026-07-01 — Agentes de código (frontend + backend) despachados em paralelo. Recon read-only de produção concluído (acima).
+- 2026-07-01 — **PIVÔ CRÍTICO**: descoberto que o workspace local estava DEFASADO e divergente da produção (`/opt/ejc`). Fonte da verdade = produção (decisão do usuário). Ações:
+  - Backup completo em `/opt/ejc/backups/audit_20260701`: `ejc_db.dump` (68M, custom format), `src_snapshot.tgz`, `uncommitted_hotfixes.diff` (22k linhas — hotfixes de prod preservados), `git_status.txt`.
+  - SFTP download quebrado no servidor (só upload+exec funcionam) → source de prod trazido via base64/exec.
+  - Local repo espelhado exatamente à produção (backend/app + frontend/src idênticos; alembic 52 migrações, head único `056_processes_is_principal`). Leftovers do snapshot antigo e migrações espúrias dos agentes anteriores movidos para quarentena (scratch).
+  - Commit baseline local `47359b7`.
+  - **Descoberta**: a maioria dos campos que a auditoria queria criar JÁ EXISTE em produção → BUG-08 (legal_docs.human_reviewed/revisor_id/notas_revisao/ai_generated), BUG-21 (cases.deleted_at) sem migração. Migrações novas mínimas: `users UNIQUE(email)` e `deadlines(origem, referencia_datajud)`.
+  - Agentes de código relançados contra a árvore correta (head 056), migrações encadeadas a partir de `056`.
+- 2026-07-01 — Deploy será por arquivo via `vps-tools/sync.js` (upload SFTP OK) + `docker exec ejc_backend alembic upgrade head` (não há auto-migrate) + rebuild frontend. Data-fixes SQL em `scripts/audit_2026-07-01/`.
+- 2026-07-01 — **DEPLOY EXECUTADO E VERIFICADO EM PRODUÇÃO**:
+  - Descoberto que containers rodam código EMBUTIDO na imagem (sem bind-mount) → deploy exige REBUILD, não só restart. `sync.js` (restart-only) não bastaria para o backend.
+  - Backup fresco pré-deploy: `/opt/ejc/backups/audit_20260701_predeploy/ejc_db.dump` (68M).
+  - 33 arquivos enviados (15 backend + 2 migrações + 16 frontend), normalizados p/ LF. Confirmado que nenhum hotfix de produção foi sobrescrito (hashes idênticos, exceto CRLF).
+  - `docker compose build backend` + recreate + `alembic upgrade head` → head **058**. Colunas `deadlines.origem/referencia_datajud` e índice `uq_users_email` criados. Health `{"status":"ok","database":true}`.
+  - Data-fixes aplicados (com backup): BUG-03 (título), BUG-04 (4886 docs → indexado; 0 sem_vetor), BUG-18 (doc ddd), BUG-22 (28 logs normalizados).
+  - Smoke test autenticado (superadmin): `/cases/stats`={total:9,ativos:6,encerrados:3,por_area inclui trabalhista} ✓ · `/rag/status`={vetorizado:5009,sem_vetor:0} ✓ · `/intimacoes/status-captura` ✓ · rotas `/aprovar` registradas (401 sem auth).
+  - `docker compose build frontend` + recreate. Público TLS 200. Chunk `Whatsapp-*.js` presente.
+  - **22/24 bugs em produção.** Pendentes de confirmação explícita: **BUG-09** (merge/desativação de usuário duplicado) e **BUG-13** (arquivar ~11 casos de teste).

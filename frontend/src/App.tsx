@@ -63,6 +63,7 @@ const DiarioOficial = lazy(() => import("./pages/DiarioOficial"));
 const Assinaturas = lazy(() => import("./pages/Assinaturas"));
 const Ajuda = lazy(() => import("./pages/Ajuda"));
 const Sociedade = lazy(() => import("./pages/Sociedade"));
+const Whatsapp = lazy(() => import("./pages/Whatsapp"));
 const DashboardIA = lazy(() => import("./pages/DashboardIA"));
 const GovernancaIA = lazy(() => import("./pages/GovernancaIA"));
 const ConteudoJuridico = lazy(() => import("./pages/ConteudoJuridico"));
@@ -163,6 +164,7 @@ export default function App() {
           >
             <Route path="/" element={<Dashboard />} />
             <Route path="/clientes" element={<Clientes />} />
+            <Route path="/clientes/:clientId" element={<DossieCliente />} />
             <Route
               path="/clientes/:clientId/dossie"
               element={<DossieCliente />}
@@ -270,7 +272,7 @@ export default function App() {
               element={<DespesasRecorrentes />}
             />
             <Route path="/crm-leads" element={<CRMLeads />} />
-            <Route path="/whatsapp" element={<Navigate to="/" replace />} />
+            <Route path="/whatsapp" element={<Whatsapp />} />
             <Route
               path="/ia"
               element={

@@ -44,6 +44,41 @@ async def sync_case(
         raise HTTPException(400, "Case has no numero_processo")
     try:
         synced = await datajud_service.sincronizar_caso(db, case)
-        return {"synced": synced, "numero_processo": case.numero_processo}
+        # BUG-16: ao sincronizar o caso, também sincroniza os PRAZOS (rascunho/HITL).
+        prazos = await datajud_service.sincronizar_prazos_datajud(
+            case.id, case.numero_processo, db
+        )
+        await db.commit()
+        return {
+            "synced": synced,
+            "numero_processo": case.numero_processo,
+            "prazos": prazos,
+        }
     except Exception as e:
         raise HTTPException(502, f"DataJud sync error: {str(e)}")
+
+
+@router.post("/cases/{case_id}/sync-prazos")
+async def sync_prazos(
+    case_id: str,
+    db: AsyncSession = Depends(get_db),
+    current_user=Depends(get_current_user),
+):
+    """BUG-16: sincronização MANUAL de prazos do caso a partir do DataJud.
+
+    Cria prazos (deadlines) preliminares — rascunho, exigem revisão do advogado
+    (HITL/OAB). Dedup por referencia_datajud: reexecutar não duplica.
+    """
+    result = await db.execute(
+        select(Case).where(Case.id == case_id, Case.deleted_at.is_(None))
+    )
+    case = result.scalar_one_or_none()
+    if not case:
+        raise HTTPException(404, "Case not found")
+    if not case.numero_processo:
+        raise HTTPException(400, "Case has no numero_processo")
+    prazos = await datajud_service.sincronizar_prazos_datajud(
+        case.id, case.numero_processo, db
+    )
+    await db.commit()
+    return {"numero_processo": case.numero_processo, "prazos": prazos}

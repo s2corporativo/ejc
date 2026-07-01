@@ -298,6 +298,7 @@ function TabResumo({ caso }: { caso: Case }) {
   const [novoMov, setNovoMov] = useState("");
   const [encModal, setEncModal] = useState(false);
   const [encLoading, setEncLoading] = useState(false);
+  const [reabrindo, setReabrindo] = useState(false);
   const [enc, setEnc] = useState({
     resultado: "exito_total",
     motivo_resultado: "",
@@ -331,6 +332,19 @@ function TabResumo({ caso }: { caso: Case }) {
       toast.error(e.response?.data?.detail || "Falha ao encerrar");
     } finally {
       setEncLoading(false);
+    }
+  };
+
+  const reabrir = async () => {
+    setReabrindo(true);
+    try {
+      await api.patch(`/cases/${caso.id}`, { status: "ativo" });
+      toast.success("Caso reaberto.");
+      window.location.reload();
+    } catch (e: any) {
+      toast.error(e.response?.data?.detail || "Falha ao reabrir caso");
+    } finally {
+      setReabrindo(false);
     }
   };
 
@@ -434,8 +448,34 @@ function TabResumo({ caso }: { caso: Case }) {
     }
   };
 
+  const casoEncerrado =
+    caso.status === "encerrado" || caso.status === "arquivado";
+
   return (
     <div className="space-y-5">
+      {casoEncerrado && (
+        <div className="flex flex-wrap items-center justify-between gap-3 rounded-lg border border-amber-200 bg-amber-50 px-4 py-3">
+          <p className="text-sm text-amber-800">
+            Este caso está{" "}
+            <strong>
+              {caso.status === "arquivado" ? "arquivado" : "encerrado"}
+            </strong>
+            . Edições e novos lançamentos estão bloqueados enquanto ele não for
+            reaberto.
+          </p>
+          <button
+            onClick={reabrir}
+            disabled={reabrindo}
+            className="btn-secondary flex items-center gap-1 whitespace-nowrap border-amber-300 text-amber-800"
+          >
+            <RefreshCw
+              size={14}
+              className={reabrindo ? "animate-spin" : ""}
+            />
+            {reabrindo ? "Reabrindo..." : "Reabrir caso"}
+          </button>
+        </div>
+      )}
       <div className="flex gap-2 flex-wrap">
         <button
           onClick={analisarIA}
