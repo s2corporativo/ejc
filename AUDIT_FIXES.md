@@ -27,7 +27,7 @@ Legenda de status: ⬜ pendente · 🟡 em andamento · ✅ código pronto · �
 | BUG-06 | Contagem inconsistente de casos | 🚀 | `/cases/stats` unificado (deleted_at IS NULL) |
 | BUG-07 | Taxa de conversão = 10000% (div/0) | 🚀 | backend 0–100/null + front sem ×100 |
 | BUG-08 | HITL 0% — fluxo formal de aprovação de peças IA | 🚀 | `PATCH /legal-docs/{id}/aprovar` (campos já existiam) + UI |
-| BUG-09 | Perfis duplicados "Clóvis José Soares" | ⛔ | script pronto; aguarda confirmação (reassign+desativar) |
+| BUG-09 | Perfis duplicados "Clóvis José Soares" | 🚀 | refs reatribuídas p/ af6e457a; f23aeeb8 inativada (soft) + índice uq_users_email |
 | BUG-10 | Gráfico de áreas omite caso Trabalhista | 🚀 | por_area inclui trabalhista |
 
 ## GRUPO 3 — MÉDIOS
@@ -35,7 +35,7 @@ Legenda de status: ⬜ pendente · 🟡 em andamento · ✅ código pronto · �
 |----|-----------|--------|-------|
 | BUG-11 | Sala de Guerra sem rota no menu lateral | 🚀 | item na sidebar + toast |
 | BUG-12 | Despesas recorrentes R$0,00 — validação | 🚀 | aviso âmbar em Despesas |
-| BUG-13 | Dados de teste em produção | ⛔ | script pronto; aguarda confirmação (arquivar ~11 casos) |
+| BUG-13 | Dados de teste em produção | 🚀 | 6 casos de teste arquivados (soft); 3 casos reais vivos |
 | BUG-14 | Casos encerrados sem mensagem ao adicionar | 🚀 | banner + reabrir |
 | BUG-15 | IA "Gerar teses" — loading infinito | 🚀 | AbortSignal.timeout(30s) |
 | BUG-16 | Prazos não importam do DataJud | 🚀 | sincronizar_prazos_datajud + endpoints + migração 057 |
@@ -84,3 +84,9 @@ Legenda de status: ⬜ pendente · 🟡 em andamento · ✅ código pronto · �
   - Smoke test autenticado (superadmin): `/cases/stats`={total:9,ativos:6,encerrados:3,por_area inclui trabalhista} ✓ · `/rag/status`={vetorizado:5009,sem_vetor:0} ✓ · `/intimacoes/status-captura` ✓ · rotas `/aprovar` registradas (401 sem auth).
   - `docker compose build frontend` + recreate. Público TLS 200. Chunk `Whatsapp-*.js` presente.
   - **22/24 bugs em produção.** Pendentes de confirmação explícita: **BUG-09** (merge/desativação de usuário duplicado) e **BUG-13** (arquivar ~11 casos de teste).
+- 2026-07-01 — **CONCLUÍDO (24/24)**:
+  - BUG-09 aplicado: refs de `f23aeeb8` reatribuídas p/ `af6e457a` (cases 1, case_checklists 2, socios 1, notifications 9); `f23aeeb8` inativada (is_active=false, deleted_at) — soft, reversível. Sem DELETE físico.
+  - BUG-13 aplicado: 6 casos de teste arquivados (soft-delete); base agora com 3 casos reais vivos (DPT-0011/0012/0013). `/cases/stats`={total:3,ativos:1,encerrados:2,civil:3} consistente.
+  - **GitHub** (conforme decisão do usuário): `origin/main` preservado em branch de backup `backup/main-pre-audit-20260701` (commit c97392f, 40 commits do time), depois **force-push** do baseline+fixes → `origin/main` = `e1ed767`. Recuperável via branch de backup.
+  - Scripts SQL: `scripts/audit_2026-07-01/` (01–07). Backups do banco em `/opt/ejc/backups/audit_20260701*`.
+  - ⚠️ Observação para o time: `origin/main` foi reescrito. Os 40 commits (PRs #6/#7/#8, portal chat, refatoração UI) estão em `backup/main-pre-audit-20260701` — reconciliar quando conveniente. CI (pytest) pode ficar vermelho pois exige banco.
