@@ -120,6 +120,7 @@ async def analisar_caso(
     numero_processo: str = "",
     area: str = "",
     nomes_proteger: list[str] | None = None,
+    scope_client_id: str | None = None,
     db=None,
 ) -> dict:
     """
@@ -162,7 +163,9 @@ async def analisar_caso(
         try:
             from app.services.ai_service import buscar_contexto_rag
             _q = " ".join(x for x in [area, titulo, (fatos or objeto or texto_documento or "")[:300]] if x)
-            _chunks = await buscar_contexto_rag(db, _q, limite=6, modo_or=True)
+            _chunks = await buscar_contexto_rag(
+                db, _q, limite=6, modo_or=True, scope_client_id=scope_client_id
+            )
             if _chunks:
                 _blocos = []
                 for _c in _chunks:
@@ -210,6 +213,16 @@ async def analisar_caso(
             return {"erro": "Falha ao parsear resposta da IA"}
         if isinstance(resultado, dict):
             resultado["_fontes_rag"] = _fontes_rag
+            # A3 (auditoria 2026-06-30): verifica súmulas/artigos citados contra a
+            # base oficial e anexa o relatório — anti-alucinação (regra absoluta).
+            if db is not None:
+                try:
+                    from app.services.citation_check import verificar_citacoes
+                    resultado["_verificacao_citacoes"] = await verificar_citacoes(
+                        db, json.dumps(resultado, ensure_ascii=False)
+                    )
+                except Exception as _e:
+                    logger.warning("citation_check (analise) falhou: %s", _e)
         return resultado
     except Exception as e:
         logger.error(f"Erro na análise estratégica: {e}")
