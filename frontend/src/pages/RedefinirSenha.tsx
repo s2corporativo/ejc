@@ -21,7 +21,7 @@ export default function RedefinirSenha() {
       return;
     }
     try {
-      await axios.post("/api/v1/auth/redefinir-senha", {
+      await axios.post("/api/auth/redefinir-senha", {
         token,
         nova_senha: senha,
       });

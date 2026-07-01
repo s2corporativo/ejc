@@ -99,7 +99,9 @@ async def criar(
     payload: CaseCreate,
     background: BackgroundTasks,
     db: AsyncSession = Depends(get_db),
-    cu: User = Depends(get_current_user),
+    cu: User = Depends(require_roles(
+        ["superadmin", "admin", "socio", "advogado", "advogado_auxiliar", "secretaria"]
+    )),  # M16 (auditoria 2026-06-30): criar caso = equipe jurídica/gestão/intake
 ):
     # Validar cliente
     client = (await db.execute(
@@ -689,6 +691,7 @@ async def analisar_caso_ia(
         numero_processo=getattr(case, 'numero_processo', '') or '',
         area=area_val,
         nomes_proteger=nomes_proteger,
+        scope_client_id=getattr(case, 'client_id', None),  # A2: RAG restrito ao próprio cliente
         db=db,
     )
 

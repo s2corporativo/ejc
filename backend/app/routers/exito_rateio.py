@@ -98,9 +98,14 @@ async def gerar_rateio(
     calc = await _calcular(fee_id, db)
     if not calc["pago"]:
         raise HTTPException(422, "Honorário de êxito ainda não foi pago")
-    partner_id = calc["titular"]["partner_id"]
-    if not partner_id:
+    socio_id = calc["titular"]["partner_id"]  # socios.id — prova de que o titular é sócio
+    if not socio_id:
         raise HTTPException(422, "Advogado titular do caso não é sócio cadastrado — rateio manual necessário")
+    # A13 (auditoria 2026-06-30): partner_withdrawals.partner_id é, por convenção
+    # unificada, o users.id (igual ao create_withdrawal e ao filtro "minhas
+    # retiradas"). Antes gravava socios.id -> o rateio de êxito sumia da lista do
+    # próprio sócio. Passa a gravar o user_id do titular.
+    partner_id = calc["titular"]["user_id"]
 
     # Evita duplicar: já existe saque com esta referência?
     ref = f"exito:{fee_id}"

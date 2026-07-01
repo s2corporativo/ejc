@@ -84,6 +84,7 @@ from app.routers import indice_risco
 from app.routers import intelligence_v3
 from app.routers import intimacoes
 from app.routers import jurimetria
+from app.routers import jurimetria_extra
 from app.routers import jurisprudencia_externa
 from app.routers import jurisprudencia_interna
 from app.routers import kanban
@@ -283,6 +284,7 @@ app.include_router(indice_risco.router, prefix=API)
 app.include_router(intelligence_v3.router, prefix=API)
 app.include_router(intimacoes.router, prefix=API)
 app.include_router(jurimetria.router, prefix=API)
+app.include_router(jurimetria_extra.router, prefix=API)  # A5: router antes órfão (404 silencioso)
 app.include_router(jurisprudencia_externa.router, prefix=API)
 app.include_router(jurisprudencia_interna.router, prefix=API)
 app.include_router(kanban.router, prefix=API)

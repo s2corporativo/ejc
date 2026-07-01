@@ -47,14 +47,20 @@ async def analisar(
     if not conteudo:
         raise HTTPException(400, "Arquivo vazio.")
 
+    # Validação por magic bytes (server-side) — reusa a barreira do GED. Não
+    # confiar em content_type/extensão. Extensões sem mapa (.tiff/.webp) passam
+    # pelo fallback e ainda assim têm o MIME real detectado; .pdf/.docx/.png/.jpg
+    # ganham verificação estrita de conteúdo.
     sufixo = os.path.splitext(file.filename or "doc")[1] or ".bin"
+    from app.routers.documents import _validar_conteudo
+    mime_real = _validar_conteudo(sufixo.lower(), conteudo)
     tmp = tempfile.NamedTemporaryFile(delete=False, suffix=sufixo)
     try:
         tmp.write(conteudo)
         tmp.flush()
         tmp.close()
         resultado = await documento_service.extrair_e_analisar(
-            tmp.name, mimetype or None, db=db, enriquecer_rag=True
+            tmp.name, mime_real or mimetype or None, db=db, enriquecer_rag=True
         )
         if not resultado.get("ok"):
             raise HTTPException(422, resultado.get("erro", "Falha ao processar documento."))

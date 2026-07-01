@@ -30,10 +30,10 @@ router = APIRouter(prefix="/deadlines", tags=["Prazos"])
 async def calcular(req: CalcularPrazoRequest, cu: User = Depends(get_current_user)):
     """Calculadora rápida de prazo (sem persistir)."""
     if req.dias_uteis:
-        vencimento = prazo_dias_uteis(req.data_inicio, req.dias)
+        vencimento = prazo_dias_uteis(req.data_inicio, req.dias, tribunal=req.tribunal)
         modo = "dias úteis (CPC art. 219)"
     else:
-        vencimento = prazo_dias_corridos(req.data_inicio, req.dias)
+        vencimento = prazo_dias_corridos(req.data_inicio, req.dias, tribunal=req.tribunal)
         modo = "dias corridos c/ prorrogação (Lei 9.784 art. 66 §1º)"
     return {
         "data_vencimento": vencimento,
@@ -99,10 +99,10 @@ async def criar(
     base = payload.base_legal
     if not data_prazo and payload.dias_prazo and payload.data_intimacao:
         if payload.dias_uteis:
-            data_prazo = prazo_dias_uteis(payload.data_intimacao, payload.dias_prazo)
+            data_prazo = prazo_dias_uteis(payload.data_intimacao, payload.dias_prazo, tribunal=payload.tribunal)
             base = base or f"{payload.dias_prazo} dias úteis (CPC art. 219)"
         else:
-            data_prazo = prazo_dias_corridos(payload.data_intimacao, payload.dias_prazo)
+            data_prazo = prazo_dias_corridos(payload.data_intimacao, payload.dias_prazo, tribunal=payload.tribunal)
             base = base or f"{payload.dias_prazo} dias corridos (Lei 9.784)"
     if not data_prazo:
         raise HTTPException(

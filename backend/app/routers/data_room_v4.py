@@ -11,7 +11,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from pydantic import BaseModel
 
 from app.core.database import Base, get_db
-from app.core.security import require_roles, get_current_user
+from app.core.security import require_roles, get_current_user, ROLE_LEVEL
 from app.models.user import User
 
 # Model ORM
@@ -57,8 +57,13 @@ async def criar_sala(payload: SalaCreate, db: AsyncSession = Depends(get_db)):
 @router.get("/", response_model=List[SalaResponse])
 async def listar_salas(db: AsyncSession = Depends(get_db), cu: User = Depends(get_current_user)):
     q = select(DataRoomSala)
-    if cu.role.value == "cliente_externo":
+    role = cu.role.value
+    if role == "cliente_externo":
+        # cliente externo: apenas as próprias salas
         q = q.where(DataRoomSala.client_id == cu.client_id)
-    
+    elif ROLE_LEVEL.get(role, 0) < ROLE_LEVEL["advogado"]:
+        # IDOR (auditoria 2026-06-30): estagiário/secretaria/financeiro não
+        # listam todas as salas documentais do escritório.
+        raise HTTPException(403, "Sem permissão para listar data rooms")
     res = await db.execute(q)
     return res.scalars().all()

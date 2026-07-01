@@ -350,6 +350,26 @@ async def gerar_peca_pipeline(
     yield await _emit("step", {"etapa": 7, "titulo": "Documento montado", "status": "concluido"})
     documento_final = padronizar_documento_juridico(r7.texto)
 
+    # A3 (auditoria 2026-06-30): verifica as citações (súmulas/artigos) contra a
+    # base oficial e anexa o relatório — anti-alucinação (regra absoluta OAB).
+    # Fail-safe: falha na verificação não impede a entrega da minuta.
+    verificacao_citacoes = None
+    try:
+        from app.services.citation_check import verificar_citacoes
+        verificacao_citacoes = await verificar_citacoes(db, documento_final)
+        yield await _emit("step", {
+            "etapa": 8, "titulo": "Verificando citações na base oficial",
+            "status": "concluido",
+            "resultado": (
+                f"{verificacao_citacoes['confirmadas']}/{verificacao_citacoes['total']} "
+                "citações confirmadas"
+                if verificacao_citacoes.get("total") else "sem citações a verificar"
+            ),
+        })
+    except Exception as _e:
+        import logging as _lg
+        _lg.getLogger(__name__).warning("citation_check falhou: %s", _e)
+
     # ── Registra no AILog (HITL) ───────────────────────────────────────────
     log = AILog(
         id=str(uuid4()),
@@ -398,6 +418,7 @@ async def gerar_peca_pipeline(
         "fontes_usadas": len(fontes),
         "pii_removida": houve_pii,
         "tokens_totais": (log.tokens_input or 0) + (log.tokens_output or 0),
+        "verificacao_citacoes": verificacao_citacoes,
         "aviso": aviso_rascunho_ia(),
     })
 

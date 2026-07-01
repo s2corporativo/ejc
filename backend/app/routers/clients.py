@@ -6,6 +6,7 @@ from typing import Optional
 
 from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy import select, or_, func as sqlfunc
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 from pydantic import BaseModel  # noqa: E402 (module-level p/ _ResolverClienteReq)
 
@@ -85,7 +86,11 @@ async def resolver_cliente(
     db.add(novo)
     await criar_audit_log(db, cu.id, cu.role.value, "CREATE_AUTO", "clients", novo.id,
                           detalhes=f"import inteligente: {nome or cpf or cnpj}")
-    await db.commit()
+    try:
+        await db.commit()
+    except IntegrityError:
+        await db.rollback()
+        raise HTTPException(status_code=409, detail="CPF/CNPJ já cadastrado")
     return {"id": novo.id, "nome": novo.nome_exibicao, "criado": True}
 
 
@@ -93,7 +98,7 @@ async def resolver_cliente(
 async def verificar_conflito(
     req: ConflitoCheckRequest,
     db: AsyncSession = Depends(get_db),
-    cu: User = Depends(get_current_user),
+    cu: User = Depends(_req_clientes),
 ):
     """
     Verificação OBRIGATÓRIA antes de cadastrar cliente/caso (EOAB arts. 34-35).
@@ -204,7 +209,11 @@ async def criar(
                 f"{len(conflito['achados'])} achado(s)"
             ),
         )
-    await db.commit()
+    try:
+        await db.commit()
+    except IntegrityError:
+        await db.rollback()
+        raise HTTPException(status_code=409, detail="CPF/CNPJ já cadastrado")
     await db.refresh(c)
     return c
 
@@ -267,7 +276,11 @@ async def atualizar(
     for k, v in payload.model_dump(exclude_unset=True).items():
         setattr(c, k, v)
     await criar_audit_log(db, cu.id, cu.role.value, "UPDATE", "clients", client_id)
-    await db.commit()
+    try:
+        await db.commit()
+    except IntegrityError:
+        await db.rollback()
+        raise HTTPException(status_code=409, detail="CPF/CNPJ já cadastrado")
     await db.refresh(c)
     return c
 

@@ -170,7 +170,7 @@ export default function PecaGeneratorModal({
     });
 
     try {
-      const res = await fetch("/api/v1/pecas/gerar", {
+      const res = await fetch("/api/pecas/gerar", {
         method: "POST",
         headers: {
           "Content-Type": "application/json",

@@ -1,11 +1,11 @@
 """Produtividade — GET /analytics/produtividade?periodo=7d|30d|90d|365d
    Horas (time_entries) por advogado e por área. Alimenta Produtividade.tsx."""
 from datetime import date, timedelta
-from fastapi import APIRouter, Depends, Query
+from fastapi import APIRouter, Depends, Query, HTTPException
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import text
 from app.core.database import get_db
-from app.core.security import get_current_user
+from app.core.security import get_current_user, ROLE_LEVEL
 from app.models.user import User
 
 router = APIRouter(prefix="/analytics", tags=["analytics"])
@@ -13,11 +13,19 @@ router = APIRouter(prefix="/analytics", tags=["analytics"])
 _DIAS = {"7d": 7, "30d": 30, "90d": 90, "365d": 365}
 
 
+def _req_gestao(cu: User = Depends(get_current_user)) -> User:
+    # Produtividade/ROI por advogado = dado gerencial sensível (auditoria 2026-06-30):
+    # restrito a sócio+ (exclui estagiário/secretaria/financeiro/auxiliar).
+    if ROLE_LEVEL.get(cu.role.value, 0) < ROLE_LEVEL["socio"]:
+        raise HTTPException(status_code=403, detail="Acesso restrito à gestão")
+    return cu
+
+
 @router.get("/produtividade")
 async def produtividade(
     periodo: str = Query("30d"),
     db: AsyncSession = Depends(get_db),
-    cu: User = Depends(get_current_user),
+    cu: User = Depends(_req_gestao),
 ):
     dias = _DIAS.get(periodo, 30)
     desde = date.today() - timedelta(days=dias)
@@ -83,7 +91,7 @@ async def produtividade(
 @router.get("/roi-por-area")
 async def roi_por_area(
     db: AsyncSession = Depends(get_db),
-    cu: User = Depends(get_current_user),
+    cu: User = Depends(_req_gestao),
 ):
     """ROI por área jurídica — receita, custo e margem agrupados por ramo do direito."""
     from app.services.rentabilidade import ranking_por_area

@@ -7,7 +7,7 @@ export default function RecuperarSenha() {
   const [ok, setOk] = useState(false);
 
   const enviar = async () => {
-    await axios.post("/api/v1/auth/recuperar-senha", { email }).catch(() => {});
+    await axios.post("/api/auth/recuperar-senha", { email }).catch(() => {});
     setOk(true); // sempre sucesso (não revela se e-mail existe)
   };
 

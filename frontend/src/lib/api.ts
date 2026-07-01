@@ -33,7 +33,7 @@ api.interceptors.response.use(
       }
       try {
         refreshing ??= axios
-          .post("/api/v1/auth/refresh", { refresh_token: rt })
+          .post("/api/auth/refresh", { refresh_token: rt })
           .then((res) => {
             localStorage.setItem("ejc_access", res.data.access_token);
             localStorage.setItem("ejc_refresh", res.data.refresh_token);
@@ -55,7 +55,7 @@ api.interceptors.response.use(
 
 export function logout() {
   const rt = localStorage.getItem("ejc_refresh");
-  if (rt) axios.post("/api/v1/auth/logout", { refresh_token: rt }).catch(() => {});
+  if (rt) axios.post("/api/auth/logout", { refresh_token: rt }).catch(() => {});
   localStorage.removeItem("ejc_access");
   localStorage.removeItem("ejc_refresh");
   localStorage.removeItem("ejc_user");

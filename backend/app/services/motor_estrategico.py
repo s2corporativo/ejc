@@ -21,12 +21,14 @@ class MotorEstrategico:
         
         res = await ai_gateway.processar_demanda(prompt, tipo="juridico_profundo")
         
-        # Simulação de cálculo de probabilidade (em produção seria baseado em jurimetria real)
+        # Valores numéricos NÃO são preenchidos automaticamente: dependem de
+        # jurimetria real e de validação humana. Estatística inventada viola a OAB.
         return {
             "analise_cenarios": res["resposta"],
-            "probabilidade_exito": 0.75, # Exemplo
-            "valor_estimado_vitoria": 150000.00,
-            "risco_sucumbencia": 15000.00
+            "probabilidade_exito": None,
+            "valor_estimado_vitoria": None,
+            "risco_sucumbencia": None,
+            "aviso": "Estimativa ilustrativa — NÃO é garantia de resultado; depende de validação humana e de dados reais.",
         }
 
 motor_estrategico = MotorEstrategico()
