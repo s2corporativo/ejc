@@ -4,28 +4,36 @@
 # Protocolo E5: consultas levam prefixo "query: ";
 #               documentos (ingestão) levam prefixo "passage: ".
 # Lazy-load: o modelo (~450MB) só carrega no primeiro uso.
-# Se sentence-transformers não estiver instalado → busca cai p/ textual.
-# Instalação: pip install -r requirements-ml.txt
+# Provider local: sentence-transformers no mesmo processo.
+# Provider http: backend leve chama um serviço interno de embeddings.
+# Se indisponível → busca cai p/ textual.
 from __future__ import annotations
 import asyncio
 import logging
+import httpx
 from app.core.config import get_settings
 
 logger = logging.getLogger("ejc.embeddings")
 settings = get_settings()
 
 MODEL_NAME = "intfloat/multilingual-e5-base"
-EMBED_DIM  = 768  # dimensão do multilingual-e5-base
+EMBED_DIM  = 768  # dimensão do multilingual-e5-base (768d) — ideal para PT-BR
 
 _model = None
 _DISPONIVEL: bool | None = None
 
 
+def _provider() -> str:
+    return (settings.EMBEDDINGS_PROVIDER or "local").strip().lower()
+
+
 def disponivel() -> bool:
-    """True se a lib está instalada E a flag habilitada."""
+    """True se embeddings estão habilitados e o provider está configurado."""
     global _DISPONIVEL
     if not settings.EMBEDDINGS_ENABLED:
         return False
+    if _provider() == "http":
+        return bool(settings.EMBEDDINGS_API_URL)
     if _DISPONIVEL is None:
         try:
             import sentence_transformers  # noqa
@@ -52,17 +60,32 @@ def _embed_sync(textos: list[str], prefix: str) -> list[list[float]]:
     return model.encode(entradas, normalize_embeddings=True).tolist()
 
 
+async def _embed_http(textos: list[str], modo: str) -> list[list[float]] | None:
+    payload = {"textos": textos, "modo": modo}
+    try:
+        async with httpx.AsyncClient(timeout=settings.EMBEDDINGS_TIMEOUT) as client:
+            resp = await client.post(settings.EMBEDDINGS_API_URL, json=payload)
+            resp.raise_for_status()
+            data = resp.json()
+            return data.get("embeddings")
+    except Exception as e:
+        logger.warning(f"Serviço HTTP de embeddings indisponível: {e}")
+        return None
+
+
 async def gerar_embeddings(
     textos: list[str], modo: str = "passage"
 ) -> list[list[float]] | None:
     """
-    Async wrapper (CPU-bound → to_thread). None se indisponível.
+    Gera embeddings via provider local ou serviço HTTP interno.
 
     modo="passage" → prefixo "passage: " (ingestão de documentos no RAG)
     modo="query"   → prefixo "query: "   (busca semântica por consulta)
     """
     if not disponivel() or not textos:
         return None
+    if _provider() == "http":
+        return await _embed_http(textos, modo)
     prefix = f"{modo}: "
     try:
         return await asyncio.to_thread(_embed_sync, textos, prefix)

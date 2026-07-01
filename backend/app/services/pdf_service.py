@@ -7,12 +7,27 @@
 # LGPD: PDFs gerados para uso interno do escritório.
 # ─────────────────────────────────────────────────────────────────────────────
 from __future__ import annotations
+import base64
 import logging
+import re
+from functools import lru_cache
+from pathlib import Path
 from datetime import date
 from typing import Any
 from app.services.document_format import padronizar_documento_juridico, sem_caracteres_problematicos
 
 logger = logging.getLogger("ejc.pdf")
+
+
+@lru_cache(maxsize=1)
+def _logo_data_uri() -> str:
+    logo_path = Path(__file__).resolve().parents[1] / "static" / "brand" / "de-paula-teixeira-logo.jpg"
+    try:
+        raw = logo_path.read_bytes()
+    except OSError:
+        return ""
+    return "data:image/jpeg;base64," + base64.b64encode(raw).decode("ascii")
+
 
 _HTML_BASE = """<!DOCTYPE html>
 <html lang="pt-BR">
@@ -21,110 +36,133 @@ _HTML_BASE = """<!DOCTYPE html>
 <style>
   @page {{
     size: A4;
-    margin: 2.5cm 2cm 2.5cm 3cm;
+    margin: 2.35cm 1.85cm 2.35cm 2.65cm;
     @bottom-center {{
-      content: "De Paula Teixeira Sociedade de Advogados  ·  Pág. " counter(page) " de " counter(pages);
+      content: "De Paula Teixeira Advogados Associados | Pagina " counter(page) " de " counter(pages);
       font-family: "DejaVu Sans", sans-serif;
       font-size: 8pt;
-      color: #888;
+      color: #6b7280;
     }}
   }}
-  body {{
-    font-family: "DejaVu Sans", sans-serif;
-    font-size: 10.5pt;
-    color: #1a1a1a;
-    line-height: 1.55;
-  }}
-  .letterhead {{
-    border-bottom: 3px solid #1a3a5c;
-    padding-bottom: 10px;
-    margin-bottom: 18px;
-  }}
-  .letterhead-nome {{
-    font-size: 16pt;
-    font-weight: bold;
-    color: #1a3a5c;
-    letter-spacing: 0.5px;
-  }}
-  .letterhead-sub {{
-    font-size: 9pt;
-    color: #555;
-    margin-top: 2px;
-  }}
-  h1 {{
-    font-size: 14pt;
-    color: #1a3a5c;
-    margin-top: 18px;
-    margin-bottom: 8px;
-    padding-bottom: 4px;
-    border-bottom: 1px solid #c8d8e8;
-  }}
-  h2 {{
-    font-size: 11.5pt;
-    color: #2a4a6c;
-    margin-top: 16px;
-    margin-bottom: 6px;
-  }}
-  table {{
-    width: 100%;
-    border-collapse: collapse;
-    margin: 8px 0 14px 0;
-  }}
-  th {{
-    background: #1a3a5c;
-    color: #fff;
-    padding: 6px 8px;
-    text-align: left;
-    font-size: 9.5pt;
-    font-weight: bold;
-  }}
-  td {{
-    padding: 5px 8px;
-    border-bottom: 1px solid #dde6ef;
-    font-size: 9.5pt;
-    vertical-align: top;
-  }}
-  tr:nth-child(even) td {{
-    background: #f5f8fb;
-  }}
-  .label {{
-    font-weight: bold;
-    color: #3a5070;
-    background: #eef2f7 !important;
-  }}
-  .aviso {{
-    background: #fffbe6;
-    border: 1px solid #d4a800;
-    border-left: 4px solid #d4a800;
-    padding: 10px 12px;
-    border-radius: 3px;
-    font-size: 9.5pt;
-    margin-top: 14px;
-  }}
-  .footer-doc {{
-    margin-top: 24px;
-    font-size: 8.5pt;
-    color: #888;
-    border-top: 1px solid #ddd;
-    padding-top: 8px;
-  }}
+  body {{ font-family: "DejaVu Sans", Arial, sans-serif; font-size: 10.5pt; color: #111827; line-height: 1.58; background: #fff; }}
+  .letterhead {{ border-bottom: 3px solid #b98a3c; padding-bottom: 11px; margin-bottom: 18px; display: table; width: 100%; }}
+  .letterhead-logo {{ display: table-cell; width: 190px; vertical-align: middle; }}
+  .brand-logo {{ max-width: 178px; max-height: 78px; object-fit: contain; }}
+  .brand-logo[src=""] {{ display: none; }}
+  .letterhead-text {{ display: table-cell; vertical-align: middle; text-align: right; }}
+  .letterhead-nome {{ font-size: 13pt; font-weight: 800; color: #4b3527; }}
+  .letterhead-sub {{ font-size: 8.4pt; color: #6b7280; margin-top: 3px; }}
+  h1 {{ font-size: 15pt; color: #111827; margin: 0 0 10px 0; line-height: 1.24; }}
+  h2 {{ font-size: 11.6pt; color: #1e3a8a; margin: 17px 0 8px 0; padding-left: 8px; border-left: 4px solid #b98a3c; }}
+  h3 {{ font-size: 10.7pt; color: #374151; margin: 13px 0 6px 0; }}
+  p {{ margin: 0 0 8px 0; text-align: justify; }}
+  ul {{ margin: 4px 0 10px 18px; padding: 0; }}
+  li {{ margin-bottom: 4px; }}
+  table {{ width: 100%; border-collapse: collapse; margin: 8px 0 14px 0; page-break-inside: avoid; }}
+  th {{ background: #1e3a8a; color: #fff; padding: 7px 8px; text-align: left; font-size: 9.2pt; font-weight: 700; }}
+  td {{ padding: 6px 8px; border-bottom: 1px solid #e5e7eb; font-size: 9.4pt; vertical-align: top; }}
+  tr:nth-child(even) td {{ background: #f8fafc; }}
+  .label {{ font-weight: 700; color: #1f2937; background: #eef2ff !important; }}
+  .doc-cover {{ border: 1px solid #dbe3ef; border-radius: 10px; padding: 14px 15px 13px 15px; margin-bottom: 16px; background: #f8fafc; page-break-inside: avoid; }}
+  .doc-kicker {{ font-size: 8pt; color: #4b3527; font-weight: 800; text-transform: uppercase; margin-bottom: 4px; }}
+  .meta-grid {{ width: 100%; border-collapse: separate; border-spacing: 6px; margin: 10px -6px 0 -6px; }}
+  .meta-grid td {{ width: 33.33%; border: 1px solid #e5e7eb; background: #fff; border-radius: 7px; padding: 7px 8px; }}
+  .meta-label {{ display: block; font-size: 7.2pt; color: #6b7280; font-weight: 800; text-transform: uppercase; }}
+  .meta-value {{ display: block; margin-top: 2px; color: #111827; font-size: 9pt; font-weight: 700; }}
+  .doc-body {{ margin-top: 4px; }}
+  .doc-section {{ border-top: 1px solid #eef2f7; padding-top: 8px; margin-top: 10px; }}
+  .callout, .aviso {{ background: #fffbeb; border: 1px solid #f5d08a; border-left: 4px solid #d97706; padding: 9px 11px; border-radius: 7px; font-size: 9.3pt; color: #78350f; margin: 12px 0; page-break-inside: avoid; }}
+  .review-stamp {{ border: 1px solid #ddd6fe; border-left: 4px solid #7c3aed; background: #f5f3ff; color: #4c1d95; padding: 9px 11px; border-radius: 7px; font-size: 9pt; margin-top: 16px; page-break-inside: avoid; }}
+  .footer-doc {{ margin-top: 24px; font-size: 8.3pt; color: #6b7280; border-top: 1px solid #e5e7eb; padding-top: 8px; }}
 </style>
 </head>
 <body>
 <div class="letterhead">
-  <div class="letterhead-nome">De Paula Teixeira Sociedade de Advogados</div>
-  <div class="letterhead-sub">
-    CNPJ 32.491.468/0001-12 &nbsp;|&nbsp; Betim, MG &nbsp;|&nbsp;
-    contato@depaulateixeira.adv.br
+  <div class="letterhead-logo"><img class="brand-logo" src="{logo_data_uri}" alt="De Paula Teixeira" /></div>
+  <div class="letterhead-text">
+    <div class="letterhead-nome">De Paula Teixeira Advogados Associados</div>
+    <div class="letterhead-sub">CNPJ 32.491.468/0001-12 &nbsp;|&nbsp; Betim, MG &nbsp;|&nbsp; contato@depaulateixeira.adv.br</div>
   </div>
 </div>
 {corpo}
-<div class="footer-doc">
-  Documento gerado automaticamente pelo sistema EJC em {gerado_em}.
-  Uso interno — confidencial. Não constitui manifestação jurídica oficial.
-</div>
+<div class="footer-doc">Documento gerado automaticamente pelo sistema EJC em {gerado_em}. Uso profissional - confidencial. Responsabilidade tecnica condicionada a revisao e assinatura do advogado responsavel.</div>
 </body>
 </html>"""
+
+_HEADING_RE = re.compile(r"^(?:[IVXLCDM]+\.|[0-9]+\.|[A-Z][A-Z0-9 ,:/().-]{7,})\s*$")
+_ALERT_WORDS = ("ATENCAO", "REVISAO HUMANA", "NAO PROTOCOLAR", "RISCO", "ALERTA")
+
+
+def _linha_e_titulo(linha: str) -> bool:
+    limpa = linha.strip()
+    if not limpa or len(limpa) > 140:
+        return False
+    return bool(_HEADING_RE.match(limpa))
+
+
+def _linha_e_alerta(linha: str) -> bool:
+    alta = linha.upper()
+    return any(palavra in alta for palavra in _ALERT_WORDS)
+
+
+def _texto_peca_para_html(titulo: str, conteudo: str, pronto_protocolo: bool = False) -> str:
+    """Converte texto juridico puro em HTML Visual Law sem mudar o teor."""
+    import html as html_lib
+
+    titulo_esc = html_lib.escape(titulo or "Documento juridico")
+    linhas = [linha.rstrip() for linha in (conteudo or "").splitlines()]
+    blocos: list[str] = []
+    itens_lista: list[str] = []
+
+    def fecha_lista() -> None:
+        nonlocal itens_lista
+        if itens_lista:
+            blocos.append("<ul>" + "".join(itens_lista) + "</ul>")
+            itens_lista = []
+
+    for linha in linhas:
+        limpa = linha.strip()
+        if not limpa:
+            fecha_lista()
+            continue
+        if limpa.startswith(("- ", "* ")):
+            itens_lista.append(f"<li>{html_lib.escape(limpa[2:].strip())}</li>")
+            continue
+        fecha_lista()
+        esc = html_lib.escape(limpa)
+        if _linha_e_alerta(limpa):
+            blocos.append(f'<div class="callout">{esc}</div>')
+        elif _linha_e_titulo(limpa):
+            blocos.append(f'<div class="doc-section"><h2>{esc}</h2></div>')
+        elif re.match(r"^[A-Z]\.[ ]+", limpa) or re.match(r"^[0-9]+\.[0-9]+", limpa):
+            blocos.append(f"<h3>{esc}</h3>")
+        else:
+            blocos.append(f"<p>{esc}</p>")
+
+    fecha_lista()
+    corpo = "\n".join(blocos)
+    controle = "Pronto para protocolo" if pronto_protocolo else "Minuta revisavel"
+    status_final = "Peca final validada" if pronto_protocolo else "Rascunho controlado"
+    aviso = (
+        "Documento aprovado e validado para protocolo. Conferir dados variaveis, anexos e assinatura antes do envio ao tribunal."
+        if pronto_protocolo
+        else "ATENCAO: Rascunho sujeito a revisao humana obrigatoria por advogado responsavel antes de protocolo, envio ou assinatura."
+    )
+    return f"""
+<article class=\"visual-law legal-doc\">
+  <div class=\"doc-cover\">
+    <div class=\"doc-kicker\">Peca juridica | Padrao Visual Law EJC</div>
+    <h1>{titulo_esc}</h1>
+    <table class=\"meta-grid\"><tr>
+      <td><span class=\"meta-label\">Origem</span><span class=\"meta-value\">Sistema EJC</span></td>
+      <td><span class=\"meta-label\">Controle</span><span class=\"meta-value\">{controle}</span></td>
+      <td><span class=\"meta-label\">Status</span><span class=\"meta-value\">{status_final}</span></td>
+    </tr></table>
+  </div>
+  <div class=\"review-stamp\">{aviso}</div>
+  <div class=\"doc-body\">{corpo}</div>
+</article>
+"""
 
 
 def _html_para_pdf(html: str) -> bytes:
@@ -185,7 +223,7 @@ def relatorio_mensal_pdf(mes: int, ano: int, dados: dict[str, Any]) -> bytes:
   lançamentos individuais no sistema.
 </div>
 """
-    html = _HTML_BASE.format(corpo=corpo, gerado_em=date.today().strftime("%d/%m/%Y"))
+    html = _HTML_BASE.format(corpo=corpo, gerado_em=date.today().strftime("%d/%m/%Y"), logo_data_uri=_logo_data_uri())
     return _html_para_pdf(html)
 
 
@@ -301,31 +339,56 @@ async def gerar_caso_pdf(db, case_id: str, user_id: str) -> bytes:
   o sistema judicial competente.
 </div>
 """
-    html = _HTML_BASE.format(corpo=corpo, gerado_em=date.today().strftime("%d/%m/%Y"))
+    html = _HTML_BASE.format(corpo=corpo, gerado_em=date.today().strftime("%d/%m/%Y"), logo_data_uri=_logo_data_uri())
     return _html_para_pdf(html)
 
 
-async def peca_para_pdf_async(titulo: str, conteudo: str) -> bytes:
-    """Converte uma peça jurídica (HTML ou texto) em PDF profissional."""
+async def peca_para_pdf_async(titulo: str, conteudo: str, *, pronto_protocolo: bool = False) -> bytes:
+    """Converte uma peca juridica em PDF Visual Law.
+
+    Quando pronto_protocolo=True, o PDF sai como versao final para protocolo.
+    Caso contrario, permanece marcado como rascunho controlado.
+    """
     import asyncio
     import html as html_lib
     from datetime import date
 
-    titulo = padronizar_documento_juridico(titulo)
+    titulo = padronizar_documento_juridico(titulo) or "Documento juridico"
     conteudo = padronizar_documento_juridico(conteudo)
-    if not conteudo.strip().startswith("<"):
-        conteudo = "<p>" + html_lib.escape(conteudo).replace("\n\n", "</p><p>").replace("\n", "<br>") + "</p>"
-
-    titulo_esc = html_lib.escape(titulo)
-    corpo = f"""
-<h1>{titulo_esc}</h1>
-{conteudo}
+    controle = "Pronto para protocolo" if pronto_protocolo else "Minuta revisavel"
+    status_final = "Peca final validada" if pronto_protocolo else "Rascunho controlado"
+    aviso = (
+        "Documento aprovado e validado para protocolo. Conferir dados variaveis, anexos e assinatura antes do envio ao tribunal."
+        if pronto_protocolo
+        else "ATENCAO: Rascunho sujeito a revisao humana obrigatoria por advogado responsavel antes de protocolo, envio ou assinatura."
+    )
+    if conteudo.strip().startswith("<"):
+        titulo_esc = html_lib.escape(titulo)
+        corpo = f"""
+<article class=\"visual-law legal-doc\">
+  <div class=\"doc-cover\">
+    <div class=\"doc-kicker\">Peca juridica | Padrao Visual Law EJC</div>
+    <h1>{titulo_esc}</h1>
+    <table class=\"meta-grid\"><tr>
+      <td><span class=\"meta-label\">Origem</span><span class=\"meta-value\">Sistema EJC</span></td>
+      <td><span class=\"meta-label\">Controle</span><span class=\"meta-value\">{controle}</span></td>
+      <td><span class=\"meta-label\">Status</span><span class=\"meta-value\">{status_final}</span></td>
+    </tr></table>
+  </div>
+  <div class=\"review-stamp\">{aviso}</div>
+  <div class=\"doc-body\">{conteudo}</div>
+</article>
 """
+    else:
+        corpo = _texto_peca_para_html(titulo, conteudo, pronto_protocolo=pronto_protocolo)
+
     html_doc = _HTML_BASE.format(
         corpo=corpo,
         gerado_em=date.today().strftime("%d/%m/%Y"),
+        logo_data_uri=_logo_data_uri(),
     )
     return await asyncio.get_event_loop().run_in_executor(None, _html_para_pdf, html_doc)
+
 
 
 async def relatorio_mensal_pdf_async(mes: int, ano: int, dados: dict) -> bytes:
@@ -383,6 +446,7 @@ async def relatorio_lgpd_pdf_async(dados: dict) -> bytes:
 """
     html_doc = _HTML_BASE.format(
         corpo=corpo,
-        gerado_em=__import__('datetime').date.today().strftime("%d/%m/%Y")
+        gerado_em=__import__('datetime').date.today().strftime("%d/%m/%Y"),
+        logo_data_uri=_logo_data_uri(),
     )
     return await asyncio.get_event_loop().run_in_executor(None, _html_para_pdf, html_doc)

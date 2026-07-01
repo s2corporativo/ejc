@@ -1,79 +1,53 @@
-"""048_processes — BASELINE consolidado do schema EJC
+"""processes: entidade Processo independente do Caso (1 Caso : N Processos)
+
+Resolve a violacao estrutural Caso=Processo (auto-FK linked_judicial_case_id, 1:1).
+ADITIVO: cria a tabela e faz backfill dos casos que ja tem numero de processo.
+NAO altera cases nem conversao_caso (transicao). Reversivel (downgrade dropa).
 
 Revision ID: 048_processes
-Revises:
-Create Date: 2026-06-29
-
-Materializa a revisão-base que a cadeia 049/050 sempre referenciou: o arquivo
-``048_processes`` era citado por ``049.down_revision`` mas NUNCA existiu — o
-Alembic ficava inoperante (cadeia quebrada). As migrations 001–048 originais
-foram perdidas; este baseline as substitui de forma consolidada.
-
-Estratégia (idempotente e segura contra banco já existente):
-  1. CREATE EXTENSION IF NOT EXISTS vector  (pgvector — colunas Vector do RAG)
-  2. Base.metadata.create_all(checkfirst=True) — cria TODAS as tabelas dos
-     modelos ORM que ainda não existam (não recria nem altera as existentes).
-  3. CREATE TABLE IF NOT EXISTS processes — entidade SQL-crua (sem modelo ORM),
-     reconstruída a partir de routers/processes.py e services/processo_service.py.
-
-⚠️ PRODUÇÃO: o banco de produção JÁ possui este schema. NÃO rode ``alembic
-upgrade`` cru sem antes verificar ``SELECT version_num FROM alembic_version`` e,
-no cenário normal, fazer ``alembic stamp 050_novos_modulos`` (marca como
-aplicado sem executar). Tudo aqui é IF NOT EXISTS / checkfirst, mas o stamp é a
-rota recomendada. Ver RELATORIO_FASE2_BANCO_2026-06-29.md.
-
-⚠️ A tabela ``processes`` é uma RECONSTRUÇÃO a partir do código; valide contra
-``pg_dump --schema-only -t processes`` da produção antes de confiar nela para
-disaster recovery.
+Revises: 047_dedup_cases
 """
 from alembic import op
 
-# revision identifiers, used by Alembic.
 revision = "048_processes"
-down_revision = None
+down_revision = "047_dedup_cases"
 branch_labels = None
 depends_on = None
 
 
-def upgrade() -> None:
-    bind = op.get_bind()
-
-    # 1. pgvector — necessário antes das colunas Vector(768) do KnowledgeChunk.
-    op.execute("CREATE EXTENSION IF NOT EXISTS vector")
-
-    # 2. Todas as tabelas dos modelos ORM (checkfirst=True → não toca existentes).
-    #    env.py já importou todos os submódulos de app.models, então Base.metadata
-    #    está completo neste ponto.
-    from app.core.database import Base
-    import app.models  # noqa: F401
-    Base.metadata.create_all(bind=bind, checkfirst=True)
-
-    # 3. processes — 1 Caso : N Processos (SQL cru, padrão do projeto, sem ORM).
+def upgrade():
     op.execute("""
-    CREATE TABLE IF NOT EXISTS processes (
-        id                    VARCHAR(36)  PRIMARY KEY DEFAULT gen_random_uuid()::text,
-        case_id               VARCHAR(36)  NOT NULL REFERENCES cases(id) ON DELETE CASCADE,
-        numero_cnj            VARCHAR(30),
-        instancia             VARCHAR(40),
-        tribunal              VARCHAR(40),
-        comarca               VARCHAR(120),
-        vara                  VARCHAR(120),
-        classe                VARCHAR(150),
-        fase                  VARCHAR(60),
-        tipo                  VARCHAR(40)  NOT NULL DEFAULT 'judicial',
-        processo_principal_id VARCHAR(36)  REFERENCES processes(id) ON DELETE SET NULL,
-        is_principal          BOOLEAN      NOT NULL DEFAULT FALSE,
-        valor_causa           NUMERIC(14,2),
-        status                VARCHAR(40)  NOT NULL DEFAULT 'ativo',
-        created_at            TIMESTAMPTZ  NOT NULL DEFAULT NOW(),
-        updated_at            TIMESTAMPTZ  NOT NULL DEFAULT NOW(),
-        deleted_at            TIMESTAMPTZ
-    )
+        CREATE TABLE IF NOT EXISTS processes (
+            id varchar(36) PRIMARY KEY DEFAULT gen_random_uuid()::text,
+            case_id varchar(36) NOT NULL REFERENCES cases(id),
+            numero_cnj varchar(30),
+            instancia varchar(20),
+            tribunal varchar(160),
+            comarca varchar(160),
+            vara varchar(160),
+            classe varchar(160),
+            fase varchar(40),
+            tipo varchar(30) NOT NULL DEFAULT 'judicial',
+            processo_principal_id varchar(36) REFERENCES processes(id),
+            valor_causa numeric,
+            status varchar(30) NOT NULL DEFAULT 'ativo',
+            created_at timestamptz NOT NULL DEFAULT now(),
+            updated_at timestamptz NOT NULL DEFAULT now(),
+            deleted_at timestamptz
+        )
     """)
     op.execute("CREATE INDEX IF NOT EXISTS ix_processes_case_id ON processes(case_id)")
-    op.execute("CREATE INDEX IF NOT EXISTS ix_processes_principal ON processes(case_id, is_principal)")
+    # Backfill idempotente: cada caso com numero_processo vira 1 processo judicial.
+    op.execute("""
+        INSERT INTO processes (id, case_id, numero_cnj, tribunal, comarca, vara, tipo, valor_causa, status, created_at, updated_at)
+        SELECT gen_random_uuid()::text, c.id, NULLIF(c.numero_processo, ''), c.tribunal, c.comarca, c.vara,
+               'judicial', c.valor_causa, 'ativo', now(), now()
+        FROM cases c
+        WHERE c.deleted_at IS NULL
+          AND c.numero_processo IS NOT NULL AND c.numero_processo <> ''
+          AND NOT EXISTS (SELECT 1 FROM processes p WHERE p.case_id = c.id)
+    """)
 
 
-def downgrade() -> None:
-    # Baseline consolidado: não destrói o schema inteiro.
-    raise NotImplementedError("Baseline inicial (048_processes) não suporta downgrade.")
+def downgrade():
+    op.execute("DROP TABLE IF EXISTS processes CASCADE")

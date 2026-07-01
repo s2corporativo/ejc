@@ -27,6 +27,8 @@ PREFIXOS_PUBLICOS = (
     "/api/health",
     "/api/docs",
     "/api/openapi.json",
+    # P1-1: /api/victory_vault/ REMOVIDO da lista pública — expunha as teses
+    # vitoriosas do escritório sem login. Agora exige JWT (Depends no router).
     "/api/webhooks/",       # Z-API inbound (valida Client-Token internamente)
     "/api/calendar/",       # feed ICS (HMAC na URL)
 )

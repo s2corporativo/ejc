@@ -270,11 +270,57 @@ async def _alertar_honorarios():
             await db.execute(text("""
                 UPDATE fees SET status='atrasado'
                 WHERE status='pendente' AND deleted_at IS NULL
-                  AND data_vencimento < CURRENT_DATE
+                AND data_vencimento < CURRENT_DATE
             """))
             await db.commit()
     except Exception as e:
         logger.error(f"[Scheduler] honorarios: {e}")
+
+
+async def _backup_diario():
+    """Backup automatizado do banco de dados (pg_dump) — Auditoria Item 80."""
+    import os
+    import subprocess
+    from datetime import datetime
+    try:
+        hoje = datetime.now().strftime("%Y-%m-%d")
+        # P1-3: usa BACKUP_DIR do config (antes /home/ubuntu/backups, inexistente
+        # no container → backup silenciosamente perdido). pg_dump exige URL SÍNCRONA
+        # (DATABASE_URL é +asyncpg e quebra o pg_dump).
+        os.makedirs(settings.BACKUP_DIR, exist_ok=True)
+        path = f"{settings.BACKUP_DIR}/ejc_db_{hoje}.sql"
+        cmd = f"pg_dump {settings.DATABASE_URL_SYNC} > {path}"
+        subprocess.run(cmd, shell=True, check=True)
+        logger.info(f"[Backup] Diário concluído com sucesso: {path}")
+    except Exception as e:
+        logger.error(f"[Backup] Falha no backup diário: {e}")
+
+
+async def _verificar_sincronia_datajud():
+    """Alerta se processos estão há mais de 3 dias sem sincronizar — Auditoria Item 32."""
+    from app.core.database import AsyncSessionLocal
+    from app.services.notification_service import criar_notificacao_interna
+    try:
+        async with AsyncSessionLocal() as db:
+            limite = datetime.now() - timedelta(days=3)
+            rows = await db.execute(text("""
+                SELECT id, numero_processo, advogado_responsavel_id FROM cases
+                WHERE deleted_at IS NULL AND status NOT IN ('encerrado','arquivado')
+                  AND (last_synced_at IS NULL OR last_synced_at < :lim)
+                  AND numero_processo IS NOT NULL
+            """), {"lim": limite})
+            for r in rows:
+                if r.advogado_responsavel_id:
+                    await criar_notificacao_interna(
+                        db, r.advogado_responsavel_id,
+                        "⚠️ Sincronização Pendente",
+                        f"O processo {r.numero_processo} está há mais de 3 dias sem atualização oficial.",
+                        tipo="sistema", link=f"/casos/{r.id}"
+                    )
+            await db.commit()
+    except Exception as e:
+        logger.error(f"[Scheduler] Sincronia DataJud: {e}")
+
 
 
 async def _alertar_procuracoes():

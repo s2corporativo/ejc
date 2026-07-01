@@ -58,48 +58,6 @@ def _filtro_visibilidade(q, user: User):
     ))
 
 
-async def _sincronizar_processo_principal(
-    db: AsyncSession,
-    case_id: str,
-    numero_processo: Optional[str],
-    tribunal: Optional[str] = None,
-    comarca: Optional[str] = None,
-    vara: Optional[str] = None,
-    valor_causa=None,
-) -> None:
-    """Write-through transicional: cases.numero_processo -> processes principal."""
-    novo_cnj = (numero_processo or "").strip()[:30]
-    if not novo_cnj:
-        return
-    await db.execute(text("""
-        INSERT INTO processes (
-            id, case_id, numero_cnj, instancia, tribunal, comarca, vara,
-            tipo, valor_causa, is_principal, status, created_at, updated_at
-        )
-        VALUES (
-            :id, :cid, :ncnj, '1', :trib, :com, :vara,
-            'judicial', :vc, TRUE, 'ativo', now(), now()
-        )
-        ON CONFLICT DO NOTHING
-    """), {
-        "id": str(uuid4()), "cid": case_id, "ncnj": novo_cnj,
-        "trib": tribunal, "com": comarca, "vara": vara, "vc": valor_causa,
-    })
-    await db.execute(text("""
-        UPDATE processes SET
-            numero_cnj = :ncnj,
-            tribunal = COALESCE(:trib, tribunal),
-            comarca = COALESCE(:com, comarca),
-            vara = COALESCE(:vara, vara),
-            valor_causa = COALESCE(:vc, valor_causa),
-            updated_at = now()
-        WHERE case_id = :cid AND is_principal = TRUE AND deleted_at IS NULL
-    """), {
-        "cid": case_id, "ncnj": novo_cnj,
-        "trib": tribunal, "com": comarca, "vara": vara, "vc": valor_causa,
-    })
-
-
 @router.get("/")
 async def listar(
     page: int = Query(1, ge=1), page_size: int = Query(20, ge=1, le=500),
@@ -141,7 +99,9 @@ async def criar(
     payload: CaseCreate,
     background: BackgroundTasks,
     db: AsyncSession = Depends(get_db),
-    cu: User = Depends(get_current_user),
+    cu: User = Depends(require_roles(
+        ["superadmin", "admin", "socio", "advogado", "advogado_auxiliar", "secretaria"]
+    )),  # M16 (auditoria 2026-06-30): criar caso = equipe jurídica/gestão/intake
 ):
     # Validar cliente
     client = (await db.execute(
@@ -176,15 +136,6 @@ async def criar(
         descricao=f"Caso aberto por {cu.full_name}", created_by=cu.id,
     ))
     await criar_audit_log(db, cu.id, cu.role.value, "CREATE", "cases", c.id)
-    await _sincronizar_processo_principal(
-        db,
-        c.id,
-        payload.numero_processo,
-        payload.tribunal,
-        payload.comarca,
-        payload.vara,
-        payload.valor_causa,
-    )
     await db.commit()
     await db.refresh(c)
     # NÚCLEO COGNITIVO — ETAPA 1: triagem jurídica automática (IA invisível).
@@ -251,15 +202,17 @@ async def atualizar(
     )
     # Fase 3 write-through: sincroniza processes quando numero_processo muda
     if "numero_processo" in mudancas and mudancas["numero_processo"]:
-        await _sincronizar_processo_principal(
-            db,
-            case_id,
-            mudancas.get("numero_processo"),
-            mudancas.get("tribunal", c.tribunal),
-            mudancas.get("comarca", c.comarca),
-            mudancas.get("vara", c.vara),
-            mudancas.get("valor_causa", c.valor_causa),
-        )
+        novo_cnj = (mudancas["numero_processo"] or "").strip()[:30]
+        from uuid import uuid4
+        await db.execute(text("""
+            INSERT INTO processes (id, case_id, numero_cnj, instancia, is_principal, status, created_at, updated_at)
+            VALUES (:id, :cid, :ncnj, '1', TRUE, 'ativo', now(), now())
+            ON CONFLICT DO NOTHING
+        """), {"id": str(uuid4()), "cid": case_id, "ncnj": novo_cnj})
+        await db.execute(text("""
+            UPDATE processes SET numero_cnj=:ncnj, updated_at=now()
+            WHERE case_id=:cid AND is_principal=TRUE AND deleted_at IS NULL
+        """), {"ncnj": novo_cnj, "cid": case_id})
     await db.commit()
     await db.refresh(c)
     # Event bus: notifica módulos interessados que o caso mudou (fail-safe).
@@ -364,6 +317,40 @@ async def criar_movimento(
         {"tipo": m.tipo, "case_id": case_id}, cu.id,
     )
     return {"id": m.id, "detail": "Movimento registrado"}
+
+
+@router.post("/{case_id}/assistente-estrategico")
+async def assistente_estrategico_caso(
+    case_id: str,
+    demanda: str = Body(..., embed=True),
+    db: AsyncSession = Depends(get_db),
+    cu: User = Depends(get_current_user),
+):
+    """
+    IA Contextual: Assistente Estratégico do Caso (Seção 1.33).
+    Acesso automático a todos os dados do processo e documentos.
+    """
+    from app.core.ai_brain import ai_gateway
+    from app.models.case_parte import CaseParte
+    from app.models.document import Document
+    
+    q = select(Case).where(Case.id == case_id, Case.deleted_at.is_(None))
+    q = _filtro_visibilidade(q, cu)
+    c = (await db.execute(q)).scalar_one_or_none()
+    if not c:
+        raise HTTPException(status_code=404, detail="Caso não encontrado")
+    
+    partes = (await db.execute(select(CaseParte).where(CaseParte.case_id == case_id))).scalars().all()
+    movs = (await db.execute(select(CaseMovimento).where(CaseMovimento.case_id == case_id).limit(10))).scalars().all()
+    
+    contexto = (
+        f"CASO: {c.titulo}\nNÚMERO: {c.numero_processo}\nÁREA: {c.area}\n"
+        f"TESE: {c.tese_principal}\n"
+        f"PARTES: {', '.join([p.nome for p in partes])}\n"
+        f"ÚLTIMOS MOVIMENTOS: {'; '.join([m.descricao[:100] for m in movs])}\n"
+    )
+    
+    return await ai_gateway.processar_demanda(demanda, contexto, tipo="juridico_profundo")
 
 
 # ═══ DataJud: sincronização de movimentos oficiais ═══
@@ -672,9 +659,10 @@ async def analisar_caso_ia(
 ):
     import json as _json
     from app.services.analise_estrategica import analisar_caso
-
     from app.core.ownership import verificar_acesso_caso
-    case = await verificar_acesso_caso(db, current_user, case_id)   # ownership (IDOR)
+
+    # Ownership (IDOR): só quem tem o caso pode disparar a análise estratégica.
+    case = await verificar_acesso_caso(db, current_user, case_id)
 
     parte_contraria = getattr(case, 'parte_contraria', None) or ''
     partes_str = f'Parte contraria: {parte_contraria}' if parte_contraria else ''
@@ -703,6 +691,7 @@ async def analisar_caso_ia(
         numero_processo=getattr(case, 'numero_processo', '') or '',
         area=area_val,
         nomes_proteger=nomes_proteger,
+        scope_client_id=getattr(case, 'client_id', None),  # A2: RAG restrito ao próprio cliente
         db=db,
     )
 
@@ -724,3 +713,4 @@ async def analisar_caso_ia(
         logging.getLogger(__name__).warning(f'AILog nao salvo: {e}')
 
     return analise
+

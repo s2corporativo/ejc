@@ -308,6 +308,15 @@ async def gerar_peca_pipeline(
     # ── ETAPA 7: Montar documento completo ────────────────────────────────
     yield await _emit("step", {"etapa": 7, "titulo": "Montando documento completo", "status": "em_andamento"})
 
+    # Busca contexto adicional do caso se disponível para fundamentação real
+    contexto_caso = ""
+    if case_id:
+        from app.models.case import Case
+        from sqlalchemy import select
+        c_obj = (await db.execute(select(Case).where(Case.id == case_id))).scalar_one_or_none()
+        if c_obj:
+            contexto_caso = f"\n[CONTEXTO DO CASO]\nTítulo: {c_obj.titulo}\nTese Principal: {c_obj.tese_principal or 'N/A'}\n"
+
     instrucoes = instrucoes_adicionais or ""
     r7 = await gw_chat(
         messages=[
@@ -315,17 +324,18 @@ async def gerar_peca_pipeline(
                 f"Você é advogado sênior redator de peças jurídicas em português jurídico brasileiro formal. "
                 f"Redija uma {nome_peca} completa, estruturada, fundamentada e persuasiva. "
                 "REGRAS INVIOLÁVEIS:\n"
-                "1. Nunca invente fatos, artigos ou julgados não fornecidos.\n"
-                "2. Toda saída é RASCUNHO — revisão humana obrigatória (OAB).\n"
-                "3. Nunca prometa resultado ('vai ganhar', 'é garantido').\n"
-                "4. Use formatação jurídica padrão com seções claras."
+                "1. Baseie-se EXCLUSIVAMENTE nos fatos e jurisprudência fornecidos no RAG.\n"
+                "2. Nunca invente números de processos ou links oficiais.\n"
+                "3. Toda saída é RASCUNHO — revisão humana obrigatória (OAB).\n"
+                "4. Use formatação jurídica padrão (Dos Fatos, Do Direito, Dos Pedidos)."
             )},
             {"role": "user", "content": (
                 f"TIPO: {nome_peca}\nÁREA: {area_direito}\n\n"
                 f"FATOS:\n{fatos_limpos}\n\n"
                 f"PEDIDOS:\n{pedidos_limpos}\n\n"
+                f"{contexto_caso}"
                 f"ENQUADRAMENTO JURÍDICO:\n{r2.texto[:1500]}\n\n"
-                f"JURISPRUDÊNCIA:\n{r4.texto[:1000]}\n\n"
+                f"JURISPRUDÊNCIA (RAG):\n{r4.texto[:1000]}\n\n"
                 f"ARGUMENTOS ORGANIZADOS:\n{r5.texto[:1500]}\n\n"
                 f"RISCOS (para evitar na peça):\n{r6.texto[:800]}\n\n"
                 f"{rag_txt[:2000] if rag_txt else ''}\n"
@@ -339,6 +349,26 @@ async def gerar_peca_pipeline(
     )
     yield await _emit("step", {"etapa": 7, "titulo": "Documento montado", "status": "concluido"})
     documento_final = padronizar_documento_juridico(r7.texto)
+
+    # A3 (auditoria 2026-06-30): verifica as citações (súmulas/artigos) contra a
+    # base oficial e anexa o relatório — anti-alucinação (regra absoluta OAB).
+    # Fail-safe: falha na verificação não impede a entrega da minuta.
+    verificacao_citacoes = None
+    try:
+        from app.services.citation_check import verificar_citacoes
+        verificacao_citacoes = await verificar_citacoes(db, documento_final)
+        yield await _emit("step", {
+            "etapa": 8, "titulo": "Verificando citações na base oficial",
+            "status": "concluido",
+            "resultado": (
+                f"{verificacao_citacoes['confirmadas']}/{verificacao_citacoes['total']} "
+                "citações confirmadas"
+                if verificacao_citacoes.get("total") else "sem citações a verificar"
+            ),
+        })
+    except Exception as _e:
+        import logging as _lg
+        _lg.getLogger(__name__).warning("citation_check falhou: %s", _e)
 
     # ── Registra no AILog (HITL) ───────────────────────────────────────────
     log = AILog(
@@ -388,6 +418,7 @@ async def gerar_peca_pipeline(
         "fontes_usadas": len(fontes),
         "pii_removida": houve_pii,
         "tokens_totais": (log.tokens_input or 0) + (log.tokens_output or 0),
+        "verificacao_citacoes": verificacao_citacoes,
         "aviso": aviso_rascunho_ia(),
     })
 

@@ -1,0 +1,44 @@
+[
+    {
+        "id": "1",
+        "titulo": "Equivalência de Medicamento Veterinário para Licitação",
+        "ementa": "Reconhecimento de equivalência técnica entre princípios ativos de marcas distintas para cumprimento de edital de pregão eletrônico. Baseado em cruzamento de registros MAPA/ANVISA.",
+        "area_juridica": "Administrativa",
+        "data_vitoria": "2024-05-15",
+        "vencedora": true,
+        "detalhes_tecnicos": {
+            "principio_ativo": "Ivermectina / Fluazuron",
+            "equivalencia": "Reconhecida entre marcas X e Y para controle de ectoparasitas.",
+            "fonte": "MAPA - Registro de Produtos Veterinários"
+        }
+    },
+    {
+        "id": "2",
+        "titulo": "Exclusão do ICMS da base de cálculo do PIS/COFINS",
+        "ementa": "Tese do século. O ICMS não compõe a base de cálculo para incidência do PIS e da COFINS.",
+        "area_juridica": "Tributária",
+        "data_vitoria": "2023-11-20",
+        "vencedora": true
+    },
+    {
+        "id": "3",
+        "titulo": "Tese de Blindagem de Crescimento - Indústrias Betim/MG",
+        "ementa": "Estratégia de prospecção e auditoria de taxas para indústrias em expansão, focando em TCFA e economia trabalhista.",
+        "area_juridica": "Empresarial",
+        "data_vitoria": "2024-06-01",
+        "vencedora": true,
+        "leads_qualificados": [
+            "Indústria de Autopeças - Distrito Industrial de Betim",
+            "Logística Avançada - Eixo Fernão Dias"
+        ]
+    },
+    {
+        "id": "4",
+        "titulo": "Aceitabilidade de Medicamento Humano em Uso Veterinário",
+        "ementa": "Jurisprudência consolidada sobre a legalidade da prescrição e fornecimento de medicamentos de uso humano para fins veterinários quando comprovada a equivalência do princípio ativo e dosagem.",
+        "area_juridica": "Veterinária/Administrativa",
+        "data_vitoria": "2024-04-10",
+        "vencedora": true,
+        "fundamentação": "Parecer Técnico CRMV e Resoluções ANVISA/MAPA."
+    }
+]

@@ -4,6 +4,8 @@ Agrega o AILog (uso, custo, aproveitamento HITL, modelos) — só leitura, sem s
 """
 from __future__ import annotations
 from datetime import datetime, timezone, timedelta
+import os
+import importlib.util
 
 from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy import select, func as sqlfunc
@@ -59,4 +61,66 @@ async def dashboard(
         "por_tipo_uso": {_v(t): c for t, c in por_tipo},
         "por_status_hitl": {_v(s): c for s, c in por_status},
         "observacao": "Métricas de uso da IA (LGPD/OAB). Apenas leitura do AILog.",
+    }
+
+
+@router.get("/estado-operacional")
+async def estado_operacional(
+    db: AsyncSession = Depends(get_db),
+    cu: User = Depends(get_current_user),
+):
+    role = cu.role.value if hasattr(cu.role, "value") else str(cu.role)
+    if role not in ("superadmin", "admin", "socio"):
+        raise HTTPException(403, "Acesso restrito (admin/socio)")
+
+    def _bool_env(name: str) -> bool:
+        return os.getenv(name, "").lower() in ("1", "true", "yes", "on")
+
+    total_docs = (await db.execute(select(sqlfunc.count()).select_from(AILog))).scalar() or 0
+    try:
+        from sqlalchemy import text as _t
+        knowledge_docs = (await db.execute(_t("select count(*) from knowledge_docs where deleted_at is null"))).scalar() or 0
+        knowledge_chunks = (await db.execute(_t("select count(*) from knowledge_chunks"))).scalar() or 0
+        chunks_embedding = (await db.execute(_t("select count(*) from knowledge_chunks where embedding is not null"))).scalar() or 0
+    except Exception:
+        knowledge_docs = knowledge_chunks = chunks_embedding = 0
+
+    por_status = (await db.execute(
+        select(AILog.status_hitl, sqlfunc.count()).group_by(AILog.status_hitl)
+    )).all()
+    status_map = {_v(s): c for s, c in por_status}
+
+    embeddings_provider = (os.getenv("EMBEDDINGS_PROVIDER") or "local").lower()
+    sentence_instalado = importlib.util.find_spec("sentence_transformers") is not None
+    semantic_ready = _bool_env("EMBEDDINGS_ENABLED") and (
+        embeddings_provider == "http" or sentence_instalado
+    )
+    return {
+        "provedores": {
+            "groq": {"configurado": bool(os.getenv("GROQ_API_KEY")), "modelo": os.getenv("GROQ_MODEL", "llama-3.3-70b-versatile")},
+            "anthropic": {"configurado": bool(os.getenv("ANTHROPIC_API_KEY"))},
+            "ollama": {"habilitado": _bool_env("OLLAMA_ENABLED"), "modelo_analise": os.getenv("OLLAMA_MODEL_ANALISE") or None},
+            "modo": os.getenv("AI_PROVIDER") or "auto/padrao",
+        },
+        "rag": {
+            "documentos": knowledge_docs,
+            "chunks": knowledge_chunks,
+            "chunks_com_embedding": chunks_embedding,
+            "busca_semantica_ativa": semantic_ready,
+            "embeddings_enabled": _bool_env("EMBEDDINGS_ENABLED"),
+            "provider": embeddings_provider,
+            "api_url_configurada": bool(os.getenv("EMBEDDINGS_API_URL")),
+            "sentence_transformers_instalado_no_backend": sentence_instalado,
+        },
+        "hitl": {
+            "total_logs": total_docs,
+            "por_status": status_map,
+            "pendentes_revisao": status_map.get("gerado", 0),
+        },
+        "melhorias_recomendadas": [
+            "Manter todas as novas chamadas de IA passando pelo ai_gateway e pelos providers centralizados.",
+            "Ativar worker separado de embeddings para busca semantica sem engordar o backend principal.",
+            "Criar rotina obrigatoria de revisao HITL para reduzir logs em status gerado.",
+            "Adicionar validador antialucinacao para artigos, jurisprudencia e fontes antes de gerar peca final.",
+        ],
     }

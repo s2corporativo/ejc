@@ -2,12 +2,12 @@
 # NÚCLEO COGNITIVO — gatilhos automáticos do CASO (ETAPA 1 do prompt mestre).
 #
 # triagem_caso(case_id): roda em BackgroundTask logo após a criação do caso.
-# A IA (Groq) lê os fatos e devolve JSON estruturado; preenchemos os campos
+# A IA, via gateway central, lê os fatos e devolve JSON estruturado; preenchemos os campos
 # que JÁ EXISTEM em `cases` (tese_principal, pontos_fortes, pontos_fracos) —
 # SOMENTE se estiverem vazios (nunca sobrescreve o que o advogado escreveu).
 # Tudo é RASCUNHO (Provimento OAB 205/2021): registramos AILog + movimento.
 #
-# Reutiliza primitivas existentes: get_groq, sanitizar_pii, AILog, AsyncSessionLocal.
+# Reutiliza primitivas existentes: AI Gateway, sanitizar_pii, AILog, AsyncSessionLocal.
 # Não cria tabela nova. Não reescreve analisar_caso (que faz análise em prosa).
 from __future__ import annotations
 import json
@@ -22,7 +22,7 @@ from app.models.case import Case, CaseMovimento
 from app.models.client import Client
 from app.models.legal_doc import LegalDoc
 from app.models.ai_log import AILog, AITipoUso, AIStatusHITL
-from app.services.ai_service import get_groq
+from app.services.ai_gateway import chat as gw_chat, GatewayResponse
 from app.services.ingestion_service import upsert_documento
 from app.services.sanitizer import sanitizar_pii
 
@@ -66,6 +66,33 @@ def _parse_json(txt: str) -> dict | None:
         return None
 
 
+
+async def _gateway_json(
+    system_prompt: str,
+    user_prompt: str,
+    task_type: str = "analise_juridica",
+    temperature: float = 0.1,
+    max_tokens: int = 1000,
+    nivel: str = "alto",
+) -> tuple[str, GatewayResponse]:
+    resp = await gw_chat(
+        messages=[
+            {"role": "system", "content": system_prompt},
+            {"role": "user", "content": user_prompt},
+        ],
+        task_type=task_type,
+        temperature=temperature,
+        max_tokens=max_tokens,
+        nivel_inteligencia=nivel,
+    )
+    return resp.texto, resp
+
+
+def _modelo_log(resp: object) -> str:
+    modelo = getattr(resp, "modelo", None) or settings.GROQ_MODEL
+    provedor = getattr(resp, "provedor", None)
+    return f"{provedor}/{modelo}" if provedor else modelo
+
 async def triagem_caso(case_id: str) -> None:
     if not settings.AI_ENABLED:
         return
@@ -82,14 +109,10 @@ async def triagem_caso(case_id: str) -> None:
             area_atual = getattr(case.area, "value", None) or str(case.area or "")
             user_msg = f"ÁREA INFORMADA: {area_atual or 'não informada'}\n\nFATOS:\n{texto_limpo}"
 
-            client = get_groq()
-            resp = await client.chat.completions.create(
-                model=settings.GROQ_MODEL,
-                messages=[{"role": "system", "content": SYS_TRIAGEM},
-                          {"role": "user", "content": user_msg}],
-                temperature=0.2, max_tokens=1100, timeout=settings.GROQ_TIMEOUT,
+            bruto, resp = await _gateway_json(
+                SYS_TRIAGEM, user_msg, task_type="estrategia",
+                temperature=0.1, max_tokens=1300, nivel="alto",
             )
-            bruto = resp.choices[0].message.content
             data = _parse_json(bruto)
             if not data:
                 logger.warning(f"[case_intel] JSON inválido para caso {case_id}")
@@ -129,7 +152,7 @@ async def triagem_caso(case_id: str) -> None:
             ))
             db.add(AILog(
                 id=str(uuid4()), user_id=case.advogado_responsavel_id, case_id=case.id,
-                tipo_uso=AITipoUso.analise_caso, modelo=settings.GROQ_MODEL,
+                tipo_uso=AITipoUso.analise_caso, modelo=_modelo_log(resp),
                 prompt_sanitizado=texto_limpo[:8000], pii_removida=houve_pii,
                 resposta=bruto[:8000], status_hitl=AIStatusHITL.gerado,
             ))
@@ -188,13 +211,10 @@ async def aprendizado_encerramento(case_id: str) -> None:
             bruto = ""
             if settings.AI_ENABLED:
                 try:
-                    resp = await get_groq().chat.completions.create(
-                        model=settings.GROQ_MODEL,
-                        messages=[{"role": "system", "content": SYS_ENCERRAMENTO},
-                                  {"role": "user", "content": base_limpo}],
-                        temperature=0.2, max_tokens=900, timeout=settings.GROQ_TIMEOUT,
+                    bruto, resp = await _gateway_json(
+                        SYS_ENCERRAMENTO, base_limpo, task_type="estrategia",
+                        temperature=0.1, max_tokens=1200, nivel="alto",
                     )
-                    bruto = resp.choices[0].message.content
                     data = _parse_json(bruto)
                 except Exception as e:
                     logger.warning(f"[case_intel] IA encerramento falhou ({case_id}): {str(e)[:120]}")
@@ -239,7 +259,7 @@ async def aprendizado_encerramento(case_id: str) -> None:
             if bruto:
                 db.add(AILog(
                     id=str(uuid4()), user_id=case.advogado_responsavel_id, case_id=case.id,
-                    tipo_uso=AITipoUso.outro, modelo=settings.GROQ_MODEL,
+                    tipo_uso=AITipoUso.outro, modelo=_modelo_log(resp),
                     prompt_sanitizado=base_limpo[:8000], pii_removida=houve_pii,
                     resposta=bruto[:8000], status_hitl=AIStatusHITL.gerado))
             await db.commit()
@@ -322,13 +342,11 @@ async def indexar_peca_rag(legal_doc_id: str) -> None:
             # Módulo 6 — classificação automática (best effort).
             if settings.AI_ENABLED:
                 try:
-                    resp = await get_groq().chat.completions.create(
-                        model=settings.GROQ_MODEL,
-                        messages=[{"role": "system", "content": SYS_CLASSIFICAR},
-                                  {"role": "user", "content": limpo[:6000]}],
-                        temperature=0.1, max_tokens=400, timeout=settings.GROQ_TIMEOUT,
+                    bruto, _resp = await _gateway_json(
+                        SYS_CLASSIFICAR, limpo[:6000], task_type="analise_juridica",
+                        temperature=0.05, max_tokens=600, nivel="alto",
                     )
-                    cls = _parse_json(resp.choices[0].message.content)
+                    cls = _parse_json(bruto)
                     if cls:
                         meta.update({k: cls.get(k) for k in ("area", "assunto", "tese", "palavras_chave")})
                 except Exception as e:

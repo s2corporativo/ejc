@@ -11,6 +11,7 @@ export default function Documentos() {
   const [form, setForm] = useState<any>({ confidencialidade: "normal" });
   const fileRef = useRef<HTMLInputElement>(null);
   const [enviando, setEnviando] = useState(false);
+  const [casos, setCasos] = useState<any[]>([]);
 
   const load = () =>
     api
@@ -20,6 +21,11 @@ export default function Documentos() {
       .then((r) => setData(r.data));
   useEffect(() => {
     load();
+    // M12: lista de casos para vincular o documento (torna o gate IDOR efetivo).
+    api
+      .get("/cases/", { params: { page_size: 200 } })
+      .then((r) => setCasos(r.data?.data || []))
+      .catch(() => {});
   }, []);
   useEffect(() => {
     const t = setTimeout(load, 350);
@@ -38,6 +44,11 @@ export default function Documentos() {
     fd.append("titulo", form.titulo);
     fd.append("confidencialidade", form.confidencialidade);
     if (form.tipo) fd.append("tipo", form.tipo);
+    if (form.case_id) {
+      fd.append("case_id", form.case_id);
+      const caso = casos.find((c) => c.id === form.case_id);
+      if (caso?.client_id) fd.append("client_id", caso.client_id);
+    }
     try {
       await api.post("/documents/upload", fd);
       setModal(false);
@@ -167,6 +178,28 @@ export default function Documentos() {
               className="input"
               accept=".pdf,.docx,.doc,.jpg,.jpeg,.png,.xlsx,.xls,.txt"
             />
+          </div>
+          <div>
+            <label className="label">Vincular ao caso (recomendado)</label>
+            <select
+              className="input"
+              value={form.case_id || ""}
+              onChange={(e) =>
+                setForm({ ...form, case_id: e.target.value || undefined })
+              }
+            >
+              <option value="">— Sem vínculo —</option>
+              {casos.map((c) => (
+                <option key={c.id} value={c.id}>
+                  {(c.numero_interno ? c.numero_interno + " — " : "") +
+                    (c.titulo || "Caso")}
+                </option>
+              ))}
+            </select>
+            <p className="mt-1 text-xs text-slate-400">
+              Vincular a um caso controla quem pode acessar o documento (sigilo do
+              cliente).
+            </p>
           </div>
           <div>
             <label className="label">Confidencialidade</label>

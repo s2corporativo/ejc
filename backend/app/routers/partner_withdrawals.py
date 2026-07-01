@@ -6,7 +6,7 @@ from typing import Optional
 from app.core.database import get_db
 from app.core.security import get_current_user
 
-router = APIRouter(prefix="/api/v1/partner-withdrawals", tags=["partner-withdrawals"])
+router = APIRouter(prefix="/v1/partner-withdrawals", tags=["partner-withdrawals"])
 
 PRIVILEGED = {"superadmin", "socio"}
 
@@ -104,30 +104,6 @@ async def approve_withdrawal(
     )
     await db.commit()
     return {"ok": True, "status": "aprovado"}
-
-
-@router.patch("/{withdrawal_id}/reject")
-async def reject_withdrawal(
-    withdrawal_id: str,
-    db: AsyncSession = Depends(get_db),
-    current_user=Depends(get_current_user),
-):
-    if current_user.role not in PRIVILEGED:
-        raise HTTPException(403, "Only partners or admins can reject withdrawals")
-
-    result = await db.execute(text("SELECT status FROM partner_withdrawals WHERE id=:id AND deleted_at IS NULL"), {"id": withdrawal_id})
-    row = result.fetchone()
-    if not row:
-        raise HTTPException(404, "Withdrawal not found")
-    if row[0] != "pendente":
-        raise HTTPException(400, f"Cannot reject withdrawal in status '{row[0]}'")
-
-    await db.execute(
-        text("UPDATE partner_withdrawals SET status='rejeitado', updated_at=NOW() WHERE id=:id"),
-        {"id": withdrawal_id}
-    )
-    await db.commit()
-    return {"ok": True, "status": "rejeitado"}
 
 
 @router.patch("/{withdrawal_id}/pay")

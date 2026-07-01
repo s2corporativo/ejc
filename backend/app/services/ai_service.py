@@ -1,5 +1,5 @@
 # ── app/services/ai_service.py ───────────────────────────────────────────────
-# Serviço de IA — Groq (llama3-70b) com:
+# Serviço de IA — via AI Gateway central com:
 #  1. Sanitização LGPD obrigatória (sanitizer.py)
 #  2. RAG: recuperação de jurisprudências/súmulas do pgvector
 #  3. Anti-alucinação: resposta DEVE citar fontes da base; sem fonte = declarado
@@ -9,32 +9,17 @@
 from __future__ import annotations
 import logging
 from uuid import uuid4
-from typing import Optional
-
-from groq import AsyncGroq
 from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.config import get_settings
 from app.services.sanitizer import sanitizar_pii, validar_sem_pii
 from app.services.case_context import montar_dossie
+from app.services.ai_gateway import chat as gw_chat, GatewayResponse
 from app.models.ai_log import AILog, AITipoUso, AIStatusHITL
 
 logger = logging.getLogger(__name__)
 settings = get_settings()
-
-# Cliente Groq (singleton lazy)
-_client: Optional[AsyncGroq] = None
-
-def get_groq() -> AsyncGroq:
-    global _client
-    if _client is None:
-        if not settings.GROQ_API_KEY:
-            raise RuntimeError(
-                "GROQ_API_KEY não configurada no .env — IA desabilitada"
-            )
-        _client = AsyncGroq(api_key=settings.GROQ_API_KEY)
-    return _client
 
 
 # ── Prompts mestres ───────────────────────────────────────────────────────────
@@ -70,7 +55,6 @@ Não invente informações ausentes do texto. Marque incertezas explicitamente."
 
 
 # ── Busca RAG (pgvector) ──────────────────────────────────────────────────────
-
 
 # ── Isolamento por cliente (Fase 3B / LGPD / EOAB art. 25) ────────────────────
 # Categorias RESTRITAS = conteúdo derivado de casos de clientes (peças/precedentes
@@ -269,6 +253,53 @@ def _modelo_para_prompt(prompt: str) -> str:
     return settings.GROQ_MODEL
 
 
+
+
+async def _gateway_text(
+    system_prompt: str,
+    user_prompt: str,
+    task_type: str = "analise_juridica",
+    temperature: float = 0.15,
+    max_tokens: int = 2048,
+    nivel: str = "alto",
+    model_override: str | None = None,
+) -> tuple[str, GatewayResponse]:
+    """Chamada centralizada ao AI Gateway, mantendo metadados para logs HITL."""
+    provider_override = "groq" if model_override else None
+    resp = await gw_chat(
+        messages=[
+            {"role": "system", "content": system_prompt},
+            {"role": "user", "content": user_prompt},
+        ],
+        task_type=task_type,
+        temperature=temperature,
+        max_tokens=max_tokens,
+        model_override=model_override,
+        provider_override=provider_override,
+        nivel_inteligencia=nivel,
+    )
+    return resp.texto, resp
+
+
+def _modelo_log(resp: object, fallback: str | None = None) -> str:
+    modelo = getattr(resp, "modelo", None) or fallback or settings.GROQ_MODEL
+    provedor = getattr(resp, "provedor", None)
+    return f"{provedor}/{modelo}" if provedor else modelo
+
+
+def _tokens_input(resp: object) -> int | None:
+    usage = getattr(resp, "usage", None)
+    if usage is not None:
+        return getattr(usage, "prompt_tokens", None)
+    return getattr(resp, "input_tokens", None)
+
+
+def _tokens_output(resp: object) -> int | None:
+    usage = getattr(resp, "usage", None)
+    if usage is not None:
+        return getattr(usage, "completion_tokens", None)
+    return getattr(resp, "output_tokens", None)
+
 # ── Funções principais ────────────────────────────────────────────────────────
 
 async def analisar_caso(
@@ -297,20 +328,10 @@ async def analisar_caso(
                     "Remova CPF/CNPJ/nº processo do texto e tente novamente."
         }
 
-    # Escopo de isolamento do RAG (Fase 3B): client_id do caso libera APENAS as
-    # peças/precedentes do próprio cliente (fail-closed quando não há caso).
-    scope_cli = None
-    if case_id:
-        scope_cli = (await db.execute(
-            text("SELECT client_id FROM cases WHERE id = :id AND deleted_at IS NULL"),
-            {"id": case_id},
-        )).scalar()
-
     # 2. RAG — recuperar contexto da base
     fontes = await buscar_contexto_rag(
         db, texto_limpo, limite=6,
         categorias=None,  # busca em todas; filtrar por área em fase 2
-        scope_client_id=scope_cli,
     )
     contexto = _formatar_fontes(fontes)
 
@@ -320,7 +341,6 @@ async def analisar_caso(
     precedentes = await buscar_contexto_rag(
         db, texto_limpo, limite=3, categorias=["precedente_interno"],
         modo_or=True,   # relevância parcial é útil: poucos precedentes, vocabulário variado
-        scope_client_id=scope_cli,   # só precedentes do próprio cliente (LGPD/EOAB)
     )
     contexto_precedentes = ""
     if precedentes:
@@ -356,22 +376,15 @@ async def analisar_caso(
     )
 
     modelo_usar = _modelo_para_prompt(prompt_usuario)
+    modelo_override = modelo_usar if modelo_usar != settings.GROQ_MODEL else None
     try:
-        client = get_groq()
-        resp = await client.chat.completions.create(
-            model=modelo_usar,
-            messages=[
-                {"role": "system", "content": SYSTEM_ANALISE_CASO},
-                {"role": "user",   "content": prompt_usuario},
-            ],
-            temperature=0.2,   # baixa: precisão > criatividade
-            max_tokens=2048,
-            timeout=settings.GROQ_TIMEOUT,
+        resposta, resp = await _gateway_text(
+            SYSTEM_ANALISE_CASO, prompt_usuario,
+            task_type="estrategia", temperature=0.15, max_tokens=2600,
+            nivel="alto", model_override=modelo_override,
         )
-        resposta = resp.choices[0].message.content
-        usage = resp.usage
     except Exception as e:
-        logger.error(f"Groq API falhou: {e}")
+        logger.error(f"AI Gateway falhou: {e}")
         return {"erro": f"Falha na IA: {str(e)[:200]}"}
 
     # 4. AI LOG (rastreabilidade LGPD + HITL)
@@ -380,13 +393,13 @@ async def analisar_caso(
         user_id=user_id,
         case_id=case_id,
         tipo_uso=AITipoUso.analise_caso,
-        modelo=modelo_usar,
+        modelo=_modelo_log(resp, modelo_usar),
         prompt_sanitizado=prompt_usuario[:8000],
         pii_removida=houve_pii,
         resposta=resposta,
         fontes_rag="; ".join(f["chunk_id"] for f in fontes) or None,
-        tokens_input=usage.prompt_tokens if usage else None,
-        tokens_output=usage.completion_tokens if usage else None,
+        tokens_input=_tokens_input(resp),
+        tokens_output=_tokens_output(resp),
         status_hitl=AIStatusHITL.gerado,
     )
     db.add(log)
@@ -415,24 +428,16 @@ async def resumir_documento(
     texto_limpo, houve_pii = sanitizar_pii(texto_documento[:12000])
 
     try:
-        client = get_groq()
-        resp = await client.chat.completions.create(
-            model=settings.GROQ_MODEL,
-            messages=[
-                {"role": "system", "content": SYSTEM_RESUMO_DOC},
-                {"role": "user",   "content": texto_limpo},
-            ],
-            temperature=0.1,
-            max_tokens=1024,
-            timeout=settings.GROQ_TIMEOUT,
+        resposta, resp = await _gateway_text(
+            SYSTEM_RESUMO_DOC, texto_limpo,
+            task_type="resumo", temperature=0.1, max_tokens=1200, nivel="alto",
         )
-        resposta = resp.choices[0].message.content
     except Exception as e:
         return {"erro": f"Falha na IA: {str(e)[:200]}"}
 
     log = AILog(
         id=str(uuid4()), user_id=user_id, case_id=case_id,
-        tipo_uso=AITipoUso.resumo_documento, modelo=settings.GROQ_MODEL,
+        tipo_uso=AITipoUso.resumo_documento, modelo=_modelo_log(resp),
         prompt_sanitizado=texto_limpo[:8000], pii_removida=houve_pii,
         resposta=resposta, status_hitl=AIStatusHITL.gerado,
     )
@@ -448,17 +453,16 @@ async def resumir_documento(
 async def _log_ai(db, user_id, tipo_uso_str, prompt, resposta,
                   pii, fontes, resp_groq, case_id):
     """Helper de log para as funções ECJ — mesmo padrão do analisar_caso."""
-    usage = getattr(resp_groq, "usage", None)
     log = AILog(
         id=str(uuid4()), user_id=user_id, case_id=case_id,
         tipo_uso=AITipoUso(tipo_uso_str),
-        modelo=settings.GROQ_MODEL,
+        modelo=_modelo_log(resp_groq),
         prompt_sanitizado=prompt[:8000],
         pii_removida=pii,
         resposta=resposta,
         fontes_rag="; ".join(f["chunk_id"] for f in fontes) or None if fontes else None,
-        tokens_input=usage.prompt_tokens if usage else None,
-        tokens_output=usage.completion_tokens if usage else None,
+        tokens_input=_tokens_input(resp_groq),
+        tokens_output=_tokens_output(resp_groq),
         status_hitl=AIStatusHITL.gerado,
     )
     db.add(log)
@@ -556,16 +560,10 @@ async def detectar_teses_ocultas(
         f"FONTES DA BASE INTERNA:\n{contexto}"
     )
     try:
-        client = get_groq()
-        resp = await client.chat.completions.create(
-            model=settings.GROQ_MODEL,
-            messages=[
-                {"role": "system", "content": SYSTEM_TESES_OCULTAS},
-                {"role": "user", "content": user_msg},
-            ],
-            temperature=0.3, max_tokens=2000,
+        conteudo, resp = await _gateway_text(
+            SYSTEM_TESES_OCULTAS, user_msg,
+            task_type="estrategia", temperature=0.2, max_tokens=2400, nivel="alto",
         )
-        conteudo = resp.choices[0].message.content
         await _log_ai(db, user_id, "analise_caso", user_msg, conteudo,
                       pii, fontes, resp, case_id)
         return {
@@ -587,16 +585,10 @@ async def auditar_peca(
     texto, pii = sanitizar_pii(conteudo_peca, [])
     user_msg = f"Tipo de peça: {tipo_peca}\n\nPEÇA (sanitizada):\n{texto[:12000]}"
     try:
-        client = get_groq()
-        resp = await client.chat.completions.create(
-            model=settings.GROQ_MODEL,
-            messages=[
-                {"role": "system", "content": SYSTEM_AUDITOR_PECA},
-                {"role": "user", "content": user_msg},
-            ],
-            temperature=0.2, max_tokens=2000,
+        conteudo, resp = await _gateway_text(
+            SYSTEM_AUDITOR_PECA, user_msg,
+            task_type="auditoria_peca", temperature=0.15, max_tokens=2400, nivel="alto",
         )
-        conteudo = resp.choices[0].message.content
         await _log_ai(db, user_id, "outro", user_msg[:4000], conteudo,
                       pii, [], resp, case_id)
         return {
@@ -617,16 +609,10 @@ async def preparar_audiencia(
     texto, pii = sanitizar_pii(resumo_caso, nomes_proteger or [])
     user_msg = f"Tipo de audiência: {tipo_audiencia}\n\nCASO (sanitizado):\n{texto[:8000]}"
     try:
-        client = get_groq()
-        resp = await client.chat.completions.create(
-            model=settings.GROQ_MODEL,
-            messages=[
-                {"role": "system", "content": SYSTEM_AUDIENCIA},
-                {"role": "user", "content": user_msg},
-            ],
-            temperature=0.3, max_tokens=2000,
+        conteudo, resp = await _gateway_text(
+            SYSTEM_AUDIENCIA, user_msg,
+            task_type="estrategia", temperature=0.2, max_tokens=2400, nivel="alto",
         )
-        conteudo = resp.choices[0].message.content
         await _log_ai(db, user_id, "outro", user_msg[:4000], conteudo,
                       pii, [], resp, case_id)
         return {
@@ -693,16 +679,10 @@ async def analisar_contrato(
         f"CONTRATO (sanitizado):\n{texto[:12000]}"
     )
     try:
-        client = get_groq()
-        resp = await client.chat.completions.create(
-            model=settings.GROQ_MODEL,
-            messages=[
-                {"role": "system", "content": SYSTEM_ANALISE_CONTRATO},
-                {"role": "user", "content": user_msg},
-            ],
-            temperature=0.2, max_tokens=2200,
+        conteudo, resp = await _gateway_text(
+            SYSTEM_ANALISE_CONTRATO, user_msg,
+            task_type="analise_contrato", temperature=0.15, max_tokens=2800, nivel="alto",
         )
-        conteudo = resp.choices[0].message.content
         await _log_ai(db, user_id, "outro", user_msg[:4000], conteudo,
                       pii, fontes, resp, case_id)
         return {

@@ -17,7 +17,6 @@ import re
 from typing import Optional
 
 from app.services import ai_gateway, ocr_service
-from app.services.sanitizer import sanitizar_pii
 
 logger = logging.getLogger("ejc.documento_service")
 
@@ -95,14 +94,8 @@ async def extrair_e_analisar(
         }
     texto = texto[:18000]  # teto de contexto
 
-    # LGPD (laudo IA-01): NUNCA enviar PII bruta do documento ao LLM (Groq = EUA).
-    # Mascara CPF/CNPJ/processo/e-mail/telefone antes da análise. As partes saem
-    # mascaradas (placeholders) — o advogado preenche os dados reais (HITL). O texto
-    # bruto continua disponível localmente (retorno ao frontend e busca RAG interna).
-    texto_llm, _ = sanitizar_pii(texto)
-
     # 2) Extração estruturada + diagnóstico (1 chamada de IA)
-    user_msg = f"DOCUMENTO:\n\n{texto_llm}\n\n---\n{ESQUEMA}"
+    user_msg = f"DOCUMENTO:\n\n{texto}\n\n---\n{ESQUEMA}"
     try:
         resp = await ai_gateway.chat(
             messages=[{"role": "system", "content": SYSTEM},

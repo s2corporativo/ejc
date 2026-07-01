@@ -61,6 +61,11 @@ class Case(Base):
     vara      = Column(String(100), nullable=True)
     parte_contraria = Column(String(255), nullable=True)
     valor_causa = Column(Numeric(14, 2), nullable=True)
+    
+    # Auditoria e Sincronização (DataJud/PJe)
+    last_synced_at = Column(DateTime(timezone=True), nullable=True)
+    sync_pending   = Column(Boolean, default=False)
+    sync_error     = Column(Text, nullable=True)
 
     # Tipo de caso (núcleo Casos&Processos)
     case_type           = Column(String(50), nullable=True, default="judicial")

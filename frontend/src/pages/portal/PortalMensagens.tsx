@@ -47,7 +47,7 @@ export default function PortalMensagens() {
     if (!selectedId) return;
     setLoading(true);
     try {
-      const r = await api.get(`/cases/${selectedId}/mensagens`);
+      const r = await api.get(`/portal/casos/${selectedId}/mensagens`);
       setMsgs(r.data ?? []);
     } catch {
       setMsgs([]);
@@ -67,7 +67,7 @@ export default function PortalMensagens() {
     if (!text.trim() || !selectedId || sending) return;
     setSending(true);
     try {
-      await api.post(`/cases/${selectedId}/mensagens`, { mensagem: text });
+      await api.post(`/portal/casos/${selectedId}/mensagens`, { mensagem: text });
       setText("");
       await loadMsgs();
     } finally {
@@ -170,6 +170,7 @@ export default function PortalMensagens() {
                 value={text}
                 onChange={(e) => setText(e.target.value)}
                 onKeyDown={(e) => e.key === "Enter" && !e.shiftKey && send()}
+                maxLength={4000}
               />
               <button
                 onClick={send}

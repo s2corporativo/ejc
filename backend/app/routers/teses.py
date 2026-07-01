@@ -185,7 +185,7 @@ async def ranking_teses(
     return [_tese_out(t) for t in teses]
 
 
-@router.get("/caso/{case_id}")
+@router.get("/casos/{case_id}")
 async def teses_do_caso(
     case_id: str,
     db: AsyncSession = Depends(get_db),
@@ -424,21 +424,10 @@ async def motor_teses(
     texto, _ = sanitizar_pii(req.descricao_fatos, [])
     consulta = f"{req.area} {texto}"[:400]
 
-    # Escopo de isolamento (Fase 3B): precedentes internos só do cliente do caso.
-    # Sem case_id → scope None → fail-closed (não surge precedente de outro cliente).
-    from sqlalchemy import text as _text
-    scope_cli = None
-    if req.case_id:
-        scope_cli = (await db.execute(
-            _text("SELECT client_id FROM cases WHERE id = :id AND deleted_at IS NULL"),
-            {"id": req.case_id},
-        )).scalar()
-
     jurisp = await buscar_contexto_rag(
         db, consulta, limite=6,
         categorias=["jurisprudencia", "sumula_stf", "sumula_stj", "sumula_tst"], modo_or=True)
-    internos = await buscar_contexto_rag(db, consulta, limite=4, categorias=["precedente_interno"],
-                                         modo_or=True, scope_client_id=scope_cli)
+    internos = await buscar_contexto_rag(db, consulta, limite=4, categorias=["precedente_interno"], modo_or=True)
     doutrina = await buscar_contexto_rag(db, consulta, limite=3, categorias=["doutrina"], modo_or=True)
 
     teses_venc = (await db.execute(

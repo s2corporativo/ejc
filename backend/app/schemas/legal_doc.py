@@ -1,7 +1,7 @@
 # ── app/schemas/legal_doc.py ─────────────────────────────────────────────────
 from __future__ import annotations
 from pydantic import BaseModel
-from typing import Optional
+from typing import Optional, Any
 from datetime import datetime
 
 class LegalDocCreate(BaseModel):
@@ -30,6 +30,7 @@ class LegalDocResponse(BaseModel):
     human_reviewed: bool
     case_id: Optional[str] = None
     revisor_id: Optional[str] = None
+    validacao_juridica: Optional[dict[str, Any]] = None
     created_at: datetime
     class Config:
         from_attributes = True

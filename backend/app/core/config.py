@@ -68,9 +68,12 @@ class Settings(BaseSettings):
     DATAJUD_ENABLED: bool = True
     DATAJUD_API_KEY: str = ""  # Configurar via .env
 
-    # ── Embeddings locais (busca semântica RAG) ───────────────────────────
-    # Requer: pip install -r requirements-ml.txt (sentence-transformers)
+    # ── Embeddings locais/remotos (busca semântica RAG) ─────────────────
+    # local = sentence-transformers no mesmo processo; http = serviço interno separado.
     EMBEDDINGS_ENABLED: bool = False
+    EMBEDDINGS_PROVIDER: str = "local"  # local | http
+    EMBEDDINGS_API_URL: str = "http://embeddings:8010/embed"
+    EMBEDDINGS_TIMEOUT: int = 120
 
     # ── Web Push (alertas no celular via PWA) ────────────────────────────
     # Gerar chaves: python scripts/gen_vapid.py (uma vez no deploy)

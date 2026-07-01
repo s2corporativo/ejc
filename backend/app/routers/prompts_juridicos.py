@@ -235,17 +235,9 @@ async def executar_prompt(
     # Sanitiza PII antes de enviar à IA
     conteudo_sanitizado, houve_pii = sanitizar_pii(conteudo_preenchido, [])
 
-    # Anti-alucinação (IA-03 / Passo 0): SEMPRE injeta a base no system. Antes,
-    # mandava só {"role":"user"} com task_type arbitrário do request → se o task
-    # não estava em _TASKS_COM_BASE, a IA rodava sem nenhuma barreira (furo grave).
-    # aplicar_base é idempotente (detecta [IDENTIDADE]) — não duplica.
-    from app.services.legal_base import BASE_IDENTIDADE
     try:
         resp = await gw_chat(
-            messages=[
-                {"role": "system", "content": BASE_IDENTIDADE},
-                {"role": "user", "content": conteudo_sanitizado},
-            ],
+            messages=[{"role": "user", "content": conteudo_sanitizado}],
             task_type=req.task_type,
             temperature=req.temperature,
             max_tokens=req.max_tokens,

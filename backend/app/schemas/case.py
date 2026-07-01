@@ -85,6 +85,12 @@ class CaseResponse(BaseModel):
     linked_judicial_case_id: Optional[str] = None
     data_prescricao: Optional[datetime] = None
     created_at: datetime
+    
+    # Sincronização
+    last_synced_at: Optional[datetime] = None
+    sync_pending: bool = False
+    sync_error: Optional[str] = None
+    
     processo_principal: Optional[ProcessoPrincipalSchema] = None
     class Config:
         from_attributes = True

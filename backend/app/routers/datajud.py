@@ -8,7 +8,7 @@ from app.core.security import get_current_user
 from app.services import datajud_service
 from app.models.case import Case
 
-router = APIRouter(prefix="/api/v1/datajud", tags=["datajud"])
+router = APIRouter(prefix="/v1/datajud", tags=["datajud"])
 
 
 @router.get("/process/{numero_cnj}")

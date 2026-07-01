@@ -9,7 +9,7 @@ function MensagensCliente({ caseId }: { caseId: string }) {
   const [sending, setSending] = useState(false);
   const carregar = () =>
     api
-      .get(`/cases/${caseId}/mensagens`)
+      .get(`/portal/casos/${caseId}/mensagens`)
       .then((r) => setMsgs(r.data))
       .catch(() => {});
   useEffect(() => {
@@ -19,7 +19,7 @@ function MensagensCliente({ caseId }: { caseId: string }) {
     if (!txt.trim()) return;
     setSending(true);
     try {
-      await api.post(`/cases/${caseId}/mensagens`, { mensagem: txt });
+      await api.post(`/portal/casos/${caseId}/mensagens`, { mensagem: txt });
       setTxt("");
       carregar();
     } catch {
@@ -69,6 +69,7 @@ function MensagensCliente({ caseId }: { caseId: string }) {
           onChange={(e) => setTxt(e.target.value)}
           onKeyDown={(e) => e.key === "Enter" && enviar()}
           placeholder="Escreva sua mensagem…"
+          maxLength={4000}
           className="input flex-1"
         />
         <button

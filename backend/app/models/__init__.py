@@ -45,7 +45,24 @@ from app.models.push import PushSubscription  # noqa
 from app.models.djen import DjenComunicacao  # noqa
 from app.models.password_reset import PasswordResetToken, UserKnownIP  # noqa
 from app.models.suspensao import SuspensaoTribunal  # noqa
-from app.models.operacional import (  # noqa
-    Process, PricingRule, InadimplenciaAlert,
-    CaseAmbiental, DueDiligenceTemplate, DocumentAccessLog,
-)
+
+# ── P0/P1-6: registrar TODOS os models p/ o Alembic autogenerate enxergar a
+# metadata completa (causa-raiz do drift de schema). Import de módulo basta —
+# executa as definições de classe e as anexa a Base.metadata.
+from app.models import ai_skill            # noqa
+from app.models import atendimento         # noqa
+from app.models import bank_analysis       # noqa
+from app.models import case_parte          # noqa
+from app.models import caso_area           # noqa
+from app.models import centro_custo        # noqa
+from app.models import checklist           # noqa
+from app.models import contrato_societario # noqa
+from app.models import data_room           # noqa
+from app.models import diario_oficial      # noqa
+from app.models import dossie_estrategico  # noqa
+from app.models import jurisprudencia_interna  # noqa
+from app.models import prompt_juridico     # noqa
+from app.models import socio               # noqa
+from app.models import tese                # noqa
+from app.models import wiki                # noqa
+from app.models import workflow            # noqa

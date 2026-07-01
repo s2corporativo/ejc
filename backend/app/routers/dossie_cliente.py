@@ -6,16 +6,8 @@ from sqlalchemy import text
 from app.core.database import get_db
 from app.core.security import get_current_user
 from app.models.user import User
-# Reusa o MESMO gate de PII/financeiro do cliente já aplicado ao relatório
-# financeiro (gestão/financeiro/advogado) — o dossiê expõe a mesma classe de
-# dado (CPF/CNPJ + casos + honorários) e antes não tinha gate forte (laudo Fase 4).
-from app.routers.relatorio_cliente import _req_fin_adv
 
-router = APIRouter(
-    prefix="/clients/{client_id}/dossie",
-    tags=["Dossiê do Cliente"],
-    dependencies=[Depends(_req_fin_adv)],
-)
+router = APIRouter(prefix="/clients/{client_id}/dossie", tags=["Dossiê do Cliente"])
 
 
 @router.get("")

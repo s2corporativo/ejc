@@ -25,6 +25,7 @@ class AiRequest(BaseModel):
     mensagem: str = Field(..., min_length=5, max_length=12000)
     case_id: Optional[str] = Field(None, description="Caso para contexto")
     usar_rag: bool = Field(False, description="Buscar na base de conhecimento (RAG)")
+    nivel_inteligencia: str = Field("alto", description="padrao, alto ou maximo")
 
 
 class AiResponse(BaseModel):
@@ -54,6 +55,7 @@ async def status_ia(cu: User = Depends(get_current_user)):
         "modelo_rapido": os.getenv("ANTHROPIC_MODEL_RAPIDO", "claude-haiku-4-5-20251001"),
         "modelo_complexo": os.getenv("ANTHROPIC_MODEL_COMPLEXO", "(=rapido)"),
         "tarefas": [t.value for t in TarefaIA],
+        "niveis_inteligencia": ["padrao", "alto", "maximo"],
         "aviso": "Todos os resultados são rascunhos. Revisão humana obrigatória.",
     }
 
@@ -79,6 +81,7 @@ async def executar_ia(
         resultado = await executar_tarefa_ia(
             tarefa=req.tarefa, mensagem=req.mensagem, case_id=req.case_id,
             contexto_rag=contexto_rag, user_id=cu.id, db=db,
+            nivel_inteligencia=req.nivel_inteligencia,
         )
     except ValueError as e:
         raise HTTPException(status.HTTP_400_BAD_REQUEST, str(e))

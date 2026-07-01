@@ -7,7 +7,7 @@ from datetime import date
 from app.core.database import get_db
 from app.core.security import get_current_user
 
-router = APIRouter(prefix="/api/v1/clients", tags=["pending-items"])
+router = APIRouter(prefix="/v1/clients", tags=["pending-items"])
 
 
 @router.get("/{client_id}/pending-items")

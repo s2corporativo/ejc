@@ -14,7 +14,10 @@ from app.core.database import get_db
 from app.core.security import get_current_user, ROLE_LEVEL
 from app.models.user import User
 from app.models.ai_log import AILog
+from app.models.legal_doc import LegalDoc, PecaTipo, PecaStatus
 from app.services.peca_service import gerar_peca_pipeline, TIPOS_PECA, AREAS_DIREITO
+from datetime import date
+from uuid import uuid4
 
 router = APIRouter(prefix="/pecas", tags=["Geração de Peças"])
 
@@ -123,3 +126,62 @@ async def listar_pecas(
         "page": page,
         "page_size": page_size,
     }
+
+
+class LinhaDemonstrativo(BaseModel):
+    label: str
+    valor: str
+
+
+class DemonstrativoRequest(BaseModel):
+    titulo: str = Field(..., min_length=2, max_length=200)
+    base_legal: Optional[str] = Field(None, max_length=300)
+    linhas: list[LinhaDemonstrativo] = Field(default=[])
+    rodape: Optional[str] = Field(None, max_length=2000)
+    case_id: Optional[str] = None
+
+
+@router.post("/demonstrativo", status_code=201)
+async def gerar_demonstrativo(
+    req: DemonstrativoRequest,
+    db: AsyncSession = Depends(get_db),
+    cu: User = Depends(get_current_user),
+):
+    """Converte o resultado de uma calculadora em um Demonstrativo de Cálculo
+    salvo como peça (LegalDoc) rascunho — vinculável a um caso. Reusa a esteira
+    de peças existente; resultado é MINUTA (revisão humana obrigatória)."""
+    if ROLE_LEVEL.get(cu.role.value, 0) < ROLE_LEVEL["estagiario"]:
+        raise HTTPException(403, "Acesso negado")
+
+    linhas_txt = "\n".join(f"  • {l.label}: {l.valor}" for l in req.linhas) or "  (sem itens)"
+    partes = [
+        f"DEMONSTRATIVO DE CÁLCULO — {req.titulo}",
+        f"\nElaborado em {date.today().strftime('%d/%m/%Y')} por {cu.full_name}"
+        + (f" (OAB {cu.oab_number})" if getattr(cu, "oab_number", None) else ""),
+        "\nMEMÓRIA DE CÁLCULO:\n" + linhas_txt,
+    ]
+    if req.base_legal:
+        partes.append(f"\nFUNDAMENTO: {req.base_legal}")
+    if req.rodape:
+        partes.append(f"\n{req.rodape}")
+    partes.append(
+        "\n____________________________________________________________\n"
+        "MINUTA gerada a partir de calculadora — revisão humana obrigatória. "
+        "Conferir índices, datas-base, correção monetária e juros antes de qualquer uso."
+    )
+    conteudo = "\n".join(partes)
+
+    doc = LegalDoc(
+        id=str(uuid4()),
+        titulo=f"Demonstrativo — {req.titulo}"[:255],
+        tipo_peca=PecaTipo.outro,
+        status=PecaStatus.rascunho,
+        conteudo=conteudo,
+        ai_generated=False,
+        case_id=req.case_id or None,
+        created_by=cu.id,
+    )
+    db.add(doc)
+    await db.commit()
+    return {"id": doc.id, "titulo": doc.titulo, "conteudo": conteudo,
+            "detail": "Demonstrativo salvo como rascunho em Peças."}

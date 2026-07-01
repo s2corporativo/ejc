@@ -86,11 +86,15 @@ def validar_sem_pii(texto: str) -> list[str]:
     Usado como segunda barreira antes da chamada à API.
     """
     encontrados = []
+    # Reusa os MESMOS padrões de sanitizar_pii (índices em _PATTERNS).
     checks = {
         'CPF': _PATTERNS[0][0],
         'CNPJ': _PATTERNS[1][0],
         'PROCESSO': _PATTERNS[2][0],
+        'RG': _PATTERNS[3][0],
         'EMAIL': _PATTERNS[4][0],
+        'TELEFONE': _PATTERNS[5][0],
+        'CEP': _PATTERNS[6][0],
     }
     for nome, pattern in checks.items():
         if pattern.search(texto):

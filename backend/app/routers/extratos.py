@@ -15,7 +15,7 @@ def _gestor(u: User) -> bool:
     return ROLE_LEVEL.get(u.role.value, 0) >= ROLE_LEVEL["socio"]
 
 
-@router.get("/caso/{case_id}")
+@router.get("/detalhado/{case_id}")
 async def extrato_caso(case_id: str, db: AsyncSession = Depends(get_db), cu: User = Depends(get_current_user)):
     caso = (await db.execute(text("SELECT titulo, numero_interno FROM cases WHERE id=:id AND deleted_at IS NULL"), {"id": case_id})).mappings().first()
     if not caso:

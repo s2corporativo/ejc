@@ -18,14 +18,8 @@ BASE_IDENTIDADE = (
     "'verificar'). NUNCA prometa resultado."
 )
 
-# Apenas tarefas de PROSA recebem a base anti-alucinação — exclui as de saída
-# ESTRUTURADA (analise_juridica = JSON de extração) e 'resumo', para não interferir
-# no formato esperado. (laudo IA-04: redacao_peca/chat_rapido também são prosa e
-# antes caíam sem a base.)
-_TASKS_COM_BASE = {
-    "estrategia", "auditoria_peca", "elaboracao_peca",
-    "redacao_peca", "chat_rapido",
-}
+# Apenas tarefas de PROSA recebem a base — exclui JSON (analise_juridica) e resumo.
+_TASKS_COM_BASE = {"estrategia", "auditoria_peca", "elaboracao_peca"}
 
 
 def aplicar_base(messages: list[dict], task_type: str) -> list[dict]:

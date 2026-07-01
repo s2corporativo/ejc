@@ -260,3 +260,18 @@ async def tendencias(
         }
         for r in rows
     ]
+
+
+@router.post("/predicao-exito")
+async def predicao_exito(payload: dict, cu: User = Depends(get_current_user)):
+    """Jurimetria Preditiva: Cruzamento de dados para prever êxito."""
+    from app.core.ai_brain import ai_brain
+    texto = payload.get("contexto")
+    prompt = f"Analise a probabilidade de êxito para este caso: {texto}"
+    saida = await ai_brain.generate(prompt, "secundario")
+    return {
+        "resultado": saida,
+        "aviso": "Estimativa preliminar sem garantia de resultado (OAB Prov. 205/2021). Requer validação do advogado responsável.",
+        "is_estimativa": True,
+    }
+

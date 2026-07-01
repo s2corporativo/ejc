@@ -29,7 +29,7 @@ PERFIS = {
         "sys": ("Você é a IA Jurídica. Foco: análise técnica, teses, fundamentação legal e estratégia processual. "
                 "Sempre cite base normativa (artigo + lei). Nunca invente jurisprudência. Respostas analíticas, "
                 "nunca promessa de resultado."),
-        "task": "redacao_peca",
+        "task": "elaboracao_peca",
     },
     "financeira": {
         "label": "IA Financeira",
@@ -62,23 +62,15 @@ async def consultar(
     if not cfg:
         raise HTTPException(404, f"Perfil inválido. Use: {', '.join(PERFIS)}")
     pergunta = (body.get("pergunta") or "").strip()
+    nivel = (body.get("nivel_inteligencia") or "alto").strip()
     if len(pergunta) < 3:
         raise HTTPException(422, "Pergunta muito curta")
-
-    # LGPD (laudo IA-02): sanitiza a pergunta ANTES do RAG e do LLM, com 2ª barreira.
-    from app.services.sanitizer import sanitizar_pii, validar_sem_pii
-    pergunta_limpa, _ = sanitizar_pii(pergunta)
-    residual = validar_sem_pii(pergunta_limpa)
-    if residual:
-        raise HTTPException(
-            422, f"Dados pessoais detectados ({', '.join(residual)}). "
-                 "Remova CPF/CNPJ/nº de processo da pergunta.")
 
     # contexto RAG (mesma base de conhecimento)
     contexto = ""
     try:
         from app.services.ai_service import buscar_contexto_rag
-        contexto = await buscar_contexto_rag(db, pergunta_limpa) or ""
+        contexto = await buscar_contexto_rag(db, pergunta) or ""
     except Exception:
         contexto = ""
 
@@ -88,25 +80,9 @@ async def consultar(
 
     resp = await ai_gateway.chat(
         messages=[{"role": "system", "content": sys},
-                  {"role": "user", "content": pergunta_limpa}],
-        task_type=cfg["task"], temperature=0.3, max_tokens=1500,
+                  {"role": "user", "content": pergunta}],
+        task_type=cfg["task"], temperature=0.18 if nivel in ("alto", "maximo") else 0.3, max_tokens=2600 if nivel == "maximo" else 1900,
+        nivel_inteligencia=nivel,
     )
-
-    # Rastreabilidade (laudo IA-02): registra o uso de IA (auditoria LGPD / HITL).
-    try:
-        from uuid import uuid4
-        from app.models.ai_log import AILog, AITipoUso, AIStatusHITL
-        db.add(AILog(
-            id=str(uuid4()), user_id=cu.id, tipo_uso=AITipoUso.consulta_rag,
-            modelo=f"{resp.provedor}/{resp.modelo}"[:50],
-            prompt_sanitizado=f"[ia-especializada:{perfil}] {pergunta_limpa[:500]}",
-            resposta=(resp.texto or "")[:8000],
-            status_hitl=AIStatusHITL.gerado, pii_removida=True,
-        ))
-        await db.commit()
-    except Exception as _e:
-        import logging
-        logging.getLogger(__name__).warning("AILog (ia-especializada) nao salvo: %s", _e)
-
     return {"perfil": perfil, "label": cfg["label"], "resposta": resp.texto,
-            "modelo": resp.modelo, "provedor": resp.provedor}
+            "modelo": resp.modelo, "provedor": resp.provedor, "nivel_inteligencia": nivel}

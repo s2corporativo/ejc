@@ -1,9 +1,10 @@
-"""051_rag_isolation — isolamento do RAG por cliente/caso (LGPD/EOAB art. 25)
+"""055_rag_isolation — isolamento do RAG por cliente/caso (LGPD/EOAB art. 25)
 
-Revision ID: 051_rag_isolation
-Revises: 050_novos_modulos
-Create Date: 2026-06-29
+Revision ID: 055_rag_isolation
+Revises: 054_victory_vault
+Create Date: 2026-06-30
 
+Reaplicação da Fase 3B sobre a base canônica de produção (que evoluiu até a 054).
 Adiciona client_id/case_id em knowledge_docs para que conteúdo RESTRITO (peças e
 precedentes internos) só seja recuperável no escopo do próprio cliente. Conteúdo
 PÚBLICO (legislação, súmulas, jurisprudência, doutrina) permanece global (NULL).
@@ -15,8 +16,8 @@ baseline já criou as colunas pelo modelo ORM), os ADD COLUMN viram no-op.
 """
 from alembic import op
 
-revision = "051_rag_isolation"
-down_revision = "050_novos_modulos"
+revision = "055_rag_isolation"
+down_revision = "054_victory_vault"
 branch_labels = None
 depends_on = None
 

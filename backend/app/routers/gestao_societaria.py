@@ -38,6 +38,7 @@ class SocioPatch(BaseModel):
     pro_labore:              Optional[float] = None
     ativo:                   Optional[bool]  = None
     data_saida:              Optional[_date] = None
+    meta_produtividade:      Optional[float] = None # Seção 8.270
     observacoes:             Optional[str]   = None
 
 
@@ -59,6 +60,7 @@ def _out_socio(s: Socio) -> dict:
         "oab_numero": s.oab_numero, "oab_uf": s.oab_uf,
         "data_entrada": s.data_entrada.isoformat() if s.data_entrada else None,
         "data_saida": s.data_saida.isoformat() if s.data_saida else None,
+        "meta_produtividade": float(s.meta_produtividade) if hasattr(s, 'meta_produtividade') and s.meta_produtividade else 0.0,
         "ativo": s.ativo, "observacoes": s.observacoes,
     }
 

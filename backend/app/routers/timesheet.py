@@ -45,7 +45,7 @@ class FaturarIn(BaseModel):
     data_vencimento: Optional[date] = None
 
 
-@router.get("/caso/{case_id}")
+@router.get("/casos/{case_id}")
 async def por_caso(
     case_id: str,
     db: AsyncSession = Depends(get_db),

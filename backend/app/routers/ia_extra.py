@@ -15,22 +15,23 @@ from app.core.config import get_settings
 from app.core.security import get_current_user
 from app.models.user import User
 from app.models.ai_log import AILog, AITipoUso, AIStatusHITL
-from app.services.ai_service import get_groq, buscar_contexto_rag
+from app.services.ai_service import buscar_contexto_rag
+from app.services.ai_gateway import chat as gw_chat
 from app.services.sanitizer import sanitizar_pii
 
 settings = get_settings()
 router = APIRouter(prefix="/ai", tags=["IA — Assistente"])
 
 
-async def _groq(system: str, user: str, temperature: float = 0.2, max_tokens: int = 1200) -> str:
-    client = get_groq()
-    resp = await client.chat.completions.create(
-        model=settings.GROQ_MODEL,
-        messages=[{"role": "system", "content": system},
-                  {"role": "user", "content": user}],
-        temperature=temperature, max_tokens=max_tokens, timeout=settings.GROQ_TIMEOUT,
+async def _ia(system: str, user: str, task_type: str = "analise_juridica", temperature: float = 0.2, max_tokens: int = 1200, nivel: str = "alto") -> str:
+    resp = await gw_chat(
+        messages=[{"role": "system", "content": system}, {"role": "user", "content": user}],
+        task_type=task_type,
+        temperature=temperature,
+        max_tokens=max_tokens,
+        nivel_inteligencia=nivel,
     )
-    return resp.choices[0].message.content
+    return resp.texto
 
 
 async def _log(db, user_id, tipo, case_id, prompt, pii, resposta):
@@ -62,7 +63,7 @@ async def traduzir_andamento(body: TraduzirIn, db: AsyncSession = Depends(get_db
         raise HTTPException(503, "IA desabilitada")
     limpo, pii = sanitizar_pii(body.texto)
     try:
-        resposta = await _groq(SYS_TRADUZIR, limpo, temperature=0.3, max_tokens=700)
+        resposta = await _ia(SYS_TRADUZIR, limpo, task_type="resumo", temperature=0.25, max_tokens=900, nivel="alto")
     except Exception as e:
         raise HTTPException(502, f"Falha na IA: {str(e)[:160]}")
     log_id = await _log(db, cu.id, AITipoUso.outro, body.case_id, limpo, pii, resposta)
@@ -88,7 +89,7 @@ async def resumir_texto(body: ResumirIn, db: AsyncSession = Depends(get_db),
         raise HTTPException(503, "IA desabilitada")
     limpo, pii = sanitizar_pii(body.texto)
     try:
-        resposta = await _groq(SYS_RESUMIR, limpo, temperature=0.1, max_tokens=1200)
+        resposta = await _ia(SYS_RESUMIR, limpo, task_type="resumo", temperature=0.1, max_tokens=1400, nivel="alto")
     except Exception as e:
         raise HTTPException(502, f"Falha na IA: {str(e)[:160]}")
     log_id = await _log(db, cu.id, AITipoUso.resumo_documento, body.case_id, limpo, pii, resposta)
@@ -124,7 +125,7 @@ async def gerar_minuta(body: MinutaIn, db: AsyncSession = Depends(get_db),
     system = SYS_MINUTA.format(tipo=body.tipo_peca, area=body.area or "geral")
     user = f"TEMA: {body.tema}\n\nFATOS: {fatos_limpo}\n\nCONTEXTO (base do escritório):\n{ctx_txt}"
     try:
-        resposta = await _groq(system, user, temperature=0.3, max_tokens=2200)
+        resposta = await _ia(system, user, task_type="elaboracao_peca", temperature=0.18, max_tokens=3200, nivel="alto")
     except Exception as e:
         raise HTTPException(502, f"Falha na IA: {str(e)[:160]}")
     log_id = await _log(db, cu.id, AITipoUso.redacao_peca, body.case_id, user, pii, resposta)
@@ -154,7 +155,7 @@ async def pesquisar(body: PesquisaIn, db: AsyncSession = Depends(get_db),
                           for c in contexto) or "(base sem resultados relevantes)"
     user = f"PERGUNTA: {body.pergunta}\n\nCONTEXTO:\n{ctx_txt}"
     try:
-        resposta = await _groq(SYS_PESQUISA, user, temperature=0.2, max_tokens=1400)
+        resposta = await _ia(SYS_PESQUISA, user, task_type="analise_juridica", temperature=0.12, max_tokens=2200, nivel="alto")
     except Exception as e:
         raise HTTPException(502, f"Falha na IA: {str(e)[:160]}")
     log_id = await _log(db, cu.id, AITipoUso.consulta_rag, None, body.pergunta, False, resposta)
@@ -205,7 +206,7 @@ async def sugestao_honorarios(body: HonorariosIn, db: AsyncSession = Depends(get
     user = (f"ÁREA: {body.area}\nSERVIÇO/ATO: {body.descricao}{vc}\n\n"
             f"TRECHOS DA TABELA DE HONORÁRIOS OAB/MG:\n{ctx_txt}")
     try:
-        bruto = await _groq(SYS_HONORARIOS, user, temperature=0.1, max_tokens=700)
+        bruto = await _ia(SYS_HONORARIOS, user, task_type="analise_juridica", temperature=0.05, max_tokens=1000, nivel="alto")
     except Exception as e:
         raise HTTPException(502, f"Falha na IA: {str(e)[:160]}")
     log_id = await _log(db, cu.id, AITipoUso.outro, None, user, False, bruto)

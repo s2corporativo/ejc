@@ -304,7 +304,7 @@ async def gerar_checklist_ia_endpoint(
     }
 
 
-@router.get("/caso/{case_id}")
+@router.get("/casos/{case_id}")
 async def checklists_do_caso(
     case_id: str,
     status:  Optional[str] = Query(None),

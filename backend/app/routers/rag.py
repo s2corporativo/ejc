@@ -2,7 +2,7 @@
 # Base de conhecimento RAG: ingestão de docs + consulta.
 from datetime import datetime, timezone
 from uuid import uuid4
-from typing import Optional
+from typing import Optional, List
 
 from fastapi import APIRouter, Depends, HTTPException, Query, BackgroundTasks, UploadFile, File, Form
 from pydantic import BaseModel
@@ -16,6 +16,8 @@ from app.models.rag import KnowledgeDoc, KnowledgeChunk, FonteIngestao
 from app.services.ai_service import buscar_contexto_rag, _RESTRICTED_CATS
 from app.services.embedding_service import gerar_embeddings, disponivel as emb_disponivel
 from app.schemas.common import MsgResponse
+from app.core.ai_brain import ai_brain
+from app.core.public_apis import api_client
 
 router = APIRouter(prefix="/rag", tags=["Base de Conhecimento"])
 
@@ -38,7 +40,7 @@ async def stats_conhecimento(db: AsyncSession = Depends(get_db), cu: User = Depe
 
 class IngestRequest(BaseModel):
     titulo: str
-    categoria: str   # legislacao|sumula_stf|sumula_stj|sumula_tst|jurisprudencia|precedente_interno|doutrina
+    categoria: str   # legislacao_geral|legislacao_ambiental|legislacao_administrativa|legislacao_trabalhista|legislacao_tributaria|legislacao_bancaria|sumula_tjmg|sumula_stf|sumula_stj|sumula_tst|jurisprudencia_tjmg|jurisprudencia_stj|jurisprudencia_tst|jurisprudencia_carf|jurisprudencia_tcu|precedente_interno|doutrina|tese_vitoriosa|modelo_documento_juridico
     conteudo: str
     fonte: Optional[str] = None
     tribunal: Optional[str] = None
@@ -226,12 +228,12 @@ async def ingerir(
 async def buscar(
     q: str = Query(..., min_length=3),
     limite: int = Query(6, ge=1, le=20),
-    categoria: Optional[str] = None,
+    categorias: Optional[List[str]] = Query(None),
     db: AsyncSession = Depends(get_db),
     cu: User = Depends(get_current_user),
 ):
     """Consulta a base de conhecimento (textual; semântica na fase 2)."""
-    cats = [categoria] if categoria else None
+    cats = categorias if categorias else None
     modo = "textual"
 
     # Busca SEMÂNTICA (pgvector cosine) quando embeddings ativos
@@ -267,6 +269,18 @@ async def buscar(
 
     resultados = await buscar_contexto_rag(db, q, limite=limite, categorias=cats)
     return {"query": q, "modo": modo, "resultados": resultados}
+
+
+@router.post("/match-casos")
+async def match_casos(payload: dict, cu: User = Depends(get_current_user)):
+    """Match de Casos (v3): Cruzamento semântico de caso vs base."""
+    from app.services.rag_juridico import rag_juridico
+    texto = payload.get("texto")
+    area = payload.get("area", "geral")
+    if not texto:
+        raise HTTPException(400, "Texto do caso é obrigatório.")
+    return await rag_juridico.match_de_casos(texto, area)
+
 
 
 @router.get("/docs")

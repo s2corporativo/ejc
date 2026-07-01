@@ -24,14 +24,15 @@ async def varrer_inadimplencia(db: AsyncSession) -> dict:
     now = datetime.now(timezone.utc)
 
     # Fees vencidas e não pagas
+    # NB: o schema real usa f.valor / f.data_vencimento (não amount/due_date).
     r = await db.execute(text("""
         SELECT f.id AS fee_id, f.case_id, f.client_id,
-               f.amount AS amount_due, f.due_date
+               f.valor AS amount_due, f.data_vencimento AS due_date
         FROM fees f
         WHERE f.status IN ('pendente','atrasado')
-          AND f.due_date < NOW()
+          AND f.data_vencimento < NOW()
           AND f.deleted_at IS NULL
-        ORDER BY f.due_date ASC
+        ORDER BY f.data_vencimento ASC
         LIMIT 500
     """))
     fees = r.fetchall()
@@ -59,7 +60,7 @@ async def varrer_inadimplencia(db: AsyncSession) -> dict:
                         amount_due = :amount, updated_at = NOW()
                     WHERE id = :id
                 """), {"nivel": nivel, "days": days,
-                       "amount": float(fee.amount_due), "id": row.id})
+                       "amount": float(fee.amount_due or 0), "id": row.id})
                 updated += 1
         else:
             await db.execute(text("""
@@ -73,7 +74,7 @@ async def varrer_inadimplencia(db: AsyncSession) -> dict:
                 "case_id":   fee.case_id,
                 "client_id": fee.client_id,
                 "days":      days,
-                "amount":    float(fee.amount_due),
+                "amount":    float(fee.amount_due or 0),
                 "nivel":     nivel,
             })
             inserted += 1
@@ -107,7 +108,7 @@ async def listar_alertas(
                a.days_overdue, a.amount_due, a.alert_level,
                a.action_taken, a.resolved, a.created_at,
                cl.nome AS client_nome,
-               c.case_number
+               c.numero_interno AS case_number
         FROM inadimplencia_alerts a
         LEFT JOIN clients cl ON cl.id = a.client_id
         LEFT JOIN cases c ON c.id = a.case_id

@@ -6,12 +6,14 @@ from app.core.security import get_current_user
 import httpx
 import os
 
-router = APIRouter(prefix="/api/v1/whatsapp", tags=["whatsapp"])
+router = APIRouter(prefix="/v1/whatsapp", tags=["whatsapp"])
 
-EVOLUTION_URL = os.getenv("EVOLUTION_URL", "http://localhost:8080")
-EVOLUTION_KEY = os.getenv("EVOLUTION_KEY", "")
+# Lê os nomes oficiais do .env (EVOLUTION_API_URL / EVOLUTION_API_KEY); mantém
+# fallback para nomes legados. Sem key por instância, usa a apikey global.
+EVOLUTION_URL = os.getenv("EVOLUTION_API_URL") or os.getenv("EVOLUTION_URL", "http://evolution_api:8080")
+EVOLUTION_KEY = os.getenv("EVOLUTION_API_KEY") or os.getenv("EVOLUTION_KEY", "")
 INSTANCE      = os.getenv("EVOLUTION_INSTANCE", "ejc-escritorio")
-INSTANCE_KEY  = os.getenv("EVOLUTION_INSTANCE_KEY", "")
+INSTANCE_KEY  = os.getenv("EVOLUTION_INSTANCE_KEY") or EVOLUTION_KEY
 
 def _headers_global():
     return {"apikey": EVOLUTION_KEY, "Content-Type": "application/json"}

@@ -3,7 +3,6 @@ import Markdown from "../components/Markdown";
 import { Sparkles, Upload, FileText, AlertTriangle } from "lucide-react";
 import api from "../lib/api";
 import { PageHeader, Spinner } from "../components/UI";
-import EmDesenvolvimento from "../components/EmDesenvolvimento";
 
 type Skill = {
   id: string;
@@ -29,7 +28,6 @@ export default function FerramentasIA() {
   const [carregando, setCarregando] = useState(true);
   const [res, setRes] = useState<any>(null);
   const [erro, setErro] = useState<string | null>(null);
-  const [indisponivel, setIndisponivel] = useState(false);
 
   useEffect(() => {
     api
@@ -39,7 +37,7 @@ export default function FerramentasIA() {
         setSkills(arr);
         if (arr.length) setSel(arr[0].name);
       })
-      .catch(() => setIndisponivel(true))
+      .catch(() => setErro("Falha ao carregar as ferramentas de IA."))
       .finally(() => setCarregando(false));
   }, []);
 
@@ -90,9 +88,6 @@ export default function FerramentasIA() {
         <Spinner />
       </div>
     );
-
-  if (indisponivel)
-    return <EmDesenvolvimento eyebrow="Inteligência" title="Ferramentas de IA" />;
 
   return (
     <div className="space-y-5">

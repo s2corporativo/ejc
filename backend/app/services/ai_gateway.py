@@ -36,6 +36,43 @@ settings = get_settings()
 # "groq" usa o modelo configurado em GROQ_MODEL / GROQ_MODEL_LARGE.
 # "ollama" usa o modelo local especificado.
 
+TASK_ALIASES = {
+    "redacao_peca": "elaboracao_peca",
+    "redacao_juridica": "elaboracao_peca",
+    "peca_juridica": "elaboracao_peca",
+    "analise_caso": "estrategia",
+    "pesquisa_juridica": "analise_juridica",
+    "rag_query": "analise_juridica",
+}
+
+NIVEL_INTELIGENCIA_PROMPTS = {
+    "padrao": "Responda com objetividade, precisao e foco pratico.",
+    "alto": (
+        "Ative raciocinio juridico senior: decomponha o problema em fatos, direito, prova, "
+        "risco e estrategia; identifique lacunas, contradicoes, teses alternativas e providencias; "
+        "nao invente fontes."
+    ),
+    "maximo": (
+        "Ative modo de inteligencia maxima: faca leitura adversarial, teste hipoteses concorrentes, "
+        "analise preliminares, merito, prova, quantum, acordo e risco; entregue conclusoes verificaveis, "
+        "separando fato, inferencia, lacuna e decisao humana pendente. Nao revele cadeia de pensamento."
+    ),
+}
+
+
+def _normalizar_task_type(task_type: str) -> str:
+    return TASK_ALIASES.get(task_type, task_type)
+
+
+def _aplicar_nivel(messages: list[dict], nivel_inteligencia: str | None) -> list[dict]:
+    nivel = (nivel_inteligencia or "padrao").lower()
+    instrucao = NIVEL_INTELIGENCIA_PROMPTS.get(nivel)
+    if not instrucao:
+        return messages
+    extra = {"role": "system", "content": f"NIVEL DE INTELIGENCIA: {nivel.upper()}\n{instrucao}"}
+    return [extra] + messages
+
+
 TASK_ROUTING: dict[str, list[tuple[str, str | None]]] = {
     "analise_juridica": [
         ("ollama", None),    # resolvido em runtime para OLLAMA_MODEL_ANALISE
@@ -106,6 +143,7 @@ async def chat(
     max_tokens: int = 2048,
     model_override: str | None = None,
     provider_override: str | None = None,
+    nivel_inteligencia: str | None = None,
 ) -> GatewayResponse:
     """
     Ponto central de chamada à IA.
@@ -118,12 +156,13 @@ async def chat(
 
     Retorna GatewayResponse com texto, metadados e informações de fallback.
     """
+    task_type = _normalizar_task_type(task_type)
     t0 = time.monotonic()
     fallback_ativado = False
     fallback_motivo: str | None = None
 
     # #8 — injeta a identidade do escritório no system (apenas tarefas de prosa).
-    messages = legal_base.aplicar_base(messages, task_type)
+    messages = _aplicar_nivel(legal_base.aplicar_base(messages, task_type), nivel_inteligencia)
 
     # AI_PROVIDER="groq" → ignora Ollama; "ollama" → falha se Ollama down
     provider_force = provider_override or (
@@ -286,7 +325,8 @@ async def _registrar_ai_log(db, user_id, case_id, tipo_uso, modelo, inp, out, cu
 
 async def executar_tarefa_ia(tarefa, mensagem: str, case_id: str | None = None,
                              contexto_rag: list[str] | None = None,
-                             user_id: str | None = None, db=None) -> dict:
+                             user_id: str | None = None, db=None,
+                             nivel_inteligencia: str = "alto") -> dict:
     """Entrada do MÓDULO IA por tarefa. Resultado SEMPRE rascunho (HITL/OAB)."""
     from app.services.system_prompts import SYSTEM_PROMPTS, get_configuracao
     cfg = get_configuracao(tarefa)
@@ -294,8 +334,8 @@ async def executar_tarefa_ia(tarefa, mensagem: str, case_id: str | None = None,
     if contexto_rag:
         trechos = "\n\n---\n\n".join(f"Trecho {i+1}:\n{c}" for i, c in enumerate(contexto_rag))
         system_prompt += f"\n\n## CONHECIMENTO RECUPERADO (BASE INTERNA):\n{trechos}"
-    messages = [{"role": "system", "content": system_prompt},
-                {"role": "user", "content": mensagem}]
+    messages = _aplicar_nivel([{ "role": "system", "content": system_prompt },
+                {"role": "user", "content": mensagem}], nivel_inteligencia)
     try:
         texto, usage = await _chamar_provedor(cfg.provider, cfg.model, messages, cfg.temperature, cfg.max_tokens)
         provedor_usado = cfg.provider
@@ -316,6 +356,7 @@ async def executar_tarefa_ia(tarefa, mensagem: str, case_id: str | None = None,
                                 f"{provedor_usado}/{modelo_real}", inp, out, custo)
     return {
         "conteudo": texto, "modelo": f"{provedor_usado}/{modelo_real}", "provider": provedor_usado,
+        "nivel_inteligencia": nivel_inteligencia,
         "tarefa": getattr(tarefa, "value", str(tarefa)),
         "is_rascunho": True, "requer_revisao": True,
         "tokens_usados": inp + out, "custo_estimado_brl": custo,

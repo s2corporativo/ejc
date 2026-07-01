@@ -190,9 +190,21 @@ async def sincronizar_caso(db: AsyncSession, case: Case) -> int:
     """
     if not case.numero_processo:
         return 0
-    info = await consultar_processo(case.numero_processo)
-    if not info:
-        return 0
+    
+    case.sync_pending = True
+    try:
+        info = await consultar_processo(case.numero_processo)
+        if not info:
+            case.sync_pending = False
+            case.last_synced_at = datetime.now(timezone.utc)
+            case.sync_error = "Processo não localizado no DataJud"
+            return 0
+        
+        case.sync_error = None
+    except Exception as e:
+        case.sync_pending = False
+        case.sync_error = str(e)
+        raise e
 
     existentes = (await db.execute(
         select(CaseMovimento.descricao).where(CaseMovimento.case_id == case.id)
@@ -269,3 +281,8 @@ async def _criar_deadline_automatico(
         )
     except Exception as e:
         logger.warning(f"[DataJud] Falha ao criar deadline automático: {e}")
+
+    # Atualiza metadados de sucesso
+    case.last_synced_at = datetime.now(timezone.utc)
+    case.sync_pending = False
+    return inseridos

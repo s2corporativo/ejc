@@ -5,7 +5,7 @@
 #     fetch (httpx async + retry/backoff)
 #       → normaliza (texto limpo)
 #       → chunk (por tamanho, com overlap)
-#       → embeddings locais (all-MiniLM 384d, opcional)
+#       → embeddings locais (all-E5 768d, opcional)
 #       → UPSERT idempotente em knowledge_docs/knowledge_chunks
 #       → registra execução em fontes_ingestao (auditável)
 #

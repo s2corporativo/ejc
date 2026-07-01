@@ -16,10 +16,10 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.database import get_db
 from app.core.security import get_current_user, require_roles, ROLE_LEVEL
-from app.core.ownership import verificar_acesso_caso, is_gestao
 from app.models.user import User
 from app.models.case import Case
 from app.models.audit_log import criar_audit_log
+from app.core.ownership import verificar_acesso_caso, is_gestao
 from app.models.especializado import (
     EmpresarialCase, EmpresarialTipo, EmpresarialStatus,
     CivelCase, CivelTipo, CivelStatus,
@@ -68,7 +68,8 @@ def _casos_visiveis_subq(cu: User):
 # ── CRUD compartilhado ────────────────────────────────────────────────────────
 # A lógica de listar/atualizar/remover é idêntica entre os 6 ramos. Para evitar
 # duplicação mantendo cada rota EXPLÍCITA e auditável, cada handler delega para
-# estes helpers. Ownership por caso (IDOR) e serialização sem _sa_instance_state.
+# estes helpers. Comportamento preservado: filtro por tipo, soft-delete, audit
+# log, whitelist de colunas no patch.
 async def _crud_listar(Model, db: AsyncSession, tipo: Optional[str],
                        limit: int, offset: int, cu: User) -> dict:
     q = select(Model).where(Model.deleted_at.is_(None))
@@ -173,7 +174,7 @@ async def emp_criar(body: EmpresarialIn, db: AsyncSession = Depends(get_db),
     db.add(e)
     await criar_audit_log(db, cu.id, cu.role.value, "CREATE", "empresarial_cases", e.id)
     await db.commit()
-    return _serialize(e)
+    return e.__dict__
 
 
 @router.patch("/empresarial/{eid}")
@@ -294,7 +295,7 @@ async def civ_criar(body: CivelIn, db: AsyncSession = Depends(get_db),
     db.add(c)
     await criar_audit_log(db, cu.id, cu.role.value, "CREATE", "civel_cases", c.id)
     await db.commit()
-    return _serialize(c)
+    return c.__dict__
 
 
 @router.patch("/civel/{cid}")
@@ -436,7 +437,7 @@ async def pen_criar(body: PenalIn, db: AsyncSession = Depends(get_db),
     db.add(p)
     await criar_audit_log(db, cu.id, cu.role.value, "CREATE", "penal_cases", p.id)
     await db.commit()
-    return _serialize(p)
+    return p.__dict__
 
 
 @router.patch("/penal/{pid}")
@@ -598,7 +599,7 @@ async def trab_criar(body: TrabalhistaIn, db: AsyncSession = Depends(get_db),
     db.add(t)
     await criar_audit_log(db, cu.id, cu.role.value, "CREATE", "trabalhista_cases", t.id)
     await db.commit()
-    return _serialize(t)
+    return t.__dict__
 
 
 @router.patch("/trabalhista-esp/{tid}")
@@ -740,7 +741,7 @@ async def adm_criar(body: AdminIn, db: AsyncSession = Depends(get_db),
     db.add(a)
     await criar_audit_log(db, cu.id, cu.role.value, "CREATE", "admin_cases", a.id)
     await db.commit()
-    return _serialize(a)
+    return a.__dict__
 
 
 @router.patch("/admin-esp/{aid}")
@@ -778,6 +779,526 @@ async def adm_multa_transito(
         "risco_suspensao": pontos_cnh >= 20,   # CTB art. 261
         "base": "CTB arts. 281-284 + Res. CONTRAN 619/2016",
         "aviso": "MINUTA. Prazo 1ª instância conta da notificação da autuação; 2ª da decisão da JARI.",
+    }
+
+
+# ── Ferramentas Trânsito (ramo próprio) ───────────────────────────────────────
+@router.get("/transito/ferramentas/prazos-recurso")
+async def transito_prazos_recurso(
+    data_notificacao: date,
+    valor_multa: float,
+    fase: str = "autuacao",   # autuacao (defesa prévia) | penalidade (JARI)
+    cu: User = Depends(require_roles(_EQUIPE)),
+):
+    """
+    Prazos de defesa/recurso de multa e descontos (CTB Lei 9.503/97).
+    Defesa prévia: a partir da notificação da AUTUAÇÃO (mín. 15 dias, CTB art. 281 §ú).
+    Recurso à JARI: 30 dias da notificação da PENALIDADE (art. 285).
+    Recurso ao CETRAN: 30 dias da decisão da JARI (art. 288).
+    """
+    defesa_previa = prazo_dias_corridos(data_notificacao, 15)
+    jari = prazo_dias_corridos(data_notificacao, 30)
+    cetran = prazo_dias_corridos(jari, 30)
+    alvo = jari if fase == "penalidade" else defesa_previa
+    dias_restantes = (alvo - date.today()).days
+    return {
+        "data_notificacao": data_notificacao,
+        "fase": fase,
+        "prazo_defesa_previa": defesa_previa,
+        "prazo_recurso_jari": jari,
+        "prazo_recurso_cetran": cetran,
+        "dias_restantes": dias_restantes,
+        "urgente": dias_restantes <= 5,
+        "valor_multa": valor_multa,
+        "valor_desconto_40pct_sne": round(valor_multa * 0.60, 2),   # -40% adesão SNE (Lei 14.071/20)
+        "valor_desconto_20pct": round(valor_multa * 0.80, 2),       # -20% pagto até venc. (art. 284)
+        "base": "CTB Lei 9.503/97 arts. 281, 284, 285, 288 + Lei 14.071/2020",
+        "aviso": "MINUTA — revisão humana obrigatória. Confira o prazo indicado na própria notificação.",
+    }
+
+
+@router.get("/transito/ferramentas/pontuacao-cnh")
+async def transito_pontuacao_cnh(
+    pontos_total: int,
+    infracoes_gravissimas_12m: int = 0,
+    categoria_profissional: str = "nao",
+    cu: User = Depends(require_roles(_EQUIPE)),
+):
+    """
+    Limite de pontos para suspensão da CNH (Lei 14.071/2020 — CTB art. 261).
+    O teto varia com o nº de infrações GRAVÍSSIMAS nos últimos 12 meses.
+    """
+    eh_prof = categoria_profissional.lower() in ("sim", "true", "1")
+    if eh_prof:
+        limite, regra = 30, "Condutor com atividade remunerada (EAR): teto de 30 pontos."
+    elif infracoes_gravissimas_12m >= 2:
+        limite, regra = 20, "2+ infrações gravíssimas em 12 meses: teto de 20 pontos."
+    elif infracoes_gravissimas_12m == 1:
+        limite, regra = 30, "1 infração gravíssima em 12 meses: teto de 30 pontos."
+    else:
+        limite, regra = 40, "Nenhuma infração gravíssima em 12 meses: teto de 40 pontos."
+    excedeu = pontos_total >= limite
+    return {
+        "pontos_total": pontos_total,
+        "infracoes_gravissimas_12m": infracoes_gravissimas_12m,
+        "condutor_profissional": eh_prof,
+        "limite_aplicavel": limite,
+        "regra_aplicada": regra,
+        "atingiu_limite": excedeu,
+        "pontos_para_suspensao": max(limite - pontos_total, 0),
+        "consequencia": "Instauração de processo de suspensão do direito de dirigir (CTB art. 261)."
+                        if excedeu else "Dentro do limite — monitorar.",
+        "base": "CTB art. 261 c/c Lei 14.071/2020; condutor EAR: art. 261.",
+        "aviso": "MINUTA — revisão humana obrigatória.",
+    }
+
+
+# ── Helper: soma de anos a uma data (trata 29/02) ─────────────────────────────
+def _add_anos_data(d: date, anos: int) -> date:
+    try:
+        return d.replace(year=d.year + anos)
+    except ValueError:
+        return d.replace(month=2, day=28, year=d.year + anos)
+
+
+# ── Ferramentas Consumidor ────────────────────────────────────────────────────
+@router.get("/consumidor/ferramentas/devolucao-dobro")
+async def consumidor_devolucao_dobro(
+    valor_cobrado: float,
+    houve_ma_fe: str = "sim",
+    cu: User = Depends(require_roles(_EQUIPE)),
+):
+    """Repetição em dobro do indébito (CDC art. 42 §ú)."""
+    ma_fe = houve_ma_fe.lower() in ("sim", "true", "1")
+    return {
+        "valor_cobrado": valor_cobrado,
+        "restituicao": round(valor_cobrado * 2, 2) if ma_fe else round(valor_cobrado, 2),
+        "aplica_dobro": ma_fe,
+        "observacao": "Dobro do valor pago indevidamente (+ correção e juros)." if ma_fe
+                      else "Engano justificável afasta o dobro (restituição simples) — STJ.",
+        "base": "CDC art. 42 §ú; STJ EAREsp 676.608 (modulação 30/03/2021).",
+        "aviso": "MINUTA — revisão humana obrigatória.",
+    }
+
+
+@router.get("/consumidor/ferramentas/prazos-cdc")
+async def consumidor_prazos_cdc(
+    data_fato: date,
+    tipo: str = "vicio_duravel",
+    cu: User = Depends(require_roles(_EQUIPE)),
+):
+    """Decadência/prescrição e arrependimento no CDC."""
+    mapa = {
+        "vicio_duravel":     (90, "dias", "Decadência — vício de produto durável (CDC art. 26 II)."),
+        "vicio_nao_duravel": (30, "dias", "Decadência — não durável (art. 26 I)."),
+        "arrependimento":    (7,  "dias", "Arrependimento — compra fora do estabelecimento (art. 49)."),
+        "fato":              (5,  "anos", "Prescrição — fato do produto/serviço (art. 27)."),
+        "cobranca_indevida": (3,  "anos", "Prescrição — cobrança indevida (CC art. 206 §3)."),
+    }
+    n, unid, desc = mapa.get(tipo, mapa["vicio_duravel"])
+    prazo = prazo_dias_corridos(data_fato, n) if unid == "dias" else _add_anos_data(data_fato, n)
+    dias_rest = (prazo - date.today()).days
+    return {
+        "tipo": tipo, "descricao": desc, "data_fato": data_fato, "prazo_final": prazo,
+        "dias_restantes": dias_rest, "expirado": dias_rest < 0, "urgente": 0 <= dias_rest <= 15,
+        "base": "CDC arts. 26, 27, 49.", "aviso": "MINUTA — revisão humana obrigatória.",
+    }
+
+
+# ── Ferramentas Família ───────────────────────────────────────────────────────
+@router.get("/familia/ferramentas/debito-alimentos")
+async def familia_debito_alimentos(
+    valor_mensal: float,
+    meses_atraso: int,
+    cu: User = Depends(require_roles(_EQUIPE)),
+):
+    """Débito de pensão e rito de execução (prisão civil x penhora)."""
+    return {
+        "valor_mensal": valor_mensal, "meses_atraso": meses_atraso,
+        "debito_total": round(valor_mensal * meses_atraso, 2),
+        "rito_prisao_civil_3_ultimas": round(valor_mensal * min(meses_atraso, 3), 2),
+        "cabe_prisao": meses_atraso >= 1,
+        "observacao": "Prisão civil (CPC art. 528 §3) cabe sobre as 3 últimas parcelas + vincendas "
+                      "(Súmula 309 STJ); demais parcelas seguem rito de penhora (art. 528 §8).",
+        "base": "CPC art. 528 §3 e §8; Súmula 309 STJ.",
+        "aviso": "MINUTA — revisão humana obrigatória. Não inclui correção/juros.",
+    }
+
+
+# ── Ferramentas Imobiliário ───────────────────────────────────────────────────
+@router.get("/imobiliario/ferramentas/reajuste-aluguel")
+async def imobiliario_reajuste_aluguel(
+    valor_atual: float,
+    indice_percentual: float,
+    cu: User = Depends(require_roles(_EQUIPE)),
+):
+    """Reajuste anual de aluguel pelo índice contratual (IGP-M/IPCA)."""
+    novo = round(valor_atual * (1 + indice_percentual / 100), 2)
+    return {
+        "valor_atual": valor_atual, "indice_percentual": indice_percentual,
+        "valor_reajustado": novo, "aumento": round(novo - valor_atual, 2),
+        "observacao": "Reajuste anual; índice conforme cláusula contratual (Lei 8.245/91 art. 18).",
+        "base": "Lei 8.245/91 (Lei do Inquilinato) art. 18.",
+        "aviso": "MINUTA — revisão humana obrigatória.",
+    }
+
+
+@router.get("/imobiliario/ferramentas/prazos-despejo")
+async def imobiliario_prazos_despejo(
+    data_citacao: date,
+    fundamento: str = "falta_pagamento",
+    cu: User = Depends(require_roles(_EQUIPE)),
+):
+    """Prazos da ação de despejo e purga da mora (Lei 8.245/91)."""
+    mapa = {
+        "falta_pagamento": "Falta de pagamento — purga da mora em 15 dias (art. 62 II).",
+        "denuncia_vazia":  "Denúncia vazia — desocupação em 15 dias após sentença (art. 63).",
+        "infracao":        "Infração contratual/legal (art. 9).",
+    }
+    return {
+        "data_citacao": data_citacao, "fundamento": fundamento,
+        "prazo_contestacao": prazo_dias_uteis(data_citacao, 15),
+        "prazo_purga_mora": prazo_dias_corridos(data_citacao, 15) if fundamento == "falta_pagamento" else None,
+        "descricao": mapa.get(fundamento, ""),
+        "base": "Lei 8.245/91 arts. 9, 59-63; CPC art. 335.",
+        "aviso": "MINUTA — revisão humana obrigatória.",
+    }
+
+
+# ── Ferramentas Previdenciário ────────────────────────────────────────────────
+@router.get("/previdenciario/ferramentas/prazos")
+async def previdenciario_prazos(
+    data_indeferimento: date,
+    tipo: str = "recurso_administrativo",
+    cu: User = Depends(require_roles(_EQUIPE)),
+):
+    """Prazos previdenciários (recurso CRPS, decadência e prescrição)."""
+    mapa = {
+        "recurso_administrativo": (30, "dias", "Recurso ao CRPS contra indeferimento (Dec. 3.048/99)."),
+        "decadencia_revisao":     (10, "anos", "Decadência para revisão do ato de concessão (Lei 8.213/91 art. 103)."),
+        "prescricao_parcelas":    (5,  "anos", "Prescrição das parcelas vencidas (art. 103 §ú)."),
+    }
+    n, unid, desc = mapa.get(tipo, mapa["recurso_administrativo"])
+    prazo = prazo_dias_corridos(data_indeferimento, n) if unid == "dias" else _add_anos_data(data_indeferimento, n)
+    dias_rest = (prazo - date.today()).days
+    return {
+        "tipo": tipo, "descricao": desc, "data_base": data_indeferimento, "prazo_final": prazo,
+        "dias_restantes": dias_rest, "expirado": dias_rest < 0,
+        "base": "Lei 8.213/91 art. 103; Dec. 3.048/99.", "aviso": "MINUTA — revisão humana obrigatória.",
+    }
+
+
+# ── Ferramentas Digital / LGPD ────────────────────────────────────────────────
+@router.get("/digital_lgpd/ferramentas/multa-lgpd")
+async def lgpd_multa(
+    faturamento_anual: float,
+    cu: User = Depends(require_roles(_EQUIPE)),
+):
+    """Teto de multa simples da LGPD (art. 52 II): 2% do faturamento, até R$ 50 mi/infração."""
+    dois_pct = round(faturamento_anual * 0.02, 2)
+    return {
+        "faturamento_anual": faturamento_anual, "multa_2pct": dois_pct,
+        "teto_aplicavel": min(dois_pct, 50_000_000.0),
+        "limitada_ao_teto": dois_pct > 50_000_000.0,
+        "observacao": "Multa simples de até 2% do faturamento no último exercício, limitada a R$ 50 milhões por infração.",
+        "base": "LGPD Lei 13.709/18 art. 52 II.",
+        "aviso": "MINUTA — revisão humana obrigatória. Dosimetria pela ANPD (art. 52 §1).",
+    }
+
+
+@router.get("/digital_lgpd/ferramentas/prazos-lgpd")
+async def lgpd_prazos(
+    data_evento: date,
+    tipo: str = "resposta_titular",
+    cu: User = Depends(require_roles(_EQUIPE)),
+):
+    """Prazos da LGPD (resposta ao titular e comunicação de incidente à ANPD)."""
+    mapa = {
+        "resposta_titular": (15, False, "Resposta ao titular sobre tratamento (LGPD art. 19 II)."),
+        "incidente_anpd":   (3,  True,  "Comunicação de incidente à ANPD (Res. ANPD CD/15 2024: 3 dias úteis)."),
+    }
+    n, uteis, desc = mapa.get(tipo, mapa["resposta_titular"])
+    prazo = prazo_dias_uteis(data_evento, n) if uteis else prazo_dias_corridos(data_evento, n)
+    dias_rest = (prazo - date.today()).days
+    return {
+        "tipo": tipo, "descricao": desc, "data_evento": data_evento, "prazo_final": prazo,
+        "dias_restantes": dias_rest, "expirado": dias_rest < 0,
+        "base": "LGPD art. 19; Resolução ANPD CD/15 2024.", "aviso": "MINUTA — revisão humana obrigatória.",
+    }
+
+
+# ── Previdenciário: tempo de contribuição (regra de pontos EC 103/2019) ────────
+@router.get("/previdenciario/ferramentas/tempo-contribuicao")
+async def previdenciario_tempo_contribuicao(
+    idade: int,
+    tempo_contribuicao_anos: float,
+    sexo: str = "M",
+    ano: int = 2026,
+    cu: User = Depends(require_roles(_EQUIPE)),
+):
+    """Regra de transição por pontos (EC 103/2019 art. 15). Pontos = idade + tempo."""
+    homem = sexo.upper().startswith("M")
+    # 2019: H 96 / M 86, +1 ponto por ano. Teto H 105 (2028), M 100 (2033).
+    base = 96 if homem else 86
+    teto = 105 if homem else 100
+    exigido = min(base + max(0, ano - 2019), teto)
+    pontos = round(idade + tempo_contribuicao_anos, 1)
+    tempo_min = 35 if homem else 30
+    return {
+        "sexo": "masculino" if homem else "feminino", "ano": ano,
+        "pontos_atingidos": pontos, "pontos_exigidos": exigido,
+        "tempo_minimo_anos": tempo_min,
+        "tempo_minimo_ok": tempo_contribuicao_anos >= tempo_min,
+        "pode_aposentar": pontos >= exigido and tempo_contribuicao_anos >= tempo_min,
+        "faltam_pontos": max(0, round(exigido - pontos, 1)),
+        "observacao": "Regra de pontos sobe 1 ponto/ano. Verificar também idade mínima progressiva e demais regras de transição.",
+        "base": "EC 103/2019 art. 15.", "aviso": "MINUTA — revisão humana obrigatória.",
+    }
+
+
+@router.get("/previdenciario/ferramentas/carencia")
+async def previdenciario_carencia(
+    meses_contribuicao: int,
+    beneficio: str = "aposentadoria",
+    cu: User = Depends(require_roles(_EQUIPE)),
+):
+    """Carência exigida por benefício (Lei 8.213/91 art. 25-26)."""
+    mapa = {
+        "aposentadoria":        (180, "Aposentadoria por idade/tempo (art. 25 II)."),
+        "auxilio_doenca":       (12,  "Auxílio por incapacidade temporária (art. 25 I)."),
+        "aposentadoria_invalidez": (12, "Aposentadoria por incapacidade permanente (art. 25 I)."),
+        "salario_maternidade":  (10,  "Salário-maternidade — contribuinte individual/facultativa (art. 25 III)."),
+        "auxilio_acidente":     (0,   "Independe de carência (art. 26 I)."),
+        "pensao_morte":         (0,   "Independe de carência (art. 26 I)."),
+    }
+    exigida, desc = mapa.get(beneficio, mapa["aposentadoria"])
+    return {
+        "beneficio": beneficio, "descricao": desc,
+        "meses_contribuicao": meses_contribuicao, "carencia_exigida": exigida,
+        "carencia_cumprida": meses_contribuicao >= exigida,
+        "faltam_meses": max(0, exigida - meses_contribuicao),
+        "base": "Lei 8.213/91 arts. 25 e 26.", "aviso": "MINUTA — revisão humana obrigatória.",
+    }
+
+
+# ── Família: ITCMD no inventário ──────────────────────────────────────────────
+@router.get("/familia/ferramentas/itcmd-inventario")
+async def familia_itcmd(
+    valor_monte: float,
+    aliquota_percentual: float = 5.0,
+    cu: User = Depends(require_roles(_EQUIPE)),
+):
+    """ITCMD sobre o monte partilhável (MG: 5% — Lei est. 14.941/03)."""
+    imposto = round(valor_monte * aliquota_percentual / 100, 2)
+    return {
+        "valor_monte": valor_monte, "aliquota_percentual": aliquota_percentual,
+        "itcmd_devido": imposto, "liquido_herdeiros": round(valor_monte - imposto, 2),
+        "observacao": "Alíquota varia por estado (MG 5%; SP 4%; RJ progressiva). Conferir lei estadual e isenções.",
+        "base": "CTN art. 35; MG Lei 14.941/03.", "aviso": "MINUTA — revisão humana obrigatória.",
+    }
+
+
+# ── Penal: prescrição pela pena máxima (art. 109 CP) ──────────────────────────
+@router.get("/penal/ferramentas/prescricao-penal")
+async def penal_prescricao(
+    pena_maxima_anos: float,
+    cu: User = Depends(require_roles(_EQUIPE)),
+):
+    """Prescrição da pretensão punitiva pela pena em abstrato (CP art. 109)."""
+    p = pena_maxima_anos
+    if p > 12:   prazo, faixa = 20, "superior a 12 anos"
+    elif p > 8:  prazo, faixa = 16, "de 8 a 12 anos"
+    elif p > 4:  prazo, faixa = 12, "de 4 a 8 anos"
+    elif p > 2:  prazo, faixa = 8,  "de 2 a 4 anos"
+    elif p >= 1: prazo, faixa = 4,  "de 1 a 2 anos"
+    else:        prazo, faixa = 3,  "inferior a 1 ano"
+    return {
+        "pena_maxima_anos": p, "faixa": faixa, "prazo_prescricional_anos": prazo,
+        "observacao": "Prescrição da pretensão punitiva em abstrato. Reduz pela metade se réu <21 na data do fato ou >70 na sentença (art. 115).",
+        "base": "CP art. 109.", "aviso": "MINUTA — revisão humana obrigatória.",
+    }
+
+
+@router.get("/penal/ferramentas/dosimetria")
+async def penal_dosimetria(
+    pena_base_anos: float,
+    fracao_agravantes_pct: float = 0.0,
+    fracao_aumento_pct: float = 0.0,
+    fracao_diminuicao_pct: float = 0.0,
+    cu: User = Depends(require_roles(_EQUIPE)),
+):
+    """Cálculo trifásico simplificado da pena (CP art. 68)."""
+    fase2 = pena_base_anos * (1 + fracao_agravantes_pct / 100)
+    fase3 = fase2 * (1 + fracao_aumento_pct / 100) * (1 - fracao_diminuicao_pct / 100)
+    return {
+        "pena_base_anos": round(pena_base_anos, 2),
+        "apos_agravantes_atenuantes": round(fase2, 2),
+        "pena_definitiva_anos": round(fase3, 2),
+        "observacao": "Cálculo trifásico simplificado (art. 68). 2ª fase não pode ir abaixo do mínimo nem acima do máximo legal (Súmula 231 STJ).",
+        "base": "CP arts. 59, 68.", "aviso": "MINUTA — revisão humana obrigatória.",
+    }
+
+
+# ── Trabalhista: horas extras + reflexos ──────────────────────────────────────
+@router.get("/trabalhista/ferramentas/horas-extras")
+async def trabalhista_horas_extras(
+    salario_mensal: float,
+    horas_extras_mes: float,
+    adicional_percentual: float = 50.0,
+    cu: User = Depends(require_roles(_EQUIPE)),
+):
+    """Valor de horas extras + reflexos (jornada base 220h)."""
+    valor_hora = salario_mensal / 220
+    valor_he = valor_hora * (1 + adicional_percentual / 100) * horas_extras_mes
+    # Reflexos estimados: DSR (~1/6), 13º (1/12), férias+1/3 (1/12*1.333), FGTS (8%)
+    dsr = valor_he / 6
+    base_reflexo = valor_he + dsr
+    reflexos = base_reflexo * (1/12) + base_reflexo * (1/12) * (4/3)
+    fgts = (base_reflexo + reflexos) * 0.08
+    return {
+        "valor_hora_normal": round(valor_hora, 2),
+        "valor_horas_extras": round(valor_he, 2),
+        "dsr_sobre_he": round(dsr, 2),
+        "reflexos_13_ferias": round(reflexos, 2),
+        "fgts_8pct": round(fgts, 2),
+        "total_mes_estimado": round(valor_he + dsr + reflexos + fgts, 2),
+        "observacao": "Estimativa mensal. Adicional mínimo 50% (CF art. 7 XVI); base de cálculo conforme Súmula 264 TST.",
+        "base": "CF art. 7 XVI; CLT art. 59; Súmula 264 TST.", "aviso": "MINUTA — revisão humana obrigatória.",
+    }
+
+
+# ── Empresarial: juros de mora + multa ────────────────────────────────────────
+@router.get("/empresarial/ferramentas/juros-mora")
+async def empresarial_juros_mora(
+    valor_principal: float,
+    meses_atraso: int,
+    taxa_juros_mensal_pct: float = 1.0,
+    multa_pct: float = 2.0,
+    cu: User = Depends(require_roles(_EQUIPE)),
+):
+    """Juros de mora (simples) + multa sobre débito contratual."""
+    juros = valor_principal * (taxa_juros_mensal_pct / 100) * meses_atraso
+    multa = valor_principal * (multa_pct / 100)
+    return {
+        "valor_principal": valor_principal, "meses_atraso": meses_atraso,
+        "juros_mora": round(juros, 2), "multa": round(multa, 2),
+        "total_devido": round(valor_principal + juros + multa, 2),
+        "observacao": "Juros de mora 1% a.m. salvo pactuação (CC art. 406); multa contratual limitada a 2% em relações de consumo (CDC art. 52 §1).",
+        "base": "CC arts. 395, 406; CDC art. 52 §1.", "aviso": "MINUTA — revisão humana obrigatória.",
+    }
+
+
+# ── Tributário: multa de mora + atraso ────────────────────────────────────────
+@router.get("/tributario/ferramentas/multa-mora")
+async def tributario_multa_mora(
+    valor_tributo: float,
+    dias_atraso: int,
+    cu: User = Depends(require_roles(_EQUIPE)),
+):
+    """Multa de mora 0,33%/dia limitada a 20% (tributos federais — Lei 9.430/96 art. 61)."""
+    pct = min(0.33 * dias_atraso, 20.0)
+    multa = round(valor_tributo * pct / 100, 2)
+    return {
+        "valor_tributo": valor_tributo, "dias_atraso": dias_atraso,
+        "percentual_multa": round(pct, 2), "multa_mora": multa,
+        "atingiu_teto_20pct": pct >= 20.0,
+        "total_sem_juros": round(valor_tributo + multa, 2),
+        "observacao": "Multa de mora de 0,33% por dia de atraso, limitada a 20%. Acrescer juros Selic acumulada (não incluídos).",
+        "base": "Lei 9.430/96 art. 61.", "aviso": "MINUTA — revisão humana obrigatória.",
+    }
+
+
+# ── Bancário: juros abusivos (contratada vs média de mercado) ─────────────────
+@router.get("/bancario/ferramentas/juros-abusivos")
+async def bancario_juros_abusivos(
+    taxa_contratada_mensal_pct: float,
+    taxa_media_bacen_mensal_pct: float,
+    cu: User = Depends(require_roles(_EQUIPE)),
+):
+    """Compara a taxa contratada com a média de mercado (BACEN) p/ tese revisional."""
+    limite = round(taxa_media_bacen_mensal_pct * 1.5, 4)  # parâmetro usual STJ (1,5x a média)
+    abusiva = taxa_contratada_mensal_pct > limite
+    excesso = round(taxa_contratada_mensal_pct - taxa_media_bacen_mensal_pct, 4)
+    return {
+        "taxa_contratada": taxa_contratada_mensal_pct,
+        "taxa_media_bacen": taxa_media_bacen_mensal_pct,
+        "limite_referencia_1_5x": limite,
+        "indicio_abusividade": abusiva,
+        "excesso_pontos_pct": excesso,
+        "observacao": "STJ não fixa teto rígido; abusividade aferida caso a caso, sendo a taxa média do BACEN o parâmetro (REsp 1.061.530). 1,5x é referência usual, não regra absoluta.",
+        "base": "STJ REsp 1.061.530 (repetitivo); Súmula 530 STJ.",
+        "aviso": "MINUTA — revisão humana obrigatória. Consultar a taxa média BACEN da modalidade/data.",
+    }
+
+
+# ── Imobiliário: distrato (Lei 13.786/2018) ───────────────────────────────────
+@router.get("/imobiliario/ferramentas/distrato")
+async def imobiliario_distrato(
+    valor_pago: float,
+    tem_patrimonio_afetacao: str = "nao",
+    cu: User = Depends(require_roles(_EQUIPE)),
+):
+    """Retenção em distrato de imóvel na planta (Lei do Distrato 13.786/18)."""
+    afetacao = tem_patrimonio_afetacao.lower() in ("sim", "true", "1")
+    pct_retencao = 50.0 if afetacao else 25.0
+    retencao = round(valor_pago * pct_retencao / 100, 2)
+    return {
+        "valor_pago": valor_pago,
+        "patrimonio_de_afetacao": afetacao,
+        "percentual_retencao": pct_retencao,
+        "valor_retido_incorporadora": retencao,
+        "valor_a_restituir": round(valor_pago - retencao, 2),
+        "observacao": "Retenção de até 25% dos valores pagos (50% se houver patrimônio de afetação). "
+                      "Cláusulas que retêm mais podem ser revistas judicialmente.",
+        "base": "Lei 13.786/2018 (art. 67-A da Lei 4.591/64).",
+        "aviso": "MINUTA — revisão humana obrigatória.",
+    }
+
+
+# ── Trânsito: valor da multa por gravidade ────────────────────────────────────
+@router.get("/transito/ferramentas/valor-multa")
+async def transito_valor_multa(
+    gravidade: str = "media",
+    multiplicador: int = 1,
+    cu: User = Depends(require_roles(_EQUIPE)),
+):
+    """Valor da multa por gravidade (CTB art. 258) com fator multiplicador."""
+    tabela = {
+        "leve":       (88.38,  3, "Leve — 3 pontos."),
+        "media":      (130.16, 4, "Média — 4 pontos."),
+        "grave":      (195.23, 5, "Grave — 5 pontos."),
+        "gravissima": (293.47, 7, "Gravíssima — 7 pontos (multiplicador conforme infração)."),
+    }
+    valor, pontos, desc = tabela.get(gravidade, tabela["media"])
+    total = round(valor * max(1, multiplicador), 2)
+    return {
+        "gravidade": gravidade, "descricao": desc,
+        "valor_base": valor, "multiplicador": max(1, multiplicador),
+        "valor_total": total, "pontos_cnh": pontos,
+        "observacao": "Valores-base do CTB art. 258. Gravíssimas podem ter multiplicador (x2, x3, x5, x10, x20) conforme a infração.",
+        "base": "CTB art. 258 c/c Lei 13.281/2016.",
+        "aviso": "MINUTA — revisão humana obrigatória.",
+    }
+
+
+# ── Consumidor: negativação indevida (dano moral) ─────────────────────────────
+@router.get("/consumidor/ferramentas/negativacao-indevida")
+async def consumidor_negativacao(
+    existe_inscricao_anterior_legitima: str = "nao",
+    cu: User = Depends(require_roles(_EQUIPE)),
+):
+    """Triagem de dano moral por negativação indevida (Súmula 385 STJ)."""
+    tem_anterior = existe_inscricao_anterior_legitima.lower() in ("sim", "true", "1")
+    return {
+        "existe_inscricao_anterior_legitima": tem_anterior,
+        "cabe_dano_moral": not tem_anterior,
+        "parametro_valor": "R$ 0 (Súmula 385 — só cabe cancelamento)" if tem_anterior
+                           else "Faixa usual: R$ 5.000 a R$ 15.000 (varia por comarca/reincidência).",
+        "dano_moral_in_re_ipsa": not tem_anterior,
+        "observacao": "Súmula 385 STJ: havendo inscrição legítima preexistente, não cabe indenização por nova "
+                      "anotação irregular, apenas o cancelamento. Sem preexistência, dano moral é in re ipsa.",
+        "base": "Súmula 385 STJ; CDC art. 6 VI.",
+        "aviso": "MINUTA — revisão humana obrigatória.",
     }
 
 
@@ -859,7 +1380,7 @@ async def ban_criar(body: BancarioIn, db: AsyncSession = Depends(get_db),
     db.add(b)
     await criar_audit_log(db, cu.id, cu.role.value, "CREATE", "bancario_cases", b.id)
     await db.commit()
-    return _serialize(b)
+    return b.__dict__
 
 
 @router.patch("/bancario/{bid}")

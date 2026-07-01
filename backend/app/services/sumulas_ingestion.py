@@ -97,10 +97,7 @@ async def ingerir_sumulas_seed(db: AsyncSession) -> dict:
             "obs":         "Ingestão automática — banco de súmulas EJC",
         })
 
-        # Indexar no RAG (knowledge_chunks) via serviço existente.
-        # CORREÇÃO (laudo RAG-03): a chamada usava `referencia_id` (inexistente na
-        # assinatura) e omitia o obrigatório `chave_origem` → lançava TypeError
-        # silenciado em debug, e as súmulas NUNCA chegavam ao knowledge_chunks.
+        # Indexar no RAG (knowledge_chunks) via serviço existente
         try:
             from app.services.ingestion_service import upsert_documento
             await upsert_documento(
@@ -109,10 +106,10 @@ async def ingerir_sumulas_seed(db: AsyncSession) -> dict:
                 conteudo=f"{titulo}\n\nTribunal: {tribunal} | Área: {area} | Tema: {tema}\n\n{texto}",
                 categoria=area,
                 fonte="sumula",
-                chave_origem=f"sumula:{tribunal}:{tese_id}",
+                referencia_id=tese_id,
             )
         except Exception as exc:
-            logger.warning("RAG: falha ao indexar súmula %s: %s", titulo, exc)
+            logger.debug("RAG skip para %s: %s", titulo, exc)
 
         inseridas += 1
 

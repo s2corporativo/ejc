@@ -2,7 +2,6 @@ import { useEffect, useState } from "react";
 import { BrainCircuit, Database, FileCheck2, Gavel, ListChecks, ShieldCheck, SlidersHorizontal } from "lucide-react";
 import api from "../lib/api";
 import { PageHeader, Spinner, fmtDate } from "../components/UI";
-import EmDesenvolvimento from "../components/EmDesenvolvimento";
 
 type Tab = "visao" | "curadoria" | "mgjec" | "prompts" | "fontes" | "guardrails";
 
@@ -21,7 +20,6 @@ export default function GovernancaIA() {
   const [geometria, setGeometria] = useState<any>(null);
   const [jurisForm, setJurisForm] = useState({ titulo: "", ementa: "", tese_extraida: "", numero_processo: "", fonte_url: "", area: "consumidor", rito: "JEC", tipo_fonte: "turma_recursal" });
   const [loading, setLoading] = useState(true);
-  const [indisponivel, setIndisponivel] = useState(false);
   const [salvando, setSalvando] = useState<string | null>(null);
   const [urlImportacao, setUrlImportacao] = useState("");
   const [previewExtracao, setPreviewExtracao] = useState("");
@@ -39,7 +37,7 @@ export default function GovernancaIA() {
         api.get("/ia-governanca/jurisprudencia-mg/geometria"),
       ]);
       setDash(d.data); setDocs(c.data.data); setPrompts(p.data.data); setFontes(f.data.data); setGuard(g.data); setMgjec(mg.data.data); setGeometria(geo.data);
-    } catch { setIndisponivel(true); } finally { setLoading(false); }
+    } finally { setLoading(false); }
   };
 
   useEffect(() => { load(); }, []);
@@ -92,8 +90,6 @@ export default function GovernancaIA() {
   };
 
   if (loading) return <div className="py-20 flex justify-center"><Spinner /></div>;
-
-  if (indisponivel) return <EmDesenvolvimento eyebrow="Governança" title="Governança da IA" />;
 
   const tabs = [
     { k: "visao", label: "Visão geral", icon: BrainCircuit },

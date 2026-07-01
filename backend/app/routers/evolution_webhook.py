@@ -1,13 +1,31 @@
-"""Recebe webhooks da Evolution API (WhatsApp) e processa mensagens."""
-import hmac
-import os
-import logging
+"""Recebe webhooks da Evolution API (WhatsApp) e processa mensagens.
 
-from fastapi import APIRouter, Request, BackgroundTasks, Header, HTTPException
+Rota PÚBLICA (Evolution chama de fora) — protegida por secret.
+Mesmo padrão do webhook Z-API: valida um token e recusa se não configurado.
+O secret é enviado pela Evolution como header `apikey`/`X-Webhook-Token`
+ou via query `?token=` na URL do webhook configurada no painel.
+"""
+import hmac
+import logging
+import os
+
+from fastapi import APIRouter, Request, BackgroundTasks, HTTPException
 
 logger = logging.getLogger("ejc.whatsapp")
 router = APIRouter(prefix="/webhooks", tags=["Webhooks"])
-EVOLUTION_WEBHOOK_TOKEN = os.getenv("EVOLUTION_WEBHOOK_TOKEN", "")
+
+WEBHOOK_SECRET = os.getenv("EVOLUTION_WEBHOOK_SECRET", "")
+
+
+def _autorizado(request: Request) -> bool:
+    """Compara (timing-safe) o secret recebido com o configurado."""
+    recebido = (
+        request.headers.get("x-webhook-token")
+        or request.headers.get("apikey")
+        or request.query_params.get("token")
+        or ""
+    )
+    return bool(recebido) and hmac.compare_digest(recebido, WEBHOOK_SECRET)
 
 
 async def _processar_mensagem(data: dict):
@@ -22,7 +40,8 @@ async def _processar_mensagem(data: dict):
             if isinstance(msgs, list):
                 msgs = msgs[0] if msgs else {}
             numero = msgs.get("key", {}).get("remoteJid", "").replace("@s.whatsapp.net", "")
-            texto = msgs.get("message", {}).get("conversation", "") or                     msgs.get("message", {}).get("extendedTextMessage", {}).get("text", "")
+            texto = msgs.get("message", {}).get("conversation", "") or \
+                    msgs.get("message", {}).get("extendedTextMessage", {}).get("text", "")
             if numero and texto and not msgs.get("key", {}).get("fromMe"):
                 logger.info(f"Mensagem de {numero}: {texto[:100]}")
                 # TODO: integrar com fluxo de CRM/casos se necessário
@@ -36,22 +55,17 @@ async def _processar_mensagem(data: dict):
 
 
 @router.post("/evolution")
-async def evolution_webhook(
-    request: Request,
-    bg: BackgroundTasks,
-    x_webhook_token: str | None = Header(None, alias="X-Webhook-Token"),
-    apikey: str | None = Header(None),
-):
+async def evolution_webhook(request: Request, bg: BackgroundTasks):
     """Endpoint para webhooks da Evolution API."""
-    token_recebido = x_webhook_token or apikey
-    if not EVOLUTION_WEBHOOK_TOKEN:
+    # Sem secret configurado, o endpoint NÃO aceita chamadas — evita que
+    # terceiros injetem eventos forjados num deploy ainda não configurado.
+    if not WEBHOOK_SECRET:
         raise HTTPException(
             status_code=503,
-            detail="Webhook indisponivel: EVOLUTION_WEBHOOK_TOKEN nao configurado.",
+            detail="Webhook indisponível: EVOLUTION_WEBHOOK_SECRET não configurado.",
         )
-    if not token_recebido or not hmac.compare_digest(token_recebido, EVOLUTION_WEBHOOK_TOKEN):
-        raise HTTPException(status_code=401, detail="Token invalido")
-
+    if not _autorizado(request):
+        raise HTTPException(status_code=401, detail="Webhook não autorizado")
     try:
         body = await request.json()
         bg.add_task(_processar_mensagem, body)

@@ -27,61 +27,119 @@ from slowapi import _rate_limit_exceeded_handler
 from slowapi.errors import RateLimitExceeded
 
 # Routers
-from app.routers import (
-    verse,
-    auth, users, clients, cases, deadlines, documents,
-    legal_docs, fees, environmental, ai, procuracoes,
-    dashboard, notifications, audit, rag,
-    utils, templates, portal, tasks, timesheet,
-    intimacoes, trash, webhooks, calendar_feed, signatures,
-    calculadoras, analytics, suspensoes, search, export, ramos,
-    teses, prompts_juridicos, atendimentos, jurimetria,
-    workflow, jurisprudencia_interna, data_room,
-    contratos_societarios, centro_custos, diario_oficial, gestao_societaria,
-    checklists, dossie_estrategico,
-    case_partes, score_juridico, indice_risco,
-    memoria_institucional, mensagens, noticias, movimentos, ia_extra, etiquetas,
-)
+from app.routers import agenda_eventos
+from app.routers import ai
+from app.routers import ai_skills
+from app.routers import ai_tools
+from app.routers import analise_bancaria
+from app.routers import analytics
+from app.routers import areas
+from app.routers import atendimentos
+from app.routers import atividades
+from app.routers import audit
+from app.routers import auth
+from app.routers import bank_analysis
+from app.routers import calculadoras
+from app.routers import calendar_feed
+from app.routers import case_partes
+from app.routers import cases
+from app.routers import caso_areas
+from app.routers import centro_custos
+from app.routers import cerebro
+from app.routers import checklists
+from app.routers import clients
+from app.routers import compliance
+from app.routers import consumidor_monitor
+from app.routers import conteudo
+from app.routers import contratos_societarios
+from app.routers import conversao_caso
+from app.routers import curadoria_renomada
+from app.routers import dashboard
+from app.routers import data_room
+from app.routers import data_room_v4
+from app.routers import datajud
+from app.routers import deadlines
+from app.routers import despesas
+from app.routers import diario_oficial
+from app.routers import diplomacia_v3
+from app.routers import documento_ia
+from app.routers import documents
+from app.routers import dossie_cliente
+from app.routers import dossie_estrategico
+from app.routers import environmental
+from app.routers import etiquetas
+from app.routers import evolution_webhook
+from app.routers import exito_rateio
+from app.routers import export
+from app.routers import extratos
+from app.routers import fees
+from app.routers import financeiro_consolidado
+from app.routers import gestao_societaria
+from app.routers import honorarios_calc
+from app.routers import ia_defensiva
+from app.routers import ia_especializada
+from app.routers import ia_governanca
+from app.routers import ia_saude
+from app.routers import indice_risco
+from app.routers import intelligence_v3
+from app.routers import intimacoes
+from app.routers import jurimetria
+from app.routers import jurimetria_extra
+from app.routers import jurisprudencia_externa
+from app.routers import jurisprudencia_interna
+from app.routers import kanban
+from app.routers import legal_docs
+from app.routers import licitacao_auditoria
+from app.routers import mediacao
+from app.routers import memoria_institucional
+from app.routers import mensagens
+from app.routers import movimentos
+from app.routers import noticias
+from app.routers import notifications
+from app.routers import novos_modulos
+from app.routers import office_contracts
+from app.routers import partner_withdrawals
 from app.routers import peca_geracao
-from app.routers import processes as processes_router
-from app.routers import kanban as kanban_router
-from app.routers import relatorio as relatorio_router
-from app.routers import sala_de_guerra as sdg_router
-from app.routers import relatorio_cliente as relcli_router
-from app.routers import exito_rateio as exito_router
-from app.routers import conversao_caso as conv_router
-from app.routers import financeiro_consolidado as fincon_router
-from app.routers import documento_ia as docia_router
-from app.routers import honorarios_oab as honoab_router
-from app.routers import dossie_cliente as dossiecli_router
-from app.routers import produtividade as produt_router
-from app.routers import jurimetria_extra as juriex_router
-from app.routers import jurisprudencia_externa as juriext_router
-from app.routers import consumidor_monitor as consumidor_router
-from app.routers import agenda_eventos as agenda_router
-from app.routers import caso_areas as caso_areas_router
-from app.routers import atividades as atividades_router
-from app.routers import areas as areas_router
-from app.routers import pix as pix_router
-from app.routers import analise_bancaria as anbanc_router
-from app.routers import extratos as extratos_router
-from app.routers import ia_especializada as ia_esp_router
-from app.routers import datajud as datajud_router
-from app.routers import pending_items as pending_items_router
-from app.routers import office_contracts as office_contracts_router
-from app.routers import partner_withdrawals as partner_withdrawals_router
-from app.routers import despesas as despesas_router
-from app.routers import whatsapp as whatsapp_router
-from app.routers import bank_analysis as bank_analysis_router
-from app.routers import qualidade as qualidade_router
-from app.routers import honorarios_calc as honcalc_router
-from app.routers import conteudo as conteudo_router
-from app.routers import ia_saude as ia_saude_router
-from app.routers import wiki as wiki_router
-from app.routers import compliance as compliance_router
-from app.routers import assistente as assistente_router
-from app.routers import ai_tools as ai_tools_router
-from app.routers import evolution_webhook as evolution_webhook_router
+from app.routers import peca_geracao_router
+from app.routers import pending_items
+from app.routers import pix
+from app.routers import portal
+from app.routers import processes
+from app.routers import procuracoes
+from app.routers import produtividade
+from app.routers import prompts
+from app.routers import prompts_juridicos
+from app.routers import qualidade
+from app.routers import rag
+from app.routers import regulatorio
+from app.routers import ramos
+from app.routers import relatorio
+from app.routers import relatorio_cliente
+from app.routers import sala_de_guerra
+from app.routers import sala_de_guerra_v3
+from app.routers import score_juridico
+from app.routers import search
+from app.routers import signatures
+from app.routers import sumulas
+from app.routers import suspensoes
+from app.routers import tasks
+from app.routers import templates
+from app.routers import teses
+from app.routers import teses_v4
+from app.routers import timesheet
+from app.routers import trash
+from app.routers import users
+from app.routers import utils
+from app.routers import validador_juridico
+from app.routers import veredito_ia_router
+from app.routers import verse
+from app.routers import victory_vault_router
+from app.routers import webhooks
+from app.routers import whatsapp
+from app.routers import wiki
+from app.routers import workflow
+
+
 # Ativa a arquitetura orientada a eventos (P1): importar registra os @on subscribers.
 from app.services import event_subscribers as _event_subscribers  # noqa: F401
 
@@ -169,121 +227,122 @@ app.add_middleware(
 
 # ── Routers (todos sob /api) ──────────────────────────────────────────────────
 API = "/api"
-app.include_router(auth.router,          prefix=API)
-app.include_router(users.router,         prefix=API)
-app.include_router(clients.router,       prefix=API)
-app.include_router(cases.router,         prefix=API)
-app.include_router(deadlines.router,     prefix=API)
-app.include_router(documents.router,     prefix=API)
-app.include_router(legal_docs.router,    prefix=API)
-app.include_router(fees.router,          prefix=API)
-app.include_router(environmental.router, prefix=API)
-app.include_router(ai.router,            prefix=API)
-app.include_router(procuracoes.router,   prefix=API)
-app.include_router(dashboard.router,     prefix=API)
-app.include_router(notifications.router, prefix=API)
-app.include_router(audit.router,         prefix=API)
-app.include_router(rag.router,           prefix=API)
-app.include_router(utils.router,         prefix=API)
-app.include_router(templates.router,     prefix=API)
-app.include_router(workflow.router,      prefix=API)
-app.include_router(portal.router,        prefix=API)
-app.include_router(tasks.router,         prefix=API)
-app.include_router(timesheet.router,     prefix=API)
-app.include_router(intimacoes.router,    prefix=API)
-app.include_router(trash.router,         prefix=API)
-app.include_router(webhooks.router,      prefix=API)
-app.include_router(evolution_webhook_router.router, prefix=API)
+app.include_router(agenda_eventos.router, prefix=API)
+app.include_router(ai.router, prefix=API)
+app.include_router(ai_skills.router, prefix=API)
+app.include_router(ai_tools.router, prefix=API)
+app.include_router(analise_bancaria.router, prefix=API)
+app.include_router(analytics.router, prefix=API)
+app.include_router(areas.router, prefix=API)
+app.include_router(atendimentos.router, prefix=API)
+app.include_router(atividades.router, prefix=API)
+app.include_router(audit.router, prefix=API)
+app.include_router(auth.router, prefix=API)
+app.include_router(bank_analysis.router, prefix=API)
+app.include_router(calculadoras.router, prefix=API)
 app.include_router(calendar_feed.router, prefix=API)
-app.include_router(signatures.router,    prefix=API)
-app.include_router(calculadoras.router,  prefix=API)
-app.include_router(analytics.router,     prefix=API)
-app.include_router(suspensoes.router,    prefix=API)
-app.include_router(search.router,        prefix=API)
-app.include_router(export.router,        prefix=API)
-app.include_router(ramos.router,         prefix=API)
-app.include_router(teses.router,            prefix=API)
-app.include_router(prompts_juridicos.router, prefix=API)
-app.include_router(atendimentos.router,     prefix=API)
-app.include_router(jurimetria.router,           prefix=API)
-app.include_router(jurisprudencia_interna.router, prefix=API)
-app.include_router(juriext_router.router,     prefix=API)
-app.include_router(consumidor_router.router,  prefix=API)
-app.include_router(data_room.router,            prefix=API)
+app.include_router(case_partes.router, prefix=API)
+app.include_router(cases.router, prefix=API)
+app.include_router(caso_areas.router, prefix=API)
+app.include_router(centro_custos.router, prefix=API)
+app.include_router(cerebro.router, prefix=API)
+app.include_router(checklists.router, prefix=API)
+app.include_router(clients.router, prefix=API)
+app.include_router(compliance.router, prefix=API)
+app.include_router(consumidor_monitor.router, prefix=API)
+app.include_router(conteudo.router, prefix=API)
 app.include_router(contratos_societarios.router, prefix=API)
-app.include_router(centro_custos.router,        prefix=API)
-app.include_router(diario_oficial.router,       prefix=API)
-app.include_router(gestao_societaria.router,    prefix=API)
-app.include_router(checklists.router,           prefix=API)
-app.include_router(dossie_estrategico.router,   prefix=API)
-app.include_router(case_partes.router,         prefix=API)
-app.include_router(score_juridico.router,      prefix=API)
-app.include_router(indice_risco.router,        prefix=API)
+app.include_router(conversao_caso.router, prefix=API)
+app.include_router(curadoria_renomada.router, prefix=API)
+app.include_router(dashboard.router, prefix=API)
+app.include_router(data_room.router, prefix=API)
+app.include_router(data_room_v4.router, prefix=API)
+app.include_router(datajud.router, prefix=API)
+app.include_router(deadlines.router, prefix=API)
+app.include_router(despesas.router, prefix=API)
+app.include_router(diario_oficial.router, prefix=API)
+app.include_router(diplomacia_v3.router, prefix=API)
+app.include_router(documento_ia.router, prefix=API)
+app.include_router(documents.router, prefix=API)
+app.include_router(dossie_cliente.router, prefix=API)
+app.include_router(dossie_estrategico.router, prefix=API)
+app.include_router(environmental.router, prefix=API)
+app.include_router(etiquetas.router, prefix=API)
+app.include_router(evolution_webhook.router, prefix=API)
+app.include_router(exito_rateio.router, prefix=API)
+app.include_router(export.router, prefix=API)
+app.include_router(extratos.router, prefix=API)
+app.include_router(fees.router, prefix=API)
+app.include_router(financeiro_consolidado.router, prefix=API)
+app.include_router(gestao_societaria.router, prefix=API)
+app.include_router(honorarios_calc.router, prefix=API)
+app.include_router(ia_defensiva.router, prefix=API)
+app.include_router(ia_especializada.router, prefix=API)
+app.include_router(ia_governanca.router, prefix=API)
+app.include_router(ia_saude.router, prefix=API)
+app.include_router(indice_risco.router, prefix=API)
+app.include_router(intelligence_v3.router, prefix=API)
+app.include_router(intimacoes.router, prefix=API)
+app.include_router(jurimetria.router, prefix=API)
+app.include_router(jurimetria_extra.router, prefix=API)  # A5: router antes órfão (404 silencioso)
+app.include_router(jurisprudencia_externa.router, prefix=API)
+app.include_router(jurisprudencia_interna.router, prefix=API)
+app.include_router(kanban.router, prefix=API)
+app.include_router(legal_docs.router, prefix=API)
+app.include_router(licitacao_auditoria.router, prefix=API)
+app.include_router(mediacao.router, prefix=API)
 app.include_router(memoria_institucional.router, prefix=API)
-app.include_router(mensagens.router,           prefix=API)
-app.include_router(noticias.router,            prefix=API)
-app.include_router(qualidade_router.router,    prefix=API)
-app.include_router(honcalc_router.router,      prefix=API)
-app.include_router(conteudo_router.router,     prefix=API)
-app.include_router(ia_saude_router.router,     prefix=API)
-app.include_router(wiki_router.router,         prefix=API)
-app.include_router(compliance_router.router,   prefix=API)
-app.include_router(assistente_router.router,   prefix=API)
-app.include_router(docia_router.router,        prefix=API)
-app.include_router(honoab_router.router,       prefix=API)
-app.include_router(movimentos.router,          prefix=API)
-app.include_router(verse.router,           prefix=API)
-app.include_router(ia_extra.router,            prefix=API)
-app.include_router(etiquetas.router,           prefix=API)
-app.include_router(peca_geracao.router,        prefix=API)
-app.include_router(processes_router.router,    prefix=API)
-app.include_router(ai_tools_router.router,     prefix="/api/v1")
-app.include_router(datajud_router.router)
-app.include_router(kanban_router.router)
-app.include_router(relatorio_router.router, prefix="/api/v1")
-app.include_router(sdg_router.router, prefix="/api")
-app.include_router(relcli_router.router, prefix="/api")
-app.include_router(exito_router.router, prefix="/api/v1")
-app.include_router(conv_router.router, prefix="/api")
-app.include_router(fincon_router.router, prefix="/api/v1")
-app.include_router(dossiecli_router.router, prefix="/api")
-app.include_router(produt_router.router, prefix="/api")
-app.include_router(juriex_router.router, prefix="/api")
-app.include_router(agenda_router.router, prefix="/api")
-app.include_router(caso_areas_router.router, prefix="/api")
-app.include_router(atividades_router.router, prefix="/api")
-app.include_router(areas_router.router, prefix="/api")
-app.include_router(pix_router.router, prefix="/api")
-app.include_router(anbanc_router.router, prefix="/api")
-app.include_router(extratos_router.router, prefix="/api")
-app.include_router(ia_esp_router.router, prefix="/api")
-app.include_router(pending_items_router.router)
-app.include_router(office_contracts_router.router)
-app.include_router(partner_withdrawals_router.router)
-app.include_router(despesas_router.router)
-app.include_router(whatsapp_router.router)
-app.include_router(bank_analysis_router.router, prefix="/api/v1")
+app.include_router(mensagens.router, prefix=API)
+app.include_router(movimentos.router, prefix=API)
+app.include_router(noticias.router, prefix=API)
+app.include_router(notifications.router, prefix=API)
+app.include_router(novos_modulos.router, prefix=API)
+app.include_router(office_contracts.router, prefix=API)
+app.include_router(partner_withdrawals.router, prefix=API)
+app.include_router(peca_geracao.router, prefix=API)
+app.include_router(peca_geracao_router.router, prefix=API)
+app.include_router(pending_items.router, prefix=API)
+app.include_router(pix.router, prefix=API)
+app.include_router(portal.router, prefix=API)
+app.include_router(processes.router, prefix=API)
+app.include_router(procuracoes.router, prefix=API)
+app.include_router(produtividade.router, prefix=API)
+app.include_router(prompts.router, prefix=API)
+app.include_router(prompts_juridicos.router, prefix=API)
+app.include_router(qualidade.router, prefix=API)
+app.include_router(rag.router, prefix=API)
+app.include_router(regulatorio.router, prefix=API)
+app.include_router(ramos.router, prefix=API)
+app.include_router(relatorio.router, prefix=API)
+app.include_router(relatorio_cliente.router, prefix=API)
+app.include_router(sala_de_guerra.router, prefix=API)
+app.include_router(sala_de_guerra_v3.router, prefix=API)
+app.include_router(score_juridico.router, prefix=API)
+app.include_router(search.router, prefix=API)
+app.include_router(signatures.router, prefix=API)
+app.include_router(sumulas.router, prefix=API)
+app.include_router(suspensoes.router, prefix=API)
+app.include_router(tasks.router, prefix=API)
+app.include_router(templates.router, prefix=API)
+app.include_router(teses.router, prefix=API)
+app.include_router(teses_v4.router, prefix=API)
+app.include_router(timesheet.router, prefix=API)
+app.include_router(trash.router, prefix=API)
+app.include_router(users.router, prefix=API)
+app.include_router(utils.router, prefix=API)
+app.include_router(validador_juridico.router, prefix=API)
+app.include_router(veredito_ia_router.router, prefix=API)
+app.include_router(verse.router, prefix=API)
+app.include_router(victory_vault_router.router, prefix=API)
+app.include_router(webhooks.router, prefix=API)
+app.include_router(whatsapp.router, prefix=API)
+app.include_router(wiki.router, prefix=API)
+app.include_router(workflow.router, prefix=API)
 
-# ── Fase 4 — Aliases de namespace canônico (/api) ─────────────────────────────
-# Routers que estavam SÓ sob /api/v1 ganham o caminho canônico /api/* (consistente
-# com o resto do sistema). Os /api/v1/* seguem ATIVOS como alias legado — zero quebra
-# de frontend; os /api/* são os canônicos a adotar daqui pra frente.
-# ai_tools → /api/ai: verificado que /ai/status e /ai/executar NÃO colidem com as
-# rotas já existentes em /api/ai (ai.py/ia_extra.py) — sem shadowing.
-app.include_router(relatorio_router.router,     prefix=API)
-app.include_router(exito_router.router,         prefix=API)
-app.include_router(fincon_router.router,        prefix=API)
-app.include_router(bank_analysis_router.router, prefix=API)
-app.include_router(ai_tools_router.router,      prefix=API)
 
-from app.routers import sumulas as sumulas_router
-app.include_router(sumulas_router.router,      prefix=API)
-from app.routers import novos_modulos as novos_mod_router
-app.include_router(novos_mod_router.router,    prefix=API)
 
 
 # ── Health check (público — usado pelo Docker healthcheck) ────────────────────
-@app.get("/health")
 @app.get("/api/health")
 async def health():
     db_ok = await check_db()
