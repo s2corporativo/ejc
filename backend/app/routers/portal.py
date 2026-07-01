@@ -7,7 +7,8 @@
 #   4. Estratégia do caso (tese, pontos fortes/fracos) NUNCA é exposta
 from __future__ import annotations
 from fastapi import APIRouter, Depends, HTTPException
-from sqlalchemy import select
+from pydantic import BaseModel, Field
+from sqlalchemy import select, text
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.database import get_db
@@ -17,6 +18,7 @@ from app.models.case import Case, CaseMovimento
 from app.models.deadline import Deadline
 from app.models.fee import Fee
 from app.models.document import Document, DocConfidencialidade
+from app.models.audit_log import criar_audit_log
 
 router = APIRouter(prefix="/portal", tags=["Portal do Cliente"])
 
@@ -132,3 +134,72 @@ async def financeiro(
          "status": f.status.value if hasattr(f.status, "value") else str(f.status)}
         for f in rows
     ]}
+
+
+# ── Mensagens do caso (chat cliente↔escritório) ──────────────────────────────
+# Espelha app/routers/mensagens.py, mas sob /api/portal para não abrir /api/cases
+# ao cliente_externo no middleware. Mesma tabela portal_mensagens → conversa única
+# com o lado do escritório. autor_tipo é sempre "cliente" aqui.
+class MsgIn(BaseModel):
+    mensagem: str = Field(min_length=1, max_length=4000)
+
+
+async def _caso_do_cliente(case_id: str, client_id: str, db: AsyncSession) -> None:
+    """Garante que o caso pertence ao próprio cliente (isolamento LGPD)."""
+    r = await db.execute(
+        text("SELECT 1 FROM cases WHERE id = :cid AND client_id = :clid "
+             "AND deleted_at IS NULL"),
+        {"cid": case_id, "clid": client_id},
+    )
+    if not r.first():
+        raise HTTPException(status_code=404, detail="Caso não encontrado")
+
+
+@router.get("/casos/{case_id}/mensagens")
+async def listar_mensagens_portal(
+    case_id: str,
+    db: AsyncSession = Depends(get_db),
+    cu: User = Depends(get_current_user),
+):
+    client_id = _exigir_cliente(cu)
+    await _caso_do_cliente(case_id, client_id, db)
+    res = await db.execute(
+        text("""
+            SELECT id, autor_tipo, autor_id, autor_nome, mensagem, lida, created_at
+            FROM portal_mensagens WHERE case_id = :cid ORDER BY created_at ASC
+        """),
+        {"cid": case_id},
+    )
+    msgs = [dict(r) for r in res.mappings().all()]
+    # marca como lidas as mensagens do escritório
+    await db.execute(
+        text("UPDATE portal_mensagens SET lida = true "
+             "WHERE case_id = :cid AND autor_tipo <> 'cliente' AND lida = false"),
+        {"cid": case_id},
+    )
+    await db.commit()
+    return msgs
+
+
+@router.post("/casos/{case_id}/mensagens", status_code=201)
+async def enviar_mensagem_portal(
+    case_id: str,
+    body: MsgIn,
+    db: AsyncSession = Depends(get_db),
+    cu: User = Depends(get_current_user),
+):
+    client_id = _exigir_cliente(cu)
+    await _caso_do_cliente(case_id, client_id, db)
+    nome = getattr(cu, "nome", None) or getattr(cu, "nome_completo", None) or cu.email
+    res = await db.execute(
+        text("""
+            INSERT INTO portal_mensagens (case_id, autor_tipo, autor_id, autor_nome, mensagem)
+            VALUES (:cid, 'cliente', :aid, :nome, :msg)
+            RETURNING id, created_at
+        """),
+        {"cid": case_id, "aid": cu.id, "nome": nome, "msg": body.mensagem},
+    )
+    row = res.mappings().first()
+    await criar_audit_log(db, cu.id, cu.role.value, "CREATE", "portal_mensagens", row["id"])
+    await db.commit()
+    return {"id": row["id"], "created_at": row["created_at"]}
