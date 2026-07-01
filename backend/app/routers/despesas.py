@@ -1,4 +1,7 @@
+import csv
+import io
 from fastapi import APIRouter, Body, Depends, HTTPException, Query
+from fastapi.responses import Response
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import text
 from typing import Optional
@@ -95,6 +98,65 @@ async def list_despesas(
     """), params)
     rows = result.mappings().all()
     return [dict(r) for r in rows]
+
+
+@router.get("/export/csv")
+async def export_despesas_csv(
+    competencia: Optional[str] = Query(None),
+    categoria: Optional[str] = Query(None),
+    tipo: Optional[str] = Query(None),
+    status: Optional[str] = Query(None),
+    db: AsyncSession = Depends(get_db),
+    current_user: dict = Depends(get_current_user),
+):
+    """Exporta as despesas do escritório em CSV (pt-BR: separador ';', BOM UTF-8,
+    vírgula decimal). Endpoint que faltava (consumido por FinanceiroDashboard)."""
+    conditions = ["deleted_at IS NULL"]
+    params: dict = {}
+    if competencia:
+        conditions.append("competencia = :competencia")
+        params["competencia"] = competencia
+    if categoria:
+        conditions.append("categoria = :categoria")
+        params["categoria"] = categoria
+    if tipo:
+        conditions.append("tipo = :tipo")
+        params["tipo"] = tipo
+    if status:
+        conditions.append("status = :status")
+        params["status"] = status
+    where = " AND ".join(conditions)
+    result = await db.execute(text(f"""
+        SELECT competencia, categoria, subcategoria, tipo, descricao, valor,
+               vencimento, pago_em, recorrente, recorrencia, status
+        FROM office_expenses
+        WHERE {where}
+        ORDER BY competencia DESC, categoria, descricao
+    """), params)
+    rows = result.mappings().all()
+
+    buf = io.StringIO()
+    w = csv.writer(buf, delimiter=";")
+    w.writerow([
+        "Competência", "Categoria", "Subcategoria", "Tipo", "Descrição",
+        "Valor", "Vencimento", "Pago em", "Recorrente", "Recorrência", "Status",
+    ])
+    for r in rows:
+        w.writerow([
+            r["competencia"] or "", r["categoria"] or "", r["subcategoria"] or "",
+            r["tipo"] or "", r["descricao"] or "",
+            f'{float(r["valor"] or 0):.2f}'.replace(".", ","),
+            r["vencimento"] or "", r["pago_em"] or "",
+            "Sim" if r["recorrente"] else "Não", r["recorrencia"] or "",
+            r["status"] or "",
+        ])
+    nome = f"despesas_{competencia or 'todas'}.csv"
+    # BOM (﻿) para o Excel abrir UTF-8 corretamente.
+    return Response(
+        content="﻿" + buf.getvalue(),
+        media_type="text/csv; charset=utf-8",
+        headers={"Content-Disposition": f'attachment; filename="{nome}"'},
+    )
 
 
 @router.post("")

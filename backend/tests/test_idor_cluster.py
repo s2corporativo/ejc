@@ -17,8 +17,28 @@ import pytest
 from httpx import AsyncClient
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from sqlalchemy import text
+
 from app.core.security import get_password_hash, create_access_token
 from app.models.user import User, UserRole
+
+# inadimplencia_alerts é criada por SQL cru na migração 050 (sem modelo ORM),
+# logo o create_all do conftest não a cria. Este DDL replica as colunas lidas
+# por listar_alertas para o teste positivo (financeiro) render 200 real.
+_DDL_INADIMPLENCIA = """
+    CREATE TABLE IF NOT EXISTS inadimplencia_alerts (
+        id varchar(36) PRIMARY KEY,
+        fee_id varchar(36),
+        case_id varchar(36),
+        client_id varchar(36),
+        days_overdue integer NOT NULL DEFAULT 0,
+        amount_due numeric(12,2) NOT NULL DEFAULT 0,
+        alert_level varchar(30),
+        action_taken text,
+        resolved boolean NOT NULL DEFAULT false,
+        created_at timestamptz DEFAULT now()
+    )
+"""
 
 
 async def _mk_user(db: AsyncSession, role: UserRole) -> User:
@@ -50,6 +70,8 @@ async def test_inadimplencia_estagiario_bloqueado(client: AsyncClient, db_sessio
 
 @pytest.mark.asyncio
 async def test_inadimplencia_financeiro_liberado(client: AsyncClient, db_session):
+    await db_session.execute(text(_DDL_INADIMPLENCIA))
+    await db_session.commit()
     u = await _mk_user(db_session, UserRole.financeiro)
     resp = await client.get("/api/inadimplencia/alertas", headers=_h(u))
     assert resp.status_code == 200

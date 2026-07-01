@@ -87,7 +87,7 @@ async def _analisar_doc_bg(case_id: str, ocr_text: str, doc_id: str, user_id: st
 
         async with AsyncSessionLocal() as db:
             row = await db.execute(
-                _sql("SELECT titulo, area, numero_processo FROM cases WHERE id = :id"),
+                _sql("SELECT titulo, area, numero_processo, client_id FROM cases WHERE id = :id"),
                 {"id": case_id},
             )
             caso = row.fetchone()
@@ -97,6 +97,7 @@ async def _analisar_doc_bg(case_id: str, ocr_text: str, doc_id: str, user_id: st
                 area=(caso.area if caso else "") or "",
                 numero_processo=(caso.numero_processo if caso else "") or "",
                 texto_documento=ocr_text[:4000],
+                scope_client_id=(caso.client_id if caso else None),  # A2: RAG restrito ao cliente
                 db=db,
             )
 
