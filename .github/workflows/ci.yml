@@ -73,9 +73,7 @@ jobs:
           cache-dependency-path: backend/requirements.txt
 
       - name: Instalar dependências
-        # psycopg2-binary: driver SYNC exigido por alembic (env.py) e pela
-        # checagem de schema — hoje ausente do requirements.txt (ver relatório).
-        run: pip install -r requirements.txt psycopg2-binary
+        run: pip install -r requirements.txt
 
       - name: Criar extensões (vector, pg_trgm, pgcrypto)
         run: |
