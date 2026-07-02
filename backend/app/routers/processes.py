@@ -8,12 +8,13 @@ SQL cru (padrao do projeto). cliente_externo nao alcanca (bloqueado no AuthMiddl
 from uuid import uuid4
 from typing import Optional
 
-from fastapi import APIRouter, Depends, HTTPException
-from pydantic import BaseModel
+from fastapi import APIRouter, Body, Depends, HTTPException, Query
+from pydantic import BaseModel, Field
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import text
 
 from app.core.database import get_db
+from app.core.ownership import verificar_acesso_caso
 from app.core.security import get_current_user, require_roles
 from app.models.user import User
 from app.models.audit_log import criar_audit_log
@@ -50,23 +51,39 @@ class ProcessoPatch(BaseModel):
     status: Optional[str] = None
 
 
-async def _case_existe(db: AsyncSession, case_id: str) -> bool:
-    r = (await db.execute(
-        text("SELECT 1 FROM cases WHERE id = :c AND deleted_at IS NULL"), {"c": case_id}
+class ArchiveProcessRequest(BaseModel):
+    motivo: Optional[str] = Field(default=None, max_length=1000)
+
+
+async def _case_id_do_processo(db: AsyncSession, pid: str) -> str:
+    row = (await db.execute(
+        text("SELECT case_id FROM processes WHERE id = :pid AND deleted_at IS NULL"),
+        {"pid": pid},
     )).first()
-    return r is not None
+    if row is None:
+        raise HTTPException(404, "Processo não encontrado")
+    return row[0]
 
 
 @router.get("/cases/{case_id}/processes")
 async def listar_processos(
     case_id: str,
+    arquivo: str = Query("ativos", pattern="^(ativos|arquivados|todos)$"),
     db: AsyncSession = Depends(get_db),
     cu: User = Depends(get_current_user),
 ):
+    await verificar_acesso_caso(db, cu, case_id)
+    filtro_arquivo = ""
+    if arquivo == "ativos":
+        filtro_arquivo = "AND status <> 'arquivado'"
+    elif arquivo == "arquivados":
+        filtro_arquivo = "AND status = 'arquivado'"
     rows = (await db.execute(text("""
         SELECT id, case_id, numero_cnj, instancia, tribunal, comarca, vara, classe, fase, tipo,
-               processo_principal_id, valor_causa, status, created_at, updated_at
+               processo_principal_id, valor_causa, status, archived_at, archive_reason,
+               created_at, updated_at
         FROM processes WHERE case_id = :c AND deleted_at IS NULL
+        """ + filtro_arquivo + """
         ORDER BY (processo_principal_id IS NOT NULL), created_at
     """), {"c": case_id})).mappings().all()
     return {"data": [dict(r) for r in rows]}
@@ -79,8 +96,7 @@ async def criar_processo(
     db: AsyncSession = Depends(get_db),
     cu: User = Depends(require_roles(_ESCRITA)),
 ):
-    if not await _case_existe(db, case_id):
-        raise HTTPException(404, "Caso não encontrado")
+    await verificar_acesso_caso(db, cu, case_id)
     pid = str(uuid4())
     await db.execute(text("""
         INSERT INTO processes
@@ -107,6 +123,8 @@ async def atualizar_processo(
     db: AsyncSession = Depends(get_db),
     cu: User = Depends(require_roles(_ESCRITA)),
 ):
+    case_id = await _case_id_do_processo(db, pid)
+    await verificar_acesso_caso(db, cu, case_id)
     res = await db.execute(text("""
         UPDATE processes SET
             numero_cnj = COALESCE(:cnj, numero_cnj),
@@ -119,6 +137,15 @@ async def atualizar_processo(
             tipo       = COALESCE(:tipo, tipo),
             valor_causa= COALESCE(:vc, valor_causa),
             status     = COALESCE(:st, status),
+            archived_at = CASE
+                WHEN :st = 'arquivado' AND archived_at IS NULL THEN now()
+                WHEN :st IS NOT NULL AND :st <> 'arquivado' THEN NULL
+                ELSE archived_at
+            END,
+            archive_reason = CASE
+                WHEN :st IS NOT NULL AND :st <> 'arquivado' THEN NULL
+                ELSE archive_reason
+            END,
             updated_at = now()
         WHERE id = :pid AND deleted_at IS NULL
     """), {
@@ -133,12 +160,78 @@ async def atualizar_processo(
     return {"ok": True}
 
 
+@router.post("/processes/{pid}/arquivar")
+async def arquivar_processo(
+    pid: str,
+    body: Optional[ArchiveProcessRequest] = Body(default=None),
+    db: AsyncSession = Depends(get_db),
+    cu: User = Depends(require_roles(_ESCRITA)),
+):
+    case_id = await _case_id_do_processo(db, pid)
+    await verificar_acesso_caso(db, cu, case_id)
+    motivo = ((body.motivo if body else None) or "").strip() or None
+    res = await db.execute(text("""
+        UPDATE processes
+        SET status = 'arquivado',
+            archived_at = COALESCE(archived_at, now()),
+            archive_reason = :motivo,
+            updated_at = now()
+        WHERE id = :pid AND deleted_at IS NULL AND status <> 'arquivado'
+    """), {"pid": pid, "motivo": motivo})
+    if res.rowcount == 0:
+        exists = (await db.execute(text(
+            "SELECT 1 FROM processes WHERE id=:pid AND deleted_at IS NULL"
+        ), {"pid": pid})).first()
+        if not exists:
+            raise HTTPException(404, "Processo não encontrado")
+        raise HTTPException(409, "Processo já arquivado")
+    await criar_audit_log(
+        db, cu.id, cu.role.value, "ARCHIVE", "processes", pid,
+        dados_depois={"status": "arquivado", "motivo": motivo or ""},
+    )
+    await db.commit()
+    return {"ok": True, "status": "arquivado"}
+
+
+@router.post("/processes/{pid}/desarquivar")
+async def desarquivar_processo(
+    pid: str,
+    db: AsyncSession = Depends(get_db),
+    cu: User = Depends(require_roles(_ESCRITA)),
+):
+    case_id = await _case_id_do_processo(db, pid)
+    await verificar_acesso_caso(db, cu, case_id)
+    res = await db.execute(text("""
+        UPDATE processes
+        SET status = 'ativo',
+            archived_at = NULL,
+            archive_reason = NULL,
+            updated_at = now()
+        WHERE id = :pid AND deleted_at IS NULL AND status = 'arquivado'
+    """), {"pid": pid})
+    if res.rowcount == 0:
+        exists = (await db.execute(text(
+            "SELECT 1 FROM processes WHERE id=:pid AND deleted_at IS NULL"
+        ), {"pid": pid})).first()
+        if not exists:
+            raise HTTPException(404, "Processo não encontrado")
+        raise HTTPException(409, "Processo não está arquivado")
+    await criar_audit_log(
+        db, cu.id, cu.role.value, "UNARCHIVE", "processes", pid,
+        dados_depois={"status": "ativo"},
+    )
+    await db.commit()
+    return {"ok": True, "status": "ativo"}
+
+
 @router.delete("/processes/{pid}")
 async def remover_processo(
     pid: str,
     db: AsyncSession = Depends(get_db),
     cu: User = Depends(require_roles(_ESCRITA)),
 ):
+    case_id = await _case_id_do_processo(db, pid)
+    await verificar_acesso_caso(db, cu, case_id)
     res = await db.execute(text(
         "UPDATE processes SET deleted_at = now() WHERE id = :pid AND deleted_at IS NULL"
     ), {"pid": pid})
