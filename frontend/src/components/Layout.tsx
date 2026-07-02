@@ -178,12 +178,6 @@ const NAV: NavItem[] = [
     ],
   },
   {
-    to: "/licitacao-auditoria",
-    label: "Auditoria de licitacao",
-    icon: Gavel,
-    group: "Juridico",
-  },
-  {
     to: "/radar-regulatorio",
     label: "Radar regulatorio",
     icon: Bell,

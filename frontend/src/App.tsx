@@ -73,7 +73,6 @@ const InteligenciaWorkspace = lazy(
 );
 const FerramentasIA = lazy(() => import("./pages/FerramentasIA"));
 const VictoryVault = lazy(() => import("./pages/VictoryVault"));
-const LicitacaoAuditoria = lazy(() => import("./pages/LicitacaoAuditoria"));
 const RadarRegulatorio = lazy(() => import("./pages/RadarRegulatorio"));
 const PortalDashboard = lazy(() => import("./pages/portal/PortalDashboard"));
 const PortalCasos = lazy(() => import("./pages/portal/PortalCasos"));
@@ -241,7 +240,6 @@ export default function App() {
             <Route path="/inteligencia" element={<InteligenciaWorkspace />} />
             <Route path="/ferramentas-ia" element={<FerramentasIA />} />
             <Route path="/victory-vault" element={<VictoryVault />} />
-            <Route path="/licitacao-auditoria" element={<LicitacaoAuditoria />} />
             <Route path="/radar-regulatorio" element={<RadarRegulatorio />} />
             <Route path="/kanban" element={<Kanban />} />
             <Route path="/agenda" element={<Agenda />} />

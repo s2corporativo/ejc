@@ -90,7 +90,6 @@ from app.routers import jurisprudencia_externa
 from app.routers import jurisprudencia_interna
 from app.routers import kanban
 from app.routers import legal_docs
-from app.routers import licitacao_auditoria
 from app.routers import mediacao
 from app.routers import memoria_institucional
 from app.routers import mensagens
@@ -291,7 +290,6 @@ app.include_router(jurisprudencia_externa.router, prefix=API)
 app.include_router(jurisprudencia_interna.router, prefix=API)
 app.include_router(kanban.router, prefix=API)
 app.include_router(legal_docs.router, prefix=API)
-app.include_router(licitacao_auditoria.router, prefix=API)
 app.include_router(mediacao.router, prefix=API)
 app.include_router(memoria_institucional.router, prefix=API)
 app.include_router(mensagens.router, prefix=API)
