@@ -5,6 +5,7 @@
 //
 // Todas as calculadoras devolvem MINUTAS (HITL) — o resultado exibe o aviso.
 import { useEffect, useMemo, useState, useRef } from "react";
+import { toast } from "../../components/Toast";
 import Markdown from "../../components/Markdown";
 import { useParams, Link } from "react-router-dom";
 import {
@@ -850,12 +851,12 @@ export default function RamoBase() {
 
   const salvar = async () => {
     if (!form.case_id) {
-      alert("Selecione o caso vinculado");
+      toast.error("Selecione o caso vinculado");
       return;
     }
     const obrig = cfg.campos.find((c) => c.obrigatorio && !form[c.nome]);
     if (obrig) {
-      alert(`Campo obrigatório: ${obrig.label}`);
+      toast.error(`Campo obrigatório: ${obrig.label}`);
       return;
     }
     setSalvando(true);
@@ -865,7 +866,7 @@ export default function RamoBase() {
       setForm({});
       load();
     } catch (e: any) {
-      alert(e.response?.data?.detail || "Erro ao salvar");
+      toast.error(e.response?.data?.detail || "Erro ao salvar");
     } finally {
       setSalvando(false);
     }

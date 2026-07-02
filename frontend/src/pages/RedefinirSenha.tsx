@@ -1,4 +1,5 @@
 import { useState } from "react";
+import { toast } from "../components/Toast";
 import { useNavigate, useSearchParams } from "react-router-dom";
 import axios from "axios";
 
@@ -25,7 +26,7 @@ export default function RedefinirSenha() {
         token,
         nova_senha: senha,
       });
-      alert("Senha redefinida! Faça login.");
+      toast.success("Senha redefinida! Faça login.");
       nav("/login");
     } catch (e: any) {
       setErro(e.response?.data?.detail || "Link inválido ou expirado");

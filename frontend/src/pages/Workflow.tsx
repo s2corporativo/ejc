@@ -1,4 +1,5 @@
 import { useEffect, useState } from "react";
+import { toast } from "../components/Toast";
 import { GitBranch, Trash2, Plus, Clock } from "lucide-react";
 import api from "../lib/api";
 import { PageHeader, Spinner } from "../components/UI";
@@ -81,7 +82,7 @@ export default function Workflow() {
       setLoading(true);
       load();
     } catch (err: any) {
-      alert(err.response?.data?.detail || "Falha ao criar workflow");
+      toast.error(err.response?.data?.detail || "Falha ao criar workflow");
     } finally {
       setSaving(false);
     }

@@ -1,4 +1,5 @@
 import { exportCsv } from "../utils/exportCsv";
+import { toast } from "../components/Toast";
 import { exportPdf } from "../utils/exportPdf";
 import { useEffect, useState } from "react";
 import {
@@ -62,7 +63,7 @@ export default function Honorarios() {
 
   const salvar = async () => {
     if (!form.descricao || !form.client_id) {
-      alert("Descrição e cliente obrigatórios");
+      toast.error("Descrição e cliente obrigatórios");
       return;
     }
     setSalvando(true);
@@ -72,7 +73,7 @@ export default function Honorarios() {
       setForm({ tipo: "fixo" });
       load();
     } catch (e: any) {
-      alert(e.response?.data?.detail || "Erro");
+      toast.error(e.response?.data?.detail || "Erro");
     } finally {
       setSalvando(false);
     }
@@ -85,7 +86,7 @@ export default function Honorarios() {
       const r = await api.get(`/v1/honorarios-exito/${fee.id}/rateio`);
       setRateioModal({ fee, calc: r.data });
     } catch (e: any) {
-      alert(e.response?.data?.detail || "Erro ao calcular rateio");
+      toast.error(e.response?.data?.detail || "Erro ao calcular rateio");
       setRateioModal(null);
     } finally {
       setRateioLoading(false);
@@ -96,13 +97,13 @@ export default function Honorarios() {
     if (!rateioModal?.fee) return;
     try {
       await api.post(`/v1/honorarios-exito/${rateioModal.fee.id}/rateio`);
-      alert(
+      toast.success(
         "Rateio gerado — saque do titular criado em Saques Sócios (pendente de aprovação).",
       );
       setRateioModal(null);
       load();
     } catch (e: any) {
-      alert(e.response?.data?.detail || "Erro ao gerar rateio");
+      toast.error(e.response?.data?.detail || "Erro ao gerar rateio");
     }
   };
 
@@ -114,13 +115,13 @@ export default function Honorarios() {
       setPag({});
       load();
     } catch (e: any) {
-      alert(e.response?.data?.detail || "Erro ao registrar pagamento");
+      toast.error(e.response?.data?.detail || "Erro ao registrar pagamento");
     }
   };
 
   const gerarPix = async (fee: any) => {
     if (!pixCfg.chave) {
-      alert("Informe a chave PIX do escritório (campo abaixo).");
+      toast.error("Informe a chave PIX do escritório (campo abaixo).");
       return;
     }
     localStorage.setItem("ejc_pix", JSON.stringify(pixCfg));
@@ -142,7 +143,7 @@ export default function Honorarios() {
       });
       setPixQr(url);
     } catch (e: any) {
-      alert(e.response?.data?.detail || "Falha ao gerar PIX");
+      toast.error(e.response?.data?.detail || "Falha ao gerar PIX");
     }
   };
 

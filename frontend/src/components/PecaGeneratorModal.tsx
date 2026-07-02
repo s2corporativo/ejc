@@ -1,4 +1,5 @@
 import { useState, useRef, useCallback } from "react";
+import { toast } from "./Toast";
 import {
   X,
   Sparkles,
@@ -142,11 +143,11 @@ export default function PecaGeneratorModal({
 
   const gerar = useCallback(async () => {
     if (!fatos.trim() || fatos.trim().length < 50) {
-      alert("Descreva os fatos com pelo menos 50 caracteres.");
+      toast.error("Descreva os fatos com pelo menos 50 caracteres.");
       return;
     }
     if (!pedidos.trim() || pedidos.trim().length < 10) {
-      alert("Informe os pedidos.");
+      toast.error("Informe os pedidos.");
       return;
     }
 

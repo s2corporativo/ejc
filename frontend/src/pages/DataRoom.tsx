@@ -1,4 +1,5 @@
 import { useEffect, useState } from "react";
+import { toast } from "../components/Toast";
 import api from "../lib/api";
 import { PageHeader, Spinner, fmtDate, Modal } from "../components/UI";
 
@@ -83,7 +84,7 @@ export default function DataRoom() {
   const copiar = (token: string) => {
     const url = `${location.origin}/api/data-rooms/acesso/${token}`;
     navigator.clipboard?.writeText(url);
-    alert("Link copiado:\n" + url);
+    toast.info("Link copiado:\n" + url);
   };
 
   return (

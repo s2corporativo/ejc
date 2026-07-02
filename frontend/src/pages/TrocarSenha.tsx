@@ -1,4 +1,5 @@
 import { useState } from "react";
+import { toast } from "../components/Toast";
 import { useNavigate } from "react-router-dom";
 import api, { logout } from "../lib/api";
 
@@ -24,7 +25,7 @@ export default function TrocarSenha() {
         senha_atual: atual,
         nova_senha: nova,
       });
-      alert("Senha alterada! Entre novamente.");
+      toast.success("Senha alterada! Entre novamente.");
       logout();
     } catch (e: any) {
       setErro(e.response?.data?.detail || "Erro ao trocar a senha");

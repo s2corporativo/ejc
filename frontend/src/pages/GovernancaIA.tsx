@@ -1,4 +1,5 @@
 import { useEffect, useState } from "react";
+import { toast } from "../components/Toast";
 import { BrainCircuit, Database, FileCheck2, Gavel, ListChecks, ShieldCheck, SlidersHorizontal } from "lucide-react";
 import api from "../lib/api";
 import { PageHeader, Spinner, fmtDate } from "../components/UI";
@@ -73,7 +74,7 @@ export default function GovernancaIA() {
       });
       setPreviewExtracao(data.texto_extraido_preview || "");
     } catch (e: any) {
-      alert(e.response?.data?.detail || "Falha ao extrair URL oficial");
+      toast.error(e.response?.data?.detail || "Falha ao extrair URL oficial");
     } finally { setSalvando(null); }
   };
 

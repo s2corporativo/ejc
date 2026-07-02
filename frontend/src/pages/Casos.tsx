@@ -1,4 +1,5 @@
 import { exportPdf } from "../utils/exportPdf";
+import { toast } from "../components/Toast";
 import { exportCsv } from "../utils/exportCsv";
 import { useEffect, useState } from "react";
 import { Link } from "react-router-dom";
@@ -230,7 +231,7 @@ export default function Casos() {
     const cand = form._cliente_candidato;
     const temCandidato = !!(cand && (cand.nome || cand.cpf || cand.cnpj));
     if (!form.titulo || (!form.client_id && !temCandidato)) {
-      alert("Título e cliente são obrigatórios (ou importe um documento)");
+      toast.error("Título e cliente são obrigatórios (ou importe um documento)");
       return;
     }
     setSalvando(true);
@@ -261,7 +262,7 @@ export default function Casos() {
       setForm({ area: "civil", prioridade: "media", case_type: "judicial" });
       load();
     } catch (e: any) {
-      alert(e.response?.data?.detail || "Erro ao salvar");
+      toast.error(e.response?.data?.detail || "Erro ao salvar");
     } finally {
       setSalvando(false);
     }

@@ -3123,7 +3123,7 @@ function IaDefensivaCaso({ caso }: { caso: Case }) {
     const texto = resultado?.resposta || "";
     if (!texto) return;
     await navigator.clipboard.writeText(texto);
-    toast.error("Resultado copiado para a area de transferencia.");
+    toast.success("Resultado copiado para a area de transferencia.");
   };
 
   return (

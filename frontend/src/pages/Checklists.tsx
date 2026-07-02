@@ -1,4 +1,5 @@
 import { useEffect, useState } from "react";
+import { toast } from "../components/Toast";
 import { ListChecks, Trash2, Plus } from "lucide-react";
 import api from "../lib/api";
 import { PageHeader, Spinner } from "../components/UI";
@@ -47,7 +48,7 @@ export default function Checklists() {
       setLoading(true);
       load();
     } catch (err: any) {
-      alert(err.response?.data?.detail || "Falha ao criar template");
+      toast.error(err.response?.data?.detail || "Falha ao criar template");
     } finally {
       setSaving(false);
     }

@@ -1,5 +1,6 @@
 // ── Menu do avatar: segurança e preferências do usuário ──
 import { useState } from "react";
+import { toast } from "./Toast";
 import { useNavigate } from "react-router-dom";
 import {
   BellRing,
@@ -23,7 +24,7 @@ export default function SecurityMenu({ user }: { user: any }) {
     try {
       const { data } = await api.get("/notifications/push/vapid-key");
       if (!data.enabled) {
-        alert("Push não configurado no servidor (.env VAPID)");
+        toast.error("Push não configurado no servidor (.env VAPID)");
         return;
       }
       const perm = await Notification.requestPermission();
@@ -39,9 +40,9 @@ export default function SecurityMenu({ user }: { user: any }) {
         p256dh: j.keys.p256dh,
         auth: j.keys.auth,
       });
-      alert("📱 Alertas no celular ativados!");
+      toast.success("📱 Alertas no celular ativados!");
     } catch {
-      alert("Falha ao ativar push");
+      toast.error("Falha ao ativar push");
     }
   };
 
@@ -51,7 +52,7 @@ export default function SecurityMenu({ user }: { user: any }) {
       djen_oab_uf: oabUf,
     });
     setModal(null);
-    alert("OAB salva — intimações DJEN serão capturadas diariamente às 06h30.");
+    toast.success("OAB salva — intimações DJEN serão capturadas diariamente às 06h30.");
   };
 
   const copiarIcs = async () => {
@@ -62,7 +63,7 @@ export default function SecurityMenu({ user }: { user: any }) {
       data?.url ||
       `${window.location.origin}/api/calendar/${user.id}/TOKEN.ics`;
     navigator.clipboard.writeText(url);
-    alert(
+    toast.success(
       "URL do calendário copiada!\nGoogle Agenda → Adicionar agenda → Por URL.",
     );
   };
