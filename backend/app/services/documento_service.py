@@ -17,6 +17,7 @@ import re
 from typing import Optional
 
 from app.services import ai_gateway, ocr_service
+from app.services.sanitizer import sanitizar_pii
 
 logger = logging.getLogger("ejc.documento_service")
 
@@ -93,9 +94,10 @@ async def extrair_e_analisar(
                     "Verifique a qualidade do arquivo.",
         }
     texto = texto[:18000]  # teto de contexto
+    texto_sanitizado, _ = sanitizar_pii(texto)
 
     # 2) Extração estruturada + diagnóstico (1 chamada de IA)
-    user_msg = f"DOCUMENTO:\n\n{texto}\n\n---\n{ESQUEMA}"
+    user_msg = f"DOCUMENTO:\n\n{texto_sanitizado}\n\n---\n{ESQUEMA}"
     try:
         resp = await ai_gateway.chat(
             messages=[{"role": "system", "content": SYSTEM},

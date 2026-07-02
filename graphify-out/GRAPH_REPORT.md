@@ -1,16 +1,16 @@
 # Graph Report - ejc  (2026-07-02)
 
 ## Corpus Check
-- 558 files · ~361,345 words
+- 558 files · ~361,356 words
 - Verdict: corpus is large enough that graph structure adds value.
 
 ## Summary
-- 4206 nodes · 7824 edges · 375 communities (324 shown, 51 thin omitted)
-- Extraction: 83% EXTRACTED · 17% INFERRED · 0% AMBIGUOUS · INFERRED: 1365 edges (avg confidence: 0.63)
+- 4206 nodes · 7825 edges · 364 communities (324 shown, 40 thin omitted)
+- Extraction: 83% EXTRACTED · 17% INFERRED · 0% AMBIGUOUS · INFERRED: 1366 edges (avg confidence: 0.63)
 - Token cost: 0 input · 0 output
 
 ## Graph Freshness
-- Built from commit: `043156c6`
+- Built from commit: `e5412eb8`
 - Run `git rev-parse HEAD` and compare to check if the graph is stale.
 - Run `graphify update .` after code changes (no API cost).
 
@@ -285,17 +285,6 @@
 - [[_COMMUNITY_RamosHub.tsx|RamosHub.tsx]]
 - [[_COMMUNITY_monitor_health.sh|monitor_health.sh]]
 - [[_COMMUNITY_patch-frontend-package.js|patch-frontend-package.js]]
-- [[_COMMUNITY_ban_superendiv|ban_superendiv]]
-- [[_COMMUNITY_civ_usucapiao|civ_usucapiao]]
-- [[_COMMUNITY_consumidor_devolucao_dobro|consumidor_devolucao_dobro]]
-- [[_COMMUNITY_emp_tipos|emp_tipos]]
-- [[_COMMUNITY_imobiliario_reajuste_aluguel|imobiliario_reajuste_aluguel]]
-- [[_COMMUNITY_lgpd_multa|lgpd_multa]]
-- [[_COMMUNITY_pen_anpp|pen_anpp]]
-- [[_COMMUNITY_penal_prescricao|penal_prescricao]]
-- [[_COMMUNITY_tributario_multa_mora|tributario_multa_mora]]
-- [[_COMMUNITY_transito_valor_multa|transito_valor_multa]]
-- [[_COMMUNITY_trab_deposito|trab_deposito]]
 - [[_COMMUNITY_CLAUDE|CLAUDE.md]]
 - [[_COMMUNITY_CLAUDE|CLAUDE.md]]
 - [[_COMMUNITY_extraction-spec|extraction-spec.md]]
@@ -315,7 +304,7 @@
 6. `AILog` - 46 edges
 7. `Case` - 41 edges
 8. `PageHeader()` - 40 edges
-9. `sanitizar_pii()` - 35 edges
+9. `sanitizar_pii()` - 36 edges
 10. `Spinner()` - 33 edges
 
 ## Surprising Connections (you probably didn't know these)
@@ -323,17 +312,17 @@
   scripts/audit_legal_docs_preview.py → backend/app/services/document_format.py
 - `main()` --calls--> `padronizar_documento_juridico()`  [INFERRED]
   scripts/audit_legal_docs_preview.py → backend/app/services/document_format.py
-- `test_pascoa_gauss()` --calls--> `calcular_pascoa()`  [INFERRED]
-  backend/tests/test_deadline_calculator.py → backend/app/services/deadline_calculator.py
-- `test_feriados_moveis_2025()` --calls--> `feriados_moveis()`  [INFERRED]
-  backend/tests/test_deadline_calculator.py → backend/app/services/deadline_calculator.py
-- `test_eh_feriado_fixos_e_moveis()` --calls--> `eh_feriado()`  [INFERRED]
-  backend/tests/test_deadline_calculator.py → backend/app/services/deadline_calculator.py
+- `AILog` --uses--> `Base`  [INFERRED]
+  backend/app/models/ai_log.py → backend/app/core/database.py
+- `AIStatusHITL` --uses--> `Base`  [INFERRED]
+  backend/app/models/ai_log.py → backend/app/core/database.py
+- `AITipoUso` --uses--> `Base`  [INFERRED]
+  backend/app/models/ai_log.py → backend/app/core/database.py
 
 ## Import Cycles
 - None detected.
 
-## Communities (375 total, 51 thin omitted)
+## Communities (364 total, 40 thin omitted)
 
 ### Community 0 - "App.tsx"
 Cohesion: 0.03
@@ -341,7 +330,7 @@ Nodes (67): Agenda, Ajuda, Assinaturas, AssistenteIA, Auditoria, Biblioteca, Cas
 
 ### Community 1 - "api.ts"
 Cohesion: 0.04
-Nodes (27): ICON, LABEL, Patch, VIAB, Noticia, RAMOS, api, logout() (+19 more)
+Nodes (22): ICON, LABEL, Patch, VIAB, Noticia, RAMOS, api, logout() (+14 more)
 
 ### Community 2 - "novos_modulos.py"
 Cohesion: 0.07
@@ -364,12 +353,12 @@ Cohesion: 0.08
 Nodes (48): JurisprudenciaInterna, buscar(), buscar_lexml_endpoint(), buscar_tjmg_endpoint(), importar_lote(), importar_para_base(), _is_staff(), _pode_editar() (+40 more)
 
 ### Community 7 - "PageHeader"
-Cohesion: 0.06
-Nodes (20): DocumentosStats(), Empty(), Modal(), PageHeader(), Spinner(), DIAS, MES, Arquivo (+12 more)
+Cohesion: 0.25
+Nodes (4): Arquivo, Link, Room, TABS
 
 ### Community 8 - "cases.py"
-Cohesion: 0.09
-Nodes (43): CaseMovimento, Timeline do caso: petições, decisões, audiências, notas., analisar_caso_ia(), aplicar_extracao(), arquivar(), assistente_estrategico_caso(), atualizar(), _bg_sync_prazos_datajud() (+35 more)
+Cohesion: 0.14
+Nodes (35): CaseMovimento, Timeline do caso: petições, decisões, audiências, notas., analisar_caso_ia(), aplicar_extracao(), arquivar(), assistente_estrategico_caso(), atualizar(), _bg_sync_prazos_datajud() (+27 more)
 
 ### Community 9 - "rag.py"
 Cohesion: 0.10
@@ -388,8 +377,8 @@ Cohesion: 0.05
 Nodes (29): { Client }, conn, FILES, fs, LOCAL_BASE, path, sshConfig, { Client } (+21 more)
 
 ### Community 13 - "scheduler.py"
-Cohesion: 0.08
-Nodes (37): AsyncIOScheduler, executar_ingestao(), Executa um ingestor com sessão própria, captura métricas e erros.      `coro_fn(, _alertar_contratos(), _alertar_honorarios(), _auditoria_processos(), _backup_banco(), _backup_diario() (+29 more)
+Cohesion: 0.11
+Nodes (25): AsyncIOScheduler, _alertar_contratos(), _alertar_honorarios(), _auditoria_processos(), _backup_banco(), _backup_diario(), get_scheduler(), job_datajud_sync() (+17 more)
 
 ### Community 14 - "FinanceiroWorkspace.tsx"
 Cohesion: 0.06
@@ -400,16 +389,16 @@ Cohesion: 0.15
 Nodes (34): Vínculo entre tese e caso (N:N) + resultado da aplicação., Tese, TeseCasoLink, TeseStatus, TeseTipo, arquivar_tese(), atualizar_tese(), criar_tese() (+26 more)
 
 ### Community 16 - "Base"
-Cohesion: 0.10
-Nodes (26): Base, AtendimentoTipo, CaseArea, CaseFase, CasePrioridade, CaseStatus, CaseParte, CasoArea (+18 more)
+Cohesion: 0.09
+Nodes (33): Base, AtendimentoTipo, AuditLog, CaseArea, CaseFase, CasePrioridade, CaseStatus, CaseParte (+25 more)
 
 ### Community 17 - "gerar_dossie"
 Cohesion: 0.11
 Nodes (33): DossieEstrategico, aprovar(), exportar_pdf(), gerar(), GerarDossieReq, historico(), obter_atual(), _out() (+25 more)
 
 ### Community 18 - "User"
-Cohesion: 0.07
-Nodes (36): adm_remover(), ban_juros(), ban_remover(), bancario_juros_abusivos(), civ_alimentos(), civ_remover(), consumidor_negativacao(), _crud_remover() (+28 more)
+Cohesion: 0.05
+Nodes (84): adm_atualizar(), adm_listar(), adm_remover(), ban_atualizar(), ban_criar(), ban_juros(), ban_listar(), ban_remover() (+76 more)
 
 ### Community 19 - "test_ia_parser.py"
 Cohesion: 0.10
@@ -420,28 +409,28 @@ Cohesion: 0.07
 Nodes (19): AIGateway, Any, AI Gateway Central - Ecossistema Jurídico Clóvis (EJC) v4.0 Centraliza todas as, Roteador Inteligente: Seleciona o modelo com base no tipo de demanda (Seção 16.3, Funcionalidade Exclusiva: Análise Crítica Cruzada (Seção 23)., get_settings(), Em produção, falha de forma explícita se o SECRET_KEY estiver ausente ou, Settings (+11 more)
 
 ### Community 21 - "CasoDetalhe.tsx"
-Cohesion: 0.07
-Nodes (9): CONF_STYLE, Confianca, hrefSeguro(), Markdown(), renderInline(), AREA_PARA_RAMO, GROUPS, TabKey (+1 more)
+Cohesion: 0.05
+Nodes (17): RamoStats(), BG, ICONS, toast, ToastContainer(), ToastItem, ToastType, fmtMoney() (+9 more)
 
 ### Community 22 - "Clientes.tsx"
-Cohesion: 0.08
-Nodes (21): ClientesStats(), BG, ICONS, toast, ToastContainer(), ToastItem, ToastType, StatusBadge() (+13 more)
+Cohesion: 0.16
+Nodes (8): CONF_STYLE, Confianca, hrefSeguro(), Markdown(), renderInline(), AREA_LABEL, Skill, CATS
 
 ### Community 23 - "str"
 Cohesion: 0.29
 Nodes (31): AdminCase, AdminStatus, AdminTipo, BancarioCase, BancarioStatus, BancarioTipo, CivelCase, CivelStatus (+23 more)
 
 ### Community 24 - "fmtDate"
-Cohesion: 0.07
-Nodes (17): fmtDate(), AREA_LABELS, CardMemoria(), Memoria, RESULTADO_CLASS, RESULTADO_LABEL, Tese, TIPO_ICON (+9 more)
+Cohesion: 0.18
+Nodes (6): AREA_LABELS, Memoria, RESULTADO_CLASS, RESULTADO_LABEL, Tese, TIPO_ICON
 
 ### Community 25 - "Casos.tsx"
-Cohesion: 0.08
-Nodes (21): AREA_LABELS, AREAS, CASE_TYPE_COLOR, CASE_TYPE_LABEL, CASE_TYPES, EXTRAJ_TYPES, PRESCRICAO, AREA_TO_TYPE (+13 more)
+Cohesion: 0.06
+Nodes (37): ClientesStats(), Empty(), fmtDate(), Modal(), StatusBadge(), CardMemoria(), AREA_LABELS, AREAS (+29 more)
 
 ### Community 26 - "prazo_dias_corridos"
 Cohesion: 0.09
-Nodes (31): _add_anos_data(), adm_ms(), adm_multa_transito(), ban_ba(), ban_criar(), civ_prazo_contestacao(), consumidor_prazos_cdc(), emp_prazos_rj() (+23 more)
+Nodes (24): _add_anos_data(), adm_ms(), adm_multa_transito(), ban_ba(), consumidor_prazos_cdc(), emp_prazos_rj(), pen_prazos(), pen_prescricao() (+16 more)
 
 ### Community 27 - "devDependencies"
 Cohesion: 0.06
@@ -456,8 +445,8 @@ Cohesion: 0.17
 Nodes (28): DataRoom, DataRoomAcessoLog, DataRoomArquivo, DataRoomLink, Link público com expiração para acesso externo (cliente, perito, etc.)., Registro de cada acesso ao Data Room via link externo., acessar_link_publico(), adicionar_arquivo() (+20 more)
 
 ### Community 30 - "Dashboards.tsx"
-Cohesion: 0.08
-Nodes (19): ACCENTS, AREA_LABEL, AtendimentoStats(), CasosStats(), ConhecimentoStats(), ENCERRADOS, RAMO_ACCENT, RamoStats() (+11 more)
+Cohesion: 0.09
+Nodes (15): ACCENTS, AREA_LABEL, AtendimentoStats(), CasosStats(), ConhecimentoStats(), DocumentosStats(), ENCERRADOS, RAMO_ACCENT (+7 more)
 
 ### Community 31 - "User"
 Cohesion: 0.21
@@ -472,8 +461,8 @@ Cohesion: 0.20
 Nodes (28): aprovar(), atualizar(), _auditar_jurisprudencia_peca(), _bg_checklist_protocolo(), _bloquear_jurisprudencia_nao_validada(), _bloquear_sem_validacao(), checar_jurisprudencia_peca(), criar() (+20 more)
 
 ### Community 34 - "BaseModel"
-Cohesion: 0.11
-Nodes (25): Config, LoginRequest, PasswordChange, RefreshRequest, TokenResponse, UserCreate, UserResponse, UserUpdate (+17 more)
+Cohesion: 0.09
+Nodes (31): Config, LoginRequest, PasswordChange, RefreshRequest, TokenResponse, UserCreate, UserResponse, UserUpdate (+23 more)
 
 ### Community 35 - "workflow.py"
 Cohesion: 0.22
@@ -500,8 +489,8 @@ Cohesion: 0.22
 Nodes (25): atualizar_curadoria(), _colecao_mg(), _conf(), dashboard_governanca(), extrair_jurisprudencia_url(), _fonte_oficial(), fontes_ingestao(), geometria_jurisprudencia_mg() (+17 more)
 
 ### Community 41 - "Conhecimento.tsx"
-Cohesion: 0.08
-Nodes (11): IANotice(), PERFIS, Tool, TOOLS, CATS, estimarChunks(), ModalIngestao(), AREAS (+3 more)
+Cohesion: 0.04
+Nodes (31): IANotice(), PageHeader(), Spinner(), DIAS, MES, NovaAssinaturaForm, Signatario, SolicitacaoAssinatura (+23 more)
 
 ### Community 42 - "VictoryVault"
 Cohesion: 0.14
@@ -516,16 +505,16 @@ Cohesion: 0.08
 Nodes (24): For /graphify add and --watch, For /graphify query, For the commit hook and native CLAUDE.md integration, For --update and --cluster-only, /graphify, Honesty Rules, Interpreter guard for subcommands, Part A - Structural extraction for code files (+16 more)
 
 ### Community 45 - "useAuth"
-Cohesion: 0.12
-Nodes (17): NAV, PortalLayout(), ExtratoCaso(), TabResumo(), Dashboard(), Login(), LoginModern(), EMPTY (+9 more)
+Cohesion: 0.13
+Nodes (15): NAV, PortalLayout(), ExtratoCaso(), Login(), LoginModern(), EMPTY, PartnerWithdrawals(), STATUS_COLOR (+7 more)
 
 ### Community 46 - "atendimentos.py"
 Cohesion: 0.23
 Nodes (23): Atendimento, AtendimentoIn, AtendimentoPatch, atualizar_atendimento(), _check_atendimento_ownership(), criar_atendimento(), dashboard_atendimentos(), _is_staff() (+15 more)
 
 ### Community 47 - "deadline_calculator.py"
-Cohesion: 0.15
-Nodes (23): calcular_pascoa(), dia_util_anterior(), dias_uteis_restantes(), eh_dia_util(), eh_feriado(), feriados_moveis(), prazo_defesa_ambiental(), proximo_dia_util() (+15 more)
+Cohesion: 0.07
+Nodes (48): criar(), adm_criar(), civ_criar(), civ_prazo_contestacao(), imobiliario_prazos_despejo(), lgpd_prazos(), Prazos da LGPD (resposta ao titular e comunicação de incidente à ANPD)., Prazo de contestação por rito.     CPC art. 335: 15 dias úteis | JEC Lei 9.099/9 (+40 more)
 
 ### Community 48 - "ramosConfig.ts"
 Cohesion: 0.08
@@ -544,12 +533,12 @@ Cohesion: 0.19
 Nodes (20): analisar_ia_defensiva(), atualizar_status_ia_defensiva(), historico_ia_defensiva(), IaDefensivaRequest, IaDefensivaStatusRequest, _is_ia_defensiva_log(), AsyncSession, User (+12 more)
 
 ### Community 52 - "criar_notificacao_interna"
-Cohesion: 0.10
-Nodes (21): criar_notificacao_interna(), enviar_email(), enviar_push(), enviar_whatsapp(), AsyncSession, Cria notificação no sino do header. Sempre funciona (sem API externa)., Envia WhatsApp via Z-API. Telefone formato: 5531999999999.     Retorna True se e, Email via SMTP (smtplib em thread). Falha silenciosa. (+13 more)
+Cohesion: 0.20
+Nodes (10): enviar_email(), enviar_push(), enviar_whatsapp(), Envia WhatsApp via Z-API. Telefone formato: 5531999999999.     Retorna True se e, Email via SMTP (smtplib em thread). Falha silenciosa., Envia push a todas as subscriptions do usuário. Falha silenciosa., _alertar_ambiental(), _alertar_prazos() (+2 more)
 
 ### Community 53 - "FastAPI"
-Cohesion: 0.11
-Nodes (14): Motor de Notificações Mobile EJC v5.0. Gerenciamento de WebSockets e Integração, analise_impacto(), User, radar_legislativo(), Router EJC Intelligence — Radar de Poder v3.0 Monitoramento dos Três Poderes e A, Portal de Mediação Digital EJC v5.0. Ambiente de negociação guiada pelo Algoritm, AsyncSession, User (+6 more)
+Cohesion: 0.10
+Nodes (14): Motor de Notificações Mobile EJC v5.0. Gerenciamento de WebSockets e Integração, listar(), AsyncSession, User, Taxonomia única de áreas do direito — fonte canônica (resolve as 3 taxonomias de, analise_impacto(), User, radar_legislativo() (+6 more)
 
 ### Community 54 - "LegalDoc"
 Cohesion: 0.19
@@ -564,8 +553,8 @@ Cohesion: 0.11
 Nodes (13): listar(), AsyncSession, date, User, EJC — Seed de SKILLS de IA do backlog LegJur (gaps reais). Reusa o engine ejc_sk, EJC — Seed de Skills de IA Popula a tabela ejc_skills com os prompts de sistema, Seed síncrono usando SQLAlchemy direto., seed_skills_sync() (+5 more)
 
 ### Community 57 - "ramos.py"
-Cohesion: 0.25
-Nodes (19): adm_atualizar(), adm_listar(), ban_atualizar(), ban_listar(), _casos_visiveis_subq(), civ_atualizar(), civ_listar(), _crud_atualizar() (+11 more)
+Cohesion: 0.18
+Nodes (8): _log_encerramento(), event_subscribers.py — Subscribers do barramento de eventos (ativação da arquite, Ao registrar um andamento oficial, gera o resumo em linguagem simples (IA)., Trilha leve de encerramento (o aprendizado institucional já roda em     backgrou, _traduzir_andamento(), movimento_ia.py — Tradução de andamentos processuais para linguagem simples (IA), Gera e persiste o resumo em linguagem simples de um andamento.      Args:, traduzir_movimento()
 
 ### Community 58 - "EJC — Escritório Jurídico Clovis"
 Cohesion: 0.10
@@ -624,8 +613,8 @@ Cohesion: 0.11
 Nodes (18): 0. Contexto e avisos, 1.1. Credenciais locais — `vps-tools/.env` (NÃO versionar), 1.2. `.env` de PRODUÇÃO (`/opt/ejc/.env`) — chaves obrigatórias, 1.3. Endpoint de health, 1. Pré-requisitos (ambiente / credenciais), 2. Pré-flight (backup + ponto de rollback + checar .env), 3. Entrega do código + rebuild das imagens, 4. Migration do banco (sequência condicional segura) (+10 more)
 
 ### Community 72 - "lifespan"
-Cohesion: 0.12
-Nodes (16): check_db(), get_db(), AsyncSession, Injeta AsyncSession em cada request via FastAPI Depends().     Garante rollback, Verifica conectividade com o banco (usado no /health)., global_exception_handler(), health(), lifespan() (+8 more)
+Cohesion: 0.13
+Nodes (14): check_db(), get_db(), AsyncSession, Injeta AsyncSession em cada request via FastAPI Depends().     Garante rollback, Verifica conectividade com o banco (usado no /health)., global_exception_handler(), health(), lifespan() (+6 more)
 
 ### Community 73 - "pdf_service.py"
 Cohesion: 0.19
@@ -640,8 +629,8 @@ Cohesion: 0.12
 Nodes (10): analise_vencedora(), Sincroniza teses de fontes oficiais e juristas renomados para o RAG., Analisa um caso específico cruzando com a base de teses renomadas., sincronizar_teses_externas(), TeseRenomada, seed(), RAGJuridico, RAG Jurídico — EJC Intelligence v3.0 Implementa busca semântica, ingestão de Dat (+2 more)
 
 ### Community 76 - "criar"
-Cohesion: 0.20
-Nodes (15): atualizar(), calcular(), cancelar(), confirmar_ciencia(), criar(), listar(), AsyncSession, User (+7 more)
+Cohesion: 0.27
+Nodes (11): atualizar(), calcular(), cancelar(), confirmar_ciencia(), listar(), AsyncSession, User, Confirmação de ciência do prazo (rastro LGPD/responsabilidade). (+3 more)
 
 ### Community 77 - "fees.py"
 Cohesion: 0.24
@@ -668,16 +657,16 @@ Cohesion: 0.13
 Nodes (8): _ANALISE_TITULO, COR_BORDA, formatBRL(), ICONES, VerbaRescisView(), FerramentaConfig, RamoConfig, RAMOS
 
 ### Community 83 - "CriarAcessoReq"
-Cohesion: 0.20
-Nodes (10): AuditLog, Client, ClientOrigem, ClientStatus, ClientTipo, CriarAcessoReq, _ResolverClienteReq, Request (+2 more)
+Cohesion: 0.18
+Nodes (11): criar_notificacao_interna(), AsyncSession, Cria notificação no sino do header. Sempre funciona (sem API externa)., _alertar_prescricao(), _alertar_procuracoes(), _morning_brief(), Casos com prescrição ≤90 dias → alerta semanal ao responsável., Alerta se processos estão há mais de 3 dias sem sincronizar — Auditoria Item 32. (+3 more)
 
 ### Community 84 - "upload"
 Cohesion: 0.29
 Nodes (13): BankAbusiveCharge, BankAnalysis, BankTransaction, detalhe(), documento(), excel(), _fmt_de_nome(), listar() (+5 more)
 
 ### Community 85 - "Notification"
-Cohesion: 0.27
-Nodes (12): Notification, Notificações internas (sino do header) + fila de WhatsApp/email., Task, TaskStatus, atualizar(), criar(), listar(), AsyncSession (+4 more)
+Cohesion: 0.19
+Nodes (15): Notification, Notificações internas (sino do header) + fila de WhatsApp/email., Task, TaskStatus, atualizar(), criar(), listar(), AsyncSession (+7 more)
 
 ### Community 86 - "MsgResponse"
 Cohesion: 0.24
@@ -712,8 +701,8 @@ Cohesion: 0.16
 Nodes (13): fetch(), Response, GET/POST com retry e backoff exponencial. Levanta na última falha.      Repete e, ingerir(), AsyncSession, Ingere ementas de proposições recentes. Retorna (novos, total)., ingerir(), _monta_conteudo() (+5 more)
 
 ### Community 94 - "DossieCliente.tsx"
-Cohesion: 0.14
-Nodes (9): AREA_LABEL, DossieCliente(), DossieData, fmt(), PENDING_STATUS_COLOR, PENDING_STATUS_LABEL, PendingItem, STATUS_LABEL (+1 more)
+Cohesion: 0.15
+Nodes (8): AREA_LABEL, DossieCliente(), DossieData, fmt(), PENDING_STATUS_COLOR, PENDING_STATUS_LABEL, PendingItem, STATUS_LABEL
 
 ### Community 95 - "SalaDeGuerra.tsx"
 Cohesion: 0.14
@@ -725,7 +714,7 @@ Nodes (13): 1. Resumo Executivo, 2. Legenda, 3. Matriz Mestre por Modulo, 4. Ite
 
 ### Community 97 - "verificar_acesso_caso"
 Cohesion: 0.23
-Nodes (12): is_gestao(), AsyncSession, Case, User, Gate de ownership para ESCRITAS em sub-recursos de um caso.      - 404 se o caso, _role_str(), verificar_acesso_caso(), calcular_score() (+4 more)
+Nodes (12): is_gestao(), AsyncSession, Case, User, Gate de ownership para ESCRITAS em sub-recursos de um caso.      - 404 se o caso, _role_str(), verificar_acesso_caso(), get_indice() (+4 more)
 
 ### Community 98 - "obter_ip_real"
 Cohesion: 0.23
@@ -805,7 +794,7 @@ Nodes (11): desfechos(), ext_benchmarks(), ext_stats(), ingerir_datajud(), _por_
 
 ### Community 117 - "prazo_dias_uteis"
 Cohesion: 0.20
-Nodes (12): adm_criar(), civ_criar(), emp_criar(), _get_case(), pen_criar(), pen_prazos(), Case, Prazos críticos do processo penal. Base: CPP.     MINUTA — verificar suspensões (+4 more)
+Nodes (10): executar_ingestao(), Executa um ingestor com sessão própria, captura métricas e erros.      `coro_fn(, job_ingestao_camara(), job_ingestao_planalto(), job_ingestao_senado(), job_ingestao_stj(), Domingo 03h00 — (re)ingere os códigos-núcleo federais no RAG.      Idempotente:, Sábado 03h00 — ingere o lote mensal mais recente de acórdãos do STJ. (+2 more)
 
 ### Community 118 - "AnaliseEstrategica.tsx"
 Cohesion: 0.17
@@ -860,8 +849,8 @@ Cohesion: 0.36
 Nodes (10): atualizar_processo(), _case_existe(), criar_processo(), listar_processos(), ProcessoIn, ProcessoPatch, AsyncSession, User (+2 more)
 
 ### Community 131 - "test_deadline_calculator.py"
-Cohesion: 0.18
-Nodes (10): calcular_prescricao(), Data-limite prescricional para um tipo de ação a partir do fato gerador.      IM, Cálculo de prazos processuais/administrativos (Fase 5) — funções puras., test_calcular_prescricao_tabela(), test_eh_dia_util(), test_eh_feriado_fixos_e_moveis(), test_feriados_moveis_2025(), test_pascoa_gauss() (+2 more)
+Cohesion: 0.20
+Nodes (6): AREAS, CardMemoria(), FormData, Memoria, RESULTADOS, TIPOS
 
 ### Community 132 - "aplicar_base"
 Cohesion: 0.29
@@ -880,8 +869,8 @@ Cohesion: 0.18
 Nodes (10): 1. Problema (do laudo, EOAB art. 25 + LGPD), 2. Gate canônico reutilizado, 3. Correções aplicadas, 4. Validação executada (sem banco), 5. Pendente — FASE 3B (isolamento do RAG) — passo dedicado, 6. Observação importante, Relatório — FASE 3A: Ownership / IDOR (EJC), `routers/documents.py` (+2 more)
 
 ### Community 136 - "capturar_para_advogado"
-Cohesion: 0.24
-Nodes (8): DjenComunicacao, capturar_para_advogado(), consultar_oab(), _djen_get(), AsyncSession, User, Comunicações disponibilizadas nos últimos `dias` para a OAB., Insere comunicações NOVAS; vincula a casos; notifica. Retorna qtd novas.
+Cohesion: 0.20
+Nodes (10): DjenComunicacao, capturar_para_advogado(), consultar_oab(), _djen_get(), AsyncSession, User, Comunicações disponibilizadas nos últimos `dias` para a OAB., Insere comunicações NOVAS; vincula a casos; notifica. Retorna qtd novas. (+2 more)
 
 ### Community 137 - "agenda_eventos.py"
 Cohesion: 0.38
@@ -1116,8 +1105,8 @@ Cohesion: 0.38
 Nodes (6): busca_global(), AsyncSession, Request, User, Busca unificada em clientes, casos e peças (escopo por perfil)., _ve_todos()
 
 ### Community 196 - "client.py"
-Cohesion: 0.38
-Nodes (6): ClientBase, ClientCreate, ClientResponse, ClientUpdate, Config, ConflitoCheckRequest
+Cohesion: 0.25
+Nodes (6): AREAS, EMPTY_FORM, FormState, FUNIL, Lead, ORIGENS
 
 ### Community 197 - "event_bus.py"
 Cohesion: 0.33
@@ -1149,7 +1138,7 @@ Nodes (5): consultar(), listar_perfis(), AsyncSession, User, IAs especializadas 
 
 ### Community 205 - "recalcular"
 Cohesion: 0.53
-Nodes (5): get_indice(), _nivel(), AsyncSession, User, recalcular()
+Nodes (5): calcular_score(), listar_scores(), AsyncSession, User, _req_adv()
 
 ### Community 206 - "licitacao_auditoria.py"
 Cohesion: 0.33
@@ -1208,12 +1197,12 @@ Cohesion: 0.33
 Nodes (4): Module, MODULES, SECTIONS_ORDER, Step
 
 ### Community 230 - "Assinaturas.tsx"
-Cohesion: 0.33
-Nodes (4): NovaAssinaturaForm, Signatario, SolicitacaoAssinatura, STATUS_CONFIG
+Cohesion: 0.60
+Nodes (4): listar(), AsyncSession, User, restaurar()
 
 ### Community 231 - "areas.py"
-Cohesion: 0.40
-Nodes (4): listar(), AsyncSession, User, Taxonomia única de áreas do direito — fonte canônica (resolve as 3 taxonomias de
+Cohesion: 0.50
+Nodes (3): Config, DeadlineCreate, DeadlineResponse
 
 ### Community 232 - "atividades.py"
 Cohesion: 0.40
@@ -1294,17 +1283,17 @@ Nodes (3): check_http_code(), fail(), post_deploy_check.sh script
 ## Knowledge Gaps
 - **621 isolated node(s):** `Config`, `Config`, `Config`, `Config`, `Config` (+616 more)
   These have ≤1 connection - possible missing edges or undocumented components.
-- **51 thin communities (<3 nodes) omitted from report** — run `graphify query` to explore isolated nodes.
+- **40 thin communities (<3 nodes) omitted from report** — run `graphify query` to explore isolated nodes.
 
 ## Suggested Questions
 _Questions this graph is uniquely positioned to answer:_
 
-- **Why does `Base` connect `Base` to `novos_modulos.py`, `checklists.py`, `registrar_acao`, `jurisprudencia_interna.py`, `cases.py`, `capturar_para_advogado`, `rag.py`, `teses_v4.py`, `teses.py`, `gerar_dossie`, `data_room_v4.py`, `str`, `data_room.py`, `User`, `prompts_juridicos.py`, `workflow.py`, `auth.py`, `atendimentos.py`, `LegalDoc`, `suspensoes.py`, `Case`, `centro_custos.py`, `Fee`, `EjcSkill`, `lifespan`, `CriarAcessoReq`, `upload`, `Notification`, `MsgResponse`, `templates.py`, `CriarSolicitacaoReq`, `procuracoes.py`, `wiki.py`, `_criar_deadline_defesa`?**
-  _High betweenness centrality (0.086) - this node is a cross-community bridge._
-- **Why does `Client` connect `CriarAcessoReq` to `Base`, `criar_audit_log`, `LegalDoc`, `templates.py`?**
-  _High betweenness centrality (0.077) - this node is a cross-community bridge._
-- **Why does `Spinner()` connect `PageHeader` to `App.tsx`, `Assinaturas.tsx`, `Conhecimento.tsx`, `UI.tsx`, `RamoBase.tsx`, `CasoDetalhe.tsx`, `Clientes.tsx`, `fmtDate`, `Casos.tsx`, `Dashboards.tsx`?**
+- **Why does `Spinner()` connect `Conhecimento.tsx` to `App.tsx`, `api.ts`, `test_deadline_calculator.py`, `PageHeader`, `UI.tsx`, `useAuth`, `RamoBase.tsx`, `CasoDetalhe.tsx`, `Clientes.tsx`, `fmtDate`, `Casos.tsx`, `Dashboards.tsx`?**
   _High betweenness centrality (0.043) - this node is a cross-community bridge._
+- **Why does `Base` connect `Base` to `novos_modulos.py`, `checklists.py`, `registrar_acao`, `jurisprudencia_interna.py`, `cases.py`, `capturar_para_advogado`, `rag.py`, `teses_v4.py`, `teses.py`, `gerar_dossie`, `data_room_v4.py`, `str`, `data_room.py`, `User`, `prompts_juridicos.py`, `workflow.py`, `auth.py`, `atendimentos.py`, `LegalDoc`, `suspensoes.py`, `Case`, `centro_custos.py`, `Fee`, `EjcSkill`, `lifespan`, `upload`, `Notification`, `MsgResponse`, `templates.py`, `CriarSolicitacaoReq`, `procuracoes.py`, `wiki.py`, `_criar_deadline_defesa`?**
+  _High betweenness centrality (0.035) - this node is a cross-community bridge._
+- **Why does `api` connect `api.ts` to `AnaliseExtratos.tsx`, `test_deadline_calculator.py`, `PageHeader`, `UI.tsx`, `FinanceiroWorkspace.tsx`, `CasoDetalhe.tsx`, `Clientes.tsx`, `fmtDate`, `Casos.tsx`, `VictoryVault.tsx`, `Dashboards.tsx`, `Conhecimento.tsx`, `useAuth`, `client.py`, `DataJudBusca.tsx`, `Sociedade.tsx`, `RamoBase.tsx`, `DossieCliente.tsx`, `SalaDeGuerra.tsx`, `AnaliseEstrategica.tsx`, `CentralAtividades.tsx`?**
+  _High betweenness centrality (0.030) - this node is a cross-community bridge._
 - **Are the 132 inferred relationships involving `User` (e.g. with `Base` and `EventoIn`) actually correct?**
   _`User` has 132 INFERRED edges - model-reasoned connections that need verification._
 - **Are the 118 inferred relationships involving `Base` (e.g. with `AILog` and `AIStatusHITL`) actually correct?**

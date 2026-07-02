@@ -1445,8 +1445,8 @@
     "semantic_hash": ""
   },
   "backend/app/services/documento_service.py": {
-    "mtime": 1782948298.5424442,
-    "ast_hash": "599be60b41a947fc1710da75e61532af",
+    "mtime": 1782955243.7128768,
+    "ast_hash": "64f5b2ed78082a3fa3b802adda32fe48",
     "semantic_hash": ""
   },
   "backend/app/services/dossie_service.py": {
@@ -1565,8 +1565,8 @@
     "semantic_hash": ""
   },
   "backend/app/services/legal_base.py": {
-    "mtime": 1782948298.5507574,
-    "ast_hash": "13ac4d7556b7330e0f12fe422d5dd555",
+    "mtime": 1782955258.4808776,
+    "ast_hash": "677b8370f16b98ded427bb394585e688",
     "semantic_hash": ""
   },
   "backend/app/services/minerador_sucesso.py": {
@@ -1890,8 +1890,8 @@
     "semantic_hash": ""
   },
   "backend/tests/test_smoke.py": {
-    "mtime": 1782948298.5677476,
-    "ast_hash": "2e244daae316a7102c0de2fdd8b6d918",
+    "mtime": 1782955406.4168866,
+    "ast_hash": "cc43ea64a0b1146298580d2c196caf0f",
     "semantic_hash": ""
   },
   "backend/tests/test_tax_tables.py": {
@@ -2790,8 +2790,8 @@
     "semantic_hash": ""
   },
   "backend/requirements.txt": {
-    "mtime": 1782948298.5624442,
-    "ast_hash": "bef65a2f2d8758ff8d29167798c7c206",
+    "mtime": 1782955270.5008783,
+    "ast_hash": "9dbdb1f5559f91fe39278bc7cfeac4c0",
     "semantic_hash": ""
   },
   "backend/tests/README.md": {

@@ -19,7 +19,7 @@ BASE_IDENTIDADE = (
 )
 
 # Apenas tarefas de PROSA recebem a base — exclui JSON (analise_juridica) e resumo.
-_TASKS_COM_BASE = {"estrategia", "auditoria_peca", "elaboracao_peca"}
+_TASKS_COM_BASE = {"estrategia", "auditoria_peca", "elaboracao_peca", "redacao_peca", "chat_rapido"}
 
 
 def aplicar_base(messages: list[dict], task_type: str) -> list[dict]:

@@ -3150,7 +3150,7 @@
       "source_location": "L1",
       "_origin": "ast",
       "id": "backend_app_models_audit_log",
-      "community": 83,
+      "community": 16,
       "norm_label": "audit_log.py"
     },
     {
@@ -3160,7 +3160,7 @@
       "source_location": "L11",
       "_origin": "ast",
       "id": "backend_app_models_audit_log_auditlog",
-      "community": 83,
+      "community": 16,
       "norm_label": "auditlog"
     },
     {
@@ -3460,7 +3460,7 @@
       "source_location": "L1",
       "_origin": "ast",
       "id": "backend_app_models_client",
-      "community": 83,
+      "community": 16,
       "norm_label": "client.py"
     },
     {
@@ -3470,7 +3470,7 @@
       "source_location": "L9",
       "_origin": "ast",
       "id": "backend_app_models_client_clienttipo",
-      "community": 83,
+      "community": 16,
       "norm_label": "clienttipo"
     },
     {
@@ -3480,7 +3480,7 @@
       "source_location": "L14",
       "_origin": "ast",
       "id": "backend_app_models_client_clientstatus",
-      "community": 83,
+      "community": 16,
       "norm_label": "clientstatus"
     },
     {
@@ -3490,7 +3490,7 @@
       "source_location": "L21",
       "_origin": "ast",
       "id": "backend_app_models_client_clientorigem",
-      "community": 83,
+      "community": 16,
       "norm_label": "clientorigem"
     },
     {
@@ -3500,7 +3500,7 @@
       "source_location": "L30",
       "_origin": "ast",
       "id": "backend_app_models_client_client",
-      "community": 83,
+      "community": 16,
       "norm_label": "client"
     },
     {
@@ -3510,7 +3510,7 @@
       "source_location": "L77",
       "_origin": "ast",
       "id": "backend_app_models_client_client_nome_exibicao",
-      "community": 83,
+      "community": 16,
       "norm_label": ".nome_exibicao()"
     },
     {
@@ -3520,7 +3520,7 @@
       "source_location": "L80",
       "_origin": "ast",
       "id": "backend_app_models_client_client_repr",
-      "community": 83,
+      "community": 16,
       "norm_label": ".__repr__()"
     },
     {
@@ -6020,7 +6020,7 @@
       "source_location": "L1",
       "_origin": "ast",
       "id": "backend_app_routers_areas",
-      "community": 231,
+      "community": 53,
       "norm_label": "areas.py"
     },
     {
@@ -6030,7 +6030,7 @@
       "source_location": "L13",
       "_origin": "ast",
       "id": "backend_app_routers_areas_listar",
-      "community": 231,
+      "community": 53,
       "norm_label": "listar()"
     },
     {
@@ -6040,7 +6040,7 @@
       "source_location": "",
       "_origin": "ast",
       "id": "backend_app_routers_areas_py_asyncsession",
-      "community": 231,
+      "community": 53,
       "norm_label": "asyncsession"
     },
     {
@@ -6050,7 +6050,7 @@
       "source_location": "",
       "_origin": "ast",
       "id": "backend_app_routers_areas_py_user",
-      "community": 231,
+      "community": 53,
       "norm_label": "user"
     },
     {
@@ -6060,7 +6060,7 @@
       "source_location": "L1",
       "_origin": "ast",
       "id": "backend_app_routers_areas_rationale_1",
-      "community": 231,
+      "community": 53,
       "norm_label": "taxonomia unica de areas do direito \u2014 fonte canonica (resolve as 3 taxonomias de"
     },
     {
@@ -8200,7 +8200,7 @@
       "source_location": "L37",
       "_origin": "ast",
       "id": "backend_app_routers_clients_resolverclientereq",
-      "community": 83,
+      "community": 16,
       "norm_label": "_resolverclientereq"
     },
     {
@@ -8300,7 +8300,7 @@
       "source_location": "L313",
       "_origin": "ast",
       "id": "backend_app_routers_clients_criaracessoreq",
-      "community": 83,
+      "community": 16,
       "norm_label": "criaracessoreq"
     },
     {
@@ -9540,7 +9540,7 @@
       "source_location": "L92",
       "_origin": "ast",
       "id": "backend_app_routers_deadlines_criar",
-      "community": 76,
+      "community": 47,
       "norm_label": "criar()"
     },
     {
@@ -12320,7 +12320,7 @@
       "source_location": "L1",
       "_origin": "ast",
       "id": "backend_app_routers_indice_risco",
-      "community": 205,
+      "community": 97,
       "norm_label": "indice_risco.py"
     },
     {
@@ -12330,7 +12330,7 @@
       "source_location": "L18",
       "_origin": "ast",
       "id": "backend_app_routers_indice_risco_nivel",
-      "community": 205,
+      "community": 97,
       "norm_label": "_nivel()"
     },
     {
@@ -12340,7 +12340,7 @@
       "source_location": "L26",
       "_origin": "ast",
       "id": "backend_app_routers_indice_risco_get_indice",
-      "community": 205,
+      "community": 97,
       "norm_label": "get_indice()"
     },
     {
@@ -12350,7 +12350,7 @@
       "source_location": "",
       "_origin": "ast",
       "id": "backend_app_routers_indice_risco_py_asyncsession",
-      "community": 205,
+      "community": 97,
       "norm_label": "asyncsession"
     },
     {
@@ -12360,7 +12360,7 @@
       "source_location": "",
       "_origin": "ast",
       "id": "backend_app_routers_indice_risco_py_user",
-      "community": 205,
+      "community": 97,
       "norm_label": "user"
     },
     {
@@ -12370,7 +12370,7 @@
       "source_location": "L51",
       "_origin": "ast",
       "id": "backend_app_routers_indice_risco_recalcular",
-      "community": 205,
+      "community": 97,
       "norm_label": "recalcular()"
     },
     {
@@ -15960,7 +15960,7 @@
       "source_location": "L1",
       "_origin": "ast",
       "id": "backend_app_routers_ramos",
-      "community": 57,
+      "community": 18,
       "norm_label": "ramos.py"
     },
     {
@@ -15970,7 +15970,7 @@
       "source_location": "L45",
       "_origin": "ast",
       "id": "backend_app_routers_ramos_get_case",
-      "community": 117,
+      "community": 18,
       "norm_label": "_get_case()"
     },
     {
@@ -15980,7 +15980,7 @@
       "source_location": "",
       "_origin": "ast",
       "id": "backend_app_routers_ramos_py_asyncsession",
-      "community": 57,
+      "community": 18,
       "norm_label": "asyncsession"
     },
     {
@@ -16000,7 +16000,7 @@
       "source_location": "",
       "_origin": "ast",
       "id": "backend_app_routers_ramos_py_case",
-      "community": 117,
+      "community": 18,
       "norm_label": "case"
     },
     {
@@ -16010,7 +16010,7 @@
       "source_location": "L51",
       "_origin": "ast",
       "id": "backend_app_routers_ramos_serialize",
-      "community": 57,
+      "community": 18,
       "norm_label": "_serialize()"
     },
     {
@@ -16020,7 +16020,7 @@
       "source_location": "L56",
       "_origin": "ast",
       "id": "backend_app_routers_ramos_casos_visiveis_subq",
-      "community": 57,
+      "community": 18,
       "norm_label": "_casos_visiveis_subq()"
     },
     {
@@ -16030,7 +16030,7 @@
       "source_location": "L73",
       "_origin": "ast",
       "id": "backend_app_routers_ramos_crud_listar",
-      "community": 57,
+      "community": 18,
       "norm_label": "_crud_listar()"
     },
     {
@@ -16040,7 +16040,7 @@
       "source_location": "L87",
       "_origin": "ast",
       "id": "backend_app_routers_ramos_crud_atualizar",
-      "community": 57,
+      "community": 18,
       "norm_label": "_crud_atualizar()"
     },
     {
@@ -16070,7 +16070,7 @@
       "source_location": "L151",
       "_origin": "ast",
       "id": "backend_app_routers_ramos_emp_tipos",
-      "community": 328,
+      "community": 18,
       "norm_label": "emp_tipos()"
     },
     {
@@ -16080,7 +16080,7 @@
       "source_location": "L162",
       "_origin": "ast",
       "id": "backend_app_routers_ramos_emp_listar",
-      "community": 57,
+      "community": 18,
       "norm_label": "emp_listar()"
     },
     {
@@ -16090,7 +16090,7 @@
       "source_location": "L170",
       "_origin": "ast",
       "id": "backend_app_routers_ramos_emp_criar",
-      "community": 117,
+      "community": 18,
       "norm_label": "emp_criar()"
     },
     {
@@ -16100,7 +16100,7 @@
       "source_location": "L181",
       "_origin": "ast",
       "id": "backend_app_routers_ramos_emp_atualizar",
-      "community": 57,
+      "community": 18,
       "norm_label": "emp_atualizar()"
     },
     {
@@ -16160,7 +16160,7 @@
       "source_location": "L275",
       "_origin": "ast",
       "id": "backend_app_routers_ramos_civ_listar",
-      "community": 57,
+      "community": 18,
       "norm_label": "civ_listar()"
     },
     {
@@ -16170,7 +16170,7 @@
       "source_location": "L282",
       "_origin": "ast",
       "id": "backend_app_routers_ramos_civ_criar",
-      "community": 117,
+      "community": 47,
       "norm_label": "civ_criar()"
     },
     {
@@ -16180,7 +16180,7 @@
       "source_location": "L302",
       "_origin": "ast",
       "id": "backend_app_routers_ramos_civ_atualizar",
-      "community": 57,
+      "community": 18,
       "norm_label": "civ_atualizar()"
     },
     {
@@ -16200,7 +16200,7 @@
       "source_location": "L313",
       "_origin": "ast",
       "id": "backend_app_routers_ramos_civ_prazo_contestacao",
-      "community": 26,
+      "community": 47,
       "norm_label": "civ_prazo_contestacao()"
     },
     {
@@ -16220,7 +16220,7 @@
       "source_location": "L361",
       "_origin": "ast",
       "id": "backend_app_routers_ramos_civ_usucapiao",
-      "community": 326,
+      "community": 18,
       "norm_label": "civ_usucapiao()"
     },
     {
@@ -16240,7 +16240,7 @@
       "source_location": "L422",
       "_origin": "ast",
       "id": "backend_app_routers_ramos_pen_listar",
-      "community": 57,
+      "community": 18,
       "norm_label": "pen_listar()"
     },
     {
@@ -16250,7 +16250,7 @@
       "source_location": "L429",
       "_origin": "ast",
       "id": "backend_app_routers_ramos_pen_criar",
-      "community": 117,
+      "community": 18,
       "norm_label": "pen_criar()"
     },
     {
@@ -16260,7 +16260,7 @@
       "source_location": "L444",
       "_origin": "ast",
       "id": "backend_app_routers_ramos_pen_atualizar",
-      "community": 57,
+      "community": 18,
       "norm_label": "pen_atualizar()"
     },
     {
@@ -16280,7 +16280,7 @@
       "source_location": "L455",
       "_origin": "ast",
       "id": "backend_app_routers_ramos_pen_prazos",
-      "community": 117,
+      "community": 26,
       "norm_label": "pen_prazos()"
     },
     {
@@ -16290,7 +16290,7 @@
       "source_location": "L487",
       "_origin": "ast",
       "id": "backend_app_routers_ramos_pen_anpp",
-      "community": 331,
+      "community": 18,
       "norm_label": "pen_anpp()"
     },
     {
@@ -16320,7 +16320,7 @@
       "source_location": "L585",
       "_origin": "ast",
       "id": "backend_app_routers_ramos_trab_listar",
-      "community": 57,
+      "community": 18,
       "norm_label": "trab_listar()"
     },
     {
@@ -16330,7 +16330,7 @@
       "source_location": "L592",
       "_origin": "ast",
       "id": "backend_app_routers_ramos_trab_criar",
-      "community": 117,
+      "community": 18,
       "norm_label": "trab_criar()"
     },
     {
@@ -16340,7 +16340,7 @@
       "source_location": "L606",
       "_origin": "ast",
       "id": "backend_app_routers_ramos_trab_atualizar",
-      "community": 57,
+      "community": 18,
       "norm_label": "trab_atualizar()"
     },
     {
@@ -16380,7 +16380,7 @@
       "source_location": "L670",
       "_origin": "ast",
       "id": "backend_app_routers_ramos_trab_deposito",
-      "community": 335,
+      "community": 18,
       "norm_label": "trab_deposito()"
     },
     {
@@ -16400,7 +16400,7 @@
       "source_location": "L720",
       "_origin": "ast",
       "id": "backend_app_routers_ramos_adm_listar",
-      "community": 57,
+      "community": 18,
       "norm_label": "adm_listar()"
     },
     {
@@ -16410,7 +16410,7 @@
       "source_location": "L727",
       "_origin": "ast",
       "id": "backend_app_routers_ramos_adm_criar",
-      "community": 117,
+      "community": 47,
       "norm_label": "adm_criar()"
     },
     {
@@ -16420,7 +16420,7 @@
       "source_location": "L748",
       "_origin": "ast",
       "id": "backend_app_routers_ramos_adm_atualizar",
-      "community": 57,
+      "community": 18,
       "norm_label": "adm_atualizar()"
     },
     {
@@ -16480,7 +16480,7 @@
       "source_location": "L866",
       "_origin": "ast",
       "id": "backend_app_routers_ramos_consumidor_devolucao_dobro",
-      "community": 327,
+      "community": 18,
       "norm_label": "consumidor_devolucao_dobro()"
     },
     {
@@ -16510,7 +16510,7 @@
       "source_location": "L930",
       "_origin": "ast",
       "id": "backend_app_routers_ramos_imobiliario_reajuste_aluguel",
-      "community": 329,
+      "community": 18,
       "norm_label": "imobiliario_reajuste_aluguel()"
     },
     {
@@ -16520,7 +16520,7 @@
       "source_location": "L947",
       "_origin": "ast",
       "id": "backend_app_routers_ramos_imobiliario_prazos_despejo",
-      "community": 26,
+      "community": 47,
       "norm_label": "imobiliario_prazos_despejo()"
     },
     {
@@ -16540,7 +16540,7 @@
       "source_location": "L993",
       "_origin": "ast",
       "id": "backend_app_routers_ramos_lgpd_multa",
-      "community": 330,
+      "community": 18,
       "norm_label": "lgpd_multa()"
     },
     {
@@ -16550,7 +16550,7 @@
       "source_location": "L1010",
       "_origin": "ast",
       "id": "backend_app_routers_ramos_lgpd_prazos",
-      "community": 26,
+      "community": 47,
       "norm_label": "lgpd_prazos()"
     },
     {
@@ -16590,7 +16590,7 @@
       "source_location": "L1103",
       "_origin": "ast",
       "id": "backend_app_routers_ramos_penal_prescricao",
-      "community": 332,
+      "community": 18,
       "norm_label": "penal_prescricao()"
     },
     {
@@ -16630,7 +16630,7 @@
       "source_location": "L1193",
       "_origin": "ast",
       "id": "backend_app_routers_ramos_tributario_multa_mora",
-      "community": 333,
+      "community": 18,
       "norm_label": "tributario_multa_mora()"
     },
     {
@@ -16660,7 +16660,7 @@
       "source_location": "L1260",
       "_origin": "ast",
       "id": "backend_app_routers_ramos_transito_valor_multa",
-      "community": 334,
+      "community": 18,
       "norm_label": "transito_valor_multa()"
     },
     {
@@ -16700,7 +16700,7 @@
       "source_location": "L1362",
       "_origin": "ast",
       "id": "backend_app_routers_ramos_ban_listar",
-      "community": 57,
+      "community": 18,
       "norm_label": "ban_listar()"
     },
     {
@@ -16710,7 +16710,7 @@
       "source_location": "L1369",
       "_origin": "ast",
       "id": "backend_app_routers_ramos_ban_criar",
-      "community": 26,
+      "community": 18,
       "norm_label": "ban_criar()"
     },
     {
@@ -16720,7 +16720,7 @@
       "source_location": "L1387",
       "_origin": "ast",
       "id": "backend_app_routers_ramos_ban_atualizar",
-      "community": 57,
+      "community": 18,
       "norm_label": "ban_atualizar()"
     },
     {
@@ -16750,7 +16750,7 @@
       "source_location": "L1438",
       "_origin": "ast",
       "id": "backend_app_routers_ramos_ban_superendiv",
-      "community": 325,
+      "community": 18,
       "norm_label": "ban_superendiv()"
     },
     {
@@ -16770,7 +16770,7 @@
       "source_location": "L46",
       "_origin": "ast",
       "id": "backend_app_routers_ramos_rationale_46",
-      "community": 117,
+      "community": 18,
       "norm_label": "valida existencia + ownership do caso (gate canonico, inclui auxiliar e     salv"
     },
     {
@@ -16780,7 +16780,7 @@
       "source_location": "L52",
       "_origin": "ast",
       "id": "backend_app_routers_ramos_rationale_52",
-      "community": 57,
+      "community": 18,
       "norm_label": "serializa um modelo orm em dict sem vazar `_sa_instance_state`."
     },
     {
@@ -16790,7 +16790,7 @@
       "source_location": "L57",
       "_origin": "ast",
       "id": "backend_app_routers_ramos_rationale_57",
-      "community": 57,
+      "community": 18,
       "norm_label": "subquery dos ids de casos visiveis ao usuario (espelha verificar_acesso_caso)."
     },
     {
@@ -16800,7 +16800,7 @@
       "source_location": "L152",
       "_origin": "ast",
       "id": "backend_app_routers_ramos_rationale_152",
-      "community": 328,
+      "community": 18,
       "norm_label": "tipos disponiveis de materia empresarial."
     },
     {
@@ -16830,7 +16830,7 @@
       "source_location": "L318",
       "_origin": "ast",
       "id": "backend_app_routers_ramos_rationale_318",
-      "community": 26,
+      "community": 47,
       "norm_label": "prazo de contestacao por rito.     cpc art. 335: 15 dias uteis | jec lei 9.099/9"
     },
     {
@@ -16850,7 +16850,7 @@
       "source_location": "L365",
       "_origin": "ast",
       "id": "backend_app_routers_ramos_rationale_365",
-      "community": 326,
+      "community": 18,
       "norm_label": "verifica requisitos de usucapiao por modalidade. base: cc arts. 1.238-1.244 + cf"
     },
     {
@@ -16860,7 +16860,7 @@
       "source_location": "L459",
       "_origin": "ast",
       "id": "backend_app_routers_ramos_rationale_459",
-      "community": 117,
+      "community": 26,
       "norm_label": "prazos criticos do processo penal. base: cpp.     minuta \u2014 verificar suspensoes"
     },
     {
@@ -16870,7 +16870,7 @@
       "source_location": "L494",
       "_origin": "ast",
       "id": "backend_app_routers_ramos_rationale_494",
-      "community": 331,
+      "community": 18,
       "norm_label": "verifica requisitos do acordo de nao persecucao penal (art. 28-a cpp).     inser"
     },
     {
@@ -16910,7 +16910,7 @@
       "source_location": "L674",
       "_origin": "ast",
       "id": "backend_app_routers_ramos_rationale_674",
-      "community": 335,
+      "community": 18,
       "norm_label": "calcula deposito recursal para recurso ordinario e recurso de revista.     tabel"
     },
     {
@@ -16950,7 +16950,7 @@
       "source_location": "L871",
       "_origin": "ast",
       "id": "backend_app_routers_ramos_rationale_871",
-      "community": 327,
+      "community": 18,
       "norm_label": "repeticao em dobro do indebito (cdc art. 42 \u00a7u)."
     },
     {
@@ -16980,7 +16980,7 @@
       "source_location": "L935",
       "_origin": "ast",
       "id": "backend_app_routers_ramos_rationale_935",
-      "community": 329,
+      "community": 18,
       "norm_label": "reajuste anual de aluguel pelo indice contratual (igp-m/ipca)."
     },
     {
@@ -16990,7 +16990,7 @@
       "source_location": "L952",
       "_origin": "ast",
       "id": "backend_app_routers_ramos_rationale_952",
-      "community": 26,
+      "community": 47,
       "norm_label": "prazos da acao de despejo e purga da mora (lei 8.245/91)."
     },
     {
@@ -17010,7 +17010,7 @@
       "source_location": "L997",
       "_origin": "ast",
       "id": "backend_app_routers_ramos_rationale_997",
-      "community": 330,
+      "community": 18,
       "norm_label": "teto de multa simples da lgpd (art. 52 ii): 2% do faturamento, ate r$ 50 mi/infr"
     },
     {
@@ -17020,7 +17020,7 @@
       "source_location": "L1015",
       "_origin": "ast",
       "id": "backend_app_routers_ramos_rationale_1015",
-      "community": 26,
+      "community": 47,
       "norm_label": "prazos da lgpd (resposta ao titular e comunicacao de incidente a anpd)."
     },
     {
@@ -17060,7 +17060,7 @@
       "source_location": "L1107",
       "_origin": "ast",
       "id": "backend_app_routers_ramos_rationale_1107",
-      "community": 332,
+      "community": 18,
       "norm_label": "prescricao da pretensao punitiva pela pena em abstrato (cp art. 109)."
     },
     {
@@ -17100,7 +17100,7 @@
       "source_location": "L1198",
       "_origin": "ast",
       "id": "backend_app_routers_ramos_rationale_1198",
-      "community": 333,
+      "community": 18,
       "norm_label": "multa de mora 0,33%/dia limitada a 20% (tributos federais \u2014 lei 9.430/96 art. 61"
     },
     {
@@ -17130,7 +17130,7 @@
       "source_location": "L1265",
       "_origin": "ast",
       "id": "backend_app_routers_ramos_rationale_1265",
-      "community": 334,
+      "community": 18,
       "norm_label": "valor da multa por gravidade (ctb art. 258) com fator multiplicador."
     },
     {
@@ -17170,7 +17170,7 @@
       "source_location": "L1443",
       "_origin": "ast",
       "id": "backend_app_routers_ramos_rationale_1443",
-      "community": 325,
+      "community": 18,
       "norm_label": "verifica superendividamento (lei 14.181/2021 \u2014 novo art. 54-a do cdc).     compr"
     },
     {
@@ -17530,7 +17530,7 @@
       "source_location": "L1",
       "_origin": "ast",
       "id": "backend_app_routers_score_juridico",
-      "community": 97,
+      "community": 205,
       "norm_label": "score_juridico.py"
     },
     {
@@ -17540,7 +17540,7 @@
       "source_location": "L18",
       "_origin": "ast",
       "id": "backend_app_routers_score_juridico_req_adv",
-      "community": 97,
+      "community": 205,
       "norm_label": "_req_adv()"
     },
     {
@@ -17550,7 +17550,7 @@
       "source_location": "",
       "_origin": "ast",
       "id": "backend_app_routers_score_juridico_py_user",
-      "community": 97,
+      "community": 205,
       "norm_label": "user"
     },
     {
@@ -17560,7 +17560,7 @@
       "source_location": "L31",
       "_origin": "ast",
       "id": "backend_app_routers_score_juridico_listar_scores",
-      "community": 97,
+      "community": 205,
       "norm_label": "listar_scores()"
     },
     {
@@ -17570,7 +17570,7 @@
       "source_location": "",
       "_origin": "ast",
       "id": "backend_app_routers_score_juridico_py_asyncsession",
-      "community": 97,
+      "community": 205,
       "norm_label": "asyncsession"
     },
     {
@@ -17580,7 +17580,7 @@
       "source_location": "L50",
       "_origin": "ast",
       "id": "backend_app_routers_score_juridico_calcular_score",
-      "community": 97,
+      "community": 205,
       "norm_label": "calcular_score()"
     },
     {
@@ -18810,7 +18810,7 @@
       "source_location": "L1",
       "_origin": "ast",
       "id": "backend_app_routers_trash",
-      "community": 53,
+      "community": 230,
       "norm_label": "trash.py"
     },
     {
@@ -18820,7 +18820,7 @@
       "source_location": "L40",
       "_origin": "ast",
       "id": "backend_app_routers_trash_listar",
-      "community": 53,
+      "community": 230,
       "norm_label": "listar()"
     },
     {
@@ -18830,7 +18830,7 @@
       "source_location": "",
       "_origin": "ast",
       "id": "backend_app_routers_trash_py_asyncsession",
-      "community": 53,
+      "community": 230,
       "norm_label": "asyncsession"
     },
     {
@@ -18840,7 +18840,7 @@
       "source_location": "",
       "_origin": "ast",
       "id": "backend_app_routers_trash_py_user",
-      "community": 53,
+      "community": 230,
       "norm_label": "user"
     },
     {
@@ -18850,7 +18850,7 @@
       "source_location": "L63",
       "_origin": "ast",
       "id": "backend_app_routers_trash_restaurar",
-      "community": 53,
+      "community": 230,
       "norm_label": "restaurar()"
     },
     {
@@ -19160,7 +19160,7 @@
       "source_location": "L1",
       "_origin": "ast",
       "id": "backend_app_routers_webhooks",
-      "community": 83,
+      "community": 85,
       "norm_label": "webhooks.py"
     },
     {
@@ -19170,7 +19170,7 @@
       "source_location": "L26",
       "_origin": "ast",
       "id": "backend_app_routers_webhooks_zapi_inbound",
-      "community": 83,
+      "community": 85,
       "norm_label": "zapi_inbound()"
     },
     {
@@ -19180,7 +19180,7 @@
       "source_location": "",
       "_origin": "ast",
       "id": "backend_app_routers_webhooks_py_request",
-      "community": 83,
+      "community": 85,
       "norm_label": "request"
     },
     {
@@ -19190,7 +19190,7 @@
       "source_location": "L30",
       "_origin": "ast",
       "id": "backend_app_routers_webhooks_rationale_30",
-      "community": 83,
+      "community": 85,
       "norm_label": "recebe mensagens do whatsapp (z-api). cria lead se numero novo."
     },
     {
@@ -19960,7 +19960,7 @@
       "source_location": "L1",
       "_origin": "ast",
       "id": "backend_app_schemas_client",
-      "community": 196,
+      "community": 34,
       "norm_label": "client.py"
     },
     {
@@ -19970,7 +19970,7 @@
       "source_location": "L7",
       "_origin": "ast",
       "id": "backend_app_schemas_client_clientbase",
-      "community": 196,
+      "community": 34,
       "norm_label": "clientbase"
     },
     {
@@ -19980,7 +19980,7 @@
       "source_location": "L29",
       "_origin": "ast",
       "id": "backend_app_schemas_client_clientcreate",
-      "community": 196,
+      "community": 34,
       "norm_label": "clientcreate"
     },
     {
@@ -19990,7 +19990,7 @@
       "source_location": "L32",
       "_origin": "ast",
       "id": "backend_app_schemas_client_clientupdate",
-      "community": 196,
+      "community": 34,
       "norm_label": "clientupdate"
     },
     {
@@ -20000,7 +20000,7 @@
       "source_location": "L47",
       "_origin": "ast",
       "id": "backend_app_schemas_client_clientresponse",
-      "community": 196,
+      "community": 34,
       "norm_label": "clientresponse"
     },
     {
@@ -20010,7 +20010,7 @@
       "source_location": "L52",
       "_origin": "ast",
       "id": "backend_app_schemas_client_config",
-      "community": 196,
+      "community": 34,
       "norm_label": "config"
     },
     {
@@ -20020,7 +20020,7 @@
       "source_location": "L55",
       "_origin": "ast",
       "id": "backend_app_schemas_client_conflitocheckrequest",
-      "community": 196,
+      "community": 34,
       "norm_label": "conflitocheckrequest"
     },
     {
@@ -20060,7 +20060,7 @@
       "source_location": "L1",
       "_origin": "ast",
       "id": "backend_app_schemas_deadline",
-      "community": 76,
+      "community": 231,
       "norm_label": "deadline.py"
     },
     {
@@ -20070,7 +20070,7 @@
       "source_location": "L7",
       "_origin": "ast",
       "id": "backend_app_schemas_deadline_deadlinecreate",
-      "community": 76,
+      "community": 231,
       "norm_label": "deadlinecreate"
     },
     {
@@ -20090,7 +20090,7 @@
       "source_location": "L29",
       "_origin": "ast",
       "id": "backend_app_schemas_deadline_deadlineresponse",
-      "community": 76,
+      "community": 231,
       "norm_label": "deadlineresponse"
     },
     {
@@ -20100,7 +20100,7 @@
       "source_location": "L42",
       "_origin": "ast",
       "id": "backend_app_schemas_deadline_config",
-      "community": 76,
+      "community": 231,
       "norm_label": "config"
     },
     {
@@ -22740,7 +22740,7 @@
       "source_location": "L54",
       "_origin": "ast",
       "id": "backend_app_services_deadline_calculator_carregar_feriados_db",
-      "community": 72,
+      "community": 47,
       "norm_label": "carregar_feriados_db()"
     },
     {
@@ -22840,7 +22840,7 @@
       "source_location": "L192",
       "_origin": "ast",
       "id": "backend_app_services_deadline_calculator_prazo_dias_uteis",
-      "community": 117,
+      "community": 47,
       "norm_label": "prazo_dias_uteis()"
     },
     {
@@ -22850,7 +22850,7 @@
       "source_location": "L207",
       "_origin": "ast",
       "id": "backend_app_services_deadline_calculator_prazo_dias_corridos",
-      "community": 26,
+      "community": 47,
       "norm_label": "prazo_dias_corridos()"
     },
     {
@@ -22880,7 +22880,7 @@
       "source_location": "L291",
       "_origin": "ast",
       "id": "backend_app_services_deadline_calculator_calcular_prescricao",
-      "community": 131,
+      "community": 47,
       "norm_label": "calcular_prescricao()"
     },
     {
@@ -22900,7 +22900,7 @@
       "source_location": "L55",
       "_origin": "ast",
       "id": "backend_app_services_deadline_calculator_rationale_55",
-      "community": 72,
+      "community": 47,
       "norm_label": "carrega da tabela `feriados` os dias municipais/estaduais/forenses.     import l"
     },
     {
@@ -23000,7 +23000,7 @@
       "source_location": "L193",
       "_origin": "ast",
       "id": "backend_app_services_deadline_calculator_rationale_193",
-      "community": 117,
+      "community": 47,
       "norm_label": "prazo processual em dias uteis (cpc art. 219 / clt art. 775).     exclui o dia d"
     },
     {
@@ -23010,7 +23010,7 @@
       "source_location": "L210",
       "_origin": "ast",
       "id": "backend_app_services_deadline_calculator_rationale_210",
-      "community": 26,
+      "community": 47,
       "norm_label": "prazo administrativo em dias corridos (ex: defesa ibama, 20 dias).     lei 9.784"
     },
     {
@@ -23040,7 +23040,7 @@
       "source_location": "L292",
       "_origin": "ast",
       "id": "backend_app_services_deadline_calculator_rationale_292",
-      "community": 131,
+      "community": 47,
       "norm_label": "data-limite prescricional para um tipo de acao a partir do fato gerador.      im"
     },
     {
@@ -23427,7 +23427,7 @@
       "label": "_parse_json()",
       "file_type": "code",
       "source_file": "backend/app/services/documento_service.py",
-      "source_location": "L60",
+      "source_location": "L61",
       "_origin": "ast",
       "id": "backend_app_services_documento_service_parse_json",
       "community": 43,
@@ -23437,7 +23437,7 @@
       "label": "extrair_e_analisar()",
       "file_type": "code",
       "source_file": "backend/app/services/documento_service.py",
-      "source_location": "L77",
+      "source_location": "L78",
       "_origin": "ast",
       "id": "backend_app_services_documento_service_extrair_e_analisar",
       "community": 43,
@@ -23447,7 +23447,7 @@
       "label": "_sugerir_honorarios()",
       "file_type": "code",
       "source_file": "backend/app/services/documento_service.py",
-      "source_location": "L139",
+      "source_location": "L141",
       "_origin": "ast",
       "id": "backend_app_services_documento_service_sugerir_honorarios",
       "community": 43,
@@ -23457,7 +23457,7 @@
       "label": "_buscar_referencias()",
       "file_type": "code",
       "source_file": "backend/app/services/documento_service.py",
-      "source_location": "L185",
+      "source_location": "L187",
       "_origin": "ast",
       "id": "backend_app_services_documento_service_buscar_referencias",
       "community": 43,
@@ -23477,9 +23477,9 @@
       "label": "Extrai o primeiro objeto JSON da resposta da IA (tolerante a texto ao redor).",
       "file_type": "rationale",
       "source_file": "backend/app/services/documento_service.py",
-      "source_location": "L61",
+      "source_location": "L62",
       "_origin": "ast",
-      "id": "backend_app_services_documento_service_rationale_61",
+      "id": "backend_app_services_documento_service_rationale_62",
       "community": 43,
       "norm_label": "extrai o primeiro objeto json da resposta da ia (tolerante a texto ao redor)."
     },
@@ -23487,9 +23487,9 @@
       "label": "Executa o pipeline completo. Retorna dict estruturado pronto para o frontend",
       "file_type": "rationale",
       "source_file": "backend/app/services/documento_service.py",
-      "source_location": "L83",
+      "source_location": "L84",
       "_origin": "ast",
-      "id": "backend_app_services_documento_service_rationale_83",
+      "id": "backend_app_services_documento_service_rationale_84",
       "community": 43,
       "norm_label": "executa o pipeline completo. retorna dict estruturado pronto para o frontend"
     },
@@ -23497,9 +23497,9 @@
       "label": "Estima honor\u00e1rios via tabela OAB ingerida no RAG (categoria tabela_honorarios_oa",
       "file_type": "rationale",
       "source_file": "backend/app/services/documento_service.py",
-      "source_location": "L140",
+      "source_location": "L142",
       "_origin": "ast",
-      "id": "backend_app_services_documento_service_rationale_140",
+      "id": "backend_app_services_documento_service_rationale_142",
       "community": 43,
       "norm_label": "estima honorarios via tabela oab ingerida no rag (categoria tabela_honorarios_oa"
     },
@@ -23507,9 +23507,9 @@
       "label": "Busca jurisprud\u00eancia/precedentes internos semelhantes (RAG sem\u00e2ntico).",
       "file_type": "rationale",
       "source_file": "backend/app/services/documento_service.py",
-      "source_location": "L186",
+      "source_location": "L188",
       "_origin": "ast",
-      "id": "backend_app_services_documento_service_rationale_186",
+      "id": "backend_app_services_documento_service_rationale_188",
       "community": 43,
       "norm_label": "busca jurisprudencia/precedentes internos semelhantes (rag semantico)."
     },
@@ -23940,7 +23940,7 @@
       "source_location": "L1",
       "_origin": "ast",
       "id": "backend_app_services_event_subscribers",
-      "community": 8,
+      "community": 57,
       "norm_label": "event_subscribers.py"
     },
     {
@@ -23950,7 +23950,7 @@
       "source_location": "L29",
       "_origin": "ast",
       "id": "backend_app_services_event_subscribers_traduzir_andamento",
-      "community": 8,
+      "community": 57,
       "norm_label": "_traduzir_andamento()"
     },
     {
@@ -23960,7 +23960,7 @@
       "source_location": "L40",
       "_origin": "ast",
       "id": "backend_app_services_event_subscribers_log_encerramento",
-      "community": 8,
+      "community": 57,
       "norm_label": "_log_encerramento()"
     },
     {
@@ -23970,7 +23970,7 @@
       "source_location": "L50",
       "_origin": "ast",
       "id": "backend_app_services_event_subscribers_log_importacao",
-      "community": 8,
+      "community": 57,
       "norm_label": "_log_importacao()"
     },
     {
@@ -23980,7 +23980,7 @@
       "source_location": "L1",
       "_origin": "ast",
       "id": "backend_app_services_event_subscribers_rationale_1",
-      "community": 8,
+      "community": 57,
       "norm_label": "event_subscribers.py \u2014 subscribers do barramento de eventos (ativacao da arquite"
     },
     {
@@ -23990,7 +23990,7 @@
       "source_location": "L30",
       "_origin": "ast",
       "id": "backend_app_services_event_subscribers_rationale_30",
-      "community": 8,
+      "community": 57,
       "norm_label": "ao registrar um andamento oficial, gera o resumo em linguagem simples (ia)."
     },
     {
@@ -24000,7 +24000,7 @@
       "source_location": "L41",
       "_origin": "ast",
       "id": "backend_app_services_event_subscribers_rationale_41",
-      "community": 8,
+      "community": 57,
       "norm_label": "trilha leve de encerramento (o aprendizado institucional ja roda em     backgrou"
     },
     {
@@ -24920,7 +24920,7 @@
       "source_location": "L265",
       "_origin": "ast",
       "id": "backend_app_services_ingestion_service_executar_ingestao",
-      "community": 13,
+      "community": 117,
       "norm_label": "executar_ingestao()"
     },
     {
@@ -24990,7 +24990,7 @@
       "source_location": "L266",
       "_origin": "ast",
       "id": "backend_app_services_ingestion_service_rationale_266",
-      "community": 13,
+      "community": 117,
       "norm_label": "executa um ingestor com sessao propria, captura metricas e erros.      `coro_fn("
     },
     {
@@ -25790,7 +25790,7 @@
       "source_location": "L1",
       "_origin": "ast",
       "id": "backend_app_services_movimento_ia",
-      "community": 8,
+      "community": 57,
       "norm_label": "movimento_ia.py"
     },
     {
@@ -25800,7 +25800,7 @@
       "source_location": "L30",
       "_origin": "ast",
       "id": "backend_app_services_movimento_ia_traduzir_movimento",
-      "community": 8,
+      "community": 57,
       "norm_label": "traduzir_movimento()"
     },
     {
@@ -25810,7 +25810,7 @@
       "source_location": "L1",
       "_origin": "ast",
       "id": "backend_app_services_movimento_ia_rationale_1",
-      "community": 8,
+      "community": 57,
       "norm_label": "movimento_ia.py \u2014 traducao de andamentos processuais para linguagem simples (ia)"
     },
     {
@@ -25820,7 +25820,7 @@
       "source_location": "L31",
       "_origin": "ast",
       "id": "backend_app_services_movimento_ia_rationale_31",
-      "community": 8,
+      "community": 57,
       "norm_label": "gera e persiste o resumo em linguagem simples de um andamento.      args:"
     },
     {
@@ -25840,7 +25840,7 @@
       "source_location": "L17",
       "_origin": "ast",
       "id": "backend_app_services_notification_service_criar_notificacao_interna",
-      "community": 52,
+      "community": 83,
       "norm_label": "criar_notificacao_interna()"
     },
     {
@@ -25850,7 +25850,7 @@
       "source_location": "",
       "_origin": "ast",
       "id": "backend_app_services_notification_service_py_asyncsession",
-      "community": 52,
+      "community": 83,
       "norm_label": "asyncsession"
     },
     {
@@ -25890,7 +25890,7 @@
       "source_location": "L21",
       "_origin": "ast",
       "id": "backend_app_services_notification_service_rationale_21",
-      "community": 52,
+      "community": 83,
       "norm_label": "cria notificacao no sino do header. sempre funciona (sem api externa)."
     },
     {
@@ -27140,7 +27140,7 @@
       "source_location": "L38",
       "_origin": "ast",
       "id": "backend_app_services_scheduler_morning_brief",
-      "community": 52,
+      "community": 83,
       "norm_label": "_morning_brief()"
     },
     {
@@ -27170,7 +27170,7 @@
       "source_location": "L232",
       "_origin": "ast",
       "id": "backend_app_services_scheduler_alertar_prescricao",
-      "community": 52,
+      "community": 83,
       "norm_label": "_alertar_prescricao()"
     },
     {
@@ -27200,7 +27200,7 @@
       "source_location": "L299",
       "_origin": "ast",
       "id": "backend_app_services_scheduler_verificar_sincronia_datajud",
-      "community": 52,
+      "community": 83,
       "norm_label": "_verificar_sincronia_datajud()"
     },
     {
@@ -27210,7 +27210,7 @@
       "source_location": "L326",
       "_origin": "ast",
       "id": "backend_app_services_scheduler_alertar_procuracoes",
-      "community": 52,
+      "community": 83,
       "norm_label": "_alertar_procuracoes()"
     },
     {
@@ -27310,7 +27310,7 @@
       "source_location": "L665",
       "_origin": "ast",
       "id": "backend_app_services_scheduler_job_djen_intimacoes",
-      "community": 13,
+      "community": 136,
       "norm_label": "job_djen_intimacoes()"
     },
     {
@@ -27340,7 +27340,7 @@
       "source_location": "L748",
       "_origin": "ast",
       "id": "backend_app_services_scheduler_job_ingestao_planalto",
-      "community": 13,
+      "community": 117,
       "norm_label": "job_ingestao_planalto()"
     },
     {
@@ -27350,7 +27350,7 @@
       "source_location": "L761",
       "_origin": "ast",
       "id": "backend_app_services_scheduler_job_ingestao_stj",
-      "community": 13,
+      "community": 117,
       "norm_label": "job_ingestao_stj()"
     },
     {
@@ -27360,7 +27360,7 @@
       "source_location": "L771",
       "_origin": "ast",
       "id": "backend_app_services_scheduler_job_ingestao_camara",
-      "community": 13,
+      "community": 117,
       "norm_label": "job_ingestao_camara()"
     },
     {
@@ -27370,7 +27370,7 @@
       "source_location": "L781",
       "_origin": "ast",
       "id": "backend_app_services_scheduler_job_ingestao_senado",
-      "community": 13,
+      "community": 117,
       "norm_label": "job_ingestao_senado()"
     },
     {
@@ -27380,7 +27380,7 @@
       "source_location": "L39",
       "_origin": "ast",
       "id": "backend_app_services_scheduler_rationale_39",
-      "community": 52,
+      "community": 83,
       "norm_label": "briefing diario 07h00 \u2014 whatsapp para o admin."
     },
     {
@@ -27410,7 +27410,7 @@
       "source_location": "L233",
       "_origin": "ast",
       "id": "backend_app_services_scheduler_rationale_233",
-      "community": 52,
+      "community": 83,
       "norm_label": "casos com prescricao \u226490 dias \u2192 alerta semanal ao responsavel."
     },
     {
@@ -27440,7 +27440,7 @@
       "source_location": "L300",
       "_origin": "ast",
       "id": "backend_app_services_scheduler_rationale_300",
-      "community": 52,
+      "community": 83,
       "norm_label": "alerta se processos estao ha mais de 3 dias sem sincronizar \u2014 auditoria item 32."
     },
     {
@@ -27450,7 +27450,7 @@
       "source_location": "L327",
       "_origin": "ast",
       "id": "backend_app_services_scheduler_rationale_327",
-      "community": 52,
+      "community": 83,
       "norm_label": "procuracoes vencendo em 30 dias (semanal)."
     },
     {
@@ -27540,7 +27540,7 @@
       "source_location": "L666",
       "_origin": "ast",
       "id": "backend_app_services_scheduler_rationale_666",
-      "community": 13,
+      "community": 136,
       "norm_label": "06h30 \u2014 captura intimacoes djen para cada advogado com oab configurada."
     },
     {
@@ -27570,7 +27570,7 @@
       "source_location": "L749",
       "_origin": "ast",
       "id": "backend_app_services_scheduler_rationale_749",
-      "community": 13,
+      "community": 117,
       "norm_label": "domingo 03h00 \u2014 (re)ingere os codigos-nucleo federais no rag.      idempotente:"
     },
     {
@@ -27580,7 +27580,7 @@
       "source_location": "L762",
       "_origin": "ast",
       "id": "backend_app_services_scheduler_rationale_762",
-      "community": 13,
+      "community": 117,
       "norm_label": "sabado 03h00 \u2014 ingere o lote mensal mais recente de acordaos do stj."
     },
     {
@@ -27590,7 +27590,7 @@
       "source_location": "L772",
       "_origin": "ast",
       "id": "backend_app_services_scheduler_rationale_772",
-      "community": 13,
+      "community": 117,
       "norm_label": "diario 04h00 \u2014 monitor legislativo: ementas de proposicoes recentes."
     },
     {
@@ -27600,7 +27600,7 @@
       "source_location": "L782",
       "_origin": "ast",
       "id": "backend_app_services_scheduler_rationale_782",
-      "community": 13,
+      "community": 117,
       "norm_label": "diario 04h20 \u2014 monitor legislativo: ementas de materias do senado."
     },
     {
@@ -29220,7 +29220,7 @@
       "source_location": "L1",
       "_origin": "ast",
       "id": "backend_tests_test_deadline_calculator",
-      "community": 131,
+      "community": 47,
       "norm_label": "test_deadline_calculator.py"
     },
     {
@@ -29230,7 +29230,7 @@
       "source_location": "L16",
       "_origin": "ast",
       "id": "backend_tests_test_deadline_calculator_test_pascoa_gauss",
-      "community": 131,
+      "community": 47,
       "norm_label": "test_pascoa_gauss()"
     },
     {
@@ -29240,7 +29240,7 @@
       "source_location": "L22",
       "_origin": "ast",
       "id": "backend_tests_test_deadline_calculator_test_feriados_moveis_2025",
-      "community": 131,
+      "community": 47,
       "norm_label": "test_feriados_moveis_2025()"
     },
     {
@@ -29250,7 +29250,7 @@
       "source_location": "L29",
       "_origin": "ast",
       "id": "backend_tests_test_deadline_calculator_test_eh_feriado_fixos_e_moveis",
-      "community": 131,
+      "community": 47,
       "norm_label": "test_eh_feriado_fixos_e_moveis()"
     },
     {
@@ -29260,7 +29260,7 @@
       "source_location": "L36",
       "_origin": "ast",
       "id": "backend_tests_test_deadline_calculator_test_eh_dia_util",
-      "community": 131,
+      "community": 47,
       "norm_label": "test_eh_dia_util()"
     },
     {
@@ -29270,7 +29270,7 @@
       "source_location": "L43",
       "_origin": "ast",
       "id": "backend_tests_test_deadline_calculator_test_prazo_dias_uteis_exclui_inicio_e_fds",
-      "community": 131,
+      "community": 47,
       "norm_label": "test_prazo_dias_uteis_exclui_inicio_e_fds()"
     },
     {
@@ -29280,7 +29280,7 @@
       "source_location": "L48",
       "_origin": "ast",
       "id": "backend_tests_test_deadline_calculator_test_prazo_dias_corridos_prorroga_para_util",
-      "community": 131,
+      "community": 47,
       "norm_label": "test_prazo_dias_corridos_prorroga_para_util()"
     },
     {
@@ -29290,7 +29290,7 @@
       "source_location": "L53",
       "_origin": "ast",
       "id": "backend_tests_test_deadline_calculator_test_calcular_prescricao_tabela",
-      "community": 131,
+      "community": 47,
       "norm_label": "test_calcular_prescricao_tabela()"
     },
     {
@@ -29300,7 +29300,7 @@
       "source_location": "L1",
       "_origin": "ast",
       "id": "backend_tests_test_deadline_calculator_rationale_1",
-      "community": 131,
+      "community": 47,
       "norm_label": "calculo de prazos processuais/administrativos (fase 5) \u2014 funcoes puras."
     },
     {
@@ -31890,7 +31890,7 @@
       "source_location": "L279",
       "_origin": "ast",
       "id": "frontend_src_components_dashboards_ramostats",
-      "community": 30,
+      "community": 21,
       "norm_label": "ramostats()"
     },
     {
@@ -31910,7 +31910,7 @@
       "source_location": "L423",
       "_origin": "ast",
       "id": "frontend_src_components_dashboards_clientesstats",
-      "community": 22,
+      "community": 25,
       "norm_label": "clientesstats()"
     },
     {
@@ -31920,7 +31920,7 @@
       "source_location": "L490",
       "_origin": "ast",
       "id": "frontend_src_components_dashboards_documentosstats",
-      "community": 7,
+      "community": 30,
       "norm_label": "documentosstats()"
     },
     {
@@ -32090,7 +32090,7 @@
       "source_location": "L1",
       "_origin": "ast",
       "id": "frontend_src_components_explicarmov",
-      "community": 21,
+      "community": 1,
       "norm_label": "explicarmov.tsx"
     },
     {
@@ -32100,7 +32100,7 @@
       "source_location": "L10",
       "_origin": "ast",
       "id": "frontend_src_components_explicarmov_explicarmov",
-      "community": 21,
+      "community": 1,
       "norm_label": "explicarmov()"
     },
     {
@@ -33040,7 +33040,7 @@
       "source_location": "L1",
       "_origin": "ast",
       "id": "frontend_src_components_markdown",
-      "community": 21,
+      "community": 22,
       "norm_label": "markdown.tsx"
     },
     {
@@ -33050,7 +33050,7 @@
       "source_location": "L16",
       "_origin": "ast",
       "id": "frontend_src_components_markdown_hrefseguro",
-      "community": 21,
+      "community": 22,
       "norm_label": "hrefseguro()"
     },
     {
@@ -33060,7 +33060,7 @@
       "source_location": "L22",
       "_origin": "ast",
       "id": "frontend_src_components_markdown_renderinline",
-      "community": 21,
+      "community": 22,
       "norm_label": "renderinline()"
     },
     {
@@ -33070,7 +33070,7 @@
       "source_location": "L78",
       "_origin": "ast",
       "id": "frontend_src_components_markdown_markdown",
-      "community": 21,
+      "community": 22,
       "norm_label": "markdown()"
     },
     {
@@ -33450,7 +33450,7 @@
       "source_location": "L1",
       "_origin": "ast",
       "id": "frontend_src_components_toast",
-      "community": 22,
+      "community": 21,
       "norm_label": "toast.tsx"
     },
     {
@@ -33460,7 +33460,7 @@
       "source_location": "L8",
       "_origin": "ast",
       "id": "frontend_src_components_toast_toasttype",
-      "community": 22,
+      "community": 21,
       "norm_label": "toasttype"
     },
     {
@@ -33470,7 +33470,7 @@
       "source_location": "L10",
       "_origin": "ast",
       "id": "frontend_src_components_toast_toastitem",
-      "community": 22,
+      "community": 21,
       "norm_label": "toastitem"
     },
     {
@@ -33480,7 +33480,7 @@
       "source_location": "L18",
       "_origin": "ast",
       "id": "frontend_src_components_toast_toast",
-      "community": 22,
+      "community": 21,
       "norm_label": "toast"
     },
     {
@@ -33490,7 +33490,7 @@
       "source_location": "L24",
       "_origin": "ast",
       "id": "frontend_src_components_toast_fire",
-      "community": 22,
+      "community": 21,
       "norm_label": "fire()"
     },
     {
@@ -33500,7 +33500,7 @@
       "source_location": "L30",
       "_origin": "ast",
       "id": "frontend_src_components_toast_icons",
-      "community": 22,
+      "community": 21,
       "norm_label": "icons"
     },
     {
@@ -33510,7 +33510,7 @@
       "source_location": "L36",
       "_origin": "ast",
       "id": "frontend_src_components_toast_bg",
-      "community": 22,
+      "community": 21,
       "norm_label": "bg"
     },
     {
@@ -33520,7 +33520,7 @@
       "source_location": "L42",
       "_origin": "ast",
       "id": "frontend_src_components_toast_toastcontainer",
-      "community": 22,
+      "community": 21,
       "norm_label": "toastcontainer()"
     },
     {
@@ -33640,7 +33640,7 @@
       "source_location": "L168",
       "_origin": "ast",
       "id": "frontend_src_components_ui_statusbadge",
-      "community": 22,
+      "community": 25,
       "norm_label": "statusbadge()"
     },
     {
@@ -33720,7 +33720,7 @@
       "source_location": "L273",
       "_origin": "ast",
       "id": "frontend_src_components_ui_pageheader",
-      "community": 7,
+      "community": 41,
       "norm_label": "pageheader()"
     },
     {
@@ -33780,7 +33780,7 @@
       "source_location": "L447",
       "_origin": "ast",
       "id": "frontend_src_components_ui_modal",
-      "community": 7,
+      "community": 25,
       "norm_label": "modal()"
     },
     {
@@ -33810,7 +33810,7 @@
       "source_location": "L523",
       "_origin": "ast",
       "id": "frontend_src_components_ui_empty",
-      "community": 7,
+      "community": 25,
       "norm_label": "empty()"
     },
     {
@@ -33820,7 +33820,7 @@
       "source_location": "L533",
       "_origin": "ast",
       "id": "frontend_src_components_ui_spinner",
-      "community": 7,
+      "community": 41,
       "norm_label": "spinner()"
     },
     {
@@ -33870,7 +33870,7 @@
       "source_location": "L639",
       "_origin": "ast",
       "id": "frontend_src_components_ui_fmtmoney",
-      "community": 30,
+      "community": 21,
       "norm_label": "fmtmoney()"
     },
     {
@@ -33880,7 +33880,7 @@
       "source_location": "L644",
       "_origin": "ast",
       "id": "frontend_src_components_ui_fmtdate",
-      "community": 24,
+      "community": 25,
       "norm_label": "fmtdate()"
     },
     {
@@ -34040,7 +34040,7 @@
       "source_location": "L1",
       "_origin": "ast",
       "id": "frontend_src_components_ai_airesponse",
-      "community": 21,
+      "community": 22,
       "norm_label": "airesponse.tsx"
     },
     {
@@ -34050,7 +34050,7 @@
       "source_location": "L15",
       "_origin": "ast",
       "id": "frontend_src_components_ai_airesponse_confianca",
-      "community": 21,
+      "community": 22,
       "norm_label": "confianca"
     },
     {
@@ -34060,7 +34060,7 @@
       "source_location": "L17",
       "_origin": "ast",
       "id": "frontend_src_components_ai_airesponse_conf_style",
-      "community": 21,
+      "community": 22,
       "norm_label": "conf_style"
     },
     {
@@ -34070,7 +34070,7 @@
       "source_location": "L23",
       "_origin": "ast",
       "id": "frontend_src_components_ai_airesponse_airesponse",
-      "community": 21,
+      "community": 22,
       "norm_label": "airesponse()"
     },
     {
@@ -34150,7 +34150,7 @@
       "source_location": "L1",
       "_origin": "ast",
       "id": "frontend_src_pages_agenda",
-      "community": 7,
+      "community": 41,
       "norm_label": "agenda.tsx"
     },
     {
@@ -34160,7 +34160,7 @@
       "source_location": "L7",
       "_origin": "ast",
       "id": "frontend_src_pages_agenda_dias",
-      "community": 7,
+      "community": 41,
       "norm_label": "dias"
     },
     {
@@ -34170,7 +34170,7 @@
       "source_location": "L16",
       "_origin": "ast",
       "id": "frontend_src_pages_agenda_mes",
-      "community": 7,
+      "community": 41,
       "norm_label": "mes"
     },
     {
@@ -34180,7 +34180,7 @@
       "source_location": "L31",
       "_origin": "ast",
       "id": "frontend_src_pages_agenda_agenda",
-      "community": 7,
+      "community": 41,
       "norm_label": "agenda()"
     },
     {
@@ -34190,7 +34190,7 @@
       "source_location": "L1",
       "_origin": "ast",
       "id": "frontend_src_pages_agenteia",
-      "community": 22,
+      "community": 21,
       "norm_label": "agenteia.tsx"
     },
     {
@@ -34200,7 +34200,7 @@
       "source_location": "L8",
       "_origin": "ast",
       "id": "frontend_src_pages_agenteia_tarefas",
-      "community": 22,
+      "community": 21,
       "norm_label": "tarefas"
     },
     {
@@ -34210,7 +34210,7 @@
       "source_location": "L56",
       "_origin": "ast",
       "id": "frontend_src_pages_agenteia_agenteia",
-      "community": 22,
+      "community": 21,
       "norm_label": "agenteia()"
     },
     {
@@ -34280,7 +34280,7 @@
       "source_location": "L1",
       "_origin": "ast",
       "id": "frontend_src_pages_assinaturas",
-      "community": 230,
+      "community": 41,
       "norm_label": "assinaturas.tsx"
     },
     {
@@ -34290,7 +34290,7 @@
       "source_location": "L13",
       "_origin": "ast",
       "id": "frontend_src_pages_assinaturas_signatario",
-      "community": 230,
+      "community": 41,
       "norm_label": "signatario"
     },
     {
@@ -34300,7 +34300,7 @@
       "source_location": "L21",
       "_origin": "ast",
       "id": "frontend_src_pages_assinaturas_solicitacaoassinatura",
-      "community": 230,
+      "community": 41,
       "norm_label": "solicitacaoassinatura"
     },
     {
@@ -34310,7 +34310,7 @@
       "source_location": "L30",
       "_origin": "ast",
       "id": "frontend_src_pages_assinaturas_novaassinaturaform",
-      "community": 230,
+      "community": 41,
       "norm_label": "novaassinaturaform"
     },
     {
@@ -34320,7 +34320,7 @@
       "source_location": "L37",
       "_origin": "ast",
       "id": "frontend_src_pages_assinaturas_status_config",
-      "community": 230,
+      "community": 41,
       "norm_label": "status_config"
     },
     {
@@ -34330,7 +34330,7 @@
       "source_location": "L46",
       "_origin": "ast",
       "id": "frontend_src_pages_assinaturas_assinaturas",
-      "community": 230,
+      "community": 41,
       "norm_label": "assinaturas()"
     },
     {
@@ -34390,7 +34390,7 @@
       "source_location": "L1",
       "_origin": "ast",
       "id": "frontend_src_pages_auditoria",
-      "community": 7,
+      "community": 25,
       "norm_label": "auditoria.tsx"
     },
     {
@@ -34400,7 +34400,7 @@
       "source_location": "L5",
       "_origin": "ast",
       "id": "frontend_src_pages_auditoria_auditoria",
-      "community": 7,
+      "community": 25,
       "norm_label": "auditoria()"
     },
     {
@@ -34500,7 +34500,7 @@
       "source_location": "L182",
       "_origin": "ast",
       "id": "frontend_src_pages_biblioteca_cardmemoria",
-      "community": 24,
+      "community": 25,
       "norm_label": "cardmemoria()"
     },
     {
@@ -34530,7 +34530,7 @@
       "source_location": "L1",
       "_origin": "ast",
       "id": "frontend_src_pages_crmleads",
-      "community": 1,
+      "community": 196,
       "norm_label": "crmleads.tsx"
     },
     {
@@ -34540,7 +34540,7 @@
       "source_location": "L13",
       "_origin": "ast",
       "id": "frontend_src_pages_crmleads_lead",
-      "community": 1,
+      "community": 196,
       "norm_label": "lead"
     },
     {
@@ -34550,7 +34550,7 @@
       "source_location": "L27",
       "_origin": "ast",
       "id": "frontend_src_pages_crmleads_funil",
-      "community": 1,
+      "community": 196,
       "norm_label": "funil"
     },
     {
@@ -34560,7 +34560,7 @@
       "source_location": "L51",
       "_origin": "ast",
       "id": "frontend_src_pages_crmleads_areas",
-      "community": 1,
+      "community": 196,
       "norm_label": "areas"
     },
     {
@@ -34570,7 +34570,7 @@
       "source_location": "L60",
       "_origin": "ast",
       "id": "frontend_src_pages_crmleads_origens",
-      "community": 1,
+      "community": 196,
       "norm_label": "origens"
     },
     {
@@ -34580,7 +34580,7 @@
       "source_location": "L70",
       "_origin": "ast",
       "id": "frontend_src_pages_crmleads_formstate",
-      "community": 1,
+      "community": 196,
       "norm_label": "formstate"
     },
     {
@@ -34590,7 +34590,7 @@
       "source_location": "L78",
       "_origin": "ast",
       "id": "frontend_src_pages_crmleads_empty_form",
-      "community": 1,
+      "community": 196,
       "norm_label": "empty_form"
     },
     {
@@ -34600,7 +34600,7 @@
       "source_location": "L87",
       "_origin": "ast",
       "id": "frontend_src_pages_crmleads_crmleads",
-      "community": 1,
+      "community": 196,
       "norm_label": "crmleads()"
     },
     {
@@ -34680,7 +34680,7 @@
       "source_location": "L290",
       "_origin": "ast",
       "id": "frontend_src_pages_casodetalhe_tabresumo",
-      "community": 45,
+      "community": 21,
       "norm_label": "tabresumo()"
     },
     {
@@ -34870,7 +34870,7 @@
       "source_location": "L3356",
       "_origin": "ast",
       "id": "frontend_src_pages_casodetalhe_casodetalhe",
-      "community": 30,
+      "community": 21,
       "norm_label": "casodetalhe()"
     },
     {
@@ -35180,7 +35180,7 @@
       "source_location": "L1",
       "_origin": "ast",
       "id": "frontend_src_pages_checklists",
-      "community": 7,
+      "community": 41,
       "norm_label": "checklists.tsx"
     },
     {
@@ -35190,7 +35190,7 @@
       "source_location": "L6",
       "_origin": "ast",
       "id": "frontend_src_pages_checklists_checklists",
-      "community": 7,
+      "community": 41,
       "norm_label": "checklists()"
     },
     {
@@ -35200,7 +35200,7 @@
       "source_location": "L1",
       "_origin": "ast",
       "id": "frontend_src_pages_clientes",
-      "community": 22,
+      "community": 25,
       "norm_label": "clientes.tsx"
     },
     {
@@ -35210,7 +35210,7 @@
       "source_location": "L17",
       "_origin": "ast",
       "id": "frontend_src_pages_clientes_openwhatsapp",
-      "community": 22,
+      "community": 25,
       "norm_label": "openwhatsapp()"
     },
     {
@@ -35220,7 +35220,7 @@
       "source_location": "L24",
       "_origin": "ast",
       "id": "frontend_src_pages_clientes_clientes",
-      "community": 22,
+      "community": 25,
       "norm_label": "clientes()"
     },
     {
@@ -35370,7 +35370,7 @@
       "source_location": "L60",
       "_origin": "ast",
       "id": "frontend_src_pages_dashboard_dashboard",
-      "community": 45,
+      "community": 21,
       "norm_label": "dashboard()"
     },
     {
@@ -35380,7 +35380,7 @@
       "source_location": "L1",
       "_origin": "ast",
       "id": "frontend_src_pages_dashboardia",
-      "community": 30,
+      "community": 21,
       "norm_label": "dashboardia.tsx"
     },
     {
@@ -35390,7 +35390,7 @@
       "source_location": "L5",
       "_origin": "ast",
       "id": "frontend_src_pages_dashboardia_dashboardia",
-      "community": 30,
+      "community": 21,
       "norm_label": "dashboardia()"
     },
     {
@@ -35670,7 +35670,7 @@
       "source_location": "L1",
       "_origin": "ast",
       "id": "frontend_src_pages_diariooficial",
-      "community": 7,
+      "community": 41,
       "norm_label": "diariooficial.tsx"
     },
     {
@@ -35680,7 +35680,7 @@
       "source_location": "L13",
       "_origin": "ast",
       "id": "frontend_src_pages_diariooficial_keyword",
-      "community": 7,
+      "community": 41,
       "norm_label": "keyword"
     },
     {
@@ -35690,7 +35690,7 @@
       "source_location": "L19",
       "_origin": "ast",
       "id": "frontend_src_pages_diariooficial_alerta",
-      "community": 7,
+      "community": 41,
       "norm_label": "alerta"
     },
     {
@@ -35700,7 +35700,7 @@
       "source_location": "L30",
       "_origin": "ast",
       "id": "frontend_src_pages_diariooficial_filtroalerta",
-      "community": 7,
+      "community": 41,
       "norm_label": "filtroalerta"
     },
     {
@@ -35710,7 +35710,7 @@
       "source_location": "L32",
       "_origin": "ast",
       "id": "frontend_src_pages_diariooficial_diariooficial",
-      "community": 7,
+      "community": 41,
       "norm_label": "diariooficial()"
     },
     {
@@ -35720,7 +35720,7 @@
       "source_location": "L1",
       "_origin": "ast",
       "id": "frontend_src_pages_documentos",
-      "community": 7,
+      "community": 30,
       "norm_label": "documentos.tsx"
     },
     {
@@ -35730,7 +35730,7 @@
       "source_location": "L7",
       "_origin": "ast",
       "id": "frontend_src_pages_documentos_documentos",
-      "community": 7,
+      "community": 30,
       "norm_label": "documentos()"
     },
     {
@@ -35880,7 +35880,7 @@
       "source_location": "L1",
       "_origin": "ast",
       "id": "frontend_src_pages_ferramentasia",
-      "community": 7,
+      "community": 22,
       "norm_label": "ferramentasia.tsx"
     },
     {
@@ -35890,7 +35890,7 @@
       "source_location": "L7",
       "_origin": "ast",
       "id": "frontend_src_pages_ferramentasia_skill",
-      "community": 7,
+      "community": 22,
       "norm_label": "skill"
     },
     {
@@ -35900,7 +35900,7 @@
       "source_location": "L16",
       "_origin": "ast",
       "id": "frontend_src_pages_ferramentasia_area_label",
-      "community": 7,
+      "community": 22,
       "norm_label": "area_label"
     },
     {
@@ -35910,7 +35910,7 @@
       "source_location": "L22",
       "_origin": "ast",
       "id": "frontend_src_pages_ferramentasia_ferramentasia",
-      "community": 7,
+      "community": 22,
       "norm_label": "ferramentasia()"
     },
     {
@@ -36040,7 +36040,7 @@
       "source_location": "L1",
       "_origin": "ast",
       "id": "frontend_src_pages_governancaia",
-      "community": 24,
+      "community": 41,
       "norm_label": "governancaia.tsx"
     },
     {
@@ -36050,7 +36050,7 @@
       "source_location": "L6",
       "_origin": "ast",
       "id": "frontend_src_pages_governancaia_tab",
-      "community": 24,
+      "community": 41,
       "norm_label": "tab"
     },
     {
@@ -36060,7 +36060,7 @@
       "source_location": "L8",
       "_origin": "ast",
       "id": "frontend_src_pages_governancaia_kpi",
-      "community": 24,
+      "community": 41,
       "norm_label": "kpi()"
     },
     {
@@ -36070,7 +36070,7 @@
       "source_location": "L12",
       "_origin": "ast",
       "id": "frontend_src_pages_governancaia_governancaia",
-      "community": 24,
+      "community": 41,
       "norm_label": "governancaia()"
     },
     {
@@ -36080,7 +36080,7 @@
       "source_location": "L179",
       "_origin": "ast",
       "id": "frontend_src_pages_governancaia_box",
-      "community": 24,
+      "community": 41,
       "norm_label": "box()"
     },
     {
@@ -36090,7 +36090,7 @@
       "source_location": "L183",
       "_origin": "ast",
       "id": "frontend_src_pages_governancaia_badge",
-      "community": 24,
+      "community": 41,
       "norm_label": "badge()"
     },
     {
@@ -36110,7 +36110,7 @@
       "source_location": "L25",
       "_origin": "ast",
       "id": "frontend_src_pages_honorarios_honorarios",
-      "community": 30,
+      "community": 25,
       "norm_label": "honorarios()"
     },
     {
@@ -36120,7 +36120,7 @@
       "source_location": "L1",
       "_origin": "ast",
       "id": "frontend_src_pages_ia",
-      "community": 22,
+      "community": 25,
       "norm_label": "ia.tsx"
     },
     {
@@ -36130,7 +36130,7 @@
       "source_location": "L7",
       "_origin": "ast",
       "id": "frontend_src_pages_ia_areas",
-      "community": 22,
+      "community": 25,
       "norm_label": "areas"
     },
     {
@@ -36140,7 +36140,7 @@
       "source_location": "L9",
       "_origin": "ast",
       "id": "frontend_src_pages_ia_tab",
-      "community": 22,
+      "community": 25,
       "norm_label": "tab"
     },
     {
@@ -36150,7 +36150,7 @@
       "source_location": "L11",
       "_origin": "ast",
       "id": "frontend_src_pages_ia_ia",
-      "community": 22,
+      "community": 25,
       "norm_label": "ia()"
     },
     {
@@ -36280,7 +36280,7 @@
       "source_location": "L1",
       "_origin": "ast",
       "id": "frontend_src_pages_kanban",
-      "community": 25,
+      "community": 41,
       "norm_label": "kanban.tsx"
     },
     {
@@ -36290,7 +36290,7 @@
       "source_location": "L7",
       "_origin": "ast",
       "id": "frontend_src_pages_kanban_kanbancol",
-      "community": 25,
+      "community": 41,
       "norm_label": "kanbancol"
     },
     {
@@ -36300,7 +36300,7 @@
       "source_location": "L15",
       "_origin": "ast",
       "id": "frontend_src_pages_kanban_caso",
-      "community": 25,
+      "community": 41,
       "norm_label": "caso"
     },
     {
@@ -36310,7 +36310,7 @@
       "source_location": "L27",
       "_origin": "ast",
       "id": "frontend_src_pages_kanban_prio_color",
-      "community": 25,
+      "community": 41,
       "norm_label": "prio_color"
     },
     {
@@ -36320,7 +36320,7 @@
       "source_location": "L34",
       "_origin": "ast",
       "id": "frontend_src_pages_kanban_col_color",
-      "community": 25,
+      "community": 41,
       "norm_label": "col_color"
     },
     {
@@ -36330,7 +36330,7 @@
       "source_location": "L44",
       "_origin": "ast",
       "id": "frontend_src_pages_kanban_areas",
-      "community": 25,
+      "community": 41,
       "norm_label": "areas"
     },
     {
@@ -36340,7 +36340,7 @@
       "source_location": "L51",
       "_origin": "ast",
       "id": "frontend_src_pages_kanban_area_to_type",
-      "community": 25,
+      "community": 41,
       "norm_label": "area_to_type"
     },
     {
@@ -36350,7 +36350,7 @@
       "source_location": "L57",
       "_origin": "ast",
       "id": "frontend_src_pages_kanban_kanban",
-      "community": 25,
+      "community": 41,
       "norm_label": "kanban()"
     },
     {
@@ -36480,7 +36480,7 @@
       "source_location": "L1",
       "_origin": "ast",
       "id": "frontend_src_pages_memoriainstitucional",
-      "community": 24,
+      "community": 131,
       "norm_label": "memoriainstitucional.tsx"
     },
     {
@@ -36490,7 +36490,7 @@
       "source_location": "L28",
       "_origin": "ast",
       "id": "frontend_src_pages_memoriainstitucional_memoria",
-      "community": 24,
+      "community": 131,
       "norm_label": "memoria"
     },
     {
@@ -36500,7 +36500,7 @@
       "source_location": "L41",
       "_origin": "ast",
       "id": "frontend_src_pages_memoriainstitucional_tipos",
-      "community": 24,
+      "community": 131,
       "norm_label": "tipos"
     },
     {
@@ -36510,7 +36510,7 @@
       "source_location": "L87",
       "_origin": "ast",
       "id": "frontend_src_pages_memoriainstitucional_resultados",
-      "community": 24,
+      "community": 131,
       "norm_label": "resultados"
     },
     {
@@ -36520,7 +36520,7 @@
       "source_location": "L98",
       "_origin": "ast",
       "id": "frontend_src_pages_memoriainstitucional_areas",
-      "community": 24,
+      "community": 131,
       "norm_label": "areas"
     },
     {
@@ -36530,7 +36530,7 @@
       "source_location": "L110",
       "_origin": "ast",
       "id": "frontend_src_pages_memoriainstitucional_markdown",
-      "community": 24,
+      "community": 131,
       "norm_label": "markdown()"
     },
     {
@@ -36540,7 +36540,7 @@
       "source_location": "L142",
       "_origin": "ast",
       "id": "frontend_src_pages_memoriainstitucional_cardmemoria",
-      "community": 24,
+      "community": 131,
       "norm_label": "cardmemoria()"
     },
     {
@@ -36550,7 +36550,7 @@
       "source_location": "L257",
       "_origin": "ast",
       "id": "frontend_src_pages_memoriainstitucional_formdata",
-      "community": 24,
+      "community": 131,
       "norm_label": "formdata"
     },
     {
@@ -36560,7 +36560,7 @@
       "source_location": "L266",
       "_origin": "ast",
       "id": "frontend_src_pages_memoriainstitucional_modalform",
-      "community": 24,
+      "community": 131,
       "norm_label": "modalform()"
     },
     {
@@ -36570,7 +36570,7 @@
       "source_location": "L451",
       "_origin": "ast",
       "id": "frontend_src_pages_memoriainstitucional_memoriainstitucional",
-      "community": 24,
+      "community": 131,
       "norm_label": "memoriainstitucional()"
     },
     {
@@ -36580,7 +36580,7 @@
       "source_location": "L1",
       "_origin": "ast",
       "id": "frontend_src_pages_noticias",
-      "community": 7,
+      "community": 1,
       "norm_label": "noticias.tsx"
     },
     {
@@ -36590,7 +36590,7 @@
       "source_location": "L5",
       "_origin": "ast",
       "id": "frontend_src_pages_noticias_noticias",
-      "community": 7,
+      "community": 1,
       "norm_label": "noticias()"
     },
     {
@@ -36770,7 +36770,7 @@
       "source_location": "L1",
       "_origin": "ast",
       "id": "frontend_src_pages_pecas",
-      "community": 22,
+      "community": 25,
       "norm_label": "pecas.tsx"
     },
     {
@@ -36780,7 +36780,7 @@
       "source_location": "L24",
       "_origin": "ast",
       "id": "frontend_src_pages_pecas_tipos",
-      "community": 22,
+      "community": 25,
       "norm_label": "tipos"
     },
     {
@@ -36790,7 +36790,7 @@
       "source_location": "L37",
       "_origin": "ast",
       "id": "frontend_src_pages_pecas_pecas",
-      "community": 22,
+      "community": 25,
       "norm_label": "pecas()"
     },
     {
@@ -36800,7 +36800,7 @@
       "source_location": "L1",
       "_origin": "ast",
       "id": "frontend_src_pages_prazos",
-      "community": 22,
+      "community": 25,
       "norm_label": "prazos.tsx"
     },
     {
@@ -36810,7 +36810,7 @@
       "source_location": "L15",
       "_origin": "ast",
       "id": "frontend_src_pages_prazos_prazos",
-      "community": 22,
+      "community": 25,
       "norm_label": "prazos()"
     },
     {
@@ -36910,7 +36910,7 @@
       "source_location": "L1",
       "_origin": "ast",
       "id": "frontend_src_pages_prompts",
-      "community": 7,
+      "community": 22,
       "norm_label": "prompts.tsx"
     },
     {
@@ -36920,7 +36920,7 @@
       "source_location": "L7",
       "_origin": "ast",
       "id": "frontend_src_pages_prompts_cats",
-      "community": 7,
+      "community": 22,
       "norm_label": "cats"
     },
     {
@@ -36930,7 +36930,7 @@
       "source_location": "L19",
       "_origin": "ast",
       "id": "frontend_src_pages_prompts_prompts",
-      "community": 7,
+      "community": 22,
       "norm_label": "prompts()"
     },
     {
@@ -37290,7 +37290,7 @@
       "source_location": "L1",
       "_origin": "ast",
       "id": "frontend_src_pages_suspensoes",
-      "community": 24,
+      "community": 45,
       "norm_label": "suspensoes.tsx"
     },
     {
@@ -37300,7 +37300,7 @@
       "source_location": "L7",
       "_origin": "ast",
       "id": "frontend_src_pages_suspensoes_admin",
-      "community": 24,
+      "community": 45,
       "norm_label": "admin"
     },
     {
@@ -37310,7 +37310,7 @@
       "source_location": "L9",
       "_origin": "ast",
       "id": "frontend_src_pages_suspensoes_suspensoes",
-      "community": 24,
+      "community": 45,
       "norm_label": "suspensoes()"
     },
     {
@@ -37400,7 +37400,7 @@
       "source_location": "L1",
       "_origin": "ast",
       "id": "frontend_src_pages_usuarios",
-      "community": 7,
+      "community": 25,
       "norm_label": "usuarios.tsx"
     },
     {
@@ -37410,7 +37410,7 @@
       "source_location": "L7",
       "_origin": "ast",
       "id": "frontend_src_pages_usuarios_roles",
-      "community": 7,
+      "community": 25,
       "norm_label": "roles"
     },
     {
@@ -37420,7 +37420,7 @@
       "source_location": "L17",
       "_origin": "ast",
       "id": "frontend_src_pages_usuarios_usuarios",
-      "community": 7,
+      "community": 25,
       "norm_label": "usuarios()"
     },
     {
@@ -37470,7 +37470,7 @@
       "source_location": "L1",
       "_origin": "ast",
       "id": "frontend_src_pages_whatsapp",
-      "community": 7,
+      "community": 41,
       "norm_label": "whatsapp.tsx"
     },
     {
@@ -37480,7 +37480,7 @@
       "source_location": "L10",
       "_origin": "ast",
       "id": "frontend_src_pages_whatsapp_whatsapp",
-      "community": 7,
+      "community": 41,
       "norm_label": "whatsapp()"
     },
     {
@@ -37490,7 +37490,7 @@
       "source_location": "L1",
       "_origin": "ast",
       "id": "frontend_src_pages_wiki",
-      "community": 7,
+      "community": 25,
       "norm_label": "wiki.tsx"
     },
     {
@@ -37500,7 +37500,7 @@
       "source_location": "L5",
       "_origin": "ast",
       "id": "frontend_src_pages_wiki_wiki",
-      "community": 7,
+      "community": 25,
       "norm_label": "wiki()"
     },
     {
@@ -37510,7 +37510,7 @@
       "source_location": "L1",
       "_origin": "ast",
       "id": "frontend_src_pages_workflow",
-      "community": 7,
+      "community": 41,
       "norm_label": "workflow.tsx"
     },
     {
@@ -37520,7 +37520,7 @@
       "source_location": "L6",
       "_origin": "ast",
       "id": "frontend_src_pages_workflow_etapa",
-      "community": 7,
+      "community": 41,
       "norm_label": "etapa"
     },
     {
@@ -37530,7 +37530,7 @@
       "source_location": "L14",
       "_origin": "ast",
       "id": "frontend_src_pages_workflow_template",
-      "community": 7,
+      "community": 41,
       "norm_label": "template"
     },
     {
@@ -37540,7 +37540,7 @@
       "source_location": "L23",
       "_origin": "ast",
       "id": "frontend_src_pages_workflow_workflow",
-      "community": 7,
+      "community": 41,
       "norm_label": "workflow()"
     },
     {
@@ -37700,7 +37700,7 @@
       "source_location": "L18",
       "_origin": "ast",
       "id": "frontend_src_pages_portal_portalfinanceiro_portalfinanceiro",
-      "community": 94,
+      "community": 1,
       "norm_label": "portalfinanceiro()"
     },
     {
@@ -38180,7 +38180,7 @@
       "source_location": "L4",
       "_origin": "ast",
       "id": "frontend_src_stores_auth_authstate",
-      "community": 45,
+      "community": 25,
       "norm_label": "authstate"
     },
     {
@@ -38200,7 +38200,7 @@
       "source_location": "L1",
       "_origin": "ast",
       "id": "frontend_src_types_index",
-      "community": 22,
+      "community": 25,
       "norm_label": "index.ts"
     },
     {
@@ -38210,7 +38210,7 @@
       "source_location": "L2",
       "_origin": "ast",
       "id": "frontend_src_types_index_user",
-      "community": 45,
+      "community": 25,
       "norm_label": "user"
     },
     {
@@ -38220,7 +38220,7 @@
       "source_location": "L11",
       "_origin": "ast",
       "id": "frontend_src_types_index_client",
-      "community": 22,
+      "community": 25,
       "norm_label": "client"
     },
     {
@@ -38230,7 +38230,7 @@
       "source_location": "L26",
       "_origin": "ast",
       "id": "frontend_src_types_index_processoprincipal",
-      "community": 22,
+      "community": 25,
       "norm_label": "processoprincipal"
     },
     {
@@ -38240,7 +38240,7 @@
       "source_location": "L38",
       "_origin": "ast",
       "id": "frontend_src_types_index_case",
-      "community": 22,
+      "community": 25,
       "norm_label": "case"
     },
     {
@@ -38250,7 +38250,7 @@
       "source_location": "L72",
       "_origin": "ast",
       "id": "frontend_src_types_index_deadline",
-      "community": 22,
+      "community": 25,
       "norm_label": "deadline"
     },
     {
@@ -38260,7 +38260,7 @@
       "source_location": "L88",
       "_origin": "ast",
       "id": "frontend_src_types_index_legaldoc",
-      "community": 22,
+      "community": 25,
       "norm_label": "legaldoc"
     },
     {
@@ -38270,7 +38270,7 @@
       "source_location": "L110",
       "_origin": "ast",
       "id": "frontend_src_types_index_fee",
-      "community": 22,
+      "community": 25,
       "norm_label": "fee"
     },
     {
@@ -38280,7 +38280,7 @@
       "source_location": "L122",
       "_origin": "ast",
       "id": "frontend_src_types_index_envcase",
-      "community": 22,
+      "community": 25,
       "norm_label": "envcase"
     },
     {
@@ -38290,7 +38290,7 @@
       "source_location": "L133",
       "_origin": "ast",
       "id": "frontend_src_types_index_paged",
-      "community": 22,
+      "community": 25,
       "norm_label": "paged"
     },
     {
@@ -52573,17 +52573,6 @@
       "weight": 1.0,
       "source": "backend_app_models_client",
       "target": "enum",
-      "confidence_score": 1.0
-    },
-    {
-      "relation": "imports_from",
-      "context": "import",
-      "confidence": "EXTRACTED",
-      "source_file": "frontend/src/main.tsx",
-      "source_location": "L2",
-      "weight": 1.0,
-      "source": "frontend_src_main",
-      "target": "backend_app_models_client",
       "confidence_score": 1.0
     },
     {
@@ -92377,6 +92366,17 @@
       "confidence_score": 1.0
     },
     {
+      "relation": "imports_from",
+      "context": "import",
+      "confidence": "EXTRACTED",
+      "source_file": "frontend/src/main.tsx",
+      "source_location": "L2",
+      "weight": 1.0,
+      "source": "frontend_src_main",
+      "target": "backend_app_schemas_client",
+      "confidence_score": 1.0
+    },
+    {
       "relation": "inherits",
       "confidence": "EXTRACTED",
       "source_file": "backend/app/schemas/client.py",
@@ -93637,7 +93637,7 @@
       "confidence": "INFERRED",
       "confidence_score": 0.8,
       "source_file": "backend/app/services/documento_service.py",
-      "source_location": "L191",
+      "source_location": "L193",
       "weight": 1.0,
       "source": "backend_app_services_documento_service_buscar_referencias",
       "target": "backend_app_services_ai_service_buscar_contexto_rag"
@@ -93648,7 +93648,7 @@
       "confidence": "INFERRED",
       "confidence_score": 0.8,
       "source_file": "backend/app/services/documento_service.py",
-      "source_location": "L145",
+      "source_location": "L147",
       "weight": 1.0,
       "source": "backend_app_services_documento_service_sugerir_honorarios",
       "target": "backend_app_services_ai_service_buscar_contexto_rag"
@@ -98302,7 +98302,7 @@
       "relation": "contains",
       "confidence": "EXTRACTED",
       "source_file": "backend/app/services/documento_service.py",
-      "source_location": "L185",
+      "source_location": "L187",
       "weight": 1.0,
       "source": "backend_app_services_documento_service",
       "target": "backend_app_services_documento_service_buscar_referencias",
@@ -98312,7 +98312,7 @@
       "relation": "contains",
       "confidence": "EXTRACTED",
       "source_file": "backend/app/services/documento_service.py",
-      "source_location": "L77",
+      "source_location": "L78",
       "weight": 1.0,
       "source": "backend_app_services_documento_service",
       "target": "backend_app_services_documento_service_extrair_e_analisar",
@@ -98322,7 +98322,7 @@
       "relation": "contains",
       "confidence": "EXTRACTED",
       "source_file": "backend/app/services/documento_service.py",
-      "source_location": "L60",
+      "source_location": "L61",
       "weight": 1.0,
       "source": "backend_app_services_documento_service",
       "target": "backend_app_services_documento_service_parse_json",
@@ -98332,7 +98332,7 @@
       "relation": "contains",
       "confidence": "EXTRACTED",
       "source_file": "backend/app/services/documento_service.py",
-      "source_location": "L139",
+      "source_location": "L141",
       "weight": 1.0,
       "source": "backend_app_services_documento_service",
       "target": "backend_app_services_documento_service_sugerir_honorarios",
@@ -98353,7 +98353,7 @@
       "context": "call",
       "confidence": "EXTRACTED",
       "source_file": "backend/app/services/documento_service.py",
-      "source_location": "L111",
+      "source_location": "L113",
       "weight": 1.0,
       "source": "backend_app_services_documento_service_extrair_e_analisar",
       "target": "backend_app_services_documento_service_parse_json",
@@ -98363,9 +98363,9 @@
       "relation": "rationale_for",
       "confidence": "EXTRACTED",
       "source_file": "backend/app/services/documento_service.py",
-      "source_location": "L61",
+      "source_location": "L62",
       "weight": 1.0,
-      "source": "backend_app_services_documento_service_rationale_61",
+      "source": "backend_app_services_documento_service_rationale_62",
       "target": "backend_app_services_documento_service_parse_json",
       "confidence_score": 1.0
     },
@@ -98374,7 +98374,7 @@
       "context": "call",
       "confidence": "EXTRACTED",
       "source_file": "backend/app/services/documento_service.py",
-      "source_location": "L182",
+      "source_location": "L184",
       "weight": 1.0,
       "source": "backend_app_services_documento_service_sugerir_honorarios",
       "target": "backend_app_services_documento_service_parse_json",
@@ -98385,7 +98385,7 @@
       "context": "call",
       "confidence": "EXTRACTED",
       "source_file": "backend/app/services/documento_service.py",
-      "source_location": "L128",
+      "source_location": "L130",
       "weight": 1.0,
       "source": "backend_app_services_documento_service_extrair_e_analisar",
       "target": "backend_app_services_documento_service_buscar_referencias",
@@ -98396,19 +98396,30 @@
       "context": "call",
       "confidence": "EXTRACTED",
       "source_file": "backend/app/services/documento_service.py",
-      "source_location": "L124",
+      "source_location": "L126",
       "weight": 1.0,
       "source": "backend_app_services_documento_service_extrair_e_analisar",
       "target": "backend_app_services_documento_service_sugerir_honorarios",
       "confidence_score": 1.0
     },
     {
+      "relation": "calls",
+      "context": "call",
+      "confidence": "INFERRED",
+      "confidence_score": 0.8,
+      "source_file": "backend/app/services/documento_service.py",
+      "source_location": "L97",
+      "weight": 1.0,
+      "source": "backend_app_services_documento_service_extrair_e_analisar",
+      "target": "backend_app_services_sanitizer_sanitizar_pii"
+    },
+    {
       "relation": "rationale_for",
       "confidence": "EXTRACTED",
       "source_file": "backend/app/services/documento_service.py",
-      "source_location": "L83",
+      "source_location": "L84",
       "weight": 1.0,
-      "source": "backend_app_services_documento_service_rationale_83",
+      "source": "backend_app_services_documento_service_rationale_84",
       "target": "backend_app_services_documento_service_extrair_e_analisar",
       "confidence_score": 1.0
     },
@@ -98427,9 +98438,9 @@
       "relation": "rationale_for",
       "confidence": "EXTRACTED",
       "source_file": "backend/app/services/documento_service.py",
-      "source_location": "L140",
+      "source_location": "L142",
       "weight": 1.0,
-      "source": "backend_app_services_documento_service_rationale_140",
+      "source": "backend_app_services_documento_service_rationale_142",
       "target": "backend_app_services_documento_service_sugerir_honorarios",
       "confidence_score": 1.0
     },
@@ -98437,9 +98448,9 @@
       "relation": "rationale_for",
       "confidence": "EXTRACTED",
       "source_file": "backend/app/services/documento_service.py",
-      "source_location": "L186",
+      "source_location": "L188",
       "weight": 1.0,
-      "source": "backend_app_services_documento_service_rationale_186",
+      "source": "backend_app_services_documento_service_rationale_188",
       "target": "backend_app_services_documento_service_buscar_referencias",
       "confidence_score": 1.0
     },
@@ -123912,5 +123923,5 @@
     }
   ],
   "hyperedges": [],
-  "built_at_commit": "043156c632d73daa4f359080eb631d738ebb98ea"
+  "built_at_commit": "e5412eb8e90a89e119d3a4d34585057fcea89d55"
 }
