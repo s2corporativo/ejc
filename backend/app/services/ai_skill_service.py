@@ -4,13 +4,14 @@ Usa ai_gateway.chat() para roteamento ao provedor e registra em ai_logs.
 """
 from __future__ import annotations
 import logging
-from uuid import uuid4
 
-from sqlalchemy import select, text
+from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models.ai_skill import EjcSkill
+from app.models.ai_log import AITipoUso, normalizar_modelo_ia
 from app.services import ai_gateway
+from app.services.ai_guard import sanitizar_ou_abortar, registrar_ai_log
 
 logger = logging.getLogger("ejc.ai.skills")
 
@@ -46,6 +47,11 @@ async def executar_skill(
     if not skill:
         raise ValueError(f"Skill '{skill_name}' não encontrada ou inativa.")
 
+    # Guarda LGPD (auditoria 2026-07-02): query (texto digitado OU extraído via
+    # OCR de documento de cliente em /execute-doc) ia direto ao provedor externo
+    # sem sanitização — aborta se sobrar PII estrutural após a sanitização.
+    query_limpa, pii = sanitizar_ou_abortar(query)
+
     system_prompt = skill.system_prompt
     if contexto_rag:
         trechos = "\n\n---\n\n".join(
@@ -55,7 +61,7 @@ async def executar_skill(
 
     messages = [
         {"role": "system", "content": system_prompt},
-        {"role": "user", "content": query},
+        {"role": "user", "content": query_limpa},
     ]
 
     provider = _ENGINE_PROVIDER.get(skill.engine, "groq")
@@ -72,26 +78,22 @@ async def executar_skill(
     out = resp.output_tokens or 0
     custo = ai_gateway._custo_brl(resp.modelo, inp, out) if provider == "anthropic" else 0.0
 
-    prompt_san = query[:500].replace("'", "''")
-    from app.models.ai_log import normalizar_modelo_ia  # BUG-22: nome canônico
     modelo_log = f"{resp.provedor}/{resp.modelo}" if resp.provedor else resp.modelo
-    try:
-        await db.execute(text("""
-            INSERT INTO ai_logs
-                (id, user_id, case_id, tipo_uso, modelo,
-                 prompt_sanitizado, tokens_input, tokens_output,
-                 custo_estimado, status_hitl, created_at)
-            VALUES
-                (:id, :uid, :cid, 'outro', :modelo,
-                 :prompt, :ti, :to, :custo, 'gerado', now())
-        """), {
-            "id": str(uuid4()), "uid": user_id, "cid": case_id,
-            "modelo": normalizar_modelo_ia(modelo_log),
-            "prompt": prompt_san, "ti": inp, "to": out, "custo": custo,
-        })
-        await db.commit()
-    except Exception as e:
-        logger.warning(f"[Skills] ai_logs insert falhou: {e}")
+    # registrar_ai_log PROPAGA erro (não engole em try/except com só warning) —
+    # log de uso de IA é parte da própria correção, não pode falhar em silêncio.
+    await registrar_ai_log(
+        db,
+        user_id=user_id,
+        tipo_uso=AITipoUso.outro,
+        case_id=case_id,
+        prompt_sanitizado=query_limpa,
+        pii_removida=pii,
+        resposta=resp.texto,
+        modelo=normalizar_modelo_ia(modelo_log),
+        tokens_input=inp,
+        tokens_output=out,
+        custo_estimado=custo,
+    )
 
     return {
         "conteudo": resp.texto,
