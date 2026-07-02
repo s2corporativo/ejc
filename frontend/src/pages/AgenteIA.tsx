@@ -64,7 +64,7 @@ export default function AgenteIA() {
 
   useEffect(() => {
     api
-      .get("/v1/ai/status")
+      .get("/ai/status")
       .then((r) => setStatus(r.data))
       .catch(() => setStatus(null));
   }, []);
@@ -80,7 +80,7 @@ export default function AgenteIA() {
     setLoading(true);
     setRes(null);
     try {
-      const { data } = await api.post("/v1/ai/executar", {
+      const { data } = await api.post("/ai/executar", {
         tarefa,
         mensagem,
         case_id: caseId.trim() || null,
