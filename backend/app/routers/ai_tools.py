@@ -16,6 +16,7 @@ from app.core.security import get_current_user
 from app.models.user import User
 from app.services.system_prompts import TarefaIA
 from app.services.ai_gateway import executar_tarefa_ia
+from app.services.ai_guard import sanitizar_ou_abortar
 
 router = APIRouter(prefix="/ai", tags=["IA Jurídica Pro"])
 
@@ -69,17 +70,29 @@ async def executar_ia(
     if not _ai_enabled():
         raise HTTPException(status.HTTP_503_SERVICE_UNAVAILABLE,
                             "Módulo de IA não habilitado. Defina AI_ENABLED=true no .env.")
+    # Bloco 5 (continuação): case_id existia mas sem checagem de ownership.
+    escopo_cli = None
+    if req.case_id:
+        from app.core.ownership import verificar_acesso_caso
+        from app.services.ai_service import _escopo_cliente_do_caso
+        await verificar_acesso_caso(db, cu, req.case_id)
+        escopo_cli = await _escopo_cliente_do_caso(db, req.case_id)
+
+    # Guarda LGPD (auditoria 2026-07-02): mensagem livre do usuário ia direto ao
+    # provedor externo sem sanitização — aborta se sobrar PII estrutural.
+    mensagem_limpa, _pii = sanitizar_ou_abortar(req.mensagem)
+
     contexto_rag = None
     if req.usar_rag:
         try:
             from app.services.ai_service import buscar_contexto_rag
-            ctx = await buscar_contexto_rag(db, req.mensagem, limite=5)
+            ctx = await buscar_contexto_rag(db, mensagem_limpa, limite=5, scope_client_id=escopo_cli)
             contexto_rag = [str(c.get("conteudo") or "") for c in (ctx or []) if c.get("conteudo")]
         except Exception:
             contexto_rag = None
     try:
         resultado = await executar_tarefa_ia(
-            tarefa=req.tarefa, mensagem=req.mensagem, case_id=req.case_id,
+            tarefa=req.tarefa, mensagem=mensagem_limpa, case_id=req.case_id,
             contexto_rag=contexto_rag, user_id=cu.id, db=db,
             nivel_inteligencia=req.nivel_inteligencia,
         )

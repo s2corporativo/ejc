@@ -18,6 +18,7 @@ from app.models.ai_log import AILog, AITipoUso, AIStatusHITL
 from app.services.ai_service import buscar_contexto_rag
 from app.services.ai_gateway import chat as gw_chat
 from app.services.sanitizer import sanitizar_pii
+from app.services.ai_guard import sanitizar_ou_abortar
 
 settings = get_settings()
 router = APIRouter(prefix="/ai", tags=["IA — Assistente"])
@@ -61,7 +62,7 @@ async def traduzir_andamento(body: TraduzirIn, db: AsyncSession = Depends(get_db
                              cu: User = Depends(get_current_user)):
     if not settings.AI_ENABLED:
         raise HTTPException(503, "IA desabilitada")
-    limpo, pii = sanitizar_pii(body.texto)
+    limpo, pii = sanitizar_ou_abortar(body.texto)
     try:
         resposta = await _ia(SYS_TRADUZIR, limpo, task_type="resumo", temperature=0.25, max_tokens=900, nivel="alto")
     except Exception as e:
@@ -87,7 +88,7 @@ async def resumir_texto(body: ResumirIn, db: AsyncSession = Depends(get_db),
                         cu: User = Depends(get_current_user)):
     if not settings.AI_ENABLED:
         raise HTTPException(503, "IA desabilitada")
-    limpo, pii = sanitizar_pii(body.texto)
+    limpo, pii = sanitizar_ou_abortar(body.texto)
     try:
         resposta = await _ia(SYS_RESUMIR, limpo, task_type="resumo", temperature=0.1, max_tokens=1400, nivel="alto")
     except Exception as e:
@@ -118,10 +119,22 @@ async def gerar_minuta(body: MinutaIn, db: AsyncSession = Depends(get_db),
                        cu: User = Depends(get_current_user)):
     if not settings.AI_ENABLED:
         raise HTTPException(503, "IA desabilitada")
-    contexto = await buscar_contexto_rag(db, body.tema, limite=5)
-    ctx_txt = "\n\n".join(f"- {c.get('titulo','')}: {(c.get('conteudo') or '')[:500]}"
-                          for c in contexto) or "(sem contexto relevante)"
-    fatos_limpo, pii = sanitizar_pii(body.fatos or body.tema)
+    # Bloco 5 (continuação): case_id existia mas sem checagem de ownership.
+    escopo_cli = None
+    if body.case_id:
+        from app.core.ownership import verificar_acesso_caso
+        from app.services.ai_service import _escopo_cliente_do_caso
+        await verificar_acesso_caso(db, cu, body.case_id)
+        escopo_cli = await _escopo_cliente_do_caso(db, body.case_id)
+    contexto = await buscar_contexto_rag(db, body.tema, limite=5, scope_client_id=escopo_cli)
+    # Conteúdo vindo do RAG (base do escritório) é só sanitizado (sem abort) —
+    # é conteúdo interno já existente, não texto digitado agora; abortar aqui
+    # bloquearia peças legítimas por PII residual em precedentes antigos.
+    ctx_txt, _ = sanitizar_pii(
+        "\n\n".join(f"- {c.get('titulo','')}: {(c.get('conteudo') or '')[:500]}"
+                    for c in contexto) or "(sem contexto relevante)"
+    )
+    fatos_limpo, pii = sanitizar_ou_abortar(body.fatos or body.tema)
     system = SYS_MINUTA.format(tipo=body.tipo_peca, area=body.area or "geral")
     user = f"TEMA: {body.tema}\n\nFATOS: {fatos_limpo}\n\nCONTEXTO (base do escritório):\n{ctx_txt}"
     try:
@@ -150,17 +163,21 @@ async def pesquisar(body: PesquisaIn, db: AsyncSession = Depends(get_db),
                     cu: User = Depends(get_current_user)):
     if not settings.AI_ENABLED:
         raise HTTPException(503, "IA desabilitada")
-    contexto = await buscar_contexto_rag(db, body.pergunta, limite=6)
-    ctx_txt = "\n\n".join(f"- {c.get('titulo','')}: {(c.get('conteudo') or '')[:600]}"
-                          for c in contexto) or "(base sem resultados relevantes)"
-    user = f"PERGUNTA: {body.pergunta}\n\nCONTEXTO:\n{ctx_txt}"
+    pergunta_limpa, pii = sanitizar_ou_abortar(body.pergunta)
+    contexto = await buscar_contexto_rag(db, pergunta_limpa, limite=6)
+    ctx_txt, _ = sanitizar_pii(
+        "\n\n".join(f"- {c.get('titulo','')}: {(c.get('conteudo') or '')[:600]}"
+                    for c in contexto) or "(base sem resultados relevantes)"
+    )
+    user = f"PERGUNTA: {pergunta_limpa}\n\nCONTEXTO:\n{ctx_txt}"
     try:
         resposta = await _ia(SYS_PESQUISA, user, task_type="analise_juridica", temperature=0.12, max_tokens=2200, nivel="alto")
     except Exception as e:
         raise HTTPException(502, f"Falha na IA: {str(e)[:160]}")
-    log_id = await _log(db, cu.id, AITipoUso.consulta_rag, None, body.pergunta, False, resposta)
+    log_id = await _log(db, cu.id, AITipoUso.consulta_rag, None, user, pii, resposta)
     return {"ai_log_id": log_id, "resposta": resposta,
-            "fontes": [{"titulo": c.get("titulo"), "categoria": c.get("categoria")} for c in contexto]}
+            "fontes": [{"titulo": c.get("titulo"), "categoria": c.get("categoria")} for c in contexto],
+            "aviso": "⚠️ Resposta gerada por IA — confira as fontes antes de usar em peça ou orientar o cliente."}
 
 
 # ── ETAPA 4 — Motor de honorários (tabela OAB/MG via RAG) ─────────────────────
@@ -199,17 +216,18 @@ async def sugestao_honorarios(body: HonorariosIn, db: AsyncSession = Depends(get
                               cu: User = Depends(get_current_user)):
     if not settings.AI_ENABLED:
         raise HTTPException(503, "IA desabilitada")
-    consulta = f"honorários {body.area} {body.descricao}"
+    descricao_limpa, pii = sanitizar_ou_abortar(body.descricao)
+    consulta = f"honorários {body.area} {descricao_limpa}"
     ctx = await buscar_contexto_rag(db, consulta, limite=6, categorias=["tabela_honorarios_oab"])
     ctx_txt = "\n\n".join(f"- {(c.get('conteudo') or '')[:600]}" for c in ctx) or "(tabela OAB não localizada na base)"
     vc = f"\nValor da causa: R$ {body.valor_causa:.2f}" if body.valor_causa else ""
-    user = (f"ÁREA: {body.area}\nSERVIÇO/ATO: {body.descricao}{vc}\n\n"
+    user = (f"ÁREA: {body.area}\nSERVIÇO/ATO: {descricao_limpa}{vc}\n\n"
             f"TRECHOS DA TABELA DE HONORÁRIOS OAB/MG:\n{ctx_txt}")
     try:
         bruto = await _ia(SYS_HONORARIOS, user, task_type="analise_juridica", temperature=0.05, max_tokens=1000, nivel="alto")
     except Exception as e:
         raise HTTPException(502, f"Falha na IA: {str(e)[:160]}")
-    log_id = await _log(db, cu.id, AITipoUso.outro, None, user, False, bruto)
+    log_id = await _log(db, cu.id, AITipoUso.outro, None, user, pii, bruto)
     return {
         "ai_log_id": log_id,
         "sugestao": _pj(bruto) or {"texto": bruto},

@@ -118,10 +118,15 @@ async def gerar_peca_pipeline(
     nomes_proteger: list[str],
     case_id: str | None,
     instrucoes_adicionais: str | None,
+    scope_client_id: str | None = None,
 ) -> AsyncGenerator[str, None]:
     """
     Pipeline SSE de 7 etapas para geração de peça jurídica.
     Yields SSE strings para StreamingResponse.
+
+    scope_client_id (Bloco 5): o CHAMADOR (routers/peca_geracao.py) já verifica
+    ownership do case_id e deriva o escopo — esta função não tem acesso ao
+    usuário autenticado para checar isso sozinha.
     """
 
     async def step(num: int, titulo: str, status: str = "iniciando") -> None:
@@ -213,7 +218,7 @@ async def gerar_peca_pipeline(
     yield await _emit("step", {"etapa": 3, "titulo": "Buscando fundamentos legais", "status": "em_andamento"})
 
     query_rag = f"{area_direito} {tipo_peca_final} {fatos_limpos[:200]}"
-    fontes = await buscar_contexto_rag(db, query_rag, limite=6)
+    fontes = await buscar_contexto_rag(db, query_rag, limite=6, scope_client_id=scope_client_id)
     rag_txt = ""
     if fontes:
         linhas = [

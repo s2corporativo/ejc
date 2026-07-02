@@ -188,9 +188,17 @@ async def teses_ocultas(
     """Detector de Teses Ocultas (ECJ) — ranking de relevância."""
     if len(req.descricao_fatos.strip()) < 50:
         raise HTTPException(status_code=422, detail="Descreva os fatos (mín. 50 caracteres)")
+    # Bloco 5 (continuação): case_id existia mas sem checagem de ownership.
+    escopo_cli = None
+    if req.case_id:
+        from app.core.ownership import verificar_acesso_caso
+        from app.services.ai_service import _escopo_cliente_do_caso
+        await verificar_acesso_caso(db, cu, req.case_id)
+        escopo_cli = await _escopo_cliente_do_caso(db, req.case_id)
     r = await detectar_teses_ocultas(
         db, cu.id, req.descricao_fatos, req.area,
         req.tese_principal, req.nomes_proteger, req.case_id,
+        scope_client_id=escopo_cli,
     )
     if "erro" in r:
         raise HTTPException(status_code=502, detail=r["erro"])

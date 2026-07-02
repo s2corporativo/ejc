@@ -12,6 +12,7 @@ from typing import Optional
 
 from app.core.database import get_db
 from app.core.security import get_current_user, ROLE_LEVEL
+from app.core.ownership import verificar_acesso_caso
 from app.models.user import User
 from app.models.ai_log import AILog
 from app.models.legal_doc import LegalDoc, PecaTipo, PecaStatus
@@ -51,6 +52,15 @@ async def gerar_peca(
     if req.area_direito not in AREAS_DIREITO:
         raise HTTPException(422, f"Área inválida. Use: {', '.join(AREAS_DIREITO)}")
 
+    # Bloco 5 (continuação): case_id existia mas sem checagem de ownership —
+    # checado ANTES de abrir o stream SSE, para 403 vir como erro normal (não
+    # quebrar a conexão a meio da geração).
+    escopo_cli = None
+    if req.case_id:
+        await verificar_acesso_caso(db, cu, req.case_id)
+        from app.services.ai_service import _escopo_cliente_do_caso
+        escopo_cli = await _escopo_cliente_do_caso(db, req.case_id)
+
     async def stream():
         try:
             async for chunk in gerar_peca_pipeline(
@@ -60,6 +70,7 @@ async def gerar_peca(
                 area_direito=req.area_direito,
                 descricao_fatos=req.descricao_fatos,
                 pedidos=req.pedidos,
+                scope_client_id=escopo_cli,
                 nomes_proteger=req.nomes_proteger,
                 case_id=req.case_id,
                 instrucoes_adicionais=req.instrucoes_adicionais,

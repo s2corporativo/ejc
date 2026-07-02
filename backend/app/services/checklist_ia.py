@@ -57,9 +57,14 @@ def _parse_itens(texto: str) -> list:
 async def gerar_checklist_ia(db: AsyncSession, case_id: str, gatilho: str = "geral",
                              user_id: str | None = None) -> dict | None:
     """Gera e persiste um CaseChecklist (rascunho) por legislação. Retorna dict com
-    {id, ck, itens, total_itens, modelo} ou None se caso inexistente / IA sem itens."""
+    {id, ck, itens, total_itens, modelo} ou None se caso inexistente / IA sem itens.
+
+    Bloco 5 (continuação): escopa o RAG ao client_id do próprio caso. Não
+    reverifica ownership aqui — os 3 chamadores (endpoint direto + 2 background
+    tasks) já garantem, antes de chegar aqui, que o case_id é legítimo para
+    quem disparou a ação."""
     caso = (await db.execute(text("""
-        SELECT id, area, fase, tese_principal
+        SELECT id, area, fase, tese_principal, client_id
         FROM cases WHERE id = :cid AND deleted_at IS NULL
     """), {"cid": case_id})).mappings().first()
     if not caso:
@@ -70,7 +75,7 @@ async def gerar_checklist_ia(db: AsyncSession, case_id: str, gatilho: str = "ger
 
     from app.services.ai_service import buscar_contexto_rag
     consulta = f"{area} {fase} requisitos petição documentos obrigatórios diligências pressupostos prazos"
-    ctx = await buscar_contexto_rag(db, consulta, limite=6)
+    ctx = await buscar_contexto_rag(db, consulta, limite=6, scope_client_id=caso["client_id"])
     ctx_txt = "\n".join("- " + (str(c.get("conteudo") or "")[:300]) for c in (ctx or []))
 
     limpo, _ = sanitizar_pii(f"Área: {area}. Fase: {fase}. Gatilho: {gatilho}. "
