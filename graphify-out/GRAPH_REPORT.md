@@ -5,12 +5,12 @@
 - Verdict: corpus is large enough that graph structure adds value.
 
 ## Summary
-- 4206 nodes · 7825 edges · 364 communities (324 shown, 40 thin omitted)
-- Extraction: 83% EXTRACTED · 17% INFERRED · 0% AMBIGUOUS · INFERRED: 1366 edges (avg confidence: 0.63)
+- 4206 nodes · 7822 edges · 366 communities (326 shown, 40 thin omitted)
+- Extraction: 83% EXTRACTED · 17% INFERRED · 0% AMBIGUOUS · INFERRED: 1363 edges (avg confidence: 0.63)
 - Token cost: 0 input · 0 output
 
 ## Graph Freshness
-- Built from commit: `e5412eb8`
+- Built from commit: `f880c0e4`
 - Run `git rev-parse HEAD` and compare to check if the graph is stale.
 - Run `graphify update .` after code changes (no API cost).
 
@@ -285,6 +285,8 @@
 - [[_COMMUNITY_RamosHub.tsx|RamosHub.tsx]]
 - [[_COMMUNITY_monitor_health.sh|monitor_health.sh]]
 - [[_COMMUNITY_patch-frontend-package.js|patch-frontend-package.js]]
+- [[_COMMUNITY_Conhecimento.tsx|Conhecimento.tsx]]
+- [[_COMMUNITY_civ_usucapiao|civ_usucapiao]]
 - [[_COMMUNITY_CLAUDE|CLAUDE.md]]
 - [[_COMMUNITY_CLAUDE|CLAUDE.md]]
 - [[_COMMUNITY_extraction-spec|extraction-spec.md]]
@@ -304,7 +306,7 @@
 6. `AILog` - 46 edges
 7. `Case` - 41 edges
 8. `PageHeader()` - 40 edges
-9. `sanitizar_pii()` - 36 edges
+9. `sanitizar_pii()` - 35 edges
 10. `Spinner()` - 33 edges
 
 ## Surprising Connections (you probably didn't know these)
@@ -312,25 +314,25 @@
   scripts/audit_legal_docs_preview.py → backend/app/services/document_format.py
 - `main()` --calls--> `padronizar_documento_juridico()`  [INFERRED]
   scripts/audit_legal_docs_preview.py → backend/app/services/document_format.py
+- `test_documento_sanitiza_pii_antes_do_llm()` --calls--> `extrair_e_analisar()`  [INFERRED]
+  backend/tests/test_documento_service.py → backend/app/services/documento_service.py
+- `test_cria_system_se_nao_houver()` --calls--> `aplicar_base()`  [INFERRED]
+  backend/tests/test_legal_base.py → backend/app/services/legal_base.py
 - `AILog` --uses--> `Base`  [INFERRED]
-  backend/app/models/ai_log.py → backend/app/core/database.py
-- `AIStatusHITL` --uses--> `Base`  [INFERRED]
-  backend/app/models/ai_log.py → backend/app/core/database.py
-- `AITipoUso` --uses--> `Base`  [INFERRED]
   backend/app/models/ai_log.py → backend/app/core/database.py
 
 ## Import Cycles
 - None detected.
 
-## Communities (364 total, 40 thin omitted)
+## Communities (366 total, 40 thin omitted)
 
 ### Community 0 - "App.tsx"
 Cohesion: 0.03
 Nodes (67): Agenda, Ajuda, Assinaturas, AssistenteIA, Auditoria, Biblioteca, CasoDetalhe, Casos (+59 more)
 
 ### Community 1 - "api.ts"
-Cohesion: 0.04
-Nodes (22): ICON, LABEL, Patch, VIAB, Noticia, RAMOS, api, logout() (+14 more)
+Cohesion: 0.05
+Nodes (20): ICON, LABEL, Patch, VIAB, Noticia, RAMOS, api, logout() (+12 more)
 
 ### Community 2 - "novos_modulos.py"
 Cohesion: 0.07
@@ -397,8 +399,8 @@ Cohesion: 0.11
 Nodes (33): DossieEstrategico, aprovar(), exportar_pdf(), gerar(), GerarDossieReq, historico(), obter_atual(), _out() (+25 more)
 
 ### Community 18 - "User"
-Cohesion: 0.05
-Nodes (84): adm_atualizar(), adm_listar(), adm_remover(), ban_atualizar(), ban_criar(), ban_juros(), ban_listar(), ban_remover() (+76 more)
+Cohesion: 0.06
+Nodes (80): adm_atualizar(), adm_listar(), adm_remover(), ban_atualizar(), ban_criar(), ban_juros(), ban_listar(), ban_remover() (+72 more)
 
 ### Community 19 - "test_ia_parser.py"
 Cohesion: 0.10
@@ -421,12 +423,12 @@ Cohesion: 0.29
 Nodes (31): AdminCase, AdminStatus, AdminTipo, BancarioCase, BancarioStatus, BancarioTipo, CivelCase, CivelStatus (+23 more)
 
 ### Community 24 - "fmtDate"
-Cohesion: 0.18
-Nodes (6): AREA_LABELS, Memoria, RESULTADO_CLASS, RESULTADO_LABEL, Tese, TIPO_ICON
+Cohesion: 0.07
+Nodes (16): fmtDate(), AREA_LABELS, CardMemoria(), Memoria, RESULTADO_CLASS, RESULTADO_LABEL, Tese, TIPO_ICON (+8 more)
 
 ### Community 25 - "Casos.tsx"
-Cohesion: 0.06
-Nodes (37): ClientesStats(), Empty(), fmtDate(), Modal(), StatusBadge(), CardMemoria(), AREA_LABELS, AREAS (+29 more)
+Cohesion: 0.10
+Nodes (17): ClientesStats(), Empty(), Modal(), Spinner(), StatusBadge(), Honorarios(), AREAS, Tab (+9 more)
 
 ### Community 26 - "prazo_dias_corridos"
 Cohesion: 0.09
@@ -489,8 +491,8 @@ Cohesion: 0.22
 Nodes (25): atualizar_curadoria(), _colecao_mg(), _conf(), dashboard_governanca(), extrair_jurisprudencia_url(), _fonte_oficial(), fontes_ingestao(), geometria_jurisprudencia_mg() (+17 more)
 
 ### Community 41 - "Conhecimento.tsx"
-Cohesion: 0.04
-Nodes (31): IANotice(), PageHeader(), Spinner(), DIAS, MES, NovaAssinaturaForm, Signatario, SolicitacaoAssinatura (+23 more)
+Cohesion: 0.05
+Nodes (22): IANotice(), PageHeader(), DIAS, MES, NovaAssinaturaForm, Signatario, SolicitacaoAssinatura, STATUS_CONFIG (+14 more)
 
 ### Community 42 - "VictoryVault"
 Cohesion: 0.14
@@ -505,8 +507,8 @@ Cohesion: 0.08
 Nodes (24): For /graphify add and --watch, For /graphify query, For the commit hook and native CLAUDE.md integration, For --update and --cluster-only, /graphify, Honesty Rules, Interpreter guard for subcommands, Part A - Structural extraction for code files (+16 more)
 
 ### Community 45 - "useAuth"
-Cohesion: 0.13
-Nodes (15): NAV, PortalLayout(), ExtratoCaso(), Login(), LoginModern(), EMPTY, PartnerWithdrawals(), STATUS_COLOR (+7 more)
+Cohesion: 0.12
+Nodes (17): NAV, PortalLayout(), ExtratoCaso(), Login(), LoginModern(), EMPTY, PartnerWithdrawals(), STATUS_COLOR (+9 more)
 
 ### Community 46 - "atendimentos.py"
 Cohesion: 0.23
@@ -849,8 +851,8 @@ Cohesion: 0.36
 Nodes (10): atualizar_processo(), _case_existe(), criar_processo(), listar_processos(), ProcessoIn, ProcessoPatch, AsyncSession, User (+2 more)
 
 ### Community 131 - "test_deadline_calculator.py"
-Cohesion: 0.20
-Nodes (6): AREAS, CardMemoria(), FormData, Memoria, RESULTADOS, TIPOS
+Cohesion: 0.07
+Nodes (22): AREA_LABELS, AREAS, CASE_TYPE_COLOR, CASE_TYPE_LABEL, CASE_TYPES, EXTRAJ_TYPES, PRESCRICAO, AREA_TO_TYPE (+14 more)
 
 ### Community 132 - "aplicar_base"
 Cohesion: 0.29
@@ -1280,6 +1282,14 @@ Nodes (3): For --cluster-only, For --update (incremental re-extraction), graphif
 Cohesion: 1.00
 Nodes (3): check_http_code(), fail(), post_deploy_check.sh script
 
+### Community 325 - "Conhecimento.tsx"
+Cohesion: 0.29
+Nodes (3): CATS, estimarChunks(), ModalIngestao()
+
+### Community 326 - "civ_usucapiao"
+Cohesion: 0.33
+Nodes (4): civ_usucapiao(), penal_prescricao(), Prescrição da pretensão punitiva pela pena em abstrato (CP art. 109)., Verifica requisitos de usucapião por modalidade. Base: CC arts. 1.238-1.244 + CF
+
 ## Knowledge Gaps
 - **621 isolated node(s):** `Config`, `Config`, `Config`, `Config`, `Config` (+616 more)
   These have ≤1 connection - possible missing edges or undocumented components.
@@ -1288,17 +1298,17 @@ Nodes (3): check_http_code(), fail(), post_deploy_check.sh script
 ## Suggested Questions
 _Questions this graph is uniquely positioned to answer:_
 
-- **Why does `Spinner()` connect `Conhecimento.tsx` to `App.tsx`, `api.ts`, `test_deadline_calculator.py`, `PageHeader`, `UI.tsx`, `useAuth`, `RamoBase.tsx`, `CasoDetalhe.tsx`, `Clientes.tsx`, `fmtDate`, `Casos.tsx`, `Dashboards.tsx`?**
-  _High betweenness centrality (0.043) - this node is a cross-community bridge._
+- **Why does `Spinner()` connect `Casos.tsx` to `App.tsx`, `api.ts`, `test_deadline_calculator.py`, `Conhecimento.tsx`, `PageHeader`, `Conhecimento.tsx`, `UI.tsx`, `useAuth`, `RamoBase.tsx`, `CasoDetalhe.tsx`, `Clientes.tsx`, `fmtDate`, `Dashboards.tsx`?**
+  _High betweenness centrality (0.044) - this node is a cross-community bridge._
 - **Why does `Base` connect `Base` to `novos_modulos.py`, `checklists.py`, `registrar_acao`, `jurisprudencia_interna.py`, `cases.py`, `capturar_para_advogado`, `rag.py`, `teses_v4.py`, `teses.py`, `gerar_dossie`, `data_room_v4.py`, `str`, `data_room.py`, `User`, `prompts_juridicos.py`, `workflow.py`, `auth.py`, `atendimentos.py`, `LegalDoc`, `suspensoes.py`, `Case`, `centro_custos.py`, `Fee`, `EjcSkill`, `lifespan`, `upload`, `Notification`, `MsgResponse`, `templates.py`, `CriarSolicitacaoReq`, `procuracoes.py`, `wiki.py`, `_criar_deadline_defesa`?**
-  _High betweenness centrality (0.035) - this node is a cross-community bridge._
-- **Why does `api` connect `api.ts` to `AnaliseExtratos.tsx`, `test_deadline_calculator.py`, `PageHeader`, `UI.tsx`, `FinanceiroWorkspace.tsx`, `CasoDetalhe.tsx`, `Clientes.tsx`, `fmtDate`, `Casos.tsx`, `VictoryVault.tsx`, `Dashboards.tsx`, `Conhecimento.tsx`, `useAuth`, `client.py`, `DataJudBusca.tsx`, `Sociedade.tsx`, `RamoBase.tsx`, `DossieCliente.tsx`, `SalaDeGuerra.tsx`, `AnaliseEstrategica.tsx`, `CentralAtividades.tsx`?**
+  _High betweenness centrality (0.034) - this node is a cross-community bridge._
+- **Why does `api` connect `api.ts` to `AnaliseExtratos.tsx`, `test_deadline_calculator.py`, `PageHeader`, `UI.tsx`, `FinanceiroWorkspace.tsx`, `CasoDetalhe.tsx`, `Clientes.tsx`, `fmtDate`, `Casos.tsx`, `VictoryVault.tsx`, `Dashboards.tsx`, `Conhecimento.tsx`, `useAuth`, `client.py`, `Conhecimento.tsx`, `DataJudBusca.tsx`, `Sociedade.tsx`, `RamoBase.tsx`, `DossieCliente.tsx`, `SalaDeGuerra.tsx`, `AnaliseEstrategica.tsx`, `CentralAtividades.tsx`?**
   _High betweenness centrality (0.030) - this node is a cross-community bridge._
 - **Are the 132 inferred relationships involving `User` (e.g. with `Base` and `EventoIn`) actually correct?**
   _`User` has 132 INFERRED edges - model-reasoned connections that need verification._
 - **Are the 118 inferred relationships involving `Base` (e.g. with `AILog` and `AIStatusHITL`) actually correct?**
   _`Base` has 118 INFERRED edges - model-reasoned connections that need verification._
-- **What connects `AI Gateway Central - Ecossistema Jurídico Clóvis (EJC) v4.0 Centraliza todas as`, `Roteador Inteligente: Seleciona o modelo com base no tipo de demanda (Seção 16.3`, `Funcionalidade Exclusiva: Análise Crítica Cruzada (Seção 23).` to the rest of the system?**
+- **What connects `documento_service.py — Pipeline unificado de análise inteligente de documentos.`, `Extrai o primeiro objeto JSON da resposta da IA (tolerante a texto ao redor).`, `Executa o pipeline completo. Retorna dict estruturado pronto para o frontend` to the rest of the system?**
   _1256 weakly-connected nodes found - possible documentation gaps or missing edges._
 - **Should `App.tsx` be split into smaller, more focused modules?**
   _Cohesion score 0.028169014084507043 - nodes in this community are weakly interconnected._
