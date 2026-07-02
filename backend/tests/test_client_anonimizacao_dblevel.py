@@ -27,6 +27,27 @@ async def _criar_cliente(db, client_id, nome="Cliente Teste Esquecimento"):
     )
 
 
+async def _criar_executor(db) -> str:
+    """audit_logs.user_id tem FK real para users.id — o executor da anonimização
+    precisa existir (a 1ª rodada REAL destes testes no CI pegou exatamente isso:
+    uuid4() avulso violava a FK). Cria um usuário socio de teste e retorna o id."""
+    uid = str(uuid4())
+    await db.execute(
+        text(
+            "INSERT INTO users (id, email, hashed_password, full_name, role, is_active) "
+            "VALUES (:id, :email, 'x', 'Executor Teste LGPD', 'socio', true)"
+        ),
+        {"id": uid, "email": f"exec-{uid[:8]}@teste.local"},
+    )
+    return uid
+
+
+async def _limpar_executor(db, executor_id: str):
+    # audit_logs do executor primeiro (FK), depois o usuário.
+    await db.execute(text("DELETE FROM audit_logs WHERE user_id = :id"), {"id": executor_id})
+    await db.execute(text("DELETE FROM users WHERE id = :id"), {"id": executor_id})
+
+
 async def _criar_caso(db, case_id, client_id, status="ativo"):
     await db.execute(
         text(
@@ -61,10 +82,11 @@ async def test_anonimiza_cliente_sem_bloqueio():
     client_id = str(uuid4())
     async with AsyncSessionLocal() as db:
         await _criar_cliente(db, client_id)
+        executor = await _criar_executor(db)
         await db.commit()
         try:
             resultado = await anonimizar_cliente(
-                db, client_id, executor_id=str(uuid4()), executor_role="socio",
+                db, client_id, executor_id=executor, executor_role="socio",
                 motivo="teste automatizado",
             )
             assert resultado["client_id"] == client_id
@@ -79,6 +101,7 @@ async def test_anonimiza_cliente_sem_bloqueio():
             assert row["nome"] == "[ANONIMIZADO — LGPD ART. 17]"
             assert row["anonimizado_em"] is not None
         finally:
+            await _limpar_executor(db, executor)
             await _limpar(db, client_id)
 
 
@@ -91,13 +114,14 @@ async def test_bloqueia_com_caso_ativo_salvo_forcar():
     async with AsyncSessionLocal() as db:
         await _criar_cliente(db, client_id)
         await _criar_caso(db, case_id, client_id, status="ativo")
+        executor = await _criar_executor(db)
         await db.commit()
         try:
             bloqueios = await verificar_bloqueios(db, client_id)
             assert bloqueios, "caso ativo deveria gerar bloqueio"
 
             with pytest.raises(HTTPException) as exc:
-                await anonimizar_cliente(db, client_id, str(uuid4()), "socio")
+                await anonimizar_cliente(db, client_id, executor, "socio")
             assert exc.value.status_code == 409
 
             # Cliente NÃO foi tocado — dado real preservado até resolver o bloqueio.
@@ -109,10 +133,11 @@ async def test_bloqueia_com_caso_ativo_salvo_forcar():
 
             # forcar=True passa por cima do bloqueio, mas registra isso.
             resultado = await anonimizar_cliente(
-                db, client_id, str(uuid4()), "socio", forcar=True,
+                db, client_id, executor, "socio", forcar=True,
             )
             assert resultado["bloqueios_ignorados"]
         finally:
+            await _limpar_executor(db, executor)
             await _limpar(db, client_id, case_id)
 
 
@@ -124,11 +149,13 @@ async def test_nao_permite_anonimizar_duas_vezes():
     client_id = str(uuid4())
     async with AsyncSessionLocal() as db:
         await _criar_cliente(db, client_id)
+        executor = await _criar_executor(db)
         await db.commit()
         try:
-            await anonimizar_cliente(db, client_id, str(uuid4()), "socio")
+            await anonimizar_cliente(db, client_id, executor, "socio")
             with pytest.raises(HTTPException) as exc:
-                await anonimizar_cliente(db, client_id, str(uuid4()), "socio")
+                await anonimizar_cliente(db, client_id, executor, "socio")
             assert exc.value.status_code == 409
         finally:
+            await _limpar_executor(db, executor)
             await _limpar(db, client_id)
