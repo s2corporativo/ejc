@@ -16,9 +16,11 @@ def test_alembic_cadeia_integra():
     from alembic.script import ScriptDirectory
 
     script = ScriptDirectory.from_config(Config("alembic.ini"))
-    # Head único = 051 (Fase 3B); a 048 baseline resolve a cadeia (Fase 2).
-    assert script.get_heads() == ["051_rag_isolation"]
+    # Head único da cadeia atual.
+    assert script.get_heads() == ["059_archiving_cases_processes"]
     # walk_revisions percorre head→base; lança se houver down_revision ausente.
     revs = [r.revision for r in script.walk_revisions()]
-    assert revs[-1] == "048_processes"
+    assert revs[-1] == "001_inicial"
+    assert "048_processes" in revs
     assert "049_totp_2fa" in revs and "050_novos_modulos" in revs
+    assert "059_archiving_cases_processes" in revs

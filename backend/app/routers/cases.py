@@ -29,8 +29,10 @@ from app.schemas.case import (
     CaseCreate, CaseUpdate, CaseResponse, CaseDetail, MovimentoCreate,
 )
 from app.schemas.common import MsgResponse
+from pydantic import BaseModel, Field
 
 router = APIRouter(prefix="/cases", tags=["Casos"])
+_ARQUIVAMENTO_ROLES = ["superadmin", "admin", "socio", "advogado"]
 
 
 async def _proximo_numero_interno(db: AsyncSession) -> str:
@@ -65,11 +67,16 @@ async def listar(
     search: Optional[str] = None,
     area: Optional[str] = None,
     status_f: Optional[str] = Query(None, alias="status"),
+    arquivo: str = Query("ativos", pattern="^(ativos|arquivados|todos)$"),
     db: AsyncSession = Depends(get_db),
     cu: User = Depends(get_current_user),
 ):
     q = select(Case).where(Case.deleted_at.is_(None))
     q = _filtro_visibilidade(q, cu)
+    if arquivo == "ativos":
+        q = q.where(Case.status != CaseStatus.arquivado)
+    elif arquivo == "arquivados":
+        q = q.where(Case.status == CaseStatus.arquivado)
     if search:
         q = q.where(or_(
             Case.titulo.ilike(f"%{search}%"),
@@ -120,7 +127,11 @@ async def stats_casos(
         select(sqlfunc.count()).select_from(base)
         .where(base.c.status == CaseStatus.encerrado.value)
     )).scalar() or 0
-    ativos = total - encerrados
+    arquivados = (await db.execute(
+        select(sqlfunc.count()).select_from(base)
+        .where(base.c.status == CaseStatus.arquivado.value)
+    )).scalar() or 0
+    ativos = total - encerrados - arquivados
 
     rows = (await db.execute(
         select(base.c.area, sqlfunc.count())
@@ -133,6 +144,7 @@ async def stats_casos(
         "total": total,
         "ativos": ativos,
         "encerrados": encerrados,
+        "arquivados": arquivados,
         "por_area": por_area,
     }
 
@@ -235,6 +247,11 @@ async def atualizar(
         setattr(c, k, v)
     if mudancas.get("status") == "encerrado":
         c.data_encerramento = datetime.now(timezone.utc)
+    if mudancas.get("status") == "arquivado" and c.archived_at is None:
+        c.archived_at = datetime.now(timezone.utc)
+    elif mudancas.get("status") and mudancas.get("status") != "arquivado":
+        c.archived_at = None
+        c.archive_reason = None
     # Sincroniza coluna Kanban quando o status muda para um estado terminal
     _status_para_coluna = {"acordo": "Acordo", "encerrado": "Encerrado", "arquivado": "Encerrado"}
     _alvo = _status_para_coluna.get(mudancas.get("status"))
@@ -276,6 +293,74 @@ async def atualizar(
         background.add_task(_bg_sync_prazos_datajud, case_id, (mudancas["numero_processo"] or "").strip())
     # NB: o aprendizado institucional (memória+tese) é disparado pelo fluxo
     # canônico POST /cases/{id}/encerrar (com pós-mortem), não pelo PATCH.
+    return c
+
+
+class ArchiveCaseRequest(BaseModel):
+    motivo: Optional[str] = Field(default=None, max_length=1000)
+
+
+@router.post("/{case_id}/arquivar", response_model=CaseDetail)
+async def arquivar_caso(
+    case_id: str,
+    payload: Optional[ArchiveCaseRequest] = Body(default=None),
+    db: AsyncSession = Depends(get_db),
+    cu: User = Depends(require_roles(_ARQUIVAMENTO_ROLES)),
+):
+    q = select(Case).where(Case.id == case_id, Case.deleted_at.is_(None))
+    q = _filtro_visibilidade(q, cu)
+    c = (await db.execute(q)).scalar_one_or_none()
+    if not c:
+        raise HTTPException(status_code=404, detail="Caso não encontrado")
+    if c.status == CaseStatus.arquivado:
+        raise HTTPException(status_code=409, detail="Caso já arquivado")
+
+    c.status = CaseStatus.arquivado
+    c.archived_at = datetime.now(timezone.utc)
+    c.archive_reason = ((payload.motivo if payload else None) or "").strip() or None
+    db.add(CaseMovimento(
+        id=str(uuid4()), case_id=c.id, tipo="arquivamento",
+        descricao=f"Caso arquivado{': ' + c.archive_reason if c.archive_reason else ''}",
+        created_by=cu.id,
+    ))
+    await criar_audit_log(
+        db, cu.id, cu.role.value, "ARCHIVE", "cases", case_id,
+        dados_depois={"status": "arquivado", "motivo": c.archive_reason or ""},
+    )
+    await db.commit()
+    await db.refresh(c)
+    return c
+
+
+@router.post("/{case_id}/desarquivar", response_model=CaseDetail)
+async def desarquivar_caso(
+    case_id: str,
+    db: AsyncSession = Depends(get_db),
+    cu: User = Depends(require_roles(_ARQUIVAMENTO_ROLES)),
+):
+    q = select(Case).where(Case.id == case_id, Case.deleted_at.is_(None))
+    q = _filtro_visibilidade(q, cu)
+    c = (await db.execute(q)).scalar_one_or_none()
+    if not c:
+        raise HTTPException(status_code=404, detail="Caso não encontrado")
+    if c.status != CaseStatus.arquivado:
+        raise HTTPException(status_code=409, detail="Caso não está arquivado")
+
+    motivo_anterior = c.archive_reason
+    c.status = CaseStatus.ativo
+    c.archived_at = None
+    c.archive_reason = None
+    db.add(CaseMovimento(
+        id=str(uuid4()), case_id=c.id, tipo="arquivamento",
+        descricao="Caso desarquivado",
+        created_by=cu.id,
+    ))
+    await criar_audit_log(
+        db, cu.id, cu.role.value, "UNARCHIVE", "cases", case_id,
+        dados_depois={"status": "ativo", "motivo_anterior": motivo_anterior or ""},
+    )
+    await db.commit()
+    await db.refresh(c)
     return c
 
 

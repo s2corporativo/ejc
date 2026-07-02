@@ -11,6 +11,8 @@ import {
   Gavel,
   Handshake,
   FileSignature,
+  Archive,
+  ArchiveRestore,
 } from "lucide-react";
 import { Link as RLink } from "react-router-dom";
 import api from "../lib/api";
@@ -182,6 +184,9 @@ export default function Casos() {
   const [search, setSearch] = useState("");
   const [areaF, setAreaF] = useState("");
   const [tipoF, setTipoF] = useState("");
+  const [arquivoF, setArquivoF] = useState<"ativos" | "arquivados" | "todos">(
+    "ativos",
+  );
   const [view, setView] = useState<"lista" | "kanban">("lista");
   const [modal, setModal] = useState(false);
   const [form, setForm] = useState<any>({
@@ -197,6 +202,7 @@ export default function Casos() {
         params: {
           search: search || undefined,
           area: areaF || undefined,
+          arquivo: arquivoF,
           page_size: 50,
         },
       })
@@ -218,7 +224,7 @@ export default function Casos() {
   useEffect(() => {
     const t = setTimeout(load, 350);
     return () => clearTimeout(t);
-  }, [search, areaF]);
+  }, [search, areaF, arquivoF]);
 
   const salvar = async () => {
     const cand = form._cliente_candidato;
@@ -337,6 +343,21 @@ export default function Casos() {
                   className={`flex items-center gap-1 px-3 py-1.5 rounded-lg text-sm font-medium ${tipoF === t.k ? "bg-navy text-white" : "bg-white border border-slate-200 text-slate-600"}`}
                 >
                   <t.icon size={13} /> {t.l}
+                </button>
+              ))}
+            </div>
+            <div className="flex rounded-lg border border-slate-200 overflow-hidden bg-white">
+              {[
+                ["ativos", "Ativos", List],
+                ["arquivados", "Arquivados", Archive],
+                ["todos", "Todos", ArchiveRestore],
+              ].map(([k, label, Icon]: any) => (
+                <button
+                  key={k}
+                  onClick={() => setArquivoF(k)}
+                  className={`flex items-center gap-1 px-3 py-1.5 text-sm font-medium ${arquivoF === k ? "bg-navy text-white" : "text-slate-600 hover:bg-slate-50"}`}
+                >
+                  <Icon size={13} /> {label}
                 </button>
               ))}
             </div>
