@@ -1,0 +1,2847 @@
+{
+  ".claude/settings.json": {
+    "mtime": 1782954900.7160525,
+    "ast_hash": "e51077b6a7f1f67afc748f1a32a1557d",
+    "semantic_hash": ""
+  },
+  "backend/alembic/env.py": {
+    "mtime": 1782948298.469424,
+    "ast_hash": "3bebfd4669c8f2de708fe4f424ef22b3",
+    "semantic_hash": ""
+  },
+  "backend/alembic/versions/001_inicial.py": {
+    "mtime": 1782948298.470022,
+    "ast_hash": "62bc09618d10ee6d269e7eefc516a706",
+    "semantic_hash": ""
+  },
+  "backend/alembic/versions/002_funcionalidades.py": {
+    "mtime": 1782948298.4712014,
+    "ast_hash": "c67af0b859cf77beda475127a3072bfc",
+    "semantic_hash": ""
+  },
+  "backend/alembic/versions/003_expansao.py": {
+    "mtime": 1782948298.4712014,
+    "ast_hash": "f9c2672269ec5ca37dad5ed130bb97a8",
+    "semantic_hash": ""
+  },
+  "backend/alembic/versions/004_seguranca.py": {
+    "mtime": 1782948298.4712014,
+    "ast_hash": "1bfd35c9df577eab292fa8ca502941df",
+    "semantic_hash": ""
+  },
+  "backend/alembic/versions/005_posmortem.py": {
+    "mtime": 1782948298.4712014,
+    "ast_hash": "b84b001d8a4bc19490543a170afa29d2",
+    "semantic_hash": ""
+  },
+  "backend/alembic/versions/006_ingestao_rag.py": {
+    "mtime": 1782948298.4712014,
+    "ast_hash": "6e86af9a55b74ae9e72f57884ce2ee11",
+    "semantic_hash": ""
+  },
+  "backend/alembic/versions/007_custo_hora.py": {
+    "mtime": 1782948298.4712014,
+    "ast_hash": "3508d1ad5975718a5b410024124e16e1",
+    "semantic_hash": ""
+  },
+  "backend/alembic/versions/008_suspensoes_tribunal.py": {
+    "mtime": 1782948298.4712014,
+    "ast_hash": "9551d65c192d626d7d5ad5fa3d8e81f5",
+    "semantic_hash": ""
+  },
+  "backend/alembic/versions/009_rag_trgm_index.py": {
+    "mtime": 1782948298.4712014,
+    "ast_hash": "6d44c134f090a8b15d42959cd5449097",
+    "semantic_hash": ""
+  },
+  "backend/alembic/versions/010_ramos_juridicos.py": {
+    "mtime": 1782948298.4712014,
+    "ast_hash": "b9a257d7da781adaf6f7fd323a62b18b",
+    "semantic_hash": ""
+  },
+  "backend/alembic/versions/011_correcoes_auditoria.py": {
+    "mtime": 1782948298.4712014,
+    "ast_hash": "4c9561af44c4a0ab686f727b3d93635f",
+    "semantic_hash": ""
+  },
+  "backend/alembic/versions/012_remove_2fa.py": {
+    "mtime": 1782948298.4712014,
+    "ast_hash": "211ebd4448f02498f755b3deec86d187",
+    "semantic_hash": ""
+  },
+  "backend/alembic/versions/013_embedding_dim_768.py": {
+    "mtime": 1782948298.4712014,
+    "ast_hash": "97fd290a8612368fb43d683041412de9",
+    "semantic_hash": ""
+  },
+  "backend/alembic/versions/014_banco_teses.py": {
+    "mtime": 1782948298.4712014,
+    "ast_hash": "d8b5f994b6f95edce69c882e0063f719",
+    "semantic_hash": ""
+  },
+  "backend/alembic/versions/015_biblioteca_prompts.py": {
+    "mtime": 1782948298.4712014,
+    "ast_hash": "f8e1f50c0bb10f7485bc1e74f2cfa9ca",
+    "semantic_hash": ""
+  },
+  "backend/alembic/versions/016_atendimentos.py": {
+    "mtime": 1782948298.4712014,
+    "ast_hash": "f4bdb0cf6dee43670c582e585481a41f",
+    "semantic_hash": ""
+  },
+  "backend/alembic/versions/017_workflow.py": {
+    "mtime": 1782948298.4712014,
+    "ast_hash": "787bbf1b9dda77034cfbf8cf8a175e8a",
+    "semantic_hash": ""
+  },
+  "backend/alembic/versions/018_jurisprudencia_interna.py": {
+    "mtime": 1782948298.4712014,
+    "ast_hash": "a6c00d44534b860feaa3cc15cb9f3621",
+    "semantic_hash": ""
+  },
+  "backend/alembic/versions/019_data_room.py": {
+    "mtime": 1782948298.4712014,
+    "ast_hash": "c6f47a0278ce14bbb3f056efb8fc11bd",
+    "semantic_hash": ""
+  },
+  "backend/alembic/versions/020_contratos_societarios.py": {
+    "mtime": 1782948298.4712014,
+    "ast_hash": "2a7e5b204d73800095674e7a6ff9c84b",
+    "semantic_hash": ""
+  },
+  "backend/alembic/versions/021_centro_custos.py": {
+    "mtime": 1782948298.4712014,
+    "ast_hash": "8efd90a1dfb90b481c482ff99f3ecd6a",
+    "semantic_hash": ""
+  },
+  "backend/alembic/versions/022_diario_oficial.py": {
+    "mtime": 1782948298.4712014,
+    "ast_hash": "0f211b028a622fb391376435cbd97bf8",
+    "semantic_hash": ""
+  },
+  "backend/alembic/versions/023_gestao_societaria.py": {
+    "mtime": 1782948298.4712014,
+    "ast_hash": "c70e5a4eae9d5578068f812f1c89a806",
+    "semantic_hash": ""
+  },
+  "backend/alembic/versions/024_checklists.py": {
+    "mtime": 1782948298.4712014,
+    "ast_hash": "9f9479bfc8d281a653930a95fac3f1b4",
+    "semantic_hash": ""
+  },
+  "backend/alembic/versions/025_dossie_estrategico.py": {
+    "mtime": 1782948298.4712014,
+    "ast_hash": "97d4d440b56ef0ba18a92ce817f7d6e9",
+    "semantic_hash": ""
+  },
+  "backend/alembic/versions/026_atendimento_advogado.py": {
+    "mtime": 1782948298.4712014,
+    "ast_hash": "2e3cd1eef35b1eace98fa5d55f27f40e",
+    "semantic_hash": ""
+  },
+  "backend/alembic/versions/027_centro_custos_soft_delete.py": {
+    "mtime": 1782948298.4712014,
+    "ast_hash": "a4a3f5013abc882b3fed742969a79a0d",
+    "semantic_hash": ""
+  },
+  "backend/alembic/versions/028_ai_log_custo.py": {
+    "mtime": 1782948298.4712014,
+    "ast_hash": "1be1952b33683a372545775950af9839",
+    "semantic_hash": ""
+  },
+  "backend/alembic/versions/029_rag_status_indexacao.py": {
+    "mtime": 1782948298.4744444,
+    "ast_hash": "0688cfb33d8769b1c61444d5f187f7d7",
+    "semantic_hash": ""
+  },
+  "backend/alembic/versions/030_case_partes.py": {
+    "mtime": 1782948298.4744444,
+    "ast_hash": "3519121002a016d313235661325522b9",
+    "semantic_hash": ""
+  },
+  "backend/alembic/versions/031_score_juridico.py": {
+    "mtime": 1782948298.4744444,
+    "ast_hash": "b8706b5e267efff4a2bc9b04d825c1bd",
+    "semantic_hash": ""
+  },
+  "backend/alembic/versions/032_indice_risco.py": {
+    "mtime": 1782948298.4744444,
+    "ast_hash": "4a78b00a3ac8d9c3a90a5ae09e34c60a",
+    "semantic_hash": ""
+  },
+  "backend/alembic/versions/033_procuracoes_case_id.py": {
+    "mtime": 1782948298.4744444,
+    "ast_hash": "174edde2b4246decb11eaa62fe8368f5",
+    "semantic_hash": ""
+  },
+  "backend/alembic/versions/034_memoria_institucional.py": {
+    "mtime": 1782948298.4744444,
+    "ast_hash": "391f971d623f2b36a45a826696a46dee",
+    "semantic_hash": ""
+  },
+  "backend/alembic/versions/035_portal_mensagens.py": {
+    "mtime": 1782948298.4744444,
+    "ast_hash": "3bea215b28c6ecea57b09822276cead9",
+    "semantic_hash": ""
+  },
+  "backend/alembic/versions/036_drop_procuracoes_case_id.py": {
+    "mtime": 1782948298.4744444,
+    "ast_hash": "e27bd02d1418626b6ac297e29a4dc995",
+    "semantic_hash": ""
+  },
+  "backend/alembic/versions/037_etiquetas.py": {
+    "mtime": 1782948298.4744444,
+    "ast_hash": "cf2491e743efab26d24a48037c919e4c",
+    "semantic_hash": ""
+  },
+  "backend/alembic/versions/038_fix_missing_columns.py": {
+    "mtime": 1782948298.4744444,
+    "ast_hash": "f424d498919fe92fc9198b780343d95e",
+    "semantic_hash": ""
+  },
+  "backend/alembic/versions/039_jurimetria_schema.py": {
+    "mtime": 1782948298.4744444,
+    "ast_hash": "dbe0262da9df59bcd033946ef2b7eb60",
+    "semantic_hash": ""
+  },
+  "backend/alembic/versions/044_recover_head.py": {
+    "mtime": 1782948298.4744444,
+    "ast_hash": "d214b563e3d19627da3df182860c2d4a",
+    "semantic_hash": ""
+  },
+  "backend/alembic/versions/045_p1_resumo_ia.py": {
+    "mtime": 1782948298.4744444,
+    "ast_hash": "539430ed57566821621e17068f13e6da",
+    "semantic_hash": ""
+  },
+  "backend/alembic/versions/046_wiki.py": {
+    "mtime": 1782948298.4744444,
+    "ast_hash": "28f3fadd2693d451d3730efd4f691217",
+    "semantic_hash": ""
+  },
+  "backend/alembic/versions/047_dedup_cases.py": {
+    "mtime": 1782948298.4744444,
+    "ast_hash": "b922dcf5e86424ad9e55172a803d8d91",
+    "semantic_hash": ""
+  },
+  "backend/alembic/versions/048_processes.py": {
+    "mtime": 1782948298.4744444,
+    "ast_hash": "df4930efe75219b823fe89bf54bc46cb",
+    "semantic_hash": ""
+  },
+  "backend/alembic/versions/049_totp_2fa.py": {
+    "mtime": 1782948298.4744444,
+    "ast_hash": "6292d5e4af80aec9cebf74f09565ae77",
+    "semantic_hash": ""
+  },
+  "backend/alembic/versions/050_novos_modulos.py": {
+    "mtime": 1782948298.4784443,
+    "ast_hash": "8fb771b2f608960e39d85ed77da6494c",
+    "semantic_hash": ""
+  },
+  "backend/alembic/versions/051_ejc_skills.py": {
+    "mtime": 1782948298.4784443,
+    "ast_hash": "5ff28889faaf02db22e6a2a765d5487c",
+    "semantic_hash": ""
+  },
+  "backend/alembic/versions/052_workflow_tables.py": {
+    "mtime": 1782948298.4784443,
+    "ast_hash": "84ccc03b51e84620424064faaf19d718",
+    "semantic_hash": ""
+  },
+  "backend/alembic/versions/053_reconcile_schema.py": {
+    "mtime": 1782948298.4784443,
+    "ast_hash": "e2e791035ef13f752237613fbae4196d",
+    "semantic_hash": ""
+  },
+  "backend/alembic/versions/054_victory_vault.py": {
+    "mtime": 1782948298.4784443,
+    "ast_hash": "b2b4598409daae57822ee2ed25ed3b8e",
+    "semantic_hash": ""
+  },
+  "backend/alembic/versions/055_rag_isolation.py": {
+    "mtime": 1782948298.4784443,
+    "ast_hash": "22d9da6a1d99b4bbf679dd4173e8a657",
+    "semantic_hash": ""
+  },
+  "backend/alembic/versions/056_processes_is_principal.py": {
+    "mtime": 1782948298.4784443,
+    "ast_hash": "ca359145e50392bcddeda066a678dbaa",
+    "semantic_hash": ""
+  },
+  "backend/alembic/versions/057_deadline_datajud.py": {
+    "mtime": 1782948298.4784443,
+    "ast_hash": "1e88d8ec09c14f4f02041adfe4ec2be1",
+    "semantic_hash": ""
+  },
+  "backend/alembic/versions/058_users_email_unique.py": {
+    "mtime": 1782948298.4784443,
+    "ast_hash": "cfd6d25acc3ec4e22680cd70b8f0aa09",
+    "semantic_hash": ""
+  },
+  "backend/app/__init__.py": {
+    "mtime": 1782948298.4784443,
+    "ast_hash": "d41d8cd98f00b204e9800998ecf8427e",
+    "semantic_hash": ""
+  },
+  "backend/app/core/__init__.py": {
+    "mtime": 1782948298.4832578,
+    "ast_hash": "d41d8cd98f00b204e9800998ecf8427e",
+    "semantic_hash": ""
+  },
+  "backend/app/core/ai_brain.py": {
+    "mtime": 1782948298.4849992,
+    "ast_hash": "834494f45a0a7810a8b6ee2555635949",
+    "semantic_hash": ""
+  },
+  "backend/app/core/auth_middleware.py": {
+    "mtime": 1782948298.4849992,
+    "ast_hash": "3e149fd0c524e7061a62b8668465a002",
+    "semantic_hash": ""
+  },
+  "backend/app/core/config.py": {
+    "mtime": 1782948298.4849992,
+    "ast_hash": "b524b7302cd3b0d6c7851bde3fc1da0e",
+    "semantic_hash": ""
+  },
+  "backend/app/core/database.py": {
+    "mtime": 1782948298.4849992,
+    "ast_hash": "efb70d5fc2dc7600ee6a4618078ac040",
+    "semantic_hash": ""
+  },
+  "backend/app/core/document_template_engine.py": {
+    "mtime": 1782948298.4849992,
+    "ast_hash": "8a3198296fdcf25bd583d1ce05db563b",
+    "semantic_hash": ""
+  },
+  "backend/app/core/licitacao_auditor.py": {
+    "mtime": 1782948298.4849992,
+    "ast_hash": "27c9625004d55d6bbde53e96562d1fe1",
+    "semantic_hash": ""
+  },
+  "backend/app/core/notifications.py": {
+    "mtime": 1782948298.4849992,
+    "ast_hash": "6d8e12b8d48c0421ef4e263b86b95452",
+    "semantic_hash": ""
+  },
+  "backend/app/core/ownership.py": {
+    "mtime": 1782948298.4849992,
+    "ast_hash": "f3dd1cc879390b337e27e231bdbc1f6c",
+    "semantic_hash": ""
+  },
+  "backend/app/core/public_apis.py": {
+    "mtime": 1782948298.4849992,
+    "ast_hash": "5bcc8f0b219fb9e09f7db953e12281a6",
+    "semantic_hash": ""
+  },
+  "backend/app/core/rate_limit.py": {
+    "mtime": 1782948298.4849992,
+    "ast_hash": "ff999f2bfa072e79244144903a5ae9d4",
+    "semantic_hash": ""
+  },
+  "backend/app/core/security.py": {
+    "mtime": 1782948298.4849992,
+    "ast_hash": "d9df0a24ac563b6cd2ca130307bedb92",
+    "semantic_hash": ""
+  },
+  "backend/app/core/skill_router.py": {
+    "mtime": 1782948298.4849992,
+    "ast_hash": "3f1b92694164c3c1004e2ec4fd73c32b",
+    "semantic_hash": ""
+  },
+  "backend/app/core/sql_safe.py": {
+    "mtime": 1782948298.4849992,
+    "ast_hash": "96f43907095f1fbd5cdc40042f37f372",
+    "semantic_hash": ""
+  },
+  "backend/app/core/veredito_ia.py": {
+    "mtime": 1782948298.4849992,
+    "ast_hash": "9ecc225b7ba5622348dc7ef1db338a47",
+    "semantic_hash": ""
+  },
+  "backend/app/core/victory_vault.py": {
+    "mtime": 1782948298.4849992,
+    "ast_hash": "fe3b4d8d4046b0a2bd00a7116f1c48d2",
+    "semantic_hash": ""
+  },
+  "backend/app/data/mock_db/jurisprudencia.json": {
+    "mtime": 1782948298.4864442,
+    "ast_hash": "20438fc50bb614b9341c798072c12b61",
+    "semantic_hash": ""
+  },
+  "backend/app/data/mock_db/teses_vitoriosas.json": {
+    "mtime": 1782948298.489439,
+    "ast_hash": "9e21a256f97dd244e145cd5f7575bee5",
+    "semantic_hash": ""
+  },
+  "backend/app/main.py": {
+    "mtime": 1782948298.489439,
+    "ast_hash": "40720afcd3ddc5ab28502e24a667a8c8",
+    "semantic_hash": ""
+  },
+  "backend/app/models/__init__.py": {
+    "mtime": 1782948298.489439,
+    "ast_hash": "26ab5a52b17b7383d22fea8b81eadbab",
+    "semantic_hash": ""
+  },
+  "backend/app/models/ai_log.py": {
+    "mtime": 1782948298.4906085,
+    "ast_hash": "265cb97fdfa96331476f7031dc8fa353",
+    "semantic_hash": ""
+  },
+  "backend/app/models/ai_skill.py": {
+    "mtime": 1782948298.4906085,
+    "ast_hash": "86895cb15e6dde4b31740842efb07836",
+    "semantic_hash": ""
+  },
+  "backend/app/models/atendimento.py": {
+    "mtime": 1782948298.4906085,
+    "ast_hash": "3b1b298d6c78ea4cb3dad9af11a6a6be",
+    "semantic_hash": ""
+  },
+  "backend/app/models/audit_log.py": {
+    "mtime": 1782948298.4906085,
+    "ast_hash": "2a5b112f510695f82b0f6f7d48f69d51",
+    "semantic_hash": ""
+  },
+  "backend/app/models/bank_analysis.py": {
+    "mtime": 1782948298.4906085,
+    "ast_hash": "97dd2fd8c9825563fd7e8f0eecb0c0af",
+    "semantic_hash": ""
+  },
+  "backend/app/models/case.py": {
+    "mtime": 1782948298.4906085,
+    "ast_hash": "11018bdb964aa6131999f8175e73d3ec",
+    "semantic_hash": ""
+  },
+  "backend/app/models/case_parte.py": {
+    "mtime": 1782948298.4906085,
+    "ast_hash": "cf2a9ad5dfcce82f01e85b3f93c1cef4",
+    "semantic_hash": ""
+  },
+  "backend/app/models/caso_area.py": {
+    "mtime": 1782948298.4906085,
+    "ast_hash": "26285066c12ba4acdd9c820751f7f2ae",
+    "semantic_hash": ""
+  },
+  "backend/app/models/centro_custo.py": {
+    "mtime": 1782948298.4906085,
+    "ast_hash": "829cfe36af64ef32dfabf5e381fc59db",
+    "semantic_hash": ""
+  },
+  "backend/app/models/checklist.py": {
+    "mtime": 1782948298.4906085,
+    "ast_hash": "31a7bb686f1cb94f6aed6ed140db37f1",
+    "semantic_hash": ""
+  },
+  "backend/app/models/client.py": {
+    "mtime": 1782948298.4906085,
+    "ast_hash": "35b8b07f2e729dd32120daca3db3dd49",
+    "semantic_hash": ""
+  },
+  "backend/app/models/contrato_societario.py": {
+    "mtime": 1782948298.4906085,
+    "ast_hash": "b8afad21eb47871b0dba4b50bbc54253",
+    "semantic_hash": ""
+  },
+  "backend/app/models/data_room.py": {
+    "mtime": 1782948298.4906085,
+    "ast_hash": "14c787b1a7949017b2465eb2c382b14f",
+    "semantic_hash": ""
+  },
+  "backend/app/models/deadline.py": {
+    "mtime": 1782948298.4906085,
+    "ast_hash": "bd255fdc247c526768d67e3b2ee01381",
+    "semantic_hash": ""
+  },
+  "backend/app/models/diario_oficial.py": {
+    "mtime": 1782948298.4906085,
+    "ast_hash": "d6831651b47e4aba9eb68498e65171b1",
+    "semantic_hash": ""
+  },
+  "backend/app/models/djen.py": {
+    "mtime": 1782948298.4906085,
+    "ast_hash": "08606ee7e068c79244f65f87b3696849",
+    "semantic_hash": ""
+  },
+  "backend/app/models/document.py": {
+    "mtime": 1782948298.4906085,
+    "ast_hash": "68d20f4d24bc34aa076e715ee421ec5d",
+    "semantic_hash": ""
+  },
+  "backend/app/models/dossie_estrategico.py": {
+    "mtime": 1782948298.4906085,
+    "ast_hash": "f6f04604ad06af1d23b06ad1f5fd1664",
+    "semantic_hash": ""
+  },
+  "backend/app/models/environmental.py": {
+    "mtime": 1782948298.4906085,
+    "ast_hash": "73ca7915ceb6d1716b2c3b5ece6ad137",
+    "semantic_hash": ""
+  },
+  "backend/app/models/especializado.py": {
+    "mtime": 1782948298.4906085,
+    "ast_hash": "f243597412b40c7f7a2780a8e73c83c9",
+    "semantic_hash": ""
+  },
+  "backend/app/models/fee.py": {
+    "mtime": 1782948298.4906085,
+    "ast_hash": "12d20a0bda3a6bb83d4ef7a50e6f0270",
+    "semantic_hash": ""
+  },
+  "backend/app/models/feriado.py": {
+    "mtime": 1782948298.4906085,
+    "ast_hash": "7c2160e91672203b748bcca24a77a498",
+    "semantic_hash": ""
+  },
+  "backend/app/models/jurisprudencia_interna.py": {
+    "mtime": 1782948298.4906085,
+    "ast_hash": "7462d8bfec05f1ac3e2381ca93535314",
+    "semantic_hash": ""
+  },
+  "backend/app/models/legal_doc.py": {
+    "mtime": 1782948298.4906085,
+    "ast_hash": "ff1d33e33bdc17a84c43f39691843599",
+    "semantic_hash": ""
+  },
+  "backend/app/models/notification.py": {
+    "mtime": 1782948298.4906085,
+    "ast_hash": "d0802a8d362f62b8978511035a8f395e",
+    "semantic_hash": ""
+  },
+  "backend/app/models/procuracao.py": {
+    "mtime": 1782948298.4906085,
+    "ast_hash": "fa5f6cb0a1dffc5e4aef68d1755f4ce5",
+    "semantic_hash": ""
+  },
+  "backend/app/models/prompt_juridico.py": {
+    "mtime": 1782948298.4906085,
+    "ast_hash": "b633d976e83c9df4fb21c6b21ef44a87",
+    "semantic_hash": ""
+  },
+  "backend/app/models/push.py": {
+    "mtime": 1782948298.4906085,
+    "ast_hash": "6d297ee66f378050dee7f46bcbe82612",
+    "semantic_hash": ""
+  },
+  "backend/app/models/rag.py": {
+    "mtime": 1782948298.4906085,
+    "ast_hash": "6f01bd990605b5c180ce94b1cbbe0d30",
+    "semantic_hash": ""
+  },
+  "backend/app/models/signature.py": {
+    "mtime": 1782948298.4944444,
+    "ast_hash": "75dc63a10fd5b07f002466fdbb02ddea",
+    "semantic_hash": ""
+  },
+  "backend/app/models/socio.py": {
+    "mtime": 1782948298.4944444,
+    "ast_hash": "d1da56cb7724a08ee0fd13cd49c98bf0",
+    "semantic_hash": ""
+  },
+  "backend/app/models/suspensao.py": {
+    "mtime": 1782948298.4944444,
+    "ast_hash": "c1ca13b294b2d49c9e51f7ff127a9b3b",
+    "semantic_hash": ""
+  },
+  "backend/app/models/task.py": {
+    "mtime": 1782948298.4944444,
+    "ast_hash": "e31bf2212a7a85b3eceae29923aad96e",
+    "semantic_hash": ""
+  },
+  "backend/app/models/template.py": {
+    "mtime": 1782948298.4944444,
+    "ast_hash": "1669a75de904ea86efa632fa068993ec",
+    "semantic_hash": ""
+  },
+  "backend/app/models/tese.py": {
+    "mtime": 1782948298.4944444,
+    "ast_hash": "870700d7dbb7c2893b0ce88a58f1a3a0",
+    "semantic_hash": ""
+  },
+  "backend/app/models/time_entry.py": {
+    "mtime": 1782948298.4944444,
+    "ast_hash": "559e5bac0b2579253810bc2f4fa8255c",
+    "semantic_hash": ""
+  },
+  "backend/app/models/user.py": {
+    "mtime": 1782948298.4944444,
+    "ast_hash": "90fddf18c5e29830097b453b31004452",
+    "semantic_hash": ""
+  },
+  "backend/app/models/wiki.py": {
+    "mtime": 1782948298.4944444,
+    "ast_hash": "722deb1227d59d2571076d1b84e1c861",
+    "semantic_hash": ""
+  },
+  "backend/app/models/workflow.py": {
+    "mtime": 1782948298.4944444,
+    "ast_hash": "3aec1fa8ec26ed8f1b06cf86394109cf",
+    "semantic_hash": ""
+  },
+  "backend/app/modules/__init__.py": {
+    "mtime": 1782948298.4944444,
+    "ast_hash": "d41d8cd98f00b204e9800998ecf8427e",
+    "semantic_hash": ""
+  },
+  "backend/app/modules/auditoria/__init__.py": {
+    "mtime": 1782948298.499214,
+    "ast_hash": "d41d8cd98f00b204e9800998ecf8427e",
+    "semantic_hash": ""
+  },
+  "backend/app/modules/auditoria/middleware.py": {
+    "mtime": 1782948298.4996474,
+    "ast_hash": "aa7eaf7ec364b258b19f16cfa27b5d3e",
+    "semantic_hash": ""
+  },
+  "backend/app/modules/case_partes/__init__.py": {
+    "mtime": 1782948298.4996474,
+    "ast_hash": "d41d8cd98f00b204e9800998ecf8427e",
+    "semantic_hash": ""
+  },
+  "backend/app/modules/case_partes/router.py": {
+    "mtime": 1782948298.500156,
+    "ast_hash": "910ea6a9cd258d4f84b08edee0b96e07",
+    "semantic_hash": ""
+  },
+  "backend/app/modules/indice_risco/__init__.py": {
+    "mtime": 1782948298.500156,
+    "ast_hash": "d41d8cd98f00b204e9800998ecf8427e",
+    "semantic_hash": ""
+  },
+  "backend/app/modules/score_juridico/__init__.py": {
+    "mtime": 1782948298.500156,
+    "ast_hash": "d41d8cd98f00b204e9800998ecf8427e",
+    "semantic_hash": ""
+  },
+  "backend/app/routers/__init__.py": {
+    "mtime": 1782948298.500156,
+    "ast_hash": "d41d8cd98f00b204e9800998ecf8427e",
+    "semantic_hash": ""
+  },
+  "backend/app/routers/agenda_eventos.py": {
+    "mtime": 1782948298.5015204,
+    "ast_hash": "785e4721f11d8dfa43daaa22ab2fbd9e",
+    "semantic_hash": ""
+  },
+  "backend/app/routers/ai.py": {
+    "mtime": 1782948298.5015204,
+    "ast_hash": "2d12bce7e5d45c2c1082f64f0b6429d2",
+    "semantic_hash": ""
+  },
+  "backend/app/routers/ai_skills.py": {
+    "mtime": 1782948298.5015204,
+    "ast_hash": "8980a5646e835dd7f71c94248eae96f7",
+    "semantic_hash": ""
+  },
+  "backend/app/routers/ai_tools.py": {
+    "mtime": 1782948298.5015204,
+    "ast_hash": "32ed67cdd08d09a411f533f82820ee3c",
+    "semantic_hash": ""
+  },
+  "backend/app/routers/analise_bancaria.py": {
+    "mtime": 1782948298.5015204,
+    "ast_hash": "b6879f812eff73d6a6c571d2f5d6db1e",
+    "semantic_hash": ""
+  },
+  "backend/app/routers/analytics.py": {
+    "mtime": 1782948298.5015204,
+    "ast_hash": "febea44493eaeb799a9a04a6add8d240",
+    "semantic_hash": ""
+  },
+  "backend/app/routers/areas.py": {
+    "mtime": 1782948298.5015204,
+    "ast_hash": "e1e53e5712f822dc4dc895d138643496",
+    "semantic_hash": ""
+  },
+  "backend/app/routers/assistente.py": {
+    "mtime": 1782948298.5015204,
+    "ast_hash": "1fd83e7ff429c9a120a944989c8027bc",
+    "semantic_hash": ""
+  },
+  "backend/app/routers/atendimentos.py": {
+    "mtime": 1782948298.5015204,
+    "ast_hash": "fbc6ed8143e3fc931d276e34abff1e63",
+    "semantic_hash": ""
+  },
+  "backend/app/routers/atividades.py": {
+    "mtime": 1782948298.5015204,
+    "ast_hash": "7ca61547298c552a7f54860daf0aa441",
+    "semantic_hash": ""
+  },
+  "backend/app/routers/audit.py": {
+    "mtime": 1782948298.5015204,
+    "ast_hash": "9533ae525809b18bffbc2ab7b4b0803d",
+    "semantic_hash": ""
+  },
+  "backend/app/routers/auth.py": {
+    "mtime": 1782948298.5024443,
+    "ast_hash": "6b11e54efd8b9280253fe3a462238ae8",
+    "semantic_hash": ""
+  },
+  "backend/app/routers/bank_analysis.py": {
+    "mtime": 1782948298.5024443,
+    "ast_hash": "c7639c37038004462881e4f47331355d",
+    "semantic_hash": ""
+  },
+  "backend/app/routers/calculadoras.py": {
+    "mtime": 1782948298.5024443,
+    "ast_hash": "0b6374687eda19e056bd6fcafc617067",
+    "semantic_hash": ""
+  },
+  "backend/app/routers/calendar_feed.py": {
+    "mtime": 1782948298.5024443,
+    "ast_hash": "dd86729d3873d29db93106c472ed5adb",
+    "semantic_hash": ""
+  },
+  "backend/app/routers/case_partes.py": {
+    "mtime": 1782948298.5024443,
+    "ast_hash": "e6fe392b4f88f82a8b492154c6cada3e",
+    "semantic_hash": ""
+  },
+  "backend/app/routers/cases.py": {
+    "mtime": 1782948298.5024443,
+    "ast_hash": "d7d57fe3ddb081ad92e73b0302cdd186",
+    "semantic_hash": ""
+  },
+  "backend/app/routers/caso_areas.py": {
+    "mtime": 1782948298.5024443,
+    "ast_hash": "2003e27b3f7ffd47550f29a820ac8e91",
+    "semantic_hash": ""
+  },
+  "backend/app/routers/centro_custos.py": {
+    "mtime": 1782948298.5024443,
+    "ast_hash": "bc067d10d4d89282197dda04efa4e65f",
+    "semantic_hash": ""
+  },
+  "backend/app/routers/cerebro.py": {
+    "mtime": 1782948298.5024443,
+    "ast_hash": "949cda0fd6e6a503d2dffc6f0c93640a",
+    "semantic_hash": ""
+  },
+  "backend/app/routers/checklists.py": {
+    "mtime": 1782948298.5024443,
+    "ast_hash": "52d6bef62901b5d90d49b0b19846e16a",
+    "semantic_hash": ""
+  },
+  "backend/app/routers/clients.py": {
+    "mtime": 1782948298.5024443,
+    "ast_hash": "3255cb0202c971f7eb13347bfa106227",
+    "semantic_hash": ""
+  },
+  "backend/app/routers/compliance.py": {
+    "mtime": 1782948298.5024443,
+    "ast_hash": "86a45e1b2c4b11dcc1873d16e26b7fca",
+    "semantic_hash": ""
+  },
+  "backend/app/routers/consumidor_monitor.py": {
+    "mtime": 1782948298.5024443,
+    "ast_hash": "540fcc9df50902daaf3e6c9fd75a42c8",
+    "semantic_hash": ""
+  },
+  "backend/app/routers/conteudo.py": {
+    "mtime": 1782948298.5024443,
+    "ast_hash": "f872296389cb2ad56ee4a7eef23788c6",
+    "semantic_hash": ""
+  },
+  "backend/app/routers/contratos_societarios.py": {
+    "mtime": 1782948298.5024443,
+    "ast_hash": "b6cbaecbf6b60b7f18bc3faa519bb792",
+    "semantic_hash": ""
+  },
+  "backend/app/routers/conversao_caso.py": {
+    "mtime": 1782948298.5024443,
+    "ast_hash": "bdcea6330f9d0ef817d75b7454010fd4",
+    "semantic_hash": ""
+  },
+  "backend/app/routers/curadoria_renomada.py": {
+    "mtime": 1782948298.5064442,
+    "ast_hash": "ad3bc86adde4b817e3f3389eb27a9aeb",
+    "semantic_hash": ""
+  },
+  "backend/app/routers/dashboard.py": {
+    "mtime": 1782948298.5064442,
+    "ast_hash": "43e88a960177ea1df327bdb3e62ce49e",
+    "semantic_hash": ""
+  },
+  "backend/app/routers/data_room.py": {
+    "mtime": 1782948298.5064442,
+    "ast_hash": "3d076594387a2165bdd68b1ed500e4d4",
+    "semantic_hash": ""
+  },
+  "backend/app/routers/data_room_v4.py": {
+    "mtime": 1782948298.5064442,
+    "ast_hash": "564add708d56b8e931744b556750752b",
+    "semantic_hash": ""
+  },
+  "backend/app/routers/datajud.py": {
+    "mtime": 1782948298.5064442,
+    "ast_hash": "dd24eaae1adc1ed646bc97067bcaa539",
+    "semantic_hash": ""
+  },
+  "backend/app/routers/deadlines.py": {
+    "mtime": 1782948298.5064442,
+    "ast_hash": "9406e05a299cb85b47f82c5333e7ce89",
+    "semantic_hash": ""
+  },
+  "backend/app/routers/despesas.py": {
+    "mtime": 1782948298.5064442,
+    "ast_hash": "0da8e9b132a642fdb62332ffededb379",
+    "semantic_hash": ""
+  },
+  "backend/app/routers/diario_oficial.py": {
+    "mtime": 1782948298.5064442,
+    "ast_hash": "ad7f6500725e5be957ae525824a2f692",
+    "semantic_hash": ""
+  },
+  "backend/app/routers/diplomacia_v3.py": {
+    "mtime": 1782948298.5064442,
+    "ast_hash": "ff04359c1d009872b9720f4084eb7248",
+    "semantic_hash": ""
+  },
+  "backend/app/routers/documento_ia.py": {
+    "mtime": 1782948298.5064442,
+    "ast_hash": "40346fa4f524d62d7963d933b854dae0",
+    "semantic_hash": ""
+  },
+  "backend/app/routers/documents.py": {
+    "mtime": 1782948298.5064442,
+    "ast_hash": "8d022a66b28e9597137d4e0e9b17e2cb",
+    "semantic_hash": ""
+  },
+  "backend/app/routers/dossie_cliente.py": {
+    "mtime": 1782948298.5064442,
+    "ast_hash": "9272907bf203b48ddb39160d185b60f7",
+    "semantic_hash": ""
+  },
+  "backend/app/routers/dossie_estrategico.py": {
+    "mtime": 1782948298.5064442,
+    "ast_hash": "90aa64a4b5e565a915595936338e3ab6",
+    "semantic_hash": ""
+  },
+  "backend/app/routers/environmental.py": {
+    "mtime": 1782948298.5064442,
+    "ast_hash": "9dfc27ddb4a7c1c2e2ec26def8341f96",
+    "semantic_hash": ""
+  },
+  "backend/app/routers/etiquetas.py": {
+    "mtime": 1782948298.5064442,
+    "ast_hash": "e56e61b242e7e107619c77956c517b22",
+    "semantic_hash": ""
+  },
+  "backend/app/routers/evolution_webhook.py": {
+    "mtime": 1782948298.5064442,
+    "ast_hash": "be62d3d56bdee9e060d5a59a49973b67",
+    "semantic_hash": ""
+  },
+  "backend/app/routers/exito_rateio.py": {
+    "mtime": 1782948298.5104444,
+    "ast_hash": "d6072f8539205c9273a8e90f1d8574b9",
+    "semantic_hash": ""
+  },
+  "backend/app/routers/export.py": {
+    "mtime": 1782948298.5104444,
+    "ast_hash": "e16db065d6ed5b1f6f1aadec312c2e54",
+    "semantic_hash": ""
+  },
+  "backend/app/routers/extratos.py": {
+    "mtime": 1782948298.5104444,
+    "ast_hash": "3dc7fb59e3ae95dd27a4b485d3b519f1",
+    "semantic_hash": ""
+  },
+  "backend/app/routers/fees.py": {
+    "mtime": 1782948298.5104444,
+    "ast_hash": "874c61add852faf1a12a798bf31c9f53",
+    "semantic_hash": ""
+  },
+  "backend/app/routers/financeiro_consolidado.py": {
+    "mtime": 1782948298.5104444,
+    "ast_hash": "57b2f98ce0b98d3e304082eac0aeb074",
+    "semantic_hash": ""
+  },
+  "backend/app/routers/gestao_societaria.py": {
+    "mtime": 1782948298.5104444,
+    "ast_hash": "8f1643e014111b2595ae2e7f4cad52e7",
+    "semantic_hash": ""
+  },
+  "backend/app/routers/honorarios_calc.py": {
+    "mtime": 1782948298.5104444,
+    "ast_hash": "71bcf64225550fa6cdd742a496d49e40",
+    "semantic_hash": ""
+  },
+  "backend/app/routers/honorarios_oab.py": {
+    "mtime": 1782948298.5104444,
+    "ast_hash": "8090afb2840d613adb601e03eded3e1b",
+    "semantic_hash": ""
+  },
+  "backend/app/routers/ia_defensiva.py": {
+    "mtime": 1782948298.5104444,
+    "ast_hash": "2d9728752e5cd9d5a17fe8308bd25441",
+    "semantic_hash": ""
+  },
+  "backend/app/routers/ia_especializada.py": {
+    "mtime": 1782948298.5104444,
+    "ast_hash": "c4db3d7bf447ab8c7bb00bb65aedca8d",
+    "semantic_hash": ""
+  },
+  "backend/app/routers/ia_extra.py": {
+    "mtime": 1782948298.5104444,
+    "ast_hash": "d5db73fb2d3ef5c847710afbc0312d45",
+    "semantic_hash": ""
+  },
+  "backend/app/routers/ia_governanca.py": {
+    "mtime": 1782948298.5104444,
+    "ast_hash": "f1ec4218c267d56c90ef9222756c347b",
+    "semantic_hash": ""
+  },
+  "backend/app/routers/ia_saude.py": {
+    "mtime": 1782948298.5104444,
+    "ast_hash": "af6fbbbcca897de26b912fdcf950a0a1",
+    "semantic_hash": ""
+  },
+  "backend/app/routers/indice_risco.py": {
+    "mtime": 1782948298.5104444,
+    "ast_hash": "4a0bc90588ed9d55fa3d6a2a2a0140ee",
+    "semantic_hash": ""
+  },
+  "backend/app/routers/intelligence_v3.py": {
+    "mtime": 1782948298.5104444,
+    "ast_hash": "739e33281409e2472e07d689a343e087",
+    "semantic_hash": ""
+  },
+  "backend/app/routers/intimacoes.py": {
+    "mtime": 1782948298.5144444,
+    "ast_hash": "3e7cae8f16a2eccdac2020fb0b511d3a",
+    "semantic_hash": ""
+  },
+  "backend/app/routers/jurimetria.py": {
+    "mtime": 1782948298.5144444,
+    "ast_hash": "ffa0f724451f0815e0f6ecc7cd44e816",
+    "semantic_hash": ""
+  },
+  "backend/app/routers/jurimetria_extra.py": {
+    "mtime": 1782948298.5144444,
+    "ast_hash": "afc4089b751c3ae2d18b54e2916133d3",
+    "semantic_hash": ""
+  },
+  "backend/app/routers/jurisprudencia_externa.py": {
+    "mtime": 1782948298.5144444,
+    "ast_hash": "595512d77223c6b7c4e81d6d5dcf9856",
+    "semantic_hash": ""
+  },
+  "backend/app/routers/jurisprudencia_interna.py": {
+    "mtime": 1782948298.5144444,
+    "ast_hash": "fc8576b53fdf3816f68332e03e80d99b",
+    "semantic_hash": ""
+  },
+  "backend/app/routers/kanban.py": {
+    "mtime": 1782948298.5144444,
+    "ast_hash": "977cbc57e0018b6e1b00c520b2fc09ad",
+    "semantic_hash": ""
+  },
+  "backend/app/routers/legal_docs.py": {
+    "mtime": 1782948298.5144444,
+    "ast_hash": "0269abaa35e66d9cbdae1022d53b32bd",
+    "semantic_hash": ""
+  },
+  "backend/app/routers/licitacao_auditoria.py": {
+    "mtime": 1782948298.5144444,
+    "ast_hash": "52ad16eba8e07a1e7337e2efd9756e1d",
+    "semantic_hash": ""
+  },
+  "backend/app/routers/mediacao.py": {
+    "mtime": 1782948298.5144444,
+    "ast_hash": "61a1f8e2218a81c13fed9eee656d1f92",
+    "semantic_hash": ""
+  },
+  "backend/app/routers/memoria_institucional.py": {
+    "mtime": 1782948298.5144444,
+    "ast_hash": "3c5c6dd226aa18a0815f48417f18bd1e",
+    "semantic_hash": ""
+  },
+  "backend/app/routers/mensagens.py": {
+    "mtime": 1782948298.5144444,
+    "ast_hash": "9dd4c744d20f488fcf41db20485dc9de",
+    "semantic_hash": ""
+  },
+  "backend/app/routers/movimentos.py": {
+    "mtime": 1782948298.5144444,
+    "ast_hash": "2faef50de0aebeb10248e49ffe1aca64",
+    "semantic_hash": ""
+  },
+  "backend/app/routers/noticias.py": {
+    "mtime": 1782948298.5144444,
+    "ast_hash": "4857a809fd38bc8f762b83d1960660bd",
+    "semantic_hash": ""
+  },
+  "backend/app/routers/notifications.py": {
+    "mtime": 1782948298.5144444,
+    "ast_hash": "2850af7096417adaa8912d3514f2f78c",
+    "semantic_hash": ""
+  },
+  "backend/app/routers/novos_modulos.py": {
+    "mtime": 1782948298.5184443,
+    "ast_hash": "9ae5f9b0d70c1f5200c2dc0f8fc4b9db",
+    "semantic_hash": ""
+  },
+  "backend/app/routers/office_contracts.py": {
+    "mtime": 1782948298.5184443,
+    "ast_hash": "834aa1bae7b930841a7fe292df53032a",
+    "semantic_hash": ""
+  },
+  "backend/app/routers/partner_withdrawals.py": {
+    "mtime": 1782948298.5184443,
+    "ast_hash": "64694ac526f29b7195370d287cf73f46",
+    "semantic_hash": ""
+  },
+  "backend/app/routers/peca_geracao.py": {
+    "mtime": 1782948298.5184443,
+    "ast_hash": "613dbb1674780467d5769586bfd1578a",
+    "semantic_hash": ""
+  },
+  "backend/app/routers/peca_geracao_router.py": {
+    "mtime": 1782948298.5184443,
+    "ast_hash": "75528cfda783b7d8b82c33398a468004",
+    "semantic_hash": ""
+  },
+  "backend/app/routers/pending_items.py": {
+    "mtime": 1782948298.5184443,
+    "ast_hash": "144521f57dd0f8ac3f59e23d30d1f386",
+    "semantic_hash": ""
+  },
+  "backend/app/routers/pix.py": {
+    "mtime": 1782948298.5184443,
+    "ast_hash": "19adf7194ce8d84d14a871793a50e6bd",
+    "semantic_hash": ""
+  },
+  "backend/app/routers/portal.py": {
+    "mtime": 1782948298.5184443,
+    "ast_hash": "dc587c5d14e5b27c58bc9a3c783d0167",
+    "semantic_hash": ""
+  },
+  "backend/app/routers/processes.py": {
+    "mtime": 1782948298.5184443,
+    "ast_hash": "3bae92e3c46e69541d5c59e8b76b47cb",
+    "semantic_hash": ""
+  },
+  "backend/app/routers/procuracoes.py": {
+    "mtime": 1782948298.5184443,
+    "ast_hash": "9b4dfc890de055aafccea078b8491352",
+    "semantic_hash": ""
+  },
+  "backend/app/routers/produtividade.py": {
+    "mtime": 1782948298.5184443,
+    "ast_hash": "70677b192473f5f216fd13703f4dcd39",
+    "semantic_hash": ""
+  },
+  "backend/app/routers/prompts.py": {
+    "mtime": 1782948298.5184443,
+    "ast_hash": "1737787d989375cbee7ae558fe1124f1",
+    "semantic_hash": ""
+  },
+  "backend/app/routers/prompts_juridicos.py": {
+    "mtime": 1782948298.5184443,
+    "ast_hash": "99a954ae73120ec262c5f5502090cb86",
+    "semantic_hash": ""
+  },
+  "backend/app/routers/qualidade.py": {
+    "mtime": 1782948298.5184443,
+    "ast_hash": "28c3dc4da4049cad227e7c5147e2c92b",
+    "semantic_hash": ""
+  },
+  "backend/app/routers/rag.py": {
+    "mtime": 1782948298.5184443,
+    "ast_hash": "8f39d194a19407113f5cfce9a29904ab",
+    "semantic_hash": ""
+  },
+  "backend/app/routers/ramos.py": {
+    "mtime": 1782948298.5224442,
+    "ast_hash": "eec90acc6b94789dfa0261ddd9ddad44",
+    "semantic_hash": ""
+  },
+  "backend/app/routers/regulatorio.py": {
+    "mtime": 1782948298.5224442,
+    "ast_hash": "c07de303a402f41eefa2ba50a6bd7a31",
+    "semantic_hash": ""
+  },
+  "backend/app/routers/relatorio.py": {
+    "mtime": 1782948298.5224442,
+    "ast_hash": "69d995c690c5c1b877c834089eb0dfc1",
+    "semantic_hash": ""
+  },
+  "backend/app/routers/relatorio_cliente.py": {
+    "mtime": 1782948298.5224442,
+    "ast_hash": "3d6b0474e685e2757413032aded3c8fd",
+    "semantic_hash": ""
+  },
+  "backend/app/routers/sala_de_guerra.py": {
+    "mtime": 1782948298.5224442,
+    "ast_hash": "d0b9b269305c2c0aa287095cd24ccbe1",
+    "semantic_hash": ""
+  },
+  "backend/app/routers/sala_de_guerra_v3.py": {
+    "mtime": 1782948298.5224442,
+    "ast_hash": "93a67a4f8efab3500255d2076df49ac5",
+    "semantic_hash": ""
+  },
+  "backend/app/routers/score_juridico.py": {
+    "mtime": 1782948298.5224442,
+    "ast_hash": "4ea9bc8a0808d793a050fbff694b72a9",
+    "semantic_hash": ""
+  },
+  "backend/app/routers/search.py": {
+    "mtime": 1782948298.5224442,
+    "ast_hash": "9b9246298fe5c2b1d8d8c08043f9b34f",
+    "semantic_hash": ""
+  },
+  "backend/app/routers/signatures.py": {
+    "mtime": 1782948298.5224442,
+    "ast_hash": "5bd0596d76800b45f72d36c8d3724869",
+    "semantic_hash": ""
+  },
+  "backend/app/routers/sumulas.py": {
+    "mtime": 1782948298.5224442,
+    "ast_hash": "a202391c02752a33cc5e58f5927999d2",
+    "semantic_hash": ""
+  },
+  "backend/app/routers/suspensoes.py": {
+    "mtime": 1782948298.5224442,
+    "ast_hash": "b1722d6b4c2d6d183a2582336705259c",
+    "semantic_hash": ""
+  },
+  "backend/app/routers/tasks.py": {
+    "mtime": 1782948298.5224442,
+    "ast_hash": "058c52d8ec49ce59f93cc34a41c959bc",
+    "semantic_hash": ""
+  },
+  "backend/app/routers/templates.py": {
+    "mtime": 1782948298.5224442,
+    "ast_hash": "72c9a7d30db08590e09f3a3f5d9f1e3f",
+    "semantic_hash": ""
+  },
+  "backend/app/routers/teses.py": {
+    "mtime": 1782948298.5224442,
+    "ast_hash": "a361743b6ded2894216d49bdb434f101",
+    "semantic_hash": ""
+  },
+  "backend/app/routers/teses_v4.py": {
+    "mtime": 1782948298.5224442,
+    "ast_hash": "6615132d9eb872a3fa6f04d21e2d2abd",
+    "semantic_hash": ""
+  },
+  "backend/app/routers/timesheet.py": {
+    "mtime": 1782948298.5264442,
+    "ast_hash": "daad9d5f95af559d1ffbff32d9e7a01f",
+    "semantic_hash": ""
+  },
+  "backend/app/routers/trash.py": {
+    "mtime": 1782948298.5264442,
+    "ast_hash": "01a50b8d413514531d04edda7678aa33",
+    "semantic_hash": ""
+  },
+  "backend/app/routers/users.py": {
+    "mtime": 1782948298.5264442,
+    "ast_hash": "194981bfc5b645cc497b1d7cf01eaefc",
+    "semantic_hash": ""
+  },
+  "backend/app/routers/utils.py": {
+    "mtime": 1782948298.5264442,
+    "ast_hash": "8f4bfc37c25f32de8ce628e20e14b365",
+    "semantic_hash": ""
+  },
+  "backend/app/routers/validador_juridico.py": {
+    "mtime": 1782948298.5264442,
+    "ast_hash": "79521e1d84e26f77a6c65c87494fc347",
+    "semantic_hash": ""
+  },
+  "backend/app/routers/veredito_ia_router.py": {
+    "mtime": 1782948298.5264442,
+    "ast_hash": "5f955661ed0fd3b82a3fe7b05625978c",
+    "semantic_hash": ""
+  },
+  "backend/app/routers/verse.py": {
+    "mtime": 1782948298.5264442,
+    "ast_hash": "49c62883dc1cb3a2c6d1dc58954af39c",
+    "semantic_hash": ""
+  },
+  "backend/app/routers/victory_vault_router.py": {
+    "mtime": 1782948298.5264442,
+    "ast_hash": "432555339814351e12819470160fa7eb",
+    "semantic_hash": ""
+  },
+  "backend/app/routers/webhooks.py": {
+    "mtime": 1782948298.5264442,
+    "ast_hash": "c46bc8021a7ef63b2cb1112ce9898b39",
+    "semantic_hash": ""
+  },
+  "backend/app/routers/whatsapp.py": {
+    "mtime": 1782948298.5264442,
+    "ast_hash": "7557ef2d29b847ed075a924cfc789fa9",
+    "semantic_hash": ""
+  },
+  "backend/app/routers/wiki.py": {
+    "mtime": 1782948298.5264442,
+    "ast_hash": "c849575cbb0b2e261027a3792d553b97",
+    "semantic_hash": ""
+  },
+  "backend/app/routers/workflow.py": {
+    "mtime": 1782948298.5264442,
+    "ast_hash": "65db6e8cdb425d378cf3aa3ff0cdbb4d",
+    "semantic_hash": ""
+  },
+  "backend/app/schemas/__init__.py": {
+    "mtime": 1782948298.5264442,
+    "ast_hash": "d41d8cd98f00b204e9800998ecf8427e",
+    "semantic_hash": ""
+  },
+  "backend/app/schemas/ai.py": {
+    "mtime": 1782948298.5317574,
+    "ast_hash": "e76ccd30eff0b970060f71408312a754",
+    "semantic_hash": ""
+  },
+  "backend/app/schemas/ai_skill.py": {
+    "mtime": 1782948298.5317574,
+    "ast_hash": "3bf69795e94d12cf76844ca0894bb887",
+    "semantic_hash": ""
+  },
+  "backend/app/schemas/auth.py": {
+    "mtime": 1782948298.5317574,
+    "ast_hash": "90e54c4be3e4a7a66ffa1081cda95896",
+    "semantic_hash": ""
+  },
+  "backend/app/schemas/case.py": {
+    "mtime": 1782948298.5317574,
+    "ast_hash": "3157bd131aacf401ced9f47f9744463a",
+    "semantic_hash": ""
+  },
+  "backend/app/schemas/client.py": {
+    "mtime": 1782948298.5317574,
+    "ast_hash": "2cc596e57cc064eb26cf20c40b32cf58",
+    "semantic_hash": ""
+  },
+  "backend/app/schemas/common.py": {
+    "mtime": 1782948298.5317574,
+    "ast_hash": "35be617e4220214c96e6871740e0eb57",
+    "semantic_hash": ""
+  },
+  "backend/app/schemas/deadline.py": {
+    "mtime": 1782948298.5317574,
+    "ast_hash": "9515c60a58fa33cdd91eaa35930aba3c",
+    "semantic_hash": ""
+  },
+  "backend/app/schemas/environmental.py": {
+    "mtime": 1782948298.5317574,
+    "ast_hash": "f24347e5f36c65050df2d96e9a697e90",
+    "semantic_hash": ""
+  },
+  "backend/app/schemas/fee.py": {
+    "mtime": 1782948298.5317574,
+    "ast_hash": "83f4ab03fc951ef96d8394b1fc632817",
+    "semantic_hash": ""
+  },
+  "backend/app/schemas/legal_doc.py": {
+    "mtime": 1782948298.5317574,
+    "ast_hash": "9b01f89cf7b88585597491b7ec6f2452",
+    "semantic_hash": ""
+  },
+  "backend/app/schemas/procuracao.py": {
+    "mtime": 1782948298.5317574,
+    "ast_hash": "325bec4387dde05587c9fe1d5d1fb270",
+    "semantic_hash": ""
+  },
+  "backend/app/schemas/veredito_ia_schema.py": {
+    "mtime": 1782948298.5317574,
+    "ast_hash": "fbe7d5e695f45a243aca145701db998a",
+    "semantic_hash": ""
+  },
+  "backend/app/schemas/victory_vault_schema.py": {
+    "mtime": 1782948298.5317574,
+    "ast_hash": "8dfee50ee75f2e80772ddf83cbc8b180",
+    "semantic_hash": ""
+  },
+  "backend/app/scripts/seed_renomados.py": {
+    "mtime": 1782948298.5317574,
+    "ast_hash": "93e3b91470467a4dbcc74b97c3897428",
+    "semantic_hash": ""
+  },
+  "backend/app/seeds/checklists_seed.py": {
+    "mtime": 1782948298.5317574,
+    "ast_hash": "0b46790b6a6d5bd93140bb7a5561b670",
+    "semantic_hash": ""
+  },
+  "backend/app/seeds/clausulas_seed.py": {
+    "mtime": 1782948298.5350266,
+    "ast_hash": "49e8c3fa42d50378002432433d9a6f8f",
+    "semantic_hash": ""
+  },
+  "backend/app/seeds/skills_ferramentas_seed.py": {
+    "mtime": 1782948298.5350266,
+    "ast_hash": "6c366f747b3c1020d126203d5b292bfe",
+    "semantic_hash": ""
+  },
+  "backend/app/seeds/skills_seed.py": {
+    "mtime": 1782948298.5350266,
+    "ast_hash": "b5912c0216e6120b556577bbc0fa3df8",
+    "semantic_hash": ""
+  },
+  "backend/app/seeds/templates_seed.py": {
+    "mtime": 1782948298.5350266,
+    "ast_hash": "5cef78699c1b1ed057ad10ed46267cc5",
+    "semantic_hash": ""
+  },
+  "backend/app/services/__init__.py": {
+    "mtime": 1782948298.5350266,
+    "ast_hash": "d41d8cd98f00b204e9800998ecf8427e",
+    "semantic_hash": ""
+  },
+  "backend/app/services/ai_cost.py": {
+    "mtime": 1782948298.5375538,
+    "ast_hash": "a24ca55acf43db02cb7c42295e183032",
+    "semantic_hash": ""
+  },
+  "backend/app/services/ai_gateway.py": {
+    "mtime": 1782948298.5375538,
+    "ast_hash": "a1866814b35df3382f02c8b4d0695f6e",
+    "semantic_hash": ""
+  },
+  "backend/app/services/ai_service.py": {
+    "mtime": 1782948298.5375538,
+    "ast_hash": "e9306e82d4cd575547c1b7f96a467d97",
+    "semantic_hash": ""
+  },
+  "backend/app/services/ai_skill_service.py": {
+    "mtime": 1782948298.5375538,
+    "ast_hash": "f3380b6e3c022f30509d466b515d9e2c",
+    "semantic_hash": ""
+  },
+  "backend/app/services/analise_estrategica.py": {
+    "mtime": 1782948298.5375538,
+    "ast_hash": "129b47161c66bc256262840c53eb9dbd",
+    "semantic_hash": ""
+  },
+  "backend/app/services/bank_report.py": {
+    "mtime": 1782948298.5375538,
+    "ast_hash": "47608caaa0b6cc800c806a5f994d1fe4",
+    "semantic_hash": ""
+  },
+  "backend/app/services/bank_statement.py": {
+    "mtime": 1782948298.5375538,
+    "ast_hash": "f9b5d40adcd06de3a419614621b70e92",
+    "semantic_hash": ""
+  },
+  "backend/app/services/bcb_service.py": {
+    "mtime": 1782948298.5375538,
+    "ast_hash": "83133ea31daa4acdefaf2ed42babbdb4",
+    "semantic_hash": ""
+  },
+  "backend/app/services/calc/__init__.py": {
+    "mtime": 1782948298.5375538,
+    "ast_hash": "5de1980dee48c44fc3e850f3a8b673f6",
+    "semantic_hash": ""
+  },
+  "backend/app/services/calc/constantes_legais.py": {
+    "mtime": 1782948298.5404496,
+    "ast_hash": "d61b8286c38d9fadc9f2bd445e08b882",
+    "semantic_hash": ""
+  },
+  "backend/app/services/calc/custas_tjmg.py": {
+    "mtime": 1782948298.5404496,
+    "ast_hash": "b2bdf1e3929c361ebf2625d4b8888612",
+    "semantic_hash": ""
+  },
+  "backend/app/services/calc/prescricao.py": {
+    "mtime": 1782948298.5404496,
+    "ast_hash": "0f342149adc40cb8db7b450c9bd85811",
+    "semantic_hash": ""
+  },
+  "backend/app/services/calc/tax_tables.py": {
+    "mtime": 1782948298.5404496,
+    "ast_hash": "9cf7bb1142769238fdd691f87a1b13d1",
+    "semantic_hash": ""
+  },
+  "backend/app/services/calc/trabalhista.py": {
+    "mtime": 1782948298.5404496,
+    "ast_hash": "8cdc0f41f9ebab840a89ae930f11e579",
+    "semantic_hash": ""
+  },
+  "backend/app/services/case_automacao.py": {
+    "mtime": 1782948298.5404496,
+    "ast_hash": "a5f1342a800da862955b92bc10a24aff",
+    "semantic_hash": ""
+  },
+  "backend/app/services/case_context.py": {
+    "mtime": 1782948298.5404496,
+    "ast_hash": "417582af2cd504ac3ae60ecba8d778d6",
+    "semantic_hash": ""
+  },
+  "backend/app/services/case_health.py": {
+    "mtime": 1782948298.5404496,
+    "ast_hash": "34ff3b9722ad2fcdd4cd66c1cc76d9a5",
+    "semantic_hash": ""
+  },
+  "backend/app/services/case_intel.py": {
+    "mtime": 1782948298.5404496,
+    "ast_hash": "8d31efaa86eca01bdde142ff7ac2bd31",
+    "semantic_hash": ""
+  },
+  "backend/app/services/checklist_ia.py": {
+    "mtime": 1782948298.5404496,
+    "ast_hash": "1f736eee01be76394902f384649e5d25",
+    "semantic_hash": ""
+  },
+  "backend/app/services/citation_check.py": {
+    "mtime": 1782948298.5404496,
+    "ast_hash": "917c6ccb4b258d0c98fce190c3c08ba8",
+    "semantic_hash": ""
+  },
+  "backend/app/services/conflito_interesses.py": {
+    "mtime": 1782948298.5404496,
+    "ast_hash": "6fdf5a8af57d6a4710ef7459428eef79",
+    "semantic_hash": ""
+  },
+  "backend/app/services/conflito_service.py": {
+    "mtime": 1782948298.5404496,
+    "ast_hash": "483c1cf287792fd9207cc7f380620572",
+    "semantic_hash": ""
+  },
+  "backend/app/services/crawler_precedentes.py": {
+    "mtime": 1782948298.5404496,
+    "ast_hash": "51e2379e2f9dd5904102d297164aef03",
+    "semantic_hash": ""
+  },
+  "backend/app/services/datajud_service.py": {
+    "mtime": 1782948298.5404496,
+    "ast_hash": "39b055a1c7873680963289eec1aa53ca",
+    "semantic_hash": ""
+  },
+  "backend/app/services/deadline_calculator.py": {
+    "mtime": 1782948298.5404496,
+    "ast_hash": "92c8586d431393a6e6d3ce42a3b5075c",
+    "semantic_hash": ""
+  },
+  "backend/app/services/diario_oficial_service.py": {
+    "mtime": 1782948298.5404496,
+    "ast_hash": "e30f58c4d126014fef71ebf2bfceb4a0",
+    "semantic_hash": ""
+  },
+  "backend/app/services/diplomacia_digital.py": {
+    "mtime": 1782948298.5404496,
+    "ast_hash": "9769c852053f081ebeb4941cb5d800fa",
+    "semantic_hash": ""
+  },
+  "backend/app/services/djen_service.py": {
+    "mtime": 1782948298.5424442,
+    "ast_hash": "fa6a9af74887d2737eec815998d19ac0",
+    "semantic_hash": ""
+  },
+  "backend/app/services/document_format.py": {
+    "mtime": 1782948298.5424442,
+    "ast_hash": "7dd80e99f755e5d0e6384a6bf1802e8c",
+    "semantic_hash": ""
+  },
+  "backend/app/services/documental.py": {
+    "mtime": 1782948298.5424442,
+    "ast_hash": "302ca34cfa060f0182b731f75cab4697",
+    "semantic_hash": ""
+  },
+  "backend/app/services/documento_service.py": {
+    "mtime": 1782948298.5424442,
+    "ast_hash": "599be60b41a947fc1710da75e61532af",
+    "semantic_hash": ""
+  },
+  "backend/app/services/dossie_service.py": {
+    "mtime": 1782948298.5424442,
+    "ast_hash": "5d43c6352e4b5f8e41822369e06825af",
+    "semantic_hash": ""
+  },
+  "backend/app/services/elite_tools.py": {
+    "mtime": 1782948298.5424442,
+    "ast_hash": "55b64996590a498e1ab82c7dd492d4d1",
+    "semantic_hash": ""
+  },
+  "backend/app/services/embedding_service.py": {
+    "mtime": 1782948298.5424442,
+    "ast_hash": "6e303b92d119218a8a970817e86c3f0f",
+    "semantic_hash": ""
+  },
+  "backend/app/services/embeddings_api.py": {
+    "mtime": 1782948298.5424442,
+    "ast_hash": "07a347785a73c3d0e7fb7908785439cc",
+    "semantic_hash": ""
+  },
+  "backend/app/services/event_bus.py": {
+    "mtime": 1782948298.5424442,
+    "ast_hash": "c7bfaccd5f5ec9687f538d8e060f2954",
+    "semantic_hash": ""
+  },
+  "backend/app/services/event_subscribers.py": {
+    "mtime": 1782948298.5424442,
+    "ast_hash": "4442ab75f87457b300e36f964e3c3838",
+    "semantic_hash": ""
+  },
+  "backend/app/services/funil.py": {
+    "mtime": 1782948298.5424442,
+    "ast_hash": "e086a6c58259698b4403c7c04bd00664",
+    "semantic_hash": ""
+  },
+  "backend/app/services/gatilhos_estruturais.py": {
+    "mtime": 1782948298.5424442,
+    "ast_hash": "d9810773d8800b9cc058471c36a2c03d",
+    "semantic_hash": ""
+  },
+  "backend/app/services/geracao_documental.py": {
+    "mtime": 1782948298.5424442,
+    "ast_hash": "ed6656137d170a9878cdf8087fb36e07",
+    "semantic_hash": ""
+  },
+  "backend/app/services/google_drive.py": {
+    "mtime": 1782948298.5424442,
+    "ast_hash": "1470c4365b4fc947fe36d982e745e7e2",
+    "semantic_hash": ""
+  },
+  "backend/app/services/honorarios_oab.py": {
+    "mtime": 1782948298.5424442,
+    "ast_hash": "c223cef4daa3a07523247489de710f68",
+    "semantic_hash": ""
+  },
+  "backend/app/services/ia_defensiva_service.py": {
+    "mtime": 1782948298.5424442,
+    "ast_hash": "0c534e0e444b72274cb033e314baed71",
+    "semantic_hash": ""
+  },
+  "backend/app/services/ia_parser.py": {
+    "mtime": 1782948298.5464444,
+    "ast_hash": "6dc5bda8dd8fb44aa3bee2fd7662dbe8",
+    "semantic_hash": ""
+  },
+  "backend/app/services/ia_sentinela.py": {
+    "mtime": 1782948298.5464444,
+    "ast_hash": "f576d253bdc915d634563e6bbf1ac42b",
+    "semantic_hash": ""
+  },
+  "backend/app/services/inadimplencia_service.py": {
+    "mtime": 1782948298.5464444,
+    "ast_hash": "fa221150479e1433ae2f501a66bd16e1",
+    "semantic_hash": ""
+  },
+  "backend/app/services/ingestion_service.py": {
+    "mtime": 1782948298.5464444,
+    "ast_hash": "8c0e0d53feedd8879341f7b07cf45f0d",
+    "semantic_hash": ""
+  },
+  "backend/app/services/ingestors/__init__.py": {
+    "mtime": 1782948298.5464444,
+    "ast_hash": "5de1980dee48c44fc3e850f3a8b673f6",
+    "semantic_hash": ""
+  },
+  "backend/app/services/ingestors/camara.py": {
+    "mtime": 1782948298.5507574,
+    "ast_hash": "88b473fc13f68a6f23e604db596b516d",
+    "semantic_hash": ""
+  },
+  "backend/app/services/ingestors/planalto.py": {
+    "mtime": 1782948298.5507574,
+    "ast_hash": "e3e5cc9642c4a30866bfab54b6fb408b",
+    "semantic_hash": ""
+  },
+  "backend/app/services/ingestors/senado.py": {
+    "mtime": 1782948298.5507574,
+    "ast_hash": "133d575653c9623452e33cb4bf8274e3",
+    "semantic_hash": ""
+  },
+  "backend/app/services/ingestors/stj.py": {
+    "mtime": 1782948298.5507574,
+    "ast_hash": "4ced6e26263a9aa2434e2b188146fbca",
+    "semantic_hash": ""
+  },
+  "backend/app/services/jurimetria.py": {
+    "mtime": 1782948298.5507574,
+    "ast_hash": "4bd68c03d4b900733c05bee06d555be7",
+    "semantic_hash": ""
+  },
+  "backend/app/services/jurisprudencia_externa.py": {
+    "mtime": 1782948298.5507574,
+    "ast_hash": "81562cd5f29b24595a250bbc8592cbe5",
+    "semantic_hash": ""
+  },
+  "backend/app/services/legal_base.py": {
+    "mtime": 1782948298.5507574,
+    "ast_hash": "13ac4d7556b7330e0f12fe422d5dd555",
+    "semantic_hash": ""
+  },
+  "backend/app/services/minerador_sucesso.py": {
+    "mtime": 1782948298.5507574,
+    "ast_hash": "082d1020c83020b0a59ca21259fe2989",
+    "semantic_hash": ""
+  },
+  "backend/app/services/monitor_judiciario.py": {
+    "mtime": 1782948298.5507574,
+    "ast_hash": "46d6dd6b088463e4df5079c693906e03",
+    "semantic_hash": ""
+  },
+  "backend/app/services/motor_estrategico.py": {
+    "mtime": 1782948298.5507574,
+    "ast_hash": "172ef9e5499e8448f4a0bf0acc468834",
+    "semantic_hash": ""
+  },
+  "backend/app/services/movimento_ia.py": {
+    "mtime": 1782948298.5507574,
+    "ast_hash": "5d90a6dd536ac147908933addaf2c526",
+    "semantic_hash": ""
+  },
+  "backend/app/services/notification_service.py": {
+    "mtime": 1782948298.5507574,
+    "ast_hash": "385baa7785af9e27bc2f0e2921865cda",
+    "semantic_hash": ""
+  },
+  "backend/app/services/ocr_service.py": {
+    "mtime": 1782948298.5507574,
+    "ast_hash": "bb7bb7908a39835e8b65e06094413b51",
+    "semantic_hash": ""
+  },
+  "backend/app/services/onboarding.py": {
+    "mtime": 1782948298.5507574,
+    "ast_hash": "77eef13e7b204d60c319d8d12661f104",
+    "semantic_hash": ""
+  },
+  "backend/app/services/pdf_service.py": {
+    "mtime": 1782948298.5507574,
+    "ast_hash": "09f1919ecdfaf6ef3722f4ee695477f0",
+    "semantic_hash": ""
+  },
+  "backend/app/services/peca_service.py": {
+    "mtime": 1782948298.5507574,
+    "ast_hash": "4e0773e36fc924d10949f268dc937da5",
+    "semantic_hash": ""
+  },
+  "backend/app/services/precificacao_service.py": {
+    "mtime": 1782948298.5507574,
+    "ast_hash": "5b8f4e8d57731884a284b1ba040bedf0",
+    "semantic_hash": ""
+  },
+  "backend/app/services/processo_service.py": {
+    "mtime": 1782948298.5507574,
+    "ast_hash": "2ceb0bfefbcba4a1c4b0c56f9c2c19a4",
+    "semantic_hash": ""
+  },
+  "backend/app/services/providers/__init__.py": {
+    "mtime": 1782948298.5507574,
+    "ast_hash": "c543e24d1196190f1797decf843faf62",
+    "semantic_hash": ""
+  },
+  "backend/app/services/providers/anthropic_provider.py": {
+    "mtime": 1782948298.5556178,
+    "ast_hash": "87a9a9bc1686168e81fedd6de2d4c90a",
+    "semantic_hash": ""
+  },
+  "backend/app/services/providers/groq_provider.py": {
+    "mtime": 1782948298.5556178,
+    "ast_hash": "96d66f61182e067d137c2186dc503a3f",
+    "semantic_hash": ""
+  },
+  "backend/app/services/providers/ollama_provider.py": {
+    "mtime": 1782948298.5556178,
+    "ast_hash": "5015b40346ca1ce6abc1598c278cfe93",
+    "semantic_hash": ""
+  },
+  "backend/app/services/radar_poder.py": {
+    "mtime": 1782948298.5556178,
+    "ast_hash": "718b21c7c626a18bcd0f43b699e7a676",
+    "semantic_hash": ""
+  },
+  "backend/app/services/rag_juridico.py": {
+    "mtime": 1782948298.5556178,
+    "ast_hash": "d721d8c5df140a16debd8dc91e031360",
+    "semantic_hash": ""
+  },
+  "backend/app/services/relatorio_visual_law.py": {
+    "mtime": 1782948298.5556178,
+    "ast_hash": "60e1d2da4a4e8b96635b1fa68fa72b79",
+    "semantic_hash": ""
+  },
+  "backend/app/services/rentabilidade.py": {
+    "mtime": 1782948298.5556178,
+    "ast_hash": "014a2326107176653418faabd6ff38cf",
+    "semantic_hash": ""
+  },
+  "backend/app/services/rpa_peticionamento.py": {
+    "mtime": 1782948298.5556178,
+    "ast_hash": "06b3bf2b2d5a84d7bae76b06258f85ad",
+    "semantic_hash": ""
+  },
+  "backend/app/services/sanitizer.py": {
+    "mtime": 1782948298.5556178,
+    "ast_hash": "ddef6d5add6ae47670ae7c7aecf43cfc",
+    "semantic_hash": ""
+  },
+  "backend/app/services/scheduler.py": {
+    "mtime": 1782948298.5556178,
+    "ast_hash": "22d3ed3c02795918538652d3aa715c3d",
+    "semantic_hash": ""
+  },
+  "backend/app/services/security_service.py": {
+    "mtime": 1782948298.5556178,
+    "ast_hash": "2c89eacf5255d320f3e88d9792d51879",
+    "semantic_hash": ""
+  },
+  "backend/app/services/sentimento_magistrado.py": {
+    "mtime": 1782948298.5556178,
+    "ast_hash": "74ae42aa74f48f07f1d99cf47d229074",
+    "semantic_hash": ""
+  },
+  "backend/app/services/sumulas_ingestion.py": {
+    "mtime": 1782948298.5556178,
+    "ast_hash": "51937c7d999f385a1ff5448a4e7680b9",
+    "semantic_hash": ""
+  },
+  "backend/app/services/system_prompts/__init__.py": {
+    "mtime": 1782948298.5556178,
+    "ast_hash": "0fd982c341f6b338d268e6cc8bf1d956",
+    "semantic_hash": ""
+  },
+  "backend/app/services/system_prompts/ambiental.py": {
+    "mtime": 1782948298.5589252,
+    "ast_hash": "dc26ca813136216cfa5484114b31710b",
+    "semantic_hash": ""
+  },
+  "backend/app/services/system_prompts/analise_caso.py": {
+    "mtime": 1782948298.5589252,
+    "ast_hash": "4d8a379550c0e0a2b3dfeaab3c380e23",
+    "semantic_hash": ""
+  },
+  "backend/app/services/system_prompts/base.py": {
+    "mtime": 1782948298.5589252,
+    "ast_hash": "49e8e7726552bb94a346c0114d299ce8",
+    "semantic_hash": ""
+  },
+  "backend/app/services/system_prompts/honorarios.py": {
+    "mtime": 1782948298.5589252,
+    "ast_hash": "5d26391603b00fd9a5f4c0665fba8849",
+    "semantic_hash": ""
+  },
+  "backend/app/services/system_prompts/minutas.py": {
+    "mtime": 1782948298.5589252,
+    "ast_hash": "676e38635b980a1f099925f05e24d449",
+    "semantic_hash": ""
+  },
+  "backend/app/services/system_prompts/prazos.py": {
+    "mtime": 1782948298.5589252,
+    "ast_hash": "f1d5794ffcf05f2ee93e676647d3e61d",
+    "semantic_hash": ""
+  },
+  "backend/app/services/system_prompts/router.py": {
+    "mtime": 1782948298.5589252,
+    "ast_hash": "3e454222c524c41aadbb908f115263ff",
+    "semantic_hash": ""
+  },
+  "backend/app/services/system_prompts/templates_documentos.py": {
+    "mtime": 1782948298.5589252,
+    "ast_hash": "1db144cf20a5ea2e2181dfafee3cb2e8",
+    "semantic_hash": ""
+  },
+  "backend/app/services/system_prompts/triagem.py": {
+    "mtime": 1782948298.5589252,
+    "ast_hash": "8e153c8daeddc53e99d13a4d41c1be68",
+    "semantic_hash": ""
+  },
+  "backend/app/services/taskscore.py": {
+    "mtime": 1782948298.5589252,
+    "ast_hash": "9ec8ece4e15416f3178f4c794f3319b6",
+    "semantic_hash": ""
+  },
+  "backend/app/services/validador_juridico_service.py": {
+    "mtime": 1782948298.5589252,
+    "ast_hash": "c896564fa110589e33bd7a2bb1bdca45",
+    "semantic_hash": ""
+  },
+  "backend/app/services/validators_service.py": {
+    "mtime": 1782948298.5589252,
+    "ast_hash": "b4e2c0600db4f8fe5d8aaf4fd83ce82f",
+    "semantic_hash": ""
+  },
+  "backend/app/services/video_memoriais.py": {
+    "mtime": 1782948298.5589252,
+    "ast_hash": "17d4ecf715dbc829095b92a5918c479d",
+    "semantic_hash": ""
+  },
+  "backend/app/services/visual_law.py": {
+    "mtime": 1782948298.5589252,
+    "ast_hash": "69e8a35455a0d4eeb136d74eef08cee9",
+    "semantic_hash": ""
+  },
+  "backend/app/services/visual_law_pdf.py": {
+    "mtime": 1782948298.5589252,
+    "ast_hash": "770c9f232b2dbddbb1cfcdde26a06755",
+    "semantic_hash": ""
+  },
+  "backend/app/services/visual_law_templates.py": {
+    "mtime": 1782948298.5589252,
+    "ast_hash": "c9b51c212e80d8c8b02c06f375a06333",
+    "semantic_hash": ""
+  },
+  "backend/app/services/war_room.py": {
+    "mtime": 1782948298.5589252,
+    "ast_hash": "4bf1f4c4747c480e04280697939416f1",
+    "semantic_hash": ""
+  },
+  "backend/app/utils/__init__.py": {
+    "mtime": 1782948298.5624442,
+    "ast_hash": "d41d8cd98f00b204e9800998ecf8427e",
+    "semantic_hash": ""
+  },
+  "backend/conftest.py": {
+    "mtime": 1782948298.5624442,
+    "ast_hash": "509c13eacfba36526f6123b2c50b8ee3",
+    "semantic_hash": ""
+  },
+  "backend/scripts/__init__.py": {
+    "mtime": 1782948298.5624442,
+    "ast_hash": "d41d8cd98f00b204e9800998ecf8427e",
+    "semantic_hash": ""
+  },
+  "backend/scripts/reconciliar_status_rag.py": {
+    "mtime": 1782948298.5668325,
+    "ast_hash": "4abdb0d2c3abd2c55d61787442311ba2",
+    "semantic_hash": ""
+  },
+  "backend/scripts/vetorizar_documentos.py": {
+    "mtime": 1782948298.5668325,
+    "ast_hash": "6a2271ed060e7bec0a11e8c6415399f1",
+    "semantic_hash": ""
+  },
+  "backend/seeds/seed_all.py": {
+    "mtime": 1782948298.5668325,
+    "ast_hash": "f5f93ab6dc33efb97caa28f12b9cd218",
+    "semantic_hash": ""
+  },
+  "backend/tests/test_analise_estrategica.py": {
+    "mtime": 1782948298.5677476,
+    "ast_hash": "fd19d27b94890d1e4df0c24a3586290c",
+    "semantic_hash": ""
+  },
+  "backend/tests/test_calc_custas.py": {
+    "mtime": 1782948298.5677476,
+    "ast_hash": "939e6a7dc1c320ebd0138b3407c185d5",
+    "semantic_hash": ""
+  },
+  "backend/tests/test_calc_prescricao.py": {
+    "mtime": 1782948298.5677476,
+    "ast_hash": "ecfa24191a655d7f5b8295a1e2aec8af",
+    "semantic_hash": ""
+  },
+  "backend/tests/test_calc_trabalhista.py": {
+    "mtime": 1782948298.5677476,
+    "ast_hash": "985c42b65313d0af11848fb9624896e3",
+    "semantic_hash": ""
+  },
+  "backend/tests/test_citation_check.py": {
+    "mtime": 1782948298.5677476,
+    "ast_hash": "0a80104418310603a5f1124a17e202ea",
+    "semantic_hash": ""
+  },
+  "backend/tests/test_deadline_calculator.py": {
+    "mtime": 1782948298.5677476,
+    "ast_hash": "39b9c5d42acf248cb6874c7bfcbe37a7",
+    "semantic_hash": ""
+  },
+  "backend/tests/test_document_format.py": {
+    "mtime": 1782948298.5677476,
+    "ast_hash": "6269ab37bc5361dbc4d83a14261b6475",
+    "semantic_hash": ""
+  },
+  "backend/tests/test_documento_service.py": {
+    "mtime": 1782948298.5677476,
+    "ast_hash": "2b0180492f1f1c06c65d9757705bd1c0",
+    "semantic_hash": ""
+  },
+  "backend/tests/test_ia_parser.py": {
+    "mtime": 1782948298.5677476,
+    "ast_hash": "e42010a1a6988a9a021abb9164def081",
+    "semantic_hash": ""
+  },
+  "backend/tests/test_legal_base.py": {
+    "mtime": 1782948298.5677476,
+    "ast_hash": "4435fbe70dfef054ab22f3301953ee55",
+    "semantic_hash": ""
+  },
+  "backend/tests/test_ownership.py": {
+    "mtime": 1782948298.5677476,
+    "ast_hash": "9a388a98e3f5af790ef49a84a7b003bb",
+    "semantic_hash": ""
+  },
+  "backend/tests/test_rag_isolation.py": {
+    "mtime": 1782948298.5677476,
+    "ast_hash": "3e1ab1aa4bbfef107762322219bf3128",
+    "semantic_hash": ""
+  },
+  "backend/tests/test_sanitizer.py": {
+    "mtime": 1782948298.5677476,
+    "ast_hash": "089ef6378c39aafa540303d653165c6a",
+    "semantic_hash": ""
+  },
+  "backend/tests/test_security.py": {
+    "mtime": 1782948298.5677476,
+    "ast_hash": "4df23fdbc2c2176ebb044cbfc89cc0ae",
+    "semantic_hash": ""
+  },
+  "backend/tests/test_security_service.py": {
+    "mtime": 1782948298.5677476,
+    "ast_hash": "44a6988e2f1d496f1962bf5b36103088",
+    "semantic_hash": ""
+  },
+  "backend/tests/test_smoke.py": {
+    "mtime": 1782948298.5677476,
+    "ast_hash": "2e244daae316a7102c0de2fdd8b6d918",
+    "semantic_hash": ""
+  },
+  "backend/tests/test_tax_tables.py": {
+    "mtime": 1782948298.5677476,
+    "ast_hash": "31bd89cdbc228b874ebc3f04a0629400",
+    "semantic_hash": ""
+  },
+  "deploy-seguranca.ps1": {
+    "mtime": 1782948298.5677476,
+    "ast_hash": "a69adf0deb78e9a8593251c73355b253",
+    "semantic_hash": ""
+  },
+  "frontend/package.json": {
+    "mtime": 1782948298.5710201,
+    "ast_hash": "54fe75f332bcdb3104184fa759d1d884",
+    "semantic_hash": ""
+  },
+  "frontend/postcss.config.js": {
+    "mtime": 1782948298.5710201,
+    "ast_hash": "222a79a9879c7cd4d9980533b7639465",
+    "semantic_hash": ""
+  },
+  "frontend/public/manifest.json": {
+    "mtime": 1782948298.5744443,
+    "ast_hash": "a859b8df358c21e39ca86371e5891b07",
+    "semantic_hash": ""
+  },
+  "frontend/public/sw-register.js": {
+    "mtime": 1782948298.5744443,
+    "ast_hash": "7ac1f6730669ff52597b05503b6d3543",
+    "semantic_hash": ""
+  },
+  "frontend/public/sw.js": {
+    "mtime": 1782948298.5744443,
+    "ast_hash": "39f09195076bac623bd02d3f3313970c",
+    "semantic_hash": ""
+  },
+  "frontend/src/App.tsx": {
+    "mtime": 1782948298.5744443,
+    "ast_hash": "5a32283530e04af1a8450523966e1564",
+    "semantic_hash": ""
+  },
+  "frontend/src/components/AnaliseEstrategica.tsx": {
+    "mtime": 1782948298.5803258,
+    "ast_hash": "e6842ecfda68b85657c1bdae7a17761a",
+    "semantic_hash": ""
+  },
+  "frontend/src/components/AnaliseExtratos.tsx": {
+    "mtime": 1782948298.5812495,
+    "ast_hash": "8d6a6f97530d0f77a20275d53a3ad91c",
+    "semantic_hash": ""
+  },
+  "frontend/src/components/AssistedWritingMode.tsx": {
+    "mtime": 1782948298.5812495,
+    "ast_hash": "4d321e6e20744a86a39c9c8d851a0637",
+    "semantic_hash": ""
+  },
+  "frontend/src/components/CommandPalette.tsx": {
+    "mtime": 1782948298.5812495,
+    "ast_hash": "0ccee568a28b77969fe223a1dadc0808",
+    "semantic_hash": ""
+  },
+  "frontend/src/components/DashboardModernLuxury.tsx": {
+    "mtime": 1782948298.5812495,
+    "ast_hash": "2ae2c56d5ffa1cb4127d483dcfa6c6e8",
+    "semantic_hash": ""
+  },
+  "frontend/src/components/Dashboards.tsx": {
+    "mtime": 1782948298.5812495,
+    "ast_hash": "2fc5213be2879fac1c4bff30eb03d368",
+    "semantic_hash": ""
+  },
+  "frontend/src/components/ErrorBoundary.tsx": {
+    "mtime": 1782948298.5812495,
+    "ast_hash": "7d86f63bc94879426f7209510ad91cb0",
+    "semantic_hash": ""
+  },
+  "frontend/src/components/EscritaAssistida.tsx": {
+    "mtime": 1782948298.5812495,
+    "ast_hash": "d1dd72f13bb63a03944d54c544bcb126",
+    "semantic_hash": ""
+  },
+  "frontend/src/components/EstimadorHonorarios.tsx": {
+    "mtime": 1782948298.5812495,
+    "ast_hash": "ce944ff09b87346988d6fd87972389fe",
+    "semantic_hash": ""
+  },
+  "frontend/src/components/ExplicarMov.tsx": {
+    "mtime": 1782948298.5812495,
+    "ast_hash": "7dd16af858a83c25ca6e5a51a59086ae",
+    "semantic_hash": ""
+  },
+  "frontend/src/components/ExtratoSocio.tsx": {
+    "mtime": 1782948298.5812495,
+    "ast_hash": "a4c6ca0399a3856b166fbf4defd8ed8f",
+    "semantic_hash": ""
+  },
+  "frontend/src/components/FocusToday.tsx": {
+    "mtime": 1782948298.5812495,
+    "ast_hash": "abbb11c98ffa9c6a3acfd75a473feaa6",
+    "semantic_hash": ""
+  },
+  "frontend/src/components/GuiaAdministrativo.tsx": {
+    "mtime": 1782948298.5812495,
+    "ast_hash": "07c2ce34f9d2174526ed6fe4ecd1c3fc",
+    "semantic_hash": ""
+  },
+  "frontend/src/components/GuiaAmbiental.tsx": {
+    "mtime": 1782948298.5812495,
+    "ast_hash": "54468a4f1fdc04f1066974f1136bf415",
+    "semantic_hash": ""
+  },
+  "frontend/src/components/GuiaBancario.tsx": {
+    "mtime": 1782948298.5812495,
+    "ast_hash": "4c1ca31a1e47ef8b368276135e7c9329",
+    "semantic_hash": ""
+  },
+  "frontend/src/components/GuiaCivil.tsx": {
+    "mtime": 1782948298.5824442,
+    "ast_hash": "0da25e69cfeabf1c83ea31d78a89fe53",
+    "semantic_hash": ""
+  },
+  "frontend/src/components/GuiaConsumidor.tsx": {
+    "mtime": 1782948298.5824442,
+    "ast_hash": "e4189cf60d938b55b020a8b1cbfa0ec4",
+    "semantic_hash": ""
+  },
+  "frontend/src/components/GuiaFamilia.tsx": {
+    "mtime": 1782948298.5824442,
+    "ast_hash": "b93a31e6085f9516d322b8e0c466be0f",
+    "semantic_hash": ""
+  },
+  "frontend/src/components/GuiaImobiliario.tsx": {
+    "mtime": 1782948298.5824442,
+    "ast_hash": "f6d3b0e448e6b1848345a28fe68cf404",
+    "semantic_hash": ""
+  },
+  "frontend/src/components/GuiaLicitacoes.tsx": {
+    "mtime": 1782948298.5824442,
+    "ast_hash": "025bfe0bcb988022ffa4c7c5cb59b2d0",
+    "semantic_hash": ""
+  },
+  "frontend/src/components/GuiaPenal.tsx": {
+    "mtime": 1782948298.5824442,
+    "ast_hash": "dbb093aae10351b34110e79baa69908c",
+    "semantic_hash": ""
+  },
+  "frontend/src/components/GuiaPrevidenciario.tsx": {
+    "mtime": 1782948298.5824442,
+    "ast_hash": "1b099a1e70fb37824db7d305e87cd1be",
+    "semantic_hash": ""
+  },
+  "frontend/src/components/GuiaTrabalhista.tsx": {
+    "mtime": 1782948298.5824442,
+    "ast_hash": "6bee62f86c3fb10f5bc0ecc0908c9a18",
+    "semantic_hash": ""
+  },
+  "frontend/src/components/GuiaTransito.tsx": {
+    "mtime": 1782948298.5824442,
+    "ast_hash": "160a081f1f1b229cf1198b850d54fbbb",
+    "semantic_hash": ""
+  },
+  "frontend/src/components/GuiaTributario.tsx": {
+    "mtime": 1782948298.5824442,
+    "ast_hash": "161a666e755a809e1020381536baf0b1",
+    "semantic_hash": ""
+  },
+  "frontend/src/components/ImportarDocumento.tsx": {
+    "mtime": 1782948298.5824442,
+    "ast_hash": "28f8a8e43adcc6b1f39012f0faafcaa6",
+    "semantic_hash": ""
+  },
+  "frontend/src/components/Layout.tsx": {
+    "mtime": 1782948298.5824442,
+    "ast_hash": "19bab8bb65e60b09659895a4dee46ab1",
+    "semantic_hash": ""
+  },
+  "frontend/src/components/Markdown.tsx": {
+    "mtime": 1782948298.5864444,
+    "ast_hash": "b616a6372a210951cc4c01aef831672b",
+    "semantic_hash": ""
+  },
+  "frontend/src/components/MarketIntelligencePanel.tsx": {
+    "mtime": 1782948298.5864444,
+    "ast_hash": "5e05e6f7accaf35c5397e5379ca3feb9",
+    "semantic_hash": ""
+  },
+  "frontend/src/components/MotorTeses.tsx": {
+    "mtime": 1782948298.5864444,
+    "ast_hash": "aad87149475f28c3de9725336ff1b66f",
+    "semantic_hash": ""
+  },
+  "frontend/src/components/NoticiasCard.tsx": {
+    "mtime": 1782948298.5864444,
+    "ast_hash": "0c5413c8019feaa5f5f0a61cf37af765",
+    "semantic_hash": ""
+  },
+  "frontend/src/components/OnboardingTour.tsx": {
+    "mtime": 1782948298.5864444,
+    "ast_hash": "9e195c59504e096e5164f9067f1dad3a",
+    "semantic_hash": ""
+  },
+  "frontend/src/components/PecaGeneratorModal.tsx": {
+    "mtime": 1782948298.5864444,
+    "ast_hash": "95473aac42832b440f7bfc277697cba1",
+    "semantic_hash": ""
+  },
+  "frontend/src/components/PortalClientePlatinum.tsx": {
+    "mtime": 1782948298.5864444,
+    "ast_hash": "a94342b405299a3cfed6e90e4250307d",
+    "semantic_hash": ""
+  },
+  "frontend/src/components/PortalLayout.tsx": {
+    "mtime": 1782948298.5864444,
+    "ast_hash": "d083747986846dee1409e1ff6a47c81b",
+    "semantic_hash": ""
+  },
+  "frontend/src/components/RadarLegislativo.tsx": {
+    "mtime": 1782948298.5864444,
+    "ast_hash": "547ea55063762f02741f164a28044d66",
+    "semantic_hash": ""
+  },
+  "frontend/src/components/RadaresEspecializados.tsx": {
+    "mtime": 1782948298.5864444,
+    "ast_hash": "01126e19ae0d18bac93256b092c958a2",
+    "semantic_hash": ""
+  },
+  "frontend/src/components/SecurityMenu.tsx": {
+    "mtime": 1782948298.5864444,
+    "ast_hash": "597d5a1ef31c816010b888a79ab74597",
+    "semantic_hash": ""
+  },
+  "frontend/src/components/Toast.tsx": {
+    "mtime": 1782948298.5864444,
+    "ast_hash": "4387282d8246abf92aef04091cde08e7",
+    "semantic_hash": ""
+  },
+  "frontend/src/components/UI.tsx": {
+    "mtime": 1782948298.5864444,
+    "ast_hash": "dce48cae37c2713563f687de64efdcd4",
+    "semantic_hash": ""
+  },
+  "frontend/src/components/VeredutoIAWithVictoryVault.tsx": {
+    "mtime": 1782948298.5864444,
+    "ast_hash": "008fc4e8da2878684ee7037b9cb03a98",
+    "semantic_hash": ""
+  },
+  "frontend/src/components/VictoryVaultPanel.tsx": {
+    "mtime": 1782948298.5864444,
+    "ast_hash": "230e54f57abeab4198589a9caa5e14b6",
+    "semantic_hash": ""
+  },
+  "frontend/src/components/WhatsAppChatbot.tsx": {
+    "mtime": 1782948298.5904443,
+    "ast_hash": "1056f8140803c6aed7820ef8dcb4586c",
+    "semantic_hash": ""
+  },
+  "frontend/src/components/ai/AIResponse.tsx": {
+    "mtime": 1782948298.5904443,
+    "ast_hash": "3c465ceccc3042485099859775c7882f",
+    "semantic_hash": ""
+  },
+  "frontend/src/hooks/useTheme.ts": {
+    "mtime": 1782948298.5904443,
+    "ast_hash": "9f14be738ca4c2be94d6aa6dcaf67abd",
+    "semantic_hash": ""
+  },
+  "frontend/src/lib/api.ts": {
+    "mtime": 1782948298.5904443,
+    "ast_hash": "522327f4bda421aeee2b471bb94c0a85",
+    "semantic_hash": ""
+  },
+  "frontend/src/main.tsx": {
+    "mtime": 1782948298.5904443,
+    "ast_hash": "3bd5241013c1478f989364403c19384a",
+    "semantic_hash": ""
+  },
+  "frontend/src/pages/Agenda.tsx": {
+    "mtime": 1782948298.5904443,
+    "ast_hash": "e24074bd3c3adbc4c73792a301477f4f",
+    "semantic_hash": ""
+  },
+  "frontend/src/pages/AgenteIA.tsx": {
+    "mtime": 1782948298.595416,
+    "ast_hash": "f16dc380efad743c23cf71f2e0ada4ae",
+    "semantic_hash": ""
+  },
+  "frontend/src/pages/Ajuda.tsx": {
+    "mtime": 1782948298.595416,
+    "ast_hash": "e718cd97a14c46e90cfbf59a8dac778b",
+    "semantic_hash": ""
+  },
+  "frontend/src/pages/Assinaturas.tsx": {
+    "mtime": 1782948298.595416,
+    "ast_hash": "785013d0c39a3ee4809ed1d57c0ae96c",
+    "semantic_hash": ""
+  },
+  "frontend/src/pages/AssistenteIA.tsx": {
+    "mtime": 1782948298.595416,
+    "ast_hash": "060f2d2e60b92a8b59619e77d1565fca",
+    "semantic_hash": ""
+  },
+  "frontend/src/pages/Auditoria.tsx": {
+    "mtime": 1782948298.595416,
+    "ast_hash": "33c144ab231e8b26d28ed57eca7c1452",
+    "semantic_hash": ""
+  },
+  "frontend/src/pages/Biblioteca.tsx": {
+    "mtime": 1782948298.595416,
+    "ast_hash": "c408d1ec4ea23e224635bb4a488dddc1",
+    "semantic_hash": ""
+  },
+  "frontend/src/pages/CRMLeads.tsx": {
+    "mtime": 1782948298.595416,
+    "ast_hash": "4b4ad0fbcca2554f5aa3b83b90293604",
+    "semantic_hash": ""
+  },
+  "frontend/src/pages/CasoDetalhe.tsx": {
+    "mtime": 1782948298.595416,
+    "ast_hash": "94d8048a6cea40c6a5c2f467a1c2e370",
+    "semantic_hash": ""
+  },
+  "frontend/src/pages/Casos.tsx": {
+    "mtime": 1782948298.595416,
+    "ast_hash": "978ee19173db4c1447507648b00b8e21",
+    "semantic_hash": ""
+  },
+  "frontend/src/pages/CentralAtividades.tsx": {
+    "mtime": 1782948298.595416,
+    "ast_hash": "4613de7d868ba2dc4348b704b2d4c319",
+    "semantic_hash": ""
+  },
+  "frontend/src/pages/CentralRelacionamento.tsx": {
+    "mtime": 1782948298.595416,
+    "ast_hash": "ce4ee9ea3136daed75e31c2a802ca27c",
+    "semantic_hash": ""
+  },
+  "frontend/src/pages/Checklists.tsx": {
+    "mtime": 1782948298.595416,
+    "ast_hash": "f3e1d467648e3677102c06ab797de6da",
+    "semantic_hash": ""
+  },
+  "frontend/src/pages/Clientes.tsx": {
+    "mtime": 1782948298.595416,
+    "ast_hash": "fe8868f855497d1936c1a96e0401a373",
+    "semantic_hash": ""
+  },
+  "frontend/src/pages/Conhecimento.tsx": {
+    "mtime": 1782948298.595416,
+    "ast_hash": "7c881fc7b9ff593e5b64c255ffded335",
+    "semantic_hash": ""
+  },
+  "frontend/src/pages/ConteudoJuridico.tsx": {
+    "mtime": 1782948298.5984442,
+    "ast_hash": "ff71ff6a0b3ba34b5812e1146bfaaea5",
+    "semantic_hash": ""
+  },
+  "frontend/src/pages/Dashboard.tsx": {
+    "mtime": 1782948298.5984442,
+    "ast_hash": "ca535069c4c662ace52e5bf0f46ecae7",
+    "semantic_hash": ""
+  },
+  "frontend/src/pages/DashboardIA.tsx": {
+    "mtime": 1782948298.5984442,
+    "ast_hash": "1ca869ebac0a321d9f113554cfafad2c",
+    "semantic_hash": ""
+  },
+  "frontend/src/pages/DataJudBusca.tsx": {
+    "mtime": 1782948298.5984442,
+    "ast_hash": "d5b6bb5bfa9898f7b2f9e7dad0d0db08",
+    "semantic_hash": ""
+  },
+  "frontend/src/pages/DataRoom.tsx": {
+    "mtime": 1782948298.5984442,
+    "ast_hash": "cbbe36629e7c4a9ea14adf30723f0cbb",
+    "semantic_hash": ""
+  },
+  "frontend/src/pages/Despesas.tsx": {
+    "mtime": 1782948298.5984442,
+    "ast_hash": "6a713991e0242b40f5747d6c565ff74a",
+    "semantic_hash": ""
+  },
+  "frontend/src/pages/DespesasRecorrentes.tsx": {
+    "mtime": 1782948298.5984442,
+    "ast_hash": "f644ee1ee07f4c2e36d112bdba81ccf2",
+    "semantic_hash": ""
+  },
+  "frontend/src/pages/DiarioOficial.tsx": {
+    "mtime": 1782948298.5984442,
+    "ast_hash": "a1456a40563f31ce28401ad46d73ee6c",
+    "semantic_hash": ""
+  },
+  "frontend/src/pages/Documentos.tsx": {
+    "mtime": 1782948298.5984442,
+    "ast_hash": "177cb4fb37426f39cb299919989287e4",
+    "semantic_hash": ""
+  },
+  "frontend/src/pages/DossieCliente.tsx": {
+    "mtime": 1782948298.5984442,
+    "ast_hash": "f1fc43e0d0dec4fb4812ca5cc7d21f3b",
+    "semantic_hash": ""
+  },
+  "frontend/src/pages/FerramentasIA.tsx": {
+    "mtime": 1782948298.5984442,
+    "ast_hash": "b9b655956475e933d1651d3de1f9eb10",
+    "semantic_hash": ""
+  },
+  "frontend/src/pages/FinanceiroDashboard.tsx": {
+    "mtime": 1782948298.5984442,
+    "ast_hash": "fb0f91589630eab90cdc6409637446f7",
+    "semantic_hash": ""
+  },
+  "frontend/src/pages/FinanceiroWorkspace.tsx": {
+    "mtime": 1782948298.5984442,
+    "ast_hash": "3d17d02109b982b4788d1e05934f1b3c",
+    "semantic_hash": ""
+  },
+  "frontend/src/pages/GestaoDocumental.tsx": {
+    "mtime": 1782948298.5984442,
+    "ast_hash": "5abb0924e60ad0444348a15ee7e6349f",
+    "semantic_hash": ""
+  },
+  "frontend/src/pages/GovernancaIA.tsx": {
+    "mtime": 1782948298.5984442,
+    "ast_hash": "a108bcd8398401586aec9f1353bced58",
+    "semantic_hash": ""
+  },
+  "frontend/src/pages/Honorarios.tsx": {
+    "mtime": 1782948298.6024444,
+    "ast_hash": "836d8d06a64975b8ce7a19e5b3f49410",
+    "semantic_hash": ""
+  },
+  "frontend/src/pages/IA.tsx": {
+    "mtime": 1782948298.6024444,
+    "ast_hash": "51f9372a0f25dd0483e26b62f1792e93",
+    "semantic_hash": ""
+  },
+  "frontend/src/pages/InteligenciaWorkspace.tsx": {
+    "mtime": 1782948298.6024444,
+    "ast_hash": "03b7d64e1623ac9e5277738240105150",
+    "semantic_hash": ""
+  },
+  "frontend/src/pages/Intimacoes.tsx": {
+    "mtime": 1782948298.6024444,
+    "ast_hash": "780764c904db965574f3ed390c795403",
+    "semantic_hash": ""
+  },
+  "frontend/src/pages/Jurimetria.tsx": {
+    "mtime": 1782948298.6024444,
+    "ast_hash": "f83f0b2ac29f7e0ca2b4823584f438e5",
+    "semantic_hash": ""
+  },
+  "frontend/src/pages/Kanban.tsx": {
+    "mtime": 1782948298.6024444,
+    "ast_hash": "cb9148a69e10515d898d80e373db63b5",
+    "semantic_hash": ""
+  },
+  "frontend/src/pages/KnowledgeHub.tsx": {
+    "mtime": 1782948298.6024444,
+    "ast_hash": "97d0e82e22d6668977d9b4fcd43e0243",
+    "semantic_hash": ""
+  },
+  "frontend/src/pages/LicitacaoAuditoria.tsx": {
+    "mtime": 1782948298.6024444,
+    "ast_hash": "22717e78b84f55704b3b686a6bd6ccc0",
+    "semantic_hash": ""
+  },
+  "frontend/src/pages/Lixeira.tsx": {
+    "mtime": 1782948298.6024444,
+    "ast_hash": "e912476bbff8c29030eec4cef104f452",
+    "semantic_hash": ""
+  },
+  "frontend/src/pages/Login.tsx": {
+    "mtime": 1782948298.6024444,
+    "ast_hash": "25e0354f83ae1e50884c806c1e7f124d",
+    "semantic_hash": ""
+  },
+  "frontend/src/pages/LoginModern.tsx": {
+    "mtime": 1782948298.6024444,
+    "ast_hash": "8c3d39b55070ced51356195c90479441",
+    "semantic_hash": ""
+  },
+  "frontend/src/pages/MemoriaInstitucional.tsx": {
+    "mtime": 1782948298.6024444,
+    "ast_hash": "962474c34aa632fbf07b8a8fe32f612d",
+    "semantic_hash": ""
+  },
+  "frontend/src/pages/Noticias.tsx": {
+    "mtime": 1782948298.6024444,
+    "ast_hash": "b386dd42cd87a3872679e1c2b00fba2d",
+    "semantic_hash": ""
+  },
+  "frontend/src/pages/OfficeContracts.tsx": {
+    "mtime": 1782948298.6024444,
+    "ast_hash": "ac97050bae77e28fec1cdf3b4de09e80",
+    "semantic_hash": ""
+  },
+  "frontend/src/pages/PartnerWithdrawals.tsx": {
+    "mtime": 1782948298.6024444,
+    "ast_hash": "48aeaee334a93e88c257fbc0d4db1bdf",
+    "semantic_hash": ""
+  },
+  "frontend/src/pages/Pecas.tsx": {
+    "mtime": 1782948298.6064444,
+    "ast_hash": "5418473996730667ccf886c69cf6be5f",
+    "semantic_hash": ""
+  },
+  "frontend/src/pages/Prazos.tsx": {
+    "mtime": 1782948298.6064444,
+    "ast_hash": "63528b7f1d4697b056871ede5dc6f8e9",
+    "semantic_hash": ""
+  },
+  "frontend/src/pages/Produtividade.tsx": {
+    "mtime": 1782948298.6064444,
+    "ast_hash": "f5a8b2173a0a0ca7e0c2322ae5f168aa",
+    "semantic_hash": ""
+  },
+  "frontend/src/pages/Prompts.tsx": {
+    "mtime": 1782948298.6064444,
+    "ast_hash": "b13b0ff1014d3688cf2a35d0fc0ef14b",
+    "semantic_hash": ""
+  },
+  "frontend/src/pages/RadarRegulatorio.tsx": {
+    "mtime": 1782948298.6064444,
+    "ast_hash": "5151d6647e5b3cfb01deaed8674c99ef",
+    "semantic_hash": ""
+  },
+  "frontend/src/pages/RamosHub.tsx": {
+    "mtime": 1782948298.6064444,
+    "ast_hash": "5c73a7ef0b987876edc45d88db717f5a",
+    "semantic_hash": ""
+  },
+  "frontend/src/pages/RecuperarSenha.tsx": {
+    "mtime": 1782948298.6064444,
+    "ast_hash": "0ce9c105415ac10700b1b3c133a21555",
+    "semantic_hash": ""
+  },
+  "frontend/src/pages/RedefinirSenha.tsx": {
+    "mtime": 1782948298.6064444,
+    "ast_hash": "c262718550afc50253f48f44f28a844e",
+    "semantic_hash": ""
+  },
+  "frontend/src/pages/SalaDeGuerra.tsx": {
+    "mtime": 1782948298.6064444,
+    "ast_hash": "55494424461ed171c37fa9a05b7ef1ed",
+    "semantic_hash": ""
+  },
+  "frontend/src/pages/Sociedade.tsx": {
+    "mtime": 1782948298.6064444,
+    "ast_hash": "52f0d49cbe3de402a18f4990b67f82e8",
+    "semantic_hash": ""
+  },
+  "frontend/src/pages/Suspensoes.tsx": {
+    "mtime": 1782948298.6064444,
+    "ast_hash": "f3413e582824f4020edbc927d8df61a4",
+    "semantic_hash": ""
+  },
+  "frontend/src/pages/Tarefas.tsx": {
+    "mtime": 1782948298.6064444,
+    "ast_hash": "c4d72e1a2cea06e4b3e1d27200e91c78",
+    "semantic_hash": ""
+  },
+  "frontend/src/pages/TrocarSenha.tsx": {
+    "mtime": 1782948298.6064444,
+    "ast_hash": "be4694bbf7272dbb6c00a3b34d3aeb5a",
+    "semantic_hash": ""
+  },
+  "frontend/src/pages/Usuarios.tsx": {
+    "mtime": 1782948298.6104443,
+    "ast_hash": "858383e5366edb6def87172270b157e7",
+    "semantic_hash": ""
+  },
+  "frontend/src/pages/VictoryVault.tsx": {
+    "mtime": 1782948298.6104443,
+    "ast_hash": "df51b2198b87d9faa052780beb897dfd",
+    "semantic_hash": ""
+  },
+  "frontend/src/pages/Whatsapp.tsx": {
+    "mtime": 1782948298.6104443,
+    "ast_hash": "954a203506d9fe9ec6de9e507504adfd",
+    "semantic_hash": ""
+  },
+  "frontend/src/pages/Wiki.tsx": {
+    "mtime": 1782948298.6104443,
+    "ast_hash": "7a38b96d6e023028c6b72638fc75e1c8",
+    "semantic_hash": ""
+  },
+  "frontend/src/pages/Workflow.tsx": {
+    "mtime": 1782948298.6104443,
+    "ast_hash": "7cf897d74e2a271437953d86c35352f7",
+    "semantic_hash": ""
+  },
+  "frontend/src/pages/portal/PortalAssinaturas.tsx": {
+    "mtime": 1782948298.6104443,
+    "ast_hash": "295872b67c1254088b2bafbf4b16e1f0",
+    "semantic_hash": ""
+  },
+  "frontend/src/pages/portal/PortalCasoDetalhe.tsx": {
+    "mtime": 1782948298.6138914,
+    "ast_hash": "526b4b37b7556ef950b2d1ee7f62539d",
+    "semantic_hash": ""
+  },
+  "frontend/src/pages/portal/PortalCasos.tsx": {
+    "mtime": 1782948298.6138914,
+    "ast_hash": "fde6c71c29dfc0b71b39b1b4e6a4403f",
+    "semantic_hash": ""
+  },
+  "frontend/src/pages/portal/PortalDashboard.tsx": {
+    "mtime": 1782948298.6138914,
+    "ast_hash": "955d5633669fe825456189820d19fa98",
+    "semantic_hash": ""
+  },
+  "frontend/src/pages/portal/PortalFinanceiro.tsx": {
+    "mtime": 1782948298.6138914,
+    "ast_hash": "f579ea362aca12c23330c11d0d59ead1",
+    "semantic_hash": ""
+  },
+  "frontend/src/pages/portal/PortalMensagens.tsx": {
+    "mtime": 1782948298.6138914,
+    "ast_hash": "f0d1a785010d4e991795c54ef3ec4639",
+    "semantic_hash": ""
+  },
+  "frontend/src/pages/ramos/RamoBase.tsx": {
+    "mtime": 1782948298.6138914,
+    "ast_hash": "fafff4a684c160915764866a3a2fdd93",
+    "semantic_hash": ""
+  },
+  "frontend/src/pages/ramos/ramosConfig.ts": {
+    "mtime": 1782948298.6156366,
+    "ast_hash": "035ae29df0e1abae6e2722138b59071d",
+    "semantic_hash": ""
+  },
+  "frontend/src/qrcode.d.ts": {
+    "mtime": 1782948298.6156366,
+    "ast_hash": "704da827375b5a0b3dc376bbc3e66bfe",
+    "semantic_hash": ""
+  },
+  "frontend/src/stores/auth.ts": {
+    "mtime": 1782948298.6156366,
+    "ast_hash": "6a48e28d625f1b68ec730cb512d5fef6",
+    "semantic_hash": ""
+  },
+  "frontend/src/types/index.ts": {
+    "mtime": 1782948298.6184301,
+    "ast_hash": "e5cfa8ebaf3300e09da985126f2770e1",
+    "semantic_hash": ""
+  },
+  "frontend/src/utils/exportCsv.ts": {
+    "mtime": 1782948298.6184301,
+    "ast_hash": "0073d3857e9a85dca703d3dc334a6b76",
+    "semantic_hash": ""
+  },
+  "frontend/src/utils/exportPdf.ts": {
+    "mtime": 1782948298.6192932,
+    "ast_hash": "658d4b1b24101b627691c6a1dd85685f",
+    "semantic_hash": ""
+  },
+  "frontend/tailwind.config.js": {
+    "mtime": 1782948298.6192932,
+    "ast_hash": "122e886b970c49e29ac12a94da96d7f5",
+    "semantic_hash": ""
+  },
+  "frontend/tsconfig.json": {
+    "mtime": 1782948298.6192932,
+    "ast_hash": "604b408fe551807a494077c57f74c681",
+    "semantic_hash": ""
+  },
+  "frontend/vite.config.ts": {
+    "mtime": 1782948298.6192932,
+    "ast_hash": "faac973b8843e8cfced1d3b07ace06cc",
+    "semantic_hash": ""
+  },
+  "scripts/audit_legal_docs_preview.py": {
+    "mtime": 1782948298.6207128,
+    "ast_hash": "462730191493b268408230e1a42b0588",
+    "semantic_hash": ""
+  },
+  "scripts/backup.sh": {
+    "mtime": 1782948298.6207128,
+    "ast_hash": "9ac9f4bc7fe26e04dd030bb08e0a6013",
+    "semantic_hash": ""
+  },
+  "scripts/deploy.sh": {
+    "mtime": 1782948298.6207128,
+    "ast_hash": "9ae9c91cf89271ea48889efca8c4b56a",
+    "semantic_hash": ""
+  },
+  "scripts/deploy_vps_safe.sh": {
+    "mtime": 1782948298.6207128,
+    "ast_hash": "d8c5bd20439c73ac16036e35610a65cd",
+    "semantic_hash": ""
+  },
+  "scripts/gen_vapid.py": {
+    "mtime": 1782948298.6207128,
+    "ast_hash": "575c1797d870911e55806379eef6a29e",
+    "semantic_hash": ""
+  },
+  "scripts/monitor_health.sh": {
+    "mtime": 1782948298.6207128,
+    "ast_hash": "583111d91595838d80a2d8294e134765",
+    "semantic_hash": ""
+  },
+  "scripts/post_deploy_check.sh": {
+    "mtime": 1782948298.6207128,
+    "ast_hash": "788fbe83e5128ea303ab109b719d635f",
+    "semantic_hash": ""
+  },
+  "scripts/report_backend_weight.sh": {
+    "mtime": 1782948298.6207128,
+    "ast_hash": "9d6b35d0507c13546f4a2a6853f70eb8",
+    "semantic_hash": ""
+  },
+  "scripts/restore.sh": {
+    "mtime": 1782948298.6207128,
+    "ast_hash": "0ca2173343d30efcea407aac360b6bd8",
+    "semantic_hash": ""
+  },
+  "scripts/vps_setup.sh": {
+    "mtime": 1782948298.6207128,
+    "ast_hash": "23fcf3a2e54daded9ce4deac2530badf",
+    "semantic_hash": ""
+  },
+  "vps-tools/deploy-rebrand.js": {
+    "mtime": 1782948298.6624444,
+    "ast_hash": "c2e613fde8c33c2750e2ed0e3cd40362",
+    "semantic_hash": ""
+  },
+  "vps-tools/package.json": {
+    "mtime": 1782948298.6624444,
+    "ast_hash": "b7bc58d3d8aa11982b02c82c143bd163",
+    "semantic_hash": ""
+  },
+  "vps-tools/patch-frontend-package.js": {
+    "mtime": 1782948298.6624444,
+    "ast_hash": "dc74ecb8d31f00d8cab6cbecc2524f67",
+    "semantic_hash": ""
+  },
+  "vps-tools/pull-file.js": {
+    "mtime": 1782948298.6624444,
+    "ast_hash": "86d822018d5b3f765a06586275e30931",
+    "semantic_hash": ""
+  },
+  "vps-tools/run.js": {
+    "mtime": 1782948298.6624444,
+    "ast_hash": "5a45a4274d68bc73c6de9408c2e86600",
+    "semantic_hash": ""
+  },
+  "vps-tools/ssh-config.js": {
+    "mtime": 1782948298.6624444,
+    "ast_hash": "5e1e5ef580dcabfaedfc33c7d6c47288",
+    "semantic_hash": ""
+  },
+  "vps-tools/sync.js": {
+    "mtime": 1782948298.6624444,
+    "ast_hash": "939627cba74546b3a8fb69f6c93a1da0",
+    "semantic_hash": ""
+  },
+  "vps-tools/upload.js": {
+    "mtime": 1782948298.6624444,
+    "ast_hash": "77c66df33b3cf738626a63b4e513d606",
+    "semantic_hash": ""
+  },
+  ".claude/CLAUDE.md": {
+    "mtime": 1782954900.7155182,
+    "ast_hash": "9b31786b637be3c13978bec4c2330752",
+    "semantic_hash": ""
+  },
+  ".claude/skills/graphify/SKILL.md": {
+    "mtime": 1782954900.7150543,
+    "ast_hash": "5bc28728a68fa52adb97f26b0ffa1324",
+    "semantic_hash": ""
+  },
+  ".claude/skills/graphify/references/add-watch.md": {
+    "mtime": 1782954896.7208562,
+    "ast_hash": "d59d027fe449f06aa03905a01184e779",
+    "semantic_hash": ""
+  },
+  ".claude/skills/graphify/references/exports.md": {
+    "mtime": 1782954896.7208562,
+    "ast_hash": "9da2a2152e60a22f07f05fed5158f287",
+    "semantic_hash": ""
+  },
+  ".claude/skills/graphify/references/extraction-spec.md": {
+    "mtime": 1782954896.7208562,
+    "ast_hash": "42fef56a01698118f7fd722acdadea34",
+    "semantic_hash": ""
+  },
+  ".claude/skills/graphify/references/github-and-merge.md": {
+    "mtime": 1782954896.7208562,
+    "ast_hash": "cde13df085e4c492aeb7ba298a996d0d",
+    "semantic_hash": ""
+  },
+  ".claude/skills/graphify/references/hooks.md": {
+    "mtime": 1782954896.7208562,
+    "ast_hash": "3f545db6ce646650bb9de588f5512a27",
+    "semantic_hash": ""
+  },
+  ".claude/skills/graphify/references/query.md": {
+    "mtime": 1782954896.7248561,
+    "ast_hash": "9e5aadc2c57ab561bc56600fcfa70735",
+    "semantic_hash": ""
+  },
+  ".claude/skills/graphify/references/transcribe.md": {
+    "mtime": 1782954896.7248561,
+    "ast_hash": "67b6a5fa6c0974e18f60db9f8932fbd8",
+    "semantic_hash": ""
+  },
+  ".claude/skills/graphify/references/update.md": {
+    "mtime": 1782954896.7248561,
+    "ast_hash": "c698309979460d0f02ba616417844399",
+    "semantic_hash": ""
+  },
+  ".github/workflows/ci.yml": {
+    "mtime": 1782948298.463015,
+    "ast_hash": "922ce20a3b8aad1321a0e7b56c310281",
+    "semantic_hash": ""
+  },
+  "AUDITORIA_MESTRE_CHECKLIST_EJC.md": {
+    "mtime": 1782948298.463015,
+    "ast_hash": "11891a59858e9540c9ce76bf31705c40",
+    "semantic_hash": ""
+  },
+  "AUDIT_FIXES.md": {
+    "mtime": 1782948298.463015,
+    "ast_hash": "e7adeca35699931cda26303af59e7f5c",
+    "semantic_hash": ""
+  },
+  "CLAUDE.md": {
+    "mtime": 1782954900.7156336,
+    "ast_hash": "82efb97a359f5c7290bf2513d14686be",
+    "semantic_hash": ""
+  },
+  "LAUDO_AUDITORIA_FORENSE_EJC_2026-06-29.md": {
+    "mtime": 1782948298.463015,
+    "ast_hash": "9b14a96400698b8437ff18c2842345f6",
+    "semantic_hash": ""
+  },
+  "MAPA_PROMPTS_IA03.md": {
+    "mtime": 1782948298.463015,
+    "ast_hash": "17898b552ed84856815df2d38a18fb5b",
+    "semantic_hash": ""
+  },
+  "PLANO_FASE4_CONSOLIDACAO.md": {
+    "mtime": 1782948298.463015,
+    "ast_hash": "a15ca0b766d7770a8398623fe48b31cd",
+    "semantic_hash": ""
+  },
+  "README.md": {
+    "mtime": 1782948298.463015,
+    "ast_hash": "f26f2093d0b2fbfd95ed2fe352ae8235",
+    "semantic_hash": ""
+  },
+  "RELATORIO_EXECUCAO_PROMPT_MESTRE_EJC_2026-06-25.md": {
+    "mtime": 1782948298.463015,
+    "ast_hash": "037dbf14a44dd7cb2d1733574072013c",
+    "semantic_hash": ""
+  },
+  "RELATORIO_FASE0_CONTENCAO_2026-06-29.md": {
+    "mtime": 1782948298.463015,
+    "ast_hash": "07792f9d228b84ed05c95ea546dbf739",
+    "semantic_hash": ""
+  },
+  "RELATORIO_FASE2_BANCO_2026-06-29.md": {
+    "mtime": 1782948298.463015,
+    "ast_hash": "53ed0e9f71fb2eaef569c1a4d40026f4",
+    "semantic_hash": ""
+  },
+  "RELATORIO_FASE3A_OWNERSHIP_2026-06-29.md": {
+    "mtime": 1782948298.463015,
+    "ast_hash": "eb073bb79a33da53d8623c19013227eb",
+    "semantic_hash": ""
+  },
+  "RELATORIO_FASE3B_RAG_2026-06-29.md": {
+    "mtime": 1782948298.463015,
+    "ast_hash": "21fac21438502e4f40eb1eb6c61e0adf",
+    "semantic_hash": ""
+  },
+  "RELATORIO_FASE4_EXECUCAO_2026-06-29.md": {
+    "mtime": 1782948298.463015,
+    "ast_hash": "8ebac79bbeb794b5377ee81594eb7fbf",
+    "semantic_hash": ""
+  },
+  "RELATORIO_FASE5_HIGIENE_2026-06-29.md": {
+    "mtime": 1782948298.463015,
+    "ast_hash": "390e283adc70d20e5a6e92bc687bb3fa",
+    "semantic_hash": ""
+  },
+  "RELATORIO_LAUDO_IA_RAG_2026-06-29.md": {
+    "mtime": 1782948298.463015,
+    "ast_hash": "208bc6a0693d7dce485f328a5075e504",
+    "semantic_hash": ""
+  },
+  "RUNBOOK_DEPLOY_FASES_1-3.md": {
+    "mtime": 1782948298.463015,
+    "ast_hash": "4c6341b23e5762af0ede44ec9449647b",
+    "semantic_hash": ""
+  },
+  "backend/requirements.txt": {
+    "mtime": 1782948298.5624442,
+    "ast_hash": "bef65a2f2d8758ff8d29167798c7c206",
+    "semantic_hash": ""
+  },
+  "backend/tests/README.md": {
+    "mtime": 1782948298.5668325,
+    "ast_hash": "fe35364b712cfa85420780de64cc46ee",
+    "semantic_hash": ""
+  },
+  "docker-compose.yml": {
+    "mtime": 1782948298.5677476,
+    "ast_hash": "dcc70876677c3cc5ba70c98300102f14",
+    "semantic_hash": ""
+  },
+  "frontend/index.html": {
+    "mtime": 1782948298.5710201,
+    "ast_hash": "b4f5093c3a47cdbead68c364a4718bd5",
+    "semantic_hash": ""
+  },
+  "backend/app/assets/logo.png": {
+    "mtime": 1782948298.4832578,
+    "ast_hash": "276a9e7c53a895a125c8028231911e73",
+    "semantic_hash": ""
+  },
+  "backend/app/static/brand/de-paula-teixeira-logo.jpg": {
+    "mtime": 1782948298.5624442,
+    "ast_hash": "83aab558925ee864a031d3819ab5710f",
+    "semantic_hash": ""
+  },
+  "frontend/public/brand/de-paula-teixeira-logo.jpg": {
+    "mtime": 1782948298.5736053,
+    "ast_hash": "83aab558925ee864a031d3819ab5710f",
+    "semantic_hash": ""
+  },
+  "frontend/public/icon-192.png": {
+    "mtime": 1782948298.5736053,
+    "ast_hash": "6d3274f1e3da36e54e63c68a9c220ea1",
+    "semantic_hash": ""
+  },
+  "frontend/public/icon-512.png": {
+    "mtime": 1782948298.5744443,
+    "ast_hash": "658bcc36e1c3977a509b0d36c0bdffa4",
+    "semantic_hash": ""
+  },
+  "frontend/public/logo-white.png": {
+    "mtime": 1782948298.5744443,
+    "ast_hash": "eb843fd828cb02e600bee33174c284d3",
+    "semantic_hash": ""
+  },
+  "frontend/public/logo.png": {
+    "mtime": 1782948298.5744443,
+    "ast_hash": "4aac42e1f2970d2b1ab74c54bb0c7b94",
+    "semantic_hash": ""
+  }
+}
