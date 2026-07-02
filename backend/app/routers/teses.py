@@ -312,11 +312,18 @@ async def sugerir_teses_ia(
     if not _pode_editar(cu):
         raise HTTPException(403)
 
-    from app.services.sanitizer import sanitizar_pii
+    from app.services.ai_guard import sanitizar_ou_abortar, registrar_ai_log
+    from app.models.ai_log import AITipoUso
     from app.services.ai_gateway import chat as gw_chat
-    from app.services.ai_service import buscar_contexto_rag
+    from app.services.ai_service import buscar_contexto_rag, _escopo_cliente_do_caso
+    from app.core.ownership import verificar_acesso_caso
 
-    texto_limpo, _ = sanitizar_pii(req.descricao_fatos, [])
+    # Bloco 5 (continuação): case_id existia mas sem checagem de ownership.
+    if req.case_id:
+        await verificar_acesso_caso(db, cu, req.case_id)
+    escopo_cli = await _escopo_cliente_do_caso(db, req.case_id)
+
+    texto_limpo, pii = sanitizar_ou_abortar(req.descricao_fatos)
 
     # Busca teses existentes por área
     teses_existentes = (await db.execute(
@@ -332,7 +339,7 @@ async def sugerir_teses_ia(
                   for t in teses_existentes]
         catalogo = "[TESES DO ESCRITÓRIO DISPONÍVEIS]\n" + "\n".join(linhas) + "\n\n"
 
-    fontes = await buscar_contexto_rag(db, texto_limpo[:300], limite=5)
+    fontes = await buscar_contexto_rag(db, texto_limpo[:300], limite=5, scope_client_id=escopo_cli)
     rag_txt = ""
     if fontes:
         linhas = [f"- {f['titulo']}: {f['conteudo'][:200]}" for f in fontes]
@@ -363,7 +370,16 @@ Risco: [principal fragilidade]
             temperature=0.3,
             max_tokens=2000,
         )
+        # Auditoria 2026-07-02: este endpoint gerava teses sem deixar NENHUM
+        # rastro em ai_logs — quebra de HITL/LGPD. Agora grava sempre.
+        log_id = await registrar_ai_log(
+            db, user_id=cu.id, tipo_uso=AITipoUso.analise_caso, case_id=req.case_id,
+            prompt_sanitizado=user_msg, pii_removida=pii, resposta=resp.texto,
+            modelo=f"{resp.provedor}/{resp.modelo}" if resp.provedor else resp.modelo,
+            tokens_input=resp.input_tokens, tokens_output=resp.output_tokens,
+        )
         return {
+            "ai_log_id": log_id,
             "resposta": resp.texto,
             "modelo_usado": resp.modelo,
             "provedor": resp.provedor,
@@ -371,6 +387,8 @@ Risco: [principal fragilidade]
             "teses_existentes_encontradas": len(teses_existentes),
             "aviso": "⚠️ Sugestões de IA — RASCUNHO. Revisar antes de usar.",
         }
+    except HTTPException:
+        raise
     except Exception as e:
         raise HTTPException(502, f"IA indisponível: {str(e)[:200]}")
 
@@ -417,7 +435,8 @@ async def motor_teses(
     if not _pode_editar(cu):
         raise HTTPException(403)
 
-    from app.services.sanitizer import sanitizar_pii
+    from app.services.ai_guard import sanitizar_ou_abortar, registrar_ai_log
+    from app.models.ai_log import AITipoUso
     from app.services.ai_gateway import chat as gw_chat
     from app.services.ai_service import buscar_contexto_rag, _escopo_cliente_do_caso
     from app.core.ownership import verificar_acesso_caso
@@ -430,7 +449,7 @@ async def motor_teses(
         await verificar_acesso_caso(db, cu, req.case_id)
     escopo_cli = await _escopo_cliente_do_caso(db, req.case_id)
 
-    texto, _ = sanitizar_pii(req.descricao_fatos, [])
+    texto, pii = sanitizar_ou_abortar(req.descricao_fatos)
     consulta = f"{req.area} {texto}"[:400]
 
     # jurisp e doutrina são categorias PÚBLICAS — escopo não as afeta.

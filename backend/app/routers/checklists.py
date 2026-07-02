@@ -13,6 +13,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.database import get_db
 from app.core.security import get_current_user, ROLE_LEVEL
+from app.core.ownership import verificar_acesso_caso
 from app.models.user import User
 from app.models.checklist import (
     ChecklistTemplate, ChecklistTemplateItem, CaseChecklist, CaseChecklistItem,
@@ -283,11 +284,10 @@ async def gerar_checklist_ia_endpoint(
     HITL/OAB: itens entram como pendentes para revisão humana e NUNCA criam prazos."""
     if not _pode_gerenciar(cu):
         raise HTTPException(403, "Apenas advogado+ pode gerar checklist por IA")
-    existe = (await db.execute(
-        text("SELECT 1 FROM cases WHERE id = :c AND deleted_at IS NULL"), {"c": case_id}
-    )).first()
-    if not existe:
-        raise HTTPException(404, "Caso não encontrado")
+    # Bloco 5 (continuação): só existência era checada — advogado+ de QUALQUER
+    # caso podia gerar checklist para caso alheio. verificar_acesso_caso já
+    # cobre existência (404) + ownership (403 se não for gestão/responsável).
+    await verificar_acesso_caso(db, cu, case_id)
 
     from app.services.checklist_ia import gerar_checklist_ia
     res = await gerar_checklist_ia(db, case_id, req.gatilho, cu.id)

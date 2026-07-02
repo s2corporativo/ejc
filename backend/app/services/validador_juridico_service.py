@@ -201,7 +201,12 @@ def _formatar_documentos(documentos: list[str] | None) -> str:
     return "\n".join(f"- {d}" for d in documentos if d)
 
 
-async def validar_rascunho_juridico(payload: ValidacaoInput, db: AsyncSession, user_id: str) -> dict:
+async def validar_rascunho_juridico(
+    payload: ValidacaoInput, db: AsyncSession, user_id: str,
+    scope_client_id: str | None = None,
+) -> dict:
+    """scope_client_id (Bloco 5): o CHAMADOR já verifica ownership do
+    payload.case_id e deriva o escopo antes de chegar aqui."""
     if len((payload.rascunho or "").strip()) < 100:
         raise ValueError("Rascunho muito curto para validacao juridica")
 
@@ -218,7 +223,7 @@ async def validar_rascunho_juridico(payload: ValidacaoInput, db: AsyncSession, u
         " ".join(metricas.get("artigos_detectados") or [])[:500],
         texto_limpo[:800],
     ])
-    fontes = await buscar_contexto_rag(db, consulta, limite=8, modo_or=True)
+    fontes = await buscar_contexto_rag(db, consulta, limite=8, modo_or=True, scope_client_id=scope_client_id)
 
     user_prompt = USER_TEMPLATE.format(
         tipo_documento=payload.tipo_documento or "peca_juridica",

@@ -124,6 +124,7 @@ async def _dados_caso(db: AsyncSession, case_id: str) -> dict:
         "area":        caso.area.value if hasattr(caso.area, "value") else str(caso.area or ""),
         "descricao":   (caso.descricao_fatos or "")[:500],
         "data_inicio": caso.created_at.strftime("%d/%m/%Y") if caso.created_at else None,
+        "client_id":   caso.client_id,  # Bloco 5: escopo do RAG (não exposto no dossiê final)
     }
 
 
@@ -133,7 +134,7 @@ async def _jurisprudencia_relacionada(db: AsyncSession, dados: dict) -> list[dic
         from app.services.ai_service import buscar_contexto_rag
         caso = dados.get("caso", {})
         consulta = f"{caso.get('area', '')} {caso.get('titulo', '')} {caso.get('descricao', '')}"[:300]
-        fontes = await buscar_contexto_rag(db, consulta, limite=4)
+        fontes = await buscar_contexto_rag(db, consulta, limite=4, scope_client_id=caso.get("client_id"))
         return [
             {"titulo": f["titulo"], "categoria": f["categoria"],
              "chunk_id": f["chunk_id"], "trecho": (f["conteudo"] or "")[:400]}

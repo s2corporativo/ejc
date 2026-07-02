@@ -9,6 +9,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.database import get_db
 from app.core.security import get_current_user
+from app.core.ownership import verificar_acesso_caso
 from app.models.user import User
 from app.services.validador_juridico_service import ValidacaoInput, validar_rascunho_juridico
 
@@ -53,6 +54,12 @@ async def validar(
     cu: User = Depends(get_current_user),
 ):
     try:
+        # Bloco 5 (continuação): case_id existia mas sem checagem de ownership.
+        escopo_cli = None
+        if req.case_id:
+            await verificar_acesso_caso(db, cu, req.case_id)
+            from app.services.ai_service import _escopo_cliente_do_caso
+            escopo_cli = await _escopo_cliente_do_caso(db, req.case_id)
         payload = ValidacaoInput(
             rascunho=req.rascunho,
             tipo_documento=req.tipo_documento,
@@ -63,7 +70,7 @@ async def validar(
             case_id=req.case_id,
             nivel_inteligencia=req.nivel_inteligencia,
         )
-        return await validar_rascunho_juridico(payload, db=db, user_id=cu.id)
+        return await validar_rascunho_juridico(payload, db=db, user_id=cu.id, scope_client_id=escopo_cli)
     except ValueError as exc:
         raise HTTPException(status.HTTP_422_UNPROCESSABLE_ENTITY, str(exc))
     except RuntimeError as exc:

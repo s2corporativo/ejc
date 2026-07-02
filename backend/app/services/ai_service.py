@@ -566,14 +566,19 @@ async def detectar_teses_ocultas(
     tese_principal: str | None = None,
     nomes_proteger: list[str] | None = None,
     case_id: str | None = None,
+    scope_client_id: str | None = None,
 ) -> dict:
-    """Detector de Teses Ocultas — ranking por relevância."""
+    """Detector de Teses Ocultas — ranking por relevância.
+
+    scope_client_id (Bloco 5): o CHAMADOR deve verificar ownership do case_id
+    e derivar o escopo (ver routers/ai.py::teses_ocultas) — esta função de
+    serviço não tem acesso ao usuário autenticado para checar isso sozinha."""
     texto, pii = sanitizar_pii(descricao_fatos, nomes_proteger or [])
     residual = validar_sem_pii(texto)
     if residual:
         return {"erro": f"Sanitização incompleta: {residual}. Revise o texto."}
 
-    fontes = await buscar_contexto_rag(db, f"{area} {texto[:200]}", limite=6)
+    fontes = await buscar_contexto_rag(db, f"{area} {texto[:200]}", limite=6, scope_client_id=scope_client_id)
     contexto = _formatar_fontes(fontes)
 
     user_msg = (

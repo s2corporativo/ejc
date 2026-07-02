@@ -11,6 +11,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.database import get_db
 from app.core.security import get_current_user, ROLE_LEVEL
+from app.core.ownership import verificar_acesso_caso
 from app.models.user import User
 from app.models.dossie_estrategico import DossieEstrategico, DossieStatus
 from app.services.dossie_service import gerar_dossie
@@ -72,13 +73,10 @@ async def gerar(
     """
     if not _pode_gerar(cu):
         raise HTTPException(403, "Apenas advogados ou sócios podem gerar dossiês.")
-    # Valida que o caso existe (evita 500 por IntegrityError de FK).
-    from app.models.case import Case
-    caso = (await db.execute(
-        select(Case).where(Case.id == case_id, Case.deleted_at.is_(None))
-    )).scalar_one_or_none()
-    if not caso:
-        raise HTTPException(404, "Caso não encontrado")
+    # Bloco 5 (continuação): só existência era checada — advogado+ de qualquer
+    # caso podia gerar o dossiê ESTRATÉGICO (conteúdo sensível: teses, pontos
+    # fracos) de caso alheio. verificar_acesso_caso cobre existência + ownership.
+    await verificar_acesso_caso(db, cu, case_id)
     dossie = await gerar_dossie(db, case_id, cu.id, req.titulo)
     return _out(dossie)
 

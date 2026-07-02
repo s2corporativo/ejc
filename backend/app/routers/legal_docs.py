@@ -348,8 +348,11 @@ async def validar_peca_juridica(
     d = (await db.execute(select(LegalDoc).where(LegalDoc.id == doc_id, LegalDoc.deleted_at.is_(None)))).scalar_one_or_none()
     if not d:
         raise HTTPException(status_code=404, detail="Peça não encontrada")
+    escopo_cli = None
     if d.case_id:
         await verificar_acesso_caso(db, cu, d.case_id)
+        from app.services.ai_service import _escopo_cliente_do_caso
+        escopo_cli = await _escopo_cliente_do_caso(db, d.case_id)
     payload = ValidacaoInput(
         rascunho=d.conteudo,
         tipo_documento=_status_value(d.tipo_peca) or "peca_juridica",
@@ -360,7 +363,7 @@ async def validar_peca_juridica(
         case_id=d.case_id,
         nivel_inteligencia="alto",
     )
-    resultado = await validar_rascunho_juridico(payload, db=db, user_id=cu.id)
+    resultado = await validar_rascunho_juridico(payload, db=db, user_id=cu.id, scope_client_id=escopo_cli)
     await criar_audit_log(db, cu.id, cu.role.value, "VALIDACAO_JURIDICA", "legal_docs", doc_id, detalhes=f"score={resultado.get('score_confianca')}")
     await db.commit()
     return resultado

@@ -16,6 +16,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import text
 from app.core.database import get_db
 from app.core.security import require_roles
+from app.core.ownership import verificar_acesso_caso
 from app.models.user import User
 from app.models.audit_log import criar_audit_log
 
@@ -44,6 +45,11 @@ async def converter_judicial(
     db: AsyncSession = Depends(get_db),
     cu: User = Depends(require_roles(_ESCRITA)),
 ):
+    # Achado durante o Bloco 5 (continuação): só existência era checada, não
+    # ownership — qualquer usuário com papel _ESCRITA podia converter/escrever
+    # em processo de QUALQUER caso, não só os seus. Mesmo padrão já corrigido
+    # em processes.py nesta auditoria.
+    await verificar_acesso_caso(db, cu, case_id)
     orig = (await db.execute(text("""
         SELECT id, titulo, numero_processo, tribunal, comarca, vara, valor_causa,
                case_type, has_judicial_process
