@@ -1,4 +1,5 @@
 import { useEffect, useState } from "react";
+import { toast } from "../components/Toast";
 import { RefreshCw, Database } from "lucide-react";
 import api from "../lib/api";
 import { PageHeader, Spinner } from "../components/UI";
@@ -107,11 +108,11 @@ export default function Jurimetria() {
       await api.post(
         `/jurimetria/ext/predicao/treinar?tribunal=${predForm.tribunal}`,
       );
-      alert(
+      toast.success(
         "Treinamento iniciado em background. Aguarde alguns minutos e tente a predição.",
       );
     } catch (e: any) {
-      alert(e?.response?.data?.detail || "Erro ao iniciar treinamento");
+      toast.error(e?.response?.data?.detail || "Erro ao iniciar treinamento");
     } finally {
       setTreinando(false);
     }

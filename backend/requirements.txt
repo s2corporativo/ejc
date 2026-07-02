@@ -10,6 +10,8 @@ asyncpg==0.29.0
 sqlalchemy[asyncio]==2.0.30
 alembic==1.13.1
 pgvector==0.3.2
+psycopg2-binary==2.9.9  # driver SYNC exigido por alembic/env.py — ausente causava
+                         # falha de "alembic upgrade head" em instalação limpa (Etapa 6D)
 
 # Validation and settings
 pydantic==2.7.4
@@ -34,6 +36,15 @@ requests==2.32.3
 groq==0.9.0
 boto3==1.34.144
 botocore==1.34.144
+tenacity==8.2.3  # datajud_service.py, djen_service.py (retry)
+
+# Google Drive (documents.py)
+google-api-python-client==2.198.0
+google-auth==2.55.1
+
+# Web Push (notification_service.py)
+pywebpush==2.0.0
+py-vapid==1.9.2
 
 # Documents and exports
 aiofiles==23.2.1
@@ -43,18 +54,22 @@ PyMuPDF==1.24.5
 pypdf==4.2.0
 pdfplumber==0.11.1
 python-docx==1.1.2
+fpdf2==2.7.9  # visual_law_pdf.py (VisualLawPDF) importa como `fpdf` — pacote PyPI é fpdf2
 pandas==2.2.2
 openpyxl==3.1.4
 qrcode[pil]==7.4.2
 Pillow==10.4.0
 pdf2image==1.17.0
 pytesseract==0.3.10
+weasyprint==62.1  # dossie_estrategico.py, pdf_service.py
+reportlab==4.2.0  # relatorio_visual_law.py, visual_law_templates.py
 
 # AI/RAG
 langchain==0.2.5
 langchain-community==0.2.5
 langchain-core==0.2.9
 langchain-groq==0.1.6
+anthropic==0.113.0  # providers/anthropic_provider.py (ai_gateway)
 fastembed>=0.8.0
 numpy==1.26.4
 

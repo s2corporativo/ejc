@@ -1,4 +1,5 @@
 import { useEffect, useState, useRef } from "react";
+import { toast } from "../components/Toast";
 import { Upload, Download, Search, Lock } from "lucide-react";
 import api from "../lib/api";
 import { PageHeader, Modal, Empty, Spinner, fmtDate } from "../components/UI";
@@ -35,7 +36,7 @@ export default function Documentos() {
   const upload = async () => {
     const file = fileRef.current?.files?.[0];
     if (!file || !form.titulo) {
-      alert("Arquivo e título obrigatórios");
+      toast.error("Arquivo e título obrigatórios");
       return;
     }
     setEnviando(true);
@@ -55,7 +56,7 @@ export default function Documentos() {
       setForm({ confidencialidade: "normal" });
       load();
     } catch (e: any) {
-      alert(e.response?.data?.detail || "Erro no upload");
+      toast.error(e.response?.data?.detail || "Erro no upload");
     } finally {
       setEnviando(false);
     }

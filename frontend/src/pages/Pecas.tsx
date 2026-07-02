@@ -1,4 +1,5 @@
 import { useEffect, useState } from "react";
+import { toast } from "../components/Toast";
 import Markdown from "../components/Markdown";
 import {
   Plus,
@@ -81,7 +82,7 @@ export default function Pecas() {
       );
       load();
     } catch (e: any) {
-      alert(e.response?.data?.detail || "Falha na validação jurídica");
+      toast.error(e.response?.data?.detail || "Falha na validação jurídica");
     } finally {
       setAuditando(false);
     }
@@ -97,7 +98,7 @@ export default function Pecas() {
 
   const salvar = async () => {
     if (!form.titulo || !form.conteudo) {
-      alert("Título e conteúdo obrigatórios");
+      toast.error("Título e conteúdo obrigatórios");
       return;
     }
     setSalvando(true);
@@ -107,7 +108,7 @@ export default function Pecas() {
       setForm({ tipo_peca: "peticao_inicial", ai_generated: false });
       load();
     } catch (e: any) {
-      alert(e.response?.data?.detail || "Erro");
+      toast.error(e.response?.data?.detail || "Erro");
     } finally {
       setSalvando(false);
     }
@@ -142,7 +143,7 @@ export default function Pecas() {
       setAprovacao(null);
       load();
     } catch (e: any) {
-      alert(e.response?.data?.detail || "Falha ao aprovar peça");
+      toast.error(e.response?.data?.detail || "Falha ao aprovar peça");
     } finally {
       setAprovando(false);
     }
@@ -153,7 +154,7 @@ export default function Pecas() {
       await api.patch(`/legal-docs/${doc.id}`, { status });
       load();
     } catch (e: any) {
-      alert(e.response?.data?.detail || "Erro");
+      toast.error(e.response?.data?.detail || "Erro");
     }
   };
 
@@ -169,7 +170,7 @@ export default function Pecas() {
 
   const gerarDeTemplate = async () => {
     if (!tplSel || !casoSel) {
-      alert("Escolha template e caso");
+      toast.error("Escolha template e caso");
       return;
     }
     await api.post(`/templates/${tplSel}/gerar`, { case_id: casoSel });
@@ -198,7 +199,7 @@ export default function Pecas() {
       const validadas = data.citacoes_validadas?.length ? data.citacoes_validadas.join("\n") : "Nenhuma citação validada detectada.";
       setAuditoria(`CHECK DE JURISPRUDENCIA\nStatus: ${data.apto ? "APTA" : "BLOQUEADA"}\n\nProblemas:\n${problemas}\n\nValidadas:\n${validadas}\n\nRegra: ${data.regra}`);
     } catch (e: any) {
-      alert(e.response?.data?.detail?.mensagem || e.response?.data?.detail || "Falha na checagem de jurisprudencia");
+      toast.error(e.response?.data?.detail?.mensagem || e.response?.data?.detail || "Falha na checagem de jurisprudencia");
     } finally {
       setAuditando(false);
     }
@@ -215,7 +216,7 @@ export default function Pecas() {
       });
       setAuditoria(data.resposta + "\n\n" + data.aviso);
     } catch (e: any) {
-      alert(e.response?.data?.detail || "IA indisponível");
+      toast.error(e.response?.data?.detail || "IA indisponível");
     } finally {
       setAuditando(false);
     }

@@ -72,6 +72,22 @@ _RAG_MIN_SIM = 0.55
 _RAG_MAX_DIST = 1.0 - _RAG_MIN_SIM
 
 
+async def _escopo_cliente_do_caso(db: AsyncSession, case_id: str | None) -> str | None:
+    """Escopo de isolamento do RAG (Bloco 5): retorna o client_id do caso, para
+    que o conteúdo RESTRITO (peças/precedentes internos) do PRÓPRIO cliente seja
+    recuperável — e só o dele. Sem caso (case_id None) ou caso inexistente,
+    retorna None: o RAG mantém o comportamento fail-closed (nenhum conteúdo
+    restrito é recuperado). Nunca deriva o client_id de outro cliente — a chave
+    é sempre o client_id do próprio caso em contexto."""
+    if not case_id:
+        return None
+    row = (await db.execute(
+        text("SELECT client_id FROM cases WHERE id = :cid AND deleted_at IS NULL"),
+        {"cid": case_id},
+    )).first()
+    return row[0] if row else None
+
+
 async def _fundir_lexical(db, consulta, semanticos, limite, categorias, scope_client_id=None):
     """Busca híbrida: funde ranking SEMÂNTICO (pgvector) + LEXICAL (pg_trgm) via
     Reciprocal Rank Fusion (RRF). Aditivo — se a parte lexical falhar, devolve o
@@ -328,19 +344,26 @@ async def analisar_caso(
                     "Remova CPF/CNPJ/nº processo do texto e tente novamente."
         }
 
+    # Escopo de isolamento por cliente (Bloco 5): restrito ao client_id do caso.
+    # None quando não há caso → RAG fail-closed (sem conteúdo restrito).
+    escopo_cli = await _escopo_cliente_do_caso(db, case_id)
+
     # 2. RAG — recuperar contexto da base
     fontes = await buscar_contexto_rag(
         db, texto_limpo, limite=6,
         categorias=None,  # busca em todas; filtrar por área em fase 2
+        scope_client_id=escopo_cli,
     )
     contexto = _formatar_fontes(fontes)
 
     # 2.a PRECEDENTES INTERNOS — casos já encerrados do próprio escritório.
     # Busca dedicada para garantir que a experiência acumulada da firma apareça,
-    # mesmo que as fontes legais dominem o ranking textual.
+    # mesmo que as fontes legais dominem o ranking textual. Restrita ao próprio
+    # cliente via escopo — precedente de um cliente NUNCA aparece p/ outro.
     precedentes = await buscar_contexto_rag(
         db, texto_limpo, limite=3, categorias=["precedente_interno"],
         modo_or=True,   # relevância parcial é útil: poucos precedentes, vocabulário variado
+        scope_client_id=escopo_cli,
     )
     contexto_precedentes = ""
     if precedentes:

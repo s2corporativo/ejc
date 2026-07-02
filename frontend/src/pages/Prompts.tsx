@@ -1,4 +1,5 @@
 import { useEffect, useState } from "react";
+import { toast } from "../components/Toast";
 import Markdown from "../components/Markdown";
 import { Sparkles, Trash2, Plus, Play } from "lucide-react";
 import api from "../lib/api";
@@ -46,7 +47,7 @@ export default function Prompts() {
   const criar = async (e: React.FormEvent) => {
     e.preventDefault();
     if (f.titulo.trim().length < 3 || f.conteudo.trim().length < 20) {
-      alert("Título (3+) e conteúdo (20+) obrigatórios.");
+      toast.error("Título (3+) e conteúdo (20+) obrigatórios.");
       return;
     }
     setSaving(true);
@@ -60,7 +61,7 @@ export default function Prompts() {
       setLoading(true);
       load();
     } catch (err: any) {
-      alert(err.response?.data?.detail || "Falha ao criar");
+      toast.error(err.response?.data?.detail || "Falha ao criar");
     } finally {
       setSaving(false);
     }

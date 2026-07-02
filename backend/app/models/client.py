@@ -1,6 +1,6 @@
 # ── app/models/client.py ─────────────────────────────────────────────────────
 from __future__ import annotations
-from sqlalchemy import Column, String, DateTime, Enum as SAEnum, func, Text
+from sqlalchemy import Column, String, DateTime, Enum as SAEnum, func, Text, ForeignKey
 from sqlalchemy.orm import relationship
 from app.core.database import Base
 import enum
@@ -62,7 +62,10 @@ class Client(Base):
     origem         = Column(SAEnum(ClientOrigem), nullable=True)
     status         = Column(SAEnum(ClientStatus), nullable=False, default=ClientStatus.ativo)
     observacoes    = Column(Text, nullable=True)
-    responsavel_id = Column(String(36), nullable=True)    # FK users (sem FK constraint — flexibilidade)
+    # A FK para users.id EXISTE no banco desde a migration 001 (linha 85). O model
+    # não a declarava — drift model↔banco (achado M9, Etapa 3). Declarar aqui apenas
+    # informa o SQLAlchemy da constraint já existente; não gera DDL nem migração.
+    responsavel_id = Column(String(36), ForeignKey("users.id"), nullable=True)
 
     created_at     = Column(DateTime(timezone=True), server_default=func.now())
     updated_at     = Column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now())

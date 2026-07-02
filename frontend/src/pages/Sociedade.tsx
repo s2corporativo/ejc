@@ -1,4 +1,5 @@
 import { useEffect, useState, useCallback } from "react";
+import { toast } from "../components/Toast";
 import {
   Building2,
   Plus,
@@ -134,7 +135,7 @@ export default function Sociedade() {
     e.preventDefault();
     const pct = parseFloat(novoSocio.pct);
     if (!novoSocio.user_id || !(pct > 0 && pct <= 100)) {
-      alert("Selecione o sócio e percentual válido.");
+      toast.error("Selecione o sócio e percentual válido.");
       return;
     }
     try {
@@ -148,7 +149,7 @@ export default function Sociedade() {
       setShowFormSocio(false);
       load();
     } catch (err: any) {
-      alert(err.response?.data?.detail || "Falha ao cadastrar sócio");
+      toast.error(err.response?.data?.detail || "Falha ao cadastrar sócio");
     }
   };
 
@@ -156,7 +157,7 @@ export default function Sociedade() {
     e.preventDefault();
     const v = parseFloat(novaDist.valor_total);
     if (!(v > 0) || !novaDist.mes_referencia) {
-      alert("Informe mês e valor.");
+      toast.error("Informe mês e valor.");
       return;
     }
     try {
@@ -168,7 +169,7 @@ export default function Sociedade() {
       setShowFormDist(false);
       load();
     } catch (err: any) {
-      alert(err.response?.data?.detail || "Falha ao registrar distribuição");
+      toast.error(err.response?.data?.detail || "Falha ao registrar distribuição");
     }
   };
 
@@ -176,7 +177,7 @@ export default function Sociedade() {
     e.preventDefault();
     const gross = parseFloat(novoSaque.gross_value);
     if (!(gross > 0)) {
-      alert("Informe o valor bruto.");
+      toast.error("Informe o valor bruto.");
       return;
     }
     try {
@@ -195,7 +196,7 @@ export default function Sociedade() {
       setShowFormSaque(false);
       load();
     } catch (err: any) {
-      alert(err.response?.data?.detail || "Falha ao registrar saque");
+      toast.error(err.response?.data?.detail || "Falha ao registrar saque");
     }
   };
 
@@ -207,7 +208,7 @@ export default function Sociedade() {
       await api.patch(`/v1/partner-withdrawals/${id}/${action}`);
       load();
     } catch (err: any) {
-      alert(err.response?.data?.detail || "Falha");
+      toast.error(err.response?.data?.detail || "Falha");
     }
   };
 

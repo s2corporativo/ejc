@@ -56,3 +56,48 @@ async def test_consulta_aplica_escopo():
     assert "restr_cats" in db.params
     # Fail-closed: sem escopo, scope_cli é string vazia (nunca casa um UUID).
     assert db.params["scope_cli"] == ""
+
+
+# ── Bloco 5 — isolamento por cliente aplicado nas chamadas ────────────────────
+
+class _ResultCaso:
+    def __init__(self, row):
+        self._row = row
+
+    def first(self):
+        return self._row
+
+
+class _DBCaso:
+    """Fake DB que devolve o client_id de um caso (ou None se inexistente)."""
+    def __init__(self, client_id):
+        self._cid = client_id
+
+    async def execute(self, sql, params=None):
+        return _ResultCaso((self._cid,) if self._cid is not None else None)
+
+
+async def test_escopo_sem_caso_e_fail_closed():
+    """Sem case_id, o escopo é None → RAG mantém fail-closed (nada restrito)."""
+    from app.services.ai_service import _escopo_cliente_do_caso
+    assert await _escopo_cliente_do_caso(_DBCaso("qualquer"), None) is None
+
+
+async def test_escopo_deriva_client_id_do_caso():
+    """Com case_id, o escopo é EXATAMENTE o client_id daquele caso."""
+    from app.services.ai_service import _escopo_cliente_do_caso
+    assert await _escopo_cliente_do_caso(_DBCaso("cliente-A"), "caso-1") == "cliente-A"
+
+
+async def test_escopo_caso_inexistente_e_fail_closed():
+    """Caso inexistente/deletado → None (não vaza para escopo vazio de outro)."""
+    from app.services.ai_service import _escopo_cliente_do_caso
+    assert await _escopo_cliente_do_caso(_DBCaso(None), "caso-fantasma") is None
+
+
+async def test_escopo_nao_vazio_propaga_ao_param_sql():
+    """Prova a ponta final do elo: um escopo de cliente chega ao scope_cli do SQL
+    (com o filtro já validado, isolamento = filtro correto + client_id correto)."""
+    db = _CaptureDB()
+    await buscar_contexto_rag(db, "consulta", limite=3, scope_client_id="cliente-A")
+    assert db.params["scope_cli"] == "cliente-A"

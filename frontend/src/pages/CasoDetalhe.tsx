@@ -8,6 +8,8 @@ import {
   RefreshCw,
   ShieldCheck,
   Copy,
+  Archive,
+  ArchiveRestore,
 } from "lucide-react";
 import api from "../lib/api";
 import ExplicarMov from "../components/ExplicarMov";
@@ -298,6 +300,9 @@ function TabResumo({ caso }: { caso: Case }) {
   const [novoMov, setNovoMov] = useState("");
   const [encModal, setEncModal] = useState(false);
   const [encLoading, setEncLoading] = useState(false);
+  const [archiveModal, setArchiveModal] = useState(false);
+  const [archiveLoading, setArchiveLoading] = useState(false);
+  const [archiveReason, setArchiveReason] = useState("");
   const [reabrindo, setReabrindo] = useState(false);
   const [enc, setEnc] = useState({
     resultado: "exito_total",
@@ -338,13 +343,34 @@ function TabResumo({ caso }: { caso: Case }) {
   const reabrir = async () => {
     setReabrindo(true);
     try {
-      await api.patch(`/cases/${caso.id}`, { status: "ativo" });
-      toast.success("Caso reaberto.");
+      if (caso.status === "arquivado") {
+        await api.post(`/cases/${caso.id}/desarquivar`);
+        toast.success("Caso desarquivado.");
+      } else {
+        await api.patch(`/cases/${caso.id}`, { status: "ativo" });
+        toast.success("Caso reaberto.");
+      }
       window.location.reload();
     } catch (e: any) {
       toast.error(e.response?.data?.detail || "Falha ao reabrir caso");
     } finally {
       setReabrindo(false);
+    }
+  };
+
+  const arquivarCaso = async () => {
+    setArchiveLoading(true);
+    try {
+      await api.post(`/cases/${caso.id}/arquivar`, {
+        motivo: archiveReason || undefined,
+      });
+      setArchiveModal(false);
+      toast.success("Caso arquivado com histórico preservado.");
+      window.location.reload();
+    } catch (e: any) {
+      toast.error(e.response?.data?.detail || "Falha ao arquivar caso");
+    } finally {
+      setArchiveLoading(false);
     }
   };
 
@@ -468,11 +494,22 @@ function TabResumo({ caso }: { caso: Case }) {
             disabled={reabrindo}
             className="btn-secondary flex items-center gap-1 whitespace-nowrap border-amber-300 text-amber-800"
           >
-            <RefreshCw
-              size={14}
-              className={reabrindo ? "animate-spin" : ""}
-            />
-            {reabrindo ? "Reabrindo..." : "Reabrir caso"}
+            {caso.status === "arquivado" ? (
+              <ArchiveRestore
+                size={14}
+                className={reabrindo ? "animate-spin" : ""}
+              />
+            ) : (
+              <RefreshCw
+                size={14}
+                className={reabrindo ? "animate-spin" : ""}
+              />
+            )}
+            {reabrindo
+              ? "Reabrindo..."
+              : caso.status === "arquivado"
+                ? "Desarquivar caso"
+                : "Reabrir caso"}
           </button>
         </div>
       )}
@@ -516,6 +553,14 @@ function TabResumo({ caso }: { caso: Case }) {
             ✓ Encerrar caso
           </button>
         )}
+        {caso.status !== "arquivado" && (
+          <button
+            onClick={() => setArchiveModal(true)}
+            className="btn-secondary flex items-center gap-1"
+          >
+            <Archive size={14} /> Arquivar
+          </button>
+        )}
         <button
           onClick={() => navigate(`/casos/${caso.id}/sala-de-guerra`)}
           className="btn-secondary flex items-center gap-1"
@@ -547,6 +592,43 @@ function TabResumo({ caso }: { caso: Case }) {
           </button>
         )}
       </div>
+
+      <Modal
+        open={archiveModal}
+        onClose={() => setArchiveModal(false)}
+        title="Arquivar caso"
+      >
+        <div className="space-y-4">
+          <p className="text-sm text-slate-600">
+            O caso sairá da lista de ativos, mas o histórico, documentos,
+            prazos, financeiro e registros de IA continuam preservados.
+          </p>
+          <div>
+            <label className="label">Motivo do arquivamento</label>
+            <textarea
+              className="input min-h-[96px]"
+              value={archiveReason}
+              onChange={(e) => setArchiveReason(e.target.value)}
+              placeholder="Opcional"
+            />
+          </div>
+          <div className="flex justify-end gap-2">
+            <button
+              className="btn-secondary"
+              onClick={() => setArchiveModal(false)}
+            >
+              Cancelar
+            </button>
+            <button
+              className="btn-primary"
+              disabled={archiveLoading}
+              onClick={arquivarCaso}
+            >
+              {archiveLoading ? "Arquivando..." : "Arquivar caso"}
+            </button>
+          </div>
+        </div>
+      </Modal>
 
       <AreasCaso caso={caso} />
 
@@ -1039,7 +1121,7 @@ function TabChecklists({ caseId }: { caseId: string }) {
   const gerarIA = async () => {
     setGerando(true);
     try {
-      await api.post(`/checklists/casos/${caseId}/gerar-ia`, { gatilho });
+      await api.post(`/checklists/caso/${caseId}/gerar-ia`, { gatilho });
       toast.success("Checklist gerado por legislação (rascunho — revise).");
       carregar();
     } catch (e: any) {
@@ -1164,6 +1246,9 @@ function TabProcessos({ caseId }: { caseId: string }) {
   const [procs, setProcs] = useState<any[]>([]);
   const [showForm, setShowForm] = useState(false);
   const [saving, setSaving] = useState(false);
+  const [arquivo, setArquivo] = useState<"ativos" | "arquivados" | "todos">(
+    "ativos",
+  );
   const vazio = {
     tipo: "judicial",
     numero_cnj: "",
@@ -1193,12 +1278,12 @@ function TabProcessos({ caseId }: { caseId: string }) {
   };
   const carregar = () =>
     api
-      .get(`/cases/${caseId}/processes`)
+      .get(`/cases/${caseId}/processes`, { params: { arquivo } })
       .then((r) => setProcs(r.data?.data ?? []))
       .catch(() => {});
   useEffect(() => {
     carregar();
-  }, [caseId]);
+  }, [caseId, arquivo]);
 
   const salvar = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -1226,6 +1311,27 @@ function TabProcessos({ caseId }: { caseId: string }) {
       toast.error(err.response?.data?.detail || "Falha ao remover");
     }
   };
+  const arquivar = async (pid: string) => {
+    const motivo = prompt("Motivo do arquivamento (opcional)") || "";
+    try {
+      await api.post(`/processes/${pid}/arquivar`, {
+        motivo: motivo || undefined,
+      });
+      toast.success("Processo arquivado.");
+      carregar();
+    } catch (err: any) {
+      toast.error(err.response?.data?.detail || "Falha ao arquivar");
+    }
+  };
+  const desarquivar = async (pid: string) => {
+    try {
+      await api.post(`/processes/${pid}/desarquivar`);
+      toast.success("Processo desarquivado.");
+      carregar();
+    } catch (err: any) {
+      toast.error(err.response?.data?.detail || "Falha ao desarquivar");
+    }
+  };
 
   return (
     <div className="space-y-4">
@@ -1237,12 +1343,29 @@ function TabProcessos({ caseId }: { caseId: string }) {
             execução) — inclusive em tribunais distintos.
           </p>
         </div>
-        <button
-          onClick={() => setShowForm(!showForm)}
-          className="btn-primary text-sm"
-        >
-          + Processo
-        </button>
+        <div className="flex flex-wrap justify-end gap-2">
+          <div className="flex rounded-lg border border-slate-200 overflow-hidden bg-white">
+            {[
+              ["ativos", "Ativos"],
+              ["arquivados", "Arquivados"],
+              ["todos", "Todos"],
+            ].map(([k, label]) => (
+              <button
+                key={k}
+                onClick={() => setArquivo(k as typeof arquivo)}
+                className={`px-3 py-1.5 text-xs font-medium ${arquivo === k ? "bg-navy text-white" : "text-slate-600 hover:bg-slate-50"}`}
+              >
+                {label}
+              </button>
+            ))}
+          </div>
+          <button
+            onClick={() => setShowForm(!showForm)}
+            className="btn-primary text-sm"
+          >
+            + Processo
+          </button>
+        </div>
       </div>
 
       {showForm && (
@@ -1373,6 +1496,7 @@ function TabProcessos({ caseId }: { caseId: string }) {
                   <span className="font-medium text-sm">
                     {p.numero_cnj || "(sem número)"}
                   </span>
+                  <StatusBadge value={p.status || "ativo"} />
                   {p.instancia && (
                     <span className="text-xs text-gray-500">
                       · {p.instancia} instância
@@ -1391,12 +1515,29 @@ function TabProcessos({ caseId }: { caseId: string }) {
                   </p>
                 )}
               </div>
-              <button
-                onClick={() => remover(p.id)}
-                className="text-red-400 hover:text-red-600 text-xs"
-              >
-                Remover
-              </button>
+              <div className="flex shrink-0 flex-col items-end gap-1">
+                {p.status === "arquivado" ? (
+                  <button
+                    onClick={() => desarquivar(p.id)}
+                    className="text-blue-600 hover:text-blue-800 text-xs"
+                  >
+                    Desarquivar
+                  </button>
+                ) : (
+                  <button
+                    onClick={() => arquivar(p.id)}
+                    className="text-slate-500 hover:text-slate-800 text-xs"
+                  >
+                    Arquivar
+                  </button>
+                )}
+                <button
+                  onClick={() => remover(p.id)}
+                  className="text-red-400 hover:text-red-600 text-xs"
+                >
+                  Remover
+                </button>
+              </div>
             </div>
           </div>
         ))}
@@ -2888,7 +3029,7 @@ function IaDefensivaCaso({ caso }: { caso: Case }) {
   const carregarHistorico = async () => {
     setHistLoading(true);
     try {
-      const { data } = await api.get(`/v1/ia-defensiva/historico/${caso.id}`);
+      const { data } = await api.get(`/ia-defensiva/historico/${caso.id}`);
       setHistorico(data.data || []);
     } catch {
       setHistorico([]);
@@ -2903,7 +3044,7 @@ function IaDefensivaCaso({ caso }: { caso: Case }) {
 
   const atualizarStatus = async (logId: string, status: string) => {
     try {
-      await api.patch(`/v1/ia-defensiva/historico/${logId}/status`, { status });
+      await api.patch(`/ia-defensiva/historico/${logId}/status`, { status });
       toast.error(`Status atualizado para ${status}.`);
       await carregarHistorico();
     } catch (e: any) {
@@ -2929,7 +3070,7 @@ function IaDefensivaCaso({ caso }: { caso: Case }) {
     setLoading(true);
     setResultado(null);
     try {
-      const { data } = await api.post("/v1/ia-defensiva/analisar", {
+      const { data } = await api.post("/ia-defensiva/analisar", {
         etapa,
         peticao_inicial: peticao,
         rito,
@@ -2982,7 +3123,7 @@ function IaDefensivaCaso({ caso }: { caso: Case }) {
     const texto = resultado?.resposta || "";
     if (!texto) return;
     await navigator.clipboard.writeText(texto);
-    toast.error("Resultado copiado para a area de transferencia.");
+    toast.success("Resultado copiado para a area de transferencia.");
   };
 
   return (

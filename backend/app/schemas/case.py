@@ -84,6 +84,8 @@ class CaseResponse(BaseModel):
     kanban_column: Optional[str] = None
     linked_judicial_case_id: Optional[str] = None
     data_prescricao: Optional[datetime] = None
+    archived_at: Optional[datetime] = None
+    archive_reason: Optional[str] = None
     created_at: datetime
     
     # Sincronização

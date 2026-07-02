@@ -419,15 +419,25 @@ async def motor_teses(
 
     from app.services.sanitizer import sanitizar_pii
     from app.services.ai_gateway import chat as gw_chat
-    from app.services.ai_service import buscar_contexto_rag
+    from app.services.ai_service import buscar_contexto_rag, _escopo_cliente_do_caso
+    from app.core.ownership import verificar_acesso_caso
+
+    # Bloco 5: se o motor é invocado no contexto de um caso, exige acesso a ele
+    # (antes só checava papel) e escopa os PRECEDENTES INTERNOS ao cliente desse
+    # caso — precedente de um cliente nunca aparece para outro. Sem case_id, o
+    # escopo é None → fail-closed (nenhum precedente interno é recuperado).
+    if req.case_id:
+        await verificar_acesso_caso(db, cu, req.case_id)
+    escopo_cli = await _escopo_cliente_do_caso(db, req.case_id)
 
     texto, _ = sanitizar_pii(req.descricao_fatos, [])
     consulta = f"{req.area} {texto}"[:400]
 
+    # jurisp e doutrina são categorias PÚBLICAS — escopo não as afeta.
     jurisp = await buscar_contexto_rag(
         db, consulta, limite=6,
         categorias=["jurisprudencia", "sumula_stf", "sumula_stj", "sumula_tst"], modo_or=True)
-    internos = await buscar_contexto_rag(db, consulta, limite=4, categorias=["precedente_interno"], modo_or=True)
+    internos = await buscar_contexto_rag(db, consulta, limite=4, categorias=["precedente_interno"], modo_or=True, scope_client_id=escopo_cli)
     doutrina = await buscar_contexto_rag(db, consulta, limite=3, categorias=["doutrina"], modo_or=True)
 
     teses_venc = (await db.execute(

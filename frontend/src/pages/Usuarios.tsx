@@ -1,4 +1,5 @@
 import { useEffect, useState } from "react";
+import { toast } from "../components/Toast";
 import { Plus, UserX } from "lucide-react";
 import api from "../lib/api";
 import type { User } from "../types";
@@ -31,7 +32,7 @@ export default function Usuarios() {
 
   const salvar = async () => {
     if (!form.email || !form.password || !form.full_name) {
-      alert("Email, senha e nome obrigatórios");
+      toast.error("Email, senha e nome obrigatórios");
       return;
     }
     setSalvando(true);
@@ -41,7 +42,7 @@ export default function Usuarios() {
       setForm({ role: "advogado" });
       load();
     } catch (e: any) {
-      alert(e.response?.data?.detail || "Erro");
+      toast.error(e.response?.data?.detail || "Erro");
     } finally {
       setSalvando(false);
     }

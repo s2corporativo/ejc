@@ -1,4 +1,5 @@
 import { useEffect, useState, useRef } from "react";
+import { toast } from "../components/Toast";
 import {
   Plus,
   Search,
@@ -582,7 +583,7 @@ export default function Conhecimento() {
       await api.delete(`/rag/docs/${id}`);
       load();
     } catch {
-      alert("Erro ao remover");
+      toast.error("Erro ao remover");
     } finally {
       setRemovendo(null);
     }

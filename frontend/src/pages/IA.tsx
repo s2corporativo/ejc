@@ -76,7 +76,7 @@ export default function IA() {
   const validarRascunho = async () => {
     setLoading(true); setResp(null);
     try {
-      const { data } = await api.post("/v1/validador-juridico/validar", {
+      const { data } = await api.post("/validador-juridico/validar", {
         rascunho: rascunhoValidacao,
         tipo_documento: tipoDocumento,
         area,

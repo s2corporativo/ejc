@@ -60,6 +60,8 @@ export interface Case {
   observacoes?: string;
   tipo_acao_prescricao?: string;
   data_prescricao?: string;
+  archived_at?: string;
+  archive_reason?: string;
   created_at: string;
   case_type?: string;
   extrajudicial_type?: string;

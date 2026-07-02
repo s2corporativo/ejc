@@ -1,7 +1,7 @@
 """
 Endpoints do MÓDULO IA PROFISSIONAL do EJC (agente por tarefa).
 Tudo passa pelo ai_gateway; resultado sempre RASCUNHO (HITL/OAB). JWT obrigatório.
-Rota: /api/v1/ai/executar e /api/v1/ai/status (distinta do /api/ai existente).
+Rota: /api/ai/executar e /api/ai/status.
 """
 from __future__ import annotations
 import os

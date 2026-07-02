@@ -1,4 +1,5 @@
 import { useState, useEffect, useCallback, useMemo } from "react";
+import { toast } from "../components/Toast";
 import {
   Calendar,
   Clock,
@@ -485,7 +486,7 @@ export default function CentralAtividades() {
 
   const salvarEvento = async () => {
     if (!form.titulo?.trim() || !form.data_evento) {
-      alert("Título e data são obrigatórios");
+      toast.error("Título e data são obrigatórios");
       return;
     }
     try {
@@ -493,7 +494,7 @@ export default function CentralAtividades() {
       setModal(false);
       load();
     } catch (e: any) {
-      alert(e.response?.data?.detail || "Erro ao salvar evento");
+      toast.error(e.response?.data?.detail || "Erro ao salvar evento");
     }
   };
 

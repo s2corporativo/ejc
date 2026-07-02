@@ -12,7 +12,7 @@ on:
 
 jobs:
   backend-tests:
-    name: Backend — 73 testes (pytest)
+    name: Backend — pytest (inclui guarda de drift de schema)
     runs-on: ubuntu-latest
     defaults:
       run:
@@ -34,6 +34,59 @@ jobs:
         env:
           APP_ENV: development
         run: python -m pytest tests -q
+
+  db-validation:
+    name: Validação schema + RAG row-level (Postgres pgvector)
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: backend
+    services:
+      postgres:
+        image: pgvector/pgvector:pg16
+        env:
+          POSTGRES_USER: ejc_user
+          POSTGRES_PASSWORD: ejc_pass
+          POSTGRES_DB: ejc_db
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U ejc_user -d ejc_db"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 15
+    env:
+      # Async (app/asyncpg) e sync (alembic/psycopg2) apontam para o serviço.
+      DATABASE_URL: postgresql+asyncpg://ejc_user:ejc_pass@localhost:5432/ejc_db
+      DATABASE_URL_SYNC: postgresql://ejc_user:ejc_pass@localhost:5432/ejc_db
+      SCHEMA_CHECK_DATABASE_URL: postgresql://ejc_user:ejc_pass@localhost:5432/ejc_db
+      APP_ENV: development
+      RUN_DB_TESTS: "1"
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Instalar Python 3.11
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+          cache: pip
+          cache-dependency-path: backend/requirements.txt
+
+      - name: Instalar dependências
+        run: pip install -r requirements.txt
+
+      - name: Criar extensões (vector, pg_trgm, pgcrypto)
+        run: |
+          PGPASSWORD=ejc_pass psql -h localhost -U ejc_user -d ejc_db \
+            -c "CREATE EXTENSION IF NOT EXISTS vector;" \
+            -c "CREATE EXTENSION IF NOT EXISTS pg_trgm;" \
+            -c "CREATE EXTENSION IF NOT EXISTS pgcrypto;"
+
+      - name: Aplicar migrations (alembic upgrade head)
+        run: python -m alembic upgrade head
+
+      - name: Validação de schema (metadata × banco) + RAG isolamento row-level
+        run: python -m pytest tests/test_schema_sync.py tests/test_rag_isolation_dblevel.py -v
 
   frontend-build:
     name: Frontend — typecheck + build (tsc + vite)

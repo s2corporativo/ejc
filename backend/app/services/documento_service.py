@@ -17,6 +17,7 @@ import re
 from typing import Optional
 
 from app.services import ai_gateway, ocr_service
+from app.services.sanitizer import sanitizar_pii
 
 logger = logging.getLogger("ejc.documento_service")
 
@@ -93,9 +94,10 @@ async def extrair_e_analisar(
                     "Verifique a qualidade do arquivo.",
         }
     texto = texto[:18000]  # teto de contexto
+    texto_para_ia, houve_pii = sanitizar_pii(texto)
 
     # 2) Extração estruturada + diagnóstico (1 chamada de IA)
-    user_msg = f"DOCUMENTO:\n\n{texto}\n\n---\n{ESQUEMA}"
+    user_msg = f"DOCUMENTO:\n\n{texto_para_ia}\n\n---\n{ESQUEMA}"
     try:
         resp = await ai_gateway.chat(
             messages=[{"role": "system", "content": SYSTEM},
@@ -113,9 +115,10 @@ async def extrair_e_analisar(
         return {
             "ok": True,
             "parcial": True,
-            "texto_extraido": texto[:2000],
+            "texto_extraido": texto_para_ia[:2000],
             "resumo_executivo": {"fatos": resp.texto[:1500]},
             "_aviso": _AVISO,
+            "pii_removida": houve_pii,
         }
 
     # 3) Honorários sugeridos (tabela OAB via RAG) + jurisprudência semelhante
@@ -133,6 +136,7 @@ async def extrair_e_analisar(
     dados["_aviso"] = _AVISO
     dados["_modelo"] = f"{resp.provedor}/{resp.modelo}"
     dados["caracteres_lidos"] = len(texto)
+    dados["pii_removida"] = houve_pii
     return dados
 
 

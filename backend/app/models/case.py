@@ -93,6 +93,8 @@ class Case(Base):
     advogado_auxiliar_id    = Column(String(36), ForeignKey("users.id"), nullable=True)
 
     data_encerramento = Column(DateTime(timezone=True), nullable=True)
+    archived_at       = Column(DateTime(timezone=True), nullable=True)
+    archive_reason    = Column(Text, nullable=True)
     resultado         = Column(String(50), nullable=True)  # exito_total|exito_parcial|acordo|improcedente
     # Pós-Mortem Jurídico (ECJ): cada caso encerrado vira aprendizado institucional
     motivo_resultado     = Column(Text, nullable=True)

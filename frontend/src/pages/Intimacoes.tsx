@@ -1,4 +1,5 @@
 import { useEffect, useState } from "react";
+import { toast } from "../components/Toast";
 import { Inbox, RefreshCw, CheckCircle2, ExternalLink } from "lucide-react";
 import { useNavigate } from "react-router-dom";
 import { format } from "date-fns";
@@ -42,11 +43,11 @@ export default function Intimacoes() {
     setLoading(true);
     try {
       const { data } = await api.post("/intimacoes/capturar-agora");
-      alert(data.detail);
+      toast.success(data.detail);
       load();
       loadStatus();
     } catch (e: any) {
-      alert(e.response?.data?.detail || "Configure sua OAB no menu do avatar");
+      toast.error(e.response?.data?.detail || "Configure sua OAB no menu do avatar");
     } finally {
       setLoading(false);
     }
