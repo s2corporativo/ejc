@@ -101,6 +101,11 @@ _SEM_MODEL_INTENCIONAL = {
     "modelos_documentos", "office_contracts", "office_expenses",
     "partner_withdrawals", "portal_mensagens", "pricing_rules",
     "score_juridico", "teses_vitoriosas",
+    # Bookkeeping do próprio Alembic (criada por `alembic upgrade`, nunca por
+    # uma migration nossa) — não é dívida técnica, é infraestrutura da
+    # ferramenta. Só apareceu agora porque esta é a 1ª vez que a Camada 2
+    # (comparação com banco real) roda de fato, contra Postgres no CI.
+    "alembic_version",
 }
 
 

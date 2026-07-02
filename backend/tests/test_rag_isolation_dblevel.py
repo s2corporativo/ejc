@@ -30,6 +30,19 @@ pytestmark = pytest.mark.skipif(
 _TERMO = "usucapiaoextraordinariavintenaria"  # termo distintivo, casa ILIKE nos dois
 
 
+@pytest.fixture(autouse=True)
+async def _dispose_engine_apos_teste():
+    """pytest-asyncio (asyncio_mode=auto) cria um event loop novo POR FUNÇÃO de
+    teste, mas app.core.database.engine é um singleton global cujo pool guarda
+    conexões asyncpg presas ao loop em que foram abertas. Sem dispose explícito
+    NESTE loop, o teste seguinte roda noutro loop e o garbage collector tenta
+    fechar as conexões do teste anterior no loop errado — "Event loop is closed".
+    Descartar o pool aqui, ainda dentro do loop que o usou, evita o problema."""
+    yield
+    from app.core.database import engine
+    await engine.dispose()
+
+
 async def _inserir_precedente(db, doc_id, client_id, titulo):
     await db.execute(
         text(
