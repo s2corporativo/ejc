@@ -3,6 +3,7 @@
 from app.models.user import User, RefreshToken, UserRole
 from app.models.client import Client, ClientTipo, ClientStatus, ClientOrigem
 from app.models.case import Case, CaseMovimento, CaseArea, CaseStatus, CaseFase, CasePrioridade
+from app.models.process import Process
 from app.models.deadline import Deadline, DeadlineTipo, DeadlineStatus, DeadlinePrioridade
 from app.models.document import Document, DocConfidencialidade
 from app.models.legal_doc import LegalDoc, PecaTipo, PecaStatus
@@ -27,6 +28,7 @@ __all__ = [
     "User", "RefreshToken", "UserRole",
     "Client", "ClientTipo", "ClientStatus", "ClientOrigem",
     "Case", "CaseMovimento", "CaseArea", "CaseStatus", "CaseFase", "CasePrioridade",
+    "Process",
     "Deadline", "DeadlineTipo", "DeadlineStatus", "DeadlinePrioridade",
     "Document", "DocConfidencialidade",
     "LegalDoc", "PecaTipo", "PecaStatus",
