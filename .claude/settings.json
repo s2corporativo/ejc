@@ -1,5 +1,32 @@
 {
   "hooks": {
+    "SessionStart": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "command -v graphify >/dev/null 2>&1 || pip3 install -q graphifyy >/dev/null 2>&1 || pip3 install -q --user graphifyy >/dev/null 2>&1; command -v graphify >/dev/null 2>&1 && { [ -f graphify-out/graph.json ] || graphify update . >/dev/null 2>&1; } || true",
+            "timeout": 600,
+            "async": true,
+            "statusMessage": "Preparando graphify (instalação/grafo)..."
+          }
+        ]
+      }
+    ],
+    "PostToolUse": [
+      {
+        "matcher": "Write|Edit",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "F=$(python3 -c \"import json,sys;print(json.load(sys.stdin).get('tool_input',{}).get('file_path',''))\" 2>/dev/null); case \"$F\" in *.py|*.js|*.ts|*.tsx|*.jsx|*.go|*.rs|*.java|*.rb|*.c|*.h|*.cpp|*.cs|*.php|*.sh|*.kt|*.swift|*.vue|*.svelte) command -v graphify >/dev/null 2>&1 && graphify update . >/dev/null 2>&1 ;; esac; true",
+            "timeout": 600,
+            "async": true,
+            "statusMessage": "Atualizando grafo graphify..."
+          }
+        ]
+      }
+    ],
     "PreToolUse": [
       {
         "matcher": "Bash",
