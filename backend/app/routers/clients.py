@@ -477,3 +477,51 @@ async def dados_lgpd_json(
                           client_id, detalhes="Portabilidade LGPD art.18,V (JSON)")
     await db.commit()
     return payload
+
+
+class EsquecimentoReq(_BM):
+    motivo: Optional[str] = _Field(None, max_length=500)
+    forcar: bool = False
+
+
+@router.get("/{client_id}/esquecimento/bloqueios")
+async def verificar_bloqueios_esquecimento(
+    client_id: str,
+    db: AsyncSession = Depends(get_db),
+    cu: User = Depends(require_roles(["superadmin", "admin", "socio"])),
+):
+    """Consulta (sem executar) o que impede a anonimização deste cliente agora."""
+    from app.services.client_anonimizacao import verificar_bloqueios
+    c = (await db.execute(select(Client).where(
+        Client.id == client_id, Client.deleted_at.is_(None)
+    ))).scalar_one_or_none()
+    if not c:
+        raise HTTPException(status_code=404, detail="Cliente não encontrado")
+    bloqueios = await verificar_bloqueios(db, client_id)
+    return {
+        "client_id": client_id,
+        "ja_anonimizado": c.anonimizado_em is not None,
+        "pode_anonimizar": not bloqueios and c.anonimizado_em is None,
+        "bloqueios": bloqueios,
+    }
+
+
+@router.post("/{client_id}/esquecimento", status_code=200)
+async def solicitar_esquecimento(
+    client_id: str,
+    req: EsquecimentoReq = EsquecimentoReq(),
+    db: AsyncSession = Depends(get_db),
+    cu: User = Depends(require_roles(["superadmin", "admin", "socio"])),
+):
+    """
+    Direito ao esquecimento (LGPD art. 17). Restrito a sócio+/admin dado o
+    caráter irreversível — anonimiza PII do cliente, preservando casos/
+    financeiro por obrigação legal (art. 16, II). Bloqueado se há caso em
+    representação ativa, salvo forcar=true (fica registrado na auditoria).
+    """
+    from app.services.client_anonimizacao import anonimizar_cliente
+    resultado = await anonimizar_cliente(
+        db, client_id, cu.id, cu.role.value,
+        motivo=req.motivo, forcar=req.forcar,
+    )
+    return resultado
