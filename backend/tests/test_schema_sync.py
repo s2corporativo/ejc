@@ -104,6 +104,22 @@ _SEM_MODEL_INTENCIONAL = {
 }
 
 
+def test_autogenerate_tem_guarda_include_name():
+    """Trava a proteção do env.py (Etapa 6): sem a guarda `include_name`, um
+    `alembic revision --autogenerate` geraria drop_table para as ~30 tabelas de
+    acesso SQL cru (sem model). env.py não é importável fora do Alembic (roda
+    migrations no import), então validamos por inspeção do fonte."""
+    env = (Path(__file__).resolve().parent.parent / "alembic" / "env.py").read_text(
+        encoding="utf-8"
+    )
+    assert "def include_name(" in env, "env.py perdeu a função include_name"
+    # Precisa estar realmente conectada nos dois context.configure (online/offline).
+    assert env.count("include_name=include_name") >= 2, (
+        "include_name não está ligada nos dois context.configure — autogenerate "
+        "voltaria a poder gerar drop_table destrutivo para tabelas sem model."
+    )
+
+
 def test_toda_tabela_de_migration_tem_model_ou_allowlist():
     """Cross-check estático (sem banco): toda tabela criada em migration deve ter
     model em Base.metadata OU estar na allowlist consciente. Isto teria pego o

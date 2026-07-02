@@ -12,7 +12,7 @@ on:
 
 jobs:
   backend-tests:
-    name: Backend — 73 testes (pytest)
+    name: Backend — pytest (inclui guarda de drift de schema)
     runs-on: ubuntu-latest
     defaults:
       run:
