@@ -133,6 +133,14 @@ async def upload(
     db: AsyncSession = Depends(get_db),
     cu: User = Depends(get_current_user),
 ):
+    # Bloco 2 (Etapa 4) — fecha IDOR na ESCRITA: só cria documento em caso ao
+    # qual o usuário tem acesso. Antes, case_id vinha do form sem checagem (o
+    # gate existia só na leitura/download). Verificado antes de qualquer I/O em
+    # disco para não deixar arquivo órfão em caso de rejeição. Mesmo padrão de
+    # processes.py e do download deste módulo.
+    if case_id:
+        await verificar_acesso_caso(db, cu, case_id)
+
     # Validações
     ext = os.path.splitext(file.filename or "")[1].lower()
     if ext not in EXTENSOES_PERMITIDAS:
@@ -324,6 +332,11 @@ async def upload_para_drive(
     current_user: User = Depends(get_current_user),
 ):
     """Upload de documento direto para o Google Drive."""
+    # Bloco 2 (Etapa 4) — mesmo fecho de IDOR do /upload: exige acesso ao caso
+    # antes de subir para o Drive e gravar a referência.
+    if case_id:
+        await verificar_acesso_caso(db, current_user, case_id)
+
     content = await file.read()
     if len(content) > 50 * 1024 * 1024:
         raise HTTPException(413, "Arquivo muito grande (máx 50 MB)")
