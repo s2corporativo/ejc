@@ -85,8 +85,12 @@ jobs:
       - name: Aplicar migrations (alembic upgrade head)
         run: python -m alembic upgrade head
 
-      - name: Validação de schema (metadata × banco) + RAG isolamento row-level
-        run: python -m pytest tests/test_schema_sync.py tests/test_rag_isolation_dblevel.py -v
+      - name: Testes com banco real (schema, RAG row-level, LGPD row-level)
+        # Suíte COMPLETA com RUN_DB_TESTS=1 — não listar arquivos um a um:
+        # a lista explícita anterior fez os testes row-level de LGPD (Bloco 6)
+        # nunca rodarem no CI apesar do job verde (verde enganoso). Com a
+        # suíte inteira, qualquer *_dblevel.py novo roda automaticamente.
+        run: python -m pytest tests -v
 
   frontend-build:
     name: Frontend — typecheck + build (tsc + vite)

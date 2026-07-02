@@ -25,6 +25,19 @@ class Settings(BaseSettings):
     ACCESS_TOKEN_EXPIRE_HOURS: int = 8
     REFRESH_TOKEN_EXPIRE_DAYS: int = 7
 
+    # ── Criptografia de PII em repouso (LGPD, achado C6 / Bloco 6a) ────────
+    # Chave Fernet (32 bytes url-safe base64) para cpf/cnpj cifrados. Default
+    # vazio de propósito — mesmo padrão do SECRET_KEY: obrigatória em produção
+    # (validada abaixo), efêmera em desenvolvimento. TROCAR A CHAVE DEPOIS DE
+    # GERADA INUTILIZA todo dado já cifrado com a anterior — nunca regenerar
+    # em produção sem plano de re-criptografia.
+    PII_ENCRYPTION_KEY: str = ""
+    # Chave HMAC para o índice cego (hash determinístico de cpf/cnpj — permite
+    # busca exata/dedup/conflito de interesses sem expor o valor em texto
+    # puro). Pode ser a mesma PII_ENCRYPTION_KEY, mas mantida separada por
+    # higiene de chaves (rotacionar uma não invalida a outra).
+    PII_HASH_KEY: str = ""
+
     # ── Banco de dados (asyncpg) ──────────────────────────────────────────
     DATABASE_URL: str = "postgresql+asyncpg://ejc_user:ejc_pass@db:5432/ejc_db"
     # Versão sync para Alembic (mesmo host, driver diferente)
@@ -146,9 +159,23 @@ class Settings(BaseSettings):
                 )
             if "SEU_DOMINIO" in getattr(self, 'FRONTEND_URL', ''):
                 raise ValueError("FRONTEND_URL não configurada para produção.")
+            # PII_ENCRYPTION_KEY/PII_HASH_KEY: NÃO geradas em produção mesmo se
+            # ausentes — ao contrário do SECRET_KEY, uma chave efêmera aqui
+            # corromperia dados cifrados silenciosamente a cada restart (perde
+            # a chave, perde o dado). services/pii_crypto.py falha alto na
+            # primeira tentativa real de cifrar/decifrar sem a chave definida.
+            # Não travamos o BOOT do app para não quebrar produção que ainda
+            # não migrou para o Bloco 6a (feature é opt-in até o backfill).
         elif not self.SECRET_KEY:
             # Desenvolvimento: gera chave efêmera para não travar o ambiente local.
             self.SECRET_KEY = secrets.token_urlsafe(64)
+        if self.APP_ENV != "production" and (not self.PII_ENCRYPTION_KEY or not self.PII_HASH_KEY):
+            # Só em desenvolvimento: chave efêmera para não travar o ambiente local.
+            from cryptography.fernet import Fernet
+            if not self.PII_ENCRYPTION_KEY:
+                self.PII_ENCRYPTION_KEY = Fernet.generate_key().decode()
+            if not self.PII_HASH_KEY:
+                self.PII_HASH_KEY = secrets.token_urlsafe(32)
         return self
 
     model_config = SettingsConfigDict(

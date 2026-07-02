@@ -71,6 +71,7 @@ async def resolver_cliente(
         raise HTTPException(status_code=422, detail="Sem dados para identificar o cliente")
 
     tipo = ClientTipo.PJ if cnpj else ClientTipo.PF
+    from app.services.pii_crypto import encrypt as _pii_encrypt, hash_documento as _pii_hash
     novo = Client(
         id=str(uuid4()),
         tipo=tipo,
@@ -78,6 +79,12 @@ async def resolver_cliente(
         razao_social=nome if tipo == ClientTipo.PJ else None,
         cpf=cpf if tipo == ClientTipo.PF else None,
         cnpj=cnpj if tipo == ClientTipo.PJ else None,
+        # Bloco 6a (LGPD): dual-write, mesma lógica de criar(). cpf/cnpj aqui
+        # já chegam normalizados (regex \D acima).
+        cpf_enc=_pii_encrypt(cpf) if tipo == ClientTipo.PF else None,
+        cnpj_enc=_pii_encrypt(cnpj) if tipo == ClientTipo.PJ else None,
+        cpf_hash=_pii_hash(cpf) if tipo == ClientTipo.PF else None,
+        cnpj_hash=_pii_hash(cnpj) if tipo == ClientTipo.PJ else None,
         status=ClientStatus.ativo,
         origem=ClientOrigem.escritorio,
         responsavel_id=cu.id,
@@ -199,6 +206,17 @@ async def criar(
         id=str(uuid4()), responsavel_id=cu.id,
         **payload.model_dump(),
     )
+    # Bloco 6a (LGPD): dual-write — popula cpf_enc/cnpj_enc/cpf_hash/cnpj_hash
+    # em PARALELO ao cpf/cnpj em texto puro (que segue sendo o valor lido pelo
+    # resto do sistema nesta fase de transição). Backfill dos clientes já
+    # existentes é manual e separado, nunca automático.
+    from app.services.pii_crypto import normalizar_documento, encrypt as _pii_encrypt, hash_documento as _pii_hash
+    cpf_norm = normalizar_documento(c.cpf)
+    cnpj_norm = normalizar_documento(c.cnpj)
+    c.cpf_enc = _pii_encrypt(cpf_norm)
+    c.cnpj_enc = _pii_encrypt(cnpj_norm)
+    c.cpf_hash = _pii_hash(cpf_norm)
+    c.cnpj_hash = _pii_hash(cnpj_norm)
     db.add(c)
     await criar_audit_log(db, cu.id, cu.role.value, "CREATE", "clients", c.id)
     if conflito["classificacao"] != "SEM_CONFLITO":
@@ -477,3 +495,51 @@ async def dados_lgpd_json(
                           client_id, detalhes="Portabilidade LGPD art.18,V (JSON)")
     await db.commit()
     return payload
+
+
+class EsquecimentoReq(_BM):
+    motivo: Optional[str] = _Field(None, max_length=500)
+    forcar: bool = False
+
+
+@router.get("/{client_id}/esquecimento/bloqueios")
+async def verificar_bloqueios_esquecimento(
+    client_id: str,
+    db: AsyncSession = Depends(get_db),
+    cu: User = Depends(require_roles(["superadmin", "admin", "socio"])),
+):
+    """Consulta (sem executar) o que impede a anonimização deste cliente agora."""
+    from app.services.client_anonimizacao import verificar_bloqueios
+    c = (await db.execute(select(Client).where(
+        Client.id == client_id, Client.deleted_at.is_(None)
+    ))).scalar_one_or_none()
+    if not c:
+        raise HTTPException(status_code=404, detail="Cliente não encontrado")
+    bloqueios = await verificar_bloqueios(db, client_id)
+    return {
+        "client_id": client_id,
+        "ja_anonimizado": c.anonimizado_em is not None,
+        "pode_anonimizar": not bloqueios and c.anonimizado_em is None,
+        "bloqueios": bloqueios,
+    }
+
+
+@router.post("/{client_id}/esquecimento", status_code=200)
+async def solicitar_esquecimento(
+    client_id: str,
+    req: EsquecimentoReq = EsquecimentoReq(),
+    db: AsyncSession = Depends(get_db),
+    cu: User = Depends(require_roles(["superadmin", "admin", "socio"])),
+):
+    """
+    Direito ao esquecimento (LGPD art. 17). Restrito a sócio+/admin dado o
+    caráter irreversível — anonimiza PII do cliente, preservando casos/
+    financeiro por obrigação legal (art. 16, II). Bloqueado se há caso em
+    representação ativa, salvo forcar=true (fica registrado na auditoria).
+    """
+    from app.services.client_anonimizacao import anonimizar_cliente
+    resultado = await anonimizar_cliente(
+        db, client_id, cu.id, cu.role.value,
+        motivo=req.motivo, forcar=req.forcar,
+    )
+    return resultado

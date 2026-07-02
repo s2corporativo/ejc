@@ -35,14 +35,24 @@ class Client(Base):
 
     # Campos PF
     nome           = Column(String(255), nullable=True, index=True)
-    cpf            = Column(String(14),  nullable=True, unique=True, index=True)
+    cpf            = Column(String(14),  nullable=True, unique=True, index=True)  # texto puro — legado, ver Bloco 6a
     data_nascimento = Column(String(10), nullable=True)   # YYYY-MM-DD
     profissao      = Column(String(100), nullable=True)
 
     # Campos PJ
     razao_social   = Column(String(255), nullable=True)
-    cnpj           = Column(String(18),  nullable=True, unique=True, index=True)
+    cnpj           = Column(String(18),  nullable=True, unique=True, index=True)  # texto puro — legado, ver Bloco 6a
     nome_fantasia  = Column(String(255), nullable=True)
+
+    # Criptografia de PII em repouso (LGPD, achado C6 / migration 061). Fase de
+    # transição: cpf/cnpj acima seguem em texto puro para não quebrar leitura
+    # existente; os campos abaixo são preenchidos em PARALELO a partir de
+    # agora (dual-write) nos cadastros novos. Backfill dos já existentes é
+    # manual e separado (scripts/backfill_pii_encryption.py) — nunca automático.
+    cpf_enc        = Column(Text, nullable=True)   # ciphertext Fernet, não indexável
+    cnpj_enc       = Column(Text, nullable=True)
+    cpf_hash       = Column(String(64), nullable=True, index=True)   # HMAC-SHA256 — busca exata/dedup
+    cnpj_hash      = Column(String(64), nullable=True, index=True)
 
     # Contato (PF e PJ)
     email          = Column(String(255), nullable=True)
@@ -70,6 +80,11 @@ class Client(Base):
     created_at     = Column(DateTime(timezone=True), server_default=func.now())
     updated_at     = Column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now())
     deleted_at     = Column(DateTime(timezone=True), nullable=True)
+    # Direito ao esquecimento (LGPD art. 17, migration 060). NULL = nunca
+    # anonimizado. Preenchido = quando os campos de PII foram substituídos por
+    # placeholders (ver services/client_anonimizacao.py). Registro não some —
+    # relacionamentos (casos, financeiro) são preservados por obrigação legal.
+    anonimizado_em = Column(DateTime(timezone=True), nullable=True)
 
     # Relacionamentos
     cases     = relationship("Case",      back_populates="client")
