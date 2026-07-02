@@ -71,6 +71,7 @@ async def resolver_cliente(
         raise HTTPException(status_code=422, detail="Sem dados para identificar o cliente")
 
     tipo = ClientTipo.PJ if cnpj else ClientTipo.PF
+    from app.services.pii_crypto import encrypt as _pii_encrypt, hash_documento as _pii_hash
     novo = Client(
         id=str(uuid4()),
         tipo=tipo,
@@ -78,6 +79,12 @@ async def resolver_cliente(
         razao_social=nome if tipo == ClientTipo.PJ else None,
         cpf=cpf if tipo == ClientTipo.PF else None,
         cnpj=cnpj if tipo == ClientTipo.PJ else None,
+        # Bloco 6a (LGPD): dual-write, mesma lógica de criar(). cpf/cnpj aqui
+        # já chegam normalizados (regex \D acima).
+        cpf_enc=_pii_encrypt(cpf) if tipo == ClientTipo.PF else None,
+        cnpj_enc=_pii_encrypt(cnpj) if tipo == ClientTipo.PJ else None,
+        cpf_hash=_pii_hash(cpf) if tipo == ClientTipo.PF else None,
+        cnpj_hash=_pii_hash(cnpj) if tipo == ClientTipo.PJ else None,
         status=ClientStatus.ativo,
         origem=ClientOrigem.escritorio,
         responsavel_id=cu.id,
@@ -199,6 +206,17 @@ async def criar(
         id=str(uuid4()), responsavel_id=cu.id,
         **payload.model_dump(),
     )
+    # Bloco 6a (LGPD): dual-write — popula cpf_enc/cnpj_enc/cpf_hash/cnpj_hash
+    # em PARALELO ao cpf/cnpj em texto puro (que segue sendo o valor lido pelo
+    # resto do sistema nesta fase de transição). Backfill dos clientes já
+    # existentes é manual e separado, nunca automático.
+    from app.services.pii_crypto import normalizar_documento, encrypt as _pii_encrypt, hash_documento as _pii_hash
+    cpf_norm = normalizar_documento(c.cpf)
+    cnpj_norm = normalizar_documento(c.cnpj)
+    c.cpf_enc = _pii_encrypt(cpf_norm)
+    c.cnpj_enc = _pii_encrypt(cnpj_norm)
+    c.cpf_hash = _pii_hash(cpf_norm)
+    c.cnpj_hash = _pii_hash(cnpj_norm)
     db.add(c)
     await criar_audit_log(db, cu.id, cu.role.value, "CREATE", "clients", c.id)
     if conflito["classificacao"] != "SEM_CONFLITO":

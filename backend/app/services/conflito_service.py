@@ -28,12 +28,25 @@ async def detectar_conflito(
     """
     achados: list[dict] = []
 
-    # 1. Mesmo nome/documento já é cliente existente
+    # 1. Mesmo nome/documento já é cliente existente.
+    # Bloco 6a (LGPD): casa tanto pelo texto puro (clientes ainda não
+    # migrados) quanto pelo hash determinístico (clientes já com PII
+    # cifrada) — nenhum dos dois lados sozinho cobre os dois estados de
+    # transição. Verificação ética (EOAB) não pode ter falso-negativo aqui.
+    from app.services.pii_crypto import normalizar_documento, hash_documento
+    cpf_norm = normalizar_documento(cpf)
+    cnpj_norm = normalizar_documento(cnpj)
+    cpf_hash = hash_documento(cpf_norm) if cpf_norm else None
+    cnpj_hash = hash_documento(cnpj_norm) if cnpj_norm else None
     conds = []
     if cpf:
         conds.append(Client.cpf == cpf)
+    if cpf_hash:
+        conds.append(Client.cpf_hash == cpf_hash)
     if cnpj:
         conds.append(Client.cnpj == cnpj)
+    if cnpj_hash:
+        conds.append(Client.cnpj_hash == cnpj_hash)
     if nome and len(nome) >= 4:
         conds.append(Client.nome.ilike(f"%{nome}%"))
         conds.append(Client.razao_social.ilike(f"%{nome}%"))

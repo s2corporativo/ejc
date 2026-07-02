@@ -85,6 +85,12 @@ async def anonimizar_cliente(
     cliente.nome_fantasia = None
     cliente.cpf = None
     cliente.cnpj = None
+    # Bloco 6a: limpa também os campos cifrados/hash — senão a anonimização
+    # ficaria incompleta (cpf_enc ainda decifrável, cpf_hash ainda comparável).
+    cliente.cpf_enc = None
+    cliente.cnpj_enc = None
+    cliente.cpf_hash = None
+    cliente.cnpj_hash = None
     cliente.data_nascimento = None
     cliente.profissao = None
     cliente.email = None
