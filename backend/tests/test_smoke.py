@@ -22,7 +22,7 @@ def test_alembic_cadeia_integra():
 
     script = ScriptDirectory.from_config(Config("alembic.ini"))
     # Head único da cadeia atual.
-    assert script.get_heads() == ["061_client_pii_encriptado"]
+    assert script.get_heads() == ["064_drive_columns"]
     # walk_revisions percorre head→base; lança se houver down_revision ausente.
     revs = [r.revision for r in script.walk_revisions()]
     assert revs[-1] == "001_inicial"
@@ -31,3 +31,6 @@ def test_alembic_cadeia_integra():
     assert "059_archiving_cases_processes" in revs
     assert "060_client_anonimizacao" in revs
     assert "061_client_pii_encriptado" in revs
+    assert "062_redesign_tables" in revs
+    assert "063_workflow_sla_atrasado" in revs
+    assert "064_drive_columns" in revs
