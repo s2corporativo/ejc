@@ -145,15 +145,13 @@ async def extrair_e_analisar(
     texto_para_ia, houve_pii = sanitizar_pii(texto)
 
     # 2) Extração estruturada + diagnóstico (1 chamada de IA)
-    # LGPD: o texto do documento vai BRUTO para a IA (com PII) — a extração
-    # PRECISA do CPF/nome para extraí-los; sanitizar antes (como uma frente
-    # paralela tentou) destruiria a própria função de extração. Por isso a
-    # chamada é FIXADA no modelo LOCAL (Ollama), SEM fallback para o Groq
-    # (nuvem/EUA): provider_override="ollama" resolve a cadeia só-local.
-    # Se o Ollama estiver indisponível, falha fechado (não vaza p/ Groq).
-    # `texto_para_ia`/`houve_pii` (sanitizar_pii) seguem calculados acima só
-    # como metadado informativo (campo pii_removida da resposta).
-    user_msg = f"DOCUMENTO:\n\n{texto}\n\n---\n{ESQUEMA}"
+    # LGPD (Fase 3B): a PII do documento NÃO pode sair para o LLM. O prompt é
+    # montado a partir de `texto_para_ia` (já passou por sanitizar_pii), com
+    # CPF/CNPJ/nº de processo/e-mail/etc. substituídos por marcadores ([CPF],
+    # [PROCESSO], ...). A chamada permanece FIXADA no modelo LOCAL (Ollama),
+    # SEM fallback para o Groq (nuvem/EUA): provider_override="ollama" resolve
+    # a cadeia só-local e falha fechado se o Ollama estiver indisponível.
+    user_msg = f"DOCUMENTO:\n\n{texto_para_ia}\n\n---\n{ESQUEMA}"
     try:
         resp = await ai_gateway.chat(
             messages=[{"role": "system", "content": SYSTEM},
@@ -184,7 +182,11 @@ async def extrair_e_analisar(
 
     # 2.b) R4 — verificação de origem dos campos v2 (anti-alucinação).
     # Retrocompatível: "campos_v2" é chave PARALELA; o formato antigo permanece.
-    dados["campos_v2"] = _verificar_origens_v2(dados.get("campos_v2"), texto)
+    # LGPD (Fase 3B): a IA só viu `texto_para_ia` (sanitizado), então os
+    # trecho_origem que ela cita contêm marcadores ([CPF], [PROCESSO], ...).
+    # Verificamos a origem contra o texto sanitizado para preservar a
+    # rastreabilidade R4 sem reexpor PII crua.
+    dados["campos_v2"] = _verificar_origens_v2(dados.get("campos_v2"), texto_para_ia)
 
     # 3) Honorários sugeridos (tabela OAB via RAG) + jurisprudência semelhante
     if enriquecer_rag and db is not None:
@@ -193,7 +195,9 @@ async def extrair_e_analisar(
         except Exception as e:
             logger.warning(f"Honorários RAG falhou: {e}")
         try:
-            dados["referencias_internas"] = await _buscar_referencias(db, dados, texto)
+            # LGPD (Fase 3B): a consulta de embeddings do RAG usa APENAS o
+            # texto sanitizado — PII crua nunca alimenta o vetor de busca.
+            dados["referencias_internas"] = await _buscar_referencias(db, dados, texto_para_ia)
         except Exception as e:
             logger.warning(f"Referências RAG falhou: {e}")
 
@@ -350,11 +354,16 @@ async def sugerir_tipo(
     }
 
 
-async def _buscar_referencias(db, dados: dict, texto: str) -> list:
-    """Busca jurisprudência/precedentes internos semelhantes (RAG semântico)."""
+async def _buscar_referencias(db, dados: dict, texto_para_ia: str) -> list:
+    """Busca jurisprudência/precedentes internos semelhantes (RAG semântico).
+
+    LGPD (Fase 3B): `texto_para_ia` já passou por sanitizar_pii. Nenhum caminho
+    desta função pode receber texto cru — a consulta de embeddings jamais deve
+    conter PII (CPF/CNPJ/nº de processo/e-mail/...).
+    """
     from app.services.ai_service import buscar_contexto_rag
     area = (dados.get("classificacao") or {}).get("area") or ""
-    fatos = (dados.get("resumo_executivo") or {}).get("fatos") or texto[:400]
+    fatos = (dados.get("resumo_executivo") or {}).get("fatos") or texto_para_ia[:400]
     consulta = f"{area} {fatos}"[:500]
     ctx = await buscar_contexto_rag(db, consulta, limite=5, modo_or=True)
     return [
