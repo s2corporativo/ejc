@@ -67,9 +67,9 @@ const ICONES: Record<string, any> = {
 
 // Tailwind purga classes dinâmicas; mapa estático garante que as cores existam no build
 const COR_BORDA: Record<string, string> = {
-  amber: "border-amber-500",
-  blue: "border-blue-500",
-  red: "border-red-500",
+  amber: "border-warn-500",
+  blue: "border-primary-500",
+  red: "border-danger-500",
   green: "border-green-500",
   slate: "border-slate-500",
   yellow: "border-yellow-500",
@@ -224,7 +224,7 @@ function Ferramenta({ f }: { f: FerramentaConfig }) {
       )}
 
       {erro && (
-        <div className="mt-3 p-2 rounded bg-red-50 text-red-700 text-xs">
+        <div className="mt-3 p-2 rounded bg-danger-50 text-danger-700 text-xs">
           {erro}
         </div>
       )}
@@ -297,7 +297,7 @@ function TaxasBacenView({
                 <div className="text-[10px] text-slate-400">{item.data}</div>
               </>
             ) : (
-              <div className="text-xs text-red-500">indisponível</div>
+              <div className="text-xs text-danger-500">indisponível</div>
             )}
           </div>
         ))}
@@ -471,7 +471,7 @@ function ComparadorBacen() {
     res && !isNaN(t) && media != null ? ((t - media) / media) * 100 : null;
 
   return (
-    <div className="card p-4 mb-4 border-l-4 border-blue-500">
+    <div className="card p-4 mb-4 border-l-4 border-primary-500">
       <h2 className="font-serif font-semibold text-navy mb-1">
         📈 Comparador de Juros (BACEN)
       </h2>
@@ -513,7 +513,7 @@ function ComparadorBacen() {
       >
         {loading ? "Consultando BACEN…" : "Comparar"}
       </button>
-      {erro && <p className="text-xs text-red-600 mt-2">{erro}</p>}
+      {erro && <p className="text-xs text-danger-600 mt-2">{erro}</p>}
       {res && (
         <div className="mt-3 space-y-2 text-sm">
           <p className="text-xs text-slate-500">
@@ -534,7 +534,7 @@ function ComparadorBacen() {
           </div>
           {acima !== null && (
             <div
-              className={`rounded-lg p-3 text-sm font-medium ${acima ? "bg-red-50 text-red-700" : "bg-emerald-50 text-emerald-700"}`}
+              className={`rounded-lg p-3 text-sm font-medium ${acima ? "bg-danger-50 text-danger-700" : "bg-success-50 text-success-700"}`}
             >
               Sua taxa de <b>{t.toFixed(2)}% a.m.</b> está{" "}
               <b>
@@ -545,7 +545,7 @@ function ComparadorBacen() {
                 " — possível indício de abusividade (verificar caso a caso)."}
             </div>
           )}
-          <p className="text-[11px] text-amber-700">
+          <p className="text-[11px] text-warn-700">
             ⚠ Indicador de apoio. A média do BACEN não define abusividade
             automaticamente — análise do advogado é necessária.
           </p>
@@ -595,9 +595,9 @@ function AnaliseBancaria({ area, casos }: { area: string; casos: Case[] }) {
 
   const riscoCor = (r: string) =>
     r === "alto"
-      ? "bg-red-100 text-red-700"
+      ? "bg-danger-100 text-danger-700"
       : r === "medio"
-        ? "bg-amber-100 text-amber-700"
+        ? "bg-warn-100 text-warn-700"
         : "bg-slate-100 text-slate-600";
 
   const resumoTexto = () => {
@@ -648,7 +648,7 @@ function AnaliseBancaria({ area, casos }: { area: string; casos: Case[] }) {
   };
 
   return (
-    <div className="card p-4 mb-4 border-l-4 border-emerald-500">
+    <div className="card p-4 mb-4 border-l-4 border-success-500">
       <h2 className="font-serif font-semibold text-navy mb-1 flex items-center gap-2">
         {_ANALISE_TITULO[area] || "📄 Análise de Documento"}
       </h2>
@@ -689,7 +689,7 @@ function AnaliseBancaria({ area, casos }: { area: string; casos: Case[] }) {
         value={texto}
         onChange={(e) => setTexto(e.target.value)}
       />
-      {erro && <p className="text-xs text-red-600 mt-2">{erro}</p>}
+      {erro && <p className="text-xs text-danger-600 mt-2">{erro}</p>}
       {res && (
         <div className="mt-4 space-y-3 text-sm">
           {res.resumo && <p className="text-slate-700">{res.resumo}</p>}
@@ -764,7 +764,7 @@ function AnaliseBancaria({ area, casos }: { area: string; casos: Case[] }) {
             </ul>
           )}
           {res.proxima_acao && (
-            <p className="text-xs text-emerald-700 bg-emerald-50 rounded-lg p-2">
+            <p className="text-xs text-success-700 bg-success-50 rounded-lg p-2">
               ➡ {res.proxima_acao}
             </p>
           )}
@@ -798,7 +798,7 @@ function AnaliseBancaria({ area, casos }: { area: string; casos: Case[] }) {
             </div>
           )}
           {res._aviso && (
-            <p className="text-[11px] text-amber-700 border-t border-amber-100 pt-2">
+            <p className="text-[11px] text-warn-700 border-t border-warn-100 pt-2">
               ⚠ {res._aviso}
             </p>
           )}
@@ -1031,7 +1031,7 @@ export default function RamoBase() {
               ))}
             </select>
             {casos.length === 0 && (
-              <p className="text-xs text-amber-600 mt-1">
+              <p className="text-xs text-warn-600 mt-1">
                 Crie antes um caso com área "{cfg.areaCaso}"
               </p>
             )}

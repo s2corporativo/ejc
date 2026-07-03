@@ -9,13 +9,13 @@ import api from "../lib/api";
 const VIAB: Record<string, { label: string; cls: string; dot: string }> = {
   alta: {
     label: "Alta viabilidade",
-    cls: "border-emerald-300 bg-emerald-50/40",
-    dot: "bg-emerald-500",
+    cls: "border-success-300 bg-success-50/40",
+    dot: "bg-success-500",
   },
   media: {
     label: "Média viabilidade",
-    cls: "border-amber-300 bg-amber-50/40",
-    dot: "bg-amber-500",
+    cls: "border-warn-300 bg-warn-50/40",
+    dot: "bg-warn-500",
   },
   baixa: {
     label: "Baixa viabilidade",
@@ -98,7 +98,7 @@ export default function MotorTeses({ caso }: { caso: any }) {
           <Sparkles size={14} /> {loading ? "Gerando teses…" : "Gerar teses"}
         </button>
       </div>
-      {erro && <p className="text-xs text-red-600 mt-2">{erro}</p>}
+      {erro && <p className="text-xs text-danger-600 mt-2">{erro}</p>}
 
       {r && (
         <div className="mt-4 space-y-3">
@@ -179,7 +179,7 @@ export default function MotorTeses({ caso }: { caso: any }) {
                       </p>
                     )}
                     {t.contra_argumento && (
-                      <p className="flex items-start gap-1 text-amber-700">
+                      <p className="flex items-start gap-1 text-warn-700">
                         <ShieldAlert size={12} className="mt-0.5 shrink-0" />
                         <span>
                           <b>Contra-argumento:</b> {t.contra_argumento}
@@ -193,7 +193,7 @@ export default function MotorTeses({ caso }: { caso: any }) {
           )}
 
           {r._aviso && (
-            <p className="text-[11px] text-amber-700 border-t border-amber-100 pt-2">
+            <p className="text-[11px] text-warn-700 border-t border-warn-100 pt-2">
               ⚠ {r._aviso}
             </p>
           )}

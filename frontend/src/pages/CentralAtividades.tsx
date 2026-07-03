@@ -1,4 +1,5 @@
 import { useState, useEffect, useCallback, useMemo } from "react";
+import { PageHeader } from "../components/UI";
 import { toast } from "../components/Toast";
 import {
   Calendar,
@@ -17,9 +18,9 @@ import {
   Users,
   MapPin,
   Plus,
-  X,
 } from "lucide-react";
 import api from "../lib/api";
+import { Modal } from "../components/UI";
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 type ItemType =
@@ -64,7 +65,7 @@ function fmtRelative(dias?: number) {
 }
 
 const URGENCIA_COLOR: Record<string, string> = {
-  vencido: "text-red-700 bg-red-50 border-red-200",
+  vencido: "text-danger-700 bg-danger-50 border-danger-200",
   critico: "text-orange-700 bg-orange-50 border-orange-200",
   atencao: "text-yellow-700 bg-yellow-50 border-yellow-200",
   normal: "text-slate-600 bg-white border-slate-200",
@@ -74,10 +75,10 @@ const TIPO_CONFIG: Record<
   ItemType,
   { label: string; icon: React.ElementType; color: string }
 > = {
-  prazo: { label: "Prazo", icon: Clock, color: "text-red-600" },
-  tarefa: { label: "Tarefa", icon: ClipboardList, color: "text-blue-600" },
-  suspensao: { label: "Suspensão", icon: Pause, color: "text-purple-600" },
-  intimacao: { label: "Intimação", icon: Bell, color: "text-amber-600" },
+  prazo: { label: "Prazo", icon: Clock, color: "text-danger-600" },
+  tarefa: { label: "Tarefa", icon: ClipboardList, color: "text-primary-600" },
+  suspensao: { label: "Suspensão", icon: Pause, color: "text-ai-600" },
+  intimacao: { label: "Intimação", icon: Bell, color: "text-warn-600" },
   audiencia: { label: "Audiência", icon: Gavel, color: "text-rose-600" },
   reuniao: { label: "Reunião", icon: Users, color: "text-cyan-600" },
   compromisso: {
@@ -85,7 +86,7 @@ const TIPO_CONFIG: Record<
     icon: Calendar,
     color: "text-indigo-600",
   },
-  diligencia: { label: "Diligência", icon: MapPin, color: "text-emerald-600" },
+  diligencia: { label: "Diligência", icon: MapPin, color: "text-success-600" },
 };
 
 // ── Activity Row ──────────────────────────────────────────────────────────────
@@ -95,7 +96,7 @@ function ActivityRow({ item }: { item: Activity }) {
   const urg = item.urgencia ?? "normal";
   return (
     <div
-      className={`flex items-start gap-3 px-4 py-3 border-b border-slate-100 hover:bg-slate-50/60 transition-colors last:border-0 ${urg === "vencido" ? "bg-red-50/30" : urg === "critico" ? "bg-orange-50/20" : ""}`}
+      className={`flex items-start gap-3 px-4 py-3 border-b border-slate-100 hover:bg-slate-50/60 transition-colors last:border-0 ${urg === "vencido" ? "bg-danger-50/30" : urg === "critico" ? "bg-orange-50/20" : ""}`}
     >
       <div className={`mt-0.5 flex-shrink-0 ${cfg.color}`}>
         <Icon className="w-4 h-4" />
@@ -234,7 +235,7 @@ function CalendarView({ items }: { items: Activity[] }) {
               <div
                 key={day}
                 className={`relative min-h-[44px] rounded-lg p-1 text-center cursor-default
-                ${isToday ? "bg-blue-600 text-white" : dayItems.length > 0 ? "bg-slate-50 hover:bg-slate-100" : ""}
+                ${isToday ? "bg-primary-600 text-white" : dayItems.length > 0 ? "bg-slate-50 hover:bg-slate-100" : ""}
                 transition-colors`}
                 title={dayItems.map((it) => it.titulo).join(", ")}
               >
@@ -251,13 +252,13 @@ function CalendarView({ items }: { items: Activity[] }) {
                         className={`w-1.5 h-1.5 rounded-full ${
                           it.tipo === "prazo"
                             ? hasUrgent
-                              ? "bg-red-500"
-                              : "bg-red-300"
+                              ? "bg-danger-500"
+                              : "bg-danger-300"
                             : it.tipo === "tarefa"
-                              ? "bg-blue-400"
+                              ? "bg-primary-400"
                               : it.tipo === "suspensao"
-                                ? "bg-purple-400"
-                                : "bg-amber-400"
+                                ? "bg-ai-400"
+                                : "bg-warn-400"
                         }`}
                       />
                     ))}
@@ -282,7 +283,7 @@ function TimelineView({ items }: { items: Activity[] }) {
   const grupos: { titulo: string; cor: string; itens: Activity[] }[] = [
     {
       titulo: "Vencidos",
-      cor: "bg-red-500",
+      cor: "bg-danger-500",
       itens: items.filter((i) => (i.dias_restantes ?? 1) < 0),
     },
     {
@@ -292,7 +293,7 @@ function TimelineView({ items }: { items: Activity[] }) {
     },
     {
       titulo: "Próximos 7 dias",
-      cor: "bg-amber-500",
+      cor: "bg-warn-500",
       itens: items.filter(
         (i) => (i.dias_restantes ?? 99) > 0 && (i.dias_restantes ?? 99) <= 7,
       ),
@@ -314,7 +315,7 @@ function TimelineView({ items }: { items: Activity[] }) {
   if (items.length === 0) {
     return (
       <div className="bg-white rounded-xl border border-slate-200 py-16 text-center">
-        <CheckCircle className="w-10 h-10 text-emerald-400 mx-auto mb-3" />
+        <CheckCircle className="w-10 h-10 text-success-400 mx-auto mb-3" />
         <p className="text-slate-500 font-medium">
           Nenhuma atividade na linha do tempo
         </p>
@@ -421,7 +422,7 @@ function KanbanAtividades({ items }: { items: Activity[] }) {
               {itens.map((it) => (
                 <div
                   key={`${it.tipo}-${it.id}`}
-                  className={`bg-white rounded-lg border p-2.5 ${it.urgencia === "vencido" ? "border-red-200" : "border-slate-200"}`}
+                  className={`bg-white rounded-lg border p-2.5 ${it.urgencia === "vencido" ? "border-danger-200" : "border-slate-200"}`}
                 >
                   <p className="text-sm text-slate-700">{it.titulo}</p>
                   {it.caso_titulo && (
@@ -430,7 +431,7 @@ function KanbanAtividades({ items }: { items: Activity[] }) {
                     </p>
                   )}
                   <p
-                    className={`text-[11px] mt-1 ${it.urgencia === "vencido" ? "text-red-600 font-semibold" : "text-slate-400"}`}
+                    className={`text-[11px] mt-1 ${it.urgencia === "vencido" ? "text-danger-600 font-semibold" : "text-slate-400"}`}
                   >
                     {fmtRelative(it.dias_restantes)}
                   </p>
@@ -515,60 +516,56 @@ export default function CentralAtividades() {
 
   return (
     <div className="p-6 max-w-5xl mx-auto">
-      {/* Header */}
-      <div className="flex items-center justify-between mb-6">
-        <div>
-          <h1 className="text-2xl font-bold text-slate-800">
-            Central de Atividades
-          </h1>
-          <p className="text-slate-500 text-sm mt-1">
-            Prazos, tarefas, suspensões e intimações em uma única tela
-          </p>
-        </div>
-        <div className="flex gap-2">
-          <button
-            onClick={() => setView("lista")}
-            aria-label="Visualização em lista"
-            title="Lista"
-            className={`p-2 rounded-lg border transition-colors ${view === "lista" ? "bg-navy text-white border-navy" : "bg-white text-slate-500 border-slate-200 hover:border-slate-300"}`}
-          >
-            <List className="w-4 h-4" />
-          </button>
-          <button
-            onClick={() => setView("calendario")}
-            aria-label="Visualização em calendário"
-            title="Calendário"
-            className={`p-2 rounded-lg border transition-colors ${view === "calendario" ? "bg-navy text-white border-navy" : "bg-white text-slate-500 border-slate-200 hover:border-slate-300"}`}
-          >
-            <Calendar className="w-4 h-4" />
-          </button>
-          <button
-            onClick={() => setView("timeline")}
-            aria-label="Visualização em timeline"
-            title="Timeline"
-            className={`p-2 rounded-lg border transition-colors ${view === "timeline" ? "bg-navy text-white border-navy" : "bg-white text-slate-500 border-slate-200 hover:border-slate-300"}`}
-          >
-            <FileText className="w-4 h-4" />
-          </button>
-          <button
-            onClick={() => setView("kanban")}
-            aria-label="Visualização em quadro"
-            title="Quadro"
-            className={`p-2 rounded-lg border transition-colors ${view === "kanban" ? "bg-navy text-white border-navy" : "bg-white text-slate-500 border-slate-200 hover:border-slate-300"}`}
-          >
-            <LayoutGrid className="w-4 h-4" />
-          </button>
-          <button
-            onClick={() => {
-              setForm({ tipo: "reuniao", data_evento: "" });
-              setModal(true);
-            }}
-            className="flex items-center gap-1 px-3 py-2 bg-emerald-600 text-white rounded-lg text-sm hover:bg-emerald-700"
-          >
-            <Plus className="w-4 h-4" /> Novo evento
-          </button>
-        </div>
-      </div>
+      <PageHeader
+        title="Central de Atividades"
+        subtitle="Prazos, tarefas, suspensões e intimações em uma única tela"
+        actions={
+          <>
+            <button
+              onClick={() => setView("lista")}
+              aria-label="Visualização em lista"
+              title="Lista"
+              className={`p-2 rounded-lg border transition-colors ${view === "lista" ? "bg-navy text-white border-navy" : "bg-white text-slate-500 border-slate-200 hover:border-slate-300"}`}
+            >
+              <List className="w-4 h-4" />
+            </button>
+            <button
+              onClick={() => setView("calendario")}
+              aria-label="Visualização em calendário"
+              title="Calendário"
+              className={`p-2 rounded-lg border transition-colors ${view === "calendario" ? "bg-navy text-white border-navy" : "bg-white text-slate-500 border-slate-200 hover:border-slate-300"}`}
+            >
+              <Calendar className="w-4 h-4" />
+            </button>
+            <button
+              onClick={() => setView("timeline")}
+              aria-label="Visualização em timeline"
+              title="Timeline"
+              className={`p-2 rounded-lg border transition-colors ${view === "timeline" ? "bg-navy text-white border-navy" : "bg-white text-slate-500 border-slate-200 hover:border-slate-300"}`}
+            >
+              <FileText className="w-4 h-4" />
+            </button>
+            <button
+              onClick={() => setView("kanban")}
+              aria-label="Visualização em quadro"
+              title="Quadro"
+              className={`p-2 rounded-lg border transition-colors ${view === "kanban" ? "bg-navy text-white border-navy" : "bg-white text-slate-500 border-slate-200 hover:border-slate-300"}`}
+            >
+              <LayoutGrid className="w-4 h-4" />
+            </button>
+            <button
+              onClick={() => {
+                setForm({ tipo: "reuniao", data_evento: "" });
+                setModal(true);
+              }}
+              className="flex items-center gap-1 px-3 py-2 bg-success-600 text-white rounded-lg text-sm hover:bg-success-700"
+            >
+              <Plus className="w-4 h-4" /> Novo evento
+            </button>
+          </>
+        }
+      />
+
 
       {/* Stats Cards */}
       <div className="grid grid-cols-4 gap-3 mb-5">
@@ -576,7 +573,7 @@ export default function CentralAtividades() {
           {
             key: "vencido",
             label: "Vencidos",
-            color: "bg-red-50 border-red-200 text-red-700",
+            color: "bg-danger-50 border-danger-200 text-danger-700",
           },
           {
             key: "critico",
@@ -667,7 +664,7 @@ export default function CentralAtividades() {
         <div className="bg-white rounded-xl border border-slate-200 overflow-hidden">
           {filtered.length === 0 ? (
             <div className="py-16 text-center">
-              <CheckCircle className="w-10 h-10 text-emerald-400 mx-auto mb-3" />
+              <CheckCircle className="w-10 h-10 text-success-400 mx-auto mb-3" />
               <p className="text-slate-500 font-medium">
                 Nenhuma atividade encontrada
               </p>
@@ -683,97 +680,76 @@ export default function CentralAtividades() {
         </div>
       )}
 
-      {modal && (
-        <div
-          className="fixed inset-0 bg-black/40 z-50 flex items-center justify-center p-4"
-          onClick={() => setModal(false)}
-        >
-          <div
-            className="bg-white rounded-xl shadow-xl p-6 w-full max-w-md"
-            onClick={(e) => e.stopPropagation()}
-          >
-            <div className="flex items-center justify-between mb-4">
-              <h3 className="font-semibold text-slate-800">
-                Novo evento de agenda
-              </h3>
-              <button
-                onClick={() => setModal(false)}
-                aria-label="Fechar"
-                title="Fechar"
-                className="text-slate-400 hover:text-slate-600"
-              >
-                <X className="w-4 h-4" />
-              </button>
-            </div>
-            <div className="space-y-3">
-              <input
-                className="w-full border border-slate-200 rounded-lg px-3 py-2 text-sm"
-                placeholder="Título *"
-                value={form.titulo ?? ""}
-                onChange={(e) => setForm({ ...form, titulo: e.target.value })}
-              />
-              <div className="grid grid-cols-2 gap-2">
-                <select
-                  className="border border-slate-200 rounded-lg px-3 py-2 text-sm"
-                  value={form.tipo}
-                  onChange={(e) => setForm({ ...form, tipo: e.target.value })}
-                >
-                  <option value="reuniao">Reunião</option>
-                  <option value="compromisso">Compromisso</option>
-                  <option value="diligencia">Diligência</option>
-                  <option value="audiencia">Audiência</option>
-                  <option value="outro">Outro</option>
-                </select>
-                <input
-                  type="date"
-                  className="border border-slate-200 rounded-lg px-3 py-2 text-sm"
-                  value={form.data_evento}
-                  onChange={(e) =>
-                    setForm({ ...form, data_evento: e.target.value })
-                  }
-                />
-              </div>
-              <div className="grid grid-cols-2 gap-2">
-                <input
-                  className="border border-slate-200 rounded-lg px-3 py-2 text-sm"
-                  placeholder="Hora (ex: 14:30)"
-                  value={form.hora ?? ""}
-                  onChange={(e) => setForm({ ...form, hora: e.target.value })}
-                />
-                <input
-                  className="border border-slate-200 rounded-lg px-3 py-2 text-sm"
-                  placeholder="Local"
-                  value={form.local ?? ""}
-                  onChange={(e) => setForm({ ...form, local: e.target.value })}
-                />
-              </div>
-              <textarea
-                className="w-full border border-slate-200 rounded-lg px-3 py-2 text-sm"
-                rows={2}
-                placeholder="Descrição"
-                value={form.descricao ?? ""}
-                onChange={(e) =>
-                  setForm({ ...form, descricao: e.target.value })
-                }
-              />
-              <div className="flex gap-2 justify-end">
-                <button
-                  onClick={() => setModal(false)}
-                  className="px-4 py-2 text-sm text-slate-500 hover:bg-slate-100 rounded-lg"
-                >
-                  Cancelar
-                </button>
-                <button
-                  onClick={salvarEvento}
-                  className="px-4 py-2 bg-emerald-600 text-white text-sm rounded-lg hover:bg-emerald-700"
-                >
-                  Salvar
-                </button>
-              </div>
-            </div>
+      <Modal
+        open={modal}
+        onClose={() => setModal(false)}
+        title="Novo evento de agenda"
+      >
+        <div className="space-y-3">
+          <input
+            className="w-full border border-slate-200 rounded-lg px-3 py-2 text-sm"
+            placeholder="Título *"
+            value={form.titulo ?? ""}
+            onChange={(e) => setForm({ ...form, titulo: e.target.value })}
+          />
+          <div className="grid grid-cols-2 gap-2">
+            <select
+              className="border border-slate-200 rounded-lg px-3 py-2 text-sm"
+              value={form.tipo}
+              onChange={(e) => setForm({ ...form, tipo: e.target.value })}
+            >
+              <option value="reuniao">Reunião</option>
+              <option value="compromisso">Compromisso</option>
+              <option value="diligencia">Diligência</option>
+              <option value="audiencia">Audiência</option>
+              <option value="outro">Outro</option>
+            </select>
+            <input
+              type="date"
+              className="border border-slate-200 rounded-lg px-3 py-2 text-sm"
+              value={form.data_evento}
+              onChange={(e) =>
+                setForm({ ...form, data_evento: e.target.value })
+              }
+            />
+          </div>
+          <div className="grid grid-cols-2 gap-2">
+            <input
+              className="border border-slate-200 rounded-lg px-3 py-2 text-sm"
+              placeholder="Hora (ex: 14:30)"
+              value={form.hora ?? ""}
+              onChange={(e) => setForm({ ...form, hora: e.target.value })}
+            />
+            <input
+              className="border border-slate-200 rounded-lg px-3 py-2 text-sm"
+              placeholder="Local"
+              value={form.local ?? ""}
+              onChange={(e) => setForm({ ...form, local: e.target.value })}
+            />
+          </div>
+          <textarea
+            className="w-full border border-slate-200 rounded-lg px-3 py-2 text-sm"
+            rows={2}
+            placeholder="Descrição"
+            value={form.descricao ?? ""}
+            onChange={(e) => setForm({ ...form, descricao: e.target.value })}
+          />
+          <div className="flex gap-2 justify-end">
+            <button
+              onClick={() => setModal(false)}
+              className="btn-ghost"
+            >
+              Cancelar
+            </button>
+            <button
+              onClick={salvarEvento}
+              className="px-4 py-2 bg-success-600 text-white text-sm rounded-lg hover:bg-success-700"
+            >
+              Salvar
+            </button>
           </div>
         </div>
-      )}
+      </Modal>
     </div>
   );
 }

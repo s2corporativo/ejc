@@ -212,7 +212,7 @@ export default function AssistenteIA() {
               <Spinner />
             </div>
           )}
-          {erro && <p className="text-sm text-red-600">{erro}</p>}
+          {erro && <p className="text-sm text-danger-600">{erro}</p>}
           {!loading && !res && !erro && (
             <p className="text-sm text-slate-400">O resultado aparece aqui.</p>
           )}
@@ -232,7 +232,7 @@ export default function AssistenteIA() {
                 </div>
               )}
               {res.aviso && (
-                <p className="text-xs text-amber-600 border-t border-bronze-pale pt-2">
+                <p className="text-xs text-warn-600 border-t border-bronze-pale pt-2">
                   {res.aviso}
                 </p>
               )}

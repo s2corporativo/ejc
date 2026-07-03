@@ -165,7 +165,7 @@ export default function FerramentasIA() {
               <span className="text-xs text-slate-600 inline-flex items-center gap-1">
                 <FileText size={13} /> {file.name}
                 <button
-                  className="ml-1 text-red-500 hover:underline"
+                  className="ml-1 text-danger-500 hover:underline"
                   onClick={() => setFile(null)}
                 >
                   remover
@@ -183,7 +183,7 @@ export default function FerramentasIA() {
           </div>
 
           {erro && (
-            <div className="p-2 rounded bg-red-50 text-red-700 text-xs">{erro}</div>
+            <div className="p-2 rounded bg-danger-50 text-danger-700 text-xs">{erro}</div>
           )}
 
           {res && (

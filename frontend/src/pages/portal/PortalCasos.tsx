@@ -4,10 +4,10 @@ import { ChevronRight, Scale, Search } from "lucide-react";
 import api from "../../lib/api";
 
 const STATUS_LABEL: Record<string, [string, string]> = {
-  triagem: ["Em análise", "bg-amber-100 text-amber-700"],
-  ativo: ["Em andamento", "bg-blue-100 text-blue-700"],
+  triagem: ["Em análise", "bg-warn-100 text-warn-700"],
+  ativo: ["Em andamento", "bg-primary-100 text-primary-700"],
   suspenso: ["Suspenso", "bg-slate-100 text-slate-600"],
-  encerrado: ["Encerrado", "bg-emerald-100 text-emerald-700"],
+  encerrado: ["Encerrado", "bg-success-100 text-success-700"],
   arquivado: ["Arquivado", "bg-slate-100 text-slate-500"],
 };
 
@@ -60,7 +60,7 @@ export default function PortalCasos() {
         <div className="relative">
           <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400" />
           <input
-            className="w-full pl-9 pr-4 py-2.5 border border-slate-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-blue-300 bg-white"
+            className="w-full pl-9 pr-4 py-2.5 border border-slate-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-primary-300 bg-white"
             placeholder="Buscar processo..."
             value={busca}
             onChange={(e) => setBusca(e.target.value)}
@@ -94,7 +94,7 @@ export default function PortalCasos() {
               <Link
                 key={c.id}
                 to={`/portal/casos/${c.id}`}
-                className="bg-white rounded-xl border border-slate-200 p-4 flex items-center justify-between gap-4 hover:shadow-md hover:border-blue-200 transition-all block"
+                className="bg-white rounded-xl border border-slate-200 p-4 flex items-center justify-between gap-4 hover:shadow-md hover:border-primary-200 transition-all block"
               >
                 <div className="flex items-start gap-3 min-w-0">
                   <div className="w-10 h-10 bg-slate-50 rounded-xl flex items-center justify-center flex-shrink-0 text-lg">

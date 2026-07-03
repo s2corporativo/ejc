@@ -98,7 +98,7 @@ export default function Usuarios() {
                   <td className="px-4 py-3">
                     {u.is_active && (
                       <button
-                        className="btn-ghost px-2 py-1 text-red-500"
+                        className="btn-ghost px-2 py-1 text-danger-500"
                         onClick={() => desativar(u)}
                       >
                         <UserX size={15} />

@@ -39,7 +39,7 @@ export default function LicitacaoAuditoria() {
 
   return (
     <div className="space-y-6">
-      <div className="rounded-2xl border border-blue-100 bg-white p-5 shadow-sm md:p-6">
+      <div className="rounded-2xl border border-primary-100 bg-white p-5 shadow-sm md:p-6">
         <PageHeader
           eyebrow="Licitacoes"
           title="Auditoria de proposta"
@@ -50,7 +50,7 @@ export default function LicitacaoAuditoria() {
       <div className="grid gap-4 lg:grid-cols-2">
         <div className="card space-y-4 p-5">
           <span className="eyebrow">Proposta do concorrente (PDF)</span>
-          <label className="flex cursor-pointer flex-col items-center justify-center gap-2 rounded-xl border-2 border-dashed border-slate-200 bg-slate-50/60 px-4 py-8 text-center transition-colors hover:border-blue-300">
+          <label className="flex cursor-pointer flex-col items-center justify-center gap-2 rounded-xl border-2 border-dashed border-slate-200 bg-slate-50/60 px-4 py-8 text-center transition-colors hover:border-primary-300">
             <UploadCloud className="h-7 w-7 text-slate-400" />
             <span className="text-sm text-slate-600">
               {file ? file.name : "Clique para selecionar um arquivo PDF"}
@@ -66,7 +66,7 @@ export default function LicitacaoAuditoria() {
             {loading ? "Analisando..." : "Analisar proposta"}
           </button>
           {error && (
-            <div className="rounded-lg border border-red-200 bg-red-50 p-3 text-sm text-red-700">{error}</div>
+            <div className="rounded-lg border border-danger-200 bg-danger-50 p-3 text-sm text-danger-700">{error}</div>
           )}
         </div>
 
@@ -80,9 +80,9 @@ export default function LicitacaoAuditoria() {
               <div className={`card p-5 ${semAchados ? "" : ""}`}>
                 <div className="flex items-start gap-3">
                   {semAchados ? (
-                    <CheckCircle2 className="mt-0.5 h-5 w-5 shrink-0 text-emerald-600" />
+                    <CheckCircle2 className="mt-0.5 h-5 w-5 shrink-0 text-success-600" />
                   ) : (
-                    <AlertTriangle className="mt-0.5 h-5 w-5 shrink-0 text-amber-600" />
+                    <AlertTriangle className="mt-0.5 h-5 w-5 shrink-0 text-warn-600" />
                   )}
                   <div>
                     <p className="text-sm font-medium text-slate-900">{res.summary}</p>
@@ -97,7 +97,7 @@ export default function LicitacaoAuditoria() {
                   <ul className="mt-3 space-y-2">
                     {res.potential_flaws.map((f, i) => (
                       <li key={i} className="flex gap-2 text-sm text-slate-700">
-                        <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0 text-amber-500" />{f}
+                        <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0 text-warn-500" />{f}
                       </li>
                     ))}
                   </ul>
@@ -110,7 +110,7 @@ export default function LicitacaoAuditoria() {
                   <ul className="mt-3 space-y-2">
                     {res.equivalence_issues.map((f, i) => (
                       <li key={i} className="flex gap-2 text-sm text-slate-700">
-                        <ShieldAlert className="mt-0.5 h-4 w-4 shrink-0 text-blue-500" />{f}
+                        <ShieldAlert className="mt-0.5 h-4 w-4 shrink-0 text-primary-500" />{f}
                       </li>
                     ))}
                   </ul>

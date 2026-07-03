@@ -9,9 +9,9 @@ import {
 import api from "../../lib/api";
 
 const ST: Record<string, [string, string, string]> = {
-  pago: ["Pago", "text-emerald-600", "bg-emerald-50"],
-  pendente: ["Em aberto", "text-amber-600", "bg-amber-50"],
-  atrasado: ["Em atraso", "text-red-600", "bg-red-50"],
+  pago: ["Pago", "text-success-600", "bg-success-50"],
+  pendente: ["Em aberto", "text-warn-600", "bg-warn-50"],
+  atrasado: ["Em atraso", "text-danger-600", "bg-danger-50"],
   cancelado: ["Cancelado", "text-slate-400", "bg-slate-50"],
 };
 
@@ -45,29 +45,29 @@ export default function PortalFinanceiro() {
       label: "Total honorários",
       value: fmt(total),
       icon: TrendingUp,
-      color: "text-blue-500",
-      bg: "bg-blue-50",
+      color: "text-primary-500",
+      bg: "bg-primary-50",
     },
     {
       label: "Recebido",
       value: fmt(pago),
       icon: CheckCircle,
-      color: "text-emerald-500",
-      bg: "bg-emerald-50",
+      color: "text-success-500",
+      bg: "bg-success-50",
     },
     {
       label: "Em aberto",
       value: fmt(pendente),
       icon: Clock,
-      color: "text-amber-500",
-      bg: "bg-amber-50",
+      color: "text-warn-500",
+      bg: "bg-warn-50",
     },
     {
       label: "Em atraso",
       value: fmt(atrasado),
       icon: AlertCircle,
-      color: "text-red-500",
-      bg: "bg-red-50",
+      color: "text-danger-500",
+      bg: "bg-danger-50",
     },
   ];
 
@@ -102,13 +102,13 @@ export default function PortalFinanceiro() {
 
       {/* Alert for overdue */}
       {atrasado > 0 && (
-        <div className="bg-red-50 border border-red-200 rounded-xl p-4 flex items-start gap-3">
-          <AlertCircle className="w-5 h-5 text-red-500 flex-shrink-0 mt-0.5" />
+        <div className="bg-danger-50 border border-danger-200 rounded-xl p-4 flex items-start gap-3">
+          <AlertCircle className="w-5 h-5 text-danger-500 flex-shrink-0 mt-0.5" />
           <div>
-            <p className="text-sm font-semibold text-red-700">
+            <p className="text-sm font-semibold text-danger-700">
               Pagamento em atraso
             </p>
-            <p className="text-xs text-red-600 mt-0.5">
+            <p className="text-xs text-danger-600 mt-0.5">
               Você possui {fmt(atrasado)} em honorários vencidos. Entre em
               contato com o escritório para regularizar.
             </p>

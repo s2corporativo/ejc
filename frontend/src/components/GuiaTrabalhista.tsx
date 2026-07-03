@@ -95,7 +95,7 @@ export default function GuiaTrabalhista() {
   const feitos = Object.values(marcados).filter(Boolean).length;
 
   return (
-    <div className="card p-4 mb-4 border-l-4 border-emerald-500">
+    <div className="card p-4 mb-4 border-l-4 border-success-500">
       <div className="flex items-center gap-2 mb-1">
         <BookOpen size={16} className="text-bronze" />
         <h2 className="font-serif font-semibold text-navy text-sm">
@@ -166,7 +166,7 @@ export default function GuiaTrabalhista() {
               ],
             ]}
           />
-          <p className="text-amber-700 mt-2">
+          <p className="text-warn-700 mt-2">
             ⚠ Prescrição intercorrente: TST aplica Art. 11-A CLT (2 anos de
             inércia na execução). Monitore a fase de execução.
           </p>
@@ -330,7 +330,7 @@ export default function GuiaTrabalhista() {
               ],
             ]}
           />
-          <p className="text-amber-700 mt-1">
+          <p className="text-warn-700 mt-1">
             ⚠ O tabelamento de dano moral foi declarado inconstitucional pelo
             STF (ADI 6.050, 2021) para situações de dano acima do mínimo — juiz
             pode arbitrar acima da tabela.
@@ -365,7 +365,7 @@ export default function GuiaTrabalhista() {
         </Sec>
       </div>
 
-      <p className="text-[10px] text-amber-700 mt-3 flex items-start gap-1">
+      <p className="text-[10px] text-warn-700 mt-3 flex items-start gap-1">
         <AlertTriangle size={12} className="mt-0.5 shrink-0" />
         Instrumento interno. Verificar jurisprudência TST/STF atualizada.
         Depósitos recursais: atualizar pelos índices CGJT (publicados

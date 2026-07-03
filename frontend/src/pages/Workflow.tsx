@@ -203,7 +203,7 @@ export default function Workflow() {
                 </div>
                 <button
                   onClick={() => excluir(t.id)}
-                  className="text-slate-300 hover:text-red-500"
+                  className="text-slate-300 hover:text-danger-500"
                 >
                   <Trash2 size={15} />
                 </button>
@@ -214,7 +214,7 @@ export default function Workflow() {
               <ol className="space-y-1.5 text-sm text-slate-600 mt-3">
                 {(t.etapas || []).map((e, idx) => (
                   <li key={e.id || idx} className="flex items-center gap-2">
-                    <span className="flex h-5 w-5 shrink-0 items-center justify-center rounded-full bg-blue-600 text-[10px] font-semibold text-white">
+                    <span className="flex h-5 w-5 shrink-0 items-center justify-center rounded-full bg-primary-600 text-[10px] font-semibold text-white">
                       {idx + 1}
                     </span>
                     <span className="flex-1">{e.nome}</span>

@@ -1,7 +1,7 @@
 import { useState, useRef, useCallback } from "react";
+import { Modal, Button } from "./UI";
 import { toast } from "./Toast";
 import {
-  X,
   Sparkles,
   FileText,
   Scale,
@@ -261,38 +261,13 @@ export default function PecaGeneratorModal({
     URL.revokeObjectURL(url);
   };
 
-  if (!open) return null;
-
   return (
-    <div
-      className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 backdrop-blur-sm p-4"
-      onClick={fechar}
-    >
-      <div
-        className="bg-white rounded-2xl w-full max-w-2xl max-h-[92vh] flex flex-col shadow-2xl"
-        onClick={(e) => e.stopPropagation()}
-      >
-        {/* Header */}
-        <div className="flex items-center justify-between px-6 py-4 border-b border-slate-100">
-          <div className="flex items-center gap-2">
-            <div className="w-8 h-8 rounded-lg bg-indigo-600 flex items-center justify-center">
-              <Sparkles size={16} className="text-white" />
-            </div>
-            <div>
-              <h2 className="font-semibold text-slate-900 text-sm leading-tight">
-                Gerador de Peças — IA
-              </h2>
-              <p className="text-xs text-slate-400">
-                Pipeline 7 etapas · HITL obrigatório
-              </p>
-            </div>
-          </div>
-          <button
-            onClick={fechar}
-            className="p-1.5 rounded-lg text-slate-400 hover:text-slate-700 hover:bg-slate-100 transition-colors"
-          >
-            <X size={17} />
-          </button>
+    <Modal open={open} onClose={fechar} title="Gerador de Peças — IA" wide>
+      <div className="flex flex-col">
+        <div className="-mt-5 -mx-5 mb-4 px-5 pb-3 border-b border-slate-100">
+          <p className="text-xs text-slate-400">
+            Pipeline 7 etapas · HITL obrigatório
+          </p>
         </div>
 
         <div className="flex-1 overflow-y-auto">
@@ -307,7 +282,7 @@ export default function PecaGeneratorModal({
                   <select
                     value={tipoPeca}
                     onChange={(e) => setTipoPeca(e.target.value)}
-                    className="w-full border border-slate-200 rounded-lg px-3 py-2 text-sm text-slate-800 bg-white focus:outline-none focus:ring-2 focus:ring-indigo-500"
+                    className="w-full border border-slate-200 rounded-lg px-3 py-2 text-sm text-slate-800 bg-white focus:outline-none focus:ring-2 focus:ring-ai-500"
                   >
                     {Object.entries(TIPOS_PECA).map(([k, v]) => (
                       <option key={k} value={k}>
@@ -323,7 +298,7 @@ export default function PecaGeneratorModal({
                   <select
                     value={areaDireito}
                     onChange={(e) => setAreaDireito(e.target.value)}
-                    className="w-full border border-slate-200 rounded-lg px-3 py-2 text-sm text-slate-800 bg-white focus:outline-none focus:ring-2 focus:ring-indigo-500"
+                    className="w-full border border-slate-200 rounded-lg px-3 py-2 text-sm text-slate-800 bg-white focus:outline-none focus:ring-2 focus:ring-ai-500"
                   >
                     {AREAS.map((a) => (
                       <option key={a} value={a}>
@@ -336,7 +311,7 @@ export default function PecaGeneratorModal({
 
               <div>
                 <label className="block text-xs font-medium text-slate-600 mb-1">
-                  Descrição dos fatos <span className="text-red-400">*</span>
+                  Descrição dos fatos <span className="text-danger-400">*</span>
                   <span className="text-slate-400 font-normal ml-1">
                     mín. 50 caracteres
                   </span>
@@ -346,7 +321,7 @@ export default function PecaGeneratorModal({
                   onChange={(e) => setFatos(e.target.value)}
                   placeholder="Descreva os fatos de forma detalhada. A IA usa esta descrição como base para todas as 7 etapas do pipeline..."
                   rows={5}
-                  className="w-full border border-slate-200 rounded-lg px-3 py-2 text-sm text-slate-800 placeholder-slate-300 focus:outline-none focus:ring-2 focus:ring-indigo-500 resize-none"
+                  className="w-full border border-slate-200 rounded-lg px-3 py-2 text-sm text-slate-800 placeholder-slate-300 focus:outline-none focus:ring-2 focus:ring-ai-500 resize-none"
                 />
                 <div className="text-right text-xs text-slate-400 mt-0.5">
                   {fatos.length} caracteres
@@ -355,14 +330,14 @@ export default function PecaGeneratorModal({
 
               <div>
                 <label className="block text-xs font-medium text-slate-600 mb-1">
-                  Pedidos <span className="text-red-400">*</span>
+                  Pedidos <span className="text-danger-400">*</span>
                 </label>
                 <textarea
                   value={pedidos}
                   onChange={(e) => setPedidos(e.target.value)}
                   placeholder="Liste os pedidos principais e subsidiários..."
                   rows={3}
-                  className="w-full border border-slate-200 rounded-lg px-3 py-2 text-sm text-slate-800 placeholder-slate-300 focus:outline-none focus:ring-2 focus:ring-indigo-500 resize-none"
+                  className="w-full border border-slate-200 rounded-lg px-3 py-2 text-sm text-slate-800 placeholder-slate-300 focus:outline-none focus:ring-2 focus:ring-ai-500 resize-none"
                 />
               </div>
 
@@ -379,7 +354,7 @@ export default function PecaGeneratorModal({
                     value={nomesProteger}
                     onChange={(e) => setNomesProteger(e.target.value)}
                     placeholder="João Silva, Maria Costa..."
-                    className="w-full border border-slate-200 rounded-lg px-3 py-2 text-sm placeholder-slate-300 focus:outline-none focus:ring-2 focus:ring-indigo-500"
+                    className="w-full border border-slate-200 rounded-lg px-3 py-2 text-sm placeholder-slate-300 focus:outline-none focus:ring-2 focus:ring-ai-500"
                   />
                 </div>
                 <div>
@@ -391,12 +366,12 @@ export default function PecaGeneratorModal({
                     value={instrucoes}
                     onChange={(e) => setInstrucoes(e.target.value)}
                     placeholder="Ex: incluir pedido liminar..."
-                    className="w-full border border-slate-200 rounded-lg px-3 py-2 text-sm placeholder-slate-300 focus:outline-none focus:ring-2 focus:ring-indigo-500"
+                    className="w-full border border-slate-200 rounded-lg px-3 py-2 text-sm placeholder-slate-300 focus:outline-none focus:ring-2 focus:ring-ai-500"
                   />
                 </div>
               </div>
 
-              <div className="bg-amber-50 border border-amber-200 rounded-lg px-4 py-3 text-xs text-amber-800">
+              <div className="bg-warn-50 border border-warn-200 rounded-lg px-4 py-3 text-xs text-warn-800">
                 <strong>⚠️ RASCUNHO:</strong> toda peça gerada por IA exige
                 revisão e assinatura por advogado habilitado (OAB). Não
                 protocole sem revisão humana.
@@ -429,7 +404,7 @@ export default function PecaGeneratorModal({
                         e.status === "concluido"
                           ? "bg-green-50"
                           : e.status === "em_andamento"
-                            ? "bg-indigo-50"
+                            ? "bg-ai-50"
                             : "bg-white"
                       }`}
                     >
@@ -438,7 +413,7 @@ export default function PecaGeneratorModal({
                           e.status === "concluido"
                             ? "bg-green-500 text-white"
                             : e.status === "em_andamento"
-                              ? "bg-indigo-600 text-white"
+                              ? "bg-ai-600 text-white"
                               : "bg-slate-100 text-slate-400"
                         }`}
                       >
@@ -455,7 +430,7 @@ export default function PecaGeneratorModal({
                           e.status === "concluido"
                             ? "text-green-800 font-medium"
                             : e.status === "em_andamento"
-                              ? "text-indigo-800 font-medium"
+                              ? "text-ai-800 font-medium"
                               : "text-slate-400"
                         }`}
                       >
@@ -486,7 +461,7 @@ export default function PecaGeneratorModal({
               </div>
 
               {fase === "erro" && (
-                <div className="mt-4 bg-red-50 border border-red-200 rounded-lg px-4 py-3 text-sm text-red-700">
+                <div className="mt-4 bg-danger-50 border border-danger-200 rounded-lg px-4 py-3 text-sm text-danger-700">
                   {erroMsg}
                 </div>
               )}
@@ -519,14 +494,14 @@ export default function PecaGeneratorModal({
                   <div className="flex gap-2">
                     <button
                       onClick={copiar}
-                      className="flex items-center gap-1 text-xs text-slate-500 hover:text-indigo-600 transition-colors"
+                      className="flex items-center gap-1 text-xs text-slate-500 hover:text-ai-600 transition-colors"
                     >
                       <Copy size={13} />
                       {copiado ? "Copiado!" : "Copiar"}
                     </button>
                     <button
                       onClick={baixarTxt}
-                      className="flex items-center gap-1 text-xs text-slate-500 hover:text-indigo-600 transition-colors"
+                      className="flex items-center gap-1 text-xs text-slate-500 hover:text-ai-600 transition-colors"
                     >
                       <Download size={13} />
                       Baixar
@@ -537,11 +512,11 @@ export default function PecaGeneratorModal({
                   readOnly
                   value={documento}
                   rows={14}
-                  className="w-full border border-slate-200 rounded-xl px-4 py-3 text-sm text-slate-800 bg-slate-50 font-mono resize-none focus:outline-none focus:ring-2 focus:ring-indigo-500"
+                  className="w-full border border-slate-200 rounded-xl px-4 py-3 text-sm text-slate-800 bg-slate-50 font-mono resize-none focus:outline-none focus:ring-2 focus:ring-ai-500"
                 />
               </div>
 
-              <div className="bg-amber-50 border border-amber-200 rounded-lg px-4 py-3 text-xs text-amber-800">
+              <div className="bg-warn-50 border border-warn-200 rounded-lg px-4 py-3 text-xs text-warn-800">
                 <strong>⚠️ Atenção:</strong> este é um rascunho gerado por IA.
                 Revise, complemente com dados reais do caso e assine antes de
                 protocolar.
@@ -551,23 +526,20 @@ export default function PecaGeneratorModal({
         </div>
 
         {/* Footer */}
-        <div className="px-6 py-4 border-t border-slate-100 flex items-center justify-between gap-3 bg-white rounded-b-2xl">
+        <div className="-mx-5 -mb-5 px-6 py-4 mt-4 border-t border-slate-100 flex items-center justify-between gap-3 bg-white rounded-b-2xl">
           {fase === "form" && (
             <>
-              <button
-                onClick={fechar}
-                className="px-4 py-2 text-sm text-slate-500 hover:text-slate-700 transition-colors"
-              >
+              <Button variant="ghost" onClick={fechar}>
                 Cancelar
-              </button>
-              <button
+              </Button>
+              <Button
+                variant="ai"
                 onClick={gerar}
                 disabled={fatos.length < 50 || pedidos.length < 10}
-                className="flex items-center gap-2 px-5 py-2 bg-indigo-600 text-white text-sm font-medium rounded-lg hover:bg-indigo-700 disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
+                icon={<Sparkles size={15} />}
               >
-                <Sparkles size={15} />
                 Gerar peça com IA
-              </button>
+              </Button>
             </>
           )}
           {fase === "gerando" && (
@@ -581,7 +553,7 @@ export default function PecaGeneratorModal({
                   abortRef.current?.abort();
                   resetForm();
                 }}
-                className="px-4 py-2 text-sm text-red-500 hover:text-red-700 transition-colors"
+                className="px-4 py-2 text-sm text-danger-500 hover:text-danger-700 transition-colors"
               >
                 Cancelar
               </button>
@@ -589,39 +561,26 @@ export default function PecaGeneratorModal({
           )}
           {fase === "erro" && (
             <>
-              <button
-                onClick={resetForm}
-                className="px-4 py-2 text-sm text-slate-500 hover:text-slate-700 transition-colors"
-              >
+              <Button variant="ghost" onClick={resetForm}>
                 Voltar
-              </button>
-              <button
-                onClick={gerar}
-                className="flex items-center gap-2 px-5 py-2 bg-indigo-600 text-white text-sm font-medium rounded-lg hover:bg-indigo-700 transition-colors"
-              >
-                <Sparkles size={15} />
+              </Button>
+              <Button variant="ai" onClick={gerar} icon={<Sparkles size={15} />}>
                 Tentar novamente
-              </button>
+              </Button>
             </>
           )}
           {fase === "concluido" && (
             <>
-              <button
-                onClick={resetForm}
-                className="px-4 py-2 text-sm text-slate-500 hover:text-slate-700 transition-colors"
-              >
+              <Button variant="ghost" onClick={resetForm}>
                 Nova peça
-              </button>
-              <button
-                onClick={fechar}
-                className="px-5 py-2 bg-indigo-600 text-white text-sm font-medium rounded-lg hover:bg-indigo-700 transition-colors"
-              >
+              </Button>
+              <Button variant="ai" onClick={fechar}>
                 Fechar
-              </button>
+              </Button>
             </>
           )}
         </div>
       </div>
-    </div>
+    </Modal>
   );
 }

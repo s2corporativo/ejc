@@ -168,9 +168,9 @@ export default function IA() {
         <div className="space-y-2">
           {logs.map((l) => (
             <div key={l.id} className="card p-4">
-              <div className="flex flex-wrap items-center gap-3 mb-2"><span className="text-xs font-semibold text-navy uppercase">{l.tipo_uso.replace(/_/g, " ")}</span><StatusBadge value={l.status_hitl} />{l.pii_removida && <span className="badge bg-emerald-100 text-emerald-700">PII removida</span>}<span className="text-xs text-slate-400 ml-auto">{fmtDate(l.created_at)}</span></div>
+              <div className="flex flex-wrap items-center gap-3 mb-2"><span className="text-xs font-semibold text-navy uppercase">{l.tipo_uso.replace(/_/g, " ")}</span><StatusBadge value={l.status_hitl} />{l.pii_removida && <span className="badge bg-success-100 text-success-700">PII removida</span>}<span className="text-xs text-slate-400 ml-auto">{fmtDate(l.created_at)}</span></div>
               {l.resposta && <details className="text-sm text-slate-600"><summary className="cursor-pointer text-navy text-xs font-medium">Ver resposta</summary><Markdown source={l.resposta} className="mt-2 text-xs" /></details>}
-              {l.status_hitl === "gerado" && <div className="flex gap-2 mt-2"><button className="btn-ghost text-xs px-2 py-1" onClick={() => marcarHitl(l.id, "revisado")}>Marcar revisado</button><button className="btn-ghost text-xs px-2 py-1 text-emerald-700" onClick={() => marcarHitl(l.id, "aplicado")}>Aplicado</button><button className="btn-ghost text-xs px-2 py-1 text-red-600" onClick={() => marcarHitl(l.id, "descartado")}>Descartar</button></div>}
+              {l.status_hitl === "gerado" && <div className="flex gap-2 mt-2"><button className="btn-ghost text-xs px-2 py-1" onClick={() => marcarHitl(l.id, "revisado")}>Marcar revisado</button><button className="btn-ghost text-xs px-2 py-1 text-success-700" onClick={() => marcarHitl(l.id, "aplicado")}>Aplicado</button><button className="btn-ghost text-xs px-2 py-1 text-danger-600" onClick={() => marcarHitl(l.id, "descartado")}>Descartar</button></div>}
             </div>
           ))}
           {logs.length === 0 && <div className="card p-8 text-center text-sm text-slate-400">Nenhum uso de IA registrado</div>}
@@ -178,10 +178,10 @@ export default function IA() {
       )}
 
       {loading && <Spinner />}
-      {resp?.erro && <div className="mt-4 p-3 rounded-lg bg-red-50 text-red-700 text-sm">{resp.erro}</div>}
+      {resp?.erro && <div className="mt-4 p-3 rounded-lg bg-danger-50 text-danger-700 text-sm">{resp.erro}</div>}
       {resp?.resposta && (
         <div className="mt-5 card p-5">
-          <div className="mb-3 p-3 rounded-lg bg-amber-50 text-amber-800 text-xs font-medium">
+          <div className="mb-3 p-3 rounded-lg bg-warn-50 text-warn-800 text-xs font-medium">
             {resp.aviso}{resp.veredito ? ` · Veredito: ${resp.veredito}` : ""}{resp.score_confianca !== undefined ? ` · Score: ${resp.score_confianca}/100` : ""}{resp.fontes_usadas !== undefined ? ` · Fontes: ${resp.fontes_usadas}` : ""}
           </div>
           {resp.metricas && <div className="grid sm:grid-cols-3 gap-3 mb-4 text-xs"><div className="rounded border border-slate-200 p-3"><b>Artigos</b><br />{resp.metricas.artigos_detectados?.length || 0}</div><div className="rounded border border-slate-200 p-3"><b>Jurisprudência pendente</b><br />{resp.metricas.jurisprudencia_pendente_verificacao?.length || 0}</div><div className="rounded border border-slate-200 p-3"><b>Provas indicadas</b><br />{resp.metricas.indicadores_prova?.length || 0}</div></div>}

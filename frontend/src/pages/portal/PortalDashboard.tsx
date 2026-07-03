@@ -14,10 +14,10 @@ import api from "../../lib/api";
 import { useAuth } from "../../stores/auth";
 
 const STATUS: Record<string, [string, string]> = {
-  triagem: ["Em análise", "bg-amber-100 text-amber-700"],
-  ativo: ["Em andamento", "bg-blue-100 text-blue-700"],
+  triagem: ["Em análise", "bg-warn-100 text-warn-700"],
+  ativo: ["Em andamento", "bg-primary-100 text-primary-700"],
   suspenso: ["Suspenso", "bg-slate-100 text-slate-600"],
-  encerrado: ["Encerrado", "bg-emerald-100 text-emerald-700"],
+  encerrado: ["Encerrado", "bg-success-100 text-success-700"],
   arquivado: ["Arquivado", "bg-slate-100 text-slate-500"],
 };
 
@@ -62,8 +62,8 @@ export default function PortalDashboard() {
       {/* KPI cards */}
       <div className="grid grid-cols-2 lg:grid-cols-3 gap-4">
         <div className="bg-white rounded-xl border border-slate-200 p-4 flex items-center gap-3">
-          <div className="p-2.5 bg-blue-50 rounded-lg">
-            <Scale className="w-5 h-5 text-blue-600" />
+          <div className="p-2.5 bg-primary-50 rounded-lg">
+            <Scale className="w-5 h-5 text-primary-600" />
           </div>
           <div>
             <p className="text-xs text-slate-500 uppercase tracking-wide">
@@ -75,8 +75,8 @@ export default function PortalDashboard() {
           </div>
         </div>
         <div className="bg-white rounded-xl border border-slate-200 p-4 flex items-center gap-3">
-          <div className="p-2.5 bg-amber-50 rounded-lg">
-            <DollarSign className="w-5 h-5 text-amber-600" />
+          <div className="p-2.5 bg-warn-50 rounded-lg">
+            <DollarSign className="w-5 h-5 text-warn-600" />
           </div>
           <div>
             <p className="text-xs text-slate-500 uppercase tracking-wide">
@@ -88,8 +88,8 @@ export default function PortalDashboard() {
           </div>
         </div>
         <div className="bg-white rounded-xl border border-slate-200 p-4 flex items-center gap-3">
-          <div className="p-2.5 bg-emerald-50 rounded-lg">
-            <CheckCircle className="w-5 h-5 text-emerald-600" />
+          <div className="p-2.5 bg-success-50 rounded-lg">
+            <CheckCircle className="w-5 h-5 text-success-600" />
           </div>
           <div>
             <p className="text-xs text-slate-500 uppercase tracking-wide">
@@ -109,25 +109,25 @@ export default function PortalDashboard() {
             to: "/portal/casos",
             label: "Processos",
             icon: Scale,
-            color: "text-blue-600 bg-blue-50",
+            color: "text-primary-600 bg-primary-50",
           },
           {
             to: "/portal/documentos",
             label: "Documentos",
             icon: FileText,
-            color: "text-purple-600 bg-purple-50",
+            color: "text-ai-600 bg-ai-50",
           },
           {
             to: "/portal/financeiro",
             label: "Financeiro",
             icon: DollarSign,
-            color: "text-emerald-600 bg-emerald-50",
+            color: "text-success-600 bg-success-50",
           },
           {
             to: "/portal/mensagens",
             label: "Mensagens",
             icon: Bell,
-            color: "text-amber-600 bg-amber-50",
+            color: "text-warn-600 bg-warn-50",
           },
         ].map(({ to, label, icon: Icon, color }) => (
           <Link
@@ -150,7 +150,7 @@ export default function PortalDashboard() {
             <h2 className="font-semibold text-slate-800">Meus processos</h2>
             <Link
               to="/portal/casos"
-              className="text-xs text-blue-600 hover:underline"
+              className="text-xs text-primary-600 hover:underline"
             >
               Ver todos
             </Link>
@@ -191,19 +191,19 @@ export default function PortalDashboard() {
 
       {/* Pending payments */}
       {!loading && pendente > 0 && (
-        <div className="bg-amber-50 border border-amber-200 rounded-xl p-4 flex items-center gap-4">
-          <AlertCircle className="w-6 h-6 text-amber-600 flex-shrink-0" />
+        <div className="bg-warn-50 border border-warn-200 rounded-xl p-4 flex items-center gap-4">
+          <AlertCircle className="w-6 h-6 text-warn-600 flex-shrink-0" />
           <div className="flex-1">
-            <p className="text-sm font-semibold text-amber-800">
+            <p className="text-sm font-semibold text-warn-800">
               Você tem valores pendentes
             </p>
-            <p className="text-xs text-amber-700 mt-0.5">
+            <p className="text-xs text-warn-700 mt-0.5">
               {fmtR$(pendente)} aguardando pagamento
             </p>
           </div>
           <Link
             to="/portal/financeiro"
-            className="px-3 py-1.5 bg-amber-600 text-white text-sm rounded-lg hover:bg-amber-700"
+            className="px-3 py-1.5 bg-warn-600 text-white text-sm rounded-lg hover:bg-warn-700"
           >
             Ver detalhes
           </Link>

@@ -217,11 +217,11 @@ export default function NoticiasCard() {
                 <button
                   onClick={() => salvar(i, n)}
                   disabled={salvos[i]}
-                  className="text-[11px] text-slate-500 hover:text-emerald-600 flex items-center gap-1"
+                  className="text-[11px] text-slate-500 hover:text-success-600 flex items-center gap-1"
                 >
                   {salvos[i] ? (
                     <>
-                      <Check size={11} className="text-emerald-600" /> Salvo
+                      <Check size={11} className="text-success-600" /> Salvo
                     </>
                   ) : (
                     <>

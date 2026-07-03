@@ -1,6 +1,6 @@
 import { useState, useEffect, useCallback } from "react";
 import api from "../lib/api";
-import { PageHeader, Spinner } from "../components/UI";
+import { PageHeader, Spinner, Modal } from "../components/UI";
 import {
   FileSignature,
   Plus,
@@ -39,7 +39,7 @@ const STATUS_CONFIG = {
     label: "Aguardando",
     className: "bg-yellow-100 text-yellow-800",
   },
-  parcial: { label: "Parcial", className: "bg-blue-100 text-blue-800" },
+  parcial: { label: "Parcial", className: "bg-primary-100 text-primary-800" },
   concluido: { label: "Concluído", className: "bg-green-100 text-green-800" },
 };
 
@@ -168,7 +168,7 @@ export default function Assinaturas() {
         <PageHeader title="Assinaturas" />
         <button
           onClick={abrirModal}
-          className="inline-flex items-center gap-2 bg-blue-600 hover:bg-blue-700 text-white text-sm font-medium px-4 py-2 rounded-lg transition-colors"
+          className="btn-primary"
         >
           <Plus className="w-4 h-4" />
           Nova Assinatura
@@ -266,157 +266,141 @@ export default function Assinaturas() {
       )}
 
       {/* MODAL */}
-      {modalAberto && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 px-4">
-          <div className="bg-white rounded-2xl shadow-xl w-full max-w-lg max-h-[90vh] overflow-y-auto">
-            <div className="flex items-center justify-between px-6 py-4 border-b border-gray-100">
-              <h2 className="text-lg font-semibold text-gray-800">
-                Nova Solicitação de Assinatura
-              </h2>
+      <Modal
+        open={modalAberto}
+        onClose={fecharModal}
+        title="Nova Solicitação de Assinatura"
+      >
+        <form onSubmit={criarSolicitacao} className="space-y-5">
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-1">
+              Nome do Documento <span className="text-danger-500">*</span>
+            </label>
+            <input
+              type="text"
+              required
+              value={form.documento_nome}
+              onChange={(e) =>
+                setForm((p) => ({ ...p, documento_nome: e.target.value }))
+              }
+              placeholder="Ex: Contrato de Prestação de Serviços"
+              className="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary-500"
+            />
+          </div>
+
+          <div className="grid grid-cols-2 gap-3">
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-1">
+                ID do Caso
+              </label>
+              <input
+                type="number"
+                value={form.case_id}
+                onChange={(e) =>
+                  setForm((p) => ({ ...p, case_id: e.target.value }))
+                }
+                placeholder="Opcional"
+                className="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary-500"
+              />
+            </div>
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-1">
+                ID do Documento
+              </label>
+              <input
+                type="number"
+                value={form.document_id}
+                onChange={(e) =>
+                  setForm((p) => ({ ...p, document_id: e.target.value }))
+                }
+                placeholder="Opcional"
+                className="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary-500"
+              />
+            </div>
+          </div>
+
+          <div>
+            <div className="flex items-center justify-between mb-2">
+              <label className="block text-sm font-medium text-gray-700">
+                Signatários <span className="text-danger-500">*</span>
+              </label>
               <button
-                onClick={fecharModal}
-                className="text-gray-400 hover:text-gray-700"
+                type="button"
+                onClick={adicionarSignatario}
+                className="inline-flex items-center gap-1 text-xs text-primary-600 hover:text-primary-800 font-medium"
               >
-                <X className="w-5 h-5" />
+                <UserPlus className="w-3.5 h-3.5" />
+                Adicionar
               </button>
             </div>
 
-            <form onSubmit={criarSolicitacao} className="px-6 py-5 space-y-5">
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">
-                  Nome do Documento <span className="text-red-500">*</span>
-                </label>
-                <input
-                  type="text"
-                  required
-                  value={form.documento_nome}
-                  onChange={(e) =>
-                    setForm((p) => ({ ...p, documento_nome: e.target.value }))
-                  }
-                  placeholder="Ex: Contrato de Prestação de Serviços"
-                  className="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
-                />
-              </div>
-
-              <div className="grid grid-cols-2 gap-3">
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">
-                    ID do Caso
-                  </label>
-                  <input
-                    type="number"
-                    value={form.case_id}
-                    onChange={(e) =>
-                      setForm((p) => ({ ...p, case_id: e.target.value }))
-                    }
-                    placeholder="Opcional"
-                    className="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
-                  />
-                </div>
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">
-                    ID do Documento
-                  </label>
-                  <input
-                    type="number"
-                    value={form.document_id}
-                    onChange={(e) =>
-                      setForm((p) => ({ ...p, document_id: e.target.value }))
-                    }
-                    placeholder="Opcional"
-                    className="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
-                  />
-                </div>
-              </div>
-
-              <div>
-                <div className="flex items-center justify-between mb-2">
-                  <label className="block text-sm font-medium text-gray-700">
-                    Signatários <span className="text-red-500">*</span>
-                  </label>
-                  <button
-                    type="button"
-                    onClick={adicionarSignatario}
-                    className="inline-flex items-center gap-1 text-xs text-blue-600 hover:text-blue-800 font-medium"
-                  >
-                    <UserPlus className="w-3.5 h-3.5" />
-                    Adicionar
-                  </button>
-                </div>
-
-                <div className="space-y-3">
-                  {form.signatarios.map((sig, idx) => (
-                    <div key={idx} className="flex gap-2 items-start">
-                      <div className="flex-1 grid grid-cols-3 gap-2">
-                        <input
-                          type="text"
-                          required
-                          value={sig.nome}
-                          onChange={(e) =>
-                            atualizarSignatario(idx, "nome", e.target.value)
-                          }
-                          placeholder="Nome"
-                          className="rounded-lg border border-gray-300 px-2 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
-                        />
-                        <input
-                          type="email"
-                          required
-                          value={sig.email}
-                          onChange={(e) =>
-                            atualizarSignatario(idx, "email", e.target.value)
-                          }
-                          placeholder="E-mail"
-                          className="rounded-lg border border-gray-300 px-2 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
-                        />
-                        <input
-                          type="text"
-                          value={sig.papel}
-                          onChange={(e) =>
-                            atualizarSignatario(idx, "papel", e.target.value)
-                          }
-                          placeholder="Papel"
-                          className="rounded-lg border border-gray-300 px-2 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
-                        />
-                      </div>
-                      {form.signatarios.length > 1 && (
-                        <button
-                          type="button"
-                          onClick={() => removerSignatario(idx)}
-                          className="mt-1 text-gray-300 hover:text-red-500 transition-colors"
-                        >
-                          <X className="w-4 h-4" />
-                        </button>
-                      )}
-                    </div>
-                  ))}
-                </div>
-              </div>
-
-              <div className="flex gap-3 pt-2">
-                <button
-                  type="button"
-                  onClick={fecharModal}
-                  className="flex-1 rounded-lg border border-gray-300 px-4 py-2 text-sm font-medium text-gray-700 hover:bg-gray-50 transition-colors"
-                >
-                  Cancelar
-                </button>
-                <button
-                  type="submit"
-                  disabled={salvando}
-                  className="flex-1 inline-flex items-center justify-center gap-2 bg-blue-600 hover:bg-blue-700 disabled:opacity-50 text-white text-sm font-medium px-4 py-2 rounded-lg transition-colors"
-                >
-                  {salvando ? (
-                    <Spinner />
-                  ) : (
-                    <FileSignature className="w-4 h-4" />
+            <div className="space-y-3">
+              {form.signatarios.map((sig, idx) => (
+                <div key={idx} className="flex gap-2 items-start">
+                  <div className="flex-1 grid grid-cols-3 gap-2">
+                    <input
+                      type="text"
+                      required
+                      value={sig.nome}
+                      onChange={(e) =>
+                        atualizarSignatario(idx, "nome", e.target.value)
+                      }
+                      placeholder="Nome"
+                      className="rounded-lg border border-gray-300 px-2 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-primary-500"
+                    />
+                    <input
+                      type="email"
+                      required
+                      value={sig.email}
+                      onChange={(e) =>
+                        atualizarSignatario(idx, "email", e.target.value)
+                      }
+                      placeholder="E-mail"
+                      className="rounded-lg border border-gray-300 px-2 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-primary-500"
+                    />
+                    <input
+                      type="text"
+                      value={sig.papel}
+                      onChange={(e) =>
+                        atualizarSignatario(idx, "papel", e.target.value)
+                      }
+                      placeholder="Papel"
+                      className="rounded-lg border border-gray-300 px-2 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-primary-500"
+                    />
+                  </div>
+                  {form.signatarios.length > 1 && (
+                    <button
+                      type="button"
+                      onClick={() => removerSignatario(idx)}
+                      className="mt-1 text-gray-300 hover:text-danger-500 transition-colors"
+                    >
+                      <X className="w-4 h-4" />
+                    </button>
                   )}
-                  Criar Solicitação
-                </button>
-              </div>
-            </form>
+                </div>
+              ))}
+            </div>
           </div>
-        </div>
-      )}
+
+          <div className="flex gap-3 pt-2">
+            <button
+              type="button"
+              onClick={fecharModal}
+              className="btn-secondary flex-1"
+            >
+              Cancelar
+            </button>
+            <button
+              type="submit"
+              disabled={salvando}
+              className="btn-primary flex-1"
+            >
+              {salvando ? <Spinner /> : <FileSignature className="w-4 h-4" />}
+              Criar Solicitação
+            </button>
+          </div>
+        </form>
+      </Modal>
     </div>
   );
 }

@@ -1,10 +1,26 @@
 import { useEffect, useState } from "react";
-import { toast } from "../components/Toast";
-import { Inbox, RefreshCw, CheckCircle2, ExternalLink } from "lucide-react";
+import {
+  Inbox,
+  RefreshCw,
+  CheckCircle2,
+  ExternalLink,
+  Loader2,
+  CalendarClock,
+} from "lucide-react";
 import { useNavigate } from "react-router-dom";
 import { format } from "date-fns";
 import { ptBR } from "date-fns/locale";
 import api from "../lib/api";
+import { PageHeader, Modal, Alert, Button, fmtDate } from "../components/UI";
+import { toast } from "../components/Toast";
+
+interface SugestaoPrazo {
+  tipo_detectado: string;
+  dias: number;
+  data_sugerida: string;
+  fundamentacao?: string | null;
+  aviso?: string | null;
+}
 
 interface StatusCaptura {
   executado_em: string | null;
@@ -18,6 +34,11 @@ export default function Intimacoes() {
   const [items, setItems] = useState<any[]>([]);
   const [pendentes, setPendentes] = useState(true);
   const [loading, setLoading] = useState(false);
+  const [sugerindo, setSugerindo] = useState<string | null>(null);
+  const [sugestao, setSugestao] = useState<{
+    com: any;
+    dados: SugestaoPrazo;
+  } | null>(null);
   const [status, setStatus] = useState<StatusCaptura | null>(null);
 
   const load = () =>
@@ -58,23 +79,74 @@ export default function Intimacoes() {
     load();
   };
 
+  const irParaNovoPrazo = (com: any) =>
+    nav(`/prazos?novo=1&processo=${com.numero_processo || ""}`);
+
+  const criarPrazo = async (com: any) => {
+    setSugerindo(com.id);
+    try {
+      const { data } = await api.post<SugestaoPrazo>(
+        `/intimacoes/${com.id}/sugerir-prazo`,
+      );
+      setSugestao({ com, dados: data });
+    } catch {
+      // Sem sugestão disponível — cai no fluxo manual atual
+      toast.info("Sugestão indisponível — preencha o prazo manualmente.");
+      irParaNovoPrazo(com);
+    } finally {
+      setSugerindo(null);
+    }
+  };
+
+  const usarSugestao = async () => {
+    if (!sugestao) return;
+    const { com, dados } = sugestao;
+    const resumo = [
+      `Título: ${dados.tipo_detectado} — ${com.numero_processo || "processo não identificado"}`,
+      `Prazo: ${dados.dias} dias`,
+      `Data sugerida: ${fmtDate(dados.data_sugerida)}`,
+      dados.fundamentacao ? `Fundamentação: ${dados.fundamentacao}` : null,
+    ]
+      .filter(Boolean)
+      .join("\n");
+    try {
+      await navigator.clipboard.writeText(resumo);
+      toast.info(
+        "Sugestão copiada — a tela de Prazos ainda não pré-preenche o formulário; cole os dados no novo prazo.",
+      );
+    } catch {
+      toast.error("Não foi possível copiar a sugestão. Anote os dados antes de continuar.");
+    }
+    setSugestao(null);
+    irParaNovoPrazo(com);
+  };
+
+  const preencherManual = () => {
+    if (!sugestao) return;
+    const { com } = sugestao;
+    setSugestao(null);
+    irParaNovoPrazo(com);
+  };
+
   return (
     <div>
-      <div className="flex items-center justify-between mb-5 flex-wrap gap-3">
-        <h1 className="page-title">📨 Intimações DJEN</h1>
-        <div className="flex gap-2">
-          <button
-            className="btn-ghost"
-            onClick={() => setPendentes(!pendentes)}
-          >
-            {pendentes ? "Ver todas" : "Só pendentes"}
-          </button>
-          <button className="btn-primary" disabled={loading} onClick={capturar}>
-            <RefreshCw size={15} className={loading ? "animate-spin" : ""} />
-            Capturar agora
-          </button>
-        </div>
-      </div>
+      <PageHeader
+        title="Intimações DJEN"
+        actions={
+          <div className="flex gap-2">
+            <button
+              className="btn-ghost"
+              onClick={() => setPendentes(!pendentes)}
+            >
+              {pendentes ? "Ver todas" : "Só pendentes"}
+            </button>
+            <button className="btn-primary" disabled={loading} onClick={capturar}>
+              <RefreshCw size={15} className={loading ? "animate-spin" : ""} />
+              Capturar agora
+            </button>
+          </div>
+        }
+      />
 
       {/* Status da última captura automática (DJEN) */}
       <div className="card mb-5 flex flex-wrap items-center justify-between gap-3 p-4">
@@ -163,11 +235,15 @@ export default function Intimacoes() {
             <div className="flex flex-col gap-2">
               <button
                 className="btn-ghost text-xs"
-                onClick={() =>
-                  nav(`/prazos?novo=1&processo=${c.numero_processo || ""}`)
-                }
+                disabled={sugerindo === c.id}
+                onClick={() => criarPrazo(c)}
               >
-                <ExternalLink size={13} /> Criar prazo
+                {sugerindo === c.id ? (
+                  <Loader2 size={13} className="animate-spin" />
+                ) : (
+                  <ExternalLink size={13} />
+                )}{" "}
+                Criar prazo
               </button>
               {!c.processada && (
                 <button
@@ -181,6 +257,74 @@ export default function Intimacoes() {
           </div>
         ))}
       </div>
+
+      {/* Sugestão de prazo (IA/heurística do backend) */}
+      <Modal
+        open={!!sugestao}
+        onClose={() => setSugestao(null)}
+        title="Sugestão de prazo"
+        size="md"
+        footer={
+          <>
+            <Button type="button" variant="secondary" onClick={preencherManual}>
+              Preencher manualmente
+            </Button>
+            <Button
+              type="button"
+              variant="primary"
+              icon={<CalendarClock className="h-4 w-4" />}
+              onClick={usarSugestao}
+            >
+              Usar sugestão
+            </Button>
+          </>
+        }
+      >
+        {sugestao && (
+          <div className="space-y-4">
+            <div className="grid grid-cols-2 gap-3 sm:grid-cols-3">
+              <div className="rounded-lg border border-slate-200 bg-slate-50 px-3 py-2">
+                <div className="text-[10px] font-bold uppercase text-slate-500">
+                  Tipo detectado
+                </div>
+                <div className="mt-1 text-sm font-semibold text-slate-900 capitalize">
+                  {sugestao.dados.tipo_detectado.replace(/_/g, " ")}
+                </div>
+              </div>
+              <div className="rounded-lg border border-slate-200 bg-slate-50 px-3 py-2">
+                <div className="text-[10px] font-bold uppercase text-slate-500">
+                  Prazo
+                </div>
+                <div className="mt-1 text-sm font-semibold text-slate-900">
+                  {sugestao.dados.dias} dias
+                </div>
+              </div>
+              <div className="rounded-lg border border-slate-200 bg-slate-50 px-3 py-2">
+                <div className="text-[10px] font-bold uppercase text-slate-500">
+                  Data sugerida
+                </div>
+                <div className="mt-1 text-sm font-semibold text-slate-900">
+                  {fmtDate(sugestao.dados.data_sugerida)}
+                </div>
+              </div>
+            </div>
+
+            {sugestao.dados.fundamentacao && (
+              <div className="rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm text-slate-700">
+                <span className="font-semibold text-slate-900">
+                  Fundamentação:
+                </span>{" "}
+                {sugestao.dados.fundamentacao}
+              </div>
+            )}
+
+            <Alert variant="warning" title="Confira antes de criar o prazo">
+              {sugestao.dados.aviso ||
+                "Sugestão automática — a contagem do prazo é de responsabilidade do advogado. Confira a intimação e a base legal."}
+            </Alert>
+          </div>
+        )}
+      </Modal>
     </div>
   );
 }

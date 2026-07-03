@@ -24,8 +24,8 @@ const NAV = [
 export default function PortalLayout() {
   const { user } = useAuth();
   return (
-    <div className="ejc-modern-scope min-h-screen bg-[#F7F8FA]">
-      <header className="border-b border-amber-300/20 bg-[#2f2119] text-white shadow-sm">
+    <div className="ejc-modern-scope min-h-screen bg-canvas">
+      <header className="border-b border-slate-700/40 bg-navy text-white shadow-sm">
         <div className="max-w-4xl mx-auto px-4 py-4 flex items-center justify-between">
           <div className="flex items-center gap-3">
             <div className="rounded-lg bg-white px-2 py-1 ring-1 ring-white/20">
@@ -35,7 +35,7 @@ export default function PortalLayout() {
                 className="brand-logo-img h-10 w-auto max-w-[170px]"
               />
             </div>
-            <div className="hidden text-[10px] uppercase tracking-[0.25em] text-amber-100 sm:block">
+            <div className="hidden text-[10px] uppercase tracking-[0.25em] text-slate-300 sm:block">
               Portal do Cliente
             </div>
           </div>
@@ -43,7 +43,7 @@ export default function PortalLayout() {
             <span className="text-sm hidden sm:block">{user?.full_name}</span>
             <button
               onClick={logout}
-              className="p-2 rounded-lg text-blue-100 hover:bg-white/10 hover:text-white"
+              className="p-2 rounded-lg text-primary-100 hover:bg-white/10 hover:text-white"
             >
               <LogOut size={18} />
             </button>
@@ -58,7 +58,7 @@ export default function PortalLayout() {
               className={({ isActive }) =>
                 `flex items-center gap-2 px-4 py-2.5 text-sm rounded-t-lg ${
                   isActive
-                    ? "bg-[#F7F8FA] text-[#4b3527] font-medium"
+                    ? "bg-canvas text-[#4b3527] font-medium"
                     : "text-slate-300 hover:text-white"
                 }`
               }

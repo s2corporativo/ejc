@@ -77,7 +77,7 @@ export const VeredutoIAWithVictoryVault: React.FC = () => {
           {loading ? 'Analisando...' : 'Analisar tese'}
         </button>
         {error && (
-          <div className="rounded-lg border border-red-200 bg-red-50 p-3 text-sm text-red-700">{error}</div>
+          <div className="rounded-lg border border-danger-200 bg-danger-50 p-3 text-sm text-danger-700">{error}</div>
         )}
       </form>
 
@@ -91,10 +91,10 @@ export const VeredutoIAWithVictoryVault: React.FC = () => {
             <div className="card p-5">
               <div className="mb-2 flex items-center justify-between">
                 <span className="eyebrow">Probabilidade de exito</span>
-                <span className="text-2xl font-semibold text-blue-700">{pct(result.probabilidade_exito)}</span>
+                <span className="text-2xl font-semibold text-primary-700">{pct(result.probabilidade_exito)}</span>
               </div>
               <div className="h-2 w-full overflow-hidden rounded-full bg-slate-100">
-                <div className="h-2 rounded-full bg-blue-600 transition-all" style={{ width: pct(result.probabilidade_exito) }} />
+                <div className="h-2 rounded-full bg-primary-600 transition-all" style={{ width: pct(result.probabilidade_exito) }} />
               </div>
             </div>
 
@@ -132,7 +132,7 @@ export const VeredutoIAWithVictoryVault: React.FC = () => {
                 <ul className="mt-3 space-y-2">
                   {result.sugestoes_contextualizadas.map((s, i) => (
                     <li key={i} className="flex gap-2 text-sm text-slate-600">
-                      <span className="text-blue-600">&bull;</span>
+                      <span className="text-primary-600">&bull;</span>
                       <span><span className="font-medium text-slate-900">{s.tipo}:</span> {s.descricao}</span>
                     </li>
                   ))}

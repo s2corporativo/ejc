@@ -255,7 +255,7 @@ export default function DataRoom() {
                     </div>
                     <button
                       onClick={() => copiar(lk.token)}
-                      className="text-blue-600 hover:underline text-xs"
+                      className="text-primary-600 hover:underline text-xs"
                     >
                       Copiar URL
                     </button>

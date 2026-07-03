@@ -1,7 +1,7 @@
 import { toast } from "../components/Toast";
 import { useEffect, useState } from "react";
 import { Link } from "react-router-dom";
-import { Plus, Search, ShieldAlert } from "lucide-react";
+import { Plus, Search, ShieldAlert, KeyRound } from "lucide-react";
 import api from "../lib/api";
 import type { Client, Paged } from "../types";
 import {
@@ -163,7 +163,7 @@ export default function Clientes() {
                         });
                       }}
                     >
-                      🔑
+                      <KeyRound size={14} />
                     </button>
                     <button
                       title="Relatório LGPD"
@@ -403,10 +403,10 @@ export default function Clientes() {
           <div
             className={`mt-4 p-3 rounded-lg text-sm flex gap-2 ${
               conflito.classificacao === "CONFLITO_IDENTIFICADO"
-                ? "bg-red-50 text-red-700"
+                ? "bg-danger-50 text-danger-700"
                 : conflito.classificacao === "POSSIVEL_CONFLITO"
-                  ? "bg-amber-50 text-amber-700"
-                  : "bg-emerald-50 text-emerald-700"
+                  ? "bg-warn-50 text-warn-700"
+                  : "bg-success-50 text-success-700"
             }`}
           >
             <ShieldAlert size={18} className="shrink-0 mt-0.5" />
@@ -445,8 +445,8 @@ export default function Clientes() {
             className="card p-6 w-full max-w-sm"
             onClick={(e) => e.stopPropagation()}
           >
-            <h3 className="font-semibold text-navy mb-1">
-              🔑 Acesso ao Portal
+            <h3 className="font-semibold text-navy mb-1 flex items-center gap-1.5">
+              <KeyRound size={16} /> Acesso ao Portal
             </h3>
             <p className="text-xs text-slate-500 mb-4">
               {acessoModal.nome || acessoModal.razao_social} — o cliente trocará

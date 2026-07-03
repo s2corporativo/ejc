@@ -9,6 +9,7 @@ import {
   FileText,
 } from "lucide-react";
 import api from "../lib/api";
+import { PageHeader } from "../components/UI";
 
 interface Movimento {
   data: string;
@@ -91,13 +92,10 @@ export default function DataJudBusca() {
   return (
     <div className="p-6 max-w-4xl mx-auto space-y-6">
       {/* Header */}
-      <div>
-        <h1 className="text-2xl font-bold text-slate-800">Consulta DataJud</h1>
-        <p className="text-slate-500 text-sm mt-1">
-          Busca de processos pelo número CNJ — API pública do Conselho Nacional
-          de Justiça
-        </p>
-      </div>
+      <PageHeader
+        title="Consulta DataJud"
+        subtitle="Busca de processos pelo número CNJ — API pública do Conselho Nacional de Justiça"
+      />
 
       {/* Search */}
       <div className="bg-white rounded-xl border border-slate-200 p-5">
@@ -108,7 +106,7 @@ export default function DataJudBusca() {
           <input
             type="text"
             placeholder="0000000-00.0000.0.00.0000 ou 20 dígitos"
-            className="flex-1 border border-slate-200 rounded-lg px-4 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-blue-300"
+            className="flex-1 border border-slate-200 rounded-lg px-4 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-primary-300"
             value={numero}
             onChange={(e) => setNumero(e.target.value)}
             onKeyDown={(e) => e.key === "Enter" && buscar()}
@@ -116,7 +114,7 @@ export default function DataJudBusca() {
           <button
             onClick={buscar}
             disabled={loading || !numero.trim()}
-            className="flex items-center gap-2 px-5 py-2.5 bg-blue-600 text-white rounded-lg hover:bg-blue-700 disabled:opacity-50 text-sm font-medium"
+            className="btn-primary"
           >
             {loading ? (
               <RefreshCw className="w-4 h-4 animate-spin" />
@@ -134,9 +132,9 @@ export default function DataJudBusca() {
 
       {/* Error */}
       {erro && (
-        <div className="bg-red-50 border border-red-200 rounded-xl p-4 flex items-center gap-3">
-          <AlertTriangle className="w-5 h-5 text-red-500 flex-shrink-0" />
-          <p className="text-sm text-red-700">{erro}</p>
+        <div className="bg-danger-50 border border-danger-200 rounded-xl p-4 flex items-center gap-3">
+          <AlertTriangle className="w-5 h-5 text-danger-500 flex-shrink-0" />
+          <p className="text-sm text-danger-700">{erro}</p>
         </div>
       )}
 
@@ -157,7 +155,7 @@ export default function DataJudBusca() {
                 )}
               </div>
               {processo.situacao && (
-                <span className="px-3 py-1 bg-blue-50 text-blue-700 rounded-full text-xs font-medium">
+                <span className="px-3 py-1 bg-primary-50 text-primary-700 rounded-full text-xs font-medium">
                   {processo.situacao}
                 </span>
               )}
@@ -243,9 +241,9 @@ export default function DataJudBusca() {
 
           {/* Sync message */}
           {syncMsg && (
-            <div className="bg-emerald-50 border border-emerald-200 rounded-xl p-4 flex items-center gap-3">
-              <CheckCircle className="w-4 h-4 text-emerald-600" />
-              <p className="text-sm text-emerald-700">{syncMsg}</p>
+            <div className="bg-success-50 border border-success-200 rounded-xl p-4 flex items-center gap-3">
+              <CheckCircle className="w-4 h-4 text-success-600" />
+              <p className="text-sm text-success-700">{syncMsg}</p>
             </div>
           )}
         </div>

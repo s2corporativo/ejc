@@ -7,49 +7,39 @@ export default {
       colors: {
         /*
          * Identidade De Paula Teixeira — bronze/ouro/espresso sobre marfim.
-         * `blue`/`violet`/`purple` são REMAPEADOS para que os ~151 usos literais
-         * legados (bg-blue-600, text-violet-700…) exibam a marca automaticamente,
-         * sem precisar editar 40 telas. `slate` segue como cinza neutro.
+         * `blue`/`violet`/`purple` voltam a ser as cores padrão do Tailwind
+         * (Fase 3): os usos literais legados são migrados para `primary-*`
+         * (ação/marca, era o remap de `blue`) e `ai-*` (superfície de IA, era
+         * o remap de `violet`/`purple`) em vez de continuar re-pintando as
+         * cores nativas do Tailwind.
          */
-        // Re-skin de literais legados
-        blue: {
-          50: "#FAF5EF", 100: "#F0E4D2", 200: "#E2CBA8", 300: "#CBA877",
+
+        // Sidebar — slate (era espresso/azul-marinho)
+        sidebar: {
+          DEFAULT: "#0F172A",
+          light:   "#1E293B",
+          hover:   "#172033",
+          active:  "#0B111F",
+        },
+        // Primária — bronze (ação/marca, substitui o remap de `blue`)
+        primary: {
+          DEFAULT: "#8C6A33",
+          50:  "#FAF5EF", 100: "#F0E4D2", 200: "#E2CBA8", 300: "#CBA877",
           400: "#B98A3C", 500: "#A6792F", 600: "#8C6A33", 700: "#6E5228",
           800: "#5A431F", 900: "#473414", 950: "#2A1F0C",
         },
-        violet: {
-          50: "#ECF4F3", 100: "#D2E7E4", 200: "#A8D0CB", 300: "#73B0A9",
+        // IA — teal (superfície de IA, substitui o remap de `violet`/`purple`)
+        ai: {
+          DEFAULT: "#266761",
+          50:  "#ECF4F3", 100: "#D2E7E4", 200: "#A8D0CB", 300: "#73B0A9",
           400: "#459089", 500: "#2F7A72", 600: "#266761", 700: "#1F534E",
           800: "#1B433F", 900: "#173734", 950: "#0B201E",
         },
-        purple: {
-          50: "#ECF4F3", 100: "#D2E7E4", 200: "#A8D0CB", 300: "#73B0A9",
-          400: "#459089", 500: "#2F7A72", 600: "#266761", 700: "#1F534E",
-          800: "#1B433F", 900: "#173734", 950: "#0B201E",
-        },
-
-        // Sidebar — espresso (era azul-marinho)
-        sidebar: {
-          DEFAULT: "#2A2017",
-          light:   "#3A2E22",
-          hover:   "#33271C",
-          active:  "#211910",
-        },
-        // Primária — bronze (era azul)
-        primary: {
-          DEFAULT: "#8C6A33",
-          50:  "#FAF5EF",
-          100: "#F0E4D2",
-          500: "#A6792F",
-          600: "#8C6A33",
-          700: "#6E5228",
-          800: "#5A431F",
-        },
-        // navy — repintado para espresso (era azul)
+        // navy — repintado para slate (era espresso/azul)
         navy: {
-          DEFAULT: "#2A2017",
-          950: "#15100A", 900: "#1F1710", 800: "#2D241A",
-          700: "#3A2E22", 600: "#4A3A2A", 100: "#ECE5DA", 50: "#F5F1EA",
+          DEFAULT: "#0F172A",
+          950: "#020617", 900: "#0F172A", 800: "#1E293B",
+          700: "#334155", 600: "#475569", 100: "#F1F5F9", 50: "#F8FAFC",
         },
         // Bronze / ouro — marca
         bronze: {
@@ -71,17 +61,69 @@ export default {
           50:      "#FAF5EF",
         },
         ink: {
-          DEFAULT: "#2A2017",
-          light:   "#5A4733",
+          DEFAULT: "#111827",
+          light:   "#374151",
         },
-        canvas: "#F7F3EE",
-        parchment: "#F0E8DD",
+        canvas: "#f7f8fa",
+        parchment: "#F1F5F9",
+        muted: "#6b7280",
+        border: "#e5e7eb",
+        // Status — formalizados (Fase 3), escala completa Tailwind padrão
+        // (success=emerald, warn=amber, danger=red, info=sky — mesmos hex)
+        success: {
+          DEFAULT: "#10b981",
+          50: "#ecfdf5", 100: "#d1fae5", 200: "#a7f3d0", 300: "#6ee7b7",
+          400: "#34d399", 500: "#10b981", 600: "#059669", 700: "#047857",
+          800: "#065f46", 900: "#064e3b", 950: "#022c22",
+        },
+        warn: {
+          DEFAULT: "#f59e0b",
+          50: "#fffbeb", 100: "#fef3c7", 200: "#fde68a", 300: "#fcd34d",
+          400: "#fbbf24", 500: "#f59e0b", 600: "#d97706", 700: "#b45309",
+          800: "#92400e", 900: "#78350f", 950: "#451a03",
+        },
+        warning: {
+          DEFAULT: "#f59e0b",
+          50: "#fffbeb", 100: "#fef3c7", 200: "#fde68a", 300: "#fcd34d",
+          400: "#fbbf24", 500: "#f59e0b", 600: "#d97706", 700: "#b45309",
+          800: "#92400e", 900: "#78350f", 950: "#451a03",
+        },
+        danger: {
+          DEFAULT: "#ef4444",
+          50: "#fef2f2", 100: "#fee2e2", 200: "#fecaca", 300: "#fca5a5",
+          400: "#f87171", 500: "#ef4444", 600: "#dc2626", 700: "#b91c1c",
+          800: "#991b1b", 900: "#7f1d1d", 950: "#450a0a",
+        },
+        error: {
+          DEFAULT: "#ef4444",
+          50: "#fef2f2", 100: "#fee2e2", 200: "#fecaca", 300: "#fca5a5",
+          400: "#f87171", 500: "#ef4444", 600: "#dc2626", 700: "#b91c1c",
+          800: "#991b1b", 900: "#7f1d1d", 950: "#450a0a",
+        },
+        info: {
+          DEFAULT: "#0ea5e9",
+          50: "#f0f9ff", 100: "#e0f2fe", 200: "#bae6fd", 300: "#7dd3fc",
+          400: "#38bdf8", 500: "#0ea5e9", 600: "#0284c7", 700: "#0369a1",
+          800: "#075985", 900: "#0c4a6e", 950: "#082f49",
+        },
       },
       fontFamily: {
         sans:  ['"DM Sans"', "system-ui", "sans-serif"],
         serif: ['"Cormorant Garamond"', "Georgia", "Cambria", "serif"],
+        // Mono de sistema — dados processuais (nº CNJ, CPF/CNPJ, valores).
+        // Sem fonte externa: usa o que já existe no SO.
+        mono: [
+          "ui-monospace",
+          '"Cascadia Code"',
+          '"JetBrains Mono"',
+          "Consolas",
+          "monospace",
+        ],
       },
       fontSize: {
+        // Papéis semânticos (Fase 2 do redesign)
+        display: ["2.25rem", { lineHeight: "2.6rem" }], // números de dashboard, heros
+        caption: ["0.7rem",  { lineHeight: "1rem" }],   // metadados, legendas
         "2xs": ["0.65rem",  { lineHeight: "1rem" }],
         xs:    ["0.75rem",  { lineHeight: "1.125rem" }],
         sm:    ["0.8125rem",{ lineHeight: "1.25rem" }],
@@ -125,11 +167,16 @@ export default {
           from:{opacity:"0", transform:"scale(.97)"},
           to:  {opacity:"1", transform:"scale(1)"},
         },
+        "slide-in-right": {
+          from:{opacity:"0", transform:"translateX(100%)"},
+          to:  {opacity:"1", transform:"translateX(0)"},
+        },
       },
       animation: {
         "fade-in": "fade-in .25s ease-out",
         "rise":    "rise .3s cubic-bezier(.2,.7,.3,1)",
         "pop":     "pop .18s cubic-bezier(.2,.7,.3,1)",
+        "slide-in-right": "slide-in-right .25s cubic-bezier(.2,.7,.3,1)",
       },
     },
   },

@@ -218,7 +218,7 @@ export default function Honorarios() {
             <div className="text-xs text-slate-400 uppercase font-semibold">
               Em atraso
             </div>
-            <div className="text-xl font-bold text-red-600">
+            <div className="text-xl font-bold text-danger-600">
               {fmtMoney(resumo.atrasado)}
             </div>
           </div>
@@ -226,7 +226,7 @@ export default function Honorarios() {
             <div className="text-xs text-slate-400 uppercase font-semibold">
               Recebido no mês
             </div>
-            <div className="text-xl font-bold text-emerald-600">
+            <div className="text-xl font-bold text-success-600">
               {fmtMoney(resumo.recebido_mes)}
             </div>
           </div>
@@ -283,7 +283,7 @@ export default function Honorarios() {
                   <td className="px-4 py-3">
                     {f.status !== "pago" && f.status !== "cancelado" && (
                       <button
-                        className="btn-ghost px-2 py-1 text-emerald-700"
+                        className="btn-ghost px-2 py-1 text-success-700"
                         title="Registrar pagamento"
                         onClick={() => {
                           setPagModal(f);
@@ -472,7 +472,7 @@ export default function Honorarios() {
                 [
                   "(−) Despesas do caso",
                   rateioModal.calc.despesas_caso,
-                  "text-red-500",
+                  "text-danger-500",
                 ],
                 [
                   "(=) Líquido a ratear",
@@ -482,7 +482,7 @@ export default function Honorarios() {
                 [
                   "Titular do caso (50%)",
                   rateioModal.calc.titular?.valor,
-                  "text-emerald-600 font-bold",
+                  "text-success-600 font-bold",
                 ],
                 [
                   "Escritório (50%)",
@@ -500,7 +500,7 @@ export default function Honorarios() {
               ))}
             </div>
             {!rateioModal.calc.titular?.partner_id && (
-              <p className="text-xs text-amber-600">
+              <p className="text-xs text-warn-600">
                 ⚠ Titular não é sócio cadastrado — gere o saque manualmente.
               </p>
             )}

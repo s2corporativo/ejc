@@ -13,6 +13,7 @@ import {
 } from "lucide-react";
 import api from "../lib/api";
 import ExtratoSocio from "../components/ExtratoSocio";
+import { PageHeader } from "../components/UI";
 
 const fmtMoney = (v?: number | null) =>
   (Number.isFinite(v) ? (v as number) : 0).toLocaleString("pt-BR", {
@@ -57,10 +58,10 @@ interface Withdrawal {
 }
 
 const STATUS_COLOR: Record<string, string> = {
-  pending: "bg-amber-50 text-amber-700",
-  approved: "bg-emerald-50 text-emerald-700",
-  rejected: "bg-red-50 text-red-600",
-  paid: "bg-blue-50 text-blue-700",
+  pending: "bg-warn-50 text-warn-700",
+  approved: "bg-success-50 text-success-700",
+  rejected: "bg-danger-50 text-danger-600",
+  paid: "bg-primary-50 text-primary-700",
 };
 const STATUS_LABEL: Record<string, string> = {
   pending: "Pendente",
@@ -237,31 +238,26 @@ export default function Sociedade() {
 
   return (
     <div className="p-6 max-w-6xl mx-auto space-y-6">
-      {/* Header */}
-      <div className="flex items-center justify-between">
-        <div>
-          <h1 className="text-2xl font-bold text-slate-800">
-            Gestão Societária
-          </h1>
-          <p className="text-slate-500 text-sm mt-1">
-            Sócios, participação e distribuição de lucros
-          </p>
-        </div>
-        <button
-          onClick={load}
-          className="p-2 border border-slate-200 rounded-lg hover:bg-slate-50"
-        >
-          <RefreshCw
-            className={`w-4 h-4 text-slate-400 ${loading ? "animate-spin" : ""}`}
-          />
-        </button>
-      </div>
+      <PageHeader
+        title="Gestão Societária"
+        subtitle="Sócios, participação e distribuição de lucros"
+        actions={
+          <button
+            onClick={load}
+            className="btn-secondary p-2"
+          >
+            <RefreshCw
+              className={`w-4 h-4 text-slate-400 ${loading ? "animate-spin" : ""}`}
+            />
+          </button>
+        }
+      />
 
       {/* KPI cards */}
       <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
         <div className="bg-white rounded-xl border border-slate-200 p-4 flex items-center gap-3">
-          <div className="p-2.5 bg-blue-50 rounded-lg">
-            <Users className="w-5 h-5 text-blue-600" />
+          <div className="p-2.5 bg-primary-50 rounded-lg">
+            <Users className="w-5 h-5 text-primary-600" />
           </div>
           <div>
             <p className="text-xs text-slate-500 uppercase tracking-wide">
@@ -273,8 +269,8 @@ export default function Sociedade() {
           </div>
         </div>
         <div className="bg-white rounded-xl border border-slate-200 p-4 flex items-center gap-3">
-          <div className="p-2.5 bg-emerald-50 rounded-lg">
-            <TrendingUp className="w-5 h-5 text-emerald-600" />
+          <div className="p-2.5 bg-success-50 rounded-lg">
+            <TrendingUp className="w-5 h-5 text-success-600" />
           </div>
           <div>
             <p className="text-xs text-slate-500 uppercase tracking-wide">
@@ -299,8 +295,8 @@ export default function Sociedade() {
           </div>
         </div>
         <div className="bg-white rounded-xl border border-slate-200 p-4 flex items-center gap-3">
-          <div className="p-2.5 bg-amber-50 rounded-lg">
-            <Clock className="w-5 h-5 text-amber-600" />
+          <div className="p-2.5 bg-warn-50 rounded-lg">
+            <Clock className="w-5 h-5 text-warn-600" />
           </div>
           <div>
             <p className="text-xs text-slate-500 uppercase tracking-wide">
@@ -321,7 +317,7 @@ export default function Sociedade() {
             onClick={() => setTab(t)}
             className={`px-4 py-2 text-sm font-medium border-b-2 -mb-px transition-colors ${
               tab === t
-                ? "border-blue-600 text-blue-600"
+                ? "border-primary-600 text-primary-600"
                 : "border-transparent text-slate-500 hover:text-slate-700"
             }`}
           >
@@ -347,7 +343,7 @@ export default function Sociedade() {
                 <span
                   className={
                     totalPart > 1.0001
-                      ? "text-red-600 font-semibold"
+                      ? "text-danger-600 font-semibold"
                       : "text-slate-600 font-semibold"
                   }
                 >
@@ -357,7 +353,7 @@ export default function Sociedade() {
             </div>
             <button
               onClick={() => setShowFormSocio((v) => !v)}
-              className="flex items-center gap-1.5 px-3 py-1.5 bg-blue-600 text-white text-sm rounded-lg hover:bg-blue-700"
+              className="btn-primary text-sm px-3 py-1.5"
             >
               <Plus className="w-4 h-4" /> Novo sócio
             </button>
@@ -420,13 +416,13 @@ export default function Sociedade() {
                 <button
                   type="button"
                   onClick={() => setShowFormSocio(false)}
-                  className="px-3 py-1.5 text-sm text-slate-500 hover:bg-slate-100 rounded-lg"
+                  className="btn-ghost text-sm px-3 py-1.5"
                 >
                   Cancelar
                 </button>
                 <button
                   type="submit"
-                  className="px-4 py-1.5 bg-blue-600 text-white text-sm rounded-lg hover:bg-blue-700"
+                  className="btn-primary text-sm px-4 py-1.5"
                 >
                   Salvar
                 </button>
@@ -445,8 +441,8 @@ export default function Sociedade() {
                   key={s.id}
                   className="flex items-center gap-4 p-3 rounded-lg border border-slate-100 hover:bg-slate-50"
                 >
-                  <div className="w-10 h-10 bg-blue-50 rounded-full flex items-center justify-center flex-shrink-0">
-                    <Users className="w-5 h-5 text-blue-500" />
+                  <div className="w-10 h-10 bg-primary-50 rounded-full flex items-center justify-center flex-shrink-0">
+                    <Users className="w-5 h-5 text-primary-500" />
                   </div>
                   <div className="flex-1">
                     <p className="text-sm font-semibold text-slate-800">
@@ -468,12 +464,12 @@ export default function Sociedade() {
                   )}
                   <div className="text-right w-20">
                     <p className="text-xs text-slate-400">Participação</p>
-                    <p className="text-lg font-bold text-blue-600">
+                    <p className="text-lg font-bold text-primary-600">
                       {fmtPct(s.participacao_percentual)}
                     </p>
                   </div>
                   <span
-                    className={`text-xs px-2 py-0.5 rounded-full ${s.ativo ? "bg-emerald-50 text-emerald-700" : "bg-slate-100 text-slate-400"}`}
+                    className={`text-xs px-2 py-0.5 rounded-full ${s.ativo ? "bg-success-50 text-success-700" : "bg-slate-100 text-slate-400"}`}
                   >
                     {s.ativo ? "Ativo" : "Inativo"}
                   </span>
@@ -498,7 +494,7 @@ export default function Sociedade() {
             </h2>
             <button
               onClick={() => setShowFormDist((v) => !v)}
-              className="flex items-center gap-1.5 px-3 py-1.5 bg-emerald-600 text-white text-sm rounded-lg hover:bg-emerald-700"
+              className="flex items-center gap-1.5 px-3 py-1.5 bg-success-600 text-white text-sm rounded-lg hover:bg-success-700"
             >
               <Plus className="w-4 h-4" /> Registrar distribuição
             </button>
@@ -542,13 +538,13 @@ export default function Sociedade() {
                 <button
                   type="button"
                   onClick={() => setShowFormDist(false)}
-                  className="px-3 py-2 text-sm text-slate-500 hover:bg-slate-100 rounded-lg"
+                  className="btn-ghost text-sm px-3 py-2"
                 >
                   Cancelar
                 </button>
                 <button
                   type="submit"
-                  className="px-4 py-2 bg-emerald-600 text-white text-sm rounded-lg hover:bg-emerald-700"
+                  className="px-4 py-2 bg-success-600 text-white text-sm rounded-lg hover:bg-success-700"
                 >
                   Salvar
                 </button>
@@ -584,7 +580,7 @@ export default function Sociedade() {
                           {new Date(d.created_at).toLocaleDateString("pt-BR")}
                         </p>
                       </div>
-                      <p className="text-lg font-bold text-emerald-600">
+                      <p className="text-lg font-bold text-success-600">
                         {fmtMoney(d.valor_total)}
                       </p>
                     </div>
@@ -619,7 +615,7 @@ export default function Sociedade() {
             <h2 className="font-semibold text-slate-800">Saques de Sócios</h2>
             <button
               onClick={() => setShowFormSaque((v) => !v)}
-              className="flex items-center gap-1.5 px-3 py-1.5 bg-blue-600 text-white text-sm rounded-lg hover:bg-blue-700"
+              className="btn-primary text-sm px-3 py-1.5"
             >
               <Plus className="w-4 h-4" /> Solicitar saque
             </button>
@@ -699,13 +695,13 @@ export default function Sociedade() {
                 <button
                   type="button"
                   onClick={() => setShowFormSaque(false)}
-                  className="px-3 py-1.5 text-sm text-slate-500 hover:bg-slate-100 rounded-lg"
+                  className="btn-ghost text-sm px-3 py-1.5"
                 >
                   Cancelar
                 </button>
                 <button
                   type="submit"
-                  className="px-4 py-1.5 bg-blue-600 text-white text-sm rounded-lg hover:bg-blue-700"
+                  className="btn-primary text-sm px-4 py-1.5"
                 >
                   Solicitar
                 </button>
@@ -758,14 +754,14 @@ export default function Sociedade() {
                     <div className="flex gap-1.5">
                       <button
                         onClick={() => approveWithdrawal(w.id, "approve")}
-                        className="p-1.5 bg-emerald-50 text-emerald-600 rounded-lg hover:bg-emerald-100"
+                        className="p-1.5 bg-success-50 text-success-600 rounded-lg hover:bg-success-100"
                         title="Aprovar"
                       >
                         <CheckCircle className="w-4 h-4" />
                       </button>
                       <button
                         onClick={() => approveWithdrawal(w.id, "reject")}
-                        className="p-1.5 bg-red-50 text-red-500 rounded-lg hover:bg-red-100"
+                        className="p-1.5 bg-danger-50 text-danger-500 rounded-lg hover:bg-danger-100"
                         title="Rejeitar"
                       >
                         <XCircle className="w-4 h-4" />

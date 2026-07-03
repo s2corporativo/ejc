@@ -29,14 +29,14 @@ function fire(type: ToastType, message: string) {
 
 const ICONS = {
   success: <CheckCircle size={16} className="text-green-500 shrink-0" />,
-  error: <XCircle size={16} className="text-red-500 shrink-0" />,
-  info: <Info size={16} className="text-blue-500 shrink-0" />,
+  error: <XCircle size={16} className="text-danger-500 shrink-0" />,
+  info: <Info size={16} className="text-primary-500 shrink-0" />,
 };
 
 const BG = {
   success: "bg-white dark:bg-gray-800 border-green-200 dark:border-green-800",
-  error: "bg-white dark:bg-gray-800 border-red-200   dark:border-red-800",
-  info: "bg-white dark:bg-gray-800 border-blue-200  dark:border-blue-800",
+  error: "bg-white dark:bg-gray-800 border-danger-200   dark:border-danger-800",
+  info: "bg-white dark:bg-gray-800 border-primary-200  dark:border-primary-800",
 };
 
 export function ToastContainer() {

@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 import { Trash2, RotateCcw } from "lucide-react";
 import api from "../lib/api";
+import { PageHeader } from "../components/UI";
 
 const ENTIDADES = [
   ["clients", "Clientes"],
@@ -31,7 +32,7 @@ export default function Lixeira() {
 
   return (
     <div>
-      <h1 className="page-title mb-5">🗑️ Lixeira</h1>
+      <PageHeader title="Lixeira" />
       <div className="flex gap-2 flex-wrap mb-4">
         {ENTIDADES.map(([id, label]) => (
           <button

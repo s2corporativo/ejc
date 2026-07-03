@@ -18,6 +18,7 @@ import {
   BarChart3,
 } from "lucide-react";
 import api from "../lib/api";
+import { Button } from "./UI";
 
 interface Parte {
   nome: string;
@@ -95,11 +96,11 @@ interface Analise {
 const forcaCor: Record<string, string> = {
   alta: "bg-green-100 text-green-800 border-green-200",
   media: "bg-yellow-100 text-yellow-800 border-yellow-200",
-  baixa: "bg-red-100 text-red-800 border-red-200",
+  baixa: "bg-danger-100 text-danger-800 border-danger-200",
 };
 
 const probCor: Record<string, string> = {
-  alta: "text-red-600",
+  alta: "text-danger-600",
   media: "text-yellow-600",
   baixa: "text-green-600",
 };
@@ -111,8 +112,8 @@ const cenarioIcon: Record<string, React.ReactNode> = {
 };
 
 const cenarioCor: Record<string, string> = {
-  agressivo: "border-red-200 bg-red-50",
-  moderado: "border-blue-200 bg-blue-50",
+  agressivo: "border-danger-200 bg-danger-50",
+  moderado: "border-primary-200 bg-primary-50",
   defensivo: "border-green-200 bg-green-50",
 };
 
@@ -191,7 +192,7 @@ export default function AnaliseEstrategica({
       {/* Header */}
       <div className="flex items-center justify-between">
         <div className="flex items-center gap-3">
-          <div className="w-10 h-10 rounded-xl bg-gradient-to-br from-violet-500 to-indigo-600 flex items-center justify-center shadow-md">
+          <div className="w-10 h-10 rounded-xl bg-gradient-to-br from-ai-500 to-ai-600 flex items-center justify-center shadow-md">
             <Brain className="w-5 h-5 text-white" />
           </div>
           <div>
@@ -217,7 +218,7 @@ export default function AnaliseEstrategica({
         <div className="space-y-3">
           <button
             onClick={() => setMostrarInput(!mostrarInput)}
-            className="text-sm text-indigo-600 hover:text-indigo-800 flex items-center gap-1"
+            className="text-sm text-ai-600 hover:text-ai-800 flex items-center gap-1"
           >
             {mostrarInput ? (
               <ChevronUp className="w-3 h-3" />
@@ -233,13 +234,14 @@ export default function AnaliseEstrategica({
               value={textDoc}
               onChange={(e) => setTextDoc(e.target.value)}
               placeholder="Cole aqui o texto extraído de uma petição, contrato, documento oficial..."
-              className="w-full border border-slate-200 rounded-lg p-3 text-sm h-28 resize-none focus:ring-2 focus:ring-indigo-300 focus:border-indigo-400 outline-none"
+              className="w-full border border-slate-200 rounded-lg p-3 text-sm h-28 resize-none focus:ring-2 focus:ring-ai-300 focus:border-ai-400 outline-none"
             />
           )}
-          <button
+          <Button
+            variant="ai"
             onClick={executarAnalise}
             disabled={loading}
-            className="w-full bg-gradient-to-r from-violet-600 to-indigo-600 hover:from-violet-700 hover:to-indigo-700 text-white font-semibold py-3 rounded-xl text-sm transition-all shadow-md disabled:opacity-50 flex items-center justify-center gap-2"
+            className="w-full py-3 rounded-xl shadow-md"
           >
             {loading ? (
               <>
@@ -252,7 +254,7 @@ export default function AnaliseEstrategica({
                 Executar Análise Estratégica
               </>
             )}
-          </button>
+          </Button>
           <p className="text-xs text-slate-400 text-center">
             A IA analisará todos os dados do caso e produzirá um parecer
             estratégico completo
@@ -261,7 +263,7 @@ export default function AnaliseEstrategica({
       )}
 
       {analise?.erro && (
-        <div className="bg-red-50 border border-red-200 rounded-xl p-4 text-sm text-red-700">
+        <div className="bg-danger-50 border border-danger-200 rounded-xl p-4 text-sm text-danger-700">
           {analise.erro}
         </div>
       )}
@@ -270,17 +272,17 @@ export default function AnaliseEstrategica({
         <div className="space-y-3">
           {/* Alertas */}
           {analise.alertas && analise.alertas.length > 0 && (
-            <div className="bg-amber-50 border border-amber-200 rounded-xl p-4">
-              <div className="flex items-center gap-2 font-semibold text-amber-800 text-sm mb-2">
+            <div className="bg-warn-50 border border-warn-200 rounded-xl p-4">
+              <div className="flex items-center gap-2 font-semibold text-warn-800 text-sm mb-2">
                 <AlertTriangle className="w-4 h-4" /> Alertas
               </div>
               <ul className="space-y-1">
                 {analise.alertas.map((a, i) => (
                   <li
                     key={i}
-                    className="text-sm text-amber-700 flex items-start gap-2"
+                    className="text-sm text-warn-700 flex items-start gap-2"
                   >
-                    <span className="mt-0.5 text-amber-500">•</span>
+                    <span className="mt-0.5 text-warn-500">•</span>
                     {a}
                   </li>
                 ))}
@@ -291,11 +293,11 @@ export default function AnaliseEstrategica({
           {/* Ramo + Partes */}
           <Secao
             titulo="Ramo e Partes"
-            icon={<Scale className="w-4 h-4 text-indigo-500" />}
+            icon={<Scale className="w-4 h-4 text-ai-500" />}
           >
             {analise.ramo && (
               <div className="flex items-center gap-2 mb-3">
-                <span className="bg-indigo-100 text-indigo-800 text-xs font-semibold px-3 py-1 rounded-full">
+                <span className="bg-ai-100 text-ai-800 text-xs font-semibold px-3 py-1 rounded-full">
                   {analise.ramo}
                 </span>
                 {analise.subramo && (
@@ -317,9 +319,9 @@ export default function AnaliseEstrategica({
                       <span
                         className={`text-xs font-semibold px-2 py-0.5 rounded mr-2 ${
                           p.polo === "ativo"
-                            ? "bg-blue-100 text-blue-700"
+                            ? "bg-primary-100 text-primary-700"
                             : p.polo === "passivo"
-                              ? "bg-red-100 text-red-700"
+                              ? "bg-danger-100 text-danger-700"
                               : "bg-slate-100 text-slate-600"
                         }`}
                       >
@@ -348,10 +350,10 @@ export default function AnaliseEstrategica({
           {/* Fatos + Pontos */}
           <Secao
             titulo="Fatos e Análise Inicial"
-            icon={<BookOpen className="w-4 h-4 text-blue-500" />}
+            icon={<BookOpen className="w-4 h-4 text-primary-500" />}
           >
             {analise.sumario_fatos && (
-              <p className="text-sm text-slate-700 leading-relaxed mb-4 p-3 bg-slate-50 rounded-lg border-l-4 border-blue-400">
+              <p className="text-sm text-slate-700 leading-relaxed mb-4 p-3 bg-slate-50 rounded-lg border-l-4 border-primary-400">
                 {analise.sumario_fatos}
               </p>
             )}
@@ -375,14 +377,14 @@ export default function AnaliseEstrategica({
               )}
               {analise.pontos_fracos && analise.pontos_fracos.length > 0 && (
                 <div>
-                  <p className="text-xs font-semibold text-red-700 mb-2 flex items-center gap-1">
+                  <p className="text-xs font-semibold text-danger-700 mb-2 flex items-center gap-1">
                     <AlertTriangle className="w-3.5 h-3.5" /> Pontos Fracos
                   </p>
                   <ul className="space-y-1.5">
                     {analise.pontos_fracos.map((p, i) => (
                       <li
                         key={i}
-                        className="text-xs text-slate-700 bg-red-50 rounded p-2 border border-red-100 leading-relaxed"
+                        className="text-xs text-slate-700 bg-danger-50 rounded p-2 border border-danger-100 leading-relaxed"
                       >
                         {p}
                       </li>
@@ -397,15 +399,15 @@ export default function AnaliseEstrategica({
           {analise.estrategia && (
             <Secao
               titulo="Estratégia (3 Cenários)"
-              icon={<Target className="w-4 h-4 text-violet-500" />}
+              icon={<Target className="w-4 h-4 text-ai-500" />}
             >
               {analise.estrategia.recomendacao && (
-                <div className="mb-3 p-3 bg-violet-50 border border-violet-200 rounded-lg">
-                  <p className="text-xs font-semibold text-violet-700 mb-1">
+                <div className="mb-3 p-3 bg-ai-50 border border-ai-200 rounded-lg">
+                  <p className="text-xs font-semibold text-ai-700 mb-1">
                     ✦ Recomendação: cenário{" "}
                     {analise.estrategia.recomendacao?.toUpperCase()}
                   </p>
-                  <p className="text-xs text-violet-800">
+                  <p className="text-xs text-ai-800">
                     {analise.estrategia.justificativa_recomendacao}
                   </p>
                 </div>
@@ -420,12 +422,12 @@ export default function AnaliseEstrategica({
                   return (
                     <div
                       key={c}
-                      className={`rounded-xl border-2 p-4 transition-all ${isRec ? "border-violet-300 bg-violet-50 shadow-sm" : cenarioCor[c]}`}
+                      className={`rounded-xl border-2 p-4 transition-all ${isRec ? "border-ai-300 bg-ai-50 shadow-sm" : cenarioCor[c]}`}
                     >
                       <div className="flex items-center gap-2 mb-2">
                         {cenarioIcon[c]}
                         <span
-                          className={`text-sm font-bold capitalize ${isRec ? "text-violet-800" : "text-slate-800"}`}
+                          className={`text-sm font-bold capitalize ${isRec ? "text-ai-800" : "text-slate-800"}`}
                         >
                           {c} {isRec && "⭐"}
                         </span>
@@ -441,7 +443,7 @@ export default function AnaliseEstrategica({
                           {dados.vantagem}
                         </div>
                         <div className="bg-white bg-opacity-60 rounded p-2">
-                          <span className="font-semibold text-red-600">⚠ </span>
+                          <span className="font-semibold text-danger-600">⚠ </span>
                           {dados.risco}
                         </div>
                       </div>
@@ -452,7 +454,7 @@ export default function AnaliseEstrategica({
                               key={i}
                               className="text-xs text-slate-600 flex items-start gap-1.5"
                             >
-                              <span className="text-violet-400 mt-0.5">→</span>
+                              <span className="text-ai-400 mt-0.5">→</span>
                               {a}
                             </li>
                           ))}
@@ -469,13 +471,13 @@ export default function AnaliseEstrategica({
           {analise.teses_campeas && analise.teses_campeas.length > 0 && (
             <Secao
               titulo="Teses Campeãs"
-              icon={<BookOpen className="w-4 h-4 text-emerald-500" />}
+              icon={<BookOpen className="w-4 h-4 text-success-500" />}
             >
               <div className="space-y-3">
                 {analise.teses_campeas.map((t, i) => (
                   <div
                     key={i}
-                    className="border border-slate-200 rounded-xl p-4 bg-gradient-to-br from-white to-emerald-50"
+                    className="border border-slate-200 rounded-xl p-4 bg-gradient-to-br from-white to-success-50"
                   >
                     <div className="flex items-start justify-between mb-2">
                       <h4 className="font-semibold text-slate-800 text-sm pr-2">
@@ -487,13 +489,13 @@ export default function AnaliseEstrategica({
                         {t.forca?.toUpperCase()}
                       </span>
                     </div>
-                    <p className="text-xs text-indigo-700 font-medium mb-1">
+                    <p className="text-xs text-ai-700 font-medium mb-1">
                       ⚖ {t.fundamento_legal}
                     </p>
                     <p className="text-xs text-slate-500 mb-2 italic">
                       {t.jurisprudencia}
                     </p>
-                    <p className="text-xs text-slate-700 bg-white rounded-lg p-2 border border-emerald-100">
+                    <p className="text-xs text-slate-700 bg-white rounded-lg p-2 border border-success-100">
                       {t.aplicabilidade}
                     </p>
                   </div>
@@ -506,25 +508,25 @@ export default function AnaliseEstrategica({
           {analise.jurimetria && (
             <Secao
               titulo="Jurimetria"
-              icon={<BarChart3 className="w-4 h-4 text-blue-500" />}
+              icon={<BarChart3 className="w-4 h-4 text-primary-500" />}
             >
               <div className="grid grid-cols-2 gap-3 mb-3">
-                <div className="bg-gradient-to-br from-blue-50 to-indigo-50 rounded-xl p-4 border border-blue-100 text-center">
-                  <div className="text-3xl font-bold text-blue-600 mb-1">
+                <div className="bg-gradient-to-br from-primary-50 to-ai-50 rounded-xl p-4 border border-primary-100 text-center">
+                  <div className="text-3xl font-bold text-primary-600 mb-1">
                     {analise.jurimetria.chance_sucesso_percent ?? "—"}%
                   </div>
                   <div className="text-xs text-slate-500">Chance de Êxito</div>
-                  <div className="mt-2 h-2 bg-blue-100 rounded-full overflow-hidden">
+                  <div className="mt-2 h-2 bg-primary-100 rounded-full overflow-hidden">
                     <div
-                      className="h-full bg-blue-500 rounded-full"
+                      className="h-full bg-primary-500 rounded-full"
                       style={{
                         width: `${analise.jurimetria.chance_sucesso_percent ?? 0}%`,
                       }}
                     />
                   </div>
                 </div>
-                <div className="bg-gradient-to-br from-violet-50 to-purple-50 rounded-xl p-4 border border-violet-100 text-center">
-                  <div className="text-3xl font-bold text-violet-600 mb-1">
+                <div className="bg-gradient-to-br from-ai-50 to-ai-50 rounded-xl p-4 border border-ai-100 text-center">
+                  <div className="text-3xl font-bold text-ai-600 mb-1">
                     {analise.jurimetria.tempo_estimado_meses ?? "—"}
                   </div>
                   <div className="text-xs text-slate-500">Meses estimados</div>
@@ -533,11 +535,11 @@ export default function AnaliseEstrategica({
                   </div>
                 </div>
               </div>
-              <div className="bg-emerald-50 border border-emerald-200 rounded-xl p-4 text-center mb-3">
+              <div className="bg-success-50 border border-success-200 rounded-xl p-4 text-center mb-3">
                 <div className="text-xs text-slate-500 mb-1">
                   Faixa de Valor Estimado
                 </div>
-                <div className="text-lg font-bold text-emerald-700">
+                <div className="text-lg font-bold text-success-700">
                   {fmtBRL(analise.jurimetria.faixa_valor_min)} —{" "}
                   {fmtBRL(analise.jurimetria.faixa_valor_max)}
                 </div>
@@ -623,7 +625,7 @@ export default function AnaliseEstrategica({
                       <div
                         className={`text-xs font-bold px-2 py-1 rounded-lg shrink-0 ${
                           p.prioridade === "alta"
-                            ? "bg-red-100 text-red-700"
+                            ? "bg-danger-100 text-danger-700"
                             : p.prioridade === "media"
                               ? "bg-yellow-100 text-yellow-700"
                               : "bg-green-100 text-green-700"

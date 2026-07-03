@@ -161,7 +161,7 @@ export default function Produtividade() {
                   `produtividade-${periodo}`,
                 )
               }
-              className="flex items-center gap-1.5 px-3 py-1.5 text-xs bg-white border border-zinc-200 rounded-lg text-zinc-600 hover:bg-zinc-50 transition"
+              className="btn-secondary text-xs px-3 py-1.5"
               title="Exportar CSV"
             >
               <Download className="w-3.5 h-3.5" /> CSV
@@ -181,7 +181,7 @@ export default function Produtividade() {
                   ]),
                 )
               }
-              className="flex items-center gap-1.5 px-3 py-1.5 text-xs bg-white border border-zinc-200 rounded-lg text-zinc-600 hover:bg-zinc-50 transition"
+              className="btn-secondary text-xs px-3 py-1.5"
               title="Exportar PDF"
             >
               <FileType2 className="w-3.5 h-3.5" /> PDF
@@ -267,7 +267,7 @@ export default function Produtividade() {
                       value={a.horas}
                       max={maxArea}
                       sub={`${a.horas_faturavel}h fat. · ${a.casos} caso(s)`}
-                      color="bg-emerald-400/70"
+                      color="bg-success-400/70"
                     />
                   ))}
                 </div>

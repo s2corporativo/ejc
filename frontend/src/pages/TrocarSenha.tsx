@@ -43,7 +43,7 @@ export default function TrocarSenha() {
           Por segurança, defina sua senha pessoal antes de continuar.
         </p>
         {erro && (
-          <div className="mb-3 px-3 py-2 rounded-lg bg-red-50 text-red-700 text-sm">
+          <div className="mb-3 px-3 py-2 rounded-lg bg-danger-50 text-danger-700 text-sm">
             {erro}
           </div>
         )}

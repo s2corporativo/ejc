@@ -64,7 +64,7 @@ export const VictoryVaultPanel: React.FC = () => {
             key={t}
             onClick={() => setSelectedTab(t)}
             className={`-mb-px border-b-2 px-3 py-2 text-sm font-medium transition-colors ${
-              selectedTab === t ? 'border-blue-600 text-blue-700' : 'border-transparent text-slate-500 hover:text-slate-800'
+              selectedTab === t ? 'border-primary-600 text-primary-700' : 'border-transparent text-slate-500 hover:text-slate-800'
             }`}
           >
             {t === 'teses' ? 'Teses vitoriosas' : 'Modelos de documentos'}
@@ -91,7 +91,7 @@ export const VictoryVaultPanel: React.FC = () => {
             type="button"
             onClick={() => setSelectedArea(null)}
             className={`rounded-full px-3 py-1 text-xs font-medium transition-colors ${
-              selectedArea === null ? 'bg-blue-600 text-white' : 'bg-slate-100 text-slate-600 hover:bg-slate-200'
+              selectedArea === null ? 'bg-primary-600 text-white' : 'bg-slate-100 text-slate-600 hover:bg-slate-200'
             }`}
           >
             Todas as areas
@@ -102,7 +102,7 @@ export const VictoryVaultPanel: React.FC = () => {
               type="button"
               onClick={() => setSelectedArea(area)}
               className={`rounded-full px-3 py-1 text-xs font-medium transition-colors ${
-                selectedArea === area ? 'bg-blue-600 text-white' : 'bg-slate-100 text-slate-600 hover:bg-slate-200'
+                selectedArea === area ? 'bg-primary-600 text-white' : 'bg-slate-100 text-slate-600 hover:bg-slate-200'
               }`}
             >
               {area}

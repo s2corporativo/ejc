@@ -97,13 +97,13 @@ export default function KnowledgeHub() {
           <div className="grid lg:grid-cols-2 gap-4">
             <Bloco
               titulo="Base RAG (leis, súmulas, doutrina)"
-              cor="bg-purple-500"
+              cor="bg-ai-500"
               n={res.rag.length}
             >
               {res.rag.map((r, i) => (
                 <div key={i} className="text-sm border-b border-gray-100 pb-2">
                   <div className="flex justify-between">
-                    <span className="text-xs bg-purple-100 text-purple-700 px-2 rounded">
+                    <span className="text-xs bg-ai-100 text-ai-700 px-2 rounded">
                       {r.categoria}
                     </span>
                     {r.score != null && (
@@ -120,7 +120,7 @@ export default function KnowledgeHub() {
             </Bloco>
             <Bloco
               titulo="Teses do escritório"
-              cor="bg-blue-500"
+              cor="bg-primary-500"
               n={res.teses.length}
             >
               {res.teses.map((t: any, i: number) => (
@@ -150,7 +150,7 @@ export default function KnowledgeHub() {
             </Bloco>
             <Bloco
               titulo="Memória institucional"
-              cor="bg-amber-500"
+              cor="bg-warn-500"
               n={res.memoria.length}
             >
               {res.memoria.map((m: any, i: number) => (

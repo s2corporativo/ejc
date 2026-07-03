@@ -15,6 +15,7 @@ import {
 } from "lucide-react";
 import api from "../lib/api";
 import { AtendimentoStats } from "../components/Dashboards";
+import { Button, PageHeader } from "../components/UI";
 
 interface FunilData {
   total_cadastros: number;
@@ -69,10 +70,10 @@ function StatCard({
   sub?: string;
 }) {
   const cls = {
-    blue: "bg-blue-50 text-blue-600",
-    green: "bg-emerald-50 text-emerald-600",
-    amber: "bg-amber-50 text-amber-600",
-    red: "bg-red-50 text-red-600",
+    blue: "bg-primary-50 text-primary-600",
+    green: "bg-success-50 text-success-600",
+    amber: "bg-warn-50 text-warn-600",
+    red: "bg-danger-50 text-danger-600",
     slate: "bg-slate-100 text-slate-500",
   }[color];
   return (
@@ -101,11 +102,11 @@ const ETAPA_LABEL: Record<string, string> = {
 };
 const ETAPA_COLOR: Record<string, string> = {
   lead: "bg-slate-100 text-slate-600",
-  contato: "bg-blue-100 text-blue-700",
-  reuniao: "bg-amber-100 text-amber-700",
-  proposta: "bg-purple-100 text-purple-700",
-  convertido: "bg-emerald-100 text-emerald-700",
-  perdido: "bg-red-100 text-red-600",
+  contato: "bg-primary-100 text-primary-700",
+  reuniao: "bg-warn-100 text-warn-700",
+  proposta: "bg-ai-100 text-ai-700",
+  convertido: "bg-success-100 text-success-700",
+  perdido: "bg-danger-100 text-danger-600",
 };
 
 export default function CentralRelacionamento() {
@@ -157,38 +158,37 @@ export default function CentralRelacionamento() {
   return (
     <div className="p-6 max-w-7xl mx-auto space-y-6">
       {/* Header */}
-      <div className="flex items-center justify-between">
-        <div>
-          <h1 className="text-2xl font-bold text-slate-800">
-            Central de Relacionamento
-          </h1>
-          <p className="text-slate-500 text-sm mt-1">
-            Funil CRM, captação e engajamento de clientes
-          </p>
-        </div>
-        <div className="flex gap-2">
-          <button
-            onClick={() => nav("/whatsapp")}
-            className="flex items-center gap-2 px-3 py-2 bg-green-500 text-white rounded-lg hover:bg-green-600 text-sm"
-          >
-            <MessageCircle className="w-4 h-4" /> WhatsApp
-          </button>
-          <button
-            onClick={() => nav("/crm-leads")}
-            className="flex items-center gap-2 px-3 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 text-sm"
-          >
-            <Users className="w-4 h-4" /> Funil de Leads
-          </button>
-          <button
-            onClick={load}
-            className="p-2 border border-slate-200 rounded-lg hover:bg-slate-50"
-          >
-            <RefreshCw
-              className={`w-4 h-4 text-slate-400 ${loading ? "animate-spin" : ""}`}
+      <PageHeader
+        title="Central de Relacionamento"
+        subtitle="Funil CRM, captação e engajamento de clientes"
+        actions={
+          <div className="flex gap-2">
+            <button
+              onClick={() => nav("/whatsapp")}
+              className="flex items-center gap-2 px-3 py-2 bg-green-500 text-white rounded-lg hover:bg-green-600 text-sm"
+            >
+              <MessageCircle className="w-4 h-4" /> WhatsApp
+            </button>
+            <button
+              onClick={() => nav("/crm-leads")}
+              className="btn-primary text-sm"
+            >
+              <Users className="w-4 h-4" /> Funil de Leads
+            </button>
+            <Button
+              onClick={load}
+              variant="secondary"
+              size="icon"
+              aria-label="Atualizar"
+              icon={
+                <RefreshCw
+                  className={`w-4 h-4 text-slate-400 ${loading ? "animate-spin" : ""}`}
+                />
+              }
             />
-          </button>
-        </div>
-      </div>
+          </div>
+        }
+      />
 
       <AtendimentoStats />
 
@@ -252,7 +252,7 @@ export default function CentralRelacionamento() {
                     </div>
                     <div className="h-2 bg-slate-100 rounded-full overflow-hidden">
                       <div
-                        className="h-full bg-blue-500 rounded-full"
+                        className="h-full bg-primary-500 rounded-full"
                         style={{ width: `${pct}%` }}
                       />
                     </div>
@@ -263,7 +263,7 @@ export default function CentralRelacionamento() {
           )}
           <button
             onClick={() => nav("/crm-leads")}
-            className="mt-4 w-full text-xs text-blue-600 hover:underline flex items-center justify-center gap-1"
+            className="mt-4 w-full text-xs text-primary-600 hover:underline flex items-center justify-center gap-1"
           >
             Ver funil de leads <ChevronRight className="w-3 h-3" />
           </button>
@@ -290,7 +290,7 @@ export default function CentralRelacionamento() {
                   className="flex items-center justify-between py-2 border-b border-slate-50 last:border-0 text-sm"
                 >
                   <div className="flex items-center gap-2">
-                    <Star className="w-3 h-3 text-amber-400" />
+                    <Star className="w-3 h-3 text-warn-400" />
                     <span className="text-slate-700 capitalize">
                       {o.origem || "Não informado"}
                     </span>
@@ -315,7 +315,7 @@ export default function CentralRelacionamento() {
             <h2 className="font-semibold text-slate-800">Leads recentes</h2>
             <button
               onClick={() => nav("/crm-leads")}
-              className="text-xs text-blue-600 hover:underline"
+              className="text-xs text-primary-600 hover:underline"
             >
               Ver todos
             </button>
@@ -392,7 +392,7 @@ export default function CentralRelacionamento() {
           </h2>
           <button
             onClick={() => nav("/clientes")}
-            className="text-xs text-blue-600 hover:underline"
+            className="text-xs text-primary-600 hover:underline"
           >
             Ver todos
           </button>
@@ -433,7 +433,7 @@ export default function CentralRelacionamento() {
                   {c.telefone && (
                     <a
                       href={`tel:${c.telefone}`}
-                      className="p-1.5 bg-blue-50 text-blue-600 rounded-lg hover:bg-blue-100"
+                      className="p-1.5 bg-primary-50 text-primary-600 rounded-lg hover:bg-primary-100"
                     >
                       <Phone className="w-3.5 h-3.5" />
                     </a>

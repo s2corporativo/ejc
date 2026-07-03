@@ -15,8 +15,8 @@ import { Markdown } from "../Markdown";
 type Confianca = "alta" | "media" | "baixa" | string;
 
 const CONF_STYLE: Record<string, string> = {
-  alta: "bg-emerald-50 text-emerald-700 ring-emerald-200",
-  media: "bg-amber-50 text-amber-700 ring-amber-200",
+  alta: "bg-success-50 text-success-700 ring-success-200",
+  media: "bg-warn-50 text-warn-700 ring-warn-200",
   baixa: "bg-rose-50 text-rose-700 ring-rose-200",
 };
 
@@ -45,7 +45,7 @@ export function AIResponse({
     >
       {/* Cabeçalho */}
       <div className="flex items-center gap-3 border-b border-slate-100 bg-slate-50/60 px-4 py-3">
-        <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-gradient-to-br from-violet-500 to-indigo-600 text-white shadow-sm">
+        <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-gradient-to-br from-ai-500 to-ai-600 text-white shadow-sm">
           <Sparkles className="h-4 w-4" />
         </div>
         <div className="min-w-0 flex-1">
@@ -67,7 +67,7 @@ export function AIResponse({
       <div className="px-4 py-4">
         {loading ? (
           <div className="flex items-center gap-2 text-sm text-slate-500">
-            <span className="h-4 w-4 animate-spin rounded-full border-2 border-slate-300 border-t-violet-500" />
+            <span className="h-4 w-4 animate-spin rounded-full border-2 border-slate-300 border-t-ai-500" />
             Gerando análise…
           </div>
         ) : error ? (

@@ -47,7 +47,7 @@ export default function FinanceiroWorkspace() {
               onClick={() => setTab(k)}
               className={`flex h-9 items-center gap-1.5 whitespace-nowrap rounded-lg px-4 text-sm font-medium transition-all ${
                 tab === k
-                  ? "bg-blue-600 text-white shadow-sm shadow-blue-600/20"
+                  ? "bg-primary-600 text-white shadow-sm shadow-primary-600/20"
                   : "text-slate-500 hover:bg-slate-100 hover:text-slate-800"
               }`}
             >

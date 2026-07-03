@@ -1,8 +1,9 @@
 // src/components/ExtratoSocio.tsx
 // Modal de extrato financeiro do advogado/sócio: honorários + saques de êxito + distribuições.
 import { useState } from "react";
-import { BarChart2, X, TrendingUp, Wallet, PieChart } from "lucide-react";
+import { BarChart2, TrendingUp, Wallet, PieChart } from "lucide-react";
 import api from "../lib/api";
+import { Modal } from "./UI";
 
 const fmtR = (v: number) =>
   (v ?? 0).toLocaleString("pt-BR", { style: "currency", currency: "BRL" });
@@ -53,37 +54,24 @@ export default function ExtratoSocio({ userId, nome, isSocio = false }: Props) {
       </button>
 
       {open && data && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4">
-          <div className="bg-white rounded-xl shadow-2xl w-full max-w-2xl max-h-[90vh] overflow-y-auto">
-            {/* Header */}
-            <div className="flex items-center justify-between px-5 py-4 border-b">
-              <div>
-                <h2 className="font-serif font-semibold text-navy text-base">
-                  Extrato — {data.advogado ?? data.socio?.full_name ?? nome}
-                </h2>
-                {data.socio && (
-                  <p className="text-xs text-slate-500 mt-0.5">
-                    Participação:{" "}
-                    {((data.socio.participacao_percentual ?? 0) * 100).toFixed(
-                      2,
-                    )}
-                    %
-                    {data.socio.pro_labore
-                      ? ` · Pró-labore: ${fmtR(data.socio.pro_labore)}`
-                      : ""}
-                  </p>
-                )}
-              </div>
-              <button
-                onClick={() => setOpen(false)}
-                className="text-slate-400 hover:text-slate-700"
-              >
-                <X size={18} />
-              </button>
-            </div>
+        <Modal
+          open={open}
+          onClose={() => setOpen(false)}
+          title={`Extrato — ${data.advogado ?? data.socio?.full_name ?? nome}`}
+        >
+          <>
+            {data.socio && (
+              <p className="text-xs text-slate-500 -mt-2 mb-3">
+                Participação:{" "}
+                {((data.socio.participacao_percentual ?? 0) * 100).toFixed(2)}%
+                {data.socio.pro_labore
+                  ? ` · Pró-labore: ${fmtR(data.socio.pro_labore)}`
+                  : ""}
+              </p>
+            )}
 
             {/* KPI strip */}
-            <div className="grid grid-cols-2 sm:grid-cols-3 gap-3 p-4">
+            <div className="grid grid-cols-2 sm:grid-cols-3 gap-3 -mx-5 px-5 pb-4">
               {data.resumo?.honorarios_recebidos !== undefined && (
                 <Kpi
                   icon={TrendingUp}
@@ -136,10 +124,10 @@ export default function ExtratoSocio({ userId, nome, isSocio = false }: Props) {
                           <span
                             className={`px-1.5 py-0.5 rounded text-[10px] font-medium ${
                               h.status === "pago"
-                                ? "bg-emerald-50 text-emerald-700"
+                                ? "bg-success-50 text-success-700"
                                 : h.status === "atrasado"
-                                  ? "bg-red-50 text-red-600"
-                                  : "bg-amber-50 text-amber-700"
+                                  ? "bg-danger-50 text-danger-600"
+                                  : "bg-warn-50 text-warn-700"
                             }`}
                           >
                             {h.status}
@@ -183,10 +171,10 @@ export default function ExtratoSocio({ userId, nome, isSocio = false }: Props) {
                           <span
                             className={`px-1.5 py-0.5 rounded text-[10px] font-medium ${
                               s.status === "paid"
-                                ? "bg-blue-50 text-blue-700"
+                                ? "bg-primary-50 text-primary-700"
                                 : s.status === "approved"
-                                  ? "bg-emerald-50 text-emerald-700"
-                                  : "bg-amber-50 text-amber-700"
+                                  ? "bg-success-50 text-success-700"
+                                  : "bg-warn-50 text-warn-700"
                             }`}
                           >
                             {s.status}
@@ -226,7 +214,7 @@ export default function ExtratoSocio({ userId, nome, isSocio = false }: Props) {
                           {d.mes_referencia}
                         </td>
                         <td className="py-1.5 pr-3">
-                          <span className="px-1.5 py-0.5 rounded text-[10px] font-medium bg-blue-50 text-blue-700">
+                          <span className="px-1.5 py-0.5 rounded text-[10px] font-medium bg-primary-50 text-primary-700">
                             {d.status ?? "registrado"}
                           </span>
                         </td>
@@ -246,12 +234,12 @@ export default function ExtratoSocio({ userId, nome, isSocio = false }: Props) {
               </p>
             )}
 
-            <div className="px-5 py-3 text-[10px] text-amber-700 border-t">
+            <div className="-mx-5 px-5 pt-3 text-[10px] text-warn-700 border-t">
               Instrumento interno — dados em tempo real do banco. Saldo de
               distribuições por sócio calculado no momento do rateio.
             </div>
-          </div>
-        </div>
+          </>
+        </Modal>
       )}
     </>
   );
@@ -287,7 +275,7 @@ function Section({
   children: React.ReactNode;
 }) {
   return (
-    <div className="px-5 pb-4">
+    <div className="pb-4">
       <h3 className="text-[11px] font-semibold uppercase tracking-wide text-slate-400 mb-2">
         {title}
       </h3>

@@ -139,7 +139,7 @@ export default function PortalMensagens() {
                     <div
                       className={`max-w-[80%] px-3 py-2 rounded-xl text-sm ${
                         m.autor_tipo === "cliente"
-                          ? "bg-blue-600 text-white rounded-br-sm"
+                          ? "bg-primary-600 text-white rounded-br-sm"
                           : "bg-slate-100 text-slate-800 rounded-bl-sm"
                       }`}
                     >
@@ -150,7 +150,7 @@ export default function PortalMensagens() {
                       )}
                       <p className="leading-relaxed">{m.mensagem}</p>
                       <p
-                        className={`text-[10px] mt-1 ${m.autor_tipo === "cliente" ? "text-blue-200" : "text-slate-400"}`}
+                        className={`text-[10px] mt-1 ${m.autor_tipo === "cliente" ? "text-primary-200" : "text-slate-400"}`}
                       >
                         {fmtTime(m.created_at)}
                       </p>
@@ -166,7 +166,7 @@ export default function PortalMensagens() {
               <input
                 type="text"
                 placeholder="Digite sua mensagem..."
-                className="flex-1 border border-slate-200 rounded-xl px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-300"
+                className="flex-1 border border-slate-200 rounded-xl px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary-300"
                 value={text}
                 onChange={(e) => setText(e.target.value)}
                 onKeyDown={(e) => e.key === "Enter" && !e.shiftKey && send()}
@@ -175,7 +175,7 @@ export default function PortalMensagens() {
               <button
                 onClick={send}
                 disabled={!text.trim() || sending}
-                className="p-2.5 bg-blue-600 text-white rounded-xl hover:bg-blue-700 disabled:opacity-50"
+                className="btn-primary p-2.5 rounded-xl"
               >
                 {sending ? (
                   <RefreshCw className="w-4 h-4 animate-spin" />

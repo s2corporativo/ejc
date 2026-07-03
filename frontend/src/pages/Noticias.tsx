@@ -32,8 +32,8 @@ export default function Noticias() {
   }, []);
 
   const corFonte: Record<string, string> = {
-    ConJur: "bg-sky-100 text-sky-700",
-    JOTA: "bg-purple-100 text-purple-700",
+    ConJur: "bg-info-100 text-info-700",
+    JOTA: "bg-ai-100 text-ai-700",
   };
   const fmtData = (s: string) => {
     if (!s) return "";

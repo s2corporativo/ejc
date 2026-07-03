@@ -550,8 +550,22 @@ async def remover(
 
 
 # ═══ Exportação em PDF timbrado (logo institucional embutido) ═══
-from fastapi.responses import Response
+import io
+import re as _re
+
+from fastapi.responses import Response, StreamingResponse
 from app.services.pdf_service import peca_para_pdf_async
+from app.services.docx_service import gerar_docx_async
+
+_DOCX_MEDIA_TYPE = "application/vnd.openxmlformats-officedocument.wordprocessingml.document"
+
+
+def _slug_arquivo(titulo: str, fallback: str = "documento") -> str:
+    """Slug ASCII seguro p/ Content-Disposition filename."""
+    import unicodedata
+    base = unicodedata.normalize("NFKD", titulo or "").encode("ascii", "ignore").decode("ascii")
+    slug = _re.sub(r"[^a-z0-9]+", "-", base.lower()).strip("-")[:60]
+    return slug or fallback
 
 
 @router.get("/{doc_id}/pdf")
@@ -609,5 +623,49 @@ async def exportar_pdf(
     return Response(
         content=pdf_bytes, media_type="application/pdf",
         headers={"Content-Disposition": f'attachment; filename="{safe_name}.pdf"'},
+    )
+
+
+# ═══ Exportação em DOCX editável (Times 12pt, ABNT — R7 auditoria) ═══
+@router.get("/{doc_id}/exportar-docx")
+async def exportar_docx(
+    doc_id: str,
+    db: AsyncSession = Depends(get_db),
+    cu: User = Depends(get_current_user),
+):
+    """
+    Exporta a peça em DOCX editável (versão de trabalho — não substitui o
+    PDF de protocolo). Gate idêntico ao GET do detalhe: 404 se inexistente,
+    ownership do caso (IDOR) quando a peça está vinculada a um caso.
+    """
+    d = (await db.execute(
+        select(LegalDoc).where(LegalDoc.id == doc_id, LegalDoc.deleted_at.is_(None))
+    )).scalar_one_or_none()
+    if not d:
+        raise HTTPException(status_code=404, detail="Peça não encontrada")
+
+    meta: dict = {}
+    if d.case_id:
+        case = await verificar_acesso_caso(db, cu, d.case_id)
+        if case.numero_processo:
+            meta["numero_processo"] = case.numero_processo
+
+    titulo = padronizar_documento_juridico(d.titulo)
+    conteudo = padronizar_documento_juridico(d.conteudo)
+
+    try:
+        docx_bytes = await gerar_docx_async(titulo, conteudo, meta)
+    except RuntimeError as e:
+        raise HTTPException(status_code=503, detail=str(e))
+
+    await criar_audit_log(db, cu.id, cu.role.value, "DOWNLOAD", "legal_docs",
+                          doc_id, detalhes="Exportacao DOCX editavel")
+    await db.commit()
+
+    filename = f"{_slug_arquivo(titulo, fallback='peca')}.docx"
+    return StreamingResponse(
+        io.BytesIO(docx_bytes),
+        media_type=_DOCX_MEDIA_TYPE,
+        headers={"Content-Disposition": f'attachment; filename="{filename}"'},
     )
 

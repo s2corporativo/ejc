@@ -60,22 +60,22 @@ export default function PortalAssinaturas() {
 
       {/* Comprovante */}
       {comprovante && (
-        <div className="bg-emerald-50 border border-emerald-200 rounded-xl p-4 flex items-start gap-3">
-          <ShieldCheck className="w-5 h-5 text-emerald-600 flex-shrink-0 mt-0.5" />
+        <div className="bg-success-50 border border-success-200 rounded-xl p-4 flex items-start gap-3">
+          <ShieldCheck className="w-5 h-5 text-success-600 flex-shrink-0 mt-0.5" />
           <div className="flex-1">
-            <p className="text-sm font-semibold text-emerald-700">
+            <p className="text-sm font-semibold text-success-700">
               Documento assinado com sucesso!
             </p>
-            <p className="text-xs text-emerald-600 mt-0.5 font-mono break-all">
+            <p className="text-xs text-success-600 mt-0.5 font-mono break-all">
               Hash: {comprovante.hash_documento}
             </p>
-            <p className="text-xs text-emerald-500 mt-1">
+            <p className="text-xs text-success-500 mt-1">
               Registrado em {new Date().toLocaleString("pt-BR")}
             </p>
           </div>
           <button
             onClick={() => setComprovante(null)}
-            className="text-emerald-400 hover:text-emerald-600"
+            className="text-success-400 hover:text-success-600"
           >
             <X className="w-4 h-4" />
           </button>
@@ -86,7 +86,7 @@ export default function PortalAssinaturas() {
       {pendentes.length > 0 && (
         <div className="bg-white rounded-xl border border-slate-200 overflow-hidden">
           <div className="px-5 py-4 border-b border-slate-100 flex items-center gap-2">
-            <Clock className="w-4 h-4 text-amber-500" />
+            <Clock className="w-4 h-4 text-warn-500" />
             <h2 className="font-semibold text-slate-700">
               Pendentes ({pendentes.length})
             </h2>
@@ -98,8 +98,8 @@ export default function PortalAssinaturas() {
                 className="px-5 py-4 flex items-center justify-between gap-4"
               >
                 <div className="flex items-start gap-3 min-w-0">
-                  <div className="w-8 h-8 bg-amber-50 rounded-lg flex items-center justify-center flex-shrink-0 mt-0.5">
-                    <FileText className="w-4 h-4 text-amber-500" />
+                  <div className="w-8 h-8 bg-warn-50 rounded-lg flex items-center justify-center flex-shrink-0 mt-0.5">
+                    <FileText className="w-4 h-4 text-warn-500" />
                   </div>
                   <div className="min-w-0">
                     <p className="text-sm font-medium text-slate-800 truncate">
@@ -118,7 +118,7 @@ export default function PortalAssinaturas() {
                 <button
                   onClick={() => assinar(s.id)}
                   disabled={signing === s.id}
-                  className="flex items-center gap-1.5 px-4 py-2 bg-blue-600 text-white text-sm rounded-lg hover:bg-blue-700 disabled:opacity-50 flex-shrink-0"
+                  className="btn-primary text-sm px-4 py-2 flex-shrink-0"
                 >
                   <PenLine className="w-3.5 h-3.5" />
                   {signing === s.id ? "Assinando…" : "Assinar"}
@@ -133,7 +133,7 @@ export default function PortalAssinaturas() {
       {assinados.length > 0 && (
         <div className="bg-white rounded-xl border border-slate-200 overflow-hidden">
           <div className="px-5 py-4 border-b border-slate-100 flex items-center gap-2">
-            <CheckCircle2 className="w-4 h-4 text-emerald-500" />
+            <CheckCircle2 className="w-4 h-4 text-success-500" />
             <h2 className="font-semibold text-slate-700">
               Assinados ({assinados.length})
             </h2>
@@ -145,8 +145,8 @@ export default function PortalAssinaturas() {
                 className="px-5 py-4 flex items-center justify-between gap-4"
               >
                 <div className="flex items-start gap-3 min-w-0">
-                  <div className="w-8 h-8 bg-emerald-50 rounded-lg flex items-center justify-center flex-shrink-0 mt-0.5">
-                    <CheckCircle2 className="w-4 h-4 text-emerald-500" />
+                  <div className="w-8 h-8 bg-success-50 rounded-lg flex items-center justify-center flex-shrink-0 mt-0.5">
+                    <CheckCircle2 className="w-4 h-4 text-success-500" />
                   </div>
                   <div className="min-w-0">
                     <p className="text-sm font-medium text-slate-800 truncate">
@@ -160,7 +160,7 @@ export default function PortalAssinaturas() {
                     )}
                   </div>
                 </div>
-                <span className="text-xs font-medium text-emerald-600 bg-emerald-50 px-2 py-1 rounded-full flex-shrink-0">
+                <span className="text-xs font-medium text-success-600 bg-success-50 px-2 py-1 rounded-full flex-shrink-0">
                   Concluído
                 </span>
               </div>

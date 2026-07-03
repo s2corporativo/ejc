@@ -90,15 +90,15 @@ const RESULTADO_LABEL: Record<string, string> = {
 function TaxaSucesso({ v }: { v: number }) {
   const cor =
     v >= 70
-      ? "text-emerald-600"
+      ? "text-success-600"
       : v >= 40
-        ? "text-amber-600"
+        ? "text-warn-600"
         : "text-slate-400";
   return (
     <div className="flex items-center gap-1.5">
       <div className="w-16 bg-slate-100 rounded-full h-1.5">
         <div
-          className={`h-1.5 rounded-full ${v >= 70 ? "bg-emerald-400" : v >= 40 ? "bg-amber-400" : "bg-slate-300"}`}
+          className={`h-1.5 rounded-full ${v >= 70 ? "bg-success-400" : v >= 40 ? "bg-warn-400" : "bg-slate-300"}`}
           style={{ width: `${Math.min(v, 100)}%` }}
         />
       </div>
@@ -281,7 +281,7 @@ function ModalTese({ tese, onClose }: { tese: Tese; onClose: () => void }) {
             )}
             {tese.vezes_venceu > 0 && (
               <div className="text-center">
-                <p className="text-lg font-serif text-emerald-600">
+                <p className="text-lg font-serif text-success-600">
                   {tese.vezes_venceu}
                 </p>
                 <p className="label-caps">vitórias</p>
@@ -414,7 +414,7 @@ export default function Biblioteca() {
           </div>
         </div>
         <div className="card p-4 flex items-center gap-3">
-          <CheckCircle className="w-5 h-5 text-emerald-500 flex-shrink-0" />
+          <CheckCircle className="w-5 h-5 text-success-500 flex-shrink-0" />
           <div>
             <p className="font-serif text-xl text-navy-800">
               {stats.estrategias}
@@ -423,7 +423,7 @@ export default function Biblioteca() {
           </div>
         </div>
         <div className="card p-4 flex items-center gap-3">
-          <TrendingUp className="w-5 h-5 text-amber-500 flex-shrink-0" />
+          <TrendingUp className="w-5 h-5 text-warn-500 flex-shrink-0" />
           <div>
             <p className="font-serif text-xl text-navy-800">
               {teses.length > 0

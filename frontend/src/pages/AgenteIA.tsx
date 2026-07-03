@@ -1,8 +1,9 @@
 import { useEffect, useState } from "react";
 import Markdown from "../components/Markdown";
-import { Cpu, Send, AlertTriangle, Loader2 } from "lucide-react";
+import { Send, AlertTriangle, Loader2 } from "lucide-react";
 import api from "../lib/api";
 import { toast } from "../components/Toast";
+import { PageHeader } from "../components/UI";
 
 // Tarefas expostas (correspondem ao TarefaIA do backend). Rótulos amigáveis.
 const TAREFAS: { k: string; label: string; dica: string }[] = [
@@ -102,29 +103,22 @@ export default function AgenteIA() {
 
   return (
     <div className="space-y-4">
-      <div className="flex items-start justify-between flex-wrap gap-2">
-        <div>
-          <h2 className="font-semibold flex items-center gap-2">
-            <Cpu size={18} className="text-[#2D6CDF]" /> Agente Jurídico (Claude
-            + Skills)
-          </h2>
-          <p className="text-xs text-gray-400">
-            Raciocínio jurídico avançado por tarefa, ancorado na base do
-            escritório (RAG). Resultado é rascunho — revisão humana obrigatória
-            (OAB).
-          </p>
-        </div>
-        {status && (
-          <span
-            className={`text-xs font-semibold px-2.5 py-1 rounded-full ${habilitado ? "bg-green-100 text-green-700" : "bg-amber-100 text-amber-700"}`}
-          >
-            {habilitado ? "● IA ativa" : "● IA desligada"}
-          </span>
-        )}
-      </div>
+      <PageHeader
+        title="Agente Jurídico (Claude + Skills)"
+        subtitle="Raciocínio jurídico avançado por tarefa, ancorado na base do escritório (RAG). Resultado é rascunho — revisão humana obrigatória (OAB)."
+        actions={
+          status ? (
+            <span
+              className={`text-xs font-semibold px-2.5 py-1 rounded-full ${habilitado ? "bg-green-100 text-green-700" : "bg-warn-100 text-warn-700"}`}
+            >
+              {habilitado ? "● IA ativa" : "● IA desligada"}
+            </span>
+          ) : undefined
+        }
+      />
 
       {status && !habilitado && (
-        <div className="card p-3 border border-amber-200 bg-amber-50 text-sm text-amber-800 flex gap-2">
+        <div className="card p-3 border border-warn-200 bg-warn-50 text-sm text-warn-800 flex gap-2">
           <AlertTriangle size={16} className="shrink-0 mt-0.5" />
           <div>
             Módulo de IA <b>desligado</b> (custo R$ 0). Para ativar: definir{" "}
@@ -210,7 +204,7 @@ export default function AgenteIA() {
           {res && (
             <div className="space-y-2">
               <div className="flex flex-wrap gap-2 text-[11px]">
-                <span className="px-2 py-0.5 rounded-full bg-blue-50 text-blue-700">
+                <span className="px-2 py-0.5 rounded-full bg-primary-50 text-primary-700">
                   {res.modelo}
                 </span>
                 <span className="px-2 py-0.5 rounded-full bg-slate-100 text-slate-600">
@@ -221,12 +215,12 @@ export default function AgenteIA() {
                     R$ {res.custo_estimado_brl}
                   </span>
                 )}
-                <span className="px-2 py-0.5 rounded-full bg-amber-100 text-amber-700">
+                <span className="px-2 py-0.5 rounded-full bg-warn-100 text-warn-700">
                   RASCUNHO
                 </span>
               </div>
               <Markdown source={res.conteudo} className="text-sm text-navy-900 max-h-[28rem] overflow-auto bg-slate-50 rounded-lg p-3" />
-              <p className="text-[11px] text-amber-700">{res.aviso}</p>
+              <p className="text-[11px] text-warn-700">{res.aviso}</p>
             </div>
           )}
         </div>

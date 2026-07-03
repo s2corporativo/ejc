@@ -76,7 +76,7 @@ export default function Documentos() {
 
   const confIcon = (c: string) =>
     ["restrito", "confidencial", "segredo_justica"].includes(c) ? (
-      <Lock size={13} className="text-red-500" />
+      <Lock size={13} className="text-danger-500" />
     ) : null;
 
   return (

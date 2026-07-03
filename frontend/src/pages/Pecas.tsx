@@ -8,6 +8,7 @@ import {
   Eye,
   FileDown,
   LayoutTemplate,
+  Printer,
   SearchCheck,
 } from "lucide-react";
 import api from "../lib/api";
@@ -61,15 +62,26 @@ export default function Pecas() {
   const [casoSel, setCasoSel] = useState("");
   const [auditoria, setAuditoria] = useState<string | null>(null);
   const [auditando, setAuditando] = useState(false);
+  const [printDoc, setPrintDoc] = useState<LegalDoc | null>(null);
+
+  // Dispara a impressão somente depois que a .print-view estiver renderizada
+  useEffect(() => {
+    if (!printDoc) return;
+    const t = window.setTimeout(() => {
+      window.print();
+      setPrintDoc(null);
+    }, 150);
+    return () => window.clearTimeout(t);
+  }, [printDoc]);
 
 
   const validacaoLabel = (doc: LegalDoc) => {
     const v = doc.validacao_juridica;
     if (!v || v.status === "sem_validacao") return { label: "Sem validação", cls: "bg-slate-100 text-slate-600" };
-    if (v.apto_fluxo) return { label: `Validada ${v.score ?? ""}/100`, cls: "bg-emerald-100 text-emerald-700" };
-    if (v.status === "pendente_revisao") return { label: `Validar HITL ${v.score ?? ""}/100`, cls: "bg-amber-100 text-amber-700" };
-    if (v.status === "score_baixo") return { label: `Score baixo ${v.score ?? ""}/100`, cls: "bg-red-100 text-red-700" };
-    return { label: "Bloqueada", cls: "bg-red-100 text-red-700" };
+    if (v.apto_fluxo) return { label: `Validada ${v.score ?? ""}/100`, cls: "bg-success-100 text-success-700" };
+    if (v.status === "pendente_revisao") return { label: `Validar HITL ${v.score ?? ""}/100`, cls: "bg-warn-100 text-warn-700" };
+    if (v.status === "score_baixo") return { label: `Score baixo ${v.score ?? ""}/100`, cls: "bg-danger-100 text-danger-700" };
+    return { label: "Bloqueada", cls: "bg-danger-100 text-danger-700" };
   };
 
   const validarPeca = async (doc: LegalDoc) => {
@@ -189,6 +201,36 @@ export default function Pecas() {
     a.click();
   };
 
+  const baixarDocx = async (doc: LegalDoc) => {
+    try {
+      const r = await api.get(`/legal-docs/${doc.id}/exportar-docx`, {
+        responseType: "blob",
+      });
+      const url = URL.createObjectURL(r.data);
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = `${doc.titulo}.docx`;
+      a.click();
+      URL.revokeObjectURL(url);
+    } catch (e: any) {
+      toast.error(
+        e.response?.data?.detail || "Falha ao exportar DOCX. Tente novamente.",
+      );
+    }
+  };
+
+  const imprimirPeca = async (doc: LegalDoc) => {
+    try {
+      // A listagem pode não trazer o conteúdo completo — busca a peça inteira
+      const { data } = await api.get(`/legal-docs/${doc.id}`);
+      setPrintDoc(data);
+    } catch (e: any) {
+      toast.error(
+        e.response?.data?.detail || "Falha ao carregar a peça para impressão.",
+      );
+    }
+  };
+
 
   const checarJurisprudencia = async (doc: LegalDoc) => {
     setAuditando(true);
@@ -280,11 +322,11 @@ export default function Pecas() {
                   <td className="px-4 py-3">
                     {p.ai_generated ? (
                       p.human_reviewed ? (
-                        <span className="badge bg-emerald-100 text-emerald-700 gap-1">
+                        <span className="badge bg-success-100 text-success-700 gap-1">
                           <ShieldCheck size={12} /> IA revisada
                         </span>
                       ) : (
-                        <span className="badge bg-amber-100 text-amber-700 gap-1">
+                        <span className="badge bg-warn-100 text-warn-700 gap-1">
                           <Sparkles size={12} /> IA — aguarda revisão
                         </span>
                       )
@@ -317,6 +359,20 @@ export default function Pecas() {
                       <FileDown size={15} />
                     </button>
                     <button
+                      className="btn-ghost px-2 py-1 text-xs"
+                      title="Exportar DOCX"
+                      onClick={() => baixarDocx(p)}
+                    >
+                      <FileDown size={15} /> DOCX
+                    </button>
+                    <button
+                      className="btn-ghost px-2 py-1"
+                      title="Imprimir peça"
+                      onClick={() => imprimirPeca(p)}
+                    >
+                      <Printer size={15} />
+                    </button>
+                    <button
                       className="btn-ghost px-2 py-1"
                       title="Checar jurisprudencia validada"
                       onClick={() => checarJurisprudencia(p)}
@@ -339,7 +395,7 @@ export default function Pecas() {
                     </button>
                     {p.ai_generated && !p.human_reviewed && (
                       <button
-                        className="btn-ghost px-2 py-1 text-amber-700 text-xs"
+                        className="btn-ghost px-2 py-1 text-warn-700 text-xs"
                         onClick={() => setRevisao({ doc: p, notas: "" })}
                       >
                         Revisar
@@ -362,7 +418,7 @@ export default function Pecas() {
                       p.status === "corrigida" &&
                       p.validacao_juridica?.apto_fluxo && (
                         <button
-                          className="btn-ghost px-2 py-1 text-emerald-700 text-xs"
+                          className="btn-ghost px-2 py-1 text-success-700 text-xs"
                           onClick={() => avancarStatus(p, "aprovada")}
                         >
                           Aprovar
@@ -448,7 +504,7 @@ export default function Pecas() {
         wide
       >
         {view?.ai_generated && !view?.human_reviewed && (
-          <div className="mb-3 p-3 rounded-lg bg-amber-50 text-amber-800 text-xs font-medium">
+          <div className="mb-3 p-3 rounded-lg bg-warn-50 text-warn-800 text-xs font-medium">
             ⚠️ Peça gerada por IA — revisão humana obrigatória antes de aprovar
             (Provimento OAB 205/2021)
           </div>
@@ -597,6 +653,18 @@ export default function Pecas() {
           load();
         }}
       />
+
+      {/* View de impressão — invisível em tela, única coisa visível no print */}
+      {printDoc && (
+        <div className="print-view">
+          <h1 className="print-view-title">{printDoc.titulo}</h1>
+          <p className="print-view-meta">
+            {printDoc.tipo_peca.replace(/_/g, " ")} · v{printDoc.versao} ·{" "}
+            {fmtDate(printDoc.created_at)}
+          </p>
+          <Markdown source={printDoc.conteudo} />
+        </div>
+      )}
     </div>
   );
 }

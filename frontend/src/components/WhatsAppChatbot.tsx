@@ -53,19 +53,19 @@ const WhatsAppChatbot: React.FC = () => {
     };
 
     return (
-        <div className="fixed bottom-8 right-8 w-96 h-screen md:h-96 rounded-2xl shadow-2xl bg-gradient-to-br from-stone-900 to-stone-950 border border-amber-900/30 flex flex-col overflow-hidden">
+        <div className="fixed bottom-8 right-8 w-96 h-screen md:h-96 rounded-2xl shadow-2xl bg-gradient-to-br from-stone-900 to-stone-950 border border-warn-900/30 flex flex-col overflow-hidden">
             {/* Header */}
-            <div className="bg-gradient-to-r from-amber-700 to-amber-800 p-4 flex justify-between items-center">
+            <div className="bg-gradient-to-r from-warn-700 to-warn-800 p-4 flex justify-between items-center">
                 <div className="flex items-center space-x-3">
-                    <div className="w-10 h-10 bg-white rounded-full flex items-center justify-center text-amber-700 font-bold">
+                    <div className="w-10 h-10 bg-white rounded-full flex items-center justify-center text-warn-700 font-bold">
                         ⚖️
                     </div>
                     <div>
                         <h3 className="text-white font-bold">Assistente EJC</h3>
-                        <p className="text-xs text-amber-100">{isOnline ? '🟢 Online' : '🔴 Offline'}</p>
+                        <p className="text-xs text-warn-100">{isOnline ? '🟢 Online' : '🔴 Offline'}</p>
                     </div>
                 </div>
-                <button className="text-white hover:text-amber-200 transition-colors">✕</button>
+                <button className="text-white hover:text-warn-200 transition-colors">✕</button>
             </div>
 
             {/* Messages */}
@@ -75,8 +75,8 @@ const WhatsAppChatbot: React.FC = () => {
                         <div
                             className={`max-w-xs px-4 py-2 rounded-lg ${
                                 msg.sender === 'user'
-                                    ? 'bg-amber-600 text-white rounded-br-none'
-                                    : 'bg-stone-800 text-stone-200 rounded-bl-none border border-amber-900/20'
+                                    ? 'bg-warn-600 text-white rounded-br-none'
+                                    : 'bg-stone-800 text-stone-200 rounded-bl-none border border-warn-900/20'
                             }`}
                         >
                             <p className="text-sm">{msg.text}</p>
@@ -87,13 +87,13 @@ const WhatsAppChatbot: React.FC = () => {
             </div>
 
             {/* Quick Actions */}
-            <div className="px-4 py-3 border-t border-amber-900/20 space-y-2">
+            <div className="px-4 py-3 border-t border-warn-900/20 space-y-2">
                 <p className="text-xs text-stone-400 mb-2">Ações rápidas:</p>
                 <div className="flex flex-wrap gap-2">
                     {['Status do Caso', 'Prazos', 'Liquidez', 'Falar com Advogado'].map((action) => (
                         <button
                             key={action}
-                            className="text-xs bg-stone-800 hover:bg-stone-700 text-amber-400 px-3 py-1 rounded-full transition-colors"
+                            className="text-xs bg-stone-800 hover:bg-stone-700 text-warn-400 px-3 py-1 rounded-full transition-colors"
                         >
                             {action}
                         </button>
@@ -102,18 +102,18 @@ const WhatsAppChatbot: React.FC = () => {
             </div>
 
             {/* Input */}
-            <div className="p-4 border-t border-amber-900/20 flex space-x-2">
+            <div className="p-4 border-t border-warn-900/20 flex space-x-2">
                 <input
                     type="text"
                     value={inputValue}
                     onChange={(e) => setInputValue(e.target.value)}
                     onKeyPress={(e) => e.key === 'Enter' && handleSendMessage()}
                     placeholder="Digite sua mensagem..."
-                    className="flex-1 bg-stone-800 border border-amber-900/20 text-white px-4 py-2 rounded-lg focus:outline-none focus:ring-1 focus:ring-amber-500 text-sm"
+                    className="flex-1 bg-stone-800 border border-warn-900/20 text-white px-4 py-2 rounded-lg focus:outline-none focus:ring-1 focus:ring-warn-500 text-sm"
                 />
                 <button
                     onClick={handleSendMessage}
-                    className="bg-amber-600 hover:bg-amber-500 text-white px-4 py-2 rounded-lg transition-colors font-bold"
+                    className="btn-gold px-4 py-2 font-bold"
                 >
                     ➤
                 </button>

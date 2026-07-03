@@ -90,7 +90,7 @@ export default function GuiaPrevidenciario() {
   const feitos = Object.values(marcados).filter(Boolean).length;
 
   return (
-    <div className="card p-4 mb-4 border-l-4 border-violet-500">
+    <div className="card p-4 mb-4 border-l-4 border-ai-500">
       <div className="flex items-center gap-2 mb-1">
         <BookOpen size={16} className="text-bronze" />
         <h2 className="font-serif font-semibold text-navy text-sm">
@@ -365,7 +365,7 @@ export default function GuiaPrevidenciario() {
         </Sec>
       </div>
 
-      <p className="text-[10px] text-amber-700 mt-3 flex items-start gap-1">
+      <p className="text-[10px] text-warn-700 mt-3 flex items-start gap-1">
         <AlertTriangle size={12} className="mt-0.5 shrink-0" />
         Instrumento interno. Verificar EC 103/2019 (Reforma da Previdência),
         teses pendentes no STF/TNU e tabelas de salário mínimo vigente (BPC/LOAS

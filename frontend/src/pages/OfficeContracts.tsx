@@ -10,6 +10,7 @@ import {
   X,
 } from "lucide-react";
 import api from "../lib/api";
+import { Modal, PageHeader } from "../components/UI";
 
 interface Contract {
   id: string;
@@ -35,7 +36,7 @@ const STATUS_COLOR: Record<string, string> = {
   vigente: "bg-green-100 text-green-700",
   encerrado: "bg-slate-100 text-slate-500",
   suspenso: "bg-yellow-100 text-yellow-700",
-  em_negociacao: "bg-blue-100 text-blue-700",
+  em_negociacao: "bg-primary-100 text-primary-700",
 };
 const TYPE_LABEL: Record<string, string> = {
   prestacao_servico: "Prestação de Serviço",
@@ -148,23 +149,19 @@ export default function OfficeContracts() {
 
   return (
     <div className="p-6 max-w-6xl mx-auto">
-      <div className="flex items-center justify-between mb-6">
-        <div>
-          <div className="eyebrow mb-2">Financeiro</div>
-          <h1 className="text-2xl font-semibold tracking-tight text-slate-950">
-            Contratos do Escritório
-          </h1>
-          <p className="text-slate-500 text-sm mt-1">
-            Gestão de contratos operacionais e parcerias
-          </p>
-        </div>
-        <button
-          onClick={openNew}
-          className="flex items-center gap-2 px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors text-sm font-medium"
-        >
-          <Plus className="w-4 h-4" /> Novo Contrato
-        </button>
-      </div>
+      <PageHeader
+        eyebrow="Financeiro"
+        title="Contratos do Escritório"
+        subtitle="Gestão de contratos operacionais e parcerias"
+        actions={
+          <button
+            onClick={openNew}
+            className="btn-primary"
+          >
+            <Plus className="w-4 h-4" /> Novo Contrato
+          </button>
+        }
+      />
 
       {expiring.length > 0 && (
         <div className="mb-4 p-3 bg-yellow-50 border border-yellow-200 rounded-lg flex items-start gap-2">
@@ -184,7 +181,7 @@ export default function OfficeContracts() {
           <button
             key={s}
             onClick={() => setFilterStatus(s)}
-            className={`px-3 py-1.5 rounded-lg text-xs font-medium border transition-colors ${filterStatus === s ? "bg-blue-600 text-white border-blue-600" : "bg-white text-slate-600 border-slate-200 hover:border-blue-300"}`}
+            className={`px-3 py-1.5 rounded-lg text-xs font-medium border transition-colors ${filterStatus === s ? "bg-primary-600 text-white border-primary-600" : "bg-white text-slate-600 border-slate-200 hover:border-primary-300"}`}
           >
             {s === "" ? "Todos" : STATUS_LABEL[s]}
           </button>
@@ -247,7 +244,7 @@ export default function OfficeContracts() {
                       {days === null ? (
                         <span className="text-slate-400">—</span>
                       ) : days < 0 ? (
-                        <span className="text-red-600 flex items-center gap-1">
+                        <span className="text-danger-600 flex items-center gap-1">
                           <X className="w-3 h-3" /> Vencido
                         </span>
                       ) : days <= 30 ? (
@@ -264,13 +261,13 @@ export default function OfficeContracts() {
                       <div className="flex gap-1">
                         <button
                           onClick={() => openEdit(c)}
-                          className="p-1.5 rounded text-slate-400 hover:text-blue-600 hover:bg-blue-50"
+                          className="p-1.5 rounded text-slate-400 hover:text-primary-600 hover:bg-primary-50"
                         >
                           <Edit2 className="w-3.5 h-3.5" />
                         </button>
                         <button
                           onClick={() => remove(c.id)}
-                          className="p-1.5 rounded text-slate-400 hover:text-red-600 hover:bg-red-50"
+                          className="p-1.5 rounded text-slate-400 hover:text-danger-600 hover:bg-danger-50"
                         >
                           <Trash2 className="w-3.5 h-3.5" />
                         </button>
@@ -284,164 +281,153 @@ export default function OfficeContracts() {
         </div>
       )}
 
-      {showForm && (
-        <div className="fixed inset-0 bg-black/40 z-50 flex items-center justify-center p-4">
-          <div className="bg-white rounded-2xl shadow-2xl w-full max-w-lg max-h-[90vh] overflow-y-auto">
-            <div className="p-5 border-b border-slate-100 flex items-center justify-between">
-              <h2 className="font-semibold text-slate-800">
-                {editing ? "Editar Contrato" : "Novo Contrato"}
-              </h2>
-              <button
-                onClick={() => setShowForm(false)}
-                className="p-1 rounded hover:bg-slate-100"
-              >
-                <X className="w-4 h-4" />
-              </button>
+      <Modal
+        open={showForm}
+        onClose={() => setShowForm(false)}
+        title={editing ? "Editar Contrato" : "Novo Contrato"}
+      >
+        <div className="space-y-4">
+          {[
+            { label: "Título", key: "title", type: "text" },
+            { label: "Contraparte", key: "counterparty", type: "text" },
+          ].map(({ label, key, type }) => (
+            <div key={key}>
+              <label className="block text-xs font-medium text-slate-600 mb-1">
+                {label}
+              </label>
+              <input
+                type={type}
+                className="w-full border border-slate-200 rounded-lg px-3 py-2 text-sm focus:ring-2 focus:ring-primary-500 outline-none"
+                value={(form as any)[key]}
+                onChange={(e) =>
+                  setForm({ ...form, [key]: e.target.value })
+                }
+              />
             </div>
-            <div className="p-5 space-y-4">
-              {[
-                { label: "Título", key: "title", type: "text" },
-                { label: "Contraparte", key: "counterparty", type: "text" },
-              ].map(({ label, key, type }) => (
-                <div key={key}>
-                  <label className="block text-xs font-medium text-slate-600 mb-1">
-                    {label}
-                  </label>
-                  <input
-                    type={type}
-                    className="w-full border border-slate-200 rounded-lg px-3 py-2 text-sm focus:ring-2 focus:ring-blue-500 outline-none"
-                    value={(form as any)[key]}
-                    onChange={(e) =>
-                      setForm({ ...form, [key]: e.target.value })
-                    }
-                  />
-                </div>
-              ))}
-              <div className="grid grid-cols-2 gap-3">
-                <div>
-                  <label className="block text-xs font-medium text-slate-600 mb-1">
-                    Tipo
-                  </label>
-                  <select
-                    className="w-full border border-slate-200 rounded-lg px-3 py-2 text-sm"
-                    value={form.contract_type}
-                    onChange={(e) =>
-                      setForm({ ...form, contract_type: e.target.value })
-                    }
-                  >
-                    {Object.entries(TYPE_LABEL).map(([v, l]) => (
-                      <option key={v} value={v}>
-                        {l}
-                      </option>
-                    ))}
-                  </select>
-                </div>
-                <div>
-                  <label className="block text-xs font-medium text-slate-600 mb-1">
-                    Status
-                  </label>
-                  <select
-                    className="w-full border border-slate-200 rounded-lg px-3 py-2 text-sm"
-                    value={form.status}
-                    onChange={(e) =>
-                      setForm({ ...form, status: e.target.value })
-                    }
-                  >
-                    {Object.entries(STATUS_LABEL).map(([v, l]) => (
-                      <option key={v} value={v}>
-                        {l}
-                      </option>
-                    ))}
-                  </select>
-                </div>
-              </div>
-              <div className="grid grid-cols-2 gap-3">
-                <div>
-                  <label className="block text-xs font-medium text-slate-600 mb-1">
-                    Início
-                  </label>
-                  <input
-                    type="date"
-                    className="w-full border border-slate-200 rounded-lg px-3 py-2 text-sm"
-                    value={form.start_date}
-                    onChange={(e) =>
-                      setForm({ ...form, start_date: e.target.value })
-                    }
-                  />
-                </div>
-                <div>
-                  <label className="block text-xs font-medium text-slate-600 mb-1">
-                    Fim
-                  </label>
-                  <input
-                    type="date"
-                    className="w-full border border-slate-200 rounded-lg px-3 py-2 text-sm"
-                    value={form.end_date}
-                    onChange={(e) =>
-                      setForm({ ...form, end_date: e.target.value })
-                    }
-                  />
-                </div>
-              </div>
-              <div className="grid grid-cols-2 gap-3">
-                <div>
-                  <label className="block text-xs font-medium text-slate-600 mb-1">
-                    Valor (R$)
-                  </label>
-                  <input
-                    type="number"
-                    className="w-full border border-slate-200 rounded-lg px-3 py-2 text-sm"
-                    value={form.value}
-                    onChange={(e) =>
-                      setForm({ ...form, value: e.target.value })
-                    }
-                  />
-                </div>
-                <div>
-                  <label className="block text-xs font-medium text-slate-600 mb-1">
-                    Alerta (dias antes)
-                  </label>
-                  <input
-                    type="number"
-                    className="w-full border border-slate-200 rounded-lg px-3 py-2 text-sm"
-                    value={form.alert_days_before}
-                    onChange={(e) =>
-                      setForm({ ...form, alert_days_before: e.target.value })
-                    }
-                  />
-                </div>
-              </div>
-              <div>
-                <label className="block text-xs font-medium text-slate-600 mb-1">
-                  Descrição
-                </label>
-                <textarea
-                  rows={3}
-                  className="w-full border border-slate-200 rounded-lg px-3 py-2 text-sm resize-none"
-                  value={form.description}
-                  onChange={(e) =>
-                    setForm({ ...form, description: e.target.value })
-                  }
-                />
-              </div>
+          ))}
+          <div className="grid grid-cols-2 gap-3">
+            <div>
+              <label className="block text-xs font-medium text-slate-600 mb-1">
+                Tipo
+              </label>
+              <select
+                className="w-full border border-slate-200 rounded-lg px-3 py-2 text-sm"
+                value={form.contract_type}
+                onChange={(e) =>
+                  setForm({ ...form, contract_type: e.target.value })
+                }
+              >
+                {Object.entries(TYPE_LABEL).map(([v, l]) => (
+                  <option key={v} value={v}>
+                    {l}
+                  </option>
+                ))}
+              </select>
             </div>
-            <div className="p-5 border-t border-slate-100 flex gap-3 justify-end">
-              <button
-                onClick={() => setShowForm(false)}
-                className="px-4 py-2 text-sm text-slate-600 hover:bg-slate-100 rounded-lg"
+            <div>
+              <label className="block text-xs font-medium text-slate-600 mb-1">
+                Status
+              </label>
+              <select
+                className="w-full border border-slate-200 rounded-lg px-3 py-2 text-sm"
+                value={form.status}
+                onChange={(e) =>
+                  setForm({ ...form, status: e.target.value })
+                }
               >
-                Cancelar
-              </button>
-              <button
-                onClick={save}
-                className="px-4 py-2 text-sm bg-blue-600 text-white rounded-lg hover:bg-blue-700"
-              >
-                Salvar
-              </button>
+                {Object.entries(STATUS_LABEL).map(([v, l]) => (
+                  <option key={v} value={v}>
+                    {l}
+                  </option>
+                ))}
+              </select>
             </div>
           </div>
+          <div className="grid grid-cols-2 gap-3">
+            <div>
+              <label className="block text-xs font-medium text-slate-600 mb-1">
+                Início
+              </label>
+              <input
+                type="date"
+                className="w-full border border-slate-200 rounded-lg px-3 py-2 text-sm"
+                value={form.start_date}
+                onChange={(e) =>
+                  setForm({ ...form, start_date: e.target.value })
+                }
+              />
+            </div>
+            <div>
+              <label className="block text-xs font-medium text-slate-600 mb-1">
+                Fim
+              </label>
+              <input
+                type="date"
+                className="w-full border border-slate-200 rounded-lg px-3 py-2 text-sm"
+                value={form.end_date}
+                onChange={(e) =>
+                  setForm({ ...form, end_date: e.target.value })
+                }
+              />
+            </div>
+          </div>
+          <div className="grid grid-cols-2 gap-3">
+            <div>
+              <label className="block text-xs font-medium text-slate-600 mb-1">
+                Valor (R$)
+              </label>
+              <input
+                type="number"
+                className="w-full border border-slate-200 rounded-lg px-3 py-2 text-sm"
+                value={form.value}
+                onChange={(e) =>
+                  setForm({ ...form, value: e.target.value })
+                }
+              />
+            </div>
+            <div>
+              <label className="block text-xs font-medium text-slate-600 mb-1">
+                Alerta (dias antes)
+              </label>
+              <input
+                type="number"
+                className="w-full border border-slate-200 rounded-lg px-3 py-2 text-sm"
+                value={form.alert_days_before}
+                onChange={(e) =>
+                  setForm({ ...form, alert_days_before: e.target.value })
+                }
+              />
+            </div>
+          </div>
+          <div>
+            <label className="block text-xs font-medium text-slate-600 mb-1">
+              Descrição
+            </label>
+            <textarea
+              rows={3}
+              className="w-full border border-slate-200 rounded-lg px-3 py-2 text-sm resize-none"
+              value={form.description}
+              onChange={(e) =>
+                setForm({ ...form, description: e.target.value })
+              }
+            />
+          </div>
         </div>
-      )}
+        <div className="mt-5 pt-5 -mx-5 px-5 border-t border-slate-100 flex gap-3 justify-end">
+          <button
+            onClick={() => setShowForm(false)}
+            className="btn-ghost"
+          >
+            Cancelar
+          </button>
+          <button
+            onClick={save}
+            className="btn-primary"
+          >
+            Salvar
+          </button>
+        </div>
+      </Modal>
     </div>
   );
 }

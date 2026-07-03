@@ -96,7 +96,7 @@ export default function GuiaTransito() {
   const feitos = Object.values(marcados).filter(Boolean).length;
 
   return (
-    <div className="card p-4 mb-4 border-l-4 border-blue-500">
+    <div className="card p-4 mb-4 border-l-4 border-primary-500">
       <div className="flex items-center gap-2 mb-1">
         <BookOpen size={16} className="text-bronze" />
         <h2 className="font-serif font-semibold text-navy text-sm">
@@ -149,7 +149,7 @@ export default function GuiaTransito() {
               ["Data da infração", "5 anos", "Prescrição", "CTB 322"],
             ]}
           />
-          <p className="text-amber-700">
+          <p className="text-warn-700">
             ⚠ Pagamento e recurso (ambos 30d da NIP) são SIMULTÂNEOS — pagar =
             desistência tácita do recurso (STJ). Dias corridos; vencimento em
             fim de semana/feriado prorroga ao dia útil.
@@ -302,7 +302,7 @@ export default function GuiaTransito() {
         </Sec>
       </div>
 
-      <p className="text-[10px] text-amber-700 mt-3 flex items-start gap-1">
+      <p className="text-[10px] text-warn-700 mt-3 flex items-start gap-1">
         <AlertTriangle size={12} className="mt-0.5 shrink-0" />
         Instrumento interno. Verificar atualização de resoluções CONTRAN,
         valores SENATRAN e tabela de pontos.

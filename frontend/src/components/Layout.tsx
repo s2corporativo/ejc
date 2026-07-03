@@ -1,5 +1,11 @@
 import { useEffect, useMemo, useState } from "react";
-import { Link, NavLink, Outlet, useNavigate } from "react-router-dom";
+import {
+  Link,
+  NavLink,
+  Outlet,
+  useLocation,
+  useNavigate,
+} from "react-router-dom";
 import {
   Activity,
   AlarmClock,
@@ -48,6 +54,7 @@ import {
 } from "lucide-react";
 import { toast } from "./Toast";
 import CommandPalette from "./CommandPalette";
+import HelpButton from "./HelpButton";
 import OnboardingTour from "./OnboardingTour";
 import SecurityMenu from "./SecurityMenu";
 import { Button, Tooltip, cn } from "./UI";
@@ -267,6 +274,25 @@ const NAV: NavItem[] = [
   },
 ];
 
+// Ajuda contextual (R1): rota → module_key. Rotas fora da lista → null
+// (o botão "?" vira atalho para a Central de Ajuda /ajuda).
+const HELP_MODULES: Array<[prefix: string, key: string]> = [
+  ["/casos", "casos"],
+  ["/prazos", "prazos"],
+  ["/documentos", "documentos"],
+  ["/pecas", "pecas"],
+  ["/clientes", "clientes"],
+  ["/workflow", "workflow"],
+  ["/checklists", "checklists"],
+];
+
+function helpModuleKey(pathname: string): string | null {
+  const hit = HELP_MODULES.find(
+    ([prefix]) => pathname === prefix || pathname.startsWith(prefix + "/"),
+  );
+  return hit ? hit[1] : null;
+}
+
 function initials(name?: string): string {
   return (name || "?")
     .split(" ")
@@ -281,6 +307,11 @@ export default function Layout() {
   const { theme, toggle } = useTheme();
   const { user } = useAuth();
   const nav = useNavigate();
+  const location = useLocation();
+  const moduleKey = useMemo(
+    () => helpModuleKey(location.pathname),
+    [location.pathname],
+  );
   const [notifCount, setNotifCount] = useState(0);
   const [notifOpen, setNotifOpen] = useState(false);
   const [notifs, setNotifs] = useState<any[]>([]);
@@ -447,7 +478,7 @@ export default function Layout() {
                               "group flex h-10 items-center gap-3 rounded-lg px-3 text-sm font-medium transition-all",
                               collapsed && "justify-center px-0",
                               isActive
-                                ? "bg-[#b5822e] text-white shadow-sm ring-1 ring-amber-200/40"
+                                ? "bg-[#b5822e] text-white shadow-sm ring-1 ring-warn-200/40"
                                 : "text-slate-600 hover:bg-slate-100 hover:text-slate-950",
                             )
                           }
@@ -494,7 +525,7 @@ export default function Layout() {
                 <button
                   type="button"
                   onClick={logout}
-                  className="rounded-lg p-2 text-slate-400 hover:bg-white hover:text-red-600"
+                  className="rounded-lg p-2 text-slate-400 hover:bg-white hover:text-danger-600"
                   aria-label="Sair"
                 >
                   <LogOut className="h-4 w-4" />
@@ -525,7 +556,7 @@ export default function Layout() {
             <button
               type="button"
               onClick={() => window.dispatchEvent(new Event("ejc-open-search"))}
-              className="flex h-10 min-w-0 flex-1 items-center gap-3 rounded-xl border border-slate-200 bg-slate-50 px-3 text-left text-sm text-slate-500 transition-all hover:border-amber-300/60 hover:bg-amber-50/50 md:max-w-xl"
+              className="flex h-10 min-w-0 flex-1 items-center gap-3 rounded-xl border border-slate-200 bg-slate-50 px-3 text-left text-sm text-slate-500 transition-all hover:border-warn-300/60 hover:bg-warn-50/50 md:max-w-xl"
             >
               <Search className="h-4 w-4 shrink-0" />
               <span className="truncate">
@@ -541,6 +572,8 @@ export default function Layout() {
                 Novo caso
               </Button>
             </Link>
+
+            <HelpButton moduleKey={moduleKey} />
 
             <button
               type="button"
@@ -564,7 +597,7 @@ export default function Layout() {
               >
                 <Bell className="h-4 w-4" />
                 {notifCount > 0 && (
-                  <span className="absolute -right-1 -top-1 flex h-5 min-w-5 items-center justify-center rounded-full bg-red-600 px-1 text-[10px] font-semibold text-white ring-2 ring-white">
+                  <span className="absolute -right-1 -top-1 flex h-5 min-w-5 items-center justify-center rounded-full bg-danger-600 px-1 text-[10px] font-semibold text-white ring-2 ring-white">
                     {notifCount}
                   </span>
                 )}
@@ -578,7 +611,7 @@ export default function Layout() {
                     </div>
                     <button
                       type="button"
-                      className="text-xs font-medium text-blue-600 hover:text-blue-700"
+                      className="text-xs font-medium text-primary-600 hover:text-primary-700"
                       onClick={() =>
                         api
                           .post("/notifications/ler-todas")
@@ -603,8 +636,8 @@ export default function Layout() {
                             setNotifOpen(false);
                           }}
                           className={cn(
-                            "w-full border-b border-slate-50 px-4 py-3 text-left hover:bg-blue-50/60",
-                            !n.lida && "bg-blue-50/40",
+                            "w-full border-b border-slate-50 px-4 py-3 text-left hover:bg-primary-50/60",
+                            !n.lida && "bg-primary-50/40",
                           )}
                         >
                           <div className="text-sm font-medium text-slate-900">
@@ -635,7 +668,7 @@ export default function Layout() {
       <OnboardingTour />
       <Link
         to="/assistente-ia"
-        className="fixed bottom-5 right-5 z-30 hidden h-12 w-12 items-center justify-center rounded-2xl bg-violet-600 text-white shadow-lg shadow-violet-600/25 hover:bg-violet-700 md:flex"
+        className="fixed bottom-5 right-5 z-30 hidden h-12 w-12 items-center justify-center rounded-2xl bg-ai-600 text-white shadow-lg shadow-ai-600/25 hover:bg-ai-700 md:flex"
         aria-label="Assistente IA"
       >
         <Bot className="h-5 w-5" />

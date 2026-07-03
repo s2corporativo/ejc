@@ -30,7 +30,7 @@ export default function RadarRegulatorio() {
 
   return (
     <div className="space-y-6">
-      <div className="rounded-2xl border border-blue-100 bg-white p-5 shadow-sm md:p-6">
+      <div className="rounded-2xl border border-primary-100 bg-white p-5 shadow-sm md:p-6">
         <div className="flex flex-col gap-4 sm:flex-row sm:items-end sm:justify-between">
           <PageHeader
             eyebrow="Inteligencia"
@@ -53,12 +53,12 @@ export default function RadarRegulatorio() {
         <>
           <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
             <div className="card p-4">
-              <div className="flex items-center justify-between"><span className="text-xs text-slate-500">Total de alertas</span><Bell className="h-4 w-4 text-blue-600" /></div>
+              <div className="flex items-center justify-between"><span className="text-xs text-slate-500">Total de alertas</span><Bell className="h-4 w-4 text-primary-600" /></div>
               <div className="mt-1 text-2xl font-semibold text-slate-900">{data.total_alertas}</div>
               <div className="text-[11px] text-slate-400">desde {data.desde}</div>
             </div>
             <div className="card p-4">
-              <div className="flex items-center justify-between"><span className="text-xs text-slate-500">Nao lidos</span><AlertTriangle className="h-4 w-4 text-amber-600" /></div>
+              <div className="flex items-center justify-between"><span className="text-xs text-slate-500">Nao lidos</span><AlertTriangle className="h-4 w-4 text-warn-600" /></div>
               <div className="mt-1 text-2xl font-semibold text-slate-900">{data.nao_lidos}</div>
             </div>
             {Object.entries(data.por_fonte).slice(0, 2).map(([f, n]) => (
@@ -74,8 +74,8 @@ export default function RadarRegulatorio() {
               <span className="eyebrow">Palavras-chave mais acionadas</span>
               <div className="mt-3 flex flex-wrap gap-2">
                 {data.top_keywords.map((k) => (
-                  <span key={k.keyword} className="rounded-full bg-blue-50 px-3 py-1 text-xs font-medium text-blue-700">
-                    {k.keyword} <span className="text-blue-400">· {k.qtd}</span>
+                  <span key={k.keyword} className="rounded-full bg-primary-50 px-3 py-1 text-xs font-medium text-primary-700">
+                    {k.keyword} <span className="text-primary-400">· {k.qtd}</span>
                   </span>
                 ))}
               </div>
@@ -87,7 +87,7 @@ export default function RadarRegulatorio() {
             {data.itens_recentes.length === 0 ? (
               <div className="mt-4 rounded-lg border border-dashed border-slate-200 bg-slate-50/60 p-6 text-center text-sm text-slate-500">
                 Nenhum alerta no periodo. Cadastre palavras-chave em{" "}
-                <Link to="/diario-oficial" className="font-medium text-blue-600 hover:underline">Diario Oficial</Link>{" "}
+                <Link to="/diario-oficial" className="font-medium text-primary-600 hover:underline">Diario Oficial</Link>{" "}
                 para o monitoramento comecar a capturar publicacoes.
               </div>
             ) : (
@@ -103,7 +103,7 @@ export default function RadarRegulatorio() {
                       {it.data_publicacao && <span>{it.data_publicacao}</span>}
                       {it.keyword && <span>· {it.keyword}</span>}
                       {it.link && (
-                        <a href={it.link} target="_blank" rel="noreferrer" className="inline-flex items-center gap-1 text-blue-600 hover:underline">
+                        <a href={it.link} target="_blank" rel="noreferrer" className="inline-flex items-center gap-1 text-primary-600 hover:underline">
                           abrir <ExternalLink className="h-3 w-3" />
                         </a>
                       )}

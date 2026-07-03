@@ -1,7 +1,6 @@
 import { useState, useEffect, useCallback } from "react";
 import {
   Plus,
-  X,
   Check,
   Trash2,
   RefreshCw,
@@ -9,6 +8,7 @@ import {
   Download,
 } from "lucide-react";
 import api from "../lib/api";
+import { Modal, Button, PageHeader } from "../components/UI";
 
 interface Despesa {
   id: string;
@@ -52,7 +52,7 @@ const CAT_LABEL: Record<string, string> = {
 
 const STATUS_COLOR: Record<string, string> = {
   pendente: "bg-yellow-100 text-yellow-700",
-  pago: "bg-emerald-100 text-emerald-700",
+  pago: "bg-success-100 text-success-700",
   cancelado: "bg-slate-100 text-slate-500",
 };
 
@@ -210,41 +210,36 @@ export default function Despesas() {
 
   return (
     <div className="p-6 max-w-6xl mx-auto space-y-5">
-      {/* Header */}
-      <div className="flex items-center justify-between">
-        <div>
-          <div className="eyebrow mb-2">Financeiro</div>
-          <h1 className="text-2xl font-semibold tracking-tight text-slate-950">
-            Despesas do Escritório
-          </h1>
-          <p className="text-slate-500 text-sm mt-1">
-            Controle de custos fixos e variáveis
-          </p>
-        </div>
-        <div className="flex gap-2">
-          <button
-            onClick={exportCSV}
-            className="flex items-center gap-2 px-3 py-2 border border-slate-200 text-slate-600 rounded-lg hover:bg-slate-50 text-sm"
-          >
-            <Download className="w-4 h-4" /> CSV
-          </button>
-          <button
-            onClick={openNew}
-            className="flex items-center gap-2 px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 text-sm font-medium"
-          >
-            <Plus className="w-4 h-4" /> Nova Despesa
-          </button>
-        </div>
-      </div>
+      <PageHeader
+        eyebrow="Financeiro"
+        title="Despesas do Escritório"
+        subtitle="Controle de custos fixos e variáveis"
+        actions={
+          <>
+            <button
+              onClick={exportCSV}
+              className="btn-secondary text-sm"
+            >
+              <Download className="w-4 h-4" /> CSV
+            </button>
+            <button
+              onClick={openNew}
+              className="btn-primary"
+            >
+              <Plus className="w-4 h-4" /> Nova Despesa
+            </button>
+          </>
+        }
+      />
 
       {/* Summary cards */}
       <div className="grid grid-cols-3 gap-4">
         {[
-          { label: "Pendente", value: totalPendente, cls: "text-amber-600" },
+          { label: "Pendente", value: totalPendente, cls: "text-warn-600" },
           {
             label: "Pago no período",
             value: totalPago,
-            cls: "text-emerald-600",
+            cls: "text-success-600",
           },
           {
             label: "Total lançado",
@@ -295,12 +290,16 @@ export default function Despesas() {
           value={filterComp}
           onChange={(e) => setFilterComp(e.target.value)}
         />
-        <button
+        <Button
           onClick={load}
-          className="ml-auto p-1.5 text-slate-400 hover:text-slate-600"
-        >
-          <RefreshCw className={`w-4 h-4 ${loading ? "animate-spin" : ""}`} />
-        </button>
+          variant="ghost"
+          size="icon"
+          className="ml-auto"
+          aria-label="Atualizar"
+          icon={
+            <RefreshCw className={`w-4 h-4 ${loading ? "animate-spin" : ""}`} />
+          }
+        />
       </div>
 
       {/* Table */}
@@ -337,7 +336,7 @@ export default function Despesas() {
                   <td className="px-4 py-3 text-slate-800 font-medium">
                     {d.descricao}
                     {d.recorrente && (
-                      <span className="ml-1.5 text-[10px] bg-blue-50 text-blue-600 px-1.5 py-0.5 rounded-full">
+                      <span className="ml-1.5 text-[10px] bg-primary-50 text-primary-600 px-1.5 py-0.5 rounded-full">
                         Recorrente
                       </span>
                     )}
@@ -367,7 +366,7 @@ export default function Despesas() {
                         <button
                           onClick={() => marcarPago(d.id)}
                           title="Marcar como pago"
-                          className="p-1.5 rounded text-slate-300 hover:text-emerald-600 hover:bg-emerald-50"
+                          className="p-1.5 rounded text-slate-300 hover:text-success-600 hover:bg-success-50"
                         >
                           <Check className="w-3.5 h-3.5" />
                         </button>
@@ -375,7 +374,7 @@ export default function Despesas() {
                       <button
                         onClick={() => remove(d.id)}
                         title="Excluir"
-                        className="p-1.5 rounded text-slate-300 hover:text-red-500 hover:bg-red-50"
+                        className="p-1.5 rounded text-slate-300 hover:text-danger-500 hover:bg-danger-50"
                       >
                         <Trash2 className="w-3.5 h-3.5" />
                       </button>
@@ -389,187 +388,178 @@ export default function Despesas() {
       )}
 
       {/* Modal */}
-      {showForm && (
-        <div className="fixed inset-0 bg-black/40 z-50 flex items-center justify-center p-4">
-          <div className="bg-white rounded-2xl shadow-2xl w-full max-w-lg max-h-[90vh] overflow-y-auto">
-            <div className="p-5 border-b border-slate-100 flex items-center justify-between sticky top-0 bg-white">
-              <h2 className="font-semibold text-slate-800">
-                {editId ? "Editar Despesa" : "Nova Despesa"}
-              </h2>
-              <button
-                onClick={() => setShowForm(false)}
-                className="p-1 rounded hover:bg-slate-100"
-              >
-                <X className="w-4 h-4" />
-              </button>
-            </div>
-            <div className="p-5 space-y-4">
-              <div className="grid grid-cols-2 gap-3">
-                <div>
-                  <label className="block text-xs font-medium text-slate-600 mb-1">
-                    Categoria *
-                  </label>
-                  <select
-                    className="w-full border border-slate-200 rounded-lg px-3 py-2 text-sm"
-                    value={form.categoria}
-                    onChange={(e) =>
-                      setForm({ ...form, categoria: e.target.value })
-                    }
-                  >
-                    {CATEGORIAS.map((c) => (
-                      <option key={c} value={c}>
-                        {CAT_LABEL[c]}
-                      </option>
-                    ))}
-                  </select>
-                </div>
-                <div>
-                  <label className="block text-xs font-medium text-slate-600 mb-1">
-                    Tipo
-                  </label>
-                  <select
-                    className="w-full border border-slate-200 rounded-lg px-3 py-2 text-sm"
-                    value={form.tipo}
-                    onChange={(e) =>
-                      setForm({
-                        ...form,
-                        tipo: e.target.value as "fixo" | "variavel",
-                      })
-                    }
-                  >
-                    <option value="fixo">Fixo</option>
-                    <option value="variavel">Variável</option>
-                  </select>
-                </div>
+      <Modal
+        open={showForm}
+        onClose={() => setShowForm(false)}
+        title={editId ? "Editar Despesa" : "Nova Despesa"}
+      >
+        <>
+          <div className="space-y-4">
+            <div className="grid grid-cols-2 gap-3">
+              <div>
+                <label className="block text-xs font-medium text-slate-600 mb-1">
+                  Categoria *
+                </label>
+                <select
+                  className="w-full border border-slate-200 rounded-lg px-3 py-2 text-sm"
+                  value={form.categoria}
+                  onChange={(e) =>
+                    setForm({ ...form, categoria: e.target.value })
+                  }
+                >
+                  {CATEGORIAS.map((c) => (
+                    <option key={c} value={c}>
+                      {CAT_LABEL[c]}
+                    </option>
+                  ))}
+                </select>
               </div>
               <div>
                 <label className="block text-xs font-medium text-slate-600 mb-1">
-                  Descrição *
+                  Tipo
                 </label>
-                <input
-                  type="text"
+                <select
                   className="w-full border border-slate-200 rounded-lg px-3 py-2 text-sm"
-                  value={form.descricao}
+                  value={form.tipo}
                   onChange={(e) =>
-                    setForm({ ...form, descricao: e.target.value })
+                    setForm({
+                      ...form,
+                      tipo: e.target.value as "fixo" | "variavel",
+                    })
                   }
-                />
-              </div>
-              <div className="grid grid-cols-2 gap-3">
-                <div>
-                  <label className="block text-xs font-medium text-slate-600 mb-1">
-                    Valor (R$) *
-                  </label>
-                  <input
-                    type="number"
-                    step="0.01"
-                    className="w-full border border-slate-200 rounded-lg px-3 py-2 text-sm"
-                    value={form.valor}
-                    onChange={(e) =>
-                      setForm({ ...form, valor: e.target.value })
-                    }
-                  />
-                  {form.valor.trim() !== "" &&
-                    (parseFloat(form.valor) || 0) === 0 && (
-                      <p className="mt-1 text-xs text-amber-600">
-                        Valor igual a R$ 0,00 — confirme se está correto.
-                      </p>
-                    )}
-                </div>
-                <div>
-                  <label className="block text-xs font-medium text-slate-600 mb-1">
-                    Competência (AAAA-MM)
-                  </label>
-                  <input
-                    type="month"
-                    className="w-full border border-slate-200 rounded-lg px-3 py-2 text-sm"
-                    value={form.competencia}
-                    onChange={(e) =>
-                      setForm({ ...form, competencia: e.target.value })
-                    }
-                  />
-                </div>
-              </div>
-              <div className="grid grid-cols-2 gap-3">
-                <div>
-                  <label className="block text-xs font-medium text-slate-600 mb-1">
-                    Vencimento
-                  </label>
-                  <input
-                    type="date"
-                    className="w-full border border-slate-200 rounded-lg px-3 py-2 text-sm"
-                    value={form.vencimento}
-                    onChange={(e) =>
-                      setForm({ ...form, vencimento: e.target.value })
-                    }
-                  />
-                </div>
-                <div>
-                  <label className="block text-xs font-medium text-slate-600 mb-1">
-                    Status
-                  </label>
-                  <select
-                    className="w-full border border-slate-200 rounded-lg px-3 py-2 text-sm"
-                    value={form.status}
-                    onChange={(e) =>
-                      setForm({
-                        ...form,
-                        status: e.target.value as Despesa["status"],
-                      })
-                    }
-                  >
-                    <option value="pendente">Pendente</option>
-                    <option value="pago">Pago</option>
-                    <option value="cancelado">Cancelado</option>
-                  </select>
-                </div>
-              </div>
-              <div className="flex items-center gap-3">
-                <input
-                  type="checkbox"
-                  id="recorrente"
-                  className="rounded"
-                  checked={form.recorrente}
-                  onChange={(e) =>
-                    setForm({ ...form, recorrente: e.target.checked })
-                  }
-                />
-                <label htmlFor="recorrente" className="text-sm text-slate-700">
-                  Despesa recorrente
-                </label>
-                {form.recorrente && (
-                  <select
-                    className="ml-auto text-sm border border-slate-200 rounded px-2 py-1"
-                    value={form.recorrencia}
-                    onChange={(e) =>
-                      setForm({ ...form, recorrencia: e.target.value })
-                    }
-                  >
-                    <option value="mensal">Mensal</option>
-                    <option value="trimestral">Trimestral</option>
-                    <option value="anual">Anual</option>
-                  </select>
-                )}
+                >
+                  <option value="fixo">Fixo</option>
+                  <option value="variavel">Variável</option>
+                </select>
               </div>
             </div>
-            <div className="p-5 border-t border-slate-100 flex gap-3 justify-end sticky bottom-0 bg-white">
-              <button
-                onClick={() => setShowForm(false)}
-                className="px-4 py-2 text-sm text-slate-600 hover:bg-slate-100 rounded-lg"
-              >
-                Cancelar
-              </button>
-              <button
-                onClick={save}
-                disabled={!form.descricao || !form.valor}
-                className="px-4 py-2 text-sm bg-blue-600 text-white rounded-lg hover:bg-blue-700 disabled:opacity-50"
-              >
-                {editId ? "Salvar alterações" : "Criar despesa"}
-              </button>
+            <div>
+              <label className="block text-xs font-medium text-slate-600 mb-1">
+                Descrição *
+              </label>
+              <input
+                type="text"
+                className="w-full border border-slate-200 rounded-lg px-3 py-2 text-sm"
+                value={form.descricao}
+                onChange={(e) =>
+                  setForm({ ...form, descricao: e.target.value })
+                }
+              />
+            </div>
+            <div className="grid grid-cols-2 gap-3">
+              <div>
+                <label className="block text-xs font-medium text-slate-600 mb-1">
+                  Valor (R$) *
+                </label>
+                <input
+                  type="number"
+                  step="0.01"
+                  className="w-full border border-slate-200 rounded-lg px-3 py-2 text-sm"
+                  value={form.valor}
+                  onChange={(e) =>
+                    setForm({ ...form, valor: e.target.value })
+                  }
+                />
+                {form.valor.trim() !== "" &&
+                  (parseFloat(form.valor) || 0) === 0 && (
+                    <p className="mt-1 text-xs text-amber-600">
+                      Valor igual a R$ 0,00 — confirme se está correto.
+                    </p>
+                  )}
+              </div>
+              <div>
+                <label className="block text-xs font-medium text-slate-600 mb-1">
+                  Competência (AAAA-MM)
+                </label>
+                <input
+                  type="month"
+                  className="w-full border border-slate-200 rounded-lg px-3 py-2 text-sm"
+                  value={form.competencia}
+                  onChange={(e) =>
+                    setForm({ ...form, competencia: e.target.value })
+                  }
+                />
+              </div>
+            </div>
+            <div className="grid grid-cols-2 gap-3">
+              <div>
+                <label className="block text-xs font-medium text-slate-600 mb-1">
+                  Vencimento
+                </label>
+                <input
+                  type="date"
+                  className="w-full border border-slate-200 rounded-lg px-3 py-2 text-sm"
+                  value={form.vencimento}
+                  onChange={(e) =>
+                    setForm({ ...form, vencimento: e.target.value })
+                  }
+                />
+              </div>
+              <div>
+                <label className="block text-xs font-medium text-slate-600 mb-1">
+                  Status
+                </label>
+                <select
+                  className="w-full border border-slate-200 rounded-lg px-3 py-2 text-sm"
+                  value={form.status}
+                  onChange={(e) =>
+                    setForm({
+                      ...form,
+                      status: e.target.value as Despesa["status"],
+                    })
+                  }
+                >
+                  <option value="pendente">Pendente</option>
+                  <option value="pago">Pago</option>
+                  <option value="cancelado">Cancelado</option>
+                </select>
+              </div>
+            </div>
+            <div className="flex items-center gap-3">
+              <input
+                type="checkbox"
+                id="recorrente"
+                className="rounded"
+                checked={form.recorrente}
+                onChange={(e) =>
+                  setForm({ ...form, recorrente: e.target.checked })
+                }
+              />
+              <label htmlFor="recorrente" className="text-sm text-slate-700">
+                Despesa recorrente
+              </label>
+              {form.recorrente && (
+                <select
+                  className="ml-auto text-sm border border-slate-200 rounded px-2 py-1"
+                  value={form.recorrencia}
+                  onChange={(e) =>
+                    setForm({ ...form, recorrencia: e.target.value })
+                  }
+                >
+                  <option value="mensal">Mensal</option>
+                  <option value="trimestral">Trimestral</option>
+                  <option value="anual">Anual</option>
+                </select>
+              )}
             </div>
           </div>
-        </div>
-      )}
+          <div className="flex gap-3 justify-end mt-5">
+            <button
+              onClick={() => setShowForm(false)}
+              className="btn-ghost"
+            >
+              Cancelar
+            </button>
+            <button
+              onClick={save}
+              disabled={!form.descricao || !form.valor}
+              className="btn-primary"
+            >
+              {editId ? "Salvar alterações" : "Criar despesa"}
+            </button>
+          </div>
+        </>
+      </Modal>
     </div>
   );
 }

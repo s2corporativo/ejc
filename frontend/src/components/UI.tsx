@@ -1,5 +1,6 @@
-import { ReactNode } from "react";
+import { ReactNode, useEffect, useState } from "react";
 import {
+  AlertCircle,
   AlertTriangle,
   ArrowDown,
   ArrowUp,
@@ -9,6 +10,7 @@ import {
   ChevronDown,
   Filter,
   Inbox,
+  Info,
   Loader2,
   Search,
   SlidersHorizontal,
@@ -20,11 +22,11 @@ type ButtonVariant = "primary" | "secondary" | "ghost" | "danger" | "ai";
 
 const toneClasses: Record<Tone, string> = {
   slate: "bg-slate-100 text-slate-700 ring-slate-200",
-  blue: "bg-blue-50 text-blue-700 ring-blue-200",
-  green: "bg-emerald-50 text-emerald-700 ring-emerald-200",
-  amber: "bg-amber-50 text-amber-700 ring-amber-200",
-  red: "bg-red-50 text-red-700 ring-red-200",
-  purple: "bg-violet-50 text-violet-700 ring-violet-200",
+  blue: "bg-primary-50 text-primary-700 ring-primary-200",
+  green: "bg-success-50 text-success-700 ring-success-200",
+  amber: "bg-warn-50 text-warn-700 ring-warn-200",
+  red: "bg-danger-50 text-danger-700 ring-danger-200",
+  purple: "bg-ai-50 text-ai-700 ring-ai-200",
 };
 
 const buttonClasses: Record<ButtonVariant, string> = {
@@ -33,8 +35,8 @@ const buttonClasses: Record<ButtonVariant, string> = {
     "bg-white text-slate-700 border border-slate-200 hover:bg-slate-50 focus:ring-[#b5822e]",
   ghost:
     "bg-transparent text-slate-600 hover:bg-slate-100 focus:ring-slate-400",
-  danger: "bg-red-600 text-white hover:bg-red-700 focus:ring-red-500",
-  ai: "bg-violet-600 text-white hover:bg-violet-700 focus:ring-violet-500",
+  danger: "bg-danger-600 text-white hover:bg-danger-700 focus:ring-danger-500",
+  ai: "bg-ai-600 text-white hover:bg-ai-700 focus:ring-ai-500",
 };
 
 export function cn(...classes: Array<string | false | null | undefined>) {
@@ -195,7 +197,7 @@ export function FieldLabel({
   return (
     <label className="mb-1.5 block text-xs font-medium text-slate-600">
       {children}
-      {required && <span className="ml-1 text-red-500">*</span>}
+      {required && <span className="ml-1 text-danger-500">*</span>}
     </label>
   );
 }
@@ -344,9 +346,9 @@ export function StatCard({
       {trend && (
         <div className="mt-3 flex items-center gap-1 text-xs text-slate-500">
           {trend === "up" ? (
-            <ArrowUp className="h-3.5 w-3.5 text-emerald-600" />
+            <ArrowUp className="h-3.5 w-3.5 text-success-600" />
           ) : (
-            <ArrowDown className="h-3.5 w-3.5 text-red-600" />
+            <ArrowDown className="h-3.5 w-3.5 text-danger-600" />
           )}
           Tendencia {trend === "up" ? "positiva" : "de atencao"}
         </div>
@@ -355,6 +357,28 @@ export function StatCard({
   );
 }
 
+/**
+ * Tabela padrão: wrapper com `overflow-x-auto` (responsividade), cabeçalho
+ * slate (via classe `.table` do index.css) e zebra sutil via <TR>.
+ *
+ * @example
+ * <Table>
+ *   <THead>
+ *     <TR zebra={false}>
+ *       <TH>Cliente</TH>
+ *       <TH>Status</TH>
+ *     </TR>
+ *   </THead>
+ *   <tbody>
+ *     {itens.map((c) => (
+ *       <TR key={c.id}>
+ *         <TD>{c.nome}</TD>
+ *         <TD><StatusBadge value={c.status} /></TD>
+ *       </TR>
+ *     ))}
+ *   </tbody>
+ * </Table>
+ */
 export function Table({
   children,
   className,
@@ -373,6 +397,61 @@ export function Table({
         <table className="table">{children}</table>
       </div>
     </div>
+  );
+}
+
+export function THead({
+  children,
+  className,
+}: {
+  children: ReactNode;
+  className?: string;
+}) {
+  return <thead className={className}>{children}</thead>;
+}
+
+export function TR({
+  children,
+  className,
+  zebra = true,
+  ...props
+}: React.HTMLAttributes<HTMLTableRowElement> & {
+  children: ReactNode;
+  /** Zebra sutil nas linhas pares (desligue em <THead>). */
+  zebra?: boolean;
+}) {
+  return (
+    <tr {...props} className={cn(zebra && "even:bg-slate-50/40", className)}>
+      {children}
+    </tr>
+  );
+}
+
+export function TH({
+  children,
+  className,
+  ...props
+}: React.ThHTMLAttributes<HTMLTableCellElement> & {
+  children?: ReactNode;
+}) {
+  return (
+    <th {...props} className={className}>
+      {children}
+    </th>
+  );
+}
+
+export function TD({
+  children,
+  className,
+  ...props
+}: React.TdHTMLAttributes<HTMLTableCellElement> & {
+  children?: ReactNode;
+}) {
+  return (
+    <td {...props} className={className}>
+      {children}
+    </td>
   );
 }
 
@@ -395,7 +474,7 @@ export function Tabs({
           className={cn(
             "flex h-9 shrink-0 items-center gap-2 rounded-lg px-3 text-sm font-medium transition-all",
             value === item.value
-              ? "bg-blue-600 text-white shadow-sm"
+              ? "bg-primary-600 text-white shadow-sm"
               : "text-slate-600 hover:bg-slate-100",
           )}
         >
@@ -444,26 +523,61 @@ export function Tooltip({
   );
 }
 
+type ModalSize = "sm" | "md" | "lg" | "xl";
+
+const modalSizeClasses: Record<ModalSize, string> = {
+  sm: "max-w-sm",
+  md: "max-w-lg",
+  lg: "max-w-2xl",
+  xl: "max-w-4xl",
+};
+
+/**
+ * Modal genérico: overlay + painel centrado, fecha com Esc e clique no overlay.
+ *
+ * @example
+ * <Modal open={aberto} onClose={() => setAberto(false)} title="Novo caso" size="lg"
+ *   footer={<><Button variant="secondary" onClick={fechar}>Cancelar</Button><Button onClick={salvar}>Salvar</Button></>}>
+ *   conteúdo…
+ * </Modal>
+ */
 export function Modal({
   open,
   onClose,
   title,
   children,
   wide,
+  size,
+  footer,
 }: {
   open: boolean;
   onClose: () => void;
   title: string;
   children: ReactNode;
+  /** Legado — equivale a size="xl". Prefira `size`. */
   wide?: boolean;
+  size?: ModalSize;
+  footer?: ReactNode;
 }) {
+  useEffect(() => {
+    if (!open) return;
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === "Escape") onClose();
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [open, onClose]);
+
   if (!open) return null;
+  const sizeClass = size ? modalSizeClasses[size] : wide ? "max-w-4xl" : "max-w-lg";
   return (
     <div className="modal-backdrop animate-fade-in" onClick={onClose}>
       <div
+        role="dialog"
+        aria-modal="true"
         className={cn(
           "w-full max-h-[90vh] overflow-auto rounded-2xl border border-slate-200 bg-white shadow-2xl animate-pop",
-          wide ? "max-w-4xl" : "max-w-lg",
+          sizeClass,
         )}
         onClick={(e) => e.stopPropagation()}
       >
@@ -479,6 +593,261 @@ export function Modal({
           />
         </div>
         <div className="p-5">{children}</div>
+        {footer && (
+          <div className="sticky bottom-0 z-10 flex items-center justify-end gap-2 border-t border-slate-100 bg-white/95 px-5 py-4 backdrop-blur">
+            {footer}
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
+
+/**
+ * Confirmação forte construída sobre Modal. Com `typeToConfirm`, o botão de
+ * confirmação só habilita quando o usuário digita o texto exato (ex.: nome do
+ * caso antes de excluir).
+ *
+ * @example
+ * <ConfirmModal
+ *   open={confirmando}
+ *   onClose={() => setConfirmando(false)}
+ *   onConfirm={excluirCaso}
+ *   title="Excluir caso"
+ *   message="Esta ação move o caso para a lixeira."
+ *   typeToConfirm={caso.titulo}
+ * />
+ */
+export function ConfirmModal({
+  open,
+  onClose,
+  onConfirm,
+  title = "Confirmar ação",
+  message,
+  variant = "danger",
+  typeToConfirm,
+  confirmLabel = "Confirmar",
+  cancelLabel = "Cancelar",
+  loading,
+  children,
+}: {
+  open: boolean;
+  onClose: () => void;
+  onConfirm: () => void;
+  title?: string;
+  message?: ReactNode;
+  variant?: "danger" | "primary";
+  /** Exige digitar este texto exato para habilitar a confirmação. */
+  typeToConfirm?: string;
+  confirmLabel?: string;
+  cancelLabel?: string;
+  loading?: boolean;
+  children?: ReactNode;
+}) {
+  const [typed, setTyped] = useState("");
+  useEffect(() => {
+    if (!open) setTyped("");
+  }, [open]);
+  const blocked = Boolean(typeToConfirm) && typed !== typeToConfirm;
+  return (
+    <Modal
+      open={open}
+      onClose={onClose}
+      title={title}
+      size="sm"
+      footer={
+        <>
+          <Button type="button" variant="secondary" onClick={onClose}>
+            {cancelLabel}
+          </Button>
+          <Button
+            type="button"
+            variant={variant === "danger" ? "danger" : "primary"}
+            disabled={blocked || loading}
+            onClick={onConfirm}
+            icon={loading ? <Loader2 className="h-4 w-4 animate-spin" /> : undefined}
+          >
+            {confirmLabel}
+          </Button>
+        </>
+      }
+    >
+      <div className="flex items-start gap-3">
+        {variant === "danger" && (
+          <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-danger-50 text-danger-600 ring-1 ring-inset ring-danger-200">
+            <AlertTriangle className="h-5 w-5" />
+          </div>
+        )}
+        <div className="min-w-0 flex-1 text-sm text-slate-600">
+          {message && <p>{message}</p>}
+          {children}
+          {typeToConfirm && (
+            <div className="mt-4">
+              <FieldLabel>
+                Digite{" "}
+                <span className="font-mono font-semibold text-slate-900">
+                  {typeToConfirm}
+                </span>{" "}
+                para confirmar
+              </FieldLabel>
+              <Input
+                value={typed}
+                onChange={(e) => setTyped(e.target.value)}
+                placeholder={typeToConfirm}
+                autoFocus
+              />
+            </div>
+          )}
+        </div>
+      </div>
+    </Modal>
+  );
+}
+
+type DrawerWidth = "sm" | "md" | "lg";
+
+const drawerWidthClasses: Record<DrawerWidth, string> = {
+  sm: "max-w-sm",
+  md: "max-w-md",
+  lg: "max-w-2xl",
+};
+
+/**
+ * Painel lateral direito deslizante (ajuda contextual, detalhes rápidos).
+ * Fecha com Esc e clique no overlay.
+ *
+ * @example
+ * <Drawer open={ajudaAberta} onClose={() => setAjudaAberta(false)} title="Ajuda — Casos" width="md">
+ *   conteúdo…
+ * </Drawer>
+ */
+export function Drawer({
+  open,
+  onClose,
+  title,
+  children,
+  width = "md",
+  footer,
+}: {
+  open: boolean;
+  onClose: () => void;
+  title: string;
+  children: ReactNode;
+  width?: DrawerWidth;
+  footer?: ReactNode;
+}) {
+  useEffect(() => {
+    if (!open) return;
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === "Escape") onClose();
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [open, onClose]);
+
+  if (!open) return null;
+  return (
+    <div
+      className="fixed inset-0 z-50 animate-fade-in bg-slate-950/55 backdrop-blur-sm"
+      onClick={onClose}
+    >
+      <aside
+        role="dialog"
+        aria-modal="true"
+        className={cn(
+          "absolute inset-y-0 right-0 flex w-full flex-col border-l border-slate-200 bg-white shadow-2xl animate-slide-in-right",
+          drawerWidthClasses[width],
+        )}
+        onClick={(e) => e.stopPropagation()}
+      >
+        <div className="flex shrink-0 items-center justify-between border-b border-slate-100 px-5 py-4">
+          <h2 className="text-base font-semibold text-slate-950">{title}</h2>
+          <Button
+            type="button"
+            onClick={onClose}
+            variant="ghost"
+            size="icon"
+            aria-label="Fechar"
+            icon={<X className="h-4 w-4" />}
+          />
+        </div>
+        <div className="flex-1 overflow-y-auto p-5">{children}</div>
+        {footer && (
+          <div className="flex shrink-0 items-center justify-end gap-2 border-t border-slate-100 px-5 py-4">
+            {footer}
+          </div>
+        )}
+      </aside>
+    </div>
+  );
+}
+
+type AlertVariant = "info" | "success" | "warning" | "danger";
+
+const alertConfig: Record<
+  AlertVariant,
+  { icon: typeof Info; box: string; iconColor: string; title: string }
+> = {
+  info: {
+    icon: Info,
+    box: "border-info-200 bg-info-50 text-info-800",
+    iconColor: "text-info-600",
+    title: "text-info-900",
+  },
+  success: {
+    icon: CheckCircle2,
+    box: "border-success-200 bg-success-50 text-success-800",
+    iconColor: "text-success-600",
+    title: "text-success-900",
+  },
+  warning: {
+    icon: AlertTriangle,
+    box: "border-warn-200 bg-warn-50 text-warn-800",
+    iconColor: "text-warn-600",
+    title: "text-warn-900",
+  },
+  danger: {
+    icon: AlertCircle,
+    box: "border-danger-200 bg-danger-50 text-danger-800",
+    iconColor: "text-danger-600",
+    title: "text-danger-900",
+  },
+};
+
+/**
+ * Aviso inline com variante semântica.
+ *
+ * @example
+ * <Alert variant="warning" title="Prazo próximo">Vence em 2 dias úteis.</Alert>
+ */
+export function Alert({
+  variant = "info",
+  title,
+  children,
+  className,
+}: {
+  variant?: AlertVariant;
+  title?: string;
+  children?: ReactNode;
+  className?: string;
+}) {
+  const config = alertConfig[variant];
+  const Icon = config.icon;
+  return (
+    <div
+      role="alert"
+      className={cn(
+        "flex items-start gap-3 rounded-xl border px-4 py-3 text-sm",
+        config.box,
+        className,
+      )}
+    >
+      <Icon className={cn("mt-0.5 h-4 w-4 shrink-0", config.iconColor)} />
+      <div className="min-w-0">
+        {title && (
+          <p className={cn("font-semibold", config.title)}>{title}</p>
+        )}
+        {children && <div className={title ? "mt-0.5" : undefined}>{children}</div>}
       </div>
     </div>
   );
@@ -533,7 +902,7 @@ export function Empty({
 export function Spinner() {
   return (
     <div className="flex items-center justify-center p-12">
-      <Loader2 className="h-8 w-8 animate-spin text-blue-600" />
+      <Loader2 className="h-8 w-8 animate-spin text-primary-600" />
     </div>
   );
 }
@@ -544,7 +913,7 @@ export function IANotice({
   children?: ReactNode;
 }) {
   return (
-    <div className="flex items-start gap-3 rounded-xl border border-violet-200 bg-violet-50 px-4 py-3 text-sm text-violet-800">
+    <div className="flex items-start gap-3 rounded-xl border border-ai-200 bg-ai-50 px-4 py-3 text-sm text-ai-800">
       <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0" />
       <div>{children}</div>
     </div>
@@ -569,7 +938,7 @@ export function AISurface({
     <section className={cn("ai-surface overflow-hidden", className)}>
       <div className="ai-surface-header">
         <div className="flex min-w-0 items-start gap-3">
-          <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-lg bg-violet-600 text-white">
+          <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-lg bg-ai-600 text-white">
             <Bot className="h-5 w-5" />
           </div>
           <div className="min-w-0">
@@ -612,7 +981,7 @@ export function VisualLawDocument({
     <article className={cn("visual-law-document overflow-hidden", className)}>
       <header className="visual-law-document-header">
         <div className="flex items-start gap-3">
-          <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-lg bg-blue-700 text-white">
+          <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-lg bg-primary-700 text-white">
             <FileText className="h-5 w-5" />
           </div>
           <div className="min-w-0">

@@ -104,7 +104,7 @@ export default function OnboardingTour() {
           <div className="flex items-center justify-between mt-7">
             <button
               onClick={voltar}
-              className={`flex items-center gap-1 text-sm text-zinc-400 hover:text-zinc-600 ${step === 0 ? "invisible" : ""}`}
+              className={`btn-ghost flex items-center gap-1 text-sm ${step === 0 ? "invisible" : ""}`}
             >
               <ChevronLeft className="w-4 h-4" /> Voltar
             </button>
@@ -113,10 +113,7 @@ export default function OnboardingTour() {
               {step + 1} / {SLIDES.length}
             </span>
 
-            <button
-              onClick={avancar}
-              className="flex items-center gap-1.5 text-sm font-medium text-white bg-[#B08A50] px-4 py-2 rounded-lg hover:bg-[#9a7a45] transition-colors"
-            >
+            <button onClick={avancar} className="btn-primary flex items-center gap-1.5">
               {isLast ? "Concluir" : "Próximo"}{" "}
               {!isLast && <ChevronRight className="w-4 h-4" />}
             </button>

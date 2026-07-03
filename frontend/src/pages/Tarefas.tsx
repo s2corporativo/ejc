@@ -12,6 +12,7 @@ import {
   AlertCircle,
 } from "lucide-react";
 import api from "../lib/api";
+import { Modal } from "../components/UI";
 
 const COLS = [
   {
@@ -23,20 +24,20 @@ const COLS = [
   {
     id: "fazendo",
     label: "Em andamento",
-    color: "border-amber-400",
-    bg: "bg-amber-50/50",
+    color: "border-warn-400",
+    bg: "bg-warn-50/50",
   },
   {
     id: "concluida",
     label: "Concluídas",
-    color: "border-emerald-400",
-    bg: "bg-emerald-50/50",
+    color: "border-success-400",
+    bg: "bg-success-50/50",
   },
 ];
 
 const PRIO_COLOR: Record<string, string> = {
-  alta: "bg-red-100 text-red-700",
-  media: "bg-amber-100 text-amber-700",
+  alta: "bg-danger-100 text-danger-700",
+  media: "bg-warn-100 text-warn-700",
   baixa: "bg-slate-100 text-slate-500",
 };
 
@@ -152,7 +153,7 @@ export default function Tarefas() {
           <p className="text-slate-500 text-sm mt-0.5">
             {stats.total} total · {stats.fazendo} em andamento ·{" "}
             {stats.vencidas > 0 && (
-              <span className="text-red-600 font-medium">
+              <span className="text-danger-600 font-medium">
                 {stats.vencidas} vencidas
               </span>
             )}
@@ -161,7 +162,7 @@ export default function Tarefas() {
         <div className="flex items-center gap-2">
           <button
             onClick={load}
-            className="p-2 border border-slate-200 rounded-lg hover:bg-slate-50"
+            className="btn-secondary p-2"
           >
             <RefreshCw
               className={`w-4 h-4 text-slate-400 ${loading ? "animate-spin" : ""}`}
@@ -183,7 +184,7 @@ export default function Tarefas() {
           </div>
           <button
             onClick={openNew}
-            className="flex items-center gap-1.5 px-3 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 text-sm"
+            className="btn-primary text-sm px-3 py-2"
           >
             <Plus className="w-4 h-4" /> Nova tarefa
           </button>
@@ -245,7 +246,7 @@ export default function Tarefas() {
                       onClick={() => openEdit(t)}
                       className={`bg-white rounded-lg border p-3 cursor-pointer hover:shadow-sm transition-shadow ${
                         isVencida(t.data_limite) && t.status !== "concluida"
-                          ? "border-red-200"
+                          ? "border-danger-200"
                           : "border-slate-200"
                       }`}
                     >
@@ -258,7 +259,7 @@ export default function Tarefas() {
                             e.stopPropagation();
                             remover(t.id);
                           }}
-                          className="flex-shrink-0 text-slate-300 hover:text-red-500 p-0.5"
+                          className="flex-shrink-0 text-slate-300 hover:text-danger-500 p-0.5"
                         >
                           <Trash2 className="w-3 h-3" />
                         </button>
@@ -276,7 +277,7 @@ export default function Tarefas() {
                         </span>
                         {t.data_limite && (
                           <span
-                            className={`text-[10px] flex items-center gap-1 ${isVencida(t.data_limite) ? "text-red-500 font-semibold" : "text-slate-400"}`}
+                            className={`text-[10px] flex items-center gap-1 ${isVencida(t.data_limite) ? "text-danger-500 font-semibold" : "text-slate-400"}`}
                           >
                             <CalendarDays className="w-2.5 h-2.5" />
                             {new Date(
@@ -368,7 +369,7 @@ export default function Tarefas() {
                     <td className="px-4 py-3">
                       {t.data_limite ? (
                         <span
-                          className={`text-xs ${isVencida(t.data_limite) && t.status !== "concluida" ? "text-red-600 font-semibold" : "text-slate-500"}`}
+                          className={`text-xs ${isVencida(t.data_limite) && t.status !== "concluida" ? "text-danger-600 font-semibold" : "text-slate-500"}`}
                         >
                           {new Date(
                             t.data_limite + "T12:00",
@@ -387,7 +388,7 @@ export default function Tarefas() {
                           e.stopPropagation();
                           remover(t.id);
                         }}
-                        className="text-slate-300 hover:text-red-500"
+                        className="text-slate-300 hover:text-danger-500"
                       >
                         <Trash2 className="w-4 h-4" />
                       </button>
@@ -401,115 +402,106 @@ export default function Tarefas() {
       )}
 
       {/* Modal */}
-      {modal && (
-        <div
-          className="fixed inset-0 bg-black/40 z-50 flex items-center justify-center p-4"
-          onClick={() => setModal(false)}
-        >
-          <div
-            className="bg-white rounded-xl shadow-xl p-6 w-full max-w-md"
-            onClick={(e) => e.stopPropagation()}
-          >
-            <h3 className="font-semibold text-slate-800 mb-4">
-              {editTask ? "Editar tarefa" : "Nova tarefa"}
-            </h3>
-            <div className="space-y-3">
-              <div>
-                <label className="block text-xs text-slate-500 mb-1">
-                  Título *
-                </label>
-                <input
-                  className="w-full border border-slate-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-300"
-                  placeholder="Título da tarefa"
-                  value={form.titulo}
-                  onChange={(e) => setForm({ ...form, titulo: e.target.value })}
-                />
-              </div>
-              <div>
-                <label className="block text-xs text-slate-500 mb-1">
-                  Descrição
-                </label>
-                <textarea
-                  className="w-full border border-slate-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-300"
-                  rows={2}
-                  placeholder="Detalhe opcional..."
-                  value={form.descricao ?? ""}
-                  onChange={(e) =>
-                    setForm({ ...form, descricao: e.target.value })
-                  }
-                />
-              </div>
-              <div className="grid grid-cols-2 gap-3">
-                <div>
-                  <label className="block text-xs text-slate-500 mb-1">
-                    Prioridade
-                  </label>
-                  <select
-                    className="w-full border border-slate-200 rounded-lg px-3 py-2 text-sm"
-                    value={form.prioridade}
-                    onChange={(e) =>
-                      setForm({ ...form, prioridade: e.target.value })
-                    }
-                  >
-                    <option value="baixa">Baixa</option>
-                    <option value="media">Média</option>
-                    <option value="alta">Alta</option>
-                  </select>
-                </div>
-                <div>
-                  <label className="block text-xs text-slate-500 mb-1">
-                    Prazo
-                  </label>
-                  <input
-                    type="date"
-                    className="w-full border border-slate-200 rounded-lg px-3 py-2 text-sm"
-                    value={form.data_limite ?? ""}
-                    onChange={(e) =>
-                      setForm({ ...form, data_limite: e.target.value })
-                    }
-                  />
-                </div>
-              </div>
-              <div>
-                <label className="block text-xs text-slate-500 mb-1">
-                  Responsável
-                </label>
-                <select
-                  className="w-full border border-slate-200 rounded-lg px-3 py-2 text-sm"
-                  value={form.responsavel_id ?? ""}
-                  onChange={(e) =>
-                    setForm({
-                      ...form,
-                      responsavel_id: e.target.value || undefined,
-                    })
-                  }
-                >
-                  <option value="">Nenhum</option>
-                  {users.map((u) => (
-                    <option key={u.id} value={u.id}>
-                      {u.full_name}
-                    </option>
-                  ))}
-                </select>
-              </div>
-              <div className="flex gap-2 justify-end pt-1">
-                <button
-                  onClick={() => setModal(false)}
-                  className="px-4 py-2 text-sm text-slate-500 hover:bg-slate-100 rounded-lg"
-                >
-                  Cancelar
-                </button>
-                <button
-                  onClick={salvar}
-                  className="px-4 py-2 bg-blue-600 text-white text-sm rounded-lg hover:bg-blue-700"
-                >
-                  {editTask ? "Salvar" : "Criar"}
-                </button>
-              </div>
+      <Modal
+        open={modal}
+        onClose={() => setModal(false)}
+        title={editTask ? "Editar tarefa" : "Nova tarefa"}
+      >
+        <div className="space-y-3">
+          <div>
+            <label className="block text-xs text-slate-500 mb-1">
+              Título *
+            </label>
+            <input
+              className="w-full border border-slate-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary-300"
+              placeholder="Título da tarefa"
+              value={form.titulo}
+              onChange={(e) => setForm({ ...form, titulo: e.target.value })}
+            />
+          </div>
+          <div>
+            <label className="block text-xs text-slate-500 mb-1">
+              Descrição
+            </label>
+            <textarea
+              className="w-full border border-slate-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary-300"
+              rows={2}
+              placeholder="Detalhe opcional..."
+              value={form.descricao ?? ""}
+              onChange={(e) =>
+                setForm({ ...form, descricao: e.target.value })
+              }
+            />
+          </div>
+          <div className="grid grid-cols-2 gap-3">
+            <div>
+              <label className="block text-xs text-slate-500 mb-1">
+                Prioridade
+              </label>
+              <select
+                className="w-full border border-slate-200 rounded-lg px-3 py-2 text-sm"
+                value={form.prioridade}
+                onChange={(e) =>
+                  setForm({ ...form, prioridade: e.target.value })
+                }
+              >
+                <option value="baixa">Baixa</option>
+                <option value="media">Média</option>
+                <option value="alta">Alta</option>
+              </select>
+            </div>
+            <div>
+              <label className="block text-xs text-slate-500 mb-1">
+                Prazo
+              </label>
+              <input
+                type="date"
+                className="w-full border border-slate-200 rounded-lg px-3 py-2 text-sm"
+                value={form.data_limite ?? ""}
+                onChange={(e) =>
+                  setForm({ ...form, data_limite: e.target.value })
+                }
+              />
             </div>
           </div>
+          <div>
+            <label className="block text-xs text-slate-500 mb-1">
+              Responsável
+            </label>
+            <select
+              className="w-full border border-slate-200 rounded-lg px-3 py-2 text-sm"
+              value={form.responsavel_id ?? ""}
+              onChange={(e) =>
+                setForm({
+                  ...form,
+                  responsavel_id: e.target.value || undefined,
+                })
+              }
+            >
+              <option value="">Nenhum</option>
+              {users.map((u) => (
+                <option key={u.id} value={u.id}>
+                  {u.full_name}
+                </option>
+              ))}
+            </select>
+          </div>
+          <div className="flex gap-2 justify-end pt-1">
+            <button
+              onClick={() => setModal(false)}
+              className="btn-ghost text-sm px-4 py-2"
+            >
+              Cancelar
+            </button>
+            <button
+              onClick={salvar}
+              className="btn-primary text-sm px-4 py-2"
+            >
+              {editTask ? "Salvar" : "Criar"}
+            </button>
+          </div>
         </div>
-      )}
+      </Modal>
     </div>
   );
 }

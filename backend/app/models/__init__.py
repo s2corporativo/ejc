@@ -68,3 +68,4 @@ from app.models import socio               # noqa
 from app.models import tese                # noqa
 from app.models import wiki                # noqa
 from app.models import workflow            # noqa
+from app.models import redesign            # noqa  (module_help, area_modulos_mapping, document_types_master, tabela_oab_honorarios — migração 057)

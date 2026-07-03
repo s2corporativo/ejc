@@ -35,12 +35,52 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models.user import User
-from app.models.case import Case, CaseMovimento
+from app.models.case import Case, CaseMovimento, CaseStatus
 from app.models.djen import DjenComunicacao
-from app.models.notification import Notification
 
 logger = logging.getLogger("ejc.djen")
 BASE = "https://comunicaapi.pje.jus.br/api/v1/comunicacao"
+
+# ── Vinculação automática publicação → caso (R10/Seção 12) ────────────────────
+# Padrão CNJ (Res. CNJ 65/2008): NNNNNNN-DD.AAAA.J.TR.OOOO — aceita com ou
+# sem pontuação. A comparação com Case.numero_processo é feita normalizando
+# os dois lados (apenas dígitos).
+CNJ_REGEX = re.compile(r"\d{7}-?\d{2}\.?\d{4}\.?\d\.?\d{2}\.?\d{4}")
+
+
+def extrair_numero_cnj(texto: str | None) -> str | None:
+    """Extrai o primeiro nº de processo no padrão CNJ do texto (ou None)."""
+    if not texto:
+        return None
+    m = CNJ_REGEX.search(texto)
+    return m.group(0) if m else None
+
+
+def normalizar_processo(numero: str | None) -> str:
+    """Remove toda pontuação/máscara — só dígitos, para comparação."""
+    return re.sub(r"\D", "", numero or "")
+
+
+async def buscar_caso_ativo_por_processo(
+    db: AsyncSession, numero: str | None
+) -> Case | None:
+    """
+    Retorna o caso ATIVO (não deletado, não encerrado/arquivado) cujo
+    numero_processo — normalizado (só dígitos) — bate com `numero`.
+    Comparação em Python porque o banco guarda o nº com máscara variável.
+    """
+    alvo = normalizar_processo(numero)
+    if not alvo:
+        return None
+    casos = (await db.execute(select(Case).where(
+        Case.deleted_at.is_(None),
+        Case.numero_processo.isnot(None),
+        Case.status.notin_([CaseStatus.encerrado, CaseStatus.arquivado]),
+    ))).scalars().all()
+    return next(
+        (c for c in casos if normalizar_processo(c.numero_processo) == alvo),
+        None,
+    )
 
 
 async def consultar_oab(numero: str, uf: str, dias: int = 2) -> list[dict]:
@@ -78,22 +118,22 @@ async def capturar_para_advogado(db: AsyncSession, adv: User) -> int:
         if existe:
             continue
 
-        num_proc = re.sub(r"\D", "", it.get("numero_processo")
-                          or it.get("numeroprocessocommascara") or "")
-        # Vincular a caso existente pelo nº do processo
-        case = None
-        if num_proc:
-            case = (await db.execute(select(Case).where(
-                Case.deleted_at.is_(None),
-            ))).scalars().all()
-            case = next(
-                (c for c in case
-                 if c.numero_processo
-                 and re.sub(r"\D", "", c.numero_processo) == num_proc),
-                None,
-            )
-
         texto = (it.get("texto") or "")[:2000]
+        num_proc = normalizar_processo(it.get("numero_processo")
+                                       or it.get("numeroprocessocommascara") or "")
+        # Fallback: se a API não trouxe o nº, extrai do texto (padrão CNJ)
+        if not num_proc:
+            num_proc = normalizar_processo(extrair_numero_cnj(texto))
+
+        # Vinculação AUTOMÁTICA a caso ativo pelo nº do processo (normalizado).
+        # Marcador no texto_resumo para conferência humana — o vínculo não
+        # dispensa a leitura da publicação original.
+        case = await buscar_caso_ativo_por_processo(db, num_proc)
+        if case:
+            marcador = (f"\n[vinculação automática ao caso pelo nº do processo "
+                        f"{num_proc} — conferir]")
+            texto = texto[:2000 - len(marcador)] + marcador
+
         com = DjenComunicacao(
             id=str(uuid4()),
             comunicacao_id_externo=ext_id,
@@ -115,15 +155,42 @@ async def capturar_para_advogado(db: AsyncSession, adv: User) -> int:
             db.add(CaseMovimento(
                 id=str(uuid4()), case_id=case.id, tipo="intimacao",
                 descricao=f"📨 Intimação DJEN ({com.tribunal}): "
-                          f"{com.tipo_comunicacao} — tratar na tela Intimações",
+                          f"{com.tipo_comunicacao} — tratar na tela Intimações"
+                          f" [vinculação automática pelo nº do processo]",
             ))
 
-        db.add(Notification(
-            id=str(uuid4()), user_id=adv.id,
-            titulo="📨 Nova intimação no DJEN",
-            mensagem=f"{com.tribunal or 'Tribunal'} · proc. "
-                     f"{com.numero_processo or '—'} · {com.tipo_comunicacao}",
-            tipo="intimacao", link="/intimacoes",
-        ))
+        # ── Notificação ATIVA (só na criação — o dedup acima garante) ────────
+        # Destinatário: advogado responsável do caso vinculado; sem caso (ou
+        # caso sem responsável), o dono da OAB que originou a captura.
+        from app.services.notification_service import (
+            criar_notificacao_interna, enviar_email,
+        )
+        destinatario_id = (case.advogado_responsavel_id
+                           if case and case.advogado_responsavel_id else adv.id)
+        titulo_n = "📨 Nova intimação no DJEN"
+        msg_n = (f"{com.tribunal or 'Tribunal'} · proc. "
+                 f"{com.numero_processo or '—'} · {com.tipo_comunicacao}"
+                 + (" · vinculada automaticamente ao caso (conferir)"
+                    if case else ""))
+        try:
+            await criar_notificacao_interna(
+                db, destinatario_id, titulo_n, msg_n,
+                tipo="intimacao", link="/intimacoes",
+            )
+            # E-mail: enviar_email é no-op seguro se EMAIL_ENABLED=false
+            if destinatario_id == adv.id:
+                email_dest = adv.email
+            else:
+                email_dest = (await db.execute(select(User.email).where(
+                    User.id == destinatario_id
+                ))).scalar_one_or_none()
+            if email_dest:
+                await enviar_email(
+                    email_dest, f"[EJC] {titulo_n}",
+                    f"<p>{msg_n}</p><p>Trate a intimação na tela "
+                    f"<b>Intimações</b> do EJC.</p>",
+                )
+        except Exception as e:
+            logger.warning(f"DJEN notificação falhou (não-fatal): {e}")
         novas += 1
     return novas

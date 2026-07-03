@@ -179,7 +179,7 @@ export default function Suspensoes() {
           </div>
         )}
         {simRes?.erro && (
-          <div className="mt-4 px-3 py-2 rounded-lg bg-red-50 text-red-700 text-sm ring-1 ring-inset ring-red-200">
+          <div className="mt-4 px-3 py-2 rounded-lg bg-danger-50 text-danger-700 text-sm ring-1 ring-inset ring-danger-200">
             {simRes.erro}
           </div>
         )}
@@ -221,7 +221,7 @@ export default function Suspensoes() {
                   {isAdmin && (
                     <td className="text-right">
                       <button
-                        className="p-1.5 rounded-lg text-slate-400 hover:text-red-600 hover:bg-red-50"
+                        className="p-1.5 rounded-lg text-slate-400 hover:text-danger-600 hover:bg-danger-50"
                         onClick={() => remover(s.id)}
                         aria-label="Remover"
                       >
@@ -243,7 +243,7 @@ export default function Suspensoes() {
         title="Nova suspensão de prazo"
       >
         {erro && (
-          <div className="mb-4 px-3 py-2 rounded-lg bg-red-50 text-red-700 text-sm ring-1 ring-inset ring-red-200">
+          <div className="mb-4 px-3 py-2 rounded-lg bg-danger-50 text-danger-700 text-sm ring-1 ring-inset ring-danger-200">
             {erro}
           </div>
         )}

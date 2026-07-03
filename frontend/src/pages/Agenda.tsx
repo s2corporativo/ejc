@@ -85,10 +85,10 @@ export default function Agenda() {
 
   const cor = (tipo: string) =>
     tipo === "audiencia"
-      ? "bg-purple-100 text-purple-700"
+      ? "bg-ai-100 text-ai-700"
       : tipo === "prescricao"
-        ? "bg-red-100 text-red-700"
-        : "bg-sky-100 text-sky-700";
+        ? "bg-danger-100 text-danger-700"
+        : "bg-info-100 text-info-700";
 
   return (
     <div>
@@ -99,8 +99,8 @@ export default function Agenda() {
       />
 
       {atrasados.length > 0 && (
-        <div className="mb-5 card border-l-4 border-red-600 p-4">
-          <p className="text-sm font-semibold text-red-700 mb-2">
+        <div className="mb-5 card border-l-4 border-danger-600 p-4">
+          <p className="text-sm font-semibold text-danger-700 mb-2">
             {atrasados.length} prazo(s) vencido(s)
           </p>
           <div className="space-y-1">
@@ -108,7 +108,7 @@ export default function Agenda() {
               <Link
                 key={i}
                 to="/prazos"
-                className="block text-sm text-red-700 hover:underline"
+                className="block text-sm text-danger-700 hover:underline"
               >
                 • {p.titulo}
               </Link>
@@ -217,7 +217,7 @@ export default function Agenda() {
               onClick={() => {
                 navigator.clipboard.writeText(icsUrl);
               }}
-              className="flex items-center gap-1 px-2.5 py-1.5 text-xs border rounded bg-white hover:bg-gray-50 transition-colors text-gray-600"
+              className="btn-secondary flex items-center gap-1 px-2.5 py-1.5 text-xs"
             >
               <Copy size={12} /> Copiar
             </button>

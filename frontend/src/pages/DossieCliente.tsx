@@ -117,9 +117,9 @@ function StatCard({
   const colors: Record<string, string> = {
     bronze: "bg-bronze-50 text-bronze-deep border-bronze-pale",
     navy: "bg-navy-50 text-navy-700 border-navy-100",
-    emerald: "bg-emerald-50 text-emerald-700 border-emerald-200",
-    amber: "bg-amber-50 text-amber-700 border-amber-200",
-    red: "bg-red-50 text-red-700 border-red-200",
+    emerald: "bg-success-50 text-success-700 border-success-200",
+    amber: "bg-warn-50 text-warn-700 border-warn-200",
+    red: "bg-danger-50 text-danger-700 border-danger-200",
   };
   return (
     <div className={`card border p-4 flex items-start gap-3 ${colors[color]}`}>
@@ -142,7 +142,7 @@ function PrazoRow({ p }: { p: DossieData["prazos"][0] }) {
       className="flex items-center gap-3 px-4 py-2.5 hover:bg-bronze-50/60 transition-colors group"
     >
       <div
-        className={`w-2 h-2 rounded-full flex-shrink-0 ${p.urgente ? "bg-red-500" : p.dias_restantes <= 15 ? "bg-amber-400" : "bg-emerald-400"}`}
+        className={`w-2 h-2 rounded-full flex-shrink-0 ${p.urgente ? "bg-danger-500" : p.dias_restantes <= 15 ? "bg-warn-400" : "bg-success-400"}`}
       />
       <div className="flex-1 min-w-0">
         <p className="text-sm text-navy-900 truncate">{p.descricao}</p>
@@ -150,7 +150,7 @@ function PrazoRow({ p }: { p: DossieData["prazos"][0] }) {
       </div>
       <div className="text-right flex-shrink-0">
         <p
-          className={`text-xs font-medium ${p.urgente ? "text-red-600" : p.dias_restantes <= 15 ? "text-amber-600" : "text-slate-500"}`}
+          className={`text-xs font-medium ${p.urgente ? "text-danger-600" : p.dias_restantes <= 15 ? "text-warn-600" : "text-slate-500"}`}
         >
           {p.dias_restantes === 0
             ? "Hoje"
@@ -180,8 +180,8 @@ type PendingItem = {
 
 const PENDING_STATUS_COLOR: Record<string, string> = {
   pendente: "bg-yellow-100 text-yellow-700",
-  solicitado: "bg-blue-100 text-blue-700",
-  recebido: "bg-purple-100 text-purple-700",
+  solicitado: "bg-primary-100 text-primary-700",
+  recebido: "bg-ai-100 text-ai-700",
   em_analise: "bg-orange-100 text-orange-700",
   concluido: "bg-green-100 text-green-700",
 };
@@ -328,7 +328,7 @@ function PendingItemsPanel({ clientId }: { clientId: string | number }) {
           </p>
         )}
         {!loading && active.length === 0 && done.length === 0 && (
-          <div className="px-4 py-5 flex items-center gap-2 text-sm text-emerald-600">
+          <div className="px-4 py-5 flex items-center gap-2 text-sm text-success-600">
             <CheckCircle className="w-4 h-4" /> Sem pendências em aberto
           </div>
         )}
@@ -381,7 +381,7 @@ function PendingItemsPanel({ clientId }: { clientId: string | number }) {
               )}
               <button
                 onClick={() => remove(item.id)}
-                className="p-1 text-slate-300 hover:text-red-500 transition-colors"
+                className="p-1 text-slate-300 hover:text-danger-500 transition-colors"
               >
                 <X className="w-3 h-3" />
               </button>
@@ -398,7 +398,7 @@ function PendingItemsPanel({ clientId }: { clientId: string | number }) {
                 key={item.id}
                 className="flex items-center gap-3 px-4 py-2 opacity-50"
               >
-                <CheckCircle className="w-3 h-3 text-emerald-500 flex-shrink-0" />
+                <CheckCircle className="w-3 h-3 text-success-500 flex-shrink-0" />
                 <span className="text-xs text-slate-500 line-through truncate">
                   {item.title}
                 </span>
@@ -466,7 +466,7 @@ function ComunicacaoRapida({
             onClick={() =>
               registrarAtendimento("ligacao", "Ligação para " + cliente.nome)
             }
-            className="flex items-center gap-1 px-2.5 py-1.5 bg-blue-500 text-white rounded-lg hover:bg-blue-600 transition-colors text-xs font-medium"
+            className="flex items-center gap-1 px-2.5 py-1.5 bg-primary-500 text-white rounded-lg hover:bg-primary-600 transition-colors text-xs font-medium"
           >
             <Phone className="w-3.5 h-3.5" /> Ligar
           </a>
@@ -495,7 +495,7 @@ function ComunicacaoRapida({
               "Reunião agendada com " + cliente.nome,
             )
           }
-          className="flex items-center gap-1 px-2.5 py-1.5 bg-purple-600 text-white rounded-lg hover:bg-purple-700 transition-colors text-xs font-medium"
+          className="flex items-center gap-1 px-2.5 py-1.5 bg-ai-600 text-white rounded-lg hover:bg-ai-700 transition-colors text-xs font-medium"
         >
           <Calendar className="w-3.5 h-3.5" /> Reunião
         </a>
@@ -602,8 +602,8 @@ function RelatorioFinanceiro({
           <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
             {[
               { l: "Total honorários", v: fmtm(r.total), c: "text-navy-900" },
-              { l: "Recebido", v: fmtm(r.recebido), c: "text-emerald-600" },
-              { l: "Pendente", v: fmtm(r.pendente), c: "text-amber-600" },
+              { l: "Recebido", v: fmtm(r.recebido), c: "text-success-600" },
+              { l: "Pendente", v: fmtm(r.pendente), c: "text-warn-600" },
               {
                 l: "Êxito recebido",
                 v: fmtm(r.exito_recebido),
@@ -622,15 +622,15 @@ function RelatorioFinanceiro({
               {
                 l: "Despesas pagas",
                 v: fmtm(r.despesas_pagas),
-                c: "text-red-500",
+                c: "text-danger-500",
               },
               {
                 l: "Resultado líquido",
                 v: fmtm(r.resultado_liquido),
                 c:
                   r.resultado_liquido >= 0
-                    ? "text-emerald-600"
-                    : "text-red-600",
+                    ? "text-success-600"
+                    : "text-danger-600",
               },
             ].map(({ l, v, c }) => (
               <div key={l} className="bg-slate-50 rounded-lg p-2.5">
@@ -666,7 +666,7 @@ function RelatorioFinanceiro({
                       </span>
                     </div>
                     <span
-                      className={`font-semibold flex-shrink-0 ml-2 ${e.tipo === "credito" ? "text-emerald-600" : "text-red-500"}`}
+                      className={`font-semibold flex-shrink-0 ml-2 ${e.tipo === "credito" ? "text-success-600" : "text-danger-500"}`}
                     >
                       {e.tipo === "credito" ? "+" : "−"} {fmtm(e.valor)}
                     </span>
@@ -710,7 +710,7 @@ export default function DossieCliente() {
 
   if (erro || !data)
     return (
-      <div className="flex items-center justify-center h-64 text-red-500 text-sm">
+      <div className="flex items-center justify-center h-64 text-danger-500 text-sm">
         {erro || "Erro"}
       </div>
     );

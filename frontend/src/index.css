@@ -61,7 +61,7 @@
   }
 
   ::selection {
-    @apply bg-blue-100 text-blue-950;
+    @apply bg-primary-100 text-primary-950;
   }
 }
 
@@ -103,10 +103,10 @@
     @apply btn bg-transparent hover:bg-gray-100 active:bg-gray-200 text-gray-700;
   }
   .btn-secondary {
-    @apply btn border border-gray-200 bg-white hover:bg-gray-50 active:bg-gray-100 text-gray-700 focus:ring-blue-400;
+    @apply btn border border-gray-200 bg-white hover:bg-gray-50 active:bg-gray-100 text-gray-700 focus:ring-primary-400;
   }
   .btn-outline {
-    @apply btn border border-gray-200 bg-white hover:bg-gray-50 active:bg-gray-100 text-gray-700 focus:ring-blue-400;
+    @apply btn border border-gray-200 bg-white hover:bg-gray-50 active:bg-gray-100 text-gray-700 focus:ring-primary-400;
   }
   .btn-danger {
     @apply btn bg-red-600 hover:bg-red-700 active:bg-red-800 text-white focus:ring-red-500;
@@ -127,16 +127,16 @@
     @apply inline-flex items-center rounded-md px-2 py-0.5 text-[11px] font-semibold capitalize;
   }
   .badge-success {
-    @apply badge bg-emerald-50  text-emerald-700 ring-1 ring-inset ring-emerald-200/60;
+    @apply badge bg-success-50  text-success-700 ring-1 ring-inset ring-success-200/60;
   }
   .badge-warn {
-    @apply badge bg-amber-50    text-amber-700   ring-1 ring-inset ring-amber-200/60;
+    @apply badge bg-warn-50     text-warn-700    ring-1 ring-inset ring-warn-200/60;
   }
   .badge-danger {
-    @apply badge bg-red-50      text-red-700     ring-1 ring-inset ring-red-200/60;
+    @apply badge bg-danger-50   text-danger-700  ring-1 ring-inset ring-danger-200/60;
   }
   .badge-info {
-    @apply badge bg-blue-50     text-blue-700    ring-1 ring-inset ring-blue-200/60;
+    @apply badge bg-info-50     text-info-700    ring-1 ring-inset ring-info-200/60;
   }
   .badge-neutral {
     @apply badge bg-gray-100    text-gray-600    ring-1 ring-inset ring-gray-200/60;
@@ -159,7 +159,7 @@
     @apply border-t border-slate-100 px-4 py-3 text-slate-700;
   }
   .table tbody tr {
-    @apply transition-colors hover:bg-blue-50/40;
+    @apply transition-colors hover:bg-primary-50/40;
   }
 
   /* ── Modal ────────────────────────────────────────────────── */
@@ -171,7 +171,7 @@
 
   /* ── Eyebrow / section label ──────────────────────────────── */
   .eyebrow {
-    @apply text-[10px] font-bold uppercase tracking-[0.22em] text-blue-700;
+    @apply text-[10px] font-bold uppercase tracking-[0.22em] text-primary-700;
   }
 
   .hero-blue {
@@ -502,17 +502,17 @@
   .status-dot {
     @apply inline-block h-2 w-2 rounded-full bg-slate-400;
   }
-  .status-dot.success { @apply bg-emerald-500; }
-  .status-dot.warn { @apply bg-amber-500; }
-  .status-dot.danger { @apply bg-red-500; }
-  .status-dot.ai { @apply bg-violet-500; }
+  .status-dot.success { @apply bg-success-500; }
+  .status-dot.warn { @apply bg-warn-500; }
+  .status-dot.danger { @apply bg-danger-500; }
+  .status-dot.ai { @apply bg-ai-500; }
 
   .kanban-column {
     @apply min-h-80 rounded-xl border border-slate-200 bg-slate-50/80 p-3;
   }
 
   .kanban-card {
-    @apply rounded-lg border border-slate-200 bg-white p-3 shadow-sm transition-all hover:border-blue-200 hover:shadow-md;
+    @apply rounded-lg border border-slate-200 bg-white p-3 shadow-sm transition-all hover:border-primary-200 hover:shadow-md;
   }
 
   .visual-law-document {
@@ -534,7 +534,7 @@
   }
 
   .visual-law-document h2 {
-    @apply mt-2 border-l-4 border-blue-700 pl-3 text-base font-semibold text-slate-950;
+    @apply mt-2 border-l-4 border-primary-700 pl-3 text-base font-semibold text-slate-950;
   }
 
   .visual-law-document h3 {
@@ -570,6 +570,13 @@
   }
 }
 
+/* ── Impressão ─────────────────────────────────────────────────
+   .print-view: container de impressão de peças (Pecas.tsx). Invisível em
+   tela; no print, é a ÚNICA coisa visível (via visibility + :has). */
+.print-view {
+  display: none;
+}
+
 @media print {
   body { background: #fff !important; }
   .visual-law-document,
@@ -577,6 +584,65 @@
   .ai-surface,
   .card,
   .section-card { box-shadow: none !important; }
+
+  /* Estrutura do app nunca vai para o papel */
+  aside,
+  nav,
+  header,
+  .no-print {
+    display: none !important;
+  }
+
+  /* Quando existe uma .print-view, ela é a única superfície impressa */
+  body:has(.print-view) * {
+    visibility: hidden;
+  }
+  body:has(.print-view) .print-view,
+  body:has(.print-view) .print-view * {
+    visibility: visible;
+  }
+
+  .print-view {
+    display: block !important;
+    position: absolute;
+    top: 0;
+    left: 0;
+    width: 100%;
+    margin: 0;
+    padding: 2cm 1.5cm;
+    background: #fff !important;
+    color: #000 !important;
+    font-family: Georgia, "Times New Roman", Times, serif;
+    font-size: 12pt;
+    line-height: 1.65;
+  }
+
+  .print-view * {
+    color: #000 !important;
+    background: transparent !important;
+  }
+
+  .print-view .print-view-title {
+    font-family: Georgia, "Times New Roman", Times, serif;
+    font-size: 15pt;
+    font-weight: 700;
+    margin-bottom: 0.25cm;
+  }
+
+  .print-view .print-view-meta {
+    font-size: 9pt;
+    text-transform: capitalize;
+    margin-bottom: 0.8cm;
+    border-bottom: 1pt solid #000;
+    padding-bottom: 0.25cm;
+  }
+
+  .print-view p,
+  .print-view li,
+  .print-view blockquote {
+    orphans: 3;
+    widows: 3;
+  }
 }
 
 @layer components {

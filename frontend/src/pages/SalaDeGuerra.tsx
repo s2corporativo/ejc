@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 import Markdown from "../components/Markdown";
 import { useParams, useNavigate } from "react-router-dom";
+import { Button } from "../components/UI";
 import {
   AlertTriangle,
   Clock,
@@ -105,14 +106,14 @@ interface SalaData {
 }
 
 const PRIORIDADE_COLOR: Record<string, string> = {
-  urgente: "bg-red-100 text-red-700 border border-red-200",
+  urgente: "bg-danger-100 text-danger-700 border border-danger-200",
   alta: "bg-orange-100 text-orange-700 border border-orange-200",
   media: "bg-yellow-100 text-yellow-700 border border-yellow-200",
   baixa: "bg-green-100 text-green-700 border border-green-200",
 };
 
 const RISCO_COLOR: Record<string, string> = {
-  critico: "text-red-600",
+  critico: "text-danger-600",
   alto: "text-orange-500",
   medio: "text-yellow-500",
   baixo: "text-green-500",
@@ -265,7 +266,7 @@ export default function SalaDeGuerra() {
     );
   if (!data)
     return (
-      <div className="flex items-center justify-center h-64 text-red-400 text-sm">
+      <div className="flex items-center justify-center h-64 text-danger-400 text-sm">
         Caso não encontrado.
       </div>
     );
@@ -290,12 +291,15 @@ export default function SalaDeGuerra() {
       {/* Header */}
       <div className="flex items-start justify-between gap-4">
         <div className="flex items-start gap-3">
-          <button
+          <Button
+            type="button"
+            variant="ghost"
+            size="icon"
+            className="mt-1 h-auto w-auto p-1.5 text-zinc-400"
+            aria-label="Voltar"
             onClick={() => navigate(-1)}
-            className="mt-1 p-1.5 rounded-lg hover:bg-zinc-100 text-zinc-400"
-          >
-            <ArrowLeft className="w-4 h-4" />
-          </button>
+            icon={<ArrowLeft className="w-4 h-4" />}
+          />
           <div>
             <div className="flex items-center gap-2 flex-wrap">
               <span className="text-xs text-zinc-400 font-medium uppercase tracking-wider">
@@ -336,10 +340,10 @@ export default function SalaDeGuerra() {
 
       {/* Alertas urgentes */}
       {prazosUrgentes.length > 0 && (
-        <div className="bg-red-50 border border-red-200 rounded-xl px-5 py-4">
+        <div className="bg-danger-50 border border-danger-200 rounded-xl px-5 py-4">
           <div className="flex items-center gap-2 mb-3">
-            <AlertTriangle className="w-4 h-4 text-red-500" />
-            <span className="text-sm font-medium text-red-700">
+            <AlertTriangle className="w-4 h-4 text-danger-500" />
+            <span className="text-sm font-medium text-danger-700">
               Atenção — {prazosUrgentes.length} prazo(s) crítico(s)
             </span>
           </div>
@@ -349,9 +353,9 @@ export default function SalaDeGuerra() {
                 key={p.id}
                 className="flex items-center justify-between text-sm"
               >
-                <span className="text-red-700">{p.descricao}</span>
+                <span className="text-danger-700">{p.descricao}</span>
                 <span
-                  className={`text-xs font-medium ${p.urgente ? "text-red-600" : "text-orange-500"}`}
+                  className={`text-xs font-medium ${p.urgente ? "text-danger-600" : "text-orange-500"}`}
                 >
                   {p.urgente ? "VENCIDO" : `${p.dias_restantes}d`}
                 </span>
@@ -493,7 +497,7 @@ export default function SalaDeGuerra() {
                       </p>
                     </div>
                     <span
-                      className={`text-xs font-medium shrink-0 ml-4 ${p.urgente ? "text-red-600" : p.dias_restantes !== null && p.dias_restantes <= 7 ? "text-orange-500" : "text-zinc-400"}`}
+                      className={`text-xs font-medium shrink-0 ml-4 ${p.urgente ? "text-danger-600" : p.dias_restantes !== null && p.dias_restantes <= 7 ? "text-orange-500" : "text-zinc-400"}`}
                     >
                       {p.urgente
                         ? "VENCIDO"
@@ -635,7 +639,7 @@ export default function SalaDeGuerra() {
                     </div>
                     <div className="h-1.5 bg-zinc-100 rounded-full overflow-hidden">
                       <div
-                        className="h-full bg-emerald-400 rounded-full transition-all"
+                        className="h-full bg-success-400 rounded-full transition-all"
                         style={{
                           width: `${ck.total_itens > 0 ? (ck.itens_ok / ck.total_itens) * 100 : 0}%`,
                         }}
@@ -668,7 +672,7 @@ export default function SalaDeGuerra() {
                         {t.titulo}
                       </p>
                       {t.taxa_sucesso !== null && (
-                        <span className="text-xs font-medium text-emerald-600 shrink-0">
+                        <span className="text-xs font-medium text-success-600 shrink-0">
                           {t.taxa_sucesso}%
                         </span>
                       )}

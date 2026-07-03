@@ -33,22 +33,22 @@ export const ACCENTS: Record<
   { bg: string; fg: string; bar: string; ring: string }
 > = {
   blue: {
-    bg: "bg-blue-50",
-    fg: "text-blue-600",
+    bg: "bg-primary-50",
+    fg: "text-primary-600",
     bar: "#8c6a33",
-    ring: "ring-blue-100",
+    ring: "ring-primary-100",
   },
   bronze: {
-    bg: "bg-amber-50",
-    fg: "text-amber-600",
+    bg: "bg-warn-50",
+    fg: "text-warn-600",
     bar: "#d97706",
-    ring: "ring-amber-100",
+    ring: "ring-warn-100",
   },
   emerald: {
-    bg: "bg-emerald-50",
-    fg: "text-emerald-600",
+    bg: "bg-success-50",
+    fg: "text-success-600",
     bar: "#059669",
-    ring: "ring-emerald-100",
+    ring: "ring-success-100",
   },
   amber: {
     bg: "bg-orange-50",
@@ -57,22 +57,22 @@ export const ACCENTS: Record<
     ring: "ring-orange-100",
   },
   red: {
-    bg: "bg-red-50",
-    fg: "text-red-600",
+    bg: "bg-danger-50",
+    fg: "text-danger-600",
     bar: "#dc2626",
-    ring: "ring-red-100",
+    ring: "ring-danger-100",
   },
   purple: {
-    bg: "bg-purple-50",
-    fg: "text-purple-600",
+    bg: "bg-ai-50",
+    fg: "text-ai-600",
     bar: "#9333ea",
-    ring: "ring-purple-100",
+    ring: "ring-ai-100",
   },
   sky: {
-    bg: "bg-sky-50",
-    fg: "text-sky-600",
+    bg: "bg-info-50",
+    fg: "text-info-600",
     bar: "#0ea5e9",
-    ring: "ring-sky-100",
+    ring: "ring-info-100",
   },
   slate: {
     bg: "bg-slate-50",
@@ -131,8 +131,8 @@ export function Kpi({
           <span
             className={`inline-flex items-center gap-1 text-[11px] font-semibold px-2 py-0.5 rounded-full ${
               delta.up === false
-                ? "bg-red-50 text-red-600"
-                : "bg-emerald-50 text-emerald-600"
+                ? "bg-danger-50 text-danger-600"
+                : "bg-success-50 text-success-600"
             }`}
           >
             {delta.up === false ? (
@@ -146,7 +146,7 @@ export function Kpi({
         {!delta && to && (
           <ArrowUpRight
             size={15}
-            className="text-gray-300 group-hover:text-blue-500 transition-colors shrink-0"
+            className="text-gray-300 group-hover:text-primary-500 transition-colors shrink-0"
           />
         )}
       </div>
@@ -163,7 +163,7 @@ export function Kpi({
   const cls =
     "group card hover:-translate-y-0.5 transition-all duration-150 cursor-default";
   const linkCls =
-    "group card hover:-translate-y-0.5 hover:border-blue-200 transition-all duration-150";
+    "group card hover:-translate-y-0.5 hover:border-primary-200 transition-all duration-150";
   return to ? (
     <Link to={to} className={linkCls}>
       {inner}
@@ -242,7 +242,7 @@ export function Panel({
       {(title || action) && (
         <div className="flex items-center justify-between mb-4">
           <h3 className="text-sm font-semibold text-gray-700 flex items-center gap-2">
-            {Icon && <Icon size={14} className="text-blue-500" />}
+            {Icon && <Icon size={14} className="text-primary-500" />}
             {title}
           </h3>
           {action}

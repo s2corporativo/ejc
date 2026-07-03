@@ -71,9 +71,9 @@ export default function Prazos() {
   };
 
   const urgClass: Record<string, string> = {
-    vencido: "border-l-4 border-red-600 bg-red-50/50",
-    critico: "border-l-4 border-red-500",
-    atencao: "border-l-4 border-amber-400",
+    vencido: "border-l-4 border-danger-600 bg-danger-50/50",
+    critico: "border-l-4 border-danger-500",
+    atencao: "border-l-4 border-warn-400",
     normal: "border-l-4 border-slate-200",
   };
 
@@ -127,7 +127,7 @@ export default function Prazos() {
                 <div className="font-medium text-navy flex items-center gap-2">
                   {d.titulo}
                   {d.ciencia_confirmada && (
-                    <BadgeCheck size={15} className="text-emerald-600" />
+                    <BadgeCheck size={15} className="text-success-600" />
                   )}
                 </div>
                 <div className="text-xs text-slate-400">
@@ -136,7 +136,7 @@ export default function Prazos() {
               </div>
               <div className="text-sm">
                 <div
-                  className={`font-bold ${d.urgencia === "vencido" || d.urgencia === "critico" ? "text-red-600" : "text-navy"}`}
+                  className={`font-bold ${d.urgencia === "vencido" || d.urgencia === "critico" ? "text-danger-600" : "text-navy"}`}
                 >
                   {fmtDate(d.data_prazo)}
                 </div>
@@ -159,7 +159,7 @@ export default function Prazos() {
                     </button>
                   )}
                   <button
-                    className="btn-ghost text-xs px-2 py-1 text-emerald-700"
+                    className="btn-ghost text-xs px-2 py-1 text-success-700"
                     title="Concluir"
                     onClick={() => concluir(d.id)}
                   >

@@ -39,7 +39,7 @@ export default function RedefinirSenha() {
         <img src="/logo.png" alt="" className="h-16 mx-auto mb-5" />
         <h1 className="font-semibold text-navy text-center mb-4">Nova senha</h1>
         {erro && (
-          <div className="mb-3 px-3 py-2 rounded-lg bg-red-50 text-red-700 text-sm">
+          <div className="mb-3 px-3 py-2 rounded-lg bg-danger-50 text-danger-700 text-sm">
             {erro}
           </div>
         )}

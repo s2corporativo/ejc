@@ -57,7 +57,7 @@ export default function ExplicarMov({
       {r && (
         <div className="text-xs text-slate-600 bg-bronze-50/40 rounded-lg p-2 mt-1">
           <Markdown source={r} className="leading-relaxed" />
-          <p className="text-[10px] text-amber-700 mt-1">
+          <p className="text-[10px] text-warn-700 mt-1">
             ⚠ Gerado por IA — revise antes de repassar ao cliente.
           </p>
         </div>

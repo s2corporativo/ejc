@@ -41,7 +41,7 @@ const CATS: { value: string; label: string; icon: any; cor: string }[] = [
     value: "sumula_tst",
     label: "Súmula TST",
     icon: Gavel,
-    cor: "bg-purple-100 text-purple-700",
+    cor: "bg-ai-100 text-ai-700",
   },
   {
     value: "sumula_stj",
@@ -53,19 +53,19 @@ const CATS: { value: string; label: string; icon: any; cor: string }[] = [
     value: "sumula_stf",
     label: "Súmula STF",
     icon: Gavel,
-    cor: "bg-blue-100 text-blue-700",
+    cor: "bg-primary-100 text-primary-700",
   },
   {
     value: "jurisprudencia",
     label: "Jurisprudência",
     icon: ScrollText,
-    cor: "bg-amber-100 text-amber-700",
+    cor: "bg-warn-100 text-warn-700",
   },
   {
     value: "legislacao",
     label: "Legislação",
     icon: Library,
-    cor: "bg-emerald-100 text-emerald-700",
+    cor: "bg-success-100 text-success-700",
   },
   {
     value: "doutrina",
@@ -81,14 +81,14 @@ const catMeta = (v: string) => CATS.find((c) => c.value === v) ?? CATS[7];
 function StatusBadge({ status }: { status: string }) {
   if (status === "indexado")
     return (
-      <span className="inline-flex items-center gap-1 text-[10px] font-semibold text-emerald-700 bg-emerald-50 px-2 py-0.5 rounded-full">
+      <span className="inline-flex items-center gap-1 text-[10px] font-semibold text-success-700 bg-success-50 px-2 py-0.5 rounded-full">
         <CheckCircle2 size={10} />
         Vetorizado
       </span>
     );
   if (status === "pendente")
     return (
-      <span className="inline-flex items-center gap-1 text-[10px] font-semibold text-amber-700 bg-amber-50 px-2 py-0.5 rounded-full">
+      <span className="inline-flex items-center gap-1 text-[10px] font-semibold text-warn-700 bg-warn-50 px-2 py-0.5 rounded-full">
         <Clock size={10} />
         Pendente
       </span>
@@ -295,7 +295,7 @@ function ModalIngestao({
           </div>
 
           {erro && (
-            <div className="text-sm text-red-600 bg-red-50 border border-red-200 rounded-xl px-4 py-3">
+            <div className="text-sm text-danger-600 bg-danger-50 border border-danger-200 rounded-xl px-4 py-3">
               {erro}
             </div>
           )}
@@ -414,7 +414,7 @@ function ModalIngestPdf({
         </div>
         {resultado ? (
           <div className="p-6 text-center space-y-3">
-            <CheckCircle2 className="w-10 h-10 text-emerald-500 mx-auto" />
+            <CheckCircle2 className="w-10 h-10 text-success-500 mx-auto" />
             <p className="font-serif text-lg text-navy-800">
               Ingerido com sucesso!
             </p>
@@ -501,7 +501,7 @@ function ModalIngestPdf({
               </div>
             )}
             {erro && (
-              <p className="text-sm text-red-600 bg-red-50 p-3 rounded-lg">
+              <p className="text-sm text-danger-600 bg-danger-50 p-3 rounded-lg">
                 {erro}
               </p>
             )}
@@ -665,7 +665,7 @@ export default function Conhecimento() {
                         {cm.label}
                       </span>
                       {r.similarity != null && (
-                        <span className="text-[10px] font-semibold text-emerald-600 bg-emerald-50 px-2 py-0.5 rounded-full">
+                        <span className="text-[10px] font-semibold text-success-600 bg-success-50 px-2 py-0.5 rounded-full">
                           {Math.round(r.similarity * 100)}% similar
                         </span>
                       )}
@@ -792,7 +792,7 @@ export default function Conhecimento() {
                         <button
                           onClick={() => remover(d.id)}
                           disabled={removendo === d.id}
-                          className="p-1.5 rounded-lg text-slate-300 hover:text-red-500 hover:bg-red-50 transition-colors"
+                          className="p-1.5 rounded-lg text-slate-300 hover:text-danger-500 hover:bg-danger-50 transition-colors"
                         >
                           <Trash2 size={14} />
                         </button>

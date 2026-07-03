@@ -62,7 +62,7 @@ export default function LoginModern() {
           </div>
 
           <div className="max-w-2xl">
-            <div className="mb-4 inline-flex items-center gap-2 rounded-full border border-amber-200 bg-amber-50 px-3 py-1 text-xs font-semibold text-amber-800">
+            <div className="mb-4 inline-flex items-center gap-2 rounded-full border border-warn-200 bg-warn-50 px-3 py-1 text-xs font-semibold text-warn-800">
               <Sparkles className="h-3.5 w-3.5" />
               Plataforma juridica empresarial
             </div>
@@ -94,7 +94,7 @@ export default function LoginModern() {
           </div>
 
           <div className="flex items-center gap-2 text-xs text-slate-500">
-            <ShieldCheck className="h-4 w-4 text-amber-700" />
+            <ShieldCheck className="h-4 w-4 text-warn-700" />
             Acesso restrito com trilha de auditoria e perfis de permissao.
           </div>
         </section>
@@ -111,7 +111,7 @@ export default function LoginModern() {
 
             <div className="rounded-2xl border border-slate-200 bg-white p-8 shadow-xl shadow-slate-200/70">
               <div className="mb-7">
-                <div className="mb-3 flex h-11 w-11 items-center justify-center rounded-xl bg-blue-50 text-blue-700">
+                <div className="mb-3 flex h-11 w-11 items-center justify-center rounded-xl bg-primary-50 text-primary-700">
                   <LockKeyhole className="h-5 w-5" />
                 </div>
                 <p className="eyebrow">Area restrita</p>
@@ -125,7 +125,7 @@ export default function LoginModern() {
               </div>
 
               {erro && (
-                <div className="mb-4 flex items-start gap-2 rounded-xl bg-red-50 px-3 py-2.5 text-sm text-red-700 ring-1 ring-inset ring-red-200">
+                <div className="mb-4 flex items-start gap-2 rounded-xl bg-danger-50 px-3 py-2.5 text-sm text-danger-700 ring-1 ring-inset ring-danger-200">
                   <AlertCircle className="mt-0.5 h-4 w-4 shrink-0" />
                   <span>{erro}</span>
                 </div>
@@ -171,7 +171,7 @@ export default function LoginModern() {
                 <div className="text-center">
                   <Link
                     to="/recuperar-senha"
-                    className="text-xs font-medium text-amber-700 transition-colors hover:text-blue-700"
+                    className="text-xs font-medium text-warn-700 transition-colors hover:text-primary-700"
                   >
                     Esqueci minha senha
                   </Link>

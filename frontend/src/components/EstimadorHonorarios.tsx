@@ -170,7 +170,7 @@ export default function EstimadorHonorarios() {
             <Calculator size={15} />{" "}
             {loading ? "Calculando…" : "Estimar honorários"}
           </button>
-          {erro && <span className="text-xs text-red-600 ml-3">{erro}</span>}
+          {erro && <span className="text-xs text-danger-600 ml-3">{erro}</span>}
         </div>
       </div>
 
@@ -184,7 +184,7 @@ export default function EstimadorHonorarios() {
                 v: r.recomendado,
                 c: "border-bronze ring-1 ring-bronze/20",
               },
-              { l: "Estratégico", v: r.estrategico, c: "border-emerald-200" },
+              { l: "Estratégico", v: r.estrategico, c: "border-success-200" },
             ].map(({ l, v, c }) => (
               <div key={l} className={`card p-4 text-center ${c}`}>
                 <p className="text-[11px] uppercase tracking-wide text-ink-light">
@@ -222,7 +222,7 @@ export default function EstimadorHonorarios() {
               </p>
             )}
             {r.tabela_oficial_disponivel === false && (
-              <p className="text-xs text-amber-700 bg-amber-50 rounded-lg p-2 flex items-start gap-1">
+              <p className="text-xs text-warn-700 bg-warn-50 rounded-lg p-2 flex items-start gap-1">
                 <Info size={13} className="mt-0.5 shrink-0" /> Tabela oficial
                 OAB/MG não está na base — valores são referência genérica de
                 mercado.

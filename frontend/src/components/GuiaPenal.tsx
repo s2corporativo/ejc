@@ -115,7 +115,7 @@ export default function GuiaPenal() {
 
   return (
     <div className="space-y-3 p-4">
-      <h2 className="text-xl font-bold text-red-700 flex items-center gap-2">
+      <h2 className="text-xl font-bold text-danger-700 flex items-center gap-2">
         <BookOpen size={20} /> Guia Operacional — Direito Penal
       </h2>
 

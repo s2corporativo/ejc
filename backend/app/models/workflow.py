@@ -13,6 +13,7 @@ from app.core.database import Base
 class WorkflowStatus(str, enum.Enum):
     ativo    = "ativo"
     pausado  = "pausado"
+    atrasado = "atrasado"   # SLA da etapa atual vencido (migração 058)
     concluido = "concluido"
     cancelado = "cancelado"
 

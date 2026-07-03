@@ -13,6 +13,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.database import get_db
 from app.core.security import get_current_user, ROLE_LEVEL
+from app.core.ownership import verificar_acesso_caso
 from app.models.user import User
 from app.models.tese import Tese, TeseCasoLink, TeseTipo, TeseStatus
 
@@ -185,6 +186,63 @@ async def ranking_teses(
     return [_tese_out(t) for t in teses]
 
 
+@router.get("/busca-avancada")
+async def busca_avancada(
+    q: Optional[str] = Query(None, description="Texto livre (título/descrição/fundamentação/tags)"),
+    area: Optional[str] = Query(None),
+    tribunal: Optional[str] = Query(None),
+    status: Optional[str] = Query("ativa"),
+    tipo: Optional[str] = Query(None),
+    taxa_minima: Optional[float] = Query(None, ge=0, le=1, description="Taxa de sucesso mínima (0–1)"),
+    limit: int = Query(30, ge=1, le=100),
+    offset: int = Query(0, ge=0),
+    db: AsyncSession = Depends(get_db),
+    cu: User = Depends(get_current_user),
+):
+    """
+    Busca avançada de teses — consumida por Biblioteca.tsx (era 404).
+    Filtros combináveis: texto livre + área + tribunal + taxa mínima + status/tipo.
+    Retorna {"total", "teses"} (contrato esperado pelo frontend).
+    IMPORTANTE: declarada ANTES de /{tese_id} para não colidir com a rota dinâmica.
+    """
+    if not _is_staff(cu):
+        raise HTTPException(403, "Acesso restrito a advogados")
+
+    stmt = select(Tese).where(Tese.deleted_at.is_(None))
+    if area:
+        stmt = stmt.where(Tese.area_juridica.ilike(f"%{area}%"))
+    if tribunal:
+        stmt = stmt.where(Tese.tribunal.ilike(f"%{tribunal}%"))
+    if status:
+        stmt = stmt.where(Tese.status == status)
+    if tipo:
+        stmt = stmt.where(Tese.tipo == tipo)
+    if taxa_minima is not None:
+        stmt = stmt.where(Tese.taxa_sucesso >= taxa_minima)
+    if q:
+        termo = f"%{q}%"
+        stmt = stmt.where(or_(
+            Tese.titulo.ilike(termo),
+            Tese.descricao.ilike(termo),
+            Tese.fundamentacao.ilike(termo),
+            Tese.jurisprudencia.ilike(termo),
+            Tese.tags.ilike(termo),
+        ))
+
+    total = (await db.execute(select(func.count()).select_from(stmt.subquery()))).scalar() or 0
+    teses = (await db.execute(
+        stmt.order_by(Tese.taxa_sucesso.desc().nullslast(), Tese.created_at.desc())
+            .offset(offset).limit(limit)
+    )).scalars().all()
+
+    return {
+        "total": total,
+        "limit": limit,
+        "offset": offset,
+        "teses": [_tese_out(t) for t in teses],
+    }
+
+
 @router.get("/casos/{case_id}")
 async def teses_do_caso(
     case_id: str,
@@ -194,6 +252,7 @@ async def teses_do_caso(
     """Teses vinculadas a um caso (via tese_caso_links), com resultado da aplicação."""
     if not _is_staff(cu):
         raise HTTPException(403)
+    await verificar_acesso_caso(db, cu, case_id)  # gate ownership (sigilo EOAB/LGPD)
     rows = (await db.execute(
         select(Tese, TeseCasoLink)
         .join(TeseCasoLink, TeseCasoLink.tese_id == Tese.id)
@@ -272,6 +331,7 @@ async def vincular_caso(
     """Vincula tese a um caso e atualiza contadores de desempenho."""
     if not _pode_editar(cu):
         raise HTTPException(403)
+    await verificar_acesso_caso(db, cu, req.case_id)  # gate ownership (sigilo EOAB/LGPD)
     t = (await db.execute(
         select(Tese).where(Tese.id == tese_id, Tese.deleted_at.is_(None))
     )).scalar_one_or_none()

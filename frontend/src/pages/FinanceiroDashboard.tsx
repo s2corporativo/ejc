@@ -16,6 +16,7 @@ import {
   PiggyBank,
 } from "lucide-react";
 import api from "../lib/api";
+import { PageHeader } from "../components/UI";
 
 function fmtR$(v: number | undefined | null) {
   if (v == null) return "R$ 0,00";
@@ -48,11 +49,11 @@ function StatCard({
   sub?: string;
 }) {
   const colors: Record<string, string> = {
-    blue: "bg-blue-50 text-blue-600",
-    green: "bg-emerald-50 text-emerald-600",
-    red: "bg-red-50 text-red-600",
-    yellow: "bg-amber-50 text-amber-600",
-    purple: "bg-purple-50 text-purple-600",
+    blue: "bg-primary-50 text-primary-600",
+    green: "bg-success-50 text-success-600",
+    red: "bg-danger-50 text-danger-600",
+    yellow: "bg-warn-50 text-warn-600",
+    purple: "bg-ai-50 text-ai-600",
     slate: "bg-slate-100 text-slate-600",
     bronze: "bg-orange-50 text-orange-600",
   };
@@ -129,44 +130,42 @@ export default function FinanceiroDashboard() {
 
   return (
     <div className="p-6 max-w-6xl mx-auto space-y-6">
-      {/* Header */}
-      <div className="flex items-center justify-between flex-wrap gap-3">
-        <div>
-          <h1 className="text-2xl font-bold text-slate-800">Financeiro</h1>
-          <p className="text-slate-500 text-sm mt-1">
-            Controle integrado do escritório
-          </p>
-        </div>
-        <div className="flex items-center gap-2 flex-wrap">
-          <div className="flex items-center gap-2 border border-slate-200 rounded-lg px-3 py-1.5">
-            <Calendar className="w-4 h-4 text-slate-400" />
-            <input
-              type="month"
-              className="text-sm text-slate-700 outline-none bg-transparent"
-              value={competencia}
-              onChange={(e) => setCompetencia(e.target.value)}
-            />
+      <PageHeader
+        title="Financeiro"
+        subtitle="Controle integrado do escritório"
+        actions={
+          <div className="flex items-center gap-2 flex-wrap">
+            <div className="flex items-center gap-2 border border-slate-200 rounded-lg px-3 py-1.5">
+              <Calendar className="w-4 h-4 text-slate-400" />
+              <input
+                type="month"
+                className="text-sm text-slate-700 outline-none bg-transparent"
+                value={competencia}
+                onChange={(e) => setCompetencia(e.target.value)}
+              />
+            </div>
+            <button
+              onClick={carregarRelatorio}
+              className="btn-secondary"
+            >
+              <FileText className="w-4 h-4" /> Relatório
+            </button>
+            <button
+              onClick={exportarCSV}
+              className="btn-secondary"
+            >
+              <Download className="w-4 h-4" /> CSV
+            </button>
+            <button
+              onClick={load}
+              className="p-2 rounded-lg border border-slate-200 hover:bg-slate-50 text-slate-500"
+              aria-label="Atualizar"
+            >
+              <RefreshCw className={`w-4 h-4 ${loading ? "animate-spin" : ""}`} />
+            </button>
           </div>
-          <button
-            onClick={carregarRelatorio}
-            className="flex items-center gap-1.5 px-3 py-2 border border-slate-200 rounded-lg hover:bg-slate-50 text-slate-500 text-sm"
-          >
-            <FileText className="w-4 h-4" /> Relatório
-          </button>
-          <button
-            onClick={exportarCSV}
-            className="flex items-center gap-1.5 px-3 py-2 border border-slate-200 rounded-lg hover:bg-slate-50 text-slate-500 text-sm"
-          >
-            <Download className="w-4 h-4" /> CSV
-          </button>
-          <button
-            onClick={load}
-            className="p-2 rounded-lg border border-slate-200 hover:bg-slate-50 text-slate-500"
-          >
-            <RefreshCw className={`w-4 h-4 ${loading ? "animate-spin" : ""}`} />
-          </button>
-        </div>
-      </div>
+        }
+      />
 
       {loading ? (
         <div className="text-center py-16 text-slate-400">Carregando...</div>
@@ -280,7 +279,7 @@ export default function FinanceiroDashboard() {
             {/* Honorários (status) */}
             <div className="bg-white rounded-xl border border-slate-200 p-5">
               <h2 className="font-semibold text-slate-800 mb-4 flex items-center gap-2">
-                <Wallet className="w-4 h-4 text-blue-500" /> Honorários —
+                <Wallet className="w-4 h-4 text-primary-500" /> Honorários —
                 situação
               </h2>
               <div className="space-y-3">
@@ -288,17 +287,17 @@ export default function FinanceiroDashboard() {
                   {
                     label: "Recebido no mês",
                     value: rec.recebido_mes,
-                    color: "text-emerald-600",
+                    color: "text-success-600",
                   },
                   {
                     label: "A receber (pendente)",
                     value: rec.a_receber,
-                    color: "text-amber-600",
+                    color: "text-warn-600",
                   },
                   {
                     label: "Atrasado",
                     value: rec.atrasado,
-                    color: "text-red-600",
+                    color: "text-danger-600",
                   },
                 ].map(({ label, value, color }) => (
                   <div
@@ -317,7 +316,7 @@ export default function FinanceiroDashboard() {
             {/* Despesas por categoria + fixo/variável */}
             <div className="bg-white rounded-xl border border-slate-200 p-5">
               <h2 className="font-semibold text-slate-800 mb-4 flex items-center gap-2">
-                <BarChart3 className="w-4 h-4 text-red-500" /> Despesas por
+                <BarChart3 className="w-4 h-4 text-danger-500" /> Despesas por
                 categoria
               </h2>
               {!desp.por_categoria?.length ? (
@@ -341,7 +340,7 @@ export default function FinanceiroDashboard() {
                         </div>
                         <div className="h-1.5 bg-slate-100 rounded-full">
                           <div
-                            className="h-1.5 bg-red-400 rounded-full"
+                            className="h-1.5 bg-danger-400 rounded-full"
                             style={{ width: `${pct}%` }}
                           />
                         </div>
@@ -372,7 +371,7 @@ export default function FinanceiroDashboard() {
             <div className="bg-white rounded-xl border border-slate-200 p-5">
               <div className="flex items-center justify-between mb-4">
                 <h2 className="font-semibold text-slate-800 flex items-center gap-2">
-                  <FileText className="w-4 h-4 text-purple-500" /> Relatório
+                  <FileText className="w-4 h-4 text-ai-500" /> Relatório
                   Gerencial — {relatorio.mes_label}
                 </h2>
                 <button
@@ -408,11 +407,11 @@ export default function FinanceiroDashboard() {
 
           {/* Saldo destaque */}
           <div
-            className={`rounded-xl border p-5 flex items-center justify-between ${caixa >= 0 ? "bg-emerald-50 border-emerald-200" : "bg-red-50 border-red-200"}`}
+            className={`rounded-xl border p-5 flex items-center justify-between ${caixa >= 0 ? "bg-success-50 border-success-200" : "bg-danger-50 border-danger-200"}`}
           >
             <div>
               <p
-                className={`text-sm font-medium ${caixa >= 0 ? "text-emerald-700" : "text-red-700"}`}
+                className={`text-sm font-medium ${caixa >= 0 ? "text-success-700" : "text-danger-700"}`}
               >
                 {caixa >= 0
                   ? "Resultado positivo no período"
@@ -424,7 +423,7 @@ export default function FinanceiroDashboard() {
               </p>
             </div>
             <p
-              className={`text-2xl font-bold ${caixa >= 0 ? "text-emerald-700" : "text-red-700"}`}
+              className={`text-2xl font-bold ${caixa >= 0 ? "text-success-700" : "text-danger-700"}`}
             >
               {fmtR$(caixa)}
             </p>

@@ -40,11 +40,25 @@ ESQUEMA = """Responda APENAS com um JSON válido nesta forma exata (use null qua
  "brechas_processuais": {"prescricao": null, "decadencia": null, "incompetencia": null, "ilegitimidade": null, "nulidades": [], "falhas_documentais": [], "ausencia_de_provas": null, "teses_defensivas": []},
  "estrategia": {"medidas_cabiveis": [], "recursos": [], "acoes": [], "producao_de_provas": [], "negociacao": []},
  "valor_causa_estimado": null,
- "complexidade_atos": null
+ "complexidade_atos": null,
+ "campos_v2": {
+  "numero_processo": {"valor": null, "trecho_origem": null, "confianca": 0.0},
+  "autor": {"valor": null, "trecho_origem": null, "confianca": 0.0},
+  "reu": {"valor": null, "trecho_origem": null, "confianca": 0.0},
+  "cpf": {"valor": null, "trecho_origem": null, "confianca": 0.0},
+  "cnpj": {"valor": null, "trecho_origem": null, "confianca": 0.0},
+  "area": {"valor": null, "trecho_origem": null, "confianca": 0.0},
+  "valor_causa": {"valor": null, "trecho_origem": null, "confianca": 0.0},
+  "data_documento": {"valor": null, "trecho_origem": null, "confianca": 0.0}
+ }
 }
 - "area" deve ser uma de: civil, trabalhista, consumidor, familia, ambiental, criminal, previdenciario, empresarial, tributario.
 - "complexidade" deve ser: baixa, media ou alta.
-- valores monetários como número (sem R$), ou null."""
+- valores monetários como número (sem R$), ou null.
+- Em "campos_v2" (R4 — rastreabilidade da extração): para CADA campo,
+  "trecho_origem" = citação LITERAL e CURTA (máx. 15 palavras) copiada do
+  documento onde o valor aparece (null se o campo não constar) e
+  "confianca" = número entre 0 e 1. NUNCA parafraseie o trecho_origem."""
 
 SYSTEM = (
     "Você é um analista jurídico sênior brasileiro especializado em leitura e triagem de peças "
@@ -56,6 +70,40 @@ _AVISO = (
     "MINUTA gerada por IA a partir da leitura automática do documento — sujeita a erros de OCR e "
     "interpretação. Revisão obrigatória do advogado responsável (OAB) antes de qualquer uso."
 )
+
+
+def _norm_espacos(s: Optional[str]) -> str:
+    """Normaliza espaços/quebras e caixa para comparação fuzzy de trechos."""
+    return re.sub(r"\s+", " ", (s or "")).strip().casefold()
+
+
+def _verificar_origens_v2(campos_v2, texto: str) -> dict:
+    """
+    Pós-processamento R4: valida que cada trecho_origem REALMENTE ocorre no
+    texto extraído (comparação com espaços normalizados). Se não ocorrer,
+    rebaixa confianca para 0.3 e marca origem_verificada=false — anti-alucinação.
+    """
+    if not isinstance(campos_v2, dict):
+        return {}
+    texto_norm = _norm_espacos(texto)
+    saida: dict = {}
+    for chave, campo in campos_v2.items():
+        if not isinstance(campo, dict):
+            campo = {"valor": campo, "trecho_origem": None, "confianca": 0.3}
+        try:
+            conf = float(campo.get("confianca") or 0.0)
+        except (TypeError, ValueError):
+            conf = 0.0
+        conf = min(max(conf, 0.0), 1.0)
+        trecho = campo.get("trecho_origem")
+        trecho_norm = _norm_espacos(str(trecho)) if trecho else ""
+        verificada = bool(trecho_norm) and trecho_norm in texto_norm
+        if not verificada:
+            conf = min(conf, 0.3)
+        campo["confianca"] = conf
+        campo["origem_verificada"] = verificada
+        saida[chave] = campo
+    return saida
 
 
 def _parse_json(txt: str) -> Optional[dict]:
@@ -97,7 +145,15 @@ async def extrair_e_analisar(
     texto_para_ia, houve_pii = sanitizar_pii(texto)
 
     # 2) Extração estruturada + diagnóstico (1 chamada de IA)
-    user_msg = f"DOCUMENTO:\n\n{texto_para_ia}\n\n---\n{ESQUEMA}"
+    # LGPD: o texto do documento vai BRUTO para a IA (com PII) — a extração
+    # PRECISA do CPF/nome para extraí-los; sanitizar antes (como uma frente
+    # paralela tentou) destruiria a própria função de extração. Por isso a
+    # chamada é FIXADA no modelo LOCAL (Ollama), SEM fallback para o Groq
+    # (nuvem/EUA): provider_override="ollama" resolve a cadeia só-local.
+    # Se o Ollama estiver indisponível, falha fechado (não vaza p/ Groq).
+    # `texto_para_ia`/`houve_pii` (sanitizar_pii) seguem calculados acima só
+    # como metadado informativo (campo pii_removida da resposta).
+    user_msg = f"DOCUMENTO:\n\n{texto}\n\n---\n{ESQUEMA}"
     try:
         resp = await ai_gateway.chat(
             messages=[{"role": "system", "content": SYSTEM},
@@ -105,10 +161,15 @@ async def extrair_e_analisar(
             task_type="analise_juridica",
             temperature=0.1,
             max_tokens=3200,
+            provider_override="ollama",   # LGPD: extração de PII só no modelo local
         )
     except Exception as e:
-        logger.warning(f"Falha na IA de extração: {e}")
-        return {"ok": False, "erro": "IA indisponível no momento. Tente novamente."}
+        logger.warning(f"Falha na IA de extração (modelo local): {e}")
+        return {"ok": False, "erro": (
+            "IA local (Ollama) indisponível. A extração de documentos roda "
+            "apenas no modelo local por conter dados pessoais (LGPD) — não é "
+            "enviada a serviço externo. Verifique o Ollama e tente novamente."
+        )}
 
     dados = _parse_json(resp.texto)
     if not dados:
@@ -120,6 +181,10 @@ async def extrair_e_analisar(
             "_aviso": _AVISO,
             "pii_removida": houve_pii,
         }
+
+    # 2.b) R4 — verificação de origem dos campos v2 (anti-alucinação).
+    # Retrocompatível: "campos_v2" é chave PARALELA; o formato antigo permanece.
+    dados["campos_v2"] = _verificar_origens_v2(dados.get("campos_v2"), texto)
 
     # 3) Honorários sugeridos (tabela OAB via RAG) + jurisprudência semelhante
     if enriquecer_rag and db is not None:
@@ -184,6 +249,105 @@ async def _sugerir_honorarios(db, dados: dict) -> dict:
         task_type="analise_juridica", temperature=0.2, max_tokens=600,
     )
     return _parse_json(resp.texto) or {"_bruto": resp.texto[:500]}
+
+
+async def sugerir_tipo(
+    db,
+    user_id: str,
+    texto: str,
+    tipos: list[dict],
+    case_id: Optional[str] = None,
+    doc_id: Optional[str] = None,
+) -> dict:
+    """
+    Classifica o documento em UM tipo_key do master (R3) — SUGESTÃO apenas.
+
+    Pipeline LGPD obrigatório (mesmo padrão de ai_service):
+      sanitizar_pii → IA via ai_gateway (chat_rapido) → AILog (HITL rastreável).
+    NUNCA grava o tipo no Document — confirmação humana obrigatória.
+    Se a IA devolver tipo fora do master → "outro" com confiança baixa.
+    """
+    from uuid import uuid4
+    from app.services.sanitizer import sanitizar_pii
+    from app.models.ai_log import AILog, AITipoUso, AIStatusHITL
+
+    # 1) Sanitização LGPD antes de QUALQUER envio (teto ~6K chars)
+    texto_limpo, pii = sanitizar_pii((texto or "")[:6000])
+
+    keys_validas = {t["tipo_key"] for t in tipos}
+    catalogo = "\n".join(
+        f"- {t['tipo_key']}: {t['nome']}"
+        + (f" — {t['descricao']}" if t.get("descricao") else "")
+        for t in tipos
+    )
+
+    system = (
+        "Você classifica documentos jurídicos/administrativos brasileiros em tipos "
+        "pré-definidos. Escolha EXATAMENTE UM tipo_key da lista fornecida — é "
+        "PROIBIDO inventar tipos fora da lista. Se nenhum se aplicar com clareza, "
+        "use 'outro'. " + REGRAS
+    )
+    user_msg = (
+        f"TIPOS DISPONÍVEIS (tipo_key: nome — descrição):\n{catalogo}\n\n"
+        f"TEXTO DO DOCUMENTO (sanitizado):\n{texto_limpo}\n\n"
+        'Responda APENAS com JSON válido: {"tipo_sugerido": "<tipo_key da lista>", '
+        '"confianca": "alta|media|baixa", "justificativa": "<1-2 frases objetivas>"}'
+    )
+
+    # 2) IA via gateway (tarefa leve — chat_rapido, com fallback resumo/groq)
+    resp = await ai_gateway.chat(
+        messages=[{"role": "system", "content": system},
+                  {"role": "user", "content": user_msg}],
+        task_type="chat_rapido",
+        temperature=0.1,
+        max_tokens=300,
+    )
+
+    dados = _parse_json(resp.texto) or {}
+    tipo = str(dados.get("tipo_sugerido") or "").strip()
+    confianca = str(dados.get("confianca") or "").strip().lower()
+    justificativa = str(dados.get("justificativa") or resp.texto or "")[:500]
+
+    # 3) Guarda-corpo: tipo fora do master → "outro" (nunca propagar inventado)
+    if tipo not in keys_validas:
+        if tipo:
+            justificativa = (
+                f"IA sugeriu '{tipo}', que não existe no catálogo — "
+                f"rebaixado para 'outro'. {justificativa}"
+            )[:500]
+        tipo = "outro"
+        confianca = "baixa"
+    if confianca not in {"alta", "media", "baixa"}:
+        confianca = "media"
+
+    # 4) AILog (LGPD + HITL — toda chamada de IA é registrada)
+    log = AILog(
+        id=str(uuid4()),
+        user_id=user_id,
+        case_id=case_id,
+        tipo_uso=AITipoUso.outro,
+        modelo=f"{resp.provedor}/{resp.modelo}",
+        prompt_sanitizado=(
+            f"[sugerir-tipo doc={doc_id or '-'}] " + user_msg
+        )[:8000],
+        pii_removida=pii,
+        resposta=resp.texto[:4000],
+        tokens_input=resp.input_tokens,
+        tokens_output=resp.output_tokens,
+        status_hitl=AIStatusHITL.gerado,
+    )
+    db.add(log)
+    await db.commit()
+
+    return {
+        "tipo_sugerido": tipo,
+        "confianca": confianca,
+        "justificativa": justificativa,
+        "ai_log_id": log.id,
+        "pii_removida": pii,
+        "aviso": "⚠️ SUGESTÃO gerada por IA — o tipo NÃO foi gravado no documento; "
+                 "confirmação humana obrigatória.",
+    }
 
 
 async def _buscar_referencias(db, dados: dict, texto: str) -> list:

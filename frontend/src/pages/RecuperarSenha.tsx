@@ -19,7 +19,7 @@ export default function RecuperarSenha() {
           Recuperar senha
         </h1>
         {ok ? (
-          <div className="text-sm text-emerald-700 bg-emerald-50 rounded-lg p-4 text-center">
+          <div className="text-sm text-success-700 bg-success-50 rounded-lg p-4 text-center">
             Se o e-mail existir, enviaremos as instruções em instantes.
             Verifique também o spam.
           </div>

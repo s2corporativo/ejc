@@ -59,6 +59,7 @@ class Case(Base):
     tribunal  = Column(String(20),  nullable=True)
     comarca   = Column(String(100), nullable=True)
     vara      = Column(String(100), nullable=True)
+    drive_folder_id = Column(String(128), nullable=True)  # subpasta do caso no Google Drive
     parte_contraria = Column(String(255), nullable=True)
     valor_causa = Column(Numeric(14, 2), nullable=True)
     

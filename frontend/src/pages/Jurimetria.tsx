@@ -11,7 +11,7 @@ function Bars({
   rows,
   label,
   val,
-  cor = "bg-blue-500",
+  cor = "bg-primary-500",
 }: {
   titulo: string;
   rows: any[];
@@ -260,7 +260,7 @@ export default function Jurimetria() {
                         ? "h-full bg-green-500"
                         : r.pct > 25
                           ? "h-full bg-yellow-400"
-                          : "h-full bg-red-400"
+                          : "h-full bg-danger-400"
                     }
                     style={{ width: `${r.pct}%` }}
                   />
@@ -275,7 +275,7 @@ export default function Jurimetria() {
       <div className="card p-5 mb-6">
         <div className="flex flex-wrap items-center gap-3 mb-4">
           <div className="flex items-center gap-1.5">
-            <Database size={16} className="text-blue-500" />
+            <Database size={16} className="text-primary-500" />
             <h3 className="font-semibold text-sm text-gray-700 uppercase">
               Benchmarks DataJud
             </h3>
@@ -287,8 +287,8 @@ export default function Jurimetria() {
                 onClick={() => setSelectedTribunal(t)}
                 className={`px-3 py-1 text-xs rounded-full border transition-colors ${
                   selectedTribunal === t
-                    ? "bg-blue-600 text-white border-blue-600"
-                    : "text-gray-600 border-gray-300 hover:border-blue-400"
+                    ? "bg-primary-600 text-white border-primary-600"
+                    : "text-gray-600 border-gray-300 hover:border-primary-400"
                 }`}
               >
                 {t}
@@ -306,7 +306,7 @@ export default function Jurimetria() {
         </div>
 
         {msgIngestao && (
-          <p className="text-xs text-blue-600 bg-blue-50 border border-blue-200 rounded px-3 py-2 mb-3">
+          <p className="text-xs text-primary-600 bg-primary-50 border border-primary-200 rounded px-3 py-2 mb-3">
             {msgIngestao}
           </p>
         )}
@@ -399,7 +399,7 @@ export default function Jurimetria() {
         rows={tese}
         label={(r) => r.titulo || r.tese || "—"}
         val={(r) => r.total ?? r.count ?? r.uso ?? 0}
-        cor="bg-emerald-500"
+        cor="bg-success-500"
       />
 
       {/* Lições aprendidas */}
@@ -412,7 +412,7 @@ export default function Jurimetria() {
             {desfechos.licoes_aprendidas.map((l: any, i: number) => (
               <li
                 key={i}
-                className="text-sm text-gray-600 border-l-2 border-amber-400 pl-3 py-0.5"
+                className="text-sm text-gray-600 border-l-2 border-warn-400 pl-3 py-0.5"
               >
                 <span className="font-medium text-gray-700">{l.nr_cnj}</span>
                 {l.licoes_aprendidas && <> — {l.licoes_aprendidas}</>}
@@ -474,21 +474,21 @@ export default function Jurimetria() {
           <button
             onClick={prever}
             disabled={loadingPred || !predForm.classe}
-            className="px-4 py-1.5 text-sm bg-bronze text-white rounded-lg hover:bg-bronze-dark disabled:opacity-50 transition-colors"
+            className="btn-primary"
           >
             {loadingPred ? "Calculando..." : "Calcular"}
           </button>
           <button
             onClick={treinarModelo}
             disabled={treinando}
-            className="px-4 py-1.5 text-sm border rounded-lg text-gray-600 hover:bg-gray-50 disabled:opacity-50 transition-colors"
+            className="btn-secondary"
           >
             {treinando ? "Iniciando..." : "Treinar modelo"}
           </button>
         </div>
 
         {predicao && !predicao.disponivel && (
-          <p className="text-sm text-amber-600 bg-amber-50 border border-amber-200 rounded px-3 py-2">
+          <p className="text-sm text-warn-600 bg-warn-50 border border-warn-200 rounded px-3 py-2">
             {predicao.mensagem}
           </p>
         )}
@@ -501,11 +501,11 @@ export default function Jurimetria() {
               </p>
               <p className="text-xs text-green-600">Prob. Provimento</p>
             </div>
-            <div className="text-center p-3 bg-red-50 rounded-lg border border-red-100">
-              <p className="text-2xl font-bold text-red-700">
+            <div className="text-center p-3 bg-danger-50 rounded-lg border border-danger-100">
+              <p className="text-2xl font-bold text-danger-700">
                 {predicao.probabilidade_negado}%
               </p>
-              <p className="text-xs text-red-600">Prob. Negado</p>
+              <p className="text-xs text-danger-600">Prob. Negado</p>
             </div>
             <div className="text-center p-3 bg-gray-50 rounded-lg border border-gray-200">
               <p className="text-2xl font-bold text-gray-700">
@@ -513,8 +513,8 @@ export default function Jurimetria() {
               </p>
               <p className="text-xs text-gray-500">Confiança</p>
             </div>
-            <div className="text-center p-3 bg-blue-50 rounded-lg border border-blue-100 flex items-center justify-center">
-              <p className="text-sm font-medium text-blue-700">
+            <div className="text-center p-3 bg-primary-50 rounded-lg border border-primary-100 flex items-center justify-center">
+              <p className="text-sm font-medium text-primary-700">
                 {predicao.interpretacao}
               </p>
             </div>

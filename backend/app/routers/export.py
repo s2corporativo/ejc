@@ -1,11 +1,15 @@
 # ── app/routers/export.py ─────────────────────────────────────────────────────
-# Exportação CSV (clientes, casos, honorários) e PDF por caso.
+# Exportação CSV (clientes, casos, honorários), PDF por caso e DOCX genérico.
 from __future__ import annotations
 import csv
 import io
+import re
+import unicodedata
+from typing import Optional
 
 from fastapi import APIRouter, Depends, HTTPException
 from fastapi.responses import StreamingResponse, Response
+from pydantic import BaseModel, Field
 from sqlalchemy import select, or_
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -15,6 +19,7 @@ from app.models.user import User
 from app.models.client import Client
 from app.models.case import Case
 from app.models.fee import Fee
+from app.services.docx_service import gerar_docx_async
 
 router = APIRouter(prefix="/export", tags=["Exportação"])
 
@@ -107,6 +112,59 @@ async def export_caso_pdf(
     return Response(
         content=pdf_bytes,
         media_type="application/pdf",
+        headers={"Content-Disposition": f'attachment; filename="{filename}"'},
+    )
+
+
+# ═══ DOCX genérico (pareceres, propostas, relatórios de outras telas) ═══
+
+_DOCX_MEDIA_TYPE = "application/vnd.openxmlformats-officedocument.wordprocessingml.document"
+
+
+class DocxExportPayload(BaseModel):
+    """Payload do DOCX genérico.
+
+    meta (opcional): {"numero_processo": "0000000-00.0000.0.00.0000"} —
+    exibido no cabeçalho abaixo do nome do escritório.
+    """
+    titulo: str = Field(..., min_length=1, max_length=255)
+    conteudo_md: str = Field(..., min_length=1)
+    meta: Optional[dict] = None
+
+
+def _slug_arquivo(titulo: str, fallback: str = "documento") -> str:
+    base = unicodedata.normalize("NFKD", titulo or "").encode("ascii", "ignore").decode("ascii")
+    slug = re.sub(r"[^a-z0-9]+", "-", base.lower()).strip("-")[:60]
+    return slug or fallback
+
+
+@router.post("/docx")
+async def export_docx(
+    payload: DocxExportPayload,
+    cu: User = Depends(get_current_user),
+):
+    """
+    Gera DOCX editável (Times 12pt, margens ABNT, timbre do escritório) a
+    partir de markdown — reuso genérico p/ pareceres, propostas e relatórios.
+    Restrito a staff. Para peças jurídicas persistidas, use
+    GET /legal-docs/{id}/exportar-docx (com audit log por recurso).
+    """
+    if cu.role.value == "cliente_externo":
+        raise HTTPException(403, "Não autorizado")
+
+    try:
+        docx_bytes = await gerar_docx_async(
+            payload.titulo, payload.conteudo_md, payload.meta or {}
+        )
+    except RuntimeError as e:
+        raise HTTPException(503, str(e))
+    except Exception as e:
+        raise HTTPException(500, f"Erro ao gerar DOCX: {str(e)[:200]}")
+
+    filename = f"{_slug_arquivo(payload.titulo)}.docx"
+    return StreamingResponse(
+        io.BytesIO(docx_bytes),
+        media_type=_DOCX_MEDIA_TYPE,
         headers={"Content-Disposition": f'attachment; filename="{filename}"'},
     )
 

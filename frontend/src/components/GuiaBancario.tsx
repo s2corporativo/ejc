@@ -297,7 +297,7 @@ export default function GuiaBancario() {
               ["Revisão contratual", "10 anos", "CC 205"],
             ]}
           />
-          <p className="text-amber-700">
+          <p className="text-warn-700">
             ⚠ Verificar suspensão/interrupção (CC 197-204): renegociação,
             reconhecimento de dívida, parcelamento.
           </p>
@@ -331,7 +331,7 @@ export default function GuiaBancario() {
         </Sec>
       </div>
 
-      <p className="text-[10px] text-amber-700 mt-3 flex items-start gap-1">
+      <p className="text-[10px] text-warn-700 mt-3 flex items-start gap-1">
         <AlertTriangle size={12} className="mt-0.5 shrink-0" />
         Instrumento de trabalho interno. Jurisprudência sujeita a atualização —
         confirmar a data e eventual superação antes de aplicar.

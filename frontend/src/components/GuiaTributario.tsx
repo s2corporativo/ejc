@@ -115,7 +115,7 @@ export default function GuiaTributario() {
   const feitos = Object.values(marcados).filter(Boolean).length;
 
   return (
-    <div className="card p-4 mb-4 border-l-4 border-amber-500">
+    <div className="card p-4 mb-4 border-l-4 border-warn-500">
       <div className="flex items-center gap-2 mb-1">
         <BookOpen size={16} className="text-bronze" />
         <h2 className="font-serif font-semibold text-navy text-sm">
@@ -631,7 +631,7 @@ SELIC s/ restituição (STF RE 1.063.187): não incide IR/CSLL sobre Selic na re
             parcelamento em vigor na data de exclusão ou que os débitos não
             existem.
           </p>
-          <p className="text-amber-700">
+          <p className="text-warn-700">
             ⚠ Aderir a parcelamento = reconhecer débito = interromper
             prescrição. Confirmar se prescrição não estava consumada antes de
             aderir.
@@ -830,7 +830,7 @@ ESTRATÉGIA: priorizar pagamento antes do recebimento da denúncia
         </Sec>
       </div>
 
-      <p className="text-[10px] text-amber-700 mt-3 flex items-start gap-1">
+      <p className="text-[10px] text-warn-700 mt-3 flex items-start gap-1">
         <AlertTriangle size={12} className="mt-0.5 shrink-0" />
         Instrumento interno. Verificar legislação CARF, programas de
         parcelamento vigentes, teses repetitivas STJ/STF e LC Municipal de

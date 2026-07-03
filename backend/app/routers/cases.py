@@ -24,9 +24,11 @@ from app.services.documental import gerar_documentos_iniciais
 from app.models.case_parte import CaseParte
 from app.models.caso_area import CasoArea
 from app.services.movimento_ia import traduzir_movimento
+from app.core.ownership import verificar_acesso_caso
 from app.services.ia_parser import titulo_e_json_bruto
 from app.schemas.case import (
     CaseCreate, CaseUpdate, CaseResponse, CaseDetail, MovimentoCreate,
+    CaseDeleteRequest,
 )
 from app.schemas.common import MsgResponse
 from pydantic import BaseModel, Field
@@ -296,6 +298,23 @@ async def atualizar(
     return c
 
 
+# ── R2 — Arquivamento (reversível) e exclusão segura (soft delete) ───────────
+# Nota de reconciliação (2026-07-03): esta funcionalidade foi construída em
+# paralelo por duas frentes independentes. Versão canônica = a que já está em
+# produção (colunas archived_at/archive_reason persistidas via migração),
+# com dois adicionais do redesign incorporados: sincronização do kanban e
+# evento no event_bus (arquitetura orientada a eventos, P1).
+
+async def _sincronizar_kanban_encerrado(db: AsyncSession, c: Case) -> None:
+    """Move o card para a coluna 'Encerrado' (se existir) — mesmo mapa do PATCH."""
+    col = (await db.execute(text("""
+        SELECT name FROM kanban_columns WHERE is_active=true AND name ILIKE :nm
+        ORDER BY position LIMIT 1
+    """), {"nm": "Encerrado"})).scalar()
+    if col:
+        c.kanban_column = col
+
+
 class ArchiveCaseRequest(BaseModel):
     motivo: Optional[str] = Field(default=None, max_length=1000)
 
@@ -303,6 +322,7 @@ class ArchiveCaseRequest(BaseModel):
 @router.post("/{case_id}/arquivar", response_model=CaseDetail)
 async def arquivar_caso(
     case_id: str,
+    background: BackgroundTasks,
     payload: Optional[ArchiveCaseRequest] = Body(default=None),
     db: AsyncSession = Depends(get_db),
     cu: User = Depends(require_roles(_ARQUIVAMENTO_ROLES)),
@@ -318,6 +338,7 @@ async def arquivar_caso(
     c.status = CaseStatus.arquivado
     c.archived_at = datetime.now(timezone.utc)
     c.archive_reason = ((payload.motivo if payload else None) or "").strip() or None
+    await _sincronizar_kanban_encerrado(db, c)
     db.add(CaseMovimento(
         id=str(uuid4()), case_id=c.id, tipo="arquivamento",
         descricao=f"Caso arquivado{': ' + c.archive_reason if c.archive_reason else ''}",
@@ -329,12 +350,17 @@ async def arquivar_caso(
     )
     await db.commit()
     await db.refresh(c)
+    background.add_task(
+        event_bus.emitir, "caso.atualizado", "case", case_id,
+        {"mudancas": ["status"], "status": CaseStatus.arquivado.value}, cu.id,
+    )
     return c
 
 
 @router.post("/{case_id}/desarquivar", response_model=CaseDetail)
 async def desarquivar_caso(
     case_id: str,
+    background: BackgroundTasks,
     db: AsyncSession = Depends(get_db),
     cu: User = Depends(require_roles(_ARQUIVAMENTO_ROLES)),
 ):
@@ -361,6 +387,10 @@ async def desarquivar_caso(
     )
     await db.commit()
     await db.refresh(c)
+    background.add_task(
+        event_bus.emitir, "caso.atualizado", "case", case_id,
+        {"mudancas": ["status"], "status": CaseStatus.ativo.value}, cu.id,
+    )
     return c
 
 
@@ -380,20 +410,82 @@ async def _bg_sync_prazos_datajud(case_id: str, numero_cnj: str) -> None:
 
 
 @router.delete("/{case_id}", response_model=MsgResponse)
-async def arquivar(
+async def excluir(
     case_id: str,
+    motivo: Optional[str] = Query(None, min_length=5, max_length=500,
+                                  description="Motivo da exclusão (ou envie no body)"),
+    payload: Optional[CaseDeleteRequest] = Body(None),
     db: AsyncSession = Depends(get_db),
     cu: User = Depends(require_roles(["admin", "socio"])),
 ):
+    """
+    Soft delete (lixeira/restauração via /trash). R2 endurecido:
+    - motivo obrigatório (body {"motivo": ...} ou query ?motivo=), min 5 chars;
+    - bloqueado (422 + lista `pendencias`) se houver prazo pendente,
+      honorário pendente/atrasado ou peça protocolada — usar arquivamento.
+    """
+    motivo_final = ((payload.motivo if payload else None) or motivo or "").strip()
+    if len(motivo_final) < 5:
+        raise HTTPException(
+            status_code=422,
+            detail='Informe o motivo da exclusão (mínimo 5 caracteres) — '
+                   'body {"motivo": "..."} ou query ?motivo=',
+        )
+
     c = (await db.execute(
         select(Case).where(Case.id == case_id, Case.deleted_at.is_(None))
     )).scalar_one_or_none()
     if not c:
         raise HTTPException(status_code=404, detail="Caso não encontrado")
+
+    # ── Bloqueios condicionais (R2): pendências impedem exclusão ─────────────
+    from app.models.deadline import Deadline, DeadlineStatus
+    from app.models.fee import Fee, FeeStatus
+    from app.models.legal_doc import LegalDoc, PecaStatus
+
+    pendencias: list[dict] = []
+    for p in (await db.execute(
+        select(Deadline).where(
+            Deadline.case_id == case_id,
+            Deadline.deleted_at.is_(None),
+            Deadline.status == DeadlineStatus.pendente,
+        )
+    )).scalars().all():
+        pendencias.append({"tipo": "prazo", "id": p.id,
+                           "descricao": f"Prazo pendente: {p.titulo} ({p.data_prazo})"})
+    for f in (await db.execute(
+        select(Fee).where(
+            Fee.case_id == case_id,
+            Fee.deleted_at.is_(None),
+            Fee.status.in_([FeeStatus.pendente, FeeStatus.atrasado]),
+        )
+    )).scalars().all():
+        pendencias.append({"tipo": "honorario", "id": f.id,
+                           "descricao": f"Honorário {_status_val(f.status)}: {f.descricao}"})
+    for d in (await db.execute(
+        select(LegalDoc).where(
+            LegalDoc.case_id == case_id,
+            LegalDoc.deleted_at.is_(None),
+            LegalDoc.status == PecaStatus.protocolada,
+        )
+    )).scalars().all():
+        pendencias.append({"tipo": "peca", "id": d.id,
+                           "descricao": f"Peça protocolada: {d.titulo}"})
+
+    if pendencias:
+        raise HTTPException(status_code=422, detail={
+            "mensagem": "Caso possui pendências — use arquivamento "
+                        "(POST /cases/{id}/arquivar)",
+            "pendencias": pendencias,
+        })
+
     c.deleted_at = datetime.now(timezone.utc)
-    await criar_audit_log(db, cu.id, cu.role.value, "DELETE", "cases", case_id)
+    await criar_audit_log(
+        db, cu.id, cu.role.value, "DELETE", "cases", case_id,
+        detalhes=f"Exclusão (soft delete). Motivo: {motivo_final}",
+    )
     await db.commit()
-    return MsgResponse(detail="Caso arquivado")
+    return MsgResponse(detail="Caso excluído (soft delete — restaurável pela lixeira)")
 
 
 # ── ETAPA 5 — Geração documental automática ───────────────────────────────────
@@ -503,8 +595,14 @@ async def assistente_estrategico_caso(
         f"PARTES: {', '.join([p.nome for p in partes])}\n"
         f"ÚLTIMOS MOVIMENTOS: {'; '.join([m.descricao[:100] for m in movs])}\n"
     )
-    
-    return await ai_gateway.processar_demanda(demanda, contexto, tipo="juridico_profundo")
+
+    # LGPD: sanitiza PII (nomes de partes, nº do processo, CPF/CNPJ) antes de
+    # enviar à IA — a análise estratégica não precisa dos dados reais.
+    from app.services.sanitizer import sanitizar_pii
+    contexto, _ = sanitizar_pii(contexto, [p.nome for p in partes if p.nome])
+    demanda_limpa, _ = sanitizar_pii(demanda)
+
+    return await ai_gateway.processar_demanda(demanda_limpa, contexto, tipo="juridico_profundo")
 
 
 # ═══ DataJud: sincronização de movimentos oficiais ═══

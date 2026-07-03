@@ -17,7 +17,7 @@ export default function VictoryVault() {
 
   return (
     <div className="space-y-6">
-      <div className="rounded-2xl border border-blue-100 bg-white p-5 shadow-sm md:p-6">
+      <div className="rounded-2xl border border-primary-100 bg-white p-5 shadow-sm md:p-6">
         <PageHeader
           eyebrow="Inteligencia juridica"
           title="Victory Vault"
@@ -30,7 +30,7 @@ export default function VictoryVault() {
               onClick={() => setAba(a.id)}
               className={`-mb-px border-b-2 px-4 py-2 text-sm font-medium transition-colors ${
                 aba === a.id
-                  ? "border-blue-600 text-blue-700"
+                  ? "border-primary-600 text-primary-700"
                   : "border-transparent text-slate-500 hover:text-slate-800"
               }`}
             >

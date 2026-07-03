@@ -1,6 +1,7 @@
 import { useState, useEffect, useCallback } from "react";
 import { RefreshCw, Check, AlertCircle, Calendar, Repeat } from "lucide-react";
 import api from "../lib/api";
+import { PageHeader } from "../components/UI";
 
 interface Despesa {
   id: string;
@@ -94,20 +95,16 @@ export default function DespesasRecorrentes() {
 
   return (
     <div className="p-6 max-w-4xl mx-auto space-y-5">
-      <div>
-        <div className="eyebrow mb-2">Financeiro</div>
-        <h1 className="text-2xl font-semibold tracking-tight text-slate-950">
-          Despesas Recorrentes
-        </h1>
-        <p className="text-slate-500 text-sm mt-1">
-          Geração automática de lançamentos mensais
-        </p>
-      </div>
+      <PageHeader
+        eyebrow="Financeiro"
+        title="Despesas Recorrentes"
+        subtitle="Geração automática de lançamentos mensais"
+      />
 
       {/* Action card */}
       <div className="bg-white rounded-xl border border-slate-200 p-5">
         <h2 className="font-semibold text-slate-800 mb-3 flex items-center gap-2">
-          <Repeat className="w-4 h-4 text-blue-500" />
+          <Repeat className="w-4 h-4 text-primary-500" />
           Gerar lançamentos para novo mês
         </h2>
         <div className="flex items-center gap-4">
@@ -123,7 +120,7 @@ export default function DespesasRecorrentes() {
           <button
             onClick={gerarProximoMes}
             disabled={gerando || recorrentes.length === 0}
-            className="flex items-center gap-2 px-5 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 disabled:opacity-50 text-sm font-medium"
+            className="btn-primary"
           >
             {gerando ? (
               <RefreshCw className="w-4 h-4 animate-spin" />
@@ -137,8 +134,8 @@ export default function DespesasRecorrentes() {
           <div
             className={`mt-3 flex items-center gap-2 text-sm px-3 py-2 rounded-lg ${
               msg.startsWith("Erro")
-                ? "bg-red-50 text-red-700"
-                : "bg-emerald-50 text-emerald-700"
+                ? "bg-danger-50 text-danger-700"
+                : "bg-success-50 text-success-700"
             }`}
           >
             {msg.startsWith("Erro") ? (
@@ -185,7 +182,7 @@ export default function DespesasRecorrentes() {
                     {d.descricao}
                   </td>
                   <td className="px-4 py-3">
-                    <span className="text-xs bg-blue-50 text-blue-600 px-2 py-0.5 rounded-full capitalize">
+                    <span className="text-xs bg-primary-50 text-primary-600 px-2 py-0.5 rounded-full capitalize">
                       {d.recorrencia}
                     </span>
                   </td>

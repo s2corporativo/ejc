@@ -23,6 +23,7 @@ import {
 } from "lucide-react";
 import api from "../lib/api";
 import { PageHeader, Spinner, fmtDate } from "../components/UI";
+import { Markdown } from "../components/Markdown";
 
 // ─── Tipos ────────────────────────────────────────────────────────────────────
 interface Memoria {
@@ -55,7 +56,7 @@ const TIPOS: Record<
   parecer: {
     label: "Parecer",
     icon: BookMarked,
-    cor: "bg-amber-50 text-amber-700",
+    cor: "bg-warn-50 text-warn-700",
   },
   contrato: {
     label: "Contrato",
@@ -70,17 +71,17 @@ const TIPOS: Record<
   acordo: {
     label: "Acordo",
     icon: Handshake,
-    cor: "bg-emerald-50 text-emerald-700",
+    cor: "bg-success-50 text-success-700",
   },
   tese_vencedora: {
     label: "Tese vencedora",
     icon: CheckCircle,
-    cor: "bg-emerald-50 text-emerald-700",
+    cor: "bg-success-50 text-success-700",
   },
   estrategia: {
     label: "Estratégia",
     icon: Lightbulb,
-    cor: "bg-amber-50 text-amber-700",
+    cor: "bg-warn-50 text-warn-700",
   },
 };
 
@@ -105,38 +106,6 @@ const AREAS: Record<string, string> = {
   tributario: "Tributário",
   ambiental: "Ambiental",
 };
-
-// ─── Renderizador markdown simples ────────────────────────────────────────────
-function Markdown({ src }: { src: string }) {
-  const html = src
-    .replace(/&/g, "&amp;")
-    .replace(/</g, "&lt;")
-    .replace(/>/g, "&gt;")
-    .replace(/\*\*(.+?)\*\*/g, "<strong>$1</strong>")
-    .replace(/\*(.+?)\*/g, "<em>$1</em>")
-    .replace(
-      /^### (.+)$/gm,
-      '<h3 class="font-serif text-base text-navy-800 mt-3 mb-1">$1</h3>',
-    )
-    .replace(
-      /^## (.+)$/gm,
-      '<h2 class="font-serif text-lg text-navy-800 mt-4 mb-1.5">$1</h2>',
-    )
-    .replace(
-      /^# (.+)$/gm,
-      '<h1 class="font-serif text-xl text-navy-800 mt-4 mb-2">$1</h1>',
-    )
-    .replace(/^- (.+)$/gm, '<li class="ml-4 list-disc">$1</li>')
-    .replace(/^(\d+)\. (.+)$/gm, '<li class="ml-4 list-decimal">$2</li>')
-    .replace(/\n\n/g, '</p><p class="mb-2">')
-    .replace(/\n/g, "<br />");
-  return (
-    <div
-      className="text-sm text-slate-600 leading-relaxed prose-sm"
-      dangerouslySetInnerHTML={{ __html: `<p class="mb-2">${html}</p>` }}
-    />
-  );
-}
 
 // ─── Card de memória ──────────────────────────────────────────────────────────
 function CardMemoria({
@@ -185,7 +154,7 @@ function CardMemoria({
                 </button>
                 <button
                   onClick={onExcluir}
-                  className="p-1.5 text-slate-400 hover:text-red-500 rounded-lg transition-colors"
+                  className="p-1.5 text-slate-400 hover:text-danger-500 rounded-lg transition-colors"
                 >
                   <Trash2 className="w-3.5 h-3.5" />
                 </button>
@@ -209,7 +178,10 @@ function CardMemoria({
             {/* Conteúdo */}
             <div className="mt-3">
               {expandido ? (
-                <Markdown src={m.conteudo} />
+                <Markdown
+                  source={m.conteudo}
+                  className="text-sm text-slate-600 leading-relaxed prose-sm"
+                />
               ) : (
                 <p className="text-sm text-slate-500 leading-relaxed">
                   {previewTexto}
@@ -421,7 +393,7 @@ function ModalForm({
             />
           </div>
           {erro && (
-            <p className="text-sm text-red-600 bg-red-50 p-3 rounded-lg">
+            <p className="text-sm text-danger-600 bg-danger-50 p-3 rounded-lg">
               {erro}
             </p>
           )}
@@ -521,18 +493,18 @@ export default function MemoriaInstitucional() {
           </div>
         </div>
         <div className="card p-4 flex items-center gap-3">
-          <CheckCircle className="w-4 h-4 text-emerald-500" />
+          <CheckCircle className="w-4 h-4 text-success-500" />
           <div>
-            <p className="font-serif text-xl text-emerald-700">
+            <p className="font-serif text-xl text-success-700">
               {resultadosFavoraveis}
             </p>
             <p className="label-caps">favoráveis</p>
           </div>
         </div>
         <div className="card p-4 flex items-center gap-3">
-          <Lightbulb className="w-4 h-4 text-amber-500" />
+          <Lightbulb className="w-4 h-4 text-warn-500" />
           <div>
-            <p className="font-serif text-xl text-amber-700">
+            <p className="font-serif text-xl text-warn-700">
               {
                 memorias.filter(
                   (m) => m.tipo === "estrategia" || m.tipo === "tese_vencedora",

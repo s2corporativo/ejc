@@ -2,7 +2,7 @@ import { useEffect, useState, useCallback } from "react";
 import { useNavigate } from "react-router-dom";
 import { ChevronDown } from "lucide-react";
 import api from "../lib/api";
-import { Spinner } from "../components/UI";
+import { Spinner, PageHeader } from "../components/UI";
 
 interface KanbanCol {
   id: string;
@@ -25,18 +25,18 @@ interface Caso {
 }
 
 const PRIO_COLOR: Record<string, string> = {
-  critica: "bg-red-100 text-red-700",
+  critica: "bg-danger-100 text-danger-700",
   alta: "bg-orange-100 text-orange-700",
-  media: "bg-amber-100 text-amber-700",
+  media: "bg-warn-100 text-warn-700",
   baixa: "bg-slate-100 text-slate-500",
 };
 
 const COL_COLOR: Record<string, string> = {
-  blue: "border-t-blue-400",
-  green: "border-t-emerald-400",
-  yellow: "border-t-amber-400",
-  red: "border-t-red-400",
-  purple: "border-t-purple-400",
+  blue: "border-t-primary-400",
+  green: "border-t-success-400",
+  yellow: "border-t-warn-400",
+  red: "border-t-danger-400",
+  purple: "border-t-ai-400",
   slate: "border-t-slate-400",
   orange: "border-t-orange-400",
 };
@@ -116,30 +116,28 @@ export default function Kanban() {
 
   return (
     <div className="flex flex-col h-full">
-      {/* Header */}
-      <div className="px-6 pt-6 pb-3 flex items-center justify-between flex-shrink-0">
-        <div>
-          <h1 className="text-xl font-bold text-slate-800">Kanban de Casos</h1>
-          <p className="text-slate-500 text-sm mt-0.5">
-            Gestão visual do fluxo processual
-          </p>
-        </div>
-        {/* Area tabs */}
-        <div className="flex gap-1 bg-slate-100 rounded-lg p-1">
-          {AREAS.map((a) => (
-            <button
-              key={a.key}
-              onClick={() => setArea(a.key)}
-              className={`px-3 py-1.5 rounded-md text-sm font-medium transition-colors ${
-                area === a.key
-                  ? "bg-white text-slate-800 shadow-sm"
-                  : "text-slate-500 hover:text-slate-700"
-              }`}
-            >
-              {a.label}
-            </button>
-          ))}
-        </div>
+      <div className="px-6 pt-6 pb-3 flex-shrink-0">
+        <PageHeader
+          title="Kanban de Casos"
+          subtitle="Gestão visual do fluxo processual"
+          actions={
+            <div className="flex gap-1 bg-slate-100 rounded-lg p-1">
+              {AREAS.map((a) => (
+                <button
+                  key={a.key}
+                  onClick={() => setArea(a.key)}
+                  className={`px-3 py-1.5 rounded-md text-sm font-medium transition-colors ${
+                    area === a.key
+                      ? "bg-white text-slate-800 shadow-sm"
+                      : "text-slate-500 hover:text-slate-700"
+                  }`}
+                >
+                  {a.label}
+                </button>
+              ))}
+            </div>
+          }
+        />
       </div>
 
       {/* Board */}
@@ -169,7 +167,7 @@ export default function Kanban() {
                 }
                 onDrop={() => dragId && moverParaColuna(dragId, col.name)}
                 className={`flex flex-col rounded-xl border-t-2 ${topColor} bg-slate-50 border border-slate-200 w-52 flex-shrink-0 transition-all ${
-                  overCol === col.name ? "ring-2 ring-blue-300 bg-blue-50" : ""
+                  overCol === col.name ? "ring-2 ring-primary-300 bg-primary-50" : ""
                 }`}
               >
                 {/* Column header */}
@@ -240,7 +238,7 @@ export default function Kanban() {
                       </div>
                       <button
                         onClick={() => nav(`/casos/${c.id}`)}
-                        className="mt-1.5 w-full text-[10px] text-blue-600 hover:underline text-left opacity-0 group-hover:opacity-100 transition-opacity"
+                        className="mt-1.5 w-full text-[10px] text-primary-600 hover:underline text-left opacity-0 group-hover:opacity-100 transition-opacity"
                       >
                         Abrir caso →
                       </button>

@@ -39,6 +39,10 @@ class Document(Base):
     client_id = Column(String(36), ForeignKey("clients.id"), nullable=True, index=True)
     uploaded_by = Column(String(36), nullable=True)
 
+    # Google Drive (quando o doc vive no Drive, não no volume local)
+    drive_file_id = Column(String(128), nullable=True, index=True)
+    drive_link    = Column(String(500), nullable=True)
+
     created_at = Column(DateTime(timezone=True), server_default=func.now())
     updated_at = Column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now())
     deleted_at = Column(DateTime(timezone=True), nullable=True)

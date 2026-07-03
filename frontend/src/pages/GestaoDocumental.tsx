@@ -2,6 +2,7 @@ import { useState } from "react";
 import { FolderOpen, Lock } from "lucide-react";
 import Documentos from "./Documentos";
 import DataRoom from "./DataRoom";
+import { PageHeader } from "../components/UI";
 
 const TABS = [
   { k: "docs", label: "Documentos", icon: FolderOpen },
@@ -12,6 +13,10 @@ export default function GestaoDocumental() {
   const [tab, setTab] = useState<"docs" | "dataroom">("docs");
   return (
     <div>
+      <PageHeader
+        title="Gestão Documental"
+        subtitle="Documentos e Data Room do escritório"
+      />
       <div className="flex gap-1 bg-slate-100 p-1 rounded-xl w-fit mb-5">
         {TABS.map(({ k, label, icon: Icon }) => (
           <button

@@ -36,15 +36,15 @@ import {
 import NoticiasCard from "../components/NoticiasCard";
 
 const areaTone: Record<string, string> = {
-  civil: "bg-blue-600",
-  trabalhista: "bg-violet-600",
+  civil: "bg-primary-600",
+  trabalhista: "bg-ai-600",
   consumidor: "bg-cyan-600",
   familia: "bg-pink-600",
-  ambiental: "bg-emerald-600",
-  criminal: "bg-red-600",
-  previdenciario: "bg-amber-600",
-  empresarial: "bg-blue-700",
-  tributario: "bg-sky-700",
+  ambiental: "bg-success-600",
+  criminal: "bg-danger-600",
+  previdenciario: "bg-warn-600",
+  empresarial: "bg-primary-700",
+  tributario: "bg-info-700",
 };
 
 function initials(value?: string) {
@@ -129,7 +129,7 @@ export default function Dashboard() {
 
   return (
     <div className="space-y-6">
-      <div className="rounded-2xl border border-blue-100 bg-white p-5 shadow-sm md:p-6">
+      <div className="rounded-2xl border border-primary-100 bg-white p-5 shadow-sm md:p-6">
         <div className="flex flex-col gap-5 lg:flex-row lg:items-center lg:justify-between">
           <PageHeader
             eyebrow="Painel executivo"
@@ -212,7 +212,7 @@ export default function Dashboard() {
           actions={
             <Link
               to="/atividades"
-              className="text-sm font-medium text-blue-600 hover:text-blue-700"
+              className="text-sm font-medium text-primary-600 hover:text-primary-700"
             >
               Abrir central
             </Link>
@@ -283,44 +283,44 @@ export default function Dashboard() {
         <SectionCard
           title="Alertas inteligentes"
           subtitle="Sinais rapidos para decisao."
-          actions={<Sparkles className="h-4 w-4 text-violet-600" />}
+          actions={<Sparkles className="h-4 w-4 text-ai-600" />}
         >
           <div className="space-y-3">
-            <div className="rounded-xl border border-red-100 bg-red-50 p-4">
+            <div className="rounded-xl border border-danger-100 bg-danger-50 p-4">
               <div className="flex items-start gap-3">
-                <AlertTriangle className="mt-0.5 h-4 w-4 text-red-600" />
+                <AlertTriangle className="mt-0.5 h-4 w-4 text-danger-600" />
                 <div>
-                  <div className="text-sm font-semibold text-red-800">
+                  <div className="text-sm font-semibold text-danger-800">
                     {prazosCriticos} prazo(s) critico(s)
                   </div>
-                  <p className="mt-1 text-xs text-red-700">
+                  <p className="mt-1 text-xs text-danger-700">
                     Priorize prazos com vencimento em ate 3 dias.
                   </p>
                 </div>
               </div>
             </div>
-            <div className="rounded-xl border border-violet-100 bg-violet-50 p-4">
+            <div className="rounded-xl border border-ai-100 bg-ai-50 p-4">
               <div className="flex items-start gap-3">
-                <Bot className="mt-0.5 h-4 w-4 text-violet-700" />
+                <Bot className="mt-0.5 h-4 w-4 text-ai-700" />
                 <div>
-                  <div className="text-sm font-semibold text-violet-900">
+                  <div className="text-sm font-semibold text-ai-900">
                     IA juridica disponivel
                   </div>
-                  <p className="mt-1 text-xs text-violet-800">
+                  <p className="mt-1 text-xs text-ai-800">
                     Rascunhos, analise de risco e apoio a producao sempre exigem
                     revisao humana.
                   </p>
                 </div>
               </div>
             </div>
-            <div className="rounded-xl border border-emerald-100 bg-emerald-50 p-4">
+            <div className="rounded-xl border border-success-100 bg-success-50 p-4">
               <div className="flex items-start gap-3">
-                <DollarSign className="mt-0.5 h-4 w-4 text-emerald-700" />
+                <DollarSign className="mt-0.5 h-4 w-4 text-success-700" />
                 <div>
-                  <div className="text-sm font-semibold text-emerald-900">
+                  <div className="text-sm font-semibold text-success-900">
                     Auditoria de Honorários
                   </div>
-                  <p className="mt-1 text-xs text-emerald-800">
+                  <p className="mt-1 text-xs text-success-800">
                     Novos ativos recuperáveis identificados. Verifique o módulo financeiro.
                   </p>
                 </div>
@@ -328,7 +328,7 @@ export default function Dashboard() {
             </div>
             <Link
               to="/financeiro"
-              className="flex items-center justify-between rounded-xl border border-slate-200 bg-white p-4 text-sm font-medium text-slate-700 hover:border-blue-200 hover:bg-blue-50"
+              className="flex items-center justify-between rounded-xl border border-slate-200 bg-white p-4 text-sm font-medium text-slate-700 hover:border-primary-200 hover:bg-primary-50"
             >
               Ver financeiro consolidado
               <ArrowRight className="h-4 w-4" />
@@ -344,7 +344,7 @@ export default function Dashboard() {
           actions={
             <Link
               to="/casos"
-              className="text-sm font-medium text-blue-600 hover:text-blue-700"
+              className="text-sm font-medium text-primary-600 hover:text-primary-700"
             >
               Ver casos
             </Link>
@@ -358,7 +358,7 @@ export default function Dashboard() {
                 <Link
                   key={caso.id}
                   to={`/casos/${caso.id}`}
-                  className="flex items-center gap-3 rounded-xl border border-slate-200 bg-white p-3 hover:border-blue-200 hover:bg-blue-50/40"
+                  className="flex items-center gap-3 rounded-xl border border-slate-200 bg-white p-3 hover:border-primary-200 hover:bg-primary-50/40"
                 >
                   <div
                     className={`flex h-10 w-10 shrink-0 items-center justify-center rounded-xl text-xs font-semibold text-white ${areaTone[caso.area] || "bg-slate-700"}`}
@@ -387,7 +387,7 @@ export default function Dashboard() {
           actions={
             <Link
               to="/inteligencia"
-              className="text-sm font-medium text-blue-600 hover:text-blue-700"
+              className="text-sm font-medium text-primary-600 hover:text-primary-700"
             >
               Inteligencia
             </Link>
@@ -395,21 +395,21 @@ export default function Dashboard() {
         >
           <div className="mb-4 grid grid-cols-3 gap-3">
             <div className="rounded-xl bg-slate-50 p-3 text-center">
-              <BarChart3 className="mx-auto h-4 w-4 text-blue-600" />
+              <BarChart3 className="mx-auto h-4 w-4 text-primary-600" />
               <div className="mt-2 text-lg font-semibold text-slate-950">
                 {taxaExito != null ? `${taxaExito}%` : "—"}
               </div>
               <div className="text-[11px] text-slate-500">Exito</div>
             </div>
             <div className="rounded-xl bg-slate-50 p-3 text-center">
-              <Scale className="mx-auto h-4 w-4 text-violet-600" />
+              <Scale className="mx-auto h-4 w-4 text-ai-600" />
               <div className="mt-2 text-lg font-semibold text-slate-950">
                 {jurimetria?.total_casos ?? "—"}
               </div>
               <div className="text-[11px] text-slate-500">Casos</div>
             </div>
             <div className="rounded-xl bg-slate-50 p-3 text-center">
-              <Gavel className="mx-auto h-4 w-4 text-emerald-600" />
+              <Gavel className="mx-auto h-4 w-4 text-success-600" />
               <div className="mt-2 text-lg font-semibold text-slate-950">
                 {movimentos.length}
               </div>
@@ -447,7 +447,7 @@ export default function Dashboard() {
                 to: "/pecas",
                 label: "Producao juridica",
                 icon: FileText,
-                tone: "text-blue-700 bg-blue-50 border-blue-100",
+                tone: "text-primary-700 bg-primary-50 border-primary-100",
               },
               {
                 to: "/documentos",
@@ -459,13 +459,13 @@ export default function Dashboard() {
                 to: "/inteligencia",
                 label: "IA do escritorio",
                 icon: Sparkles,
-                tone: "text-violet-700 bg-violet-50 border-violet-100",
+                tone: "text-ai-700 bg-ai-50 border-ai-100",
               },
               {
                 to: "/ramos/administrativo",
                 label: "Licitacoes",
                 icon: Scale,
-                tone: "text-amber-700 bg-amber-50 border-amber-100",
+                tone: "text-warn-700 bg-warn-50 border-warn-100",
               },
             ].map(({ to, label, icon: Icon, tone }) => (
               <Link

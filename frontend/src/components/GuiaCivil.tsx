@@ -115,7 +115,7 @@ export default function GuiaCivil() {
 
   return (
     <div className="space-y-3 p-4">
-      <h2 className="text-xl font-bold text-blue-700 flex items-center gap-2">
+      <h2 className="text-xl font-bold text-primary-700 flex items-center gap-2">
         <BookOpen size={20} /> Guia Operacional — Direito Civil
       </h2>
 

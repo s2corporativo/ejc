@@ -1,7 +1,7 @@
 # ── app/schemas/case.py ──────────────────────────────────────────────────────
 from __future__ import annotations
-from pydantic import BaseModel
-from typing import Optional
+from pydantic import BaseModel, Field
+from typing import Optional, List
 from datetime import datetime, date
 from decimal import Decimal
 
@@ -110,3 +110,23 @@ class CaseDetail(CaseResponse):
 class MovimentoCreate(BaseModel):
     tipo: str
     descricao: str
+
+
+# ── R2 — Arquivamento e exclusão segura ──────────────────────────────────────
+class CaseDeleteRequest(BaseModel):
+    """Body do DELETE /cases/{id}: motivo obrigatório (gravado no audit log)."""
+    motivo: str = Field(min_length=5, max_length=500,
+                        description="Motivo da exclusão (mínimo 5 caracteres)")
+
+
+class CasePendencia(BaseModel):
+    """Pendência que bloqueia a exclusão do caso (retornada no 422)."""
+    tipo: str        # prazo | honorario | peca
+    id: str
+    descricao: str
+
+
+class CasePendenciasResponse(BaseModel):
+    """Corpo do 422 quando a exclusão é bloqueada — usar arquivamento."""
+    mensagem: str
+    pendencias: List[CasePendencia]

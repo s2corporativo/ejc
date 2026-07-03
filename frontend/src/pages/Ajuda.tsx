@@ -780,7 +780,7 @@ export default function Ajuda() {
                   {sel.title}
                 </h1>
                 {sel.badge && (
-                  <span className="text-[10px] font-bold bg-emerald-100 text-emerald-700 px-2 py-0.5 rounded-full">
+                  <span className="text-[10px] font-bold bg-success-100 text-success-700 px-2 py-0.5 rounded-full">
                     {sel.badge}
                   </span>
                 )}
@@ -804,12 +804,12 @@ export default function Ajuda() {
             ))}
           </ol>
           {sel.tip && (
-            <div className="mt-5 flex items-start gap-2 bg-amber-50 border border-amber-200 rounded-xl px-4 py-3">
+            <div className="mt-5 flex items-start gap-2 bg-warn-50 border border-warn-200 rounded-xl px-4 py-3">
               <Lightbulb
                 size={16}
-                className="text-amber-600 flex-shrink-0 mt-0.5"
+                className="text-warn-600 flex-shrink-0 mt-0.5"
               />
-              <p className="text-sm text-amber-800">{sel.tip}</p>
+              <p className="text-sm text-warn-800">{sel.tip}</p>
             </div>
           )}
         </div>
@@ -830,7 +830,7 @@ export default function Ajuda() {
       <div className="relative max-w-md mb-6">
         <Search size={16} className="absolute left-3 top-2.5 text-slate-400" />
         <input
-          className="w-full pl-9 pr-3 py-2 border border-slate-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-300"
+          className="w-full pl-9 pr-3 py-2 border border-slate-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-primary-300"
           placeholder="Buscar ferramenta ou assunto..."
           value={q}
           onChange={(e) => setQ(e.target.value)}
@@ -852,12 +852,12 @@ export default function Ajuda() {
                 <button
                   key={m.id}
                   onClick={() => setSel(m)}
-                  className="text-left bg-white rounded-xl border border-slate-200 p-4 hover:shadow-md hover:border-blue-200 transition-all"
+                  className="text-left bg-white rounded-xl border border-slate-200 p-4 hover:shadow-md hover:border-primary-200 transition-all"
                 >
                   <div className="flex items-start justify-between">
                     <span className="text-2xl">{m.icon}</span>
                     {m.badge && (
-                      <span className="text-[10px] font-bold bg-emerald-100 text-emerald-700 px-2 py-0.5 rounded-full">
+                      <span className="text-[10px] font-bold bg-success-100 text-success-700 px-2 py-0.5 rounded-full">
                         {m.badge}
                       </span>
                     )}
@@ -868,7 +868,7 @@ export default function Ajuda() {
                   <p className="text-xs text-slate-500 mt-0.5 line-clamp-2">
                     {m.sub}
                   </p>
-                  <span className="inline-flex items-center gap-1 text-xs text-blue-600 mt-2 font-medium">
+                  <span className="inline-flex items-center gap-1 text-xs text-primary-600 mt-2 font-medium">
                     Ver tutorial <ChevronRight size={13} />
                   </span>
                 </button>

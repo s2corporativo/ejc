@@ -1,4 +1,5 @@
 import { useNavigate } from "react-router-dom";
+import { PageHeader } from "../components/UI";
 import {
   Building2,
   Scale,
@@ -23,21 +24,21 @@ const RAMOS = [
     slug: "empresarial",
     label: "Direito Empresarial",
     icon: Building2,
-    color: "bg-blue-50 text-blue-700 border-blue-200",
+    color: "bg-primary-50 text-primary-700 border-primary-200",
     desc: "Contratos, fusões, M&A, recuperação judicial",
   },
   {
     slug: "civel",
     label: "Direito Cível",
     icon: Scale,
-    color: "bg-violet-50 text-violet-700 border-violet-200",
+    color: "bg-ai-50 text-ai-700 border-ai-200",
     desc: "Contratos, danos, família, sucessões",
   },
   {
     slug: "penal",
     label: "Direito Penal",
     icon: Lock,
-    color: "bg-red-50 text-red-700 border-red-200",
+    color: "bg-danger-50 text-danger-700 border-danger-200",
     desc: "Defesa criminal, inquéritos, habeas corpus",
   },
   {
@@ -58,7 +59,7 @@ const RAMOS = [
     slug: "bancario",
     label: "Direito Bancário",
     icon: Banknote,
-    color: "bg-emerald-50 text-emerald-700 border-emerald-200",
+    color: "bg-success-50 text-success-700 border-success-200",
     desc: "Contratos bancários, superendividamento",
   },
   {
@@ -128,7 +129,7 @@ const RAMOS = [
     slug: "transito",
     label: "Direito de Tr\u00e2nsito",
     icon: Car,
-    color: "bg-blue-50 text-blue-700 border-blue-200",
+    color: "bg-primary-50 text-primary-700 border-primary-200",
     desc: "Multas, recursos JARI/CETRAN, CNH, pontos",
   },
 ];
@@ -137,13 +138,10 @@ export default function RamosHub() {
   const navigate = useNavigate();
   return (
     <div className="p-6 max-w-6xl mx-auto">
-      <div className="mb-6">
-        <h1 className="text-2xl font-bold text-slate-800">Ramos do Direito</h1>
-        <p className="text-slate-500 mt-1">
-          Selecione uma área para acessar ferramentas, cálculos e casos
-          especializados
-        </p>
-      </div>
+      <PageHeader
+        title="Ramos do Direito"
+        subtitle="Selecione uma área para acessar ferramentas, cálculos e casos especializados"
+      />
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4">
         {RAMOS.map((r) => {
           const Icon = r.icon;

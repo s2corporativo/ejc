@@ -6,6 +6,7 @@
 # Jobs:
 #  07:00 — Morning Brief WhatsApp (consolidado do dia)
 #  07:15 — Alertas de prazos (7d/3d/1d)
+#  07:30 — SLA de etapas BPM (workflow) — vencidos + vésperas
 #  08:00 — Honorários vencidos
 #  08:30 — Defesas ambientais ≤ 5 dias (crítico)
 #  09:00 seg — Procurações vencendo em 30 dias
@@ -262,6 +263,154 @@ async def _alertar_prescricao():
         logger.error(f"[Scheduler] alertar_prescricao: {e}")
 
 
+async def _verificar_sla_workflows():
+    """07h30 — SLA das etapas de workflow BPM, em DIAS ÚTEIS (R9/Seção 11).
+
+    Para cada CaseWorkflow em progresso (status='ativo'):
+      vencimento = data de entrada na etapa atual (WorkflowHistorico aberto)
+                   + sla_dias_uteis, via deadline_calculator.prazo_dias_uteis
+                   (respeita feriados e suspensões carregados do banco).
+      - VENCIDO (hoje > vencimento)  → status='atrasado' + histórico
+        '[sla_vencido]' + notificação interna (e e-mail, se habilitado) ao
+        responsável do caso + audit log. Idempotente: o job só varre
+        status='ativo', então o workflow marcado não é re-notificado.
+      - VÉSPERA (1 dia útil antes), se acao_automatica da etapa for
+        'alerta_prazo' ou 'notificar' → notificação antecipada. Idempotente
+        via marcador '[alerta_sla]' no WorkflowHistorico (checado antes de
+        repetir; sem coluna nova). Marcadores têm concluido_em preenchido
+        para não colidir com a query de "etapa aberta" do /avancar.
+    """
+    from datetime import datetime, timezone as _tz
+    from app.core.database import AsyncSessionLocal
+    from app.models.case import Case
+    from app.models.workflow import (
+        CaseWorkflow, WorkflowEtapa, WorkflowHistorico, WorkflowStatus,
+    )
+    from app.modules.auditoria.middleware import registrar_acao
+    from app.services.deadline_calculator import dia_util_anterior, prazo_dias_uteis
+    from app.services.notification_service import criar_notificacao_interna, enviar_email
+
+    async def _notificar_responsavel(db, resp_id, case_id, titulo, msg):
+        if not resp_id:
+            return
+        await criar_notificacao_interna(
+            db, resp_id, titulo, msg, tipo="workflow", link=f"/casos/{case_id}",
+        )
+        email = (await db.execute(
+            text("SELECT email FROM users WHERE id=:i AND is_active=true"),
+            {"i": resp_id},
+        )).scalar()
+        if email:
+            await enviar_email(email, f"[EJC] {titulo}", f"<p>{msg}</p>")
+
+    try:
+        async with AsyncSessionLocal() as db:
+            hoje = date.today()
+            agora = datetime.now(_tz.utc)
+            cws = (await db.execute(select(CaseWorkflow).where(
+                CaseWorkflow.status == WorkflowStatus.ativo,
+                CaseWorkflow.etapa_atual_id.isnot(None),
+            ))).scalars().all()
+
+            vencidos = alertas = 0
+            for cw in cws:
+                etapa = (await db.execute(select(WorkflowEtapa).where(
+                    WorkflowEtapa.id == cw.etapa_atual_id
+                ))).scalar_one_or_none()
+                if not etapa or not etapa.sla_dias_uteis:
+                    continue
+
+                # Entrada na etapa atual = histórico ABERTO mais recente
+                entrada = (await db.execute(
+                    select(WorkflowHistorico).where(
+                        WorkflowHistorico.case_workflow_id == cw.id,
+                        WorkflowHistorico.etapa_id == etapa.id,
+                        WorkflowHistorico.concluido_em.is_(None),
+                    ).order_by(WorkflowHistorico.iniciado_em.desc())
+                )).scalars().first()
+                inicio = entrada.iniciado_em if entrada else cw.iniciado_em
+                if inicio is None:
+                    continue
+                vencimento = prazo_dias_uteis(inicio.date(), etapa.sla_dias_uteis)
+
+                case = (await db.execute(select(Case).where(
+                    Case.id == cw.case_id
+                ))).scalar_one_or_none()
+                resp_id = case.advogado_responsavel_id if case else None
+                ref_caso = (getattr(case, "numero_interno", None)
+                            or getattr(case, "titulo", None) or cw.case_id)
+
+                if hoje > vencimento:
+                    # ── SLA estourado ────────────────────────────────────
+                    cw.status = WorkflowStatus.atrasado
+                    db.add(WorkflowHistorico(
+                        id=str(uuid4()), case_workflow_id=cw.id,
+                        etapa_id=etapa.id, responsavel_id=resp_id,
+                        concluido_em=agora, sla_respeitado=False,
+                        observacao=(
+                            f"[sla_vencido] Etapa '{etapa.nome}' venceu em "
+                            f"{vencimento.strftime('%d/%m/%Y')} "
+                            f"(SLA de {etapa.sla_dias_uteis} dia(s) útil(eis))."
+                        ),
+                    ))
+                    await db.commit()
+                    await _notificar_responsavel(
+                        db, resp_id, cw.case_id,
+                        "⚠️ Etapa de workflow ATRASADA",
+                        f"Caso {ref_caso}: a etapa '{etapa.nome}' venceu em "
+                        f"{vencimento.strftime('%d/%m/%Y')} "
+                        f"(SLA {etapa.sla_dias_uteis} dia(s) útil(eis)).",
+                    )
+                    await registrar_acao(
+                        db, None, "sla_vencido", "workflow", cw.id,
+                        f"Workflow do caso {cw.case_id} marcado 'atrasado' — "
+                        f"etapa '{etapa.nome}' venceu "
+                        f"{vencimento.strftime('%d/%m/%Y')}",
+                    )
+                    vencidos += 1
+
+                elif (etapa.acao_automatica or "") in ("alerta_prazo", "notificar"):
+                    # ── Véspera: 1 dia útil antes do vencimento ──────────
+                    alerta_em = dia_util_anterior(vencimento - timedelta(days=1))
+                    if not (alerta_em <= hoje <= vencimento):
+                        continue
+                    ja_alertado = (await db.execute(
+                        select(WorkflowHistorico.id).where(
+                            WorkflowHistorico.case_workflow_id == cw.id,
+                            WorkflowHistorico.etapa_id == etapa.id,
+                            WorkflowHistorico.observacao.like("[alerta_sla]%"),
+                            WorkflowHistorico.iniciado_em >= inicio,
+                        ).limit(1)
+                    )).scalar_one_or_none()
+                    if ja_alertado:
+                        continue
+                    db.add(WorkflowHistorico(
+                        id=str(uuid4()), case_workflow_id=cw.id,
+                        etapa_id=etapa.id, responsavel_id=resp_id,
+                        concluido_em=agora,
+                        observacao=(
+                            f"[alerta_sla] Véspera do SLA da etapa "
+                            f"'{etapa.nome}' — vence em "
+                            f"{vencimento.strftime('%d/%m/%Y')}."
+                        ),
+                    ))
+                    await db.commit()
+                    await _notificar_responsavel(
+                        db, resp_id, cw.case_id,
+                        "⏰ Etapa de workflow vence amanhã (dia útil)",
+                        f"Caso {ref_caso}: a etapa '{etapa.nome}' vence em "
+                        f"{vencimento.strftime('%d/%m/%Y')}.",
+                    )
+                    alertas += 1
+
+            logger.info(
+                f"[Workflow SLA] {len(cws)} workflow(s) ativos verificados — "
+                f"{vencidos} atrasado(s), {alertas} alerta(s) de véspera"
+            )
+    except Exception as e:
+        logger.error(f"[Scheduler] workflow_sla: {e}", exc_info=True)
+
+
 async def _alertar_honorarios():
     """Marca como 'atrasado' honorários vencidos."""
     from app.core.database import AsyncSessionLocal
@@ -418,6 +567,7 @@ def start_scheduler():
 
     s.add_job(_morning_brief,       CronTrigger(hour=7,  minute=0),  id="brief",       replace_existing=True)
     s.add_job(_alertar_prazos,      CronTrigger(hour=7,  minute=15), id="prazos",      replace_existing=True)
+    s.add_job(_verificar_sla_workflows, CronTrigger(hour=7, minute=30), id="workflow_sla", replace_existing=True)
     s.add_job(_alertar_honorarios,  CronTrigger(hour=8,  minute=0),  id="honorarios",  replace_existing=True)
     s.add_job(_alertar_ambiental,   CronTrigger(hour=8,  minute=30), id="ambiental",   replace_existing=True)
     s.add_job(_alertar_procuracoes, CronTrigger(day_of_week="mon", hour=9), id="procuracoes", replace_existing=True)
@@ -446,7 +596,7 @@ def start_scheduler():
     s.add_job(_purgar_logs_ia,        CronTrigger(day=1, hour=3, minute=30), id="retencao_ia", replace_existing=True)
 
     s.start()
-    logger.info("[Scheduler] Iniciado — 20 jobs (+ purga LGPD clientes inativos)")
+    logger.info("[Scheduler] Iniciado — 21 jobs (+ SLA workflows BPM + purga LGPD clientes inativos)")
 
 
 async def _backup_banco():

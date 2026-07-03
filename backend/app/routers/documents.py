@@ -1,6 +1,7 @@
 # ── app/routers/documents.py ─────────────────────────────────────────────────
 # GED: upload/download com controle de confidencialidade (cofre).
 # Acesso a docs restritos: audit log obrigatório (LGPD art. 37).
+import json
 import os
 from datetime import datetime, timezone
 from uuid import uuid4
@@ -10,6 +11,7 @@ import aiofiles
 import magic  # python-magic — validação por magic bytes (server-side)
 from fastapi import BackgroundTasks, APIRouter, Depends, HTTPException, Query, UploadFile, File, Form
 from fastapi.responses import FileResponse
+from pydantic import BaseModel
 from sqlalchemy import select, func as sqlfunc
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -19,16 +21,22 @@ from app.core.security import get_current_user, ROLE_LEVEL
 from app.models.user import User
 from app.models.document import Document
 from app.models.case import Case
+from app.models.redesign import DocumentTypeMaster
 from app.models.audit_log import criar_audit_log
 from app.core.ownership import verificar_acesso_caso, is_gestao
 from app.schemas.common import MsgResponse
 import asyncio
-from app.services.ocr_service import extrair_texto
+from app.services.ocr_service import extrair_texto, extrair_xml
 
 settings = get_settings()
 router = APIRouter(prefix="/documents", tags=["Documentos / GED"])
 
-EXTENSOES_PERMITIDAS = {".pdf", ".docx", ".doc", ".jpg", ".jpeg", ".png", ".xlsx", ".xls", ".txt"}
+EXTENSOES_PERMITIDAS = {".pdf", ".docx", ".doc", ".jpg", ".jpeg", ".png", ".xlsx", ".xls", ".txt", ".xml"}
+
+# Tipos legados do campo Document.tipo — continuam aceitos no upload mesmo que
+# não existam no master (compatibilidade com o frontend atual). Os que existem
+# no master (procuracao/contrato/peticao/outro) são validados por lá também.
+TIPOS_LEGADOS = {"procuracao", "contrato", "decisao", "peticao", "prova", "outro"}
 
 # Magic bytes esperados por extensão. O valor é o conjunto de MIME types
 # aceitáveis que `magic.from_buffer` pode retornar para aquele formato.
@@ -44,6 +52,8 @@ MIME_POR_EXTENSAO: dict[str, set[str]] = {
     ".jpg":  {"image/jpeg"},
     ".jpeg": {"image/jpeg"},
     ".png":  {"image/png"},
+    # NF-e/XML: libmagic pode reportar application/xml, text/xml ou text/plain
+    ".xml":  {"application/xml", "text/xml", "text/plain"},
 }
 
 
@@ -121,6 +131,118 @@ async def _analisar_doc_bg(case_id: str, ocr_text: str, doc_id: str, user_id: st
         import logging as _log
         _log.getLogger(__name__).warning("Hook analise doc falhou: %s", exc)
 
+async def _tipos_master_ativos(db: AsyncSession) -> list[DocumentTypeMaster]:
+    """Tipos ativos do master (document_types_master), ordenados para o seletor."""
+    rows = (await db.execute(
+        select(DocumentTypeMaster)
+        .where(DocumentTypeMaster.ativo.is_(True))
+        .order_by(DocumentTypeMaster.ordem, DocumentTypeMaster.nome)
+    )).scalars().all()
+    return list(rows)
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# TIPOS DE DOCUMENTO (master) — R3
+# IMPORTANTE (ordem de rotas): /tipos e /sugerir-tipo são declarados ANTES de
+# qualquer rota com path param /{doc_id}, senão o FastAPI capturaria "tipos"
+# como doc_id. Não mover para baixo.
+# ─────────────────────────────────────────────────────────────────────────────
+@router.get("/tipos")
+async def listar_tipos(
+    db: AsyncSession = Depends(get_db),
+    cu: User = Depends(get_current_user),
+):
+    """Lista os tipos de documento ativos do master para o seletor do frontend."""
+    tipos = await _tipos_master_ativos(db)
+    return {
+        "data": [
+            {
+                "tipo_key": t.tipo_key,
+                "nome": t.nome,
+                "categoria": t.categoria,
+                "descricao": t.descricao,
+                "campos_extracao": t.campos_extracao,
+                "extensoes_aceitas": t.extensoes_aceitas,
+            }
+            for t in tipos
+        ],
+        "total": len(tipos),
+    }
+
+
+class SugerirTipoRequest(BaseModel):
+    doc_id: Optional[str] = None
+    texto: Optional[str] = None
+    # Formato alternativo usado pelo ImportarDocumento.tsx: classifica a partir
+    # do JSON da análise (extração estruturada) + nome do arquivo.
+    nome_arquivo: Optional[str] = None
+    analise: Optional[dict] = None
+
+
+@router.post("/sugerir-tipo")
+async def sugerir_tipo_documento(
+    req: SugerirTipoRequest,
+    db: AsyncSession = Depends(get_db),
+    cu: User = Depends(get_current_user),
+):
+    """
+    Classifica o documento em UM tipo_key do master via IA (SUGESTÃO).
+
+    NUNCA grava o tipo no Document — confirmação humana obrigatória (HITL).
+    Pipeline LGPD: sanitizar_pii antes do envio + AILog (como em ai_service).
+    """
+    if not req.doc_id and not (req.texto and req.texto.strip()):
+        raise HTTPException(status_code=422, detail="Informe doc_id ou texto")
+
+    texto = req.texto
+    case_id = None
+    if req.doc_id:
+        d = (await db.execute(
+            select(Document).where(
+                Document.id == req.doc_id, Document.deleted_at.is_(None)
+            )
+        )).scalar_one_or_none()
+        if not d:
+            raise HTTPException(status_code=404, detail="Documento não encontrado")
+        # Mesmos gates do download (IDOR + cofre)
+        if d.case_id:
+            await verificar_acesso_caso(db, cu, d.case_id)
+        if not _pode_acessar_confidencial(cu, d.confidencialidade.value):
+            raise HTTPException(status_code=403, detail="Documento restrito — acesso negado")
+        case_id = d.case_id
+        texto = texto or d.ocr_text
+
+    if not texto or len(texto.strip()) < 40:
+        raise HTTPException(
+            status_code=422,
+            detail="Sem texto suficiente para classificar (OCR vazio ou muito curto).",
+        )
+
+    tipos = await _tipos_master_ativos(db)
+    if not tipos:
+        raise HTTPException(
+            status_code=503,
+            detail="Catálogo de tipos (document_types_master) não populado — rode o seed.",
+        )
+
+    from app.services.documento_service import sugerir_tipo
+    try:
+        return await sugerir_tipo(
+            db, cu.id, texto,
+            tipos=[{"tipo_key": t.tipo_key, "nome": t.nome, "descricao": t.descricao}
+                   for t in tipos],
+            case_id=case_id, doc_id=req.doc_id,
+        )
+    except HTTPException:
+        raise
+    except Exception as e:
+        import logging as _logging
+        _logging.getLogger(__name__).error(
+            "sugerir-tipo falhou (doc %s): %s", req.doc_id, e, exc_info=True
+        )
+        raise HTTPException(status_code=503, detail="Serviço de IA indisponível no momento")
+
+
 @router.post("/upload", status_code=201)
 async def upload(
     background_tasks: BackgroundTasks,
@@ -146,6 +268,23 @@ async def upload(
     if ext not in EXTENSOES_PERMITIDAS:
         raise HTTPException(status_code=422, detail=f"Extensão não permitida: {ext}")
 
+    # Validação do tipo contra o master (R3), mantendo os valores legados
+    # aceitos (decisao/prova não existem no master, mas o frontend atual envia).
+    if tipo:
+        tipos_validos = set(TIPOS_LEGADOS)
+        try:
+            tipos_validos |= {t.tipo_key for t in await _tipos_master_ativos(db)}
+        except Exception as e:
+            import logging as _logging
+            _logging.getLogger(__name__).warning(
+                "document_types_master indisponível na validação de tipo: %s", e
+            )
+        if tipo not in tipos_validos:
+            raise HTTPException(
+                status_code=422,
+                detail=f"Tipo de documento inválido: {tipo}. Use GET /documents/tipos.",
+            )
+
     conteudo = await file.read()
     if len(conteudo) > settings.MAX_UPLOAD_MB * 1024 * 1024:
         raise HTTPException(
@@ -168,11 +307,20 @@ async def upload(
     async with aiofiles.open(full_path, "wb") as f:
         await f.write(conteudo)
 
-    # OCR em thread (não bloqueia o event loop); falha não impede upload
+    # OCR em thread (não bloqueia o event loop); falha não impede upload.
+    # XML (NF-e): parser seguro dedicado, que devolve também campos fiscais
+    # estruturados (chave de acesso, CNPJ emitente, valor total, NCMs).
     import asyncio as _asyncio
     ocr_text = None
+    nfe_info = None
     try:
-        ocr_text = await _asyncio.to_thread(extrair_texto, full_path, mime_real)
+        if ext == ".xml":
+            res_xml = await _asyncio.to_thread(extrair_xml, full_path)
+            if res_xml:
+                ocr_text = res_xml.get("texto")
+                nfe_info = res_xml.get("nfe")
+        else:
+            ocr_text = await _asyncio.to_thread(extrair_texto, full_path, mime_real)
     except Exception as e:
         import logging as _logging
         _logging.getLogger(__name__).warning(
@@ -195,7 +343,10 @@ async def upload(
     # Hook: análise estratégica automática quando há OCR e case_id
     if case_id and ocr_text:
         background_tasks.add_task(_analisar_doc_bg, case_id, ocr_text, doc_id, cu.id)
-    return {"id": doc_id, "detail": "Documento enviado"}
+    resposta: dict = {"id": doc_id, "detail": "Documento enviado"}
+    if nfe_info:
+        resposta["nfe"] = nfe_info  # campos fiscais estruturados (NF-e/XML)
+    return resposta
 
 
 @router.get("/")
@@ -353,19 +504,29 @@ async def upload_para_drive(
     from sqlalchemy import text as sql_text
     import uuid
     doc_id = str(uuid.uuid4())
+    # Colunas alinhadas ao schema real de `documents` (titulo/filename/filepath/
+    # size_bytes/uploaded_by são NOT NULL ou canônicas; drive_* vieram na migr. 059).
+    # filepath guarda um marcador drive:// (o arquivo vive no Drive, não no volume).
+    nome_arq = file.filename or "documento"
     await db.execute(sql_text("""
-        INSERT INTO documents (id, case_id, nome, tipo, drive_file_id, drive_link, tamanho, created_by, created_at)
-        VALUES (:id, :case_id, :nome, :tipo, :drive_file_id, :drive_link, :tamanho, :created_by, NOW())
+        INSERT INTO documents
+            (id, case_id, titulo, filename, filepath, mimetype, size_bytes,
+             drive_file_id, drive_link, uploaded_by, created_at)
+        VALUES
+            (:id, :case_id, :titulo, :filename, :filepath, :mimetype, :size_bytes,
+             :drive_file_id, :drive_link, :uploaded_by, NOW())
         ON CONFLICT DO NOTHING
     """), {
         "id": doc_id,
         "case_id": case_id,
-        "nome": file.filename or "documento",
-        "tipo": mime,
+        "titulo": nome_arq,
+        "filename": nome_arq,
+        "filepath": f"drive://{result['id']}",
+        "mimetype": mime,
+        "size_bytes": len(content),
         "drive_file_id": result["id"],
         "drive_link": result.get("webViewLink"),
-        "tamanho": len(content),
-        "created_by": current_user.id,
+        "uploaded_by": current_user.id,
     })
     await db.commit()
 
@@ -384,14 +545,14 @@ async def _gate_drive_doc(db: AsyncSession, cu: User, file_id: str):
     (verificar_acesso_caso) ou, p/ doc sem caso, ser gestão ou o criador."""
     from sqlalchemy import text as sql_text
     row = (await db.execute(sql_text(
-        "SELECT id, case_id, created_by FROM documents "
+        "SELECT id, case_id, uploaded_by FROM documents "
         "WHERE drive_file_id = :fid AND deleted_at IS NULL LIMIT 1"
     ), {"fid": file_id})).mappings().first()
     if not row:
         raise HTTPException(404, "Documento não encontrado")
     if row.get("case_id"):
         await verificar_acesso_caso(db, cu, row["case_id"])
-    elif not (is_gestao(cu) or row.get("created_by") == cu.id):
+    elif not (is_gestao(cu) or row.get("uploaded_by") == cu.id):
         raise HTTPException(403, "Sem permissão para este documento")
     return row
 
@@ -449,7 +610,7 @@ async def deletar_documento_drive(
     except Exception:
         pass  # já foi removido do Drive
     await db.execute(
-        sql_text("DELETE FROM documents WHERE drive_file_id = :fid AND created_by = :uid"),
+        sql_text("DELETE FROM documents WHERE drive_file_id = :fid AND uploaded_by = :uid"),
         {"fid": file_id, "uid": current_user.id},
     )
     await db.commit()

@@ -15,6 +15,8 @@ import api from "../lib/api";
 import ExplicarMov from "../components/ExplicarMov";
 import MotorTeses from "../components/MotorTeses";
 import AnaliseEstrategica from "../components/AnaliseEstrategica";
+import IntakeAnalise from "../components/IntakeAnalise";
+import ConversaoChecklist from "../components/ConversaoChecklist";
 import type { Case } from "../types";
 import {
   PageHeader,
@@ -23,6 +25,10 @@ import {
   fmtDate,
   fmtMoney,
   Modal,
+  ConfirmModal,
+  Alert,
+  Textarea,
+  FieldLabel,
 } from "../components/UI";
 import { useAuth } from "../stores/auth";
 import { RAMOS } from "./ramos/ramosConfig";
@@ -82,12 +88,35 @@ const GROUPS: { label: string; tabs: TabKey[] }[] = [
   },
 ];
 
+// Pendência retornada pelo DELETE /cases/{id} em 422 (bloqueio condicional R2)
+interface PendenciaExclusao {
+  tipo: string;
+  id: string | number;
+  descricao: string;
+}
+
+// detail pode vir como string ou como objeto { mensagem, pendencias } — nunca
+// renderizar objeto cru no toast.
+function detalheErro(e: unknown, fallback: string): string {
+  const detail = (e as { response?: { data?: { detail?: unknown } } })?.response
+    ?.data?.detail;
+  if (typeof detail === "string") return detail;
+  if (
+    detail &&
+    typeof detail === "object" &&
+    typeof (detail as { mensagem?: unknown }).mensagem === "string"
+  ) {
+    return (detail as { mensagem: string }).mensagem;
+  }
+  return fallback;
+}
+
 function RiscoChip({ nivel }: { nivel?: string }) {
   const map: Record<string, string> = {
     baixo: "bg-green-100 text-green-700",
     medio: "bg-yellow-100 text-yellow-700",
     alto: "bg-orange-100 text-orange-700",
-    critico: "bg-red-100 text-red-700",
+    critico: "bg-danger-100 text-danger-700",
   };
   if (!nivel) return null;
   return (
@@ -124,78 +153,61 @@ function ExtratoCaso({ caso }: { caso: Case }) {
       <button onClick={abrir} className="btn-secondary flex items-center gap-1">
         📊 Extrato do caso
       </button>
-      {open && (
-        <div
-          className="fixed inset-0 bg-black/40 z-50 flex items-center justify-center p-4"
-          onClick={() => setOpen(false)}
-        >
-          <div
-            className="bg-white rounded-xl shadow-xl p-6 w-full max-w-lg"
-            onClick={(e) => e.stopPropagation()}
-          >
-            <div className="flex justify-between items-center mb-4">
-              <h3 className="font-semibold text-slate-800">
-                Extrato financeiro do caso
-              </h3>
-              <button
-                onClick={() => setOpen(false)}
-                className="text-slate-400 hover:text-slate-600"
-              >
-                ✕
-              </button>
+      <Modal
+        open={open}
+        onClose={() => setOpen(false)}
+        title="Extrato financeiro do caso"
+      >
+        {!data ? (
+          <div className="py-8 text-center text-slate-400 text-sm">
+            Carregando…
+          </div>
+        ) : (
+          <div className="space-y-4">
+            <div className="grid grid-cols-2 gap-3">
+              {[
+                ["Entradas", data.resumo?.entradas, "text-success-600"],
+                ["A receber", data.resumo?.a_receber, "text-warn-600"],
+                ["Saídas (custos)", data.resumo?.saidas, "text-danger-600"],
+                [
+                  "Saldo",
+                  data.resumo?.saldo,
+                  (data.resumo?.saldo ?? 0) >= 0
+                    ? "text-success-700"
+                    : "text-danger-700",
+                ],
+              ].map(([l, v, cls]: any) => (
+                <div key={l} className="bg-slate-50 rounded-lg p-3">
+                  <p className="text-xs text-slate-500">{l}</p>
+                  <p className={`text-base font-bold ${cls}`}>
+                    {fmt(Number(v))}
+                  </p>
+                </div>
+              ))}
             </div>
-            {!data ? (
-              <div className="py-8 text-center text-slate-400 text-sm">
-                Carregando…
-              </div>
-            ) : (
-              <div className="space-y-4">
-                <div className="grid grid-cols-2 gap-3">
-                  {[
-                    ["Entradas", data.resumo?.entradas, "text-emerald-600"],
-                    ["A receber", data.resumo?.a_receber, "text-amber-600"],
-                    ["Saídas (custos)", data.resumo?.saidas, "text-red-600"],
-                    [
-                      "Saldo",
-                      data.resumo?.saldo,
-                      (data.resumo?.saldo ?? 0) >= 0
-                        ? "text-emerald-700"
-                        : "text-red-700",
-                    ],
-                  ].map(([l, v, cls]: any) => (
-                    <div key={l} className="bg-slate-50 rounded-lg p-3">
-                      <p className="text-xs text-slate-500">{l}</p>
-                      <p className={`text-base font-bold ${cls}`}>
-                        {fmt(Number(v))}
-                      </p>
+            {(data.honorarios ?? []).length > 0 && (
+              <div>
+                <p className="text-xs font-semibold text-slate-500 uppercase mb-1">
+                  Honorários
+                </p>
+                <div className="max-h-40 overflow-y-auto divide-y divide-slate-100">
+                  {data.honorarios.map((h: any, i: number) => (
+                    <div
+                      key={i}
+                      className="flex justify-between text-xs py-1.5"
+                    >
+                      <span className="text-slate-600 capitalize">
+                        {h.tipo?.replace(/_/g, " ")} · {h.status}
+                      </span>
+                      <span className="font-medium">{fmt(h.valor)}</span>
                     </div>
                   ))}
                 </div>
-                {(data.honorarios ?? []).length > 0 && (
-                  <div>
-                    <p className="text-xs font-semibold text-slate-500 uppercase mb-1">
-                      Honorários
-                    </p>
-                    <div className="max-h-40 overflow-y-auto divide-y divide-slate-100">
-                      {data.honorarios.map((h: any, i: number) => (
-                        <div
-                          key={i}
-                          className="flex justify-between text-xs py-1.5"
-                        >
-                          <span className="text-slate-600 capitalize">
-                            {h.tipo?.replace(/_/g, " ")} · {h.status}
-                          </span>
-                          <span className="font-medium">{fmt(h.valor)}</span>
-                        </div>
-                      ))}
-                    </div>
-                  </div>
-                )}
               </div>
             )}
           </div>
-        </div>
-      )}
+        )}
+      </Modal>
     </>
   );
 }
@@ -316,6 +328,68 @@ function TabResumo({ caso }: { caso: Case }) {
   const [honLoading, setHonLoading] = useState(false);
   const [honDesc, setHonDesc] = useState("");
   const [honResp, setHonResp] = useState<any>(null);
+  // R2 — arquivar / excluir
+  const [arqModal, setArqModal] = useState(false);
+  const [arqLoading, setArqLoading] = useState(false);
+  const [delModal, setDelModal] = useState(false);
+  const [delLoading, setDelLoading] = useState(false);
+  const [delMotivo, setDelMotivo] = useState("");
+  const [pendencias, setPendencias] = useState<PendenciaExclusao[] | null>(
+    null,
+  );
+  // Exclusão restrita a administração/sócios (soft delete → Lixeira)
+  const podeExcluir = ["superadmin", "admin", "socio"].includes(
+    user?.role || "",
+  );
+
+  const arquivar = async () => {
+    setArqLoading(true);
+    try {
+      await api.post(`/cases/${caso.id}/arquivar`);
+      toast.success("Caso arquivado.");
+      window.location.reload();
+    } catch (e) {
+      toast.error(detalheErro(e, "Falha ao arquivar o caso"));
+      setArqLoading(false);
+    }
+  };
+
+  const desarquivar = async () => {
+    setArqLoading(true);
+    try {
+      await api.post(`/cases/${caso.id}/desarquivar`);
+      toast.success("Caso desarquivado.");
+      window.location.reload();
+    } catch (e) {
+      toast.error(detalheErro(e, "Falha ao desarquivar o caso"));
+      setArqLoading(false);
+    }
+  };
+
+  const excluir = async () => {
+    const motivo = delMotivo.trim();
+    if (motivo.length < 5) {
+      toast.error("Informe o motivo da exclusão (mínimo 5 caracteres).");
+      return;
+    }
+    setDelLoading(true);
+    setPendencias(null);
+    try {
+      await api.delete(`/cases/${caso.id}`, { data: { motivo } });
+      toast.success("Caso excluído — enviado para a Lixeira.");
+      navigate("/casos");
+    } catch (e: any) {
+      const detail =
+        e?.response?.status === 422 ? e?.response?.data?.detail : null;
+      if (detail && Array.isArray(detail.pendencias) && detail.pendencias.length) {
+        setPendencias(detail.pendencias as PendenciaExclusao[]);
+      } else {
+        toast.error(detalheErro(e, "Falha ao excluir o caso"));
+      }
+    } finally {
+      setDelLoading(false);
+    }
+  };
 
   useEffect(() => {
     api
@@ -452,27 +526,8 @@ function TabResumo({ caso }: { caso: Case }) {
     }
   };
 
-  const [convLoading, setConvLoading] = useState(false);
-  const converterJudicial = async () => {
-    if (
-      !confirm(
-        "Judicializar este caso? Será criado um PROCESSO JUDICIAL dentro deste mesmo caso (sem duplicar o caso).",
-      )
-    )
-      return;
-    setConvLoading(true);
-    try {
-      await api.post(`/cases/${caso.id}/converter-judicial`);
-      toast.success("Caso judicializado — processo criado.");
-      setTimeout(() => {
-        window.location.assign(`/casos/${caso.id}?tab=processos`);
-      }, 700);
-    } catch (e: any) {
-      toast.error(e.response?.data?.detail || "Falha ao converter");
-    } finally {
-      setConvLoading(false);
-    }
-  };
+  // #R8 — conversão em judicial passa pelo checklist bloqueante (ConversaoChecklist)
+  const [convModal, setConvModal] = useState(false);
 
   const casoEncerrado =
     caso.status === "encerrado" || caso.status === "arquivado";
@@ -553,12 +608,32 @@ function TabResumo({ caso }: { caso: Case }) {
             ✓ Encerrar caso
           </button>
         )}
-        {caso.status !== "arquivado" && (
+        {caso.status !== "arquivado" ? (
           <button
-            onClick={() => setArchiveModal(true)}
+            onClick={() => setArqModal(true)}
             className="btn-secondary flex items-center gap-1"
           >
-            <Archive size={14} /> Arquivar
+            🗄️ Arquivar
+          </button>
+        ) : (
+          <button
+            onClick={desarquivar}
+            disabled={arqLoading}
+            className="btn-secondary flex items-center gap-1"
+          >
+            🗄️ {arqLoading ? "Desarquivando..." : "Desarquivar"}
+          </button>
+        )}
+        {podeExcluir && (
+          <button
+            onClick={() => {
+              setDelMotivo("");
+              setPendencias(null);
+              setDelModal(true);
+            }}
+            className="btn-secondary flex items-center gap-1 text-danger-600 border-danger-200 hover:bg-danger-50"
+          >
+            🗑️ Excluir
           </button>
         )}
         <button
@@ -571,14 +646,10 @@ function TabResumo({ caso }: { caso: Case }) {
         {(caso as any).case_type === "extrajudicial" &&
           !(caso as any).linked_judicial_case_id && (
             <button
-              onClick={converterJudicial}
-              disabled={convLoading}
-              className="btn-secondary flex items-center gap-1 text-blue-700 border-blue-200"
+              onClick={() => setConvModal(true)}
+              className="btn-secondary flex items-center gap-1 text-primary-700 border-primary-200"
             >
-              ⚖️{" "}
-              {convLoading
-                ? "Convertendo..."
-                : "Converter em processo judicial"}
+              ⚖️ Converter em processo judicial
             </button>
           )}
         {(caso as any).linked_judicial_case_id && (
@@ -586,7 +657,7 @@ function TabResumo({ caso }: { caso: Case }) {
             onClick={() =>
               navigate(`/casos/${(caso as any).linked_judicial_case_id}`)
             }
-            className="btn-secondary flex items-center gap-1 text-blue-700 border-blue-200"
+            className="btn-secondary flex items-center gap-1 text-primary-700 border-primary-200"
           >
             🔗 Ver caso vinculado
           </button>
@@ -675,7 +746,7 @@ function TabResumo({ caso }: { caso: Case }) {
               </div>
             )}
             {caso.data_prescricao && (
-              <div className="text-red-700 font-medium">
+              <div className="text-danger-700 font-medium">
                 <span className="text-slate-400">Prescrição:</span>{" "}
                 <span className="ml-1">{fmtDate(caso.data_prescricao)}</span>
               </div>
@@ -720,6 +791,9 @@ function TabResumo({ caso }: { caso: Case }) {
         </div>
       )}
 
+      {/* Intake — Análise Completa (IA): área, teses, estratégia, honorários e módulos */}
+      <IntakeAnalise caseId={caso.id} />
+
       {(caso as any).tese_principal && (
         <div className="grid lg:grid-cols-2 gap-5">
           {(caso as any).tese_principal && (
@@ -734,7 +808,7 @@ function TabResumo({ caso }: { caso: Case }) {
           )}
           {(caso as any).pontos_fracos && (
             <div className="card p-5">
-              <h3 className="font-semibold mb-2 text-sm text-red-600">
+              <h3 className="font-semibold mb-2 text-sm text-danger-600">
                 Pontos de Atenção
               </h3>
               <p className="text-sm text-slate-700">
@@ -756,7 +830,7 @@ function TabResumo({ caso }: { caso: Case }) {
               <Spinner />
             </div>
           ) : iaResp?.erro ? (
-            <p className="text-red-600">{iaResp.erro}</p>
+            <p className="text-danger-600">{iaResp.erro}</p>
           ) : (
             <div className="space-y-3 text-sm">
               {iaResp?.analise && (
@@ -778,7 +852,7 @@ function TabResumo({ caso }: { caso: Case }) {
               )}
               {iaResp?.pontos_fracos?.length > 0 && (
                 <div>
-                  <p className="font-semibold text-red-700 mb-1">
+                  <p className="font-semibold text-danger-700 mb-1">
                     Pontos de Atenção
                   </p>
                   <ul className="list-disc pl-4 space-y-0.5">
@@ -788,7 +862,7 @@ function TabResumo({ caso }: { caso: Case }) {
                   </ul>
                 </div>
               )}
-              <p className="text-xs text-amber-600 border-t pt-2">
+              <p className="text-xs text-warn-600 border-t pt-2">
                 ⚠️ Rascunho gerado por IA — revisão humana obrigatória (OAB)
               </p>
             </div>
@@ -902,7 +976,7 @@ function TabResumo({ caso }: { caso: Case }) {
               {honLoading ? "Consultando a tabela…" : "Sugerir honorários"}
             </button>
             {honResp?.erro && (
-              <p className="text-sm text-red-600">{honResp.erro}</p>
+              <p className="text-sm text-danger-600">{honResp.erro}</p>
             )}
             {honResp?.sugestao && (
               <div className="text-sm space-y-1.5 border-t border-bronze-pale pt-3">
@@ -929,12 +1003,94 @@ function TabResumo({ caso }: { caso: Case }) {
                     {honResp.sugestao.fundamento}
                   </p>
                 )}
-                <p className="text-xs text-amber-600">{honResp.aviso}</p>
+                <p className="text-xs text-warn-600">{honResp.aviso}</p>
               </div>
             )}
           </div>
         </Modal>
       )}
+
+      {/* R2 — Arquivar (confirmação simples) */}
+      <ConfirmModal
+        open={arqModal}
+        onClose={() => setArqModal(false)}
+        onConfirm={arquivar}
+        variant="primary"
+        title="Arquivar caso"
+        message="O caso sai das listagens ativas, mas nada é apagado. Ele fica disponível na aba Arquivados e pode ser desarquivado a qualquer momento."
+        confirmLabel="Arquivar"
+        loading={arqLoading}
+      />
+
+      {/* R2 — Excluir (confirmação forte: digitar EXCLUIR + motivo ≥ 5 chars) */}
+      <ConfirmModal
+        open={delModal}
+        onClose={() => {
+          setDelModal(false);
+          setPendencias(null);
+        }}
+        onConfirm={excluir}
+        variant="danger"
+        title="Excluir caso"
+        message={`Esta ação envia o caso "${caso.titulo}" para a Lixeira e fica registrada na Auditoria com o motivo informado.`}
+        typeToConfirm="EXCLUIR"
+        confirmLabel="Excluir caso"
+        loading={delLoading}
+      >
+        <div className="mt-3">
+          <FieldLabel required>
+            Motivo da exclusão (mínimo 5 caracteres)
+          </FieldLabel>
+          <Textarea
+            value={delMotivo}
+            onChange={(e) => setDelMotivo(e.target.value)}
+            rows={3}
+            placeholder="Ex.: caso duplicado, cadastro de teste..."
+          />
+        </div>
+        {pendencias && pendencias.length > 0 && (
+          <Alert
+            variant="danger"
+            title="Pendências impedem a exclusão"
+            className="mt-3"
+          >
+            <ul className="mt-1 list-disc space-y-0.5 pl-4">
+              {pendencias.map((p, i) => (
+                <li key={`${p.tipo}-${p.id ?? i}`}>
+                  <span className="capitalize">
+                    {String(p.tipo).replace(/_/g, " ")}
+                  </span>
+                  {p.descricao ? ` — ${p.descricao}` : ""}
+                </li>
+              ))}
+            </ul>
+            <button
+              type="button"
+              onClick={() => {
+                setDelModal(false);
+                setPendencias(null);
+                arquivar();
+              }}
+              disabled={arqLoading}
+              className="btn-secondary mt-3 flex items-center gap-1 text-xs"
+            >
+              🗄️ Arquivar em vez disso
+            </button>
+          </Alert>
+        )}
+      </ConfirmModal>
+
+      {/* #R8 — Checklist bloqueante de conversão extrajudicial → judicial */}
+      <ConversaoChecklist
+        caseId={caso.id}
+        open={convModal}
+        onClose={() => setConvModal(false)}
+        onSuccess={() => {
+          setTimeout(() => {
+            window.location.assign(`/casos/${caso.id}?tab=processos`);
+          }, 700);
+        }}
+      />
     </div>
   );
 }
@@ -995,7 +1151,7 @@ function TabTimeline({ caseId }: { caseId: string }) {
             <div className="space-y-3">
               {movs.map((m) => (
                 <div key={m.id} className="flex gap-4 ml-2">
-                  <div className="w-6 h-6 rounded-full bg-white border-2 border-blue-300 flex items-center justify-center text-xs z-10 shrink-0">
+                  <div className="w-6 h-6 rounded-full bg-white border-2 border-primary-300 flex items-center justify-center text-xs z-10 shrink-0">
                     {TIPOS[m.tipo] || "•"}
                   </div>
                   <div className="flex-1 card p-3">
@@ -1086,7 +1242,7 @@ function TabTimeline({ caseId }: { caseId: string }) {
               <span className="text-gray-700">{t.descricao}</span>
               <div className="flex items-center gap-3 shrink-0">
                 <span className="text-gray-400 text-xs">{fmtDate(t.data)}</span>
-                <span className="font-mono font-semibold text-blue-600">
+                <span className="font-mono font-semibold text-primary-600">
                   {((t.minutos ?? 0) / 60).toFixed(1)}h
                 </span>
               </div>
@@ -1143,10 +1299,10 @@ function TabChecklists({ caseId }: { caseId: string }) {
   };
 
   const CAT_COR: Record<string, string> = {
-    documentos: "bg-blue-100 text-blue-700",
-    diligencias: "bg-amber-100 text-amber-700",
-    prazos: "bg-red-100 text-red-700",
-    audiencia: "bg-violet-100 text-violet-700",
+    documentos: "bg-primary-100 text-primary-700",
+    diligencias: "bg-warn-100 text-warn-700",
+    prazos: "bg-danger-100 text-danger-700",
+    audiencia: "bg-ai-100 text-ai-700",
     financeiro: "bg-green-100 text-green-700",
     comunicacao: "bg-cyan-100 text-cyan-700",
     outros: "bg-slate-100 text-slate-600",
@@ -1219,7 +1375,7 @@ function TabChecklists({ caseId }: { caseId: string }) {
                     {i.texto}
                   </span>
                   {i.obrigatorio && (
-                    <span className="text-[10px] text-red-500 ml-1">*</span>
+                    <span className="text-[10px] text-danger-500 ml-1">*</span>
                   )}
                   <span
                     className={`ml-2 text-[10px] px-1.5 py-0.5 rounded-full ${CAT_COR[i.categoria] || "bg-slate-100 text-slate-600"}`}
@@ -1269,10 +1425,10 @@ function TabProcessos({ caseId }: { caseId: string }) {
     extrajudicial: "Extrajudicial",
   };
   const TIPO_COR: Record<string, string> = {
-    judicial: "bg-blue-100 text-blue-700",
-    recurso: "bg-violet-100 text-violet-700",
-    cautelar: "bg-amber-100 text-amber-700",
-    execucao: "bg-red-100 text-red-700",
+    judicial: "bg-primary-100 text-primary-700",
+    recurso: "bg-ai-100 text-ai-700",
+    cautelar: "bg-warn-100 text-warn-700",
+    execucao: "bg-danger-100 text-danger-700",
     administrativo: "bg-cyan-100 text-cyan-700",
     extrajudicial: "bg-slate-100 text-slate-600",
   };
@@ -1706,7 +1862,7 @@ function TabPartes({ caseId }: { caseId: string }) {
             <div>
               <div className="flex items-center gap-2 mb-1">
                 <span className="font-medium text-sm">{p.nome}</span>
-                <span className="text-xs bg-blue-100 text-blue-700 px-2 py-0.5 rounded-full">
+                <span className="text-xs bg-primary-100 text-primary-700 px-2 py-0.5 rounded-full">
                   {TIPOS[p.tipo] || p.tipo}
                 </span>
               </div>
@@ -1723,7 +1879,7 @@ function TabPartes({ caseId }: { caseId: string }) {
             </div>
             <button
               onClick={() => remover(p.id)}
-              className="text-red-400 hover:text-red-600 text-xs ml-4"
+              className="text-danger-400 hover:text-danger-600 text-xs ml-4"
             >
               Remover
             </button>
@@ -1780,18 +1936,18 @@ function TabScore({ caseId }: { caseId: string }) {
     pct >= 80
       ? "bg-green-500"
       : pct >= 60
-        ? "bg-blue-500"
+        ? "bg-primary-500"
         : pct >= 40
           ? "bg-yellow-500"
-          : "bg-red-500";
+          : "bg-danger-500";
   const getLabel = (t: number) =>
     t >= 80
       ? { l: "Excelente", c: "text-green-600" }
       : t >= 60
-        ? { l: "Bom", c: "text-blue-600" }
+        ? { l: "Bom", c: "text-primary-600" }
         : t >= 40
           ? { l: "Regular", c: "text-yellow-600" }
-          : { l: "Fraco", c: "text-red-600" };
+          : { l: "Fraco", c: "text-danger-600" };
 
   return (
     <div className="space-y-5">
@@ -1851,8 +2007,8 @@ function TabScore({ caseId }: { caseId: string }) {
               </div>
             </div>
             {top.recomendacoes && (
-              <div className="bg-amber-50 border border-amber-200 rounded-lg p-3 mt-3">
-                <p className="text-xs font-semibold text-amber-800 mb-1">
+              <div className="bg-warn-50 border border-warn-200 rounded-lg p-3 mt-3">
+                <p className="text-xs font-semibold text-warn-800 mb-1">
                   Recomendações da IA
                 </p>
                 <ul className="space-y-0.5">
@@ -1860,14 +2016,14 @@ function TabScore({ caseId }: { caseId: string }) {
                     ? JSON.parse(top.recomendacoes)
                     : (top.recomendacoes as string[])
                   ).map((r: string, i: number) => (
-                    <li key={i} className="text-xs text-amber-700">
+                    <li key={i} className="text-xs text-warn-700">
                       • {r}
                     </li>
                   ))}
                 </ul>
               </div>
             )}
-            <p className="text-xs text-amber-500 mt-2">
+            <p className="text-xs text-warn-500 mt-2">
               ⚠️ Gerado por IA — revisão humana obrigatória
             </p>
           </div>
@@ -1935,10 +2091,10 @@ function TabRisco({ caseId }: { caseId: string }) {
       bar: "bg-orange-500",
     },
     critico: {
-      c: "text-red-700",
-      bg: "bg-red-50",
-      border: "border-red-200",
-      bar: "bg-red-500",
+      c: "text-danger-700",
+      bg: "bg-danger-50",
+      border: "border-danger-200",
+      bar: "bg-danger-500",
     },
   };
   const FATORES: Record<string, string> = {
@@ -2109,7 +2265,7 @@ function TabJurisprudencia({ caseId, caso }: { caseId: string; caso: Case }) {
       {!searched && caso.descricao_fatos && (
         <button
           onClick={buscar}
-          className="text-sm text-blue-600 hover:underline"
+          className="text-sm text-primary-600 hover:underline"
         >
           Buscar jurisprudência relevante automaticamente
         </button>
@@ -2118,7 +2274,7 @@ function TabJurisprudencia({ caseId, caso }: { caseId: string; caso: Case }) {
         {results.map((r, i) => (
           <div key={i} className="card p-4">
             <div className="flex justify-between mb-2">
-              <span className="text-xs bg-blue-100 text-blue-700 px-2 py-0.5 rounded">
+              <span className="text-xs bg-primary-100 text-primary-700 px-2 py-0.5 rounded">
                 {r.categoria}
               </span>
               <span className="text-xs text-gray-400">
@@ -2232,11 +2388,11 @@ function TabMensagens({ caseId }: { caseId: string }) {
             className={`flex ${m.autor_tipo === "escritorio" ? "justify-end" : "justify-start"}`}
           >
             <div
-              className={`max-w-[75%] rounded-lg px-3 py-2 text-sm ${m.autor_tipo === "escritorio" ? "bg-blue-600 text-white" : "bg-white border border-gray-200"}`}
+              className={`max-w-[75%] rounded-lg px-3 py-2 text-sm ${m.autor_tipo === "escritorio" ? "bg-primary-600 text-white" : "bg-white border border-gray-200"}`}
             >
               <Markdown source={m.mensagem} />
               <p
-                className={`text-[10px] mt-1 ${m.autor_tipo === "escritorio" ? "text-blue-100" : "text-gray-400"}`}
+                className={`text-[10px] mt-1 ${m.autor_tipo === "escritorio" ? "text-primary-100" : "text-gray-400"}`}
               >
                 {m.autor_nome ||
                   (m.autor_tipo === "cliente" ? "Cliente" : "Escritório")}{" "}
@@ -2423,9 +2579,9 @@ function TabMemoria({ caseId }: { caseId: string }) {
   };
   const RES: Record<string, string> = {
     favoravel: "text-green-700 bg-green-100",
-    desfavoravel: "text-red-700 bg-red-100",
+    desfavoravel: "text-danger-700 bg-danger-100",
     parcial: "text-yellow-700 bg-yellow-100",
-    acordo: "text-blue-700 bg-blue-100",
+    acordo: "text-primary-700 bg-primary-100",
     em_andamento: "text-gray-700 bg-gray-100",
   };
 
@@ -2563,7 +2719,7 @@ function TabMemoria({ caseId }: { caseId: string }) {
               <div className="flex-1">
                 <div className="flex items-center gap-2 mb-1 flex-wrap">
                   <span className="font-medium text-sm">{m.titulo}</span>
-                  <span className="text-xs bg-blue-100 text-blue-700 px-2 py-0.5 rounded-full">
+                  <span className="text-xs bg-primary-100 text-primary-700 px-2 py-0.5 rounded-full">
                     {TIPOS[m.tipo] || m.tipo}
                   </span>
                   {m.resultado && (
@@ -2583,7 +2739,7 @@ function TabMemoria({ caseId }: { caseId: string }) {
               </div>
               <button
                 onClick={() => remover(m.id)}
-                className="text-red-400 hover:text-red-600 text-xs ml-4"
+                className="text-danger-400 hover:text-danger-600 text-xs ml-4"
               >
                 Remover
               </button>
@@ -2728,7 +2884,7 @@ function MiniFerramentaCalc({ f }: { f: FerramentaConfig }) {
           {loading ? "..." : f.campos.length === 0 ? "Atualizar" : "Calcular"}
         </button>
       )}
-      {erro && <p className="text-xs text-red-600 mt-2">{erro}</p>}
+      {erro && <p className="text-xs text-danger-600 mt-2">{erro}</p>}
       {res && (
         <div className="mt-2 p-2 bg-gold-50 rounded text-[11px] space-y-0.5 border border-gold-200">
           {typeof res === "object" &&
@@ -2839,7 +2995,7 @@ function AnaliseContratoIA({ caseId }: { caseId: string }) {
         <h3 className="font-serif font-semibold text-navy text-sm">
           Análise de Contrato com IA
         </h3>
-        <span className="text-[10px] bg-amber-100 text-amber-700 px-2 py-0.5 rounded-full font-medium">
+        <span className="text-[10px] bg-warn-100 text-warn-700 px-2 py-0.5 rounded-full font-medium">
           MINUTA · revisão obrigatória
         </span>
       </div>
@@ -2960,7 +3116,7 @@ function AnaliseContratoIA({ caseId }: { caseId: string }) {
 function ResultadoContratoIA({ data }: { data: any }) {
   if (data.erro)
     return (
-      <div className="mt-3 p-3 bg-red-50 text-red-700 text-xs rounded">
+      <div className="mt-3 p-3 bg-danger-50 text-danger-700 text-xs rounded">
         {data.erro}
       </div>
     );
@@ -2985,7 +3141,7 @@ function ResultadoContratoIA({ data }: { data: any }) {
         </div>
       )}
       {data.aviso && (
-        <p className="text-[11px] text-amber-700 mt-2 italic">{data.aviso}</p>
+        <p className="text-[11px] text-warn-700 mt-2 italic">{data.aviso}</p>
       )}
     </div>
   );
@@ -3105,9 +3261,9 @@ function IaDefensivaCaso({ caso }: { caso: Case }) {
 
   const statusClass = (status: string) => {
     const map: Record<string, string> = {
-      gerado: "bg-amber-50 text-amber-700 ring-amber-200",
-      revisado: "bg-blue-50 text-blue-700 ring-blue-200",
-      aplicado: "bg-emerald-50 text-emerald-700 ring-emerald-200",
+      gerado: "bg-warn-50 text-warn-700 ring-warn-200",
+      revisado: "bg-primary-50 text-primary-700 ring-primary-200",
+      aplicado: "bg-success-50 text-success-700 ring-success-200",
       descartado: "bg-slate-100 text-slate-500 ring-slate-200",
     };
     return map[status] || "bg-slate-100 text-slate-600 ring-slate-200";
@@ -3128,11 +3284,11 @@ function IaDefensivaCaso({ caso }: { caso: Case }) {
 
   return (
     <div className="space-y-4">
-      <div className="rounded-xl border border-purple-100 bg-purple-50/70 p-4">
+      <div className="rounded-xl border border-ai-100 bg-ai-50/70 p-4">
         <div className="flex flex-col gap-3 md:flex-row md:items-start md:justify-between">
           <div>
             <div className="flex items-center gap-2">
-              <ShieldCheck size={18} className="text-purple-700" />
+              <ShieldCheck size={18} className="text-ai-700" />
               <h2 className="text-sm font-semibold text-slate-950">
                 IA Defensiva do Caso
               </h2>
@@ -3143,7 +3299,7 @@ function IaDefensivaCaso({ caso }: { caso: Case }) {
               e rascunho interno sujeito a revisao humana obrigatoria.
             </p>
           </div>
-          <span className="rounded-full bg-white px-3 py-1 text-[11px] font-semibold text-purple-700 ring-1 ring-purple-100">
+          <span className="rounded-full bg-white px-3 py-1 text-[11px] font-semibold text-ai-700 ring-1 ring-ai-100">
             Nivel {nivelInteligencia}
           </span>
         </div>
@@ -3313,15 +3469,15 @@ function IaDefensivaCaso({ caso }: { caso: Case }) {
             </div>
           )}
           {resultado?.erro && (
-            <div className="rounded-lg border border-red-200 bg-red-50 p-3 text-sm text-red-700">
+            <div className="rounded-lg border border-danger-200 bg-danger-50 p-3 text-sm text-danger-700">
               {resultado.erro}
             </div>
           )}
           {resultado?.resposta && (
-            <div className="max-h-[720px] overflow-auto rounded-lg border border-purple-100 bg-purple-50/30 p-4">
+            <div className="max-h-[720px] overflow-auto rounded-lg border border-ai-100 bg-ai-50/30 p-4">
               <Markdown source={resultado.resposta} className="text-sm leading-7 text-slate-800" />
               {resultado.aviso && (
-                <p className="mt-4 border-t border-purple-100 pt-3 text-xs font-medium text-purple-700">
+                <p className="mt-4 border-t border-ai-100 pt-3 text-xs font-medium text-ai-700">
                   {resultado.aviso}
                 </p>
               )}
@@ -3358,11 +3514,11 @@ function IaDefensivaCaso({ caso }: { caso: Case }) {
             {historico.map((item) => (
               <div
                 key={item.id}
-                className={`rounded-lg border p-3 text-xs ${histSelecionado === item.id ? "border-purple-300 bg-purple-50" : "border-slate-200 bg-white"}`}
+                className={`rounded-lg border p-3 text-xs ${histSelecionado === item.id ? "border-ai-300 bg-ai-50" : "border-slate-200 bg-white"}`}
               >
                 <div className="flex items-start justify-between gap-2">
                   <button
-                    className="text-left font-semibold text-slate-800 hover:text-purple-700"
+                    className="text-left font-semibold text-slate-800 hover:text-ai-700"
                     onClick={() => abrirHistorico(item)}
                   >
                     {etapaResumo(item.resposta)}
@@ -3382,13 +3538,13 @@ function IaDefensivaCaso({ caso }: { caso: Case }) {
                 </p>
                 <div className="mt-3 flex flex-wrap gap-1.5">
                   <button
-                    className="rounded-md border border-blue-200 px-2 py-1 text-blue-700 hover:bg-blue-50"
+                    className="rounded-md border border-primary-200 px-2 py-1 text-primary-700 hover:bg-primary-50"
                     onClick={() => atualizarStatus(item.id, "revisado")}
                   >
                     Revisado
                   </button>
                   <button
-                    className="rounded-md border border-emerald-200 px-2 py-1 text-emerald-700 hover:bg-emerald-50"
+                    className="rounded-md border border-success-200 px-2 py-1 text-success-700 hover:bg-success-50"
                     onClick={() => atualizarStatus(item.id, "aplicado")}
                   >
                     Aplicado
@@ -3607,7 +3763,7 @@ export default function CasoDetalhe() {
                 <span
                   className={`font-medium text-xs ${
                     (d.dias_restantes ?? 1) <= 0
-                      ? "text-red-600"
+                      ? "text-danger-600"
                       : (d.dias_restantes ?? 99) <= 7
                         ? "text-orange-600"
                         : "text-gray-500"
@@ -3797,7 +3953,7 @@ export default function CasoDetalhe() {
           <div className="min-w-0 flex-1">
             <div className="flex flex-wrap items-center gap-2">
               {caso.numero_interno && (
-                <span className="text-xs font-semibold uppercase tracking-wide text-blue-700">
+                <span className="text-xs font-semibold uppercase tracking-wide text-primary-700">
                   {caso.numero_interno}
                 </span>
               )}
@@ -3866,7 +4022,7 @@ export default function CasoDetalhe() {
                   onClick={() => setSearchParams({ tab: g.tabs[0] })}
                   className={`h-9 flex-shrink-0 rounded-lg px-3 text-sm font-medium transition-all ${
                     ativo
-                      ? "bg-blue-600 text-white shadow-sm shadow-blue-600/20"
+                      ? "bg-primary-600 text-white shadow-sm shadow-primary-600/20"
                       : "text-slate-600 hover:bg-slate-100 hover:text-slate-950"
                   }`}
                 >

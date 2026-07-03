@@ -30,7 +30,7 @@ function Kpi({
 }) {
   return (
     <div
-      className={`rounded-lg p-2 border ${alerta ? "border-red-200 bg-red-50/40" : "border-bronze-pale bg-bronze-50/10"}`}
+      className={`rounded-lg p-2 border ${alerta ? "border-danger-200 bg-danger-50/40" : "border-bronze-pale bg-bronze-50/10"}`}
     >
       <div className="text-[15px] font-bold text-navy">{val}</div>
       <div className="text-[10px] text-slate-500 uppercase tracking-wide">
@@ -95,7 +95,7 @@ export default function AnaliseExtratos() {
   const a = res?.analise;
   const cobr: any[] = res?.cobrancas || [];
   const prioCor = (p: string) =>
-    p === "URGENTE" ? "bg-red-100 text-red-700" : "bg-amber-100 text-amber-700";
+    p === "URGENTE" ? "bg-danger-100 text-danger-700" : "bg-warn-100 text-warn-700";
   const btn =
     "text-xs px-2.5 py-1.5 rounded-lg border border-bronze text-bronze hover:bg-bronze-50/40 flex items-center gap-1 transition-colors";
 
@@ -139,7 +139,7 @@ export default function AnaliseExtratos() {
           <UploadCloud size={15} /> {loading ? "Analisando…" : "Enviar extrato"}
         </button>
       </div>
-      {erro && <p className="text-xs text-red-600">{erro}</p>}
+      {erro && <p className="text-xs text-danger-600">{erro}</p>}
 
       {a && (
         <div className="mt-3 space-y-3">
@@ -205,12 +205,12 @@ export default function AnaliseExtratos() {
               </table>
             </div>
           ) : (
-            <p className="text-xs text-emerald-700 flex items-center gap-1">
+            <p className="text-xs text-success-700 flex items-center gap-1">
               <AlertTriangle size={12} /> Nenhuma cobrança abusiva detectada
               automaticamente neste extrato.
             </p>
           )}
-          <p className="text-[10px] text-amber-700">
+          <p className="text-[10px] text-warn-700">
             ⚠ Indícios automáticos — não afirmam ilegalidade. Revisão
             obrigatória do advogado (OAB).
           </p>

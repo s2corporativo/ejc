@@ -154,7 +154,7 @@ export default function Checklists() {
                 </div>
                 <button
                   onClick={() => excluir(t.id)}
-                  className="text-slate-300 hover:text-red-500"
+                  className="text-slate-300 hover:text-danger-500"
                 >
                   <Trash2 size={15} />
                 </button>

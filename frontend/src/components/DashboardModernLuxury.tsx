@@ -11,21 +11,21 @@ const DashboardModernLuxury: React.FC = () => {
     return (
         <div className="min-h-screen bg-gradient-to-br from-slate-950 via-slate-900 to-stone-950">
             {/* Navigation Bar - Glassmorphism */}
-            <nav className="sticky top-0 z-50 backdrop-blur-xl bg-stone-950/40 border-b border-amber-900/10">
+            <nav className="sticky top-0 z-50 backdrop-blur-xl bg-stone-950/40 border-b border-warn-900/10">
                 <div className="max-w-7xl mx-auto px-6 py-4 flex justify-between items-center">
                     <div className="flex items-center space-x-3">
-                        <div className="w-10 h-10 bg-gradient-to-br from-amber-600 to-amber-800 rounded-lg flex items-center justify-center">
+                        <div className="w-10 h-10 bg-gradient-to-br from-warn-600 to-warn-800 rounded-lg flex items-center justify-center">
                             <span className="text-white font-serif font-bold">⚖️</span>
                         </div>
                         <div>
-                            <h1 className="text-xl font-serif font-bold text-amber-500">EJC v6.0</h1>
+                            <h1 className="text-xl font-serif font-bold text-warn-500">EJC v6.0</h1>
                             <p className="text-xs text-stone-400">Sovereign Diamond</p>
                         </div>
                     </div>
                     <div className="flex items-center space-x-6">
-                        <button className="text-stone-400 hover:text-amber-500 transition-colors text-sm font-medium">Notificações</button>
-                        <button className="text-stone-400 hover:text-amber-500 transition-colors text-sm font-medium">Configurações</button>
-                        <div className="w-10 h-10 bg-gradient-to-br from-amber-600 to-amber-800 rounded-full flex items-center justify-center text-white font-bold">DC</div>
+                        <button className="text-stone-400 hover:text-warn-500 transition-colors text-sm font-medium">Notificações</button>
+                        <button className="text-stone-400 hover:text-warn-500 transition-colors text-sm font-medium">Configurações</button>
+                        <div className="w-10 h-10 bg-gradient-to-br from-warn-600 to-warn-800 rounded-full flex items-center justify-center text-white font-bold">DC</div>
                     </div>
                 </div>
             </nav>
@@ -41,15 +41,15 @@ const DashboardModernLuxury: React.FC = () => {
                 </div>
 
                 {/* Tab Navigation */}
-                    <div className="flex space-x-2 mb-8 border-b border-amber-900/10 pb-4">
+                    <div className="flex space-x-2 mb-8 border-b border-warn-900/10 pb-4">
                         {['overview', 'cases', 'intelligence', 'audit', 'radars', 'victory_vault', 'veredito_ia', 'escrita_assistida'].map((tab) => (
                             <button
                                 key={tab}
                                 onClick={() => setActiveTab(tab)}
                                 className={`px-6 py-2 font-medium text-sm transition-all rounded-t-lg ${
                                     activeTab === tab
-                                        ? 'bg-amber-600/20 text-amber-400 border-b-2 border-amber-500'
-                                        : 'text-stone-400 hover:text-amber-400'
+                                        ? 'bg-warn-600/20 text-warn-400 border-b-2 border-warn-500'
+                                        : 'text-stone-400 hover:text-warn-400'
                                 }`}
                             >
                                 {tab === 'overview' && '📊 Visão Geral'}
@@ -77,9 +77,9 @@ const DashboardModernLuxury: React.FC = () => {
                             ].map((kpi, i) => (
                                 <div
                                     key={i}
-                                    className="group relative overflow-hidden rounded-2xl bg-gradient-to-br from-stone-800/50 to-stone-900/50 border border-amber-900/20 p-8 hover:border-amber-600/40 transition-all duration-300 backdrop-blur-xl"
+                                    className="group relative overflow-hidden rounded-2xl bg-gradient-to-br from-stone-800/50 to-stone-900/50 border border-warn-900/20 p-8 hover:border-warn-600/40 transition-all duration-300 backdrop-blur-xl"
                                 >
-                                    <div className="absolute inset-0 bg-gradient-to-br from-amber-600/5 to-transparent opacity-0 group-hover:opacity-100 transition-opacity duration-300" />
+                                    <div className="absolute inset-0 bg-gradient-to-br from-warn-600/5 to-transparent opacity-0 group-hover:opacity-100 transition-opacity duration-300" />
                                     <div className="relative">
                                         <div className="flex justify-between items-start mb-4">
                                             <span className="text-3xl">{kpi.icon}</span>
@@ -95,8 +95,8 @@ const DashboardModernLuxury: React.FC = () => {
                         {/* Main Sections */}
                         <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
                             {/* Próximos Prazos */}
-                            <div className="lg:col-span-2 rounded-2xl bg-gradient-to-br from-stone-800/50 to-stone-900/50 border border-amber-900/20 p-8 backdrop-blur-xl">
-                                <h3 className="text-xl font-serif font-bold text-amber-400 mb-6">🔥 Foco no Hoje</h3>
+                            <div className="lg:col-span-2 rounded-2xl bg-gradient-to-br from-stone-800/50 to-stone-900/50 border border-warn-900/20 p-8 backdrop-blur-xl">
+                                <h3 className="text-xl font-serif font-bold text-warn-400 mb-6">🔥 Foco no Hoje</h3>
                                 <div className="space-y-4">
                                     {[
                                         { title: 'Réplica - Caso #1029', date: 'Hoje', priority: 'high' },
@@ -108,20 +108,20 @@ const DashboardModernLuxury: React.FC = () => {
                                                 <p className="font-medium text-white">{item.title}</p>
                                                 <p className="text-xs text-stone-400">{item.date}</p>
                                             </div>
-                                            <div className={`w-3 h-3 rounded-full ${item.priority === 'high' ? 'bg-red-500' : 'bg-amber-500'}`} />
+                                            <div className={`w-3 h-3 rounded-full ${item.priority === 'high' ? 'bg-danger-500' : 'bg-warn-500'}`} />
                                         </div>
                                     ))}
                                 </div>
                             </div>
 
                             {/* Gatilhos de Liquidez */}
-                            <div className="rounded-2xl bg-gradient-to-br from-amber-900/20 to-stone-900/50 border border-amber-600/30 p-8 backdrop-blur-xl">
-                                <h3 className="text-xl font-serif font-bold text-amber-400 mb-6">💰 Liquidez</h3>
+                            <div className="rounded-2xl bg-gradient-to-br from-warn-900/20 to-stone-900/50 border border-warn-600/30 p-8 backdrop-blur-xl">
+                                <h3 className="text-xl font-serif font-bold text-warn-400 mb-6">💰 Liquidez</h3>
                                 <div className="space-y-3">
-                                    <div className="p-4 bg-amber-900/20 rounded-lg border border-amber-600/20">
-                                        <p className="text-sm text-amber-200 mb-2">Alvará Expedido</p>
-                                        <p className="font-bold text-amber-400">Caso #882</p>
-                                        <button className="mt-3 w-full bg-amber-600 hover:bg-amber-500 text-white text-xs font-bold py-2 rounded transition-colors">
+                                    <div className="p-4 bg-warn-900/20 rounded-lg border border-warn-600/20">
+                                        <p className="text-sm text-warn-200 mb-2">Alvará Expedido</p>
+                                        <p className="font-bold text-warn-400">Caso #882</p>
+                                        <button className="btn-primary mt-3 w-full text-xs font-bold py-2 rounded transition-colors">
                                             ACIONAR COBRANÇA
                                         </button>
                                     </div>
@@ -130,13 +130,13 @@ const DashboardModernLuxury: React.FC = () => {
                         </div>
 
                         {/* Performance Chart */}
-                        <div className="rounded-2xl bg-gradient-to-br from-stone-800/50 to-stone-900/50 border border-amber-900/20 p-8 backdrop-blur-xl">
-                            <h3 className="text-xl font-serif font-bold text-amber-400 mb-6">📈 Performance (Últimos 30 Dias)</h3>
+                        <div className="rounded-2xl bg-gradient-to-br from-stone-800/50 to-stone-900/50 border border-warn-900/20 p-8 backdrop-blur-xl">
+                            <h3 className="text-xl font-serif font-bold text-warn-400 mb-6">📈 Performance (Últimos 30 Dias)</h3>
                             <div className="h-64 bg-stone-700/20 rounded-lg flex items-end justify-around px-4 py-8">
                                 {[65, 78, 82, 75, 88, 92, 87].map((value, i) => (
                                     <div key={i} className="flex flex-col items-center">
                                         <div
-                                            className="w-8 bg-gradient-to-t from-amber-600 to-amber-400 rounded-t transition-all hover:from-amber-500 hover:to-amber-300"
+                                            className="w-8 bg-gradient-to-t from-warn-600 to-warn-400 rounded-t transition-all hover:from-warn-500 hover:to-warn-300"
                                             style={{ height: `${value}%` }}
                                         />
                                         <p className="text-xs text-stone-500 mt-2">{['S', 'T', 'Q', 'Q', 'S', 'S', 'D'][i]}</p>
@@ -148,16 +148,16 @@ const DashboardModernLuxury: React.FC = () => {
                 )}
 
                 {activeTab === 'intelligence' && (
-                    <div className="rounded-2xl bg-gradient-to-br from-stone-800/50 to-stone-900/50 border border-amber-900/20 p-8 backdrop-blur-xl">
-                        <h3 className="text-2xl font-serif font-bold text-amber-400 mb-6">🧠 Cérebro EJC (Ollama Local)</h3>
+                    <div className="rounded-2xl bg-gradient-to-br from-stone-800/50 to-stone-900/50 border border-warn-900/20 p-8 backdrop-blur-xl">
+                        <h3 className="text-2xl font-serif font-bold text-warn-400 mb-6">🧠 Cérebro EJC (Ollama Local)</h3>
                         <p className="text-stone-300 mb-6">Status: <span className="text-green-400 font-bold">✓ Operacional (100% Soberano)</span></p>
                         <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
                             <div className="p-6 bg-stone-700/20 rounded-lg">
-                                <p className="text-amber-400 font-bold mb-2">Modelo IA Ativo</p>
+                                <p className="text-warn-400 font-bold mb-2">Modelo IA Ativo</p>
                                 <p className="text-white">DeepSeek v2.5 + BGE-M3 Embeddings</p>
                             </div>
                             <div className="p-6 bg-stone-700/20 rounded-lg">
-                                <p className="text-amber-400 font-bold mb-2">Base de Conhecimento</p>
+                                <p className="text-warn-400 font-bold mb-2">Base de Conhecimento</p>
                                 <p className="text-white">12.500+ Teses + 4M Jurisprudências</p>
                             </div>
                         </div>
@@ -165,10 +165,10 @@ const DashboardModernLuxury: React.FC = () => {
                 )}
 
                 {activeTab === 'audit' && (
-                    <div className="rounded-2xl bg-gradient-to-br from-stone-800/50 to-stone-900/50 border border-amber-900/20 p-8 backdrop-blur-xl">
-                        <h3 className="text-2xl font-serif font-bold text-amber-400 mb-6">🔍 Auditoria de Licitações</h3>
+                    <div className="rounded-2xl bg-gradient-to-br from-stone-800/50 to-stone-900/50 border border-warn-900/20 p-8 backdrop-blur-xl">
+                        <h3 className="text-2xl font-serif font-bold text-warn-400 mb-6">🔍 Auditoria de Licitações</h3>
                         <p className="text-stone-300 mb-6">Carregue uma proposta de concorrente para análise automática de falhas técnicas e equivalência.</p>
-                        <div className="border-2 border-dashed border-amber-600/30 rounded-lg p-12 text-center hover:border-amber-600/60 transition-colors cursor-pointer">
+                        <div className="border-2 border-dashed border-warn-600/30 rounded-lg p-12 text-center hover:border-warn-600/60 transition-colors cursor-pointer">
                             <p className="text-3xl mb-4">📄</p>
                             <p className="text-white font-medium mb-2">Arraste um PDF aqui</p>
                             <p className="text-stone-400 text-sm">ou clique para selecionar</p>
@@ -203,7 +203,7 @@ const DashboardModernLuxury: React.FC = () => {
             </main>
 
             {/* Footer */}
-            <footer className="border-t border-amber-900/10 mt-16 py-8 text-center text-stone-500 text-sm">
+            <footer className="border-t border-warn-900/10 mt-16 py-8 text-center text-stone-500 text-sm">
                 <p>EJC v6.0 — Sovereign Diamond © 2026 | Soberania Tecnológica & Luxo Jurídico</p>
             </footer>
         </div>

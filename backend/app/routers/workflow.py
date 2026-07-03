@@ -11,12 +11,19 @@ from sqlalchemy import select, func
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.database import get_db
+from app.core.ownership import verificar_acesso_caso
 from app.core.security import get_current_user, ROLE_LEVEL
+from app.models.redesign import AreaModuloMapping
 from app.models.user import User
 from app.models.workflow import WorkflowTemplate, WorkflowEtapa, CaseWorkflow, WorkflowHistorico, WorkflowStatus
 from app.modules.auditoria.middleware import registrar_acao
 
 router = APIRouter(prefix="/workflow", tags=["BPM Workflow"])
+
+# Workflow "em andamento" = ativo OU atrasado (SLA estourado, mas ainda corre).
+# Sem incluir 'atrasado' aqui, um workflow marcado pelo scheduler ficaria
+# travado (avancar/concluir só achavam status='ativo').
+_STATUS_EM_ANDAMENTO = (WorkflowStatus.ativo, WorkflowStatus.atrasado)
 
 
 # ── Schemas ───────────────────────────────────────────────────────────────────
@@ -155,13 +162,14 @@ async def workflow_do_caso(
     db:  AsyncSession = Depends(get_db),
     cu:  User = Depends(get_current_user),
 ):
-    """Retorna o workflow ativo do caso, com etapas e histórico."""
+    """Retorna o workflow em andamento (ativo/atrasado) do caso, com etapas e histórico."""
+    await verificar_acesso_caso(db, cu, case_id)  # gate ownership (sigilo EOAB/LGPD)
     cw = (await db.execute(
         select(CaseWorkflow).where(
             CaseWorkflow.case_id == case_id,
-            CaseWorkflow.status == WorkflowStatus.ativo,
-        )
-    )).scalar_one_or_none()
+            CaseWorkflow.status.in_(_STATUS_EM_ANDAMENTO),
+        ).order_by(CaseWorkflow.iniciado_em.desc())
+    )).scalars().first()
     if not cw:
         return {"ativo": False}
 
@@ -198,6 +206,7 @@ async def iniciar_workflow(
     """Vincula um template de workflow a um caso e inicia na primeira etapa."""
     if not _pode_editar(cu):
         raise HTTPException(403)
+    await verificar_acesso_caso(db, cu, case_id)  # gate ownership (sigilo EOAB/LGPD)
 
     # Verifica template
     t = (await db.execute(
@@ -234,6 +243,96 @@ async def iniciar_workflow(
     return _out_case_wf(cw)
 
 
+@router.post("/casos/{case_id}/aplicar-padrao", status_code=201)
+async def aplicar_workflow_padrao(
+    case_id: str,
+    db:  AsyncSession = Depends(get_db),
+    cu:  User = Depends(get_current_user),
+):
+    """Auto-aplica o workflow padrão da ÁREA do caso (R9 / Seção 11 do redesign).
+
+    Resolução do template, nesta ordem:
+      (a) AreaModuloMapping da área do caso com workflow_template_id preenchido;
+      (b) WorkflowTemplate com area_juridica == área do caso e is_default=true;
+      (c) 404 com mensagem clara.
+    Inicia o workflow na primeira etapa, como o /iniciar.
+    """
+    if not _pode_editar(cu):
+        raise HTTPException(403)
+    case = await verificar_acesso_caso(db, cu, case_id)
+
+    # Não empilha workflows: um em andamento por caso.
+    existente = (await db.execute(
+        select(CaseWorkflow.id).where(
+            CaseWorkflow.case_id == case_id,
+            CaseWorkflow.status.in_(_STATUS_EM_ANDAMENTO),
+        ).limit(1)
+    )).scalar_one_or_none()
+    if existente:
+        raise HTTPException(409, "O caso já possui um workflow em andamento")
+
+    area = case.area.value if hasattr(case.area, "value") else str(case.area)
+
+    # (a) matriz área → módulos com template vinculado
+    template = None
+    mapping = (await db.execute(
+        select(AreaModuloMapping).where(
+            func.lower(AreaModuloMapping.area_juridica) == area.lower(),
+            AreaModuloMapping.workflow_template_id.isnot(None),
+            AreaModuloMapping.habilitado.is_(True),
+        ).order_by(AreaModuloMapping.ordem)
+    )).scalars().first()
+    if mapping:
+        template = (await db.execute(
+            select(WorkflowTemplate).where(
+                WorkflowTemplate.id == mapping.workflow_template_id,
+                WorkflowTemplate.deleted_at.is_(None),
+            )
+        )).scalar_one_or_none()
+
+    # (b) template default da área
+    if not template:
+        template = (await db.execute(
+            select(WorkflowTemplate).where(
+                WorkflowTemplate.deleted_at.is_(None),
+                WorkflowTemplate.is_default.is_(True),
+                func.lower(WorkflowTemplate.area_juridica) == area.lower(),
+            ).order_by(WorkflowTemplate.created_at)
+        )).scalars().first()
+
+    # (c) nada configurado — orienta o usuário
+    if not template:
+        raise HTTPException(
+            404,
+            f"Nenhum workflow padrão configurado para a área '{area}'. "
+            "Vincule um template na matriz Área→Módulos (workflow_template_id) "
+            "ou marque um template dessa área como padrão (is_default).",
+        )
+
+    primeira = (await db.execute(
+        select(WorkflowEtapa).where(WorkflowEtapa.template_id == template.id)
+        .order_by(WorkflowEtapa.ordem).limit(1)
+    )).scalar_one_or_none()
+
+    cw = CaseWorkflow(
+        id=str(uuid4()), case_id=case_id, template_id=template.id,
+        etapa_atual_id=primeira.id if primeira else None,
+        created_by=cu.id,
+    )
+    db.add(cw)
+    await db.flush()
+    if primeira:
+        db.add(WorkflowHistorico(
+            id=str(uuid4()), case_workflow_id=cw.id,
+            etapa_id=primeira.id, responsavel_id=cu.id,
+        ))
+    await db.commit()
+    await registrar_acao(db, cu.id, "aplicar_padrao", "workflow", cw.id,
+                         f"Workflow padrão '{template.nome}' (área {area}) "
+                         f"aplicado ao caso {case_id}")
+    return _out_case_wf(cw)
+
+
 @router.post("/casos/{case_id}/avancar")
 async def avancar_etapa(
     case_id: str,
@@ -244,11 +343,13 @@ async def avancar_etapa(
     """Avança o workflow para a próxima etapa e registra no histórico."""
     if not _pode_editar(cu):
         raise HTTPException(403)
+    await verificar_acesso_caso(db, cu, case_id)  # gate ownership (sigilo EOAB/LGPD)
 
     cw = (await db.execute(
         select(CaseWorkflow).where(CaseWorkflow.case_id == case_id,
-                                   CaseWorkflow.status == WorkflowStatus.ativo)
-    )).scalar_one_or_none()
+                                   CaseWorkflow.status.in_(_STATUS_EM_ANDAMENTO))
+        .order_by(CaseWorkflow.iniciado_em.desc())
+    )).scalars().first()
     if not cw:
         raise HTTPException(404, "Workflow ativo não encontrado para este caso")
 
@@ -274,12 +375,18 @@ async def avancar_etapa(
         raise HTTPException(404, "Etapa não encontrada")
 
     cw.etapa_atual_id = proxima.id
+    # Sai do estado 'atrasado' ao avançar — o SLA da nova etapa recomeça.
+    if cw.status == WorkflowStatus.atrasado:
+        cw.status = WorkflowStatus.ativo
     hist_nova = WorkflowHistorico(
         id=str(uuid4()), case_workflow_id=cw.id,
         etapa_id=proxima.id, responsavel_id=cu.id,
     )
     db.add(hist_nova)
     await db.commit()
+    await registrar_acao(db, cu.id, "avancar", "workflow", cw.id,
+                         f"Workflow do caso {case_id} avançou para etapa "
+                         f"'{proxima.nome}'")
     return {"etapa_atual": _out_etapa(proxima)}
 
 
@@ -292,13 +399,30 @@ async def concluir_workflow(
     """Marca o workflow do caso como concluído."""
     if not _pode_editar(cu):
         raise HTTPException(403)
+    await verificar_acesso_caso(db, cu, case_id)  # gate ownership (sigilo EOAB/LGPD)
     cw = (await db.execute(
         select(CaseWorkflow).where(CaseWorkflow.case_id == case_id,
-                                   CaseWorkflow.status == WorkflowStatus.ativo)
-    )).scalar_one_or_none()
+                                   CaseWorkflow.status.in_(_STATUS_EM_ANDAMENTO))
+        .order_by(CaseWorkflow.iniciado_em.desc())
+    )).scalars().first()
     if not cw:
         raise HTTPException(404)
+
+    agora = datetime.now(timezone.utc)
+    # Fecha no histórico a etapa que estava aberta (transição auditável).
+    hist_aberto = (await db.execute(
+        select(WorkflowHistorico).where(
+            WorkflowHistorico.case_workflow_id == cw.id,
+            WorkflowHistorico.etapa_id == cw.etapa_atual_id,
+            WorkflowHistorico.concluido_em.is_(None),
+        ).order_by(WorkflowHistorico.iniciado_em.desc())
+    )).scalars().first()
+    if hist_aberto:
+        hist_aberto.concluido_em = agora
+
     cw.status = WorkflowStatus.concluido
-    cw.concluido_em = datetime.now(timezone.utc)
+    cw.concluido_em = agora
     await db.commit()
+    await registrar_acao(db, cu.id, "concluir", "workflow", cw.id,
+                         f"Workflow do caso {case_id} concluído")
     return {"status": "concluido"}

@@ -67,7 +67,7 @@ export const AssistedWritingMode: React.FC = () => {
               type="button"
               onClick={() => setSelectedArea(null)}
               className={`rounded-full px-3 py-1 text-xs font-medium transition-colors ${
-                selectedArea === null ? 'bg-blue-600 text-white' : 'bg-slate-100 text-slate-600 hover:bg-slate-200'
+                selectedArea === null ? 'bg-primary-600 text-white' : 'bg-slate-100 text-slate-600 hover:bg-slate-200'
               }`}
             >
               Todas
@@ -78,7 +78,7 @@ export const AssistedWritingMode: React.FC = () => {
                 type="button"
                 onClick={() => setSelectedArea(area)}
                 className={`rounded-full px-3 py-1 text-xs font-medium transition-colors ${
-                  selectedArea === area ? 'bg-blue-600 text-white' : 'bg-slate-100 text-slate-600 hover:bg-slate-200'
+                  selectedArea === area ? 'bg-primary-600 text-white' : 'bg-slate-100 text-slate-600 hover:bg-slate-200'
                 }`}
               >
                 {area}
@@ -99,7 +99,7 @@ export const AssistedWritingMode: React.FC = () => {
                   onClick={() => { setSelectedTemplate(t.id); setTemplateData({}); }}
                   className={`w-full rounded-lg border p-3 text-left transition-colors ${
                     selectedTemplate === t.id
-                      ? 'border-blue-300 bg-blue-50'
+                      ? 'border-primary-300 bg-primary-50'
                       : 'border-slate-200 bg-white hover:border-slate-300'
                   }`}
                 >
@@ -140,7 +140,7 @@ export const AssistedWritingMode: React.FC = () => {
         )}
 
         {error && (
-          <div className="rounded-lg border border-red-200 bg-red-50 p-3 text-sm text-red-700">{error}</div>
+          <div className="rounded-lg border border-danger-200 bg-danger-50 p-3 text-sm text-danger-700">{error}</div>
         )}
 
         {generatedDocument && (
