@@ -39,6 +39,13 @@ class AnexosIn(BaseModel):
     gerar_legendas_ia: bool = True
 
 
+class RazoesIn(AnexosIn):
+    objetivo: Optional[str] = Field(None, max_length=600, description="Pedido/objetivo central da manifestação")
+    area: str = Field("Consumidor", max_length=60)
+    nivel: str = Field("maximo", description="Nível de raciocínio: padrao | alto | maximo")
+    formato: str = Field("json", description="json (texto + citações) ou pdf")
+
+
 def _pode_gerar(cu: User) -> bool:
     return ROLE_LEVEL.get(getattr(cu.role, "value", str(cu.role)), 0) >= ROLE_LEVEL["advogado"]
 
@@ -113,3 +120,50 @@ async def gerar(
         media_type="application/pdf",
         headers={"Content-Disposition": f'attachment; filename="{filename}"'},
     )
+
+
+# ── Razões / Fundamentação Jurídica (o texto argumentativo) ───────────────────
+
+@router.post("/razoes")
+async def razoes(
+    body: RazoesIn,
+    db: AsyncSession = Depends(get_db),
+    cu: User = Depends(get_current_user),
+):
+    """
+    Gera as RAZÕES / fundamentação jurídica do caso — fato → direito →
+    responsabilidade → dano → pedido — referenciando os anexos pelo número
+    (Doc. 0X). Grounding nos documentos + RAG, verificação de citações e HITL.
+    `formato=pdf` devolve a minuta em PDF (rascunho controlado); senão, JSON com
+    o texto e o relatório de citações para revisão do advogado.
+    """
+    ctx, itens = await _preparar(db, cu, body)
+    resultado = await svc.gerar_razoes_juridicas(
+        db,
+        cu_id=cu.id,
+        case_id=body.case_id,
+        ctx=ctx,
+        itens=itens,
+        objetivo=body.objetivo,
+        area=body.area,
+        nivel=body.nivel,
+    )
+
+    if body.formato == "pdf":
+        from app.services.pdf_service import peca_para_pdf_async
+        try:
+            pdf = await peca_para_pdf_async(
+                f"Razões — {ctx.titulo_acao.title()}",
+                resultado["texto"],
+                pronto_protocolo=False,
+            )
+        except RuntimeError as exc:
+            raise HTTPException(503, f"Geração de PDF indisponível: {exc}")
+        filename = f"razoes_{body.case_id[:8]}.pdf"
+        return Response(
+            content=pdf,
+            media_type="application/pdf",
+            headers={"Content-Disposition": f'attachment; filename="{filename}"'},
+        )
+
+    return resultado

@@ -203,3 +203,105 @@ def test_mesclar_ignora_bytes_invalidos():
     partes = [_pdf_de_paginas(1), b"nao-e-pdf", _pdf_de_paginas(1)]
     saida = svc._mesclar(partes)
     assert len(PdfReader(io.BytesIO(saida)).pages) == 2
+
+
+# ── Razões / Fundamentação Jurídica ───────────────────────────────────────────
+
+class _RespRazoes:
+    def __init__(self, texto):
+        self.texto = texto
+        self.modelo = "deepseek"
+        self.provedor = "ollama"
+        self.input_tokens = 100
+        self.output_tokens = 800
+
+
+async def test_razoes_referencia_docs_grounding_e_nivel(monkeypatch):
+    cap = {}
+
+    async def fake_escopo(db, case_id):
+        return "cli-1"
+
+    async def fake_rag(db, consulta, limite=6, scope_client_id=None):
+        cap["rag_scope"] = scope_client_id
+        return [{"titulo": "CDC art. 14", "conteudo": "Responsabilidade objetiva do fornecedor."}]
+
+    async def fake_chat(*, messages, **kw):
+        cap["system"] = messages[0]["content"]
+        cap["user"] = messages[1]["content"]
+        cap["task"] = kw.get("task_type")
+        cap["nivel"] = kw.get("nivel_inteligencia")
+        return _RespRazoes("I — SÍNTESE DOS FATOS\nConforme Doc. 03, houve pagamento...")
+
+    async def fake_cit(db, texto):
+        cap["cit_texto"] = texto
+        return {"total": 0, "nao_confirmadas": []}
+
+    async def fake_log(db, **kw):
+        cap["log"] = kw
+        return "id"
+
+    monkeypatch.setattr(svc, "_escopo_cliente_do_caso", fake_escopo)
+    monkeypatch.setattr(svc, "buscar_contexto_rag", fake_rag)
+    monkeypatch.setattr(svc, "gw_chat", fake_chat)
+    monkeypatch.setattr(svc, "verificar_citacoes", fake_cit)
+    monkeypatch.setattr(svc, "registrar_ai_log", fake_log)
+
+    itens = [
+        ItemAnexo(1, "Reclamação Consumidor.gov"),
+        ItemAnexo(3, "Comprovante PIX", legenda="PIX de R$ 1.000,00 ao Banco do Brasil"),
+    ]
+    out = await svc.gerar_razoes_juridicas(
+        None, cu_id="u1", case_id="c1", ctx=_ctx(), itens=itens,
+        objetivo="reembolso e danos morais", area="Consumidor", nivel="maximo",
+    )
+
+    # Estrutura argumentativa exigida no system prompt:
+    for secao in ("SÍNTESE DOS FATOS", "DO DIREITO", "DA RESPONSABILIDADE", "DOS DANOS", "DOS PEDIDOS"):
+        assert secao in cap["system"]
+    # Anti-alucinação: nunca inventar + rótulo dos documentos:
+    assert "NUNCA invente" in cap["system"]
+    # Os anexos entram numerados no prompt do usuário:
+    assert "Doc. 01 — Reclamação Consumidor.gov" in cap["user"]
+    assert "Doc. 03 — Comprovante PIX" in cap["user"]
+    assert "PIX de R$ 1.000,00" in cap["user"]
+    # Grounding RAG presente e no escopo do cliente:
+    assert "CDC art. 14" in cap["user"]
+    assert cap["rag_scope"] == "cli-1"
+    # Raciocínio máximo + task de prosa:
+    assert cap["nivel"] == "maximo"
+    assert cap["task"] == "elaboracao_peca"
+    # Saída: verificação de citações acoplada, docs referenciados e HITL:
+    assert out["verificacao_citacoes"] == {"total": 0, "nao_confirmadas": []}
+    assert out["docs_referenciados"] == ["Doc. 01", "Doc. 03"]
+    assert "RASCUNHO" in out["aviso"]
+    # AILog gravado como redação de peça:
+    assert cap["log"]["case_id"] == "c1"
+    assert cap["log"]["fontes_rag"] is not None
+
+
+async def test_razoes_sem_rag_nao_inventa_sinaliza(monkeypatch):
+    async def fake_escopo(db, case_id):
+        return None
+
+    async def fake_rag(db, consulta, limite=6, scope_client_id=None):
+        return []
+
+    async def fake_chat(*, messages, **kw):
+        return _RespRazoes("texto")
+
+    monkeypatch.setattr(svc, "_escopo_cliente_do_caso", fake_escopo)
+    monkeypatch.setattr(svc, "buscar_contexto_rag", fake_rag)
+    monkeypatch.setattr(svc, "gw_chat", fake_chat)
+    monkeypatch.setattr(svc, "verificar_citacoes", lambda db, t: _noop())
+    monkeypatch.setattr(svc, "registrar_ai_log", lambda db, **k: _noop())
+
+    out = await svc.gerar_razoes_juridicas(
+        None, cu_id="u", case_id="c", ctx=_ctx(),
+        itens=[ItemAnexo(1, "Doc")], objetivo=None,
+    )
+    assert "texto" in out["texto"]
+
+
+async def _noop():
+    return None

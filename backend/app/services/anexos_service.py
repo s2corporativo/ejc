@@ -37,6 +37,9 @@ from app.models.client import Client
 from app.models.document import Document
 from app.services.ai_gateway import chat as gw_chat
 from app.services.ai_guard import registrar_ai_log
+from app.services.ai_service import buscar_contexto_rag, _escopo_cliente_do_caso
+from app.services.citation_check import verificar_citacoes
+from app.services.document_format import padronizar_documento_juridico
 from app.services.sanitizer import sanitizar_pii
 
 logger = logging.getLogger("ejc.anexos")
@@ -73,6 +76,7 @@ class ItemAnexo:
     document_id: str | None = None
     _filepath: str | None = field(default=None, repr=False)
     _mimetype: str | None = field(default=None, repr=False)
+    _contexto: str = field(default="", repr=False)   # trecho sanitizado p/ as razões
 
 
 # ── Contexto do caso ──────────────────────────────────────────────────────────
@@ -427,5 +431,130 @@ async def resolver_itens(
         if doc is not None:
             item._filepath = doc.filepath
             item._mimetype = doc.mimetype
+            if doc.ocr_text:
+                item._contexto = sanitizar_pii(doc.ocr_text[:900])[0]
         itens.append(item)
     return itens
+
+
+# ── Razões / Fundamentação Jurídica (o texto argumentativo) ───────────────────
+# Gera o raciocínio jurídico da manifestação — fato → direito → responsabilidade
+# → dano → pedido — REFERENCIANDO os anexos pelo número (Doc. 0X), com grounding
+# nos documentos + RAG, nível de inteligência máximo (raciocínio adversarial),
+# verificação de citações e HITL. Mesmo contrato de garantia do gateway.
+
+_SYSTEM_RAZOES = (
+    "Você é advogado(a) sênior brasileiro(a). Redija AS RAZÕES / FUNDAMENTAÇÃO "
+    "JURÍDICA de uma manifestação, em português jurídico formal e com raciocínio "
+    "ADVERSARIAL: não apenas exponha — enfrente os argumentos da parte contrária, "
+    "aponte o dispositivo que os afasta e conclua.\n\n"
+    "ESTRUTURA OBRIGATÓRIA (use estes títulos):\n"
+    "I — SÍNTESE DOS FATOS — objetiva; ao afirmar um fato comprovado, referencie o "
+    "documento juntado pelo rótulo exato 'Doc. 0X'.\n"
+    "II — DO DIREITO APLICÁVEL — fundamente cada tese no dispositivo legal pertinente.\n"
+    "III — DA RESPONSABILIDADE — enquadre a conduta e enfrente eventual excludente.\n"
+    "IV — DOS DANOS — material e moral, com nexo causal explícito.\n"
+    "V — DOS PEDIDOS — decorrentes e coerentes com a fundamentação.\n\n"
+    "REGRAS INVIOLÁVEIS (OAB / anti-alucinação):\n"
+    "1. Cite APENAS lei, súmula ou julgado de que tenha certeza. Em caso de dúvida, "
+    "escreva '(verificar)' ao lado — NUNCA invente número de artigo, súmula, "
+    "acórdão ou processo.\n"
+    "2. Refira-se aos documentos SOMENTE pelos rótulos 'Doc. 0X' fornecidos; não "
+    "invente documentos nem o que eles contêm.\n"
+    "3. Baseie os fatos apenas no contexto fornecido; lacuna probatória = '(a comprovar)'.\n"
+    "4. NUNCA prometa resultado (vedação da OAB).\n"
+    "5. Toda a saída é RASCUNHO — revisão do advogado responsável é obrigatória."
+)
+
+_AVISO_RAZOES = (
+    "⚠️ RASCUNHO gerado por IA. As citações sinalizadas e os fatos '(a comprovar)' "
+    "exigem conferência. Revisão e assinatura do advogado responsável são obrigatórias "
+    "antes de qualquer uso (OAB)."
+)
+
+
+async def gerar_razoes_juridicas(
+    db: AsyncSession,
+    *,
+    cu_id: str,
+    case_id: str,
+    ctx: ContextoAnexos,
+    itens: list[ItemAnexo],
+    objetivo: str | None = None,
+    area: str = "Consumidor",
+    nivel: str = "maximo",
+) -> dict:
+    """
+    Redige as razões jurídicas do caso amarrando-as aos anexos (Doc. 0X).
+    Retorna {texto, verificacao_citacoes, docs_referenciados, aviso}.
+    """
+    # Bloco de documentos numerados (rótulo + síntese/contexto sanitizado).
+    linhas_docs = []
+    for it in itens:
+        detalhe = it.legenda or it._contexto or ""
+        if it._contexto and it.legenda:
+            detalhe = f"{it.legenda}. {it._contexto}"
+        linhas_docs.append(f"Doc. {it.ordem:02d} — {it.titulo}: {detalhe[:600]}".rstrip())
+    bloco_docs = "\n".join(linhas_docs) or "(sem documentos juntados)"
+
+    # Grounding jurídico via RAG (legislação/súmulas), no escopo do cliente.
+    scope_cli = await _escopo_cliente_do_caso(db, case_id)
+    consulta = (objetivo or ctx.titulo_acao or area)[:300]
+    fontes = await buscar_contexto_rag(db, consulta, limite=6, scope_client_id=scope_cli)
+    rag_txt = ""
+    if fontes:
+        rag_txt = "\n".join(f"- {f['titulo']}: {f['conteudo'][:220]}" for f in fontes)
+
+    user = (
+        f"[AÇÃO] {ctx.titulo_acao}\n"
+        f"[PARTES] {ctx.partes}\n"
+        f"[ÁREA] {area}\n"
+        f"[OBJETIVO / PEDIDO CENTRAL] {objetivo or 'reparação dos danos e demais medidas cabíveis'}\n\n"
+        f"[DOCUMENTOS JUNTADOS — referencie pelos rótulos]\n{bloco_docs}\n\n"
+        f"[BASE DE CONHECIMENTO (RAG) — fundamente-se e cite a fonte]\n"
+        f"{rag_txt or '(sem fontes recuperadas — não invente; sinalize (verificar))'}"
+    )
+
+    resp = await gw_chat(
+        messages=[
+            {"role": "system", "content": _SYSTEM_RAZOES},
+            {"role": "user", "content": user},
+        ],
+        task_type="elaboracao_peca",   # prosa → base anti-alucinação
+        temperature=0.3,
+        max_tokens=4000,
+        nivel_inteligencia=nivel,
+    )
+    texto = padronizar_documento_juridico(resp.texto)
+
+    # Verificação de citações (súmulas/artigos) contra a base — fail-safe.
+    verificacao = None
+    try:
+        verificacao = await verificar_citacoes(db, texto)
+    except Exception as exc:
+        logger.warning("citation_check (razões) falhou: %s", exc)
+
+    # AILog obrigatório (HITL rastreável).
+    try:
+        await registrar_ai_log(
+            db,
+            user_id=cu_id,
+            tipo_uso=AITipoUso.redacao_peca,
+            case_id=case_id,
+            prompt_sanitizado=user,
+            pii_removida=True,   # documentos já entram sanitizados em resolver_itens
+            resposta=texto,
+            modelo=resp.modelo,
+            fontes_rag=(rag_txt[:2000] or None),
+            tokens_input=resp.input_tokens,
+            tokens_output=resp.output_tokens,
+        )
+    except Exception as exc:
+        logger.error("Falha ao gravar AILog das razões: %s", exc)
+
+    return {
+        "texto": texto,
+        "verificacao_citacoes": verificacao,
+        "docs_referenciados": [f"Doc. {it.ordem:02d}" for it in itens],
+        "aviso": _AVISO_RAZOES,
+    }
