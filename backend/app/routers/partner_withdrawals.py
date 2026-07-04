@@ -106,6 +106,30 @@ async def approve_withdrawal(
     return {"ok": True, "status": "aprovado"}
 
 
+@router.patch("/{withdrawal_id}/reject")
+async def reject_withdrawal(
+    withdrawal_id: str,
+    db: AsyncSession = Depends(get_db),
+    current_user=Depends(get_current_user),
+):
+    if current_user.role not in PRIVILEGED:
+        raise HTTPException(403, "Only partners or admins can reject withdrawals")
+
+    result = await db.execute(text("SELECT status FROM partner_withdrawals WHERE id=:id AND deleted_at IS NULL"), {"id": withdrawal_id})
+    row = result.fetchone()
+    if not row:
+        raise HTTPException(404, "Withdrawal not found")
+    if row[0] != "pendente":
+        raise HTTPException(400, f"Cannot reject withdrawal in status '{row[0]}'")
+
+    await db.execute(
+        text("UPDATE partner_withdrawals SET status='rejeitado', approved_by=:uid, updated_at=NOW() WHERE id=:id"),
+        {"uid": str(current_user.id), "id": withdrawal_id}
+    )
+    await db.commit()
+    return {"ok": True, "status": "rejeitado"}
+
+
 @router.patch("/{withdrawal_id}/pay")
 async def pay_withdrawal(
     withdrawal_id: str,

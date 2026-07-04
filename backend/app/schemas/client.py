@@ -32,6 +32,8 @@ class ClientCreate(ClientBase):
 class ClientUpdate(BaseModel):
     nome: Optional[str] = None
     razao_social: Optional[str] = None
+    cpf: Optional[str] = None
+    cnpj: Optional[str] = None
     email: Optional[str] = None
     telefone: Optional[str] = None
     whatsapp: Optional[str] = None

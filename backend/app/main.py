@@ -30,6 +30,7 @@ from slowapi.errors import RateLimitExceeded
 from app.routers import agenda_eventos
 from app.routers import ai
 from app.routers import ai_core
+from app.routers import anexos
 from app.routers import ai_skills
 from app.routers import ai_tools
 from app.routers import analise_bancaria
@@ -88,6 +89,8 @@ from app.routers import intimacoes
 from app.routers import jurimetria
 from app.routers import jurimetria_extra
 from app.routers import jurisprudencia_externa
+from app.routers import honorarios_oab
+from app.routers import intake
 from app.routers import jurisprudencia_interna
 from app.routers import kanban
 from app.routers import legal_docs
@@ -95,6 +98,7 @@ from app.routers import licitacao_auditoria
 from app.routers import mediacao
 from app.routers import memoria_institucional
 from app.routers import mensagens
+from app.routers import module_help
 from app.routers import movimentos
 from app.routers import noticias
 from app.routers import notifications
@@ -232,6 +236,7 @@ API = "/api"
 app.include_router(agenda_eventos.router, prefix=API)
 app.include_router(ai.router, prefix=API)
 app.include_router(ai_core.router, prefix=API)
+app.include_router(anexos.router, prefix=API)
 app.include_router(ai_skills.router, prefix=API)
 app.include_router(ai_tools.router, prefix=API)
 app.include_router(analise_bancaria.router, prefix=API)
@@ -296,7 +301,10 @@ app.include_router(legal_docs.router, prefix=API)
 app.include_router(licitacao_auditoria.router, prefix=API)
 app.include_router(mediacao.router, prefix=API)
 app.include_router(memoria_institucional.router, prefix=API)
+app.include_router(honorarios_oab.router, prefix=API)  # frontend: /api/honorarios-oab/estimar (EstimadorHonorarios)
+app.include_router(intake.router, prefix=API)  # frontend: /api/intake/casos/{id}/analise-completa (IntakeAnalise)
 app.include_router(mensagens.router, prefix=API)
+app.include_router(module_help.router, prefix=API)  # frontend: /api/module-help/* (HelpButton)
 app.include_router(movimentos.router, prefix=API)
 app.include_router(noticias.router, prefix=API)
 app.include_router(notifications.router, prefix=API)

@@ -38,12 +38,21 @@ _ARQUIVAMENTO_ROLES = ["superadmin", "admin", "socio", "advogado"]
 
 
 async def _proximo_numero_interno(db: AsyncSession) -> str:
-    """Numeração automática DPT-2026-0001 (sequencial por ano)."""
+    """Numeração automática DPT-2026-0001 (sequencial por ano).
+
+    Lock consultivo transacional (pg_advisory_xact_lock) serializa criações
+    concorrentes no mesmo ano — evita numero_interno duplicado. Ordenação pelo
+    sufixo NUMÉRICO (não lexicográfica: 'DPT-2026-10000' < 'DPT-2026-9999')."""
     ano = date.today().year
-    result = await db.execute(text("""
+    await db.execute(
+        text("SELECT pg_advisory_xact_lock(hashtext(:chave))"),
+        {"chave": f"numero_interno_{ano}"},
+    )
+    result = await db.execute(text(r"""
         SELECT numero_interno FROM cases
         WHERE numero_interno LIKE :pref
-        ORDER BY numero_interno DESC LIMIT 1
+        ORDER BY CAST(substring(numero_interno FROM '\d+$') AS INTEGER) DESC
+        LIMIT 1
     """), {"pref": f"DPT-{ano}-%"})
     ultimo = result.scalar()
     seq = int(ultimo.split("-")[-1]) + 1 if ultimo else 1
@@ -70,11 +79,20 @@ async def listar(
     area: Optional[str] = None,
     status_f: Optional[str] = Query(None, alias="status"),
     arquivo: str = Query("ativos", pattern="^(ativos|arquivados|todos)$"),
+    advogado_id: Optional[str] = None,
     db: AsyncSession = Depends(get_db),
     cu: User = Depends(get_current_user),
 ):
     q = select(Case).where(Case.deleted_at.is_(None))
     q = _filtro_visibilidade(q, cu)
+    # Filtro por advogado: aplicado APÓS _filtro_visibilidade — para socio+
+    # permite ver os processos de um advogado específico; para advogado comum
+    # é inócuo (no máximo estreita o conjunto já restrito aos próprios casos).
+    if advogado_id:
+        q = q.where(or_(
+            Case.advogado_responsavel_id == advogado_id,
+            Case.advogado_auxiliar_id == advogado_id,
+        ))
     if arquivo == "ativos":
         q = q.where(Case.status != CaseStatus.arquivado)
     elif arquivo == "arquivados":
@@ -106,6 +124,7 @@ async def listar(
 
 @router.get("/stats")
 async def stats_casos(
+    advogado_id: Optional[str] = None,
     db: AsyncSession = Depends(get_db),
     cu: User = Depends(get_current_user),
 ):
@@ -118,9 +137,17 @@ async def stats_casos(
     - encerrados = status == 'encerrado'
     - por_area  = contagem por área sobre o MESMO conjunto (nenhuma área some).
     """
-    base = _filtro_visibilidade(
+    base_q = _filtro_visibilidade(
         select(Case).where(Case.deleted_at.is_(None)), cu
-    ).subquery()
+    )
+    # Mesmo filtro opcional do listar (após visibilidade) — mantém o dashboard
+    # consistente com a listagem quando filtrado por advogado.
+    if advogado_id:
+        base_q = base_q.where(or_(
+            Case.advogado_responsavel_id == advogado_id,
+            Case.advogado_auxiliar_id == advogado_id,
+        ))
+    base = base_q.subquery()
 
     total = (await db.execute(
         select(sqlfunc.count()).select_from(base)
@@ -497,9 +524,9 @@ async def gerar_documentos(
 ):
     """Gera as minutas iniciais do caso (procuração, contrato de honorários,
     relatório inicial) preenchidas com os dados do cliente/caso. Rascunhos."""
-    c = (await db.execute(
-        select(Case).where(Case.id == case_id, Case.deleted_at.is_(None))
-    )).scalar_one_or_none()
+    q = select(Case).where(Case.id == case_id, Case.deleted_at.is_(None))
+    q = _filtro_visibilidade(q, cu)
+    c = (await db.execute(q)).scalar_one_or_none()
     if not c:
         raise HTTPException(status_code=404, detail="Caso não encontrado")
     docs = await gerar_documentos_iniciais(case_id, cu.id)
@@ -640,7 +667,12 @@ from pydantic import BaseModel as _BM2, Field as _F2
 
 
 class EncerrarCasoReq(_BM2):
-    resultado: str = _F2(description="exito|exito_parcial|acordo|derrota|desistencia|arquivado")
+    resultado: str = _F2(
+        # \A/\z (não ^/$): a validação por regex aceitaria "exito\n" com "$",
+        # que passaria aqui mas nunca casaria o vocabulário da jurimetria.
+        pattern=r"\A(exito|exito_parcial|acordo|derrota|desistencia|arquivado)\z",
+        description="exito|exito_parcial|acordo|derrota|desistencia|arquivado",
+    )
     motivo_resultado: str = _F2(min_length=20,
         description="Por que esse resultado? Fundamentos aceitos/rejeitados.")
     provas_determinantes: str = _F2(min_length=10)
@@ -745,6 +777,14 @@ async def traduzir_andamento(
     q = _filtro_visibilidade(q, cu)
     if not (await db.execute(q)).scalar_one_or_none():
         raise HTTPException(status_code=404, detail="Caso não encontrado")
+    # IDOR: o movimento precisa pertencer a ESTE caso (não basta o caso existir).
+    mov_ok = (await db.execute(
+        select(CaseMovimento.id).where(
+            CaseMovimento.id == mov_id, CaseMovimento.case_id == case_id,
+        )
+    )).scalar_one_or_none()
+    if not mov_ok:
+        raise HTTPException(status_code=404, detail="Movimento não encontrado neste caso")
     resumo = await traduzir_movimento(db, mov_id, forcar=True)
     if resumo is None:
         raise HTTPException(status_code=422, detail="Não foi possível traduzir o andamento (IA indisponível ou texto curto).")
@@ -900,6 +940,155 @@ async def linha_do_tempo(
     eventos.sort(key=lambda e: (e["data"].isoformat() if hasattr(e["data"], "isoformat")
                                 else str(e["data"])), reverse=True)
     return {"case_id": case_id, "total": len(eventos), "eventos": eventos}
+
+
+# ── Recomendação de teses relevantes ao caso (#tese-match) ────────────────────
+# Sugere teses vitoriosas/relevantes do Banco de Teses semelhantes ao caso atual.
+#
+# ESTRATÉGIA: relevância TEXTUAL (não vetorial).
+# A tabela `teses` (app/models/tese.py) NÃO possui coluna de embedding próprio —
+# apenas campos textuais (titulo, descricao, fundamentacao, jurisprudencia, tags)
+# e métricas de desempenho (taxa_sucesso, vezes_venceu). Como não há vetor para
+# comparar com `<=>`, gerar um embedding da consulta não teria contra-parte no
+# schema. Portanto usamos correspondência por área + palavras-chave (ILIKE),
+# reaproveitando o mesmo padrão de busca de app/routers/teses.py, e ranqueamos
+# priorizando teses vitoriosas (taxa_sucesso / vezes_venceu). Fail-safe: sem
+# resultados → lista vazia (nunca erro).
+
+_STOPWORDS_TESE = {
+    "para", "com", "sem", "por", "dos", "das", "que", "uma", "uns", "umas",
+    "seu", "sua", "sobre", "ante", "caso", "acao", "ação", "contra", "entre",
+    "nao", "não", "the", "and", "processo", "autor", "reu", "réu", "parte",
+    "juridica", "jurídica", "direito", "art", "artigo",
+}
+
+
+def _tokens_relevantes(*textos: Optional[str], limite: int = 12) -> list[str]:
+    """Extrai palavras-chave (>3 chars, sem stopwords, únicas) do texto do caso."""
+    import re
+    vistos: list[str] = []
+    seen: set[str] = set()
+    for t in textos:
+        if not t:
+            continue
+        for bruto in re.split(r"[^0-9a-zA-ZáàâãéêíóôõúçÁÀÂÃÉÊÍÓÔÕÚÇ]+", str(t)):
+            w = bruto.strip().lower()
+            if len(w) <= 3 or w in _STOPWORDS_TESE or w in seen:
+                continue
+            seen.add(w)
+            vistos.append(w)
+            if len(vistos) >= limite:
+                return vistos
+    return vistos
+
+
+@router.get("/{case_id}/teses-sugeridas", summary="Teses relevantes ao caso")
+async def teses_sugeridas(
+    case_id: str,
+    k: int = Query(5, ge=1, le=20, description="Quantidade de teses sugeridas"),
+    db: AsyncSession = Depends(get_db),
+    cu: User = Depends(get_current_user),
+):
+    """
+    Sugere teses do Banco de Teses semelhantes ao caso (vitoriosas em destaque).
+
+    Ownership: `verificar_acesso_caso` (mesmo gate dos demais endpoints do caso).
+    Busca TEXTUAL por área + palavras-chave (teses não têm embedding próprio);
+    ranqueia por sobreposição de termos e desempenho histórico. Fail-safe:
+    retorna `{"teses": []}` quando não há correspondências.
+    """
+    from app.models.tese import Tese, TeseStatus
+
+    # 1) Ownership de leitura (IDOR): reaproveita o gate canônico do caso.
+    case = await verificar_acesso_caso(db, cu, case_id)
+
+    # 2) Texto-consulta a partir do caso (área + título + tese/fatos + partes).
+    area_val = ""
+    raw_area = getattr(case, "area", None)
+    if raw_area:
+        area_val = (raw_area.value if hasattr(raw_area, "value") else str(raw_area)).strip()
+
+    keywords = _tokens_relevantes(
+        case.titulo,
+        getattr(case, "tese_principal", None),
+        getattr(case, "descricao", None),
+        getattr(case, "descricao_fatos", None),
+        getattr(case, "parte_contraria", None),
+    )
+
+    # 3) Candidatas: teses ativas cuja área bate OU que casam alguma palavra-chave.
+    stmt = select(Tese).where(
+        Tese.deleted_at.is_(None),
+        Tese.status == TeseStatus.ativa,
+    )
+    condicoes = []
+    if area_val:
+        condicoes.append(Tese.area_juridica.ilike(f"%{area_val}%"))
+    for w in keywords:
+        termo = f"%{w}%"
+        condicoes.append(Tese.titulo.ilike(termo))
+        condicoes.append(Tese.descricao.ilike(termo))
+        condicoes.append(Tese.fundamentacao.ilike(termo))
+        condicoes.append(Tese.jurisprudencia.ilike(termo))
+        condicoes.append(Tese.tags.ilike(termo))
+    if condicoes:
+        stmt = stmt.where(or_(*condicoes))
+    else:
+        # Sem área nem palavras-chave úteis → cai para as mais vitoriosas.
+        stmt = stmt.where(Tese.vezes_usada >= 1)
+
+    # Pré-filtro amplo (ordenado por desempenho) e ranqueamento fino em memória.
+    candidatas = (await db.execute(
+        stmt.order_by(Tese.taxa_sucesso.desc().nullslast(), Tese.vezes_venceu.desc())
+            .limit(100)
+    )).scalars().all()
+
+    area_lc = area_val.lower()
+
+    def _score(t: Tese) -> float:
+        blob = " ".join(filter(None, [
+            t.titulo, t.descricao, t.fundamentacao, t.jurisprudencia, t.tags,
+        ])).lower()
+        hits = sum(1 for w in keywords if w in blob)
+        area_match = bool(area_lc and t.area_juridica and area_lc in t.area_juridica.lower())
+        score = float(hits) + (2.0 if area_match else 0.0)
+        # Boost por desempenho (teses vitoriosas ganham prioridade no desempate).
+        score += float(t.taxa_sucesso or 0.0)
+        score += min(float(t.vezes_venceu or 0), 5) * 0.1
+        return score
+
+    ranqueadas = sorted(candidatas, key=_score, reverse=True)
+
+    saida = []
+    for t in ranqueadas:
+        sc = _score(t)
+        if sc <= 0:
+            continue  # sem qualquer aderência textual — descarta
+        resumo = (t.descricao or t.fundamentacao or "").strip()
+        saida.append({
+            "id": t.id,
+            "titulo": t.titulo,
+            "tema": t.area_juridica or area_val or None,
+            "ramo": t.area_juridica or None,
+            "resumo": (resumo[:280] + "…") if len(resumo) > 280 else resumo,
+            "score": round(sc, 4),
+            "distancia": round(1.0 / (1.0 + sc), 4),  # menor = mais próxima
+            "taxa_sucesso": t.taxa_sucesso,
+            "vezes_venceu": t.vezes_venceu,
+            "vezes_usada": t.vezes_usada,
+            "tribunal": t.tribunal,
+        })
+        if len(saida) >= k:
+            break
+
+    return {
+        "case_id": case_id,
+        "estrategia": "textual",  # teses não possuem embedding vetorial próprio
+        "area": area_val or None,
+        "palavras_chave": keywords,
+        "total": len(saida),
+        "teses": saida,
+    }
 
 
 @router.post('/{case_id}/analisar', summary='Analise estrategica com IA')

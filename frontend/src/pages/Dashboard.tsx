@@ -151,7 +151,7 @@ export default function Dashboard() {
         </div>
       </div>
 
-      <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-6">
+      <div className="grid gap-5 sm:grid-cols-2 xl:grid-cols-6">
         <StatCard
           label="Casos ativos"
           value={dashboard?.casos?.ativos ?? "—"}

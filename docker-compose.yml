@@ -1,6 +1,9 @@
 services:
   db:
-    image: postgres:16-alpine
+    # pgvector/pgvector:pg16 — Postgres 16 COM a extensão `vector` já instalada.
+    # As migrations do RAG fazem `CREATE EXTENSION vector`; a imagem oficial
+    # postgres:16-alpine NÃO traz o pgvector e o `alembic upgrade head` falharia.
+    image: pgvector/pgvector:pg16
     restart: unless-stopped
     environment:
       POSTGRES_USER: ${POSTGRES_USER}

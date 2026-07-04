@@ -11,15 +11,20 @@ from fastapi.responses import Response
 from sqlalchemy import select, text, func
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from fastapi.responses import StreamingResponse
+import json
+
 from app.core.database import get_db
 from app.core.config import get_settings
-from app.core.security import get_current_user
+from app.core.security import get_current_user, ROLE_LEVEL
 from app.models.user import User
 from app.models.bank_analysis import BankAnalysis, BankTransaction, BankAbusiveCharge
 from app.services.bank_statement import parse_extrato, detectar_abusivas
 from app.services import bank_report
 from app.core.ownership import verificar_acesso_caso, is_gestao
+import logging
 
+logger = logging.getLogger("ejc.bank_analysis")
 router = APIRouter(prefix="/bank-analysis", tags=["Análise Bancária (Extratos)"])
 settings = get_settings()
 
@@ -180,6 +185,134 @@ async def documento(analysis_id: str, payload: dict = Body(default={}),
                   "transaction": {"data": c.get("data")}} for c in d["cobrancas"]]
     html_doc = bank_report.gerar_documento(tipo, d["analise"], cobrancas, payload.get("dados") or {})
     return {"tipo": tipo, "html": html_doc}
+
+
+def _fmt_brl(valor) -> str:
+    try:
+        return f"R$ {float(valor or 0):,.2f}".replace(",", "X").replace(".", ",").replace("X", ".")
+    except (TypeError, ValueError):
+        return "R$ 0,00"
+
+
+def _montar_contexto_revisional(analise: dict, cobrancas: list[dict]) -> tuple[str, str]:
+    """Monta (descricao_fatos, pedidos) para o gerador de peças a partir dos
+    achados de cobranças abusivas. Apenas ESTRUTURA o contexto — a redação e a
+    sanitização LGPD ficam a cargo de gerar_peca_pipeline (esteira de peças)."""
+    banco = analise.get("banco") or "instituição financeira"
+    pini = analise.get("periodo_inicio")
+    pfim = analise.get("periodo_fim")
+    periodo = (f" no período de {pini} a {pfim}" if pini and pfim else "")
+    total_abusivo = analise.get("total_abusivo")
+
+    linhas = []
+    for c in cobrancas:
+        prio = (c.get("prioridade") or "").strip()
+        titulo = c.get("titulo") or c.get("regra") or "Cobrança"
+        desc = (c.get("descricao") or "").strip()
+        base = (c.get("base_legal") or "").strip()
+        partes = [f"[{prio}] {titulo}" if prio else titulo]
+        if desc:
+            partes.append(desc)
+        partes.append(f"Valor cobrado: {_fmt_brl(c.get('valor'))}")
+        if base:
+            partes.append(f"Base legal: {base}")
+        linhas.append(" — ".join(partes))
+
+    descricao_fatos = (
+        f"Da análise do extrato bancário do consumidor junto ao(à) {banco}{periodo}, "
+        f"foram identificadas {len(cobrancas)} cobrança(s) potencialmente abusiva(s), "
+        f"totalizando {_fmt_brl(total_abusivo)} em débitos indevidos. "
+        "As cobranças abusivas detectadas, com respectiva fundamentação, são:\n"
+        + "\n".join(f"{i + 1}. {ln}" for i, ln in enumerate(linhas))
+        + "\n\nTais lançamentos oneram indevidamente o consumidor, em desacordo com a "
+        "legislação consumerista e as normas do Conselho Monetário Nacional/BACEN, "
+        "justificando a revisão do contrato bancário e a repetição do indébito."
+    )
+
+    pedidos = (
+        "a) a declaração de abusividade e nulidade das cobranças acima discriminadas;\n"
+        "b) a revisão do contrato bancário para expurgo dos encargos abusivos;\n"
+        "c) a condenação da instituição financeira à repetição do indébito, com a "
+        "devolução em dobro dos valores cobrados indevidamente, nos termos do art. 42, "
+        f"parágrafo único, do CDC, totalizando {_fmt_brl(total_abusivo)} (a apurar em "
+        "liquidação), acrescidos de correção monetária e juros legais;\n"
+        "d) subsidiariamente, a devolução simples dos valores indevidamente debitados."
+    )
+    return descricao_fatos, pedidos
+
+
+@router.post("/{analysis_id}/gerar-peca")
+async def gerar_peca(analysis_id: str, db: AsyncSession = Depends(get_db),
+                     cu: User = Depends(get_current_user)):
+    """Gera a MINUTA de uma ação revisional / repetição de indébito a partir das
+    cobranças abusivas já detectadas na análise bancária.
+
+    Reutiliza a esteira de peças (gerar_peca_pipeline, 7 etapas + SSE). A saída é
+    RASCUNHO (HITL): revisão humana obrigatória (OAB). A sanitização LGPD ocorre
+    dentro do pipeline. Retorna Server-Sent Events: step(1-7) → concluido com o
+    documento e o legal_doc_id, no mesmo formato do gerador de peças."""
+    if ROLE_LEVEL.get(cu.role.value, 0) < ROLE_LEVEL["estagiario"]:
+        raise HTTPException(403, "Acesso negado")
+
+    # Reutiliza detalhe(): já aplica ownership (verificar_acesso_caso se houver
+    # case_id; senão gestão/criador) e carrega análise + cobranças.
+    d = await detalhe(analysis_id, db, cu)
+    cobrancas = d["cobrancas"]
+    if not cobrancas:
+        raise HTTPException(422, "Sem cobranças abusivas para peticionar nesta análise.")
+
+    # Fail-safe: a esteira de peças depende de IA. Se nenhum provedor estiver
+    # configurado, retorna erro limpo antes de abrir o stream.
+    if not settings.GROQ_API_KEY and not settings.OLLAMA_ENABLED:
+        raise HTTPException(503, "Serviço de IA indisponível para geração de peças no momento.")
+
+    analise = d["analise"]
+    case_id = analise.get("case_id")
+    descricao_fatos, pedidos = _montar_contexto_revisional(analise, cobrancas)
+
+    escopo_cli = None
+    if case_id:
+        # ownership do caso já checado em detalhe(); aqui deriva o escopo do RAG.
+        from app.services.ai_service import _escopo_cliente_do_caso
+        escopo_cli = await _escopo_cliente_do_caso(db, case_id)
+
+    from app.services.peca_service import gerar_peca_pipeline
+
+    async def stream():
+        try:
+            async for chunk in gerar_peca_pipeline(
+                db=db,
+                user_id=cu.id,
+                tipo_peca="peticao_inicial",
+                area_direito="consumidor",
+                descricao_fatos=descricao_fatos,
+                pedidos=pedidos,
+                scope_client_id=escopo_cli,
+                nomes_proteger=[],
+                case_id=case_id,
+                instrucoes_adicionais=(
+                    "Redija AÇÃO REVISIONAL DE CONTRATO BANCÁRIO cumulada com "
+                    "REPETIÇÃO DE INDÉBITO, fundada nas cobranças abusivas apuradas "
+                    "no extrato. Não invente valores além dos informados."
+                ),
+            ):
+                yield chunk
+        except Exception as e:
+            logger.error(f"Falha ao gerar peça da análise {analysis_id}: {e}", exc_info=True)
+            yield (
+                "event: erro\ndata: "
+                + json.dumps(
+                    {"detail": "Não foi possível gerar a minuta no momento."},
+                    ensure_ascii=False,
+                )
+                + "\n\n"
+            )
+
+    return StreamingResponse(
+        stream(),
+        media_type="text/event-stream",
+        headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"},
+    )
 
 
 @router.delete("/{analysis_id}")

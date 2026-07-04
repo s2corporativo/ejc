@@ -11,8 +11,25 @@ import {
   Empty,
   Spinner,
   fmtDate,
+  Alert,
+  Badge,
+  Button,
 } from "../components/UI";
 import { ClientesStats } from "../components/Dashboards";
+
+// Resposta de POST /clients/checar-conflito (nomes já mascarados; nunca CPF).
+type ConflitoNivel = "nenhum" | "atencao" | "critico";
+interface ConflitoMatch {
+  tipo: string;
+  case_id?: string;
+  papel: string;
+  descricao: string;
+}
+interface ConflitoCheck {
+  conflito: boolean;
+  nivel: ConflitoNivel;
+  matches: ConflitoMatch[];
+}
 
 function openWhatsApp(phone: string, name: string) {
   const digits = phone.replace(/\D/g, "");
@@ -25,7 +42,8 @@ export default function Clientes() {
   const [data, setData] = useState<Paged<Client> | null>(null);
   const [search, setSearch] = useState("");
   const [modal, setModal] = useState(false);
-  const [conflito, setConflito] = useState<any>(null);
+  const [conflito, setConflito] = useState<ConflitoCheck | null>(null);
+  const [conflitoLoading, setConflitoLoading] = useState(false);
   const [acessoModal, setAcessoModal] = useState<any>(null); // cliente alvo
   const [acessoForm, setAcessoForm] = useState({
     email: "",
@@ -53,25 +71,39 @@ export default function Clientes() {
     return () => clearTimeout(t);
   }, [search]);
 
-  const verificarConflito = async () => {
-    const { data } = await api.post("/clients/verificar-conflito", {
-      nome: form.nome || form.razao_social,
-      cpf: form.cpf,
-      cnpj: form.cnpj,
-      parte_contraria: form.parte_contraria,
-    });
-    setConflito(data);
-    return data;
+  // Checagem de conflito de interesses em tempo real (EOAB arts. 34-35).
+  // Fail-safe: qualquer erro é silencioso e NÃO impede o cadastro.
+  const checarConflito = async (): Promise<ConflitoCheck | null> => {
+    const nome = (form.nome || form.razao_social || "").trim();
+    const cpf = form.cpf;
+    const cnpj = form.cnpj;
+    const parte_contraria = form.parte_contraria;
+    // Nada relevante digitado ainda → limpa e não chama a API.
+    if (!cpf && !cnpj && nome.length < 4 && !parte_contraria) {
+      setConflito(null);
+      return null;
+    }
+    setConflitoLoading(true);
+    try {
+      const { data } = await api.post<ConflitoCheck>(
+        "/clients/checar-conflito",
+        { nome, cpf, cnpj, parte_contraria },
+      );
+      setConflito(data);
+      return data;
+    } catch {
+      // Aviso ético é best-effort: falha na checagem não trava o formulário.
+      setConflito(null);
+      return null;
+    } finally {
+      setConflitoLoading(false);
+    }
   };
 
   const salvar = async () => {
+    // O alerta de conflito é apenas um aviso ético — NÃO bloqueia o cadastro.
     setSalvando(true);
     try {
-      const check = conflito || (await verificarConflito());
-      if (check.bloqueio) {
-        setSalvando(false);
-        return;
-      }
       await api.post("/clients/", form);
       setModal(false);
       setForm({ tipo: "PF", cidade: "Betim", estado: "MG" });
@@ -258,6 +290,7 @@ export default function Clientes() {
                   className="input"
                   value={form.cpf || ""}
                   onChange={(e) => setForm({ ...form, cpf: e.target.value })}
+                  onBlur={checarConflito}
                 />
               </div>
             </>
@@ -280,6 +313,7 @@ export default function Clientes() {
                     className="input flex-1"
                     value={form.cnpj || ""}
                     onChange={(e) => setForm({ ...form, cnpj: e.target.value })}
+                    onBlur={checarConflito}
                   />
                   <button
                     type="button"
@@ -395,47 +429,58 @@ export default function Clientes() {
               onChange={(e) =>
                 setForm({ ...form, parte_contraria: e.target.value })
               }
+              onBlur={checarConflito}
             />
           </div>
         </div>
 
-        {conflito && (
-          <div
-            className={`mt-4 p-3 rounded-lg text-sm flex gap-2 ${
-              conflito.classificacao === "CONFLITO_IDENTIFICADO"
-                ? "bg-danger-50 text-danger-700"
-                : conflito.classificacao === "POSSIVEL_CONFLITO"
-                  ? "bg-warn-50 text-warn-700"
-                  : "bg-success-50 text-success-700"
-            }`}
+        {conflito && conflito.conflito && conflito.nivel !== "nenhum" && (
+          <Alert
+            className="mt-4"
+            variant={conflito.nivel === "critico" ? "danger" : "warning"}
+            title={
+              conflito.nivel === "critico"
+                ? "Conflito de interesses crítico (EOAB arts. 34-35)"
+                : "Atenção: possível conflito de interesses"
+            }
           >
-            <ShieldAlert size={18} className="shrink-0 mt-0.5" />
-            <div>
-              <strong>{conflito.orientacao}</strong>
-              {conflito.achados?.length > 0 && (
-                <ul className="mt-1 text-xs space-y-0.5">
-                  {conflito.achados.map((a: any, i: number) => (
-                    <li key={i}>
-                      • {a.tipo.replace(/_/g, " ")}: {a.nome || a.titulo}
-                    </li>
-                  ))}
-                </ul>
-              )}
-            </div>
-          </div>
+            <ul className="space-y-1.5">
+              {conflito.matches.map((m, i) => (
+                <li key={i} className="flex flex-wrap items-center gap-1.5">
+                  <Badge tone={conflito.nivel === "critico" ? "red" : "amber"}>
+                    {m.papel.replace(/_/g, " ")}
+                  </Badge>
+                  <span>{m.descricao}</span>
+                  {m.case_id && (
+                    <Link
+                      to={`/casos/${m.case_id}`}
+                      className="font-medium underline hover:no-underline"
+                    >
+                      ver caso
+                    </Link>
+                  )}
+                </li>
+              ))}
+            </ul>
+            <p className="mt-2 text-xs opacity-80">
+              Aviso ético — o cadastro não é bloqueado, mas registre a análise
+              de conflito antes de prosseguir.
+            </p>
+          </Alert>
         )}
 
         <div className="flex justify-between mt-5">
-          <button className="btn-ghost" onClick={verificarConflito}>
-            <ShieldAlert size={15} /> Verificar conflito
-          </button>
-          <button
-            className="btn-primary"
-            disabled={salvando || conflito?.bloqueio}
-            onClick={salvar}
+          <Button
+            variant="ghost"
+            icon={<ShieldAlert size={15} />}
+            disabled={conflitoLoading}
+            onClick={checarConflito}
           >
+            {conflitoLoading ? "Verificando..." : "Verificar conflito"}
+          </Button>
+          <Button variant="primary" disabled={salvando} onClick={salvar}>
             {salvando ? "Salvando..." : "Salvar cliente"}
-          </button>
+          </Button>
         </div>
       </Modal>
       {/* Modal: criar acesso ao Portal do Cliente */}

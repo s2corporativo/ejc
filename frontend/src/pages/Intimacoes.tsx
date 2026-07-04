@@ -6,20 +6,36 @@ import {
   ExternalLink,
   Loader2,
   CalendarClock,
+  XCircle,
 } from "lucide-react";
 import { useNavigate } from "react-router-dom";
 import { format } from "date-fns";
 import { ptBR } from "date-fns/locale";
 import api from "../lib/api";
-import { PageHeader, Modal, Alert, Button, fmtDate } from "../components/UI";
+import { PageHeader, Modal, Alert, Button, Badge, fmtDate } from "../components/UI";
 import { toast } from "../components/Toast";
 
-interface SugestaoPrazo {
-  tipo_detectado: string;
-  dias: number;
-  data_sugerida: string;
+type PrazoStatus = "nenhum" | "sugerido" | "aceito" | "recusado";
+
+// Resposta de GET /intimacoes/{id}/prazo-sugerido (fluxo de prazo assistido).
+// Campos alinhados a `_calcular_sugestao` + status/deadline do backend.
+interface PrazoSugerido {
+  disponivel: boolean;
+  tipo_detectado?: string | null;
+  dias?: number | null;
+  data_sugerida?: string | null;
+  data_base?: string | null;
   fundamentacao?: string | null;
   aviso?: string | null;
+  prazo_sugerido_status: PrazoStatus;
+  prazo_deadline_id?: string | null;
+}
+
+// Estado local do prazo assistido por intimação (a listagem não devolve estes
+// campos, então semeamos a partir do GET e atualizamos ao aceitar/recusar).
+interface PrazoLocal {
+  status: PrazoStatus;
+  deadlineId: string | null;
 }
 
 interface StatusCaptura {
@@ -29,16 +45,28 @@ interface StatusCaptura {
   erro: string | null;
 }
 
+const PRAZO_BADGE: Record<
+  PrazoStatus,
+  { tone: "slate" | "amber" | "green" | "red"; label: string }
+> = {
+  nenhum: { tone: "slate", label: "Sem prazo" },
+  sugerido: { tone: "amber", label: "Prazo sugerido" },
+  aceito: { tone: "green", label: "Prazo aceito" },
+  recusado: { tone: "red", label: "Prazo recusado" },
+};
+
 export default function Intimacoes() {
   const nav = useNavigate();
   const [items, setItems] = useState<any[]>([]);
   const [pendentes, setPendentes] = useState(true);
   const [loading, setLoading] = useState(false);
   const [sugerindo, setSugerindo] = useState<string | null>(null);
+  const [salvando, setSalvando] = useState<null | "aceitar" | "recusar">(null);
   const [sugestao, setSugestao] = useState<{
     com: any;
-    dados: SugestaoPrazo;
+    dados: PrazoSugerido;
   } | null>(null);
+  const [prazos, setPrazos] = useState<Record<string, PrazoLocal>>({});
   const [status, setStatus] = useState<StatusCaptura | null>(null);
 
   const load = () =>
@@ -60,6 +88,11 @@ export default function Intimacoes() {
     loadStatus();
   }, []);
 
+  const statusDe = (com: any): PrazoStatus =>
+    prazos[com.id]?.status ??
+    (com.prazo_sugerido_status as PrazoStatus | undefined) ??
+    "nenhum";
+
   const capturar = async () => {
     setLoading(true);
     try {
@@ -79,54 +112,82 @@ export default function Intimacoes() {
     load();
   };
 
-  const irParaNovoPrazo = (com: any) =>
-    nav(`/prazos?novo=1&processo=${com.numero_processo || ""}`);
-
-  const criarPrazo = async (com: any) => {
+  // Prazo assistido — passo 1: buscar a sugestão (modo leitura, não persiste).
+  const sugerirPrazo = async (com: any) => {
     setSugerindo(com.id);
     try {
-      const { data } = await api.post<SugestaoPrazo>(
-        `/intimacoes/${com.id}/sugerir-prazo`,
+      const { data } = await api.get<PrazoSugerido>(
+        `/intimacoes/${com.id}/prazo-sugerido`,
       );
+      setPrazos((p) => ({
+        ...p,
+        [com.id]: {
+          status: data.prazo_sugerido_status || "nenhum",
+          deadlineId: data.prazo_deadline_id ?? null,
+        },
+      }));
       setSugestao({ com, dados: data });
-    } catch {
-      // Sem sugestão disponível — cai no fluxo manual atual
-      toast.info("Sugestão indisponível — preencha o prazo manualmente.");
-      irParaNovoPrazo(com);
+    } catch (e: any) {
+      toast.error(
+        e.response?.data?.detail || "Não foi possível calcular a sugestão de prazo.",
+      );
     } finally {
       setSugerindo(null);
     }
   };
 
-  const usarSugestao = async () => {
-    if (!sugestao) return;
-    const { com, dados } = sugestao;
-    const resumo = [
-      `Título: ${dados.tipo_detectado} — ${com.numero_processo || "processo não identificado"}`,
-      `Prazo: ${dados.dias} dias`,
-      `Data sugerida: ${fmtDate(dados.data_sugerida)}`,
-      dados.fundamentacao ? `Fundamentação: ${dados.fundamentacao}` : null,
-    ]
-      .filter(Boolean)
-      .join("\n");
-    try {
-      await navigator.clipboard.writeText(resumo);
-      toast.info(
-        "Sugestão copiada — a tela de Prazos ainda não pré-preenche o formulário; cole os dados no novo prazo.",
-      );
-    } catch {
-      toast.error("Não foi possível copiar a sugestão. Anote os dados antes de continuar.");
-    }
-    setSugestao(null);
-    irParaNovoPrazo(com);
-  };
-
-  const preencherManual = () => {
+  // Passo 2a: aceitar — cria o Deadline no caso e marca status "aceito".
+  const aceitarPrazo = async () => {
     if (!sugestao) return;
     const { com } = sugestao;
-    setSugestao(null);
-    irParaNovoPrazo(com);
+    setSalvando("aceitar");
+    try {
+      const { data } = await api.post(`/intimacoes/${com.id}/aceitar-prazo`);
+      setPrazos((p) => ({
+        ...p,
+        [com.id]: { status: "aceito", deadlineId: data.deadline_id ?? null },
+      }));
+      toast.success(
+        data.criado === false
+          ? "Prazo já estava cadastrado para esta intimação."
+          : `Prazo cadastrado para ${fmtDate(data.data_prazo)}.`,
+      );
+      setSugestao(null);
+    } catch (e: any) {
+      // 422: intimação sem caso vinculado (ou sem base para calcular o prazo).
+      const detalhe =
+        e.response?.status === 422
+          ? e.response?.data?.detail ||
+            "Intimação sem caso vinculado — vincule um caso antes de gerar o prazo."
+          : e.response?.data?.detail || "Não foi possível cadastrar o prazo.";
+      toast.error(detalhe);
+    } finally {
+      setSalvando(null);
+    }
   };
+
+  // Passo 2b: recusar — nenhum Deadline é criado, apenas marca "recusado".
+  const recusarPrazo = async () => {
+    if (!sugestao) return;
+    const { com } = sugestao;
+    setSalvando("recusar");
+    try {
+      const { data } = await api.post(`/intimacoes/${com.id}/recusar-prazo`);
+      setPrazos((p) => ({
+        ...p,
+        [com.id]: { status: "recusado", deadlineId: null },
+      }));
+      toast.info(data.detail || "Prazo recusado — nenhum prazo será gerado.");
+      setSugestao(null);
+    } catch (e: any) {
+      toast.error(e.response?.data?.detail || "Não foi possível recusar o prazo.");
+    } finally {
+      setSalvando(null);
+    }
+  };
+
+  const sugestaoAtual = sugestao ? statusDe(sugestao.com) : "nenhum";
+  const podeAceitar = sugestao?.dados.disponivel && sugestaoAtual !== "recusado";
 
   return (
     <div>
@@ -209,119 +270,188 @@ export default function Intimacoes() {
             </p>
           </div>
         )}
-        {items.map((c) => (
-          <div
-            key={c.id}
-            className="p-4 flex flex-wrap gap-3 items-start justify-between"
-          >
-            <div className="flex-1 min-w-[260px]">
-              <div className="flex items-center gap-2 flex-wrap">
-                <span className="badge-navy">{c.tribunal || "—"}</span>
-                <span className="text-xs text-slate-500">
-                  {c.tipo || "Comunicação"}
-                </span>
-                <span className="text-xs text-slate-400">
-                  {c.data &&
-                    new Date(c.data + "T12:00").toLocaleDateString("pt-BR")}
-                </span>
+        {items.map((c) => {
+          const st = statusDe(c);
+          const badge = PRAZO_BADGE[st];
+          const local = prazos[c.id];
+          return (
+            <div
+              key={c.id}
+              className="p-4 flex flex-wrap gap-3 items-start justify-between"
+            >
+              <div className="flex-1 min-w-[260px]">
+                <div className="flex items-center gap-2 flex-wrap">
+                  <span className="badge-navy">{c.tribunal || "—"}</span>
+                  <span className="text-xs text-slate-500">
+                    {c.tipo || "Comunicação"}
+                  </span>
+                  <span className="text-xs text-slate-400">
+                    {c.data &&
+                      new Date(c.data + "T12:00").toLocaleDateString("pt-BR")}
+                  </span>
+                  <Badge tone={badge.tone}>{badge.label}</Badge>
+                </div>
+                <div className="text-sm font-medium mt-1">
+                  {c.numero_processo || "Processo não identificado"}
+                </div>
+                <p className="text-xs text-slate-500 mt-1 line-clamp-3">
+                  {c.texto}
+                </p>
+                {st === "aceito" && (
+                  <button
+                    type="button"
+                    className="mt-2 inline-flex items-center gap-1 text-xs font-medium text-primary-600 hover:underline"
+                    onClick={() => nav("/prazos")}
+                  >
+                    <CalendarClock size={12} />
+                    {local?.deadlineId ? "Ver prazo cadastrado" : "Ver prazos"}
+                  </button>
+                )}
               </div>
-              <div className="text-sm font-medium mt-1">
-                {c.numero_processo || "Processo não identificado"}
-              </div>
-              <p className="text-xs text-slate-500 mt-1 line-clamp-3">
-                {c.texto}
-              </p>
-            </div>
-            <div className="flex flex-col gap-2">
-              <button
-                className="btn-ghost text-xs"
-                disabled={sugerindo === c.id}
-                onClick={() => criarPrazo(c)}
-              >
-                {sugerindo === c.id ? (
-                  <Loader2 size={13} className="animate-spin" />
-                ) : (
-                  <ExternalLink size={13} />
-                )}{" "}
-                Criar prazo
-              </button>
-              {!c.processada && (
+              <div className="flex flex-col gap-2">
                 <button
-                  className="btn-primary text-xs"
-                  onClick={() => processar(c.id)}
+                  className="btn-ghost text-xs"
+                  disabled={sugerindo === c.id}
+                  onClick={() => sugerirPrazo(c)}
                 >
-                  <CheckCircle2 size={13} /> Tratada
+                  {sugerindo === c.id ? (
+                    <Loader2 size={13} className="animate-spin" />
+                  ) : st === "aceito" || st === "recusado" ? (
+                    <ExternalLink size={13} />
+                  ) : (
+                    <CalendarClock size={13} />
+                  )}{" "}
+                  {st === "aceito" || st === "recusado"
+                    ? "Revisar prazo"
+                    : "Sugerir prazo"}
                 </button>
-              )}
+                {!c.processada && (
+                  <button
+                    className="btn-primary text-xs"
+                    onClick={() => processar(c.id)}
+                  >
+                    <CheckCircle2 size={13} /> Tratada
+                  </button>
+                )}
+              </div>
             </div>
-          </div>
-        ))}
+          );
+        })}
       </div>
 
-      {/* Sugestão de prazo (IA/heurística do backend) */}
+      {/* Prazo assistido — sugestão do backend (heurística/base legal DJEN) */}
       <Modal
         open={!!sugestao}
-        onClose={() => setSugestao(null)}
-        title="Sugestão de prazo"
+        onClose={() => (salvando ? null : setSugestao(null))}
+        title="Prazo assistido"
         size="md"
         footer={
           <>
-            <Button type="button" variant="secondary" onClick={preencherManual}>
-              Preencher manualmente
+            <Button
+              type="button"
+              variant="secondary"
+              icon={
+                salvando === "recusar" ? (
+                  <Loader2 className="h-4 w-4 animate-spin" />
+                ) : (
+                  <XCircle className="h-4 w-4" />
+                )
+              }
+              disabled={salvando !== null || sugestaoAtual === "recusado"}
+              onClick={recusarPrazo}
+            >
+              Recusar
             </Button>
             <Button
               type="button"
               variant="primary"
-              icon={<CalendarClock className="h-4 w-4" />}
-              onClick={usarSugestao}
+              icon={
+                salvando === "aceitar" ? (
+                  <Loader2 className="h-4 w-4 animate-spin" />
+                ) : (
+                  <CalendarClock className="h-4 w-4" />
+                )
+              }
+              disabled={salvando !== null || !podeAceitar}
+              onClick={aceitarPrazo}
             >
-              Usar sugestão
+              {sugestaoAtual === "aceito" ? "Aceito" : "Aceitar prazo"}
             </Button>
           </>
         }
       >
         {sugestao && (
           <div className="space-y-4">
-            <div className="grid grid-cols-2 gap-3 sm:grid-cols-3">
-              <div className="rounded-lg border border-slate-200 bg-slate-50 px-3 py-2">
-                <div className="text-[10px] font-bold uppercase text-slate-500">
-                  Tipo detectado
-                </div>
-                <div className="mt-1 text-sm font-semibold text-slate-900 capitalize">
-                  {sugestao.dados.tipo_detectado.replace(/_/g, " ")}
-                </div>
-              </div>
-              <div className="rounded-lg border border-slate-200 bg-slate-50 px-3 py-2">
-                <div className="text-[10px] font-bold uppercase text-slate-500">
-                  Prazo
-                </div>
-                <div className="mt-1 text-sm font-semibold text-slate-900">
-                  {sugestao.dados.dias} dias
-                </div>
-              </div>
-              <div className="rounded-lg border border-slate-200 bg-slate-50 px-3 py-2">
-                <div className="text-[10px] font-bold uppercase text-slate-500">
-                  Data sugerida
-                </div>
-                <div className="mt-1 text-sm font-semibold text-slate-900">
-                  {fmtDate(sugestao.dados.data_sugerida)}
-                </div>
-              </div>
+            <div className="flex items-center justify-between gap-2">
+              <span className="text-xs font-medium text-slate-500">
+                {sugestao.com.numero_processo || "Processo não identificado"}
+              </span>
+              <Badge tone={PRAZO_BADGE[sugestaoAtual].tone}>
+                {PRAZO_BADGE[sugestaoAtual].label}
+              </Badge>
             </div>
 
-            {sugestao.dados.fundamentacao && (
-              <div className="rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm text-slate-700">
-                <span className="font-semibold text-slate-900">
-                  Fundamentação:
-                </span>{" "}
-                {sugestao.dados.fundamentacao}
-              </div>
-            )}
+            {sugestao.dados.disponivel ? (
+              <>
+                <div className="grid grid-cols-2 gap-3 sm:grid-cols-3">
+                  <div className="rounded-lg border border-slate-200 bg-slate-50 px-3 py-2">
+                    <div className="text-[10px] font-bold uppercase text-slate-500">
+                      Tipo detectado
+                    </div>
+                    <div className="mt-1 text-sm font-semibold text-slate-900 capitalize">
+                      {(sugestao.dados.tipo_detectado || "Prazo").replace(
+                        /_/g,
+                        " ",
+                      )}
+                    </div>
+                  </div>
+                  <div className="rounded-lg border border-slate-200 bg-slate-50 px-3 py-2">
+                    <div className="text-[10px] font-bold uppercase text-slate-500">
+                      Prazo
+                    </div>
+                    <div className="mt-1 text-sm font-semibold text-slate-900">
+                      {sugestao.dados.dias ?? "—"} dias
+                    </div>
+                  </div>
+                  <div className="rounded-lg border border-slate-200 bg-slate-50 px-3 py-2">
+                    <div className="text-[10px] font-bold uppercase text-slate-500">
+                      Data sugerida
+                    </div>
+                    <div className="mt-1 text-sm font-semibold text-slate-900">
+                      {fmtDate(sugestao.dados.data_sugerida)}
+                    </div>
+                  </div>
+                </div>
 
-            <Alert variant="warning" title="Confira antes de criar o prazo">
-              {sugestao.dados.aviso ||
-                "Sugestão automática — a contagem do prazo é de responsabilidade do advogado. Confira a intimação e a base legal."}
-            </Alert>
+                {sugestao.dados.data_base && (
+                  <div className="text-xs text-slate-500">
+                    Termo inicial (disponibilização):{" "}
+                    <span className="font-medium text-slate-700">
+                      {fmtDate(sugestao.dados.data_base)}
+                    </span>
+                  </div>
+                )}
+
+                {sugestao.dados.fundamentacao && (
+                  <div className="rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm text-slate-700">
+                    <span className="font-semibold text-slate-900">
+                      Fundamentação:
+                    </span>{" "}
+                    {sugestao.dados.fundamentacao}
+                  </div>
+                )}
+
+                <Alert variant="warning" title="Confira antes de aceitar o prazo">
+                  {sugestao.dados.aviso ||
+                    "Sugestão automática — a contagem do prazo é de responsabilidade do advogado. Confira a intimação e a base legal."}
+                </Alert>
+              </>
+            ) : (
+              <Alert variant="warning" title="Sem sugestão automática">
+                {sugestao.dados.aviso ||
+                  "Não foi possível calcular um prazo a partir desta intimação (sem data de disponibilização ou tipo não reconhecido). Cadastre o prazo manualmente na tela de Prazos ou recuse."}
+              </Alert>
+            )}
           </div>
         )}
       </Modal>

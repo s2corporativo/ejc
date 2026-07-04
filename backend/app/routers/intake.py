@@ -21,7 +21,9 @@ from pydantic import BaseModel, Field
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.core.config import settings
+from app.core.config import get_settings
+
+settings = get_settings()
 from app.core.database import get_db
 from app.core.ownership import verificar_acesso_caso
 from app.core.security import get_current_user, ROLE_LEVEL

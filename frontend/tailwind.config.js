@@ -6,59 +6,57 @@ export default {
     extend: {
       colors: {
         /*
-         * Identidade De Paula Teixeira — bronze/ouro/espresso sobre marfim.
-         * `blue`/`violet`/`purple` voltam a ser as cores padrão do Tailwind
-         * (Fase 3): os usos literais legados são migrados para `primary-*`
-         * (ação/marca, era o remap de `blue`) e `ai-*` (superfície de IA, era
-         * o remap de `violet`/`purple`) em vez de continuar re-pintando as
-         * cores nativas do Tailwind.
+         * SaaS tech moderno — indigo/violet sobre superfícies claras.
+         * Nomes de tokens preservados (fan-in alto nas 64 páginas); apenas
+         * os VALORES foram repintados: primary=indigo, ai=violet,
+         * bronze/gold/navy=neutros slate/indigo (legado).
          */
 
-        // Sidebar — slate (era espresso/azul-marinho)
+        // Sidebar — dark refinado com tint indigo sutil
         sidebar: {
-          DEFAULT: "#0F172A",
-          light:   "#1E293B",
-          hover:   "#172033",
-          active:  "#0B111F",
+          DEFAULT: "#0B0F1A",
+          light:   "#151B2C",
+          hover:   "#141B30",
+          active:  "#1A2240",
         },
-        // Primária — bronze (ação/marca, substitui o remap de `blue`)
+        // Primária — indigo moderno (ação/marca)
         primary: {
-          DEFAULT: "#8C6A33",
-          50:  "#FAF5EF", 100: "#F0E4D2", 200: "#E2CBA8", 300: "#CBA877",
-          400: "#B98A3C", 500: "#A6792F", 600: "#8C6A33", 700: "#6E5228",
-          800: "#5A431F", 900: "#473414", 950: "#2A1F0C",
+          DEFAULT: "#4F46E5",
+          50:  "#EEF2FF", 100: "#E0E7FF", 200: "#C7D2FE", 300: "#A5B4FC",
+          400: "#818CF8", 500: "#6366F1", 600: "#4F46E5", 700: "#4338CA",
+          800: "#3730A3", 900: "#312E81", 950: "#1E1B4B",
         },
-        // IA — teal (superfície de IA, substitui o remap de `violet`/`purple`)
+        // IA — violet tech (superfícies de inteligência)
         ai: {
-          DEFAULT: "#266761",
-          50:  "#ECF4F3", 100: "#D2E7E4", 200: "#A8D0CB", 300: "#73B0A9",
-          400: "#459089", 500: "#2F7A72", 600: "#266761", 700: "#1F534E",
-          800: "#1B433F", 900: "#173734", 950: "#0B201E",
+          DEFAULT: "#7C3AED",
+          50:  "#F5F3FF", 100: "#EDE9FE", 200: "#DDD6FE", 300: "#C4B5FD",
+          400: "#A78BFA", 500: "#8B5CF6", 600: "#7C3AED", 700: "#6D28D9",
+          800: "#5B21B6", 900: "#4C1D95", 950: "#2E1065",
         },
-        // navy — repintado para slate (era espresso/azul)
+        // navy — slate escuro (legado)
         navy: {
           DEFAULT: "#0F172A",
           950: "#020617", 900: "#0F172A", 800: "#1E293B",
           700: "#334155", 600: "#475569", 100: "#F1F5F9", 50: "#F8FAFC",
         },
-        // Bronze / ouro — marca
+        // bronze/gold — legados repintados para neutros slate/indigo suaves
         bronze: {
-          DEFAULT: "#8C6A33",
-          dark:    "#6E5228",
-          deep:    "#5A431F",
-          medium:  "#9A7742",
-          light:   "#C6A158",
-          pale:    "#E8D6AE",
-          50:      "#FAF5EF",
-          30:      "#FDF9F5",
+          DEFAULT: "#475569",
+          dark:    "#334155",
+          deep:    "#1E293B",
+          medium:  "#64748B",
+          light:   "#A5B4FC",
+          pale:    "#E0E7FF",
+          50:      "#F8FAFC",
+          30:      "#FBFCFE",
         },
         gold: {
-          DEFAULT: "#C6A158",
-          dark:    "#9A7742",
-          light:   "#DBC084",
-          700:     "#6E5228",
-          600:     "#8C6A33",
-          50:      "#FAF5EF",
+          DEFAULT: "#A5B4FC",
+          dark:    "#818CF8",
+          light:   "#C7D2FE",
+          700:     "#4338CA",
+          600:     "#4F46E5",
+          50:      "#EEF2FF",
         },
         ink: {
           DEFAULT: "#111827",
@@ -108,8 +106,8 @@ export default {
         },
       },
       fontFamily: {
-        sans:  ['"DM Sans"', "system-ui", "sans-serif"],
-        serif: ['"Cormorant Garamond"', "Georgia", "Cambria", "serif"],
+        sans:  ['"Inter"', "system-ui", "-apple-system", "sans-serif"],
+        serif: ["Georgia", "Cambria", '"Times New Roman"', "serif"],
         // Mono de sistema — dados processuais (nº CNJ, CPF/CNPJ, valores).
         // Sem fonte externa: usa o que já existe no SO.
         mono: [
@@ -150,12 +148,12 @@ export default {
         widest:   "0.18em",
       },
       boxShadow: {
-        card:        "0 1px 3px rgba(0,0,0,0.08), 0 1px 2px rgba(0,0,0,0.04)",
-        "card-hover":"0 4px 16px rgba(0,0,0,0.10), 0 2px 4px rgba(0,0,0,0.06)",
-        float:       "0 20px 40px rgba(0,0,0,0.18), 0 4px 12px rgba(0,0,0,0.10)",
-        logo:        "0 2px 8px rgba(59,37,23,0.12)",
-        sm:          "0 1px 2px rgba(0,0,0,0.06)",
-        md:          "0 4px 8px rgba(0,0,0,0.08)",
+        card:        "0 1px 2px rgba(15,23,42,0.04), 0 1px 3px rgba(15,23,42,0.06)",
+        "card-hover":"0 2px 4px rgba(15,23,42,0.04), 0 8px 24px rgba(15,23,42,0.08)",
+        float:       "0 4px 12px rgba(15,23,42,0.08), 0 24px 48px rgba(15,23,42,0.14)",
+        logo:        "0 2px 8px rgba(30,27,75,0.12)",
+        sm:          "0 1px 2px rgba(15,23,42,0.05)",
+        md:          "0 2px 4px rgba(15,23,42,0.04), 0 4px 10px rgba(15,23,42,0.07)",
       },
       keyframes: {
         "fade-in": { from:{opacity:"0"}, to:{opacity:"1"} },

@@ -21,9 +21,11 @@ def normalizar_modelo_ia(modelo: str | None) -> str | None:
     # Já tem provedor (contém "/") → mantém como está.
     if "/" in m:
         return m
-    # Sem provedor: modelos Groq/Llama recebem o prefixo canônico.
+    # Sem provedor: modelos Groq/Llama e Claude recebem o prefixo canônico.
     if m.lower().startswith("llama"):
         return f"groq/{m}"
+    if m.lower().startswith("claude"):
+        return f"anthropic/{m}"
     return m
 
 
@@ -66,6 +68,11 @@ class AILog(Base):
     status_hitl  = Column(SAEnum(AIStatusHITL), nullable=False, default=AIStatusHITL.gerado, index=True)
     revisado_por = Column(String(36), nullable=True)
     revisado_em  = Column(DateTime(timezone=True), nullable=True)
+
+    # Feedback do usuário sobre a resposta (feature #4 / migration 066):
+    # 'util' | 'nao_util' | None (sem feedback).
+    feedback     = Column(String(20), nullable=True)
+    feedback_em  = Column(DateTime(timezone=True), nullable=True)
 
     created_at = Column(DateTime(timezone=True), server_default=func.now(), index=True)
 

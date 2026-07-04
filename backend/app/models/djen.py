@@ -21,4 +21,12 @@ class DjenComunicacao(Base):
     processada_por         = Column(String(36), nullable=True)
     processada_em          = Column(DateTime(timezone=True), nullable=True)
 
+    # Prazo assistido (feature #1 / migration 065): o sistema SUGERE um prazo a
+    # partir da intimação e o advogado ACEITA/RECUSA.
+    # prazo_sugerido_status: 'nenhum' | 'sugerido' | 'aceito' | 'recusado'.
+    prazo_sugerido_status  = Column(String(20), nullable=True, default="nenhum")
+    # FK LÓGICA para deadlines.id (sem constraint física — mesmo padrão de
+    # processada_por): id do Deadline criado quando o prazo é aceito.
+    prazo_deadline_id      = Column(String(36), nullable=True)
+
     created_at = Column(DateTime(timezone=True), server_default=func.now())

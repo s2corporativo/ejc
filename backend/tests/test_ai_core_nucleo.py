@@ -201,7 +201,9 @@ class _FakeAnthropicClient:
             def create(self, **kwargs):
                 box.update(kwargs)
                 return SimpleNamespace(
-                    content=[SimpleNamespace(text="resposta fake")],
+                    # Contrato atual do provider: a resposta pode conter blocos
+                    # "thinking" antes do texto; só blocos type=="text" contam.
+                    content=[SimpleNamespace(type="text", text="resposta fake")],
                     usage=SimpleNamespace(input_tokens=7, output_tokens=3),
                 )
 

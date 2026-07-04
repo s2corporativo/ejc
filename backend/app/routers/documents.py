@@ -467,6 +467,65 @@ async def remover(
     return MsgResponse(detail="Documento removido")
 
 
+@router.post("/{doc_id}/classificar")
+async def classificar_tipo_documento(
+    doc_id: str,
+    aplicar: bool = Query(
+        False,
+        description="Se true, grava o tipo sugerido em Document.tipo "
+                    "(somente quando a IA sugere um tipo válido do catálogo).",
+    ),
+    db: AsyncSession = Depends(get_db),
+    cu: User = Depends(get_current_user),
+):
+    """
+    Classificação automática de tipo por IA a partir do texto extraído (OCR).
+
+    Retorna uma SUGESTÃO (tipo_sugerido/confianca/alternativas). Por padrão NÃO
+    grava nada no documento — confirmação humana obrigatória (HITL/OAB). Use
+    `?aplicar=true` para persistir o tipo sugerido em Document.tipo.
+
+    LGPD: o texto é sanitizado (sanitizar_pii) dentro de classificar_documento
+    ANTES de qualquer envio à IA. Fail-safe: IA indisponível → tipo_sugerido=None.
+    """
+    d = (await db.execute(
+        select(Document).where(
+            Document.id == doc_id, Document.deleted_at.is_(None)
+        )
+    )).scalar_one_or_none()
+    if not d:
+        raise HTTPException(status_code=404, detail="Documento não encontrado")
+
+    # Mesmos gates do download/sugerir-tipo (IDOR + cofre).
+    if d.case_id:
+        await verificar_acesso_caso(db, cu, d.case_id)
+    if not _pode_acessar_confidencial(cu, d.confidencialidade.value):
+        raise HTTPException(status_code=403, detail="Documento restrito — acesso negado")
+
+    # Texto extraído do documento: campo Document.ocr_text (preenchido no upload).
+    from app.services.document_classifier import classificar_documento
+    resultado = await classificar_documento(db, d.ocr_text or "")
+
+    # Persistência opcional e explícita (não sobrescreve automaticamente).
+    aplicado = False
+    if aplicar and resultado.get("tipo_sugerido"):
+        d.tipo = resultado["tipo_sugerido"]
+        await criar_audit_log(
+            db, cu.id, cu.role.value, "UPDATE", "documents", doc_id,
+            detalhes=f"tipo classificado por IA: {d.tipo}",
+        )
+        await db.commit()
+        aplicado = True
+
+    return {
+        "doc_id": doc_id,
+        "aplicado": aplicado,
+        "tipo_atual": d.tipo,
+        **resultado,
+        "aviso": "⚠️ SUGESTÃO gerada por IA — confirmação humana obrigatória.",
+    }
+
+
 # ─────────────────────────────────────────────────────────────────────────────
 # GOOGLE DRIVE — upload, download e deleção de documentos
 # ─────────────────────────────────────────────────────────────────────────────
@@ -605,13 +664,26 @@ async def deletar_documento_drive(
 ):
     """Remove documento do Drive e do banco."""
     from sqlalchemy import text as sql_text
+    import logging as _logging
+    # Gate IDOR: exige acesso ao caso (ou gestão/criador) ANTES de tocar o Drive.
+    row = await _gate_drive_doc(db, current_user, file_id)
     try:
         gd.delete_file(file_id)
     except Exception:
-        pass  # já foi removido do Drive
+        # Pode já ter sido removido do Drive — registra para diagnóstico.
+        _logging.getLogger(__name__).warning(
+            "Falha ao remover arquivo %s do Drive (seguindo com remoção local)",
+            file_id, exc_info=True,
+        )
+    # Apaga somente a linha autorizada pelo gate — drive_file_id não é unique,
+    # e apagar pelo file_id removeria duplicatas de outros casos/soft-deleted.
     await db.execute(
-        sql_text("DELETE FROM documents WHERE drive_file_id = :fid AND uploaded_by = :uid"),
-        {"fid": file_id, "uid": current_user.id},
+        sql_text("DELETE FROM documents WHERE id = :id"),
+        {"id": row["id"]},
+    )
+    await criar_audit_log(
+        db, current_user.id, current_user.role.value, "DELETE", "documents",
+        row["id"], detalhes=f"Exclusão de documento do Drive (drive_file_id={file_id})",
     )
     await db.commit()
     return {"ok": True}

@@ -43,6 +43,7 @@ import {
   ScrollText,
   Search,
   Settings,
+  ShieldAlert,
   ShieldCheck,
   Sparkles,
   Sun,
@@ -195,6 +196,13 @@ const NAV: NavItem[] = [
     label: "Radar regulatorio",
     icon: Bell,
     group: "Inteligencia",
+  },
+  {
+    to: "/compliance/radar",
+    label: "Radar de Compliance",
+    icon: ShieldAlert,
+    group: "Inteligencia",
+    roles: ["superadmin", "admin", "socio", "advogado"],
   },
   {
     to: "/victory-vault",
@@ -369,7 +377,7 @@ export default function Layout() {
   const contentMargin = collapsed ? "md:ml-[5.25rem]" : "md:ml-72";
 
   return (
-    <div className="min-h-screen bg-[#F7F8FA] text-slate-900">
+    <div className="min-h-screen bg-slate-50 text-slate-900">
       <CommandPalette />
 
       {menuOpen && (
@@ -383,17 +391,17 @@ export default function Layout() {
 
       <aside
         className={cn(
-          "fixed inset-y-0 left-0 z-50 flex-col border-r border-slate-200 bg-white/95 backdrop-blur-xl transition-all",
+          "fixed inset-y-0 left-0 z-50 flex-col border-r border-white/5 bg-sidebar text-slate-300 transition-all",
           sidebarWidth,
           menuOpen ? "flex w-72 md:flex" : "hidden md:flex",
         )}
       >
-        <div className="flex h-16 items-center gap-3 border-b border-slate-100 px-4">
+        <div className="flex h-16 items-center gap-3 border-b border-white/5 px-4">
           <Link
             to="/"
             className={cn(
               "flex min-w-0 items-center",
-              collapsed ? "w-10 justify-center" : "max-w-[190px]",
+              collapsed ? "w-10 justify-center" : "max-w-[220px]",
             )}
             aria-label="De Paula Teixeira - EJC"
           >
@@ -401,14 +409,14 @@ export default function Layout() {
               src={BRAND_LOGO}
               alt="De Paula Teixeira Sociedade de Advogados"
               className={cn(
-                "brand-logo-img",
-                collapsed ? "h-10 w-10 rounded-lg object-cover object-top" : "h-12 w-auto max-w-[190px]",
+                "brand-logo-img rounded-lg bg-white",
+                collapsed ? "h-10 w-10 object-cover object-top" : "h-14 w-auto max-w-[220px] p-1",
               )}
             />
           </Link>
           <button
             type="button"
-            className="ml-auto hidden rounded-lg p-1.5 text-slate-400 hover:bg-slate-100 hover:text-slate-700 md:block"
+            className="ml-auto hidden rounded-lg p-1.5 text-slate-500 hover:bg-white/10 hover:text-slate-200 md:block"
             onClick={() => setCollapsed((v) => !v)}
             aria-label={collapsed ? "Expandir menu" : "Recolher menu"}
           >
@@ -420,7 +428,7 @@ export default function Layout() {
           </button>
           <button
             type="button"
-            className="ml-auto rounded-lg p-1.5 text-slate-400 hover:bg-slate-100 md:hidden"
+            className="ml-auto rounded-lg p-1.5 text-slate-500 hover:bg-white/10 hover:text-slate-200 md:hidden"
             onClick={() => setMenuOpen(false)}
             aria-label="Fechar menu"
           >
@@ -429,11 +437,11 @@ export default function Layout() {
         </div>
 
         {!collapsed && (
-          <div className="brand-panel mx-3 mt-3 rounded-xl border p-3">
-            <div className="brand-kicker text-xs font-semibold">
+          <div className="mx-3 mt-3 rounded-xl border border-white/10 bg-white/5 p-3">
+            <div className="text-xs font-semibold text-primary-300">
               Sociedade de Advogados
             </div>
-            <div className="mt-1 text-[11px] text-slate-600">
+            <div className="mt-1 text-[11px] text-slate-400">
               Operacao juridica empresarial
             </div>
             <div className="brand-accent-line mt-3 h-0.5 rounded-full" />
@@ -449,7 +457,7 @@ export default function Layout() {
                   <button
                     type="button"
                     onClick={() => toggleGroup(group)}
-                    className="mb-2 flex w-full items-center justify-between px-2 text-[10px] font-semibold uppercase tracking-[0.2em] text-slate-400 transition-colors hover:text-slate-600"
+                    className="mb-2 flex w-full items-center justify-between px-2 text-2xs font-semibold uppercase tracking-[0.2em] text-slate-500 transition-colors hover:text-slate-300"
                     aria-expanded={isOpen}
                   >
                     <span>{group}</span>
@@ -475,11 +483,11 @@ export default function Layout() {
                           }}
                           className={({ isActive }) =>
                             cn(
-                              "group flex h-10 items-center gap-3 rounded-lg px-3 text-sm font-medium transition-all",
+                              "group flex h-10 items-center gap-3 rounded-lg px-3 text-sm font-medium transition-all duration-150",
                               collapsed && "justify-center px-0",
                               isActive
-                                ? "bg-[#b5822e] text-white shadow-sm ring-1 ring-warn-200/40"
-                                : "text-slate-600 hover:bg-slate-100 hover:text-slate-950",
+                                ? "bg-white/10 text-white ring-1 ring-inset ring-white/10 [&>svg]:text-primary-400"
+                                : "text-slate-400 hover:bg-white/5 hover:text-white",
                             )
                           }
                         >
@@ -502,30 +510,30 @@ export default function Layout() {
           })}
         </nav>
 
-        <div className="border-t border-slate-100 p-3">
+        <div className="border-t border-white/5 p-3">
           <div
             className={cn(
-              "flex items-center gap-3 rounded-xl bg-slate-50 p-2",
+              "flex items-center gap-3 rounded-xl bg-white/5 p-2",
               collapsed && "justify-center",
             )}
           >
-            <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-slate-900 text-xs font-semibold text-white">
+            <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-primary-600 text-xs font-semibold text-white">
               {initials(user?.full_name)}
             </div>
             {!collapsed && (
               <>
                 <div className="min-w-0 flex-1">
-                  <div className="truncate text-xs font-semibold text-slate-900">
+                  <div className="truncate text-xs font-semibold text-white">
                     {user?.full_name || "Usuario"}
                   </div>
-                  <div className="truncate text-[11px] capitalize text-slate-500">
+                  <div className="truncate text-[11px] capitalize text-slate-400">
                     {user?.role || ""}
                   </div>
                 </div>
                 <button
                   type="button"
                   onClick={logout}
-                  className="rounded-lg p-2 text-slate-400 hover:bg-white hover:text-danger-600"
+                  className="rounded-lg p-2 text-slate-500 hover:bg-white/10 hover:text-danger-400"
                   aria-label="Sair"
                 >
                   <LogOut className="h-4 w-4" />
@@ -556,7 +564,7 @@ export default function Layout() {
             <button
               type="button"
               onClick={() => window.dispatchEvent(new Event("ejc-open-search"))}
-              className="flex h-10 min-w-0 flex-1 items-center gap-3 rounded-xl border border-slate-200 bg-slate-50 px-3 text-left text-sm text-slate-500 transition-all hover:border-warn-300/60 hover:bg-warn-50/50 md:max-w-xl"
+              className="flex h-10 min-w-0 flex-1 items-center gap-3 rounded-xl border border-slate-200 bg-slate-50 px-3 text-left text-sm text-slate-500 transition-all duration-150 hover:border-primary-300/60 hover:bg-primary-50/50 md:max-w-xl"
             >
               <Search className="h-4 w-4 shrink-0" />
               <span className="truncate">
