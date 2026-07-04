@@ -42,6 +42,9 @@ class UserResponse(BaseModel):
     role: str
     phone: Optional[str] = None
     oab_number: Optional[str] = None
+    # Path da API que serve a foto de perfil (ex.: /users/{id}/avatar).
+    # O frontend monta a URL final com o baseURL do axios (/api) + este path.
+    avatar_url: Optional[str] = None
     is_active: bool
     djen_oab_numero: Optional[str] = None
     djen_oab_uf: Optional[str] = None
