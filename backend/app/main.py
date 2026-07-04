@@ -30,6 +30,7 @@ from slowapi.errors import RateLimitExceeded
 from app.routers import agenda_eventos
 from app.routers import ai
 from app.routers import ai_core
+from app.routers import anexos
 from app.routers import ai_skills
 from app.routers import ai_tools
 from app.routers import analise_bancaria
@@ -235,6 +236,7 @@ API = "/api"
 app.include_router(agenda_eventos.router, prefix=API)
 app.include_router(ai.router, prefix=API)
 app.include_router(ai_core.router, prefix=API)
+app.include_router(anexos.router, prefix=API)
 app.include_router(ai_skills.router, prefix=API)
 app.include_router(ai_tools.router, prefix=API)
 app.include_router(analise_bancaria.router, prefix=API)
