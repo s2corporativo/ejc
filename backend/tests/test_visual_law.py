@@ -3,7 +3,9 @@ calculadora de breakeven/VPL. Testes unitários das funções puras (sem banco).
 from datetime import datetime, timedelta, timezone
 
 import pytest
+from pydantic import ValidationError
 
+from app.schemas.visual_law import BreakevenIn
 from app.services import visual_law_core as vl
 from app.services import bcb_service
 from app.services.diplomacia_digital import DiplomaciaDigital
@@ -53,6 +55,14 @@ def test_proximos_passos_prazos_reais_antes_das_estimativas():
 def test_classificar_estagnacao_limiares(dias, nivel):
     assert vl.classificar_estagnacao(dias) == nivel
     assert vl.montar_estagnacao(dias) == {"dias_parado": dias, "nivel": nivel}
+
+
+def test_estagnacao_caso_fechado_sempre_ok():
+    # Caso encerrado/arquivado não estagna: parado é o estado esperado
+    assert vl.montar_estagnacao(180, fechado=True) == {"dias_parado": 180,
+                                                       "nivel": "ok"}
+    # sem a flag, 180 dias seguiria crítico
+    assert vl.montar_estagnacao(180)["nivel"] == "critico"
 
 
 def test_dias_parado_desde_datas_injetadas():
@@ -157,6 +167,17 @@ def test_montar_badges_sem_fatores_e_sem_estagnacao():
     assert vl.montar_badges([], dias_parado=10) == []
 
 
+def test_montar_badges_caso_fechado_sem_badge_de_estagnacao():
+    # Fechado com 180 dias parado: NENHUM badge parado_60d/parado_30d;
+    # os demais fatores do case_health continuam virando badges.
+    fatores = [{"fator": "sem_posmortem", "impacto": -5,
+                "detalhe": "Sem lições aprendidas"}]
+    badges = vl.montar_badges(fatores, dias_parado=180, fechado=True)
+    assert [b["codigo"] for b in badges] == ["sem_posmortem"]
+    # sem a flag, o mesmo cenário emitiria o badge crítico pulsante
+    assert vl.montar_badges(fatores, dias_parado=180)[0]["codigo"] == "parado_60d"
+
+
 # ── Breakeven / VPL ───────────────────────────────────────────────────────────
 def test_tempo_tramitacao_por_tribunal():
     assert vl.tempo_tramitacao_estimado("TJMG") == (4.5, "tribunal_cnj")
@@ -169,18 +190,38 @@ def test_tempo_tramitacao_por_tribunal():
     assert vl.tempo_tramitacao_estimado("outro") == (4.0, "default")
 
 
-def test_normalizar_pct_fracao_e_escala_percentual():
-    assert vl.normalizar_pct(0.10) == 0.10
+def test_normalizar_pct_escala_percentual_0_100():
+    # Contrato da API: SEMPRE escala 0–100 (sem heurística de fração)
     assert vl.normalizar_pct(10) == pytest.approx(0.10)
-    assert vl.normalizar_pct(1.0) == 1.0   # fração-limite (100%)
+    assert vl.normalizar_pct(1) == pytest.approx(0.01)      # 1 é 1%, não 100%
+    assert vl.normalizar_pct(0.5) == pytest.approx(0.005)   # meio por cento
+    assert vl.normalizar_pct(100) == pytest.approx(1.0)
     assert vl.normalizar_pct(0.0) == 0.0
 
 
+def test_breakeven_in_defaults_em_escala_percentual():
+    p = BreakevenIn(prob_exito=0.7)
+    assert p.custas_pct == 10.0
+    assert p.honorarios_sucumbencia_pct == 10.0
+
+
+def test_breakeven_in_rejeita_infinity_e_valores_absurdos():
+    # "Infinity" no JSON viraria float('inf') — allow_inf_nan=False barra (422)
+    with pytest.raises(ValidationError):
+        BreakevenIn.model_validate({"valor_causa": "Infinity", "prob_exito": 0.5})
+    with pytest.raises(ValidationError):
+        BreakevenIn(valor_causa=float("nan"), prob_exito=0.5)
+    with pytest.raises(ValidationError):
+        BreakevenIn(valor_causa=1e13, prob_exito=0.5)   # acima do teto 1e12
+
+
 def test_calcular_breakeven_valores_conhecidos():
-    # valor 100k · prob 0.7 · 2 anos · selic 10% · custas 10% · sucumbência 10%
+    # valor 100k · prob 0.7 · 2 anos · selic 10% · custas 10 + sucumbência 10
+    # (escala 0–100 da API, normalizada para fração como faz o router)
     r = vl.calcular_breakeven(
         valor_causa=100_000.0, prob_exito=0.7, tempo_anos=2.0, selic_anual=0.10,
-        custas_pct=0.10, honorarios_sucumbencia_pct=0.10,
+        custas_pct=vl.normalizar_pct(10.0),
+        honorarios_sucumbencia_pct=vl.normalizar_pct(10.0),
         tribunal="TJMG", tempo_fonte="tribunal_cnj", selic_fonte="fallback",
     )
     assert r["valor_esperado"] == 70_000.0
@@ -223,6 +264,12 @@ def test_diplomacia_digital_retrocompativel():
 
 
 # ── Selic anualizada (BCB) — fallback determinístico ──────────────────────────
+@pytest.fixture(autouse=True)
+def _limpa_cache_negativo_bcb(monkeypatch):
+    """Isola o cache negativo do BCB entre testes (estado de módulo)."""
+    monkeypatch.setattr(bcb_service, "_fallback_ate", 0.0)
+
+
 async def test_selic_anualizada_via_bcb(monkeypatch):
     async def fake_serie(codigo, ini, fim):
         assert codigo == 4390  # série Selic mensal
@@ -253,3 +300,53 @@ async def test_selic_anualizada_fallback_deterministico(monkeypatch):
     monkeypatch.setattr(bcb_service, "_buscar_serie", fake_serie)
     r = await bcb_service.selic_anualizada()
     assert r == {"selic_anual": 0.1075, "fonte": "fallback", "meses_compostos": 0}
+
+
+async def test_selic_anualizada_cache_negativo_nao_tenta_de_novo(monkeypatch):
+    """Após uma falha, o fallback fica memorizado por FALLBACK_TTL_SEGUNDOS:
+    dentro da janela não abre nova conexão com o BCB; expirada, tenta de novo.
+    Relógio injetado (sem depender de tempo real)."""
+    chamadas = {"n": 0}
+
+    async def serie_fora_do_ar(codigo, ini, fim):
+        chamadas["n"] += 1
+        raise RuntimeError("BCB fora do ar")
+
+    relogio = {"t": 1_000.0}
+    monkeypatch.setattr(bcb_service, "_buscar_serie", serie_fora_do_ar)
+    monkeypatch.setattr(bcb_service, "_agora", lambda: relogio["t"])
+
+    r1 = await bcb_service.selic_anualizada()
+    assert r1["fonte"] == "fallback" and chamadas["n"] == 1
+
+    # Dentro da janela: serve o fallback direto, SEM nova tentativa no BCB
+    relogio["t"] += 60.0
+    r2 = await bcb_service.selic_anualizada()
+    assert r2 == {"selic_anual": 0.1075, "fonte": "fallback", "meses_compostos": 0}
+    assert chamadas["n"] == 1
+
+    # Janela expirada: volta a tentar o BCB
+    relogio["t"] += bcb_service.FALLBACK_TTL_SEGUNDOS
+    await bcb_service.selic_anualizada()
+    assert chamadas["n"] == 2
+
+
+async def test_selic_anualizada_sucesso_limpa_cache_negativo(monkeypatch):
+    relogio = {"t": 1_000.0}
+    monkeypatch.setattr(bcb_service, "_agora", lambda: relogio["t"])
+
+    async def serie_fora_do_ar(codigo, ini, fim):
+        raise RuntimeError("BCB fora do ar")
+
+    monkeypatch.setattr(bcb_service, "_buscar_serie", serie_fora_do_ar)
+    assert (await bcb_service.selic_anualizada())["fonte"] == "fallback"
+
+    # BCB volta após a janela: sucesso responde "bcb" e zera o cache negativo
+    relogio["t"] += bcb_service.FALLBACK_TTL_SEGUNDOS + 1.0
+
+    async def serie_ok(codigo, ini, fim):
+        return [{"data": f"01/{m:02d}/2026", "valor": "0,80"} for m in range(1, 13)]
+
+    monkeypatch.setattr(bcb_service, "_buscar_serie", serie_ok)
+    assert (await bcb_service.selic_anualizada())["fonte"] == "bcb"
+    assert bcb_service._fallback_ate == 0.0

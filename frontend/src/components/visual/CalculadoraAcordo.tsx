@@ -28,6 +28,7 @@ import {
 import type {
   BreakevenRequest,
   BreakevenResponse,
+  SelicFonte,
 } from "../../types/visualLaw";
 
 const fmtBRL = new Intl.NumberFormat("pt-BR", {
@@ -36,6 +37,16 @@ const fmtBRL = new Intl.NumberFormat("pt-BR", {
 });
 
 const TRIBUNAIS = ["TJMG", "TJSP", "TRT3", "TRF6", "STJ", "outro"] as const;
+
+/** Badge da fonte da Selic — exaustivo sobre SelicFonte (erro de tipo se o union crescer). */
+const SELIC_BADGE = {
+  bcb: { tone: "green", label: "Selic BCB" },
+  fallback: { tone: "amber", label: "Selic estimada" },
+  informada: { tone: "slate", label: "Selic informada" },
+} as const satisfies Record<
+  SelicFonte,
+  { tone: "green" | "amber" | "slate"; label: string }
+>;
 
 const MAX_DECISOES = 10;
 
@@ -392,15 +403,9 @@ export default function CalculadoraAcordo({
         <SectionCard
           title="Resultado da simulação"
           actions={
-            <Badge
-              tone={
-                resultado.parametros.selic_fonte === "bcb" ? "green" : "amber"
-              }
-            >
-              {resultado.parametros.selic_fonte === "bcb"
-                ? "Selic BCB"
-                : "Selic estimada"}{" "}
-              · {(resultado.parametros.selic_anual * 100).toFixed(2)}% a.a.
+            <Badge tone={SELIC_BADGE[resultado.parametros.selic_fonte].tone}>
+              {SELIC_BADGE[resultado.parametros.selic_fonte].label} ·{" "}
+              {(resultado.parametros.selic_anual * 100).toFixed(2)}% a.a.
             </Badge>
           }
         >

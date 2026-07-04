@@ -17,6 +17,7 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.database import get_db
+from app.core.rate_limit import rate_limit
 from app.core.security import get_current_user
 from app.models.user import User
 from app.models.case import Case
@@ -25,7 +26,7 @@ from app.routers.cases import _filtro_visibilidade
 from app.schemas.visual_law import BreakevenIn
 from app.services import bcb_service
 from app.services import visual_law_core as vl
-from app.services.case_health import calcular_score_caso
+from app.services.case_health import FECHADOS, calcular_score_caso
 
 router = APIRouter(prefix="/visual-law", tags=["Visual Law"])
 
@@ -76,7 +77,9 @@ async def timeline_visual(
         "fases": vl.montar_fases(fase),
         "eventos": eventos,
         "proximos_passos": vl.montar_proximos_passos(fase, prazos),
-        "estagnacao": vl.montar_estagnacao(dias_parado),
+        # Caso encerrado/arquivado não estagna — nível sempre "ok"
+        "estagnacao": vl.montar_estagnacao(dias_parado,
+                                           fechado=case.status in FECHADOS),
     }
 
 
@@ -121,19 +124,24 @@ async def alertas(
     regra visual de estagnação: >60 dias parado → badge crítico pulsante."""
     case = await _obter_caso_visivel(db, cu, case_id)
     saude = await calcular_score_caso(db, case)
-    dias_parado = await vl.dias_sem_movimentacao(db, case)
+    # dias_parado já vem do case_health (evita repetir a query de movimentos);
+    # sem referência (None) ou referência futura → 0, como em dias_parado_desde.
+    dias_parado = max(0, saude["dias_parado"] or 0)
 
     return {
         "case_id": case_id,
         "score": saude["score"],
         "classificacao": saude["classificacao"],
         "dias_parado": dias_parado,
-        "badges": vl.montar_badges(saude["fatores"], dias_parado),
+        # Caso encerrado/arquivado não recebe badge de estagnação
+        "badges": vl.montar_badges(saude["fatores"], dias_parado,
+                                   fechado=case.status in FECHADOS),
     }
 
 
 # ── Calculadora de ponto de equilíbrio (breakeven/VPL) ────────────────────────
-@router.post("/breakeven")
+@router.post("/breakeven",
+             dependencies=[Depends(rate_limit("visual-breakeven", 15))])
 async def breakeven(
     payload: BreakevenIn,
     db: AsyncSession = Depends(get_db),
