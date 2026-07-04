@@ -21,6 +21,7 @@
 # ─────────────────────────────────────────────────────────────────────────────
 from __future__ import annotations
 import logging
+import os
 import time
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
@@ -73,6 +74,9 @@ def _aplicar_nivel(messages: list[dict], nivel_inteligencia: str | None) -> list
     return [extra] + messages
 
 
+# Cadeias: Ollama (local, custo zero) → Anthropic (qualidade, se houver chave)
+# → Groq (grátis, último recurso). Tarefas simples (resumo/chat) pulam o
+# Anthropic — Groq grátis basta e mantém o custo baixo.
 TASK_ROUTING: dict[str, list[tuple[str, str | None]]] = {
     # Tarefas COMPLEXAS incluem "anthropic" na cadeia (Núcleo Único): entra na
     # ordem de AI_PROVIDER_PRIORITY quando elegível (chave + ENABLED +
@@ -84,7 +88,7 @@ TASK_ROUTING: dict[str, list[tuple[str, str | None]]] = {
     ],
     "elaboracao_peca": [
         ("ollama",    None),  # OLLAMA_MODEL_PETICAO
-        ("anthropic", None),
+        ("anthropic", None),  # ANTHROPIC_MODEL_COMPLEXO
         ("groq",      None),
     ],
     "resumo": [
@@ -130,6 +134,23 @@ _OLLAMA_MODEL_BY_TASK = {
     "auditoria_peca":   lambda: settings.OLLAMA_MODEL_PETICAO,
     "jurimetria":       lambda: settings.OLLAMA_MODEL_ANALISE,
 }
+
+# Modelo Claude por tarefa: complexas → COMPLEXO (qualidade); simples → RAPIDO.
+_ANTHROPIC_MODEL_BY_TASK = {
+    "analise_juridica": lambda: settings.ANTHROPIC_MODEL_COMPLEXO,
+    "elaboracao_peca":  lambda: settings.ANTHROPIC_MODEL_COMPLEXO,
+    "resumo":           lambda: settings.ANTHROPIC_MODEL_RAPIDO,
+    "chat_rapido":      lambda: settings.ANTHROPIC_MODEL_RAPIDO,
+    "analise_contrato": lambda: settings.ANTHROPIC_MODEL_COMPLEXO,
+    "estrategia":       lambda: settings.ANTHROPIC_MODEL_COMPLEXO,
+    "auditoria_peca":   lambda: settings.ANTHROPIC_MODEL_COMPLEXO,
+    "jurimetria":       lambda: settings.ANTHROPIC_MODEL_COMPLEXO,
+}
+
+
+def _anthropic_key() -> str:
+    """Mesma resolução do provider: Settings tipada → os.getenv (docker env_file)."""
+    return settings.ANTHROPIC_API_KEY or os.getenv("ANTHROPIC_API_KEY", "")
 
 
 @dataclass
@@ -314,7 +335,16 @@ def _resolver_cadeia(
     """Resolve a cadeia de (provider, model) para a tarefa, respeitando
     AI_PROVIDER_PRIORITY e a elegibilidade de cada provedor."""
     if provider_force in ("groq", "ollama", "anthropic"):
-        return [(provider_force, _resolver_modelo(provider_force, task_type, model_override))]
+        if _provider_elegivel(provider_force):
+            return [(provider_force, _resolver_modelo(provider_force, task_type, model_override))]
+        # Provider forçado inelegível (sem chave/desabilitado/policy): não
+        # falhar duro — loga e cai no roteamento automático, preservando o
+        # comportamento das EJC skills com engine fixo.
+        logger.warning(
+            "[Gateway] provider '%s' forçado mas inelegível "
+            "(chave/enable/policy); usando cadeia automática.",
+            provider_force,
+        )
 
     base = TASK_ROUTING.get(task_type, TASK_ROUTING["analise_juridica"])
     candidatos = _ordenar_por_prioridade([p for p, _ in base])
@@ -375,10 +405,14 @@ async def _chamar_provedor(
 # ══════════════════════════════════════════════════════════════════════════════
 import os as _os
 
+# Preços oficiais Anthropic (USD por 1M tokens) — manter em dia com a fatura.
 _PRICING_USD_MM = {
-    "claude-haiku-4-5-20251001": {"input": 0.80, "output": 4.00},
+    "claude-haiku-4-5-20251001": {"input": 1.00, "output": 5.00},
+    "claude-haiku-4-5":          {"input": 1.00, "output": 5.00},
     "claude-sonnet-4-6":         {"input": 3.00, "output": 15.00},
-    "claude-opus-4-8":           {"input": 15.00, "output": 75.00},
+    "claude-sonnet-5":           {"input": 3.00, "output": 15.00},
+    "claude-opus-4-7":           {"input": 5.00, "output": 25.00},
+    "claude-opus-4-8":           {"input": 5.00, "output": 25.00},
 }
 
 
