@@ -41,7 +41,7 @@ export function exportPdf(
       background: #fff;
     }
     .letterhead {
-      border-bottom: 3px solid #3a2e22;
+      border-bottom: 3px solid #0f172a;
       padding-bottom: 10px;
       margin-bottom: 14px;
     }
@@ -55,7 +55,7 @@ export function exportPdf(
       margin-bottom: 14px;
     }
     .kicker {
-      color: #8c6a33;
+      color: #4f46e5;
       font-size: 9px;
       font-weight: 800;
       text-transform: uppercase;
@@ -63,10 +63,10 @@ export function exportPdf(
     }
     h1 { font-size: 18px; color: #111827; margin: 0; line-height: 1.25; }
     .review {
-      border: 1px solid #cfe5e2;
-      border-left: 4px solid #266761;
-      background: #eef5f4;
-      color: #1f534e;
+      border: 1px solid #c7d2fe;
+      border-left: 4px solid #4f46e5;
+      background: #eef2ff;
+      color: #3730a3;
       padding: 8px 10px;
       border-radius: 8px;
       margin-bottom: 12px;
@@ -74,7 +74,7 @@ export function exportPdf(
     }
     table { width: 100%; border-collapse: collapse; page-break-inside: auto; }
     th {
-      background: #3a2e22;
+      background: #0f172a;
       color: #fff;
       padding: 7px 8px;
       text-align: left;

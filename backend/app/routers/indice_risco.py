@@ -7,7 +7,6 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.core.database import get_db
 from app.core.security import get_current_user, ROLE_LEVEL
 from app.core.ownership import verificar_acesso_caso
-from sqlalchemy import select as sa_select
 from app.models.case import Case
 from app.models.user import User
 from app.models.audit_log import criar_audit_log

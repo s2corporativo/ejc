@@ -1161,7 +1161,7 @@ async def job_datajud_sync():
 async def job_relatorio_mensal():
     """Dia 1, 07h30 — gera PDF do mês ANTERIOR e notifica sócios."""
     from datetime import date as _d
-    from app.routers.dashboard import _coletar_dados_mes
+    from app.services.dashboard_service import coletar_dados_mes as _coletar_dados_mes
     from app.services.pdf_service import relatorio_mensal_pdf
     from app.models.user import User as _U, UserRole as _R
     from app.models.notification import Notification as _N
