@@ -15,7 +15,6 @@ import {
   Gavel,
   Plus,
   Scale,
-  Search,
   Sparkles,
   Users,
   Wallet,
@@ -36,16 +35,26 @@ import {
 import NoticiasCard from "../components/NoticiasCard";
 
 const areaTone: Record<string, string> = {
-  civil: "bg-primary-600",
-  trabalhista: "bg-ai-600",
-  consumidor: "bg-cyan-600",
-  familia: "bg-pink-600",
-  ambiental: "bg-success-600",
-  criminal: "bg-danger-600",
-  previdenciario: "bg-warn-600",
+  civil: "bg-primary-500",
+  trabalhista: "bg-ai-500",
+  consumidor: "bg-warn-400",
+  familia: "bg-primary-300",
+  ambiental: "bg-success-500",
+  criminal: "bg-danger-500",
+  previdenciario: "bg-warn-500",
   empresarial: "bg-primary-700",
-  tributario: "bg-info-700",
+  tributario: "bg-info-600",
 };
+
+// Paleta do donut — coral / amarelo / laranja (referência) + apoio
+const DONUT_COLORS = [
+  "#F4574D",
+  "#FFD166",
+  "#F79256",
+  "#0CA678",
+  "#FDA9A2",
+  "#94A3B8",
+];
 
 function initials(value?: string) {
   return (value || "?")
@@ -55,6 +64,150 @@ function initials(value?: string) {
     .map((x) => x[0])
     .join("")
     .toUpperCase();
+}
+
+/** Gráfico de área coral com fill gradiente (SVG puro — sem lib externa). */
+function CoralAreaChart({
+  points,
+}: {
+  points: Array<{ label: string; value: number }>;
+}) {
+  const W = 600;
+  const H = 200;
+  const PAD = 24;
+  const max = Math.max(1, ...points.map((p) => p.value));
+  const stepX = points.length > 1 ? (W - PAD * 2) / (points.length - 1) : 0;
+  const coords = points.map((p, i) => ({
+    x: PAD + i * stepX,
+    y: H - PAD - (p.value / max) * (H - PAD * 2),
+  }));
+  const line = coords
+    .map((c, i) => `${i === 0 ? "M" : "L"}${c.x.toFixed(1)},${c.y.toFixed(1)}`)
+    .join(" ");
+  const area = `${line} L${(PAD + (points.length - 1) * stepX).toFixed(1)},${H - PAD} L${PAD},${H - PAD} Z`;
+  return (
+    <div>
+      <svg
+        viewBox={`0 0 ${W} ${H}`}
+        className="h-48 w-full"
+        preserveAspectRatio="none"
+        role="img"
+        aria-label="Evolucao de prazos"
+      >
+        <defs>
+          <linearGradient id="coral-fill" x1="0" y1="0" x2="0" y2="1">
+            <stop offset="0%" stopColor="#F4574D" stopOpacity="0.28" />
+            <stop offset="100%" stopColor="#F4574D" stopOpacity="0.02" />
+          </linearGradient>
+        </defs>
+        {[0.25, 0.5, 0.75].map((f) => (
+          <line
+            key={f}
+            x1={PAD}
+            x2={W - PAD}
+            y1={PAD + f * (H - PAD * 2)}
+            y2={PAD + f * (H - PAD * 2)}
+            stroke="#EDF0F4"
+            strokeWidth="1"
+          />
+        ))}
+        {points.length > 1 && (
+          <>
+            <path d={area} fill="url(#coral-fill)" />
+            <path
+              d={line}
+              fill="none"
+              stroke="#F4574D"
+              strokeWidth="2.5"
+              strokeLinecap="round"
+              strokeLinejoin="round"
+            />
+          </>
+        )}
+        {coords.map((c, i) => (
+          <circle
+            key={i}
+            cx={c.x}
+            cy={c.y}
+            r="3.5"
+            fill="#fff"
+            stroke="#F4574D"
+            strokeWidth="2"
+          />
+        ))}
+      </svg>
+      <div className="mt-1 flex justify-between px-1 text-[10px] font-medium text-slate-400">
+        {points.map((p) => (
+          <span key={p.label}>{p.label}</span>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+/** Donut SVG amarelo/laranja/coral (sem lib externa). */
+function DonutChart({
+  slices,
+}: {
+  slices: Array<{ label: string; value: number; color: string }>;
+}) {
+  const total = slices.reduce((acc, s) => acc + s.value, 0) || 1;
+  const R = 42;
+  const C = 2 * Math.PI * R;
+  let offset = 0;
+  return (
+    <div className="flex items-center gap-5">
+      <svg viewBox="0 0 120 120" className="h-32 w-32 shrink-0 -rotate-90">
+        <circle
+          cx="60"
+          cy="60"
+          r={R}
+          fill="none"
+          stroke="#EDF0F4"
+          strokeWidth="14"
+        />
+        {slices.map((s) => {
+          const frac = s.value / total;
+          const dash = `${frac * C} ${C}`;
+          const el = (
+            <circle
+              key={s.label}
+              cx="60"
+              cy="60"
+              r={R}
+              fill="none"
+              stroke={s.color}
+              strokeWidth="14"
+              strokeDasharray={dash}
+              strokeDashoffset={-offset * C}
+              strokeLinecap="butt"
+            />
+          );
+          offset += frac;
+          return el;
+        })}
+      </svg>
+      <div className="min-w-0 flex-1 space-y-2">
+        {slices.slice(0, 5).map((s) => (
+          <div
+            key={s.label}
+            className="flex items-center gap-2 text-xs text-slate-600"
+          >
+            <span
+              className="h-2.5 w-2.5 shrink-0 rounded-full"
+              style={{ backgroundColor: s.color }}
+            />
+            <span className="min-w-0 flex-1 truncate capitalize">
+              {s.label}
+            </span>
+            <span className="font-semibold tabular-nums text-slate-900">
+              {s.value}
+            </span>
+          </div>
+        ))}
+      </div>
+    </div>
+  );
 }
 
 export default function Dashboard() {
@@ -73,7 +226,7 @@ export default function Dashboard() {
       api.get("/jurimetria/overview"),
       api.get("/deadlines/?status=pendente&page_size=100"),
       api.get("/movimentos/recentes?limit=6"),
-      api.get("/cases/?page_size=6"),
+      api.get("/cases/?page_size=50"),
     ])
       .then(([dash, juri, deadlines, movs, cases]) => {
         if (dash.status === "fulfilled") setDashboard(dash.value.data);
@@ -111,13 +264,58 @@ export default function Dashboard() {
   const prazosCriticos = prazos.filter(
     (p) => (p.dias_restantes ?? 99) <= 3,
   ).length;
-  const tarefasAbertas =
-    dashboard?.tarefas?.abertas ?? dashboard?.tarefas_abertas ?? "—";
   const honorariosPendentes =
     dashboard?.financeiro?.pendente ??
     dashboard?.financeiro?.honorarios_pendentes;
   const receitaMes =
     dashboard?.financeiro?.honorarios_mes ?? dashboard?.financeiro?.receita_mes;
+
+  // Série do gráfico principal: prazos pendentes por semana (próximas 6)
+  const serieSemanas = useMemo(() => {
+    const buckets = [0, 0, 0, 0, 0, 0];
+    const hoje = new Date();
+    for (const p of prazos) {
+      if (!p.data_prazo) continue;
+      const d = new Date(
+        String(p.data_prazo).includes("T")
+          ? p.data_prazo
+          : p.data_prazo + "T12:00:00",
+      );
+      const diff = Math.floor(
+        (d.getTime() - hoje.getTime()) / (7 * 24 * 3600 * 1000),
+      );
+      if (diff >= 0 && diff < 6) buckets[diff] += 1;
+    }
+    return buckets.map((v, i) => ({
+      label: i === 0 ? "Esta sem." : `+${i} sem.`,
+      value: v,
+    }));
+  }, [prazos]);
+
+  // Donut: distribuição da carteira por área do direito
+  const areasDonut = useMemo(() => {
+    const count = new Map<string, number>();
+    for (const c of casos) {
+      const area = (c.area || "outros").toLowerCase();
+      count.set(area, (count.get(area) || 0) + 1);
+    }
+    return Array.from(count.entries())
+      .sort((a, b) => b[1] - a[1])
+      .slice(0, 6)
+      .map(([label, value], i) => ({
+        label,
+        value,
+        color: DONUT_COLORS[i % DONUT_COLORS.length],
+      }));
+  }, [casos]);
+
+  const recebido = typeof receitaMes === "number" ? receitaMes : 0;
+  const pendente =
+    typeof honorariosPendentes === "number" ? honorariosPendentes : 0;
+  const pctRecebido =
+    recebido + pendente > 0
+      ? Math.round((recebido / (recebido + pendente)) * 100)
+      : 0;
 
   const quickActions = [
     { to: "/casos", label: "Novo caso", icon: Plus },
@@ -129,29 +327,27 @@ export default function Dashboard() {
 
   return (
     <div className="space-y-6">
-      <div className="rounded-2xl border border-primary-100 bg-white p-5 shadow-sm md:p-6">
-        <div className="flex flex-col gap-5 lg:flex-row lg:items-center lg:justify-between">
-          <PageHeader
-            eyebrow="Painel executivo"
-            title={`Bom trabalho, ${nome}`}
-            subtitle="Visao consolidada do escritorio: casos, prazos, financeiro, produtividade e inteligencia juridica."
-          />
-          <div className="flex flex-wrap gap-2">
-            {quickActions.map(({ to, label, icon: Icon }) => (
-              <Link key={to} to={to}>
-                <Button
-                  variant={label === "Novo caso" ? "primary" : "secondary"}
-                  icon={<Icon className="h-4 w-4" />}
-                >
-                  {label}
-                </Button>
-              </Link>
-            ))}
-          </div>
+      <div className="flex flex-col gap-4 lg:flex-row lg:items-end lg:justify-between">
+        <PageHeader
+          eyebrow="Painel executivo"
+          title={`Bom trabalho, ${nome}`}
+          subtitle="Visao consolidada do escritorio: casos, prazos, financeiro, produtividade e inteligencia juridica."
+        />
+        <div className="mb-6 flex flex-wrap gap-2">
+          {quickActions.map(({ to, label, icon: Icon }) => (
+            <Link key={to} to={to}>
+              <Button
+                variant={label === "Novo caso" ? "primary" : "secondary"}
+                icon={<Icon className="h-4 w-4" />}
+              >
+                {label}
+              </Button>
+            </Link>
+          ))}
         </div>
       </div>
 
-      <div className="grid gap-5 sm:grid-cols-2 xl:grid-cols-6">
+      <div className="grid gap-5 sm:grid-cols-2 xl:grid-cols-4">
         <StatCard
           label="Casos ativos"
           value={dashboard?.casos?.ativos ?? "—"}
@@ -177,6 +373,7 @@ export default function Dashboard() {
           subtitle="Honorarios recebidos"
           icon={<DollarSign className="h-5 w-5" />}
           tone="green"
+          trend={recebido > 0 ? "up" : undefined}
         />
         <StatCard
           label="Pendentes"
@@ -189,20 +386,61 @@ export default function Dashboard() {
           icon={<Wallet className="h-5 w-5" />}
           tone="amber"
         />
-        <StatCard
-          label="Tarefas abertas"
-          value={tarefasAbertas}
-          subtitle="Operacao juridica"
-          icon={<CheckCircle2 className="h-5 w-5" />}
-          tone="slate"
-        />
-        <StatCard
-          label="Saude da IA"
-          value={taxaExito != null ? `${taxaExito}%` : "OK"}
-          subtitle="Jurimetria e apoio"
-          icon={<Bot className="h-5 w-5" />}
-          tone="purple"
-        />
+      </div>
+
+      <div className="grid gap-5 xl:grid-cols-[1.35fr_0.65fr]">
+        <SectionCard
+          title="Prazos das proximas semanas"
+          subtitle="Volume de prazos pendentes por semana."
+          actions={
+            <Link
+              to="/prazos"
+              className="text-sm font-medium text-primary-600 hover:text-primary-700"
+            >
+              Ver prazos
+            </Link>
+          }
+        >
+          {loading ? (
+            <div className="h-48 animate-pulse rounded-xl bg-slate-100" />
+          ) : (
+            <CoralAreaChart points={serieSemanas} />
+          )}
+        </SectionCard>
+
+        <div className="space-y-5">
+          <SectionCard
+            title="Carteira por area"
+            subtitle="Distribuicao dos casos."
+          >
+            {areasDonut.length === 0 ? (
+              <EmptyState title="Sem casos" icon={Briefcase} />
+            ) : (
+              <DonutChart slices={areasDonut} />
+            )}
+          </SectionCard>
+
+          <SectionCard title="Honorarios" subtitle="Recebido vs. a receber.">
+            <div className="flex items-end justify-between">
+              <div className="text-2xl font-semibold tracking-tight text-slate-950 tabular-nums">
+                {pctRecebido}%
+              </div>
+              <div className="text-xs text-slate-400">
+                {fmtMoney(recebido)} de {fmtMoney(recebido + pendente)}
+              </div>
+            </div>
+            <div className="mt-3 h-2.5 overflow-hidden rounded-full bg-slate-100">
+              <div
+                className="h-full rounded-full bg-gradient-to-r from-ai-400 to-primary-500 transition-all"
+                style={{ width: `${pctRecebido}%` }}
+              />
+            </div>
+            <div className="mt-2 flex items-center gap-2 text-[11px] text-slate-400">
+              <CheckCircle2 className="h-3.5 w-3.5 text-success-600" />
+              Meta: converter pendencias do mes em receita.
+            </div>
+          </SectionCard>
+        </div>
       </div>
 
       <div className="grid gap-5 xl:grid-cols-[1.25fr_0.75fr]">
@@ -321,7 +559,8 @@ export default function Dashboard() {
                     Auditoria de Honorários
                   </div>
                   <p className="mt-1 text-xs text-success-800">
-                    Novos ativos recuperáveis identificados. Verifique o módulo financeiro.
+                    Novos ativos recuperáveis identificados. Verifique o módulo
+                    financeiro.
                   </p>
                 </div>
               </div>
@@ -354,7 +593,7 @@ export default function Dashboard() {
             <EmptyState title="Sem casos recentes" icon={Briefcase} />
           ) : (
             <div className="space-y-3">
-              {casos.map((caso) => (
+              {casos.slice(0, 6).map((caso) => (
                 <Link
                   key={caso.id}
                   to={`/casos/${caso.id}`}

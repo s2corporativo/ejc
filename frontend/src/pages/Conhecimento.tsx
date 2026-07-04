@@ -47,7 +47,7 @@ const CATS: { value: string; label: string; icon: any; cor: string }[] = [
     value: "sumula_stj",
     label: "Súmula STJ",
     icon: Gavel,
-    cor: "bg-indigo-100 text-indigo-700",
+    cor: "bg-primary-100 text-primary-700",
   },
   {
     value: "sumula_stf",

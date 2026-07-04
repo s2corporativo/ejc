@@ -68,7 +68,7 @@ export function Button({
     <button
       {...props}
       className={cn(
-        "inline-flex items-center justify-center gap-2 rounded-lg font-medium transition-all duration-150 ease-out active:scale-[.98]",
+        "inline-flex items-center justify-center gap-2 rounded-xl font-medium transition-all duration-150 ease-out active:scale-[.98]",
         "focus:outline-none focus-visible:ring-2 disabled:cursor-not-allowed disabled:opacity-50",
         sizeClass,
         buttonClasses[variant],
@@ -321,17 +321,15 @@ export function StatCard({
   trend?: "up" | "down";
 }) {
   return (
-    <Card className="p-4">
+    <Card className="p-5">
       <div className="flex items-start justify-between gap-3">
         <div>
-          <p className="text-xs font-medium uppercase tracking-wide text-slate-500">
-            {label}
-          </p>
-          <div className="mt-2 text-2xl font-semibold tracking-tight text-slate-950 tabular-nums">
+          <p className="text-xs font-medium text-slate-400">{label}</p>
+          <div className="mt-2 text-3xl font-semibold tracking-tight text-slate-950 tabular-nums">
             {value}
           </div>
           {subtitle && (
-            <p className="mt-1 text-xs text-slate-500">{subtitle}</p>
+            <p className="mt-1 text-xs text-slate-400">{subtitle}</p>
           )}
         </div>
         {icon && (
@@ -346,13 +344,22 @@ export function StatCard({
         )}
       </div>
       {trend && (
-        <div className="mt-3 flex items-center gap-1 text-xs text-slate-500">
-          {trend === "up" ? (
-            <ArrowUp className="h-3.5 w-3.5 text-success-600" />
-          ) : (
-            <ArrowDown className="h-3.5 w-3.5 text-danger-600" />
-          )}
-          Tendencia {trend === "up" ? "positiva" : "de atencao"}
+        <div className="mt-3">
+          <span
+            className={cn(
+              "inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-[11px] font-semibold",
+              trend === "up"
+                ? "bg-success-50 text-success-600"
+                : "bg-danger-50 text-danger-500",
+            )}
+          >
+            {trend === "up" ? (
+              <ArrowUp className="h-3 w-3" />
+            ) : (
+              <ArrowDown className="h-3 w-3" />
+            )}
+            Tendencia {trend === "up" ? "positiva" : "de atencao"}
+          </span>
         </div>
       )}
     </Card>
@@ -419,11 +426,17 @@ export function TR({
   ...props
 }: React.HTMLAttributes<HTMLTableRowElement> & {
   children: ReactNode;
-  /** Zebra sutil nas linhas pares (desligue em <THead>). */
+  /** Realce sutil no hover (desligue em <THead>). Sem zebra — divisórias finas. */
   zebra?: boolean;
 }) {
   return (
-    <tr {...props} className={cn(zebra && "even:bg-slate-50/40", className)}>
+    <tr
+      {...props}
+      className={cn(
+        zebra && "transition-colors hover:bg-slate-50/70",
+        className,
+      )}
+    >
       {children}
     </tr>
   );
@@ -571,7 +584,11 @@ export function Modal({
   }, [open, onClose]);
 
   if (!open) return null;
-  const sizeClass = size ? modalSizeClasses[size] : wide ? "max-w-4xl" : "max-w-lg";
+  const sizeClass = size
+    ? modalSizeClasses[size]
+    : wide
+      ? "max-w-4xl"
+      : "max-w-lg";
   return (
     <div className="modal-backdrop animate-fade-in" onClick={onClose}>
       <div
@@ -667,7 +684,9 @@ export function ConfirmModal({
             variant={variant === "danger" ? "danger" : "primary"}
             disabled={blocked || loading}
             onClick={onConfirm}
-            icon={loading ? <Loader2 className="h-4 w-4 animate-spin" /> : undefined}
+            icon={
+              loading ? <Loader2 className="h-4 w-4 animate-spin" /> : undefined
+            }
           >
             {confirmLabel}
           </Button>
@@ -846,10 +865,10 @@ export function Alert({
     >
       <Icon className={cn("mt-0.5 h-4 w-4 shrink-0", config.iconColor)} />
       <div className="min-w-0">
-        {title && (
-          <p className={cn("font-semibold", config.title)}>{title}</p>
+        {title && <p className={cn("font-semibold", config.title)}>{title}</p>}
+        {children && (
+          <div className={title ? "mt-0.5" : undefined}>{children}</div>
         )}
-        {children && <div className={title ? "mt-0.5" : undefined}>{children}</div>}
       </div>
     </div>
   );
@@ -922,7 +941,6 @@ export function IANotice({
   );
 }
 
-
 export function AISurface({
   title = "IA Juridica",
   subtitle = "Rascunho sujeito a revisao humana obrigatoria.",
@@ -948,7 +966,9 @@ export function AISurface({
             <p className="mt-1 text-xs text-slate-500">{subtitle}</p>
           </div>
         </div>
-        {actions && <div className="flex shrink-0 flex-wrap gap-2">{actions}</div>}
+        {actions && (
+          <div className="flex shrink-0 flex-wrap gap-2">{actions}</div>
+        )}
       </div>
       <div className="p-5">{children}</div>
     </section>
@@ -956,8 +976,16 @@ export function AISurface({
 }
 
 export function ConfidenceBadge({ value }: { value?: number | null }) {
-  const score = typeof value === "number" ? Math.max(0, Math.min(100, value)) : null;
-  const tone: Tone = score == null ? "slate" : score >= 80 ? "green" : score >= 60 ? "amber" : "red";
+  const score =
+    typeof value === "number" ? Math.max(0, Math.min(100, value)) : null;
+  const tone: Tone =
+    score == null
+      ? "slate"
+      : score >= 80
+        ? "green"
+        : score >= 60
+          ? "amber"
+          : "red";
   return (
     <Badge tone={tone} className="gap-1">
       <CheckCircle2 className="h-3 w-3" />
@@ -988,7 +1016,9 @@ export function VisualLawDocument({
           </div>
           <div className="min-w-0">
             <h1>{title}</h1>
-            {subtitle && <p className="mt-1 text-sm text-slate-500">{subtitle}</p>}
+            {subtitle && (
+              <p className="mt-1 text-sm text-slate-500">{subtitle}</p>
+            )}
           </div>
         </div>
         {meta.length > 0 && (

@@ -51,7 +51,7 @@ const TIPOS: Record<
   recurso: {
     label: "Recurso",
     icon: Scale,
-    cor: "bg-indigo-50 text-indigo-600",
+    cor: "bg-primary-50 text-primary-600",
   },
   parecer: {
     label: "Parecer",

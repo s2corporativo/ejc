@@ -58,6 +58,7 @@ import CommandPalette from "./CommandPalette";
 import HelpButton from "./HelpButton";
 import OnboardingTour from "./OnboardingTour";
 import SecurityMenu from "./SecurityMenu";
+import UserAvatar from "./UserAvatar";
 import { Button, Tooltip, cn } from "./UI";
 import { useTheme } from "../hooks/useTheme";
 import { useAuth } from "../stores/auth";
@@ -154,7 +155,12 @@ const NAV: NavItem[] = [
     roles: ["superadmin", "admin", "socio", "advogado", "financeiro"],
   },
   { to: "/despesas", label: "Despesas", icon: Receipt, group: "Gestao" },
-  { to: "/sociedade", label: "Sociedade", icon: Building2, group: "Financeiro" },
+  {
+    to: "/sociedade",
+    label: "Sociedade",
+    icon: Building2,
+    group: "Financeiro",
+  },
 
   // ── Inteligência ──
   {
@@ -242,7 +248,12 @@ const NAV: NavItem[] = [
 
   // ── Biblioteca / Conhecimento ──
   { to: "/wiki", label: "Wiki", icon: BookOpen, group: "Biblioteca" },
-  { to: "/biblioteca", label: "Biblioteca", icon: Library, group: "Biblioteca" },
+  {
+    to: "/biblioteca",
+    label: "Biblioteca",
+    icon: Library,
+    group: "Biblioteca",
+  },
   { to: "/memoria", label: "Memoria", icon: Brain, group: "Biblioteca" },
   { to: "/noticias", label: "Noticias", icon: Newspaper, group: "Biblioteca" },
   {
@@ -301,19 +312,9 @@ function helpModuleKey(pathname: string): string | null {
   return hit ? hit[1] : null;
 }
 
-function initials(name?: string): string {
-  return (name || "?")
-    .split(" ")
-    .filter(Boolean)
-    .map((part) => part[0])
-    .slice(0, 2)
-    .join("")
-    .toUpperCase();
-}
-
 export default function Layout() {
   const { theme, toggle } = useTheme();
-  const { user } = useAuth();
+  const { user, updateUser } = useAuth();
   const nav = useNavigate();
   const location = useLocation();
   const moduleKey = useMemo(
@@ -358,6 +359,22 @@ export default function Layout() {
     return () => clearInterval(timer);
   }, []);
 
+  // Hidrata avatar_url (e nome) a partir de /users/me — tolerante: se o
+  // campo não vier, o avatar cai no fallback de iniciais.
+  useEffect(() => {
+    api
+      .get("/users/me")
+      .then((r) => {
+        const patch: { avatar_url: string | null; full_name?: string } = {
+          avatar_url: r.data?.avatar_url ?? null,
+        };
+        if (r.data?.full_name) patch.full_name = r.data.full_name;
+        updateUser(patch);
+      })
+      .catch(() => {});
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
   const visible = useMemo(
     () =>
       NAV.filter(
@@ -377,7 +394,9 @@ export default function Layout() {
   const contentMargin = collapsed ? "md:ml-[5.25rem]" : "md:ml-72";
 
   return (
-    <div className="min-h-screen bg-slate-50 text-slate-900">
+    <div className="min-h-screen bg-canvas text-slate-900">
+      {/* Marca d'água da logomarca — decorativa, some na impressão */}
+      <div className="brand-watermark" aria-hidden="true" />
       <CommandPalette />
 
       {menuOpen && (
@@ -391,32 +410,41 @@ export default function Layout() {
 
       <aside
         className={cn(
-          "fixed inset-y-0 left-0 z-50 flex-col border-r border-white/5 bg-sidebar text-slate-300 transition-all",
+          "fixed inset-y-0 left-0 z-50 flex-col border-r border-slate-200/60 bg-sidebar text-slate-600 transition-all",
           sidebarWidth,
           menuOpen ? "flex w-72 md:flex" : "hidden md:flex",
         )}
       >
-        <div className="flex h-16 items-center gap-3 border-b border-white/5 px-4">
+        <div className="flex h-16 items-center gap-3 border-b border-slate-100 px-4">
           <Link
             to="/"
             className={cn(
-              "flex min-w-0 items-center",
+              "flex min-w-0 items-center gap-2.5",
               collapsed ? "w-10 justify-center" : "max-w-[220px]",
             )}
             aria-label="De Paula Teixeira - EJC"
           >
-            <img
-              src={BRAND_LOGO}
-              alt="De Paula Teixeira Sociedade de Advogados"
+            <span
               className={cn(
-                "brand-logo-img rounded-lg bg-white",
-                collapsed ? "h-10 w-10 object-cover object-top" : "h-14 w-auto max-w-[220px] p-1",
+                "flex shrink-0 items-center justify-center rounded-xl bg-white shadow-soft ring-1 ring-slate-100",
+                collapsed ? "h-10 w-10" : "h-11 w-auto max-w-[200px] px-1",
               )}
-            />
+            >
+              <img
+                src={BRAND_LOGO}
+                alt="De Paula Teixeira Sociedade de Advogados"
+                className={cn(
+                  "brand-logo-img rounded-lg",
+                  collapsed
+                    ? "h-9 w-9 object-cover object-top"
+                    : "h-10 w-auto max-w-[190px]",
+                )}
+              />
+            </span>
           </Link>
           <button
             type="button"
-            className="ml-auto hidden rounded-lg p-1.5 text-slate-500 hover:bg-white/10 hover:text-slate-200 md:block"
+            className="ml-auto hidden rounded-lg p-1.5 text-slate-400 hover:bg-slate-100 hover:text-slate-700 md:block"
             onClick={() => setCollapsed((v) => !v)}
             aria-label={collapsed ? "Expandir menu" : "Recolher menu"}
           >
@@ -428,7 +456,7 @@ export default function Layout() {
           </button>
           <button
             type="button"
-            className="ml-auto rounded-lg p-1.5 text-slate-500 hover:bg-white/10 hover:text-slate-200 md:hidden"
+            className="ml-auto rounded-lg p-1.5 text-slate-400 hover:bg-slate-100 hover:text-slate-700 md:hidden"
             onClick={() => setMenuOpen(false)}
             aria-label="Fechar menu"
           >
@@ -437,8 +465,8 @@ export default function Layout() {
         </div>
 
         {!collapsed && (
-          <div className="mx-3 mt-3 rounded-xl border border-white/10 bg-white/5 p-3">
-            <div className="text-xs font-semibold text-primary-300">
+          <div className="mx-3 mt-3 rounded-xl border border-slate-100 bg-slate-50/70 p-3">
+            <div className="text-xs font-semibold text-primary-600">
               Sociedade de Advogados
             </div>
             <div className="mt-1 text-[11px] text-slate-400">
@@ -457,7 +485,7 @@ export default function Layout() {
                   <button
                     type="button"
                     onClick={() => toggleGroup(group)}
-                    className="mb-2 flex w-full items-center justify-between px-2 text-2xs font-semibold uppercase tracking-[0.2em] text-slate-500 transition-colors hover:text-slate-300"
+                    className="mb-2 flex w-full items-center justify-between px-2 text-2xs font-semibold uppercase tracking-[0.2em] text-slate-400 transition-colors hover:text-slate-600"
                     aria-expanded={isOpen}
                   >
                     <span>{group}</span>
@@ -470,7 +498,13 @@ export default function Layout() {
                   </button>
                 )}
                 {(collapsed || isOpen) && (
-                  <div className="space-y-1">
+                  <div
+                    className={cn(
+                      "space-y-1",
+                      // Linha de árvore vertical fina + indentação (referência)
+                      !collapsed && "ml-3 border-l border-slate-200 pl-2",
+                    )}
+                  >
                     {items.map(({ to, label, icon: Icon, end, onClick }) => {
                       const content = (
                         <NavLink
@@ -483,16 +517,18 @@ export default function Layout() {
                           }}
                           className={({ isActive }) =>
                             cn(
-                              "group flex h-10 items-center gap-3 rounded-lg px-3 text-sm font-medium transition-all duration-150",
+                              "group flex h-10 items-center gap-3 rounded-xl px-3 text-sm font-medium transition-all duration-150",
                               collapsed && "justify-center px-0",
                               isActive
-                                ? "bg-white/10 text-white ring-1 ring-inset ring-white/10 [&>svg]:text-primary-400"
-                                : "text-slate-400 hover:bg-white/5 hover:text-white",
+                                ? "bg-white text-primary-600 shadow-[0_8px_24px_rgba(16,24,40,.08)] ring-1 ring-slate-100 [&>svg]:text-primary-500"
+                                : "text-slate-500 hover:bg-sidebar-hover hover:text-slate-900",
                             )
                           }
                         >
                           <Icon className="h-4 w-4 shrink-0" />
-                          {!collapsed && <span className="truncate">{label}</span>}
+                          {!collapsed && (
+                            <span className="truncate">{label}</span>
+                          )}
                         </NavLink>
                       );
                       return collapsed ? (
@@ -510,47 +546,47 @@ export default function Layout() {
           })}
         </nav>
 
-        <div className="border-t border-white/5 p-3">
+        <div className="border-t border-slate-100 p-3">
           <div
             className={cn(
-              "flex items-center gap-3 rounded-xl bg-white/5 p-2",
+              "flex items-center gap-3 rounded-xl bg-slate-50/80 p-2",
               collapsed && "justify-center",
             )}
           >
-            <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-primary-600 text-xs font-semibold text-white">
-              {initials(user?.full_name)}
-            </div>
+            <UserAvatar user={user} size="md" />
             {!collapsed && (
-              <>
-                <div className="min-w-0 flex-1">
-                  <div className="truncate text-xs font-semibold text-white">
-                    {user?.full_name || "Usuario"}
-                  </div>
-                  <div className="truncate text-[11px] capitalize text-slate-400">
-                    {user?.role || ""}
-                  </div>
+              <div className="min-w-0 flex-1">
+                <div className="truncate text-xs font-semibold text-slate-900">
+                  {user?.full_name || "Usuario"}
                 </div>
-                <button
-                  type="button"
-                  onClick={logout}
-                  className="rounded-lg p-2 text-slate-500 hover:bg-white/10 hover:text-danger-400"
-                  aria-label="Sair"
-                >
-                  <LogOut className="h-4 w-4" />
-                </button>
-              </>
+                <div className="truncate text-[11px] capitalize text-slate-400">
+                  {user?.role || ""}
+                </div>
+              </div>
             )}
           </div>
+          <button
+            type="button"
+            onClick={logout}
+            className={cn(
+              "mt-2 flex h-10 w-full items-center gap-3 rounded-xl px-3 text-sm font-medium text-slate-500 transition-colors hover:bg-danger-50 hover:text-danger-600",
+              collapsed && "justify-center px-0",
+            )}
+            aria-label="Sair"
+          >
+            <LogOut className="h-4 w-4 shrink-0" />
+            {!collapsed && <span>Sair</span>}
+          </button>
         </div>
       </aside>
 
       <div
         className={cn(
-          "flex min-h-screen flex-col transition-all",
+          "relative z-10 flex min-h-screen flex-col transition-all",
           contentMargin,
         )}
       >
-        <header className="sticky top-0 z-30 border-b border-slate-200 bg-white/85 px-4 py-3 backdrop-blur-xl md:px-6">
+        <header className="sticky top-0 z-30 border-b border-slate-200/60 bg-white/85 px-4 py-3 backdrop-blur-xl md:px-6">
           <div className="flex items-center gap-3">
             <button
               type="button"
@@ -605,7 +641,7 @@ export default function Layout() {
               >
                 <Bell className="h-4 w-4" />
                 {notifCount > 0 && (
-                  <span className="absolute -right-1 -top-1 flex h-5 min-w-5 items-center justify-center rounded-full bg-danger-600 px-1 text-[10px] font-semibold text-white ring-2 ring-white">
+                  <span className="absolute -right-1 -top-1 flex h-5 min-w-5 items-center justify-center rounded-full bg-primary-500 px-1 text-[10px] font-semibold text-white ring-2 ring-white">
                     {notifCount}
                   </span>
                 )}

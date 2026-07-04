@@ -5,17 +5,19 @@
 @layer base {
   :root {
     color-scheme: light;
-    --ejc-bg: #f8fafc;
+    /* Canvas cinza-azulado claro + cartões brancos flutuantes (referência SaaS) */
+    --ejc-bg: #edf0f4;
     --ejc-card: #ffffff;
     --ejc-ink: #0f172a;
-    --ejc-muted: #64748b;
-    --ejc-border: #e2e8f0;
+    --ejc-muted: #8a94a6;
+    --ejc-border: #e5e9f0;
     --ejc-legal: #1e293b;
-    --ejc-action: #4f46e5;
-    --ejc-ai: #7c3aed;
-    --ejc-bronze: #475569;
-    --ejc-gold: #6366f1;
-    --ejc-gold-soft: #e0e7ff;
+    --ejc-action: #f4574d;
+    --ejc-ai: #f79256;
+    --ejc-bronze: #c93b32;
+    --ejc-gold: #f4574d;
+    --ejc-gold-soft: #ffe8e6;
+    --ejc-shadow-soft: 0 8px 30px rgba(16, 24, 40, 0.06);
   }
 
   html {
@@ -51,10 +53,10 @@
     font-variant-numeric: tabular-nums;
   }
 
-  /* Focus ring indigo consistente para navegação por teclado */
+  /* Focus ring coral consistente para navegação por teclado */
   :focus-visible {
     outline: none;
-    box-shadow: 0 0 0 2px rgba(99, 102, 241, 0.4);
+    box-shadow: 0 0 0 2px rgba(244, 87, 77, 0.4);
     border-radius: 6px;
   }
 
@@ -90,34 +92,30 @@
 }
 
 @layer components {
-  /* ── Card ─────────────────────────────────────────────────── */
+  /* ── Card — cartão branco flutuante (raio grande + sombra difusa) ── */
   .card {
     @apply rounded-2xl border border-slate-200/60 bg-white;
-    box-shadow:
-      0 1px 2px rgba(15, 23, 42, 0.04),
-      0 1px 3px rgba(15, 23, 42, 0.05);
+    box-shadow: var(--ejc-shadow-soft);
     transition:
       border-color 0.15s ease-out,
       box-shadow 0.15s ease-out,
       transform 0.15s ease-out;
   }
   .card:hover {
-    border-color: #e2e8f0;
+    border-color: #e5e9f0;
     box-shadow:
-      0 2px 4px rgba(15, 23, 42, 0.04),
-      0 8px 24px rgba(15, 23, 42, 0.08);
+      0 2px 4px rgba(16, 24, 40, 0.04),
+      0 12px 36px rgba(16, 24, 40, 0.1);
   }
 
   .section-card {
     @apply rounded-2xl border border-slate-200/60 bg-white;
-    box-shadow:
-      0 1px 2px rgba(15, 23, 42, 0.04),
-      0 1px 3px rgba(15, 23, 42, 0.05);
+    box-shadow: var(--ejc-shadow-soft);
   }
 
   /* ── Buttons ──────────────────────────────────────────────── */
   .btn {
-    @apply inline-flex items-center justify-center gap-2 rounded-lg px-4 py-2 text-sm font-medium
+    @apply inline-flex items-center justify-center gap-2 rounded-xl px-4 py-2 text-sm font-medium
            transition-all duration-150 ease-out active:scale-[.98]
            focus:outline-none focus-visible:ring-2 focus-visible:ring-primary-500/40
            disabled:opacity-50 disabled:cursor-not-allowed select-none;
@@ -143,7 +141,7 @@
 
   /* ── Form inputs ──────────────────────────────────────────── */
   .input {
-    @apply w-full rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm text-slate-900
+    @apply w-full rounded-xl border border-slate-300 bg-white px-3 py-2 text-sm text-slate-900
            placeholder:text-slate-400 transition-all duration-150
            focus:border-primary-400 focus:outline-none focus:ring-2 focus:ring-primary-500/25;
   }
@@ -182,10 +180,10 @@
     @apply border-b border-slate-100;
   }
   .table th {
-    @apply bg-slate-50/80 px-4 py-3 text-left text-[11px] font-semibold uppercase tracking-wider text-slate-500 first:rounded-tl-xl last:rounded-tr-xl;
+    @apply bg-white px-4 py-3 text-left text-[11px] font-semibold uppercase tracking-wider text-slate-400 first:rounded-tl-xl last:rounded-tr-xl;
   }
   .table td {
-    @apply border-t border-slate-100 px-4 py-3 text-slate-700;
+    @apply border-t border-slate-100 px-4 py-4 text-slate-700;
   }
   .table tbody tr {
     @apply transition-colors hover:bg-slate-50;
@@ -208,11 +206,33 @@
     background:
       radial-gradient(
         circle at 15% 15%,
-        rgba(255, 255, 255, 0.12),
+        rgba(255, 255, 255, 0.14),
         transparent 18rem
       ),
-      linear-gradient(135deg, #1e1b4b 0%, #312e81 45%, #4c1d95 100%);
-    box-shadow: 0 18px 45px rgba(30, 27, 75, 0.25);
+      linear-gradient(135deg, #c93b32 0%, #e04a40 45%, #f0813f 100%);
+    box-shadow: 0 18px 45px rgba(201, 59, 50, 0.25);
+  }
+
+  /* ── Item de menu de dropdown (avatar/segurança) ──────────── */
+  .menu-item {
+    @apply flex w-full items-center gap-2.5 rounded-lg px-3 py-2 text-left text-sm text-slate-700 transition-colors hover:bg-primary-50 hover:text-primary-700;
+  }
+
+  /* ── Marca d'água da logomarca (decorativa, atrás do conteúdo) ──
+     mix-blend multiply faz o fundo branco do JPG sumir no canvas claro,
+     sobrando só o traço da balança/louros como fantasma. */
+  .brand-watermark {
+    position: fixed;
+    inset: 0;
+    z-index: 0;
+    pointer-events: none;
+    user-select: none;
+    background-image: url("/brand/de-paula-teixeira-logo.jpg");
+    background-repeat: no-repeat;
+    background-position: center;
+    background-size: min(60vw, 820px);
+    opacity: 0.04;
+    mix-blend-mode: multiply;
   }
 
   /* ── Page header ──────────────────────────────────────────── */
@@ -394,11 +414,11 @@
 .ejc-modern-scope input:focus,
 .ejc-modern-scope select:focus,
 .ejc-modern-scope textarea:focus {
-  border-color: #818cf8 !important;
+  border-color: #fda9a2 !important;
   outline: none;
   box-shadow:
-    0 0 0 3px rgba(99, 102, 241, 0.18),
-    0 1px 2px rgba(15, 23, 42, 0.04) !important;
+    0 0 0 3px rgba(244, 87, 77, 0.16),
+    0 1px 2px rgba(16, 24, 40, 0.04) !important;
 }
 
 .ejc-modern-scope label,
@@ -427,7 +447,7 @@
 }
 
 .ejc-modern-scope tbody tr:hover {
-  background: rgba(238, 242, 255, 0.6);
+  background: rgba(255, 245, 244, 0.65);
 }
 
 .ejc-modern-scope .btn,
@@ -436,12 +456,12 @@
 }
 
 .ejc-modern-scope .btn-primary {
-  background: #4f46e5;
-  box-shadow: 0 10px 24px rgba(79, 70, 229, 0.22);
+  background: #f4574d;
+  box-shadow: 0 10px 24px rgba(244, 87, 77, 0.24);
 }
 
 .ejc-modern-scope .btn-primary:hover {
-  background: #4338ca;
+  background: #e04a40;
 }
 
 .ejc-modern-scope .badge,
@@ -465,8 +485,8 @@
 
 .ejc-modern-scope .bg-slate-100.p-1.rounded-xl button.bg-white,
 .ejc-modern-scope .bg-gray-100.p-1.rounded-xl button.bg-white {
-  color: #4338ca !important;
-  box-shadow: 0 8px 18px rgba(15, 23, 42, 0.1) !important;
+  color: #c93b32 !important;
+  box-shadow: 0 8px 18px rgba(16, 24, 40, 0.1) !important;
 }
 
 .ejc-modern-scope .prose,
@@ -482,7 +502,7 @@
 
 .ejc-modern-scope [class*="bg-violet"],
 .ejc-modern-scope [class*="text-violet"] {
-  --tw-ring-color: rgba(124, 58, 237, 0.18);
+  --tw-ring-color: rgba(247, 146, 86, 0.2);
 }
 
 @media (max-width: 768px) {
@@ -498,7 +518,7 @@
 /* Visual polish layer: premium LegalTech surfaces shared across legacy and new screens. */
 @layer components {
   .app-shell-surface {
-    background: #f8fafc;
+    background: #edf0f4;
   }
 
   .toolbar-surface {
@@ -507,51 +527,68 @@
   }
 
   .stat-card {
-    @apply rounded-xl border border-slate-200 bg-white p-4;
-    box-shadow: 0 14px 35px rgba(15, 23, 42, 0.055), 0 1px 2px rgba(15, 23, 42, 0.04);
+    @apply rounded-2xl border border-slate-200/60 bg-white p-4;
+    box-shadow: var(--ejc-shadow-soft);
   }
 
   .legal-surface {
-    @apply rounded-xl border border-slate-200 bg-white;
-    box-shadow: 0 18px 45px rgba(15, 23, 42, 0.055), 0 1px 2px rgba(15, 23, 42, 0.04);
+    @apply rounded-2xl border border-slate-200/60 bg-white;
+    box-shadow: var(--ejc-shadow-soft);
   }
 
   .ai-surface {
     @apply rounded-2xl border bg-white;
-    border-color: rgba(124, 58, 237, 0.22);
-    box-shadow: 0 18px 45px rgba(76, 29, 149, 0.08), 0 1px 2px rgba(15, 23, 42, 0.04);
+    border-color: rgba(247, 146, 86, 0.28);
+    box-shadow:
+      0 8px 30px rgba(199, 95, 36, 0.08),
+      0 1px 2px rgba(16, 24, 40, 0.04);
   }
 
   .ai-surface-header {
     @apply flex flex-wrap items-center justify-between gap-3 border-b px-5 py-4;
-    border-color: rgba(124, 58, 237, 0.16);
-    background: linear-gradient(90deg, rgba(124, 58, 237, 0.08), rgba(99, 102, 241, 0.05), transparent);
+    border-color: rgba(247, 146, 86, 0.2);
+    background: linear-gradient(
+      90deg,
+      rgba(247, 146, 86, 0.1),
+      rgba(244, 87, 77, 0.05),
+      transparent
+    );
   }
 
   .status-dot {
     @apply inline-block h-2 w-2 rounded-full bg-slate-400;
   }
-  .status-dot.success { @apply bg-success-500; }
-  .status-dot.warn { @apply bg-warn-500; }
-  .status-dot.danger { @apply bg-danger-500; }
-  .status-dot.ai { @apply bg-ai-500; }
+  .status-dot.success {
+    @apply bg-success-500;
+  }
+  .status-dot.warn {
+    @apply bg-warn-500;
+  }
+  .status-dot.danger {
+    @apply bg-danger-500;
+  }
+  .status-dot.ai {
+    @apply bg-ai-500;
+  }
 
   .kanban-column {
     @apply min-h-80 rounded-xl border border-slate-200 bg-slate-50/80 p-3;
   }
 
   .kanban-card {
-    @apply rounded-lg border border-slate-200 bg-white p-3 shadow-sm transition-all hover:border-primary-200 hover:shadow-md;
+    @apply rounded-xl border border-slate-200 bg-white p-3 shadow-sm transition-all hover:border-primary-200 hover:shadow-md;
   }
 
   .visual-law-document {
-    @apply rounded-xl border border-slate-200 bg-white text-slate-800;
-    box-shadow: 0 22px 55px rgba(15, 23, 42, 0.07), 0 1px 2px rgba(15, 23, 42, 0.04);
+    @apply rounded-2xl border border-slate-200/60 bg-white text-slate-800;
+    box-shadow:
+      0 22px 55px rgba(16, 24, 40, 0.07),
+      0 1px 2px rgba(16, 24, 40, 0.04);
   }
 
   .visual-law-document-header {
     @apply border-b border-slate-200 px-6 py-5;
-    background: linear-gradient(135deg, #f8fafc 0%, #eef2ff 100%);
+    background: linear-gradient(135deg, #f8fafc 0%, #fff5f4 100%);
   }
 
   .visual-law-document-body {
@@ -607,18 +644,23 @@
 }
 
 @media print {
-  body { background: #fff !important; }
+  body {
+    background: #fff !important;
+  }
   .visual-law-document,
   .legal-surface,
   .ai-surface,
   .card,
-  .section-card { box-shadow: none !important; }
+  .section-card {
+    box-shadow: none !important;
+  }
 
   /* Estrutura do app nunca vai para o papel */
   aside,
   nav,
   header,
-  .no-print {
+  .no-print,
+  .brand-watermark {
     display: none !important;
   }
 
@@ -681,8 +723,12 @@
   }
 
   .brand-panel {
-    border-color: rgba(99, 102, 241, 0.24) !important;
-    background: linear-gradient(135deg, rgba(224, 231, 255, 0.65), rgba(255, 255, 255, 0.92));
+    border-color: rgba(244, 87, 77, 0.22) !important;
+    background: linear-gradient(
+      135deg,
+      rgba(255, 232, 230, 0.65),
+      rgba(255, 255, 255, 0.92)
+    );
   }
 
   .brand-kicker {
@@ -690,17 +736,21 @@
   }
 
   .brand-accent-line {
-    background: linear-gradient(90deg, var(--ejc-gold), rgba(99, 102, 241, 0.18), transparent);
+    background: linear-gradient(
+      90deg,
+      var(--ejc-gold),
+      rgba(247, 146, 86, 0.28),
+      transparent
+    );
   }
 
   .btn-primary {
-    box-shadow: 0 4px 12px rgba(79, 70, 229, 0.24);
+    box-shadow: 0 4px 12px rgba(244, 87, 77, 0.26);
   }
 
   .card:hover,
   .section-card:hover,
   .legal-surface:hover {
-    border-color: rgba(99, 102, 241, 0.24);
+    border-color: rgba(244, 87, 77, 0.22);
   }
 }
-

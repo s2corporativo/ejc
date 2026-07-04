@@ -7,6 +7,8 @@ export interface User {
   phone?: string;
   oab_number?: string;
   is_active?: boolean;
+  /** Path da foto de perfil (ex.: "/users/{id}/avatar", sem prefixo /api). */
+  avatar_url?: string | null;
 }
 export interface Client {
   id: string;
