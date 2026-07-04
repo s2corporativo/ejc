@@ -1,5 +1,13 @@
 """Sanitização LGPD — Fase 3B (PII fora do RAG/Groq)."""
-from app.services.sanitizer import sanitizar_pii, validar_sem_pii
+from app.services.sanitizer import (
+    sanitizar_pii,
+    validar_sem_pii,
+    sanitizar_pii_interno,
+    validar_sem_pii_interno,
+)
+from app.services.ai_guard import sanitizar_ou_abortar
+import pytest
+from fastapi import HTTPException
 
 
 def test_mascara_cpf_e_cnpj():
@@ -30,3 +38,64 @@ def test_texto_limpo_nao_muda():
 
 def test_validar_detecta_residual():
     assert "CPF" in validar_sem_pii("resto 123.456.789-09")
+
+
+# ── Uso interno (2026-07-04): CPF/CNPJ visíveis só na barreira de entrada ────
+
+def test_sanitizar_pii_interno_preserva_cpf_cnpj_mas_remove_o_resto():
+    out, mudou = sanitizar_pii_interno(
+        "CPF 123.456.789-09, CNPJ 12.345.678/0001-99, "
+        "processo 1234567-89.2020.8.13.0024, contato a@b.com"
+    )
+    assert "123.456.789-09" in out
+    assert "12.345.678/0001-99" in out
+    assert "[PROCESSO]" in out
+    assert "[EMAIL]" in out
+    assert mudou is True
+
+
+def test_validar_sem_pii_interno_ignora_cpf_cnpj():
+    assert validar_sem_pii_interno("resto 123.456.789-09 e 12.345.678/0001-99") == []
+    assert "EMAIL" in validar_sem_pii_interno("contato a@b.com")
+
+
+def test_sanitizar_ou_abortar_mantem_cpf_cnpj_para_ollama():
+    """Barreira de ENTRADA: CPF/CNPJ passam íntegros (uso interno)."""
+    limpo, _ = sanitizar_ou_abortar("Cliente CPF 123.456.789-09, CNPJ 12.345.678/0001-99")
+    assert "123.456.789-09" in limpo
+    assert "12.345.678/0001-99" in limpo
+
+
+def test_sanitizar_ou_abortar_continua_mascarando_outros_tipos_de_pii():
+    """RG/e-mail/telefone/CEP/processo continuam sendo removidos na barreira de
+    entrada (só CPF/CNPJ deixaram de ser tratados como PII aqui)."""
+    limpo, mudou = sanitizar_ou_abortar(
+        "Processo 1234567-89.2020.8.13.0024 contato a@b.com"
+    )
+    assert "1234567-89.2020.8.13.0024" not in limpo
+    assert "a@b.com" not in limpo
+    assert "[PROCESSO]" in limpo
+    assert "[EMAIL]" in limpo
+    assert mudou is True
+
+
+def test_sanitizar_ou_abortar_aborta_se_sobrar_pii_nao_cpf_cnpj(monkeypatch):
+    """Confirma que o abort 422 continua ativo para residual fora de CPF/CNPJ —
+    força um residual artificial para exercitar o caminho de erro."""
+    import app.services.ai_guard as ai_guard_mod
+
+    monkeypatch.setattr(ai_guard_mod, "validar_sem_pii_interno", lambda t: ["EMAIL"])
+    with pytest.raises(HTTPException) as exc:
+        ai_guard_mod.sanitizar_ou_abortar("texto qualquer")
+    assert exc.value.status_code == 422
+
+
+def test_barreira_externa_do_gateway_continua_removendo_cpf_cnpj():
+    """A barreira que protege Anthropic/Groq (ai_gateway) NÃO foi tocada: usa
+    as funções completas, então CPF/CNPJ residual bloqueia o provider externo."""
+    from app.services.ai_gateway import _sanitizar_messages_externo
+    msgs = [{"role": "user", "content": "CPF 123.456.789-09"}]
+    limpos, residual = _sanitizar_messages_externo(msgs)
+    assert "[CPF]" in limpos[0]["content"]
+    assert "123.456.789-09" not in limpos[0]["content"]
+    assert residual == []

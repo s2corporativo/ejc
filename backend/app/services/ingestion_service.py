@@ -12,7 +12,9 @@
 # Princípio: jobs diários NÃO podem duplicar documentos. A deduplicação é por
 # `chave_origem` (URN LexML, nº CNJ, código da norma...). Se o conteúdo não
 # mudou (mesmo hash), o documento é deixado intacto (não re-embeda). Se mudou,
-# os chunks antigos são removidos e regravados. Tudo respeitando soft-delete.
+# NÃO sobrescreve: a versão antiga é preservada como histórico (vigente=False,
+# chunks intactos) e uma nova versão é criada (migration 068). Tudo respeitando
+# soft-delete.
 from __future__ import annotations
 
 import asyncio
@@ -23,7 +25,7 @@ from datetime import datetime, timezone
 from uuid import uuid4
 
 import httpx
-from sqlalchemy import select, text as sqltext, delete
+from sqlalchemy import select, text as sqltext
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models.rag import KnowledgeDoc, KnowledgeChunk, FonteIngestao
@@ -153,20 +155,34 @@ async def upsert_documento(
     extra: dict | None = None,
     client_id: str | None = None,
     case_id: str | None = None,
+    confianca: str | None = None,
+    embutir_vetores: bool = True,
 ) -> str:
-    """Insere/atualiza um documento na base de conhecimento, de forma idempotente.
+    """Insere/atualiza um documento na base de conhecimento, com VERSIONAMENTO
+    (migration 068) — nunca sobrescreve o conteúdo de uma versão anterior.
 
     Retorna: "novo" | "atualizado" | "inalterado".
 
-    - Dedup por `chave_origem` (obrigatória aqui). Se já existe documento ativo
-      com a mesma chave:
+    - Dedup por `chave_origem` (obrigatória aqui), olhando apenas a versão
+      VIGENTE (`vigente=True`). Se já existe:
         • conteúdo idêntico (mesmo hash) → "inalterado" (não toca nos vetores).
-        • conteúdo diferente → remove chunks antigos, regrava + re-embeda.
-    - Documento novo → cria doc + chunks (+ embeddings se disponíveis).
+        • conteúdo diferente → NÃO apaga a versão antiga. Marca-a
+          `vigente=False` (seus chunks continuam intactos, preservando o
+          histórico para auditoria/citações antigas) e cria um NOVO
+          `KnowledgeDoc` com `versao = anterior.versao + 1` e
+          `versao_anterior_id = anterior.id`, com seus próprios chunks
+          re-vetorizados.
+    - Documento novo → cria doc (versao=1, vigente=True) + chunks (+ embeddings
+      se disponíveis).
     """
     conteudo = normalizar(conteudo)
     if len(conteudo) < 50:
         return "inalterado"   # conteúdo irrelevante — ignora silenciosamente
+    # Gate de confiança (governança de IA): grava no extra JSONB a chave
+    # canônica lida por ia_governanca._conf (vocabulário alta|media|baixa|
+    # bloqueado). Sem confianca explícita, a busca assume "media".
+    if confianca:
+        extra = {**(extra or {}), "confidence_level": confianca}
     h = _sha1(conteudo)
     agora = datetime.now(timezone.utc)
 
@@ -174,11 +190,15 @@ async def upsert_documento(
         select(KnowledgeDoc).where(
             KnowledgeDoc.chave_origem == chave_origem,
             KnowledgeDoc.deleted_at.is_(None),
+            KnowledgeDoc.vigente.is_(True),
         )
     )).scalar_one_or_none()
 
     chunks = chunk_texto(conteudo)
-    vetores = await gerar_embeddings(chunks)   # None se embeddings desligados
+    # `embutir_vetores=False` → vetorização adiada (fica "pendente"; o chamador
+    # agenda a indexação em background — ex.: lote da API pública, que não pode
+    # bloquear a resposta embedando até ~100 documentos inline).
+    vetores = await gerar_embeddings(chunks) if embutir_vetores else None
     # BUG-04: status coerente com o resultado real da vetorização.
     # 'indexado' só quando os chunks foram efetivamente embedados; senão 'pendente'
     # (embeddings desligados/indisponíveis) — nunca fica 'pendente' com vetor pronto.
@@ -187,21 +207,21 @@ async def upsert_documento(
     if existente:
         if existente.hash_conteudo == h:
             return "inalterado"
-        # Conteúdo mudou → troca os chunks
-        await db.execute(
-            delete(KnowledgeChunk).where(KnowledgeChunk.doc_id == existente.id)
-        )
-        existente.titulo = titulo
-        existente.categoria = categoria
-        existente.fonte = fonte
-        existente.tribunal = tribunal
-        existente.extra = extra
-        existente.client_id = client_id
-        existente.case_id = case_id
-        existente.hash_conteudo = h
-        existente.atualizado_em = agora
-        existente.status_indexacao = status_novo
-        doc_id = existente.id
+        # Conteúdo mudou → NOVA VERSÃO. A versão antiga vira histórico
+        # (vigente=False), seus chunks NÃO são tocados.
+        existente.vigente = False
+        doc_id = str(uuid4())
+        db.add(KnowledgeDoc(
+            id=doc_id, titulo=titulo, categoria=categoria,
+            fonte=fonte, tribunal=tribunal, extra=extra,
+            client_id=client_id, case_id=case_id,
+            chave_origem=chave_origem, hash_conteudo=h, atualizado_em=agora,
+            status_indexacao=status_novo,
+            versao=existente.versao + 1,
+            versao_anterior_id=existente.id,
+            vigente=True,
+        ))
+        await db.flush()   # FK: doc antes dos chunks
         resultado = "atualizado"
     else:
         doc_id = str(uuid4())

@@ -15,6 +15,10 @@ class ResumirDocRequest(BaseModel):
 
 class HITLRevisaoRequest(BaseModel):
     status: str   # revisado | aplicado | descartado
+    # Gate de citações (CITACOES_POLITICA="bloquear"): aprovar output com
+    # citação bloqueante exige override EXPLÍCITO + justificativa (auditada).
+    override_citacoes: bool = False
+    justificativa_override: Optional[str] = Field(None, max_length=2000)
 
 class VerificarCitacoesRequest(BaseModel):
     """Verificador rigoroso de jurisprudência (anti-alucinação)."""

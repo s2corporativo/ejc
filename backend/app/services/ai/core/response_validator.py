@@ -53,8 +53,14 @@ async def validar(
     revisao_obrigatoria = False
     citacoes: dict | None = None
 
+    # Política do gate antialucinação (Fase 4 — citation_gate):
+    # "desligado" pula a verificação; "bloquear" antecipa ao revisor que a
+    # aprovação HITL exigirá override se houver citação bloqueante.
+    from app.services.citation_gate import politica_citacoes, avaliar_bloqueantes
+    politica = politica_citacoes()
+
     # 1. Citações contra a base oficial (só quando a tarefa exige fonte).
-    if exige_fonte and db is not None:
+    if exige_fonte and db is not None and politica != "desligado":
         from app.services.citation_check import verificar_citacoes
         try:
             citacoes = await verificar_citacoes(db, conteudo)
@@ -72,6 +78,15 @@ async def validar(
                 "na base oficial — verificação manual obrigatória (OAB)."
             )
             revisao_obrigatoria = True
+        if citacoes:
+            bloqueantes = avaliar_bloqueantes(citacoes)
+            if bloqueantes and politica == "bloquear":
+                alertas.append(
+                    f"{len(bloqueantes)} citação(ões) BLOQUEANTE(s) (política "
+                    "'bloquear'): a aprovação HITL exigirá correção do texto "
+                    "ou override justificado do revisor."
+                )
+                revisao_obrigatoria = True
 
     # 2. Vedação de promessa de resultado — alerta, nunca reescrita.
     promessas = detectar_promessa_resultado(conteudo)

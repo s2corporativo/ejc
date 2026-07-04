@@ -78,6 +78,7 @@ from app.routers import fees
 from app.routers import financeiro_consolidado
 from app.routers import gestao_societaria
 from app.routers import honorarios_calc
+from app.routers import ia_citacoes
 from app.routers import ia_defensiva
 from app.routers import ia_especializada
 from app.routers import ia_extra
@@ -95,7 +96,6 @@ from app.routers import jurisprudencia_interna
 from app.routers import kanban
 from app.routers import legal_docs
 from app.routers import licitacao_auditoria
-from app.routers import mediacao
 from app.routers import memoria_institucional
 from app.routers import mensagens
 from app.routers import module_help
@@ -117,6 +117,8 @@ from app.routers import prompts
 from app.routers import prompts_juridicos
 from app.routers import qualidade
 from app.routers import rag
+from app.routers import rag_public
+from app.routers import api_keys as api_keys_router
 from app.routers import regulatorio
 from app.routers import ramos
 from app.routers import relatorio
@@ -140,6 +142,7 @@ from app.routers import validador_juridico
 from app.routers import veredito_ia_router
 from app.routers import verse
 from app.routers import victory_vault_router
+from app.routers import visual_law
 from app.routers import webhooks
 from app.routers import whatsapp
 from app.routers import wiki
@@ -284,6 +287,7 @@ app.include_router(fees.router, prefix=API)
 app.include_router(financeiro_consolidado.router, prefix=API)
 app.include_router(gestao_societaria.router, prefix=API)
 app.include_router(honorarios_calc.router, prefix=API)
+app.include_router(ia_citacoes.router, prefix=API)
 app.include_router(ia_defensiva.router, prefix=API)
 app.include_router(ia_especializada.router, prefix=API)
 app.include_router(ia_extra.router, prefix=API)  # Bloco 1 (Etapa 4): router antes não montado → 8 chamadas frontend em 404
@@ -299,7 +303,6 @@ app.include_router(jurisprudencia_interna.router, prefix=API)
 app.include_router(kanban.router, prefix=API)
 app.include_router(legal_docs.router, prefix=API)
 app.include_router(licitacao_auditoria.router, prefix=API)
-app.include_router(mediacao.router, prefix=API)
 app.include_router(memoria_institucional.router, prefix=API)
 app.include_router(honorarios_oab.router, prefix=API)  # frontend: /api/honorarios-oab/estimar (EstimadorHonorarios)
 app.include_router(intake.router, prefix=API)  # frontend: /api/intake/casos/{id}/analise-completa (IntakeAnalise)
@@ -323,6 +326,8 @@ app.include_router(prompts.router, prefix=API)
 app.include_router(prompts_juridicos.router, prefix=API)
 app.include_router(qualidade.router, prefix=API)
 app.include_router(rag.router, prefix=API)
+app.include_router(rag_public.router, prefix=API)      # API pública (X-API-Key)
+app.include_router(api_keys_router.router, prefix=API) # admin de chaves (JWT admin)
 app.include_router(regulatorio.router, prefix=API)
 app.include_router(ramos.router, prefix=API)
 app.include_router(relatorio.router, prefix=API)
@@ -346,6 +351,7 @@ app.include_router(validador_juridico.router, prefix=API)
 app.include_router(veredito_ia_router.router, prefix=API)
 app.include_router(verse.router, prefix=API)
 app.include_router(victory_vault_router.router, prefix=API)
+app.include_router(visual_law.router, prefix=API)
 app.include_router(webhooks.router, prefix=API)
 app.include_router(whatsapp.router, prefix=API)
 app.include_router(wiki.router, prefix=API)

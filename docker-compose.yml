@@ -22,6 +22,21 @@ services:
       timeout: 5s
       retries: 10
 
+  redis:
+    # Broker/result backend do Celery (Fase 3A — fila assíncrona de indexação).
+    image: redis:7-alpine
+    container_name: ejc_redis
+    restart: unless-stopped
+    # AOF ligado: tasks enfileiradas sobrevivem a restart do container.
+    command: ["redis-server", "--appendonly", "yes"]
+    volumes:
+      - redis_data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+
   backend:
     build:
       context: ./backend
@@ -35,11 +50,54 @@ services:
       DATABASE_URL_SYNC: postgresql://${POSTGRES_USER}:${POSTGRES_PASSWORD}@db:5432/${POSTGRES_DB}
       UPLOAD_DIR: /app/uploads
       BACKUP_DIR: /app/backups
+      # Fila assíncrona (Fase 3A): worker existe no compose → Celery ligado.
+      # Redis fora do ar não quebra nada: o dispatcher cai para BackgroundTasks.
+      REDIS_URL: redis://redis:6379/0
+      CELERY_ENABLED: "true"
     volumes:
       - uploads_data:/app/uploads
       - backups_data:/app/backups
     depends_on:
       db:
+        condition: service_healthy
+      # service_started (não healthy) de propósito: a API NUNCA deve ficar
+      # refém do Redis — sem ele, o dispatcher usa BackgroundTasks.
+      redis:
+        condition: service_started
+    # OBRIGATÓRIO: o frontend usa depends_on: backend: service_healthy —
+    # sem este healthcheck o compose falha com "has no healthcheck
+    # configured" e o frontend NUNCA sobe (regressão da reescrita que
+    # adicionou o Redis; originalmente adicionado no PR #29).
+    healthcheck:
+      test: ["CMD", "curl", "-fsS", "http://localhost:8000/api/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+
+  worker:
+    # Worker Celery — mesma imagem do backend (mesmo código/dependências).
+    build:
+      context: ./backend
+    container_name: ejc_worker
+    restart: unless-stopped
+    command: celery -A app.core.celery_app.celery_app worker --loglevel=INFO --concurrency=2
+    env_file:
+      - .env
+    environment:
+      APP_ENV: production
+      DATABASE_URL: postgresql+asyncpg://${POSTGRES_USER}:${POSTGRES_PASSWORD}@db:5432/${POSTGRES_DB}
+      DATABASE_URL_SYNC: postgresql://${POSTGRES_USER}:${POSTGRES_PASSWORD}@db:5432/${POSTGRES_DB}
+      UPLOAD_DIR: /app/uploads
+      REDIS_URL: redis://redis:6379/0
+      CELERY_ENABLED: "true"
+      # Scheduler APScheduler só no processo da API — nunca no worker.
+      ENABLE_SCHEDULER: "false"
+    volumes:
+      - uploads_data:/app/uploads
+    depends_on:
+      db:
+        condition: service_healthy
+      redis:
         condition: service_healthy
     healthcheck:
       # O único endpoint de health registrado é /api/health (main.py:358) —
@@ -64,3 +122,4 @@ volumes:
   postgres_data:
   uploads_data:
   backups_data:
+  redis_data:

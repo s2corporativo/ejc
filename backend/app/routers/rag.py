@@ -15,6 +15,15 @@ from app.models.user import User
 from app.models.rag import KnowledgeDoc, KnowledgeChunk, FonteIngestao
 from app.services.ai_service import buscar_contexto_rag, _RESTRICTED_CATS
 from app.services.embedding_service import gerar_embeddings, disponivel as emb_disponivel
+# Chunker ÚNICO do RAG (heurística de fronteira de frase) — o mesmo usado pela
+# ingestão automática (ingestion_service). Evita qualidade de recuperação
+# divergente entre ingestão manual e automática.
+from app.services.ingestion_service import chunk_texto
+# Vocabulário canônico de confiança da governança de IA (alta|media|baixa|bloqueado).
+from app.routers.ia_governanca import Confianca
+# Dispatcher único de indexação (Fase 3A): Celery quando habilitado/alcançável,
+# senão BackgroundTasks (comportamento idêntico ao anterior com CELERY_ENABLED=False).
+from app.tasks.dispatcher import agendar_indexacao
 from app.schemas.common import MsgResponse
 from app.core.ai_brain import ai_brain
 from app.core.public_apis import api_client
@@ -75,40 +84,42 @@ class IngestRequest(BaseModel):
     conteudo: str
     fonte: Optional[str] = None
     tribunal: Optional[str] = None
-
-
-def _chunk_texto(texto: str, tam: int = 1200, overlap: int = 150) -> list[str]:
-    """Chunking simples por caracteres com sobreposição."""
-    if len(texto) <= tam:
-        return [texto]
-    chunks, i = [], 0
-    while i < len(texto):
-        chunks.append(texto[i:i + tam])
-        i += tam - overlap
-    return chunks
+    # Gate de confiança na entrada (mesmo vocabulário da curadoria de governança;
+    # persiste em extra["confidence_level"], lido por ia_governanca._conf).
+    confianca: Confianca = "media"
 
 
 import re as _re
 
 
-async def _ingerir_texto(db, background_tasks, titulo, categoria, conteudo, fonte=None, tribunal=None):
-    """Núcleo de ingestão reutilizado por /ingest, /ingest-pdf e /ingest-url."""
+async def _ingerir_texto(db, background_tasks, titulo, categoria, conteudo,
+                         fonte=None, tribunal=None, confianca: str = "media",
+                         extra_doc: Optional[dict] = None):
+    """Núcleo de ingestão reutilizado por /ingest, /ingest-pdf e /ingest-url.
+
+    `extra_doc`: chaves adicionais mescladas no JSONB `extra` do documento
+    (ex.: extração estruturada do OCR em extra["extracao"])."""
     if len(conteudo.strip()) < 50:
         raise HTTPException(status_code=422, detail="Conteúdo extraído muito curto (< 50 caracteres)")
     status_inicial = "pendente" if emb_disponivel() else "sem_embeddings"
+    extra = {"confidence_level": confianca}
+    if extra_doc:
+        extra.update(extra_doc)
     doc = KnowledgeDoc(
         id=str(uuid4()), titulo=titulo, categoria=categoria,
         fonte=fonte, tribunal=tribunal, status_indexacao=status_inicial,
+        extra=extra,
     )
     db.add(doc)
     await db.flush()
-    chunks = _chunk_texto(conteudo)
+    chunks = chunk_texto(conteudo)
     for i, ch in enumerate(chunks):
         db.add(KnowledgeChunk(id=str(uuid4()), doc_id=doc.id, chunk_index=i, conteudo=ch, embedding=None))
     await db.commit()
     if emb_disponivel():
-        background_tasks.add_task(_indexar_doc_bg, doc.id)
+        await agendar_indexacao(doc.id, background_tasks)
     return {"id": doc.id, "chunks": len(chunks), "status_indexacao": doc.status_indexacao,
+            "confianca": confianca,
             "embeddings_pendentes": emb_disponivel(),
             "detail": f"Documento ingerido ({len(chunks)} trechos)"}
 
@@ -120,24 +131,37 @@ async def ingerir_pdf(
     titulo: str = Form(...),
     categoria: str = Form(...),
     tribunal: Optional[str] = Form(None),
+    confianca: Confianca = Form("media"),
     db: AsyncSession = Depends(get_db),
     cu: User = Depends(require_roles(["superadmin", "admin", "socio", "advogado"])),
 ):
-    """Extrai texto de um PDF (PyMuPDF) e ingere na base RAG."""
-    try:
-        import fitz
-    except Exception:
-        raise HTTPException(500, "Extração de PDF indisponível no servidor")
+    """Extrai texto de um PDF e ingere na base RAG.
+
+    Fase 3A: usa ocr_service (texto nativo PyMuPDF + OCR Tesseract nas páginas
+    escaneadas — antes, PDF escaneado virava texto vazio) e grava a extração
+    estruturada determinística (CNJ/CPF/CNPJ/datas/valores/e-mails/telefones)
+    em `extra["extracao"]`.
+    """
+    from app.services.ocr_service import extrair_texto_pdf
+    from app.services.extracao_estruturada import extrair_estruturas
+    import asyncio as _asyncio
     raw = await file.read()
     try:
-        texto = ""
-        with fitz.open(stream=raw, filetype="pdf") as pdf:
-            for page in pdf:
-                texto += page.get_text()
-    except Exception as e:
-        raise HTTPException(422, f"Falha ao ler o PDF: {str(e)[:120]}")
-    return await _ingerir_texto(db, background_tasks, titulo, categoria, texto,
-                                fonte=file.filename, tribunal=tribunal)
+        # OCR é CPU-bound (renderização + tesseract) → thread para não travar o loop
+        res = await _asyncio.to_thread(extrair_texto_pdf, raw)
+    except ValueError as e:
+        raise HTTPException(422, str(e))
+    texto = res["texto"]
+    extracao = extrair_estruturas(texto)
+    return await _ingerir_texto(
+        db, background_tasks, titulo, categoria, texto,
+        fonte=file.filename, tribunal=tribunal, confianca=confianca,
+        extra_doc={
+            "extracao": extracao,
+            "ocr": {"paginas": res["paginas"], "paginas_ocr": res["paginas_ocr"],
+                    "ocr_disponivel": res["ocr_disponivel"]},
+        },
+    )
 
 
 @router.post("/ingest-url", status_code=201)
@@ -147,6 +171,7 @@ async def ingerir_url(
     titulo: str = Form(...),
     categoria: str = Form(...),
     tribunal: Optional[str] = Form(None),
+    confianca: Confianca = Form("media"),
     db: AsyncSession = Depends(get_db),
     cu: User = Depends(require_roles(["superadmin", "admin", "socio", "advogado"])),
 ):
@@ -167,7 +192,7 @@ async def ingerir_url(
     texto = _re.sub(r"&[a-zA-Z#0-9]+;", " ", texto)
     texto = _re.sub(r"\s+", " ", texto).strip()
     return await _ingerir_texto(db, background_tasks, titulo, categoria, texto,
-                                fonte=url, tribunal=tribunal)
+                                fonte=url, tribunal=tribunal, confianca=confianca)
 
 
 async def _indexar_doc_bg(doc_id: str) -> None:
@@ -222,37 +247,12 @@ async def ingerir(
     BackgroundTasks — sem Celery/Redis (tudo local). O campo
     `status_indexacao` reflete o progresso (pendente → indexado).
     """
-    if len(req.conteudo.strip()) < 50:
-        raise HTTPException(status_code=422, detail="Conteúdo muito curto")
-
-    # Status honesto: 'pendente' só faz sentido se a vetorização vai rodar.
-    status_inicial = "pendente" if emb_disponivel() else "sem_embeddings"
-    doc = KnowledgeDoc(
-        id=str(uuid4()), titulo=req.titulo, categoria=req.categoria,
-        fonte=req.fonte, tribunal=req.tribunal,
-        status_indexacao=status_inicial,
+    # Núcleo único de ingestão (mesmo chunker/fluxo do PDF/URL); vetorização
+    # continua em BackgroundTasks (não bloqueia a resposta).
+    return await _ingerir_texto(
+        db, background_tasks, req.titulo, req.categoria, req.conteudo,
+        fonte=req.fonte, tribunal=req.tribunal, confianca=req.confianca,
     )
-    db.add(doc)
-    await db.flush()   # doc precisa existir antes dos chunks (FK)
-
-    chunks = _chunk_texto(req.conteudo)
-    for i, c in enumerate(chunks):
-        db.add(KnowledgeChunk(
-            id=str(uuid4()), doc_id=doc.id, chunk_index=i, conteudo=c,
-            embedding=None,   # preenchido em background
-        ))
-    await db.commit()
-
-    # Agenda a vetorização para depois de a resposta ser enviada (não bloqueia).
-    if emb_disponivel():
-        background_tasks.add_task(_indexar_doc_bg, doc.id)
-
-    return {
-        "id": doc.id, "chunks": len(chunks),
-        "status_indexacao": doc.status_indexacao,
-        "embeddings_pendentes": emb_disponivel(),
-        "detail": "Documento ingerido (embeddings em segundo plano)",
-    }
 
 
 @router.get("/buscar")
@@ -260,6 +260,9 @@ async def buscar(
     q: str = Query(..., min_length=3),
     limite: int = Query(6, ge=1, le=20),
     categorias: Optional[List[str]] = Query(None),
+    incluir_historico: bool = Query(
+        False, description="Inclui versões não-vigentes (migration 068) — auditoria de citações antigas."
+    ),
     db: AsyncSession = Depends(get_db),
     cu: User = Depends(get_current_user),
 ):
@@ -275,19 +278,22 @@ async def buscar(
             vec = "[" + ",".join(f"{x:.6f}" for x in vetores[0]) + "]"
             sql = """
                 SELECT c.id AS chunk_id, c.conteudo, d.titulo, d.categoria,
+                       COALESCE(d.extra->>'confidence_level', d.extra->>'confianca', 'media') AS confianca,
                        1 - (c.embedding <=> CAST(:v AS vector)) AS score
                 FROM knowledge_chunks c
                 JOIN knowledge_docs d ON d.id = c.doc_id
                 WHERE d.deleted_at IS NULL AND c.embedding IS NOT NULL
                 AND 1 - (c.embedding <=> CAST(:v AS vector)) >= 0.60
                 AND (d.categoria <> ALL(:restr_cats) OR d.client_id = :scope_cli)
+                AND (d.vigente = TRUE OR :incl_hist)
             """
             if cats:
                 sql += " AND d.categoria = ANY(:cats)"
             sql += " ORDER BY c.embedding <=> CAST(:v AS vector) LIMIT :lim"
             # Endpoint geral de busca → fail-closed: sem escopo de cliente,
             # conteúdo restrito (peças/precedentes internos) é excluído (LGPD/EOAB).
-            params = {"v": vec, "lim": limite, "restr_cats": _RESTRICTED_CATS, "scope_cli": ""}
+            params = {"v": vec, "lim": limite, "restr_cats": _RESTRICTED_CATS, "scope_cli": "",
+                      "incl_hist": incluir_historico}
             if cats:
                 params["cats"] = cats
             rows = (await db.execute(sqltext(sql), params)).mappings().all()
@@ -298,7 +304,9 @@ async def buscar(
                     "resultados": [dict(r) for r in rows],
                 }
 
-    resultados = await buscar_contexto_rag(db, q, limite=limite, categorias=cats)
+    resultados = await buscar_contexto_rag(
+        db, q, limite=limite, categorias=cats, incluir_historico=incluir_historico
+    )
     return {"query": q, "modo": modo, "resultados": resultados}
 
 
@@ -463,7 +471,7 @@ async def ingerir_ai_log_aprovado(
     await db.commit()
 
     # Estima chunks para retorno informativo
-    chunks_estimados = len(_chunk_texto(log.resposta))
+    chunks_estimados = len(chunk_texto(log.resposta))
 
     return {
         "ok": True,

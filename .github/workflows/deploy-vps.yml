@@ -1,5 +1,7 @@
-# ── Deploy manual do EJC no VPS ───────────────────────────────────────────────
-# Disparo: manual (workflow_dispatch), a partir da main.
+# ── Deploy automático do EJC no VPS ───────────────────────────────────────────
+# Disparo: automático, quando o workflow "CI" conclui com SUCESSO na main (ou
+# seja, só depois que pytest + typecheck/build passaram no commit que chegou à
+# main) — ou manual (workflow_dispatch), a partir de qualquer branch/ref.
 # Fluxo: probe de autenticação SSH → sync do código para /opt/ejc via rsync →
 # scripts/deploy_vps_safe.sh (backup → build → health-check → rollback em falha).
 #
@@ -11,7 +13,8 @@
 #   VPS_PORT      — opcional (default 22)
 #
 # Segurança: o rsync NUNCA toca .env, uploads/, backups/ do servidor e não usa
-# --delete. Migrations NÃO rodam por padrão (input run_migrations).
+# --delete. Migrations NÃO rodam por padrão (input run_migrations) — inclusive
+# no disparo automático, que nunca roda migrations.
 name: Deploy VPS
 
 on:
@@ -21,6 +24,10 @@ on:
         description: "Rodar migrations Alembic (apenas com migração revisada)"
         type: boolean
         default: false
+  workflow_run:
+    workflows: ["CI"]
+    types: [completed]
+    branches: [main]
 
 concurrency:
   group: deploy-vps
@@ -34,10 +41,17 @@ env:
 
 jobs:
   deploy:
+    # No disparo automático (workflow_run), só prossegue se a CI concluiu com
+    # sucesso — CI falhou/cancelada nunca deploya. workflow_dispatch sempre roda.
+    if: >-
+      github.event_name == 'workflow_dispatch' ||
+      github.event.workflow_run.conclusion == 'success'
     runs-on: ubuntu-latest
     timeout-minutes: 30
     steps:
       - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.workflow_run.head_sha || github.ref }}
 
       - name: Validar secrets
         env:
