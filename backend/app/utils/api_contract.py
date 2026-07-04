@@ -63,7 +63,7 @@ def _iter_frontend_files(front_src: str):
 # Grupo 1 = cliente: `api`/`apiClient` têm baseURL "/api"; `axios`/`http` crus
 # trazem o path já absoluto (não recebem o prefixo).
 _CALL_RE = re.compile(
-    r"\b(api|apiClient|axios|http)\.(get|post|put|patch|delete)\s*"
+    r"\b(api|apiClient|axios|http)\s*\.\s*(get|post|put|patch|delete)\s*"
     r"(?:<[^>]*>)?\(\s*([`'\"])(.*?)\3",
     re.S,
 )
