@@ -48,7 +48,9 @@ Inventário completo na auditoria inicial (seções 1–3). Problemas de fronten
 [docs/design-system.md](design-system.md) — paleta com hex e papéis, tipografia, catálogo de componentes com props e exemplos, regras de uso (IA sempre via AIResponse/Markdown; nunca `dangerouslySetInnerHTML`), esqueleto de tela nova.
 
 ## 5. Rotas testadas (frontend e backend)
-- **Backend**: `py_compile` OK; 3 novos routers registrados no `main.py`; cadeia Alembic head único 058; ordem de rotas conferida (`/tipos`, `/sugerir-tipo`, `/busca-avancada`, `/module-help` antes dos `/{param}`). **Suíte pytest não roda localmente** (Postgres/deps vivem no container) — rodar no CI/container antes do merge.
+- **Backend**: `py_compile` OK; 3 novos routers registrados no `main.py`; ordem de rotas conferida (`/tipos`, `/sugerir-tipo`, `/busca-avancada`, `/module-help` antes dos `/{param}`).
+  - ✅ **RESOLVIDO (07-03) — suíte pytest rodada de verdade:** contra `pgvector/pgvector:pg16` (mesmo do CI `db-validation`), com `alembic upgrade head` aplicando toda a cadeia até o head único **064_drive_columns** e `RUN_DB_TESTS=1`: **126 passed** (inclui os testes ROW-LEVEL de RAG/anonimização/PII e os novos de arquivamento). A cadeia de migrations do redesign (062→063→064, encadeada após o head real 061) foi validada num Postgres real, não só por inspeção.
+  - ✅ **RESOLVIDO (07-03) — cobertura de arquivar/excluir portada:** `tests/test_casos_dblevel.py` (5 testes) substitui o `test_casos.py` API-level removido na integração, agora no padrão DB-level da suíte (arquivar/desarquivar, 409 em já-arquivado, 422 sem motivo, 422 com prazo pendente, soft-delete sem pendências). `tests/test_documento_service.py` foi reescrito para travar o invariante LGPD real (extração de PII fixada no Ollama local + fail-closed), em vez do "mascarar antes" da frente rejeitada na merge.
 - **Frontend**: `tsc --noEmit` limpo + `vite build` de produção OK (code-splitting preservado).
 
 ## 6. Módulos revisados
