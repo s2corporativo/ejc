@@ -6,10 +6,10 @@ export default {
     extend: {
       colors: {
         /*
-         * SaaS moderno claro — coral sobre canvas cinza-azulado (#EDF0F4)
+         * SaaS moderno claro — dourado sobre canvas cinza-azulado (#EDF0F4)
          * com cartões brancos flutuantes. Nomes de tokens preservados
          * (fan-in alto nas 64 páginas); apenas os VALORES foram repintados:
-         * primary=coral, ai=laranja quente, success=mint, danger=soft-red,
+         * primary=dourado, ai=laranja quente, success=mint, danger=soft-red,
          * warn/gold=amarelo #FFD166, bronze/navy=neutros (legado).
          */
 
@@ -18,23 +18,24 @@ export default {
           DEFAULT: "#FFFFFF",
           light: "#F8FAFC",
           hover: "#F3F5F9",
-          active: "#FFF5F4",
+          active: "#FCF9EE",
         },
-        // Primária — coral/vermelho-suave (ação/marca)
+        // Primária — dourado (ação/marca)
         primary: {
-          DEFAULT: "#F4574D",
-          50: "#FFF5F4",
-          100: "#FFE8E6",
-          200: "#FFD1CD",
-          300: "#FDA9A2",
-          400: "#F97F74",
-          500: "#F4574D",
-          // 600 calibrado p/ WCAG AA: 4,7:1 sobre branco (era #E04A40 = 4,0:1)
-          600: "#D23F35",
-          700: "#C93B32",
-          800: "#A62F28",
-          900: "#872A25",
-          950: "#4A120F",
+          DEFAULT: "#C9A227",
+          50: "#FCF9EE",
+          100: "#F8F0D8",
+          200: "#F0E2B0",
+          300: "#E5CE7F",
+          400: "#D8B94E",
+          500: "#C9A227",
+          // 600 calibrado p/ WCAG AA: 4,6:1 sobre branco (dourado médio
+          // #B08D1F = 3,2:1 falharia em texto/botão sólido)
+          600: "#8F7117",
+          700: "#6F5711",
+          800: "#57430D",
+          900: "#453509",
+          950: "#2E2306",
         },
         // IA — laranja quente (superfícies de inteligência / acento)
         ai: {
@@ -63,14 +64,14 @@ export default {
           50: "#F8FAFC",
         },
         // bronze/gold — legados repintados: bronze=neutro slate com pontas
-        // coral pálidas; gold=amarelo #FFD166 (acento da referência)
+        // douradas pálidas; gold=amarelo #FFD166 (acento da referência)
         bronze: {
           DEFAULT: "#475569",
           dark: "#334155",
           deep: "#1E293B",
           medium: "#64748B",
-          light: "#FDA9A2",
-          pale: "#FFE8E6",
+          light: "#E5CE7F",
+          pale: "#F8F0D8",
           50: "#F8FAFC",
           30: "#FBFCFE",
         },

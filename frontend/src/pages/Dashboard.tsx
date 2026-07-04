@@ -46,13 +46,13 @@ const areaTone: Record<string, string> = {
   tributario: "bg-info-600",
 };
 
-// Paleta do donut — coral / amarelo / laranja (referência) + apoio
+// Paleta do donut — dourado / âmbar / bronze + apoio
 const DONUT_COLORS = [
-  "#F4574D",
+  "#C9A227",
   "#FFD166",
   "#F79256",
   "#0CA678",
-  "#FDA9A2",
+  "#E5CE7F",
   "#94A3B8",
 ];
 
@@ -66,8 +66,8 @@ function initials(value?: string) {
     .toUpperCase();
 }
 
-/** Gráfico de área coral com fill gradiente (SVG puro — sem lib externa). */
-function CoralAreaChart({
+/** Gráfico de área dourado com fill gradiente (SVG puro — sem lib externa). */
+function GoldAreaChart({
   points,
 }: {
   points: Array<{ label: string; value: number }>;
@@ -95,9 +95,9 @@ function CoralAreaChart({
         aria-label="Evolucao de prazos"
       >
         <defs>
-          <linearGradient id="coral-fill" x1="0" y1="0" x2="0" y2="1">
-            <stop offset="0%" stopColor="#F4574D" stopOpacity="0.28" />
-            <stop offset="100%" stopColor="#F4574D" stopOpacity="0.02" />
+          <linearGradient id="gold-fill" x1="0" y1="0" x2="0" y2="1">
+            <stop offset="0%" stopColor="#C9A227" stopOpacity="0.28" />
+            <stop offset="100%" stopColor="#C9A227" stopOpacity="0.02" />
           </linearGradient>
         </defs>
         {[0.25, 0.5, 0.75].map((f) => (
@@ -113,11 +113,11 @@ function CoralAreaChart({
         ))}
         {points.length > 1 && (
           <>
-            <path d={area} fill="url(#coral-fill)" />
+            <path d={area} fill="url(#gold-fill)" />
             <path
               d={line}
               fill="none"
-              stroke="#F4574D"
+              stroke="#C9A227"
               strokeWidth="2.5"
               strokeLinecap="round"
               strokeLinejoin="round"
@@ -131,7 +131,7 @@ function CoralAreaChart({
             cy={c.y}
             r="3.5"
             fill="#fff"
-            stroke="#F4574D"
+            stroke="#C9A227"
             strokeWidth="2"
           />
         ))}
@@ -145,7 +145,7 @@ function CoralAreaChart({
   );
 }
 
-/** Donut SVG amarelo/laranja/coral (sem lib externa). */
+/** Donut SVG dourado/âmbar/laranja (sem lib externa). */
 function DonutChart({
   slices,
 }: {
@@ -407,7 +407,7 @@ export default function Dashboard() {
           {loading ? (
             <div className="h-48 animate-pulse rounded-xl bg-slate-100" />
           ) : (
-            <CoralAreaChart points={serieSemanas} />
+            <GoldAreaChart points={serieSemanas} />
           )}
         </SectionCard>
 
