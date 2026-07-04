@@ -73,9 +73,10 @@ export default function UserAvatar({
   }
   return (
     <div
+      role="img"
       aria-label={user?.full_name || "Usuario"}
       className={cn(
-        "flex shrink-0 items-center justify-center rounded-full bg-primary-500 font-semibold text-white ring-2 ring-white shadow-sm",
+        "flex shrink-0 items-center justify-center rounded-full bg-primary-600 font-semibold text-white ring-2 ring-white shadow-sm",
         SIZE_CLASSES[size],
         className,
       )}

@@ -31,7 +31,7 @@ const toneClasses: Record<Tone, string> = {
 
 const buttonClasses: Record<ButtonVariant, string> = {
   primary:
-    "bg-primary-600 text-white shadow-sm hover:bg-primary-500 active:bg-primary-700 focus:ring-primary-500/40",
+    "bg-primary-600 text-white shadow-sm hover:bg-primary-700 active:bg-primary-800 focus:ring-primary-500/40",
   secondary:
     "bg-white text-slate-700 border border-slate-200 hover:bg-slate-50 hover:border-slate-300 focus:ring-primary-500/40",
   ghost:
@@ -349,8 +349,8 @@ export function StatCard({
             className={cn(
               "inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-[11px] font-semibold",
               trend === "up"
-                ? "bg-success-50 text-success-600"
-                : "bg-danger-50 text-danger-500",
+                ? "bg-success-50 text-success-700"
+                : "bg-danger-50 text-danger-700",
             )}
           >
             {trend === "up" ? (
