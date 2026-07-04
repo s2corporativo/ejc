@@ -3,7 +3,9 @@
 # Séries mensais: IPCA 433 · IPCA-E 10764 · INPC 188 · SELIC mensal 4390 · TR 226
 # Cálculo: fator composto dos índices + juros de mora simples (opcional).
 from __future__ import annotations
+import asyncio
 import logging
+import time
 from datetime import date
 from decimal import Decimal, ROUND_HALF_UP
 
@@ -33,27 +35,45 @@ SERIES_PAINEL = {
 }
 
 
+# Cache do painel (auditoria P3): as séries mudam no máximo 1x/dia — sem o
+# cache cada request faria 4 HTTPs externos e arriscaria throttling do BCB.
+_PAINEL_TTL_S = 600.0
+_painel_cache: tuple[float, dict] | None = None
+
+
 async def painel_taxas() -> dict:
-    """Último valor divulgado de cada série do painel. Falha em uma série não
-    derruba as demais (valor=None ⇒ frontend mostra 'indisponível')."""
-    taxas: dict[str, dict] = {}
+    """Último valor divulgado de cada série do painel (concorrente + cache).
+    Falha em uma série não derruba as demais (valor=None ⇒ 'indisponível')."""
+    global _painel_cache
+    agora = time.monotonic()
+    if _painel_cache and agora - _painel_cache[0] < _PAINEL_TTL_S:
+        return _painel_cache[1]
+
+    async def _uma(cli: httpx.AsyncClient, chave: str, cfg: dict) -> tuple[str, dict]:
+        info: dict = {"serie_sgs": cfg["codigo"], "nome": cfg["nome"],
+                      "valor": None, "data": None}
+        try:
+            r = await cli.get(
+                f"https://api.bcb.gov.br/dados/serie/bcdata.sgs."
+                f"{cfg['codigo']}/dados/ultimos/1?formato=json"
+            )
+            r.raise_for_status()
+            item = r.json()[0]
+            info["valor"] = float(str(item["valor"]).replace(",", "."))
+            info["data"] = item["data"]
+        except Exception as e:      # rede/formato — degrada graciosamente
+            logger.warning("painel_taxas: série %s indisponível: %s",
+                           cfg["codigo"], e)
+        return chave, info
+
     async with httpx.AsyncClient(timeout=10) as cli:
-        for chave, cfg in SERIES_PAINEL.items():
-            info: dict = {"serie_sgs": cfg["codigo"], "nome": cfg["nome"],
-                          "valor": None, "data": None}
-            try:
-                r = await cli.get(
-                    f"https://api.bcb.gov.br/dados/serie/bcdata.sgs."
-                    f"{cfg['codigo']}/dados/ultimos/1?formato=json"
-                )
-                r.raise_for_status()
-                item = r.json()[0]
-                info["valor"] = float(str(item["valor"]).replace(",", "."))
-                info["data"] = item["data"]
-            except Exception as e:      # rede/formato — degrada graciosamente
-                logger.warning("painel_taxas: série %s indisponível: %s",
-                               cfg["codigo"], e)
-            taxas[chave] = info
+        pares = await asyncio.gather(*(
+            _uma(cli, chave, cfg) for chave, cfg in SERIES_PAINEL.items()
+        ))
+    taxas = dict(pares)
+    # Só cacheia se TODAS as séries vieram (falha parcial deve re-tentar logo).
+    if all(v["valor"] is not None for v in taxas.values()):
+        _painel_cache = (agora, taxas)
     return taxas
 
 

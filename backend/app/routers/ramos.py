@@ -14,6 +14,7 @@ from pydantic import BaseModel, Field
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.core.config import get_settings
 from app.core.database import get_db
 from app.core.security import get_current_user, require_roles, ROLE_LEVEL
 from app.models.user import User
@@ -345,7 +346,7 @@ async def civ_alimentos(salario_devedor: float, percentual: float,
     MINUTA — cálculo de apoio, o juiz fixa.
     """
     valor = round(salario_devedor * (percentual / 100), 2)
-    sm = 1518.00   # SM 2026
+    sm = _sm_vigente()
     return {
         "salario_devedor": salario_devedor,
         "percentual": percentual,
@@ -1445,7 +1446,7 @@ async def ban_superendiv(
     Verifica superendividamento (Lei 14.181/2021 — novo art. 54-A do CDC).
     Comprometimento do mínimo existencial = acima de 30% da renda (parâmetro STJ/doutrina).
     """
-    sm = 1518.00  # SM 2026
+    sm = _sm_vigente()
     minimo_existencial = sm  # referência: 1 SM
     renda_disponivel = renda_mensal - minimo_existencial
     percentual_comprometido = (total_parcelas_mes / renda_mensal) * 100
@@ -1512,7 +1513,9 @@ async def ban_ba(
 # frontend/src/pages/ramos/ramosConfig.ts (mesmo path e mesmos parâmetros).
 # O teste tests/test_calculadoras_ramos.py trava esse contrato no CI.
 # ════════════════════════════════════════════════════════════════════════════
-_SM_2026 = 1518.00   # salário mínimo nacional 2026 (mesma referência de civ_alimentos)
+def _sm_vigente() -> float:
+    """Salário mínimo VIGENTE (settings.SALARIO_MINIMO_BRL — decreto anual)."""
+    return float(get_settings().SALARIO_MINIMO_BRL)
 
 
 def _mais_anos(d: date, anos: int) -> date:
@@ -1600,7 +1603,7 @@ async def civ_dano_moral(
 ):
     """Faixas ORIENTATIVAS de dano moral por tipo de caso (sem tabelamento legal)."""
     minimo, maximo, nota = _FAIXAS_DANO_MORAL.get(tipo_caso, _FAIXAS_DANO_MORAL["outro"])
-    pedido = round(salarios_minimos_pedido * _SM_2026, 2)
+    pedido = round(salarios_minimos_pedido * _sm_vigente(), 2)
     posicao = ("dentro da faixa usual" if minimo <= pedido <= maximo
                else "abaixo da faixa usual" if pedido < minimo
                else "acima da faixa usual")
@@ -1724,6 +1727,10 @@ async def civ_rescisao_locacao(
         raise HTTPException(422, "Data de rescisão anterior ao início do contrato")
     meses_cumpridos = ((data_rescisao_pretendida.year - data_inicio.year) * 12
                        + (data_rescisao_pretendida.month - data_inicio.month))
+    # Mês só conta como cumprido quando o DIA do aniversário foi alcançado
+    # (auditoria: 31/01→01/02 não é 1 mês cumprido).
+    if data_rescisao_pretendida.day < data_inicio.day:
+        meses_cumpridos -= 1
     meses_cumpridos = max(0, min(meses_cumpridos, prazo_contrato_meses))
     meses_restantes = prazo_contrato_meses - meses_cumpridos
     multa = round(valor_aluguel * multa_contratual_alugueis

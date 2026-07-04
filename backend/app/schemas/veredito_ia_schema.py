@@ -1,9 +1,9 @@
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 from typing import List, Optional
 
 
 class AnaliseTeseRequest(BaseModel):
-    tese_juridica: str
+    tese_juridica: str = Field(..., min_length=1, max_length=20000)
     area_juridica: str
     tribunais_selecionados: List[str] = []
     # Opcional: escopo de caso — habilita o isolamento de cliente no RAG

@@ -34,6 +34,7 @@ from app.schemas.veredito_ia_schema import (
     JurisprudenciaSuporte, SugestaoContextualizada,
 )
 from app.services.ai_guard import sanitizar_ou_abortar, registrar_ai_log
+from app.services.sanitizer import sanitizar_pii
 from app.services.ai_service import buscar_contexto_rag, _escopo_cliente_do_caso
 from app.services.citation_check import verificar_citacoes
 from app.services.jurimetria import jurimetria as calcular_jurimetria, MIN_AMOSTRA
@@ -122,6 +123,11 @@ class VereditoIA:
         # LGPD: sanitiza a tese ANTES de qualquer uso (aborta 422 se sobrar PII
         # estrutural — a mesma guarda dos demais endpoints de IA).
         tese_limpa, pii_removida = sanitizar_ou_abortar(tese_juridica)
+        # Auditoria P2: area/tribunais são texto LIVRE do usuário e também vão
+        # ao gateway externo e ao AILog — passam pelo mesmo guard. (Para o
+        # matching interno de jurimetria usamos o valor original.)
+        area_limpa, _ = sanitizar_pii(area_juridica or "")
+        tribunais_limpos = [sanitizar_pii(t or "")[0] for t in (tribunais_selecionados or [])]
 
         # ── 1. Probabilidade: jurimetria REAL (casos encerrados da área) ─────
         probabilidade: Optional[float] = None
@@ -208,8 +214,8 @@ class VereditoIA:
             "com revisão obrigatória do advogado (OAB)."
         )
         user_msg = (
-            f"ÁREA: {area_juridica} | TRIBUNAIS DE INTERESSE: "
-            f"{', '.join(tribunais_selecionados) or '(não informados)'}\n\n"
+            f"ÁREA: {area_limpa} | TRIBUNAIS DE INTERESSE: "
+            f"{', '.join(tribunais_limpos) or '(não informados)'}\n\n"
             f"TESE:\n{tese_limpa[:2000]}\n\n"
             f"JURISPRUDÊNCIA INTERNA RECUPERADA:\n{contexto}\n\n"
             f"TESES VITORIOSAS DO ESCRITÓRIO NA ÁREA:\n{historico}\n\n"

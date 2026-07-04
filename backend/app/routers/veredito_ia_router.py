@@ -3,6 +3,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.database import get_db
 from app.core.ownership import verificar_acesso_caso
+from app.core.rate_limit import rate_limit
 from app.core.security import get_current_user
 from app.core.veredito_ia import VereditoIA
 from app.models.user import User
@@ -11,7 +12,8 @@ from app.schemas.veredito_ia_schema import AnaliseTeseRequest, AnaliseTeseRespon
 router = APIRouter()
 
 
-@router.post("/veredito_ia/analisar", response_model=AnaliseTeseResponse)
+@router.post("/veredito_ia/analisar", response_model=AnaliseTeseResponse,
+             dependencies=[Depends(rate_limit("veredito-ia", 10))])
 async def analisar_tese(
     request: AnaliseTeseRequest,
     db: AsyncSession = Depends(get_db),
