@@ -41,6 +41,12 @@ class VictoryVault:
         if VictoryVault._seed_tentado:
             return
         VictoryVault._seed_tentado = True
+        # Auditoria 04/07/2026: o seed vem de JSON MOCK (conteúdo de demonstração)
+        # e NUNCA deve rodar em produção — dado fake em sistema jurídico é
+        # inaceitável. Em produção a tabela começa/permanece como estiver.
+        from app.core.config import get_settings
+        if get_settings().APP_ENV == "production":
+            return
         try:
             count = (await db.execute(text("SELECT COUNT(*) FROM teses_vitoriosas WHERE deleted_at IS NULL"))).scalar()
             if count and count > 0:

@@ -1,6 +1,5 @@
 import { useEffect, useState } from "react";
-import { toast } from "../components/Toast";
-import { RefreshCw, Database } from "lucide-react";
+import { Database } from "lucide-react";
 import api from "../lib/api";
 import { PageHeader, Spinner } from "../components/UI";
 
@@ -77,7 +76,7 @@ export default function Jurimetria() {
   const [loading, setLoading] = useState(true);
   const [desfechos, setDesfechos] = useState<any>(null);
 
-  // Predição ML
+  // Predição por taxa histórica (heurística estatística, não ML)
   const [predForm, setPredForm] = useState({
     classe: "",
     tribunal: "TJMG",
@@ -85,7 +84,6 @@ export default function Jurimetria() {
   });
   const [predicao, setPredicao] = useState<any>(null);
   const [loadingPred, setLoadingPred] = useState(false);
-  const [treinando, setTreinando] = useState(false);
 
   const prever = async () => {
     if (!predForm.classe) return;
@@ -102,29 +100,11 @@ export default function Jurimetria() {
     }
   };
 
-  const treinarModelo = async () => {
-    setTreinando(true);
-    try {
-      await api.post(
-        `/jurimetria/ext/predicao/treinar?tribunal=${predForm.tribunal}`,
-      );
-      toast.success(
-        "Treinamento iniciado em background. Aguarde alguns minutos e tente a predição.",
-      );
-    } catch (e: any) {
-      toast.error(e?.response?.data?.detail || "Erro ao iniciar treinamento");
-    } finally {
-      setTreinando(false);
-    }
-  };
-
   // Dados externos (DataJud/STJ)
   const [extStats, setExtStats] = useState<any>(null);
   const [benchmarks, setBenchmarks] = useState<any>(null);
   const [selectedTribunal, setSelectedTribunal] = useState("TJMG");
   const [loadingExt, setLoadingExt] = useState(false);
-  const [ingerindo, setIngerindo] = useState(false);
-  const [msgIngestao, setMsgIngestao] = useState("");
 
   useEffect(() => {
     api
@@ -184,23 +164,6 @@ export default function Jurimetria() {
   useEffect(() => {
     carregarBenchmarks();
   }, [selectedTribunal]);
-
-  const dispararIngestao = async () => {
-    setIngerindo(true);
-    setMsgIngestao("");
-    try {
-      await api.post(
-        `/jurimetria/ext/ingerir/datajud?tribunal=${selectedTribunal}&data_inicio=2022-01-01&limite=500`,
-      );
-      setMsgIngestao(
-        `Ingestão iniciada para ${selectedTribunal}. Aguarde alguns minutos e recarregue.`,
-      );
-    } catch (e: any) {
-      setMsgIngestao(e?.response?.data?.detail || "Erro ao iniciar ingestão");
-    } finally {
-      setIngerindo(false);
-    }
-  };
 
   if (loading)
     return (
@@ -295,21 +258,7 @@ export default function Jurimetria() {
               </button>
             ))}
           </div>
-          <button
-            onClick={dispararIngestao}
-            disabled={ingerindo}
-            className="ml-auto flex items-center gap-1.5 px-3 py-1.5 text-xs bg-gray-100 hover:bg-gray-200 rounded-lg border transition-colors disabled:opacity-50"
-          >
-            <RefreshCw size={12} className={ingerindo ? "animate-spin" : ""} />
-            {ingerindo ? "Coletando..." : "Coletar DataJud"}
-          </button>
         </div>
-
-        {msgIngestao && (
-          <p className="text-xs text-primary-600 bg-primary-50 border border-primary-200 rounded px-3 py-2 mb-3">
-            {msgIngestao}
-          </p>
-        )}
 
         {loadingExt ? (
           <div className="flex justify-center py-6">
@@ -371,8 +320,7 @@ export default function Jurimetria() {
           </div>
         ) : (
           <p className="text-gray-400 text-sm text-center py-6">
-            Sem dados para {selectedTribunal}. Clique em "Coletar DataJud" para
-            iniciar a ingestão.
+            Sem dados para {selectedTribunal} na base interna do escritório.
           </p>
         )}
       </div>
@@ -422,11 +370,15 @@ export default function Jurimetria() {
         </div>
       )}
 
-      {/* ── Predição ML ─────────────────────────────────────────────── */}
+      {/* ── Predição por taxa histórica ─────────────────────────────── */}
       <div className="card p-5 mt-4">
-        <h3 className="font-semibold text-sm text-gray-500 uppercase mb-3">
-          Predição de Provimento (IA)
+        <h3 className="font-semibold text-sm text-gray-500 uppercase mb-1">
+          Predição de Provimento
         </h3>
+        <p className="text-xs text-gray-400 mb-3">
+          Baseada na taxa histórica dos casos do escritório (heurística
+          estatística, não ML).
+        </p>
         <div className="grid grid-cols-3 gap-3 mb-3">
           <div>
             <label className="text-xs text-gray-500 block mb-1">
@@ -478,44 +430,43 @@ export default function Jurimetria() {
           >
             {loadingPred ? "Calculando..." : "Calcular"}
           </button>
-          <button
-            onClick={treinarModelo}
-            disabled={treinando}
-            className="btn-secondary"
-          >
-            {treinando ? "Iniciando..." : "Treinar modelo"}
-          </button>
         </div>
 
-        {predicao && !predicao.disponivel && (
+        {/* Shape real do backend (/jurimetria/ext/predicao/provimento):
+            probabilidade_provimento (null = amostra insuficiente), amostra,
+            metodo, confianca textual (baixa/média/alta). */}
+        {predicao && predicao.probabilidade_provimento == null && (
           <p className="text-sm text-warn-600 bg-warn-50 border border-warn-200 rounded px-3 py-2">
-            {predicao.mensagem}
+            Amostra histórica insuficiente para estimar ({predicao.metodo}).
+            Encerre mais casos desta classe/tribunal para habilitar a taxa.
           </p>
         )}
 
-        {predicao?.disponivel && (
+        {predicao != null && predicao.probabilidade_provimento != null && (
           <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
             <div className="text-center p-3 bg-green-50 rounded-lg border border-green-100">
               <p className="text-2xl font-bold text-green-700">
                 {predicao.probabilidade_provimento}%
               </p>
-              <p className="text-xs text-green-600">Prob. Provimento</p>
+              <p className="text-xs text-green-600">Taxa hist. favorável</p>
             </div>
             <div className="text-center p-3 bg-danger-50 rounded-lg border border-danger-100">
               <p className="text-2xl font-bold text-danger-700">
-                {predicao.probabilidade_negado}%
+                {Math.round((100 - predicao.probabilidade_provimento) * 10) / 10}%
               </p>
-              <p className="text-xs text-danger-600">Prob. Negado</p>
+              <p className="text-xs text-danger-600">Taxa hist. desfavorável</p>
             </div>
             <div className="text-center p-3 bg-gray-50 rounded-lg border border-gray-200">
-              <p className="text-2xl font-bold text-gray-700">
-                {predicao.confianca}%
+              <p className="text-2xl font-bold capitalize text-gray-700">
+                {predicao.confianca}
               </p>
-              <p className="text-xs text-gray-500">Confiança</p>
+              <p className="text-xs text-gray-500">
+                Confiança ({predicao.amostra} casos)
+              </p>
             </div>
             <div className="text-center p-3 bg-primary-50 rounded-lg border border-primary-100 flex items-center justify-center">
               <p className="text-sm font-medium text-primary-700">
-                {predicao.interpretacao}
+                {predicao.metodo}
               </p>
             </div>
           </div>

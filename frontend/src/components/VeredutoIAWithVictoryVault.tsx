@@ -21,10 +21,16 @@ interface Sugestao {
   descricao: string;
 }
 interface VeredutoResponse {
-  probabilidade_exito: number;
+  // null = amostra historica insuficiente (o backend nao inventa numero)
+  probabilidade_exito: number | null;
+  fonte_probabilidade?: string | null;
+  n_amostra?: number;
   teses_vitoriosas_similares: TeseSimilar[];
   jurisprudencia_suporte: JurisSuporte[];
   sugestoes_contextualizadas: Sugestao[];
+  score_citacoes?: number | null;
+  avisos?: string[];
+  status_hitl?: string;
 }
 
 const AREAS = [
@@ -132,16 +138,54 @@ export const VeredutoIAWithVictoryVault: React.FC = () => {
               <div className="mb-2 flex items-center justify-between">
                 <span className="eyebrow">Probabilidade de exito</span>
                 <span className="text-2xl font-semibold text-primary-700">
-                  {pct(result.probabilidade_exito)}
+                  {result.probabilidade_exito != null
+                    ? pct(result.probabilidade_exito)
+                    : "N/D"}
                 </span>
               </div>
-              <div className="h-2 w-full overflow-hidden rounded-full bg-slate-100">
-                <div
-                  className="h-2 rounded-full bg-primary-600 transition-all"
-                  style={{ width: pct(result.probabilidade_exito) }}
-                />
-              </div>
+              {result.probabilidade_exito != null ? (
+                <>
+                  <div className="h-2 w-full overflow-hidden rounded-full bg-slate-100">
+                    <div
+                      className="h-2 rounded-full bg-primary-600 transition-all"
+                      style={{ width: pct(result.probabilidade_exito) }}
+                    />
+                  </div>
+                  {result.fonte_probabilidade && (
+                    <p className="mt-2 text-xs text-slate-500">
+                      {result.fonte_probabilidade}
+                    </p>
+                  )}
+                </>
+              ) : (
+                <p className="text-xs text-slate-500">
+                  Amostra historica insuficiente
+                  {result.n_amostra != null
+                    ? ` (${result.n_amostra} caso(s) encerrado(s) na area)`
+                    : ""}{" "}
+                  — nenhuma probabilidade e inventada.
+                </p>
+              )}
             </div>
+
+            {(result.avisos?.length ?? 0) > 0 && (
+              <div className="card border border-amber-200 bg-amber-50/60 p-5">
+                <span className="eyebrow">Avisos</span>
+                <ul className="mt-2 space-y-1">
+                  {result.avisos!.map((a, i) => (
+                    <li key={i} className="text-xs text-amber-800">
+                      {a}
+                    </li>
+                  ))}
+                </ul>
+                {result.score_citacoes != null && (
+                  <p className="mt-2 text-xs font-medium text-amber-900">
+                    Score de verificacao das citacoes: {result.score_citacoes}
+                    /100
+                  </p>
+                )}
+              </div>
+            )}
 
             {result.teses_vitoriosas_similares?.length > 0 && (
               <div className="card p-5">
@@ -174,7 +218,8 @@ export const VeredutoIAWithVictoryVault: React.FC = () => {
                       className="rounded-lg border border-slate-100 bg-slate-50/60 p-3"
                     >
                       <p className="text-sm font-medium text-slate-900">
-                        {j.tribunal} — {j.data}
+                        {j.tribunal}
+                        {j.data ? ` — ${j.data}` : ""}
                       </p>
                       <p className="mt-1 text-xs text-slate-500">{j.ementa}</p>
                     </div>

@@ -193,6 +193,12 @@ class Settings(BaseSettings):
     # "anthropic" = força Claude — sem chave, cai na cadeia automática
     AI_PROVIDER: str = "auto"
 
+    # ── Parâmetros jurídicos atualizáveis por decreto (via .env) ──────────
+    # Salário mínimo nacional VIGENTE — usado nas calculadoras (alimentos,
+    # dano moral etc.). ATUALIZAR anualmente pelo decreto; valor default é o
+    # último decreto conhecido (2025: R$ 1.518,00).
+    SALARIO_MINIMO_BRL: float = 1518.00
+
     # ── Sentry — rastreamento de erros em produção ────────────────────────
     SENTRY_DSN: str = ""            # deixar vazio para desabilitar
 
