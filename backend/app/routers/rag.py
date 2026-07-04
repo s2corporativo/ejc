@@ -260,6 +260,9 @@ async def buscar(
     q: str = Query(..., min_length=3),
     limite: int = Query(6, ge=1, le=20),
     categorias: Optional[List[str]] = Query(None),
+    incluir_historico: bool = Query(
+        False, description="Inclui versões não-vigentes (migration 068) — auditoria de citações antigas."
+    ),
     db: AsyncSession = Depends(get_db),
     cu: User = Depends(get_current_user),
 ):
@@ -281,13 +284,15 @@ async def buscar(
                 WHERE d.deleted_at IS NULL AND c.embedding IS NOT NULL
                 AND 1 - (c.embedding <=> CAST(:v AS vector)) >= 0.60
                 AND (d.categoria <> ALL(:restr_cats) OR d.client_id = :scope_cli)
+                AND (d.vigente = TRUE OR :incl_hist)
             """
             if cats:
                 sql += " AND d.categoria = ANY(:cats)"
             sql += " ORDER BY c.embedding <=> CAST(:v AS vector) LIMIT :lim"
             # Endpoint geral de busca → fail-closed: sem escopo de cliente,
             # conteúdo restrito (peças/precedentes internos) é excluído (LGPD/EOAB).
-            params = {"v": vec, "lim": limite, "restr_cats": _RESTRICTED_CATS, "scope_cli": ""}
+            params = {"v": vec, "lim": limite, "restr_cats": _RESTRICTED_CATS, "scope_cli": "",
+                      "incl_hist": incluir_historico}
             if cats:
                 params["cats"] = cats
             rows = (await db.execute(sqltext(sql), params)).mappings().all()
@@ -298,7 +303,9 @@ async def buscar(
                     "resultados": [dict(r) for r in rows],
                 }
 
-    resultados = await buscar_contexto_rag(db, q, limite=limite, categorias=cats)
+    resultados = await buscar_contexto_rag(
+        db, q, limite=limite, categorias=cats, incluir_historico=incluir_historico
+    )
     return {"query": q, "modo": modo, "resultados": resultados}
 
 
