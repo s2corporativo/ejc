@@ -24,6 +24,7 @@ from app.models.feriado import Feriado
 from app.models.procuracao import Procuracao
 from app.models.rag import KnowledgeDoc, KnowledgeChunk
 from app.models.deep_research import DeepResearchJob, DeepResearchStatus
+from app.models.estilo_advogado import EstiloAdvogado
 
 __all__ = [
     "User", "RefreshToken", "UserRole",
@@ -40,6 +41,7 @@ __all__ = [
     "Notification", "Feriado", "Procuracao",
     "KnowledgeDoc", "KnowledgeChunk",
     "DeepResearchJob", "DeepResearchStatus",
+    "EstiloAdvogado",
 ]
 from app.models.template import DocTemplate  # noqa
 from app.models.task import Task, TaskStatus  # noqa

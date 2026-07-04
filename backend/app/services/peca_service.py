@@ -15,6 +15,7 @@ from app.models.ai_log import AILog, AITipoUso, AIStatusHITL
 from app.models.legal_doc import LegalDoc, PecaTipo
 from app.services.ai_gateway import chat as gw_chat
 from app.services.ai_service import buscar_contexto_rag
+from app.services.estilo_service import instrucao_estilo
 from app.services.document_format import aviso_rascunho_ia, padronizar_documento_juridico
 from app.services.sanitizer import sanitizar_pii
 
@@ -225,6 +226,7 @@ async def gerar_peca_pipeline(
     case_id: str | None,
     instrucoes_adicionais: str | None,
     scope_client_id: str | None = None,
+    usar_estilo: bool = False,
 ) -> AsyncGenerator[str, None]:
     """
     Pipeline SSE de 7 etapas para geração de peça jurídica.
@@ -431,6 +433,15 @@ async def gerar_peca_pipeline(
     instrucoes = instrucoes_adicionais or ""
     perfil_peca = PERFIS_PECA.get(tipo_peca_final, "")
     bloco_perfil = f"{perfil_peca}\n\n" if perfil_peca else ""
+
+    # Aprendizado de Estilo (opcional e ortogonal): injeta o estilo de redação
+    # do advogado logado APENAS quando a request pediu (usar_estilo) E o advogado
+    # tem perfil ativo. Preserva 100% do comportamento atual quando ausente.
+    bloco_estilo = ""
+    if usar_estilo:
+        instr_estilo = await instrucao_estilo(db, user_id)
+        if instr_estilo:
+            bloco_estilo = "\n\n" + instr_estilo
     r7 = await gw_chat(
         messages=[
             {"role": "system", "content": (
@@ -441,6 +452,7 @@ async def gerar_peca_pipeline(
                 "2. Nunca invente números de processos ou links oficiais.\n"
                 "3. Toda saída é RASCUNHO — revisão humana obrigatória (OAB).\n"
                 "4. Use formatação jurídica padrão (Dos Fatos, Do Direito, Dos Pedidos)."
+                f"{bloco_estilo}"
             )},
             {"role": "user", "content": (
                 f"TIPO: {nome_peca}\nÁREA: {area_direito}\n\n"

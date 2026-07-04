@@ -31,6 +31,9 @@ class GerarPecaRequest(BaseModel):
     nomes_proteger: list[str] = Field(default=[], description="Nomes para anonimizar (LGPD)")
     case_id: Optional[str] = None
     instrucoes_adicionais: Optional[str] = Field(None, max_length=1000)
+    usar_estilo: bool = Field(
+        False, description="Injetar o estilo de redação aprendido do advogado (se ativo)"
+    )
 
 
 @router.post("/gerar")
@@ -74,6 +77,7 @@ async def gerar_peca(
                 nomes_proteger=req.nomes_proteger,
                 case_id=req.case_id,
                 instrucoes_adicionais=req.instrucoes_adicionais,
+                usar_estilo=req.usar_estilo,
             ):
                 yield chunk
         except Exception as e:

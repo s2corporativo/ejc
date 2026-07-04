@@ -74,6 +74,7 @@ from app.routers import environmental
 from app.routers import etiquetas
 from app.routers import evolution_webhook
 from app.routers import exito_rateio
+from app.routers import estilo
 from app.routers import export
 from app.routers import extratos
 from app.routers import fees
@@ -280,6 +281,7 @@ app.include_router(environmental.router, prefix=API)
 app.include_router(etiquetas.router, prefix=API)
 app.include_router(evolution_webhook.router, prefix=API)
 app.include_router(exito_rateio.router, prefix=API)
+app.include_router(estilo.router, prefix=API)
 app.include_router(export.router, prefix=API)
 app.include_router(extratos.router, prefix=API)
 app.include_router(fees.router, prefix=API)
