@@ -155,6 +155,7 @@ async def upsert_documento(
     extra: dict | None = None,
     client_id: str | None = None,
     case_id: str | None = None,
+    confianca: str | None = None,
 ) -> str:
     """Insere/atualiza um documento na base de conhecimento, com VERSIONAMENTO
     (migration 068) — nunca sobrescreve o conteúdo de uma versão anterior.
@@ -176,6 +177,11 @@ async def upsert_documento(
     conteudo = normalizar(conteudo)
     if len(conteudo) < 50:
         return "inalterado"   # conteúdo irrelevante — ignora silenciosamente
+    # Gate de confiança (governança de IA): grava no extra JSONB a chave
+    # canônica lida por ia_governanca._conf (vocabulário alta|media|baixa|
+    # bloqueado). Sem confianca explícita, a busca assume "media".
+    if confianca:
+        extra = {**(extra or {}), "confidence_level": confianca}
     h = _sha1(conteudo)
     agora = datetime.now(timezone.utc)
 

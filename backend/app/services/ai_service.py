@@ -76,6 +76,14 @@ _FILTRO_VIGENTE_RAG = "AND (kd.vigente = TRUE OR :incl_hist)"
 _RAG_MIN_SIM = 0.55
 _RAG_MAX_DIST = 1.0 - _RAG_MIN_SIM
 
+# Confiança do documento (curadoria de governança — ia_governanca._conf):
+# vive em knowledge_docs.extra (JSONB), chave canônica "confidence_level"
+# (legado "confianca"), default "media". Exposta em todo resultado de busca
+# para que o consumidor (IA/frontend) pondere a fonte.
+_SQL_CONFIANCA = (
+    "COALESCE(kd.extra->>'confidence_level', kd.extra->>'confianca', 'media') AS confianca"
+)
+
 
 async def _escopo_cliente_do_caso(db: AsyncSession, case_id: str | None) -> str | None:
     """Escopo de isolamento do RAG (Bloco 5): retorna o client_id do caso, para
@@ -118,6 +126,7 @@ async def _fundir_lexical(db, consulta, semanticos, limite, categorias, scope_cl
             params["cats"] = categorias
         sql = _text(f"""
             SELECT kc.id, kc.conteudo, kd.titulo, kd.categoria, kd.fonte,
+                   {_SQL_CONFIANCA},
                    similarity(kc.conteudo, :q) AS sim
             FROM knowledge_chunks kc
             JOIN knowledge_docs kd ON kd.id = kc.doc_id
@@ -135,7 +144,8 @@ async def _fundir_lexical(db, consulta, semanticos, limite, categorias, scope_cl
             fusion[cid] = fusion.get(cid, 0.0) + 1.0 / (K + rank + 1)
             if cid not in meta:
                 meta[cid] = {"chunk_id": r.id, "conteudo": r.conteudo, "titulo": r.titulo,
-                             "categoria": r.categoria, "fonte": r.fonte, "score": round(float(r.sim), 4)}
+                             "categoria": r.categoria, "fonte": r.fonte,
+                             "confianca": r.confianca, "score": round(float(r.sim), 4)}
     except Exception as _e:
         logger.warning(f"Fusao lexical (RRF) falhou, mantendo semantico: {_e}")
         return semanticos
@@ -183,6 +193,7 @@ async def buscar_contexto_rag(
                 params_v["cats"] = categorias
             sql_v = text(f"""
                 SELECT kc.id, kc.conteudo, kd.titulo, kd.categoria, kd.fonte,
+                       {_SQL_CONFIANCA},
                        (kc.embedding <=> :vec) AS dist
                 FROM knowledge_chunks kc
                 JOIN knowledge_docs kd ON kd.id = kc.doc_id
@@ -200,6 +211,7 @@ async def buscar_contexto_rag(
                 resultados = [
                     {"chunk_id": r.id, "conteudo": r.conteudo, "titulo": r.titulo,
                      "categoria": r.categoria, "fonte": r.fonte,
+                     "confianca": r.confianca,
                      "score": round(1 - r.dist, 4)}   # cosine similarity
                     for r in rows_v
                 ]
@@ -234,7 +246,8 @@ async def buscar_contexto_rag(
     params["incl_hist"] = incluir_historico
 
     sql = text(f"""
-        SELECT kc.id, kc.conteudo, kd.titulo, kd.categoria, kd.fonte
+        SELECT kc.id, kc.conteudo, kd.titulo, kd.categoria, kd.fonte,
+               {_SQL_CONFIANCA}
         FROM knowledge_chunks kc
         JOIN knowledge_docs kd ON kd.id = kc.doc_id
         WHERE kd.deleted_at IS NULL
@@ -250,6 +263,7 @@ async def buscar_contexto_rag(
             {
                 "chunk_id": r.id, "conteudo": r.conteudo,
                 "titulo": r.titulo, "categoria": r.categoria, "fonte": r.fonte,
+                "confianca": r.confianca,
             }
             for r in rows
         ]
