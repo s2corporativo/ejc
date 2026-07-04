@@ -7,26 +7,17 @@
 # LGPD: PDFs gerados para uso interno do escritório.
 # ─────────────────────────────────────────────────────────────────────────────
 from __future__ import annotations
-import base64
 import logging
 import re
-from functools import lru_cache
-from pathlib import Path
 from datetime import date
 from typing import Any
 from app.services.document_format import padronizar_documento_juridico, sem_caracteres_problematicos
+from app.services import visual_law_theme as vlt
 
 logger = logging.getLogger("ejc.pdf")
 
-
-@lru_cache(maxsize=1)
-def _logo_data_uri() -> str:
-    logo_path = Path(__file__).resolve().parents[1] / "static" / "brand" / "de-paula-teixeira-logo.jpg"
-    try:
-        raw = logo_path.read_bytes()
-    except OSError:
-        return ""
-    return "data:image/jpeg;base64," + base64.b64encode(raw).decode("ascii")
+# Logo institucional embutida via tema central (base64, lazy + cache).
+_logo_data_uri = vlt.logo_data_uri
 
 
 _HTML_BASE = """<!DOCTYPE html>
@@ -45,26 +36,26 @@ _HTML_BASE = """<!DOCTYPE html>
     }}
   }}
   body {{ font-family: "DejaVu Sans", Arial, sans-serif; font-size: 10.5pt; color: #111827; line-height: 1.58; background: #fff; }}
-  .letterhead {{ border-bottom: 3px solid #b98a3c; padding-bottom: 11px; margin-bottom: 18px; display: table; width: 100%; }}
+  .letterhead {{ border-bottom: 3px solid §OURO_CLARO§; padding-bottom: 11px; margin-bottom: 18px; display: table; width: 100%; }}
   .letterhead-logo {{ display: table-cell; width: 190px; vertical-align: middle; }}
   .brand-logo {{ max-width: 178px; max-height: 78px; object-fit: contain; }}
   .brand-logo[src=""] {{ display: none; }}
   .letterhead-text {{ display: table-cell; vertical-align: middle; text-align: right; }}
-  .letterhead-nome {{ font-size: 13pt; font-weight: 800; color: #4b3527; }}
+  .letterhead-nome {{ font-size: 13pt; font-weight: 800; color: §OURO_PROFUNDO§; }}
   .letterhead-sub {{ font-size: 8.4pt; color: #6b7280; margin-top: 3px; }}
   h1 {{ font-size: 15pt; color: #111827; margin: 0 0 10px 0; line-height: 1.24; }}
-  h2 {{ font-size: 11.6pt; color: #1e3a8a; margin: 17px 0 8px 0; padding-left: 8px; border-left: 4px solid #b98a3c; }}
+  h2 {{ font-size: 11.6pt; color: §OURO§; margin: 17px 0 8px 0; padding-left: 8px; border-left: 4px solid §OURO_CLARO§; }}
   h3 {{ font-size: 10.7pt; color: #374151; margin: 13px 0 6px 0; }}
   p {{ margin: 0 0 8px 0; text-align: justify; }}
   ul {{ margin: 4px 0 10px 18px; padding: 0; }}
   li {{ margin-bottom: 4px; }}
   table {{ width: 100%; border-collapse: collapse; margin: 8px 0 14px 0; page-break-inside: avoid; }}
-  th {{ background: #1e3a8a; color: #fff; padding: 7px 8px; text-align: left; font-size: 9.2pt; font-weight: 700; }}
+  th {{ background: §OURO_PROFUNDO§; color: #fff; padding: 7px 8px; text-align: left; font-size: 9.2pt; font-weight: 700; }}
   td {{ padding: 6px 8px; border-bottom: 1px solid #e5e7eb; font-size: 9.4pt; vertical-align: top; }}
-  tr:nth-child(even) td {{ background: #f8fafc; }}
-  .label {{ font-weight: 700; color: #1f2937; background: #eef2ff !important; }}
-  .doc-cover {{ border: 1px solid #dbe3ef; border-radius: 10px; padding: 14px 15px 13px 15px; margin-bottom: 16px; background: #f8fafc; page-break-inside: avoid; }}
-  .doc-kicker {{ font-size: 8pt; color: #4b3527; font-weight: 800; text-transform: uppercase; margin-bottom: 4px; }}
+  tr:nth-child(even) td {{ background: §OURO_PALHA§; }}
+  .label {{ font-weight: 700; color: #1f2937; background: §OURO_PALHA§ !important; }}
+  .doc-cover {{ border: 1px solid #e5d9ac; border-radius: 10px; padding: 14px 15px 13px 15px; margin-bottom: 16px; background: #fbf8ee; page-break-inside: avoid; }}
+  .doc-kicker {{ font-size: 8pt; color: §OURO§; font-weight: 800; text-transform: uppercase; margin-bottom: 4px; }}
   .meta-grid {{ width: 100%; border-collapse: separate; border-spacing: 6px; margin: 10px -6px 0 -6px; }}
   .meta-grid td {{ width: 33.33%; border: 1px solid #e5e7eb; background: #fff; border-radius: 7px; padding: 7px 8px; }}
   .meta-label {{ display: block; font-size: 7.2pt; color: #6b7280; font-weight: 800; text-transform: uppercase; }}
@@ -72,7 +63,7 @@ _HTML_BASE = """<!DOCTYPE html>
   .doc-body {{ margin-top: 4px; }}
   .doc-section {{ border-top: 1px solid #eef2f7; padding-top: 8px; margin-top: 10px; }}
   .callout, .aviso {{ background: #fffbeb; border: 1px solid #f5d08a; border-left: 4px solid #d97706; padding: 9px 11px; border-radius: 7px; font-size: 9.3pt; color: #78350f; margin: 12px 0; page-break-inside: avoid; }}
-  .review-stamp {{ border: 1px solid #ddd6fe; border-left: 4px solid #7c3aed; background: #f5f3ff; color: #4c1d95; padding: 9px 11px; border-radius: 7px; font-size: 9pt; margin-top: 16px; page-break-inside: avoid; }}
+  .review-stamp {{ border: 1px solid #e8d9a0; border-left: 4px solid §OURO_CLARO§; background: §OURO_PALHA§; color: §OURO_PROFUNDO§; padding: 9px 11px; border-radius: 7px; font-size: 9pt; margin-top: 16px; page-break-inside: avoid; }}
   .footer-doc {{ margin-top: 24px; font-size: 8.3pt; color: #6b7280; border-top: 1px solid #e5e7eb; padding-top: 8px; }}
 </style>
 </head>
@@ -88,6 +79,16 @@ _HTML_BASE = """<!DOCTYPE html>
 <div class="footer-doc">Documento gerado automaticamente pelo sistema EJC em {gerado_em}. Uso profissional - confidencial. Responsabilidade tecnica condicionada a revisao e assinatura do advogado responsavel.</div>
 </body>
 </html>"""
+
+# Paleta dourada vinda do tema central (fonte única de verdade) — os tokens
+# §...§ evitam conflito com as chaves duplicadas do .format() no CSS.
+_HTML_BASE = (
+    _HTML_BASE
+    .replace("§OURO_PROFUNDO§", vlt.OURO_PROFUNDO)
+    .replace("§OURO_CLARO§", vlt.OURO_CLARO)
+    .replace("§OURO_PALHA§", vlt.OURO_PALHA)
+    .replace("§OURO§", vlt.OURO)
+)
 
 _HEADING_RE = re.compile(r"^(?:[IVXLCDM]+\.|[0-9]+\.|[A-Z][A-Z0-9 ,:/().-]{7,})\s*$")
 _ALERT_WORDS = ("ATENCAO", "REVISAO HUMANA", "NAO PROTOCOLAR", "RISCO", "ALERTA")

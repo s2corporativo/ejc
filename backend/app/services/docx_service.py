@@ -24,6 +24,7 @@ import re
 from typing import Any
 
 from app.core.config import get_settings
+from app.services.visual_law_theme import OURO
 
 logger = logging.getLogger("ejc.docx")
 
@@ -156,12 +157,14 @@ def gerar_docx(titulo: str, conteudo_md: str, meta: dict | None = None) -> bytes
         from docx import Document
         from docx.enum.text import WD_ALIGN_PARAGRAPH
         from docx.oxml.ns import qn
-        from docx.shared import Cm, Pt
+        from docx.shared import Cm, Pt, RGBColor
     except ImportError:
         raise RuntimeError("python-docx não instalado. Execute: pip install python-docx")
 
     meta = meta or {}
     fonte = "Times New Roman"
+    # Dourado institucional (tema central Visual Law) nos títulos.
+    cor_titulo = RGBColor.from_string(OURO.lstrip("#").upper())
     doc = Document()
 
     # ── Página + estilo base ────────────────────────────────────────────
@@ -224,6 +227,7 @@ def gerar_docx(titulo: str, conteudo_md: str, meta: dict | None = None) -> bytes
     rt.bold = True
     rt.font.name = fonte
     rt.font.size = Pt(12)
+    rt.font.color.rgb = cor_titulo
 
     # ── Corpo (blocos do markdown) ──────────────────────────────────────
     for bloco in _blocos_markdown(conteudo_md):
@@ -241,6 +245,7 @@ def gerar_docx(titulo: str, conteudo_md: str, meta: dict | None = None) -> bytes
             _add_runs_inline(p, texto, font_name=fonte, size_pt=12)
             for r in p.runs:
                 r.bold = True
+                r.font.color.rgb = cor_titulo
 
         elif tipo == "quote":
             # Citação longa (padrão ABNT): recuo 4cm, 11pt, espaçamento simples.

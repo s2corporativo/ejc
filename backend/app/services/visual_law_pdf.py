@@ -1,53 +1,66 @@
-"""
-Gerador de Visual Law PDF — EJC v3.0
-Cria infográficos e linhas do tempo em PDF no padrão Bronze & Elegance.
-"""
+# ── app/services/visual_law_pdf.py ────────────────────────────────────────────
+# Visual Law PDF (Sala de Guerra) — cronologia processual em HTML→PDF via
+# weasyprint, com o tema dourado central (visual_law_theme).
+#
+# Reescrito de FPDF para weasyprint:
+#   - FIX (singleton): a antiga instância global de FPDF acumulava páginas
+#     entre requests — cada chamada fazia add_page() no MESMO objeto, e o PDF
+#     seguinte saía com as cronologias anteriores dentro. Agora cada chamada
+#     de gerar_cronologia monta um HTML novo e renderiza um PDF independente;
+#     a classe é stateless e a instância de módulo existe só por
+#     compatibilidade com os consumidores (routers/sala_de_guerra_v3.py,
+#     services/geracao_documental.py).
+from __future__ import annotations
+
 import logging
-from fpdf import FPDF
+
+from app.services import visual_law_theme as vlt
 
 logger = logging.getLogger("visual_law_pdf")
 
-class VisualLawPDF(FPDF):
-    def header(self):
-        # Logo ou Título Bronze
-        self.set_font('Arial', 'B', 12)
-        self.set_text_color(184, 134, 11) # Bronze Primary (#B8860B)
-        self.cell(0, 10, 'EJC — Ecossistema Jurídico (Relatório Visual)', 0, 1, 'C')
-        self.ln(5)
+_CSS_TIMELINE = f"""
+  .conteudo {{ padding: 2mm 2mm 0 2mm; }}
+  .tl-item {{ display: table; width: 100%; border-bottom: 1px solid {vlt.OURO_PALHA};
+              padding: 6px 0; page-break-inside: avoid; }}
+  .tl-data {{ display: table-cell; width: 34mm; font-weight: 800; color: {vlt.OURO};
+              vertical-align: top; }}
+  .tl-evento {{ display: table-cell; color: #1f2937; vertical-align: top; }}
+"""
 
-    def footer(self):
-        self.set_y(-15)
-        self.set_font('Arial', 'I', 8)
-        self.set_text_color(128, 128, 128)
-        self.cell(0, 10, f'Página {self.page_no()} | Confidencial Dr. Clovis', 0, 0, 'C')
 
-    def gerar_cronologia(self, eventos: list, output_path: str):
-        """
-        Gera uma linha do tempo elegante em PDF.
-        """
-        self.add_page()
-        self.set_font('Arial', 'B', 16)
-        self.set_text_color(44, 44, 44) # Charcoal
-        self.cell(0, 15, 'Cronologia Processual Estratégica', 0, 1, 'L')
-        self.ln(5)
-        
-        for item in eventos:
-            # Data em destaque (Bronze)
-            self.set_font('Arial', 'B', 11)
-            self.set_text_color(184, 134, 11)
-            self.cell(40, 10, item.get('data', 'S/D'), 0, 0, 'L')
-            
-            # Descrição do Evento
-            self.set_font('Arial', '', 11)
-            self.set_text_color(44, 44, 44)
-            self.multi_cell(0, 10, item.get('evento', 'Evento não descrito'), 0, 'L')
-            
-            # Linha separadora Champagne
-            self.set_draw_color(245, 230, 211) # Champagne
-            self.line(self.get_x(), self.get_y(), self.get_x() + 190, self.get_y())
-            self.ln(2)
-            
-        self.output(output_path)
+class VisualLawPDF:
+    """Gerador stateless de PDFs Visual Law (tema dourado De Paula Teixeira)."""
+
+    def gerar_cronologia(self, eventos: list, output_path: str) -> str:
+        """Gera a linha do tempo processual — um PDF novo e independente por
+        chamada (sem estado acumulado entre requests)."""
+        from weasyprint import HTML
+
+        linhas = "".join(
+            '<div class="tl-item">'
+            f'<div class="tl-data">{vlt.esc(str(item.get("data") or "S/D"))}</div>'
+            f'<div class="tl-evento">{vlt.esc(str(item.get("evento") or "Evento não descrito"))}</div>'
+            "</div>"
+            for item in (eventos or [])
+        ) or '<p class="legenda">Nenhum evento informado.</p>'
+
+        corpo = (
+            vlt.render_banner(
+                "CRONOLOGIA PROCESSUAL ESTRATÉGICA",
+                "EJC — Ecossistema Jurídico (Relatório Visual)",
+            )
+            + f'<div class="conteudo"><h2>Linha do Tempo</h2>{linhas}</div>'
+        )
+        html = vlt.html_doc(
+            corpo,
+            css=vlt.css_fluxo("Confidencial — De Paula Teixeira Advogados"),
+            css_extra=_CSS_TIMELINE,
+        )
+        HTML(string=html).write_pdf(output_path)
+        logger.info("Cronologia Visual Law gerada em %s (%d eventos)",
+                    output_path, len(eventos or []))
         return output_path
 
+
+# Instância de módulo mantida por compatibilidade de import — é stateless.
 visual_law_pdf = VisualLawPDF()
