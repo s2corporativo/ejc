@@ -87,6 +87,8 @@ from app.routers import intimacoes
 from app.routers import jurimetria
 from app.routers import jurimetria_extra
 from app.routers import jurisprudencia_externa
+from app.routers import honorarios_oab
+from app.routers import intake
 from app.routers import jurisprudencia_interna
 from app.routers import kanban
 from app.routers import legal_docs
@@ -295,6 +297,8 @@ app.include_router(legal_docs.router, prefix=API)
 app.include_router(licitacao_auditoria.router, prefix=API)
 app.include_router(mediacao.router, prefix=API)
 app.include_router(memoria_institucional.router, prefix=API)
+app.include_router(honorarios_oab.router, prefix=API)  # frontend: /api/honorarios-oab/estimar (EstimadorHonorarios)
+app.include_router(intake.router, prefix=API)  # frontend: /api/intake/casos/{id}/analise-completa (IntakeAnalise)
 app.include_router(mensagens.router, prefix=API)
 app.include_router(module_help.router, prefix=API)  # frontend: /api/module-help/* (HelpButton)
 app.include_router(movimentos.router, prefix=API)

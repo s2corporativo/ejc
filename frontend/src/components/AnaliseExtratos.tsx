@@ -146,7 +146,7 @@ export default function AnaliseExtratos() {
     const token = localStorage.getItem("ejc_access") ?? "";
     try {
       const r = await fetch(
-        `/api/v1/bank-analysis/${res.analise.id}/gerar-peca`,
+        `/api/bank-analysis/${res.analise.id}/gerar-peca`,
         {
           method: "POST",
           headers: {
