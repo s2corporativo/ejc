@@ -6,7 +6,8 @@ from datetime import datetime, timezone, date
 from uuid import uuid4
 from typing import Optional
 
-from fastapi import APIRouter, Body, Depends, HTTPException, Query, BackgroundTasks
+from fastapi import APIRouter, Body, Depends, HTTPException, Query, BackgroundTasks, Request
+from app.core.rate_limit import limiter
 from sqlalchemy import select, or_, func as sqlfunc, text
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -943,7 +944,9 @@ def _tokens_relevantes(*textos: Optional[str], limite: int = 12) -> list[str]:
 
 
 @router.get("/{case_id}/teses-sugeridas", summary="Teses relevantes ao caso")
+@limiter.limit("30/minute")
 async def teses_sugeridas(
+    request: Request,
     case_id: str,
     k: int = Query(5, ge=1, le=20, description="Quantidade de teses sugeridas"),
     db: AsyncSession = Depends(get_db),

@@ -4,7 +4,8 @@ from datetime import datetime, timezone
 from uuid import uuid4
 from typing import Optional
 
-from fastapi import APIRouter, Depends, HTTPException, Query
+from fastapi import APIRouter, Depends, HTTPException, Query, Request
+from app.core.rate_limit import limiter
 from sqlalchemy import select, or_, func as sqlfunc
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -157,7 +158,9 @@ _STATUS_ATIVOS = {"triagem", "ativo", "suspenso", "acordo"}
 
 
 @router.post("/checar-conflito")
+@limiter.limit("20/minute")
 async def checar_conflito(
+    request: Request,
     req: ConflitoCheckRequest,
     db: AsyncSession = Depends(get_db),
     cu: User = Depends(_req_clientes),

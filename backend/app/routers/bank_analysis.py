@@ -6,7 +6,7 @@ import os
 from uuid import uuid4
 from datetime import datetime, timezone
 
-from fastapi import APIRouter, Depends, HTTPException, UploadFile, File, Form, Query, Body
+from fastapi import APIRouter, Depends, HTTPException, UploadFile, File, Form, Query, Body, Request
 from fastapi.responses import Response
 from sqlalchemy import select, text, func
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -22,7 +22,10 @@ from app.models.bank_analysis import BankAnalysis, BankTransaction, BankAbusiveC
 from app.services.bank_statement import parse_extrato, detectar_abusivas
 from app.services import bank_report
 from app.core.ownership import verificar_acesso_caso, is_gestao
+from app.core.rate_limit import limiter
+import logging
 
+logger = logging.getLogger("ejc.bank_analysis")
 router = APIRouter(prefix="/bank-analysis", tags=["Análise Bancária (Extratos)"])
 settings = get_settings()
 
@@ -240,7 +243,8 @@ def _montar_contexto_revisional(analise: dict, cobrancas: list[dict]) -> tuple[s
 
 
 @router.post("/{analysis_id}/gerar-peca")
-async def gerar_peca(analysis_id: str, db: AsyncSession = Depends(get_db),
+@limiter.limit("10/minute")
+async def gerar_peca(request: Request, analysis_id: str, db: AsyncSession = Depends(get_db),
                      cu: User = Depends(get_current_user)):
     """Gera a MINUTA de uma ação revisional / repetição de indébito a partir das
     cobranças abusivas já detectadas na análise bancária.
@@ -296,7 +300,15 @@ async def gerar_peca(analysis_id: str, db: AsyncSession = Depends(get_db),
             ):
                 yield chunk
         except Exception as e:
-            yield f"event: erro\ndata: {json.dumps({'detail': str(e)[:300]}, ensure_ascii=False)}\n\n"
+            logger.error(f"Falha ao gerar peça da análise {analysis_id}: {e}", exc_info=True)
+            yield (
+                "event: erro\ndata: "
+                + json.dumps(
+                    {"detail": "Não foi possível gerar a minuta no momento."},
+                    ensure_ascii=False,
+                )
+                + "\n\n"
+            )
 
     return StreamingResponse(
         stream(),
