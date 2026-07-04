@@ -137,6 +137,7 @@ from app.routers import users
 from app.routers import utils
 from app.routers import validador_juridico
 from app.routers import veredito_ia_router
+from app.routers import visual_law
 from app.routers import verse
 from app.routers import victory_vault_router
 from app.routers import webhooks
@@ -342,6 +343,7 @@ app.include_router(users.router, prefix=API)
 app.include_router(utils.router, prefix=API)
 app.include_router(validador_juridico.router, prefix=API)
 app.include_router(veredito_ia_router.router, prefix=API)
+app.include_router(visual_law.router, prefix=API)
 app.include_router(verse.router, prefix=API)
 app.include_router(victory_vault_router.router, prefix=API)
 app.include_router(webhooks.router, prefix=API)
