@@ -79,17 +79,28 @@ export default function CommandPalette() {
     if (!open) return;
     if (q.trim().length < 2) {
       setRes([]);
+      setLoading(false);
       return;
     }
+    let stale = false;
     setLoading(true);
     const t = setTimeout(() => {
       api
         .get("/search", { params: { q, tipo } })
-        .then((r) => setRes(r.data.resultados as ResultadoBusca[]))
-        .catch(() => setRes([]))
-        .finally(() => setLoading(false));
+        .then((r) => {
+          if (!stale) setRes(r.data.resultados as ResultadoBusca[]);
+        })
+        .catch(() => {
+          if (!stale) setRes([]);
+        })
+        .finally(() => {
+          if (!stale) setLoading(false);
+        });
     }, 250);
-    return () => clearTimeout(t);
+    return () => {
+      stale = true;
+      clearTimeout(t);
+    };
   }, [q, tipo, open]);
 
   if (!open) return null;
