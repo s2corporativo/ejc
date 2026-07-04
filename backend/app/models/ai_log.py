@@ -21,9 +21,11 @@ def normalizar_modelo_ia(modelo: str | None) -> str | None:
     # Já tem provedor (contém "/") → mantém como está.
     if "/" in m:
         return m
-    # Sem provedor: modelos Groq/Llama recebem o prefixo canônico.
+    # Sem provedor: modelos Groq/Llama e Claude recebem o prefixo canônico.
     if m.lower().startswith("llama"):
         return f"groq/{m}"
+    if m.lower().startswith("claude"):
+        return f"anthropic/{m}"
     return m
 
 

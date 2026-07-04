@@ -65,10 +65,17 @@ class Settings(BaseSettings):
     # NUNCA hardcodar aqui: definir o valor real APENAS no .env. Vazio = Claude
     # indisponível e o gateway faz fallback para Groq.
     ANTHROPIC_API_KEY: str = ""
-    # Modelos configuráveis sem deploy (defaults econômicos — Haiku).
-    # Suba ANTHROPIC_MODEL_COMPLEXO para claude-sonnet-4-6 quando quiser mais qualidade.
+    # Modelos configuráveis sem deploy (via .env).
+    # RAPIDO  = tarefas factuais/médias (Haiku — barato: $1/$5 por 1M tokens).
+    # COMPLEXO = análise estratégica, dossiês, minutas, pesquisa (Opus 4.8 —
+    #            máxima qualidade jurídica: $5/$25 por 1M tokens). Para reduzir
+    #            custo, definir no .env: claude-sonnet-5 ($3/$15, quase Opus)
+    #            ou claude-haiku-4-5-20251001.
     ANTHROPIC_MODEL_RAPIDO: str = "claude-haiku-4-5-20251001"
-    ANTHROPIC_MODEL_COMPLEXO: str = "claude-haiku-4-5-20251001"
+    ANTHROPIC_MODEL_COMPLEXO: str = "claude-opus-4-8"
+    # Profundidade de raciocínio nos modelos modernos (Opus 4.7+/Sonnet 5):
+    # low | medium | high. "high" = mais rigor em tarefas jurídicas sensíveis.
+    ANTHROPIC_EFFORT: str = "high"
 
     # ── Notificações ──────────────────────────────────────────────────────
     ZAPI_INSTANCE_ID: str = ""
@@ -129,9 +136,10 @@ class Settings(BaseSettings):
     OLLAMA_TIMEOUT: int = 180                         # modelos locais = mais lentos
 
     # ── AI Provider — seleção automática ──────────────────────────────────
-    # "auto" = prefere Ollama se disponível, cai para Groq
-    # "groq"  = força Groq (nuvem)
-    # "ollama" = força Ollama (local) — falha se indisponível
+    # "auto"      = Ollama (se habilitado) → Anthropic (se houver chave) → Groq
+    # "groq"      = força Groq (nuvem, grátis)
+    # "ollama"    = força Ollama (local) — falha se indisponível
+    # "anthropic" = força Claude — sem chave, cai na cadeia automática
     AI_PROVIDER: str = "auto"
 
     # ── Sentry — rastreamento de erros em produção ────────────────────────

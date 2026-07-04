@@ -1,15 +1,15 @@
 """Router de modelos/prompts por tarefa. Critério: qualidade mínima × custo × velocidade.
-CUSTO BAIXO: Groq (grátis) p/ tarefas simples; Claude Haiku (barato) p/ o resto;
-Claude COMPLEXO via env (default Haiku — suba para sonnet quando quiser mais qualidade)."""
+Groq (grátis) p/ tarefas simples; Claude Haiku (barato) p/ tarefas factuais;
+Claude COMPLEXO via env (default claude-opus-4-8 — máxima qualidade jurídica;
+para reduzir custo, defina claude-sonnet-5 ou Haiku no .env)."""
 from enum import Enum
 from dataclasses import dataclass
 
 from app.core.config import get_settings
 
-# Modelos vêm da Settings/.env (configuráveis sem deploy). Defaults econômicos.
+# Modelos vêm da Settings/.env (configuráveis sem deploy).
 _settings = get_settings()
 _RAPIDO = _settings.ANTHROPIC_MODEL_RAPIDO
-# Para custo baixo, COMPLEXO também default Haiku; defina claude-sonnet-4-6 no .env p/ máxima qualidade.
 _COMPLEXO = _settings.ANTHROPIC_MODEL_COMPLEXO or _RAPIDO
 _GROQ = "llama-3.3-70b-versatile"
 
@@ -59,7 +59,7 @@ CONFIGURACOES: dict[TarefaIA, ConfiguracaoIA] = {
     TarefaIA.HONORARIOS:  _claude("honorarios", _RAPIDO, 1800, 0.1, "Honorários OAB/MG"),
     TarefaIA.AUDIENCIA:   _claude("audiencia", _RAPIDO, 2000, 0.2, "Preparação de audiência"),
     TarefaIA.RAG_QUERY:   _claude("rag_query", _RAPIDO, 1500, 0.1, "Síntese de RAG"),
-    # Complexo (Claude — env COMPLEXO; default Haiku p/ custo baixo)
+    # Complexo (Claude — env COMPLEXO; default Opus 4.8 p/ máxima qualidade)
     TarefaIA.ANALISE_CASO: _claude("analise_caso", _COMPLEXO, 4000, 0.1, "Análise estratégica"),
     TarefaIA.DOSSIE:       _claude("analise_caso", _COMPLEXO, 5000, 0.1, "Dossiê completo"),
     TarefaIA.MINUTAS:      _claude("minutas", _COMPLEXO, 6000, 0.15, "Redação de peças"),

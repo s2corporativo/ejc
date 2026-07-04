@@ -21,6 +21,7 @@
 # ─────────────────────────────────────────────────────────────────────────────
 from __future__ import annotations
 import logging
+import os
 import time
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
@@ -73,14 +74,19 @@ def _aplicar_nivel(messages: list[dict], nivel_inteligencia: str | None) -> list
     return [extra] + messages
 
 
+# Cadeias: Ollama (local, custo zero) → Anthropic (qualidade, se houver chave)
+# → Groq (grátis, último recurso). Tarefas simples (resumo/chat) pulam o
+# Anthropic — Groq grátis basta e mantém o custo baixo.
 TASK_ROUTING: dict[str, list[tuple[str, str | None]]] = {
     "analise_juridica": [
-        ("ollama", None),    # resolvido em runtime para OLLAMA_MODEL_ANALISE
-        ("groq",   None),
+        ("ollama",    None),  # resolvido em runtime para OLLAMA_MODEL_ANALISE
+        ("anthropic", None),  # ANTHROPIC_MODEL_COMPLEXO
+        ("groq",      None),
     ],
     "elaboracao_peca": [
-        ("ollama", None),    # OLLAMA_MODEL_PETICAO
-        ("groq",   None),
+        ("ollama",    None),  # OLLAMA_MODEL_PETICAO
+        ("anthropic", None),  # ANTHROPIC_MODEL_COMPLEXO
+        ("groq",      None),
     ],
     "resumo": [
         ("ollama", None),    # OLLAMA_MODEL_RESUMO
@@ -91,20 +97,24 @@ TASK_ROUTING: dict[str, list[tuple[str, str | None]]] = {
         ("groq",   None),
     ],
     "analise_contrato": [
-        ("ollama", None),    # OLLAMA_MODEL_CONTRATO
-        ("groq",   None),
+        ("ollama",    None),  # OLLAMA_MODEL_CONTRATO
+        ("anthropic", None),
+        ("groq",      None),
     ],
     "estrategia": [
-        ("ollama", None),    # OLLAMA_MODEL_ANALISE (raciocínio profundo)
-        ("groq",   None),
+        ("ollama",    None),  # OLLAMA_MODEL_ANALISE (raciocínio profundo)
+        ("anthropic", None),
+        ("groq",      None),
     ],
     "auditoria_peca": [
-        ("ollama", None),    # OLLAMA_MODEL_PETICAO
-        ("groq",   None),
+        ("ollama",    None),  # OLLAMA_MODEL_PETICAO
+        ("anthropic", None),
+        ("groq",      None),
     ],
     "jurimetria": [
-        ("ollama", None),    # OLLAMA_MODEL_ANALISE
-        ("groq",   None),
+        ("ollama",    None),  # OLLAMA_MODEL_ANALISE
+        ("anthropic", None),
+        ("groq",      None),
     ],
 }
 
@@ -118,6 +128,23 @@ _OLLAMA_MODEL_BY_TASK = {
     "auditoria_peca":   lambda: settings.OLLAMA_MODEL_PETICAO,
     "jurimetria":       lambda: settings.OLLAMA_MODEL_ANALISE,
 }
+
+# Modelo Claude por tarefa: complexas → COMPLEXO (qualidade); simples → RAPIDO.
+_ANTHROPIC_MODEL_BY_TASK = {
+    "analise_juridica": lambda: settings.ANTHROPIC_MODEL_COMPLEXO,
+    "elaboracao_peca":  lambda: settings.ANTHROPIC_MODEL_COMPLEXO,
+    "resumo":           lambda: settings.ANTHROPIC_MODEL_RAPIDO,
+    "chat_rapido":      lambda: settings.ANTHROPIC_MODEL_RAPIDO,
+    "analise_contrato": lambda: settings.ANTHROPIC_MODEL_COMPLEXO,
+    "estrategia":       lambda: settings.ANTHROPIC_MODEL_COMPLEXO,
+    "auditoria_peca":   lambda: settings.ANTHROPIC_MODEL_COMPLEXO,
+    "jurimetria":       lambda: settings.ANTHROPIC_MODEL_COMPLEXO,
+}
+
+
+def _anthropic_key() -> str:
+    """Mesma resolução do provider: Settings tipada → os.getenv (docker env_file)."""
+    return settings.ANTHROPIC_API_KEY or os.getenv("ANTHROPIC_API_KEY", "")
 
 
 @dataclass
@@ -245,6 +272,20 @@ def _resolver_cadeia(
     if provider_force == "ollama":
         modelo = model_override or _OLLAMA_MODEL_BY_TASK.get(task_type, lambda: None)()
         return [("ollama", modelo)]
+    if provider_force == "anthropic":
+        # Antes este valor era silenciosamente ignorado (EJC skills com
+        # engine=anthropic caíam na cadeia padrão sem Claude).
+        if _anthropic_key():
+            modelo = model_override or _ANTHROPIC_MODEL_BY_TASK.get(
+                task_type, lambda: settings.ANTHROPIC_MODEL_COMPLEXO
+            )()
+            return [("anthropic", modelo)]
+        # Sem chave: não falhar duro — loga e cai no roteamento automático,
+        # preservando o comportamento anterior das skills.
+        logger.warning(
+            "[Gateway] provider 'anthropic' forçado sem ANTHROPIC_API_KEY; "
+            "usando cadeia automática."
+        )
 
     base = TASK_ROUTING.get(task_type, TASK_ROUTING["analise_juridica"])
     cadeia = []
@@ -253,11 +294,22 @@ def _resolver_cadeia(
             continue  # pular Ollama se desabilitado
         if provider == "groq" and not settings.GROQ_API_KEY:
             continue  # pular Groq sem chave
+        if provider == "anthropic" and not _anthropic_key():
+            continue  # pular Anthropic sem chave
         modelo_resolvido: str | None = None
         if provider == "ollama":
             modelo_resolvido = model_override or _OLLAMA_MODEL_BY_TASK.get(
                 task_type, lambda: settings.OLLAMA_MODEL_ANALISE
             )()
+        elif provider == "anthropic":
+            # model_override só se aplica ao Anthropic quando for um modelo
+            # Claude (evita repassar nome de modelo Ollama/Groq à API errada).
+            if model_override and model_override.startswith("claude"):
+                modelo_resolvido = model_override
+            else:
+                modelo_resolvido = _ANTHROPIC_MODEL_BY_TASK.get(
+                    task_type, lambda: settings.ANTHROPIC_MODEL_COMPLEXO
+                )()
         else:
             modelo_resolvido = model_override  # None = usa default do provedor Groq
         cadeia.append((provider, modelo_resolvido))
@@ -298,10 +350,14 @@ import os as _os
 from uuid import uuid4 as _uuid4
 from sqlalchemy import text as _sql_text
 
+# Preços oficiais Anthropic (USD por 1M tokens) — manter em dia com a fatura.
 _PRICING_USD_MM = {
-    "claude-haiku-4-5-20251001": {"input": 0.80, "output": 4.00},
+    "claude-haiku-4-5-20251001": {"input": 1.00, "output": 5.00},
+    "claude-haiku-4-5":          {"input": 1.00, "output": 5.00},
     "claude-sonnet-4-6":         {"input": 3.00, "output": 15.00},
-    "claude-opus-4-8":           {"input": 15.00, "output": 75.00},
+    "claude-sonnet-5":           {"input": 3.00, "output": 15.00},
+    "claude-opus-4-7":           {"input": 5.00, "output": 25.00},
+    "claude-opus-4-8":           {"input": 5.00, "output": 25.00},
 }
 
 
