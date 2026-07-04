@@ -1,20 +1,61 @@
-// ── Menu do avatar: segurança e preferências do usuário ──
-import { useState } from "react";
+// ── Menu do avatar: foto de perfil, segurança e preferências ──
+import { useRef, useState } from "react";
 import { toast } from "./Toast";
 import { useNavigate } from "react-router-dom";
 import {
   BellRing,
+  Camera,
   KeyRound,
   Gavel,
   ChevronDown,
   CalendarPlus,
+  LogOut,
+  Trash2,
 } from "lucide-react";
-import api from "../lib/api";
+import api, { logout } from "../lib/api";
+import { useAuth } from "../stores/auth";
+import UserAvatar from "./UserAvatar";
 
 export default function SecurityMenu({ user }: { user: any }) {
   const nav = useNavigate();
+  const { updateUser } = useAuth();
+  const fileRef = useRef<HTMLInputElement>(null);
   const [open, setOpen] = useState(false);
   const [modal, setModal] = useState<"oab" | null>(null);
+
+  // Foto de perfil — POST /users/me/avatar (multipart `file`)
+  const trocarFoto = async (file: File) => {
+    const form = new FormData();
+    form.append("file", file);
+    try {
+      const { data } = await api.post("/users/me/avatar", form);
+      // cache-buster: força o UserAvatar a rebuscar o blob
+      const url = data?.avatar_url
+        ? `${data.avatar_url}?v=${Date.now()}`
+        : null;
+      updateUser({ avatar_url: url });
+      toast.success("Foto de perfil atualizada!");
+    } catch (e: any) {
+      const st = e?.response?.status;
+      toast.error(
+        st === 413
+          ? "Imagem grande demais (máx. 2MB)"
+          : st === 415
+            ? "Formato inválido — use JPG, PNG ou WebP"
+            : "Falha ao enviar a foto",
+      );
+    }
+  };
+
+  const removerFoto = async () => {
+    try {
+      await api.delete("/users/me/avatar");
+      updateUser({ avatar_url: null });
+      toast.success("Foto removida");
+    } catch {
+      toast.error("Falha ao remover a foto");
+    }
+  };
 
   // OAB DJEN
   const [oabNum, setOabNum] = useState("");
@@ -72,13 +113,11 @@ export default function SecurityMenu({ user }: { user: any }) {
     <div className="relative">
       <button
         onClick={() => setOpen(!open)}
-        className="flex items-center gap-2"
+        className="flex items-center gap-2 rounded-xl px-1 py-0.5 transition-colors hover:bg-slate-50"
       >
-        <div className="w-8 h-8 rounded-full bg-navy text-gold flex items-center justify-center text-sm font-bold">
-          {user?.full_name?.[0] || "U"}
-        </div>
+        <UserAvatar user={user} size="md" />
         <div className="hidden sm:block text-left">
-          <div className="text-sm font-medium leading-tight">
+          <div className="text-sm font-medium leading-tight text-slate-900">
             {user?.full_name}
           </div>
           <div className="text-[11px] text-slate-400 capitalize">
@@ -88,8 +127,41 @@ export default function SecurityMenu({ user }: { user: any }) {
         <ChevronDown size={14} className="text-slate-400" />
       </button>
 
+      <input
+        ref={fileRef}
+        type="file"
+        accept="image/jpeg,image/png,image/webp"
+        className="hidden"
+        onChange={(e) => {
+          const f = e.target.files?.[0];
+          if (f) trocarFoto(f);
+          e.target.value = "";
+        }}
+      />
+
       {open && (
         <div className="absolute right-0 mt-2 w-64 card z-50 py-1">
+          <button
+            className="menu-item"
+            onClick={() => {
+              fileRef.current?.click();
+              setOpen(false);
+            }}
+          >
+            <Camera size={15} /> Trocar foto de perfil
+          </button>
+          {user?.avatar_url && (
+            <button
+              className="menu-item"
+              onClick={() => {
+                removerFoto();
+                setOpen(false);
+              }}
+            >
+              <Trash2 size={15} /> Remover foto
+            </button>
+          )}
+          <div className="my-1 border-t border-slate-100" />
           <button
             className="menu-item"
             onClick={() => {
@@ -125,6 +197,16 @@ export default function SecurityMenu({ user }: { user: any }) {
             }}
           >
             <KeyRound size={15} /> Trocar senha
+          </button>
+          <div className="my-1 border-t border-slate-100" />
+          <button
+            className="menu-item hover:!bg-danger-50 hover:!text-danger-600"
+            onClick={() => {
+              setOpen(false);
+              logout();
+            }}
+          >
+            <LogOut size={15} /> Sair
           </button>
         </div>
       )}

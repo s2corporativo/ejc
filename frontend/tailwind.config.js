@@ -6,32 +6,33 @@ export default {
     extend: {
       colors: {
         /*
-         * SaaS tech moderno — indigo/violet sobre superfícies claras.
-         * Nomes de tokens preservados (fan-in alto nas 64 páginas); apenas
-         * os VALORES foram repintados: primary=indigo, ai=violet,
-         * bronze/gold/navy=neutros slate/indigo (legado).
+         * SaaS moderno claro — coral sobre canvas cinza-azulado (#EDF0F4)
+         * com cartões brancos flutuantes. Nomes de tokens preservados
+         * (fan-in alto nas 64 páginas); apenas os VALORES foram repintados:
+         * primary=coral, ai=laranja quente, success=mint, danger=soft-red,
+         * warn/gold=amarelo #FFD166, bronze/navy=neutros (legado).
          */
 
-        // Sidebar — dark refinado com tint indigo sutil
+        // Sidebar — branca no novo tema (item ativo vira cartão com sombra)
         sidebar: {
-          DEFAULT: "#0B0F1A",
-          light:   "#151B2C",
-          hover:   "#141B30",
-          active:  "#1A2240",
+          DEFAULT: "#FFFFFF",
+          light:   "#F8FAFC",
+          hover:   "#F3F5F9",
+          active:  "#FFF5F4",
         },
-        // Primária — indigo moderno (ação/marca)
+        // Primária — coral/vermelho-suave (ação/marca)
         primary: {
-          DEFAULT: "#4F46E5",
-          50:  "#EEF2FF", 100: "#E0E7FF", 200: "#C7D2FE", 300: "#A5B4FC",
-          400: "#818CF8", 500: "#6366F1", 600: "#4F46E5", 700: "#4338CA",
-          800: "#3730A3", 900: "#312E81", 950: "#1E1B4B",
+          DEFAULT: "#F4574D",
+          50:  "#FFF5F4", 100: "#FFE8E6", 200: "#FFD1CD", 300: "#FDA9A2",
+          400: "#F97F74", 500: "#F4574D", 600: "#E04A40", 700: "#C93B32",
+          800: "#A62F28", 900: "#872A25", 950: "#4A120F",
         },
-        // IA — violet tech (superfícies de inteligência)
+        // IA — laranja quente (superfícies de inteligência / acento)
         ai: {
-          DEFAULT: "#7C3AED",
-          50:  "#F5F3FF", 100: "#EDE9FE", 200: "#DDD6FE", 300: "#C4B5FD",
-          400: "#A78BFA", 500: "#8B5CF6", 600: "#7C3AED", 700: "#6D28D9",
-          800: "#5B21B6", 900: "#4C1D95", 950: "#2E1065",
+          DEFAULT: "#ED7D3A",
+          50:  "#FFF6EF", 100: "#FFEBDB", 200: "#FED7B5", 300: "#FCB985",
+          400: "#F79256", 500: "#F0813F", 600: "#ED7D3A", 700: "#C75F24",
+          800: "#9E4B1E", 900: "#7F3E1C", 950: "#451E0B",
         },
         // navy — slate escuro (legado)
         navy: {
@@ -39,64 +40,65 @@ export default {
           950: "#020617", 900: "#0F172A", 800: "#1E293B",
           700: "#334155", 600: "#475569", 100: "#F1F5F9", 50: "#F8FAFC",
         },
-        // bronze/gold — legados repintados para neutros slate/indigo suaves
+        // bronze/gold — legados repintados: bronze=neutro slate com pontas
+        // coral pálidas; gold=amarelo #FFD166 (acento da referência)
         bronze: {
           DEFAULT: "#475569",
           dark:    "#334155",
           deep:    "#1E293B",
           medium:  "#64748B",
-          light:   "#A5B4FC",
-          pale:    "#E0E7FF",
+          light:   "#FDA9A2",
+          pale:    "#FFE8E6",
           50:      "#F8FAFC",
           30:      "#FBFCFE",
         },
         gold: {
-          DEFAULT: "#A5B4FC",
-          dark:    "#818CF8",
-          light:   "#C7D2FE",
-          700:     "#4338CA",
-          600:     "#4F46E5",
-          50:      "#EEF2FF",
+          DEFAULT: "#FFD166",
+          dark:    "#F7BE3F",
+          light:   "#FFE3A3",
+          700:     "#B37B12",
+          600:     "#D99A1B",
+          50:      "#FFF9E6",
         },
         ink: {
           DEFAULT: "#111827",
           light:   "#374151",
         },
-        canvas: "#f7f8fa",
+        canvas: "#EDF0F4",
         parchment: "#F1F5F9",
-        muted: "#6b7280",
-        border: "#e5e7eb",
-        // Status — formalizados (Fase 3), escala completa Tailwind padrão
-        // (success=emerald, warn=amber, danger=red, info=sky — mesmos hex)
+        muted: "#8A94A6",
+        border: "#E5E9F0",
+        // Status — success=mint (#0CA678), danger/error=soft-red (#E03131),
+        // warn/warning=amarelo quente (#FFD166), info=sky (inalterado)
         success: {
-          DEFAULT: "#10b981",
-          50: "#ecfdf5", 100: "#d1fae5", 200: "#a7f3d0", 300: "#6ee7b7",
-          400: "#34d399", 500: "#10b981", 600: "#059669", 700: "#047857",
-          800: "#065f46", 900: "#064e3b", 950: "#022c22",
+          DEFAULT: "#0CA678",
+          50: "#E6F7F1", 100: "#D3F3E8", 200: "#A8E8D3", 300: "#74D9B8",
+          400: "#3EC49A", 500: "#12B886", 600: "#0CA678", 700: "#099268",
+          800: "#087F5B", 900: "#066649", 950: "#033A2A",
         },
         warn: {
-          DEFAULT: "#f59e0b",
-          50: "#fffbeb", 100: "#fef3c7", 200: "#fde68a", 300: "#fcd34d",
-          400: "#fbbf24", 500: "#f59e0b", 600: "#d97706", 700: "#b45309",
-          800: "#92400e", 900: "#78350f", 950: "#451a03",
+          DEFAULT: "#EFAE2E",
+          50: "#FFF9E6", 100: "#FFF3CC", 200: "#FFE799", 300: "#FFD166",
+          400: "#F7C04A", 500: "#EFAE2E", 600: "#D99A1B", 700: "#B37B12",
+          800: "#8C5F0E", 900: "#664409", 950: "#3D2905",
         },
         warning: {
-          DEFAULT: "#f59e0b",
-          50: "#fffbeb", 100: "#fef3c7", 200: "#fde68a", 300: "#fcd34d",
-          400: "#fbbf24", 500: "#f59e0b", 600: "#d97706", 700: "#b45309",
-          800: "#92400e", 900: "#78350f", 950: "#451a03",
+          DEFAULT: "#EFAE2E",
+          50: "#FFF9E6", 100: "#FFF3CC", 200: "#FFE799", 300: "#FFD166",
+          400: "#F7C04A", 500: "#EFAE2E", 600: "#D99A1B", 700: "#B37B12",
+          800: "#8C5F0E", 900: "#664409", 950: "#3D2905",
         },
         danger: {
-          DEFAULT: "#ef4444",
-          50: "#fef2f2", 100: "#fee2e2", 200: "#fecaca", 300: "#fca5a5",
-          400: "#f87171", 500: "#ef4444", 600: "#dc2626", 700: "#b91c1c",
-          800: "#991b1b", 900: "#7f1d1d", 950: "#450a0a",
+          DEFAULT: "#E03131",
+          50: "#FDEBEC", 100: "#FCDCDE", 200: "#F8B9BC", 300: "#F1898E",
+          400: "#EA5A60", 500: "#E03131", 600: "#C92A2A", 700: "#A61E1E",
+          800: "#871B1B", 900: "#6E1818", 950: "#3D0A0A",
         },
         error: {
-          DEFAULT: "#ef4444",
-          50: "#fef2f2", 100: "#fee2e2", 200: "#fecaca", 300: "#fca5a5",
-          400: "#f87171", 500: "#ef4444", 600: "#dc2626", 700: "#b91c1c",
-          800: "#991b1b", 900: "#7f1d1d", 950: "#450a0a",
+          DEFAULT: "#E03131",
+          50: "#FDEBEC", 100: "#FCDCDE", 200: "#F8B9BC", 300: "#F1898E",
+          400: "#EA5A60", 500: "#E03131", 600: "#C92A2A", 700: "#A61E1E",
+          800: "#871B1B", 900: "#6E1818", 950: "#3D0A0A",
         },
         info: {
           DEFAULT: "#0ea5e9",
@@ -147,13 +149,20 @@ export default {
         wider:    "0.06em",
         widest:   "0.18em",
       },
+      borderRadius: {
+        // Cartões flutuantes da referência (~20-24px)
+        "2xl": "1.25rem",
+        "3xl": "1.5rem",
+      },
       boxShadow: {
-        card:        "0 1px 2px rgba(15,23,42,0.04), 0 1px 3px rgba(15,23,42,0.06)",
-        "card-hover":"0 2px 4px rgba(15,23,42,0.04), 0 8px 24px rgba(15,23,42,0.08)",
-        float:       "0 4px 12px rgba(15,23,42,0.08), 0 24px 48px rgba(15,23,42,0.14)",
-        logo:        "0 2px 8px rgba(30,27,75,0.12)",
-        sm:          "0 1px 2px rgba(15,23,42,0.05)",
-        md:          "0 2px 4px rgba(15,23,42,0.04), 0 4px 10px rgba(15,23,42,0.07)",
+        // Sombras suaves e difusas dos cartões brancos flutuantes
+        soft:        "0 8px 30px rgba(16,24,40,0.06)",
+        card:        "0 1px 2px rgba(16,24,40,0.03), 0 8px 30px rgba(16,24,40,0.06)",
+        "card-hover":"0 2px 4px rgba(16,24,40,0.04), 0 12px 36px rgba(16,24,40,0.10)",
+        float:       "0 4px 12px rgba(16,24,40,0.08), 0 24px 48px rgba(16,24,40,0.14)",
+        logo:        "0 2px 8px rgba(16,24,40,0.10)",
+        sm:          "0 1px 2px rgba(16,24,40,0.05)",
+        md:          "0 2px 4px rgba(16,24,40,0.04), 0 8px 30px rgba(16,24,40,0.07)",
       },
       keyframes: {
         "fade-in": { from:{opacity:"0"}, to:{opacity:"1"} },
