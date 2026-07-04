@@ -31,18 +31,57 @@ class DiplomaciaDigital:
             "custo_oportunidade_perda": round(valor_esperado - vpl, 2)
         }
 
-    async def gerar_dossie_pressao(self, dados_acordo: dict):
+    async def gerar_dossie_pressao(self, dados_acordo: dict) -> dict:
         """
-        Gera os argumentos para o Dossiê de Pressão (Visual Law).
+        Gera os argumentos do Dossiê de Pressão (Visual Law) via gateway
+        central de IA (task_type="estrategia").
+
+        `dados_acordo` deve ser o dict retornado por calcular_ponto_equilibrio.
+        Retorna {"status", "dossie", "dados_acordo", "modelo", "provedor"} ou
+        {"status": "erro", "mensagem": ...} em falha real — nunca texto fixo.
         """
-        prompt = f"""
-        Gere um argumento de negociação para o advogado da parte contrária.
-        Dados: Valor da Causa {dados_acordo['valor_causa']}, Probabilidade de Perda deles: {dados_acordo['probabilidade_exito']}.
-        Tempo estimado de processo: {dados_acordo['tempo_estimado_anos']} anos.
-        
-        Foque em mostrar que o acordo hoje é a única decisão racional para o cliente deles evitar prejuízos maiores com custas e juros.
-        """
-        # Aqui usaria o ai_brain para gerar o texto do dossiê
-        return "Argumentação gerada com base em dados estatísticos."
+        obrigatorios = (
+            "valor_causa", "probabilidade_exito", "tempo_estimado_anos",
+            "valor_presente_liquido", "sugestao_acordo_ideal",
+        )
+        faltantes = [c for c in obrigatorios if dados_acordo.get(c) is None]
+        if faltantes:
+            return {
+                "status": "erro",
+                "mensagem": f"Dados insuficientes para o dossiê: faltam {', '.join(faltantes)}.",
+            }
+
+        prompt = (
+            "Gere um argumento de negociação (Dossiê de Pressão) dirigido ao "
+            "advogado da parte contrária, com base EXCLUSIVAMENTE nos números "
+            "abaixo, calculados por Valor Presente Líquido (VPL) com a Selic "
+            f"de {self.selic:.4f}:\n"
+            f"- Valor da causa: R$ {dados_acordo['valor_causa']}\n"
+            f"- Probabilidade de perda da parte contrária: {dados_acordo['probabilidade_exito']}\n"
+            f"- Tempo estimado do processo: {dados_acordo['tempo_estimado_anos']} anos\n"
+            f"- Valor presente líquido: R$ {dados_acordo['valor_presente_liquido']}\n"
+            f"- Sugestão de acordo ideal: R$ {dados_acordo['sugestao_acordo_ideal']}\n"
+            f"- Custo de oportunidade da perda: R$ {dados_acordo.get('custo_oportunidade_perda', '—')}\n\n"
+            "Regras: NÃO invente estatísticas, percentuais ou valores além dos "
+            "fornecidos; se algum dado relevante não estiver acima, diga "
+            "explicitamente que ele falta. Foque em demonstrar que o acordo "
+            "hoje é racional para evitar custas e juros futuros."
+        )
+        try:
+            from app.services import ai_gateway
+            resp = await ai_gateway.chat(
+                [{"role": "user", "content": prompt}], task_type="estrategia"
+            )
+        except Exception as e:
+            logger.error(f"[diplomacia] falha ao gerar dossiê: {e}")
+            return {"status": "erro", "mensagem": f"Falha na geração do dossiê: {e}"}
+
+        return {
+            "status": "success",
+            "dossie": resp.texto,
+            "dados_acordo": dados_acordo,
+            "modelo": resp.modelo,
+            "provedor": resp.provedor,
+        }
 
 diplomacia = DiplomaciaDigital()

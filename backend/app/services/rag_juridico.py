@@ -1,45 +1,81 @@
 """
 RAG Jurídico — EJC Intelligence v3.0
-Implementa busca semântica, ingestão de DataJud/Jurisprudências.ai e Match de Casos.
+Match de Casos com busca vetorial REAL (pgvector, via buscar_contexto_rag) e
+explicação por LLM apenas sobre os trechos efetivamente recuperados.
+
+Nota de honestidade: a antiga `ingestao_jurisprudencia` (que só logava
+"em fila" sem ingerir nada) foi removida — a ingestão real é feita pelo
+pipeline de app/services/ingestion_service.upsert_documento (router rag.py).
 """
 import logging
+
+from sqlalchemy.ext.asyncio import AsyncSession
+
 from app.core.ai_brain import ai_brain
-from app.core.public_apis import api_client
 
 logger = logging.getLogger("rag_juridico")
+
 
 class RAGJuridico:
     def __init__(self):
         self.ai = ai_brain
-        self.apis = api_client
 
-    async def ingestao_jurisprudencia(self, tribunal: str, tema: str):
+    async def match_de_casos(self, texto_caso: str, area: str, db: AsyncSession) -> dict:
         """
-        Ingestão via Jurisprudências.ai (STF, STJ, TJMG).
-        Filtra apenas decisões com número de processo verificável.
-        """
-        logger.info(f"Iniciando ingestão de {tema} no tribunal {tribunal}")
-        # Lógica de conexão com a API Jurisprudências.ai
-        return {"status": "Ingestão em fila", "tribunal": tribunal}
+        Match semântico REAL entre o caso novo e a base de conhecimento do
+        escritório:
+          1. Busca vetorial pgvector (cosine) via buscar_contexto_rag, com
+             fallback textual quando não há embeddings.
+          2. Só os top-N trechos recuperados são passados ao LLM, que explica
+             a aderência de cada um ao caso — sem inventar precedentes.
 
-    async def match_de_casos(self, texto_caso: str, area: str):
+        Retorna {"status", "casos_similares": [...], "analise": str|None}.
+        Se nada for recuperado, retorna status "sem_resultados" (sem chamar o
+        LLM, para não gerar "matches" alucinados).
         """
-        Realiza o match semântico entre o caso novo e a base de dados (interna/externa).
-        """
-        # 1. Gerar embedding do texto do caso
-        # 2. Busca vetorial no pgvector (rag_documents)
-        # 3. Validar fontes nas APIs oficiais (DataJud)
-        
-        prompt = f"""
-        Como assistente jurídico sênior, realize o Match de Casos para este contexto:
-        Área: {area}
-        Caso: {texto_caso}
-        
-        Identifique:
-        1. Decisões similares em tribunais superiores.
-        2. Teses internas aplicáveis com maior taxa de sucesso.
-        3. Riscos de alucinação (Verifique se os números de processo citados são reais).
-        """
-        return await self.ai.generate(prompt, "principal")
+        from app.services.ai_service import buscar_contexto_rag
+
+        similares = await buscar_contexto_rag(
+            db, texto_caso, limite=5, modo_or=True
+        )
+        if not similares:
+            return {
+                "status": "sem_resultados",
+                "mensagem": (
+                    "Nenhum documento similar encontrado na base de "
+                    "conhecimento do escritório para este caso."
+                ),
+                "casos_similares": [],
+                "analise": None,
+            }
+
+        trechos = "\n\n".join(
+            f"[{i+1}] (fonte: {c.get('fonte') or c.get('categoria') or 'interna'}, "
+            f"score: {c.get('score')}) {c.get('titulo') or ''}\n"
+            f"{(c.get('conteudo') or '')[:1200]}"
+            for i, c in enumerate(similares)
+        )
+        prompt = (
+            "Como assistente jurídico sênior, analise o Match de Casos abaixo.\n"
+            f"Área: {area}\n"
+            f"Caso novo: {texto_caso}\n\n"
+            "Documentos recuperados da base interna (busca vetorial):\n"
+            f"{trechos}\n\n"
+            "Para cada documento numerado, explique em 1-2 frases por que é (ou "
+            "não é) aplicável ao caso novo. Baseie-se APENAS nos trechos acima; "
+            "não cite precedentes ou números de processo que não constem deles."
+        )
+        try:
+            analise = await self.ai.generate(prompt, "principal")
+        except Exception as e:
+            logger.warning(f"[rag_juridico] LLM indisponível no match: {e}")
+            analise = None
+
+        return {
+            "status": "success",
+            "casos_similares": similares,
+            "analise": analise,
+        }
+
 
 rag_juridico = RAGJuridico()

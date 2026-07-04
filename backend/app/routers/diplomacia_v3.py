@@ -21,6 +21,22 @@ async def calcular_acordo(payload: dict, cu: User = Depends(get_current_user)):
         
     return diplomacia.calcular_ponto_equilibrio(valor, prob, tempo)
 
+@router.post("/dossie-pressao")
+async def dossie_pressao(payload: dict, cu: User = Depends(get_current_user)):
+    """Calcula o ponto de equilíbrio e gera o Dossiê de Pressão via IA."""
+    valor = payload.get("valor_causa")
+    prob = payload.get("prob_exito")
+    tempo = payload.get("tempo_anos")
+
+    if not all([valor, prob, tempo]):
+        raise HTTPException(400, "Dados insuficientes para cálculo.")
+
+    dados = diplomacia.calcular_ponto_equilibrio(valor, prob, tempo)
+    resultado = await diplomacia.gerar_dossie_pressao(dados)
+    if resultado.get("status") == "erro":
+        raise HTTPException(502, resultado.get("mensagem", "Falha na geração do dossiê."))
+    return resultado
+
 @router.post("/analisar-magistrado")
 async def analisar_magistrado(payload: dict, cu: User = Depends(get_current_user)):
     decisoes = payload.get("decisoes", [])

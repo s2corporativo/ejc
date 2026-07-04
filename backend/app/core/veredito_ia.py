@@ -1,50 +1,137 @@
+"""
+Veredito IA — probabilidade de êxito baseada em JURIMETRIA REAL.
+
+Honestidade estatística (mesmo contrato de app/services/jurimetria.py):
+- A probabilidade vem da taxa de êxito histórica dos casos ENCERRADOS do
+  escritório na área informada. Se a amostra for menor que MIN_AMOSTRA,
+  retorna probabilidade_exito=None com aviso explícito — nunca um número
+  inventado.
+- A jurisprudência de suporte vem da busca RAG real (pgvector), não de mock.
+"""
+import logging
 from typing import List, Optional
-from app.schemas.veredito_ia_schema import AnaliseTeseResponse, TeseVitoriosaSimilar, JurisprudenciaSuporte, SugestaoContextualizada
+
+from sqlalchemy import String, cast, func, select
+
+from app.core.database import AsyncSessionLocal
 from app.core.victory_vault import VictoryVault
+from app.models.case import Case
+from app.schemas.veredito_ia_schema import (
+    AnaliseTeseResponse,
+    JurisprudenciaSuporte,
+    SugestaoContextualizada,
+    TeseVitoriosaSimilar,
+)
+from app.services.jurimetria import FECHADOS, MIN_AMOSTRA, _bucket, _resumo
+
+logger = logging.getLogger("ejc.veredito_ia")
+
 
 class VereditoIA:
     def __init__(self):
         self.victory_vault = VictoryVault()
 
-    async def predict_success(self, tese_juridica: str, area_juridica: str, tribunais_selecionados: List[str]) -> AnaliseTeseResponse:
-        # Simulação de análise de probabilidade de êxito
-        probabilidade_exito = self._calcular_probabilidade(tese_juridica, area_juridica, tribunais_selecionados)
+    async def predict_success(
+        self, tese_juridica: str, area_juridica: str, tribunais_selecionados: List[str]
+    ) -> AnaliseTeseResponse:
+        # 1) Probabilidade via jurimetria REAL (casos encerrados com resultado).
+        resumo = await self._amostra_resultados(area_juridica)
+        if resumo["amostra_suficiente"] and resumo["taxa_exito_com_acordo"] is not None:
+            probabilidade: Optional[float] = round(
+                resumo["taxa_exito_com_acordo"] / 100.0, 3
+            )
+            aviso = None
+        else:
+            probabilidade = None
+            aviso = (
+                f"Amostra insuficiente: {resumo['n']} caso(s) encerrado(s) com "
+                f"resultado na área '{area_juridica}' (mínimo {MIN_AMOSTRA}). "
+                "Sem base estatística para estimar probabilidade de êxito."
+            )
 
-        # Buscar teses vitoriosas similares no VictoryVault
-        teses_vitoriosas = await self.victory_vault.get_teses_vitoriosas(area_juridica=area_juridica, query=tese_juridica)
-
-        # Simulação de jurisprudência de suporte
-        jurisprudencia_suporte = self._buscar_jurisprudencia(tese_juridica, area_juridica, tribunais_selecionados)
-
-        # Simulação de sugestões contextualizadas
-        sugestoes = self._generate_suggestions(tese_juridica, area_juridica, teses_vitoriosas)
-
-        return AnaliseTeseResponse(
-            probabilidade_exito=probabilidade_exito,
-            teses_vitoriosas_similares=teses_vitoriosas,
-            jurisprudencia_suporte=jurisprudencia_suporte,
-            sugestoes_contextualizadas=sugestoes
+        # 2) Teses vitoriosas similares (Victory Vault — persistência real).
+        teses_vitoriosas = await self.victory_vault.get_teses_vitoriosas(
+            area_juridica=area_juridica, query=tese_juridica
         )
 
-    def _calcular_probabilidade(self, tese_juridica: str, area_juridica: str, tribunais_selecionados: List[str]) -> float:
-        # Lógica de cálculo de probabilidade (simulada)
-        base_prob = 0.5
-        if "licitação" in tese_juridica.lower() and "administrativo" in area_juridica.lower():
-            base_prob += 0.2
-        if "STF" in tribunais_selecionados or "STJ" in tribunais_selecionados:
-            base_prob += 0.1
-        return min(1.0, base_prob)
+        # 3) Jurisprudência de suporte via RAG real (pgvector/textual).
+        jurisprudencia_suporte = await self._buscar_jurisprudencia(tese_juridica)
 
-    def _buscar_jurisprudencia(self, tese_juridica: str, area_juridica: str, tribunais_selecionados: List[str]) -> List[JurisprudenciaSuporte]:
-        # Lógica de busca de jurisprudência (simulada)
+        sugestoes = self._generate_suggestions(probabilidade, teses_vitoriosas)
+
+        return AnaliseTeseResponse(
+            probabilidade_exito=probabilidade,
+            aviso=aviso,
+            amostra=resumo,
+            teses_vitoriosas_similares=teses_vitoriosas,
+            jurisprudencia_suporte=jurisprudencia_suporte,
+            sugestoes_contextualizadas=sugestoes,
+        )
+
+    async def _amostra_resultados(self, area_juridica: str) -> dict:
+        """Distribuição de resultados dos casos encerrados na área (jurimetria)."""
+        try:
+            async with AsyncSessionLocal() as db:
+                q = select(Case.resultado).where(
+                    Case.deleted_at.is_(None),
+                    Case.status.in_(FECHADOS),
+                    Case.resultado.isnot(None),
+                    func.lower(cast(Case.area, String))
+                    == (area_juridica or "").strip().lower(),
+                )
+                linhas = (await db.execute(q)).scalars().all()
+            return _resumo([_bucket(r) for r in linhas])
+        except Exception as e:
+            logger.warning(f"[veredito_ia] jurimetria indisponível: {e}")
+            return _resumo([])
+
+    async def _buscar_jurisprudencia(
+        self, tese_juridica: str, limite: int = 5
+    ) -> List[JurisprudenciaSuporte]:
+        """Busca RAG real na base de conhecimento (sem mock)."""
+        try:
+            from app.services.ai_service import buscar_contexto_rag
+
+            async with AsyncSessionLocal() as db:
+                chunks = await buscar_contexto_rag(
+                    db, tese_juridica, limite=limite, modo_or=True
+                )
+        except Exception as e:
+            logger.warning(f"[veredito_ia] busca RAG falhou: {e}")
+            return []
         return [
-            JurisprudenciaSuporte(id="1", ementa="Jurisprudência relevante 1.", tribunal="TJMG", data="2023-01-15", link="http://link1.com"),
-            JurisprudenciaSuporte(id="2", ementa="Jurisprudência relevante 2.", tribunal="TRF1", data="2022-11-20", link="http://link2.com"),
+            JurisprudenciaSuporte(
+                id=str(c.get("chunk_id", "")),
+                ementa=(c.get("conteudo") or "")[:1000],
+                tribunal=c.get("fonte") or c.get("categoria") or "base interna",
+                data="",
+                link=None,
+            )
+            for c in chunks
         ]
 
-    def _generate_suggestions(self, tese_juridica: str, area_juridica: str, teses_vitoriosas: List[TeseVitoriosaSimilar]) -> List[SugestaoContextualizada]:
-        suggestions = []
-        suggestions.append(SugestaoContextualizada(tipo="Melhoria", descricao="Revise a argumentação com base nas teses vitoriosas similares."))
-        if not teses_vitoriosas:
-            suggestions.append(SugestaoContextualizada(tipo="Pesquisa", descricao="Considere pesquisar mais teses vitoriosas para fortalecer o caso."))
-        return suggestions
+    def _generate_suggestions(
+        self,
+        probabilidade: Optional[float],
+        teses_vitoriosas: List[TeseVitoriosaSimilar],
+    ) -> List[SugestaoContextualizada]:
+        sugestoes: List[SugestaoContextualizada] = []
+        if probabilidade is None:
+            sugestoes.append(SugestaoContextualizada(
+                tipo="Estatística",
+                descricao=(
+                    "Sem histórico suficiente na área — registre resultados dos "
+                    "casos encerrados para habilitar a jurimetria."
+                ),
+            ))
+        if teses_vitoriosas:
+            sugestoes.append(SugestaoContextualizada(
+                tipo="Melhoria",
+                descricao="Revise a argumentação com base nas teses vitoriosas similares.",
+            ))
+        else:
+            sugestoes.append(SugestaoContextualizada(
+                tipo="Pesquisa",
+                descricao="Nenhuma tese vitoriosa similar registrada — pesquise e cadastre no Victory Vault.",
+            ))
+        return sugestoes

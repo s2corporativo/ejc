@@ -303,14 +303,18 @@ async def buscar(
 
 
 @router.post("/match-casos")
-async def match_casos(payload: dict, cu: User = Depends(get_current_user)):
-    """Match de Casos (v3): Cruzamento semântico de caso vs base."""
+async def match_casos(
+    payload: dict,
+    db: AsyncSession = Depends(get_db),
+    cu: User = Depends(get_current_user),
+):
+    """Match de Casos (v3): busca vetorial real (pgvector) + análise por LLM."""
     from app.services.rag_juridico import rag_juridico
     texto = payload.get("texto")
     area = payload.get("area", "geral")
     if not texto:
         raise HTTPException(400, "Texto do caso é obrigatório.")
-    return await rag_juridico.match_de_casos(texto, area)
+    return await rag_juridico.match_de_casos(texto, area, db)
 
 
 

@@ -26,7 +26,11 @@ class SugestaoContextualizada(BaseModel):
     descricao: str
 
 class AnaliseTeseResponse(BaseModel):
-    probabilidade_exito: float
+    # None quando a amostra histórica é estatisticamente insuficiente —
+    # honestidade estatística: nunca inventar número sem base.
+    probabilidade_exito: Optional[float] = None
+    aviso: Optional[str] = None
+    amostra: Optional[dict] = None
     teses_vitoriosas_similares: List[TeseVitoriosaSimilar]
     jurisprudencia_suporte: List[JurisprudenciaSuporte]
     sugestoes_contextualizadas: List[SugestaoContextualizada]
