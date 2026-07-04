@@ -43,6 +43,7 @@ import {
   ScrollText,
   Search,
   Settings,
+  ShieldAlert,
   ShieldCheck,
   Sparkles,
   Sun,
@@ -195,6 +196,13 @@ const NAV: NavItem[] = [
     label: "Radar regulatorio",
     icon: Bell,
     group: "Inteligencia",
+  },
+  {
+    to: "/compliance/radar",
+    label: "Radar de Compliance",
+    icon: ShieldAlert,
+    group: "Inteligencia",
+    roles: ["superadmin", "admin", "socio", "advogado"],
   },
   {
     to: "/victory-vault",

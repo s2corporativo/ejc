@@ -29,6 +29,8 @@ import {
   Alert,
   Textarea,
   FieldLabel,
+  Badge,
+  Empty,
 } from "../components/UI";
 import { useAuth } from "../stores/auth";
 import { RAMOS } from "./ramos/ramosConfig";
@@ -50,6 +52,7 @@ const TABS = [
   { key: "financeiro", label: "Financeiro" },
   { key: "custos", label: "Centro de Custos" },
   { key: "teses", label: "Teses" },
+  { key: "teses-sugeridas", label: "Teses sugeridas" },
   { key: "jurisprudencia", label: "Jurisprudência" },
   { key: "precedentes", label: "Precedentes" },
   { key: "score", label: "Score Jurídico" },
@@ -78,6 +81,7 @@ const GROUPS: { label: string; tabs: TabKey[] }[] = [
     label: "Inteligência",
     tabs: [
       "teses",
+      "teses-sugeridas",
       "jurisprudencia",
       "precedentes",
       "memoria",
@@ -3650,6 +3654,118 @@ function TabFerramentas({ caso }: { caso: Case }) {
   );
 }
 
+// ── Tab: Teses sugeridas (Banco de Teses ranqueado ao caso) ──────────────────
+interface TeseSugerida {
+  id: string;
+  titulo: string;
+  tema: string | null;
+  ramo: string | null;
+  resumo: string;
+  score: number;
+  distancia: number;
+  taxa_sucesso: number | null;
+  vezes_venceu: number | null;
+  vezes_usada: number | null;
+  tribunal: string | null;
+}
+
+interface TesesSugeridasResp {
+  case_id: string;
+  estrategia: string | null;
+  area: string | null;
+  palavras_chave: string[];
+  total: number;
+  teses: TeseSugerida[];
+}
+
+function TabTesesSugeridas({ caseId }: { caseId: string }) {
+  const [loading, setLoading] = useState(true);
+  const [resp, setResp] = useState<TesesSugeridasResp | null>(null);
+
+  useEffect(() => {
+    let ativo = true;
+    setLoading(true);
+    api
+      .get<TesesSugeridasResp>(`/cases/${caseId}/teses-sugeridas`, {
+        params: { k: 5 },
+      })
+      .then((r) => {
+        if (ativo) setResp(r.data);
+      })
+      .catch(() => {
+        if (ativo) {
+          setResp(null);
+          toast.error("Falha ao carregar teses sugeridas.");
+        }
+      })
+      .finally(() => {
+        if (ativo) setLoading(false);
+      });
+    return () => {
+      ativo = false;
+    };
+  }, [caseId]);
+
+  if (loading) return <Spinner />;
+
+  const teses = resp?.teses ?? [];
+  if (!resp || resp.total === 0 || teses.length === 0) {
+    return <Empty message="Nenhuma tese aderente encontrada" />;
+  }
+
+  const pctExito = (taxa: number | null): string =>
+    taxa == null ? "—" : `${Math.round(taxa * 100)}%`;
+
+  return (
+    <div className="space-y-4">
+      <div>
+        <h2 className="font-semibold">Teses sugeridas</h2>
+        <p className="text-xs text-slate-400">
+          Teses do Banco de Teses mais aderentes a este caso, ranqueadas por
+          desempenho histórico. Rascunho de apoio — revisão humana obrigatória
+          (OAB).
+          {resp.palavras_chave.length > 0 && (
+            <> Palavras-chave: {resp.palavras_chave.join(", ")}.</>
+          )}
+        </p>
+      </div>
+
+      <div className="space-y-3">
+        {teses.map((t) => (
+          <div key={t.id} className="card p-4">
+            <div className="flex items-start justify-between gap-3">
+              <div className="min-w-0">
+                <h3 className="font-medium text-sm text-slate-800">
+                  {t.titulo}
+                </h3>
+                {t.tema && (
+                  <p className="text-xs text-slate-400 mt-0.5">{t.tema}</p>
+                )}
+              </div>
+              {t.ramo && <Badge tone="purple">{t.ramo}</Badge>}
+            </div>
+
+            {t.resumo && (
+              <p className="text-sm text-slate-600 mt-2 leading-relaxed">
+                {t.resumo}
+              </p>
+            )}
+
+            <div className="flex flex-wrap items-center gap-2 mt-3">
+              <Badge tone="green">Êxito {pctExito(t.taxa_sucesso)}</Badge>
+              <Badge tone="slate">{t.vezes_venceu ?? 0} vitória(s)</Badge>
+              {typeof t.vezes_usada === "number" && (
+                <Badge tone="slate">{t.vezes_usada} uso(s)</Badge>
+              )}
+              {t.tribunal && <Badge tone="slate">{t.tribunal}</Badge>}
+            </div>
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+}
+
 export default function CasoDetalhe() {
   const { id } = useParams<{ id: string }>();
   const [searchParams, setSearchParams] = useSearchParams();
@@ -3854,6 +3970,8 @@ export default function CasoDetalhe() {
             />
           </div>
         );
+      case "teses-sugeridas":
+        return <TabTesesSugeridas caseId={id} />;
       case "precedentes":
         return (
           <TabLista

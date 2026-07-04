@@ -1,6 +1,15 @@
 import React from "react";
-import { Sparkles, ShieldCheck, AlertTriangle } from "lucide-react";
+import {
+  Sparkles,
+  ShieldCheck,
+  AlertTriangle,
+  ThumbsUp,
+  ThumbsDown,
+} from "lucide-react";
 import { Markdown } from "../Markdown";
+import { Button } from "../UI";
+import { toast } from "../Toast";
+import api from "../../lib/api";
 
 /**
  * AIResponse — componente PADRÃO para exibir respostas/análises da IA do EJC.
@@ -20,6 +29,8 @@ const CONF_STYLE: Record<string, string> = {
   baixa: "bg-rose-50 text-rose-700 ring-rose-200",
 };
 
+type FeedbackValor = "util" | "nao_util";
+
 export function AIResponse({
   source,
   title = "Análise da IA",
@@ -28,6 +39,7 @@ export function AIResponse({
   error,
   aviso = true,
   className = "",
+  logId,
   children,
 }: {
   source?: string | null;
@@ -37,8 +49,29 @@ export function AIResponse({
   error?: string | null;
   aviso?: boolean;
   className?: string;
+  /** ID do AILog da interação. Quando presente, exibe os botões de feedback 👍/👎. */
+  logId?: string;
   children?: React.ReactNode;
 }) {
+  const [feedback, setFeedback] = React.useState<FeedbackValor | null>(null);
+  const [enviando, setEnviando] = React.useState<FeedbackValor | null>(null);
+
+  async function avaliar(valor: FeedbackValor) {
+    if (!logId || enviando || feedback === valor) return;
+    setEnviando(valor);
+    try {
+      await api.post(`/ai/logs/${logId}/feedback`, { feedback: valor });
+      setFeedback(valor);
+      toast.success("Obrigado pelo feedback!");
+    } catch {
+      toast.error("Não foi possível registrar seu feedback. Tente novamente.");
+    } finally {
+      setEnviando(null);
+    }
+  }
+
+  const mostrarFeedback = Boolean(logId) && !loading && !error;
+
   return (
     <div
       className={`rounded-2xl border border-slate-200 bg-white shadow-sm overflow-hidden ${className}`}
@@ -81,6 +114,45 @@ export function AIResponse({
           <Markdown source={source} className="text-sm leading-relaxed text-slate-700" />
         )}
       </div>
+
+      {/* Feedback 👍/👎 (só quando há logId e há resposta exibida) */}
+      {mostrarFeedback && (
+        <div className="flex items-center gap-2 border-t border-slate-100 px-4 py-2">
+          <span className="text-[11px] text-slate-500">Esta resposta foi útil?</span>
+          <Button
+            variant="ghost"
+            size="sm"
+            aria-label="Marcar resposta como útil"
+            aria-pressed={feedback === "util"}
+            disabled={enviando !== null || feedback === "util"}
+            onClick={() => void avaliar("util")}
+            className={
+              feedback === "util"
+                ? "text-success-700 bg-success-50 ring-1 ring-success-200"
+                : ""
+            }
+            icon={<ThumbsUp className="h-3.5 w-3.5" />}
+          >
+            Útil
+          </Button>
+          <Button
+            variant="ghost"
+            size="sm"
+            aria-label="Marcar resposta como não útil"
+            aria-pressed={feedback === "nao_util"}
+            disabled={enviando !== null || feedback === "nao_util"}
+            onClick={() => void avaliar("nao_util")}
+            className={
+              feedback === "nao_util"
+                ? "text-rose-700 bg-rose-50 ring-1 ring-rose-200"
+                : ""
+            }
+            icon={<ThumbsDown className="h-3.5 w-3.5" />}
+          >
+            Não útil
+          </Button>
+        </div>
+      )}
 
       {/* Aviso de validação humana (discreto) */}
       {aviso && !loading && !error && (
