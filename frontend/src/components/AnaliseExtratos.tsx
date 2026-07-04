@@ -75,7 +75,7 @@ export default function AnaliseExtratos() {
       const fd = new FormData();
       fd.append("file", file);
       if (banco) fd.append("banco", banco);
-      const { data } = await api.post("/v1/bank-analysis/upload", fd, {
+      const { data } = await api.post("/bank-analysis/upload", fd, {
         headers: { "Content-Type": "multipart/form-data" },
       });
       setRes(data);
@@ -88,7 +88,7 @@ export default function AnaliseExtratos() {
 
   const baixarExcel = async () => {
     if (!res?.analise?.id) return;
-    const r = await api.get(`/v1/bank-analysis/${res.analise.id}/excel`, {
+    const r = await api.get(`/bank-analysis/${res.analise.id}/excel`, {
       responseType: "blob",
     });
     const url = URL.createObjectURL(r.data as Blob);
@@ -102,7 +102,7 @@ export default function AnaliseExtratos() {
   const gerarDoc = async (tipo: string) => {
     if (!res?.analise?.id) return;
     const { data } = await api.post(
-      `/v1/bank-analysis/${res.analise.id}/documento`,
+      `/bank-analysis/${res.analise.id}/documento`,
       { tipo },
     );
     const w = window.open("", "_blank");

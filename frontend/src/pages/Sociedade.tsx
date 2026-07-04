@@ -57,17 +57,18 @@ interface Withdrawal {
   created_at: string;
 }
 
+// Status reais gravados pelo backend (pt-BR): pendente/aprovado/pago/rejeitado
 const STATUS_COLOR: Record<string, string> = {
-  pending: "bg-warn-50 text-warn-700",
-  approved: "bg-success-50 text-success-700",
-  rejected: "bg-danger-50 text-danger-600",
-  paid: "bg-primary-50 text-primary-700",
+  pendente: "bg-warn-50 text-warn-700",
+  aprovado: "bg-success-50 text-success-700",
+  rejeitado: "bg-danger-50 text-danger-600",
+  pago: "bg-primary-50 text-primary-700",
 };
 const STATUS_LABEL: Record<string, string> = {
-  pending: "Pendente",
-  approved: "Aprovado",
-  rejected: "Rejeitado",
-  paid: "Pago",
+  pendente: "Pendente",
+  aprovado: "Aprovado",
+  rejeitado: "Rejeitado",
+  pago: "Pago",
 };
 
 export default function Sociedade() {
@@ -216,10 +217,10 @@ export default function Sociedade() {
   // KPIs
   const totalDistrib = distrib.reduce((a, d) => a + (d.valor_total ?? 0), 0);
   const totalSaquesPagos = withdrawals
-    .filter((w) => w.status === "paid")
+    .filter((w) => w.status === "pago")
     .reduce((a, w) => a + (w.net_value ?? 0), 0);
   const totalSaquesPendentes = withdrawals
-    .filter((w) => w.status === "pending")
+    .filter((w) => w.status === "pendente")
     .reduce((a, w) => a + (w.gross_value ?? 0), 0);
 
   if (loading)
@@ -750,7 +751,7 @@ export default function Sociedade() {
                       </p>
                     )}
                   </div>
-                  {w.status === "pending" && (
+                  {w.status === "pendente" && (
                     <div className="flex gap-1.5">
                       <button
                         onClick={() => approveWithdrawal(w.id, "approve")}

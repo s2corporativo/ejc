@@ -86,7 +86,7 @@ export default function FinanceiroDashboard() {
     setLoading(true);
     try {
       const r = await api.get(
-        `/v1/financeiro/consolidado?competencia=${competencia}`,
+        `/financeiro/consolidado?competencia=${competencia}`,
       );
       setD(r.data);
     } finally {
@@ -100,7 +100,7 @@ export default function FinanceiroDashboard() {
 
   const carregarRelatorio = async () => {
     try {
-      const r = await api.get(`/v1/relatorio/mensal?mes=${competencia}`);
+      const r = await api.get(`/relatorio/mensal?mes=${competencia}`);
       setRelatorio(r.data);
     } catch {}
   };

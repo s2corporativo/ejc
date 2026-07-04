@@ -49,27 +49,27 @@ export default function LoginModern() {
   };
 
   return (
-    <div className="min-h-screen overflow-hidden bg-[#F7F8FA] text-slate-950">
-      <div className="pointer-events-none fixed inset-0 bg-[radial-gradient(circle_at_18%_10%,rgba(185,138,60,.18),transparent_28rem),radial-gradient(circle_at_92%_8%,rgba(110,82,40,.10),transparent_24rem)]" />
+    <div className="min-h-screen overflow-hidden bg-slate-50 text-slate-950">
       <div className="relative grid min-h-screen lg:grid-cols-[1fr_460px]">
-        <section className="hidden flex-col justify-between border-r border-slate-200 bg-white/55 p-10 backdrop-blur-xl lg:flex">
-          <div className="flex items-center gap-3">
+        <section className="relative hidden flex-col justify-between overflow-hidden bg-gradient-to-br from-primary-950 via-primary-900 to-ai-900 p-10 text-white lg:flex">
+          <div className="pointer-events-none absolute inset-0 bg-[radial-gradient(circle_at_20%_10%,rgba(129,140,248,.18),transparent_30rem),radial-gradient(circle_at_90%_90%,rgba(167,139,250,.14),transparent_26rem)]" />
+          <div className="relative flex items-center gap-3">
             <img
               src={BRAND_LOGO}
               alt="De Paula Teixeira Sociedade de Advogados"
-              className="brand-logo-img h-20 w-auto max-w-[270px]"
+              className="brand-logo-img h-20 w-auto max-w-[270px] rounded-xl bg-white p-1.5"
             />
           </div>
 
-          <div className="max-w-2xl">
-            <div className="mb-4 inline-flex items-center gap-2 rounded-full border border-warn-200 bg-warn-50 px-3 py-1 text-xs font-semibold text-warn-800">
+          <div className="relative max-w-2xl">
+            <div className="mb-4 inline-flex items-center gap-2 rounded-full border border-white/15 bg-white/10 px-3 py-1 text-xs font-semibold text-primary-100">
               <Sparkles className="h-3.5 w-3.5" />
               Plataforma juridica empresarial
             </div>
-            <h1 className="max-w-xl text-5xl font-semibold leading-tight tracking-tight text-slate-950">
+            <h1 className="max-w-xl text-5xl font-semibold leading-tight tracking-tight text-white">
               Gestao juridica com controle, produtividade e IA revisavel.
             </h1>
-            <p className="mt-5 max-w-xl text-base leading-7 text-slate-500">
+            <p className="mt-5 max-w-xl text-base leading-7 text-primary-200/80">
               Centralize casos, clientes, prazos, documentos, financeiro e
               producao juridica em um ambiente seguro para operacao
               profissional.
@@ -82,19 +82,19 @@ export default function LoginModern() {
               ].map(([title, desc]) => (
                 <div
                   key={title}
-                  className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm"
+                  className="rounded-2xl border border-white/10 bg-white/5 p-4 backdrop-blur-sm"
                 >
-                  <div className="text-sm font-semibold text-slate-950">
+                  <div className="text-sm font-semibold text-white">
                     {title}
                   </div>
-                  <div className="mt-1 text-xs text-slate-500">{desc}</div>
+                  <div className="mt-1 text-xs text-primary-200/70">{desc}</div>
                 </div>
               ))}
             </div>
           </div>
 
-          <div className="flex items-center gap-2 text-xs text-slate-500">
-            <ShieldCheck className="h-4 w-4 text-warn-700" />
+          <div className="relative flex items-center gap-2 text-xs text-primary-200/70">
+            <ShieldCheck className="h-4 w-4 text-primary-300" />
             Acesso restrito com trilha de auditoria e perfis de permissao.
           </div>
         </section>
@@ -109,9 +109,9 @@ export default function LoginModern() {
               />
             </div>
 
-            <div className="rounded-2xl border border-slate-200 bg-white p-8 shadow-xl shadow-slate-200/70">
+            <div className="rounded-2xl border border-slate-200/60 bg-white p-8 shadow-xl shadow-slate-200/60">
               <div className="mb-7">
-                <div className="mb-3 flex h-11 w-11 items-center justify-center rounded-xl bg-primary-50 text-primary-700">
+                <div className="mb-3 flex h-11 w-11 items-center justify-center rounded-xl bg-primary-50 text-primary-600">
                   <LockKeyhole className="h-5 w-5" />
                 </div>
                 <p className="eyebrow">Area restrita</p>
@@ -135,7 +135,7 @@ export default function LoginModern() {
                 <div>
                   <label className="label">E-mail</label>
                   <input
-                    className="input"
+                    className="input h-11"
                     type="email"
                     value={email}
                     autoFocus
@@ -147,7 +147,7 @@ export default function LoginModern() {
                 <div>
                   <label className="label">Senha</label>
                   <input
-                    className="input"
+                    className="input h-11"
                     type="password"
                     value={password}
                     placeholder="********"
@@ -171,7 +171,7 @@ export default function LoginModern() {
                 <div className="text-center">
                   <Link
                     to="/recuperar-senha"
-                    className="text-xs font-medium text-warn-700 transition-colors hover:text-primary-700"
+                    className="text-xs font-medium text-primary-600 transition-colors hover:text-primary-700"
                   >
                     Esqueci minha senha
                   </Link>

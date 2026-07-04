@@ -137,15 +137,21 @@ function ExtratoCaso({ caso }: { caso: Case }) {
   const { user } = useAuth();
   const [open, setOpen] = useState(false);
   const [data, setData] = useState<any>(null);
+  const [erro, setErro] = useState("");
   const fmt = (v: number) =>
     (v ?? 0).toLocaleString("pt-BR", { style: "currency", currency: "BRL" });
   const abrir = async () => {
     setOpen(true);
     if (!data) {
+      setErro("");
       try {
-        const r = await api.get(`/extratos/casos/${caso.id}`);
+        const r = await api.get(`/extratos/detalhado/${caso.id}`);
         setData(r.data);
-      } catch {}
+      } catch (e: any) {
+        setErro(
+          e?.response?.data?.detail || "Falha ao carregar o extrato do caso.",
+        );
+      }
     }
   };
   if (!["superadmin", "admin", "socio", "advogado"].includes(user?.role || "")) {
@@ -162,7 +168,9 @@ function ExtratoCaso({ caso }: { caso: Case }) {
         onClose={() => setOpen(false)}
         title="Extrato financeiro do caso"
       >
-        {!data ? (
+        {erro ? (
+          <div className="py-8 text-center text-danger-600 text-sm">{erro}</div>
+        ) : !data ? (
           <div className="py-8 text-center text-slate-400 text-sm">
             Carregando…
           </div>

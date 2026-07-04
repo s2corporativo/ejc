@@ -650,7 +650,9 @@ from pydantic import BaseModel as _BM2, Field as _F2
 
 class EncerrarCasoReq(_BM2):
     resultado: str = _F2(
-        pattern="^(exito|exito_parcial|acordo|derrota|desistencia|arquivado)$",
+        # \A/\z (não ^/$): a validação por regex aceitaria "exito\n" com "$",
+        # que passaria aqui mas nunca casaria o vocabulário da jurimetria.
+        pattern=r"\A(exito|exito_parcial|acordo|derrota|desistencia|arquivado)\z",
         description="exito|exito_parcial|acordo|derrota|desistencia|arquivado",
     )
     motivo_resultado: str = _F2(min_length=20,

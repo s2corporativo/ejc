@@ -675,9 +675,11 @@ async def deletar_documento_drive(
             "Falha ao remover arquivo %s do Drive (seguindo com remoção local)",
             file_id, exc_info=True,
         )
+    # Apaga somente a linha autorizada pelo gate — drive_file_id não é unique,
+    # e apagar pelo file_id removeria duplicatas de outros casos/soft-deleted.
     await db.execute(
-        sql_text("DELETE FROM documents WHERE drive_file_id = :fid"),
-        {"fid": file_id},
+        sql_text("DELETE FROM documents WHERE id = :id"),
+        {"id": row["id"]},
     )
     await criar_audit_log(
         db, current_user.id, current_user.role.value, "DELETE", "documents",
