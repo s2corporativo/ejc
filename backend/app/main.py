@@ -78,6 +78,7 @@ from app.routers import fees
 from app.routers import financeiro_consolidado
 from app.routers import gestao_societaria
 from app.routers import honorarios_calc
+from app.routers import ia_citacoes
 from app.routers import ia_defensiva
 from app.routers import ia_especializada
 from app.routers import ia_extra
@@ -286,6 +287,7 @@ app.include_router(fees.router, prefix=API)
 app.include_router(financeiro_consolidado.router, prefix=API)
 app.include_router(gestao_societaria.router, prefix=API)
 app.include_router(honorarios_calc.router, prefix=API)
+app.include_router(ia_citacoes.router, prefix=API)
 app.include_router(ia_defensiva.router, prefix=API)
 app.include_router(ia_especializada.router, prefix=API)
 app.include_router(ia_extra.router, prefix=API)  # Bloco 1 (Etapa 4): router antes não montado → 8 chamadas frontend em 404

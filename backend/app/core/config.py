@@ -94,6 +94,13 @@ class Settings(BaseSettings):
     AI_REQUIRE_SANITIZATION_FOR_EXTERNAL: bool = True
     # True = toda saída de IA é rascunho com revisão humana obrigatória (OAB).
     AI_REQUIRE_HITL: bool = True
+    # Gate anti-alucinação de citações (Fase 4 — citation_gate.py):
+    #   "bloquear"  → saída de IA com citação bloqueante (suspeita de alucinação,
+    #                 menção genérica ou julgado sem tribunal+data) NÃO pode ser
+    #                 aprovada no HITL sem override justificado do revisor;
+    #   "marcar"    → relatório de citações anexado/exposto ao revisor (default);
+    #   "desligado" → verificação de citações não roda nos fluxos de IA.
+    CITACOES_POLITICA: str = "marcar"
     # Ordem de preferência entre provedores ELEGÍVEIS (csv). A policy ainda
     # filtra por habilitação/chave e prioriza Anthropic em tarefas complexas.
     AI_PROVIDER_PRIORITY: str = "ollama,anthropic,groq"

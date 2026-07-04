@@ -165,11 +165,87 @@ async def atualizar_hitl(
     if log.user_id != cu.id and ROLE_LEVEL.get(cu.role.value, 0) < ROLE_LEVEL["socio"]:
         raise HTTPException(status_code=403, detail="Sem permissão para revisar este log")
 
+    # ── Gate antialucinação de citações (Fase 4 — citation_gate) ─────────────
+    # Na política "bloquear", output de IA com citação bloqueante (suspeita de
+    # alucinação / menção genérica / julgado sem tribunal+data) NÃO pode ser
+    # aprovado (revisado/aplicado) sem override explícito e justificado.
+    # "descartado" nunca é bloqueado. Verificação 100% local e determinística.
+    gate = None
+    if req.status in ("revisado", "aplicado") and (log.resposta or "").strip():
+        from app.services.citation_gate import validar_citacoes, politica_citacoes
+        try:
+            gate = await validar_citacoes(db, log.resposta)
+        except Exception:
+            # Fail-closed SÓ quando a política exige bloqueio: aprovar sem
+            # conseguir verificar contraria a própria política.
+            if politica_citacoes() == "bloquear":
+                raise HTTPException(
+                    status_code=503,
+                    detail="Verificação de citações indisponível — a política "
+                           "'bloquear' exige verificação antes da aprovação. "
+                           "Tente novamente.",
+                )
+    if gate is not None and gate.bloqueia_aprovacao:
+        if not req.override_citacoes:
+            raise HTTPException(status_code=409, detail={
+                "erro": "citacoes_nao_verificadas",
+                "mensagem": "Output de IA contém citações bloqueantes (política "
+                            "'bloquear'). Corrija o texto ou aprove com "
+                            "override_citacoes=true + justificativa_override.",
+                "politica": gate.politica,
+                "score": gate.score,
+                "motivos": gate.motivos,
+                "bloqueantes": [b.model_dump() for b in gate.bloqueantes[:10]],
+            })
+        justificativa = (req.justificativa_override or "").strip()
+        if len(justificativa) < 10:
+            raise HTTPException(
+                status_code=422,
+                detail="Override do gate de citações exige justificativa "
+                       "(mín. 10 caracteres) para auditoria.",
+            )
+        # Rastro de governança do override no próprio AILog (campo de
+        # rastreabilidade fontes_rag — sem migration; exposto no histórico).
+        log.fontes_rag = (log.fontes_rag or "") + (
+            f"\n[override_citacoes] por={cu.id} "
+            f"em={datetime.now(timezone.utc).isoformat()} "
+            f"bloqueantes={len(gate.bloqueantes)} "
+            f"justificativa={justificativa[:500]}"
+        )
+
     log.status_hitl = AIStatusHITL(req.status)
     log.revisado_por = cu.id
     log.revisado_em = datetime.now(timezone.utc)
     await db.commit()
     return {"detail": f"Status HITL: {req.status}"}
+
+
+@router.get("/logs/{log_id}/citacoes")
+async def citacoes_do_log(
+    log_id: str,
+    db: AsyncSession = Depends(get_db),
+    cu: User = Depends(get_current_user),
+):
+    """Relatório do gate de citações para o revisor HITL (governança).
+
+    Recomputado sob demanda a partir da resposta gravada (a verificação é
+    determinística e 100% local — não precisa de coluna extra no AILog).
+    """
+    log = (await db.execute(
+        select(AILog).where(AILog.id == log_id)
+    )).scalar_one_or_none()
+    if not log:
+        raise HTTPException(status_code=404, detail="Log não encontrado")
+    if log.user_id != cu.id and ROLE_LEVEL.get(cu.role.value, 0) < ROLE_LEVEL["socio"]:
+        raise HTTPException(status_code=403, detail="Sem permissão para este log")
+
+    from app.services.citation_gate import validar_citacoes
+    gate = await validar_citacoes(db, log.resposta or "")
+    overrides = [ln for ln in (log.fontes_rag or "").splitlines()
+                 if ln.startswith("[override_citacoes]")]
+    out = gate.model_dump()
+    out["overrides_registrados"] = overrides
+    return out
 
 
 # ═══ FEEDBACK DE RESPOSTA DA IA (feature #4 / migration 066) ══════════════════
