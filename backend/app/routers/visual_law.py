@@ -38,10 +38,10 @@ TEMPO_ANOS_PADRAO = 3.0
 
 
 class BreakevenRequest(BaseModel):
-    valor_causa: float = Field(gt=0)
+    valor_causa: float = Field(gt=0, le=1e12)
     prob_exito: float = Field(ge=0, le=1)
-    tempo_anos: Optional[float] = Field(default=None, gt=0)
-    tribunal: Optional[str] = None
+    tempo_anos: Optional[float] = Field(default=None, gt=0, le=50)
+    tribunal: Optional[str] = Field(default=None, max_length=120)
     custas_pct: float = Field(default=0.0, ge=0, le=100)
     honorarios_sucumbencia_pct: float = Field(default=0.0, ge=0, le=100)
     selic_anual: Optional[float] = Field(default=None, gt=0, le=1)
@@ -87,7 +87,7 @@ async def breakeven(
 
     # ── Selic (parâmetro explícito > BCB > fallback) ─────────────────────────
     if req.selic_anual is not None:
-        selic, selic_fonte = req.selic_anual, "fallback"
+        selic, selic_fonte = req.selic_anual, "usuario"
         memoria.append(f"Selic anual informada pelo usuário: {selic:.2%}.")
     else:
         selic_bcb = await _selic_anual_bcb()

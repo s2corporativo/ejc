@@ -17,6 +17,7 @@ logger = logging.getLogger("crawler_precedentes")
 
 SCON_URL = "https://scon.stj.jus.br/SCON/pesquisar.jsp"
 _TIMEOUT = 20.0
+_MAX_CORPO_BYTES = 2_000_000  # teto do HTML externo processado (~2 MB)
 
 # Blocos de ementa/documento no HTML do SCON (best-effort — layout público).
 _RE_DOC_BLOCO = re.compile(
@@ -94,7 +95,10 @@ class CrawlerPrecedentes:
                 "precedentes": [],
             }
 
-        corpo = resp.text or ""
+        # Limita o corpo processado (HTML externo não confiável): 2 MB bastam
+        # para a página de resultados; evita consumo de memória com respostas
+        # anômalas/maliciosas.
+        corpo = (resp.text or "")[:_MAX_CORPO_BYTES]
 
         # Sem resultados — resposta legítima do tribunal, não um mock.
         if _RE_NENHUM.search(corpo):

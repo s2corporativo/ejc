@@ -42,7 +42,8 @@ async def test_breakeven_matematica_basica(monkeypatch):
     assert r["vpl_litigio"] == round(vpl, 2)
     assert r["breakeven"] == r["vpl_litigio"] == r["sugestao_acordo"]
     assert r["comparativo"]["custo_do_tempo"] == round(esperado - custos - vpl, 2)
-    assert r["parametros"]["selic_fonte"] == "fallback"
+    # Selic informada pelo usuário → fonte própria (não "fallback" de referência).
+    assert r["parametros"]["selic_fonte"] == "usuario"
     assert any("VPL" in m for m in r["memoria_calculo"])
 
 

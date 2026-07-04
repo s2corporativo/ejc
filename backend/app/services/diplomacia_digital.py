@@ -73,8 +73,9 @@ class DiplomaciaDigital:
                 [{"role": "user", "content": prompt}], task_type="estrategia"
             )
         except Exception as e:
-            logger.error(f"[diplomacia] falha ao gerar dossiê: {e}")
-            return {"status": "erro", "mensagem": f"Falha na geração do dossiê: {e}"}
+            logger.exception("[diplomacia] falha ao gerar dossiê")
+            # Mensagem genérica ao caller (não vaza provedor/config); detalhe no log.
+            return {"status": "erro", "mensagem": "Falha na geração do dossiê pela IA."}
 
         return {
             "status": "success",
