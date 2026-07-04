@@ -21,6 +21,41 @@ SERIES = {
 
 _cache: dict[tuple, list] = {}   # cache em memória por (codigo, ini, fim)
 
+# ── Painel de taxas "ao vivo" (card taxas-bacen do ramo Bancário) ─────────────
+# Séries SGS oficiais: SELIC meta 432 (% a.a.) · CDI 12 (% a.d.) ·
+# TR 226 (% a.m.) · IPCA-15 7478 (% a.m.). Shape consumido por
+# frontend/src/pages/ramos/RamoBase.tsx (TaxasBacenView).
+SERIES_PAINEL = {
+    "selic_meta_aa":  {"codigo": 432,  "nome": "Meta SELIC (% a.a.)"},
+    "cdi_diario":     {"codigo": 12,   "nome": "CDI (% a.d.)"},
+    "tr_mensal":      {"codigo": 226,  "nome": "TR (% a.m.)"},
+    "ipca_15_mensal": {"codigo": 7478, "nome": "IPCA-15 (% a.m.)"},
+}
+
+
+async def painel_taxas() -> dict:
+    """Último valor divulgado de cada série do painel. Falha em uma série não
+    derruba as demais (valor=None ⇒ frontend mostra 'indisponível')."""
+    taxas: dict[str, dict] = {}
+    async with httpx.AsyncClient(timeout=10) as cli:
+        for chave, cfg in SERIES_PAINEL.items():
+            info: dict = {"serie_sgs": cfg["codigo"], "nome": cfg["nome"],
+                          "valor": None, "data": None}
+            try:
+                r = await cli.get(
+                    f"https://api.bcb.gov.br/dados/serie/bcdata.sgs."
+                    f"{cfg['codigo']}/dados/ultimos/1?formato=json"
+                )
+                r.raise_for_status()
+                item = r.json()[0]
+                info["valor"] = float(str(item["valor"]).replace(",", "."))
+                info["data"] = item["data"]
+            except Exception as e:      # rede/formato — degrada graciosamente
+                logger.warning("painel_taxas: série %s indisponível: %s",
+                               cfg["codigo"], e)
+            taxas[chave] = info
+    return taxas
+
 
 async def _buscar_serie(codigo: int, ini: date, fim: date) -> list[dict]:
     key = (codigo, ini.isoformat(), fim.isoformat())
