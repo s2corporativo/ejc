@@ -41,15 +41,10 @@ from app.services.ai_service import buscar_contexto_rag, _escopo_cliente_do_caso
 from app.services.citation_check import verificar_citacoes
 from app.services.document_format import padronizar_documento_juridico
 from app.services.sanitizer import sanitizar_pii
+from app.services import visual_law_theme as vlt
 
 logger = logging.getLogger("ejc.anexos")
 settings = get_settings()
-
-# Cor institucional do banner (aprox. do modelo do escritório).
-_BANNER = "#22506e"
-_BANNER_TEXTO = "#e8eef4"
-_TITULO_DOC = "#1f4e79"
-_RODAPE = "#6b7280"
 
 _LEGENDA_MAX = 240   # caracteres máximos de uma legenda de separador
 _OCR_MAX = 1600      # texto do documento enviado à IA (após sanitização)
@@ -195,35 +190,8 @@ async def gerar_legenda_ia(
 # ── HTML: capa, índice e folhas de separação ──────────────────────────────────
 
 def _css_base() -> str:
-    return f"""
-  @page {{ size: A4; margin: 0; }}
-  * {{ box-sizing: border-box; }}
-  body {{ margin: 0; font-family: "DejaVu Sans", Arial, sans-serif; color: #111827; }}
-  .sheet {{ position: relative; width: 210mm; min-height: 297mm; padding: 0 0 26mm 0;
-            page-break-after: always; }}
-  .banner {{ background: {_BANNER}; color: {_BANNER_TEXTO}; padding: 20mm 18mm 12mm 18mm;
-             text-align: center; }}
-  .banner-titulo {{ font-size: 15pt; font-weight: 800; letter-spacing: .2px; }}
-  .banner-sub {{ font-size: 10.5pt; margin-top: 6px; color: #cfdbe6; }}
-  .hero {{ text-align: center; padding: 62mm 22mm 0 22mm; }}
-  .hero-num {{ font-size: 46pt; font-weight: 800; color: {_TITULO_DOC}; letter-spacing: 1px; }}
-  .rule {{ width: 62%; margin: 14px auto 20px auto; border: 0; border-top: 3px solid {_TITULO_DOC}; }}
-  .hero-kicker {{ font-size: 14pt; font-weight: 800; color: #1f2937; text-transform: uppercase;
-                  letter-spacing: .4px; }}
-  .hero-legenda {{ font-size: 10.5pt; color: #4b5563; font-style: italic; margin: 12px auto 0 auto;
-                   max-width: 150mm; line-height: 1.5; }}
-  .indice-titulo {{ text-align: center; font-size: 12pt; font-weight: 800; color: #1f2937;
-                    text-transform: uppercase; margin: 6mm 0 5mm 0; }}
-  .indice {{ margin: 0 24mm; }}
-  .indice-linha {{ display: table; width: 100%; margin-bottom: 6px; font-size: 10.5pt; }}
-  .indice-doc {{ display: table-cell; width: 22mm; font-weight: 800; color: {_TITULO_DOC};
-                 white-space: nowrap; vertical-align: top; }}
-  .indice-desc {{ display: table-cell; color: #374151; vertical-align: top; }}
-  .rodape {{ position: absolute; bottom: 12mm; left: 0; right: 0; text-align: center;
-             font-size: 8.5pt; color: {_RODAPE}; }}
-  .img-full {{ display: block; margin: 12mm auto 0 auto; max-width: 174mm; max-height: 232mm;
-               object-fit: contain; }}
-"""
+    # Tema central Visual Law (dourado + logo De Paula Teixeira).
+    return vlt.css_tema()
 
 
 def _doc(css_extra: str, corpo: str) -> str:
@@ -238,15 +206,10 @@ def _esc(s: str) -> str:
 
 
 def _banner_html(ctx: ContextoAnexos) -> str:
-    sub = _esc(ctx.partes)
+    sub = ctx.partes
     if ctx.referencia:
-        sub += f" &mdash; {_esc(ctx.referencia)}"
-    return (
-        '<div class="banner">'
-        f'<div class="banner-titulo">{_esc(ctx.titulo_acao)}</div>'
-        f'<div class="banner-sub">{sub}</div>'
-        "</div>"
-    )
+        sub += f" — {ctx.referencia}"
+    return vlt.render_banner(ctx.titulo_acao, sub)
 
 
 def cover_html(ctx: ContextoAnexos, itens: list[ItemAnexo]) -> str:
@@ -262,11 +225,10 @@ def cover_html(ctx: ContextoAnexos, itens: list[ItemAnexo]) -> str:
     corpo = (
         '<div class="sheet">'
         f"{_banner_html(ctx)}"
-        '<div class="hero"><div class="hero-num" style="font-size:40pt">ANEXOS</div>'
-        '<hr class="rule"></div>'
+        f"{vlt.render_capa('ANEXOS', tamanho_pt=40)}"
         f'<div class="indice-titulo">Índice de Documentos</div>'
         f'<div class="indice">{linhas}</div>'
-        f'<div class="rodape">{_esc(ctx.rodape)}</div>'
+        f"{vlt.render_rodape(ctx.rodape)}"
         "</div>"
     )
     return _doc("", corpo)
@@ -274,19 +236,11 @@ def cover_html(ctx: ContextoAnexos, itens: list[ItemAnexo]) -> str:
 
 def separador_html(ctx: ContextoAnexos, item: ItemAnexo) -> str:
     """Folha de separação de um documento: banner + 'DOC. 0X' + título + legenda."""
-    legenda = ""
-    if item.legenda:
-        legenda = f'<div class="hero-legenda">{_esc(item.legenda)}</div>'
     corpo = (
         '<div class="sheet">'
         f"{_banner_html(ctx)}"
-        '<div class="hero">'
-        f'<div class="hero-num">DOC. {item.ordem:02d}</div>'
-        '<hr class="rule">'
-        f'<div class="hero-kicker">{_esc(item.titulo)}</div>'
-        f"{legenda}"
-        "</div>"
-        f'<div class="rodape">{_esc(ctx.rodape)}</div>'
+        f"{vlt.render_capa(f'DOC. {item.ordem:02d}', item.titulo, item.legenda)}"
+        f"{vlt.render_rodape(ctx.rodape)}"
         "</div>"
     )
     return _doc("", corpo)
@@ -296,7 +250,7 @@ def _imagem_html(ctx: ContextoAnexos, item: ItemAnexo, data_uri: str) -> str:
     corpo = (
         '<div class="sheet">'
         f'<img class="img-full" src="{data_uri}" alt="Doc. {item.ordem:02d}">'
-        f'<div class="rodape">Doc. {item.ordem:02d} &mdash; {_esc(ctx.rodape)}</div>'
+        f"{vlt.render_rodape(f'Doc. {item.ordem:02d} — {ctx.rodape}')}"
         "</div>"
     )
     return _doc("", corpo)

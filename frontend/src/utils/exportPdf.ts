@@ -43,11 +43,15 @@ export function exportPdf(
       background: #fff;
     }
     .letterhead {
-      border-bottom: 3px solid #0f172a;
+      border-bottom: 3px solid #C9A227;
       padding-bottom: 10px;
       margin-bottom: 14px;
+      display: flex;
+      align-items: center;
+      gap: 12px;
     }
-    .brand { font-size: 17px; font-weight: 800; color: #111827; }
+    .brand-logo { height: 36px; }
+    .brand { font-size: 17px; font-weight: 800; color: #6F5711; }
     .sub { font-size: 10px; color: #6b7280; margin-top: 3px; }
     .cover {
       border: 1px solid #dbe3ef;
@@ -65,10 +69,10 @@ export function exportPdf(
     }
     h1 { font-size: 18px; color: #111827; margin: 0; line-height: 1.25; }
     .review {
-      border: 1px solid #c7d2fe;
+      border: 1px solid #e8d9a0;
       border-left: 4px solid #C9A227;
-      background: #eef2ff;
-      color: #3730a3;
+      background: #FBF7EA;
+      color: #6F5711;
       padding: 8px 10px;
       border-radius: 8px;
       margin-bottom: 12px;
@@ -76,7 +80,7 @@ export function exportPdf(
     }
     table { width: 100%; border-collapse: collapse; page-break-inside: auto; }
     th {
-      background: #0f172a;
+      background: #6F5711;
       color: #fff;
       padding: 7px 8px;
       text-align: left;
@@ -85,14 +89,18 @@ export function exportPdf(
       font-weight: 800;
     }
     td { padding: 6px 8px; border-bottom: 1px solid #e5e7eb; vertical-align: top; }
-    tr:nth-child(even) td { background: #f8fafc; }
+    tr:nth-child(even) td { background: #F7F1DC; }
     .footer { margin-top: 18px; border-top: 1px solid #e5e7eb; padding-top: 8px; color: #6b7280; font-size: 9px; }
   </style>
 </head>
 <body>
   <div class="letterhead">
-    <div class="brand">De Paula Teixeira Advogados Associados</div>
-    <div class="sub">Sistema EJC | Relatorio gerado em ${exportedAt}</div>
+    <img class="brand-logo" src="${window.location.origin}/brand/de-paula-teixeira-logo.jpg"
+         alt="" onerror="this.style.display='none'" />
+    <div>
+      <div class="brand">De Paula Teixeira Advogados Associados</div>
+      <div class="sub">Sistema EJC | Relatorio gerado em ${exportedAt}</div>
+    </div>
   </div>
   <section class="cover">
     <div class="kicker">Relatorio | Padrao Visual Law EJC</div>
