@@ -1,17 +1,17 @@
 # ── Deploy manual do EJC no VPS ───────────────────────────────────────────────
 # Disparo: manual (workflow_dispatch), a partir da main.
-# Fluxo: sync do código para /opt/ejc via rsync/SSH → scripts/deploy_vps_safe.sh
-# (backup → build backend+frontend → health-check → rollback automático em falha).
+# Fluxo: probe de autenticação SSH → sync do código para /opt/ejc via rsync →
+# scripts/deploy_vps_safe.sh (backup → build → health-check → rollback em falha).
 #
-# Secrets necessários (Settings → Secrets and variables → Actions):
-#   VPS_HOST      — IP ou hostname do VPS
-#   VPS_USER      — usuário SSH (ex.: root ou usuário de deploy)
-#   VPS_PASSWORD  — senha SSH (recomendado migrar para chave no futuro)
+# Secrets (Settings → Secrets and variables → Actions):
+#   VPS_HOST      — IP ou hostname do VPS (obrigatório)
+#   VPS_USER      — usuário SSH (obrigatório; ex.: root)
+#   VPS_SSH_KEY   — chave PRIVADA OpenSSH (recomendado; tem prioridade)
+#   VPS_PASSWORD  — senha SSH (alternativa à chave)
 #   VPS_PORT      — opcional (default 22)
 #
 # Segurança: o rsync NUNCA toca .env, uploads/, backups/ do servidor e não usa
-# --delete — nada é removido em /opt/ejc. Migrations NÃO rodam por padrão
-# (RUN_MIGRATIONS=0); só habilite o input com migração revisada.
+# --delete. Migrations NÃO rodam por padrão (input run_migrations).
 name: Deploy VPS
 
 on:
@@ -26,6 +26,12 @@ concurrency:
   group: deploy-vps
   cancel-in-progress: false
 
+env:
+  SSHPASS: ${{ secrets.VPS_PASSWORD }}
+  VPS_HOST: ${{ secrets.VPS_HOST }}
+  VPS_USER: ${{ secrets.VPS_USER }}
+  VPS_PORT: ${{ secrets.VPS_PORT }}
+
 jobs:
   deploy:
     runs-on: ubuntu-latest
@@ -33,19 +39,51 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
+      - name: Validar secrets
+        env:
+          VPS_SSH_KEY: ${{ secrets.VPS_SSH_KEY }}
+        run: |
+          faltando=""
+          [ -n "$VPS_HOST" ] || faltando="$faltando VPS_HOST"
+          [ -n "$VPS_USER" ] || faltando="$faltando VPS_USER"
+          if [ -z "$VPS_SSH_KEY" ] && [ -z "$SSHPASS" ]; then
+            faltando="$faltando (VPS_SSH_KEY ou VPS_PASSWORD)"
+          fi
+          if [ -n "$faltando" ]; then
+            echo "::error::Secrets ausentes:$faltando — crie em Settings → Secrets and variables → Actions."
+            exit 1
+          fi
+
       - name: Instalar sshpass e rsync
         run: sudo apt-get update -qq && sudo apt-get install -y -qq sshpass rsync
 
-      - name: Sincronizar código para /opt/ejc
+      - name: Preparar autenticação SSH (chave tem prioridade sobre senha)
         env:
-          SSHPASS: ${{ secrets.VPS_PASSWORD }}
-          VPS_HOST: ${{ secrets.VPS_HOST }}
-          VPS_USER: ${{ secrets.VPS_USER }}
-          VPS_PORT: ${{ secrets.VPS_PORT }}
+          VPS_SSH_KEY: ${{ secrets.VPS_SSH_KEY }}
         run: |
           PORT="${VPS_PORT:-22}"
+          mkdir -p ~/.ssh && chmod 700 ~/.ssh
+          if [ -n "$VPS_SSH_KEY" ]; then
+            printf '%s\n' "$VPS_SSH_KEY" > ~/.ssh/deploy_key
+            chmod 600 ~/.ssh/deploy_key
+            echo "RSH=ssh -i $HOME/.ssh/deploy_key -o IdentitiesOnly=yes -o StrictHostKeyChecking=accept-new -p ${PORT}" >> "$GITHUB_ENV"
+            echo "Autenticação: chave SSH"
+          else
+            echo "RSH=sshpass -e ssh -o PreferredAuthentications=password,keyboard-interactive -o StrictHostKeyChecking=accept-new -p ${PORT}" >> "$GITHUB_ENV"
+            echo "Autenticação: senha (sshpass)"
+          fi
+
+      - name: Testar conexão SSH (probe)
+        run: |
+          if ! ${RSH} "${VPS_USER}@${VPS_HOST}" "echo 'SSH ok:' \$(hostname)"; then
+            echo "::error::Autenticação SSH recusada pelo VPS. Verifique: (1) VPS_USER e VPS_PASSWORD exatos — sem espaço ou quebra de linha ao colar o secret; (2) se o sshd do VPS permite senha (PasswordAuthentication yes e PermitRootLogin yes em /etc/ssh/sshd_config) — se o servidor for só-chave, crie o secret VPS_SSH_KEY com a chave privada; (3) VPS_HOST/VPS_PORT corretos."
+            exit 1
+          fi
+
+      - name: Sincronizar código para /opt/ejc
+        run: |
           rsync -az --stats \
-            -e "sshpass -e ssh -o StrictHostKeyChecking=accept-new -p ${PORT}" \
+            -e "${RSH}" \
             --exclude '.git/' \
             --exclude '.env' --exclude '**/.env' --exclude '*.env' \
             --exclude 'uploads/' --exclude 'backups/' \
@@ -55,15 +93,9 @@ jobs:
 
       - name: Deploy seguro (backup → build → health-check → rollback em falha)
         env:
-          SSHPASS: ${{ secrets.VPS_PASSWORD }}
-          VPS_HOST: ${{ secrets.VPS_HOST }}
-          VPS_USER: ${{ secrets.VPS_USER }}
-          VPS_PORT: ${{ secrets.VPS_PORT }}
           RUN_MIGRATIONS: ${{ inputs.run_migrations && '1' || '0' }}
         run: |
-          PORT="${VPS_PORT:-22}"
-          sshpass -e ssh -o StrictHostKeyChecking=accept-new -p "${PORT}" \
-            "${VPS_USER}@${VPS_HOST}" \
+          ${RSH} "${VPS_USER}@${VPS_HOST}" \
             "cd /opt/ejc && RUN_MIGRATIONS=${RUN_MIGRATIONS} bash scripts/deploy_vps_safe.sh"
 
       - name: Verificação pública pós-deploy
