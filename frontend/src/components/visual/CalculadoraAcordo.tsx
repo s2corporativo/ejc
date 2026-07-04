@@ -394,12 +394,16 @@ export default function CalculadoraAcordo({
           actions={
             <Badge
               tone={
-                resultado.parametros.selic_fonte === "bcb" ? "green" : "amber"
+                resultado.parametros.selic_fonte === "fallback"
+                  ? "amber"
+                  : "green"
               }
             >
               {resultado.parametros.selic_fonte === "bcb"
                 ? "Selic BCB"
-                : "Selic estimada"}{" "}
+                : resultado.parametros.selic_fonte === "usuario"
+                  ? "Selic informada por você"
+                  : "Selic estimada"}{" "}
               · {(resultado.parametros.selic_anual * 100).toFixed(2)}% a.a.
             </Badge>
           }

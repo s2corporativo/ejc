@@ -114,7 +114,7 @@ export interface BreakevenParametros {
   tempo_anos: number;
   tribunal: string | null;
   selic_anual: number;
-  selic_fonte: "bcb" | "fallback";
+  selic_fonte: "bcb" | "fallback" | "usuario";
   custas_pct: number;
   honorarios_sucumbencia_pct: number;
 }

@@ -20,8 +20,20 @@ interface Sugestao {
   tipo: string;
   descricao: string;
 }
+interface Amostra {
+  n: number;
+  distribuicao?: Record<string, number>;
+  taxa_exito?: number | null;
+  taxa_exito_com_acordo?: number | null;
+  taxa_improcedencia?: number | null;
+  amostra_suficiente?: boolean;
+}
 interface VeredutoResponse {
-  probabilidade_exito: number;
+  // null quando a amostra histórica é estatisticamente insuficiente —
+  // nesse caso o backend envia `aviso` e não deve exibir percentual.
+  probabilidade_exito: number | null;
+  aviso?: string | null;
+  amostra?: Amostra | null;
   teses_vitoriosas_similares: TeseSimilar[];
   jurisprudencia_suporte: JurisSuporte[];
   sugestoes_contextualizadas: Sugestao[];
@@ -128,20 +140,41 @@ export const VeredutoIAWithVictoryVault: React.FC = () => {
           </div>
         ) : (
           <>
-            <div className="card p-5">
-              <div className="mb-2 flex items-center justify-between">
-                <span className="eyebrow">Probabilidade de exito</span>
-                <span className="text-2xl font-semibold text-primary-700">
-                  {pct(result.probabilidade_exito)}
+            {result.probabilidade_exito == null ? (
+              <div className="card border border-amber-200 bg-amber-50 p-5">
+                <span className="eyebrow text-amber-700">
+                  Probabilidade de exito
                 </span>
+                <p className="mt-2 text-sm text-amber-800">
+                  {result.aviso ??
+                    "Amostra historica insuficiente para estimar a probabilidade de exito."}
+                </p>
               </div>
-              <div className="h-2 w-full overflow-hidden rounded-full bg-slate-100">
-                <div
-                  className="h-2 rounded-full bg-primary-600 transition-all"
-                  style={{ width: pct(result.probabilidade_exito) }}
-                />
+            ) : (
+              <div className="card p-5">
+                <div className="mb-2 flex items-center justify-between">
+                  <span className="eyebrow">Probabilidade de exito</span>
+                  <span className="text-2xl font-semibold text-primary-700">
+                    {pct(result.probabilidade_exito)}
+                  </span>
+                </div>
+                <div className="h-2 w-full overflow-hidden rounded-full bg-slate-100">
+                  <div
+                    className="h-2 rounded-full bg-primary-600 transition-all"
+                    style={{ width: pct(result.probabilidade_exito) }}
+                  />
+                </div>
+                {result.amostra && result.amostra.n > 0 && (
+                  <p className="mt-2 text-xs text-slate-400">
+                    Baseado em {result.amostra.n}{" "}
+                    {result.amostra.n === 1
+                      ? "caso encerrado"
+                      : "casos encerrados"}{" "}
+                    na area.
+                  </p>
+                )}
               </div>
-            </div>
+            )}
 
             {result.teses_vitoriosas_similares?.length > 0 && (
               <div className="card p-5">
