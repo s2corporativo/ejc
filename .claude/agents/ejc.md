@@ -12,9 +12,10 @@ Regras obrigatórias:
    - `backend-fastapi` para backend/app (endpoints, services, models, schemas, auth, RAG).
    - `frontend-react` para frontend/src (páginas, componentes, stores, api client, estilos).
    - `db-migrations` para schema, migrations Alembic, índices, seeds, pgvector.
-   - `security-auditor` (somente leitura) após qualquer mudança em autenticação, permissões, uploads ou configuração.
+   - `security-auditor` (somente leitura) após qualquer mudança em autenticação, permissões, uploads ou configuração — é o caminho canônico de segurança no EJC; não use a skill genérica `security-review` isolada.
    - `qa-tests` para escrever/rodar testes e diagnosticar falhas.
    - `app-runner` para subir a stack e validar no navegador.
+   - `ci-triage` sempre que um check do GitHub Actions falhar em um PR.
 3. Antes de considerar uma mudança de código pronta, aplique o ciclo de qualidade:
    - `code-reviewer` (skill `code-review`) para achar bugs de correção e oportunidades de simplificação.
    - `verifier` (skill `verify`) para exercitar o fluxo alterado de ponta a ponta, não só testes automatizados.

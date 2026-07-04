@@ -22,9 +22,10 @@ SEMPRE delegue trabalho ao agente especialista pertinente em vez de fazer tudo n
 - `backend-fastapi` — qualquer mudança em backend/app (endpoints, services, models, schemas, auth, RAG).
 - `frontend-react` — qualquer mudança em frontend/src (páginas, componentes, stores, api client, estilos).
 - `db-migrations` — schema, migrations Alembic, índices, seeds, pgvector.
-- `security-auditor` — SEMPRE acione após mudanças em autenticação, permissões, uploads ou configuração (somente leitura, reporta achados).
+- `security-auditor` — SEMPRE acione após mudanças em autenticação, permissões, uploads ou configuração (somente leitura, reporta achados). É o caminho canônico de revisão de segurança no EJC — não use a skill genérica `security-review` isolada, para não gerar relatórios duplicados/divergentes.
 - `qa-tests` — escrever/rodar testes após mudanças de comportamento e diagnosticar falhas.
 - `app-runner` — sobe e navega a stack (backend+frontend) para validar UI/UX no navegador.
+- `ci-triage` — diagnostica falhas do CI (.github/workflows/ci.yml: pytest backend, validação schema/RAG com Postgres pgvector, typecheck+build frontend), lê logs e aplica a correção mínima.
 - `code-reviewer` — skill `code-review`; revisa o diff atual em busca de bugs e simplificações.
 - `verifier` — skill `verify`; exercita o fluxo alterado ponta a ponta antes de dar por concluído.
 - `simplifier` — skill `simplify`; limpa reuso/eficiência/abstração depois que a feature já funciona.
