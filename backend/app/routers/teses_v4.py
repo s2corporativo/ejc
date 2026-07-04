@@ -70,12 +70,60 @@ async def listar_teses(
     return res.scalars().all()
 
 @router.get("/sugestao-ia")
-async def sugerir_teses_ia(contexto: str, db: AsyncSession = Depends(get_db)):
-    """Sugestão de teses pela IA integrada ao RAG (Seção 3.136)."""
-    from app.core.ai_brain import ai_gateway
+async def sugerir_teses_ia(
+    contexto: str = Query(..., min_length=3, max_length=12000),
+    db: AsyncSession = Depends(get_db),
+    cu: User = Depends(get_current_user),
+):
+    """Sugestão de teses pela IA integrada ao RAG (Seção 3.136).
+
+    Consolidado: gateway CENTRAL (app.services.ai_gateway) + sanitização LGPD
+    com abort em PII residual + AILog obrigatório (auditoria HITL).
+    """
+    from app.services import ai_gateway as gateway_central
+    from app.services.ai_guard import sanitizar_ou_abortar, registrar_ai_log
+    from app.models.ai_log import AITipoUso
+
+    contexto_limpo, pii = sanitizar_ou_abortar(contexto)
+
     # Busca teses similares no banco via RAG (simulado aqui)
     teses_existentes = await listar_teses(db=db)
     contexto_teses = "\n".join([f"- {t.titulo}: {t.descricao}" for t in teses_existentes[:5]])
-    
-    prompt = f"Com base no contexto do caso: {contexto}\n\nE nestas teses do escritório:\n{contexto_teses}\n\nSugira a melhor estratégia e novas teses."
-    return await ai_gateway.processar_demanda(prompt, tipo="juridico_profundo")
+
+    prompt = (
+        f"Com base no contexto do caso: {contexto_limpo}\n\n"
+        f"E nestas teses do escritório:\n{contexto_teses}\n\n"
+        "Sugira a melhor estratégia e novas teses. Não invente julgados/artigos; "
+        "não prometa resultado. Toda sugestão é rascunho sob revisão do advogado."
+    )
+    try:
+        resp = await gateway_central.chat(
+            [{"role": "user", "content": prompt}],
+            task_type="analise_juridica",
+        )
+    except Exception as e:
+        raise HTTPException(502, f"IA indisponível: {str(e)[:200]}")
+
+    log_id = await registrar_ai_log(
+        db,
+        user_id=cu.id,
+        tipo_uso=AITipoUso.analise_caso,
+        case_id=None,
+        prompt_sanitizado=prompt,
+        pii_removida=pii,
+        resposta=resp.texto,
+        modelo=f"{resp.provedor}/{resp.modelo}",
+        tokens_input=resp.input_tokens,
+        tokens_output=resp.output_tokens,
+    )
+
+    # Shape legado do processar_demanda preservado + campos de auditoria.
+    return {
+        "modelo_utilizado": f"{resp.provedor}/{resp.modelo}",
+        "tipo_demanda": "juridico_profundo",
+        "resposta": resp.texto,
+        "status": "sucesso",
+        "log_id": log_id,
+        "is_rascunho": True,
+        "aviso_hitl": "Rascunho sujeito à revisão humana (HITL obrigatório — OAB).",
+    }

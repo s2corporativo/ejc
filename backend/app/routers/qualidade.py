@@ -38,6 +38,18 @@ _SYS_ADVERSARIO = (
 )
 
 
+async def _log(db, cu, prompt_sanitizado: str, houve_pii: bool, resp) -> str:
+    """Auditoria: rastro obrigatório em ai_logs (HITL/LGPD)."""
+    from app.services.ai_guard import registrar_ai_log
+    from app.models.ai_log import AITipoUso
+    return await registrar_ai_log(
+        db, user_id=cu.id, tipo_uso=AITipoUso.outro, case_id=None,
+        prompt_sanitizado=prompt_sanitizado[:8000], pii_removida=houve_pii,
+        resposta=resp.texto, modelo=f"{resp.provedor}/{resp.modelo}",
+        tokens_input=resp.input_tokens, tokens_output=resp.output_tokens,
+    )
+
+
 class VerificarCitacoesReq(BaseModel):
     texto: str = Field(..., min_length=10, max_length=60000)
 
@@ -62,26 +74,30 @@ async def verificar(req: VerificarCitacoesReq, db: AsyncSession = Depends(get_db
 async def consistencia(req: ConsistenciaReq, db: AsyncSession = Depends(get_db),
                        cu: User = Depends(get_current_user)):
     """Analisa coerência interna da peça (pedidos × fatos, contradições)."""
-    limpo, _ = sanitizar_pii(req.texto)
+    limpo, houve_pii = sanitizar_pii(req.texto)
     resp = await ai_gateway.chat(
         messages=[{"role": "system", "content": _SYS_CONSIST},
                   {"role": "user", "content": limpo[:30000]}],
         task_type="auditoria_peca", temperature=0.2, max_tokens=1600,
     )
+    log_id = await _log(db, cu, limpo, houve_pii, resp)
     return {"analise": resp.texto, "modelo": f"{resp.provedor}/{resp.modelo}",
-            "is_draft": True, "aviso": _AVISO}
+            "is_draft": True, "is_rascunho": True, "aviso": _AVISO,
+            "aviso_hitl": _AVISO, "log_id": log_id}
 
 
 @router.post("/simular-adversario")
 async def simular_adversario(req: AdversarioReq, db: AsyncSession = Depends(get_db),
                              cu: User = Depends(get_current_user)):
     """Gera os contra-argumentos da parte contrária para preparar a defesa."""
-    limpo, _ = sanitizar_pii(req.tese)
+    limpo, houve_pii = sanitizar_pii(req.tese)
     ctx = f"Área: {req.area}\n\n" if req.area else ""
     resp = await ai_gateway.chat(
         messages=[{"role": "system", "content": _SYS_ADVERSARIO},
                   {"role": "user", "content": f"{ctx}TESE DO ESCRITÓRIO:\n{limpo}"}],
         task_type="estrategia", temperature=0.3, max_tokens=1600,
     )
+    log_id = await _log(db, cu, limpo, houve_pii, resp)
     return {"contra_argumentos": resp.texto, "modelo": f"{resp.provedor}/{resp.modelo}",
-            "is_draft": True, "aviso": _AVISO}
+            "is_draft": True, "is_rascunho": True, "aviso": _AVISO,
+            "aviso_hitl": _AVISO, "log_id": log_id}

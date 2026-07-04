@@ -47,8 +47,16 @@ def _ai_enabled() -> bool:
     return os.getenv("AI_ENABLED", "true").lower() == "true"
 
 
+def _bloquear_cliente_externo(cu: User) -> None:
+    """IA interna não é exposta ao portal do cliente (mesma regra do núcleo)."""
+    if str(getattr(cu, "role", "")) == "cliente_externo":
+        raise HTTPException(status.HTTP_403_FORBIDDEN,
+                            "Funções de IA internas não estão disponíveis no portal do cliente.")
+
+
 @router.get("/status")
 async def status_ia(cu: User = Depends(get_current_user)):
+    _bloquear_cliente_externo(cu)
     return {
         "ai_enabled": _ai_enabled(),
         "anthropic_configurado": bool(os.getenv("ANTHROPIC_API_KEY", "")),
@@ -67,6 +75,7 @@ async def executar_ia(
     db: AsyncSession = Depends(get_db),
     cu: User = Depends(get_current_user),
 ):
+    _bloquear_cliente_externo(cu)
     if not _ai_enabled():
         raise HTTPException(status.HTTP_503_SERVICE_UNAVAILABLE,
                             "Módulo de IA não habilitado. Defina AI_ENABLED=true no .env.")

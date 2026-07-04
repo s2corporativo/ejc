@@ -64,6 +64,48 @@ async def analisar(
         )
         if not resultado.get("ok"):
             raise HTTPException(422, resultado.get("erro", "Falha ao processar documento."))
+
+        # ── Núcleo Único de IA: o diagnóstico jurídico passa OBRIGATORIAMENTE
+        # pelo orchestrator (permissões, policy de provider, validação de
+        # citações, HITL e AILog). Os campos antigos do payload (extração
+        # estruturada, honorários, referências) são preservados; os campos do
+        # núcleo são ACRESCENTADOS — o frontend antigo continua funcionando.
+        texto_sanitizado = resultado.pop("_texto_sanitizado", "") or ""
+        if texto_sanitizado:
+            from app.services.ai.core.orchestrator import orchestrator
+            try:
+                nucleo = await orchestrator.run(
+                    db=db,
+                    user=current_user,
+                    task_type="document_analysis",
+                    domain="documents",
+                    mensagem=(
+                        "Analise juridicamente o documento abaixo (já sanitizado) e "
+                        "aponte natureza, riscos, providências e pontos de atenção "
+                        "para o advogado responsável.\n\nDOCUMENTO:\n"
+                        f"{texto_sanitizado}"
+                    ),
+                    usar_rag=True,
+                )
+                resultado["diagnostico_nucleo"] = nucleo.get("conteudo")
+                resultado["agente"] = nucleo.get("agente")
+                resultado["modelo_nucleo"] = nucleo.get("modelo")
+                resultado["provider"] = nucleo.get("provider")
+                resultado["fontes"] = nucleo.get("fontes", [])
+                resultado["citacoes"] = nucleo.get("citacoes", [])
+                resultado["log_id"] = nucleo.get("log_id")
+                resultado["is_rascunho"] = nucleo.get("is_rascunho", True)
+                resultado["aviso_hitl"] = nucleo.get("aviso_hitl")
+            except HTTPException as e:
+                # Núcleo pode abortar (422 PII residual / policy). A extração
+                # estruturada permanece útil — degrada com aviso, sem stack trace.
+                logger.warning(f"Núcleo IA indisponível para diagnóstico: {e.detail}")
+                resultado["diagnostico_nucleo"] = None
+                resultado["nucleo_aviso"] = str(e.detail)[:300]
+            except Exception as e:
+                logger.warning(f"Núcleo IA falhou no diagnóstico: {type(e).__name__}")
+                resultado["diagnostico_nucleo"] = None
+                resultado["nucleo_aviso"] = "Diagnóstico pelo núcleo de IA indisponível no momento."
         return resultado
     finally:
         try:

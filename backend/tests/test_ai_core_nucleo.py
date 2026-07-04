@@ -1,0 +1,494 @@
+"""Etapa 13 — Testes do Núcleo Único de IA (policy, gateway, providers, core).
+
+Todos os dados são FICTÍCIOS (CPF sintético 123.456.789-09, nomes inventados).
+Nenhum teste toca rede: providers são mockados; settings via monkeypatch nos
+ATRIBUTOS da instância cacheada de get_settings() (lru_cache).
+"""
+from __future__ import annotations
+
+from types import SimpleNamespace
+
+import pytest
+from fastapi import HTTPException
+
+from app.core.config import get_settings
+
+CPF_FAKE = "123.456.789-09"
+CNPJ_FAKE = "12.345.678/0001-99"
+EMAIL_FAKE = "maria.exemplo@teste-ficticio.com.br"
+
+
+# ── Fixtures ──────────────────────────────────────────────────────────────────
+
+@pytest.fixture
+def s(monkeypatch):
+    """Settings cacheada com baseline determinística p/ os testes do núcleo:
+    Anthropic habilitado c/ chave fake, Groq c/ chave fake, Ollama desligado."""
+    st = get_settings()
+    monkeypatch.setattr(st, "ANTHROPIC_ENABLED", True)
+    monkeypatch.setattr(st, "ANTHROPIC_API_KEY", "sk-ant-fake-para-testes")
+    monkeypatch.setattr(st, "GROQ_API_KEY", "gsk-fake-para-testes")
+    monkeypatch.setattr(st, "OLLAMA_ENABLED", False)
+    monkeypatch.setattr(st, "AI_EXTERNAL_PROVIDERS_ALLOWED", True)
+    monkeypatch.setattr(st, "AI_REQUIRE_SANITIZATION_FOR_EXTERNAL", True)
+    monkeypatch.setattr(st, "AI_PROVIDER_PRIORITY", "ollama,anthropic,groq")
+    monkeypatch.setattr(st, "AI_PROVIDER", "auto")
+    monkeypatch.setattr(st, "AI_REQUIRE_HITL", True)
+    return st
+
+
+def _providers(decisao) -> list[str]:
+    return [p for p, _ in decisao.provider_chain]
+
+
+# ══════════════════════════════════════════════════════════════════════════════
+# 1. AIProviderPolicy
+# ══════════════════════════════════════════════════════════════════════════════
+
+class TestAIProviderPolicy:
+    def test_anthropic_elegivel_com_chave_e_externos_permitidos(self, s):
+        from app.services.ai.provider_policy import AIProviderPolicy
+        d = AIProviderPolicy().avaliar("texto limpo sem dados pessoais", "analise_juridica")
+        assert d.permitido is True
+        assert "anthropic" in _providers(d)
+
+    def test_anthropic_inelegivel_sem_chave(self, s, monkeypatch):
+        from app.services.ai.provider_policy import AIProviderPolicy
+        monkeypatch.setattr(s, "ANTHROPIC_API_KEY", "")
+        d = AIProviderPolicy().avaliar("texto limpo", "analise_juridica")
+        assert "anthropic" not in _providers(d)
+
+    def test_externos_inelegiveis_com_flag_desligada(self, s, monkeypatch):
+        from app.services.ai.provider_policy import AIProviderPolicy
+        monkeypatch.setattr(s, "AI_EXTERNAL_PROVIDERS_ALLOWED", False)
+        d = AIProviderPolicy().avaliar("texto limpo", "analise_juridica")
+        assert "anthropic" not in _providers(d)
+        assert "groq" not in _providers(d)
+        # Sem Ollama local, nada resta → bloqueado com motivo seguro.
+        assert d.permitido is False
+        assert d.bloqueio_motivo
+
+    def test_pii_residual_remove_externos_e_bloqueia_sem_local(self, s, monkeypatch):
+        # Simula PII residual pós-sanitização (segunda barreira acusando).
+        from app.services.ai import provider_policy as pp
+        monkeypatch.setattr(pp, "validar_sem_pii", lambda t: ["CPF"])
+        texto = f"cliente fictício com CPF {CPF_FAKE} no caso"
+        d = pp.AIProviderPolicy().avaliar(texto, "analise_juridica")
+        assert d.permitido is False
+        assert d.provider_chain == []
+        assert "PII residual" in d.motivo
+        # Motivo de bloqueio SEGURO: nunca ecoa o texto/valores de PII.
+        assert CPF_FAKE not in (d.bloqueio_motivo or "")
+        assert texto not in (d.bloqueio_motivo or "")
+
+    def test_pii_residual_mantem_provider_local(self, s, monkeypatch):
+        from app.services.ai import provider_policy as pp
+        monkeypatch.setattr(s, "OLLAMA_ENABLED", True)
+        monkeypatch.setattr(pp, "validar_sem_pii", lambda t: ["CPF"])
+        d = pp.AIProviderPolicy().avaliar(f"texto com {CPF_FAKE}", "analise_juridica")
+        assert d.permitido is True
+        assert _providers(d) == ["ollama"]  # externos saíram da cadeia (LGPD)
+
+    def test_caminho_nao_sanitizado_com_texto_limpo_permite(self, s):
+        from app.services.ai.provider_policy import AIProviderPolicy
+        d = AIProviderPolicy().avaliar(
+            "consulta teórica sobre prescrição sem dados pessoais",
+            "analise_juridica",
+            ja_sanitizado=False,
+        )
+        assert d.permitido is True
+        assert d.sanitizar_antes is True  # destino externo exige sanitização
+
+    def test_tarefa_complexa_prioriza_anthropic(self, s, monkeypatch):
+        from app.services.ai.provider_policy import AIProviderPolicy
+        monkeypatch.setattr(s, "OLLAMA_ENABLED", True)
+        d = AIProviderPolicy().avaliar("texto limpo", "analise_juridica")
+        assert _providers(d)[0] == "anthropic"
+
+    def test_tarefa_economica_prioriza_local_barato(self, s, monkeypatch):
+        from app.services.ai.provider_policy import AIProviderPolicy
+        monkeypatch.setattr(s, "OLLAMA_ENABLED", True)
+        d = AIProviderPolicy().avaliar("texto limpo", "resumo")
+        assert _providers(d)[0] in ("ollama", "groq")
+        assert _providers(d)[0] == "ollama"  # prioridade ollama,anthropic,groq
+        # Sem Ollama, cai no Groq (custo ~zero) antes do Anthropic.
+        monkeypatch.setattr(s, "OLLAMA_ENABLED", False)
+        d2 = AIProviderPolicy().avaliar("texto limpo", "resumo")
+        assert _providers(d2)[0] == "groq"
+
+
+# ══════════════════════════════════════════════════════════════════════════════
+# 2. Barreira do gateway (_sanitizar_messages_externo + chat bloqueado)
+# ══════════════════════════════════════════════════════════════════════════════
+
+class TestGatewayBarreiraLGPD:
+    def test_sanitizar_messages_externo_remove_pii(self, s):
+        from app.services.ai_gateway import _sanitizar_messages_externo
+        messages = [
+            {"role": "system", "content": "Você é um assistente jurídico."},
+            {"role": "user", "content": f"CPF {CPF_FAKE}, CNPJ {CNPJ_FAKE}, e-mail {EMAIL_FAKE}"},
+        ]
+        limpos, residual = _sanitizar_messages_externo(messages)
+        assert residual == []
+        conteudo = " ".join(m["content"] for m in limpos)
+        assert CPF_FAKE not in conteudo
+        assert CNPJ_FAKE not in conteudo
+        assert EMAIL_FAKE not in conteudo
+        assert "[CPF]" in conteudo and "[CNPJ]" in conteudo and "[EMAIL]" in conteudo
+        # Não muta as mensagens originais.
+        assert CPF_FAKE in messages[1]["content"]
+
+    async def test_chat_bloqueia_cadeia_so_externa_com_pii_residual(self, s, monkeypatch):
+        from app.services import ai_gateway, sanitizer
+
+        # Segunda barreira acusa residual mesmo após sanitizar (simulado).
+        monkeypatch.setattr(sanitizer, "validar_sem_pii", lambda t: ["CPF"])
+
+        chamadas: list = []
+
+        async def _nao_chamar(*a, **kw):  # provider nunca deve ser tocado
+            chamadas.append(a)
+            raise AssertionError("provider externo foi chamado com PII residual")
+
+        monkeypatch.setattr(ai_gateway, "_chamar_provedor", _nao_chamar)
+
+        # Ollama OFF → cadeia de "resumo" fica só-externa (groq).
+        with pytest.raises(RuntimeError) as exc:
+            await ai_gateway.chat(
+                [{"role": "user", "content": f"resumir caso do CPF {CPF_FAKE}"}],
+                task_type="resumo",
+            )
+        msg = str(exc.value)
+        assert "dados pessoais" in msg
+        assert CPF_FAKE not in msg  # mensagem segura: não ecoa PII
+        assert chamadas == []       # nenhuma chamada de rede/provider
+
+
+# ══════════════════════════════════════════════════════════════════════════════
+# 3. _resolver_cadeia
+# ══════════════════════════════════════════════════════════════════════════════
+
+class TestResolverCadeia:
+    def test_analise_juridica_inclui_anthropic_na_ordem_de_prioridade(self, s):
+        from app.services.ai_gateway import _resolver_cadeia
+        cadeia = _resolver_cadeia("analise_juridica", None, None)
+        providers = [p for p, _ in cadeia]
+        assert "anthropic" in providers
+        # Ollama OFF → anthropic vem antes de groq (AI_PROVIDER_PRIORITY).
+        assert providers.index("anthropic") < providers.index("groq")
+        modelo_anthropic = dict(cadeia)["anthropic"]
+        assert modelo_anthropic == (s.ANTHROPIC_MODEL_COMPLEXO or s.ANTHROPIC_MODEL_RAPIDO)
+
+    def test_sem_externos_e_sem_ollama_cai_no_last_resort_groq(self, s, monkeypatch):
+        from app.services.ai_gateway import _resolver_cadeia
+        monkeypatch.setattr(s, "AI_EXTERNAL_PROVIDERS_ALLOWED", False)
+        monkeypatch.setattr(s, "OLLAMA_ENABLED", False)
+        cadeia = _resolver_cadeia("analise_juridica", None, None)
+        assert cadeia == [("groq", None)]
+
+
+# ══════════════════════════════════════════════════════════════════════════════
+# 4. anthropic_provider
+# ══════════════════════════════════════════════════════════════════════════════
+
+class _FakeAnthropicClient:
+    """Cliente fake que captura kwargs de messages.create — zero rede."""
+
+    def __init__(self, box: dict):
+        outer = self
+
+        class _Messages:
+            def create(self, **kwargs):
+                box.update(kwargs)
+                return SimpleNamespace(
+                    content=[SimpleNamespace(text="resposta fake")],
+                    usage=SimpleNamespace(input_tokens=7, output_tokens=3),
+                )
+
+        self.messages = _Messages()
+
+
+class TestAnthropicProvider:
+    async def test_chat_desabilitado_levanta_runtimeerror_sem_rede(self, s, monkeypatch):
+        from app.services.providers import anthropic_provider
+        monkeypatch.setattr(s, "ANTHROPIC_ENABLED", False)
+
+        def _nao_criar_client():
+            raise AssertionError("client não deveria ser criado com provider desabilitado")
+
+        monkeypatch.setattr(anthropic_provider, "_get_client", _nao_criar_client)
+        with pytest.raises(RuntimeError, match="desabilitado"):
+            await anthropic_provider.chat(
+                [{"role": "user", "content": "olá"}], None, 0.2, 100
+            )
+
+    async def test_health_false_sem_chave(self, s, monkeypatch):
+        from app.services.providers import anthropic_provider
+        monkeypatch.setattr(s, "ANTHROPIC_API_KEY", "")
+        monkeypatch.delenv("ANTHROPIC_API_KEY", raising=False)
+        assert await anthropic_provider.health() is False
+        # Com chave fake volta a True (ENABLED + chave).
+        monkeypatch.setattr(s, "ANTHROPIC_API_KEY", "sk-ant-fake")
+        assert await anthropic_provider.health() is True
+
+    async def test_teto_de_max_tokens_aplicado(self, s, monkeypatch):
+        from app.services.providers import anthropic_provider
+        monkeypatch.setattr(s, "ANTHROPIC_MAX_TOKENS", 500)
+        box: dict = {}
+        monkeypatch.setattr(anthropic_provider, "_get_client",
+                            lambda: _FakeAnthropicClient(box))
+
+        texto, usage = await anthropic_provider.chat(
+            [{"role": "system", "content": "instruções"},
+             {"role": "user", "content": "pergunta fictícia"}],
+            None, 0.2, 2000,  # pedido acima do teto
+        )
+        assert box["max_tokens"] == 500  # min(2000, 500)
+        assert texto == "resposta fake"
+        assert usage["input_tokens"] == 7 and usage["output_tokens"] == 3
+
+        # Pedido abaixo do teto passa intacto.
+        await anthropic_provider.chat(
+            [{"role": "user", "content": "outra pergunta"}], None, 0.2, 100
+        )
+        assert box["max_tokens"] == 100  # min(100, 500)
+
+
+# ══════════════════════════════════════════════════════════════════════════════
+# 5. intent_classifier
+# ══════════════════════════════════════════════════════════════════════════════
+
+class TestIntentClassifier:
+    def test_task_type_jurimetria(self):
+        from app.services.ai.core.intent_classifier import classify_intent
+        assert classify_intent("jurimetria").agente == "JurimetryAgent"
+
+    def test_task_type_legal_draft_exige_fonte(self):
+        from app.services.ai.core.intent_classifier import classify_intent
+        r = classify_intent("legal_draft")
+        assert r.agente == "LegalWritingAgent"
+        assert r.exige_fonte is True
+
+    def test_domain_licitacao(self):
+        from app.services.ai.core.intent_classifier import classify_intent
+        r = classify_intent("task_desconhecida", domain="licitacao")
+        assert r.agente == "LicitacaoComplianceAgent"
+
+    def test_keywords_na_mensagem_redigir_peticao(self):
+        from app.services.ai.core.intent_classifier import classify_intent
+        r = classify_intent("outra_coisa", None, "preciso redigir petição inicial fictícia")
+        assert r.agente == "LegalWritingAgent"
+
+    def test_fallback_case_agent(self):
+        from app.services.ai.core.intent_classifier import classify_intent
+        r = classify_intent("xyz_inexistente", None, "bom dia, tudo bem?")
+        assert r.agente == "CaseAgent"
+        assert r.precisa_caso is True
+
+
+# ══════════════════════════════════════════════════════════════════════════════
+# 6. response_validator
+# ══════════════════════════════════════════════════════════════════════════════
+
+class TestResponseValidator:
+    def test_detecta_promessas_de_resultado(self):
+        from app.services.ai.core.response_validator import detectar_promessa_resultado
+        assert detectar_promessa_resultado("Garantimos o êxito da ação trabalhista.")
+        assert detectar_promessa_resultado("Há 100% de chance de vitória neste caso.")
+
+    def test_ignora_texto_neutro(self):
+        from app.services.ai.core.response_validator import detectar_promessa_resultado
+        neutro = ("A análise indica riscos processuais moderados; recomenda-se "
+                  "reunir provas documentais antes do ajuizamento.")
+        assert detectar_promessa_resultado(neutro) == []
+
+    async def test_validar_sem_fontes_prefixa_sem_base_verificavel(self):
+        from app.services.ai.core import response_validator
+        r = await response_validator.validar(
+            None, "Resposta jurídica fictícia.", exige_fonte=True, fontes=[]
+        )
+        assert r["sem_base_verificavel"] is True
+        assert r["conteudo"].startswith("SEM BASE VERIFICÁVEL")
+        assert r["revisao_obrigatoria"] is True
+
+    async def test_validar_promessa_gera_alerta_sem_reescrever(self):
+        from app.services.ai.core import response_validator
+        texto = "Garantimos o êxito total do processo."
+        r = await response_validator.validar(None, texto, exige_fonte=False)
+        assert r["alertas"]
+        assert r["revisao_obrigatoria"] is True
+        assert texto in r["conteudo"]  # nunca reescreve — alerta p/ o revisor
+
+
+# ══════════════════════════════════════════════════════════════════════════════
+# 7. hitl_policy
+# ══════════════════════════════════════════════════════════════════════════════
+
+class TestHITLPolicy:
+    def test_aplicar_sempre_rascunho(self, s):
+        from app.services.ai.core import hitl_policy
+        r = hitl_policy.aplicar({"conteudo": "minuta fictícia"})
+        assert r["is_rascunho"] is True
+        assert r["status_hitl"] == "gerado"
+        assert r["aviso_hitl"]
+
+    def test_rascunho_mesmo_com_hitl_flag_desligada(self, s, monkeypatch):
+        from app.services.ai.core import hitl_policy
+        monkeypatch.setattr(s, "AI_REQUIRE_HITL", False)
+        r = hitl_policy.aplicar({"conteudo": "x"})
+        assert r["is_rascunho"] is True  # rótulo de rascunho é inegociável
+        assert r["status_hitl"] == "gerado"
+
+
+# ══════════════════════════════════════════════════════════════════════════════
+# 8. SingleAICoreOrchestrator (tudo mockado — sem rede, sem banco)
+# ══════════════════════════════════════════════════════════════════════════════
+
+@pytest.fixture
+def nucleo_mocks(s, monkeypatch):
+    """Mocks do pipeline: gateway.chat, context_builder e audit_logger.
+    Devolve um setter para controlar o texto 'gerado pelo modelo'."""
+    from app.services import ai_gateway
+    from app.services.ai.core import audit_logger, context_builder
+    from app.services.ai.core.context_builder import ContextoMontado
+
+    # Ollama ON p/ a policy permitir sem depender de sanitização externa.
+    monkeypatch.setattr(s, "OLLAMA_ENABLED", True)
+
+    estado = {"texto": "Análise estratégica fictícia, sem promessas."}
+
+    async def fake_montar_contexto(db, **kw):
+        return ContextoMontado()
+
+    async def fake_registrar(db, **kw):
+        return "log-fake"
+
+    async def fake_chat(messages, **kw):
+        return ai_gateway.GatewayResponse(
+            texto=estado["texto"],
+            modelo="modelo-fake",
+            provedor="ollama",
+            task_type=kw.get("task_type", ""),
+            input_tokens=10,
+            output_tokens=20,
+        )
+
+    monkeypatch.setattr(context_builder, "montar_contexto", fake_montar_contexto)
+    monkeypatch.setattr(audit_logger, "registrar", fake_registrar)
+    monkeypatch.setattr(ai_gateway, "chat", fake_chat)
+
+    def set_texto(t: str):
+        estado["texto"] = t
+
+    return set_texto
+
+
+def _user(role: str):
+    return SimpleNamespace(id="usuario-fake-1", role=role)
+
+
+class TestOrchestrator:
+    async def test_cliente_externo_bloqueado_403(self, nucleo_mocks):
+        from app.services.ai.core.orchestrator import orchestrator
+        with pytest.raises(HTTPException) as exc:
+            await orchestrator.run(
+                db=None, user=_user("cliente_externo"),
+                task_type="chat", mensagem="Qual o andamento do meu caso?",
+            )
+        assert exc.value.status_code == 403
+
+    async def test_advogado_bloqueado_em_agente_tecnico_403(self, nucleo_mocks):
+        from app.services.ai.core.orchestrator import orchestrator
+        with pytest.raises(HTTPException) as exc:
+            await orchestrator.run(
+                db=None, user=_user("advogado"),
+                task_type="saude_sistema", mensagem="diagnóstico geral do sistema",
+            )
+        assert exc.value.status_code == 403
+
+    async def test_fluxo_feliz_chat(self, nucleo_mocks):
+        from app.services.ai.core.orchestrator import orchestrator
+        r = await orchestrator.run(
+            db=None, user=_user("advogado"),
+            task_type="chat",
+            mensagem="Analise a estratégia geral de um caso trabalhista fictício.",
+        )
+        assert r["is_rascunho"] is True
+        assert r["aviso_hitl"]
+        assert r["agente"] == "CaseAgent"
+        assert r["modelo"] == "ollama/modelo-fake"
+        assert r["provider"] == "ollama"
+        assert r["log_id"] == "log-fake"
+        assert r["status_hitl"] == "gerado"
+        assert r["custo_estimado_brl"] == 0.0  # provedor local não fatura
+
+    async def test_promessa_do_modelo_gera_alerta_e_revisao(self, nucleo_mocks):
+        from app.services.ai.core.orchestrator import orchestrator
+        nucleo_mocks("Garantimos o êxito da causa com 100% de certeza.")
+        r = await orchestrator.run(
+            db=None, user=_user("advogado"),
+            task_type="chat", mensagem="Como fica o caso fictício?",
+        )
+        assert r["alertas"]
+        assert r["revisao_obrigatoria"] is True
+        assert r["is_rascunho"] is True
+
+
+# ══════════════════════════════════════════════════════════════════════════════
+# 9. Registries (agentes e skills)
+# ══════════════════════════════════════════════════════════════════════════════
+
+AGENTES_CANONICOS = {
+    "CaseAgent", "ProcessAgent", "DocumentAgent", "LegalWritingAgent",
+    "RAGResearchAgent", "JurimetryAgent", "FinanceAgent", "BankForensicsAgent",
+    "LicitacaoComplianceAgent", "ClientCommunicationAgent", "SystemHealthAgent",
+    "RepairAgent", "UIUXAgent", "SecurityLGPDOABAgent",
+}
+
+
+class TestRegistries:
+    def test_14_agentes_canonicos(self):
+        from app.services.ai.core.agent_registry import AGENT_REGISTRY
+        assert len(AGENT_REGISTRY) == 14
+        assert set(AGENT_REGISTRY.keys()) == AGENTES_CANONICOS
+        for nome, ag in AGENT_REGISTRY.items():
+            assert ag.nome == nome  # chave == nome canônico
+
+    def test_28_skills_registradas(self):
+        from app.services.ai.core.skill_registry import SKILL_REGISTRY
+        assert len(SKILL_REGISTRY) == 28
+
+    def test_skills_de_patch_nunca_automaticas(self):
+        from app.services.ai.core.skill_registry import SKILL_REGISTRY
+        assert SKILL_REGISTRY["apply_authorized_patch"].handler is None
+        assert SKILL_REGISTRY["rollback_patch"].handler is None
+
+    def test_listar_skills_nao_expoe_handlers(self):
+        from app.services.ai.core.skill_registry import SKILL_REGISTRY, listar_skills
+        skills = listar_skills()
+        assert len(skills) == 28
+        for item in skills:
+            assert "handler" not in item
+            assert not any(callable(v) for v in item.values())
+            assert isinstance(item["automatica"], bool)
+        por_nome = {i["nome"]: i for i in skills}
+        assert por_nome["apply_authorized_patch"]["automatica"] is False
+        assert por_nome["rollback_patch"]["automatica"] is False
+        assert por_nome["classify_intent"]["automatica"] is True
+        assert set(por_nome) == set(SKILL_REGISTRY)
+
+
+# ══════════════════════════════════════════════════════════════════════════════
+# 10. Router /ai/core (import + rotas presentes, sem subir servidor)
+# ══════════════════════════════════════════════════════════════════════════════
+
+class TestRouterAICore:
+    def test_rotas_do_nucleo_presentes(self):
+        from app.routers.ai_core import router
+        paths = {r.path for r in router.routes}
+        esperadas = {
+            "/ai/core/chat", "/ai/core/task", "/ai/core/analyze",
+            "/ai/core/generate", "/ai/core/report", "/ai/core/agents",
+            "/ai/core/skills", "/ai/core/status",
+        }
+        assert esperadas <= paths

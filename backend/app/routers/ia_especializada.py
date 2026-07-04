@@ -58,6 +58,9 @@ async def consultar(
     db: AsyncSession = Depends(get_db),
     cu: User = Depends(get_current_user),
 ):
+    from app.services.ai_guard import sanitizar_ou_abortar, registrar_ai_log
+    from app.models.ai_log import AITipoUso
+
     cfg = PERFIS.get(perfil)
     if not cfg:
         raise HTTPException(404, f"Perfil inválido. Use: {', '.join(PERFIS)}")
@@ -66,23 +69,42 @@ async def consultar(
     if len(pergunta) < 3:
         raise HTTPException(422, "Pergunta muito curta")
 
-    # contexto RAG (mesma base de conhecimento)
-    contexto = ""
+    # Sanitização LGPD com abort real em PII residual (segunda barreira).
+    pergunta_limpa, pii = sanitizar_ou_abortar(pergunta)
+
+    # contexto RAG (mesma base de conhecimento) — fontes estruturadas
+    fontes: list[dict] = []
     try:
         from app.services.ai_service import buscar_contexto_rag
-        contexto = await buscar_contexto_rag(db, pergunta) or ""
+        fontes = await buscar_contexto_rag(db, pergunta_limpa) or []
     except Exception:
-        contexto = ""
+        fontes = []
 
     sys = cfg["sys"]
-    if contexto:
-        sys += "\n\nContexto da base de conhecimento do escritório:\n" + contexto[:4000]
+    if fontes:
+        ctx_txt = "\n".join(
+            f"- {f.get('titulo') or ''}: {(f.get('conteudo') or '')[:300]}" for f in fontes
+        )
+        sys += "\n\nContexto da base de conhecimento do escritório:\n" + ctx_txt[:4000]
 
     resp = await ai_gateway.chat(
         messages=[{"role": "system", "content": sys},
-                  {"role": "user", "content": pergunta}],
+                  {"role": "user", "content": pergunta_limpa}],
         task_type=cfg["task"], temperature=0.18 if nivel in ("alto", "maximo") else 0.3, max_tokens=2600 if nivel == "maximo" else 1900,
         nivel_inteligencia=nivel,
     )
+
+    # Auditoria: rastro obrigatório em ai_logs (HITL/LGPD).
+    log_id = await registrar_ai_log(
+        db, user_id=cu.id, tipo_uso=AITipoUso.consulta_rag, case_id=None,
+        prompt_sanitizado=pergunta_limpa, pii_removida=pii,
+        resposta=resp.texto, modelo=f"{resp.provedor}/{resp.modelo}",
+        fontes_rag="; ".join(f.get("titulo") or "" for f in fontes) or None,
+        tokens_input=resp.input_tokens, tokens_output=resp.output_tokens,
+    )
     return {"perfil": perfil, "label": cfg["label"], "resposta": resp.texto,
-            "modelo": resp.modelo, "provedor": resp.provedor, "nivel_inteligencia": nivel}
+            "modelo": resp.modelo, "provedor": resp.provedor, "nivel_inteligencia": nivel,
+            "fontes": [{"titulo": f.get("titulo"), "categoria": f.get("categoria"),
+                        "fonte": f.get("fonte")} for f in fontes],
+            "log_id": log_id, "is_rascunho": True,
+            "aviso_hitl": "Rascunho sujeito à revisão humana (HITL obrigatório — OAB)."}

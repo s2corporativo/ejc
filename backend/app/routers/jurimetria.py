@@ -263,15 +263,38 @@ async def tendencias(
 
 
 @router.post("/predicao-exito")
-async def predicao_exito(payload: dict, cu: User = Depends(get_current_user)):
-    """Jurimetria Preditiva: Cruzamento de dados para prever êxito."""
-    from app.core.ai_brain import ai_brain
+async def predicao_exito(
+    payload: dict,
+    db: AsyncSession = Depends(get_db),
+    cu: User = Depends(get_current_user),
+):
+    """Jurimetria Preditiva: Cruzamento de dados para prever êxito.
+
+    Consolidado no NÚCLEO ÚNICO de IA (orchestrator, task_type=jurimetria):
+    sanitização LGPD, policy de provider, validação e AILog obrigatório.
+    """
+    from app.services.ai.core.orchestrator import orchestrator
+
     texto = payload.get("contexto")
+    if not (texto or "").strip():
+        raise HTTPException(422, "Envie o campo 'contexto' com a descrição do caso.")
     prompt = f"Analise a probabilidade de êxito para este caso: {texto}"
-    saida = await ai_brain.generate(prompt, "secundario")
+    res = await orchestrator.run(
+        db=db,
+        user=cu,
+        task_type="jurimetria",
+        domain="jurimetria",
+        mensagem=prompt,
+        case_id=payload.get("case_id"),
+    )
     return {
-        "resultado": saida,
+        "resultado": res.get("conteudo"),
         "aviso": "Estimativa preliminar sem garantia de resultado (OAB Prov. 205/2021). Requer validação do advogado responsável.",
         "is_estimativa": True,
+        "modelo": res.get("modelo"),
+        "provider": res.get("provider"),
+        "log_id": res.get("log_id"),
+        "is_rascunho": res.get("is_rascunho", True),
+        "aviso_hitl": res.get("aviso_hitl"),
     }
 

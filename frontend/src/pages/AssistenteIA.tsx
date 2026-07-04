@@ -231,9 +231,9 @@ export default function AssistenteIA() {
                   </ul>
                 </div>
               )}
-              {res.aviso && (
+              {(res.aviso || res.aviso_hitl) && (
                 <p className="text-xs text-warn-600 border-t border-bronze-pale pt-2">
-                  {res.aviso}
+                  {res.aviso || res.aviso_hitl}
                 </p>
               )}
               <button

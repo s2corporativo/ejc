@@ -2958,10 +2958,13 @@ function AnaliseContratoIA({ caseId }: { caseId: string }) {
     setCompLoading(true);
     setCompResult(null);
     try {
-      const prompt = `Compare os dois contratos abaixo identificando: 1) Cláusulas presentes em apenas um deles, 2) Divergências relevantes, 3) Qual é mais favorável ao contratado e por quê, 4) Riscos exclusivos de cada versão.\n\n=== CONTRATO A ===\n${texto.slice(0, 6000)}\n\n=== CONTRATO B ===\n${texto2.slice(0, 6000)}`;
+      // Prompt de comparação montado no servidor (modo "comparacao") —
+      // o cliente envia apenas os dois textos brutos.
       const { data } = await api.post("/ai/analisar-contrato", {
-        texto_contrato: prompt,
-        tipo_contrato: tipo + "_comparacao",
+        texto_contrato: texto,
+        texto_contrato_2: texto2,
+        modo: "comparacao",
+        tipo_contrato: tipo,
         case_id: caseId,
       });
       setCompResult(data);
@@ -3140,8 +3143,10 @@ function ResultadoContratoIA({ data }: { data: any }) {
           </div>
         </div>
       )}
-      {data.aviso && (
-        <p className="text-[11px] text-warn-700 mt-2 italic">{data.aviso}</p>
+      {(data.aviso || data.aviso_hitl) && (
+        <p className="text-[11px] text-warn-700 mt-2 italic">
+          {data.aviso || data.aviso_hitl}
+        </p>
       )}
     </div>
   );
