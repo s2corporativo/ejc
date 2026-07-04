@@ -71,7 +71,7 @@ async def listar_teses(
 
 @router.get("/sugestao-ia")
 async def sugerir_teses_ia(
-    contexto: str,
+    contexto: str = Query(..., min_length=3, max_length=12000),
     db: AsyncSession = Depends(get_db),
     cu: User = Depends(get_current_user),
 ):
