@@ -13,6 +13,7 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.database import get_db
+from app.core.rate_limit import rate_limit
 from app.core.security import get_current_user, ROLE_LEVEL
 from app.core.ownership import is_gestao
 from app.models.user import User
@@ -252,7 +253,7 @@ async def _itens_ambiental(db: AsyncSession, cu: User, desde: Optional[date],
     return itens
 
 
-@router.get("/radar")
+@router.get("/radar", dependencies=[Depends(rate_limit("compliance-radar", 15))])
 async def radar_compliance(
     fonte: Optional[str] = Query(None, description="diario_oficial|regulatorio|ambiental"),
     desde: Optional[date] = Query(None, description="Só itens a partir desta data (YYYY-MM-DD)"),

@@ -22,6 +22,7 @@ from app.models.bank_analysis import BankAnalysis, BankTransaction, BankAbusiveC
 from app.services.bank_statement import parse_extrato, detectar_abusivas
 from app.services import bank_report
 from app.core.ownership import verificar_acesso_caso, is_gestao
+from app.core.rate_limit import rate_limit
 import logging
 
 logger = logging.getLogger("ejc.bank_analysis")
@@ -241,7 +242,8 @@ def _montar_contexto_revisional(analise: dict, cobrancas: list[dict]) -> tuple[s
     return descricao_fatos, pedidos
 
 
-@router.post("/{analysis_id}/gerar-peca")
+@router.post("/{analysis_id}/gerar-peca",
+             dependencies=[Depends(rate_limit("bank-gerar-peca", 5))])
 async def gerar_peca(analysis_id: str, db: AsyncSession = Depends(get_db),
                      cu: User = Depends(get_current_user)):
     """Gera a MINUTA de uma ação revisional / repetição de indébito a partir das

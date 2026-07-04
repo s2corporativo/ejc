@@ -17,6 +17,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.database import get_db
 from app.core.config import get_settings
+from app.core.rate_limit import rate_limit
 from app.core.security import get_current_user, ROLE_LEVEL
 from app.models.user import User
 from app.models.document import Document
@@ -467,7 +468,8 @@ async def remover(
     return MsgResponse(detail="Documento removido")
 
 
-@router.post("/{doc_id}/classificar")
+@router.post("/{doc_id}/classificar",
+             dependencies=[Depends(rate_limit("doc-classificar", 15))])
 async def classificar_tipo_documento(
     doc_id: str,
     aplicar: bool = Query(
