@@ -360,7 +360,7 @@ export default function Jurimetria() {
                     </div>
                     <div className="h-1.5 bg-gray-100 rounded-full overflow-hidden">
                       <div
-                        className="h-full bg-indigo-500"
+                        className="h-full bg-primary-500"
                         style={{ width: `${r.pct ?? 0}%` }}
                       />
                     </div>
@@ -390,7 +390,7 @@ export default function Jurimetria() {
           rows={trib}
           label={(r) => r.tribunal || "—"}
           val={(r) => r.total ?? r.count ?? 0}
-          cor="bg-indigo-500"
+          cor="bg-primary-500"
         />
       </div>
 

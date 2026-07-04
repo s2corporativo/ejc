@@ -101,7 +101,7 @@ const RAMOS = [
     slug: "internacional",
     label: "Direito Internacional",
     icon: Globe,
-    color: "bg-indigo-50 text-indigo-700 border-indigo-200",
+    color: "bg-primary-50 text-primary-700 border-primary-200",
     desc: "Tratados, arbitragem, comércio exterior",
   },
   {
@@ -122,7 +122,7 @@ const RAMOS = [
     slug: "digital_lgpd",
     label: "Direito Digital e LGPD",
     icon: Database,
-    color: "bg-indigo-50 text-indigo-700 border-indigo-200",
+    color: "bg-primary-50 text-primary-700 border-primary-200",
     desc: "LGPD, DPO, contratos SaaS, startups, dados",
   },
   {

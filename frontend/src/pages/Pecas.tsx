@@ -390,7 +390,7 @@ export default function Pecas() {
                       <SearchCheck size={15} />
                     </button>
                     <button
-                      className="btn-ghost px-2 py-1 text-indigo-700"
+                      className="btn-ghost px-2 py-1 text-primary-700"
                       title="Validar juridicamente antes de finalizar"
                       onClick={() => validarPeca(p)}
                     >

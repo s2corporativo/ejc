@@ -84,7 +84,7 @@ const TIPO_CONFIG: Record<
   compromisso: {
     label: "Compromisso",
     icon: Calendar,
-    color: "text-indigo-600",
+    color: "text-primary-600",
   },
   diligencia: { label: "Diligência", icon: MapPin, color: "text-success-600" },
 };

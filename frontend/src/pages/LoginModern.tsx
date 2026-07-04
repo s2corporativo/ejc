@@ -49,27 +49,27 @@ export default function LoginModern() {
   };
 
   return (
-    <div className="min-h-screen overflow-hidden bg-slate-50 text-slate-950">
+    <div className="min-h-screen overflow-hidden bg-canvas text-slate-950">
       <div className="relative grid min-h-screen lg:grid-cols-[1fr_460px]">
-        <section className="relative hidden flex-col justify-between overflow-hidden bg-gradient-to-br from-primary-950 via-primary-900 to-ai-900 p-10 text-white lg:flex">
-          <div className="pointer-events-none absolute inset-0 bg-[radial-gradient(circle_at_20%_10%,rgba(129,140,248,.18),transparent_30rem),radial-gradient(circle_at_90%_90%,rgba(167,139,250,.14),transparent_26rem)]" />
+        <section className="relative hidden flex-col justify-between overflow-hidden bg-canvas p-10 text-slate-900 lg:flex">
+          <div className="pointer-events-none absolute inset-0 bg-[radial-gradient(circle_at_20%_10%,rgba(244,87,77,.10),transparent_30rem),radial-gradient(circle_at_90%_90%,rgba(247,146,86,.10),transparent_26rem)]" />
           <div className="relative flex items-center gap-3">
             <img
               src={BRAND_LOGO}
               alt="De Paula Teixeira Sociedade de Advogados"
-              className="brand-logo-img h-28 w-auto max-w-[360px] rounded-xl bg-white p-2"
+              className="brand-logo-img h-28 w-auto max-w-[360px] rounded-xl bg-white p-2 shadow-soft"
             />
           </div>
 
           <div className="relative max-w-2xl">
-            <div className="mb-4 inline-flex items-center gap-2 rounded-full border border-white/15 bg-white/10 px-3 py-1 text-xs font-semibold text-primary-100">
+            <div className="mb-4 inline-flex items-center gap-2 rounded-full border border-primary-200 bg-primary-50 px-3 py-1 text-xs font-semibold text-primary-700">
               <Sparkles className="h-3.5 w-3.5" />
               Plataforma juridica empresarial
             </div>
-            <h1 className="max-w-xl text-5xl font-semibold leading-tight tracking-tight text-white">
+            <h1 className="max-w-xl text-5xl font-semibold leading-tight tracking-tight text-slate-950">
               Gestao juridica com controle, produtividade e IA revisavel.
             </h1>
-            <p className="mt-5 max-w-xl text-base leading-7 text-primary-200/80">
+            <p className="mt-5 max-w-xl text-base leading-7 text-slate-500">
               Centralize casos, clientes, prazos, documentos, financeiro e
               producao juridica em um ambiente seguro para operacao
               profissional.
@@ -82,19 +82,19 @@ export default function LoginModern() {
               ].map(([title, desc]) => (
                 <div
                   key={title}
-                  className="rounded-2xl border border-white/10 bg-white/5 p-4 backdrop-blur-sm"
+                  className="rounded-2xl border border-slate-200/60 bg-white p-4 shadow-soft"
                 >
-                  <div className="text-sm font-semibold text-white">
+                  <div className="text-sm font-semibold text-slate-950">
                     {title}
                   </div>
-                  <div className="mt-1 text-xs text-primary-200/70">{desc}</div>
+                  <div className="mt-1 text-xs text-slate-400">{desc}</div>
                 </div>
               ))}
             </div>
           </div>
 
-          <div className="relative flex items-center gap-2 text-xs text-primary-200/70">
-            <ShieldCheck className="h-4 w-4 text-primary-300" />
+          <div className="relative flex items-center gap-2 text-xs text-slate-500">
+            <ShieldCheck className="h-4 w-4 text-primary-500" />
             Acesso restrito com trilha de auditoria e perfis de permissao.
           </div>
         </section>
@@ -109,7 +109,7 @@ export default function LoginModern() {
               />
             </div>
 
-            <div className="rounded-2xl border border-slate-200/60 bg-white p-8 shadow-xl shadow-slate-200/60">
+            <div className="rounded-2xl border border-slate-200/60 bg-white p-8 shadow-[0_8px_30px_rgba(16,24,40,.08)]">
               <div className="mb-7">
                 <div className="mb-3 flex h-11 w-11 items-center justify-center rounded-xl bg-primary-50 text-primary-600">
                   <LockKeyhole className="h-5 w-5" />

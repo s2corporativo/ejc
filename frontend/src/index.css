@@ -218,6 +218,23 @@
     @apply flex w-full items-center gap-2.5 rounded-lg px-3 py-2 text-left text-sm text-slate-700 transition-colors hover:bg-primary-50 hover:text-primary-700;
   }
 
+  /* ── Marca d'água da logomarca (decorativa, atrás do conteúdo) ──
+     mix-blend multiply faz o fundo branco do JPG sumir no canvas claro,
+     sobrando só o traço da balança/louros como fantasma. */
+  .brand-watermark {
+    position: fixed;
+    inset: 0;
+    z-index: 0;
+    pointer-events: none;
+    user-select: none;
+    background-image: url("/brand/de-paula-teixeira-logo.jpg");
+    background-repeat: no-repeat;
+    background-position: center;
+    background-size: min(60vw, 820px);
+    opacity: 0.04;
+    mix-blend-mode: multiply;
+  }
+
   /* ── Page header ──────────────────────────────────────────── */
   .page-section {
     @apply mb-6;
