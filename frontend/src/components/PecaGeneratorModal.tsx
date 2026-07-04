@@ -16,19 +16,7 @@ import {
   ChevronDown,
   ChevronUp,
 } from "lucide-react";
-
-const TIPOS_PECA: Record<string, string> = {
-  peticao_inicial: "Petição Inicial",
-  contestacao: "Contestação",
-  recurso_ordinario: "Recurso Ordinário",
-  agravo: "Agravo",
-  memorias: "Memoriais",
-  acordo: "Proposta de Acordo",
-  parecer: "Parecer Jurídico",
-  notificacao: "Notificação Extrajudicial",
-  contrato: "Minuta de Contrato",
-  impugnacao: "Impugnação",
-};
+import { PECA_TIPOS, pecaTipoLabel } from "../lib/pecaTypes";
 
 const AREAS: string[] = [
   "trabalhista",
@@ -256,7 +244,7 @@ export default function PecaGeneratorModal({
     const url = URL.createObjectURL(blob);
     const a = document.createElement("a");
     a.href = url;
-    a.download = `${TIPOS_PECA[tipoPeca] ?? "peca"}_EJC.txt`;
+    a.download = `${pecaTipoLabel(tipoPeca)}_EJC.txt`;
     a.click();
     URL.revokeObjectURL(url);
   };
@@ -284,9 +272,9 @@ export default function PecaGeneratorModal({
                     onChange={(e) => setTipoPeca(e.target.value)}
                     className="w-full border border-slate-200 rounded-lg px-3 py-2 text-sm text-slate-800 bg-white focus:outline-none focus:ring-2 focus:ring-ai-500"
                   >
-                    {Object.entries(TIPOS_PECA).map(([k, v]) => (
-                      <option key={k} value={k}>
-                        {v}
+                    {PECA_TIPOS.map((t) => (
+                      <option key={t.value} value={t.value}>
+                        {t.label}
                       </option>
                     ))}
                   </select>
@@ -389,7 +377,7 @@ export default function PecaGeneratorModal({
                     : "Erro na geração"}
                 </h3>
                 <p className="text-xs text-slate-400">
-                  {TIPOS_PECA[tipoPeca]} · {areaDireito}
+                  {pecaTipoLabel(tipoPeca)} · {areaDireito}
                 </p>
               </div>
 

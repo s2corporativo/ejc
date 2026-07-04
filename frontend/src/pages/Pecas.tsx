@@ -22,19 +22,7 @@ import {
   fmtDate,
 } from "../components/UI";
 import PecaGeneratorModal from "../components/PecaGeneratorModal";
-
-const TIPOS = [
-  "peticao_inicial",
-  "contestacao",
-  "recurso",
-  "contrarrazoes",
-  "parecer",
-  "contrato",
-  "procuracao",
-  "notificacao_extrajudicial",
-  "defesa_ambiental",
-  "outro",
-];
+import { PECA_TIPOS } from "../lib/pecaTypes";
 
 export default function Pecas() {
   const [data, setData] = useState<Paged<LegalDoc> | null>(null);
@@ -461,9 +449,9 @@ export default function Pecas() {
                   setForm({ ...form, tipo_peca: e.target.value })
                 }
               >
-                {TIPOS.map((t) => (
-                  <option key={t} value={t}>
-                    {t.replace(/_/g, " ")}
+                {PECA_TIPOS.map((t) => (
+                  <option key={t.value} value={t.value}>
+                    {t.label}
                   </option>
                 ))}
               </select>
