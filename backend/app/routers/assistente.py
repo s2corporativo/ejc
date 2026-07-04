@@ -61,16 +61,32 @@ async def chat_caso(case_id: str, req: ChatReq, db: AsyncSession = Depends(get_d
         f"=== CONTEXTO DO CASO ===\n{ctx}"
     )
     historico = []
+    houve_pii = False
     for m in req.mensagens[-12:]:
-        limpo, _ = sanitizar_pii(m.content)
+        limpo, teve = sanitizar_pii(m.content)
+        houve_pii = houve_pii or teve
         historico.append({"role": m.role, "content": limpo})
 
     resp = await ai_gateway.chat(
         messages=[{"role": "system", "content": system}] + historico,
         task_type="chat_rapido", temperature=0.3, max_tokens=1200,
     )
+
+    # Auditoria: toda interação de IA deixa rastro em ai_logs (HITL/LGPD).
+    from app.services.ai_guard import registrar_ai_log
+    from app.models.ai_log import AITipoUso
+    ultima_pergunta = next(
+        (m["content"] for m in reversed(historico) if m["role"] == "user"), ""
+    )
+    log_id = await registrar_ai_log(
+        db, user_id=cu.id, tipo_uso=AITipoUso.analise_caso, case_id=case_id,
+        prompt_sanitizado=ultima_pergunta, pii_removida=houve_pii,
+        resposta=resp.texto, modelo=f"{resp.provedor}/{resp.modelo}",
+        tokens_input=resp.input_tokens, tokens_output=resp.output_tokens,
+    )
     return {"resposta": resp.texto, "modelo": f"{resp.provedor}/{resp.modelo}",
-            "is_draft": True, "aviso": _AVISO}
+            "is_draft": True, "is_rascunho": True, "aviso": _AVISO,
+            "aviso_hitl": _AVISO, "log_id": log_id}
 
 
 # ── #67 Detector de prazos em documentos ─────────────────────────────────────
@@ -89,7 +105,7 @@ _SYS_PRAZOS = (
 async def detectar_prazos(req: PrazosReq, db: AsyncSession = Depends(get_db),
                           cu: User = Depends(get_current_user)):
     """Sugere prazos encontrados num documento — o advogado confirma e cria."""
-    limpo, _ = sanitizar_pii(req.texto)
+    limpo, houve_pii = sanitizar_pii(req.texto)
     resp = await ai_gateway.chat(
         messages=[{"role": "system", "content": _SYS_PRAZOS},
                   {"role": "user", "content": limpo[:30000]}],
@@ -105,8 +121,20 @@ async def detectar_prazos(req: PrazosReq, db: AsyncSession = Depends(get_db),
         except Exception:
             data = {"prazos": []}
     prazos = data.get("prazos", []) if isinstance(data, dict) else []
+
+    # Auditoria: toda interação de IA deixa rastro em ai_logs (HITL/LGPD).
+    from app.services.ai_guard import registrar_ai_log
+    from app.models.ai_log import AITipoUso
+    log_id = await registrar_ai_log(
+        db, user_id=cu.id, tipo_uso=AITipoUso.outro, case_id=None,
+        prompt_sanitizado=limpo[:8000], pii_removida=houve_pii,
+        resposta=txt[:8000], modelo=f"{resp.provedor}/{resp.modelo}",
+        tokens_input=resp.input_tokens, tokens_output=resp.output_tokens,
+    )
     return {
         "prazos": prazos, "total": len(prazos), "is_draft": True,
+        "is_rascunho": True, "log_id": log_id,
         "aviso": ("Prazos SUGERIDOS pela IA — o advogado confere e cria no módulo de prazos. "
                   "NÃO são criados automaticamente (IA não agenda prazo sozinha)."),
+        "aviso_hitl": "Rascunho sujeito à revisão humana (HITL obrigatório — OAB).",
     }

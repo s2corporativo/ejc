@@ -51,10 +51,32 @@ async def executar_prompt(
     db: AsyncSession = Depends(get_db), 
     cu: User = Depends(get_current_user)
 ):
-    from app.core.ai_brain import ai_gateway
+    # Consolidado no NÚCLEO ÚNICO de IA: sanitização LGPD (abort em PII
+    # residual), policy de provider, validação da resposta, HITL e AILog.
+    from app.services.ai.core.orchestrator import orchestrator
+
     p = await db.get(PromptJuridico, prompt_id)
     if not p:
         raise HTTPException(status_code=404, detail="Prompt não encontrado")
-    
+
     full_prompt = f"{p.conteudo}\n\nCONTEXTO:\n{contexto}"
-    return await ai_gateway.processar_demanda(full_prompt, tipo=p.categoria.lower())
+    res = await orchestrator.run(
+        db=db,
+        user=cu,
+        task_type="chat",
+        domain=None,
+        mensagem=full_prompt,
+        usar_rag=False,
+    )
+
+    # Shape legado preservado ({modelo_utilizado, tipo_demanda, resposta, status})
+    # + campos do núcleo acrescentados (log_id, aviso_hitl, is_rascunho).
+    return {
+        "modelo_utilizado": res.get("modelo"),
+        "tipo_demanda": str(getattr(p.categoria, "value", p.categoria) or "").lower(),
+        "resposta": res.get("conteudo"),
+        "status": "sucesso",
+        "log_id": res.get("log_id"),
+        "is_rascunho": res.get("is_rascunho", True),
+        "aviso_hitl": res.get("aviso_hitl"),
+    }

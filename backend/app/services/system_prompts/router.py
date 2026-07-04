@@ -1,14 +1,16 @@
 """Router de modelos/prompts por tarefa. Critério: qualidade mínima × custo × velocidade.
 CUSTO BAIXO: Groq (grátis) p/ tarefas simples; Claude Haiku (barato) p/ o resto;
 Claude COMPLEXO via env (default Haiku — suba para sonnet quando quiser mais qualidade)."""
-import os
 from enum import Enum
 from dataclasses import dataclass
 
-# Modelos vêm do .env (configuráveis sem deploy). Defaults econômicos.
-_RAPIDO = os.getenv("ANTHROPIC_MODEL_RAPIDO", "claude-haiku-4-5-20251001")
+from app.core.config import get_settings
+
+# Modelos vêm da Settings/.env (configuráveis sem deploy). Defaults econômicos.
+_settings = get_settings()
+_RAPIDO = _settings.ANTHROPIC_MODEL_RAPIDO
 # Para custo baixo, COMPLEXO também default Haiku; defina claude-sonnet-4-6 no .env p/ máxima qualidade.
-_COMPLEXO = os.getenv("ANTHROPIC_MODEL_COMPLEXO", _RAPIDO)
+_COMPLEXO = _settings.ANTHROPIC_MODEL_COMPLEXO or _RAPIDO
 _GROQ = "llama-3.3-70b-versatile"
 
 

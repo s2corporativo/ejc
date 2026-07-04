@@ -251,12 +251,15 @@ export default function Pecas() {
     setAuditando(true);
     setAuditoria(null);
     try {
-      const full = await api.get(`/legal-docs/${doc.id}`);
+      // Envia apenas o id — o backend busca o conteúdo com RBAC/ownership.
       const { data } = await api.post("/ai/auditar-peca", {
-        conteudo: full.data.conteudo,
+        peca_id: doc.id,
         tipo_peca: doc.tipo_peca,
       });
-      setAuditoria(data.resposta + "\n\n" + data.aviso);
+      const aviso = data.aviso || data.aviso_hitl;
+      setAuditoria(
+        (data.resposta ?? data.conteudo) + (aviso ? "\n\n" + aviso : ""),
+      );
     } catch (e: any) {
       toast.error(e.response?.data?.detail || "IA indisponível");
     } finally {

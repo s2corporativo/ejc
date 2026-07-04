@@ -675,18 +675,50 @@ FORMATO (obrigatório):
 Use exclusivamente as [FONTES] fornecidas para qualquer afirmação legal."""
 
 
+SYSTEM_COMPARACAO_CONTRATOS = """Você é um advogado contratualista brasileiro comparando DUAS minutas de contrato.
+Produza um RELATÓRIO DE COMPARAÇÃO CONTRATUAL, cláusula a cláusula, para apoio
+à decisão do advogado.
+
+REGRAS INVIOLÁVEIS:
+- NUNCA invente dispositivo de lei, súmula ou número de artigo. Use APENAS o que
+  estiver em [FONTES]; se não houver base, escreva "verificar base legal".
+- Cite o trecho/cláusula de CADA contrato ao comparar cada ponto.
+- NÃO prometa resultado nem afirme nulidade em definitivo — diga "possivelmente
+  abusiva/questionável" e remeta à análise do advogado.
+
+FORMATO (obrigatório):
+## Resumo dos objetos (Contrato 1 × Contrato 2)
+## 🔍 Comparação cláusula a cláusula
+(para cada tema — objeto, preço/reajuste, prazo, rescisão, multas, garantias,
+foro, LGPD, responsabilidades: qual contrato é MAIS FAVORÁVEL e POR QUÊ,
+citando os trechos)
+## ⚠️ Riscos exclusivos de cada contrato
+## ⚖️ Conclusão comparativa
+(qual minuta tende a ser mais favorável, com ressalvas — decisão final é do advogado)
+
+Use exclusivamente as [FONTES] fornecidas para qualquer afirmação legal."""
+
+
 async def analisar_contrato(
     db: AsyncSession, user_id: str, texto_contrato: str,
     tipo_contrato: str = "geral",
     nomes_proteger: list[str] | None = None,
     case_id: str | None = None,
+    texto_contrato_2: str | None = None,
+    modo: str | None = None,
 ) -> dict:
     """Análise de contrato (Bloco E) — sanitiza → RAG (CC/CDC) → Groq → log HITL.
 
+    modo="comparacao" + texto_contrato_2: compara as duas minutas cláusula a
+    cláusula (qual é mais favorável e por quê), mesmo fluxo LGPD/HITL.
     Saída é MINUTA de análise: o advogado revisa antes de qualquer uso.
     """
     if not settings.AI_ENABLED:
         return {"erro": "IA desabilitada na configuração"}
+
+    comparacao = (modo or "").strip().lower() == "comparacao" and bool(
+        (texto_contrato_2 or "").strip()
+    )
 
     # 1) Sanitização LGPD (dupla barreira, como nas demais funções)
     texto, pii = sanitizar_pii(texto_contrato, nomes_proteger or [])
@@ -695,6 +727,15 @@ async def analisar_contrato(
         logger.error(f"PII residual após sanitização (contrato): {residual}")
         return {"erro": "Não foi possível sanitizar dados pessoais com segurança."}
 
+    texto2 = ""
+    if comparacao:
+        texto2, pii2 = sanitizar_pii(texto_contrato_2 or "", nomes_proteger or [])
+        residual2 = validar_sem_pii(texto2)
+        if residual2:
+            logger.error(f"PII residual após sanitização (contrato 2): {residual2}")
+            return {"erro": "Não foi possível sanitizar dados pessoais com segurança."}
+        pii = pii or pii2
+
     # 2) Recuperação no RAG — legislação relevante (CC, CDC) por termos do contrato
     consulta = f"{tipo_contrato} contrato cláusula abusiva rescisão multa garantia"
     fontes = await buscar_contexto_rag(
@@ -702,20 +743,30 @@ async def analisar_contrato(
     )
     bloco_fontes = _formatar_fontes(fontes)
 
-    user_msg = (
-        f"Tipo de contrato: {tipo_contrato}\n\n{bloco_fontes}\n\n"
-        f"CONTRATO (sanitizado):\n{texto[:12000]}"
-    )
+    if comparacao:
+        user_msg = (
+            f"Tipo de contrato: {tipo_contrato}\n\n{bloco_fontes}\n\n"
+            f"CONTRATO 1 (sanitizado):\n{texto[:8000]}\n\n"
+            f"CONTRATO 2 (sanitizado):\n{texto2[:8000]}"
+        )
+    else:
+        user_msg = (
+            f"Tipo de contrato: {tipo_contrato}\n\n{bloco_fontes}\n\n"
+            f"CONTRATO (sanitizado):\n{texto[:12000]}"
+        )
+    system = SYSTEM_COMPARACAO_CONTRATOS if comparacao else SYSTEM_ANALISE_CONTRATO
     try:
         conteudo, resp = await _gateway_text(
-            SYSTEM_ANALISE_CONTRATO, user_msg,
-            task_type="analise_contrato", temperature=0.15, max_tokens=2800, nivel="alto",
+            system, user_msg,
+            task_type="analise_contrato", temperature=0.15,
+            max_tokens=3200 if comparacao else 2800, nivel="alto",
         )
         await _log_ai(db, user_id, "outro", user_msg[:4000], conteudo,
                       pii, fontes, resp, case_id)
         return {
             "resposta": conteudo,
             "pii_removida": pii,
+            "modo": "comparacao" if comparacao else "analise",
             "fontes": [{"titulo": f["titulo"], "categoria": f["categoria"],
                         "fonte": f.get("fonte")} for f in fontes],
             "aviso": "⚠️ Análise automática (minuta) — não substitui a revisão "

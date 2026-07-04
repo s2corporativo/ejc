@@ -4,22 +4,45 @@
 # Converte mensagens formato OpenAI [{role,content}] → API Anthropic (system separado).
 # Cliente lazy: só inicializa quando há ANTHROPIC_API_KEY. Sem chave → erro claro
 # (o gateway faz fallback para Groq na cadeia).
+#
+# Endurecimento (Núcleo Único de IA):
+#   • ANTHROPIC_ENABLED=false desliga o provider sem remover a chave;
+#   • timeout do client = ANTHROPIC_TIMEOUT_SECONDS;
+#   • max_tokens capado por ANTHROPIC_MAX_TOKENS (teto duro de custo);
+#   • erros da API re-lançados como RuntimeError CURTO — sem stack trace,
+#     sem corpo de resposta e SEM chave (nada sensível vaza para logs/HTTP).
 from __future__ import annotations
 import os
 import asyncio
 
+from app.core.config import get_settings
+
 _client = None
-_DEFAULT = os.getenv("ANTHROPIC_MODEL_RAPIDO", "claude-haiku-4-5-20251001")
+
+
+def _api_key() -> str:
+    """Chave Anthropic: prioriza a Settings tipada (.env carregado pelo pydantic);
+    cai para os.getenv (ex.: docker env_file exporta no ambiente do processo)."""
+    return get_settings().ANTHROPIC_API_KEY or os.getenv("ANTHROPIC_API_KEY", "")
+
+
+def _default_model() -> str:
+    return get_settings().ANTHROPIC_MODEL_RAPIDO or "claude-haiku-4-5-20251001"
 
 
 def _get_client():
     global _client
+    if not get_settings().ANTHROPIC_ENABLED:
+        raise RuntimeError("Provider Anthropic desabilitado (ANTHROPIC_ENABLED=false)")
     if _client is None:
         import anthropic  # import tardio: só quando realmente usado
-        api_key = os.getenv("ANTHROPIC_API_KEY", "")
+        api_key = _api_key()
         if not api_key:
             raise RuntimeError("ANTHROPIC_API_KEY não configurada")
-        _client = anthropic.Anthropic(api_key=api_key)
+        _client = anthropic.Anthropic(
+            api_key=api_key,
+            timeout=float(get_settings().ANTHROPIC_TIMEOUT_SECONDS),
+        )
     return _client
 
 
@@ -41,20 +64,37 @@ def _split_system(messages: list[dict]) -> tuple[str, list[dict]]:
 
 
 async def health() -> bool:
-    return bool(os.getenv("ANTHROPIC_API_KEY", ""))
+    s = get_settings()
+    return bool(s.ANTHROPIC_ENABLED and _api_key())
 
 
 async def chat(messages: list[dict], model: str | None,
                temperature: float, max_tokens: int) -> tuple[str, dict]:
+    settings = get_settings()
+    if not settings.ANTHROPIC_ENABLED:
+        raise RuntimeError("Provider Anthropic desabilitado (ANTHROPIC_ENABLED=false)")
+
     system, conv = _split_system(messages)
-    mdl = model or _DEFAULT
+    mdl = model or _default_model()
+    # Teto duro de saída — controle de custo independente do chamador.
+    mt = min(int(max_tokens or 1024), int(settings.ANTHROPIC_MAX_TOKENS))
 
     def _call():
+        import anthropic  # import tardio (mesmo padrão do _get_client)
         client = _get_client()
-        kwargs = dict(model=mdl, max_tokens=max_tokens, temperature=temperature, messages=conv)
+        kwargs = dict(model=mdl, max_tokens=mt, temperature=temperature, messages=conv)
         if system:
             kwargs["system"] = system
-        return client.messages.create(**kwargs)
+        try:
+            return client.messages.create(**kwargs)
+        except anthropic.APIError as e:
+            # Mensagem CURTA e segura: tipo + status. Sem corpo, sem stack,
+            # sem chave. `from None` corta a cadeia de exceção original.
+            status = getattr(e, "status_code", None)
+            raise RuntimeError(
+                f"Anthropic API falhou ({type(e).__name__}"
+                + (f", HTTP {status}" if status else "") + ")"
+            ) from None
 
     # SDK síncrono → roda em thread para não bloquear o event loop.
     resp = await asyncio.to_thread(_call)

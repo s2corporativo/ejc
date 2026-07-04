@@ -60,6 +60,37 @@ class Settings(BaseSettings):
     GROQ_TIMEOUT: int = 60               # segundos
     AI_ENABLED: bool = True
 
+    # ── IA — Anthropic (Claude) — módulo IA profissional por tarefa ───────
+    # Chave OBRIGATÓRIA para usar Claude (router.py/anthropic_provider.py).
+    # NUNCA hardcodar aqui: definir o valor real APENAS no .env. Vazio = Claude
+    # indisponível e o gateway faz fallback para Groq.
+    ANTHROPIC_API_KEY: str = ""
+    # Modelos configuráveis sem deploy (defaults econômicos — Haiku).
+    # Suba ANTHROPIC_MODEL_COMPLEXO para claude-sonnet-4-6 quando quiser mais qualidade.
+    ANTHROPIC_MODEL_RAPIDO: str = "claude-haiku-4-5-20251001"
+    ANTHROPIC_MODEL_COMPLEXO: str = "claude-haiku-4-5-20251001"
+    # Liga/desliga o provider Anthropic sem remover a chave do .env.
+    ANTHROPIC_ENABLED: bool = True
+    # Timeout do client Anthropic (segundos) — tarefas complexas podem demorar.
+    ANTHROPIC_TIMEOUT_SECONDS: int = 120
+    # Teto DURO de tokens de saída por chamada (controle de custo).
+    # Qualquer max_tokens acima disto é rebaixado no provider.
+    ANTHROPIC_MAX_TOKENS: int = 8000
+
+    # ── IA — Núcleo Único (policy central de provedores) ──────────────────
+    # False = só Ollama local (soberania total): nenhum dado sai do VPS,
+    # mesmo sanitizado. Anthropic/Groq ficam inelegíveis na cadeia.
+    AI_EXTERNAL_PROVIDERS_ALLOWED: bool = True
+    # True = todo conteúdo destinado a provider EXTERNO (Anthropic/Groq) passa
+    # por sanitizar_pii + validar_sem_pii; PII residual bloqueia o envio (LGPD).
+    # NUNCA desligar em produção sem parecer do encarregado de dados.
+    AI_REQUIRE_SANITIZATION_FOR_EXTERNAL: bool = True
+    # True = toda saída de IA é rascunho com revisão humana obrigatória (OAB).
+    AI_REQUIRE_HITL: bool = True
+    # Ordem de preferência entre provedores ELEGÍVEIS (csv). A policy ainda
+    # filtra por habilitação/chave e prioriza Anthropic em tarefas complexas.
+    AI_PROVIDER_PRIORITY: str = "ollama,anthropic,groq"
+
     # ── Notificações ──────────────────────────────────────────────────────
     ZAPI_INSTANCE_ID: str = ""
     ZAPI_TOKEN: str = ""

@@ -220,7 +220,7 @@ export default function AgenteIA() {
                 </span>
               </div>
               <Markdown source={res.conteudo} className="text-sm text-navy-900 max-h-[28rem] overflow-auto bg-slate-50 rounded-lg p-3" />
-              <p className="text-[11px] text-warn-700">{res.aviso}</p>
+              <p className="text-[11px] text-warn-700">{res.aviso || res.aviso_hitl}</p>
             </div>
           )}
         </div>

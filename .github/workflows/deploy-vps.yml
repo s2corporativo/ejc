@@ -1,0 +1,73 @@
+# ── Deploy manual do EJC no VPS ───────────────────────────────────────────────
+# Disparo: manual (workflow_dispatch), a partir da main.
+# Fluxo: sync do código para /opt/ejc via rsync/SSH → scripts/deploy_vps_safe.sh
+# (backup → build backend+frontend → health-check → rollback automático em falha).
+#
+# Secrets necessários (Settings → Secrets and variables → Actions):
+#   VPS_HOST      — IP ou hostname do VPS
+#   VPS_USER      — usuário SSH (ex.: root ou usuário de deploy)
+#   VPS_PASSWORD  — senha SSH (recomendado migrar para chave no futuro)
+#   VPS_PORT      — opcional (default 22)
+#
+# Segurança: o rsync NUNCA toca .env, uploads/, backups/ do servidor e não usa
+# --delete — nada é removido em /opt/ejc. Migrations NÃO rodam por padrão
+# (RUN_MIGRATIONS=0); só habilite o input com migração revisada.
+name: Deploy VPS
+
+on:
+  workflow_dispatch:
+    inputs:
+      run_migrations:
+        description: "Rodar migrations Alembic (apenas com migração revisada)"
+        type: boolean
+        default: false
+
+concurrency:
+  group: deploy-vps
+  cancel-in-progress: false
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Instalar sshpass e rsync
+        run: sudo apt-get update -qq && sudo apt-get install -y -qq sshpass rsync
+
+      - name: Sincronizar código para /opt/ejc
+        env:
+          SSHPASS: ${{ secrets.VPS_PASSWORD }}
+          VPS_HOST: ${{ secrets.VPS_HOST }}
+          VPS_USER: ${{ secrets.VPS_USER }}
+          VPS_PORT: ${{ secrets.VPS_PORT }}
+        run: |
+          PORT="${VPS_PORT:-22}"
+          rsync -az --stats \
+            -e "sshpass -e ssh -o StrictHostKeyChecking=accept-new -p ${PORT}" \
+            --exclude '.git/' \
+            --exclude '.env' --exclude '**/.env' --exclude '*.env' \
+            --exclude 'uploads/' --exclude 'backups/' \
+            --exclude 'node_modules/' --exclude 'graphify-out/' \
+            --exclude 'vps-tools/' \
+            ./ "${VPS_USER}@${VPS_HOST}:/opt/ejc/"
+
+      - name: Deploy seguro (backup → build → health-check → rollback em falha)
+        env:
+          SSHPASS: ${{ secrets.VPS_PASSWORD }}
+          VPS_HOST: ${{ secrets.VPS_HOST }}
+          VPS_USER: ${{ secrets.VPS_USER }}
+          VPS_PORT: ${{ secrets.VPS_PORT }}
+          RUN_MIGRATIONS: ${{ inputs.run_migrations && '1' || '0' }}
+        run: |
+          PORT="${VPS_PORT:-22}"
+          sshpass -e ssh -o StrictHostKeyChecking=accept-new -p "${PORT}" \
+            "${VPS_USER}@${VPS_HOST}" \
+            "cd /opt/ejc && RUN_MIGRATIONS=${RUN_MIGRATIONS} bash scripts/deploy_vps_safe.sh"
+
+      - name: Verificação pública pós-deploy
+        run: |
+          sleep 5
+          curl -fsS -o /dev/null -w "https://ejc.depaulateixeira.adv.br/api/health → HTTP %{http_code}\n" \
+            https://ejc.depaulateixeira.adv.br/api/health
