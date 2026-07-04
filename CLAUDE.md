@@ -14,12 +14,20 @@ Automation (hooks em .claude/settings.json):
 
 ## Agentes do projeto (.claude/agents/)
 
+Em toda sessão neste repositório, use o agente `ejc` como PRIMEIRO ponto de contato para qualquer tarefa não trivial — ele já sabe orquestrar os demais agentes e skills abaixo. Não faça o trabalho inteiro na thread principal quando `ejc` (ou um especialista mais específico) puder ser acionado.
+
 SEMPRE delegue trabalho ao agente especialista pertinente em vez de fazer tudo na thread principal. Tarefas que cruzam áreas devem acionar TODOS os agentes pertinentes (em paralelo quando independentes):
 
+- `ejc` — orquestrador principal; ponto de entrada padrão para qualquer tarefa no repo.
 - `backend-fastapi` — qualquer mudança em backend/app (endpoints, services, models, schemas, auth, RAG).
 - `frontend-react` — qualquer mudança em frontend/src (páginas, componentes, stores, api client, estilos).
 - `db-migrations` — schema, migrations Alembic, índices, seeds, pgvector.
 - `security-auditor` — SEMPRE acione após mudanças em autenticação, permissões, uploads ou configuração (somente leitura, reporta achados).
 - `qa-tests` — escrever/rodar testes após mudanças de comportamento e diagnosticar falhas.
+- `app-runner` — sobe e navega a stack (backend+frontend) para validar UI/UX no navegador.
+- `code-reviewer` — skill `code-review`; revisa o diff atual em busca de bugs e simplificações.
+- `verifier` — skill `verify`; exercita o fluxo alterado ponta a ponta antes de dar por concluído.
+- `simplifier` — skill `simplify`; limpa reuso/eficiência/abstração depois que a feature já funciona.
+- `researcher` — skill `deep-research`; pesquisa externa multi-fonte (nunca para entender o próprio código do EJC).
 
-Fluxo padrão para uma feature: graphify query → agente(s) de implementação pertinente(s) → qa-tests → security-auditor (se tocou área sensível). Inclua a regra do graphify no prompt de todo subagente que explora código.
+Fluxo padrão para uma feature: graphify query → `ejc` (ou agente(s) de implementação pertinente(s) diretamente) → `qa-tests` → `security-auditor` (se tocou área sensível) → `code-reviewer` → `verifier` → `simplifier`. Inclua a regra do graphify no prompt de todo subagente que explora código.
