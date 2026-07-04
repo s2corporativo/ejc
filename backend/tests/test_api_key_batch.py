@@ -86,6 +86,12 @@ class _FakeDB:
                 and (d.vigente is None or d.vigente is True)
                 and d.deleted_at is None
             ]
+            # Honra o filtro de isolamento por cliente (auditoria A-1): se o
+            # statement contém `client_id = :client_id_N`, aplica-o.
+            client_vals = [v for k, v in stmt.compile().params.items()
+                           if k.startswith("client_id")]
+            if client_vals:
+                rows = [d for d in rows if d.client_id == client_vals[0]]
         return _FakeResult(rows)
 
     def add(self, obj):
@@ -412,3 +418,179 @@ def test_admin_revoga_chave_e_ela_para_de_funcionar(admin_ctx):
     neg = admin_ctx["client"].post(BATCH, json={"itens": [_item("k:rev2")]},
                                    headers={"X-API-Key": chave})
     assert neg.status_code == 401
+
+
+# ── 6. Auditoria de segurança (A-1, M-1, M-2, M-3) ────────────────────────────
+
+def _addrinfo(ip: str):
+    fam = 10 if ":" in ip else 2
+    return [(fam, 1, 6, "", (ip, 0))]
+
+
+# A-1: isolamento cross-tenant no GET /status --------------------------------
+
+def test_status_chave_restrita_nao_enxerga_doc_de_outro_cliente(ctx):
+    """Chave do cliente A consultando chave_origem do cliente B recebe
+    `nao_encontrado` — como se o documento não existisse (fail-closed)."""
+    chave_b, ak_b = _nova_chave(client_id="cli-b")
+    ctx["db"].store[ApiKey].append(ak_b)
+    ctx["client"].post(BATCH, json={"itens": [_item("lexml:doc-b")]},
+                       headers={"X-API-Key": chave_b})
+
+    chave_a, ak_a = _nova_chave(client_id="cli-a")
+    ctx["db"].store[ApiKey].append(ak_a)
+    r = ctx["client"].get(STATUS, params={"chaves": "lexml:doc-b"},
+                          headers={"X-API-Key": chave_a})
+    assert r.status_code == 200
+    doc = r.json()["docs"][0]
+    assert doc["status_indexacao"] == "nao_encontrado"
+    assert doc["doc_id"] is None
+
+    # a própria chave do cliente B continua enxergando o documento
+    r_b = ctx["client"].get(STATUS, params={"chaves": "lexml:doc-b"},
+                            headers={"X-API-Key": chave_b})
+    assert r_b.json()["docs"][0]["status_indexacao"] != "nao_encontrado"
+
+
+def test_status_chave_global_continua_enxergando_tudo(ctx):
+    chave_b, ak_b = _nova_chave(client_id="cli-b")
+    ctx["db"].store[ApiKey].append(ak_b)
+    ctx["client"].post(BATCH, json={"itens": [_item("lexml:doc-b2")]},
+                       headers={"X-API-Key": chave_b})
+    r = ctx["client"].get(STATUS, params={"chaves": "lexml:doc-b2"},
+                          headers={"X-API-Key": ctx["chave"]})  # sem client_id
+    assert r.json()["docs"][0]["status_indexacao"] != "nao_encontrado"
+
+
+# M-1: rate limit PRÉ-auth por IP ---------------------------------------------
+
+def test_chave_invalida_consome_cota_por_ip_e_leva_429(ctx):
+    from app.core.api_key_auth import MAX_TENTATIVAS_IP_MIN
+    h = {"X-API-Key": "ejc_forca-bruta"}
+    for _ in range(MAX_TENTATIVAS_IP_MIN):
+        r = ctx["client"].get(STATUS, params={"chaves": "x"}, headers=h)
+        assert r.status_code == 401
+    r = ctx["client"].get(STATUS, params={"chaves": "x"}, headers=h)
+    assert r.status_code == 429
+    assert "Retry-After" in r.headers
+    # e SEM chave nenhuma também é limitado (pré-auth de verdade)
+    r2 = ctx["client"].get(STATUS, params={"chaves": "x"})
+    assert r2.status_code == 429
+
+
+# M-2: DNS rebinding do callback_url ------------------------------------------
+
+def test_validar_callback_url_retorna_ip_publico(monkeypatch):
+    import app.routers.rag_public as rp
+    monkeypatch.setattr(rp.socket, "getaddrinfo",
+                        lambda host, port: _addrinfo("93.184.216.34"))
+    ip = rp.validar_callback_url("https://exemplo.com/hook", exigir_https=False)
+    assert ip == "93.184.216.34"
+
+
+async def test_postar_callback_fixa_ip_com_host_e_sni(monkeypatch):
+    import app.routers.rag_public as rp
+    capturas = []
+
+    class _CapClient:
+        def __init__(self, *a, **kw):
+            pass
+        async def __aenter__(self):
+            return self
+        async def __aexit__(self, *a):
+            return False
+        async def post(self, url, json=None, headers=None, extensions=None):
+            capturas.append((url, headers, extensions))
+            class _R:
+                def raise_for_status(self):
+                    pass
+            return _R()
+
+    monkeypatch.setattr(rp.httpx, "AsyncClient", _CapClient)
+    ok = await rp._postar_callback("https://exemplo.com:8443/hook?x=1",
+                                   {"lote_id": "l1"}, ip="93.184.216.34")
+    assert ok is True
+    url, headers, extensions = capturas[0]
+    assert url == "https://93.184.216.34:8443/hook?x=1"   # conecta no IP fixado
+    assert headers["Host"] == "exemplo.com"              # host original preservado
+    assert extensions["sni_hostname"] == "exemplo.com"   # SNI/verificação TLS
+
+
+def test_dns_rebinding_entre_validacao_e_post_nao_tem_efeito(ctx, monkeypatch):
+    """DNS devolve IP público na validação e IP privado depois: o callback em
+    background usa o IP FIXADO na validação — o IP privado nunca é alcançado."""
+    import app.routers.rag_public as rp
+
+    resolucoes = {"n": 0}
+
+    def _dns_rebind(host, port):
+        resolucoes["n"] += 1
+        # 1ª resolução (validação) → público; depois → privado (rebinding)
+        return _addrinfo("93.184.216.34" if resolucoes["n"] == 1 else "10.0.0.5")
+
+    monkeypatch.setattr(rp.socket, "getaddrinfo", _dns_rebind)
+
+    capturas = []
+
+    class _CapClient:
+        def __init__(self, *a, **kw):
+            pass
+        async def __aenter__(self):
+            return self
+        async def __aexit__(self, *a):
+            return False
+        async def post(self, url, json=None, headers=None, extensions=None):
+            capturas.append((url, headers))
+            class _R:
+                def raise_for_status(self):
+                    pass
+            return _R()
+
+    monkeypatch.setattr(rp.httpx, "AsyncClient", _CapClient)
+
+    class _FakeSessionCtx:
+        async def __aenter__(self):
+            return ctx["db"]
+        async def __aexit__(self, *a):
+            return False
+
+    monkeypatch.setattr(rp, "AsyncSessionLocal", lambda: _FakeSessionCtx())
+
+    r = ctx["client"].post(
+        BATCH,
+        json={"itens": [_item("lexml:rebind")],
+              "callback_url": "http://rebind.example/hook"},
+        headers={"X-API-Key": ctx["chave"]})
+    assert r.status_code == 201
+    assert r.json()["callback_agendado"] is True
+    # o POST do callback (background) foi para o IP público FIXADO
+    assert capturas, "callback não foi disparado"
+    url, headers = capturas[0]
+    assert url.startswith("http://93.184.216.34/")
+    assert headers["Host"] == "rebind.example"
+    assert "10.0.0.5" not in url
+
+
+# M-3: DoS de memória (tetos de conteúdo) --------------------------------------
+
+def test_item_conteudo_acima_do_teto_vira_erro_sem_derrubar_lote(ctx):
+    from app.routers.rag_public import MAX_CHARS_ITEM
+    itens = [_item("lexml:ok"),
+             _item("lexml:gigante", conteudo="x" * (MAX_CHARS_ITEM + 1))]
+    r = ctx["client"].post(BATCH, json={"itens": itens},
+                           headers={"X-API-Key": ctx["chave"]})
+    assert r.status_code == 201
+    body = r.json()
+    assert body["novo"] == 1 and body["erro"] == 1
+    assert "conteudo" in body["itens"][1]["erro"]
+
+
+def test_lote_acima_do_teto_agregado_422(ctx):
+    from app.routers.rag_public import MAX_CHARS_ITEM, MAX_CHARS_LOTE
+    por_item = MAX_CHARS_ITEM - 10_000
+    n = MAX_CHARS_LOTE // por_item + 2   # garante estourar o agregado
+    itens = [_item(f"k:big-{i}", conteudo="x" * por_item) for i in range(n)]
+    r = ctx["client"].post(BATCH, json={"itens": itens},
+                           headers={"X-API-Key": ctx["chave"]})
+    assert r.status_code == 422
+    assert "agregado" in r.json()["detail"]

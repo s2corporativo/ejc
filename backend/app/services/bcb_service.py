@@ -39,6 +39,33 @@ async def _buscar_serie(codigo: int, ini: date, fim: date) -> list[dict]:
     return data
 
 
+async def selic_anual_atual(fallback: float = 0.15) -> tuple[float, str]:
+    """Meta Selic vigente (fração a.a., ex.: 0.15 = 15%) via SGS série 432.
+
+    Retorna (taxa, fonte) com fonte "bcb" ou "fallback". Nunca propaga erro:
+    sem rede/timeout/resposta inválida → (fallback, "fallback"). Cache simples
+    em memória do último valor obtido do BCB.
+    """
+    if "selic_meta" in _cache:
+        return _cache["selic_meta"], "bcb"
+    url = ("https://api.bcb.gov.br/dados/serie/bcdata.sgs.432/dados/ultimos/1"
+           "?formato=json")
+    try:
+        async with httpx.AsyncClient(timeout=4) as c:
+            r = await c.get(url)
+            r.raise_for_status()
+            data = r.json()
+        taxa = float(str(data[0]["valor"]).replace(",", ".")) / 100.0
+        if not (0 < taxa < 1):
+            raise ValueError(f"Selic fora da faixa plausível: {taxa}")
+        _cache["selic_meta"] = taxa
+        return taxa, "bcb"
+    except Exception as e:
+        logger.info(f"[bcb] Selic indisponível, usando fallback {fallback}: "
+                    f"{type(e).__name__}: {e}")
+        return fallback, "fallback"
+
+
 async def atualizar_valor(
     valor: float, data_inicial: date, data_final: date,
     indice: str = "ipca", juros_mora_pct_mes: float = 0.0,

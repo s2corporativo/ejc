@@ -43,6 +43,9 @@ router = APIRouter(prefix="/rag/knowledge-base",
                    tags=["Base de Conhecimento — API Pública"])
 
 MAX_ITENS_LOTE = 100
+# Auditoria M-3 (DoS de memória): teto por item e teto AGREGADO por lote.
+MAX_CHARS_ITEM = 300_000
+MAX_CHARS_LOTE = 3_000_000
 
 # Auth única do módulo: o cache de dependências do FastAPI garante que a
 # validação da API key roda UMA vez por request (auth + rate limit + handler).
@@ -64,8 +67,9 @@ class ItemLote(BaseModel):
     titulo: str = Field(..., min_length=3, max_length=500)
     categoria: str = Field(..., min_length=2, max_length=50,
                            description="Categoria RAG (ex.: legislacao_geral, sumula_stj, doutrina)")
-    conteudo: str = Field(..., min_length=50,
-                          description="Texto integral do documento (mínimo 50 caracteres)")
+    conteudo: str = Field(..., min_length=50, max_length=MAX_CHARS_ITEM,
+                          description="Texto integral do documento "
+                                      f"(50 a {MAX_CHARS_ITEM} caracteres)")
     chave_origem: str = Field(..., min_length=3, max_length=255,
                               description="Chave idempotente (URN, nº CNJ, id externo). "
                                           "Reenvios com o mesmo conteúdo não duplicam.")
@@ -91,12 +95,17 @@ class BatchIngestRequest(BaseModel):
 
 # ── Proteção SSRF do callback ─────────────────────────────────────────────────
 
-def validar_callback_url(url: str, *, exigir_https: bool | None = None) -> None:
+def validar_callback_url(url: str, *, exigir_https: bool | None = None) -> str:
     """Valida a callback_url contra SSRF. Lança ValueError se inválida.
 
     - Esquema http/https apenas; https OBRIGATÓRIO em produção (APP_ENV).
     - Resolve o host e bloqueia IPs privados, loopback, link-local, multicast,
       reservados e não-especificados (169.254.*, 10.*, 127.*, ::1 etc.).
+
+    Retorna o PRIMEIRO IP público resolvido (todos são validados). O chamador
+    deve FIXAR esse IP no POST do callback (`_postar_callback(ip=...)`) — sem
+    isso, uma nova resolução DNS no background permitiria DNS rebinding
+    (validação vê IP público; POST resolve de novo e cai em IP privado).
     """
     p = urlparse(url)
     if p.scheme not in ("http", "https"):
@@ -112,6 +121,7 @@ def validar_callback_url(url: str, *, exigir_https: bool | None = None) -> None:
         infos = socket.getaddrinfo(host, None)
     except socket.gaierror:
         raise ValueError("host da callback_url não resolve")
+    ips_validos: list[str] = []
     for info in infos:
         try:
             ip = ipaddress.ip_address(info[4][0])
@@ -120,17 +130,30 @@ def validar_callback_url(url: str, *, exigir_https: bool | None = None) -> None:
         if (ip.is_private or ip.is_loopback or ip.is_link_local
                 or ip.is_multicast or ip.is_reserved or ip.is_unspecified):
             raise ValueError("callback_url aponta para endereço privado/loopback (bloqueado)")
+        ips_validos.append(str(ip))
+    if not ips_validos:
+        raise ValueError("host da callback_url não resolve para IP utilizável")
+    return ips_validos[0]
 
 
 # ── Resumo de status por chave_origem (compartilhado batch/status/callback) ──
 
-async def _resumo_status(db: AsyncSession, chaves: List[str]) -> list[dict]:
+async def _resumo_status(
+    db: AsyncSession, chaves: List[str], client_id: Optional[str] = None,
+) -> list[dict]:
+    """Resumo por chave_origem. `client_id` = isolamento fail-closed da API
+    key (auditoria A-1): chave restrita a um cliente enxerga SOMENTE os docs
+    daquele cliente — chave_origem de outro tenant responde `nao_encontrado`,
+    como se não existisse (mesma regra que o batch já força na escrita)."""
+    filtros = [
+        KnowledgeDoc.chave_origem.in_(chaves),
+        KnowledgeDoc.vigente.is_(True),
+        KnowledgeDoc.deleted_at.is_(None),
+    ]
+    if client_id is not None:
+        filtros.append(KnowledgeDoc.client_id == client_id)
     docs = (await db.execute(
-        select(KnowledgeDoc).where(
-            KnowledgeDoc.chave_origem.in_(chaves),
-            KnowledgeDoc.vigente.is_(True),
-            KnowledgeDoc.deleted_at.is_(None),
-        )
+        select(KnowledgeDoc).where(*filtros)
     )).scalars().all()
     por_chave = {d.chave_origem: d for d in docs}
     out = []
@@ -147,13 +170,39 @@ async def _resumo_status(db: AsyncSession, chaves: List[str]) -> list[dict]:
 
 # ── Callback (webhook simples) ────────────────────────────────────────────────
 
-async def _postar_callback(url: str, payload: dict) -> bool:
+def _url_com_ip_fixado(url: str, ip: str) -> tuple[str, str]:
+    """Substitui o host da URL pelo IP validado. Retorna (url_fixada, host
+    original) — o host vai no header `Host` e no SNI/verificação TLS."""
+    p = urlparse(url)
+    host = p.hostname or ""
+    porta = f":{p.port}" if p.port else ""
+    ip_fmt = f"[{ip}]" if ":" in ip else ip
+    return p._replace(netloc=f"{ip_fmt}{porta}").geturl(), host
+
+
+async def _postar_callback(url: str, payload: dict, ip: str | None = None) -> bool:
     """POST no callback com timeout curto e no máximo 2 tentativas.
-    Falha SÓ loga — nunca propaga (a indexação já aconteceu)."""
+    Falha SÓ loga — nunca propaga (a indexação já aconteceu).
+
+    Anti-DNS-rebinding (auditoria M-2): quando `ip` (validado por
+    validar_callback_url no request) é informado, o POST conecta DIRETO nesse
+    IP — a URL é reescrita com o IP e o hostname original segue no header
+    `Host` e na extensão `sni_hostname` do httpx/httpcore, que também é usada
+    como server_hostname na verificação do certificado TLS. Assim NÃO há nova
+    resolução DNS no background e um DNS que "mude" para IP privado entre a
+    validação e o POST não tem efeito. (Alternativa de re-validar o IP no
+    momento do POST foi descartada: ainda deixaria janela TOCTOU entre a
+    re-validação e a resolução interna do httpx.)
+    """
+    destino, host = (url, None) if ip is None else _url_com_ip_fixado(url, ip)
+    kwargs: dict = {}
+    if host:
+        kwargs["headers"] = {"Host": host}
+        kwargs["extensions"] = {"sni_hostname": host}
     for tentativa in (1, 2):
         try:
             async with httpx.AsyncClient(timeout=5.0) as c:
-                r = await c.post(url, json=payload)
+                r = await c.post(destino, json=payload, **kwargs)
                 r.raise_for_status()
                 return True
         except Exception as e:
@@ -164,13 +213,16 @@ async def _postar_callback(url: str, payload: dict) -> bool:
     return False
 
 
-async def _callback_bg(url: str, lote_id: str, chaves: List[str]) -> None:
+async def _callback_bg(url: str, lote_id: str, chaves: List[str],
+                       ip: str | None = None,
+                       client_id: str | None = None) -> None:
     """Task de background: roda DEPOIS das tasks de indexação (BackgroundTasks
-    executa em ordem), lê o status final e notifica o integrador."""
+    executa em ordem), lê o status final e notifica o integrador.
+    `ip` = IP fixado na validação SSRF; `client_id` = escopo da API key."""
     try:
         async with AsyncSessionLocal() as db:
-            docs = await _resumo_status(db, chaves)
-        await _postar_callback(url, {"lote_id": lote_id, "docs": docs})
+            docs = await _resumo_status(db, chaves, client_id=client_id)
+        await _postar_callback(url, {"lote_id": lote_id, "docs": docs}, ip=ip)
     except Exception as e:  # defesa extra: callback nunca derruba nada
         logger.warning(f"[rag_public] callback_bg erro: {type(e).__name__}: {e}")
 
@@ -201,11 +253,25 @@ async def ingerir_lote(
     - Chave com `client_id` fixado: todo item é FORÇADO ao escopo daquele
       cliente (isolamento LGPD), ignorando o client_id do payload.
     """
+    callback_ip: str | None = None
     if req.callback_url:
         try:
-            validar_callback_url(req.callback_url)
+            callback_ip = validar_callback_url(req.callback_url)
         except ValueError as e:
             raise HTTPException(422, f"callback_url rejeitada: {e}")
+
+    # Teto agregado do lote (auditoria M-3): soma dos conteúdos brutos.
+    total_chars = sum(
+        len(b.get("conteudo"))
+        for b in req.itens
+        if isinstance(b, dict) and isinstance(b.get("conteudo"), str)
+    )
+    if total_chars > MAX_CHARS_LOTE:
+        raise HTTPException(
+            422,
+            f"Lote excede o limite agregado de {MAX_CHARS_LOTE} caracteres "
+            f"de conteúdo (recebido: {total_chars}). Divida em lotes menores.",
+        )
 
     resultados: list[dict] = []
     chaves_lote: list[str] = []
@@ -281,7 +347,8 @@ async def ingerir_lote(
     # Callback por último: BackgroundTasks roda em ordem → o resumo enviado já
     # reflete o resultado da indexação.
     if req.callback_url and chaves_lote:
-        background_tasks.add_task(_callback_bg, req.callback_url, lote_id, chaves_lote)
+        background_tasks.add_task(_callback_bg, req.callback_url, lote_id,
+                                  chaves_lote, callback_ip, ak.client_id)
 
     return {
         "lote_id": lote_id,
@@ -314,4 +381,6 @@ async def status_lote(
         expandidas.extend(x.strip() for x in c.split(",") if x.strip())
     if not expandidas or len(expandidas) > MAX_ITENS_LOTE:
         raise HTTPException(422, f"Informe entre 1 e {MAX_ITENS_LOTE} chaves")
-    return {"docs": await _resumo_status(db, expandidas)}
+    # Isolamento fail-closed (auditoria A-1): chave restrita a um cliente só
+    # enxerga documentos daquele cliente.
+    return {"docs": await _resumo_status(db, expandidas, client_id=ak.client_id)}

@@ -18,14 +18,22 @@ import hmac
 import secrets
 from datetime import datetime, timezone
 
-from fastapi import Depends, Header, HTTPException
+from fastapi import Depends, Header, HTTPException, Request
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.database import get_db
+from app.core.rate_limit import _consumir
 from app.models.api_key import ApiKey
+from app.services.security_service import obter_ip_real
 
 PREFIXO_CHAVE = "ejc_"
+
+# Rate limit PRÉ-auth por IP (auditoria M-1): requisições com X-API-Key
+# ausente/inválida também consomem cota — sem isso, um atacante brutalizaria
+# o lookup de chaves (e o banco) sem nunca ser limitado, pois os limites por
+# chave (rag_public) só valem para chave VÁLIDA.
+MAX_TENTATIVAS_IP_MIN = 60
 
 
 def gerar_chave() -> tuple[str, str, str]:
@@ -50,12 +58,18 @@ def require_api_key(escopo: str):
     """
 
     async def _dep(
+        request: Request,
         x_api_key: str | None = Header(
             default=None, alias="X-API-Key",
             description="Chave de API de serviço (formato ejc_...)",
         ),
         db: AsyncSession = Depends(get_db),
     ) -> ApiKey:
+        # ANTES de qualquer lookup no banco: cota por IP real (anti-DoS/brute
+        # force pré-auth — auditoria M-1). 429 mesmo sem chave válida.
+        _consumir("api_key_preauth",
+                  f"ip:{obter_ip_real(request)}", MAX_TENTATIVAS_IP_MIN)
+
         exc = HTTPException(
             status_code=401,
             detail="API key ausente, inválida ou revogada",
