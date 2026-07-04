@@ -8,8 +8,8 @@ passa pela rota de verdade — inclusive validação de Query e o wrapper do
 slowapi (@limiter.limit).
 
 A cobertura com dados reais (parte/cpf/processo/escopo) está em
-test_search_dblevel.py — regexp_replace e o SQL cru da tabela `processes`
-são Postgres-only, então lá exige RUN_DB_TESTS=1.
+test_search_dblevel.py — regexp_replace(…, 'g') é Postgres-only, então lá
+exige RUN_DB_TESTS=1.
 """
 from __future__ import annotations
 

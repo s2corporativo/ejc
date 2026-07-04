@@ -7,10 +7,9 @@ ex. test_casos_dblevel.py). O handler é decorado com @limiter.limit, então
 recebe um Request construído de um scope ASGI mínimo.
 
 Postgres é OBRIGATÓRIO aqui (não dá para portar a SQLite): a busca por
-cpf/processo usa func.regexp_replace(..., 'g') e SQL cru com ILIKE na tabela
-`processes` — ambos PG-only. Sem RUN_DB_TESTS=1, pula (nunca conecta em
-produção). A validação de contrato sem banco (422 etc.) está em
-test_search.py.
+cpf/processo usa func.regexp_replace(..., 'g') — PG-only. Sem RUN_DB_TESTS=1,
+pula (nunca conecta em produção). A validação de contrato sem banco (422 etc.)
+está em test_search.py.
 """
 from __future__ import annotations
 
@@ -75,11 +74,12 @@ async def _criar_caso(db, client_id: str, titulo: str,
 
 
 async def _criar_parte(db, case_id: str, nome: str,
-                       cpf_cnpj: str | None = None) -> None:
+                       cpf_cnpj: str | None = None,
+                       ativo: bool = True) -> None:
     await db.execute(
-        text("INSERT INTO case_partes (case_id, tipo, nome, cpf_cnpj) "
-             "VALUES (:cid, 'autor', :nome, :doc)"),
-        {"cid": case_id, "nome": nome, "doc": cpf_cnpj},
+        text("INSERT INTO case_partes (case_id, tipo, nome, cpf_cnpj, ativo) "
+             "VALUES (:cid, 'autor', :nome, :doc, :ativo)"),
+        {"cid": case_id, "nome": nome, "doc": cpf_cnpj, "ativo": ativo},
     )
 
 
@@ -199,20 +199,100 @@ async def test_cpf_acha_cliente_e_parte_com_mascara_no_banco():
             resp = await _buscar(db, cu, "52998224725", "cpf")
             assert resp["tipo"] == "cpf"
             assert [(i["tipo"], i["id"]) for i in resp["resultados"]] == [("cliente", cli)]
-            assert resp["resultados"][0]["subtitulo"] == cpf_cli  # exibe como está no banco
+            # B1: o documento sai MASCARADO (só os 4 últimos dígitos).
+            assert resp["resultados"][0]["subtitulo"] == "***4725"
 
             # Digitado COM máscara → normalizar_documento também resolve.
             resp2 = await _buscar(db, cu, "529.982.247-25", "cpf")
             assert [i["id"] for i in resp2["resultados"]] == [cli]
 
-            # CPF da parte processual → devolve o CASO dono da parte.
+            # CPF da parte processual → devolve o CASO dono da parte, com o
+            # documento mascarado no subtítulo (nunca o CPF completo).
             resp3 = await _buscar(db, cu, "15350946056", "cpf")
             assert [(i["tipo"], i["id"]) for i in resp3["resultados"]] == [("caso", caso)]
-            assert cpf_parte in resp3["resultados"][0]["subtitulo"]
+            sub3 = resp3["resultados"][0]["subtitulo"]
+            assert "***6056" in sub3
+            assert cpf_parte not in sub3 and "15350946056" not in sub3
 
             # Busca sem nenhum dígito → vazio (não explode).
             resp4 = await _buscar(db, cu, "abc", "cpf")
             assert resp4 == {"q": "abc", "tipo": "cpf", "total": 0, "resultados": []}
+        finally:
+            await _limpar(db, case_ids=[caso], user_ids=[uid], client_ids=[cli])
+
+
+async def test_cpf_hash_exato_encontra_cliente_sem_plaintext():
+    """M2: cliente JÁ MIGRADO (cpf plaintext NULL, só cpf_hash) é encontrado
+    quando o usuário digita o documento COMPLETO (11 dígitos) — o índice cego
+    garante a busca após a remoção das colunas legadas."""
+    from app.core.database import AsyncSessionLocal
+    from app.services.pii_crypto import hash_documento
+
+    tok = f"Zzh{uuid4().hex[:6]}"
+    cpf = "39053344705"
+    async with AsyncSessionLocal() as db:
+        uid = await _criar_user(db, "socio")
+        cli = await _criar_cliente(db, f"Cliente Hash {tok}")
+        await db.execute(
+            text("UPDATE clients SET cpf = NULL, cpf_hash = :h WHERE id = :id"),
+            {"h": hash_documento(cpf), "id": cli})
+        await db.commit()
+        cu = await _carregar_user(db, uid)
+        try:
+            resp = await _buscar(db, cu, "390.533.447-05", "cpf")
+            assert [(i["tipo"], i["id"]) for i in resp["resultados"]] == [("cliente", cli)]
+            # Sem plaintext, o subtítulo mascarado é vazio (nada a exibir).
+            assert resp["resultados"][0]["subtitulo"] == ""
+
+            # Fragmento (≠ 11/14 dígitos) não bate no hash nem no plaintext.
+            resp2 = await _buscar(db, cu, "0533447", "cpf")
+            assert cli not in [i["id"] for i in resp2["resultados"]]
+        finally:
+            await _limpar(db, user_ids=[uid], client_ids=[cli])
+
+
+async def test_cpf_estagiario_nao_recebe_clientes():
+    """M1: papel fora da matriz do CRM (estagiario) não recebe itens de
+    cliente em tipo=cpf; o bloco partes→casos continua (escopado por caso)."""
+    from app.core.database import AsyncSessionLocal
+
+    tok = f"Zzg{uuid4().hex[:6]}"
+    cpf = "529.982.247-25"
+    async with AsyncSessionLocal() as db:
+        estagiario = await _criar_user(db, "estagiario")
+        cli = await _criar_cliente(db, f"Cliente Gate {tok}", cpf=cpf)
+        caso = await _criar_caso(db, cli, f"Caso Gate {tok}", resp_id=estagiario)
+        await _criar_parte(db, caso, f"Parte Gate {tok}", cpf_cnpj=cpf)
+        await db.commit()
+        try:
+            resp = await _buscar(db, await _carregar_user(db, estagiario),
+                                 "52998224725", "cpf")
+            # Nenhum item "cliente"; o caso (via parte) aparece.
+            assert [(i["tipo"], i["id"]) for i in resp["resultados"]] == [("caso", caso)]
+        finally:
+            await _limpar(db, case_ids=[caso], user_ids=[estagiario],
+                          client_ids=[cli])
+
+
+async def test_parte_inativa_nao_aparece_em_parte_nem_cpf():
+    """ALTA: parte soft-deletada (ativo=false, padrão de case_partes.py) não
+    aparece em tipo=parte nem em tipo=cpf."""
+    from app.core.database import AsyncSessionLocal
+
+    tok = f"Zzi{uuid4().hex[:6]}"
+    cpf = "153.509.460-56"
+    async with AsyncSessionLocal() as db:
+        uid = await _criar_user(db, "socio")
+        cli = await _criar_cliente(db, f"Cliente Inativa {tok}")
+        caso = await _criar_caso(db, cli, f"Caso Inativa {tok}")
+        await _criar_parte(db, caso, f"{tok} Removida", cpf_cnpj=cpf, ativo=False)
+        await db.commit()
+        cu = await _carregar_user(db, uid)
+        try:
+            resp = await _buscar(db, cu, f"{tok} Removida", "parte")
+            assert resp["resultados"] == []
+            resp2 = await _buscar(db, cu, "15350946056", "cpf")
+            assert resp2["resultados"] == []
         finally:
             await _limpar(db, case_ids=[caso], user_ids=[uid], client_ids=[cli])
 
@@ -273,7 +353,7 @@ async def test_processo_vinculado_tabela_processes_com_escopo_e_dedup():
             resp2 = await _buscar(db, await _carregar_user(db, socio), cnj, "processo")
             assert [i["id"] for i in resp2["resultados"]] == [caso]
 
-            # Escopo do SQL cru: advogado sem vínculo com o caso não vê nada.
+            # Escopo (via _escopo_casos no ORM): advogado sem vínculo não vê nada.
             resp3 = await _buscar(db, await _carregar_user(db, adv_sem_vinculo),
                                   cnj, "processo")
             assert resp3["resultados"] == []
