@@ -120,7 +120,7 @@ class Settings(BaseSettings):
     DATAJUD_API_KEY: str = ""  # Configurar via .env
 
     # ── Embeddings locais/remotos (busca semântica RAG) ─────────────────
-    # local = sentence-transformers no mesmo processo; http = serviço interno separado.
+    # local = fastembed (ONNX, sem torch) no mesmo processo; http = serviço interno separado.
     EMBEDDINGS_ENABLED: bool = False
     EMBEDDINGS_PROVIDER: str = "local"  # local | http
     EMBEDDINGS_API_URL: str = "http://embeddings:8010/embed"

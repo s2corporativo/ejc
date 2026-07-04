@@ -16,6 +16,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.database import get_db
 from app.core.ownership import verificar_acesso_caso
+from app.core.rate_limit import rate_limit
 from app.core.security import get_current_user, ROLE_LEVEL
 from app.models.user import User
 from app.services import anexos_service as svc
@@ -69,7 +70,7 @@ async def _preparar(db: AsyncSession, cu: User, body: AnexosIn):
 
 # ── Preview (HITL): índice + legendas, sem gerar o PDF ────────────────────────
 
-@router.post("/preview")
+@router.post("/preview", dependencies=[Depends(rate_limit("anexos-preview", 15))])
 async def preview(
     body: AnexosIn,
     db: AsyncSession = Depends(get_db),
@@ -102,7 +103,7 @@ async def preview(
 
 # ── Geração do PDF único ──────────────────────────────────────────────────────
 
-@router.post("/gerar")
+@router.post("/gerar", dependencies=[Depends(rate_limit("anexos-gerar", 5))])
 async def gerar(
     body: AnexosIn,
     db: AsyncSession = Depends(get_db),
@@ -124,7 +125,7 @@ async def gerar(
 
 # ── Razões / Fundamentação Jurídica (o texto argumentativo) ───────────────────
 
-@router.post("/razoes")
+@router.post("/razoes", dependencies=[Depends(rate_limit("anexos-razoes", 5))])
 async def razoes(
     body: RazoesIn,
     db: AsyncSession = Depends(get_db),

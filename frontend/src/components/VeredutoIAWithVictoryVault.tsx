@@ -1,9 +1,25 @@
-import React, { useState } from 'react';
-import api from '../lib/api';
+import React, { useState } from "react";
+import api from "../lib/api";
 
-interface TeseSimilar { id: string; titulo: string; ementa: string; area_juridica: string; data_vitoria: string; link?: string | null; }
-interface JurisSuporte { id: string; ementa: string; tribunal: string; data: string; link?: string | null; }
-interface Sugestao { tipo: string; descricao: string; }
+interface TeseSimilar {
+  id: string;
+  titulo: string;
+  ementa: string;
+  area_juridica: string;
+  data_vitoria: string;
+  link?: string | null;
+}
+interface JurisSuporte {
+  id: string;
+  ementa: string;
+  tribunal: string;
+  data: string;
+  link?: string | null;
+}
+interface Sugestao {
+  tipo: string;
+  descricao: string;
+}
 interface VeredutoResponse {
   probabilidade_exito: number;
   teses_vitoriosas_similares: TeseSimilar[];
@@ -11,12 +27,20 @@ interface VeredutoResponse {
   sugestoes_contextualizadas: Sugestao[];
 }
 
-const AREAS = ['Administrativa', 'Tributaria', 'Trabalhista', 'Ambiental', 'Bancaria', 'Civel', 'Penal'];
+const AREAS = [
+  "Administrativa",
+  "Tributaria",
+  "Trabalhista",
+  "Ambiental",
+  "Bancaria",
+  "Civel",
+  "Penal",
+];
 
 export const VeredutoIAWithVictoryVault: React.FC = () => {
-  const [thesis, setThesis] = useState('');
+  const [thesis, setThesis] = useState("");
   const [area, setArea] = useState(AREAS[0]);
-  const [courts, setCourts] = useState('');
+  const [courts, setCourts] = useState("");
   const [result, setResult] = useState<VeredutoResponse | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -29,15 +53,18 @@ export const VeredutoIAWithVictoryVault: React.FC = () => {
     setError(null);
     setResult(null);
     try {
-      const tribunais_selecionados = courts.split(',').map((c) => c.trim()).filter(Boolean);
-      const r = await api.post('/veredito_ia/analisar', {
+      const tribunais_selecionados = courts
+        .split(",")
+        .map((c) => c.trim())
+        .filter(Boolean);
+      const r = await api.post("/veredito_ia/analisar", {
         tese_juridica: thesis,
         area_juridica: area,
         tribunais_selecionados,
       });
       setResult(r.data);
     } catch (err) {
-      setError('Erro ao analisar a tese. Tente novamente.');
+      setError("Erro ao analisar a tese. Tente novamente.");
       console.error(err);
     } finally {
       setLoading(false);
@@ -59,12 +86,22 @@ export const VeredutoIAWithVictoryVault: React.FC = () => {
         </div>
         <div>
           <label className="label">Area juridica</label>
-          <select value={area} onChange={(e) => setArea(e.target.value)} className="input">
-            {AREAS.map((a) => <option key={a} value={a}>{a}</option>)}
+          <select
+            value={area}
+            onChange={(e) => setArea(e.target.value)}
+            className="input"
+          >
+            {AREAS.map((a) => (
+              <option key={a} value={a}>
+                {a}
+              </option>
+            ))}
           </select>
         </div>
         <div>
-          <label className="label">Tribunais relevantes (separados por virgula)</label>
+          <label className="label">
+            Tribunais relevantes (separados por virgula)
+          </label>
           <input
             type="text"
             value={courts}
@@ -74,37 +111,52 @@ export const VeredutoIAWithVictoryVault: React.FC = () => {
           />
         </div>
         <button type="submit" disabled={loading} className="btn-primary w-full">
-          {loading ? 'Analisando...' : 'Analisar tese'}
+          {loading ? "Analisando..." : "Analisar tese"}
         </button>
         {error && (
-          <div className="rounded-lg border border-danger-200 bg-danger-50 p-3 text-sm text-danger-700">{error}</div>
+          <div className="rounded-lg border border-danger-200 bg-danger-50 p-3 text-sm text-danger-700">
+            {error}
+          </div>
         )}
       </form>
 
       <div className="space-y-4">
         {!result ? (
           <div className="card flex h-full items-center justify-center p-8 text-center text-sm text-slate-400">
-            Preencha a tese e clique em "Analisar" para ver a probabilidade de exito.
+            Preencha a tese e clique em "Analisar" para ver a probabilidade de
+            exito.
           </div>
         ) : (
           <>
             <div className="card p-5">
               <div className="mb-2 flex items-center justify-between">
                 <span className="eyebrow">Probabilidade de exito</span>
-                <span className="text-2xl font-semibold text-primary-700">{pct(result.probabilidade_exito)}</span>
+                <span className="text-2xl font-semibold text-primary-700">
+                  {pct(result.probabilidade_exito)}
+                </span>
               </div>
               <div className="h-2 w-full overflow-hidden rounded-full bg-slate-100">
-                <div className="h-2 rounded-full bg-primary-600 transition-all" style={{ width: pct(result.probabilidade_exito) }} />
+                <div
+                  className="h-2 rounded-full bg-primary-600 transition-all"
+                  style={{ width: pct(result.probabilidade_exito) }}
+                />
               </div>
             </div>
 
             {result.teses_vitoriosas_similares?.length > 0 && (
               <div className="card p-5">
-                <span className="eyebrow">Teses similares ({result.teses_vitoriosas_similares.length})</span>
+                <span className="eyebrow">
+                  Teses similares ({result.teses_vitoriosas_similares.length})
+                </span>
                 <div className="mt-3 space-y-2">
                   {result.teses_vitoriosas_similares.map((t) => (
-                    <div key={t.id} className="rounded-lg border border-slate-100 bg-slate-50/60 p-3">
-                      <p className="text-sm font-medium text-slate-900">{t.titulo}</p>
+                    <div
+                      key={t.id}
+                      className="rounded-lg border border-slate-100 bg-slate-50/60 p-3"
+                    >
+                      <p className="text-sm font-medium text-slate-900">
+                        {t.titulo}
+                      </p>
                       <p className="mt-1 text-xs text-slate-500">{t.ementa}</p>
                     </div>
                   ))}
@@ -117,8 +169,13 @@ export const VeredutoIAWithVictoryVault: React.FC = () => {
                 <span className="eyebrow">Jurisprudencia de suporte</span>
                 <div className="mt-3 space-y-2">
                   {result.jurisprudencia_suporte.map((j) => (
-                    <div key={j.id} className="rounded-lg border border-slate-100 bg-slate-50/60 p-3">
-                      <p className="text-sm font-medium text-slate-900">{j.tribunal} — {j.data}</p>
+                    <div
+                      key={j.id}
+                      className="rounded-lg border border-slate-100 bg-slate-50/60 p-3"
+                    >
+                      <p className="text-sm font-medium text-slate-900">
+                        {j.tribunal} — {j.data}
+                      </p>
                       <p className="mt-1 text-xs text-slate-500">{j.ementa}</p>
                     </div>
                   ))}
@@ -133,7 +190,12 @@ export const VeredutoIAWithVictoryVault: React.FC = () => {
                   {result.sugestoes_contextualizadas.map((s, i) => (
                     <li key={i} className="flex gap-2 text-sm text-slate-600">
                       <span className="text-primary-600">&bull;</span>
-                      <span><span className="font-medium text-slate-900">{s.tipo}:</span> {s.descricao}</span>
+                      <span>
+                        <span className="font-medium text-slate-900">
+                          {s.tipo}:
+                        </span>{" "}
+                        {s.descricao}
+                      </span>
                     </li>
                   ))}
                 </ul>

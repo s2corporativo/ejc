@@ -67,16 +67,56 @@ const FALLBACK_TIPOS: TipoDocumento[] = [
   { tipo_key: "contrato", nome: "Contrato", categoria: "juridico" },
   { tipo_key: "peticao", nome: "Petição", categoria: "juridico" },
   { tipo_key: "procuracao", nome: "Procuração", categoria: "juridico" },
-  { tipo_key: "denuncia", nome: "Denúncia / Queixa-crime", categoria: "juridico" },
-  { tipo_key: "boletim_ocorrencia", nome: "Boletim de Ocorrência", categoria: "juridico" },
-  { tipo_key: "laudo_tecnico", nome: "Laudo Técnico / Perícia", categoria: "juridico" },
-  { tipo_key: "multa_transito", nome: "Multa de Trânsito", categoria: "administrativo" },
-  { tipo_key: "multa_ambiental", nome: "Multa Ambiental", categoria: "administrativo" },
-  { tipo_key: "auto_infracao", nome: "Auto de Infração (geral)", categoria: "administrativo" },
-  { tipo_key: "edital_licitacao", nome: "Edital de Licitação", categoria: "administrativo" },
-  { tipo_key: "nfe_xml", nome: "Nota Fiscal Eletrônica (XML)", categoria: "fiscal" },
-  { tipo_key: "doc_identificacao", nome: "Documento de Identificação", categoria: "pessoal" },
-  { tipo_key: "comprovante_residencia", nome: "Comprovante de Residência", categoria: "pessoal" },
+  {
+    tipo_key: "denuncia",
+    nome: "Denúncia / Queixa-crime",
+    categoria: "juridico",
+  },
+  {
+    tipo_key: "boletim_ocorrencia",
+    nome: "Boletim de Ocorrência",
+    categoria: "juridico",
+  },
+  {
+    tipo_key: "laudo_tecnico",
+    nome: "Laudo Técnico / Perícia",
+    categoria: "juridico",
+  },
+  {
+    tipo_key: "multa_transito",
+    nome: "Multa de Trânsito",
+    categoria: "administrativo",
+  },
+  {
+    tipo_key: "multa_ambiental",
+    nome: "Multa Ambiental",
+    categoria: "administrativo",
+  },
+  {
+    tipo_key: "auto_infracao",
+    nome: "Auto de Infração (geral)",
+    categoria: "administrativo",
+  },
+  {
+    tipo_key: "edital_licitacao",
+    nome: "Edital de Licitação",
+    categoria: "administrativo",
+  },
+  {
+    tipo_key: "nfe_xml",
+    nome: "Nota Fiscal Eletrônica (XML)",
+    categoria: "fiscal",
+  },
+  {
+    tipo_key: "doc_identificacao",
+    nome: "Documento de Identificação",
+    categoria: "pessoal",
+  },
+  {
+    tipo_key: "comprovante_residencia",
+    nome: "Comprovante de Residência",
+    categoria: "pessoal",
+  },
   { tipo_key: "outro", nome: "Outro Documento", categoria: "outro" },
 ];
 
@@ -128,9 +168,10 @@ function BadgeConfiancaCampo({ score }: { score: number | null }) {
 function normalizarCamposV2(cv: unknown): CampoRevisao[] {
   if (!cv || typeof cv !== "object" || Array.isArray(cv)) return [];
   return Object.entries(cv as Record<string, unknown>).map(([campo, raw]) => {
-    const o = (
-      raw && typeof raw === "object" ? raw : { valor: raw }
-    ) as Record<string, unknown>;
+    const o = (raw && typeof raw === "object" ? raw : { valor: raw }) as Record<
+      string,
+      unknown
+    >;
     const valor = o.valor == null ? "" : String(o.valor);
     return {
       campo,

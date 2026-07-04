@@ -70,7 +70,7 @@ langchain-community==0.2.5
 langchain-core==0.2.9
 langchain-groq==0.1.6
 anthropic==0.113.0  # providers/anthropic_provider.py (ai_gateway)
-fastembed>=0.8.0
+fastembed==0.8.0  # PINADO (auditoria P2): versao flutuante = supply chain risk
 numpy==1.26.4
 
 # Streaming, jobs, observability

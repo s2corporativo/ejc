@@ -1,12 +1,5 @@
 import { useState, useEffect, useCallback } from "react";
-import {
-  Plus,
-  Check,
-  Trash2,
-  RefreshCw,
-  Filter,
-  Download,
-} from "lucide-react";
+import { Plus, Check, Trash2, RefreshCw, Filter, Download } from "lucide-react";
 import api from "../lib/api";
 import { Modal, Button, PageHeader } from "../components/UI";
 
@@ -216,16 +209,10 @@ export default function Despesas() {
         subtitle="Controle de custos fixos e variáveis"
         actions={
           <>
-            <button
-              onClick={exportCSV}
-              className="btn-secondary text-sm"
-            >
+            <button onClick={exportCSV} className="btn-secondary text-sm">
               <Download className="w-4 h-4" /> CSV
             </button>
-            <button
-              onClick={openNew}
-              className="btn-primary"
-            >
+            <button onClick={openNew} className="btn-primary">
               <Plus className="w-4 h-4" /> Nova Despesa
             </button>
           </>
@@ -456,9 +443,7 @@ export default function Despesas() {
                   step="0.01"
                   className="w-full border border-slate-200 rounded-lg px-3 py-2 text-sm"
                   value={form.valor}
-                  onChange={(e) =>
-                    setForm({ ...form, valor: e.target.value })
-                  }
+                  onChange={(e) => setForm({ ...form, valor: e.target.value })}
                 />
                 {form.valor.trim() !== "" &&
                   (parseFloat(form.valor) || 0) === 0 && (
@@ -544,10 +529,7 @@ export default function Despesas() {
             </div>
           </div>
           <div className="flex gap-3 justify-end mt-5">
-            <button
-              onClick={() => setShowForm(false)}
-              className="btn-ghost"
-            >
+            <button onClick={() => setShowForm(false)} className="btn-ghost">
               Cancelar
             </button>
             <button

@@ -10,7 +10,14 @@ import {
 } from "lucide-react";
 import api from "../lib/api";
 import { toast } from "../components/Toast";
-import { Badge, Empty, Input, PageHeader, SectionCard, Spinner } from "../components/UI";
+import {
+  Badge,
+  Empty,
+  Input,
+  PageHeader,
+  SectionCard,
+  Spinner,
+} from "../components/UI";
 
 // ── Tipagem confirmada contra backend: app/routers/compliance.py::radar_compliance
 type NivelRisco = "critico" | "alto" | "medio" | "baixo";
@@ -59,10 +66,7 @@ function RiskBadge({ nivel }: { nivel: NivelRisco }) {
   );
 }
 
-const FONTE_META: Record<
-  FonteRadar,
-  { label: string; icon: typeof Radar }
-> = {
+const FONTE_META: Record<FonteRadar, { label: string; icon: typeof Radar }> = {
   diario_oficial: { label: "Diario Oficial", icon: ScrollText },
   regulatorio: { label: "Regulatorio", icon: Radar },
   ambiental: { label: "Ambiental", icon: Leaf },
@@ -167,11 +171,19 @@ export default function RadarCompliance() {
       {loading ? (
         <Spinner />
       ) : erro ? (
-        <Empty message="Erro ao carregar o radar. Ajuste os filtros e tente novamente." icon={ShieldAlert} />
+        <Empty
+          message="Erro ao carregar o radar. Ajuste os filtros e tente novamente."
+          icon={ShieldAlert}
+        />
       ) : itens.length === 0 ? (
-        <Empty message="Nenhum item de compliance no periodo selecionado." icon={ShieldAlert} />
+        <Empty
+          message="Nenhum item de compliance no periodo selecionado."
+          icon={ShieldAlert}
+        />
       ) : (
-        <SectionCard title={`Itens priorizados (${data?.total ?? itens.length})`}>
+        <SectionCard
+          title={`Itens priorizados (${data?.total ?? itens.length})`}
+        >
           <div className="space-y-2">
             {itens.map((it) => {
               const meta = FONTE_META[it.fonte];

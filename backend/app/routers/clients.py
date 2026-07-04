@@ -11,6 +11,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from pydantic import BaseModel  # noqa: E402 (module-level p/ _ResolverClienteReq)
 
 from app.core.database import get_db
+from app.core.rate_limit import rate_limit
 from app.core.security import get_current_user, require_roles
 from app.models.user import User
 from app.models.client import Client
@@ -164,7 +165,9 @@ def _mascarar_nome(n: Optional[str]) -> str:
 _STATUS_ATIVOS = {"triagem", "ativo", "suspenso", "acordo"}
 
 
-@router.post("/checar-conflito")
+# Rate limit também mitiga enumeração de CPF/CNPJ via tentativas em massa.
+@router.post("/checar-conflito",
+             dependencies=[Depends(rate_limit("checar-conflito", 10))])
 async def checar_conflito(
     req: ConflitoCheckRequest,
     db: AsyncSession = Depends(get_db),

@@ -566,7 +566,6 @@ export default function CentralAtividades() {
         }
       />
 
-
       {/* Stats Cards */}
       <div className="grid grid-cols-4 gap-3 mb-5">
         {[
@@ -735,10 +734,7 @@ export default function CentralAtividades() {
             onChange={(e) => setForm({ ...form, descricao: e.target.value })}
           />
           <div className="flex gap-2 justify-end">
-            <button
-              onClick={() => setModal(false)}
-              className="btn-ghost"
-            >
+            <button onClick={() => setModal(false)} className="btn-ghost">
               Cancelar
             </button>
             <button

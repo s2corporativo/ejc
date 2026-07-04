@@ -100,14 +100,18 @@ export default function ConversaoChecklist({
         const detail = (
           e as {
             response?: {
-              data?: { detail?: { mensagem?: string; pendentes?: ChecklistItem[] } };
+              data?: {
+                detail?: { mensagem?: string; pendentes?: ChecklistItem[] };
+              };
             };
           }
         )?.response?.data?.detail;
         const pendentes = Array.isArray(detail?.pendentes)
           ? detail.pendentes
           : [];
-        setBloqueio(detail?.mensagem || "Conversão bloqueada — itens pendentes");
+        setBloqueio(
+          detail?.mensagem || "Conversão bloqueada — itens pendentes",
+        );
         // Re-renderiza com os pendentes devolvidos pelo backend
         setItens((prev) =>
           prev.length

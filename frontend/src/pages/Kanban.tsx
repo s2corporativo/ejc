@@ -167,7 +167,9 @@ export default function Kanban() {
                 }
                 onDrop={() => dragId && moverParaColuna(dragId, col.name)}
                 className={`flex flex-col rounded-xl border-t-2 ${topColor} bg-slate-50 border border-slate-200 w-52 flex-shrink-0 transition-all ${
-                  overCol === col.name ? "ring-2 ring-primary-300 bg-primary-50" : ""
+                  overCol === col.name
+                    ? "ring-2 ring-primary-300 bg-primary-50"
+                    : ""
                 }`}
               >
                 {/* Column header */}

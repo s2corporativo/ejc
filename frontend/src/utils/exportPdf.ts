@@ -22,7 +22,9 @@ export function exportPdf(
     new Date().toLocaleDateString("pt-BR", { dateStyle: "full" }),
   );
   const tableRows = rows
-    .map((r) => `<tr>${r.map((c) => `<td>${escapeHtml(c)}</td>`).join("")}</tr>`)
+    .map(
+      (r) => `<tr>${r.map((c) => `<td>${escapeHtml(c)}</td>`).join("")}</tr>`,
+    )
     .join("");
   const safeHeaders = headers.map((h) => `<th>${escapeHtml(h)}</th>`).join("");
 

@@ -296,7 +296,9 @@ export default function Casos() {
     const cand = form._cliente_candidato;
     const temCandidato = !!(cand && (cand.nome || cand.cpf || cand.cnpj));
     if (!form.titulo || (!form.client_id && !temCandidato)) {
-      toast.error("Título e cliente são obrigatórios (ou importe um documento)");
+      toast.error(
+        "Título e cliente são obrigatórios (ou importe um documento)",
+      );
       return;
     }
     setSalvando(true);

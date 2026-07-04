@@ -91,9 +91,9 @@ async def estado_operacional(
     status_map = {_v(s): c for s, c in por_status}
 
     embeddings_provider = (os.getenv("EMBEDDINGS_PROVIDER") or "local").lower()
-    sentence_instalado = importlib.util.find_spec("sentence_transformers") is not None
+    fastembed_instalado = importlib.util.find_spec("fastembed") is not None
     semantic_ready = _bool_env("EMBEDDINGS_ENABLED") and (
-        embeddings_provider == "http" or sentence_instalado
+        embeddings_provider == "http" or fastembed_instalado
     )
     return {
         "provedores": {
@@ -110,7 +110,7 @@ async def estado_operacional(
             "embeddings_enabled": _bool_env("EMBEDDINGS_ENABLED"),
             "provider": embeddings_provider,
             "api_url_configurada": bool(os.getenv("EMBEDDINGS_API_URL")),
-            "sentence_transformers_instalado_no_backend": sentence_instalado,
+            "fastembed_instalado_no_backend": fastembed_instalado,
         },
         "hitl": {
             "total_logs": total_docs,

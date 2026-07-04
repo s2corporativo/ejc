@@ -67,7 +67,9 @@ export default function PortalMensagens() {
     if (!text.trim() || !selectedId || sending) return;
     setSending(true);
     try {
-      await api.post(`/portal/casos/${selectedId}/mensagens`, { mensagem: text });
+      await api.post(`/portal/casos/${selectedId}/mensagens`, {
+        mensagem: text,
+      });
       setText("");
       await loadMsgs();
     } finally {

@@ -443,7 +443,9 @@ export default function AnaliseEstrategica({
                           {dados.vantagem}
                         </div>
                         <div className="bg-white bg-opacity-60 rounded p-2">
-                          <span className="font-semibold text-danger-600">⚠ </span>
+                          <span className="font-semibold text-danger-600">
+                            ⚠{" "}
+                          </span>
                           {dados.risco}
                         </div>
                       </div>

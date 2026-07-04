@@ -818,18 +818,30 @@ export default function DossieCliente() {
         <div className="card overflow-hidden animate-fade-in">
           <div className="px-4 py-3 border-b border-bronze-pale flex items-center justify-between">
             <p className="eyebrow flex items-center gap-2">
-              <Briefcase className="w-3 h-3" /> Carteira de Casos ({casos.length})
+              <Briefcase className="w-3 h-3" /> Carteira de Casos (
+              {casos.length})
             </p>
-            <Link to={`/casos/novo?client_id=${clientId}`} className="btn-outline text-[10px] py-1">
+            <Link
+              to={`/casos/novo?client_id=${clientId}`}
+              className="btn-outline text-[10px] py-1"
+            >
               + Novo caso
             </Link>
           </div>
           <div className="divide-y divide-bronze-pale/50">
             {casos.map((c) => (
-              <Link key={c.id} to={`/casos/${c.id}`} className="flex items-center gap-3 px-4 py-3 hover:bg-bronze-50/60 transition-colors group">
+              <Link
+                key={c.id}
+                to={`/casos/${c.id}`}
+                className="flex items-center gap-3 px-4 py-3 hover:bg-bronze-50/60 transition-colors group"
+              >
                 <div className="flex-1 min-w-0">
-                  <p className="text-sm text-navy-900 font-medium truncate">{c.titulo}</p>
-                  <p className="text-[11px] text-slate-400 mt-0.5">{c.numero_interno} · {AREA_LABEL[c.area] ?? c.area}</p>
+                  <p className="text-sm text-navy-900 font-medium truncate">
+                    {c.titulo}
+                  </p>
+                  <p className="text-[11px] text-slate-400 mt-0.5">
+                    {c.numero_interno} · {AREA_LABEL[c.area] ?? c.area}
+                  </p>
                 </div>
                 <StatusBadge value={c.status} />
                 <ChevronRight className="w-4 h-4 text-slate-300 group-hover:text-bronze" />
@@ -856,7 +868,10 @@ export default function DossieCliente() {
 
       {abaAtiva === "financeiro" && (
         <div className="space-y-4 animate-fade-in">
-          <RelatorioFinanceiro clientId={clientId!} clienteNome={cliente.nome} />
+          <RelatorioFinanceiro
+            clientId={clientId!}
+            clienteNome={cliente.nome}
+          />
         </div>
       )}
 
@@ -869,10 +884,18 @@ export default function DossieCliente() {
           </div>
           <div className="divide-y divide-bronze-pale/50">
             {documentos_recentes.map((doc) => (
-              <Link key={doc.id} to={`/casos/${doc.case_id}`} className="flex items-center gap-3 px-4 py-3 hover:bg-bronze-50/60 transition-colors group">
+              <Link
+                key={doc.id}
+                to={`/casos/${doc.case_id}`}
+                className="flex items-center gap-3 px-4 py-3 hover:bg-bronze-50/60 transition-colors group"
+              >
                 <div className="flex-1 min-w-0">
-                  <p className="text-sm text-navy-900 font-medium truncate">{doc.nome}</p>
-                  <p className="text-[10px] text-slate-400 mt-0.5">Caso #{doc.case_id} · {doc.tipo}</p>
+                  <p className="text-sm text-navy-900 font-medium truncate">
+                    {doc.nome}
+                  </p>
+                  <p className="text-[10px] text-slate-400 mt-0.5">
+                    Caso #{doc.case_id} · {doc.tipo}
+                  </p>
                 </div>
                 <Download className="w-4 h-4 text-slate-300 group-hover:text-bronze" />
               </Link>
@@ -886,7 +909,9 @@ export default function DossieCliente() {
           <Bot className="w-12 h-12 mx-auto text-bronze-pale animate-pulse" />
           <h3 className="text-lg font-serif">IA do Cliente (Análise 360º)</h3>
           <p className="text-sm text-slate-500 max-w-md mx-auto">
-            O Cérebro do EJC está processando o histórico deste cliente para identificar padrões de litígio, riscos financeiros e oportunidades estratégicas.
+            O Cérebro do EJC está processando o histórico deste cliente para
+            identificar padrões de litígio, riscos financeiros e oportunidades
+            estratégicas.
           </p>
           <button className="btn-primary">Iniciar Análise Estratégica</button>
         </div>

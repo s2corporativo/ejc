@@ -78,12 +78,16 @@ export async function aiTask(req: AITaskRequest): Promise<AICoreResponse> {
   return data;
 }
 
-export async function aiAnalyze(req: AIAnalyzeRequest): Promise<AICoreResponse> {
+export async function aiAnalyze(
+  req: AIAnalyzeRequest,
+): Promise<AICoreResponse> {
   const { data } = await api.post("/ai/core/analyze", req);
   return data;
 }
 
-export async function aiGenerate(req: AIGenerateRequest): Promise<AICoreResponse> {
+export async function aiGenerate(
+  req: AIGenerateRequest,
+): Promise<AICoreResponse> {
   const { data } = await api.post("/ai/core/generate", req);
   return data;
 }

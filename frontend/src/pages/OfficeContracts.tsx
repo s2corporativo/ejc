@@ -154,10 +154,7 @@ export default function OfficeContracts() {
         title="Contratos do Escritório"
         subtitle="Gestão de contratos operacionais e parcerias"
         actions={
-          <button
-            onClick={openNew}
-            className="btn-primary"
-          >
+          <button onClick={openNew} className="btn-primary">
             <Plus className="w-4 h-4" /> Novo Contrato
           </button>
         }
@@ -299,9 +296,7 @@ export default function OfficeContracts() {
                 type={type}
                 className="w-full border border-slate-200 rounded-lg px-3 py-2 text-sm focus:ring-2 focus:ring-primary-500 outline-none"
                 value={(form as any)[key]}
-                onChange={(e) =>
-                  setForm({ ...form, [key]: e.target.value })
-                }
+                onChange={(e) => setForm({ ...form, [key]: e.target.value })}
               />
             </div>
           ))}
@@ -331,9 +326,7 @@ export default function OfficeContracts() {
               <select
                 className="w-full border border-slate-200 rounded-lg px-3 py-2 text-sm"
                 value={form.status}
-                onChange={(e) =>
-                  setForm({ ...form, status: e.target.value })
-                }
+                onChange={(e) => setForm({ ...form, status: e.target.value })}
               >
                 {Object.entries(STATUS_LABEL).map(([v, l]) => (
                   <option key={v} value={v}>
@@ -365,9 +358,7 @@ export default function OfficeContracts() {
                 type="date"
                 className="w-full border border-slate-200 rounded-lg px-3 py-2 text-sm"
                 value={form.end_date}
-                onChange={(e) =>
-                  setForm({ ...form, end_date: e.target.value })
-                }
+                onChange={(e) => setForm({ ...form, end_date: e.target.value })}
               />
             </div>
           </div>
@@ -380,9 +371,7 @@ export default function OfficeContracts() {
                 type="number"
                 className="w-full border border-slate-200 rounded-lg px-3 py-2 text-sm"
                 value={form.value}
-                onChange={(e) =>
-                  setForm({ ...form, value: e.target.value })
-                }
+                onChange={(e) => setForm({ ...form, value: e.target.value })}
               />
             </div>
             <div>
@@ -414,16 +403,10 @@ export default function OfficeContracts() {
           </div>
         </div>
         <div className="mt-5 pt-5 -mx-5 px-5 border-t border-slate-100 flex gap-3 justify-end">
-          <button
-            onClick={() => setShowForm(false)}
-            className="btn-ghost"
-          >
+          <button onClick={() => setShowForm(false)} className="btn-ghost">
             Cancelar
           </button>
-          <button
-            onClick={save}
-            className="btn-primary"
-          >
+          <button onClick={save} className="btn-primary">
             Salvar
           </button>
         </div>

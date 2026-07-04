@@ -158,7 +158,9 @@ function ExtratoCaso({ caso }: { caso: Case }) {
       }
     }
   };
-  if (!["superadmin", "admin", "socio", "advogado"].includes(user?.role || "")) {
+  if (
+    !["superadmin", "admin", "socio", "advogado"].includes(user?.role || "")
+  ) {
     return null;
   }
 
@@ -397,7 +399,11 @@ function TabResumo({ caso }: { caso: Case }) {
     } catch (e: any) {
       const detail =
         e?.response?.status === 422 ? e?.response?.data?.detail : null;
-      if (detail && Array.isArray(detail.pendencias) && detail.pendencias.length) {
+      if (
+        detail &&
+        Array.isArray(detail.pendencias) &&
+        detail.pendencias.length
+      ) {
         setPendencias(detail.pendencias as PendenciaExclusao[]);
       } else {
         toast.error(detalheErro(e, "Falha ao excluir o caso"));
@@ -747,7 +753,9 @@ function TabResumo({ caso }: { caso: Case }) {
               <span className="text-slate-400">Parte contrária:</span>{" "}
               <span className="ml-1">{caso.parte_contraria || "—"}</span>
             </div>
-            {["superadmin", "admin", "socio", "advogado"].includes(user?.role || "") && (
+            {["superadmin", "admin", "socio", "advogado"].includes(
+              user?.role || "",
+            ) && (
               <div>
                 <span className="text-slate-400">Valor:</span>{" "}
                 <span className="ml-1">{fmtMoney(caso.valor_causa)}</span>
@@ -2427,10 +2435,7 @@ function TabProvas({ caseId, caso }: { caseId: string; caso: Case }) {
     <div className="space-y-4">
       <div className="flex items-center justify-between">
         <h2 className="font-semibold">Provas ({docs.length})</h2>
-        <button
-          className="btn-gold text-sm"
-          onClick={() => setUpModal(true)}
-        >
+        <button className="btn-gold text-sm" onClick={() => setUpModal(true)}>
           + Anexar prova
         </button>
       </div>
@@ -2486,17 +2491,10 @@ function TabProvas({ caseId, caso }: { caseId: string; caso: Case }) {
             este caso.
           </p>
           <div className="flex justify-end gap-2">
-            <button
-              className="btn-secondary"
-              onClick={() => setUpModal(false)}
-            >
+            <button className="btn-secondary" onClick={() => setUpModal(false)}>
               Cancelar
             </button>
-            <button
-              className="btn-gold"
-              onClick={upload}
-              disabled={enviando}
-            >
+            <button className="btn-gold" onClick={upload} disabled={enviando}>
               {enviando ? "Enviando..." : "Enviar prova"}
             </button>
           </div>
@@ -3285,7 +3283,10 @@ function ResultadoContratoIA({ data }: { data: any }) {
     );
   return (
     <div className="mt-3 border border-gold-200 rounded-lg bg-gold-50 p-4">
-      <Markdown source={data.resposta} className="prose prose-sm max-w-none text-navy text-xs leading-relaxed" />
+      <Markdown
+        source={data.resposta}
+        className="prose prose-sm max-w-none text-navy text-xs leading-relaxed"
+      />
       {data.fontes?.length > 0 && (
         <div className="mt-3 pt-3 border-t border-gold-200">
           <p className="text-[10px] font-semibold text-gold-700 uppercase mb-1">
@@ -3640,7 +3641,10 @@ function IaDefensivaCaso({ caso }: { caso: Case }) {
           )}
           {resultado?.resposta && (
             <div className="max-h-[720px] overflow-auto rounded-lg border border-ai-100 bg-ai-50/30 p-4">
-              <Markdown source={resultado.resposta} className="text-sm leading-7 text-slate-800" />
+              <Markdown
+                source={resultado.resposta}
+                className="text-sm leading-7 text-slate-800"
+              />
               {resultado.aviso && (
                 <p className="mt-4 border-t border-ai-100 pt-3 text-xs font-medium text-ai-700">
                   {resultado.aviso}

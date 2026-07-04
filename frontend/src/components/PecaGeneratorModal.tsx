@@ -564,7 +564,11 @@ export default function PecaGeneratorModal({
               <Button variant="ghost" onClick={resetForm}>
                 Voltar
               </Button>
-              <Button variant="ai" onClick={gerar} icon={<Sparkles size={15} />}>
+              <Button
+                variant="ai"
+                onClick={gerar}
+                icon={<Sparkles size={15} />}
+              >
                 Tentar novamente
               </Button>
             </>

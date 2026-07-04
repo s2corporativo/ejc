@@ -231,7 +231,10 @@ export default function IntakeAnalise({ caseId }: { caseId: string }) {
       {dados && !loading && (
         <div className="space-y-4">
           {/* Banner: rascunho OAB 205/2021 */}
-          <Alert variant="warning" title="Rascunho — revisão humana obrigatória">
+          <Alert
+            variant="warning"
+            title="Rascunho — revisão humana obrigatória"
+          >
             {dados.aviso}
           </Alert>
 
@@ -244,7 +247,11 @@ export default function IntakeAnalise({ caseId }: { caseId: string }) {
               <span className="text-sm font-semibold capitalize text-slate-800">
                 {dados.area.valor.replace(/_/g, " ")}
               </span>
-              <Badge tone={dados.area.origem === "classificacao_ia" ? "purple" : "slate"}>
+              <Badge
+                tone={
+                  dados.area.origem === "classificacao_ia" ? "purple" : "slate"
+                }
+              >
                 {ORIGEM_AREA_LABEL[dados.area.origem] ||
                   dados.area.origem.replace(/_/g, " ")}
               </Badge>

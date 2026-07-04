@@ -105,7 +105,9 @@ function Ferramenta({ f }: { f: FerramentaConfig }) {
     setDocMsg(null);
     const RODAPE = ["aviso", "base", "observacao", "descricao"];
     const linhas = Object.entries(res)
-      .filter(([k, v]) => !RODAPE.includes(k) && v !== null && typeof v !== "object")
+      .filter(
+        ([k, v]) => !RODAPE.includes(k) && v !== null && typeof v !== "object",
+      )
       .map(([k, v]) => ({ label: k.replace(/_/g, " "), valor: String(v) }));
     const rodape = [res.observacao, res.descricao].filter(Boolean).join("\n");
     try {
@@ -794,7 +796,10 @@ function AnaliseBancaria({ area, casos }: { area: string; casos: Case[] }) {
               <p className="text-xs font-semibold text-slate-500 uppercase mb-1">
                 Minuta (rascunho — revisão obrigatória)
               </p>
-              <Markdown source={minuta} className="text-xs text-slate-700 leading-relaxed max-h-72 overflow-y-auto" />
+              <Markdown
+                source={minuta}
+                className="text-xs text-slate-700 leading-relaxed max-h-72 overflow-y-auto"
+              />
             </div>
           )}
           {res._aviso && (
