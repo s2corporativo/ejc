@@ -18,6 +18,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.database import get_db
 from app.core.ownership import is_gestao, verificar_acesso_caso
+from app.core.rate_limit import rate_limit
 from app.core.security import get_current_user
 from app.models.deep_research import DeepResearchJob
 from app.models.user import User
@@ -55,7 +56,8 @@ def _serializar(job: DeepResearchJob) -> dict:
     }
 
 
-@router.post("/iniciar", status_code=202)
+@router.post("/iniciar", status_code=202,
+             dependencies=[Depends(rate_limit("deep_research", 3))])
 async def iniciar(req: IniciarReq, background: BackgroundTasks,
                   db: AsyncSession = Depends(get_db),
                   cu: User = Depends(get_current_user)):

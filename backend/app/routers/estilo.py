@@ -14,6 +14,7 @@ from pydantic import BaseModel, Field
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.database import get_db
+from app.core.rate_limit import rate_limit
 from app.core.security import get_current_user
 from app.models.user import User
 from app.services.estilo_service import (
@@ -57,7 +58,7 @@ def _serializar(estilo) -> dict:
     }
 
 
-@router.post("/amostras")
+@router.post("/amostras", dependencies=[Depends(rate_limit("estilo_amostra", 10))])
 async def adicionar_amostra(
     req: AmostraRequest,
     db: AsyncSession = Depends(get_db),

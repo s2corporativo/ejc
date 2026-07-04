@@ -5,6 +5,7 @@ Cada etapa emite um evento SSE com status e resultado parcial.
 from __future__ import annotations
 
 import json
+import logging
 import unicodedata
 from collections.abc import AsyncGenerator
 from uuid import uuid4
@@ -439,9 +440,14 @@ async def gerar_peca_pipeline(
     # tem perfil ativo. Preserva 100% do comportamento atual quando ausente.
     bloco_estilo = ""
     if usar_estilo:
-        instr_estilo = await instrucao_estilo(db, user_id)
-        if instr_estilo:
-            bloco_estilo = "\n\n" + instr_estilo
+        # Estilo é secundário/opt-in: uma falha transitória ao lê-lo não pode
+        # derrubar a geração da peça — degrada para "sem estilo".
+        try:
+            instr_estilo = await instrucao_estilo(db, user_id)
+            if instr_estilo:
+                bloco_estilo = "\n\n" + instr_estilo
+        except Exception as e:
+            logger.warning(f"[peca] estilo do advogado ignorado (falha ao ler): {e}")
     r7 = await gw_chat(
         messages=[
             {"role": "system", "content": (
