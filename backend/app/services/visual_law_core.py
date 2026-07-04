@@ -101,7 +101,11 @@ def classificar_estagnacao(dias_parado: int) -> str:
     return "ok"
 
 
-def montar_estagnacao(dias_parado: int) -> dict:
+def montar_estagnacao(dias_parado: int, fechado: bool = False) -> dict:
+    """Caso encerrado/arquivado não estagna: parado é o estado esperado,
+    então o nível é sempre "ok" (sem banner de alerta no frontend)."""
+    if fechado:
+        return {"dias_parado": dias_parado, "nivel": "ok"}
     return {"dias_parado": dias_parado, "nivel": classificar_estagnacao(dias_parado)}
 
 
@@ -147,16 +151,19 @@ async def montar_eventos_caso(db: AsyncSession, case_id: str) -> list[dict]:
                         "tipo": m.tipo, "descricao": (m.descricao or "")[:240]})
     for p in (await db.execute(
         select(Deadline).where(Deadline.case_id == case_id, Deadline.deleted_at.is_(None))
+        .limit(300)
     )).scalars().all():
         eventos.append({"data": p.data_prazo, "categoria": "prazo", "tipo": _val(p.tipo),
                         "descricao": f"{p.titulo} [{_val(p.status)}]"})
     for d in (await db.execute(
         select(Document).where(Document.case_id == case_id, Document.deleted_at.is_(None))
+        .limit(300)
     )).scalars().all():
         eventos.append({"data": d.created_at, "categoria": "documento",
                         "tipo": d.tipo or "doc", "descricao": d.titulo})
     for f in (await db.execute(
         select(Fee).where(Fee.case_id == case_id, Fee.deleted_at.is_(None))
+        .limit(300)
     )).scalars().all():
         dt = f.data_pagamento or f.data_vencimento
         if dt:
@@ -278,12 +285,16 @@ def badge_estagnacao(dias_parado: int) -> Optional[dict]:
     return None
 
 
-def montar_badges(fatores: list[dict], dias_parado: int) -> list[dict]:
+def montar_badges(fatores: list[dict], dias_parado: int,
+                  fechado: bool = False) -> list[dict]:
     """Converte os fatores do case_health em badges visuais. O fator
     "sem_movimentacao" é substituído pelo badge de estagnação (regra 30/60
-    dias, calculada aqui em dias exatos) para não duplicar o alerta."""
+    dias, calculada aqui em dias exatos) para não duplicar o alerta.
+
+    Caso encerrado/arquivado (`fechado`): nenhum badge de estagnação é emitido
+    — parado é o estado esperado; os demais fatores continuam virando badges."""
     badges: list[dict] = []
-    b = badge_estagnacao(dias_parado)
+    b = None if fechado else badge_estagnacao(dias_parado)
     if b:
         badges.append(b)
     for f in fatores:
@@ -328,9 +339,12 @@ def tempo_tramitacao_estimado(tribunal: Optional[str]) -> tuple[float, str]:
 
 
 def normalizar_pct(pct: float) -> float:
-    """Aceita percentuais em fração (0.10) ou em escala 0–100 (10 → 0.10).
-    O formulário do frontend envia 0–100; a API/documentação usa fração."""
-    return pct / 100.0 if pct > 1.0 else pct
+    """Converte percentual em escala 0–100 para fração (10 → 0.10; 0.5 → 0.005).
+
+    O contrato da API (BreakevenIn) é SEMPRE escala percentual 0–100 — é o que
+    o formulário CalculadoraAcordo do frontend envia. Sem heurística: 1 significa
+    1% (0.01), nunca 100%."""
+    return pct / 100.0
 
 
 def calcular_breakeven(

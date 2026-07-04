@@ -4,6 +4,7 @@
 # Cálculo: fator composto dos índices + juros de mora simples (opcional).
 from __future__ import annotations
 import logging
+import time
 from datetime import date
 from decimal import Decimal, ROUND_HALF_UP
 
@@ -23,6 +24,17 @@ _cache: dict[tuple, list] = {}   # cache em memória por (codigo, ini, fim)
 
 # Fallback determinístico quando a API do BCB está indisponível (Selic a.a.).
 FALLBACK_SELIC_ANUAL = 0.1075
+
+# Cache NEGATIVO: após uma falha no BCB, serve o fallback direto por esta
+# janela (sem reabrir a conexão de 15s a cada requisição com o BCB fora).
+FALLBACK_TTL_SEGUNDOS = 300.0
+_fallback_ate: float = 0.0   # timestamp (monotônico) até quando vale o cache negativo
+
+
+def _agora() -> float:
+    # Indireção para os testes poderem injetar o relógio (monkeypatch),
+    # mesmo padrão de app/core/rate_limit.py.
+    return time.monotonic()
 
 
 async def _buscar_serie(codigo: int, ini: date, fim: date) -> list[dict]:
@@ -47,9 +59,15 @@ async def selic_anualizada() -> dict:
 
     Se houver menos de 12 pontos disponíveis, anualiza por composição
     equivalente (fator^(12/n)). Fail-safe: qualquer erro (rede, série vazia,
-    formato) → fallback determinístico FALLBACK_SELIC_ANUAL, nunca exceção.
+    formato) → fallback determinístico FALLBACK_SELIC_ANUAL, nunca exceção —
+    e a falha fica memorizada por FALLBACK_TTL_SEGUNDOS (cache negativo),
+    servindo o fallback direto enquanto o BCB estiver fora.
     Retorna {"selic_anual": float, "fonte": "bcb"|"fallback", "meses_compostos": int}.
     """
+    global _fallback_ate
+    if _agora() < _fallback_ate:   # cache negativo vigente — não tenta o BCB
+        return {"selic_anual": FALLBACK_SELIC_ANUAL, "fonte": "fallback",
+                "meses_compostos": 0}
     try:
         hoje = date.today()
         ini = date(hoje.year - 2, hoje.month, 1)  # janela ampla p/ garantir ≥12 pontos
@@ -62,11 +80,14 @@ async def selic_anualizada() -> dict:
             fator *= 1.0 + float(str(item["valor"]).replace(",", ".")) / 100.0
         if len(ultimos) < 12:
             fator = fator ** (12.0 / len(ultimos))
+        _fallback_ate = 0.0   # sucesso limpa o cache negativo
         return {"selic_anual": round(fator - 1.0, 6), "fonte": "bcb",
                 "meses_compostos": len(ultimos)}
     except Exception as exc:  # noqa: BLE001 — fail-safe deliberado (fallback fixo)
-        logger.warning("Selic via BCB indisponível (%s); usando fallback %.4f",
-                       exc, FALLBACK_SELIC_ANUAL)
+        _fallback_ate = _agora() + FALLBACK_TTL_SEGUNDOS   # memoriza a falha
+        logger.warning("Selic via BCB indisponível (%s); usando fallback %.4f "
+                       "(cache negativo por %.0fs)",
+                       exc, FALLBACK_SELIC_ANUAL, FALLBACK_TTL_SEGUNDOS)
         return {"selic_anual": FALLBACK_SELIC_ANUAL, "fonte": "fallback",
                 "meses_compostos": 0}
 
