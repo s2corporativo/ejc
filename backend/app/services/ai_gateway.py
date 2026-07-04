@@ -74,13 +74,18 @@ def _aplicar_nivel(messages: list[dict], nivel_inteligencia: str | None) -> list
 
 
 TASK_ROUTING: dict[str, list[tuple[str, str | None]]] = {
+    # Tarefas COMPLEXAS incluem "anthropic" na cadeia (Núcleo Único): entra na
+    # ordem de AI_PROVIDER_PRIORITY quando elegível (chave + ENABLED +
+    # AI_EXTERNAL_PROVIDERS_ALLOWED) — ver _resolver_cadeia.
     "analise_juridica": [
-        ("ollama", None),    # resolvido em runtime para OLLAMA_MODEL_ANALISE
-        ("groq",   None),
+        ("ollama",    None),  # resolvido em runtime para OLLAMA_MODEL_ANALISE
+        ("anthropic", None),  # ANTHROPIC_MODEL_COMPLEXO
+        ("groq",      None),
     ],
     "elaboracao_peca": [
-        ("ollama", None),    # OLLAMA_MODEL_PETICAO
-        ("groq",   None),
+        ("ollama",    None),  # OLLAMA_MODEL_PETICAO
+        ("anthropic", None),
+        ("groq",      None),
     ],
     "resumo": [
         ("ollama", None),    # OLLAMA_MODEL_RESUMO
@@ -91,22 +96,29 @@ TASK_ROUTING: dict[str, list[tuple[str, str | None]]] = {
         ("groq",   None),
     ],
     "analise_contrato": [
-        ("ollama", None),    # OLLAMA_MODEL_CONTRATO
-        ("groq",   None),
+        ("ollama",    None),  # OLLAMA_MODEL_CONTRATO
+        ("anthropic", None),
+        ("groq",      None),
     ],
     "estrategia": [
-        ("ollama", None),    # OLLAMA_MODEL_ANALISE (raciocínio profundo)
-        ("groq",   None),
+        ("ollama",    None),  # OLLAMA_MODEL_ANALISE (raciocínio profundo)
+        ("anthropic", None),
+        ("groq",      None),
     ],
     "auditoria_peca": [
-        ("ollama", None),    # OLLAMA_MODEL_PETICAO
-        ("groq",   None),
+        ("ollama",    None),  # OLLAMA_MODEL_PETICAO
+        ("anthropic", None),
+        ("groq",      None),
     ],
     "jurimetria": [
-        ("ollama", None),    # OLLAMA_MODEL_ANALISE
-        ("groq",   None),
+        ("ollama",    None),  # OLLAMA_MODEL_ANALISE
+        ("anthropic", None),
+        ("groq",      None),
     ],
 }
+
+# Provedores que processam dados FORA do VPS → barreira LGPD obrigatória.
+_PROVIDERS_EXTERNOS = {"anthropic", "groq"}
 
 _OLLAMA_MODEL_BY_TASK = {
     "analise_juridica": lambda: settings.OLLAMA_MODEL_ANALISE,
@@ -173,12 +185,29 @@ async def chat(
     cadeia = _resolver_cadeia(task_type, provider_force, model_override)
 
     ultimo_erro: str = "Nenhum provedor disponível"
+    bloqueado_por_pii = False
     for i, (provider, model) in enumerate(cadeia):
         if i > 0:
             fallback_ativado = True
+        # ── Barreira FINAL LGPD (Núcleo Único): provider EXTERNO só recebe
+        # conteúdo sanitizado. Se após sanitizar ainda houver PII estrutural,
+        # este provedor é PULADO (tenta o próximo — ex.: Ollama local).
+        # Nunca ecoa o conteúdo — só os TIPOS de PII no log.
+        messages_envio = messages
+        if provider in _PROVIDERS_EXTERNOS and settings.AI_REQUIRE_SANITIZATION_FOR_EXTERNAL:
+            messages_envio, residual = _sanitizar_messages_externo(messages)
+            if residual:
+                bloqueado_por_pii = True
+                ultimo_erro = f"PII residual ({', '.join(residual)}) bloqueou provider externo"
+                fallback_motivo = f"{provider}: bloqueado por PII residual (LGPD)"
+                logger.warning(
+                    f"[Gateway] {provider} pulado — PII residual ({', '.join(residual)}) "
+                    "após sanitização (LGPD)."
+                )
+                continue
         try:
             texto, usage = await _chamar_provedor(
-                provider, model, messages, temperature, max_tokens
+                provider, model, messages_envio, temperature, max_tokens
             )
             duracao = int((time.monotonic() - t0) * 1000)
             resp = GatewayResponse(
@@ -210,6 +239,12 @@ async def chat(
                 f"[Gateway] {provider}/{model} falhou, tentando próximo: {ultimo_erro}"
             )
 
+    if bloqueado_por_pii:
+        # Mensagem segura: não ecoa o conteúdo nem os valores de PII.
+        raise RuntimeError(
+            "Conteúdo com dados pessoais não pode ir a provider externo — "
+            "configure Ollama ou revise o texto"
+        )
     raise RuntimeError(
         f"Todos os provedores falharam para task={task_type}. "
         f"Último erro: {ultimo_erro}"
@@ -234,38 +269,82 @@ async def health() -> dict:
 
 # ── Helpers internos ──────────────────────────────────────────────────────────
 
+def _provider_elegivel(provider: str) -> bool:
+    """Elegibilidade por provedor (mesmas regras da AIProviderPolicy)."""
+    if provider == "ollama":
+        return bool(settings.OLLAMA_ENABLED)
+    if provider == "anthropic":
+        return bool(
+            settings.ANTHROPIC_ENABLED and settings.ANTHROPIC_API_KEY
+            and settings.AI_EXTERNAL_PROVIDERS_ALLOWED
+        )
+    if provider == "groq":
+        return bool(settings.GROQ_API_KEY and settings.AI_EXTERNAL_PROVIDERS_ALLOWED)
+    return False
+
+
+def _ordenar_por_prioridade(providers: list[str]) -> list[str]:
+    """Ordena a lista pela AI_PROVIDER_PRIORITY (csv); desconhecidos vão ao fim
+    mantendo a ordem original do TASK_ROUTING."""
+    prioridade = [p.strip().lower() for p in (settings.AI_PROVIDER_PRIORITY or "").split(",") if p.strip()]
+
+    def _chave(p: str) -> int:
+        return prioridade.index(p) if p in prioridade else len(prioridade)
+
+    return sorted(providers, key=_chave)
+
+
+def _resolver_modelo(provider: str, task_type: str, model_override: str | None) -> str | None:
+    """Modelo default por provedor/tarefa (None = default do próprio provider)."""
+    if model_override:
+        return model_override
+    if provider == "ollama":
+        return _OLLAMA_MODEL_BY_TASK.get(task_type, lambda: settings.OLLAMA_MODEL_ANALISE)()
+    if provider == "anthropic":
+        # Tarefas roteadas para Anthropic aqui são as complexas → modelo COMPLEXO.
+        return settings.ANTHROPIC_MODEL_COMPLEXO or settings.ANTHROPIC_MODEL_RAPIDO
+    return None  # groq: default do provedor
+
+
 def _resolver_cadeia(
     task_type: str,
     provider_force: str | None,
     model_override: str | None,
 ) -> list[tuple[str, str | None]]:
-    """Resolve a cadeia de (provider, model) para a tarefa."""
-    if provider_force == "groq":
-        return [("groq", model_override)]
-    if provider_force == "ollama":
-        modelo = model_override or _OLLAMA_MODEL_BY_TASK.get(task_type, lambda: None)()
-        return [("ollama", modelo)]
+    """Resolve a cadeia de (provider, model) para a tarefa, respeitando
+    AI_PROVIDER_PRIORITY e a elegibilidade de cada provedor."""
+    if provider_force in ("groq", "ollama", "anthropic"):
+        return [(provider_force, _resolver_modelo(provider_force, task_type, model_override))]
 
     base = TASK_ROUTING.get(task_type, TASK_ROUTING["analise_juridica"])
-    cadeia = []
-    for provider, _ in base:
-        if provider == "ollama" and not settings.OLLAMA_ENABLED:
-            continue  # pular Ollama se desabilitado
-        if provider == "groq" and not settings.GROQ_API_KEY:
-            continue  # pular Groq sem chave
-        modelo_resolvido: str | None = None
-        if provider == "ollama":
-            modelo_resolvido = model_override or _OLLAMA_MODEL_BY_TASK.get(
-                task_type, lambda: settings.OLLAMA_MODEL_ANALISE
-            )()
-        else:
-            modelo_resolvido = model_override  # None = usa default do provedor Groq
-        cadeia.append((provider, modelo_resolvido))
+    candidatos = _ordenar_por_prioridade([p for p, _ in base])
+    cadeia = [
+        (p, _resolver_modelo(p, task_type, model_override))
+        for p in candidatos
+        if _provider_elegivel(p)
+    ]
 
     if not cadeia:
         # Último recurso: Groq sem checar chave (vai falhar com erro claro)
         cadeia = [("groq", model_override)]
     return cadeia
+
+
+def _sanitizar_messages_externo(messages: list[dict]) -> tuple[list[dict], list[str]]:
+    """Barreira FINAL de LGPD antes de provider externo (Anthropic/Groq):
+    sanitiza o content de CADA mensagem e devolve a lista de tipos de PII
+    residual (vazia = liberado). NUNCA loga/ecoa o conteúdo em si."""
+    from app.services.sanitizer import sanitizar_pii, validar_sem_pii
+    limpos: list[dict] = []
+    residual: set[str] = set()
+    for m in messages:
+        conteudo = m.get("content", "") or ""
+        limpo, _ = sanitizar_pii(conteudo)
+        residual.update(validar_sem_pii(limpo))
+        novo = dict(m)
+        novo["content"] = limpo
+        limpos.append(novo)
+    return limpos, sorted(residual)
 
 
 async def _chamar_provedor(
