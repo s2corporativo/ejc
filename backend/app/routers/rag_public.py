@@ -9,8 +9,11 @@
 #                                      upsert_documento (versionamento 068).
 #   GET  /rag/knowledge-base/status  → status de indexação por chave_origem.
 #
-# Vetorização segue ASSÍNCRONA (BackgroundTasks + _indexar_doc_bg, o mesmo
-# mecanismo da ingestão manual) — sem Celery/Redis nesta fase.
+# Vetorização segue ASSÍNCRONA via dispatcher único (app/tasks/dispatcher.py):
+# Celery+Redis quando CELERY_ENABLED (Fase 3A), senão BackgroundTasks +
+# _indexar_doc_bg (mesmo mecanismo da ingestão manual). Com Celery ativo, o
+# callback_url pode ser notificado ANTES de a indexação concluir (o worker é
+# outro processo) — o integrador deve confirmar via GET /status.
 from __future__ import annotations
 
 import ipaddress
@@ -33,8 +36,8 @@ from app.core.rate_limit import _consumir
 from app.models.api_key import ApiKey
 from app.models.rag import KnowledgeDoc
 from app.routers.ia_governanca import Confianca
-from app.routers.rag import _indexar_doc_bg
 from app.services.embedding_service import disponivel as emb_disponivel
+from app.tasks.dispatcher import agendar_indexacao
 from app.services.ingestion_service import upsert_documento
 
 logger = logging.getLogger("ejc.rag_public")
@@ -338,10 +341,11 @@ async def ingerir_lote(
 
     await db.commit()
 
-    # Vetorização assíncrona — mesmo mecanismo da ingestão manual (/rag/ingest).
+    # Vetorização assíncrona — mesmo dispatcher da ingestão manual (/rag/ingest):
+    # Celery quando habilitado/alcançável, senão BackgroundTasks (_indexar_doc_bg).
     if emb_disponivel():
         for doc_id in docs_pendentes:
-            background_tasks.add_task(_indexar_doc_bg, doc_id)
+            await agendar_indexacao(doc_id, background_tasks)
 
     lote_id = str(uuid4())
     # Callback por último: BackgroundTasks roda em ordem → o resumo enviado já
