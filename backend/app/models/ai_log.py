@@ -67,6 +67,11 @@ class AILog(Base):
     revisado_por = Column(String(36), nullable=True)
     revisado_em  = Column(DateTime(timezone=True), nullable=True)
 
+    # Feedback do usuário sobre a resposta (feature #4 / migration 066):
+    # 'util' | 'nao_util' | None (sem feedback).
+    feedback     = Column(String(20), nullable=True)
+    feedback_em  = Column(DateTime(timezone=True), nullable=True)
+
     created_at = Column(DateTime(timezone=True), server_default=func.now(), index=True)
 
     user = relationship("User", foreign_keys=[user_id], back_populates="ai_logs")

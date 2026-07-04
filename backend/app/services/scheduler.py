@@ -4,12 +4,15 @@
 # uvicorn roda com múltiplos workers. Padrão Dockerfile: --workers 1.
 #
 # Jobs:
+#  06:55 — Briefing matinal por advogado (personalizado)
 #  07:00 — Morning Brief WhatsApp (consolidado do dia)
 #  07:15 — Alertas de prazos (7d/3d/1d)
 #  07:30 — SLA de etapas BPM (workflow) — vencidos + vésperas
 #  08:00 — Honorários vencidos
+#  08:15 — Régua de cobrança escalonada (inadimplência)
 #  08:30 — Defesas ambientais ≤ 5 dias (crítico)
 #  09:00 seg — Procurações vencendo em 30 dias
+#  09:15 — Alertas de vencimento societário
 from __future__ import annotations
 import logging
 from uuid import uuid4
@@ -426,6 +429,291 @@ async def _alertar_honorarios():
         logger.error(f"[Scheduler] honorarios: {e}")
 
 
+async def _regua_cobranca():
+    """08h15 — Régua de cobrança escalonada de honorários vencidos (#3).
+
+    Reutiliza inadimplencia_service.varrer_inadimplencia() para recalcular os
+    níveis (leve<30 → medio 30-59 → critico 60-89 → cobranca_formal ≥90) e
+    popular/atualizar inadimplencia_alerts. Em seguida, para cada alerta NÃO
+    resolvido, dispara notificação escalonada ao advogado responsável pelo
+    caso do honorário:
+      - leve            → apenas sino interno
+      - medio           → sino + e-mail (se habilitado)
+      - critico/formal  → sino + e-mail + WhatsApp (se habilitados)
+
+    Idempotência sem coluna nova: usa inadimplencia_alerts.action_taken como
+    marcador 'regua:<nivel>'. Só (re)notifica quando o nível muda ou ainda não
+    houve notificação — evita spam diário no mesmo nível.
+    """
+    from app.core.database import AsyncSessionLocal
+    from app.services.inadimplencia_service import varrer_inadimplencia
+    from app.services.notification_service import (
+        criar_notificacao_interna, enviar_email, enviar_whatsapp, enviar_push,
+    )
+    try:
+        async with AsyncSessionLocal() as db:
+            # 1) Recalcula níveis e sincroniza a tabela de alertas (não reimplementar).
+            resumo = await varrer_inadimplencia(db)
+
+            # 2) Alertas abertos + advogado responsável do caso.
+            rows = (await db.execute(text("""
+                SELECT a.id, a.fee_id, a.days_overdue, a.amount_due,
+                       a.alert_level, a.action_taken,
+                       cl.nome AS cliente_nome,
+                       c.numero_interno AS caso_num,
+                       c.advogado_responsavel_id AS adv_id,
+                       u.email AS adv_email, u.phone AS adv_phone
+                FROM inadimplencia_alerts a
+                LEFT JOIN cases   c  ON c.id  = a.case_id
+                LEFT JOIN clients cl ON cl.id = a.client_id
+                LEFT JOIN users   u  ON u.id  = c.advogado_responsavel_id
+                WHERE a.resolved = FALSE
+                ORDER BY a.days_overdue DESC
+                LIMIT 500
+            """))).all()
+
+            notificados = 0
+            for r in rows:
+                if not r.adv_id:
+                    continue  # sem responsável a quem escalar
+                marcador = f"regua:{r.alert_level}"
+                if (r.action_taken or "") == marcador:
+                    continue  # já notificado neste nível — evita spam diário
+
+                nome = r.cliente_nome or "Cliente"
+                caso = r.caso_num or "—"
+                valor = float(r.amount_due or 0)
+                dias = int(r.days_overdue or 0)
+                titulo = f"💰 Honorário vencido ({dias}d) — {r.alert_level}"
+                corpo = (
+                    f"{nome} (caso {caso}): R$ {valor:,.2f} em atraso há "
+                    f"{dias} dia(s). Nível de cobrança: {r.alert_level}."
+                )
+
+                # Sino interno — sempre (todos os níveis)
+                await criar_notificacao_interna(
+                    db, r.adv_id, titulo, corpo,
+                    tipo="financeiro", link="/financeiro",
+                )
+                await enviar_push(
+                    db, r.adv_id, titulo, corpo, link="/financeiro",
+                )
+                # E-mail — a partir de 'medio'
+                if r.alert_level in ("medio", "critico", "cobranca_formal") and r.adv_email:
+                    await enviar_email(
+                        r.adv_email,
+                        f"[EJC] Cobrança {r.alert_level}: {nome} ({dias}d)",
+                        f"<p>O honorário de <b>{nome}</b> (caso {caso}) está "
+                        f"<b>{dias} dia(s)</b> em atraso — R$ {valor:,.2f}.</p>"
+                        f"<p>Nível de cobrança: <b>{r.alert_level}</b>. "
+                        f"Acione a régua de cobrança no EJC.</p>",
+                    )
+                # WhatsApp — apenas níveis mais graves
+                if r.alert_level in ("critico", "cobranca_formal") and r.adv_phone:
+                    await enviar_whatsapp(
+                        r.adv_phone,
+                        f"💰 *EJC* — Honorário de {nome} (caso {caso}) "
+                        f"{dias}d em atraso (R$ {valor:,.2f}). "
+                        f"Nível: {r.alert_level}.",
+                    )
+
+                # Marca o nível notificado (sem coluna nova)
+                await db.execute(text(
+                    "UPDATE inadimplencia_alerts SET action_taken=:m, updated_at=NOW() "
+                    "WHERE id=:id"
+                ), {"m": marcador, "id": r.id})
+                notificados += 1
+
+            await db.commit()
+            logger.info(
+                f"[Régua] varridas={resumo.get('varridas')} "
+                f"alertas={len(rows)} notificados={notificados}"
+            )
+    except Exception as e:
+        logger.error(f"[Scheduler] regua_cobranca: {e}", exc_info=True)
+
+
+async def _alertar_vencimento_societario():
+    """09h15 — Alertas de vencimento societário (#7).
+
+    (a) ContratoSocietario com data_fim se aproximando: notifica o criador do
+        contrato (sino) em marcos discretos — 30/15/7/1 dia(s) antes do fim —
+        para não repetir diariamente (não há coluna de flag/dedup no model).
+        Model app/models/contrato_societario.py: campo de data usado = data_fim
+        (Date); considera também renovacao_automatica na mensagem.
+    (b) DistribuicaoLucro 'agendada' (status='aprovado', aguardando pagamento)
+        aprovada nas últimas 24h: notifica o aprovador/criador (sino). O model
+        socio.py NÃO possui data de vencimento própria — usa-se aprovado_em como
+        gatilho e mes_referencia como rótulo.
+    """
+    from app.core.database import AsyncSessionLocal
+    from app.services.notification_service import criar_notificacao_interna
+    try:
+        async with AsyncSessionLocal() as db:
+            hoje = date.today()
+
+            # (a) Contratos societários vencendo — marcos 30/15/7/1
+            contratos = (await db.execute(text("""
+                SELECT c.id, c.titulo, c.data_fim, c.renovacao_automatica,
+                       c.created_by
+                FROM contratos_societarios c
+                WHERE c.deleted_at IS NULL
+                  AND c.status IN ('vigente','assinado','aprovado')
+                  AND c.data_fim IS NOT NULL
+                  AND c.data_fim >= :hoje
+                  AND c.data_fim <= :lim
+            """), {"hoje": hoje, "lim": hoje + timedelta(days=30)})).all()
+
+            notif_c = 0
+            for c in contratos:
+                dias = (c.data_fim - hoje).days
+                if dias not in (30, 15, 7, 1):
+                    continue  # só marcos discretos — evita repetição diária
+                if not c.created_by:
+                    continue
+                sufixo = (" · renovação automática" if c.renovacao_automatica
+                          else " · SEM renovação automática")
+                await criar_notificacao_interna(
+                    db, c.created_by,
+                    "📄 Contrato societário vencendo",
+                    f"\"{c.titulo[:80]}\" encerra em {dias} dia(s) "
+                    f"({c.data_fim.strftime('%d/%m/%Y')}){sufixo}.",
+                    tipo="societario", link="/sociedade",
+                )
+                notif_c += 1
+
+            # (b) Distribuições de lucro agendadas (aprovadas nas últimas 24h)
+            distros = (await db.execute(text("""
+                SELECT d.id, d.mes_referencia, d.valor_total,
+                       d.aprovado_por, d.created_by, d.aprovado_em
+                FROM distribuicoes_lucro d
+                WHERE d.status = 'aprovado'
+                  AND d.aprovado_em IS NOT NULL
+                  AND d.aprovado_em >= NOW() - INTERVAL '1 day'
+            """))).all()
+
+            notif_d = 0
+            for d in distros:
+                destino = d.aprovado_por or d.created_by
+                if not destino:
+                    continue
+                valor = float(d.valor_total or 0)
+                await criar_notificacao_interna(
+                    db, destino,
+                    "💵 Distribuição de lucros agendada",
+                    f"Distribuição {d.mes_referencia} aprovada — "
+                    f"R$ {valor:,.2f} aguardando pagamento.",
+                    tipo="societario", link="/sociedade",
+                )
+                notif_d += 1
+
+            await db.commit()
+            logger.info(
+                f"[Societário] contratos_notif={notif_c} distribuicoes_notif={notif_d}"
+            )
+    except Exception as e:
+        logger.error(f"[Scheduler] vencimento_societario: {e}", exc_info=True)
+
+
+async def _briefing_matinal_advogado():
+    """06h55 — Briefing matinal PERSONALIZADO por advogado (#11), antes do
+    Morning Brief genérico (07h00).
+
+    Para cada usuário de equipe/gestão (superadmin, admin, socio, advogado,
+    advogado_auxiliar), monta um resumo dos SEUS casos (advogado_responsavel_id):
+      - prazos pendentes nos próximos 7 dias (deadlines dos seus casos);
+      - pendências: tarefas em aberto (status a_fazer/fazendo) sob sua
+        responsabilidade, com destaque de atrasadas;
+      - índice de risco: nº de casos ativos classificados como 'alto'
+        (Case.risco). Entrega via sino interno + e-mail (se habilitado).
+    Só notifica quem tiver algum item — evita briefing vazio.
+    """
+    from app.core.database import AsyncSessionLocal
+    from app.services.notification_service import (
+        criar_notificacao_interna, enviar_email,
+    )
+    try:
+        async with AsyncSessionLocal() as db:
+            hoje = date.today()
+            d7 = hoje + timedelta(days=7)
+
+            advs = (await db.execute(text("""
+                SELECT id, full_name, email FROM users
+                WHERE is_active = true AND deleted_at IS NULL
+                  AND role IN ('superadmin','admin','socio','advogado','advogado_auxiliar')
+            """))).all()
+
+            enviados = 0
+            for adv in advs:
+                # Prazos próximos (7d) dos casos do advogado
+                prazos = (await db.execute(text("""
+                    SELECT COUNT(*)
+                    FROM deadlines dl
+                    JOIN cases c ON c.id = dl.case_id
+                    WHERE dl.status = 'pendente' AND dl.deleted_at IS NULL
+                      AND c.deleted_at IS NULL
+                      AND c.advogado_responsavel_id = :uid
+                      AND dl.data_prazo BETWEEN :hoje AND :d7
+                """), {"uid": adv.id, "hoje": hoje, "d7": d7})).scalar() or 0
+
+                # Pendências: tarefas em aberto (total + atrasadas)
+                tarefas = (await db.execute(text("""
+                    SELECT
+                      COUNT(*) FILTER (WHERE status IN ('a_fazer','fazendo')) AS pendentes,
+                      COUNT(*) FILTER (
+                        WHERE status IN ('a_fazer','fazendo')
+                          AND data_limite IS NOT NULL AND data_limite < :hoje
+                      ) AS atrasadas
+                    FROM tasks
+                    WHERE deleted_at IS NULL AND responsavel_id = :uid
+                """), {"uid": adv.id, "hoje": hoje})).one()
+                pendentes = tarefas.pendentes or 0
+                atrasadas = tarefas.atrasadas or 0
+
+                # Índice de risco: casos ativos de risco alto
+                risco_alto = (await db.execute(text("""
+                    SELECT COUNT(*) FROM cases
+                    WHERE deleted_at IS NULL
+                      AND advogado_responsavel_id = :uid
+                      AND status NOT IN ('encerrado','arquivado')
+                      AND risco = 'alto'
+                """), {"uid": adv.id})).scalar() or 0
+
+                if not (prazos or pendentes or risco_alto):
+                    continue  # nada a reportar
+
+                nome = (adv.full_name or "advogado").split()[0]
+                resumo_txt = (
+                    f"Bom dia, {nome}! Prazos (7d): {prazos} | "
+                    f"Tarefas em aberto: {pendentes} (atrasadas: {atrasadas}) | "
+                    f"Casos de risco alto: {risco_alto}"
+                )
+                await criar_notificacao_interna(
+                    db, adv.id,
+                    f"☀️ Seu briefing — {hoje.strftime('%d/%m/%Y')}",
+                    resumo_txt, tipo="sistema", link="/",
+                )
+                if adv.email:
+                    await enviar_email(
+                        adv.email,
+                        f"[EJC] Seu briefing de {hoje.strftime('%d/%m')}",
+                        f"<h3>Bom dia, {nome}!</h3>"
+                        f"<ul>"
+                        f"<li><b>Prazos próximos (7 dias):</b> {prazos}</li>"
+                        f"<li><b>Tarefas em aberto:</b> {pendentes} "
+                        f"(atrasadas: {atrasadas})</li>"
+                        f"<li><b>Casos de risco alto:</b> {risco_alto}</li>"
+                        f"</ul>"
+                        f"<p><a href='https://ejc.depaulateixeira.adv.br'>Acessar EJC</a></p>",
+                    )
+                enviados += 1
+
+            await db.commit()
+            logger.info(f"[Briefing/advogado] {enviados} briefing(s) personalizado(s)")
+    except Exception as e:
+        logger.error(f"[Scheduler] briefing_matinal_advogado: {e}", exc_info=True)
+
+
 async def _backup_diario():
     """Backup automatizado do banco de dados (pg_dump) — Auditoria Item 80."""
     import os
@@ -568,9 +856,12 @@ def start_scheduler():
     s.add_job(_morning_brief,       CronTrigger(hour=7,  minute=0),  id="brief",       replace_existing=True)
     s.add_job(_alertar_prazos,      CronTrigger(hour=7,  minute=15), id="prazos",      replace_existing=True)
     s.add_job(_verificar_sla_workflows, CronTrigger(hour=7, minute=30), id="workflow_sla", replace_existing=True)
+    s.add_job(_briefing_matinal_advogado, CronTrigger(hour=6, minute=55), id="briefing_adv", replace_existing=True)
     s.add_job(_alertar_honorarios,  CronTrigger(hour=8,  minute=0),  id="honorarios",  replace_existing=True)
+    s.add_job(_regua_cobranca,      CronTrigger(hour=8,  minute=15), id="regua_cobranca", replace_existing=True)
     s.add_job(_alertar_ambiental,   CronTrigger(hour=8,  minute=30), id="ambiental",   replace_existing=True)
     s.add_job(_alertar_procuracoes, CronTrigger(day_of_week="mon", hour=9), id="procuracoes", replace_existing=True)
+    s.add_job(_alertar_vencimento_societario, CronTrigger(hour=9, minute=15), id="societario", replace_existing=True)
     s.add_job(_alertar_prescricao,  CronTrigger(day_of_week="mon", hour=9, minute=5), id="prescricao", replace_existing=True)
 
     # Jobs v3.x — integrações oficiais (guardas internas pulam se não configurado)
@@ -596,7 +887,7 @@ def start_scheduler():
     s.add_job(_purgar_logs_ia,        CronTrigger(day=1, hour=3, minute=30), id="retencao_ia", replace_existing=True)
 
     s.start()
-    logger.info("[Scheduler] Iniciado — 21 jobs (+ SLA workflows BPM + purga LGPD clientes inativos)")
+    logger.info("[Scheduler] Iniciado — 24 jobs (+ briefing por advogado, régua de cobrança e alertas societários)")
 
 
 async def _backup_banco():
