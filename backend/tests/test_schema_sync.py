@@ -35,7 +35,13 @@ _TABELAS_NUCLEO = {
 
 
 def _metadata():
-    import app.models  # noqa: F401 — popula Base.metadata
+    # Importa o APP COMPLETO (não só app.models): alguns routers montados em
+    # main.py definem models inline (ex.: data_room_v4, teses_v4). Sem carregar
+    # o app, esses models entrariam em Base.metadata só por poluição de ordem de
+    # testes (quem importar app.main primeiro), tornando a checagem de drift
+    # dependente da ordem. Carregar o app aqui torna a verificação determinística
+    # e fiel ao schema real que a aplicação monta.
+    import app.main  # noqa: F401 — popula Base.metadata com TODOS os models
     from app.core.database import Base
     return Base.metadata
 

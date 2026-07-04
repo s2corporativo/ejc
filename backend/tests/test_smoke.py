@@ -22,7 +22,7 @@ def test_alembic_cadeia_integra():
 
     script = ScriptDirectory.from_config(Config("alembic.ini"))
     # Head único da cadeia atual.
-    assert script.get_heads() == ["066_ai_log_feedback"]
+    assert script.get_heads() == ["067_v4_dataroom_teses"]
     # walk_revisions percorre head→base; lança se houver down_revision ausente.
     revs = [r.revision for r in script.walk_revisions()]
     assert revs[-1] == "001_inicial"
@@ -36,3 +36,4 @@ def test_alembic_cadeia_integra():
     assert "064_drive_columns" in revs
     assert "065_djen_prazo_assistido" in revs
     assert "066_ai_log_feedback" in revs
+    assert "067_v4_dataroom_teses" in revs
