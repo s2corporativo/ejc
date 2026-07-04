@@ -401,7 +401,7 @@ export default function Layout() {
             to="/"
             className={cn(
               "flex min-w-0 items-center",
-              collapsed ? "w-10 justify-center" : "max-w-[190px]",
+              collapsed ? "w-10 justify-center" : "max-w-[220px]",
             )}
             aria-label="De Paula Teixeira - EJC"
           >
@@ -410,7 +410,7 @@ export default function Layout() {
               alt="De Paula Teixeira Sociedade de Advogados"
               className={cn(
                 "brand-logo-img rounded-lg bg-white",
-                collapsed ? "h-10 w-10 object-cover object-top" : "h-12 w-auto max-w-[190px] p-1",
+                collapsed ? "h-10 w-10 object-cover object-top" : "h-14 w-auto max-w-[220px] p-1",
               )}
             />
           </Link>

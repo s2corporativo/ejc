@@ -57,7 +57,7 @@ export default function LoginModern() {
             <img
               src={BRAND_LOGO}
               alt="De Paula Teixeira Sociedade de Advogados"
-              className="brand-logo-img h-20 w-auto max-w-[270px] rounded-xl bg-white p-1.5"
+              className="brand-logo-img h-28 w-auto max-w-[360px] rounded-xl bg-white p-2"
             />
           </div>
 
@@ -105,7 +105,7 @@ export default function LoginModern() {
               <img
                 src={BRAND_LOGO}
                 alt="De Paula Teixeira Sociedade de Advogados"
-                className="brand-logo-img h-16 w-auto max-w-[240px]"
+                className="brand-logo-img h-20 w-auto max-w-[280px] rounded-xl bg-white p-1.5"
               />
             </div>
 

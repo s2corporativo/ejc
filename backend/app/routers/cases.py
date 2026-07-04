@@ -79,11 +79,20 @@ async def listar(
     area: Optional[str] = None,
     status_f: Optional[str] = Query(None, alias="status"),
     arquivo: str = Query("ativos", pattern="^(ativos|arquivados|todos)$"),
+    advogado_id: Optional[str] = None,
     db: AsyncSession = Depends(get_db),
     cu: User = Depends(get_current_user),
 ):
     q = select(Case).where(Case.deleted_at.is_(None))
     q = _filtro_visibilidade(q, cu)
+    # Filtro por advogado: aplicado APÓS _filtro_visibilidade — para socio+
+    # permite ver os processos de um advogado específico; para advogado comum
+    # é inócuo (no máximo estreita o conjunto já restrito aos próprios casos).
+    if advogado_id:
+        q = q.where(or_(
+            Case.advogado_responsavel_id == advogado_id,
+            Case.advogado_auxiliar_id == advogado_id,
+        ))
     if arquivo == "ativos":
         q = q.where(Case.status != CaseStatus.arquivado)
     elif arquivo == "arquivados":
@@ -115,6 +124,7 @@ async def listar(
 
 @router.get("/stats")
 async def stats_casos(
+    advogado_id: Optional[str] = None,
     db: AsyncSession = Depends(get_db),
     cu: User = Depends(get_current_user),
 ):
@@ -127,9 +137,17 @@ async def stats_casos(
     - encerrados = status == 'encerrado'
     - por_area  = contagem por área sobre o MESMO conjunto (nenhuma área some).
     """
-    base = _filtro_visibilidade(
+    base_q = _filtro_visibilidade(
         select(Case).where(Case.deleted_at.is_(None)), cu
-    ).subquery()
+    )
+    # Mesmo filtro opcional do listar (após visibilidade) — mantém o dashboard
+    # consistente com a listagem quando filtrado por advogado.
+    if advogado_id:
+        base_q = base_q.where(or_(
+            Case.advogado_responsavel_id == advogado_id,
+            Case.advogado_auxiliar_id == advogado_id,
+        ))
+    base = base_q.subquery()
 
     total = (await db.execute(
         select(sqlfunc.count()).select_from(base)
