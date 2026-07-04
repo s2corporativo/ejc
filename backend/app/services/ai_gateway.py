@@ -218,14 +218,16 @@ async def chat(
 
 async def health() -> dict:
     """Retorna status de saúde de cada provedor."""
-    from app.services.providers import groq_provider, ollama_provider
+    from app.services.providers import groq_provider, ollama_provider, anthropic_provider
     groq_ok   = await groq_provider.health()   if settings.GROQ_API_KEY else False
     ollama_ok = await ollama_provider.health() if settings.OLLAMA_ENABLED else False
+    anthropic_ok = await anthropic_provider.health()
     modelos_ollama = await ollama_provider.modelos_disponiveis() if settings.OLLAMA_ENABLED else []
 
     return {
-        "groq":   {"disponivel": groq_ok, "modelo": settings.GROQ_MODEL},
-        "ollama": {"disponivel": ollama_ok, "modelos": modelos_ollama},
+        "groq":      {"disponivel": groq_ok, "modelo": settings.GROQ_MODEL},
+        "ollama":    {"disponivel": ollama_ok, "modelos": modelos_ollama},
+        "anthropic": {"disponivel": anthropic_ok, "modelo": settings.ANTHROPIC_MODEL_RAPIDO},
         "provider_mode": settings.AI_PROVIDER,
     }
 
