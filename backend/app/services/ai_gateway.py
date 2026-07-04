@@ -172,7 +172,7 @@ async def chat(
     )
 
     # Cadeia de tentativas
-    cadeia = _resolver_cadeia(task_type, provider_force, model_override)
+    cadeia = _resolver_cadeia(task_type, provider_force, model_override, nivel_inteligencia)
 
     ultimo_erro: str = "Nenhum provedor disponível"
     for i, (provider, model) in enumerate(cadeia):
@@ -234,10 +234,21 @@ async def health() -> dict:
 
 # ── Helpers internos ──────────────────────────────────────────────────────────
 
+# Claude só entra para RACIOCÍNIO JURÍDICO COMPLEXO — quando o chamador pede
+# nível elevado (as razões pedem "maximo"). Nos demais casos (padrão), o
+# raciocínio segue em Ollama/Groq. Ajuste este conjunto para afrouxar/apertar.
+_NIVEIS_COMPLEXOS = {"alto", "maximo"}
+
+
+def _nivel_complexo(nivel_inteligencia: str | None) -> bool:
+    return (nivel_inteligencia or "padrao").lower() in _NIVEIS_COMPLEXOS
+
+
 def _resolver_cadeia(
     task_type: str,
     provider_force: str | None,
     model_override: str | None,
+    nivel_inteligencia: str | None = None,
 ) -> list[tuple[str, str | None]]:
     """Resolve a cadeia de (provider, model) para a tarefa."""
     if provider_force == "groq":
@@ -246,6 +257,7 @@ def _resolver_cadeia(
         modelo = model_override or _OLLAMA_MODEL_BY_TASK.get(task_type, lambda: None)()
         return [("ollama", modelo)]
 
+    complexo = _nivel_complexo(nivel_inteligencia)
     base = TASK_ROUTING.get(task_type, TASK_ROUTING["analise_juridica"])
     cadeia = []
     for provider, modelo_cadeia in base:
@@ -253,16 +265,26 @@ def _resolver_cadeia(
             continue  # pular Ollama se desabilitado
         if provider == "groq" and not settings.GROQ_API_KEY:
             continue  # pular Groq sem chave
-        if provider == "anthropic" and not settings.ANTHROPIC_API_KEY:
-            continue  # pular Claude sem chave → cai para Ollama/Groq
+        if provider == "anthropic":
+            if not settings.ANTHROPIC_API_KEY:
+                continue  # sem chave → cai para Ollama/Groq
+            if not complexo:
+                continue  # Claude SÓ para raciocínio jurídico complexo
         modelo_resolvido: str | None = None
         if provider == "ollama":
             modelo_resolvido = model_override or _OLLAMA_MODEL_BY_TASK.get(
                 task_type, lambda: settings.OLLAMA_MODEL_ANALISE
             )()
+        elif provider == "anthropic":
+            # maximo → Opus (mais capaz); alto → Sonnet. model_override vence.
+            padrao_nivel = (
+                settings.ANTHROPIC_MODEL_COMPLEXO
+                if (nivel_inteligencia or "").lower() == "maximo"
+                else modelo_cadeia
+            )
+            modelo_resolvido = model_override or padrao_nivel
         else:
-            # Respeita o modelo declarado na cadeia (ex.: claude-sonnet-5);
-            # model_override tem prioridade. None (Groq) = default do provedor.
+            # Groq: None = default do provedor.
             modelo_resolvido = model_override or modelo_cadeia
         cadeia.append((provider, modelo_resolvido))
 

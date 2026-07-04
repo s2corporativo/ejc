@@ -98,24 +98,39 @@ async def test_provider_haiku_mantem_temperature_sem_thinking(monkeypatch):
     assert kw["max_tokens"] == 512            # sem piso para legado
 
 
-# ── Gateway: roteamento com/sem chave ─────────────────────────────────────────
+# ── Gateway: Claude só para raciocínio complexo ───────────────────────────────
 
-def _cadeia(monkeypatch, *, tem_chave: bool):
+def _cadeia(monkeypatch, *, tem_chave=True, nivel=None):
     monkeypatch.setattr(g.settings, "ANTHROPIC_API_KEY", "sk-x" if tem_chave else "")
     monkeypatch.setattr(g.settings, "OLLAMA_ENABLED", True)
     monkeypatch.setattr(g.settings, "GROQ_API_KEY", "gk")
-    return g._resolver_cadeia("estrategia", provider_force=None, model_override=None)
+    return g._resolver_cadeia("estrategia", provider_force=None,
+                              model_override=None, nivel_inteligencia=nivel)
 
 
-def test_gateway_roteia_claude_quando_ha_chave(monkeypatch):
-    cadeia = _cadeia(monkeypatch, tem_chave=True)
-    assert cadeia[0] == ("anthropic", "claude-sonnet-5")   # Claude primeiro, com modelo
-    assert ("ollama", "deepseek-r1:8b") in cadeia or any(p == "ollama" for p, _ in cadeia)
+def test_gateway_padrao_nao_usa_claude(monkeypatch):
+    # Sem nível elevado (padrão), o raciocínio NÃO vai para a Claude —
+    # mesmo com chave — e segue em Ollama/Groq.
+    for nivel in (None, "padrao"):
+        cadeia = _cadeia(monkeypatch, tem_chave=True, nivel=nivel)
+        assert all(p != "anthropic" for p, _ in cadeia), nivel
+        assert any(p == "ollama" for p, _ in cadeia)
+        assert any(p == "groq" for p, _ in cadeia)
+
+
+def test_gateway_maximo_usa_opus(monkeypatch):
+    cadeia = _cadeia(monkeypatch, tem_chave=True, nivel="maximo")
+    assert cadeia[0] == ("anthropic", "claude-opus-4-8")   # complexo → modelo mais capaz
     assert any(p == "groq" for p, _ in cadeia)             # fallback preservado
 
 
+def test_gateway_alto_usa_sonnet(monkeypatch):
+    cadeia = _cadeia(monkeypatch, tem_chave=True, nivel="alto")
+    assert cadeia[0] == ("anthropic", "claude-sonnet-5")
+
+
 def test_gateway_pula_claude_sem_chave(monkeypatch):
-    cadeia = _cadeia(monkeypatch, tem_chave=False)
+    cadeia = _cadeia(monkeypatch, tem_chave=False, nivel="maximo")
     assert all(p != "anthropic" for p, _ in cadeia)        # sem chave → sem Claude
     assert any(p == "ollama" for p, _ in cadeia)
     assert any(p == "groq" for p, _ in cadeia)
@@ -126,8 +141,9 @@ def test_gateway_model_override_tem_prioridade(monkeypatch):
     monkeypatch.setattr(g.settings, "OLLAMA_ENABLED", False)
     monkeypatch.setattr(g.settings, "GROQ_API_KEY", "gk")
     cadeia = g._resolver_cadeia("elaboracao_peca", provider_force=None,
-                                model_override="claude-opus-4-8")
-    assert cadeia[0] == ("anthropic", "claude-opus-4-8")   # override vence o default da cadeia
+                                model_override="claude-sonnet-5",
+                                nivel_inteligencia="maximo")
+    assert cadeia[0] == ("anthropic", "claude-sonnet-5")   # override vence a escalada p/ Opus
 
 
 # ── Preços corrigidos ─────────────────────────────────────────────────────────
