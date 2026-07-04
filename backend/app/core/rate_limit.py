@@ -58,6 +58,40 @@ def _limpar_janelas() -> None:
         _janelas.clear()
 
 
+def _consumir(nome: str, chave: str, max_por_minuto: int) -> None:
+    """Núcleo do fixed-window: consome 1 unidade da cota (nome, chave) e lança
+    429 se o limite do minuto foi excedido. Compartilhado pelo rate limit por
+    usuário JWT (rate_limit) e pelo rate limit por API key (rag_public)."""
+    agora = _agora()
+    with _lock:
+        if len(_janelas) > _MAX_ENTRADAS:  # poda janelas velhas (evita crescer sem limite)
+            for k in [k for k, (ini, _) in _janelas.items() if agora - ini >= _JANELA_SEGUNDOS]:
+                del _janelas[k]
+            # Teto DURO (auditoria P3): se após a poda tudo ainda está
+            # "fresco" (só possível com chaves forjadas em massa, ex.: IP
+            # spoofado), remove as janelas mais antigas — o invariante de
+            # memória não pode depender do modo de chave.
+            if len(_janelas) > _MAX_ENTRADAS:
+                excedente = len(_janelas) - _MAX_ENTRADAS
+                for k in sorted(_janelas, key=lambda k: _janelas[k][0])[:excedente]:
+                    del _janelas[k]
+        inicio, contagem = _janelas.get((nome, chave), (agora, 0))
+        if agora - inicio >= _JANELA_SEGUNDOS:
+            inicio, contagem = agora, 0
+        contagem += 1
+        _janelas[(nome, chave)] = (inicio, contagem)
+    if contagem > max_por_minuto:
+        restante = max(1, math.ceil(_JANELA_SEGUNDOS - (agora - inicio)))
+        raise HTTPException(
+            status_code=429,
+            detail=(
+                f"Limite de {max_por_minuto} requisições por minuto excedido "
+                "para esta operação. Aguarde alguns instantes e tente novamente."
+            ),
+            headers={"Retry-After": str(restante)},
+        )
+
+
 def rate_limit(nome: str, max_por_minuto: int):
     """Dependency de rate limit por rota: `dependencies=[Depends(rate_limit("x", 5))]`.
 
@@ -72,33 +106,6 @@ def rate_limit(nome: str, max_por_minuto: int):
         # cu nunca é None hoje (get_current_user lança 401), mas o fallback por
         # IP fica como defesa caso a auth passe a ser opcional em alguma rota.
         chave = f"user:{cu.id}" if cu is not None else f"ip:{obter_ip_real(request)}"
-        agora = _agora()
-        with _lock:
-            if len(_janelas) > _MAX_ENTRADAS:  # poda janelas velhas (evita crescer sem limite)
-                for k in [k for k, (ini, _) in _janelas.items() if agora - ini >= _JANELA_SEGUNDOS]:
-                    del _janelas[k]
-                # Teto DURO (auditoria P3): se após a poda tudo ainda está
-                # "fresco" (só possível com chaves forjadas em massa, ex.: IP
-                # spoofado), remove as janelas mais antigas — o invariante de
-                # memória não pode depender do modo de chave.
-                if len(_janelas) > _MAX_ENTRADAS:
-                    excedente = len(_janelas) - _MAX_ENTRADAS
-                    for k in sorted(_janelas, key=lambda k: _janelas[k][0])[:excedente]:
-                        del _janelas[k]
-            inicio, contagem = _janelas.get((nome, chave), (agora, 0))
-            if agora - inicio >= _JANELA_SEGUNDOS:
-                inicio, contagem = agora, 0
-            contagem += 1
-            _janelas[(nome, chave)] = (inicio, contagem)
-        if contagem > max_por_minuto:
-            restante = max(1, math.ceil(_JANELA_SEGUNDOS - (agora - inicio)))
-            raise HTTPException(
-                status_code=429,
-                detail=(
-                    f"Limite de {max_por_minuto} requisições por minuto excedido "
-                    "para esta operação. Aguarde alguns instantes e tente novamente."
-                ),
-                headers={"Retry-After": str(restante)},
-            )
+        _consumir(nome, chave, max_por_minuto)
 
     return _dep

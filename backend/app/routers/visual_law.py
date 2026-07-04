@@ -1,217 +1,194 @@
 # ── app/routers/visual_law.py ────────────────────────────────────────────────
-# Visual Law — Calculadora de acordo (breakeven do litígio).
-# POST /visual-law/breakeven: cálculo puro/determinístico (sem IA, sem banco).
-# Contrato consumido por frontend/src/components/visual/CalculadoraAcordo.tsx
-# (tipos em frontend/src/types/visualLaw.ts: BreakevenRequest/BreakevenResponse).
+# Módulo Visual Law — endpoints determinísticos (sem IA):
+#   GET  /visual-law/casos/{id}/timeline      linha do tempo visual do processo
+#   GET  /visual-law/casos/{id}/matriz-risco  matriz probabilidade × impacto (CPC 25)
+#   GET  /visual-law/casos/{id}/alertas       badges de alerta (case_health)
+#   POST /visual-law/breakeven                calculadora de ponto de equilíbrio (VPL)
 #
-# Modelo financeiro:
-#   valor_esperado    = valor_causa × prob_exito
-#   custos_estimados  = valor_causa × custas% + valor_causa × sucumbência% × (1 − prob_exito)
-#   líquido nominal   = valor_esperado − custos_estimados   (recebido ao fim do litígio)
-#   vpl_litigio       = líquido nominal ÷ (1 + selic_anual)^tempo_anos
-#   breakeven         = vpl_litigio  (acordo hoje equivalente ao litígio)
-#   sugestao_acordo   = breakeven × (1 + MARGEM_NEGOCIACAO)  (margem de fechamento)
-#   custo_do_tempo    = líquido nominal − vpl_litigio
-#
-# Selic: tenta a série SGS 432 do BCB (Meta Selic, % a.a.); em falha/timeout usa
-# SELIC_FALLBACK_ANUAL. Se o cliente enviar `selic_anual`, esse valor prevalece
-# (fonte reportada como "fallback", pois não veio do BCB nesta requisição).
-#
-# `case_id` (opcional no payload) é aceito e IGNORADO: o cálculo não lê nem
-# expõe nenhum dado do caso, então não há superfície de acesso a validar.
+# Visibilidade: mesmo gate dos casos (_filtro_visibilidade de routers/cases.py)
+# — 404 quando o caso não existe OU não é visível ao usuário (não vaza existência).
+# Lógica de negócio em app/services/visual_law_core.py (funções puras testáveis).
 from __future__ import annotations
 
-import logging
-from typing import Literal, Optional
+from datetime import date
 
-import httpx
-from fastapi import APIRouter, Depends
-from pydantic import BaseModel, Field
+from fastapi import APIRouter, Depends, HTTPException
+from sqlalchemy import select
+from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.core.database import get_db
+from app.core.rate_limit import rate_limit
 from app.core.security import get_current_user
 from app.models.user import User
-
-logger = logging.getLogger("ejc.visual_law")
+from app.models.case import Case
+from app.models.deadline import Deadline, DeadlineStatus
+from app.routers.cases import _filtro_visibilidade
+from app.schemas.visual_law import BreakevenIn
+from app.services import bcb_service
+from app.services import visual_law_core as vl
+from app.services.case_health import FECHADOS, calcular_score_caso
 
 router = APIRouter(prefix="/visual-law", tags=["Visual Law"])
 
-# Tempo médio de tramitação (anos) por tribunal — estimativas conservadoras
-# (Justiça em Números/CNJ, ordem de grandeza). Usado só quando o cliente não
-# informa tempo_anos.
-TEMPO_MEDIO_ANOS = {
-    "TJMG": 4.0,
-    "TJSP": 4.5,
-    "TRT3": 2.5,
-    "TRF6": 5.0,
-    "STJ": 3.0,
-}
-TEMPO_PADRAO_ANOS = 4.0
-CUSTAS_PCT_PADRAO = 5.0                # % sobre o valor da causa
-HONORARIOS_SUCUMBENCIA_PCT_PADRAO = 10.0  # % sobre o valor da causa (CPC art. 85 §2º, piso)
-SELIC_FALLBACK_ANUAL = 0.15            # 15% a.a. quando o BCB está indisponível
-MARGEM_NEGOCIACAO = 0.05               # sugestão de acordo = breakeven + 5%
-_BCB_SELIC_META_URL = (
-    "https://api.bcb.gov.br/dados/serie/bcdata.sgs.432/dados/ultimos/1?formato=json"
-)
+
+async def _obter_caso_visivel(db: AsyncSession, cu: User, case_id: str) -> Case:
+    """Carrega o caso aplicando o MESMO controle de visibilidade dos casos
+    (LGPD/RBAC). 404 se não existir ou não for visível ao usuário."""
+    q = select(Case).where(Case.id == case_id, Case.deleted_at.is_(None))
+    q = _filtro_visibilidade(q, cu)
+    case = (await db.execute(q)).scalar_one_or_none()
+    if not case:
+        raise HTTPException(status_code=404, detail="Caso não encontrado")
+    return case
 
 
-class BreakevenRequest(BaseModel):
-    valor_causa: float = Field(gt=0)
-    prob_exito: float = Field(ge=0, le=1, description="Probabilidade de êxito (0..1)")
-    tempo_anos: Optional[float] = Field(default=None, gt=0, le=50)
-    tribunal: Optional[str] = Field(default=None, max_length=40)
-    custas_pct: Optional[float] = Field(default=None, ge=0, le=100)
-    honorarios_sucumbencia_pct: Optional[float] = Field(default=None, ge=0, le=100)
-    selic_anual: Optional[float] = Field(default=None, ge=0, le=1)
-    case_id: Optional[str] = Field(default=None, max_length=64)  # aceito e ignorado
-
-
-class BreakevenParametros(BaseModel):
-    valor_causa: float
-    prob_exito: float
-    tempo_anos: float
-    tribunal: Optional[str]
-    selic_anual: float
-    selic_fonte: Literal["bcb", "fallback"]
-    custas_pct: float
-    honorarios_sucumbencia_pct: float
-
-
-class BreakevenComparativo(BaseModel):
-    litigio_vpl: float
-    acordo_imediato_equivalente: float
-    custo_do_tempo: float
-
-
-class BreakevenResponse(BaseModel):
-    parametros: BreakevenParametros
-    valor_esperado: float
-    custos_estimados: float
-    vpl_litigio: float
-    sugestao_acordo: float
-    breakeven: float
-    comparativo: BreakevenComparativo
-    memoria_calculo: list[str]
-
-
-async def _obter_selic_anual() -> tuple[float, Literal["bcb", "fallback"]]:
-    """Meta Selic anual via BCB/SGS (série 432). Falhou → fallback fixo."""
-    try:
-        async with httpx.AsyncClient(timeout=4) as c:
-            r = await c.get(_BCB_SELIC_META_URL)
-            r.raise_for_status()
-            dados = r.json()
-        taxa = float(str(dados[-1]["valor"]).replace(",", ".")) / 100.0
-        if 0 < taxa < 1:
-            return taxa, "bcb"
-    except Exception as exc:  # rede/formato — nunca derruba o cálculo
-        logger.warning("Selic BCB indisponível, usando fallback: %s", exc)
-    return SELIC_FALLBACK_ANUAL, "fallback"
-
-
-def calcular_breakeven(
-    *,
-    valor_causa: float,
-    prob_exito: float,
-    tempo_anos: float,
-    tribunal: Optional[str],
-    selic_anual: float,
-    selic_fonte: Literal["bcb", "fallback"],
-    custas_pct: float,
-    honorarios_sucumbencia_pct: float,
-) -> BreakevenResponse:
-    """Cálculo puro e determinístico do ponto de equilíbrio do acordo."""
-    valor_esperado = valor_causa * prob_exito
-    custas = valor_causa * custas_pct / 100.0
-    sucumbencia_esperada = (
-        valor_causa * honorarios_sucumbencia_pct / 100.0 * (1.0 - prob_exito)
-    )
-    custos_estimados = custas + sucumbencia_esperada
-    liquido_nominal = valor_esperado - custos_estimados
-
-    fator_desconto = (1.0 + selic_anual) ** tempo_anos
-    vpl_litigio = liquido_nominal / fator_desconto
-    breakeven = max(0.0, vpl_litigio)
-    sugestao_acordo = breakeven * (1.0 + MARGEM_NEGOCIACAO)
-    custo_do_tempo = max(0.0, liquido_nominal - vpl_litigio)
-
-    r2 = lambda x: round(x, 2)  # noqa: E731 — moeda com 2 casas
-    memoria = [
-        f"Valor esperado = {valor_causa:.2f} × {prob_exito:.2%} = R$ {valor_esperado:.2f}",
-        f"Custas processuais = {valor_causa:.2f} × {custas_pct:.1f}% = R$ {custas:.2f}",
-        (
-            f"Sucumbência esperada = {valor_causa:.2f} × {honorarios_sucumbencia_pct:.1f}% "
-            f"× (1 − {prob_exito:.2%}) = R$ {sucumbencia_esperada:.2f}"
-        ),
-        f"Custos estimados = {custas:.2f} + {sucumbencia_esperada:.2f} = R$ {custos_estimados:.2f}",
-        f"Líquido nominal ao fim do litígio = {valor_esperado:.2f} − {custos_estimados:.2f} = R$ {liquido_nominal:.2f}",
-        (
-            f"Fator de desconto = (1 + {selic_anual:.4f})^{tempo_anos:g} = {fator_desconto:.6f} "
-            f"(Selic {selic_anual:.2%} a.a., fonte {'BCB' if selic_fonte == 'bcb' else 'estimada'})"
-        ),
-        f"VPL do litígio = {liquido_nominal:.2f} ÷ {fator_desconto:.6f} = R$ {vpl_litigio:.2f}",
-        f"Breakeven (acordo hoje equivalente ao litígio) = R$ {breakeven:.2f}",
-        f"Sugestão de acordo = breakeven × (1 + {MARGEM_NEGOCIACAO:.0%}) = R$ {sugestao_acordo:.2f}",
-        f"Custo do tempo = {liquido_nominal:.2f} − {vpl_litigio:.2f} = R$ {custo_do_tempo:.2f}",
-    ]
-
-    return BreakevenResponse(
-        parametros=BreakevenParametros(
-            valor_causa=r2(valor_causa),
-            prob_exito=prob_exito,
-            tempo_anos=tempo_anos,
-            tribunal=tribunal,
-            selic_anual=selic_anual,
-            selic_fonte=selic_fonte,
-            custas_pct=custas_pct,
-            honorarios_sucumbencia_pct=honorarios_sucumbencia_pct,
-        ),
-        valor_esperado=r2(valor_esperado),
-        custos_estimados=r2(custos_estimados),
-        vpl_litigio=r2(vpl_litigio),
-        sugestao_acordo=r2(sugestao_acordo),
-        breakeven=r2(breakeven),
-        comparativo=BreakevenComparativo(
-            litigio_vpl=r2(vpl_litigio),
-            acordo_imediato_equivalente=r2(breakeven),
-            custo_do_tempo=r2(custo_do_tempo),
-        ),
-        memoria_calculo=memoria,
-    )
-
-
-@router.post("/breakeven", response_model=BreakevenResponse)
-async def breakeven(
-    payload: BreakevenRequest,
+# ── Linha do tempo visual ─────────────────────────────────────────────────────
+@router.get("/casos/{case_id}/timeline")
+async def timeline_visual(
+    case_id: str,
+    db: AsyncSession = Depends(get_db),
     cu: User = Depends(get_current_user),
-) -> BreakevenResponse:
-    """Compara VPL do litígio × acordo imediato e sugere o ponto de equilíbrio."""
-    if payload.selic_anual is not None:
-        selic_anual: float = payload.selic_anual
-        selic_fonte: Literal["bcb", "fallback"] = "fallback"
+):
+    """Linha do tempo VISUAL do caso: fases da jornada processual, eventos
+    reais (mesma montagem de /cases/{id}/linha-do-tempo), próximos passos
+    determinísticos (prazos reais + estimativas estáticas) e estagnação."""
+    case = await _obter_caso_visivel(db, cu, case_id)
+    fase = case.fase.value if case.fase else "pre_processual"
+
+    eventos = await vl.montar_eventos_caso(db, case_id)
+    dias_parado = await vl.dias_sem_movimentacao(db, case)
+
+    # Prazos pendentes futuros reais do caso (base dos próximos passos)
+    prazos_rows = (await db.execute(
+        select(Deadline).where(
+            Deadline.case_id == case_id,
+            Deadline.deleted_at.is_(None),
+            Deadline.status == DeadlineStatus.pendente,
+            Deadline.data_prazo >= date.today(),
+        ).order_by(Deadline.data_prazo).limit(20)
+    )).scalars().all()
+    prazos = [{"titulo": p.titulo,
+               "data": p.data_prazo.isoformat() if p.data_prazo else None}
+              for p in prazos_rows]
+
+    return {
+        "case_id": case_id,
+        "fase_atual": fase,
+        "fases": vl.montar_fases(fase),
+        "eventos": eventos,
+        "proximos_passos": vl.montar_proximos_passos(fase, prazos),
+        # Caso encerrado/arquivado não estagna — nível sempre "ok"
+        "estagnacao": vl.montar_estagnacao(dias_parado,
+                                           fechado=case.status in FECHADOS),
+    }
+
+
+# ── Matriz de risco (probabilidade × impacto, CPC 25) ─────────────────────────
+@router.get("/casos/{case_id}/matriz-risco")
+async def matriz_risco(
+    case_id: str,
+    db: AsyncSession = Depends(get_db),
+    cu: User = Depends(get_current_user),
+):
+    """Matriz Probabilidade × Impacto: probabilidade do risco cadastrado (ou
+    derivada do score de saúde), impacto do valor da causa, quadrante com
+    tratamento contábil conforme CPC 25. Determinístico, sem IA."""
+    case = await _obter_caso_visivel(db, cu, case_id)
+
+    # Score de saúde só é calculado quando necessário (risco não cadastrado)
+    score = None
+    if (case.risco or "").strip().lower() not in ("baixo", "medio", "alto"):
+        score = (await calcular_score_caso(db, case))["score"]
+    probabilidade, fonte = vl.derivar_probabilidade(case.risco, score)
+
+    valor_causa = float(case.valor_causa) if case.valor_causa is not None else None
+    impacto = vl.classificar_impacto(valor_causa)
+
+    return {
+        "case_id": case_id,
+        "probabilidade": {"nivel": probabilidade, "fonte": fonte},
+        "impacto": {"nivel": impacto, "valor_causa": valor_causa},
+        "quadrante": vl.montar_quadrante(probabilidade, impacto),
+        "matriz": vl.montar_matriz(),
+    }
+
+
+# ── Badges de alerta ──────────────────────────────────────────────────────────
+@router.get("/casos/{case_id}/alertas")
+async def alertas(
+    case_id: str,
+    db: AsyncSession = Depends(get_db),
+    cu: User = Depends(get_current_user),
+):
+    """Badges de alerta do caso a partir dos fatores do case_health, com a
+    regra visual de estagnação: >60 dias parado → badge crítico pulsante."""
+    case = await _obter_caso_visivel(db, cu, case_id)
+    saude = await calcular_score_caso(db, case)
+    # dias_parado já vem do case_health (evita repetir a query de movimentos);
+    # sem referência (None) ou referência futura → 0, como em dias_parado_desde.
+    dias_parado = max(0, saude["dias_parado"] or 0)
+
+    return {
+        "case_id": case_id,
+        "score": saude["score"],
+        "classificacao": saude["classificacao"],
+        "dias_parado": dias_parado,
+        # Caso encerrado/arquivado não recebe badge de estagnação
+        "badges": vl.montar_badges(saude["fatores"], dias_parado,
+                                   fechado=case.status in FECHADOS),
+    }
+
+
+# ── Calculadora de ponto de equilíbrio (breakeven/VPL) ────────────────────────
+@router.post("/breakeven",
+             dependencies=[Depends(rate_limit("visual-breakeven", 15))])
+async def breakeven(
+    payload: BreakevenIn,
+    db: AsyncSession = Depends(get_db),
+    cu: User = Depends(get_current_user),
+):
+    """Ponto de equilíbrio do acordo: VPL do litígio × acordo imediato.
+    Defaults determinísticos: valor/tribunal do caso (se case_id), tempo médio
+    de tramitação por tribunal (CNJ) e Selic anualizada do BCB (com fallback)."""
+    valor_causa = payload.valor_causa
+    tribunal = payload.tribunal
+
+    # Defaults a partir do caso (com o mesmo gate de visibilidade — 404)
+    if payload.case_id:
+        case = await _obter_caso_visivel(db, cu, payload.case_id)
+        if valor_causa is None and case.valor_causa is not None:
+            valor_causa = float(case.valor_causa)
+        if not tribunal:
+            tribunal = case.tribunal
+
+    if not valor_causa or valor_causa <= 0:
+        raise HTTPException(
+            status_code=422,
+            detail="valor_causa é obrigatório: informe no payload ou envie um "
+                   "case_id de caso com valor da causa cadastrado.",
+        )
+
+    # Tempo de tramitação: informado > média do tribunal (CNJ) > default
+    if payload.tempo_anos:
+        tempo_anos, tempo_fonte = payload.tempo_anos, "informado"
     else:
-        selic_anual, selic_fonte = await _obter_selic_anual()
+        tempo_anos, tempo_fonte = vl.tempo_tramitacao_estimado(tribunal)
 
-    tribunal = payload.tribunal.strip().upper() if payload.tribunal else None
-    tempo_anos = payload.tempo_anos or TEMPO_MEDIO_ANOS.get(
-        tribunal or "", TEMPO_PADRAO_ANOS
-    )
-    custas_pct = (
-        payload.custas_pct if payload.custas_pct is not None else CUSTAS_PCT_PADRAO
-    )
-    honorarios_pct = (
-        payload.honorarios_sucumbencia_pct
-        if payload.honorarios_sucumbencia_pct is not None
-        else HONORARIOS_SUCUMBENCIA_PCT_PADRAO
-    )
+    # Selic anual: informada > BCB (série 4390 anualizada) > fallback fixo
+    if payload.selic_anual is not None:
+        selic_anual, selic_fonte = payload.selic_anual, "informada"
+    else:
+        selic = await bcb_service.selic_anualizada()
+        selic_anual, selic_fonte = selic["selic_anual"], selic["fonte"]
 
-    return calcular_breakeven(
-        valor_causa=payload.valor_causa,
+    return vl.calcular_breakeven(
+        valor_causa=valor_causa,
         prob_exito=payload.prob_exito,
         tempo_anos=tempo_anos,
-        tribunal=tribunal,
         selic_anual=selic_anual,
+        custas_pct=vl.normalizar_pct(payload.custas_pct),
+        honorarios_sucumbencia_pct=vl.normalizar_pct(payload.honorarios_sucumbencia_pct),
+        tribunal=tribunal,
+        tempo_fonte=tempo_fonte,
         selic_fonte=selic_fonte,
-        custas_pct=custas_pct,
-        honorarios_sucumbencia_pct=honorarios_pct,
     )

@@ -58,6 +58,20 @@ async def calcular_score_caso(db: AsyncSession, case: Case, hoje: date | None = 
     fatores: list[dict] = []
     fechado = case.status in FECHADOS
 
+    # Dias sem movimentação — calculado UMA vez, para todo status (fechado
+    # incluso), e devolvido no resultado (evita query duplicada nos routers
+    # que também precisam do dado, ex.: /visual-law/casos/{id}/alertas).
+    # None quando não há referência alguma (sem movimento e sem created_at).
+    ult_mov = (await db.execute(
+        select(func.max(CaseMovimento.data_evento)).where(CaseMovimento.case_id == case.id)
+    )).scalar()
+    referencia = ult_mov or case.created_at
+    dias_parado: int | None = None
+    if referencia is not None:
+        if referencia.tzinfo is None:
+            referencia = referencia.replace(tzinfo=timezone.utc)
+        dias_parado = (agora - referencia).days
+
     if not fechado:
         # 1) Prazos vencidos (vencido explícito OU pendente com data passada)
         venc = (await db.execute(
@@ -86,19 +100,11 @@ async def calcular_score_caso(db: AsyncSession, case: Case, hoje: date | None = 
             fatores.append({"fator": "prazo_critico_sem_ciencia", "impacto": -10,
                             "detalhe": f"{criticos} prazo(s) ≤7 dias sem confirmação de ciência"})
 
-        # 3) Mais de 30 dias sem movimentação
-        ult_mov = (await db.execute(
-            select(func.max(CaseMovimento.data_evento)).where(CaseMovimento.case_id == case.id)
-        )).scalar()
-        referencia = ult_mov or case.created_at
-        if referencia is not None:
-            if referencia.tzinfo is None:
-                referencia = referencia.replace(tzinfo=timezone.utc)
-            dias_parado = (agora - referencia).days
-            if dias_parado > 30:
-                score -= 15
-                fatores.append({"fator": "sem_movimentacao", "impacto": -15,
-                                "detalhe": f"{dias_parado} dias sem movimentação"})
+        # 3) Mais de 30 dias sem movimentação (fator não se aplica a fechados)
+        if dias_parado is not None and dias_parado > 30:
+            score -= 15
+            fatores.append({"fator": "sem_movimentacao", "impacto": -15,
+                            "detalhe": f"{dias_parado} dias sem movimentação"})
 
     # 4) Cliente sem procuração ativa (procuração é por cliente)
     proc_ativa = (await db.execute(
@@ -140,6 +146,7 @@ async def calcular_score_caso(db: AsyncSession, case: Case, hoje: date | None = 
         "classificacao": _classificar(score),
         "fatores": fatores,
         "saudavel": not fatores,
+        "dias_parado": dias_parado,   # aditivo — consumidores existentes ignoram
     }
 
 

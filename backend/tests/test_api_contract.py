@@ -29,3 +29,22 @@ def test_frontend_calls_batem_com_rotas_reais():
             "Se for chamada legitimamente dinâmica/externa, adicione à "
             "ALLOWLIST_SUBSTR em app/utils/api_contract.py com justificativa."
         )
+
+
+def test_extrator_reconhece_chamada_encadeada_multilinha():
+    """Regressão: o prettier quebra chamadas longas em `api\n  .get<T>(...)` e
+    a regex antiga exigia `api.` colado — as rotas Visual Law passaram sem
+    rota no backend justamente por esse ponto cego (404 silencioso em prod)."""
+    from app.utils.api_contract import _CALL_RE
+
+    src = (
+        "const r = await api\n"
+        "  .get<TimelineResponse>(\n"
+        '    "/visual-law/casos/abc/timeline",\n'
+        "  );\n"
+    )
+    m = _CALL_RE.search(src)
+    assert m is not None, "chamada encadeada multilinha não reconhecida"
+    assert m.group(1) == "api"
+    assert m.group(2) == "get"
+    assert m.group(4) == "/visual-law/casos/abc/timeline"

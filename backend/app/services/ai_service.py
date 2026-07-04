@@ -65,11 +65,24 @@ _RESTRICTED_CATS = ["peca_interna", "peca_escritorio", "precedente_interno"]
 # EXCLUÍDO da busca — fecha o vazamento cruzado entre clientes.
 _FILTRO_ESCOPO_RAG = "AND (kd.categoria <> ALL(:restr_cats) OR kd.client_id = :scope_cli)"
 
+# Versionamento (migration 068): por padrão só a versão VIGENTE de cada
+# documento entra na busca RAG. `:incl_hist` (bool) permite incluir versões
+# históricas (auditoria de citações antigas, pesquisa de evolução de tese).
+_FILTRO_VIGENTE_RAG = "AND (kd.vigente = TRUE OR :incl_hist)"
+
 # RAG-04: limiar mínimo de similaridade na busca semântica — evita que matches
 # fracos/irrelevantes entrem como "fonte" e poluam o contexto da IA (risco de
 # alucinação). Similaridade = 1 - distância de cosseno. min_sim 0.55 → max_dist 0.45.
 _RAG_MIN_SIM = 0.55
 _RAG_MAX_DIST = 1.0 - _RAG_MIN_SIM
+
+# Confiança do documento (curadoria de governança — ia_governanca._conf):
+# vive em knowledge_docs.extra (JSONB), chave canônica "confidence_level"
+# (legado "confianca"), default "media". Exposta em todo resultado de busca
+# para que o consumidor (IA/frontend) pondere a fonte.
+_SQL_CONFIANCA = (
+    "COALESCE(kd.extra->>'confidence_level', kd.extra->>'confianca', 'media') AS confianca"
+)
 
 
 async def _escopo_cliente_do_caso(db: AsyncSession, case_id: str | None) -> str | None:
@@ -88,7 +101,8 @@ async def _escopo_cliente_do_caso(db: AsyncSession, case_id: str | None) -> str 
     return row[0] if row else None
 
 
-async def _fundir_lexical(db, consulta, semanticos, limite, categorias, scope_client_id=None):
+async def _fundir_lexical(db, consulta, semanticos, limite, categorias, scope_client_id=None,
+                          incluir_historico=False):
     """Busca híbrida: funde ranking SEMÂNTICO (pgvector) + LEXICAL (pg_trgm) via
     Reciprocal Rank Fusion (RRF). Aditivo — se a parte lexical falhar, devolve o
     semântico intacto. k=60 é o padrão de RRF."""
@@ -104,13 +118,15 @@ async def _fundir_lexical(db, consulta, semanticos, limite, categorias, scope_cl
         meta[cid] = r
     try:
         params = {"q": consulta[:300], "lim": max(limite * 3, 12),
-                  "restr_cats": _RESTRICTED_CATS, "scope_cli": scope_client_id or ""}
+                  "restr_cats": _RESTRICTED_CATS, "scope_cli": scope_client_id or "",
+                  "incl_hist": incluir_historico}
         filtro = ""
         if categorias:
             filtro = "AND kd.categoria = ANY(:cats)"
             params["cats"] = categorias
         sql = _text(f"""
             SELECT kc.id, kc.conteudo, kd.titulo, kd.categoria, kd.fonte,
+                   {_SQL_CONFIANCA},
                    similarity(kc.conteudo, :q) AS sim
             FROM knowledge_chunks kc
             JOIN knowledge_docs kd ON kd.id = kc.doc_id
@@ -118,6 +134,7 @@ async def _fundir_lexical(db, consulta, semanticos, limite, categorias, scope_cl
               AND similarity(kc.conteudo, :q) > 0.05
               {filtro}
               {_FILTRO_ESCOPO_RAG}
+              {_FILTRO_VIGENTE_RAG}
             ORDER BY sim DESC
             LIMIT :lim
         """)
@@ -127,7 +144,8 @@ async def _fundir_lexical(db, consulta, semanticos, limite, categorias, scope_cl
             fusion[cid] = fusion.get(cid, 0.0) + 1.0 / (K + rank + 1)
             if cid not in meta:
                 meta[cid] = {"chunk_id": r.id, "conteudo": r.conteudo, "titulo": r.titulo,
-                             "categoria": r.categoria, "fonte": r.fonte, "score": round(float(r.sim), 4)}
+                             "categoria": r.categoria, "fonte": r.fonte,
+                             "confianca": r.confianca, "score": round(float(r.sim), 4)}
     except Exception as _e:
         logger.warning(f"Fusao lexical (RRF) falhou, mantendo semantico: {_e}")
         return semanticos
@@ -142,6 +160,7 @@ async def buscar_contexto_rag(
     categorias: list[str] | None = None,
     modo_or: bool = False,
     scope_client_id: str | None = None,
+    incluir_historico: bool = False,
 ) -> list[dict]:
     """
     Busca semântica na base de conhecimento via pgvector.
@@ -150,6 +169,10 @@ async def buscar_contexto_rag(
     modo_or=True: casa qualquer termo (OR) em vez de todos (AND). Útil para
     precedentes internos, onde a relevância parcial é valiosa e os textos
     raramente repetem o vocabulário exato do caso novo.
+
+    incluir_historico=True: inclui versões não-vigentes (migration 068) —
+    útil para auditoria de citações antigas ou pesquisa da evolução de uma
+    tese/entendimento. Por padrão (False) só a versão vigente é retornada.
     """
     # Tentativa 0: busca SEMÂNTICA via pgvector (se embeddings habilitados).
     # Usa distância de cosseno (operador <=> do pgvector). Cai no textual se
@@ -162,13 +185,15 @@ async def buscar_contexto_rag(
         if vetores:
             vec = vetores[0]
             params_v: dict = {"vec": str(vec), "lim": limite, "max_dist": _RAG_MAX_DIST,
-                              "restr_cats": _RESTRICTED_CATS, "scope_cli": scope_client_id or ""}
+                              "restr_cats": _RESTRICTED_CATS, "scope_cli": scope_client_id or "",
+                              "incl_hist": incluir_historico}
             filtro_cat_v = ""
             if categorias:
                 filtro_cat_v = "AND kd.categoria = ANY(:cats)"
                 params_v["cats"] = categorias
             sql_v = text(f"""
                 SELECT kc.id, kc.conteudo, kd.titulo, kd.categoria, kd.fonte,
+                       {_SQL_CONFIANCA},
                        (kc.embedding <=> :vec) AS dist
                 FROM knowledge_chunks kc
                 JOIN knowledge_docs kd ON kd.id = kc.doc_id
@@ -177,6 +202,7 @@ async def buscar_contexto_rag(
                   AND (kc.embedding <=> :vec) <= :max_dist
                   {filtro_cat_v}
                   {_FILTRO_ESCOPO_RAG}
+                  {_FILTRO_VIGENTE_RAG}
                 ORDER BY kc.embedding <=> :vec
                 LIMIT :lim
             """)
@@ -185,11 +211,13 @@ async def buscar_contexto_rag(
                 resultados = [
                     {"chunk_id": r.id, "conteudo": r.conteudo, "titulo": r.titulo,
                      "categoria": r.categoria, "fonte": r.fonte,
+                     "confianca": r.confianca,
                      "score": round(1 - r.dist, 4)}   # cosine similarity
                     for r in rows_v
                 ]
                 if resultados:
-                    return await _fundir_lexical(db, consulta, resultados, limite, categorias, scope_client_id)
+                    return await _fundir_lexical(db, consulta, resultados, limite, categorias,
+                                                 scope_client_id, incluir_historico)
                 # Sem vetores gravados ainda → cai no textual abaixo
             except Exception as e:
                 logger.warning(f"Busca vetorial falhou, usando textual: {e}")
@@ -215,15 +243,18 @@ async def buscar_contexto_rag(
         params["cats"] = categorias
     params["restr_cats"] = _RESTRICTED_CATS
     params["scope_cli"] = scope_client_id or ""
+    params["incl_hist"] = incluir_historico
 
     sql = text(f"""
-        SELECT kc.id, kc.conteudo, kd.titulo, kd.categoria, kd.fonte
+        SELECT kc.id, kc.conteudo, kd.titulo, kd.categoria, kd.fonte,
+               {_SQL_CONFIANCA}
         FROM knowledge_chunks kc
         JOIN knowledge_docs kd ON kd.id = kc.doc_id
         WHERE kd.deleted_at IS NULL
           {cond_termos}
           {filtro_cat}
           {_FILTRO_ESCOPO_RAG}
+          {_FILTRO_VIGENTE_RAG}
         LIMIT :lim
     """)
     try:
@@ -232,6 +263,7 @@ async def buscar_contexto_rag(
             {
                 "chunk_id": r.id, "conteudo": r.conteudo,
                 "titulo": r.titulo, "categoria": r.categoria, "fonte": r.fonte,
+                "confianca": r.confianca,
             }
             for r in rows
         ]

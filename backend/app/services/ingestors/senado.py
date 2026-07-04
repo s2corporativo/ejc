@@ -64,6 +64,7 @@ async def ingerir(db: AsyncSession) -> tuple[int, int]:
                     fonte=m.get("UrlDetalheMateria") or API,
                     extra={"sigla": sigla, "ano": ano, "casa": "senado",
                            "numero": m.get("Numero")},
+                    confianca="alta",   # fonte oficial (Senado Federal)
                 )
                 if res in ("novo", "atualizado"):
                     novos += 1
