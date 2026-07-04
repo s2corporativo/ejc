@@ -38,12 +38,21 @@ _ARQUIVAMENTO_ROLES = ["superadmin", "admin", "socio", "advogado"]
 
 
 async def _proximo_numero_interno(db: AsyncSession) -> str:
-    """Numeração automática DPT-2026-0001 (sequencial por ano)."""
+    """Numeração automática DPT-2026-0001 (sequencial por ano).
+
+    Lock consultivo transacional (pg_advisory_xact_lock) serializa criações
+    concorrentes no mesmo ano — evita numero_interno duplicado. Ordenação pelo
+    sufixo NUMÉRICO (não lexicográfica: 'DPT-2026-10000' < 'DPT-2026-9999')."""
     ano = date.today().year
-    result = await db.execute(text("""
+    await db.execute(
+        text("SELECT pg_advisory_xact_lock(hashtext(:chave))"),
+        {"chave": f"numero_interno_{ano}"},
+    )
+    result = await db.execute(text(r"""
         SELECT numero_interno FROM cases
         WHERE numero_interno LIKE :pref
-        ORDER BY numero_interno DESC LIMIT 1
+        ORDER BY CAST(substring(numero_interno FROM '\d+$') AS INTEGER) DESC
+        LIMIT 1
     """), {"pref": f"DPT-{ano}-%"})
     ultimo = result.scalar()
     seq = int(ultimo.split("-")[-1]) + 1 if ultimo else 1
@@ -497,9 +506,9 @@ async def gerar_documentos(
 ):
     """Gera as minutas iniciais do caso (procuração, contrato de honorários,
     relatório inicial) preenchidas com os dados do cliente/caso. Rascunhos."""
-    c = (await db.execute(
-        select(Case).where(Case.id == case_id, Case.deleted_at.is_(None))
-    )).scalar_one_or_none()
+    q = select(Case).where(Case.id == case_id, Case.deleted_at.is_(None))
+    q = _filtro_visibilidade(q, cu)
+    c = (await db.execute(q)).scalar_one_or_none()
     if not c:
         raise HTTPException(status_code=404, detail="Caso não encontrado")
     docs = await gerar_documentos_iniciais(case_id, cu.id)
@@ -640,7 +649,10 @@ from pydantic import BaseModel as _BM2, Field as _F2
 
 
 class EncerrarCasoReq(_BM2):
-    resultado: str = _F2(description="exito|exito_parcial|acordo|derrota|desistencia|arquivado")
+    resultado: str = _F2(
+        pattern="^(exito|exito_parcial|acordo|derrota|desistencia|arquivado)$",
+        description="exito|exito_parcial|acordo|derrota|desistencia|arquivado",
+    )
     motivo_resultado: str = _F2(min_length=20,
         description="Por que esse resultado? Fundamentos aceitos/rejeitados.")
     provas_determinantes: str = _F2(min_length=10)
@@ -745,6 +757,14 @@ async def traduzir_andamento(
     q = _filtro_visibilidade(q, cu)
     if not (await db.execute(q)).scalar_one_or_none():
         raise HTTPException(status_code=404, detail="Caso não encontrado")
+    # IDOR: o movimento precisa pertencer a ESTE caso (não basta o caso existir).
+    mov_ok = (await db.execute(
+        select(CaseMovimento.id).where(
+            CaseMovimento.id == mov_id, CaseMovimento.case_id == case_id,
+        )
+    )).scalar_one_or_none()
+    if not mov_ok:
+        raise HTTPException(status_code=404, detail="Movimento não encontrado neste caso")
     resumo = await traduzir_movimento(db, mov_id, forcar=True)
     if resumo is None:
         raise HTTPException(status_code=422, detail="Não foi possível traduzir o andamento (IA indisponível ou texto curto).")

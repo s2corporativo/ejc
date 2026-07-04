@@ -94,6 +94,7 @@ from app.routers import licitacao_auditoria
 from app.routers import mediacao
 from app.routers import memoria_institucional
 from app.routers import mensagens
+from app.routers import module_help
 from app.routers import movimentos
 from app.routers import noticias
 from app.routers import notifications
@@ -295,6 +296,7 @@ app.include_router(licitacao_auditoria.router, prefix=API)
 app.include_router(mediacao.router, prefix=API)
 app.include_router(memoria_institucional.router, prefix=API)
 app.include_router(mensagens.router, prefix=API)
+app.include_router(module_help.router, prefix=API)  # frontend: /api/module-help/* (HelpButton)
 app.include_router(movimentos.router, prefix=API)
 app.include_router(noticias.router, prefix=API)
 app.include_router(notifications.router, prefix=API)

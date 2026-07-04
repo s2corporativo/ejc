@@ -664,13 +664,24 @@ async def deletar_documento_drive(
 ):
     """Remove documento do Drive e do banco."""
     from sqlalchemy import text as sql_text
+    import logging as _logging
+    # Gate IDOR: exige acesso ao caso (ou gestão/criador) ANTES de tocar o Drive.
+    row = await _gate_drive_doc(db, current_user, file_id)
     try:
         gd.delete_file(file_id)
     except Exception:
-        pass  # já foi removido do Drive
+        # Pode já ter sido removido do Drive — registra para diagnóstico.
+        _logging.getLogger(__name__).warning(
+            "Falha ao remover arquivo %s do Drive (seguindo com remoção local)",
+            file_id, exc_info=True,
+        )
     await db.execute(
-        sql_text("DELETE FROM documents WHERE drive_file_id = :fid AND uploaded_by = :uid"),
-        {"fid": file_id, "uid": current_user.id},
+        sql_text("DELETE FROM documents WHERE drive_file_id = :fid"),
+        {"fid": file_id},
+    )
+    await criar_audit_log(
+        db, current_user.id, current_user.role.value, "DELETE", "documents",
+        row["id"], detalhes=f"Exclusão de documento do Drive (drive_file_id={file_id})",
     )
     await db.commit()
     return {"ok": True}

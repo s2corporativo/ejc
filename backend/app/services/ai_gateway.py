@@ -310,16 +310,22 @@ def _custo_brl(model: str, inp: int, out: int) -> float:
 
 
 async def _registrar_ai_log(db, user_id, case_id, tipo_uso, modelo, inp, out, custo):
-    """Grava na tabela REAL ai_logs (HITL). Fail-safe."""
+    """Grava na tabela REAL ai_logs (HITL). Fail-safe.
+
+    Usa sessão PRÓPRIA (AsyncSessionLocal) em vez da sessão do request: commitar
+    a sessão do handler aqui poderia confirmar/abortar transação alheia. O
+    parâmetro `db` é mantido por compatibilidade de assinatura (ignorado)."""
     from app.models.ai_log import normalizar_modelo_ia  # BUG-22: nome canônico
+    from app.core.database import AsyncSessionLocal
     try:
-        await db.execute(_sql_text("""
-            INSERT INTO ai_logs (id, user_id, case_id, tipo_uso, modelo,
-                                 tokens_input, tokens_output, custo_estimado, status_hitl, created_at)
-            VALUES (:id, :uid, :cid, :tipo, :modelo, :ti, :to, :custo, 'gerado', now())
-        """), {"id": str(_uuid4()), "uid": user_id, "cid": case_id, "tipo": tipo_uso,
-               "modelo": normalizar_modelo_ia(modelo), "ti": inp or 0, "to": out or 0, "custo": custo})
-        await db.commit()
+        async with AsyncSessionLocal() as sessao:
+            await sessao.execute(_sql_text("""
+                INSERT INTO ai_logs (id, user_id, case_id, tipo_uso, modelo,
+                                     tokens_input, tokens_output, custo_estimado, status_hitl, created_at)
+                VALUES (:id, :uid, :cid, :tipo, :modelo, :ti, :to, :custo, 'gerado', now())
+            """), {"id": str(_uuid4()), "uid": user_id, "cid": case_id, "tipo": tipo_uso,
+                   "modelo": normalizar_modelo_ia(modelo), "ti": inp or 0, "to": out or 0, "custo": custo})
+            await sessao.commit()
     except Exception as e:
         logger.warning(f"[Gateway] ai_logs falhou: {e}")
 

@@ -1,4 +1,4 @@
-﻿"""
+"""
 Pipeline de geração de peças jurídicas em 7 etapas com SSE streaming.
 Cada etapa emite um evento SSE com status e resultado parcial.
 """

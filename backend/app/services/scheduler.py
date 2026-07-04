@@ -159,38 +159,46 @@ async def _alertar_prazos():
                       AND d.responsavel_id IS NOT NULL
                 """), {"alvo": alvo, "hoje": hoje})
                 for r in rows:
-                    venc = r.data_prazo.strftime('%d/%m/%Y')
-                    dias_reais = (r.data_prazo - hoje).days
-                    await criar_notificacao_interna(
-                        db, r.responsavel_id,
-                        f"⏰ Prazo em {dias_reais} dia(s)",
-                        f"{r.titulo} vence em {venc}",
-                        tipo="prazo", link=f"/prazos",
-                    )
-                    await enviar_push(
-                        db, r.responsavel_id,
-                        f"⏰ Prazo em {dias_reais} dia(s)",
-                        f"{r.titulo} vence em {venc}",
-                        link="/prazos",
-                    )
-                    if r.email:
-                        await enviar_email(
-                            r.email,
-                            f"[EJC] Prazo em {dias_reais} dia(s): {r.titulo}",
-                            f"<p>O prazo <b>{r.titulo}</b> vence em "
-                            f"<b>{venc}</b> ({dias_reais} dia(s)).</p>"
-                            f"<p>Acesse o EJC para os detalhes do caso.</p>",
+                    # Try/except POR destinatário: a falha de um não aborta o
+                    # lote; commit por item logo após marcar a flag (idempotência).
+                    try:
+                        venc = r.data_prazo.strftime('%d/%m/%Y')
+                        dias_reais = (r.data_prazo - hoje).days
+                        await criar_notificacao_interna(
+                            db, r.responsavel_id,
+                            f"⏰ Prazo em {dias_reais} dia(s)",
+                            f"{r.titulo} vence em {venc}",
+                            tipo="prazo", link=f"/prazos",
                         )
-                    if r.phone:
-                        await enviar_whatsapp(
-                            r.phone,
-                            f"⏰ *EJC* — o prazo \"{r.titulo}\" vence em "
-                            f"{venc} ({dias_reais} dia(s)).",
+                        await enviar_push(
+                            db, r.responsavel_id,
+                            f"⏰ Prazo em {dias_reais} dia(s)",
+                            f"{r.titulo} vence em {venc}",
+                            link="/prazos",
                         )
-                    await db.execute(text(
-                        f"UPDATE deadlines SET {flag}=true WHERE id=:id"
-                    ), {"id": r.id})
-                await db.commit()
+                        if r.email:
+                            await enviar_email(
+                                r.email,
+                                f"[EJC] Prazo em {dias_reais} dia(s): {r.titulo}",
+                                f"<p>O prazo <b>{r.titulo}</b> vence em "
+                                f"<b>{venc}</b> ({dias_reais} dia(s)).</p>"
+                                f"<p>Acesse o EJC para os detalhes do caso.</p>",
+                            )
+                        if r.phone:
+                            await enviar_whatsapp(
+                                r.phone,
+                                f"⏰ *EJC* — o prazo \"{r.titulo}\" vence em "
+                                f"{venc} ({dias_reais} dia(s)).",
+                            )
+                        await db.execute(text(
+                            f"UPDATE deadlines SET {flag}=true WHERE id=:id"
+                        ), {"id": r.id})
+                        await db.commit()
+                    except Exception as e:
+                        await db.rollback()
+                        logger.error(
+                            f"[Scheduler] alertar_prazos falhou p/ deadline {r.id}: {e}"
+                        )
     except Exception as e:
         logger.error(f"[Scheduler] alertar_prazos: {e}")
 
@@ -480,51 +488,58 @@ async def _regua_cobranca():
                 if (r.action_taken or "") == marcador:
                     continue  # já notificado neste nível — evita spam diário
 
-                nome = r.cliente_nome or "Cliente"
-                caso = r.caso_num or "—"
-                valor = float(r.amount_due or 0)
-                dias = int(r.days_overdue or 0)
-                titulo = f"💰 Honorário vencido ({dias}d) — {r.alert_level}"
-                corpo = (
-                    f"{nome} (caso {caso}): R$ {valor:,.2f} em atraso há "
-                    f"{dias} dia(s). Nível de cobrança: {r.alert_level}."
-                )
-
-                # Sino interno — sempre (todos os níveis)
-                await criar_notificacao_interna(
-                    db, r.adv_id, titulo, corpo,
-                    tipo="financeiro", link="/financeiro",
-                )
-                await enviar_push(
-                    db, r.adv_id, titulo, corpo, link="/financeiro",
-                )
-                # E-mail — a partir de 'medio'
-                if r.alert_level in ("medio", "critico", "cobranca_formal") and r.adv_email:
-                    await enviar_email(
-                        r.adv_email,
-                        f"[EJC] Cobrança {r.alert_level}: {nome} ({dias}d)",
-                        f"<p>O honorário de <b>{nome}</b> (caso {caso}) está "
-                        f"<b>{dias} dia(s)</b> em atraso — R$ {valor:,.2f}.</p>"
-                        f"<p>Nível de cobrança: <b>{r.alert_level}</b>. "
-                        f"Acione a régua de cobrança no EJC.</p>",
-                    )
-                # WhatsApp — apenas níveis mais graves
-                if r.alert_level in ("critico", "cobranca_formal") and r.adv_phone:
-                    await enviar_whatsapp(
-                        r.adv_phone,
-                        f"💰 *EJC* — Honorário de {nome} (caso {caso}) "
-                        f"{dias}d em atraso (R$ {valor:,.2f}). "
-                        f"Nível: {r.alert_level}.",
+                # Try/except POR destinatário + commit por item após marcar o
+                # nível (idempotência): a falha de um não aborta o lote.
+                try:
+                    nome = r.cliente_nome or "Cliente"
+                    caso = r.caso_num or "—"
+                    valor = float(r.amount_due or 0)
+                    dias = int(r.days_overdue or 0)
+                    titulo = f"💰 Honorário vencido ({dias}d) — {r.alert_level}"
+                    corpo = (
+                        f"{nome} (caso {caso}): R$ {valor:,.2f} em atraso há "
+                        f"{dias} dia(s). Nível de cobrança: {r.alert_level}."
                     )
 
-                # Marca o nível notificado (sem coluna nova)
-                await db.execute(text(
-                    "UPDATE inadimplencia_alerts SET action_taken=:m, updated_at=NOW() "
-                    "WHERE id=:id"
-                ), {"m": marcador, "id": r.id})
-                notificados += 1
+                    # Sino interno — sempre (todos os níveis)
+                    await criar_notificacao_interna(
+                        db, r.adv_id, titulo, corpo,
+                        tipo="financeiro", link="/financeiro",
+                    )
+                    await enviar_push(
+                        db, r.adv_id, titulo, corpo, link="/financeiro",
+                    )
+                    # E-mail — a partir de 'medio'
+                    if r.alert_level in ("medio", "critico", "cobranca_formal") and r.adv_email:
+                        await enviar_email(
+                            r.adv_email,
+                            f"[EJC] Cobrança {r.alert_level}: {nome} ({dias}d)",
+                            f"<p>O honorário de <b>{nome}</b> (caso {caso}) está "
+                            f"<b>{dias} dia(s)</b> em atraso — R$ {valor:,.2f}.</p>"
+                            f"<p>Nível de cobrança: <b>{r.alert_level}</b>. "
+                            f"Acione a régua de cobrança no EJC.</p>",
+                        )
+                    # WhatsApp — apenas níveis mais graves
+                    if r.alert_level in ("critico", "cobranca_formal") and r.adv_phone:
+                        await enviar_whatsapp(
+                            r.adv_phone,
+                            f"💰 *EJC* — Honorário de {nome} (caso {caso}) "
+                            f"{dias}d em atraso (R$ {valor:,.2f}). "
+                            f"Nível: {r.alert_level}.",
+                        )
 
-            await db.commit()
+                    # Marca o nível notificado (sem coluna nova)
+                    await db.execute(text(
+                        "UPDATE inadimplencia_alerts SET action_taken=:m, updated_at=NOW() "
+                        "WHERE id=:id"
+                    ), {"m": marcador, "id": r.id})
+                    await db.commit()
+                    notificados += 1
+                except Exception as e:
+                    await db.rollback()
+                    logger.error(
+                        f"[Scheduler] regua_cobranca falhou p/ alerta {r.id}: {e}"
+                    )
             logger.info(
                 f"[Régua] varridas={resumo.get('varridas')} "
                 f"alertas={len(rows)} notificados={notificados}"
@@ -735,11 +750,12 @@ async def _backup_diario():
 
 async def _verificar_sincronia_datajud():
     """Alerta se processos estão há mais de 3 dias sem sincronizar — Auditoria Item 32."""
+    from datetime import datetime, timezone
     from app.core.database import AsyncSessionLocal
     from app.services.notification_service import criar_notificacao_interna
     try:
         async with AsyncSessionLocal() as db:
-            limite = datetime.now() - timedelta(days=3)
+            limite = datetime.now(timezone.utc) - timedelta(days=3)
             rows = await db.execute(text("""
                 SELECT id, numero_processo, advogado_responsavel_id FROM cases
                 WHERE deleted_at IS NULL AND status NOT IN ('encerrado','arquivado')
@@ -884,7 +900,7 @@ def start_scheduler():
     s.add_job(_auditoria_processos,   CronTrigger(day_of_week="mon", hour=8, minute=15),  id="auditoria",  replace_existing=True)
     s.add_job(_monitor_diario_oficial, CronTrigger(hour=6, minute=0),                      id="dou_monitor", replace_existing=True)
     s.add_job(_alertar_contratos,     CronTrigger(day_of_week="mon", hour=9, minute=30),  id="contratos",  replace_existing=True)
-    s.add_job(_purgar_logs_ia,        CronTrigger(day=1, hour=3, minute=30), id="retencao_ia", replace_existing=True)
+    # (removido job duplicado id="retencao_ia" — _purgar_logs_ia já agendado em id="purga_ia")
 
     s.start()
     logger.info("[Scheduler] Iniciado — 24 jobs (+ briefing por advogado, régua de cobrança e alertas societários)")

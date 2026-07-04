@@ -34,6 +34,14 @@ def _req_clientes(cu: User = Depends(get_current_user)) -> User:
     return cu
 
 
+def _req_clientes_leitura(cu: User = Depends(get_current_user)) -> User:
+    """Leitura do CRM restrita à equipe interna — bloqueia cliente_externo
+    (portal do cliente NÃO pode listar/consultar a carteira de clientes)."""
+    if cu.role.value == "cliente_externo":
+        raise HTTPException(status_code=403, detail="Sem permissão para consultar clientes")
+    return cu
+
+
 class _ResolverClienteReq(BaseModel):
     nome: Optional[str] = None
     cpf: Optional[str] = None
@@ -298,7 +306,7 @@ async def listar(
     page: int = Query(1, ge=1), page_size: int = Query(20, ge=1, le=500),
     search: Optional[str] = None, status_f: Optional[str] = Query(None, alias="status"),
     db: AsyncSession = Depends(get_db),
-    cu: User = Depends(get_current_user),
+    cu: User = Depends(_req_clientes_leitura),
 ):
     q = select(Client).where(Client.deleted_at.is_(None))
     if search:
@@ -390,7 +398,7 @@ async def criar(
 async def detalhe(
     client_id: str,
     db: AsyncSession = Depends(get_db),
-    cu: User = Depends(get_current_user),
+    cu: User = Depends(_req_clientes_leitura),
 ):
     c = (await db.execute(
         select(Client).where(Client.id == client_id, Client.deleted_at.is_(None))
@@ -403,7 +411,7 @@ async def detalhe(
 async def ia_analise_cliente(
     client_id: str,
     db: AsyncSession = Depends(get_db),
-    cu: User = Depends(get_current_user),
+    cu: User = Depends(_req_clientes),
 ):
     """
     ABA 6 – IA do Cliente: Análise completa do histórico (Seção 2.113).
@@ -411,20 +419,27 @@ async def ia_analise_cliente(
     from app.core.ai_brain import ai_gateway
     from app.models.case import Case
     from app.models.fee import Fee
-    
-    c = (await db.execute(select(Client).where(Client.id == client_id))).scalar_one_or_none()
+
+    c = (await db.execute(
+        select(Client).where(Client.id == client_id, Client.deleted_at.is_(None))
+    )).scalar_one_or_none()
     if not c:
         raise HTTPException(status_code=404, detail="Cliente não encontrado")
-    
+
     casos = (await db.execute(select(Case).where(Case.client_id == client_id))).scalars().all()
     financeiro = (await db.execute(select(Fee).where(Fee.client_id == client_id))).scalars().all()
-    
+
     contexto = f"Cliente: {c.nome_exibicao}\nTipo: {c.tipo}\n"
     contexto += f"Casos: {len(casos)}\n"
     contexto += f"Histórico Financeiro: {len(financeiro)} registros.\n"
-    
+
+    # LGPD: sanitiza PII (nome do cliente, CPF/CNPJ etc.) antes de enviar à IA —
+    # mesmo padrão dos demais endpoints de IA (cases.py assistente-estrategico).
+    from app.services.sanitizer import sanitizar_pii
+    contexto, _ = sanitizar_pii(contexto, [c.nome_exibicao] if c.nome_exibicao else None)
+
     demanda = "Faça uma análise estratégica completa do perfil deste cliente, identificando riscos, oportunidades e padrão de litígios."
-    
+
     res = await ai_gateway.processar_demanda(demanda, contexto, tipo="juridico_profundo")
     return res
 
@@ -441,8 +456,29 @@ async def atualizar(
     if not c:
         raise HTTPException(status_code=404, detail="Cliente não encontrado")
 
-    for k, v in payload.model_dump(exclude_unset=True).items():
+    mudancas = payload.model_dump(exclude_unset=True)
+
+    # Se CPF/CNPJ mudou: revalida dígito verificador e regrava os campos LGPD
+    # (cpf_enc/cnpj_enc/cpf_hash/cnpj_hash) — mesmos helpers do criar().
+    if "cpf" in mudancas or "cnpj" in mudancas:
+        from app.services.validators_service import validar_cpf as _vcpf, validar_cnpj as _vcnpj
+        if mudancas.get("cpf") and not _vcpf(mudancas["cpf"]):
+            raise HTTPException(status_code=422, detail="CPF inválido (dígito verificador)")
+        if mudancas.get("cnpj") and not _vcnpj(mudancas["cnpj"]):
+            raise HTTPException(status_code=422, detail="CNPJ inválido (dígito verificador)")
+
+    for k, v in mudancas.items():
         setattr(c, k, v)
+
+    if "cpf" in mudancas or "cnpj" in mudancas:
+        from app.services.pii_crypto import normalizar_documento, encrypt as _pii_encrypt, hash_documento as _pii_hash
+        cpf_norm = normalizar_documento(c.cpf)
+        cnpj_norm = normalizar_documento(c.cnpj)
+        c.cpf_enc = _pii_encrypt(cpf_norm)
+        c.cnpj_enc = _pii_encrypt(cnpj_norm)
+        c.cpf_hash = _pii_hash(cpf_norm)
+        c.cnpj_hash = _pii_hash(cnpj_norm)
+
     await criar_audit_log(db, cu.id, cu.role.value, "UPDATE", "clients", client_id)
     try:
         await db.commit()

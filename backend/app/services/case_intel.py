@@ -176,7 +176,10 @@ SYS_ENCERRAMENTO = (
     ' "tese_consolidada": "<a tese jurídica reutilizável extraída do caso, 1-2 frases>"}\n'
     "Baseie-se SÓ nos dados do caso. Não invente. Seja objetivo e prático."
 )
-_EXITO = {"exito_total", "exito_parcial", "acordo"}
+# Vocabulário alinhado ao router (cases.py EncerrarCasoReq): exito|exito_parcial|
+# acordo|derrota|desistencia|arquivado. "exito_total"/"improcedente" mantidos
+# como aliases p/ dados históricos.
+_EXITO = {"exito", "exito_total", "exito_parcial", "acordo"}
 
 
 async def aprendizado_encerramento(case_id: str) -> None:
@@ -195,7 +198,7 @@ async def aprendizado_encerramento(case_id: str) -> None:
             area = getattr(case.area, "value", None) or str(case.area or "")
             resultado = (case.resultado or "").strip()
             exito = resultado in _EXITO
-            perdeu = resultado == "improcedente"
+            perdeu = resultado in ("derrota", "improcedente")
 
             base = (
                 f"Caso: {case.titulo}\nÁrea: {area}\nResultado: {resultado or 'não informado'}\n"
