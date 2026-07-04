@@ -6,32 +6,32 @@
 
 :root {
   /* ─ Cores Primárias (Bronze Brilhante) ─ */
-  --bronze-primary: #B8860B;        /* Bronze Brilhante (Goldenrod) */
-  --bronze-dark: #8B6914;           /* Bronze Escuro */
-  --bronze-light: #DAA520;          /* Bronze Claro (Goldenrod Claro) */
-  --bronze-accent: #CD853F;         /* Bronze Accent (Peru) */
+  --bronze-primary: #b8860b; /* Bronze Brilhante (Goldenrod) */
+  --bronze-dark: #8b6914; /* Bronze Escuro */
+  --bronze-light: #daa520; /* Bronze Claro (Goldenrod Claro) */
+  --bronze-accent: #cd853f; /* Bronze Accent (Peru) */
 
   /* ─ Cores Secundárias (Champagne & Off-white) ─ */
-  --champagne: #F5E6D3;             /* Champagne Suave */
-  --off-white: #FAFAF8;             /* Off-white (Quase branco) */
-  --cream: #FFF8E7;                 /* Cream */
-  --ivory: #FFFFF0;                 /* Ivory */
+  --champagne: #f5e6d3; /* Champagne Suave */
+  --off-white: #fafaf8; /* Off-white (Quase branco) */
+  --cream: #fff8e7; /* Cream */
+  --ivory: #fffff0; /* Ivory */
 
   /* ─ Cores Neutras (Profundidade) ─ */
-  --dark-charcoal: #2C2C2C;         /* Preto Profundo */
-  --charcoal: #3A3A3A;              /* Charcoal */
-  --gray-light: #E8E8E8;            /* Cinza Claro */
-  --gray-medium: #BDBDBD;           /* Cinza Médio */
+  --dark-charcoal: #2c2c2c; /* Preto Profundo */
+  --charcoal: #3a3a3a; /* Charcoal */
+  --gray-light: #e8e8e8; /* Cinza Claro */
+  --gray-medium: #bdbdbd; /* Cinza Médio */
 
   /* ─ Cores de Status ─ */
-  --success: #6B8E23;               /* Olive Green (sucesso) */
-  --warning: #CD853F;               /* Bronze Accent (aviso) */
-  --error: #8B4513;                 /* Saddle Brown (erro) */
-  --info: #B8860B;                  /* Bronze Primary (informação) */
+  --success: #6b8e23; /* Olive Green (sucesso) */
+  --warning: #cd853f; /* Bronze Accent (aviso) */
+  --error: #8b4513; /* Saddle Brown (erro) */
+  --info: #b8860b; /* Bronze Primary (informação) */
 
   /* ─ Tipografia ─ */
-  --font-family-primary: 'Segoe UI', 'Trebuchet MS', sans-serif;
-  --font-family-accent: 'Georgia', 'Garamond', serif;
+  --font-family-primary: "Segoe UI", "Trebuchet MS", sans-serif;
+  --font-family-accent: "Georgia", "Garamond", serif;
   --font-weight-light: 300;
   --font-weight-regular: 400;
   --font-weight-medium: 500;
@@ -93,7 +93,12 @@ body {
    TIPOGRAFIA
    ═══════════════════════════════════════════════════════════════════════════════ */
 
-h1, h2, h3, h4, h5, h6 {
+h1,
+h2,
+h3,
+h4,
+h5,
+h6 {
   font-family: var(--font-family-accent);
   font-weight: var(--font-weight-semibold);
   letter-spacing: -0.5px;
@@ -232,17 +237,23 @@ a:hover {
 }
 
 /* Inputs & Forms */
-input, textarea, select {
+input,
+textarea,
+select {
   width: 100%;
   padding: var(--spacing-md);
   border: 1px solid var(--gray-light);
   border-radius: var(--border-radius-md);
   font-family: var(--font-family-primary);
   font-size: 1rem;
-  transition: border-color var(--transition-fast), box-shadow var(--transition-fast);
+  transition:
+    border-color var(--transition-fast),
+    box-shadow var(--transition-fast);
 }
 
-input:focus, textarea:focus, select:focus {
+input:focus,
+textarea:focus,
+select:focus {
   outline: none;
   border-color: var(--bronze-primary);
   box-shadow: 0 0 0 3px rgba(184, 134, 11, 0.1);
@@ -289,7 +300,11 @@ tbody tr:hover {
 
 /* Sidebar */
 .sidebar {
-  background: linear-gradient(135deg, var(--bronze-dark) 0%, var(--bronze-primary) 100%);
+  background: linear-gradient(
+    135deg,
+    var(--bronze-dark) 0%,
+    var(--bronze-primary) 100%
+  );
   color: var(--off-white);
   padding: var(--spacing-xl);
   border-radius: var(--border-radius-lg);
@@ -401,22 +416,50 @@ tbody tr:hover {
 }
 
 /* Spacing Utilities */
-.m-0 { margin: 0; }
-.m-1 { margin: var(--spacing-sm); }
-.m-2 { margin: var(--spacing-md); }
-.m-3 { margin: var(--spacing-lg); }
-.m-4 { margin: var(--spacing-xl); }
+.m-0 {
+  margin: 0;
+}
+.m-1 {
+  margin: var(--spacing-sm);
+}
+.m-2 {
+  margin: var(--spacing-md);
+}
+.m-3 {
+  margin: var(--spacing-lg);
+}
+.m-4 {
+  margin: var(--spacing-xl);
+}
 
-.p-0 { padding: 0; }
-.p-1 { padding: var(--spacing-sm); }
-.p-2 { padding: var(--spacing-md); }
-.p-3 { padding: var(--spacing-lg); }
-.p-4 { padding: var(--spacing-xl); }
+.p-0 {
+  padding: 0;
+}
+.p-1 {
+  padding: var(--spacing-sm);
+}
+.p-2 {
+  padding: var(--spacing-md);
+}
+.p-3 {
+  padding: var(--spacing-lg);
+}
+.p-4 {
+  padding: var(--spacing-xl);
+}
 
-.mt-2 { margin-top: var(--spacing-md); }
-.mb-2 { margin-bottom: var(--spacing-md); }
-.mt-4 { margin-top: var(--spacing-xl); }
-.mb-4 { margin-bottom: var(--spacing-xl); }
+.mt-2 {
+  margin-top: var(--spacing-md);
+}
+.mb-2 {
+  margin-bottom: var(--spacing-md);
+}
+.mt-4 {
+  margin-top: var(--spacing-xl);
+}
+.mb-4 {
+  margin-bottom: var(--spacing-xl);
+}
 
 /* ═══════════════════════════════════════════════════════════════════════════════
    RESPONSIVIDADE
@@ -448,7 +491,8 @@ tbody tr:hover {
     font-size: 0.9rem;
   }
 
-  th, td {
+  th,
+  td {
     padding: var(--spacing-sm);
   }
 }

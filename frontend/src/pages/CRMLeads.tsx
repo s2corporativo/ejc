@@ -201,7 +201,9 @@ export default function CRMLeads() {
                   }
                   onDrop={() => dragId && mover(dragId, col.key)}
                   className={`flex flex-col rounded-xl border-t-2 ${col.topColor} bg-slate-50 border border-slate-200 w-52 flex-shrink-0 ${
-                    overCol === col.key ? "ring-2 ring-primary-300 bg-primary-50" : ""
+                    overCol === col.key
+                      ? "ring-2 ring-primary-300 bg-primary-50"
+                      : ""
                   }`}
                 >
                   <div className="px-3 py-2.5 flex items-center justify-between border-b border-slate-200">
@@ -421,9 +423,7 @@ export default function CRMLeads() {
               placeholder="Telefone / WhatsApp"
               className="border border-slate-200 rounded-lg px-3 py-2 text-sm"
               value={form.telefone}
-              onChange={(e) =>
-                setForm({ ...form, telefone: e.target.value })
-              }
+              onChange={(e) => setForm({ ...form, telefone: e.target.value })}
             />
             <input
               type="email"
@@ -467,15 +467,10 @@ export default function CRMLeads() {
             rows={3}
             className="w-full border border-slate-200 rounded-lg px-3 py-2 text-sm resize-none"
             value={form.observacoes}
-            onChange={(e) =>
-              setForm({ ...form, observacoes: e.target.value })
-            }
+            onChange={(e) => setForm({ ...form, observacoes: e.target.value })}
           />
           <div className="pt-2 flex gap-3 justify-end">
-            <button
-              onClick={() => setShowForm(false)}
-              className="btn-ghost"
-            >
+            <button onClick={() => setShowForm(false)} className="btn-ghost">
               Cancelar
             </button>
             <button

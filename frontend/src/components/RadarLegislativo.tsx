@@ -1,5 +1,5 @@
-import React, { useState, useEffect } from 'react';
-import { AlertCircle, TrendingUp, FileText, Calendar } from 'lucide-react';
+import React, { useState, useEffect } from "react";
+import { AlertCircle, TrendingUp, FileText, Calendar } from "lucide-react";
 
 interface Legislacao {
   id: string;
@@ -32,34 +32,39 @@ const RadarLegislativo: React.FC = () => {
     // Simular carregamento de legislações e alertas
     const mockLegislacoes: Legislacao[] = [
       {
-        id: '1',
-        titulo: 'Lei nº 14.133/2021 - Nova Lei de Licitações',
-        tipo: 'Lei',
-        area: 'Administrativa',
-        data_publicacao: '2021-04-01',
-        ementa: 'Institui normas gerais de licitação e contratação para a Administração Pública.',
-        url_fonte: 'https://www.planalto.gov.br/ccivil_03/_ato2019-2022/2021/lei/l14133.htm',
+        id: "1",
+        titulo: "Lei nº 14.133/2021 - Nova Lei de Licitações",
+        tipo: "Lei",
+        area: "Administrativa",
+        data_publicacao: "2021-04-01",
+        ementa:
+          "Institui normas gerais de licitação e contratação para a Administração Pública.",
+        url_fonte:
+          "https://www.planalto.gov.br/ccivil_03/_ato2019-2022/2021/lei/l14133.htm",
       },
       {
-        id: '2',
-        titulo: 'Lei nº 9.784/1999 - Processo Administrativo',
-        tipo: 'Lei',
-        area: 'Administrativa',
-        data_publicacao: '1999-01-29',
-        ementa: 'Regula o processo administrativo no âmbito da Administração Federal direta e indireta.',
-        url_fonte: 'https://www.planalto.gov.br/ccivil_03/leis/l9784.htm',
+        id: "2",
+        titulo: "Lei nº 9.784/1999 - Processo Administrativo",
+        tipo: "Lei",
+        area: "Administrativa",
+        data_publicacao: "1999-01-29",
+        ementa:
+          "Regula o processo administrativo no âmbito da Administração Federal direta e indireta.",
+        url_fonte: "https://www.planalto.gov.br/ccivil_03/leis/l9784.htm",
       },
     ];
 
     const mockAlertas: AlertaRegulatorio[] = [
       {
-        id: '1',
-        titulo: 'Alteração na Lei de Licitações',
-        descricao: 'Nova resolução sobre prazos de impugnação em pregões eletrônicos.',
-        tipo_alerta: 'Alteração',
-        area_afetada: 'Administrativa',
+        id: "1",
+        titulo: "Alteração na Lei de Licitações",
+        descricao:
+          "Nova resolução sobre prazos de impugnação em pregões eletrônicos.",
+        tipo_alerta: "Alteração",
+        area_afetada: "Administrativa",
         data_alerta: new Date().toISOString(),
-        url_referencia: 'https://www.planalto.gov.br/ccivil_03/_ato2019-2022/2021/lei/l14133.htm',
+        url_referencia:
+          "https://www.planalto.gov.br/ccivil_03/_ato2019-2022/2021/lei/l14133.htm",
         resolvido: false,
       },
     ];
@@ -69,14 +74,20 @@ const RadarLegislativo: React.FC = () => {
     setLoading(false);
   }, []);
 
-  const areas = ['Administrativa', 'Ambiental', 'Tributária', 'Trabalhista', 'Bancária'];
+  const areas = [
+    "Administrativa",
+    "Ambiental",
+    "Tributária",
+    "Trabalhista",
+    "Bancária",
+  ];
 
   const filteredLegislacoes = selectedArea
-    ? legislacoes.filter(l => l.area === selectedArea)
+    ? legislacoes.filter((l) => l.area === selectedArea)
     : legislacoes;
 
   const filteredAlertas = selectedArea
-    ? alertas.filter(a => a.area_afetada === selectedArea)
+    ? alertas.filter((a) => a.area_afetada === selectedArea)
     : alertas;
 
   return (
@@ -87,7 +98,9 @@ const RadarLegislativo: React.FC = () => {
           <TrendingUp className="w-8 h-8 text-warn-500" />
           <h2 className="text-3xl font-bold text-white">Radar Legislativo</h2>
         </div>
-        <p className="text-slate-300">Monitoramento em tempo real de alterações legislativas</p>
+        <p className="text-slate-300">
+          Monitoramento em tempo real de alterações legislativas
+        </p>
       </div>
 
       {/* Filtros por Área */}
@@ -96,20 +109,20 @@ const RadarLegislativo: React.FC = () => {
           onClick={() => setSelectedArea(null)}
           className={`px-4 py-2 rounded-lg font-medium transition-all ${
             selectedArea === null
-              ? 'bg-warn-500 text-slate-900'
-              : 'bg-slate-700 text-slate-300 hover:bg-slate-600'
+              ? "bg-warn-500 text-slate-900"
+              : "bg-slate-700 text-slate-300 hover:bg-slate-600"
           }`}
         >
           Todas as Áreas
         </button>
-        {areas.map(area => (
+        {areas.map((area) => (
           <button
             key={area}
             onClick={() => setSelectedArea(area)}
             className={`px-4 py-2 rounded-lg font-medium transition-all ${
               selectedArea === area
-                ? 'bg-warn-500 text-slate-900'
-                : 'bg-slate-700 text-slate-300 hover:bg-slate-600'
+                ? "bg-warn-500 text-slate-900"
+                : "bg-slate-700 text-slate-300 hover:bg-slate-600"
             }`}
           >
             {area}
@@ -122,25 +135,33 @@ const RadarLegislativo: React.FC = () => {
         <div className="mb-8 bg-danger-900/20 border border-danger-500/30 rounded-xl p-4">
           <div className="flex items-center gap-2 mb-4">
             <AlertCircle className="w-6 h-6 text-danger-500" />
-            <h3 className="text-xl font-bold text-danger-400">Alertas Regulatórios</h3>
+            <h3 className="text-xl font-bold text-danger-400">
+              Alertas Regulatórios
+            </h3>
           </div>
           <div className="space-y-3">
-            {filteredAlertas.map(alerta => (
+            {filteredAlertas.map((alerta) => (
               <div
                 key={alerta.id}
                 className="bg-slate-800/50 border border-danger-500/20 rounded-lg p-4 hover:border-danger-500/50 transition-all"
               >
                 <div className="flex items-start justify-between">
                   <div className="flex-1">
-                    <h4 className="font-bold text-white mb-1">{alerta.titulo}</h4>
-                    <p className="text-slate-300 text-sm mb-2">{alerta.descricao}</p>
+                    <h4 className="font-bold text-white mb-1">
+                      {alerta.titulo}
+                    </h4>
+                    <p className="text-slate-300 text-sm mb-2">
+                      {alerta.descricao}
+                    </p>
                     <div className="flex items-center gap-4 text-xs text-slate-400">
                       <span className="bg-danger-500/20 text-danger-300 px-2 py-1 rounded">
                         {alerta.tipo_alerta}
                       </span>
                       <span className="flex items-center gap-1">
                         <Calendar className="w-3 h-3" />
-                        {new Date(alerta.data_alerta).toLocaleDateString('pt-BR')}
+                        {new Date(alerta.data_alerta).toLocaleDateString(
+                          "pt-BR",
+                        )}
                       </span>
                     </div>
                   </div>
@@ -162,9 +183,11 @@ const RadarLegislativo: React.FC = () => {
         </h3>
         <div className="space-y-3">
           {loading ? (
-            <div className="text-center py-8 text-slate-400">Carregando legislações...</div>
+            <div className="text-center py-8 text-slate-400">
+              Carregando legislações...
+            </div>
           ) : filteredLegislacoes.length > 0 ? (
-            filteredLegislacoes.map(leg => (
+            filteredLegislacoes.map((leg) => (
               <div
                 key={leg.id}
                 className="bg-slate-800/50 border border-warn-500/20 rounded-lg p-4 hover:border-warn-500/50 transition-all hover:shadow-lg hover:shadow-warn-500/10"
@@ -182,7 +205,9 @@ const RadarLegislativo: React.FC = () => {
                       </span>
                       <span className="flex items-center gap-1">
                         <Calendar className="w-3 h-3" />
-                        {new Date(leg.data_publicacao).toLocaleDateString('pt-BR')}
+                        {new Date(leg.data_publicacao).toLocaleDateString(
+                          "pt-BR",
+                        )}
                       </span>
                     </div>
                   </div>

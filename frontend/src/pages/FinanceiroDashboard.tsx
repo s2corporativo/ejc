@@ -144,16 +144,10 @@ export default function FinanceiroDashboard() {
                 onChange={(e) => setCompetencia(e.target.value)}
               />
             </div>
-            <button
-              onClick={carregarRelatorio}
-              className="btn-secondary"
-            >
+            <button onClick={carregarRelatorio} className="btn-secondary">
               <FileText className="w-4 h-4" /> Relatório
             </button>
-            <button
-              onClick={exportarCSV}
-              className="btn-secondary"
-            >
+            <button onClick={exportarCSV} className="btn-secondary">
               <Download className="w-4 h-4" /> CSV
             </button>
             <button
@@ -161,7 +155,9 @@ export default function FinanceiroDashboard() {
               className="p-2 rounded-lg border border-slate-200 hover:bg-slate-50 text-slate-500"
               aria-label="Atualizar"
             >
-              <RefreshCw className={`w-4 h-4 ${loading ? "animate-spin" : ""}`} />
+              <RefreshCw
+                className={`w-4 h-4 ${loading ? "animate-spin" : ""}`}
+              />
             </button>
           </div>
         }

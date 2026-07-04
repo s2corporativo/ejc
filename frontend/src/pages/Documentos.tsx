@@ -305,8 +305,8 @@ export default function Documentos() {
               ))}
             </select>
             <p className="mt-1 text-xs text-slate-400">
-              Vincular a um caso controla quem pode acessar o documento (sigilo do
-              cliente).
+              Vincular a um caso controla quem pode acessar o documento (sigilo
+              do cliente).
             </p>
           </div>
           <div>

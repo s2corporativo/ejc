@@ -218,7 +218,10 @@ export default function AssistenteIA() {
           )}
           {res && (
             <div className="space-y-3">
-              <Markdown source={res.resposta} className="text-sm text-slate-700 leading-relaxed" />
+              <Markdown
+                source={res.resposta}
+                className="text-sm text-slate-700 leading-relaxed"
+              />
               {res.fontes?.length > 0 && (
                 <div className="pt-2 border-t border-bronze-pale">
                   <p className="text-xs font-semibold text-slate-500 mb-1">

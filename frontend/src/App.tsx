@@ -242,14 +242,15 @@ export default function App() {
             <Route path="/inteligencia" element={<InteligenciaWorkspace />} />
             <Route path="/ferramentas-ia" element={<FerramentasIA />} />
             <Route path="/victory-vault" element={<VictoryVault />} />
-            <Route path="/licitacao-auditoria" element={<LicitacaoAuditoria />} />
+            <Route
+              path="/licitacao-auditoria"
+              element={<LicitacaoAuditoria />}
+            />
             <Route path="/radar-regulatorio" element={<RadarRegulatorio />} />
             <Route
               path="/compliance/radar"
               element={
-                <RoleOnly
-                  roles={["superadmin", "admin", "socio", "advogado"]}
-                >
+                <RoleOnly roles={["superadmin", "admin", "socio", "advogado"]}>
                   <RadarCompliance />
                 </RoleOnly>
               }

@@ -74,13 +74,25 @@ export default function Pecas() {
     return () => window.clearTimeout(t);
   }, [printDoc]);
 
-
   const validacaoLabel = (doc: LegalDoc) => {
     const v = doc.validacao_juridica;
-    if (!v || v.status === "sem_validacao") return { label: "Sem validação", cls: "bg-slate-100 text-slate-600" };
-    if (v.apto_fluxo) return { label: `Validada ${v.score ?? ""}/100`, cls: "bg-success-100 text-success-700" };
-    if (v.status === "pendente_revisao") return { label: `Validar HITL ${v.score ?? ""}/100`, cls: "bg-warn-100 text-warn-700" };
-    if (v.status === "score_baixo") return { label: `Score baixo ${v.score ?? ""}/100`, cls: "bg-danger-100 text-danger-700" };
+    if (!v || v.status === "sem_validacao")
+      return { label: "Sem validação", cls: "bg-slate-100 text-slate-600" };
+    if (v.apto_fluxo)
+      return {
+        label: `Validada ${v.score ?? ""}/100`,
+        cls: "bg-success-100 text-success-700",
+      };
+    if (v.status === "pendente_revisao")
+      return {
+        label: `Validar HITL ${v.score ?? ""}/100`,
+        cls: "bg-warn-100 text-warn-700",
+      };
+    if (v.status === "score_baixo")
+      return {
+        label: `Score baixo ${v.score ?? ""}/100`,
+        cls: "bg-danger-100 text-danger-700",
+      };
     return { label: "Bloqueada", cls: "bg-danger-100 text-danger-700" };
   };
 
@@ -231,17 +243,28 @@ export default function Pecas() {
     }
   };
 
-
   const checarJurisprudencia = async (doc: LegalDoc) => {
     setAuditando(true);
     setAuditoria(null);
     try {
-      const { data } = await api.get(`/legal-docs/${doc.id}/jurisprudencia-check`);
-      const problemas = data.problemas?.length ? data.problemas.map((p: string) => `- ${p}`).join("\n") : "Nenhum problema encontrado.";
-      const validadas = data.citacoes_validadas?.length ? data.citacoes_validadas.join("\n") : "Nenhuma citação validada detectada.";
-      setAuditoria(`CHECK DE JURISPRUDENCIA\nStatus: ${data.apto ? "APTA" : "BLOQUEADA"}\n\nProblemas:\n${problemas}\n\nValidadas:\n${validadas}\n\nRegra: ${data.regra}`);
+      const { data } = await api.get(
+        `/legal-docs/${doc.id}/jurisprudencia-check`,
+      );
+      const problemas = data.problemas?.length
+        ? data.problemas.map((p: string) => `- ${p}`).join("\n")
+        : "Nenhum problema encontrado.";
+      const validadas = data.citacoes_validadas?.length
+        ? data.citacoes_validadas.join("\n")
+        : "Nenhuma citação validada detectada.";
+      setAuditoria(
+        `CHECK DE JURISPRUDENCIA\nStatus: ${data.apto ? "APTA" : "BLOQUEADA"}\n\nProblemas:\n${problemas}\n\nValidadas:\n${validadas}\n\nRegra: ${data.regra}`,
+      );
     } catch (e: any) {
-      toast.error(e.response?.data?.detail?.mensagem || e.response?.data?.detail || "Falha na checagem de jurisprudencia");
+      toast.error(
+        e.response?.data?.detail?.mensagem ||
+          e.response?.data?.detail ||
+          "Falha na checagem de jurisprudencia",
+      );
     } finally {
       setAuditando(false);
     }
@@ -340,7 +363,9 @@ export default function Pecas() {
                   <td className="px-4 py-3">
                     {(() => {
                       const v = validacaoLabel(p);
-                      return <span className={`badge ${v.cls}`}>{v.label}</span>;
+                      return (
+                        <span className={`badge ${v.cls}`}>{v.label}</span>
+                      );
                     })()}
                   </td>
                   <td className="px-4 py-3 text-slate-400">v{p.versao}</td>
@@ -514,8 +539,13 @@ export default function Pecas() {
         )}
         {view?.validacao_juridica && (
           <div className="mb-3 p-3 rounded-lg bg-slate-50 border border-slate-200 text-xs text-slate-700">
-            <strong>Validação jurídica:</strong> {view.validacao_juridica.status} · Score {view.validacao_juridica.score ?? "—"}/{view.validacao_juridica.score_minimo ?? 75} · HITL {view.validacao_juridica.hitl ?? "pendente"}
-            <br />{view.validacao_juridica.motivo}
+            <strong>Validação jurídica:</strong>{" "}
+            {view.validacao_juridica.status} · Score{" "}
+            {view.validacao_juridica.score ?? "—"}/
+            {view.validacao_juridica.score_minimo ?? 75} · HITL{" "}
+            {view.validacao_juridica.hitl ?? "pendente"}
+            <br />
+            {view.validacao_juridica.motivo}
           </div>
         )}
         <Markdown source={view?.conteudo} className="text-sm text-slate-700" />
@@ -645,7 +675,10 @@ export default function Pecas() {
         {auditando ? (
           <Spinner />
         ) : (
-          <Markdown source={auditoria} className="text-sm max-h-[60vh] overflow-auto" />
+          <Markdown
+            source={auditoria}
+            className="text-sm max-h-[60vh] overflow-auto"
+          />
         )}
       </Modal>
       <PecaGeneratorModal

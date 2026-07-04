@@ -274,10 +274,7 @@ export default function PartnerWithdrawals() {
             />
           </div>
           <div className="flex gap-3 justify-end pt-2 border-t border-slate-100 mt-2">
-            <button
-              onClick={() => setShowForm(false)}
-              className="btn-ghost"
-            >
+            <button onClick={() => setShowForm(false)} className="btn-ghost">
               Cancelar
             </button>
             <button

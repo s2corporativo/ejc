@@ -113,7 +113,10 @@ export default function OnboardingTour() {
               {step + 1} / {SLIDES.length}
             </span>
 
-            <button onClick={avancar} className="btn-primary flex items-center gap-1.5">
+            <button
+              onClick={avancar}
+              className="btn-primary flex items-center gap-1.5"
+            >
               {isLast ? "Concluir" : "Próximo"}{" "}
               {!isLast && <ChevronRight className="w-4 h-4" />}
             </button>

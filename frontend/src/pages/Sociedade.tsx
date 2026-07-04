@@ -171,7 +171,9 @@ export default function Sociedade() {
       setShowFormDist(false);
       load();
     } catch (err: any) {
-      toast.error(err.response?.data?.detail || "Falha ao registrar distribuição");
+      toast.error(
+        err.response?.data?.detail || "Falha ao registrar distribuição",
+      );
     }
   };
 
@@ -243,10 +245,7 @@ export default function Sociedade() {
         title="Gestão Societária"
         subtitle="Sócios, participação e distribuição de lucros"
         actions={
-          <button
-            onClick={load}
-            className="btn-secondary p-2"
-          >
+          <button onClick={load} className="btn-secondary p-2">
             <RefreshCw
               className={`w-4 h-4 text-slate-400 ${loading ? "animate-spin" : ""}`}
             />

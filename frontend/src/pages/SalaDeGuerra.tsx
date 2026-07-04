@@ -149,8 +149,7 @@ function fatoresRiscoToText(fatores: unknown): string {
               : typeof obj.fator === "string"
                 ? obj.fator
                 : JSON.stringify(obj);
-          const nivel =
-            typeof obj.nivel === "string" ? ` (${obj.nivel})` : "";
+          const nivel = typeof obj.nivel === "string" ? ` (${obj.nivel})` : "";
           return `${desc}${nivel}`.trim();
         }
         return String(item);
@@ -165,7 +164,10 @@ function fatoresRiscoToText(fatores: unknown): string {
     const entries = Object.entries(fatores as Record<string, unknown>);
     if (entries.length === 0) return SEM_FATORES;
     return entries
-      .map(([k, v]) => `- **${k}:** ${typeof v === "object" ? JSON.stringify(v) : String(v)}`)
+      .map(
+        ([k, v]) =>
+          `- **${k}:** ${typeof v === "object" ? JSON.stringify(v) : String(v)}`,
+      )
       .join("\n");
   }
 
@@ -463,11 +465,13 @@ export default function SalaDeGuerra() {
                       }
                     />
                   ) : (
-                    <p className="text-sm text-zinc-600 whitespace-pre-wrap">{notas[field] || (
+                    <p className="text-sm text-zinc-600 whitespace-pre-wrap">
+                      {notas[field] || (
                         <span className="text-zinc-300 italic">
                           Não preenchido
                         </span>
-                      )}</p>
+                      )}
+                    </p>
                   )}
                 </div>
               ))}
