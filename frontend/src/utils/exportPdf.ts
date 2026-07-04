@@ -57,7 +57,7 @@ export function exportPdf(
       margin-bottom: 14px;
     }
     .kicker {
-      color: #F4574D;
+      color: #8F7117;
       font-size: 9px;
       font-weight: 800;
       text-transform: uppercase;
@@ -66,7 +66,7 @@ export function exportPdf(
     h1 { font-size: 18px; color: #111827; margin: 0; line-height: 1.25; }
     .review {
       border: 1px solid #c7d2fe;
-      border-left: 4px solid #F4574D;
+      border-left: 4px solid #C9A227;
       background: #eef2ff;
       color: #3730a3;
       padding: 8px 10px;

@@ -12,11 +12,11 @@
     --ejc-muted: #8a94a6;
     --ejc-border: #e5e9f0;
     --ejc-legal: #1e293b;
-    --ejc-action: #f4574d;
+    --ejc-action: #8f7117;
     --ejc-ai: #f79256;
-    --ejc-bronze: #c93b32;
-    --ejc-gold: #f4574d;
-    --ejc-gold-soft: #ffe8e6;
+    --ejc-bronze: #6f5711;
+    --ejc-gold: #c9a227;
+    --ejc-gold-soft: #f8f0d8;
     --ejc-shadow-soft: 0 8px 30px rgba(16, 24, 40, 0.06);
   }
 
@@ -53,10 +53,10 @@
     font-variant-numeric: tabular-nums;
   }
 
-  /* Focus ring coral consistente para navegação por teclado */
+  /* Focus ring dourado consistente para navegação por teclado */
   :focus-visible {
     outline: none;
-    box-shadow: 0 0 0 2px rgba(244, 87, 77, 0.4);
+    box-shadow: 0 0 0 2px rgba(201, 162, 39, 0.6);
     border-radius: 6px;
   }
 
@@ -209,8 +209,8 @@
         rgba(255, 255, 255, 0.14),
         transparent 18rem
       ),
-      linear-gradient(135deg, #c93b32 0%, #e04a40 45%, #f0813f 100%);
-    box-shadow: 0 18px 45px rgba(201, 59, 50, 0.25);
+      linear-gradient(135deg, #8f7117 0%, #b08d1f 45%, #d8b94e 100%);
+    box-shadow: 0 18px 45px rgba(143, 113, 23, 0.25);
   }
 
   /* ── Item de menu de dropdown (avatar/segurança) ──────────── */
@@ -414,10 +414,10 @@
 .ejc-modern-scope input:focus,
 .ejc-modern-scope select:focus,
 .ejc-modern-scope textarea:focus {
-  border-color: #fda9a2 !important;
+  border-color: #e5ce7f !important;
   outline: none;
   box-shadow:
-    0 0 0 3px rgba(244, 87, 77, 0.16),
+    0 0 0 3px rgba(201, 162, 39, 0.2),
     0 1px 2px rgba(16, 24, 40, 0.04) !important;
 }
 
@@ -447,7 +447,7 @@
 }
 
 .ejc-modern-scope tbody tr:hover {
-  background: rgba(255, 245, 244, 0.65);
+  background: rgba(252, 249, 238, 0.75);
 }
 
 .ejc-modern-scope .btn,
@@ -456,12 +456,12 @@
 }
 
 .ejc-modern-scope .btn-primary {
-  background: #f4574d;
-  box-shadow: 0 10px 24px rgba(244, 87, 77, 0.24);
+  background: #8f7117;
+  box-shadow: 0 10px 24px rgba(143, 113, 23, 0.24);
 }
 
 .ejc-modern-scope .btn-primary:hover {
-  background: #e04a40;
+  background: #6f5711;
 }
 
 .ejc-modern-scope .badge,
@@ -485,7 +485,7 @@
 
 .ejc-modern-scope .bg-slate-100.p-1.rounded-xl button.bg-white,
 .ejc-modern-scope .bg-gray-100.p-1.rounded-xl button.bg-white {
-  color: #c93b32 !important;
+  color: #8f7117 !important;
   box-shadow: 0 8px 18px rgba(16, 24, 40, 0.1) !important;
 }
 
@@ -550,7 +550,7 @@
     background: linear-gradient(
       90deg,
       rgba(247, 146, 86, 0.1),
-      rgba(244, 87, 77, 0.05),
+      rgba(201, 162, 39, 0.06),
       transparent
     );
   }
@@ -588,7 +588,7 @@
 
   .visual-law-document-header {
     @apply border-b border-slate-200 px-6 py-5;
-    background: linear-gradient(135deg, #f8fafc 0%, #fff5f4 100%);
+    background: linear-gradient(135deg, #f8fafc 0%, #fcf9ee 100%);
   }
 
   .visual-law-document-body {
@@ -723,10 +723,10 @@
   }
 
   .brand-panel {
-    border-color: rgba(244, 87, 77, 0.22) !important;
+    border-color: rgba(201, 162, 39, 0.32) !important;
     background: linear-gradient(
       135deg,
-      rgba(255, 232, 230, 0.65),
+      rgba(248, 240, 216, 0.6),
       rgba(255, 255, 255, 0.92)
     );
   }
@@ -739,18 +739,18 @@
     background: linear-gradient(
       90deg,
       var(--ejc-gold),
-      rgba(247, 146, 86, 0.28),
+      rgba(216, 185, 78, 0.35),
       transparent
     );
   }
 
   .btn-primary {
-    box-shadow: 0 4px 12px rgba(244, 87, 77, 0.26);
+    box-shadow: 0 4px 12px rgba(143, 113, 23, 0.26);
   }
 
   .card:hover,
   .section-card:hover,
   .legal-surface:hover {
-    border-color: rgba(244, 87, 77, 0.22);
+    border-color: rgba(201, 162, 39, 0.3);
   }
 }
