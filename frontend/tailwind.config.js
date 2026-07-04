@@ -29,7 +29,8 @@ export default {
           300: "#FDA9A2",
           400: "#F97F74",
           500: "#F4574D",
-          600: "#E04A40",
+          // 600 calibrado p/ WCAG AA: 4,7:1 sobre branco (era #E04A40 = 4,0:1)
+          600: "#D23F35",
           700: "#C93B32",
           800: "#A62F28",
           900: "#872A25",

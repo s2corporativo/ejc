@@ -188,7 +188,7 @@ function DonutChart({
         })}
       </svg>
       <div className="min-w-0 flex-1 space-y-2">
-        {slices.slice(0, 5).map((s) => (
+        {slices.slice(0, 6).map((s) => (
           <div
             key={s.label}
             className="flex items-center gap-2 text-xs text-slate-600"
@@ -226,7 +226,7 @@ export default function Dashboard() {
       api.get("/jurimetria/overview"),
       api.get("/deadlines/?status=pendente&page_size=100"),
       api.get("/movimentos/recentes?limit=6"),
-      api.get("/cases/?page_size=50"),
+      api.get("/cases/?page_size=200"),
     ])
       .then(([dash, juri, deadlines, movs, cases]) => {
         if (dash.status === "fulfilled") setDashboard(dash.value.data);
@@ -273,7 +273,10 @@ export default function Dashboard() {
   // Série do gráfico principal: prazos pendentes por semana (próximas 6)
   const serieSemanas = useMemo(() => {
     const buckets = [0, 0, 0, 0, 0, 0];
+    // Inicio do dia: um prazo que vence HOJE conta em "Esta sem." mesmo apos
+    // meio-dia; prazos pendentes ja vencidos tambem entram no bucket 0.
     const hoje = new Date();
+    hoje.setHours(0, 0, 0, 0);
     for (const p of prazos) {
       if (!p.data_prazo) continue;
       const d = new Date(
@@ -284,7 +287,7 @@ export default function Dashboard() {
       const diff = Math.floor(
         (d.getTime() - hoje.getTime()) / (7 * 24 * 3600 * 1000),
       );
-      if (diff >= 0 && diff < 6) buckets[diff] += 1;
+      if (diff < 6) buckets[Math.max(diff, 0)] += 1;
     }
     return buckets.map((v, i) => ({
       label: i === 0 ? "Esta sem." : `+${i} sem.`,
