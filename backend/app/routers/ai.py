@@ -145,6 +145,86 @@ async def atualizar_hitl(
     return {"detail": f"Status HITL: {req.status}"}
 
 
+# ═══ FEEDBACK DE RESPOSTA DA IA (feature #4 / migration 066) ══════════════════
+from pydantic import BaseModel as _BMFeedback, Field as _FieldFeedback
+from typing import Literal as _Literal
+
+_FEEDBACK_VALIDO = ("util", "nao_util")
+
+
+class FeedbackReq(_BMFeedback):
+    # Pydantic v2 rejeita valores fora do Literal → 422 automático.
+    feedback: _Literal["util", "nao_util"] = _FieldFeedback(
+        description="Avaliação da resposta da IA: 'util' ou 'nao_util'",
+    )
+
+
+@router.post("/logs/{log_id}/feedback")
+async def feedback_resposta_ia(
+    log_id: str, req: FeedbackReq,
+    db: AsyncSession = Depends(get_db),
+    cu: User = Depends(get_current_user),
+):
+    """
+    Registra o feedback do usuário sobre a resposta da IA ('util' | 'nao_util').
+
+    Só quem gerou a interação (AILog.user_id) pode avaliá-la.
+    Idempotente: pode alternar entre 'util' e 'nao_util' quantas vezes quiser;
+    cada chamada atualiza feedback_em = now().
+    """
+    # Validação defensiva (o Literal do Pydantic já barra valores inválidos com 422).
+    if req.feedback not in _FEEDBACK_VALIDO:
+        raise HTTPException(status_code=422, detail="Feedback inválido: use 'util' ou 'nao_util'")
+
+    log = (await db.execute(
+        select(AILog).where(AILog.id == log_id)
+    )).scalar_one_or_none()
+    if not log:
+        raise HTTPException(status_code=404, detail="Log de IA não encontrado")
+    # Posse: apenas o autor da interação pode avaliar a própria resposta.
+    if log.user_id != cu.id:
+        raise HTTPException(status_code=403, detail="Sem permissão para avaliar este log")
+
+    log.feedback = req.feedback
+    log.feedback_em = datetime.now(timezone.utc)
+    await db.commit()
+
+    return {
+        "id": log.id,
+        "feedback": log.feedback,
+        "feedback_em": log.feedback_em,
+        "detail": f"Feedback registrado: {req.feedback}",
+    }
+
+
+@router.get("/logs/feedback/resumo")
+async def resumo_feedback_ia(
+    db: AsyncSession = Depends(get_db),
+    cu: User = Depends(get_current_user),
+):
+    """
+    Contagem agregada de feedback (util / nao_util) — útil para curadoria.
+
+    Escopo: usuário comum vê apenas os próprios logs; a partir de 'socio' vê o
+    agregado global (mesma regra de visibilidade de GET /ai/logs).
+    """
+    q = select(AILog.feedback, sqlfunc.count()).where(AILog.feedback.isnot(None))
+    if ROLE_LEVEL.get(cu.role.value, 0) < ROLE_LEVEL["socio"]:
+        q = q.where(AILog.user_id == cu.id)
+    q = q.group_by(AILog.feedback)
+
+    rows = (await db.execute(q)).all()
+    contagem = {fb: total for fb, total in rows}
+    util = int(contagem.get("util", 0))
+    nao_util = int(contagem.get("nao_util", 0))
+    return {
+        "util": util,
+        "nao_util": nao_util,
+        "total_avaliados": util + nao_util,
+        "escopo": "proprio" if ROLE_LEVEL.get(cu.role.value, 0) < ROLE_LEVEL["socio"] else "global",
+    }
+
+
 # ═══ ECJ: Teses Ocultas · Auditor de Peças · Preparação de Audiência ═══
 from app.services.ai_service import detectar_teses_ocultas, auditar_peca, preparar_audiencia, analisar_contrato
 from pydantic import BaseModel as _BM, Field as _Field

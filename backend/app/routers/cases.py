@@ -902,6 +902,155 @@ async def linha_do_tempo(
     return {"case_id": case_id, "total": len(eventos), "eventos": eventos}
 
 
+# ── Recomendação de teses relevantes ao caso (#tese-match) ────────────────────
+# Sugere teses vitoriosas/relevantes do Banco de Teses semelhantes ao caso atual.
+#
+# ESTRATÉGIA: relevância TEXTUAL (não vetorial).
+# A tabela `teses` (app/models/tese.py) NÃO possui coluna de embedding próprio —
+# apenas campos textuais (titulo, descricao, fundamentacao, jurisprudencia, tags)
+# e métricas de desempenho (taxa_sucesso, vezes_venceu). Como não há vetor para
+# comparar com `<=>`, gerar um embedding da consulta não teria contra-parte no
+# schema. Portanto usamos correspondência por área + palavras-chave (ILIKE),
+# reaproveitando o mesmo padrão de busca de app/routers/teses.py, e ranqueamos
+# priorizando teses vitoriosas (taxa_sucesso / vezes_venceu). Fail-safe: sem
+# resultados → lista vazia (nunca erro).
+
+_STOPWORDS_TESE = {
+    "para", "com", "sem", "por", "dos", "das", "que", "uma", "uns", "umas",
+    "seu", "sua", "sobre", "ante", "caso", "acao", "ação", "contra", "entre",
+    "nao", "não", "the", "and", "processo", "autor", "reu", "réu", "parte",
+    "juridica", "jurídica", "direito", "art", "artigo",
+}
+
+
+def _tokens_relevantes(*textos: Optional[str], limite: int = 12) -> list[str]:
+    """Extrai palavras-chave (>3 chars, sem stopwords, únicas) do texto do caso."""
+    import re
+    vistos: list[str] = []
+    seen: set[str] = set()
+    for t in textos:
+        if not t:
+            continue
+        for bruto in re.split(r"[^0-9a-zA-ZáàâãéêíóôõúçÁÀÂÃÉÊÍÓÔÕÚÇ]+", str(t)):
+            w = bruto.strip().lower()
+            if len(w) <= 3 or w in _STOPWORDS_TESE or w in seen:
+                continue
+            seen.add(w)
+            vistos.append(w)
+            if len(vistos) >= limite:
+                return vistos
+    return vistos
+
+
+@router.get("/{case_id}/teses-sugeridas", summary="Teses relevantes ao caso")
+async def teses_sugeridas(
+    case_id: str,
+    k: int = Query(5, ge=1, le=20, description="Quantidade de teses sugeridas"),
+    db: AsyncSession = Depends(get_db),
+    cu: User = Depends(get_current_user),
+):
+    """
+    Sugere teses do Banco de Teses semelhantes ao caso (vitoriosas em destaque).
+
+    Ownership: `verificar_acesso_caso` (mesmo gate dos demais endpoints do caso).
+    Busca TEXTUAL por área + palavras-chave (teses não têm embedding próprio);
+    ranqueia por sobreposição de termos e desempenho histórico. Fail-safe:
+    retorna `{"teses": []}` quando não há correspondências.
+    """
+    from app.models.tese import Tese, TeseStatus
+
+    # 1) Ownership de leitura (IDOR): reaproveita o gate canônico do caso.
+    case = await verificar_acesso_caso(db, cu, case_id)
+
+    # 2) Texto-consulta a partir do caso (área + título + tese/fatos + partes).
+    area_val = ""
+    raw_area = getattr(case, "area", None)
+    if raw_area:
+        area_val = (raw_area.value if hasattr(raw_area, "value") else str(raw_area)).strip()
+
+    keywords = _tokens_relevantes(
+        case.titulo,
+        getattr(case, "tese_principal", None),
+        getattr(case, "descricao", None),
+        getattr(case, "descricao_fatos", None),
+        getattr(case, "parte_contraria", None),
+    )
+
+    # 3) Candidatas: teses ativas cuja área bate OU que casam alguma palavra-chave.
+    stmt = select(Tese).where(
+        Tese.deleted_at.is_(None),
+        Tese.status == TeseStatus.ativa,
+    )
+    condicoes = []
+    if area_val:
+        condicoes.append(Tese.area_juridica.ilike(f"%{area_val}%"))
+    for w in keywords:
+        termo = f"%{w}%"
+        condicoes.append(Tese.titulo.ilike(termo))
+        condicoes.append(Tese.descricao.ilike(termo))
+        condicoes.append(Tese.fundamentacao.ilike(termo))
+        condicoes.append(Tese.jurisprudencia.ilike(termo))
+        condicoes.append(Tese.tags.ilike(termo))
+    if condicoes:
+        stmt = stmt.where(or_(*condicoes))
+    else:
+        # Sem área nem palavras-chave úteis → cai para as mais vitoriosas.
+        stmt = stmt.where(Tese.vezes_usada >= 1)
+
+    # Pré-filtro amplo (ordenado por desempenho) e ranqueamento fino em memória.
+    candidatas = (await db.execute(
+        stmt.order_by(Tese.taxa_sucesso.desc().nullslast(), Tese.vezes_venceu.desc())
+            .limit(100)
+    )).scalars().all()
+
+    area_lc = area_val.lower()
+
+    def _score(t: Tese) -> float:
+        blob = " ".join(filter(None, [
+            t.titulo, t.descricao, t.fundamentacao, t.jurisprudencia, t.tags,
+        ])).lower()
+        hits = sum(1 for w in keywords if w in blob)
+        area_match = bool(area_lc and t.area_juridica and area_lc in t.area_juridica.lower())
+        score = float(hits) + (2.0 if area_match else 0.0)
+        # Boost por desempenho (teses vitoriosas ganham prioridade no desempate).
+        score += float(t.taxa_sucesso or 0.0)
+        score += min(float(t.vezes_venceu or 0), 5) * 0.1
+        return score
+
+    ranqueadas = sorted(candidatas, key=_score, reverse=True)
+
+    saida = []
+    for t in ranqueadas:
+        sc = _score(t)
+        if sc <= 0:
+            continue  # sem qualquer aderência textual — descarta
+        resumo = (t.descricao or t.fundamentacao or "").strip()
+        saida.append({
+            "id": t.id,
+            "titulo": t.titulo,
+            "tema": t.area_juridica or area_val or None,
+            "ramo": t.area_juridica or None,
+            "resumo": (resumo[:280] + "…") if len(resumo) > 280 else resumo,
+            "score": round(sc, 4),
+            "distancia": round(1.0 / (1.0 + sc), 4),  # menor = mais próxima
+            "taxa_sucesso": t.taxa_sucesso,
+            "vezes_venceu": t.vezes_venceu,
+            "vezes_usada": t.vezes_usada,
+            "tribunal": t.tribunal,
+        })
+        if len(saida) >= k:
+            break
+
+    return {
+        "case_id": case_id,
+        "estrategia": "textual",  # teses não possuem embedding vetorial próprio
+        "area": area_val or None,
+        "palavras_chave": keywords,
+        "total": len(saida),
+        "teses": saida,
+    }
+
+
 @router.post('/{case_id}/analisar', summary='Analise estrategica com IA')
 async def analisar_caso_ia(
     case_id: str,
