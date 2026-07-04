@@ -4,6 +4,11 @@ services:
     # As migrations do RAG fazem `CREATE EXTENSION vector`; a imagem oficial
     # postgres:16-alpine NÃO traz o pgvector e o `alembic upgrade head` falharia.
     image: pgvector/pgvector:pg16
+    # Nome fixo: scripts/backup.sh, post_deploy_check.sh e deploy_vps_safe.sh
+    # fazem `docker exec ejc_db`/`ejc_backend`/`ejc_frontend` — sem isto o
+    # Compose V2 nomeia com hífen (ejc-db-1) e os 3 scripts falham com
+    # "No such container".
+    container_name: ejc_db
     restart: unless-stopped
     environment:
       POSTGRES_USER: ${POSTGRES_USER}
@@ -20,6 +25,7 @@ services:
   backend:
     build:
       context: ./backend
+    container_name: ejc_backend
     restart: unless-stopped
     env_file:
       - .env
@@ -36,7 +42,9 @@ services:
       db:
         condition: service_healthy
     healthcheck:
-      test: ["CMD", "curl", "-fsS", "http://localhost:8000/health"]
+      # O único endpoint de health registrado é /api/health (main.py:358) —
+      # "/health" (sem /api) sempre 404, e o container nunca ficava "healthy".
+      test: ["CMD", "curl", "-fsS", "http://localhost:8000/api/health"]
       interval: 30s
       timeout: 10s
       retries: 5
@@ -44,6 +52,7 @@ services:
   frontend:
     build:
       context: ./frontend
+    container_name: ejc_frontend
     restart: unless-stopped
     ports:
       - "80:80"
