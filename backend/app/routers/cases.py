@@ -900,46 +900,17 @@ async def linha_do_tempo(
     cu: User = Depends(get_current_user),
 ):
     """Cronologia unificada do caso: movimentos + prazos + documentos + honorários,
-    ordenada por data (mais recente primeiro). Agrega dados reais — não inventa."""
-    from app.models.deadline import Deadline
-    from app.models.document import Document
-    from app.models.fee import Fee
+    ordenada por data (mais recente primeiro). Agrega dados reais — não inventa.
+    A montagem dos eventos vive em app/services/visual_law_core.py (compartilhada
+    com o módulo Visual Law); o contrato deste endpoint permanece o mesmo."""
+    from app.services.visual_law_core import montar_eventos_caso
 
     q = select(Case).where(Case.id == case_id, Case.deleted_at.is_(None))
     q = _filtro_visibilidade(q, cu)
     if not (await db.execute(q)).scalar_one_or_none():
         raise HTTPException(status_code=404, detail="Caso não encontrado")
 
-    def _val(x):
-        return x.value if hasattr(x, "value") else x
-
-    eventos: list[dict] = []
-    for m in (await db.execute(
-        select(CaseMovimento).where(CaseMovimento.case_id == case_id)
-        .order_by(CaseMovimento.data_evento.desc()).limit(300)
-    )).scalars().all():
-        eventos.append({"data": m.data_evento, "categoria": "movimento",
-                        "tipo": m.tipo, "descricao": (m.descricao or "")[:240]})
-    for p in (await db.execute(
-        select(Deadline).where(Deadline.case_id == case_id, Deadline.deleted_at.is_(None))
-    )).scalars().all():
-        eventos.append({"data": p.data_prazo, "categoria": "prazo", "tipo": _val(p.tipo),
-                        "descricao": f"{p.titulo} [{_val(p.status)}]"})
-    for d in (await db.execute(
-        select(Document).where(Document.case_id == case_id, Document.deleted_at.is_(None))
-    )).scalars().all():
-        eventos.append({"data": d.created_at, "categoria": "documento",
-                        "tipo": d.tipo or "doc", "descricao": d.titulo})
-    for f in (await db.execute(
-        select(Fee).where(Fee.case_id == case_id, Fee.deleted_at.is_(None))
-    )).scalars().all():
-        dt = f.data_pagamento or f.data_vencimento
-        if dt:
-            eventos.append({"data": dt, "categoria": "honorario", "tipo": _val(f.tipo),
-                            "descricao": f"{f.descricao} [{_val(f.status)}]"})
-
-    eventos.sort(key=lambda e: (e["data"].isoformat() if hasattr(e["data"], "isoformat")
-                                else str(e["data"])), reverse=True)
+    eventos = await montar_eventos_caso(db, case_id)
     return {"case_id": case_id, "total": len(eventos), "eventos": eventos}
 
 

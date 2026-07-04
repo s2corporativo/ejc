@@ -21,6 +21,9 @@ SERIES = {
 
 _cache: dict[tuple, list] = {}   # cache em memória por (codigo, ini, fim)
 
+# Fallback determinístico quando a API do BCB está indisponível (Selic a.a.).
+FALLBACK_SELIC_ANUAL = 0.1075
+
 
 async def _buscar_serie(codigo: int, ini: date, fim: date) -> list[dict]:
     key = (codigo, ini.isoformat(), fim.isoformat())
@@ -37,6 +40,35 @@ async def _buscar_serie(codigo: int, ini: date, fim: date) -> list[dict]:
         data = r.json()
     _cache[key] = data
     return data
+
+
+async def selic_anualizada() -> dict:
+    """Selic anualizada compondo os últimos 12 valores mensais da série 4390.
+
+    Se houver menos de 12 pontos disponíveis, anualiza por composição
+    equivalente (fator^(12/n)). Fail-safe: qualquer erro (rede, série vazia,
+    formato) → fallback determinístico FALLBACK_SELIC_ANUAL, nunca exceção.
+    Retorna {"selic_anual": float, "fonte": "bcb"|"fallback", "meses_compostos": int}.
+    """
+    try:
+        hoje = date.today()
+        ini = date(hoje.year - 2, hoje.month, 1)  # janela ampla p/ garantir ≥12 pontos
+        serie = await _buscar_serie(SERIES["selic"]["codigo"], ini, hoje)
+        ultimos = serie[-12:]
+        if not ultimos:
+            raise ValueError("série Selic vazia")
+        fator = 1.0
+        for item in ultimos:
+            fator *= 1.0 + float(str(item["valor"]).replace(",", ".")) / 100.0
+        if len(ultimos) < 12:
+            fator = fator ** (12.0 / len(ultimos))
+        return {"selic_anual": round(fator - 1.0, 6), "fonte": "bcb",
+                "meses_compostos": len(ultimos)}
+    except Exception as exc:  # noqa: BLE001 — fail-safe deliberado (fallback fixo)
+        logger.warning("Selic via BCB indisponível (%s); usando fallback %.4f",
+                       exc, FALLBACK_SELIC_ANUAL)
+        return {"selic_anual": FALLBACK_SELIC_ANUAL, "fonte": "fallback",
+                "meses_compostos": 0}
 
 
 async def atualizar_valor(
