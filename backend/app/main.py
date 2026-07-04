@@ -60,6 +60,8 @@ from app.routers import dashboard
 from app.routers import data_room
 from app.routers import data_room_v4
 from app.routers import datajud
+from app.routers import deep_research
+from app.routers import precedentes
 from app.routers import deadlines
 from app.routers import despesas
 from app.routers import diario_oficial
@@ -322,6 +324,8 @@ app.include_router(prompts.router, prefix=API)
 app.include_router(prompts_juridicos.router, prefix=API)
 app.include_router(qualidade.router, prefix=API)
 app.include_router(rag.router, prefix=API)
+app.include_router(deep_research.router, prefix=API)
+app.include_router(precedentes.router, prefix=API)
 app.include_router(regulatorio.router, prefix=API)
 app.include_router(ramos.router, prefix=API)
 app.include_router(relatorio.router, prefix=API)
