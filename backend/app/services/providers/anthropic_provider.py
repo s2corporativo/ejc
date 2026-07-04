@@ -8,15 +8,26 @@ from __future__ import annotations
 import os
 import asyncio
 
+from app.core.config import get_settings
+
 _client = None
-_DEFAULT = os.getenv("ANTHROPIC_MODEL_RAPIDO", "claude-haiku-4-5-20251001")
+
+
+def _api_key() -> str:
+    """Chave Anthropic: prioriza a Settings tipada (.env carregado pelo pydantic);
+    cai para os.getenv (ex.: docker env_file exporta no ambiente do processo)."""
+    return get_settings().ANTHROPIC_API_KEY or os.getenv("ANTHROPIC_API_KEY", "")
+
+
+def _default_model() -> str:
+    return get_settings().ANTHROPIC_MODEL_RAPIDO or "claude-haiku-4-5-20251001"
 
 
 def _get_client():
     global _client
     if _client is None:
         import anthropic  # import tardio: só quando realmente usado
-        api_key = os.getenv("ANTHROPIC_API_KEY", "")
+        api_key = _api_key()
         if not api_key:
             raise RuntimeError("ANTHROPIC_API_KEY não configurada")
         _client = anthropic.Anthropic(api_key=api_key)
@@ -41,13 +52,13 @@ def _split_system(messages: list[dict]) -> tuple[str, list[dict]]:
 
 
 async def health() -> bool:
-    return bool(os.getenv("ANTHROPIC_API_KEY", ""))
+    return bool(_api_key())
 
 
 async def chat(messages: list[dict], model: str | None,
                temperature: float, max_tokens: int) -> tuple[str, dict]:
     system, conv = _split_system(messages)
-    mdl = model or _DEFAULT
+    mdl = model or _default_model()
 
     def _call():
         client = _get_client()

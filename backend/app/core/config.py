@@ -60,6 +60,16 @@ class Settings(BaseSettings):
     GROQ_TIMEOUT: int = 60               # segundos
     AI_ENABLED: bool = True
 
+    # ── IA — Anthropic (Claude) — módulo IA profissional por tarefa ───────
+    # Chave OBRIGATÓRIA para usar Claude (router.py/anthropic_provider.py).
+    # NUNCA hardcodar aqui: definir o valor real APENAS no .env. Vazio = Claude
+    # indisponível e o gateway faz fallback para Groq.
+    ANTHROPIC_API_KEY: str = ""
+    # Modelos configuráveis sem deploy (defaults econômicos — Haiku).
+    # Suba ANTHROPIC_MODEL_COMPLEXO para claude-sonnet-4-6 quando quiser mais qualidade.
+    ANTHROPIC_MODEL_RAPIDO: str = "claude-haiku-4-5-20251001"
+    ANTHROPIC_MODEL_COMPLEXO: str = "claude-haiku-4-5-20251001"
+
     # ── Notificações ──────────────────────────────────────────────────────
     ZAPI_INSTANCE_ID: str = ""
     ZAPI_TOKEN: str = ""
