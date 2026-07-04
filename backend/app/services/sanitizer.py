@@ -79,6 +79,38 @@ def sanitizar_pii(texto: str, nomes_proteger: list[str] | None = None) -> tuple[
     return resultado, (resultado != original)
 
 
+def sanitizar_pii_interno(texto: str, nomes_proteger: list[str] | None = None) -> tuple[str, bool]:
+    """
+    Variante de `sanitizar_pii` para uso 100% interno (nunca sai para provider
+    externo): mantém CPF/CNPJ visíveis (decisão de 2026-07-04 — uso interno do
+    escritório), mas continua removendo processo/RG/e-mail/telefone/CEP/cartão/
+    PIX/nomes protegidos, exatamente como antes. NÃO USAR neste texto para
+    montar mensagens que possam ir a Anthropic/Groq — para isso, use sempre
+    `sanitizar_pii` (que trata CPF/CNPJ como qualquer outro provider externo).
+    """
+    original = texto
+    resultado = texto
+    for pattern, placeholder in _PATTERNS[2:]:  # pula CPF (0) e CNPJ (1)
+        resultado = pattern.sub(placeholder, resultado)
+    resultado = _NASCIMENTO.sub(r'\1 [DATA_NASC]', resultado)
+    if nomes_proteger:
+        for i, nome in enumerate(nomes_proteger, start=1):
+            if nome and len(nome.strip()) >= 4:
+                escaped = re.escape(nome.strip())
+                resultado = re.sub(
+                    rf'(?<!\w){escaped}(?!\w)',
+                    f'[PARTE_{i}]',
+                    resultado,
+                    flags=re.IGNORECASE,
+                )
+    return resultado, (resultado != original)
+
+
+def validar_sem_pii_interno(texto: str) -> list[str]:
+    """Mesma checagem de `validar_sem_pii`, exceto CPF/CNPJ (uso interno)."""
+    return [tipo for tipo in validar_sem_pii(texto) if tipo not in ("CPF", "CNPJ")]
+
+
 def validar_sem_pii(texto: str) -> list[str]:
     """
     Validação final: verifica se ainda há PII residual.

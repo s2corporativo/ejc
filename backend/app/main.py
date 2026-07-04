@@ -95,7 +95,6 @@ from app.routers import jurisprudencia_interna
 from app.routers import kanban
 from app.routers import legal_docs
 from app.routers import licitacao_auditoria
-from app.routers import mediacao
 from app.routers import memoria_institucional
 from app.routers import mensagens
 from app.routers import module_help
@@ -139,10 +138,10 @@ from app.routers import trash
 from app.routers import users
 from app.routers import utils
 from app.routers import validador_juridico
-from app.routers import visual_law
 from app.routers import veredito_ia_router
 from app.routers import verse
 from app.routers import victory_vault_router
+from app.routers import visual_law
 from app.routers import webhooks
 from app.routers import whatsapp
 from app.routers import wiki
@@ -302,7 +301,6 @@ app.include_router(jurisprudencia_interna.router, prefix=API)
 app.include_router(kanban.router, prefix=API)
 app.include_router(legal_docs.router, prefix=API)
 app.include_router(licitacao_auditoria.router, prefix=API)
-app.include_router(mediacao.router, prefix=API)
 app.include_router(memoria_institucional.router, prefix=API)
 app.include_router(honorarios_oab.router, prefix=API)  # frontend: /api/honorarios-oab/estimar (EstimadorHonorarios)
 app.include_router(intake.router, prefix=API)  # frontend: /api/intake/casos/{id}/analise-completa (IntakeAnalise)
@@ -348,10 +346,10 @@ app.include_router(trash.router, prefix=API)
 app.include_router(users.router, prefix=API)
 app.include_router(utils.router, prefix=API)
 app.include_router(validador_juridico.router, prefix=API)
-app.include_router(visual_law.router, prefix=API)       # breakeven determinístico (Visual Law)
 app.include_router(veredito_ia_router.router, prefix=API)
 app.include_router(verse.router, prefix=API)
 app.include_router(victory_vault_router.router, prefix=API)
+app.include_router(visual_law.router, prefix=API)
 app.include_router(webhooks.router, prefix=API)
 app.include_router(whatsapp.router, prefix=API)
 app.include_router(wiki.router, prefix=API)

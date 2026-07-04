@@ -604,7 +604,7 @@ export default function Layout() {
             >
               <Search className="h-4 w-4 shrink-0" />
               <span className="truncate">
-                Buscar cliente, caso, processo ou documento
+                Buscar processos por parte, CPF ou número…
               </span>
               <kbd className="ml-auto hidden rounded-md border border-slate-200 bg-white px-1.5 py-0.5 text-[10px] font-medium text-slate-400 sm:block">
                 Ctrl K
