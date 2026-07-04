@@ -22,8 +22,8 @@ Create Date: 2026-07-04
 """
 from alembic import op
 
-revision = "068_deep_research_jobs"
-down_revision = "067_v4_dataroom_teses"
+revision = "070_deep_research_jobs"
+down_revision = "069_api_keys"
 branch_labels = None
 depends_on = None
 

@@ -5,6 +5,7 @@
 # ─────────────────────────────────────────────────────────────────────────────
 from __future__ import annotations
 import logging
+import posixpath
 from fastapi import Request, Response
 from fastapi.responses import JSONResponse
 import jwt
@@ -31,11 +32,21 @@ PREFIXOS_PUBLICOS = (
     # vitoriosas do escritório sem login. Agora exige JWT (Depends no router).
     "/api/webhooks/",       # Z-API inbound (valida Client-Token internamente)
     "/api/calendar/",       # feed ICS (HMAC na URL)
+    # API pública de abastecimento da base de conhecimento (Fase 2 IA/RAG):
+    # NÃO usa JWT — exige API key de serviço (X-API-Key) validada pelo
+    # require_api_key no router (401/403 lá; nada fica realmente aberto).
+    "/api/rag/knowledge-base/",
 )
 
 
 def _is_publica(path: str) -> bool:
-    """Retorna True se a rota não exige JWT."""
+    """Retorna True se a rota não exige JWT.
+
+    Auditoria B-1: normaliza o path (posixpath.normpath) ANTES do startswith —
+    sem isso, "/api/rag/knowledge-base/../qualquer-coisa" casaria um prefixo
+    público via segmentos "..", pulando o middleware para uma rota protegida.
+    """
+    path = posixpath.normpath(path)
     if not path.startswith("/api/"):
         return True  # arquivos estáticos, etc.
     return any(path.startswith(p) for p in PREFIXOS_PUBLICOS)

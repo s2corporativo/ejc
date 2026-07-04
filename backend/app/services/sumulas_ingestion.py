@@ -106,7 +106,10 @@ async def ingerir_sumulas_seed(db: AsyncSession) -> dict:
                 conteudo=f"{titulo}\n\nTribunal: {tribunal} | Área: {area} | Tema: {tema}\n\n{texto}",
                 categoria=area,
                 fonte="sumula",
-                referencia_id=tese_id,
+                tribunal=tribunal,
+                chave_origem=f"sumula:{tese_id}",
+                extra={"referencia_id": tese_id},
+                confianca="alta",
             )
         except Exception as exc:
             logger.debug("RAG skip para %s: %s", titulo, exc)

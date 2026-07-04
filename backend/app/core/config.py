@@ -119,9 +119,25 @@ class Settings(BaseSettings):
     DATAJUD_ENABLED: bool = True
     DATAJUD_API_KEY: str = ""  # Configurar via .env
 
+    # ── DJEN / API Comunica CNJ (Res. CNJ 569/2024) — ingestão RAG ───────
+    # Ingestor diário de comunicações processuais (intimações/publicações)
+    # por OAB monitorada. A retenção da API é limitada — o RAG do EJC é o
+    # arquivo histórico permanente. Desligado por padrão (opt-in no .env).
+    DJEN_INGEST_ENABLED: bool = False
+    # CSV "numero/UF" — ex.: "12345/MG,67890/MG". Vazio = ingestor no-op.
+    DJEN_OABS_MONITORADAS: str = ""
+    # Janela incremental (dias para trás) de cada coleta diária. 2 dias dá
+    # margem para atraso de disponibilização sem reprocessar demais (o upsert
+    # é idempotente por chave_origem, então sobreposição é inofensiva).
+    DJEN_INGEST_JANELA_DIAS: int = 2
+
     # ── Embeddings locais/remotos (busca semântica RAG) ─────────────────
     # local = fastembed (ONNX, sem torch) no mesmo processo; http = serviço interno separado.
-    EMBEDDINGS_ENABLED: bool = False
+    # Default True: fastembed é dependência pinada (requirements.txt) e o
+    # fallback é gracioso — falha/erro/import ausente → gerar_embeddings()
+    # retorna None e o RAG cai para busca textual (ver embedding_service.py
+    # e ai_service.buscar_contexto_rag), sem exceção ao chamador.
+    EMBEDDINGS_ENABLED: bool = True
     EMBEDDINGS_PROVIDER: str = "local"  # local | http
     EMBEDDINGS_API_URL: str = "http://embeddings:8010/embed"
     EMBEDDINGS_TIMEOUT: int = 120
@@ -147,7 +163,14 @@ class Settings(BaseSettings):
     # ── Ollama — modelos locais (soberania total, sem custo por token) ────
     # Instalar: ollama pull qwen2.5:14b && ollama pull deepseek-r1:8b etc.
     OLLAMA_BASE_URL: str = "http://ollama:11434"
-    OLLAMA_ENABLED: bool = False   # habilitar apenas quando modelos estiverem instalados
+    # Default True: cadeia de fallback do ai_gateway (_resolver_cadeia/chat)
+    # já trata Ollama indisponível/sem host de forma graciosa — connection
+    # refused/DNS falha rápido, ollama_provider.chat() levanta RuntimeError
+    # que o loop de `chat()` captura e segue para o próximo provedor
+    # (Anthropic/Groq) sem quebrar a requisição do usuário. Sem um serviço
+    # "ollama" no docker-compose, isso só passa a valer quando um for
+    # provisionado — até lá, cai direto para o próximo provedor.
+    OLLAMA_ENABLED: bool = True
     # Modelos disponíveis por categoria (ajuste ao hardware disponível)
     OLLAMA_MODEL_ANALISE: str = "deepseek-r1:8b"     # análise jurídica profunda
     OLLAMA_MODEL_PETICAO:  str = "qwen2.5:14b"       # elaboração de peças
@@ -173,6 +196,16 @@ class Settings(BaseSettings):
 
     # ── Scheduler ────────────────────────────────────────────────────────
     ENABLE_SCHEDULER: bool = True   # desligar em workers extras (uvicorn --workers)
+
+    # ── Fila assíncrona (Celery + Redis — Fase 3A) ────────────────────────
+    # CELERY_ENABLED=False (default) preserva o comportamento atual: tarefas
+    # de indexação rodam em BackgroundTasks no próprio processo da API.
+    # True (definido no docker-compose quando o serviço `worker` existe)
+    # despacha para o worker Celery via Redis; se o Redis estiver fora do ar,
+    # o dispatcher (app/tasks/dispatcher.py) cai de volta para BackgroundTasks
+    # — fallback gracioso, mesmo espírito de embeddings/IA.
+    REDIS_URL: str = "redis://redis:6379/0"
+    CELERY_ENABLED: bool = False
 
     # ── Escritório (LGPD — identificação do controlador de dados) ─────────
     ESCRITORIO_NOME: str = "De Paula Teixeira Sociedade de Advogados"

@@ -36,6 +36,15 @@ class KnowledgeDoc(Base):
     # Estado da vetorização (BackgroundTasks): pendente | indexado | sem_embeddings
     status_indexacao = Column(String(20), nullable=False, server_default="pendente")
 
+    # Versionamento (migration 068): reingestão do mesmo `chave_origem` com
+    # conteúdo diferente NÃO sobrescreve — cria uma nova versão. A versão
+    # antiga vira `vigente=False` mas seus chunks permanecem intactos (histórico
+    # auditável; citações antigas usadas em petições continuam rastreáveis).
+    versao             = Column(Integer, nullable=False, server_default="1")
+    vigente            = Column(Boolean, nullable=False, server_default="true", index=True)
+    versao_anterior_id = Column(String(36), ForeignKey("knowledge_docs.id", ondelete="SET NULL"),
+                                nullable=True)
+
     created_at = Column(DateTime(timezone=True), server_default=func.now())
     deleted_at = Column(DateTime(timezone=True), nullable=True)
 

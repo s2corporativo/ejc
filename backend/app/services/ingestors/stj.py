@@ -110,6 +110,7 @@ async def ingerir(db: AsyncSession) -> tuple[int, int]:
                         "classe": rec.get("siglaClasse"),
                         "data_decisao": rec.get("dataDecisao"),
                     },
+                    confianca="alta",   # fonte oficial (STJ Dados Abertos)
                 )
                 if res in ("novo", "atualizado"):
                     novos += 1

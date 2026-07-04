@@ -96,6 +96,8 @@ export interface AlertasResponse {
 }
 
 // POST /visual-law/breakeven
+export type SelicFonte = "bcb" | "fallback" | "informada";
+
 export interface BreakevenRequest {
   valor_causa: number;
   /** 0..1 */
@@ -114,7 +116,7 @@ export interface BreakevenParametros {
   tempo_anos: number;
   tribunal: string | null;
   selic_anual: number;
-  selic_fonte: "bcb" | "fallback" | "usuario";
+  selic_fonte: SelicFonte;
   custas_pct: number;
   honorarios_sucumbencia_pct: number;
 }

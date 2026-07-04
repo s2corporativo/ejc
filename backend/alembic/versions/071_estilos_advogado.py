@@ -21,8 +21,8 @@ Create Date: 2026-07-04
 """
 from alembic import op
 
-revision = "069_estilos_advogado"
-down_revision = "068_deep_research_jobs"
+revision = "071_estilos_advogado"
+down_revision = "070_deep_research_jobs"
 branch_labels = None
 depends_on = None
 

@@ -93,6 +93,87 @@ def _docx_texto(path: str) -> str:
     return "\n".join(p.text for p in d.paragraphs)[:MAX_OCR_CHARS]
 
 
+# ── API baseada em BYTES (Fase 3A — /rag/ingest-pdf e tasks Celery) ──────────
+# Mesma estratégia da API por caminho acima (texto nativo PyMuPDF + OCR de
+# fallback por página), mas recebe o binário direto do UploadFile e retorna
+# metadados da extração (nº de páginas, quantas precisaram de OCR).
+
+def ocr_disponivel() -> bool:
+    """True se pytesseract E o binário tesseract estão utilizáveis."""
+    if not _TESS_OK:
+        return False
+    import shutil as _shutil
+    return _shutil.which("tesseract") is not None
+
+
+def _ocr_imagem_pil(img) -> str:
+    """OCR de um PIL.Image; sem traineddata 'por', degrada para o default."""
+    try:
+        return pytesseract.image_to_string(img, lang="por")
+    except pytesseract.TesseractError:
+        return pytesseract.image_to_string(img)
+
+
+def extrair_texto_pdf(raw: bytes) -> dict:
+    """Extrai texto de um PDF em bytes: nativo + OCR nas páginas escaneadas.
+
+    Retorno: {"texto", "paginas", "paginas_ocr", "ocr_disponivel"}.
+    Levanta ValueError se o binário não for um PDF legível (chamador → 422).
+    Falta de tesseract NUNCA levanta — páginas escaneadas ficam vazias e
+    `ocr_disponivel=False` sinaliza a degradação (fallback gracioso).
+    """
+    if not _PDF_OK:
+        raise ValueError("Extração de PDF indisponível no servidor (PyMuPDF ausente)")
+    tem_ocr = ocr_disponivel()
+    try:
+        pdf = fitz.open(stream=raw, filetype="pdf")
+    except Exception as e:
+        raise ValueError(f"Falha ao ler o PDF: {str(e)[:120]}") from e
+    partes: list[str] = []
+    paginas_ocr = 0
+    with pdf:
+        total = pdf.page_count
+        for page in pdf:
+            txt = page.get_text("text") or ""
+            # Página sem texto nativo (escaneada) → OCR, se disponível
+            if len(txt.strip()) < 20 and tem_ocr:
+                try:
+                    pix = page.get_pixmap(dpi=200)
+                    img = Image.frombytes("RGB", [pix.width, pix.height], pix.samples)
+                    txt = _ocr_imagem_pil(img)
+                    paginas_ocr += 1
+                except Exception as e:
+                    logger.warning(f"OCR da página {page.number} falhou: {e}")
+            partes.append(txt)
+            if sum(len(p) for p in partes) > MAX_OCR_CHARS:
+                break
+    return {
+        "texto": "\n".join(partes)[:MAX_OCR_CHARS].strip(),
+        "paginas": total,
+        "paginas_ocr": paginas_ocr,
+        "ocr_disponivel": tem_ocr,
+    }
+
+
+def extrair_texto_imagem(raw: bytes) -> dict:
+    """OCR de uma imagem (png/jpg...) em bytes. Sem tesseract → texto vazio."""
+    import io as _io
+    tem_ocr = ocr_disponivel()
+    texto = ""
+    if tem_ocr:
+        try:
+            with Image.open(_io.BytesIO(raw)) as img:
+                texto = _ocr_imagem_pil(img.convert("RGB"))[:MAX_OCR_CHARS]
+        except Exception as e:
+            raise ValueError(f"Falha ao ler a imagem: {str(e)[:120]}") from e
+    return {
+        "texto": texto.strip(),
+        "paginas": 1,
+        "paginas_ocr": 1 if texto.strip() else 0,
+        "ocr_disponivel": tem_ocr,
+    }
+
+
 # ── XML / NF-e ────────────────────────────────────────────────────────────────
 
 def _xml_root(bruto: str):

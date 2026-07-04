@@ -25,6 +25,7 @@ from app.models.procuracao import Procuracao
 from app.models.rag import KnowledgeDoc, KnowledgeChunk
 from app.models.deep_research import DeepResearchJob, DeepResearchStatus
 from app.models.estilo_advogado import EstiloAdvogado
+from app.models.api_key import ApiKey
 
 __all__ = [
     "User", "RefreshToken", "UserRole",
@@ -42,6 +43,7 @@ __all__ = [
     "KnowledgeDoc", "KnowledgeChunk",
     "DeepResearchJob", "DeepResearchStatus",
     "EstiloAdvogado",
+    "ApiKey",
 ]
 from app.models.template import DocTemplate  # noqa
 from app.models.task import Task, TaskStatus  # noqa

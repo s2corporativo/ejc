@@ -892,6 +892,8 @@ def start_scheduler():
     s.add_job(_purgar_dados_lgpd, CronTrigger(day_of_week="sun", hour=2, minute=30), id="purga_lgpd", replace_existing=True)
     s.add_job(job_ingestao_camara,   CronTrigger(hour=4, minute=0),          id="ing_camara",   replace_existing=True)
     s.add_job(job_ingestao_senado,   CronTrigger(hour=4, minute=20),         id="ing_senado",   replace_existing=True)
+    # DJEN → RAG: gate interno DJEN_INGEST_ENABLED (default False)
+    s.add_job(job_ingestao_djen,     CronTrigger(hour=5, minute=0),          id="ing_djen",     replace_existing=True)
 
     # Recarrega feriados municipais/estaduais (00h05) — pega novas inserções
     # na tabela `feriados` sem precisar reiniciar o backend.
@@ -1242,4 +1244,24 @@ async def job_ingestao_senado():
     await executar_ingestao(
         "senado", "Monitor legislativo (Senado Federal)",
         "proposicao_legislativa", senado.ingerir,
+    )
+
+
+async def job_ingestao_djen():
+    """Diário 05h00 — comunicações processuais do DJEN (API Comunica/CNJ)
+    das OABs monitoradas → RAG (arquivo histórico; a retenção da API é curta).
+
+    Gate: DJEN_INGEST_ENABLED (default False — opt-in no .env). Não confundir
+    com job_djen_intimacoes (06h30), que alimenta a tela Intimações por
+    advogado cadastrado; este job persiste as comunicações no RAG.
+    """
+    from app.core.config import get_settings as _gs
+    if not _gs().DJEN_INGEST_ENABLED:
+        logger.info("[Ingestao:djen] desabilitado (DJEN_INGEST_ENABLED=false)")
+        return
+    from app.services.ingestion_service import executar_ingestao
+    from app.services.ingestors import djen
+    await executar_ingestao(
+        "djen", "Comunicações processuais (DJEN — API Comunica/CNJ)",
+        "comunicacao_processual", djen.ingerir,
     )
