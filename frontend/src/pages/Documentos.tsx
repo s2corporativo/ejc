@@ -1,9 +1,33 @@
 import { useEffect, useState, useRef } from "react";
 import { toast } from "../components/Toast";
-import { Upload, Download, Search, Lock } from "lucide-react";
+import { Upload, Download, Search, Lock, Sparkles } from "lucide-react";
 import api from "../lib/api";
 import { PageHeader, Modal, Empty, Spinner, fmtDate } from "../components/UI";
 import { DocumentosStats } from "../components/Dashboards";
+
+/** Item de alternativa devolvido pela classificação por IA. */
+type ClassAlternativa = { tipo_key: string; nome: string };
+
+/** Shape de POST /documents/{id}/classificar (aplicar=false|true). */
+type ClassResultado = {
+  doc_id: string;
+  aplicado: boolean;
+  tipo_atual: string | null;
+  tipo_sugerido: string | null;
+  confianca: "alta" | "media" | "baixa" | null;
+  alternativas: ClassAlternativa[];
+  justificativa: string;
+  disponivel: boolean;
+  pii_removida?: boolean;
+  modelo?: string;
+  aviso?: string;
+};
+
+const CONF_LABEL: Record<string, string> = {
+  alta: "Alta confiança",
+  media: "Confiança média",
+  baixa: "Baixa confiança",
+};
 
 export default function Documentos() {
   const [data, setData] = useState<any>(null);
@@ -13,6 +37,12 @@ export default function Documentos() {
   const fileRef = useRef<HTMLInputElement>(null);
   const [enviando, setEnviando] = useState(false);
   const [casos, setCasos] = useState<any[]>([]);
+
+  // Classificação de tipo por IA (sugerir → aplicar), confirmação humana obrigatória.
+  const [classDoc, setClassDoc] = useState<any | null>(null);
+  const [classResult, setClassResult] = useState<ClassResultado | null>(null);
+  const [classLoading, setClassLoading] = useState(false);
+  const [aplicando, setAplicando] = useState(false);
 
   const load = () =>
     api
@@ -74,6 +104,62 @@ export default function Documentos() {
     URL.revokeObjectURL(url);
   };
 
+  // Abre o modal e busca a SUGESTÃO de tipo (aplicar=false — nunca grava aqui).
+  const classificar = async (doc: any) => {
+    setClassDoc(doc);
+    setClassResult(null);
+    setClassLoading(true);
+    try {
+      const r = await api.post<ClassResultado>(
+        `/documents/${doc.id}/classificar`,
+        null,
+        { params: { aplicar: false } },
+      );
+      setClassResult(r.data);
+    } catch (e: any) {
+      toast.error(e.response?.data?.detail || "Falha ao classificar documento");
+      setClassDoc(null);
+    } finally {
+      setClassLoading(false);
+    }
+  };
+
+  // Persiste o tipo sugerido (aplicar=true) e atualiza a linha na UI.
+  const aplicarTipo = async () => {
+    if (!classDoc) return;
+    setAplicando(true);
+    try {
+      const r = await api.post<ClassResultado>(
+        `/documents/${classDoc.id}/classificar`,
+        null,
+        { params: { aplicar: true } },
+      );
+      const novoTipo = r.data.tipo_atual;
+      setData((prev: any) =>
+        prev
+          ? {
+              ...prev,
+              data: prev.data.map((d: any) =>
+                d.id === classDoc.id ? { ...d, tipo: novoTipo } : d,
+              ),
+            }
+          : prev,
+      );
+      toast.success(`Tipo aplicado: ${novoTipo || "—"}`);
+      setClassDoc(null);
+      setClassResult(null);
+    } catch (e: any) {
+      toast.error(e.response?.data?.detail || "Falha ao aplicar o tipo");
+    } finally {
+      setAplicando(false);
+    }
+  };
+
+  const fecharClass = () => {
+    setClassDoc(null);
+    setClassResult(null);
+  };
+
   const confIcon = (c: string) =>
     ["restrito", "confidencial", "segredo_justica"].includes(c) ? (
       <Lock size={13} className="text-danger-500" />
@@ -114,6 +200,7 @@ export default function Documentos() {
               <tr>
                 <th className="px-4 py-3">Título</th>
                 <th className="px-4 py-3">Arquivo</th>
+                <th className="px-4 py-3">Tipo</th>
                 <th className="px-4 py-3">Confidencialidade</th>
                 <th className="px-4 py-3">Tamanho</th>
                 <th className="px-4 py-3">Enviado em</th>
@@ -129,6 +216,15 @@ export default function Documentos() {
                   <td className="px-4 py-3 text-slate-500 text-xs">
                     {d.filename}
                   </td>
+                  <td className="px-4 py-3 text-xs">
+                    {d.tipo ? (
+                      <span className="capitalize">
+                        {String(d.tipo).replace(/_/g, " ")}
+                      </span>
+                    ) : (
+                      <span className="text-slate-300">—</span>
+                    )}
+                  </td>
                   <td className="px-4 py-3 capitalize text-xs">
                     {d.confidencialidade.replace(/_/g, " ")}
                   </td>
@@ -141,12 +237,23 @@ export default function Documentos() {
                     {fmtDate(d.created_at)}
                   </td>
                   <td className="px-4 py-3">
-                    <button
-                      className="btn-ghost px-2 py-1"
-                      onClick={() => baixar(d.id, d.filename)}
-                    >
-                      <Download size={15} />
-                    </button>
+                    <div className="flex items-center justify-end gap-1">
+                      <button
+                        className="btn-ghost px-2 py-1"
+                        title="Classificar tipo (IA)"
+                        disabled={classLoading && classDoc?.id === d.id}
+                        onClick={() => classificar(d)}
+                      >
+                        <Sparkles size={15} />
+                      </button>
+                      <button
+                        className="btn-ghost px-2 py-1"
+                        title="Baixar"
+                        onClick={() => baixar(d.id, d.filename)}
+                      >
+                        <Download size={15} />
+                      </button>
+                    </div>
                   </td>
                 </tr>
               ))}
@@ -228,6 +335,118 @@ export default function Documentos() {
             {enviando ? "Enviando..." : "Enviar"}
           </button>
         </div>
+      </Modal>
+
+      <Modal
+        open={!!classDoc}
+        onClose={fecharClass}
+        title="Classificar tipo (IA)"
+        footer={
+          classResult && classResult.disponivel && classResult.tipo_sugerido ? (
+            <>
+              <button className="btn-ghost" onClick={fecharClass}>
+                Cancelar
+              </button>
+              <button
+                className="btn-primary"
+                disabled={aplicando}
+                onClick={aplicarTipo}
+              >
+                {aplicando ? "Aplicando..." : "Aplicar tipo sugerido"}
+              </button>
+            </>
+          ) : (
+            <button className="btn-ghost" onClick={fecharClass}>
+              Fechar
+            </button>
+          )
+        }
+      >
+        {classDoc && (
+          <p className="mb-4 text-sm text-slate-500">
+            Documento:{" "}
+            <span className="font-medium text-navy">{classDoc.titulo}</span>
+          </p>
+        )}
+
+        {classLoading || !classResult ? (
+          <div className="py-8">
+            <Spinner />
+            <p className="mt-3 text-center text-xs text-slate-400">
+              Analisando o texto do documento…
+            </p>
+          </div>
+        ) : !classResult.disponivel || !classResult.tipo_sugerido ? (
+          <div className="rounded-xl border border-amber-200 bg-amber-50 p-4 text-sm text-amber-800">
+            Classificação por IA indisponível.
+            {classResult.justificativa && (
+              <span className="mt-1 block text-xs text-amber-700">
+                {classResult.justificativa}
+              </span>
+            )}
+          </div>
+        ) : (
+          <div className="space-y-4">
+            <div className="rounded-xl border border-slate-200 bg-slate-50 p-4">
+              <div className="text-xs uppercase text-slate-400">
+                Tipo sugerido
+              </div>
+              <div className="mt-1 flex items-center gap-2">
+                <span className="text-lg font-semibold capitalize text-navy">
+                  {String(classResult.tipo_sugerido).replace(/_/g, " ")}
+                </span>
+                {classResult.confianca && (
+                  <span className="rounded-full bg-slate-200 px-2 py-0.5 text-xs text-slate-600">
+                    {CONF_LABEL[classResult.confianca] ?? classResult.confianca}
+                  </span>
+                )}
+              </div>
+              {classResult.tipo_atual && (
+                <div className="mt-1 text-xs text-slate-400">
+                  Tipo atual:{" "}
+                  <span className="capitalize">
+                    {String(classResult.tipo_atual).replace(/_/g, " ")}
+                  </span>
+                </div>
+              )}
+            </div>
+
+            {classResult.justificativa && (
+              <div>
+                <div className="mb-1 text-xs uppercase text-slate-400">
+                  Justificativa
+                </div>
+                <p className="text-sm text-slate-600">
+                  {classResult.justificativa}
+                </p>
+              </div>
+            )}
+
+            {classResult.alternativas.length > 0 && (
+              <div>
+                <div className="mb-1 text-xs uppercase text-slate-400">
+                  Alternativas
+                </div>
+                <div className="flex flex-wrap gap-1.5">
+                  {classResult.alternativas.map((a) => (
+                    <span
+                      key={a.tipo_key}
+                      className="rounded-full border border-slate-200 px-2.5 py-0.5 text-xs text-slate-600"
+                      title={a.tipo_key}
+                    >
+                      {a.nome}
+                    </span>
+                  ))}
+                </div>
+              </div>
+            )}
+
+            <p className="text-xs text-slate-400">
+              {classResult.aviso ||
+                "Sugestão gerada por IA — confirmação humana obrigatória."}
+            </p>
+          </div>
+        )}
       </Modal>
     </div>
   );

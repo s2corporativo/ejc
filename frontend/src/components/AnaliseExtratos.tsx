@@ -9,8 +9,28 @@ import {
   FileSpreadsheet,
   FileText,
   AlertTriangle,
+  Sparkles,
+  Loader2,
+  CheckCircle2,
+  Copy,
 } from "lucide-react";
 import api from "../lib/api";
+import { Modal, Button } from "./UI";
+import { toast } from "./Toast";
+
+// Etapas do pipeline de peças (mesma esteira 7 etapas reutilizada pelo backend).
+const ETAPAS_MINUTA: { num: number; titulo: string }[] = [
+  { num: 1, titulo: "Identificando tipo de peça" },
+  { num: 2, titulo: "Estruturando enquadramento" },
+  { num: 3, titulo: "Buscando fundamentos legais" },
+  { num: 4, titulo: "Analisando jurisprudência" },
+  { num: 5, titulo: "Organizando argumentos" },
+  { num: 6, titulo: "Identificando riscos" },
+  { num: 7, titulo: "Montando documento completo" },
+];
+
+type StatusEtapa = "aguardando" | "em_andamento" | "concluido";
+type FaseMinuta = "gerando" | "concluido" | "erro";
 
 function fmt(v: any) {
   return Number(v || 0).toLocaleString("pt-BR", {
@@ -92,6 +112,125 @@ export default function AnaliseExtratos() {
     }
   };
 
+  // ── Minuta revisional (IA) — consome o mesmo SSE do gerador de peças ─────────
+  // Espelha o padrão de leitura de stream de PecaGeneratorModal.tsx:174-231
+  // (fetch direto + reader + parse event:/data:). O endpoint reusa a esteira de
+  // peças (gerar_peca_pipeline), então os eventos são idênticos: step/concluido/erro.
+  const [minutaOpen, setMinutaOpen] = useState(false);
+  const [minutaFase, setMinutaFase] = useState<FaseMinuta>("gerando");
+  const [minutaEtapas, setMinutaEtapas] = useState<
+    Record<number, StatusEtapa>
+  >({});
+  const [minutaDoc, setMinutaDoc] = useState("");
+  const [minutaLegalDocId, setMinutaLegalDocId] = useState("");
+  const [minutaErro, setMinutaErro] = useState("");
+  const [minutaCopiado, setMinutaCopiado] = useState(false);
+  const minutaAbort = useRef<AbortController | null>(null);
+
+  const fecharMinuta = () => {
+    minutaAbort.current?.abort();
+    setMinutaOpen(false);
+  };
+
+  const gerarMinuta = async () => {
+    if (!res?.analise?.id) return;
+    setMinutaOpen(true);
+    setMinutaFase("gerando");
+    setMinutaEtapas({});
+    setMinutaDoc("");
+    setMinutaLegalDocId("");
+    setMinutaErro("");
+    setMinutaCopiado(false);
+    minutaAbort.current = new AbortController();
+
+    const token = localStorage.getItem("ejc_access") ?? "";
+    try {
+      const r = await fetch(
+        `/api/v1/bank-analysis/${res.analise.id}/gerar-peca`,
+        {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+            Authorization: `Bearer ${token}`,
+          },
+          signal: minutaAbort.current.signal,
+        },
+      );
+
+      if (!r.ok) {
+        const err = await r
+          .json()
+          .catch(() => ({ detail: "" }));
+        if (r.status === 422) {
+          throw new Error(
+            err.detail ||
+              "Nenhuma cobrança abusiva para peticionar nesta análise.",
+          );
+        }
+        if (r.status === 503) {
+          throw new Error(
+            err.detail ||
+              "Serviço de IA indisponível para geração de peças no momento.",
+          );
+        }
+        throw new Error(err.detail || "Falha ao gerar a minuta revisional.");
+      }
+
+      const reader = r.body!.getReader();
+      const decoder = new TextDecoder();
+      let buf = "";
+
+      while (true) {
+        const { done, value } = await reader.read();
+        if (done) break;
+        buf += decoder.decode(value, { stream: true });
+
+        const parts = buf.split("\n\n");
+        buf = parts.pop() ?? "";
+
+        for (const part of parts) {
+          const eventLine = part.match(/^event:\s*(.+)$/m)?.[1]?.trim();
+          const dataLine = part.match(/^data:\s*(.+)$/ms)?.[1]?.trim();
+          if (!dataLine) continue;
+
+          let payload: Record<string, any> = {};
+          try {
+            payload = JSON.parse(dataLine);
+          } catch {
+            continue;
+          }
+
+          if (eventLine === "step") {
+            const num = Number(payload.etapa);
+            const st: StatusEtapa =
+              payload.status === "em_andamento"
+                ? "em_andamento"
+                : "concluido";
+            setMinutaEtapas((prev) => ({ ...prev, [num]: st }));
+          } else if (eventLine === "concluido") {
+            setMinutaDoc(payload.documento ?? "");
+            setMinutaLegalDocId(payload.legal_doc_id ?? "");
+            setMinutaFase("concluido");
+            toast.success("Minuta revisional gerada (rascunho — revise, OAB).");
+          } else if (eventLine === "erro") {
+            throw new Error(payload.detail ?? "Erro na geração da minuta.");
+          }
+        }
+      }
+    } catch (e: any) {
+      if (e.name === "AbortError") return;
+      setMinutaErro(e.message ?? "Erro desconhecido");
+      setMinutaFase("erro");
+      toast.error(e.message ?? "Falha ao gerar a minuta revisional.");
+    }
+  };
+
+  const copiarMinuta = () => {
+    navigator.clipboard.writeText(minutaDoc);
+    setMinutaCopiado(true);
+    setTimeout(() => setMinutaCopiado(false), 2000);
+  };
+
   const a = res?.analise;
   const cobr: any[] = res?.cobrancas || [];
   const prioCor = (p: string) =>
@@ -171,6 +310,14 @@ export default function AnaliseExtratos() {
             <button onClick={() => gerarDoc("bacen")} className={btn}>
               <FileText size={13} /> Reclamação BACEN
             </button>
+            {a.qtd_abusivas > 0 && (
+              <button
+                onClick={gerarMinuta}
+                className="text-xs px-2.5 py-1.5 rounded-lg bg-navy text-white hover:bg-navy/90 flex items-center gap-1 transition-colors"
+              >
+                <Sparkles size={13} /> Gerar minuta revisional (IA)
+              </button>
+            )}
           </div>
 
           {cobr.length > 0 ? (
@@ -216,6 +363,159 @@ export default function AnaliseExtratos() {
           </p>
         </div>
       )}
+
+      {/* ── Minuta revisional (IA) ── */}
+      <Modal
+        open={minutaOpen}
+        onClose={fecharMinuta}
+        title="Minuta revisional (IA)"
+        wide
+      >
+        <div className="flex flex-col">
+          <div className="-mt-5 -mx-5 mb-4 px-5 pb-3 border-b border-slate-100">
+            <p className="text-xs text-slate-400">
+              Ação revisional c/c repetição de indébito · pipeline 7 etapas ·
+              HITL obrigatório
+            </p>
+          </div>
+
+          {(minutaFase === "gerando" || minutaFase === "erro") && (
+            <div className="flex flex-col gap-2">
+              {ETAPAS_MINUTA.map((e) => {
+                const st = minutaEtapas[e.num] ?? "aguardando";
+                return (
+                  <div
+                    key={e.num}
+                    className={`flex items-center gap-3 px-4 py-2.5 rounded-xl border transition-colors ${
+                      st === "concluido"
+                        ? "bg-success-50 border-success-200"
+                        : st === "em_andamento"
+                          ? "bg-bronze-50/40 border-bronze-pale"
+                          : "bg-white border-slate-100"
+                    }`}
+                  >
+                    <div
+                      className={`w-6 h-6 rounded-full flex items-center justify-center flex-shrink-0 text-[11px] font-medium ${
+                        st === "concluido"
+                          ? "bg-success-600 text-white"
+                          : st === "em_andamento"
+                            ? "bg-bronze text-white"
+                            : "bg-slate-100 text-slate-400"
+                      }`}
+                    >
+                      {st === "em_andamento" ? (
+                        <Loader2 size={12} className="animate-spin" />
+                      ) : st === "concluido" ? (
+                        <CheckCircle2 size={12} />
+                      ) : (
+                        e.num
+                      )}
+                    </div>
+                    <span
+                      className={`text-sm ${
+                        st === "aguardando" ? "text-slate-400" : "text-navy"
+                      }`}
+                    >
+                      {e.titulo}
+                    </span>
+                  </div>
+                );
+              })}
+
+              {minutaFase === "erro" && (
+                <div className="mt-3 bg-danger-50 border border-danger-200 rounded-lg px-4 py-3 text-sm text-danger-700">
+                  {minutaErro}
+                </div>
+              )}
+            </div>
+          )}
+
+          {minutaFase === "concluido" && (
+            <div className="flex flex-col gap-4">
+              <div className="flex items-center gap-2 bg-success-50 border border-success-200 rounded-xl px-4 py-3">
+                <CheckCircle2
+                  size={18}
+                  className="text-success-600 flex-shrink-0"
+                />
+                <div className="flex-1">
+                  <div className="text-sm font-medium text-success-800">
+                    Minuta gerada com sucesso
+                  </div>
+                  <div className="text-xs text-success-700">
+                    {minutaLegalDocId
+                      ? `Peça: ${minutaLegalDocId} · `
+                      : ""}
+                    Rascunho (HITL) — aguarda revisão humana.
+                  </div>
+                </div>
+              </div>
+
+              <div>
+                <div className="flex items-center justify-between mb-2">
+                  <label className="text-xs font-medium text-slate-600">
+                    Documento gerado
+                  </label>
+                  <button
+                    onClick={copiarMinuta}
+                    className="flex items-center gap-1 text-xs text-slate-500 hover:text-bronze transition-colors"
+                  >
+                    <Copy size={13} />
+                    {minutaCopiado ? "Copiado!" : "Copiar"}
+                  </button>
+                </div>
+                <textarea
+                  readOnly
+                  value={minutaDoc}
+                  rows={14}
+                  className="w-full border border-slate-200 rounded-xl px-4 py-3 text-sm text-slate-800 bg-slate-50 font-mono resize-none focus:outline-none focus:ring-2 focus:ring-bronze"
+                />
+              </div>
+
+              <div className="bg-warn-50 border border-warn-200 rounded-lg px-4 py-3 text-xs text-warn-800">
+                <strong>⚠ RASCUNHO:</strong> minuta gerada por IA. Revise,
+                complemente com os dados reais do caso e assine (advogado
+                habilitado, OAB) antes de protocolar.
+              </div>
+            </div>
+          )}
+
+          <div className="-mx-5 -mb-5 px-6 py-4 mt-4 border-t border-slate-100 flex items-center justify-between gap-3 bg-white rounded-b-2xl">
+            {minutaFase === "gerando" && (
+              <>
+                <div className="flex items-center gap-2 text-xs text-slate-400">
+                  <Loader2 size={13} className="animate-spin" />
+                  Processando pipeline...
+                </div>
+                <button
+                  onClick={fecharMinuta}
+                  className="px-4 py-2 text-sm text-danger-500 hover:text-danger-700 transition-colors"
+                >
+                  Cancelar
+                </button>
+              </>
+            )}
+            {minutaFase === "erro" && (
+              <>
+                <Button variant="ghost" onClick={fecharMinuta}>
+                  Fechar
+                </Button>
+                <Button
+                  variant="ai"
+                  onClick={gerarMinuta}
+                  icon={<Sparkles size={15} />}
+                >
+                  Tentar novamente
+                </Button>
+              </>
+            )}
+            {minutaFase === "concluido" && (
+              <Button variant="ai" onClick={fecharMinuta} className="ml-auto">
+                Fechar
+              </Button>
+            )}
+          </div>
+        </div>
+      </Modal>
     </div>
   );
 }
