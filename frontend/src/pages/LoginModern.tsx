@@ -50,8 +50,10 @@ export default function LoginModern() {
 
   return (
     <div className="min-h-screen overflow-hidden bg-canvas text-slate-950">
-      <div className="relative grid min-h-screen lg:grid-cols-[1fr_460px]">
-        <section className="relative hidden flex-col justify-between overflow-hidden bg-canvas p-10 text-slate-900 lg:flex">
+      {/* Marca d'água da logomarca — um pouco mais visível no login */}
+      <div className="brand-watermark opacity-[0.05]" aria-hidden="true" />
+      <div className="relative z-10 grid min-h-screen lg:grid-cols-[1fr_460px]">
+        <section className="relative hidden flex-col justify-between overflow-hidden p-10 text-slate-900 lg:flex">
           <div className="pointer-events-none absolute inset-0 bg-[radial-gradient(circle_at_20%_10%,rgba(244,87,77,.10),transparent_30rem),radial-gradient(circle_at_90%_90%,rgba(247,146,86,.10),transparent_26rem)]" />
           <div className="relative flex items-center gap-3">
             <img

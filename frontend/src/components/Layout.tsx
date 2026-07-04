@@ -155,7 +155,12 @@ const NAV: NavItem[] = [
     roles: ["superadmin", "admin", "socio", "advogado", "financeiro"],
   },
   { to: "/despesas", label: "Despesas", icon: Receipt, group: "Gestao" },
-  { to: "/sociedade", label: "Sociedade", icon: Building2, group: "Financeiro" },
+  {
+    to: "/sociedade",
+    label: "Sociedade",
+    icon: Building2,
+    group: "Financeiro",
+  },
 
   // ── Inteligência ──
   {
@@ -243,7 +248,12 @@ const NAV: NavItem[] = [
 
   // ── Biblioteca / Conhecimento ──
   { to: "/wiki", label: "Wiki", icon: BookOpen, group: "Biblioteca" },
-  { to: "/biblioteca", label: "Biblioteca", icon: Library, group: "Biblioteca" },
+  {
+    to: "/biblioteca",
+    label: "Biblioteca",
+    icon: Library,
+    group: "Biblioteca",
+  },
   { to: "/memoria", label: "Memoria", icon: Brain, group: "Biblioteca" },
   { to: "/noticias", label: "Noticias", icon: Newspaper, group: "Biblioteca" },
   {
@@ -385,6 +395,8 @@ export default function Layout() {
 
   return (
     <div className="min-h-screen bg-canvas text-slate-900">
+      {/* Marca d'água da logomarca — decorativa, some na impressão */}
+      <div className="brand-watermark" aria-hidden="true" />
       <CommandPalette />
 
       {menuOpen && (
@@ -514,7 +526,9 @@ export default function Layout() {
                           }
                         >
                           <Icon className="h-4 w-4 shrink-0" />
-                          {!collapsed && <span className="truncate">{label}</span>}
+                          {!collapsed && (
+                            <span className="truncate">{label}</span>
+                          )}
                         </NavLink>
                       );
                       return collapsed ? (
@@ -568,7 +582,7 @@ export default function Layout() {
 
       <div
         className={cn(
-          "flex min-h-screen flex-col transition-all",
+          "relative z-10 flex min-h-screen flex-col transition-all",
           contentMargin,
         )}
       >

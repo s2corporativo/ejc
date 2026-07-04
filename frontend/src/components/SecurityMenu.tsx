@@ -93,7 +93,9 @@ export default function SecurityMenu({ user }: { user: any }) {
       djen_oab_uf: oabUf,
     });
     setModal(null);
-    toast.success("OAB salva — intimações DJEN serão capturadas diariamente às 06h30.");
+    toast.success(
+      "OAB salva — intimações DJEN serão capturadas diariamente às 06h30.",
+    );
   };
 
   const copiarIcs = async () => {

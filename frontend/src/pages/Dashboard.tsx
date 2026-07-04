@@ -76,8 +76,7 @@ function CoralAreaChart({
   const H = 200;
   const PAD = 24;
   const max = Math.max(1, ...points.map((p) => p.value));
-  const stepX =
-    points.length > 1 ? (W - PAD * 2) / (points.length - 1) : 0;
+  const stepX = points.length > 1 ? (W - PAD * 2) / (points.length - 1) : 0;
   const coords = points.map((p, i) => ({
     x: PAD + i * stepX,
     y: H - PAD - (p.value / max) * (H - PAD * 2),
@@ -560,7 +559,8 @@ export default function Dashboard() {
                     Auditoria de Honorários
                   </div>
                   <p className="mt-1 text-xs text-success-800">
-                    Novos ativos recuperáveis identificados. Verifique o módulo financeiro.
+                    Novos ativos recuperáveis identificados. Verifique o módulo
+                    financeiro.
                   </p>
                 </div>
               </div>

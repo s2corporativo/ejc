@@ -539,22 +539,37 @@
   .ai-surface {
     @apply rounded-2xl border bg-white;
     border-color: rgba(247, 146, 86, 0.28);
-    box-shadow: 0 8px 30px rgba(199, 95, 36, 0.08), 0 1px 2px rgba(16, 24, 40, 0.04);
+    box-shadow:
+      0 8px 30px rgba(199, 95, 36, 0.08),
+      0 1px 2px rgba(16, 24, 40, 0.04);
   }
 
   .ai-surface-header {
     @apply flex flex-wrap items-center justify-between gap-3 border-b px-5 py-4;
     border-color: rgba(247, 146, 86, 0.2);
-    background: linear-gradient(90deg, rgba(247, 146, 86, 0.1), rgba(244, 87, 77, 0.05), transparent);
+    background: linear-gradient(
+      90deg,
+      rgba(247, 146, 86, 0.1),
+      rgba(244, 87, 77, 0.05),
+      transparent
+    );
   }
 
   .status-dot {
     @apply inline-block h-2 w-2 rounded-full bg-slate-400;
   }
-  .status-dot.success { @apply bg-success-500; }
-  .status-dot.warn { @apply bg-warn-500; }
-  .status-dot.danger { @apply bg-danger-500; }
-  .status-dot.ai { @apply bg-ai-500; }
+  .status-dot.success {
+    @apply bg-success-500;
+  }
+  .status-dot.warn {
+    @apply bg-warn-500;
+  }
+  .status-dot.danger {
+    @apply bg-danger-500;
+  }
+  .status-dot.ai {
+    @apply bg-ai-500;
+  }
 
   .kanban-column {
     @apply min-h-80 rounded-xl border border-slate-200 bg-slate-50/80 p-3;
@@ -566,7 +581,9 @@
 
   .visual-law-document {
     @apply rounded-2xl border border-slate-200/60 bg-white text-slate-800;
-    box-shadow: 0 22px 55px rgba(16, 24, 40, 0.07), 0 1px 2px rgba(16, 24, 40, 0.04);
+    box-shadow:
+      0 22px 55px rgba(16, 24, 40, 0.07),
+      0 1px 2px rgba(16, 24, 40, 0.04);
   }
 
   .visual-law-document-header {
@@ -627,18 +644,23 @@
 }
 
 @media print {
-  body { background: #fff !important; }
+  body {
+    background: #fff !important;
+  }
   .visual-law-document,
   .legal-surface,
   .ai-surface,
   .card,
-  .section-card { box-shadow: none !important; }
+  .section-card {
+    box-shadow: none !important;
+  }
 
   /* Estrutura do app nunca vai para o papel */
   aside,
   nav,
   header,
-  .no-print {
+  .no-print,
+  .brand-watermark {
     display: none !important;
   }
 
@@ -702,7 +724,11 @@
 
   .brand-panel {
     border-color: rgba(244, 87, 77, 0.22) !important;
-    background: linear-gradient(135deg, rgba(255, 232, 230, 0.65), rgba(255, 255, 255, 0.92));
+    background: linear-gradient(
+      135deg,
+      rgba(255, 232, 230, 0.65),
+      rgba(255, 255, 255, 0.92)
+    );
   }
 
   .brand-kicker {
@@ -710,7 +736,12 @@
   }
 
   .brand-accent-line {
-    background: linear-gradient(90deg, var(--ejc-gold), rgba(247, 146, 86, 0.28), transparent);
+    background: linear-gradient(
+      90deg,
+      var(--ejc-gold),
+      rgba(247, 146, 86, 0.28),
+      transparent
+    );
   }
 
   .btn-primary {
@@ -723,4 +754,3 @@
     border-color: rgba(244, 87, 77, 0.22);
   }
 }
-

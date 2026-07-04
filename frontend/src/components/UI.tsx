@@ -432,7 +432,10 @@ export function TR({
   return (
     <tr
       {...props}
-      className={cn(zebra && "transition-colors hover:bg-slate-50/70", className)}
+      className={cn(
+        zebra && "transition-colors hover:bg-slate-50/70",
+        className,
+      )}
     >
       {children}
     </tr>
@@ -581,7 +584,11 @@ export function Modal({
   }, [open, onClose]);
 
   if (!open) return null;
-  const sizeClass = size ? modalSizeClasses[size] : wide ? "max-w-4xl" : "max-w-lg";
+  const sizeClass = size
+    ? modalSizeClasses[size]
+    : wide
+      ? "max-w-4xl"
+      : "max-w-lg";
   return (
     <div className="modal-backdrop animate-fade-in" onClick={onClose}>
       <div
@@ -677,7 +684,9 @@ export function ConfirmModal({
             variant={variant === "danger" ? "danger" : "primary"}
             disabled={blocked || loading}
             onClick={onConfirm}
-            icon={loading ? <Loader2 className="h-4 w-4 animate-spin" /> : undefined}
+            icon={
+              loading ? <Loader2 className="h-4 w-4 animate-spin" /> : undefined
+            }
           >
             {confirmLabel}
           </Button>
@@ -856,10 +865,10 @@ export function Alert({
     >
       <Icon className={cn("mt-0.5 h-4 w-4 shrink-0", config.iconColor)} />
       <div className="min-w-0">
-        {title && (
-          <p className={cn("font-semibold", config.title)}>{title}</p>
+        {title && <p className={cn("font-semibold", config.title)}>{title}</p>}
+        {children && (
+          <div className={title ? "mt-0.5" : undefined}>{children}</div>
         )}
-        {children && <div className={title ? "mt-0.5" : undefined}>{children}</div>}
       </div>
     </div>
   );
@@ -932,7 +941,6 @@ export function IANotice({
   );
 }
 
-
 export function AISurface({
   title = "IA Juridica",
   subtitle = "Rascunho sujeito a revisao humana obrigatoria.",
@@ -958,7 +966,9 @@ export function AISurface({
             <p className="mt-1 text-xs text-slate-500">{subtitle}</p>
           </div>
         </div>
-        {actions && <div className="flex shrink-0 flex-wrap gap-2">{actions}</div>}
+        {actions && (
+          <div className="flex shrink-0 flex-wrap gap-2">{actions}</div>
+        )}
       </div>
       <div className="p-5">{children}</div>
     </section>
@@ -966,8 +976,16 @@ export function AISurface({
 }
 
 export function ConfidenceBadge({ value }: { value?: number | null }) {
-  const score = typeof value === "number" ? Math.max(0, Math.min(100, value)) : null;
-  const tone: Tone = score == null ? "slate" : score >= 80 ? "green" : score >= 60 ? "amber" : "red";
+  const score =
+    typeof value === "number" ? Math.max(0, Math.min(100, value)) : null;
+  const tone: Tone =
+    score == null
+      ? "slate"
+      : score >= 80
+        ? "green"
+        : score >= 60
+          ? "amber"
+          : "red";
   return (
     <Badge tone={tone} className="gap-1">
       <CheckCircle2 className="h-3 w-3" />
@@ -998,7 +1016,9 @@ export function VisualLawDocument({
           </div>
           <div className="min-w-0">
             <h1>{title}</h1>
-            {subtitle && <p className="mt-1 text-sm text-slate-500">{subtitle}</p>}
+            {subtitle && (
+              <p className="mt-1 text-sm text-slate-500">{subtitle}</p>
+            )}
           </div>
         </div>
         {meta.length > 0 && (
