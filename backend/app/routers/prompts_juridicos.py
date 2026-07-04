@@ -254,6 +254,16 @@ async def executar_prompt(
         p.avaliacao_media = round((prev * (cnt - 1) + req.avaliacao) / cnt, 2)
     await db.commit()
 
+    # Auditoria: rastro obrigatório em ai_logs (HITL/LGPD).
+    from app.services.ai_guard import registrar_ai_log
+    from app.models.ai_log import AITipoUso
+    log_id = await registrar_ai_log(
+        db, user_id=cu.id, tipo_uso=AITipoUso.outro, case_id=req.case_id,
+        prompt_sanitizado=conteudo_sanitizado[:8000], pii_removida=houve_pii,
+        resposta=resp.texto, modelo=f"{resp.provedor}/{resp.modelo}",
+        tokens_input=resp.input_tokens, tokens_output=resp.output_tokens,
+    )
+
     return {
         "resposta":    resp.texto,
         "modelo":      resp.modelo,
@@ -261,5 +271,8 @@ async def executar_prompt(
         "fallback":    resp.fallback_ativado,
         "pii_removida": houve_pii,
         "prompt_id":   prompt_id,
+        "log_id":      log_id,
+        "is_rascunho": True,
         "aviso": "⚠️ RASCUNHO gerado por IA — revisão obrigatória antes de usar.",
+        "aviso_hitl": "Rascunho sujeito à revisão humana (HITL obrigatório — OAB).",
     }

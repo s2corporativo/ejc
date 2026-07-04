@@ -160,7 +160,8 @@ class TesesOcultasReq(_BM):
 
 
 class AuditarPecaReq(_BM):
-    conteudo: str
+    conteudo: _Opt[str] = None           # texto direto OU...
+    peca_id:  _Opt[str] = None           # ...id de LegalDoc (busca no GED)
     tipo_peca: str
     case_id: _Opt[str] = None
 
@@ -177,6 +178,8 @@ class AnaliseContratoReq(_BM):
     tipo_contrato: str = "geral"
     nomes_proteger: _List[str] = []
     case_id: _Opt[str] = None
+    texto_contrato_2: _Opt[str] = None   # segunda minuta (modo comparação)
+    modo: _Opt[str] = None               # "comparacao" → compara cláusula a cláusula
 
 
 @router.post("/teses-ocultas")
@@ -211,10 +214,37 @@ async def auditar(
     db: AsyncSession = Depends(get_db),
     cu: User = Depends(get_current_user),
 ):
-    """Auditor de Petições (ECJ) — pontuação + omissões + inconsistências."""
-    if len(req.conteudo.strip()) < 100:
+    """Auditor de Petições (ECJ) — pontuação + omissões + inconsistências.
+
+    Aceita `conteudo` (texto direto) OU `peca_id` (LegalDoc do GED — com
+    verificação de ownership pelo caso vinculado, mesmo padrão do arquivo).
+    """
+    conteudo = (req.conteudo or "").strip()
+    case_id = req.case_id
+
+    if not conteudo and req.peca_id:
+        from app.models.legal_doc import LegalDoc
+        doc = (await db.execute(
+            select(LegalDoc).where(LegalDoc.id == req.peca_id,
+                                   LegalDoc.deleted_at.is_(None))
+        )).scalar_one_or_none()
+        if not doc:
+            raise HTTPException(status_code=404, detail="Peça não encontrada")
+        # Ownership: pelo caso vinculado (padrão do arquivo — ver teses_ocultas);
+        # peça sem caso: autor da peça ou sócio+.
+        if doc.case_id:
+            from app.core.ownership import verificar_acesso_caso
+            await verificar_acesso_caso(db, cu, doc.case_id)
+        elif doc.created_by != cu.id and ROLE_LEVEL.get(cu.role.value, 0) < ROLE_LEVEL["socio"]:
+            raise HTTPException(status_code=403, detail="Sem permissão para esta peça")
+        conteudo = (doc.conteudo or "").strip()
+        case_id = case_id or doc.case_id
+
+    if not conteudo:
+        raise HTTPException(status_code=422, detail="Informe 'conteudo' ou 'peca_id'")
+    if len(conteudo) < 100:
         raise HTTPException(status_code=422, detail="Peça muito curta para auditar")
-    r = await auditar_peca(db, cu.id, req.conteudo, req.tipo_peca, req.case_id)
+    r = await auditar_peca(db, cu.id, conteudo, req.tipo_peca, case_id)
     if "erro" in r:
         raise HTTPException(status_code=502, detail=r["erro"])
     return r
@@ -624,6 +654,11 @@ REGRAS:
 
     user_msg = f"[DOSSIÊ]\n{dossie_txt[:5000]}{rag_txt}\n\n[FOCO DA ESTRATÉGIA]: {req.foco or 'geral'}"
 
+    # LGPD: sanitiza o input consolidado (o dossiê já vem sanitizado, mas o
+    # RAG/foco podem carregar PII) e usa o retorno REAL na flag pii_removida.
+    from app.services.sanitizer import sanitizar_pii
+    user_msg, houve_pii = sanitizar_pii(user_msg)
+
     try:
         resp = await gw_chat(
             messages=[
@@ -642,7 +677,7 @@ REGRAS:
         tipo_uso=AITipoUso.analise_caso,
         modelo=resp.modelo,
         prompt_sanitizado=user_msg[:4000],
-        pii_removida=False,
+        pii_removida=houve_pii,
         resposta=resp.texto,
         status_hitl=AIStatusHITL.gerado,
     )
@@ -671,9 +706,16 @@ async def analisar_contrato_endpoint(
     """
     if len(req.texto_contrato.strip()) < 100:
         raise HTTPException(status_code=422, detail="Contrato muito curto para análise")
+    if (req.modo or "").strip().lower() == "comparacao":
+        if len((req.texto_contrato_2 or "").strip()) < 100:
+            raise HTTPException(
+                status_code=422,
+                detail="Modo comparação exige 'texto_contrato_2' (mín. 100 caracteres)",
+            )
     r = await analisar_contrato(
         db, cu.id, req.texto_contrato, req.tipo_contrato,
         req.nomes_proteger, req.case_id,
+        texto_contrato_2=req.texto_contrato_2, modo=req.modo,
     )
     if "erro" in r:
         raise HTTPException(status_code=502, detail=r["erro"])

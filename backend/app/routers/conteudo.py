@@ -18,6 +18,19 @@ router = APIRouter(prefix="/conteudo", tags=["Conteúdo Jurídico"])
 
 _AVISO = "Rascunho gerado por IA — revisar antes de publicar (pode conter imprecisões)."
 
+
+async def _log(db, cu, prompt_sanitizado: str, resp) -> str:
+    """Auditoria: rastro obrigatório em ai_logs (HITL/LGPD).
+    Conteúdo aqui é genérico (sem PII de cliente) — pii_removida=False."""
+    from app.services.ai_guard import registrar_ai_log
+    from app.models.ai_log import AITipoUso
+    return await registrar_ai_log(
+        db, user_id=cu.id, tipo_uso=AITipoUso.outro, case_id=None,
+        prompt_sanitizado=prompt_sanitizado[:8000], pii_removida=False,
+        resposta=resp.texto, modelo=f"{resp.provedor}/{resp.modelo}",
+        tokens_input=resp.input_tokens, tokens_output=resp.output_tokens,
+    )
+
 _SYS_FAQ = (
     "Você redige FAQ jurídico para o PORTAL DO CLIENTE de um escritório de advocacia. "
     "Gere perguntas frequentes e respostas em linguagem SIMPLES (cliente leigo), sobre a "
@@ -56,8 +69,10 @@ async def gerar_faq(req: FaqReq, db: AsyncSession = Depends(get_db),
         messages=[{"role": "system", "content": _SYS_FAQ}, {"role": "user", "content": user}],
         task_type="resumo", temperature=0.3, max_tokens=2000,
     )
+    log_id = await _log(db, cu, user, resp)
     return {"area": req.area, "conteudo": resp.texto,
-            "modelo": f"{resp.provedor}/{resp.modelo}", "is_draft": True, "aviso": _AVISO}
+            "modelo": f"{resp.provedor}/{resp.modelo}", "is_draft": True,
+            "is_rascunho": True, "aviso": _AVISO, "aviso_hitl": _AVISO, "log_id": log_id}
 
 
 @router.post("/glossario")
@@ -73,5 +88,7 @@ async def gerar_glossario(req: GlossarioReq, db: AsyncSession = Depends(get_db),
         messages=[{"role": "system", "content": _SYS_GLOSSARIO}, {"role": "user", "content": alvo}],
         task_type="resumo", temperature=0.3, max_tokens=2000,
     )
+    log_id = await _log(db, cu, alvo, resp)
     return {"conteudo": resp.texto, "modelo": f"{resp.provedor}/{resp.modelo}",
-            "is_draft": True, "aviso": _AVISO}
+            "is_draft": True, "is_rascunho": True, "aviso": _AVISO,
+            "aviso_hitl": _AVISO, "log_id": log_id}

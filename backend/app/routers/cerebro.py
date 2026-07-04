@@ -9,7 +9,6 @@ from app.core.database import get_db
 from app.core.security import get_current_user
 from app.models.user import User
 from app.core.skill_router import skill_router
-from app.core.ai_brain import ai_brain
 import json
 
 router = APIRouter(prefix="/cerebro", tags=["Cérebro"])
@@ -22,19 +21,46 @@ async def status_cerebro(cu: User = Depends(get_current_user)):
 async def analise_estrategica(payload: dict, db: AsyncSession = Depends(get_db), cu: User = Depends(get_current_user)):
     """
     Executa análise estratégica unificada com roteamento automático de Skills.
+    Consolidado no NÚCLEO ÚNICO de IA (orchestrator): permissões, sanitização
+    LGPD, policy de provider, validação de citações, HITL e AILog.
     """
+    from app.services.ai.core.orchestrator import orchestrator
+
     texto_caso = payload.get("texto", "")
+    if not (texto_caso or "").strip():
+        raise HTTPException(422, "Envie o campo 'texto' com o contexto do caso.")
     ramo = skill_router.identificar_ramo(texto_caso)
     instrucao_skill = skill_router.get_skill_instruction(ramo)
-    
-    # Executa análise via Modo Duas IAs com a instrução da Skill específica
+
     contexto_completo = f"{instrucao_skill}\n\nContexto do Caso: {texto_caso}"
-    resultado = await ai_brain.modo_duas_ias(contexto_completo)
-    
+    res = await orchestrator.run(
+        db=db,
+        user=cu,
+        task_type="case_analysis",
+        domain="estrategia",
+        mensagem=contexto_completo,
+        case_id=payload.get("case_id"),
+    )
+
+    # Shape legado preservado (analise.{analise_principal,analise_critica,...});
+    # campos do núcleo ACRESCENTADOS (log_id, aviso_hitl, is_rascunho, modelo).
+    alertas = res.get("alertas") or []
     return {
         "ramo_identificado": ramo,
         "skill_acionada": instrucao_skill,
-        "analise": resultado
+        "analise": {
+            "analise_principal": res.get("conteudo"),
+            "analise_critica": "\n".join(alertas) if alertas
+                               else "Validação automática do núcleo (citações/promessas) aplicada.",
+            "convergencias": "Análise consolidada pelo núcleo único de IA.",
+            "riscos_identificados": "Ver alertas e revisão HITL obrigatória.",
+        },
+        "modelo": res.get("modelo"),
+        "provider": res.get("provider"),
+        "fontes": res.get("fontes", []),
+        "log_id": res.get("log_id"),
+        "is_rascunho": res.get("is_rascunho", True),
+        "aviso_hitl": res.get("aviso_hitl"),
     }
 
 @router.get("/teses")

@@ -178,6 +178,9 @@ async def extrair_e_analisar(
             "resumo_executivo": {"fatos": resp.texto[:1500]},
             "_aviso": _AVISO,
             "pii_removida": houve_pii,
+            # Chave interna (consumida e removida pelo router documento_ia):
+            # texto JÁ SANITIZADO para o diagnóstico via núcleo único de IA.
+            "_texto_sanitizado": texto_para_ia[:6000],
         }
 
     # 2.b) R4 — verificação de origem dos campos v2 (anti-alucinação).
@@ -206,6 +209,9 @@ async def extrair_e_analisar(
     dados["_modelo"] = f"{resp.provedor}/{resp.modelo}"
     dados["caracteres_lidos"] = len(texto)
     dados["pii_removida"] = houve_pii
+    # Chave interna (consumida e removida pelo router documento_ia): texto JÁ
+    # SANITIZADO para o diagnóstico jurídico via núcleo único de IA.
+    dados["_texto_sanitizado"] = texto_para_ia[:6000]
     return dados
 
 
