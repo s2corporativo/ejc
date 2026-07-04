@@ -1,6 +1,6 @@
 import { toast } from "../components/Toast";
 import Markdown from "../components/Markdown";
-import React, { useEffect, useState } from "react";
+import React, { useEffect, useRef, useState } from "react";
 import { useParams, useSearchParams, useNavigate } from "react-router-dom";
 import {
   Sparkles,
@@ -45,6 +45,7 @@ const TABS = [
   { key: "etiquetas", label: "Etiquetas" },
   { key: "checklists", label: "Checklists" },
   { key: "documentos", label: "Documentos" },
+  { key: "provas", label: "Provas" },
   { key: "contratos", label: "Contratos" },
   { key: "procuracoes", label: "Procurações" },
   { key: "prazos", label: "Prazos" },
@@ -74,7 +75,10 @@ const GROUPS: { label: string; tabs: TabKey[] }[] = [
     label: "Andamentos",
     tabs: ["timeline", "mensagens", "partes", "etiquetas", "checklists"],
   },
-  { label: "Documentos", tabs: ["documentos", "contratos", "procuracoes"] },
+  {
+    label: "Documentos",
+    tabs: ["documentos", "provas", "contratos", "procuracoes"],
+  },
   { label: "Prazos & Agenda", tabs: ["prazos", "audiencias"] },
   { label: "Financeiro", tabs: ["financeiro", "custos"] },
   {
@@ -2358,6 +2362,150 @@ function TabLista({
   );
 }
 
+// ── Tab: Provas ──────────────────────────────────────────────────────────────
+// Reusa o mecanismo de documentos do caso: GET /documents/?case_id=... não
+// aceita filtro por tipo, então filtramos client-side pela convenção
+// Document.tipo === "prova" (enum documentado no model backend). O upload usa
+// POST /documents/upload com tipo pré-preenchido como "prova".
+function TabProvas({ caseId, caso }: { caseId: string; caso: Case }) {
+  const [docs, setDocs] = useState<any[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [upModal, setUpModal] = useState(false);
+  const [enviando, setEnviando] = useState(false);
+  const [titulo, setTitulo] = useState("");
+  const fileRef = useRef<HTMLInputElement>(null);
+  const provasDeterminantes = (caso as any).provas_determinantes as
+    | string
+    | undefined;
+
+  const carregar = () =>
+    api
+      .get("/documents/", { params: { case_id: caseId, page_size: 500 } })
+      .then((r) => {
+        const all = Array.isArray(r.data) ? r.data : (r.data?.data ?? []);
+        setDocs(all.filter((d: any) => d.tipo === "prova"));
+      })
+      .catch(() => {})
+      .finally(() => setLoading(false));
+
+  useEffect(() => {
+    setLoading(true);
+    carregar();
+  }, [caseId]);
+
+  const upload = async () => {
+    const file = fileRef.current?.files?.[0];
+    if (!file) {
+      toast.error("Selecione um arquivo");
+      return;
+    }
+    setEnviando(true);
+    const fd = new FormData();
+    fd.append("file", file);
+    fd.append("titulo", titulo.trim() || file.name);
+    fd.append("tipo", "prova"); // categoria pré-preenchida pela aba Provas
+    fd.append("confidencialidade", "normal");
+    fd.append("case_id", caseId);
+    if ((caso as any).client_id) {
+      fd.append("client_id", (caso as any).client_id);
+    }
+    try {
+      await api.post("/documents/upload", fd);
+      toast.success("Prova enviada.");
+      setUpModal(false);
+      setTitulo("");
+      if (fileRef.current) fileRef.current.value = "";
+      carregar();
+    } catch (e: any) {
+      toast.error(e.response?.data?.detail || "Erro no upload da prova");
+    } finally {
+      setEnviando(false);
+    }
+  };
+
+  return (
+    <div className="space-y-4">
+      <div className="flex items-center justify-between">
+        <h2 className="font-semibold">Provas ({docs.length})</h2>
+        <button
+          className="btn-gold text-sm"
+          onClick={() => setUpModal(true)}
+        >
+          + Anexar prova
+        </button>
+      </div>
+
+      {provasDeterminantes && (
+        <Alert variant="info" title="Provas determinantes (encerramento)">
+          <p className="whitespace-pre-wrap text-sm">{provasDeterminantes}</p>
+        </Alert>
+      )}
+
+      {loading ? (
+        <Spinner />
+      ) : docs.length === 0 ? (
+        <Empty message="Nenhuma prova anexada a este caso" />
+      ) : (
+        <div className="space-y-2">
+          {docs.map((d) => (
+            <div
+              key={d.id}
+              className="card p-3 flex justify-between items-center text-sm"
+            >
+              <span className="text-gray-800">{d.titulo || d.filename}</span>
+              <span className="text-gray-400 text-xs">
+                <Badge tone="amber">prova</Badge>{" "}
+                {d.created_at ? fmtDate(d.created_at) : ""}
+              </span>
+            </div>
+          ))}
+        </div>
+      )}
+
+      <Modal
+        open={upModal}
+        onClose={() => setUpModal(false)}
+        title="Anexar prova ao caso"
+      >
+        <div className="space-y-3">
+          <div>
+            <FieldLabel>Título (opcional — usa o nome do arquivo)</FieldLabel>
+            <input
+              className="input"
+              value={titulo}
+              onChange={(e) => setTitulo(e.target.value)}
+              placeholder="Ex.: Comprovante de pagamento — jan/2026"
+            />
+          </div>
+          <div>
+            <FieldLabel required>Arquivo</FieldLabel>
+            <input type="file" ref={fileRef} className="input" />
+          </div>
+          <p className="text-xs text-gray-400">
+            O documento será registrado com a categoria "prova" e vinculado a
+            este caso.
+          </p>
+          <div className="flex justify-end gap-2">
+            <button
+              className="btn-secondary"
+              onClick={() => setUpModal(false)}
+            >
+              Cancelar
+            </button>
+            <button
+              className="btn-gold"
+              onClick={upload}
+              disabled={enviando}
+            >
+              {enviando ? "Enviando..." : "Enviar prova"}
+            </button>
+          </div>
+        </div>
+      </Modal>
+    </div>
+  );
+}
+
 // ── Tab: Mensagens (chat cliente↔escritório) ─────────────────────────────────
 function TabMensagens({ caseId }: { caseId: string }) {
   const [msgs, setMsgs] = useState<any[]>([]);
@@ -3844,6 +3992,8 @@ export default function CasoDetalhe() {
             )}
           />
         );
+      case "provas":
+        return <TabProvas caseId={id} caso={caso} />;
       case "contratos":
         return (
           <TabLista

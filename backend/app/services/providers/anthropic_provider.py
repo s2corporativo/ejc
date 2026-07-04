@@ -116,9 +116,11 @@ async def chat(messages: list[dict], model: str | None,
         if _is_modern(mdl):
             effort = (get_settings().ANTHROPIC_EFFORT or "high").lower()
             # O thinking adaptativo consome o MESMO budget de max_tokens da
-            # resposta → piso de 8192 para o texto não truncar no meio (o piso
-            # prevalece sobre o teto ANTHROPIC_MAX_TOKENS já aplicado em `mt`).
-            kwargs["max_tokens"] = max(mt, 8192)
+            # resposta → piso de 8192 para o texto não truncar no meio. O teto
+            # ANTHROPIC_MAX_TOKENS continua valendo acima do piso: teto efetivo
+            # nos modelos modernos = max(ANTHROPIC_MAX_TOKENS, 8192).
+            teto = max(int(settings.ANTHROPIC_MAX_TOKENS), 8192)
+            kwargs["max_tokens"] = min(max(mt, 8192), teto)
             # extra_body: compatível com qualquer versão do SDK python (evita
             # TypeError em SDKs que ainda não tipam thinking/output_config).
             kwargs["extra_body"] = {

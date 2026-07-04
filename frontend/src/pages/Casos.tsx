@@ -14,6 +14,7 @@ import {
   FileSignature,
   Archive,
   ArchiveRestore,
+  Trash2,
 } from "lucide-react";
 import { Link as RLink } from "react-router-dom";
 import api from "../lib/api";
@@ -22,10 +23,14 @@ import {
   PageHeader,
   StatusBadge,
   Modal,
+  ConfirmModal,
+  FieldLabel,
+  Textarea,
   Empty,
   Spinner,
   fmtDate,
 } from "../components/UI";
+import { useAuth } from "../stores/auth";
 import { CasosStats } from "../components/Dashboards";
 import ImportarDocumento from "../components/ImportarDocumento";
 import Kanban from "./Kanban";
@@ -185,11 +190,21 @@ export default function Casos() {
   const [search, setSearch] = useState("");
   const [areaF, setAreaF] = useState("");
   const [tipoF, setTipoF] = useState("");
+  // Filtro por advogado responsável/auxiliar (query param advogado_id)
+  const [advogadoF, setAdvogadoF] = useState("");
   // R2 — filtro ativos/arquivados/todos + ação de desarquivar por linha
   const [arquivoF, setArquivoF] = useState<"ativos" | "arquivados" | "todos">(
     "ativos",
   );
   const [desarquivandoId, setDesarquivandoId] = useState<string | null>(null);
+  // Exclusão (soft delete → Lixeira) restrita a administração/sócios
+  const { user } = useAuth();
+  const podeExcluir = ["superadmin", "admin", "socio"].includes(
+    user?.role || "",
+  );
+  const [delCaso, setDelCaso] = useState<Case | null>(null);
+  const [delMotivo, setDelMotivo] = useState("");
+  const [delLoading, setDelLoading] = useState(false);
   const [view, setView] = useState<"lista" | "kanban">("lista");
   const [modal, setModal] = useState(false);
   const [form, setForm] = useState<any>({
@@ -205,6 +220,7 @@ export default function Casos() {
         params: {
           search: search || undefined,
           area: areaF || undefined,
+          advogado_id: advogadoF || undefined,
           arquivo: arquivoF,
           page_size: 50,
         },
@@ -227,6 +243,37 @@ export default function Casos() {
     }
   };
 
+  const excluir = async () => {
+    if (!delCaso) return;
+    const motivo = delMotivo.trim();
+    // Backend (DELETE /cases/{id}) exige motivo com no mínimo 5 caracteres
+    if (motivo.length < 5) {
+      toast.error("Informe o motivo da exclusão (mínimo 5 caracteres).");
+      return;
+    }
+    setDelLoading(true);
+    try {
+      await api.delete(`/cases/${delCaso.id}`, { data: { motivo } });
+      toast.success("Caso excluído — reversível pela Lixeira.");
+      setDelCaso(null);
+      setDelMotivo("");
+      await load();
+    } catch (e: any) {
+      if (e?.response?.status === 403) {
+        toast.error("Sem permissão para excluir casos (apenas admin/sócio).");
+      } else {
+        const detail = e?.response?.data?.detail;
+        toast.error(
+          typeof detail === "string"
+            ? detail
+            : detail?.mensagem || "Falha ao excluir o caso",
+        );
+      }
+    } finally {
+      setDelLoading(false);
+    }
+  };
+
   useEffect(() => {
     // load() inicial fica a cargo do effect de [arquivoF] abaixo
     api
@@ -243,7 +290,7 @@ export default function Casos() {
   useEffect(() => {
     const t = setTimeout(load, 350);
     return () => clearTimeout(t);
-  }, [search, areaF, arquivoF]);
+  }, [search, areaF, advogadoF, arquivoF]);
 
   const salvar = async () => {
     const cand = form._cliente_candidato;
@@ -348,6 +395,19 @@ export default function Casos() {
                 </option>
               ))}
             </select>
+            <select
+              className="input w-52"
+              value={advogadoF}
+              onChange={(e) => setAdvogadoF(e.target.value)}
+              title="Filtrar por advogado responsável ou auxiliar"
+            >
+              <option value="">Todos os advogados</option>
+              {advogados.map((u) => (
+                <option key={u.id} value={u.id}>
+                  {u.full_name || u.email}
+                </option>
+              ))}
+            </select>
             <div className="flex gap-1">
               <button
                 onClick={() => setTipoF("")}
@@ -405,7 +465,7 @@ export default function Casos() {
                     <th className="px-4 py-2.5 label-caps">Status</th>
                     <th className="px-4 py-2.5 label-caps">Parte contrária</th>
                     <th className="px-4 py-2.5 label-caps">Aberto em</th>
-                    {arquivoF === "arquivados" && (
+                    {(arquivoF === "arquivados" || podeExcluir) && (
                       <th className="px-4 py-2.5 label-caps">Ações</th>
                     )}
                   </tr>
@@ -454,18 +514,34 @@ export default function Casos() {
                       <td className="px-4 py-3 text-xs text-slate-400">
                         {fmtDate(c.created_at)}
                       </td>
-                      {arquivoF === "arquivados" && (
+                      {(arquivoF === "arquivados" || podeExcluir) && (
                         <td className="px-4 py-3">
-                          <button
-                            onClick={() => desarquivar(c.id)}
-                            disabled={desarquivandoId === c.id}
-                            className="flex items-center gap-1 text-xs font-medium text-primary-700 hover:underline disabled:opacity-50"
-                          >
-                            <ArchiveRestore size={13} />
-                            {desarquivandoId === c.id
-                              ? "Desarquivando..."
-                              : "Desarquivar"}
-                          </button>
+                          <div className="flex items-center gap-3">
+                            {arquivoF === "arquivados" && (
+                              <button
+                                onClick={() => desarquivar(c.id)}
+                                disabled={desarquivandoId === c.id}
+                                className="flex items-center gap-1 text-xs font-medium text-primary-700 hover:underline disabled:opacity-50"
+                              >
+                                <ArchiveRestore size={13} />
+                                {desarquivandoId === c.id
+                                  ? "Desarquivando..."
+                                  : "Desarquivar"}
+                              </button>
+                            )}
+                            {podeExcluir && (
+                              <button
+                                onClick={() => {
+                                  setDelMotivo("");
+                                  setDelCaso(c);
+                                }}
+                                title="Excluir caso (reversível pela Lixeira)"
+                                className="flex items-center gap-1 text-xs font-medium text-danger-600 hover:underline"
+                              >
+                                <Trash2 size={13} /> Excluir
+                              </button>
+                            )}
+                          </div>
                         </td>
                       )}
                     </tr>
@@ -747,6 +823,30 @@ export default function Casos() {
           </button>
         </div>
       </Modal>
+
+      {/* Exclusão de caso (soft delete): motivo obrigatório no backend (≥ 5 chars) */}
+      <ConfirmModal
+        open={!!delCaso}
+        onClose={() => setDelCaso(null)}
+        onConfirm={excluir}
+        variant="danger"
+        title="Excluir caso"
+        message={`O caso "${delCaso?.titulo ?? ""}" será enviado para a Lixeira — a exclusão é reversível pela lixeira. A ação fica registrada na Auditoria com o motivo informado.`}
+        confirmLabel="Excluir caso"
+        loading={delLoading}
+      >
+        <div className="mt-3">
+          <FieldLabel required>
+            Motivo da exclusão (mínimo 5 caracteres)
+          </FieldLabel>
+          <Textarea
+            value={delMotivo}
+            onChange={(e) => setDelMotivo(e.target.value)}
+            rows={3}
+            placeholder="Ex.: caso duplicado, cadastro de teste..."
+          />
+        </div>
+      </ConfirmModal>
     </div>
   );
 }

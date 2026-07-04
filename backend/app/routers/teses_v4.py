@@ -10,7 +10,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from pydantic import BaseModel
 
 from app.core.database import Base, get_db
-from app.core.security import get_current_user
+from app.core.security import get_current_user, require_roles
 from app.models.user import User
 
 # Model ORM
@@ -45,7 +45,8 @@ class TeseResponse(TeseCreate):
 
 router = APIRouter(prefix="/teses-v4", tags=["Banco de Teses Jurídicas"])
 
-@router.post("/", response_model=TeseResponse)
+@router.post("/", response_model=TeseResponse,
+             dependencies=[Depends(require_roles(["admin", "socio", "advogado"]))])
 async def criar_tese(payload: TeseCreate, db: AsyncSession = Depends(get_db)):
     t = TeseJuridica(id=str(uuid4()), **payload.model_dump())
     db.add(t)

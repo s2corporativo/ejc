@@ -550,7 +550,13 @@ async def gerar_razoes_juridicas(
             tokens_output=resp.output_tokens,
         )
     except Exception as exc:
+        # IA sem trilha de auditoria NÃO pode ser entregue (mesma regra do
+        # executar_tarefa_ia): peça jurídica exige AILog para HITL/OAB.
         logger.error("Falha ao gravar AILog das razões: %s", exc)
+        raise RuntimeError(
+            "Razões geradas, mas a trilha de auditoria (AILog) falhou — "
+            "saída descartada. Tente novamente."
+        ) from None
 
     return {
         "texto": texto,
