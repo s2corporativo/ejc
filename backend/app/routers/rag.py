@@ -21,6 +21,9 @@ from app.services.embedding_service import gerar_embeddings, disponivel as emb_d
 from app.services.ingestion_service import chunk_texto
 # Vocabulário canônico de confiança da governança de IA (alta|media|baixa|bloqueado).
 from app.routers.ia_governanca import Confianca
+# Dispatcher único de indexação (Fase 3A): Celery quando habilitado/alcançável,
+# senão BackgroundTasks (comportamento idêntico ao anterior com CELERY_ENABLED=False).
+from app.tasks.dispatcher import agendar_indexacao
 from app.schemas.common import MsgResponse
 from app.core.ai_brain import ai_brain
 from app.core.public_apis import api_client
@@ -90,15 +93,22 @@ import re as _re
 
 
 async def _ingerir_texto(db, background_tasks, titulo, categoria, conteudo,
-                         fonte=None, tribunal=None, confianca: str = "media"):
-    """Núcleo de ingestão reutilizado por /ingest, /ingest-pdf e /ingest-url."""
+                         fonte=None, tribunal=None, confianca: str = "media",
+                         extra_doc: Optional[dict] = None):
+    """Núcleo de ingestão reutilizado por /ingest, /ingest-pdf e /ingest-url.
+
+    `extra_doc`: chaves adicionais mescladas no JSONB `extra` do documento
+    (ex.: extração estruturada do OCR em extra["extracao"])."""
     if len(conteudo.strip()) < 50:
         raise HTTPException(status_code=422, detail="Conteúdo extraído muito curto (< 50 caracteres)")
     status_inicial = "pendente" if emb_disponivel() else "sem_embeddings"
+    extra = {"confidence_level": confianca}
+    if extra_doc:
+        extra.update(extra_doc)
     doc = KnowledgeDoc(
         id=str(uuid4()), titulo=titulo, categoria=categoria,
         fonte=fonte, tribunal=tribunal, status_indexacao=status_inicial,
-        extra={"confidence_level": confianca},
+        extra=extra,
     )
     db.add(doc)
     await db.flush()
@@ -107,7 +117,7 @@ async def _ingerir_texto(db, background_tasks, titulo, categoria, conteudo,
         db.add(KnowledgeChunk(id=str(uuid4()), doc_id=doc.id, chunk_index=i, conteudo=ch, embedding=None))
     await db.commit()
     if emb_disponivel():
-        background_tasks.add_task(_indexar_doc_bg, doc.id)
+        await agendar_indexacao(doc.id, background_tasks)
     return {"id": doc.id, "chunks": len(chunks), "status_indexacao": doc.status_indexacao,
             "confianca": confianca,
             "embeddings_pendentes": emb_disponivel(),
@@ -125,21 +135,33 @@ async def ingerir_pdf(
     db: AsyncSession = Depends(get_db),
     cu: User = Depends(require_roles(["superadmin", "admin", "socio", "advogado"])),
 ):
-    """Extrai texto de um PDF (PyMuPDF) e ingere na base RAG."""
-    try:
-        import fitz
-    except Exception:
-        raise HTTPException(500, "Extração de PDF indisponível no servidor")
+    """Extrai texto de um PDF e ingere na base RAG.
+
+    Fase 3A: usa ocr_service (texto nativo PyMuPDF + OCR Tesseract nas páginas
+    escaneadas — antes, PDF escaneado virava texto vazio) e grava a extração
+    estruturada determinística (CNJ/CPF/CNPJ/datas/valores/e-mails/telefones)
+    em `extra["extracao"]`.
+    """
+    from app.services.ocr_service import extrair_texto_pdf
+    from app.services.extracao_estruturada import extrair_estruturas
+    import asyncio as _asyncio
     raw = await file.read()
     try:
-        texto = ""
-        with fitz.open(stream=raw, filetype="pdf") as pdf:
-            for page in pdf:
-                texto += page.get_text()
-    except Exception as e:
-        raise HTTPException(422, f"Falha ao ler o PDF: {str(e)[:120]}")
-    return await _ingerir_texto(db, background_tasks, titulo, categoria, texto,
-                                fonte=file.filename, tribunal=tribunal, confianca=confianca)
+        # OCR é CPU-bound (renderização + tesseract) → thread para não travar o loop
+        res = await _asyncio.to_thread(extrair_texto_pdf, raw)
+    except ValueError as e:
+        raise HTTPException(422, str(e))
+    texto = res["texto"]
+    extracao = extrair_estruturas(texto)
+    return await _ingerir_texto(
+        db, background_tasks, titulo, categoria, texto,
+        fonte=file.filename, tribunal=tribunal, confianca=confianca,
+        extra_doc={
+            "extracao": extracao,
+            "ocr": {"paginas": res["paginas"], "paginas_ocr": res["paginas_ocr"],
+                    "ocr_disponivel": res["ocr_disponivel"]},
+        },
+    )
 
 
 @router.post("/ingest-url", status_code=201)
