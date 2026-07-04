@@ -1,7 +1,8 @@
 """
 Templates de Visual Law Sofisticado - EJC v4.0.
-Configuração de estilos, tipografia e componentes visuais para PDFs de luxo.
-Inclui integração com a logomarca De Paula Teixeira.
+Configuração de estilos, tipografia e componentes visuais para PDFs (reportlab).
+Paleta e logomarca vêm do tema central (visual_law_theme — dourado
+De Paula Teixeira), garantindo o mesmo padrão dos geradores weasyprint.
 """
 from reportlab.lib.pagesizes import A4
 from reportlab.lib import colors
@@ -9,16 +10,21 @@ from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
 from reportlab.platypus import SimpleDocTemplate, Paragraph, Spacer, Table, TableStyle, Image
 import os
 
+from app.services import visual_law_theme as vlt
+
 class VisualLawPDF:
     def __init__(self):
-        # Paleta Bronze & Elegance
-        self.color_bronze = colors.HexColor("#CD7F32")
-        self.color_champagne = colors.HexColor("#F7E7CE")
+        # Paleta dourada institucional (tema central visual_law_theme).
+        # Atributos mantêm os nomes antigos por compatibilidade de consumo.
+        self.color_bronze = colors.HexColor(vlt.OURO)
+        self.color_champagne = colors.HexColor(vlt.OURO_PALHA)
         self.color_text = colors.HexColor("#2C3E50")
-        self.font_main = "Helvetica" 
+        self.font_main = "Helvetica"
         self.font_bold = "Helvetica-Bold"
-        # P1-3: caminho relativo ao pacote (antes /home/ubuntu/..., inexistente no container)
-        self.logo_path = os.path.join(os.path.dirname(__file__), "..", "assets", "logo.png")
+        # Logomarca De Paula Teixeira (mesma fonte do tema central).
+        self.logo_path = os.path.join(
+            os.path.dirname(__file__), "..", "assets", "de-paula-teixeira-logo.jpg"
+        )
 
     def get_styles(self):
         styles = getSampleStyleSheet()

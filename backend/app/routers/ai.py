@@ -10,15 +10,42 @@ from sqlalchemy import select, func as sqlfunc
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.database import get_db
+from app.core.rate_limit import rate_limit
 from app.core.security import get_current_user, ROLE_LEVEL
 from app.models.user import User
 from app.models.case import Case
 from app.models.ai_log import AILog, AIStatusHITL
 from app.services.ai_service import analisar_caso, resumir_documento
 from app.services.case_context import montar_dossie
-from app.schemas.ai import AnalisarCasoRequest, ResumirDocRequest, HITLRevisaoRequest
+from app.schemas.ai import (
+    AnalisarCasoRequest, ResumirDocRequest, HITLRevisaoRequest,
+    VerificarCitacoesRequest,
+)
 
 router = APIRouter(prefix="/ai", tags=["Inteligência Artificial"])
+
+
+@router.post("/citacoes/verificar",
+             dependencies=[Depends(rate_limit("verificar-citacoes", 15))])
+async def verificar_citacoes_juris(
+    req: VerificarCitacoesRequest,
+    db: AsyncSession = Depends(get_db),
+    cu: User = Depends(get_current_user),
+):
+    """
+    Verificador RIGOROSO de jurisprudência (anti-alucinação).
+
+    Extrai números CNJ (com validação do dígito verificador), recursos
+    superiores, súmulas e menções vagas; classifica cada citação como
+    verificada/identificada/suspeita/generica e retorna score 0-100 de
+    confiabilidade. `consultar_datajud=true` confirma números CNJ na API
+    pública do CNJ (máx. 5 consultas/verificação, fail-safe).
+
+    Sem chamada a LLM (100% determinístico) — por isso não gera AILog.
+    """
+    from app.services.verificador_jurisprudencia import verificar_jurisprudencia
+    return await verificar_jurisprudencia(
+        db, req.texto, consultar_datajud=req.consultar_datajud)
 
 
 @router.post("/analisar-caso")

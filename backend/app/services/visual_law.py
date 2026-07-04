@@ -6,9 +6,30 @@ from __future__ import annotations
 import logging
 from typing import Literal
 
+from app.services.visual_law_theme import OURO, OURO_CLARO, OURO_PALHA, OURO_PROFUNDO
+
 logger = logging.getLogger(__name__)
 
 DiagramaTipo = Literal["timeline", "fluxo_status", "partes", "prazos"]
+
+# Diretiva de init do Mermaid com o tema dourado central — prefixada de forma
+# DETERMINÍSTICA no código gerado (a IA não escolhe as cores do escritório).
+_MERMAID_INIT_TEMA = (
+    "%%{init: {'theme': 'base', 'themeVariables': {"
+    f"'primaryColor': '{OURO_PALHA}', 'primaryBorderColor': '{OURO}', "
+    "'primaryTextColor': '#111827', "
+    f"'lineColor': '{OURO}', 'titleColor': '{OURO_PROFUNDO}', "
+    f"'cScale0': '{OURO_PROFUNDO}', 'cScale1': '{OURO}', 'cScale2': '{OURO_CLARO}'"
+    "}}}%%"
+)
+
+
+def aplicar_tema_dourado(codigo: str) -> str:
+    """Prefixa o diagrama Mermaid com o init do tema dourado (idempotente)."""
+    codigo = (codigo or "").strip()
+    if not codigo or codigo.startswith("%%{init"):
+        return codigo
+    return f"{_MERMAID_INIT_TEMA}\n{codigo}"
 
 SYSTEM_VISUAL_LAW = """Você é especialista em Visual Law e gera EXCLUSIVAMENTE código Mermaid.js.
 Regras absolutas:
@@ -81,7 +102,7 @@ async def gerar_diagrama(
             codigo = codigo[len(prefix):]
     if codigo.endswith("```"):
         codigo = codigo[:-3]
-    codigo = codigo.strip()
+    codigo = aplicar_tema_dourado(codigo.strip())
 
     return {
         "tipo":         tipo,

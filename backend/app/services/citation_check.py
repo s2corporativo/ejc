@@ -9,22 +9,13 @@ VERIFICAÇÃO = lookup EXATO (chave_origem / título), não busca semântica —
 verificar existência exige precisão, não similaridade. 100% local (sem IA externa).
 """
 from __future__ import annotations
-import re
 
 from sqlalchemy import text
 
-# "Súmula 7 do STF", "Súmula Vinculante 11", "Súmula 297 STJ", "súmula nº 54/TST"
-_RE_SUMULA = re.compile(
-    r"s[úu]mula(?:\s+vinculante)?\s+(?:n[ºo°.]*\s*)?(\d{1,4})\s*"
-    r"(?:[\-/]?\s*(?:d[oae]\s+)?)?(stf|stj|tst|tjmg)?",
-    re.IGNORECASE,
-)
-# "art. 927 do CC", "artigo 5º CF", "art. 333 CPC", "art. 71 da Lei 9.605/98"
-_RE_ARTIGO = re.compile(
-    r"\bart(?:igo)?s?\.?\s*(\d{1,4})[º°ªa]?(?:[\-,]?[A-Z])?\b[^.;\n]{0,45}?"
-    r"\b(cf|cpc|cc|clt|cdc|cpp|cp|ctn|lei\s*n?[ºo°.]*\s*[\d.]+\/?\d*)\b",
-    re.IGNORECASE,
-)
+# Os padrões de extração (súmula/artigo/nº CNJ/recursos/menções vagas) vivem em
+# app/services/verificador_jurisprudencia.py — este módulo mantém apenas os
+# lookups exatos no RAG oficial (_existe_sumula/_existe_artigo) e a fachada
+# retrocompatível verificar_citacoes().
 
 
 async def _existe_sumula(db, num: str, orgao: str) -> str | None:
@@ -61,46 +52,19 @@ async def _existe_artigo(db, num: str) -> str | None:
     return row[0] if row else None
 
 
-async def verificar_citacoes(db, texto: str) -> dict:
-    """Relatório de verificação das citações encontradas no texto."""
-    texto = texto or ""
-    achados: list[dict] = []
-    seen: set = set()
+async def verificar_citacoes(
+    db, texto: str, *, consultar_datajud: bool = False,
+) -> dict:
+    """Relatório de verificação das citações encontradas no texto.
 
-    for m in _RE_SUMULA.finditer(texto):
-        num, orgao = m.group(1), (m.group(2) or "").upper()
-        key = ("sumula", num, orgao)
-        if key in seen:
-            continue
-        seen.add(key)
-        achados.append({"tipo": "sumula", "num": num, "orgao": orgao,
-                        "rotulo": f"Súmula {num}" + (f" {orgao}" if orgao else "")})
-
-    for m in _RE_ARTIGO.finditer(texto):
-        num, dipl = m.group(1), (m.group(2) or "").upper()
-        key = ("artigo", num, dipl)
-        if key in seen:
-            continue
-        seen.add(key)
-        achados.append({"tipo": "artigo", "num": num, "orgao": dipl,
-                        "rotulo": f"art. {num} {dipl}".strip()})
-
-    resultados = []
-    for c in achados:
-        if c["tipo"] == "sumula":
-            fonte = await _existe_sumula(db, c["num"], c["orgao"])
-        else:
-            fonte = await _existe_artigo(db, c["num"])
-        resultados.append({"citacao": c["rotulo"], "tipo": c["tipo"],
-                           "encontrada": fonte is not None, "fonte": fonte})
-
-    conf = sum(1 for r in resultados if r["encontrada"])
-    return {
-        "total": len(resultados),
-        "confirmadas": conf,
-        "nao_encontradas": len(resultados) - conf,
-        "citacoes": resultados,
-        "aviso": ("Citações NÃO confirmadas na base oficial devem ser verificadas "
-                  "manualmente antes do protocolo (responsabilidade do advogado — OAB). "
-                  "A base cobre súmulas STF/STJ/TST e a legislação já ingerida."),
-    }
+    Desde a promoção ao VERIFICADOR RIGOROSO (verificador_jurisprudencia),
+    delega ao novo módulo — que mantém o shape legado (total/confirmadas/
+    nao_encontradas/citacoes[{citacao,tipo,encontrada,fonte}]/aviso) e o
+    ESTENDE com status por citação (verificada/identificada/suspeita/generica),
+    score 0-100, avisos e campos estruturados (tribunal/numero/orgao/relator/
+    data). `consultar_datajud=True` confirma números CNJ no DataJud (opt-in,
+    fail-safe, máx. 5 consultas por verificação).
+    """
+    from app.services.verificador_jurisprudencia import verificar_jurisprudencia
+    return await verificar_jurisprudencia(
+        db, texto, consultar_datajud=consultar_datajud)
