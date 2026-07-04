@@ -12,7 +12,14 @@ import { useNavigate } from "react-router-dom";
 import { format } from "date-fns";
 import { ptBR } from "date-fns/locale";
 import api from "../lib/api";
-import { PageHeader, Modal, Alert, Button, Badge, fmtDate } from "../components/UI";
+import {
+  PageHeader,
+  Modal,
+  Alert,
+  Button,
+  Badge,
+  fmtDate,
+} from "../components/UI";
 import { toast } from "../components/Toast";
 
 type PrazoStatus = "nenhum" | "sugerido" | "aceito" | "recusado";
@@ -101,7 +108,9 @@ export default function Intimacoes() {
       load();
       loadStatus();
     } catch (e: any) {
-      toast.error(e.response?.data?.detail || "Configure sua OAB no menu do avatar");
+      toast.error(
+        e.response?.data?.detail || "Configure sua OAB no menu do avatar",
+      );
     } finally {
       setLoading(false);
     }
@@ -129,7 +138,8 @@ export default function Intimacoes() {
       setSugestao({ com, dados: data });
     } catch (e: any) {
       toast.error(
-        e.response?.data?.detail || "Não foi possível calcular a sugestão de prazo.",
+        e.response?.data?.detail ||
+          "Não foi possível calcular a sugestão de prazo.",
       );
     } finally {
       setSugerindo(null);
@@ -180,14 +190,17 @@ export default function Intimacoes() {
       toast.info(data.detail || "Prazo recusado — nenhum prazo será gerado.");
       setSugestao(null);
     } catch (e: any) {
-      toast.error(e.response?.data?.detail || "Não foi possível recusar o prazo.");
+      toast.error(
+        e.response?.data?.detail || "Não foi possível recusar o prazo.",
+      );
     } finally {
       setSalvando(null);
     }
   };
 
   const sugestaoAtual = sugestao ? statusDe(sugestao.com) : "nenhum";
-  const podeAceitar = sugestao?.dados.disponivel && sugestaoAtual !== "recusado";
+  const podeAceitar =
+    sugestao?.dados.disponivel && sugestaoAtual !== "recusado";
 
   return (
     <div>
@@ -201,7 +214,11 @@ export default function Intimacoes() {
             >
               {pendentes ? "Ver todas" : "Só pendentes"}
             </button>
-            <button className="btn-primary" disabled={loading} onClick={capturar}>
+            <button
+              className="btn-primary"
+              disabled={loading}
+              onClick={capturar}
+            >
               <RefreshCw size={15} className={loading ? "animate-spin" : ""} />
               Capturar agora
             </button>
@@ -250,11 +267,7 @@ export default function Intimacoes() {
             )}
           </div>
         </div>
-        <button
-          className="btn-ghost"
-          disabled={loading}
-          onClick={capturar}
-        >
+        <button className="btn-ghost" disabled={loading} onClick={capturar}>
           <RefreshCw size={14} className={loading ? "animate-spin" : ""} />
           Capturar agora
         </button>
@@ -441,7 +454,10 @@ export default function Intimacoes() {
                   </div>
                 )}
 
-                <Alert variant="warning" title="Confira antes de aceitar o prazo">
+                <Alert
+                  variant="warning"
+                  title="Confira antes de aceitar o prazo"
+                >
                   {sugestao.dados.aviso ||
                     "Sugestão automática — a contagem do prazo é de responsabilidade do advogado. Confira a intimação e a base legal."}
                 </Alert>

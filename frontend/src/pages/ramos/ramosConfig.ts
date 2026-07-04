@@ -193,9 +193,18 @@ const empresarial: RamoConfig = {
       grupo: "Cálculos",
       endpoint: "/empresarial/ferramentas/juros-mora",
       campos: [
-        { nome: "valor_principal", label: "Valor principal (R$)", tipo: "number" },
+        {
+          nome: "valor_principal",
+          label: "Valor principal (R$)",
+          tipo: "number",
+        },
         { nome: "meses_atraso", label: "Meses em atraso", tipo: "number" },
-        { nome: "taxa_juros_mensal_pct", label: "Juros ao mês (%)", tipo: "number", default: 1 },
+        {
+          nome: "taxa_juros_mensal_pct",
+          label: "Juros ao mês (%)",
+          tipo: "number",
+          default: 1,
+        },
         { nome: "multa_pct", label: "Multa (%)", tipo: "number", default: 2 },
       ],
     },
@@ -605,7 +614,11 @@ const penal: RamoConfig = {
       grupo: "Prazos",
       endpoint: "/penal/ferramentas/prescricao-penal",
       campos: [
-        { nome: "pena_maxima_anos", label: "Pena máxima cominada (anos)", tipo: "number" },
+        {
+          nome: "pena_maxima_anos",
+          label: "Pena máxima cominada (anos)",
+          tipo: "number",
+        },
       ],
     },
     {
@@ -617,9 +630,24 @@ const penal: RamoConfig = {
       endpoint: "/penal/ferramentas/dosimetria",
       campos: [
         { nome: "pena_base_anos", label: "Pena-base (anos)", tipo: "number" },
-        { nome: "fracao_agravantes_pct", label: "Agravantes líq. (%)", tipo: "number", default: 0 },
-        { nome: "fracao_aumento_pct", label: "Causas de aumento (%)", tipo: "number", default: 0 },
-        { nome: "fracao_diminuicao_pct", label: "Causas de diminuição (%)", tipo: "number", default: 0 },
+        {
+          nome: "fracao_agravantes_pct",
+          label: "Agravantes líq. (%)",
+          tipo: "number",
+          default: 0,
+        },
+        {
+          nome: "fracao_aumento_pct",
+          label: "Causas de aumento (%)",
+          tipo: "number",
+          default: 0,
+        },
+        {
+          nome: "fracao_diminuicao_pct",
+          label: "Causas de diminuição (%)",
+          tipo: "number",
+          default: 0,
+        },
       ],
     },
   ],
@@ -780,9 +808,22 @@ const trabalhista: RamoConfig = {
       grupo: "Cálculos",
       endpoint: "/trabalhista/ferramentas/horas-extras",
       campos: [
-        { nome: "salario_mensal", label: "Salário mensal (R$)", tipo: "number" },
-        { nome: "horas_extras_mes", label: "Horas extras no mês", tipo: "number" },
-        { nome: "adicional_percentual", label: "Adicional (%)", tipo: "number", default: 50 },
+        {
+          nome: "salario_mensal",
+          label: "Salário mensal (R$)",
+          tipo: "number",
+        },
+        {
+          nome: "horas_extras_mes",
+          label: "Horas extras no mês",
+          tipo: "number",
+        },
+        {
+          nome: "adicional_percentual",
+          label: "Adicional (%)",
+          tipo: "number",
+          default: 50,
+        },
       ],
     },
   ],
@@ -1157,8 +1198,16 @@ const bancario: RamoConfig = {
       grupo: "Revisional",
       endpoint: "/bancario/ferramentas/juros-abusivos",
       campos: [
-        { nome: "taxa_contratada_mensal_pct", label: "Taxa contratada (% a.m.)", tipo: "number" },
-        { nome: "taxa_media_bacen_mensal_pct", label: "Taxa média BACEN (% a.m.)", tipo: "number" },
+        {
+          nome: "taxa_contratada_mensal_pct",
+          label: "Taxa contratada (% a.m.)",
+          tipo: "number",
+        },
+        {
+          nome: "taxa_media_bacen_mensal_pct",
+          label: "Taxa média BACEN (% a.m.)",
+          tipo: "number",
+        },
       ],
     },
   ],
@@ -1402,7 +1451,11 @@ const tributario: RamoConfig = {
       grupo: "Cálculos",
       endpoint: "/tributario/ferramentas/multa-mora",
       campos: [
-        { nome: "valor_tributo", label: "Valor do tributo (R$)", tipo: "number" },
+        {
+          nome: "valor_tributo",
+          label: "Valor do tributo (R$)",
+          tipo: "number",
+        },
         { nome: "dias_atraso", label: "Dias de atraso", tipo: "number" },
       ],
     },
@@ -1664,7 +1717,11 @@ const consumidor: RamoConfig = {
       grupo: "Cálculos",
       endpoint: "/consumidor/ferramentas/devolucao-dobro",
       campos: [
-        { nome: "valor_cobrado", label: "Valor cobrado indevidamente (R$)", tipo: "number" },
+        {
+          nome: "valor_cobrado",
+          label: "Valor cobrado indevidamente (R$)",
+          tipo: "number",
+        },
         {
           nome: "houve_ma_fe",
           label: "Cobrança sem engano justificável?",
@@ -1677,7 +1734,8 @@ const consumidor: RamoConfig = {
     {
       id: "prazos-cdc",
       titulo: "Prazos CDC (decadência/prescrição)",
-      descricao: "Vício (30/90d), fato (5a), cobrança indevida (3a), arrependimento (7d).",
+      descricao:
+        "Vício (30/90d), fato (5a), cobrança indevida (3a), arrependimento (7d).",
       baseLegal: "CDC arts. 26, 27, 49",
       grupo: "Prazos",
       endpoint: "/consumidor/ferramentas/prazos-cdc",
@@ -1687,7 +1745,13 @@ const consumidor: RamoConfig = {
           nome: "tipo",
           label: "Tipo de pretensão",
           tipo: "select",
-          opcoes: ["vicio_duravel", "vicio_nao_duravel", "arrependimento", "fato", "cobranca_indevida"],
+          opcoes: [
+            "vicio_duravel",
+            "vicio_nao_duravel",
+            "arrependimento",
+            "fato",
+            "cobranca_indevida",
+          ],
           default: "vicio_duravel",
         },
       ],
@@ -1733,20 +1797,30 @@ const familia: RamoConfig = {
       grupo: "Execução",
       endpoint: "/familia/ferramentas/debito-alimentos",
       campos: [
-        { nome: "valor_mensal", label: "Valor mensal da pensão (R$)", tipo: "number" },
+        {
+          nome: "valor_mensal",
+          label: "Valor mensal da pensão (R$)",
+          tipo: "number",
+        },
         { nome: "meses_atraso", label: "Meses em atraso", tipo: "number" },
       ],
     },
     {
       id: "itcmd-inventario",
       titulo: "ITCMD no Inventário",
-      descricao: "Imposto sobre o monte partilhável (MG 5%; conferir lei estadual).",
+      descricao:
+        "Imposto sobre o monte partilhável (MG 5%; conferir lei estadual).",
       baseLegal: "CTN art. 35 · MG Lei 14.941/03",
       grupo: "Sucessões",
       endpoint: "/familia/ferramentas/itcmd-inventario",
       campos: [
         { nome: "valor_monte", label: "Valor do monte (R$)", tipo: "number" },
-        { nome: "aliquota_percentual", label: "Alíquota ITCMD (%)", tipo: "number", default: 5 },
+        {
+          nome: "aliquota_percentual",
+          label: "Alíquota ITCMD (%)",
+          tipo: "number",
+          default: 5,
+        },
       ],
     },
   ],
@@ -1774,7 +1848,11 @@ const imobiliario: RamoConfig = {
       endpoint: "/imobiliario/ferramentas/reajuste-aluguel",
       campos: [
         { nome: "valor_atual", label: "Aluguel atual (R$)", tipo: "number" },
-        { nome: "indice_percentual", label: "Índice de reajuste (%)", tipo: "number" },
+        {
+          nome: "indice_percentual",
+          label: "Índice de reajuste (%)",
+          tipo: "number",
+        },
       ],
     },
     {
@@ -1832,17 +1910,26 @@ const previdenciario: RamoConfig = {
     {
       id: "prazos-previdenciario",
       titulo: "Prazos Previdenciários",
-      descricao: "Recurso ao CRPS (30d), decadência de revisão (10a) e prescrição (5a).",
+      descricao:
+        "Recurso ao CRPS (30d), decadência de revisão (10a) e prescrição (5a).",
       baseLegal: "Lei 8.213/91 art. 103 · Dec. 3.048/99",
       grupo: "Prazos",
       endpoint: "/previdenciario/ferramentas/prazos",
       campos: [
-        { nome: "data_indeferimento", label: "Data do indeferimento / concessão", tipo: "date" },
+        {
+          nome: "data_indeferimento",
+          label: "Data do indeferimento / concessão",
+          tipo: "date",
+        },
         {
           nome: "tipo",
           label: "Tipo de prazo",
           tipo: "select",
-          opcoes: ["recurso_administrativo", "decadencia_revisao", "prescricao_parcelas"],
+          opcoes: [
+            "recurso_administrativo",
+            "decadencia_revisao",
+            "prescricao_parcelas",
+          ],
           default: "recurso_administrativo",
         },
       ],
@@ -1850,15 +1937,31 @@ const previdenciario: RamoConfig = {
     {
       id: "tempo-contribuicao",
       titulo: "Tempo de Contribuição (regra de pontos)",
-      descricao: "Pontos = idade + tempo; compara com a regra de transição do ano.",
+      descricao:
+        "Pontos = idade + tempo; compara com a regra de transição do ano.",
       baseLegal: "EC 103/2019 art. 15",
       grupo: "Cálculos",
       endpoint: "/previdenciario/ferramentas/tempo-contribuicao",
       campos: [
         { nome: "idade", label: "Idade (anos)", tipo: "number" },
-        { nome: "tempo_contribuicao_anos", label: "Tempo de contribuição (anos)", tipo: "number" },
-        { nome: "sexo", label: "Sexo", tipo: "select", opcoes: ["M", "F"], default: "M" },
-        { nome: "ano", label: "Ano de referência", tipo: "number", default: 2026 },
+        {
+          nome: "tempo_contribuicao_anos",
+          label: "Tempo de contribuição (anos)",
+          tipo: "number",
+        },
+        {
+          nome: "sexo",
+          label: "Sexo",
+          tipo: "select",
+          opcoes: ["M", "F"],
+          default: "M",
+        },
+        {
+          nome: "ano",
+          label: "Ano de referência",
+          tipo: "number",
+          default: 2026,
+        },
       ],
     },
     {
@@ -1869,12 +1972,23 @@ const previdenciario: RamoConfig = {
       grupo: "Cálculos",
       endpoint: "/previdenciario/ferramentas/carencia",
       campos: [
-        { nome: "meses_contribuicao", label: "Meses de contribuição", tipo: "number" },
+        {
+          nome: "meses_contribuicao",
+          label: "Meses de contribuição",
+          tipo: "number",
+        },
         {
           nome: "beneficio",
           label: "Benefício",
           tipo: "select",
-          opcoes: ["aposentadoria", "auxilio_doenca", "aposentadoria_invalidez", "salario_maternidade", "auxilio_acidente", "pensao_morte"],
+          opcoes: [
+            "aposentadoria",
+            "auxilio_doenca",
+            "aposentadoria_invalidez",
+            "salario_maternidade",
+            "auxilio_acidente",
+            "pensao_morte",
+          ],
           default: "aposentadoria",
         },
       ],
@@ -1899,23 +2013,33 @@ const digital_lgpd: RamoConfig = {
     {
       id: "multa-lgpd",
       titulo: "Multa LGPD (art. 52)",
-      descricao: "Teto de multa simples: 2% do faturamento, até R$ 50 mi por infração.",
+      descricao:
+        "Teto de multa simples: 2% do faturamento, até R$ 50 mi por infração.",
       baseLegal: "LGPD Lei 13.709/18 art. 52 II",
       grupo: "Sanções",
       endpoint: "/digital_lgpd/ferramentas/multa-lgpd",
       campos: [
-        { nome: "faturamento_anual", label: "Faturamento anual (R$)", tipo: "number" },
+        {
+          nome: "faturamento_anual",
+          label: "Faturamento anual (R$)",
+          tipo: "number",
+        },
       ],
     },
     {
       id: "prazos-lgpd",
       titulo: "Prazos LGPD",
-      descricao: "Resposta ao titular (15d) e comunicação de incidente à ANPD (3 dias úteis).",
+      descricao:
+        "Resposta ao titular (15d) e comunicação de incidente à ANPD (3 dias úteis).",
       baseLegal: "LGPD art. 19 · Res. ANPD CD/15 2024",
       grupo: "Prazos",
       endpoint: "/digital_lgpd/ferramentas/prazos-lgpd",
       campos: [
-        { nome: "data_evento", label: "Data do pedido / incidente", tipo: "date" },
+        {
+          nome: "data_evento",
+          label: "Data do pedido / incidente",
+          tipo: "date",
+        },
         {
           nome: "tipo",
           label: "Tipo",
@@ -1952,7 +2076,11 @@ const transito: RamoConfig = {
       grupo: "Multas",
       endpoint: "/transito/ferramentas/prazos-recurso",
       campos: [
-        { nome: "data_notificacao", label: "Data da notificação", tipo: "date" },
+        {
+          nome: "data_notificacao",
+          label: "Data da notificação",
+          tipo: "date",
+        },
         { nome: "valor_multa", label: "Valor da multa (R$)", tipo: "number" },
         {
           nome: "fase",
@@ -1972,7 +2100,11 @@ const transito: RamoConfig = {
       grupo: "CNH",
       endpoint: "/transito/ferramentas/pontuacao-cnh",
       campos: [
-        { nome: "pontos_total", label: "Pontos acumulados (12m)", tipo: "number" },
+        {
+          nome: "pontos_total",
+          label: "Pontos acumulados (12m)",
+          tipo: "number",
+        },
         {
           nome: "infracoes_gravissimas_12m",
           label: "Infrações gravíssimas (12m)",
@@ -2003,7 +2135,12 @@ const transito: RamoConfig = {
           opcoes: ["leve", "media", "grave", "gravissima"],
           default: "media",
         },
-        { nome: "multiplicador", label: "Multiplicador (gravíssimas)", tipo: "number", default: 1 },
+        {
+          nome: "multiplicador",
+          label: "Multiplicador (gravíssimas)",
+          tipo: "number",
+          default: 1,
+        },
       ],
     },
   ],

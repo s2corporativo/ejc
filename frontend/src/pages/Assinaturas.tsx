@@ -166,10 +166,7 @@ export default function Assinaturas() {
     <div className="max-w-4xl mx-auto px-4 py-6 space-y-6">
       <div className="flex items-center justify-between">
         <PageHeader title="Assinaturas" />
-        <button
-          onClick={abrirModal}
-          className="btn-primary"
-        >
+        <button onClick={abrirModal} className="btn-primary">
           <Plus className="w-4 h-4" />
           Nova Assinatura
         </button>

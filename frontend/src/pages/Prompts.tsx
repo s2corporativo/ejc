@@ -247,7 +247,10 @@ export default function Prompts() {
               {running ? "Processando…" : "Gerar"}
             </button>
             {out && (
-              <Markdown source={out} className="text-sm text-slate-700 border-t border-bronze-pale pt-3 leading-relaxed" />
+              <Markdown
+                source={out}
+                className="text-sm text-slate-700 border-t border-bronze-pale pt-3 leading-relaxed"
+              />
             )}
           </div>
         </Modal>

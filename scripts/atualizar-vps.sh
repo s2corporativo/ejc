@@ -64,10 +64,14 @@ grep -q 'localhost:8000/api/health' docker-compose.yml || die "compose sem healt
 grep -q 'container_name: ejc_backend' docker-compose.yml || die "compose sem container_name fixo"
 ok "backend/Dockerfile e docker-compose.yml corretos"
 
-log "5/8 Build do backend SEM cache (elimina camadas antigas)"
+log "5/8 Build do backend SEM cache (elimina camadas antigas) + frontend"
 docker compose build --no-cache backend
 docker image inspect ejc-backend:latest >/dev/null 2>&1 || die "imagem ejc-backend:latest nao existe apos o build"
-ok "imagem reconstruida do zero"
+# Frontend TAMBEM precisa de build explicito: `docker compose up` NUNCA
+# reconstroi imagem por mudanca de arquivo — sem isto o visual fica velho.
+# (com cache: so re-executa a partir da camada que mudou)
+docker compose build frontend
+ok "imagens backend (sem cache) e frontend reconstruidas"
 
 log "6/8 PROVA da imagem antes de subir"
 docker run --rm --entrypoint python ejc-backend:latest \

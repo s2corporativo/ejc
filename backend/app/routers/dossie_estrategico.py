@@ -200,35 +200,40 @@ async def exportar_pdf(
     try:
         import markdown
         from weasyprint import HTML as WP_HTML
+        from app.services import visual_law_theme as vlt
+
         aviso_hitl = ""
         if dossie.status != DossieStatus.aprovado:
-            aviso_hitl = "<div style='background:#fffbe6;border:1px solid #f0ad4e;padding:12px;margin-bottom:16px;'><strong>RASCUNHO — Revisão Humana Obrigatória</strong><br>Este dossiê ainda não foi aprovado por um sócio.</div>"
+            aviso_hitl = (
+                "<div style='background:#fffbe6;border:1px solid #f0ad4e;"
+                "border-left:4px solid " + vlt.OURO_CLARO + ";padding:12px;"
+                "margin:16px 0;'><strong>RASCUNHO — Revisão Humana Obrigatória"
+                "</strong><br>Este dossiê ainda não foi aprovado por um sócio.</div>"
+            )
 
         corpo_html = markdown.markdown(
             dossie.conteudo_texto or "",
             extensions=["tables", "nl2br"],
         )
-        html_full = f"""<!DOCTYPE html>
-<html lang="pt-BR">
-<head>
-  <meta charset="utf-8"/>
-  <title>{dossie.titulo or 'Dossiê'}</title>
-  <style>
-    body {{font-family: Arial, sans-serif; margin: 40px; color: #222; font-size: 13px;}}
-    h1 {{color: #003366; border-bottom: 2px solid #003366; padding-bottom: 6px;}}
-    h2 {{color: #003366; margin-top: 24px;}}
-    table {{border-collapse: collapse; width: 100%;}}
-    th, td {{border: 1px solid #ccc; padding: 6px 10px; text-align: left;}}
-    th {{background: #e8f0fe;}}
-    .footer {{margin-top: 40px; font-size: 10px; color: #888; border-top: 1px solid #ddd; padding-top: 8px;}}
-  </style>
-</head>
-<body>
-{aviso_hitl}
-{corpo_html}
-<div class="footer">Gerado em: {datetime.now(timezone.utc).strftime('%d/%m/%Y %H:%M')} UTC | IA: {dossie.provedor_ia}/{dossie.modelo_ia} | Versão {dossie.versao}</div>
-</body>
-</html>"""
+        # Padrão Visual Law central: banner dourado + logo + rodapé repetido.
+        banner = vlt.render_banner(
+            "DOSSIÊ ESTRATÉGICO",
+            f"{dossie.titulo or 'Dossiê'} — v{dossie.versao}",
+        )
+        rodape_pdf = (
+            f"De Paula Teixeira Advogados · Dossiê Estratégico v{dossie.versao} · "
+            f"IA: {dossie.provedor_ia}/{dossie.modelo_ia}"
+        )
+        footer_html = (
+            "<div style='margin-top:24px;font-size:8.5pt;color:#6b7280;"
+            "border-top:1px solid #e5e7eb;padding-top:8px;'>Gerado em: "
+            f"{datetime.now(timezone.utc).strftime('%d/%m/%Y %H:%M')} UTC | "
+            f"IA: {dossie.provedor_ia}/{dossie.modelo_ia} | Versão {dossie.versao}</div>"
+        )
+        html_full = vlt.html_doc(
+            banner + aviso_hitl + corpo_html + footer_html,
+            css=vlt.css_fluxo(rodape_pdf),
+        )
         pdf_bytes = WP_HTML(string=html_full).write_pdf()
         filename = f"dossie_v{dossie.versao}_{case_id[:8]}.pdf"
         return Response(

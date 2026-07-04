@@ -118,9 +118,9 @@ export default function AnaliseExtratos() {
   // peças (gerar_peca_pipeline), então os eventos são idênticos: step/concluido/erro.
   const [minutaOpen, setMinutaOpen] = useState(false);
   const [minutaFase, setMinutaFase] = useState<FaseMinuta>("gerando");
-  const [minutaEtapas, setMinutaEtapas] = useState<
-    Record<number, StatusEtapa>
-  >({});
+  const [minutaEtapas, setMinutaEtapas] = useState<Record<number, StatusEtapa>>(
+    {},
+  );
   const [minutaDoc, setMinutaDoc] = useState("");
   const [minutaLegalDocId, setMinutaLegalDocId] = useState("");
   const [minutaErro, setMinutaErro] = useState("");
@@ -145,22 +145,17 @@ export default function AnaliseExtratos() {
 
     const token = localStorage.getItem("ejc_access") ?? "";
     try {
-      const r = await fetch(
-        `/api/bank-analysis/${res.analise.id}/gerar-peca`,
-        {
-          method: "POST",
-          headers: {
-            "Content-Type": "application/json",
-            Authorization: `Bearer ${token}`,
-          },
-          signal: minutaAbort.current.signal,
+      const r = await fetch(`/api/bank-analysis/${res.analise.id}/gerar-peca`, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${token}`,
         },
-      );
+        signal: minutaAbort.current.signal,
+      });
 
       if (!r.ok) {
-        const err = await r
-          .json()
-          .catch(() => ({ detail: "" }));
+        const err = await r.json().catch(() => ({ detail: "" }));
         if (r.status === 422) {
           throw new Error(
             err.detail ||
@@ -203,9 +198,7 @@ export default function AnaliseExtratos() {
           if (eventLine === "step") {
             const num = Number(payload.etapa);
             const st: StatusEtapa =
-              payload.status === "em_andamento"
-                ? "em_andamento"
-                : "concluido";
+              payload.status === "em_andamento" ? "em_andamento" : "concluido";
             setMinutaEtapas((prev) => ({ ...prev, [num]: st }));
           } else if (eventLine === "concluido") {
             setMinutaDoc(payload.documento ?? "");
@@ -234,7 +227,9 @@ export default function AnaliseExtratos() {
   const a = res?.analise;
   const cobr: any[] = res?.cobrancas || [];
   const prioCor = (p: string) =>
-    p === "URGENTE" ? "bg-danger-100 text-danger-700" : "bg-warn-100 text-warn-700";
+    p === "URGENTE"
+      ? "bg-danger-100 text-danger-700"
+      : "bg-warn-100 text-warn-700";
   const btn =
     "text-xs px-2.5 py-1.5 rounded-lg border border-bronze text-bronze hover:bg-bronze-50/40 flex items-center gap-1 transition-colors";
 
@@ -442,9 +437,7 @@ export default function AnaliseExtratos() {
                     Minuta gerada com sucesso
                   </div>
                   <div className="text-xs text-success-700">
-                    {minutaLegalDocId
-                      ? `Peça: ${minutaLegalDocId} · `
-                      : ""}
+                    {minutaLegalDocId ? `Peça: ${minutaLegalDocId} · ` : ""}
                     Rascunho (HITL) — aguarda revisão humana.
                   </div>
                 </div>

@@ -11,6 +11,7 @@ from sqlalchemy import select, or_, func as sqlfunc, text
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.database import get_db
+from app.core.rate_limit import rate_limit
 from app.core.security import get_current_user, require_roles, ROLE_LEVEL
 from app.models.user import User
 from app.models.case import Case, CaseMovimento, CaseStatus
@@ -982,7 +983,8 @@ def _tokens_relevantes(*textos: Optional[str], limite: int = 12) -> list[str]:
     return vistos
 
 
-@router.get("/{case_id}/teses-sugeridas", summary="Teses relevantes ao caso")
+@router.get("/{case_id}/teses-sugeridas", summary="Teses relevantes ao caso",
+            dependencies=[Depends(rate_limit("teses-sugeridas", 15))])
 async def teses_sugeridas(
     case_id: str,
     k: int = Query(5, ge=1, le=20, description="Quantidade de teses sugeridas"),

@@ -520,7 +520,7 @@ export default function Layout() {
                               "group flex h-10 items-center gap-3 rounded-xl px-3 text-sm font-medium transition-all duration-150",
                               collapsed && "justify-center px-0",
                               isActive
-                                ? "bg-white text-primary-600 shadow-[0_8px_24px_rgba(16,24,40,.08)] ring-1 ring-slate-100 [&>svg]:text-primary-500"
+                                ? "bg-white text-slate-900 shadow-[0_8px_24px_rgba(16,24,40,.08)] ring-1 ring-slate-100 [&>svg]:text-primary-600"
                                 : "text-slate-500 hover:bg-sidebar-hover hover:text-slate-900",
                             )
                           }
@@ -604,7 +604,7 @@ export default function Layout() {
             >
               <Search className="h-4 w-4 shrink-0" />
               <span className="truncate">
-                Buscar cliente, caso, processo ou documento
+                Buscar processos por parte, CPF ou número…
               </span>
               <kbd className="ml-auto hidden rounded-md border border-slate-200 bg-white px-1.5 py-0.5 text-[10px] font-medium text-slate-400 sm:block">
                 Ctrl K

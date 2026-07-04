@@ -178,8 +178,8 @@ export default function Workflow() {
       {tpls.length === 0 ? (
         <div className="card p-10 text-center text-slate-400">
           <GitBranch size={32} className="mx-auto mb-3 text-bronze-pale" />
-          Nenhum workflow ainda. Crie fluxos de etapas por tipo de demanda — eles
-          ficam disponíveis para aplicar em cada caso.
+          Nenhum workflow ainda. Crie fluxos de etapas por tipo de demanda —
+          eles ficam disponíveis para aplicar em cada caso.
         </div>
       ) : (
         <div className="grid md:grid-cols-2 gap-4">

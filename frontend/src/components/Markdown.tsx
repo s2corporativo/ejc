@@ -35,19 +35,19 @@ function renderInline(text: string, keyBase: string): React.ReactNode[] {
           className="rounded bg-slate-100 px-1 py-0.5 font-mono text-[0.85em] text-slate-800"
         >
           {m[1]}
-        </code>
+        </code>,
       );
     } else if (m[2] !== undefined) {
       nodes.push(
         <strong key={key} className="font-semibold text-slate-900">
           <em>{m[2]}</em>
-        </strong>
+        </strong>,
       );
     } else if (m[3] !== undefined || m[4] !== undefined) {
       nodes.push(
         <strong key={key} className="font-semibold text-slate-900">
           {m[3] ?? m[4]}
-        </strong>
+        </strong>,
       );
     } else if (m[5] !== undefined || m[6] !== undefined) {
       nodes.push(<em key={key}>{m[5] ?? m[6]}</em>);
@@ -66,7 +66,7 @@ function renderInline(text: string, keyBase: string): React.ReactNode[] {
           </a>
         ) : (
           m[7]
-        )
+        ),
       );
     }
     last = m.index + m[0].length;
@@ -97,7 +97,7 @@ export function Markdown({
       blocks.push(
         <p key={"p" + k} className="mb-2 leading-relaxed">
           {renderInline(para.join(" "), "p" + k)}
-        </p>
+        </p>,
       );
       k++;
       para = [];
@@ -111,7 +111,7 @@ export function Markdown({
           className="mb-2 border-l-2 border-bronze-300 bg-slate-50 px-3 py-1 italic text-slate-600"
         >
           {renderInline(quote.join(" "), "q" + k)}
-        </blockquote>
+        </blockquote>,
       );
       k++;
       quote = [];
@@ -131,7 +131,7 @@ export function Markdown({
           <ul key={"l" + k} className="mb-2 list-disc space-y-1 pl-5">
             {items}
           </ul>
-        )
+        ),
       );
       k++;
       listItems = [];
@@ -167,12 +167,12 @@ export function Markdown({
         lvl <= 1
           ? "mb-1 mt-3 text-base font-bold text-slate-900"
           : lvl === 2
-          ? "mb-1 mt-3 text-sm font-semibold text-slate-900"
-          : "mb-1 mt-2 text-sm font-medium text-slate-800";
+            ? "mb-1 mt-3 text-sm font-semibold text-slate-900"
+            : "mb-1 mt-2 text-sm font-medium text-slate-800";
       blocks.push(
         <div key={"h" + k} className={cls}>
           {renderInline(h[2], "h" + k)}
-        </div>
+        </div>,
       );
       k++;
     } else if (q) {

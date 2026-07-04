@@ -54,12 +54,13 @@ export default function LoginModern() {
       <div className="brand-watermark opacity-[0.05]" aria-hidden="true" />
       <div className="relative z-10 grid min-h-screen lg:grid-cols-[1fr_460px]">
         <section className="relative hidden flex-col justify-between overflow-hidden p-10 text-slate-900 lg:flex">
-          <div className="pointer-events-none absolute inset-0 bg-[radial-gradient(circle_at_20%_10%,rgba(244,87,77,.10),transparent_30rem),radial-gradient(circle_at_90%_90%,rgba(247,146,86,.10),transparent_26rem)]" />
+          {/* Radiais dourados afastados do canto da logo (fundo da marca fica branco puro) */}
+          <div className="pointer-events-none absolute inset-0 bg-[radial-gradient(circle_at_35%_45%,rgba(201,162,39,.10),transparent_30rem),radial-gradient(circle_at_90%_90%,rgba(216,185,78,.12),transparent_26rem)]" />
           <div className="relative flex items-center gap-3">
             <img
               src={BRAND_LOGO}
               alt="De Paula Teixeira Sociedade de Advogados"
-              className="brand-logo-img h-28 w-auto max-w-[360px] rounded-xl bg-white p-2 shadow-soft"
+              className="brand-logo-img h-28 w-auto max-w-[360px] rounded-xl bg-white p-2 shadow-soft ring-1 ring-slate-100"
             />
           </div>
 
@@ -107,7 +108,7 @@ export default function LoginModern() {
               <img
                 src={BRAND_LOGO}
                 alt="De Paula Teixeira Sociedade de Advogados"
-                className="brand-logo-img h-20 w-auto max-w-[280px] rounded-xl bg-white p-1.5"
+                className="brand-logo-img h-20 w-auto max-w-[280px] rounded-xl bg-white p-1.5 shadow-soft ring-1 ring-slate-100"
               />
             </div>
 

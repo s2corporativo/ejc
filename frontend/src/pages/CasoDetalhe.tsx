@@ -12,8 +12,11 @@ import {
   ArchiveRestore,
 } from "lucide-react";
 import api from "../lib/api";
-import ExplicarMov from "../components/ExplicarMov";
 import MotorTeses from "../components/MotorTeses";
+import LinhaDoTempoProcessual from "../components/visual/LinhaDoTempoProcessual";
+import MatrizRisco from "../components/visual/MatrizRisco";
+import BadgesAlerta from "../components/visual/BadgesAlerta";
+import CalculadoraAcordo from "../components/visual/CalculadoraAcordo";
 import AnaliseEstrategica from "../components/AnaliseEstrategica";
 import IntakeAnalise from "../components/IntakeAnalise";
 import ConversaoChecklist from "../components/ConversaoChecklist";
@@ -52,6 +55,7 @@ const TABS = [
   { key: "audiencias", label: "Audiências" },
   { key: "financeiro", label: "Financeiro" },
   { key: "custos", label: "Centro de Custos" },
+  { key: "liquidez", label: "Acordo & Liquidez" },
   { key: "teses", label: "Teses" },
   { key: "teses-sugeridas", label: "Teses sugeridas" },
   { key: "jurisprudencia", label: "Jurisprudência" },
@@ -80,7 +84,7 @@ const GROUPS: { label: string; tabs: TabKey[] }[] = [
     tabs: ["documentos", "provas", "contratos", "procuracoes"],
   },
   { label: "Prazos & Agenda", tabs: ["prazos", "audiencias"] },
-  { label: "Financeiro", tabs: ["financeiro", "custos"] },
+  { label: "Financeiro", tabs: ["financeiro", "custos", "liquidez"] },
   {
     label: "Inteligência",
     tabs: [
@@ -158,7 +162,9 @@ function ExtratoCaso({ caso }: { caso: Case }) {
       }
     }
   };
-  if (!["superadmin", "admin", "socio", "advogado"].includes(user?.role || "")) {
+  if (
+    !["superadmin", "admin", "socio", "advogado"].includes(user?.role || "")
+  ) {
     return null;
   }
 
@@ -397,7 +403,11 @@ function TabResumo({ caso }: { caso: Case }) {
     } catch (e: any) {
       const detail =
         e?.response?.status === 422 ? e?.response?.data?.detail : null;
-      if (detail && Array.isArray(detail.pendencias) && detail.pendencias.length) {
+      if (
+        detail &&
+        Array.isArray(detail.pendencias) &&
+        detail.pendencias.length
+      ) {
         setPendencias(detail.pendencias as PendenciaExclusao[]);
       } else {
         toast.error(detalheErro(e, "Falha ao excluir o caso"));
@@ -747,7 +757,9 @@ function TabResumo({ caso }: { caso: Case }) {
               <span className="text-slate-400">Parte contrária:</span>{" "}
               <span className="ml-1">{caso.parte_contraria || "—"}</span>
             </div>
-            {["superadmin", "admin", "socio", "advogado"].includes(user?.role || "") && (
+            {["superadmin", "admin", "socio", "advogado"].includes(
+              user?.role || "",
+            ) && (
               <div>
                 <span className="text-slate-400">Valor:</span>{" "}
                 <span className="ml-1">{fmtMoney(caso.valor_causa)}</span>
@@ -1113,26 +1125,11 @@ function TabResumo({ caso }: { caso: Case }) {
 
 // ── Tab: Timeline completa ───────────────────────────────────────────────────
 function TabTimeline({ caseId }: { caseId: string }) {
-  const [movs, setMovs] = useState<any[]>([]);
   const [ts, setTs] = useState<any[]>([]);
   const [tsForm, setTsForm] = useState({ descricao: "", horas: 1 });
   const [showTsForm, setShowTsForm] = useState(false);
-  const TIPOS: Record<string, string> = {
-    nota: "📝",
-    audiencia: "⚖️",
-    peticao: "📄",
-    despacho: "📋",
-    decisao: "⚡",
-    prazo: "⏰",
-    andamento: "📌",
-    email: "✉️",
-  };
 
   useEffect(() => {
-    api
-      .get(`/cases/${caseId}/movimentos`)
-      .then((r) => setMovs(r.data))
-      .catch(() => {});
     api
       .get(`/timesheet/casos/${caseId}`)
       .then((r) => setTs(r.data?.data ?? []))
@@ -1153,43 +1150,7 @@ function TabTimeline({ caseId }: { caseId: string }) {
 
   return (
     <div className="space-y-6">
-      <div>
-        <h3 className="font-semibold text-sm text-gray-500 uppercase mb-3">
-          Movimentações do Processo
-        </h3>
-        {movs.length === 0 ? (
-          <p className="text-center py-8 text-gray-400 text-sm">
-            Nenhuma movimentação registrada
-          </p>
-        ) : (
-          <div className="relative">
-            <div className="absolute left-4 top-0 bottom-0 w-0.5 bg-gray-200" />
-            <div className="space-y-3">
-              {movs.map((m) => (
-                <div key={m.id} className="flex gap-4 ml-2">
-                  <div className="w-6 h-6 rounded-full bg-white border-2 border-primary-300 flex items-center justify-center text-xs z-10 shrink-0">
-                    {TIPOS[m.tipo] || "•"}
-                  </div>
-                  <div className="flex-1 card p-3">
-                    <div className="flex justify-between items-start">
-                      <p className="text-sm text-gray-800">{m.descricao}</p>
-                      <span className="text-xs text-gray-400 ml-2 shrink-0">
-                        {fmtDate(m.created_at)}
-                      </span>
-                    </div>
-                    {m.responsavel && (
-                      <p className="text-xs text-gray-500 mt-0.5">
-                        por {m.responsavel}
-                      </p>
-                    )}
-                    <ExplicarMov texto={m.descricao} caseId={caseId} />
-                  </div>
-                </div>
-              ))}
-            </div>
-          </div>
-        )}
-      </div>
+      <LinhaDoTempoProcessual caseId={caseId} />
 
       <div>
         <div className="flex justify-between items-center mb-3">
@@ -2153,6 +2114,7 @@ function TabRisco({ caseId }: { caseId: string }) {
 
   return (
     <div className="space-y-5">
+      <MatrizRisco caseId={caseId} />
       <div className="flex justify-between items-center">
         <h2 className="font-semibold">Índice de Risco</h2>
         <button
@@ -2427,10 +2389,7 @@ function TabProvas({ caseId, caso }: { caseId: string; caso: Case }) {
     <div className="space-y-4">
       <div className="flex items-center justify-between">
         <h2 className="font-semibold">Provas ({docs.length})</h2>
-        <button
-          className="btn-gold text-sm"
-          onClick={() => setUpModal(true)}
-        >
+        <button className="btn-gold text-sm" onClick={() => setUpModal(true)}>
           + Anexar prova
         </button>
       </div>
@@ -2486,17 +2445,10 @@ function TabProvas({ caseId, caso }: { caseId: string; caso: Case }) {
             este caso.
           </p>
           <div className="flex justify-end gap-2">
-            <button
-              className="btn-secondary"
-              onClick={() => setUpModal(false)}
-            >
+            <button className="btn-secondary" onClick={() => setUpModal(false)}>
               Cancelar
             </button>
-            <button
-              className="btn-gold"
-              onClick={upload}
-              disabled={enviando}
-            >
+            <button className="btn-gold" onClick={upload} disabled={enviando}>
               {enviando ? "Enviando..." : "Enviar prova"}
             </button>
           </div>
@@ -3285,7 +3237,10 @@ function ResultadoContratoIA({ data }: { data: any }) {
     );
   return (
     <div className="mt-3 border border-gold-200 rounded-lg bg-gold-50 p-4">
-      <Markdown source={data.resposta} className="prose prose-sm max-w-none text-navy text-xs leading-relaxed" />
+      <Markdown
+        source={data.resposta}
+        className="prose prose-sm max-w-none text-navy text-xs leading-relaxed"
+      />
       {data.fontes?.length > 0 && (
         <div className="mt-3 pt-3 border-t border-gold-200">
           <p className="text-[10px] font-semibold text-gold-700 uppercase mb-1">
@@ -3640,7 +3595,10 @@ function IaDefensivaCaso({ caso }: { caso: Case }) {
           )}
           {resultado?.resposta && (
             <div className="max-h-[720px] overflow-auto rounded-lg border border-ai-100 bg-ai-50/30 p-4">
-              <Markdown source={resultado.resposta} className="text-sm leading-7 text-slate-800" />
+              <Markdown
+                source={resultado.resposta}
+                className="text-sm leading-7 text-slate-800"
+              />
               {resultado.aviso && (
                 <p className="mt-4 border-t border-ai-100 pt-3 text-xs font-medium text-ai-700">
                   {resultado.aviso}
@@ -4112,6 +4070,18 @@ export default function CasoDetalhe() {
             )}
           />
         );
+      case "liquidez":
+        return (
+          <CalculadoraAcordo
+            caseId={id}
+            valorCausaInicial={
+              caso.valor_causa ?? caso.processo_principal?.valor_causa ?? null
+            }
+            tribunalInicial={
+              caso.tribunal ?? caso.processo_principal?.tribunal ?? null
+            }
+          />
+        );
       case "teses":
         return (
           <div className="space-y-4">
@@ -4276,6 +4246,8 @@ export default function CasoDetalhe() {
                 </span>
               )}
             </div>
+            {/* Visual Law — badges de alerta do caso (falha silenciosa) */}
+            <BadgesAlerta caseId={caso.id} className="mt-2" />
           </div>
           <div className="grid grid-cols-2 gap-2 sm:flex sm:shrink-0">
             <button

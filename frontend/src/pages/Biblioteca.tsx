@@ -89,11 +89,7 @@ const RESULTADO_LABEL: Record<string, string> = {
 // ─── Componentes ──────────────────────────────────────────────────────────────
 function TaxaSucesso({ v }: { v: number }) {
   const cor =
-    v >= 70
-      ? "text-success-600"
-      : v >= 40
-        ? "text-warn-600"
-        : "text-slate-400";
+    v >= 70 ? "text-success-600" : v >= 40 ? "text-warn-600" : "text-slate-400";
   return (
     <div className="flex items-center gap-1.5">
       <div className="w-16 bg-slate-100 rounded-full h-1.5">

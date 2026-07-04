@@ -160,10 +160,7 @@ export default function Tarefas() {
           </p>
         </div>
         <div className="flex items-center gap-2">
-          <button
-            onClick={load}
-            className="btn-secondary p-2"
-          >
+          <button onClick={load} className="btn-secondary p-2">
             <RefreshCw
               className={`w-4 h-4 text-slate-400 ${loading ? "animate-spin" : ""}`}
             />
@@ -182,10 +179,7 @@ export default function Tarefas() {
               <List className="w-4 h-4 text-slate-500" />
             </button>
           </div>
-          <button
-            onClick={openNew}
-            className="btn-primary text-sm px-3 py-2"
-          >
+          <button onClick={openNew} className="btn-primary text-sm px-3 py-2">
             <Plus className="w-4 h-4" /> Nova tarefa
           </button>
         </div>
@@ -428,9 +422,7 @@ export default function Tarefas() {
               rows={2}
               placeholder="Detalhe opcional..."
               value={form.descricao ?? ""}
-              onChange={(e) =>
-                setForm({ ...form, descricao: e.target.value })
-              }
+              onChange={(e) => setForm({ ...form, descricao: e.target.value })}
             />
           </div>
           <div className="grid grid-cols-2 gap-3">
@@ -451,9 +443,7 @@ export default function Tarefas() {
               </select>
             </div>
             <div>
-              <label className="block text-xs text-slate-500 mb-1">
-                Prazo
-              </label>
+              <label className="block text-xs text-slate-500 mb-1">Prazo</label>
               <input
                 type="date"
                 className="w-full border border-slate-200 rounded-lg px-3 py-2 text-sm"
@@ -493,10 +483,7 @@ export default function Tarefas() {
             >
               Cancelar
             </button>
-            <button
-              onClick={salvar}
-              className="btn-primary text-sm px-4 py-2"
-            >
+            <button onClick={salvar} className="btn-primary text-sm px-4 py-2">
               {editTask ? "Salvar" : "Criar"}
             </button>
           </div>

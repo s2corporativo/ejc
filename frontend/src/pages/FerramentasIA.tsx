@@ -183,7 +183,9 @@ export default function FerramentasIA() {
           </div>
 
           {erro && (
-            <div className="p-2 rounded bg-danger-50 text-danger-700 text-xs">{erro}</div>
+            <div className="p-2 rounded bg-danger-50 text-danger-700 text-xs">
+              {erro}
+            </div>
           )}
 
           {res && (
@@ -192,7 +194,10 @@ export default function FerramentasIA() {
                 <AlertTriangle size={13} />
                 {res.aviso || "Rascunho — revisão humana obrigatória."}
               </div>
-              <Markdown source={res.conteudo} className="text-sm text-slate-800 leading-relaxed" />
+              <Markdown
+                source={res.conteudo}
+                className="text-sm text-slate-800 leading-relaxed"
+              />
               <div className="mt-3 pt-2 border-t border-bronze-200 text-[11px] text-slate-500">
                 {res.skill} · {res.engine} · {res.tokens_usados} tokens
               </div>

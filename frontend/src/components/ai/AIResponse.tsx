@@ -82,7 +82,9 @@ export function AIResponse({
           <Sparkles className="h-4 w-4" />
         </div>
         <div className="min-w-0 flex-1">
-          <p className="truncate text-sm font-semibold text-slate-800">{title}</p>
+          <p className="truncate text-sm font-semibold text-slate-800">
+            {title}
+          </p>
         </div>
         {confianca && (
           <span
@@ -111,14 +113,19 @@ export function AIResponse({
         ) : children ? (
           children
         ) : (
-          <Markdown source={source} className="text-sm leading-relaxed text-slate-700" />
+          <Markdown
+            source={source}
+            className="text-sm leading-relaxed text-slate-700"
+          />
         )}
       </div>
 
       {/* Feedback 👍/👎 (só quando há logId e há resposta exibida) */}
       {mostrarFeedback && (
         <div className="flex items-center gap-2 border-t border-slate-100 px-4 py-2">
-          <span className="text-[11px] text-slate-500">Esta resposta foi útil?</span>
+          <span className="text-[11px] text-slate-500">
+            Esta resposta foi útil?
+          </span>
           <Button
             variant="ghost"
             size="sm"
@@ -159,8 +166,8 @@ export function AIResponse({
         <div className="flex items-center gap-2 border-t border-slate-100 bg-slate-50/60 px-4 py-2 text-[11px] text-slate-500">
           <ShieldCheck className="h-3.5 w-3.5 shrink-0 text-slate-400" />
           <span>
-            Conteúdo gerado por IA. Requer validação do advogado responsável (OAB
-            Prov. 205/2021).
+            Conteúdo gerado por IA. Requer validação do advogado responsável
+            (OAB Prov. 205/2021).
           </span>
         </div>
       )}
