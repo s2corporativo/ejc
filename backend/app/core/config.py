@@ -124,6 +124,17 @@ class Settings(BaseSettings):
     # "ollama" = força Ollama (local) — falha se indisponível
     AI_PROVIDER: str = "auto"
 
+    # ── Anthropic (Claude) — raciocínio jurídico de alta qualidade ────────
+    # Sem chave → o gateway pula a Claude na cadeia e cai para Ollama/Groq.
+    # LGPD: nuvem nos EUA (mesma categoria do Groq) — só recebe texto já
+    # sanitizado (sanitizer/ai_guard). Soberania total continua sendo Ollama.
+    ANTHROPIC_API_KEY: str = ""
+    # Modelo padrão das tarefas de raciocínio (estrategia/elaboracao_peca).
+    # Sonnet 5 = melhor custo/qualidade em redação jurídica PT-BR.
+    ANTHROPIC_MODEL_RAZOES: str = "claude-sonnet-5"
+    # Casos mais complexos (acessível via model_override/nível máximo).
+    ANTHROPIC_MODEL_COMPLEXO: str = "claude-opus-4-8"
+
     # ── Sentry — rastreamento de erros em produção ────────────────────────
     SENTRY_DSN: str = ""            # deixar vazio para desabilitar
 

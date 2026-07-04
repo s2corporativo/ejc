@@ -44,21 +44,51 @@ async def health() -> bool:
     return bool(os.getenv("ANTHROPIC_API_KEY", ""))
 
 
+# Modelos Claude 4.6+/5 que REJEITAM sampling (temperature/top_p → 400) e usam
+# adaptive thinking em vez de budget_tokens. Para eles: sem temperature, com
+# thinking adaptativo e folga de max_tokens (o raciocínio consome saída).
+_MARCADORES_MODERNOS = (
+    "sonnet-5", "sonnet-4-6", "opus-4-6", "opus-4-7", "opus-4-8", "fable-5", "mythos-5",
+)
+_THINKING_FLOOR = 8000  # piso de max_tokens quando o thinking está ativo (evita truncar)
+
+
+def _modelo_moderno(mdl: str) -> bool:
+    m = (mdl or "").lower()
+    return any(marca in m for marca in _MARCADORES_MODERNOS)
+
+
+def _extrair_texto(resp) -> str:
+    """Concatena os blocos de texto (ignora thinking/redacted)."""
+    partes = []
+    for bloco in getattr(resp, "content", None) or []:
+        if getattr(bloco, "type", None) == "text":
+            partes.append(getattr(bloco, "text", "") or "")
+    return "".join(partes).strip()
+
+
 async def chat(messages: list[dict], model: str | None,
                temperature: float, max_tokens: int) -> tuple[str, dict]:
     system, conv = _split_system(messages)
     mdl = model or _DEFAULT
+    moderno = _modelo_moderno(mdl)
+    tokens = max(max_tokens, _THINKING_FLOOR) if moderno else max_tokens
 
     def _call():
         client = _get_client()
-        kwargs = dict(model=mdl, max_tokens=max_tokens, temperature=temperature, messages=conv)
+        kwargs = dict(model=mdl, max_tokens=tokens, messages=conv)
+        if moderno:
+            # Raciocínio jurídico: adaptive thinking; NÃO enviar temperature (400).
+            kwargs["thinking"] = {"type": "adaptive"}
+        else:
+            kwargs["temperature"] = temperature
         if system:
             kwargs["system"] = system
         return client.messages.create(**kwargs)
 
     # SDK síncrono → roda em thread para não bloquear o event loop.
     resp = await asyncio.to_thread(_call)
-    texto = resp.content[0].text if resp.content else ""
+    texto = _extrair_texto(resp)
     usage = {
         "model": mdl,
         "input_tokens": getattr(resp.usage, "input_tokens", None),

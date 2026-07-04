@@ -79,6 +79,7 @@ TASK_ROUTING: dict[str, list[tuple[str, str | None]]] = {
         ("groq",   None),
     ],
     "elaboracao_peca": [
+        ("anthropic", settings.ANTHROPIC_MODEL_RAZOES),  # Claude: redação jurídica de alta qualidade
         ("ollama", None),    # OLLAMA_MODEL_PETICAO
         ("groq",   None),
     ],
@@ -95,6 +96,7 @@ TASK_ROUTING: dict[str, list[tuple[str, str | None]]] = {
         ("groq",   None),
     ],
     "estrategia": [
+        ("anthropic", settings.ANTHROPIC_MODEL_RAZOES),  # Claude: raciocínio jurídico adversarial
         ("ollama", None),    # OLLAMA_MODEL_ANALISE (raciocínio profundo)
         ("groq",   None),
     ],
@@ -246,18 +248,22 @@ def _resolver_cadeia(
 
     base = TASK_ROUTING.get(task_type, TASK_ROUTING["analise_juridica"])
     cadeia = []
-    for provider, _ in base:
+    for provider, modelo_cadeia in base:
         if provider == "ollama" and not settings.OLLAMA_ENABLED:
             continue  # pular Ollama se desabilitado
         if provider == "groq" and not settings.GROQ_API_KEY:
             continue  # pular Groq sem chave
+        if provider == "anthropic" and not settings.ANTHROPIC_API_KEY:
+            continue  # pular Claude sem chave → cai para Ollama/Groq
         modelo_resolvido: str | None = None
         if provider == "ollama":
             modelo_resolvido = model_override or _OLLAMA_MODEL_BY_TASK.get(
                 task_type, lambda: settings.OLLAMA_MODEL_ANALISE
             )()
         else:
-            modelo_resolvido = model_override  # None = usa default do provedor Groq
+            # Respeita o modelo declarado na cadeia (ex.: claude-sonnet-5);
+            # model_override tem prioridade. None (Groq) = default do provedor.
+            modelo_resolvido = model_override or modelo_cadeia
         cadeia.append((provider, modelo_resolvido))
 
     if not cadeia:
@@ -296,10 +302,15 @@ import os as _os
 from uuid import uuid4 as _uuid4
 from sqlalchemy import text as _sql_text
 
+# Preços oficiais Anthropic (USD por 1.000.000 de tokens) — conferidos 2026-07.
+# Sonnet 5 tem preço promocional US$2/US$10 até 2026-08-31; usamos o de tabela
+# (US$3/US$15) para não subestimar o custo na auditoria de gasto.
 _PRICING_USD_MM = {
-    "claude-haiku-4-5-20251001": {"input": 0.80, "output": 4.00},
+    "claude-haiku-4-5-20251001": {"input": 1.00, "output": 5.00},
+    "claude-haiku-4-5":          {"input": 1.00, "output": 5.00},
     "claude-sonnet-4-6":         {"input": 3.00, "output": 15.00},
-    "claude-opus-4-8":           {"input": 15.00, "output": 75.00},
+    "claude-sonnet-5":           {"input": 3.00, "output": 15.00},
+    "claude-opus-4-8":           {"input": 5.00, "output": 25.00},
 }
 
 
