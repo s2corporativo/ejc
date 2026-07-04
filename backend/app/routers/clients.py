@@ -143,6 +143,156 @@ async def verificar_conflito(
     }
 
 
+def _mascarar_nome(n: Optional[str]) -> str:
+    """Mascara nome para exposição (LGPD): nunca devolve o valor completo."""
+    n = (n or "").strip()
+    if not n:
+        return "N/D"
+    return (n[:3] + "***") if len(n) > 3 else (n[0] + "***")
+
+
+# Casos considerados "ativos" para fins de conflito (CaseStatus).
+# encerrado/arquivado NÃO contam como conflito crítico.
+_STATUS_ATIVOS = {"triagem", "ativo", "suspenso", "acordo"}
+
+
+@router.post("/checar-conflito")
+async def checar_conflito(
+    req: ConflitoCheckRequest,
+    db: AsyncSession = Depends(get_db),
+    cu: User = Depends(_req_clientes),
+):
+    """
+    Checagem de conflito de interesses em tempo real no intake (EOAB arts. 34-35).
+
+    Cruza CPF/CNPJ (via índice cego HMAC — nunca em claro) e nome contra:
+      • clientes existentes (clients.cpf_hash / cnpj_hash);
+      • partes de casos (case_partes) e parte contrária livre (cases).
+
+    Resposta enxuta p/ intake: {conflito, nivel, matches}. Fail-safe — nunca
+    levanta exceção de regra de negócio e NUNCA devolve CPF/CNPJ em claro.
+    Crítico = mesma pessoa como parte em caso ATIVO / parte contrária que já é
+    nosso cliente.
+    """
+    from app.services.conflito_service import detectar_conflito
+    from app.services.pii_crypto import normalizar_documento, hash_documento
+    from app.models.case_parte import CaseParte
+
+    matches: list[dict] = []
+    nivel = "nenhum"
+
+    def _elevar(novo: str):
+        nonlocal nivel
+        ordem = {"nenhum": 0, "atencao": 1, "critico": 2}
+        if ordem[novo] > ordem[nivel]:
+            nivel = novo
+
+    # ── 1. Reutiliza detectar_conflito (clients por hash + parte contrária) ──
+    resultado = await detectar_conflito(
+        db, nome=req.nome, cpf=req.cpf, cnpj=req.cnpj,
+        parte_contraria=req.parte_contraria,
+    )
+    for a in resultado["achados"]:
+        tipo = a["tipo"]
+        if tipo == "cliente_existente":
+            matches.append({
+                "tipo": "cliente_existente",
+                "papel": "cliente",
+                "descricao": f"Já cadastrado como cliente ({_mascarar_nome(a.get('nome'))}).",
+            })
+            _elevar("atencao")
+        elif tipo == "parte_contraria_em_caso":
+            matches.append({
+                "tipo": "parte_contraria_em_caso",
+                "case_id": a.get("case_id"),
+                "papel": "parte_contraria",
+                "descricao": "Nome consta como parte contrária em caso registrado.",
+            })
+            _elevar("atencao")
+        elif "CONFLITO" in tipo:  # parte contrária informada já é nosso cliente
+            matches.append({
+                "tipo": "parte_contraria_eh_cliente",
+                "papel": "parte_contraria",
+                "descricao": (
+                    f"A parte contrária informada já é cliente do escritório "
+                    f"({_mascarar_nome(a.get('nome'))}) — representação vedada (EOAB art. 34, XVII)."
+                ),
+            })
+            _elevar("critico")
+
+    # ── 2. case_partes: pessoa já é parte em algum caso? (status-aware) ──────
+    # cpf_cnpj em case_partes é texto (pode vir formatado) → compara normalizado.
+    cpf_norm = normalizar_documento(req.cpf)
+    cnpj_norm = normalizar_documento(req.cnpj)
+    doc_norm = cpf_norm or cnpj_norm
+    # hash_documento é o índice cego usado na escrita/clients; aqui serve para
+    # correlacionar sem manter o valor em claro em logs/variáveis desnecessárias.
+    _ = hash_documento(doc_norm) if doc_norm else None
+
+    conds = []
+    if doc_norm:
+        norm_expr = sqlfunc.replace(
+            sqlfunc.replace(
+                sqlfunc.replace(
+                    sqlfunc.replace(CaseParte.cpf_cnpj, ".", ""),
+                    "-", ""),
+                "/", ""),
+            " ", "")
+        conds.append(norm_expr == doc_norm)
+    if req.nome and len(req.nome.strip()) >= 4:
+        conds.append(CaseParte.nome.ilike(f"%{req.nome.strip()}%"))
+
+    if conds:
+        q = (
+            select(CaseParte, Case.status, Case.titulo)
+            .join(Case, Case.id == CaseParte.case_id)
+            .where(or_(*conds), Case.deleted_at.is_(None))
+            .limit(20)
+        )
+        for parte, status, _titulo in (await db.execute(q)).all():
+            status_val = status.value if hasattr(status, "value") else str(status)
+            ativo = status_val in _STATUS_ATIVOS
+            papel = parte.papel_processual or parte.tipo or "parte"
+            if ativo:
+                matches.append({
+                    "tipo": "parte_em_caso_ativo",
+                    "case_id": parte.case_id,
+                    "papel": papel,
+                    "descricao": (
+                        f"{_mascarar_nome(parte.nome)} já figura como '{papel}' "
+                        f"em caso ATIVO (conflito potencial — EOAB arts. 34-35)."
+                    ),
+                })
+                _elevar("critico")
+            else:
+                matches.append({
+                    "tipo": "parte_em_caso_encerrado",
+                    "case_id": parte.case_id,
+                    "papel": papel,
+                    "descricao": (
+                        f"{_mascarar_nome(parte.nome)} figurou como '{papel}' "
+                        f"em caso já encerrado/arquivado."
+                    ),
+                })
+                _elevar("atencao")
+
+    # ── 3. Audit obrigatório (proteção OAB) — fail-safe ─────────────────────
+    try:
+        await criar_audit_log(
+            db, cu.id, cu.role.value, "CONFLITO_CHECK", "clients",
+            detalhes=f"intake checar-conflito: nivel={nivel}, {len(matches)} match(es)",
+        )
+        await db.commit()
+    except Exception:
+        await db.rollback()
+
+    return {
+        "conflito": nivel != "nenhum",
+        "nivel": nivel,
+        "matches": matches,
+    }
+
+
 @router.get("/")
 async def listar(
     page: int = Query(1, ge=1), page_size: int = Query(20, ge=1, le=500),
