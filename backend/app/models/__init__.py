@@ -23,6 +23,7 @@ from app.models.notification import Notification
 from app.models.feriado import Feriado
 from app.models.procuracao import Procuracao
 from app.models.rag import KnowledgeDoc, KnowledgeChunk
+from app.models.api_key import ApiKey
 
 __all__ = [
     "User", "RefreshToken", "UserRole",
@@ -38,6 +39,7 @@ __all__ = [
     "AILog", "AIStatusHITL", "AITipoUso",
     "Notification", "Feriado", "Procuracao",
     "KnowledgeDoc", "KnowledgeChunk",
+    "ApiKey",
 ]
 from app.models.template import DocTemplate  # noqa
 from app.models.task import Task, TaskStatus  # noqa
