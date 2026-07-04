@@ -16,7 +16,7 @@ import {
   ChevronDown,
   ChevronUp,
 } from "lucide-react";
-import { PECA_TIPOS, pecaTipoLabel } from "../lib/pecaTypes";
+import { PECA_TIPOS_GERACAO, pecaTipoLabel } from "../lib/pecaTypes";
 
 const AREAS: string[] = [
   "trabalhista",
@@ -272,7 +272,7 @@ export default function PecaGeneratorModal({
                     onChange={(e) => setTipoPeca(e.target.value)}
                     className="w-full border border-slate-200 rounded-lg px-3 py-2 text-sm text-slate-800 bg-white focus:outline-none focus:ring-2 focus:ring-ai-500"
                   >
-                    {PECA_TIPOS.map((t) => (
+                    {PECA_TIPOS_GERACAO.map((t) => (
                       <option key={t.value} value={t.value}>
                         {t.label}
                       </option>

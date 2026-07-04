@@ -24,6 +24,10 @@ TIPOS_PECA = {
     "contestacao": "Contestação",
     "recurso_ordinario": "Recurso Ordinário",
     "agravo": "Agravo",
+    "agravo_de_instrumento": "Agravo de Instrumento",
+    "apelacao": "Apelação",
+    "contrarrazoes": "Contrarrazões",
+    "replica": "Réplica (Impugnação à Contestação)",
     "memorias": "Memoriais",
     "acordo": "Proposta de Acordo",
     "parecer": "Parecer Jurídico",
@@ -44,6 +48,10 @@ TIPO_PECA_LEGAL_DOC = {
     "contestacao": PecaTipo.contestacao,
     "recurso_ordinario": PecaTipo.recurso,
     "agravo": PecaTipo.recurso,
+    "agravo_de_instrumento": PecaTipo.recurso,
+    "apelacao": PecaTipo.recurso,
+    "contrarrazoes": PecaTipo.contrarrazoes,
+    "replica": PecaTipo.outro,
     "memorias": PecaTipo.outro,
     "acordo": PecaTipo.contrato,
     "parecer": PecaTipo.parecer,
@@ -59,7 +67,20 @@ TIPOS_PECA_ALIASES = {
     "contestacao": "contestacao",
     "defesa": "contestacao",
     "recurso ordinario": "recurso_ordinario",
-    "agravo": "agravo",
+    "agravo de instrumento": "agravo_de_instrumento",
+    # "agravo" segue aceito como tipo direto (compat frontend), mas na
+    # identificação automática resolve para o tipo canônico completo.
+    "agravo": "agravo_de_instrumento",
+    "apelacao": "apelacao",
+    "recurso de apelacao": "apelacao",
+    "razoes de apelacao": "apelacao",
+    "contrarrazoes": "contrarrazoes",
+    "contrarrazoes de apelacao": "contrarrazoes",
+    "contrarrazoes de recurso": "contrarrazoes",
+    "contra-razoes": "contrarrazoes",
+    "replica": "replica",
+    "replica a contestacao": "replica",
+    "impugnacao a contestacao": "replica",
     "memoriais": "memorias",
     "memorias": "memorias",
     "acordo": "acordo",
@@ -72,6 +93,89 @@ TIPOS_PECA_ALIASES = {
     "minuta de contrato": "contrato",
     "impugnacao": "impugnacao",
 }
+
+# ── Presets por rito: instruções específicas injetadas na etapa de redação ──
+# Cada perfil orienta estrutura obrigatória, prazo típico e campos que o
+# advogado deve preencher/conferir antes de protocolar.
+PERFIS_PECA: dict[str, str] = {
+    "peticao_inicial": (
+        "PERFIL DA PEÇA — PETIÇÃO INICIAL (art. 319 CPC):\n"
+        "Atenda a TODOS os requisitos do art. 319 do CPC: I) juízo a que é dirigida; "
+        "II) qualificação completa das partes (nomes, prenomes, estado civil, união estável, "
+        "profissão, CPF/CNPJ, e-mail, domicílio); III) fatos e fundamentos jurídicos do pedido; "
+        "IV) pedido com suas especificações; V) valor da causa; VI) provas que pretende produzir; "
+        "VII) opção pela audiência de conciliação/mediação (art. 334). "
+        "Verifique também requerimento de justiça gratuita e tutela provisória, se cabíveis.\n"
+        "PRAZO TÍPICO: peça inaugural — observar prescrição/decadência da pretensão.\n"
+        "CAMPOS A PREENCHER PELO ADVOGADO: [JUÍZO/VARA/COMARCA], [QUALIFICAÇÃO COMPLETA DAS PARTES], "
+        "[VALOR DA CAUSA], [ROL DE PROVAS/DOCUMENTOS ANEXOS], [OPÇÃO POR AUDIÊNCIA DE CONCILIAÇÃO]."
+    ),
+    "contestacao": (
+        "PERFIL DA PEÇA — CONTESTAÇÃO (arts. 335-342 CPC):\n"
+        "Estruture em: 1) PRELIMINARES do art. 337 do CPC (incompetência, inépcia, perempção, "
+        "litispendência, coisa julgada, conexão, incapacidade/irregularidade de representação, "
+        "convenção de arbitragem, ausência de legitimidade ou interesse, falta de caução, "
+        "incorreção do valor da causa, indevida gratuidade); 2) MÉRITO com IMPUGNAÇÃO ESPECIFICADA "
+        "de cada fato alegado na inicial (art. 341 CPC — ônus da impugnação especificada; fato não "
+        "impugnado presume-se verdadeiro); 3) eventual reconvenção (art. 343) e provas.\n"
+        "PRAZO TÍPICO: 15 dias úteis (art. 335 CPC).\n"
+        "CAMPOS A PREENCHER PELO ADVOGADO: [NÚMERO DO PROCESSO], [JUÍZO], [QUALIFICAÇÃO DO RÉU], "
+        "[FATOS DA INICIAL A IMPUGNAR PONTO A PONTO], [DOCUMENTOS/PROVAS DA DEFESA]."
+    ),
+    "replica": (
+        "PERFIL DA PEÇA — RÉPLICA / IMPUGNAÇÃO À CONTESTAÇÃO (arts. 350-351 CPC):\n"
+        "Impugne a contestação PONTO A PONTO: 1) rebata cada preliminar do art. 337 suscitada; "
+        "2) impugne cada fato impeditivo, modificativo ou extintivo alegado pelo réu (art. 350); "
+        "3) reafirme os fatos e fundamentos da inicial atingidos pela defesa; 4) manifeste-se sobre "
+        "documentos juntados com a contestação (art. 437, §1º); 5) ratifique pedidos e provas.\n"
+        "PRAZO TÍPICO: 15 dias úteis (arts. 350-351 CPC), contados da intimação.\n"
+        "CAMPOS A PREENCHER PELO ADVOGADO: [NÚMERO DO PROCESSO], [PRELIMINARES ARGUIDAS NA "
+        "CONTESTAÇÃO], [FATOS NOVOS/DEFESAS INDIRETAS A REBATER], [DOCUMENTOS DA DEFESA A IMPUGNAR]."
+    ),
+    "contrarrazoes": (
+        "PERFIL DA PEÇA — CONTRARRAZÕES DE RECURSO (art. 1.010, §1º CPC):\n"
+        "Responda DIRETAMENTE aos fundamentos do recurso adversário: 1) PRELIMINARMENTE, aponte "
+        "óbices de admissibilidade do recurso (intempestividade, deserção, ausência de dialeticidade, "
+        "inovação recursal, súmulas impeditivas); 2) NO MÉRITO, rebata cada fundamento recursal na "
+        "ordem em que deduzido, defendendo a manutenção da decisão recorrida; 3) requeira o "
+        "desprovimento do recurso e a majoração de honorários (art. 85, §11 CPC).\n"
+        "PRAZO TÍPICO: 15 dias úteis (art. 1.010, §1º CPC).\n"
+        "CAMPOS A PREENCHER PELO ADVOGADO: [NÚMERO DO PROCESSO/RECURSO], [DECISÃO RECORRIDA], "
+        "[FUNDAMENTOS DO RECURSO A REBATER UM A UM], [ÓBICES DE ADMISSIBILIDADE IDENTIFICADOS]."
+    ),
+    "apelacao": (
+        "PERFIL DA PEÇA — APELAÇÃO (arts. 1.009-1.014 CPC):\n"
+        "Estruture em: 1) PRELIMINARES (nulidades da sentença/processo, cerceamento de defesa, "
+        "error in procedendo; questões resolvidas na fase de conhecimento não sujeitas a agravo — "
+        "art. 1.009, §1º); 2) MÉRITO (error in judicando: reexame de fatos, provas e teses, com "
+        "dialeticidade — impugnação específica dos fundamentos da sentença, art. 1.010, II-III); "
+        "3) PREQUESTIONAMENTO explícito dos dispositivos legais e constitucionais violados, para "
+        "viabilizar REsp/RE (art. 1.025 CPC); 4) pedido de reforma/anulação e efeito suspensivo "
+        "quando cabível (art. 1.012).\n"
+        "PRAZO TÍPICO: 15 dias úteis (art. 1.003, §5º CPC).\n"
+        "CAMPOS A PREENCHER PELO ADVOGADO: [NÚMERO DO PROCESSO], [SENTENÇA RECORRIDA E SEUS "
+        "FUNDAMENTOS], [DISPOSITIVOS A PREQUESTIONAR], [VALOR DO PREPARO/GUIA]."
+    ),
+    "agravo_de_instrumento": (
+        "PERFIL DA PEÇA — AGRAVO DE INSTRUMENTO (arts. 1.015-1.020 CPC):\n"
+        "Estruture em: 1) CABIMENTO — demonstre que a decisão interlocutória se enquadra nas "
+        "hipóteses do art. 1.015 do CPC (tutelas provisórias, mérito parcial, gratuidade, "
+        "distribuição do ônus da prova etc.) ou na taxatividade mitigada (Tema 988/STJ — urgência "
+        "decorrente da inutilidade do julgamento diferido); 2) REQUISITOS FORMAIS dos arts. "
+        "1.016-1.018: qualificação das partes, exposição do fato e do direito, razões do pedido de "
+        "reforma/invalidação, nome e endereço dos advogados, peças obrigatórias (art. 1.017: cópias "
+        "da decisão agravada, certidão de intimação e procurações — dispensadas em autos "
+        "eletrônicos), comprovante de preparo e comunicação ao juízo de origem (art. 1.018); "
+        "3) EFEITO SUSPENSIVO ou tutela antecipada recursal (art. 1.019, I): demonstre probabilidade "
+        "de provimento e risco de dano grave ou de difícil reparação.\n"
+        "PRAZO TÍPICO: 15 dias úteis (art. 1.003, §5º CPC).\n"
+        "CAMPOS A PREENCHER PELO ADVOGADO: [NÚMERO DO PROCESSO DE ORIGEM], [DECISÃO AGRAVADA E "
+        "HIPÓTESE DO ART. 1.015], [PEÇAS OBRIGATÓRIAS DO ART. 1.017], [COMPROVANTE DE PREPARO], "
+        "[FUNDAMENTOS DO EFEITO SUSPENSIVO]."
+    ),
+}
+# "agravo" (tipo legado mantido por compatibilidade) usa o mesmo perfil.
+PERFIS_PECA["agravo"] = PERFIS_PECA["agravo_de_instrumento"]
 
 
 def _tipo_identificado(texto: str) -> str | None:
@@ -94,12 +198,14 @@ def _tipo_identificado(texto: str) -> str | None:
         normalizado = "".join(c for c in normalizado if not unicodedata.combining(c))
         if normalizado in TIPOS_PECA_ALIASES:
             return TIPOS_PECA_ALIASES[normalizado]
-        for chave in TIPOS_PECA_VALIDOS:
+        # Substring: testa termos mais longos primeiro para que
+        # "contrarrazoes de apelacao" não caia em "apelacao", etc.
+        for chave in sorted(TIPOS_PECA_VALIDOS, key=len, reverse=True):
             if chave.replace("_", " ") in normalizado:
                 return chave
-        for alias, chave in TIPOS_PECA_ALIASES.items():
+        for alias in sorted(TIPOS_PECA_ALIASES, key=len, reverse=True):
             if alias in normalizado:
-                return chave
+                return TIPOS_PECA_ALIASES[alias]
     return None
 
 
@@ -323,6 +429,8 @@ async def gerar_peca_pipeline(
             contexto_caso = f"\n[CONTEXTO DO CASO]\nTítulo: {c_obj.titulo}\nTese Principal: {c_obj.tese_principal or 'N/A'}\n"
 
     instrucoes = instrucoes_adicionais or ""
+    perfil_peca = PERFIS_PECA.get(tipo_peca_final, "")
+    bloco_perfil = f"{perfil_peca}\n\n" if perfil_peca else ""
     r7 = await gw_chat(
         messages=[
             {"role": "system", "content": (
@@ -336,6 +444,7 @@ async def gerar_peca_pipeline(
             )},
             {"role": "user", "content": (
                 f"TIPO: {nome_peca}\nÁREA: {area_direito}\n\n"
+                f"{bloco_perfil}"
                 f"FATOS:\n{fatos_limpos}\n\n"
                 f"PEDIDOS:\n{pedidos_limpos}\n\n"
                 f"{contexto_caso}"

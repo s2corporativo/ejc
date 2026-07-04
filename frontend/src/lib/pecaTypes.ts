@@ -7,8 +7,9 @@ export interface PecaTipo {
   label: string;
 }
 
-export const PECA_TIPOS: PecaTipo[] = [
-  // Values canônicos do backend
+// Tipos aceitos pelo pipeline de GERAÇÃO (backend peca_service.TIPOS_PECA —
+// o endpoint /peca-geracao valida contra essa lista e responde 422 fora dela).
+export const PECA_TIPOS_GERACAO: PecaTipo[] = [
   { value: "peticao_inicial", label: "Petição Inicial" },
   { value: "contestacao", label: "Contestação" },
   { value: "replica", label: "Réplica" },
@@ -22,7 +23,12 @@ export const PECA_TIPOS: PecaTipo[] = [
   { value: "notificacao", label: "Notificação" },
   { value: "contrato", label: "Minuta de Contrato" },
   { value: "impugnacao", label: "Impugnação" },
-  // Values legados (preservados para compatibilidade com documentos existentes)
+];
+
+// Lista completa para telas de DOCUMENTOS (legal_docs aceita também os values
+// legados abaixo, presentes em registros já salvos).
+export const PECA_TIPOS: PecaTipo[] = [
+  ...PECA_TIPOS_GERACAO,
   { value: "recurso", label: "Recurso" },
   { value: "agravo", label: "Agravo" },
   { value: "procuracao", label: "Procuração" },
