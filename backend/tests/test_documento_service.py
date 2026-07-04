@@ -1,12 +1,12 @@
 """IA-01 — a extração de documento com PII roda SÓ no modelo local (Ollama),
 nunca em provedor de nuvem (Groq/EUA).
 
-Decisão de design registrada na integração do redesign: o texto do documento
-vai BRUTO para a IA (a extração PRECISA do CPF/nome para extraí-los —
-sanitizar antes destruiria a própria função). A garantia LGPD é obtida
-FIXANDO a chamada no modelo local via provider_override="ollama", SEM fallback
-para a nuvem: se o Ollama cair, a extração falha FECHADA e o PII nunca vaza.
-Este teste trava esse invariante contra regressão."""
+Contrato atual (Fase 3B, LGPD): o texto passa por sanitizar_pii ANTES de
+qualquer chamada de IA — mesmo a local. CPF/nº de processo/e-mail viram
+marcadores ([CPF], [PROCESSO], ...). Defesa em profundidade: além da
+sanitização, a chamada permanece FIXADA no modelo local via
+provider_override="ollama", SEM fallback para a nuvem: se o Ollama cair,
+a extração falha FECHADA. Este teste trava esses invariantes contra regressão."""
 
 
 class _R:
@@ -40,9 +40,12 @@ async def test_extracao_pii_fixada_no_modelo_local(monkeypatch):
 
     # Invariante LGPD: a chamada é FIXADA no modelo local — o PII nunca vai à nuvem.
     assert captured["provider_override"] == "ollama"
-    # O texto vai BRUTO (a extração precisa do CPF/nº processo) — mas SÓ para o local.
-    assert "987.654.321-00" in captured["user"]
-    assert "1234567-89.2020.8.13.0024" in captured["user"]
+    # Fase 3B: o texto é SANITIZADO antes de qualquer IA (mesmo a local) —
+    # CPF e nº de processo viram marcadores; a PII crua não aparece no prompt.
+    assert "987.654.321-00" not in captured["user"]
+    assert "1234567-89.2020.8.13.0024" not in captured["user"]
+    assert "[CPF]" in captured["user"]
+    assert "[PROCESSO]" in captured["user"]
 
 
 async def test_extracao_falha_fechado_sem_ollama(monkeypatch):

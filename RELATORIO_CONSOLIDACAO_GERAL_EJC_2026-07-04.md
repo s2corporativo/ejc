@@ -47,7 +47,41 @@ plataforma jurídica operacional contra o estado real do código.
 
 ## 2. Verificação (build, testes, segurança)
 
-_(preenchido ao final da rodada de verificação)_
+### Testes e build
+- **Backend**: `pytest` → **176 passed, 13 skipped, 0 failed** (skips exigem
+  Postgres real / `SCHEMA_CHECK_DATABASE_URL` — rodam no CI com pgvector).
+- **Frontend**: `tsc --noEmit` limpo; `vite build` ok.
+- Dois testes estavam desatualizados em relação ao contrato consolidado e foram
+  corrigidos (fake do SDK Anthropic sem `type="text"`; teste de extração que
+  esperava PII crua ao modelo local — a Fase 3B da main sanitiza SEMPRE, mesmo
+  para o Ollama, e o invariante `provider_override="ollama"` foi mantido).
+- `prettier --check`: 61 arquivos com estilo divergente (ruído pré-existente dos
+  branches mesclados; rodar `prettier --write` numa rodada própria).
+
+### Auditoria de segurança do diff (security-auditor)
+Corrigidos nesta rodada:
+- **P1** Teto `ANTHROPIC_MAX_TOKENS` era anulado nos modelos modernos (piso 8192
+  sobrepunha qualquer teto) → teto efetivo agora é `max(teto, 8192)`, documentado.
+- **P2** Razões jurídicas eram entregues mesmo com falha ao gravar `AILog` →
+  agora a saída é descartada (trilha HITL obrigatória, mesma regra do gateway).
+- **P2** `POST /teses-v4` sem gate de role (ativado pela migration 067) →
+  `require_roles(["admin","socio","advogado"])`.
+
+Pendências registradas (não bloqueiam merge):
+- **P2** Rate limiting dos endpoints novos de IA (bank-analysis/gerar-peca,
+  documents/classificar, teses-sugeridas, compliance/radar, clients/checar-conflito,
+  anexos/*) — o decorator `@limiter.limit` foi revertido por incompatibilidade
+  com PEP 563; implementar via `SlowAPIMiddleware` com `default_limits`.
+- **P3** Radar de compliance mostra itens do Diário Oficial sem filtro de
+  ownership (comportamento pré-existente, consistente com os endpoints de Diário).
+- **P3** Falha de audit log em `checar-conflito` é engolida sem warning.
+- **P3** Senha temporária do admin aparece uma vez no log do 1º boot (mitigada:
+  `must_change_password=True`; documentar rotação do log no deploy).
+
+Sem achados: IDOR/path traversal nos endpoints novos (anexos com gate de
+ownership + trava anti-IDOR), segredos hardcoded, vazamento de chave/stack no
+provider, e a barreira LGPD (`_sanitizar_messages_externo`) confirmada em TODOS
+os caminhos de chat externo — inclusive com provider forçado.
 
 ---
 
