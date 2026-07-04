@@ -31,6 +31,10 @@ PREFIXOS_PUBLICOS = (
     # vitoriosas do escritório sem login. Agora exige JWT (Depends no router).
     "/api/webhooks/",       # Z-API inbound (valida Client-Token internamente)
     "/api/calendar/",       # feed ICS (HMAC na URL)
+    # API pública de abastecimento da base de conhecimento (Fase 2 IA/RAG):
+    # NÃO usa JWT — exige API key de serviço (X-API-Key) validada pelo
+    # require_api_key no router (401/403 lá; nada fica realmente aberto).
+    "/api/rag/knowledge-base/",
 )
 
 

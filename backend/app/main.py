@@ -117,6 +117,8 @@ from app.routers import prompts
 from app.routers import prompts_juridicos
 from app.routers import qualidade
 from app.routers import rag
+from app.routers import rag_public
+from app.routers import api_keys as api_keys_router
 from app.routers import regulatorio
 from app.routers import ramos
 from app.routers import relatorio
@@ -323,6 +325,8 @@ app.include_router(prompts.router, prefix=API)
 app.include_router(prompts_juridicos.router, prefix=API)
 app.include_router(qualidade.router, prefix=API)
 app.include_router(rag.router, prefix=API)
+app.include_router(rag_public.router, prefix=API)      # API pública (X-API-Key)
+app.include_router(api_keys_router.router, prefix=API) # admin de chaves (JWT admin)
 app.include_router(regulatorio.router, prefix=API)
 app.include_router(ramos.router, prefix=API)
 app.include_router(relatorio.router, prefix=API)

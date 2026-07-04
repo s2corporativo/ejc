@@ -156,6 +156,7 @@ async def upsert_documento(
     client_id: str | None = None,
     case_id: str | None = None,
     confianca: str | None = None,
+    embutir_vetores: bool = True,
 ) -> str:
     """Insere/atualiza um documento na base de conhecimento, com VERSIONAMENTO
     (migration 068) — nunca sobrescreve o conteúdo de uma versão anterior.
@@ -194,7 +195,10 @@ async def upsert_documento(
     )).scalar_one_or_none()
 
     chunks = chunk_texto(conteudo)
-    vetores = await gerar_embeddings(chunks)   # None se embeddings desligados
+    # `embutir_vetores=False` → vetorização adiada (fica "pendente"; o chamador
+    # agenda a indexação em background — ex.: lote da API pública, que não pode
+    # bloquear a resposta embedando até ~100 documentos inline).
+    vetores = await gerar_embeddings(chunks) if embutir_vetores else None
     # BUG-04: status coerente com o resultado real da vetorização.
     # 'indexado' só quando os chunks foram efetivamente embedados; senão 'pendente'
     # (embeddings desligados/indisponíveis) — nunca fica 'pendente' com vetor pronto.
