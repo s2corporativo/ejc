@@ -9,9 +9,8 @@ from typing import Optional
 
 import aiofiles
 import magic  # python-magic — validação por magic bytes (server-side)
-from fastapi import BackgroundTasks, APIRouter, Depends, HTTPException, Query, UploadFile, File, Form, Request
+from fastapi import BackgroundTasks, APIRouter, Depends, HTTPException, Query, UploadFile, File, Form
 from fastapi.responses import FileResponse
-from app.core.rate_limit import limiter
 from pydantic import BaseModel
 from sqlalchemy import select, func as sqlfunc
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -469,9 +468,7 @@ async def remover(
 
 
 @router.post("/{doc_id}/classificar")
-@limiter.limit("20/minute")
 async def classificar_tipo_documento(
-    request: Request,
     doc_id: str,
     aplicar: bool = Query(
         False,

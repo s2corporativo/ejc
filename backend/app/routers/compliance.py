@@ -8,8 +8,7 @@ import logging
 from datetime import date, datetime, timedelta
 from typing import Optional
 
-from fastapi import APIRouter, Depends, HTTPException, Query, Request
-from app.core.rate_limit import limiter
+from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -254,9 +253,7 @@ async def _itens_ambiental(db: AsyncSession, cu: User, desde: Optional[date],
 
 
 @router.get("/radar")
-@limiter.limit("30/minute")
 async def radar_compliance(
-    request: Request,
     fonte: Optional[str] = Query(None, description="diario_oficial|regulatorio|ambiental"),
     desde: Optional[date] = Query(None, description="Só itens a partir desta data (YYYY-MM-DD)"),
     limit: int = Query(50, ge=1, le=200),
