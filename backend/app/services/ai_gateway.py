@@ -119,6 +119,15 @@ TASK_ROUTING: dict[str, list[tuple[str, str | None]]] = {
         ("anthropic", None),
         ("groq",      None),
     ],
+    # Fase 5 — Modo Duas IAs: crítica adversarial de peça (leitura como
+    # advogado da parte contrária/magistrado). Tarefa COMPLEXA: inclui
+    # Anthropic. O chamador (services/ai/adversarial.py) ainda prefere
+    # provider DIFERENTE do que gerou a peça via provider_override.
+    "critica_adversarial": [
+        ("ollama",    None),  # OLLAMA_MODEL_ANALISE (raciocínio crítico)
+        ("anthropic", None),
+        ("groq",      None),
+    ],
 }
 
 # Provedores que processam dados FORA do VPS → barreira LGPD obrigatória.
@@ -133,6 +142,7 @@ _OLLAMA_MODEL_BY_TASK = {
     "estrategia":       lambda: settings.OLLAMA_MODEL_ANALISE,
     "auditoria_peca":   lambda: settings.OLLAMA_MODEL_PETICAO,
     "jurimetria":       lambda: settings.OLLAMA_MODEL_ANALISE,
+    "critica_adversarial": lambda: settings.OLLAMA_MODEL_ANALISE,
 }
 
 # Modelo Claude por tarefa: complexas → COMPLEXO (qualidade); simples → RAPIDO.
@@ -145,6 +155,7 @@ _ANTHROPIC_MODEL_BY_TASK = {
     "estrategia":       lambda: settings.ANTHROPIC_MODEL_COMPLEXO,
     "auditoria_peca":   lambda: settings.ANTHROPIC_MODEL_COMPLEXO,
     "jurimetria":       lambda: settings.ANTHROPIC_MODEL_COMPLEXO,
+    "critica_adversarial": lambda: settings.ANTHROPIC_MODEL_COMPLEXO,
 }
 
 

@@ -101,6 +101,18 @@ class Settings(BaseSettings):
     #   "marcar"    → relatório de citações anexado/exposto ao revisor (default);
     #   "desligado" → verificação de citações não roda nos fluxos de IA.
     CITACOES_POLITICA: str = "marcar"
+    # ── Modo Duas IAs (Fase 5 — validação adversarial) ────────────────────
+    # True = peças de alta complexidade geradas pelo Núcleo de IA recebem uma
+    # SEGUNDA passada por uma IA Crítica/Adversarial (advogado da parte
+    # contrária + magistrado), preferindo provider DIFERENTE do que gerou a
+    # peça (diversidade reduz erro correlacionado). Default OFF — dobra o
+    # custo por peça. A crítica NUNCA bloqueia a entrega: falhou → anexa
+    # aviso "crítica indisponível" e o revisor HITL segue normalmente.
+    DUAS_IAS_ENABLED: bool = False
+    # CSV de task_types do ai_gateway que disparam a crítica automática
+    # (vocabulário de TASK_ROUTING; aliases como "redacao_peca" são
+    # normalizados antes da comparação).
+    DUAS_IAS_TASK_TYPES: str = "elaboracao_peca,auditoria_peca"
     # Ordem de preferência entre provedores ELEGÍVEIS (csv). A policy ainda
     # filtra por habilitação/chave e prioriza Anthropic em tarefas complexas.
     AI_PROVIDER_PRIORITY: str = "ollama,anthropic,groq"

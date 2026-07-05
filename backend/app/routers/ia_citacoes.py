@@ -20,7 +20,9 @@ router = APIRouter(prefix="/ia", tags=["IA — Gate de Citações"])
 
 
 class ValidarCitacoesRequest(BaseModel):
-    texto: str = Field(..., min_length=1, max_length=200_000)
+    # 50k chars ≈ maior peça plausível; teto menor que o do verificador cru
+    # (/ai/citacoes/verificar) porque este endpoint também roda a política.
+    texto: str = Field(..., min_length=1, max_length=50_000)
 
 
 @router.post("/validar-citacoes", response_model=RelatorioCitacoes,

@@ -170,6 +170,10 @@ class _ResultHITL:
 class _DBHITL:
     def __init__(self, log):
         self.log = log
+        self.added = []          # AuditLog do override (criar_audit_log)
+
+    def add(self, obj):
+        self.added.append(obj)
 
     async def execute(self, *a, **k):
         return _ResultHITL(self.log)

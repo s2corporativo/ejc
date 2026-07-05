@@ -68,6 +68,11 @@ async def status_ia_defensiva(cu: User = Depends(get_current_user)):
 
 class IaDefensivaStatusRequest(BaseModel):
     status: Literal["revisado", "aplicado", "descartado"]
+    # Gate antialucinação de citações (CITACOES_POLITICA="bloquear"): aprovar
+    # output com citação bloqueante exige override EXPLÍCITO + justificativa
+    # auditada — mesmo contrato de PATCH /ai/logs/{id}/hitl.
+    override_citacoes: bool = False
+    justificativa_override: str | None = Field(None, max_length=2000)
 
 
 def _role_value(user: User) -> str:
@@ -148,6 +153,16 @@ async def atualizar_status_ia_defensiva(
         raise HTTPException(status.HTTP_404_NOT_FOUND, "Historico de IA Defensiva nao encontrado")
     if log.user_id != cu.id and ROLE_LEVEL.get(_role_value(cu), 0) < ROLE_LEVEL["socio"]:
         raise HTTPException(status.HTTP_403_FORBIDDEN, "Sem permissao para revisar este resultado")
+
+    # Gate antialucinação de citações — MESMO helper do PATCH /ai/logs/{id}/hitl
+    # (sem ele, este endpoint seria bypass do gate: também grava status_hitl).
+    # 409 bloqueante sem override; 422 justificativa inválida; 503 fail-closed
+    # em política "bloquear"; "descartado" nunca é bloqueado.
+    from app.services.citation_gate import aplicar_gate_hitl
+    await aplicar_gate_hitl(
+        db, log, req.status, req.override_citacoes,
+        req.justificativa_override, cu,
+    )
 
     log.status_hitl = AIStatusHITL(req.status)
     log.revisado_por = cu.id

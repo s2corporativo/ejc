@@ -2,6 +2,7 @@
 # IA: análise de caso (sugestão de teses), resumo de documento, status HITL.
 # Pipeline LGPD/OAB já enforçado em ai_service.py.
 from __future__ import annotations
+import logging
 from datetime import datetime, timezone
 from typing import Optional
 
@@ -23,6 +24,7 @@ from app.schemas.ai import (
 )
 
 router = APIRouter(prefix="/ai", tags=["Inteligência Artificial"])
+_logger = logging.getLogger("ejc.routers.ai")
 
 
 @router.post("/citacoes/verificar",
@@ -140,7 +142,10 @@ async def listar_logs(
             {"id": l.id, "tipo_uso": l.tipo_uso.value, "modelo": l.modelo,
              "status_hitl": l.status_hitl.value, "pii_removida": l.pii_removida,
              "case_id": l.case_id, "created_at": l.created_at,
-             "resposta": l.resposta}
+             "resposta": l.resposta,
+             # Campo dedicado (migration 070): crítica adversarial p/ o revisor
+             # HITL — separada de `resposta` para não gatear/ingerir a crítica.
+             "critica_adversarial": l.critica_adversarial}
             for l in rows
         ],
         "total": total, "page": page, "page_size": page_size,
@@ -166,52 +171,14 @@ async def atualizar_hitl(
         raise HTTPException(status_code=403, detail="Sem permissão para revisar este log")
 
     # ── Gate antialucinação de citações (Fase 4 — citation_gate) ─────────────
-    # Na política "bloquear", output de IA com citação bloqueante (suspeita de
-    # alucinação / menção genérica / julgado sem tribunal+data) NÃO pode ser
-    # aprovado (revisado/aplicado) sem override explícito e justificado.
-    # "descartado" nunca é bloqueado. Verificação 100% local e determinística.
-    gate = None
-    if req.status in ("revisado", "aplicado") and (log.resposta or "").strip():
-        from app.services.citation_gate import validar_citacoes, politica_citacoes
-        try:
-            gate = await validar_citacoes(db, log.resposta)
-        except Exception:
-            # Fail-closed SÓ quando a política exige bloqueio: aprovar sem
-            # conseguir verificar contraria a própria política.
-            if politica_citacoes() == "bloquear":
-                raise HTTPException(
-                    status_code=503,
-                    detail="Verificação de citações indisponível — a política "
-                           "'bloquear' exige verificação antes da aprovação. "
-                           "Tente novamente.",
-                )
-    if gate is not None and gate.bloqueia_aprovacao:
-        if not req.override_citacoes:
-            raise HTTPException(status_code=409, detail={
-                "erro": "citacoes_nao_verificadas",
-                "mensagem": "Output de IA contém citações bloqueantes (política "
-                            "'bloquear'). Corrija o texto ou aprove com "
-                            "override_citacoes=true + justificativa_override.",
-                "politica": gate.politica,
-                "score": gate.score,
-                "motivos": gate.motivos,
-                "bloqueantes": [b.model_dump() for b in gate.bloqueantes[:10]],
-            })
-        justificativa = (req.justificativa_override or "").strip()
-        if len(justificativa) < 10:
-            raise HTTPException(
-                status_code=422,
-                detail="Override do gate de citações exige justificativa "
-                       "(mín. 10 caracteres) para auditoria.",
-            )
-        # Rastro de governança do override no próprio AILog (campo de
-        # rastreabilidade fontes_rag — sem migration; exposto no histórico).
-        log.fontes_rag = (log.fontes_rag or "") + (
-            f"\n[override_citacoes] por={cu.id} "
-            f"em={datetime.now(timezone.utc).isoformat()} "
-            f"bloqueantes={len(gate.bloqueantes)} "
-            f"justificativa={justificativa[:500]}"
-        )
+    # Helper compartilhado com PATCH /ia-defensiva/historico/{id}/status:
+    # 409 sem override, 422 justificativa inválida, 503 fail-closed em
+    # política "bloquear"; override auditado (fontes_rag + audit_logs).
+    from app.services.citation_gate import aplicar_gate_hitl
+    await aplicar_gate_hitl(
+        db, log, req.status, req.override_citacoes,
+        req.justificativa_override, cu,
+    )
 
     log.status_hitl = AIStatusHITL(req.status)
     log.revisado_por = cu.id
@@ -220,7 +187,8 @@ async def atualizar_hitl(
     return {"detail": f"Status HITL: {req.status}"}
 
 
-@router.get("/logs/{log_id}/citacoes")
+@router.get("/logs/{log_id}/citacoes",
+            dependencies=[Depends(rate_limit("citacoes-relatorio", 30))])
 async def citacoes_do_log(
     log_id: str,
     db: AsyncSession = Depends(get_db),
@@ -240,7 +208,16 @@ async def citacoes_do_log(
         raise HTTPException(status_code=403, detail="Sem permissão para este log")
 
     from app.services.citation_gate import validar_citacoes
-    gate = await validar_citacoes(db, log.resposta or "")
+    try:
+        gate = await validar_citacoes(db, log.resposta or "")
+    except Exception:
+        _logger.exception(
+            "Falha ao recomputar relatório de citações do AILog %s.", log_id)
+        raise HTTPException(
+            status_code=503,
+            detail="Verificação de citações indisponível no momento — "
+                   "tente novamente.",
+        )
     overrides = [ln for ln in (log.fontes_rag or "").splitlines()
                  if ln.startswith("[override_citacoes]")]
     out = gate.model_dump()

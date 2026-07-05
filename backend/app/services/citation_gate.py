@@ -32,7 +32,9 @@ relatório pode ser RECOMPUTADO a qualquer momento a partir do texto
 from __future__ import annotations
 
 import logging
+from datetime import datetime, timezone
 
+from fastapi import HTTPException
 from pydantic import BaseModel, Field
 
 from app.core.config import get_settings
@@ -46,6 +48,17 @@ _POLITICAS_VALIDAS = {POLITICA_BLOQUEAR, POLITICA_MARCAR, POLITICA_DESLIGADO}
 
 # Tipos de citação que referenciam JULGADO (exigem tribunal+data verificáveis).
 _TIPOS_JULGADO = {"processo_cnj", "recurso"}
+
+# ── Limites de custo e de auditoria do gate ─────────────────────────────────
+# Teto de citações processadas por verificação (cada súmula/artigo custa um
+# lookup no banco). Acima disso o texto é verificado apenas até a citação de
+# número MAX e o relatório sai com `verificacao_parcial=true`.
+MAX_CITACOES_POR_VERIFICACAO = 200
+JUSTIFICATIVA_OVERRIDE_MIN = 10
+JUSTIFICATIVA_OVERRIDE_MAX = 500
+# Marcador reservado da trilha de override em AILog.fontes_rag — proibido na
+# justificativa do revisor para impedir injeção de linhas falsas de auditoria.
+MARCADOR_OVERRIDE = "[override_citacoes]"
 
 
 def politica_citacoes() -> str:
@@ -73,6 +86,9 @@ class RelatorioCitacoes(BaseModel):
     nao_verificadas: int = 0
     score: int | None = None
     bloqueia_aprovacao: bool = False
+    # True quando o texto tinha mais de MAX_CITACOES_POR_VERIFICACAO citações
+    # e só as primeiras foram verificadas (proteção de custo).
+    verificacao_parcial: bool = False
     bloqueantes: list[CitacaoBloqueante] = Field(default_factory=list)
     motivos: list[str] = Field(default_factory=list)
     # Relatório integral do verificador rigoroso (shape de
@@ -134,11 +150,30 @@ async def validar_citacoes(
             motivos=["Verificação de citações desligada (CITACOES_POLITICA)."],
         )
 
-    from app.services.verificador_jurisprudencia import verificar_jurisprudencia
+    from app.services.verificador_jurisprudencia import (
+        analisar_texto, verificar_jurisprudencia,
+    )
+
+    # Teto de custo: cada súmula/artigo verificado custa um lookup no banco.
+    # A extração (analisar_texto) é pura/CPU — usamos os spans para cortar o
+    # texto na citação nº MAX+1 e verificar só o prefixo (relatório parcial).
+    verificacao_parcial = False
+    achados = analisar_texto(texto)
+    if len(achados) > MAX_CITACOES_POR_VERIFICACAO:
+        verificacao_parcial = True
+        inicios = sorted(a["span"][0] for a in achados)
+        texto = texto[:inicios[MAX_CITACOES_POR_VERIFICACAO]]
+
     rel = await verificar_jurisprudencia(db, texto)
 
     bloqueantes = [CitacaoBloqueante(**b) for b in avaliar_bloqueantes(rel)]
     motivos: list[str] = []
+    if verificacao_parcial:
+        motivos.append(
+            f"Texto com mais de {MAX_CITACOES_POR_VERIFICACAO} citações — "
+            f"verificação PARCIAL (apenas as {MAX_CITACOES_POR_VERIFICACAO} "
+            "primeiras foram processadas)."
+        )
     if bloqueantes:
         motivos.append(
             f"{len(bloqueantes)} citação(ões) bloqueante(s): possível alucinação "
@@ -157,7 +192,120 @@ async def validar_citacoes(
         nao_verificadas=rel["nao_encontradas"],
         score=rel.get("score"),
         bloqueia_aprovacao=pol == POLITICA_BLOQUEAR and bool(bloqueantes),
+        verificacao_parcial=verificacao_parcial,
         bloqueantes=bloqueantes,
         motivos=motivos,
         relatorio=rel,
     )
+
+
+# ── Gate compartilhado do fluxo HITL ─────────────────────────────────────────
+# Usado por PATCH /ai/logs/{id}/hitl E PATCH /ia-defensiva/historico/{id}/status
+# — qualquer endpoint que altere AILog.status_hitl para revisado/aplicado DEVE
+# passar por aqui (senão vira bypass do gate antialucinação).
+
+def sanitizar_justificativa_override(justificativa: str | None) -> str:
+    """Sanitiza a justificativa do override (anti log-injection).
+
+    - Colapsa TODO whitespace (inclusive \\n/\\r/\\t) em espaço simples — a
+      trilha em fontes_rag é parseada por linha, então quebra de linha na
+      justificativa permitiria forjar entradas de auditoria.
+    - Rejeita (422) conteúdo com o marcador reservado ``[override_citacoes]``.
+    - Exige mínimo de JUSTIFICATIVA_OVERRIDE_MIN caracteres (422).
+    - Trunca em JUSTIFICATIVA_OVERRIDE_MAX chars anotando sufixo "…[truncada]".
+    """
+    just = " ".join((justificativa or "").split())
+    if MARCADOR_OVERRIDE in just.lower():
+        raise HTTPException(
+            status_code=422,
+            detail="Justificativa de override não pode conter o marcador "
+                   f"reservado '{MARCADOR_OVERRIDE}' (trilha de auditoria).",
+        )
+    if len(just) < JUSTIFICATIVA_OVERRIDE_MIN:
+        raise HTTPException(
+            status_code=422,
+            detail="Override do gate de citações exige justificativa "
+                   f"(mín. {JUSTIFICATIVA_OVERRIDE_MIN} caracteres) para auditoria.",
+        )
+    if len(just) > JUSTIFICATIVA_OVERRIDE_MAX:
+        just = just[:JUSTIFICATIVA_OVERRIDE_MAX] + "…[truncada]"
+    return just
+
+
+async def aplicar_gate_hitl(
+    db, log, novo_status: str, override: bool,
+    justificativa: str | None, revisor,
+) -> RelatorioCitacoes | None:
+    """Aplica o gate antialucinação antes de aprovar um AILog no HITL.
+
+    - `novo_status` fora de {revisado, aplicado} (ex.: descartado) → livre.
+    - Falha na verificação: logada SEMPRE (com stacktrace); fail-closed 503
+      SÓ na política "bloquear" (aprovar sem verificar contraria a política —
+      runbook: mudar CITACOES_POLITICA para 'marcar' e REINICIAR o backend).
+    - Bloqueante sem override → 409; com override → exige justificativa
+      sanitizada (ver sanitizar_justificativa_override) e grava trilha dupla:
+      espelho em AILog.fontes_rag + audit_logs imutável (criar_audit_log).
+
+    Retorna o RelatorioCitacoes (ou None se o gate não se aplicou/falhou em
+    política tolerante). Levanta HTTPException 409/422/503 conforme o caso.
+    """
+    if novo_status not in ("revisado", "aplicado"):
+        return None
+    if not (getattr(log, "resposta", None) or "").strip():
+        return None
+
+    try:
+        gate = await validar_citacoes(db, log.resposta)
+    except Exception:
+        # B1/B3: SEMPRE logar a falha com stacktrace (antes era silencioso em
+        # política 'marcar'); fail-closed apenas quando a política exige.
+        logger.exception(
+            "Falha na verificação de citações do AILog %s (política %s).",
+            getattr(log, "id", "?"), politica_citacoes(),
+        )
+        if politica_citacoes() == POLITICA_BLOQUEAR:
+            raise HTTPException(
+                status_code=503,
+                detail="Verificação de citações indisponível — a política "
+                       "'bloquear' exige verificação antes da aprovação. "
+                       "Tente novamente.",
+            )
+        return None
+
+    if not gate.bloqueia_aprovacao:
+        return gate
+
+    if not override:
+        raise HTTPException(status_code=409, detail={
+            "erro": "citacoes_nao_verificadas",
+            "mensagem": "Output de IA contém citações bloqueantes (política "
+                        "'bloquear'). Corrija o texto ou aprove com "
+                        "override_citacoes=true + justificativa_override.",
+            "politica": gate.politica,
+            "score": gate.score,
+            "motivos": gate.motivos,
+            "bloqueantes": [b.model_dump() for b in gate.bloqueantes[:10]],
+        })
+
+    just = sanitizar_justificativa_override(justificativa)
+    agora = datetime.now(timezone.utc)
+
+    # Espelho no próprio AILog (campo de rastreabilidade fontes_rag — sem
+    # migration; exposto no histórico/GET citações).
+    log.fontes_rag = (log.fontes_rag or "") + (
+        f"\n{MARCADOR_OVERRIDE} por={revisor.id} "
+        f"em={agora.isoformat()} "
+        f"bloqueantes={len(gate.bloqueantes)} "
+        f"justificativa={just}"
+    )
+
+    # Trilha IMUTÁVEL em audit_logs (LGPD art. 37) — sobrevive a edição do
+    # AILog; mesma transação do commit do chamador.
+    from app.models.audit_log import criar_audit_log
+    await criar_audit_log(
+        db, revisor.id, getattr(revisor.role, "value", revisor.role),
+        "ia_hitl_override_citacoes", "ai_logs", getattr(log, "id", None),
+        detalhes=(f"Override do gate de citações (status={novo_status}, "
+                  f"bloqueantes={len(gate.bloqueantes)}): {just}"),
+    )
+    return gate

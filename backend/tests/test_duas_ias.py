@@ -1,0 +1,629 @@
+"""Fase 5 — Modo Duas IAs (crítica adversarial de peças).
+
+Tudo mockado (gateway/citation_gate) — nenhum teste toca rede ou banco real.
+Settings via monkeypatch nos atributos da instância cacheada de get_settings().
+"""
+from __future__ import annotations
+
+import inspect
+from types import SimpleNamespace
+
+import pytest
+
+from app.core.config import get_settings
+from app.services.ai_gateway import GatewayResponse
+
+TEXTO_PECA = (
+    "EXCELENTÍSSIMO SENHOR DOUTOR JUIZ — petição inicial fictícia de "
+    "indenização por danos morais, com fatos e pedidos inventados para teste."
+)
+
+RELATORIO_OK = (
+    "## 1. CONTRADIÇÕES\nNenhuma identificada.\n"
+    "## 2. LACUNAS FÁTICAS\nFalta a data exata do evento danoso.\n"
+    "## 3. FRAGILIDADES PROBATÓRIAS\nDano moral afirmado sem prova.\n"
+    "## 4. TESES DEFENSIVAS PROVÁVEIS\nCulpa exclusiva da vítima.\n"
+    "## 5. JURISPRUDÊNCIA CONTRÁRIA A VERIFICAR\nLinha restritiva do STJ — verificar fonte.\n"
+    "## 6. NOTA DE ROBUSTEZ\nNOTA DE ROBUSTEZ: 72\nPeça razoável, mas com lacunas."
+)
+
+
+@pytest.fixture
+def s(monkeypatch):
+    """Baseline: Anthropic e Groq elegíveis, Ollama OFF, Duas IAs OFF."""
+    st = get_settings()
+    monkeypatch.setattr(st, "ANTHROPIC_ENABLED", True)
+    monkeypatch.setattr(st, "ANTHROPIC_API_KEY", "sk-ant-fake-para-testes")
+    monkeypatch.setattr(st, "GROQ_API_KEY", "gsk-fake-para-testes")
+    monkeypatch.setattr(st, "OLLAMA_ENABLED", False)
+    monkeypatch.setattr(st, "AI_EXTERNAL_PROVIDERS_ALLOWED", True)
+    monkeypatch.setattr(st, "AI_REQUIRE_SANITIZATION_FOR_EXTERNAL", True)
+    monkeypatch.setattr(st, "AI_PROVIDER_PRIORITY", "ollama,anthropic,groq")
+    monkeypatch.setattr(st, "AI_PROVIDER", "auto")
+    monkeypatch.setattr(st, "DUAS_IAS_ENABLED", False)
+    monkeypatch.setattr(st, "DUAS_IAS_TASK_TYPES", "elaboracao_peca,auditoria_peca")
+    return st
+
+
+def _fake_chat(box: dict, *, texto: str = RELATORIO_OK, provedor: str = "anthropic",
+               falhar: bool = False):
+    async def fake(messages, **kw):
+        box["messages"] = messages
+        box.update(kw)
+        if falhar:
+            raise RuntimeError("provider fora do ar (simulado)")
+        return GatewayResponse(
+            texto=texto, modelo="modelo-fake", provedor=provedor,
+            task_type=kw.get("task_type", ""), input_tokens=10, output_tokens=20,
+        )
+    return fake
+
+
+# ══════════════════════════════════════════════════════════════════════════════
+# 1. Seleção de provider DIVERSO do proponente
+# ══════════════════════════════════════════════════════════════════════════════
+
+class TestProviderDiverso:
+    def test_origem_ollama_prefere_anthropic(self, s):
+        from app.services.ai.adversarial import escolher_provider_diverso
+        assert escolher_provider_diverso("ollama") == "anthropic"
+
+    def test_origem_anthropic_cai_no_groq_sem_ollama(self, s):
+        from app.services.ai.adversarial import escolher_provider_diverso
+        assert escolher_provider_diverso("anthropic") == "groq"
+
+    def test_origem_anthropic_prefere_ollama_quando_ligado(self, s, monkeypatch):
+        from app.services.ai.adversarial import escolher_provider_diverso
+        monkeypatch.setattr(s, "OLLAMA_ENABLED", True)
+        assert escolher_provider_diverso("anthropic") == "ollama"
+
+    def test_nenhum_diverso_elegivel_devolve_none(self, s, monkeypatch):
+        from app.services.ai.adversarial import escolher_provider_diverso
+        monkeypatch.setattr(s, "ANTHROPIC_API_KEY", "")
+        # Só groq elegível e groq é o próprio origem.
+        assert escolher_provider_diverso("groq") is None
+
+
+# ══════════════════════════════════════════════════════════════════════════════
+# 2. Gate por flag/task_type (DUAS_IAS_ENABLED + DUAS_IAS_TASK_TYPES)
+# ══════════════════════════════════════════════════════════════════════════════
+
+class TestGatePorFlag:
+    def test_flag_desligada_nunca_habilita(self, s):
+        from app.services.ai.adversarial import critica_automatica_habilitada
+        assert critica_automatica_habilitada("elaboracao_peca") is False
+
+    def test_flag_ligada_task_elegivel(self, s, monkeypatch):
+        from app.services.ai.adversarial import critica_automatica_habilitada
+        monkeypatch.setattr(s, "DUAS_IAS_ENABLED", True)
+        assert critica_automatica_habilitada("elaboracao_peca") is True
+        assert critica_automatica_habilitada("auditoria_peca") is True
+        assert critica_automatica_habilitada("resumo") is False
+        assert critica_automatica_habilitada(None) is False
+
+    def test_alias_de_task_type_normalizado(self, s, monkeypatch):
+        # "redacao_peca" é alias de "elaboracao_peca" no gateway.
+        from app.services.ai.adversarial import critica_automatica_habilitada
+        monkeypatch.setattr(s, "DUAS_IAS_ENABLED", True)
+        monkeypatch.setattr(s, "DUAS_IAS_TASK_TYPES", "redacao_peca")
+        assert critica_automatica_habilitada("elaboracao_peca") is True
+
+    def test_task_critica_tem_cadeia_no_gateway(self, s):
+        from app.services.ai_gateway import _resolver_cadeia
+        providers = [p for p, _ in _resolver_cadeia("critica_adversarial", None, None)]
+        assert "anthropic" in providers  # tarefa complexa inclui Anthropic
+
+
+# ══════════════════════════════════════════════════════════════════════════════
+# 3. criticar_peca — sucesso, diversidade e gate de citações da crítica
+# ══════════════════════════════════════════════════════════════════════════════
+
+class TestCriticarPeca:
+    async def test_sucesso_com_provider_diverso_e_nota(self, s, monkeypatch):
+        from app.services import ai_gateway, citation_gate
+        from app.services.ai import adversarial
+
+        box: dict = {}
+        monkeypatch.setattr(ai_gateway, "chat", _fake_chat(box, provedor="anthropic"))
+
+        gate_calls: list[str] = []
+
+        async def fake_validar(db, texto, **kw):
+            gate_calls.append(texto)
+            return citation_gate.RelatorioCitacoes(politica="marcar", total=1)
+
+        monkeypatch.setattr(citation_gate, "validar_citacoes", fake_validar)
+
+        c = await adversarial.criticar_peca(
+            db=object(), texto_peca=TEXTO_PECA,
+            task_type_origem="elaboracao_peca", provedor_origem="ollama",
+        )
+        assert c.disponivel is True
+        assert c.nota_robustez == 72
+        assert c.provider_diverso is True
+        assert c.provedor == "anthropic" and c.provedor_origem == "ollama"
+        # Pediu explicitamente o provider diverso ao gateway.
+        assert box["provider_override"] == "anthropic"
+        assert box["task_type"] == "critica_adversarial"
+        # A PRÓPRIA crítica passou pelo gate de citações.
+        assert gate_calls == [RELATORIO_OK]
+        assert c.citacoes is not None and c.citacoes.politica == "marcar"
+
+    async def test_critica_com_citacao_bloqueante_gera_alerta(self, s, monkeypatch):
+        from app.services import ai_gateway, citation_gate
+        from app.services.ai import adversarial
+
+        monkeypatch.setattr(ai_gateway, "chat", _fake_chat({}))
+
+        async def fake_validar(db, texto, **kw):
+            return citation_gate.RelatorioCitacoes(
+                politica="marcar", total=1, nao_verificadas=1,
+                bloqueantes=[citation_gate.CitacaoBloqueante(
+                    citacao="Súmula 999/STJ", tipo="sumula",
+                    status="suspeita", motivo="fora de faixa",
+                )],
+            )
+
+        monkeypatch.setattr(citation_gate, "validar_citacoes", fake_validar)
+        c = await adversarial.criticar_peca(db=object(), texto_peca=TEXTO_PECA)
+        assert c.disponivel is True
+        assert any("alucinação" in a for a in c.alertas)
+
+    async def test_sem_db_pula_gate_com_alerta(self, s, monkeypatch):
+        from app.services import ai_gateway
+        from app.services.ai import adversarial
+        monkeypatch.setattr(ai_gateway, "chat", _fake_chat({}))
+        c = await adversarial.criticar_peca(db=None, texto_peca=TEXTO_PECA)
+        assert c.disponivel is True
+        assert c.citacoes is None
+        assert any("Gate de citações" in a for a in c.alertas)
+
+    async def test_mesmo_provider_quando_nao_ha_diverso(self, s, monkeypatch):
+        from app.services import ai_gateway
+        from app.services.ai import adversarial
+        # Só Anthropic elegível e a peça veio do Anthropic.
+        monkeypatch.setattr(s, "GROQ_API_KEY", "")
+        box: dict = {}
+        monkeypatch.setattr(ai_gateway, "chat", _fake_chat(box, provedor="anthropic"))
+        c = await adversarial.criticar_peca(
+            db=None, texto_peca=TEXTO_PECA, provedor_origem="anthropic",
+        )
+        assert box["provider_override"] is None  # cadeia automática
+        assert c.provider_diverso is False
+        assert any("MESMO provider" in a for a in c.alertas)
+
+    async def test_falha_de_provider_nao_levanta_excecao(self, s, monkeypatch):
+        from app.services import ai_gateway
+        from app.services.ai import adversarial
+        monkeypatch.setattr(ai_gateway, "chat", _fake_chat({}, falhar=True))
+        c = await adversarial.criticar_peca(
+            db=object(), texto_peca=TEXTO_PECA, provedor_origem="ollama",
+        )
+        assert c.disponivel is False
+        assert c.relatorio is None
+        assert c.aviso == adversarial.AVISO_INDISPONIVEL
+        assert any("Falha na IA Crítica" in a for a in c.alertas)
+
+    async def test_falha_do_gate_nao_derruba_critica(self, s, monkeypatch):
+        from app.services import ai_gateway, citation_gate
+        from app.services.ai import adversarial
+        monkeypatch.setattr(ai_gateway, "chat", _fake_chat({}))
+
+        async def gate_quebrado(db, texto, **kw):
+            raise RuntimeError("verificador fora")
+
+        monkeypatch.setattr(citation_gate, "validar_citacoes", gate_quebrado)
+        c = await adversarial.criticar_peca(db=object(), texto_peca=TEXTO_PECA)
+        assert c.disponivel is True
+        assert c.citacoes is None
+        assert any("indisponível" in a for a in c.alertas)
+
+    def test_extrair_nota_robustez(self):
+        from app.services.ai.adversarial import extrair_nota_robustez
+        assert extrair_nota_robustez("NOTA DE ROBUSTEZ: 85") == 85
+        assert extrair_nota_robustez("nota de robustez - 7") == 7
+        assert extrair_nota_robustez("NOTA DE ROBUSTEZ: 250") is None
+        assert extrair_nota_robustez("sem nota") is None
+        assert extrair_nota_robustez(None) is None
+
+
+# ══════════════════════════════════════════════════════════════════════════════
+# 4. Gravação da crítica em campo DEDICADO (migration 070 — NÃO em `resposta`)
+# ══════════════════════════════════════════════════════════════════════════════
+
+class _FakeDB:
+    def __init__(self, log):
+        self._log = log
+        self.commits = 0
+
+    async def get(self, model, pk):
+        return self._log
+
+    async def commit(self):
+        self.commits += 1
+
+
+class TestAnexarAoAILog:
+    async def test_grava_relatorio_em_campo_dedicado(self, s):
+        from app.services.ai import adversarial
+        critica = adversarial.CriticaAdversarial(
+            disponivel=True, relatorio=RELATORIO_OK, nota_robustez=72,
+            provedor="anthropic", modelo="claude-fake",
+            provedor_origem="ollama", provider_diverso=True,
+        )
+        log = SimpleNamespace(resposta="TEXTO DA PEÇA", critica_adversarial=None)
+        db = _FakeDB(log)
+        ok = await adversarial.anexar_critica_ao_log(db, "log-1", critica)
+        assert ok is True and db.commits == 1
+        # A crítica vai no campo DEDICADO — `resposta` (peça) fica INTACTA.
+        assert log.resposta == "TEXTO DA PEÇA"
+        assert adversarial.MARCADOR_AILOG not in (log.resposta or "")
+        assert adversarial.MARCADOR_AILOG in log.critica_adversarial
+        assert "Nota de robustez: 72/100" in log.critica_adversarial
+        assert "DIVERSO" in log.critica_adversarial
+
+    async def test_critica_nao_contamina_resposta(self, s):
+        """A jurisprudência ESPECULATIVA da crítica não pode entrar em `resposta`
+        (que alimenta o gate de aprovação e a ingestão RAG)."""
+        from app.services.ai import adversarial
+        critica = adversarial.CriticaAdversarial(
+            disponivel=True, relatorio=RELATORIO_OK, nota_robustez=72,
+            provedor="anthropic", modelo="claude-fake",
+        )
+        log = SimpleNamespace(resposta="PEÇA LIMPA", critica_adversarial=None)
+        await adversarial.anexar_critica_ao_log(_FakeDB(log), "log-1", critica)
+        assert log.resposta == "PEÇA LIMPA"
+        # "verificar fonte" (jurisprudência especulativa) só no campo dedicado.
+        assert "verificar fonte" in log.critica_adversarial
+        assert "verificar fonte" not in log.resposta
+
+    async def test_critica_indisponivel_grava_aviso_no_campo_dedicado(self, s):
+        from app.services.ai import adversarial
+        critica = adversarial.CriticaAdversarial(
+            disponivel=False, aviso=adversarial.AVISO_INDISPONIVEL,
+        )
+        log = SimpleNamespace(resposta="PEÇA", critica_adversarial=None)
+        assert await adversarial.anexar_critica_ao_log(_FakeDB(log), "log-1", critica) is True
+        assert log.resposta == "PEÇA"
+        assert adversarial.AVISO_INDISPONIVEL in log.critica_adversarial
+
+    async def test_sem_db_ou_log_nao_quebra(self, s):
+        from app.services.ai import adversarial
+        critica = adversarial.CriticaAdversarial(disponivel=False)
+        assert await adversarial.anexar_critica_ao_log(None, "x", critica) is False
+        assert await adversarial.anexar_critica_ao_log(_FakeDB(None), "x", critica) is False
+
+
+# ══════════════════════════════════════════════════════════════════════════════
+# 4b. Isolamento: gate de aprovação e ingestão RAG NÃO veem a crítica
+# ══════════════════════════════════════════════════════════════════════════════
+
+class _CitacoesResult:
+    def __init__(self, obj):
+        self._obj = obj
+
+    def scalar_one_or_none(self):
+        return self._obj
+
+
+class _ExecDB:
+    """DB mínimo com execute()→scalar_one_or_none() e commit() (fluxos router)."""
+    def __init__(self, obj):
+        self._obj = obj
+        self.commits = 0
+
+    async def execute(self, *a, **kw):
+        return _CitacoesResult(self._obj)
+
+    async def commit(self):
+        self.commits += 1
+
+
+class TestIsolamentoCriticaDoGateEIngestao:
+    async def test_gate_aprovacao_peca_ignora_critica_especulativa(self, s, monkeypatch):
+        """política=bloquear: o gate varre SÓ `resposta` (peça) — a
+        jurisprudência especulativa da crítica no campo dedicado NÃO bloqueia."""
+        from app.services import citation_gate
+        from app.services.ai.adversarial import MARCADOR_AILOG
+        monkeypatch.setattr(s, "CITACOES_POLITICA", "bloquear")
+
+        capturado = {}
+
+        async def fake_validar(db, texto, **kw):
+            capturado["texto"] = texto
+            return citation_gate.RelatorioCitacoes(politica="bloquear")
+
+        monkeypatch.setattr(citation_gate, "validar_citacoes", fake_validar)
+
+        log = SimpleNamespace(
+            id="log-x",
+            resposta="Peça limpa, sem jurisprudência.",
+            critica_adversarial=(
+                MARCADOR_AILOG + "\n## 5. JURISPRUDÊNCIA CONTRÁRIA A VERIFICAR\n"
+                "Linha adversa do STJ — verificar fonte."
+            ),
+            fontes_rag=None,
+        )
+        gate = await citation_gate.aplicar_gate_hitl(
+            None, log, "revisado", False, None, SimpleNamespace(id="rev-1"),
+        )
+        # O texto verificado é SÓ a peça — a crítica especulativa ficou de fora.
+        assert capturado["texto"] == "Peça limpa, sem jurisprudência."
+        assert "verificar fonte" not in capturado["texto"]
+        assert gate is not None and gate.bloqueia_aprovacao is False
+
+    async def test_ingestao_ailog_aprovado_destila_so_a_peca(self, monkeypatch):
+        """A ingestão RAG usa `resposta` — a crítica no campo dedicado nunca vai
+        para a base de conhecimento."""
+        import datetime as _dt
+        from app.routers import rag as rag_router
+        from app.routers.rag import ingerir_ai_log_aprovado, IngerirAILogRequest
+        from app.services import ingestion_service
+        from app.models.ai_log import AIStatusHITL, AITipoUso
+        from app.services.ai.adversarial import MARCADOR_AILOG
+
+        capturado = {}
+
+        async def fake_upsert(db, *, titulo, categoria, conteudo, chave_origem, fonte):
+            capturado["conteudo"] = conteudo
+            return "novo"
+
+        monkeypatch.setattr(ingestion_service, "upsert_documento", fake_upsert)
+        monkeypatch.setattr(rag_router, "chunk_texto", lambda t: ["c1", "c2"])
+
+        log = SimpleNamespace(
+            id="log-1", user_id="user-1",
+            status_hitl=AIStatusHITL.revisado,
+            tipo_uso=AITipoUso.redacao_peca,
+            created_at=_dt.datetime(2026, 7, 5),
+            resposta="Peça institucional aprovada e limpa, com folga de cinquenta caracteres.",
+            critica_adversarial=MARCADOR_AILOG + " verificar fonte STJ especulativo",
+        )
+        out = await ingerir_ai_log_aprovado(
+            "log-1", IngerirAILogRequest(), db=_ExecDB(log),
+            cu=SimpleNamespace(id="user-1"),
+        )
+        assert out["ok"] is True
+        assert capturado["conteudo"] == log.resposta
+        assert "verificar fonte" not in capturado["conteudo"]
+        assert MARCADOR_AILOG not in capturado["conteudo"]
+
+
+# ══════════════════════════════════════════════════════════════════════════════
+# 4c. Hardening: marcador reservado forjado no texto de entrada é neutralizado
+# ══════════════════════════════════════════════════════════════════════════════
+
+class TestMarcadorForjado:
+    def test_neutralizar_marcador_ailog(self):
+        from app.services.ai import adversarial
+        t = "conteúdo " + adversarial.MARCADOR_AILOG + " forjado"
+        out = adversarial.neutralizar_marcador_ailog(t)
+        assert adversarial.MARCADOR_AILOG not in out
+        assert adversarial._MARCADOR_NEUTRALIZADO in out
+
+    def test_neutralizar_marcador_none_e_vazio(self):
+        from app.services.ai import adversarial
+        assert adversarial.neutralizar_marcador_ailog(None) is None
+        assert adversarial.neutralizar_marcador_ailog("") == ""
+
+    async def test_marcador_forjado_nao_chega_ao_prompt(self, s, monkeypatch):
+        from app.services import ai_gateway
+        from app.services.ai import adversarial
+        box = {}
+        monkeypatch.setattr(ai_gateway, "chat", _fake_chat(box, provedor="anthropic"))
+        texto = "Peça " + adversarial.MARCADOR_AILOG + " com marcador forjado embutido"
+        # db=None → gate de citações pulado; foco é a neutralização do marcador.
+        critica = await adversarial.criticar_peca(None, texto_peca=texto)
+        assert critica.disponivel is True
+        user_msg = box["messages"][1]["content"]
+        assert adversarial.MARCADOR_AILOG not in user_msg
+        assert adversarial._MARCADOR_NEUTRALIZADO in user_msg
+
+    async def test_delimitador_prompt_tem_token_aleatorio(self, s):
+        """Cada chamada usa um token de delimitador diferente (anti-escape)."""
+        from app.services.ai.adversarial import _montar_user_prompt
+        import re as _re
+        p1 = _montar_user_prompt("peça um", None)
+        p2 = _montar_user_prompt("peça dois", None)
+        tok1 = _re.search(r"\[PEÇA A CRITICAR::([0-9a-f]{8}) ", p1).group(1)
+        tok2 = _re.search(r"\[PEÇA A CRITICAR::([0-9a-f]{8}) ", p2).group(1)
+        assert tok1 != tok2
+        assert f"[/PEÇA A CRITICAR::{tok1}]" in p1
+
+
+# ══════════════════════════════════════════════════════════════════════════════
+# 5. Integração no orchestrator (Núcleo Único) — tudo mockado
+# ══════════════════════════════════════════════════════════════════════════════
+
+@pytest.fixture
+def nucleo_mocks(s, monkeypatch):
+    from app.services import ai_gateway
+    from app.services.ai.core import audit_logger, context_builder
+    from app.services.ai.core.context_builder import ContextoMontado
+
+    monkeypatch.setattr(s, "OLLAMA_ENABLED", True)
+
+    async def fake_montar_contexto(db, **kw):
+        return ContextoMontado()
+
+    async def fake_registrar(db, **kw):
+        return "log-fake"
+
+    async def fake_chat(messages, **kw):
+        return GatewayResponse(
+            texto="Minuta fictícia de petição, sem promessas.",
+            modelo="modelo-fake", provedor="ollama",
+            task_type=kw.get("task_type", ""), input_tokens=10, output_tokens=20,
+        )
+
+    monkeypatch.setattr(context_builder, "montar_contexto", fake_montar_contexto)
+    monkeypatch.setattr(audit_logger, "registrar", fake_registrar)
+    monkeypatch.setattr(ai_gateway, "chat", fake_chat)
+    return s
+
+
+@pytest.fixture
+def critica_spy(monkeypatch):
+    """Espião de criticar_peca/anexar_critica_ao_log no módulo adversarial."""
+    from app.services.ai import adversarial
+    calls = {"criticar": [], "anexar": []}
+
+    async def fake_criticar(db, texto_peca, contexto_caso=None,
+                            task_type_origem=None, provedor_origem=None):
+        calls["criticar"].append({
+            "texto_peca": texto_peca, "task_type_origem": task_type_origem,
+            "provedor_origem": provedor_origem,
+        })
+        return adversarial.CriticaAdversarial(
+            disponivel=True, relatorio=RELATORIO_OK, nota_robustez=72,
+            provedor="anthropic", modelo="claude-fake",
+            provedor_origem=provedor_origem, task_type_origem=task_type_origem,
+            provider_diverso=True,
+        )
+
+    async def fake_anexar(db, log_id, critica):
+        calls["anexar"].append(log_id)
+        return True
+
+    monkeypatch.setattr(adversarial, "criticar_peca", fake_criticar)
+    monkeypatch.setattr(adversarial, "anexar_critica_ao_log", fake_anexar)
+    return calls
+
+
+def _user(role: str = "advogado"):
+    return SimpleNamespace(id="usuario-fake-1", role=role)
+
+
+class TestOrchestratorDuasIAs:
+    async def test_flag_desligada_nao_dispara_critica(self, nucleo_mocks, critica_spy):
+        from app.services.ai.core.orchestrator import orchestrator
+        r = await orchestrator.run(
+            db=None, user=_user(), task_type="legal_draft",
+            mensagem="Redigir petição inicial fictícia de cobrança.",
+        )
+        assert r["critica_adversarial"] is None
+        assert critica_spy["criticar"] == []
+
+    async def test_flag_ligada_task_elegivel_dispara_e_anexa(
+        self, nucleo_mocks, critica_spy, monkeypatch,
+    ):
+        from app.services.ai.core.orchestrator import orchestrator
+        monkeypatch.setattr(nucleo_mocks, "DUAS_IAS_ENABLED", True)
+        r = await orchestrator.run(
+            db=None, user=_user(), task_type="legal_draft",
+            mensagem="Redigir petição inicial fictícia de cobrança.",
+        )
+        assert len(critica_spy["criticar"]) == 1
+        chamada = critica_spy["criticar"][0]
+        assert chamada["task_type_origem"] == "elaboracao_peca"
+        assert chamada["provedor_origem"] == "ollama"
+        # A crítica recebe o conteúdo JÁ validado (pós gate de citações da peça).
+        assert r["conteudo"].endswith(chamada["texto_peca"]) or \
+            chamada["texto_peca"] == r["conteudo"]
+        assert critica_spy["anexar"] == ["log-fake"]
+        assert r["critica_adversarial"]["disponivel"] is True
+        assert r["critica_adversarial"]["nota_robustez"] == 72
+        # HITL preservado: peça continua rascunho com revisão obrigatória.
+        assert r["is_rascunho"] is True
+
+    async def test_flag_ligada_task_inelegivel_nao_dispara(
+        self, nucleo_mocks, critica_spy, monkeypatch,
+    ):
+        from app.services.ai.core.orchestrator import orchestrator
+        monkeypatch.setattr(nucleo_mocks, "DUAS_IAS_ENABLED", True)
+        r = await orchestrator.run(
+            db=None, user=_user(), task_type="chat",
+            mensagem="Resumo rápido de um caso fictício qualquer.",
+        )
+        assert r["critica_adversarial"] is None
+        assert critica_spy["criticar"] == []
+
+    async def test_falha_inesperada_da_critica_nao_bloqueia_peca(
+        self, nucleo_mocks, monkeypatch,
+    ):
+        from app.services.ai import adversarial
+        from app.services.ai.core.orchestrator import orchestrator
+        monkeypatch.setattr(nucleo_mocks, "DUAS_IAS_ENABLED", True)
+
+        async def explode(*a, **kw):
+            raise RuntimeError("falha inesperada no pipeline de crítica")
+
+        monkeypatch.setattr(adversarial, "criticar_peca", explode)
+        r = await orchestrator.run(
+            db=None, user=_user(), task_type="legal_draft",
+            mensagem="Redigir petição inicial fictícia de cobrança.",
+        )
+        # Peça entregue normalmente, crítica marcada como indisponível.
+        assert r["conteudo"]
+        assert r["critica_adversarial"]["disponivel"] is False
+        assert r["critica_adversarial"]["aviso"] == adversarial.AVISO_INDISPONIVEL
+
+
+# ══════════════════════════════════════════════════════════════════════════════
+# 6. Endpoint POST /ia/critica-adversarial (JWT + rate limit + AILog)
+# ══════════════════════════════════════════════════════════════════════════════
+
+class _EndpointDB:
+    def __init__(self):
+        self.added = []
+        self.commits = 0
+
+    def add(self, obj):
+        self.added.append(obj)
+
+    async def commit(self):
+        self.commits += 1
+
+
+class TestEndpointCriticaAdversarial:
+    def test_rota_registrada_com_rate_limit(self):
+        from app.routers.ia_adversarial import router
+        rotas = {r.path: r for r in router.routes}
+        assert "/ia/critica-adversarial" in rotas
+        rota = rotas["/ia/critica-adversarial"]
+        assert "POST" in rota.methods
+        assert rota.dependencies  # rate_limit("critica-adversarial", 10)
+
+    def test_endpoint_exige_jwt(self):
+        from app.core.security import get_current_user
+        from app.routers.ia_adversarial import critica_adversarial_endpoint
+        params = inspect.signature(critica_adversarial_endpoint).parameters
+        assert params["cu"].default.dependency is get_current_user
+
+    async def test_endpoint_executa_critica_e_grava_ailog(self, s, monkeypatch):
+        from app.services import ai_gateway, citation_gate
+        from app.routers.ia_adversarial import (
+            CriticaAdversarialRequest, critica_adversarial_endpoint,
+        )
+        monkeypatch.setattr(ai_gateway, "chat", _fake_chat({}, provedor="anthropic"))
+
+        async def fake_validar(db, texto, **kw):
+            return citation_gate.RelatorioCitacoes(politica="marcar")
+
+        monkeypatch.setattr(citation_gate, "validar_citacoes", fake_validar)
+        db = _EndpointDB()
+        c = await critica_adversarial_endpoint(
+            CriticaAdversarialRequest(texto_peca=TEXTO_PECA, provedor_origem="ollama"),
+            db=db, cu=SimpleNamespace(id="user-1"),
+        )
+        assert c.disponivel is True and c.provider_diverso is True
+        # AILog gravado (trilha LGPD/OAB).
+        assert db.commits == 1 and len(db.added) == 1
+        log = db.added[0]
+        assert log.user_id == "user-1"
+        assert "[CRITICA_ADVERSARIAL sob demanda]" in log.prompt_sanitizado
+        assert log.resposta == RELATORIO_OK
+
+    async def test_endpoint_falha_de_provider_devolve_indisponivel(self, s, monkeypatch):
+        from app.services import ai_gateway
+        from app.routers.ia_adversarial import (
+            CriticaAdversarialRequest, critica_adversarial_endpoint,
+        )
+        monkeypatch.setattr(ai_gateway, "chat", _fake_chat({}, falhar=True))
+        db = _EndpointDB()
+        c = await critica_adversarial_endpoint(
+            CriticaAdversarialRequest(texto_peca=TEXTO_PECA),
+            db=db, cu=SimpleNamespace(id="user-1"),
+        )
+        assert c.disponivel is False
+        assert db.added == [] and db.commits == 0  # nada de log sem chamada de IA
