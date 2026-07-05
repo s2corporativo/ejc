@@ -8,6 +8,7 @@ from typing import Dict, Any
 from fastapi import APIRouter, Depends, UploadFile, File, HTTPException
 
 from app.core.security import get_current_user
+from app.core.rate_limit import rate_limit
 from app.core.licitacao_auditor import LicitacaoAuditor
 
 router = APIRouter(
@@ -19,7 +20,8 @@ router = APIRouter(
 _auditor = LicitacaoAuditor()
 
 
-@router.post("/analyze-competitor-proposal")
+@router.post("/analyze-competitor-proposal",
+             dependencies=[Depends(rate_limit("licitacao-auditoria", 15))])
 async def analyze_competitor_proposal(file: UploadFile = File(...)) -> Dict[str, Any]:
     if not (file.filename or "").lower().endswith(".pdf"):
         raise HTTPException(status_code=400, detail="Apenas arquivos PDF sao aceitos.")
