@@ -278,6 +278,13 @@ class Settings(BaseSettings):
     # bloqueia a request por indisponibilidade de infra).
     RATE_LIMIT_REDIS_ENABLED: bool = False
 
+    # Observabilidade — logging. LOG_JSON=False (default) mantém o formato
+    # texto atual; True emite uma linha JSON por log (ts/level/logger/msg +
+    # excecao), pronto para agregadores (Loki/ELK/CloudWatch). LOG_LEVEL
+    # controla o nivel raiz.
+    LOG_JSON: bool = False
+    LOG_LEVEL: str = "INFO"
+
     # ── Escritório (LGPD — identificação do controlador de dados) ─────────
     ESCRITORIO_NOME: str = "De Paula Teixeira Sociedade de Advogados"
     ESCRITORIO_CNPJ: str = "32.491.468/0001-12"
