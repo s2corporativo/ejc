@@ -98,6 +98,20 @@ ok "backend healthy"
 docker compose up -d --remove-orphans
 ok "frontend no ar"
 
+# ── IA local (Ollama) — OPCIONAL, nunca bloqueia o deploy ──────────────────
+# Liga com IA_LOCAL=1 ./scripts/atualizar-vps.sh, ou automaticamente se o
+# profile ia-local ja estava em uso (container ollama existente). O `up`
+# padrao acima NAO toca nestes servicos (profile opt-in). Falha aqui NAO
+# derruba o deploy: sem Ollama a cadeia de IA cai para Anthropic/Groq sozinha.
+if [ "${IA_LOCAL:-0}" = "1" ] || [ -n "$(docker compose --profile ia-local ps -q ollama 2>/dev/null)" ]; then
+  log "IA local (Ollama) — profile ia-local"
+  if ./scripts/subir-ia-local.sh; then
+    ok "IA local no ar (modelos conferidos)"
+  else
+    echo "  [AVISO] IA local falhou — backend segue com Anthropic/Groq (fallback automatico)"
+  fi
+fi
+
 log "8/8 Smoke test final"
 echo "  migrations: $(docker exec "$BID" python -m alembic current 2>/dev/null | tail -1)"
 docker exec "$BID" curl -fsS http://localhost:8000/api/health >/dev/null && ok "/api/health respondendo"
