@@ -61,6 +61,29 @@ def normalizar_processo(numero: str | None) -> str:
     return re.sub(r"\D", "", numero or "")
 
 
+def _parse_data_disp(raw: str | None) -> date:
+    """Data de disponibilização TOLERANTE a formato: ISO (YYYY-MM-DD, com ou sem
+    hora) ou BR (DD/MM/YYYY). NUNCA levanta — formato desconhecido → hoje, com
+    warning. Antes, um date.fromisoformat direto abortava a captura INTEIRA do
+    advogado quando a API devolvia a data em outro formato (ou vazia com hora
+    inválida) — perdendo todas as intimações seguintes do lote (risco de prazo)."""
+    s = (raw or "").strip()
+    if not s:
+        return date.today()
+    try:
+        return date.fromisoformat(s[:10])
+    except ValueError:
+        pass
+    m = re.match(r"(\d{2})/(\d{2})/(\d{4})", s)
+    if m:
+        try:
+            return date(int(m.group(3)), int(m.group(2)), int(m.group(1)))
+        except ValueError:
+            pass
+    logger.warning("DJEN: data_disponibilizacao em formato inesperado (%r) — usando hoje", raw)
+    return date.today()
+
+
 async def buscar_caso_ativo_por_processo(
     db: AsyncSession, numero: str | None
 ) -> Case | None:
@@ -142,9 +165,8 @@ async def capturar_para_advogado(db: AsyncSession, adv: User) -> int:
             tribunal=it.get("siglaTribunal") or it.get("sigla_tribunal"),
             tipo_comunicacao=(it.get("tipoComunicacao")
                               or it.get("tipo_comunicacao") or "")[:60],
-            data_disponibilizacao=date.fromisoformat(
-                (it.get("data_disponibilizacao")
-                 or it.get("dataDisponibilizacao") or str(date.today()))[:10]
+            data_disponibilizacao=_parse_data_disp(
+                it.get("data_disponibilizacao") or it.get("dataDisponibilizacao")
             ),
             texto_resumo=texto,
             case_id=case.id if case else None,
