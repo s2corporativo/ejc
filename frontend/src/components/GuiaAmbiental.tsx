@@ -119,6 +119,30 @@ export default function GuiaAmbiental() {
         <BookOpen size={20} /> Guia Operacional — Direito Ambiental
       </h2>
 
+      {/* No sistema — simulador de estratégia do auto de infração */}
+      <div className="rounded-lg border border-gold-light bg-gold-50/60 p-3 flex flex-wrap items-center gap-x-3 gap-y-1 text-xs">
+        <span className="text-[10px] font-semibold uppercase text-slate-400">
+          No sistema
+        </span>
+        <span className="text-slate-600 flex-1 min-w-[200px]">
+          <b className="text-navy">Simulador de Estratégia do Auto de Infração</b>{" "}
+          — compare o custo de pagar à vista, converter a multa em serviços
+          (−40%), defender ou prescrição, e gere o requerimento de conversão.
+        </span>
+        <a
+          href="#ambiental-estrategia"
+          onClick={(e) => {
+            e.preventDefault();
+            document
+              .getElementById("ambiental-estrategia")
+              ?.scrollIntoView({ behavior: "smooth" });
+          }}
+          className="text-gold-700 hover:text-gold-600 underline decoration-gold-200 underline-offset-2 font-medium"
+        >
+          Abrir ferramenta ↑
+        </a>
+      </div>
+
       <Sec title="Base Legal" icon={<Scale size={16} />} open>
         <Tab
           headers={["Norma", "Tema"]}

@@ -65,6 +65,7 @@ export interface RamoConfig {
   guiaPrevidenciario?: boolean; // guia operacional de direito previdenciário
   guiaAmbiental?: boolean; // guia operacional de direito ambiental
   autosAmbientais?: boolean; // autos de infração ambiental com prazo automático (/environmental)
+  ambientalEstrategia?: boolean; // simulador de estratégia do auto de infração (comparador econômico + peça de conversão)
   guiaCivil?: boolean; // guia operacional de direito civil
   guiaPenal?: boolean; // guia operacional de direito penal
   guiaConsumidor?: boolean; // guia operacional de direito do consumidor
@@ -1476,6 +1477,7 @@ const ambiental: RamoConfig = {
   analiseDocumento: true,
   guiaAmbiental: true,
   autosAmbientais: true,
+  ambientalEstrategia: true,
   slug: "ambiental",
   endpoint: "/admin-esp",
   areaCaso: "ambiental",
