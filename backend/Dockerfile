@@ -13,6 +13,8 @@ WORKDIR /app
 #   poppler-utils    → pdf2image (OCR de PDF escaneado)
 #   tesseract-ocr(+por) → pytesseract (OCR em português)
 #   libpango*/gdk-pixbuf/fonts → weasyprint (PDFs: anexos, dossiês, relatórios)
+#   antiword         → ocr_service._doc_legado (.doc binário; sem ele o texto
+#                      não é extraído e o documento não entra no RAG)
 RUN apt-get update \
     && apt-get install -y --no-install-recommends \
        build-essential curl libpq-dev \
@@ -21,6 +23,7 @@ RUN apt-get update \
        tesseract-ocr tesseract-ocr-por \
        libpango-1.0-0 libpangocairo-1.0-0 libgdk-pixbuf-2.0-0 \
        shared-mime-info fonts-dejavu-core \
+       antiword \
     && rm -rf /var/lib/apt/lists/*
 
 COPY requirements.txt .
