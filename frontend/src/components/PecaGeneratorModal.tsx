@@ -20,7 +20,11 @@ import {
 const TIPOS_PECA: Record<string, string> = {
   peticao_inicial: "Petição Inicial",
   contestacao: "Contestação",
+  replica: "Réplica (Impugnação à Contestação)",
   recurso_ordinario: "Recurso Ordinário",
+  apelacao: "Apelação",
+  contrarrazoes: "Contrarrazões",
+  embargos_declaracao: "Embargos de Declaração",
   agravo: "Agravo",
   memorias: "Memoriais",
   acordo: "Proposta de Acordo",
