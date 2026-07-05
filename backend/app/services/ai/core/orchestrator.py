@@ -178,6 +178,35 @@ class SingleAICoreOrchestrator:
             custo_estimado=custo,
         )
 
+        # 9.5) MODO DUAS IAS (Fase 5) — crítica adversarial pós-geração ───────
+        # Roda DEPOIS da validação/gate de citações da peça e do AILog.
+        # Prefere provider DIFERENTE do proponente; NUNCA bloqueia a entrega
+        # (falha → aviso "crítica indisponível" e o revisor HITL segue).
+        critica_dict: dict | None = None
+        from app.services.ai import adversarial
+        if adversarial.critica_automatica_habilitada(gateway_task):
+            try:
+                critica = await adversarial.criticar_peca(
+                    db,
+                    texto_peca=validacao["conteudo"],
+                    contexto_caso=ctx.texto or None,
+                    task_type_origem=gateway_task,
+                    provedor_origem=resp.provedor,
+                )
+                await adversarial.anexar_critica_ao_log(db, log_id, critica)
+                critica_dict = critica.model_dump()
+            except Exception as e:  # cinto e suspensório: jamais bloquear a peça
+                logger.warning(
+                    "[DuasIAs] Falha inesperada no pipeline de crítica "
+                    "(peça entregue normalmente): %s", str(e)[:200],
+                )
+                critica_dict = adversarial.CriticaAdversarial(
+                    disponivel=False,
+                    provedor_origem=resp.provedor,
+                    task_type_origem=gateway_task,
+                    aviso=adversarial.AVISO_INDISPONIVEL,
+                ).model_dump()
+
         # 10) Resposta padronizada + carimbo HITL ─────────────────────────────
         resultado = {
             "conteudo": validacao["conteudo"],
@@ -200,6 +229,8 @@ class SingleAICoreOrchestrator:
             "tokens_input": resp.input_tokens,
             "tokens_output": resp.output_tokens,
             "log_id": log_id,
+            # Modo Duas IAs: None quando desligado/task inelegível.
+            "critica_adversarial": critica_dict,
         }
         return hitl_policy.aplicar(resultado)
 
