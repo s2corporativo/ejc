@@ -321,14 +321,21 @@ async def chat(
             _lf.flush()
             return resp
         except Exception as e:
-            ultimo_erro = str(e)[:200]
-            fallback_motivo = f"{provider}: {ultimo_erro}"
+            ultimo_erro = str(e)[:200]  # trilha INTERNA (logger + RuntimeError)
+            # B1: no que sai ao Langfuse (fallback_motivo → metadata; evento),
+            # nunca o str(e) cru (pode conter PII/detalhe do provider): só a
+            # CLASSE do erro (+ status HTTP quando houver).
+            _status = getattr(e, "status_code", None) or getattr(
+                getattr(e, "response", None), "status_code", None
+            )
+            erro_traco = type(e).__name__ + (f" (HTTP {_status})" if _status else "")
+            fallback_motivo = f"{provider}: {erro_traco}"
             logger.warning(
                 f"[Gateway] {provider}/{model} falhou, tentando próximo: {ultimo_erro}"
             )
             _lf.registrar_evento(_trace, name=f"fallback:{provider}",
                                  metadata={"provider": provider, "model": model,
-                                           "task_type": task_type, "erro": ultimo_erro})
+                                           "task_type": task_type, "erro": erro_traco})
 
     _lf.flush()
     if bloqueado_por_pii:

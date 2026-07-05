@@ -40,6 +40,37 @@ def test_validar_detecta_residual():
     assert "CPF" in validar_sem_pii("resto 123.456.789-09")
 
 
+@pytest.mark.parametrize(
+    "texto",
+    [
+        "advogado OAB/MG 123.456 protocolou",
+        "inscrito na OAB SP 12345",
+        "OAB/RJ 12.345 responsável",
+        "OAB MG 123456",
+    ],
+)
+def test_mascara_oab(texto):
+    out, mudou = sanitizar_pii(texto)
+    assert "[OAB]" in out
+    assert mudou is True
+    # número da inscrição não sobra
+    assert "123.456" not in out and "12345" not in out and "123456" not in out
+
+
+def test_oab_detectada_como_residual():
+    assert "OAB" in validar_sem_pii("subscritor OAB/MG 123.456")
+
+
+def test_oab_sai_na_barreira_externa_do_gateway():
+    """A barreira Anthropic/Groq também mascara OAB (padrão é aditivo)."""
+    from app.services.ai_gateway import _sanitizar_messages_externo
+    msgs = [{"role": "user", "content": "Dr. Fulano, OAB/MG 123.456"}]
+    limpos, residual = _sanitizar_messages_externo(msgs)
+    assert "[OAB]" in limpos[0]["content"]
+    assert "123.456" not in limpos[0]["content"]
+    assert residual == []
+
+
 # ── Uso interno (2026-07-04): CPF/CNPJ visíveis só na barreira de entrada ────
 
 def test_sanitizar_pii_interno_preserva_cpf_cnpj_mas_remove_o_resto():
