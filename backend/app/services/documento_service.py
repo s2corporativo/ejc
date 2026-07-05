@@ -124,15 +124,28 @@ def _parse_json(txt: str) -> Optional[dict]:
     return None
 
 
+_ERRO_FAIL_CLOSED = (
+    "A interpretação por IA local (Ollama) está indisponível e o fallback para "
+    "provedores externos está DESLIGADO (INTAKE_EXTERNAL_FALLBACK=false). "
+    "Habilite o Ollama ou ligue INTAKE_EXTERNAL_FALLBACK no .env para permitir "
+    "a cadeia externa (o texto vai sanitizado — sem CPF/CNPJ/nº de processo)."
+)
+
+
 async def extrair_e_analisar(
     filepath: str,
     mimetype: Optional[str],
     db=None,
     enriquecer_rag: bool = True,
+    user_id: Optional[str] = None,
 ) -> dict:
     """
     Executa o pipeline completo. Retorna dict estruturado pronto para o frontend
     e para pré-preencher um novo caso.
+
+    `user_id` (quando fornecido junto com `db`): grava AILog da chamada
+    principal de interpretação — trilha "qual provedor viu qual documento"
+    (art. 37 LGPD).
     """
     # 1) OCR / extração de texto
     texto = ocr_service.extrair_texto(filepath, mimetype)
@@ -163,6 +176,18 @@ async def extrair_e_analisar(
     #     (AI_REQUIRE_SANITIZATION_FOR_EXTERNAL).
     # Por isso o fallback externo é seguro — e a importação não depende mais
     # exclusivamente do Ollama estar provisionado.
+    #
+    # Opt-out (INTAKE_EXTERNAL_FALLBACK=false): volta ao fail-closed antigo —
+    # provider_override="ollama" (só local); indisponível → erro claro citando
+    # a flag, sem jamais acionar provedor externo neste fluxo.
+    from app.core.config import get_settings
+    settings = get_settings()
+    somente_local = not settings.INTAKE_EXTERNAL_FALLBACK
+    if somente_local and not settings.OLLAMA_ENABLED:
+        # Guarda: provider forçado inelegível faria o gateway cair na cadeia
+        # automática (externa) — exatamente o que a flag proíbe.
+        return {"ok": False, "erro": _ERRO_FAIL_CLOSED}
+
     user_msg = f"DOCUMENTO:\n\n{texto_para_ia}\n\n---\n{ESQUEMA}"
     try:
         resp = await ai_gateway.chat(
@@ -171,12 +196,16 @@ async def extrair_e_analisar(
             task_type="analise_juridica",
             temperature=0.1,
             max_tokens=3200,
+            provider_override="ollama" if somente_local else None,
         )
     except Exception as e:
+        logger.warning(f"Cadeia de IA falhou na análise do documento: {e}")
+        if somente_local:
+            # Fail-closed explícito escolhido pelo escritório via flag.
+            return {"ok": False, "erro": _ERRO_FAIL_CLOSED}
         # 2.a) TODA a cadeia LLM falhou → degrada com sucesso parcial: a
         # extração determinística local + texto OCR continuam úteis para o
         # advogado. Nunca mais erro seco na importação.
-        logger.warning(f"Toda a cadeia de IA falhou na análise do documento: {e}")
         return {
             "ok": True,
             "parcial": True,
@@ -195,11 +224,34 @@ async def extrair_e_analisar(
             "_texto_sanitizado": texto_para_ia[:6000],
         }
 
+    # 2.b) Trilha de auditoria (art. 37 LGPD): AILog da chamada PRINCIPAL do
+    # intake — registra qual provedor/modelo viu qual documento (prompt já
+    # SANITIZADO). Mesmo padrão canônico de sugerir_tipo/executar_tarefa_ia
+    # (ai_guard): erro de gravação PROPAGA — IA sem trilha deve falhar.
+    intake_log_id: Optional[str] = None
+    if db is not None and user_id:
+        from app.models.ai_log import AITipoUso
+        from app.services.ai_guard import registrar_ai_log
+        intake_log_id = await registrar_ai_log(
+            db,
+            user_id=user_id,
+            tipo_uso=AITipoUso.resumo_documento,
+            case_id=None,
+            prompt_sanitizado=("[intake analise_juridica] " + user_msg)[:8000],
+            pii_removida=houve_pii,
+            resposta=(resp.texto or "")[:4000],
+            modelo=f"{resp.provedor}/{resp.modelo}",
+            tokens_input=getattr(resp, "input_tokens", None),
+            tokens_output=getattr(resp, "output_tokens", None),
+            custo_estimado=getattr(resp, "custo_estimado_brl", None),
+        )
+
     dados = _parse_json(resp.texto)
     if not dados:
         return {
             "ok": True,
             "parcial": True,
+            "intake_log_id": intake_log_id,
             "dados_estruturados": dados_estruturados,
             "texto_extraido": texto_para_ia[:2000],
             "resumo_executivo": {"fatos": resp.texto[:1500]},
@@ -235,6 +287,7 @@ async def extrair_e_analisar(
     dados["dados_estruturados"] = dados_estruturados
     dados["_aviso"] = _AVISO
     dados["_modelo"] = f"{resp.provedor}/{resp.modelo}"
+    dados["intake_log_id"] = intake_log_id
     dados["caracteres_lidos"] = len(texto)
     dados["pii_removida"] = houve_pii
     # Chave interna (consumida e removida pelo router documento_ia): texto JÁ

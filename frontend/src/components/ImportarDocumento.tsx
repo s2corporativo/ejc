@@ -446,6 +446,15 @@ export default function ImportarDocumento({
             (OAB Prov. 205/2021).
           </Alert>
 
+          {/* Transparência LGPD (arts. 33/37) — provedor externo com texto
+              mascarado quando o modelo local estiver indisponível */}
+          <p className="text-[11px] leading-relaxed text-slate-500">
+            A interpretação do documento pode usar provedor de IA externo (EUA)
+            sobre texto com identificadores mascarados (CPF/CNPJ/OAB/processo)
+            quando o modelo local estiver indisponível. Dados exatos são
+            extraídos localmente.
+          </p>
+
           {/* Interpretação por LLM indisponível — a extração determinística
               local (regex, sem IA) segue válida e pré-preenche o caso. */}
           {d.analise_llm_indisponivel && (
