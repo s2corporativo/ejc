@@ -1,5 +1,5 @@
 """Base anti-alucinação (IA-04) — injeção da identidade nas tarefas de prosa."""
-from app.services.legal_base import aplicar_base
+from app.services.legal_base import aplicar_base, garantir_identidade
 
 
 def _msgs():
@@ -30,5 +30,34 @@ def test_idempotente():
 
 def test_cria_system_se_nao_houver():
     out = aplicar_base([{"role": "user", "content": "oi"}], "redacao_peca")
+    assert out[0]["role"] == "system"
+    assert "[IDENTIDADE]" in out[0]["content"]
+
+
+# ── garantir_identidade: barreira INCONDICIONAL (canais autorais do usuário) ──
+
+def test_garantir_identidade_independe_do_task_type():
+    # Ao contrário de aplicar_base, injeta mesmo sem passar task_type nenhum —
+    # cobre EjcSkill (area financeiro/operacional) e PromptJuridico (task livre).
+    out = garantir_identidade(_msgs())
+    assert "[IDENTIDADE]" in out[0]["content"]
+
+
+def test_garantir_identidade_cria_system_para_mensagem_so_de_usuario():
+    # PromptJuridico envia só {"role": "user", ...} — precisa ganhar o system.
+    out = garantir_identidade([{"role": "user", "content": "minuta"}])
+    assert out[0]["role"] == "system"
+    assert "[IDENTIDADE]" in out[0]["content"]
+    assert out[-1]["role"] == "user"
+
+
+def test_garantir_identidade_idempotente():
+    once = garantir_identidade([{"role": "user", "content": "x"}])
+    twice = garantir_identidade(once)
+    assert twice[0]["content"].count("[IDENTIDADE]") == 1
+
+
+def test_garantir_identidade_lista_vazia():
+    out = garantir_identidade([])
     assert out[0]["role"] == "system"
     assert "[IDENTIDADE]" in out[0]["content"]

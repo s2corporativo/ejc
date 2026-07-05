@@ -12,6 +12,7 @@ from app.models.ai_skill import EjcSkill
 from app.models.ai_log import AITipoUso, normalizar_modelo_ia
 from app.services import ai_gateway
 from app.services.ai_guard import sanitizar_ou_abortar, registrar_ai_log
+from app.services.legal_base import garantir_identidade
 
 logger = logging.getLogger("ejc.ai.skills")
 
@@ -59,10 +60,13 @@ async def executar_skill(
         )
         system_prompt += f"\n\n## BASE DE CONHECIMENTO INTERNA:\n{trechos}"
 
-    messages = [
+    # Barreira anti-alucinação OBRIGATÓRIA: o system_prompt da skill é autoral
+    # (gravado no banco) e o task_type derivado da área pode não passar por
+    # aplicar_base no gateway — garantimos a identidade/regras OAB aqui.
+    messages = garantir_identidade([
         {"role": "system", "content": system_prompt},
         {"role": "user", "content": query_limpa},
-    ]
+    ])
 
     provider = _ENGINE_PROVIDER.get(skill.engine, "groq")
     task_type = _AREA_TASK.get(skill.area, "analise_juridica")

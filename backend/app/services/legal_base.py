@@ -28,10 +28,9 @@ _TASKS_COM_BASE = {
 }
 
 
-def aplicar_base(messages: list[dict], task_type: str) -> list[dict]:
-    """Prepend a identidade do escritório ao system message (tarefas de prosa)."""
-    if task_type not in _TASKS_COM_BASE or not messages:
-        return messages
+def _prepend_identidade(messages: list[dict]) -> list[dict]:
+    """Prepend BASE_IDENTIDADE ao 1º system message (cria um se não houver).
+    Idempotente: detecta [IDENTIDADE] e não duplica."""
     out = [dict(m) for m in messages]
     for m in out:
         if m.get("role") == "system":
@@ -39,3 +38,24 @@ def aplicar_base(messages: list[dict], task_type: str) -> list[dict]:
                 m["content"] = BASE_IDENTIDADE + "\n\n" + (m.get("content") or "")
             return out
     return [{"role": "system", "content": BASE_IDENTIDADE}] + out
+
+
+def aplicar_base(messages: list[dict], task_type: str) -> list[dict]:
+    """Prepend a identidade do escritório ao system message (tarefas de prosa).
+    Gated por task_type: exclui JSON de extração (analise_juridica) e resumo."""
+    if task_type not in _TASKS_COM_BASE or not messages:
+        return messages
+    return _prepend_identidade(messages)
+
+
+def garantir_identidade(messages: list[dict]) -> list[dict]:
+    """Injeta BASE_IDENTIDADE INCONDICIONALMENTE (independe de task_type).
+
+    Para canais de prompt AUTORAIS DO USUÁRIO — skills configuráveis no banco
+    (EjcSkill) e biblioteca de prompts (PromptJuridico). Esses prompts não
+    passam pela curadoria de código e seu task_type pode não estar em
+    _TASKS_COM_BASE, então aplicar_base os deixaria SEM a barreira
+    anti-alucinação (regra OAB). Aqui a barreira é obrigatória e idempotente."""
+    if not messages:
+        return [{"role": "system", "content": BASE_IDENTIDADE}]
+    return _prepend_identidade(messages)
