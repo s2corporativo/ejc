@@ -3,6 +3,7 @@ import { Bell, ExternalLink, FileText, AlertTriangle } from "lucide-react";
 import { Link } from "react-router-dom";
 import api from "../lib/api";
 import { PageHeader } from "../components/UI";
+import RadarLegislativo from "../components/RadarLegislativo";
 
 interface Item {
   fonte: string;
@@ -177,6 +178,8 @@ export default function RadarRegulatorio() {
           </div>
         </>
       )}
+
+      <RadarLegislativo />
     </div>
   );
 }

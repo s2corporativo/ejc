@@ -25,13 +25,13 @@ from app.services.visual_law_pdf import visual_law_pdf
 router = APIRouter(prefix="/sala-de-guerra-v3", tags=["Sala de Guerra"])
 
 
-@router.get("/sentinela/auditoria")
+@router.get("/sentinela/auditoria", dependencies=[Depends(rate_limit("sentinela-auditoria", 10))])
 async def auditoria_sentinela(db: AsyncSession = Depends(get_db), cu: User = Depends(get_current_user)):
     sentinela = IASentinela(db)
     return await sentinela.gerar_alertas_estrategicos()
 
 
-@router.post("/war-room/simular")
+@router.post("/war-room/simular", dependencies=[Depends(rate_limit("war-room-simular", 10))])
 async def simular_war_room(payload: dict, cu: User = Depends(get_current_user)):
     peticao = payload.get("peticao")
     if not peticao:
