@@ -12,6 +12,8 @@ interface Proposicao {
   numero: number;
   ano: number;
   ementa: string;
+  casa?: "camara" | "senado";
+  link?: string;
 }
 
 export default function RadarLegislativo() {
@@ -37,7 +39,7 @@ export default function RadarLegislativo() {
         <div className="flex items-center gap-2">
           <Landmark className="h-5 w-5 text-primary-600" />
           <h3 className="text-base font-semibold text-slate-900">
-            Radar legislativo (Câmara dos Deputados)
+            Radar legislativo (Câmara e Senado)
           </h3>
         </div>
         <button
@@ -52,7 +54,7 @@ export default function RadarLegislativo() {
       <p className="mb-4 text-xs text-slate-500">
         Proposições recentes que casam com os temas estratégicos do escritório
         (tributos, licitações, medicamentos veterinários), direto dos Dados
-        Abertos da Câmara.
+        Abertos da Câmara e do Senado.
       </p>
 
       {loading ? (
@@ -77,9 +79,15 @@ export default function RadarLegislativo() {
               <div className="mb-1 flex items-center justify-between gap-2">
                 <span className="font-medium text-slate-800">
                   {p.siglaTipo} {p.numero}/{p.ano}
+                  <span className="ml-2 rounded bg-slate-100 px-1.5 py-0.5 text-[10px] font-normal uppercase text-slate-500">
+                    {p.casa === "senado" ? "Senado" : "Câmara"}
+                  </span>
                 </span>
                 <a
-                  href={`https://www.camara.leg.br/proposicoesWeb/fichadetramitacao?idProposicao=${p.id}`}
+                  href={
+                    p.link ??
+                    `https://www.camara.leg.br/proposicoesWeb/fichadetramitacao?idProposicao=${p.id}`
+                  }
                   target="_blank"
                   rel="noreferrer"
                   className="flex shrink-0 items-center gap-1 text-xs text-primary-600 hover:underline"
