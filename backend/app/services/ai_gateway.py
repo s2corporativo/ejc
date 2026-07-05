@@ -204,10 +204,16 @@ async def chat(
 
     Retorna GatewayResponse com texto, metadados e informações de fallback.
     """
+    # Modo de sanitização de PII é decidido pelo task_type ORIGINAL (antes dos
+    # aliases do gateway), pois o mapeamento LGPD usa o vocabulário de tarefa.
+    task_type_original = task_type
     task_type = _normalizar_task_type(task_type)
     t0 = time.monotonic()
     fallback_ativado = False
     fallback_motivo: str | None = None
+
+    from app.services.ai.sanitization_policy import ModoSanitizacao, modo_para_task
+    modo_sanitizacao = modo_para_task(task_type_original)
 
     # #8 — injeta a identidade do escritório no system (apenas tarefas de prosa).
     messages = _aplicar_nivel(legal_base.aplicar_base(messages, task_type), nivel_inteligencia)
@@ -242,6 +248,22 @@ async def chat(
         task_type, provider_force, model_override, provider_preferido, model_preferido
     )
 
+    # ── Modo 1 (LOCAL_COMPLETO) — sigilo reforçado: a tarefa NUNCA pode ir a
+    # provider externo (nem pseudonimizada). Filtra a cadeia para providers
+    # LOCAIS; sem local elegível → bloqueio SEGURO (não vaza o conteúdo).
+    if modo_sanitizacao == ModoSanitizacao.LOCAL_COMPLETO:
+        cadeia = [(p, m) for (p, m) in cadeia if p not in _PROVIDERS_EXTERNOS]
+        if not cadeia:
+            logger.warning(
+                "[Gateway] task=%s exige IA local (sigilo reforçado) e não há "
+                "provedor local elegível — chamada bloqueada (LGPD).",
+                task_type_original,
+            )
+            raise RuntimeError(
+                "Esta tarefa exige processamento por IA local (sigilo reforçado) "
+                "e nenhum provedor local está disponível — habilite o Ollama."
+            )
+
     # ── Fase 6 — Observabilidade (Langfuse self-hosted, NO-OP se desligado) ──
     from app.services.observability import langfuse_client as _lf
     _trace = _lf.novo_trace(
@@ -260,10 +282,23 @@ async def chat(
         # este provedor é PULADO (tenta o próximo — ex.: Ollama local).
         # Nunca ecoa o conteúdo — só os TIPOS de PII no log.
         messages_envio = messages
+        # `mapa_reidratacao` contém PII real (só EXTERNO_PSEUDONIMIZADO):
+        # vive SÓ nesta iteração/memória, nunca é logado/persistido/enviado.
+        mapa_reidratacao: dict[str, str] | None = None
         if provider in _PROVIDERS_EXTERNOS and settings.AI_REQUIRE_SANITIZATION_FOR_EXTERNAL:
-            messages_envio, residual = _sanitizar_messages_externo(messages)
+            # EXTERNO_PSEUDONIMIZADO / EXTRACAO_LOCAL → pseudonimização REVERSÍVEL
+            # (marcadores consistentes) + reidratação da resposta. Demais modos
+            # (MASCARAMENTO/legado) → mascaramento IRREVERSÍVEL (comportamento atual).
+            if modo_sanitizacao in (
+                ModoSanitizacao.EXTERNO_PSEUDONIMIZADO,
+                ModoSanitizacao.EXTRACAO_LOCAL,
+            ):
+                messages_envio, residual, mapa_reidratacao = _pseudonimizar_messages_externo(messages)
+            else:
+                messages_envio, residual = _sanitizar_messages_externo(messages)
             if residual:
                 bloqueado_por_pii = True
+                mapa_reidratacao = None  # não reidratar: provider externo foi pulado
                 ultimo_erro = f"PII residual ({', '.join(residual)}) bloqueou provider externo"
                 fallback_motivo = f"{provider}: bloqueado por PII residual (LGPD)"
                 logger.warning(
@@ -277,6 +312,13 @@ async def chat(
             texto, usage = await _chamar_provedor(
                 provider, model, messages_envio, temperature, max_tokens
             )
+            # Reidratação LOCAL: só a resposta DEVOLVIDA ao chamador recupera o
+            # dado real. A versão pseudonimizada (`texto_para_log`) é a que vai
+            # ao Langfuse — nunca PII em claro na observabilidade (LGPD).
+            texto_para_log = texto
+            if mapa_reidratacao:
+                from app.services.ai.pseudonymizer import reidratar
+                texto = reidratar(texto, mapa_reidratacao)
             duracao = int((time.monotonic() - t0) * 1000)
             modelo_real = usage.get("model", model or "")
             inp = usage.get("input_tokens")
@@ -308,7 +350,7 @@ async def chat(
                 )
             _lf.registrar_generation(
                 _trace, name=task_type, model=modelo_real,
-                input_messages=messages_envio, output_text=texto,
+                input_messages=messages_envio, output_text=texto_para_log,
                 input_tokens=inp, output_tokens=out,
                 metadata=_lf.montar_metadata(
                     provider=provider, model=modelo_real, task_type=task_type,
@@ -476,6 +518,28 @@ def _sanitizar_messages_externo(messages: list[dict]) -> tuple[list[dict], list[
         novo["content"] = limpo
         limpos.append(novo)
     return limpos, sorted(residual)
+
+
+def _pseudonimizar_messages_externo(
+    messages: list[dict],
+) -> tuple[list[dict], list[str], dict[str, str]]:
+    """Barreira EXTERNO_PSEUDONIMIZADO (Modo 2+3): substitui PII por marcadores
+    CONSISTENTES e REVERSÍVEIS (mesma entidade → mesmo marcador em todas as
+    mensagens), verifica PII residual (segunda barreira `validar_sem_pii`) e
+    devolve também o `mapa` (marcador → valor real) para REIDRATAR a resposta.
+
+    ⚠️ O `mapa` contém PII real: fica só em memória na request; jamais é logado,
+    persistido (AILog/Langfuse) ou enviado a provider externo. O que segue ao
+    Anthropic/Groq são as mensagens já pseudonimizadas."""
+    from app.services.ai.pseudonymizer import (
+        pseudonimizar_mensagens,
+        validar_sem_pii_pseudonimizado,
+    )
+    limpos, mapa = pseudonimizar_mensagens(messages)
+    residual: set[str] = set()
+    for m in limpos:
+        residual.update(validar_sem_pii_pseudonimizado(m.get("content", "") or ""))
+    return limpos, sorted(residual), mapa
 
 
 async def _chamar_provedor(

@@ -164,6 +164,100 @@ class TestGatewayBarreiraLGPD:
 
 
 # ══════════════════════════════════════════════════════════════════════════════
+# 2b. Modos de sanitização por tarefa (pseudonimização reversível + LOCAL_COMPLETO)
+# ══════════════════════════════════════════════════════════════════════════════
+
+class TestModosSanitizacaoGateway:
+    async def test_externo_pseudonimizado_reidrata_resposta(self, s, monkeypatch):
+        """Tarefa EXTERNO_PSEUDONIMIZADO com provider externo: o provider recebe
+        conteúdo COM marcadores e SEM PII real; a resposta devolvida está
+        REIDRATADA (PII real de volta); nada de PII/mapa vai ao Langfuse."""
+        from app.services import ai_gateway
+
+        capturado: dict = {}
+
+        async def _fake_provedor(provider, model, messages, temperature, max_tokens):
+            capturado["provider"] = provider
+            capturado["conteudo"] = " ".join(m.get("content", "") for m in messages)
+            # O modelo devolve a resposta usando o MARCADOR (como faria de fato).
+            return f"Análise do CPF [CPF_1] concluída.", {
+                "model": model or provider, "input_tokens": 5, "output_tokens": 9,
+            }
+
+        monkeypatch.setattr(ai_gateway, "_chamar_provedor", _fake_provedor)
+
+        # Langfuse: captura o que seria logado (nunca pode conter PII real).
+        from app.services.observability import langfuse_client as _lf
+        logados: dict = {}
+        monkeypatch.setattr(
+            _lf, "registrar_generation",
+            lambda trace, **kw: logados.update(kw),
+        )
+
+        # analise_caso → EXTERNO_PSEUDONIMIZADO; sem Ollama → anthropic externo.
+        resp = await ai_gateway.chat(
+            [{"role": "user", "content": f"Analise o caso do CPF {CPF_FAKE}."}],
+            task_type="analise_caso",
+        )
+        assert capturado["provider"] in ("anthropic", "groq")
+        # Provider recebeu marcador, nunca o CPF real.
+        assert "[CPF_1]" in capturado["conteudo"]
+        assert CPF_FAKE not in capturado["conteudo"]
+        # Resposta ao chamador está REIDRATADA (CPF real de volta).
+        assert CPF_FAKE in resp.texto
+        assert "[CPF_1]" not in resp.texto
+        # Langfuse recebeu a saída PSEUDONIMIZADA (sem PII real).
+        assert CPF_FAKE not in str(logados.get("output_text", ""))
+        assert CPF_FAKE not in str(logados.get("input_messages", ""))
+
+    async def test_local_completo_bloqueia_sem_ollama_e_nao_chama_externo(self, s, monkeypatch):
+        """Tarefa LOCAL_COMPLETO (criminal) sem Ollama: bloqueia, provider externo
+        NUNCA é chamado e a mensagem de erro não vaza PII."""
+        from app.services import ai_gateway
+
+        chamadas: list = []
+
+        async def _nao_chamar(*a, **kw):
+            chamadas.append(a)
+            raise AssertionError("provider externo chamado em tarefa LOCAL_COMPLETO")
+
+        monkeypatch.setattr(ai_gateway, "_chamar_provedor", _nao_chamar)
+
+        with pytest.raises(RuntimeError) as exc:
+            await ai_gateway.chat(
+                [{"role": "user", "content": f"Defesa criminal do CPF {CPF_FAKE}."}],
+                task_type="criminal",
+            )
+        msg = str(exc.value)
+        assert "local" in msg.lower()
+        assert CPF_FAKE not in msg      # mensagem segura
+        assert chamadas == []           # externo nunca tocado
+
+    async def test_local_completo_usa_ollama_com_conteudo_real(self, s, monkeypatch):
+        """Com Ollama ligado, LOCAL_COMPLETO roda no provider LOCAL recebendo o
+        conteúdo REAL (sem pseudonimizar) — soberania total no VPS."""
+        from app.services import ai_gateway
+
+        monkeypatch.setattr(s, "OLLAMA_ENABLED", True)
+        capturado: dict = {}
+
+        async def _fake_provedor(provider, model, messages, temperature, max_tokens):
+            capturado["provider"] = provider
+            capturado["conteudo"] = " ".join(m.get("content", "") for m in messages)
+            return "resposta local", {"model": "ollama-x", "input_tokens": 1, "output_tokens": 1}
+
+        monkeypatch.setattr(ai_gateway, "_chamar_provedor", _fake_provedor)
+
+        resp = await ai_gateway.chat(
+            [{"role": "user", "content": f"Caso criminal com CPF {CPF_FAKE}."}],
+            task_type="criminal",
+        )
+        assert capturado["provider"] == "ollama"
+        assert CPF_FAKE in capturado["conteudo"]   # local recebe o dado real
+        assert resp.provedor == "ollama"
+
+
+# ══════════════════════════════════════════════════════════════════════════════
 # 3. _resolver_cadeia
 # ══════════════════════════════════════════════════════════════════════════════
 
