@@ -26,7 +26,8 @@ import {
   Bot,
 } from "lucide-react";
 import api from "../lib/api";
-import { StatusBadge } from "../components/UI";
+import { soDigitos } from "../utils/phone";
+import { StatusBadge, fmtMoney } from "../components/UI";
 
 interface DossieData {
   cliente: {
@@ -77,9 +78,6 @@ interface DossieData {
     created_at: string;
   }>;
 }
-
-const fmt = (v: number) =>
-  v.toLocaleString("pt-BR", { style: "currency", currency: "BRL" });
 
 const STATUS_LABEL: Record<string, string> = {
   em_andamento: "Em andamento",
@@ -436,7 +434,7 @@ function ComunicacaoRapida({
   };
   const phone = cliente.whatsapp || cliente.telefone;
   if (!phone && !cliente.email) return null;
-  const digits = phone ? phone.replace(/\D/g, "") : "";
+  const digits = soDigitos(phone);
   const wa = digits.startsWith("55") ? digits : "55" + digits;
   return (
     <div className="card p-3 flex items-center gap-3">
@@ -795,7 +793,7 @@ export default function DossieCliente() {
             <StatCard
               icon={DollarSign}
               label="Honorários"
-              value={fmt(resumo.honorarios_total)}
+              value={fmtMoney(resumo.honorarios_total)}
               sub={`${taxaRecebimento}% recebido`}
               color="bronze"
             />

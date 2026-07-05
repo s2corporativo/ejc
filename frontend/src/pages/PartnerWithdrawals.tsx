@@ -2,7 +2,7 @@ import { useState, useEffect, useCallback } from "react";
 import { Plus, Check, CreditCard, Trash2 } from "lucide-react";
 import api from "../lib/api";
 import { useAuth } from "../stores/auth";
-import { Modal, PageHeader } from "../components/UI";
+import { Modal, PageHeader, fmtMoney, fmtDate } from "../components/UI";
 
 interface Withdrawal {
   id: string;
@@ -25,16 +25,6 @@ const STATUS_COLOR: Record<string, string> = {
   pago: "bg-green-100 text-green-700",
   cancelado: "bg-danger-100 text-danger-700",
 };
-
-function fmtR$(v: number) {
-  return (
-    v?.toLocaleString("pt-BR", { style: "currency", currency: "BRL" }) ?? "—"
-  );
-}
-function fmtDate(d?: string) {
-  if (!d) return "—";
-  return new Date(d).toLocaleDateString("pt-BR");
-}
 
 const EMPTY = {
   gross_value: "",
@@ -136,16 +126,16 @@ export default function PartnerWithdrawals() {
                     {w.period_reference || "—"}
                   </td>
                   <td className="px-4 py-3 text-right text-slate-600">
-                    {fmtR$(w.gross_value)}
+                    {fmtMoney(w.gross_value)}
                   </td>
                   <td className="px-4 py-3 text-right text-danger-500">
-                    {fmtR$(w.case_expenses)}
+                    {fmtMoney(w.case_expenses)}
                   </td>
                   <td className="px-4 py-3 text-right font-medium text-slate-800">
-                    {fmtR$(w.net_value)}
+                    {fmtMoney(w.net_value)}
                   </td>
                   <td className="px-4 py-3 text-right font-semibold text-primary-700">
-                    {fmtR$(w.partner_share)}
+                    {fmtMoney(w.partner_share)}
                   </td>
                   <td className="px-4 py-3">
                     <span
@@ -235,14 +225,11 @@ export default function PartnerWithdrawals() {
             <div className="bg-primary-50 rounded-lg p-3 text-sm text-primary-800">
               Cota estimada (50%):{" "}
               <strong>
-                {(
+                {fmtMoney(
                   ((parseFloat(form.gross_value) || 0) -
                     (parseFloat(form.case_expenses) || 0)) *
-                  0.5
-                ).toLocaleString("pt-BR", {
-                  style: "currency",
-                  currency: "BRL",
-                })}
+                    0.5,
+                )}
               </strong>
             </div>
           )}

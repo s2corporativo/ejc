@@ -460,10 +460,11 @@ def _resolver_cadeia(
 
 
 def _sanitizar_messages_externo(messages: list[dict]) -> tuple[list[dict], list[str]]:
-    """Barreira FINAL antes de provider externo (Anthropic/Groq). DESATIVADA
-    (decisão do titular, 2026-07-05): sanitizar_pii/validar_sem_pii viraram
-    passthrough — o conteúdo segue em claro e residual é sempre vazio. A
-    estrutura fica para reativação (restaurar services/sanitizer.py)."""
+    """Barreira FINAL antes de provider externo (Anthropic/Groq). REATIVADA na
+    auditoria técnica (LGPD art. 33/46 — dado pessoal não pode seguir em claro a
+    provedor fora do VPS): sanitizar_pii mascara CPF/CNPJ/processo/RG/e-mail/
+    telefone/CEP/cartão/PIX e validar_sem_pii detecta PII residual. Uso 100%
+    interno (Ollama local) mantém CPF/CNPJ via sanitizar_pii_interno."""
     from app.services.sanitizer import sanitizar_pii, validar_sem_pii
     limpos: list[dict] = []
     residual: set[str] = set()

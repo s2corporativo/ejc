@@ -14,6 +14,7 @@ import {
   Star,
 } from "lucide-react";
 import api from "../lib/api";
+import { soDigitos } from "../utils/phone";
 import { AtendimentoStats } from "../components/Dashboards";
 import { Button, PageHeader } from "../components/UI";
 
@@ -147,7 +148,7 @@ export default function CentralRelacionamento() {
   const taxa = fmtTaxa(funil?.taxa_conversao_geral);
 
   const openWA = (phone: string, nome: string) => {
-    const d = phone.replace(/\D/g, "");
+    const d = soDigitos(phone);
     const wa = d.startsWith("55") ? d : "55" + d;
     window.open(
       `https://wa.me/${wa}?text=${encodeURIComponent("Olá " + nome + "!")}`,

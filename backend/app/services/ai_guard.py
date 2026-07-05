@@ -17,12 +17,18 @@ settings = get_settings()
 
 def sanitizar_ou_abortar(texto: str, nomes_proteger: list[str] | None = None) -> tuple[str, bool]:
     """
-    Barreira de ENTRADA — DESATIVADA (decisão do titular, 2026-07-05): a
-    sanitização de PII virou passthrough em services/sanitizer.py, então nada
-    é removido e o abort 422 por PII residual nunca dispara. A estrutura da
-    barreira é mantida para reativação simples (basta restaurar o sanitizer).
+    Barreira de ENTRADA (uso interno do escritório, decisão de 2026-07-04):
+    CPF/CNPJ deixam de ser removidos aqui (não abortam mais a chamada) —
+    continuam sendo removidos processo/RG/e-mail/telefone/CEP/cartão/PIX/nomes
+    protegidos, com abort real (422) se sobrar algum desses após a limpeza.
 
-    Retorna (texto_intacto, False).
+    Isso NÃO afeta a proteção de provider externo: `ai_gateway` aplica sua
+    própria barreira final (`_sanitizar_messages_externo`, que usa
+    `sanitizar_pii`/`validar_sem_pii` — as versões completas, com CPF/CNPJ)
+    antes de qualquer chamada a Anthropic/Groq. Só o Ollama local recebe
+    CPF/CNPJ em texto plano.
+
+    Retorna (texto_sanitizado, houve_remocao).
     """
     limpo, houve_remocao = sanitizar_pii_interno(texto, nomes_proteger)
     residual = validar_sem_pii_interno(limpo)

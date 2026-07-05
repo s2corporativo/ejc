@@ -9,7 +9,7 @@ import {
   FileText,
 } from "lucide-react";
 import api from "../lib/api";
-import { PageHeader } from "../components/UI";
+import { PageHeader, fmtMoney, fmtDate } from "../components/UI";
 
 interface Movimento {
   data: string;
@@ -30,14 +30,6 @@ interface ProcessoDataJud {
   partes?: { tipo: string; nome: string }[];
 }
 
-function fmtDate(d?: string) {
-  if (!d) return "—";
-  return new Date(d).toLocaleDateString("pt-BR");
-}
-function fmtR$(v?: number) {
-  if (v == null) return "—";
-  return v.toLocaleString("pt-BR", { style: "currency", currency: "BRL" });
-}
 
 function formatCNJ(raw: string) {
   const d = raw.replace(/\D/g, "");
@@ -169,7 +161,7 @@ export default function DataJudBusca() {
                   label: "Distribuição",
                   value: fmtDate(processo.data_distribuicao),
                 },
-                { label: "Valor da causa", value: fmtR$(processo.valor_causa) },
+                { label: "Valor da causa", value: fmtMoney(processo.valor_causa) },
               ].map(
                 ({ label, value }) =>
                   value && (

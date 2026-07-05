@@ -24,6 +24,7 @@ import {
   Spinner,
   Textarea,
   cn,
+  fmtMoney,
 } from "../UI";
 import type {
   BreakevenRequest,
@@ -31,10 +32,6 @@ import type {
   SelicFonte,
 } from "../../types/visualLaw";
 
-const fmtBRL = new Intl.NumberFormat("pt-BR", {
-  style: "currency",
-  currency: "BRL",
-});
 
 const TRIBUNAIS = ["TJMG", "TJSP", "TRT3", "TRF6", "STJ", "outro"] as const;
 
@@ -118,7 +115,7 @@ function BarraComparativa({ resultado }: { resultado: BreakevenResponse }) {
           <div className="mb-1 flex items-center justify-between text-xs">
             <span className="font-medium text-slate-600">{linha.label}</span>
             <span className="font-semibold tabular-nums text-slate-800">
-              {fmtBRL.format(linha.valor)}
+              {fmtMoney(linha.valor)}
             </span>
           </div>
           <div className="h-3 w-full overflow-hidden rounded-full bg-slate-100">
@@ -418,11 +415,11 @@ export default function CalculadoraAcordo({
                   VPL do litígio
                 </div>
                 <p className="mt-2 text-3xl font-bold tabular-nums text-primary-800">
-                  {fmtBRL.format(resultado.vpl_litigio)}
+                  {fmtMoney(resultado.vpl_litigio)}
                 </p>
                 <p className="mt-1 text-xs text-slate-500">
-                  Valor esperado {fmtBRL.format(resultado.valor_esperado)} −
-                  custos {fmtBRL.format(resultado.custos_estimados)}, trazidos a
+                  Valor esperado {fmtMoney(resultado.valor_esperado)} −
+                  custos {fmtMoney(resultado.custos_estimados)}, trazidos a
                   valor presente ({resultado.parametros.tempo_anos}{" "}
                   {resultado.parametros.tempo_anos === 1 ? "ano" : "anos"}
                   {resultado.parametros.tribunal
@@ -437,12 +434,12 @@ export default function CalculadoraAcordo({
                   Sugestão de acordo
                 </div>
                 <p className="mt-2 text-3xl font-bold tabular-nums text-emerald-800">
-                  {fmtBRL.format(resultado.sugestao_acordo)}
+                  {fmtMoney(resultado.sugestao_acordo)}
                 </p>
                 <p className="mt-1 text-xs text-slate-500">
                   Ponto de equilíbrio (breakeven):{" "}
                   <strong className="text-slate-700">
-                    {fmtBRL.format(resultado.breakeven)}
+                    {fmtMoney(resultado.breakeven)}
                   </strong>{" "}
                   — acima disso o acordo tende a superar o litígio.
                 </p>
@@ -458,7 +455,7 @@ export default function CalculadoraAcordo({
               <div className="text-sm text-amber-800">
                 <span className="font-semibold">
                   Custo do tempo:{" "}
-                  {fmtBRL.format(resultado.comparativo.custo_do_tempo)}
+                  {fmtMoney(resultado.comparativo.custo_do_tempo)}
                 </span>
                 <p className="mt-0.5 text-xs">
                   Quanto o valor do litígio perde ao longo da tramitação em

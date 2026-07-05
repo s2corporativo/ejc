@@ -1,8 +1,9 @@
-"""Análise estratégica (Fase 4 / 4C) — prompt vai ao LLM SEM mascaramento.
+"""Análise estratégica (Fase 4 / 4C) — prompt vai ao LLM SANITIZADO.
 
-Sanitização de PII desativada (decisão do titular, 2026-07-05): o prompt
-enviado ao gateway carrega CPF, número de processo e nomes como digitados,
-para a IA trabalhar o caso com os dados reais.
+Sanitização de PII reativada (auditoria — LGPD art. 33/46): o prompt enviado
+ao gateway tem CPF/nº de processo/nome mascarados ([CPF]/[PROCESSO]/[PARTE_1])
+antes de qualquer provedor externo. O escritório trabalha o dado exato pela
+extração local; a IA raciocina sobre a versão mascarada.
 """
 
 
@@ -11,7 +12,7 @@ class _Resp:
         self.texto = texto
 
 
-async def test_prompt_vai_ao_llm_sem_mascaramento(monkeypatch):
+async def test_prompt_vai_ao_llm_sanitizado(monkeypatch):
     captured = {}
 
     async def fake_chat(*, messages, **kw):
@@ -33,8 +34,10 @@ async def test_prompt_vai_ao_llm_sem_mascaramento(monkeypatch):
     )
 
     prompt = captured["prompt"]
-    assert "123.456.789-09" in prompt          # CPF em claro
-    assert "1234567-89.2020.8.13.0024" in prompt  # nº processo em claro
-    assert "Joao da Silva" in prompt           # nome em claro
-    assert "[CPF]" not in prompt               # nenhum placeholder de máscara
+    assert "123.456.789-09" not in prompt          # CPF mascarado
+    assert "1234567-89.2020.8.13.0024" not in prompt  # nº processo mascarado
+    assert "Joao da Silva" not in prompt           # nome mascarado
+    assert "[CPF]" in prompt                        # placeholders de máscara
+    assert "[PROCESSO]" in prompt
+    assert "[PARTE_1]" in prompt
     assert isinstance(res, dict)
