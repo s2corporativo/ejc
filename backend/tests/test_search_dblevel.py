@@ -199,20 +199,20 @@ async def test_cpf_acha_cliente_e_parte_com_mascara_no_banco():
             resp = await _buscar(db, cu, "52998224725", "cpf")
             assert resp["tipo"] == "cpf"
             assert [(i["tipo"], i["id"]) for i in resp["resultados"]] == [("cliente", cli)]
-            # B1: o documento sai MASCARADO (só os 4 últimos dígitos).
-            assert resp["resultados"][0]["subtitulo"] == "***4725"
+            # Documento sai COMPLETO, como armazenado (mesma exposição de
+            # /clients e tipo=tudo — decisão de produto, não há blindagem aqui).
+            assert resp["resultados"][0]["subtitulo"] == cpf_cli
 
             # Digitado COM máscara → normalizar_documento também resolve.
             resp2 = await _buscar(db, cu, "529.982.247-25", "cpf")
             assert [i["id"] for i in resp2["resultados"]] == [cli]
 
             # CPF da parte processual → devolve o CASO dono da parte, com o
-            # documento mascarado no subtítulo (nunca o CPF completo).
+            # documento completo no subtítulo (como armazenado).
             resp3 = await _buscar(db, cu, "15350946056", "cpf")
             assert [(i["tipo"], i["id"]) for i in resp3["resultados"]] == [("caso", caso)]
             sub3 = resp3["resultados"][0]["subtitulo"]
-            assert "***6056" in sub3
-            assert cpf_parte not in sub3 and "15350946056" not in sub3
+            assert cpf_parte in sub3
 
             # Busca sem nenhum dígito → vazio (não explode).
             resp4 = await _buscar(db, cu, "abc", "cpf")
@@ -241,7 +241,7 @@ async def test_cpf_hash_exato_encontra_cliente_sem_plaintext():
         try:
             resp = await _buscar(db, cu, "390.533.447-05", "cpf")
             assert [(i["tipo"], i["id"]) for i in resp["resultados"]] == [("cliente", cli)]
-            # Sem plaintext, o subtítulo mascarado é vazio (nada a exibir).
+            # Sem plaintext, o subtítulo é vazio (nada a exibir).
             assert resp["resultados"][0]["subtitulo"] == ""
 
             # Fragmento (≠ 11/14 dígitos) não bate no hash nem no plaintext.
