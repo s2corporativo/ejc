@@ -62,6 +62,65 @@ def test_get_client_falha_vira_none_sem_levantar(monkeypatch):
     assert lf.novo_trace("resumo") is None  # não levanta
 
 
+# ── Guarda de soberania: host externo x CAPTURE_CONTENT (LGPD) ────────────────
+
+def _fake_sdk(monkeypatch):
+    """Injeta um SDK Langfuse falso que instancia sem erro."""
+    import sys, types
+    fake_mod = types.ModuleType("langfuse")
+
+    class _OK:
+        def __init__(self, **kw):
+            self.kw = kw
+
+        def trace(self, **kw):
+            return object()
+
+    fake_mod.Langfuse = _OK
+    monkeypatch.setitem(sys.modules, "langfuse", fake_mod)
+
+
+def test_host_interno_helper():
+    # compose service name (sem ponto), localhost e IP privado = interno
+    assert lf._host_langfuse_interno("http://langfuse:3000") is True
+    assert lf._host_langfuse_interno("http://localhost:3000") is True
+    assert lf._host_langfuse_interno("http://127.0.0.1:3000") is True
+    assert lf._host_langfuse_interno("http://10.0.0.5:3000") is True
+    # cloud / IP público = externo
+    assert lf._host_langfuse_interno("https://cloud.langfuse.com") is False
+    assert lf._host_langfuse_interno("https://us.cloud.langfuse.com") is False
+    assert lf._host_langfuse_interno("http://8.8.8.8:3000") is False
+    assert lf._host_langfuse_interno("") is False
+
+
+def test_capture_content_rejeita_host_externo(monkeypatch):
+    # captura ligada + host cloud → cliente NÃO inicializa (conteúdo não vaza)
+    _cfg(monkeypatch, LANGFUSE_ENABLED=True, LANGFUSE_PUBLIC_KEY="pk",
+         LANGFUSE_SECRET_KEY="sk", LANGFUSE_CAPTURE_CONTENT=True,
+         LANGFUSE_HOST="https://cloud.langfuse.com")
+    _fake_sdk(monkeypatch)  # mesmo com SDK OK, a guarda barra antes
+    assert lf._get_client() is None
+    assert lf.novo_trace("resumo") is None
+
+
+def test_capture_content_aceita_host_interno(monkeypatch):
+    # captura ligada + host self-hosted (compose) → inicializa normalmente
+    _cfg(monkeypatch, LANGFUSE_ENABLED=True, LANGFUSE_PUBLIC_KEY="pk",
+         LANGFUSE_SECRET_KEY="sk", LANGFUSE_CAPTURE_CONTENT=True,
+         LANGFUSE_HOST="http://langfuse:3000")
+    _fake_sdk(monkeypatch)
+    assert lf._get_client() is not None
+
+
+def test_host_externo_permissivo_sem_captura(monkeypatch):
+    # captura DESLIGADA + host externo → permitido (só metadados), inicializa
+    _cfg(monkeypatch, LANGFUSE_ENABLED=True, LANGFUSE_PUBLIC_KEY="pk",
+         LANGFUSE_SECRET_KEY="sk", LANGFUSE_CAPTURE_CONTENT=False,
+         LANGFUSE_HOST="https://cloud.langfuse.com")
+    _fake_sdk(monkeypatch)
+    assert lf._get_client() is not None
+
+
 # ── metadata puro (sem PII) ───────────────────────────────────────────────────
 
 def test_montar_metadata_so_operacional():

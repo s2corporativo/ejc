@@ -29,6 +29,10 @@ _PATTERNS: list[tuple[re.Pattern, str]] = [
     (re.compile(r'\b\d{4}[\s.-]?\d{4}[\s.-]?\d{4}[\s.-]?\d{4}\b'), '[CARTAO]'),
     # PIX chave aleatória (UUID)
     (re.compile(r'\b[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}\b', re.I), '[CHAVE_PIX]'),
+    # OAB (nº de inscrição): "OAB/MG 123.456", "OAB SP 12345", "OAB/RJ 12.345".
+    # Prefixo literal OAB + UF (2 letras) + 4–6 dígitos (com ponto opcional).
+    # Identifica o advogado/parte → PII. Beneficia também a barreira externa.
+    (re.compile(r'\bOAB\s*[/\-]?\s*[A-Za-z]{2}\s*[:\-\s]?\s*\d{1,3}\.?\d{3}\b', re.I), '[OAB]'),
 ]
 
 # Datas de nascimento explícitas (contexto "nascido em", "nascimento")
@@ -127,6 +131,7 @@ def validar_sem_pii(texto: str) -> list[str]:
         'EMAIL': _PATTERNS[4][0],
         'TELEFONE': _PATTERNS[5][0],
         'CEP': _PATTERNS[6][0],
+        'OAB': _PATTERNS[9][0],
     }
     for nome, pattern in checks.items():
         if pattern.search(texto):

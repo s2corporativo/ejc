@@ -13,12 +13,64 @@
 #      cloud.langfuse.com — o AILog interno continua sendo a trilha legal (LGPD).
 from __future__ import annotations
 
+import ipaddress
 import logging
+import socket
 from typing import Any
+from urllib.parse import urlparse
 
 from app.core.config import get_settings
 
 logger = logging.getLogger("ejc.ai.observability")
+
+
+def _ip_e_interno(ip_str: str) -> bool:
+    """True se o IP é privado/loopback/link-local/reservado (não roteável na
+    internet). Mesma noção de 'IP privado' usada na guarda SSRF de rag_public."""
+    try:
+        ip = ipaddress.ip_address(ip_str)
+    except ValueError:
+        return False
+    return bool(
+        ip.is_private or ip.is_loopback or ip.is_link_local
+        or ip.is_reserved or ip.is_unspecified
+    )
+
+
+def _host_langfuse_interno(host_url: str | None) -> bool:
+    """True quando LANGFUSE_HOST aponta para destino INTERNO/self-hosted.
+
+    Aceita: nome de serviço do compose (ex.: ``langfuse``, sem ponto),
+    ``localhost`` e IPs privados. Rejeita: ``*.langfuse.com`` (cloud) e qualquer
+    host que resolva para IP público. Fail-closed: host que não resolve é
+    tratado como EXTERNO (não deixa conteúdo vazar por engano de DNS)."""
+    if not host_url:
+        return False
+    p = urlparse(host_url if "://" in host_url else f"//{host_url}")
+    host = (p.hostname or "").strip().lower()
+    if not host:
+        return False
+    # Langfuse Cloud e subdomínios: sempre externo.
+    if host == "langfuse.com" or host.endswith(".langfuse.com"):
+        return False
+    if host == "localhost":
+        return True
+    # IP literal: decide pela classe do endereço.
+    try:
+        ipaddress.ip_address(host)
+        return _ip_e_interno(host)
+    except ValueError:
+        pass
+    # Nome de serviço do compose (sem ponto, ex.: "langfuse"): interno.
+    if "." not in host:
+        return True
+    # Hostname com domínio: só é interno se TODOS os IPs resolvidos forem privados.
+    try:
+        infos = socket.getaddrinfo(host, None)
+    except socket.gaierror:
+        return False
+    ips = [info[4][0] for info in infos]
+    return bool(ips) and all(_ip_e_interno(ip) for ip in ips)
 
 # Cliente Langfuse memoizado (None = não inicializado / indisponível).
 _client: Any = None
@@ -47,6 +99,26 @@ def _get_client() -> Any:
     if not habilitado():
         return None
     s = get_settings()
+    # Guarda de soberania (LGPD): com CAPTURE_CONTENT o conteúdo sanitizado sai
+    # para o Langfuse. Se o host NÃO for interno/self-hosted (cloud ou IP
+    # público), NÃO inicializa — conteúdo jamais pode deixar o VPS.
+    interno = _host_langfuse_interno(s.LANGFUSE_HOST)
+    if capturar_conteudo() and not interno:
+        logger.error(
+            "[Langfuse] CAPTURE_CONTENT=true mas LANGFUSE_HOST=%s NÃO é interno "
+            "(cloud/IP público) — cliente NÃO inicializado (LGPD: conteúdo não "
+            "pode sair do VPS). Aponte para o serviço self-hosted ou desligue a "
+            "captura de conteúdo.",
+            s.LANGFUSE_HOST,
+        )
+        return None
+    if not interno:
+        # Só metadados (sem PII) — permissivo, mas registra o desvio.
+        logger.warning(
+            "[Langfuse] LANGFUSE_HOST=%s parece externo; apenas metadados serão "
+            "enviados (CAPTURE_CONTENT=false).",
+            s.LANGFUSE_HOST,
+        )
     try:
         from langfuse import Langfuse  # import tardio: só quando ligado
 
@@ -58,7 +130,8 @@ def _get_client() -> Any:
         logger.info("[Langfuse] cliente self-hosted inicializado (host=%s)", s.LANGFUSE_HOST)
         return _client
     except Exception as e:  # ImportError, config inválida, etc. — nunca quebra IA
-        logger.warning("[Langfuse] indisponível, tracing desligado: %s", str(e)[:200])
+        # B3: só a CLASSE do erro — str(e) poderia ecoar secret_key/host no log.
+        logger.warning("[Langfuse] indisponível, tracing desligado: %s", type(e).__name__)
         return None
 
 

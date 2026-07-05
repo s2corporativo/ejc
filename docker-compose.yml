@@ -134,7 +134,9 @@ services:
     restart: unless-stopped
     environment:
       POSTGRES_USER: langfuse
-      POSTGRES_PASSWORD: ${LANGFUSE_DB_PASSWORD:-langfuse}
+      # Fail-closed: sem senha definida no .env o serviço nem sobe (nada de
+      # fallback fraco tipo "langfuse" — evita banco de tracing com senha padrão).
+      POSTGRES_PASSWORD: ${LANGFUSE_DB_PASSWORD:?defina LANGFUSE_DB_PASSWORD no .env}
       POSTGRES_DB: langfuse
     volumes:
       - langfuse_db_data:/var/lib/postgresql/data
@@ -152,12 +154,15 @@ services:
     depends_on:
       langfuse-db:
         condition: service_healthy
+    # Painel exposto SÓ no loopback do host — nunca em 0.0.0.0. Acesso remoto
+    # deve passar por túnel SSH/reverse-proxy autenticado, não pela porta crua.
     ports:
-      - "3000:3000"
+      - "127.0.0.1:3000:3000"
     environment:
-      DATABASE_URL: postgresql://langfuse:${LANGFUSE_DB_PASSWORD:-langfuse}@langfuse-db:5432/langfuse
-      NEXTAUTH_SECRET: ${LANGFUSE_NEXTAUTH_SECRET:-changeme}
-      SALT: ${LANGFUSE_SALT:-changeme}
+      # Fail-closed em todos os segredos: sem valor no .env o serviço não sobe.
+      DATABASE_URL: postgresql://langfuse:${LANGFUSE_DB_PASSWORD:?defina LANGFUSE_DB_PASSWORD no .env}@langfuse-db:5432/langfuse
+      NEXTAUTH_SECRET: ${LANGFUSE_NEXTAUTH_SECRET:?defina LANGFUSE_NEXTAUTH_SECRET no .env}
+      SALT: ${LANGFUSE_SALT:?defina LANGFUSE_SALT no .env}
       NEXTAUTH_URL: ${LANGFUSE_NEXTAUTH_URL:-http://localhost:3000}
       TELEMETRY_ENABLED: "false"
       # Self-hosted fechado: sem signup público após criar o 1º usuário admin.

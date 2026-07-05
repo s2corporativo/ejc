@@ -437,7 +437,8 @@ async def gateway_health(cu: User = Depends(get_current_user)):
     return await gw_health()
 
 
-@router.get("/roteamento/preview")
+@router.get("/roteamento/preview",
+            dependencies=[Depends(rate_limit("roteamento-preview", 30))])
 async def roteamento_preview(
     task_type: str = Query(..., description="Tipo de tarefa (vocabulário do gateway)"),
     tamanho: int = Query(0, ge=0, description="Tamanho estimado do input (chars)"),
@@ -446,6 +447,10 @@ async def roteamento_preview(
     """Fase 6 — mostra qual tier/provedor/modelo o roteamento inteligente
     escolheria para (task_type, tamanho), SEM gerar peça. Leitura para o admin
     entender o roteamento. Reflete a elegibilidade real (kill-switch/chave)."""
+    # Introspecção de infra (provedores/modelos/kill-switch): restrita a sócio+
+    # (mesmo gate do /ai/dossie). Papéis abaixo não enxergam o roteamento.
+    if ROLE_LEVEL.get(cu.role.value, 0) < ROLE_LEVEL["socio"]:
+        raise HTTPException(403, "Apenas sócio/admin")
     from app.services.ai_gateway import _normalizar_task_type, _provider_elegivel
     from app.services.ai.model_router import escolher_modelo
     from app.core.config import get_settings
