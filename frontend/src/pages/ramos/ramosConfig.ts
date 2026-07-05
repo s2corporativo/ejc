@@ -61,6 +61,7 @@ export interface RamoConfig {
   guiaTransito?: boolean; // guia operacional de multas de trânsito (referência)
   guiaTrabalhista?: boolean; // guia operacional de direito do trabalho
   guiaTributario?: boolean; // guia operacional de direito tributário
+  tributarioFiscal?: boolean; // recuperação de créditos fiscais: upload de XML NF-e + diagnóstico por tese
   guiaPrevidenciario?: boolean; // guia operacional de direito previdenciário
   guiaAmbiental?: boolean; // guia operacional de direito ambiental
   autosAmbientais?: boolean; // autos de infração ambiental com prazo automático (/environmental)
@@ -1224,6 +1225,7 @@ const bancario: RamoConfig = {
 const tributario: RamoConfig = {
   analiseDocumento: true,
   guiaTributario: true,
+  tributarioFiscal: true,
   slug: "tributario",
   endpoint: "/admin-esp", // reusa AdminCase com tipos tributários
   areaCaso: "tributario",

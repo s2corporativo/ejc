@@ -132,6 +132,7 @@ from app.routers import signatures
 from app.routers import sociedades_cliente
 from app.routers import sumulas
 from app.routers import suspensoes
+from app.routers import tributario_fiscal
 from app.routers import tasks
 from app.routers import templates
 from app.routers import teses
@@ -343,6 +344,7 @@ app.include_router(signatures.router, prefix=API)
 app.include_router(sociedades_cliente.router, prefix=API)  # gestão societária de CLIENTES (vertical Empresarial)
 app.include_router(sumulas.router, prefix=API)
 app.include_router(suspensoes.router, prefix=API)
+app.include_router(tributario_fiscal.router, prefix=API)  # vertical Tributário — XML fiscal + recuperação de créditos
 app.include_router(tasks.router, prefix=API)
 app.include_router(templates.router, prefix=API)
 app.include_router(teses.router, prefix=API)

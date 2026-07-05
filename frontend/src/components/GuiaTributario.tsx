@@ -129,6 +129,30 @@ export default function GuiaTributario() {
         MG/Betim vigente.
       </p>
 
+      {/* No sistema — ferramenta de recuperação de créditos fiscais */}
+      <div className="mb-3 rounded-lg border border-gold-light bg-gold-50/60 p-3 flex flex-wrap items-center gap-x-3 gap-y-1 text-xs">
+        <span className="text-[10px] font-semibold uppercase text-slate-400">
+          No sistema
+        </span>
+        <span className="text-slate-600 flex-1 min-w-[200px]">
+          <b className="text-navy">Recuperação de Créditos Fiscais</b> — envie
+          os XMLs de NF-e do cliente e obtenha o diagnóstico por tese (Tema 69
+          STF e outras) com estimativa de valores.
+        </span>
+        <a
+          href="#tributario-fiscal"
+          onClick={(e) => {
+            e.preventDefault();
+            document
+              .getElementById("tributario-fiscal")
+              ?.scrollIntoView({ behavior: "smooth" });
+          }}
+          className="text-gold-700 hover:text-gold-600 underline decoration-gold-200 underline-offset-2 font-medium"
+        >
+          Abrir ferramenta ↑
+        </a>
+      </div>
+
       <div className="space-y-2">
         {/* 1. BASE LEGAL */}
         <Sec
