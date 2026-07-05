@@ -271,11 +271,17 @@ export default function ImportarDocumento({
         "empresarial",
         "tributario",
       ];
+      // Extração determinística local (regex, sem IA) — presente mesmo quando
+      // a interpretação por LLM está indisponível (analise_llm_indisponivel).
+      const de = data.dados_estruturados || {};
+      const primeiro = (lista?: { valor: string }[]) => lista?.[0]?.valor || "";
       const patch: Patch = {};
       const titulo = cl.materia || re.fatos?.slice(0, 70);
       if (titulo) patch.titulo = titulo;
       if (cl.area && AREA_OK.includes(cl.area)) patch.area = cl.area;
       if (ip.numero_processo) patch.numero_processo = ip.numero_processo;
+      else if (primeiro(de.processos_cnj))
+        patch.numero_processo = primeiro(de.processos_cnj);
       if (ip.tribunal) patch.tribunal = ip.tribunal;
       if (ip.comarca) patch.comarca = ip.comarca;
       if (ip.vara) patch.vara = ip.vara;
@@ -299,8 +305,8 @@ export default function ImportarDocumento({
       };
       patch._cliente_candidato = {
         nome: pa.autor || "",
-        cpf: dp2.cpf || "",
-        cnpj: dp2.cnpj || "",
+        cpf: dp2.cpf || primeiro(de.cpfs),
+        cnpj: dp2.cnpj || primeiro(de.cnpjs),
       };
       if (tipoSelecionado) patch._tipo_documento = tipoSelecionado;
       onPrefill(patch);
@@ -439,6 +445,24 @@ export default function ImportarDocumento({
             Dados extraídos por IA — revisão humana obrigatória antes de gravar
             (OAB Prov. 205/2021).
           </Alert>
+
+          {/* Transparência LGPD (arts. 33/37) — provedor externo com texto
+              mascarado quando o modelo local estiver indisponível */}
+          <p className="text-[11px] leading-relaxed text-slate-500">
+            A interpretação do documento pode usar provedor de IA externo (EUA)
+            sobre texto com identificadores mascarados (CPF/CNPJ/OAB/processo)
+            quando o modelo local estiver indisponível. Dados exatos são
+            extraídos localmente.
+          </p>
+
+          {/* Interpretação por LLM indisponível — a extração determinística
+              local (regex, sem IA) segue válida e pré-preenche o caso. */}
+          {d.analise_llm_indisponivel && (
+            <Alert variant="warning" title="Interpretação por IA indisponível">
+              {d.aviso_llm ||
+                "A interpretação por IA está indisponível no momento. Os dados abaixo foram extraídos localmente (sem IA) — revise e complete o caso manualmente."}
+            </Alert>
+          )}
 
           {/* Sugestão de tipo por IA — exige confirmação humana explícita */}
           {sugestao && (
@@ -584,6 +608,41 @@ export default function ImportarDocumento({
                   ))}
                 </tbody>
               </Table>
+            </div>
+          )}
+
+          {/* Dados extraídos localmente (determinístico, sem IA) — exibidos
+              quando a interpretação por LLM não está disponível. */}
+          {d.analise_llm_indisponivel && d.dados_estruturados && (
+            <div className="grid sm:grid-cols-2 gap-2 text-xs">
+              {(d.dados_estruturados.processos_cnj || [])
+                .slice(0, 3)
+                .map((o: { valor: string }, i: number) => (
+                  <p key={`cnj-${i}`}>
+                    <b>Processo:</b> {o.valor}
+                  </p>
+                ))}
+              {(d.dados_estruturados.cpfs || [])
+                .slice(0, 3)
+                .map((o: { valor: string }, i: number) => (
+                  <p key={`cpf-${i}`}>
+                    <b>CPF:</b> {o.valor}
+                  </p>
+                ))}
+              {(d.dados_estruturados.cnpjs || [])
+                .slice(0, 3)
+                .map((o: { valor: string }, i: number) => (
+                  <p key={`cnpj-${i}`}>
+                    <b>CNPJ:</b> {o.valor}
+                  </p>
+                ))}
+              {(d.dados_estruturados.valores || [])
+                .slice(0, 3)
+                .map((o: { valor: string }, i: number) => (
+                  <p key={`val-${i}`}>
+                    <b>Valor:</b> {o.valor}
+                  </p>
+                ))}
             </div>
           )}
 
