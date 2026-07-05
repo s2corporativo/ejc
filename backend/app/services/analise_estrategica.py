@@ -110,6 +110,74 @@ def _parse_json_robusto(text: str) -> dict:
         return {}
 
 
+async def _recuperar_ocr_completo_se_truncado(
+    *,
+    db,
+    texto_documento: str,
+    titulo: str,
+    numero_processo: str,
+    scope_client_id: str | None,
+) -> str:
+    """Recupera OCR completo quando chamadores legados passaram só o prefixo.
+
+    O hook de upload antigo enviava `ocr_text[:4000]` para esta análise. Enquanto
+    todos os chamadores não forem migrados, este fallback procura o documento
+    recém-salvo do mesmo caso e substitui o prefixo pelo OCR completo. Fail-safe:
+    em qualquer dúvida, devolve o texto recebido.
+    """
+    if not db or not texto_documento or len(texto_documento) > 4_500:
+        return texto_documento
+    if len(texto_documento.strip()) < 180:
+        return texto_documento
+
+    try:
+        from sqlalchemy import desc, or_, select
+        from app.models.case import Case
+        from app.models.document import Document
+
+        filtros = []
+        if numero_processo:
+            filtros.append(Case.numero_processo == numero_processo)
+        if titulo:
+            filtros.append(Case.titulo == titulo)
+        if not filtros:
+            return texto_documento
+
+        q_case = select(Case.id).where(Case.deleted_at.is_(None), or_(*filtros))
+        if scope_client_id:
+            q_case = q_case.where(Case.client_id == scope_client_id)
+        case_ids = [row[0] for row in (await db.execute(q_case.limit(5))).all()]
+        if not case_ids:
+            return texto_documento
+
+        q_docs = (
+            select(Document.ocr_text)
+            .where(
+                Document.deleted_at.is_(None),
+                Document.case_id.in_(case_ids),
+                Document.ocr_text.is_not(None),
+            )
+            .order_by(desc(Document.created_at))
+            .limit(8)
+        )
+        docs = (await db.execute(q_docs)).scalars().all()
+        prefixo = texto_documento[:300].strip()
+        assinatura = prefixo[:120]
+        for ocr in docs:
+            if not ocr or len(ocr) <= len(texto_documento):
+                continue
+            if ocr.startswith(prefixo) or (assinatura and assinatura in ocr[:1_500]):
+                logger.info(
+                    "OCR completo recuperado para análise estratégica (%s → %s chars)",
+                    len(texto_documento), len(ocr),
+                )
+                return ocr
+    except Exception as exc:
+        logger.warning("Recuperação de OCR completo indisponível: %s", exc)
+
+    return texto_documento
+
+
 async def analisar_caso(
     *,
     titulo: str = "",
@@ -130,7 +198,16 @@ async def analisar_caso(
     Se `db` for fornecido, ancora a análise na base RAG (anti-alucinação).
     """
     from app.services.ai_gateway import chat
+    from app.services.document_intake_service import montar_dossie_documental
     from app.services.sanitizer import sanitizar_pii, validar_sem_pii
+
+    texto_documento = await _recuperar_ocr_completo_se_truncado(
+        db=db,
+        texto_documento=texto_documento,
+        titulo=titulo,
+        numero_processo=numero_processo,
+        scope_client_id=scope_client_id,
+    )
 
     # Montar contexto
     partes_ctx = []
@@ -147,9 +224,10 @@ async def analisar_caso(
     if fatos:
         partes_ctx.append(f"FATOS:\n{fatos}")
     if texto_documento:
-        # Limitar a 4000 chars para não estourar contexto
-        trecho = texto_documento[:4000]
-        partes_ctx.append(f"TEXTO EXTRAÍDO DO DOCUMENTO:\n{trecho}")
+        # Não cortar mais em 4.000 chars. Documento longo vira DOSSIÊ jurídico
+        # com início, trechos relevantes do meio/fim e sinais estruturados.
+        trecho = montar_dossie_documental(texto_documento, titulo=titulo)
+        partes_ctx.append(f"TEXTO EXTRAÍDO DO DOCUMENTO / DOSSIÊ DE INTAKE:\n{trecho}")
 
     if not partes_ctx:
         return {"erro": "Dados insuficientes para análise"}
