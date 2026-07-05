@@ -118,8 +118,54 @@ services:
       backend:
         condition: service_healthy
 
+  # ── Fase 6 — Observabilidade de IA (Langfuse SELF-HOSTED) ──────────────────
+  # OPT-IN via profile "observability": o compose padrão (up -d) NÃO sobe estes
+  # serviços. Para ligar:
+  #   docker compose --profile observability up -d langfuse-db langfuse
+  # Depois acesse http://SEU_HOST:3000, crie a conta/projeto e gere as chaves
+  # (public/secret) → cole em LANGFUSE_PUBLIC_KEY/LANGFUSE_SECRET_KEY no .env e
+  # ligue LANGFUSE_ENABLED=true. Langfuse v2 usa Postgres PRÓPRIO (isolado do
+  # banco jurídico) — nenhum dado do EJC é copiado para cá; só metadados de
+  # tracing enviados pelo backend.
+  langfuse-db:
+    image: postgres:16-alpine
+    container_name: ejc_langfuse_db
+    profiles: ["observability"]
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: langfuse
+      POSTGRES_PASSWORD: ${LANGFUSE_DB_PASSWORD:-langfuse}
+      POSTGRES_DB: langfuse
+    volumes:
+      - langfuse_db_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U langfuse -d langfuse"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+
+  langfuse:
+    image: langfuse/langfuse:2
+    container_name: ejc_langfuse
+    profiles: ["observability"]
+    restart: unless-stopped
+    depends_on:
+      langfuse-db:
+        condition: service_healthy
+    ports:
+      - "3000:3000"
+    environment:
+      DATABASE_URL: postgresql://langfuse:${LANGFUSE_DB_PASSWORD:-langfuse}@langfuse-db:5432/langfuse
+      NEXTAUTH_SECRET: ${LANGFUSE_NEXTAUTH_SECRET:-changeme}
+      SALT: ${LANGFUSE_SALT:-changeme}
+      NEXTAUTH_URL: ${LANGFUSE_NEXTAUTH_URL:-http://localhost:3000}
+      TELEMETRY_ENABLED: "false"
+      # Self-hosted fechado: sem signup público após criar o 1º usuário admin.
+      LANGFUSE_DEFAULT_PROJECT_ROLE: MEMBER
+
 volumes:
   postgres_data:
   uploads_data:
   backups_data:
   redis_data:
+  langfuse_db_data:

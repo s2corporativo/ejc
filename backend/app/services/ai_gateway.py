@@ -175,6 +175,10 @@ class GatewayResponse:
     duracao_ms: int = 0
     fallback_ativado: bool = False
     fallback_motivo: str | None = None
+    # Fase 6 — custo estimado (R$) pela tabela de preços; roteamento inteligente.
+    custo_estimado_brl: float = 0.0
+    roteamento_tier: str | None = None
+    roteamento_score: int | None = None
     timestamp: str = field(
         default_factory=lambda: datetime.now(timezone.utc).isoformat()
     )
@@ -213,8 +217,38 @@ async def chat(
         settings.AI_PROVIDER if settings.AI_PROVIDER != "auto" else None
     )
 
+    # ── Fase 6 — Roteamento inteligente (opt-in): PROPÕE provedor de partida ──
+    # por complexidade/custo. Sem override e só quando ligado. O gateway ainda
+    # aplica elegibilidade/PII/fallback — o roteador não sobrepõe nada disso.
+    provider_preferido = model_preferido = None
+    roteamento_tier = roteamento_score = None
+    if (
+        settings.ROTEAMENTO_INTELIGENTE_ENABLED
+        and not provider_override
+        and not model_override
+    ):
+        try:
+            from app.services.ai.model_router import escolher_modelo
+            texto_entrada = "\n".join(m.get("content", "") or "" for m in messages)
+            decisao = escolher_modelo(task_type, texto_entrada)
+            provider_preferido, model_preferido = decisao.provider, decisao.model
+            roteamento_tier, roteamento_score = decisao.tier, decisao.score
+            logger.info("[Gateway] roteamento inteligente → %s", decisao.motivo)
+        except Exception as e:  # roteamento nunca quebra a chamada de IA
+            logger.warning("[Gateway] roteamento inteligente falhou: %s", str(e)[:200])
+
     # Cadeia de tentativas
-    cadeia = _resolver_cadeia(task_type, provider_force, model_override)
+    cadeia = _resolver_cadeia(
+        task_type, provider_force, model_override, provider_preferido, model_preferido
+    )
+
+    # ── Fase 6 — Observabilidade (Langfuse self-hosted, NO-OP se desligado) ──
+    from app.services.observability import langfuse_client as _lf
+    _trace = _lf.novo_trace(
+        name=task_type,
+        metadata={"task_type": task_type, "nivel_inteligencia": nivel_inteligencia,
+                  "roteamento_tier": roteamento_tier, "roteamento_score": roteamento_score},
+    )
 
     ultimo_erro: str = "Nenhum provedor disponível"
     bloqueado_por_pii = False
@@ -236,22 +270,31 @@ async def chat(
                     f"[Gateway] {provider} pulado — PII residual ({', '.join(residual)}) "
                     "após sanitização (LGPD)."
                 )
+                _lf.registrar_evento(_trace, name=f"pii_bloqueio:{provider}",
+                                     metadata={"provider": provider, "task_type": task_type})
                 continue
         try:
             texto, usage = await _chamar_provedor(
                 provider, model, messages_envio, temperature, max_tokens
             )
             duracao = int((time.monotonic() - t0) * 1000)
+            modelo_real = usage.get("model", model or "")
+            inp = usage.get("input_tokens")
+            out = usage.get("output_tokens")
+            custo_brl = _custo_brl(modelo_real, inp or 0, out or 0)
             resp = GatewayResponse(
                 texto=texto,
-                modelo=usage.get("model", model or ""),
+                modelo=modelo_real,
                 provedor=provider,
                 task_type=task_type,
-                input_tokens=usage.get("input_tokens"),
-                output_tokens=usage.get("output_tokens"),
+                input_tokens=inp,
+                output_tokens=out,
                 duracao_ms=duracao,
                 fallback_ativado=fallback_ativado,
                 fallback_motivo=fallback_motivo if fallback_ativado else None,
+                custo_estimado_brl=custo_brl,
+                roteamento_tier=roteamento_tier,
+                roteamento_score=roteamento_score,
             )
             if fallback_ativado:
                 logger.warning(
@@ -263,6 +306,19 @@ async def chat(
                     f"[Gateway] {task_type} → {provider}/{usage.get('model')} "
                     f"({duracao}ms)"
                 )
+            _lf.registrar_generation(
+                _trace, name=task_type, model=modelo_real,
+                input_messages=messages_envio, output_text=texto,
+                input_tokens=inp, output_tokens=out,
+                metadata=_lf.montar_metadata(
+                    provider=provider, model=modelo_real, task_type=task_type,
+                    input_tokens=inp, output_tokens=out, duracao_ms=duracao,
+                    fallback_ativado=fallback_ativado, fallback_motivo=fallback_motivo,
+                    custo_estimado_brl=custo_brl, sucesso=True,
+                    tier=roteamento_tier, roteamento_score=roteamento_score,
+                ),
+            )
+            _lf.flush()
             return resp
         except Exception as e:
             ultimo_erro = str(e)[:200]
@@ -270,7 +326,11 @@ async def chat(
             logger.warning(
                 f"[Gateway] {provider}/{model} falhou, tentando próximo: {ultimo_erro}"
             )
+            _lf.registrar_evento(_trace, name=f"fallback:{provider}",
+                                 metadata={"provider": provider, "model": model,
+                                           "task_type": task_type, "erro": ultimo_erro})
 
+    _lf.flush()
     if bloqueado_por_pii:
         # Mensagem segura: não ecoa o conteúdo nem os valores de PII.
         raise RuntimeError(
@@ -342,9 +402,16 @@ def _resolver_cadeia(
     task_type: str,
     provider_force: str | None,
     model_override: str | None,
+    provider_preferido: str | None = None,
+    model_preferido: str | None = None,
 ) -> list[tuple[str, str | None]]:
     """Resolve a cadeia de (provider, model) para a tarefa, respeitando
-    AI_PROVIDER_PRIORITY e a elegibilidade de cada provedor."""
+    AI_PROVIDER_PRIORITY e a elegibilidade de cada provedor.
+
+    `provider_preferido` (roteamento inteligente, Fase 6) só é uma PROPOSTA de
+    provedor de PARTIDA: se elegível, vai à frente da cadeia; o resto do fallback
+    é preservado. Inelegível → ignorado (cadeia normal). NUNCA sobrepõe um
+    provider_force explícito nem a barreira de elegibilidade/PII."""
     if provider_force in ("groq", "ollama", "anthropic"):
         if _provider_elegivel(provider_force):
             return [(provider_force, _resolver_modelo(provider_force, task_type, model_override))]
@@ -359,8 +426,22 @@ def _resolver_cadeia(
 
     base = TASK_ROUTING.get(task_type, TASK_ROUTING["analise_juridica"])
     candidatos = _ordenar_por_prioridade([p for p, _ in base])
+
+    # Roteamento inteligente: promove o provider proposto à frente SE elegível e
+    # SE participa da cadeia da tarefa (não inventa provedor fora do TASK_ROUTING).
+    if (
+        provider_preferido in ("groq", "ollama", "anthropic")
+        and provider_preferido in candidatos
+        and _provider_elegivel(provider_preferido)
+    ):
+        candidatos = [provider_preferido] + [p for p in candidatos if p != provider_preferido]
+
     cadeia = [
-        (p, _resolver_modelo(p, task_type, model_override))
+        (
+            p,
+            model_preferido if (p == provider_preferido and model_preferido)
+            else _resolver_modelo(p, task_type, model_override),
+        )
         for p in candidatos
         if _provider_elegivel(p)
     ]

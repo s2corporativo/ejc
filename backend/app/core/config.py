@@ -117,6 +117,36 @@ class Settings(BaseSettings):
     # filtra por habilitação/chave e prioriza Anthropic em tarefas complexas.
     AI_PROVIDER_PRIORITY: str = "ollama,anthropic,groq"
 
+    # ── Fase 6 — Roteamento inteligente por complexidade/custo ────────────
+    # False (default) = comportamento atual por task_type intacto. Quando True,
+    # o model_router (heurística DETERMINÍSTICA, sem IA) propõe o provedor de
+    # PARTIDA da cadeia por complexidade estimada do input; o gateway AINDA
+    # aplica elegibilidade/kill-switch/barreira PII e o fallback continua.
+    ROTEAMENTO_INTELIGENTE_ENABLED: bool = False
+    # Provedor preferido por TIER de complexidade (o roteador só PROPÕE; se
+    # inelegível, o gateway ignora e usa a cadeia normal por prioridade).
+    ROTEAMENTO_PROVIDER_LEVE: str = "groq"       # rápido/barato p/ tarefas leves
+    ROTEAMENTO_PROVIDER_MEDIO: str = "ollama"    # local, custo zero
+    ROTEAMENTO_PROVIDER_PESADO: str = "anthropic"  # modelo forte p/ raciocínio
+    # Limiares (score inteiro) que separam os tiers leve|medio|pesado.
+    ROTEAMENTO_LIMIAR_MEDIO: int = 3
+    ROTEAMENTO_LIMIAR_PESADO: int = 6
+
+    # ── Fase 6 — Observabilidade de IA (Langfuse SELF-HOSTED) ─────────────
+    # Langfuse é SELF-HOSTED (docker-compose, perfil "observability"): dados
+    # jurídicos NÃO saem do ambiente. NUNCA apontar para cloud.langfuse.com.
+    # Default OFF: quando desligado, o wrapper é NO-OP total (não importa o SDK,
+    # não abre conexão) e o fluxo de IA nunca quebra por causa do tracing.
+    LANGFUSE_ENABLED: bool = False
+    LANGFUSE_HOST: str = "http://langfuse:3000"  # serviço self-hosted no compose
+    LANGFUSE_PUBLIC_KEY: str = ""                # secret — só no .env
+    LANGFUSE_SECRET_KEY: str = ""                # secret — só no .env
+    # LGPD: por padrão o Langfuse recebe SÓ metadados (task_type, provider,
+    # modelo, tokens, latência, custo, sucesso/erro) — NUNCA prompt/resposta
+    # crus (podem conter PII). Ligar True só envia conteúdo APÓS passar pela
+    # MESMA sanitização PII do gateway. Não ligar sem parecer do DPO.
+    LANGFUSE_CAPTURE_CONTENT: bool = False
+
     # ── Notificações ──────────────────────────────────────────────────────
     ZAPI_INSTANCE_ID: str = ""
     ZAPI_TOKEN: str = ""
