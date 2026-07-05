@@ -42,12 +42,6 @@ def _item_caso(caso: Case, subtitulo: str) -> dict:
             "subtitulo": subtitulo, "link": f"/casos/{caso.id}"}
 
 
-def _mascarar_doc(doc: str | None) -> str:
-    """Mascara CPF/CNPJ para exibição: só os 4 últimos dígitos (ex.: ***5678)."""
-    dig = normalizar_documento(doc) or ""
-    return f"***{dig[-4:]}" if dig else ""
-
-
 @router.get("")
 @router.get("/")
 @limiter.limit("30/minute")
@@ -65,7 +59,8 @@ async def busca_global(
     tipo=parte    → casos cuja parte processual ATIVA tem o nome buscado.
     tipo=cpf      → clientes (só papéis com acesso ao CRM) e partes por
                     CPF/CNPJ (com ou sem máscara; hash exato quando 11/14
-                    dígitos). Documentos são exibidos mascarados (***1234).
+                    dígitos). Documentos são exibidos completos, como
+                    armazenados — mesma exposição de /clients e tipo=tudo.
     tipo=processo → casos por número de processo/interno e números CNJ
                     dos processos vinculados (tabela `processes`).
 
@@ -132,7 +127,7 @@ async def busca_global(
             for c in (await db.execute(qcli.limit(limit))).scalars().all():
                 out.append({"tipo": "cliente", "id": c.id,
                             "titulo": c.nome or c.razao_social or "—",
-                            "subtitulo": _mascarar_doc(c.cpf or c.cnpj),
+                            "subtitulo": c.cpf or c.cnpj or "",
                             "link": "/clientes"})
 
         # Partes processuais ativas → caso dono
@@ -151,7 +146,7 @@ async def busca_global(
                 continue
             casos_vistos.add(caso.id)
             out.append(_item_caso(
-                caso, f"Parte: {parte.nome} · {_mascarar_doc(parte.cpf_cnpj)}"))
+                caso, f"Parte: {parte.nome} · {parte.cpf_cnpj or ''}"))
             if len(casos_vistos) >= limit:
                 break
         return {"q": q, "tipo": tipo, "total": len(out), "resultados": out}
