@@ -64,6 +64,7 @@ export interface RamoConfig {
   guiaTributario?: boolean; // guia operacional de direito tributário
   tributarioFiscal?: boolean; // recuperação de créditos fiscais: upload de XML NF-e + diagnóstico por tese
   guiaPrevidenciario?: boolean; // guia operacional de direito previdenciário
+  previdenciarioSimulacao?: boolean; // simulação de aposentadoria EC 103/2019 (regras de transição + parecer PDF)
   guiaAmbiental?: boolean; // guia operacional de direito ambiental
   autosAmbientais?: boolean; // autos de infração ambiental com prazo automático (/environmental)
   ambientalEstrategia?: boolean; // simulador de estratégia do auto de infração (comparador econômico + peça de conversão)
@@ -1819,6 +1820,7 @@ const imobiliario: RamoConfig = {
 };
 const previdenciario: RamoConfig = {
   guiaPrevidenciario: true,
+  previdenciarioSimulacao: true,
   slug: "previdenciario",
   endpoint: "/cases/?area=previdenciario",
   areaCaso: "previdenciario",

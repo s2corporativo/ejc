@@ -103,6 +103,30 @@ export default function GuiaPrevidenciario() {
         requerimento administrativo no primeiro atendimento.
       </p>
 
+      {/* No sistema — simulação de aposentadoria (regras de transição EC 103) */}
+      <div className="mb-3 rounded-lg border border-gold-light bg-gold-50/60 p-3 flex flex-wrap items-center gap-x-3 gap-y-1 text-xs">
+        <span className="text-[10px] font-semibold uppercase text-slate-400">
+          No sistema
+        </span>
+        <span className="text-slate-600 flex-1 min-w-[200px]">
+          <b className="text-navy">Simulação de Aposentadoria (EC 103/2019)</b>{" "}
+          — informe idade e tempo de contribuição e compare as 5 regras de
+          transição, com coeficiente da RMI, elegibilidade e a melhor regra.
+        </span>
+        <a
+          href="#previdenciario-simulacao"
+          onClick={(e) => {
+            e.preventDefault();
+            document
+              .getElementById("previdenciario-simulacao")
+              ?.scrollIntoView({ behavior: "smooth" });
+          }}
+          className="text-gold-700 hover:text-gold-600 underline decoration-gold-200 underline-offset-2 font-medium"
+        >
+          Abrir ferramenta ↑
+        </a>
+      </div>
+
       <div className="space-y-2">
         <Sec icon={Clock} titulo="Benefícios, carências e prazos" aberto>
           <Tab
