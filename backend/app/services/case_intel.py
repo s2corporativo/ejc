@@ -74,6 +74,7 @@ async def _gateway_json(
     temperature: float = 0.1,
     max_tokens: int = 1000,
     nivel: str = "alto",
+    entidades: dict[str, list[str]] | None = None,
 ) -> tuple[str, GatewayResponse]:
     resp = await gw_chat(
         messages=[
@@ -84,6 +85,7 @@ async def _gateway_json(
         temperature=temperature,
         max_tokens=max_tokens,
         nivel_inteligencia=nivel,
+        entidades=entidades or None,
     )
     return resp.texto, resp
 
@@ -109,9 +111,16 @@ async def triagem_caso(case_id: str) -> None:
             area_atual = getattr(case.area, "value", None) or str(case.area or "")
             user_msg = f"ÁREA INFORMADA: {area_atual or 'não informada'}\n\nFATOS:\n{texto_limpo}"
 
+            # Nomes próprios do caso → marcadores reversíveis antes do provider
+            # externo (estrategia = EXTERNO_PSEUDONIMIZADO). sanitizar_pii acima
+            # só cobre PII estrutural; `entidades` cobre cliente/parte/advogado.
+            from app.services.ai.entidades_caso import entidades_do_caso
+            entidades = await entidades_do_caso(db, case_id)
+
             bruto, resp = await _gateway_json(
                 SYS_TRIAGEM, user_msg, task_type="estrategia",
                 temperature=0.1, max_tokens=1300, nivel="alto",
+                entidades=entidades,
             )
             data = _parse_json(bruto)
             if not data:
@@ -214,9 +223,12 @@ async def aprendizado_encerramento(case_id: str) -> None:
             bruto = ""
             if settings.AI_ENABLED:
                 try:
+                    from app.services.ai.entidades_caso import entidades_do_caso
+                    entidades = await entidades_do_caso(db, case_id)
                     bruto, resp = await _gateway_json(
                         SYS_ENCERRAMENTO, base_limpo, task_type="estrategia",
                         temperature=0.1, max_tokens=1200, nivel="alto",
+                        entidades=entidades,
                     )
                     data = _parse_json(bruto)
                 except Exception as e:

@@ -227,10 +227,18 @@ class VereditoIA:
             # Import em runtime (padrão do motor de teses/análise estratégica):
             # permite monkeypatch de app.services.ai_gateway.chat nos testes.
             from app.services.ai_gateway import chat as gw_chat
+            # Nomes próprios do caso → marcadores reversíveis antes do provider
+            # externo (jurimetria = EXTERNO_PSEUDONIMIZADO). Só há contexto de
+            # caso quando case_id foi informado; sem ele, PII estrutural apenas.
+            entidades = None
+            if case_id:
+                from app.services.ai.entidades_caso import entidades_do_caso
+                entidades = await entidades_do_caso(db, case_id)
             resp = await gw_chat(
                 messages=[{"role": "system", "content": system_msg},
                           {"role": "user", "content": user_msg}],
-                task_type="jurimetria", temperature=0.2, max_tokens=1200)
+                task_type="jurimetria", temperature=0.2, max_tokens=1200,
+                entidades=entidades or None)
         except Exception as e:
             logger.warning(f"Veredito IA: gateway indisponível: {e}")
             avisos.append("Análise qualitativa de IA indisponível no momento — "
