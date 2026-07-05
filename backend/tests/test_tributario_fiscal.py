@@ -235,3 +235,59 @@ async def test_endpoint_recusa_mais_de_50_arquivos():
     with pytest.raises(HTTPException) as exc:
         await analisar_xml(arquivos=[object()] * 51, regime="simples", cu=None)
     assert exc.value.status_code == 422
+
+
+# ══════════════════════════════════════════════════════════════════════════
+# Hardening (achados da auditoria de segurança)
+# ══════════════════════════════════════════════════════════════════════════
+class _FakeUpload:
+    """UploadFile mínimo: serve `dados` em blocos via read(size), como o
+    Starlette faz — sem depender de spool real."""
+
+    def __init__(self, filename: str, dados: bytes):
+        self.filename = filename
+        self._buf = dados
+        self._pos = 0
+
+    async def read(self, size: int = -1) -> bytes:
+        if size is None or size < 0:
+            size = len(self._buf) - self._pos
+        chunk = self._buf[self._pos:self._pos + size]
+        self._pos += len(chunk)
+        return chunk
+
+
+async def test_lote_respeita_teto_agregado_de_bytes(monkeypatch):
+    from app.routers import tributario_fiscal as trib
+
+    # encolhe o teto do lote para 1 MB (cada arquivo ~450 KB fica abaixo do
+    # teto POR ARQUIVO, mas três somados estouram o teto AGREGADO).
+    monkeypatch.setattr(trib, "MAX_LOTE_MB", 1)
+    recheio = b"<!--" + b"x" * (450 * 1024) + b"-->"
+    grande = _mk_nfe("2024-03-01T10:00:00-03:00", ITENS_PADRAO,
+                     CHAVE_A).encode() + recheio
+    arquivos = [_FakeUpload(f"{i}.xml", grande) for i in range(3)]
+    res = await trib.analisar_xml(arquivos=arquivos, regime="lucro_real", cu=None)
+    # ao menos o último é rejeitado pelo teto agregado (vira nota com erro)
+    assert any(n.erro and "Lote excede" in n.erro for n in res.notas)
+
+
+def test_schema_rejeita_payload_de_pdf_gigante():
+    from pydantic import ValidationError
+
+    from app.routers.tributario_fiscal import ConsolidacaoOut
+
+    base = {
+        "regime": "lucro_real", "total_estimado": 0.0, "notas_analisadas": 0,
+        "notas_com_erro": 0, "notas_prescritas": 0,
+        "periodo": {"inicio": None, "fim": None},
+        "teses": [], "alertas_globais": [], "aviso_hitl": "ok", "notas": [],
+    }
+    # 21 teses > teto de 20 → rejeitado antes de chegar ao WeasyPrint
+    demais = dict(base, teses=[{
+        "tese_id": "t", "titulo": "x", "base_legal": "y", "fundamento": "z",
+        "aplicavel": False, "valor_estimado": 0.0, "memoria_calculo": [],
+        "alertas": [], "nivel_confianca": "estimativa_preliminar",
+    }] * 21)
+    with pytest.raises(ValidationError):
+        ConsolidacaoOut.model_validate(demais)

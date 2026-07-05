@@ -13,15 +13,15 @@ from __future__ import annotations
 
 import os
 import re
-from datetime import datetime, timezone
+import time
+from datetime import date, datetime, timezone
 from typing import Literal, Optional
 from uuid import uuid4
 
 import magic  # python-magic — validação por magic bytes (server-side)
 from fastapi import APIRouter, Depends, File, Form, HTTPException, UploadFile
 from fastapi.responses import FileResponse
-from pydantic import BaseModel
-from datetime import date
+from pydantic import BaseModel, Field
 
 from app.core.config import get_settings
 from app.core.rate_limit import rate_limit
@@ -36,51 +36,66 @@ router = APIRouter(prefix="/tributario/fiscal", tags=["Tributário / Fiscal"])
 MAX_ARQUIVOS = 50
 # Mesmo conjunto aceito para .xml em routers/documents.py (libmagic varia).
 MIMES_XML = {"application/xml", "text/xml", "text/plain"}
+# Teto agregado do lote (soma de todos os XMLs válidos mantidos em memória):
+# além do teto por arquivo (MAX_UPLOAD_MB), limita o total simultâneo para
+# não esgotar a RAM do worker com 50 arquivos grandes (hardening DoS).
+MAX_LOTE_MB = 120
+_CHUNK = 256 * 1024  # 256 KiB — leitura em blocos, sem materializar tudo
+# Retenção dos PDFs de diagnóstico (contêm dados fiscais de terceiros — LGPD):
+# varredura best-effort remove os mais antigos que este TTL a cada geração.
+PDF_TTL_SEGUNDOS = 3600  # 1h
 
 Regime = Literal["simples", "lucro_presumido", "lucro_real"]
 
 
 # ── Schemas de resposta (Decimal só interno; JSON sai float) ─────────────────
 
+# Limites de tamanho no payload de /relatorio-pdf (entrada do usuário renderizada
+# pelo WeasyPrint — caro/síncrono): evitam DoS por strings/listas gigantes.
+_TXT = 2000       # texto curto (títulos, fundamentos, alertas)
+_TXT_LONGO = 6000  # aviso_hitl
+
+
 class TeseOut(BaseModel):
-    tese_id: str
-    titulo: str
-    base_legal: str
-    fundamento: str
+    tese_id: str = Field(max_length=64)
+    titulo: str = Field(max_length=_TXT)
+    base_legal: str = Field(max_length=_TXT)
+    fundamento: str = Field(max_length=_TXT)
     aplicavel: bool
-    motivo_inaplicavel: Optional[str] = None
+    motivo_inaplicavel: Optional[str] = Field(default=None, max_length=_TXT)
     valor_estimado: float
-    memoria_calculo: list[str]
-    alertas: list[str]
-    nivel_confianca: str
+    memoria_calculo: list[str] = Field(max_length=50)
+    alertas: list[str] = Field(max_length=50)
+    nivel_confianca: str = Field(max_length=64)
 
 
 class NotaOut(BaseModel):
-    chave: str = ""
-    numero: Optional[str] = None
-    data_emissao: Optional[str] = None
-    emitente_nome: Optional[str] = None
+    chave: str = Field(default="", max_length=64)
+    numero: Optional[str] = Field(default=None, max_length=32)
+    data_emissao: Optional[str] = Field(default=None, max_length=32)
+    emitente_nome: Optional[str] = Field(default=None, max_length=_TXT)
     valor_total: float = 0.0
     icms_destacado: float = 0.0
-    erro: Optional[str] = None
+    erro: Optional[str] = Field(default=None, max_length=_TXT)
 
 
 class PeriodoOut(BaseModel):
-    inicio: Optional[str] = None
-    fim: Optional[str] = None
+    inicio: Optional[str] = Field(default=None, max_length=32)
+    fim: Optional[str] = Field(default=None, max_length=32)
 
 
 class ConsolidacaoOut(BaseModel):
-    regime: str
+    regime: str = Field(max_length=32)
     total_estimado: float
     notas_analisadas: int
     notas_com_erro: int
     notas_prescritas: int
     periodo: PeriodoOut
-    teses: list[TeseOut]
-    alertas_globais: list[str]
-    aviso_hitl: str
-    notas: list[NotaOut]
+    teses: list[TeseOut] = Field(max_length=20)
+    alertas_globais: list[str] = Field(max_length=50)
+    aviso_hitl: str = Field(max_length=_TXT_LONGO)
+    # teto coerente com MAX_ARQUIVOS (uma nota-resumo por arquivo enviado)
+    notas: list[NotaOut] = Field(max_length=MAX_ARQUIVOS)
 
 
 # ── Análise ───────────────────────────────────────────────────────────────────
@@ -111,6 +126,8 @@ async def analisar_xml(
     lote: list[tuple[str, bytes]] = []
     erros_previos: list[dict] = []
     limite_bytes = settings.MAX_UPLOAD_MB * 1024 * 1024
+    limite_lote = MAX_LOTE_MB * 1024 * 1024
+    total_bytes = 0
     for f in arquivos:
         nome = f.filename or "sem_nome.xml"
         ext = os.path.splitext(nome)[1].lower()
@@ -118,10 +135,31 @@ async def analisar_xml(
             erros_previos.append({"arquivo": nome,
                                   "erro": f"Extensão não permitida: {ext or '(sem extensão)'} — apenas .xml."})
             continue
-        conteudo = await f.read()
-        if len(conteudo) > limite_bytes:
+        # Leitura em blocos com corte no teto: aborta o arquivo ao ultrapassar
+        # o limite SEM materializar 800 MB na RAM para só então rejeitar.
+        partes: list[bytes] = []
+        tamanho = 0
+        estourou = False
+        while True:
+            bloco = await f.read(_CHUNK)
+            if not bloco:
+                break
+            tamanho += len(bloco)
+            if tamanho > limite_bytes:
+                estourou = True
+                break
+            partes.append(bloco)
+        if estourou:
             erros_previos.append({"arquivo": nome,
                                   "erro": f"Arquivo excede {settings.MAX_UPLOAD_MB}MB."})
+            continue
+        conteudo = b"".join(partes)
+        # Teto agregado do lote: barra o esgotamento de RAM por muitos arquivos
+        # grandes somados (o restante do lote vira erro, não derruba o app).
+        if total_bytes + len(conteudo) > limite_lote:
+            erros_previos.append({"arquivo": nome,
+                                  "erro": f"Lote excede o total de {MAX_LOTE_MB}MB — "
+                                          "envie menos arquivos por vez."})
             continue
         # Magic bytes (server-side), nunca o content_type do cliente —
         # mesmo padrão de routers/documents.py.
@@ -130,6 +168,7 @@ async def analisar_xml(
             erros_previos.append({"arquivo": nome,
                                   "erro": f"Conteúdo do arquivo ({mime_real}) não é XML."})
             continue
+        total_bytes += len(conteudo)
         lote.append((nome, conteudo))
 
     # Rejeições de nível de router (extensão/mime/tamanho) entram no lote como
@@ -146,6 +185,25 @@ def _relatorio_dir() -> str:
     out_dir = os.path.join(settings.UPLOAD_DIR, "tributario_fiscal")
     os.makedirs(out_dir, exist_ok=True)
     return out_dir
+
+
+def _limpar_pdfs_antigos(out_dir: str) -> None:
+    """Retenção LGPD: os PDFs carregam dados fiscais de terceiros (CNPJ, razão
+    social). Varredura best-effort remove os mais antigos que o TTL a cada
+    geração — sem estado externo, tolerante a falhas (nunca quebra a resposta)."""
+    try:
+        agora = time.time()
+        for nome in os.listdir(out_dir):
+            if not nome.endswith(".pdf"):
+                continue
+            caminho = os.path.join(out_dir, nome)
+            try:
+                if agora - os.path.getmtime(caminho) > PDF_TTL_SEGUNDOS:
+                    os.remove(caminho)
+            except OSError:
+                continue
+    except OSError:
+        pass
 
 
 def _html_relatorio(c: ConsolidacaoOut) -> str:
@@ -267,14 +325,17 @@ async def relatorio_pdf(
     html_full = _html_relatorio(consolidacao)
     pdf_bytes = WP_HTML(string=html_full).write_pdf()
 
+    out_dir = _relatorio_dir()
+    _limpar_pdfs_antigos(out_dir)  # retenção LGPD (TTL) a cada geração
     arquivo_id = str(uuid4())
-    path = os.path.join(_relatorio_dir(), f"diagnostico_{arquivo_id}.pdf")
+    path = os.path.join(out_dir, f"diagnostico_{arquivo_id}.pdf")
     with open(path, "wb") as fh:
         fh.write(pdf_bytes)
     return {"download_url": f"/tributario/fiscal/relatorio/{arquivo_id}/download"}
 
 
-@router.get("/relatorio/{arquivo_id}/download")
+@router.get("/relatorio/{arquivo_id}/download",
+            dependencies=[Depends(rate_limit("tributario-fiscal-download", 30))])
 async def download_relatorio(
     arquivo_id: str,
     cu: User = Depends(get_current_user),
