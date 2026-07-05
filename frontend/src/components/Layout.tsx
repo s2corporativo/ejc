@@ -35,6 +35,7 @@ import {
   ListChecks,
   LogOut,
   Menu,
+  Monitor,
   Moon,
   Newspaper,
   Plus,
@@ -60,7 +61,7 @@ import OnboardingTour from "./OnboardingTour";
 import SecurityMenu from "./SecurityMenu";
 import UserAvatar from "./UserAvatar";
 import { Button, Tooltip, cn } from "./UI";
-import { useTheme } from "../hooks/useTheme";
+import { THEME_LABELS, useThemeStore } from "../stores/theme";
 import { useAuth } from "../stores/auth";
 import api, { logout } from "../lib/api";
 
@@ -313,7 +314,7 @@ function helpModuleKey(pathname: string): string | null {
 }
 
 export default function Layout() {
-  const { theme, toggle } = useTheme();
+  const { theme, cycleTheme } = useThemeStore();
   const { user, updateUser } = useAuth();
   const nav = useNavigate();
   const location = useLocation();
@@ -399,52 +400,180 @@ export default function Layout() {
       <div className="brand-watermark" aria-hidden="true" />
       <CommandPalette />
 
+      {/* ── Header superior fixo (full-width, acima da sidebar) ──
+          Logo grande à esquerda sobre branco, busca central em pill,
+          tema/sino/avatar à direita. */}
+      <header className="fixed inset-x-0 top-0 z-50 border-b border-slate-200/60 bg-white/90 backdrop-blur-xl">
+        <div className="flex h-16 items-center gap-3 px-3 md:px-6">
+          <button
+            type="button"
+            className="rounded-lg p-2 text-slate-500 hover:bg-slate-100 md:hidden"
+            onClick={() => setMenuOpen(true)}
+            aria-label="Abrir menu"
+          >
+            <Menu className="h-5 w-5" />
+          </button>
+
+          <Link
+            to="/"
+            className="brand-logo-tile flex shrink-0 items-center rounded-xl px-1.5 py-1"
+            aria-label="De Paula Teixeira - EJC"
+          >
+            <img
+              src={BRAND_LOGO}
+              alt="De Paula Teixeira Sociedade de Advogados"
+              className="brand-logo-img h-11 w-auto max-w-[200px] rounded-lg md:h-[3.25rem] md:max-w-[260px]"
+            />
+          </Link>
+
+          {/* Busca global centralizada (Command Palette — Ctrl K) */}
+          <div className="flex min-w-0 flex-1 justify-center px-1">
+            <button
+              type="button"
+              onClick={() => window.dispatchEvent(new Event("ejc-open-search"))}
+              className="flex h-10 w-full max-w-xl items-center gap-3 rounded-full border border-slate-200 bg-slate-50 px-4 text-left text-sm text-slate-500 transition-all duration-150 hover:border-primary-300/60 hover:bg-primary-50/50"
+            >
+              <Search className="h-4 w-4 shrink-0" />
+              <span className="hidden truncate sm:inline">
+                Buscar processos por parte, CPF ou número…
+              </span>
+              <span className="truncate sm:hidden">Buscar…</span>
+              <kbd className="ml-auto hidden rounded-md border border-slate-200 bg-white px-1.5 py-0.5 text-[10px] font-medium text-slate-400 sm:block">
+                Ctrl K
+              </kbd>
+            </button>
+          </div>
+
+          <Link to="/casos" className="hidden lg:inline-flex">
+            <Button size="md" icon={<Plus className="h-4 w-4" />}>
+              Novo caso
+            </Button>
+          </Link>
+
+          <HelpButton moduleKey={moduleKey} />
+
+          <button
+            type="button"
+            onClick={cycleTheme}
+            title={`Tema: ${THEME_LABELS[theme]} — clique para alternar`}
+            className="hidden h-10 w-10 items-center justify-center rounded-xl border border-slate-200 bg-white text-slate-500 hover:bg-slate-50 sm:flex"
+            aria-label={`Alternar tema (atual: ${THEME_LABELS[theme]})`}
+          >
+            {theme === "light" ? (
+              <Sun className="h-4 w-4" />
+            ) : theme === "dark" ? (
+              <Moon className="h-4 w-4" />
+            ) : (
+              <Monitor className="h-4 w-4" />
+            )}
+          </button>
+
+          <div className="relative">
+            <button
+              type="button"
+              onClick={() => setNotifOpen((v) => !v)}
+              className="relative flex h-10 w-10 items-center justify-center rounded-xl border border-slate-200 bg-white text-slate-500 hover:bg-slate-50"
+              aria-label="Notificacoes"
+            >
+              <Bell className="h-4 w-4" />
+              {notifCount > 0 && (
+                <span className="absolute -right-1 -top-1 flex h-5 min-w-5 items-center justify-center rounded-full bg-primary-600 px-1 text-[10px] font-semibold text-white ring-2 ring-white">
+                  {notifCount}
+                </span>
+              )}
+            </button>
+
+            {notifOpen && (
+              <div className="absolute right-0 mt-2 w-80 overflow-hidden rounded-xl border border-slate-200 bg-white shadow-xl">
+                <div className="flex items-center justify-between border-b border-slate-100 px-4 py-3">
+                  <div className="text-sm font-semibold text-slate-950">
+                    Notificacoes
+                  </div>
+                  <button
+                    type="button"
+                    className="text-xs font-medium text-primary-600 hover:text-primary-700"
+                    onClick={() =>
+                      api
+                        .post("/notifications/ler-todas")
+                        .then(() => setNotifCount(0))
+                    }
+                  >
+                    Marcar lidas
+                  </button>
+                </div>
+                <div className="max-h-96 overflow-y-auto">
+                  {notifs.length === 0 ? (
+                    <div className="px-4 py-8 text-center text-sm text-slate-400">
+                      Sem notificacoes
+                    </div>
+                  ) : (
+                    notifs.map((n) => (
+                      <button
+                        key={n.id}
+                        type="button"
+                        onClick={() => {
+                          if (n.link) nav(n.link);
+                          setNotifOpen(false);
+                        }}
+                        className={cn(
+                          "w-full border-b border-slate-50 px-4 py-3 text-left hover:bg-primary-50/60",
+                          !n.lida && "bg-primary-50/40",
+                        )}
+                      >
+                        <div className="text-sm font-medium text-slate-900">
+                          {n.titulo}
+                        </div>
+                        <div className="mt-1 line-clamp-2 text-xs text-slate-500">
+                          {n.mensagem}
+                        </div>
+                      </button>
+                    ))
+                  )}
+                </div>
+              </div>
+            )}
+          </div>
+
+          <SecurityMenu user={user} />
+        </div>
+      </header>
+
       {menuOpen && (
         <button
           type="button"
-          className="fixed inset-0 z-40 bg-slate-950/45 backdrop-blur-sm md:hidden"
+          className="fixed inset-0 z-30 bg-slate-950/45 backdrop-blur-sm md:hidden"
           aria-label="Fechar menu"
           onClick={() => setMenuOpen(false)}
         />
       )}
 
+      {/* ── Sidebar escura em gradiente marrom→bronze ── */}
       <aside
         className={cn(
-          "fixed inset-y-0 left-0 z-50 flex-col border-r border-slate-200/60 bg-sidebar text-slate-600 transition-all",
+          "sidebar-bronze fixed bottom-0 left-0 top-16 z-40 flex-col transition-all",
           sidebarWidth,
           menuOpen ? "flex w-72 md:flex" : "hidden md:flex",
         )}
       >
-        <div className="flex h-16 items-center gap-3 border-b border-slate-100 px-4">
-          <Link
-            to="/"
-            className={cn(
-              "flex min-w-0 items-center gap-2.5",
-              collapsed ? "w-10 justify-center" : "max-w-[220px]",
-            )}
-            aria-label="De Paula Teixeira - EJC"
-          >
-            <span
-              className={cn(
-                "flex shrink-0 items-center justify-center rounded-xl bg-white shadow-soft ring-1 ring-slate-100",
-                collapsed ? "h-10 w-10" : "h-11 w-auto max-w-[200px] px-1",
-              )}
-            >
-              <img
-                src={BRAND_LOGO}
-                alt="De Paula Teixeira Sociedade de Advogados"
-                className={cn(
-                  "brand-logo-img rounded-lg",
-                  collapsed
-                    ? "h-9 w-9 object-cover object-top"
-                    : "h-10 w-auto max-w-[190px]",
-                )}
-              />
-            </span>
-          </Link>
+        <div
+          className={cn(
+            "flex items-center gap-2 px-4 pb-3 pt-4",
+            collapsed && "justify-center px-2",
+          )}
+        >
+          {!collapsed && (
+            <div className="min-w-0 flex-1">
+              <div className="truncate text-[11px] font-semibold uppercase tracking-[0.18em] text-[#E5CE7F]">
+                De Paula Teixeira
+              </div>
+              <div className="mt-0.5 truncate text-[10px] text-[rgba(255,245,230,0.5)]">
+                Sociedade de Advogados
+              </div>
+            </div>
+          )}
           <button
             type="button"
-            className="ml-auto hidden rounded-lg p-1.5 text-slate-400 hover:bg-slate-100 hover:text-slate-700 md:block"
+            className="hidden rounded-lg p-1.5 text-[rgba(255,245,230,0.55)] hover:bg-[rgba(166,124,82,0.2)] hover:text-[#F5EDD2] md:block"
             onClick={() => setCollapsed((v) => !v)}
             aria-label={collapsed ? "Expandir menu" : "Recolher menu"}
           >
@@ -456,25 +585,14 @@ export default function Layout() {
           </button>
           <button
             type="button"
-            className="ml-auto rounded-lg p-1.5 text-slate-400 hover:bg-slate-100 hover:text-slate-700 md:hidden"
+            className="rounded-lg p-1.5 text-[rgba(255,245,230,0.55)] hover:bg-[rgba(166,124,82,0.2)] hover:text-[#F5EDD2] md:hidden"
             onClick={() => setMenuOpen(false)}
             aria-label="Fechar menu"
           >
             <X className="h-4 w-4" />
           </button>
         </div>
-
-        {!collapsed && (
-          <div className="mx-3 mt-3 rounded-xl border border-slate-100 bg-slate-50/70 p-3">
-            <div className="text-xs font-semibold text-primary-600">
-              Sociedade de Advogados
-            </div>
-            <div className="mt-1 text-[11px] text-slate-400">
-              Operacao juridica empresarial
-            </div>
-            <div className="brand-accent-line mt-3 h-0.5 rounded-full" />
-          </div>
-        )}
+        <div className="brand-accent-line mx-4 h-px" aria-hidden="true" />
 
         <nav className="flex-1 overflow-y-auto px-3 py-4 scrollbar-thin">
           {groups.map(([group, items]) => {
@@ -485,7 +603,7 @@ export default function Layout() {
                   <button
                     type="button"
                     onClick={() => toggleGroup(group)}
-                    className="mb-2 flex w-full items-center justify-between px-2 text-2xs font-semibold uppercase tracking-[0.2em] text-slate-400 transition-colors hover:text-slate-600"
+                    className="sidebar-group-label mb-2 flex w-full items-center justify-between px-2 text-2xs font-semibold uppercase tracking-[0.2em] transition-colors"
                     aria-expanded={isOpen}
                   >
                     <span>{group}</span>
@@ -502,7 +620,7 @@ export default function Layout() {
                     className={cn(
                       "space-y-1",
                       // Linha de árvore vertical fina + indentação (referência)
-                      !collapsed && "ml-3 border-l border-slate-200 pl-2",
+                      !collapsed && "sidebar-tree ml-3 border-l pl-2",
                     )}
                   >
                     {items.map(({ to, label, icon: Icon, end, onClick }) => {
@@ -517,11 +635,9 @@ export default function Layout() {
                           }}
                           className={({ isActive }) =>
                             cn(
-                              "group flex h-10 items-center gap-3 rounded-xl px-3 text-sm font-medium transition-all duration-150",
+                              "sidebar-nav-item group flex h-10 items-center gap-3 rounded-xl px-3 text-sm font-medium transition-all duration-150",
                               collapsed && "justify-center px-0",
-                              isActive
-                                ? "bg-white text-slate-900 shadow-[0_8px_24px_rgba(16,24,40,.08)] ring-1 ring-slate-100 [&>svg]:text-primary-600"
-                                : "text-slate-500 hover:bg-sidebar-hover hover:text-slate-900",
+                              isActive && "is-active",
                             )
                           }
                         >
@@ -546,20 +662,34 @@ export default function Layout() {
           })}
         </nav>
 
-        <div className="border-t border-slate-100 p-3">
+        <div className="border-t border-[rgba(255,245,230,0.12)] p-3">
+          {/* Selo de conformidade (padrão "Secure & Compliant" do mockup) */}
+          {!collapsed && (
+            <div className="mb-2 flex items-center gap-2.5 rounded-xl bg-[rgba(255,245,230,0.06)] px-3 py-2.5 ring-1 ring-inset ring-[rgba(255,245,230,0.1)]">
+              <ShieldCheck className="h-4 w-4 shrink-0 text-[#D4AF37]" />
+              <div className="min-w-0">
+                <div className="truncate text-[11px] font-semibold text-[#F5EDD2]">
+                  Seguro &amp; Conforme
+                </div>
+                <div className="truncate text-[10px] text-[rgba(255,245,230,0.55)]">
+                  Dados protegidos — LGPD
+                </div>
+              </div>
+            </div>
+          )}
           <div
             className={cn(
-              "flex items-center gap-3 rounded-xl bg-slate-50/80 p-2",
+              "flex items-center gap-3 rounded-xl bg-[rgba(255,245,230,0.06)] p-2",
               collapsed && "justify-center",
             )}
           >
             <UserAvatar user={user} size="md" />
             {!collapsed && (
               <div className="min-w-0 flex-1">
-                <div className="truncate text-xs font-semibold text-slate-900">
+                <div className="truncate text-xs font-semibold text-[#F5EDD2]">
                   {user?.full_name || "Usuario"}
                 </div>
-                <div className="truncate text-[11px] capitalize text-slate-400">
+                <div className="truncate text-[11px] capitalize text-[rgba(255,245,230,0.55)]">
                   {user?.role || ""}
                 </div>
               </div>
@@ -569,7 +699,7 @@ export default function Layout() {
             type="button"
             onClick={logout}
             className={cn(
-              "mt-2 flex h-10 w-full items-center gap-3 rounded-xl px-3 text-sm font-medium text-slate-500 transition-colors hover:bg-danger-50 hover:text-danger-600",
+              "mt-2 flex h-10 w-full items-center gap-3 rounded-xl px-3 text-sm font-medium text-[rgba(255,245,230,0.65)] transition-colors hover:bg-danger-600/25 hover:text-[#F8B9BC]",
               collapsed && "justify-center px-0",
             )}
             aria-label="Sair"
@@ -582,126 +712,10 @@ export default function Layout() {
 
       <div
         className={cn(
-          "relative z-10 flex min-h-screen flex-col transition-all",
+          "relative z-10 flex min-h-screen flex-col pt-16 transition-all",
           contentMargin,
         )}
       >
-        <header className="sticky top-0 z-30 border-b border-slate-200/60 bg-white/85 px-4 py-3 backdrop-blur-xl md:px-6">
-          <div className="flex items-center gap-3">
-            <button
-              type="button"
-              className="rounded-lg p-2 text-slate-500 hover:bg-slate-100 md:hidden"
-              onClick={() => setMenuOpen(true)}
-              aria-label="Abrir menu"
-            >
-              <Menu className="h-5 w-5" />
-            </button>
-
-            <button
-              type="button"
-              onClick={() => window.dispatchEvent(new Event("ejc-open-search"))}
-              className="flex h-10 min-w-0 flex-1 items-center gap-3 rounded-xl border border-slate-200 bg-slate-50 px-3 text-left text-sm text-slate-500 transition-all duration-150 hover:border-primary-300/60 hover:bg-primary-50/50 md:max-w-xl"
-            >
-              <Search className="h-4 w-4 shrink-0" />
-              <span className="truncate">
-                Buscar processos por parte, CPF ou número…
-              </span>
-              <kbd className="ml-auto hidden rounded-md border border-slate-200 bg-white px-1.5 py-0.5 text-[10px] font-medium text-slate-400 sm:block">
-                Ctrl K
-              </kbd>
-            </button>
-
-            <Link to="/casos" className="hidden sm:inline-flex">
-              <Button size="md" icon={<Plus className="h-4 w-4" />}>
-                Novo caso
-              </Button>
-            </Link>
-
-            <HelpButton moduleKey={moduleKey} />
-
-            <button
-              type="button"
-              onClick={toggle}
-              className="hidden h-10 w-10 items-center justify-center rounded-xl border border-slate-200 bg-white text-slate-500 hover:bg-slate-50 sm:flex"
-              aria-label="Alternar tema"
-            >
-              {theme === "dark" ? (
-                <Sun className="h-4 w-4" />
-              ) : (
-                <Moon className="h-4 w-4" />
-              )}
-            </button>
-
-            <div className="relative">
-              <button
-                type="button"
-                onClick={() => setNotifOpen((v) => !v)}
-                className="relative flex h-10 w-10 items-center justify-center rounded-xl border border-slate-200 bg-white text-slate-500 hover:bg-slate-50"
-                aria-label="Notificacoes"
-              >
-                <Bell className="h-4 w-4" />
-                {notifCount > 0 && (
-                  <span className="absolute -right-1 -top-1 flex h-5 min-w-5 items-center justify-center rounded-full bg-primary-600 px-1 text-[10px] font-semibold text-white ring-2 ring-white">
-                    {notifCount}
-                  </span>
-                )}
-              </button>
-
-              {notifOpen && (
-                <div className="absolute right-0 mt-2 w-80 overflow-hidden rounded-xl border border-slate-200 bg-white shadow-xl">
-                  <div className="flex items-center justify-between border-b border-slate-100 px-4 py-3">
-                    <div className="text-sm font-semibold text-slate-950">
-                      Notificacoes
-                    </div>
-                    <button
-                      type="button"
-                      className="text-xs font-medium text-primary-600 hover:text-primary-700"
-                      onClick={() =>
-                        api
-                          .post("/notifications/ler-todas")
-                          .then(() => setNotifCount(0))
-                      }
-                    >
-                      Marcar lidas
-                    </button>
-                  </div>
-                  <div className="max-h-96 overflow-y-auto">
-                    {notifs.length === 0 ? (
-                      <div className="px-4 py-8 text-center text-sm text-slate-400">
-                        Sem notificacoes
-                      </div>
-                    ) : (
-                      notifs.map((n) => (
-                        <button
-                          key={n.id}
-                          type="button"
-                          onClick={() => {
-                            if (n.link) nav(n.link);
-                            setNotifOpen(false);
-                          }}
-                          className={cn(
-                            "w-full border-b border-slate-50 px-4 py-3 text-left hover:bg-primary-50/60",
-                            !n.lida && "bg-primary-50/40",
-                          )}
-                        >
-                          <div className="text-sm font-medium text-slate-900">
-                            {n.titulo}
-                          </div>
-                          <div className="mt-1 line-clamp-2 text-xs text-slate-500">
-                            {n.mensagem}
-                          </div>
-                        </button>
-                      ))
-                    )}
-                  </div>
-                </div>
-              )}
-            </div>
-
-            <SecurityMenu user={user} />
-          </div>
-        </header>
-
         <main className="ejc-modern-scope flex-1 px-4 py-5 md:px-7 md:py-7">
           <div className="mx-auto w-full max-w-[1440px] animate-rise">
             <Outlet />

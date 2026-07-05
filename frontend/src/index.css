@@ -5,19 +5,51 @@
 @layer base {
   :root {
     color-scheme: light;
-    /* Canvas cinza-azulado claro + cartões brancos flutuantes (referência SaaS) */
-    --ejc-bg: #edf0f4;
+    /* Canvas off-white + cartões brancos (DS "De Paula Teixeira" — luxo
+       jurídico: marrom #2D1B14 / bronze #A67C52 / dourado #D4AF37) */
+    --ejc-bg: #f8f9fa;
     --ejc-card: #ffffff;
+    --ejc-elev: #ffffff;
     --ejc-ink: #0f172a;
     --ejc-muted: #8a94a6;
-    --ejc-border: #e5e9f0;
+    --ejc-border: #e8e5df;
     --ejc-legal: #1e293b;
-    --ejc-action: #8f7117;
+    --ejc-action: #2d1b14;
     --ejc-ai: #f79256;
-    --ejc-bronze: #6f5711;
-    --ejc-gold: #c9a227;
-    --ejc-gold-soft: #f8f0d8;
-    --ejc-shadow-soft: 0 8px 30px rgba(16, 24, 40, 0.06);
+    --ejc-bronze: #7a5a3a;
+    --ejc-gold: #d4af37;
+    --ejc-gold-soft: #f5edd9;
+    --ejc-shadow-soft: 0 4px 18px rgba(24, 16, 8, 0.05);
+    --ejc-sidebar-top: #2d1b14;
+    --ejc-sidebar-bottom: #4a3427;
+    /* Paleta de gráficos (mockup): marrom / bronze / dourado / creme */
+    --ejc-chart-1: #2d1b14;
+    --ejc-chart-2: #a67c52;
+    --ejc-chart-3: #d4af37;
+    --ejc-chart-4: #e8dfd3;
+    --ejc-chart-5: #7a5a3a;
+    --ejc-chart-6: #e5ce7f;
+  }
+
+  /* ── Tema ESCURO (classe `dark` no <html> — stores/theme.ts) ──
+     Tons quentes que harmonizam com a sidebar bronze: canvas
+     #14100D, cartões #1C1712, textos creme, dourado como acento. */
+  .dark {
+    color-scheme: dark;
+    --ejc-bg: #14100d;
+    --ejc-card: #1c1712;
+    --ejc-elev: #241d16;
+    --ejc-ink: #ede6da;
+    --ejc-muted: #a89e8f;
+    --ejc-border: rgba(255, 245, 230, 0.08);
+    --ejc-legal: #d6cec2;
+    --ejc-gold-soft: rgba(212, 175, 55, 0.12);
+    --ejc-shadow-soft: 0 8px 30px rgba(0, 0, 0, 0.45);
+    --ejc-sidebar-top: #241511;
+    --ejc-sidebar-bottom: #3a2a1f;
+    /* No escuro o marrom profundo some sobre o card — troca com o creme */
+    --ejc-chart-1: #e8dfd3;
+    --ejc-chart-4: #6b4f38;
   }
 
   html {
@@ -56,7 +88,7 @@
   /* Focus ring dourado consistente para navegação por teclado */
   :focus-visible {
     outline: none;
-    box-shadow: 0 0 0 2px rgba(201, 162, 39, 0.6);
+    box-shadow: 0 0 0 2px rgba(212, 175, 55, 0.65);
     border-radius: 6px;
   }
 
@@ -120,11 +152,12 @@
            focus:outline-none focus-visible:ring-2 focus-visible:ring-primary-500/40
            disabled:opacity-50 disabled:cursor-not-allowed select-none;
   }
+  /* Botão sólido primário — Marrom Profundo #2D1B14 (texto branco AAA) */
   .btn-primary {
-    @apply btn text-white shadow-sm bg-primary-600 hover:bg-primary-700 active:bg-primary-800;
+    @apply btn text-white shadow-sm bg-primary-900 hover:bg-primary-800 active:bg-primary-950;
   }
   .btn-gold {
-    @apply btn bg-primary-600 hover:bg-primary-700 active:bg-primary-800 text-white;
+    @apply btn bg-primary-900 hover:bg-primary-800 active:bg-primary-950 text-white;
   }
   .btn-ghost {
     @apply btn bg-transparent hover:bg-slate-100 active:bg-slate-200 text-slate-700;
@@ -206,11 +239,61 @@
     background:
       radial-gradient(
         circle at 15% 15%,
-        rgba(255, 255, 255, 0.14),
+        rgba(255, 255, 255, 0.12),
         transparent 18rem
       ),
-      linear-gradient(135deg, #8f7117 0%, #b08d1f 45%, #d8b94e 100%);
-    box-shadow: 0 18px 45px rgba(143, 113, 23, 0.25);
+      linear-gradient(135deg, #2d1b14 0%, #5e4429 55%, #a67c52 100%);
+    box-shadow: 0 18px 45px rgba(45, 27, 20, 0.28);
+  }
+
+  /* ── Sidebar bronze (gradiente marrom→bronze — igual nos 2 temas) ── */
+  .sidebar-bronze {
+    background: linear-gradient(
+      180deg,
+      var(--ejc-sidebar-top) 0%,
+      var(--ejc-sidebar-bottom) 100%
+    );
+  }
+  .sidebar-nav-item {
+    position: relative;
+    color: rgba(255, 245, 230, 0.72);
+  }
+  .sidebar-nav-item:hover {
+    background: rgba(166, 124, 82, 0.18);
+    color: #f5edd2;
+  }
+  .sidebar-nav-item.is-active {
+    background: rgba(166, 124, 82, 0.2);
+    color: #e5ce7f;
+  }
+  .sidebar-nav-item.is-active::before {
+    content: "";
+    position: absolute;
+    left: 0;
+    top: 20%;
+    height: 60%;
+    width: 3px;
+    border-radius: 999px;
+    background: #d4af37;
+  }
+  .sidebar-group-label {
+    color: rgba(255, 245, 230, 0.45);
+  }
+  .sidebar-group-label:hover {
+    color: rgba(255, 245, 230, 0.7);
+  }
+  .sidebar-tree {
+    border-color: rgba(255, 245, 230, 0.14);
+  }
+  .sidebar-count {
+    background: rgba(212, 175, 55, 0.18);
+    color: #e5ce7f;
+  }
+
+  /* Tile branco da logomarca (header) — a logo JPG precisa de fundo
+     branco nos DOIS temas; protegido dos fallbacks do modo escuro. */
+  .brand-logo-tile {
+    background: #ffffff;
   }
 
   /* ── Item de menu de dropdown (avatar/segurança) ──────────── */
@@ -414,10 +497,10 @@
 .ejc-modern-scope input:focus,
 .ejc-modern-scope select:focus,
 .ejc-modern-scope textarea:focus {
-  border-color: #e5ce7f !important;
+  border-color: #d4af37 !important;
   outline: none;
   box-shadow:
-    0 0 0 3px rgba(201, 162, 39, 0.2),
+    0 0 0 3px rgba(212, 175, 55, 0.2),
     0 1px 2px rgba(16, 24, 40, 0.04) !important;
 }
 
@@ -447,7 +530,7 @@
 }
 
 .ejc-modern-scope tbody tr:hover {
-  background: rgba(252, 249, 238, 0.75);
+  background: rgba(250, 247, 240, 0.75);
 }
 
 .ejc-modern-scope .btn,
@@ -456,12 +539,12 @@
 }
 
 .ejc-modern-scope .btn-primary {
-  background: #8f7117;
-  box-shadow: 0 10px 24px rgba(143, 113, 23, 0.24);
+  background: #2d1b14;
+  box-shadow: 0 10px 24px rgba(45, 27, 20, 0.24);
 }
 
 .ejc-modern-scope .btn-primary:hover {
-  background: #6f5711;
+  background: #44301d;
 }
 
 .ejc-modern-scope .badge,
@@ -485,7 +568,7 @@
 
 .ejc-modern-scope .bg-slate-100.p-1.rounded-xl button.bg-white,
 .ejc-modern-scope .bg-gray-100.p-1.rounded-xl button.bg-white {
-  color: #8f7117 !important;
+  color: #7a5a3a !important;
   box-shadow: 0 8px 18px rgba(16, 24, 40, 0.1) !important;
 }
 
@@ -518,7 +601,7 @@
 /* Visual polish layer: premium LegalTech surfaces shared across legacy and new screens. */
 @layer components {
   .app-shell-surface {
-    background: #edf0f4;
+    background: var(--ejc-bg);
   }
 
   .toolbar-surface {
@@ -526,8 +609,9 @@
     backdrop-filter: blur(14px);
   }
 
+  /* KPI card — glassmorphism sutil sobre o canvas off-white */
   .stat-card {
-    @apply rounded-2xl border border-slate-200/60 bg-white p-4;
+    @apply rounded-2xl border border-white/50 bg-white/75 p-4 backdrop-blur-sm;
     box-shadow: var(--ejc-shadow-soft);
   }
 
@@ -753,4 +837,492 @@
   .legal-surface:hover {
     border-color: rgba(201, 162, 39, 0.3);
   }
+}
+
+/* ═══════════════════════════════════════════════════════════════
+   MODO ESCURO — propagação pela camada de design system
+   ───────────────────────────────────────────────────────────────
+   Estratégia em 3 camadas (nenhuma página é editada individualmente):
+   1. Variáveis --ejc-* remapeadas no bloco `.dark` (topo do arquivo).
+   2. Overrides explícitos das classes ESTRUTURAIS do DS (.card,
+      .input, .table, .btn-*, modais, badges, ejc-modern-scope…).
+   3. Fallback global `.dark :where(.utilitário)` para as classes
+      Tailwind hardcoded nas ~64 páginas (bg-white, text-slate-900…).
+      `:where()` zera a especificidade extra: o fallback vence o
+      utilitário claro (vem depois no arquivo), mas qualquer variante
+      `dark:` explícita (especificidade 0,2,0) continua vencendo.
+   Exceções que NUNCA escurecem: impressão/PDF (@media print força
+   branco) e tiles da logomarca (.brand-logo-tile/.brand-logo-img).
+   ═══════════════════════════════════════════════════════════════ */
+
+/* ── 2a. Base ──────────────────────────────────────────────── */
+.dark body {
+  color: var(--ejc-ink);
+}
+.dark h1,
+.dark h2,
+.dark h3,
+.dark h4 {
+  color: #f2ece1;
+}
+.dark * {
+  scrollbar-color: #3d342a transparent;
+}
+.dark ::-webkit-scrollbar-thumb {
+  background: #3d342a;
+}
+.dark ::-webkit-scrollbar-thumb:hover {
+  background: #55483a;
+}
+.dark ::selection {
+  background: rgba(212, 175, 55, 0.35);
+  color: #f5edd2;
+}
+
+/* ── 2b. Superfícies do design system ──────────────────────── */
+.dark .card,
+.dark .section-card,
+.dark .legal-surface,
+.dark .kanban-card,
+.dark .visual-law-meta-item,
+.dark .doc-chip {
+  background: var(--ejc-card);
+  border-color: var(--ejc-border);
+}
+.dark .card:hover,
+.dark .section-card:hover,
+.dark .legal-surface:hover {
+  border-color: rgba(212, 175, 55, 0.32);
+  box-shadow: 0 12px 36px rgba(0, 0, 0, 0.55);
+}
+.dark .stat-card {
+  background: rgba(28, 23, 18, 0.75);
+  border-color: rgba(255, 245, 230, 0.08);
+}
+.dark .toolbar-surface {
+  background: rgba(28, 23, 18, 0.9);
+  border-color: var(--ejc-border);
+}
+.dark .kanban-column {
+  background: rgba(255, 245, 230, 0.03);
+  border-color: var(--ejc-border);
+}
+.dark .modal-backdrop {
+  background: rgba(0, 0, 0, 0.65);
+}
+
+/* ── 2c. Botões / inputs / labels ──────────────────────────── */
+.dark .btn-secondary,
+.dark .btn-outline {
+  background: var(--ejc-elev);
+  border-color: rgba(255, 245, 230, 0.12);
+  color: #d6cec2;
+}
+.dark .btn-secondary:hover,
+.dark .btn-outline:hover {
+  background: #2c241b;
+}
+.dark .btn-ghost {
+  color: #d6cec2;
+}
+.dark .btn-ghost:hover {
+  background: rgba(255, 245, 230, 0.06);
+}
+.dark .btn-primary,
+.dark .btn-gold {
+  /* marrom profundo some no canvas escuro — sobe para o bronze */
+  background: #7a5a3a;
+}
+.dark .btn-primary:hover,
+.dark .btn-gold:hover {
+  background: #8a6844;
+}
+.dark .input,
+.dark .ejc-modern-scope .input,
+.dark
+  .ejc-modern-scope
+  input:not([type="checkbox"]):not([type="radio"]):not([type="range"]),
+.dark .ejc-modern-scope select,
+.dark .ejc-modern-scope textarea {
+  background: var(--ejc-elev);
+  border-color: rgba(255, 245, 230, 0.12);
+  color: var(--ejc-ink);
+}
+.dark .input::placeholder,
+.dark .ejc-modern-scope input::placeholder,
+.dark .ejc-modern-scope textarea::placeholder {
+  color: #7d7466;
+}
+.dark .label,
+.dark .ejc-modern-scope label,
+.dark .ejc-modern-scope .label {
+  color: #b5ab9c;
+}
+
+/* ── 2d. Tabelas ───────────────────────────────────────────── */
+.dark .table th,
+.dark .ejc-modern-scope thead th {
+  background: var(--ejc-card);
+  color: #8b8274;
+}
+.dark .table td {
+  border-color: var(--ejc-border);
+  color: #d6cec2;
+}
+.dark .table thead tr {
+  border-color: var(--ejc-border);
+}
+.dark .table tbody tr:hover,
+.dark .ejc-modern-scope tbody tr:hover {
+  background: rgba(255, 245, 230, 0.04);
+}
+
+/* ── 2e. Badges / acentos ──────────────────────────────────── */
+.dark .badge-success {
+  background: rgba(18, 184, 134, 0.14);
+  color: #4ecfa2;
+  --tw-ring-color: rgba(18, 184, 134, 0.3);
+}
+.dark .badge-warn {
+  background: rgba(239, 174, 46, 0.14);
+  color: #f2c14e;
+  --tw-ring-color: rgba(239, 174, 46, 0.3);
+}
+.dark .badge-danger {
+  background: rgba(224, 49, 49, 0.16);
+  color: #f08a8a;
+  --tw-ring-color: rgba(224, 49, 49, 0.32);
+}
+.dark .badge-info {
+  background: rgba(14, 165, 233, 0.14);
+  color: #67c5f0;
+  --tw-ring-color: rgba(14, 165, 233, 0.3);
+}
+.dark .badge-neutral {
+  background: rgba(255, 245, 230, 0.08);
+  color: #b5ab9c;
+  --tw-ring-color: rgba(255, 245, 230, 0.14);
+}
+.dark .badge-gold {
+  background: rgba(212, 175, 55, 0.16);
+  color: #e5ce7f;
+  --tw-ring-color: rgba(212, 175, 55, 0.35);
+}
+.dark .eyebrow,
+.dark .brand-kicker {
+  color: #e5ce7f;
+}
+.dark .menu-item {
+  color: #d6cec2;
+}
+.dark .menu-item:hover {
+  background: rgba(212, 175, 55, 0.12);
+  color: #e5ce7f;
+}
+
+/* ── 2f. Superfícies especiais ─────────────────────────────── */
+.dark .ai-surface {
+  background: var(--ejc-card);
+  border-color: rgba(247, 146, 86, 0.25);
+  box-shadow: 0 8px 30px rgba(0, 0, 0, 0.4);
+}
+.dark .ai-surface-header {
+  border-color: rgba(247, 146, 86, 0.2);
+  background: linear-gradient(
+    90deg,
+    rgba(247, 146, 86, 0.12),
+    rgba(212, 175, 55, 0.06),
+    transparent
+  );
+}
+.dark .visual-law-document {
+  background: var(--ejc-card);
+  border-color: var(--ejc-border);
+  color: #d6cec2;
+}
+.dark .visual-law-document-header {
+  border-color: var(--ejc-border);
+  background: linear-gradient(135deg, #211a14 0%, #241d16 100%);
+}
+.dark .visual-law-callout {
+  background: rgba(212, 175, 55, 0.1);
+  border-color: rgba(212, 175, 55, 0.28);
+  color: #e8d48a;
+}
+.dark .visual-law-source-list {
+  background: rgba(255, 245, 230, 0.04);
+  border-color: var(--ejc-border);
+  color: #c8bfb1;
+}
+.dark .brand-panel {
+  border-color: rgba(212, 175, 55, 0.28) !important;
+  background: linear-gradient(
+    135deg,
+    rgba(212, 175, 55, 0.1),
+    rgba(28, 23, 18, 0.92)
+  );
+}
+
+/* Marca d'água: multiply não funciona sobre fundo escuro — inverte a
+   logo (fundo branco do JPG vira preto e some no blend screen) */
+.dark .brand-watermark {
+  mix-blend-mode: screen;
+  opacity: 0.05;
+  filter: invert(1) grayscale(1);
+}
+
+/* ── 2g. ejc-modern-scope (telas legadas) ──────────────────── */
+.dark .ejc-modern-scope {
+  color: var(--ejc-ink);
+}
+.dark .ejc-modern-scope h1 {
+  color: #f2ece1;
+}
+.dark .ejc-modern-scope h2,
+.dark .ejc-modern-scope h3 {
+  color: #e8e0d3;
+}
+.dark .ejc-modern-scope .prose,
+.dark .ejc-modern-scope .whitespace-pre-wrap {
+  color: #cfc6b8;
+}
+.dark
+  .ejc-modern-scope
+  .bg-white.border:not(input):not(select):not(textarea):not(button),
+.dark
+  .ejc-modern-scope
+  .bg-white.shadow:not(input):not(select):not(textarea):not(button),
+.dark
+  .ejc-modern-scope
+  .bg-white.shadow-sm:not(input):not(select):not(textarea):not(button),
+.dark
+  .ejc-modern-scope
+  .bg-white.shadow-md:not(input):not(select):not(textarea):not(button),
+.dark
+  .ejc-modern-scope
+  .bg-white.rounded-xl:not(input):not(select):not(textarea):not(button),
+.dark
+  .ejc-modern-scope
+  .bg-white.rounded-2xl:not(input):not(select):not(textarea):not(button) {
+  border-color: rgba(255, 245, 230, 0.09) !important;
+  box-shadow: 0 18px 45px rgba(0, 0, 0, 0.4) !important;
+}
+.dark .ejc-modern-scope [class*="border-dashed"] {
+  border-color: rgba(255, 245, 230, 0.18) !important;
+  background: rgba(255, 245, 230, 0.03);
+}
+.dark .ejc-modern-scope .bg-slate-100.p-1.rounded-xl,
+.dark .ejc-modern-scope .bg-gray-100.p-1.rounded-xl {
+  border-color: rgba(255, 245, 230, 0.1);
+  background: rgba(28, 23, 18, 0.8) !important;
+  box-shadow: inset 0 0 0 1px rgba(255, 245, 230, 0.05);
+}
+.dark .ejc-modern-scope .bg-slate-100.p-1.rounded-xl button.bg-white,
+.dark .ejc-modern-scope .bg-gray-100.p-1.rounded-xl button.bg-white {
+  color: #e5ce7f !important;
+  box-shadow: 0 8px 18px rgba(0, 0, 0, 0.4) !important;
+}
+
+/* ── 3. Fallback global para utilitários Tailwind hardcoded ──
+   `:where()` mantém especificidade 0,1,0 → variantes `dark:`
+   explícitas nas páginas continuam vencendo. */
+
+/* Fundos claros → superfícies escuras */
+.dark :where(.bg-white) {
+  background-color: var(--ejc-card);
+}
+.dark :where(.bg-canvas, .bg-parchment) {
+  background-color: var(--ejc-bg);
+}
+.dark :where(.bg-slate-50, .bg-gray-50) {
+  background-color: #211b15;
+}
+.dark :where(.bg-slate-100, .bg-gray-100, .bg-slate-200, .bg-slate-200\/70) {
+  background-color: rgba(255, 245, 230, 0.08);
+}
+.dark
+  :where(
+    .bg-slate-50\/50,
+    .bg-slate-50\/60,
+    .bg-slate-50\/70,
+    .bg-slate-50\/80,
+    .bg-slate-100\/60,
+    .bg-slate-100\/70,
+    .bg-slate-100\/80
+  ) {
+  background-color: rgba(255, 245, 230, 0.04);
+}
+.dark :where(.bg-white\/75, .bg-white\/80) {
+  background-color: rgba(28, 23, 18, 0.78);
+}
+.dark :where(.bg-white\/85, .bg-white\/90, .bg-white\/95) {
+  background-color: rgba(28, 23, 18, 0.88);
+}
+.dark :where(.bg-white\/50, .bg-white\/60, .bg-white\/70) {
+  background-color: rgba(28, 23, 18, 0.6);
+}
+
+/* Textos escuros → creme */
+.dark
+  :where(
+    .text-slate-950,
+    .text-slate-900,
+    .text-gray-950,
+    .text-gray-900,
+    .text-ink,
+    .text-navy,
+    .text-navy-900,
+    .text-black
+  ) {
+  color: var(--ejc-ink);
+}
+.dark :where(.text-slate-800, .text-slate-700, .text-gray-800, .text-gray-700) {
+  color: #d6cec2;
+}
+.dark :where(.text-slate-600, .text-gray-600, .text-slate-500, .text-gray-500) {
+  color: var(--ejc-muted);
+}
+.dark :where(.text-slate-400, .text-gray-400, .text-slate-300) {
+  color: #8b8274;
+}
+
+/* Bordas claras → bordas translúcidas */
+.dark
+  :where(
+    .border-slate-50,
+    .border-slate-100,
+    .border-slate-200,
+    .border-slate-300,
+    .border-gray-100,
+    .border-gray-200,
+    .border-gray-300,
+    .border-slate-200\/60,
+    .border-slate-200\/70,
+    .border-slate-200\/80,
+    .border-white\/50,
+    .border-border
+  ) {
+  border-color: var(--ejc-border);
+}
+.dark
+  :where(
+    .divide-slate-100,
+    .divide-slate-200,
+    .divide-gray-100,
+    .divide-gray-200
+  )
+  > :not([hidden])
+  ~ :not([hidden]) {
+  border-color: var(--ejc-border);
+}
+.dark :where(.ring-slate-100, .ring-slate-200, .ring-slate-200\/60) {
+  --tw-ring-color: var(--ejc-border);
+}
+.dark :where(.ring-white) {
+  --tw-ring-color: var(--ejc-card);
+}
+
+/* Hovers claros → véu creme */
+.dark
+  :where(
+    .hover\:bg-slate-50:hover,
+    .hover\:bg-slate-100:hover,
+    .hover\:bg-gray-50:hover,
+    .hover\:bg-gray-100:hover,
+    .hover\:bg-slate-50\/70:hover,
+    .hover\:bg-slate-200:hover,
+    .hover\:bg-white:hover
+  ) {
+  background-color: rgba(255, 245, 230, 0.06);
+}
+
+/* Tintas primárias (creme/dourado suave) → dourado translúcido */
+.dark
+  :where(
+    .bg-primary-50,
+    .bg-primary-100,
+    .bg-primary-50\/40,
+    .bg-primary-50\/50,
+    .bg-primary-50\/60,
+    .bg-amber-50,
+    .bg-amber-100
+  ) {
+  background-color: rgba(212, 175, 55, 0.12);
+}
+.dark
+  :where(
+    .hover\:bg-primary-50:hover,
+    .hover\:bg-primary-50\/50:hover,
+    .hover\:bg-primary-50\/60:hover,
+    .hover\:bg-primary-100:hover
+  ) {
+  background-color: rgba(212, 175, 55, 0.14);
+}
+.dark
+  :where(
+    .text-primary-600,
+    .text-primary-700,
+    .text-primary-800,
+    .text-primary-900
+  ) {
+  color: #e5ce7f;
+}
+.dark :where(.text-amber-700, .text-amber-800, .text-amber-900) {
+  color: #e8d48a;
+}
+.dark :where(.border-amber-200, .border-amber-300, .border-primary-200) {
+  border-color: rgba(212, 175, 55, 0.3);
+}
+
+/* Status suaves → translúcidos com texto claro */
+.dark :where(.bg-success-50, .bg-success-100, .bg-emerald-50, .bg-green-50) {
+  background-color: rgba(18, 184, 134, 0.12);
+}
+.dark
+  :where(
+    .text-success-700,
+    .text-success-800,
+    .text-emerald-700,
+    .text-green-700
+  ) {
+  color: #4ecfa2;
+}
+.dark :where(.bg-warn-50, .bg-warn-100, .bg-yellow-50, .bg-orange-50) {
+  background-color: rgba(239, 174, 46, 0.12);
+}
+.dark
+  :where(.text-warn-700, .text-warn-800, .text-yellow-700, .text-orange-700) {
+  color: #f2c14e;
+}
+.dark :where(.bg-danger-50, .bg-danger-100, .bg-red-50, .bg-rose-50) {
+  background-color: rgba(224, 49, 49, 0.14);
+}
+.dark :where(.text-danger-600, .text-danger-700, .text-red-600, .text-red-700) {
+  color: #f08a8a;
+}
+.dark :where(.hover\:bg-danger-50:hover, .hover\:bg-red-50:hover) {
+  background-color: rgba(224, 49, 49, 0.14);
+}
+.dark :where(.bg-info-50, .bg-sky-50, .bg-blue-50) {
+  background-color: rgba(14, 165, 233, 0.12);
+}
+.dark :where(.text-info-700, .text-sky-700, .text-blue-700) {
+  color: #67c5f0;
+}
+.dark :where(.bg-ai-50, .bg-ai-100) {
+  background-color: rgba(247, 146, 86, 0.12);
+}
+.dark :where(.text-ai-700, .text-ai-800) {
+  color: #fcb985;
+}
+
+/* A logomarca JPG SEMPRE fica sobre branco (protege dos fallbacks) */
+.dark .brand-logo-tile,
+.dark img.brand-logo-img {
+  background-color: #ffffff;
+}
+.dark .brand-logo-tile {
+  box-shadow:
+    0 0 0 1px rgba(212, 175, 55, 0.35),
+    0 6px 22px rgba(0, 0, 0, 0.45);
 }

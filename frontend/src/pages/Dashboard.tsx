@@ -46,14 +46,16 @@ const areaTone: Record<string, string> = {
   tributario: "bg-info-600",
 };
 
-// Paleta do donut — dourado / âmbar / bronze + apoio
+// Paleta do donut — marrom profundo / bronze / dourado / creme (mockup).
+// Via CSS vars: no escuro o marrom (invisível sobre #1C1712) troca com o
+// creme — ver --ejc-chart-* em index.css.
 const DONUT_COLORS = [
-  "#C9A227",
-  "#FFD166",
-  "#F79256",
-  "#0CA678",
-  "#E5CE7F",
-  "#94A3B8",
+  "var(--ejc-chart-1)",
+  "var(--ejc-chart-2)",
+  "var(--ejc-chart-3)",
+  "var(--ejc-chart-4)",
+  "var(--ejc-chart-5)",
+  "var(--ejc-chart-6)",
 ];
 
 function initials(value?: string) {
@@ -96,10 +98,11 @@ function GoldAreaChart({
       >
         <defs>
           <linearGradient id="gold-fill" x1="0" y1="0" x2="0" y2="1">
-            <stop offset="0%" stopColor="#C9A227" stopOpacity="0.28" />
-            <stop offset="100%" stopColor="#C9A227" stopOpacity="0.02" />
+            <stop offset="0%" stopColor="#D4AF37" stopOpacity="0.28" />
+            <stop offset="100%" stopColor="#D4AF37" stopOpacity="0.02" />
           </linearGradient>
         </defs>
+        {/* grid segue o tema (claro: cinza; escuro: creme translúcido) */}
         {[0.25, 0.5, 0.75].map((f) => (
           <line
             key={f}
@@ -107,7 +110,7 @@ function GoldAreaChart({
             x2={W - PAD}
             y1={PAD + f * (H - PAD * 2)}
             y2={PAD + f * (H - PAD * 2)}
-            stroke="#EDF0F4"
+            className="stroke-slate-100 dark:stroke-[rgba(255,245,230,0.09)]"
             strokeWidth="1"
           />
         ))}
@@ -117,7 +120,7 @@ function GoldAreaChart({
             <path
               d={line}
               fill="none"
-              stroke="#C9A227"
+              stroke="#D4AF37"
               strokeWidth="2.5"
               strokeLinecap="round"
               strokeLinejoin="round"
@@ -130,8 +133,8 @@ function GoldAreaChart({
             cx={c.x}
             cy={c.y}
             r="3.5"
-            fill="#fff"
-            stroke="#C9A227"
+            fill="var(--ejc-card)"
+            stroke="#D4AF37"
             strokeWidth="2"
           />
         ))}
@@ -163,7 +166,7 @@ function DonutChart({
           cy="60"
           r={R}
           fill="none"
-          stroke="#EDF0F4"
+          className="stroke-slate-100 dark:stroke-[rgba(255,245,230,0.09)]"
           strokeWidth="14"
         />
         {slices.map((s) => {
