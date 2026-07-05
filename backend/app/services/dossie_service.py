@@ -252,6 +252,13 @@ async def gerar_dossie(
                 )
             prompt_sanitizado_log = prompt_limpo
 
+            # Nomes próprios do caso (cliente/empresa/parte contrária/advogado)
+            # → marcadores consistentes e REVERSÍVEIS antes do provider externo
+            # (task estrategia = EXTERNO_PSEUDONIMIZADO). A pré-sanitização acima
+            # cobre a PII estrutural; `entidades` cobre os nomes.
+            from app.services.ai.entidades_caso import entidades_do_caso
+            entidades = await entidades_do_caso(db, case_id)
+
             resp = await gw_chat(
                 messages=[
                     {"role": "system",
@@ -263,6 +270,7 @@ async def gerar_dossie(
                 task_type="estrategia",  # task_type REAL do gateway
                 temperature=0.3,
                 max_tokens=3500,
+                entidades=entidades or None,
             )
             conteudo_md = resp.texto
             modelo_ia   = resp.modelo

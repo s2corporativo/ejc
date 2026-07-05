@@ -82,11 +82,17 @@ async def executar_ia(
                             "Módulo de IA não habilitado. Defina AI_ENABLED=true no .env.")
     # Bloco 5 (continuação): case_id existia mas sem checagem de ownership.
     escopo_cli = None
+    entidades = None
     if req.case_id:
         from app.core.ownership import verificar_acesso_caso
         from app.services.ai_service import _escopo_cliente_do_caso
+        from app.services.ai.entidades_caso import entidades_do_caso
         await verificar_acesso_caso(db, cu, req.case_id)
         escopo_cli = await _escopo_cliente_do_caso(db, req.case_id)
+        # Nomes do caso → marcadores reversíveis quando a tarefa vai a provider
+        # externo em modo pseudonimizado (executar_tarefa_ia decide o modo pelo
+        # `tarefa`); em MASCARAMENTO o gateway ignora `entidades` (sem efeito).
+        entidades = await entidades_do_caso(db, req.case_id)
 
     # Guarda LGPD (auditoria 2026-07-02): mensagem livre do usuário ia direto ao
     # provedor externo sem sanitização — aborta se sobrar PII estrutural.
@@ -105,6 +111,7 @@ async def executar_ia(
             tarefa=req.tarefa, mensagem=mensagem_limpa, case_id=req.case_id,
             contexto_rag=contexto_rag, user_id=cu.id, db=db,
             nivel_inteligencia=req.nivel_inteligencia,
+            entidades=entidades or None,
         )
     except ValueError as e:
         raise HTTPException(status.HTTP_400_BAD_REQUEST, str(e))
