@@ -1,0 +1,140 @@
+# ── app/services/ai/sanitization_policy.py ───────────────────────────────────
+# NÍVEIS DE SANITIZAÇÃO DE PII POR TIPO DE TAREFA (Núcleo Único de IA).
+#
+# Eleva o mascaramento irreversível legado para uma política graduada por
+# tarefa, decidindo COMO o conteúdo é tratado antes de um provider EXTERNO
+# (Anthropic/Groq — fora do VPS, art. 33/46 LGPD):
+#
+#   • LOCAL_COMPLETO         (Modo 1) — sigilo reforçado: só Ollama LOCAL; o
+#                            conteúdo NUNCA vai a provider externo (nem
+#                            pseudonimizado). Sem local elegível → bloqueia.
+#   • EXTERNO_PSEUDONIMIZADO (Modo 2+3) — pseudonimiza (marcadores consistentes
+#                            e reversíveis) → externo → REIDRATA a resposta
+#                            localmente. Seguro para análise/minuta.
+#   • EXTRACAO_LOCAL         (Modo 4) — a PII estruturada é extraída LOCALMENTE
+#                            (regex/parser) no ponto de importação; ao gateway,
+#                            trata-se como ≥ pseudonimizado (nunca vaza PII).
+#   • MASCARAMENTO           (legado/fallback) — mascaramento IRREVERSÍVEL via
+#                            sanitizer ([CPF], [EMAIL]…). Comportamento atual.
+#
+# O mapeamento default é REVISÁVEL POR DR. CLOVIS e OVERRIDÁVEL por configuração
+# (Settings.AI_SANITIZATION_MODE_MAP — JSON opcional task_type→modo). Sem
+# override, vale o default abaixo. Defaults SEGUROS: qualquer tarefa não mapeada
+# cai em MASCARAMENTO (irreversível), nunca em "sem sanitização".
+# ─────────────────────────────────────────────────────────────────────────────
+from __future__ import annotations
+
+import json
+import logging
+from enum import Enum
+
+from app.core.config import get_settings
+
+logger = logging.getLogger("ejc.ai.sanitization_policy")
+
+
+class ModoSanitizacao(str, Enum):
+    LOCAL_COMPLETO = "local_completo"
+    EXTERNO_PSEUDONIMIZADO = "externo_pseudonimizado"
+    EXTRACAO_LOCAL = "extracao_local"
+    MASCARAMENTO = "mascaramento"
+
+
+# ── Mapeamento DEFAULT (revisável por Dr. Clovis) ─────────────────────────────
+# Chaves em minúsculo; cobre o vocabulário de TarefaIA (system_prompts/router.py)
+# E os task_types do ai_gateway (TASK_ROUTING + aliases), pois `chat()` pode
+# receber qualquer um dos dois. Comparação é feita sobre o task_type ORIGINAL
+# (antes da normalização por aliases do gateway).
+_MODO_DEFAULT_POR_TASK: dict[str, ModoSanitizacao] = {
+    # Modo 1 — sigilo reforçado: nunca sai do VPS.
+    "criminal": ModoSanitizacao.LOCAL_COMPLETO,
+    # Modo 2+3 — pseudonimização reversível + reidratação (análise/minuta).
+    "analise_caso": ModoSanitizacao.EXTERNO_PSEUDONIMIZADO,
+    "dossie": ModoSanitizacao.EXTERNO_PSEUDONIMIZADO,
+    "minutas": ModoSanitizacao.EXTERNO_PSEUDONIMIZADO,
+    "estrategia": ModoSanitizacao.EXTERNO_PSEUDONIMIZADO,
+    "pesquisa_juridica": ModoSanitizacao.EXTERNO_PSEUDONIMIZADO,
+    "trabalhista": ModoSanitizacao.EXTERNO_PSEUDONIMIZADO,
+    "familia": ModoSanitizacao.EXTERNO_PSEUDONIMIZADO,
+    "ambiental": ModoSanitizacao.EXTERNO_PSEUDONIMIZADO,
+    "honorarios": ModoSanitizacao.EXTERNO_PSEUDONIMIZADO,
+    "audiencia": ModoSanitizacao.EXTERNO_PSEUDONIMIZADO,
+    "prazos": ModoSanitizacao.EXTERNO_PSEUDONIMIZADO,
+    # Vocabulário do gateway (TASK_ROUTING) para tarefas complexas equivalentes.
+    "analise_juridica": ModoSanitizacao.EXTERNO_PSEUDONIMIZADO,
+    "elaboracao_peca": ModoSanitizacao.EXTERNO_PSEUDONIMIZADO,
+    "analise_contrato": ModoSanitizacao.EXTERNO_PSEUDONIMIZADO,
+    "auditoria_peca": ModoSanitizacao.EXTERNO_PSEUDONIMIZADO,
+    "jurimetria": ModoSanitizacao.EXTERNO_PSEUDONIMIZADO,
+    "critica_adversarial": ModoSanitizacao.EXTERNO_PSEUDONIMIZADO,
+    # Modo 4 — extração estruturada local (importação/OCR de documento).
+    "intake": ModoSanitizacao.EXTRACAO_LOCAL,
+    "importacao_documento": ModoSanitizacao.EXTRACAO_LOCAL,
+    "extracao_documento": ModoSanitizacao.EXTRACAO_LOCAL,
+    "ocr": ModoSanitizacao.EXTRACAO_LOCAL,
+    # Legado/mascaramento irreversível — tarefas simples/econômicas.
+    "triagem": ModoSanitizacao.MASCARAMENTO,
+    "resumo": ModoSanitizacao.MASCARAMENTO,
+    "rag_query": ModoSanitizacao.MASCARAMENTO,
+    "chat_rapido": ModoSanitizacao.MASCARAMENTO,
+    "chat": ModoSanitizacao.MASCARAMENTO,
+    "default": ModoSanitizacao.MASCARAMENTO,
+}
+
+# Fallback seguro para tarefa desconhecida: mascaramento irreversível (nunca
+# "sem sanitização"; nunca pseudonimização sem intenção explícita).
+_MODO_FALLBACK = ModoSanitizacao.MASCARAMENTO
+
+
+def _overrides() -> dict[str, ModoSanitizacao]:
+    """Lê Settings.AI_SANITIZATION_MODE_MAP (JSON opcional task_type→modo).
+    JSON inválido/valor desconhecido é ignorado com log de aviso (fail-safe:
+    cai no default), nunca derruba a chamada de IA."""
+    raw = (getattr(get_settings(), "AI_SANITIZATION_MODE_MAP", "") or "").strip()
+    if not raw:
+        return {}
+    try:
+        bruto = json.loads(raw)
+        if not isinstance(bruto, dict):
+            raise ValueError("esperado objeto JSON task_type→modo")
+    except Exception as e:  # noqa: BLE001 — override malformado nunca quebra IA
+        logger.warning("AI_SANITIZATION_MODE_MAP ignorado (inválido): %s", str(e)[:200])
+        return {}
+    resultado: dict[str, ModoSanitizacao] = {}
+    for task, modo in bruto.items():
+        try:
+            resultado[str(task).strip().lower()] = ModoSanitizacao(str(modo).strip().lower())
+        except ValueError:
+            logger.warning(
+                "AI_SANITIZATION_MODE_MAP: modo '%s' desconhecido p/ '%s' — ignorado",
+                modo, task,
+            )
+    return resultado
+
+
+def modo_para_task(task_type: str) -> ModoSanitizacao:
+    """Retorna o ModoSanitizacao para `task_type` (default + override de config).
+
+    O override (AI_SANITIZATION_MODE_MAP) tem precedência sobre o default, EXCETO
+    pelo PISO DE SEGURANÇA não-rebaixável: se o DEFAULT da tarefa for
+    LOCAL_COMPLETO (sigilo reforçado, ex.: `criminal`), um override que NÃO seja
+    LOCAL_COMPLETO é IGNORADO (com aviso) — o dado não pode ser rebaixado para
+    externo por configuração. Reforçar (qualquer tarefa → LOCAL_COMPLETO) é
+    sempre permitido. Tarefa não mapeada em nenhum dos dois → `_MODO_FALLBACK`
+    (MASCARAMENTO, seguro)."""
+    task = (task_type or "").strip().lower()
+    padrao = _MODO_DEFAULT_POR_TASK.get(task, _MODO_FALLBACK)
+    over = _overrides()
+    if task in over:
+        escolhido = over[task]
+        # Piso: LOCAL_COMPLETO por default nunca é rebaixado por override.
+        if padrao == ModoSanitizacao.LOCAL_COMPLETO and escolhido != ModoSanitizacao.LOCAL_COMPLETO:
+            logger.warning(
+                "AI_SANITIZATION_MODE_MAP: override '%s' para '%s' IGNORADO — "
+                "tarefa de sigilo reforçado (LOCAL_COMPLETO) não pode ser rebaixada "
+                "para provider externo (piso de segurança LGPD).",
+                escolhido.value, task,
+            )
+            return ModoSanitizacao.LOCAL_COMPLETO
+        return escolhido
+    return padrao

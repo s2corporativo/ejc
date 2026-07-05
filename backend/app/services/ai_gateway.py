@@ -194,6 +194,7 @@ async def chat(
     model_override: str | None = None,
     provider_override: str | None = None,
     nivel_inteligencia: str | None = None,
+    entidades: dict[str, list[str]] | None = None,
 ) -> GatewayResponse:
     """
     Ponto central de chamada à IA.
@@ -203,13 +204,25 @@ async def chat(
       task_type       — tipo de tarefa (define qual modelo usar)
       model_override  — forçar modelo específico (ex: "deepseek-r1:14b")
       provider_override — forçar provedor ("groq" | "ollama")
+      entidades       — nomes próprios a pseudonimizar por tipo (opcional):
+                        {"cliente": [...], "empresa": [...], "advogado": [...],
+                        "parte_contraria": [...]}. Só usado em modo
+                        EXTERNO_PSEUDONIMIZADO/EXTRACAO_LOCAL antes de provider
+                        externo. None (default) = só PII estrutural (não quebra
+                        os call sites existentes).
 
     Retorna GatewayResponse com texto, metadados e informações de fallback.
     """
+    # Modo de sanitização de PII é decidido pelo task_type ORIGINAL (antes dos
+    # aliases do gateway), pois o mapeamento LGPD usa o vocabulário de tarefa.
+    task_type_original = task_type
     task_type = _normalizar_task_type(task_type)
     t0 = time.monotonic()
     fallback_ativado = False
     fallback_motivo: str | None = None
+
+    from app.services.ai.sanitization_policy import ModoSanitizacao, modo_para_task
+    modo_sanitizacao = modo_para_task(task_type_original)
 
     # #8 — injeta a identidade do escritório no system (apenas tarefas de prosa).
     messages = _aplicar_nivel(legal_base.aplicar_base(messages, task_type), nivel_inteligencia)
@@ -275,6 +288,14 @@ async def chat(
         task_type, provider_force, model_override, provider_preferido, model_preferido
     )
 
+    # ── Modo 1 (LOCAL_COMPLETO) — sigilo reforçado: a tarefa NUNCA pode ir a
+    # provider externo (nem pseudonimizada). Filtra a cadeia para providers
+    # LOCAIS; sem local elegível → bloqueio SEGURO (não vaza o conteúdo).
+    if modo_sanitizacao == ModoSanitizacao.LOCAL_COMPLETO:
+        cadeia = _restringir_cadeia_local_completo(cadeia, modo_sanitizacao, task_type_original)
+        if not cadeia:
+            raise RuntimeError(_MSG_BLOQUEIO_LOCAL_COMPLETO)
+
     # ── Fase 6 — Observabilidade (Langfuse self-hosted, NO-OP se desligado) ──
     from app.services.observability import langfuse_client as _lf
     _trace = _lf.novo_trace(
@@ -293,10 +314,19 @@ async def chat(
         # este provedor é PULADO (tenta o próximo — ex.: Ollama local).
         # Nunca ecoa o conteúdo — só os TIPOS de PII no log.
         messages_envio = messages
+        # `mapa_reidratacao` contém PII real (só EXTERNO_PSEUDONIMIZADO):
+        # vive SÓ nesta iteração/memória, nunca é logado/persistido/enviado.
+        mapa_reidratacao: dict[str, str] | None = None
         if provider in _PROVIDERS_EXTERNOS and settings.AI_REQUIRE_SANITIZATION_FOR_EXTERNAL:
-            messages_envio, residual = _sanitizar_messages_externo(messages)
+            # EXTERNO_PSEUDONIMIZADO / EXTRACAO_LOCAL → pseudonimização REVERSÍVEL
+            # (marcadores consistentes) + reidratação da resposta. Demais modos
+            # (MASCARAMENTO/legado) → mascaramento IRREVERSÍVEL (comportamento atual).
+            messages_envio, residual, mapa_reidratacao = _preparar_mensagens_externo(
+                messages, modo_sanitizacao, entidades
+            )
             if residual:
                 bloqueado_por_pii = True
+                mapa_reidratacao = None  # não reidratar: provider externo foi pulado
                 ultimo_erro = f"PII residual ({', '.join(residual)}) bloqueou provider externo"
                 fallback_motivo = f"{provider}: bloqueado por PII residual (LGPD)"
                 logger.warning(
@@ -310,6 +340,13 @@ async def chat(
             texto, usage = await _chamar_provedor(
                 provider, model, messages_envio, temperature, max_tokens
             )
+            # Reidratação LOCAL: só a resposta DEVOLVIDA ao chamador recupera o
+            # dado real. A versão pseudonimizada (`texto_para_log`) é a que vai
+            # ao Langfuse — nunca PII em claro na observabilidade (LGPD).
+            texto_para_log = texto
+            if mapa_reidratacao:
+                from app.services.ai.pseudonymizer import reidratar
+                texto = reidratar(texto, mapa_reidratacao)
             duracao = int((time.monotonic() - t0) * 1000)
             modelo_real = usage.get("model", model or "")
             inp = usage.get("input_tokens")
@@ -341,7 +378,7 @@ async def chat(
                 )
             _lf.registrar_generation(
                 _trace, name=task_type, model=modelo_real,
-                input_messages=messages_envio, output_text=texto,
+                input_messages=messages_envio, output_text=texto_para_log,
                 input_tokens=inp, output_tokens=out,
                 metadata=_lf.montar_metadata(
                     provider=provider, model=modelo_real, task_type=task_type,
@@ -517,6 +554,69 @@ def _sanitizar_messages_externo(messages: list[dict]) -> tuple[list[dict], list[
     return limpos, sorted(residual)
 
 
+def _pseudonimizar_messages_externo(
+    messages: list[dict],
+    entidades: dict[str, list[str]] | None = None,
+) -> tuple[list[dict], list[str], dict[str, str]]:
+    """Barreira EXTERNO_PSEUDONIMIZADO (Modo 2+3): substitui PII por marcadores
+    CONSISTENTES e REVERSÍVEIS (mesma entidade → mesmo marcador em todas as
+    mensagens), verifica PII residual (segunda barreira `validar_sem_pii`) e
+    devolve também o `mapa` (marcador → valor real) para REIDRATAR a resposta.
+
+    `entidades` (opcional) protege nomes próprios por tipo — {"cliente": [...],
+    "empresa": [...], "advogado": [...], "parte_contraria": [...]}: sem ela,
+    apenas PII estrutural (CPF/CNPJ/processo/…) é pseudonimizada.
+
+    ⚠️ O `mapa` contém PII real: fica só em memória na request; jamais é logado,
+    persistido (AILog/Langfuse) ou enviado a provider externo. O que segue ao
+    Anthropic/Groq são as mensagens já pseudonimizadas."""
+    from app.services.ai.pseudonymizer import (
+        pseudonimizar_mensagens,
+        validar_sem_pii_pseudonimizado,
+    )
+    limpos, mapa = pseudonimizar_mensagens(messages, entidades)
+    residual: set[str] = set()
+    for m in limpos:
+        residual.update(validar_sem_pii_pseudonimizado(m.get("content", "") or ""))
+    return limpos, sorted(residual), mapa
+
+
+# ── Política de modo de sanitização (compartilhada por chat() e
+#    executar_tarefa_ia() — fonte única para não divergirem) ────────────────────
+_MSG_BLOQUEIO_LOCAL_COMPLETO = (
+    "Esta tarefa exige processamento por IA local (sigilo reforçado) "
+    "e nenhum provedor local está disponível — habilite o Ollama."
+)
+
+
+def _restringir_cadeia_local_completo(cadeia, modo, task_label):
+    """Modo 1 (LOCAL_COMPLETO): remove providers EXTERNOS da cadeia — a tarefa
+    nunca pode sair do VPS (nem pseudonimizada). Retorna a cadeia filtrada; se
+    esvaziar, loga e o chamador deve levantar bloqueio SEGURO (sem vazar conteúdo)."""
+    from app.services.ai.sanitization_policy import ModoSanitizacao
+    if modo != ModoSanitizacao.LOCAL_COMPLETO:
+        return cadeia
+    filtrada = [(p, m) for (p, m) in cadeia if p not in _PROVIDERS_EXTERNOS]
+    if not filtrada:
+        logger.warning(
+            "[Gateway] task=%s exige IA local (sigilo reforçado) e não há "
+            "provedor local elegível — chamada bloqueada (LGPD).",
+            task_label,
+        )
+    return filtrada
+
+
+def _preparar_mensagens_externo(messages, modo, entidades=None):
+    """Barreira final por-provider EXTERNO conforme o modo. Retorna sempre
+    (messages_envio, residual, mapa): `mapa` só é não-vazio no modo REVERSÍVEL
+    (EXTERNO_PSEUDONIMIZADO/EXTRACAO_LOCAL); em MASCARAMENTO é None (irreversível)."""
+    from app.services.ai.sanitization_policy import ModoSanitizacao
+    if modo in (ModoSanitizacao.EXTERNO_PSEUDONIMIZADO, ModoSanitizacao.EXTRACAO_LOCAL):
+        return _pseudonimizar_messages_externo(messages, entidades)
+    limpos, residual = _sanitizar_messages_externo(messages)
+    return limpos, residual, None
+
+
 async def _chamar_provedor(
     provider: str,
     model: str | None,
@@ -565,15 +665,25 @@ def _custo_brl(model: str, inp: int, out: int) -> float:
 async def executar_tarefa_ia(tarefa, mensagem: str, case_id: str | None = None,
                              contexto_rag: list[str] | None = None,
                              user_id: str | None = None, db=None,
-                             nivel_inteligencia: str = "alto") -> dict:
+                             nivel_inteligencia: str = "alto",
+                             entidades: dict[str, list[str]] | None = None) -> dict:
     """Entrada do MÓDULO IA por tarefa. Resultado SEMPRE rascunho (HITL/OAB).
 
     Auditoria 2026-07-04 (P1-1/P2-1): este caminho aplica as MESMAS regras do
     chat() — elegibilidade por provedor (inclui o kill-switch de soberania
     AI_EXTERNAL_PROVIDERS_ALLOWED) e barreira final de sanitização antes de
     provider EXTERNO (cobre o contexto RAG, que pode conter PII de precedentes
-    internos). AILog via ai_guard (canônico): erro de gravação PROPAGA."""
+    internos). AILog via ai_guard (canônico): erro de gravação PROPAGA.
+
+    Auditoria 2026-07-05: aplica a MESMA política de MODO de sanitização por
+    tarefa do chat() (sanitization_policy) — LOCAL_COMPLETO nunca vai a externo;
+    EXTERNO_PSEUDONIMIZADO/EXTRACAO_LOCAL pseudonimizam (reversível) e reidratam
+    a resposta; MASCARAMENTO mantém o mascaramento irreversível legado. O `mapa`
+    de reidratação vive só em memória; AILog/Langfuse recebem versão PSEUDONIMIZADA."""
+    from app.services.ai.sanitization_policy import ModoSanitizacao, modo_para_task
     from app.services.system_prompts import SYSTEM_PROMPTS, get_configuracao
+    tarefa_label = str(getattr(tarefa, "value", tarefa))
+    modo_sanitizacao = modo_para_task(tarefa_label)
     cfg = get_configuracao(tarefa)
     system_prompt = SYSTEM_PROMPTS.get(cfg.prompt_key, SYSTEM_PROMPTS["default"])
     if contexto_rag:
@@ -589,18 +699,41 @@ async def executar_tarefa_ia(tarefa, mensagem: str, case_id: str | None = None,
     if settings.OLLAMA_ENABLED and cfg.provider != "ollama":
         cadeia.append(("ollama", None))
 
+    # ── Modo 1 (LOCAL_COMPLETO) — sigilo reforçado: nunca sai do VPS. Remove
+    # externos; sem provedor local ELEGÍVEL → bloqueio SEGURO (externo nunca é
+    # chamado; a mensagem não vaza conteúdo). Espelha o chat().
+    if modo_sanitizacao == ModoSanitizacao.LOCAL_COMPLETO:
+        cadeia = _restringir_cadeia_local_completo(cadeia, modo_sanitizacao, tarefa_label)
+        if not any(_provider_elegivel(p) for p, _ in cadeia):
+            logger.warning(
+                "[Gateway] executar_tarefa_ia task=%s exige IA local (sigilo "
+                "reforçado) e não há provedor local elegível — bloqueada (LGPD).",
+                tarefa_label,
+            )
+            raise RuntimeError(_MSG_BLOQUEIO_LOCAL_COMPLETO)
+
     texto = usage = provedor_usado = None
     ultimo_erro = "nenhum provedor elegível"
     bloqueado_por_pii = False
+    # Log LGPD: por padrão o prompt cru; no modo reversível será o PSEUDONIMIZADO.
+    resposta_log = None
+    prompt_log = mensagem[:8000]
+    pii_removida_log = False
     for provider, model in cadeia:
         if not _provider_elegivel(provider):
             ultimo_erro = f"{provider} inelegível (habilitação/chave/soberania)"
             continue
         messages_envio = messages
+        # `mapa_reidratacao` contém PII real (só modo reversível): vive só nesta
+        # iteração/memória; nunca é logado/persistido/enviado a externo.
+        mapa_reidratacao: dict[str, str] | None = None
         if provider in _PROVIDERS_EXTERNOS and settings.AI_REQUIRE_SANITIZATION_FOR_EXTERNAL:
-            messages_envio, residual = _sanitizar_messages_externo(messages)
+            messages_envio, residual, mapa_reidratacao = _preparar_mensagens_externo(
+                messages, modo_sanitizacao, entidades
+            )
             if residual:
                 bloqueado_por_pii = True
+                mapa_reidratacao = None  # não reidratar: provider externo foi pulado
                 ultimo_erro = f"PII residual ({', '.join(residual)}) bloqueou provider externo"
                 logger.warning(f"[Gateway] {provider} pulado em executar_tarefa_ia — "
                                f"PII residual ({', '.join(residual)}) após sanitização (LGPD).")
@@ -609,6 +742,14 @@ async def executar_tarefa_ia(tarefa, mensagem: str, case_id: str | None = None,
             texto, usage = await _chamar_provedor(provider, model, messages_envio,
                                                   cfg.temperature, cfg.max_tokens)
             provedor_usado = provider
+            # Log recebe a versão PSEUDONIMIZADA (sem PII real); só a resposta
+            # DEVOLVIDA ao chamador é reidratada.
+            resposta_log = texto
+            if mapa_reidratacao:
+                from app.services.ai.pseudonymizer import reidratar
+                prompt_log = (messages_envio[-1].get("content", "") if messages_envio else mensagem)[:8000]
+                pii_removida_log = True
+                texto = reidratar(texto, mapa_reidratacao)
             break
         except Exception as e:
             ultimo_erro = str(e)[:120]
@@ -629,12 +770,13 @@ async def executar_tarefa_ia(tarefa, mensagem: str, case_id: str | None = None,
     if db is not None and user_id:
         # Canônico (ai_guard): tipo_uso mapeado para o enum real e erro PROPAGA —
         # IA sem trilha de auditoria deve falhar, não responder em silêncio.
+        # AILog guarda a versão PSEUDONIMIZADA (sem PII real) no modo reversível.
         from app.services.ai_guard import registrar_ai_log
         from app.services.ai.core.audit_logger import _tipo_uso
         await registrar_ai_log(
             db, user_id=user_id, tipo_uso=_tipo_uso(tarefa), case_id=case_id,
-            prompt_sanitizado=mensagem[:8000], pii_removida=False,
-            resposta=texto, modelo=f"{provedor_usado}/{modelo_real}",
+            prompt_sanitizado=prompt_log, pii_removida=pii_removida_log,
+            resposta=resposta_log, modelo=f"{provedor_usado}/{modelo_real}",
             tokens_input=inp, tokens_output=out, custo_estimado=custo,
         )
     return {

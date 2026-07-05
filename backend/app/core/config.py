@@ -116,6 +116,15 @@ class Settings(BaseSettings):
     # Ordem de preferência entre provedores ELEGÍVEIS (csv). A policy ainda
     # filtra por habilitação/chave e prioriza Anthropic em tarefas complexas.
     AI_PROVIDER_PRIORITY: str = "ollama,anthropic,groq"
+    # ── Níveis de sanitização de PII por tipo de tarefa (LGPD art. 33/46) ─────
+    # JSON OPCIONAL (string) mapeando task_type → modo de sanitização, que
+    # SOBREPÕE o default de app/services/ai/sanitization_policy.py. Modos:
+    # "local_completo" (só Ollama local; nunca externo), "externo_pseudonimizado"
+    # (pseudonimiza reversível → externo → reidrata), "extracao_local" (extração
+    # estruturada local) e "mascaramento" (irreversível — legado). Vazio = usa o
+    # default (revisável por Dr. Clovis). Ex.: {"familia":"local_completo"}.
+    # Fail-safe: JSON inválido ou modo desconhecido é ignorado (cai no default).
+    AI_SANITIZATION_MODE_MAP: str = ""
     # ── Intake de documentos (importação inteligente) ─────────────────────
     # True (default) = a interpretação do documento importado usa a cadeia
     # automática do gateway (ollama→anthropic→groq): se o Ollama local cair,
