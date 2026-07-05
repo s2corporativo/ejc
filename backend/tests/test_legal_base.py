@@ -1,5 +1,5 @@
 """Base anti-alucinação (IA-04) — injeção da identidade nas tarefas de prosa."""
-from app.services.legal_base import aplicar_base, garantir_identidade
+from app.services.legal_base import aplicar_base, garantir_identidade, _TASKS_COM_BASE
 
 
 def _msgs():
@@ -61,3 +61,16 @@ def test_garantir_identidade_lista_vazia():
     out = garantir_identidade([])
     assert out[0]["role"] == "system"
     assert "[IDENTIDADE]" in out[0]["content"]
+
+
+def test_pipeline_runtime_combinado_nao_duplica():
+    # Garantia (a) da revisão: o canal autoral chama garantir_identidade e, em
+    # seguida, o gateway chama aplicar_base. Mesmo quando o task_type ESTÁ em
+    # _TASKS_COM_BASE (ex.: skill juridico → elaboracao_peca), não pode duplicar.
+    task = next(iter(_TASKS_COM_BASE))
+    autoral = garantir_identidade([
+        {"role": "system", "content": "Prompt autoral da skill."},
+        {"role": "user", "content": "pergunta"},
+    ])
+    final = aplicar_base(autoral, task)
+    assert final[0]["content"].count("[IDENTIDADE]") == 1

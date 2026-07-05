@@ -6,6 +6,10 @@ from .minutas import PROMPT_MINUTAS
 from .prazos import PROMPT_PRAZOS
 from .honorarios import PROMPT_HONORARIOS
 from .ambiental import PROMPT_AMBIENTAL
+from .consumidor import PROMPT_CONSUMIDOR
+from .tributario import PROMPT_TRIBUTARIO
+from .previdenciario import PROMPT_PREVIDENCIARIO
+from .empresarial import PROMPT_EMPRESARIAL
 from .router import TarefaIA, ConfiguracaoIA, get_configuracao
 
 # Regras transversais dos prompts do Núcleo Único (evita repetição literal).
@@ -36,6 +40,10 @@ SYSTEM_PROMPTS: dict[str, str] = {
     "prazos":            PROMPT_PRAZOS,
     "honorarios":        PROMPT_HONORARIOS,
     "ambiental":         PROMPT_AMBIENTAL,
+    "consumidor":        PROMPT_CONSUMIDOR,
+    "tributario":        PROMPT_TRIBUTARIO,
+    "previdenciario":    PROMPT_PREVIDENCIARIO,
+    "empresarial":       PROMPT_EMPRESARIAL,
     "trabalhista":       PROMPT_ANALISE_CASO,
     "criminal":          PROMPT_ANALISE_CASO,
     "familia":           PROMPT_ANALISE_CASO,

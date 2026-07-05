@@ -55,7 +55,12 @@ def garantir_identidade(messages: list[dict]) -> list[dict]:
     (EjcSkill) e biblioteca de prompts (PromptJuridico). Esses prompts não
     passam pela curadoria de código e seu task_type pode não estar em
     _TASKS_COM_BASE, então aplicar_base os deixaria SEM a barreira
-    anti-alucinação (regra OAB). Aqui a barreira é obrigatória e idempotente."""
-    if not messages:
-        return [{"role": "system", "content": BASE_IDENTIDADE}]
+    anti-alucinação (regra OAB). Aqui a barreira é obrigatória e idempotente.
+
+    DECISÃO EXPLÍCITA (vs. a exclusão de analise_juridica/resumo em
+    _TASKS_COM_BASE): a exclusão foi desenhada para o path de EXTRAÇÃO-JSON do
+    gateway (executar_tarefa_ia), cujo consumidor faz parse. Estes canais
+    devolvem PROSA crua (resp.texto) ao usuário como RASCUNHO — nunca são
+    parseados como JSON —, então injetar a identidade é seguro e intencional:
+    a barreira anti-alucinação prevalece sobre a preservação de formato."""
     return _prepend_identidade(messages)
