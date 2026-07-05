@@ -437,6 +437,45 @@ async def gateway_health(cu: User = Depends(get_current_user)):
     return await gw_health()
 
 
+@router.get("/roteamento/preview")
+async def roteamento_preview(
+    task_type: str = Query(..., description="Tipo de tarefa (vocabulário do gateway)"),
+    tamanho: int = Query(0, ge=0, description="Tamanho estimado do input (chars)"),
+    cu: User = Depends(get_current_user),
+):
+    """Fase 6 — mostra qual tier/provedor/modelo o roteamento inteligente
+    escolheria para (task_type, tamanho), SEM gerar peça. Leitura para o admin
+    entender o roteamento. Reflete a elegibilidade real (kill-switch/chave)."""
+    from app.services.ai_gateway import _normalizar_task_type, _provider_elegivel
+    from app.services.ai.model_router import escolher_modelo
+    from app.core.config import get_settings
+
+    s = get_settings()
+    tt = _normalizar_task_type(task_type)
+    decisao = escolher_modelo(tt, tamanho_override=tamanho)
+    elegivel = _provider_elegivel(decisao.provider)
+    return {
+        "roteamento_habilitado": s.ROTEAMENTO_INTELIGENTE_ENABLED,
+        "task_type": tt,
+        "tamanho": tamanho,
+        "tier": decisao.tier,
+        "score": decisao.score,
+        "provider_proposto": decisao.provider,
+        "modelo_proposto": decisao.model,
+        "provider_elegivel": elegivel,
+        "observacao": (
+            "Roteamento DESLIGADO: o gateway usa a cadeia por task_type. "
+            "Este preview é apenas hipotético."
+            if not s.ROTEAMENTO_INTELIGENTE_ENABLED else
+            ("Provedor proposto elegível — seria o de partida da cadeia."
+             if elegivel else
+             "Provedor proposto INELEGÍVEL (chave/enable/soberania) — "
+             "o gateway ignora a proposta e usa a cadeia normal.")
+        ),
+        "motivo": decisao.motivo,
+    }
+
+
 # ═══ ASSISTENTE ESTRATÉGICO DO CASO — IA contextual por processo ═══════════
 
 SYSTEM_ASSISTENTE_CASO = """Você é o Assistente Estratégico do caso jurídico apresentado.
