@@ -1,11 +1,15 @@
 # ── app/routers/deadlines.py ─────────────────────────────────────────────────
 # Prazos: CRUD + cálculo automático (úteis/corridos) + confirmação de ciência
 from __future__ import annotations
+import csv
+import io
+import logging
 from datetime import datetime, timezone, date
 from uuid import uuid4
 from typing import Optional
 
 from fastapi import APIRouter, Depends, HTTPException, Query
+from fastapi.responses import Response
 from sqlalchemy import select, or_, func as sqlfunc
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -24,6 +28,9 @@ from app.schemas.deadline import (
 from app.schemas.common import MsgResponse
 
 router = APIRouter(prefix="/deadlines", tags=["Prazos"])
+logger = logging.getLogger("ejc.deadlines")
+
+_MAX_EXPORT = 5000  # teto de linhas do CSV (painel de prazos é sempre pequeno)
 
 
 @router.post("/calcular")
@@ -90,6 +97,56 @@ async def listar(
         )
         data.append(item)
     return {"data": data, "total": total, "page": page, "page_size": page_size}
+
+
+@router.get("/export.csv")
+async def exportar_csv(
+    status_f: Optional[str] = Query("pendente", alias="status"),
+    case_id: Optional[str] = None,
+    tipo: Optional[str] = None,
+    db: AsyncSession = Depends(get_db),
+    cu: User = Depends(get_current_user),
+):
+    """Exporta os prazos (com os mesmos filtros do painel) em CSV — uso recorrente
+    do escritório (imprimir/compartilhar/importar em planilha). Mesmo modelo de
+    acesso do GET /deadlines (painel compartilhado). UTF-8 com BOM p/ o Excel
+    abrir acentos corretamente."""
+    q = select(Deadline).where(Deadline.deleted_at.is_(None))
+    if status_f:
+        q = q.where(Deadline.status == status_f)
+    if case_id:
+        q = q.where(Deadline.case_id == case_id)
+    if tipo:
+        q = q.where(Deadline.tipo == tipo)
+    q = q.order_by(Deadline.data_prazo.asc()).limit(_MAX_EXPORT + 1)
+    rows = (await db.execute(q)).scalars().all()
+    truncado = len(rows) > _MAX_EXPORT
+    if truncado:
+        rows = rows[:_MAX_EXPORT]
+        logger.warning("[export.csv] resultado truncado em %d linhas", _MAX_EXPORT)
+
+    return Response(
+        content=_prazos_para_csv(rows, date.today()),
+        media_type="text/csv; charset=utf-8",
+        headers={"Content-Disposition": 'attachment; filename="prazos.csv"'},
+    )
+
+
+def _prazos_para_csv(rows, hoje: date) -> str:
+    """Serializa prazos em CSV (';' pt-BR, BOM UTF-8 p/ Excel). Pura e testável."""
+    buf = io.StringIO()
+    w = csv.writer(buf, delimiter=";")
+    w.writerow(["Titulo", "Tipo", "Prioridade", "Status", "Data do prazo",
+                "Data da intimacao", "Dias restantes", "Base legal"])
+    for d in rows:
+        dias = (d.data_prazo - hoje).days if d.data_prazo else ""
+        w.writerow([
+            d.titulo or "", d.tipo or "", d.prioridade or "", d.status or "",
+            d.data_prazo.isoformat() if d.data_prazo else "",
+            d.data_intimacao.isoformat() if getattr(d, "data_intimacao", None) else "",
+            dias, getattr(d, "base_legal", "") or "",
+        ])
+    return "﻿" + buf.getvalue()   # BOM UTF-8
 
 
 @router.post("/", status_code=201)

@@ -1,6 +1,12 @@
 import { toast } from "../components/Toast";
 import { useEffect, useState } from "react";
-import { Plus, Calculator, CheckCircle2, BadgeCheck } from "lucide-react";
+import {
+  Plus,
+  Calculator,
+  CheckCircle2,
+  BadgeCheck,
+  Download,
+} from "lucide-react";
 import api from "../lib/api";
 import type { Deadline, Paged } from "../types";
 import {
@@ -40,6 +46,24 @@ export default function Prazos() {
     if (!calc.data_inicio) return;
     const { data } = await api.post("/deadlines/calcular", calc);
     setCalcResp(data);
+  };
+
+  const exportarCsv = async () => {
+    try {
+      // Via api client (injeta o JWT); baixa como blob e dispara o download.
+      const r = await api.get("/deadlines/export.csv", {
+        params: { status: statusF || undefined },
+        responseType: "blob",
+      });
+      const url = URL.createObjectURL(r.data as Blob);
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = "prazos.csv";
+      a.click();
+      URL.revokeObjectURL(url);
+    } catch {
+      toast.error("Falha ao exportar o CSV.");
+    }
   };
 
   const salvar = async () => {
@@ -92,6 +116,9 @@ export default function Prazos() {
               }}
             >
               <Calculator size={16} /> Calculadora
+            </button>
+            <button className="btn-ghost" onClick={exportarCsv}>
+              <Download size={16} /> Exportar CSV
             </button>
             <button className="btn-gold" onClick={() => setModal(true)}>
               <Plus size={16} /> Novo prazo
