@@ -269,10 +269,12 @@ class TestIntentClassifier:
         assert r.agente == "LegalWritingAgent"
         assert r.exige_fonte is True
 
-    def test_domain_licitacao(self):
+    def test_domain_ambiental_usa_tarefa_ambiental(self):
         from app.services.ai.core.intent_classifier import classify_intent
-        r = classify_intent("task_desconhecida", domain="licitacao")
-        assert r.agente == "LicitacaoComplianceAgent"
+        from app.services.system_prompts import TarefaIA
+        r = classify_intent("task_desconhecida", domain="ambiental")
+        assert r.agente == "CaseAgent"
+        assert r.tarefa == TarefaIA.AMBIENTAL
 
     def test_keywords_na_mensagem_redigir_peticao(self):
         from app.services.ai.core.intent_classifier import classify_intent
@@ -441,22 +443,22 @@ class TestOrchestrator:
 AGENTES_CANONICOS = {
     "CaseAgent", "ProcessAgent", "DocumentAgent", "LegalWritingAgent",
     "RAGResearchAgent", "JurimetryAgent", "FinanceAgent", "BankForensicsAgent",
-    "LicitacaoComplianceAgent", "ClientCommunicationAgent", "SystemHealthAgent",
+    "ClientCommunicationAgent", "SystemHealthAgent",
     "RepairAgent", "UIUXAgent", "SecurityLGPDOABAgent",
 }
 
 
 class TestRegistries:
-    def test_14_agentes_canonicos(self):
+    def test_13_agentes_canonicos(self):
         from app.services.ai.core.agent_registry import AGENT_REGISTRY
-        assert len(AGENT_REGISTRY) == 14
+        assert len(AGENT_REGISTRY) == 13
         assert set(AGENT_REGISTRY.keys()) == AGENTES_CANONICOS
         for nome, ag in AGENT_REGISTRY.items():
             assert ag.nome == nome  # chave == nome canônico
 
-    def test_28_skills_registradas(self):
+    def test_27_skills_registradas(self):
         from app.services.ai.core.skill_registry import SKILL_REGISTRY
-        assert len(SKILL_REGISTRY) == 28
+        assert len(SKILL_REGISTRY) == 27
 
     def test_skills_de_patch_nunca_automaticas(self):
         from app.services.ai.core.skill_registry import SKILL_REGISTRY
@@ -466,7 +468,7 @@ class TestRegistries:
     def test_listar_skills_nao_expoe_handlers(self):
         from app.services.ai.core.skill_registry import SKILL_REGISTRY, listar_skills
         skills = listar_skills()
-        assert len(skills) == 28
+        assert len(skills) == 27
         for item in skills:
             assert "handler" not in item
             assert not any(callable(v) for v in item.values())

@@ -89,7 +89,7 @@ const CHECKLIST = [
   "Se já em execução fiscal: verificar se houve penhora → calcular 30 dias para embargos",
   "Calcular decadência: data do FG → verificar se o lançamento é tempestivo",
   "Calcular prescrição: data da constituição definitiva → verificar se está prescrita",
-  "Verificar situação da CND / CPD-EN (cliente precisa de certidão para licitação/contrato?)",
+  "Verificar situação da CND / CPD-EN (cliente precisa de certidão para contrato/habilitação em geral?)",
   "Identificar se há outros processos do mesmo cliente → consolidar défices",
   "Verificar parcelamentos ativos: há inadimplência que pode causar exclusão?",
   "Verificar responsabilidade de sócios: algum sendo redirecionado na execução?",
@@ -743,7 +743,7 @@ SELIC s/ restituição (STF RE 1.063.187): não incide IR/CSLL sobre Selic na re
           <p className="font-semibold text-slate-600 mt-2">
             Estratégia para obter CPD-EN com débitos:
           </p>
-          <Flow>{`PROBLEMA: cliente tem débitos e precisa de certidão para licitação/contrato
+          <Flow>{`PROBLEMA: cliente tem débitos e precisa de certidão para contrato/habilitação em geral
 SOLUÇÕES:
 1. Parcelamento ordinário → CPD-EN imediata após adesão
 2. Depósito judicial integral → CPD-EN após confirmação (1-3 dias úteis)

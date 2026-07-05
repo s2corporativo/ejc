@@ -37,7 +37,7 @@ class ModuleHelp(Base):
 class AreaModuloMapping(Base):
     """Matriz área do direito → módulos/ferramentas (R6 — antes hardcoded).
 
-    `area_juridica` em slug minúsculo (ex.: "civel", "familia", "licitacoes").
+    `area_juridica` em slug minúsculo (ex.: "civel", "familia", "administrativo").
     `module_key` = rota do frontend (ex.: "casos", "ramos/penal").
     `ferramentas` = lista JSON de {"nome", "endpoint"} com endpoints REAIS da
     API (relativos ao prefixo /api — ex.: "/civel/ferramentas/prazos-contestacao").

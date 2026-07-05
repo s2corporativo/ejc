@@ -153,7 +153,9 @@ async def login(
 
 # ─── Refresh (rotação de token) ───────────────────────────────────────────────
 @router.post("/refresh")
-async def refresh(req: RefreshRequest, db: AsyncSession = Depends(get_db)):
+@limiter.limit("20/minute")
+async def refresh(req: RefreshRequest, request: Request,
+                  db: AsyncSession = Depends(get_db)):
     payload = decode_token(req.refresh_token)
     if not payload or payload.get("type") != "refresh":
         raise HTTPException(status_code=401, detail="Refresh token inválido")
@@ -180,7 +182,13 @@ async def refresh(req: RefreshRequest, db: AsyncSession = Depends(get_db)):
     if not user:
         raise HTTPException(status_code=401, detail="Usuário inativo")
 
-    new_access = create_access_token(user.id, user.role.value)
+    # Propaga o estado de troca obrigatória: sem isto, um usuário com senha
+    # temporária (must_change_password) obteria via /refresh um access token
+    # SEM o claim pwd_change_required, contornando o gate de troca de senha.
+    new_access = create_access_token(
+        user.id, user.role.value,
+        must_change_password=user.must_change_password,
+    )
     new_refresh, new_jti = create_refresh_token(user.id)
 
     db.add(RefreshToken(
@@ -211,6 +219,7 @@ async def logout(req: RefreshRequest, db: AsyncSession = Depends(get_db)):
 
 # ─── Alterar senha (autenticado) ──────────────────────────────────────────────
 @router.post("/alterar-senha")
+@limiter.limit("10/minute")
 async def alterar_senha(
     req: AlterarSenhaRequest,
     request: Request,
@@ -266,8 +275,10 @@ async def recuperar_senha(
 
 
 @router.post("/redefinir-senha")
+@limiter.limit("10/hour")
 async def redefinir_senha(
     req: ResetConfirmarRequest,
+    request: Request,
     db: AsyncSession = Depends(get_db),
 ):
     ok = await confirmar_reset(db, req.token, req.nova_senha)
@@ -308,6 +319,7 @@ async def totp_setup(
 
 
 @router.post("/totp/verificar")
+@limiter.limit("10/minute")
 async def totp_verificar(
     req: TOTPVerificarRequest,
     request: Request,
@@ -337,6 +349,7 @@ async def totp_verificar(
 
 
 @router.post("/totp/desativar")
+@limiter.limit("10/minute")
 async def totp_desativar(
     req: TOTPDesativarRequest,
     request: Request,

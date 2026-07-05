@@ -46,7 +46,7 @@ class FerramentaItem(BaseModel):
 
 class AreaModuloCreate(BaseModel):
     area_juridica:         str = Field(min_length=2, max_length=50,
-                                       description='Slug minúsculo (ex.: "civel", "familia", "licitacoes")')
+                                       description='Slug minúsculo (ex.: "civel", "familia", "administrativo")')
     module_key:            str = Field(min_length=2, max_length=60)
     habilitado:            bool = True
     ordem:                 int = 0

@@ -278,7 +278,7 @@ _AREA_MAP = [
     (["imobiliário", "locação", "usucapião", "matrícula", "financiamento"], "Imobiliário"),
     (["bancário", "juros", "revisional", "cet", "anatocismo"], "Bancário"),
     (["empresarial", "societário", "recuperação judicial", "falência"], "Empresarial"),
-    (["administrativo", "licitação", "contrato público", "servidor"], "Administrativo"),
+    (["administrativo", "improbidade", "contrato público", "servidor"], "Administrativo"),
     (["trânsito", "multa", "cnh", "cetran", "jari"], "Trânsito"),
     (["saúde", "plano de saúde", "ans", "médico", "hospital"], "Saúde"),
     (["digital", "lgpd", "dados pessoais", "privacidade"], "Digital/LGPD"),

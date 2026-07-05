@@ -96,7 +96,6 @@ from app.routers import intake
 from app.routers import jurisprudencia_interna
 from app.routers import kanban
 from app.routers import legal_docs
-from app.routers import licitacao_auditoria
 from app.routers import memoria_institucional
 from app.routers import mensagens
 from app.routers import module_help
@@ -310,7 +309,6 @@ app.include_router(jurisprudencia_externa.router, prefix=API)
 app.include_router(jurisprudencia_interna.router, prefix=API)
 app.include_router(kanban.router, prefix=API)
 app.include_router(legal_docs.router, prefix=API)
-app.include_router(licitacao_auditoria.router, prefix=API)
 app.include_router(memoria_institucional.router, prefix=API)
 app.include_router(honorarios_oab.router, prefix=API)  # frontend: /api/honorarios-oab/estimar (EstimadorHonorarios)
 app.include_router(intake.router, prefix=API)  # frontend: /api/intake/casos/{id}/analise-completa (IntakeAnalise)

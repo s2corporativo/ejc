@@ -52,7 +52,6 @@ import GuiaConsumidor from "../../components/GuiaConsumidor";
 import GuiaImobiliario from "../../components/GuiaImobiliario";
 import GuiaFamilia from "../../components/GuiaFamilia";
 import GuiaAdministrativo from "../../components/GuiaAdministrativo";
-import GuiaLicitacoes from "../../components/GuiaLicitacoes";
 import GuiaEmpresarial from "../../components/GuiaEmpresarial";
 import SociedadesCliente from "../../components/SociedadesCliente";
 import LgpdRegistros from "../../components/LgpdRegistros";
@@ -937,7 +936,6 @@ export default function RamoBase() {
       {cfg.guiaImobiliario && <GuiaImobiliario />}
       {cfg.guiaFamilia && <GuiaFamilia />}
       {cfg.guiaAdministrativo && <GuiaAdministrativo />}
-      {cfg.guiaLicitacoes && <GuiaLicitacoes />}
       {cfg.guiaEmpresarial && <GuiaEmpresarial />}
       {cfg.sociedadesCliente && <SociedadesCliente />}
       {cfg.lgpdRegistros && <LgpdRegistros />}

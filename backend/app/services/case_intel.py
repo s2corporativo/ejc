@@ -33,7 +33,7 @@ SYS_TRIAGEM = (
     "Você é um advogado sênior fazendo a TRIAGEM inicial de um caso a partir dos "
     "fatos relatados. Responda APENAS um objeto JSON válido (sem texto fora do JSON, "
     "sem markdown), com exatamente estas chaves:\n"
-    '{"area": "<trabalhista|civel|empresarial|administrativo|tributario|licitacoes|'
+    '{"area": "<trabalhista|civel|empresarial|administrativo|tributario|'
     'previdenciario|consumidor|familia|sucessoes|penal|ambiental|bancario|outro>",'
     ' "assunto": "<tema jurídico em poucas palavras>",'
     ' "tese_principal": "<a tese central a sustentar, 1-3 frases>",'
