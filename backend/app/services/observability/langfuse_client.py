@@ -5,10 +5,11 @@
 #   1. NO-OP por padrão: se LANGFUSE_ENABLED=false ou faltarem chaves, NADA é
 #      importado/conectado e todas as funções retornam sem efeito. O tracing
 #      JAMAIS pode quebrar o fluxo de IA — todo erro do SDK é engolido (log).
-#   2. LGPD: por padrão só metadados (task_type, provider, modelo, tokens,
-#      latência, custo, sucesso/erro) vão ao Langfuse. Prompt/resposta crus só
-#      quando LANGFUSE_CAPTURE_CONTENT=true, e SEMPRE após a MESMA sanitização
-#      PII do gateway (sanitizar_pii). Nunca ecoamos conteúdo sem sanitizar.
+#   2. Por padrão só metadados (task_type, provider, modelo, tokens, latência,
+#      custo, sucesso/erro) vão ao Langfuse. Prompt/resposta só quando
+#      LANGFUSE_CAPTURE_CONTENT=true, passando por sanitizar_pii — que hoje é
+#      PASSTHROUGH (sanitização desativada em 2026-07-05 por decisão do
+#      titular); como o Langfuse é self-hosted, o conteúdo não sai do VPS.
 #   3. Self-hosted: LANGFUSE_HOST aponta para o serviço no docker-compose. Nunca
 #      cloud.langfuse.com — o AILog interno continua sendo a trilha legal (LGPD).
 from __future__ import annotations

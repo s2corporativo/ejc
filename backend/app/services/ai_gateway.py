@@ -453,9 +453,10 @@ def _resolver_cadeia(
 
 
 def _sanitizar_messages_externo(messages: list[dict]) -> tuple[list[dict], list[str]]:
-    """Barreira FINAL de LGPD antes de provider externo (Anthropic/Groq):
-    sanitiza o content de CADA mensagem e devolve a lista de tipos de PII
-    residual (vazia = liberado). NUNCA loga/ecoa o conteúdo em si."""
+    """Barreira FINAL antes de provider externo (Anthropic/Groq). DESATIVADA
+    (decisão do titular, 2026-07-05): sanitizar_pii/validar_sem_pii viraram
+    passthrough — o conteúdo segue em claro e residual é sempre vazio. A
+    estrutura fica para reativação (restaurar services/sanitizer.py)."""
     from app.services.sanitizer import sanitizar_pii, validar_sem_pii
     limpos: list[dict] = []
     residual: set[str] = set()

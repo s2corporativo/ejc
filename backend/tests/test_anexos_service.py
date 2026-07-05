@@ -96,7 +96,7 @@ class _Resp:
         self.output_tokens = 5
 
 
-async def test_legenda_ia_sanitiza_pii_e_loga(monkeypatch):
+async def test_legenda_ia_envia_texto_integral_e_loga(monkeypatch):
     capturado = {}
 
     async def fake_chat(*, messages, **kw):
@@ -121,13 +121,13 @@ async def test_legenda_ia_sanitiza_pii_e_loga(monkeypatch):
     )
 
     assert legenda == "Reclamação do consumidor com resposta da empresa"
-    # PII mascarada ANTES de sair para o provedor (regra IA-01):
-    assert "058.858.426-63" not in capturado["user"]
-    assert "[CPF]" in capturado["user"]
+    # Sanitização desativada (2026-07-05): o texto vai integral ao provedor.
+    assert "058.858.426-63" in capturado["user"]
+    assert "[CPF]" not in capturado["user"]
     # task de prosa (recebe base anti-alucinação):
     assert capturado["task"] == "chat_rapido"
-    # AILog gravado com a marca de PII removida:
-    assert capturado["log"]["pii_removida"] is True
+    # AILog gravado (sem remoção de PII, por decisão do titular):
+    assert capturado["log"]["pii_removida"] is False
     assert capturado["log"]["case_id"] == "c1"
 
 
