@@ -32,7 +32,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.core.api_key_auth import require_api_key
 from app.core.config import get_settings
 from app.core.database import get_db, AsyncSessionLocal
-from app.core.rate_limit import _consumir
+from app.core.rate_limit import consumir
 from app.models.api_key import ApiKey
 from app.models.rag import KnowledgeDoc
 from app.routers.ia_governanca import Confianca
@@ -56,11 +56,11 @@ _auth = require_api_key("knowledge:write")
 
 
 async def _rl_batch(ak: ApiKey = Depends(_auth)) -> None:
-    _consumir("rag_kb_batch", f"apikey:{ak.id}", 30)
+    await consumir("rag_kb_batch", f"apikey:{ak.id}", 30)
 
 
 async def _rl_status(ak: ApiKey = Depends(_auth)) -> None:
-    _consumir("rag_kb_status", f"apikey:{ak.id}", 60)
+    await consumir("rag_kb_status", f"apikey:{ak.id}", 60)
 
 
 # ── Schemas ───────────────────────────────────────────────────────────────────

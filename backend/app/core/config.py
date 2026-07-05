@@ -271,6 +271,13 @@ class Settings(BaseSettings):
     REDIS_URL: str = "redis://redis:6379/0"
     CELERY_ENABLED: bool = False
 
+    # Rate limit distribuído (multi-worker): False (default) usa contador
+    # fixed-window em memória — correto só com uvicorn --workers 1. True passa
+    # a contar no Redis (compartilhado entre processos), habilitando >1 worker.
+    # Redis fora do ar → fallback gracioso para o contador em memória (nunca
+    # bloqueia a request por indisponibilidade de infra).
+    RATE_LIMIT_REDIS_ENABLED: bool = False
+
     # ── Escritório (LGPD — identificação do controlador de dados) ─────────
     ESCRITORIO_NOME: str = "De Paula Teixeira Sociedade de Advogados"
     ESCRITORIO_CNPJ: str = "32.491.468/0001-12"

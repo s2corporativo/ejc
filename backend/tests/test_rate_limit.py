@@ -16,6 +16,7 @@ from fastapi import Depends, FastAPI, HTTPException
 from fastapi.testclient import TestClient
 
 from app.core import rate_limit as rl
+from app.core.config import get_settings
 from app.core.security import get_current_user
 
 
@@ -96,6 +97,78 @@ def test_sem_autenticacao_401_nao_consome_cota():
 
     app.dependency_overrides[get_current_user] = lambda: estado["user"]
     assert client.get("/alvo").status_code == 200  # cota intacta (limite = 1)
+
+
+class _FakeRedis:
+    """Redis async mínimo: implementa o fixed-window do script Lua em memória
+    (INCR + EXPIRE-no-primeiro-hit + TTL) para testar o caminho Redis sem infra."""
+
+    def __init__(self):
+        self.contadores: dict[str, int] = {}
+
+    async def eval(self, _script, _nkeys, key, janela):
+        self.contadores[key] = self.contadores.get(key, 0) + 1
+        return [self.contadores[key], int(janela)]
+
+
+class _RedisQuebrado:
+    async def eval(self, *_a, **_k):
+        raise ConnectionError("redis caiu")
+
+
+async def test_redis_off_usa_memoria(monkeypatch):
+    """Flag desligada: consumir() nunca toca o Redis (delega ao contador local)."""
+    monkeypatch.setattr(get_settings(), "RATE_LIMIT_REDIS_ENABLED", False)
+
+    async def _boom():
+        raise AssertionError("Redis não deveria ser consultado com a flag off")
+
+    monkeypatch.setattr(rl, "_get_redis", _boom)
+    for _ in range(2):
+        await rl.consumir("m-off", "user:x", 2)
+    with pytest.raises(HTTPException) as e:
+        await rl.consumir("m-off", "user:x", 2)
+    assert e.value.status_code == 429
+
+
+async def test_redis_on_conta_no_redis(monkeypatch):
+    """Flag ligada + Redis disponível: a cota é contada no Redis, com chaves
+    independentes por (rota, usuário) e 429 ao exceder."""
+    monkeypatch.setattr(get_settings(), "RATE_LIMIT_REDIS_ENABLED", True)
+    fake = _FakeRedis()
+    monkeypatch.setattr(rl, "_get_redis", lambda: _async(fake))
+
+    await rl.consumir("r-on", "user:a", 2)
+    await rl.consumir("r-on", "user:a", 2)
+    with pytest.raises(HTTPException) as e:
+        await rl.consumir("r-on", "user:a", 2)
+    assert e.value.status_code == 429
+    assert 1 <= int(e.value.headers["Retry-After"]) <= 60
+    # Outra chave tem cota própria mesmo no mesmo backend.
+    await rl.consumir("r-on", "user:b", 2)
+    assert fake.contadores["rl:r-on:user:a"] == 3
+    assert fake.contadores["rl:r-on:user:b"] == 1
+
+
+async def test_redis_indisponivel_faz_fallback_para_memoria(monkeypatch):
+    """Flag ligada mas Redis falha no eval: cai para o contador em memória —
+    fail-open para LOCAL (ainda limita), nunca ilimitado."""
+    monkeypatch.setattr(get_settings(), "RATE_LIMIT_REDIS_ENABLED", True)
+    rl._redis_client = "sentinela-para-invalidar"
+    monkeypatch.setattr(rl, "_get_redis", lambda: _async(_RedisQuebrado()))
+
+    for _ in range(2):
+        await rl.consumir("r-fallback", "user:z", 2)
+    with pytest.raises(HTTPException) as e:
+        await rl.consumir("r-fallback", "user:z", 2)
+    assert e.value.status_code == 429
+    # O cache do cliente foi invalidado para reconectar na próxima request.
+    assert rl._redis_client is None
+
+
+async def _async(valor):
+    """Embrulha um valor síncrono numa coroutine (para monkeypatch de _get_redis)."""
+    return valor
 
 
 def test_rotas_alvo_registradas_com_rate_limit():

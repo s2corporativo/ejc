@@ -3,11 +3,15 @@
 # (respeita X-Forwarded-For do Nginx) — sem isso, atrás do proxy todos os
 # clientes compartilhariam o limite de 127.0.0.1.
 #
-# Storage em memória (default) = compatível com uvicorn --workers 1.
-# NÃO aumentar workers sem migrar o storage para Redis (storage_uri).
+# DOIS backends de contagem, escolhidos por RATE_LIMIT_REDIS_ENABLED:
+#   • memória (default) — fixed-window por processo; correto só com --workers 1.
+#   • Redis — fixed-window atômico (Lua) COMPARTILHADO entre processos, o que
+#     torna seguro rodar uvicorn com >1 worker. Redis fora do ar → fallback
+#     gracioso para o contador em memória (nunca bloqueia por falha de infra).
 # ─────────────────────────────────────────────────────────────────────────────
 from __future__ import annotations
 
+import logging
 import math
 import threading
 import time
@@ -15,8 +19,11 @@ import time
 from fastapi import Depends, HTTPException, Request
 from slowapi import Limiter
 
+from app.core.config import get_settings
 from app.core.security import get_current_user
 from app.services.security_service import obter_ip_real
+
+logger = logging.getLogger("ejc.rate_limit")
 
 
 def _key_por_ip_real(request) -> str:
@@ -35,11 +42,8 @@ limiter = Limiter(key_func=_key_por_ip_real)
 # TODAS as rotas do app indiscriminadamente.
 #
 # Por isso os endpoints de IA/varredura usam esta dependency dirigida:
-# contador fixed-window de 60s em memória, por (rota, usuário-ou-IP).
-#
-# LIMITAÇÃO (igual à do slowapi acima): contadores em memória de UM processo.
-# O app roda com uvicorn --workers 1; NÃO aumentar workers sem migrar este
-# storage (e o do slowapi) para Redis.
+# contador fixed-window de 60s, por (rota, usuário-ou-IP) — em memória ou no
+# Redis conforme RATE_LIMIT_REDIS_ENABLED (ver consumir()/_consumir_redis).
 
 _JANELA_SEGUNDOS = 60
 _MAX_ENTRADAS = 4096  # gatilho de limpeza das janelas expiradas
@@ -92,6 +96,82 @@ def _consumir(nome: str, chave: str, max_por_minuto: int) -> None:
         )
 
 
+# ── Backend Redis (fixed-window atômico, compartilhado entre workers) ─────────
+# INCR + EXPIRE-no-primeiro-hit num único round-trip via Lua (atômico: sem a
+# corrida em que a chave é criada mas nunca expira). Retorna (contagem, ttl).
+_LUA_FIXED_WINDOW = """
+local c = redis.call('INCR', KEYS[1])
+if c == 1 then redis.call('EXPIRE', KEYS[1], ARGV[1]) end
+return {c, redis.call('TTL', KEYS[1])}
+"""
+
+_redis_client = None  # cache do cliente async (lazy, reaproveitado entre requests)
+
+
+async def _get_redis():
+    """Cliente redis.asyncio cacheado. Qualquer falha de import/conexão → None
+    (o chamador cai para o contador em memória)."""
+    global _redis_client
+    if _redis_client is not None:
+        return _redis_client
+    try:
+        import redis.asyncio as aioredis
+        cli = aioredis.from_url(
+            get_settings().REDIS_URL,
+            socket_connect_timeout=1.0, socket_timeout=1.0,
+        )
+        _redis_client = cli
+        return cli
+    except Exception:
+        return None
+
+
+async def _consumir_redis(nome: str, chave: str, max_por_minuto: int) -> bool:
+    """Consome 1 unidade da cota no Redis. Lança 429 se exceder. Retorna True
+    se o Redis atendeu; False (sem lançar) se o Redis falhou — sinal para o
+    chamador cair no contador em memória (fail-open para local, nunca ilimitado)."""
+    cli = await _get_redis()
+    if cli is None:
+        return False
+    try:
+        contagem, ttl = await cli.eval(
+            _LUA_FIXED_WINDOW, 1, f"rl:{nome}:{chave}", _JANELA_SEGUNDOS,
+        )
+    except Exception as e:
+        # Redis caiu no meio → invalida o cache (reconecta na próxima) e delega.
+        # Fecha o cliente antigo p/ não vazar pool de conexões sob flapping.
+        global _redis_client
+        _redis_client = None
+        try:
+            await cli.aclose()
+        except Exception:
+            pass
+        logger.warning("[rate_limit] Redis indisponível (%s) — usando contador "
+                       "em memória neste processo", type(e).__name__)
+        return False
+    if int(contagem) > max_por_minuto:
+        restante = max(1, int(ttl) if int(ttl) > 0 else _JANELA_SEGUNDOS)
+        raise HTTPException(
+            status_code=429,
+            detail=(
+                f"Limite de {max_por_minuto} requisições por minuto excedido "
+                "para esta operação. Aguarde alguns instantes e tente novamente."
+            ),
+            headers={"Retry-After": str(restante)},
+        )
+    return True
+
+
+async def consumir(nome: str, chave: str, max_por_minuto: int) -> None:
+    """Consome cota (rota, chave). Usa o Redis quando habilitado e disponível;
+    caso contrário (flag off ou Redis fora do ar) o contador em memória. Ambos
+    lançam HTTPException 429 ao exceder o limite do minuto."""
+    if get_settings().RATE_LIMIT_REDIS_ENABLED:
+        if await _consumir_redis(nome, chave, max_por_minuto):
+            return
+    _consumir(nome, chave, max_por_minuto)
+
+
 def rate_limit(nome: str, max_por_minuto: int):
     """Dependency de rate limit por rota: `dependencies=[Depends(rate_limit("x", 5))]`.
 
@@ -106,6 +186,6 @@ def rate_limit(nome: str, max_por_minuto: int):
         # cu nunca é None hoje (get_current_user lança 401), mas o fallback por
         # IP fica como defesa caso a auth passe a ser opcional em alguma rota.
         chave = f"user:{cu.id}" if cu is not None else f"ip:{obter_ip_real(request)}"
-        _consumir(nome, chave, max_por_minuto)
+        await consumir(nome, chave, max_por_minuto)
 
     return _dep
