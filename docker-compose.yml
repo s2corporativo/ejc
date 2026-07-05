@@ -54,6 +54,10 @@ services:
       # Redis fora do ar não quebra nada: o dispatcher cai para BackgroundTasks.
       REDIS_URL: redis://redis:6379/0
       CELERY_ENABLED: "true"
+      # Rate limit distribuído: com o Redis já disponível aqui, contar no Redis
+      # torna seguro subir uvicorn com >1 worker (o contador em memória só vale
+      # para 1 processo). Redis fora do ar → fallback para o contador local.
+      RATE_LIMIT_REDIS_ENABLED: "true"
     volumes:
       - uploads_data:/app/uploads
       - backups_data:/app/backups
