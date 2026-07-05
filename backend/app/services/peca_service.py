@@ -28,6 +28,10 @@ TIPOS_PECA = {
     "contrarrazoes": "Contrarrazões",
     "embargos_declaracao": "Embargos de Declaração",
     "agravo": "Agravo",
+    "cumprimento_sentenca": "Cumprimento de Sentença",
+    "impugnacao_cumprimento": "Impugnação ao Cumprimento de Sentença",
+    "embargos_execucao": "Embargos à Execução",
+    "mandado_seguranca": "Mandado de Segurança",
     "memorias": "Memoriais",
     "acordo": "Proposta de Acordo",
     "parecer": "Parecer Jurídico",
@@ -86,6 +90,35 @@ ESTRUTURA_TIPO: dict[str, str] = {
         "síntese da sentença; preparo (custas + depósito recursal); razões de reforma "
         "com impugnação específica dos fundamentos; pedidos."
     ),
+    "cumprimento_sentenca": (
+        "Estrutura obrigatória (CPC arts. 523-524): requerimento ao juízo da causa; "
+        "indicação do título executivo (sentença transitada/decisão) e demonstrativo "
+        "discriminado e atualizado do débito (art. 524 — principal, correção, juros, "
+        "multa e honorários); requerimento de intimação do executado para pagar em 15 "
+        "dias sob pena de multa de 10% + honorários de 10% (art. 523 §1º) e penhora."
+    ),
+    "impugnacao_cumprimento": (
+        "Estrutura obrigatória (CPC art. 525): tempestividade (15 dias após a penhora/"
+        "garantia, quando exigida); matérias TAXATIVAS do art. 525 §1º (falta/nulidade "
+        "de citação no processo de conhecimento à revelia, ilegitimidade, inexequibilidade "
+        "do título, penhora incorreta, excesso de execução, causa modificativa/extintiva "
+        "superveniente); no excesso de execução, apontar o valor tido por correto (§4º-5º)."
+    ),
+    "embargos_execucao": (
+        "Estrutura obrigatória (CPC arts. 914-917): ação incidental distribuída por "
+        "dependência, independente de penhora (art. 914); tempestividade (15 dias da "
+        "juntada do mandado de citação); fundamentos do art. 917 (inexequibilidade do "
+        "título, penhora incorreta, excesso de execução — com memória de cálculo sob pena "
+        "de rejeição liminar, ilegitimidade, qualquer matéria de conhecimento); pedidos."
+    ),
+    "mandado_seguranca": (
+        "Estrutura obrigatória (Lei 12.016/2009): endereçamento ao juízo competente pela "
+        "autoridade coatora; qualificação do impetrante e indicação da autoridade coatora "
+        "e da pessoa jurídica a que se vincula; direito líquido e certo comprovado de "
+        "plano por prova PRÉ-CONSTITUÍDA (documental); ilegalidade/abuso de poder; prazo "
+        "decadencial de 120 dias (art. 23); pedido de liminar (art. 7º, III) e a concessão "
+        "final da ordem."
+    ),
 }
 
 AREAS_DIREITO = [
@@ -102,6 +135,10 @@ TIPO_PECA_LEGAL_DOC = {
     "contrarrazoes": PecaTipo.contrarrazoes,
     "embargos_declaracao": PecaTipo.recurso,
     "agravo": PecaTipo.recurso,
+    "cumprimento_sentenca": PecaTipo.peticao_inicial,
+    "impugnacao_cumprimento": PecaTipo.outro,
+    "embargos_execucao": PecaTipo.outro,
+    "mandado_seguranca": PecaTipo.peticao_inicial,
     "memorias": PecaTipo.outro,
     "acordo": PecaTipo.contrato,
     "parecer": PecaTipo.parecer,
@@ -125,6 +162,13 @@ TIPOS_PECA_ALIASES = {
     "contrarrazoes de apelacao": "contrarrazoes",
     "embargos": "embargos_declaracao",
     "embargos de declaracao": "embargos_declaracao",
+    "embargos a execucao": "embargos_execucao",
+    "embargos do devedor": "embargos_execucao",
+    "cumprimento de sentenca": "cumprimento_sentenca",
+    "impugnacao ao cumprimento": "impugnacao_cumprimento",
+    "impugnacao ao cumprimento de sentenca": "impugnacao_cumprimento",
+    "mandado de seguranca": "mandado_seguranca",
+    "ms": "mandado_seguranca",
     "recurso ordinario": "recurso_ordinario",
     "agravo": "agravo",
     "memoriais": "memorias",
@@ -164,9 +208,12 @@ def _tipo_identificado(texto: str) -> str | None:
         for chave in TIPOS_PECA_VALIDOS:
             if chave.replace("_", " ") in normalizado:
                 return chave
-        for alias, chave in TIPOS_PECA_ALIASES.items():
+        # Alias por substring: casa a MAIS ESPECÍFICA (mais longa) primeiro, para
+        # que a genérica "embargos" não sombreie "embargos a execucao" no texto
+        # livre (senão a ordem do dict decidiria e classificaria errado).
+        for alias in sorted(TIPOS_PECA_ALIASES, key=len, reverse=True):
             if alias in normalizado:
-                return chave
+                return TIPOS_PECA_ALIASES[alias]
     return None
 
 
