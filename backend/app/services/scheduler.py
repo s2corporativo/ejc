@@ -1013,12 +1013,15 @@ async def _monitor_diario_oficial():
 
 async def _alertar_contratos():
     """Segunda-feira 09h30 — alerta contratos societários próximos do vencimento."""
+    from app.services.notification_service import criar_notificacao_interna
     try:
         async with AsyncSessionLocal() as db:
             hoje = date.today()
             rows = (await db.execute(text("""
-                SELECT c.id, c.titulo, c.data_fim, c.alertar_dias_antes
+                SELECT c.id, c.titulo, c.data_fim,
+                       COALESCE(c.created_by, cs.advogado_responsavel_id) AS responsavel_id
                 FROM contratos_societarios c
+                LEFT JOIN cases cs ON cs.id = c.case_id
                 WHERE c.deleted_at IS NULL
                   AND c.status IN ('vigente', 'assinado')
                   AND c.data_fim IS NOT NULL
@@ -1030,6 +1033,19 @@ async def _alertar_contratos():
                     f"[Contratos] {len(rows)} contrato(s) próximos do vencimento: "
                     + ", ".join(r.titulo[:30] for r in rows[:5])
                 )
+            for r in rows:
+                if not r.responsavel_id:
+                    continue
+                try:
+                    await criar_notificacao_interna(
+                        db, r.responsavel_id,
+                        "📄 Contrato próximo do vencimento",
+                        f"{r.titulo} vence em {r.data_fim.strftime('%d/%m/%Y')}",
+                        tipo="contrato", link="/contratos-societarios",
+                    )
+                except Exception as e:
+                    await db.rollback()
+                    logger.error(f"[Contratos] notif falhou p/ contrato {r.id}: {e}")
     except Exception as e:
         logger.error(f"[Contratos] Falha no alerta: {e}")
 

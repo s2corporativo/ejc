@@ -21,6 +21,7 @@ from app.models.user import User
 from app.services.ai.core.orchestrator import orchestrator
 from app.services.ai.core.agent_registry import AGENT_REGISTRY
 from app.services.ai.core.skill_registry import listar_skills
+from app.core.rate_limit import rate_limit
 
 router = APIRouter(prefix="/ai/core", tags=["IA — Núcleo Único"])
 
@@ -79,7 +80,7 @@ class CoreReportRequest(BaseModel):
 
 # ── Endpoints ─────────────────────────────────────────────────────────────────
 
-@router.post("/chat")
+@router.post("/chat", dependencies=[Depends(rate_limit("ai-core-chat", 20))])
 async def core_chat(
     body: CoreChatRequest,
     cu: User = Depends(get_current_user),
@@ -92,7 +93,7 @@ async def core_chat(
     )
 
 
-@router.post("/task")
+@router.post("/task", dependencies=[Depends(rate_limit("ai-core-task", 15))])
 async def core_task(
     body: CoreTaskRequest,
     cu: User = Depends(get_current_user),
@@ -108,7 +109,7 @@ async def core_task(
     )
 
 
-@router.post("/analyze")
+@router.post("/analyze", dependencies=[Depends(rate_limit("ai-core-analyze", 15))])
 async def core_analyze(
     body: CoreAnalyzeRequest,
     cu: User = Depends(get_current_user),
@@ -124,7 +125,7 @@ async def core_analyze(
     )
 
 
-@router.post("/generate")
+@router.post("/generate", dependencies=[Depends(rate_limit("ai-core-generate", 15))])
 async def core_generate(
     body: CoreGenerateRequest,
     cu: User = Depends(get_current_user),
@@ -139,7 +140,7 @@ async def core_generate(
     )
 
 
-@router.post("/report")
+@router.post("/report", dependencies=[Depends(rate_limit("ai-core-report", 10))])
 async def core_report(
     body: CoreReportRequest,
     cu: User = Depends(get_current_user),

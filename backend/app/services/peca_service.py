@@ -22,7 +22,11 @@ TIPOS_PECA = {
     "auto": "Identificar automaticamente",
     "peticao_inicial": "Petição Inicial",
     "contestacao": "Contestação",
+    "replica": "Réplica (Impugnação à Contestação)",
     "recurso_ordinario": "Recurso Ordinário",
+    "apelacao": "Apelação",
+    "contrarrazoes": "Contrarrazões",
+    "embargos_declaracao": "Embargos de Declaração",
     "agravo": "Agravo",
     "memorias": "Memoriais",
     "acordo": "Proposta de Acordo",
@@ -34,6 +38,56 @@ TIPOS_PECA = {
 
 TIPOS_PECA_VALIDOS = [k for k in TIPOS_PECA if k != "auto"]
 
+# Roteiro estrutural obrigatório por tipo — injetado na etapa de redação para
+# que cada preset saia com a espinha dorsal processual correta (CPC/CLT).
+ESTRUTURA_TIPO: dict[str, str] = {
+    "peticao_inicial": (
+        "Estrutura obrigatória (CPC art. 319): endereçamento ao juízo; qualificação "
+        "das partes; Dos Fatos; Do Direito; Dos Pedidos (certos e determinados); "
+        "valor da causa; provas que pretende produzir; opção por audiência de conciliação."
+    ),
+    "contestacao": (
+        "Estrutura obrigatória (CPC arts. 335-342): endereçamento; preliminares "
+        "(CPC art. 337 — incompetência, ilegitimidade, etc.) ANTES do mérito; "
+        "impugnação especificada de TODOS os fatos da inicial (ônus da impugnação "
+        "específica, art. 341); Do Mérito; Dos Pedidos; provas."
+    ),
+    "replica": (
+        "Estrutura obrigatória (CPC arts. 350-351): endereçamento; refutação das "
+        "preliminares arguidas na contestação; impugnação dos fatos novos/modificativos/"
+        "extintivos trazidos pela defesa; reafirmação da tese inicial; requerimentos finais."
+    ),
+    "apelacao": (
+        "Estrutura obrigatória (CPC art. 1.010): peça de interposição dirigida ao juízo "
+        "a quo + razões recursais dirigidas ao tribunal; síntese da sentença recorrida; "
+        "cabimento e tempestividade; preparo; Das Razões de Reforma (error in judicando/"
+        "in procedendo); prequestionamento quando cabível; pedido de reforma/anulação."
+    ),
+    "contrarrazoes": (
+        "Estrutura obrigatória (CPC art. 1.010 §1º): endereçamento; síntese do recurso "
+        "adversário; preliminares de inadmissibilidade do recurso (intempestividade, "
+        "deserção, ausência de dialeticidade); refutação ponto a ponto das razões "
+        "recursais; pedido de desprovimento e manutenção da decisão."
+    ),
+    "embargos_declaracao": (
+        "Estrutura obrigatória (CPC arts. 1.022-1.026): endereçamento ao próprio juízo "
+        "prolator; tempestividade (5 dias); indicação PRECISA da omissão, contradição, "
+        "obscuridade ou erro material; pedido de integração/correção; prequestionamento "
+        "explícito se for o objetivo; ressalva quanto a efeitos infringentes."
+    ),
+    "agravo": (
+        "Estrutura obrigatória (CPC arts. 1.015-1.019): cabimento (hipóteses taxativas do "
+        "art. 1.015 ou rol jurisprudencial); síntese da decisão interlocutória; "
+        "tempestividade e preparo; razões de reforma; pedido de efeito suspensivo/"
+        "antecipação de tutela recursal quando cabível."
+    ),
+    "recurso_ordinario": (
+        "Estrutura obrigatória (CLT art. 895): interposição no prazo de 8 dias; "
+        "síntese da sentença; preparo (custas + depósito recursal); razões de reforma "
+        "com impugnação específica dos fundamentos; pedidos."
+    ),
+}
+
 AREAS_DIREITO = [
     "trabalhista", "civil", "previdenciario", "tributario",
     "criminal", "consumidor", "administrativo", "familia",
@@ -42,7 +96,11 @@ AREAS_DIREITO = [
 TIPO_PECA_LEGAL_DOC = {
     "peticao_inicial": PecaTipo.peticao_inicial,
     "contestacao": PecaTipo.contestacao,
+    "replica": PecaTipo.outro,
     "recurso_ordinario": PecaTipo.recurso,
+    "apelacao": PecaTipo.recurso,
+    "contrarrazoes": PecaTipo.contrarrazoes,
+    "embargos_declaracao": PecaTipo.recurso,
     "agravo": PecaTipo.recurso,
     "memorias": PecaTipo.outro,
     "acordo": PecaTipo.contrato,
@@ -58,6 +116,15 @@ TIPOS_PECA_ALIASES = {
     "inicial": "peticao_inicial",
     "contestacao": "contestacao",
     "defesa": "contestacao",
+    "replica": "replica",
+    "impugnacao a contestacao": "replica",
+    "apelacao": "apelacao",
+    "recurso de apelacao": "apelacao",
+    "contrarrazoes": "contrarrazoes",
+    "contra-razoes": "contrarrazoes",
+    "contrarrazoes de apelacao": "contrarrazoes",
+    "embargos": "embargos_declaracao",
+    "embargos de declaracao": "embargos_declaracao",
     "recurso ordinario": "recurso_ordinario",
     "agravo": "agravo",
     "memoriais": "memorias",
@@ -323,6 +390,7 @@ async def gerar_peca_pipeline(
             contexto_caso = f"\n[CONTEXTO DO CASO]\nTítulo: {c_obj.titulo}\nTese Principal: {c_obj.tese_principal or 'N/A'}\n"
 
     instrucoes = instrucoes_adicionais or ""
+    estrutura_tipo = ESTRUTURA_TIPO.get(tipo_peca_final, "")
     r7 = await gw_chat(
         messages=[
             {"role": "system", "content": (
@@ -333,6 +401,7 @@ async def gerar_peca_pipeline(
                 "2. Nunca invente números de processos ou links oficiais.\n"
                 "3. Toda saída é RASCUNHO — revisão humana obrigatória (OAB).\n"
                 "4. Use formatação jurídica padrão (Dos Fatos, Do Direito, Dos Pedidos)."
+                + (f"\n5. {estrutura_tipo}" if estrutura_tipo else "")
             )},
             {"role": "user", "content": (
                 f"TIPO: {nome_peca}\nÁREA: {area_direito}\n\n"

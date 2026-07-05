@@ -7,6 +7,7 @@ from app.core.database import get_db
 from app.core.security import get_current_user
 from app.models.user import User
 from app.services import ai_gateway
+from app.core.rate_limit import rate_limit
 
 router = APIRouter(prefix="/ia-especializada", tags=["IAs Especializadas"])
 
@@ -51,7 +52,7 @@ async def listar_perfis(cu: User = Depends(get_current_user)):
     return {"perfis": [{"id": k, "label": v["label"]} for k, v in PERFIS.items()]}
 
 
-@router.post("/{perfil}")
+@router.post("/{perfil}", dependencies=[Depends(rate_limit("ia-especializada", 15))])
 async def consultar(
     perfil: str,
     body: dict = Body(...),

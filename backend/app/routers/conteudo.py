@@ -13,6 +13,7 @@ from app.core.database import get_db
 from app.core.security import get_current_user
 from app.models.user import User
 from app.services import ai_gateway
+from app.core.rate_limit import rate_limit
 
 router = APIRouter(prefix="/conteudo", tags=["Conteúdo Jurídico"])
 
@@ -56,7 +57,7 @@ class GlossarioReq(BaseModel):
     quantidade: int = Field(12, ge=3, le=30)
 
 
-@router.post("/faq")
+@router.post("/faq", dependencies=[Depends(rate_limit("conteudo-faq", 10))])
 async def gerar_faq(req: FaqReq, db: AsyncSession = Depends(get_db),
                     cu: User = Depends(get_current_user)):
     """Gera FAQ por área, ancorado no RAG (súmulas/legislação)."""
@@ -75,7 +76,7 @@ async def gerar_faq(req: FaqReq, db: AsyncSession = Depends(get_db),
             "is_rascunho": True, "aviso": _AVISO, "aviso_hitl": _AVISO, "log_id": log_id}
 
 
-@router.post("/glossario")
+@router.post("/glossario", dependencies=[Depends(rate_limit("conteudo-glossario", 10))])
 async def gerar_glossario(req: GlossarioReq, db: AsyncSession = Depends(get_db),
                           cu: User = Depends(get_current_user)):
     """Gera glossário jurídico (termos informados ou comuns de uma área)."""

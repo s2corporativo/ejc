@@ -14,6 +14,7 @@ from app.core.database import get_db
 from app.core.security import get_current_user, ROLE_LEVEL
 from app.models.user import User
 from app.models.jurisprudencia_interna import JurisprudenciaInterna, JuriResultado
+from app.core.rate_limit import rate_limit
 
 router = APIRouter(prefix="/jurisprudencias", tags=["Jurisprudência Interna"])
 
@@ -189,7 +190,7 @@ async def remover_jurisprudencia(
     await db.commit()
 
 
-@router.post("/{juri_id}/classificar-ia")
+@router.post("/{juri_id}/classificar-ia", dependencies=[Depends(rate_limit("juri-classificar-ia", 15))])
 async def classificar_com_ia(
     juri_id: str,
     db: AsyncSession = Depends(get_db),

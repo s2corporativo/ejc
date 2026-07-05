@@ -12,6 +12,7 @@ from pydantic import BaseModel
 from app.core.database import Base, get_db
 from app.core.security import get_current_user, require_roles
 from app.models.user import User
+from app.core.rate_limit import rate_limit
 
 # Model ORM
 class TeseJuridica(Base):
@@ -70,7 +71,7 @@ async def listar_teses(
     res = await db.execute(q)
     return res.scalars().all()
 
-@router.get("/sugestao-ia")
+@router.get("/sugestao-ia", dependencies=[Depends(rate_limit("teses-sugestao-ia", 15))])
 async def sugerir_teses_ia(
     contexto: str = Query(..., min_length=3, max_length=12000),
     db: AsyncSession = Depends(get_db),

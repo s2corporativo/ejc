@@ -14,6 +14,7 @@ from app.core.security import get_current_user
 from app.models.user import User
 from app.services import ai_gateway, abusividade_service
 from app.services.calc import cet as cet_calc
+from app.core.rate_limit import rate_limit
 
 router = APIRouter(prefix="/analise-bancaria", tags=["Análise de Documento"])
 
@@ -104,7 +105,7 @@ async def _analisar(texto: str, area: str = "default") -> dict:
     return data
 
 
-@router.post("/contrato")
+@router.post("/contrato", dependencies=[Depends(rate_limit("analise-bancaria", 10))])
 async def analisar_documento(
     file: Optional[UploadFile] = File(None),
     texto: Optional[str] = Form(None),

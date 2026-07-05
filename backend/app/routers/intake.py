@@ -33,6 +33,7 @@ from app.models.document import Document
 from app.models.redesign import AreaModuloMapping, TabelaOABHonorario
 from app.models.tese import Tese, TeseStatus
 from app.models.user import User
+from app.core.rate_limit import rate_limit
 
 logger = logging.getLogger("ejc.intake")
 
@@ -366,7 +367,7 @@ async def _modulos_sugeridos(db: AsyncSession, area: str) -> list[dict]:
 
 # ── Endpoint ──────────────────────────────────────────────────────────────────
 
-@router.post("/casos/{case_id}/analise-completa")
+@router.post("/casos/{case_id}/analise-completa", dependencies=[Depends(rate_limit("intake-analise-completa", 10))])
 async def analise_completa(
     case_id: str,
     payload: AnaliseCompletaIn | None = None,

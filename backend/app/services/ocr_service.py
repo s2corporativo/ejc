@@ -56,10 +56,13 @@ def extrair_texto(filepath: str, mimetype: str | None) -> str | None:
         if ("wordprocessingml" in mt or filepath.endswith(".docx")) and _DOCX_OK:
             return _docx_texto(filepath)
         # Planilhas .xlsx via openpyxl (P1 2026-07-05: antes ocr_text ficava
-        # NULL silencioso). .xls legado NÃO tem extrator (sem lib) — o upload
-        # avisa "conteúdo não indexável" (routers/documents.py).
+        # NULL silencioso).
         if "spreadsheetml" in mt or filepath.lower().endswith(".xlsx"):
             return _xlsx(filepath)
+        if "ms-excel" in mt or filepath.lower().endswith(".xls"):
+            return _xls_legado(filepath)
+        if "msword" in mt or filepath.lower().endswith(".doc"):
+            return _doc_legado(filepath)
         # XML antes do ramo text/ (text/xml também começa com "text/")
         if "xml" in mt or filepath.lower().endswith(".xml"):
             res = extrair_xml(filepath)
@@ -127,6 +130,45 @@ def _xlsx(path: str) -> str:
     finally:
         wb.close()
     return "\n".join(partes)[:MAX_OCR_CHARS]
+
+def _xls_legado(path: str) -> str | None:
+    """Texto de .xls legado (xlrd, se instalado). Antes deste ramo, .xls era
+    aceito no upload mas indexado VAZIO no RAG — falha silenciosa."""
+    try:
+        import xlrd  # opcional (requirements)
+    except ImportError:
+        logger.warning(f"Extração .xls indisponível (xlrd ausente): {path}")
+        return None
+    linhas: list[str] = []
+    book = xlrd.open_workbook(path)
+    for sheet in book.sheets():
+        linhas.append(f"[Planilha: {sheet.name}]")
+        for i in range(sheet.nrows):
+            cels = [str(c.value).strip() for c in sheet.row(i) if str(c.value).strip()]
+            if cels:
+                linhas.append(" | ".join(cels))
+            if sum(len(l) for l in linhas) > MAX_OCR_CHARS:
+                break
+    return "\n".join(linhas)[:MAX_OCR_CHARS] or None
+
+
+def _doc_legado(path: str) -> str | None:
+    """Word binário (.doc): usa antiword/catdoc se disponível no sistema.
+    Sem conversor, loga aviso claro — nunca indexa vazio em silêncio."""
+    import shutil
+    import subprocess
+    for conv in ("antiword", "catdoc"):
+        exe = shutil.which(conv)
+        if exe:
+            out = subprocess.run([exe, path], capture_output=True, timeout=60)
+            if out.returncode == 0 and out.stdout.strip():
+                return out.stdout.decode("utf-8", errors="ignore")[:MAX_OCR_CHARS]
+    logger.warning(
+        f"Formato .doc sem conversor instalado (antiword/catdoc) — texto não "
+        f"extraído; converta para .docx/PDF para indexação RAG: {path}"
+    )
+    return None
+
 
 
 # ── API baseada em BYTES (Fase 3A — /rag/ingest-pdf e tasks Celery) ──────────

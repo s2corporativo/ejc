@@ -56,6 +56,8 @@ Não invente informações ausentes do texto. Marque incertezas explicitamente."
 
 # ── Busca RAG (pgvector) ──────────────────────────────────────────────────────
 
+_AVISOU_SEM_EMBEDDINGS = False  # warning único de degradação p/ ILIKE
+
 # ── Isolamento por cliente (Fase 3B / LGPD / EOAB art. 25) ────────────────────
 # Categorias RESTRITAS = conteúdo derivado de casos de clientes (peças/precedentes
 # internos): só recuperáveis no escopo do próprio cliente. Demais categorias
@@ -179,6 +181,17 @@ async def buscar_contexto_rag(
     # indisponível ou em erro. Esta é a busca "por significado" — encontra
     # precedentes mesmo quando o vocabulário do caso novo difere do registrado.
     from app.services.embedding_service import disponivel as _emb_on, gerar_embeddings
+    if not _emb_on():
+        # Degradação AUDÍVEL: sem embeddings a busca vira ILIKE puro (recall
+        # muito menor). Warning único por processo — visível no monitoramento.
+        global _AVISOU_SEM_EMBEDDINGS
+        if not _AVISOU_SEM_EMBEDDINGS:
+            _AVISOU_SEM_EMBEDDINGS = True
+            logger.warning(
+                "RAG operando SEM busca semântica (EMBEDDINGS_ENABLED=false ou "
+                "provider indisponível) — usando fallback textual ILIKE, com "
+                "recall reduzido. Habilite embeddings em produção."
+            )
     if _emb_on():
         # modo="query": protocolo E5 — consultas levam prefixo "query: "
         vetores = await gerar_embeddings([consulta], modo="query")

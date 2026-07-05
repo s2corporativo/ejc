@@ -18,6 +18,7 @@ from app.models.user import User
 from app.models.case import Case
 from app.services import ai_gateway
 from app.services.sanitizer import sanitizar_pii
+from app.core.rate_limit import rate_limit
 
 router = APIRouter(prefix="/assistente", tags=["Assistente IA"])
 
@@ -41,7 +42,7 @@ class ChatReq(BaseModel):
     mensagens: list[ChatMsg] = Field(..., min_length=1, max_length=20)
 
 
-@router.post("/cases/{case_id}/chat")
+@router.post("/cases/{case_id}/chat", dependencies=[Depends(rate_limit("assistente-chat", 20))])
 async def chat_caso(case_id: str, req: ChatReq, db: AsyncSession = Depends(get_db),
                     cu: User = Depends(get_current_user)):
     """Conversa multi-turno sobre o caso, com contexto real injetado (sanitizado)."""
@@ -101,7 +102,7 @@ _SYS_PRAZOS = (
 )
 
 
-@router.post("/detectar-prazos")
+@router.post("/detectar-prazos", dependencies=[Depends(rate_limit("assistente-prazos", 15))])
 async def detectar_prazos(req: PrazosReq, db: AsyncSession = Depends(get_db),
                           cu: User = Depends(get_current_user)):
     """Sugere prazos encontrados num documento — o advogado confirma e cria."""
