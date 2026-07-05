@@ -58,6 +58,12 @@ class AILog(Base):
     prompt_sanitizado  = Column(Text, nullable=False)
     pii_removida       = Column(Boolean, default=False)  # flag: houve remoção?
     resposta           = Column(Text, nullable=True)
+    # MODO DUAS IAS (Fase 5 / migration 070): relatório da IA Crítica/Adversarial.
+    # Campo DEDICADO — a crítica NÃO vive mais dentro de `resposta`. Isso mantém
+    # a jurisprudência ESPECULATIVA da crítica ("verificar fonte") fora do gate
+    # de aprovação HITL (que varre só `resposta`) e fora da ingestão RAG (que
+    # destila só `resposta`). O revisor vê a crítica por este campo.
+    critica_adversarial = Column(Text, nullable=True)
     fontes_rag         = Column(Text, nullable=True)     # chunks usados (rastreabilidade)
     tokens_input       = Column(Integer, nullable=True)
     tokens_output      = Column(Integer, nullable=True)

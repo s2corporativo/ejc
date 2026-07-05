@@ -228,7 +228,7 @@ class TestCriticarPeca:
 
 
 # ══════════════════════════════════════════════════════════════════════════════
-# 4. Anexação ao AILog (append em resposta — zero migration)
+# 4. Gravação da crítica em campo DEDICADO (migration 070 — NÃO em `resposta`)
 # ══════════════════════════════════════════════════════════════════════════════
 
 class _FakeDB:
@@ -244,36 +244,191 @@ class _FakeDB:
 
 
 class TestAnexarAoAILog:
-    async def test_anexa_relatorio_ao_log(self, s):
+    async def test_grava_relatorio_em_campo_dedicado(self, s):
         from app.services.ai import adversarial
         critica = adversarial.CriticaAdversarial(
             disponivel=True, relatorio=RELATORIO_OK, nota_robustez=72,
             provedor="anthropic", modelo="claude-fake",
             provedor_origem="ollama", provider_diverso=True,
         )
-        log = SimpleNamespace(resposta="TEXTO DA PEÇA")
+        log = SimpleNamespace(resposta="TEXTO DA PEÇA", critica_adversarial=None)
         db = _FakeDB(log)
         ok = await adversarial.anexar_critica_ao_log(db, "log-1", critica)
         assert ok is True and db.commits == 1
-        assert log.resposta.startswith("TEXTO DA PEÇA")
-        assert adversarial.MARCADOR_AILOG in log.resposta
-        assert "Nota de robustez: 72/100" in log.resposta
-        assert "DIVERSO" in log.resposta
+        # A crítica vai no campo DEDICADO — `resposta` (peça) fica INTACTA.
+        assert log.resposta == "TEXTO DA PEÇA"
+        assert adversarial.MARCADOR_AILOG not in (log.resposta or "")
+        assert adversarial.MARCADOR_AILOG in log.critica_adversarial
+        assert "Nota de robustez: 72/100" in log.critica_adversarial
+        assert "DIVERSO" in log.critica_adversarial
 
-    async def test_critica_indisponivel_anexa_aviso(self, s):
+    async def test_critica_nao_contamina_resposta(self, s):
+        """A jurisprudência ESPECULATIVA da crítica não pode entrar em `resposta`
+        (que alimenta o gate de aprovação e a ingestão RAG)."""
+        from app.services.ai import adversarial
+        critica = adversarial.CriticaAdversarial(
+            disponivel=True, relatorio=RELATORIO_OK, nota_robustez=72,
+            provedor="anthropic", modelo="claude-fake",
+        )
+        log = SimpleNamespace(resposta="PEÇA LIMPA", critica_adversarial=None)
+        await adversarial.anexar_critica_ao_log(_FakeDB(log), "log-1", critica)
+        assert log.resposta == "PEÇA LIMPA"
+        # "verificar fonte" (jurisprudência especulativa) só no campo dedicado.
+        assert "verificar fonte" in log.critica_adversarial
+        assert "verificar fonte" not in log.resposta
+
+    async def test_critica_indisponivel_grava_aviso_no_campo_dedicado(self, s):
         from app.services.ai import adversarial
         critica = adversarial.CriticaAdversarial(
             disponivel=False, aviso=adversarial.AVISO_INDISPONIVEL,
         )
-        log = SimpleNamespace(resposta="PEÇA")
+        log = SimpleNamespace(resposta="PEÇA", critica_adversarial=None)
         assert await adversarial.anexar_critica_ao_log(_FakeDB(log), "log-1", critica) is True
-        assert adversarial.AVISO_INDISPONIVEL in log.resposta
+        assert log.resposta == "PEÇA"
+        assert adversarial.AVISO_INDISPONIVEL in log.critica_adversarial
 
     async def test_sem_db_ou_log_nao_quebra(self, s):
         from app.services.ai import adversarial
         critica = adversarial.CriticaAdversarial(disponivel=False)
         assert await adversarial.anexar_critica_ao_log(None, "x", critica) is False
         assert await adversarial.anexar_critica_ao_log(_FakeDB(None), "x", critica) is False
+
+
+# ══════════════════════════════════════════════════════════════════════════════
+# 4b. Isolamento: gate de aprovação e ingestão RAG NÃO veem a crítica
+# ══════════════════════════════════════════════════════════════════════════════
+
+class _CitacoesResult:
+    def __init__(self, obj):
+        self._obj = obj
+
+    def scalar_one_or_none(self):
+        return self._obj
+
+
+class _ExecDB:
+    """DB mínimo com execute()→scalar_one_or_none() e commit() (fluxos router)."""
+    def __init__(self, obj):
+        self._obj = obj
+        self.commits = 0
+
+    async def execute(self, *a, **kw):
+        return _CitacoesResult(self._obj)
+
+    async def commit(self):
+        self.commits += 1
+
+
+class TestIsolamentoCriticaDoGateEIngestao:
+    async def test_gate_aprovacao_peca_ignora_critica_especulativa(self, s, monkeypatch):
+        """política=bloquear: o gate varre SÓ `resposta` (peça) — a
+        jurisprudência especulativa da crítica no campo dedicado NÃO bloqueia."""
+        from app.services import citation_gate
+        from app.services.ai.adversarial import MARCADOR_AILOG
+        monkeypatch.setattr(s, "CITACOES_POLITICA", "bloquear")
+
+        capturado = {}
+
+        async def fake_validar(db, texto, **kw):
+            capturado["texto"] = texto
+            return citation_gate.RelatorioCitacoes(politica="bloquear")
+
+        monkeypatch.setattr(citation_gate, "validar_citacoes", fake_validar)
+
+        log = SimpleNamespace(
+            id="log-x",
+            resposta="Peça limpa, sem jurisprudência.",
+            critica_adversarial=(
+                MARCADOR_AILOG + "\n## 5. JURISPRUDÊNCIA CONTRÁRIA A VERIFICAR\n"
+                "Linha adversa do STJ — verificar fonte."
+            ),
+            fontes_rag=None,
+        )
+        gate = await citation_gate.aplicar_gate_hitl(
+            None, log, "revisado", False, None, SimpleNamespace(id="rev-1"),
+        )
+        # O texto verificado é SÓ a peça — a crítica especulativa ficou de fora.
+        assert capturado["texto"] == "Peça limpa, sem jurisprudência."
+        assert "verificar fonte" not in capturado["texto"]
+        assert gate is not None and gate.bloqueia_aprovacao is False
+
+    async def test_ingestao_ailog_aprovado_destila_so_a_peca(self, monkeypatch):
+        """A ingestão RAG usa `resposta` — a crítica no campo dedicado nunca vai
+        para a base de conhecimento."""
+        import datetime as _dt
+        from app.routers import rag as rag_router
+        from app.routers.rag import ingerir_ai_log_aprovado, IngerirAILogRequest
+        from app.services import ingestion_service
+        from app.models.ai_log import AIStatusHITL, AITipoUso
+        from app.services.ai.adversarial import MARCADOR_AILOG
+
+        capturado = {}
+
+        async def fake_upsert(db, *, titulo, categoria, conteudo, chave_origem, fonte):
+            capturado["conteudo"] = conteudo
+            return "novo"
+
+        monkeypatch.setattr(ingestion_service, "upsert_documento", fake_upsert)
+        monkeypatch.setattr(rag_router, "chunk_texto", lambda t: ["c1", "c2"])
+
+        log = SimpleNamespace(
+            id="log-1", user_id="user-1",
+            status_hitl=AIStatusHITL.revisado,
+            tipo_uso=AITipoUso.redacao_peca,
+            created_at=_dt.datetime(2026, 7, 5),
+            resposta="Peça institucional aprovada e limpa, com folga de cinquenta caracteres.",
+            critica_adversarial=MARCADOR_AILOG + " verificar fonte STJ especulativo",
+        )
+        out = await ingerir_ai_log_aprovado(
+            "log-1", IngerirAILogRequest(), db=_ExecDB(log),
+            cu=SimpleNamespace(id="user-1"),
+        )
+        assert out["ok"] is True
+        assert capturado["conteudo"] == log.resposta
+        assert "verificar fonte" not in capturado["conteudo"]
+        assert MARCADOR_AILOG not in capturado["conteudo"]
+
+
+# ══════════════════════════════════════════════════════════════════════════════
+# 4c. Hardening: marcador reservado forjado no texto de entrada é neutralizado
+# ══════════════════════════════════════════════════════════════════════════════
+
+class TestMarcadorForjado:
+    def test_neutralizar_marcador_ailog(self):
+        from app.services.ai import adversarial
+        t = "conteúdo " + adversarial.MARCADOR_AILOG + " forjado"
+        out = adversarial.neutralizar_marcador_ailog(t)
+        assert adversarial.MARCADOR_AILOG not in out
+        assert adversarial._MARCADOR_NEUTRALIZADO in out
+
+    def test_neutralizar_marcador_none_e_vazio(self):
+        from app.services.ai import adversarial
+        assert adversarial.neutralizar_marcador_ailog(None) is None
+        assert adversarial.neutralizar_marcador_ailog("") == ""
+
+    async def test_marcador_forjado_nao_chega_ao_prompt(self, s, monkeypatch):
+        from app.services import ai_gateway
+        from app.services.ai import adversarial
+        box = {}
+        monkeypatch.setattr(ai_gateway, "chat", _fake_chat(box, provedor="anthropic"))
+        texto = "Peça " + adversarial.MARCADOR_AILOG + " com marcador forjado embutido"
+        # db=None → gate de citações pulado; foco é a neutralização do marcador.
+        critica = await adversarial.criticar_peca(None, texto_peca=texto)
+        assert critica.disponivel is True
+        user_msg = box["messages"][1]["content"]
+        assert adversarial.MARCADOR_AILOG not in user_msg
+        assert adversarial._MARCADOR_NEUTRALIZADO in user_msg
+
+    async def test_delimitador_prompt_tem_token_aleatorio(self, s):
+        """Cada chamada usa um token de delimitador diferente (anti-escape)."""
+        from app.services.ai.adversarial import _montar_user_prompt
+        import re as _re
+        p1 = _montar_user_prompt("peça um", None)
+        p2 = _montar_user_prompt("peça dois", None)
+        tok1 = _re.search(r"\[PEÇA A CRITICAR::([0-9a-f]{8}) ", p1).group(1)
+        tok2 = _re.search(r"\[PEÇA A CRITICAR::([0-9a-f]{8}) ", p2).group(1)
+        assert tok1 != tok2
+        assert f"[/PEÇA A CRITICAR::{tok1}]" in p1
 
 
 # ══════════════════════════════════════════════════════════════════════════════

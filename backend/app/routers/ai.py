@@ -142,7 +142,10 @@ async def listar_logs(
             {"id": l.id, "tipo_uso": l.tipo_uso.value, "modelo": l.modelo,
              "status_hitl": l.status_hitl.value, "pii_removida": l.pii_removida,
              "case_id": l.case_id, "created_at": l.created_at,
-             "resposta": l.resposta}
+             "resposta": l.resposta,
+             # Campo dedicado (migration 070): crítica adversarial p/ o revisor
+             # HITL — separada de `resposta` para não gatear/ingerir a crítica.
+             "critica_adversarial": l.critica_adversarial}
             for l in rows
         ],
         "total": total, "page": page, "page_size": page_size,
