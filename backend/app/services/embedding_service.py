@@ -100,6 +100,30 @@ async def _embed_http(textos: list[str], modo: str) -> list[list[float]] | None:
         return None
 
 
+# Cache LRU em memória para embeddings de QUERY única (buscas repetidas: mesmo
+# termo por vários usuários no mesmo dia). Só o caminho de consulta é cacheado —
+# ingestão (passage) é one-shot e volumosa. Limite pequeno; evicção FIFO/LRU.
+from collections import OrderedDict
+
+_QUERY_CACHE: "OrderedDict[tuple[str, str], list[float]]" = OrderedDict()
+_QUERY_CACHE_MAX = 256
+
+
+def _cache_query_get(modo: str, texto: str) -> list[float] | None:
+    chave = (modo, texto)
+    vec = _QUERY_CACHE.get(chave)
+    if vec is not None:
+        _QUERY_CACHE.move_to_end(chave)  # LRU: marca como recém-usado
+    return vec
+
+
+def _cache_query_put(modo: str, texto: str, vec: list[float]) -> None:
+    _QUERY_CACHE[(modo, texto)] = vec
+    _QUERY_CACHE.move_to_end((modo, texto))
+    while len(_QUERY_CACHE) > _QUERY_CACHE_MAX:
+        _QUERY_CACHE.popitem(last=False)  # remove o menos recentemente usado
+
+
 async def gerar_embeddings(
     textos: list[str], modo: str = "passage"
 ) -> list[list[float]] | None:
@@ -115,11 +139,21 @@ async def gerar_embeddings(
     """
     if not disponivel() or not textos:
         return None
+    # Fast path: query única já vista → devolve o vetor cacheado (sem recomputar).
+    cacheavel = modo == "query" and len(textos) == 1
+    if cacheavel:
+        vec = _cache_query_get(modo, textos[0])
+        if vec is not None:
+            return [vec]
     if _provider() == "http":
-        return await _embed_http(textos, modo)
-    try:
-        vetores = await asyncio.to_thread(_embed_sync, textos, _prefixo(modo))
-        return _validar_dimensao(vetores)
-    except Exception as e:
-        logger.warning(f"Falha ao gerar embeddings: {e}")
-        return None
+        vetores = await _embed_http(textos, modo)
+    else:
+        try:
+            vetores = await asyncio.to_thread(_embed_sync, textos, _prefixo(modo))
+            vetores = _validar_dimensao(vetores)
+        except Exception as e:
+            logger.warning(f"Falha ao gerar embeddings: {e}")
+            vetores = None
+    if cacheavel and vetores:
+        _cache_query_put(modo, textos[0], vetores[0])
+    return vetores

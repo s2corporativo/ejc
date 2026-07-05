@@ -179,6 +179,8 @@ class GatewayResponse:
     custo_estimado_brl: float = 0.0
     roteamento_tier: str | None = None
     roteamento_score: int | None = None
+    # True quando a resposta veio do cache (dedup de requisição idêntica).
+    cache_hit: bool = False
     timestamp: str = field(
         default_factory=lambda: datetime.now(timezone.utc).isoformat()
     )
@@ -211,6 +213,31 @@ async def chat(
 
     # #8 — injeta a identidade do escritório no system (apenas tarefas de prosa).
     messages = _aplicar_nivel(legal_base.aplicar_base(messages, task_type), nivel_inteligencia)
+
+    # ── Cache de resposta (opt-in): dedup de requisição idêntica dentro do TTL.
+    # Chaveado pelas messages FINAIS + parâmetros que afetam a saída. Nunca
+    # quebra o fluxo (ai_cache engole erros) e só serve respostas gravadas de
+    # chamadas bem-sucedidas anteriores.
+    from app.services import ai_cache
+    _cache_key = ai_cache.chave(
+        task_type, messages, temperature=temperature, max_tokens=max_tokens,
+        model_override=model_override, provider_override=provider_override,
+        nivel_inteligencia=nivel_inteligencia,
+    )
+    _cached = await ai_cache.obter(_cache_key)
+    if _cached:
+        logger.info("[Gateway] cache HIT → %s (sem chamada ao provedor)", task_type)
+        return GatewayResponse(
+            texto=_cached.get("texto", ""),
+            modelo=_cached.get("modelo", ""),
+            provedor=_cached.get("provedor", ""),
+            task_type=task_type,
+            input_tokens=_cached.get("input_tokens"),
+            output_tokens=_cached.get("output_tokens"),
+            duracao_ms=0,
+            custo_estimado_brl=_cached.get("custo_estimado_brl", 0.0),
+            cache_hit=True,
+        )
 
     # AI_PROVIDER="groq" → ignora Ollama; "ollama" → falha se Ollama down
     provider_force = provider_override or (
@@ -319,6 +346,12 @@ async def chat(
                 ),
             )
             _lf.flush()
+            # Grava no cache apenas respostas bem-sucedidas (TTL curto).
+            await ai_cache.gravar(_cache_key, {
+                "texto": texto, "modelo": modelo_real, "provedor": provider,
+                "input_tokens": inp, "output_tokens": out,
+                "custo_estimado_brl": custo_brl,
+            })
             return resp
         except Exception as e:
             ultimo_erro = str(e)[:200]  # trilha INTERNA (logger + RuntimeError)
