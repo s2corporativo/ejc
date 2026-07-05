@@ -32,6 +32,7 @@ import {
   Modal,
   Empty,
   Spinner,
+  fmtMoney,
 } from "../../components/UI";
 import { RAMOS, type RamoConfig, type FerramentaConfig } from "./ramosConfig";
 import GuiaBancario from "../../components/GuiaBancario";
@@ -87,9 +88,6 @@ function rotulo(v: string) {
   return v.replace(/_/g, " ").replace(/\b\w/g, (c) => c.toUpperCase());
 }
 
-function formatBRL(v: number) {
-  return v.toLocaleString("pt-BR", { style: "currency", currency: "BRL" });
-}
 
 // ── Bloco de uma ferramenta/calculadora ──────────────────────────────────────
 function Ferramenta({ f }: { f: FerramentaConfig }) {
@@ -340,12 +338,12 @@ function VerbaRescisView({ data }: { data: any }) {
         {Object.entries(verbas).map(([k, v]) => (
           <div key={k} className="flex justify-between text-xs">
             <span className="text-slate-600">{labels[k] || rotulo(k)}</span>
-            <span className="font-medium text-navy">{formatBRL(v)}</span>
+            <span className="font-medium text-navy">{fmtMoney(v)}</span>
           </div>
         ))}
         <div className="flex justify-between text-sm font-bold text-navy border-t border-gold-300 pt-1 mt-1">
           <span>Total bruto estimado</span>
-          <span>{formatBRL(total)}</span>
+          <span>{fmtMoney(total)}</span>
         </div>
       </div>
       <div className="text-[10px] text-slate-400 space-y-0.5">

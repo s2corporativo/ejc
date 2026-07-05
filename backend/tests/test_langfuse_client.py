@@ -148,14 +148,16 @@ def test_conteudo_omitido_quando_captura_desligada(monkeypatch):
     assert lf._sanitizar_conteudo([{"role": "user", "content": "x"}]) is None
 
 
-def test_conteudo_integral_quando_captura_ligada(monkeypatch):
-    # Sanitização desativada (2026-07-05): conteúdo capturado segue integral
-    # (Langfuse é self-hosted — não sai do VPS).
+def test_conteudo_sanitizado_quando_captura_ligada(monkeypatch):
+    # Sanitização reativada (LGPD): mesmo com captura ligada, o conteúdo é
+    # mascarado antes de ir ao Langfuse (mesma barreira do gateway).
     _cfg(monkeypatch, LANGFUSE_CAPTURE_CONTENT=True)
     out = lf._sanitizar_conteudo("meu CPF é 529.982.247-25 ok")
-    assert "529.982.247-25" in out
+    assert "529.982.247-25" not in out
+    assert "[CPF]" in out
     msgs = lf._sanitizar_conteudo([{"role": "user", "content": "CPF 529.982.247-25"}])
-    assert "529.982.247-25" in msgs[0]["content"]
+    assert "529.982.247-25" not in msgs[0]["content"]
+    assert "[CPF]" in msgs[0]["content"]
 
 
 # ── generation/evento usam o handle do SDK e engolem erro ─────────────────────

@@ -4,17 +4,12 @@ import { useEffect, useState } from "react";
 import { Target } from "lucide-react";
 import api from "../../lib/api";
 import { toast } from "../Toast";
-import { Alert, Badge, Empty, SectionCard, Spinner, cn } from "../UI";
+import { Alert, Badge, Empty, SectionCard, Spinner, cn, fmtMoney } from "../UI";
 import type {
   MatrizRiscoResponse,
   NivelQuadrante,
   TratamentoContabil,
 } from "../../types/visualLaw";
-
-const fmtBRL = new Intl.NumberFormat("pt-BR", {
-  style: "currency",
-  currency: "BRL",
-});
 
 const NIVEL_CELULA: Record<string, { bg: string; texto: string }> = {
   baixo: { bg: "bg-green-100 hover:bg-green-200", texto: "text-green-800" },
@@ -238,7 +233,7 @@ export default function MatrizRisco({ caseId }: { caseId: string }) {
             </p>
             <p className="mt-1 text-lg font-semibold tabular-nums text-slate-900">
               {data.impacto.valor_causa != null
-                ? fmtBRL.format(data.impacto.valor_causa)
+                ? fmtMoney(data.impacto.valor_causa)
                 : "Não cadastrado"}
             </p>
           </div>

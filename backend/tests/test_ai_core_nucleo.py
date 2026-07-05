@@ -122,9 +122,10 @@ class TestAIProviderPolicy:
 # ══════════════════════════════════════════════════════════════════════════════
 
 class TestGatewayBarreiraLGPD:
-    def test_sanitizar_messages_externo_e_passthrough(self, s):
-        # Sanitização desativada (2026-07-05): conteúdo segue integral e
-        # nenhum residual é acusado — nenhum provider é pulado por PII.
+    def test_sanitizar_messages_externo_mascara_pii(self, s):
+        # Sanitização reativada (LGPD art. 33/46): a barreira final mascara
+        # CPF/CNPJ/e-mail antes de qualquer provedor externo e não deixa
+        # residual (nenhuma PII estrutural segue em claro).
         from app.services.ai_gateway import _sanitizar_messages_externo
         messages = [
             {"role": "system", "content": "Você é um assistente jurídico."},
@@ -133,8 +134,8 @@ class TestGatewayBarreiraLGPD:
         limpos, residual = _sanitizar_messages_externo(messages)
         assert residual == []
         conteudo = " ".join(m["content"] for m in limpos)
-        assert CPF_FAKE in conteudo and CNPJ_FAKE in conteudo and EMAIL_FAKE in conteudo
-        assert "[CPF]" not in conteudo
+        assert CPF_FAKE not in conteudo and CNPJ_FAKE not in conteudo and EMAIL_FAKE not in conteudo
+        assert "[CPF]" in conteudo and "[CNPJ]" in conteudo and "[EMAIL]" in conteudo
 
     async def test_chat_bloqueia_cadeia_so_externa_com_pii_residual(self, s, monkeypatch):
         from app.services import ai_gateway, sanitizer

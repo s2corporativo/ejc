@@ -7,6 +7,7 @@ import {
   TrendingUp,
 } from "lucide-react";
 import api from "../../lib/api";
+import { fmtMoney } from "../../components/UI";
 
 const ST: Record<string, [string, string, string]> = {
   pago: ["Pago", "text-success-600", "bg-success-50"],
@@ -37,34 +38,31 @@ export default function PortalFinanceiro() {
     .filter((r) => r.status === "atrasado")
     .reduce((s, r) => s + (r.valor ?? 0), 0);
 
-  const fmt = (v: number) =>
-    v.toLocaleString("pt-BR", { style: "currency", currency: "BRL" });
-
   const kpis = [
     {
       label: "Total honorários",
-      value: fmt(total),
+      value: fmtMoney(total),
       icon: TrendingUp,
       color: "text-primary-500",
       bg: "bg-primary-50",
     },
     {
       label: "Recebido",
-      value: fmt(pago),
+      value: fmtMoney(pago),
       icon: CheckCircle,
       color: "text-success-500",
       bg: "bg-success-50",
     },
     {
       label: "Em aberto",
-      value: fmt(pendente),
+      value: fmtMoney(pendente),
       icon: Clock,
       color: "text-warn-500",
       bg: "bg-warn-50",
     },
     {
       label: "Em atraso",
-      value: fmt(atrasado),
+      value: fmtMoney(atrasado),
       icon: AlertCircle,
       color: "text-danger-500",
       bg: "bg-danger-50",
@@ -109,7 +107,7 @@ export default function PortalFinanceiro() {
               Pagamento em atraso
             </p>
             <p className="text-xs text-danger-600 mt-0.5">
-              Você possui {fmt(atrasado)} em honorários vencidos. Entre em
+              Você possui {fmtMoney(atrasado)} em honorários vencidos. Entre em
               contato com o escritório para regularizar.
             </p>
           </div>
@@ -164,7 +162,7 @@ export default function PortalFinanceiro() {
                   </div>
                   <div className="text-right flex-shrink-0">
                     <p className="text-sm font-bold text-slate-800">
-                      {fmt(f.valor ?? 0)}
+                      {fmtMoney(f.valor ?? 0)}
                     </p>
                     <span
                       className={`inline-block text-xs font-medium px-2 py-0.5 rounded-full mt-1 ${cor} ${bgcor}`}

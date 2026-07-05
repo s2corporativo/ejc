@@ -10,7 +10,7 @@ import {
   X,
 } from "lucide-react";
 import api from "../lib/api";
-import { Modal, PageHeader } from "../components/UI";
+import { Modal, PageHeader, fmtDate } from "../components/UI";
 
 interface Contract {
   id: string;
@@ -47,10 +47,6 @@ const TYPE_LABEL: Record<string, string> = {
   outro: "Outro",
 };
 
-function fmtDate(d?: string) {
-  if (!d) return "—";
-  return new Date(d + "T12:00:00").toLocaleDateString("pt-BR");
-}
 function fmtMoney(v?: number) {
   if (!v) return "—";
   return v.toLocaleString("pt-BR", { style: "currency", currency: "BRL" });

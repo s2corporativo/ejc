@@ -409,7 +409,6 @@ class AdminTipo(str, enum.Enum):
     improbidade_admin       = "improbidade_administrativa" # Lei 8.429/92
     mandado_seguranca       = "mandado_seguranca_admin"    # Lei 12.016/2009
     servidor_publico        = "servidor_publico"           # PAD/sindicância
-    licitacao_recurso       = "licitacao_recurso"          # Lei 14.133/21 art. 165
     desapropriacao          = "desapropriacao"             # DL 3.365/41
     indenizacao_estado      = "indenizacao_estado"         # responsabilidade civil CF art. 37 §6º
     licença_negada          = "licenca_negada_admin"
@@ -434,7 +433,6 @@ class AdminCase(Base):
       - Recurso administrativo geral (Lei 9.784/99 art. 59): 10 dias
       - MS impetração: 120 dias do ato (Lei 12.016/09 art. 23)
       - Improbidade (ação): 8 anos da prática (Lei 8.429/92 art. 23)
-      - Recurso licitação (Lei 14.133/21 art. 165): 3 dias úteis
     """
     __tablename__ = "admin_cases"
 

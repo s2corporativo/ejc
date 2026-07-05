@@ -3,6 +3,7 @@ import { useEffect, useState } from "react";
 import { Link } from "react-router-dom";
 import { Plus, Search, ShieldAlert, KeyRound } from "lucide-react";
 import api from "../lib/api";
+import { soDigitos } from "../utils/phone";
 import type { Client, Paged } from "../types";
 import {
   PageHeader,
@@ -36,7 +37,7 @@ interface ConflitoCheck {
 }
 
 function openWhatsApp(phone: string, name: string) {
-  const digits = phone.replace(/\D/g, "");
+  const digits = soDigitos(phone);
   const br = digits.startsWith("55") ? digits : "55" + digits;
   const msg = encodeURIComponent(`Olá ${name}, tudo bem?`);
   window.open(`https://wa.me/${br}?text=${msg}`, "_blank");
