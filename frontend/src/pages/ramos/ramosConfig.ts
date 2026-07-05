@@ -73,7 +73,6 @@ export interface RamoConfig {
   guiaImobiliario?: boolean; // guia operacional de direito imobiliário
   guiaFamilia?: boolean; // guia operacional de direito de família
   guiaAdministrativo?: boolean; // guia operacional de direito administrativo
-  guiaLicitacoes?: boolean; // guia operacional de licitações e contratos
   guiaEmpresarial?: boolean; // guia operacional de direito empresarial (3 pilares)
   sociedadesCliente?: boolean; // sociedades do cliente: cap table + eventos societários (/empresarial/sociedades)
   guiaLgpd?: boolean; // guia operacional de adequação à LGPD (referência)
@@ -840,17 +839,16 @@ const trabalhista: RamoConfig = {
 };
 
 // ══════════════════════════════════════════════════════════════════════════
-// 5. ADMINISTRATIVO — Licitações · Multas · Prefeituras · MS · PAD
+// 5. ADMINISTRATIVO — Multas · Prefeituras · MS · PAD · Improbidade
 // ══════════════════════════════════════════════════════════════════════════
 const administrativo: RamoConfig = {
   guiaAdministrativo: true,
-  guiaLicitacoes: true,
   slug: "administrativo",
   endpoint: "/admin-esp",
   areaCaso: "tributario",
   titulo: "Direito Administrativo",
   subtitulo:
-    "Licitações · Contratos Públicos · Recursos de Multas · MS · Prefeituras · Improbidade",
+    "Recursos de Multas · MS · Prefeituras · Improbidade · Contratos Administrativos",
   icone: "Landmark",
   cor: "slate",
   campoTitulo: "tipo",
@@ -871,7 +869,6 @@ const administrativo: RamoConfig = {
         "improbidade_administrativa",
         "mandado_seguranca_admin",
         "servidor_publico",
-        "licitacao_recurso",
         "desapropriacao",
         "indenizacao_estado",
         "licenca_negada_admin",
@@ -910,102 +907,14 @@ const administrativo: RamoConfig = {
     { nome: "observacoes", label: "Observações", tipo: "textarea", col: 2 },
   ],
   ferramentas: [
-    // ── LICITAÇÕES ────────────────────────────────────────────────────────
-    {
-      id: "prazo-recurso-licitacao",
-      titulo: "Prazo de Recurso em Licitação",
-      descricao:
-        "Pregão (3 dias), concorrência (3 dias), tomada de preços (5 dias).",
-      baseLegal: "Lei 14.133/2021 art. 165 · Lei 10.520/02",
-      grupo: "Licitações",
-      endpoint: "/admin-esp/ferramentas/prazo-recurso-licitacao",
-      campos: [
-        {
-          nome: "data_publicacao_resultado",
-          label: "Data do resultado / julgamento",
-          tipo: "date",
-        },
-        {
-          nome: "modalidade",
-          label: "Modalidade",
-          tipo: "select",
-          opcoes: [
-            "pregao",
-            "concorrencia",
-            "tomada_precos",
-            "convite",
-            "credenciamento",
-          ],
-          default: "pregao",
-        },
-      ],
-    },
-    {
-      id: "habilitacao-licitacao",
-      titulo: "Checklist de Habilitação",
-      descricao: "Documentação mínima para habilitar em licitação pública.",
-      baseLegal: "Lei 14.133/2021 arts. 62-70 · LC 123/06",
-      grupo: "Licitações",
-      endpoint: "/admin-esp/ferramentas/habilitacao-licitacao",
-      campos: [
-        {
-          nome: "tem_certidao_federal",
-          label: "CND Federal (Receita+PGFN)?",
-          tipo: "select",
-          opcoes: ["true", "false"],
-          default: "true",
-        },
-        {
-          nome: "tem_certidao_estadual",
-          label: "CND Estadual?",
-          tipo: "select",
-          opcoes: ["true", "false"],
-          default: "true",
-        },
-        {
-          nome: "tem_certidao_municipal",
-          label: "CND Municipal?",
-          tipo: "select",
-          opcoes: ["true", "false"],
-          default: "true",
-        },
-        {
-          nome: "tem_fgts",
-          label: "Certidão FGTS (CEF)?",
-          tipo: "select",
-          opcoes: ["true", "false"],
-          default: "true",
-        },
-        {
-          nome: "tem_trabalhista",
-          label: "CNDT (TST)?",
-          tipo: "select",
-          opcoes: ["true", "false"],
-          default: "true",
-        },
-        {
-          nome: "tem_qualificacao_tecnica",
-          label: "Qualif. técnica (atestados)?",
-          tipo: "select",
-          opcoes: ["true", "false"],
-          default: "true",
-        },
-        {
-          nome: "tem_qualificacao_economica",
-          label: "Qualif. econômica (balanço)?",
-          tipo: "select",
-          opcoes: ["true", "false"],
-          default: "true",
-        },
-      ],
-    },
+    // ── CONTRATOS ADMINISTRATIVOS ─────────────────────────────────────────
     {
       id: "reajuste-contrato-admin",
       titulo: "Reajuste de Contrato com Prefeitura",
       descricao:
         "Cálculo do reajuste após 12 meses por índice contratual (IPCA/INCC/IGP-M).",
       baseLegal: "Lei 14.133/2021 art. 92 §§2º-3º",
-      grupo: "Licitações",
+      grupo: "Contratos Administrativos",
       endpoint: "/admin-esp/ferramentas/reajuste-contrato-administrativo",
       campos: [
         {
@@ -2242,7 +2151,7 @@ const SUBAREAS: Record<string, string[]> = {
     "Negociação Coletiva",
     "Terceirização e Contratos de Trabalho",
     "Defesa do Consumidor para Empresas (PROCON)",
-    "Licitações e Contratos Públicos",
+    "Contratos Administrativos",
   ],
   consumidor: [
     "Planos de Saúde — Negativa de Cobertura",
@@ -2295,9 +2204,8 @@ const SUBAREAS: Record<string, string[]> = {
     "Terceirização e Trabalho Intermitente/Teletrabalho",
   ],
   administrativo: [
-    "Licitações e Contratos Administrativos",
-    "Análise de Editais (cláusulas restritivas)",
-    "Impugnações e Recursos",
+    "Contratos Administrativos",
+    "Recursos Administrativos",
     "Equilíbrio Econômico-Financeiro (reajuste)",
     "Defesa em Sanções (multas/inidoneidade)",
     "Defesa de Servidores Públicos",
@@ -2478,11 +2386,6 @@ const FERRAMENTAS_EXTERNAS: Record<string, LinkExterno[]> = {
       nome: "CRF FGTS — Caixa",
       url: "https://consulta-crf.caixa.gov.br/consultacrf/pages/consultaEmpregador.jsf",
       descricao: "Regularidade do FGTS da empresa.",
-    },
-    {
-      nome: "PNCP — Contratações Públicas",
-      url: "https://www.gov.br/pncp/",
-      descricao: "Editais de licitação e contratos públicos do Brasil.",
     },
     {
       nome: "Consulta CNPJ — Receita Federal",
@@ -2705,24 +2608,9 @@ const FERRAMENTAS_EXTERNAS: Record<string, LinkExterno[]> = {
   ],
   administrativo: [
     {
-      nome: "SICAF",
-      url: "https://www3.comprasnet.gov.br/sicaf-web/",
-      descricao: "Cadastro de fornecedores do governo federal.",
-    },
-    {
       nome: "Portal da Transparência",
       url: "https://portaldatransparencia.gov.br/",
       descricao: "Gastos, contratos e sanções da administração pública.",
-    },
-    {
-      nome: "PNCP — Contratações Públicas",
-      url: "https://www.gov.br/pncp/",
-      descricao: "Editais e contratos da administração pública.",
-    },
-    {
-      nome: "Compras.gov.br",
-      url: "https://www.gov.br/compras/",
-      descricao: "Portal de compras do Governo Federal.",
     },
   ],
   consumidor: [

@@ -53,7 +53,7 @@ const RAMOS = [
     label: "Direito Administrativo",
     icon: Landmark,
     color: "bg-cyan-50 text-cyan-700 border-cyan-200",
-    desc: "Licitações, concessões, atos administrativos",
+    desc: "Concessões, atos administrativos, contratos públicos",
   },
   {
     slug: "bancario",

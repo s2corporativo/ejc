@@ -15,7 +15,7 @@ router = APIRouter(prefix="/intelligence-v3", tags=["Intelligence"])
 
 @router.get("/radar/legislativo", dependencies=[Depends(rate_limit("radar-legislativo", 10))])
 async def radar_legislativo(cu: User = Depends(get_current_user)):
-    keywords = ["tributo", "pis", "cofins", "medicamento", "veterinario", "licitacao"]
+    keywords = ["tributo", "pis", "cofins", "medicamento", "veterinario", "administrativo"]
     camara, senado = await asyncio.gather(
         radar_poder.monitorar_projetos_lei(keywords),
         radar_poder.monitorar_materias_senado(keywords),

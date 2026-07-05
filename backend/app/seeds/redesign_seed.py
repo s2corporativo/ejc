@@ -63,13 +63,6 @@ DOCUMENT_TYPES = [
         "extensoes_aceitas": ["xml"],
     },
     {
-        "tipo_key": "edital_licitacao", "nome": "Edital de Licitação", "categoria": "administrativo",
-        "descricao": "Editais de licitação/pregão para análise de exigências e prazos.",
-        "campos_extracao": ["orgao", "modalidade", "numero_edital", "objeto",
-                            "data_sessao", "valor_estimado", "exigencias_habilitacao"],
-        "extensoes_aceitas": ["pdf", "docx"],
-    },
-    {
         "tipo_key": "denuncia", "nome": "Denúncia / Queixa-crime", "categoria": "juridico",
         "descricao": "Peça acusatória do MP ou queixa-crime (área criminal).",
         "campos_extracao": ["tipificacao_artigo", "orgao", "denunciado",
@@ -236,7 +229,6 @@ AREA_MODULOS = (
             _f("Dosimetria", "/penal/ferramentas/dosimetria"),
         ]}])
     + _area("ambiental", [{"module_key": "ramos/ambiental"}])
-    + _area("licitacoes", [{"module_key": "licitacao-auditoria"}])
 )
 
 # ══════════════════════════════════════════════════════════════════════════════

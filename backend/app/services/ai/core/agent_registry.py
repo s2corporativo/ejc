@@ -108,14 +108,6 @@ AGENT_REGISTRY: dict[str, AgenteInterno] = {
         prompt_key="bancario",
         skills=_skills("build_case_context", "analyze_bank_statement"),
     ),
-    "LicitacaoComplianceAgent": AgenteInterno(
-        nome="LicitacaoComplianceAgent",
-        descricao="Licitações, compliance, regulatório e ambiental (auditoria documental).",
-        dominios=["licitacao", "compliance", "regulatorio", "ambiental"],
-        tarefa_padrao=TarefaIA.ANALISE_CASO,
-        prompt_key="licitacao_compliance",
-        skills=_skills("build_case_context", "build_document_context", "audit_licitacao_document"),
-    ),
     "ClientCommunicationAgent": AgenteInterno(
         nome="ClientCommunicationAgent",
         descricao="Rascunhos de comunicação com o cliente (linguagem clara, sem juridiquês).",

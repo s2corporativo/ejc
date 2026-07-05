@@ -57,7 +57,6 @@ _TAREFA_PARA_GATEWAY: dict[TarefaIA, str] = {
 _AGENTE_GATEWAY_OVERRIDE: dict[str, str] = {
     "JurimetryAgent": "jurimetria",
     "BankForensicsAgent": "analise_contrato",
-    "LicitacaoComplianceAgent": "auditoria_peca",
 }
 
 

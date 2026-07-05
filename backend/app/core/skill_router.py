@@ -13,7 +13,7 @@ class SkillRouter:
             "trabalhista": ["clt", "vinculo", "hora extra", "verbas", "tst", "trabalho", "rescisao"],
             "empresarial": ["sociedade", "contrato", "pj", "societario", "m&a", "empresa", "falencia"],
             "civil": ["indenizacao", "danos", "contrato civil", "posse", "propriedade", "familia"],
-            "administrativo": ["licitacao", "pregao", "edital", "concurso", "servidor", "tcu", "pncp"]
+            "administrativo": ["administrativo", "multa", "concurso", "servidor", "tcu", "improbidade", "mandado de seguranca"]
         }
 
     def identificar_ramo(self, texto: str) -> str:
@@ -36,7 +36,7 @@ class SkillRouter:
             "tributario": "Acionando Skill Especialista em Direito Tributário. Foco em recuperação de créditos e análise de Selic/IPCA.",
             "trabalhista": "Acionando Skill Especialista em Direito do Trabalho. Foco em jurisprudência do TST e cálculos de verbas.",
             "empresarial": "Acionando Skill Especialista em Direito Empresarial e Societário. Foco em contratos e governança.",
-            "administrativo": "Acionando Skill Especialista em Direito Administrativo. Foco em licitações e decisões do TCU.",
+            "administrativo": "Acionando Skill Especialista em Direito Administrativo. Foco em atos administrativos, servidores e decisões do TCU.",
             "civil": "Acionando Skill Especialista em Direito Civil. Foco em responsabilidade e contratos.",
             "geral": "Acionando Assistente Jurídico Geral. Análise multisetorial."
         }
