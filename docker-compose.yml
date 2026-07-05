@@ -134,9 +134,11 @@ services:
     restart: unless-stopped
     environment:
       POSTGRES_USER: langfuse
-      # Fail-closed: sem senha definida no .env o serviço nem sobe (nada de
-      # fallback fraco tipo "langfuse" — evita banco de tracing com senha padrão).
-      POSTGRES_PASSWORD: ${LANGFUSE_DB_PASSWORD:?defina LANGFUSE_DB_PASSWORD no .env}
+      # Fail-closed em RUNTIME: sem senha no .env o postgres se recusa a subir
+      # (sem fallback fraco). NÃO usar ${VAR:?} aqui: o compose interpola
+      # variáveis mesmo com o profile DESLIGADO e quebraria todo build/up
+      # de quem não usa observabilidade (regressão vista no deploy do VPS).
+      POSTGRES_PASSWORD: ${LANGFUSE_DB_PASSWORD:-}
       POSTGRES_DB: langfuse
     volumes:
       - langfuse_db_data:/var/lib/postgresql/data
@@ -159,10 +161,11 @@ services:
     ports:
       - "127.0.0.1:3000:3000"
     environment:
-      # Fail-closed em todos os segredos: sem valor no .env o serviço não sobe.
-      DATABASE_URL: postgresql://langfuse:${LANGFUSE_DB_PASSWORD:?defina LANGFUSE_DB_PASSWORD no .env}@langfuse-db:5432/langfuse
-      NEXTAUTH_SECRET: ${LANGFUSE_NEXTAUTH_SECRET:?defina LANGFUSE_NEXTAUTH_SECRET no .env}
-      SALT: ${LANGFUSE_SALT:?defina LANGFUSE_SALT no .env}
+      # Fail-closed em RUNTIME (langfuse aborta sem estes valores); ver nota
+      # acima sobre por que NÃO usar ${VAR:?} em serviços com profile.
+      DATABASE_URL: postgresql://langfuse:${LANGFUSE_DB_PASSWORD:-}@langfuse-db:5432/langfuse
+      NEXTAUTH_SECRET: ${LANGFUSE_NEXTAUTH_SECRET:-}
+      SALT: ${LANGFUSE_SALT:-}
       NEXTAUTH_URL: ${LANGFUSE_NEXTAUTH_URL:-http://localhost:3000}
       TELEMETRY_ENABLED: "false"
       # Self-hosted fechado: sem signup público após criar o 1º usuário admin.
