@@ -55,18 +55,40 @@ class DiplomaciaDigital:
             "selic_anual": selic,
         }
 
-    async def gerar_dossie_pressao(self, dados_acordo: dict):
+    async def gerar_dossie_pressao(self, dados_acordo: dict) -> dict:
         """
         Gera os argumentos para o Dossiê de Pressão (Visual Law).
+
+        P1 (2026-07-05): antes retornava string fixa; agora chama o gateway
+        central de IA (task_type="estrategia" — cadeia Ollama→Anthropic→Groq,
+        com barreira LGPD do próprio gateway). O prompt contém apenas dados
+        NUMÉRICOS do cálculo (sem PII). Saída é RASCUNHO (HITL): o router
+        registra AILog e marca is_rascunho.
+
+        Retorna dict com argumentacao/prompt/modelo/provedor/tokens — o
+        contrato antigo (string) não tinha nenhum consumidor.
         """
         prompt = f"""
         Gere um argumento de negociação para o advogado da parte contrária.
         Dados: Valor da Causa {dados_acordo['valor_causa']}, Probabilidade de Perda deles: {dados_acordo['probabilidade_exito']}.
         Tempo estimado de processo: {dados_acordo['tempo_estimado_anos']} anos.
-        
+        Valor Presente Líquido do litígio: {dados_acordo.get('valor_presente_liquido')}.
+        Sugestão de acordo: {dados_acordo.get('sugestao_acordo_ideal')} (Selic anual considerada: {dados_acordo.get('selic_anual')}).
+
         Foque em mostrar que o acordo hoje é a única decisão racional para o cliente deles evitar prejuízos maiores com custas e juros.
         """
-        # Aqui usaria o ai_brain para gerar o texto do dossiê
-        return "Argumentação gerada com base em dados estatísticos."
+        from app.services import ai_gateway
+        resp = await ai_gateway.chat(
+            messages=[{"role": "user", "content": prompt}],
+            task_type="estrategia", temperature=0.3, max_tokens=1200,
+        )
+        return {
+            "argumentacao": resp.texto,
+            "prompt": prompt.strip(),
+            "modelo": resp.modelo,
+            "provedor": resp.provedor,
+            "input_tokens": resp.input_tokens,
+            "output_tokens": resp.output_tokens,
+        }
 
 diplomacia = DiplomaciaDigital()

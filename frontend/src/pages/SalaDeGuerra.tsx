@@ -2,6 +2,7 @@ import { useEffect, useState } from "react";
 import Markdown from "../components/Markdown";
 import { useParams, useNavigate } from "react-router-dom";
 import { Button } from "../components/UI";
+import { toast } from "../components/Toast";
 import {
   AlertTriangle,
   Clock,
@@ -17,6 +18,11 @@ import {
   Briefcase,
   Shield,
   BookOpen,
+  Swords,
+  Radar,
+  FileDown,
+  Handshake,
+  Calculator,
 } from "lucide-react";
 import api from "../lib/api";
 
@@ -216,6 +222,633 @@ function Section({
   );
 }
 
+function formatBRL(v: number | null | undefined) {
+  if (v == null || isNaN(Number(v))) return "—";
+  return Number(v).toLocaleString("pt-BR", {
+    style: "currency",
+    currency: "BRL",
+  });
+}
+
+/** Aviso HITL padrão: toda saída de IA é rascunho com revisão obrigatória. */
+function AvisoHitl() {
+  return (
+    <p className="text-[11px] text-warn-700 bg-warn-50 border border-warn-200 rounded-lg px-3 py-2">
+      ⚠ Conteúdo gerado por IA — rascunho de apoio. Revisão obrigatória pelo
+      advogado responsável antes de qualquer uso.
+    </p>
+  );
+}
+
+// ── War Room — Simulação Adversarial + Sentinela + Visual Law ───────────────
+interface SentinelaAlertaProcesso {
+  id: string;
+  titulo: string;
+  numero_interno: string | null;
+  ultima_movimentacao: string | null;
+}
+interface SentinelaAlertaCliente {
+  id: string;
+  full_name: string;
+  ultimo_contato: string | null;
+}
+interface SentinelaData {
+  alertas_processuais: SentinelaAlertaProcesso[];
+  alertas_clientes: SentinelaAlertaCliente[];
+}
+
+function WarRoomTab({
+  caseId,
+  tesePadrao,
+}: {
+  caseId: string;
+  tesePadrao: string;
+}) {
+  const [peticao, setPeticao] = useState(tesePadrao);
+  const [simulando, setSimulando] = useState(false);
+  const [resultado, setResultado] = useState("");
+
+  const [sentinela, setSentinela] = useState<SentinelaData | null>(null);
+  const [sentinelaErro, setSentinelaErro] = useState(false);
+
+  const [gerandoPdf, setGerandoPdf] = useState(false);
+  const [pdfUrl, setPdfUrl] = useState("");
+
+  useEffect(() => {
+    api
+      .get("/sala-de-guerra-v3/sentinela/auditoria")
+      .then((r: { data: SentinelaData }) => setSentinela(r.data))
+      .catch(() => setSentinelaErro(true));
+  }, []);
+
+  const simular = async () => {
+    if (!peticao.trim()) {
+      toast.error("Descreva a tese/estratégia a ser testada.");
+      return;
+    }
+    setSimulando(true);
+    setResultado("");
+    try {
+      const r = await api.post("/sala-de-guerra-v3/war-room/simular", {
+        peticao,
+      });
+      setResultado(
+        typeof r.data === "string"
+          ? r.data
+          : (r.data?.texto ?? JSON.stringify(r.data, null, 2)),
+      );
+    } catch (e: any) {
+      toast.error(
+        e.response?.data?.detail || "Falha na simulação adversarial.",
+      );
+    } finally {
+      setSimulando(false);
+    }
+  };
+
+  const gerarVisualLaw = async () => {
+    setGerandoPdf(true);
+    try {
+      const r = await api.post(`/sala-de-guerra-v3/visual-law/${caseId}`, {});
+      const downloadUrl: string | undefined = r.data?.download_url;
+      if (!downloadUrl) throw new Error("download_url ausente na resposta");
+      // baseURL do client é /api — remove o prefixo se o backend devolver a URL completa
+      const blob = await api.get(downloadUrl.replace(/^\/api/, ""), {
+        responseType: "blob",
+      });
+      const url = URL.createObjectURL(blob.data as Blob);
+      setPdfUrl(url);
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = `visual-law-cronologia-${caseId}.pdf`;
+      a.click();
+      toast.success("PDF Visual Law gerado.");
+    } catch (e: any) {
+      toast.error(
+        e.response?.data?.detail || "Falha ao gerar o PDF Visual Law.",
+      );
+    } finally {
+      setGerandoPdf(false);
+    }
+  };
+
+  return (
+    <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+      <div className="lg:col-span-2 space-y-6">
+        <Section
+          title="War Room — Simulação Adversarial"
+          icon={<Swords className="w-4 h-4" />}
+        >
+          <p className="text-xs text-zinc-400 mb-3">
+            A IA assume o papel do advogado da parte contrária e ataca a sua
+            tese: nulidades, contradições, jurisprudência defensiva e falta de
+            provas.
+          </p>
+          <textarea
+            className="w-full text-sm border border-zinc-200 rounded-lg px-3 py-2 resize-y focus:outline-none focus:ring-1 focus:ring-bronze/40 text-zinc-700"
+            rows={6}
+            placeholder="Cole aqui a tese, estratégia ou petição inicial a ser blindada…"
+            value={peticao}
+            onChange={(e) => setPeticao(e.target.value)}
+          />
+          <div className="mt-3">
+            <button
+              className="btn-gold text-sm"
+              disabled={simulando}
+              onClick={simular}
+            >
+              {simulando
+                ? "Simulando parte contrária…"
+                : "Simular parte contrária"}
+            </button>
+          </div>
+          {resultado && (
+            <div className="mt-4 space-y-3">
+              <AvisoHitl />
+              <div className="p-4 rounded-lg bg-zinc-50 border border-zinc-100">
+                <p className="text-[11px] font-semibold text-zinc-400 uppercase tracking-wider mb-2">
+                  Relatório de vulnerabilidades (visão adversarial)
+                </p>
+                <Markdown
+                  source={resultado}
+                  className="text-sm text-zinc-700 leading-relaxed"
+                />
+              </div>
+            </div>
+          )}
+        </Section>
+
+        <Section
+          title="Visual Law — Cronologia em PDF"
+          icon={<FileDown className="w-4 h-4" />}
+        >
+          <p className="text-xs text-zinc-400 mb-3">
+            Gera um PDF visual com a cronologia processual do caso, pronto para
+            audiências e negociações.
+          </p>
+          <div className="flex items-center gap-3 flex-wrap">
+            <button
+              className="btn-gold text-sm"
+              disabled={gerandoPdf}
+              onClick={gerarVisualLaw}
+            >
+              {gerandoPdf
+                ? "Gerando PDF…"
+                : "Gerar Visual Law PDF (cronologia)"}
+            </button>
+            {pdfUrl && (
+              <a
+                href={pdfUrl}
+                download={`visual-law-cronologia-${caseId}.pdf`}
+                className="text-sm text-bronze hover:underline flex items-center gap-1"
+              >
+                <FileDown className="w-4 h-4" /> Baixar novamente
+              </a>
+            )}
+          </div>
+        </Section>
+      </div>
+
+      <div className="space-y-6">
+        <Section
+          title="Sentinela — Auditoria de Inércia"
+          icon={<Radar className="w-4 h-4" />}
+        >
+          {sentinelaErro ? (
+            <p className="text-sm text-danger-500">
+              Falha ao consultar a Sentinela.
+            </p>
+          ) : !sentinela ? (
+            <p className="text-sm text-zinc-300 italic">
+              Auditando inércia processual…
+            </p>
+          ) : (
+            <div className="space-y-4">
+              <div className="grid grid-cols-2 gap-3">
+                <div className="rounded-lg border border-zinc-100 bg-zinc-50 px-3 py-2.5 text-center">
+                  <div className="text-xl font-light text-zinc-800">
+                    {sentinela.alertas_processuais.length}
+                  </div>
+                  <div className="text-[10px] text-zinc-400 uppercase tracking-wider">
+                    Processos parados &gt;60d
+                  </div>
+                </div>
+                <div className="rounded-lg border border-zinc-100 bg-zinc-50 px-3 py-2.5 text-center">
+                  <div className="text-xl font-light text-zinc-800">
+                    {sentinela.alertas_clientes.length}
+                  </div>
+                  <div className="text-[10px] text-zinc-400 uppercase tracking-wider">
+                    Clientes sem reporte &gt;30d
+                  </div>
+                </div>
+              </div>
+
+              {sentinela.alertas_processuais.length > 0 && (
+                <div>
+                  <p className="text-[11px] font-semibold text-zinc-400 uppercase tracking-wider mb-1.5">
+                    Processos sem movimentação
+                  </p>
+                  <div className="space-y-1.5 max-h-44 overflow-y-auto">
+                    {sentinela.alertas_processuais.map((p) => (
+                      <div
+                        key={p.id}
+                        className="flex items-center justify-between text-xs py-1 border-b border-zinc-50 last:border-0"
+                      >
+                        <span className="text-zinc-600 line-clamp-1 mr-2">
+                          {p.numero_interno ? `${p.numero_interno} — ` : ""}
+                          {p.titulo}
+                        </span>
+                        <span className="text-orange-500 shrink-0">
+                          {p.ultima_movimentacao
+                            ? new Date(
+                                p.ultima_movimentacao,
+                              ).toLocaleDateString("pt-BR")
+                            : "sem registro"}
+                        </span>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
+
+              {sentinela.alertas_clientes.length > 0 && (
+                <div>
+                  <p className="text-[11px] font-semibold text-zinc-400 uppercase tracking-wider mb-1.5">
+                    Clientes sem contato
+                  </p>
+                  <div className="space-y-1.5 max-h-44 overflow-y-auto">
+                    {sentinela.alertas_clientes.map((c) => (
+                      <div
+                        key={c.id}
+                        className="flex items-center justify-between text-xs py-1 border-b border-zinc-50 last:border-0"
+                      >
+                        <span className="text-zinc-600 line-clamp-1 mr-2">
+                          {c.full_name}
+                        </span>
+                        <span className="text-orange-500 shrink-0">
+                          {c.ultimo_contato
+                            ? new Date(c.ultimo_contato).toLocaleDateString(
+                                "pt-BR",
+                              )
+                            : "nunca"}
+                        </span>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
+
+              {sentinela.alertas_processuais.length === 0 &&
+                sentinela.alertas_clientes.length === 0 && (
+                  <p className="text-sm text-success-600">
+                    ✓ Nenhum alerta de inércia — carteira em dia.
+                  </p>
+                )}
+            </div>
+          )}
+        </Section>
+      </div>
+    </div>
+  );
+}
+
+// ── Acordo & Liquidez — Diplomacia Digital ───────────────────────────────────
+interface AcordoResultado {
+  valor_causa: number;
+  probabilidade_exito: number;
+  tempo_estimado_anos: number;
+  valor_presente_liquido: number;
+  sugestao_acordo_ideal: number;
+  custo_oportunidade_perda: number;
+  custos_estimados?: number;
+  selic_anual?: number;
+  selic_fonte?: string; // "bcb" | "fallback" | "informada" (aditivo no backend)
+}
+
+function AcordoTab({
+  caseId,
+  caso,
+}: {
+  caseId: string;
+  caso: SalaData["caso"];
+}) {
+  const [form, setForm] = useState({
+    valor_causa: caso.valor_causa != null ? String(caso.valor_causa) : "",
+    prob_exito_pct: "",
+    tempo_anos: "",
+    custas_pct: "",
+    honorarios_sucumbencia_pct: "",
+  });
+  const [res, setRes] = useState<AcordoResultado | null>(null);
+  const [calculando, setCalculando] = useState(false);
+  const [preenchendo, setPreenchendo] = useState(false);
+  const [dossie, setDossie] = useState("");
+  const [gerandoDossie, setGerandoDossie] = useState(false);
+
+  const set = (k: keyof typeof form) => (e: any) =>
+    setForm((f) => ({ ...f, [k]: e.target.value }));
+
+  const preencherJurimetria = async () => {
+    setPreenchendo(true);
+    try {
+      const r = await api.get("/jurimetria/ext/benchmarks", {
+        params: caso.tribunal ? { tribunal: caso.tribunal } : {},
+      });
+      const porResultado: { resultado_raw: string; total: number }[] =
+        r.data?.por_resultado ?? [];
+      const total = porResultado.reduce((s, x) => s + x.total, 0);
+      const favoraveis = porResultado
+        .filter((x) =>
+          ["exito_total", "exito_parcial", "acordo"].includes(x.resultado_raw),
+        )
+        .reduce((s, x) => s + x.total, 0);
+      const diasMedio: number = r.data?.tempo_tramitacao?.dias_medio ?? 0;
+
+      let aplicou = false;
+      const next = { ...form };
+      if (total > 0) {
+        next.prob_exito_pct = String(
+          Math.round((favoraveis / total) * 1000) / 10,
+        );
+        aplicou = true;
+      }
+      if (diasMedio > 0) {
+        next.tempo_anos = String(Math.round((diasMedio / 365) * 10) / 10);
+        aplicou = true;
+      }
+      if (aplicou) {
+        setForm(next);
+        toast.success(
+          `Jurimetria aplicada — base interna${caso.tribunal ? ` (${caso.tribunal})` : ""}.`,
+        );
+      } else {
+        toast.info(
+          "Sem dados históricos suficientes na jurimetria para pré-preencher.",
+        );
+      }
+    } catch (e: any) {
+      toast.error(e.response?.data?.detail || "Falha ao consultar jurimetria.");
+    } finally {
+      setPreenchendo(false);
+    }
+  };
+
+  const calcular = async () => {
+    const valor = parseFloat(form.valor_causa);
+    const prob = parseFloat(form.prob_exito_pct);
+    const tempo = parseFloat(form.tempo_anos);
+    if (!valor || !prob || !tempo) {
+      toast.error(
+        "Preencha valor da causa, probabilidade de êxito e tempo estimado.",
+      );
+      return;
+    }
+    setCalculando(true);
+    setRes(null);
+    setDossie("");
+    try {
+      const r = await api.post("/diplomacia-v3/calcular-acordo", {
+        valor_causa: valor,
+        prob_exito: prob / 100,
+        tempo_anos: tempo,
+        custas_pct: (parseFloat(form.custas_pct) || 0) / 100,
+        honorarios_sucumbencia_pct:
+          (parseFloat(form.honorarios_sucumbencia_pct) || 0) / 100,
+      });
+      setRes(r.data);
+    } catch (e: any) {
+      toast.error(e.response?.data?.detail || "Falha no cálculo do acordo.");
+    } finally {
+      setCalculando(false);
+    }
+  };
+
+  const gerarDossie = async () => {
+    if (!res) {
+      toast.error("Calcule o acordo antes de gerar o dossiê.");
+      return;
+    }
+    setGerandoDossie(true);
+    setDossie("");
+    try {
+      // Contrato real: POST /diplomacia-v3/dossie-pressao
+      // body {case_id?, valor_causa, prob_exito, tempo_anos} → {argumentacao,…}
+      const r = await api.post("/diplomacia-v3/dossie-pressao", {
+        case_id: caseId,
+        valor_causa: res.valor_causa,
+        prob_exito: res.probabilidade_exito,
+        tempo_anos: res.tempo_estimado_anos,
+      });
+      const d = r.data;
+      setDossie(
+        typeof d === "string"
+          ? d
+          : (d?.argumentacao ?? d?.dossie ?? d?.texto ?? ""),
+      );
+    } catch (e: any) {
+      toast.error(
+        e.response?.data?.detail || "Falha ao gerar o dossiê de pressão.",
+      );
+    } finally {
+      setGerandoDossie(false);
+    }
+  };
+
+  return (
+    <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+      <div className="lg:col-span-2 space-y-6">
+        <Section
+          title="Calculadora de Acordo Racional (VPL)"
+          icon={<Calculator className="w-4 h-4" />}
+        >
+          <p className="text-xs text-zinc-400 mb-4">
+            Valor presente líquido do processo descontado pela Selic — quanto
+            vale um acordo hoje versus litigar até o fim.
+          </p>
+          <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
+            <div>
+              <label className="text-xs text-zinc-400 uppercase tracking-wider block mb-1">
+                Valor da causa (R$)
+              </label>
+              <input
+                type="number"
+                step="0.01"
+                className="w-full text-sm border border-zinc-200 rounded-lg px-3 py-2 focus:outline-none focus:ring-1 focus:ring-bronze/40 text-zinc-700"
+                value={form.valor_causa}
+                onChange={set("valor_causa")}
+              />
+            </div>
+            <div>
+              <label className="text-xs text-zinc-400 uppercase tracking-wider block mb-1">
+                Prob. de êxito (%)
+              </label>
+              <input
+                type="number"
+                step="0.1"
+                min="0"
+                max="100"
+                className="w-full text-sm border border-zinc-200 rounded-lg px-3 py-2 focus:outline-none focus:ring-1 focus:ring-bronze/40 text-zinc-700"
+                value={form.prob_exito_pct}
+                onChange={set("prob_exito_pct")}
+              />
+            </div>
+            <div>
+              <label className="text-xs text-zinc-400 uppercase tracking-wider block mb-1">
+                Tempo estimado (anos)
+              </label>
+              <input
+                type="number"
+                step="0.1"
+                className="w-full text-sm border border-zinc-200 rounded-lg px-3 py-2 focus:outline-none focus:ring-1 focus:ring-bronze/40 text-zinc-700"
+                value={form.tempo_anos}
+                onChange={set("tempo_anos")}
+              />
+            </div>
+            <div>
+              <label className="text-xs text-zinc-400 uppercase tracking-wider block mb-1">
+                Custas (% da causa)
+              </label>
+              <input
+                type="number"
+                step="0.1"
+                className="w-full text-sm border border-zinc-200 rounded-lg px-3 py-2 focus:outline-none focus:ring-1 focus:ring-bronze/40 text-zinc-700"
+                placeholder="0"
+                value={form.custas_pct}
+                onChange={set("custas_pct")}
+              />
+            </div>
+            <div className="col-span-2">
+              <label className="text-xs text-zinc-400 uppercase tracking-wider block mb-1">
+                Honorários sucumbência (%)
+              </label>
+              <input
+                type="number"
+                step="0.1"
+                className="w-full text-sm border border-zinc-200 rounded-lg px-3 py-2 focus:outline-none focus:ring-1 focus:ring-bronze/40 text-zinc-700"
+                placeholder="0"
+                value={form.honorarios_sucumbencia_pct}
+                onChange={set("honorarios_sucumbencia_pct")}
+              />
+            </div>
+          </div>
+          <div className="flex flex-wrap items-center gap-2 mt-4">
+            <button
+              className="btn-secondary text-sm"
+              disabled={preenchendo}
+              onClick={preencherJurimetria}
+            >
+              {preenchendo ? "Consultando…" : "Pré-preencher da jurimetria"}
+            </button>
+            <button
+              className="btn-gold text-sm"
+              disabled={calculando}
+              onClick={calcular}
+            >
+              {calculando ? "Calculando…" : "Calcular acordo racional"}
+            </button>
+          </div>
+
+          {res && (
+            <div className="mt-5 space-y-4">
+              <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
+                <div className="rounded-lg border border-zinc-100 bg-zinc-50 px-4 py-3">
+                  <div className="text-[10px] text-zinc-400 uppercase tracking-wider">
+                    VPL do processo
+                  </div>
+                  <div className="text-lg font-light text-zinc-800">
+                    {formatBRL(res.valor_presente_liquido)}
+                  </div>
+                </div>
+                <div className="rounded-lg border border-bronze/30 bg-bronze/5 px-4 py-3">
+                  <div className="text-[10px] text-bronze uppercase tracking-wider">
+                    Acordo racional sugerido
+                  </div>
+                  <div className="text-lg font-medium text-bronze">
+                    {formatBRL(res.sugestao_acordo_ideal)}
+                  </div>
+                </div>
+                <div className="rounded-lg border border-zinc-100 bg-zinc-50 px-4 py-3">
+                  <div className="text-[10px] text-zinc-400 uppercase tracking-wider">
+                    Custo de oportunidade
+                  </div>
+                  <div className="text-lg font-light text-zinc-800">
+                    {formatBRL(res.custo_oportunidade_perda)}
+                  </div>
+                </div>
+              </div>
+              <div className="flex flex-wrap gap-x-5 gap-y-1 text-xs text-zinc-400">
+                {res.selic_anual != null && (
+                  <span>
+                    Selic usada no desconto:{" "}
+                    <b className="text-zinc-600">
+                      {(res.selic_anual * 100).toFixed(2)}% a.a.
+                    </b>
+                    {res.selic_fonte ? ` (fonte: ${res.selic_fonte})` : ""}
+                  </span>
+                )}
+                {res.custos_estimados != null && (
+                  <span>
+                    Custos estimados:{" "}
+                    <b className="text-zinc-600">
+                      {formatBRL(res.custos_estimados)}
+                    </b>
+                  </span>
+                )}
+              </div>
+              <div className="pt-3 border-t border-zinc-100">
+                <button
+                  className="btn-secondary text-sm"
+                  disabled={gerandoDossie}
+                  onClick={gerarDossie}
+                >
+                  {gerandoDossie
+                    ? "Gerando dossiê…"
+                    : "Gerar dossiê de pressão"}
+                </button>
+              </div>
+            </div>
+          )}
+        </Section>
+
+        {dossie && (
+          <Section
+            title="Dossiê de Pressão"
+            icon={<Handshake className="w-4 h-4" />}
+          >
+            <div className="space-y-3">
+              <AvisoHitl />
+              <Markdown
+                source={dossie}
+                className="text-sm text-zinc-700 leading-relaxed"
+              />
+            </div>
+          </Section>
+        )}
+      </div>
+
+      <div className="space-y-6">
+        <Section title="Como funciona" icon={<Shield className="w-4 h-4" />}>
+          <ul className="text-xs text-zinc-500 space-y-2 list-disc list-inside">
+            <li>
+              <b>VPL</b> = (valor × probabilidade − custos) ÷ (1 + Selic)^anos.
+            </li>
+            <li>
+              A Selic anual usada é a retornada pelo backend (Banco Central).
+            </li>
+            <li>
+              O pré-preenchimento usa a taxa histórica de êxito e o tempo médio
+              de tramitação da base interna (jurimetria).
+            </li>
+            <li>
+              O acordo sugerido inclui margem de conveniência de 5% sobre o VPL.
+            </li>
+          </ul>
+        </Section>
+      </div>
+    </div>
+  );
+}
+
 export default function SalaDeGuerra() {
   const { caseId } = useParams<{ caseId: string }>();
   const navigate = useNavigate();
@@ -229,6 +862,7 @@ export default function SalaDeGuerra() {
     observacoes: "",
   });
   const [saving, setSaving] = useState(false);
+  const [tab, setTab] = useState<"visao" | "warroom" | "acordo">("visao");
 
   useEffect(() => {
     if (!caseId) return;
@@ -398,7 +1032,39 @@ export default function SalaDeGuerra() {
         </div>
       </div>
 
-      <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+      {/* Abas */}
+      <div className="flex gap-1 border-b border-zinc-200">
+        {(
+          [
+            { id: "visao", label: "Visão Geral", icon: Shield },
+            { id: "warroom", label: "War Room", icon: Swords },
+            { id: "acordo", label: "Acordo & Liquidez", icon: Handshake },
+          ] as const
+        ).map((t) => (
+          <button
+            key={t.id}
+            onClick={() => setTab(t.id)}
+            className={`flex items-center gap-1.5 px-4 py-2 text-sm font-medium -mb-px border-b-2 transition-colors ${
+              tab === t.id
+                ? "border-bronze text-bronze"
+                : "border-transparent text-zinc-400 hover:text-zinc-600"
+            }`}
+          >
+            <t.icon className="w-4 h-4" /> {t.label}
+          </button>
+        ))}
+      </div>
+
+      {tab === "warroom" && caseId && (
+        <WarRoomTab caseId={caseId} tesePadrao={caso.tese_principal ?? ""} />
+      )}
+      {tab === "acordo" && caseId && <AcordoTab caseId={caseId} caso={caso} />}
+
+      <div
+        className={
+          tab === "visao" ? "grid grid-cols-1 lg:grid-cols-3 gap-6" : "hidden"
+        }
+      >
         {/* Left column (2/3) */}
         <div className="lg:col-span-2 space-y-6">
           {/* Notas estratégicas */}

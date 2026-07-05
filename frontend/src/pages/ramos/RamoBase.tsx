@@ -41,6 +41,7 @@ import GuiaTrabalhista from "../../components/GuiaTrabalhista";
 import GuiaTributario from "../../components/GuiaTributario";
 import GuiaPrevidenciario from "../../components/GuiaPrevidenciario";
 import GuiaAmbiental from "../../components/GuiaAmbiental";
+import AmbientalAutos from "../../components/AmbientalAutos";
 import GuiaCivil from "../../components/GuiaCivil";
 import GuiaPenal from "../../components/GuiaPenal";
 import GuiaConsumidor from "../../components/GuiaConsumidor";
@@ -913,6 +914,7 @@ export default function RamoBase() {
       {cfg.guiaTrabalhista && <GuiaTrabalhista />}
       {cfg.guiaTributario && <GuiaTributario />}
       {cfg.guiaPrevidenciario && <GuiaPrevidenciario />}
+      {cfg.autosAmbientais && <AmbientalAutos casos={casos} />}
       {cfg.guiaAmbiental && <GuiaAmbiental />}
       {cfg.guiaCivil && <GuiaCivil />}
       {cfg.guiaPenal && <GuiaPenal />}
