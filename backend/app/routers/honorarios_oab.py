@@ -20,6 +20,7 @@ from app.core.security import get_current_user
 from app.models.user import User
 from app.services import ai_gateway
 from app.services.ai_service import buscar_contexto_rag
+from app.core.rate_limit import rate_limit
 
 router = APIRouter(prefix="/honorarios-oab", tags=["Honorários OAB"])
 
@@ -76,7 +77,7 @@ async def itens_tabela(area: str = "", tipo: str = "",
     return {"disponivel": ok, "itens": txt or "Tabela oficial OAB/MG não disponível na base."}
 
 
-@router.post("/estimar")
+@router.post("/estimar", dependencies=[Depends(rate_limit("honorarios-estimar", 15))])
 async def estimar(body: EstimativaIn,
                   db: AsyncSession = Depends(get_db),
                   cu: User = Depends(get_current_user)):

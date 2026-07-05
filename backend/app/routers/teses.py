@@ -16,6 +16,7 @@ from app.core.security import get_current_user, ROLE_LEVEL
 from app.core.ownership import verificar_acesso_caso
 from app.models.user import User
 from app.models.tese import Tese, TeseCasoLink, TeseTipo, TeseStatus
+from app.core.rate_limit import rate_limit
 
 router = APIRouter(prefix="/teses", tags=["Banco de Teses"])
 
@@ -358,7 +359,7 @@ async def vincular_caso(
     return {"id": link.id, "taxa_sucesso": t.taxa_sucesso}
 
 
-@router.post("/sugerir-ia")
+@router.post("/sugerir-ia", dependencies=[Depends(rate_limit("teses-sugerir-ia", 15))])
 async def sugerir_teses_ia(
     req: SugestaoIARequest,
     db: AsyncSession = Depends(get_db),
@@ -480,7 +481,7 @@ def _parse_json_motor(txt: str):
     return None
 
 
-@router.post("/motor")
+@router.post("/motor", dependencies=[Depends(rate_limit("teses-motor", 15))])
 async def motor_teses(
     req: MotorTesesRequest,
     db: AsyncSession = Depends(get_db),

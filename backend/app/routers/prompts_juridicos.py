@@ -17,6 +17,7 @@ from app.core.database import get_db
 from app.core.security import get_current_user, ROLE_LEVEL
 from app.models.user import User
 from app.models.prompt_juridico import PromptJuridico, PromptCategoria
+from app.core.rate_limit import rate_limit
 
 router = APIRouter(prefix="/prompts-juridicos", tags=["Biblioteca de Prompts"])
 
@@ -205,7 +206,7 @@ async def remover_prompt(
     await db.commit()
 
 
-@router.post("/{prompt_id}/executar")
+@router.post("/{prompt_id}/executar", dependencies=[Depends(rate_limit("prompt-executar", 15))])
 async def executar_prompt(
     prompt_id: str,
     req: ExecutarPromptReq,

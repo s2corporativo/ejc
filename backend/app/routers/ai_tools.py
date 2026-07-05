@@ -17,6 +17,7 @@ from app.models.user import User
 from app.services.system_prompts import TarefaIA
 from app.services.ai_gateway import executar_tarefa_ia
 from app.services.ai_guard import sanitizar_ou_abortar
+from app.core.rate_limit import rate_limit
 
 router = APIRouter(prefix="/ai", tags=["IA Jurídica Pro"])
 
@@ -69,7 +70,7 @@ async def status_ia(cu: User = Depends(get_current_user)):
     }
 
 
-@router.post("/executar", response_model=AiResponse)
+@router.post("/executar", response_model=AiResponse, dependencies=[Depends(rate_limit("ai-executar", 15))])
 async def executar_ia(
     req: AiRequest,
     db: AsyncSession = Depends(get_db),

@@ -15,6 +15,7 @@ from app.models.user import User
 from app.services.citation_check import verificar_citacoes
 from app.services import ai_gateway
 from app.services.sanitizer import sanitizar_pii
+from app.core.rate_limit import rate_limit
 
 router = APIRouter(prefix="/qualidade", tags=["Qualidade Jurídica"])
 
@@ -63,14 +64,14 @@ class AdversarioReq(BaseModel):
     area: str | None = Field(None, description="Área jurídica (opcional)")
 
 
-@router.post("/verificar-citacoes")
+@router.post("/verificar-citacoes", dependencies=[Depends(rate_limit("qualidade-citacoes", 15))])
 async def verificar(req: VerificarCitacoesReq, db: AsyncSession = Depends(get_db),
                     cu: User = Depends(get_current_user)):
     """Confere cada súmula/artigo citado contra a base oficial (RAG)."""
     return await verificar_citacoes(db, req.texto)
 
 
-@router.post("/consistencia")
+@router.post("/consistencia", dependencies=[Depends(rate_limit("qualidade-consistencia", 15))])
 async def consistencia(req: ConsistenciaReq, db: AsyncSession = Depends(get_db),
                        cu: User = Depends(get_current_user)):
     """Analisa coerência interna da peça (pedidos × fatos, contradições)."""
@@ -86,7 +87,7 @@ async def consistencia(req: ConsistenciaReq, db: AsyncSession = Depends(get_db),
             "aviso_hitl": _AVISO, "log_id": log_id}
 
 
-@router.post("/simular-adversario")
+@router.post("/simular-adversario", dependencies=[Depends(rate_limit("qualidade-adversario", 10))])
 async def simular_adversario(req: AdversarioReq, db: AsyncSession = Depends(get_db),
                              cu: User = Depends(get_current_user)):
     """Gera os contra-argumentos da parte contrária para preparar a defesa."""

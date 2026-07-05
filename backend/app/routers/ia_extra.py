@@ -19,6 +19,7 @@ from app.services.ai_service import buscar_contexto_rag
 from app.services.ai_gateway import chat as gw_chat
 from app.services.sanitizer import sanitizar_pii
 from app.services.ai_guard import sanitizar_ou_abortar
+from app.core.rate_limit import rate_limit
 
 settings = get_settings()
 router = APIRouter(prefix="/ai", tags=["IA — Assistente"])
@@ -57,7 +58,7 @@ SYS_TRADUZIR = (
     "cliente deve esperar. Não invente fatos nem dê garantias de resultado."
 )
 
-@router.post("/traduzir-andamento")
+@router.post("/traduzir-andamento", dependencies=[Depends(rate_limit("ia-traduzir", 15))])
 async def traduzir_andamento(body: TraduzirIn, db: AsyncSession = Depends(get_db),
                              cu: User = Depends(get_current_user)):
     if not settings.AI_ENABLED:
@@ -83,7 +84,7 @@ SYS_RESUMIR = (
     "Não invente nada que não esteja no texto."
 )
 
-@router.post("/resumir-texto")
+@router.post("/resumir-texto", dependencies=[Depends(rate_limit("ia-resumir", 15))])
 async def resumir_texto(body: ResumirIn, db: AsyncSession = Depends(get_db),
                         cu: User = Depends(get_current_user)):
     if not settings.AI_ENABLED:
@@ -114,7 +115,7 @@ SYS_MINUTA = (
     "de processo. Deixe claro onde faltam dados com [COLCHETES]."
 )
 
-@router.post("/gerar-minuta")
+@router.post("/gerar-minuta", dependencies=[Depends(rate_limit("ia-gerar-minuta", 10))])
 async def gerar_minuta(body: MinutaIn, db: AsyncSession = Depends(get_db),
                        cu: User = Depends(get_current_user)):
     if not settings.AI_ENABLED:
@@ -158,7 +159,7 @@ SYS_PESQUISA = (
     "de inventar. Não dê garantias de resultado."
 )
 
-@router.post("/pesquisar")
+@router.post("/pesquisar", dependencies=[Depends(rate_limit("ia-pesquisar", 15))])
 async def pesquisar(body: PesquisaIn, db: AsyncSession = Depends(get_db),
                     cu: User = Depends(get_current_user)):
     if not settings.AI_ENABLED:
@@ -211,7 +212,7 @@ SYS_HONORARIOS = (
 )
 
 
-@router.post("/sugestao-honorarios")
+@router.post("/sugestao-honorarios", dependencies=[Depends(rate_limit("ia-sugestao-honorarios", 15))])
 async def sugestao_honorarios(body: HonorariosIn, db: AsyncSession = Depends(get_db),
                               cu: User = Depends(get_current_user)):
     if not settings.AI_ENABLED:
