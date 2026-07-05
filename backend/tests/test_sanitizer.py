@@ -29,6 +29,17 @@ def test_sanitizar_pii_interno_e_passthrough():
 def test_validar_sem_pii_nunca_acusa_residual():
     assert validar_sem_pii("resto 123.456.789-09 e a@b.com") == []
     assert validar_sem_pii_interno("contato a@b.com") == []
+    # OAB (padrão adicionado à sanitização antiga) também não acusa residual.
+    assert validar_sem_pii("subscritor OAB/MG 123.456") == []
+
+
+def test_oab_tambem_e_passthrough():
+    # A main adicionou mascaramento de OAB ([OAB]) à implementação antiga;
+    # com a sanitização desativada, a inscrição passa intacta.
+    texto = "Dr. Fulano, OAB/MG 123.456, protocolou"
+    out, mudou = sanitizar_pii(texto)
+    assert out == texto
+    assert mudou is False
 
 
 def test_sanitizar_ou_abortar_nao_mascara_nem_aborta():

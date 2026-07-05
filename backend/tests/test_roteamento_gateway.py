@@ -186,3 +186,50 @@ class TestEndpointRoteamentoPreview:
         out = await roteamento_preview(task_type="estrategia", tamanho=100, cu=_U())
         assert out["provider_proposto"] == "anthropic"
         assert out["provider_elegivel"] is False  # kill-switch
+
+    async def test_preview_403_para_papel_baixo(self, monkeypatch):
+        # B2: introspecção de roteamento é restrita a sócio+ (mesmo gate do dossiê).
+        _prep(monkeypatch, ROTEAMENTO_INTELIGENTE_ENABLED=True)
+        from fastapi import HTTPException
+        from app.routers.ai import roteamento_preview
+
+        class _U:
+            role = type("R", (), {"value": "estagiario"})()
+
+        with pytest.raises(HTTPException) as exc:
+            await roteamento_preview(task_type="estrategia", tamanho=100, cu=_U())
+        assert exc.value.status_code == 403
+
+    def test_preview_tem_rate_limit(self):
+        # B2: a rota carrega uma dependência de rate limit (Depends(rate_limit(...))).
+        from app.routers.ai import router
+        rota = next(r for r in router.routes if r.path == "/ai/roteamento/preview")
+        assert rota.dependencies, "preview deve ter dependência de rate limit"
+
+
+# ── B1 — erro do provider no trace do Langfuse não ecoa PII/str(e) ────────────
+
+async def test_erro_no_trace_nao_ecoa_pii(monkeypatch):
+    _prep(monkeypatch, ROTEAMENTO_INTELIGENTE_ENABLED=False)
+
+    async def _boom(provider, model, messages, temperature, max_tokens):
+        # str(e) do provider carrega PII — não pode chegar ao Langfuse.
+        raise RuntimeError("provider caiu: CPF 529.982.247-25 vazou no detalhe")
+
+    monkeypatch.setattr(g, "_chamar_provedor", _boom)
+    from app.services.observability import langfuse_client as _lf
+    eventos: list = []
+    monkeypatch.setattr(
+        _lf, "registrar_evento",
+        lambda trace, *, name, metadata: eventos.append((name, metadata)),
+    )
+    with pytest.raises(RuntimeError):
+        await g.chat([{"role": "user", "content": "x"}], task_type="resumo")
+
+    assert eventos, "deveria registrar evento de fallback"
+    for name, meta in eventos:
+        if not name.startswith("fallback:"):
+            continue
+        assert "529.982.247-25" not in str(meta)   # PII não vaza
+        assert "vazou" not in str(meta)             # str(e) cru não vaza
+        assert meta["erro"] == "RuntimeError"       # só a classe do erro

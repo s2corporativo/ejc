@@ -10,8 +10,8 @@
 # As funções abaixo são mantidas como PASSTHROUGH para preservar o contrato
 # dos ~40 pontos de chamada (ai_guard, ai_gateway, services de IA) e permitir
 # reativação simples: a implementação anterior (regex de CPF/CNPJ/processo/
-# RG/e-mail/telefone/CEP/cartão/PIX + nomes protegidos) está no histórico git
-# deste arquivo.
+# RG/OAB/e-mail/telefone/CEP/cartão/PIX + nomes protegidos) está no histórico
+# git deste arquivo.
 from __future__ import annotations
 
 

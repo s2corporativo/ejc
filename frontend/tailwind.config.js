@@ -6,36 +6,46 @@ export default {
     extend: {
       colors: {
         /*
-         * SaaS moderno claro — dourado sobre canvas cinza-azulado (#EDF0F4)
-         * com cartões brancos flutuantes. Nomes de tokens preservados
-         * (fan-in alto nas 64 páginas); apenas os VALORES foram repintados:
-         * primary=dourado, ai=laranja quente, success=mint, danger=soft-red,
-         * warn/gold=amarelo #FFD166, bronze/navy=neutros (legado).
+         * Design System "De Paula Teixeira" — luxo jurídico (mockup Opção 1).
+         * Tokens oficiais (fonte única — documentados aqui):
+         *   Marrom Profundo #2D1B14 — topo da sidebar em gradiente e botões
+         *     sólidos primários (texto branco = 16,4:1, AAA).
+         *   Bronze Metálico #A67C52 — hover/ativo da sidebar, ícones e
+         *     bordas de destaque (3,7:1 — só componente de UI, nunca texto
+         *     pequeno sobre branco; para texto use #7A5A3A = 6,3:1 AA).
+         *   Dourado #D4AF37 — destaques GRÁFICOS (linhas de gráfico,
+         *     indicadores, filetes, ícones de KPI). Não é texto sobre
+         *     branco (2,1:1); no modo ESCURO vira texto-acento (#E5CE7F
+         *     = 11,4:1 sobre #1C1712).
+         *   Canvas Off-White #F8F9FA + cards branco puro; raio 12–16px
+         *     (rounded-xl/2xl); sombras muito suaves.
+         * Nomes de tokens preservados (fan-in alto nas 64 páginas);
+         * apenas os VALORES foram repintados.
          */
 
-        // Sidebar — branca no novo tema (item ativo vira cartão com sombra)
+        // Sidebar — gradiente marrom→bronze (ver .sidebar-bronze no CSS)
         sidebar: {
-          DEFAULT: "#FFFFFF",
-          light: "#F8FAFC",
-          hover: "#F3F5F9",
-          active: "#FCF9EE",
+          DEFAULT: "#2D1B14",
+          light: "#4A3427",
+          hover: "rgba(166,124,82,0.18)",
+          active: "rgba(166,124,82,0.20)",
         },
-        // Primária — dourado (ação/marca)
+        // Primária — marrom/bronze/dourado (ação/marca)
         primary: {
-          DEFAULT: "#C9A227",
-          50: "#FCF9EE",
-          100: "#F8F0D8",
-          200: "#F0E2B0",
+          DEFAULT: "#A67C52",
+          50: "#FAF7F0",
+          100: "#F2E9D8",
+          200: "#E9DCB8",
           300: "#E5CE7F",
-          400: "#D8B94E",
-          500: "#C9A227",
-          // 600 calibrado p/ WCAG AA: 4,6:1 sobre branco (dourado médio
-          // #B08D1F = 3,2:1 falharia em texto/botão sólido)
-          600: "#8F7117",
-          700: "#6F5711",
-          800: "#57430D",
-          900: "#453509",
-          950: "#2E2306",
+          400: "#D4AF37",
+          500: "#A67C52",
+          // 600 calibrado p/ WCAG AA: 6,3:1 sobre branco (texto-acento
+          // bronze; #A67C52 puro = 3,7:1 falharia em texto pequeno)
+          600: "#7A5A3A",
+          700: "#5E4429",
+          800: "#44301D",
+          900: "#2D1B14",
+          950: "#1C110C",
         },
         // IA — laranja quente (superfícies de inteligência / acento)
         ai: {
@@ -76,18 +86,18 @@ export default {
           30: "#FBFCFE",
         },
         gold: {
-          DEFAULT: "#FFD166",
-          dark: "#F7BE3F",
-          light: "#FFE3A3",
-          700: "#B37B12",
-          600: "#D99A1B",
-          50: "#FFF9E6",
+          DEFAULT: "#D4AF37",
+          dark: "#B8952B",
+          light: "#E5CE7F",
+          700: "#8C6D1F",
+          600: "#A6842A",
+          50: "#FAF5E3",
         },
         ink: {
           DEFAULT: "#111827",
           light: "#374151",
         },
-        canvas: "#EDF0F4",
+        canvas: "#F8F9FA",
         parchment: "#F1F5F9",
         muted: "#8A94A6",
         border: "#E5E9F0",
@@ -221,21 +231,20 @@ export default {
         widest: "0.18em",
       },
       borderRadius: {
-        // Cartões flutuantes da referência (~20-24px)
-        "2xl": "1.25rem",
-        "3xl": "1.5rem",
+        // Raio oficial do DS: 12–16px (xl=12px padrão, 2xl=16px)
+        "2xl": "1rem",
+        "3xl": "1.25rem",
       },
       boxShadow: {
-        // Sombras suaves e difusas dos cartões brancos flutuantes
-        soft: "0 8px 30px rgba(16,24,40,0.06)",
-        card: "0 1px 2px rgba(16,24,40,0.03), 0 8px 30px rgba(16,24,40,0.06)",
+        // Soft elevation — sombras muito suaves e contidas
+        soft: "0 4px 18px rgba(24,16,8,0.05)",
+        card: "0 1px 2px rgba(24,16,8,0.03), 0 4px 18px rgba(24,16,8,0.05)",
         "card-hover":
-          "0 2px 4px rgba(16,24,40,0.04), 0 12px 36px rgba(16,24,40,0.10)",
-        float:
-          "0 4px 12px rgba(16,24,40,0.08), 0 24px 48px rgba(16,24,40,0.14)",
-        logo: "0 2px 8px rgba(16,24,40,0.10)",
-        sm: "0 1px 2px rgba(16,24,40,0.05)",
-        md: "0 2px 4px rgba(16,24,40,0.04), 0 8px 30px rgba(16,24,40,0.07)",
+          "0 2px 4px rgba(24,16,8,0.04), 0 8px 26px rgba(24,16,8,0.08)",
+        float: "0 4px 12px rgba(24,16,8,0.07), 0 18px 40px rgba(24,16,8,0.12)",
+        logo: "0 2px 8px rgba(24,16,8,0.10)",
+        sm: "0 1px 2px rgba(24,16,8,0.05)",
+        md: "0 2px 4px rgba(24,16,8,0.04), 0 6px 22px rgba(24,16,8,0.06)",
       },
       keyframes: {
         "fade-in": { from: { opacity: "0" }, to: { opacity: "1" } },
