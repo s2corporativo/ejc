@@ -397,6 +397,21 @@ export default function Casos() {
                 </option>
               ))}
             </select>
+            {user?.id && (
+              <button
+                onClick={() =>
+                  setAdvogadoF((prev) => (prev === user.id ? "" : user.id))
+                }
+                title="Ver somente os casos em que você é responsável ou auxiliar"
+                className={`px-3 py-1.5 rounded-lg text-sm font-medium whitespace-nowrap ${
+                  advogadoF === user.id
+                    ? "bg-gold text-navy"
+                    : "bg-white border border-slate-200 text-slate-600"
+                }`}
+              >
+                Meus casos
+              </button>
+            )}
             <select
               className="input w-52"
               value={advogadoF}
