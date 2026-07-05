@@ -195,10 +195,15 @@ def _fmt_brl(valor) -> str:
         return "R$ 0,00"
 
 
-def _montar_contexto_revisional(analise: dict, cobrancas: list[dict]) -> tuple[str, str]:
+def _montar_contexto_revisional(analise: dict, cobrancas: list[dict],
+                                expurgo_texto: str | None = None) -> tuple[str, str]:
     """Monta (descricao_fatos, pedidos) para o gerador de peças a partir dos
     achados de cobranças abusivas. Apenas ESTRUTURA o contexto — a redação e a
-    sanitização LGPD ficam a cargo de gerar_peca_pipeline (esteira de peças)."""
+    sanitização LGPD ficam a cargo de gerar_peca_pipeline (esteira de peças).
+    ``expurgo_texto`` (opcional): parágrafo determinístico do motor de
+    abusividade (abusividade_service.formatar_expurgo_para_peca) com os números
+    do recálculo pela taxa média BACEN — quando presente, entra nos fatos e
+    acrescenta o pedido de limitação dos juros à média de mercado."""
     banco = analise.get("banco") or "instituição financeira"
     pini = analise.get("periodo_inicio")
     pfim = analise.get("periodo_fim")
@@ -229,6 +234,8 @@ def _montar_contexto_revisional(analise: dict, cobrancas: list[dict]) -> tuple[s
         "legislação consumerista e as normas do Conselho Monetário Nacional/BACEN, "
         "justificando a revisão do contrato bancário e a repetição do indébito."
     )
+    if expurgo_texto:
+        descricao_fatos += "\n\n" + expurgo_texto
 
     pedidos = (
         "a) a declaração de abusividade e nulidade das cobranças acima discriminadas;\n"
@@ -239,12 +246,20 @@ def _montar_contexto_revisional(analise: dict, cobrancas: list[dict]) -> tuple[s
         "liquidação), acrescidos de correção monetária e juros legais;\n"
         "d) subsidiariamente, a devolução simples dos valores indevidamente debitados."
     )
+    if expurgo_texto:
+        pedidos += (
+            "\ne) a limitação dos juros remuneratórios à taxa média de mercado "
+            "divulgada pelo BACEN para a modalidade (REsp 1.061.530/RS, Tema 27/STJ), "
+            "com o recálculo das parcelas conforme os valores determinísticos "
+            "indicados nos fatos e a restituição do excedente."
+        )
     return descricao_fatos, pedidos
 
 
 @router.post("/{analysis_id}/gerar-peca",
              dependencies=[Depends(rate_limit("bank-gerar-peca", 5))])
-async def gerar_peca(analysis_id: str, db: AsyncSession = Depends(get_db),
+async def gerar_peca(analysis_id: str, payload: dict | None = Body(default=None),
+                     db: AsyncSession = Depends(get_db),
                      cu: User = Depends(get_current_user)):
     """Gera a MINUTA de uma ação revisional / repetição de indébito a partir das
     cobranças abusivas já detectadas na análise bancária.
@@ -252,7 +267,12 @@ async def gerar_peca(analysis_id: str, db: AsyncSession = Depends(get_db),
     Reutiliza a esteira de peças (gerar_peca_pipeline, 7 etapas + SSE). A saída é
     RASCUNHO (HITL): revisão humana obrigatória (OAB). A sanitização LGPD ocorre
     dentro do pipeline. Retorna Server-Sent Events: step(1-7) → concluido com o
-    documento e o legal_doc_id, no mesmo formato do gerador de peças."""
+    documento e o legal_doc_id, no mesmo formato do gerador de peças.
+
+    Body opcional: {"abusividade": <resposta de POST /analise-bancaria/abusividade>}
+    — quando presente e com expurgo calculado, os números DETERMINÍSTICOS do
+    recálculo pela taxa média BACEN entram nos fatos/pedidos da minuta (apenas
+    valores numéricos validados são formatados; texto livre é descartado)."""
     if ROLE_LEVEL.get(cu.role.value, 0) < ROLE_LEVEL["estagiario"]:
         raise HTTPException(403, "Acesso negado")
 
@@ -270,7 +290,11 @@ async def gerar_peca(analysis_id: str, db: AsyncSession = Depends(get_db),
 
     analise = d["analise"]
     case_id = analise.get("case_id")
-    descricao_fatos, pedidos = _montar_contexto_revisional(analise, cobrancas)
+    expurgo_texto = None
+    if payload and isinstance(payload.get("abusividade"), dict):
+        from app.services.abusividade_service import formatar_expurgo_para_peca
+        expurgo_texto = formatar_expurgo_para_peca(payload["abusividade"])
+    descricao_fatos, pedidos = _montar_contexto_revisional(analise, cobrancas, expurgo_texto)
 
     escopo_cli = None
     if case_id:

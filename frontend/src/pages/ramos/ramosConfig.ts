@@ -57,6 +57,7 @@ export interface RamoConfig {
   comparadorBacen?: boolean; // comparador de juros com a média BACEN
   guiaBancario?: boolean; // guia operacional de direito bancário (referência)
   analiseExtratos?: boolean; // análise de extrato bancário (cobranças abusivas)
+  bancarioForense?: boolean; // forense bancário: verificador de abusividade + calculadora de CET
   guiaTransito?: boolean; // guia operacional de multas de trânsito (referência)
   guiaTrabalhista?: boolean; // guia operacional de direito do trabalho
   guiaTributario?: boolean; // guia operacional de direito tributário
@@ -1056,6 +1057,7 @@ const bancario: RamoConfig = {
   analiseDocumento: true,
   guiaBancario: true,
   analiseExtratos: true,
+  bancarioForense: true,
   slug: "bancario",
   endpoint: "/bancario",
   areaCaso: "civil",

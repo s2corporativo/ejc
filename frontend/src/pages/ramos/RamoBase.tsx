@@ -36,6 +36,7 @@ import {
 import { RAMOS, type RamoConfig, type FerramentaConfig } from "./ramosConfig";
 import GuiaBancario from "../../components/GuiaBancario";
 import AnaliseExtratos from "../../components/AnaliseExtratos";
+import BancarioForense from "../../components/BancarioForense";
 import GuiaTransito from "../../components/GuiaTransito";
 import GuiaTrabalhista from "../../components/GuiaTrabalhista";
 import GuiaTributario from "../../components/GuiaTributario";
@@ -910,6 +911,7 @@ export default function RamoBase() {
       )}
       {cfg.guiaBancario && <GuiaBancario />}
       {cfg.analiseExtratos && <AnaliseExtratos />}
+      {cfg.bancarioForense && <BancarioForense />}
       {cfg.guiaTransito && <GuiaTransito />}
       {cfg.guiaTrabalhista && <GuiaTrabalhista />}
       {cfg.guiaTributario && <GuiaTributario />}

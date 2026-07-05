@@ -4,13 +4,16 @@
 """
 import json
 import re
+from datetime import date
 from typing import Optional
 from fastapi import APIRouter, Depends, HTTPException, UploadFile, File, Form
+from pydantic import BaseModel, Field, model_validator
 from sqlalchemy.ext.asyncio import AsyncSession
 from app.core.database import get_db
 from app.core.security import get_current_user
 from app.models.user import User
-from app.services import ai_gateway
+from app.services import ai_gateway, abusividade_service
+from app.services.calc import cet as cet_calc
 
 router = APIRouter(prefix="/analise-bancaria", tags=["Análise de Documento"])
 
@@ -124,33 +127,26 @@ async def analisar_documento(
     return await _analisar(conteudo, area)
 
 
-_OLINDA_DIA = "https://olinda.bcb.gov.br/olinda/servico/taxaJuros/versao/v2/odata/TaxasJurosDiariaPorInicioPeriodo"
-
-
-async def _olinda_get(params: dict) -> list:
-    import httpx
-    params = {**params, "$format": "json"}
-    async with httpx.AsyncClient(timeout=30) as cli:
-        r = await cli.get(_OLINDA_DIA, params=params)
-        r.raise_for_status()
-        return r.json().get("value", [])
+# Consulta Olinda/BCB extraída para app/services/abusividade_service.py (reúso
+# pelo motor de abusividade). Endpoints abaixo apenas delegam ao service.
 
 
 @router.get("/modalidades")
 async def modalidades(cu: User = Depends(get_current_user)):
     """Modalidades de crédito do BACEN (série diária) — agrupadas por segmento PF/PJ, período mais recente."""
     try:
-        ult = await _olinda_get({"$top": "1", "$orderby": "InicioPeriodo desc", "$select": "InicioPeriodo"})
+        ult = await abusividade_service.olinda_get(
+            {"$top": "1", "$orderby": "InicioPeriodo desc", "$select": "InicioPeriodo"})
         if not ult:
             raise HTTPException(404, "Sem dados no BACEN")
         periodo = ult[0]["InicioPeriodo"]
-        rows = await _olinda_get({
+        rows = await abusividade_service.olinda_get({
             "$filter": f"InicioPeriodo eq '{periodo}'",
             "$select": "Modalidade,Segmento", "$top": "8000",
         })
     except HTTPException:
         raise
-    except Exception as e:
+    except abusividade_service.TaxaMediaIndisponivel as e:
         raise HTTPException(502, f"Falha ao consultar BACEN: {str(e)[:100]}")
     vistos = {}
     for x in rows:
@@ -158,31 +154,99 @@ async def modalidades(cu: User = Depends(get_current_user)):
         if m:
             vistos[(seg, m)] = True
     lista = [{"segmento": seg, "modalidade": m} for (seg, m) in sorted(vistos)]
-    return {"periodo": periodo, "modalidades": lista}
+    return {"periodo": periodo, "modalidades": lista,
+            "atalhos": sorted(abusividade_service.MODALIDADES_MAP)}
 
 
 @router.get("/taxa-media")
 async def taxa_media(modalidade: str, segmento: Optional[str] = None, periodo: Optional[str] = None, cu: User = Depends(get_current_user)):
     """Taxa média de mercado (BACEN, série diária) — min/média/máx das instituições no período mais recente."""
-    mod = modalidade.replace("'", "''")
-    filt = f"Modalidade eq '{mod}'"
-    if segmento:
-        filt += f" and Segmento eq '{segmento.replace(chr(39), chr(39)+chr(39))}'"
     try:
-        rows = await _olinda_get({"$filter": filt, "$top": "1500"})
-    except Exception as e:
+        return await abusividade_service.consultar_taxa_media(modalidade, segmento=segmento)
+    except abusividade_service.TaxaMediaIndisponivel as e:
         raise HTTPException(502, f"Falha ao consultar BACEN: {str(e)[:100]}")
-    rows = [x for x in rows if x.get("TaxaJurosAoMes") is not None]
-    if not rows:
+    except LookupError:
         raise HTTPException(404, "Modalidade sem dados no BACEN")
-    ultimo = max(x.get("InicioPeriodo", "") for x in rows)
-    do = [x for x in rows if x.get("InicioPeriodo") == ultimo]
-    am = [float(x["TaxaJurosAoMes"]) for x in do]
-    aa = [float(x["TaxaJurosAoAno"]) for x in do if x.get("TaxaJurosAoAno") is not None]
-    return {
-        "modalidade": modalidade, "segmento": segmento,
-        "periodo": ultimo, "instituicoes": len(do),
-        "ao_mes": {"min": round(min(am), 2), "media": round(sum(am) / len(am), 2), "max": round(max(am), 2)},
-        "ao_ano": {"min": round(min(aa), 2), "media": round(sum(aa) / len(aa), 2), "max": round(max(aa), 2)} if aa else None,
-        "fonte": "Banco Central do Brasil — Taxas de Juros (Olinda, série diária)",
-    }
+
+
+# ── CET determinístico (Res. CMN 3.517/2007) ─────────────────────────────────
+class ParcelaIn(BaseModel):
+    valor: float = Field(..., gt=0)
+    vencimento: date
+
+
+class CETIn(BaseModel):
+    valor_liberado: float = Field(..., gt=0)
+    data_liberacao: date
+    # modo 1: fluxo explícito
+    parcelas: Optional[list[ParcelaIn]] = None
+    # modo 2: série mensal uniforme
+    n_parcelas: Optional[int] = Field(None, ge=1, le=600)
+    valor_parcela: Optional[float] = Field(None, gt=0)
+    primeiro_vencimento: Optional[date] = None
+    tarifas_incluidas: float = Field(0, ge=0)
+    iof: float = Field(0, ge=0)
+    cet_informado_aa_pct: Optional[float] = Field(None, ge=0)
+
+    @model_validator(mode="after")
+    def _um_dos_modos(self):
+        serie = self.n_parcelas and self.valor_parcela and self.primeiro_vencimento
+        if not self.parcelas and not serie:
+            raise ValueError("Informe 'parcelas' OU (n_parcelas, valor_parcela, primeiro_vencimento)")
+        return self
+
+
+@router.post("/cet")
+async def calcular_cet_endpoint(req: CETIn, cu: User = Depends(get_current_user)):
+    """CET determinístico (mensal e anual) via TIR do fluxo de caixa em Decimal,
+    com memória de cálculo e verificação de divergência com o CET informado.
+    Res. CMN 3.517/2007 · CDC arts. 46 e 52. Sem IA e sem rate limit
+    (cálculo local). MINUTA — HITL."""
+    try:
+        return cet_calc.calcular_cet(
+            valor_liberado=req.valor_liberado,
+            data_liberacao=req.data_liberacao,
+            parcelas=[p.model_dump() for p in req.parcelas] if req.parcelas else None,
+            n_parcelas=req.n_parcelas,
+            valor_parcela=req.valor_parcela,
+            primeiro_vencimento=req.primeiro_vencimento,
+            tarifas_incluidas=req.tarifas_incluidas,
+            iof=req.iof,
+            cet_informado_aa_pct=req.cet_informado_aa_pct,
+        )
+    except ValueError as e:
+        raise HTTPException(422, str(e))
+
+
+# ── Motor de abusividade de juros (REsp 1.061.530/RS, Tema 27) ───────────────
+class AbusividadeIn(BaseModel):
+    taxa_contrato_am_pct: float = Field(..., gt=0, description="Taxa contratada, % a.m.")
+    modalidade: str = Field(..., min_length=2, max_length=160,
+                            description="Atalho (ver /modalidades → atalhos) ou nome BCB")
+    data_contrato: Optional[date] = None
+    segmento: Optional[str] = Field(None, max_length=40)
+    # opcionais p/ cenário de expurgo (Price com a taxa média BACEN)
+    valor_financiado: Optional[float] = Field(None, gt=0)
+    n_parcelas: Optional[int] = Field(None, ge=1, le=600)
+    parcela_contratual: Optional[float] = Field(None, gt=0)
+
+
+@router.post("/abusividade")
+async def avaliar_abusividade_endpoint(req: AbusividadeIn, cu: User = Depends(get_current_user)):
+    """Compara a taxa contratada com a média BACEN da época da contratação e
+    classifica: ≥1,5x = indício forte · 1,2–1,5x = atenção · <1,2x = normal
+    (baliza do REsp 1.061.530/RS — caracterização é judicial, HITL). Com
+    indício forte + valor/n_parcelas, retorna o cenário de expurgo (Price).
+    BCB fora do ar → fail-soft (taxa_media=null + aviso; nunca inventa média)."""
+    try:
+        return await abusividade_service.avaliar_abusividade(
+            taxa_contrato_am_pct=req.taxa_contrato_am_pct,
+            modalidade=req.modalidade,
+            data_contrato=req.data_contrato,
+            segmento=req.segmento,
+            valor_financiado=req.valor_financiado,
+            n_parcelas=req.n_parcelas,
+            parcela_contratual=req.parcela_contratual,
+        )
+    except ValueError as e:
+        raise HTTPException(422, str(e))
