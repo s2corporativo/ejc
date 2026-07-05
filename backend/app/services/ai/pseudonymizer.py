@@ -95,7 +95,9 @@ class _Pseudonimizador:
         # Padrões estruturados (CPF, CNPJ, processo, e-mail, telefone, CEP…),
         # na MESMA ordem do sanitizer para evitar sobreposição.
         for pattern, placeholder in _PATTERNS:
-            tipo = _TIPO_POR_PLACEHOLDER[placeholder]
+            # .get com fallback "PII": placeholder novo no sanitizer não quebra
+            # o gateway (degrada seguro; teste de sincronismo cobre a paridade).
+            tipo = _TIPO_POR_PLACEHOLDER.get(placeholder, "PII")
             texto = pattern.sub(lambda m, _t=tipo: self._marcador(_t, m.group(0)), texto)
         # Datas de nascimento contextuais → marcador único (mantém round-trip).
         texto = _NASCIMENTO.sub(lambda m: self._marcador("DATA_NASC", m.group(0)), texto)

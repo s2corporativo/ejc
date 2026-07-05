@@ -115,10 +115,26 @@ def _overrides() -> dict[str, ModoSanitizacao]:
 def modo_para_task(task_type: str) -> ModoSanitizacao:
     """Retorna o ModoSanitizacao para `task_type` (default + override de config).
 
-    O override (AI_SANITIZATION_MODE_MAP) tem precedência sobre o default. Tarefa
-    não mapeada em nenhum dos dois → `_MODO_FALLBACK` (MASCARAMENTO, seguro)."""
+    O override (AI_SANITIZATION_MODE_MAP) tem precedência sobre o default, EXCETO
+    pelo PISO DE SEGURANÇA não-rebaixável: se o DEFAULT da tarefa for
+    LOCAL_COMPLETO (sigilo reforçado, ex.: `criminal`), um override que NÃO seja
+    LOCAL_COMPLETO é IGNORADO (com aviso) — o dado não pode ser rebaixado para
+    externo por configuração. Reforçar (qualquer tarefa → LOCAL_COMPLETO) é
+    sempre permitido. Tarefa não mapeada em nenhum dos dois → `_MODO_FALLBACK`
+    (MASCARAMENTO, seguro)."""
     task = (task_type or "").strip().lower()
+    padrao = _MODO_DEFAULT_POR_TASK.get(task, _MODO_FALLBACK)
     over = _overrides()
     if task in over:
-        return over[task]
-    return _MODO_DEFAULT_POR_TASK.get(task, _MODO_FALLBACK)
+        escolhido = over[task]
+        # Piso: LOCAL_COMPLETO por default nunca é rebaixado por override.
+        if padrao == ModoSanitizacao.LOCAL_COMPLETO and escolhido != ModoSanitizacao.LOCAL_COMPLETO:
+            logger.warning(
+                "AI_SANITIZATION_MODE_MAP: override '%s' para '%s' IGNORADO — "
+                "tarefa de sigilo reforçado (LOCAL_COMPLETO) não pode ser rebaixada "
+                "para provider externo (piso de segurança LGPD).",
+                escolhido.value, task,
+            )
+            return ModoSanitizacao.LOCAL_COMPLETO
+        return escolhido
+    return padrao

@@ -256,6 +256,120 @@ class TestModosSanitizacaoGateway:
         assert CPF_FAKE in capturado["conteudo"]   # local recebe o dado real
         assert resp.provedor == "ollama"
 
+    async def test_entidades_pseudonimizadas_e_reidratadas(self, s, monkeypatch):
+        """FIX 3 — nomes próprios via `entidades` são pseudonimizados antes do
+        provider externo e reidratados na resposta devolvida."""
+        from app.services import ai_gateway
+
+        capturado: dict = {}
+
+        async def _fake_provedor(provider, model, messages, temperature, max_tokens):
+            capturado["conteudo"] = " ".join(m.get("content", "") for m in messages)
+            return "Parecer sobre [CLIENTE_1] concluído.", {
+                "model": model or provider, "input_tokens": 3, "output_tokens": 4,
+            }
+
+        monkeypatch.setattr(ai_gateway, "_chamar_provedor", _fake_provedor)
+
+        resp = await ai_gateway.chat(
+            [{"role": "user", "content": "Analise o caso de João da Silva."}],
+            task_type="analise_caso",
+            entidades={"cliente": ["João da Silva"]},
+        )
+        assert "[CLIENTE_1]" in capturado["conteudo"]
+        assert "João da Silva" not in capturado["conteudo"]   # nome não vaza ao externo
+        assert "João da Silva" in resp.texto                  # resposta reidratada
+        assert "[CLIENTE_1]" not in resp.texto
+
+
+# ══════════════════════════════════════════════════════════════════════════════
+# 2c. executar_tarefa_ia — política de modo (FIX 1: 2º ponto de entrada por-tarefa)
+# ══════════════════════════════════════════════════════════════════════════════
+
+class TestExecutarTarefaIAModos:
+    async def test_criminal_sem_ollama_bloqueia_e_nao_chama_externo(self, s, monkeypatch):
+        """LOCAL_COMPLETO (criminal) sem Ollama: bloqueia; Anthropic/Groq NUNCA
+        chamados; mensagem de erro não vaza PII."""
+        from app.services import ai_gateway
+        from app.services.system_prompts import TarefaIA
+
+        chamadas: list = []
+
+        async def _nao_chamar(*a, **kw):
+            chamadas.append(a)
+            raise AssertionError("provider externo chamado em tarefa LOCAL_COMPLETO")
+
+        monkeypatch.setattr(ai_gateway, "_chamar_provedor", _nao_chamar)
+
+        with pytest.raises(RuntimeError) as exc:
+            await ai_gateway.executar_tarefa_ia(
+                TarefaIA.CRIMINAL, f"Defesa do CPF {CPF_FAKE}.",
+            )
+        msg = str(exc.value)
+        assert "local" in msg.lower()
+        assert CPF_FAKE not in msg
+        assert chamadas == []
+
+    async def test_criminal_com_ollama_usa_local(self, s, monkeypatch):
+        """LOCAL_COMPLETO (criminal) com Ollama ligado → roda no Ollama local."""
+        from app.services import ai_gateway
+        from app.services.system_prompts import TarefaIA
+
+        monkeypatch.setattr(s, "OLLAMA_ENABLED", True)
+        capturado: dict = {}
+
+        async def _fake_provedor(provider, model, messages, temperature, max_tokens):
+            capturado["provider"] = provider
+            return "rascunho local", {"model": "ollama-x", "input_tokens": 1, "output_tokens": 1}
+
+        monkeypatch.setattr(ai_gateway, "_chamar_provedor", _fake_provedor)
+
+        out = await ai_gateway.executar_tarefa_ia(
+            TarefaIA.CRIMINAL, f"Caso do CPF {CPF_FAKE}.",
+        )
+        assert capturado["provider"] == "ollama"
+        assert out["provider"] == "ollama"
+
+    async def test_pseudonimizado_reidrata_e_ailog_sem_pii(self, s, monkeypatch):
+        """EXTERNO_PSEUDONIMIZADO (analise_caso) sem Ollama: provider externo
+        recebe marcador; resposta devolvida reidratada; AILog registra a versão
+        PSEUDONIMIZADA (sem PII real)."""
+        from app.services import ai_gateway
+        from app.services.system_prompts import TarefaIA
+
+        capturado: dict = {}
+
+        async def _fake_provedor(provider, model, messages, temperature, max_tokens):
+            capturado["provider"] = provider
+            capturado["conteudo"] = " ".join(m.get("content", "") for m in messages)
+            return "Análise do CPF [CPF_1] pronta.", {
+                "model": model or provider, "input_tokens": 2, "output_tokens": 3,
+            }
+
+        monkeypatch.setattr(ai_gateway, "_chamar_provedor", _fake_provedor)
+
+        registrado: dict = {}
+
+        async def _fake_registrar(db, **kw):
+            registrado.update(kw)
+            return "log-1"
+
+        import app.services.ai_guard as ai_guard_mod
+        monkeypatch.setattr(ai_guard_mod, "registrar_ai_log", _fake_registrar)
+
+        out = await ai_gateway.executar_tarefa_ia(
+            TarefaIA.ANALISE_CASO, f"Analise o caso do CPF {CPF_FAKE}.",
+            user_id="u1", db=object(),
+        )
+        assert capturado["provider"] in ("anthropic", "groq")
+        assert "[CPF_1]" in capturado["conteudo"] and CPF_FAKE not in capturado["conteudo"]
+        # Resposta devolvida está reidratada.
+        assert CPF_FAKE in out["conteudo"] and "[CPF_1]" not in out["conteudo"]
+        # AILog não guarda PII real (prompt e resposta pseudonimizados).
+        assert CPF_FAKE not in str(registrado.get("prompt_sanitizado", ""))
+        assert CPF_FAKE not in str(registrado.get("resposta", ""))
+        assert registrado.get("pii_removida") is True
+
 
 # ══════════════════════════════════════════════════════════════════════════════
 # 3. _resolver_cadeia

@@ -148,3 +148,41 @@ def test_modo_override_invalido_cai_no_default(monkeypatch):
     # Modo desconhecido em JSON válido é ignorado (cai no default).
     monkeypatch.setattr(st, "AI_SANITIZATION_MODE_MAP", '{"resumo":"modo_zumbi"}')
     assert modo_para_task("resumo") == ModoSanitizacao.MASCARAMENTO
+
+
+# ── FIX 2 — piso não-rebaixável do LOCAL_COMPLETO ─────────────────────────────
+
+def test_piso_local_completo_nao_rebaixavel(monkeypatch):
+    """Override NÃO pode rebaixar tarefa de sigilo reforçado (default
+    LOCAL_COMPLETO) para provider externo — ignora e mantém LOCAL_COMPLETO."""
+    st = get_settings()
+    monkeypatch.setattr(
+        st, "AI_SANITIZATION_MODE_MAP",
+        '{"criminal":"externo_pseudonimizado"}',
+    )
+    assert modo_para_task("criminal") == ModoSanitizacao.LOCAL_COMPLETO
+
+
+def test_piso_reforco_para_local_completo_permitido(monkeypatch):
+    """Reforçar QUALQUER tarefa para LOCAL_COMPLETO via override é permitido; e
+    rebaixar criminal continua bloqueado no mesmo mapa."""
+    st = get_settings()
+    monkeypatch.setattr(
+        st, "AI_SANITIZATION_MODE_MAP",
+        '{"resumo":"local_completo","criminal":"mascaramento"}',
+    )
+    assert modo_para_task("resumo") == ModoSanitizacao.LOCAL_COMPLETO   # reforço aplicado
+    assert modo_para_task("criminal") == ModoSanitizacao.LOCAL_COMPLETO  # rebaixamento ignorado
+
+
+# ── FIX 4 — sincronismo placeholder do sanitizer × mapa de tipos ──────────────
+
+def test_todo_placeholder_do_sanitizer_tem_tipo():
+    """Todo placeholder em sanitizer._PATTERNS deve ter entrada em
+    _TIPO_POR_PLACEHOLDER (evita marcador genérico 'PII' silencioso)."""
+    from app.services.sanitizer import _PATTERNS
+    from app.services.ai.pseudonymizer import _TIPO_POR_PLACEHOLDER
+    for _pattern, placeholder in _PATTERNS:
+        assert placeholder in _TIPO_POR_PLACEHOLDER, (
+            f"placeholder {placeholder!r} do sanitizer sem tipo pseudonimizado"
+        )
