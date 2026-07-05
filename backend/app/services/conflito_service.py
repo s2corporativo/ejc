@@ -58,6 +58,7 @@ async def detectar_conflito(
             achados.append({
                 "tipo": "cliente_existente",
                 "id": c.id, "nome": c.nome or c.razao_social,
+                "documento": c.cpf or c.cnpj,
             })
 
     # 2. Nome do novo cliente aparece como parte contrária de algum caso
@@ -91,6 +92,7 @@ async def detectar_conflito(
             achados.append({
                 "tipo": "CONFLITO_parte_contraria_eh_cliente",
                 "id": c.id, "nome": c.nome or c.razao_social,
+                "documento": c.cpf or c.cnpj,
             })
 
     conflito_grave = any("CONFLITO" in a["tipo"] for a in achados)

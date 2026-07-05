@@ -152,14 +152,6 @@ async def verificar_conflito(
     }
 
 
-def _mascarar_nome(n: Optional[str]) -> str:
-    """Mascara nome para exposição (LGPD): nunca devolve o valor completo."""
-    n = (n or "").strip()
-    if not n:
-        return "N/D"
-    return (n[:3] + "***") if len(n) > 3 else (n[0] + "***")
-
-
 # Casos considerados "ativos" para fins de conflito (CaseStatus).
 # encerrado/arquivado NÃO contam como conflito crítico.
 _STATUS_ATIVOS = {"triagem", "ativo", "suspenso", "acordo"}
@@ -176,17 +168,19 @@ async def checar_conflito(
     """
     Checagem de conflito de interesses em tempo real no intake (EOAB arts. 34-35).
 
-    Cruza CPF/CNPJ (via índice cego HMAC — nunca em claro) e nome contra:
+    Cruza CPF/CNPJ (busca via índice cego HMAC) e nome contra:
       • clientes existentes (clients.cpf_hash / cnpj_hash);
       • partes de casos (case_partes) e parte contrária livre (cases).
 
     Resposta enxuta p/ intake: {conflito, nivel, matches}. Fail-safe — nunca
-    levanta exceção de regra de negócio e NUNCA devolve CPF/CNPJ em claro.
+    levanta exceção de regra de negócio. Os matches trazem nome e documento
+    COMPLETOS (decisão de produto: o advogado precisa saber com quem é o
+    conflito; o endpoint já é restrito a papéis do CRM + rate limit).
     Crítico = mesma pessoa como parte em caso ATIVO / parte contrária que já é
     nosso cliente.
     """
     from app.services.conflito_service import detectar_conflito
-    from app.services.pii_crypto import normalizar_documento, hash_documento
+    from app.services.pii_crypto import normalizar_documento
     from app.models.case_parte import CaseParte
 
     matches: list[dict] = []
@@ -209,7 +203,10 @@ async def checar_conflito(
             matches.append({
                 "tipo": "cliente_existente",
                 "papel": "cliente",
-                "descricao": f"Já cadastrado como cliente ({_mascarar_nome(a.get('nome'))}).",
+                "client_id": a.get("id"),
+                "nome": a.get("nome"),
+                "documento": a.get("documento"),
+                "descricao": f"Já cadastrado como cliente ({a.get('nome') or 'N/D'}).",
             })
             _elevar("atencao")
         elif tipo == "parte_contraria_em_caso":
@@ -217,16 +214,23 @@ async def checar_conflito(
                 "tipo": "parte_contraria_em_caso",
                 "case_id": a.get("case_id"),
                 "papel": "parte_contraria",
-                "descricao": "Nome consta como parte contrária em caso registrado.",
+                "nome": a.get("parte"),
+                "descricao": (
+                    f"Consta como parte contrária no caso "
+                    f"\"{a.get('titulo') or a.get('case_id')}\"."
+                ),
             })
             _elevar("atencao")
         elif "CONFLITO" in tipo:  # parte contrária informada já é nosso cliente
             matches.append({
                 "tipo": "parte_contraria_eh_cliente",
                 "papel": "parte_contraria",
+                "client_id": a.get("id"),
+                "nome": a.get("nome"),
+                "documento": a.get("documento"),
                 "descricao": (
                     f"A parte contrária informada já é cliente do escritório "
-                    f"({_mascarar_nome(a.get('nome'))}) — representação vedada (EOAB art. 34, XVII)."
+                    f"({a.get('nome') or 'N/D'}) — representação vedada (EOAB art. 34, XVII)."
                 ),
             })
             _elevar("critico")
@@ -236,9 +240,6 @@ async def checar_conflito(
     cpf_norm = normalizar_documento(req.cpf)
     cnpj_norm = normalizar_documento(req.cnpj)
     doc_norm = cpf_norm or cnpj_norm
-    # hash_documento é o índice cego usado na escrita/clients; aqui serve para
-    # correlacionar sem manter o valor em claro em logs/variáveis desnecessárias.
-    _ = hash_documento(doc_norm) if doc_norm else None
 
     conds = []
     if doc_norm:
@@ -260,7 +261,7 @@ async def checar_conflito(
             .where(or_(*conds), Case.deleted_at.is_(None))
             .limit(20)
         )
-        for parte, status, _titulo in (await db.execute(q)).all():
+        for parte, status, titulo in (await db.execute(q)).all():
             status_val = status.value if hasattr(status, "value") else str(status)
             ativo = status_val in _STATUS_ATIVOS
             papel = parte.papel_processual or parte.tipo or "parte"
@@ -269,9 +270,11 @@ async def checar_conflito(
                     "tipo": "parte_em_caso_ativo",
                     "case_id": parte.case_id,
                     "papel": papel,
+                    "nome": parte.nome,
+                    "documento": parte.cpf_cnpj,
                     "descricao": (
-                        f"{_mascarar_nome(parte.nome)} já figura como '{papel}' "
-                        f"em caso ATIVO (conflito potencial — EOAB arts. 34-35)."
+                        f"{parte.nome} já figura como '{papel}' no caso ATIVO "
+                        f"\"{titulo}\" (conflito potencial — EOAB arts. 34-35)."
                     ),
                 })
                 _elevar("critico")
@@ -280,9 +283,11 @@ async def checar_conflito(
                     "tipo": "parte_em_caso_encerrado",
                     "case_id": parte.case_id,
                     "papel": papel,
+                    "nome": parte.nome,
+                    "documento": parte.cpf_cnpj,
                     "descricao": (
-                        f"{_mascarar_nome(parte.nome)} figurou como '{papel}' "
-                        f"em caso já encerrado/arquivado."
+                        f"{parte.nome} figurou como '{papel}' no caso já "
+                        f"encerrado/arquivado \"{titulo}\"."
                     ),
                 })
                 _elevar("atencao")

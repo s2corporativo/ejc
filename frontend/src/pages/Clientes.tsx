@@ -17,12 +17,16 @@ import {
 } from "../components/UI";
 import { ClientesStats } from "../components/Dashboards";
 
-// Resposta de POST /clients/checar-conflito (nomes já mascarados; nunca CPF).
+// Resposta de POST /clients/checar-conflito (nome/documento completos —
+// o advogado precisa saber com quem é o conflito; endpoint restrito ao CRM).
 type ConflitoNivel = "nenhum" | "atencao" | "critico";
 interface ConflitoMatch {
   tipo: string;
   case_id?: string;
+  client_id?: string;
   papel: string;
+  nome?: string;
+  documento?: string;
   descricao: string;
 }
 interface ConflitoCheck {
