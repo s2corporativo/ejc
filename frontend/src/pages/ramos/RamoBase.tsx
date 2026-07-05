@@ -36,6 +36,7 @@ import {
 import { RAMOS, type RamoConfig, type FerramentaConfig } from "./ramosConfig";
 import GuiaBancario from "../../components/GuiaBancario";
 import AnaliseExtratos from "../../components/AnaliseExtratos";
+import BancarioForense from "../../components/BancarioForense";
 import GuiaTransito from "../../components/GuiaTransito";
 import GuiaTrabalhista from "../../components/GuiaTrabalhista";
 import GuiaTributario from "../../components/GuiaTributario";
@@ -49,6 +50,8 @@ import GuiaImobiliario from "../../components/GuiaImobiliario";
 import GuiaFamilia from "../../components/GuiaFamilia";
 import GuiaAdministrativo from "../../components/GuiaAdministrativo";
 import GuiaLicitacoes from "../../components/GuiaLicitacoes";
+import GuiaEmpresarial from "../../components/GuiaEmpresarial";
+import SociedadesCliente from "../../components/SociedadesCliente";
 import { RamoStats } from "../../components/Dashboards";
 
 // Mapa de ícones por nome (evita importar a lib inteira)
@@ -651,7 +654,10 @@ function AnaliseBancaria({ area, casos }: { area: string; casos: Case[] }) {
   };
 
   return (
-    <div className="card p-4 mb-4 border-l-4 border-success-500">
+    <div
+      id="analise-documento"
+      className="card p-4 mb-4 border-l-4 border-success-500 scroll-mt-4"
+    >
       <h2 className="font-serif font-semibold text-navy mb-1 flex items-center gap-2">
         {_ANALISE_TITULO[area] || "📄 Análise de Documento"}
       </h2>
@@ -910,6 +916,7 @@ export default function RamoBase() {
       )}
       {cfg.guiaBancario && <GuiaBancario />}
       {cfg.analiseExtratos && <AnaliseExtratos />}
+      {cfg.bancarioForense && <BancarioForense />}
       {cfg.guiaTransito && <GuiaTransito />}
       {cfg.guiaTrabalhista && <GuiaTrabalhista />}
       {cfg.guiaTributario && <GuiaTributario />}
@@ -923,6 +930,8 @@ export default function RamoBase() {
       {cfg.guiaFamilia && <GuiaFamilia />}
       {cfg.guiaAdministrativo && <GuiaAdministrativo />}
       {cfg.guiaLicitacoes && <GuiaLicitacoes />}
+      {cfg.guiaEmpresarial && <GuiaEmpresarial />}
+      {cfg.sociedadesCliente && <SociedadesCliente />}
 
       {/* Áreas de atuação (subáreas) */}
       {cfg.subareas && cfg.subareas.length > 0 && (

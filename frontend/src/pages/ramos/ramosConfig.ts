@@ -57,6 +57,7 @@ export interface RamoConfig {
   comparadorBacen?: boolean; // comparador de juros com a média BACEN
   guiaBancario?: boolean; // guia operacional de direito bancário (referência)
   analiseExtratos?: boolean; // análise de extrato bancário (cobranças abusivas)
+  bancarioForense?: boolean; // forense bancário: verificador de abusividade + calculadora de CET
   guiaTransito?: boolean; // guia operacional de multas de trânsito (referência)
   guiaTrabalhista?: boolean; // guia operacional de direito do trabalho
   guiaTributario?: boolean; // guia operacional de direito tributário
@@ -70,6 +71,8 @@ export interface RamoConfig {
   guiaFamilia?: boolean; // guia operacional de direito de família
   guiaAdministrativo?: boolean; // guia operacional de direito administrativo
   guiaLicitacoes?: boolean; // guia operacional de licitações e contratos
+  guiaEmpresarial?: boolean; // guia operacional de direito empresarial (3 pilares)
+  sociedadesCliente?: boolean; // sociedades do cliente: cap table + eventos societários (/empresarial/sociedades)
 }
 
 export interface LinkExterno {
@@ -83,6 +86,8 @@ export interface LinkExterno {
 // ══════════════════════════════════════════════════════════════════════════
 const empresarial: RamoConfig = {
   analiseDocumento: true,
+  guiaEmpresarial: true,
+  sociedadesCliente: true,
   slug: "empresarial",
   endpoint: "/empresarial",
   areaCaso: "empresarial",
@@ -1056,6 +1061,7 @@ const bancario: RamoConfig = {
   analiseDocumento: true,
   guiaBancario: true,
   analiseExtratos: true,
+  bancarioForense: true,
   slug: "bancario",
   endpoint: "/bancario",
   areaCaso: "civil",
