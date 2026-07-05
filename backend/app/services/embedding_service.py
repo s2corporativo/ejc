@@ -118,8 +118,9 @@ def _cache_query_get(modo: str, texto: str) -> list[float] | None:
 
 
 def _cache_query_put(modo: str, texto: str, vec: list[float]) -> None:
-    _QUERY_CACHE[(modo, texto)] = vec
-    _QUERY_CACHE.move_to_end((modo, texto))
+    chave = (modo, texto)
+    _QUERY_CACHE[chave] = vec
+    _QUERY_CACHE.move_to_end(chave)  # necessário só no caminho de sobrescrita
     while len(_QUERY_CACHE) > _QUERY_CACHE_MAX:
         _QUERY_CACHE.popitem(last=False)  # remove o menos recentemente usado
 

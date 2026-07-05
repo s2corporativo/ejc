@@ -223,19 +223,25 @@ async def chat(
         task_type, messages, temperature=temperature, max_tokens=max_tokens,
         model_override=model_override, provider_override=provider_override,
         nivel_inteligencia=nivel_inteligencia,
+        # AI_PROVIDER global entra na chave: se a config trocar (ex.: auto→groq)
+        # sem override explícito, não serve resposta de outro provedor no TTL.
+        ai_provider=settings.AI_PROVIDER,
     )
     _cached = await ai_cache.obter(_cache_key)
     if _cached:
         logger.info("[Gateway] cache HIT → %s (sem chamada ao provedor)", task_type)
+        # Tokens/custo ZERADOS no hit: não houve chamada real ao provedor, então
+        # contabilizá-los (AILog/dashboards) inflaria o gasto de IA (dupla
+        # contagem). cache_hit=True sinaliza a origem; texto é o cacheado.
         return GatewayResponse(
             texto=_cached.get("texto", ""),
             modelo=_cached.get("modelo", ""),
             provedor=_cached.get("provedor", ""),
             task_type=task_type,
-            input_tokens=_cached.get("input_tokens"),
-            output_tokens=_cached.get("output_tokens"),
+            input_tokens=0,
+            output_tokens=0,
             duracao_ms=0,
-            custo_estimado_brl=_cached.get("custo_estimado_brl", 0.0),
+            custo_estimado_brl=0.0,
             cache_hit=True,
         )
 

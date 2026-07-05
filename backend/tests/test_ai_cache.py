@@ -39,3 +39,23 @@ def test_desligado_por_default_e_no_op(monkeypatch):
 async def test_obter_desligado_retorna_none_sem_redis():
     valor = await ai_cache.obter("ai:resp:qualquer")
     assert valor is None
+
+
+async def test_cache_hit_zera_tokens_e_custo(monkeypatch):
+    # Um hit não gastou provedor: tokens/custo devem vir zerados (evita dupla
+    # contagem no AILog/dashboards), com cache_hit=True e o texto cacheado.
+    from app.services import ai_gateway
+    from app.services import ai_cache as _c
+
+    async def _fake_obter(_key):
+        return {"texto": "resposta cacheada", "modelo": "m", "provedor": "groq",
+                "input_tokens": 500, "output_tokens": 800, "custo_estimado_brl": 1.23}
+
+    monkeypatch.setattr(_c, "obter", _fake_obter)
+    resp = await ai_gateway.chat(
+        messages=[{"role": "user", "content": "oi"}], task_type="chat_rapido",
+    )
+    assert resp.cache_hit is True
+    assert resp.texto == "resposta cacheada"
+    assert resp.input_tokens == 0 and resp.output_tokens == 0
+    assert resp.custo_estimado_brl == 0.0

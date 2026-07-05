@@ -125,6 +125,13 @@ async def executar_skill_documento(
     query = (f"{instrucoes.strip()}\n\n" if instrucoes else "") + \
             f"DOCUMENTO ENVIADO ({file.filename}):\n\n{texto}"
 
+    # Ownership do case_id (espelha /execute): sem isso, um usuário poderia
+    # associar a análise a um caso de outro cliente, poluindo a trilha de AILog
+    # (IDOR sobre a auditoria). Mesma checagem do "Bloco 5" do endpoint irmão.
+    if case_id:
+        from app.core.ownership import verificar_acesso_caso
+        await verificar_acesso_caso(db, cu, case_id)
+
     try:
         resultado = await ai_skill_service.executar_skill(
             db=db, skill_name=skill_name, query=query, user_id=cu.id, case_id=case_id,
