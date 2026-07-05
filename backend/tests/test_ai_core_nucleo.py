@@ -444,15 +444,16 @@ class TestOrchestrator:
 AGENTES_CANONICOS = {
     "CaseAgent", "ProcessAgent", "DocumentAgent", "LegalWritingAgent",
     "RAGResearchAgent", "JurimetryAgent", "FinanceAgent", "BankForensicsAgent",
+    "ConsumerLawAgent", "TaxLawAgent", "SocialSecurityAgent", "CorporateLawAgent",
     "ClientCommunicationAgent", "SystemHealthAgent",
     "RepairAgent", "UIUXAgent", "SecurityLGPDOABAgent",
 }
 
 
 class TestRegistries:
-    def test_13_agentes_canonicos(self):
+    def test_17_agentes_canonicos(self):
         from app.services.ai.core.agent_registry import AGENT_REGISTRY
-        assert len(AGENT_REGISTRY) == 13
+        assert len(AGENT_REGISTRY) == 17
         assert set(AGENT_REGISTRY.keys()) == AGENTES_CANONICOS
         for nome, ag in AGENT_REGISTRY.items():
             assert ag.nome == nome  # chave == nome canônico

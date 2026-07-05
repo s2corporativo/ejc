@@ -68,9 +68,12 @@ async def executar_skill(
             user_id=cu.id,
             case_id=req.case_id,
             contexto_rag=contexto_rag,
+            user_role=getattr(cu.role, "value", cu.role),
         )
     except ValueError as e:
         raise HTTPException(status.HTTP_404_NOT_FOUND, str(e))
+    except PermissionError as e:
+        raise HTTPException(status.HTTP_403_FORBIDDEN, str(e))
     except RuntimeError as e:
         raise HTTPException(status.HTTP_503_SERVICE_UNAVAILABLE, str(e))
 
@@ -122,12 +125,22 @@ async def executar_skill_documento(
     query = (f"{instrucoes.strip()}\n\n" if instrucoes else "") + \
             f"DOCUMENTO ENVIADO ({file.filename}):\n\n{texto}"
 
+    # Ownership do case_id (espelha /execute): sem isso, um usuário poderia
+    # associar a análise a um caso de outro cliente, poluindo a trilha de AILog
+    # (IDOR sobre a auditoria). Mesma checagem do "Bloco 5" do endpoint irmão.
+    if case_id:
+        from app.core.ownership import verificar_acesso_caso
+        await verificar_acesso_caso(db, cu, case_id)
+
     try:
         resultado = await ai_skill_service.executar_skill(
             db=db, skill_name=skill_name, query=query, user_id=cu.id, case_id=case_id,
+            user_role=getattr(cu.role, "value", cu.role),
         )
     except ValueError as e:
         raise HTTPException(status.HTTP_404_NOT_FOUND, str(e))
+    except PermissionError as e:
+        raise HTTPException(status.HTTP_403_FORBIDDEN, str(e))
     except RuntimeError as e:
         raise HTTPException(status.HTTP_503_SERVICE_UNAVAILABLE, str(e))
 

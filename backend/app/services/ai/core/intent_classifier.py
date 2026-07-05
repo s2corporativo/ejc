@@ -58,6 +58,18 @@ TASK_TYPE_PARA_AGENTE: dict[str, str] = {
     # Bancário
     "bancario": "BankForensicsAgent",
     "extrato": "BankForensicsAgent",
+    # Áreas jurídicas com agente dedicado
+    "consumidor": "ConsumerLawAgent",
+    "cdc": "ConsumerLawAgent",
+    "tributario": "TaxLawAgent",
+    "fiscal": "TaxLawAgent",
+    "execucao_fiscal": "TaxLawAgent",
+    "previdenciario": "SocialSecurityAgent",
+    "inss": "SocialSecurityAgent",
+    "beneficio": "SocialSecurityAgent",
+    "empresarial": "CorporateLawAgent",
+    "societario": "CorporateLawAgent",
+    "recuperacao_judicial": "CorporateLawAgent",
     # Compliance / regulatório / ambiental (agente de caso genérico; a tarefa
     # ambiental é refinada abaixo para usar o prompt/modelo ambiental).
     "compliance": "CaseAgent",
@@ -85,6 +97,10 @@ TASK_TYPE_PARA_AGENTE: dict[str, str] = {
 # Fallback por keywords na MENSAGEM (ordem importa: mais específico primeiro).
 _KEYWORDS_PARA_AGENTE: list[tuple[tuple[str, ...], str]] = [
     (("extrato", "tarifa bancária", "busca e apreensão", "revisional"), "BankForensicsAgent"),
+    (("cdc", "código de defesa do consumidor", "codigo de defesa do consumidor", "relação de consumo", "vício do produto", "vicio do produto", "propaganda enganosa"), "ConsumerLawAgent"),
+    (("execução fiscal", "execucao fiscal", "certidão de dívida ativa", "certidao de divida ativa", "icms", "decadência tributária", "decadencia tributaria", "tributár"), "TaxLawAgent"),
+    (("inss", "aposentadoria", "auxílio-doença", "auxilio-doenca", "benefício previdenciário", "beneficio previdenciario", "cnis", "previdenciár"), "SocialSecurityAgent"),
+    (("recuperação judicial", "recuperacao judicial", "falência", "falencia", "dissolução de sociedade", "dissolucao de sociedade", "apuração de haveres", "societár"), "CorporateLawAgent"),
     (("ambiental", "auto de infração ambiental", "licenciamento", "compliance", "regulatório", "regulatorio"), "CaseAgent"),
     (("lgpd", "dado pessoal", "vazamento", "auditoria de acesso"), "SecurityLGPDOABAgent"),
     (("jurimetria", "probabilidade", "predição", "predicao"), "JurimetryAgent"),
