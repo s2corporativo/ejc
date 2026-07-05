@@ -60,6 +60,7 @@ export interface RamoConfig {
   bancarioForense?: boolean; // forense bancário: verificador de abusividade + calculadora de CET
   guiaTransito?: boolean; // guia operacional de multas de trânsito (referência)
   guiaTrabalhista?: boolean; // guia operacional de direito do trabalho
+  liquidacaoTrabalhista?: boolean; // liquidação de sentença trabalhista: verbas + FGTS/correção ADC 58/59 + honorários
   guiaTributario?: boolean; // guia operacional de direito tributário
   tributarioFiscal?: boolean; // recuperação de créditos fiscais: upload de XML NF-e + diagnóstico por tese
   guiaPrevidenciario?: boolean; // guia operacional de direito previdenciário
@@ -667,6 +668,7 @@ const penal: RamoConfig = {
 const trabalhista: RamoConfig = {
   analiseDocumento: true,
   guiaTrabalhista: true,
+  liquidacaoTrabalhista: true,
   slug: "trabalhista",
   endpoint: "/trabalhista-esp",
   areaCaso: "trabalhista",

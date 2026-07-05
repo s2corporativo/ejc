@@ -135,6 +135,7 @@ from app.routers import provas
 from app.routers import sumulas
 from app.routers import suspensoes
 from app.routers import tributario_fiscal
+from app.routers import trabalhista_liquidacao
 from app.routers import ambiental_estrategia
 from app.routers import tasks
 from app.routers import templates
@@ -350,6 +351,7 @@ app.include_router(lgpd_registros.router, prefix=API)  # vertical LGPD — ROPA 
 app.include_router(sumulas.router, prefix=API)
 app.include_router(suspensoes.router, prefix=API)
 app.include_router(tributario_fiscal.router, prefix=API)  # vertical Tributário — XML fiscal + recuperação de créditos
+app.include_router(trabalhista_liquidacao.router, prefix=API)  # vertical Trabalhista — liquidação de sentença (ADC 58 / Selic real BCB)
 app.include_router(ambiental_estrategia.router, prefix=API)  # vertical Ambiental — simulador de estratégia do auto de infração
 app.include_router(tasks.router, prefix=API)
 app.include_router(templates.router, prefix=API)

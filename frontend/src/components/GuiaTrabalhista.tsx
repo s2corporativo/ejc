@@ -108,6 +108,30 @@ export default function GuiaTrabalhista() {
         prescrição bienal imediatamente ao receber o caso.
       </p>
 
+      {/* No sistema — ferramenta de liquidação de sentença */}
+      <div className="mb-3 rounded-lg border border-gold-light bg-gold-50/60 p-3 flex flex-wrap items-center gap-x-3 gap-y-1 text-xs">
+        <span className="text-[10px] font-semibold uppercase text-slate-400">
+          No sistema
+        </span>
+        <span className="text-slate-600 flex-1 min-w-[200px]">
+          <b className="text-navy">Liquidação de Sentença Trabalhista</b> — monte
+          as verbas deferidas e obtenha a planilha consolidada (FGTS + multa de
+          40%, correção ADC 58/59 com Selic real do BCB e honorários CLT 791-A).
+        </span>
+        <a
+          href="#liquidacao-trabalhista"
+          onClick={(e) => {
+            e.preventDefault();
+            document
+              .getElementById("liquidacao-trabalhista")
+              ?.scrollIntoView({ behavior: "smooth" });
+          }}
+          className="text-gold-700 hover:text-gold-600 underline decoration-gold-200 underline-offset-2 font-medium"
+        >
+          Abrir ferramenta ↑
+        </a>
+      </div>
+
       <div className="space-y-2">
         <Sec icon={Clock} titulo="Prazos críticos e prescrição" aberto>
           <Tab

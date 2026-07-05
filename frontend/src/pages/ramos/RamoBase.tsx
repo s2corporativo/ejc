@@ -39,6 +39,7 @@ import AnaliseExtratos from "../../components/AnaliseExtratos";
 import BancarioForense from "../../components/BancarioForense";
 import GuiaTransito from "../../components/GuiaTransito";
 import GuiaTrabalhista from "../../components/GuiaTrabalhista";
+import LiquidacaoTrabalhista from "../../components/LiquidacaoTrabalhista";
 import GuiaTributario from "../../components/GuiaTributario";
 import TributarioFiscal from "../../components/TributarioFiscal";
 import GuiaPrevidenciario from "../../components/GuiaPrevidenciario";
@@ -922,6 +923,7 @@ export default function RamoBase() {
       {cfg.analiseExtratos && <AnaliseExtratos />}
       {cfg.bancarioForense && <BancarioForense />}
       {cfg.guiaTransito && <GuiaTransito />}
+      {cfg.liquidacaoTrabalhista && <LiquidacaoTrabalhista />}
       {cfg.guiaTrabalhista && <GuiaTrabalhista />}
       {cfg.tributarioFiscal && <TributarioFiscal />}
       {cfg.guiaTributario && <GuiaTributario />}
