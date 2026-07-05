@@ -53,15 +53,19 @@ async def varrer_inadimplencia(db: AsyncSession) -> dict:
         row = existing.fetchone()
 
         if row:
-            if row.alert_level != nivel:
-                await db.execute(text("""
-                    UPDATE inadimplencia_alerts
-                    SET alert_level = :nivel, days_overdue = :days,
-                        amount_due = :amount, updated_at = NOW()
-                    WHERE id = :id
-                """), {"nivel": nivel, "days": days,
-                       "amount": float(fee.amount_due or 0), "id": row.id})
-                updated += 1
+            # SEMPRE refresca days_overdue/amount_due (não só na troca de nível):
+            # antes, um alerta que permanecia na mesma faixa (ex.: "medio",
+            # 30-59d) congelava days_overdue no valor do dia em que entrou na
+            # faixa — o painel de cobrança (ordenado por days_overdue) mostrava
+            # dias em atraso desatualizados até o nível mudar.
+            await db.execute(text("""
+                UPDATE inadimplencia_alerts
+                SET alert_level = :nivel, days_overdue = :days,
+                    amount_due = :amount, updated_at = NOW()
+                WHERE id = :id
+            """), {"nivel": nivel, "days": days,
+                   "amount": float(fee.amount_due or 0), "id": row.id})
+            updated += 1
         else:
             await db.execute(text("""
                 INSERT INTO inadimplencia_alerts
