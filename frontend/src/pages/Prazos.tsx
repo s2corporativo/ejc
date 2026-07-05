@@ -205,15 +205,26 @@ export default function Prazos() {
               <select
                 className="input"
                 value={calc.dias_uteis ? "u" : "c"}
-                onChange={(e) =>
-                  setCalc({ ...calc, dias_uteis: e.target.value === "u" })
-                }
+                onChange={(e) => {
+                  const u = e.target.value === "u";
+                  setCalc({ ...calc, dias_uteis: u, dobro: u ? calc.dobro : false });
+                }}
               >
                 <option value="u">Dias úteis (CPC)</option>
                 <option value="c">Dias corridos (admin)</option>
               </select>
             </div>
           </div>
+          {calc.dias_uteis && (
+            <label className="flex items-center gap-2 text-sm text-slate-600">
+              <input
+                type="checkbox"
+                checked={!!calc.dobro}
+                onChange={(e) => setCalc({ ...calc, dobro: e.target.checked })}
+              />
+              Prazo em dobro (Fazenda Pública, MP, Defensoria — CPC 183/229)
+            </label>
+          )}
           <button
             className="btn-primary w-full justify-center"
             onClick={calcular}

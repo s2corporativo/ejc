@@ -30,9 +30,13 @@ router = APIRouter(prefix="/deadlines", tags=["Prazos"])
 async def calcular(req: CalcularPrazoRequest, cu: User = Depends(get_current_user)):
     """Calculadora rápida de prazo (sem persistir)."""
     if req.dias_uteis:
-        vencimento = prazo_dias_uteis(req.data_inicio, req.dias, tribunal=req.tribunal)
-        modo = "dias úteis (CPC art. 219)"
+        vencimento = prazo_dias_uteis(req.data_inicio, req.dias,
+                                      tribunal=req.tribunal, em_dobro=req.dobro)
+        modo = ("dias úteis EM DOBRO (CPC art. 183/229)" if req.dobro
+                else "dias úteis (CPC art. 219)")
     else:
+        # Prazo em dobro é dos prazos processuais em dias úteis; não incide sobre
+        # prazo administrativo corrido (Lei 9.784) — ignorado aqui de propósito.
         vencimento = prazo_dias_corridos(req.data_inicio, req.dias, tribunal=req.tribunal)
         modo = "dias corridos c/ prorrogação (Lei 9.784 art. 66 §1º)"
     return {
@@ -99,8 +103,12 @@ async def criar(
     base = payload.base_legal
     if not data_prazo and payload.dias_prazo and payload.data_intimacao:
         if payload.dias_uteis:
-            data_prazo = prazo_dias_uteis(payload.data_intimacao, payload.dias_prazo, tribunal=payload.tribunal)
-            base = base or f"{payload.dias_prazo} dias úteis (CPC art. 219)"
+            data_prazo = prazo_dias_uteis(payload.data_intimacao, payload.dias_prazo,
+                                          tribunal=payload.tribunal, em_dobro=payload.dobro)
+            base = base or (
+                f"{payload.dias_prazo} dias úteis em dobro (CPC art. 183/229)"
+                if payload.dobro else f"{payload.dias_prazo} dias úteis (CPC art. 219)"
+            )
         else:
             data_prazo = prazo_dias_corridos(payload.data_intimacao, payload.dias_prazo, tribunal=payload.tribunal)
             base = base or f"{payload.dias_prazo} dias corridos (Lei 9.784)"

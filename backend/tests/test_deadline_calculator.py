@@ -50,6 +50,23 @@ def test_prazo_dias_corridos_prorroga_para_util():
     assert prazo_dias_corridos(date(2025, 6, 2), 20) == date(2025, 6, 23)
 
 
+def test_prazo_em_dobro_equivale_ao_dobro_de_dias():
+    # Prazo em dobro (CPC 183/229): dobra a CONTAGEM de dias úteis.
+    inicio = date(2025, 6, 2)
+    assert (prazo_dias_uteis(inicio, 5, em_dobro=True)
+            == prazo_dias_uteis(inicio, 10))
+
+
+def test_prazo_em_dobro_data_concreta():
+    # Início seg 02/06/2025; 5 úteis = 09/06; em dobro (10 úteis) = 16/06.
+    assert prazo_dias_uteis(date(2025, 6, 2), 5, em_dobro=True) == date(2025, 6, 16)
+
+
+def test_prazo_em_dobro_default_desligado():
+    # em_dobro=False (default) NÃO altera o resultado histórico.
+    assert prazo_dias_uteis(date(2025, 6, 2), 5) == date(2025, 6, 9)
+
+
 def test_calcular_prescricao_tabela():
     r = calcular_prescricao("reparacao_civil", date(2020, 1, 15))
     assert r["data_limite"] == date(2023, 1, 15)        # 3 anos
