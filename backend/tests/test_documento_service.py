@@ -1,13 +1,15 @@
 """IA-01 (revisado) — importação de documento: híbrido determinístico + LLM.
 
-Contrato LGPD (pós-correção do intake):
+Contrato (pós-correção do intake + sanitização DESATIVADA em 2026-07-05 por
+decisão do titular):
   • O dado pessoal EXATO (CPF/nº CNJ/e-mail/...) é extraído LOCALMENTE por
     regex determinística (extracao_estruturada) — sem LLM — e devolvido em
     `dados_estruturados` em TODOS os caminhos de retorno.
   • O LLM (cadeia automática do gateway: ollama→anthropic→groq, com fallback)
-    só recebe o texto JÁ SANITIZADO por sanitizar_pii (marcadores [CPF],
-    [PROCESSO], ...). A barreira _sanitizar_messages_externo do gateway é a
-    segunda linha de defesa para provedores externos.
+    recebe o texto INTEGRAL — sanitizar_pii é passthrough, e a barreira
+    _sanitizar_messages_externo do gateway virou no-op.
+  • A flag INTAKE_EXTERNAL_FALLBACK continua decidindo SE provedores externos
+    podem ser usados no intake (off = só Ollama local, fail-closed).
   • Se TODA a cadeia LLM falhar, a importação NÃO quebra: retorna ok=True com
     analise_llm_indisponivel=True + dados_estruturados + texto OCR.
 Estes testes travam esses invariantes contra regressão."""
@@ -29,9 +31,9 @@ def _mock_ocr(monkeypatch):
     )
 
 
-async def test_llm_recebe_texto_sanitizado_e_usa_cadeia_com_fallback(monkeypatch):
+async def test_llm_recebe_texto_integral_e_usa_cadeia_com_fallback(monkeypatch):
     """(a) Caminho feliz: sem provider_override fixo (cadeia automática do
-    gateway) e o prompt contém APENAS o texto sanitizado."""
+    gateway) e o prompt contém o texto integral (sanitização desativada)."""
     captured = {}
     _mock_ocr(monkeypatch)
 
@@ -49,18 +51,17 @@ async def test_llm_recebe_texto_sanitizado_e_usa_cadeia_com_fallback(monkeypatch
     # Cadeia automática (ollama→anthropic→groq no TASK_ROUTING) — nada fixado.
     assert captured["provider_override"] is None
     assert captured["task_type"] == "analise_juridica"
-    # LGPD: o texto é SANITIZADO antes de qualquer IA — PII crua nunca no prompt.
-    assert "987.654.321-00" not in captured["user"]
-    assert "1234567-89.2020.8.13.0024" not in captured["user"]
-    assert "[CPF]" in captured["user"]
-    assert "[PROCESSO]" in captured["user"]
+    # Sanitização desativada (2026-07-05): o documento vai integral ao modelo.
+    assert "987.654.321-00" in captured["user"]
+    assert "1234567-89.2020.8.13.0024" in captured["user"]
+    assert "[CPF]" not in captured["user"]
+    assert "[PROCESSO]" not in captured["user"]
     assert r["ok"] is True
 
 
-async def test_fallback_externo_so_ve_texto_sanitizado(monkeypatch):
-    """(b) Ollama cai → provedor externo assume; o conteúdo enviado ao chat é
-    o MESMO texto sanitizado (o serviço não distingue o provedor — a chamada
-    já sai limpa; o gateway ainda tem a barreira externa)."""
+async def test_fallback_externo_ve_texto_integral(monkeypatch):
+    """(b) Ollama cai → provedor externo assume e recebe o MESMO texto
+    integral (sanitização desativada por decisão do titular, 2026-07-05)."""
     captured = {}
     _mock_ocr(monkeypatch)
 
@@ -78,10 +79,10 @@ async def test_fallback_externo_so_ve_texto_sanitizado(monkeypatch):
 
     assert r["ok"] is True
     assert r["_modelo"] == "anthropic/claude"
-    # O provedor externo só viu texto sanitizado.
+    # O provedor externo recebe o texto integral.
     assert captured["provider_override"] is None
-    assert "987.654.321-00" not in captured["user"]
-    assert "[CPF]" in captured["user"]
+    assert "987.654.321-00" in captured["user"]
+    assert "[CPF]" not in captured["user"]
 
 
 async def test_cadeia_toda_falha_degrada_com_extracao_deterministica(monkeypatch):
@@ -104,8 +105,9 @@ async def test_cadeia_toda_falha_degrada_com_extracao_deterministica(monkeypatch
     de = r["dados_estruturados"]
     assert de["cpfs"][0]["valor"] == "987.654.321-00"
     assert de["processos_cnj"][0]["valor"] == "1234567-89.2020.8.13.0024"
-    # Texto OCR devolvido SANITIZADO (o cru nunca sai em campo de texto livre).
-    assert "[CPF]" in r["texto_extraido"]
+    # Texto OCR devolvido integral (sanitização desativada).
+    assert "987.654.321-00" in r["texto_extraido"]
+    assert "[CPF]" not in r["texto_extraido"]
 
 
 async def test_dados_estruturados_presentes_em_todos_os_retornos(monkeypatch):
@@ -140,11 +142,12 @@ def _settings():
     return ai_gateway.settings  # mesmo objeto cacheado de get_settings()
 
 
-async def test_barreira_real_provider_externo_recebe_sanitizado(monkeypatch):
-    """(e) Integração da barreira REAL: gateway de verdade (sem mock do chat),
-    Ollama desabilitado → cadeia cai no Anthropic; mockamos APENAS
-    anthropic_provider.chat e assertamos que o conteúdo que CHEGA ao provider
-    externo está sanitizado (CPF/nº de processo mascarados)."""
+async def test_gateway_real_provider_externo_recebe_texto_integral(monkeypatch):
+    """(e) Integração com o gateway REAL (sem mock do chat), Ollama
+    desabilitado → cadeia cai no Anthropic; mockamos APENAS
+    anthropic_provider.chat. Com a sanitização desativada (passthrough), o
+    conteúdo chega INTEGRAL ao provider externo mesmo com
+    AI_REQUIRE_SANITIZATION_FOR_EXTERNAL=True (a barreira é no-op)."""
     _mock_ocr(monkeypatch)
     s = _settings()
     monkeypatch.setattr(s, "INTAKE_EXTERNAL_FALLBACK", True)
@@ -171,11 +174,11 @@ async def test_barreira_real_provider_externo_recebe_sanitizado(monkeypatch):
 
     assert r["ok"] is True
     assert r["_modelo"] == "anthropic/claude-opus-4-8"
-    # O que o provider EXTERNO recebeu (pós-cadeia + barreira do gateway):
+    # O que o provider EXTERNO recebeu (pós-cadeia + barreira no-op):
     todo = "\n".join((m.get("content") or "") for m in captured["messages"])
-    assert "987.654.321-00" not in todo
-    assert "1234567-89.2020.8.13.0024" not in todo
-    assert "[CPF]" in todo
+    assert "987.654.321-00" in todo
+    assert "1234567-89.2020.8.13.0024" in todo
+    assert "[CPF]" not in todo
     # Dado exato continua vindo da extração determinística LOCAL.
     assert r["dados_estruturados"]["cpfs"][0]["valor"] == "987.654.321-00"
 
@@ -228,7 +231,7 @@ async def test_flag_false_sem_ollama_habilitado_erra_antes_do_gateway(monkeypatc
 
 async def test_ailog_da_chamada_principal_do_intake(monkeypatch):
     """(h) Art. 37 LGPD: com db+user_id, o intake grava AILog com provedor,
-    modelo, tokens e prompt SANITIZADO da chamada principal."""
+    modelo, tokens e o prompt REAL enviado (sanitização desativada)."""
     _mock_ocr(monkeypatch)
 
     class _RTok(_R):
@@ -264,7 +267,7 @@ async def test_ailog_da_chamada_principal_do_intake(monkeypatch):
     assert log.user_id == "u-1"
     assert log.modelo == "anthropic/claude-opus-4-8"
     assert log.tokens_input == 42 and log.tokens_output == 17
-    # Prompt persistido é o SANITIZADO — nunca a PII crua.
-    assert "987.654.321-00" not in log.prompt_sanitizado
-    assert "[CPF]" in log.prompt_sanitizado
-    assert log.pii_removida is True
+    # Prompt persistido é o REAL enviado (passthrough — nada removido).
+    assert "987.654.321-00" in log.prompt_sanitizado
+    assert "[CPF]" not in log.prompt_sanitizado
+    assert log.pii_removida is False

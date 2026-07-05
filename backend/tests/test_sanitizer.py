@@ -1,4 +1,7 @@
-"""Sanitização LGPD — Fase 3B (PII fora do RAG/Groq)."""
+"""Sanitização de PII em prompts de IA — DESATIVADA (decisão do titular,
+2026-07-05): as funções do sanitizer viraram passthrough. Estes testes fixam
+o contrato atual: nada é mascarado, nada aborta, e o gateway não bloqueia
+provider externo por PII. (O comportamento antigo está no histórico git.)"""
 from app.services.sanitizer import (
     sanitizar_pii,
     validar_sem_pii,
@@ -6,127 +9,53 @@ from app.services.sanitizer import (
     validar_sem_pii_interno,
 )
 from app.services.ai_guard import sanitizar_ou_abortar
-import pytest
-from fastapi import HTTPException
 
 
-def test_mascara_cpf_e_cnpj():
-    out, mudou = sanitizar_pii("CPF 123.456.789-09 e CNPJ 12.345.678/0001-99")
-    assert "[CPF]" in out
-    assert "[CNPJ]" in out
-    assert mudou is True
-
-
-def test_mascara_processo_e_email():
-    out, _ = sanitizar_pii("Processo 1234567-89.2020.8.13.0024 contato a@b.com")
-    assert "[PROCESSO]" in out
-    assert "[EMAIL]" in out
-
-
-def test_nomes_proteger():
-    out, mudou = sanitizar_pii("O cliente João da Silva compareceu", ["João da Silva"])
-    assert "João da Silva" not in out
-    assert "[PARTE_1]" in out
-    assert mudou is True
-
-
-def test_texto_limpo_nao_muda():
-    out, mudou = sanitizar_pii("peça sobre direito do trabalho sem dados pessoais")
+def test_sanitizar_pii_e_passthrough():
+    texto = ("CPF 123.456.789-09, CNPJ 12.345.678/0001-99, "
+             "processo 1234567-89.2020.8.13.0024, contato a@b.com")
+    out, mudou = sanitizar_pii(texto, ["João da Silva"])
+    assert out == texto
     assert mudou is False
-    assert validar_sem_pii(out) == []
 
 
-def test_validar_detecta_residual():
-    assert "CPF" in validar_sem_pii("resto 123.456.789-09")
+def test_sanitizar_pii_interno_e_passthrough():
+    texto = "CPF 123.456.789-09 contato a@b.com tel (31) 99999-9999"
+    out, mudou = sanitizar_pii_interno(texto)
+    assert out == texto
+    assert mudou is False
 
 
-@pytest.mark.parametrize(
-    "texto",
-    [
-        "advogado OAB/MG 123.456 protocolou",
-        "inscrito na OAB SP 12345",
-        "OAB/RJ 12.345 responsável",
-        "OAB MG 123456",
-    ],
-)
-def test_mascara_oab(texto):
+def test_validar_sem_pii_nunca_acusa_residual():
+    assert validar_sem_pii("resto 123.456.789-09 e a@b.com") == []
+    assert validar_sem_pii_interno("contato a@b.com") == []
+    # OAB (padrão adicionado à sanitização antiga) também não acusa residual.
+    assert validar_sem_pii("subscritor OAB/MG 123.456") == []
+
+
+def test_oab_tambem_e_passthrough():
+    # A main adicionou mascaramento de OAB ([OAB]) à implementação antiga;
+    # com a sanitização desativada, a inscrição passa intacta.
+    texto = "Dr. Fulano, OAB/MG 123.456, protocolou"
     out, mudou = sanitizar_pii(texto)
-    assert "[OAB]" in out
-    assert mudou is True
-    # número da inscrição não sobra
-    assert "123.456" not in out and "12345" not in out and "123456" not in out
+    assert out == texto
+    assert mudou is False
 
 
-def test_oab_detectada_como_residual():
-    assert "OAB" in validar_sem_pii("subscritor OAB/MG 123.456")
+def test_sanitizar_ou_abortar_nao_mascara_nem_aborta():
+    """Barreira de ENTRADA desativada: texto passa intacto, sem 422."""
+    texto = ("Cliente CPF 123.456.789-09, processo 1234567-89.2020.8.13.0024, "
+             "contato a@b.com")
+    limpo, mudou = sanitizar_ou_abortar(texto)
+    assert limpo == texto
+    assert mudou is False
 
 
-def test_oab_sai_na_barreira_externa_do_gateway():
-    """A barreira Anthropic/Groq também mascara OAB (padrão é aditivo)."""
+def test_barreira_externa_do_gateway_nao_bloqueia():
+    """A barreira final do gateway (Anthropic/Groq) vira no-op: conteúdo em
+    claro e residual sempre vazio (nenhum provider é pulado por PII)."""
     from app.services.ai_gateway import _sanitizar_messages_externo
-    msgs = [{"role": "user", "content": "Dr. Fulano, OAB/MG 123.456"}]
+    msgs = [{"role": "user", "content": "CPF 123.456.789-09 contato a@b.com"}]
     limpos, residual = _sanitizar_messages_externo(msgs)
-    assert "[OAB]" in limpos[0]["content"]
-    assert "123.456" not in limpos[0]["content"]
-    assert residual == []
-
-
-# ── Uso interno (2026-07-04): CPF/CNPJ visíveis só na barreira de entrada ────
-
-def test_sanitizar_pii_interno_preserva_cpf_cnpj_mas_remove_o_resto():
-    out, mudou = sanitizar_pii_interno(
-        "CPF 123.456.789-09, CNPJ 12.345.678/0001-99, "
-        "processo 1234567-89.2020.8.13.0024, contato a@b.com"
-    )
-    assert "123.456.789-09" in out
-    assert "12.345.678/0001-99" in out
-    assert "[PROCESSO]" in out
-    assert "[EMAIL]" in out
-    assert mudou is True
-
-
-def test_validar_sem_pii_interno_ignora_cpf_cnpj():
-    assert validar_sem_pii_interno("resto 123.456.789-09 e 12.345.678/0001-99") == []
-    assert "EMAIL" in validar_sem_pii_interno("contato a@b.com")
-
-
-def test_sanitizar_ou_abortar_mantem_cpf_cnpj_para_ollama():
-    """Barreira de ENTRADA: CPF/CNPJ passam íntegros (uso interno)."""
-    limpo, _ = sanitizar_ou_abortar("Cliente CPF 123.456.789-09, CNPJ 12.345.678/0001-99")
-    assert "123.456.789-09" in limpo
-    assert "12.345.678/0001-99" in limpo
-
-
-def test_sanitizar_ou_abortar_continua_mascarando_outros_tipos_de_pii():
-    """RG/e-mail/telefone/CEP/processo continuam sendo removidos na barreira de
-    entrada (só CPF/CNPJ deixaram de ser tratados como PII aqui)."""
-    limpo, mudou = sanitizar_ou_abortar(
-        "Processo 1234567-89.2020.8.13.0024 contato a@b.com"
-    )
-    assert "1234567-89.2020.8.13.0024" not in limpo
-    assert "a@b.com" not in limpo
-    assert "[PROCESSO]" in limpo
-    assert "[EMAIL]" in limpo
-    assert mudou is True
-
-
-def test_sanitizar_ou_abortar_aborta_se_sobrar_pii_nao_cpf_cnpj(monkeypatch):
-    """Confirma que o abort 422 continua ativo para residual fora de CPF/CNPJ —
-    força um residual artificial para exercitar o caminho de erro."""
-    import app.services.ai_guard as ai_guard_mod
-
-    monkeypatch.setattr(ai_guard_mod, "validar_sem_pii_interno", lambda t: ["EMAIL"])
-    with pytest.raises(HTTPException) as exc:
-        ai_guard_mod.sanitizar_ou_abortar("texto qualquer")
-    assert exc.value.status_code == 422
-
-
-def test_barreira_externa_do_gateway_continua_removendo_cpf_cnpj():
-    """A barreira que protege Anthropic/Groq (ai_gateway) NÃO foi tocada: usa
-    as funções completas, então CPF/CNPJ residual bloqueia o provider externo."""
-    from app.services.ai_gateway import _sanitizar_messages_externo
-    msgs = [{"role": "user", "content": "CPF 123.456.789-09"}]
-    limpos, residual = _sanitizar_messages_externo(msgs)
-    assert "[CPF]" in limpos[0]["content"]
-    assert "123.456.789-09" not in limpos[0]["content"]
+    assert limpos[0]["content"] == msgs[0]["content"]
     assert residual == []
