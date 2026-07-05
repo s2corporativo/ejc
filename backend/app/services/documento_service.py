@@ -17,6 +17,7 @@ import re
 from typing import Optional
 
 from app.services import ai_gateway, ocr_service
+from app.services.extracao_estruturada import extrair_estruturas
 from app.services.sanitizer import sanitizar_pii
 
 logger = logging.getLogger("ejc.documento_service")
@@ -142,15 +143,26 @@ async def extrair_e_analisar(
                     "Verifique a qualidade do arquivo.",
         }
     texto = texto[:18000]  # teto de contexto
+
+    # 1.b) Extração DETERMINÍSTICA local (regex, sem IA) sobre o texto BRUTO.
+    # LGPD: o dado pessoal EXATO (CPF/CNPJ/nº CNJ/e-mail/telefone) é extraído
+    # aqui, localmente, sem passar por nenhum LLM — e devolvido apenas ao
+    # frontend autenticado. Nunca alimenta prompt de IA.
+    dados_estruturados = extrair_estruturas(texto)
+
     texto_para_ia, houve_pii = sanitizar_pii(texto)
 
-    # 2) Extração estruturada + diagnóstico (1 chamada de IA)
-    # LGPD (Fase 3B): a PII do documento NÃO pode sair para o LLM. O prompt é
-    # montado a partir de `texto_para_ia` (já passou por sanitizar_pii), com
-    # CPF/CNPJ/nº de processo/e-mail/etc. substituídos por marcadores ([CPF],
-    # [PROCESSO], ...). A chamada permanece FIXADA no modelo LOCAL (Ollama),
-    # SEM fallback para o Groq (nuvem/EUA): provider_override="ollama" resolve
-    # a cadeia só-local e falha fechado se o Ollama estiver indisponível.
+    # 2) Interpretação LLM (1 chamada de IA) — cadeia com fallback.
+    # Decisão LGPD (híbrido determinístico + LLM):
+    #   • O dado pessoal exato vem da extração determinística local acima.
+    #   • O LLM (possivelmente EXTERNO via fallback ollama→anthropic→groq) só
+    #     vê `texto_para_ia`, JÁ SANITIZADO por sanitizar_pii (CPF/CNPJ/nº de
+    #     processo/e-mail/etc. viram marcadores [CPF], [PROCESSO], ...).
+    #   • Segunda linha de defesa: o gateway aplica _sanitizar_messages_externo
+    #     e PULA provedores externos se restar PII estrutural
+    #     (AI_REQUIRE_SANITIZATION_FOR_EXTERNAL).
+    # Por isso o fallback externo é seguro — e a importação não depende mais
+    # exclusivamente do Ollama estar provisionado.
     user_msg = f"DOCUMENTO:\n\n{texto_para_ia}\n\n---\n{ESQUEMA}"
     try:
         resp = await ai_gateway.chat(
@@ -159,21 +171,36 @@ async def extrair_e_analisar(
             task_type="analise_juridica",
             temperature=0.1,
             max_tokens=3200,
-            provider_override="ollama",   # LGPD: extração de PII só no modelo local
         )
     except Exception as e:
-        logger.warning(f"Falha na IA de extração (modelo local): {e}")
-        return {"ok": False, "erro": (
-            "IA local (Ollama) indisponível. A extração de documentos roda "
-            "apenas no modelo local por conter dados pessoais (LGPD) — não é "
-            "enviada a serviço externo. Verifique o Ollama e tente novamente."
-        )}
+        # 2.a) TODA a cadeia LLM falhou → degrada com sucesso parcial: a
+        # extração determinística local + texto OCR continuam úteis para o
+        # advogado. Nunca mais erro seco na importação.
+        logger.warning(f"Toda a cadeia de IA falhou na análise do documento: {e}")
+        return {
+            "ok": True,
+            "parcial": True,
+            "analise_llm_indisponivel": True,
+            "aviso_llm": (
+                "A interpretação por IA está indisponível no momento (nenhum "
+                "provedor respondeu). Os dados abaixo foram extraídos "
+                "localmente de forma determinística (sem IA) e o texto do "
+                "documento foi lido — revise e preencha o caso manualmente."
+            ),
+            "dados_estruturados": dados_estruturados,
+            "texto_extraido": texto_para_ia[:2000],
+            "caracteres_lidos": len(texto),
+            "pii_removida": houve_pii,
+            "_aviso": _AVISO,
+            "_texto_sanitizado": texto_para_ia[:6000],
+        }
 
     dados = _parse_json(resp.texto)
     if not dados:
         return {
             "ok": True,
             "parcial": True,
+            "dados_estruturados": dados_estruturados,
             "texto_extraido": texto_para_ia[:2000],
             "resumo_executivo": {"fatos": resp.texto[:1500]},
             "_aviso": _AVISO,
@@ -205,6 +232,7 @@ async def extrair_e_analisar(
             logger.warning(f"Referências RAG falhou: {e}")
 
     dados["ok"] = True
+    dados["dados_estruturados"] = dados_estruturados
     dados["_aviso"] = _AVISO
     dados["_modelo"] = f"{resp.provedor}/{resp.modelo}"
     dados["caracteres_lidos"] = len(texto)
