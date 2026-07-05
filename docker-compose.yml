@@ -42,6 +42,7 @@ services:
       context: ./backend
     container_name: ejc_backend
     restart: unless-stopped
+    networks: [default, ia]
     env_file:
       - .env
     environment:
@@ -80,6 +81,7 @@ services:
       context: ./backend
     container_name: ejc_worker
     restart: unless-stopped
+    networks: [default, ia]
     command: celery -A app.core.celery_app.celery_app worker --loglevel=INFO --concurrency=2
     env_file:
       - .env
@@ -188,6 +190,9 @@ services:
     container_name: ejc_ollama
     profiles: ["ia-local"]
     restart: unless-stopped
+    # Rede dedicada: só backend/worker alcançam a API sem auth do Ollama —
+    # frontend/langfuse ficam fora (menor superfície em caso de comprometimento).
+    networks: [ia]
     # Porta NÃO publicada no host de propósito: só a rede interna do compose
     # alcança o Ollama (backend/worker via http://ollama:11434). Não exponha —
     # a API do Ollama não tem autenticação.
@@ -222,6 +227,7 @@ services:
     container_name: ejc_ollama_init
     profiles: ["ia-local"]
     restart: "no"
+    networks: [ia]
     depends_on:
       ollama:
         condition: service_healthy
@@ -237,13 +243,14 @@ services:
     command:
       - |
         set -eu
+        set -f  # sem glob: item com * no CSV não expande contra o cwd
         falhas=0
         IFS=','
         for m in $$OLLAMA_PULL_MODELS; do
           m="$$(echo "$$m" | tr -d '[:space:]')"
           [ -n "$$m" ] || continue
           echo "==> ollama pull $$m"
-          if ! ollama pull "$$m"; then
+          if ! ollama pull -- "$$m"; then
             echo "[ERRO] pull de $$m falhou (segue para o próximo)" >&2
             falhas=$$((falhas+1))
           fi
@@ -251,6 +258,11 @@ services:
         echo "==> modelos instalados:"
         ollama list
         exit "$$falhas"
+
+networks:
+  default:
+  # Rede interna da IA local: backend/worker <-> ollama. Nenhuma porta no host.
+  ia:
 
 volumes:
   postgres_data:

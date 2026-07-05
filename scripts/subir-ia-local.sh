@@ -41,9 +41,11 @@ done
 [ "$ST" = healthy ] || die "ollama terminou como '$ST' (docker logs ejc_ollama)"
 
 log "2/3 Baixando os modelos (ollama-init) — pode demorar na 1a vez"
-# Attached (sem -d): o progresso do download aparece aqui. Exit code != 0 se
-# algum pull falhar (o init tenta todos antes de sair).
-docker compose --profile ia-local up --exit-code-from ollama-init ollama-init \
+# `run --rm` em vez de `up --exit-code-from`: este último implica
+# --abort-on-container-exit e, em algumas versões do compose, PARA o serviço
+# ollama quando o init sai. `run --rm` roda o one-shot attached (progresso
+# visível) sem tocar no serviço, e propaga o exit code do init.
+docker compose --profile ia-local run --rm ollama-init \
   || die "ollama-init falhou em ao menos um modelo (log acima)"
 
 log "3/3 Modelos instalados"
