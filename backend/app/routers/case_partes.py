@@ -34,6 +34,9 @@ async def listar_partes(
     db: AsyncSession = Depends(get_db),
     cu: User = Depends(get_current_user),
 ):
+    # Mesmo gate de ownership de POST/DELETE — partes carregam PII (CPF/CNPJ,
+    # e-mail, telefone) e a leitura não pode vazar para fora da equipe do caso.
+    await verificar_acesso_caso(db, cu, case_id)
     result = await db.execute(
         text("""
             SELECT id, tipo, papel_processual, nome, cpf_cnpj,
