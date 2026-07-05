@@ -55,6 +55,11 @@ def extrair_texto(filepath: str, mimetype: str | None) -> str | None:
             return _imagem(filepath)
         if ("wordprocessingml" in mt or filepath.endswith(".docx")) and _DOCX_OK:
             return _docx_texto(filepath)
+        # Planilhas .xlsx via openpyxl (P1 2026-07-05: antes ocr_text ficava
+        # NULL silencioso). .xls legado NÃO tem extrator (sem lib) — o upload
+        # avisa "conteúdo não indexável" (routers/documents.py).
+        if "spreadsheetml" in mt or filepath.lower().endswith(".xlsx"):
+            return _xlsx(filepath)
         # XML antes do ramo text/ (text/xml também começa com "text/")
         if "xml" in mt or filepath.lower().endswith(".xml"):
             res = extrair_xml(filepath)
@@ -91,6 +96,37 @@ def _imagem(path: str) -> str:
 def _docx_texto(path: str) -> str:
     d = _docx.Document(path)
     return "\n".join(p.text for p in d.paragraphs)[:MAX_OCR_CHARS]
+
+
+def _xlsx(path: str) -> str:
+    """Texto pesquisável de planilha .xlsx: células não-vazias concatenadas
+    por linha (' | ') e por aba ([Planilha: nome]), truncado em MAX_OCR_CHARS.
+    read_only+data_only: streaming (não carrega o workbook inteiro) e valores
+    calculados em vez de fórmulas. Erros sobem para o try de extrair_texto
+    (log + None, padrão do arquivo — falha de extração nunca quebra upload)."""
+    import openpyxl  # lazy, como os demais extratores
+
+    wb = openpyxl.load_workbook(path, read_only=True, data_only=True)
+    partes: list[str] = []
+    total = 0
+    try:
+        for ws in wb.worksheets:
+            partes.append(f"[Planilha: {ws.title}]")
+            for row in ws.iter_rows(values_only=True):
+                celulas = [str(c).strip() for c in row
+                           if c is not None and str(c).strip()]
+                if not celulas:
+                    continue
+                linha = " | ".join(celulas)
+                partes.append(linha)
+                total += len(linha)
+                if total > MAX_OCR_CHARS:
+                    break
+            if total > MAX_OCR_CHARS:
+                break
+    finally:
+        wb.close()
+    return "\n".join(partes)[:MAX_OCR_CHARS]
 
 
 # ── API baseada em BYTES (Fase 3A — /rag/ingest-pdf e tasks Celery) ──────────

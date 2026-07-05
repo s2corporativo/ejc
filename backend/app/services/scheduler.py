@@ -1034,6 +1034,42 @@ async def _alertar_contratos():
         logger.error(f"[Contratos] Falha no alerta: {e}")
 
 
+# Idempotência da auditoria semanal (P1 2026-07-05): o job roda toda segunda
+# 08h15; sem janela, o MESMO caso parado geraria uma notificação nova a cada
+# execução. Estratégia escolhida: JANELA por (user_id, tipo="auditoria", link) —
+# só re-notifica se não houver notificação idêntica nos últimos 13 dias.
+# 13 (e não 7) porque execuções semanais distam exatamente 7 dias e a
+# comparação no limite ficaria sujeita a jitter de segundos; com 13 dias o
+# alerta re-aparece de forma determinística segunda sim, segunda não,
+# enquanto o problema persistir (lembrete quinzenal, sem ruído semanal).
+JANELA_REAUDITORIA_DIAS = 13
+
+
+async def _notificar_auditoria(db, user_id: str, titulo: str,
+                               mensagem: str, link: str) -> bool:
+    """Cria notificação interna (sino) da auditoria com dedupe por janela.
+    Retorna True se criou; False se suprimida por já existir na janela."""
+    from datetime import datetime, timezone
+    from app.models.notification import Notification
+    from app.services import notification_service
+
+    corte = datetime.now(timezone.utc) - timedelta(days=JANELA_REAUDITORIA_DIAS)
+    ja_existe = (await db.execute(
+        select(Notification.id).where(
+            Notification.user_id == user_id,
+            Notification.tipo == "auditoria",
+            Notification.link == link,
+            Notification.created_at >= corte,
+        ).limit(1)
+    )).scalar_one_or_none()
+    if ja_existe:
+        return False
+    await notification_service.criar_notificacao_interna(
+        db, user_id, titulo, mensagem, tipo="auditoria", link=link,
+    )
+    return True
+
+
 async def _auditoria_processos():
     """
     Segunda-feira 08h15 — detecta processos esquecidos e envia alertas internos.
@@ -1041,6 +1077,11 @@ async def _auditoria_processos():
     - Casos com prazos vencidos sem tarefa associada
     - Clientes sem atendimento há 60+ dias
     - Honorários sem cobrança há 90+ dias
+
+    P1 (2026-07-05): além do log, cada achado agora vira notificação interna
+    (sino) para o responsável — mesmo padrão do monitor DOU
+    (diario_oficial_service.processar_alertas_dou) — com idempotência por
+    janela (ver JANELA_REAUDITORIA_DIAS).
     """
     try:
         async with AsyncSessionLocal() as db:
@@ -1051,7 +1092,8 @@ async def _auditoria_processos():
 
             # 1. Casos sem movimentação DataJud há 30+ dias
             rows_mov = (await db.execute(text("""
-                SELECT c.id, c.titulo, c.numero_processo, u.email
+                SELECT c.id, c.titulo, c.numero_processo,
+                       c.advogado_responsavel_id, u.email
                 FROM cases c
                 LEFT JOIN users u ON u.id = c.advogado_responsavel_id
                 WHERE c.deleted_at IS NULL
@@ -1067,10 +1109,25 @@ async def _auditoria_processos():
                     f"[Auditoria] {len(rows_mov)} caso(s) sem movimentação há 30+ dias: "
                     + ", ".join(r.numero_processo or r.id for r in rows_mov[:5])
                 )
+                # Sino do responsável — por caso (link=/casos/{id} dá dedupe natural)
+                for r in rows_mov:
+                    if not r.advogado_responsavel_id:
+                        continue
+                    try:
+                        await _notificar_auditoria(
+                            db, r.advogado_responsavel_id,
+                            "🕵️ Sentinela: caso sem movimentação há 30+ dias",
+                            f"O caso \"{r.titulo}\""
+                            + (f" (proc. {r.numero_processo})" if r.numero_processo else "")
+                            + " está sem movimentação há mais de 30 dias. Verifique andamento.",
+                            link=f"/casos/{r.id}",
+                        )
+                    except Exception as e:
+                        logger.warning(f"[Auditoria] notif caso {r.id} falhou: {e}")
 
             # 2. Prazos vencidos ontem sem tarefa
             rows_prazos = (await db.execute(text("""
-                SELECT d.id, d.titulo, d.case_id
+                SELECT d.id, d.titulo, d.case_id, d.responsavel_id
                 FROM deadlines d
                 WHERE d.data_prazo < :hoje
                   AND d.status = 'pendente'
@@ -1082,12 +1139,29 @@ async def _auditoria_processos():
                     f"[Auditoria] {len(rows_prazos)} prazo(s) VENCIDO(S) ainda 'pendente': "
                     + ", ".join(r.titulo for r in rows_prazos[:5])
                 )
+                # Sino: UMA notificação agregada por responsável (link=/prazos)
+                por_resp: dict[str, list[str]] = {}
+                for r in rows_prazos:
+                    if r.responsavel_id:
+                        por_resp.setdefault(r.responsavel_id, []).append(r.titulo)
+                for resp_id, titulos in por_resp.items():
+                    try:
+                        await _notificar_auditoria(
+                            db, resp_id,
+                            "🚨 Sentinela: prazos vencidos ainda pendentes",
+                            f"{len(titulos)} prazo(s) vencido(s) sem baixa: "
+                            + "; ".join(titulos[:5])
+                            + ("…" if len(titulos) > 5 else ""),
+                            link="/prazos",
+                        )
+                    except Exception as e:
+                        logger.warning(f"[Auditoria] notif prazos {resp_id} falhou: {e}")
 
             # 3. Clientes sem atendimento registrado há 60+ dias
             try:
                 rows_clientes = (await db.execute(text("""
                     -- _auditoria_clientes_fixed
-                    SELECT cl.id, cl.nome
+                    SELECT cl.id, cl.nome, cl.responsavel_id
                     FROM clients cl
                     WHERE cl.deleted_at IS NULL
                       AND cl.status = 'ativo'
@@ -1101,6 +1175,23 @@ async def _auditoria_processos():
                     logger.info(
                         f"[Auditoria] {len(rows_clientes)} cliente(s) sem contato há 60+ dias"
                     )
+                    # Sino: UMA notificação agregada por responsável do cliente
+                    cli_por_resp: dict[str, list[str]] = {}
+                    for r in rows_clientes:
+                        if r.responsavel_id:
+                            cli_por_resp.setdefault(r.responsavel_id, []).append(r.nome)
+                    for resp_id, nomes in cli_por_resp.items():
+                        try:
+                            await _notificar_auditoria(
+                                db, resp_id,
+                                "📞 Sentinela: clientes sem contato há 60+ dias",
+                                f"{len(nomes)} cliente(s) sem atendimento registrado: "
+                                + "; ".join(nomes[:5])
+                                + ("…" if len(nomes) > 5 else ""),
+                                link="/clientes",
+                            )
+                        except Exception as e:
+                            logger.warning(f"[Auditoria] notif clientes {resp_id} falhou: {e}")
             except Exception:
                 pass  # tabela atendimentos pode não existir ainda (migration pendente)
 

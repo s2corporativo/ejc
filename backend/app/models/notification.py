@@ -13,7 +13,7 @@ class Notification(Base):
 
     titulo   = Column(String(255), nullable=False)
     mensagem = Column(Text, nullable=False)
-    tipo     = Column(String(30), nullable=False)   # prazo|honorario|sistema|ambiental|ia
+    tipo     = Column(String(30), nullable=False)   # prazo|honorario|sistema|ambiental|ia|diario_oficial|auditoria
     link     = Column(String(255), nullable=True)   # rota no frontend
 
     lida     = Column(Boolean, default=False, index=True)

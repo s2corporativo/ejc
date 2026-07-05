@@ -112,3 +112,65 @@ def test_ocr_real_em_pdf_escaneado():
     res = extrair_texto_pdf(raw)
     assert res["paginas_ocr"] == 1
     assert "12345" in res["texto"]
+
+
+# ── Planilhas (P1 2026-07-05): .xlsx extraído via openpyxl; legados .xls/.doc
+# seguem sem extrator (upload avisa "conteúdo não indexável"). ─────────────────
+def _xlsx_sintetico(tmp_path):
+    import openpyxl
+    wb = openpyxl.Workbook()
+    ws = wb.active
+    ws.title = "Honorarios"
+    ws.append(["Cliente", "Valor"])
+    ws.append(["ACME Ltda", 1500.5])
+    ws.append([None, None])            # linha vazia — deve ser ignorada
+    ws2 = wb.create_sheet("Custas")
+    ws2["A1"] = "Guia DARE"
+    caminho = tmp_path / "planilha.xlsx"
+    wb.save(caminho)
+    return str(caminho)
+
+
+def test_xlsx_extraido_por_mimetype(tmp_path):
+    from app.services.ocr_service import extrair_texto
+    texto = extrair_texto(
+        _xlsx_sintetico(tmp_path),
+        "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+    )
+    assert texto is not None
+    assert "[Planilha: Honorarios]" in texto
+    assert "Cliente | Valor" in texto          # células unidas por " | "
+    assert "ACME Ltda | 1500.5" in texto
+    assert "[Planilha: Custas]" in texto and "Guia DARE" in texto
+    # linha totalmente vazia não vira linha em branco dupla
+    assert " | \n" not in texto
+
+
+def test_xlsx_extraido_por_extensao_sem_mimetype(tmp_path):
+    from app.services.ocr_service import extrair_texto
+    texto = extrair_texto(_xlsx_sintetico(tmp_path), None)
+    assert texto and "ACME Ltda" in texto
+
+
+def test_xlsx_respeita_limite_de_chars(tmp_path, monkeypatch):
+    from app.services import ocr_service
+    monkeypatch.setattr(ocr_service, "MAX_OCR_CHARS", 40)
+    texto = ocr_service.extrair_texto(_xlsx_sintetico(tmp_path), None)
+    assert texto is not None and len(texto) <= 40
+
+
+def test_xlsx_corrompido_nao_quebra_retorna_none(tmp_path):
+    from app.services.ocr_service import extrair_texto
+    caminho = tmp_path / "falso.xlsx"
+    caminho.write_bytes(b"isto nao e um zip/xlsx")
+    assert extrair_texto(str(caminho), None) is None  # log + None, sem exceção
+
+
+def test_legados_doc_e_xls_sem_extrator_retornam_none(tmp_path):
+    from app.services.ocr_service import extrair_texto
+    doc = tmp_path / "antigo.doc"
+    doc.write_bytes(b"\xd0\xcf\x11\xe0conteudo binario ole")
+    xls = tmp_path / "antigo.xls"
+    xls.write_bytes(b"\xd0\xcf\x11\xe0conteudo binario ole")
+    assert extrair_texto(str(doc), "application/msword") is None
+    assert extrair_texto(str(xls), "application/vnd.ms-excel") is None

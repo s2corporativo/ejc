@@ -33,6 +33,9 @@ settings = get_settings()
 router = APIRouter(prefix="/documents", tags=["Documentos / GED"])
 
 EXTENSOES_PERMITIDAS = {".pdf", ".docx", ".doc", ".jpg", ".jpeg", ".png", ".xlsx", ".xls", ".txt", ".xml"}
+# Legados sem extrator de texto (sem lib p/ binário OLE): upload aceito, mas o
+# response avisa que o conteúdo não é indexável (ver bloco final do upload()).
+FORMATOS_SEM_INDEXACAO = {".doc", ".xls"}
 
 # Tipos legados do campo Document.tipo — continuam aceitos no upload mesmo que
 # não existam no master (compatibilidade com o frontend atual). Os que existem
@@ -347,6 +350,16 @@ async def upload(
     resposta: dict = {"id": doc_id, "detail": "Documento enviado"}
     if nfe_info:
         resposta["nfe"] = nfe_info  # campos fiscais estruturados (NF-e/XML)
+    # P1 (2026-07-05): formatos legados SEM extrator de texto (.doc/.xls) —
+    # decisão de menor atrito: o upload continua aceito (não quebra fluxo de
+    # quem só arquiva), mas o response avisa que o conteúdo não será indexado
+    # (busca por conteúdo e análise IA ficam indisponíveis para o arquivo).
+    if ext in FORMATOS_SEM_INDEXACAO and not ocr_text:
+        resposta["aviso"] = (
+            "Conteúdo não indexável: formato legado sem extração de texto "
+            f"({ext}). Converta para {'.docx' if ext == '.doc' else '.xlsx'} "
+            "para habilitar busca por conteúdo e análise por IA."
+        )
     return resposta
 
 

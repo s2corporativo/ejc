@@ -40,12 +40,7 @@ class RadarPoder:
             logger.error(f"Erro ao monitorar Câmara: {e}")
             return []
 
-    async def monitorar_dou(self, termos: list):
-        """
-        Simulação de monitoramento do Diário Oficial da União via API/Scraping.
-        """
-        # Implementação futura via portal da imprensa nacional ou API de terceiros gratuita
-        logger.info(f"Monitorando DOU para termos: {termos}")
-        return []
+    # P2 (2026-07-05): stub monitorar_dou removido — o monitoramento REAL do
+    # DOU é o de app/services/diario_oficial_service.py (job do scheduler).
 
 radar_poder = RadarPoder()
