@@ -71,6 +71,8 @@ export interface RamoConfig {
   guiaFamilia?: boolean; // guia operacional de direito de família
   guiaAdministrativo?: boolean; // guia operacional de direito administrativo
   guiaLicitacoes?: boolean; // guia operacional de licitações e contratos
+  guiaEmpresarial?: boolean; // guia operacional de direito empresarial (3 pilares)
+  sociedadesCliente?: boolean; // sociedades do cliente: cap table + eventos societários (/empresarial/sociedades)
 }
 
 export interface LinkExterno {
@@ -84,6 +86,8 @@ export interface LinkExterno {
 // ══════════════════════════════════════════════════════════════════════════
 const empresarial: RamoConfig = {
   analiseDocumento: true,
+  guiaEmpresarial: true,
+  sociedadesCliente: true,
   slug: "empresarial",
   endpoint: "/empresarial",
   areaCaso: "empresarial",

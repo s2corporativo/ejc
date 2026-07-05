@@ -67,6 +67,7 @@ from app.models import dossie_estrategico  # noqa
 from app.models import jurisprudencia_interna  # noqa
 from app.models import prompt_juridico     # noqa
 from app.models import socio               # noqa
+from app.models import sociedade_cliente   # noqa  (sociedades de CLIENTES — vertical Empresarial, migração 071)
 from app.models import tese                # noqa
 from app.models import wiki                # noqa
 from app.models import workflow            # noqa
