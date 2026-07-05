@@ -21,7 +21,8 @@ de impugnacao, nao substitui a leitura tecnica do edital + proposta.
 from __future__ import annotations
 
 from dataclasses import dataclass, field
-from typing import Dict, Any, List
+from typing import Dict, Any, List, Optional
+import json
 import logging
 import re
 import unicodedata
@@ -29,6 +30,23 @@ import unicodedata
 import fitz  # PyMuPDF
 
 logger = logging.getLogger("ejc.licitacao_auditor")
+
+
+def _parse_json(txt: str) -> Optional[dict]:
+    """Extrai o primeiro objeto JSON da resposta da IA (tolerante a texto ao redor)."""
+    if not txt:
+        return None
+    try:
+        return json.loads(txt)
+    except Exception:
+        pass
+    m = re.search(r"\{.*\}", txt, re.DOTALL)
+    if m:
+        try:
+            return json.loads(m.group(0))
+        except Exception:
+            return None
+    return None
 
 
 def _norm(texto: str) -> str:
@@ -163,7 +181,10 @@ REGRAS: tuple[Regra, ...] = (
 
 
 class LicitacaoAuditor:
-    async def analyze_competitor_proposal(self, pdf_content: bytes) -> Dict[str, Any]:
+    async def analyze_competitor_proposal(
+        self, pdf_content: bytes, *,
+        db=None, user_id: str | None = None, com_ia: bool = False,
+    ) -> Dict[str, Any]:
         texto = self._extract_text_from_pdf(pdf_content)
         achados = self._aplicar_regras(texto)
         falhas = achados["falha"]
@@ -174,7 +195,7 @@ class LicitacaoAuditor:
             if not falhas and not equivalencia
             else "Analise preliminar concluida. Possiveis pontos de impugnacao identificados."
         )
-        return {
+        resultado: Dict[str, Any] = {
             "status": "success",
             "aviso": "Analise PRELIMINAR por regras deterministicas (Lei 14.133/21). "
                      "Revisao do advogado obrigatoria (OAB).",
@@ -182,7 +203,79 @@ class LicitacaoAuditor:
             "potential_flaws": falhas,
             "equivalence_issues": equivalencia,
             "extracted_text_sample": (texto[:500] + "...") if len(texto) > 500 else texto,
+            # Enriquecimento por IA (opt-in) — campos aditivos, vazios por padrao.
+            "ia_usada": False,
+            "ai_flags": [],
+            "ai_equivalencia": [],
         }
+
+        # Camada de IA OPT-IN (com_ia=True + db/user). Degrada com sucesso:
+        # qualquer falha da IA nao derruba a analise deterministica.
+        if com_ia and db is not None and user_id and len((texto or "").strip()) >= 40:
+            try:
+                ia = await self._enriquecer_com_ia(texto, db, user_id)
+                resultado["ai_flags"] = ia["pontos"]
+                resultado["ai_equivalencia"] = ia["equivalencia"]
+                resultado["ia_usada"] = True
+                resultado["aviso"] = (
+                    "Analise deterministica (Lei 14.133/21) + enriquecimento por IA. "
+                    "Toda saida e MINUTA — revisao do advogado obrigatoria (OAB); "
+                    "a IA NAO cita lei/jurisprudencia sem confirmacao."
+                )
+            except Exception as e:
+                logger.warning(f"IA indisponivel na auditoria de licitacao: {e}")
+                resultado["ia_indisponivel"] = True
+        return resultado
+
+    async def _enriquecer_com_ia(self, texto: str, db, user_id: str) -> Dict[str, List[str]]:
+        """Chama o ai_gateway para pontos de impugnacao/equivalencia adicionais.
+
+        LGPD: o texto passa por sanitizar_pii antes do LLM; o proprio gateway
+        aplica a segunda barreira e PULA provedores externos se restar PII
+        estrutural (AI_REQUIRE_SANITIZATION_FOR_EXTERNAL) — proposta de
+        concorrente nunca vaza crua para provedor externo. AILog registra a
+        chamada (art. 37 LGPD). Erro de log PROPAGA (rastro obrigatorio)."""
+        from app.services import ai_gateway
+        from app.services.sanitizer import sanitizar_pii
+        from app.services.ai_guard import registrar_ai_log
+        from app.models.ai_log import AITipoUso
+
+        texto_limpo, houve_pii = sanitizar_pii((texto or "")[:8000])
+        system = (
+            "Voce e analista de licitacoes publicas (Lei 14.133/21). A partir do "
+            "texto da proposta de um CONCORRENTE, aponte pontos PRELIMINARES de "
+            "impugnacao e questoes de equivalencia tecnica. REGRAS INVIOLAVEIS: "
+            "(1) baseie-se SOMENTE no que consta no texto; (2) NUNCA invente "
+            "dispositivo legal, sumula ou jurisprudencia — so cite artigo da Lei "
+            "14.133/21 se tiver certeza, senao escreva 'verificar no edital'; "
+            "(3) nao afirme ilegalidade — diga 'possivel ponto a impugnar'. Toda "
+            "saida e MINUTA para revisao do advogado (OAB)."
+        )
+        user = (
+            f"TEXTO DA PROPOSTA (sanitizado):\n{texto_limpo}\n\n"
+            'Responda APENAS com JSON valido nesta forma: '
+            '{"pontos": ["..."], "equivalencia": ["..."]}. '
+            "Cada item: uma frase objetiva. Listas vazias se nada relevante."
+        )
+        resp = await ai_gateway.chat(
+            messages=[{"role": "system", "content": system},
+                      {"role": "user", "content": user}],
+            task_type="analise_juridica", temperature=0.1, max_tokens=800,
+        )
+        dados = _parse_json(resp.texto) or {}
+        await registrar_ai_log(
+            db, user_id=user_id, tipo_uso=AITipoUso.outro, case_id=None,
+            prompt_sanitizado=("[licitacao-auditoria] " + user)[:8000],
+            pii_removida=houve_pii, resposta=(resp.texto or "")[:4000],
+            modelo=f"{resp.provedor}/{resp.modelo}",
+            tokens_input=resp.input_tokens, tokens_output=resp.output_tokens,
+            custo_estimado=getattr(resp, "custo_estimado_brl", None),
+        )
+
+        def _lista(v):
+            return [str(x).strip() for x in (v or []) if str(x).strip()][:15]
+        return {"pontos": _lista(dados.get("pontos")),
+                "equivalencia": _lista(dados.get("equivalencia"))}
 
     @staticmethod
     def _aplicar_regras(texto: str) -> Dict[str, List[str]]:

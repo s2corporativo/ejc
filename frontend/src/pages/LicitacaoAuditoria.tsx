@@ -16,6 +16,10 @@ interface Analise {
   potential_flaws: string[];
   equivalence_issues: string[];
   extracted_text_sample: string;
+  ia_usada?: boolean;
+  ia_indisponivel?: boolean;
+  ai_flags?: string[];
+  ai_equivalencia?: string[];
 }
 
 export default function LicitacaoAuditoria() {
@@ -23,6 +27,7 @@ export default function LicitacaoAuditoria() {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [res, setRes] = useState<Analise | null>(null);
+  const [comIa, setComIa] = useState(false);
 
   const analisar = async () => {
     if (!file) return;
@@ -33,7 +38,7 @@ export default function LicitacaoAuditoria() {
       const form = new FormData();
       form.append("file", file);
       const r = await api.post(
-        "/v1/licitacao-auditoria/analyze-competitor-proposal",
+        `/v1/licitacao-auditoria/analyze-competitor-proposal?com_ia=${comIa}`,
         form,
       );
       setRes(r.data);
@@ -80,6 +85,19 @@ export default function LicitacaoAuditoria() {
                 setError(null);
               }}
             />
+          </label>
+          <label className="flex items-start gap-2 text-xs text-slate-600">
+            <input
+              type="checkbox"
+              className="mt-0.5"
+              checked={comIa}
+              onChange={(e) => setComIa(e.target.checked)}
+            />
+            <span>
+              Enriquecer com IA (opt-in). O texto é sanitizado antes do modelo e
+              a chamada é registrada (LGPD). Saída é minuta — revisão do advogado
+              obrigatória.
+            </span>
           </label>
           <button
             onClick={analisar}
@@ -152,6 +170,49 @@ export default function LicitacaoAuditoria() {
                   </ul>
                 </div>
               )}
+
+              {res.ia_indisponivel && (
+                <div className="rounded-lg border border-warn-200 bg-warn-50 p-3 text-xs text-warn-700">
+                  A análise por IA está indisponível no momento — os achados
+                  determinísticos acima permanecem válidos.
+                </div>
+              )}
+
+              {res.ia_usada &&
+                ((res.ai_flags?.length ?? 0) > 0 ||
+                  (res.ai_equivalencia?.length ?? 0) > 0) && (
+                  <div className="card border-primary-200 p-5">
+                    <div className="mb-1 flex items-center gap-2">
+                      <ShieldAlert className="h-4 w-4 text-primary-600" />
+                      <span className="eyebrow">Achados adicionais por IA</span>
+                    </div>
+                    <p className="mb-3 text-[11px] text-slate-400">
+                      Minuta gerada por IA (texto sanitizado, chamada registrada
+                      — LGPD). Revisão do advogado obrigatória; a IA não cita lei
+                      ou jurisprudência sem confirmação.
+                    </p>
+                    <ul className="space-y-2">
+                      {(res.ai_flags ?? []).map((f, i) => (
+                        <li
+                          key={`f${i}`}
+                          className="flex gap-2 text-sm text-slate-700"
+                        >
+                          <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0 text-warn-500" />
+                          {f}
+                        </li>
+                      ))}
+                      {(res.ai_equivalencia ?? []).map((f, i) => (
+                        <li
+                          key={`e${i}`}
+                          className="flex gap-2 text-sm text-slate-700"
+                        >
+                          <ShieldAlert className="mt-0.5 h-4 w-4 shrink-0 text-primary-500" />
+                          {f}
+                        </li>
+                      ))}
+                    </ul>
+                  </div>
+                )}
 
               {res.extracted_text_sample && (
                 <div className="card p-5">
