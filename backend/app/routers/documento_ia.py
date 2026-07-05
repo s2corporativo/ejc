@@ -60,7 +60,8 @@ async def analisar(
         tmp.flush()
         tmp.close()
         resultado = await documento_service.extrair_e_analisar(
-            tmp.name, mime_real or mimetype or None, db=db, enriquecer_rag=True
+            tmp.name, mime_real or mimetype or None, db=db, enriquecer_rag=True,
+            user_id=current_user.id,
         )
         if not resultado.get("ok"):
             raise HTTPException(422, resultado.get("erro", "Falha ao processar documento."))
@@ -71,7 +72,13 @@ async def analisar(
         # estruturada, honorários, referências) são preservados; os campos do
         # núcleo são ACRESCENTADOS — o frontend antigo continua funcionando.
         texto_sanitizado = resultado.pop("_texto_sanitizado", "") or ""
-        if texto_sanitizado:
+        # Retorno degradado (analise_llm_indisponivel=True): TODA a cadeia de
+        # IA acabou de falhar no serviço — chamar o orchestrator agora só
+        # adiciona latência para falhar de novo. Pula o núcleo e mantém o
+        # aviso (aviso_llm) já presente no payload.
+        if resultado.get("analise_llm_indisponivel"):
+            resultado["diagnostico_nucleo"] = None
+        elif texto_sanitizado:
             from app.services.ai.core.orchestrator import orchestrator
             try:
                 nucleo = await orchestrator.run(

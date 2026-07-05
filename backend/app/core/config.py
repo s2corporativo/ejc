@@ -116,6 +116,15 @@ class Settings(BaseSettings):
     # Ordem de preferência entre provedores ELEGÍVEIS (csv). A policy ainda
     # filtra por habilitação/chave e prioriza Anthropic em tarefas complexas.
     AI_PROVIDER_PRIORITY: str = "ollama,anthropic,groq"
+    # ── Intake de documentos (importação inteligente) ─────────────────────
+    # True (default) = a interpretação do documento importado usa a cadeia
+    # automática do gateway (ollama→anthropic→groq): se o Ollama local cair,
+    # o texto — JÁ SANITIZADO (sanitizar_pii + barreira final do gateway) —
+    # pode ir a provedor EXTERNO (EUA → transferência internacional, art. 33
+    # LGPD; o dado pessoal exato NUNCA sai, é extraído localmente por regex).
+    # False = fail-closed: intake só usa Ollama local; indisponível → a
+    # importação degrada com erro claro citando esta flag.
+    INTAKE_EXTERNAL_FALLBACK: bool = True
 
     # ── Fase 6 — Roteamento inteligente por complexidade/custo ────────────
     # False (default) = comportamento atual por task_type intacto. Quando True,

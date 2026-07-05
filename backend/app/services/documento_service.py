@@ -17,6 +17,7 @@ import re
 from typing import Optional
 
 from app.services import ai_gateway, ocr_service
+from app.services.extracao_estruturada import extrair_estruturas
 from app.services.sanitizer import sanitizar_pii
 
 logger = logging.getLogger("ejc.documento_service")
@@ -123,15 +124,28 @@ def _parse_json(txt: str) -> Optional[dict]:
     return None
 
 
+_ERRO_FAIL_CLOSED = (
+    "A interpretação por IA local (Ollama) está indisponível e o fallback para "
+    "provedores externos está DESLIGADO (INTAKE_EXTERNAL_FALLBACK=false). "
+    "Habilite o Ollama ou ligue INTAKE_EXTERNAL_FALLBACK no .env para permitir "
+    "a cadeia externa (o texto vai sanitizado — sem CPF/CNPJ/nº de processo)."
+)
+
+
 async def extrair_e_analisar(
     filepath: str,
     mimetype: Optional[str],
     db=None,
     enriquecer_rag: bool = True,
+    user_id: Optional[str] = None,
 ) -> dict:
     """
     Executa o pipeline completo. Retorna dict estruturado pronto para o frontend
     e para pré-preencher um novo caso.
+
+    `user_id` (quando fornecido junto com `db`): grava AILog da chamada
+    principal de interpretação — trilha "qual provedor viu qual documento"
+    (art. 37 LGPD).
     """
     # 1) OCR / extração de texto
     texto = ocr_service.extrair_texto(filepath, mimetype)
@@ -142,15 +156,38 @@ async def extrair_e_analisar(
                     "Verifique a qualidade do arquivo.",
         }
     texto = texto[:18000]  # teto de contexto
+
+    # 1.b) Extração DETERMINÍSTICA local (regex, sem IA) sobre o texto BRUTO.
+    # LGPD: o dado pessoal EXATO (CPF/CNPJ/nº CNJ/e-mail/telefone) é extraído
+    # aqui, localmente, sem passar por nenhum LLM — e devolvido apenas ao
+    # frontend autenticado. Nunca alimenta prompt de IA.
+    dados_estruturados = extrair_estruturas(texto)
+
     texto_para_ia, houve_pii = sanitizar_pii(texto)
 
-    # 2) Extração estruturada + diagnóstico (1 chamada de IA)
-    # LGPD (Fase 3B): a PII do documento NÃO pode sair para o LLM. O prompt é
-    # montado a partir de `texto_para_ia` (já passou por sanitizar_pii), com
-    # CPF/CNPJ/nº de processo/e-mail/etc. substituídos por marcadores ([CPF],
-    # [PROCESSO], ...). A chamada permanece FIXADA no modelo LOCAL (Ollama),
-    # SEM fallback para o Groq (nuvem/EUA): provider_override="ollama" resolve
-    # a cadeia só-local e falha fechado se o Ollama estiver indisponível.
+    # 2) Interpretação LLM (1 chamada de IA) — cadeia com fallback.
+    # Decisão LGPD (híbrido determinístico + LLM):
+    #   • O dado pessoal exato vem da extração determinística local acima.
+    #   • O LLM (possivelmente EXTERNO via fallback ollama→anthropic→groq) só
+    #     vê `texto_para_ia`, JÁ SANITIZADO por sanitizar_pii (CPF/CNPJ/nº de
+    #     processo/e-mail/etc. viram marcadores [CPF], [PROCESSO], ...).
+    #   • Segunda linha de defesa: o gateway aplica _sanitizar_messages_externo
+    #     e PULA provedores externos se restar PII estrutural
+    #     (AI_REQUIRE_SANITIZATION_FOR_EXTERNAL).
+    # Por isso o fallback externo é seguro — e a importação não depende mais
+    # exclusivamente do Ollama estar provisionado.
+    #
+    # Opt-out (INTAKE_EXTERNAL_FALLBACK=false): volta ao fail-closed antigo —
+    # provider_override="ollama" (só local); indisponível → erro claro citando
+    # a flag, sem jamais acionar provedor externo neste fluxo.
+    from app.core.config import get_settings
+    settings = get_settings()
+    somente_local = not settings.INTAKE_EXTERNAL_FALLBACK
+    if somente_local and not settings.OLLAMA_ENABLED:
+        # Guarda: provider forçado inelegível faria o gateway cair na cadeia
+        # automática (externa) — exatamente o que a flag proíbe.
+        return {"ok": False, "erro": _ERRO_FAIL_CLOSED}
+
     user_msg = f"DOCUMENTO:\n\n{texto_para_ia}\n\n---\n{ESQUEMA}"
     try:
         resp = await ai_gateway.chat(
@@ -159,21 +196,63 @@ async def extrair_e_analisar(
             task_type="analise_juridica",
             temperature=0.1,
             max_tokens=3200,
-            provider_override="ollama",   # LGPD: extração de PII só no modelo local
+            provider_override="ollama" if somente_local else None,
         )
     except Exception as e:
-        logger.warning(f"Falha na IA de extração (modelo local): {e}")
-        return {"ok": False, "erro": (
-            "IA local (Ollama) indisponível. A extração de documentos roda "
-            "apenas no modelo local por conter dados pessoais (LGPD) — não é "
-            "enviada a serviço externo. Verifique o Ollama e tente novamente."
-        )}
+        logger.warning(f"Cadeia de IA falhou na análise do documento: {e}")
+        if somente_local:
+            # Fail-closed explícito escolhido pelo escritório via flag.
+            return {"ok": False, "erro": _ERRO_FAIL_CLOSED}
+        # 2.a) TODA a cadeia LLM falhou → degrada com sucesso parcial: a
+        # extração determinística local + texto OCR continuam úteis para o
+        # advogado. Nunca mais erro seco na importação.
+        return {
+            "ok": True,
+            "parcial": True,
+            "analise_llm_indisponivel": True,
+            "aviso_llm": (
+                "A interpretação por IA está indisponível no momento (nenhum "
+                "provedor respondeu). Os dados abaixo foram extraídos "
+                "localmente de forma determinística (sem IA) e o texto do "
+                "documento foi lido — revise e preencha o caso manualmente."
+            ),
+            "dados_estruturados": dados_estruturados,
+            "texto_extraido": texto_para_ia[:2000],
+            "caracteres_lidos": len(texto),
+            "pii_removida": houve_pii,
+            "_aviso": _AVISO,
+            "_texto_sanitizado": texto_para_ia[:6000],
+        }
+
+    # 2.b) Trilha de auditoria (art. 37 LGPD): AILog da chamada PRINCIPAL do
+    # intake — registra qual provedor/modelo viu qual documento (prompt já
+    # SANITIZADO). Mesmo padrão canônico de sugerir_tipo/executar_tarefa_ia
+    # (ai_guard): erro de gravação PROPAGA — IA sem trilha deve falhar.
+    intake_log_id: Optional[str] = None
+    if db is not None and user_id:
+        from app.models.ai_log import AITipoUso
+        from app.services.ai_guard import registrar_ai_log
+        intake_log_id = await registrar_ai_log(
+            db,
+            user_id=user_id,
+            tipo_uso=AITipoUso.resumo_documento,
+            case_id=None,
+            prompt_sanitizado=("[intake analise_juridica] " + user_msg)[:8000],
+            pii_removida=houve_pii,
+            resposta=(resp.texto or "")[:4000],
+            modelo=f"{resp.provedor}/{resp.modelo}",
+            tokens_input=getattr(resp, "input_tokens", None),
+            tokens_output=getattr(resp, "output_tokens", None),
+            custo_estimado=getattr(resp, "custo_estimado_brl", None),
+        )
 
     dados = _parse_json(resp.texto)
     if not dados:
         return {
             "ok": True,
             "parcial": True,
+            "intake_log_id": intake_log_id,
+            "dados_estruturados": dados_estruturados,
             "texto_extraido": texto_para_ia[:2000],
             "resumo_executivo": {"fatos": resp.texto[:1500]},
             "_aviso": _AVISO,
@@ -205,8 +284,10 @@ async def extrair_e_analisar(
             logger.warning(f"Referências RAG falhou: {e}")
 
     dados["ok"] = True
+    dados["dados_estruturados"] = dados_estruturados
     dados["_aviso"] = _AVISO
     dados["_modelo"] = f"{resp.provedor}/{resp.modelo}"
+    dados["intake_log_id"] = intake_log_id
     dados["caracteres_lidos"] = len(texto)
     dados["pii_removida"] = houve_pii
     # Chave interna (consumida e removida pelo router documento_ia): texto JÁ
