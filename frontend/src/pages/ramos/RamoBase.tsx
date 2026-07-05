@@ -54,6 +54,8 @@ import GuiaAdministrativo from "../../components/GuiaAdministrativo";
 import GuiaLicitacoes from "../../components/GuiaLicitacoes";
 import GuiaEmpresarial from "../../components/GuiaEmpresarial";
 import SociedadesCliente from "../../components/SociedadesCliente";
+import LgpdRegistros from "../../components/LgpdRegistros";
+import GuiaLgpd from "../../components/GuiaLgpd";
 import { RamoStats } from "../../components/Dashboards";
 
 // Mapa de ícones por nome (evita importar a lib inteira)
@@ -936,6 +938,8 @@ export default function RamoBase() {
       {cfg.guiaLicitacoes && <GuiaLicitacoes />}
       {cfg.guiaEmpresarial && <GuiaEmpresarial />}
       {cfg.sociedadesCliente && <SociedadesCliente />}
+      {cfg.lgpdRegistros && <LgpdRegistros />}
+      {cfg.guiaLgpd && <GuiaLgpd />}
 
       {/* Áreas de atuação (subáreas) */}
       {cfg.subareas && cfg.subareas.length > 0 && (

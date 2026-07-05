@@ -126,6 +126,7 @@ from app.routers import relatorio
 from app.routers import relatorio_cliente
 from app.routers import sala_de_guerra
 from app.routers import sala_de_guerra_v3
+from app.routers import lgpd_registros
 from app.routers import score_juridico
 from app.routers import search
 from app.routers import signatures
@@ -343,6 +344,7 @@ app.include_router(score_juridico.router, prefix=API)
 app.include_router(search.router, prefix=API)
 app.include_router(signatures.router, prefix=API)
 app.include_router(sociedades_cliente.router, prefix=API)  # gestão societária de CLIENTES (vertical Empresarial)
+app.include_router(lgpd_registros.router, prefix=API)  # vertical LGPD — ROPA (art. 37) por cliente + RIPD (art. 38)
 app.include_router(sumulas.router, prefix=API)
 app.include_router(suspensoes.router, prefix=API)
 app.include_router(tributario_fiscal.router, prefix=API)  # vertical Tributário — XML fiscal + recuperação de créditos

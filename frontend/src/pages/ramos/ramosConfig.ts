@@ -75,6 +75,8 @@ export interface RamoConfig {
   guiaLicitacoes?: boolean; // guia operacional de licitações e contratos
   guiaEmpresarial?: boolean; // guia operacional de direito empresarial (3 pilares)
   sociedadesCliente?: boolean; // sociedades do cliente: cap table + eventos societários (/empresarial/sociedades)
+  guiaLgpd?: boolean; // guia operacional de adequação à LGPD (referência)
+  lgpdRegistros?: boolean; // ROPA por cliente + gerador de RIPD (/lgpd/registros)
 }
 
 export interface LinkExterno {
@@ -2008,6 +2010,8 @@ const previdenciario: RamoConfig = {
 };
 const digital_lgpd: RamoConfig = {
   analiseDocumento: true,
+  guiaLgpd: true,
+  lgpdRegistros: true,
   slug: "digital_lgpd",
   endpoint: "/cases/?area=empresarial",
   areaCaso: "empresarial",
