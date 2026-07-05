@@ -10,15 +10,29 @@ import {
   ChevronDown,
   CalendarPlus,
   LogOut,
+  Monitor,
+  Moon,
+  Sun,
   Trash2,
 } from "lucide-react";
 import api, { logout } from "../lib/api";
 import { useAuth } from "../stores/auth";
+import { THEME_LABELS, useThemeStore, type ThemeMode } from "../stores/theme";
 import UserAvatar from "./UserAvatar";
+
+const THEME_OPTIONS: Array<{
+  mode: ThemeMode;
+  icon: typeof Sun;
+}> = [
+  { mode: "light", icon: Sun },
+  { mode: "dark", icon: Moon },
+  { mode: "system", icon: Monitor },
+];
 
 export default function SecurityMenu({ user }: { user: any }) {
   const nav = useNavigate();
   const { updateUser } = useAuth();
+  const { theme, setTheme } = useThemeStore();
   const fileRef = useRef<HTMLInputElement>(null);
   const [open, setOpen] = useState(false);
   const [modal, setModal] = useState<"oab" | null>(null);
@@ -200,6 +214,31 @@ export default function SecurityMenu({ user }: { user: any }) {
           >
             <KeyRound size={15} /> Trocar senha
           </button>
+          <div className="my-1 border-t border-slate-100" />
+          {/* Tema — claro / escuro / sistema */}
+          <div className="px-3 py-2">
+            <div className="mb-1.5 text-[10px] font-bold uppercase tracking-wider text-slate-400">
+              Tema
+            </div>
+            <div className="flex gap-1">
+              {THEME_OPTIONS.map(({ mode, icon: Icon }) => (
+                <button
+                  key={mode}
+                  type="button"
+                  onClick={() => setTheme(mode)}
+                  aria-pressed={theme === mode}
+                  className={
+                    theme === mode
+                      ? "flex flex-1 flex-col items-center gap-1 rounded-lg bg-primary-50 px-2 py-1.5 text-[10px] font-semibold text-primary-700 ring-1 ring-inset ring-primary-300/60"
+                      : "flex flex-1 flex-col items-center gap-1 rounded-lg px-2 py-1.5 text-[10px] font-medium text-slate-500 hover:bg-slate-100"
+                  }
+                >
+                  <Icon size={14} />
+                  {THEME_LABELS[mode]}
+                </button>
+              ))}
+            </div>
+          </div>
           <div className="my-1 border-t border-slate-100" />
           <button
             className="menu-item hover:!bg-danger-50 hover:!text-danger-600"

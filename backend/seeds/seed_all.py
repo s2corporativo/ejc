@@ -5,7 +5,8 @@ vezes é seguro (não duplica, não sobrescreve). Async (usa o engine asyncpg do
 app — não exige driver sync).
 
 Segurança: NÃO contém senha hardcoded. Lê do ambiente:
-  - ADMIN_EMAIL    (default: admin@ejc.local)
+  - ADMIN_EMAIL    (default: admin@ejc.adv.br — NUNCA usar TLD .local:
+                    o EmailStr do login rejeita e o admin não consegue logar)
   - ADMIN_NAME     (default: Administrador EJC)
   - ADMIN_PASSWORD (se ausente, gera senha aleatória e a imprime UMA vez)
 O admin é criado com must_change_password=True (troca obrigatória no 1º login).
@@ -27,7 +28,7 @@ from app.models.user import User, UserRole
 
 
 async def seed_admin() -> None:
-    email = os.environ.get("ADMIN_EMAIL", "admin@ejc.local").strip().lower()
+    email = os.environ.get("ADMIN_EMAIL", "admin@ejc.adv.br").strip().lower()
     nome = os.environ.get("ADMIN_NAME", "Administrador EJC").strip()
     senha = os.environ.get("ADMIN_PASSWORD", "").strip()
     senha_gerada = False

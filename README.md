@@ -87,7 +87,7 @@ node run.js "" "/opt/ejc/scripts/backup.sh"
 > Defina a nova senha em uma variável de ambiente local (`$NOVA_SENHA`) — **nunca** escreva a senha em texto puro neste README nem em scripts versionados.
 ```powershell
 # $NOVA_SENHA = "<defina-localmente>"
-node run.js "" "HASH=`$(docker exec ejc_backend python3 -c \"import os; from passlib.context import CryptContext; c=CryptContext(schemes=['bcrypt']); print(c.hash(os.environ['NOVA_SENHA']))\") && docker exec ejc_postgres psql -U ejc_user -d ejc_db -c \"UPDATE usuarios SET senha_hash='`$HASH' WHERE email='admin@ejc.local';\""
+node run.js "" "HASH=`$(docker exec ejc_backend python3 -c \"import os; from passlib.context import CryptContext; c=CryptContext(schemes=['bcrypt']); print(c.hash(os.environ['NOVA_SENHA']))\") && docker exec ejc_postgres psql -U ejc_user -d ejc_db -c \"UPDATE usuarios SET senha_hash='`$HASH' WHERE email='admin@ejc.adv.br';\""
 ```
 
 ---
