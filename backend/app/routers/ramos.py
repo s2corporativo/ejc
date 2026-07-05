@@ -1837,95 +1837,6 @@ async def trab_verbas_rescisorias(
     }
 
 
-# ── Administrativo: prazo de recurso em licitação ─────────────────────────────
-@router.get("/admin-esp/ferramentas/prazo-recurso-licitacao")
-async def adm_prazo_recurso_licitacao(
-    data_publicacao_resultado: date,
-    modalidade: Literal["pregao", "concorrencia", "tomada_precos",
-                        "convite", "credenciamento"] = "pregao",
-    cu: User = Depends(require_roles(_EQUIPE)),
-):
-    """Prazo recursal em licitação — Lei 14.133/2021 art. 165: 3 dias ÚTEIS
-    (recurso e pedido de reconsideração). Tomada de preços/convite só subsistem
-    em contratos remanescentes da Lei 8.666/93 (art. 109: 5 e 2 dias úteis)."""
-    regras = {
-        "pregao":         (3, "Lei 14.133/2021 art. 165 I — recurso em 3 dias úteis"),
-        "concorrencia":   (3, "Lei 14.133/2021 art. 165 I — recurso em 3 dias úteis"),
-        "credenciamento": (3, "Lei 14.133/2021 art. 165 II — pedido de reconsideração em 3 dias úteis"),
-        "tomada_precos":  (5, "Lei 8.666/93 art. 109 I — 5 dias úteis (regime remanescente)"),
-        "convite":        (2, "Lei 8.666/93 art. 109 §6º — 2 dias úteis (regime remanescente)"),
-    }
-    dias, base = regras[modalidade]
-    venc_recurso = prazo_dias_uteis(data_publicacao_resultado, dias)
-    venc_contrarrazoes = prazo_dias_uteis(venc_recurso, dias)
-    return {
-        "modalidade": modalidade,
-        "prazo": f"{dias} dias ÚTEIS",
-        "data_resultado": data_publicacao_resultado,
-        "vencimento_recurso": venc_recurso,
-        "vencimento_contrarrazoes": venc_contrarrazoes,
-        "intencao_de_recorrer": "Na fase de julgamento/habilitação, a INTENÇÃO de recorrer deve ser "
-                                "manifestada imediatamente, sob pena de preclusão; as razões seguem "
-                                "no prazo legal (Lei 14.133 art. 165 §1º).",
-        "efeito_suspensivo": "O recurso contra julgamento/habilitação tem efeito suspensivo "
-                             "(Lei 14.133 art. 168 § único).",
-        "base_legal": base,
-        "aviso": "MINUTA — conferir o instrumento convocatório e o sistema do certame "
-                 "(prazos podem correr em horário do portal).",
-    }
-
-
-# ── Administrativo: checklist de habilitação (Lei 14.133 arts. 62-70) ─────────
-@router.get("/admin-esp/ferramentas/habilitacao-licitacao")
-async def adm_habilitacao_licitacao(
-    tem_certidao_federal: bool = True,
-    tem_certidao_estadual: bool = True,
-    tem_certidao_municipal: bool = True,
-    tem_fgts: bool = True,
-    tem_trabalhista: bool = True,
-    tem_qualificacao_tecnica: bool = True,
-    tem_qualificacao_economica: bool = True,
-    cu: User = Depends(require_roles(_EQUIPE)),
-):
-    """Checklist da documentação mínima de habilitação (Lei 14.133/2021 arts. 62-70)."""
-    itens = [
-        {"item": "CND Federal (Receita/PGFN, abrange INSS)", "ok": tem_certidao_federal,
-         "categoria": "fiscal_social_trabalhista", "base": "Lei 14.133 art. 68 III-IV"},
-        {"item": "CND Estadual", "ok": tem_certidao_estadual,
-         "categoria": "fiscal_social_trabalhista", "base": "Lei 14.133 art. 68 III"},
-        {"item": "CND Municipal", "ok": tem_certidao_municipal,
-         "categoria": "fiscal_social_trabalhista", "base": "Lei 14.133 art. 68 III"},
-        {"item": "Certificado de Regularidade do FGTS (CEF)", "ok": tem_fgts,
-         "categoria": "fiscal_social_trabalhista", "base": "Lei 14.133 art. 68 IV · Lei 8.036/90 art. 27"},
-        {"item": "CNDT — Certidão Negativa de Débitos Trabalhistas (TST)", "ok": tem_trabalhista,
-         "categoria": "fiscal_social_trabalhista", "base": "Lei 14.133 art. 68 V · Lei 12.440/2011"},
-        {"item": "Qualificação técnica (atestados compatíveis, registro profissional)", "ok": tem_qualificacao_tecnica,
-         "categoria": "tecnica", "base": "Lei 14.133 art. 67"},
-        {"item": "Qualificação econômico-financeira (balanço, certidão de falência, índices)", "ok": tem_qualificacao_economica,
-         "categoria": "economico_financeira", "base": "Lei 14.133 art. 69"},
-    ]
-    faltantes = [i["item"] for i in itens if not i["ok"]]
-    return {
-        "apto_preliminarmente": not faltantes,
-        "documentos_faltantes": faltantes,
-        "checklist": itens,
-        "categorias_lei_14133": {
-            "juridica": "art. 66 — atos constitutivos, CNPJ, representação legal",
-            "fiscal_social_trabalhista": "art. 68 — CNDs, FGTS, CNDT",
-            "tecnica": "art. 67 — atestados de capacidade técnica",
-            "economico_financeira": "art. 69 — balanço patrimonial e certidões",
-        },
-        "beneficio_me_epp": "ME/EPP com restrição FISCAL/trabalhista pode regularizar em 5 dias "
-                            "úteis APÓS declarada vencedora (LC 123/06 arts. 42-43, §1º).",
-        "declaracoes_obrigatorias": "Não emprega menor (CF art. 7º XXXIII c/c Lei 14.133 art. 68 VI) "
-                                    "e cumprimento de reserva de cargos PCD/aprendiz quando exigível "
-                                    "(art. 63 IV).",
-        "base": "Lei 14.133/2021 arts. 62-70 · LC 123/2006 arts. 42-43.",
-        "aviso": "MINUTA — o EDITAL define a lista exata; documentos podem ser dispensados ou "
-                 "acrescidos conforme o objeto. Conferir validades.",
-    }
-
-
 # ── Administrativo: reajuste de contrato administrativo ───────────────────────
 @router.get("/admin-esp/ferramentas/reajuste-contrato-administrativo")
 async def adm_reajuste_contrato(
@@ -1956,7 +1867,7 @@ async def adm_reajuste_contrato(
                          "mão de obra, art. 135) ≠ reequilíbrio econômico-financeiro (álea "
                          "extraordinária, art. 124 II d).",
         "base": "Lei 14.133/2021 arts. 25 §7º, 92 §3º, 124 e 135 · Lei 10.192/2001 art. 2º §1º.",
-        "aviso": "MINUTA — usar o ÍNDICE previsto no contrato/edital e o período correto de apuração.",
+        "aviso": "MINUTA — usar o ÍNDICE previsto no contrato administrativo e o período correto de apuração.",
     }
 
 
@@ -2014,7 +1925,7 @@ async def trib_auto_infracao_prazos(
                                     "administrativo fiscal próprio (MG: RPTA — Dec. 44.747/2008, "
                                     "30 dias). CONFERIR a legislação indicada no próprio auto.")
         out["base"] = "Legislação de processo administrativo fiscal do ente · CTN art. 151 III."
-    out["aviso"] = "MINUTA — confirmar a data exata de ciência (AR, DTe, edital) e a lei local."
+    out["aviso"] = "MINUTA — confirmar a data exata de ciência (AR, DTe, publicação) e a lei local."
     return out
 
 

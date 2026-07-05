@@ -327,7 +327,7 @@ export default function Dashboard() {
     { to: "/casos", label: "Novo caso", icon: Plus },
     { to: "/clientes", label: "Novo cliente", icon: Users },
     { to: "/pecas", label: "Gerar peca", icon: FileText },
-    { to: "/sala-de-guerra", label: "Sala de Guerra", icon: Gavel },
+    { to: "/casos?filtro=ativos", label: "Sala de Guerra", icon: Gavel },
     { to: "/inteligencia", label: "Radar de Poder", icon: Sparkles },
   ];
 
@@ -705,12 +705,6 @@ export default function Dashboard() {
                 label: "IA do escritorio",
                 icon: Sparkles,
                 tone: "text-ai-700 bg-ai-50 border-ai-100",
-              },
-              {
-                to: "/ramos/administrativo",
-                label: "Licitacoes",
-                icon: Scale,
-                tone: "text-warn-700 bg-warn-50 border-warn-100",
               },
             ].map(({ to, label, icon: Icon, tone }) => (
               <Link

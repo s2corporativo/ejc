@@ -37,8 +37,6 @@ CODIGOS: list[dict] = [
      "url": "https://www.planalto.gov.br/ccivil_03/decreto-lei/del3689compilado.htm"},
     {"slug": "eca",   "titulo": "Estatuto da Criança e do Adolescente (Lei 8.069/1990)",
      "url": "https://www.planalto.gov.br/ccivil_03/leis/l8069compilado.htm"},
-    {"slug": "l14133","titulo": "Lei de Licitações e Contratos (Lei 14.133/2021)",
-     "url": "https://www.planalto.gov.br/ccivil_03/_ato2019-2022/2021/lei/l14133.htm"},
     {"slug": "ctn",   "titulo": "Código Tributário Nacional (Lei 5.172/1966)",
      "url": "https://www.planalto.gov.br/ccivil_03/leis/l5172compilado.htm"},
 ]

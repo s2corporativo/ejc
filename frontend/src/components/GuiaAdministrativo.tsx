@@ -88,8 +88,6 @@ const ITEMS = [
   "Verificar prescrição de 5 anos para ações contra a Fazenda Pública",
   "Analisar nulidades do PAD — intimações, contraditório, ampla defesa",
   "Verificar se improbidade é na modalidade dolosa (Lei 14.230/21)",
-  "Calcular prazo de recurso em licitação (3 dias pregão / 3 dias concorrência)",
-  "Verificar documentos de habilitação para licitação",
   "Analisar equilíbrio econômico-financeiro do contrato administrativo",
   "Verificar sanções aplicáveis e proporcionalidade (Lei 14.133/21 art. 156)",
   "Checar responsabilidade civil do Estado: nexo causal + dano + atividade estatal",
@@ -125,12 +123,10 @@ export default function GuiaAdministrativo() {
           rows={[
             ["CF/88 art. 37", "Princípios da Administração Pública (LIMPE)"],
             ["Lei 9.784/99", "Processo Administrativo Federal (PAF)"],
-            ["Lei 14.133/21 (NLLC)", "Nova Lei de Licitações e Contratos"],
             [
-              "Lei 8.666/93",
-              "Lei de Licitações (contratos assinados antes de 30/12/2023)",
+              "Lei 14.133/21",
+              "Contratos e contratações administrativas (execução, reajuste, sanções)",
             ],
-            ["Lei 10.520/02", "Pregão (vigente em paralelo durante transição)"],
             ["Lei 14.230/21", "Nova Lei de Improbidade Administrativa"],
             [
               "Lei 12.846/13 (LAC)",

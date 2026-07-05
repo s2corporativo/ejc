@@ -122,9 +122,10 @@ class TestAIProviderPolicy:
 # ══════════════════════════════════════════════════════════════════════════════
 
 class TestGatewayBarreiraLGPD:
-    def test_sanitizar_messages_externo_e_passthrough(self, s):
-        # Sanitização desativada (2026-07-05): conteúdo segue integral e
-        # nenhum residual é acusado — nenhum provider é pulado por PII.
+    def test_sanitizar_messages_externo_mascara_pii(self, s):
+        # Sanitização reativada (LGPD art. 33/46): a barreira final mascara
+        # CPF/CNPJ/e-mail antes de qualquer provedor externo e não deixa
+        # residual (nenhuma PII estrutural segue em claro).
         from app.services.ai_gateway import _sanitizar_messages_externo
         messages = [
             {"role": "system", "content": "Você é um assistente jurídico."},
@@ -133,8 +134,8 @@ class TestGatewayBarreiraLGPD:
         limpos, residual = _sanitizar_messages_externo(messages)
         assert residual == []
         conteudo = " ".join(m["content"] for m in limpos)
-        assert CPF_FAKE in conteudo and CNPJ_FAKE in conteudo and EMAIL_FAKE in conteudo
-        assert "[CPF]" not in conteudo
+        assert CPF_FAKE not in conteudo and CNPJ_FAKE not in conteudo and EMAIL_FAKE not in conteudo
+        assert "[CPF]" in conteudo and "[CNPJ]" in conteudo and "[EMAIL]" in conteudo
 
     async def test_chat_bloqueia_cadeia_so_externa_com_pii_residual(self, s, monkeypatch):
         from app.services import ai_gateway, sanitizer
@@ -269,10 +270,12 @@ class TestIntentClassifier:
         assert r.agente == "LegalWritingAgent"
         assert r.exige_fonte is True
 
-    def test_domain_licitacao(self):
+    def test_domain_ambiental_usa_tarefa_ambiental(self):
         from app.services.ai.core.intent_classifier import classify_intent
-        r = classify_intent("task_desconhecida", domain="licitacao")
-        assert r.agente == "LicitacaoComplianceAgent"
+        from app.services.system_prompts import TarefaIA
+        r = classify_intent("task_desconhecida", domain="ambiental")
+        assert r.agente == "CaseAgent"
+        assert r.tarefa == TarefaIA.AMBIENTAL
 
     def test_keywords_na_mensagem_redigir_peticao(self):
         from app.services.ai.core.intent_classifier import classify_intent
@@ -441,22 +444,23 @@ class TestOrchestrator:
 AGENTES_CANONICOS = {
     "CaseAgent", "ProcessAgent", "DocumentAgent", "LegalWritingAgent",
     "RAGResearchAgent", "JurimetryAgent", "FinanceAgent", "BankForensicsAgent",
-    "LicitacaoComplianceAgent", "ClientCommunicationAgent", "SystemHealthAgent",
+    "ConsumerLawAgent", "TaxLawAgent", "SocialSecurityAgent", "CorporateLawAgent",
+    "ClientCommunicationAgent", "SystemHealthAgent",
     "RepairAgent", "UIUXAgent", "SecurityLGPDOABAgent",
 }
 
 
 class TestRegistries:
-    def test_14_agentes_canonicos(self):
+    def test_17_agentes_canonicos(self):
         from app.services.ai.core.agent_registry import AGENT_REGISTRY
-        assert len(AGENT_REGISTRY) == 14
+        assert len(AGENT_REGISTRY) == 17
         assert set(AGENT_REGISTRY.keys()) == AGENTES_CANONICOS
         for nome, ag in AGENT_REGISTRY.items():
             assert ag.nome == nome  # chave == nome canônico
 
-    def test_28_skills_registradas(self):
+    def test_27_skills_registradas(self):
         from app.services.ai.core.skill_registry import SKILL_REGISTRY
-        assert len(SKILL_REGISTRY) == 28
+        assert len(SKILL_REGISTRY) == 27
 
     def test_skills_de_patch_nunca_automaticas(self):
         from app.services.ai.core.skill_registry import SKILL_REGISTRY
@@ -466,7 +470,7 @@ class TestRegistries:
     def test_listar_skills_nao_expoe_handlers(self):
         from app.services.ai.core.skill_registry import SKILL_REGISTRY, listar_skills
         skills = listar_skills()
-        assert len(skills) == 28
+        assert len(skills) == 27
         for item in skills:
             assert "handler" not in item
             assert not any(callable(v) for v in item.values())

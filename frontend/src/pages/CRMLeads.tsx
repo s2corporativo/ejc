@@ -9,6 +9,7 @@ import {
   User,
 } from "lucide-react";
 import api from "../lib/api";
+import { soDigitos } from "../utils/phone";
 import { Modal, Button, PageHeader } from "../components/UI";
 
 interface Lead {
@@ -146,7 +147,7 @@ export default function CRMLeads() {
   }
 
   function openWhatsApp(phone: string, nome: string) {
-    const digits = phone.replace(/\D/g, "");
+    const digits = soDigitos(phone);
     const wa = digits.startsWith("55") ? digits : "55" + digits;
     window.open(
       `https://wa.me/${wa}?text=${encodeURIComponent("Olá " + nome + ", tudo bem?")}`,

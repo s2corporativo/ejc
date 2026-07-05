@@ -6,6 +6,10 @@ from .minutas import PROMPT_MINUTAS
 from .prazos import PROMPT_PRAZOS
 from .honorarios import PROMPT_HONORARIOS
 from .ambiental import PROMPT_AMBIENTAL
+from .consumidor import PROMPT_CONSUMIDOR
+from .tributario import PROMPT_TRIBUTARIO
+from .previdenciario import PROMPT_PREVIDENCIARIO
+from .empresarial import PROMPT_EMPRESARIAL
 from .router import TarefaIA, ConfiguracaoIA, get_configuracao
 
 # Regras transversais dos prompts do Núcleo Único (evita repetição literal).
@@ -36,6 +40,10 @@ SYSTEM_PROMPTS: dict[str, str] = {
     "prazos":            PROMPT_PRAZOS,
     "honorarios":        PROMPT_HONORARIOS,
     "ambiental":         PROMPT_AMBIENTAL,
+    "consumidor":        PROMPT_CONSUMIDOR,
+    "tributario":        PROMPT_TRIBUTARIO,
+    "previdenciario":    PROMPT_PREVIDENCIARIO,
+    "empresarial":       PROMPT_EMPRESARIAL,
     "trabalhista":       PROMPT_ANALISE_CASO,
     "criminal":          PROMPT_ANALISE_CASO,
     "familia":           PROMPT_ANALISE_CASO,
@@ -50,7 +58,6 @@ SYSTEM_PROMPTS: dict[str, str] = {
     "processo":            BASE_PROMPT + _REGRA_FONTES + "\n\nAnalise o andamento processual: fase atual, últimos movimentos, prazos em curso e providências pendentes. Prazos são SEMPRE fatais — destaque datas-limite e a antecipação mínima de 5 dias úteis. Indique a base legal de cada prazo." + AVISO_RASCUNHO,
     "jurimetria_pred":     BASE_PROMPT + _REGRA_FONTES + "\n\nFaça análise jurimétrica/preditiva com base APENAS nos dados e precedentes fornecidos no contexto. Apresente cenários (otimista/base/pessimista) como HIPÓTESES estatísticas, nunca como promessa de resultado. Explicite as limitações da amostra." + AVISO_RASCUNHO,
     "bancario":            BASE_PROMPT + _REGRA_FONTES + "\n\nAnalise a matéria bancária/financeira (contratos, extratos, encargos, revisional, busca e apreensão). Aponte tarifas e encargos potencialmente abusivos com a respectiva base normativa (CDC, Bacen, súmulas STJ). Cálculos são estimativas sujeitas a perícia." + AVISO_RASCUNHO,
-    "licitacao_compliance": BASE_PROMPT + _REGRA_FONTES + "\n\nAudite o documento/questão sob a ótica de licitações, compliance e regulatório (Lei 14.133/2021, Lei 12.846/2013, normas ambientais quando aplicável). Liste conformidades, não conformidades e riscos com a base legal de cada apontamento." + AVISO_RASCUNHO,
     "comunicacao_cliente": BASE_PROMPT + "\n\nRedija comunicação clara e cordial destinada ao CLIENTE (não juridiquês): situação do caso, próximos passos e o que se espera dele. NUNCA prometa resultado nem antecipe decisão judicial. NUNCA inclua dados pessoais de terceiros. O texto é RASCUNHO que o advogado revisará antes do envio." + AVISO_RASCUNHO,
     "seguranca_lgpd":      BASE_PROMPT + _REGRA_FONTES + "\n\nAnalise a questão sob LGPD (Lei 13.709/2018), sigilo profissional (Lei 8.906/94) e segurança da informação. Aponte riscos, bases legais de tratamento e providências. NUNCA inclua dados pessoais reais ou segredos (chaves, senhas, tokens) na resposta." + AVISO_RASCUNHO,
     # Técnicos (restritos a superadmin/admin/socio): usam contexto técnico

@@ -98,11 +98,6 @@ const FALLBACK_TIPOS: TipoDocumento[] = [
     categoria: "administrativo",
   },
   {
-    tipo_key: "edital_licitacao",
-    nome: "Edital de Licitação",
-    categoria: "administrativo",
-  },
-  {
     tipo_key: "nfe_xml",
     nome: "Nota Fiscal Eletrônica (XML)",
     categoria: "fiscal",

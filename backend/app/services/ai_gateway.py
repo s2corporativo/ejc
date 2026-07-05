@@ -179,6 +179,8 @@ class GatewayResponse:
     custo_estimado_brl: float = 0.0
     roteamento_tier: str | None = None
     roteamento_score: int | None = None
+    # True quando a resposta veio do cache (dedup de requisição idêntica).
+    cache_hit: bool = False
     timestamp: str = field(
         default_factory=lambda: datetime.now(timezone.utc).isoformat()
     )
@@ -211,6 +213,37 @@ async def chat(
 
     # #8 — injeta a identidade do escritório no system (apenas tarefas de prosa).
     messages = _aplicar_nivel(legal_base.aplicar_base(messages, task_type), nivel_inteligencia)
+
+    # ── Cache de resposta (opt-in): dedup de requisição idêntica dentro do TTL.
+    # Chaveado pelas messages FINAIS + parâmetros que afetam a saída. Nunca
+    # quebra o fluxo (ai_cache engole erros) e só serve respostas gravadas de
+    # chamadas bem-sucedidas anteriores.
+    from app.services import ai_cache
+    _cache_key = ai_cache.chave(
+        task_type, messages, temperature=temperature, max_tokens=max_tokens,
+        model_override=model_override, provider_override=provider_override,
+        nivel_inteligencia=nivel_inteligencia,
+        # AI_PROVIDER global entra na chave: se a config trocar (ex.: auto→groq)
+        # sem override explícito, não serve resposta de outro provedor no TTL.
+        ai_provider=settings.AI_PROVIDER,
+    )
+    _cached = await ai_cache.obter(_cache_key)
+    if _cached:
+        logger.info("[Gateway] cache HIT → %s (sem chamada ao provedor)", task_type)
+        # Tokens/custo ZERADOS no hit: não houve chamada real ao provedor, então
+        # contabilizá-los (AILog/dashboards) inflaria o gasto de IA (dupla
+        # contagem). cache_hit=True sinaliza a origem; texto é o cacheado.
+        return GatewayResponse(
+            texto=_cached.get("texto", ""),
+            modelo=_cached.get("modelo", ""),
+            provedor=_cached.get("provedor", ""),
+            task_type=task_type,
+            input_tokens=0,
+            output_tokens=0,
+            duracao_ms=0,
+            custo_estimado_brl=0.0,
+            cache_hit=True,
+        )
 
     # AI_PROVIDER="groq" → ignora Ollama; "ollama" → falha se Ollama down
     provider_force = provider_override or (
@@ -319,6 +352,12 @@ async def chat(
                 ),
             )
             _lf.flush()
+            # Grava no cache apenas respostas bem-sucedidas (TTL curto).
+            await ai_cache.gravar(_cache_key, {
+                "texto": texto, "modelo": modelo_real, "provedor": provider,
+                "input_tokens": inp, "output_tokens": out,
+                "custo_estimado_brl": custo_brl,
+            })
             return resp
         except Exception as e:
             ultimo_erro = str(e)[:200]  # trilha INTERNA (logger + RuntimeError)
@@ -460,10 +499,11 @@ def _resolver_cadeia(
 
 
 def _sanitizar_messages_externo(messages: list[dict]) -> tuple[list[dict], list[str]]:
-    """Barreira FINAL antes de provider externo (Anthropic/Groq). DESATIVADA
-    (decisão do titular, 2026-07-05): sanitizar_pii/validar_sem_pii viraram
-    passthrough — o conteúdo segue em claro e residual é sempre vazio. A
-    estrutura fica para reativação (restaurar services/sanitizer.py)."""
+    """Barreira FINAL antes de provider externo (Anthropic/Groq). REATIVADA na
+    auditoria técnica (LGPD art. 33/46 — dado pessoal não pode seguir em claro a
+    provedor fora do VPS): sanitizar_pii mascara CPF/CNPJ/processo/RG/e-mail/
+    telefone/CEP/cartão/PIX e validar_sem_pii detecta PII residual. Uso 100%
+    interno (Ollama local) mantém CPF/CNPJ via sanitizar_pii_interno."""
     from app.services.sanitizer import sanitizar_pii, validar_sem_pii
     limpos: list[dict] = []
     residual: set[str] = set()

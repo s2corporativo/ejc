@@ -1,7 +1,7 @@
 import { useState, useEffect, useCallback } from "react";
 import { Plus, Check, Trash2, RefreshCw, Filter, Download } from "lucide-react";
 import api from "../lib/api";
-import { Modal, Button, PageHeader } from "../components/UI";
+import { Modal, Button, PageHeader, fmtDate } from "../components/UI";
 
 interface Despesa {
   id: string;
@@ -54,10 +54,6 @@ function fmtR$(v: number) {
     style: "currency",
     currency: "BRL",
   });
-}
-function fmtDate(d?: string) {
-  if (!d) return "—";
-  return new Date(d + "T12:00:00").toLocaleDateString("pt-BR");
 }
 
 interface FormState {

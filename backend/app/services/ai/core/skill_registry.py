@@ -168,8 +168,6 @@ SKILL_REGISTRY: dict[str, Skill] = {s.nome: s for s in [
     Skill("analyze_bank_statement", "Analisar extrato/contrato bancário (encargos, tarifas)",
           "texto do extrato/contrato", "apontamentos de abusividade + base normativa",
           pos_condicoes="cálculos são estimativas sujeitas a perícia", handler=None),
-    Skill("audit_licitacao_document", "Auditar edital/proposta (Lei 14.133/2021, compliance)",
-          "documento", "conformidades/não conformidades + base legal", handler=None),
     Skill("diagnose_system_module", "Diagnosticar módulo do EJC via grafo de código",
           "nome do módulo/sintoma", "diagnóstico com base no GRAPH_REPORT",
           permissoes=_TECNICO,

@@ -18,39 +18,8 @@ from app.routers import ramos
 
 
 # ══════════════════════════════════════════════════════════════════════════
-# Administrativo — prazo de recurso em licitação (dias ÚTEIS, Lei 14.133 art. 165)
+# Administrativo — reajuste de contrato administrativo (anualidade, Lei 14.133 art. 92)
 # ══════════════════════════════════════════════════════════════════════════
-async def test_prazo_recurso_licitacao_3_dias_uteis():
-    # Sexta 03/07/2026 → 3 dias úteis: seg 06, ter 07, qua 08/07
-    r = await ramos.adm_prazo_recurso_licitacao(
-        data_publicacao_resultado=date(2026, 7, 3), modalidade="pregao", cu=None,
-    )
-    assert r["vencimento_recurso"] == date(2026, 7, 8)
-    assert r["prazo"] == "3 dias ÚTEIS"
-    assert "165" in r["base_legal"]
-    # contrarrazões: mais 3 dias úteis após o vencimento do recurso
-    assert r["vencimento_contrarrazoes"] == date(2026, 7, 13)
-
-
-async def test_prazo_recurso_licitacao_pula_feriado():
-    # Qui 03/09/2026: 3 dias úteis = sex 04, ter 08 (seg 07/09 = Independência), qua 09
-    r = await ramos.adm_prazo_recurso_licitacao(
-        data_publicacao_resultado=date(2026, 9, 3), modalidade="concorrencia", cu=None,
-    )
-    assert r["vencimento_recurso"] == date(2026, 9, 9)
-
-
-async def test_habilitacao_licitacao_aponta_faltantes():
-    r = await ramos.adm_habilitacao_licitacao(
-        tem_certidao_federal=True, tem_certidao_estadual=False,
-        tem_certidao_municipal=True, tem_fgts=True, tem_trabalhista=False,
-        tem_qualificacao_tecnica=True, tem_qualificacao_economica=True, cu=None,
-    )
-    assert r["apto_preliminarmente"] is False
-    assert len(r["documentos_faltantes"]) == 2
-    assert any("CNDT" in d for d in r["documentos_faltantes"])
-
-
 async def test_reajuste_contrato_respeita_anualidade():
     ainda_nao = await ramos.adm_reajuste_contrato(
         valor_original=100_000.0, indice_acumulado_pct=5.0, meses_contrato=10, cu=None,

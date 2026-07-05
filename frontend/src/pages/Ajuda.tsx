@@ -489,7 +489,7 @@ const MODULES: Module[] = [
       },
       {
         title: "Ferramentas públicas",
-        desc: "Links oficiais por área: PJe-Calc (trabalhista), Registrato/BACEN (bancário), MapBiomas (ambiental), PNCP (licitações), Meu INSS (previdenciário), Consumidor.gov, e-CAC (tributário).",
+        desc: "Links oficiais por área: PJe-Calc (trabalhista), Registrato/BACEN (bancário), MapBiomas (ambiental), Meu INSS (previdenciário), Consumidor.gov, e-CAC (tributário).",
       },
       {
         title: "Calculadoras",

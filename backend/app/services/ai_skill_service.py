@@ -12,6 +12,7 @@ from app.models.ai_skill import EjcSkill
 from app.models.ai_log import AITipoUso, normalizar_modelo_ia
 from app.services import ai_gateway
 from app.services.ai_guard import sanitizar_ou_abortar, registrar_ai_log
+from app.services.legal_base import garantir_identidade
 
 logger = logging.getLogger("ejc.ai.skills")
 
@@ -22,6 +23,11 @@ _AREA_TASK = {
     "financeiro": "analise_juridica",
     "operacional": "resumo",
 }
+
+# Roles com credencial para executar skills marcadas oab_restricted (produção de
+# trabalho jurídico sob responsabilidade OAB). cliente_externo já é bloqueado
+# antes (não acessa IA interna); estagiário/secretaria/financeiro ficam de fora.
+_ROLES_OAB = {"superadmin", "admin", "socio", "advogado", "advogado_auxiliar"}
 
 
 async def listar_skills(db: AsyncSession, area: str | None = None) -> list[EjcSkill]:
@@ -39,6 +45,7 @@ async def executar_skill(
     user_id: str,
     case_id: str | None = None,
     contexto_rag: list[str] | None = None,
+    user_role: str | None = None,
 ) -> dict:
     result = await db.execute(
         select(EjcSkill).where(EjcSkill.name == skill_name, EjcSkill.active == True)
@@ -46,6 +53,14 @@ async def executar_skill(
     skill = result.scalar_one_or_none()
     if not skill:
         raise ValueError(f"Skill '{skill_name}' não encontrada ou inativa.")
+
+    # Enforcement de oab_restricted: skills que produzem trabalho jurídico sob
+    # responsabilidade OAB só executam para roles com credencial. Antes esta
+    # coluna era apenas descritiva (sem gate em runtime — achado de auditoria).
+    if skill.oab_restricted and (user_role or "") not in _ROLES_OAB:
+        raise PermissionError(
+            f"Skill '{skill_name}' é restrita (OAB): seu perfil não tem permissão para executá-la."
+        )
 
     # Guarda LGPD (auditoria 2026-07-02): query (texto digitado OU extraído via
     # OCR de documento de cliente em /execute-doc) ia direto ao provedor externo
@@ -59,10 +74,13 @@ async def executar_skill(
         )
         system_prompt += f"\n\n## BASE DE CONHECIMENTO INTERNA:\n{trechos}"
 
-    messages = [
+    # Barreira anti-alucinação OBRIGATÓRIA: o system_prompt da skill é autoral
+    # (gravado no banco) e o task_type derivado da área pode não passar por
+    # aplicar_base no gateway — garantimos a identidade/regras OAB aqui.
+    messages = garantir_identidade([
         {"role": "system", "content": system_prompt},
         {"role": "user", "content": query_limpa},
-    ]
+    ])
 
     provider = _ENGINE_PROVIDER.get(skill.engine, "groq")
     task_type = _AREA_TASK.get(skill.area, "analise_juridica")
