@@ -158,12 +158,12 @@ from app.routers import workflow
 # Ativa a arquitetura orientada a eventos (P1): importar registra os @on subscribers.
 from app.services import event_subscribers as _event_subscribers  # noqa: F401
 
-logging.basicConfig(
-    level=logging.INFO,
-    format="%(asctime)s [%(levelname)s] %(name)s: %(message)s",
-)
-logger = logging.getLogger("ejc")
 settings = get_settings()
+
+# Logging estruturado opcional (LOG_JSON): substitui o basicConfig antigo.
+from app.core.logging_config import setup_logging
+setup_logging(json_logs=settings.LOG_JSON, level=settings.LOG_LEVEL)
+logger = logging.getLogger("ejc")
 
 # ── Sentry (desabilitado se SENTRY_DSN vazio) ─────────────────────────────────
 if settings.SENTRY_DSN:

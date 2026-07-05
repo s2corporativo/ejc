@@ -11,14 +11,17 @@ from datetime import datetime, timezone
 from typing import Annotated, Any, Dict, List, Optional
 from uuid import uuid4
 
-from fastapi import APIRouter, Depends, UploadFile, File, HTTPException
+from fastapi import APIRouter, Depends, UploadFile, File, HTTPException, Query
 from fastapi.responses import FileResponse
+from sqlalchemy.ext.asyncio import AsyncSession
 from pydantic import BaseModel, Field, StringConstraints
 
 from app.core.config import get_settings
+from app.core.database import get_db
 from app.core.security import get_current_user
 from app.core.rate_limit import rate_limit
 from app.core.licitacao_auditor import LicitacaoAuditor
+from app.models.user import User
 
 settings = get_settings()
 
@@ -38,11 +41,18 @@ _Str1k = Annotated[str, StringConstraints(max_length=1000)]
 
 @router.post("/analyze-competitor-proposal",
              dependencies=[Depends(rate_limit("licitacao-auditoria", 15))])
-async def analyze_competitor_proposal(file: UploadFile = File(...)) -> Dict[str, Any]:
+async def analyze_competitor_proposal(
+    file: UploadFile = File(...),
+    com_ia: bool = Query(False, description="Enriquecer com IA (opt-in; texto sanitizado + AILog)"),
+    db: AsyncSession = Depends(get_db),
+    cu: User = Depends(get_current_user),
+) -> Dict[str, Any]:
     if not (file.filename or "").lower().endswith(".pdf"):
         raise HTTPException(status_code=400, detail="Apenas arquivos PDF sao aceitos.")
     pdf_content = await file.read()
-    return await _auditor.analyze_competitor_proposal(pdf_content)
+    return await _auditor.analyze_competitor_proposal(
+        pdf_content, db=db, user_id=cu.id, com_ia=com_ia,
+    )
 
 
 @router.get("/audit-report-template")

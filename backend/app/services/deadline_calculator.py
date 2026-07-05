@@ -189,12 +189,25 @@ def dia_util_anterior(d: date, forense: bool = True, tribunal: str | None = None
 
 # ── Cálculo de prazos ─────────────────────────────────────────────────────────
 
-def prazo_dias_uteis(data_inicio: date, dias: int, tribunal: str | None = None) -> date:
+def prazo_dias_uteis(data_inicio: date, dias: int, tribunal: str | None = None,
+                     em_dobro: bool = False) -> date:
     """
     Prazo processual em dias ÚTEIS (CPC art. 219 / CLT art. 775).
     Exclui o dia do início; conta apenas dias úteis forenses.
     Se `tribunal` for informado, desconsidera também os dias suspensos por ele.
+
+    em_dobro=True DOBRA a quantidade de dias — prazo em dobro do CPC:
+      • art. 180 — Ministério Público;
+      • art. 183 — Fazenda Pública (União, Estados, DF, Municípios e autarquias/
+        fundações);
+      • art. 186 — Defensoria Pública / escritórios de prática jurídica;
+      • art. 229 — litisconsortes com procuradores distintos, de escritórios
+        diferentes, APENAS em autos FÍSICOS (não se aplica ao processo
+        eletrônico, art. 229 §2º).
+    O dobro incide sobre a CONTAGEM (nº de dias úteis), não sobre a data.
     """
+    if em_dobro:
+        dias *= 2
     atual = data_inicio
     contados = 0
     while contados < dias:
