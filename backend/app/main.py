@@ -377,6 +377,35 @@ async def health():
     }
 
 
+# ── Readiness (público — para monitores externos: UptimeRobot, etc.) ──────────
+# Diferente do /api/health (liveness, sempre 200 se o processo respira e usado
+# pelo Docker healthcheck): aqui o STATUS HTTP reflete a prontidão. DB fora do ar
+# → 503, para o monitor externo efetivamente detectar a queda (200 "degraded"
+# passava despercebido). Redis/embeddings são informativos (não derrubam o 200).
+@app.get("/api/health/ready")
+async def readiness():
+    settings = get_settings()
+    db_ok = await check_db()
+
+    # Redis só é checado quando alguma feature depende dele; senão, "não usado".
+    redis_ok = None
+    if settings.CELERY_ENABLED or settings.RATE_LIMIT_REDIS_ENABLED:
+        from app.tasks.dispatcher import _redis_alcancavel
+        redis_ok = await _redis_alcancavel(settings.REDIS_URL)
+
+    from app.services.embedding_service import disponivel as _emb_disponivel
+    checks = {
+        "database": db_ok,          # crítico
+        "redis": redis_ok,          # informativo (None = não utilizado)
+        "embeddings": _emb_disponivel(),  # informativo
+    }
+    pronto = db_ok                  # só o DB é bloqueante para "ready"
+    return JSONResponse(
+        status_code=200 if pronto else 503,
+        content={"status": "ready" if pronto else "not_ready", "checks": checks},
+    )
+
+
 # ── Exception handler global (nunca vazar stack trace) ────────────────────────
 @app.exception_handler(Exception)
 async def global_exception_handler(request: Request, exc: Exception):
