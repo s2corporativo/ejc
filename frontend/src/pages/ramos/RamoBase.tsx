@@ -39,11 +39,13 @@ import AnaliseExtratos from "../../components/AnaliseExtratos";
 import BancarioForense from "../../components/BancarioForense";
 import GuiaTransito from "../../components/GuiaTransito";
 import GuiaTrabalhista from "../../components/GuiaTrabalhista";
+import LiquidacaoTrabalhista from "../../components/LiquidacaoTrabalhista";
 import GuiaTributario from "../../components/GuiaTributario";
 import TributarioFiscal from "../../components/TributarioFiscal";
 import GuiaPrevidenciario from "../../components/GuiaPrevidenciario";
 import GuiaAmbiental from "../../components/GuiaAmbiental";
 import AmbientalAutos from "../../components/AmbientalAutos";
+import AmbientalEstrategia from "../../components/AmbientalEstrategia";
 import GuiaCivil from "../../components/GuiaCivil";
 import GuiaPenal from "../../components/GuiaPenal";
 import GuiaConsumidor from "../../components/GuiaConsumidor";
@@ -53,6 +55,8 @@ import GuiaAdministrativo from "../../components/GuiaAdministrativo";
 import GuiaLicitacoes from "../../components/GuiaLicitacoes";
 import GuiaEmpresarial from "../../components/GuiaEmpresarial";
 import SociedadesCliente from "../../components/SociedadesCliente";
+import LgpdRegistros from "../../components/LgpdRegistros";
+import GuiaLgpd from "../../components/GuiaLgpd";
 import { RamoStats } from "../../components/Dashboards";
 
 // Mapa de ícones por nome (evita importar a lib inteira)
@@ -919,11 +923,13 @@ export default function RamoBase() {
       {cfg.analiseExtratos && <AnaliseExtratos />}
       {cfg.bancarioForense && <BancarioForense />}
       {cfg.guiaTransito && <GuiaTransito />}
+      {cfg.liquidacaoTrabalhista && <LiquidacaoTrabalhista />}
       {cfg.guiaTrabalhista && <GuiaTrabalhista />}
       {cfg.tributarioFiscal && <TributarioFiscal />}
       {cfg.guiaTributario && <GuiaTributario />}
       {cfg.guiaPrevidenciario && <GuiaPrevidenciario />}
       {cfg.autosAmbientais && <AmbientalAutos casos={casos} />}
+      {cfg.ambientalEstrategia && <AmbientalEstrategia />}
       {cfg.guiaAmbiental && <GuiaAmbiental />}
       {cfg.guiaCivil && <GuiaCivil />}
       {cfg.guiaPenal && <GuiaPenal />}
@@ -934,6 +940,8 @@ export default function RamoBase() {
       {cfg.guiaLicitacoes && <GuiaLicitacoes />}
       {cfg.guiaEmpresarial && <GuiaEmpresarial />}
       {cfg.sociedadesCliente && <SociedadesCliente />}
+      {cfg.lgpdRegistros && <LgpdRegistros />}
+      {cfg.guiaLgpd && <GuiaLgpd />}
 
       {/* Áreas de atuação (subáreas) */}
       {cfg.subareas && cfg.subareas.length > 0 && (

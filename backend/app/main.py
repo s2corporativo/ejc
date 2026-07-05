@@ -126,13 +126,17 @@ from app.routers import relatorio
 from app.routers import relatorio_cliente
 from app.routers import sala_de_guerra
 from app.routers import sala_de_guerra_v3
+from app.routers import lgpd_registros
 from app.routers import score_juridico
 from app.routers import search
 from app.routers import signatures
 from app.routers import sociedades_cliente
+from app.routers import provas
 from app.routers import sumulas
 from app.routers import suspensoes
 from app.routers import tributario_fiscal
+from app.routers import trabalhista_liquidacao
+from app.routers import ambiental_estrategia
 from app.routers import tasks
 from app.routers import templates
 from app.routers import teses
@@ -342,9 +346,13 @@ app.include_router(score_juridico.router, prefix=API)
 app.include_router(search.router, prefix=API)
 app.include_router(signatures.router, prefix=API)
 app.include_router(sociedades_cliente.router, prefix=API)  # gestão societária de CLIENTES (vertical Empresarial)
+app.include_router(provas.router, prefix=API)  # Gestão de Provas por caso + Documento Único de Anexos (Visual Law)
+app.include_router(lgpd_registros.router, prefix=API)  # vertical LGPD — ROPA (art. 37) por cliente + RIPD (art. 38)
 app.include_router(sumulas.router, prefix=API)
 app.include_router(suspensoes.router, prefix=API)
 app.include_router(tributario_fiscal.router, prefix=API)  # vertical Tributário — XML fiscal + recuperação de créditos
+app.include_router(trabalhista_liquidacao.router, prefix=API)  # vertical Trabalhista — liquidação de sentença (ADC 58 / Selic real BCB)
+app.include_router(ambiental_estrategia.router, prefix=API)  # vertical Ambiental — simulador de estratégia do auto de infração
 app.include_router(tasks.router, prefix=API)
 app.include_router(templates.router, prefix=API)
 app.include_router(teses.router, prefix=API)

@@ -60,11 +60,13 @@ export interface RamoConfig {
   bancarioForense?: boolean; // forense bancário: verificador de abusividade + calculadora de CET
   guiaTransito?: boolean; // guia operacional de multas de trânsito (referência)
   guiaTrabalhista?: boolean; // guia operacional de direito do trabalho
+  liquidacaoTrabalhista?: boolean; // liquidação de sentença trabalhista: verbas + FGTS/correção ADC 58/59 + honorários
   guiaTributario?: boolean; // guia operacional de direito tributário
   tributarioFiscal?: boolean; // recuperação de créditos fiscais: upload de XML NF-e + diagnóstico por tese
   guiaPrevidenciario?: boolean; // guia operacional de direito previdenciário
   guiaAmbiental?: boolean; // guia operacional de direito ambiental
   autosAmbientais?: boolean; // autos de infração ambiental com prazo automático (/environmental)
+  ambientalEstrategia?: boolean; // simulador de estratégia do auto de infração (comparador econômico + peça de conversão)
   guiaCivil?: boolean; // guia operacional de direito civil
   guiaPenal?: boolean; // guia operacional de direito penal
   guiaConsumidor?: boolean; // guia operacional de direito do consumidor
@@ -74,6 +76,8 @@ export interface RamoConfig {
   guiaLicitacoes?: boolean; // guia operacional de licitações e contratos
   guiaEmpresarial?: boolean; // guia operacional de direito empresarial (3 pilares)
   sociedadesCliente?: boolean; // sociedades do cliente: cap table + eventos societários (/empresarial/sociedades)
+  guiaLgpd?: boolean; // guia operacional de adequação à LGPD (referência)
+  lgpdRegistros?: boolean; // ROPA por cliente + gerador de RIPD (/lgpd/registros)
 }
 
 export interface LinkExterno {
@@ -664,6 +668,7 @@ const penal: RamoConfig = {
 const trabalhista: RamoConfig = {
   analiseDocumento: true,
   guiaTrabalhista: true,
+  liquidacaoTrabalhista: true,
   slug: "trabalhista",
   endpoint: "/trabalhista-esp",
   areaCaso: "trabalhista",
@@ -1476,6 +1481,7 @@ const ambiental: RamoConfig = {
   analiseDocumento: true,
   guiaAmbiental: true,
   autosAmbientais: true,
+  ambientalEstrategia: true,
   slug: "ambiental",
   endpoint: "/admin-esp",
   areaCaso: "ambiental",
@@ -2006,6 +2012,8 @@ const previdenciario: RamoConfig = {
 };
 const digital_lgpd: RamoConfig = {
   analiseDocumento: true,
+  guiaLgpd: true,
+  lgpdRegistros: true,
   slug: "digital_lgpd",
   endpoint: "/cases/?area=empresarial",
   areaCaso: "empresarial",

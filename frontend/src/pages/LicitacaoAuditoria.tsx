@@ -5,6 +5,8 @@ import {
   ShieldAlert,
   CheckCircle2,
   FileText,
+  FileDown,
+  Loader2,
 } from "lucide-react";
 import api from "../lib/api";
 import { PageHeader } from "../components/UI";
@@ -27,6 +29,9 @@ export default function LicitacaoAuditoria() {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [res, setRes] = useState<Analise | null>(null);
+  const [edital, setEdital] = useState("");
+  const [concorrente, setConcorrente] = useState("");
+  const [gerandoPdf, setGerandoPdf] = useState(false);
   const [comIa, setComIa] = useState(false);
 
   const analisar = async () => {
@@ -49,6 +54,41 @@ export default function LicitacaoAuditoria() {
       );
     } finally {
       setLoading(false);
+    }
+  };
+
+  const gerarPdf = async () => {
+    if (!res) return;
+    setGerandoPdf(true);
+    setError(null);
+    try {
+      const r = await api.post("/v1/licitacao-auditoria/report-pdf", {
+        analise: {
+          summary: res.summary,
+          potential_flaws: res.potential_flaws,
+          equivalence_issues: res.equivalence_issues,
+          aviso: res.aviso ?? null,
+        },
+        edital,
+        concorrente,
+      });
+      const downloadUrl: string | undefined = r.data?.download_url;
+      if (!downloadUrl) throw new Error("download_url ausente na resposta");
+      const blob = await api.get(downloadUrl.replace(/^\/api/, ""), {
+        responseType: "blob",
+      });
+      const url = URL.createObjectURL(blob.data as Blob);
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = "auditoria-proposta-concorrente.pdf";
+      a.click();
+      URL.revokeObjectURL(url);
+    } catch (e: any) {
+      setError(
+        e?.response?.data?.detail || "Falha ao gerar o relatorio em PDF.",
+      );
+    } finally {
+      setGerandoPdf(false);
     }
   };
 
@@ -225,6 +265,39 @@ export default function LicitacaoAuditoria() {
                   </pre>
                 </div>
               )}
+
+              <div className="card space-y-3 p-5">
+                <span className="eyebrow">Relatorio de auditoria (Visual Law)</span>
+                <div className="grid gap-2 sm:grid-cols-2">
+                  <input
+                    className="input text-sm"
+                    placeholder="Edital (ex.: Pregao 12/2026)"
+                    value={edital}
+                    onChange={(e) => setEdital(e.target.value)}
+                  />
+                  <input
+                    className="input text-sm"
+                    placeholder="Concorrente"
+                    value={concorrente}
+                    onChange={(e) => setConcorrente(e.target.value)}
+                  />
+                </div>
+                <button
+                  onClick={gerarPdf}
+                  disabled={gerandoPdf}
+                  className="btn-gold flex items-center gap-2 text-sm"
+                >
+                  {gerandoPdf ? (
+                    <>
+                      <Loader2 className="h-4 w-4 animate-spin" /> Gerando PDF...
+                    </>
+                  ) : (
+                    <>
+                      <FileDown className="h-4 w-4" /> Gerar relatorio em PDF
+                    </>
+                  )}
+                </button>
+              </div>
             </>
           )}
         </div>
