@@ -220,6 +220,7 @@ async def executar_prompt(
     """
     from app.services.ai_gateway import chat as gw_chat
     from app.services.sanitizer import sanitizar_pii
+    from app.services.legal_base import garantir_identidade
 
     p = (await db.execute(
         select(PromptJuridico).where(
@@ -236,9 +237,14 @@ async def executar_prompt(
     # Sanitiza PII antes de enviar à IA
     conteudo_sanitizado, houve_pii = sanitizar_pii(conteudo_preenchido, [])
 
+    # Barreira anti-alucinação OBRIGATÓRIA: o conteúdo é autoral (biblioteca de
+    # prompts do usuário) e req.task_type é livre — sem system message a barreira
+    # do gateway (aplicar_base) não teria onde/quando agir. Injeta identidade OAB.
+    messages = garantir_identidade([{"role": "user", "content": conteudo_sanitizado}])
+
     try:
         resp = await gw_chat(
-            messages=[{"role": "user", "content": conteudo_sanitizado}],
+            messages=messages,
             task_type=req.task_type,
             temperature=req.temperature,
             max_tokens=req.max_tokens,
