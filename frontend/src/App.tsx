@@ -37,6 +37,7 @@ const CRMLeads = lazy(() => import("./pages/CRMLeads"));
 const IA = lazy(() => import("./pages/IA"));
 const Conhecimento = lazy(() => import("./pages/Conhecimento"));
 const Auditoria = lazy(() => import("./pages/Auditoria"));
+const MapaModulos = lazy(() => import("./pages/MapaModulos"));
 const Usuarios = lazy(() => import("./pages/Usuarios"));
 const Tarefas = lazy(() => import("./pages/Tarefas"));
 const Intimacoes = lazy(() => import("./pages/Intimacoes"));
@@ -193,30 +194,15 @@ export default function App() {
                 </RoleOnly>
               }
             />
-            <Route
-              path="/ambiental"
-              element={<Navigate to="/ramos/ambiental" replace />}
-            />
-            <Route
-              path="/data-room"
-              element={<Navigate to="/documentos" replace />}
-            />
-            <Route
-              path="/dashboard-executivo"
-              element={<Navigate to="/" replace />}
-            />
+            <Route path="/ambiental" element={<Navigate to="/ramos/ambiental" replace />} />
+            <Route path="/data-room" element={<Navigate to="/documentos" replace />} />
+            <Route path="/dashboard-executivo" element={<Navigate to="/" replace />} />
             <Route path="/jurimetria" element={<Jurimetria />} />
-            <Route
-              path="/central-relacionamento"
-              element={<CentralRelacionamento />}
-            />
+            <Route path="/central-relacionamento" element={<CentralRelacionamento />} />
             <Route path="/knowledge-hub" element={<KnowledgeHub />} />
             <Route path="/biblioteca" element={<Biblioteca />} />
             <Route path="/memoria" element={<MemoriaInstitucional />} />
-            <Route
-              path="/casos/:caseId/sala-de-guerra"
-              element={<SalaDeGuerra />}
-            />
+            <Route path="/casos/:caseId/sala-de-guerra" element={<SalaDeGuerra />} />
             <Route path="/produtividade" element={<Produtividade />} />
             <Route path="/ajuda" element={<Ajuda />} />
             <Route path="/noticias" element={<Noticias />} />
@@ -262,22 +248,13 @@ export default function App() {
             <Route path="/ramos" element={<RamosHub />} />
             <Route path="/ramos/:slug" element={<RamoBase />} />
             <Route path="/office-contracts" element={<OfficeContracts />} />
-            <Route
-              path="/partner-withdrawals"
-              element={<PartnerWithdrawals />}
-            />
+            <Route path="/partner-withdrawals" element={<PartnerWithdrawals />} />
             <Route path="/atividades" element={<CentralAtividades />} />
             <Route path="/financeiro" element={<FinanceiroWorkspace />} />
-            <Route
-              path="/financeiro-dashboard"
-              element={<Navigate to="/financeiro" replace />}
-            />
+            <Route path="/financeiro-dashboard" element={<Navigate to="/financeiro" replace />} />
             <Route path="/despesas" element={<Despesas />} />
             <Route path="/datajud" element={<DataJudBusca />} />
-            <Route
-              path="/despesas-recorrentes"
-              element={<DespesasRecorrentes />}
-            />
+            <Route path="/despesas-recorrentes" element={<DespesasRecorrentes />} />
             <Route path="/crm-leads" element={<CRMLeads />} />
             <Route path="/whatsapp" element={<Whatsapp />} />
             <Route
@@ -310,6 +287,14 @@ export default function App() {
               element={
                 <RoleOnly roles={["superadmin", "admin", "socio"]}>
                   <Auditoria />
+                </RoleOnly>
+              }
+            />
+            <Route
+              path="/mapa-modulos"
+              element={
+                <RoleOnly roles={["superadmin", "admin", "socio"]}>
+                  <MapaModulos />
                 </RoleOnly>
               }
             />
