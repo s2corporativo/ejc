@@ -83,6 +83,7 @@ const PortalAssinaturas = lazy(
   () => import("./pages/portal/PortalAssinaturas"),
 );
 const PortalMensagens = lazy(() => import("./pages/portal/PortalMensagens"));
+const NotFound = lazy(() => import("./pages/NotFound"));
 
 function Protected({ children }: { children: JSX.Element }) {
   const token = localStorage.getItem("ejc_access");
@@ -312,7 +313,7 @@ export default function App() {
               }
             />
           </Route>
-          <Route path="*" element={<Navigate to="/" replace />} />
+          <Route path="*" element={<NotFound />} />
         </Routes>
       </Suspense>
       <ToastContainer />
