@@ -319,6 +319,12 @@ class Settings(BaseSettings):
         a chave aleatória de fallback muda a cada reinício e desloga todos os
         usuários (e impede rejeição de tokens entre eventuais réplicas).
         """
+        # Canoniza casing/espaços antes de qualquer gate. Sem isto, "Production"
+        # ou " production " escapavam do ramo de produção e caíam no de dev, que
+        # AUTOGERA chave PII efêmera — corrompendo CPF/CNPJ cifrados a cada
+        # restart. Persiste o valor normalizado para todo `== "production"` a
+        # jusante ver o mesmo canônico.
+        self.APP_ENV = (self.APP_ENV or "").strip().lower()
         if self.APP_ENV == "production":
             if not self.SECRET_KEY or self.SECRET_KEY.startswith("TROCAR"):
                 raise ValueError(
@@ -328,13 +334,47 @@ class Settings(BaseSettings):
                 )
             if "SEU_DOMINIO" in getattr(self, 'FRONTEND_URL', ''):
                 raise ValueError("FRONTEND_URL não configurada para produção.")
-            # PII_ENCRYPTION_KEY/PII_HASH_KEY: NÃO geradas em produção mesmo se
-            # ausentes — ao contrário do SECRET_KEY, uma chave efêmera aqui
-            # corromperia dados cifrados silenciosamente a cada restart (perde
-            # a chave, perde o dado). services/pii_crypto.py falha alto na
-            # primeira tentativa real de cifrar/decifrar sem a chave definida.
-            # Não travamos o BOOT do app para não quebrar produção que ainda
-            # não migrou para o Bloco 6a (feature é opt-in até o backfill).
+            # PII_ENCRYPTION_KEY/PII_HASH_KEY: EXIGIDAS no boot em produção. O
+            # cadastro/edição de cliente faz dual-write incondicional de CPF/CNPJ
+            # cifrado + hash cego (routers/clients.py, migration 061) — sem as
+            # chaves, o PRIMEIRO cadastro com documento estoura em runtime, não
+            # no deploy. Falhar aqui é estritamente mais seguro e NÃO gera chave
+            # efêmera: continuamos jamais autogerando em produção (uma chave
+            # volátil corromperia dados cifrados a cada restart). Exigimos apenas
+            # que o operador defina uma chave estável antes de subir.
+            faltantes = [
+                nome for nome, valor in (
+                    ("PII_ENCRYPTION_KEY", self.PII_ENCRYPTION_KEY),
+                    ("PII_HASH_KEY", self.PII_HASH_KEY),
+                )
+                if not valor or valor.startswith("TROCAR")
+            ]
+            if faltantes:
+                raise ValueError(
+                    f"{' e '.join(faltantes)} ausente(s) ou placeholder em "
+                    "produção. Gere PII_ENCRYPTION_KEY com \"python3 -c 'from "
+                    "cryptography.fernet import Fernet; print(Fernet.generate_key()"
+                    ".decode())'\" e PII_HASH_KEY com \"python3 -c 'import secrets; "
+                    "print(secrets.token_urlsafe(32))'\", e defina no .env. "
+                    "Nunca troque uma chave já em uso — descriptografaria dados "
+                    "cifrados existentes."
+                )
+            # Valida o FORMATO da chave Fernet no boot. Sem isto, uma chave não-
+            # placeholder porém malformada (base64 inválido, whitespace colado,
+            # tamanho errado) passa aqui e só estoura no primeiro encrypt() em
+            # runtime (pii_crypto._fernet) — quebrando a promessa "falha no
+            # deploy, não no primeiro cadastro". PII_HASH_KEY serve para HMAC com
+            # qualquer bytes, então não tem formato a validar.
+            from cryptography.fernet import Fernet
+            try:
+                Fernet(self.PII_ENCRYPTION_KEY.encode())
+            except Exception as e:
+                raise ValueError(
+                    "PII_ENCRYPTION_KEY inválida: precisa ser uma chave Fernet "
+                    "(32 bytes url-safe base64). Gere com \"python3 -c 'from "
+                    "cryptography.fernet import Fernet; print(Fernet.generate_key()"
+                    ".decode())'\"."
+                ) from e
         elif not self.SECRET_KEY:
             # Desenvolvimento: gera chave efêmera para não travar o ambiente local.
             self.SECRET_KEY = secrets.token_urlsafe(64)

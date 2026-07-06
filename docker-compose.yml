@@ -104,12 +104,15 @@ services:
       redis:
         condition: service_healthy
     healthcheck:
-      # O único endpoint de health registrado é /api/health (main.py:358) —
-      # "/health" (sem /api) sempre 404, e o container nunca ficava "healthy".
-      test: ["CMD", "curl", "-fsS", "http://localhost:8000/api/health"]
+      # Worker Celery não expõe HTTP — o health correto é perguntar ao próprio
+      # Celery se há worker respondendo. `inspect ping` retorna != 0 quando
+      # nenhum worker responde no broker. start_period cobre o tempo de boot
+      # (conexão ao Redis + registro das filas) sem marcar unhealthy cedo demais.
+      test: ["CMD", "celery", "-A", "app.core.celery_app.celery_app", "inspect", "ping"]
       interval: 30s
       timeout: 10s
       retries: 5
+      start_period: 30s
 
   frontend:
     build:

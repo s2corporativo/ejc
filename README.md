@@ -135,8 +135,10 @@ node run.js "" "HASH=`$(docker exec ejc_backend python3 -c \"import os; from pas
 - WhatsApp: descartado. Se retomar: Evolution self-hosted
 
 ### Migrations Alembic
-- Última: `048` (alembic head)
-- 3 tabelas adicionadas sem alembic: `bank_analyses`, `bank_transactions`, `bank_abusive_charges`
+- Última: `069_api_keys` (alembic head)
+- Drift de `bank_analyses`, `bank_transactions`, `bank_abusive_charges` **resolvido**:
+  criadas por `053_reconcile_schema` (`CREATE TABLE IF NOT EXISTS`), na cadeia até o
+  head — um `alembic upgrade head` limpo já as cria. Sem pendência de schema.
 
 ---
 
