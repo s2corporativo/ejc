@@ -1,6 +1,6 @@
-"""075 — Pente fino do banco: FKs faltantes, UNIQUE parcial (soft-delete) e tipo de data.
+"""075 — Pente fino do banco: FK ai_logs, UNIQUE parcial (soft-delete) e tipo de data.
 
-Corrige quatro achados da auditoria de banco, todos reversíveis:
+Corrige três achados da auditoria de banco, todos reversíveis:
 
 1. FK faltando: `ai_logs.case_id` ganha FK -> cases.id ON DELETE SET NULL
    (antes era String solto sem integridade referencial). Órfãos são zerados
@@ -16,15 +16,11 @@ Corrige quatro achados da auditoria de banco, todos reversíveis:
 3. TIPO: `clients.data_nascimento` de String(10) -> Date, tratando linhas
    vazias/malformadas (viram NULL).
 
-4. Isolamento RAG / api_keys (defesa em profundidade): `knowledge_docs.client_id`,
-   `knowledge_docs.case_id` e `api_keys.client_id` ganham FK.
-   - client_id (knowledge_docs, api_keys): ON DELETE CASCADE. SET NULL faria o
-     conteúdo/chave privados virarem escopo GLOBAL (NULL = público) — vazamento
-     LGPD / escalonamento de privilégio. Erguer um cliente (right to erasure)
-     remove seu conteúdo/chave restritos.
-   - case_id (knowledge_docs): ON DELETE SET NULL. O doc permanece restrito ao
-     seu client_id (sem vazamento cross-cliente); só perde o vínculo de caso.
-   Órfãos são limpos antes (DELETE p/ CASCADE, UPDATE NULL p/ SET NULL).
+Nota: FKs de isolamento RAG/api_keys (`knowledge_docs.client_id/case_id`,
+`api_keys.client_id`) NÃO entram aqui — `client_id` do RAG é um identificador
+de ESCOPO (nem sempre um cliente formal; o isolamento é imposto na camada de
+serviço), então uma FK estrita rejeitaria escopos válidos. Fica como
+recomendação (exige alinhar seeds/testes de escopo antes).
 
 Revision ID: 075_fk_partial_unique_dtnasc
 Revises: 074_remove_licitacao_admin_tipo
@@ -89,42 +85,8 @@ def upgrade() -> None:
         """
     )
 
-    # ── 4. Isolamento RAG / api_keys (FK defesa em profundidade) ───────────────
-    # knowledge_docs.client_id → clients.id ON DELETE CASCADE
-    op.execute(
-        "DELETE FROM knowledge_docs "
-        "WHERE client_id IS NOT NULL AND client_id NOT IN (SELECT id FROM clients)"
-    )
-    op.create_foreign_key(
-        "fk_knowledge_docs_client_id_clients", "knowledge_docs", "clients",
-        ["client_id"], ["id"], ondelete="CASCADE",
-    )
-    # knowledge_docs.case_id → cases.id ON DELETE SET NULL
-    op.execute(
-        "UPDATE knowledge_docs SET case_id = NULL "
-        "WHERE case_id IS NOT NULL AND case_id NOT IN (SELECT id FROM cases)"
-    )
-    op.create_foreign_key(
-        "fk_knowledge_docs_case_id_cases", "knowledge_docs", "cases",
-        ["case_id"], ["id"], ondelete="SET NULL",
-    )
-    # api_keys.client_id → clients.id ON DELETE CASCADE
-    op.execute(
-        "DELETE FROM api_keys "
-        "WHERE client_id IS NOT NULL AND client_id NOT IN (SELECT id FROM clients)"
-    )
-    op.create_foreign_key(
-        "fk_api_keys_client_id_clients", "api_keys", "clients",
-        ["client_id"], ["id"], ondelete="CASCADE",
-    )
-
 
 def downgrade() -> None:
-    # ── 4. reverte FKs RAG / api_keys ──────────────────────────────────────────
-    op.drop_constraint("fk_api_keys_client_id_clients", "api_keys", type_="foreignkey")
-    op.drop_constraint("fk_knowledge_docs_case_id_cases", "knowledge_docs", type_="foreignkey")
-    op.drop_constraint("fk_knowledge_docs_client_id_clients", "knowledge_docs", type_="foreignkey")
-
     # ── 3. data_nascimento Date → String(10) ───────────────────────────────────
     op.execute(
         """
