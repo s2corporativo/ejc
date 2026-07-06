@@ -334,6 +334,16 @@ class Settings(BaseSettings):
                 )
             if "SEU_DOMINIO" in getattr(self, 'FRONTEND_URL', ''):
                 raise ValueError("FRONTEND_URL não configurada para produção.")
+            # CORS wildcard em produção é proibido: o app usa
+            # allow_credentials=True (cookies/Authorization), e "*" com
+            # credenciais permitiria qualquer origem ler respostas
+            # autenticadas. Falha explícita no boot em vez de expor em runtime.
+            if "*" in self.cors_origins_list:
+                raise ValueError(
+                    "CORS_ORIGINS não pode conter '*' em produção "
+                    "(allow_credentials=True). Liste os domínios exatos do "
+                    "frontend, ex.: CORS_ORIGINS=https://app.seu-dominio.adv.br"
+                )
             # PII_ENCRYPTION_KEY/PII_HASH_KEY: EXIGIDAS no boot em produção. O
             # cadastro/edição de cliente faz dual-write incondicional de CPF/CNPJ
             # cifrado + hash cego (routers/clients.py, migration 061) — sem as
