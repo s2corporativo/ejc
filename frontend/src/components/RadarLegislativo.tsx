@@ -53,9 +53,8 @@ export default function RadarLegislativo() {
       </div>
       <p className="mb-4 text-xs text-slate-500">
         Proposições recentes que casam com os temas estratégicos do escritório
-        (tributos, direito administrativo, medicamentos veterinários), direto
-        dos Dados
-        Abertos da Câmara e do Senado.
+        (tributos, direito administrativo), direto dos Dados Abertos da Câmara e
+        do Senado.
       </p>
 
       {loading ? (
