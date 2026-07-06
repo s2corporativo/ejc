@@ -66,7 +66,10 @@ async def _rodar_seed_sync(nome: str, fn) -> None:
     falha é registrada mas não aborta os demais seeds nem o deploy."""
     try:
         await asyncio.to_thread(fn)
-    except Exception as e:  # noqa: BLE001 — seed é best-effort no bootstrap
+    except (Exception, SystemExit) as e:  # noqa: BLE001 — seed best-effort:
+        # os seeds síncronos chamam sys.exit(1) em má-configuração (URL vazia),
+        # que é SystemExit (BaseException) e escaparia de `except Exception`,
+        # abortando o bootstrap. Capturamos ambos para honrar o "não-fatal".
         print(f"[seed] AVISO: seed '{nome}' falhou (não-fatal): {e}")
 
 
