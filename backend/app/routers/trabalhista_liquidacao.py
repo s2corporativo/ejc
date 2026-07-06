@@ -35,6 +35,7 @@ router = APIRouter(prefix="/trabalhista/liquidacao", tags=["Trabalhista / Liquid
 # Retenção dos PDFs (contêm valores e dados de terceiros — LGPD): varredura
 # best-effort remove os mais antigos que este TTL a cada geração.
 PDF_TTL_SEGUNDOS = 3600  # 1h
+from app.services import visual_law_files as _vlf  # #27: arnês único
 MAX_VERBAS = 100
 
 # Limites de tamanho no payload de /planilha-pdf (renderizado pelo WeasyPrint —
@@ -155,19 +156,8 @@ def _limpar_pdfs_antigos(out_dir: str) -> None:
     """Retenção LGPD: os PDFs carregam valores e dados de terceiros. Varredura
     best-effort remove os mais antigos que o TTL a cada geração — sem estado
     externo, tolerante a falhas (nunca quebra a resposta)."""
-    try:
-        agora = time.time()
-        for nome in os.listdir(out_dir):
-            if not nome.endswith(".pdf"):
-                continue
-            caminho = os.path.join(out_dir, nome)
-            try:
-                if agora - os.path.getmtime(caminho) > PDF_TTL_SEGUNDOS:
-                    os.remove(caminho)
-            except OSError:
-                continue
-    except OSError:
-        pass
+    # #27: purga TTL centralizada em services/visual_law_files (retenção LGPD).
+    _vlf.purgar_antigos(out_dir, PDF_TTL_SEGUNDOS)
 
 
 def _moeda(v: float) -> str:
@@ -320,9 +310,8 @@ async def download_planilha(arquivo_id: str,
                             cu: User = Depends(get_current_user)):
     """Download do PDF gerado pelo POST acima. `arquivo_id` é validado como UUID
     (nunca interpolado livre no path — sem traversal)."""
-    if not re.fullmatch(r"[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}",
-                        arquivo_id):
-        raise HTTPException(422, "Identificador de planilha inválido.")
+    # #27: validação anti-traversal (UUID) centralizada.
+    _vlf.validar_uuid(arquivo_id)
     path = os.path.join(_pdf_dir(), f"liquidacao_{arquivo_id}.pdf")
     if not os.path.isfile(path):
         raise HTTPException(404, "Planilha não encontrada — gere via POST "
