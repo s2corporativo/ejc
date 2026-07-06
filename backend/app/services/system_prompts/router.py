@@ -64,9 +64,9 @@ CONFIGURACOES: dict[TarefaIA, ConfiguracaoIA] = {
     TarefaIA.DOSSIE:       _claude("analise_caso", _COMPLEXO, 5000, 0.1, "Dossiê completo"),
     TarefaIA.MINUTAS:      _claude("minutas", _COMPLEXO, 6000, 0.15, "Redação de peças"),
     TarefaIA.AMBIENTAL:    _claude("ambiental", _COMPLEXO, 4000, 0.1, "Direito ambiental técnico"),
-    TarefaIA.TRABALHISTA:  _claude("analise_caso", _COMPLEXO, 3500, 0.1, "CLT + TST"),
-    TarefaIA.CRIMINAL:     _claude("analise_caso", _COMPLEXO, 3000, 0.1, "Criminal — sensível"),
-    TarefaIA.FAMILIA:      _claude("analise_caso", _COMPLEXO, 3000, 0.1, "Família — sensível"),
+    TarefaIA.TRABALHISTA:  _claude("trabalhista", _COMPLEXO, 3500, 0.1, "CLT + TST"),
+    TarefaIA.CRIMINAL:     _claude("criminal", _COMPLEXO, 3000, 0.1, "Criminal — sensível"),
+    TarefaIA.FAMILIA:      _claude("familia", _COMPLEXO, 3000, 0.1, "Família — sensível"),
     TarefaIA.PESQUISA_JURIDICA: _claude("pesquisa_juridica", _COMPLEXO, 3000, 0.2, "Pesquisa jurisprudencial"),
     TarefaIA.DEFAULT:      _claude("default", _RAPIDO, 2000, 0.2, "Fallback — Haiku"),
 }
