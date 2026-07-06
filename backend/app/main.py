@@ -230,6 +230,12 @@ app.add_exception_handler(RateLimitExceeded, _rate_limit_exceeded_handler)
 # ── Middlewares (ordem importa: CORS por fora, Auth por dentro) ───────────────
 app.add_middleware(AuthMiddleware)          # ← P0-1 CORRIGIDO: registrado!
 
+# Item 1.1 — captura o IP real por requisição num ContextVar para que TODO
+# evento de auditoria (não só LOGIN) grave o IP de origem. Puro-ASGI (roda na
+# mesma task do endpoint → ContextVar propaga com segurança).
+from app.core.request_context import ClientIPMiddleware
+app.add_middleware(ClientIPMiddleware)
+
 # Compressão GZip (>500 bytes): reduz payload JSON em 70-85%. Fica entre
 # CORS (externo) e Auth (interno) — não altera a lógica de autorização.
 app.add_middleware(GZipMiddleware, minimum_size=500)

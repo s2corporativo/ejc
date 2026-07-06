@@ -1,7 +1,30 @@
 import { useState } from "react";
+import { Link } from "react-router-dom";
+import { BookOpen, Library, Brain, ChevronRight } from "lucide-react";
 import api from "../lib/api";
 import { PageHeader, Spinner } from "../components/UI";
 import { ConhecimentoStats } from "../components/Dashboards";
+
+const CATEGORIAS = [
+  {
+    to: "/conhecimento",
+    label: "Base de Conhecimento",
+    desc: "Leis, súmulas e doutrina indexadas para RAG",
+    icon: BookOpen,
+  },
+  {
+    to: "/biblioteca",
+    label: "Biblioteca de Estratégias",
+    desc: "Teses e peças de referência do escritório",
+    icon: Library,
+  },
+  {
+    to: "/memoria",
+    label: "Memória Institucional",
+    desc: "Casos, resultados e lições aprendidas",
+    icon: Brain,
+  },
+] as const;
 
 // Busca unificada: agrega RAG semântico + teses + jurisprudência interna + memória institucional.
 // Não cria tabela própria — é uma camada de busca sobre o conhecimento que já existe.
@@ -65,6 +88,30 @@ export default function KnowledgeHub() {
       />
 
       <ConhecimentoStats />
+
+      <div className="mb-6">
+        <h2 className="text-sm font-semibold text-slate-700 mb-3">Categorias</h2>
+        <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
+          {CATEGORIAS.map(({ to, label, desc, icon: Icon }) => (
+            <Link
+              key={to}
+              to={to}
+              className="card p-4 flex items-start gap-3 transition-all hover:border-primary-300 hover:shadow-sm"
+            >
+              <span className="rounded-xl bg-primary-50 p-2.5 text-primary-600 ring-1 ring-inset ring-primary-100">
+                <Icon className="h-5 w-5" />
+              </span>
+              <div className="min-w-0 flex-1">
+                <div className="flex items-center gap-1 text-sm font-semibold text-slate-800">
+                  {label}
+                  <ChevronRight className="h-3.5 w-3.5 text-slate-400" />
+                </div>
+                <p className="mt-0.5 text-xs text-slate-500">{desc}</p>
+              </div>
+            </Link>
+          ))}
+        </div>
+      </div>
 
       <div className="flex gap-2 mb-6 max-w-2xl">
         <input

@@ -22,7 +22,7 @@ def test_alembic_cadeia_integra():
 
     script = ScriptDirectory.from_config(Config("alembic.ini"))
     # Head único da cadeia atual.
-    assert script.get_heads() == ["077_deadline_confirmado_doc"]
+    assert script.get_heads() == ["078_seed_kanban_columns"]
     # walk_revisions percorre head→base; lança se houver down_revision ausente.
     revs = [r.revision for r in script.walk_revisions()]
     assert revs[-1] == "001_inicial"
@@ -46,3 +46,5 @@ def test_alembic_cadeia_integra():
     assert "074_remove_licitacao_admin_tipo" in revs
     assert "075_fk_partial_unique_dtnasc" in revs
     assert "076_fk_hot_path_indexes" in revs
+    assert "077_deadline_confirmado_doc" in revs
+    assert "078_seed_kanban_columns" in revs

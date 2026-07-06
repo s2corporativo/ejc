@@ -163,7 +163,7 @@ export default function Clientes() {
               </tr>
             </thead>
             <tbody className="divide-y divide-slate-100">
-              {data.data.map((c) => (
+              {(Array.isArray(data.data) ? data.data : []).map((c) => (
                 <tr key={c.id} className="hover:bg-slate-50">
                   <td className="px-4 py-3 font-medium text-navy">
                     <Link
@@ -479,7 +479,16 @@ export default function Clientes() {
             variant="ghost"
             icon={<ShieldAlert size={15} />}
             disabled={conflitoLoading}
-            onClick={checarConflito}
+            onClick={async () => {
+              const r = await checarConflito();
+              if (r && r.nivel === "nenhum")
+                toast.success("Nenhum conflito de interesses encontrado.");
+              else if (!r)
+                toast.info(
+                  "Informe nome/documento ou parte contrária para verificar.",
+                );
+              // r.nivel !== "nenhum" → o Alert inline já exibe o conflito
+            }}
           >
             {conflitoLoading ? "Verificando..." : "Verificar conflito"}
           </Button>

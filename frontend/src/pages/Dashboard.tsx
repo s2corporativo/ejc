@@ -328,7 +328,7 @@ export default function Dashboard() {
     { to: "/clientes", label: "Novo cliente", icon: Users },
     { to: "/pecas", label: "Gerar peca", icon: FileText },
     { to: "/casos?filtro=ativos", label: "Sala de Guerra", icon: Gavel },
-    { to: "/inteligencia", label: "Radar de Poder", icon: Sparkles },
+    { to: "/radar-regulatorio", label: "Radar de Poder", icon: Sparkles },
   ];
 
   return (

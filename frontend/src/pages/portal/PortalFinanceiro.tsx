@@ -23,7 +23,7 @@ export default function PortalFinanceiro() {
   useEffect(() => {
     api
       .get("/portal/financeiro")
-      .then((r) => setRows(r.data?.data ?? r.data ?? []))
+      .then((r) => setRows(Array.isArray(r.data) ? r.data : (Array.isArray(r.data?.data) ? r.data.data : [])))
       .finally(() => setLoading(false));
   }, []);
 

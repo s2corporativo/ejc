@@ -42,13 +42,13 @@ export default function IA() {
     if (tab === "logs")
       api
         .get("/ai/logs", { params: { page_size: 30 } })
-        .then((r) => setLogs(r.data.data));
+        .then((r) => setLogs(Array.isArray(r.data?.data) ? r.data.data : []));
   }, [tab]);
 
   useEffect(() => {
     api
       .get("/cases/", { params: { page_size: 100 } })
-      .then((r) => setCasos(r.data.data))
+      .then((r) => setCasos(Array.isArray(r.data?.data) ? r.data.data : []))
       .catch(() => setCasos([]));
   }, []);
 
@@ -134,7 +134,7 @@ export default function IA() {
     await api.patch(`/ai/logs/${id}/hitl`, { status });
     api
       .get("/ai/logs", { params: { page_size: 30 } })
-      .then((r) => setLogs(r.data.data));
+      .then((r) => setLogs(Array.isArray(r.data?.data) ? r.data.data : []));
   };
 
   const tabs = [

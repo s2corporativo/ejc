@@ -334,7 +334,7 @@ export default function Pecas() {
               </tr>
             </thead>
             <tbody className="divide-y divide-slate-100">
-              {data.data.map((p) => (
+              {(Array.isArray(data.data) ? data.data : []).map((p) => (
                 <tr key={p.id} className="hover:bg-slate-50">
                   <td className="px-4 py-3 font-medium text-navy">
                     {p.titulo}

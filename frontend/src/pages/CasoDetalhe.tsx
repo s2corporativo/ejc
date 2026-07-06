@@ -40,6 +40,24 @@ import { useAuth } from "../stores/auth";
 import { RAMOS } from "./ramos/ramosConfig";
 import type { FerramentaConfig } from "./ramos/ramosConfig";
 
+// Item 4.4: baixa um documento do caso reutilizando o endpoint ja validado
+// GET /documents/:id/download (mesmo padrao de Documentos.tsx).
+async function baixarDoc(docId: string, filename: string) {
+  try {
+    const r = await api.get(`/documents/${docId}/download`, {
+      responseType: "blob",
+    });
+    const url = URL.createObjectURL(r.data);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = filename || "documento";
+    a.click();
+    URL.revokeObjectURL(url);
+  } catch {
+    toast.error("Nao foi possivel baixar o documento.");
+  }
+}
+
 const TABS = [
   { key: "resumo", label: "Resumo" },
   { key: "processos", label: "Processos" },
@@ -426,7 +444,7 @@ function TabResumo({ caso }: { caso: Case }) {
   useEffect(() => {
     api
       .get(`/cases/${caso.id}/movimentos`)
-      .then((r) => setMovs(r.data))
+      .then((r) => setMovs(Array.isArray(r.data) ? r.data : []))
       .catch(() => {});
   }, [caso.id]);
 
@@ -538,7 +556,7 @@ function TabResumo({ caso }: { caso: Case }) {
     setNovoMov("");
     api
       .get(`/cases/${caso.id}/movimentos`)
-      .then((r) => setMovs(r.data))
+      .then((r) => setMovs(Array.isArray(r.data) ? r.data : []))
       .catch(() => {});
   };
 
@@ -1717,7 +1735,7 @@ function TabPartes({ caseId }: { caseId: string }) {
   useEffect(() => {
     api
       .get(`/cases/${caseId}/partes`)
-      .then((r) => setPartes(r.data))
+      .then((r) => setPartes(Array.isArray(r.data) ? r.data : []))
       .catch(() => {});
   }, [caseId]);
 
@@ -1727,7 +1745,7 @@ function TabPartes({ caseId }: { caseId: string }) {
     setShowForm(false);
     api
       .get(`/cases/${caseId}/partes`)
-      .then((r) => setPartes(r.data))
+      .then((r) => setPartes(Array.isArray(r.data) ? r.data : []))
       .catch(() => {});
   };
 
@@ -2342,7 +2360,7 @@ function TabMensagens({ caseId }: { caseId: string }) {
   const carregar = () =>
     api
       .get(`/cases/${caseId}/mensagens`)
-      .then((r) => setMsgs(r.data))
+      .then((r) => setMsgs(Array.isArray(r.data) ? r.data : []))
       .catch(() => {});
   useEffect(() => {
     carregar();
@@ -2439,7 +2457,7 @@ function TabEtiquetas({ caseId }: { caseId: string }) {
       .catch(() => {});
     api
       .get(`/cases/${caseId}/etiquetas`)
-      .then((r) => setDoCaso(r.data))
+      .then((r) => setDoCaso(Array.isArray(r.data) ? r.data : []))
       .catch(() => {});
   };
   useEffect(() => {
@@ -2581,7 +2599,7 @@ function TabMemoria({ caseId }: { caseId: string }) {
   const carregar = () =>
     api
       .get(`/memoria-institucional?case_id=${caseId}`)
-      .then((r) => setItens(r.data))
+      .then((r) => setItens(Array.isArray(r.data) ? r.data : []))
       .catch(() => {});
   useEffect(() => {
     carregar();
@@ -3824,9 +3842,15 @@ export default function CasoDetalhe() {
             endpoint={`/documents/?case_id=${id}`}
             empty="Nenhum documento vinculado a este caso"
             renderItem={(d) => (
-              <div className="card p-3 flex justify-between items-center text-sm">
+              <div
+                className="card p-3 flex justify-between items-center text-sm cursor-pointer hover:bg-slate-50"
+                onClick={() =>
+                  baixarDoc(d.id, d.filename || d.nome_arquivo || d.titulo)
+                }
+                title="Clique para baixar"
+              >
                 <span className="text-gray-800">
-                  {d.titulo || d.nome_arquivo}
+                  {d.titulo || d.filename || d.nome_arquivo}
                 </span>
                 <span className="text-gray-400 text-xs">
                   {d.tipo_peca || d.tipo}

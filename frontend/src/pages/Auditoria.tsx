@@ -12,7 +12,7 @@ export default function Auditoria() {
       .get("/audit/", {
         params: {
           acao: acao || undefined,
-          modulo: modulo || undefined,
+          entidade: modulo || undefined,
           page_size: 100,
         },
       })
@@ -79,7 +79,7 @@ export default function Auditoria() {
 
       {!data ? (
         <Spinner />
-      ) : data.data.length === 0 ? (
+      ) : (!Array.isArray(data.data) || data.data.length === 0) ? (
         <Empty message="Nenhum log com esses filtros" />
       ) : (
         <div className="card overflow-x-auto">
@@ -95,7 +95,7 @@ export default function Auditoria() {
               </tr>
             </thead>
             <tbody className="divide-y divide-slate-100">
-              {data.data.map((l: any) => (
+              {(Array.isArray(data.data) ? data.data : []).map((l: any) => (
                 <tr key={l.id} className="hover:bg-slate-50">
                   <td className="px-4 py-2.5 text-xs text-slate-500">
                     {new Date(l.created_at).toLocaleString("pt-BR")}
@@ -105,13 +105,15 @@ export default function Auditoria() {
                       {l.acao}
                     </span>
                   </td>
-                  <td className="px-4 py-2.5 text-xs">{l.modulo}</td>
-                  <td className="px-4 py-2.5 text-xs">{l.usuario_id || "—"}</td>
+                  <td className="px-4 py-2.5 text-xs">{l.entidade || "—"}</td>
+                  <td className="px-4 py-2.5 text-xs">
+                    {l.user_nome || l.user_id || "—"}
+                  </td>
                   <td className="px-4 py-2.5 text-xs text-slate-400">
                     {l.ip || "—"}
                   </td>
                   <td className="px-4 py-2.5 text-xs text-slate-500 max-w-[280px] truncate">
-                    {l.descricao || "—"}
+                    {l.detalhes || "—"}
                   </td>
                 </tr>
               ))}

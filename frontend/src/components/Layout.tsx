@@ -11,18 +11,15 @@ import {
   AlarmClock,
   BarChart3,
   Bell,
-  Brain,
   BrainCircuit,
   BookOpen,
   Bot,
   Briefcase,
-  Building2,
   CalendarClock,
   CheckSquare,
   ChevronDown,
   ChevronLeft,
   ChevronRight,
-  Coins,
   FileSignature,
   FileText,
   FolderOpen,
@@ -31,7 +28,6 @@ import {
   Inbox,
   LayoutDashboard,
   LayoutGrid,
-  Library,
   ListChecks,
   LogOut,
   Menu,
@@ -39,7 +35,6 @@ import {
   Moon,
   Newspaper,
   Plus,
-  Receipt,
   Scale,
   ScrollText,
   Search,
@@ -98,7 +93,7 @@ const NAV: NavItem[] = [
 
   // ── Jurídico ──
   { to: "/casos", label: "Casos", icon: Gavel, group: "Juridico" },
-  { to: "/datajud", label: "Processos", icon: Scale, group: "Juridico" },
+  { to: "/datajud", label: "Consulta DataJud (CNJ)", icon: Scale, group: "Juridico" },
   { to: "/prazos", label: "Prazos", icon: AlarmClock, group: "Juridico" },
   { to: "/intimacoes", label: "Intimacoes", icon: Inbox, group: "Juridico" },
   {
@@ -147,20 +142,6 @@ const NAV: NavItem[] = [
     icon: Wallet,
     group: "Financeiro",
     roles: ["superadmin", "admin", "socio", "financeiro"],
-  },
-  {
-    to: "/honorarios",
-    label: "Honorarios",
-    icon: Coins,
-    group: "Financeiro",
-    roles: ["superadmin", "admin", "socio", "advogado", "financeiro"],
-  },
-  { to: "/despesas", label: "Despesas", icon: Receipt, group: "Gestao" },
-  {
-    to: "/sociedade",
-    label: "Sociedade",
-    icon: Building2,
-    group: "Financeiro",
   },
 
   // ── Inteligência ──
@@ -220,13 +201,6 @@ const NAV: NavItem[] = [
     ],
   },
   {
-    to: "/conhecimento",
-    label: "Conhecimento",
-    icon: BookOpen,
-    group: "Inteligencia",
-    roles: ["superadmin", "admin", "socio"],
-  },
-  {
     to: "/jurimetria",
     label: "Jurimetria",
     icon: BarChart3,
@@ -242,14 +216,13 @@ const NAV: NavItem[] = [
   { to: "/kanban", label: "Kanban", icon: LayoutGrid, group: "Inteligencia" },
 
   // ── Biblioteca / Conhecimento ──
-  { to: "/wiki", label: "Wiki", icon: BookOpen, group: "Biblioteca" },
   {
-    to: "/biblioteca",
-    label: "Biblioteca",
-    icon: Library,
+    to: "/knowledge-hub",
+    label: "Conhecimento",
+    icon: BookOpen,
     group: "Biblioteca",
   },
-  { to: "/memoria", label: "Memoria", icon: Brain, group: "Biblioteca" },
+  { to: "/wiki", label: "Wiki", icon: BookOpen, group: "Biblioteca" },
   { to: "/noticias", label: "Noticias", icon: Newspaper, group: "Biblioteca" },
   {
     to: "/diario-oficial",
@@ -287,9 +260,16 @@ const NAV: NavItem[] = [
     roles: ["superadmin", "admin", "socio"],
   },
   {
-    to: "/usuarios",
+    to: "/configuracoes",
     label: "Configuracoes",
     icon: Settings,
+    group: "Administracao",
+    roles: ["superadmin", "admin"],
+  },
+  {
+    to: "/usuarios",
+    label: "Usuarios",
+    icon: Users,
     group: "Administracao",
     roles: ["superadmin", "admin"],
   },

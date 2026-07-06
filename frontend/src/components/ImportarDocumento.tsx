@@ -304,6 +304,10 @@ export default function ImportarDocumento({
         cnpj: dp2.cnpj || primeiro(de.cnpjs),
       };
       if (tipoSelecionado) patch._tipo_documento = tipoSelecionado;
+      // Item 4.2: retém o arquivo original para que Casos.tsx o persista na GED
+      // (vinculado ao caso) após criar o caso — antes o PDF era só analisado e
+      // descartado, e a aba Documentos ficava em "Documentos (0)".
+      patch._arquivo_original = file;
       onPrefill(patch);
       // Sugestão de tipo por IA — best-effort; falha não interrompe o fluxo.
       try {

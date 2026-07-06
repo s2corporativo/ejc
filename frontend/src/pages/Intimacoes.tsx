@@ -79,7 +79,7 @@ export default function Intimacoes() {
   const load = () =>
     api
       .get(`/intimacoes/?apenas_pendentes=${pendentes}`)
-      .then((r) => setItems(r.data.data));
+      .then((r) => setItems(Array.isArray(r.data?.data) ? r.data.data : []));
 
   const loadStatus = () =>
     api

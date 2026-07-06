@@ -27,7 +27,11 @@ async def listar(
     db: AsyncSession = Depends(get_db),
     cu: User = Depends(require_roles(["superadmin", "admin", "socio"])),
 ):
-    q = select(AuditLog)
+    # LEFT JOIN em users para exibir o NOME de quem agiu (não só o UUID) —
+    # valor probatório do log (item 1.1). Fica NULL para eventos sem usuário.
+    q = select(AuditLog, User.full_name, User.email).outerjoin(
+        User, User.id == AuditLog.user_id
+    )
     if acao:
         q = q.where(AuditLog.acao == acao)
     if entidade:
@@ -45,14 +49,15 @@ async def listar(
     )).scalar()
     rows = (await db.execute(
         q.offset((page - 1) * page_size).limit(page_size)
-    )).scalars().all()
+    )).all()
     return {
         "data": [
             {"id": l.id, "user_id": l.user_id, "user_role": l.user_role,
+             "user_nome": full_name or email,
              "acao": l.acao, "entidade": l.entidade,
              "registro_id": l.registro_id, "detalhes": l.detalhes,
              "ip": l.ip, "created_at": l.created_at}
-            for l in rows
+            for (l, full_name, email) in rows
         ],
         "total": total, "page": page, "page_size": page_size,
     }

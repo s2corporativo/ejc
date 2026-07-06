@@ -116,7 +116,15 @@ export default function Sociedade() {
         setTotalPart(s.value.data?.total_participacao ?? 0);
       } else setErro("Acesso restrito a sócios.");
       if (d.status === "fulfilled")
-        setDistrib(d.value.data?.data ?? d.value.data ?? []);
+        setDistrib(
+          Array.isArray(d.value.data?.items)
+            ? d.value.data.items
+            : Array.isArray(d.value.data?.data)
+              ? d.value.data.data
+              : Array.isArray(d.value.data)
+                ? d.value.data
+                : [],
+        );
       if (u.status === "fulfilled")
         setUsers(
           u.value.data?.data ?? u.value.data?.items ?? u.value.data ?? [],

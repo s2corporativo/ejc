@@ -139,7 +139,7 @@ export default function Documentos() {
         prev
           ? {
               ...prev,
-              data: prev.data.map((d: any) =>
+              data: (Array.isArray(prev.data) ? prev.data : []).map((d: any) =>
                 d.id === classDoc.id ? { ...d, tipo: novoTipo } : d,
               ),
             }
@@ -208,7 +208,7 @@ export default function Documentos() {
               </tr>
             </thead>
             <tbody className="divide-y divide-slate-100">
-              {data.data.map((d: any) => (
+              {(Array.isArray(data.data) ? data.data : []).map((d: any) => (
                 <tr key={d.id} className="hover:bg-slate-50">
                   <td className="px-4 py-3 font-medium text-navy flex items-center gap-1.5">
                     {confIcon(d.confidencialidade)} {d.titulo}

@@ -15,7 +15,10 @@ router = APIRouter(prefix="/intelligence-v3", tags=["Intelligence"])
 
 @router.get("/radar/legislativo", dependencies=[Depends(rate_limit("radar-legislativo", 10))])
 async def radar_legislativo(cu: User = Depends(get_current_user)):
-    keywords = ["tributo", "pis", "cofins", "medicamento", "veterinario", "administrativo"]
+    # Item 5.11: "veterinario" está fora do escopo do escritório (achado da
+    # auditoria: "medicamentos veterinários"). "medicamento" é mantido por
+    # cobrir projetos de ANVISA/pharma com viés tributário/regulatório.
+    keywords = ["tributo", "pis", "cofins", "medicamento", "administrativo"]
     camara, senado = await asyncio.gather(
         radar_poder.monitorar_projetos_lei(keywords),
         radar_poder.monitorar_materias_senado(keywords),

@@ -223,6 +223,28 @@ async def dashboard_governanca(
     logs_validacao = (await db.execute(select(AILog.prompt_sanitizado).where(AILog.created_at >= desde, AILog.prompt_sanitizado.ilike("%score_confianca%")))).scalars().all()
     scores = [s for s in (_parse_score(x) for x in logs_validacao) if s is not None]
 
+    # ── HITL a NÍVEL DE PEÇA (item 1.2) ──────────────────────────────────
+    # A taxa_hitl_pct acima é o % de LOGS de IA marcados manualmente como
+    # revisado/aplicado — estruturalmente ~0%, pois a revisão humana grava em
+    # LegalDoc.human_reviewed (controle realmente imposto por código em
+    # legal_docs.py), nunca em AILog.status_hitl. A métrica que reflete o
+    # controle HITL efetivo é a cobertura de revisão das PEÇAS geradas por IA.
+    pecas_ia_total = (await db.execute(
+        select(sqlfunc.count()).select_from(LegalDoc).where(
+            LegalDoc.deleted_at.is_(None),
+            LegalDoc.ai_generated.is_(True),
+            LegalDoc.created_at >= desde,
+        )
+    )).scalar() or 0
+    pecas_ia_revisadas = (await db.execute(
+        select(sqlfunc.count()).select_from(LegalDoc).where(
+            LegalDoc.deleted_at.is_(None),
+            LegalDoc.ai_generated.is_(True),
+            LegalDoc.human_reviewed.is_(True),
+            LegalDoc.created_at >= desde,
+        )
+    )).scalar() or 0
+
     docs = (await db.execute(select(KnowledgeDoc).where(KnowledgeDoc.deleted_at.is_(None)))).scalars().all()
     conf_map = {"alta": 0, "media": 0, "baixa": 0, "bloqueado": 0, "sem_curadoria": 0}
     rag_status_map: dict[str, int] = {}
@@ -257,7 +279,14 @@ async def dashboard_governanca(
         "periodo_dias": dias,
         "ia": {
             "total_chamadas": total_logs,
-            "taxa_hitl_pct": round((aplicados + revisados) / total_logs * 100, 1) if total_logs else None,
+            # Cobertura HITL das PEÇAS de IA — métrica ligada ao controle imposto
+            # por código (LegalDoc.human_reviewed). É o indicador principal do painel.
+            "hitl_pecas_pct": round(pecas_ia_revisadas / pecas_ia_total * 100, 1) if pecas_ia_total else None,
+            "pecas_ia_geradas": pecas_ia_total,
+            "pecas_ia_revisadas": pecas_ia_revisadas,
+            # Ratio a nível de LOG (marcação manual em AILog.status_hitl) — mantido
+            # para diagnóstico, mas NÃO é a cobertura de revisão humana das peças.
+            "taxa_hitl_logs_pct": round((aplicados + revisados) / total_logs * 100, 1) if total_logs else None,
             "por_status": status_map,
             "score_medio_validacoes": round(sum(scores) / len(scores), 1) if scores else None,
             "validacoes_com_score": len(scores),

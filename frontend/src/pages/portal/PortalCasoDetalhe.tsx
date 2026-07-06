@@ -11,7 +11,7 @@ function MensagensCliente({ caseId }: { caseId: string }) {
   const carregar = () =>
     api
       .get(`/portal/casos/${caseId}/mensagens`)
-      .then((r) => setMsgs(r.data))
+      .then((r) => setMsgs(Array.isArray(r.data) ? r.data : []))
       .catch(() => {});
   useEffect(() => {
     carregar();
@@ -116,12 +116,12 @@ export default function PortalCasoDetalhe() {
         </div>
       </div>
 
-      {proximas_datas.length > 0 && (
+      {Array.isArray(proximas_datas) && proximas_datas.length > 0 && (
         <div className="card p-5 mb-4">
           <h2 className="font-medium text-navy mb-3 flex items-center gap-2">
             <CalendarClock size={16} /> Próximas datas
           </h2>
-          {proximas_datas.map((d: any, i: number) => (
+          {(Array.isArray(proximas_datas) ? proximas_datas : []).map((d: any, i: number) => (
             <div
               key={i}
               className="flex justify-between py-2 border-b border-slate-100 last:border-0 text-sm"
@@ -138,10 +138,10 @@ export default function PortalCasoDetalhe() {
       <div className="card p-5">
         <h2 className="font-medium text-navy mb-3">Andamentos</h2>
         <div className="space-y-3">
-          {andamentos.length === 0 && (
+          {(!Array.isArray(andamentos) || andamentos.length === 0) && (
             <p className="text-sm text-slate-400">Sem andamentos registrados</p>
           )}
-          {andamentos.map((m: any, i: number) => (
+          {(Array.isArray(andamentos) ? andamentos : []).map((m: any, i: number) => (
             <div key={i} className="flex gap-3 text-sm">
               <div className="w-2 h-2 rounded-full bg-gold mt-1.5 shrink-0" />
               <div>
