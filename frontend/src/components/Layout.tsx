@@ -267,6 +267,13 @@ const NAV: NavItem[] = [
     roles: ["superadmin", "admin", "socio"],
   },
   {
+    to: "/mapa-modulos",
+    label: "Mapa de Modulos",
+    icon: LayoutGrid,
+    group: "Administracao",
+    roles: ["superadmin", "admin", "socio"],
+  },
+  {
     to: "/produtividade",
     label: "Produtividade",
     icon: Activity,
@@ -298,6 +305,7 @@ const HELP_MODULES: Array<[prefix: string, key: string]> = [
   ["/clientes", "clientes"],
   ["/workflow", "workflow"],
   ["/checklists", "checklists"],
+  ["/mapa-modulos", "autofix"],
 ];
 
 function helpModuleKey(pathname: string): string | null {
