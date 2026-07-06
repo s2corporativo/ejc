@@ -61,10 +61,23 @@ async def seed_admin() -> None:
             print(f"[seed] SENHA TEMPORÁRIA (anote agora; troque no 1º login): {senha}")
 
 
+async def _rodar_seed_sync(nome: str, fn) -> None:
+    """Roda um seed SÍNCRONO (psycopg2) fora do event loop. Não-fatal: uma
+    falha é registrada mas não aborta os demais seeds nem o deploy."""
+    try:
+        await asyncio.to_thread(fn)
+    except Exception as e:  # noqa: BLE001 — seed é best-effort no bootstrap
+        print(f"[seed] AVISO: seed '{nome}' falhou (não-fatal): {e}")
+
+
 async def main() -> None:
     await seed_admin()
-    # Hooks idempotentes adicionais (feriados, súmulas) podem ser plugados aqui
-    # numa fase posterior, sempre com checagem "já existe?" antes de inserir.
+    # Catálogo de tipos de documento (item 4.3): a tabela document_types_master
+    # é criada VAZIA pela migration 062 e nunca era populada no bootstrap, então
+    # a classificação automática de documentos falhava com "rode o seed". O seed
+    # já existe e é idempotente (por tipo_key) — basta rodá-lo a cada deploy.
+    from app.seeds.redesign_seed import seed as seed_document_types
+    await _rodar_seed_sync("document_types_master", seed_document_types)
     print("[seed] concluído.")
 
 
