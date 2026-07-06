@@ -213,11 +213,16 @@ export default function GovernancaIA() {
               hint="período 30 dias"
             />
             <Kpi
-              label="HITL revisado/aplicado"
+              label="HITL peças revisadas"
               value={
-                dash?.ia?.taxa_hitl_pct != null
-                  ? `${dash.ia.taxa_hitl_pct}%`
+                dash?.ia?.hitl_pecas_pct != null
+                  ? `${dash.ia.hitl_pecas_pct}%`
                   : "—"
+              }
+              hint={
+                dash?.ia?.pecas_ia_geradas != null
+                  ? `${dash.ia.pecas_ia_revisadas ?? 0}/${dash.ia.pecas_ia_geradas} peças de IA`
+                  : "período 30 dias"
               }
             />
             <Kpi
