@@ -24,6 +24,7 @@ import {
   Download,
   Receipt,
   Bot,
+  ExternalLink,
 } from "lucide-react";
 import api from "../lib/api";
 import { soDigitos } from "../utils/phone";
@@ -749,6 +750,15 @@ export default function DossieCliente() {
             {cliente.telefone && <span>{cliente.telefone}</span>}
           </p>
         </div>
+        <a
+          href="/portal"
+          target="_blank"
+          rel="noreferrer"
+          className="btn-ghost text-xs"
+          title="Abrir o Portal do Cliente em uma nova aba"
+        >
+          <ExternalLink className="w-3 h-3" /> Portal do Cliente
+        </a>
         <Link to={`/clientes/${clientId}`} className="btn-outline text-xs">
           <User className="w-3 h-3" /> Editar perfil
         </Link>
