@@ -328,6 +328,12 @@ export default function Casos() {
       const { data: novo } = await api.post("/cases/", payload);
       // Captura a extração antes de limpar o form (será materializada abaixo).
       const extracao = form._extracao as ExtracaoPayload | undefined;
+      // Item 4.2: captura o arquivo importado (e metadados) ANTES do reset do
+      // form, para persisti-lo na GED vinculado ao caso recém-criado.
+      const arquivoOriginal = form._arquivo_original as File | undefined;
+      const tipoDoc = form._tipo_documento as string | undefined;
+      const tituloDoc =
+        (payload.titulo as string) || novo?.titulo || "Documento importado";
       setModal(false);
       setForm({ area: "civil", prioridade: "media", case_type: "judicial" });
       load();
@@ -349,6 +355,27 @@ export default function Casos() {
           toast.error(
             e.response?.data?.detail ||
               "Caso criado, mas não foi possível pré-visualizar os dados extraídos pela IA.",
+          );
+        }
+      }
+      // Item 4.2: persiste o PDF/arquivo da Importação Inteligente na GED,
+      // vinculado ao caso (mesmo endpoint do upload manual). Antes, o arquivo
+      // era só analisado e descartado → aba Documentos ficava vazia.
+      if (arquivoOriginal && novo?.id) {
+        try {
+          const fd = new FormData();
+          fd.append("file", arquivoOriginal);
+          fd.append("titulo", tituloDoc);
+          if (tipoDoc) fd.append("tipo", tipoDoc);
+          fd.append("case_id", novo.id);
+          if (clientId) fd.append("client_id", clientId);
+          await api.post("/documents/upload", fd, {
+            headers: { "Content-Type": "multipart/form-data" },
+          });
+        } catch (e: any) {
+          toast.error(
+            e.response?.data?.detail ||
+              "Caso criado, mas não foi possível anexar o documento importado.",
           );
         }
       }
