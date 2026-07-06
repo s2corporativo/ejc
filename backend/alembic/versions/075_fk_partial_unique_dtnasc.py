@@ -26,13 +26,13 @@ Corrige quatro achados da auditoria de banco, todos reversíveis:
      seu client_id (sem vazamento cross-cliente); só perde o vínculo de caso.
    Órfãos são limpos antes (DELETE p/ CASCADE, UPDATE NULL p/ SET NULL).
 
-Revision ID: 075_fk_partial_unique_data_nascimento
+Revision ID: 075_fk_partial_unique_dtnasc
 Revises: 074_remove_licitacao_admin_tipo
 """
 from alembic import op
 import sqlalchemy as sa
 
-revision = "075_fk_partial_unique_data_nascimento"
+revision = "075_fk_partial_unique_dtnasc"
 down_revision = "074_remove_licitacao_admin_tipo"
 branch_labels = None
 depends_on = None
