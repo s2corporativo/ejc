@@ -12,7 +12,7 @@ export default function Auditoria() {
       .get("/audit/", {
         params: {
           acao: acao || undefined,
-          modulo: modulo || undefined,
+          entidade: modulo || undefined,
           page_size: 100,
         },
       })
@@ -105,13 +105,15 @@ export default function Auditoria() {
                       {l.acao}
                     </span>
                   </td>
-                  <td className="px-4 py-2.5 text-xs">{l.modulo}</td>
-                  <td className="px-4 py-2.5 text-xs">{l.usuario_id || "—"}</td>
+                  <td className="px-4 py-2.5 text-xs">{l.entidade || "—"}</td>
+                  <td className="px-4 py-2.5 text-xs">
+                    {l.user_nome || l.user_id || "—"}
+                  </td>
                   <td className="px-4 py-2.5 text-xs text-slate-400">
                     {l.ip || "—"}
                   </td>
                   <td className="px-4 py-2.5 text-xs text-slate-500 max-w-[280px] truncate">
-                    {l.descricao || "—"}
+                    {l.detalhes || "—"}
                   </td>
                 </tr>
               ))}

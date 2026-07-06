@@ -35,7 +35,16 @@ async def criar_audit_log(
     detalhes: str | None = None, ip: str | None = None,
     dados_antes: dict | None = None, dados_depois: dict | None = None,
 ):
-    """Helper para gravar log de auditoria. Chamado após cada operação sensível."""
+    """Helper para gravar log de auditoria. Chamado após cada operação sensível.
+
+    Item 1.1: quando o chamador não passa `ip` (caso da maioria dos writers,
+    que hoje deixavam ip=NULL), usa o IP real capturado por requisição pelo
+    ClientIPMiddleware — assim CREATE/UPDATE/DELETE/UPLOAD/DOWNLOAD/CONFLITO_CHECK
+    passam a registrar IP, não só o LOGIN.
+    """
+    if ip is None:
+        from app.core.request_context import get_client_ip
+        ip = get_client_ip()
     log = AuditLog(
         id=str(uuid4()), user_id=user_id, user_role=user_role,
         acao=acao, entidade=entidade, registro_id=registro_id,
