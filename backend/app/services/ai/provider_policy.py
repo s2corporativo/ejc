@@ -121,6 +121,27 @@ class AIProviderPolicy:
         requer_hitl = bool(s.AI_REQUIRE_HITL)
 
         if not elegiveis:
+            # Mensagem HONESTA conforme a causa da cadeia vazia:
+            #  • se externos foram removidos por PII residual, só uma IA LOCAL
+            #    resolveria (ou limpar o texto);
+            #  • caso contrário, o deploy simplesmente não tem provedor externo
+            #    elegível (falta ANTHROPIC_API_KEY / AI_EXTERNAL_PROVIDERS_ALLOWED)
+            #    nem Ollama local. Não direcionar só para "habilite o Ollama":
+            #    o desenho de produção é IA externa com mascaramento de PII.
+            removido_por_pii = any("PII residual" in m for m in motivos)
+            if removido_por_pii:
+                bloqueio = (
+                    "Este conteúdo tem dados pessoais que não podem ir a uma IA "
+                    "externa. Habilite uma IA local (OLLAMA_ENABLED=true) ou "
+                    "remova os dados pessoais do texto e tente novamente."
+                )
+            else:
+                bloqueio = (
+                    "Nenhum provedor de IA está configurado. Configure a IA "
+                    "externa (defina ANTHROPIC_API_KEY no ambiente e mantenha "
+                    "AI_EXTERNAL_PROVIDERS_ALLOWED=true) ou habilite uma IA local "
+                    "(OLLAMA_ENABLED=true com um serviço Ollama disponível)."
+                )
             return PolicyDecision(
                 permitido=False,
                 provider_chain=[],
@@ -128,11 +149,7 @@ class AIProviderPolicy:
                 motivo="; ".join(motivos) or "nenhum provedor de IA elegível",
                 requer_hitl=requer_hitl,
                 requer_fonte=exige_fonte,
-                bloqueio_motivo=(
-                    "Nenhum provedor de IA elegível para este conteúdo. "
-                    "Habilite o Ollama local (OLLAMA_ENABLED=true) ou remova "
-                    "dados pessoais do texto e tente novamente."
-                ),
+                bloqueio_motivo=bloqueio,
             )
 
         # Modelo fica None: o gateway resolve o modelo por tarefa/provedor.
