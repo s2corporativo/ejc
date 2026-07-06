@@ -20,6 +20,9 @@ type Tab =
   | "fontes"
   | "guardrails";
 
+const brl = (v?: number | null) =>
+  (v ?? 0).toLocaleString("pt-BR", { style: "currency", currency: "BRL" });
+
 function Kpi({
   label,
   value,
@@ -230,6 +233,71 @@ export default function GovernancaIA() {
               value={dash?.ia?.score_medio_validacoes}
             />
             <Kpi label="Docs RAG" value={dash?.rag?.documentos} />
+          </div>
+          {/* Governança de custo de IA — visibilidade do gasto (dados já
+              rastreados em AILog.custo_estimado via ai_cost.py). */}
+          <div className="card p-4">
+            <div className="flex items-center justify-between mb-3">
+              <h3 className="font-semibold text-ink">
+                Custo de IA — período {dash?.periodo_dias ?? 30} dias
+              </h3>
+              {dash?.custo?.acima_do_alerta && (
+                <span className="badge bg-danger-100 text-danger-700">
+                  Acima do orçamento ({dash?.custo?.pct_do_orcamento}%)
+                </span>
+              )}
+            </div>
+            <div className="grid sm:grid-cols-3 gap-4 mb-4">
+              <div>
+                <p className="label-caps text-slate-400">Gasto no período</p>
+                <p className="text-2xl font-serif">{brl(dash?.custo?.total_brl)}</p>
+              </div>
+              <div>
+                <p className="label-caps text-slate-400">Projeção mensal</p>
+                <p className="text-2xl font-serif">
+                  {brl(dash?.custo?.projecao_mensal_brl)}
+                </p>
+              </div>
+              <div>
+                <p className="label-caps text-slate-400">Tokens (in / out)</p>
+                <p className="text-2xl font-serif">
+                  {(dash?.custo?.tokens_input ?? 0).toLocaleString("pt-BR")} /{" "}
+                  {(dash?.custo?.tokens_output ?? 0).toLocaleString("pt-BR")}
+                </p>
+              </div>
+            </div>
+            {Array.isArray(dash?.custo?.por_modelo) &&
+            dash.custo.por_modelo.length > 0 ? (
+              <div className="overflow-x-auto">
+                <table className="w-full text-sm">
+                  <thead className="text-left text-xs uppercase text-slate-400">
+                    <tr>
+                      <th className="py-1">Modelo</th>
+                      <th className="py-1">Chamadas</th>
+                      <th className="py-1 text-right">Custo (R$)</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-slate-100">
+                    {dash.custo.por_modelo.map((m: any) => (
+                      <tr key={m.modelo}>
+                        <td className="py-1.5">{m.modelo}</td>
+                        <td className="py-1.5">{m.chamadas}</td>
+                        <td className="py-1.5 text-right">{brl(m.custo_brl)}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            ) : (
+              <p className="text-sm text-slate-400">
+                Sem chamadas de IA no período.
+              </p>
+            )}
+            <p className="text-xs text-slate-400 mt-3">
+              Ollama (local) = R$ 0. Custo estimado por chamada (ai_cost.py).
+              {dash?.custo?.orcamento_alerta_brl == null &&
+                " Defina AI_BUDGET_ALERTA_BRL no .env para ativar o alerta de orçamento."}
+            </p>
           </div>
           <div className="grid lg:grid-cols-3 gap-4">
             <Box title="RAG por confiança" data={dash?.rag?.por_confianca} />

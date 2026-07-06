@@ -262,6 +262,11 @@ class Settings(BaseSettings):
     # ── Sentry — rastreamento de erros em produção ────────────────────────
     SENTRY_DSN: str = ""            # deixar vazio para desabilitar
 
+    # ── Governança de custo de IA ─────────────────────────────────────────
+    # Alerta de gasto no painel de Governança da IA: se o custo estimado de IA
+    # no período exceder este valor (R$), o painel sinaliza. 0 = sem alerta.
+    AI_BUDGET_ALERTA_BRL: float = 0.0
+
     # ── Backup offsite (pg_dump via rclone no HOST) ───────────────────────
     BACKUP_REMOTE: str = ""         # ex: "b2:ejc-backups" (rclone remote)
     BACKUP_DIR: str = "/app/backups"  # diretório local de dumps dentro do container postgres
