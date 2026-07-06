@@ -78,6 +78,13 @@ async def main() -> None:
     # já existe e é idempotente (por tipo_key) — basta rodá-lo a cada deploy.
     from app.seeds.redesign_seed import seed as seed_document_types
     await _rodar_seed_sync("document_types_master", seed_document_types)
+    # Skills/Ferramentas de IA (item 5.6): a tabela ejc_skills também nascia
+    # vazia, deixando o seletor de "Ferramenta" em Ferramentas de IA sem opções.
+    # Seeds idempotentes (por name); ferramentas dependem das skills, nesta ordem.
+    from app.seeds.skills_seed import seed_skills_sync
+    from app.seeds.skills_ferramentas_seed import seed as seed_skills_ferramentas
+    await _rodar_seed_sync("ejc_skills", seed_skills_sync)
+    await _rodar_seed_sync("ejc_skills_ferramentas", seed_skills_ferramentas)
     print("[seed] concluído.")
 
 
