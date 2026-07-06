@@ -11,6 +11,7 @@ from pydantic import BaseModel, Field
 from sqlalchemy import select, func as sqlfunc, text as sqltext
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.core.config import get_settings
 from app.core.database import get_db
 from app.core.security import get_current_user
 from app.models.user import User
@@ -245,6 +246,36 @@ async def dashboard_governanca(
         )
     )).scalar() or 0
 
+    # ── CUSTO DE IA (governança de gasto) ────────────────────────────────
+    # O custo já é rastreado por chamada (AILog.custo_estimado, via ai_cost.py);
+    # aqui damos VISIBILIDADE no painel — total do período, tokens, por modelo, e
+    # um alerta opcional de orçamento (AI_BUDGET_ALERTA_BRL no .env; 0 = desligado).
+    custo_total = (await db.execute(
+        select(sqlfunc.coalesce(sqlfunc.sum(AILog.custo_estimado), 0)).where(AILog.created_at >= desde)
+    )).scalar() or 0
+    tokens_in = (await db.execute(
+        select(sqlfunc.coalesce(sqlfunc.sum(AILog.tokens_input), 0)).where(AILog.created_at >= desde)
+    )).scalar() or 0
+    tokens_out = (await db.execute(
+        select(sqlfunc.coalesce(sqlfunc.sum(AILog.tokens_output), 0)).where(AILog.created_at >= desde)
+    )).scalar() or 0
+    custo_por_modelo = [
+        {"modelo": m, "chamadas": int(n), "custo_brl": round(float(c), 4)}
+        for (m, n, c) in (await db.execute(
+            select(
+                AILog.modelo, sqlfunc.count(),
+                sqlfunc.coalesce(sqlfunc.sum(AILog.custo_estimado), 0),
+            )
+            .where(AILog.created_at >= desde)
+            .group_by(AILog.modelo)
+            .order_by(sqlfunc.coalesce(sqlfunc.sum(AILog.custo_estimado), 0).desc())
+        )).all()
+    ]
+    custo_total_brl = round(float(custo_total), 2)
+    budget_alerta = float(get_settings().AI_BUDGET_ALERTA_BRL or 0)
+    # Projeção mensal simples (ritmo atual) — consciência de consumo sem config.
+    projecao_mensal = round(custo_total_brl / dias * 30, 2) if dias else custo_total_brl
+
     docs = (await db.execute(select(KnowledgeDoc).where(KnowledgeDoc.deleted_at.is_(None)))).scalars().all()
     conf_map = {"alta": 0, "media": 0, "baixa": 0, "bloqueado": 0, "sem_curadoria": 0}
     rag_status_map: dict[str, int] = {}
@@ -290,6 +321,16 @@ async def dashboard_governanca(
             "por_status": status_map,
             "score_medio_validacoes": round(sum(scores) / len(scores), 1) if scores else None,
             "validacoes_com_score": len(scores),
+        },
+        "custo": {
+            "total_brl": custo_total_brl,
+            "projecao_mensal_brl": projecao_mensal,
+            "tokens_input": int(tokens_in),
+            "tokens_output": int(tokens_out),
+            "por_modelo": custo_por_modelo,
+            "orcamento_alerta_brl": budget_alerta or None,
+            "acima_do_alerta": bool(budget_alerta and custo_total_brl > budget_alerta),
+            "pct_do_orcamento": round(custo_total_brl / budget_alerta * 100, 1) if budget_alerta else None,
         },
         "rag": {
             "documentos": len(docs),
