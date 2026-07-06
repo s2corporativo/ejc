@@ -364,8 +364,12 @@ async def listar_docs(
     )).scalars().all()
     return {
         "data": [
+            # status_indexacao/tribunal (item 3.1/3.2): sem eles, /conhecimento
+            # renderizava "Sem vetor" para TODO doc (campo undefined), divergindo
+            # da Curadoria RAG que já expõe o status real do mesmo documento.
             {"id": d.id, "titulo": d.titulo, "categoria": d.categoria,
-             "fonte": d.fonte, "created_at": d.created_at}
+             "fonte": d.fonte, "tribunal": d.tribunal,
+             "status_indexacao": d.status_indexacao, "created_at": d.created_at}
             for d in rows
         ],
         "total": total, "page": page, "page_size": page_size,
