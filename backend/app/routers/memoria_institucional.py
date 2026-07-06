@@ -10,11 +10,22 @@ from pydantic import BaseModel
 from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncSession
 from app.core.database import get_db
-from app.core.security import get_current_user
+from app.core.security import get_current_user, ROLE_LEVEL
+from app.core.ownership import verificar_acesso_caso
 from app.models.user import User
 from app.models.audit_log import criar_audit_log
 
-router = APIRouter(prefix="/memoria-institucional", tags=["Memória Institucional"])
+
+def _req_staff(cu: User = Depends(get_current_user)) -> User:
+    # Conhecimento interno do escritório: só equipe (estagiario+); nunca
+    # cliente_externo/secretaria.
+    if ROLE_LEVEL.get(cu.role.value, 0) < ROLE_LEVEL["estagiario"]:
+        raise HTTPException(403, "Acesso restrito à equipe do escritório")
+    return cu
+
+
+router = APIRouter(prefix="/memoria-institucional", tags=["Memória Institucional"],
+                   dependencies=[Depends(_req_staff)])
 
 TIPOS = {"peticao", "recurso", "parecer", "contrato", "decisao",
          "acordo", "tese_vencedora", "estrategia"}
@@ -58,6 +69,7 @@ async def listar(
     cond = ["deleted_at IS NULL"]
     params: dict = {"limit": limit}
     if case_id:
+        await verificar_acesso_caso(db, cu, case_id)  # ownership do caso filtrado
         cond.append("case_id = :case_id"); params["case_id"] = case_id
     if tipo:
         cond.append("tipo = :tipo"); params["tipo"] = tipo
@@ -83,6 +95,8 @@ async def criar(
         raise HTTPException(422, f"tipo inválido; use um de {sorted(TIPOS)}")
     if body.resultado and body.resultado not in RESULTADOS:
         raise HTTPException(422, f"resultado inválido; use um de {sorted(RESULTADOS)}")
+    if body.case_id:
+        await verificar_acesso_caso(db, cu, body.case_id)  # ownership do caso vinculado
     result = await db.execute(
         text("""
             INSERT INTO memoria_institucional
@@ -160,9 +174,12 @@ async def remover(
     db: AsyncSession = Depends(get_db),
     cu: User = Depends(get_current_user),
 ):
-    await db.execute(
-        text("UPDATE memoria_institucional SET deleted_at = now() WHERE id = :id"),
+    res = await db.execute(
+        text("UPDATE memoria_institucional SET deleted_at = now() "
+             "WHERE id = :id AND deleted_at IS NULL"),
         {"id": mem_id},
     )
+    if res.rowcount == 0:
+        raise HTTPException(404, "Registro não encontrado")
     await criar_audit_log(db, cu.id, cu.role.value, "DELETE", "memoria_institucional", mem_id)
     await db.commit()

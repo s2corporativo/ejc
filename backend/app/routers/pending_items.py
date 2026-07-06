@@ -6,8 +6,31 @@ from typing import Optional
 from datetime import date
 from app.core.database import get_db
 from app.core.security import get_current_user
+from app.core.ownership import is_gestao
+from app.models.user import User
 
 router = APIRouter(prefix="/v1/clients", tags=["pending-items"])
+
+
+async def _exigir_cliente_visivel(db: AsyncSession, cu: User, client_id: str) -> None:
+    """Gate de visibilidade do cliente (ownership): gestão vê tudo; demais só
+    clientes de que são responsáveis OU em cujos casos atuam. 404 (não 403) para
+    não confirmar a existência de cliente alheio. Sem isso, qualquer usuário
+    listava/alterava pendências de qualquer cliente (IDOR)."""
+    if is_gestao(cu):
+        return
+    row = (await db.execute(text("""
+        SELECT 1 FROM clients cl
+        WHERE cl.id = :cid AND cl.deleted_at IS NULL
+          AND (cl.responsavel_id = :uid
+               OR EXISTS (SELECT 1 FROM cases c
+                          WHERE c.client_id = cl.id AND c.deleted_at IS NULL
+                            AND (c.advogado_responsavel_id = :uid
+                                 OR c.advogado_auxiliar_id = :uid)))
+        LIMIT 1
+    """), {"cid": client_id, "uid": cu.id})).first()
+    if row is None:
+        raise HTTPException(404, "Cliente não encontrado")
 
 
 @router.get("/{client_id}/pending-items")
@@ -17,6 +40,7 @@ async def list_pending_items(
     db: AsyncSession = Depends(get_db),
     current_user=Depends(get_current_user),
 ):
+    await _exigir_cliente_visivel(db, current_user, client_id)
     q = "SELECT * FROM client_pending_items WHERE client_id=:cid AND deleted_at IS NULL"
     params = {"cid": client_id}
     if status:
@@ -34,6 +58,7 @@ async def create_pending_item(
     db: AsyncSession = Depends(get_db),
     current_user=Depends(get_current_user),
 ):
+    await _exigir_cliente_visivel(db, current_user, client_id)
     if not body.get('title'):
         raise HTTPException(422, 'Campo obrigatório: title')
     result = await db.execute(
@@ -64,6 +89,7 @@ async def update_pending_item(
     db: AsyncSession = Depends(get_db),
     current_user=Depends(get_current_user),
 ):
+    await _exigir_cliente_visivel(db, current_user, client_id)
     result = await db.execute(text("SELECT id FROM client_pending_items WHERE id=:id AND client_id=:cid AND deleted_at IS NULL"), {"id": item_id, "cid": client_id})
     if not result.fetchone():
         raise HTTPException(404, "Item not found")
@@ -90,6 +116,7 @@ async def delete_pending_item(
     db: AsyncSession = Depends(get_db),
     current_user=Depends(get_current_user),
 ):
+    await _exigir_cliente_visivel(db, current_user, client_id)
     await db.execute(
         text("UPDATE client_pending_items SET deleted_at=NOW() WHERE id=:id AND client_id=:cid"),
         {"id": item_id, "cid": client_id}

@@ -5,6 +5,7 @@ from sqlalchemy import text, select
 from typing import Optional
 from app.core.database import get_db
 from app.core.security import get_current_user
+from app.core.ownership import verificar_acesso_caso
 from app.services import datajud_service
 from app.models.case import Case
 
@@ -40,6 +41,7 @@ async def sync_case(
     case = result.scalar_one_or_none()
     if not case:
         raise HTTPException(404, "Case not found")
+    await verificar_acesso_caso(db, current_user, case_id)
     if not case.numero_processo:
         raise HTTPException(400, "Case has no numero_processo")
     try:
@@ -75,6 +77,7 @@ async def sync_prazos(
     case = result.scalar_one_or_none()
     if not case:
         raise HTTPException(404, "Case not found")
+    await verificar_acesso_caso(db, current_user, case_id)
     if not case.numero_processo:
         raise HTTPException(400, "Case has no numero_processo")
     prazos = await datajud_service.sincronizar_prazos_datajud(

@@ -50,8 +50,12 @@ export default function Usuarios() {
 
   const desativar = async (u: User) => {
     if (!confirm(`Desativar ${u.full_name}?`)) return;
-    await api.delete(`/users/${u.id}`);
-    load();
+    try {
+      await api.delete(`/users/${u.id}`);
+      load();
+    } catch (e: any) {
+      toast.error(e.response?.data?.detail || "Erro ao desativar usuário");
+    }
   };
 
   return (

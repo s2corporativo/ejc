@@ -34,6 +34,7 @@ async def sala_de_guerra(
     db: AsyncSession = Depends(get_db),
     cu: User = Depends(get_current_user),
 ):
+    await verificar_acesso_caso(db, cu, case_id)
     caso_q = await db.execute(text("""
         SELECT id, numero_interno, titulo, area, status, fase,
                prioridade, numero_processo, tribunal, comarca, vara,

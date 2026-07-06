@@ -8,7 +8,7 @@ from typing import List, Optional
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy import Column, String, Text, DateTime, func, select, Boolean
 from sqlalchemy.ext.asyncio import AsyncSession
-from pydantic import BaseModel
+from pydantic import BaseModel, ConfigDict
 
 from app.core.database import Base, get_db
 from app.core.security import require_roles, get_current_user, ROLE_LEVEL
@@ -33,6 +33,8 @@ class SalaCreate(BaseModel):
     expira_dias: Optional[int] = 30
 
 class SalaResponse(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
     id: str
     nome: str
     expira_em: Optional[datetime]

@@ -13,6 +13,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.database import get_db
 from app.core.security import get_current_user, ROLE_LEVEL
+from app.core.ownership import verificar_acesso_caso
 from app.models.user import User
 from app.models.centro_custo import CentroCusto, CentroCustoTipo, CentroCustoCategoria
 from app.models.audit_log import criar_audit_log
@@ -79,6 +80,8 @@ async def listar_lancamentos(
 ):
     if not _pode_editar(cu):
         raise HTTPException(403)
+    if case_id:
+        await verificar_acesso_caso(db, cu, case_id)
     q = select(CentroCusto).where(CentroCusto.deleted_at.is_(None))
     if case_id:
         q = q.where(CentroCusto.case_id == case_id)
@@ -102,6 +105,7 @@ async def criar_lancamento(
 ):
     if not _pode_editar(cu):
         raise HTTPException(403)
+    await verificar_acesso_caso(db, cu, req.case_id)
     c = CentroCusto(id=str(uuid4()), created_by=cu.id, **req.model_dump())
     db.add(c)
     await db.commit()
@@ -120,6 +124,7 @@ async def resumo_caso(
     """
     if not _pode_editar(cu):
         raise HTTPException(403)
+    await verificar_acesso_caso(db, cu, case_id)
 
     row = (await db.execute(
         select(
@@ -253,6 +258,8 @@ async def atualizar_lancamento(
     ))).scalar_one_or_none()
     if not c:
         raise HTTPException(404)
+    if c.case_id:
+        await verificar_acesso_caso(db, cu, c.case_id)
     for campo, valor in req.model_dump(exclude_none=True).items():
         setattr(c, campo, valor)
     await db.commit()

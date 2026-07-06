@@ -14,6 +14,7 @@ router = APIRouter(prefix="/cases/{case_id}/areas", tags=["Áreas do Caso"])
 
 @router.get("")
 async def listar_areas(case_id: str, db: AsyncSession = Depends(get_db), cu: User = Depends(get_current_user)):
+    await verificar_acesso_caso(db, cu, case_id)
     rows = (await db.execute(text("""
         SELECT area, principal FROM caso_areas WHERE case_id = :cid ORDER BY principal DESC, area
     """), {"cid": case_id})).mappings().all()

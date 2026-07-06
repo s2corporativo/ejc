@@ -14,7 +14,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.database import get_db
 from app.core.config import get_settings
-from app.core.security import get_current_user, require_admin, get_password_hash
+from app.core.security import get_current_user, require_admin, get_password_hash, ROLE_LEVEL
 from app.models.user import User
 from app.models.audit_log import criar_audit_log
 from app.schemas.auth import UserCreate, UserUpdate, UserResponse
@@ -22,6 +22,34 @@ from app.schemas.common import MsgResponse
 
 settings = get_settings()
 router = APIRouter(prefix="/users", tags=["Usuários"])
+
+
+def _nivel(role) -> int:
+    return ROLE_LEVEL.get(getattr(role, "value", role), 0)
+
+
+def _validar_atribuicao_role(cu: User, novo_role: str | None) -> None:
+    """Anti-escalonamento: o perfil deve ser CONHECIDO e de nível ≤ ao do próprio
+    `cu`. Impede que um admin (8) crie/promova alguém a superadmin (9, wildcard)."""
+    if novo_role is None:
+        return
+    if novo_role not in ROLE_LEVEL:
+        raise HTTPException(status_code=422, detail=f"Perfil inválido: {novo_role}")
+    if _nivel(novo_role) > _nivel(cu.role):
+        raise HTTPException(
+            status_code=403,
+            detail="Sem permissão para conceder perfil de nível superior ao seu.",
+        )
+
+
+def _validar_alvo(cu: User, alvo: User) -> None:
+    """Impede gerenciar (alterar/desativar) um usuário de nível SUPERIOR ao próprio
+    (ex.: um admin desativar/rebaixar um superadmin)."""
+    if _nivel(alvo.role) > _nivel(cu.role):
+        raise HTTPException(
+            status_code=403,
+            detail="Sem permissão para gerenciar usuário de nível superior ao seu.",
+        )
 
 
 @router.get("/me", response_model=UserResponse)
@@ -61,6 +89,7 @@ async def criar(
     if exists:
         raise HTTPException(status_code=409, detail="Email já cadastrado")
 
+    _validar_atribuicao_role(cu, payload.role)
     user = User(
         id=str(uuid4()), email=payload.email.lower(),
         hashed_password=get_password_hash(payload.password),
@@ -99,6 +128,12 @@ async def atualizar(
         if extras:
             raise HTTPException(status_code=403,
                                 detail=f"Campos restritos a admin: {sorted(extras)}")
+    else:
+        # Admin: não pode gerenciar alguém de nível superior nem conceder um
+        # perfil acima do próprio (anti-escalonamento vertical → superadmin).
+        _validar_alvo(cu, user)
+        if "role" in mudancas:
+            _validar_atribuicao_role(cu, mudancas["role"])
 
     for k, v in mudancas.items():
         setattr(user, k, v)
@@ -123,6 +158,7 @@ async def desativar(
     if not user:
         raise HTTPException(status_code=404, detail="Usuário não encontrado")
 
+    _validar_alvo(cu, user)  # admin não desativa superadmin
     user.deleted_at = datetime.now(timezone.utc)
     user.is_active = False
     await criar_audit_log(db, cu.id, cu.role.value, "DELETE", "users", user_id)

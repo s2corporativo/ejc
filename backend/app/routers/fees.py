@@ -140,7 +140,7 @@ async def criar(
         )).scalar_one_or_none()
         if not caso:
             raise HTTPException(status_code=404, detail="Caso não encontrado")
-        if (cu.role.value not in ("admin", "socio")
+        if (cu.role.value not in ("superadmin", "admin", "socio")
                 and caso.advogado_responsavel_id != cu.id
                 and caso.advogado_auxiliar_id != cu.id):
             raise HTTPException(status_code=403,
@@ -194,6 +194,16 @@ async def registrar_pagamento(
     )).scalar_one_or_none()
     if not f:
         raise HTTPException(status_code=404, detail="Honorário não encontrado")
+    # Verificar permissão sobre o caso vinculado ao honorário (IDOR).
+    if f.case_id:
+        caso = (await db.execute(
+            select(Case).where(Case.id == f.case_id, Case.deleted_at.is_(None))
+        )).scalar_one_or_none()
+        if caso and (cu.role.value not in ("admin", "socio")
+                     and caso.advogado_responsavel_id != cu.id
+                     and caso.advogado_auxiliar_id != cu.id):
+            raise HTTPException(status_code=403,
+                                detail="Sem permissão para registrar pagamento deste caso")
 
     p = FeePayment(
         id=str(uuid4()), fee_id=fee_id,

@@ -19,7 +19,6 @@ const Casos = lazy(() => import("./pages/Casos"));
 const CasoDetalhe = lazy(() => import("./pages/CasoDetalhe"));
 const Prazos = lazy(() => import("./pages/Prazos"));
 const Suspensoes = lazy(() => import("./pages/Suspensoes"));
-const Documentos = lazy(() => import("./pages/Documentos"));
 const GestaoDocumental = lazy(() => import("./pages/GestaoDocumental"));
 const Pecas = lazy(() => import("./pages/Pecas"));
 const Honorarios = lazy(() => import("./pages/Honorarios"));
@@ -28,7 +27,6 @@ const RamosHub = lazy(() => import("./pages/RamosHub"));
 const OfficeContracts = lazy(() => import("./pages/OfficeContracts"));
 const PartnerWithdrawals = lazy(() => import("./pages/PartnerWithdrawals"));
 const CentralAtividades = lazy(() => import("./pages/CentralAtividades"));
-const FinanceiroDashboard = lazy(() => import("./pages/FinanceiroDashboard"));
 const FinanceiroWorkspace = lazy(() => import("./pages/FinanceiroWorkspace"));
 const Despesas = lazy(() => import("./pages/Despesas"));
 const DataJudBusca = lazy(() => import("./pages/DataJudBusca"));
@@ -42,7 +40,6 @@ const Usuarios = lazy(() => import("./pages/Usuarios"));
 const Tarefas = lazy(() => import("./pages/Tarefas"));
 const Intimacoes = lazy(() => import("./pages/Intimacoes"));
 const Lixeira = lazy(() => import("./pages/Lixeira"));
-const DataRoom = lazy(() => import("./pages/DataRoom"));
 const Jurimetria = lazy(() => import("./pages/Jurimetria"));
 const CentralRelacionamento = lazy(
   () => import("./pages/CentralRelacionamento"),

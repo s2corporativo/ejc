@@ -22,6 +22,7 @@ import {
   Trash2,
 } from "lucide-react";
 import api from "../lib/api";
+import { toast } from "../components/Toast";
 import { PageHeader, Spinner, fmtDate } from "../components/UI";
 import { Markdown } from "../components/Markdown";
 
@@ -453,8 +454,12 @@ export default function MemoriaInstitucional() {
 
   const excluir = async (id: string) => {
     if (!confirm("Excluir este registro permanentemente?")) return;
-    await api.delete(`/memoria-institucional/${id}`);
-    carregar();
+    try {
+      await api.delete(`/memoria-institucional/${id}`);
+      carregar();
+    } catch (e: any) {
+      toast.error(e.response?.data?.detail || "Erro ao excluir registro");
+    }
   };
 
   const grupos = Object.entries(TIPOS)

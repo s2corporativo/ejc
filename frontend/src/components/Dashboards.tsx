@@ -360,14 +360,26 @@ export function RamoStats({
 }
 
 // ── Dashboard de CASOS ────────────────────────────────────────────────────────
+// Bloco de erro dos painéis Stats — distingue falha de carregamento de "sem dados"
+function StatsErro() {
+  return (
+    <div className="mb-5 rounded-xl border border-danger-200 bg-danger-50 p-4 text-sm text-danger-700">
+      Não foi possível carregar estes indicadores. Verifique sua conexão e
+      recarregue a página.
+    </div>
+  );
+}
+
 export function CasosStats() {
   const [d, setD] = useState<any>(null);
+  const [erro, setErro] = useState(false);
   useEffect(() => {
     api
       .get("/dashboard/")
       .then((r) => setD(r.data))
-      .catch(() => {});
+      .catch(() => setErro(true));
   }, []);
+  if (erro) return <StatsErro />;
   if (!d) return null;
 
   const porArea = d?.casos?.por_area ?? [];
@@ -422,12 +434,14 @@ export function CasosStats() {
 // ── Dashboard de CLIENTES / CRM ──────────────────────────────────────────────
 export function ClientesStats() {
   const [d, setD] = useState<any>(null);
+  const [erro, setErro] = useState(false);
   useEffect(() => {
     api
       .get("/clients/", { params: { page_size: 200 } })
       .then((r) => setD(r.data))
-      .catch(() => {});
+      .catch(() => setErro(true));
   }, []);
+  if (erro) return <StatsErro />;
   if (!d) return null;
   const lista: any[] = d.data || [];
   const total = d.total ?? lista.length;
@@ -489,12 +503,14 @@ export function ClientesStats() {
 // ── Dashboard de DOCUMENTOS ──────────────────────────────────────────────────
 export function DocumentosStats() {
   const [d, setD] = useState<any>(null);
+  const [erro, setErro] = useState(false);
   useEffect(() => {
     api
       .get("/documents/", { params: { page_size: 200 } })
       .then((r) => setD(r.data))
-      .catch(() => {});
+      .catch(() => setErro(true));
   }, []);
+  if (erro) return <StatsErro />;
   if (!d) return null;
   const lista: any[] = d.data || [];
   const total = d.total ?? lista.length;
@@ -555,12 +571,14 @@ export function DocumentosStats() {
 // ── Dashboard de CONHECIMENTO (base RAG) ─────────────────────────────────────
 export function ConhecimentoStats() {
   const [d, setD] = useState<any>(null);
+  const [erro, setErro] = useState(false);
   useEffect(() => {
     api
       .get("/rag/stats")
       .then((r) => setD(r.data))
-      .catch(() => {});
+      .catch(() => setErro(true));
   }, []);
+  if (erro) return <StatsErro />;
   if (!d) return null;
   const cats = (d.por_categoria || [])
     .map((c: any) => ({
@@ -613,13 +631,15 @@ export function ConhecimentoStats() {
 // ── Dashboard de ATENDIMENTO ─────────────────────────────────────────────────
 export function AtendimentoStats() {
   const [d, setD] = useState<any>(null);
+  const [erro, setErro] = useState(false);
   useEffect(() => {
     const ano = new Date().getFullYear();
     api
       .get(`/atendimentos/stats?ano=${ano}`)
       .then((r) => setD(r.data))
-      .catch(() => {});
+      .catch(() => setErro(true));
   }, []);
+  if (erro) return <StatsErro />;
   if (!Array.isArray(d)) return null;
   const totalAno = d.reduce((s: number, m: any) => s + (m.total || 0), 0);
   if (totalAno === 0) return null;

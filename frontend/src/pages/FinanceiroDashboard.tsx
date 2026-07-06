@@ -77,6 +77,7 @@ export default function FinanceiroDashboard() {
   const [d, setD] = useState<any>(null);
   const [relatorio, setRelatorio] = useState<any>(null);
   const [loading, setLoading] = useState(true);
+  const [erro, setErro] = useState<string | null>(null);
   const [competencia, setCompetencia] = useState(() => {
     const now = new Date();
     return `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}`;
@@ -84,11 +85,18 @@ export default function FinanceiroDashboard() {
 
   const load = useCallback(async () => {
     setLoading(true);
+    setErro(null);
     try {
       const r = await api.get(
         `/financeiro/consolidado?competencia=${competencia}`,
       );
       setD(r.data);
+    } catch (e: any) {
+      setD(null);
+      setErro(
+        e?.response?.data?.detail ||
+          "Não foi possível carregar o consolidado financeiro. Os valores abaixo podem estar indisponíveis — tente atualizar.",
+      );
     } finally {
       setLoading(false);
     }
@@ -165,6 +173,10 @@ export default function FinanceiroDashboard() {
 
       {loading ? (
         <div className="text-center py-16 text-slate-400">Carregando...</div>
+      ) : erro ? (
+        <div className="rounded-xl border border-danger-200 bg-danger-50 p-4 text-sm text-danger-700">
+          {erro}
+        </div>
       ) : (
         <>
           {/* Cards principais — Caixa / Receber / Pagar / Resultado */}

@@ -3,6 +3,7 @@ import { Plus, Check, CreditCard, Trash2 } from "lucide-react";
 import api from "../lib/api";
 import { useAuth } from "../stores/auth";
 import { Modal, PageHeader, fmtMoney, fmtDate } from "../components/UI";
+import { toast } from "../components/Toast";
 
 interface Withdrawal {
   id: string;
@@ -19,11 +20,18 @@ interface Withdrawal {
   created_at: string;
 }
 
+// Status reais gravados pelo backend (pt-BR): pendente/aprovado/pago/rejeitado
 const STATUS_COLOR: Record<string, string> = {
   pendente: "bg-yellow-100 text-yellow-700",
   aprovado: "bg-primary-100 text-primary-700",
   pago: "bg-green-100 text-green-700",
-  cancelado: "bg-danger-100 text-danger-700",
+  rejeitado: "bg-danger-100 text-danger-700",
+};
+const STATUS_LABEL: Record<string, string> = {
+  pendente: "Pendente",
+  aprovado: "Aprovado",
+  pago: "Pago",
+  rejeitado: "Rejeitado",
 };
 
 const EMPTY = {
@@ -79,8 +87,12 @@ export default function PartnerWithdrawals() {
 
   async function remove(id: string) {
     if (!window.confirm("Excluir solicitação?")) return;
-    await api.delete(`/v1/partner-withdrawals/${id}`);
-    load();
+    try {
+      await api.delete(`/v1/partner-withdrawals/${id}`);
+      load();
+    } catch (e: any) {
+      toast.error(e.response?.data?.detail || "Erro ao excluir solicitação");
+    }
   }
 
   return (
@@ -141,7 +153,7 @@ export default function PartnerWithdrawals() {
                     <span
                       className={`px-2 py-0.5 rounded-full text-xs font-medium ${STATUS_COLOR[w.status] ?? "bg-slate-100 text-slate-500"}`}
                     >
-                      {w.status}
+                      {STATUS_LABEL[w.status] ?? w.status}
                     </span>
                   </td>
                   <td className="px-4 py-3 text-slate-400">

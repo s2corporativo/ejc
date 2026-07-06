@@ -13,9 +13,9 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.database import get_db
 from app.core.security import get_current_user, require_roles
+from app.core.ownership import verificar_acesso_caso
 from app.models.user import User
 from app.models.template import DocTemplate
-from app.models.case import Case
 from app.models.client import Client
 from app.models.legal_doc import LegalDoc, PecaTipo, PecaStatus
 from app.models.audit_log import criar_audit_log
@@ -130,15 +130,14 @@ async def gerar_peca(
     if not t:
         raise HTTPException(status_code=404, detail="Template não encontrado")
 
-    case = (await db.execute(select(Case).where(
-        Case.id == payload.case_id, Case.deleted_at.is_(None)
-    ))).scalar_one_or_none()
-    if not case:
-        raise HTTPException(status_code=422, detail="Caso não encontrado")
+    # Gate de ownership (IDOR): só quem atua no caso (ou gestão) gera peça dele.
+    case = await verificar_acesso_caso(db, cu, payload.case_id)
 
     client = (await db.execute(select(Client).where(
         Client.id == case.client_id
-    ))).scalar_one()
+    ))).scalar_one_or_none()
+    if not client:
+        raise HTTPException(status_code=404, detail="Caso sem cliente vinculado")
 
     endereco = ", ".join(filter(None, [
         client.logradouro, client.numero, client.bairro,

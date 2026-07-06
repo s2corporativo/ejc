@@ -65,7 +65,7 @@ export default function GovernancaIA() {
   const load = async () => {
     setLoading(true);
     try {
-      const [d, c, p, f, g, mg, geo] = await Promise.all([
+      const [d, c, p, f, g, mg, geo] = await Promise.allSettled([
         api.get("/ia-governanca/dashboard"),
         api.get("/ia-governanca/rag-curadoria", { params: { page_size: 30 } }),
         api.get("/ia-governanca/prompts"),
@@ -74,13 +74,22 @@ export default function GovernancaIA() {
         api.get("/ia-governanca/jurisprudencia-mg", { params: { limite: 30 } }),
         api.get("/ia-governanca/jurisprudencia-mg/geometria"),
       ]);
-      setDash(d.data);
-      setDocs(c.data.data);
-      setPrompts(p.data.data);
-      setFontes(f.data.data);
-      setGuard(g.data);
-      setMgjec(mg.data.data);
-      setGeometria(geo.data);
+      if (d.status === "fulfilled") setDash(d.value.data);
+      if (c.status === "fulfilled") setDocs(c.value.data.data);
+      if (p.status === "fulfilled") setPrompts(p.value.data.data);
+      if (f.status === "fulfilled") setFontes(f.value.data.data);
+      if (g.status === "fulfilled") setGuard(g.value.data);
+      if (mg.status === "fulfilled") setMgjec(mg.value.data.data);
+      if (geo.status === "fulfilled") setGeometria(geo.value.data);
+
+      const falhas = [d, c, p, f, g, mg, geo].filter(
+        (r) => r.status === "rejected",
+      ).length;
+      if (falhas > 0) {
+        toast.error(
+          `Falha ao carregar ${falhas} de 7 painéis de governança de IA. Alguns dados podem estar desatualizados.`,
+        );
+      }
     } finally {
       setLoading(false);
     }

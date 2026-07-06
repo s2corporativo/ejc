@@ -25,7 +25,7 @@ class RadarPoder:
         }
         
         try:
-            async with httpx.AsyncClient() as client:
+            async with httpx.AsyncClient(timeout=15) as client:
                 response = await client.get(url, params=params)
                 response.raise_for_status()
                 proposicoes = response.json().get("dados", [])

@@ -46,6 +46,8 @@ async def chat(
         max_tokens=max_tokens,
         timeout=timeout or settings.GROQ_TIMEOUT,
     )
+    if not resp.choices:
+        raise RuntimeError("Groq retornou resposta vazia")
     texto = resp.choices[0].message.content
     usage = {
         "input_tokens":  resp.usage.prompt_tokens if resp.usage else None,

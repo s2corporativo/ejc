@@ -16,6 +16,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.core.database import get_db
 from app.core.security import get_current_user, require_roles
 from app.models.user import User, UserRole
+from app.models.case import Case
 from app.models.document import Document
 from app.models.signature import SignatureRequest, SignatureStatus
 from app.models.notification import Notification
@@ -41,6 +42,18 @@ async def criar_solicitacao(
     ))).scalar_one_or_none()
     if not doc:
         raise HTTPException(status_code=404, detail="Documento não encontrado")
+
+    # Valida que o documento pertence ao cliente (direto via doc.client_id ou pelo
+    # caso vinculado) ANTES de notificar o portal — senão notifica-se o cliente
+    # sobre um documento de OUTRO cliente (vazamento).
+    doc_client_id = doc.client_id
+    if doc_client_id is None and doc.case_id:
+        doc_client_id = (await db.execute(
+            select(Case.client_id).where(Case.id == doc.case_id)
+        )).scalar_one_or_none()
+    if doc_client_id != payload.client_id:
+        raise HTTPException(status_code=400,
+                            detail="Documento não pertence a este cliente")
 
     # Hash do arquivo no momento da solicitação (integridade)
     from app.core.config import get_settings as _gs

@@ -90,6 +90,8 @@ async def obter_atual(
     """Retorna o dossiê aprovado mais recente; se não houver, retorna o último rascunho."""
     if not _pode_ver(cu):
         raise HTTPException(403)
+    # IDOR: conteúdo estratégico sensível — restringe a quem atua no caso (ou gestão).
+    await verificar_acesso_caso(db, cu, case_id)
     # Preferência: aprovado mais recente
     dossie = (await db.execute(
         select(DossieEstrategico)
@@ -123,6 +125,8 @@ async def historico(
     """Lista todas as versões do dossiê, da mais recente para a mais antiga."""
     if not _pode_ver(cu):
         raise HTTPException(403)
+    # IDOR: conteúdo estratégico sensível — restringe a quem atua no caso (ou gestão).
+    await verificar_acesso_caso(db, cu, case_id)
     q = (select(DossieEstrategico)
          .where(DossieEstrategico.case_id == case_id)
          .order_by(DossieEstrategico.versao.desc()))
@@ -188,6 +192,8 @@ async def exportar_pdf(
     """Exporta o dossiê em PDF via WeasyPrint. Requer dossiê aprovado ou rascunho."""
     if not _pode_ver(cu):
         raise HTTPException(403)
+    # IDOR: conteúdo estratégico sensível — restringe a quem atua no caso (ou gestão).
+    await verificar_acesso_caso(db, cu, case_id)
 
     dossie = (await db.execute(
         select(DossieEstrategico)

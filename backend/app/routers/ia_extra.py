@@ -63,6 +63,9 @@ async def traduzir_andamento(body: TraduzirIn, db: AsyncSession = Depends(get_db
                              cu: User = Depends(get_current_user)):
     if not settings.AI_ENABLED:
         raise HTTPException(503, "IA desabilitada")
+    if body.case_id:
+        from app.core.ownership import verificar_acesso_caso
+        await verificar_acesso_caso(db, cu, body.case_id)  # não polui AILog de caso alheio
     limpo, pii = sanitizar_ou_abortar(body.texto)
     try:
         resposta = await _ia(SYS_TRADUZIR, limpo, task_type="resumo", temperature=0.25, max_tokens=900, nivel="alto")
@@ -89,6 +92,9 @@ async def resumir_texto(body: ResumirIn, db: AsyncSession = Depends(get_db),
                         cu: User = Depends(get_current_user)):
     if not settings.AI_ENABLED:
         raise HTTPException(503, "IA desabilitada")
+    if body.case_id:
+        from app.core.ownership import verificar_acesso_caso
+        await verificar_acesso_caso(db, cu, body.case_id)  # não polui AILog de caso alheio
     limpo, pii = sanitizar_ou_abortar(body.texto)
     try:
         resposta = await _ia(SYS_RESUMIR, limpo, task_type="resumo", temperature=0.1, max_tokens=1400, nivel="alto")

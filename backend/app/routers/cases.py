@@ -488,8 +488,9 @@ async def excluir(
             Fee.status.in_([FeeStatus.pendente, FeeStatus.atrasado]),
         )
     )).scalars().all():
+        _st = f.status.value if hasattr(f.status, "value") else str(f.status)
         pendencias.append({"tipo": "honorario", "id": f.id,
-                           "descricao": f"Honorário {_status_val(f.status)}: {f.descricao}"})
+                           "descricao": f"Honorário {_st}: {f.descricao}"})
     for d in (await db.execute(
         select(LegalDoc).where(
             LegalDoc.case_id == case_id,

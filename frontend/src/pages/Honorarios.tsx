@@ -33,6 +33,7 @@ export default function Honorarios() {
   const [form, setForm] = useState<any>({ tipo: "fixo" });
   const [pag, setPag] = useState<any>({});
   const [salvando, setSalvando] = useState(false);
+  const [registrando, setRegistrando] = useState(false);
   const [rateioModal, setRateioModal] = useState<any>(null);
   const [pixModal, setPixModal] = useState<any>(null);
   const [pixCfg, setPixCfg] = useState<any>(() => {
@@ -108,7 +109,8 @@ export default function Honorarios() {
   };
 
   const registrarPag = async () => {
-    if (!pagModal || !pag.valor || !pag.data_pagamento) return;
+    if (!pagModal || !pag.valor || !pag.data_pagamento || registrando) return;
+    setRegistrando(true);
     try {
       await api.post(`/fees/${pagModal.id}/pagamentos`, pag);
       setPagModal(null);
@@ -116,6 +118,8 @@ export default function Honorarios() {
       load();
     } catch (e: any) {
       toast.error(e.response?.data?.detail || "Erro ao registrar pagamento");
+    } finally {
+      setRegistrando(false);
     }
   };
 
@@ -441,8 +445,9 @@ export default function Honorarios() {
           <button
             className="btn-primary w-full justify-center"
             onClick={registrarPag}
+            disabled={registrando}
           >
-            Confirmar
+            {registrando ? "Registrando..." : "Confirmar"}
           </button>
         </div>
       </Modal>

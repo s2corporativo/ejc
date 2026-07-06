@@ -15,6 +15,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.database import get_db
 from app.core.security import get_current_user, ROLE_LEVEL
+from app.core.ownership import verificar_acesso_caso
 from app.models.user import User
 from app.models.atendimento import Atendimento, AtendimentoTipo
 from app.modules.auditoria.middleware import registrar_acao
@@ -135,6 +136,8 @@ async def criar_atendimento(
 ):
     if not _is_staff(cu):
         raise HTTPException(403)
+    if req.case_id:
+        await verificar_acesso_caso(db, cu, req.case_id)
     data = req.model_dump()
     # Se não informado o advogado responsável, assume o criador
     if not data.get("advogado_responsavel_id"):
@@ -276,11 +279,7 @@ async def obter_atendimento(
 ):
     if not _is_staff(cu):
         raise HTTPException(403)
-    a = (await db.execute(
-        select(Atendimento).where(Atendimento.id == atendimento_id)
-    )).scalar_one_or_none()
-    if not a:
-        raise HTTPException(404, "Atendimento não encontrado")
+    a = await _check_atendimento_ownership(atendimento_id, cu, db)
     return _out(a, com_privado=_pode_ver_privado(cu))
 
 

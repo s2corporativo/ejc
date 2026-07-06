@@ -3,8 +3,23 @@ from fastapi import APIRouter, Body, Depends, HTTPException, Query
 from sqlalchemy.ext.asyncio import AsyncSession
 from app.core.database import get_db
 from app.core.security import get_current_user
+from app.models.user import User
 import httpx
 import os
+
+# Envio ativo de WhatsApp do escritório = ação sensível: só equipe que fala com
+# cliente (gestão/advogados/secretaria); nunca qualquer autenticado.
+# Checagem EXPLÍCITA por conjunto (não hierárquica): `require_roles` usa o piso do
+# menor nível da lista (secretaria=2), o que deixaria estagiário/financeiro passar.
+_PODE_ENVIAR = frozenset(
+    {"superadmin", "admin", "socio", "advogado", "advogado_auxiliar", "secretaria"}
+)
+
+
+def _exigir_envio(cu: User = Depends(get_current_user)) -> User:
+    if cu.role.value not in _PODE_ENVIAR:
+        raise HTTPException(403, "Sem permissão para enviar WhatsApp do escritório")
+    return cu
 
 router = APIRouter(prefix="/v1/whatsapp", tags=["whatsapp"])
 
@@ -59,7 +74,7 @@ async def get_qrcode(current_user=Depends(get_current_user)):
 @router.post("/send")
 async def send_message(
     body: dict = Body(...),
-    current_user=Depends(get_current_user),
+    current_user=Depends(_exigir_envio),
 ):
     """Envia mensagem de texto para um número"""
     phone = body.get("phone", "").replace("+", "").replace("-", "").replace(" ", "")

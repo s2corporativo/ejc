@@ -367,7 +367,7 @@ export default function Dashboard() {
         />
         <StatCard
           label="Prazos criticos"
-          value={prazosCriticos || dashboard?.prazos?.proximos_7d || "—"}
+          value={prazosCriticos}
           subtitle="Proximos 3 dias"
           icon={<AlertTriangle className="h-5 w-5" />}
           tone={prazosCriticos ? "red" : "amber"}
@@ -557,20 +557,6 @@ export default function Dashboard() {
                 </div>
               </div>
             </div>
-            <div className="rounded-xl border border-success-100 bg-success-50 p-4">
-              <div className="flex items-start gap-3">
-                <DollarSign className="mt-0.5 h-4 w-4 text-success-700" />
-                <div>
-                  <div className="text-sm font-semibold text-success-900">
-                    Auditoria de Honorários
-                  </div>
-                  <p className="mt-1 text-xs text-success-800">
-                    Novos ativos recuperáveis identificados. Verifique o módulo
-                    financeiro.
-                  </p>
-                </div>
-              </div>
-            </div>
             <Link
               to="/financeiro"
               className="flex items-center justify-between rounded-xl border border-slate-200 bg-white p-4 text-sm font-medium text-slate-700 hover:border-primary-200 hover:bg-primary-50"
@@ -658,7 +644,9 @@ export default function Dashboard() {
               <div className="mt-2 text-lg font-semibold text-slate-950">
                 {movimentos.length}
               </div>
-              <div className="text-[11px] text-slate-500">Andamentos</div>
+              <div className="text-[11px] text-slate-500">
+                Andamentos recentes
+              </div>
             </div>
           </div>
 

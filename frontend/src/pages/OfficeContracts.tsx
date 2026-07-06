@@ -11,6 +11,7 @@ import {
 } from "lucide-react";
 import api from "../lib/api";
 import { Modal, PageHeader, fmtDate } from "../components/UI";
+import { toast } from "../components/Toast";
 
 interface Contract {
   id: string;
@@ -139,8 +140,12 @@ export default function OfficeContracts() {
 
   async function remove(id: string) {
     if (!window.confirm("Excluir contrato?")) return;
-    await api.delete(`/v1/office-contracts/${id}`);
-    load();
+    try {
+      await api.delete(`/v1/office-contracts/${id}`);
+      load();
+    } catch (e: any) {
+      toast.error(e.response?.data?.detail || "Erro ao excluir contrato");
+    }
   }
 
   return (

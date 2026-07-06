@@ -1728,8 +1728,12 @@ function TabPartes({ caseId }: { caseId: string }) {
 
   const remover = async (id: string) => {
     if (!confirm("Remover esta parte?")) return;
-    await api.delete(`/cases/${caseId}/partes/${id}`);
-    setPartes((p) => p.filter((x) => x.id !== id));
+    try {
+      await api.delete(`/cases/${caseId}/partes/${id}`);
+      setPartes((p) => p.filter((x) => x.id !== id));
+    } catch (e: any) {
+      toast.error(e.response?.data?.detail || "Erro ao remover parte");
+    }
   };
 
   return (
@@ -2588,8 +2592,12 @@ function TabMemoria({ caseId }: { caseId: string }) {
   };
   const remover = async (id: string) => {
     if (!confirm("Remover este registro de memória?")) return;
-    await api.delete(`/memoria-institucional/${id}`);
-    setItens((p) => p.filter((x) => x.id !== id));
+    try {
+      await api.delete(`/memoria-institucional/${id}`);
+      setItens((p) => p.filter((x) => x.id !== id));
+    } catch (e: any) {
+      toast.error(e.response?.data?.detail || "Erro ao remover registro");
+    }
   };
 
   return (

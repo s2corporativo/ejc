@@ -16,6 +16,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.core.database import get_db
 from app.core.rate_limit import rate_limit
 from app.core.security import get_current_user
+from app.core.ownership import is_gestao
 from app.core.config import get_settings
 from app.models.user import User
 from app.services.ia_sentinela import IASentinela
@@ -27,6 +28,9 @@ router = APIRouter(prefix="/sala-de-guerra-v3", tags=["Sala de Guerra"])
 
 @router.get("/sentinela/auditoria", dependencies=[Depends(rate_limit("sentinela-auditoria", 10))])
 async def auditoria_sentinela(db: AsyncSession = Depends(get_db), cu: User = Depends(get_current_user)):
+    # IASentinela varre TODA a carteira do escritório → restrito a gestão (socio+).
+    if not is_gestao(cu):
+        raise HTTPException(403, "Auditoria estratégica restrita à gestão")
     sentinela = IASentinela(db)
     return await sentinela.gerar_alertas_estrategicos()
 

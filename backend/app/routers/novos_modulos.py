@@ -16,6 +16,7 @@ from sqlalchemy import text
 
 from app.core.database import get_db
 from app.core.security import get_current_user
+from app.core.ownership import verificar_acesso_caso
 from app.models.user import User
 
 router = APIRouter(tags=["Novos Módulos — Etapa B"])
@@ -117,6 +118,9 @@ async def resolver_alerta(
     db: AsyncSession = Depends(get_db),
     cu: User = Depends(get_current_user),
 ):
+    # IDOR/sigilo: resolver inadimplência é ação de gestão/financeiro (espelha o GET irmão).
+    if cu.role not in ("admin", "superadmin", "socio", "financeiro"):
+        raise HTTPException(403, "Acesso restrito a gestão/financeiro")
     from app.services.inadimplencia_service import resolver_alerta
     return await resolver_alerta(db, alert_id, body.action_taken)
 
@@ -154,6 +158,7 @@ async def get_ambiental(
     db: AsyncSession = Depends(get_db),
     cu: User = Depends(get_current_user),
 ):
+    await verificar_acesso_caso(db, cu, case_id)
     r = await db.execute(
         text("SELECT * FROM case_ambiental WHERE case_id = :cid"),
         {"cid": case_id},
@@ -172,6 +177,7 @@ async def upsert_ambiental(
     cu: User = Depends(get_current_user),
 ):
     import json
+    await verificar_acesso_caso(db, cu, case_id)
     existing = await db.execute(
         text("SELECT id FROM case_ambiental WHERE case_id = :cid"), {"cid": case_id}
     )
@@ -294,6 +300,9 @@ async def cofre_logs(
     db: AsyncSession = Depends(get_db),
     cu: User = Depends(get_current_user),
 ):
+    # Logs de acesso ao cofre = trilha de auditoria sensível: só gestão consulta.
+    if cu.role not in ("admin", "superadmin", "socio"):
+        raise HTTPException(403, "Acesso restrito a sócios e administradores")
     r = await db.execute(text("""
         SELECT l.id, l.action, l.ip_address, l.created_at,
                u.nome AS user_nome, u.email AS user_email

@@ -307,16 +307,22 @@ async def buscar_todas_fontes(
     """
     fontes = fontes or ["lexml", "tjmg"]
 
+    # Coroutine-vazia real: asyncio.coroutine foi REMOVIDO no Python 3.11 e
+    # levantava AttributeError, quebrando a busca sempre que uma fonte era
+    # desabilitada (o gather recebia a exceção da própria construção da task).
+    async def _vazio() -> list:
+        return []
+
     tasks = []
     if "lexml" in fontes:
         tasks.append(buscar_lexml(palavras, pagina=pagina, por_pagina=por_pagina))
     else:
-        tasks.append(asyncio.coroutine(lambda: [])())  # type: ignore
+        tasks.append(_vazio())
 
     if "tjmg" in fontes:
         tasks.append(buscar_tjmg(palavras, pagina=pagina, por_pagina=por_pagina))
     else:
-        tasks.append(asyncio.coroutine(lambda: [])())  # type: ignore
+        tasks.append(_vazio())
 
     resultados = await asyncio.gather(*tasks, return_exceptions=True)
 

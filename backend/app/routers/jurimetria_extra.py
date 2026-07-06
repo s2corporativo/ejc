@@ -3,14 +3,32 @@
    benchmarks internos e predição por taxa histórica de êxito.
 """
 from typing import Optional
-from fastapi import APIRouter, Depends, Query
+from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import text
 from app.core.database import get_db
-from app.core.security import get_current_user
+from app.core.security import get_current_user, ROLE_LEVEL
 from app.models.user import User
 
-router = APIRouter(prefix="/jurimetria", tags=["Jurimetria"])
+
+def _req_staff(cu: User = Depends(get_current_user)) -> User:
+    # MESMO gate de papel de jurimetria.py (_is_staff = estagiario+): barra
+    # cliente_externo/secretaria. Sem isso, qualquer usuário via métricas de êxito.
+    if ROLE_LEVEL.get(cu.role.value, 0) < ROLE_LEVEL["estagiario"]:
+        raise HTTPException(403, "Acesso restrito à equipe do escritório")
+    return cu
+
+
+def _req_socio(cu: User = Depends(get_current_user)) -> User:
+    # Métricas de êxito consolidadas = mesmo nível do overview de jurimetria.py.
+    if ROLE_LEVEL.get(cu.role.value, 0) < ROLE_LEVEL["socio"]:
+        raise HTTPException(403, "Apenas sócios têm acesso a métricas de êxito")
+    return cu
+
+
+# Router inteiro exige, no mínimo, equipe (nunca cliente_externo).
+router = APIRouter(prefix="/jurimetria", tags=["Jurimetria"],
+                   dependencies=[Depends(_req_staff)])
 
 _RESULTADO_LABEL = {
     "exito_total": "Êxito total", "exito_parcial": "Êxito parcial",
@@ -37,7 +55,7 @@ async def _por_resultado(db: AsyncSession, tribunal: Optional[str] = None):
 
 
 @router.get("/desfechos")
-async def desfechos(db: AsyncSession = Depends(get_db), cu: User = Depends(get_current_user)):
+async def desfechos(db: AsyncSession = Depends(get_db), cu: User = Depends(_req_socio)):
     total, por_resultado = await _por_resultado(db)
     licoes = (await db.execute(text("""
         SELECT id, titulo, licoes_aprendidas, resultado FROM cases
@@ -64,7 +82,7 @@ async def ext_stats(db: AsyncSession = Depends(get_db), cu: User = Depends(get_c
 
 @router.get("/ext/benchmarks")
 async def ext_benchmarks(tribunal: Optional[str] = None,
-                         db: AsyncSession = Depends(get_db), cu: User = Depends(get_current_user)):
+                         db: AsyncSession = Depends(get_db), cu: User = Depends(_req_socio)):
     total, por_resultado = await _por_resultado(db, tribunal)
     tempo = (await db.execute(text("""
         SELECT COUNT(*) AS total_processos,
@@ -86,7 +104,7 @@ async def ext_benchmarks(tribunal: Optional[str] = None,
 @router.get("/ext/predicao/provimento")
 async def predicao_provimento(classe: str = Query(""), tribunal: str = Query(""),
                               dias_estimados: int = Query(0),
-                              db: AsyncSession = Depends(get_db), cu: User = Depends(get_current_user)):
+                              db: AsyncSession = Depends(get_db), cu: User = Depends(_req_socio)):
     """Predição por taxa histórica de êxito (heurística interna, não ML)."""
     total, por_resultado = await _por_resultado(db, tribunal or None)
     favoraveis = sum(r["total"] for r in por_resultado if r["resultado_raw"] in ("exito_total", "exito_parcial", "acordo"))
