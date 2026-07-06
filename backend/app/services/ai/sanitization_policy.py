@@ -19,8 +19,14 @@
 #
 # O mapeamento default é REVISÁVEL POR DR. CLOVIS e OVERRIDÁVEL por configuração
 # (Settings.AI_SANITIZATION_MODE_MAP — JSON opcional task_type→modo). Sem
-# override, vale o default abaixo. Defaults SEGUROS: qualquer tarefa não mapeada
-# cai em MASCARAMENTO (irreversível), nunca em "sem sanitização".
+# override, vale o default abaixo.
+#
+# DECISÃO DE PRODUTO (2026-07-06, dono do escritório): a IA deve funcionar
+# PLENAMENTE em todas as áreas usando PSEUDONIMIZAÇÃO REVERSÍVEL (não
+# mascaramento irreversível, não bloqueio). Nenhum PII real sai do VPS — o
+# provider externo recebe apenas marcadores consistentes e a resposta é
+# REIDRATADA localmente. Por isso o default de QUALQUER tarefa não mapeada passa
+# a ser EXTERNO_PSEUDONIMIZADO (reversível, seguro), e não mais MASCARAMENTO.
 # ─────────────────────────────────────────────────────────────────────────────
 from __future__ import annotations
 
@@ -46,7 +52,17 @@ class ModoSanitizacao(str, Enum):
 # receber qualquer um dos dois. Comparação é feita sobre o task_type ORIGINAL
 # (antes da normalização por aliases do gateway).
 _MODO_DEFAULT_POR_TASK: dict[str, ModoSanitizacao] = {
-    # Modo 1 — sigilo reforçado: nunca sai do VPS.
+    # `criminal` — MANTIDO em LOCAL_COMPLETO (nunca sai da VPS). Auditoria de
+    # segurança (2026-07-06) apontou risco CRÍTICO ao rebaixar para externo: a 2ª
+    # barreira só detecta PII ESTRUTURAL (CPF/CNPJ/RG/e-mail/tel/CEP), NÃO nomes
+    # próprios. Nomes de vítima/testemunha que aparecem só no documento/OCR/RAG
+    # (não cadastrados como parte no Case) iriam EM CLARO ao provedor externo
+    # (EUA) — inaceitável em matéria criminal. A IA criminal roda on-prem quando
+    # houver Ollama (scripts/subir-ia-local.sh). NÃO é rebaixável por config: o
+    # piso não-rebaixável de modo_para_task IGNORA qualquer override de
+    # AI_SANITIZATION_MODE_MAP para tarefa LOCAL_COMPLETO. Levar criminal a externo
+    # exige mudar ESTE default no código — e, antes, um NER local reforçando a
+    # barreira contra nomes (vítima/testemunha citados só no documento).
     "criminal": ModoSanitizacao.LOCAL_COMPLETO,
     # Modo 2+3 — pseudonimização reversível + reidratação (análise/minuta).
     "analise_caso": ModoSanitizacao.EXTERNO_PSEUDONIMIZADO,
@@ -75,18 +91,23 @@ _MODO_DEFAULT_POR_TASK: dict[str, ModoSanitizacao] = {
     "importacao_documento": ModoSanitizacao.EXTRACAO_LOCAL,
     "extracao_documento": ModoSanitizacao.EXTRACAO_LOCAL,
     "ocr": ModoSanitizacao.EXTRACAO_LOCAL,
-    # Legado/mascaramento irreversível — tarefas simples/econômicas.
-    "triagem": ModoSanitizacao.MASCARAMENTO,
-    "resumo": ModoSanitizacao.MASCARAMENTO,
-    "rag_query": ModoSanitizacao.MASCARAMENTO,
-    "chat_rapido": ModoSanitizacao.MASCARAMENTO,
-    "chat": ModoSanitizacao.MASCARAMENTO,
-    "default": ModoSanitizacao.MASCARAMENTO,
+    # Tarefas simples/econômicas — antes MASCARAMENTO irreversível. Migradas
+    # para EXTERNO_PSEUDONIMIZADO (2026-07-06) para NÃO degradar a qualidade com
+    # marcadores irreversíveis ([CPF]/[EMAIL]): agora usam marcadores reversíveis
+    # e a resposta é reidratada localmente. A barreira externa continua idêntica.
+    "triagem": ModoSanitizacao.EXTERNO_PSEUDONIMIZADO,
+    "resumo": ModoSanitizacao.EXTERNO_PSEUDONIMIZADO,
+    "rag_query": ModoSanitizacao.EXTERNO_PSEUDONIMIZADO,
+    "chat_rapido": ModoSanitizacao.EXTERNO_PSEUDONIMIZADO,
+    "chat": ModoSanitizacao.EXTERNO_PSEUDONIMIZADO,
+    "default": ModoSanitizacao.EXTERNO_PSEUDONIMIZADO,
 }
 
-# Fallback seguro para tarefa desconhecida: mascaramento irreversível (nunca
-# "sem sanitização"; nunca pseudonimização sem intenção explícita).
-_MODO_FALLBACK = ModoSanitizacao.MASCARAMENTO
+# Fallback para tarefa desconhecida (2026-07-06): PSEUDONIMIZAÇÃO REVERSÍVEL —
+# nunca "sem sanitização". Antes era MASCARAMENTO irreversível; a decisão de
+# produto elegeu pseudonimização reversível como piso universal (qualidade sem
+# vazar PII: o gateway só envia marcadores ao externo e reidrata a resposta).
+_MODO_FALLBACK = ModoSanitizacao.EXTERNO_PSEUDONIMIZADO
 
 
 def _overrides() -> dict[str, ModoSanitizacao]:
@@ -120,11 +141,16 @@ def modo_para_task(task_type: str) -> ModoSanitizacao:
 
     O override (AI_SANITIZATION_MODE_MAP) tem precedência sobre o default, EXCETO
     pelo PISO DE SEGURANÇA não-rebaixável: se o DEFAULT da tarefa for
-    LOCAL_COMPLETO (sigilo reforçado, ex.: `criminal`), um override que NÃO seja
-    LOCAL_COMPLETO é IGNORADO (com aviso) — o dado não pode ser rebaixado para
-    externo por configuração. Reforçar (qualquer tarefa → LOCAL_COMPLETO) é
-    sempre permitido. Tarefa não mapeada em nenhum dos dois → `_MODO_FALLBACK`
-    (MASCARAMENTO, seguro)."""
+    LOCAL_COMPLETO (sigilo reforçado), um override que NÃO seja LOCAL_COMPLETO é
+    IGNORADO (com aviso) — o dado não pode ser rebaixado para externo por
+    configuração. Reforçar (qualquer tarefa → LOCAL_COMPLETO) é sempre permitido.
+
+    NOTA (2026-07-06): por decisão de produto NENHUMA tarefa tem mais default
+    LOCAL_COMPLETO (inclusive `criminal`, agora EXTERNO_PSEUDONIMIZADO). O
+    mecanismo do piso permanece intacto e passa a valer quando o escritório
+    REFORÇAR uma tarefa para LOCAL_COMPLETO via override — daí ela não pode ser
+    rebaixada por outro override. Tarefa não mapeada em nenhum dos dois →
+    `_MODO_FALLBACK` (EXTERNO_PSEUDONIMIZADO, reversível e seguro)."""
     task = (task_type or "").strip().lower()
     padrao = _MODO_DEFAULT_POR_TASK.get(task, _MODO_FALLBACK)
     over = _overrides()

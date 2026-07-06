@@ -139,9 +139,14 @@ class TestGatewayBarreiraLGPD:
 
     async def test_chat_bloqueia_cadeia_so_externa_com_pii_residual(self, s, monkeypatch):
         from app.services import ai_gateway, sanitizer
+        from app.services.ai import pseudonymizer
 
-        # Segunda barreira acusa residual mesmo após sanitizar (simulado).
+        # Segunda barreira acusa residual mesmo após sanitizar/pseudonimizar
+        # (simulado). "resumo" agora é EXTERNO_PSEUDONIMIZADO (2026-07-06), então a
+        # barreira final usa `validar_sem_pii_pseudonimizado`; forçamos residual nela
+        # (e no sanitizer, defesa em profundidade) para exercitar o bloqueio.
         monkeypatch.setattr(sanitizer, "validar_sem_pii", lambda t: ["CPF"])
+        monkeypatch.setattr(pseudonymizer, "validar_sem_pii_pseudonimizado", lambda t: ["CPF"])
 
         chamadas: list = []
 
@@ -210,11 +215,38 @@ class TestModosSanitizacaoGateway:
         assert CPF_FAKE not in str(logados.get("output_text", ""))
         assert CPF_FAKE not in str(logados.get("input_messages", ""))
 
-    async def test_local_completo_bloqueia_sem_ollama_e_nao_chama_externo(self, s, monkeypatch):
-        """Tarefa LOCAL_COMPLETO (criminal) sem Ollama: bloqueia, provider externo
-        NUNCA é chamado e a mensagem de erro não vaza PII."""
+    async def test_criminal_local_completo_bloqueia_sem_ollama(self, s, monkeypatch):
+        """Auditoria de segurança (2026-07-06): `criminal` MANTIDO em LOCAL_COMPLETO
+        por DEFAULT (sem override). Sem Ollama elegível, a análise criminal BLOQUEIA:
+        o provider externo (Anthropic/Groq) NUNCA é chamado — nomes de vítima/
+        testemunha não estruturais jamais saem da VPS. A mensagem de erro não vaza PII."""
         from app.services import ai_gateway
 
+        chamadas: list = []
+
+        async def _nao_chamar(*a, **kw):
+            chamadas.append(a)
+            raise AssertionError("provider externo chamado em tarefa LOCAL_COMPLETO")
+
+        monkeypatch.setattr(ai_gateway, "_chamar_provedor", _nao_chamar)
+
+        with pytest.raises(RuntimeError) as exc:
+            await ai_gateway.chat(
+                [{"role": "user", "content": f"Defesa criminal do CPF {CPF_FAKE}."}],
+                task_type="criminal",
+            )
+        msg = str(exc.value)
+        assert "local" in msg.lower()   # bloqueio LOCAL_COMPLETO
+        assert CPF_FAKE not in msg       # mensagem segura, sem PII
+        assert chamadas == []            # externo nunca tocado
+
+    async def test_local_completo_via_override_bloqueia_sem_ollama(self, s, monkeypatch):
+        """O MECANISMO LOCAL_COMPLETO permanece: se o escritório REFORÇAR criminal
+        para local_completo (AI_SANITIZATION_MODE_MAP) e não houver Ollama, bloqueia
+        e o provider externo NUNCA é chamado — mensagem de erro não vaza PII."""
+        from app.services import ai_gateway
+
+        monkeypatch.setattr(s, "AI_SANITIZATION_MODE_MAP", '{"criminal":"local_completo"}')
         chamadas: list = []
 
         async def _nao_chamar(*a, **kw):
@@ -233,11 +265,12 @@ class TestModosSanitizacaoGateway:
         assert CPF_FAKE not in msg      # mensagem segura
         assert chamadas == []           # externo nunca tocado
 
-    async def test_local_completo_usa_ollama_com_conteudo_real(self, s, monkeypatch):
-        """Com Ollama ligado, LOCAL_COMPLETO roda no provider LOCAL recebendo o
-        conteúdo REAL (sem pseudonimizar) — soberania total no VPS."""
+    async def test_local_completo_via_override_usa_ollama_com_conteudo_real(self, s, monkeypatch):
+        """Com LOCAL_COMPLETO (reforçado por override) e Ollama ligado, roda no
+        provider LOCAL recebendo o conteúdo REAL (sem pseudonimizar) — soberania."""
         from app.services import ai_gateway
 
+        monkeypatch.setattr(s, "AI_SANITIZATION_MODE_MAP", '{"criminal":"local_completo"}')
         monkeypatch.setattr(s, "OLLAMA_ENABLED", True)
         capturado: dict = {}
 
@@ -281,15 +314,58 @@ class TestModosSanitizacaoGateway:
         assert "João da Silva" in resp.texto                  # resposta reidratada
         assert "[CLIENTE_1]" not in resp.texto
 
+    async def test_deliverable_cpf_cnpj_nome_rg_email_so_marcadores_e_reidrata(self, s, monkeypatch):
+        """ENTREGÁVEL (2026-07-06): texto com CPF + CNPJ + nome + RG + e-mail →
+        (a) o provider externo recebe SÓ marcadores (nenhum valor real);
+        (b) a resposta é REIDRATADA localmente (valores reais de volta ao chamador).
+        Prova a barreira final do gateway intacta mesmo sem o abort de entrada."""
+        from app.services import ai_gateway
+
+        RG_FAKE = "RG 12.345.678-9"
+        EMAIL2 = "joao@exemplo.com"
+        capturado: dict = {}
+
+        async def _fake_provedor(provider, model, messages, temperature, max_tokens):
+            capturado["provider"] = provider
+            capturado["conteudo"] = " ".join(m.get("content", "") for m in messages)
+            # O modelo raciocina e responde usando SOMENTE os marcadores.
+            return "Parecer sobre [CLIENTE_1]: [CPF_1], [CNPJ_1], [RG_1], [EMAIL_1].", {
+                "model": model or provider, "input_tokens": 8, "output_tokens": 12,
+            }
+
+        monkeypatch.setattr(ai_gateway, "_chamar_provedor", _fake_provedor)
+
+        texto = (
+            f"Cliente João da Silva, CPF {CPF_FAKE}, CNPJ {CNPJ_FAKE}, "
+            f"{RG_FAKE}, e-mail {EMAIL2}."
+        )
+        resp = await ai_gateway.chat(
+            [{"role": "user", "content": texto}],
+            task_type="analise_caso",
+            entidades={"cliente": ["João da Silva"]},
+        )
+        # (a) provider externo recebeu SÓ marcadores — nenhum valor real de PII.
+        assert capturado["provider"] in ("anthropic", "groq")
+        for real in (CPF_FAKE, CNPJ_FAKE, "João da Silva", RG_FAKE, EMAIL2):
+            assert real not in capturado["conteudo"], f"vazou ao externo: {real!r}"
+        for marc in ("[CLIENTE_1]", "[CPF_1]", "[CNPJ_1]", "[RG_1]", "[EMAIL_1]"):
+            assert marc in capturado["conteudo"]
+        # (b) resposta ao chamador está REIDRATADA (todos os valores reais de volta).
+        for real in (CPF_FAKE, CNPJ_FAKE, "João da Silva", RG_FAKE, EMAIL2):
+            assert real in resp.texto, f"reidratação falhou para {real!r}"
+        for marc in ("[CLIENTE_1]", "[CPF_1]", "[CNPJ_1]", "[RG_1]", "[EMAIL_1]"):
+            assert marc not in resp.texto
+
 
 # ══════════════════════════════════════════════════════════════════════════════
 # 2c. executar_tarefa_ia — política de modo (FIX 1: 2º ponto de entrada por-tarefa)
 # ══════════════════════════════════════════════════════════════════════════════
 
 class TestExecutarTarefaIAModos:
-    async def test_criminal_sem_ollama_bloqueia_e_nao_chama_externo(self, s, monkeypatch):
-        """LOCAL_COMPLETO (criminal) sem Ollama: bloqueia; Anthropic/Groq NUNCA
-        chamados; mensagem de erro não vaza PII."""
+    async def test_criminal_sem_ollama_local_completo_bloqueia(self, s, monkeypatch):
+        """Auditoria de segurança (2026-07-06): `criminal` em executar_tarefa_ia é
+        LOCAL_COMPLETO por DEFAULT. Sem Ollama elegível, BLOQUEIA: o provider externo
+        (Anthropic/Groq) NUNCA é chamado — espelha o chat(). Erro sem PII."""
         from app.services import ai_gateway
         from app.services.system_prompts import TarefaIA
 
@@ -306,15 +382,17 @@ class TestExecutarTarefaIAModos:
                 TarefaIA.CRIMINAL, f"Defesa do CPF {CPF_FAKE}.",
             )
         msg = str(exc.value)
-        assert "local" in msg.lower()
-        assert CPF_FAKE not in msg
-        assert chamadas == []
+        assert "local" in msg.lower()   # bloqueio LOCAL_COMPLETO
+        assert CPF_FAKE not in msg       # mensagem segura, sem PII
+        assert chamadas == []            # externo nunca tocado
 
-    async def test_criminal_com_ollama_usa_local(self, s, monkeypatch):
-        """LOCAL_COMPLETO (criminal) com Ollama ligado → roda no Ollama local."""
+    async def test_criminal_local_completo_via_override_usa_ollama(self, s, monkeypatch):
+        """Mecanismo LOCAL_COMPLETO preservado em executar_tarefa_ia: reforçado por
+        override + Ollama ligado → roda no Ollama local com conteúdo real."""
         from app.services import ai_gateway
         from app.services.system_prompts import TarefaIA
 
+        monkeypatch.setattr(s, "AI_SANITIZATION_MODE_MAP", '{"criminal":"local_completo"}')
         monkeypatch.setattr(s, "OLLAMA_ENABLED", True)
         capturado: dict = {}
 
