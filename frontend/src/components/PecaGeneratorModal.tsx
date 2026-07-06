@@ -1,4 +1,5 @@
 import { useState, useRef, useCallback } from "react";
+import { authFetch } from "../lib/stream";
 import { Modal, Button } from "./UI";
 import { toast } from "./Toast";
 import {
@@ -164,7 +165,6 @@ export default function PecaGeneratorModal({
     setDocumento("");
     abortRef.current = new AbortController();
 
-    const token = localStorage.getItem("ejc_access") ?? "";
     const body = JSON.stringify({
       tipo_peca: tipoPeca,
       area_direito: areaDireito,
@@ -179,12 +179,9 @@ export default function PecaGeneratorModal({
     });
 
     try {
-      const res = await fetch("/api/pecas/gerar", {
+      const res = await authFetch("/api/pecas/gerar", {
         method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-          Authorization: `Bearer ${token}`,
-        },
+        headers: { "Content-Type": "application/json" },
         body,
         signal: abortRef.current.signal,
       });

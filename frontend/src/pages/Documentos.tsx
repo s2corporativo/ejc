@@ -4,6 +4,7 @@ import { Upload, Download, Search, Lock, Sparkles } from "lucide-react";
 import api from "../lib/api";
 import { PageHeader, Modal, Empty, Spinner, fmtDate } from "../components/UI";
 import { DocumentosStats } from "../components/Dashboards";
+import { asList } from "../lib/list";
 
 /** Item de alternativa devolvido pela classificação por IA. */
 type ClassAlternativa = { tipo_key: string; nome: string };
@@ -55,7 +56,7 @@ export default function Documentos() {
     // M12: lista de casos para vincular o documento (torna o gate IDOR efetivo).
     api
       .get("/cases/", { params: { page_size: 200 } })
-      .then((r) => setCasos(r.data?.data || []))
+      .then((r) => setCasos(asList(r.data)))
       .catch(() => {});
   }, []);
   useEffect(() => {

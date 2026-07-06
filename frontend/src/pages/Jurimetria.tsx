@@ -2,6 +2,7 @@ import { useEffect, useState } from "react";
 import { Database } from "lucide-react";
 import api from "../lib/api";
 import { PageHeader, Spinner } from "../components/UI";
+import { asList } from "../lib/list";
 
 const TRIBUNAIS = ["TJMG", "STJ", "STF", "TRF1", "TRT3"];
 
@@ -120,23 +121,11 @@ export default function Jurimetria() {
       .then(([a, b, c, d]) => {
         if (a.status === "fulfilled") setOv(a.value.data);
         if (b.status === "fulfilled")
-          setArea(
-            Array.isArray(b.value.data)
-              ? b.value.data
-              : (b.value.data?.items ?? []),
-          );
+          setArea(asList(b.value.data));
         if (c.status === "fulfilled")
-          setTrib(
-            Array.isArray(c.value.data)
-              ? c.value.data
-              : (c.value.data?.items ?? []),
-          );
+          setTrib(asList(c.value.data));
         if (d.status === "fulfilled")
-          setTese(
-            Array.isArray(d.value.data)
-              ? d.value.data
-              : (d.value.data?.items ?? []),
-          );
+          setTese(asList(d.value.data));
       })
       .finally(() => setLoading(false));
 

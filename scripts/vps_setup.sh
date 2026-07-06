@@ -79,7 +79,14 @@ docker compose exec -T backend python seeds/seed_all.py
 
 # ── 7. Nginx + SSL ─────────────────────────────────────────────────────────────
 echo "[7/8] Configurando Nginx e SSL..."
-cp "$APP_DIR/nginx/ejc.conf" /etc/nginx/sites-available/ejc.conf
+# O template de produção agora existe versionado no repo (nginx/ejc.conf).
+# `cp -f` sobrescreve o destino sem abortar se já existir (idempotência: este
+# script pode ser reexecutado). Falha explícita e clara se o fonte sumir.
+if [ ! -f "$APP_DIR/nginx/ejc.conf" ]; then
+    echo "ERRO: $APP_DIR/nginx/ejc.conf não encontrado — o repositório está incompleto." >&2
+    exit 1
+fi
+cp -f "$APP_DIR/nginx/ejc.conf" /etc/nginx/sites-available/ejc.conf
 
 # Desabilitar default se existir
 rm -f /etc/nginx/sites-enabled/default
@@ -118,7 +125,7 @@ NGINX_HTTP
         echo "   Após corrigir, rode: certbot --nginx -d $DOMAIN"
     }
     # Restaurar configuração completa com SSL
-    cp "$APP_DIR/nginx/ejc.conf" /etc/nginx/sites-available/ejc.conf
+    cp -f "$APP_DIR/nginx/ejc.conf" /etc/nginx/sites-available/ejc.conf
 fi
 
 systemctl reload nginx

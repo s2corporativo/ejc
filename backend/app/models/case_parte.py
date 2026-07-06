@@ -23,8 +23,9 @@ class CaseParte(Base):
     telefone = Column(String(20), nullable=True)
     representante_legal = Column(String(255), nullable=True)
     oab     = Column(String(20), nullable=True)
+    # index=True declara o ix_case_partes_client_id criado na migration 076 (#11)
     client_id = Column(String, ForeignKey("clients.id", ondelete="SET NULL"),
-                       nullable=True)
+                       nullable=True, index=True)
     ativo   = Column(Boolean, default=True)
     observacoes = Column(Text, nullable=True)
     created_at  = Column(DateTime(timezone=True), server_default=func.now())

@@ -9,6 +9,7 @@ import {
   Sparkles,
 } from "lucide-react";
 import api from "../lib/api";
+import type { LoginResponse } from "../types";
 import { useAuth } from "../stores/auth";
 
 const BRAND_LOGO = "/brand/de-paula-teixeira-logo.jpg";
@@ -25,9 +26,12 @@ export default function LoginModern() {
     setErro("");
     setLoading(true);
     try {
-      const { data } = await api.post("/auth/login", { email, password });
+      const { data } = await api.post<LoginResponse>("/auth/login", {
+        email,
+        password,
+      });
+      // Só o access curto em localStorage; o refresh vem em cookie httpOnly (ejc_refresh).
       localStorage.setItem("ejc_access", data.access_token);
-      localStorage.setItem("ejc_refresh", data.refresh_token);
       const user = {
         id: data.user_id,
         email,

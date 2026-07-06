@@ -12,6 +12,7 @@ import {
   ArchiveRestore,
 } from "lucide-react";
 import api from "../lib/api";
+import { asList } from "../lib/list";
 import MotorTeses from "../components/MotorTeses";
 import LinhaDoTempoProcessual from "../components/visual/LinhaDoTempoProcessual";
 import MatrizRisco from "../components/visual/MatrizRisco";
@@ -444,7 +445,7 @@ function TabResumo({ caso }: { caso: Case }) {
   useEffect(() => {
     api
       .get(`/cases/${caso.id}/movimentos`)
-      .then((r) => setMovs(Array.isArray(r.data) ? r.data : []))
+      .then((r) => setMovs(asList(r.data)))
       .catch(() => {});
   }, [caso.id]);
 
@@ -556,7 +557,7 @@ function TabResumo({ caso }: { caso: Case }) {
     setNovoMov("");
     api
       .get(`/cases/${caso.id}/movimentos`)
-      .then((r) => setMovs(Array.isArray(r.data) ? r.data : []))
+      .then((r) => setMovs(asList(r.data)))
       .catch(() => {});
   };
 
@@ -1156,7 +1157,7 @@ function TabTimeline({ caseId }: { caseId: string }) {
   useEffect(() => {
     api
       .get(`/timesheet/casos/${caseId}`)
-      .then((r) => setTs(r.data?.data ?? []))
+      .then((r) => setTs(asList(r.data)))
       .catch(() => setTs([]));
   }, [caseId]);
 
@@ -1166,7 +1167,7 @@ function TabTimeline({ caseId }: { caseId: string }) {
     setShowTsForm(false);
     api
       .get(`/timesheet/casos/${caseId}`)
-      .then((r) => setTs(r.data?.data ?? []))
+      .then((r) => setTs(asList(r.data)))
       .catch(() => setTs([]));
   };
 
@@ -1436,7 +1437,7 @@ function TabProcessos({ caseId }: { caseId: string }) {
   const carregar = () =>
     api
       .get(`/cases/${caseId}/processes`, { params: { arquivo } })
-      .then((r) => setProcs(r.data?.data ?? []))
+      .then((r) => setProcs(asList(r.data)))
       .catch(() => {});
   useEffect(() => {
     carregar();
@@ -1735,7 +1736,7 @@ function TabPartes({ caseId }: { caseId: string }) {
   useEffect(() => {
     api
       .get(`/cases/${caseId}/partes`)
-      .then((r) => setPartes(Array.isArray(r.data) ? r.data : []))
+      .then((r) => setPartes(asList(r.data)))
       .catch(() => {});
   }, [caseId]);
 
@@ -1745,7 +1746,7 @@ function TabPartes({ caseId }: { caseId: string }) {
     setShowForm(false);
     api
       .get(`/cases/${caseId}/partes`)
-      .then((r) => setPartes(Array.isArray(r.data) ? r.data : []))
+      .then((r) => setPartes(asList(r.data)))
       .catch(() => {});
   };
 
@@ -2327,11 +2328,7 @@ function TabLista({
     api
       .get(endpoint)
       .then((r) =>
-        setItems(
-          Array.isArray(r.data)
-            ? r.data
-            : (r.data?.items ?? r.data?.data ?? []),
-        ),
+        setItems(asList(r.data)),
       )
       .catch(() => {});
   }, [endpoint]);
@@ -2360,7 +2357,7 @@ function TabMensagens({ caseId }: { caseId: string }) {
   const carregar = () =>
     api
       .get(`/cases/${caseId}/mensagens`)
-      .then((r) => setMsgs(Array.isArray(r.data) ? r.data : []))
+      .then((r) => setMsgs(asList(r.data)))
       .catch(() => {});
   useEffect(() => {
     carregar();
@@ -2457,7 +2454,7 @@ function TabEtiquetas({ caseId }: { caseId: string }) {
       .catch(() => {});
     api
       .get(`/cases/${caseId}/etiquetas`)
-      .then((r) => setDoCaso(Array.isArray(r.data) ? r.data : []))
+      .then((r) => setDoCaso(asList(r.data)))
       .catch(() => {});
   };
   useEffect(() => {
@@ -2599,7 +2596,7 @@ function TabMemoria({ caseId }: { caseId: string }) {
   const carregar = () =>
     api
       .get(`/memoria-institucional?case_id=${caseId}`)
-      .then((r) => setItens(Array.isArray(r.data) ? r.data : []))
+      .then((r) => setItens(asList(r.data)))
       .catch(() => {});
   useEffect(() => {
     carregar();

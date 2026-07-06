@@ -192,10 +192,8 @@ async def documento(analysis_id: str, payload: dict = Body(default={}),
 
 
 def _fmt_brl(valor) -> str:
-    try:
-        return f"R$ {float(valor or 0):,.2f}".replace(",", "X").replace(".", ",").replace("X", ".")
-    except (TypeError, ValueError):
-        return "R$ 0,00"
+    from app.utils.format import formatar_brl  # #41: formatador BRL único
+    return formatar_brl(valor)
 
 
 def _montar_contexto_revisional(analise: dict, cobrancas: list[dict],

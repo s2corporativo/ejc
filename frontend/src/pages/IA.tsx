@@ -3,6 +3,7 @@ import Markdown from "../components/Markdown";
 import { Sparkles, FileText, History, Eye, ShieldCheck } from "lucide-react";
 import api from "../lib/api";
 import { PageHeader, Spinner, fmtDate, StatusBadge } from "../components/UI";
+import { asList } from "../lib/list";
 
 const AREAS = [
   "civil",
@@ -42,13 +43,13 @@ export default function IA() {
     if (tab === "logs")
       api
         .get("/ai/logs", { params: { page_size: 30 } })
-        .then((r) => setLogs(Array.isArray(r.data?.data) ? r.data.data : []));
+        .then((r) => setLogs(asList(r.data)));
   }, [tab]);
 
   useEffect(() => {
     api
       .get("/cases/", { params: { page_size: 100 } })
-      .then((r) => setCasos(Array.isArray(r.data?.data) ? r.data.data : []))
+      .then((r) => setCasos(asList(r.data)))
       .catch(() => setCasos([]));
   }, []);
 
@@ -134,7 +135,7 @@ export default function IA() {
     await api.patch(`/ai/logs/${id}/hitl`, { status });
     api
       .get("/ai/logs", { params: { page_size: 30 } })
-      .then((r) => setLogs(Array.isArray(r.data?.data) ? r.data.data : []));
+      .then((r) => setLogs(asList(r.data)));
   };
 
   const tabs = [

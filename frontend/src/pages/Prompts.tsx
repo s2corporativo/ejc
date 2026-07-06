@@ -4,6 +4,7 @@ import Markdown from "../components/Markdown";
 import { Sparkles, Trash2, Plus, Play } from "lucide-react";
 import api from "../lib/api";
 import { PageHeader, Spinner, Modal } from "../components/UI";
+import { asList } from "../lib/list";
 
 const CATS = [
   "peticao",
@@ -37,13 +38,7 @@ export default function Prompts() {
     api
       .get("/prompts-juridicos")
       .then((r) =>
-        setPrompts(
-          Array.isArray(r.data)
-            ? r.data
-            : Array.isArray(r.data?.data)
-              ? r.data.data
-              : [],
-        ),
+        setPrompts(asList(r.data)),
       )
       .catch(() => {})
       .finally(() => setLoading(false));

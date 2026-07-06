@@ -3,6 +3,7 @@ import { toast } from "../components/Toast";
 import { ListChecks, Trash2, Plus } from "lucide-react";
 import api from "../lib/api";
 import { PageHeader, Spinner } from "../components/UI";
+import { asList } from "../lib/list";
 
 export default function Checklists() {
   const [tpls, setTpls] = useState<any[]>([]);
@@ -20,13 +21,7 @@ export default function Checklists() {
     api
       .get("/checklists/templates")
       .then((r) =>
-        setTpls(
-          Array.isArray(r.data)
-            ? r.data
-            : Array.isArray(r.data?.data)
-              ? r.data.data
-              : [],
-        ),
+        setTpls(asList(r.data)),
       )
       .catch(() => {})
       .finally(() => setLoading(false));

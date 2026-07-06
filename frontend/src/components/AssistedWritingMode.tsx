@@ -2,6 +2,7 @@ import React, { useState, useEffect } from "react";
 import Markdown from "./Markdown";
 import { Copy } from "lucide-react";
 import api from "../lib/api";
+import { asList } from "../lib/list";
 
 interface Template {
   id: string;
@@ -40,7 +41,7 @@ export const AssistedWritingMode: React.FC = () => {
       const r = await api.get("/document-templates/", {
         params: { area_juridica: selectedArea || undefined },
       });
-      setTemplates(Array.isArray(r.data) ? r.data : []);
+      setTemplates(asList<Template>(r.data));
     } catch (err) {
       console.error("Erro ao buscar templates:", err);
     }

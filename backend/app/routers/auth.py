@@ -5,7 +5,7 @@ from datetime import datetime, timezone, timedelta
 from uuid import uuid4
 import pyotp
 
-from fastapi import APIRouter, Depends, HTTPException, Request, status
+from fastapi import APIRouter, Depends, HTTPException, Request, Response, status
 from pydantic import BaseModel, EmailStr, Field
 from sqlalchemy import select, update
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -37,7 +37,35 @@ class LoginRequest(BaseModel):
 
 
 class RefreshRequest(BaseModel):
-    refresh_token: str
+    # #14: o refresh token agora trafega preferencialmente no cookie httpOnly
+    # `ejc_refresh` (inacessível a JS → um XSS não rouba a sessão de 7 dias).
+    # O campo no corpo continua aceito para retrocompatibilidade/clientes API.
+    refresh_token: str | None = None
+
+
+# ─── Cookie do refresh token (#14) ───────────────────────────────────────────
+REFRESH_COOKIE = "ejc_refresh"
+
+
+def _set_refresh_cookie(response: Response, token: str) -> None:
+    response.set_cookie(
+        key=REFRESH_COOKIE,
+        value=token,
+        max_age=settings.REFRESH_TOKEN_EXPIRE_DAYS * 24 * 3600,
+        httponly=True,
+        secure=(settings.APP_ENV == "production"),  # em dev (http) o browser
+        samesite="lax",                              # não guardaria cookie Secure
+        path="/",
+    )
+
+
+def _clear_refresh_cookie(response: Response) -> None:
+    response.delete_cookie(REFRESH_COOKIE, path="/")
+
+
+def _refresh_from(req: RefreshRequest, request: Request) -> str:
+    """Token do cookie httpOnly (preferido) ou do corpo (retrocompat)."""
+    return request.cookies.get(REFRESH_COOKIE) or (req.refresh_token or "")
 
 
 class AlterarSenhaRequest(BaseModel):
@@ -65,7 +93,7 @@ class TOTPDesativarRequest(BaseModel):
 @router.post("/login")
 @limiter.limit("10/minute")
 async def login(
-    req: LoginRequest, request: Request,
+    req: LoginRequest, request: Request, response: Response,
     db: AsyncSession = Depends(get_db),
 ):
     ip = obter_ip_real(request)
@@ -139,6 +167,9 @@ async def login(
 
     await db.commit()
 
+    # #14: entrega o refresh token no cookie httpOnly (não legível por JS).
+    _set_refresh_cookie(response, refresh_tok)
+
     resp = {
         "access_token": access, "refresh_token": refresh_tok,
         "token_type": "bearer",
@@ -154,9 +185,10 @@ async def login(
 # ─── Refresh (rotação de token) ───────────────────────────────────────────────
 @router.post("/refresh")
 @limiter.limit("20/minute")
-async def refresh(req: RefreshRequest, request: Request,
+async def refresh(req: RefreshRequest, request: Request, response: Response,
                   db: AsyncSession = Depends(get_db)):
-    payload = decode_token(req.refresh_token)
+    token = _refresh_from(req, request)
+    payload = decode_token(token) if token else None
     if not payload or payload.get("type") != "refresh":
         raise HTTPException(status_code=401, detail="Refresh token inválido")
 
@@ -197,14 +229,19 @@ async def refresh(req: RefreshRequest, request: Request,
             days=settings.REFRESH_TOKEN_EXPIRE_DAYS),
     ))
     await db.commit()
+
+    # Rotaciona também o cookie httpOnly com o novo refresh token.
+    _set_refresh_cookie(response, new_refresh)
     return {"access_token": new_access, "refresh_token": new_refresh,
             "token_type": "bearer"}
 
 
 # ─── Logout ───────────────────────────────────────────────────────────────────
 @router.post("/logout")
-async def logout(req: RefreshRequest, db: AsyncSession = Depends(get_db)):
-    payload = decode_token(req.refresh_token)
+async def logout(req: RefreshRequest, request: Request, response: Response,
+                 db: AsyncSession = Depends(get_db)):
+    token = _refresh_from(req, request)
+    payload = decode_token(token) if token else None
     if payload:
         jti = payload.get("jti")
         if jti:
@@ -214,6 +251,7 @@ async def logout(req: RefreshRequest, db: AsyncSession = Depends(get_db)):
                 .values(revoked=True)
             )
             await db.commit()
+    _clear_refresh_cookie(response)
     return {"detail": "Logout realizado"}
 
 

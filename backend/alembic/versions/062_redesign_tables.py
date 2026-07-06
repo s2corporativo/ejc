@@ -1,4 +1,4 @@
-"""057 — redesign: module_help, area_modulos_mapping, document_types_master,
+"""062 — redesign: module_help, area_modulos_mapping, document_types_master,
 tabela_oab_honorarios
 
 Tabelas de configuração/master data do redesign EJC (auditoria pré-redesign
@@ -18,8 +18,8 @@ Tabelas de configuração/master data do redesign EJC (auditoria pré-redesign
 Totalmente IDEMPOTENTE (CREATE TABLE/INDEX IF NOT EXISTS), no padrão das
 migrações 052/056. Models correspondentes: app/models/redesign.py.
 
-Revision ID: 057_redesign_tables
-Revises: 056_processes_is_principal
+Revision ID: 062_redesign_tables
+Revises: 061_client_pii_encriptado
 Create Date: 2026-07-03
 """
 from alembic import op

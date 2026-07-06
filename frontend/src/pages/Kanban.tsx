@@ -2,6 +2,7 @@ import { useEffect, useState, useCallback } from "react";
 import { useNavigate } from "react-router-dom";
 import { ChevronDown } from "lucide-react";
 import api from "../lib/api";
+import { asList } from "../lib/list";
 import { Spinner, PageHeader } from "../components/UI";
 
 interface KanbanCol {
@@ -70,7 +71,7 @@ export default function Kanban() {
 
   const loadCasos = useCallback(async () => {
     const res = await api.get("/cases/?page_size=300");
-    setCasos(res.data?.data ?? res.data?.items ?? []);
+    setCasos(asList<Caso>(res.data));
   }, []);
 
   useEffect(() => {

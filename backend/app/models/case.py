@@ -98,7 +98,8 @@ class Case(Base):
     # Responsáveis
     client_id  = Column(String(36), ForeignKey("clients.id"), nullable=False, index=True)
     advogado_responsavel_id = Column(String(36), ForeignKey("users.id"), nullable=True, index=True)
-    advogado_auxiliar_id    = Column(String(36), ForeignKey("users.id"), nullable=True)
+    # index=True declara o ix_cases_advogado_auxiliar_id da migration 076 (#11)
+    advogado_auxiliar_id    = Column(String(36), ForeignKey("users.id"), nullable=True, index=True)
 
     data_encerramento = Column(DateTime(timezone=True), nullable=True)
     archived_at       = Column(DateTime(timezone=True), nullable=True)

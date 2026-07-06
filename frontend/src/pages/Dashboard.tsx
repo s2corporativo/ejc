@@ -33,6 +33,7 @@ import {
   fmtMoney,
 } from "../components/UI";
 import NoticiasCard from "../components/NoticiasCard";
+import { asList } from "../lib/list";
 
 const areaTone: Record<string, string> = {
   civil: "bg-primary-500",
@@ -235,17 +236,10 @@ export default function Dashboard() {
         if (dash.status === "fulfilled") setDashboard(dash.value.data);
         if (juri.status === "fulfilled") setJurimetria(juri.value.data);
         if (deadlines.status === "fulfilled")
-          setPrazos(
-            deadlines.value.data?.data ?? deadlines.value.data?.items ?? [],
-          );
-        if (movs.status === "fulfilled") setMovimentos(movs.value.data ?? []);
+          setPrazos(asList(deadlines.value.data));
+        if (movs.status === "fulfilled") setMovimentos(asList(movs.value.data));
         if (cases.status === "fulfilled")
-          setCasos(
-            cases.value.data?.data ??
-              cases.value.data?.items ??
-              cases.value.data ??
-              [],
-          );
+          setCasos(asList(cases.value.data));
       })
       .finally(() => setLoading(false));
   }, []);

@@ -2,6 +2,7 @@ import { useEffect, useState, useRef, useCallback } from "react";
 import { Send, MessageCircle, RefreshCw } from "lucide-react";
 import api from "../../lib/api";
 import { toast } from "../../components/Toast";
+import { asList } from "../../lib/list";
 
 interface Mensagem {
   id: string;
@@ -38,7 +39,7 @@ export default function PortalMensagens() {
 
   useEffect(() => {
     api.get("/portal/meus-casos").then((r) => {
-      const cs = r.data?.data ?? [];
+      const cs = asList<Caso>(r.data);
       setCasos(cs);
       if (cs.length > 0) setSelectedId(cs[0].id);
     });

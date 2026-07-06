@@ -9,6 +9,7 @@ import api from "../lib/api";
 import { toast } from "./Toast";
 import { Spinner, StatusBadge, Empty } from "./UI";
 import type { Case } from "../types";
+import { asList } from "../lib/list";
 
 interface EnvCase {
   id: string;
@@ -65,7 +66,7 @@ export default function AmbientalAutos({ casos }: { casos: Case[] }) {
   const load = () => {
     api
       .get("/environmental/")
-      .then((r) => setLista(r.data?.data ?? []))
+      .then((r) => setLista(asList<EnvCase>(r.data)))
       .catch(() => setLista([]));
   };
   useEffect(load, []);

@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 import { Trash2, RotateCcw } from "lucide-react";
 import api from "../lib/api";
+import { asList } from "../lib/list";
 import { PageHeader } from "../components/UI";
 
 const ENTIDADES = [
@@ -20,7 +21,7 @@ export default function Lixeira() {
   const [rows, setRows] = useState<any[]>([]);
 
   const load = () =>
-    api.get(`/trash/?entidade=${ent}`).then((r) => setRows(Array.isArray(r.data?.data) ? r.data.data : []));
+    api.get(`/trash/?entidade=${ent}`).then((r) => setRows(asList(r.data)));
   useEffect(() => {
     load();
   }, [ent]);

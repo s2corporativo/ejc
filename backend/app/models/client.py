@@ -38,6 +38,15 @@ class Client(Base):
               postgresql_where=text("deleted_at IS NULL")),
         Index("uq_clients_cnpj_active", "cnpj", unique=True,
               postgresql_where=text("deleted_at IS NULL")),
+        # #11/#12: dedup por HMAC (migration 061), com o predicado corrigido na
+        # 079 para EXCLUIR soft-deleted (antes só `cpf_hash IS NOT NULL`, o que
+        # impedia recadastrar o mesmo CPF após soft-delete que a 075 habilitou).
+        # Declarados no ORM para o autogenerate NÃO emitir DROP INDEX destes
+        # únicos parciais (perderia a unicidade de dedup).
+        Index("ux_clients_cpf_hash", "cpf_hash", unique=True,
+              postgresql_where=text("cpf_hash IS NOT NULL AND deleted_at IS NULL")),
+        Index("ux_clients_cnpj_hash", "cnpj_hash", unique=True,
+              postgresql_where=text("cnpj_hash IS NOT NULL AND deleted_at IS NULL")),
     )
 
     id             = Column(String(36), primary_key=True)
@@ -61,8 +70,10 @@ class Client(Base):
     # manual e separado (scripts/backfill_pii_encryption.py) — nunca automático.
     cpf_enc        = Column(Text, nullable=True)   # ciphertext Fernet, não indexável
     cnpj_enc       = Column(Text, nullable=True)
-    cpf_hash       = Column(String(64), nullable=True, index=True)   # HMAC-SHA256 — busca exata/dedup
-    cnpj_hash      = Column(String(64), nullable=True, index=True)
+    # Índice declarado em __table_args__ (único parcial ux_clients_*_hash) — sem
+    # index=True aqui para não gerar um ix_ redundante não-único (#11).
+    cpf_hash       = Column(String(64), nullable=True)   # HMAC-SHA256 — busca exata/dedup
+    cnpj_hash      = Column(String(64), nullable=True)
 
     # Contato (PF e PJ)
     email          = Column(String(255), nullable=True)
@@ -85,7 +96,9 @@ class Client(Base):
     # A FK para users.id EXISTE no banco desde a migration 001 (linha 85). O model
     # não a declarava — drift model↔banco (achado M9, Etapa 3). Declarar aqui apenas
     # informa o SQLAlchemy da constraint já existente; não gera DDL nem migração.
-    responsavel_id = Column(String(36), ForeignKey("users.id"), nullable=True)
+    # index=True declara o ix_clients_responsavel_id criado na migration 076
+    # (caminho quente); sem isto o autogenerate emitiria DROP INDEX (#11).
+    responsavel_id = Column(String(36), ForeignKey("users.id"), nullable=True, index=True)
 
     created_at     = Column(DateTime(timezone=True), server_default=func.now())
     updated_at     = Column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now())

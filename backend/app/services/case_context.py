@@ -52,7 +52,8 @@ def _fmt_val(v) -> str:
     if hasattr(v, "value") and not isinstance(v, (int, float, bool)):
         return str(v.value).replace("_", " ")
     if isinstance(v, Decimal):
-        return f"R$ {v:,.2f}".replace(",", "X").replace(".", ",").replace("X", ".")
+        from app.utils.format import formatar_brl  # #41: formatador BRL único
+        return formatar_brl(v)
     if isinstance(v, (date, datetime)):
         return v.strftime("%d/%m/%Y")
     if isinstance(v, bool):

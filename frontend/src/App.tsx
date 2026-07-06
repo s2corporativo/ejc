@@ -3,11 +3,21 @@ import { lazy, Suspense } from "react";
 import { BrowserRouter, Routes, Route, Navigate } from "react-router-dom";
 import { useAuth } from "./stores/auth";
 import { Spinner } from "./components/UI";
+import ErrorBoundary from "./components/ErrorBoundary";
 
 // Eager: necessários no primeiro paint / leves
 import Layout from "./components/Layout";
 import PortalLayout from "./components/PortalLayout";
 import Login from "./pages/LoginModern";
+
+/** Lê o usuário salvo em localStorage sem estourar se o JSON estiver corrompido. */
+function readStoredUser(): { role?: string } | null {
+  try {
+    return JSON.parse(localStorage.getItem("ejc_user") || "null");
+  } catch {
+    return null;
+  }
+}
 
 // Lazy: carregados sob demanda (reduz o bundle inicial)
 const RecuperarSenha = lazy(() => import("./pages/RecuperarSenha"));
@@ -90,7 +100,7 @@ function Protected({ children }: { children: JSX.Element }) {
 
 /** Cliente externo só navega no /portal — staff não entra no portal */
 function StaffOnly({ children }: { children: JSX.Element }) {
-  const u = JSON.parse(localStorage.getItem("ejc_user") || "null");
+  const u = readStoredUser();
   if (u?.role === "cliente_externo") return <Navigate to="/portal" replace />;
   return children;
 }
@@ -103,8 +113,9 @@ function RoleOnly({
   roles: string[];
   children: JSX.Element;
 }) {
-  const u = JSON.parse(localStorage.getItem("ejc_user") || "null");
-  if (!u || !roles.includes(u.role)) return <Navigate to="/" replace />;
+  const u = readStoredUser();
+  if (!u || !u.role || !roles.includes(u.role))
+    return <Navigate to="/" replace />;
   return children;
 }
 
@@ -112,203 +123,231 @@ export default function App() {
   useAuth();
   return (
     <BrowserRouter>
-      <Suspense
-        fallback={
-          <div className="min-h-screen grid place-items-center">
-            <Spinner />
-          </div>
-        }
-      >
-        <Routes>
-          <Route path="/login" element={<Login />} />
-          <Route path="/recuperar-senha" element={<RecuperarSenha />} />
-          <Route path="/redefinir-senha" element={<RedefinirSenha />} />
-          <Route
-            path="/trocar-senha"
-            element={
-              <Protected>
-                <TrocarSenha />
-              </Protected>
-            }
-          />
+      <ErrorBoundary>
+        <Suspense
+          fallback={
+            <div className="min-h-screen grid place-items-center">
+              <Spinner />
+            </div>
+          }
+        >
+          <Routes>
+            <Route path="/login" element={<Login />} />
+            <Route path="/recuperar-senha" element={<RecuperarSenha />} />
+            <Route path="/redefinir-senha" element={<RedefinirSenha />} />
+            <Route
+              path="/trocar-senha"
+              element={
+                <Protected>
+                  <TrocarSenha />
+                </Protected>
+              }
+            />
 
-          {/* ── Portal do Cliente ── */}
-          <Route
-            path="/portal"
-            element={
-              <Protected>
-                <PortalLayout />
-              </Protected>
-            }
-          >
-            <Route index element={<PortalDashboard />} />
-            <Route path="casos" element={<PortalCasos />} />
-            <Route path="casos/:id" element={<PortalCasoDetalhe />} />
-            <Route path="financeiro" element={<PortalFinanceiro />} />
-            <Route path="assinaturas" element={<PortalAssinaturas />} />
-            <Route path="mensagens" element={<PortalMensagens />} />
-          </Route>
+            {/* ── Portal do Cliente ── */}
+            <Route
+              path="/portal"
+              element={
+                <Protected>
+                  <PortalLayout />
+                </Protected>
+              }
+            >
+              <Route index element={<PortalDashboard />} />
+              <Route path="casos" element={<PortalCasos />} />
+              <Route path="casos/:id" element={<PortalCasoDetalhe />} />
+              <Route path="financeiro" element={<PortalFinanceiro />} />
+              <Route path="assinaturas" element={<PortalAssinaturas />} />
+              <Route path="mensagens" element={<PortalMensagens />} />
+            </Route>
 
-          {/* ── Sistema interno (staff) ── */}
-          <Route
-            element={
-              <Protected>
-                <StaffOnly>
-                  <Layout />
-                </StaffOnly>
-              </Protected>
-            }
-          >
-            <Route path="/" element={<Dashboard />} />
-            <Route path="/clientes" element={<Clientes />} />
-            <Route path="/clientes/:clientId" element={<DossieCliente />} />
+            {/* ── Sistema interno (staff) ── */}
             <Route
-              path="/clientes/:clientId/dossie"
-              element={<DossieCliente />}
-            />
-            <Route path="/casos" element={<Casos />} />
-            <Route path="/casos/:id" element={<CasoDetalhe />} />
-            <Route path="/prazos" element={<Prazos />} />
-            <Route path="/suspensoes" element={<Suspensoes />} />
-            <Route path="/tarefas" element={<Tarefas />} />
-            <Route path="/intimacoes" element={<Intimacoes />} />
-            <Route path="/documentos" element={<GestaoDocumental />} />
-            <Route path="/pecas" element={<Pecas />} />
-            <Route
-              path="/honorarios"
-              element={<Navigate to="/financeiro?tab=honorarios" replace />}
-            />
-            <Route path="/ambiental" element={<Navigate to="/ramos/ambiental" replace />} />
-            <Route path="/data-room" element={<Navigate to="/documentos" replace />} />
-            <Route path="/dashboard-executivo" element={<Navigate to="/" replace />} />
-            <Route path="/jurimetria" element={<Jurimetria />} />
-            <Route path="/central-relacionamento" element={<CentralRelacionamento />} />
-            <Route path="/knowledge-hub" element={<KnowledgeHub />} />
-            <Route path="/biblioteca" element={<Biblioteca />} />
-            <Route path="/memoria" element={<MemoriaInstitucional />} />
-            <Route path="/casos/:caseId/sala-de-guerra" element={<SalaDeGuerra />} />
-            <Route path="/produtividade" element={<Produtividade />} />
-            <Route path="/ajuda" element={<Ajuda />} />
-            <Route path="/configuracoes" element={<Configuracoes />} />
-            <Route path="/noticias" element={<Noticias />} />
-            <Route
-              path="/ia-saude"
               element={
-                <RoleOnly roles={["superadmin", "admin", "socio"]}>
-                  <DashboardIA />
-                </RoleOnly>
+                <Protected>
+                  <StaffOnly>
+                    <Layout />
+                  </StaffOnly>
+                </Protected>
               }
-            />
-            <Route
-              path="/ia-governanca"
-              element={
-                <RoleOnly roles={["superadmin", "admin", "socio"]}>
-                  <GovernancaIA />
-                </RoleOnly>
-              }
-            />
-            <Route path="/conteudo-juridico" element={<ConteudoJuridico />} />
-            <Route path="/wiki" element={<Wiki />} />
-            <Route path="/inteligencia" element={<InteligenciaWorkspace />} />
-            <Route path="/ferramentas-ia" element={<FerramentasIA />} />
-            <Route path="/victory-vault" element={<VictoryVault />} />
-            <Route path="/radar-regulatorio" element={<RadarRegulatorio />} />
-            <Route
-              path="/compliance/radar"
-              element={
-                <RoleOnly roles={["superadmin", "admin", "socio", "advogado"]}>
-                  <RadarCompliance />
-                </RoleOnly>
-              }
-            />
-            <Route path="/kanban" element={<Kanban />} />
-            <Route path="/agenda" element={<Agenda />} />
-            <Route path="/assistente-ia" element={<AssistenteIA />} />
-            <Route path="/checklists" element={<Checklists />} />
-            <Route path="/prompts" element={<Prompts />} />
-            <Route path="/diario-oficial" element={<DiarioOficial />} />
-            <Route path="/assinaturas" element={<Assinaturas />} />
-            <Route path="/workflow" element={<Workflow />} />
-            <Route
-              path="/sociedade"
-              element={<Navigate to="/financeiro?tab=societaria" replace />}
-            />
-            <Route path="/ramos" element={<RamosHub />} />
-            <Route path="/ramos/:slug" element={<RamoBase />} />
-            <Route path="/office-contracts" element={<OfficeContracts />} />
-            <Route path="/partner-withdrawals" element={<PartnerWithdrawals />} />
-            <Route path="/atividades" element={<CentralAtividades />} />
-            <Route path="/financeiro" element={<FinanceiroWorkspace />} />
-            <Route path="/financeiro-dashboard" element={<Navigate to="/financeiro" replace />} />
-            <Route
-              path="/despesas"
-              element={<Navigate to="/financeiro?tab=despesas" replace />}
-            />
-            <Route path="/datajud" element={<DataJudBusca />} />
-            <Route path="/despesas-recorrentes" element={<DespesasRecorrentes />} />
-            <Route path="/crm-leads" element={<CRMLeads />} />
-            <Route path="/whatsapp" element={<Whatsapp />} />
-            <Route
-              path="/ia"
-              element={
-                <RoleOnly
-                  roles={[
-                    "superadmin",
-                    "admin",
-                    "socio",
-                    "advogado",
-                    "advogado_auxiliar",
-                    "estagiario",
-                  ]}
-                >
-                  <IA />
-                </RoleOnly>
-              }
-            />
-            <Route
-              path="/conhecimento"
-              element={
-                <RoleOnly roles={["superadmin", "admin", "socio"]}>
-                  <Conhecimento />
-                </RoleOnly>
-              }
-            />
-            <Route
-              path="/auditoria"
-              element={
-                <RoleOnly roles={["superadmin", "admin", "socio"]}>
-                  <Auditoria />
-                </RoleOnly>
-              }
-            />
-            <Route
-              path="/mapa-modulos"
-              element={
-                <RoleOnly roles={["superadmin", "admin", "socio"]}>
-                  <MapaModulos />
-                </RoleOnly>
-              }
-            />
-            <Route
-              path="/usuarios"
-              element={
-                <RoleOnly roles={["superadmin", "admin"]}>
-                  <Usuarios />
-                </RoleOnly>
-              }
-            />
-            <Route
-              path="/lixeira"
-              element={
-                <RoleOnly roles={["superadmin", "admin", "socio"]}>
-                  <Lixeira />
-                </RoleOnly>
-              }
-            />
-          </Route>
-          <Route path="*" element={<NotFound />} />
-        </Routes>
-      </Suspense>
+            >
+              <Route path="/" element={<Dashboard />} />
+              <Route path="/clientes" element={<Clientes />} />
+              <Route path="/clientes/:clientId" element={<DossieCliente />} />
+              <Route
+                path="/clientes/:clientId/dossie"
+                element={<DossieCliente />}
+              />
+              <Route path="/casos" element={<Casos />} />
+              <Route path="/casos/:id" element={<CasoDetalhe />} />
+              <Route path="/prazos" element={<Prazos />} />
+              <Route path="/suspensoes" element={<Suspensoes />} />
+              <Route path="/tarefas" element={<Tarefas />} />
+              <Route path="/intimacoes" element={<Intimacoes />} />
+              <Route path="/documentos" element={<GestaoDocumental />} />
+              <Route path="/pecas" element={<Pecas />} />
+              <Route
+                path="/honorarios"
+                element={<Navigate to="/financeiro?tab=honorarios" replace />}
+              />
+              <Route
+                path="/ambiental"
+                element={<Navigate to="/ramos/ambiental" replace />}
+              />
+              <Route
+                path="/data-room"
+                element={<Navigate to="/documentos" replace />}
+              />
+              <Route
+                path="/dashboard-executivo"
+                element={<Navigate to="/" replace />}
+              />
+              <Route path="/jurimetria" element={<Jurimetria />} />
+              <Route
+                path="/central-relacionamento"
+                element={<CentralRelacionamento />}
+              />
+              <Route path="/knowledge-hub" element={<KnowledgeHub />} />
+              <Route path="/biblioteca" element={<Biblioteca />} />
+              <Route path="/memoria" element={<MemoriaInstitucional />} />
+              <Route
+                path="/casos/:caseId/sala-de-guerra"
+                element={<SalaDeGuerra />}
+              />
+              <Route path="/produtividade" element={<Produtividade />} />
+              <Route path="/ajuda" element={<Ajuda />} />
+              <Route path="/configuracoes" element={<Configuracoes />} />
+              <Route path="/noticias" element={<Noticias />} />
+              <Route
+                path="/ia-saude"
+                element={
+                  <RoleOnly roles={["superadmin", "admin", "socio"]}>
+                    <DashboardIA />
+                  </RoleOnly>
+                }
+              />
+              <Route
+                path="/ia-governanca"
+                element={
+                  <RoleOnly roles={["superadmin", "admin", "socio"]}>
+                    <GovernancaIA />
+                  </RoleOnly>
+                }
+              />
+              <Route path="/conteudo-juridico" element={<ConteudoJuridico />} />
+              <Route path="/wiki" element={<Wiki />} />
+              <Route path="/inteligencia" element={<InteligenciaWorkspace />} />
+              <Route path="/ferramentas-ia" element={<FerramentasIA />} />
+              <Route path="/victory-vault" element={<VictoryVault />} />
+              <Route path="/radar-regulatorio" element={<RadarRegulatorio />} />
+              <Route
+                path="/compliance/radar"
+                element={
+                  <RoleOnly
+                    roles={["superadmin", "admin", "socio", "advogado"]}
+                  >
+                    <RadarCompliance />
+                  </RoleOnly>
+                }
+              />
+              <Route path="/kanban" element={<Kanban />} />
+              <Route path="/agenda" element={<Agenda />} />
+              <Route path="/assistente-ia" element={<AssistenteIA />} />
+              <Route path="/checklists" element={<Checklists />} />
+              <Route path="/prompts" element={<Prompts />} />
+              <Route path="/diario-oficial" element={<DiarioOficial />} />
+              <Route path="/assinaturas" element={<Assinaturas />} />
+              <Route path="/workflow" element={<Workflow />} />
+              <Route
+                path="/sociedade"
+                element={<Navigate to="/financeiro?tab=societaria" replace />}
+              />
+              <Route path="/ramos" element={<RamosHub />} />
+              <Route path="/ramos/:slug" element={<RamoBase />} />
+              <Route path="/office-contracts" element={<OfficeContracts />} />
+              <Route
+                path="/partner-withdrawals"
+                element={<PartnerWithdrawals />}
+              />
+              <Route path="/atividades" element={<CentralAtividades />} />
+              <Route path="/financeiro" element={<FinanceiroWorkspace />} />
+              <Route
+                path="/financeiro-dashboard"
+                element={<Navigate to="/financeiro" replace />}
+              />
+              <Route
+                path="/despesas"
+                element={<Navigate to="/financeiro?tab=despesas" replace />}
+              />
+              <Route path="/datajud" element={<DataJudBusca />} />
+              <Route
+                path="/despesas-recorrentes"
+                element={<DespesasRecorrentes />}
+              />
+              <Route path="/crm-leads" element={<CRMLeads />} />
+              <Route path="/whatsapp" element={<Whatsapp />} />
+              <Route
+                path="/ia"
+                element={
+                  <RoleOnly
+                    roles={[
+                      "superadmin",
+                      "admin",
+                      "socio",
+                      "advogado",
+                      "advogado_auxiliar",
+                      "estagiario",
+                    ]}
+                  >
+                    <IA />
+                  </RoleOnly>
+                }
+              />
+              <Route
+                path="/conhecimento"
+                element={
+                  <RoleOnly roles={["superadmin", "admin", "socio"]}>
+                    <Conhecimento />
+                  </RoleOnly>
+                }
+              />
+              <Route
+                path="/auditoria"
+                element={
+                  <RoleOnly roles={["superadmin", "admin", "socio"]}>
+                    <Auditoria />
+                  </RoleOnly>
+                }
+              />
+              <Route
+                path="/mapa-modulos"
+                element={
+                  <RoleOnly roles={["superadmin", "admin", "socio"]}>
+                    <MapaModulos />
+                  </RoleOnly>
+                }
+              />
+              <Route
+                path="/usuarios"
+                element={
+                  <RoleOnly roles={["superadmin", "admin"]}>
+                    <Usuarios />
+                  </RoleOnly>
+                }
+              />
+              <Route
+                path="/lixeira"
+                element={
+                  <RoleOnly roles={["superadmin", "admin", "socio"]}>
+                    <Lixeira />
+                  </RoleOnly>
+                }
+              />
+            </Route>
+            <Route path="*" element={<NotFound />} />
+          </Routes>
+        </Suspense>
+      </ErrorBoundary>
       <ToastContainer />
     </BrowserRouter>
   );

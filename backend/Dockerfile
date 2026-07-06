@@ -15,9 +15,13 @@ WORKDIR /app
 #   libpango*/gdk-pixbuf/fonts → weasyprint (PDFs: anexos, dossiês, relatórios)
 #   antiword         → ocr_service._doc_legado (.doc binário; sem ele o texto
 #                      não é extraído e o documento não entra no RAG)
+#   postgresql-client → fornece o binário `pg_dump` que o backup agendado
+#                      in-container (scheduler.py, job 02h00) invoca. `libpq-dev`
+#                      traz só headers/libpq, NÃO o cliente — sem isto o backup
+#                      era no-op (pg_dump: command not found).
 RUN apt-get update \
     && apt-get install -y --no-install-recommends \
-       build-essential curl libpq-dev \
+       build-essential curl libpq-dev postgresql-client \
        libmagic1 \
        poppler-utils \
        tesseract-ocr tesseract-ocr-por \

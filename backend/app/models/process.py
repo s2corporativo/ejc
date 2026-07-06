@@ -39,8 +39,9 @@ class Process(Base):
     tipo = Column(String(30), nullable=False, server_default="judicial")
 
     # Auto-relacionamento: processo principal × acessórios (recurso, cautelar…).
+    # index=True declara o ix_processes_processo_principal_id da migration 076 (#11)
     processo_principal_id = Column(
-        String(36), ForeignKey("processes.id"), nullable=True
+        String(36), ForeignKey("processes.id"), nullable=True, index=True
     )
     valor_causa = Column(Numeric, nullable=True)
     status = Column(String(30), nullable=False, server_default="ativo")

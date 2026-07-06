@@ -179,3 +179,39 @@ def test_metadata_bate_com_banco_real():
     if no_banco_sem_model:
         problemas.append(f"no banco mas sem model nem allowlist: {sorted(no_banco_sem_model)}")
     assert not problemas, "Drift model↔banco detectado — " + "; ".join(problemas)
+
+
+# ── Camada 3 — drift de COLUNA (não só de tabela) ─────────────────────────────
+# #20: a Camada 2 comparava só nomes de TABELA, então uma regressão de coluna
+# (ex.: model declara `full_name` mas a migration nunca criou; ou uma coluna do
+# model perdeu a migration correspondente) passava despercebida — "verde
+# enganoso". Aqui, para cada tabela modelada, TODA coluna do MODEL precisa
+# existir no banco (direção model→banco). Não sinaliza colunas SÓ no banco (há
+# colunas intencionais acessadas via SQL cru, ex.: documents.sensitivity_level),
+# evitando falso-positivo.
+def test_colunas_do_model_existem_no_banco():
+    url = os.getenv("SCHEMA_CHECK_DATABASE_URL")
+    if not url:
+        pytest.skip("SCHEMA_CHECK_DATABASE_URL não definida — checagem de coluna pulada")
+
+    try:
+        from sqlalchemy import create_engine, inspect
+        engine = create_engine(url)
+        insp = inspect(engine)
+        tabelas_banco = set(insp.get_table_names())
+    except Exception as e:
+        pytest.skip(f"Banco inacessível para checagem de coluna: {e}")
+
+    md = _metadata()
+    faltando: list[str] = []
+    for nome_tab, tabela in md.tables.items():
+        if nome_tab not in tabelas_banco:
+            continue  # ausência de tabela já é coberta pela Camada 2
+        cols_banco = {c["name"] for c in insp.get_columns(nome_tab)}
+        for col in tabela.columns:
+            if col.name not in cols_banco:
+                faltando.append(f"{nome_tab}.{col.name}")
+    assert not faltando, (
+        "Colunas declaradas no model mas AUSENTES no banco (migration faltando?): "
+        f"{sorted(faltando)}"
+    )

@@ -12,11 +12,13 @@
 #    NÃO sofrem INSS/IRRF; saldo de salário e 13º sofrem (cálculo separado).
 from __future__ import annotations
 
+import calendar
 from dataclasses import dataclass, field
 from datetime import date
 from decimal import Decimal, ROUND_HALF_UP
 
 from app.services.calc.tax_tables import inss as calc_inss, irrf as calc_irrf
+from app.utils.datas import data_segura
 
 _CENT = Decimal("0.01")
 
@@ -53,11 +55,23 @@ class EntradaRescisao:
 
 
 def _meses_avos(ini: date, fim: date) -> int:
-    """Conta avos (meses) considerando fração ≥ 15 dias como mês cheio."""
+    """Conta avos (1/12) tratando fração ≥ 15 dias como mês cheio — aplicando a
+    regra dos 15 dias tanto ao mês FINAL quanto ao mês INICIAL.
+
+    Antes só o mês final era avaliado (fim.day >= 15), ignorando o dia de início:
+    uma admissão depois do dia 15 contava 1 avô a mais (o mês inicial não teve 15
+    dias trabalhados e não deveria virar avô)."""
+    if fim < ini:
+        return 0
     meses = (fim.year - ini.year) * 12 + (fim.month - ini.month)
+    # Mês final: conta se houve ≥ 15 dias trabalhados nele.
     if fim.day >= 15:
         meses += 1
-    # avos do período aquisitivo de 13º/férias contam dentro do ano; clamp 0..12
+    # Mês inicial: só é avô cheio se houve ≥ 15 dias trabalhados nele. Se a
+    # admissão foi tarde no mês, esse avô não existe → desconta.
+    dias_no_mes_ini = calendar.monthrange(ini.year, ini.month)[1]
+    if (dias_no_mes_ini - ini.day + 1) < 15:
+        meses -= 1
     return max(0, min(meses, 12))
 
 
@@ -110,20 +124,35 @@ def calcular(e: EntradaRescisao) -> dict:
 
     # 3) 13º proporcional
     if regra["decimo_prop"]:
-        meses13 = _meses_avos(date(fim_projetado.year, 1, 1)
-                              if e.admissao.year < fim_projetado.year else e.admissao,
-                              fim_projetado)
+        # O 13º é proporcional aos meses trabalhados NO ANO. Quando o aviso prévio
+        # indenizado projeta a saída para o ano seguinte (comum em rescisões de
+        # nov/dez), NÃO se pode zerar o ano da demissão: são dois 13º — o do ano
+        # da demissão (até 31/12) e o proporcional do ano seguinte (fração
+        # projetada). Antes o início saltava para 01/01 do novo ano e descartava
+        # todos os meses do ano da demissão, subestimando o 13º em milhares.
+        ini_ano_dem = max(e.admissao, date(e.demissao.year, 1, 1))
+        if fim_projetado.year > e.demissao.year:
+            meses_dem = _meses_avos(ini_ano_dem, date(e.demissao.year, 12, 31))
+            meses_seg = _meses_avos(date(fim_projetado.year, 1, 1), fim_projetado)
+            meses13 = meses_dem + meses_seg
+            rotulo13 = (f"13º salário proporcional ({meses_dem}/12 de "
+                        f"{e.demissao.year} + {meses_seg}/12 de {fim_projetado.year})")
+        else:
+            meses13 = _meses_avos(ini_ano_dem, fim_projetado)
+            rotulo13 = f"13º salário proporcional ({meses13}/12)"
         decimo = _q(sal / Decimal("12") * Decimal(meses13))
-        proventos.append({"verba": f"13º salário proporcional ({meses13}/12)",
+        proventos.append({"verba": rotulo13,
                           "valor": float(decimo), "incide_inss": True,
                           "incide_irrf": True, "tributo_separado": True})
 
     # 4) Férias proporcionais + 1/3
     if regra["ferias_prop"]:
         # avos do período aquisitivo em curso (desde o último aniversário de admissão)
-        ult_aniv = date(fim_projetado.year, e.admissao.month, e.admissao.day) \
+        # data_segura evita ValueError quando a admissão é 29/02 e o ano-alvo do
+        # aniversário não é bissexto (vira 28/02).
+        ult_aniv = data_segura(fim_projetado.year, e.admissao.month, e.admissao.day) \
             if (e.admissao.month, e.admissao.day) <= (fim_projetado.month, fim_projetado.day) \
-            else date(fim_projetado.year - 1, e.admissao.month, e.admissao.day)
+            else data_segura(fim_projetado.year - 1, e.admissao.month, e.admissao.day)
         mfp = _meses_avos(ult_aniv, fim_projetado)
         ferias_prop = _q(sal / Decimal("12") * Decimal(mfp))
         terco_prop = _q(ferias_prop / Decimal("3"))

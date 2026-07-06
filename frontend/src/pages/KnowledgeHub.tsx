@@ -4,6 +4,7 @@ import { BookOpen, Library, Brain, ChevronRight } from "lucide-react";
 import api from "../lib/api";
 import { PageHeader, Spinner } from "../components/UI";
 import { ConhecimentoStats } from "../components/Dashboards";
+import { asList } from "../lib/list";
 
 const CATEGORIAS = [
   {
@@ -53,11 +54,11 @@ export default function KnowledgeHub() {
       rag: rag.status === "fulfilled" ? (rag.value.data?.resultados ?? []) : [],
       teses:
         teses.status === "fulfilled"
-          ? (teses.value.data?.items ?? teses.value.data ?? [])
+          ? asList(teses.value.data)
           : [],
       juris:
-        juris.status === "fulfilled" ? (juris.value.data?.items ?? []) : [],
-      memoria: mem.status === "fulfilled" ? (mem.value.data ?? []) : [],
+        juris.status === "fulfilled" ? asList(juris.value.data) : [],
+      memoria: mem.status === "fulfilled" ? asList(mem.value.data) : [],
     });
     setLoading(false);
   };

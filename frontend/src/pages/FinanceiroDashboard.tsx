@@ -114,21 +114,21 @@ export default function FinanceiroDashboard() {
   };
 
   const exportarCSV = async () => {
-    const token = localStorage.getItem("ejc_access");
-    const resp = await fetch(
-      `/api/v1/despesas/export/csv?competencia=${competencia}`,
-      {
-        headers: { Authorization: `Bearer ${token}` },
-      },
-    );
-    if (!resp.ok) return;
-    const blob = await resp.blob();
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement("a");
-    a.href = url;
-    a.download = `despesas-${competencia}.csv`;
-    a.click();
-    URL.revokeObjectURL(url);
+    try {
+      // Reusa o cliente axios (baseURL /api + interceptor de token/refresh).
+      const resp = await api.get("/v1/despesas/export/csv", {
+        params: { competencia },
+        responseType: "blob",
+      });
+      const url = URL.createObjectURL(resp.data as Blob);
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = `despesas-${competencia}.csv`;
+      a.click();
+      URL.revokeObjectURL(url);
+    } catch {
+      // silencioso — o dashboard segue utilizável mesmo sem o export
+    }
   };
 
   const rec = d?.receitas ?? {};

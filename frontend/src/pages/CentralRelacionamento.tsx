@@ -17,6 +17,7 @@ import api from "../lib/api";
 import { soDigitos } from "../utils/phone";
 import { AtendimentoStats } from "../components/Dashboards";
 import { Button, PageHeader } from "../components/UI";
+import { asList } from "../lib/list";
 
 interface FunilData {
   total_cadastros: number;
@@ -128,11 +129,11 @@ export default function CentralRelacionamento() {
       if (funilRes.status === "fulfilled") setFunil(funilRes.value.data);
       if (clientesRes.status === "fulfilled") {
         const d = clientesRes.value.data;
-        setClientes(d?.data ?? d?.items ?? []);
+        setClientes(asList<ClienteRecente>(d));
       }
       if (leadsRes.status === "fulfilled") {
         const d = leadsRes.value.data;
-        setLeads(d?.data ?? d?.items ?? []);
+        setLeads(asList<ClienteRecente>(d));
       }
     } finally {
       setLoading(false);

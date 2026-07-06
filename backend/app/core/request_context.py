@@ -29,22 +29,40 @@ def get_client_ip() -> Optional[str]:
     return _client_ip.get()
 
 
+def parse_client_ip(xff: str, x_real_ip: str, client_host: Optional[str]) -> str:
+    """IP real do cliente atrás de UM proxy reverso confiável (o Nginx do host).
+
+    Fonte única da verdade — reusada por security_service.obter_ip_real e pelo
+    ClientIPMiddleware, para não divergirem.
+
+    O Nginx usa ``proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for``,
+    que ANEXA o endereço do peer imediato ao FINAL da lista. Logo o ÚLTIMO item
+    do X-Forwarded-For é o único não-forjável (posto pelo nosso Nginx); os itens
+    anteriores são controlados pelo cliente. Confiar no PRIMEIRO item permitia
+    spoof de IP (bypass de rate-limit por IP, IP falso em audit logs LGPD,
+    poisoning do alerta de novo dispositivo). Por isso pegamos o último salto.
+    """
+    if xff:
+        partes = [p.strip() for p in xff.split(",") if p.strip()]
+        if partes:
+            return partes[-1]
+    if x_real_ip:
+        return x_real_ip.strip()
+    return client_host or "0.0.0.0"
+
+
 def _extrai_ip(scope: Scope) -> str:
-    """IP real do cliente a partir do scope ASGI, respeitando proxy reverso
-    (Nginx). Espelha services.security_service.obter_ip_real, mas lê direto do
-    scope para manter este módulo sem dependências de models."""
+    """IP real do cliente a partir do scope ASGI, respeitando proxy reverso."""
     headers = {
         k.decode("latin1").lower(): v.decode("latin1")
         for k, v in scope.get("headers", [])
     }
-    xff = headers.get("x-forwarded-for", "")
-    if xff:
-        return xff.split(",")[0].strip()
-    real = headers.get("x-real-ip", "")
-    if real:
-        return real.strip()
     client = scope.get("client")
-    return client[0] if client else "0.0.0.0"
+    return parse_client_ip(
+        headers.get("x-forwarded-for", ""),
+        headers.get("x-real-ip", ""),
+        client[0] if client else None,
+    )
 
 
 class ClientIPMiddleware:

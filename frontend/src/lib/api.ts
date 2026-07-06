@@ -1,16 +1,43 @@
 // ── API client com refresh automático ────────────────────
+// O access token curto vive em localStorage (ejc_access). O refresh token
+// vive num cookie httpOnly (ejc_refresh) setado/lido pelo backend — por isso
+// TODAS as chamadas usam withCredentials para o navegador enviar o cookie.
 import axios from "axios";
-import type { Deadline } from "../types";
+import type { AuthTokens, Deadline } from "../types";
 
-const api = axios.create({ baseURL: "/api" });
+const api = axios.create({ baseURL: "/api", withCredentials: true });
+
+/** Access token curto atualmente em localStorage (ou null). */
+export function getAccessToken(): string | null {
+  return localStorage.getItem("ejc_access");
+}
 
 api.interceptors.request.use((config) => {
-  const token = localStorage.getItem("ejc_access");
+  const token = getAccessToken();
   if (token) config.headers.Authorization = `Bearer ${token}`;
   return config;
 });
 
 let refreshing: Promise<string> | null = null;
+
+/**
+ * Renova o access token usando o refresh que está no cookie httpOnly
+ * `ejc_refresh`. Sem body — o cookie carrega o refresh. Grava apenas o novo
+ * access em localStorage. Chamadas concorrentes compartilham a mesma Promise.
+ */
+export function refreshAccessToken(): Promise<string> {
+  refreshing ??= axios
+    .post<AuthTokens>("/api/auth/refresh", {}, { withCredentials: true })
+    .then((res) => {
+      const token = res.data.access_token;
+      localStorage.setItem("ejc_access", token);
+      return token;
+    })
+    .finally(() => {
+      refreshing = null;
+    });
+  return refreshing;
+}
 
 api.interceptors.response.use(
   (r) => r,
@@ -27,23 +54,8 @@ api.interceptors.response.use(
     }
     if (error.response?.status === 401 && !original._retry) {
       original._retry = true;
-      const rt = localStorage.getItem("ejc_refresh");
-      if (!rt) {
-        logout();
-        return Promise.reject(error);
-      }
       try {
-        refreshing ??= axios
-          .post("/api/auth/refresh", { refresh_token: rt })
-          .then((res) => {
-            localStorage.setItem("ejc_access", res.data.access_token);
-            localStorage.setItem("ejc_refresh", res.data.refresh_token);
-            return res.data.access_token as string;
-          })
-          .finally(() => {
-            refreshing = null;
-          });
-        const newToken = await refreshing;
+        const newToken = await refreshAccessToken();
         original.headers.Authorization = `Bearer ${newToken}`;
         return api(original);
       } catch {
@@ -104,10 +116,9 @@ export async function confirmarPrazo(deadlineId: string): Promise<Deadline> {
 }
 
 export function logout() {
-  const rt = localStorage.getItem("ejc_refresh");
-  if (rt) axios.post("/api/auth/logout", { refresh_token: rt }).catch(() => {});
+  // O backend limpa o cookie httpOnly ejc_refresh; o cookie vai junto via withCredentials.
+  axios.post("/api/auth/logout", {}, { withCredentials: true }).catch(() => {});
   localStorage.removeItem("ejc_access");
-  localStorage.removeItem("ejc_refresh");
   localStorage.removeItem("ejc_user");
   window.location.href = "/login";
 }

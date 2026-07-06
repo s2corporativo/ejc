@@ -7,6 +7,7 @@ import {
   TrendingUp,
 } from "lucide-react";
 import api from "../../lib/api";
+import { asList } from "../../lib/list";
 import { fmtMoney } from "../../components/UI";
 
 const ST: Record<string, [string, string, string]> = {
@@ -23,7 +24,7 @@ export default function PortalFinanceiro() {
   useEffect(() => {
     api
       .get("/portal/financeiro")
-      .then((r) => setRows(Array.isArray(r.data) ? r.data : (Array.isArray(r.data?.data) ? r.data.data : [])))
+      .then((r) => setRows(asList(r.data)))
       .finally(() => setLoading(false));
   }, []);
 

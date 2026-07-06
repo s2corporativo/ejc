@@ -14,6 +14,7 @@ import {
 import api from "../lib/api";
 import { toast } from "../components/Toast";
 import { Modal } from "../components/UI";
+import { asList } from "../lib/list";
 
 const COLS = [
   {
@@ -72,8 +73,8 @@ export default function Tarefas() {
         api.get("/tasks/"),
         api.get("/users/?page_size=50"),
       ]);
-      if (t.status === "fulfilled") setTasks(t.value.data?.data ?? []);
-      if (u.status === "fulfilled") setUsers(u.value.data?.data ?? []);
+      if (t.status === "fulfilled") setTasks(asList(t.value.data));
+      if (u.status === "fulfilled") setUsers(asList(u.value.data));
     } finally {
       setLoading(false);
     }

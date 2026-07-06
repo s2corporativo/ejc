@@ -137,6 +137,36 @@ export interface EnvCase {
   valor_multa?: number;
   created_at: string;
 }
+// ── Autenticação ─────────────────────────────────────────
+export interface AuthTokens {
+  access_token: string;
+  token_type?: string;
+}
+export interface LoginResponse extends AuthTokens {
+  user_id: string;
+  full_name: string;
+  role: string;
+  must_change_password?: boolean;
+}
+
+// ── Diário Oficial (IDs UUID string, alinhados ao modelo canônico) ──
+export interface DiarioOficialKeyword {
+  id: string;
+  keyword: string;
+  ativo: boolean;
+}
+export interface DiarioOficialAlerta {
+  id: string;
+  keyword: string;
+  titulo: string;
+  trecho: string;
+  data_publicacao: string;
+  fonte: string;
+  lido: boolean;
+  case_id?: string;
+  /** Backend marca aqui quando a vinculação ao caso foi automática (nº CNJ). */
+  observacao?: string | null;
+}
 export interface Paged<T> {
   data: T[];
   total: number;

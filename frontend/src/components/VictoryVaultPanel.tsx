@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from "react";
 import { Search } from "lucide-react";
 import api from "../lib/api";
+import { asList } from "../lib/list";
 
 interface TeseVitoriosa {
   id: string;
@@ -48,10 +49,10 @@ export const VictoryVaultPanel: React.FC = () => {
       };
       if (selectedTab === "teses") {
         const r = await api.get("/victory_vault/teses", { params });
-        setTeses(Array.isArray(r.data) ? r.data : []);
+        setTeses(asList<TeseVitoriosa>(r.data));
       } else {
         const r = await api.get("/victory_vault/modelos", { params });
-        setModelos(Array.isArray(r.data) ? r.data : []);
+        setModelos(asList<ModeloDocumento>(r.data));
       }
     } catch (e) {
       console.error("Erro ao buscar dados do Victory Vault:", e);

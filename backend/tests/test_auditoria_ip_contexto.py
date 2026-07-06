@@ -70,8 +70,10 @@ def _scope(headers, client=("127.0.0.1", 5000)):
 
 
 def test_extrai_ip_prioriza_x_forwarded_for():
+    # #9 (SEC-02): usa o ÚLTIMO salto do XFF (posto pelo nosso Nginx), não o
+    # primeiro — o primeiro é controlado pelo cliente e era spoofável.
     scope = _scope([(b"x-forwarded-for", b"172.16.0.5, 10.0.0.1")])
-    assert _extrai_ip(scope) == "172.16.0.5"
+    assert _extrai_ip(scope) == "10.0.0.1"
 
 
 def test_extrai_ip_usa_x_real_ip_quando_sem_xff():

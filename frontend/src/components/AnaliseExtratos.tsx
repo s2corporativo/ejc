@@ -15,6 +15,7 @@ import {
   Copy,
 } from "lucide-react";
 import api from "../lib/api";
+import { authFetch } from "../lib/stream";
 import { Modal, Button } from "./UI";
 import { toast } from "./Toast";
 
@@ -143,16 +144,15 @@ export default function AnaliseExtratos() {
     setMinutaCopiado(false);
     minutaAbort.current = new AbortController();
 
-    const token = localStorage.getItem("ejc_access") ?? "";
     try {
-      const r = await fetch(`/api/bank-analysis/${res.analise.id}/gerar-peca`, {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-          Authorization: `Bearer ${token}`,
+      const r = await authFetch(
+        `/api/bank-analysis/${res.analise.id}/gerar-peca`,
+        {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          signal: minutaAbort.current.signal,
         },
-        signal: minutaAbort.current.signal,
-      });
+      );
 
       if (!r.ok) {
         const err = await r.json().catch(() => ({ detail: "" }));

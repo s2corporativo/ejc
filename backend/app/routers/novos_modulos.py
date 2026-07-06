@@ -15,11 +15,18 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import text
 
 from app.core.database import get_db
-from app.core.security import get_current_user
+from app.core.security import get_current_user, ROLE_LEVEL
 from app.core.ownership import verificar_acesso_caso
+from app.core.request_context import get_client_ip
 from app.models.user import User
 
 router = APIRouter(tags=["Novos Módulos — Etapa B"])
+
+# Ações válidas da trilha de acesso ao cofre — espelha o CHECK da coluna
+# document_access_log.action (migration 050). Valor fora da lista → 422.
+_COFRE_ACOES = ("view", "download", "print", "share", "delete")
+# Confidencialidade a partir da qual só gestão (socio+) pode acessar/registrar.
+_CONF_RESTRITA = ("restrito", "confidencial", "segredo_justica")
 
 
 # ════════════════════════════════════════════════════════════
@@ -305,7 +312,7 @@ async def cofre_logs(
         raise HTTPException(403, "Acesso restrito a sócios e administradores")
     r = await db.execute(text("""
         SELECT l.id, l.action, l.ip_address, l.created_at,
-               u.nome AS user_nome, u.email AS user_email
+               u.full_name AS user_nome, u.email AS user_email
         FROM document_access_log l
         JOIN users u ON u.id = l.user_id
         WHERE l.document_id = :did
@@ -315,25 +322,56 @@ async def cofre_logs(
     return [dict(row._mapping) for row in r.fetchall()]
 
 
+def _pode_registrar_acesso(cu: User, confidencialidade: str) -> bool:
+    """Mesmo limiar do download (documents._pode_acessar_confidencial):
+    restrito+ exige socio ou superior."""
+    if confidencialidade in _CONF_RESTRITA:
+        return ROLE_LEVEL.get(cu.role.value, 0) >= ROLE_LEVEL["socio"]
+    return True
+
+
 @router.post("/cofre/documentos/{document_id}/registrar-acesso")
 async def cofre_registrar_acesso(
     document_id: str,
     action: str = "view",
-    request_ip: Optional[str] = None,
     db: AsyncSession = Depends(get_db),
     cu: User = Depends(get_current_user),
 ):
+    # Este endpoint ALIMENTA a trilha de auditoria do cofre (consumida por
+    # cofre_logs/cofre_relatorio, restritos a sócios). Sem o MESMO gate do
+    # download, qualquer usuário autenticado forjava acessos — com IP falso — em
+    # documentos que sequer pode ver, e inflava download_count arbitrário. O IP
+    # vem SEMPRE do servidor (request_context), nunca de um parâmetro do cliente.
+    if action not in _COFRE_ACOES:
+        raise HTTPException(
+            422, f"Ação inválida: {action}. Use uma de: {', '.join(_COFRE_ACOES)}"
+        )
+
+    doc = (await db.execute(text("""
+        SELECT case_id, confidencialidade FROM documents
+        WHERE id = :did AND deleted_at IS NULL
+    """), {"did": document_id})).first()
+    if doc is None:
+        raise HTTPException(404, "Documento não encontrado")
+
+    if doc.case_id:
+        await verificar_acesso_caso(db, cu, doc.case_id)
+    conf = getattr(doc.confidencialidade, "value", doc.confidencialidade)
+    if not _pode_registrar_acesso(cu, conf):
+        raise HTTPException(403, "Documento restrito — acesso negado")
+
     await db.execute(text("""
         INSERT INTO document_access_log (id, document_id, user_id, action, ip_address)
         VALUES (gen_random_uuid()::text, :did, :uid, :action, :ip)
-    """), {"did": document_id, "uid": cu.id, "action": action, "ip": request_ip})
+    """), {"did": document_id, "uid": cu.id, "action": action, "ip": get_client_ip()})
 
-    await db.execute(text("""
-        UPDATE documents
-        SET download_count = download_count + 1,
-            last_accessed_at = NOW()
-        WHERE id = :did AND :action = 'download'
-    """), {"did": document_id, "action": action})
+    if action == "download":
+        await db.execute(text("""
+            UPDATE documents
+            SET download_count = download_count + 1,
+                last_accessed_at = NOW()
+            WHERE id = :did
+        """), {"did": document_id})
 
     await db.commit()
     return {"registered": True}
@@ -355,19 +393,23 @@ async def cofre_sensibilidade(
     if cu.role not in ("admin", "superadmin", "socio"):
         raise HTTPException(403, "Acesso restrito a sócios e administradores")
     import json
-    await db.execute(text("""
+    res = await db.execute(text("""
         UPDATE documents
         SET sensitivity_level = :sl,
             access_users = :au::jsonb,
             watermark = :wm,
             updated_at = NOW()
-        WHERE id = :did
+        WHERE id = :did AND deleted_at IS NULL
     """), {
         "sl": body.sensitivity_level,
         "au": json.dumps(body.access_users),
         "wm": body.watermark,
         "did": document_id,
     })
+    # #30: sem checar rowcount o endpoint devolvia sucesso mesmo para um
+    # document_id inexistente (no-op silencioso).
+    if res.rowcount == 0:
+        raise HTTPException(404, "Documento não encontrado")
     await db.commit()
     return {"updated": True, "document_id": document_id}
 

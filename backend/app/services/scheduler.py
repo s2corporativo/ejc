@@ -146,18 +146,25 @@ async def _alertar_prazos():
     try:
         async with AsyncSessionLocal() as db:
             hoje = date.today()
-            for dias, flag in [(7, "alerta_7d_enviado"),
-                               (3, "alerta_3d_enviado"),
-                               (1, "alerta_1d_enviado")]:
+            # Faixas DISJUNTAS (teto, piso, flag): 7d cobre [hoje+4, hoje+7],
+            # 3d cobre [hoje+2, hoje+3], 1d cobre [hoje, hoje+1]. Antes cada faixa
+            # usava só `<= alvo AND >= hoje`, então um prazo criado a poucos dias
+            # do vencimento satisfazia as TRÊS faixas no mesmo run e disparava
+            # e-mail/WhatsApp/push em triplicata. Com pisos, cada prazo cai em uma
+            # única faixa por execução (e migra de faixa conforme os dias passam).
+            for dias, piso, flag in [(7, 4, "alerta_7d_enviado"),
+                                     (3, 2, "alerta_3d_enviado"),
+                                     (1, 0, "alerta_1d_enviado")]:
                 alvo = hoje + timedelta(days=dias)
+                piso_data = hoje + timedelta(days=piso)
                 rows = await db.execute(text(f"""
                     SELECT d.id, d.titulo, d.data_prazo, d.responsavel_id, u.email, u.phone
                     FROM deadlines d
                     LEFT JOIN users u ON u.id = d.responsavel_id
                     WHERE d.status='pendente' AND d.deleted_at IS NULL
-                      AND d.data_prazo <= :alvo AND d.data_prazo >= :hoje AND d.{flag} = false
+                      AND d.data_prazo <= :alvo AND d.data_prazo >= :piso AND d.{flag} = false
                       AND d.responsavel_id IS NOT NULL
-                """), {"alvo": alvo, "hoje": hoje})
+                """), {"alvo": alvo, "piso": piso_data})
                 for r in rows:
                     # Try/except POR destinatário: a falha de um não aborta o
                     # lote; commit por item logo após marcar a flag (idempotência).
@@ -968,6 +975,13 @@ async def _backup_banco():
                     logger.info(f"[Backup] Upload p/ {settings.BACKUP_REMOTE} OK")
                 else:
                     logger.warning(f"[Backup] rclone upload falhou (código {r2.returncode})")
+            else:
+                # BACKUP_REMOTE configurado mas rclone ausente: o backup NÃO está
+                # indo offsite — não deixar isso silencioso (risco de perda total).
+                logger.warning(
+                    "[Backup] BACKUP_REMOTE definido mas 'rclone' não está "
+                    "instalado — backup permanece SÓ local (sem cópia offsite)."
+                )
 
         # Rotação: remove dumps locais mais antigos que BACKUP_RETENTION_DAYS dias.
         try:
