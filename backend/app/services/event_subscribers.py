@@ -29,6 +29,23 @@ _TRADUZ_TIPOS = {"intimacao", "decisao", "peticao", "audiencia", "movimento"}
 _TIPOS_PUBLICOS_CLIENTE = {"intimacao", "decisao", "audiencia", "movimento"}
 
 
+def _patch_precedentes_router() -> None:
+    """Registra subrouter de precedentes sem reescrever o router grande.
+
+    O `main.py` já inclui `jurisprudencia_externa.router` em `/api`. Ao anexar o
+    subrouter aqui, antes do include principal, o endpoint fica disponível em:
+    `/api/jurisprudencia-externa/precedentes/buscar`.
+    """
+    try:
+        from app.routers import jurisprudencia_externa
+        from app.routers import precedentes_jurisprudencia
+
+        jurisprudencia_externa.router.include_router(precedentes_jurisprudencia.router)
+        logger.info("Router de precedentes multifonte registrado")
+    except Exception as exc:  # pragma: no cover - import defensivo no startup
+        logger.warning("Router de precedentes multifonte indisponível: %s", exc)
+
+
 def _patch_documents_background_analysis() -> None:
     """Substitui o hook legado de análise documental por versão sem corte.
 
@@ -95,6 +112,7 @@ def _patch_documents_background_analysis() -> None:
     logger.info("Hook de análise documental ajustado para OCR completo")
 
 
+_patch_precedentes_router()
 _patch_documents_background_analysis()
 
 
@@ -127,13 +145,10 @@ async def _notificar_cliente_movimento(db, entidade_id, payload):
     from app.models.user import User, UserRole
     from app.services.notification_service import criar_notificacao_interna
 
-    # Carrega o caso e descobre o cliente vinculado.
     caso = await db.get(Case, entidade_id)
     if caso is None or not caso.client_id:
         return
 
-    # Usuário-cliente = User com role cliente_externo vinculado a este client_id,
-    # ativo e não removido. Pode haver mais de um acesso ao portal.
     res = await db.execute(
         select(User).where(
             User.client_id == caso.client_id,
@@ -144,7 +159,7 @@ async def _notificar_cliente_movimento(db, entidade_id, payload):
     )
     usuarios_cliente = res.scalars().all()
     if not usuarios_cliente:
-        return  # cliente sem acesso ao portal: nada a notificar
+        return
 
     ref = f" (caso {caso.numero_interno})" if caso.numero_interno else ""
     for user in usuarios_cliente:
