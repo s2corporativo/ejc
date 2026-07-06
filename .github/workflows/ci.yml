@@ -113,3 +113,6 @@ jobs:
 
       - name: Typecheck + build
         run: npm run build
+
+      - name: Testes de componente (vitest)
+        run: npm run test

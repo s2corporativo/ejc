@@ -83,7 +83,7 @@ export default function DiarioOficial() {
     setLoadingKeywords(true);
     try {
       const res = await api.get("/diario-oficial/keywords");
-      setKeywords(res.data);
+      setKeywords(Array.isArray(res.data) ? res.data : []);
     } catch {
       setKeywords([]);
     } finally {
