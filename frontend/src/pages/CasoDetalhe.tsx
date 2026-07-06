@@ -40,6 +40,24 @@ import { useAuth } from "../stores/auth";
 import { RAMOS } from "./ramos/ramosConfig";
 import type { FerramentaConfig } from "./ramos/ramosConfig";
 
+// Item 4.4: baixa um documento do caso reutilizando o endpoint ja validado
+// GET /documents/:id/download (mesmo padrao de Documentos.tsx).
+async function baixarDoc(docId: string, filename: string) {
+  try {
+    const r = await api.get(`/documents/${docId}/download`, {
+      responseType: "blob",
+    });
+    const url = URL.createObjectURL(r.data);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = filename || "documento";
+    a.click();
+    URL.revokeObjectURL(url);
+  } catch {
+    toast.error("Nao foi possivel baixar o documento.");
+  }
+}
+
 const TABS = [
   { key: "resumo", label: "Resumo" },
   { key: "processos", label: "Processos" },
@@ -3824,9 +3842,15 @@ export default function CasoDetalhe() {
             endpoint={`/documents/?case_id=${id}`}
             empty="Nenhum documento vinculado a este caso"
             renderItem={(d) => (
-              <div className="card p-3 flex justify-between items-center text-sm">
+              <div
+                className="card p-3 flex justify-between items-center text-sm cursor-pointer hover:bg-slate-50"
+                onClick={() =>
+                  baixarDoc(d.id, d.filename || d.nome_arquivo || d.titulo)
+                }
+                title="Clique para baixar"
+              >
                 <span className="text-gray-800">
-                  {d.titulo || d.nome_arquivo}
+                  {d.titulo || d.filename || d.nome_arquivo}
                 </span>
                 <span className="text-gray-400 text-xs">
                   {d.tipo_peca || d.tipo}
