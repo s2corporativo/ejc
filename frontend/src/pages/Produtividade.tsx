@@ -124,9 +124,9 @@ export default function Produtividade() {
   }, [periodo]);
 
   const maxAdv = data
-    ? Math.max(...data.por_advogado.map((a) => a.horas), 1)
+    ? Math.max(...(Array.isArray(data.por_advogado) ? data.por_advogado : []).map((a) => a.horas), 1)
     : 1;
-  const maxArea = data ? Math.max(...data.por_area.map((a) => a.horas), 1) : 1;
+  const maxArea = data ? Math.max(...(Array.isArray(data.por_area) ? data.por_area : []).map((a) => a.horas), 1) : 1;
 
   return (
     <div className="max-w-6xl mx-auto px-4 py-6 space-y-6">
@@ -283,8 +283,8 @@ export default function Produtividade() {
               </h3>
               <div className="flex items-end gap-0.5 h-24 overflow-x-auto pb-2">
                 {(() => {
-                  const mx = Math.max(...data.trend.map((t) => t.horas), 1);
-                  return data.trend.map((t, i) => (
+                  const mx = Math.max(...(Array.isArray(data.trend) ? data.trend : []).map((t) => t.horas), 1);
+                  return (Array.isArray(data.trend) ? data.trend : []).map((t, i) => (
                     <div
                       key={i}
                       className="flex flex-col items-center gap-1 shrink-0"

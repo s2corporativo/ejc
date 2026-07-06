@@ -79,7 +79,7 @@ export default function Auditoria() {
 
       {!data ? (
         <Spinner />
-      ) : data.data.length === 0 ? (
+      ) : (!Array.isArray(data.data) || data.data.length === 0) ? (
         <Empty message="Nenhum log com esses filtros" />
       ) : (
         <div className="card overflow-x-auto">
@@ -95,7 +95,7 @@ export default function Auditoria() {
               </tr>
             </thead>
             <tbody className="divide-y divide-slate-100">
-              {data.data.map((l: any) => (
+              {(Array.isArray(data.data) ? data.data : []).map((l: any) => (
                 <tr key={l.id} className="hover:bg-slate-50">
                   <td className="px-4 py-2.5 text-xs text-slate-500">
                     {new Date(l.created_at).toLocaleString("pt-BR")}

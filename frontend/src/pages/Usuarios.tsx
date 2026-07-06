@@ -88,7 +88,7 @@ export default function Usuarios() {
               </tr>
             </thead>
             <tbody className="divide-y divide-slate-100">
-              {data.data.map((u: User) => (
+              {(Array.isArray(data.data) ? data.data : []).map((u: User) => (
                 <tr key={u.id} className="hover:bg-slate-50">
                   <td className="px-4 py-3 font-medium text-navy">
                     {u.full_name}

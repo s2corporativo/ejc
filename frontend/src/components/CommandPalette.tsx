@@ -88,7 +88,7 @@ export default function CommandPalette() {
       api
         .get("/search", { params: { q, tipo } })
         .then((r) => {
-          if (!stale) setRes(r.data.resultados as ResultadoBusca[]);
+          if (!stale) setRes(Array.isArray(r.data?.resultados) ? (r.data.resultados as ResultadoBusca[]) : []);
         })
         .catch(() => {
           if (!stale) setRes([]);

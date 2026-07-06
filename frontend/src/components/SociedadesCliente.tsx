@@ -463,7 +463,7 @@ export default function SociedadesCliente() {
                   <Empty message="Nenhum sócio cadastrado" />
                 ) : (
                   <div className="space-y-2">
-                    {detalhe.socios.map((s) => {
+                    {(Array.isArray(detalhe?.socios) ? detalhe.socios : []).map((s) => {
                       const pct = Number(s.percentual) || 0;
                       return (
                         <div

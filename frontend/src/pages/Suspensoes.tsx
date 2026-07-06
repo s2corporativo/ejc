@@ -37,14 +37,14 @@ export default function Suspensoes() {
   const carregar = () =>
     api
       .get("/suspensoes/")
-      .then((r) => setLista(r.data.data))
+      .then((r) => setLista(Array.isArray(r.data?.data) ? r.data.data : []))
       .catch(() => setLista([]));
 
   useEffect(() => {
     carregar();
     api
       .get("/suspensoes/tribunais")
-      .then((r) => setTribunais(r.data.tribunais))
+      .then((r) => setTribunais(Array.isArray(r.data?.tribunais) ? r.data.tribunais : []))
       .catch(() => {});
   }, []);
 

@@ -59,7 +59,7 @@ export default function Honorarios() {
     load();
     api
       .get("/clients/", { params: { page_size: 100 } })
-      .then((r) => setClientes(r.data.data));
+      .then((r) => setClientes(Array.isArray(r.data?.data) ? r.data.data : []));
   }, [statusF]);
 
   const salvar = async () => {
@@ -267,7 +267,7 @@ export default function Honorarios() {
               </tr>
             </thead>
             <tbody className="divide-y divide-slate-100">
-              {data.data.map((f) => (
+              {(Array.isArray(data.data) ? data.data : []).map((f) => (
                 <tr key={f.id} className="hover:bg-slate-50">
                   <td className="px-4 py-3 font-medium text-navy">
                     {f.descricao}

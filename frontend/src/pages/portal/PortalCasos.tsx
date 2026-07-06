@@ -29,7 +29,7 @@ export default function PortalCasos() {
   useEffect(() => {
     api
       .get("/portal/meus-casos")
-      .then((r) => setCasos(r.data?.data ?? r.data ?? []))
+      .then((r) => setCasos(Array.isArray(r.data) ? r.data : (Array.isArray(r.data?.data) ? r.data.data : [])))
       .finally(() => setLoading(false));
   }, []);
 

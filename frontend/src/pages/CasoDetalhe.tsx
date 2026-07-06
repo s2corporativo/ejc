@@ -426,7 +426,7 @@ function TabResumo({ caso }: { caso: Case }) {
   useEffect(() => {
     api
       .get(`/cases/${caso.id}/movimentos`)
-      .then((r) => setMovs(r.data))
+      .then((r) => setMovs(Array.isArray(r.data) ? r.data : []))
       .catch(() => {});
   }, [caso.id]);
 
@@ -538,7 +538,7 @@ function TabResumo({ caso }: { caso: Case }) {
     setNovoMov("");
     api
       .get(`/cases/${caso.id}/movimentos`)
-      .then((r) => setMovs(r.data))
+      .then((r) => setMovs(Array.isArray(r.data) ? r.data : []))
       .catch(() => {});
   };
 
@@ -1717,7 +1717,7 @@ function TabPartes({ caseId }: { caseId: string }) {
   useEffect(() => {
     api
       .get(`/cases/${caseId}/partes`)
-      .then((r) => setPartes(r.data))
+      .then((r) => setPartes(Array.isArray(r.data) ? r.data : []))
       .catch(() => {});
   }, [caseId]);
 
@@ -1727,7 +1727,7 @@ function TabPartes({ caseId }: { caseId: string }) {
     setShowForm(false);
     api
       .get(`/cases/${caseId}/partes`)
-      .then((r) => setPartes(r.data))
+      .then((r) => setPartes(Array.isArray(r.data) ? r.data : []))
       .catch(() => {});
   };
 
@@ -2342,7 +2342,7 @@ function TabMensagens({ caseId }: { caseId: string }) {
   const carregar = () =>
     api
       .get(`/cases/${caseId}/mensagens`)
-      .then((r) => setMsgs(r.data))
+      .then((r) => setMsgs(Array.isArray(r.data) ? r.data : []))
       .catch(() => {});
   useEffect(() => {
     carregar();
@@ -2439,7 +2439,7 @@ function TabEtiquetas({ caseId }: { caseId: string }) {
       .catch(() => {});
     api
       .get(`/cases/${caseId}/etiquetas`)
-      .then((r) => setDoCaso(r.data))
+      .then((r) => setDoCaso(Array.isArray(r.data) ? r.data : []))
       .catch(() => {});
   };
   useEffect(() => {
@@ -2581,7 +2581,7 @@ function TabMemoria({ caseId }: { caseId: string }) {
   const carregar = () =>
     api
       .get(`/memoria-institucional?case_id=${caseId}`)
-      .then((r) => setItens(r.data))
+      .then((r) => setItens(Array.isArray(r.data) ? r.data : []))
       .catch(() => {});
   useEffect(() => {
     carregar();

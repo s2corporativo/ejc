@@ -287,7 +287,7 @@ export default function Casos() {
     // load() inicial fica a cargo do effect de [arquivoF] abaixo
     api
       .get("/clients/", { params: { page_size: 100 } })
-      .then((r) => setClientes(r.data.data));
+      .then((r) => setClientes(Array.isArray(r.data?.data) ? r.data.data : []));
     // advogados p/ o seletor de responsável — falha silenciosa se o perfil não puder listar usuários
     api
       .get("/users/")

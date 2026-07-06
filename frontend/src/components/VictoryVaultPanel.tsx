@@ -48,10 +48,10 @@ export const VictoryVaultPanel: React.FC = () => {
       };
       if (selectedTab === "teses") {
         const r = await api.get("/victory_vault/teses", { params });
-        setTeses(r.data);
+        setTeses(Array.isArray(r.data) ? r.data : []);
       } else {
         const r = await api.get("/victory_vault/modelos", { params });
-        setModelos(r.data);
+        setModelos(Array.isArray(r.data) ? r.data : []);
       }
     } catch (e) {
       console.error("Erro ao buscar dados do Victory Vault:", e);

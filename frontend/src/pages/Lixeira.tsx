@@ -20,7 +20,7 @@ export default function Lixeira() {
   const [rows, setRows] = useState<any[]>([]);
 
   const load = () =>
-    api.get(`/trash/?entidade=${ent}`).then((r) => setRows(r.data.data));
+    api.get(`/trash/?entidade=${ent}`).then((r) => setRows(Array.isArray(r.data?.data) ? r.data.data : []));
   useEffect(() => {
     load();
   }, [ent]);

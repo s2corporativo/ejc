@@ -40,7 +40,7 @@ export const AssistedWritingMode: React.FC = () => {
       const r = await api.get("/document-templates/", {
         params: { area_juridica: selectedArea || undefined },
       });
-      setTemplates(r.data);
+      setTemplates(Array.isArray(r.data) ? r.data : []);
     } catch (err) {
       console.error("Erro ao buscar templates:", err);
     }

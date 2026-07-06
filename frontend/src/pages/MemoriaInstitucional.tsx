@@ -440,7 +440,7 @@ export default function MemoriaInstitucional() {
       if (tipo) params.tipo = tipo;
       if (area) params.area = area;
       const { data } = await api.get("/memoria-institucional", { params });
-      let lista = data as Memoria[];
+      let lista = Array.isArray(data) ? (data as Memoria[]) : [];
       if (resultado) lista = lista.filter((m) => m.resultado === resultado);
       setMemorias(lista);
     } finally {

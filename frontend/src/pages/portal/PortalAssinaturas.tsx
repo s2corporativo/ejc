@@ -20,7 +20,7 @@ export default function PortalAssinaturas() {
     setLoading(true);
     api
       .get("/signatures/")
-      .then((r) => setRows(r.data?.data ?? r.data ?? []))
+      .then((r) => setRows(Array.isArray(r.data) ? r.data : (Array.isArray(r.data?.data) ? r.data.data : [])))
       .finally(() => setLoading(false));
   };
   useEffect(() => {

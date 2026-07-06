@@ -141,11 +141,11 @@ export default function Prazos() {
 
       {!data ? (
         <Spinner />
-      ) : data.data.length === 0 ? (
+      ) : (!Array.isArray(data.data) || data.data.length === 0) ? (
         <Empty message="Nenhum prazo nesta categoria" />
       ) : (
         <div className="space-y-2">
-          {data.data.map((d: any) => (
+          {(Array.isArray(data.data) ? data.data : []).map((d: any) => (
             <div
               key={d.id}
               className={`card p-4 flex flex-wrap items-center gap-4 ${urgClass[d.urgencia] || ""}`}
