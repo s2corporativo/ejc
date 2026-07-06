@@ -39,9 +39,11 @@ _TAREFA_PARA_GATEWAY: dict[TarefaIA, str] = {
     TarefaIA.ANALISE_CASO: "estrategia",
     TarefaIA.DOSSIE: "estrategia",
     TarefaIA.TRABALHISTA: "estrategia",
-    # Criminal = sigilo reforçado (LGPD): o gateway_task "criminal" mantém o piso
-    # LOCAL_COMPLETO (sanitization_policy) — nunca vai a provider externo, nem no
-    # caminho do orchestrator. NÃO rebaixar para "estrategia".
+    # Criminal (decisão de produto 2026-07-06): o gateway_task "criminal" resolve
+    # EXTERNO_PSEUDONIMIZADO na sanitization_policy — vai a provider externo APENAS
+    # pseudonimizado (marcadores) e a resposta é reidratada localmente. O rótulo
+    # "criminal" é mantido para que o escritório possa, se quiser, REFORÇAR essa
+    # tarefa de volta a LOCAL_COMPLETO via AI_SANITIZATION_MODE_MAP.
     TarefaIA.CRIMINAL: "criminal",
     TarefaIA.FAMILIA: "estrategia",
     TarefaIA.ADMINISTRATIVO: "estrategia",
@@ -111,7 +113,10 @@ class SingleAICoreOrchestrator:
             exige_fonte=intent.exige_fonte,
         )
 
-        # 4) Sanitização LGPD do input (abort 422 em PII residual) ────────────
+        # 4) Sanitização LGPD do input ("sanitiza e segue" — 2026-07-06; não
+        #    aborta mais em PII residual, apenas registra). Os nomes do caso são
+        #    protegidos DE FORMA REVERSÍVEL na barreira final do gateway (passo 6,
+        #    via `entidades`); aqui a limpeza de entrada é defesa em profundidade.
         from app.services.ai_guard import sanitizar_ou_abortar
         nomes = list(ctx.nomes_proteger) + list(params.get("nomes_proteger") or [])
         mensagem_sana, pii_removida = sanitizar_ou_abortar(mensagem, nomes or None)
@@ -150,6 +155,27 @@ class SingleAICoreOrchestrator:
 
         gateway_task = _AGENTE_GATEWAY_OVERRIDE.get(agente.nome) or \
             _TAREFA_PARA_GATEWAY.get(intent.tarefa, "analise_juridica")
+
+        # ── Nomes do caso → pseudonimização REVERSÍVEL no gateway (LGPD 2026-07-06)
+        # Passa as ENTIDADES NOMEADAS (cliente/empresa/advogado/parte contrária) ao
+        # gateway: no modo EXTERNO_PSEUDONIMIZADO ele troca cada nome por um marcador
+        # consistente ([CLIENTE_1]…) ANTES do provider externo e REIDRATA a resposta
+        # localmente. Sem isto, um nome próprio que chegue não mascarado ao gateway
+        # VAZARIA — `validar_sem_pii` (2ª barreira) detecta PII estrutural, não nomes.
+        # Fail-safe: entidades_do_caso NUNCA levanta (retorna {} em qualquer falha).
+        entidades: dict[str, list[str]] = {}
+        if case_id and db is not None:
+            from app.services.ai.entidades_caso import entidades_do_caso
+            entidades = await entidades_do_caso(db, case_id)
+        # Nomes avulsos informados pelo chamador (ex.: testemunha) entram como
+        # parte_contraria — basta que sejam pseudonimizados; o rótulo é indiferente.
+        _nomes_extra = [n for n in (params.get("nomes_proteger") or []) if (n or "").strip()]
+        if _nomes_extra:
+            entidades = {
+                **entidades,
+                "parte_contraria": list(entidades.get("parte_contraria", [])) + _nomes_extra,
+            }
+
         resp = await ai_gateway.chat(
             [{"role": "system", "content": system_prompt},
              {"role": "user", "content": user_content}],
@@ -157,6 +183,7 @@ class SingleAICoreOrchestrator:
             temperature=cfg.temperature,
             max_tokens=cfg.max_tokens,
             nivel_inteligencia=nivel_inteligencia,
+            entidades=entidades or None,
         )
 
         # 7) Validação da resposta (citações, promessas, base verificável) ────

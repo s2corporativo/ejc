@@ -1,43 +1,49 @@
 # ── app/services/ai_guard.py ─────────────────────────────────────────────────
 # Guarda única de PII/auditoria para endpoints de IA (auditoria 2026-07-02).
 # Centraliza o padrão-ouro já usado em analise_estrategica.py: sanitizar_pii +
-# segunda barreira (validar_sem_pii com abort) + AILog honesto (erro propaga,
-# não é engolido). Endpoints que ainda montam AILog manualmente devem migrar
-# para registrar_ai_log() em vez de reimplementar o INSERT.
+# AILog honesto (erro propaga, não é engolido). Endpoints que ainda montam AILog
+# manualmente devem migrar para registrar_ai_log() em vez de reimplementar o
+# INSERT.
 from __future__ import annotations
+import logging
 from uuid import uuid4
-from fastapi import HTTPException
 
 from app.services.sanitizer import sanitizar_pii_interno, validar_sem_pii_interno
 from app.models.ai_log import AILog, AIStatusHITL
 from app.core.config import get_settings
 
 settings = get_settings()
+logger = logging.getLogger("ejc.ai.guard")
 
 
 def sanitizar_ou_abortar(texto: str, nomes_proteger: list[str] | None = None) -> tuple[str, bool]:
     """
-    Barreira de ENTRADA (uso interno do escritório, decisão de 2026-07-04):
-    CPF/CNPJ deixam de ser removidos aqui (não abortam mais a chamada) —
-    continuam sendo removidos processo/RG/e-mail/telefone/CEP/cartão/PIX/nomes
-    protegidos, com abort real (422) se sobrar algum desses após a limpeza.
+    Barreira de ENTRADA — "sanitiza e SEGUE" (decisão de produto 2026-07-06).
 
-    Isso NÃO afeta a proteção de provider externo: `ai_gateway` aplica sua
-    própria barreira final (`_sanitizar_messages_externo`, que usa
-    `sanitizar_pii`/`validar_sem_pii` — as versões completas, com CPF/CNPJ)
-    antes de qualquer chamada a Anthropic/Groq. Só o Ollama local recebe
-    CPF/CNPJ em texto plano.
+    Antes esta barreira ABORTAVA (HTTP 422) quando sobrava PII residual após a
+    limpeza de entrada. Isso bloqueava análises legítimas do escritório. Agora
+    ela NÃO aborta mais: sanitiza o texto internamente (remove processo/RG/e-mail/
+    telefone/CEP/cartão/PIX/nomes protegidos; CPF/CNPJ seguem íntegros para o
+    Ollama local, decisão de 2026-07-04) e apenas REGISTRA (log) que houve PII
+    residual, seguindo o fluxo. O nome/contrato é mantido por compatibilidade.
+
+    Segurança preservada: a proteção real de provider externo é a barreira FINAL
+    do `ai_gateway` (`_preparar_mensagens_externo` → pseudonimização/mascaramento
+    + `validar_sem_pii*`), que PULA o provider externo se ainda houver PII —
+    NENHUM PII real chega a Anthropic/Groq mesmo sem este abort de entrada. Só o
+    Ollama local recebe CPF/CNPJ em texto plano.
 
     Retorna (texto_sanitizado, houve_remocao).
     """
     limpo, houve_remocao = sanitizar_pii_interno(texto, nomes_proteger)
     residual = validar_sem_pii_interno(limpo)
     if residual:
-        raise HTTPException(
-            422,
-            f"Dados pessoais detectados ({', '.join(residual)}) mesmo após "
-            "sanitização. Remova RG/e-mail/telefone/CEP/número de processo "
-            "do texto e tente novamente.",
+        # Não aborta: registra os TIPOS de PII residual (nunca o valor/texto —
+        # LGPD) para auditoria; a barreira final do gateway garante o não-vazamento.
+        logger.info(
+            "[ai_guard] PII residual após sanitização de entrada (%s) — "
+            "seguindo; barreira final do gateway protege o provider externo.",
+            ", ".join(sorted(residual)),
         )
     return limpo, houve_remocao
 

@@ -8,8 +8,6 @@ from app.services.sanitizer import (
     validar_sem_pii_interno,
 )
 from app.services.ai_guard import sanitizar_ou_abortar
-import pytest
-from fastapi import HTTPException
 
 
 def test_mascara_cpf_e_cnpj():
@@ -81,15 +79,18 @@ def test_sanitizar_ou_abortar_continua_mascarando_outros_tipos_de_pii():
     assert mudou is True
 
 
-def test_sanitizar_ou_abortar_aborta_se_sobrar_pii_nao_cpf_cnpj(monkeypatch):
-    """Confirma que o abort 422 continua ativo para residual fora de CPF/CNPJ —
-    força um residual artificial para exercitar o caminho de erro."""
+def test_sanitizar_ou_abortar_nao_aborta_mais_com_pii_residual(monkeypatch):
+    """Decisão de produto (2026-07-06): a barreira de ENTRADA "sanitiza e SEGUE"
+    — NÃO aborta mais (HTTP 422) quando sobra PII residual; retorna o texto
+    sanitizado e apenas registra. A proteção real do provider externo é a
+    barreira FINAL do gateway (testada em test_ai_core_nucleo), não este abort.
+    Força um residual artificial e confirma que NÃO há mais exceção."""
     import app.services.ai_guard as ai_guard_mod
 
     monkeypatch.setattr(ai_guard_mod, "validar_sem_pii_interno", lambda t: ["EMAIL"])
-    with pytest.raises(HTTPException) as exc:
-        ai_guard_mod.sanitizar_ou_abortar("texto qualquer")
-    assert exc.value.status_code == 422
+    # Antes levantava HTTPException(422); agora deve retornar normalmente.
+    limpo, _mudou = ai_guard_mod.sanitizar_ou_abortar("texto qualquer")
+    assert isinstance(limpo, str)
 
 
 def test_barreira_externa_do_gateway_remove_cpf_cnpj():

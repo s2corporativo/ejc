@@ -6,8 +6,11 @@ toca rede. Contrato:
   - consistência: mesma entidade → mesmo marcador; distintas → índices distintos;
   - relação preservada ("[CLIENTE_1] processa [PARTE_CONTRARIA_1]");
   - texto pseudonimizado sem PII estrutural residual;
-  - modo_para_task: criminal→LOCAL_COMPLETO, analise_caso→EXTERNO_PSEUDONIMIZADO,
-    resumo→MASCARAMENTO; override via AI_SANITIZATION_MODE_MAP respeitado.
+  - modo_para_task: `criminal` MANTIDO em LOCAL_COMPLETO (auditoria 2026-07-06 —
+    nomes de vítima/testemunha não estruturais não podem sair da VPS); demais
+    (analise_caso/resumo/triagem/tarefa desconhecida) → EXTERNO_PSEUDONIMIZADO;
+    override via AI_SANITIZATION_MODE_MAP respeitado; piso LOCAL_COMPLETO
+    permanece não-rebaixável por override.
 """
 from __future__ import annotations
 
@@ -121,13 +124,19 @@ def test_pseudonimizar_mensagens_estado_compartilhado():
 # ── modo_para_task ────────────────────────────────────────────────────────────
 
 def test_modo_default_por_tarefa():
+    # Auditoria de segurança (2026-07-06): `criminal` MANTIDO em LOCAL_COMPLETO —
+    # nomes de vítima/testemunha (não estruturais) jamais podem sair da VPS; sem
+    # Ollama, a análise criminal BLOQUEIA em vez de ir a provider externo.
     assert modo_para_task("criminal") == ModoSanitizacao.LOCAL_COMPLETO
     assert modo_para_task("analise_caso") == ModoSanitizacao.EXTERNO_PSEUDONIMIZADO
-    assert modo_para_task("resumo") == ModoSanitizacao.MASCARAMENTO
-    assert modo_para_task("triagem") == ModoSanitizacao.MASCARAMENTO
-    # Tarefa desconhecida → fallback seguro (mascaramento irreversível).
-    assert modo_para_task("tarefa_inexistente") == ModoSanitizacao.MASCARAMENTO
+    # Tarefas simples migradas de MASCARAMENTO irreversível → pseudonimização.
+    assert modo_para_task("resumo") == ModoSanitizacao.EXTERNO_PSEUDONIMIZADO
+    assert modo_para_task("triagem") == ModoSanitizacao.EXTERNO_PSEUDONIMIZADO
+    # Tarefa desconhecida → fallback reversível e seguro (nunca "sem sanitização").
+    assert modo_para_task("tarefa_inexistente") == ModoSanitizacao.EXTERNO_PSEUDONIMIZADO
     assert modo_para_task("CRIMINAL") == ModoSanitizacao.LOCAL_COMPLETO  # case-insensitive
+    # Extração local segue local (PII extraída no ponto de importação).
+    assert modo_para_task("intake") == ModoSanitizacao.EXTRACAO_LOCAL
 
 
 def test_modo_override_por_config(monkeypatch):
@@ -136,43 +145,58 @@ def test_modo_override_por_config(monkeypatch):
         st, "AI_SANITIZATION_MODE_MAP",
         '{"familia":"local_completo","analise_caso":"mascaramento"}',
     )
-    assert modo_para_task("familia") == ModoSanitizacao.LOCAL_COMPLETO      # novo
+    assert modo_para_task("familia") == ModoSanitizacao.LOCAL_COMPLETO      # reforço opt-in
     assert modo_para_task("analise_caso") == ModoSanitizacao.MASCARAMENTO   # sobrepõe default
-    assert modo_para_task("criminal") == ModoSanitizacao.LOCAL_COMPLETO     # default preservado
+    # criminal sem override → default LOCAL_COMPLETO (piso de segurança preservado).
+    assert modo_para_task("criminal") == ModoSanitizacao.LOCAL_COMPLETO
 
 
 def test_modo_override_invalido_cai_no_default(monkeypatch):
     st = get_settings()
     monkeypatch.setattr(st, "AI_SANITIZATION_MODE_MAP", "{json quebrado")
     assert modo_para_task("analise_caso") == ModoSanitizacao.EXTERNO_PSEUDONIMIZADO
-    # Modo desconhecido em JSON válido é ignorado (cai no default).
+    # Modo desconhecido em JSON válido é ignorado (cai no default de produto).
     monkeypatch.setattr(st, "AI_SANITIZATION_MODE_MAP", '{"resumo":"modo_zumbi"}')
-    assert modo_para_task("resumo") == ModoSanitizacao.MASCARAMENTO
+    assert modo_para_task("resumo") == ModoSanitizacao.EXTERNO_PSEUDONIMIZADO
 
 
-# ── FIX 2 — piso não-rebaixável do LOCAL_COMPLETO ─────────────────────────────
+# ── Piso LOCAL_COMPLETO — agora OPT-IN por override (decisão 2026-07-06) ───────
 
-def test_piso_local_completo_nao_rebaixavel(monkeypatch):
-    """Override NÃO pode rebaixar tarefa de sigilo reforçado (default
-    LOCAL_COMPLETO) para provider externo — ignora e mantém LOCAL_COMPLETO."""
+def test_criminal_reforcavel_para_local_completo_via_override(monkeypatch):
+    """`criminal` passou a EXTERNO_PSEUDONIMIZADO por decisão de produto, mas o
+    escritório pode REFORÇAR o sigilo de volta a LOCAL_COMPLETO via config."""
     st = get_settings()
     monkeypatch.setattr(
         st, "AI_SANITIZATION_MODE_MAP",
-        '{"criminal":"externo_pseudonimizado"}',
+        '{"criminal":"local_completo"}',
     )
     assert modo_para_task("criminal") == ModoSanitizacao.LOCAL_COMPLETO
 
 
+def test_piso_local_completo_nao_rebaixavel(monkeypatch):
+    """O MECANISMO do piso permanece: uma tarefa cujo DEFAULT seja LOCAL_COMPLETO
+    não pode ser rebaixada por override. Como nenhum default é LOCAL_COMPLETO após
+    2026-07-06, injetamos um default fictício para exercitar o mecanismo em si."""
+    import app.services.ai.sanitization_policy as pol
+    st = get_settings()
+    monkeypatch.setitem(pol._MODO_DEFAULT_POR_TASK, "sigilo_maximo", ModoSanitizacao.LOCAL_COMPLETO)
+    monkeypatch.setattr(
+        st, "AI_SANITIZATION_MODE_MAP",
+        '{"sigilo_maximo":"externo_pseudonimizado"}',
+    )
+    # Rebaixamento ignorado → mantém LOCAL_COMPLETO.
+    assert modo_para_task("sigilo_maximo") == ModoSanitizacao.LOCAL_COMPLETO
+
+
 def test_piso_reforco_para_local_completo_permitido(monkeypatch):
-    """Reforçar QUALQUER tarefa para LOCAL_COMPLETO via override é permitido; e
-    rebaixar criminal continua bloqueado no mesmo mapa."""
+    """Reforçar QUALQUER tarefa para LOCAL_COMPLETO via override é sempre
+    permitido (inclusive tarefas simples)."""
     st = get_settings()
     monkeypatch.setattr(
         st, "AI_SANITIZATION_MODE_MAP",
-        '{"resumo":"local_completo","criminal":"mascaramento"}',
+        '{"resumo":"local_completo"}',
     )
     assert modo_para_task("resumo") == ModoSanitizacao.LOCAL_COMPLETO   # reforço aplicado
-    assert modo_para_task("criminal") == ModoSanitizacao.LOCAL_COMPLETO  # rebaixamento ignorado
 
 
 # ── FIX 4 — sincronismo placeholder do sanitizer × mapa de tipos ──────────────
