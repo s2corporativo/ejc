@@ -224,6 +224,11 @@ class SingleAICoreOrchestrator:
                     contexto_caso=ctx.texto or None,
                     task_type_origem=gateway_task,
                     provedor_origem=resp.provedor,
+                    # Reaproveita as ENTIDADES NOMEADAS já montadas para a peça
+                    # (cliente/parte contrária) — evita reconsultar o banco e
+                    # garante que a crítica pseudonimize os mesmos nomes antes
+                    # do provider externo (LGPD). Inclui `nomes_proteger` extras.
+                    entidades=entidades or None,
                 )
                 await adversarial.anexar_critica_ao_log(db, log_id, critica)
                 critica_dict = critica.model_dump()

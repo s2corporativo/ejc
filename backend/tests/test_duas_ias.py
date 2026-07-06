@@ -228,6 +228,128 @@ class TestCriticarPeca:
 
 
 # ══════════════════════════════════════════════════════════════════════════════
+# 3b. LGPD — a crítica pseudonimiza os NOMES do caso antes do provider externo
+#     (issue #103: sem `entidades`, nome de cliente/parte contrária vazava)
+# ══════════════════════════════════════════════════════════════════════════════
+
+class _ResEnt:
+    def __init__(self, val):
+        self._val = val
+
+    def scalar_one_or_none(self):
+        return self._val
+
+
+class _CaseDB:
+    """Sessão fake: execute() (usado por entidades_do_caso) devolve o Case."""
+
+    def __init__(self, caso):
+        self._caso = caso
+
+    async def execute(self, *a, **k):
+        return _ResEnt(self._caso)
+
+
+class TestCriticaProtegeNomesLGPD:
+    """A minuta criticada traz nomes reais (cliente/parte contrária) EM CLARO.
+    A crítica prefere provider EXTERNO — os nomes NÃO podem vazar: devem virar
+    marcadores consistentes antes do externo e ser reidratados na resposta."""
+
+    def _caso_com_nomes(self):
+        from app.models.case import Case
+        from app.models.case_parte import CaseParte
+        from app.models.client import Client, ClientTipo
+        cli = Client(id="cli1", tipo=ClientTipo.PF, nome="João da Silva")
+        parte = CaseParte(id="p1", case_id="c1", tipo="reu",
+                          papel_processual="Réu", nome="Construtora Alfa Ltda")
+        return Case(id="c1", titulo="Ação fictícia", client_id="cli1",
+                    deleted_at=None, client=cli, partes=[parte],
+                    advogado_responsavel=None, parte_contraria="Banco Omega S.A.")
+
+    async def test_case_id_pseudonimiza_nomes_e_reidrata(self, s, monkeypatch):
+        """Round-trip real (mocka só o provider de baixo nível): com case_id, os
+        nomes do caso viram marcadores antes do externo e voltam reidratados."""
+        from app.services import ai_gateway, citation_gate
+        from app.services.ai import adversarial
+
+        capturado: dict = {}
+
+        async def _fake_provedor(provider, model, messages, temperature, max_tokens):
+            capturado["provider"] = provider
+            capturado["conteudo"] = " ".join(m.get("content", "") for m in messages)
+            # A IA Crítica raciocina SÓ sobre os marcadores e cita a nota.
+            return (
+                "## 6. NOTA DE ROBUSTEZ\nNOTA DE ROBUSTEZ: 60\n"
+                "Peça de [CLIENTE_1] contra [PARTE_CONTRARIA_1] e "
+                "[PARTE_CONTRARIA_2] tem lacunas.",
+                {"model": model or provider, "input_tokens": 5, "output_tokens": 9},
+            )
+
+        monkeypatch.setattr(ai_gateway, "_chamar_provedor", _fake_provedor)
+        # Gate de citações mockado (o _CaseDB só serve à montagem de entidades).
+        async def _fake_validar(db, texto, **kw):
+            return citation_gate.RelatorioCitacoes(politica="marcar", total=0)
+        monkeypatch.setattr(citation_gate, "validar_citacoes", _fake_validar)
+
+        texto_peca = (
+            "EXCELENTÍSSIMO JUIZ — o autor João da Silva move ação contra "
+            "Construtora Alfa Ltda e Banco Omega S.A. por danos morais."
+        )
+        c = await adversarial.criticar_peca(
+            db=_CaseDB(self._caso_com_nomes()),
+            texto_peca=texto_peca,
+            contexto_caso="Cliente João da Silva; parte contrária Construtora Alfa Ltda.",
+            task_type_origem="elaboracao_peca",
+            provedor_origem="ollama",  # crítica cai no anthropic (externo)
+            case_id="c1",
+        )
+
+        # (a) provider EXTERNO recebeu SÓ marcadores — nenhum nome real vazou.
+        assert capturado["provider"] in ("anthropic", "groq")
+        for nome in ("João da Silva", "Construtora Alfa Ltda", "Banco Omega S.A."):
+            assert nome not in capturado["conteudo"], f"vazou ao externo: {nome!r}"
+        assert "[CLIENTE_1]" in capturado["conteudo"]
+        assert "[PARTE_CONTRARIA_1]" in capturado["conteudo"]
+        # (b) relatório devolvido ao chamador está REIDRATADO (nomes reais).
+        assert c.disponivel is True
+        for nome in ("João da Silva", "Banco Omega S.A.", "Construtora Alfa Ltda"):
+            assert nome in c.relatorio, f"reidratação falhou para {nome!r}"
+        assert "[CLIENTE_1]" not in c.relatorio
+        assert "[PARTE_CONTRARIA_1]" not in c.relatorio
+        assert "[PARTE_CONTRARIA_2]" not in c.relatorio
+
+    async def test_sem_case_id_degrada_sem_crash_entidades_none(self, s, monkeypatch):
+        """Sem case_id/entidades a crítica NÃO quebra: passa entidades=None ao
+        gateway (barreira ESTRUTURAL do gateway segue ativa)."""
+        from app.services import ai_gateway
+        from app.services.ai import adversarial
+        box: dict = {}
+        monkeypatch.setattr(ai_gateway, "chat", _fake_chat(box))
+        c = await adversarial.criticar_peca(db=None, texto_peca=TEXTO_PECA)
+        assert c.disponivel is True
+        assert box.get("entidades") is None  # degradou sem entidades, sem crash
+
+    async def test_entidades_prontas_repassadas_sem_reconsultar_banco(self, s, monkeypatch):
+        """Quando o chamador (orquestrador) já traz `entidades`, elas são
+        repassadas ao gateway SEM tocar o banco (case_id é ignorado)."""
+        from app.services import ai_gateway
+        from app.services.ai import adversarial, entidades_caso
+        box: dict = {}
+        monkeypatch.setattr(ai_gateway, "chat", _fake_chat(box))
+
+        async def _boom(*a, **k):  # entidades_do_caso NÃO deve ser chamado
+            raise AssertionError("entidades_do_caso não deveria ser consultado")
+        monkeypatch.setattr(entidades_caso, "entidades_do_caso", _boom)
+
+        ent = {"cliente": ["João da Silva"], "parte_contraria": ["Construtora Alfa Ltda"]}
+        c = await adversarial.criticar_peca(
+            db=None, texto_peca=TEXTO_PECA, case_id="c1", entidades=ent,
+        )
+        assert c.disponivel is True
+        assert box["entidades"] == ent
+
+
+# ══════════════════════════════════════════════════════════════════════════════
 # 4. Gravação da crítica em campo DEDICADO (migration 070 — NÃO em `resposta`)
 # ══════════════════════════════════════════════════════════════════════════════
 
@@ -469,10 +591,12 @@ def critica_spy(monkeypatch):
     calls = {"criticar": [], "anexar": []}
 
     async def fake_criticar(db, texto_peca, contexto_caso=None,
-                            task_type_origem=None, provedor_origem=None):
+                            task_type_origem=None, provedor_origem=None,
+                            case_id=None, entidades=None):
         calls["criticar"].append({
             "texto_peca": texto_peca, "task_type_origem": task_type_origem,
             "provedor_origem": provedor_origem,
+            "case_id": case_id, "entidades": entidades,
         })
         return adversarial.CriticaAdversarial(
             disponivel=True, relatorio=RELATORIO_OK, nota_robustez=72,
