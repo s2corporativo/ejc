@@ -16,6 +16,10 @@ import logging
 import re
 from typing import Optional
 
+from app.schemas.document_intake import (
+    CampoExtraido, CasoExtraido, ClienteExtraido, DocumentoIntakeResult,
+    ParteExtraida, PedidoExtraido, RiscoExtraido, TeseSugerida,
+)
 from app.services import ai_gateway, ocr_service
 from app.services.extracao_estruturada import extrair_estruturas
 from app.services.sanitizer import sanitizar_pii
@@ -124,6 +128,202 @@ def _parse_json(txt: str) -> Optional[dict]:
     return None
 
 
+def _txt(v) -> Optional[str]:
+    """Coage para str não-vazia limpa, ou None (lacuna). Nunca levanta."""
+    if v is None:
+        return None
+    try:
+        s = str(v).strip()
+    except Exception:
+        return None
+    return s or None
+
+
+def _flt(v) -> Optional[float]:
+    """Coage para float em [0,1], ou None. Nunca levanta."""
+    try:
+        f = float(v)
+    except (TypeError, ValueError, OverflowError):
+        # OverflowError: inteiro JSON gigante vindo do LLM (ex.: 10**400).
+        return None
+    if f != f or f in (float("inf"), float("-inf")):
+        # NaN/inf escapam do clamp min/max e serializariam como JSON inválido
+        # (`NaN`/`Infinity`) — o JSON.parse do navegador quebraria. Tratar como lacuna.
+        return None
+    return min(max(f, 0.0), 1.0)
+
+
+def _campo_det(ocorrencias) -> Optional["CampoExtraido"]:
+    """Primeira ocorrência determinística (extrair_estruturas) → CampoExtraido.
+
+    O valor é literal do texto, então `trecho_origem` = o próprio valor e a
+    confiança é 1.0 (regex + DV, sem IA). Lacuna → None.
+    """
+    if not isinstance(ocorrencias, list):
+        return None
+    for oc in ocorrencias:
+        if isinstance(oc, dict):
+            valor = _txt(oc.get("valor"))
+        else:
+            valor = _txt(oc)
+        if valor:
+            return CampoExtraido(valor=valor, trecho_origem=valor, confianca=1.0)
+    return None
+
+
+def _campo_llm(campos_v2, chave: str) -> Optional["CampoExtraido"]:
+    """Extrai um CampoExtraido do bloco `campos_v2` do LLM (fail-safe)."""
+    if not isinstance(campos_v2, dict):
+        return None
+    campo = campos_v2.get(chave)
+    if not isinstance(campo, dict):
+        return None
+    valor = campo.get("valor")
+    if valor in (None, ""):
+        return None
+    return CampoExtraido(
+        valor=valor,
+        trecho_origem=_txt(campo.get("trecho_origem")),
+        confianca=_flt(campo.get("confianca")),
+    )
+
+
+def _lista_str(v) -> list:
+    """Normaliza para lista de strings limpas (aceita str única). Sem levantar."""
+    if v is None:
+        return []
+    itens = v if isinstance(v, (list, tuple)) else [v]
+    return [s for s in (_txt(x) for x in itens) if s]
+
+
+def _montar_intake_result(
+    dados: Optional[dict],
+    dados_estruturados: Optional[dict],
+    tipo_documento: Optional[str] = None,
+    confianca_classificacao: Optional[float] = None,
+) -> "DocumentoIntakeResult":
+    """Valida/coage o dict cru do LLM + a extração determinística local para
+    `DocumentoIntakeResult`. **Fail-safe**: qualquer entrada inválida (None,
+    parcial, tipos errados) degrada para um resultado com listas vazias e
+    `necessita_revisao_humana=True` — nunca levanta exceção.
+
+    A PII exata (CPF/CNPJ/nº CNJ) vem SEMPRE de `dados_estruturados`
+    (extrair_estruturas, local), preservando `trecho_origem` — nunca de novo
+    parsing nem do texto sanitizado do LLM.
+    """
+    llm = dados if isinstance(dados, dict) else {}
+    det = dados_estruturados if isinstance(dados_estruturados, dict) else {}
+
+    # Campos determinísticos (locais) com trecho_origem literal.
+    cnj_det = _campo_det(det.get("processos_cnj"))
+    cpf_det = _campo_det(det.get("cpfs"))
+    cnpj_det = _campo_det(det.get("cnpjs"))
+
+    def _get(chave: str) -> dict:
+        v = llm.get(chave)
+        return v if isinstance(v, dict) else {}
+
+    ident = _get("identificacao_processual")
+    classif = _get("classificacao")
+    resumo = _get("resumo_executivo")
+    partes_llm = _get("partes")
+    pessoais = _get("dados_pessoais")
+    diag = _get("diagnostico")
+    brechas = _get("brechas_processuais")
+    campos_v2 = llm.get("campos_v2")
+
+    resumo_fatos = _txt(resumo.get("fatos"))
+
+    try:
+        # numero_cnj: prefere o determinístico (nº real + trecho); senão o do LLM.
+        numero_cnj = cnj_det or _campo_llm(campos_v2, "numero_processo")
+        if numero_cnj is None:
+            n = _txt(ident.get("numero_processo"))
+            if n:
+                numero_cnj = CampoExtraido(valor=n)
+
+        valor_causa = _campo_llm(campos_v2, "valor_causa")
+        if valor_causa is None and llm.get("valor_causa_estimado") not in (None, ""):
+            valor_causa = CampoExtraido(valor=llm.get("valor_causa_estimado"))
+
+        caso = CasoExtraido(
+            area=_txt(classif.get("area")),
+            subramo=_txt(classif.get("subarea")),
+            numero_cnj=numero_cnj,
+            orgao=_txt(ident.get("comarca")),
+            vara=_txt(ident.get("vara")),
+            tribunal=_txt(ident.get("tribunal")),
+            valor_causa=valor_causa,
+            resumo_fatos=resumo_fatos,
+        )
+    except Exception:
+        caso = None
+
+    try:
+        cliente = ClienteExtraido(
+            nome=_txt(pessoais.get("nome")),
+            cpf=cpf_det,
+            cnpj=cnpj_det,
+            email=_txt(pessoais.get("email")),
+            telefone=_txt(pessoais.get("telefone")),
+            endereco=_txt(pessoais.get("endereco")),
+        )
+        if not any(getattr(cliente, c) for c in
+                   ("nome", "cpf", "cnpj", "email", "telefone", "endereco")):
+            cliente = None
+    except Exception:
+        cliente = None
+
+    partes: list = []
+    try:
+        for chave, papel in (("autor", "autor"), ("reu", "reu")):
+            nome = _txt(partes_llm.get(chave))
+            if nome:
+                partes.append(ParteExtraida(nome=nome, papel=papel))
+        for terceiro in _lista_str(partes_llm.get("terceiros")):
+            partes.append(ParteExtraida(nome=terceiro, papel="terceiro"))
+    except Exception:
+        partes = []
+
+    pedidos: list = []
+    try:
+        ped = _txt(resumo.get("pedidos"))
+        if ped:
+            pedidos.append(PedidoExtraido(descricao=ped))
+    except Exception:
+        pedidos = []
+
+    riscos: list = []
+    try:
+        riscos = [RiscoExtraido(descricao=r) for r in _lista_str(diag.get("riscos"))]
+    except Exception:
+        riscos = []
+
+    teses: list = []
+    try:
+        teses = [TeseSugerida(titulo=t)
+                 for t in _lista_str(brechas.get("teses_defensivas"))]
+    except Exception:
+        teses = []
+
+    try:
+        return DocumentoIntakeResult(
+            tipo_documento=_txt(tipo_documento),
+            confianca_classificacao=_flt(confianca_classificacao),
+            cliente=cliente,
+            caso=caso,
+            partes=partes,
+            pedidos=pedidos,
+            riscos=riscos,
+            teses=teses,
+            resumo_fatos=resumo_fatos,
+            necessita_revisao_humana=True,
+        )
+    except Exception:
+        # Última barreira: contrato mínimo válido, jamais 500.
+        return DocumentoIntakeResult(necessita_revisao_humana=True)
+
+
 _ERRO_FAIL_CLOSED = (
     "A interpretação por IA local (Ollama) está indisponível e o fallback para "
     "provedores externos está DESLIGADO (INTAKE_EXTERNAL_FALLBACK=false). "
@@ -217,6 +417,10 @@ async def extrair_e_analisar(
                 "documento foi lido — revise e preencha o caso manualmente."
             ),
             "dados_estruturados": dados_estruturados,
+            # Contrato tipado (#83 Gap A): sem LLM, monta só a partir da
+            # extração determinística — necessita_revisao_humana=True.
+            "intake_result": _montar_intake_result(
+                None, dados_estruturados).model_dump(mode="json"),
             "texto_extraido": texto_para_ia[:2000],
             "caracteres_lidos": len(texto),
             "pii_removida": houve_pii,
@@ -253,6 +457,9 @@ async def extrair_e_analisar(
             "parcial": True,
             "intake_log_id": intake_log_id,
             "dados_estruturados": dados_estruturados,
+            # JSON do LLM ilegível → contrato tipado só com o determinístico.
+            "intake_result": _montar_intake_result(
+                None, dados_estruturados).model_dump(mode="json"),
             "texto_extraido": texto_para_ia[:2000],
             "resumo_executivo": {"fatos": resp.texto[:1500]},
             "_aviso": _AVISO,
@@ -285,6 +492,10 @@ async def extrair_e_analisar(
 
     dados["ok"] = True
     dados["dados_estruturados"] = dados_estruturados
+    # Contrato tipado (#83 Gap A): valida/coage o dict do LLM + o determinístico
+    # para DocumentoIntakeResult, ADITIVO ao dict legado (não o substitui).
+    dados["intake_result"] = _montar_intake_result(
+        dados, dados_estruturados).model_dump(mode="json")
     dados["_aviso"] = _AVISO
     dados["_modelo"] = f"{resp.provedor}/{resp.modelo}"
     dados["intake_log_id"] = intake_log_id
