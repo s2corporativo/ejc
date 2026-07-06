@@ -936,15 +936,6 @@ export default function DossieCliente() {
           </div>
         </div>
       )}
-
-      {/* Comunicação Rápida */}
-      <ComunicacaoRapida cliente={cliente} />
-
-      {/* Relatório Financeiro */}
-      <RelatorioFinanceiro clientId={cliente.id} clienteNome={cliente.nome} />
-
-      {/* Pendências do Cliente */}
-      <PendingItemsPanel clientId={cliente.id} />
     </div>
   );
 }
