@@ -79,7 +79,10 @@ async def zapi_inbound(
                             f"1ª mensagem: {texto[:300]}",
             )
             db.add(lead)
-            logger.info(f"Lead WhatsApp criado: {telefone}")
+            # LGPD: não gravar telefone de titular em log de aplicação
+            # (agregadores/`docker logs` não têm base legal nem retenção
+            # controlada). Mascara para só os 4 últimos dígitos.
+            logger.info(f"Lead WhatsApp criado: ****{telefone[-4:]}")
 
             # Notificar admins/sócios
             staff = (await db.execute(select(User).where(

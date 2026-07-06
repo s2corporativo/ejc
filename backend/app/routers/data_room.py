@@ -13,7 +13,9 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.database import get_db
 from app.core.security import get_current_user, ROLE_LEVEL
+from app.core.ownership import verificar_acesso_caso
 from app.models.user import User
+from app.models.document import Document
 from app.models.data_room import DataRoom, DataRoomArquivo, DataRoomLink, DataRoomAcessoLog
 
 router = APIRouter(prefix="/data-rooms", tags=["Data Room"])
@@ -43,6 +45,21 @@ class GerarLinkReq(BaseModel):
 
 def _pode_editar(u: User) -> bool:
     return ROLE_LEVEL.get(u.role.value, 0) >= ROLE_LEVEL["advogado"]
+
+async def _usuario_ve_documento(db: AsyncSession, cu: User, doc: Document) -> bool:
+    """Reaplica o gate do GED — cofre (confidencialidade) + ownership do caso —
+    para FILTRAR listagens do Data Room. Não levanta: retorna bool. Reusa os
+    helpers canônicos (documents._pode_acessar_confidencial + ownership) para
+    não divergir da regra do GED."""
+    from app.routers.documents import _pode_acessar_confidencial
+    if not _pode_acessar_confidencial(cu, doc.confidencialidade.value):
+        return False
+    if doc.case_id:
+        try:
+            await verificar_acesso_caso(db, cu, doc.case_id)
+        except HTTPException:
+            return False
+    return True
 
 def _out_room(r: DataRoom) -> dict:
     return {
@@ -119,6 +136,24 @@ async def obter_data_room(
         select(DataRoomArquivo).where(DataRoomArquivo.data_room_id == room_id)
     )).scalars().all()
 
+    # Filtra por acesso do usuário a CADA documento (cofre + ownership do caso).
+    # Sem isto, a listagem expõe metadados de docs de casos alheios a um
+    # advogado que não é dono do caso.
+    docs: dict = {}
+    if arquivos:
+        rows = (await db.execute(
+            select(Document).where(
+                Document.id.in_([a.document_id for a in arquivos]),
+                Document.deleted_at.is_(None),
+            )
+        )).scalars().all()
+        docs = {d.id: d for d in rows}
+    arquivos_visiveis = [
+        a for a in arquivos
+        if (d := docs.get(a.document_id)) is not None
+        and await _usuario_ve_documento(db, cu, d)
+    ]
+
     links = (await db.execute(
         select(DataRoomLink).where(DataRoomLink.data_room_id == room_id, DataRoomLink.ativo.is_(True))
     )).scalars().all()
@@ -128,7 +163,7 @@ async def obter_data_room(
         "arquivos": [
             {"id": a.id, "document_id": a.document_id, "nome_exibicao": a.nome_exibicao,
              "added_at": a.added_at.isoformat() if a.added_at else None}
-            for a in arquivos
+            for a in arquivos_visiveis
         ],
         "links": [_out_link(lk) for lk in links],
     }
@@ -148,6 +183,19 @@ async def adicionar_arquivo(
     )).scalar_one_or_none()
     if not room:
         raise HTTPException(404)
+    # Vincular um documento à sala não pode furar o cofre nem o ownership do
+    # caso do documento — senão a sala (e o link externo) vazam metadados
+    # (título/nome) de documentos de casos alheios. Valida ANTES de gravar.
+    doc = (await db.execute(
+        select(Document).where(Document.id == req.document_id, Document.deleted_at.is_(None))
+    )).scalar_one_or_none()
+    if not doc:
+        raise HTTPException(404, "Documento não encontrado")
+    from app.routers.documents import _pode_acessar_confidencial
+    if not _pode_acessar_confidencial(cu, doc.confidencialidade.value):
+        raise HTTPException(403, "Sem permissão para este documento (cofre)")
+    if doc.case_id:
+        await verificar_acesso_caso(db, cu, doc.case_id)  # 403/404
     arq = DataRoomArquivo(
         id=str(uuid4()), data_room_id=room_id,
         document_id=req.document_id, nome_exibicao=req.nome_exibicao,
