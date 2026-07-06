@@ -84,6 +84,8 @@ const PortalAssinaturas = lazy(
 );
 const PortalMensagens = lazy(() => import("./pages/portal/PortalMensagens"));
 
+const GESTAO_FINANCEIRO_ROLES = ["superadmin", "admin", "socio", "financeiro"];
+
 function Protected({ children }: { children: JSX.Element }) {
   const token = localStorage.getItem("ejc_access");
   return token ? children : <Navigate to="/login" replace />;
@@ -241,17 +243,45 @@ export default function App() {
             <Route path="/diario-oficial" element={<DiarioOficial />} />
             <Route path="/assinaturas" element={<Assinaturas />} />
             <Route path="/workflow" element={<Workflow />} />
-            <Route path="/sociedade" element={<Sociedade />} />
+            <Route
+              path="/sociedade"
+              element={
+                <RoleOnly roles={GESTAO_FINANCEIRO_ROLES}>
+                  <Sociedade />
+                </RoleOnly>
+              }
+            />
             <Route path="/ramos" element={<RamosHub />} />
             <Route path="/ramos/:slug" element={<RamoBase />} />
             <Route path="/office-contracts" element={<OfficeContracts />} />
             <Route path="/partner-withdrawals" element={<PartnerWithdrawals />} />
             <Route path="/atividades" element={<CentralAtividades />} />
-            <Route path="/financeiro" element={<FinanceiroWorkspace />} />
+            <Route
+              path="/financeiro"
+              element={
+                <RoleOnly roles={GESTAO_FINANCEIRO_ROLES}>
+                  <FinanceiroWorkspace />
+                </RoleOnly>
+              }
+            />
             <Route path="/financeiro-dashboard" element={<Navigate to="/financeiro" replace />} />
-            <Route path="/despesas" element={<Despesas />} />
+            <Route
+              path="/despesas"
+              element={
+                <RoleOnly roles={GESTAO_FINANCEIRO_ROLES}>
+                  <Despesas />
+                </RoleOnly>
+              }
+            />
             <Route path="/datajud" element={<DataJudBusca />} />
-            <Route path="/despesas-recorrentes" element={<DespesasRecorrentes />} />
+            <Route
+              path="/despesas-recorrentes"
+              element={
+                <RoleOnly roles={GESTAO_FINANCEIRO_ROLES}>
+                  <DespesasRecorrentes />
+                </RoleOnly>
+              }
+            />
             <Route path="/crm-leads" element={<CRMLeads />} />
             <Route path="/whatsapp" element={<Whatsapp />} />
             <Route
