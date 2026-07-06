@@ -183,6 +183,8 @@ def test_gateway_model_override_tem_prioridade(monkeypatch):
 # ── Preços corrigidos ─────────────────────────────────────────────────────────
 
 def test_precos_oficiais_corrigidos():
-    assert g._PRICING_USD_MM["claude-opus-4-8"] == {"input": 5.00, "output": 25.00}
-    assert g._PRICING_USD_MM["claude-sonnet-5"] == {"input": 3.00, "output": 15.00}
-    assert g._PRICING_USD_MM["claude-haiku-4-5"] == {"input": 1.00, "output": 5.00}
+    # Tabela de preços Anthropic unificada em ai_cost (fonte única de custo de IA).
+    from app.services.ai_cost import _PRECOS_ANTHROPIC_USD_MM
+    assert _PRECOS_ANTHROPIC_USD_MM["claude-opus-4-8"] == {"input": 5.00, "output": 25.00}
+    assert _PRECOS_ANTHROPIC_USD_MM["claude-sonnet-5"] == {"input": 3.00, "output": 15.00}
+    assert _PRECOS_ANTHROPIC_USD_MM["claude-haiku-4-5"] == {"input": 1.00, "output": 5.00}

@@ -17,7 +17,7 @@ from datetime import date, datetime, timezone, timedelta
 from sqlalchemy import select, func, and_, or_
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.core.security import ROLE_LEVEL
+from app.core.ownership import pode_ver_todos
 from app.models.user import User
 from app.models.case import Case, CaseStatus, CaseMovimento
 from app.models.deadline import Deadline, DeadlineStatus
@@ -36,10 +36,6 @@ def _classificar(score: int) -> str:
     if score >= 40:
         return "risco"
     return "critico"
-
-
-def pode_ver_todos(user: User) -> bool:
-    return ROLE_LEVEL.get(user.role.value, 0) >= ROLE_LEVEL["admin"]
 
 
 def _filtro_acesso(user: User):

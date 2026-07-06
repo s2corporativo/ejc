@@ -5,7 +5,10 @@ from app.core.database import get_db
 from app.core.security import get_current_user
 from app.models.user import User
 import httpx
+import logging
 import os
+
+logger = logging.getLogger(__name__)
 
 # Envio ativo de WhatsApp do escritório = ação sensível: só equipe que fala com
 # cliente (gestão/advogados/secretaria); nunca qualquer autenticado.
@@ -57,8 +60,9 @@ async def get_status(current_user=Depends(get_current_user)):
     try:
         status_code, data = await _evo_get(f"/instance/connectionState/{INSTANCE}", use_instance_key=True)
         return data
-    except Exception as e:
-        return {"state": "error", "detail": str(e)}
+    except Exception:
+        logger.warning("Falha ao consultar status da instância WhatsApp", exc_info=True)
+        return {"state": "error", "detail": "Falha ao consultar o serviço de WhatsApp"}
 
 
 @router.get("/qrcode")
@@ -67,8 +71,9 @@ async def get_qrcode(current_user=Depends(get_current_user)):
     try:
         status_code, data = await _evo_get(f"/instance/connect/{INSTANCE}", use_instance_key=True)
         return data
-    except Exception as e:
-        raise HTTPException(502, f"Evolution API error: {e}")
+    except Exception:
+        logger.warning("Falha ao obter QR Code do WhatsApp", exc_info=True)
+        raise HTTPException(502, "Falha ao comunicar com o serviço de WhatsApp")
 
 
 @router.post("/send")
@@ -95,8 +100,9 @@ async def send_message(
         return data
     except HTTPException:
         raise
-    except Exception as e:
-        raise HTTPException(502, f"Evolution API error: {e}")
+    except Exception:
+        logger.warning("Falha ao enviar mensagem de WhatsApp", exc_info=True)
+        raise HTTPException(502, "Falha ao comunicar com o serviço de WhatsApp")
 
 
 @router.get("/chats")

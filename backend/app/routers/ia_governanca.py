@@ -89,8 +89,8 @@ class ExtrairJurisprudenciaURLIn(BaseModel):
 
 
 def _limpar_html(html: str) -> str:
-    html = re.sub(r"<(script|style|noscript)[^>]*>.*?</\\1>", " ", html, flags=re.S | re.I)
-    html = re.sub(r"<br\\s*/?>", "\n", html, flags=re.I)
+    html = re.sub(r"<(script|style|noscript)[^>]*>.*?</\1>", " ", html, flags=re.S | re.I)
+    html = re.sub(r"<br\s*/?>", "\n", html, flags=re.I)
     html = re.sub(r"</(p|div|li|tr|h1|h2|h3|h4)>", "\n", html, flags=re.I)
     texto = re.sub(r"<[^>]+>", " ", html)
     entidades = {"&nbsp;": " ", "&amp;": "&", "&quot;": '"', "&#39;": "'", "&lt;": "<", "&gt;": ">"}
@@ -293,16 +293,33 @@ async def listar_curadoria(
         q = q.where(KnowledgeDoc.categoria == categoria)
     if busca:
         q = q.where(KnowledgeDoc.titulo.ilike(f"%{busca}%"))
+    if confianca:
+        # Filtro no SQL (não em Python pós-paginação): garante total e páginas
+        # corretos. Espelha _conf(): confidence_level → confianca (legado) → "media".
+        conf_expr = sqlfunc.coalesce(
+            sqlfunc.nullif(KnowledgeDoc.extra["confidence_level"].astext, ""),
+            sqlfunc.nullif(KnowledgeDoc.extra["confianca"].astext, ""),
+            "media",
+        )
+        q = q.where(conf_expr == confianca)
     q = q.order_by(KnowledgeDoc.created_at.desc())
     total = (await db.execute(select(sqlfunc.count()).select_from(q.subquery()))).scalar() or 0
     rows = (await db.execute(q.offset((page - 1) * page_size).limit(page_size))).scalars().all()
+    # Contagem de chunks por doc em UMA query agregada (evita N+1 no loop).
+    doc_ids = [d.id for d in rows]
+    chunk_counts: dict[str, int] = {}
+    if doc_ids:
+        cc = await db.execute(
+            select(KnowledgeChunk.doc_id, sqlfunc.count())
+            .where(KnowledgeChunk.doc_id.in_(doc_ids))
+            .group_by(KnowledgeChunk.doc_id)
+        )
+        chunk_counts = {row[0]: row[1] for row in cc.all()}
     data = []
     for d in rows:
         extra = d.extra or {}
         item_conf = _conf(extra)
-        if confianca and item_conf != confianca:
-            continue
-        chunks = (await db.execute(select(sqlfunc.count()).select_from(KnowledgeChunk).where(KnowledgeChunk.doc_id == d.id))).scalar() or 0
+        chunks = chunk_counts.get(d.id, 0)
         data.append({
             "id": d.id,
             "titulo": d.titulo,

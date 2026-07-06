@@ -1,4 +1,5 @@
 """DataJud CNJ public API endpoints"""
+import logging
 from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import text, select
@@ -8,6 +9,8 @@ from app.core.security import get_current_user
 from app.core.ownership import verificar_acesso_caso
 from app.services import datajud_service
 from app.models.case import Case
+
+log = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/v1/datajud", tags=["datajud"])
 
@@ -26,8 +29,9 @@ async def lookup_process(
         return result
     except HTTPException:
         raise
-    except Exception as e:
-        raise HTTPException(502, f"DataJud error: {str(e)}")
+    except Exception:
+        log.exception("Erro ao consultar processo no DataJud")
+        raise HTTPException(502, "Erro ao consultar o DataJud")
 
 
 @router.post("/cases/{case_id}/sync")
@@ -56,8 +60,9 @@ async def sync_case(
             "numero_processo": case.numero_processo,
             "prazos": prazos,
         }
-    except Exception as e:
-        raise HTTPException(502, f"DataJud sync error: {str(e)}")
+    except Exception:
+        log.exception("Erro ao sincronizar caso com o DataJud")
+        raise HTTPException(502, "Erro ao sincronizar com o DataJud")
 
 
 @router.post("/cases/{case_id}/sync-prazos")

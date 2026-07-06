@@ -40,7 +40,7 @@ async def calcular_acordo(payload: dict, cu: User = Depends(get_current_user)):
     prob = payload.get("prob_exito")
     tempo = payload.get("tempo_anos")
 
-    if not all([valor, prob, tempo]):
+    if valor is None or prob is None or tempo is None:
         raise HTTPException(400, "Dados insuficientes para cálculo.")
 
     selic_anual, selic_fonte = await _resolver_selic(payload)
@@ -67,7 +67,7 @@ async def dossie_pressao(
     valor = payload.get("valor_causa")
     prob = payload.get("prob_exito")
     tempo = payload.get("tempo_anos")
-    if not all([valor, prob, tempo]):
+    if valor is None or prob is None or tempo is None:
         raise HTTPException(400, "Dados insuficientes (valor_causa, prob_exito, tempo_anos).")
 
     case_id = payload.get("case_id")

@@ -3,6 +3,7 @@
 from __future__ import annotations
 import csv
 import io
+import logging
 import re
 import unicodedata
 from typing import Optional
@@ -21,6 +22,7 @@ from app.models.case import Case
 from app.models.fee import Fee
 from app.services.docx_service import gerar_docx_async
 
+logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/export", tags=["Exportação"])
 
 
@@ -105,8 +107,9 @@ async def export_caso_pdf(
         raise HTTPException(503, str(e))
     except ValueError as e:
         raise HTTPException(404, str(e))
-    except Exception as e:
-        raise HTTPException(500, f"Erro ao gerar PDF: {str(e)[:200]}")
+    except Exception:
+        logger.exception("Erro ao gerar PDF do caso %s", case_id)
+        raise HTTPException(500, "Erro ao gerar o PDF")
 
     filename = f"caso_{case.numero_interno or case_id}.pdf"
     return Response(
@@ -158,8 +161,9 @@ async def export_docx(
         )
     except RuntimeError as e:
         raise HTTPException(503, str(e))
-    except Exception as e:
-        raise HTTPException(500, f"Erro ao gerar DOCX: {str(e)[:200]}")
+    except Exception:
+        logger.exception("Erro ao gerar DOCX")
+        raise HTTPException(500, "Erro ao gerar o DOCX")
 
     filename = f"{_slug_arquivo(payload.titulo)}.docx"
     return StreamingResponse(

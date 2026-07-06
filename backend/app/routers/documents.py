@@ -2,6 +2,7 @@
 # GED: upload/download com controle de confidencialidade (cofre).
 # Acesso a docs restritos: audit log obrigatório (LGPD art. 37).
 import json
+import logging
 import os
 from datetime import datetime, timezone
 from uuid import uuid4
@@ -30,6 +31,7 @@ import asyncio
 from app.services.ocr_service import extrair_texto, extrair_xml
 
 settings = get_settings()
+logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/documents", tags=["Documentos / GED"])
 
 EXTENSOES_PERMITIDAS = {".pdf", ".docx", ".doc", ".jpg", ".jpeg", ".png", ".xlsx", ".xls", ".txt", ".xml"}
@@ -647,8 +649,9 @@ async def link_documento(
             "download": info.get("webContentLink"),
             "nome": info.get("name"),
         }
-    except Exception as e:
-        raise HTTPException(404, f"Arquivo não encontrado no Drive: {e}")
+    except Exception:
+        logger.warning("Falha ao obter link do arquivo %s no Drive", file_id, exc_info=True)
+        raise HTTPException(404, "Arquivo não encontrado no Drive")
 
 
 @router.get("/drive/{file_id}/download")
@@ -668,8 +671,9 @@ async def download_documento(
             media_type=mime,
             headers={"Content-Disposition": f'attachment; filename="{info.get("name","documento")}"'},
         )
-    except Exception as e:
-        raise HTTPException(404, f"Erro ao baixar arquivo: {e}")
+    except Exception:
+        logger.warning("Falha ao baixar arquivo %s do Drive", file_id, exc_info=True)
+        raise HTTPException(404, "Erro ao baixar o arquivo")
 
 
 @router.delete("/drive/{file_id}")

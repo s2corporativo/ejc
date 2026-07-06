@@ -62,17 +62,55 @@ def _parse_veredito(prompt: str | None) -> str | None:
     return m.group(1).strip()[:80] if m else None
 
 
+_VALIDACAO_TIPO_FILTRO = or_(
+    AILog.resposta.ilike("%RELATORIO DE VALIDACAO JURIDICA%"),
+    AILog.prompt_sanitizado.ilike("%RELATORIO DE VALIDACAO JURIDICA%"),
+    AILog.prompt_sanitizado.ilike("%VALIDACAO JURIDICA%"),
+)
+
+
 async def _ultima_validacao_peca(db: AsyncSession, doc: LegalDoc) -> dict:
     marcador = f"LEGAL_DOC_ID:{doc.id}"
     q = select(AILog).where(
         AILog.prompt_sanitizado.ilike(f"%{marcador}%"),
-        or_(
-            AILog.resposta.ilike("%RELATORIO DE VALIDACAO JURIDICA%"),
-            AILog.prompt_sanitizado.ilike("%RELATORIO DE VALIDACAO JURIDICA%"),
-            AILog.prompt_sanitizado.ilike("%VALIDACAO JURIDICA%"),
-        ),
+        _VALIDACAO_TIPO_FILTRO,
     ).order_by(AILog.created_at.desc())
     log = (await db.execute(q.limit(1))).scalar_one_or_none()
+    return _montar_validacao(log)
+
+
+async def _validacoes_por_peca(db: AsyncSession, docs: list[LegalDoc]) -> dict[str, dict]:
+    """Resolve a última validação de VÁRIAS peças em UMA query (evita N+1).
+
+    Busca todos os AILog de validação que citem qualquer marcador da página e,
+    percorrendo do mais recente ao mais antigo, fica com o primeiro (mais novo)
+    de cada peça.
+    """
+    resultado: dict[str, dict] = {d.id: _montar_validacao(None) for d in docs}
+    doc_ids = [d.id for d in docs]
+    if not doc_ids:
+        return resultado
+    marcadores = or_(*[
+        AILog.prompt_sanitizado.ilike(f"%LEGAL_DOC_ID:{did}%") for did in doc_ids
+    ])
+    q = select(AILog).where(marcadores, _VALIDACAO_TIPO_FILTRO).order_by(
+        AILog.created_at.desc()
+    )
+    logs = (await db.execute(q)).scalars().all()
+    vistos: set[str] = set()
+    for log in logs:
+        prompt = log.prompt_sanitizado or ""
+        for did in doc_ids:
+            if did not in vistos and f"LEGAL_DOC_ID:{did}" in prompt:
+                resultado[did] = _montar_validacao(log)
+                vistos.add(did)
+                break
+        if len(vistos) == len(doc_ids):
+            break
+    return resultado
+
+
+def _montar_validacao(log: AILog | None) -> dict:
     if not log:
         return {
             "status": "sem_validacao",
@@ -268,10 +306,11 @@ async def listar(
     rows = (await db.execute(
         q.offset((page - 1) * page_size).limit(page_size)
     )).scalars().all()
+    validacoes = await _validacoes_por_peca(db, rows)
     data = []
     for d in rows:
         item = LegalDocResponse.model_validate(d).model_dump(mode="json")
-        item["validacao_juridica"] = await _ultima_validacao_peca(db, d)
+        item["validacao_juridica"] = validacoes[d.id]
         data.append(item)
     return {"data": data, "total": total, "page": page, "page_size": page_size}
 

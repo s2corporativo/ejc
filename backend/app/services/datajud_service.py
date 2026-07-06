@@ -220,7 +220,13 @@ async def sincronizar_caso(db: AsyncSession, case: Case) -> int:
         h = _hash_mov(mov["data"], mov["descricao"])
         if h in hashes_exist:
             continue
-        data_ev = datetime.fromisoformat(mov["data"]) if mov["data"] else None
+        data_ev = None
+        if mov["data"]:
+            data_ev = datetime.fromisoformat(mov["data"])
+            # CaseMovimento.data_evento é timestamptz — torna aware (UTC) quando o
+            # ISO vier naive, evitando comparação naive vs aware no banco.
+            if data_ev.tzinfo is None:
+                data_ev = data_ev.replace(tzinfo=timezone.utc)
         db.add(CaseMovimento(
             id=str(uuid4()), case_id=case.id, tipo="andamento_oficial",
             descricao=f"{mov['descricao']} [dj:{h}]",

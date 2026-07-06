@@ -115,19 +115,41 @@ def get_file_link(file_id: str) -> dict:
     }
 
 
+def _resolver_path_por_id(file_id: str) -> str:
+    """Resolve o caminho (remote:BASE/subpasta/arquivo) de um arquivo a partir do
+    seu ID do Drive. O rclone não endereça arquivo por ID diretamente com a
+    config de path deste projeto, então varremos a pasta base recursivamente
+    (lsjson -R) e casamos o campo ID → Path. Levanta RuntimeError se não achar."""
+    if not file_id:
+        raise ValueError("file_id vazio")
+    base = f"{RCLONE_REMOTE}:{BASE_FOLDER}"
+    r = _run(["rclone", "lsjson", "-R", "--files-only", base])
+    if r.returncode != 0:
+        raise RuntimeError(f"rclone lsjson falhou ao resolver ID {file_id}: {r.stderr[:200]}")
+    try:
+        entries = json.loads(r.stdout or "[]")
+    except Exception as e:
+        raise RuntimeError(f"rclone lsjson devolveu JSON inválido: {e}")
+    alvo = next((e for e in entries if e.get("ID") == file_id), None)
+    if alvo is None:
+        raise RuntimeError(f"Arquivo ID {file_id} não encontrado em {BASE_FOLDER}")
+    return f"{base}/{alvo.get('Path', '')}"
+
+
 def download_file(file_id: str) -> tuple[bytes, str]:
-    """Baixa o conteúdo de um arquivo pelo ID do Drive."""
+    """Baixa o conteúdo de um arquivo pelo ID do Drive (modo BYTES).
+
+    Resolve o path pelo ID e usa `rclone copyto` para um arquivo temporário lido
+    em modo binário — nunca `rclone cat` com re-encode em texto (corromperia
+    PDF/DOCX)."""
     if not DRIVE_AVAILABLE:
         raise RuntimeError("rclone não configurado")
+    src = _resolver_path_por_id(file_id)
     with tempfile.NamedTemporaryFile(delete=False) as tmp:
         tmp_path = tmp.name
     try:
-        r = _run(["rclone", "copyto", f"gdrive:--drive-root-folder-id={file_id}", tmp_path], timeout=60)
+        r = _run(["rclone", "copyto", src, tmp_path], timeout=RCLONE_TIMEOUT)
         if r.returncode != 0:
-            # fallback: download via drive ID direto
-            r2 = _run(["rclone", "cat", f"gdrive:{file_id}"], timeout=60)
-            if r2.returncode == 0:
-                return r2.stdout.encode(), "application/octet-stream"
             raise RuntimeError(f"rclone download: {r.stderr[:200]}")
         with open(tmp_path, "rb") as f:
             return f.read(), "application/octet-stream"
@@ -137,8 +159,18 @@ def download_file(file_id: str) -> tuple[bytes, str]:
 
 
 def delete_file(file_id: str) -> None:
-    """Remove um arquivo do Drive pelo ID."""
-    if not DRIVE_AVAILABLE or not file_id:
-        return
-    # rclone não suporta delete por ID diretamente; operação best-effort
-    logger.warning(f"[Drive] delete_file({file_id}): não suportado via rclone por ID — ignored")
+    """Remove um arquivo do Drive pelo ID (exclusão REAL — LGPD art. 18, V).
+
+    Resolve o path pelo ID (lsjson -R) e apaga com `rclone deletefile`. NÃO é
+    no-op silencioso: se o arquivo não puder ser removido, levanta RuntimeError
+    para o chamador saber que o dado permanece no Drive (o caller decide como
+    tratar — ex.: manter o registro/alertar em vez de assumir eliminação)."""
+    if not DRIVE_AVAILABLE:
+        raise RuntimeError(f"rclone não configurado — arquivo {file_id} NÃO removido do Drive")
+    if not file_id:
+        raise ValueError("delete_file: file_id vazio")
+    dest = _resolver_path_por_id(file_id)
+    r = _run(["rclone", "deletefile", dest])
+    if r.returncode != 0:
+        raise RuntimeError(f"rclone deletefile falhou para {file_id}: {r.stderr[:200]}")
+    logger.info("[Drive] delete_file(%s): removido (%s)", file_id, dest)

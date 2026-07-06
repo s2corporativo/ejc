@@ -65,7 +65,7 @@ class PrecificacaoCreate(BaseModel):
     notes: Optional[str] = None
 
 
-@router.post("/precificacao/regras")
+@router.post("/precificacao/regras", status_code=201)
 async def criar_regra(
     body: PrecificacaoCreate,
     db: AsyncSession = Depends(get_db),
@@ -270,7 +270,7 @@ class DDTemplateCreate(BaseModel):
     items: list
 
 
-@router.post("/due-diligence/templates")
+@router.post("/due-diligence/templates", status_code=201)
 async def criar_template(
     body: DDTemplateCreate,
     db: AsyncSession = Depends(get_db),

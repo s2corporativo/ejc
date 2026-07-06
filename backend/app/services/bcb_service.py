@@ -167,7 +167,7 @@ async def atualizar_valor(
     fator = Decimal("1")
     memoria = []
     for item in serie:
-        pct = Decimal(item["valor"].replace(",", "."))
+        pct = Decimal(str(item.get("valor", "0")).replace(",", "."))
         f_mes = Decimal("1") + pct / Decimal("100")
         fator *= f_mes
         memoria.append({

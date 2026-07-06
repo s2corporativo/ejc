@@ -196,7 +196,9 @@ async def confirmar_reset(db: AsyncSession, token_raw: str, nova_senha: str) -> 
         .where(RefreshToken.user_id == user.id, RefreshToken.revoked == False)
         .values(revoked=True)
     )
-    limpar_falhas(user.email)
+    # As chaves de brute-force são prefixadas ("em:{email}"/"ip:{ip}", ver
+    # routers/auth.py). Limpar por e-mail cru NÃO casava nenhuma chave.
+    limpar_falhas(f"em:{user.email.lower()}")
     await db.commit()
     return True
 

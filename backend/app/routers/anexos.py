@@ -7,6 +7,7 @@
 # ─────────────────────────────────────────────────────────────────────────────
 from __future__ import annotations
 
+import logging
 from typing import Optional
 
 from fastapi import APIRouter, Depends, HTTPException
@@ -21,6 +22,7 @@ from app.core.security import get_current_user, ROLE_LEVEL
 from app.models.user import User
 from app.services import anexos_service as svc
 
+logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/anexos", tags=["Anexos — Documento Único"])
 
 
@@ -113,8 +115,9 @@ async def gerar(
     ctx, itens = await _preparar(db, cu, body)
     try:
         pdf = await svc.montar_documento_unico(ctx, itens)
-    except RuntimeError as exc:  # weasyprint ausente / erro de render
-        raise HTTPException(503, f"Geração de PDF indisponível: {exc}")
+    except RuntimeError:  # weasyprint ausente / erro de render
+        logger.warning("Geração do documento único de anexos indisponível", exc_info=True)
+        raise HTTPException(503, "Geração de PDF indisponível no momento")
     filename = f"anexos_{body.case_id[:8]}.pdf"
     return Response(
         content=pdf,
@@ -158,8 +161,9 @@ async def razoes(
                 resultado["texto"],
                 pronto_protocolo=False,
             )
-        except RuntimeError as exc:
-            raise HTTPException(503, f"Geração de PDF indisponível: {exc}")
+        except RuntimeError:
+            logger.warning("Geração do PDF de razões indisponível", exc_info=True)
+            raise HTTPException(503, "Geração de PDF indisponível no momento")
         filename = f"razoes_{body.case_id[:8]}.pdf"
         return Response(
             content=pdf,

@@ -67,7 +67,7 @@ def _out(a: Atendimento, com_privado: bool = True) -> dict:
         "tipo":                   a.tipo.value if hasattr(a.tipo, "value") else a.tipo,
         "data_atendimento":       a.data_atendimento.isoformat() if a.data_atendimento else None,
         "duracao_min":            a.duracao_min,
-        "duracao_horas":          float(a.duracao_horas) if a.duracao_horas else None,
+        "duracao_horas":          float(a.duracao_horas) if a.duracao_horas is not None else None,
         "resumo":                 a.resumo,
         "proximo_passo":          a.proximo_passo,
         "observacoes_privadas":   a.observacoes_privadas if com_privado else None,

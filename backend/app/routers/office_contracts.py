@@ -56,7 +56,7 @@ async def list_expiring(
     return [dict(r) for r in result.mappings().all()]
 
 
-@router.post("")
+@router.post("", status_code=201)
 async def create_contract(
     body: dict = Body(...),
     db: AsyncSession = Depends(get_db),

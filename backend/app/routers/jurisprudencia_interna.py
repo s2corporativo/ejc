@@ -1,6 +1,7 @@
 # ── app/routers/jurisprudencia_interna.py ────────────────────────────────────
 # Repositório Interno de Jurisprudência — CRUD + classificação por IA.
 from __future__ import annotations
+import logging
 from uuid import uuid4
 from datetime import datetime, timezone, date as _date
 from typing import Optional
@@ -16,6 +17,7 @@ from app.models.user import User
 from app.models.jurisprudencia_interna import JurisprudenciaInterna, JuriResultado
 from app.core.rate_limit import rate_limit
 
+logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/jurisprudencias", tags=["Jurisprudência Interna"])
 
 
@@ -230,8 +232,9 @@ async def classificar_com_ia(
             task_type="resumo", temperature=0.1, max_tokens=400,
         )
         classificacao = json.loads(resp.texto)
-    except Exception as e:
-        raise HTTPException(502, f"Classificação falhou: {str(e)[:200]}")
+    except Exception:
+        logger.exception("Classificação por IA da jurisprudência falhou")
+        raise HTTPException(502, "Classificação por IA indisponível no momento")
 
     j.classificacao_ia = json.dumps(classificacao, ensure_ascii=False)
     if not j.area_juridica and "area" in classificacao:

@@ -2,6 +2,7 @@
 # Banco de Teses Jurídicas — CRUD + ranking + sugestão por IA.
 # Acesso: staff (advogado+). Criação: advogado+.
 from __future__ import annotations
+import logging
 from uuid import uuid4
 from datetime import datetime, timezone
 from typing import Optional
@@ -18,6 +19,7 @@ from app.models.user import User
 from app.models.tese import Tese, TeseCasoLink, TeseTipo, TeseStatus
 from app.core.rate_limit import rate_limit
 
+logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/teses", tags=["Banco de Teses"])
 
 
@@ -450,8 +452,9 @@ Risco: [principal fragilidade]
         }
     except HTTPException:
         raise
-    except Exception as e:
-        raise HTTPException(502, f"IA indisponível: {str(e)[:200]}")
+    except Exception:
+        logger.exception("Falha na chamada de IA (teses)")
+        raise HTTPException(502, "IA indisponível no momento")
 
 
 # ── P2.2 — Motor de Teses estruturado (viabilidade Alta/Média/Baixa) ──────────
@@ -565,8 +568,9 @@ async def motor_teses(
         resp = await gw_chat(
             messages=[{"role": "system", "content": system}, {"role": "user", "content": user}],
             task_type="analise_juridica", temperature=0.3, max_tokens=2600)
-    except Exception as e:
-        raise HTTPException(502, f"IA indisponível: {str(e)[:200]}")
+    except Exception:
+        logger.exception("Falha na chamada de IA (motor de teses)")
+        raise HTTPException(502, "IA indisponível no momento")
 
     data = _parse_json_motor(resp.texto) or {"teses": [], "_bruto": resp.texto[:1500]}
     ordem = {"alta": 0, "media": 1, "baixa": 2}

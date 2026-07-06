@@ -51,7 +51,7 @@ async def list_pending_items(
     return [dict(r) for r in result.mappings().all()]
 
 
-@router.post("/{client_id}/pending-items")
+@router.post("/{client_id}/pending-items", status_code=201)
 async def create_pending_item(
     client_id: str,
     body: dict = Body(...),

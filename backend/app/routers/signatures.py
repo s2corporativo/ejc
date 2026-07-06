@@ -103,15 +103,19 @@ async def listar(
         q.order_by(SignatureRequest.status, SignatureRequest.created_at.desc())
     )).scalars().all()
 
-    # Anexar título do documento
+    # Anexar título do documento — títulos resolvidos em UMA query (evita N+1).
+    doc_ids = {s.document_id for s in rows if s.document_id}
+    titulos: dict[str, str] = {}
+    if doc_ids:
+        docs = (await db.execute(
+            select(Document.id, Document.titulo).where(Document.id.in_(doc_ids))
+        )).all()
+        titulos = {did: titulo for did, titulo in docs}
     out = []
     for s in rows:
-        doc = (await db.execute(select(Document).where(
-            Document.id == s.document_id
-        ))).scalar_one_or_none()
         out.append({
             "id": s.id, "document_id": s.document_id,
-            "documento": doc.titulo if doc else "—",
+            "documento": titulos.get(s.document_id, "—"),
             "status": s.status.value, "hash": s.hash_sha256[:16] + "…",
             "assinado_em": s.assinado_em, "created_at": s.created_at,
         })

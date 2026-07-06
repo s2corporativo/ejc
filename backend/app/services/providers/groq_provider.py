@@ -63,7 +63,7 @@ async def health() -> bool:
     try:
         client = get_client()
         await client.chat.completions.create(
-            model="llama-3.3-70b-versatile",   # gemma-7b-it foi descomissionado pelo Groq
+            model=settings.GROQ_MODEL,   # modelo configurado (evita hardcode desatualizado)
             messages=[{"role": "user", "content": "ok"}],
             max_tokens=1,
             timeout=5,

@@ -40,9 +40,11 @@ async def buscar_dou(keyword: str, data_pub: date | None = None) -> list[dict]:
         logger.warning(f"[DOU] Falha ao consultar '{keyword}': {e}")
         return []
 
-    # Normaliza resposta
+    # Normaliza resposta — defensivo: `content` pode vir null/lista na resposta.
+    content = data.get("content") if isinstance(data, dict) else None
+    json_array = content.get("jsonArray", []) if isinstance(content, dict) else []
     resultados = []
-    for item in data.get("content", {}).get("jsonArray", []):
+    for item in json_array:
         resultados.append({
             "titulo":          item.get("title", ""),
             "resumo":          item.get("excerpt", ""),

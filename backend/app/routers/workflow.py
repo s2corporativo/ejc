@@ -99,11 +99,20 @@ async def listar_templates(
     if area:
         q = q.where(WorkflowTemplate.area_juridica.ilike(f"%{area}%"))
     templates = (await db.execute(q.order_by(WorkflowTemplate.is_default.desc(), WorkflowTemplate.nome))).scalars().all()
+    # Etapas de TODOS os templates em UMA query, agrupadas por template (evita N+1).
+    template_ids = [t.id for t in templates]
+    etapas_por_template: dict[str, list] = {tid: [] for tid in template_ids}
+    if template_ids:
+        todas_etapas = (await db.execute(
+            select(WorkflowEtapa)
+            .where(WorkflowEtapa.template_id.in_(template_ids))
+            .order_by(WorkflowEtapa.template_id, WorkflowEtapa.ordem)
+        )).scalars().all()
+        for e in todas_etapas:
+            etapas_por_template.setdefault(e.template_id, []).append(e)
     result = []
     for t in templates:
-        etapas = (await db.execute(
-            select(WorkflowEtapa).where(WorkflowEtapa.template_id == t.id).order_by(WorkflowEtapa.ordem)
-        )).scalars().all()
+        etapas = etapas_por_template.get(t.id, [])
         result.append(_out_template(t, [_out_etapa(e) for e in etapas]))
     return result
 

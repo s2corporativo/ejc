@@ -3,6 +3,7 @@
 # Todas as saídas são MINUTAS de cálculo (HITL) — o profissional revisa.
 from __future__ import annotations
 
+import logging
 from datetime import date
 
 from fastapi import APIRouter, Depends, HTTPException, Query
@@ -18,6 +19,7 @@ from app.services.calc.prescricao import (
 from app.services.calc import custas_tjmg
 from app.services import bcb_service
 
+logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/calculadoras", tags=["calculadoras"])
 
 # Equipe interna (cliente externo não acessa ferramentas internas)
@@ -106,8 +108,9 @@ async def correcao_monetaria(req: CorrecaoIn, cu: User = Depends(require_roles(_
         )
     except ValueError as e:
         raise HTTPException(status_code=422, detail=str(e))
-    except Exception as e:
-        raise HTTPException(status_code=502, detail=f"Falha ao consultar BCB: {e}")
+    except Exception:
+        logger.exception("Falha ao consultar o BCB (correção monetária)")
+        raise HTTPException(status_code=502, detail="Falha ao consultar o serviço do BCB")
 
 
 @router.get("/prescricao/tipos")

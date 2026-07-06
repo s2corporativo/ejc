@@ -1,5 +1,6 @@
 # ── app/routers/dashboard.py ─────────────────────────────────────────────────
 # Dashboard executivo — KPIs do escritório em uma chamada.
+import logging
 import time
 from datetime import date, timedelta
 
@@ -11,6 +12,7 @@ from app.core.database import get_db
 from app.core.security import get_current_user
 from app.models.user import User
 
+logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/dashboard", tags=["Dashboard"])
 
 # Cache TTL em processo (sem Redis). A chave inclui o escopo financeiro do
@@ -183,8 +185,9 @@ async def relatorio_mensal(
     dados = await _coletar_dados_mes(db, mes, ano)
     try:
         pdf = await relatorio_mensal_pdf_async(mes, ano, dados)
-    except RuntimeError as e:
-        raise _HTTPExc(status_code=503, detail=str(e))
+    except RuntimeError:
+        logger.warning("Geração do relatório mensal em PDF indisponível", exc_info=True)
+        raise _HTTPExc(status_code=503, detail="Geração de PDF indisponível no momento")
     return _R(content=pdf, media_type="application/pdf",
               headers={"Content-Disposition":
                        f'attachment; filename="relatorio_{ano}_{mes:02d}.pdf"'})

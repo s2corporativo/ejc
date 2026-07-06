@@ -42,7 +42,7 @@ async def list_withdrawals(
     return {"data": [dict(r) for r in result.mappings().all()], "total": total, "page": page, "page_size": page_size}
 
 
-@router.post("")
+@router.post("", status_code=201)
 async def create_withdrawal(
     body: dict = Body(...),
     db: AsyncSession = Depends(get_db),
