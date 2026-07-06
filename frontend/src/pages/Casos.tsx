@@ -397,8 +397,11 @@ export default function Casos() {
       const campos = r.campos_preenchidos.length
         ? `, campos: ${r.campos_preenchidos.join(", ")}`
         : "";
+      const prazos = r.prazos_criados
+        ? `, ${r.prazos_criados} prazo(s) criado(s) como rascunho a confirmar`
+        : "";
       toast.success(
-        `Dados aplicados ao caso: ${r.partes_criadas} parte(s), ${r.areas_criadas} área(s)${campos}.`,
+        `Dados aplicados ao caso: ${r.partes_criadas} parte(s), ${r.areas_criadas} área(s)${campos}${prazos}.`,
       );
       setPreview(null);
       load();
@@ -939,6 +942,7 @@ export default function Casos() {
                 (preview
                   ? preview.result.partes_criadas +
                       preview.result.areas_criadas +
+                      preview.result.prazos_criados +
                       preview.result.campos_preenchidos.length ===
                     0
                   : true)
@@ -985,9 +989,27 @@ export default function Casos() {
                   </p>
                 )}
               </li>
+              <li className="rounded-lg border border-amber-100 bg-amber-50 px-3 py-2">
+                <div className="flex items-center justify-between">
+                  <span className="text-amber-800">
+                    Prazos a criar (rascunho, a confirmar)
+                  </span>
+                  <span className="font-semibold text-amber-900">
+                    {preview.result.prazos_criados}
+                  </span>
+                </div>
+                {preview.result.prazos_criados > 0 && (
+                  <p className="mt-1 text-xs text-amber-700">
+                    {preview.result.prazos_criados} prazo(s) serão criados como
+                    rascunho e já passam a alertar — confira e confirme cada um
+                    na tela de Prazos.
+                  </p>
+                )}
+              </li>
             </ul>
             {preview.result.partes_criadas +
               preview.result.areas_criadas +
+              preview.result.prazos_criados +
               preview.result.campos_preenchidos.length ===
               0 && (
               <p className="text-xs text-slate-500">

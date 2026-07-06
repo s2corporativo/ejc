@@ -6,12 +6,14 @@ import {
   CheckCircle2,
   BadgeCheck,
   Download,
+  Sparkles,
 } from "lucide-react";
-import api from "../lib/api";
+import api, { confirmarPrazo } from "../lib/api";
 import type { Deadline, Paged } from "../types";
 import {
   PageHeader,
   StatusBadge,
+  Badge,
   Modal,
   Empty,
   Spinner,
@@ -93,6 +95,19 @@ export default function Prazos() {
     await api.post(`/deadlines/${id}/ciencia`);
     load();
   };
+  const [confirmando, setConfirmando] = useState<string | null>(null);
+  const confirmar = async (id: string) => {
+    setConfirmando(id);
+    try {
+      await confirmarPrazo(id);
+      toast.success("Prazo confirmado.");
+      load();
+    } catch (e: any) {
+      toast.error(e.response?.data?.detail || "Falha ao confirmar o prazo.");
+    } finally {
+      setConfirmando(null);
+    }
+  };
 
   const urgClass: Record<string, string> = {
     vencido: "border-l-4 border-danger-600 bg-danger-50/50",
@@ -151,14 +166,28 @@ export default function Prazos() {
               className={`card p-4 flex flex-wrap items-center gap-4 ${urgClass[d.urgencia] || ""}`}
             >
               <div className="flex-1 min-w-[200px]">
-                <div className="font-medium text-navy flex items-center gap-2">
+                <div className="font-medium text-navy flex items-center gap-2 flex-wrap">
                   {d.titulo}
                   {d.ciencia_confirmada && (
                     <BadgeCheck size={15} className="text-success-600" />
                   )}
+                  {!d.confirmado && (
+                    <Badge tone="amber" className="gap-1">
+                      {d.origem === "importacao_ia" && <Sparkles size={11} />}
+                      {d.origem === "importacao_ia"
+                        ? "Sugerido pela IA — a confirmar"
+                        : "A confirmar"}
+                    </Badge>
+                  )}
                 </div>
                 <div className="text-xs text-slate-400">
                   {d.base_legal || d.tipo}
+                  {!d.confirmado && (
+                    <span className="text-warn-600">
+                      {" "}
+                      · já ativo e alertando, precisa de conferência humana
+                    </span>
+                  )}
                 </div>
               </div>
               <div className="text-sm">
@@ -174,6 +203,16 @@ export default function Prazos() {
                 </div>
               </div>
               <StatusBadge value={d.status} />
+              {!d.confirmado && (
+                <button
+                  className="btn-gold text-xs px-2.5 py-1"
+                  title="Confirmar este prazo sugerido"
+                  disabled={confirmando === d.id}
+                  onClick={() => confirmar(d.id)}
+                >
+                  {confirmando === d.id ? "Confirmando..." : "Confirmar"}
+                </button>
+              )}
               {d.status === "pendente" && (
                 <div className="flex gap-1">
                   {!d.ciencia_confirmada && (

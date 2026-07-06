@@ -1,4 +1,4 @@
-"""077 — Semeia colunas padrão do Kanban de Casos (item 5.5).
+"""078 — Semeia colunas padrão do Kanban de Casos (item 5.5).
 
 A tabela `kanban_columns` era criada vazia (migration 053) e nunca semeada, então
 o Kanban de Casos mostrava "Nenhuma coluna configurada para esta área". Esta
@@ -14,13 +14,13 @@ Idempotente: só insere num `legal_area` que ainda não tem coluna alguma —
 seguro em re-deploy e não sobrescreve colunas customizadas. Downgrade remove
 apenas as linhas com os nomes semeados aqui (não toca colunas criadas pelo time).
 
-Revision ID: 077_seed_kanban_columns
-Revises: 076_fk_hot_path_indexes
+Revision ID: 078_seed_kanban_columns
+Revises: 077_deadline_confirmado_doc
 """
 from alembic import op
 
-revision = "077_seed_kanban_columns"
-down_revision = "076_fk_hot_path_indexes"
+revision = "078_seed_kanban_columns"
+down_revision = "077_deadline_confirmado_doc"
 branch_labels = None
 depends_on = None
 

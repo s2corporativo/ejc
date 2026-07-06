@@ -14,7 +14,8 @@
 from __future__ import annotations
 
 import re
-from typing import TypedDict
+from datetime import date
+from typing import Optional, TypedDict
 
 # Teto de ocorrências POR TIPO — protege o JSONB `extra` contra documentos
 # patológicos (ex.: planilha com 50k CPFs) sem perder utilidade prática.
@@ -86,6 +87,57 @@ _RE_EMAIL = re.compile(r"[A-Za-z0-9._%+\-]+@[A-Za-z0-9.\-]+\.[A-Za-z]{2,}")
 _RE_FONE = re.compile(
     r"(?<![\d\-])(?:\+?55[\s.]?)?(?:\(\d{2}\)\s?|\d{2}[\s.])9?\d{4}[-\s]\d{4}(?![\d\-])"
 )
+
+
+# ── Parsing de data BR → date (determinístico, fail-safe) ────────────────────
+# Reusa a lista de meses acima. Usado pela materialização de PRAZOS extraídos
+# por IA (#83 Gap C): só vira Deadline quando a data fatal é parseável — sem
+# data clara, nada é criado (nunca inventa prazo).
+_MES_NUM = {
+    "janeiro": 1, "fevereiro": 2, "março": 3, "marco": 3, "abril": 4,
+    "maio": 5, "junho": 6, "julho": 7, "agosto": 8, "setembro": 9,
+    "outubro": 10, "novembro": 11, "dezembro": 12,
+}
+_RE_DATA_EXT_PARSE = re.compile(
+    rf"(\d{{1,2}})\s+de\s+({_MESES})\s+de\s+((?:19|20)\d{{2}})", re.IGNORECASE
+)
+
+
+def parse_data_br(valor) -> Optional[date]:
+    """Converte uma data em texto para `date`, ou None se não parseável.
+
+    Aceita: ISO 'aaaa-mm-dd' (inclusive prefixo de datetime 'aaaa-mm-ddThh:...'),
+    'dd/mm/aaaa' e '12 de março de 2024'. Determinístico e fail-safe — nunca
+    levanta. Data inexistente (ex.: 31/02) → None.
+    """
+    if valor is None:
+        return None
+    if isinstance(valor, date):
+        return valor
+    s = str(valor).strip()
+    if not s:
+        return None
+    m = re.match(r"(\d{4})-(\d{1,2})-(\d{1,2})", s)          # ISO aaaa-mm-dd
+    if m:
+        try:
+            return date(int(m.group(1)), int(m.group(2)), int(m.group(3)))
+        except ValueError:
+            return None
+    m = re.match(r"(\d{1,2})/(\d{1,2})/((?:19|20)\d{2})", s)  # dd/mm/aaaa
+    if m:
+        try:
+            return date(int(m.group(3)), int(m.group(2)), int(m.group(1)))
+        except ValueError:
+            return None
+    m = _RE_DATA_EXT_PARSE.search(s)                          # 12 de março de 2024
+    if m:
+        mes = _MES_NUM.get(m.group(2).lower())
+        if mes:
+            try:
+                return date(int(m.group(3)), mes, int(m.group(1)))
+            except ValueError:
+                return None
+    return None
 
 
 def _coletar(regex: re.Pattern, texto: str,

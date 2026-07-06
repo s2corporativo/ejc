@@ -1,5 +1,6 @@
 // ── API client com refresh automático ────────────────────
 import axios from "axios";
+import type { Deadline } from "../types";
 
 const api = axios.create({ baseURL: "/api" });
 
@@ -68,6 +69,7 @@ export interface AplicarExtracaoResult {
   ok: boolean;
   partes_criadas: number;
   areas_criadas: number;
+  prazos_criados: number;
   campos_preenchidos: string[];
   aviso: string;
 }
@@ -86,6 +88,17 @@ export async function aplicarExtracao(
     `/cases/${caseId}/aplicar-extracao`,
     extracao,
     { params: { dry_run: dryRun } },
+  );
+  return data;
+}
+
+/**
+ * Confirma um prazo sugerido pela IA (ou não-confirmado). O backend seta
+ * `confirmado=true` e devolve o deadline atualizado. Ownership é checado.
+ */
+export async function confirmarPrazo(deadlineId: string): Promise<Deadline> {
+  const { data } = await api.patch<Deadline>(
+    `/deadlines/${deadlineId}/confirmar`,
   );
   return data;
 }
