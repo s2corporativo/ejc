@@ -801,18 +801,26 @@ class AplicarExtracaoReq(_BM2):
     identificacao_processual: Optional[dict] = None
     partes: Optional[dict] = None
     classificacao: Optional[dict] = None
+    # Preview: quando true, computa o que SERIA aplicado sem persistir nada
+    # (nem AuditLog). Pode vir no corpo ou no query param ?dry_run=true.
+    dry_run: bool = False
 
 
 @router.post("/{case_id}/aplicar-extracao")
 async def aplicar_extracao(
     case_id: str, payload: AplicarExtracaoReq,
     background: BackgroundTasks,
+    dry_run: bool = Query(False, description="Preview: não persiste nada, só devolve o que seria aplicado."),
     db: AsyncSession = Depends(get_db),
     cu: User = Depends(get_current_user),
 ):
     """Materializa no caso os dados extraídos de um documento pela IA.
     Aditivo: dedup de partes por (tipo, nome); campos processuais só são
-    preenchidos se estiverem vazios (nunca sobrescreve o advogado)."""
+    preenchidos se estiverem vazios (nunca sobrescreve o advogado).
+
+    dry_run (corpo OU query param): roda EXATAMENTE a mesma lógica de
+    materialização mas dá rollback e NÃO grava AuditLog — é só prévia."""
+    is_dry_run = bool(dry_run or payload.dry_run)
     q = select(Case).where(Case.id == case_id, Case.deleted_at.is_(None))
     q = _filtro_visibilidade(q, cu)
     case = (await db.execute(q)).scalar_one_or_none()
@@ -872,6 +880,20 @@ async def aplicar_extracao(
                             principal=True))
             n_areas += 1
 
+    # Preview: desfaz tudo (partes/área/campos ficaram só pendentes na sessão)
+    # e retorna o que SERIA aplicado. Nada é persistido, nenhum AuditLog é gravado.
+    if is_dry_run:
+        await db.rollback()
+        return {
+            "aplicado": False,
+            "dry_run": True,
+            "ok": False,
+            "partes_criadas": n_partes,
+            "areas_criadas": n_areas,
+            "campos_preenchidos": preenchidos,
+            "aviso": "Prévia (dry_run): nada foi persistido. Confirme para aplicar. Revisão obrigatória do advogado (OAB).",
+        }
+
     db.add(CaseMovimento(
         id=str(uuid4()), case_id=case_id, tipo="nota", created_by=cu.id,
         descricao=(f"Importação inteligente aplicada: {n_partes} parte(s), "
@@ -885,6 +907,8 @@ async def aplicar_extracao(
         {"partes": n_partes, "areas": n_areas, "campos": preenchidos}, cu.id,
     )
     return {
+        "aplicado": True,
+        "dry_run": False,
         "ok": True,
         "partes_criadas": n_partes,
         "areas_criadas": n_areas,

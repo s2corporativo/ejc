@@ -53,6 +53,43 @@ api.interceptors.response.use(
   },
 );
 
+// ── Materialização da extração de IA no caso ──────────────
+// JSON produzido por /documentos-ia/analisar (partes, número/tribunal, área).
+export interface ExtracaoPayload {
+  identificacao_processual?: Record<string, unknown> | null;
+  partes?: Record<string, unknown> | null;
+  classificacao?: Record<string, unknown> | null;
+}
+
+// Resposta de POST /cases/{id}/aplicar-extracao (idêntica em preview e aplicação).
+export interface AplicarExtracaoResult {
+  aplicado: boolean;
+  dry_run: boolean;
+  ok: boolean;
+  partes_criadas: number;
+  areas_criadas: number;
+  campos_preenchidos: string[];
+  aviso: string;
+}
+
+/**
+ * Materializa no caso os dados extraídos por IA de um documento.
+ * `dryRun: true` → preview (nada é persistido; devolve o que SERIA aplicado).
+ * `dryRun: false` (padrão) → aplica e persiste.
+ */
+export async function aplicarExtracao(
+  caseId: string,
+  extracao: ExtracaoPayload,
+  { dryRun = false }: { dryRun?: boolean } = {},
+): Promise<AplicarExtracaoResult> {
+  const { data } = await api.post<AplicarExtracaoResult>(
+    `/cases/${caseId}/aplicar-extracao`,
+    extracao,
+    { params: { dry_run: dryRun } },
+  );
+  return data;
+}
+
 export function logout() {
   const rt = localStorage.getItem("ejc_refresh");
   if (rt) axios.post("/api/auth/logout", { refresh_token: rt }).catch(() => {});

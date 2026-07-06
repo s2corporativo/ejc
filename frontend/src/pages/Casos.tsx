@@ -17,7 +17,8 @@ import {
   Trash2,
 } from "lucide-react";
 import { Link as RLink } from "react-router-dom";
-import api from "../lib/api";
+import api, { aplicarExtracao } from "../lib/api";
+import type { AplicarExtracaoResult, ExtracaoPayload } from "../lib/api";
 import type { Case, Client, Paged, User } from "../types";
 import {
   PageHeader,
@@ -213,6 +214,14 @@ export default function Casos() {
     case_type: "judicial",
   });
   const [salvando, setSalvando] = useState(false);
+  // Preview da materialização da extração de IA (dry_run) antes de aplicar.
+  const [preview, setPreview] = useState<{
+    caseId: string;
+    caseTitulo: string;
+    extracao: ExtracaoPayload;
+    result: AplicarExtracaoResult;
+  } | null>(null);
+  const [aplicando, setAplicando] = useState(false);
 
   const load = () =>
     api
@@ -317,21 +326,61 @@ export default function Casos() {
       }
       payload.client_id = clientId;
       const { data: novo } = await api.post("/cases/", payload);
-      // Materializa partes + área + campos do processo extraídos do documento
-      if (form._extracao && novo?.id) {
-        try {
-          await api.post(`/cases/${novo.id}/aplicar-extracao`, form._extracao);
-        } catch {
-          /* não bloqueia a criação */
-        }
-      }
+      // Captura a extração antes de limpar o form (será materializada abaixo).
+      const extracao = form._extracao as ExtracaoPayload | undefined;
       setModal(false);
       setForm({ area: "civil", prioridade: "media", case_type: "judicial" });
       load();
+      // Materialização EXPLÍCITA: primeiro um preview (dry_run) do que SERIA
+      // aplicado; o usuário confirma ("Aplicar ao caso") ou pula. Erros são
+      // visíveis (nunca engolidos) — o caso já foi criado.
+      if (extracao && novo?.id) {
+        try {
+          const result = await aplicarExtracao(novo.id, extracao, {
+            dryRun: true,
+          });
+          setPreview({
+            caseId: novo.id,
+            caseTitulo: novo.titulo || payload.titulo || "caso",
+            extracao,
+            result,
+          });
+        } catch (e: any) {
+          toast.error(
+            e.response?.data?.detail ||
+              "Caso criado, mas não foi possível pré-visualizar os dados extraídos pela IA.",
+          );
+        }
+      }
     } catch (e: any) {
       toast.error(e.response?.data?.detail || "Erro ao salvar");
     } finally {
       setSalvando(false);
+    }
+  };
+
+  // Aplica de fato (dry_run=false) o que foi mostrado no preview.
+  const aplicarPreviewNoCaso = async () => {
+    if (!preview) return;
+    setAplicando(true);
+    try {
+      const r = await aplicarExtracao(preview.caseId, preview.extracao, {
+        dryRun: false,
+      });
+      const campos = r.campos_preenchidos.length
+        ? `, campos: ${r.campos_preenchidos.join(", ")}`
+        : "";
+      toast.success(
+        `Dados aplicados ao caso: ${r.partes_criadas} parte(s), ${r.areas_criadas} área(s)${campos}.`,
+      );
+      setPreview(null);
+      load();
+    } catch (e: any) {
+      toast.error(
+        e.response?.data?.detail || "Erro ao aplicar os dados ao caso.",
+      );
+    } finally {
+      setAplicando(false);
     }
   };
 
@@ -839,6 +888,93 @@ export default function Casos() {
             {salvando ? "Salvando..." : "Abrir caso"}
           </button>
         </div>
+      </Modal>
+
+      {/* Preview EXPLÍCITO da materialização da extração de IA (dry_run).
+          O usuário vê o que SERÁ aplicado e confirma ou pula. */}
+      <Modal
+        open={!!preview}
+        onClose={() => setPreview(null)}
+        title="Aplicar dados extraídos ao caso"
+        footer={
+          <>
+            <button
+              className="btn-ghost"
+              disabled={aplicando}
+              onClick={() => setPreview(null)}
+            >
+              Pular
+            </button>
+            <button
+              className="btn-primary"
+              disabled={
+                aplicando ||
+                (preview
+                  ? preview.result.partes_criadas +
+                      preview.result.areas_criadas +
+                      preview.result.campos_preenchidos.length ===
+                    0
+                  : true)
+              }
+              onClick={aplicarPreviewNoCaso}
+            >
+              {aplicando ? "Aplicando..." : "Aplicar ao caso"}
+            </button>
+          </>
+        }
+      >
+        {preview && (
+          <div className="space-y-4">
+            <p className="text-sm text-slate-600">
+              A IA extraiu dados do documento importado para o caso{" "}
+              <span className="font-medium text-slate-900">
+                {preview.caseTitulo}
+              </span>
+              . Confira o que será aplicado:
+            </p>
+            <ul className="space-y-2 text-sm">
+              <li className="flex items-center justify-between rounded-lg border border-slate-100 bg-slate-50 px-3 py-2">
+                <span className="text-slate-600">Partes a criar</span>
+                <span className="font-semibold text-slate-900">
+                  {preview.result.partes_criadas}
+                </span>
+              </li>
+              <li className="flex items-center justify-between rounded-lg border border-slate-100 bg-slate-50 px-3 py-2">
+                <span className="text-slate-600">Áreas a criar</span>
+                <span className="font-semibold text-slate-900">
+                  {preview.result.areas_criadas}
+                </span>
+              </li>
+              <li className="rounded-lg border border-slate-100 bg-slate-50 px-3 py-2">
+                <div className="flex items-center justify-between">
+                  <span className="text-slate-600">Campos a preencher</span>
+                  <span className="font-semibold text-slate-900">
+                    {preview.result.campos_preenchidos.length}
+                  </span>
+                </div>
+                {preview.result.campos_preenchidos.length > 0 && (
+                  <p className="mt-1 text-xs text-slate-500">
+                    {preview.result.campos_preenchidos.join(", ")}
+                  </p>
+                )}
+              </li>
+            </ul>
+            {preview.result.partes_criadas +
+              preview.result.areas_criadas +
+              preview.result.campos_preenchidos.length ===
+              0 && (
+              <p className="text-xs text-slate-500">
+                Nada novo a aplicar — as partes/área/campos já estão
+                preenchidos no caso.
+              </p>
+            )}
+            {preview.result.aviso && (
+              <p className="text-xs text-amber-700 bg-amber-50 border border-amber-100 rounded-lg px-3 py-2">
+                {preview.result.aviso}
+              </p>
+            )}
+          </div>
+        )}
       </Modal>
 
       {/* Exclusão de caso (soft delete): motivo obrigatório no backend (≥ 5 chars) */}
