@@ -234,6 +234,12 @@ async def sincronizar_caso(db: AsyncSession, case: Case) -> int:
         for p in prazos:
             await _criar_deadline_automatico(db, case, p, mov["descricao"])
 
+    # Sucesso: metadados de sync atualizados SEMPRE. Antes só eram atualizados
+    # dentro de _criar_deadline_automatico, que roda apenas quando há prazo
+    # crítico — então um caso sincronizado sem prazo (o caso comum) ficava com
+    # sync_pending=True indefinidamente e last_synced_at nunca avançava.
+    case.sync_pending = False
+    case.last_synced_at = datetime.now(timezone.utc)
     return inseridos
 
 
@@ -257,8 +263,6 @@ async def _criar_deadline_automatico(
         if existe:
             return
 
-        db.add_all([])   # flush sem commit
-        from sqlalchemy import insert
         from app.models.deadline import Deadline
         db.add(Deadline(
             id=str(uuid4()),
@@ -281,10 +285,6 @@ async def _criar_deadline_automatico(
         )
     except Exception as e:
         logger.warning(f"[DataJud] Falha ao criar deadline automático: {e}")
-
-    # Atualiza metadados de sucesso
-    case.last_synced_at = datetime.now(timezone.utc)
-    case.sync_pending = False
 
 
 # ── BUG-16: sincronização de PRAZOS a partir do DataJud ──────────────────────
