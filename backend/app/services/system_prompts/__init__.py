@@ -16,6 +16,9 @@ from .familia import PROMPT_FAMILIA
 from .administrativo import PROMPT_ADMINISTRATIVO
 from .sucessoes import PROMPT_SUCESSOES
 from .imobiliario import PROMPT_IMOBILIARIO
+from .constitucional import PROMPT_CONSTITUCIONAL
+from .juizados import PROMPT_JUIZADOS
+from .civel import PROMPT_CIVEL
 from .router import TarefaIA, ConfiguracaoIA, get_configuracao
 
 # Regras transversais dos prompts do Núcleo Único (evita repetição literal).
@@ -56,6 +59,9 @@ SYSTEM_PROMPTS: dict[str, str] = {
     "administrativo":    PROMPT_ADMINISTRATIVO,
     "sucessoes":         PROMPT_SUCESSOES,
     "imobiliario":       PROMPT_IMOBILIARIO,
+    "constitucional":    PROMPT_CONSTITUCIONAL,
+    "juizados":          PROMPT_JUIZADOS,
+    "civel":             PROMPT_CIVEL,
     "pesquisa_juridica": PROMPT_ANALISE_CASO,
     "audiencia":         PROMPT_ANALISE_CASO,
     "rag_query":         BASE_PROMPT + "\n\nSintetize os trechos recuperados da base de conhecimento para responder à pergunta do advogado. Indique a fonte. Nunca invente jurisprudência ou legislação." + AVISO_RASCUNHO,

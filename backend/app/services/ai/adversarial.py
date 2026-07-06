@@ -195,14 +195,21 @@ async def criticar_peca(
     contexto_caso: str | None = None,
     task_type_origem: str | None = None,
     provedor_origem: str | None = None,
+    case_id: str | None = None,
+    entidades: dict[str, list[str]] | None = None,
 ) -> CriticaAdversarial:
     """Executa a IA Crítica sobre uma peça. NUNCA levanta exceção de provider:
     qualquer falha devolve CriticaAdversarial(disponivel=False, aviso=...).
 
     - `provedor_origem`: provider que gerou a peça (diversidade — a crítica
       prefere outro provider).
-    - `db`: sessão async, usada só para o gate de citações da própria crítica
-      (None = gate pulado, com alerta).
+    - `db`: sessão async, usada para o gate de citações da própria crítica E
+      para montar as ENTIDADES NOMEADAS do caso (None = gate/entidades pulados).
+    - `case_id`: caso ao qual a peça pertence. Quando informado (com `db`) e
+      `entidades` não vier pronto, monta as entidades nomeadas do caso para a
+      pseudonimização REVERSÍVEL do gateway.
+    - `entidades`: entidades nomeadas JÁ montadas (ex.: pelo orquestrador) —
+      evita reconsultar o banco. Tem precedência sobre `case_id`.
     """
     from app.services import ai_gateway
 
@@ -210,6 +217,20 @@ async def criticar_peca(
     # reservado da crítica se embutido no texto da peça, para que não possa
     # forjar uma seção de crítica no campo dedicado nem ser ecoado no relatório.
     texto_peca = neutralizar_marcador_ailog(texto_peca)
+
+    # ── Nomes do caso → pseudonimização REVERSÍVEL no gateway (LGPD) ─────────
+    # A minuta (`texto_peca`) e o `contexto_caso` trazem nomes de cliente e
+    # parte contrária EM CLARO. A crítica cai em EXTERNO_PSEUDONIMIZADO e
+    # PREFERE provider EXTERNO (diversidade) — sem `entidades`, a barreira final
+    # do gateway só pega PII ESTRUTURAL (CPF/CNPJ…), NÃO nomes próprios, que
+    # vazariam ao provider externo. Montamos as ENTIDADES NOMEADAS do caso para
+    # que o gateway troque cada nome por marcador consistente ([CLIENTE_1]/
+    # [PARTE_CONTRARIA_1]) ANTES do externo e REIDRATE a resposta localmente.
+    # entidades_do_caso é fail-safe: NUNCA levanta ({} → degrada com segurança,
+    # a barreira estrutural do gateway continua ativa).
+    if entidades is None and case_id and db is not None:
+        from app.services.ai.entidades_caso import entidades_do_caso
+        entidades = await entidades_do_caso(db, case_id)
 
     provider_escolhido = escolher_provider_diverso(provedor_origem)
     try:
@@ -222,6 +243,7 @@ async def criticar_peca(
             temperature=0.2,
             max_tokens=4000,
             provider_override=provider_escolhido,
+            entidades=entidades or None,
         )
     except Exception as e:
         # Failure mode: crítica NUNCA bloqueia a entrega da peça.

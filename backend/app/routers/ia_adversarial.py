@@ -14,6 +14,7 @@ from pydantic import BaseModel, Field
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.database import get_db
+from app.core.ownership import verificar_acesso_caso
 from app.core.rate_limit import rate_limit
 from app.core.security import get_current_user
 from app.models.user import User
@@ -32,6 +33,10 @@ class CriticaAdversarialRequest(BaseModel):
     provedor_origem: str | None = Field(default=None, max_length=30,
                                         description="Provider que gerou a peça (ollama|anthropic|groq) — "
                                                     "a crítica prefere um DIFERENTE.")
+    case_id: str | None = Field(default=None, max_length=64,
+                                description="Caso ao qual a peça pertence. Quando informado, os nomes "
+                                            "do caso (cliente/parte contrária) são pseudonimizados de "
+                                            "forma REVERSÍVEL antes de qualquer provider externo (LGPD).")
 
 
 @router.post("/critica-adversarial", response_model=CriticaAdversarial,
@@ -47,12 +52,23 @@ async def critica_adversarial_endpoint(
     com aviso. Uso registrado no AILog (LGPD/OAB); PII é barrada pelo
     ai_gateway antes de qualquer provider externo.
     """
+    # Se o chamador vincula a crítica a um caso, exige acesso a ESSE caso — o
+    # case_id só serve para montar as entidades a pseudonimizar, mas validar o
+    # ownership mantém consistência com os demais endpoints de caso e evita que
+    # evoluções futuras (surfacing de algo derivado das entidades) virem IDOR.
+    if req.case_id:
+        await verificar_acesso_caso(db, cu, req.case_id)
+
     critica = await criticar_peca(
         db,
         texto_peca=req.texto_peca,
         contexto_caso=req.contexto_caso,
         task_type_origem=req.task_type_origem,
         provedor_origem=req.provedor_origem,
+        # Com case_id, monta as entidades nomeadas do caso p/ pseudonimização
+        # reversível no gateway; sem ele, degrada com segurança (a barreira
+        # estrutural do gateway segue ativa). LGPD: nomes não vazam ao externo.
+        case_id=req.case_id,
     )
 
     # Trilha de auditoria (padrão do projeto: todo uso de IA gera AILog).

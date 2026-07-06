@@ -4,7 +4,7 @@ Trava regressões silenciosas ao adicionar/alterar agentes, prompts, tarefas e
 roteamento: todo alias resolve, todo prompt_key existe, toda tarefa tem config,
 toda skill existe, e agentes jurídicos com afirmação normativa exigem fonte.
 """
-from app.services.system_prompts import SYSTEM_PROMPTS, TarefaIA
+from app.services.system_prompts import SYSTEM_PROMPTS, TarefaIA, get_configuracao
 from app.services.system_prompts.router import CONFIGURACOES
 from app.services.ai.core.agent_registry import AGENT_REGISTRY
 from app.services.ai.core.skill_registry import SKILL_REGISTRY
@@ -19,7 +19,18 @@ _AGENTES_NORMATIVOS = {
     "ConsumerLawAgent", "TaxLawAgent", "SocialSecurityAgent", "CorporateLawAgent",
     "LaborLawAgent", "CriminalLawAgent", "FamilyLawAgent",
     "AdministrativeLawAgent", "SuccessionLawAgent", "RealEstateLawAgent",
+    "ConstitutionalLawAgent", "SpecialCourtsAgent", "CivilLawAgent",
     "RAGResearchAgent", "LegalWritingAgent", "JurimetryAgent",
+}
+
+# TarefaIA que correspondem a uma ÁREA jurídica com prompt DEDICADO. Cada uma
+# deve resolver para um prompt_key próprio em SYSTEM_PROMPTS — nunca o genérico
+# "analise_caso" (isso caracterizaria uma "entrada morta": tarefa de área que,
+# na prática, cai no prompt genérico e perde a especialização).
+_TAREFAS_DE_AREA = {
+    TarefaIA.AMBIENTAL, TarefaIA.TRABALHISTA, TarefaIA.CRIMINAL, TarefaIA.FAMILIA,
+    TarefaIA.ADMINISTRATIVO, TarefaIA.SUCESSOES, TarefaIA.IMOBILIARIO,
+    TarefaIA.CONSTITUCIONAL, TarefaIA.JUIZADOS, TarefaIA.CIVEL,
 }
 
 
@@ -80,7 +91,22 @@ def test_prompt_key_das_novas_areas_carrega_barreira():
     # Prompts das áreas especializadas devem embutir a identidade/regras (BASE_PROMPT).
     for key in ("consumidor", "tributario", "previdenciario", "empresarial",
                 "trabalhista", "criminal", "familia",
-                "administrativo", "sucessoes", "imobiliario"):
+                "administrativo", "sucessoes", "imobiliario",
+                "constitucional", "juizados", "civel"):
         texto = SYSTEM_PROMPTS[key]
         assert "IDENTIDADE" in texto and "RASCUNHO" in texto.upper(), \
             f"prompt '{key}' sem barreira anti-alucinação/aviso de rascunho"
+
+
+def test_tarefa_de_area_nao_cai_no_prompt_generico():
+    # Blinda a classe de bug "entrada morta": toda TarefaIA de ÁREA jurídica
+    # resolve para um prompt_key REAL em SYSTEM_PROMPTS e NÃO para o genérico
+    # "analise_caso" (que perderia a especialização por área).
+    for tarefa in _TAREFAS_DE_AREA:
+        cfg = get_configuracao(tarefa)
+        assert cfg.prompt_key in SYSTEM_PROMPTS, \
+            f"TarefaIA '{tarefa.value}': prompt_key '{cfg.prompt_key}' ausente em SYSTEM_PROMPTS"
+        assert cfg.prompt_key != "analise_caso", \
+            f"TarefaIA de área '{tarefa.value}' caiu no prompt genérico 'analise_caso'"
+        assert cfg.prompt_key == tarefa.value, \
+            f"TarefaIA de área '{tarefa.value}': prompt_key '{cfg.prompt_key}' divergente da área"

@@ -28,6 +28,9 @@ class TarefaIA(str, Enum):
     ADMINISTRATIVO = "administrativo"
     SUCESSOES = "sucessoes"
     IMOBILIARIO = "imobiliario"
+    CONSTITUCIONAL = "constitucional"
+    JUIZADOS = "juizados"
+    CIVEL = "civel"
     PESQUISA_JURIDICA = "pesquisa_juridica"
     RESUMO = "resumo"
     AUDIENCIA = "audiencia"
@@ -73,6 +76,9 @@ CONFIGURACOES: dict[TarefaIA, ConfiguracaoIA] = {
     TarefaIA.ADMINISTRATIVO: _claude("administrativo", _COMPLEXO, 3000, 0.1, "Administrativo — Lei 9.784/improbidade/14.133"),
     TarefaIA.SUCESSOES:    _claude("sucessoes", _COMPLEXO, 3000, 0.1, "Sucessões — inventário/partilha (CC+CPC)"),
     TarefaIA.IMOBILIARIO:  _claude("imobiliario", _COMPLEXO, 3000, 0.1, "Imobiliário — locação/usucapião/condomínio/registros"),
+    TarefaIA.CONSTITUCIONAL: _claude("constitucional", _COMPLEXO, 3500, 0.1, "Constitucional/remédios — MS/HD/ação popular/ACP/controle"),
+    TarefaIA.JUIZADOS:     _claude("juizados", _COMPLEXO, 3000, 0.1, "Juizados Especiais — JEC/JEF/JEFP (rito/alçada/recursos)"),
+    TarefaIA.CIVEL:        _claude("civel", _COMPLEXO, 3500, 0.1, "Cível — responsabilidade civil/prescrição/execução/tutelas (CC+CPC)"),
     TarefaIA.PESQUISA_JURIDICA: _claude("pesquisa_juridica", _COMPLEXO, 3000, 0.2, "Pesquisa jurisprudencial"),
     TarefaIA.DEFAULT:      _claude("default", _RAPIDO, 2000, 0.2, "Fallback — Haiku"),
 }
