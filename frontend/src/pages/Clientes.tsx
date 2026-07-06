@@ -479,7 +479,16 @@ export default function Clientes() {
             variant="ghost"
             icon={<ShieldAlert size={15} />}
             disabled={conflitoLoading}
-            onClick={checarConflito}
+            onClick={async () => {
+              const r = await checarConflito();
+              if (r && r.nivel === "nenhum")
+                toast.success("Nenhum conflito de interesses encontrado.");
+              else if (!r)
+                toast.info(
+                  "Informe nome/documento ou parte contrária para verificar.",
+                );
+              // r.nivel !== "nenhum" → o Alert inline já exibe o conflito
+            }}
           >
             {conflitoLoading ? "Verificando..." : "Verificar conflito"}
           </Button>
