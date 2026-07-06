@@ -91,11 +91,14 @@ atômico por item; nenhum dado de produção tocado._
 | **5.10** "IA Jurídica" e "Radar de Poder" duplicados | `pages/Dashboard.tsx` | Atalho "Radar de Poder" aponta para `/radar-regulatorio` (diferencia); "IA Jurídica" segue em `/inteligencia`. | **Concluído** |
 | **5.11** tema fora de escopo | `backend/app/routers/intelligence_v3.py`, `components/RadarLegislativo.tsx` | Removido `"veterinario"` das keywords e "medicamentos veterinários" da legenda (mantido `"medicamento"` por relevância ANVISA/tributária). | **Concluído** |
 
-### Itens que exigem decisão do usuário (não implementados — ver §Decisões)
-- **5.3** Unificar módulos de conhecimento (**migração de dados** — exige confirmação).
-- **5.4** Unificar rotas financeiras em abas (estrutura de produto).
-- **5.7** "Configurações" → "Usuários" **ou** criar tela de configurações real.
-- **5.9** Portal do Cliente: implementar rota **ou** remover menção na Central de Ajuda.
+### Itens que dependiam de decisão do usuário — DECIDIDOS e implementados
+
+| Item | Decisão do usuário | Correção | Status |
+|---|---|---|---|
+| **5.3** | Hub sem migrar dados | `KnowledgeHub` ganha cards de categoria (Base de Conhecimento, Biblioteca de Estratégias, Memória Institucional) que navegam para as fontes existentes; menu unifica numa única entrada "Conhecimento". Sem migração de dados. | **Concluído** |
+| **5.4** | Unificar em abas c/ redirects | `/financeiro` (já um workspace com abas) passa a ler `?tab=`; `/honorarios`, `/despesas`, `/sociedade` redirecionam para a aba correspondente; itens de menu duplicados removidos. | **Concluído** |
+| **5.7** | Criar tela de Configurações real | Nova tela `Configuracoes` (Aparência com seletor de tema funcional; Conta/segurança; Administração→Usuários p/ admin). Menu "Configurações"→`/configuracoes`; "Usuários" vira entrada própria. | **Concluído** |
+| **5.9** | Adicionar ponto de entrada | Link "Portal do Cliente" no cabeçalho do Dossiê do Cliente abre `/portal` em nova aba (o portal já existe para contas `cliente_externo`). | **Concluído** |
 
 ---
 
@@ -115,10 +118,10 @@ responsividade mobile/tablet. Recomenda-se executá-los após o deploy dos Bloco
 |---|---|---|---|
 | 1.2 | Métrica HITL | Cobertura de peças de IA revisadas (recomendado; display-only, reversível) | Manter esse denominador ou usar o ratio de log? |
 | 5.11 | Radar | Removido "veterinario"; mantido "medicamento" | Remover também "medicamento"? |
-| 5.3 | Unificar conhecimento | **Não aplicado** | Migrar dados agora ou manter separado? |
-| 5.4 | Unificar financeiro | **Não aplicado** | Consolidar em abas com redirects? |
-| 5.7 | Configurações/Usuários | **Não aplicado** | Renomear para "Usuários" ou construir tela de config? |
-| 5.9 | Portal do Cliente | **Não aplicado** | Implementar rota ou remover menção? |
+| 5.3 | Unificar conhecimento | **Decidido:** hub sem migrar dados → **implementado** | — |
+| 5.4 | Unificar financeiro | **Decidido:** abas + redirects → **implementado** | — |
+| 5.7 | Configurações/Usuários | **Decidido:** tela de config real → **implementado** | — |
+| 5.9 | Portal do Cliente | **Decidido:** ponto de entrada → **implementado** | — |
 
 ---
 
