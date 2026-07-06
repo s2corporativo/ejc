@@ -23,11 +23,47 @@ type Payload = {
   modo?: string;
 };
 
+type Diagnostico = {
+  metricas?: { rotas_api_detectadas?: number };
+  inventario?: {
+    modulos_esperados?: Array<{ module_key: string; rota: string; titulo: string; grupo: string }>;
+  };
+};
+
 const statusClass: Record<string, string> = {
   ativo: "bg-emerald-50 text-emerald-700 border-emerald-200",
   beta: "bg-amber-50 text-amber-700 border-amber-200",
   legado: "bg-slate-100 text-slate-700 border-slate-200",
 };
+
+function adaptarDiagnostico(d: Diagnostico): Payload {
+  const modulos: Modulo[] = (d.inventario?.modulos_esperados || []).map((m) => ({
+    module_key: m.module_key,
+    nome: m.titulo,
+    grupo: m.grupo,
+    frontend_route: m.rota,
+    backend_prefixes: [],
+    status: "ativo",
+    perfis: ["superadmin", "admin", "socio"],
+    dependencias: [],
+    usa_ia: ["ia", "inteligencia", "ferramentas-ia", "conhecimento", "jurimetria"].includes(m.module_key),
+    dados_sensiveis: !["dashboard", "autofix"].includes(m.module_key),
+    qtd_endpoints_detectados: 0,
+    precisa_revisao: true,
+  }));
+  return {
+    modo: "diagnostico_existente",
+    rotas_api_detectadas: d.metricas?.rotas_api_detectadas || 0,
+    resumo: {
+      total: modulos.length,
+      sem_endpoint_detectado: modulos.length,
+      usam_ia: modulos.filter((m) => m.usa_ia).length,
+      dados_sensiveis: modulos.filter((m) => m.dados_sensiveis).length,
+      precisam_revisao: modulos.length,
+    },
+    modulos,
+  };
+}
 
 export default function MapaModulos() {
   const [data, setData] = useState<Payload | null>(null);
@@ -40,7 +76,12 @@ export default function MapaModulos() {
     api
       .get<Payload>("/system-modules/mapa")
       .then((r) => setData(r.data))
-      .catch((e) => setErro(e?.response?.data?.detail || "Não foi possível carregar o mapa."))
+      .catch(() =>
+        api
+          .get<Diagnostico>("/module-help/diagnostico-sistema")
+          .then((r) => setData(adaptarDiagnostico(r.data)))
+          .catch((e) => setErro(e?.response?.data?.detail || "Não foi possível carregar o mapa.")),
+      )
       .finally(() => setLoading(false));
   }, []);
 
@@ -120,7 +161,7 @@ export default function MapaModulos() {
                   </td>
                   <td className="px-4 py-3 font-mono text-xs text-slate-600">{m.frontend_route}</td>
                   <td className="px-4 py-3 text-xs text-slate-600">
-                    {m.backend_prefixes.map((p) => <div key={p} className="font-mono">{p}</div>)}
+                    {m.backend_prefixes.length ? m.backend_prefixes.map((p) => <div key={p} className="font-mono">{p}</div>) : <span className="text-slate-400">a mapear</span>}
                     <div className="mt-1 text-slate-400">endpoints: {m.qtd_endpoints_detectados ?? 0}</div>
                   </td>
                   <td className="px-4 py-3 text-xs text-slate-600">{m.perfis.join(", ")}</td>
