@@ -13,11 +13,13 @@ from typing import Optional
 from app.core.database import get_db
 from app.core.security import get_current_user, ROLE_LEVEL
 from app.core.ownership import verificar_acesso_caso
+from app.core.rate_limit import rate_limit
 from app.models.user import User
 from app.models.ai_log import AILog
 from app.models.legal_doc import LegalDoc, PecaTipo, PecaStatus
 from app.services.peca_service import gerar_peca_pipeline, TIPOS_PECA, AREAS_DIREITO
 from app.services.advogado_style_service import montar_instrucoes_estilo_para_prompt
+from app.services.deep_research_service import DeepResearchInput, executar_deep_research
 from datetime import date
 from uuid import uuid4
 
@@ -53,9 +55,6 @@ async def gerar_peca(
     if req.area_direito not in AREAS_DIREITO:
         raise HTTPException(422, f"Área inválida. Use: {', '.join(AREAS_DIREITO)}")
 
-    # Bloco 5 (continuação): case_id existia mas sem checagem de ownership —
-    # checado ANTES de abrir o stream SSE, para 403 vir como erro normal (não
-    # quebrar a conexão a meio da geração).
     escopo_cli = None
     if req.case_id:
         await verificar_acesso_caso(db, cu, req.case_id)
@@ -148,6 +147,45 @@ async def listar_pecas(
     }
 
 
+class DeepResearchRequest(BaseModel):
+    tese: str = Field(..., min_length=10, max_length=1000)
+    fatos: str = Field(..., min_length=20, max_length=6000)
+    area: Optional[str] = Field(None, max_length=80)
+    case_id: Optional[str] = None
+    numero_cnj: Optional[str] = Field(None, max_length=30)
+    fontes_externas: list[str] = Field(default_factory=lambda: ["lexml", "tjmg"])
+    max_subquestoes: int = Field(5, ge=3, le=8)
+
+
+@router.post("/deep-research/juridica", dependencies=[Depends(rate_limit("deep_research_juridica", 6))])
+async def deep_research_juridica(
+    req: DeepResearchRequest,
+    db: AsyncSession = Depends(get_db),
+    cu: User = Depends(get_current_user),
+):
+    """Executa Deep Research jurídica v1 com RAG, precedentes e IA central."""
+    if ROLE_LEVEL.get(cu.role.value, 0) < ROLE_LEVEL["estagiario"]:
+        raise HTTPException(403, "Acesso negado")
+
+    scope_client_id = None
+    if req.case_id:
+        await verificar_acesso_caso(db, cu, req.case_id)
+        from app.services.ai_service import _escopo_cliente_do_caso
+        scope_client_id = await _escopo_cliente_do_caso(db, req.case_id)
+
+    entrada = DeepResearchInput(
+        tese=req.tese,
+        fatos=req.fatos,
+        area=req.area,
+        case_id=req.case_id,
+        scope_client_id=scope_client_id,
+        numero_cnj=req.numero_cnj,
+        fontes_externas=req.fontes_externas,
+        max_subquestoes=req.max_subquestoes,
+    )
+    return await executar_deep_research(db, entrada, user_id=cu.id)
+
+
 class LinhaDemonstrativo(BaseModel):
     label: str
     valor: str
@@ -173,7 +211,7 @@ async def gerar_demonstrativo(
     if ROLE_LEVEL.get(cu.role.value, 0) < ROLE_LEVEL["estagiario"]:
         raise HTTPException(403, "Acesso negado")
     if req.case_id:
-        await verificar_acesso_caso(db, cu, req.case_id)  # ownership do caso vinculado
+        await verificar_acesso_caso(db, cu, req.case_id)
 
     linhas_txt = "\n".join(f"  • {l.label}: {l.valor}" for l in req.linhas) or "  (sem itens)"
     partes = [
