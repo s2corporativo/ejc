@@ -25,6 +25,9 @@ class TarefaIA(str, Enum):
     TRABALHISTA = "trabalhista"
     CRIMINAL = "criminal"
     FAMILIA = "familia"
+    ADMINISTRATIVO = "administrativo"
+    SUCESSOES = "sucessoes"
+    IMOBILIARIO = "imobiliario"
     PESQUISA_JURIDICA = "pesquisa_juridica"
     RESUMO = "resumo"
     AUDIENCIA = "audiencia"
@@ -64,9 +67,12 @@ CONFIGURACOES: dict[TarefaIA, ConfiguracaoIA] = {
     TarefaIA.DOSSIE:       _claude("analise_caso", _COMPLEXO, 5000, 0.1, "Dossiê completo"),
     TarefaIA.MINUTAS:      _claude("minutas", _COMPLEXO, 6000, 0.15, "Redação de peças"),
     TarefaIA.AMBIENTAL:    _claude("ambiental", _COMPLEXO, 4000, 0.1, "Direito ambiental técnico"),
-    TarefaIA.TRABALHISTA:  _claude("analise_caso", _COMPLEXO, 3500, 0.1, "CLT + TST"),
-    TarefaIA.CRIMINAL:     _claude("analise_caso", _COMPLEXO, 3000, 0.1, "Criminal — sensível"),
-    TarefaIA.FAMILIA:      _claude("analise_caso", _COMPLEXO, 3000, 0.1, "Família — sensível"),
+    TarefaIA.TRABALHISTA:  _claude("trabalhista", _COMPLEXO, 3500, 0.1, "CLT + TST"),
+    TarefaIA.CRIMINAL:     _claude("criminal", _COMPLEXO, 3000, 0.1, "Criminal — sensível"),
+    TarefaIA.FAMILIA:      _claude("familia", _COMPLEXO, 3000, 0.1, "Família — sensível"),
+    TarefaIA.ADMINISTRATIVO: _claude("administrativo", _COMPLEXO, 3000, 0.1, "Administrativo — Lei 9.784/improbidade/14.133"),
+    TarefaIA.SUCESSOES:    _claude("sucessoes", _COMPLEXO, 3000, 0.1, "Sucessões — inventário/partilha (CC+CPC)"),
+    TarefaIA.IMOBILIARIO:  _claude("imobiliario", _COMPLEXO, 3000, 0.1, "Imobiliário — locação/usucapião/condomínio/registros"),
     TarefaIA.PESQUISA_JURIDICA: _claude("pesquisa_juridica", _COMPLEXO, 3000, 0.2, "Pesquisa jurisprudencial"),
     TarefaIA.DEFAULT:      _claude("default", _RAPIDO, 2000, 0.2, "Fallback — Haiku"),
 }

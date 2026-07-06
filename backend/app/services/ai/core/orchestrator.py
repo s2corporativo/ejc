@@ -39,8 +39,14 @@ _TAREFA_PARA_GATEWAY: dict[TarefaIA, str] = {
     TarefaIA.ANALISE_CASO: "estrategia",
     TarefaIA.DOSSIE: "estrategia",
     TarefaIA.TRABALHISTA: "estrategia",
-    TarefaIA.CRIMINAL: "estrategia",
+    # Criminal = sigilo reforçado (LGPD): o gateway_task "criminal" mantém o piso
+    # LOCAL_COMPLETO (sanitization_policy) — nunca vai a provider externo, nem no
+    # caminho do orchestrator. NÃO rebaixar para "estrategia".
+    TarefaIA.CRIMINAL: "criminal",
     TarefaIA.FAMILIA: "estrategia",
+    TarefaIA.ADMINISTRATIVO: "estrategia",
+    TarefaIA.SUCESSOES: "estrategia",
+    TarefaIA.IMOBILIARIO: "estrategia",
     TarefaIA.AMBIENTAL: "analise_juridica",
     TarefaIA.MINUTAS: "elaboracao_peca",
     TarefaIA.PRAZOS: "analise_juridica",

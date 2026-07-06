@@ -17,6 +17,8 @@ from app.services.ai.core.intent_classifier import (
 # ficam de fora por natureza (não citam jurisprudência).
 _AGENTES_NORMATIVOS = {
     "ConsumerLawAgent", "TaxLawAgent", "SocialSecurityAgent", "CorporateLawAgent",
+    "LaborLawAgent", "CriminalLawAgent", "FamilyLawAgent",
+    "AdministrativeLawAgent", "SuccessionLawAgent", "RealEstateLawAgent",
     "RAGResearchAgent", "LegalWritingAgent", "JurimetryAgent",
 }
 
@@ -75,8 +77,10 @@ def test_classify_intent_sempre_roteia_para_agente_valido():
 
 
 def test_prompt_key_das_novas_areas_carrega_barreira():
-    # Prompts das 4 áreas novas devem embutir a identidade/regras (BASE_PROMPT).
-    for key in ("consumidor", "tributario", "previdenciario", "empresarial"):
+    # Prompts das áreas especializadas devem embutir a identidade/regras (BASE_PROMPT).
+    for key in ("consumidor", "tributario", "previdenciario", "empresarial",
+                "trabalhista", "criminal", "familia",
+                "administrativo", "sucessoes", "imobiliario"):
         texto = SYSTEM_PROMPTS[key]
         assert "IDENTIDADE" in texto and "RASCUNHO" in texto.upper(), \
             f"prompt '{key}' sem barreira anti-alucinação/aviso de rascunho"

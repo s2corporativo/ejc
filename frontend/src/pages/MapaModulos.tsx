@@ -112,7 +112,7 @@ export default function MapaModulos() {
       <div className="grid gap-3 md:grid-cols-5">
         {Object.entries(data?.resumo || {}).map(([k, v]) => (
           <div key={k} className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
-            <div className="text-xs uppercase tracking-wide text-slate-400">{k.replaceAll("_", " ")}</div>
+            <div className="text-xs uppercase tracking-wide text-slate-400">{k.split("_").join(" ")}</div>
             <div className="mt-1 text-2xl font-bold text-slate-950">{v}</div>
           </div>
         ))}
