@@ -9,7 +9,7 @@ const TOOLS: { key: Tool; label: string; icon: string; desc: string }[] = [
     key: "pesquisa",
     label: "Pesquisa",
     icon: "🔎",
-    desc: "Pergunte e a IA responde com base no conhecimento do escritório (RAG).",
+    desc: "Pergunte e a IA responde; quando houver documentos ingeridos, usa a base do escritório (RAG).",
   },
   {
     key: "resumir",
@@ -27,13 +27,13 @@ const TOOLS: { key: Tool; label: string; icon: string; desc: string }[] = [
     key: "minuta",
     label: "Minuta",
     icon: "✍️",
-    desc: "Gere um rascunho de peça com apoio da jurisprudência interna.",
+    desc: "Gere um rascunho de peça (usa a jurisprudência interna quando disponível).",
   },
   {
     key: "especialista",
     label: "Especialistas",
     icon: "🧠",
-    desc: "5 IAs especializadas (Comercial, Atendimento, Jurídica, Financeira, Societária) sobre a mesma base.",
+    desc: "5 IAs especializadas (Comercial, Atendimento, Jurídica, Financeira, Societária) — usam a base do escritório quando há documentos ingeridos.",
   },
 ];
 const PERFIS = [

@@ -596,7 +596,7 @@ export default function Conhecimento() {
       <PageHeader
         eyebrow="IA Jurídica"
         title="Base de Conhecimento"
-        subtitle="Peças vencedoras, teses e súmulas que a IA usa para gerar documentos"
+        subtitle="Peças vencedoras, teses e súmulas que a IA usa para gerar documentos quando estão vetorizadas (status por documento abaixo)"
         actions={
           <button
             className="btn btn-primary gap-2"

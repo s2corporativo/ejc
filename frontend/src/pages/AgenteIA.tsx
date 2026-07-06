@@ -105,7 +105,7 @@ export default function AgenteIA() {
     <div className="space-y-4">
       <PageHeader
         title="Agente Jurídico (Claude + Skills)"
-        subtitle="Raciocínio jurídico avançado por tarefa, ancorado na base do escritório (RAG). Resultado é rascunho — revisão humana obrigatória (OAB)."
+        subtitle="Raciocínio jurídico avançado por tarefa, com apoio da base do escritório (RAG) quando há documentos ingeridos. Resultado é rascunho — revisão humana obrigatória (OAB)."
         actions={
           status ? (
             <span
