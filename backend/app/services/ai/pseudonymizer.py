@@ -103,9 +103,26 @@ class _Pseudonimizador:
         texto = _NASCIMENTO.sub(lambda m: self._marcador("DATA_NASC", m.group(0)), texto)
         return texto
 
+    def _substituir_nomes_livres(self, texto: str) -> str:
+        """3ª passada — NER LOCAL (issue #102): pseudonimiza NOMES DE PESSOA
+        residuais em texto livre/OCR/RAG que NÃO estavam em `entidades` (vítima,
+        testemunha, terceiro citados só no documento). Roda por ÚLTIMO: os
+        marcadores já criados ([CLIENTE_1], [CPF_1]…) são ALL-CAPS entre colchetes
+        e nunca são reconhecidos como nome (não há dupla marcação). Cada nome vira
+        [PESSOA_n] consistente/reversível; substitui do mais LONGO ao mais curto."""
+        from app.services.ai.ner_local import detectar_nomes
+        for nome in detectar_nomes(texto, incluir_medio=True):
+            padrao = rf"(?<!\w){re.escape(nome)}(?!\w)"
+            if not re.search(padrao, texto):
+                continue
+            marcador = self._marcador("PESSOA", nome)
+            texto = re.sub(padrao, marcador, texto)
+        return texto
+
     def processar(self, texto: str, entidades: dict[str, list[str]] | None = None) -> str:
         texto = self._substituir_entidades(texto, entidades)
         texto = self._substituir_estruturais(texto)
+        texto = self._substituir_nomes_livres(texto)
         return texto
 
 
@@ -169,5 +186,17 @@ def reidratar(texto: str, mapa: dict[str, str]) -> str:
 def validar_sem_pii_pseudonimizado(texto: str) -> list[str]:
     """Segunda barreira: reusa `validar_sem_pii` do sanitizer para garantir que
     o texto pseudonimizado não deixou PII estrutural residual em claro.
-    Retorna a lista de tipos residuais (vazia = limpo)."""
-    return validar_sem_pii(texto)
+    Retorna a lista de tipos residuais (vazia = limpo).
+
+    REDE DE SEGURANÇA (issue #102): além da PII estrutural, sinaliza 'PESSOA'
+    quando sobrar um NOME de ALTA confiança (gatilho de contexto — "vítima X",
+    "testemunha Y") EM CLARO após a pseudonimização. No fluxo normal o motor já
+    substituiu esses nomes por [PESSOA_n], então isto fica vazio; só dispara se
+    um nome escapou — aí o gateway PULA o provider externo (defense-in-depth,
+    sobretudo em sigilo). NÃO usa a heurística MÉDIA (capitalização) para não
+    super-bloquear termos institucionais/jurídicos capitalizados."""
+    from app.services.ai.ner_local import contem_nome_alta_confianca
+    residual = validar_sem_pii(texto)
+    if contem_nome_alta_confianca(texto):
+        residual = residual + ["PESSOA"]
+    return residual
