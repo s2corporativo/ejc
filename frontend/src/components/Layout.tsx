@@ -98,7 +98,7 @@ const NAV: NavItem[] = [
 
   // ── Jurídico ──
   { to: "/casos", label: "Casos", icon: Gavel, group: "Juridico" },
-  { to: "/datajud", label: "Processos", icon: Scale, group: "Juridico" },
+  { to: "/datajud", label: "Consulta DataJud (CNJ)", icon: Scale, group: "Juridico" },
   { to: "/prazos", label: "Prazos", icon: AlarmClock, group: "Juridico" },
   { to: "/intimacoes", label: "Intimacoes", icon: Inbox, group: "Juridico" },
   {
