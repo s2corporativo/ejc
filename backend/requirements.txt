@@ -86,7 +86,7 @@ langfuse==2.50.0
 
 # Tests/dev
 pytest==8.2.0
-pytest-asyncio==0.23.7
+pytest-asyncio==1.4.0
 pytest-cov==5.0.0
 aiosqlite==0.20.0
 ruff==0.6.9
