@@ -13,6 +13,7 @@ from app.models.user import User
 from app.modules.auditoria.middleware import registrar_acao
 from app.schemas.redesign import ModuleHelpCreate, ModuleHelpUpdate
 from app.services.autofix_scanner import gerar_diagnostico_basico
+from app.services.module_help_seed import seed_module_help_minimo
 
 router = APIRouter(prefix="/module-help", tags=["Ajuda de Módulos"])
 
@@ -68,6 +69,14 @@ async def diagnostico_sistema(
     cu: User = Depends(_gestores_amplo),
 ):
     return await gerar_diagnostico_basico(db, request.app)
+
+
+@router.post("/preencher-minimo")
+async def preencher_minimo(
+    db: AsyncSession = Depends(get_db),
+    cu: User = Depends(_gestores_amplo),
+):
+    return await seed_module_help_minimo(db, cu.id)
 
 
 @router.get("/{module_key:path}")
