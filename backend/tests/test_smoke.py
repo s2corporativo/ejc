@@ -21,8 +21,9 @@ def test_alembic_cadeia_integra():
     from alembic.script import ScriptDirectory
 
     script = ScriptDirectory.from_config(Config("alembic.ini"))
-    # Head único da cadeia atual.
-    assert script.get_heads() == ["078_seed_kanban_columns"]
+    # Head único da cadeia atual (migration 079 — #12: ux_clients_*_hash exclui
+    # soft-deleted, habilitando recadastro de CPF/CNPJ após soft-delete).
+    assert script.get_heads() == ["079_client_hash_partial_deleted"]
     # walk_revisions percorre head→base; lança se houver down_revision ausente.
     revs = [r.revision for r in script.walk_revisions()]
     assert revs[-1] == "001_inicial"
