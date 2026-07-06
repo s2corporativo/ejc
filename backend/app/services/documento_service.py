@@ -18,10 +18,10 @@ from typing import Optional
 
 from app.schemas.document_intake import (
     CampoExtraido, CasoExtraido, ClienteExtraido, DocumentoIntakeResult,
-    ParteExtraida, PedidoExtraido, RiscoExtraido, TeseSugerida,
+    ParteExtraida, PedidoExtraido, PrazoExtraido, RiscoExtraido, TeseSugerida,
 )
 from app.services import ai_gateway, ocr_service
-from app.services.extracao_estruturada import extrair_estruturas
+from app.services.extracao_estruturada import extrair_estruturas, parse_data_br
 from app.services.sanitizer import sanitizar_pii
 
 logger = logging.getLogger("ejc.documento_service")
@@ -43,6 +43,7 @@ ESQUEMA = """Responda APENAS com um JSON válido nesta forma exata (use null qua
  "resumo_executivo": {"fatos": null, "pedidos": null, "situacao_processual": null},
  "diagnostico": {"pontos_fortes": [], "pontos_fracos": [], "riscos": [], "oportunidades": []},
  "brechas_processuais": {"prescricao": null, "decadencia": null, "incompetencia": null, "ilegitimidade": null, "nulidades": [], "falhas_documentais": [], "ausencia_de_provas": null, "teses_defensivas": []},
+ "prazos": [{"tipo": null, "data_base": null, "termo_final": null, "fatal": false, "base_legal": null}],
  "estrategia": {"medidas_cabiveis": [], "recursos": [], "acoes": [], "producao_de_provas": [], "negociacao": []},
  "valor_causa_estimado": null,
  "complexidade_atos": null,
@@ -59,6 +60,11 @@ ESQUEMA = """Responda APENAS com um JSON válido nesta forma exata (use null qua
 }
 - "area" deve ser uma de: civil, trabalhista, consumidor, familia, ambiental, criminal, previdenciario, empresarial, tributario.
 - "complexidade" deve ser: baixa, media ou alta.
+- "prazos": inclua um item SOMENTE para cada prazo/data fatal EXPLÍCITO no documento
+  (ex.: prazo de contestação, recurso, audiência, prescrição). "termo_final" = a
+  DATA FATAL exatamente como consta, no formato "dd/mm/aaaa" ou "aaaa-mm-dd"; "tipo" =
+  o nome do prazo (ex.: "contestação", "recurso", "audiência"). Se o documento NÃO
+  trouxer uma data fatal clara, deixe "prazos" como [] — NUNCA calcule nem invente datas.
 - valores monetários como número (sem R$), ou null.
 - Em "campos_v2" (R4 — rastreabilidade da extração): para CADA campo,
   "trecho_origem" = citação LITERAL e CURTA (máx. 15 palavras) copiada do
@@ -196,6 +202,36 @@ def _lista_str(v) -> list:
     return [s for s in (_txt(x) for x in itens) if s]
 
 
+def _prazos_extraidos(llm: dict) -> list["PrazoExtraido"]:
+    """Prazos do LLM → `PrazoExtraido`, SÓ quando há data fatal parseável.
+
+    Não inventa (#83 Gap C): item sem `termo_final` (nem `data_prazo`) que
+    parseie para uma data é DESCARTADO — o documento sem data clara não vira
+    prazo. `termo_final` é normalizado para ISO (aaaa-mm-dd) p/ materialização
+    determinística em `cases.aplicar_extracao`. Fail-safe: nunca levanta.
+    """
+    brutos = llm.get("prazos")
+    if not isinstance(brutos, list):
+        return []
+    saida: list[PrazoExtraido] = []
+    for item in brutos:
+        if not isinstance(item, dict):
+            continue
+        data_fatal = parse_data_br(item.get("termo_final") or item.get("data_prazo"))
+        if data_fatal is None:
+            continue  # sem data fatal clara → não materializa (nunca inventa)
+        saida.append(PrazoExtraido(
+            tipo=_txt(item.get("tipo")),
+            data_base=_txt(item.get("data_base")),
+            termo_final=data_fatal.isoformat(),
+            fatal=bool(item.get("fatal")),
+            base_legal=_txt(item.get("base_legal")),
+        ))
+        if len(saida) >= 50:  # teto defensivo contra saída patológica do LLM
+            break
+    return saida
+
+
 def _montar_intake_result(
     dados: Optional[dict],
     dados_estruturados: Optional[dict],
@@ -307,6 +343,11 @@ def _montar_intake_result(
         teses = []
 
     try:
+        prazos = _prazos_extraidos(llm)
+    except Exception:
+        prazos = []
+
+    try:
         return DocumentoIntakeResult(
             tipo_documento=_txt(tipo_documento),
             confianca_classificacao=_flt(confianca_classificacao),
@@ -314,6 +355,7 @@ def _montar_intake_result(
             caso=caso,
             partes=partes,
             pedidos=pedidos,
+            prazos=prazos,
             riscos=riscos,
             teses=teses,
             resumo_fatos=resumo_fatos,

@@ -39,6 +39,9 @@ class DeadlineResponse(BaseModel):
     case_id: Optional[str] = None
     responsavel_id: Optional[str] = None
     ciencia_confirmada: bool
+    confirmado: bool = True
+    origem: Optional[str] = None
+    origem_documento_id: Optional[str] = None
     created_at: datetime
     class Config:
         from_attributes = True

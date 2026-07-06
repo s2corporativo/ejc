@@ -24,6 +24,8 @@ from app.services import event_bus
 from app.services.documental import gerar_documentos_iniciais
 from app.models.case_parte import CaseParte
 from app.models.caso_area import CasoArea
+from app.models.deadline import Deadline, DeadlineTipo, DeadlineStatus
+from app.services.extracao_estruturada import parse_data_br
 from app.services.movimento_ia import traduzir_movimento
 from app.core.ownership import verificar_acesso_caso
 from app.services.ia_parser import titulo_e_json_bruto
@@ -795,12 +797,35 @@ async def traduzir_andamento(
 
 
 # ── Importação inteligente → Caso núcleo (P1) ─────────────────────────────────
+def _map_deadline_tipo(tipo_txt: Optional[str]) -> DeadlineTipo:
+    """Mapeia o `tipo` livre de um prazo extraído (ex.: 'contestação',
+    'recurso', 'audiência', 'prescrição') para o enum DeadlineTipo.
+    Default: processual (prazo judicial)."""
+    t = (tipo_txt or "").lower()
+    if "prescri" in t or "decad" in t:
+        return DeadlineTipo.prescricao
+    if "audi" in t:
+        return DeadlineTipo.audiencia
+    if "administ" in t:
+        return DeadlineTipo.administrativo
+    if "interno" in t or "tarefa" in t:
+        return DeadlineTipo.interno
+    return DeadlineTipo.processual
+
+
 class AplicarExtracaoReq(_BM2):
     """JSON de /documentos-ia/analisar materializado no caso: partes
-    (case_partes), área (caso_areas) e campos processuais vazios."""
+    (case_partes), área (caso_areas), campos processuais vazios e prazos
+    (deadlines rascunho, #83 Gap C)."""
     identificacao_processual: Optional[dict] = None
     partes: Optional[dict] = None
     classificacao: Optional[dict] = None
+    # Prazos extraídos por IA (shape de PrazoExtraido: tipo, data_base,
+    # termo_final, fatal, base_legal). Cada prazo com data fatal válida vira um
+    # Deadline confirmado=false (rascunho "a confirmar" — já dispara alertas).
+    prazos: Optional[list[dict]] = None
+    # Documento (GED) de origem dos prazos — rastreabilidade em Deadline.
+    origem_documento_id: Optional[str] = None
     # Preview: quando true, computa o que SERIA aplicado sem persistir nada
     # (nem AuditLog). Pode vir no corpo ou no query param ?dry_run=true.
     dry_run: bool = False
@@ -880,8 +905,53 @@ async def aplicar_extracao(
                             principal=True))
             n_areas += 1
 
-    # Preview: desfaz tudo (partes/área/campos ficaram só pendentes na sessão)
-    # e retorna o que SERIA aplicado. Nada é persistido, nenhum AuditLog é gravado.
+    # 4) Prazos extraídos por IA → Deadline RASCUNHO (#83 Gap C).
+    # Decisão de produto (imutável): o prazo nasce confirmado=false ("a
+    # confirmar") mas JÁ dispara os alertas normais (não filtramos alerta por
+    # confirmado). SEMPRE rascunho — nunca auto-confirma. Só materializa quando
+    # há data fatal VÁLIDA; sem data clara → ignora (fica só como sugestão no
+    # resultado da extração, não vira Deadline). Dedup por (data_prazo, titulo).
+    n_prazos = 0
+    prazos_in = payload.prazos or []
+    if prazos_in:
+        prazos_existentes = {
+            (d.data_prazo, (d.titulo or "").strip().lower())
+            for d in (await db.execute(
+                select(Deadline).where(
+                    Deadline.case_id == case_id, Deadline.deleted_at.is_(None)
+                )
+            )).scalars().all()
+        }
+        for pr in prazos_in:
+            if not isinstance(pr, dict):
+                continue
+            data_fatal = parse_data_br(pr.get("termo_final") or pr.get("data_prazo"))
+            if data_fatal is None:
+                continue  # sem data fatal → não cria (nunca inventa prazo)
+            tipo_txt = (pr.get("tipo") or "").strip()
+            titulo = (pr.get("titulo") or tipo_txt or "Prazo (importação IA)")[:255]
+            chave = (data_fatal, titulo.strip().lower())
+            if chave in prazos_existentes:
+                continue  # dedup: mesmo (data_prazo, titulo) já existe no caso
+            bl = pr.get("base_legal")
+            db.add(Deadline(
+                id=str(uuid4()),
+                titulo=titulo,
+                tipo=_map_deadline_tipo(tipo_txt),
+                status=DeadlineStatus.pendente,
+                data_prazo=data_fatal,
+                base_legal=(str(bl)[:255] if bl else None),
+                case_id=case_id,
+                responsavel_id=case.advogado_responsavel_id,
+                confirmado=False,
+                origem="importacao_ia",
+                origem_documento_id=payload.origem_documento_id,
+            ))
+            prazos_existentes.add(chave)
+            n_prazos += 1
+
+    # Preview: desfaz tudo (partes/área/campos/prazos ficaram só pendentes na
+    # sessão) e retorna o que SERIA aplicado. Nada é persistido, sem AuditLog.
     if is_dry_run:
         await db.rollback()
         return {
@@ -891,20 +961,22 @@ async def aplicar_extracao(
             "partes_criadas": n_partes,
             "areas_criadas": n_areas,
             "campos_preenchidos": preenchidos,
+            "prazos_criados": n_prazos,
             "aviso": "Prévia (dry_run): nada foi persistido. Confirme para aplicar. Revisão obrigatória do advogado (OAB).",
         }
 
     db.add(CaseMovimento(
         id=str(uuid4()), case_id=case_id, tipo="nota", created_by=cu.id,
         descricao=(f"Importação inteligente aplicada: {n_partes} parte(s), "
-                   f"{n_areas} área(s), campos: {', '.join(preenchidos) or '—'}. "
-                   f"Revisar (OAB)."),
+                   f"{n_areas} área(s), {n_prazos} prazo(s) a confirmar, "
+                   f"campos: {', '.join(preenchidos) or '—'}. Revisar (OAB)."),
     ))
     await criar_audit_log(db, cu.id, cu.role.value, "IMPORT_EXTRACAO", "cases", case_id)
     await db.commit()
     background.add_task(
         event_bus.emitir, "documento.importado", "case", case_id,
-        {"partes": n_partes, "areas": n_areas, "campos": preenchidos}, cu.id,
+        {"partes": n_partes, "areas": n_areas, "campos": preenchidos,
+         "prazos": n_prazos}, cu.id,
     )
     return {
         "aplicado": True,
@@ -913,7 +985,8 @@ async def aplicar_extracao(
         "partes_criadas": n_partes,
         "areas_criadas": n_areas,
         "campos_preenchidos": preenchidos,
-        "aviso": "Dados extraídos por IA aplicados ao caso. Revisão obrigatória do advogado (OAB).",
+        "prazos_criados": n_prazos,
+        "aviso": "Dados extraídos por IA aplicados ao caso. Prazos criados como RASCUNHO (a confirmar) — já entram nos alertas. Revisão obrigatória do advogado (OAB).",
     }
 
 

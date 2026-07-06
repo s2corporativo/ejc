@@ -225,6 +225,38 @@ async def atualizar(
     return DeadlineResponse.model_validate(d)
 
 
+@router.patch("/{deadline_id}/confirmar", response_model=DeadlineResponse)
+async def confirmar(
+    deadline_id: str,
+    db: AsyncSession = Depends(get_db),
+    cu: User = Depends(get_current_user),
+):
+    """Confirma um prazo RASCUNHO extraído por IA (confirmado=false → true, #83
+    Gap C). O prazo já dispara alertas mesmo como rascunho — isto apenas remove
+    a marca "a confirmar" e deixa trilha de auditoria (PRAZO_CONFIRMADO).
+
+    Ownership idêntico aos demais endpoints de prazo (verificar_acesso_caso):
+    sem vínculo com o caso → 403/404. Idempotente: reconfirmar não regrava audit."""
+    d = (await db.execute(
+        select(Deadline).where(
+            Deadline.id == deadline_id, Deadline.deleted_at.is_(None)
+        )
+    )).scalar_one_or_none()
+    if not d:
+        raise HTTPException(status_code=404, detail="Prazo não encontrado")
+    if d.case_id:
+        await verificar_acesso_caso(db, cu, d.case_id)
+
+    if not d.confirmado:
+        d.confirmado = True
+        await criar_audit_log(
+            db, cu.id, cu.role.value, "PRAZO_CONFIRMADO", "deadlines", deadline_id,
+        )
+        await db.commit()
+        await db.refresh(d)
+    return DeadlineResponse.model_validate(d)
+
+
 @router.post("/{deadline_id}/ciencia", response_model=MsgResponse)
 async def confirmar_ciencia(
     deadline_id: str,

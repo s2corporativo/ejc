@@ -1,6 +1,6 @@
 # ── app/models/deadline.py ───────────────────────────────────────────────────
 from __future__ import annotations
-from sqlalchemy import Column, String, DateTime, Date, Enum as SAEnum, func, Text, Boolean, ForeignKey
+from sqlalchemy import Column, String, DateTime, Date, Enum as SAEnum, func, Text, Boolean, ForeignKey, true
 from sqlalchemy.orm import relationship
 from app.core.database import Base
 import enum
@@ -62,6 +62,17 @@ class Deadline(Base):
     # do movimento (hash CNJ+movimento) — evita reimportar o mesmo prazo.
     origem             = Column(String(20), nullable=False, server_default="manual")
     referencia_datajud = Column(String(64), nullable=True, index=True)
+
+    # Gap C (#83): prazo extraído por IA nasce como RASCUNHO a confirmar.
+    # confirmado=false marca "a confirmar" (informativo/UX + ação de confirmação);
+    # NÃO filtra a lógica de alerta — o prazo já dispara alertas 7d/3d/1d normalmente.
+    # Default TRUE: prazos existentes e criados manualmente são "confirmados";
+    # só os extraídos por IA (origem='importacao_ia') nascem false.
+    confirmado          = Column(Boolean, nullable=False, server_default=true())
+    # Rastreabilidade: documento (GED) que originou o prazo extraído por IA.
+    origem_documento_id = Column(
+        String(36), ForeignKey("documents.id"), nullable=True, index=True
+    )
 
     created_at = Column(DateTime(timezone=True), server_default=func.now())
     updated_at = Column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now())
