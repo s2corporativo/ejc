@@ -14,6 +14,17 @@ set -e
 # o dir do script no path — não o WORKDIR — e o `import app` falha).
 export PYTHONPATH="$(pwd):${PYTHONPATH:-}"
 
+# Se um comando explícito foi passado ao container (ex.: `celery -A ... worker`
+# no serviço `worker` do compose), executa-o diretamente — SEM rodar migrations
+# nem seed. Isso é intencional: migrations/seed são responsabilidade exclusiva
+# do container da API (sem comando), evitando dois processos disputando o schema
+# a cada boot. Sem este `exec "$@"`, o worker subia outro uvicorn e nenhum job
+# Celery era processado (o container ainda ficava "healthy" pelo healthcheck HTTP).
+if [ "$#" -gt 0 ]; then
+    echo "[entrypoint] Comando explícito recebido — executando sem migrations/seed: $*"
+    exec "$@"
+fi
+
 echo "[entrypoint] Aplicando migrations (alembic upgrade head)..."
 python -m alembic upgrade head
 
