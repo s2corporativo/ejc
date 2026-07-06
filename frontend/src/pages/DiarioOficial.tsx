@@ -1,6 +1,7 @@
 import { useState, useEffect, useCallback } from "react";
 import { Link } from "react-router-dom";
 import api from "../lib/api";
+import { toast } from "../components/Toast";
 import { PageHeader, Spinner, Badge } from "../components/UI";
 import {
   Bell,
@@ -124,10 +125,13 @@ export default function DiarioOficial() {
   };
 
   const removerKeyword = async (id: number) => {
+    if (!confirm("Remover esta palavra-chave do monitoramento?")) return;
     try {
       await api.delete(`/diario-oficial/keywords/${id}`);
       setKeywords((prev) => prev.filter((k) => k.id !== id));
-    } catch {}
+    } catch (e: any) {
+      toast.error(e.response?.data?.detail || "Erro ao remover palavra-chave");
+    }
   };
 
   const formatDate = (iso: string) =>

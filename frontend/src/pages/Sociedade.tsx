@@ -85,6 +85,7 @@ export default function Sociedade() {
   const [showFormSocio, setShowFormSocio] = useState(false);
   const [showFormDist, setShowFormDist] = useState(false);
   const [showFormSaque, setShowFormSaque] = useState(false);
+  const [savingSaque, setSavingSaque] = useState(false);
   const [novoSocio, setNovoSocio] = useState({
     user_id: "",
     pct: "",
@@ -184,6 +185,8 @@ export default function Sociedade() {
       toast.error("Informe o valor bruto.");
       return;
     }
+    if (savingSaque) return;
+    setSavingSaque(true);
     try {
       await api.post("/v1/partner-withdrawals", {
         gross_value: gross,
@@ -201,6 +204,8 @@ export default function Sociedade() {
       load();
     } catch (err: any) {
       toast.error(err.response?.data?.detail || "Falha ao registrar saque");
+    } finally {
+      setSavingSaque(false);
     }
   };
 
@@ -701,9 +706,10 @@ export default function Sociedade() {
                 </button>
                 <button
                   type="submit"
+                  disabled={savingSaque}
                   className="btn-primary text-sm px-4 py-1.5"
                 >
-                  Solicitar
+                  {savingSaque ? "Solicitando…" : "Solicitar"}
                 </button>
               </div>
             </form>

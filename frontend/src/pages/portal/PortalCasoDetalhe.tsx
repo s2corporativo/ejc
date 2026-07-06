@@ -2,6 +2,7 @@ import { useEffect, useState } from "react";
 import { useParams, Link } from "react-router-dom";
 import { ArrowLeft, CalendarClock, MessageSquare } from "lucide-react";
 import api from "../../lib/api";
+import { toast } from "../../components/Toast";
 
 function MensagensCliente({ caseId }: { caseId: string }) {
   const [msgs, setMsgs] = useState<any[]>([]);
@@ -22,8 +23,11 @@ function MensagensCliente({ caseId }: { caseId: string }) {
       await api.post(`/portal/casos/${caseId}/mensagens`, { mensagem: txt });
       setTxt("");
       carregar();
-    } catch {
-      /* silencioso */
+    } catch (e: any) {
+      toast.error(
+        e.response?.data?.detail ||
+          "Não foi possível enviar a mensagem. Tente novamente.",
+      );
     } finally {
       setSending(false);
     }
