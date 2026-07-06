@@ -55,7 +55,7 @@ export default function DiarioOficial() {
   const fetchNaoLidosCount = useCallback(async () => {
     try {
       const res = await api.get("/diario-oficial/alertas/nao-lidos/count");
-      setNaoLidosCount(res.data.count);
+      setNaoLidosCount(res.data?.nao_lidos ?? 0);
     } catch {}
   }, []);
 
@@ -65,7 +65,13 @@ export default function DiarioOficial() {
       const params: Record<string, string | number> = { limite: 50 };
       if (filtro === "nao-lidos") params.lido = "false";
       const res = await api.get("/diario-oficial/alertas", { params });
-      setAlertas(res.data);
+      setAlertas(
+        Array.isArray(res.data?.items)
+          ? res.data.items
+          : Array.isArray(res.data)
+            ? res.data
+            : [],
+      );
     } catch {
       setAlertas([]);
     } finally {
