@@ -1106,6 +1106,7 @@ async def analisar_caso_ia(
         area=area_val,
         nomes_proteger=nomes_proteger,
         scope_client_id=getattr(case, 'client_id', None),  # A2: RAG restrito ao próprio cliente
+        case_id=case_id,  # PR #85: pseudonimização reversível dos nomes do caso
         db=db,
     )
 

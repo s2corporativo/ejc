@@ -112,6 +112,7 @@ async def _analisar_doc_bg(case_id: str, ocr_text: str, doc_id: str, user_id: st
                 numero_processo=(caso.numero_processo if caso else "") or "",
                 texto_documento=ocr_text[:4000],
                 scope_client_id=(caso.client_id if caso else None),  # A2: RAG restrito ao cliente
+                case_id=case_id,  # PR #85: pseudonimização reversível dos nomes do caso
                 db=db,
             )
 
