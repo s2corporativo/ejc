@@ -39,17 +39,33 @@ PREFIXOS_PUBLICOS = (
 )
 
 
+def _path_casa_prefixo_publico(path: str, prefixo: str) -> bool:
+    """Casa uma rota pública sem liberar prefixos falsos.
+
+    Prefixos terminados em "/" continuam funcionando como subárvore pública
+    deliberada. Rotas sem "/" final aceitam somente a rota exata ou subrota
+    real separada por barra. Ex.: "/api/health/ready" é público, mas
+    "/api/auth/login-extra" não herda a liberação de "/api/auth/login".
+    """
+    if prefixo.endswith("/"):
+        return path.startswith(prefixo)
+    return path == prefixo or path.startswith(prefixo + "/")
+
+
 def _is_publica(path: str) -> bool:
     """Retorna True se a rota não exige JWT.
 
     Auditoria B-1: normaliza o path (posixpath.normpath) ANTES do startswith —
     sem isso, "/api/rag/knowledge-base/../qualquer-coisa" casaria um prefixo
     público via segmentos "..", pulando o middleware para uma rota protegida.
+
+    Auditoria estabilidade-ejc: evita falso positivo por prefixo textual
+    parcial. Ex.: "/api/auth/login-extra" não pode ser tratado como público.
     """
     path = posixpath.normpath(path)
     if not path.startswith("/api/"):
         return True  # arquivos estáticos, etc.
-    return any(path.startswith(p) for p in PREFIXOS_PUBLICOS)
+    return any(_path_casa_prefixo_publico(path, p) for p in PREFIXOS_PUBLICOS)
 
 
 class AuthMiddleware(BaseHTTPMiddleware):
