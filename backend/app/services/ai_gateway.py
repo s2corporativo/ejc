@@ -187,6 +187,52 @@ class GatewayResponse:
     )
 
 
+class _ProviderPulado(Exception):
+    """A barreira LGPD PULOU este provider (PII residual após a sanitização): o
+    chamador deve tentar o PRÓXIMO da cadeia, não tratar como falha do provider.
+    O conteúdo NUNCA foi enviado ao provider externo."""
+
+    def __init__(self, residual):
+        self.residual = list(residual)
+        super().__init__("PII residual: " + ", ".join(self.residual))
+
+
+async def _chamar_com_barreira(provider, model, messages, modo_sanitizacao,
+                               entidades, temperature, max_tokens):
+    """Barreira FINAL LGPD + chamada ao provider + reidratação — FONTE ÚNICA.
+
+    #39: antes esta lógica estava DUPLICADA em chat() e executar_tarefa_ia(); duas
+    cópias de um controle de PII arriscam divergência silenciosa. Consolidada aqui:
+      - provider EXTERNO só recebe conteúdo sanitizado; se após sanitizar ainda
+        sobra PII estrutural, levanta _ProviderPulado (o chamador pula p/ o
+        próximo, ex.: Ollama local) — o conteúdo nunca é enviado nem ecoado;
+      - chama o provider e REIDRATA a resposta devolvida ao chamador (modo
+        reversível). O `texto_para_log` fica SEM PII real (pseudonimizado) — é a
+        versão que deve ir a log/observabilidade.
+
+    Retorna (texto, texto_para_log, usage, messages_envio, pii_removida).
+    """
+    messages_envio = messages
+    # `mapa_reidratacao` contém PII real (só EXTERNO_PSEUDONIMIZADO): vive só
+    # nesta chamada/memória, nunca é logado/persistido/enviado.
+    mapa_reidratacao = None
+    if provider in _PROVIDERS_EXTERNOS and settings.AI_REQUIRE_SANITIZATION_FOR_EXTERNAL:
+        messages_envio, residual, mapa_reidratacao = _preparar_mensagens_externo(
+            messages, modo_sanitizacao, entidades
+        )
+        if residual:
+            raise _ProviderPulado(residual)
+    texto, usage = await _chamar_provedor(provider, model, messages_envio,
+                                          temperature, max_tokens)
+    # Reidratação LOCAL: só a resposta DEVOLVIDA recupera o dado real; a versão
+    # pseudonimizada (texto_para_log) é a que vai à observabilidade.
+    texto_para_log = texto
+    if mapa_reidratacao:
+        from app.services.ai.pseudonymizer import reidratar
+        texto = reidratar(texto, mapa_reidratacao)
+    return texto, texto_para_log, usage, messages_envio, bool(mapa_reidratacao)
+
+
 async def chat(
     messages: list[dict],
     task_type: str = "analise_juridica",
@@ -310,44 +356,15 @@ async def chat(
     for i, (provider, model) in enumerate(cadeia):
         if i > 0:
             fallback_ativado = True
-        # ── Barreira FINAL LGPD (Núcleo Único): provider EXTERNO só recebe
-        # conteúdo sanitizado. Se após sanitizar ainda houver PII estrutural,
-        # este provedor é PULADO (tenta o próximo — ex.: Ollama local).
-        # Nunca ecoa o conteúdo — só os TIPOS de PII no log.
-        messages_envio = messages
-        # `mapa_reidratacao` contém PII real (só EXTERNO_PSEUDONIMIZADO):
-        # vive SÓ nesta iteração/memória, nunca é logado/persistido/enviado.
-        mapa_reidratacao: dict[str, str] | None = None
-        if provider in _PROVIDERS_EXTERNOS and settings.AI_REQUIRE_SANITIZATION_FOR_EXTERNAL:
-            # EXTERNO_PSEUDONIMIZADO / EXTRACAO_LOCAL → pseudonimização REVERSÍVEL
-            # (marcadores consistentes) + reidratação da resposta. Demais modos
-            # (MASCARAMENTO/legado) → mascaramento IRREVERSÍVEL (comportamento atual).
-            messages_envio, residual, mapa_reidratacao = _preparar_mensagens_externo(
-                messages, modo_sanitizacao, entidades
-            )
-            if residual:
-                bloqueado_por_pii = True
-                mapa_reidratacao = None  # não reidratar: provider externo foi pulado
-                ultimo_erro = f"PII residual ({', '.join(residual)}) bloqueou provider externo"
-                fallback_motivo = f"{provider}: bloqueado por PII residual (LGPD)"
-                logger.warning(
-                    f"[Gateway] {provider} pulado — PII residual ({', '.join(residual)}) "
-                    "após sanitização (LGPD)."
-                )
-                _lf.registrar_evento(_trace, name=f"pii_bloqueio:{provider}",
-                                     metadata={"provider": provider, "task_type": task_type})
-                continue
         try:
-            texto, usage = await _chamar_provedor(
-                provider, model, messages_envio, temperature, max_tokens
+            # #39: barreira LGPD + chamada ao provider + reidratação num ÚNICO
+            # ponto (fonte compartilhada com executar_tarefa_ia). Se o provider
+            # externo é PULADO por PII residual, _chamar_com_barreira levanta
+            # _ProviderPulado (tratado abaixo — tenta o próximo da cadeia).
+            texto, texto_para_log, usage, messages_envio, _ = await _chamar_com_barreira(
+                provider, model, messages, modo_sanitizacao, entidades,
+                temperature, max_tokens,
             )
-            # Reidratação LOCAL: só a resposta DEVOLVIDA ao chamador recupera o
-            # dado real. A versão pseudonimizada (`texto_para_log`) é a que vai
-            # ao Langfuse — nunca PII em claro na observabilidade (LGPD).
-            texto_para_log = texto
-            if mapa_reidratacao:
-                from app.services.ai.pseudonymizer import reidratar
-                texto = reidratar(texto, mapa_reidratacao)
             duracao = int((time.monotonic() - t0) * 1000)
             modelo_real = usage.get("model", model or "")
             inp = usage.get("input_tokens")
@@ -399,6 +416,18 @@ async def chat(
                 "custo_estimado_brl": custo_brl,
             })
             return resp
+        except _ProviderPulado as _pulado:
+            # Barreira LGPD pulou este provider (PII residual) → tenta o próximo.
+            bloqueado_por_pii = True
+            ultimo_erro = f"PII residual ({', '.join(_pulado.residual)}) bloqueou provider externo"
+            fallback_motivo = f"{provider}: bloqueado por PII residual (LGPD)"
+            logger.warning(
+                f"[Gateway] {provider} pulado — PII residual ({', '.join(_pulado.residual)}) "
+                "após sanitização (LGPD)."
+            )
+            _lf.registrar_evento(_trace, name=f"pii_bloqueio:{provider}",
+                                 metadata={"provider": provider, "task_type": task_type})
+            continue
         except Exception as e:
             ultimo_erro = str(e)[:200]  # trilha INTERNA (logger + RuntimeError)
             # B1: no que sai ao Langfuse (fallback_motivo → metadata; evento),
@@ -739,38 +768,30 @@ async def executar_tarefa_ia(tarefa, mensagem: str, case_id: str | None = None,
         if not _provider_elegivel(provider):
             ultimo_erro = f"{provider} inelegível (habilitação/chave/soberania)"
             continue
-        messages_envio = messages
-        # `mapa_reidratacao` contém PII real (só modo reversível): vive só nesta
-        # iteração/memória; nunca é logado/persistido/enviado a externo.
-        mapa_reidratacao: dict[str, str] | None = None
-        if provider in _PROVIDERS_EXTERNOS and settings.AI_REQUIRE_SANITIZATION_FOR_EXTERNAL:
-            messages_envio, residual, mapa_reidratacao = _preparar_mensagens_externo(
-                messages, modo_sanitizacao, entidades
-            )
-            if residual:
-                bloqueado_por_pii = True
-                mapa_reidratacao = None  # não reidratar: provider externo foi pulado
-                ultimo_erro = f"PII residual ({', '.join(residual)}) bloqueou provider externo"
-                logger.warning(f"[Gateway] {provider} pulado em executar_tarefa_ia — "
-                               f"PII residual ({', '.join(residual)}) após sanitização (LGPD).")
-                continue
         try:
-            texto, usage = await _chamar_provedor(provider, model, messages_envio,
-                                                  cfg.temperature, cfg.max_tokens)
-            provedor_usado = provider
-            # Log recebe a versão PSEUDONIMIZADA (sem PII real); só a resposta
-            # DEVOLVIDA ao chamador é reidratada.
-            resposta_log = texto
-            if mapa_reidratacao:
-                from app.services.ai.pseudonymizer import reidratar
-                prompt_log = (messages_envio[-1].get("content", "") if messages_envio else mensagem)[:8000]
-                pii_removida_log = True
-                texto = reidratar(texto, mapa_reidratacao)
-            break
+            # #39: barreira LGPD + chamada + reidratação — fonte única (idem chat).
+            texto, resposta_log, usage, messages_envio, pii_removida = await _chamar_com_barreira(
+                provider, model, messages, modo_sanitizacao, entidades,
+                cfg.temperature, cfg.max_tokens,
+            )
+        except _ProviderPulado as _pulado:
+            bloqueado_por_pii = True
+            ultimo_erro = f"PII residual ({', '.join(_pulado.residual)}) bloqueou provider externo"
+            logger.warning(f"[Gateway] {provider} pulado em executar_tarefa_ia — "
+                           f"PII residual ({', '.join(_pulado.residual)}) após sanitização (LGPD).")
+            continue
         except Exception as e:
             ultimo_erro = str(e)[:120]
             logger.warning(f"[Gateway] {provider} falhou em executar_tarefa_ia; "
                            f"tentando próximo: {ultimo_erro}")
+            continue
+        provedor_usado = provider
+        # resposta_log = versão PSEUDONIMIZADA (sem PII real); no modo reversível
+        # o prompt logado também é o sanitizado.
+        if pii_removida:
+            prompt_log = (messages_envio[-1].get("content", "") if messages_envio else mensagem)[:8000]
+            pii_removida_log = True
+        break
     if provedor_usado is None:
         if bloqueado_por_pii:
             raise RuntimeError(

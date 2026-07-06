@@ -55,6 +55,7 @@ router = APIRouter(prefix="/casos/{case_id}/provas", tags=["Provas"])
 # Retenção dos PDFs do documento único (contêm dados do caso e do cliente —
 # LGPD): varredura best-effort remove os mais antigos que o TTL a cada geração.
 PDF_TTL_SEGUNDOS = 3600  # 1h
+from app.services import visual_law_files as _vlf  # #27: arnês único
 
 
 # ── Helpers ───────────────────────────────────────────────────────────────────
@@ -331,19 +332,8 @@ def _limpar_pdfs_antigos(out_dir: str) -> None:
     """Retenção LGPD: os PDFs carregam dados do caso e do cliente. Varredura
     best-effort remove os mais antigos que o TTL a cada geração — sem estado
     externo, tolerante a falhas (nunca quebra a resposta)."""
-    try:
-        agora = time.time()
-        for nome in os.listdir(out_dir):
-            if not nome.endswith(".pdf"):
-                continue
-            caminho = os.path.join(out_dir, nome)
-            try:
-                if agora - os.path.getmtime(caminho) > PDF_TTL_SEGUNDOS:
-                    os.remove(caminho)
-            except OSError:
-                continue
-    except OSError:
-        pass
+    # #27: purga TTL centralizada em services/visual_law_files (retenção LGPD).
+    _vlf.purgar_antigos(out_dir, PDF_TTL_SEGUNDOS)
 
 
 @router.post("/documento-unico",
@@ -419,9 +409,8 @@ async def download_documento_unico(
     """Download do PDF gerado. `arquivo_id` é validado como UUID (nunca
     interpolado livre no path — sem traversal). Exige acesso ao caso."""
     await verificar_acesso_caso(db, cu, case_id)
-    if not re.fullmatch(r"[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}",
-                        arquivo_id):
-        raise HTTPException(422, "Identificador de documento inválido.")
+    # #27: validação anti-traversal (UUID) centralizada.
+    _vlf.validar_uuid(arquivo_id)
     path = os.path.join(_provas_dir(), f"anexos_{arquivo_id}.pdf")
     if not os.path.isfile(path):
         raise HTTPException(404, "Documento não encontrado — gere via POST "

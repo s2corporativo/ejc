@@ -38,6 +38,7 @@ router = APIRouter(prefix="/ambiental/estrategia", tags=["Ambiental / Estratégi
 # Retenção dos PDFs (contêm dados do auto — órgão, número, valores): varredura
 # best-effort remove os mais antigos que o TTL a cada geração (LGPD).
 PDF_TTL_SEGUNDOS = 3600  # 1h
+from app.services import visual_law_files as _vlf  # #27: arnês único
 
 # Limites de tamanho no payload renderizado pelo WeasyPrint (caro/síncrono):
 # evitam DoS por strings/listas gigantes.
@@ -126,19 +127,8 @@ def _limpar_pdfs_antigos(out_dir: str) -> None:
     """Retenção LGPD: PDFs carregam dados do auto. Varredura best-effort remove
     os mais antigos que o TTL a cada geração — sem estado externo, tolerante a
     falhas (nunca quebra a resposta)."""
-    try:
-        agora = time.time()
-        for nome in os.listdir(out_dir):
-            if not nome.endswith(".pdf"):
-                continue
-            caminho = os.path.join(out_dir, nome)
-            try:
-                if agora - os.path.getmtime(caminho) > PDF_TTL_SEGUNDOS:
-                    os.remove(caminho)
-            except OSError:
-                continue
-    except OSError:
-        pass
+    # #27: purga TTL centralizada em services/visual_law_files (retenção LGPD).
+    _vlf.purgar_antigos(out_dir, PDF_TTL_SEGUNDOS)
 
 
 def _moeda(v: Optional[float]) -> str:
@@ -251,9 +241,8 @@ async def peca_conversao(payload: PecaConversaoIn,
 async def download_peca(arquivo_id: str, cu: User = Depends(get_current_user)):
     """Download do PDF gerado pelo POST acima. `arquivo_id` é validado como UUID
     (nunca interpolado livre no path — sem traversal)."""
-    if not re.fullmatch(r"[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}",
-                        arquivo_id):
-        raise HTTPException(422, "Identificador de peça inválido.")
+    # #27: validação anti-traversal (UUID) centralizada.
+    _vlf.validar_uuid(arquivo_id)
     path = os.path.join(_peca_dir(), f"requerimento_{arquivo_id}.pdf")
     if not os.path.isfile(path):
         raise HTTPException(404, "Peça não encontrada — gere via POST "
