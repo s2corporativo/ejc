@@ -39,6 +39,7 @@ dist/
 *.log
 uploads/
 backups/
+frontend/tests/__out__/
 _QUARENTENA/
 vps-tools/generated/
 _session_componentes_bronze/

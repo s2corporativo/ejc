@@ -8,7 +8,7 @@
 // padrão do ambiente (/opt/pw-browsers/...). Não baixa navegador.
 import http from "node:http";
 import { readFile, stat } from "node:fs/promises";
-import { existsSync } from "node:fs";
+import { existsSync, mkdirSync } from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { chromium } from "playwright";
@@ -57,6 +57,7 @@ async function main() {
   const port = server.address().port;
   const base = `http://127.0.0.1:${port}/`;
 
+  mkdirSync(OUT, { recursive: true }); // garante o diretório dos screenshots
   const browser = await chromium.launch({ executablePath: CHROMIUM });
   const falhas = [];
   try {
