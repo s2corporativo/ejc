@@ -189,6 +189,7 @@ async def analisar_caso(
     area: str = "",
     nomes_proteger: list[str] | None = None,
     scope_client_id: str | None = None,
+    case_id: str | None = None,
     db=None,
 ) -> dict:
     """
@@ -256,10 +257,22 @@ async def analisar_caso(
         except Exception as _e:
             logger.warning("RAG grounding indisponivel: %s", _e)
 
-    # LGPD — sanitiza (inclui nomes do caso via nomes_proteger) e aplica a
-    # SEGUNDA BARREIRA (validar_sem_pii) ANTES de qualquer envio ao LLM. Se sobrar
-    # PII estrutural (CPF/CNPJ/processo/e-mail), aborta — não vaza pra nuvem.
-    resultado_sanitizacao = sanitizar_pii(contexto, nomes_proteger)
+    # Pseudonimização REVERSÍVEL de nomes próprios (PR #85): com case_id+db,
+    # deriva as ENTIDADES do caso e deixa o gateway pseudonimizar/reidratar — a
+    # resposta volta com o NOME REAL (não [PARTE_n] irreversível). Sem case_id/db
+    # (ou helper sem entidades), cai no mascaramento IRREVERSÍVEL legado via
+    # nomes_proteger. entidades_do_caso é fail-safe (nunca levanta).
+    entidades = None
+    if db is not None and case_id:
+        from app.services.ai.entidades_caso import entidades_do_caso
+        entidades = await entidades_do_caso(db, case_id) or None
+
+    # LGPD — sanitiza a PII ESTRUTURAL (CPF/CNPJ/processo/e-mail…) e aplica a
+    # SEGUNDA BARREIRA (validar_sem_pii) ANTES de qualquer envio ao LLM. Quando há
+    # `entidades`, os NOMES não são pré-mascarados aqui: o gateway os troca por
+    # marcadores consistentes (reversíveis) e reidrata a resposta. Sem entidades,
+    # mantém o mascaramento IRREVERSÍVEL dos nomes via nomes_proteger.
+    resultado_sanitizacao = sanitizar_pii(contexto, None if entidades else nomes_proteger)
     contexto_sanitizado = (
         resultado_sanitizacao[0] if isinstance(resultado_sanitizacao, tuple)
         else resultado_sanitizacao
@@ -284,6 +297,7 @@ async def analisar_caso(
             task_type="estrategia",
             temperature=0.3,
             max_tokens=3000,
+            entidades=entidades,
         )
         resultado = _parse_json_robusto(resp.texto)
         if not resultado:

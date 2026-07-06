@@ -324,8 +324,13 @@ async def _gateway_text(
     max_tokens: int = 2048,
     nivel: str = "alto",
     model_override: str | None = None,
+    entidades: dict[str, list[str]] | None = None,
 ) -> tuple[str, GatewayResponse]:
-    """Chamada centralizada ao AI Gateway, mantendo metadados para logs HITL."""
+    """Chamada centralizada ao AI Gateway, mantendo metadados para logs HITL.
+
+    `entidades` (opcional): nomes próprios do caso para pseudonimização
+    REVERSÍVEL no gateway (só surte efeito em tasks EXTERNO_PSEUDONIMIZADO). None
+    (default) = só PII estrutural, sem quebrar os call sites existentes."""
     provider_override = "groq" if model_override else None
     resp = await gw_chat(
         messages=[
@@ -338,6 +343,7 @@ async def _gateway_text(
         model_override=model_override,
         provider_override=provider_override,
         nivel_inteligencia=nivel,
+        entidades=entidades,
     )
     return resp.texto, resp
 
@@ -618,7 +624,16 @@ async def detectar_teses_ocultas(
     scope_client_id (Bloco 5): o CHAMADOR deve verificar ownership do case_id
     e derivar o escopo (ver routers/ai.py::teses_ocultas) — esta função de
     serviço não tem acesso ao usuário autenticado para checar isso sozinha."""
-    texto, pii = sanitizar_pii(descricao_fatos, nomes_proteger or [])
+    # Pseudonimização REVERSÍVEL dos nomes do caso (PR #85): com case_id, deriva
+    # as ENTIDADES e deixa o gateway pseudonimizar/reidratar — as teses voltam
+    # com o NOME REAL. Sem case_id (fatos livres), mantém o mascaramento
+    # IRREVERSÍVEL legado via nomes_proteger. entidades_do_caso é fail-safe.
+    entidades = None
+    if case_id:
+        from app.services.ai.entidades_caso import entidades_do_caso
+        entidades = await entidades_do_caso(db, case_id) or None
+
+    texto, pii = sanitizar_pii(descricao_fatos, (nomes_proteger or []) if not entidades else None)
     residual = validar_sem_pii(texto)
     if residual:
         return {"erro": f"Sanitização incompleta: {residual}. Revise o texto."}
@@ -636,8 +651,17 @@ async def detectar_teses_ocultas(
         conteudo, resp = await _gateway_text(
             SYSTEM_TESES_OCULTAS, user_msg,
             task_type="estrategia", temperature=0.2, max_tokens=2400, nivel="alto",
+            entidades=entidades,
         )
-        await _log_ai(db, user_id, "analise_caso", user_msg, conteudo,
+        # LGPD — AILog.prompt_sanitizado é "SEM PII". Com `entidades` o user_msg
+        # tem nomes em claro (o gateway só os pseudonimiza no envio ao externo);
+        # pseudonimizamos AQUI apenas o valor logado (marcadores), preservando o
+        # que foi enviado e a resposta reidratada.
+        prompt_log = user_msg
+        if entidades:
+            from app.services.ai.pseudonymizer import pseudonimizar
+            prompt_log = pseudonimizar(user_msg, entidades)[0]
+        await _log_ai(db, user_id, "analise_caso", prompt_log, conteudo,
                       pii, fontes, resp, case_id)
         return {
             "resposta": conteudo,

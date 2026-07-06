@@ -246,9 +246,23 @@ async def gerar_peca_pipeline(
     async def step(num: int, titulo: str, status: str = "iniciando") -> None:
         yield await _emit("step", {"etapa": num, "titulo": titulo, "status": status})
 
-    # Sanitiza entrada (LGPD)
-    fatos_limpos, houve_pii_fatos = sanitizar_pii(descricao_fatos, nomes_proteger)
-    pedidos_limpos, houve_pii_pedidos = sanitizar_pii(pedidos, nomes_proteger)
+    # Pseudonimização REVERSÍVEL dos nomes próprios (PR #85): com case_id+db,
+    # deriva as ENTIDADES do caso e deixa o gateway pseudonimizar/reidratar — a
+    # peça final volta com o NOME REAL (não [PARTE_n] irreversível). Sem case_id
+    # (ou helper sem entidades), cai no mascaramento IRREVERSÍVEL legado via
+    # nomes_proteger. entidades_do_caso é fail-safe (nunca levanta).
+    entidades = None
+    if db is not None and case_id:
+        from app.services.ai.entidades_caso import entidades_do_caso
+        entidades = await entidades_do_caso(db, case_id) or None
+
+    # Sanitiza entrada (LGPD). Com `entidades`, os NOMES não são pré-mascarados
+    # aqui (o gateway os pseudonimiza de forma reversível e reidrata a resposta);
+    # só a PII ESTRUTURAL é removida. Sem entidades, mantém o mascaramento
+    # IRREVERSÍVEL dos nomes via nomes_proteger.
+    _nomes_mascarar = None if entidades else nomes_proteger
+    fatos_limpos, houve_pii_fatos = sanitizar_pii(descricao_fatos, _nomes_mascarar)
+    pedidos_limpos, houve_pii_pedidos = sanitizar_pii(pedidos, _nomes_mascarar)
     houve_pii = houve_pii_fatos or houve_pii_pedidos
     auto_tipo = tipo_peca == "auto"
     tipo_peca_final = tipo_peca
@@ -289,6 +303,7 @@ async def gerar_peca_pipeline(
         task_type="analise_juridica",
         temperature=0.1,
         max_tokens=600,
+        entidades=entidades,
     )
     if auto_tipo:
         tipo_detectado = _tipo_identificado(r1.texto)
@@ -325,6 +340,7 @@ async def gerar_peca_pipeline(
         task_type="analise_juridica",
         temperature=0.15,
         max_tokens=1000,
+        entidades=entidades,
     )
     yield await _emit("step", {"etapa": 2, "titulo": "Enquadramento jurídico estruturado", "status": "concluido", "resultado": r2.texto[:500]})
 
@@ -369,6 +385,7 @@ async def gerar_peca_pipeline(
         task_type="analise_juridica",
         temperature=0.1,
         max_tokens=1200,
+        entidades=entidades,
     )
     yield await _emit("step", {"etapa": 4, "titulo": "Jurisprudência analisada", "status": "concluido", "resultado": r4.texto[:500]})
 
@@ -395,6 +412,7 @@ async def gerar_peca_pipeline(
         task_type="analise_juridica",
         temperature=0.2,
         max_tokens=1500,
+        entidades=entidades,
     )
     yield await _emit("step", {"etapa": 5, "titulo": "Argumentos organizados", "status": "concluido", "resultado": r5.texto[:500]})
 
@@ -421,6 +439,7 @@ async def gerar_peca_pipeline(
         task_type="analise_juridica",
         temperature=0.2,
         max_tokens=1000,
+        entidades=entidades,
     )
     yield await _emit("step", {"etapa": 6, "titulo": "Riscos identificados", "status": "concluido", "resultado": r6.texto[:500]})
 
@@ -467,6 +486,7 @@ async def gerar_peca_pipeline(
         task_type="elaboracao_peca",
         temperature=0.3,
         max_tokens=4000,
+        entidades=entidades,
     )
     yield await _emit("step", {"etapa": 7, "titulo": "Documento montado", "status": "concluido"})
     documento_final = padronizar_documento_juridico(r7.texto)
@@ -492,13 +512,22 @@ async def gerar_peca_pipeline(
         _lg.getLogger(__name__).warning("citation_check falhou: %s", _e)
 
     # ── Registra no AILog (HITL) ───────────────────────────────────────────
+    # LGPD — o campo prompt_sanitizado tem contrato "SEM PII". Com `entidades`
+    # ativo os fatos NÃO foram pré-mascarados (o gateway pseudonimiza só no
+    # envio ao externo), então pseudonimizamos AQUI apenas o VALOR LOGADO
+    # (marcadores consistentes [CLIENTE_1]…) — sem afetar o que foi enviado ao
+    # gateway nem a resposta reidratada devolvida.
+    fatos_log = fatos_limpos
+    if entidades:
+        from app.services.ai.pseudonymizer import pseudonimizar
+        fatos_log = pseudonimizar(fatos_limpos, entidades)[0]
     log = AILog(
         id=str(uuid4()),
         user_id=user_id,
         case_id=case_id,
         tipo_uso=AITipoUso.redacao_peca,
         modelo=r7.modelo,
-        prompt_sanitizado=fatos_limpos[:4000],
+        prompt_sanitizado=fatos_log[:4000],
         pii_removida=houve_pii,
         resposta=documento_final,
         fontes_rag="; ".join(f["chunk_id"] for f in fontes) if fontes else None,
