@@ -1,0 +1,88 @@
+{
+  "suite": "EJC Full System Fictitious E2E",
+  "version": "1.0.0",
+  "safety": {
+    "production_guard": true,
+    "required_env": ["EJC_BASE_URL", "EJC_TEST_EMAIL", "EJC_TEST_PASSWORD"],
+    "marker": "E2E-FICTICIO",
+    "description": "Todos os dados criados por esta suíte devem conter o marcador E2E-FICTICIO para facilitar localização e limpeza. A suíte deve rodar preferencialmente em staging/homologação."
+  },
+  "fictional_data": {
+    "cliente_pf": {
+      "tipo": "PF",
+      "nome": "E2E-FICTICIO Maria Teste Integral",
+      "cpf": "52998224725",
+      "email": "maria.e2e@example.test",
+      "telefone": "31999990001",
+      "whatsapp": "31999990001",
+      "cidade": "Betim",
+      "estado": "MG",
+      "observacoes": "Cadastro fictício criado para teste ponta a ponta do EJC."
+    },
+    "caso_consumidor": {
+      "titulo": "E2E-FICTICIO Reclamação contra concessionária de água",
+      "area": "consumidor",
+      "prioridade": "alta",
+      "numero_processo": "5000000-00.2026.8.13.0027",
+      "tribunal": "TJMG",
+      "comarca": "Betim",
+      "vara": "Juizado Especial Cível",
+      "parte_contraria": "Companhia Fictícia de Água S.A.",
+      "valor_causa": "3500.00",
+      "descricao_fatos": "Cliente fictícia relata cobrança indevida e interrupção de serviço essencial. Documento longo será anexado para testar OCR, dossiê e IA."
+    },
+    "documento_texto": {
+      "titulo": "E2E-FICTICIO Relato documental longo",
+      "filename": "e2e-ficticio-relato.txt",
+      "content_type": "text/plain",
+      "content": "E2E-FICTICIO. RELATO LONGO PARA TESTE. A consumidora fictícia Maria Teste Integral afirma que recebeu cobranças indevidas por três meses consecutivos. A concessionária fictícia não apresentou memória de cálculo clara. Houve tentativa administrativa de solução sem resposta adequada. O serviço essencial teria sido interrompido por 24 horas. A prova documental inclui protocolos, prints e faturas. Este texto deve ser enviado integralmente à análise, sem corte de 4000 caracteres. Para alongar o documento, repetimos fatos juridicamente relevantes: cobrança indevida, dano moral, serviço essencial, inversão do ônus da prova, tutela de urgência, repetição de indébito, falha na prestação de serviço, CDC, consumidor vulnerável, prova documental, protocolo administrativo. FIM DO DOCUMENTO E2E-FICTICIO."
+    },
+    "movimento": {
+      "tipo": "movimento",
+      "descricao": "E2E-FICTICIO Movimento público de teste para validar timeline e notificação."
+    },
+    "atualizacao_caso": {
+      "status": "ativo",
+      "fase": "instrucao",
+      "risco": "medio",
+      "observacoes": "E2E-FICTICIO Atualização automática de homologação."
+    }
+  },
+  "modules": [
+    {"module_key": "dashboard", "kind": "smoke", "frontend_route": "/", "api_checks": [{"method": "GET", "path": "/api/health", "expected": [200]}, {"method": "GET", "path": "/api/health/ready", "expected": [200, 503]}]},
+    {"module_key": "clientes", "kind": "crud", "frontend_route": "/clientes", "api_checks": [{"method": "GET", "path": "/api/clients/", "expected": [200]}, {"method": "POST", "path": "/api/clients/", "expected": [201, 409, 422]}]},
+    {"module_key": "atendimento", "kind": "smoke", "frontend_route": "/central-relacionamento", "api_checks": [{"method": "GET", "path": "/api/notifications/?apenas_nao_lidas=false&limit=5", "expected": [200]}]},
+    {"module_key": "crm", "kind": "coverage", "frontend_route": "/crm-leads", "api_checks": [{"method": "GET", "path": "/api/clients/", "expected": [200]}]},
+    {"module_key": "casos", "kind": "crud", "frontend_route": "/casos", "api_checks": [{"method": "GET", "path": "/api/cases/", "expected": [200]}, {"method": "POST", "path": "/api/cases/", "expected": [200, 201, 422]}]},
+    {"module_key": "datajud", "kind": "smoke", "frontend_route": "/datajud", "api_checks": [{"method": "GET", "path": "/api/datajud/health", "expected": [200, 404, 405]}]},
+    {"module_key": "prazos", "kind": "smoke", "frontend_route": "/prazos", "api_checks": [{"method": "GET", "path": "/api/deadlines/", "expected": [200, 404]}]},
+    {"module_key": "intimacoes", "kind": "smoke", "frontend_route": "/intimacoes", "api_checks": [{"method": "GET", "path": "/api/intimacoes/", "expected": [200, 404]}]},
+    {"module_key": "tarefas", "kind": "smoke", "frontend_route": "/tarefas", "api_checks": [{"method": "GET", "path": "/api/tasks/", "expected": [200, 404]}]},
+    {"module_key": "ramos", "kind": "smoke", "frontend_route": "/ramos", "api_checks": [{"method": "GET", "path": "/api/ramos/", "expected": [200, 404]}]},
+    {"module_key": "documentos", "kind": "upload", "frontend_route": "/documentos", "api_checks": [{"method": "GET", "path": "/api/documents/", "expected": [200]}, {"method": "POST", "path": "/api/documents/upload", "expected": [201]}]},
+    {"module_key": "pecas", "kind": "smoke", "frontend_route": "/pecas", "api_checks": [{"method": "GET", "path": "/api/templates/", "expected": [200, 404]}]},
+    {"module_key": "checklists", "kind": "smoke", "frontend_route": "/checklists", "api_checks": [{"method": "GET", "path": "/api/checklists/", "expected": [200, 404]}]},
+    {"module_key": "workflow", "kind": "smoke", "frontend_route": "/workflow", "api_checks": [{"method": "GET", "path": "/api/workflow/", "expected": [200, 404]}]},
+    {"module_key": "assinaturas", "kind": "smoke", "frontend_route": "/assinaturas", "api_checks": [{"method": "GET", "path": "/api/signatures/", "expected": [200, 404]}]},
+    {"module_key": "financeiro", "kind": "smoke", "frontend_route": "/financeiro", "api_checks": [{"method": "GET", "path": "/api/financeiro-consolidado/", "expected": [200, 404]}]},
+    {"module_key": "honorarios", "kind": "smoke", "frontend_route": "/honorarios", "api_checks": [{"method": "GET", "path": "/api/honorarios-oab/", "expected": [200, 404, 405]}]},
+    {"module_key": "sociedade", "kind": "smoke", "frontend_route": "/sociedade", "api_checks": [{"method": "GET", "path": "/api/gestao-societaria/", "expected": [200, 404]}]},
+    {"module_key": "ia", "kind": "smoke", "frontend_route": "/ia", "api_checks": [{"method": "GET", "path": "/api/ia-saude/status", "expected": [200, 404]}]},
+    {"module_key": "inteligencia", "kind": "smoke", "frontend_route": "/inteligencia", "api_checks": [{"method": "GET", "path": "/api/score-juridico/", "expected": [200, 404]}]},
+    {"module_key": "ferramentas-ia", "kind": "smoke", "frontend_route": "/ferramentas-ia", "api_checks": [{"method": "GET", "path": "/api/ia-extra/", "expected": [200, 404]}]},
+    {"module_key": "conhecimento", "kind": "smoke", "frontend_route": "/conhecimento", "api_checks": [{"method": "GET", "path": "/api/rag/", "expected": [200, 404]}]},
+    {"module_key": "jurimetria", "kind": "smoke", "frontend_route": "/jurimetria", "api_checks": [{"method": "GET", "path": "/api/jurimetria/", "expected": [200, 404]}]},
+    {"module_key": "victory-vault", "kind": "smoke", "frontend_route": "/victory-vault", "api_checks": [{"method": "GET", "path": "/api/victory-vault/", "expected": [200, 404]}]},
+    {"module_key": "radar-regulatorio", "kind": "smoke", "frontend_route": "/radar-regulatorio", "api_checks": [{"method": "GET", "path": "/api/regulatorio/", "expected": [200, 404]}]},
+    {"module_key": "biblioteca", "kind": "smoke", "frontend_route": "/biblioteca", "api_checks": [{"method": "GET", "path": "/api/wiki/", "expected": [200, 404]}]},
+    {"module_key": "diario-oficial", "kind": "smoke", "frontend_route": "/diario-oficial", "api_checks": [{"method": "GET", "path": "/api/diario-oficial/", "expected": [200, 404]}]},
+    {"module_key": "noticias", "kind": "smoke", "frontend_route": "/noticias", "api_checks": [{"method": "GET", "path": "/api/noticias/", "expected": [200, 404]}]},
+    {"module_key": "portal", "kind": "security", "frontend_route": "/portal", "api_checks": [{"method": "GET", "path": "/api/portal", "expected": [200, 403, 404]}]},
+    {"module_key": "whatsapp", "kind": "smoke", "frontend_route": "/whatsapp", "api_checks": [{"method": "GET", "path": "/api/whatsapp/", "expected": [200, 404]}]},
+    {"module_key": "auditoria", "kind": "smoke", "frontend_route": "/auditoria", "api_checks": [{"method": "GET", "path": "/api/audit/", "expected": [200, 404]}]},
+    {"module_key": "produtividade", "kind": "smoke", "frontend_route": "/produtividade", "api_checks": [{"method": "GET", "path": "/api/produtividade/", "expected": [200, 404]}]},
+    {"module_key": "usuarios", "kind": "security", "frontend_route": "/usuarios", "api_checks": [{"method": "GET", "path": "/api/users/me", "expected": [200]}]},
+    {"module_key": "mapa-modulos", "kind": "governance", "frontend_route": "/mapa-modulos", "api_checks": [{"method": "GET", "path": "/api/system-modules/mapa", "expected": [200]}]},
+    {"module_key": "autofix", "kind": "governance", "frontend_route": "/autofix", "api_checks": [{"method": "GET", "path": "/api/module-help/diagnostico-sistema", "expected": [200, 403]}]}
+  ]
+}
