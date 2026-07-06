@@ -12,6 +12,7 @@ import {
   AlertCircle,
 } from "lucide-react";
 import api from "../lib/api";
+import { toast } from "../components/Toast";
 import { Modal } from "../components/UI";
 
 const COLS = [
@@ -124,8 +125,12 @@ export default function Tarefas() {
 
   const remover = async (id: string) => {
     if (!confirm("Remover tarefa?")) return;
-    await api.delete(`/tasks/${id}`);
-    load();
+    try {
+      await api.delete(`/tasks/${id}`);
+      load();
+    } catch (e: any) {
+      toast.error(e.response?.data?.detail || "Erro ao remover tarefa");
+    }
   };
 
   const nomeUser = (id?: string) =>

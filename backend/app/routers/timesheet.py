@@ -13,6 +13,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.database import get_db
 from app.core.security import get_current_user
+from app.core.ownership import verificar_acesso_caso
 from app.models.user import User
 from app.models.time_entry import TimeEntry
 from app.models.case import Case
@@ -51,6 +52,7 @@ async def por_caso(
     db: AsyncSession = Depends(get_db),
     cu: User = Depends(get_current_user),
 ):
+    await verificar_acesso_caso(db, cu, case_id)
     rows = (await db.execute(
         select(TimeEntry).where(
             TimeEntry.case_id == case_id, TimeEntry.deleted_at.is_(None)
@@ -81,6 +83,7 @@ async def lancar(
     ))).scalar_one_or_none()
     if not case:
         raise HTTPException(status_code=422, detail="Caso não encontrado")
+    await verificar_acesso_caso(db, cu, payload.case_id)
     e = TimeEntry(id=str(uuid4()), user_id=cu.id, **payload.model_dump())
     db.add(e)
     await db.commit()
@@ -99,6 +102,7 @@ async def faturar(
     ))).scalar_one_or_none()
     if not case:
         raise HTTPException(status_code=422, detail="Caso não encontrado")
+    await verificar_acesso_caso(db, cu, case_id)
 
     entries = (await db.execute(
         select(TimeEntry).where(
@@ -146,6 +150,7 @@ async def remover(
     ))).scalar_one_or_none()
     if not e:
         raise HTTPException(status_code=404, detail="Lançamento não encontrado")
+    await verificar_acesso_caso(db, cu, e.case_id)
     if e.fee_id:
         raise HTTPException(status_code=422, detail="Lançamento já faturado — cancele o honorário antes")
     e.deleted_at = datetime.now(timezone.utc)

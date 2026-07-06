@@ -14,6 +14,7 @@ export default function PortalAssinaturas() {
   const [loading, setLoading] = useState(true);
   const [comprovante, setComprovante] = useState<any>(null);
   const [signing, setSigning] = useState<string | null>(null);
+  const [erro, setErro] = useState<string | null>(null);
 
   const load = () => {
     setLoading(true);
@@ -35,10 +36,17 @@ export default function PortalAssinaturas() {
     )
       return;
     setSigning(id);
+    setErro(null);
     try {
       const { data } = await api.post(`/signatures/${id}/assinar`);
       setComprovante(data.comprovante);
       load();
+    } catch (e: any) {
+      setComprovante(null);
+      setErro(
+        e?.response?.data?.detail ||
+          "Não foi possível registrar sua assinatura. O documento NÃO foi assinado. Tente novamente.",
+      );
     } finally {
       setSigning(null);
     }
@@ -76,6 +84,25 @@ export default function PortalAssinaturas() {
           <button
             onClick={() => setComprovante(null)}
             className="text-success-400 hover:text-success-600"
+          >
+            <X className="w-4 h-4" />
+          </button>
+        </div>
+      )}
+
+      {/* Erro */}
+      {erro && (
+        <div className="bg-danger-50 border border-danger-200 rounded-xl p-4 flex items-start gap-3">
+          <X className="w-5 h-5 text-danger-600 flex-shrink-0 mt-0.5" />
+          <div className="flex-1">
+            <p className="text-sm font-semibold text-danger-700">
+              Falha ao assinar
+            </p>
+            <p className="text-xs text-danger-600 mt-0.5">{erro}</p>
+          </div>
+          <button
+            onClick={() => setErro(null)}
+            className="text-danger-400 hover:text-danger-600"
           >
             <X className="w-4 h-4" />
           </button>

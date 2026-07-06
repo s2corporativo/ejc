@@ -1,6 +1,7 @@
 import { useEffect, useState, useRef, useCallback } from "react";
 import { Send, MessageCircle, RefreshCw } from "lucide-react";
 import api from "../../lib/api";
+import { toast } from "../../components/Toast";
 
 interface Mensagem {
   id: string;
@@ -72,6 +73,11 @@ export default function PortalMensagens() {
       });
       setText("");
       await loadMsgs();
+    } catch (e: any) {
+      toast.error(
+        e.response?.data?.detail ||
+          "Não foi possível enviar a mensagem. Tente novamente.",
+      );
     } finally {
       setSending(false);
     }

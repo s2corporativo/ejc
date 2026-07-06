@@ -11,12 +11,13 @@ Aditivo e isolado — não altera nenhum fluxo existente.
 from __future__ import annotations
 from decimal import Decimal
 
-from fastapi import APIRouter, Depends, HTTPException, Query
+from fastapi import APIRouter, Depends, Query
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.database import get_db
 from app.core.security import get_current_user
+from app.core.ownership import verificar_acesso_caso
 from app.models.user import User
 from app.models.case import Case
 from app.models.fee import Fee, FeeTipo, FeeStatus
@@ -34,13 +35,9 @@ def _f(x):
     return float(x) if x is not None else None
 
 
-async def _get_case(db: AsyncSession, case_id: str) -> Case:
-    c = (await db.execute(
-        select(Case).where(Case.id == case_id, Case.deleted_at.is_(None))
-    )).scalar_one_or_none()
-    if not c:
-        raise HTTPException(404, "Caso não encontrado")
-    return c
+async def _get_case(db: AsyncSession, cu: User, case_id: str) -> Case:
+    # Gate de ownership (IDOR): 404 se não existe, 403 se sem acesso ao caso.
+    return await verificar_acesso_caso(db, cu, case_id)
 
 
 @router.get("/cases/{case_id}/provisionamento")
@@ -51,7 +48,7 @@ async def provisionamento(
     cu: User = Depends(get_current_user),
 ):
     """Provisão de sucumbência (art. 85 §2º CPC) sobre valor da causa ou condenação."""
-    c = await _get_case(db, case_id)
+    c = await _get_case(db, cu, case_id)
     base = Decimal(str(condenacao)) if condenacao is not None else (c.valor_causa or Decimal("0"))
     if base <= 0:
         return {"ok": False, "aviso": "Caso sem valor da causa/condenação — informe ?condenacao=."}
@@ -74,7 +71,7 @@ async def teto_etico(
     cu: User = Depends(get_current_user),
 ):
     """Soma honorários contratuais + sucumbência estimada e alerta se > 50% do proveito."""
-    c = await _get_case(db, case_id)
+    c = await _get_case(db, cu, case_id)
     proveito = c.valor_causa or Decimal("0")
     fees = (await db.execute(
         select(Fee).where(

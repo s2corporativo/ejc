@@ -1,6 +1,6 @@
 # ── app/models/case.py ────────────────────────────────────────────────────────
 from __future__ import annotations
-from sqlalchemy import Column, String, DateTime, Enum as SAEnum, func, Text, Numeric, ForeignKey, Boolean, Integer
+from sqlalchemy import Column, String, DateTime, Enum as SAEnum, func, Text, Numeric, ForeignKey, Boolean, Integer, Index, text
 from sqlalchemy.orm import relationship
 from app.core.database import Base
 import enum
@@ -45,8 +45,15 @@ class CasePrioridade(str, enum.Enum):
 class Case(Base):
     __tablename__ = "cases"
 
+    # Unicidade de numero_interno via ÍNDICE ÚNICO PARCIAL (migration 075): só
+    # entre casos ATIVOS (deleted_at IS NULL). numero_interno NÃO usa unique=True.
+    __table_args__ = (
+        Index("uq_cases_numero_interno_active", "numero_interno", unique=True,
+              postgresql_where=text("deleted_at IS NULL")),
+    )
+
     id        = Column(String(36), primary_key=True)
-    numero_interno = Column(String(20), unique=True, index=True)  # DPT-2026-0001
+    numero_interno = Column(String(20), index=True)  # DPT-2026-0001
     titulo    = Column(String(255), nullable=False)
     area      = Column(SAEnum(CaseArea), nullable=False, index=True)
     status    = Column(SAEnum(CaseStatus), nullable=False, default=CaseStatus.triagem, index=True)

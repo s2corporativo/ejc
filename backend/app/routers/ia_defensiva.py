@@ -11,6 +11,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.database import get_db
 from app.core.security import get_current_user, ROLE_LEVEL
+from app.core.ownership import verificar_acesso_caso
 from app.models.user import User
 from app.models.ai_log import AILog, AIStatusHITL
 from app.services.ia_defensiva_service import IaDefensivaInput, executar_ia_defensiva
@@ -177,6 +178,9 @@ async def analisar_ia_defensiva(
     db: AsyncSession = Depends(get_db),
     cu: User = Depends(get_current_user),
 ):
+    # Ownership quando vinculado a caso: evita gravar AILog em caso alheio.
+    if req.case_id:
+        await verificar_acesso_caso(db, cu, req.case_id)
     try:
         payload = IaDefensivaInput(
             etapa=req.etapa,

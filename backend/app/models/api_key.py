@@ -9,7 +9,7 @@
 # chave é forçado ao escopo daquele cliente (isolamento LGPD — migration 055).
 from __future__ import annotations
 
-from sqlalchemy import Column, String, Boolean, DateTime, func
+from sqlalchemy import Column, String, Boolean, DateTime, func, ForeignKey
 
 from app.core.database import Base
 
@@ -26,6 +26,7 @@ class ApiKey(Base):
     # Escopos separados por vírgula. Hoje: "knowledge:write".
     escopo     = Column(String(120), nullable=False, server_default="knowledge:write")
     # Isolamento LGPD: chave restrita a um cliente específico (NULL = global).
+    # Sem FK estrita (escopo, imposto na camada de serviço).
     client_id  = Column(String(36), nullable=True, index=True)
 
     ativo        = Column(Boolean, nullable=False, server_default="true")

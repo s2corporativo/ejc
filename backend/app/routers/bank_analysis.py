@@ -45,6 +45,9 @@ async def upload(
     db: AsyncSession = Depends(get_db),
     cu: User = Depends(get_current_user),
 ):
+    # IDOR: análise vinculada a caso exige acesso ao caso ANTES de persistir.
+    if case_id:
+        await verificar_acesso_caso(db, cu, case_id)
     fmt = (formato or _fmt_de_nome(file.filename or "")).lower()
     if fmt not in ("ofx", "csv", "pdf"):
         raise HTTPException(422, "Formato não suportado (use PDF, OFX ou CSV)")

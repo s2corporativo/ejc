@@ -163,6 +163,8 @@ async def gerar_demonstrativo(
     de peças existente; resultado é MINUTA (revisão humana obrigatória)."""
     if ROLE_LEVEL.get(cu.role.value, 0) < ROLE_LEVEL["estagiario"]:
         raise HTTPException(403, "Acesso negado")
+    if req.case_id:
+        await verificar_acesso_caso(db, cu, req.case_id)  # ownership do caso vinculado
 
     linhas_txt = "\n".join(f"  • {l.label}: {l.valor}" for l in req.linhas) or "  (sem itens)"
     partes = [

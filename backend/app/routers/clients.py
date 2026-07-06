@@ -1,5 +1,6 @@
 # ── app/routers/clients.py ───────────────────────────────────────────────────
 # CRM de clientes + VERIFICAÇÃO DE CONFLITO DE INTERESSES (OAB obrigatório)
+import logging
 from datetime import datetime, timezone
 from uuid import uuid4
 from typing import Optional
@@ -22,6 +23,7 @@ from app.schemas.client import (
 )
 from app.schemas.common import MsgResponse
 
+logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/clients", tags=["Clientes / CRM"])
 
 # Gestão de clientes conforme a matriz de permissões (inclui secretaria; exclui
@@ -626,8 +628,9 @@ async def relatorio_lgpd(
     }
     try:
         pdf = await relatorio_lgpd_pdf_async(dados)
-    except RuntimeError as e:
-        raise HTTPException(status_code=503, detail=str(e))
+    except RuntimeError:
+        logger.warning("Geração do relatório LGPD em PDF indisponível", exc_info=True)
+        raise HTTPException(status_code=503, detail="Geração de PDF indisponível no momento")
 
     await criar_audit_log(db, cu.id, cu.role.value, "DOWNLOAD", "clients",
                           client_id, detalhes="Relatório LGPD art.18 emitido")

@@ -2,6 +2,7 @@
 Módulo de Banco de Teses Jurídicas Estruturado - EJC v4.0 (Seção 3.122).
 Cadastro, ranking de desempenho e reaproveitamento inteligente de teses.
 """
+import logging
 from uuid import uuid4
 from typing import List, Optional
 from fastapi import APIRouter, Depends, HTTPException, Query
@@ -44,9 +45,10 @@ class TeseResponse(TeseCreate):
     taxa_sucesso: float
     vencedora: bool
 
+logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/teses-v4", tags=["Banco de Teses Jurídicas"])
 
-@router.post("/", response_model=TeseResponse,
+@router.post("/", response_model=TeseResponse, status_code=201,
              dependencies=[Depends(require_roles(["admin", "socio", "advogado"]))])
 async def criar_tese(payload: TeseCreate, db: AsyncSession = Depends(get_db)):
     t = TeseJuridica(id=str(uuid4()), **payload.model_dump())
@@ -57,9 +59,10 @@ async def criar_tese(payload: TeseCreate, db: AsyncSession = Depends(get_db)):
 
 @router.get("/", response_model=List[TeseResponse])
 async def listar_teses(
-    area: Optional[str] = None, 
+    area: Optional[str] = None,
     vencedoras: bool = False,
-    db: AsyncSession = Depends(get_db)
+    db: AsyncSession = Depends(get_db),
+    cu: User = Depends(get_current_user),
 ):
     q = select(TeseJuridica)
     if area:
@@ -103,8 +106,9 @@ async def sugerir_teses_ia(
             [{"role": "user", "content": prompt}],
             task_type="analise_juridica",
         )
-    except Exception as e:
-        raise HTTPException(502, f"IA indisponível: {str(e)[:200]}")
+    except Exception:
+        logger.exception("Falha na chamada de IA (teses v4)")
+        raise HTTPException(502, "IA indisponível no momento")
 
     log_id = await registrar_ai_log(
         db,

@@ -15,7 +15,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.core.database import get_db
 from app.core.rate_limit import rate_limit
 from app.core.security import get_current_user, ROLE_LEVEL
-from app.core.ownership import is_gestao
+from app.core.ownership import is_gestao, verificar_acesso_caso
 from app.models.user import User
 from app.models.case import Case
 from app.models.client import Client
@@ -134,10 +134,8 @@ Cliente                                 Advogado(a) responsável (OAB)
 @router.get("/cases/{case_id}/termo-consentimento-ia")
 async def termo_consentimento_ia(case_id: str, db: AsyncSession = Depends(get_db),
                                  cu: User = Depends(get_current_user)):
-    case = (await db.execute(
-        select(Case).where(Case.id == case_id, Case.deleted_at.is_(None)))).scalar_one_or_none()
-    if not case:
-        raise HTTPException(404, "Caso não encontrado")
+    # Gate de ownership: sem isso o termo vaza o NOME do cliente de qualquer caso.
+    case = await verificar_acesso_caso(db, cu, case_id)
     client = (await db.execute(
         select(Client).where(Client.id == case.client_id))).scalar_one_or_none()
     nome = "[NOME DO CLIENTE]"

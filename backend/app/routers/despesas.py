@@ -159,7 +159,7 @@ async def export_despesas_csv(
     )
 
 
-@router.post("")
+@router.post("", status_code=201)
 async def create_despesa(
     body: dict = Body(...),
     db: AsyncSession = Depends(get_db),

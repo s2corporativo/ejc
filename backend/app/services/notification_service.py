@@ -2,6 +2,7 @@
 # Notificações: interna (sino) + WhatsApp (Z-API) + email (SMTP).
 # WhatsApp/email só disparam se habilitados no .env.
 from __future__ import annotations
+import asyncio
 import logging
 from uuid import uuid4
 import httpx
@@ -65,7 +66,6 @@ async def enviar_email(destinatario: str, assunto: str, corpo: str) -> bool:
     """Email via SMTP (smtplib em thread). Falha silenciosa."""
     if not settings.EMAIL_ENABLED:
         return False
-    import asyncio
     import smtplib
     from email.mime.text import MIMEText
 
@@ -74,7 +74,7 @@ async def enviar_email(destinatario: str, assunto: str, corpo: str) -> bool:
         msg["Subject"] = assunto
         msg["From"] = settings.SMTP_USER
         msg["To"] = destinatario
-        with smtplib.SMTP(settings.SMTP_HOST, settings.SMTP_PORT) as s:
+        with smtplib.SMTP(settings.SMTP_HOST, settings.SMTP_PORT, timeout=15) as s:
             s.starttls()
             s.login(settings.SMTP_USER, settings.SMTP_PASSWORD)
             s.send_message(msg)
@@ -125,6 +125,10 @@ async def enviar_push(db, user_id: str, titulo: str, mensagem: str, link: str = 
                 if e.response is not None and e.response.status_code in (404, 410):
                     await db.execute(delete(PushSubscription)
                                      .where(PushSubscription.id == s.id))
+                    # Sem commit, a limpeza da subscription morta seria descartada
+                    # ao fechar a sessão — o endpoint tentaria o mesmo push morto
+                    # em toda notificação seguinte.
+                    await db.commit()
                 else:
                     logger.warning(f"Push falhou: {e}")
     except Exception as e:

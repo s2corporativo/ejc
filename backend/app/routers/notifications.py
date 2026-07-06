@@ -2,7 +2,7 @@
 from __future__ import annotations
 from datetime import datetime, timezone
 
-from fastapi import APIRouter, Depends, Query
+from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy import select, update, func as sqlfunc
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -51,11 +51,14 @@ async def marcar_lida(
     db: AsyncSession = Depends(get_db),
     cu: User = Depends(get_current_user),
 ):
-    await db.execute(
+    res = await db.execute(
         update(Notification)
         .where(Notification.id == notif_id, Notification.user_id == cu.id)
         .values(lida=True, lida_em=datetime.now(timezone.utc))
     )
+    if res.rowcount == 0:
+        # Notificação inexistente ou de outro usuário: não confirma leitura falsa.
+        raise HTTPException(404, "Notificação não encontrada")
     await db.commit()
     return MsgResponse(detail="Notificação lida")
 

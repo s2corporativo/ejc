@@ -49,7 +49,7 @@ class AILog(Base):
 
     id      = Column(String(36), primary_key=True)
     user_id = Column(String(36), ForeignKey("users.id"), nullable=False, index=True)
-    case_id = Column(String(36), nullable=True, index=True)
+    case_id = Column(String(36), ForeignKey("cases.id", ondelete="SET NULL"), nullable=True, index=True)
 
     tipo_uso = Column(SAEnum(AITipoUso), nullable=False)
     modelo   = Column(String(50), nullable=False)   # ex: llama3-70b-8192

@@ -25,6 +25,9 @@ class KnowledgeDoc(Base):
     # Isolamento por cliente/caso (Fase 3B / migration 055): conteúdo RESTRITO
     # (peças/precedentes internos) só é recuperável no escopo do próprio cliente.
     # NULL = conteúdo PÚBLICO/global (legislação, súmulas, jurisprudência, doutrina).
+    # client_id/case_id são IDENTIFICADORES DE ESCOPO (nem sempre um cliente/caso
+    # formal — ex.: escopos sintéticos de teste). O isolamento é imposto na camada
+    # de serviço; sem FK estrita para não rejeitar escopos válidos.
     client_id = Column(String(36), nullable=True, index=True)
     case_id   = Column(String(36), nullable=True, index=True)
 

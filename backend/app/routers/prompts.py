@@ -28,7 +28,7 @@ class PromptResponse(PromptCreate):
 
 router = APIRouter(prefix="/prompts-biblioteca", tags=["Prompts Jurídicos"])
 
-@router.post("/", response_model=PromptResponse)
+@router.post("/", response_model=PromptResponse, status_code=201)
 async def criar_prompt(payload: PromptCreate, db: AsyncSession = Depends(get_db), cu: User = Depends(get_current_user)):
     p = PromptJuridico(id=str(uuid4()), created_by=cu.id, **payload.model_dump())
     db.add(p)
@@ -37,7 +37,8 @@ async def criar_prompt(payload: PromptCreate, db: AsyncSession = Depends(get_db)
     return p
 
 @router.get("/", response_model=List[PromptResponse])
-async def listar_prompts(categoria: Optional[str] = None, db: AsyncSession = Depends(get_db)):
+async def listar_prompts(categoria: Optional[str] = None, db: AsyncSession = Depends(get_db),
+                         cu: User = Depends(get_current_user)):
     q = select(PromptJuridico)
     if categoria:
         q = q.where(PromptJuridico.categoria == categoria)

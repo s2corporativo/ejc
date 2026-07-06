@@ -5,6 +5,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import text
 from app.core.database import get_db
 from app.core.security import get_current_user
+from app.core.ownership import is_gestao
 from app.models.user import User
 
 router = APIRouter(prefix="/clients/{client_id}/dossie", tags=["Dossiê do Cliente"])
@@ -16,6 +17,12 @@ async def dossie_cliente(
     db: AsyncSession = Depends(get_db),
     cu: User = Depends(get_current_user),
 ):
+    # IDOR: este dossiê agrega TODOS os casos/prazos/documentos/honorários do
+    # cliente. Como é uma visão consolidada por cliente (não por caso), filtrar
+    # caso a caso não impede o vazamento dos demais casos do mesmo cliente.
+    # Escolha: restringir à gestão (sócio+), que já enxerga todos os casos.
+    if not is_gestao(cu):
+        raise HTTPException(403, "Acesso restrito à gestão (sócio+)")
     cli = (await db.execute(text("""
         SELECT id, nome, email, telefone, whatsapp, tipo, created_at,
                COALESCE(cpf, cnpj) AS cpf_cnpj

@@ -4,6 +4,7 @@
 # (LGPD) → Groq → registra AILog → devolve como RASCUNHO (revisão OAB).
 from __future__ import annotations
 import json
+import logging
 from uuid import uuid4
 from typing import Optional
 from fastapi import APIRouter, Depends, HTTPException
@@ -22,6 +23,7 @@ from app.services.ai_guard import sanitizar_ou_abortar
 from app.core.rate_limit import rate_limit
 
 settings = get_settings()
+logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/ai", tags=["IA — Assistente"])
 
 
@@ -63,11 +65,15 @@ async def traduzir_andamento(body: TraduzirIn, db: AsyncSession = Depends(get_db
                              cu: User = Depends(get_current_user)):
     if not settings.AI_ENABLED:
         raise HTTPException(503, "IA desabilitada")
+    if body.case_id:
+        from app.core.ownership import verificar_acesso_caso
+        await verificar_acesso_caso(db, cu, body.case_id)  # não polui AILog de caso alheio
     limpo, pii = sanitizar_ou_abortar(body.texto)
     try:
         resposta = await _ia(SYS_TRADUZIR, limpo, task_type="resumo", temperature=0.25, max_tokens=900, nivel="alto")
-    except Exception as e:
-        raise HTTPException(502, f"Falha na IA: {str(e)[:160]}")
+    except Exception:
+        logger.exception("Falha na chamada de IA")
+        raise HTTPException(502, "Falha ao processar a solicitação de IA")
     log_id = await _log(db, cu.id, AITipoUso.outro, body.case_id, limpo, pii, resposta)
     return {"ai_log_id": log_id, "resposta": resposta,
             "aviso": "⚠️ Texto gerado por IA — revise antes de enviar ao cliente."}
@@ -89,11 +95,15 @@ async def resumir_texto(body: ResumirIn, db: AsyncSession = Depends(get_db),
                         cu: User = Depends(get_current_user)):
     if not settings.AI_ENABLED:
         raise HTTPException(503, "IA desabilitada")
+    if body.case_id:
+        from app.core.ownership import verificar_acesso_caso
+        await verificar_acesso_caso(db, cu, body.case_id)  # não polui AILog de caso alheio
     limpo, pii = sanitizar_ou_abortar(body.texto)
     try:
         resposta = await _ia(SYS_RESUMIR, limpo, task_type="resumo", temperature=0.1, max_tokens=1400, nivel="alto")
-    except Exception as e:
-        raise HTTPException(502, f"Falha na IA: {str(e)[:160]}")
+    except Exception:
+        logger.exception("Falha na chamada de IA")
+        raise HTTPException(502, "Falha ao processar a solicitação de IA")
     log_id = await _log(db, cu.id, AITipoUso.resumo_documento, body.case_id, limpo, pii, resposta)
     return {"ai_log_id": log_id, "resposta": resposta,
             "aviso": "⚠️ Resumo gerado por IA — confira com o original."}
@@ -140,8 +150,9 @@ async def gerar_minuta(body: MinutaIn, db: AsyncSession = Depends(get_db),
     user = f"TEMA: {body.tema}\n\nFATOS: {fatos_limpo}\n\nCONTEXTO (base do escritório):\n{ctx_txt}"
     try:
         resposta = await _ia(system, user, task_type="elaboracao_peca", temperature=0.18, max_tokens=3200, nivel="alto")
-    except Exception as e:
-        raise HTTPException(502, f"Falha na IA: {str(e)[:160]}")
+    except Exception:
+        logger.exception("Falha na chamada de IA")
+        raise HTTPException(502, "Falha ao processar a solicitação de IA")
     log_id = await _log(db, cu.id, AITipoUso.redacao_peca, body.case_id, user, pii, resposta)
     return {"ai_log_id": log_id, "resposta": resposta,
             "fontes": [{"titulo": c.get("titulo"), "categoria": c.get("categoria")} for c in contexto],
@@ -173,8 +184,9 @@ async def pesquisar(body: PesquisaIn, db: AsyncSession = Depends(get_db),
     user = f"PERGUNTA: {pergunta_limpa}\n\nCONTEXTO:\n{ctx_txt}"
     try:
         resposta = await _ia(SYS_PESQUISA, user, task_type="analise_juridica", temperature=0.12, max_tokens=2200, nivel="alto")
-    except Exception as e:
-        raise HTTPException(502, f"Falha na IA: {str(e)[:160]}")
+    except Exception:
+        logger.exception("Falha na chamada de IA")
+        raise HTTPException(502, "Falha ao processar a solicitação de IA")
     log_id = await _log(db, cu.id, AITipoUso.consulta_rag, None, user, pii, resposta)
     return {"ai_log_id": log_id, "resposta": resposta,
             "fontes": [{"titulo": c.get("titulo"), "categoria": c.get("categoria")} for c in contexto],
@@ -226,8 +238,9 @@ async def sugestao_honorarios(body: HonorariosIn, db: AsyncSession = Depends(get
             f"TRECHOS DA TABELA DE HONORÁRIOS OAB/MG:\n{ctx_txt}")
     try:
         bruto = await _ia(SYS_HONORARIOS, user, task_type="analise_juridica", temperature=0.05, max_tokens=1000, nivel="alto")
-    except Exception as e:
-        raise HTTPException(502, f"Falha na IA: {str(e)[:160]}")
+    except Exception:
+        logger.exception("Falha na chamada de IA")
+        raise HTTPException(502, "Falha ao processar a solicitação de IA")
     log_id = await _log(db, cu.id, AITipoUso.outro, None, user, pii, bruto)
     return {
         "ai_log_id": log_id,

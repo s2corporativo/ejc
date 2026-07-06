@@ -176,7 +176,7 @@ async def emp_criar(body: EmpresarialIn, db: AsyncSession = Depends(get_db),
     db.add(e)
     await criar_audit_log(db, cu.id, cu.role.value, "CREATE", "empresarial_cases", e.id)
     await db.commit()
-    return e.__dict__
+    return _serialize(e)
 
 
 @router.patch("/empresarial/{eid}")
@@ -297,7 +297,7 @@ async def civ_criar(body: CivelIn, db: AsyncSession = Depends(get_db),
     db.add(c)
     await criar_audit_log(db, cu.id, cu.role.value, "CREATE", "civel_cases", c.id)
     await db.commit()
-    return c.__dict__
+    return _serialize(c)
 
 
 @router.patch("/civel/{cid}")
@@ -439,7 +439,7 @@ async def pen_criar(body: PenalIn, db: AsyncSession = Depends(get_db),
     db.add(p)
     await criar_audit_log(db, cu.id, cu.role.value, "CREATE", "penal_cases", p.id)
     await db.commit()
-    return p.__dict__
+    return _serialize(p)
 
 
 @router.patch("/penal/{pid}")
@@ -601,7 +601,7 @@ async def trab_criar(body: TrabalhistaIn, db: AsyncSession = Depends(get_db),
     db.add(t)
     await criar_audit_log(db, cu.id, cu.role.value, "CREATE", "trabalhista_cases", t.id)
     await db.commit()
-    return t.__dict__
+    return _serialize(t)
 
 
 @router.patch("/trabalhista-esp/{tid}")
@@ -743,7 +743,7 @@ async def adm_criar(body: AdminIn, db: AsyncSession = Depends(get_db),
     db.add(a)
     await criar_audit_log(db, cu.id, cu.role.value, "CREATE", "admin_cases", a.id)
     await db.commit()
-    return a.__dict__
+    return _serialize(a)
 
 
 @router.patch("/admin-esp/{aid}")
@@ -1382,7 +1382,7 @@ async def ban_criar(body: BancarioIn, db: AsyncSession = Depends(get_db),
     db.add(b)
     await criar_audit_log(db, cu.id, cu.role.value, "CREATE", "bancario_cases", b.id)
     await db.commit()
-    return b.__dict__
+    return _serialize(b)
 
 
 @router.patch("/bancario/{bid}")

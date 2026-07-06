@@ -33,11 +33,6 @@ async def modelos_disponiveis() -> list[str]:
         return []
 
 
-def _invalidar_cache():
-    global _modelos_cache
-    _modelos_cache = None
-
-
 async def chat(
     messages: list[dict],
     model: str,

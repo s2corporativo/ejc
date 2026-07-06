@@ -175,19 +175,17 @@ function CardTese({ t, onClick }: { t: Tese; onClick: () => void }) {
   );
 }
 
-function CardMemoria({ m, onClick }: { m: Memoria; onClick: () => void }) {
+function CardMemoria({ m }: { m: Memoria }) {
   return (
-    <div
-      onClick={onClick}
-      className="card p-4 cursor-pointer hover:shadow-card-hover transition-all hover:border-bronze/30 group"
-    >
+    <div className="card p-4">
+
       <div className="flex items-start gap-3">
         <div className="p-2 rounded-lg bg-navy-50 text-navy-600 flex-shrink-0 mt-0.5">
           <CheckCircle className="w-4 h-4" />
         </div>
         <div className="flex-1 min-w-0">
           <div className="flex items-start justify-between gap-2">
-            <h3 className="font-serif text-base text-navy-800 leading-snug group-hover:text-bronze-deep transition-colors">
+            <h3 className="font-serif text-base text-navy-800 leading-snug">
               {m.titulo}
             </h3>
             {m.resultado && (
@@ -525,7 +523,7 @@ export default function Biblioteca() {
             </div>
           )}
           {memorias.map((m) => (
-            <CardMemoria key={m.id} m={m} onClick={() => {}} />
+            <CardMemoria key={m.id} m={m} />
           ))}
         </div>
       )}

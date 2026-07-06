@@ -10,15 +10,11 @@ from decimal import Decimal
 from sqlalchemy import select, func
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.core.security import ROLE_LEVEL
+from app.core.ownership import pode_ver_todos
 from app.models.user import User
 from app.models.case import Case, CaseStatus
 from app.models.fee import Fee, FeeStatus
 from app.models.time_entry import TimeEntry
-
-
-def pode_ver_todos(user: User) -> bool:
-    return ROLE_LEVEL.get(user.role.value, 0) >= ROLE_LEVEL["admin"]
 
 
 def _filtro_acesso(user: User):

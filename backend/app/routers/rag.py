@@ -177,13 +177,35 @@ async def ingerir_url(
 ):
     """Busca uma URL pública, extrai o texto (remove HTML) e ingere na base RAG."""
     import httpx
+    # SSRF: reutiliza o mesmo validador anti-SSRF do callback público (rag_public):
+    # bloqueia IP privado/loopback/link-local/reservado. follow_redirects é
+    # DESABILITADO e cada salto é revalidado manualmente para impedir que um
+    # redirect leve a um destino interno.
+    from app.routers.rag_public import validar_callback_url
     if not url.startswith(("http://", "https://")):
         raise HTTPException(422, "URL inválida")
     try:
-        async with httpx.AsyncClient(timeout=20, follow_redirects=True) as cli:
+        validar_callback_url(url, exigir_https=False)
+    except ValueError as e:
+        raise HTTPException(422, f"URL rejeitada: {e}")
+    try:
+        async with httpx.AsyncClient(timeout=20, follow_redirects=False) as cli:
             resp = await cli.get(url, headers={"User-Agent": "Mozilla/5.0 EJC-RAG"})
+            saltos = 0
+            while resp.is_redirect and saltos < 5:
+                destino = (str(resp.next_request.url)
+                           if resp.next_request else resp.headers.get("location", ""))
+                if not destino.startswith(("http://", "https://")):
+                    raise HTTPException(422, "Redirect para destino inválido")
+                validar_callback_url(destino, exigir_https=False)  # revalida cada salto
+                resp = await cli.get(destino, headers={"User-Agent": "Mozilla/5.0 EJC-RAG"})
+                saltos += 1
             resp.raise_for_status()
             html = resp.text
+    except HTTPException:
+        raise
+    except ValueError as e:
+        raise HTTPException(422, f"Redirect rejeitado: {e}")
     except Exception as e:
         raise HTTPException(422, f"Falha ao buscar a URL: {str(e)[:120]}")
     # remove scripts/styles e tags

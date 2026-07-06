@@ -4,6 +4,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import text
 from app.core.database import get_db
 from app.core.security import get_current_user
+from app.core.ownership import is_gestao
 from app.models.user import User
 
 _FIN_ADV = {"superadmin", "admin", "socio", "financeiro", "advogado"}
@@ -14,6 +15,25 @@ def _req_fin_adv(cu: User = Depends(get_current_user)) -> User:
     if cu.role.value not in _FIN_ADV:
         raise HTTPException(status_code=403, detail="Acesso restrito a gestão/financeiro/advogado")
     return cu
+
+
+async def _cliente_visivel(db: AsyncSession, cu: User, client_id: str) -> bool:
+    """Ownership do cliente (mesmo racional de sociedades_cliente._cliente_visivel):
+    gestão vê tudo; demais precisam ser responsáveis pelo cliente OU atuar em caso
+    dele. Impede advogado/financeiro de puxar relatório+PII de cliente alheio."""
+    if is_gestao(cu):
+        return True
+    row = (await db.execute(text("""
+        SELECT 1 FROM clients cl
+        WHERE cl.id = :cid AND cl.deleted_at IS NULL
+          AND (cl.responsavel_id = :uid
+               OR EXISTS (SELECT 1 FROM cases c
+                          WHERE c.client_id = cl.id AND c.deleted_at IS NULL
+                            AND (c.advogado_responsavel_id = :uid
+                                 OR c.advogado_auxiliar_id = :uid)))
+        LIMIT 1
+    """), {"cid": client_id, "uid": cu.id})).first()
+    return row is not None
 
 
 router = APIRouter(prefix="/clients/{client_id}/relatorio-financeiro", tags=["Relatório Financeiro Cliente"], dependencies=[Depends(_req_fin_adv)])
@@ -30,6 +50,9 @@ async def relatorio_financeiro_cliente(
         WHERE id = :cid AND deleted_at IS NULL
     """), {"cid": client_id})).mappings().first()
     if not cli:
+        raise HTTPException(404, "Cliente não encontrado")
+    if not await _cliente_visivel(db, cu, client_id):
+        # 404 (não 403) para não confirmar a existência de cliente alheio.
         raise HTTPException(404, "Cliente não encontrado")
 
     # Honorários por tipo/status

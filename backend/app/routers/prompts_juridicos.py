@@ -3,6 +3,7 @@
 # Prompts têm {{variavel}} como placeholders, substituídos na hora de executar.
 from __future__ import annotations
 import json
+import logging
 import re
 from uuid import uuid4
 from datetime import datetime, timezone
@@ -19,6 +20,7 @@ from app.models.user import User
 from app.models.prompt_juridico import PromptJuridico, PromptCategoria
 from app.core.rate_limit import rate_limit
 
+logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/prompts-juridicos", tags=["Biblioteca de Prompts"])
 
 # ── Schemas ───────────────────────────────────────────────────────────────────
@@ -249,8 +251,9 @@ async def executar_prompt(
             temperature=req.temperature,
             max_tokens=req.max_tokens,
         )
-    except Exception as e:
-        raise HTTPException(502, f"IA indisponível: {str(e)[:200]}")
+    except Exception:
+        logger.exception("Falha na chamada de IA (prompts jurídicos)")
+        raise HTTPException(502, "IA indisponível no momento")
 
     # Atualiza métricas de uso
     p.vezes_executado = (p.vezes_executado or 0) + 1

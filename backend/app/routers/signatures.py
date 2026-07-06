@@ -16,6 +16,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.core.database import get_db
 from app.core.security import get_current_user, require_roles
 from app.models.user import User, UserRole
+from app.models.case import Case
 from app.models.document import Document
 from app.models.signature import SignatureRequest, SignatureStatus
 from app.models.notification import Notification
@@ -41,6 +42,18 @@ async def criar_solicitacao(
     ))).scalar_one_or_none()
     if not doc:
         raise HTTPException(status_code=404, detail="Documento não encontrado")
+
+    # Valida que o documento pertence ao cliente (direto via doc.client_id ou pelo
+    # caso vinculado) ANTES de notificar o portal — senão notifica-se o cliente
+    # sobre um documento de OUTRO cliente (vazamento).
+    doc_client_id = doc.client_id
+    if doc_client_id is None and doc.case_id:
+        doc_client_id = (await db.execute(
+            select(Case.client_id).where(Case.id == doc.case_id)
+        )).scalar_one_or_none()
+    if doc_client_id != payload.client_id:
+        raise HTTPException(status_code=400,
+                            detail="Documento não pertence a este cliente")
 
     # Hash do arquivo no momento da solicitação (integridade)
     from app.core.config import get_settings as _gs
@@ -90,15 +103,19 @@ async def listar(
         q.order_by(SignatureRequest.status, SignatureRequest.created_at.desc())
     )).scalars().all()
 
-    # Anexar título do documento
+    # Anexar título do documento — títulos resolvidos em UMA query (evita N+1).
+    doc_ids = {s.document_id for s in rows if s.document_id}
+    titulos: dict[str, str] = {}
+    if doc_ids:
+        docs = (await db.execute(
+            select(Document.id, Document.titulo).where(Document.id.in_(doc_ids))
+        )).all()
+        titulos = {did: titulo for did, titulo in docs}
     out = []
     for s in rows:
-        doc = (await db.execute(select(Document).where(
-            Document.id == s.document_id
-        ))).scalar_one_or_none()
         out.append({
             "id": s.id, "document_id": s.document_id,
-            "documento": doc.titulo if doc else "—",
+            "documento": titulos.get(s.document_id, "—"),
             "status": s.status.value, "hash": s.hash_sha256[:16] + "…",
             "assinado_em": s.assinado_em, "created_at": s.created_at,
         })

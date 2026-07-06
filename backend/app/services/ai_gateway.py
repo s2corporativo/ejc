@@ -28,6 +28,7 @@ from datetime import datetime, timezone
 
 from app.core.config import get_settings
 from app.services import legal_base
+from app.services.ai_cost import estimar_custo_brl
 
 logger = logging.getLogger("ejc.ai.gateway")
 settings = get_settings()
@@ -351,7 +352,9 @@ async def chat(
             modelo_real = usage.get("model", model or "")
             inp = usage.get("input_tokens")
             out = usage.get("output_tokens")
-            custo_brl = _custo_brl(modelo_real, inp or 0, out or 0)
+            # Custo pela fonte ÚNICA (ai_cost): ciente do PROVEDOR real — Groq
+            # não fica mais zerado (bug anterior: só havia preço Anthropic aqui).
+            custo_brl = float(estimar_custo_brl(provider, inp or 0, out or 0, modelo_real))
             resp = GatewayResponse(
                 texto=texto,
                 modelo=modelo_real,
@@ -643,23 +646,14 @@ async def _chamar_provedor(
 # MÓDULO IA PROFISSIONAL — agente por tarefa (system_prompts + Anthropic/Groq).
 # Reusa _chamar_provedor (mesmo dispatch). HITL/LGPD/auditoria preservados.
 # ══════════════════════════════════════════════════════════════════════════════
-import os as _os
-
-# Preços oficiais Anthropic (USD por 1M tokens) — manter em dia com a fatura.
-_PRICING_USD_MM = {
-    "claude-haiku-4-5-20251001": {"input": 1.00, "output": 5.00},
-    "claude-haiku-4-5":          {"input": 1.00, "output": 5.00},
-    "claude-sonnet-4-6":         {"input": 3.00, "output": 15.00},
-    "claude-sonnet-5":           {"input": 3.00, "output": 15.00},
-    "claude-opus-4-7":           {"input": 5.00, "output": 25.00},
-    "claude-opus-4-8":           {"input": 5.00, "output": 25.00},
-}
-
-
 def _custo_brl(model: str, inp: int, out: int) -> float:
-    p = _PRICING_USD_MM.get(model, {"input": 0.0, "output": 0.0})
-    usd = (inp * p["input"] + out * p["output"]) / 1_000_000
-    return round(usd * float(_os.getenv("USD_BRL_RATE", "5.70")), 4)
+    """Shim de compatibilidade → ai_cost.estimar_custo_brl (fonte única de preço).
+
+    Chamadores legados (skill_registry/orchestrator/ai_skill_service) só computam
+    custo de peça Anthropic e passam o MODELO; delega assumindo provedor
+    "anthropic" (modelo fora da tabela → 0, comportamento idêntico ao anterior).
+    Novos call sites devem usar estimar_custo_brl(provedor, inp, out, modelo)."""
+    return round(float(estimar_custo_brl("anthropic", inp, out, model)), 4)
 
 
 async def executar_tarefa_ia(tarefa, mensagem: str, case_id: str | None = None,
@@ -766,7 +760,8 @@ async def executar_tarefa_ia(tarefa, mensagem: str, case_id: str | None = None,
     inp = usage.get("input_tokens") or 0
     out = usage.get("output_tokens") or 0
     modelo_real = usage.get("model", cfg.model or "")
-    custo = _custo_brl(modelo_real, inp, out) if provedor_usado == "anthropic" else 0.0
+    # Fonte única (ai_cost), ciente do provedor: Groq deixa de reportar 0.0.
+    custo = float(estimar_custo_brl(provedor_usado, inp, out, modelo_real))
     if db is not None and user_id:
         # Canônico (ai_guard): tipo_uso mapeado para o enum real e erro PROPAGA —
         # IA sem trilha de auditoria deve falhar, não responder em silêncio.

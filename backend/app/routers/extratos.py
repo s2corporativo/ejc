@@ -6,6 +6,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import text
 from app.core.database import get_db
 from app.core.security import get_current_user, ROLE_LEVEL
+from app.core.ownership import verificar_acesso_caso
 from app.models.user import User
 
 router = APIRouter(prefix="/extratos", tags=["Extratos"])
@@ -17,6 +18,8 @@ def _gestor(u: User) -> bool:
 
 @router.get("/detalhado/{case_id}")
 async def extrato_caso(case_id: str, db: AsyncSession = Depends(get_db), cu: User = Depends(get_current_user)):
+    # Gate de ownership (IDOR): 404 se não existe, 403 se sem acesso ao caso.
+    await verificar_acesso_caso(db, cu, case_id)
     caso = (await db.execute(text("SELECT titulo, numero_interno FROM cases WHERE id=:id AND deleted_at IS NULL"), {"id": case_id})).mappings().first()
     if not caso:
         raise HTTPException(404, "Caso não encontrado")

@@ -9,6 +9,7 @@ from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncSession
 from app.core.database import get_db
 from app.core.security import get_current_user
+from app.core.ownership import verificar_acesso_caso
 from app.models.user import User, UserRole
 from app.models.audit_log import criar_audit_log
 
@@ -20,7 +21,9 @@ class MsgIn(BaseModel):
 
 
 async def _verificar_acesso(case_id: str, cu: User, db: AsyncSession):
-    """cliente_externo só acessa caso do próprio client_id; staff acessa qualquer um."""
+    """cliente_externo só acessa caso do próprio client_id; staff só acessa se
+    tiver ownership do caso (responsável/auxiliar) ou for gestão — chat sigiloso
+    do caso não pode ser lido por qualquer membro do escritório (IDOR)."""
     if cu.role == UserRole.cliente_externo:
         if not cu.client_id:
             raise HTTPException(403, "Cliente sem vínculo")
@@ -30,6 +33,8 @@ async def _verificar_acesso(case_id: str, cu: User, db: AsyncSession):
         )
         if not r.first():
             raise HTTPException(403, "Acesso negado a este caso")
+    else:
+        await verificar_acesso_caso(db, cu, case_id)
 
 
 def _meu_tipo(cu: User) -> str:

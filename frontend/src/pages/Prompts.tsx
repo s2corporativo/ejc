@@ -69,8 +69,12 @@ export default function Prompts() {
 
   const excluir = async (id: string) => {
     if (!confirm("Excluir este prompt?")) return;
-    await api.delete(`/prompts-juridicos/${id}`);
-    setPrompts((p) => p.filter((x) => x.id !== id));
+    try {
+      await api.delete(`/prompts-juridicos/${id}`);
+      setPrompts((p) => p.filter((x) => x.id !== id));
+    } catch (e: any) {
+      toast.error(e.response?.data?.detail || "Erro ao excluir prompt");
+    }
   };
 
   const abrirExec = (p: any) => {

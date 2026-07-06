@@ -268,8 +268,13 @@ function AreasCaso({ caso }: { caso: Case }) {
     load();
   };
   const remover = async (a: string) => {
-    await api.delete(`/cases/${caso.id}/areas/${a}`);
-    load();
+    if (!confirm("Remover esta área do caso?")) return;
+    try {
+      await api.delete(`/cases/${caso.id}/areas/${a}`);
+      load();
+    } catch (e: any) {
+      toast.error(e.response?.data?.detail || "Erro ao remover área");
+    }
   };
   const disponiveis = TODAS.filter((t) => !areas.some((a) => a.area === t));
   return (
@@ -1728,8 +1733,12 @@ function TabPartes({ caseId }: { caseId: string }) {
 
   const remover = async (id: string) => {
     if (!confirm("Remover esta parte?")) return;
-    await api.delete(`/cases/${caseId}/partes/${id}`);
-    setPartes((p) => p.filter((x) => x.id !== id));
+    try {
+      await api.delete(`/cases/${caseId}/partes/${id}`);
+      setPartes((p) => p.filter((x) => x.id !== id));
+    } catch (e: any) {
+      toast.error(e.response?.data?.detail || "Erro ao remover parte");
+    }
   };
 
   return (
@@ -2442,8 +2451,13 @@ function TabEtiquetas({ caseId }: { caseId: string }) {
     carregar();
   };
   const remover = async (id: string) => {
-    await api.delete(`/cases/${caseId}/etiquetas/${id}`);
-    setDoCaso((p) => p.filter((x) => x.id !== id));
+    if (!confirm("Remover esta etiqueta do caso?")) return;
+    try {
+      await api.delete(`/cases/${caseId}/etiquetas/${id}`);
+      setDoCaso((p) => p.filter((x) => x.id !== id));
+    } catch (e: any) {
+      toast.error(e.response?.data?.detail || "Erro ao remover etiqueta");
+    }
   };
   const criar = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -2588,8 +2602,12 @@ function TabMemoria({ caseId }: { caseId: string }) {
   };
   const remover = async (id: string) => {
     if (!confirm("Remover este registro de memória?")) return;
-    await api.delete(`/memoria-institucional/${id}`);
-    setItens((p) => p.filter((x) => x.id !== id));
+    try {
+      await api.delete(`/memoria-institucional/${id}`);
+      setItens((p) => p.filter((x) => x.id !== id));
+    } catch (e: any) {
+      toast.error(e.response?.data?.detail || "Erro ao remover registro");
+    }
   };
 
   return (

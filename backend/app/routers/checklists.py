@@ -208,6 +208,8 @@ async def instanciar_checklist(
     """
     if not _pode_editar(cu):
         raise HTTPException(403)
+    # IDOR: só quem atua no caso (ou gestão) instancia checklist nele.
+    await verificar_acesso_caso(db, cu, req.case_id)
 
     template = (await db.execute(
         select(ChecklistTemplate).where(
@@ -313,6 +315,8 @@ async def checklists_do_caso(
 ):
     if not _pode_editar(cu):
         raise HTTPException(403)
+    # IDOR: só quem atua no caso (ou gestão) lê os checklists dele.
+    await verificar_acesso_caso(db, cu, case_id)
     q = select(CaseChecklist).where(CaseChecklist.case_id == case_id)
     if status:
         q = q.where(CaseChecklist.status == status)
@@ -341,6 +345,8 @@ async def obter_checklist(
     )).scalar_one_or_none()
     if not ck:
         raise HTTPException(404)
+    # IDOR: só quem atua no caso (ou gestão) vê o checklist dele.
+    await verificar_acesso_caso(db, cu, ck.case_id)
     itens = (await db.execute(
         select(CaseChecklistItem)
         .where(CaseChecklistItem.case_checklist_id == checklist_id)
@@ -366,6 +372,8 @@ async def marcar_item(
     )).scalar_one_or_none()
     if not ck:
         raise HTTPException(404, "Checklist não encontrado")
+    # IDOR: só quem atua no caso (ou gestão) marca itens do checklist dele.
+    await verificar_acesso_caso(db, cu, ck.case_id)
 
     item = (await db.execute(
         select(CaseChecklistItem).where(
@@ -426,6 +434,8 @@ async def adicionar_item(
     )).scalar_one_or_none()
     if not ck:
         raise HTTPException(404)
+    # IDOR: só quem atua no caso (ou gestão) adiciona item ao checklist dele.
+    await verificar_acesso_caso(db, cu, ck.case_id)
 
     max_ordem = (await db.execute(
         select(func.max(CaseChecklistItem.ordem))
@@ -456,6 +466,8 @@ async def cancelar_checklist(
     )).scalar_one_or_none()
     if not ck:
         raise HTTPException(404)
+    # IDOR: só quem atua no caso (ou gestão) cancela o checklist dele.
+    await verificar_acesso_caso(db, cu, ck.case_id)
     ck.status = ChecklistStatus.cancelado
     ck.updated_at = datetime.now(timezone.utc)
     await db.commit()

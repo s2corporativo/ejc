@@ -119,7 +119,13 @@ async def consultar_oab(numero: str, uf: str, dias: int = 2) -> list[dict]:
     }
     try:
         data = await _djen_get(params)
-        return data.get("items", data if isinstance(data, list) else [])
+        # A API Comunica pode devolver {"items": [...]} OU um array no topo.
+        # Fazer data.get(...) quando data é lista dispara AttributeError — que o
+        # except abaixo engoliria, zerando TODAS as intimações do advogado.
+        return (
+            data.get("items", []) if isinstance(data, dict)
+            else (data if isinstance(data, list) else [])
+        )
     except Exception as e:
         logger.warning(f"DJEN falhou OAB {numero}/{uf} (após retries): {e}")
         return []

@@ -5,6 +5,7 @@ from sqlalchemy import text
 from typing import Optional
 from app.core.database import get_db
 from app.core.security import get_current_user
+from app.core.ownership import verificar_acesso_caso
 from app.models.user import User
 
 _TEAM = {"superadmin", "admin", "socio", "advogado", "advogado_auxiliar", "estagiario"}
@@ -62,6 +63,8 @@ async def update_case_kanban(
 ):
     kanban_column = body.get("kanban_column")
     kanban_position = body.get("kanban_position", 0)
+    # IDOR: mover cartão sincroniza o STATUS do caso — só quem atua no caso (ou gestão).
+    await verificar_acesso_caso(db, current_user, case_id)
     row = (await db.execute(
         text("SELECT status FROM cases WHERE id=:id AND deleted_at IS NULL"), {"id": case_id}
     )).mappings().first()
