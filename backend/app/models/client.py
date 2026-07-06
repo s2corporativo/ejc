@@ -1,6 +1,6 @@
 # ── app/models/client.py ─────────────────────────────────────────────────────
 from __future__ import annotations
-from sqlalchemy import Column, String, DateTime, Enum as SAEnum, func, Text, ForeignKey
+from sqlalchemy import Column, String, DateTime, Enum as SAEnum, func, Text, ForeignKey, Date, Index, text
 from sqlalchemy.orm import relationship
 from app.core.database import Base
 import enum
@@ -30,18 +30,28 @@ class ClientOrigem(str, enum.Enum):
 class Client(Base):
     __tablename__ = "clients"
 
+    # Unicidade de cpf/cnpj é imposta por ÍNDICE ÚNICO PARCIAL (migration 075):
+    # só entre registros ATIVOS (deleted_at IS NULL). Por isso as colunas abaixo
+    # NÃO usam unique=True — isso permitiria recadastro após soft-delete.
+    __table_args__ = (
+        Index("uq_clients_cpf_active", "cpf", unique=True,
+              postgresql_where=text("deleted_at IS NULL")),
+        Index("uq_clients_cnpj_active", "cnpj", unique=True,
+              postgresql_where=text("deleted_at IS NULL")),
+    )
+
     id             = Column(String(36), primary_key=True)
     tipo           = Column(SAEnum(ClientTipo), nullable=False, default=ClientTipo.PF)
 
     # Campos PF
     nome           = Column(String(255), nullable=True, index=True)
-    cpf            = Column(String(14),  nullable=True, unique=True, index=True)  # texto puro — legado, ver Bloco 6a
-    data_nascimento = Column(String(10), nullable=True)   # YYYY-MM-DD
+    cpf            = Column(String(14),  nullable=True, index=True)  # unicidade via índice parcial (ver __table_args__)
+    data_nascimento = Column(Date, nullable=True)
     profissao      = Column(String(100), nullable=True)
 
     # Campos PJ
     razao_social   = Column(String(255), nullable=True)
-    cnpj           = Column(String(18),  nullable=True, unique=True, index=True)  # texto puro — legado, ver Bloco 6a
+    cnpj           = Column(String(18),  nullable=True, index=True)  # unicidade via índice parcial (ver __table_args__)
     nome_fantasia  = Column(String(255), nullable=True)
 
     # Criptografia de PII em repouso (LGPD, achado C6 / migration 061). Fase de

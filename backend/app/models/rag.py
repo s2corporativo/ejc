@@ -25,8 +25,15 @@ class KnowledgeDoc(Base):
     # Isolamento por cliente/caso (Fase 3B / migration 055): conteúdo RESTRITO
     # (peças/precedentes internos) só é recuperável no escopo do próprio cliente.
     # NULL = conteúdo PÚBLICO/global (legislação, súmulas, jurisprudência, doutrina).
-    client_id = Column(String(36), nullable=True, index=True)
-    case_id   = Column(String(36), nullable=True, index=True)
+    # FKs (migration 075, defesa em profundidade):
+    #  - client_id ON DELETE CASCADE: erguer o cliente remove seu conteúdo privado
+    #    (right to erasure). SET NULL o tornaria GLOBAL (NULL=público) = vazamento.
+    #  - case_id ON DELETE SET NULL: o doc segue restrito ao client_id (sem
+    #    vazamento cross-cliente); só perde o vínculo de caso.
+    client_id = Column(String(36), ForeignKey("clients.id", ondelete="CASCADE"),
+                       nullable=True, index=True)
+    case_id   = Column(String(36), ForeignKey("cases.id", ondelete="SET NULL"),
+                       nullable=True, index=True)
 
     # Ingestão automática (migration 006): rastreabilidade + dedup idempotente
     chave_origem  = Column(String(255), nullable=True, index=True)  # URN/nº CNJ/código

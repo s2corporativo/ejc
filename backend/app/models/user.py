@@ -1,6 +1,6 @@
 # ── app/models/user.py ───────────────────────────────────────────────────────
 from __future__ import annotations
-from sqlalchemy import Column, String, Boolean, DateTime, Enum as SAEnum, func, ForeignKey, Numeric
+from sqlalchemy import Column, String, Boolean, DateTime, Enum as SAEnum, func, ForeignKey, Numeric, Index, text
 from sqlalchemy.orm import relationship
 from app.core.database import Base
 import enum
@@ -21,8 +21,16 @@ class UserRole(str, enum.Enum):
 class User(Base):
     __tablename__ = "users"
 
+    # Unicidade de email é imposta por ÍNDICE ÚNICO PARCIAL (migration 075):
+    # só entre usuários ATIVOS (deleted_at IS NULL), permitindo recadastrar um
+    # e-mail liberado por soft-delete. Por isso email NÃO usa unique=True.
+    __table_args__ = (
+        Index("uq_users_email_active", "email", unique=True,
+              postgresql_where=text("deleted_at IS NULL")),
+    )
+
     id             = Column(String(36), primary_key=True)   # UUID string
-    email          = Column(String(255), unique=True, nullable=False, index=True)
+    email          = Column(String(255), nullable=False, index=True)
     hashed_password = Column(String(255), nullable=False)
     full_name      = Column(String(255), nullable=False)
     role           = Column(SAEnum(UserRole), nullable=False, default=UserRole.advogado)
