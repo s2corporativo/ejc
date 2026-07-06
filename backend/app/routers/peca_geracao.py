@@ -17,6 +17,7 @@ from app.models.user import User
 from app.models.ai_log import AILog
 from app.models.legal_doc import LegalDoc, PecaTipo, PecaStatus
 from app.services.peca_service import gerar_peca_pipeline, TIPOS_PECA, AREAS_DIREITO
+from app.services.advogado_style_service import montar_instrucoes_estilo_para_prompt
 from datetime import date
 from uuid import uuid4
 
@@ -63,6 +64,14 @@ async def gerar_peca(
 
     async def stream():
         try:
+            instrucoes = req.instrucoes_adicionais or ""
+            estilo = await montar_instrucoes_estilo_para_prompt(db, cu.id)
+            if estilo:
+                instrucoes = (
+                    f"{instrucoes}\n\n[ESTILO DO ADVOGADO]\n{estilo}"
+                    if instrucoes else f"[ESTILO DO ADVOGADO]\n{estilo}"
+                )[:2500]
+
             async for chunk in gerar_peca_pipeline(
                 db=db,
                 user_id=cu.id,
@@ -73,7 +82,7 @@ async def gerar_peca(
                 scope_client_id=escopo_cli,
                 nomes_proteger=req.nomes_proteger,
                 case_id=req.case_id,
-                instrucoes_adicionais=req.instrucoes_adicionais,
+                instrucoes_adicionais=instrucoes,
             ):
                 yield chunk
         except Exception as e:

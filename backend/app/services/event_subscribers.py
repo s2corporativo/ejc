@@ -46,6 +46,23 @@ def _patch_precedentes_router() -> None:
         logger.warning("Router de precedentes multifonte indisponível: %s", exc)
 
 
+def _patch_advogado_estilo_router() -> None:
+    """Registra endpoint de aprendizado de estilo sob /api/pecas.
+
+    O `main.py` já inclui `peca_geracao.router` em `/api`. Ao anexar o subrouter
+    aqui, o endpoint fica disponível em `/api/pecas/advogado-estilo/me` sem
+    reescrever o main.py.
+    """
+    try:
+        from app.routers import peca_geracao
+        from app.routers import advogado_estilo
+
+        peca_geracao.router.include_router(advogado_estilo.router)
+        logger.info("Router de aprendizado de estilo registrado")
+    except Exception as exc:  # pragma: no cover - import defensivo no startup
+        logger.warning("Router de aprendizado de estilo indisponível: %s", exc)
+
+
 def _patch_documents_background_analysis() -> None:
     """Substitui o hook legado de análise documental por versão sem corte.
 
@@ -113,6 +130,7 @@ def _patch_documents_background_analysis() -> None:
 
 
 _patch_precedentes_router()
+_patch_advogado_estilo_router()
 _patch_documents_background_analysis()
 
 
