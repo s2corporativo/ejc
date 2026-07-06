@@ -22,7 +22,7 @@ def test_alembic_cadeia_integra():
 
     script = ScriptDirectory.from_config(Config("alembic.ini"))
     # Head único da cadeia atual.
-    assert script.get_heads() == ["076_fk_hot_path_indexes"]
+    assert script.get_heads() == ["077_deadline_confirmado_doc"]
     # walk_revisions percorre head→base; lança se houver down_revision ausente.
     revs = [r.revision for r in script.walk_revisions()]
     assert revs[-1] == "001_inicial"

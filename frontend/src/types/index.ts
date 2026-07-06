@@ -85,6 +85,9 @@ export interface Deadline {
   case_id?: string;
   responsavel_id?: string;
   ciencia_confirmada: boolean;
+  confirmado: boolean;
+  origem: "manual" | "datajud" | "importacao_ia";
+  origem_documento_id: string | null;
   dias_restantes?: number;
   urgencia?: string;
   created_at: string;
