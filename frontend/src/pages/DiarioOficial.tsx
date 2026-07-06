@@ -1,8 +1,13 @@
 import { useState, useEffect, useCallback } from "react";
 import { Link } from "react-router-dom";
 import api from "../lib/api";
+import { asList } from "../lib/list";
 import { toast } from "../components/Toast";
 import { PageHeader, Spinner, Badge } from "../components/UI";
+import type {
+  DiarioOficialKeyword as Keyword,
+  DiarioOficialAlerta as Alerta,
+} from "../types";
 import {
   Bell,
   Trash2,
@@ -12,25 +17,6 @@ import {
   Link2,
   Newspaper,
 } from "lucide-react";
-
-interface Keyword {
-  id: number;
-  keyword: string;
-  ativo: boolean;
-}
-
-interface Alerta {
-  id: number;
-  keyword: string;
-  titulo: string;
-  trecho: string;
-  data_publicacao: string;
-  fonte: string;
-  lido: boolean;
-  case_id?: number;
-  /** Backend marca aqui quando a vinculação ao caso foi automática (nº CNJ). */
-  observacao?: string | null;
-}
 
 /** Vinculação feita automaticamente pelo backend (marcada na observação/texto). */
 const isVinculacaoAutomatica = (a: Alerta): boolean =>
@@ -50,7 +36,7 @@ export default function DiarioOficial() {
   const [loadingAlertas, setLoadingAlertas] = useState(true);
   const [loadingKeywords, setLoadingKeywords] = useState(true);
   const [addingKeyword, setAddingKeyword] = useState(false);
-  const [marcandoLido, setMarcandoLido] = useState<number | null>(null);
+  const [marcandoLido, setMarcandoLido] = useState<string | null>(null);
 
   const fetchNaoLidosCount = useCallback(async () => {
     try {
@@ -65,13 +51,7 @@ export default function DiarioOficial() {
       const params: Record<string, string | number> = { limite: 50 };
       if (filtro === "nao-lidos") params.lido = "false";
       const res = await api.get("/diario-oficial/alertas", { params });
-      setAlertas(
-        Array.isArray(res.data?.items)
-          ? res.data.items
-          : Array.isArray(res.data)
-            ? res.data
-            : [],
-      );
+      setAlertas(asList<Alerta>(res.data));
     } catch {
       setAlertas([]);
     } finally {
@@ -83,7 +63,7 @@ export default function DiarioOficial() {
     setLoadingKeywords(true);
     try {
       const res = await api.get("/diario-oficial/keywords");
-      setKeywords(res.data);
+      setKeywords(asList<Keyword>(res.data));
     } catch {
       setKeywords([]);
     } finally {
@@ -100,7 +80,7 @@ export default function DiarioOficial() {
     fetchKeywords();
   }, [fetchKeywords]);
 
-  const marcarLido = async (id: number) => {
+  const marcarLido = async (id: string) => {
     setMarcandoLido(id);
     try {
       await api.patch(`/diario-oficial/alertas/${id}/marcar-lido`);
@@ -130,7 +110,7 @@ export default function DiarioOficial() {
     }
   };
 
-  const removerKeyword = async (id: number) => {
+  const removerKeyword = async (id: string) => {
     if (!confirm("Remover esta palavra-chave do monitoramento?")) return;
     try {
       await api.delete(`/diario-oficial/keywords/${id}`);

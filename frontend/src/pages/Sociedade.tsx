@@ -14,6 +14,7 @@ import {
 import api from "../lib/api";
 import ExtratoSocio from "../components/ExtratoSocio";
 import { PageHeader } from "../components/UI";
+import { asList } from "../lib/list";
 
 const fmtMoney = (v?: number | null) =>
   (Number.isFinite(v) ? (v as number) : 0).toLocaleString("pt-BR", {
@@ -116,20 +117,10 @@ export default function Sociedade() {
         setTotalPart(s.value.data?.total_participacao ?? 0);
       } else setErro("Acesso restrito a sócios.");
       if (d.status === "fulfilled")
-        setDistrib(
-          Array.isArray(d.value.data?.items)
-            ? d.value.data.items
-            : Array.isArray(d.value.data?.data)
-              ? d.value.data.data
-              : Array.isArray(d.value.data)
-                ? d.value.data
-                : [],
-        );
+        setDistrib(asList<Distribuicao>(d.value.data));
       if (u.status === "fulfilled")
-        setUsers(
-          u.value.data?.data ?? u.value.data?.items ?? u.value.data ?? [],
-        );
-      if (w.status === "fulfilled") setWithdrawals(w.value.data?.data ?? []);
+        setUsers(asList(u.value.data));
+      if (w.status === "fulfilled") setWithdrawals(asList<Withdrawal>(w.value.data));
     } finally {
       setLoading(false);
     }

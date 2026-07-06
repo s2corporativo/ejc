@@ -11,6 +11,7 @@ import {
 import api from "../lib/api";
 import { soDigitos } from "../utils/phone";
 import { Modal, Button, PageHeader } from "../components/UI";
+import { asList } from "../lib/list";
 
 interface Lead {
   id: string;
@@ -99,7 +100,7 @@ export default function CRMLeads() {
     setLoading(true);
     try {
       const res = await api.get("/clients/?page_size=500&status=lead");
-      const all: Lead[] = res.data?.data ?? res.data?.items ?? res.data ?? [];
+      const all: Lead[] = asList<Lead>(res.data);
       setLeads(all);
     } catch {
       setLeads([]);

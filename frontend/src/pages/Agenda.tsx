@@ -3,6 +3,7 @@ import { useEffect, useState } from "react";
 import { Link } from "react-router-dom";
 import api from "../lib/api";
 import { PageHeader, Spinner } from "../components/UI";
+import { asList } from "../lib/list";
 
 const DIAS = [
   "Domingo",
@@ -45,15 +46,10 @@ export default function Agenda() {
     ])
       .then(([a, b]) => {
         if (a.status === "fulfilled")
-          setPrazos(a.value.data?.data ?? a.value.data?.items ?? []);
+          setPrazos(asList(a.value.data));
         if (b.status === "fulfilled")
           setTarefas(
-            (
-              b.value.data?.data ??
-              b.value.data?.items ??
-              b.value.data ??
-              []
-            ).filter(
+            asList(b.value.data).filter(
               (t: any) =>
                 (t.status ?? t.situacao) !== "concluida" &&
                 !t.concluida &&

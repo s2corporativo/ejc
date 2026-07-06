@@ -3,6 +3,7 @@ import { useParams, Link } from "react-router-dom";
 import { ArrowLeft, CalendarClock, MessageSquare } from "lucide-react";
 import api from "../../lib/api";
 import { toast } from "../../components/Toast";
+import { asList } from "../../lib/list";
 
 function MensagensCliente({ caseId }: { caseId: string }) {
   const [msgs, setMsgs] = useState<any[]>([]);
@@ -11,7 +12,7 @@ function MensagensCliente({ caseId }: { caseId: string }) {
   const carregar = () =>
     api
       .get(`/portal/casos/${caseId}/mensagens`)
-      .then((r) => setMsgs(Array.isArray(r.data) ? r.data : []))
+      .then((r) => setMsgs(asList(r.data)))
       .catch(() => {});
   useEffect(() => {
     carregar();

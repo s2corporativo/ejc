@@ -12,6 +12,7 @@ import {
 } from "lucide-react";
 import api from "../../lib/api";
 import { useAuth } from "../../stores/auth";
+import { asList } from "../../lib/list";
 
 const STATUS: Record<string, [string, string]> = {
   triagem: ["Em análise", "bg-warn-100 text-warn-700"],
@@ -37,7 +38,7 @@ export default function PortalDashboard() {
       api.get("/portal/financeiro"),
     ])
       .then(([c, f]) => {
-        if (c.status === "fulfilled") setCasos(c.value.data?.data ?? []);
+        if (c.status === "fulfilled") setCasos(asList(c.value.data));
         if (f.status === "fulfilled") setFinanceiro(f.value.data);
       })
       .finally(() => setLoading(false));

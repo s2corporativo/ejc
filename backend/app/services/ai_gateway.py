@@ -686,6 +686,28 @@ async def executar_tarefa_ia(tarefa, mensagem: str, case_id: str | None = None,
     messages = _aplicar_nivel([{ "role": "system", "content": system_prompt },
                 {"role": "user", "content": mensagem}], nivel_inteligencia)
 
+    # #40: dedup de chamada de IA no caminho por tarefa — reusa o mesmo ai_cache
+    # que o chat() já usa. Requisições idênticas (mesma tarefa/mensagem/contexto/
+    # nível) servem do cache no TTL, sem bater o provedor (economia de tokens e
+    # latência). A chave usa as mensagens REAIS (pré-sanitização), então inputs
+    # distintos nunca colidem.
+    from app.services import ai_cache
+    _cache_key = ai_cache.chave(
+        tarefa_label, messages, temperature=cfg.temperature, max_tokens=cfg.max_tokens,
+        model_override=cfg.model, provider_override=cfg.provider,
+        nivel_inteligencia=nivel_inteligencia, ai_provider=settings.AI_PROVIDER,
+    )
+    _cached = await ai_cache.obter(_cache_key)
+    if _cached:
+        logger.info("[Gateway] cache HIT (tarefa) → %s (sem chamada ao provedor)", tarefa_label)
+        return {
+            "conteudo": _cached.get("texto", ""), "modelo": _cached.get("modelo", ""),
+            "provider": _cached.get("provedor", ""),
+            "nivel_inteligencia": nivel_inteligencia, "tarefa": tarefa_label,
+            "is_rascunho": True, "requer_revisao": True,
+            "tokens_usados": 0, "custo_estimado_brl": 0.0, "cache_hit": True,
+        }
+
     # Cadeia: provedor da tarefa → Groq (custo ~zero) → Ollama (local).
     cadeia: list[tuple[str, str | None]] = [(cfg.provider, cfg.model)]
     if cfg.provider != "groq":
@@ -774,6 +796,13 @@ async def executar_tarefa_ia(tarefa, mensagem: str, case_id: str | None = None,
             resposta=resposta_log, modelo=f"{provedor_usado}/{modelo_real}",
             tokens_input=inp, tokens_output=out, custo_estimado=custo,
         )
+    # #40: cacheia só sucesso e SEM PII reidratada — no modo reversível o `texto`
+    # foi reidratado com PII real e NÃO deve ir para o cache (Redis/memória).
+    if not pii_removida_log:
+        await ai_cache.gravar(_cache_key, {
+            "texto": texto, "modelo": f"{provedor_usado}/{modelo_real}",
+            "provedor": provedor_usado,
+        })
     return {
         "conteudo": texto, "modelo": f"{provedor_usado}/{modelo_real}", "provider": provedor_usado,
         "nivel_inteligencia": nivel_inteligencia,

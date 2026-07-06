@@ -8,6 +8,7 @@ import {
   X,
 } from "lucide-react";
 import api from "../../lib/api";
+import { asList } from "../../lib/list";
 
 export default function PortalAssinaturas() {
   const [rows, setRows] = useState<any[]>([]);
@@ -20,7 +21,7 @@ export default function PortalAssinaturas() {
     setLoading(true);
     api
       .get("/signatures/")
-      .then((r) => setRows(Array.isArray(r.data) ? r.data : (Array.isArray(r.data?.data) ? r.data.data : [])))
+      .then((r) => setRows(asList(r.data)))
       .finally(() => setLoading(false));
   };
   useEffect(() => {

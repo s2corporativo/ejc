@@ -1,6 +1,7 @@
 import { useState, useEffect, useCallback } from "react";
 import { Plus, Check, Trash2, RefreshCw, Filter, Download } from "lucide-react";
 import api from "../lib/api";
+import { toast } from "../components/Toast";
 import { Modal, Button, PageHeader, fmtDate } from "../components/UI";
 
 interface Despesa {
@@ -97,24 +98,24 @@ export default function Despesas() {
     return `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}`;
   });
 
-  function exportCSV() {
-    const token = localStorage.getItem("ejc_access");
-    const comp = filterComp ? `?competencia=${filterComp}` : "";
-    const url = `/v1/despesas/export/csv${comp}`;
-    const a = document.createElement("a");
-    a.href = url;
-    a.download = `despesas_${filterComp || "todas"}.csv`;
-    // pass auth via fetch then blob
-    fetch(url, { headers: { Authorization: `Bearer ${token}` } })
-      .then((r) => r.blob())
-      .then((blob) => {
-        const blobUrl = URL.createObjectURL(blob);
-        a.href = blobUrl;
-        document.body.appendChild(a);
-        a.click();
-        document.body.removeChild(a);
-        URL.revokeObjectURL(blobUrl);
+  async function exportCSV() {
+    try {
+      // Reusa o cliente axios (baseURL /api + interceptor de token/refresh).
+      const resp = await api.get("/v1/despesas/export/csv", {
+        params: filterComp ? { competencia: filterComp } : {},
+        responseType: "blob",
       });
+      const blobUrl = URL.createObjectURL(resp.data as Blob);
+      const a = document.createElement("a");
+      a.href = blobUrl;
+      a.download = `despesas_${filterComp || "todas"}.csv`;
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+      URL.revokeObjectURL(blobUrl);
+    } catch {
+      toast.error("Falha ao exportar as despesas em CSV.");
+    }
   }
 
   const load = useCallback(async () => {

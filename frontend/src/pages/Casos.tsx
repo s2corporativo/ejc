@@ -18,6 +18,7 @@ import {
 } from "lucide-react";
 import { Link as RLink } from "react-router-dom";
 import api, { aplicarExtracao } from "../lib/api";
+import { asList } from "../lib/list";
 import type { AplicarExtracaoResult, ExtracaoPayload } from "../lib/api";
 import type { Case, Client, Paged, User } from "../types";
 import {
@@ -287,12 +288,12 @@ export default function Casos() {
     // load() inicial fica a cargo do effect de [arquivoF] abaixo
     api
       .get("/clients/", { params: { page_size: 100 } })
-      .then((r) => setClientes(Array.isArray(r.data?.data) ? r.data.data : []));
+      .then((r) => setClientes(asList<Client>(r.data)));
     // advogados p/ o seletor de responsável — falha silenciosa se o perfil não puder listar usuários
     api
       .get("/users/")
       .then((r) =>
-        setAdvogados(Array.isArray(r.data) ? r.data : (r.data.data ?? [])),
+        setAdvogados(asList<User>(r.data)),
       )
       .catch(() => {});
   }, []);

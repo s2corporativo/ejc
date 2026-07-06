@@ -20,9 +20,11 @@ class _FakeReq:
 
 
 def test_ip_do_x_forwarded_for():
-    # Pega o PRIMEIRO IP do XFF (comportamento atual; nginx deve sobrescrever — laudo SEC-02)
+    # #9 (SEC-02): usa o ÚLTIMO salto do XFF (o posto pelo nosso Nginx), NÃO o
+    # primeiro — o primeiro é controlado pelo cliente e era spoofável. Aqui
+    # "203.0.113.5" é o valor forjado pelo cliente e "10.0.0.1" o real (Nginx).
     req = _FakeReq(headers={"x-forwarded-for": "203.0.113.5, 10.0.0.1"})
-    assert obter_ip_real(req) == "203.0.113.5"
+    assert obter_ip_real(req) == "10.0.0.1"
 
 
 def test_ip_do_x_real_ip():

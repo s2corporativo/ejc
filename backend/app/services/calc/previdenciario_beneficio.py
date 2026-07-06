@@ -160,7 +160,13 @@ def simular_aposentadoria(
         "elegivel": eleg1, "o_que_falta": falta1,
         "coeficiente_rmi": coef_geral, "rmi_estimada": rmi(coef_geral),
         "observacoes": obs1,
-        "_deficit": max(_D0, pts_exig - pontos) + max(_D0, tempo_min - tempo_contribuicao),
+        # #38: déficit em ANOS-equivalentes para ser comparável ao das demais
+        # regras (que somam gaps em anos). O gap de PONTOS é convertido dividindo
+        # por 2 — idade e tempo de contribuição somam ~2 pontos/ano. Antes somava
+        # pontos com anos (unidades distintas), o que quase nunca elegia a regra
+        # de pontos como "mais próxima" mesmo quando era.
+        "_deficit": (max(_D0, pts_exig - pontos) / Decimal("2")
+                     + max(_D0, tempo_min - tempo_contribuicao)),
     })
 
     # ── 2. Idade progressiva (art. 16) ────────────────────────────────────────

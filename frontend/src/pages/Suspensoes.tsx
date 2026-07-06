@@ -3,6 +3,7 @@ import { CalendarOff, Plus, Trash2, Calculator } from "lucide-react";
 import api from "../lib/api";
 import { useAuth } from "../stores/auth";
 import { PageHeader, Spinner, Empty, Modal, fmtDate } from "../components/UI";
+import { asList } from "../lib/list";
 
 const ADMIN = ["superadmin", "admin", "socio"];
 
@@ -37,7 +38,7 @@ export default function Suspensoes() {
   const carregar = () =>
     api
       .get("/suspensoes/")
-      .then((r) => setLista(Array.isArray(r.data?.data) ? r.data.data : []))
+      .then((r) => setLista(asList(r.data)))
       .catch(() => setLista([]));
 
   useEffect(() => {

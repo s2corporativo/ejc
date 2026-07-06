@@ -181,29 +181,17 @@ async def analisar_xml(
 
 # ── Relatório PDF (Visual Law) ────────────────────────────────────────────────
 
+# #27: arnês de arquivo (dir + purga TTL + validação UUID) centralizado em
+# services/visual_law_files — antes copiado verbatim em cada vertical.
+from app.services import visual_law_files as _vlf
+
+
 def _relatorio_dir() -> str:
-    out_dir = os.path.join(settings.UPLOAD_DIR, "tributario_fiscal")
-    os.makedirs(out_dir, exist_ok=True)
-    return out_dir
+    return _vlf.preparar_dir("tributario_fiscal")
 
 
 def _limpar_pdfs_antigos(out_dir: str) -> None:
-    """Retenção LGPD: os PDFs carregam dados fiscais de terceiros (CNPJ, razão
-    social). Varredura best-effort remove os mais antigos que o TTL a cada
-    geração — sem estado externo, tolerante a falhas (nunca quebra a resposta)."""
-    try:
-        agora = time.time()
-        for nome in os.listdir(out_dir):
-            if not nome.endswith(".pdf"):
-                continue
-            caminho = os.path.join(out_dir, nome)
-            try:
-                if agora - os.path.getmtime(caminho) > PDF_TTL_SEGUNDOS:
-                    os.remove(caminho)
-            except OSError:
-                continue
-    except OSError:
-        pass
+    _vlf.purgar_antigos(out_dir)
 
 
 def _html_relatorio(c: ConsolidacaoOut) -> str:
@@ -342,9 +330,7 @@ async def download_relatorio(
 ):
     """Download do PDF gerado pelo POST acima. `arquivo_id` é validado como
     UUID (nunca interpolado livre no path — sem traversal)."""
-    if not re.fullmatch(r"[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}",
-                        arquivo_id):
-        raise HTTPException(422, "Identificador de relatório inválido.")
+    _vlf.validar_uuid(arquivo_id)
     path = os.path.join(_relatorio_dir(), f"diagnostico_{arquivo_id}.pdf")
     if not os.path.isfile(path):
         raise HTTPException(404, "Relatório não encontrado — gere via POST "

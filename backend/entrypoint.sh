@@ -25,8 +25,24 @@ if [ "$#" -gt 0 ]; then
     exec "$@"
 fi
 
-echo "[entrypoint] Aplicando migrations (alembic upgrade head)..."
-python -m alembic upgrade head
+# Migrations no boot são OPT-IN: só rodam com RUN_MIGRATIONS=1|true (default:
+# NÃO rodar). Antes rodavam em TODO boot, o que tornava placebo a trava
+# RUN_MIGRATIONS do deploy seguro (scripts/deploy_vps_safe.sh): o deploy podia
+# "decidir" não migrar, mas o próprio boot já aplicava `alembic upgrade head`
+# sem backup prévio. Agora o deploy controla explicitamente e garante o backup
+# antes. Dev local (docker-compose) seta RUN_MIGRATIONS=1 e segue funcionando.
+# CI NÃO usa este entrypoint: o job db-validation roda `alembic upgrade head`
+# num step próprio.
+case "${RUN_MIGRATIONS:-}" in
+    1|true|TRUE|True|yes|YES)
+        echo "[entrypoint] RUN_MIGRATIONS ativo — aplicando migrations (alembic upgrade head)..."
+        python -m alembic upgrade head
+        ;;
+    *)
+        echo "[entrypoint] RUN_MIGRATIONS não setado (=${RUN_MIGRATIONS:-<vazio>}) — pulando migrations no boot."
+        echo "[entrypoint] Em produção o deploy aplica as migrations de forma gated, com backup antes."
+        ;;
+esac
 
 echo "[entrypoint] Semeando usuário admin (idempotente)..."
 python seeds/seed_all.py

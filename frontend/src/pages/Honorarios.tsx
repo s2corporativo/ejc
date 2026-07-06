@@ -12,6 +12,7 @@ import {
 } from "lucide-react";
 import QRCode from "qrcode";
 import api from "../lib/api";
+import { asList } from "../lib/list";
 import type { Fee, Client, Paged } from "../types";
 import {
   PageHeader,
@@ -59,7 +60,7 @@ export default function Honorarios() {
     load();
     api
       .get("/clients/", { params: { page_size: 100 } })
-      .then((r) => setClientes(Array.isArray(r.data?.data) ? r.data.data : []));
+      .then((r) => setClientes(asList<Client>(r.data)));
   }, [statusF]);
 
   const salvar = async () => {

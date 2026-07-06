@@ -12,6 +12,7 @@ import { useNavigate } from "react-router-dom";
 import { format } from "date-fns";
 import { ptBR } from "date-fns/locale";
 import api from "../lib/api";
+import { asList } from "../lib/list";
 import {
   PageHeader,
   Modal,
@@ -79,7 +80,7 @@ export default function Intimacoes() {
   const load = () =>
     api
       .get(`/intimacoes/?apenas_pendentes=${pendentes}`)
-      .then((r) => setItems(Array.isArray(r.data?.data) ? r.data.data : []));
+      .then((r) => setItems(asList(r.data)));
 
   const loadStatus = () =>
     api

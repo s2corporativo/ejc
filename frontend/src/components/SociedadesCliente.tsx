@@ -27,6 +27,7 @@ import api from "../lib/api";
 import { toast } from "./Toast";
 import { Modal, Spinner, Empty } from "./UI";
 import type { Client } from "../types";
+import { asList } from "../lib/list";
 
 // ── Tipos do contrato /empresarial/sociedades ────────────────────────────────
 interface Sociedade {
@@ -166,7 +167,7 @@ export default function SociedadesCliente() {
   useEffect(() => {
     api
       .get("/clients/", { params: { page_size: 100 } })
-      .then((r) => setClientes(r.data?.data ?? []))
+      .then((r) => setClientes(asList<Client>(r.data)))
       .catch(() => setClientes([]));
   }, []);
 
@@ -176,7 +177,7 @@ export default function SociedadesCliente() {
         params: { client_id: filtroCliente || undefined, page },
       })
       .then((r) => {
-        setLista(r.data?.data ?? []);
+        setLista(asList<Sociedade>(r.data));
         setTotal(r.data?.total ?? 0);
       })
       .catch(() => {

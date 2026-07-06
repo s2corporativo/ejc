@@ -10,6 +10,7 @@ import {
   FileStack,
 } from "lucide-react";
 import api from "../lib/api";
+import { asList } from "../lib/list";
 import { toast } from "./Toast";
 import {
   Modal,
@@ -125,9 +126,7 @@ export default function ProvasCaso({ caseId }: { caseId: string | number }) {
     return api
       .get(`/casos/${caseId}/provas`)
       .then((r) => {
-        const lista: Prova[] = Array.isArray(r.data)
-          ? r.data
-          : (r.data?.data ?? []);
+        const lista: Prova[] = asList<Prova>(r.data);
         lista.sort((a, b) => (a.ordem ?? 0) - (b.ordem ?? 0));
         setProvas(lista);
       })
@@ -142,7 +141,7 @@ export default function ProvasCaso({ caseId }: { caseId: string | number }) {
     api
       .get("/documents/", { params: { case_id: caseId, page_size: 500 } })
       .then((r) => {
-        const all = Array.isArray(r.data) ? r.data : (r.data?.data ?? []);
+        const all = asList(r.data);
         setDocs(
           all.map((d: any) => ({
             id: d.id,
@@ -158,7 +157,7 @@ export default function ProvasCaso({ caseId }: { caseId: string | number }) {
     api
       .get(`/teses/casos/${caseId}`)
       .then((r) => {
-        const all = Array.isArray(r.data) ? r.data : (r.data?.data ?? []);
+        const all = asList(r.data);
         setTeses(
           all.map((t: any) => ({
             id: t.id,

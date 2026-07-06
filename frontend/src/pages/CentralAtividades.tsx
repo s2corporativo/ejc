@@ -20,6 +20,7 @@ import {
   Plus,
 } from "lucide-react";
 import api from "../lib/api";
+import { asList } from "../lib/list";
 import { Modal } from "../components/UI";
 
 // ── Types ─────────────────────────────────────────────────────────────────────
@@ -463,7 +464,7 @@ export default function CentralAtividades() {
       const r = await api.get("/atividades", {
         params: { apenas_pendentes: false },
       });
-      const all: Activity[] = (r.data?.data ?? []).map((a: any) => ({
+      const all: Activity[] = asList(r.data).map((a: any) => ({
         id: a.id,
         tipo: a.tipo as ItemType,
         titulo: a.titulo,

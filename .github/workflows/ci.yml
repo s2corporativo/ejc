@@ -30,6 +30,25 @@ jobs:
       - name: Instalar dependências
         run: pip install -r requirements.txt
 
+      # Gate de lint/format — ruff já está no requirements.txt (não precisa de
+      # instalação extra). Non-blocking por ora (continue-on-error) porque pode
+      # haver achados legados; quando o código estiver limpo, REMOVA o
+      # continue-on-error para tornar o lint BLOQUEANTE.
+      - name: Lint (ruff)
+        continue-on-error: true
+        run: python -m ruff check app
+
+      # Scan de vulnerabilidades das dependências Python (requirements.txt).
+      # pip-audit não filtra por severidade nativamente; começa non-blocking
+      # para não travar o CI com achados legados de dependências transitivas.
+      # Meta: remover o continue-on-error e tratar severidade alta como
+      # bloqueante assim que o backlog for triado.
+      - name: Scan de vulnerabilidades (pip-audit)
+        continue-on-error: true
+        run: |
+          pip install pip-audit
+          pip-audit -r requirements.txt --desc
+
       - name: Rodar testes
         env:
           APP_ENV: development
@@ -110,6 +129,27 @@ jobs:
 
       - name: Instalar dependências
         run: npm ci
+
+      # Gate de format — script "format:check" (prettier) já existe no
+      # package.json. Non-blocking por ora; remova o continue-on-error para
+      # torná-lo BLOQUEANTE quando o código estiver formatado.
+      - name: Checar formatação (prettier)
+        continue-on-error: true
+        run: npm run format:check
+
+      # Testes de unidade do frontend (vitest). --if-present evita quebrar o CI
+      # caso o script "test" ainda não tenha entrado no package.json; assim que
+      # entrar, roda automaticamente. Quando o vitest estiver consolidado,
+      # prefira o step direto `npm run test`.
+      - name: Testes (vitest)
+        run: npm run test --if-present
+
+      # Scan de vulnerabilidades das dependências npm (severidade >= high).
+      # Non-blocking por ora (continue-on-error) para triagem de achados
+      # legados; remova para tornar bloqueante em severidade alta.
+      - name: Scan de vulnerabilidades (npm audit)
+        continue-on-error: true
+        run: npm audit --audit-level=high
 
       - name: Typecheck + build
         run: npm run build

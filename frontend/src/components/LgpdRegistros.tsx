@@ -25,6 +25,7 @@ import api from "../lib/api";
 import { toast } from "./Toast";
 import { Modal, Spinner, Empty } from "./UI";
 import type { Client } from "../types";
+import { asList } from "../lib/list";
 
 // ── Tipos do contrato /lgpd/registros ────────────────────────────────────────
 type Risco = "baixo" | "medio" | "alto";
@@ -141,7 +142,7 @@ export default function LgpdRegistros() {
   useEffect(() => {
     api
       .get("/clients/", { params: { page_size: 100 } })
-      .then((r) => setClientes(r.data?.data ?? []))
+      .then((r) => setClientes(asList<Client>(r.data)))
       .catch(() => setClientes([]));
   }, []);
 
@@ -154,7 +155,7 @@ export default function LgpdRegistros() {
     setLista(null);
     api
       .get("/lgpd/registros", { params: { client_id: clientId } })
-      .then((r) => setLista(Array.isArray(r.data) ? r.data : (r.data?.data ?? [])))
+      .then((r) => setLista(asList<RegistroTratamento>(r.data)))
       .catch(() => setLista([]));
     api
       .get(`/lgpd/registros/${clientId}/resumo`)

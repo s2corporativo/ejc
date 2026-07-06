@@ -322,8 +322,7 @@ def formatar_expurgo_para_peca(avaliacao: dict) -> str | None:
         return None
     mod = re.sub(r"[^\w\sÀ-ÿ/().-]", "", str(avaliacao.get("modalidade") or ""))[:80]
 
-    def brl(v: float) -> str:
-        return f"R$ {v:,.2f}".replace(",", "X").replace(".", ",").replace("X", ".")
+    from app.utils.format import formatar_brl as brl  # #41: formatador BRL único
 
     return (
         "CÁLCULO DETERMINÍSTICO DE ABUSIVIDADE DOS JUROS (fonte: BACEN/Olinda): "

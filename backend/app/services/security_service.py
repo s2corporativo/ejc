@@ -41,15 +41,17 @@ def obter_ip_real(request) -> str:
     IP real do cliente respeitando proxy reverso (Nginx).
     Sem isto, atrás do Nginx todos os IPs viram 127.0.0.1 e o
     anti-brute-force bloquearia o escritório inteiro.
-    Confia no PRIMEIRO IP do X-Forwarded-For (definido pelo Nginx).
+
+    Usa o ÚLTIMO salto do X-Forwarded-For (o posto pelo nosso Nginx), não o
+    primeiro — o primeiro é controlado pelo cliente e era spoofável. Lógica
+    centralizada em request_context.parse_client_ip.
     """
-    xff = request.headers.get("x-forwarded-for", "")
-    if xff:
-        return xff.split(",")[0].strip()
-    real = request.headers.get("x-real-ip", "")
-    if real:
-        return real.strip()
-    return request.client.host if request.client else "0.0.0.0"
+    from app.core.request_context import parse_client_ip
+    return parse_client_ip(
+        request.headers.get("x-forwarded-for", ""),
+        request.headers.get("x-real-ip", ""),
+        request.client.host if request.client else None,
+    )
 
 
 def registrar_falha(chave: str) -> None:

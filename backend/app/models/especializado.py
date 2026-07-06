@@ -55,8 +55,12 @@ class EmpresarialCase(Base):
     id      = Column(String(36), primary_key=True)
     case_id = Column(String(36), ForeignKey("cases.id"), nullable=False, unique=True, index=True)
 
-    tipo    = Column(SAEnum(EmpresarialTipo), nullable=False, default=EmpresarialTipo.contrato_empresarial)
-    status  = Column(SAEnum(EmpresarialStatus), nullable=False, default=EmpresarialStatus.diagnostico)
+    # #10: colunas são VARCHAR no banco (migration 010). O ORM declarava
+    # SAEnum (enum NATIVO no PG), gerando drift model↔schema (create_all criaria
+    # tipos enum; ler valor fora do domínio levantaria LookupError). String +
+    # enum Python só na validação Pydantic (ramos.py), como em sociedade_cliente.
+    tipo    = Column(String(40), nullable=False, default=EmpresarialTipo.contrato_empresarial.value)
+    status  = Column(String(30), nullable=False, default=EmpresarialStatus.diagnostico.value)
 
     # Societário
     cnpj_empresa        = Column(String(18), nullable=True)
@@ -149,8 +153,8 @@ class CivelCase(Base):
     id      = Column(String(36), primary_key=True)
     case_id = Column(String(36), ForeignKey("cases.id"), nullable=False, unique=True, index=True)
 
-    tipo   = Column(SAEnum(CivelTipo), nullable=False)
-    status = Column(SAEnum(CivelStatus), nullable=False, default=CivelStatus.pre_processual)
+    tipo   = Column(String(40), nullable=False)  # #10: VARCHAR no banco, não enum nativo
+    status = Column(String(30), nullable=False, default=CivelStatus.pre_processual.value)
 
     # Geral
     valor_causa      = Column(Numeric(14, 2), nullable=True)
@@ -250,8 +254,8 @@ class PenalCase(Base):
     id      = Column(String(36), primary_key=True)
     case_id = Column(String(36), ForeignKey("cases.id"), nullable=False, unique=True, index=True)
 
-    tipo_crime  = Column(SAEnum(PenalTipo), nullable=False)
-    fase        = Column(SAEnum(PenalFase), nullable=False, default=PenalFase.investigacao)
+    tipo_crime  = Column(String(40), nullable=False)  # #10: VARCHAR no banco
+    fase        = Column(String(40), nullable=False, default=PenalFase.investigacao.value)
 
     # Identificação
     numero_bo        = Column(String(40), nullable=True)   # boletim de ocorrência
@@ -349,8 +353,8 @@ class TrabalhistaCase(Base):
     id      = Column(String(36), primary_key=True)
     case_id = Column(String(36), ForeignKey("cases.id"), nullable=False, unique=True, index=True)
 
-    tipo  = Column(SAEnum(TrabalhistaTipo), nullable=False)
-    fase  = Column(SAEnum(TrabalhistaFase), nullable=False, default=TrabalhistaFase.pre_processual)
+    tipo  = Column(String(40), nullable=False)  # #10: VARCHAR no banco
+    fase  = Column(String(40), nullable=False, default=TrabalhistaFase.pre_processual.value)
     polo  = Column(String(20), nullable=True)   # reclamante|reclamado
 
     # Dados do empregado/empregador
@@ -439,8 +443,8 @@ class AdminCase(Base):
     id      = Column(String(36), primary_key=True)
     case_id = Column(String(36), ForeignKey("cases.id"), nullable=False, unique=True, index=True)
 
-    tipo   = Column(SAEnum(AdminTipo), nullable=False)
-    status = Column(SAEnum(AdminStatus), nullable=False, default=AdminStatus.prazo_recurso)
+    tipo   = Column(String(50), nullable=False)  # #10: VARCHAR no banco
+    status = Column(String(40), nullable=False, default=AdminStatus.prazo_recurso.value)
 
     # Auto / ato administrativo
     numero_auto_infracao  = Column(String(50), nullable=True)
@@ -523,8 +527,8 @@ class BancarioCase(Base):
     id      = Column(String(36), primary_key=True)
     case_id = Column(String(36), ForeignKey("cases.id"), nullable=False, unique=True, index=True)
 
-    tipo   = Column(SAEnum(BancarioTipo), nullable=False)
-    status = Column(SAEnum(BancarioStatus), nullable=False, default=BancarioStatus.analise_contrato)
+    tipo   = Column(String(40), nullable=False)  # #10: VARCHAR no banco
+    status = Column(String(30), nullable=False, default=BancarioStatus.analise_contrato.value)
 
     # Dados do contrato
     instituicao_financeira  = Column(String(100), nullable=True)

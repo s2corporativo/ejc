@@ -318,10 +318,11 @@ def calcular_prescricao(tipo_acao: str, data_fato: date) -> dict | None:
     regra = PRESCRICAO_TABELA.get(tipo_acao)
     if not regra:
         return None
-    limite = date(
-        data_fato.year + regra["anos"], data_fato.month,
-        min(data_fato.day, 28)  # segurança p/ fevereiro
-    )
+    # data_segura clampa ao último dia real do mês-alvo (28/29 fev, 30 abr...).
+    # Antes truncava SEMPRE no dia 28, adiantando a prescrição em até 3 dias
+    # para fatos ocorridos nos dias 29–31.
+    from app.utils.datas import data_segura
+    limite = data_segura(data_fato.year + regra["anos"], data_fato.month, data_fato.day)
     return {
         "data_limite": limite,
         "base_legal": regra["base"],

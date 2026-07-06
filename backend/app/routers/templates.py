@@ -13,6 +13,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.database import get_db
 from app.core.security import get_current_user, require_roles
+from app.utils.format import formatar_brl  # #41: formatador BRL único
 from app.core.ownership import verificar_acesso_caso
 from app.models.user import User
 from app.models.template import DocTemplate
@@ -152,7 +153,7 @@ async def gerar_peca(
         "parte_contraria": case.parte_contraria or "—",
         "comarca": case.comarca or "—",
         "vara": case.vara or "—",
-        "valor_causa": f"R$ {case.valor_causa:,.2f}".replace(",", "X").replace(".", ",").replace("X", ".") if case.valor_causa else "—",
+        "valor_causa": formatar_brl(case.valor_causa) if case.valor_causa else "—",
         "area": case.area.value if hasattr(case.area, "value") else str(case.area),
         "data_hoje": _data_extenso(date.today()),
         "advogado_nome": cu.full_name,

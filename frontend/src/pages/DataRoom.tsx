@@ -2,6 +2,7 @@ import { useEffect, useState } from "react";
 import { toast } from "../components/Toast";
 import api from "../lib/api";
 import { PageHeader, Spinner, fmtDate, Modal } from "../components/UI";
+import { asList } from "../lib/list";
 
 interface Room {
   id: string;
@@ -40,7 +41,7 @@ export default function DataRoom() {
     setLoading(true);
     api
       .get("/data-rooms?per_page=50")
-      .then((r) => setRooms(r.data?.items ?? []))
+      .then((r) => setRooms(asList<Room>(r.data)))
       .catch(() => {})
       .finally(() => setLoading(false));
   };
@@ -61,7 +62,7 @@ export default function DataRoom() {
     setAberta(data);
     api
       .get("/documents/?per_page=100")
-      .then((r) => setDocs(r.data?.items ?? r.data?.data ?? []))
+      .then((r) => setDocs(asList(r.data)))
       .catch(() => {});
   };
 

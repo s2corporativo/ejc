@@ -219,6 +219,15 @@ async def buscar_contexto_rag(
                 ORDER BY kc.embedding <=> :vec
                 LIMIT :lim
             """)
+            # #13: com filtros seletivos (escopo por cliente, vigência, categoria)
+            # o índice HNSW aproximado pode varrer poucos candidatos e sub-retornar
+            # (precedentes internos somem do topo). Elevar ef_search nesta
+            # transação amplia a lista de candidatos e melhora o recall sem trocar
+            # o índice. SET LOCAL = escopo da transação apenas.
+            try:
+                await db.execute(text("SET LOCAL hnsw.ef_search = 100"))
+            except Exception:
+                pass  # GUC ausente (índice não-HNSW/pgvector antigo) → segue igual
             try:
                 rows_v = await db.execute(sql_v, params_v)
                 resultados = [

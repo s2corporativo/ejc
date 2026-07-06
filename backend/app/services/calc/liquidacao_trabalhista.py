@@ -63,8 +63,8 @@ def _q(v: Decimal) -> Decimal:
 
 
 def _moeda(v: Decimal) -> str:
-    inteiro, _, dec = f"{_q(v):,.2f}".partition(".")
-    return "R$ " + inteiro.replace(",", ".") + "," + dec
+    from app.utils.format import formatar_brl  # #41: formatador BRL único
+    return formatar_brl(v)
 
 
 async def calcular_liquidacao(

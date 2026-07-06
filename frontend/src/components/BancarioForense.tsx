@@ -17,6 +17,7 @@ import {
   Sparkles,
 } from "lucide-react";
 import api from "../lib/api";
+import { authFetch } from "../lib/stream";
 import { Modal, Button, Spinner } from "./UI";
 import { toast } from "./Toast";
 
@@ -361,12 +362,27 @@ function CalculadoraCET() {
         </span>
       </p>
       <div className="grid grid-cols-2 sm:grid-cols-3 gap-2">
-        {campo("Valor liberado (R$) *", "valor_liberado", "text", "ex: 10.000,00")}
+        {campo(
+          "Valor liberado (R$) *",
+          "valor_liberado",
+          "text",
+          "ex: 10.000,00",
+        )}
         {campo("Data de liberação *", "data_liberacao", "date")}
         {campo("Nº de parcelas *", "n_parcelas", "text", "ex: 24")}
-        {campo("Valor da parcela (R$) *", "valor_parcela", "text", "ex: 620,00")}
+        {campo(
+          "Valor da parcela (R$) *",
+          "valor_parcela",
+          "text",
+          "ex: 620,00",
+        )}
         {campo("1º vencimento *", "primeiro_vencimento", "date")}
-        {campo("Tarifas incluídas (R$)", "tarifas_incluidas", "text", "opcional")}
+        {campo(
+          "Tarifas incluídas (R$)",
+          "tarifas_incluidas",
+          "text",
+          "opcional",
+        )}
         {campo("IOF (R$)", "iof", "text", "opcional")}
         {campo(
           "CET informado pelo banco (% a.a.)",
@@ -540,14 +556,10 @@ function MinutaRevisionalModal({
     setDoc("");
     setErro("");
     abort.current = new AbortController();
-    const token = localStorage.getItem("ejc_access") ?? "";
     try {
-      const r = await fetch(`/api/bank-analysis/${analiseSel}/gerar-peca`, {
+      const r = await authFetch(`/api/bank-analysis/${analiseSel}/gerar-peca`, {
         method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-          Authorization: `Bearer ${token}`,
-        },
+        headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ abusividade }),
         signal: abort.current.signal,
       });
@@ -626,8 +638,8 @@ function MinutaRevisionalModal({
               </div>
             ) : analises.length === 0 ? (
               <div className="bg-warn-50 border border-warn-200 rounded-lg px-4 py-3 text-sm text-warn-800">
-                A esteira de peças é ancorada em uma <b>análise de extrato</b>{" "}
-                e nenhuma foi encontrada. Rode primeiro a seção{" "}
+                A esteira de peças é ancorada em uma <b>análise de extrato</b> e
+                nenhuma foi encontrada. Rode primeiro a seção{" "}
                 <b>"Análise de Extrato Bancário"</b> (acima, nesta página)
                 enviando o extrato do cliente — depois volte aqui e gere a
                 minuta com estes números.
@@ -635,9 +647,7 @@ function MinutaRevisionalModal({
             ) : (
               <>
                 <div>
-                  <label className="label">
-                    Ancorar na análise de extrato
-                  </label>
+                  <label className="label">Ancorar na análise de extrato</label>
                   <select
                     className="input w-full text-sm"
                     value={analiseSel}
@@ -866,13 +876,16 @@ function VerificadorAbusividade() {
 
   const cfg = res ? VEREDITO_CFG[res.veredito] : null;
   const razaoTxt =
-    res?.razao != null ? fmtNum(res.razao).replace(/0+$/, "").replace(/,$/, "") : null;
+    res?.razao != null
+      ? fmtNum(res.razao).replace(/0+$/, "").replace(/,$/, "")
+      : null;
 
   return (
     <div>
       <p className="text-xs text-slate-500 mb-3">
-        Compara a taxa contratada com a <b>média BACEN da modalidade na época
-        da contratação</b> e classifica o indício (baliza de ~1,5x) ·{" "}
+        Compara a taxa contratada com a{" "}
+        <b>média BACEN da modalidade na época da contratação</b> e classifica o
+        indício (baliza de ~1,5x) ·{" "}
         <span className="text-gold-700">REsp 1.061.530/RS (Tema 27/STJ)</span>
       </p>
       <div className="grid grid-cols-2 sm:grid-cols-3 gap-2">
@@ -1031,7 +1044,10 @@ function VerificadorAbusividade() {
                 </summary>
                 <ol className="mt-1 space-y-0.5">
                   {res.expurgo.memoria.map((m, i) => (
-                    <li key={i} className="text-[11px] text-slate-600 font-mono">
+                    <li
+                      key={i}
+                      className="text-[11px] text-slate-600 font-mono"
+                    >
                       {m}
                     </li>
                   ))}
@@ -1041,8 +1057,7 @@ function VerificadorAbusividade() {
                 onClick={() => setMinutaOpen(true)}
                 className="mt-3 text-xs px-3 py-2 rounded-lg bg-navy text-white hover:bg-navy/90 flex items-center gap-1.5 transition-colors"
               >
-                <FileText size={13} /> Gerar minuta revisional com estes
-                números
+                <FileText size={13} /> Gerar minuta revisional com estes números
               </button>
             </div>
           )}

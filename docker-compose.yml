@@ -51,6 +51,16 @@ services:
       DATABASE_URL_SYNC: postgresql://${POSTGRES_USER}:${POSTGRES_PASSWORD}@db:5432/${POSTGRES_DB}
       UPLOAD_DIR: /app/uploads
       BACKUP_DIR: /app/backups
+      # O entrypoint aplica `alembic upgrade head` no boot SOMENTE quando
+      # RUN_MIGRATIONS=1 (ver backend/entrypoint.sh). Default 1 = dev local:
+      # um `docker compose up` cru (sem RUN_MIGRATIONS no ambiente) cria/atualiza
+      # o schema sozinho, como antes.
+      # Em PRODUÇÃO o deploy seguro (scripts/deploy_vps_safe.sh) exporta
+      # RUN_MIGRATIONS (0 por padrão, 1 só no disparo com migração revisada)
+      # ANTES do `docker compose up` e faz backup do banco antes. Assim o boot
+      # herda esse valor gated: sem opt-in explícito, nenhuma migration roda no
+      # boot — a trava do deploy deixa de ser placebo.
+      RUN_MIGRATIONS: "${RUN_MIGRATIONS:-1}"
       # Fila assíncrona (Fase 3A): worker existe no compose → Celery ligado.
       # Redis fora do ar não quebra nada: o dispatcher cai para BackgroundTasks.
       REDIS_URL: redis://redis:6379/0
@@ -137,7 +147,13 @@ services:
     container_name: ejc_frontend
     restart: unless-stopped
     ports:
-      - "80:80"
+      # Publica SÓ no loopback do host, atrás do Nginx do host (nginx/ejc.conf
+      # faz o TLS/HSTS/CSP e o proxy_pass para 127.0.0.1:8080). Expor 0.0.0.0:80
+      # cru pulava o Nginx (sem TLS) e batia com toda a tooling, que checa
+      # 127.0.0.1:8080 (post_deploy_check.sh, monitor_health.sh, vps_setup.sh) —
+      # a divergência fazia o deploy da main dar ROLLBACK numa stack saudável e
+      # o monitor reiniciar o frontend a cada run.
+      - "127.0.0.1:8080:80"
     depends_on:
       backend:
         condition: service_healthy

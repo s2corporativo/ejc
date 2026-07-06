@@ -22,6 +22,7 @@ import {
 } from "lucide-react";
 import api from "../lib/api";
 import { PageHeader, Empty, Spinner, fmtDate } from "../components/UI";
+import { asList } from "../lib/list";
 
 // ── Categorias ────────────────────────────────────────────────────────────────
 const CATS: { value: string; label: string; icon: any; cor: string }[] = [
@@ -552,7 +553,7 @@ export default function Conhecimento() {
         },
       })
       .then((r) => {
-        setDocs(r.data.data ?? r.data.items ?? []);
+        setDocs(asList(r.data));
         setTotal(r.data.total ?? 0);
       })
       .catch(() => setDocs([]));

@@ -63,8 +63,8 @@ def _q(v: Decimal) -> Decimal:
 
 def _moeda(v: Decimal) -> str:
     """R$ 10.000,00 — formatação pt-BR para a memória de cálculo."""
-    inteiro, _, dec = f"{_q(v):,.2f}".partition(".")
-    return "R$ " + inteiro.replace(",", ".") + "," + dec
+    from app.utils.format import formatar_brl  # #41: formatador BRL único
+    return formatar_brl(v)
 
 
 def simular_estrategia(
@@ -252,8 +252,11 @@ def _cenario_prescricao(data_infracao: date | None, hoje: date) -> dict:
         }
 
     dias = (hoje - data_infracao).days
-    # 5 anos "completos" a partir da data do fato (art. 1º da Lei 9.873/99):
-    limite = data_infracao.replace(year=data_infracao.year + _PRESCRICAO_ANOS)
+    # 5 anos "completos" a partir da data do fato (art. 1º da Lei 9.873/99).
+    # adicionar_anos trata 29/02 com segurança (replace(year=...) estouraria
+    # ValueError se a infração fosse 29/02 e o ano-limite não for bissexto).
+    from app.utils.datas import adicionar_anos
+    limite = adicionar_anos(data_infracao, _PRESCRICAO_ANOS)
     prescrito = hoje > limite
     anos_aprox = dias / 365.25
 

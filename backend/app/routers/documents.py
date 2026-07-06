@@ -21,7 +21,8 @@ from app.core.config import get_settings
 from app.core.rate_limit import rate_limit
 from app.core.security import get_current_user, ROLE_LEVEL
 from app.models.user import User
-from app.models.document import Document
+from app.models.document import Document, DocConfidencialidade
+from app.models.client import Client
 from app.models.case import Case
 from app.models.redesign import DocumentTypeMaster
 from app.models.audit_log import criar_audit_log
@@ -268,7 +269,38 @@ async def upload(
     # disco para não deixar arquivo órfão em caso de rejeição. Mesmo padrão de
     # processes.py e do download deste módulo.
     if case_id:
-        await verificar_acesso_caso(db, cu, case_id)
+        caso = await verificar_acesso_caso(db, cu, case_id)
+        # #8: o cliente do documento é SEMPRE derivado do caso — nunca confiar no
+        # client_id do formulário. Sem isso, um usuário podia marcar o documento
+        # com o client_id de OUTRO cliente e ele apareceria no Portal externo do
+        # cliente errado (vazamento cross-tenant). Divergência → 422.
+        if client_id and client_id != caso.client_id:
+            raise HTTPException(
+                status_code=422,
+                detail="client_id diverge do cliente do caso informado",
+            )
+        client_id = caso.client_id
+    elif client_id:
+        # Sem caso vinculado, o client_id precisa existir — senão o documento
+        # apontaria para um cliente arbitrário/inexistente (mesmo risco no portal).
+        cli = (await db.execute(
+            select(Client.id).where(
+                Client.id == client_id, Client.deleted_at.is_(None)
+            )
+        )).scalar_one_or_none()
+        if cli is None:
+            raise HTTPException(status_code=404, detail="Cliente não encontrado")
+
+    # #29: confidencialidade chega como string livre do form; validar contra o
+    # enum e responder 422 (antes caía direto no SAEnum do model → 500).
+    try:
+        conf_enum = DocConfidencialidade(confidencialidade)
+    except ValueError:
+        _validos = ", ".join(c.value for c in DocConfidencialidade)
+        raise HTTPException(
+            status_code=422,
+            detail=f"Confidencialidade inválida: {confidencialidade}. Use: {_validos}",
+        )
 
     # Validações
     ext = os.path.splitext(file.filename or "")[1].lower()
@@ -338,7 +370,7 @@ async def upload(
         id=doc_id, titulo=titulo, tipo=tipo,
         filename=file.filename, filepath=filepath,
         mimetype=mime_real, size_bytes=len(conteudo),
-        confidencialidade=confidencialidade, ocr_text=ocr_text,
+        confidencialidade=conf_enum, ocr_text=ocr_text,
         case_id=case_id, client_id=client_id, uploaded_by=cu.id,
     )
     db.add(d)
