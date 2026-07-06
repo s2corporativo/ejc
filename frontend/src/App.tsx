@@ -21,14 +21,12 @@ const Prazos = lazy(() => import("./pages/Prazos"));
 const Suspensoes = lazy(() => import("./pages/Suspensoes"));
 const GestaoDocumental = lazy(() => import("./pages/GestaoDocumental"));
 const Pecas = lazy(() => import("./pages/Pecas"));
-const Honorarios = lazy(() => import("./pages/Honorarios"));
 const RamoBase = lazy(() => import("./pages/ramos/RamoBase"));
 const RamosHub = lazy(() => import("./pages/RamosHub"));
 const OfficeContracts = lazy(() => import("./pages/OfficeContracts"));
 const PartnerWithdrawals = lazy(() => import("./pages/PartnerWithdrawals"));
 const CentralAtividades = lazy(() => import("./pages/CentralAtividades"));
 const FinanceiroWorkspace = lazy(() => import("./pages/FinanceiroWorkspace"));
-const Despesas = lazy(() => import("./pages/Despesas"));
 const DataJudBusca = lazy(() => import("./pages/DataJudBusca"));
 const DespesasRecorrentes = lazy(() => import("./pages/DespesasRecorrentes"));
 const CRMLeads = lazy(() => import("./pages/CRMLeads"));
@@ -60,7 +58,7 @@ const Produtividade = lazy(() => import("./pages/Produtividade"));
 const DiarioOficial = lazy(() => import("./pages/DiarioOficial"));
 const Assinaturas = lazy(() => import("./pages/Assinaturas"));
 const Ajuda = lazy(() => import("./pages/Ajuda"));
-const Sociedade = lazy(() => import("./pages/Sociedade"));
+const Configuracoes = lazy(() => import("./pages/Configuracoes"));
 const Whatsapp = lazy(() => import("./pages/Whatsapp"));
 const DashboardIA = lazy(() => import("./pages/DashboardIA"));
 const GovernancaIA = lazy(() => import("./pages/GovernancaIA"));
@@ -178,19 +176,7 @@ export default function App() {
             <Route path="/pecas" element={<Pecas />} />
             <Route
               path="/honorarios"
-              element={
-                <RoleOnly
-                  roles={[
-                    "superadmin",
-                    "admin",
-                    "socio",
-                    "advogado",
-                    "financeiro",
-                  ]}
-                >
-                  <Honorarios />
-                </RoleOnly>
-              }
+              element={<Navigate to="/financeiro?tab=honorarios" replace />}
             />
             <Route path="/ambiental" element={<Navigate to="/ramos/ambiental" replace />} />
             <Route path="/data-room" element={<Navigate to="/documentos" replace />} />
@@ -203,6 +189,7 @@ export default function App() {
             <Route path="/casos/:caseId/sala-de-guerra" element={<SalaDeGuerra />} />
             <Route path="/produtividade" element={<Produtividade />} />
             <Route path="/ajuda" element={<Ajuda />} />
+            <Route path="/configuracoes" element={<Configuracoes />} />
             <Route path="/noticias" element={<Noticias />} />
             <Route
               path="/ia-saude"
@@ -242,7 +229,10 @@ export default function App() {
             <Route path="/diario-oficial" element={<DiarioOficial />} />
             <Route path="/assinaturas" element={<Assinaturas />} />
             <Route path="/workflow" element={<Workflow />} />
-            <Route path="/sociedade" element={<Sociedade />} />
+            <Route
+              path="/sociedade"
+              element={<Navigate to="/financeiro?tab=societaria" replace />}
+            />
             <Route path="/ramos" element={<RamosHub />} />
             <Route path="/ramos/:slug" element={<RamoBase />} />
             <Route path="/office-contracts" element={<OfficeContracts />} />
@@ -250,7 +240,10 @@ export default function App() {
             <Route path="/atividades" element={<CentralAtividades />} />
             <Route path="/financeiro" element={<FinanceiroWorkspace />} />
             <Route path="/financeiro-dashboard" element={<Navigate to="/financeiro" replace />} />
-            <Route path="/despesas" element={<Despesas />} />
+            <Route
+              path="/despesas"
+              element={<Navigate to="/financeiro?tab=despesas" replace />}
+            />
             <Route path="/datajud" element={<DataJudBusca />} />
             <Route path="/despesas-recorrentes" element={<DespesasRecorrentes />} />
             <Route path="/crm-leads" element={<CRMLeads />} />

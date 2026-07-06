@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useSearchParams } from "react-router-dom";
 import {
   BarChart3,
   Wallet,
@@ -30,8 +30,13 @@ const TABS = [
 
 type Tab = (typeof TABS)[number]["k"];
 
+const isTab = (v: string | null): v is Tab => TABS.some((t) => t.k === v);
+
 export default function FinanceiroWorkspace() {
-  const [tab, setTab] = useState<Tab>("visao");
+  const [searchParams, setSearchParams] = useSearchParams();
+  const raw = searchParams.get("tab");
+  const tab: Tab = isTab(raw) ? raw : "visao";
+  const setTab = (k: Tab) => setSearchParams({ tab: k }, { replace: true });
   return (
     <div className="space-y-5">
       <PageHeader
