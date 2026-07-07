@@ -901,6 +901,9 @@ def start_scheduler():
     s.add_job(job_ingestao_senado,   CronTrigger(hour=4, minute=20),         id="ing_senado",   replace_existing=True)
     # DJEN → RAG: gate interno DJEN_INGEST_ENABLED (default False)
     s.add_job(job_ingestao_djen,     CronTrigger(hour=5, minute=0),          id="ing_djen",     replace_existing=True)
+    # TJMG → RAG: gate interno TJMG_INGEST_ENABLED (default False). Semanal
+    # (sáb 04h30) — crawler de jurisprudência estadual MG por temas curados.
+    s.add_job(job_ingestao_tjmg,     CronTrigger(day_of_week="sat", hour=4, minute=30), id="ing_tjmg", replace_existing=True)
 
     # Recarrega feriados municipais/estaduais (00h05) — pega novas inserções
     # na tabela `feriados` sem precisar reiniciar o backend.
@@ -1385,4 +1388,25 @@ async def job_ingestao_djen():
     await executar_ingestao(
         "djen", "Comunicações processuais (DJEN — API Comunica/CNJ)",
         "comunicacao_processual", djen.ingerir,
+    )
+
+
+async def job_ingestao_tjmg():
+    """Sábado 04h30 — crawler da jurisprudência do TJMG (base de acórdãos) →
+    RAG, por temas curados e janela de datas.
+
+    Gate: TJMG_INGEST_ENABLED (default False — opt-in no .env; validar contra
+    o site real antes de ativar em produção). O TJMG não tem API aberta, então
+    a coleta depende de scraping: se o HTML mudar ou o portal bloquear, a fonte
+    'tjmg' é marcada 'erro'/'parcial' no painel, sem derrubar o scheduler.
+    """
+    from app.core.config import get_settings as _gs
+    if not _gs().TJMG_INGEST_ENABLED:
+        logger.info("[Ingestao:tjmg] desabilitado (TJMG_INGEST_ENABLED=false)")
+        return
+    from app.services.ingestion_service import executar_ingestao
+    from app.services.ingestors import tjmg
+    await executar_ingestao(
+        "tjmg", "Jurisprudência TJMG (crawler — base de acórdãos)",
+        "jurisprudencia", tjmg.ingerir,
     )

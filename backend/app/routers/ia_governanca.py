@@ -6,7 +6,7 @@ from datetime import datetime, timezone, timedelta
 from typing import Literal
 from uuid import uuid4
 
-from fastapi import APIRouter, Depends, HTTPException, Query
+from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, Query
 from pydantic import BaseModel, Field
 from sqlalchemy import select, func as sqlfunc, text as sqltext
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -462,6 +462,35 @@ async def fontes_ingestao(db: AsyncSession = Depends(get_db), cu: User = Depends
         "registros_total": f.registros_total,
         "ultimo_erro": f.ultimo_erro,
     } for f in rows]}
+
+
+@router.post("/fontes/tjmg/coletar", status_code=202)
+async def coletar_tjmg_agora(
+    bg: BackgroundTasks,
+    cu: User = Depends(get_current_user),
+):
+    """Dispara uma coleta do TJMG SOB DEMANDA (fora do cron semanal).
+
+    Serve para o escritório VALIDAR o coletor contra o site real do TJMG antes
+    de ligar o job agendado (TJMG_INGEST_ENABLED) — por isso NÃO depende desse
+    gate: é uma ação explícita de admin/sócio. Roda em segundo plano (a coleta
+    faz requisições de rede) e o resultado (novos/total/erro) aparece na fonte
+    'tjmg' em GET /ia-governanca/fontes.
+    """
+    _require_admin_socio(cu)
+    from app.services.ingestion_service import executar_ingestao
+    from app.services.ingestors import tjmg
+    bg.add_task(
+        executar_ingestao,
+        "tjmg", "Jurisprudência TJMG (crawler — base de acórdãos)",
+        "jurisprudencia", tjmg.ingerir,
+    )
+    return {
+        "status": "coleta_iniciada",
+        "mensagem": "Coleta do TJMG iniciada em segundo plano. Acompanhe o "
+                    "resultado (novos/total/erro) na fonte 'tjmg' em "
+                    "/ia-governanca/fontes.",
+    }
 
 
 @router.get("/guardrails")

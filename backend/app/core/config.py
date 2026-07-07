@@ -198,6 +198,26 @@ class Settings(BaseSettings):
     # é idempotente por chave_origem, então sobreposição é inofensiva).
     DJEN_INGEST_JANELA_DIAS: int = 2
 
+    # ── TJMG — jurisprudência estadual MG (crawler agendado → RAG) ───────
+    # O TJMG NÃO tem API aberta (≠ STJ CKAN): a jurisprudência fica atrás de
+    # um formulário HTML. O ingestor varre a base de acórdãos por uma lista
+    # curada de temas do escritório, em janela de datas, e ingere as ementas
+    # no RAG (dedup idempotente por chave_origem). Scraping é frágil por
+    # natureza — se o HTML mudar ou o TJMG bloquear, o job marca 'erro' em
+    # fontes_ingestao SEM derrubar o scheduler. Desligado por padrão (opt-in
+    # no .env); validar contra o site real antes de ativar em produção.
+    TJMG_INGEST_ENABLED: bool = False
+    # CSV de temas de busca. Vazio = usa a lista padrão (áreas do escritório,
+    # ver services/ingestors/tjmg.py::TEMAS_PADRAO).
+    TJMG_INGEST_TEMAS: str = ""
+    # Janela (dias para trás) da coleta, aplicada como filtro de data de
+    # julgamento no formulário. 0 = sem filtro (o TJMG decide a ordenação).
+    # Sobreposição entre execuções é inofensiva (upsert idempotente).
+    TJMG_INGEST_JANELA_DIAS: int = 30
+    # Teto de acórdãos por tema/execução (controle de volume e de carga no
+    # portal do TJMG — evita varredura abusiva).
+    TJMG_INGEST_MAX_POR_TEMA: int = 50
+
     # ── Embeddings locais/remotos (busca semântica RAG) ─────────────────
     # local = fastembed (ONNX, sem torch) no mesmo processo; http = serviço interno separado.
     # Default True: fastembed é dependência pinada (requirements.txt) e o
