@@ -73,4 +73,153 @@
       radial-gradient(circle at top left, rgba(212, 175, 55, 0.08), transparent 24rem),
       linear-gradient(180deg, rgba(255, 245, 230, 0.04), rgba(255, 245, 230, 0));
   }
+
+  .visual-law-doc {
+    overflow: hidden;
+    border-radius: 1.75rem;
+    background: #ffffff;
+    color: #111827;
+    box-shadow:
+      0 1px 2px rgba(15, 23, 42, 0.04),
+      0 22px 70px rgba(15, 23, 42, 0.12);
+  }
+
+  .visual-law-cover {
+    position: relative;
+    padding: 2rem;
+    background:
+      radial-gradient(circle at 15% 20%, rgba(212, 175, 55, 0.22), transparent 18rem),
+      linear-gradient(135deg, #2d1b14 0%, #5e4429 58%, #a67c52 100%);
+    color: white;
+  }
+
+  .visual-law-kicker {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.4rem;
+    border-radius: 999px;
+    background: rgba(255, 255, 255, 0.12);
+    padding: 0.4rem 0.75rem;
+    font-size: 0.7rem;
+    font-weight: 800;
+    letter-spacing: 0.16em;
+    text-transform: uppercase;
+  }
+
+  .visual-law-cover h1 {
+    margin-top: 1rem;
+    max-width: 48rem;
+    color: white;
+    font-size: clamp(1.6rem, 3vw, 2.55rem);
+    line-height: 1.05;
+  }
+
+  .visual-law-cover p {
+    margin-top: 0.75rem;
+    max-width: 42rem;
+    color: rgba(255, 255, 255, 0.78);
+    font-size: 0.95rem;
+    line-height: 1.7;
+  }
+
+  .visual-law-meta-grid {
+    margin-top: 1.5rem;
+    display: grid;
+    gap: 0.75rem;
+    grid-template-columns: repeat(auto-fit, minmax(9rem, 1fr));
+  }
+
+  .visual-law-meta-grid > div {
+    border-radius: 1rem;
+    background: rgba(255, 255, 255, 0.12);
+    padding: 0.75rem 0.85rem;
+    backdrop-filter: blur(10px);
+  }
+
+  .visual-law-meta-grid span {
+    display: block;
+    font-size: 0.62rem;
+    font-weight: 800;
+    letter-spacing: 0.14em;
+    text-transform: uppercase;
+    color: rgba(255, 255, 255, 0.56);
+  }
+
+  .visual-law-meta-grid strong {
+    margin-top: 0.2rem;
+    display: block;
+    font-size: 0.86rem;
+    color: #ffffff;
+  }
+
+  .visual-law-review-box {
+    margin: 1.5rem 2rem 0;
+    display: flex;
+    gap: 0.75rem;
+    border-radius: 1rem;
+    background: #f7f1dc;
+    padding: 1rem;
+    color: #6f5711;
+  }
+
+  .visual-law-review-box p {
+    margin-top: 0.25rem;
+    font-size: 0.82rem;
+    line-height: 1.6;
+    color: #7a5a3a;
+  }
+
+  .visual-law-body {
+    padding: 2rem;
+    font-size: 0.95rem;
+    line-height: 1.85;
+  }
+
+  .visual-law-body h1,
+  .visual-law-body h2,
+  .visual-law-body h3 {
+    color: #2d1b14;
+  }
+
+  .visual-law-body h2 {
+    margin-top: 1.8rem;
+    border-left: 4px solid #d4af37;
+    padding-left: 0.85rem;
+  }
+
+  .visual-law-body blockquote,
+  .visual-law-body .callout {
+    border-left: 4px solid #d4af37;
+    border-radius: 1rem;
+    background: #fbf8ee;
+    padding: 1rem;
+    color: #4a3427;
+  }
+
+  .visual-law-footer {
+    display: flex;
+    align-items: center;
+    gap: 0.45rem;
+    border-top: 1px solid rgba(148, 163, 184, 0.18);
+    padding: 1rem 2rem 1.25rem;
+    color: #64748b;
+    font-size: 0.78rem;
+  }
+
+  .print-view .visual-law-doc {
+    box-shadow: none;
+    border-radius: 0;
+  }
+
+  @media print {
+    .visual-law-doc {
+      box-shadow: none !important;
+      border-radius: 0 !important;
+    }
+
+    .visual-law-cover {
+      print-color-adjust: exact;
+      -webkit-print-color-adjust: exact;
+    }
+  }
 }
