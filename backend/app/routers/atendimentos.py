@@ -54,7 +54,8 @@ class AtendimentoPatch(BaseModel):
 # ── Helpers ───────────────────────────────────────────────────────────────────
 
 def _is_staff(user: User) -> bool:
-    return ROLE_LEVEL.get(user.role.value, 0) >= ROLE_LEVEL["estagiario"]
+    # CRM/relacionamento é operado também por secretaria.
+    return ROLE_LEVEL.get(user.role.value, 0) >= ROLE_LEVEL["secretaria"]
 
 def _pode_ver_privado(user: User) -> bool:
     return ROLE_LEVEL.get(user.role.value, 0) >= ROLE_LEVEL["advogado"]
@@ -181,7 +182,7 @@ async def por_advogado(
 ):
     """Lista todos os atendimentos de um advogado específico (somente sócios ou o próprio)."""
     nivel = ROLE_LEVEL.get(cu.role.value, 0)
-    if nivel < ROLE_LEVEL["estagiario"]:
+    if nivel < ROLE_LEVEL["secretaria"]:
         raise HTTPException(403)
     if advogado_id != cu.id and nivel < ROLE_LEVEL["socio"]:
         raise HTTPException(403, "Somente sócios podem ver atendimentos de outros advogados.")
