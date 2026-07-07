@@ -9,6 +9,7 @@ import "./styles/workspace-executive.css";
 import "./styles/portal-premium.css";
 import "./styles/ged-premium.css";
 import "./styles/operacional-premium.css";
+import "./styles/inteligencia-premium.css";
 
 initTheme();
 
