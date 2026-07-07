@@ -24,21 +24,37 @@ As rotas foram registradas sob o router RAG existente:
 
 As rotas de escrita exigem perfil `superadmin`, `admin` ou `socio`.
 
-## Variáveis de ambiente
+## Autenticação recomendada quando a organização bloqueia chave de Service Account
+
+Se o Google Cloud mostrar a política `iam.managed.disableServiceAccountKeyCreation`, não tente forçar a criação da chave. Use OAuth de usuário.
 
 Configure no `.env` do backend:
 
 ```env
 GOOGLE_DRIVE_ENABLED=true
+GOOGLE_DRIVE_AUTH_MODE=oauth
 GOOGLE_DRIVE_KNOWLEDGE_FOLDER_ID=1fEQJsQRZzRNCK9uVCTpe1ka9i2UBhiLT
-GOOGLE_DRIVE_SERVICE_ACCOUNT_FILE=/app/secrets/google-drive-service-account.json
+GOOGLE_DRIVE_OAUTH_USER_FILE=/app/secrets/google-drive-authorized-user.json
 GOOGLE_DRIVE_SHARED_DRIVE_ID=
 GOOGLE_DRIVE_DEFAULT_CATEGORIA=doutrina
 GOOGLE_DRIVE_MAX_FILE_MB=50
 GOOGLE_DRIVE_ALLOWED_MIME_TYPES=
 ```
 
-Use uma Service Account do Google Cloud e compartilhe a pasta do Drive com o e-mail dessa Service Account. A credencial deve ficar fora do Git; o `.gitignore` já bloqueia arquivos com padrão `*-service-account*.json`.
+O arquivo `google-drive-authorized-user.json` deve ser um arquivo OAuth do tipo `authorized_user`, gerado fora do Git e montado na VPS em `/app/secrets`.
+
+## Alternativa com Service Account
+
+Se a política da organização permitir chave de Service Account, também é aceito:
+
+```env
+GOOGLE_DRIVE_ENABLED=true
+GOOGLE_DRIVE_AUTH_MODE=service_account
+GOOGLE_DRIVE_KNOWLEDGE_FOLDER_ID=1fEQJsQRZzRNCK9uVCTpe1ka9i2UBhiLT
+GOOGLE_DRIVE_SERVICE_ACCOUNT_FILE=/app/secrets/google-drive-service-account.json
+```
+
+A credencial deve ficar fora do Git; o `.gitignore` já bloqueia arquivos com padrão `*-service-account*.json`.
 
 ## Tipos indexáveis por padrão
 
@@ -67,6 +83,5 @@ O serviço cria automaticamente a tabela `google_drive_sync_state`, caso ela ain
 ## Observações operacionais
 
 - Não versionar credenciais do Google.
-- Não usar conta pessoal de Gmail como credencial do sistema.
 - Documentos sigilosos devem ter política clara de categoria, escopo e retenção.
 - A fonte soberana para respostas da IA continua sendo o RAG interno, não a leitura direta do Drive.
