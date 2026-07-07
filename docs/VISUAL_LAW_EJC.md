@@ -40,14 +40,13 @@ Visual Law, neste projeto, significa organizar o conteúdo jurídico com melhor 
 
 ## Implementado neste ciclo
 
-- Componente frontend `VisualLawDocument`.
 - Estilos `.visual-law-*` em `frontend/src/styles/site-system.css`.
 - Impressão de peças com aparência Visual Law usando `.print-view`.
 - DOCX exportado com quadro inicial de controle Visual Law.
 
 ## Evolução recomendada
 
-1. Aplicar o componente `VisualLawDocument` diretamente no modal de visualização das peças.
+1. Criar componente React `VisualLawDocument` em PR separado, após estabilizar o design system base.
 2. Criar templates Visual Law por tipo de documento: petição, contrato, parecer, notificação e relatório.
 3. Aplicar Visual Law em dossiês de cliente, relatórios de IA e demonstrativos.
 4. Permitir escolha de modelo: clássico jurídico, Visual Law e executivo.
