@@ -206,6 +206,61 @@
     font-size: 0.78rem;
   }
 
+  .print-view {
+    background: #ffffff;
+    color: #111827;
+    font-family: "Inter", "Segoe UI", Arial, sans-serif;
+  }
+
+  .print-view-title {
+    margin: 0;
+    padding: 2rem 2rem 0.75rem;
+    background:
+      radial-gradient(circle at 15% 20%, rgba(212, 175, 55, 0.22), transparent 18rem),
+      linear-gradient(135deg, #2d1b14 0%, #5e4429 58%, #a67c52 100%);
+    color: #ffffff;
+    font-size: 1.85rem;
+    line-height: 1.1;
+  }
+
+  .print-view-title::before {
+    display: block;
+    margin-bottom: 0.55rem;
+    color: rgba(255, 255, 255, 0.68);
+    content: "VISUAL LAW EJC";
+    font-size: 0.68rem;
+    font-weight: 800;
+    letter-spacing: 0.16em;
+  }
+
+  .print-view-meta {
+    margin: 0 0 1.5rem;
+    padding: 0 2rem 1.5rem;
+    background: linear-gradient(135deg, #2d1b14 0%, #5e4429 58%, #a67c52 100%);
+    color: rgba(255, 255, 255, 0.76);
+    font-size: 0.82rem;
+  }
+
+  .print-view > :not(.print-view-title):not(.print-view-meta) {
+    padding-left: 2rem;
+    padding-right: 2rem;
+  }
+
+  .print-view h2 {
+    margin-top: 1.5rem;
+    border-left: 4px solid #d4af37;
+    padding-left: 0.75rem;
+    color: #2d1b14;
+  }
+
+  .print-view blockquote {
+    border-left: 4px solid #d4af37;
+    border-radius: 0.75rem;
+    background: #fbf8ee;
+    padding: 0.9rem 1rem;
+    color: #4a3427;
+  }
+
   .print-view .visual-law-doc {
     box-shadow: none;
     border-radius: 0;
@@ -217,7 +272,9 @@
       border-radius: 0 !important;
     }
 
-    .visual-law-cover {
+    .visual-law-cover,
+    .print-view-title,
+    .print-view-meta {
       print-color-adjust: exact;
       -webkit-print-color-adjust: exact;
     }
