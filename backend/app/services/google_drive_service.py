@@ -3,7 +3,7 @@
 #
 # Desenho de segurança:
 # - Drive é fonte documental externa; o RAG interno continua sendo a base soberana.
-# - Credenciais via Service Account em variável de ambiente/arquivo local, nunca no Git.
+# - Autenticação aceita OAuth do usuário ou Service Account, sempre fora do Git.
 # - Deduplicação/versionamento usa upsert_documento(chave_origem='gdrive:<file_id>').
 # - Metadados do Drive ficam em knowledge_docs.extra para rastreabilidade.
 from __future__ import annotations
@@ -18,6 +18,8 @@ from dataclasses import dataclass
 from datetime import datetime, timezone
 from typing import Any
 
+from google.auth.transport.requests import Request
+from google.oauth2 import credentials as user_credentials
 from google.oauth2 import service_account
 from googleapiclient.discovery import build
 from googleapiclient.errors import HttpError
@@ -31,6 +33,7 @@ from app.services.ocr_service import extrair_texto
 logger = logging.getLogger("ejc.google_drive")
 
 DRIVE_SCOPE = "https://www.googleapis.com/auth/drive.readonly"
+GOOGLE_TOKEN_URI = "https://oauth2.googleapis.com/token"
 
 GOOGLE_DOC_MIME = "application/vnd.google-apps.document"
 GOOGLE_SHEET_MIME = "application/vnd.google-apps.spreadsheet"
@@ -130,31 +133,120 @@ def allowed_mime_types() -> set[str]:
     return {item.strip() for item in raw.split(",") if item.strip()}
 
 
+def auth_status() -> dict[str, Any]:
+    return {
+        "auth_mode": os.getenv("GOOGLE_DRIVE_AUTH_MODE", "auto").strip().lower() or "auto",
+        "oauth_user_file_configurado": bool(os.getenv("GOOGLE_DRIVE_OAUTH_USER_FILE", "").strip()),
+        "oauth_user_json_configurado": bool(os.getenv("GOOGLE_DRIVE_OAUTH_USER_JSON", "").strip()),
+        "oauth_refresh_token_configurado": bool(os.getenv("GOOGLE_DRIVE_OAUTH_REFRESH_TOKEN", "").strip()),
+        "service_account_file_configurado": bool(os.getenv("GOOGLE_DRIVE_SERVICE_ACCOUNT_FILE", "").strip()),
+        "service_account_json_configurado": bool(os.getenv("GOOGLE_DRIVE_SERVICE_ACCOUNT_JSON", "").strip()),
+    }
+
+
+def _refresh_if_needed(creds):
+    # Credenciais authorized_user normalmente vêm sem access_token inicial.
+    # Se houver refresh_token, renovamos aqui para falhar cedo com erro claro.
+    if not creds.valid and getattr(creds, "refresh_token", None):
+        creds.refresh(Request())
+    return creds
+
+
+def _credentials_from_oauth_user_json(raw_json: str):
+    try:
+        info = json.loads(raw_json)
+    except json.JSONDecodeError as exc:
+        raise RuntimeError("GOOGLE_DRIVE_OAUTH_USER_JSON inválido") from exc
+    creds = user_credentials.Credentials.from_authorized_user_info(
+        info, scopes=[DRIVE_SCOPE]
+    )
+    return _refresh_if_needed(creds)
+
+
+def _credentials_from_oauth_user_file(path: str):
+    if not os.path.exists(path):
+        raise RuntimeError(f"GOOGLE_DRIVE_OAUTH_USER_FILE não encontrado: {path}")
+    creds = user_credentials.Credentials.from_authorized_user_file(
+        path, scopes=[DRIVE_SCOPE]
+    )
+    return _refresh_if_needed(creds)
+
+
+def _credentials_from_oauth_refresh_token():
+    client_id = os.getenv("GOOGLE_DRIVE_OAUTH_CLIENT_ID", "").strip()
+    client_secret = os.getenv("GOOGLE_DRIVE_OAUTH_CLIENT_SECRET", "").strip()
+    refresh_token = os.getenv("GOOGLE_DRIVE_OAUTH_REFRESH_TOKEN", "").strip()
+    if not (client_id and client_secret and refresh_token):
+        return None
+    creds = user_credentials.Credentials(
+        token=None,
+        refresh_token=refresh_token,
+        token_uri=GOOGLE_TOKEN_URI,
+        client_id=client_id,
+        client_secret=client_secret,
+        scopes=[DRIVE_SCOPE],
+    )
+    return _refresh_if_needed(creds)
+
+
+def _credentials_from_service_account_json(raw_json: str):
+    try:
+        info = json.loads(raw_json)
+    except json.JSONDecodeError as exc:
+        raise RuntimeError("GOOGLE_DRIVE_SERVICE_ACCOUNT_JSON inválido") from exc
+    return service_account.Credentials.from_service_account_info(
+        info, scopes=[DRIVE_SCOPE]
+    )
+
+
+def _credentials_from_service_account_file(path: str):
+    if not os.path.exists(path):
+        raise RuntimeError(f"GOOGLE_DRIVE_SERVICE_ACCOUNT_FILE não encontrado: {path}")
+    return service_account.Credentials.from_service_account_file(
+        path, scopes=[DRIVE_SCOPE]
+    )
+
+
 def _build_credentials():
-    json_inline = os.getenv("GOOGLE_DRIVE_SERVICE_ACCOUNT_JSON", "").strip()
-    file_path = os.getenv("GOOGLE_DRIVE_SERVICE_ACCOUNT_FILE", "").strip()
+    """Constrói credenciais Google Drive.
 
-    if json_inline:
-        try:
-            info = json.loads(json_inline)
-        except json.JSONDecodeError as exc:
-            raise RuntimeError("GOOGLE_DRIVE_SERVICE_ACCOUNT_JSON inválido") from exc
-        return service_account.Credentials.from_service_account_info(
-            info, scopes=[DRIVE_SCOPE]
+    Ordem em GOOGLE_DRIVE_AUTH_MODE=auto:
+    1) OAuth authorized_user em arquivo/JSON ou refresh token;
+    2) Service Account em JSON/arquivo.
+
+    Isto evita travar quando a organização bloqueia criação de chaves de
+    Service Account por `iam.managed.disableServiceAccountKeyCreation`.
+    """
+    auth_mode = os.getenv("GOOGLE_DRIVE_AUTH_MODE", "auto").strip().lower() or "auto"
+    if auth_mode not in {"auto", "oauth", "service_account"}:
+        raise RuntimeError(
+            "GOOGLE_DRIVE_AUTH_MODE inválido. Use auto, oauth ou service_account."
         )
 
-    if file_path:
-        if not os.path.exists(file_path):
-            raise RuntimeError(
-                f"GOOGLE_DRIVE_SERVICE_ACCOUNT_FILE não encontrado: {file_path}"
-            )
-        return service_account.Credentials.from_service_account_file(
-            file_path, scopes=[DRIVE_SCOPE]
-        )
+    if auth_mode in {"auto", "oauth"}:
+        oauth_user_json = os.getenv("GOOGLE_DRIVE_OAUTH_USER_JSON", "").strip()
+        oauth_user_file = os.getenv("GOOGLE_DRIVE_OAUTH_USER_FILE", "").strip()
+        if oauth_user_json:
+            return _credentials_from_oauth_user_json(oauth_user_json)
+        if oauth_user_file:
+            return _credentials_from_oauth_user_file(oauth_user_file)
+        refresh_creds = _credentials_from_oauth_refresh_token()
+        if refresh_creds is not None:
+            return refresh_creds
+
+    if auth_mode in {"auto", "service_account"}:
+        sa_json = os.getenv("GOOGLE_DRIVE_SERVICE_ACCOUNT_JSON", "").strip()
+        sa_file = os.getenv("GOOGLE_DRIVE_SERVICE_ACCOUNT_FILE", "").strip()
+        if sa_json:
+            return _credentials_from_service_account_json(sa_json)
+        if sa_file:
+            return _credentials_from_service_account_file(sa_file)
 
     raise RuntimeError(
-        "Credencial Google Drive ausente. Defina GOOGLE_DRIVE_SERVICE_ACCOUNT_FILE "
-        "ou GOOGLE_DRIVE_SERVICE_ACCOUNT_JSON no .env."
+        "Credencial Google Drive ausente. Configure uma das opções: "
+        "GOOGLE_DRIVE_OAUTH_USER_FILE, GOOGLE_DRIVE_OAUTH_USER_JSON, "
+        "GOOGLE_DRIVE_OAUTH_CLIENT_ID/SECRET/REFRESH_TOKEN, "
+        "GOOGLE_DRIVE_SERVICE_ACCOUNT_FILE ou GOOGLE_DRIVE_SERVICE_ACCOUNT_JSON."
     )
 
 
