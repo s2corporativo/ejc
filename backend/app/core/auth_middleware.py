@@ -32,6 +32,12 @@ PREFIXOS_PUBLICOS = (
     # vitoriosas do escritório sem login. Agora exige JWT (Depends no router).
     "/api/webhooks/",       # Z-API inbound (valida Client-Token internamente)
     "/api/calendar/",       # feed ICS (HMAC na URL)
+    # Data Room — acesso externo por LINK com token (48 bytes urlsafe) na URL:
+    # o token É a credencial (valida expiração + max_acessos + log). Sem isto o
+    # middleware bloqueava o cliente externo (sem JWT) com 401 e o
+    # compartilhamento externo não funcionava. Só o subpath /acesso/ é público;
+    # a gestão do Data Room (/api/data-rooms/...) segue exigindo JWT.
+    "/api/data-rooms/acesso/",
     # API pública de abastecimento da base de conhecimento (Fase 2 IA/RAG):
     # NÃO usa JWT — exige API key de serviço (X-API-Key) validada pelo
     # require_api_key no router (401/403 lá; nada fica realmente aberto).
