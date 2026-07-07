@@ -222,12 +222,56 @@ def gerar_docx(titulo: str, conteudo_md: str, meta: dict | None = None) -> bytes
     # ── Título do documento ─────────────────────────────────────────────
     pt = doc.add_paragraph()
     pt.alignment = WD_ALIGN_PARAGRAPH.CENTER
-    pt.paragraph_format.space_after = Pt(18)
+    pt.paragraph_format.space_after = Pt(12)
     rt = pt.add_run((titulo or "Documento jurídico").upper())
     rt.bold = True
     rt.font.name = fonte
     rt.font.size = Pt(12)
     rt.font.color.rgb = cor_titulo
+
+    quadro = doc.add_paragraph()
+    quadro.alignment = WD_ALIGN_PARAGRAPH.CENTER
+    quadro.paragraph_format.space_after = Pt(8)
+    q = quadro.add_run("CONTROLE VISUAL LAW EJC")
+    q.bold = True
+    q.font.name = fonte
+    q.font.size = Pt(10)
+    q.font.color.rgb = cor_titulo
+
+    tabela = doc.add_table(rows=2, cols=3)
+    campos = [
+        ("Origem", "Sistema EJC"),
+        ("Formato", "DOCX editável"),
+        ("Status", "Versão de trabalho"),
+        ("Processo", str(numero_processo or "—")),
+        ("Controle", "Visual Law"),
+        ("Revisão", "Obrigatória"),
+    ]
+    for cell, (label, valor) in zip(tabela._cells, campos):
+        p = cell.paragraphs[0]
+        p.paragraph_format.space_after = Pt(0)
+        r_label = p.add_run(label.upper() + "\n")
+        r_label.bold = True
+        r_label.font.name = fonte
+        r_label.font.size = Pt(7.5)
+        r_label.font.color.rgb = cor_titulo
+        r_valor = p.add_run(valor)
+        r_valor.bold = True
+        r_valor.font.name = fonte
+        r_valor.font.size = Pt(9.5)
+
+    nota = doc.add_paragraph()
+    nota.alignment = WD_ALIGN_PARAGRAPH.JUSTIFY
+    nota.paragraph_format.space_before = Pt(8)
+    nota.paragraph_format.space_after = Pt(14)
+    nr = nota.add_run(
+        "Documento estruturado com elementos de Visual Law para facilitar leitura, "
+        "controle de versão e conferência profissional, sem alteração do teor."
+    )
+    nr.italic = True
+    nr.font.name = fonte
+    nr.font.size = Pt(9)
+    nr.font.color.rgb = RGBColor(75, 85, 99)
 
     # ── Corpo (blocos do markdown) ──────────────────────────────────────
     for bloco in _blocos_markdown(conteudo_md):
