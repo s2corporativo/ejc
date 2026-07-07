@@ -1,11 +1,11 @@
 import type { HTMLAttributes, ReactNode } from "react";
 import { cn } from "../../lib/cn";
 
-export function Page({ className, ...props }: HTMLAttributes<HTMLDivElement>) {
+export function Page({ className, ...props }: HTMLAttributes<HTMLElement>) {
   return <main className={cn("space-y-6", className)} {...props} />;
 }
 
-export function PageHeader({ className, ...props }: HTMLAttributes<HTMLDivElement>) {
+export function PageHeader({ className, ...props }: HTMLAttributes<HTMLElement>) {
   return <header className={cn("flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between", className)} {...props} />;
 }
 
@@ -25,6 +25,6 @@ export function PageActions({ className, children, ...props }: HTMLAttributes<HT
   );
 }
 
-export function PageGrid({ className, ...props }: HTMLAttributes<HTMLDivElement>) {
+export function PageGrid({ className, ...props }: HTMLAttributes<HTMLElement>) {
   return <section className={cn("grid gap-4 md:grid-cols-2 xl:grid-cols-3", className)} {...props} />;
 }
