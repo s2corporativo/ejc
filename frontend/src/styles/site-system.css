@@ -1,0 +1,76 @@
+@layer components {
+  /* Camada visual SaaS/site: menos contorno, mais profundidade, respiro e hierarquia. */
+  .card,
+  .section-card {
+    border: 0;
+    background: color-mix(in srgb, var(--ejc-card) 96%, transparent);
+    box-shadow:
+      0 1px 2px rgba(15, 23, 42, 0.04),
+      0 18px 48px rgba(15, 23, 42, 0.08);
+  }
+
+  .card:hover {
+    border-color: transparent;
+    box-shadow:
+      0 2px 6px rgba(15, 23, 42, 0.05),
+      0 24px 64px rgba(15, 23, 42, 0.12);
+    transform: translateY(-1px);
+  }
+
+  .dark .card,
+  .dark .section-card {
+    background: color-mix(in srgb, var(--ejc-card) 92%, transparent);
+    box-shadow:
+      0 1px 2px rgba(0, 0, 0, 0.28),
+      0 20px 56px rgba(0, 0, 0, 0.42);
+  }
+
+  .input,
+  .select,
+  .textarea {
+    border: 0;
+    background: color-mix(in srgb, var(--ejc-card) 94%, #f8fafc 6%);
+    box-shadow:
+      inset 0 0 0 1px rgba(148, 163, 184, 0.22),
+      0 1px 2px rgba(15, 23, 42, 0.03);
+  }
+
+  .input:hover,
+  .select:hover,
+  .textarea:hover {
+    box-shadow:
+      inset 0 0 0 1px rgba(166, 124, 82, 0.35),
+      0 4px 14px rgba(15, 23, 42, 0.05);
+  }
+
+  .input:focus,
+  .select:focus,
+  .textarea:focus {
+    border-color: transparent;
+    box-shadow:
+      inset 0 0 0 1px rgba(212, 175, 55, 0.72),
+      0 0 0 4px rgba(212, 175, 55, 0.16),
+      0 10px 28px rgba(15, 23, 42, 0.08);
+  }
+
+  .dark .input,
+  .dark .select,
+  .dark .textarea {
+    background: color-mix(in srgb, var(--ejc-elev) 90%, transparent);
+    box-shadow:
+      inset 0 0 0 1px rgba(255, 245, 230, 0.1),
+      0 1px 2px rgba(0, 0, 0, 0.22);
+  }
+
+  .surface-soft {
+    background:
+      radial-gradient(circle at top left, rgba(212, 175, 55, 0.11), transparent 24rem),
+      linear-gradient(180deg, rgba(255, 255, 255, 0.72), rgba(255, 255, 255, 0));
+  }
+
+  .dark .surface-soft {
+    background:
+      radial-gradient(circle at top left, rgba(212, 175, 55, 0.08), transparent 24rem),
+      linear-gradient(180deg, rgba(255, 245, 230, 0.04), rgba(255, 245, 230, 0));
+  }
+}
