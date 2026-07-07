@@ -251,7 +251,9 @@ async def gerar_link(
     )
     db.add(lk)
     await db.commit()
-    return {**_out_link(lk), "url_acesso": f"/data-room/acesso/{token}"}
+    # Path REAL do endpoint público (router prefix /data-rooms, montado sob /api).
+    # Antes retornava "/data-room/acesso/..." (singular, sem /api) — path quebrado.
+    return {**_out_link(lk), "url_acesso": f"/api/data-rooms/acesso/{token}"}
 
 
 @router.delete("/{room_id}/links/{link_id}", status_code=204)
