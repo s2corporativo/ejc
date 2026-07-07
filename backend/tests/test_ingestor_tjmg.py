@@ -82,6 +82,37 @@ def test_parse_tjmg_html_vazio_ou_lixo_nao_quebra():
     assert je._parse_tjmg_html("<html><body>sem resultados</body></html>") == []
 
 
+def test_parse_ementa_com_sumula_inline_nao_trunca():
+    """Ementa que cita "Súmula N" inline NÃO pode ser truncada (regressão do
+    token de parada acidental)."""
+    html = """
+    <tr class="resultadoLinha"><td>
+      Acórdão: 1.0000.00.111111-1/001<br>
+      Relator: Des. Fulano de Tal<br>
+      Ementa: AGRAVO INTERNO. Aplica-se a Súmula 568 do STJ ao caso concreto.
+      Recurso improvido por unanimidade.
+    </td></tr>"""
+    itens = je._parse_tjmg_html(html)
+    assert len(itens) == 1
+    ementa = itens[0]["ementa"]
+    assert "Súmula 568" in ementa and "Recurso improvido" in ementa
+
+
+def test_parse_orgao_nao_captura_camara_da_ementa():
+    """Sem rótulo "Órgão Julgador" e sem câmara NUMERADA, não se inventa órgão
+    a partir da palavra "Câmara" solta na ementa."""
+    html = """
+    <tr class="resultadoLinha"><td>
+      Acórdão: 1.0000.00.222222-2/001<br>
+      Relator: Desa. Beltrana<br>
+      Ementa: APELAÇÃO CÍVEL. Decisão mantida pela Câmara julgadora.
+      Dano moral configurado. Recurso não provido.
+    </td></tr>"""
+    itens = je._parse_tjmg_html(html)
+    assert len(itens) == 1
+    assert itens[0]["orgao_julgador"] == ""
+
+
 def test_limpar_html_unescape():
     out = je._limpar_html("A&ccedil;&atilde;o <b>de</b> sa&uacute;de &amp; cia")
     assert out == "Ação de saúde & cia"
@@ -236,9 +267,10 @@ async def test_ingerir_ignora_ementa_curta(monkeypatch):
 async def test_ingerir_tolerante_a_erro_de_upsert(monkeypatch):
     _prepara(monkeypatch, temas="tema1", por_tema={"tema1": [ITEM_A]},
              upsert_erro=True)
-    # erro no upsert é capturado (rollback + continua) → não levanta
+    # erro no upsert é capturado (rollback + continua) → não levanta; com commit
+    # por item, o item falho NÃO persiste nem conta (métrica exata, sem inflar).
     novos, total = await tjmg.ingerir(_FakeDB())
-    assert (novos, total) == (0, 1)   # 1 processado, 0 novo
+    assert (novos, total) == (0, 0)
 
 
 # ── 5. Gate no scheduler ──────────────────────────────────────────────────────

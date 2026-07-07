@@ -133,7 +133,6 @@ async def ingerir(db: AsyncSession) -> tuple[int, int]:
                 continue
             vistas.add(chave)
 
-            total += 1
             try:
                 res = await upsert_documento(
                     db,
@@ -154,18 +153,20 @@ async def ingerir(db: AsyncSession) -> tuple[int, int]:
                     },
                     confianca="alta",   # fonte oficial (portal do TJMG)
                 )
+                # Commit por item: as métricas (novos/total) só contam o que foi
+                # de fato persistido, e um erro isolado dá rollback APENAS do
+                # item falho (o volume — ~temas×MAX_POR_TEMA — é pequeno).
+                await db.commit()
             except Exception as e:
                 await db.rollback()
                 logger.warning("TJMG upsert %r: %s: %s", chave, type(e).__name__, e)
                 continue
 
+            total += 1
             if res in ("novo", "atualizado"):
                 novos += 1
                 n_tema += 1
-            if total % 50 == 0:
-                await db.commit()   # commit em lotes (não segura tudo em memória)
 
-        await db.commit()
         logger.info("TJMG tema %r: %d novos / %d itens", tema, n_tema, len(itens))
 
     return novos, total

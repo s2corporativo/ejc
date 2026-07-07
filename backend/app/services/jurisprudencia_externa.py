@@ -218,6 +218,11 @@ def _parse_tjmg_html(html: str) -> list[dict]:
     """
     resultados = []
 
+    # Teto defensivo de tamanho: bound o custo do parse regex sobre HTML de
+    # terceiros (uma resposta anômala não vira gasto de CPU desproporcional).
+    # Páginas de resultado do TJMG são muito menores que isto.
+    html = html[:2_000_000]
+
     # Decodifica entidades ANTES da extração de campos: os rótulos ("Acórdão",
     # "Órgão Julgador", "Ementa"...) casam mesmo que o TJMG os sirva
     # entity-encoded (&oacute; etc.). As tags (<tr>, <br>, </td>) permanecem
@@ -241,8 +246,12 @@ def _parse_tjmg_html(html: str) -> list[dict]:
         rel = re.search(r'Relator[^:]*[:\s]*([A-ZÀ-Ü][A-Za-zÀ-ü \.]+?)(?:<|,|\n|&)', bloco, re.I)
         relator = _limpar_html(rel.group(1)) if rel else ""
 
-        # Órgão julgador / Câmara
-        org = re.search(r'(?:Órg[ãa]o\s*Julgador|C[âa]mara)[^:]*[:\s]*([^<\n]+?)(?:<|\n)', bloco, re.I)
+        # Órgão julgador — exige o rótulo; sem ele, aceita apenas uma designação
+        # NUMERADA de câmara/turma (ex.: "5ª Câmara Cível"). Não casa "Câmara"
+        # solta no meio da ementa (evita gravar metadado errado no `extra`).
+        org = re.search(r'Órg[ãa]o\s*Julgador[^:]*[:\s]*([^<\n]+?)(?:<|\n)', bloco, re.I)
+        if not org:
+            org = re.search(r'(\d{1,2}[ªº]\s*(?:C[âa]mara|Turma)[^<\n]{0,40})', bloco, re.I)
         orgao = _limpar_html(org.group(1)) if org else ""
 
         # Classe processual (permite identificar IRDR/IAC etc.)
@@ -258,8 +267,10 @@ def _parse_tjmg_html(html: str) -> list[dict]:
             except ValueError:
                 pass
 
-        # Ementa — texto limpo
-        ementa_raw = re.search(r'(?:Ementa|EMENTA)[:\s]*(.*?)(?:Relator|RELATOR|S[úu]mula|<hr|</div|</td)', bloco, re.S | re.I)
+        # Ementa — texto limpo. NÃO usar "Súmula" como parada: ementas citam
+        # súmulas inline com frequência ("aplica-se a Súmula 83 do STJ") e isso
+        # truncaria o conteúdo citável central do RAG.
+        ementa_raw = re.search(r'(?:Ementa|EMENTA)[:\s]*(.*?)(?:Relator|RELATOR|<hr|</div|</td)', bloco, re.S | re.I)
         ementa = _limpar_html(ementa_raw.group(1)) if ementa_raw else _limpar_html(bloco[:800])
 
         if len(ementa) < 30:
@@ -281,8 +292,10 @@ def _parse_tjmg_html(html: str) -> list[dict]:
             classe=classe,
         ))
 
-    # Teto defensivo: o chamador controla o volume real via `tamanhoPagina`.
-    return resultados[:100]
+    # Teto defensivo de memória: o chamador controla o volume real via
+    # `tamanhoPagina` (TJMG_INGEST_MAX_POR_TEMA). 500 fica bem acima do volume
+    # realista por página; acima disso, elevar este teto junto.
+    return resultados[:500]
 
 
 def _limpar_html(s: str) -> str:
