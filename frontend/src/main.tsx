@@ -7,6 +7,7 @@ import "./styles/site-system.css";
 import "./styles/clientes-casos-saas.css";
 import "./styles/workspace-executive.css";
 import "./styles/portal-premium.css";
+import "./styles/ged-premium.css";
 
 initTheme();
 
