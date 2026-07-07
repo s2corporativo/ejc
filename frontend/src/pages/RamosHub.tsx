@@ -56,7 +56,7 @@ const RAMOS = [
     slug: "trabalhista",
     label: "Direito Trabalhista",
     icon: HardHat,
-    tone: "from-yellow-500/12 to-yellow-500/0 text-yellow-700",
+    tone: "from-yellow-500/10 to-yellow-500/0 text-yellow-700",
     desc: "Reclamações, cálculos, FGTS, verbas e recursos",
   },
   {
