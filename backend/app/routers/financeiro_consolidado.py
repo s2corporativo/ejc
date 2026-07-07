@@ -39,27 +39,30 @@ async def consolidado(
               AND date_trunc('month', data_pagamento) = date_trunc('month', CAST(:mes AS date))), 0) AS recebido_mes,
           COALESCE(SUM(valor) FILTER (WHERE status IN ('pendente')), 0) AS a_receber,
           COALESCE(SUM(valor) FILTER (WHERE status='atrasado'), 0) AS atrasado,
-          -- classificação por tipo (recebido no mês)
+          -- classificação por tipo (recebido no mês). Sucumbência NÃO é um label
+          -- do enum feetipo (fixo/exito/misto/por_hora/custas_despesas) — é
+          -- detectada por `descricao ILIKE '%sucumb%'`. Comparar o enum com o
+          -- literal 'sucumbencia' estourava InvalidTextRepresentationError (500).
           COALESCE(SUM(valor) FILTER (WHERE status='pago'
               AND date_trunc('month', data_pagamento) = date_trunc('month', CAST(:mes AS date))
               AND tipo IN ('fixo','misto','por_hora')
-              AND tipo != 'sucumbencia' AND descricao NOT ILIKE '%sucumb%'), 0) AS rec_contratual,
+              AND descricao NOT ILIKE '%sucumb%'), 0) AS rec_contratual,
           COALESCE(SUM(valor) FILTER (WHERE status='pago'
               AND date_trunc('month', data_pagamento) = date_trunc('month', CAST(:mes AS date))
-              AND tipo='exito' AND tipo != 'sucumbencia' AND descricao NOT ILIKE '%sucumb%'), 0) AS rec_exito,
+              AND tipo='exito' AND descricao NOT ILIKE '%sucumb%'), 0) AS rec_exito,
           COALESCE(SUM(valor) FILTER (WHERE status='pago'
               AND date_trunc('month', data_pagamento) = date_trunc('month', CAST(:mes AS date))
-              AND (tipo='sucumbencia' OR descricao ILIKE '%sucumb%')), 0) AS rec_sucumbencia,
+              AND descricao ILIKE '%sucumb%'), 0) AS rec_sucumbencia,
           COALESCE(SUM(valor) FILTER (WHERE status='pago'
               AND date_trunc('month', data_pagamento) = date_trunc('month', CAST(:mes AS date))
               AND tipo='custas_despesas'), 0) AS rec_custas,
           -- PREVISTO (pendente + atrasado), independente de mes
           COALESCE(SUM(valor) FILTER (WHERE status IN ('pendente','atrasado')
-              AND tipo IN ('fixo','misto','por_hora') AND tipo != 'sucumbencia' AND descricao NOT ILIKE '%sucumb%'), 0) AS prev_contratual,
+              AND tipo IN ('fixo','misto','por_hora') AND descricao NOT ILIKE '%sucumb%'), 0) AS prev_contratual,
           COALESCE(SUM(valor) FILTER (WHERE status IN ('pendente','atrasado')
-              AND tipo='exito' AND tipo != 'sucumbencia' AND descricao NOT ILIKE '%sucumb%'), 0) AS prev_exito,
+              AND tipo='exito' AND descricao NOT ILIKE '%sucumb%'), 0) AS prev_exito,
           COALESCE(SUM(valor) FILTER (WHERE status IN ('pendente','atrasado')
-              AND (tipo='sucumbencia' OR descricao ILIKE '%sucumb%')), 0) AS prev_sucumbencia,
+              AND descricao ILIKE '%sucumb%'), 0) AS prev_sucumbencia,
           COALESCE(SUM(valor) FILTER (WHERE status IN ('pendente','atrasado')
               AND tipo='custas_despesas'), 0) AS prev_custas
         FROM fees WHERE deleted_at IS NULL
