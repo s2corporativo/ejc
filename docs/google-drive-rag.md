@@ -4,6 +4,15 @@ Este módulo permite usar uma pasta do Google Drive como fonte documental para a
 
 A integração não substitui o RAG interno. O Drive funciona apenas como origem dos arquivos. O EJC baixa, extrai texto/OCR, deduplica, versiona e grava o conteúdo em `knowledge_docs` e `knowledge_chunks`, usando o pipeline existente de embeddings e pgvector.
 
+## Pasta definida para o EJC
+
+Pasta informada pelo Dr. Clóvis para alimentar a Base de Conhecimento:
+
+- URL: `https://drive.google.com/drive/folders/1fEQJsQRZzRNCK9uVCTpe1ka9i2UBhiLT`
+- ID: `1fEQJsQRZzRNCK9uVCTpe1ka9i2UBhiLT`
+
+Use este ID em `GOOGLE_DRIVE_KNOWLEDGE_FOLDER_ID`.
+
 ## Rotas disponíveis
 
 As rotas foram registradas sob o router RAG existente:
@@ -21,7 +30,7 @@ Configure no `.env` do backend:
 
 ```env
 GOOGLE_DRIVE_ENABLED=true
-GOOGLE_DRIVE_KNOWLEDGE_FOLDER_ID=ID_DA_PASTA_DO_DRIVE
+GOOGLE_DRIVE_KNOWLEDGE_FOLDER_ID=1fEQJsQRZzRNCK9uVCTpe1ka9i2UBhiLT
 GOOGLE_DRIVE_SERVICE_ACCOUNT_FILE=/app/secrets/google-drive-service-account.json
 GOOGLE_DRIVE_SHARED_DRIVE_ID=
 GOOGLE_DRIVE_DEFAULT_CATEGORIA=doutrina
