@@ -1,282 +1,340 @@
-@layer components {
-  /* Camada visual SaaS/site: menos contorno, mais profundidade, respiro e hierarquia. */
-  .card,
-  .section-card {
-    border: 0;
-    background: color-mix(in srgb, var(--ejc-card) 96%, transparent);
-    box-shadow:
-      0 1px 2px rgba(15, 23, 42, 0.04),
-      0 18px 48px rgba(15, 23, 42, 0.08);
-  }
+/* Camada visual SaaS/site global: menos contorno, mais profundidade, respiro e hierarquia. */
+.card,
+.section-card {
+  border: 0;
+  background: rgba(255, 255, 255, 0.96);
+  box-shadow:
+    0 1px 2px rgba(15, 23, 42, 0.04),
+    0 18px 48px rgba(15, 23, 42, 0.08);
+}
 
-  .card:hover {
-    border-color: transparent;
-    box-shadow:
-      0 2px 6px rgba(15, 23, 42, 0.05),
-      0 24px 64px rgba(15, 23, 42, 0.12);
-    transform: translateY(-1px);
-  }
+.card:hover {
+  border-color: transparent;
+  box-shadow:
+    0 2px 6px rgba(15, 23, 42, 0.05),
+    0 24px 64px rgba(15, 23, 42, 0.12);
+  transform: translateY(-1px);
+}
 
-  .dark .card,
-  .dark .section-card {
-    background: color-mix(in srgb, var(--ejc-card) 92%, transparent);
-    box-shadow:
-      0 1px 2px rgba(0, 0, 0, 0.28),
-      0 20px 56px rgba(0, 0, 0, 0.42);
-  }
+.dark .card,
+.dark .section-card {
+  background: var(--ejc-card);
+  box-shadow:
+    0 1px 2px rgba(0, 0, 0, 0.28),
+    0 20px 56px rgba(0, 0, 0, 0.42);
+}
 
-  .input,
-  .select,
-  .textarea {
-    border: 0;
-    background: color-mix(in srgb, var(--ejc-card) 94%, #f8fafc 6%);
-    box-shadow:
-      inset 0 0 0 1px rgba(148, 163, 184, 0.22),
-      0 1px 2px rgba(15, 23, 42, 0.03);
-  }
+.input,
+.select,
+.textarea,
+.ejc-modern-scope input:not([type="checkbox"]):not([type="radio"]):not([type="range"]),
+.ejc-modern-scope select,
+.ejc-modern-scope textarea {
+  border: 0;
+  background: #fff;
+  box-shadow:
+    inset 0 0 0 1px rgba(148, 163, 184, 0.22),
+    0 1px 2px rgba(15, 23, 42, 0.03);
+}
 
-  .input:hover,
-  .select:hover,
-  .textarea:hover {
-    box-shadow:
-      inset 0 0 0 1px rgba(166, 124, 82, 0.35),
-      0 4px 14px rgba(15, 23, 42, 0.05);
-  }
+.input:hover,
+.select:hover,
+.textarea:hover,
+.ejc-modern-scope input:not([type="checkbox"]):not([type="radio"]):not([type="range"]):hover,
+.ejc-modern-scope select:hover,
+.ejc-modern-scope textarea:hover {
+  box-shadow:
+    inset 0 0 0 1px rgba(166, 124, 82, 0.35),
+    0 4px 14px rgba(15, 23, 42, 0.05);
+}
 
-  .input:focus,
-  .select:focus,
-  .textarea:focus {
-    border-color: transparent;
-    box-shadow:
-      inset 0 0 0 1px rgba(212, 175, 55, 0.72),
-      0 0 0 4px rgba(212, 175, 55, 0.16),
-      0 10px 28px rgba(15, 23, 42, 0.08);
-  }
+.input:focus,
+.select:focus,
+.textarea:focus,
+.ejc-modern-scope input:not([type="checkbox"]):not([type="radio"]):not([type="range"]):focus,
+.ejc-modern-scope select:focus,
+.ejc-modern-scope textarea:focus {
+  border-color: transparent;
+  outline: none;
+  box-shadow:
+    inset 0 0 0 1px rgba(212, 175, 55, 0.72),
+    0 0 0 4px rgba(212, 175, 55, 0.16),
+    0 10px 28px rgba(15, 23, 42, 0.08);
+}
 
-  .dark .input,
-  .dark .select,
-  .dark .textarea {
-    background: color-mix(in srgb, var(--ejc-elev) 90%, transparent);
-    box-shadow:
-      inset 0 0 0 1px rgba(255, 245, 230, 0.1),
-      0 1px 2px rgba(0, 0, 0, 0.22);
-  }
+.dark .input,
+.dark .select,
+.dark .textarea,
+.dark .ejc-modern-scope input:not([type="checkbox"]):not([type="radio"]):not([type="range"]),
+.dark .ejc-modern-scope select,
+.dark .ejc-modern-scope textarea {
+  background: var(--ejc-elev);
+  box-shadow:
+    inset 0 0 0 1px rgba(255, 245, 230, 0.1),
+    0 1px 2px rgba(0, 0, 0, 0.22);
+}
 
-  .surface-soft {
-    background:
-      radial-gradient(circle at top left, rgba(212, 175, 55, 0.11), transparent 24rem),
-      linear-gradient(180deg, rgba(255, 255, 255, 0.72), rgba(255, 255, 255, 0));
-  }
+.surface-soft,
+.ejc-modern-scope {
+  background:
+    radial-gradient(circle at top left, rgba(212, 175, 55, 0.08), transparent 24rem),
+    linear-gradient(180deg, rgba(255, 255, 255, 0.68), rgba(255, 255, 255, 0));
+}
 
-  .dark .surface-soft {
-    background:
-      radial-gradient(circle at top left, rgba(212, 175, 55, 0.08), transparent 24rem),
-      linear-gradient(180deg, rgba(255, 245, 230, 0.04), rgba(255, 245, 230, 0));
-  }
+.dark .surface-soft,
+.dark .ejc-modern-scope {
+  background:
+    radial-gradient(circle at top left, rgba(212, 175, 55, 0.08), transparent 24rem),
+    linear-gradient(180deg, rgba(255, 245, 230, 0.04), rgba(255, 245, 230, 0));
+}
 
+.ejc-modern-scope :where(.bg-white.border, .bg-white.shadow, .bg-white.shadow-sm, .bg-white.shadow-md, .bg-white.rounded-xl, .bg-white.rounded-2xl):not(input):not(select):not(textarea):not(button),
+.ejc-modern-scope :where(.card, .section-card) {
+  border-color: transparent !important;
+  box-shadow:
+    0 18px 45px rgba(15, 23, 42, 0.055),
+    0 1px 2px rgba(15, 23, 42, 0.04) !important;
+}
+
+.ejc-modern-scope :where(.bg-white.border, .bg-white.shadow, .bg-white.shadow-sm, .bg-white.shadow-md, .bg-white.rounded-xl, .bg-white.rounded-2xl):not(input):not(select):not(textarea):not(button):hover,
+.ejc-modern-scope :where(.card, .section-card):hover {
+  box-shadow:
+    0 24px 64px rgba(15, 23, 42, 0.11),
+    0 1px 2px rgba(15, 23, 42, 0.04) !important;
+}
+
+.ejc-modern-scope :where(h1, h2, h3) {
+  letter-spacing: -0.02em;
+}
+
+.ejc-modern-scope :where(p, li, .text-slate-500, .text-gray-500) {
+  line-height: 1.58;
+}
+
+.ejc-modern-scope :where(table) {
+  border-collapse: separate;
+  border-spacing: 0;
+}
+
+.ejc-modern-scope :where(thead th) {
+  background: #f8fafc;
+  color: #64748b;
+  font-size: 0.72rem;
+  font-weight: 750;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+}
+
+.ejc-modern-scope :where(tbody tr) {
+  transition: background-color 0.15s ease;
+}
+
+.ejc-modern-scope :where(tbody tr:hover) {
+  background: rgba(250, 247, 240, 0.75);
+}
+
+.visual-law-doc {
+  overflow: hidden;
+  border-radius: 1.75rem;
+  background: #ffffff;
+  color: #111827;
+  box-shadow:
+    0 1px 2px rgba(15, 23, 42, 0.04),
+    0 22px 70px rgba(15, 23, 42, 0.12);
+}
+
+.visual-law-cover {
+  position: relative;
+  padding: 2rem;
+  background:
+    radial-gradient(circle at 15% 20%, rgba(212, 175, 55, 0.22), transparent 18rem),
+    linear-gradient(135deg, #2d1b14 0%, #5e4429 58%, #a67c52 100%);
+  color: white;
+}
+
+.visual-law-kicker {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.4rem;
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.12);
+  padding: 0.4rem 0.75rem;
+  font-size: 0.7rem;
+  font-weight: 800;
+  letter-spacing: 0.16em;
+  text-transform: uppercase;
+}
+
+.visual-law-cover h1 {
+  margin-top: 1rem;
+  max-width: 48rem;
+  color: white;
+  font-size: clamp(1.6rem, 3vw, 2.55rem);
+  line-height: 1.05;
+}
+
+.visual-law-cover p {
+  margin-top: 0.75rem;
+  max-width: 42rem;
+  color: rgba(255, 255, 255, 0.78);
+  font-size: 0.95rem;
+  line-height: 1.7;
+}
+
+.visual-law-meta-grid {
+  margin-top: 1.5rem;
+  display: grid;
+  gap: 0.75rem;
+  grid-template-columns: repeat(auto-fit, minmax(9rem, 1fr));
+}
+
+.visual-law-meta-grid > div {
+  border-radius: 1rem;
+  background: rgba(255, 255, 255, 0.12);
+  padding: 0.75rem 0.85rem;
+  backdrop-filter: blur(10px);
+}
+
+.visual-law-meta-grid span {
+  display: block;
+  font-size: 0.62rem;
+  font-weight: 800;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: rgba(255, 255, 255, 0.56);
+}
+
+.visual-law-meta-grid strong {
+  margin-top: 0.2rem;
+  display: block;
+  font-size: 0.86rem;
+  color: #ffffff;
+}
+
+.visual-law-review-box {
+  margin: 1.5rem 2rem 0;
+  display: flex;
+  gap: 0.75rem;
+  border-radius: 1rem;
+  background: #f7f1dc;
+  padding: 1rem;
+  color: #6f5711;
+}
+
+.visual-law-review-box p {
+  margin-top: 0.25rem;
+  font-size: 0.82rem;
+  line-height: 1.6;
+  color: #7a5a3a;
+}
+
+.visual-law-body {
+  padding: 2rem;
+  font-size: 0.95rem;
+  line-height: 1.85;
+}
+
+.visual-law-body h1,
+.visual-law-body h2,
+.visual-law-body h3 {
+  color: #2d1b14;
+}
+
+.visual-law-body h2 {
+  margin-top: 1.8rem;
+  border-left: 4px solid #d4af37;
+  padding-left: 0.85rem;
+}
+
+.visual-law-body blockquote,
+.visual-law-body .callout {
+  border-left: 4px solid #d4af37;
+  border-radius: 1rem;
+  background: #fbf8ee;
+  padding: 1rem;
+  color: #4a3427;
+}
+
+.visual-law-footer {
+  display: flex;
+  align-items: center;
+  gap: 0.45rem;
+  border-top: 1px solid rgba(148, 163, 184, 0.18);
+  padding: 1rem 2rem 1.25rem;
+  color: #64748b;
+  font-size: 0.78rem;
+}
+
+.print-view {
+  background: #ffffff;
+  color: #111827;
+  font-family: "Inter", "Segoe UI", Arial, sans-serif;
+}
+
+.print-view-title {
+  margin: 0;
+  padding: 2rem 2rem 0.75rem;
+  background:
+    radial-gradient(circle at 15% 20%, rgba(212, 175, 55, 0.22), transparent 18rem),
+    linear-gradient(135deg, #2d1b14 0%, #5e4429 58%, #a67c52 100%);
+  color: #ffffff;
+  font-size: 1.85rem;
+  line-height: 1.1;
+}
+
+.print-view-title::before {
+  display: block;
+  margin-bottom: 0.55rem;
+  color: rgba(255, 255, 255, 0.68);
+  content: "VISUAL LAW EJC";
+  font-size: 0.68rem;
+  font-weight: 800;
+  letter-spacing: 0.16em;
+}
+
+.print-view-meta {
+  margin: 0 0 1.5rem;
+  padding: 0 2rem 1.5rem;
+  background: linear-gradient(135deg, #2d1b14 0%, #5e4429 58%, #a67c52 100%);
+  color: rgba(255, 255, 255, 0.76);
+  font-size: 0.82rem;
+}
+
+.print-view > :not(.print-view-title):not(.print-view-meta) {
+  padding-left: 2rem;
+  padding-right: 2rem;
+}
+
+.print-view h2 {
+  margin-top: 1.5rem;
+  border-left: 4px solid #d4af37;
+  padding-left: 0.75rem;
+  color: #2d1b14;
+}
+
+.print-view blockquote {
+  border-left: 4px solid #d4af37;
+  border-radius: 0.75rem;
+  background: #fbf8ee;
+  padding: 0.9rem 1rem;
+  color: #4a3427;
+}
+
+.print-view .visual-law-doc {
+  box-shadow: none;
+  border-radius: 0;
+}
+
+@media print {
   .visual-law-doc {
-    overflow: hidden;
-    border-radius: 1.75rem;
-    background: #ffffff;
-    color: #111827;
-    box-shadow:
-      0 1px 2px rgba(15, 23, 42, 0.04),
-      0 22px 70px rgba(15, 23, 42, 0.12);
+    box-shadow: none !important;
+    border-radius: 0 !important;
   }
 
-  .visual-law-cover {
-    position: relative;
-    padding: 2rem;
-    background:
-      radial-gradient(circle at 15% 20%, rgba(212, 175, 55, 0.22), transparent 18rem),
-      linear-gradient(135deg, #2d1b14 0%, #5e4429 58%, #a67c52 100%);
-    color: white;
-  }
-
-  .visual-law-kicker {
-    display: inline-flex;
-    align-items: center;
-    gap: 0.4rem;
-    border-radius: 999px;
-    background: rgba(255, 255, 255, 0.12);
-    padding: 0.4rem 0.75rem;
-    font-size: 0.7rem;
-    font-weight: 800;
-    letter-spacing: 0.16em;
-    text-transform: uppercase;
-  }
-
-  .visual-law-cover h1 {
-    margin-top: 1rem;
-    max-width: 48rem;
-    color: white;
-    font-size: clamp(1.6rem, 3vw, 2.55rem);
-    line-height: 1.05;
-  }
-
-  .visual-law-cover p {
-    margin-top: 0.75rem;
-    max-width: 42rem;
-    color: rgba(255, 255, 255, 0.78);
-    font-size: 0.95rem;
-    line-height: 1.7;
-  }
-
-  .visual-law-meta-grid {
-    margin-top: 1.5rem;
-    display: grid;
-    gap: 0.75rem;
-    grid-template-columns: repeat(auto-fit, minmax(9rem, 1fr));
-  }
-
-  .visual-law-meta-grid > div {
-    border-radius: 1rem;
-    background: rgba(255, 255, 255, 0.12);
-    padding: 0.75rem 0.85rem;
-    backdrop-filter: blur(10px);
-  }
-
-  .visual-law-meta-grid span {
-    display: block;
-    font-size: 0.62rem;
-    font-weight: 800;
-    letter-spacing: 0.14em;
-    text-transform: uppercase;
-    color: rgba(255, 255, 255, 0.56);
-  }
-
-  .visual-law-meta-grid strong {
-    margin-top: 0.2rem;
-    display: block;
-    font-size: 0.86rem;
-    color: #ffffff;
-  }
-
-  .visual-law-review-box {
-    margin: 1.5rem 2rem 0;
-    display: flex;
-    gap: 0.75rem;
-    border-radius: 1rem;
-    background: #f7f1dc;
-    padding: 1rem;
-    color: #6f5711;
-  }
-
-  .visual-law-review-box p {
-    margin-top: 0.25rem;
-    font-size: 0.82rem;
-    line-height: 1.6;
-    color: #7a5a3a;
-  }
-
-  .visual-law-body {
-    padding: 2rem;
-    font-size: 0.95rem;
-    line-height: 1.85;
-  }
-
-  .visual-law-body h1,
-  .visual-law-body h2,
-  .visual-law-body h3 {
-    color: #2d1b14;
-  }
-
-  .visual-law-body h2 {
-    margin-top: 1.8rem;
-    border-left: 4px solid #d4af37;
-    padding-left: 0.85rem;
-  }
-
-  .visual-law-body blockquote,
-  .visual-law-body .callout {
-    border-left: 4px solid #d4af37;
-    border-radius: 1rem;
-    background: #fbf8ee;
-    padding: 1rem;
-    color: #4a3427;
-  }
-
-  .visual-law-footer {
-    display: flex;
-    align-items: center;
-    gap: 0.45rem;
-    border-top: 1px solid rgba(148, 163, 184, 0.18);
-    padding: 1rem 2rem 1.25rem;
-    color: #64748b;
-    font-size: 0.78rem;
-  }
-
-  .print-view {
-    background: #ffffff;
-    color: #111827;
-    font-family: "Inter", "Segoe UI", Arial, sans-serif;
-  }
-
-  .print-view-title {
-    margin: 0;
-    padding: 2rem 2rem 0.75rem;
-    background:
-      radial-gradient(circle at 15% 20%, rgba(212, 175, 55, 0.22), transparent 18rem),
-      linear-gradient(135deg, #2d1b14 0%, #5e4429 58%, #a67c52 100%);
-    color: #ffffff;
-    font-size: 1.85rem;
-    line-height: 1.1;
-  }
-
-  .print-view-title::before {
-    display: block;
-    margin-bottom: 0.55rem;
-    color: rgba(255, 255, 255, 0.68);
-    content: "VISUAL LAW EJC";
-    font-size: 0.68rem;
-    font-weight: 800;
-    letter-spacing: 0.16em;
-  }
-
+  .visual-law-cover,
+  .print-view-title,
   .print-view-meta {
-    margin: 0 0 1.5rem;
-    padding: 0 2rem 1.5rem;
-    background: linear-gradient(135deg, #2d1b14 0%, #5e4429 58%, #a67c52 100%);
-    color: rgba(255, 255, 255, 0.76);
-    font-size: 0.82rem;
-  }
-
-  .print-view > :not(.print-view-title):not(.print-view-meta) {
-    padding-left: 2rem;
-    padding-right: 2rem;
-  }
-
-  .print-view h2 {
-    margin-top: 1.5rem;
-    border-left: 4px solid #d4af37;
-    padding-left: 0.75rem;
-    color: #2d1b14;
-  }
-
-  .print-view blockquote {
-    border-left: 4px solid #d4af37;
-    border-radius: 0.75rem;
-    background: #fbf8ee;
-    padding: 0.9rem 1rem;
-    color: #4a3427;
-  }
-
-  .print-view .visual-law-doc {
-    box-shadow: none;
-    border-radius: 0;
-  }
-
-  @media print {
-    .visual-law-doc {
-      box-shadow: none !important;
-      border-radius: 0 !important;
-    }
-
-    .visual-law-cover,
-    .print-view-title,
-    .print-view-meta {
-      print-color-adjust: exact;
-      -webkit-print-color-adjust: exact;
-    }
+    print-color-adjust: exact;
+    -webkit-print-color-adjust: exact;
   }
 }
