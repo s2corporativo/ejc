@@ -30,6 +30,30 @@ export default class ErrorBoundary extends Component<Props, State> {
 
   componentDidCatch(error: unknown, info: ErrorInfo) {
     console.error("[ErrorBoundary] Falha ao renderizar módulo:", error, info);
+    // Reporta ao backend (best-effort) para dar visibilidade ao crash sem
+    // depender de leitura manual de console. fetch cru (sem o interceptor do
+    // axios) para não arriscar recursão caso a falha seja no próprio client.
+    try {
+      const token = localStorage.getItem("ejc_access");
+      if (!token) return; // o endpoint exige autenticação
+      fetch("/api/observabilidade/frontend-error", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${token}`,
+        },
+        body: JSON.stringify({
+          message: error instanceof Error ? error.message : String(error),
+          stack: error instanceof Error ? error.stack : undefined,
+          component_stack: info?.componentStack,
+          url: window.location.pathname,
+          user_agent: navigator.userAgent,
+        }),
+        keepalive: true,
+      }).catch(() => {});
+    } catch {
+      /* telemetria nunca deve derrubar o boundary */
+    }
   }
 
   render() {

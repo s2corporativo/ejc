@@ -103,6 +103,7 @@ from app.routers import movimentos
 from app.routers import noticias
 from app.routers import notifications
 from app.routers import novos_modulos
+from app.routers import observabilidade
 from app.routers import office_contracts
 from app.routers import partner_withdrawals
 from app.routers import peca_geracao
@@ -326,6 +327,7 @@ app.include_router(movimentos.router, prefix=API)
 app.include_router(noticias.router, prefix=API)
 app.include_router(notifications.router, prefix=API)
 app.include_router(novos_modulos.router, prefix=API)
+app.include_router(observabilidade.router, prefix=API)
 app.include_router(office_contracts.router, prefix=API)
 app.include_router(partner_withdrawals.router, prefix=API)
 app.include_router(peca_geracao.router, prefix=API)

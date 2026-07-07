@@ -54,6 +54,7 @@ import CommandPalette from "./CommandPalette";
 import HelpButton from "./HelpButton";
 import OnboardingTour from "./OnboardingTour";
 import SecurityMenu from "./SecurityMenu";
+import ErrorBoundary from "./ErrorBoundary";
 import UserAvatar from "./UserAvatar";
 import { Button, Tooltip, cn } from "./UI";
 import { THEME_LABELS, useThemeStore } from "../stores/theme";
@@ -700,7 +701,12 @@ export default function Layout() {
       >
         <main className="ejc-modern-scope flex-1 px-4 py-5 md:px-7 md:py-7">
           <div className="mx-auto w-full max-w-[1440px] animate-rise">
-            <Outlet />
+            {/* Um crash de render numa página não derruba mais o app inteiro
+                (tela branca): o ErrorBoundary mostra um fallback e reporta o
+                erro. key=pathname reseta o boundary ao navegar. */}
+            <ErrorBoundary key={location.pathname}>
+              <Outlet />
+            </ErrorBoundary>
           </div>
         </main>
       </div>
