@@ -1,0 +1,97 @@
+/* Portal do Cliente — visual institucional premium.
+   Camada somente visual, sem alterar rotas, permissões, dados ou chamadas de API. */
+
+.ejc-modern-scope > header.bg-navy {
+  border: 0;
+  background:
+    radial-gradient(circle at 12% 18%, rgba(212, 175, 55, 0.2), transparent 19rem),
+    linear-gradient(135deg, #2d1b14 0%, #5e4429 58%, #a67c52 100%);
+  box-shadow: 0 24px 72px rgba(45, 27, 20, 0.22);
+}
+
+.ejc-modern-scope > header.bg-navy .rounded-lg.bg-white {
+  border-radius: 1rem;
+  box-shadow:
+    0 1px 2px rgba(15, 23, 42, 0.08),
+    0 14px 34px rgba(0, 0, 0, 0.18);
+}
+
+.ejc-modern-scope > header.bg-navy nav {
+  gap: 0.35rem;
+  padding-bottom: 0.35rem;
+}
+
+.ejc-modern-scope > header.bg-navy nav a {
+  border-radius: 999px;
+  margin-bottom: 0.35rem;
+  color: rgba(255, 245, 230, 0.78);
+  transition:
+    background-color 0.16s ease,
+    color 0.16s ease,
+    box-shadow 0.16s ease;
+}
+
+.ejc-modern-scope > header.bg-navy nav a:hover {
+  background: rgba(255, 255, 255, 0.12);
+  color: #fff5e6;
+}
+
+.ejc-modern-scope > header.bg-navy nav a.bg-canvas {
+  background: #fffaf0;
+  color: #2d1b14;
+  box-shadow: 0 12px 28px rgba(45, 27, 20, 0.2);
+}
+
+.ejc-modern-scope > header.bg-navy + main {
+  position: relative;
+  margin-top: 1.25rem;
+}
+
+.ejc-modern-scope > header.bg-navy + main > div > .bg-white.rounded-xl.border,
+.ejc-modern-scope > header.bg-navy + main .bg-white.rounded-xl.border {
+  border: 0;
+  background: rgba(255, 255, 255, 0.96);
+  box-shadow:
+    0 1px 2px rgba(15, 23, 42, 0.04),
+    0 22px 64px rgba(15, 23, 42, 0.08);
+}
+
+.ejc-modern-scope > header.bg-navy + main .grid a.bg-white.rounded-xl.border {
+  border: 0;
+  box-shadow:
+    0 1px 2px rgba(15, 23, 42, 0.04),
+    0 16px 44px rgba(15, 23, 42, 0.07);
+}
+
+.ejc-modern-scope > header.bg-navy + main .grid a.bg-white.rounded-xl.border:hover {
+  transform: translateY(-2px);
+  box-shadow:
+    0 2px 6px rgba(15, 23, 42, 0.05),
+    0 26px 68px rgba(15, 23, 42, 0.12);
+}
+
+.ejc-modern-scope > header.bg-navy + main h1,
+.ejc-modern-scope > header.bg-navy + main h2 {
+  color: #2d1b14;
+  letter-spacing: -0.02em;
+}
+
+.ejc-modern-scope > header.bg-navy + main .rounded-full {
+  box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.45);
+}
+
+.ejc-modern-scope > header.bg-navy + main .bg-warn-50.border {
+  border: 0;
+  border-left: 4px solid #d4af37;
+  box-shadow: 0 16px 44px rgba(180, 83, 9, 0.12);
+}
+
+.dark .ejc-modern-scope > header.bg-navy + main .bg-white.rounded-xl.border,
+.dark .ejc-modern-scope > header.bg-navy + main .grid a.bg-white.rounded-xl.border {
+  background: rgba(28, 23, 18, 0.9);
+}
+
+.dark .ejc-modern-scope > header.bg-navy + main h1,
+.dark .ejc-modern-scope > header.bg-navy + main h2 {
+  color: #fff5e6;
+}
