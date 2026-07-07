@@ -9,7 +9,7 @@ interface FieldChromeProps {
   rightSlot?: ReactNode;
 }
 
-export interface InputProps extends InputHTMLAttributes<HTMLInputElement>, FieldChromeProps {}
+export type InputProps = Omit<InputHTMLAttributes<HTMLInputElement>, keyof FieldChromeProps> & FieldChromeProps;
 
 export function Input({ label, hint, error, leftIcon, rightSlot, className, id, ...props }: InputProps) {
   return (
@@ -29,7 +29,7 @@ export function Input({ label, hint, error, leftIcon, rightSlot, className, id, 
   );
 }
 
-export interface SelectProps extends SelectHTMLAttributes<HTMLSelectElement>, FieldChromeProps {}
+export type SelectProps = Omit<SelectHTMLAttributes<HTMLSelectElement>, keyof FieldChromeProps> & FieldChromeProps;
 
 export function Select({ label, hint, error, leftIcon, className, children, ...props }: SelectProps) {
   return (
@@ -46,7 +46,7 @@ export function Select({ label, hint, error, leftIcon, className, children, ...p
   );
 }
 
-export interface TextareaProps extends TextareaHTMLAttributes<HTMLTextAreaElement>, FieldChromeProps {}
+export type TextareaProps = Omit<TextareaHTMLAttributes<HTMLTextAreaElement>, keyof FieldChromeProps> & FieldChromeProps;
 
 export function Textarea({ label, hint, error, className, ...props }: TextareaProps) {
   return (
