@@ -1,169 +1,214 @@
 import { useNavigate } from "react-router-dom";
-import { PageHeader } from "../components/UI";
 import {
-  Building2,
-  Scale,
-  Lock,
-  HardHat,
-  Landmark,
+  Baby,
   Banknote,
-  Receipt,
-  Leaf,
+  Building2,
+  Car,
+  Database,
+  Globe,
+  HardHat,
   Heart,
   Home,
-  Users,
-  Globe,
+  Landmark,
+  Leaf,
+  Lock,
+  Receipt,
+  Scale,
   Shield,
-  Baby,
-  Database,
-  Car,
+  Sparkles,
+  Users,
 } from "lucide-react";
+import {
+  Badge,
+  Button,
+  Card,
+  Page,
+  PageActions,
+  PageDescription,
+  PageGrid,
+  PageHeader,
+  PageTitle,
+} from "../components/ui";
 
 const RAMOS = [
   {
     slug: "empresarial",
     label: "Direito Empresarial",
     icon: Building2,
-    color: "bg-primary-50 text-primary-700 border-primary-200",
-    desc: "Contratos, fusões, M&A, recuperação judicial",
+    tone: "from-primary-900/10 to-primary-900/0 text-primary-800",
+    desc: "Contratos, sociedades, M&A e recuperação judicial",
   },
   {
     slug: "civel",
     label: "Direito Cível",
     icon: Scale,
-    color: "bg-ai-50 text-ai-700 border-ai-200",
-    desc: "Contratos, danos, família, sucessões",
+    tone: "from-slate-900/10 to-slate-900/0 text-slate-800",
+    desc: "Contratos, danos, obrigações e responsabilidade civil",
   },
   {
     slug: "penal",
     label: "Direito Penal",
     icon: Lock,
-    color: "bg-danger-50 text-danger-700 border-danger-200",
-    desc: "Defesa criminal, inquéritos, habeas corpus",
+    tone: "from-danger-500/10 to-danger-500/0 text-danger-700",
+    desc: "Defesa criminal, inquéritos e medidas urgentes",
   },
   {
     slug: "trabalhista",
     label: "Direito Trabalhista",
     icon: HardHat,
-    color: "bg-yellow-50 text-yellow-700 border-yellow-200",
-    desc: "Reclamações, TST, FGTS, demissões",
+    tone: "from-yellow-500/12 to-yellow-500/0 text-yellow-700",
+    desc: "Reclamações, cálculos, FGTS, verbas e recursos",
   },
   {
     slug: "administrativo",
     label: "Direito Administrativo",
     icon: Landmark,
-    color: "bg-cyan-50 text-cyan-700 border-cyan-200",
-    desc: "Concessões, atos administrativos, contratos públicos",
+    tone: "from-cyan-500/10 to-cyan-500/0 text-cyan-700",
+    desc: "Licitações, contratos públicos e atos administrativos",
   },
   {
     slug: "bancario",
     label: "Direito Bancário",
     icon: Banknote,
-    color: "bg-success-50 text-success-700 border-success-200",
-    desc: "Contratos bancários, superendividamento",
+    tone: "from-success-500/10 to-success-500/0 text-success-700",
+    desc: "Contratos bancários, juros e superendividamento",
   },
   {
     slug: "tributario",
     label: "Direito Tributário",
     icon: Receipt,
-    color: "bg-orange-50 text-orange-700 border-orange-200",
-    desc: "Planejamento fiscal, defesas, CARF",
+    tone: "from-orange-500/10 to-orange-500/0 text-orange-700",
+    desc: "Planejamento, defesas, autos e contencioso fiscal",
   },
   {
     slug: "ambiental",
     label: "Direito Ambiental",
     icon: Leaf,
-    color: "bg-green-50 text-green-700 border-green-200",
-    desc: "Licenciamento, AIA, responsabilidade ambiental",
+    tone: "from-green-500/10 to-green-500/0 text-green-700",
+    desc: "Licenciamento, autos, AIA e responsabilidade ambiental",
   },
   {
     slug: "saude",
     label: "Direito da Saúde",
     icon: Heart,
-    color: "bg-pink-50 text-pink-700 border-pink-200",
-    desc: "Planos, SUS, responsabilidade médica",
+    tone: "from-pink-500/10 to-pink-500/0 text-pink-700",
+    desc: "Planos de saúde, SUS e responsabilidade médica",
   },
   {
     slug: "imobiliario",
     label: "Direito Imobiliário",
     icon: Home,
-    color: "bg-stone-50 text-stone-700 border-stone-200",
-    desc: "Compra e venda, locação, incorporação",
+    tone: "from-stone-500/10 to-stone-500/0 text-stone-700",
+    desc: "Compra e venda, locação, posse e incorporação",
   },
   {
     slug: "consumidor",
     label: "Direito do Consumidor",
     icon: Users,
-    color: "bg-teal-50 text-teal-700 border-teal-200",
-    desc: "CDC, recalls, práticas abusivas",
+    tone: "from-teal-500/10 to-teal-500/0 text-teal-700",
+    desc: "CDC, práticas abusivas, cobranças e indenizações",
   },
   {
     slug: "internacional",
     label: "Direito Internacional",
     icon: Globe,
-    color: "bg-primary-50 text-primary-700 border-primary-200",
-    desc: "Tratados, arbitragem, comércio exterior",
+    tone: "from-primary-900/10 to-primary-900/0 text-primary-800",
+    desc: "Tratados, arbitragem e comércio exterior",
   },
   {
     slug: "previdenciario",
     label: "Direito Previdenciário",
     icon: Shield,
-    color: "bg-slate-50 text-slate-700 border-slate-200",
-    desc: "INSS, aposentadorias, benefícios",
+    tone: "from-slate-500/10 to-slate-500/0 text-slate-700",
+    desc: "INSS, aposentadorias, benefícios e revisões",
   },
   {
     slug: "familia",
     label: "Direito de Família",
     icon: Baby,
-    color: "bg-rose-50 text-rose-700 border-rose-200",
-    desc: "Divórcio, guarda, alimentos, inventário",
+    tone: "from-rose-500/10 to-rose-500/0 text-rose-700",
+    desc: "Divórcio, guarda, alimentos e inventário",
   },
   {
     slug: "digital_lgpd",
     label: "Direito Digital e LGPD",
     icon: Database,
-    color: "bg-primary-50 text-primary-700 border-primary-200",
-    desc: "LGPD, DPO, contratos SaaS, startups, dados",
+    tone: "from-primary-900/10 to-primary-900/0 text-primary-800",
+    desc: "LGPD, DPO, contratos SaaS, dados e tecnologia",
   },
   {
     slug: "transito",
-    label: "Direito de Tr\u00e2nsito",
+    label: "Direito de Trânsito",
     icon: Car,
-    color: "bg-primary-50 text-primary-700 border-primary-200",
-    desc: "Multas, recursos JARI/CETRAN, CNH, pontos",
+    tone: "from-primary-900/10 to-primary-900/0 text-primary-800",
+    desc: "Multas, JARI/CETRAN, CNH e pontuação",
   },
 ];
 
 export default function RamosHub() {
   const navigate = useNavigate();
+
   return (
-    <div className="p-6 max-w-6xl mx-auto">
-      <PageHeader
-        title="Ramos do Direito"
-        subtitle="Selecione uma área para acessar ferramentas, cálculos e casos especializados"
-      />
-      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4">
-        {RAMOS.map((r) => {
-          const Icon = r.icon;
-          return (
-            <button
-              key={r.slug}
-              onClick={() => navigate(`/ramos/${r.slug}`)}
-              className={`flex flex-col items-start gap-3 p-4 rounded-xl border-2 hover:shadow-md transition-all text-left ${r.color}`}
-            >
-              <div className="p-2 rounded-lg bg-white/60">
-                <Icon className="w-5 h-5" />
-              </div>
-              <div>
-                <div className="font-semibold text-sm">{r.label}</div>
-                <div className="text-xs opacity-70 mt-0.5 leading-snug">
-                  {r.desc}
-                </div>
-              </div>
-            </button>
-          );
-        })}
+    <Page className="surface-soft min-h-full px-6 py-8">
+      <div className="mx-auto max-w-7xl space-y-8">
+        <PageHeader className="rounded-[2rem] bg-white/70 p-6 shadow-[0_18px_60px_rgba(15,23,42,0.08)] backdrop-blur dark:bg-white/[0.03]">
+          <div>
+            <Badge variant="gold" className="mb-3 gap-1">
+              <Sparkles className="h-3 w-3" /> Áreas estratégicas
+            </Badge>
+            <PageTitle>Ramos do Direito</PageTitle>
+            <PageDescription>
+              Escolha uma área para acessar ferramentas especializadas, cálculos,
+              guias, análises e fluxos jurídicos próprios do escritório.
+            </PageDescription>
+          </div>
+          <PageActions>
+            <Button variant="secondary" onClick={() => navigate("/casos")}>Casos</Button>
+            <Button onClick={() => navigate("/ia")}>Abrir IA jurídica</Button>
+          </PageActions>
+        </PageHeader>
+
+        <PageGrid className="grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
+          {RAMOS.map((ramo) => {
+            const Icon = ramo.icon;
+            return (
+              <button
+                key={ramo.slug}
+                onClick={() => navigate(`/ramos/${ramo.slug}`)}
+                className="group text-left outline-none"
+              >
+                <Card className="relative h-full overflow-hidden p-5 transition duration-200 group-hover:-translate-y-1 group-hover:shadow-[0_26px_70px_rgba(15,23,42,0.14)]">
+                  <div className={`absolute inset-x-0 top-0 h-24 bg-gradient-to-b ${ramo.tone}`} />
+                  <div className="relative flex h-full flex-col gap-5">
+                    <div className="flex items-start justify-between gap-3">
+                      <div className="grid h-11 w-11 place-items-center rounded-2xl bg-white/85 shadow-[0_10px_30px_rgba(15,23,42,0.08)] ring-1 ring-black/5 dark:bg-white/10">
+                        <Icon className="h-5 w-5" />
+                      </div>
+                      <span className="rounded-full bg-slate-950/5 px-2.5 py-1 text-[10px] font-semibold uppercase tracking-[0.16em] text-slate-500 dark:bg-white/10 dark:text-slate-300">
+                        Núcleo
+                      </span>
+                    </div>
+
+                    <div className="space-y-2">
+                      <h2 className="text-base font-semibold text-slate-950 dark:text-slate-50">
+                        {ramo.label}
+                      </h2>
+                      <p className="text-sm leading-6 text-slate-500 dark:text-slate-300">
+                        {ramo.desc}
+                      </p>
+                    </div>
+
+                    <div className="mt-auto flex items-center justify-between pt-2 text-xs font-medium text-primary-800 dark:text-primary-200">
+                      <span>Acessar módulo</span>
+                      <span className="transition-transform group-hover:translate-x-1">→</span>
+                    </div>
+                  </div>
+                </Card>
+              </button>
+            );
+          })}
+        </PageGrid>
       </div>
-    </div>
+    </Page>
   );
 }
