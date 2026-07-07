@@ -14,9 +14,15 @@ O EJC deve parecer um sistema SaaS jurídico premium, próximo de um site modern
 
 Evitar cards com borda forte, excesso de cores sólidas e blocos internos amadores. A preferência visual é por profundidade, sombra, transparência sutil, ícones bem posicionados e textos curtos.
 
+## Aplicação global
+
+O layout interno envolve as páginas com `ejc-modern-scope`. A camada `site-system.css` aplica acabamento global em cards, superfícies, inputs, tabelas, badges e blocos antigos, inclusive telas que ainda não foram migradas para componentes React oficiais.
+
+Isso evita que apenas uma tela fique moderna enquanto o restante do sistema mantém aparência antiga.
+
 ## Componentes iniciais
 
-- `Button`: ações primárias, secundárias, outline, ghost e danger.
+- `Button`: ações primárias, secundárias, outline e ghost.
 - `Card`: contêiner padrão para blocos de conteúdo, agora com sombra e sem borda pesada.
 - `Badge`: status visuais padronizados.
 - `Input`, `Select` e `Textarea`: campos oficiais com label, hint, erro e suporte a ícones.
