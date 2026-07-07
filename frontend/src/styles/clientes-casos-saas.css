@@ -1,0 +1,81 @@
+/* Clientes e Casos — acabamento SaaS executivo.
+   Apenas apresentação visual; não altera dados, rotas, permissões ou regras. */
+
+.ejc-modern-scope .card.overflow-x-auto {
+  border: 0;
+  border-radius: 1.6rem;
+  background: rgba(255, 255, 255, 0.96);
+  box-shadow:
+    0 1px 2px rgba(15, 23, 42, 0.04),
+    0 24px 72px rgba(15, 23, 42, 0.09);
+}
+
+.ejc-modern-scope .card.overflow-x-auto thead {
+  background: linear-gradient(90deg, rgba(250, 247, 240, 0.98), rgba(255, 255, 255, 0.86));
+}
+
+.ejc-modern-scope .card.overflow-x-auto thead th {
+  border-bottom: 1px solid rgba(212, 175, 55, 0.16);
+  color: #7a5a3a;
+  font-size: 0.68rem;
+  font-weight: 850;
+  letter-spacing: 0.1em;
+}
+
+.ejc-modern-scope .card.overflow-x-auto tbody tr {
+  transition: background-color 0.16s ease, box-shadow 0.16s ease;
+}
+
+.ejc-modern-scope .card.overflow-x-auto tbody tr:hover {
+  background: rgba(250, 247, 240, 0.82);
+  box-shadow: inset 4px 0 0 rgba(212, 175, 55, 0.54);
+}
+
+.ejc-modern-scope .card.overflow-x-auto tbody td:first-child a,
+.ejc-modern-scope .card.overflow-x-auto tbody td:nth-child(2) a {
+  color: #2d1b14;
+  font-weight: 650;
+  text-decoration: none;
+}
+
+.ejc-modern-scope .card.overflow-x-auto tbody td:first-child a:hover,
+.ejc-modern-scope .card.overflow-x-auto tbody td:nth-child(2) a:hover {
+  color: #a67c52;
+  text-decoration: underline;
+  text-underline-offset: 0.18rem;
+}
+
+.ejc-modern-scope .relative.mb-4.max-w-md,
+.ejc-modern-scope .flex.flex-wrap.gap-3.mb-4 {
+  border-radius: 1.4rem;
+  background: rgba(255, 255, 255, 0.74);
+  padding: 0.75rem;
+  box-shadow:
+    0 1px 2px rgba(15, 23, 42, 0.04),
+    0 18px 48px rgba(15, 23, 42, 0.06);
+}
+
+.ejc-modern-scope .btn-gold,
+.ejc-modern-scope button.bg-navy,
+.ejc-modern-scope button.bg-gold {
+  box-shadow: 0 12px 30px rgba(45, 27, 20, 0.12);
+}
+
+.dark .ejc-modern-scope .card.overflow-x-auto,
+.dark .ejc-modern-scope .relative.mb-4.max-w-md,
+.dark .ejc-modern-scope .flex.flex-wrap.gap-3.mb-4 {
+  background: rgba(28, 23, 18, 0.88);
+}
+
+.dark .ejc-modern-scope .card.overflow-x-auto thead {
+  background: linear-gradient(90deg, rgba(255, 245, 230, 0.05), rgba(255, 245, 230, 0.01));
+}
+
+.dark .ejc-modern-scope .card.overflow-x-auto tbody tr:hover {
+  background: rgba(255, 245, 230, 0.05);
+}
+
+.dark .ejc-modern-scope .card.overflow-x-auto tbody td:first-child a,
+.dark .ejc-modern-scope .card.overflow-x-auto tbody td:nth-child(2) a {
+  color: #fff5e6;
+}
