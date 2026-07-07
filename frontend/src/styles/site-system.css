@@ -261,6 +261,88 @@
   background: linear-gradient(90deg, rgba(255, 245, 230, 0.04), rgba(255, 245, 230, 0));
 }
 
+/* Pré-visualização de peças jurídicas em Visual Law.
+   Escopada ao modal largo usado na tela de Peças, sem alterar conteúdo ou fluxo. */
+.modal-backdrop [role="dialog"].max-w-4xl > .p-5 > .mb-3.p-3.rounded-lg {
+  border: 0;
+  border-left: 4px solid #d4af37;
+  border-radius: 1rem;
+  box-shadow: 0 10px 28px rgba(15, 23, 42, 0.06);
+}
+
+.modal-backdrop [role="dialog"].max-w-4xl > .p-5 > .text-sm.text-slate-700 {
+  position: relative;
+  overflow: hidden;
+  border-radius: 1.6rem;
+  background:
+    linear-gradient(180deg, #ffffff 0%, #fffaf0 100%);
+  padding: 2rem;
+  color: #2d1b14;
+  font-size: 0.96rem;
+  line-height: 1.85;
+  box-shadow:
+    inset 0 0 0 1px rgba(212, 175, 55, 0.14),
+    0 22px 70px rgba(15, 23, 42, 0.1);
+}
+
+.modal-backdrop [role="dialog"].max-w-4xl > .p-5 > .text-sm.text-slate-700::before {
+  display: block;
+  margin: -2rem -2rem 1.5rem;
+  padding: 1.55rem 2rem;
+  background:
+    radial-gradient(circle at 12% 22%, rgba(212, 175, 55, 0.22), transparent 18rem),
+    linear-gradient(135deg, #2d1b14 0%, #5e4429 62%, #a67c52 100%);
+  color: rgba(255, 245, 230, 0.86);
+  content: "VISUAL LAW EJC · PRÉ-VISUALIZAÇÃO DA PEÇA";
+  font-size: 0.72rem;
+  font-weight: 850;
+  letter-spacing: 0.16em;
+  text-transform: uppercase;
+}
+
+.modal-backdrop [role="dialog"].max-w-4xl > .p-5 > .text-sm.text-slate-700 > div[class*="font-bold"],
+.modal-backdrop [role="dialog"].max-w-4xl > .p-5 > .text-sm.text-slate-700 > div[class*="font-semibold"] {
+  margin-top: 1.4rem;
+  border-left: 4px solid #d4af37;
+  padding-left: 0.85rem;
+  color: #2d1b14;
+  font-size: 1rem;
+}
+
+.modal-backdrop [role="dialog"].max-w-4xl > .p-5 > .text-sm.text-slate-700 p {
+  margin-bottom: 0.8rem;
+  text-align: justify;
+}
+
+.modal-backdrop [role="dialog"].max-w-4xl > .p-5 > .text-sm.text-slate-700 blockquote {
+  border-left: 4px solid #d4af37;
+  border-radius: 1rem;
+  background: #fbf8ee;
+  padding: 1rem;
+  color: #4a3427;
+}
+
+.modal-backdrop [role="dialog"].max-w-4xl > .p-5 > .text-sm.text-slate-700 ul,
+.modal-backdrop [role="dialog"].max-w-4xl > .p-5 > .text-sm.text-slate-700 ol {
+  border-radius: 1rem;
+  background: rgba(250, 247, 240, 0.74);
+  padding: 1rem 1.25rem 1rem 2rem;
+}
+
+.dark .modal-backdrop [role="dialog"].max-w-4xl > .p-5 > .text-sm.text-slate-700 {
+  background:
+    linear-gradient(180deg, rgba(28, 23, 18, 0.98), rgba(45, 27, 20, 0.92));
+  color: rgba(255, 245, 230, 0.88);
+  box-shadow:
+    inset 0 0 0 1px rgba(212, 175, 55, 0.16),
+    0 22px 70px rgba(0, 0, 0, 0.36);
+}
+
+.dark .modal-backdrop [role="dialog"].max-w-4xl > .p-5 > .text-sm.text-slate-700 > div[class*="font-bold"],
+.dark .modal-backdrop [role="dialog"].max-w-4xl > .p-5 > .text-sm.text-slate-700 > div[class*="font-semibold"] {
+  color: #fff5e6;
+}
+
 .visual-law-doc {
   overflow: hidden;
   border-radius: 1.75rem;
