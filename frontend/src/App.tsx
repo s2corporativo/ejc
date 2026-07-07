@@ -93,6 +93,8 @@ const PortalAssinaturas = lazy(
 const PortalMensagens = lazy(() => import("./pages/portal/PortalMensagens"));
 const NotFound = lazy(() => import("./pages/NotFound"));
 
+const GESTAO_FINANCEIRO_ROLES = ["superadmin", "admin", "socio", "financeiro"];
+
 function Protected({ children }: { children: JSX.Element }) {
   const token = localStorage.getItem("ejc_access");
   return token ? children : <Navigate to="/login" replace />;
@@ -270,7 +272,14 @@ export default function App() {
                 element={<PartnerWithdrawals />}
               />
               <Route path="/atividades" element={<CentralAtividades />} />
-              <Route path="/financeiro" element={<FinanceiroWorkspace />} />
+              <Route
+                path="/financeiro"
+                element={
+                  <RoleOnly roles={GESTAO_FINANCEIRO_ROLES}>
+                    <FinanceiroWorkspace />
+                  </RoleOnly>
+                }
+              />
               <Route
                 path="/financeiro-dashboard"
                 element={<Navigate to="/financeiro" replace />}
@@ -282,7 +291,11 @@ export default function App() {
               <Route path="/datajud" element={<DataJudBusca />} />
               <Route
                 path="/despesas-recorrentes"
-                element={<DespesasRecorrentes />}
+                element={
+                  <RoleOnly roles={GESTAO_FINANCEIRO_ROLES}>
+                    <DespesasRecorrentes />
+                  </RoleOnly>
+                }
               />
               <Route path="/crm-leads" element={<CRMLeads />} />
               <Route path="/whatsapp" element={<Whatsapp />} />
