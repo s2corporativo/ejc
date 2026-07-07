@@ -38,7 +38,7 @@ export default function FinanceiroWorkspace() {
   const tab: Tab = isTab(raw) ? raw : "visao";
   const setTab = (k: Tab) => setSearchParams({ tab: k }, { replace: true });
   return (
-    <div className="space-y-5">
+    <div className="executive-workspace space-y-5">
       <PageHeader
         eyebrow="Gestao financeira"
         title="Financeiro"
