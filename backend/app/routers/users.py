@@ -95,6 +95,7 @@ async def criar(
         hashed_password=get_password_hash(payload.password),
         full_name=payload.full_name, role=payload.role,
         phone=payload.phone, oab_number=payload.oab_number,
+        must_change_password=True,
     )
     db.add(user)
     await criar_audit_log(db, cu.id, cu.role.value, "CREATE", "users", user.id)
