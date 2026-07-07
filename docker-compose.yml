@@ -42,6 +42,9 @@ services:
       context: ./backend
     container_name: ejc_backend
     restart: unless-stopped
+    ports:
+      # Publica só no loopback do host; o Nginx do host faz proxy_pass para 127.0.0.1:8000.
+      - "127.0.0.1:8000:8000"
     networks: [default, ia]
     env_file:
       - .env
