@@ -1,0 +1,205 @@
+# Pente-fino técnico do EJC — auditoria estrutural inicial
+
+Data: 09/07/2026  
+Branch: `audit/pente-fino-20260709`  
+Repositório: `s2corporativo/ejc`  
+Escopo desta entrega: leitura direta dos arquivos críticos disponíveis pelo GitHub Contents API, criação de script de auditoria estática e consolidação dos achados prioritários.
+
+## 1. Limitação operacional assumida
+
+Esta auditoria foi feita sem clone local do repositório e sem execução de CI, porque o índice de busca de código do GitHub não estava disponível para o repositório e o ambiente de execução não possui acesso direto à internet/GitHub para `git clone`.
+
+Por segurança, nenhuma exclusão de módulo e nenhuma alteração destrutiva foi feita nesta etapa. A intervenção aplicada foi não destrutiva: inclusão de script de auditoria e relatório técnico para permitir validação local antes de alterações de produção.
+
+## 2. Diagnóstico confirmado
+
+### 2.1. Backend altamente acoplado no `main.py`
+
+O arquivo `backend/app/main.py` importa e registra grande quantidade de routers diretamente. Esse padrão funciona, mas aumenta o risco de boot failure: qualquer erro de import em módulo secundário derruba toda a aplicação.
+
+Risco: P1.
+
+Recomendação:
+
+1. Criar registro modular por grupos: core, jurídico, financeiro, IA, integrações, portal e experimental.
+2. Colocar módulos beta/experimentais atrás de feature flags.
+3. Manter apenas rotas core sempre obrigatórias no boot.
+4. Criar teste de import mínimo: `python -c "from app.main import app; print(len(app.routes))"`.
+
+### 2.2. Segurança/autenticação está melhor do que versões anteriores, mas exige revisão contínua
+
+O `AuthMiddleware` está registrado e há lista explícita de prefixos públicos. Isso corrige a falha histórica de routers públicos, mas a lista pública precisa permanecer curta e auditada.
+
+Risco atual: P1 se novos routers forem adicionados sem RBAC por rota.
+
+Recomendação:
+
+1. Todo router novo deve declarar explicitamente `Depends(get_current_user)` ou `require_roles`.
+2. Rotas realmente públicas devem ter comentário de justificativa e validação alternativa, como token HMAC ou API key.
+3. O script `scripts/ejc_static_audit.py` criado nesta branch verifica routers de escrita sem dependência de autenticação claramente detectável.
+
+### 2.3. Governança de produção está parcialmente madura
+
+`config.py` já falha em produção se `SECRET_KEY`, `PII_ENCRYPTION_KEY`, `PII_HASH_KEY`, `FRONTEND_URL` e CORS estiverem inseguros. O `docker-compose.yml` prende backend/frontend/Ollama/Langfuse ao loopback ou rede interna, o que é correto para VPS.
+
+Risco atual: P2.
+
+Recomendação:
+
+1. Não relaxar essas travas.
+2. Não expor Postgres, Redis, Ollama ou Langfuse diretamente na internet.
+3. Criar checklist obrigatório pré-deploy com backup, migration current/head e health/readiness.
+
+### 2.4. Módulos inflados por ondas de IA
+
+Foram confirmados nomes e camadas com sinais de escopo excessivo ou de baixa relação custo/benefício operacional.
+
+Candidatos a manter apenas com feature flag ou migrar para legado:
+
+| Módulo/área | Status recomendado | Motivo |
+|---|---:|---|
+| `diplomacia_v3` | Legado/oculto | Nome e escopo não aderem ao núcleo jurídico-operacional do escritório. |
+| `verse` | Legado/oculto | Baixa aderência operacional ao ERP jurídico; risco de ruído de produto. |
+| `sala_de_guerra_v3` | Consolidar | Há `sala_de_guerra` e `sala_de_guerra_v3`; manter uma versão canônica. |
+| `data_room_v4` | Consolidar | Há `data_room` e `data_room_v4`; manter interface única, com versão interna se necessário. |
+| `jurimetria_extra` | Consolidar | Evitar duplicidade com `jurimetria` e `analytics`. |
+| `ia_extra`, `ia_especializada`, `ia_defensiva`, `ia_adversarial`, `ia_citacoes` | Consolidar sob AI Gateway | Excesso de routers de IA tende a gerar rotas duplicadas, políticas divergentes e manutenção cara. |
+| `victory_vault` | Renomear ou absorver por Banco de Teses | A função é útil, mas o nome é promocional e o histórico de mock exige cuidado. |
+| `radar-regulatorio`/`noticias`/`diario-oficial` | Manter opt-in | Alto custo de manutenção por dependência externa/scraping. |
+| `visual_law` | Manter como camada de apresentação | Não deve virar dependência central de regra jurídica. |
+
+### 2.5. Victory Vault
+
+O backend atual já não usa persistência puramente em memória: há serviço com PostgreSQL e seed mock apenas fora de produção. Porém, o módulo ainda conserva linguagem e histórico de demonstração.
+
+Recomendação:
+
+1. Renomear no menu para `Banco de Teses e Modelos`.
+2. Manter `victory_vault` como alias técnico temporário, com depreciação futura.
+3. Proibir seed mock em qualquer ambiente que use dados reais.
+4. Exigir RBAC por perfil e auditoria em criação/edição/exclusão de teses/modelos.
+
+### 2.6. Module Registry
+
+O `module_registry.py` é uma boa base para governança modular. Porém, precisa deixar de ser apenas mapa descritivo e virar instrumento de saneamento: status `ativo`, `beta`, `legado`, `descontinuar`, `oculto`, com feature flag e rota/módulo dono.
+
+Correção sugerida para próxima etapa:
+
+1. Acrescentar status operacional mais granular.
+2. Corrigir prefixos divergentes, especialmente módulos cujo path real usa underscore e registry usa hífen.
+3. Expor no frontend uma tela de saneamento: módulos sem endpoint, sem manual, beta, legado e com alta sensibilidade LGPD.
+
+## 3. Correções aplicadas nesta branch
+
+### 3.1. Script de pente-fino estático
+
+Criado:
+
+`/scripts/ejc_static_audit.py`
+
+Checks incluídos:
+
+1. Conflitos de merge reais.
+2. Possíveis segredos versionados.
+3. Sintaxe Python básica via `ast.parse`.
+4. Acoplamento excessivo de routers em `main.py`.
+5. Routers de escrita sem autenticação/RBAC claramente detectável.
+6. Divergências no `module_registry.py`.
+7. Linguagem de mock/demo/hype em arquivos de runtime/documentação.
+
+Comando:
+
+```bash
+python scripts/ejc_static_audit.py --root .
+```
+
+Saídas locais:
+
+```text
+audit_reports/ejc_static_audit.json
+audit_reports/ejc_static_audit.md
+```
+
+Critério de saída:
+
+```text
+P0 -> exit 2
+P1 -> exit 1
+P2/P3 -> exit 0
+```
+
+## 4. Correções recomendadas para a próxima PR funcional
+
+### P0 — bloquear antes de deploy
+
+1. Rodar o script criado nesta branch.
+2. Rodar:
+
+```bash
+git status
+python scripts/ejc_static_audit.py --root .
+cd backend && python -m compileall app
+cd ../frontend && npm run build
+```
+
+3. Se houver P0, não fazer deploy.
+
+### P1 — reduzir risco de queda do sistema
+
+1. Modularizar registro de routers.
+2. Consolidar duplicidades de versões: `*_v3`, `*_v4`, `*_extra`.
+3. Padronizar RBAC backend para módulos financeiros, auditoria, dados sensíveis, IA e portal.
+4. Criar testes mínimos de boot, health e rotas críticas.
+
+### P2 — saneamento de produto
+
+1. Ocultar módulos não essenciais do menu.
+2. Renomear módulos com linguagem promocional.
+3. Classificar módulos por valor real: essencial, útil, experimental, legado, remover.
+4. Criar métrica de uso por módulo antes de excluir definitivamente.
+
+## 5. Módulos que devem ser núcleo permanente
+
+Manter e estabilizar:
+
+1. Autenticação, usuários, RBAC e auditoria.
+2. Clientes e dossiê do cliente.
+3. Casos/processos.
+4. Prazos, suspensões, intimações e tarefas.
+5. Documentos/GED/Data Room.
+6. Peças, modelos, banco de teses e validação jurídica.
+7. Financeiro/honorários/despesas.
+8. Portal do cliente.
+9. AI Gateway/RAG, com revisão humana obrigatória.
+10. DataJud/DJEN, desde que com controle de erro e opt-in.
+
+## 6. Módulos que não recomendo manter como produto principal
+
+Não recomendo manter em destaque, salvo prova de uso real:
+
+1. `diplomacia_v3`.
+2. `verse`.
+3. nomes promocionais como `Victory Vault` no menu final.
+4. versões paralelas `*_v3`, `*_v4`, `*_extra` sem owner técnico claro.
+5. qualquer módulo de IA que faça decisão jurídica, alteração de status sensível, envio externo, cobrança ou protocolo sem revisão humana.
+
+## 7. Checklist de validação
+
+- [ ] Backend importa `app.main` sem erro.
+- [ ] `python scripts/ejc_static_audit.py --root .` executa.
+- [ ] Nenhum P0 permanece.
+- [ ] Frontend compila.
+- [ ] `docker compose config` passa.
+- [ ] `alembic current` e `alembic upgrade head` testados em ambiente de homologação.
+- [ ] `/api/health` responde.
+- [ ] `/api/health/ready` responde 200 com banco ativo.
+- [ ] Rotas financeiras exigem perfil de gestão/financeiro.
+- [ ] Rotas de IA mantêm sanitização de PII.
+- [ ] Nenhum dado sensível aparece em log.
+- [ ] Módulos beta/legados ficam ocultos ou sob feature flag.
+
+## 8. Decisão técnica
+
+O sistema não deve continuar crescendo por adição de módulos. O próximo ciclo correto é saneamento: cortar duplicidades, colocar módulos experimentais em feature flag, consolidar IA no gateway, endurecer RBAC, validar build e criar um mapa de módulos com status real.
+
+A orientação é não remover nada em produção sem telemetria mínima de uso, backup e rollback. A remoção deve seguir: ocultar no menu -> desativar por flag -> monitorar 7 a 14 dias -> remover rota/backend/migration apenas se não houver dependência.
