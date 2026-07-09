@@ -21,11 +21,14 @@ from app.core.security import get_current_user
 
 
 @pytest.fixture(autouse=True)
-def _janelas_limpas():
-    """Cada teste começa com os contadores zerados (storage é module-level)."""
+def _estado_rate_limit_limpo(monkeypatch):
+    """Cada teste começa com contador e backend Redis em estado conhecido."""
     rl._limpar_janelas()
+    rl._redis_client = None
+    monkeypatch.setattr(get_settings(), "RATE_LIMIT_REDIS_ENABLED", False)
     yield
     rl._limpar_janelas()
+    rl._redis_client = None
 
 
 def _montar_app(nome: str, limite: int):
