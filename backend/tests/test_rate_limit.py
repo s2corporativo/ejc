@@ -144,10 +144,13 @@ async def test_redis_on_conta_no_redis(monkeypatch):
         await rl.consumir("r-on", "user:a", 2)
     assert e.value.status_code == 429
     assert 1 <= int(e.value.headers["Retry-After"]) <= 60
-    # Outra chave tem cota própria mesmo no mesmo backend.
-    await rl.consumir("r-on", "user:b", 2)
-    assert fake.contadores["rl:r-on:user:a"] == 3
-    assert fake.contadores["rl:r-on:user:b"] == 1
+    # Outra chave tem cota própria mesmo no mesmo backend. A chave interna não
+    # deve expor o identificador original em claro no Redis.
+    nome_rl, chave_a = rl._chave_interna("r-on", "user:a")
+    _, chave_b = rl._chave_interna("r-on", "user:b")
+    assert fake.contadores[f"rl:{nome_rl}:{chave_a}"] == 3
+    assert fake.contadores[f"rl:{nome_rl}:{chave_b}"] == 1
+    assert "user:a" not in next(k for k in fake.contadores if chave_a in k)
 
 
 async def test_redis_indisponivel_faz_fallback_para_memoria(monkeypatch):
