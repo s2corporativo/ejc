@@ -5,16 +5,18 @@
 from __future__ import annotations
 import hashlib
 import hmac
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from zoneinfo import ZoneInfo
 
-from fastapi import APIRouter, HTTPException, Response
+from fastapi import APIRouter, Depends, HTTPException, Request, Response
 from sqlalchemy import select
 
 from app.core.config import get_settings
 from app.core.database import AsyncSessionLocal
+from app.core.rate_limit import consumir
 from app.models.deadline import Deadline
 from app.models.user import User
+from app.services.security_service import obter_ip_real
 
 router = APIRouter(prefix="/calendar", tags=["Calendário ICS"])
 settings = get_settings()
@@ -34,7 +36,27 @@ def _ics_escape(s: str) -> str:
                     .replace(",", "\\,").replace("\n", "\\n")
 
 
-@router.get("/{user_id}/{token}.ics")
+async def _rl_feed_ics(request: Request) -> None:
+    """Rate limit do feed ICS público por IP real.
+
+    A rota não usa JWT porque clientes como Google Calendar acessam a URL
+    assinada diretamente. O token HMAC segue sendo a credencial, mas o limite
+    reduz enumeração de URLs e abuso do endpoint antes da consulta ao banco.
+    """
+    await consumir("calendar_ics_public_feed", f"ip:{obter_ip_real(request)}", 60)
+
+
+def _headers_ics() -> dict[str, str]:
+    """Headers defensivos para feed assinado que contém metadados jurídicos."""
+    return {
+        "Cache-Control": "private, no-store, max-age=0",
+        "Pragma": "no-cache",
+        "X-Content-Type-Options": "nosniff",
+        "Content-Disposition": 'inline; filename="ejc-calendario.ics"',
+    }
+
+
+@router.get("/{user_id}/{token}.ics", dependencies=[Depends(_rl_feed_ics)])
 async def feed_ics(user_id: str, token: str):
     if not hmac.compare_digest(token, gerar_token_calendario(user_id)):
         raise HTTPException(status_code=403, detail="Token inválido")
@@ -70,7 +92,7 @@ async def feed_ics(user_id: str, token: str):
         eventos.append(
             "BEGIN:VEVENT\r\n"
             f"UID:ejc-{d.id}@depaulateixeira\r\n"
-            f"DTSTAMP:{datetime.utcnow().strftime('%Y%m%dT%H%M%SZ')}\r\n"
+            f"DTSTAMP:{datetime.now(timezone.utc).strftime('%Y%m%dT%H%M%SZ')}\r\n"
             f"DTSTART;VALUE=DATE:{dt}\r\n"
             f"SUMMARY:{emoji} {_ics_escape(d.titulo)}\r\n"
             f"DESCRIPTION:{_ics_escape(d.base_legal or d.descricao or 'EJC')}\r\n"
@@ -87,4 +109,8 @@ async def feed_ics(user_id: str, token: str):
         + "".join(eventos) +
         "END:VCALENDAR\r\n"
     )
-    return Response(content=ics, media_type="text/calendar; charset=utf-8")
+    return Response(
+        content=ics,
+        media_type="text/calendar; charset=utf-8",
+        headers=_headers_ics(),
+    )
