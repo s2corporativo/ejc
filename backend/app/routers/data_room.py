@@ -12,11 +12,13 @@ from sqlalchemy import select, func
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.database import get_db
+from app.core.rate_limit import consumir
 from app.core.security import get_current_user, ROLE_LEVEL
 from app.core.ownership import verificar_acesso_caso
 from app.models.user import User
 from app.models.document import Document
 from app.models.data_room import DataRoom, DataRoomArquivo, DataRoomLink, DataRoomAcessoLog
+from app.services.security_service import obter_ip_real
 
 router = APIRouter(prefix="/data-rooms", tags=["Data Room"])
 
@@ -78,6 +80,22 @@ def _out_link(lk: DataRoomLink) -> dict:
         "ativo": lk.ativo,
         "created_at": lk.created_at.isoformat() if lk.created_at else None,
     }
+
+
+async def _rl_acesso_publico(request: Request) -> None:
+    """Rate limit do endpoint público de Data Room antes de consultar o token.
+
+    O token externo é a credencial do link, mas o endpoint é público por desenho.
+    O limite por IP real reduz enumeração de tokens e abuso de links, preservando
+    uso normal por cliente externo. Usa o mesmo resolvedor de IP real do EJC.
+    """
+    await consumir("data_room_public_access", f"ip:{obter_ip_real(request)}", 60)
+
+
+def _user_agent_seguro(request: Request) -> str | None:
+    """Normaliza User-Agent para auditoria sem aceitar header arbitrariamente grande."""
+    ua = (request.headers.get("user-agent") or "").strip()
+    return ua[:500] if ua else None
 
 
 # ── Endpoints ─────────────────────────────────────────────────────────────────
@@ -275,7 +293,7 @@ async def revogar_link(
     await db.commit()
 
 
-@router.get("/acesso/{token}", include_in_schema=False)
+@router.get("/acesso/{token}", include_in_schema=False, dependencies=[Depends(_rl_acesso_publico)])
 async def acessar_link_publico(
     token: str,
     request: Request,
@@ -297,12 +315,13 @@ async def acessar_link_publico(
     if lk.max_acessos and lk.acessos_realizados >= lk.max_acessos:
         raise HTTPException(403, "Limite de acessos atingido")
 
-    # Registra acesso
+    # Registra acesso. O IP real respeita X-Forwarded-For do proxy confiável;
+    # User-Agent é truncado para evitar abuso de header grande em armazenamento.
     lk.acessos_realizados = (lk.acessos_realizados or 0) + 1
     log = DataRoomAcessoLog(
         id=str(uuid4()), link_id=lk.id,
-        ip=request.client.host if request.client else None,
-        user_agent=request.headers.get("user-agent"),
+        ip=obter_ip_real(request),
+        user_agent=_user_agent_seguro(request),
     )
     db.add(log)
     await db.flush()
