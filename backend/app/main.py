@@ -19,6 +19,7 @@ from fastapi.middleware.gzip import GZipMiddleware
 from fastapi.responses import JSONResponse
 
 from app.core.config import get_settings
+from app.core.log_sanitizer import safe_exception_log, sanitize_log_value
 from app.core.database import check_db
 from app.core.auth_middleware import AuthMiddleware
 from app.services.scheduler import start_scheduler, stop_scheduler
@@ -195,14 +196,14 @@ async def lifespan(app: FastAPI):
     try:
         n_fer = await carregar_feriados_db()
     except Exception as e:
-        logger.warning(f"[EJC] Feriados não carregados: {e}")
+        logger.warning("[EJC] Feriados não carregados", extra=safe_exception_log(e))
         n_fer = 0
     logger.info(f"[EJC] Feriados municipais/estaduais carregados: {n_fer}")
     from app.services.deadline_calculator import carregar_suspensoes_db
     try:
         n_susp = await carregar_suspensoes_db()
     except Exception as e:
-        logger.warning(f"[EJC] Suspensões não carregadas: {e}")
+        logger.warning("[EJC] Suspensões não carregadas", extra=safe_exception_log(e))
         n_susp = 0
     logger.info(f"[EJC] Suspensões de tribunal carregadas: {n_susp} dia(s)")
     if settings.ENABLE_SCHEDULER:
@@ -426,7 +427,16 @@ async def readiness():
 # ── Exception handler global (nunca vazar stack trace) ────────────────────────
 @app.exception_handler(Exception)
 async def global_exception_handler(request: Request, exc: Exception):
-    logger.error(f"Erro não tratado em {request.url.path}: {exc}", exc_info=True)
+    logger.error(
+        "Erro não tratado em rota",
+        extra={
+            "path": sanitize_log_value(request.url.path, max_len=240),
+            **safe_exception_log(exc),
+        },
+        # Em produção, não registrar stack trace em logs de container/agregador.
+        # Em dev/staging, mantém stack para diagnóstico técnico.
+        exc_info=settings.APP_ENV != "production",
+    )
     return JSONResponse(
         status_code=500,
         content={"detail": "Erro interno. A equipe foi notificada."},
