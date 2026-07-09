@@ -58,4 +58,4 @@ Nenhum desenvolvimento funcional novo deve ser priorizado antes de a árvore pas
 
 O P0 usa checkout manual para reduzir dependência de actions externas. Quando falhar em pull request, o workflow deve publicar um comentário de diagnóstico no próprio PR com o trecho final do `ci_guard.log`.
 
-Última revalidação documental: workflow corrigido para preservar heredoc Python dentro do bloco `run`.
+Última revalidação documental: workflow corrigido para usar `refs/pull/<n>/head` no checkout de pull requests.
