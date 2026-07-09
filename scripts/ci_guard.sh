@@ -65,15 +65,15 @@ RESIDUE_SUFFIXES = (".bak", ".old", ".orig")
 DANGEROUS_CORS_PATTERNS = (
     (
         re.compile(r"allow_origins\s*=\s*\[\s*['\"]\*['\"]\s*\]"),
-        "allow_origins hardcoded com '*'",
+        "origem wildcard hardcoded em lista",
     ),
     (
         re.compile(r"allow_origins\s*=\s*\(\s*['\"]\*['\"]\s*,?\s*\)"),
-        "allow_origins hardcoded com '*' em tupla",
+        "origem wildcard hardcoded em tupla",
     ),
     (
         re.compile(r"allow_origin_regex\s*=\s*['\"]\.\*['\"]"),
-        "allow_origin_regex='.*'",
+        "regex permissivo de origem",
     ),
 )
 
