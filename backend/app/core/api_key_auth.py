@@ -28,6 +28,10 @@ from app.models.api_key import ApiKey
 from app.services.security_service import obter_ip_real
 
 PREFIXO_CHAVE = "ejc_"
+# Chaves geradas hoje têm cerca de 47 caracteres. O teto abaixo é folgado para
+# compatibilidade futura, mas rejeita headers arbitrariamente grandes antes de
+# hash/lookup no banco.
+MAX_CHAVE_API_CHARS = 128
 
 # Rate limit PRÉ-auth por IP (auditoria M-1): requisições com X-API-Key
 # ausente/inválida também consomem cota — sem isso, um atacante brutalizaria
@@ -48,6 +52,25 @@ def gerar_chave() -> tuple[str, str, str]:
 
 def hash_chave(chave: str) -> str:
     return hashlib.sha256(chave.encode("utf-8")).hexdigest()
+
+
+def _normalizar_header_api_key(x_api_key: str | None) -> str | None:
+    """Validação sintática barata antes de hash e lookup no banco.
+
+    Mantém resposta indistinguível para chave ausente/inválida, mas evita que
+    headers gigantes ou formatos claramente alheios ao padrão `ejc_...` sejam
+    processados até o banco. O `.strip()` tolera espaços acidentais de cópia.
+    """
+    if not x_api_key:
+        return None
+    chave = x_api_key.strip()
+    if not chave:
+        return None
+    if len(chave) > MAX_CHAVE_API_CHARS:
+        return None
+    if not chave.startswith(PREFIXO_CHAVE):
+        return None
+    return chave
 
 
 def require_api_key(escopo: str):
@@ -75,10 +98,11 @@ def require_api_key(escopo: str):
             detail="API key ausente, inválida ou revogada",
             headers={"WWW-Authenticate": "ApiKey"},
         )
-        if not x_api_key:
+        chave = _normalizar_header_api_key(x_api_key)
+        if chave is None:
             raise exc
 
-        h = hash_chave(x_api_key)
+        h = hash_chave(chave)
         ak = (await db.execute(
             select(ApiKey).where(ApiKey.chave_hash == h)
         )).scalar_one_or_none()
