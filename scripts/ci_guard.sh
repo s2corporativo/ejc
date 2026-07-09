@@ -27,7 +27,16 @@ if git grep -n -E '^(<<<<<<< .+|>>>>>>> .+)' -- \
 fi
 
 echo "[EJC CI] Verificando arquivos de ambiente/segredos versionados..."
-tracked_env_files="$(git ls-files | grep -E '(^|/)\.env($|\.)|\.env\.bak|vps-tools/\.env$' | grep -v -E '(^|/)\.env\.example$' || true)"
+# Bloqueia .env real e backups; permite somente modelos explicitamente marcados
+# como exemplo/template/distribuição. Exemplos permitidos:
+# - .env.example
+# - backend/.env.test.example
+# - frontend/.env.local.sample
+# Arquivos como .env, .env.local, .env.production, .env.bak continuam bloqueados.
+tracked_env_files="$(git ls-files \
+  | grep -E '(^|/)\.env($|\.)|\.env\.bak|vps-tools/\.env$' \
+  | grep -v -E '(^|/)\.env(\.[A-Za-z0-9_-]+)*\.(example|sample|template|dist)$|(^|/)\.env\.example$' \
+  || true)"
 if [[ -n "${tracked_env_files}" ]]; then
   echo "::error::Arquivos de ambiente/segredo estão versionados. Remova da árvore e rotacione credenciais afetadas."
   printf '%s\n' "${tracked_env_files}"
