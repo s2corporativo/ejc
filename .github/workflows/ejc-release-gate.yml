@@ -2,11 +2,11 @@ name: EJC Release Gate
 
 on:
   pull_request:
+    branches:
+      - main
   push:
     branches:
       - main
-      - 'agent/**'
-      - 'feature/**'
 
 permissions:
   contents: read
@@ -65,25 +65,14 @@ jobs:
             echo '```'
           } >> "${GITHUB_STEP_SUMMARY}"
 
-          target_pr="${PR_NUMBER:-}"
-          if [[ -z "${target_pr}" && "${EVENT_NAME}" == "push" && -n "${GITHUB_REF_NAME:-}" ]]; then
-            repo_owner="${REPOSITORY%%/*}"
-            pulls_json="$(curl -fsS \
-              -H "Authorization: Bearer ${GH_TOKEN}" \
-              -H "Accept: application/vnd.github+json" \
-              -H "X-GitHub-Api-Version: 2022-11-28" \
-              "https://api.github.com/repos/${REPOSITORY}/pulls?head=${repo_owner}:${GITHUB_REF_NAME}&state=open" || true)"
-            target_pr="$(printf '%s' "${pulls_json}" | python3 -c 'import json,sys; data=json.load(sys.stdin) if not sys.stdin.isatty() else []; print(data[0]["number"] if data else "")' 2>/dev/null || true)"
-          fi
-
-          if [[ -n "${target_pr}" ]]; then
+          if [[ "${EVENT_NAME}" == "pull_request" && -n "${PR_NUMBER:-}" ]]; then
             python3 -c 'import json,pathlib; log=pathlib.Path("ci_guard.log").read_text(encoding="utf-8", errors="replace"); log=log[-6000:] if len(log)>6000 else log; body="## EJC Release Gate — diagnóstico P0\n\n```text\n"+log+"\n```"; print(json.dumps({"body": body}, ensure_ascii=False))' > comment_payload.json
             curl -fsS \
               -X POST \
               -H "Authorization: Bearer ${GH_TOKEN}" \
               -H "Accept: application/vnd.github+json" \
               -H "X-GitHub-Api-Version: 2022-11-28" \
-              "https://api.github.com/repos/${REPOSITORY}/issues/${target_pr}/comments" \
+              "https://api.github.com/repos/${REPOSITORY}/issues/${PR_NUMBER}/comments" \
               -d @comment_payload.json || true
           fi
 
