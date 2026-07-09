@@ -56,6 +56,4 @@ Nenhum desenvolvimento funcional novo deve ser priorizado antes de a árvore pas
 
 ## Diagnóstico remoto
 
-O P0 usa checkout manual para reduzir dependência de actions externas. Quando falhar em pull request, o workflow deve publicar um comentário de diagnóstico no próprio PR com o trecho final do `ci_guard.log`.
-
-Última revalidação documental: workflow corrigido para usar `refs/pull/<n>/head` no checkout de pull requests.
+O P0 usa checkout manual para reduzir dependência de actions externas. Quando falhar em pull request ou em push de branch vinculada a pull request, o workflow deve publicar um comentário de diagnóstico no próprio PR com o trecho final do `ci_guard.log`.
