@@ -10,7 +10,11 @@ set -euo pipefail
 fail=0
 
 echo "[EJC CI] Verificando marcadores de conflito de merge..."
-if git grep -n -E '^(<<<<<<<|=======|>>>>>>>)' -- \
+# Não usar '^=======' isolado: esse padrão também aparece como underline/separador
+# Markdown em arquivos legítimos. Marcador real de conflito sempre possui início
+# ('<<<<<<< branch') e fim ('>>>>>>> branch/sha'). A linha '=======' sozinha é
+# insuficiente para bloquear release sem contexto.
+if git grep -n -E '^(<<<<<<< .+|>>>>>>> .+)' -- \
   ':!**/node_modules/**' \
   ':!**/.venv/**' \
   ':!**/site-packages/**' \
