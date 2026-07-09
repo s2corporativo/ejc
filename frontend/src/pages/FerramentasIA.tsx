@@ -94,7 +94,7 @@ export default function FerramentasIA() {
       <PageHeader
         eyebrow="Inteligência"
         title="Ferramentas de IA"
-        subtitle={`${skills.length} assistentes jurídicos — análise de texto ou documento (PDF/DOCX/imagem). Resultado é rascunho.`}
+        subtitle={`${skills.length} assistentes jurídicos — análise de texto ou documento (PDF/DOCX/imagem) em padrão técnico-profissional.`}
       />
 
       <div className="grid lg:grid-cols-[320px_1fr] gap-4">
@@ -192,7 +192,7 @@ export default function FerramentasIA() {
             <div className="mt-2 rounded-lg border border-bronze-200 bg-bronze-50/40 p-4">
               <div className="flex items-center gap-2 text-[11px] font-semibold uppercase text-bronze-700 mb-2">
                 <AlertTriangle size={13} />
-                {res.aviso || "Rascunho — revisão humana obrigatória."}
+                {res.aviso || "Conferir fatos, documentos, prazos, valores e fontes antes do uso externo."}
               </div>
               <Markdown
                 source={res.conteudo}
