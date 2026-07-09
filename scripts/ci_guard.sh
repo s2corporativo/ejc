@@ -5,6 +5,7 @@ set -euo pipefail
 # Bloqueia regressões P0 antes de build/deploy:
 # - marcadores reais de merge em código/configuração versionados;
 # - arquivos .env/backup de segredo versionados;
+# - arquivos de credenciais/chaves versionados;
 # - arquivos temporários críticos que não devem entrar em release.
 
 python3 - <<'PY'
@@ -56,6 +57,7 @@ SCAN_NAMES = {
 }
 
 ENV_TEMPLATE_SUFFIXES = (".example", ".sample", ".template", ".dist")
+SECRET_FILE_SUFFIXES = (".pem", ".key", ".p12", ".pfx")
 RESIDUE_PREFIXES = ("_QUARENTENA/", "_dead_code/", "_deploy_e2e1/", "graphify-out/")
 RESIDUE_SUFFIXES = (".bak", ".old", ".orig")
 
@@ -85,6 +87,19 @@ def is_blocked_env(path: str) -> bool:
         or name.endswith(".env.bak")
         or posix == "vps-tools/.env"
     )
+
+
+def is_blocked_secret_file(path: str) -> bool:
+    """Arquivos que normalmente contêm segredo operacional e nunca devem ser versionados."""
+    posix = path.replace("\\", "/")
+    name = pathlib.PurePosixPath(posix).name.lower()
+    if name.endswith(SECRET_FILE_SUFFIXES):
+        return True
+    if name.startswith("credentials") and name.endswith(".json"):
+        return True
+    if "service-account" in name and name.endswith(".json"):
+        return True
+    return False
 
 
 def is_residue(path: str) -> bool:
@@ -128,6 +143,14 @@ def main() -> int:
     if env_hits:
         print("::error::Arquivos de ambiente/segredo estao versionados. Remova da arvore e rotacione credenciais afetadas.")
         for hit in env_hits:
+            print(hit)
+        fail = True
+
+    print("[EJC CI] Verificando arquivos de credenciais/chaves versionados...")
+    secret_file_hits = [item for item in files if is_blocked_secret_file(item)]
+    if secret_file_hits:
+        print("::error::Arquivos de credenciais/chaves estao versionados. Remova da arvore e rotacione credenciais afetadas.")
+        for hit in secret_file_hits:
             print(hit)
         fail = True
 
