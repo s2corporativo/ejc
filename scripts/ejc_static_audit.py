@@ -42,9 +42,6 @@ TEXT_EXTENSIONS = {
     ".css", ".html", ".sh", ".sql",
 }
 
-SECRET_NAME_RE = re.compile(
-    r"(?i)\b(secret|token|api[_-]?key|password|senha|client[_-]?secret|jwt|private[_-]?key)\b"
-)
 SECRET_ASSIGN_RE = re.compile(
     r"(?i)(secret|token|api[_-]?key|password|senha|client[_-]?secret|jwt|private[_-]?key)\s*[:=]\s*['\"]([^'\"]{8,})['\"]"
 )
@@ -60,6 +57,18 @@ RISKY_DEMO_TERMS = (
     "elite", "mock_db", "dados fictícios", "dados ficticios", "demo",
     "radar de poder", "victory vault", "sala de guerra v3", "diplomacia_v3",
 )
+
+STALE_AI_POLICY_TERMS = (
+    "toda saída é rascunho",
+    "saida é rascunho",
+    "saída é rascunho",
+    "rascunho sujeito",
+    "hitl obrigatório",
+    "aviso_hitl",
+    "is_rascunho",
+)
+
+VERSIONED_OR_SIDE_MODULE_RE = re.compile(r"(_v\d+|_extra|_router)$")
 
 @dataclass
 class Finding:
@@ -111,22 +120,18 @@ def scan_conflicts(root: Path, findings: list[Finding]) -> None:
             continue
         for i, line in enumerate(text.splitlines(), start=1):
             if MERGE_START_RE.match(line) or MERGE_END_RE.match(line):
-                add(
-                    findings, "P0", "merge_conflict", rel(root, path), i,
+                add(findings, "P0", "merge_conflict", rel(root, path), i,
                     "Marcador de conflito de merge encontrado.",
-                    "Resolver manualmente o conflito antes de qualquer build/deploy.",
-                )
+                    "Resolver manualmente o conflito antes de qualquer build/deploy.")
 
 
 def scan_secrets(root: Path, findings: list[Finding]) -> None:
     for path in iter_files(root):
         rpath = rel(root, path)
         if ".env" in path.name and path.name != ".env.example":
-            add(
-                findings, "P0", "secret_file", rpath, None,
+            add(findings, "P0", "secret_file", rpath, None,
                 "Arquivo de ambiente real pode estar versionado.",
-                "Remover do Git, rotacionar segredos e manter apenas .env.example sem valores reais.",
-            )
+                "Remover do Git, rotacionar segredos e manter apenas .env.example sem valores reais.")
             continue
         text = read_text(path)
         if text is None:
@@ -141,11 +146,25 @@ def scan_secrets(root: Path, findings: list[Finding]) -> None:
             value = m.group(2).strip()
             if PLACEHOLDER_RE.search(value) or value.startswith("${") or value in {'""', "''"}:
                 continue
-            add(
-                findings, "P0", "possible_secret", rpath, i,
+            add(findings, "P0", "possible_secret", rpath, i,
                 "Possível segredo hardcoded detectado por padrão textual.",
-                "Confirmar manualmente. Se for segredo real, remover do histórico e rotacionar imediatamente.",
-            )
+                "Confirmar manualmente. Se for segredo real, remover do histórico e rotacionar imediatamente.")
+
+
+def scan_python_imports(root: Path, findings: list[Finding]) -> None:
+    app_dir = root / "backend" / "app"
+    for path in app_dir.rglob("*.py") if app_dir.exists() else []:
+        if any(part in EXCLUDED_DIRS for part in path.parts):
+            continue
+        text = read_text(path)
+        if not text:
+            continue
+        try:
+            ast.parse(text)
+        except SyntaxError as e:
+            add(findings, "P0", "python_syntax", rel(root, path), e.lineno,
+                f"Erro de sintaxe Python: {e.msg}.",
+                "Corrigir antes de iniciar backend ou rodar migrations.")
 
 
 def scan_router_import_coupling(root: Path, findings: list[Finding]) -> None:
@@ -156,18 +175,19 @@ def scan_router_import_coupling(root: Path, findings: list[Finding]) -> None:
     routers = set(re.findall(r"from app\.routers import ([A-Za-z0-9_]+)", text))
     includes = re.findall(r"app\.include_router\(([^.\s]+)\.router", text)
     if len(routers) >= 40:
-        add(
-            findings, "P1", "architecture", rel(root, main_py), None,
+        add(findings, "P1", "architecture", rel(root, main_py), None,
             f"main.py importa {len(routers)} routers diretamente; qualquer import quebrado derruba o boot inteiro.",
-            "Migrar para registro modular com allowlist, health por módulo e feature flags para módulos beta/legados.",
-        )
+            "Migrar para registro modular com allowlist, health por módulo e feature flags para módulos beta/legados.")
     duplicates = sorted({name for name in includes if includes.count(name) > 1})
     for name in duplicates:
-        add(
-            findings, "P1", "router_duplicate", rel(root, main_py), None,
+        add(findings, "P1", "router_duplicate", rel(root, main_py), None,
             f"Router '{name}' aparece registrado mais de uma vez.",
-            "Manter apenas um include_router por router ou justificar prefixos diferentes.",
-        )
+            "Manter apenas um include_router por router ou justificar prefixos diferentes.")
+    for name in sorted(routers):
+        if VERSIONED_OR_SIDE_MODULE_RE.search(name):
+            add(findings, "P2", "versioned_or_side_router", rel(root, main_py), None,
+                f"Router '{name}' aparenta ser versão paralela, extra ou wrapper.",
+                "Classificar como ativo/beta/legado; ocultar por feature flag se não for caminho canônico.")
 
 
 def scan_public_routers(root: Path, findings: list[Finding]) -> None:
@@ -179,8 +199,7 @@ def scan_public_routers(root: Path, findings: list[Finding]) -> None:
         if not text:
             continue
         rpath = rel(root, path)
-        has_router = "APIRouter" in text
-        if not has_router:
+        if "APIRouter" not in text:
             continue
         has_global_dep = "APIRouter(" in text and "Depends(get_current_user" in text.split("APIRouter(", 1)[1].split(")", 1)[0]
         has_require_roles = "require_roles(" in text or "Depends(require_roles" in text
@@ -188,11 +207,23 @@ def scan_public_routers(root: Path, findings: list[Finding]) -> None:
         has_public_comment = "públic" in text.lower() or "public" in text.lower()
         has_write = re.search(r"@router\.(post|put|patch|delete)\(", text) is not None
         if has_write and not (has_global_dep or has_require_roles or has_current_user) and not has_public_comment:
-            add(
-                findings, "P1", "auth_review", rpath, None,
+            add(findings, "P1", "auth_review", rpath, None,
                 "Router com método de escrita sem dependência de autenticação/RBAC claramente detectável.",
-                "Revisar manualmente; exigir get_current_user/require_roles ou justificar explicitamente rota pública.",
-            )
+                "Revisar manualmente; exigir get_current_user/require_roles ou justificar explicitamente rota pública.")
+
+
+def scan_orm_inside_routers(root: Path, findings: list[Finding]) -> None:
+    routers_dir = root / "backend" / "app" / "routers"
+    if not routers_dir.exists():
+        return
+    for path in routers_dir.glob("*.py"):
+        text = read_text(path)
+        if not text:
+            continue
+        if "Base" in text and "__tablename__" in text and "Column(" in text:
+            add(findings, "P1", "orm_model_inside_router", rel(root, path), None,
+                "Modelo ORM declarado dentro de router.",
+                "Mover model para app/models e schema para app/schemas; confirmar migration antes de manter em produção.")
 
 
 def scan_module_registry(root: Path, findings: list[Finding]) -> None:
@@ -201,17 +232,13 @@ def scan_module_registry(root: Path, findings: list[Finding]) -> None:
     if not text:
         return
     if "/api/victory-vault" in text:
-        add(
-            findings, "P2", "module_registry", rel(root, registry), None,
+        add(findings, "P2", "module_registry", rel(root, registry), None,
             "Registry usa prefixo '/api/victory-vault', mas o router confirmado usa '/api/victory_vault' com underscore.",
-            "Adicionar '/api/victory_vault' aos backend_prefixes para o Mapa de Módulos não marcar falso negativo.",
-        )
+            "Adicionar '/api/victory_vault' aos backend_prefixes para o Mapa de Módulos não marcar falso negativo.")
     if "status=\"legado\"" not in text and "status='legado'" not in text:
-        add(
-            findings, "P2", "governance", rel(root, registry), None,
+        add(findings, "P2", "governance", rel(root, registry), None,
             "Nenhum módulo aparece classificado como legado, apesar do histórico de várias ondas de funcionalidades.",
-            "Classificar beta/legado/descontinuar por valor operacional, risco LGPD, manutenção e uso real.",
-        )
+            "Classificar beta/legado/descontinuar por valor operacional, risco LGPD, manutenção e uso real.")
 
 
 def scan_demo_language(root: Path, findings: list[Finding]) -> None:
@@ -222,29 +249,24 @@ def scan_demo_language(root: Path, findings: list[Finding]) -> None:
         low = text.lower()
         for term in RISKY_DEMO_TERMS:
             if term in low:
-                add(
-                    findings, "P2", "demo_or_hype_language", rel(root, path), None,
+                add(findings, "P2", "demo_or_hype_language", rel(root, path), None,
                     f"Termo de demonstração/marketing encontrado: '{term}'.",
-                    "Remover linguagem promocional de runtime/documentação técnica ou isolar em material comercial.",
-                )
+                    "Remover linguagem promocional de runtime/documentação técnica ou isolar em material comercial.")
                 break
 
 
-def scan_python_imports(root: Path, findings: list[Finding]) -> None:
-    for path in (root / "backend" / "app").rglob("*.py") if (root / "backend" / "app").exists() else []:
-        if any(part in EXCLUDED_DIRS for part in path.parts):
-            continue
+def scan_stale_ai_policy_language(root: Path, findings: list[Finding]) -> None:
+    for path in iter_files(root):
         text = read_text(path)
-        if not text:
+        if text is None:
             continue
-        try:
-            ast.parse(text)
-        except SyntaxError as e:
-            add(
-                findings, "P0", "python_syntax", rel(root, path), e.lineno,
-                f"Erro de sintaxe Python: {e.msg}.",
-                "Corrigir antes de iniciar backend ou rodar migrations.",
-            )
+        low = text.lower()
+        for term in STALE_AI_POLICY_TERMS:
+            if term in low:
+                add(findings, "P2", "stale_ai_policy_language", rel(root, path), None,
+                    f"Resíduo de política antiga encontrado: '{term}'.",
+                    "Trocar por padrão de apresentação jurídico-profissional, mantendo apenas a vedação de inventar fatos/fontes.")
+                break
 
 
 def build_summary(findings: list[Finding]) -> dict[str, int]:
@@ -265,14 +287,7 @@ def write_reports(root: Path, findings: list[Finding]) -> None:
     }
     (out / "ejc_static_audit.json").write_text(json.dumps(payload, ensure_ascii=False, indent=2), encoding="utf-8")
 
-    lines = [
-        "# Pente-fino estático do EJC",
-        "",
-        f"Gerado em: `{generated_at}`",
-        "",
-        "## Resumo",
-        "",
-    ]
+    lines = ["# Pente-fino estático do EJC", "", f"Gerado em: `{generated_at}`", "", "## Resumo", ""]
     for sev, count in payload["summary"].items():
         lines.append(f"- {sev}: {count}")
     lines += ["", "## Achados", ""]
@@ -303,8 +318,10 @@ def main() -> int:
     scan_python_imports(root, findings)
     scan_router_import_coupling(root, findings)
     scan_public_routers(root, findings)
+    scan_orm_inside_routers(root, findings)
     scan_module_registry(root, findings)
     scan_demo_language(root, findings)
+    scan_stale_ai_policy_language(root, findings)
     write_reports(root, findings)
 
     summary = build_summary(findings)
