@@ -8,21 +8,35 @@ import logging
 import re
 from uuid import uuid4
 
-from fastapi import APIRouter, Request, Header, HTTPException
+from fastapi import APIRouter, Depends, Request, Header, HTTPException
 from sqlalchemy import select
 
 from app.core.config import get_settings
 from app.core.database import AsyncSessionLocal
+from app.core.rate_limit import consumir
 from app.models.client import Client, ClientStatus, ClientOrigem, ClientTipo
 from app.models.notification import Notification
 from app.models.user import User, UserRole
+from app.services.security_service import obter_ip_real
 
 router = APIRouter(prefix="/webhooks", tags=["Webhooks"])
 settings = get_settings()
 logger = logging.getLogger("ejc.webhooks")
 
 
-@router.post("/zapi")
+async def _rl_zapi(request: Request) -> None:
+    """Rate limit do webhook público antes de parsear o payload.
+
+    A rota não usa JWT por necessidade operacional: quem chama é a Z-API.
+    O `Client-Token` continua sendo a autenticação efetiva, mas o limite por IP
+    reduz brute force de token e DoS por chamadas/payloads repetidos. Usa o
+    mesmo resolvedor de IP real do restante do EJC, respeitando X-Forwarded-For
+    quando a aplicação está atrás do Nginx confiável.
+    """
+    await consumir("webhook_zapi", f"ip:{obter_ip_real(request)}", 120)
+
+
+@router.post("/zapi", dependencies=[Depends(_rl_zapi)])
 async def zapi_inbound(
     request: Request,
     client_token: str | None = Header(None, alias="Client-Token"),
