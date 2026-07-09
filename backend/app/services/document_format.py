@@ -79,13 +79,13 @@ def padronizar_documento_juridico(conteudo: str | None) -> str:
 
 def aviso_rascunho_ia() -> str:
     return (
-        "ATENCAO: RASCUNHO GERADO POR IA - PENDENTE DE REVISAO HUMANA. "
-        "NAO PROTOCOLAR sem revisao, assinatura e validacao por advogado."
+        "Documento gerado em padrao juridico-profissional. "
+        "Conferir fatos, documentos, valores, prazos, pedidos, citacoes e estrategia antes do uso externo."
     )
 
 
 def aviso_minuta_automatica() -> str:
     return (
-        "ATENCAO: MINUTA GERADA AUTOMATICAMENTE. Revisar e preencher os campos "
-        "entre colchetes antes de usar. NAO PROTOCOLAR sem revisao juridica."
+        "Documento gerado automaticamente em padrao juridico-profissional. "
+        "Conferir campos entre colchetes, fatos, documentos, valores, prazos e citacoes antes do uso externo."
     )
