@@ -18,7 +18,7 @@ Executado por `scripts/ci_guard.sh`.
 Falha quando encontra:
 
 - marcadores reais de conflito: `<<<<<<<`, `=======`, `>>>>>>>`;
-- `.env`, `.env.*`, `.env.bak*` ou `vps-tools/.env` versionados, exceto `.env.example`.
+- `.env`, `.env.*`, `.env.bak*` ou `vps-tools/.env` versionados, exceto templates explicitamente marcados como `.example`, `.sample`, `.template` ou `.dist`.
 
 Também emite alerta quando identifica resíduos de release, como:
 
@@ -53,3 +53,7 @@ Este gate não substitui:
 ## Regra operacional
 
 Nenhum desenvolvimento funcional novo deve ser priorizado antes de a árvore passar no gate mínimo P0/P1.
+
+## Diagnóstico
+
+Quando o gate P0 falhar em ambiente remoto, o workflow publica o artifact `p0-guard-log` para permitir auditoria objetiva da causa da falha.
