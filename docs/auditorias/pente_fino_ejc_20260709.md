@@ -60,9 +60,11 @@ Pendências residuais detectadas:
 
 1. `backend/app/routers/diplomacia_v3.py` ainda contém metadados antigos `is_rascunho` e `aviso_hitl`.
 2. `frontend/src/pages/SalaDeGuerra.tsx` ainda contém componente visual com texto de rascunho obrigatório.
-3. O script de auditoria foi ampliado para localizar esses resíduos como `stale_ai_policy_language`.
+3. `backend/app/services/document_format.py` ainda centraliza avisos antigos consumidos por peças.
+4. `backend/app/services/peca_service.py`, `backend/app/services/ai_service.py` e `backend/app/services/deep_research_service.py` ainda têm textos antigos em prompts/respostas.
+5. O script de auditoria foi ampliado para localizar esses resíduos como `stale_ai_policy_language`.
 
-Observação: a tentativa de alterar `diplomacia_v3.py` diretamente foi bloqueada pela ferramenta de escrita, portanto o patch não foi aplicado e deve ser feito localmente ou em nova tentativa controlada.
+Observação: tentativas de alterar diretamente alguns arquivos de geração jurídica foram bloqueadas pela ferramenta de escrita. Os patches não foram aplicados e devem ser feitos localmente ou por uma PR menor, com validação de build.
 
 ### 2.5. Módulos inflados por ondas de IA
 
@@ -123,6 +125,93 @@ Correção sugerida:
 1. Acrescentar status operacional mais granular.
 2. Corrigir prefixos divergentes, especialmente módulos cujo path real usa underscore e registry usa hífen.
 3. Expor no frontend uma tela de saneamento: módulos sem endpoint, sem manual, beta, legado e com alta sensibilidade LGPD.
+
+### 2.10. Geração de peças: arquitetura boa, apresentação antiga
+
+`backend/app/services/peca_service.py` é o caminho canônico de geração de peças por IA. Pontos positivos confirmados:
+
+1. usa `ai_gateway.chat`;
+2. usa RAG interno;
+3. sanitiza PII;
+4. usa pseudonimização/reidratação quando há entidades do caso;
+5. registra `AILog`;
+6. cria `LegalDoc`;
+7. executa verificação de citações contra base oficial.
+
+Problemas confirmados:
+
+1. ainda emite aviso antigo via `aviso_rascunho_ia()`;
+2. o prompt da etapa final ainda contém linguagem antiga;
+3. o título do documento salvo ainda carrega `rascunho IA`;
+4. o log ainda usa `AIStatusHITL.gerado`, que pode continuar tecnicamente, mas a tela não deve transformar isso em linguagem de baixa confiança.
+
+Recomendação P1: manter `peca_service.py` como núcleo, mas ajustar apresentação textual para padrão jurídico-profissional. Não mexer na sanitização, RAG, AI Gateway ou verificação de citações.
+
+### 2.11. `document_format.py` é o ponto central dos avisos antigos
+
+`backend/app/services/document_format.py` centraliza `aviso_rascunho_ia()` e `aviso_minuta_automatica()`. Como `peca_service.py` consome esse helper, corrigir esse arquivo limpa vários fluxos sem reescrever a esteira de peças.
+
+Recomendação P1:
+
+1. manter os nomes das funções por compatibilidade;
+2. alterar apenas o texto retornado;
+3. substituir tom de bloqueio por conferência técnica de fatos, documentos, valores, prazos, citações e estratégia;
+4. testar geração de peça e demonstrativo após alteração.
+
+### 2.12. `ai_service.py` ainda contém política antiga em prompts e retorno
+
+`backend/app/services/ai_service.py` já usa AI Gateway, RAG, isolamento por cliente e sanitização. Porém, seus prompts e retornos ainda repetem linguagem antiga de rascunho/revisão obrigatória.
+
+Recomendação P1:
+
+1. não mexer no RAG, nos filtros de escopo nem na sanitização;
+2. limpar apenas a linguagem de apresentação;
+3. manter vedação a invenção de fonte, lei, julgado e dado do processo;
+4. migrar logs manuais para `ai_guard.registrar_ai_log()` em etapa posterior, reduzindo duplicidade.
+
+### 2.13. `ai_guard.py` deve virar padrão obrigatório para todos os endpoints de IA
+
+`backend/app/services/ai_guard.py` declara expressamente que endpoints que ainda montam `AILog` manualmente devem migrar para `registrar_ai_log()`.
+
+Recomendação P1:
+
+1. criar regra de arquitetura: toda rota/serviço de IA deve usar `ai_guard` ou justificar exceção;
+2. no script de auditoria, adicionar check futuro para uso manual de `AILog(` fora de `ai_guard.py`;
+3. reduzir divergência de campos, status e tratamento de erro.
+
+### 2.14. Deep Research Jurídica
+
+`backend/app/services/deep_research_service.py` é conceitualmente útil: combina RAG interno, precedentes multi-fonte e AI Gateway. Porém, também conserva linguagem antiga de rascunho.
+
+Pontos positivos:
+
+1. sanitiza tese e fatos;
+2. decompõe pesquisa em subquestões;
+3. consulta RAG interno;
+4. consulta precedentes externos via agregador;
+5. usa AI Gateway;
+6. registra AILog.
+
+Problemas:
+
+1. modo síncrono pode ficar pesado em produção;
+2. prompt ainda usa linguagem antiga;
+3. log é manual, não via `ai_guard`;
+4. resposta devolve aviso antigo.
+
+Recomendação P2/P1: manter como beta até virar job assíncrono com persistência, progresso, timeout e retentativa. Ajustar linguagem antes de liberar como produto principal.
+
+### 2.15. Crawler/agregador de precedentes está honesto
+
+`backend/app/services/crawler_precedentes.py` não simula conectores inexistentes: LexML e TJMG são fontes reais previstas, DataJud depende de habilitação, STJ/STF são marcados como `nao_implementado`.
+
+Recomendação: manter esse padrão. Nenhuma fonte indisponível deve retornar sucesso vazio que pareça resultado real.
+
+### 2.16. Templates de documentos não são duplicidade ruim
+
+`backend/app/routers/peca_geracao_router.py` não gera peça por IA; ele renderiza documentos por template em `/document-templates`. Portanto, não deve ser removido como duplicidade de `peca_geracao.py`.
+
+Risco identificado: o nome do arquivo confunde. Recomendação P2: renomear futuramente para `document_templates.py`, mantendo alias de rota por compatibilidade.
 
 ## 3. Correções aplicadas nesta branch
 
@@ -201,6 +290,8 @@ cd ../frontend && npm run build
 3. Padronizar RBAC backend para módulos financeiros, auditoria, dados sensíveis, IA e portal.
 4. Criar testes mínimos de boot, health e rotas críticas.
 5. Remover modelos ORM de dentro de routers.
+6. Padronizar logs de IA via `ai_guard.registrar_ai_log()`.
+7. Corrigir linguagem antiga nos fluxos de peças, análise de caso e deep research.
 
 ### P2 — saneamento de produto
 
@@ -209,6 +300,7 @@ cd ../frontend && npm run build
 3. Classificar módulos por valor real: essencial, útil, experimental, legado, remover.
 4. Criar métrica de uso por módulo antes de excluir definitivamente.
 5. Ajustar textos remanescentes da IA para padrão jurídico-profissional.
+6. Renomear `peca_geracao_router.py` para nome compatível com templates, sem quebrar rota.
 
 ## 5. Módulos que devem ser núcleo permanente
 
@@ -224,6 +316,8 @@ Manter e estabilizar:
 8. Portal do cliente.
 9. AI Gateway/RAG com padrão profissional de advogado e trilha de auditoria.
 10. DataJud/DJEN, desde que com controle de erro e opt-in.
+11. Deep Research Jurídica, mas inicialmente como beta com fila/job.
+12. Templates de documentos, desde que separados da geração por IA.
 
 ## 6. Módulos que não recomendo manter como produto principal
 
@@ -234,6 +328,7 @@ Não recomendo manter em destaque, salvo prova de uso real:
 3. nomes promocionais como `Victory Vault` no menu final.
 4. versões paralelas `*_v3`, `*_v4`, `*_extra` sem owner técnico claro.
 5. routers de IA fora do AI Gateway sem justificativa arquitetural.
+6. serviços de IA com AILog manual divergente quando puderem migrar para `ai_guard`.
 
 ## 7. Checklist de validação
 
@@ -251,6 +346,10 @@ Não recomendo manter em destaque, salvo prova de uso real:
 - [ ] Módulos beta/legados ficam ocultos ou sob feature flag.
 - [ ] `data_room_v4` classificado como legado ou removido após confirmação de não uso.
 - [ ] Resíduos `is_rascunho`/`aviso_hitl` removidos dos fluxos de apresentação jurídica.
+- [ ] `document_format.py` ajustado.
+- [ ] `peca_service.py` ajustado sem remover RAG, gateway, citação e pseudonimização.
+- [ ] `ai_service.py` ajustado sem remover escopo LGPD do RAG.
+- [ ] `deep_research_service.py` marcado como beta ou migrado para fila.
 
 ## 8. Decisão técnica
 
