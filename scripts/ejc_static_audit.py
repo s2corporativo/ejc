@@ -226,6 +226,23 @@ def scan_orm_inside_routers(root: Path, findings: list[Finding]) -> None:
                 "Mover model para app/models e schema para app/schemas; confirmar migration antes de manter em produção.")
 
 
+def scan_manual_ai_log(root: Path, findings: list[Finding]) -> None:
+    app_dir = root / "backend" / "app"
+    if not app_dir.exists():
+        return
+    for path in app_dir.rglob("*.py"):
+        rpath = rel(root, path)
+        if rpath.endswith("models/ai_log.py") or rpath.endswith("services/ai_guard.py"):
+            continue
+        text = read_text(path)
+        if not text:
+            continue
+        if "AILog(" in text:
+            add(findings, "P2", "manual_ai_log", rpath, None,
+                "Arquivo cria AILog manualmente fora do ai_guard.",
+                "Migrar gradualmente para app.services.ai_guard.registrar_ai_log para padronizar auditoria, PII e erros.")
+
+
 def scan_module_registry(root: Path, findings: list[Finding]) -> None:
     registry = root / "backend" / "app" / "services" / "module_registry.py"
     text = read_text(registry)
@@ -319,6 +336,7 @@ def main() -> int:
     scan_router_import_coupling(root, findings)
     scan_public_routers(root, findings)
     scan_orm_inside_routers(root, findings)
+    scan_manual_ai_log(root, findings)
     scan_module_registry(root, findings)
     scan_demo_language(root, findings)
     scan_stale_ai_policy_language(root, findings)
