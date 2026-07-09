@@ -29,9 +29,17 @@ class GoogleDriveSyncRequest(BaseModel):
     limit: Optional[int] = Field(None, ge=1, le=500)
     categoria: Optional[str] = Field(
         None,
-        description="Categoria RAG. Se vazio, usa GOOGLE_DRIVE_DEFAULT_CATEGORIA ou 'doutrina'.",
+        description=(
+            "Categoria RAG manual. Se vazio/auto, o sistema classifica por nome, "
+            "caminho e MIME. Para forçar uma categoria única, envie este campo "
+            "e categorizar_automaticamente=false."
+        ),
     )
     confianca: str = Field("media", pattern="^(alta|media|baixa|bloqueado)$")
+    categorizar_automaticamente: bool = Field(
+        True,
+        description="Quando true, evita o erro legado de sincronizar todo o Drive como doutrina.",
+    )
 
 
 @router.get("/status")
@@ -48,8 +56,10 @@ async def status_google_drive(
         "folder_id": folder_id or None,
         "shared_drive_id_configurado": bool(gdrive.shared_drive_id()),
         "categoria_padrao": gdrive.default_categoria(),
+        "auto_categorizar": gdrive.auto_categorizar_enabled(),
         "max_file_mb": gdrive.max_file_bytes() // (1024 * 1024),
         "allowed_mime_types": sorted(gdrive.allowed_mime_types()),
+        "auth": gdrive.auth_status(),
         "sync_state": state,
     }
 
@@ -61,7 +71,11 @@ async def listar_arquivos_google_drive(
     db: AsyncSession = Depends(get_db),
     cu: User = Depends(get_current_user),
 ):
-    """Lista arquivos da pasta configurada, sem ingerir no RAG."""
+    """Lista arquivos da pasta configurada, sem ingerir no RAG.
+
+    A listagem é recursiva e já devolve categoria/prioridade sugeridas, para
+    revisão antes da sincronização.
+    """
     try:
         files = await gdrive.listar_arquivos_pasta(folder_id=folder_id, limit=limit)
         return {"total": len(files), "data": files}
@@ -71,6 +85,29 @@ async def listar_arquivos_google_drive(
         raise HTTPException(
             status_code=502,
             detail=f"Falha ao consultar Google Drive: {type(exc).__name__}: {str(exc)[:200]}",
+        ) from exc
+
+
+@router.get("/audit")
+async def auditar_google_drive(
+    folder_id: Optional[str] = Query(None),
+    limit: int = Query(500, ge=1, le=500),
+    db: AsyncSession = Depends(get_db),
+    cu: User = Depends(get_current_user),
+):
+    """Audita a pasta de conhecimento antes de sincronizar.
+
+    Retorna ranqueamento por prioridade, categoria sugerida, área jurídica e
+    arquivos ignorados. Não baixa conteúdo e não altera o banco.
+    """
+    try:
+        return await gdrive.auditar_pasta_conhecimento(folder_id=folder_id, limit=limit)
+    except RuntimeError as exc:
+        raise HTTPException(status_code=503, detail=str(exc)) from exc
+    except Exception as exc:
+        raise HTTPException(
+            status_code=502,
+            detail=f"Falha ao auditar Google Drive: {type(exc).__name__}: {str(exc)[:200]}",
         ) from exc
 
 
@@ -88,6 +125,7 @@ async def sincronizar_google_drive(
             limit=req.limit,
             categoria=req.categoria,
             confianca=req.confianca,
+            categorizar_automaticamente=req.categorizar_automaticamente,
         )
     except RuntimeError as exc:
         raise HTTPException(status_code=503, detail=str(exc)) from exc
@@ -103,6 +141,7 @@ async def reindexar_arquivo_google_drive(
     file_id: str,
     categoria: Optional[str] = Query(None),
     confianca: str = Query("media", pattern="^(alta|media|baixa|bloqueado)$"),
+    categorizar_automaticamente: bool = Query(True),
     db: AsyncSession = Depends(get_db),
     cu: User = Depends(require_roles(["superadmin", "admin", "socio"])),
 ):
@@ -113,6 +152,7 @@ async def reindexar_arquivo_google_drive(
             file_id,
             categoria=categoria,
             confianca=confianca,
+            categorizar_automaticamente=categorizar_automaticamente,
         )
     except RuntimeError as exc:
         raise HTTPException(status_code=503, detail=str(exc)) from exc

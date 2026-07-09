@@ -27,6 +27,7 @@ from googleapiclient.http import MediaIoBaseDownload
 from sqlalchemy import text as sqltext
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.services.google_drive_taxonomy import DriveTaxonomyDecision, classificar_drive_file
 from app.services.ingestion_service import upsert_documento
 from app.services.ocr_service import extrair_texto
 
@@ -37,6 +38,7 @@ GOOGLE_TOKEN_URI = "https://oauth2.googleapis.com/token"
 
 GOOGLE_DOC_MIME = "application/vnd.google-apps.document"
 GOOGLE_SHEET_MIME = "application/vnd.google-apps.spreadsheet"
+GOOGLE_FOLDER_MIME = "application/vnd.google-apps.folder"
 
 DEFAULT_ALLOWED_MIME_TYPES = {
     "application/pdf",
@@ -78,9 +80,10 @@ class DriveFile:
     size: int | None = None
     web_view_link: str | None = None
     owners: list[dict[str, Any]] | None = None
+    path: str = ""
 
     @classmethod
-    def from_api(cls, data: dict[str, Any]) -> "DriveFile":
+    def from_api(cls, data: dict[str, Any], *, path: str = "") -> "DriveFile":
         size = data.get("size")
         try:
             size_int = int(size) if size is not None else None
@@ -95,7 +98,12 @@ class DriveFile:
             size=size_int,
             web_view_link=data.get("webViewLink"),
             owners=data.get("owners") or [],
+            path=path.strip("/"),
         )
+
+    @property
+    def full_path(self) -> str:
+        return f"{self.path}/{self.name}".strip("/")
 
 
 def _env_bool(name: str, default: bool = False) -> bool:
@@ -107,6 +115,10 @@ def _env_bool(name: str, default: bool = False) -> bool:
 
 def drive_enabled() -> bool:
     return _env_bool("GOOGLE_DRIVE_ENABLED", False)
+
+
+def auto_categorizar_enabled() -> bool:
+    return _env_bool("GOOGLE_DRIVE_AUTO_CATEGORIZAR", True)
 
 
 def knowledge_folder_id() -> str:
@@ -123,7 +135,9 @@ def max_file_bytes() -> int:
 
 
 def default_categoria() -> str:
-    return os.getenv("GOOGLE_DRIVE_DEFAULT_CATEGORIA", "doutrina").strip() or "doutrina"
+    # Valor legado era "doutrina". O padrão operacional agora é "auto" para
+    # evitar que peças práticas, leis e jurisprudência entrem com etiqueta errada.
+    return os.getenv("GOOGLE_DRIVE_DEFAULT_CATEGORIA", "auto").strip() or "auto"
 
 
 def allowed_mime_types() -> set[str]:
@@ -268,19 +282,31 @@ def _file_fields() -> str:
     )
 
 
-def _list_files_sync(folder_id: str, limit: int | None = None) -> list[DriveFile]:
-    service = get_drive_client()
+def _list_children_sync(
+    service,
+    folder_id: str,
+    *,
+    limit: int | None,
+    path: str,
+    items: list[DriveFile],
+    visited: set[str],
+) -> None:
+    if folder_id in visited:
+        return
+    visited.add(folder_id)
+
     query = f"'{folder_id}' in parents and trashed = false"
-    items: list[DriveFile] = []
     page_token: str | None = None
     supports = _supports_all_drives()
 
     while True:
+        if limit and len(items) >= limit:
+            return
         req = service.files().list(
             q=query,
             fields=_file_fields(),
             pageToken=page_token,
-            pageSize=min(1000, limit or 1000),
+            pageSize=1000,
             supportsAllDrives=supports,
             includeItemsFromAllDrives=supports,
             corpora="drive" if supports else "user",
@@ -288,12 +314,35 @@ def _list_files_sync(folder_id: str, limit: int | None = None) -> list[DriveFile
         )
         resp = req.execute()
         for raw in resp.get("files", []):
-            items.append(DriveFile.from_api(raw))
+            f = DriveFile.from_api(raw, path=path)
+            if f.mime_type == GOOGLE_FOLDER_MIME:
+                next_path = f.full_path
+                _list_children_sync(
+                    service, f.id, limit=limit, path=next_path,
+                    items=items, visited=visited,
+                )
+            else:
+                items.append(f)
             if limit and len(items) >= limit:
-                return items
+                return
         page_token = resp.get("nextPageToken")
         if not page_token:
-            return items
+            return
+
+
+def _list_files_sync(folder_id: str, limit: int | None = None) -> list[DriveFile]:
+    """Lista arquivos recursivamente a partir da pasta raiz de conhecimento.
+
+    A versão anterior listava apenas filhos imediatos. Se a raiz continha só
+    subpastas, a sincronização pulava o acervo real. Agora a varredura percorre
+    subpastas e preserva o caminho para classificação/auditoria.
+    """
+    service = get_drive_client()
+    items: list[DriveFile] = []
+    _list_children_sync(
+        service, folder_id, limit=limit, path="", items=items, visited=set()
+    )
+    return items
 
 
 def _get_file_sync(file_id: str) -> DriveFile:
@@ -346,12 +395,19 @@ def _texto_de_bytes(raw: bytes, mime_type: str, ext: str) -> str:
             pass
 
 
-def _extra(file: DriveFile, mime_final: str, ext: str) -> dict[str, Any]:
-    return {
+def _extra(
+    file: DriveFile,
+    mime_final: str,
+    ext: str,
+    decisao: DriveTaxonomyDecision | None = None,
+) -> dict[str, Any]:
+    extra = {
         "source": "google_drive",
         "drive": {
             "file_id": file.id,
             "name": file.name,
+            "path": file.path,
+            "full_path": file.full_path,
             "mime_type_original": file.mime_type,
             "mime_type_indexado": mime_final,
             "extensao": ext,
@@ -363,6 +419,21 @@ def _extra(file: DriveFile, mime_final: str, ext: str) -> dict[str, Any]:
         },
         "confidence_level": "media",
     }
+    if decisao:
+        extra["taxonomy"] = decisao.as_extra()
+    return extra
+
+
+def _resolver_categoria(
+    categoria_base: str | None,
+    decisao: DriveTaxonomyDecision,
+    *,
+    categorizar_automaticamente: bool,
+) -> str:
+    base = (categoria_base or "").strip()
+    if categorizar_automaticamente and (not base or base in {"auto", "doutrina"}):
+        return decisao.categoria
+    return base or decisao.categoria
 
 
 async def ensure_sync_state_table(db: AsyncSession) -> None:
@@ -433,24 +504,77 @@ async def get_sync_state(db: AsyncSession, folder_id: str) -> dict[str, Any] | N
     return dict(row) if row else None
 
 
+def _arquivo_auditado(f: DriveFile, allowed: set[str]) -> dict[str, Any]:
+    decisao = classificar_drive_file(f.name, f.path, f.mime_type)
+    indexavel = f.mime_type in allowed and not decisao.excluir
+    return {
+        "id": f.id,
+        "name": f.name,
+        "path": f.path,
+        "full_path": f.full_path,
+        "mime_type": f.mime_type,
+        "modified_time": f.modified_time,
+        "size": f.size,
+        "web_view_link": f.web_view_link,
+        "indexavel": indexavel,
+        "categoria_sugerida": decisao.categoria,
+        "confianca_sugerida": decisao.confianca,
+        "prioridade": decisao.prioridade,
+        "tipo_fonte": decisao.tipo_fonte,
+        "area_juridica": decisao.area_juridica,
+        "motivo": decisao.motivo,
+        "sinais": decisao.sinais,
+    }
+
+
 async def listar_arquivos_pasta(folder_id: str | None = None, limit: int | None = None) -> list[dict[str, Any]]:
     folder_id = (folder_id or knowledge_folder_id()).strip()
     if not folder_id:
         raise RuntimeError("GOOGLE_DRIVE_KNOWLEDGE_FOLDER_ID não configurado")
     files = await asyncio.to_thread(_list_files_sync, folder_id, limit)
     allowed = allowed_mime_types()
-    return [
-        {
-            "id": f.id,
-            "name": f.name,
-            "mime_type": f.mime_type,
-            "modified_time": f.modified_time,
-            "size": f.size,
-            "web_view_link": f.web_view_link,
-            "indexavel": f.mime_type in allowed,
-        }
-        for f in files
-    ]
+    return [_arquivo_auditado(f, allowed) for f in files]
+
+
+async def auditar_pasta_conhecimento(folder_id: str | None = None, limit: int | None = None) -> dict[str, Any]:
+    folder_id = (folder_id or knowledge_folder_id()).strip()
+    if not folder_id:
+        raise RuntimeError("GOOGLE_DRIVE_KNOWLEDGE_FOLDER_ID não configurado")
+    data = await listar_arquivos_pasta(folder_id=folder_id, limit=limit)
+    por_categoria: dict[str, int] = {}
+    por_area: dict[str, int] = {}
+    por_tipo: dict[str, int] = {}
+    indexaveis = ignorados = 0
+    for item in data:
+        if item["indexavel"]:
+            indexaveis += 1
+        else:
+            ignorados += 1
+        por_categoria[item["categoria_sugerida"]] = por_categoria.get(item["categoria_sugerida"], 0) + 1
+        area = item["area_juridica"] or "nao_identificada"
+        tipo = item["tipo_fonte"] or "nao_identificado"
+        por_area[area] = por_area.get(area, 0) + 1
+        por_tipo[tipo] = por_tipo.get(tipo, 0) + 1
+
+    ranking = sorted(
+        data,
+        key=lambda x: (x["indexavel"], x["prioridade"], x["modified_time"] or ""),
+        reverse=True,
+    )
+    return {
+        "folder_id": folder_id,
+        "total": len(data),
+        "indexaveis": indexaveis,
+        "ignorados": ignorados,
+        "por_categoria_sugerida": por_categoria,
+        "por_area_juridica": por_area,
+        "por_tipo_fonte": por_tipo,
+        "ranking": ranking,
+        "nota": (
+            "Auditoria baseada em nome, caminho e MIME. A sincronização continua "
+            "deduplicando/versionando por gdrive:file_id e hash de conteúdo."
+        ),
+    }
 
 
 async def _processar_arquivo(
@@ -459,13 +583,29 @@ async def _processar_arquivo(
     *,
     categoria: str,
     confianca: str,
+    categorizar_automaticamente: bool,
 ) -> dict[str, Any]:
+    decisao = classificar_drive_file(file.name, file.path, file.mime_type)
+    if decisao.excluir:
+        return {
+            "file_id": file.id,
+            "name": file.name,
+            "path": file.path,
+            "status": "ignorado",
+            "categoria": decisao.categoria,
+            "prioridade": decisao.prioridade,
+            "motivo": decisao.motivo,
+        }
+
     allowed = allowed_mime_types()
     if file.mime_type not in allowed:
         return {
             "file_id": file.id,
             "name": file.name,
+            "path": file.path,
             "status": "ignorado",
+            "categoria": decisao.categoria,
+            "prioridade": decisao.prioridade,
             "motivo": f"MIME não permitido: {file.mime_type}",
         }
 
@@ -473,7 +613,10 @@ async def _processar_arquivo(
         return {
             "file_id": file.id,
             "name": file.name,
+            "path": file.path,
             "status": "ignorado",
+            "categoria": decisao.categoria,
+            "prioridade": decisao.prioridade,
             "motivo": f"Arquivo acima do limite: {file.size} bytes",
         }
 
@@ -482,7 +625,10 @@ async def _processar_arquivo(
         return {
             "file_id": file.id,
             "name": file.name,
+            "path": file.path,
             "status": "ignorado",
+            "categoria": decisao.categoria,
+            "prioridade": decisao.prioridade,
             "motivo": f"Arquivo baixado acima do limite: {len(raw)} bytes",
         }
 
@@ -491,29 +637,43 @@ async def _processar_arquivo(
         return {
             "file_id": file.id,
             "name": file.name,
+            "path": file.path,
             "status": "erro",
+            "categoria": decisao.categoria,
+            "prioridade": decisao.prioridade,
             "motivo": "Texto extraído vazio ou insuficiente para indexação",
         }
 
-    extra = _extra(file, mime_final, ext)
-    extra["confidence_level"] = confianca
+    categoria_final = _resolver_categoria(
+        categoria, decisao, categorizar_automaticamente=categorizar_automaticamente
+    )
+    confianca_final = decisao.confianca if categorizar_automaticamente else confianca
+    extra = _extra(file, mime_final, ext, decisao)
+    extra["confidence_level"] = confianca_final
 
     resultado = await upsert_documento(
         db,
         titulo=file.name,
-        categoria=categoria,
+        categoria=categoria_final,
         conteudo=texto_extraido,
         chave_origem=f"gdrive:{file.id}",
         fonte=file.web_view_link or f"google_drive:{file.id}",
         extra=extra,
-        confianca=confianca,
+        confianca=confianca_final,
         embutir_vetores=True,
     )
     return {
         "file_id": file.id,
         "name": file.name,
+        "path": file.path,
+        "full_path": file.full_path,
         "status": resultado,
-        "categoria": categoria,
+        "categoria": categoria_final,
+        "categoria_sugerida": decisao.categoria,
+        "confianca": confianca_final,
+        "prioridade": decisao.prioridade,
+        "tipo_fonte": decisao.tipo_fonte,
+        "area_juridica": decisao.area_juridica,
         "chars": len(texto_extraido),
         "modified_time": file.modified_time,
         "link": file.web_view_link,
@@ -527,6 +687,7 @@ async def sincronizar_pasta_conhecimento(
     limit: int | None = None,
     categoria: str | None = None,
     confianca: str = "media",
+    categorizar_automaticamente: bool | None = None,
 ) -> dict[str, Any]:
     if not drive_enabled():
         raise RuntimeError("GOOGLE_DRIVE_ENABLED=false. Ative no .env para sincronizar.")
@@ -535,7 +696,9 @@ async def sincronizar_pasta_conhecimento(
     if not folder_id:
         raise RuntimeError("GOOGLE_DRIVE_KNOWLEDGE_FOLDER_ID não configurado")
 
-    categoria = (categoria or default_categoria()).strip() or "doutrina"
+    categoria = (categoria or default_categoria()).strip() or "auto"
+    if categorizar_automaticamente is None:
+        categorizar_automaticamente = auto_categorizar_enabled()
 
     if _sync_lock.locked():
         return {
@@ -556,7 +719,11 @@ async def sincronizar_pasta_conhecimento(
             for file in files:
                 try:
                     item = await _processar_arquivo(
-                        db, file, categoria=categoria, confianca=confianca
+                        db,
+                        file,
+                        categoria=categoria,
+                        confianca=confianca,
+                        categorizar_automaticamente=categorizar_automaticamente,
                     )
                     resultados.append(item)
                     if item["status"] in {"novo", "atualizado", "inalterado"}:
@@ -572,6 +739,7 @@ async def sincronizar_pasta_conhecimento(
                     resultados.append({
                         "file_id": file.id,
                         "name": file.name,
+                        "path": file.path,
                         "status": "erro",
                         "motivo": msg,
                     })
@@ -583,6 +751,7 @@ async def sincronizar_pasta_conhecimento(
                     resultados.append({
                         "file_id": file.id,
                         "name": file.name,
+                        "path": file.path,
                         "status": "erro",
                         "motivo": msg,
                     })
@@ -609,15 +778,26 @@ async def sincronizar_pasta_conhecimento(
             )
             await db.commit()
 
+        por_categoria: dict[str, int] = {}
+        for item in resultados:
+            cat = item.get("categoria") or item.get("categoria_sugerida") or "nao_classificado"
+            por_categoria[cat] = por_categoria.get(cat, 0) + 1
+
         return {
             "ok": status in {"sucesso", "parcial"},
             "status": status,
             "folder_id": folder_id,
-            "categoria": categoria,
+            "categoria_base": categoria,
+            "categorizar_automaticamente": categorizar_automaticamente,
             "total_files_seen": seen,
             "total_files_ingested": ingested,
             "total_files_skipped": skipped,
-            "resultados": resultados,
+            "por_categoria": por_categoria,
+            "resultados": sorted(
+                resultados,
+                key=lambda x: (x.get("status") in {"novo", "atualizado", "inalterado"}, x.get("prioridade", 0)),
+                reverse=True,
+            ),
             "erro": erro_geral,
             "executado_em": datetime.now(timezone.utc).isoformat(),
         }
@@ -629,15 +809,19 @@ async def reindexar_arquivo(
     *,
     categoria: str | None = None,
     confianca: str = "media",
+    categorizar_automaticamente: bool | None = None,
 ) -> dict[str, Any]:
     if not drive_enabled():
         raise RuntimeError("GOOGLE_DRIVE_ENABLED=false. Ative no .env para sincronizar.")
+    if categorizar_automaticamente is None:
+        categorizar_automaticamente = auto_categorizar_enabled()
     file = await asyncio.to_thread(_get_file_sync, file_id)
     resultado = await _processar_arquivo(
         db,
         file,
         categoria=(categoria or default_categoria()),
         confianca=confianca,
+        categorizar_automaticamente=categorizar_automaticamente,
     )
     await db.commit()
     return resultado

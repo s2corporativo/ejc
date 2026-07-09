@@ -19,10 +19,87 @@ As rotas foram registradas sob o router RAG existente:
 
 - `GET /api/rag/google-drive/status`
 - `GET /api/rag/google-drive/files?limit=100`
+- `GET /api/rag/google-drive/audit?limit=500`
 - `POST /api/rag/google-drive/sync`
 - `POST /api/rag/google-drive/reindex/{file_id}`
 
 As rotas de escrita exigem perfil `superadmin`, `admin` ou `socio`.
+
+## Auditoria e ranqueamento antes da sincronização
+
+Use primeiro:
+
+```http
+GET /api/rag/google-drive/audit?limit=500
+```
+
+A auditoria não altera o banco. Ela lista os arquivos recursivamente, classifica por nome/caminho/MIME e devolve:
+
+- `ranking`, ordenado por indexabilidade e prioridade;
+- `por_categoria_sugerida`;
+- `por_area_juridica`;
+- `por_tipo_fonte`;
+- arquivos ignorados por teste, rascunho, backup, MIME não permitido ou baixa qualidade operacional.
+
+## Classificação automática
+
+O sincronizador agora trabalha com `GOOGLE_DRIVE_AUTO_CATEGORIZAR=true` por padrão.
+
+Categorias sugeridas automaticamente:
+
+| Sinal encontrado | Categoria RAG sugerida | Prioridade |
+|---|---:|---:|
+| Lei, decreto, código, portaria, resolução | `legislacao_*` | 100 |
+| Súmula STF/STJ/TST/TJMG | `sumula_*` | 95 |
+| Julgado, acórdão, ementa, precedente | `jurisprudencia_*` | 90 |
+| Peça prática, minuta, modelo, petição, agravo | `modelo_documento_juridico` | 70 |
+| Manual, apostila, guia, doutrina | `doutrina` | 60 |
+| Sem sinal forte | `doutrina` com confiança baixa | 40 |
+| Teste, rascunho, backup, não indexar | `nao_indexar` | 0 |
+
+A classificação fica gravada em `knowledge_docs.extra.taxonomy`, junto com o caminho original do Drive em `knowledge_docs.extra.drive.full_path`.
+
+## Sincronização recomendada
+
+Fluxo seguro:
+
+1. Auditar:
+
+```http
+GET /api/rag/google-drive/audit?limit=500
+```
+
+2. Corrigir nomes/pastas no Drive, se necessário.
+
+3. Sincronizar com classificação automática:
+
+```json
+{
+  "limit": 500,
+  "categorizar_automaticamente": true,
+  "confianca": "media"
+}
+```
+
+4. Conferir o RAG:
+
+```http
+GET /api/rag/stats
+GET /api/rag/status
+GET /api/rag/docs?page_size=100
+```
+
+Para forçar uma categoria única em uma sincronização excepcional:
+
+```json
+{
+  "categoria": "modelo_documento_juridico",
+  "categorizar_automaticamente": false,
+  "confianca": "media"
+}
+```
+
+Use esse modo com cuidado. Ele volta ao comportamento manual e pode gerar erro de curadoria se misturar leis, jurisprudência, doutrina e modelos na mesma pasta.
 
 ## Autenticação recomendada quando a organização bloqueia chave de Service Account
 
@@ -36,7 +113,8 @@ GOOGLE_DRIVE_AUTH_MODE=oauth
 GOOGLE_DRIVE_KNOWLEDGE_FOLDER_ID=1fEQJsQRZzRNCK9uVCTpe1ka9i2UBhiLT
 GOOGLE_DRIVE_OAUTH_USER_FILE=/app/secrets/google-drive-authorized-user.json
 GOOGLE_DRIVE_SHARED_DRIVE_ID=
-GOOGLE_DRIVE_DEFAULT_CATEGORIA=doutrina
+GOOGLE_DRIVE_DEFAULT_CATEGORIA=auto
+GOOGLE_DRIVE_AUTO_CATEGORIZAR=true
 GOOGLE_DRIVE_MAX_FILE_MB=50
 GOOGLE_DRIVE_ALLOWED_MIME_TYPES=
 ```
@@ -52,6 +130,8 @@ GOOGLE_DRIVE_ENABLED=true
 GOOGLE_DRIVE_AUTH_MODE=service_account
 GOOGLE_DRIVE_KNOWLEDGE_FOLDER_ID=1fEQJsQRZzRNCK9uVCTpe1ka9i2UBhiLT
 GOOGLE_DRIVE_SERVICE_ACCOUNT_FILE=/app/secrets/google-drive-service-account.json
+GOOGLE_DRIVE_DEFAULT_CATEGORIA=auto
+GOOGLE_DRIVE_AUTO_CATEGORIZAR=true
 ```
 
 A credencial deve ficar fora do Git; o `.gitignore` já bloqueia arquivos com padrão `*-service-account*.json`.
@@ -73,6 +153,7 @@ Para cada arquivo ingerido:
 - `chave_origem = gdrive:{file_id}`;
 - o link original fica em `fonte`;
 - metadados do Drive ficam em `knowledge_docs.extra.drive`;
+- classificação sugerida fica em `knowledge_docs.extra.taxonomy`;
 - alterações geram nova versão pelo `upsert_documento()` existente;
 - conteúdo inalterado retorna `inalterado` e não duplica chunks.
 
@@ -85,3 +166,4 @@ O serviço cria automaticamente a tabela `google_drive_sync_state`, caso ela ain
 - Não versionar credenciais do Google.
 - Documentos sigilosos devem ter política clara de categoria, escopo e retenção.
 - A fonte soberana para respostas da IA continua sendo o RAG interno, não a leitura direta do Drive.
+- Peças e minutas internas devem entrar como apoio redacional/estratégico, não como fonte normativa.
