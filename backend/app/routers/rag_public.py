@@ -49,6 +49,7 @@ MAX_ITENS_LOTE = 100
 # Auditoria M-3 (DoS de memória): teto por item e teto AGREGADO por lote.
 MAX_CHARS_ITEM = 300_000
 MAX_CHARS_LOTE = 3_000_000
+MAX_CALLBACK_URL_CHARS = 2_048
 
 # Auth única do módulo: o cache de dependências do FastAPI garante que a
 # validação da API key roda UMA vez por request (auth + rate limit + handler).
@@ -91,6 +92,7 @@ class BatchIngestRequest(BaseModel):
     itens: List[dict] = Field(..., min_length=1, max_length=MAX_ITENS_LOTE)
     callback_url: Optional[str] = Field(
         None,
+        max_length=MAX_CALLBACK_URL_CHARS,
         description="URL https pública chamada (POST) ao final da indexação, "
                     "com o resumo de status por chave_origem.",
     )
@@ -169,6 +171,26 @@ async def _resumo_status(
             out.append({"chave_origem": ch, "doc_id": d.id, "versao": d.versao,
                         "status_indexacao": d.status_indexacao})
     return out
+
+
+def _filtros_doc_escopo_batch(chave_origem: str, client_id: str | None) -> list:
+    """Filtros para reler exatamente o doc do mesmo escopo usado no upsert.
+
+    O batch pode receber API key restrita a cliente ou payload com client_id.
+    Após o upsert, a resposta não pode buscar só por `chave_origem`, porque
+    chaves iguais em tenants diferentes poderiam vazar `doc_id`/`versao` de
+    outro escopo. Para item sem cliente, restringe ao escopo global (`NULL`).
+    """
+    filtros = [
+        KnowledgeDoc.chave_origem == chave_origem,
+        KnowledgeDoc.vigente.is_(True),
+        KnowledgeDoc.deleted_at.is_(None),
+    ]
+    if client_id is None:
+        filtros.append(KnowledgeDoc.client_id.is_(None))
+    else:
+        filtros.append(KnowledgeDoc.client_id == client_id)
+    return filtros
 
 
 # ── Callback (webhook simples) ────────────────────────────────────────────────
@@ -318,9 +340,7 @@ async def ingerir_lote(
 
         doc = (await db.execute(
             select(KnowledgeDoc).where(
-                KnowledgeDoc.chave_origem == item.chave_origem,
-                KnowledgeDoc.vigente.is_(True),
-                KnowledgeDoc.deleted_at.is_(None),
+                *_filtros_doc_escopo_batch(item.chave_origem, client_id)
             )
         )).scalar_one_or_none()
 
