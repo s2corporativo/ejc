@@ -6,12 +6,14 @@ set -euo pipefail
 # - marcadores reais de merge em código/configuração versionados;
 # - arquivos .env/backup de segredo versionados;
 # - arquivos de credenciais/chaves versionados;
+# - CORS wildcard hardcoded fora da configuração validada;
 # - arquivos temporários críticos que não devem entrar em release.
 
 python3 - <<'PY'
 from __future__ import annotations
 
 import pathlib
+import re
 import subprocess
 import sys
 
@@ -60,6 +62,20 @@ ENV_TEMPLATE_SUFFIXES = (".example", ".sample", ".template", ".dist")
 SECRET_FILE_SUFFIXES = (".pem", ".key", ".p12", ".pfx")
 RESIDUE_PREFIXES = ("_QUARENTENA/", "_dead_code/", "_deploy_e2e1/", "graphify-out/")
 RESIDUE_SUFFIXES = (".bak", ".old", ".orig")
+DANGEROUS_CORS_PATTERNS = (
+    (
+        re.compile(r"allow_origins\s*=\s*\[\s*['\"]\*['\"]\s*\]"),
+        "allow_origins hardcoded com '*'",
+    ),
+    (
+        re.compile(r"allow_origins\s*=\s*\(\s*['\"]\*['\"]\s*,?\s*\)"),
+        "allow_origins hardcoded com '*' em tupla",
+    ),
+    (
+        re.compile(r"allow_origin_regex\s*=\s*['\"]\.\*['\"]"),
+        "allow_origin_regex='.*'",
+    ),
+)
 
 
 def tracked_files() -> list[str]:
@@ -113,6 +129,14 @@ def should_scan_conflicts(path: pathlib.Path) -> bool:
     return path.name in SCAN_NAMES or path.suffix in SCAN_SUFFIXES
 
 
+def read_text(path: pathlib.Path) -> str | None:
+    try:
+        return path.read_text(encoding="utf-8", errors="ignore")
+    except OSError as exc:
+        print(f"::warning::Nao foi possivel ler {path}: {exc}")
+        return None
+
+
 def main() -> int:
     fail = False
     files = tracked_files()
@@ -123,10 +147,8 @@ def main() -> int:
         path = pathlib.Path(item)
         if not should_scan_conflicts(path):
             continue
-        try:
-            text = path.read_text(encoding="utf-8", errors="ignore")
-        except OSError as exc:
-            print(f"::warning::Nao foi possivel ler {item}: {exc}")
+        text = read_text(path)
+        if text is None:
             continue
         for line_no, line in enumerate(text.splitlines(), start=1):
             if line.startswith("<<<<<<< ") or line.startswith(">>>>>>> "):
@@ -151,6 +173,26 @@ def main() -> int:
     if secret_file_hits:
         print("::error::Arquivos de credenciais/chaves estao versionados. Remova da arvore e rotacione credenciais afetadas.")
         for hit in secret_file_hits:
+            print(hit)
+        fail = True
+
+    print("[EJC CI] Verificando CORS wildcard hardcoded...")
+    cors_hits: list[str] = []
+    for item in files:
+        path = pathlib.Path(item)
+        if not should_scan_conflicts(path):
+            continue
+        text = read_text(path)
+        if text is None:
+            continue
+        for line_no, line in enumerate(text.splitlines(), start=1):
+            for pattern, label in DANGEROUS_CORS_PATTERNS:
+                if pattern.search(line):
+                    cors_hits.append(f"{item}:{line_no}:{label}:{line[:160]}")
+
+    if cors_hits:
+        print("::error::CORS wildcard hardcoded encontrado. Use settings.cors_origins_list e o gate de producao em app/core/config.py.")
+        for hit in cors_hits:
             print(hit)
         fail = True
 
