@@ -21,11 +21,14 @@ from app.core.security import get_current_user
 
 
 @pytest.fixture(autouse=True)
-def _janelas_limpas():
-    """Cada teste começa com os contadores zerados (storage é module-level)."""
+def _estado_rate_limit_limpo(monkeypatch):
+    """Cada teste começa com contador e backend Redis em estado conhecido."""
     rl._limpar_janelas()
+    rl._redis_client = None
+    monkeypatch.setattr(get_settings(), "RATE_LIMIT_REDIS_ENABLED", False)
     yield
     rl._limpar_janelas()
+    rl._redis_client = None
 
 
 def _montar_app(nome: str, limite: int):
@@ -50,7 +53,6 @@ def test_estourar_limite_retorna_429_com_retry_after():
 
     r = client.get("/alvo")
     assert r.status_code == 429
-    # Mensagem clara em pt-BR e header Retry-After dentro da janela de 60s.
     assert "Limite de 3 requisições por minuto" in r.json()["detail"]
     assert 1 <= int(r.headers["Retry-After"]) <= 60
 
@@ -66,7 +68,6 @@ def test_janela_expirada_libera_novamente(monkeypatch):
     assert client.get("/alvo").status_code == 200
     assert client.get("/alvo").status_code == 429
 
-    # Avança além da janela de 60s → contador reinicia.
     relogio["t"] += rl._JANELA_SEGUNDOS + 1
     assert client.get("/alvo").status_code == 200
 
@@ -78,30 +79,29 @@ def test_usuarios_diferentes_nao_colidem():
     estado["user"] = types.SimpleNamespace(id="user-a")
     assert client.get("/alvo").status_code == 200
     assert client.get("/alvo").status_code == 200
-    assert client.get("/alvo").status_code == 429  # user-a estourou
+    assert client.get("/alvo").status_code == 429
 
     estado["user"] = types.SimpleNamespace(id="user-b")
-    assert client.get("/alvo").status_code == 200  # user-b tem cota própria
+    assert client.get("/alvo").status_code == 200
 
 
 def test_sem_autenticacao_401_nao_consome_cota():
-    """Auth roda ANTES do contador: request sem token leva 401 e não gasta cota."""
+    """Auth roda ANTES do contador: request sem credencial leva 401 e não gasta cota."""
     app, estado = _montar_app("t-auth", 1)
     client = TestClient(app)
 
     def _nega():
-        raise HTTPException(status_code=401, detail="Token inválido ou expirado")
+        raise HTTPException(status_code=401, detail="Credencial inválida ou expirada")
 
     app.dependency_overrides[get_current_user] = _nega
     assert client.get("/alvo").status_code == 401
 
     app.dependency_overrides[get_current_user] = lambda: estado["user"]
-    assert client.get("/alvo").status_code == 200  # cota intacta (limite = 1)
+    assert client.get("/alvo").status_code == 200
 
 
 class _FakeRedis:
-    """Redis async mínimo: implementa o fixed-window do script Lua em memória
-    (INCR + EXPIRE-no-primeiro-hit + TTL) para testar o caminho Redis sem infra."""
+    """Redis async mínimo: implementa o fixed-window do script Lua em memória."""
 
     def __init__(self):
         self.contadores: dict[str, int] = {}
@@ -117,7 +117,7 @@ class _RedisQuebrado:
 
 
 async def test_redis_off_usa_memoria(monkeypatch):
-    """Flag desligada: consumir() nunca toca o Redis (delega ao contador local)."""
+    """Flag desligada: consumir() nunca toca o Redis."""
     monkeypatch.setattr(get_settings(), "RATE_LIMIT_REDIS_ENABLED", False)
 
     async def _boom():
@@ -132,8 +132,7 @@ async def test_redis_off_usa_memoria(monkeypatch):
 
 
 async def test_redis_on_conta_no_redis(monkeypatch):
-    """Flag ligada + Redis disponível: a cota é contada no Redis, com chaves
-    independentes por (rota, usuário) e 429 ao exceder."""
+    """Flag ligada + Redis disponível: cota contada no Redis com chaves independentes."""
     monkeypatch.setattr(get_settings(), "RATE_LIMIT_REDIS_ENABLED", True)
     fake = _FakeRedis()
     monkeypatch.setattr(rl, "_get_redis", lambda: _async(fake))
@@ -144,15 +143,17 @@ async def test_redis_on_conta_no_redis(monkeypatch):
         await rl.consumir("r-on", "user:a", 2)
     assert e.value.status_code == 429
     assert 1 <= int(e.value.headers["Retry-After"]) <= 60
-    # Outra chave tem cota própria mesmo no mesmo backend.
+
     await rl.consumir("r-on", "user:b", 2)
-    assert fake.contadores["rl:r-on:user:a"] == 3
-    assert fake.contadores["rl:r-on:user:b"] == 1
+    nome_rl, chave_a = rl._chave_interna("r-on", "user:a")
+    _, chave_b = rl._chave_interna("r-on", "user:b")
+    assert fake.contadores[f"rl:{nome_rl}:{chave_a}"] == 3
+    assert fake.contadores[f"rl:{nome_rl}:{chave_b}"] == 1
+    assert "user:a" not in next(k for k in fake.contadores if chave_a in k)
 
 
 async def test_redis_indisponivel_faz_fallback_para_memoria(monkeypatch):
-    """Flag ligada mas Redis falha no eval: cai para o contador em memória —
-    fail-open para LOCAL (ainda limita), nunca ilimitado."""
+    """Flag ligada mas Redis falha no eval: cai para contador em memória."""
     monkeypatch.setattr(get_settings(), "RATE_LIMIT_REDIS_ENABLED", True)
     rl._redis_client = "sentinela-para-invalidar"
     monkeypatch.setattr(rl, "_get_redis", lambda: _async(_RedisQuebrado()))
@@ -162,19 +163,16 @@ async def test_redis_indisponivel_faz_fallback_para_memoria(monkeypatch):
     with pytest.raises(HTTPException) as e:
         await rl.consumir("r-fallback", "user:z", 2)
     assert e.value.status_code == 429
-    # O cache do cliente foi invalidado para reconectar na próxima request.
     assert rl._redis_client is None
 
 
 async def _async(valor):
-    """Embrulha um valor síncrono numa coroutine (para monkeypatch de _get_redis)."""
+    """Embrulha um valor síncrono numa coroutine."""
     return valor
 
 
 def test_rotas_alvo_registradas_com_rate_limit():
-    """Smoke: os endpoints da auditoria continuam montados no app real
-    (a dependency não pode quebrar a montagem — regressão dos commits
-    3d0df67/11da80f, NameError com PEP 563)."""
+    """Smoke: os endpoints da auditoria continuam montados no app real."""
     from app.main import app
 
     paths = {getattr(r, "path", "") for r in app.routes}

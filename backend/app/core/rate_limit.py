@@ -11,6 +11,7 @@
 # ─────────────────────────────────────────────────────────────────────────────
 from __future__ import annotations
 
+import hashlib
 import logging
 import math
 import threading
@@ -56,6 +57,22 @@ def _agora() -> float:
     return time.monotonic()
 
 
+def _componente_chave_seguro(valor: str) -> str:
+    """Representação interna estável, limitada e sem identificador em claro.
+
+    `chave` pode conter IP real, id de usuário ou id de API key. Em Redis, isso
+    viraria metadado operacional legível; em memória, também amplia risco de
+    crescimento por valores longos. Hashear o componente preserva a distribuição
+    do rate limit e evita gravar identificadores em claro nas chaves internas.
+    """
+    return hashlib.sha256(str(valor).encode("utf-8", errors="ignore")).hexdigest()
+
+
+def _chave_interna(nome: str, chave: str) -> tuple[str, str]:
+    """Chave canônica para os backends de rate limit."""
+    return str(nome)[:120], _componente_chave_seguro(chave)
+
+
 def _limpar_janelas() -> None:
     """Reseta todos os contadores (uso em testes)."""
     with _lock:
@@ -67,6 +84,7 @@ def _consumir(nome: str, chave: str, max_por_minuto: int) -> None:
     429 se o limite do minuto foi excedido. Compartilhado pelo rate limit por
     usuário JWT (rate_limit) e pelo rate limit por API key (rag_public)."""
     agora = _agora()
+    chave_rl = _chave_interna(nome, chave)
     with _lock:
         if len(_janelas) > _MAX_ENTRADAS:  # poda janelas velhas (evita crescer sem limite)
             for k in [k for k, (ini, _) in _janelas.items() if agora - ini >= _JANELA_SEGUNDOS]:
@@ -79,11 +97,11 @@ def _consumir(nome: str, chave: str, max_por_minuto: int) -> None:
                 excedente = len(_janelas) - _MAX_ENTRADAS
                 for k in sorted(_janelas, key=lambda k: _janelas[k][0])[:excedente]:
                     del _janelas[k]
-        inicio, contagem = _janelas.get((nome, chave), (agora, 0))
+        inicio, contagem = _janelas.get(chave_rl, (agora, 0))
         if agora - inicio >= _JANELA_SEGUNDOS:
             inicio, contagem = agora, 0
         contagem += 1
-        _janelas[(nome, chave)] = (inicio, contagem)
+        _janelas[chave_rl] = (inicio, contagem)
     if contagem > max_por_minuto:
         restante = max(1, math.ceil(_JANELA_SEGUNDOS - (agora - inicio)))
         raise HTTPException(
@@ -134,8 +152,9 @@ async def _consumir_redis(nome: str, chave: str, max_por_minuto: int) -> bool:
     if cli is None:
         return False
     try:
+        nome_rl, chave_rl = _chave_interna(nome, chave)
         contagem, ttl = await cli.eval(
-            _LUA_FIXED_WINDOW, 1, f"rl:{nome}:{chave}", _JANELA_SEGUNDOS,
+            _LUA_FIXED_WINDOW, 1, f"rl:{nome_rl}:{chave_rl}", _JANELA_SEGUNDOS,
         )
     except Exception as e:
         # Redis caiu no meio → invalida o cache (reconecta na próxima) e delega.
