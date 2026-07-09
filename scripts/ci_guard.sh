@@ -3,43 +3,148 @@ set -euo pipefail
 
 # EJC release guard
 # Bloqueia regressões P0 antes de build/deploy:
-# - marcadores de merge no código versionado;
+# - marcadores reais de merge em código/configuração versionados;
 # - arquivos .env/backup de segredo versionados;
 # - arquivos temporários críticos que não devem entrar em release.
 
-fail=0
+python3 - <<'PY'
+from __future__ import annotations
 
-echo "[EJC CI] Verificando marcadores de conflito de merge..."
-if git grep -n -E '^(<<<<<<<|=======|>>>>>>>)' -- \
-  ':!**/node_modules/**' \
-  ':!**/.venv/**' \
-  ':!**/site-packages/**' \
-  ':!**/dist/**' \
-  ':!frontend/dist/**' \
-  ':!coverage/**' \
-  ':!htmlcov/**'; then
-  echo "::error::Marcadores de conflito encontrados. Resolva semanticamente antes do merge."
-  fail=1
-fi
+import pathlib
+import subprocess
+import sys
 
-echo "[EJC CI] Verificando arquivos de ambiente/segredos versionados..."
-tracked_env_files="$(git ls-files | grep -E '(^|/)\.env($|\.)|\.env\.bak|vps-tools/\.env$' | grep -v -E '(^|/)\.env\.example$' || true)"
-if [[ -n "${tracked_env_files}" ]]; then
-  echo "::error::Arquivos de ambiente/segredo estão versionados. Remova da árvore e rotacione credenciais afetadas."
-  printf '%s\n' "${tracked_env_files}"
-  fail=1
-fi
+IGNORE_PARTS = {
+    ".git",
+    ".venv",
+    ".venv-codex",
+    "node_modules",
+    "site-packages",
+    "dist",
+    "coverage",
+    "htmlcov",
+    "__pycache__",
+}
 
-echo "[EJC CI] Verificando backups/resíduos críticos em release..."
-tracked_release_residue="$(git ls-files | grep -E '(^_QUARENTENA/|^_dead_code/|^_deploy_e2e1/|\.bak$|\.old$|\.orig$|^graphify-out/)' || true)"
-if [[ -n "${tracked_release_residue}" ]]; then
-  echo "::warning::Resíduos de desenvolvimento encontrados na árvore. Saneie antes do release final."
-  printf '%s\n' "${tracked_release_residue}"
-fi
+SCAN_SUFFIXES = {
+    ".py",
+    ".pyi",
+    ".ts",
+    ".tsx",
+    ".js",
+    ".jsx",
+    ".json",
+    ".yml",
+    ".yaml",
+    ".toml",
+    ".ini",
+    ".cfg",
+    ".conf",
+    ".sh",
+    ".sql",
+    ".txt",
+}
 
-if [[ "${fail}" -ne 0 ]]; then
-  echo "[EJC CI] Gate P0 falhou."
-  exit 1
-fi
+SCAN_NAMES = {
+    ".gitignore",
+    "Dockerfile",
+    "docker-compose.yml",
+    "docker-compose.yaml",
+    "requirements.txt",
+    "package.json",
+    "package-lock.json",
+}
 
-echo "[EJC CI] Gate P0 aprovado."
+ENV_TEMPLATE_SUFFIXES = (".example", ".sample", ".template", ".dist")
+RESIDUE_PREFIXES = ("_QUARENTENA/", "_dead_code/", "_deploy_e2e1/", "graphify-out/")
+RESIDUE_SUFFIXES = (".bak", ".old", ".orig")
+
+
+def tracked_files() -> list[str]:
+    out = subprocess.check_output(["git", "ls-files"], text=True)
+    return [line.strip() for line in out.splitlines() if line.strip()]
+
+
+def ignored_path(path: pathlib.Path) -> bool:
+    return any(part in IGNORE_PARTS for part in path.parts)
+
+
+def is_env_template(path: str) -> bool:
+    name = pathlib.PurePosixPath(path).name
+    return name == ".env.example" or (name.startswith(".env.") and name.endswith(ENV_TEMPLATE_SUFFIXES))
+
+
+def is_blocked_env(path: str) -> bool:
+    posix = path.replace("\\", "/")
+    name = pathlib.PurePosixPath(posix).name
+    if is_env_template(posix):
+        return False
+    return (
+        name == ".env"
+        or name.startswith(".env.")
+        or name.endswith(".env.bak")
+        or posix == "vps-tools/.env"
+    )
+
+
+def is_residue(path: str) -> bool:
+    posix = path.replace("\\", "/")
+    return posix.startswith(RESIDUE_PREFIXES) or posix.endswith(RESIDUE_SUFFIXES)
+
+
+def should_scan_conflicts(path: pathlib.Path) -> bool:
+    if ignored_path(path):
+        return False
+    return path.name in SCAN_NAMES or path.suffix in SCAN_SUFFIXES
+
+
+def main() -> int:
+    fail = False
+    files = tracked_files()
+
+    print("[EJC CI] Verificando marcadores de conflito de merge...")
+    conflict_hits: list[str] = []
+    for item in files:
+        path = pathlib.Path(item)
+        if not should_scan_conflicts(path):
+            continue
+        try:
+            text = path.read_text(encoding="utf-8", errors="ignore")
+        except OSError as exc:
+            print(f"::warning::Nao foi possivel ler {item}: {exc}")
+            continue
+        for line_no, line in enumerate(text.splitlines(), start=1):
+            if line.startswith("<<<<<<< ") or line.startswith(">>>>>>> "):
+                conflict_hits.append(f"{item}:{line_no}:{line[:160]}")
+
+    if conflict_hits:
+        print("::error::Marcadores reais de conflito encontrados. Resolva semanticamente antes do merge.")
+        for hit in conflict_hits:
+            print(hit)
+        fail = True
+
+    print("[EJC CI] Verificando arquivos de ambiente/segredos versionados...")
+    env_hits = [item for item in files if is_blocked_env(item)]
+    if env_hits:
+        print("::error::Arquivos de ambiente/segredo estao versionados. Remova da arvore e rotacione credenciais afetadas.")
+        for hit in env_hits:
+            print(hit)
+        fail = True
+
+    print("[EJC CI] Verificando backups/residuos criticos em release...")
+    residue_hits = [item for item in files if is_residue(item)]
+    if residue_hits:
+        print("::warning::Residuos de desenvolvimento encontrados na arvore. Saneie antes do release final.")
+        for hit in residue_hits:
+            print(hit)
+
+    if fail:
+        print("[EJC CI] Gate P0 falhou.")
+        return 1
+
+    print("[EJC CI] Gate P0 aprovado.")
+    return 0
+
+
+raise SystemExit(main())
+PY
