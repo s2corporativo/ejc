@@ -82,7 +82,8 @@ class AuthMiddleware(BaseHTTPMiddleware):
     """
 
     async def dispatch(self, request: Request, call_next) -> Response:
-        if _is_publica(request.url.path):
+        path = posixpath.normpath(request.url.path)
+        if _is_publica(path):
             return await call_next(request)
 
         # Extrai token do header Authorization: Bearer <token>
@@ -103,7 +104,6 @@ class AuthMiddleware(BaseHTTPMiddleware):
             # Injeta no state para logging/auditoria
             request.state.user_id = payload.get("sub")
             request.state.role    = payload.get("role", "")
-            path = request.url.path
         except JWTError as e:
             logger.warning(f"JWT inválido em {request.url.path}: {e}")
             return JSONResponse(
@@ -114,7 +114,7 @@ class AuthMiddleware(BaseHTTPMiddleware):
         # ── Troca de senha OBRIGATÓRIA: bloqueia tudo até trocar ─────────
         if payload.get("pwd_change_required"):   # must_change_password (claim no access token)
             liberados = ("/api/auth/alterar-senha", "/api/auth/logout")
-            if not any(path.startswith(p) for p in liberados):
+            if not any(_path_casa_prefixo_publico(path, p) for p in liberados):
                 return JSONResponse(
                     status_code=403,
                     content={"detail": "Troca de senha obrigatória. "
@@ -126,9 +126,9 @@ class AuthMiddleware(BaseHTTPMiddleware):
         # Isolamento LGPD: dados internos do escritório ficam inacessíveis
         # mesmo com token válido. Guarda central — vale p/ TODAS as rotas.
         if request.state.role == "cliente_externo":
-            permitidos = ("/api/portal/", "/api/auth", "/api/health",
+            permitidos = ("/api/portal/", "/api/auth/", "/api/health",
                           "/api/notifications", "/api/signatures")
-            if not any(path.startswith(p) for p in permitidos):
+            if not any(_path_casa_prefixo_publico(path, p) for p in permitidos):
                 return JSONResponse(
                     status_code=403,
                     content={"detail": "Acesso restrito ao Portal do Cliente"},
