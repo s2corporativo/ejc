@@ -70,11 +70,17 @@ def _validar_atribuicao_role(cu: User, novo_role: str | None) -> None:
 
 
 def _validar_alvo(cu: User, alvo: User) -> None:
-    """Impede gerenciar usuário de nível superior ao do operador."""
-    if _nivel(alvo.role) > _nivel(cu.role):
+    """Impede gerenciar usuário de nível IGUAL ou superior ao do operador.
+
+    P4 (anti-lockout / escalada horizontal): com `>` estrito, um admin (nível 8)
+    podia desativar/rebaixar OUTRO admin de mesmo nível — trancando um par para
+    fora. Com `>=`, só um perfil estritamente superior gerencia (superadmin gere
+    admin; admins não gerem entre si). Auto-gestão é tratada à parte pelo chamador
+    (o admin ainda edita seus próprios campos_self; não pode se autodesativar)."""
+    if _nivel(alvo.role) >= _nivel(cu.role):
         raise HTTPException(
             status_code=403,
-            detail="Sem permissão para gerenciar usuário de nível superior ao seu.",
+            detail="Sem permissão para gerenciar usuário de nível igual ou superior ao seu.",
         )
 
 
@@ -339,7 +345,13 @@ async def atualizar(
                 detail=f"Campos restritos a admin: {sorted(extras)}",
             )
     else:
-        _validar_alvo(cu, user)
+        # P4: self-gestão do admin é permitida (campos próprios), mas gerenciar
+        # OUTRO usuário exige nível estritamente superior (bloqueia lockout entre
+        # pares). E ninguém se autodesativa via PATCH (paridade com o DELETE).
+        if cu.id != user_id:
+            _validar_alvo(cu, user)
+        elif mudancas.get("is_active") is False:
+            raise HTTPException(status_code=400, detail="Não pode desativar a si mesmo")
         if "role" in mudancas:
             _validar_atribuicao_role(cu, mudancas["role"])
 

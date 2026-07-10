@@ -134,15 +134,40 @@ def _categoria_jurisprudencia(area: str | None, texto: str) -> str:
     return "jurisprudencia"
 
 
+# Termos de sinal normativo forte (usados também na classificação abaixo). Um
+# arquivo com esses sinais NO NOME nunca é descartado por token de exclusão.
+_LEGISLACAO_TERMOS = (
+    "lei", "decreto", "codigo", "código", "constituicao", "constituição",
+    "resolucao", "resolução", "portaria", "instrucao normativa", "instrução normativa",
+    "provimento", "estatuto", "medida provisoria", "medida provisória",
+)
+_JURISPRUDENCIA_TERMOS = (
+    "jurisprudencia", "jurisprudência", "acordao", "acórdão", "ementa",
+    "julgado", "precedente", "repetitivo", "irdr", "iac", "tese fixada",
+    "stj", "stf", "tjmg", "tst", "carf", "tcu",
+)
+
+
 def classificar_drive_file(nome: str, caminho: str | None = None, mime_type: str | None = None) -> DriveTaxonomyDecision:
     texto = normalizar_chave(f"{caminho or ''} {nome}")
+    nome_norm = normalizar_chave(nome)
     area, sinais_area = detectar_area(nome, caminho)
     sinais: list[str] = []
     if sinais_area:
         sinais.extend(sinais_area)
 
-    exclusao = _tem_token_exclusao(texto)
-    if exclusao:
+    # P3: o token de exclusão casa SÓ no NOME do arquivo (não no caminho) — antes
+    # uma pasta "Backup 2023/" descartava uma "Súmula 7 STJ.docx" legítima da
+    # vigência do RAG. Além disso, um sinal normativo forte no nome (súmula/lei/
+    # jurisprudência) tem PRECEDÊNCIA: material normativo nomeado com
+    # "antigo/backup" não é removido silenciosamente da busca.
+    tem_sinal_normativo = (
+        "sumula" in nome_norm
+        or bool(_tem(nome_norm, _LEGISLACAO_TERMOS))
+        or bool(_tem(nome_norm, _JURISPRUDENCIA_TERMOS))
+    )
+    exclusao = _tem_token_exclusao(nome_norm)
+    if exclusao and not tem_sinal_normativo:
         return DriveTaxonomyDecision(
             categoria="nao_indexar",
             confianca="bloqueado",
@@ -150,7 +175,7 @@ def classificar_drive_file(nome: str, caminho: str | None = None, mime_type: str
             tipo_fonte="teste_ou_lixo_operacional",
             area_juridica=area,
             excluir=True,
-            motivo="Arquivo/pasta sinalizado como teste, rascunho, backup ou não indexável.",
+            motivo="Arquivo sinalizado (no nome) como teste, rascunho, backup ou não indexável.",
             sinais=exclusao + sinais,
         )
 
@@ -167,22 +192,14 @@ def classificar_drive_file(nome: str, caminho: str | None = None, mime_type: str
             categoria = "sumula"
         return DriveTaxonomyDecision(categoria, "alta", 95, "sumula", area, False, "Súmula identificada por nome/caminho.", ["sumula"] + sinais)
 
-    legislacao_sinais = _tem(texto, (
-        "lei", "decreto", "codigo", "código", "constituicao", "constituição",
-        "resolucao", "resolução", "portaria", "instrucao normativa", "instrução normativa",
-        "provimento", "estatuto", "medida provisoria", "medida provisória",
-    ))
+    legislacao_sinais = _tem(texto, _LEGISLACAO_TERMOS)
     if legislacao_sinais:
         return DriveTaxonomyDecision(
             _categoria_legislacao(area), "alta", 100, "fonte_oficial_normativa",
             area, False, "Norma/legislação identificada por nome/caminho.", legislacao_sinais + sinais,
         )
 
-    jurisprudencia_sinais = _tem(texto, (
-        "jurisprudencia", "jurisprudência", "acordao", "acórdão", "ementa",
-        "julgado", "precedente", "repetitivo", "irdr", "iac", "tese fixada",
-        "stj", "stf", "tjmg", "tst", "carf", "tcu",
-    ))
+    jurisprudencia_sinais = _tem(texto, _JURISPRUDENCIA_TERMOS)
     if jurisprudencia_sinais:
         return DriveTaxonomyDecision(
             _categoria_jurisprudencia(area, texto), "alta", 90, "jurisprudencia",

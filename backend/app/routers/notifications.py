@@ -5,7 +5,7 @@ from datetime import datetime, timezone
 from uuid import uuid4
 
 from fastapi import APIRouter, Depends, HTTPException, Query
-from pydantic import BaseModel
+from pydantic import BaseModel, field_validator
 from sqlalchemy import func as sqlfunc
 from sqlalchemy import select, update
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -154,6 +154,17 @@ class PushSubIn(BaseModel):
     endpoint: str
     p256dh: str
     auth: str
+
+    @field_validator("endpoint")
+    @classmethod
+    def _valida_endpoint(cls, v: str) -> str:
+        # SSRF guard: só serviços de push conhecidos via https (ver notification_service).
+        from app.services.notification_service import endpoint_push_valido
+        if not endpoint_push_valido(v):
+            raise ValueError(
+                "endpoint de push não permitido — apenas serviços FCM/Mozilla/Apple/WNS via https"
+            )
+        return v
 
 
 @router.get("/push/vapid-key")

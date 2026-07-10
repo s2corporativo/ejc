@@ -88,6 +88,32 @@ async def enviar_email(destinatario: str, assunto: str, corpo: str) -> bool:
 
 
 # ── Web Push (PWA) ────────────────────────────────────────────────────────────
+# SSRF guard: o `endpoint` do push é fornecido pelo cliente em /push/subscribe.
+# Sem allowlist, o servidor pode ser induzido a fazer POST a uma URL interna
+# arbitrária (ex.: 169.254.169.254, serviço interno). Só aceitamos https dos
+# serviços de push conhecidos (Chrome/Android FCM, Firefox/Mozilla, Safari/Apple,
+# Edge/WNS). Validado no schema (422 na inscrição) E revalidado no envio.
+_PUSH_HOSTS_PERMITIDOS = (
+    "fcm.googleapis.com",
+    "android.googleapis.com",
+    "updates.push.services.mozilla.com",
+    "web.push.apple.com",
+    "notify.windows.com",
+)
+
+
+def endpoint_push_valido(url: str) -> bool:
+    from urllib.parse import urlparse
+    try:
+        u = urlparse(url or "")
+    except Exception:
+        return False
+    if u.scheme != "https" or not u.hostname:
+        return False
+    host = u.hostname.lower()
+    return any(host == d or host.endswith("." + d) for d in _PUSH_HOSTS_PERMITIDOS)
+
+
 async def enviar_push(db, user_id: str, titulo: str, mensagem: str, link: str = "/"):
     """Envia push a todas as subscriptions do usuário. Falha silenciosa."""
     if not settings.PUSH_ENABLED or not settings.VAPID_PRIVATE_KEY:
@@ -109,6 +135,11 @@ async def enviar_push(db, user_id: str, titulo: str, mensagem: str, link: str = 
         )).scalars().all()
 
         for s in subs:
+            # Defesa em profundidade: nunca faz POST a endpoint fora da allowlist
+            # (mesmo que algo tenha sido gravado antes do guard do schema existir).
+            if not endpoint_push_valido(s.endpoint):
+                logger.warning("Push: endpoint fora da allowlist ignorado (SSRF guard)")
+                continue
             try:
                 await asyncio.to_thread(
                     webpush,

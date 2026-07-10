@@ -330,6 +330,7 @@ async def redefinir_senha(
 
 # ─── TOTP: Setup ──────────────────────────────────────────────────────────────
 @router.post("/totp/setup")
+@limiter.limit("10/minute")
 async def totp_setup(
     request: Request,
     db: AsyncSession = Depends(get_db),

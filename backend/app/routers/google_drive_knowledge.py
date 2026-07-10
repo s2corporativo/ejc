@@ -12,7 +12,7 @@ from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.database import get_db
-from app.core.security import get_current_user, require_roles
+from app.core.security import require_roles
 from app.models.audit_log import criar_audit_log
 from app.models.user import User
 from app.routers.rag import router as rag_router
@@ -32,7 +32,7 @@ router = APIRouter(prefix="/google-drive", tags=["Base de Conhecimento / Google 
 @router.get("/status")
 async def status_google_drive(
     db: AsyncSession = Depends(get_db),
-    cu: User = Depends(get_current_user),
+    cu: User = Depends(require_roles(["superadmin", "admin", "socio"])),
 ):
     """Status da integração Google Drive → RAG."""
     folder_id = gdrive.knowledge_folder_id()
@@ -56,7 +56,7 @@ async def listar_arquivos_google_drive(
     folder_id: Optional[str] = Query(None),
     limit: int = Query(100, ge=1, le=500),
     db: AsyncSession = Depends(get_db),
-    cu: User = Depends(get_current_user),
+    cu: User = Depends(require_roles(["superadmin", "admin", "socio"])),
 ):
     """Lista arquivos da pasta configurada, sem ingerir no RAG."""
     try:
@@ -76,7 +76,7 @@ async def auditar_google_drive(
     folder_id: Optional[str] = Query(None),
     limit: int = Query(500, ge=1, le=500),
     db: AsyncSession = Depends(get_db),
-    cu: User = Depends(get_current_user),
+    cu: User = Depends(require_roles(["superadmin", "admin", "socio"])),
 ):
     """Audita e classifica a pasta de conhecimento sem alterar o banco."""
     try:
