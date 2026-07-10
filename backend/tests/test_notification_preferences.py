@@ -1,3 +1,4 @@
+from collections import defaultdict
 from datetime import datetime, time
 from types import SimpleNamespace
 from zoneinfo import ZoneInfo
@@ -73,12 +74,15 @@ def test_schema_rejeita_timezone_inexistente():
 def test_rotas_de_preferencias_e_dispositivos_estao_registradas():
     from app.main import app
 
-    methods_by_path = {
-        getattr(route, "path", ""): getattr(route, "methods", set())
-        for route in app.routes
-    }
-    assert "GET" in methods_by_path["/api/notifications/preferences"]
-    assert "PUT" in methods_by_path["/api/notifications/preferences"]
+    methods_by_path: dict[str, set[str]] = defaultdict(set)
+    for route in app.routes:
+        methods_by_path[getattr(route, "path", "")].update(
+            getattr(route, "methods", set())
+        )
+
+    assert {"GET", "PUT"}.issubset(
+        methods_by_path["/api/notifications/preferences"]
+    )
     assert "GET" in methods_by_path["/api/notifications/push/subscriptions"]
     assert "DELETE" in methods_by_path[
         "/api/notifications/push/subscriptions/{subscription_id}"
