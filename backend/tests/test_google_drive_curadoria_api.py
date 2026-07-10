@@ -1,7 +1,7 @@
 import pytest
 from pydantic import ValidationError
 
-from app.routers.google_drive_knowledge import (
+from app.schemas.google_drive_knowledge import (
     GoogleDriveCuradoriaApplyRequest,
     GoogleDriveCuradoriaPreviewRequest,
 )
