@@ -2,7 +2,7 @@ import { useEffect, useMemo, useState } from "react";
 import api from "../lib/api";
 import { getModuleCatalog } from "../config/moduleRegistry";
 
- type Modulo = {
+type Modulo = {
   module_key: string;
   nome: string;
   grupo: string;
@@ -66,7 +66,7 @@ export default function MapaModulos() {
     );
     const frontend = getModuleCatalog();
 
-    const merged = frontend.map((module) => {
+    const merged: Modulo[] = frontend.map((module) => {
       const backendModule = backendByKey.get(module.key);
       if (backendModule) backendByKey.delete(module.key);
       return {
@@ -88,7 +88,7 @@ export default function MapaModulos() {
         precisa_revisao:
           Boolean(backendModule?.precisa_revisao) || !backendModule,
         origem: backendModule ? "ambos" : "frontend",
-      } satisfies Modulo;
+      };
     });
 
     for (const module of backendByKey.values()) {
@@ -102,7 +102,10 @@ export default function MapaModulos() {
   }, [data]);
 
   const grupos = useMemo(
-    () => ["todos", ...Array.from(new Set(modulos.map((module) => module.grupo)))],
+    () => [
+      "todos",
+      ...Array.from(new Set(modulos.map((module) => module.grupo))),
+    ],
     [modulos],
   );
 
