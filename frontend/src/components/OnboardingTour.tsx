@@ -1,43 +1,43 @@
-import { useState, useEffect } from "react";
+import { useEffect, useState } from "react";
 import { X, ChevronRight, ChevronLeft } from "lucide-react";
 
-const TOUR_KEY = "ejc_tour_v1_done";
+const TOUR_KEY = "ejc_tour_v2_done";
 
 const SLIDES = [
   {
     emoji: "⚖️",
     title: "Bem-vindo ao EJC",
-    body: "Sistema completo de gestão jurídica. Este tour rápido mostra as principais funcionalidades em menos de 1 minuto.",
+    body: "O sistema agora está organizado por workspaces. Menu, rotas, ajuda e permissões usam o mesmo manifesto de módulos.",
   },
   {
     emoji: "📁",
-    title: "Casos",
-    body: "Crie e acompanhe processos em Casos no menu lateral. Cada caso tem abas de Timeline, Documentos, Checklists e Teses vinculadas.",
+    title: "Casos e Processos",
+    body: "Acesse Casos para acompanhar o processo completo. A Sala de Guerra fica dentro do caso, preservando contexto e confidencialidade.",
   },
   {
-    emoji: "⚔️",
-    title: "Sala de Guerra",
-    body: "Dentro de qualquer caso, clique ⚔️ Sala de Guerra para uma visão consolidada: prazos críticos, horas trabalhadas, teses e análise estratégica editável.",
+    emoji: "📅",
+    title: "Agenda e Atividades",
+    body: "Prazos, tarefas, intimações, suspensões e eventos aparecem em uma central operacional, sem transformar prazo jurídico em tarefa comum.",
   },
   {
     emoji: "✨",
-    title: "Inteligência Artificial",
-    body: "Use Análise IA no caso para estratégia, Sugestão de Honorários pela tabela OAB/MG, e o Assistente IA no menu para consultas livres.",
+    title: "Inteligência Jurídica",
+    body: "Assistente, análise, validação, ferramentas especializadas, jurimetria e conhecimento foram reunidos em um único workspace com revisão humana.",
   },
   {
     emoji: "📚",
-    title: "Base de Conhecimento",
-    body: "Em Biblioteca faça busca avançada de teses. Em Base RAG indexe PDFs e URLs. Em Memória Institucional registre precedentes do escritório.",
+    title: "Conhecimento Jurídico",
+    body: "A busca unificada consulta RAG, teses, jurisprudência e memória institucional, mantendo as fontes e entidades separadas no backend.",
   },
   {
-    emoji: "📈",
-    title: "Analytics",
-    body: "Acesse Produtividade para HH por advogado e área. Acesse Jurimetria para taxa de sucesso real por desfechos dos casos encerrados.",
+    emoji: "⚙️",
+    title: "Preferências e Administração",
+    body: "Cada usuário pode ajustar tema, página inicial e menu. Administradores têm acesso separado ao mapa de módulos, usuários, auditoria e governança da IA.",
   },
   {
     emoji: "🎯",
-    title: "Pronto!",
-    body: "Você pode revisitar este guia a qualquer momento em Central de Ajuda no menu. Bom trabalho!",
+    title: "Pronto",
+    body: "Use Ctrl ou Command + K para buscar dados e abrir módulos autorizados. A Central de Ajuda continua disponível no cabeçalho.",
   },
 ];
 
@@ -47,7 +47,8 @@ export default function OnboardingTour() {
 
   useEffect(() => {
     if (!localStorage.getItem(TOUR_KEY)) {
-      setTimeout(() => setVisible(true), 800);
+      const timer = setTimeout(() => setVisible(true), 800);
+      return () => clearTimeout(timer);
     }
   }, []);
 
@@ -57,11 +58,11 @@ export default function OnboardingTour() {
   };
 
   const avancar = () => {
-    if (step < SLIDES.length - 1) setStep((s) => s + 1);
+    if (step < SLIDES.length - 1) setStep((current) => current + 1);
     else fechar();
   };
 
-  const voltar = () => setStep((s) => Math.max(0, s - 1));
+  const voltar = () => setStep((current) => Math.max(0, current - 1));
 
   if (!visible) return null;
 
@@ -72,12 +73,11 @@ export default function OnboardingTour() {
     <div
       className="fixed inset-0 z-50 flex items-end sm:items-center justify-center p-4"
       style={{ background: "rgba(0,0,0,0.35)" }}
-      onClick={(e) => {
-        if (e.target === e.currentTarget) fechar();
+      onClick={(event) => {
+        if (event.target === event.currentTarget) fechar();
       }}
     >
       <div className="bg-white rounded-2xl shadow-2xl w-full max-w-sm overflow-hidden">
-        {/* Progress bar */}
         <div className="h-0.5 bg-zinc-100">
           <div
             className="h-full bg-[#B08A50] transition-all duration-300"
@@ -91,6 +91,7 @@ export default function OnboardingTour() {
             <button
               onClick={fechar}
               className="p-1 text-zinc-300 hover:text-zinc-500"
+              aria-label="Fechar tour"
             >
               <X className="w-4 h-4" />
             </button>

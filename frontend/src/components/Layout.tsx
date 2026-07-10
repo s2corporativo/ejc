@@ -7,49 +7,21 @@ import {
   useNavigate,
 } from "react-router-dom";
 import {
-  Activity,
-  AlarmClock,
-  BarChart3,
   Bell,
-  BrainCircuit,
-  BookOpen,
   Bot,
-  Briefcase,
-  CalendarClock,
-  CheckSquare,
   ChevronDown,
   ChevronLeft,
   ChevronRight,
-  FileSignature,
-  FileText,
-  FolderOpen,
-  Gavel,
-  GitBranch,
-  Inbox,
-  LayoutDashboard,
-  LayoutGrid,
-  ListChecks,
   LogOut,
   Menu,
   Monitor,
   Moon,
-  Newspaper,
   Plus,
-  Scale,
-  ScrollText,
   Search,
-  Settings,
-  ShieldAlert,
   ShieldCheck,
-  Sparkles,
   Sun,
-  Swords,
-  Trash2,
-  Users,
-  Wallet,
   X,
 } from "lucide-react";
-import { toast } from "./Toast";
 import CommandPalette from "./CommandPalette";
 import HelpButton from "./HelpButton";
 import OnboardingTour from "./OnboardingTour";
@@ -59,258 +31,33 @@ import UserAvatar from "./UserAvatar";
 import { Button, Tooltip, cn } from "./UI";
 import { THEME_LABELS, useThemeStore } from "../stores/theme";
 import { useAuth } from "../stores/auth";
+import { usePreferencesStore } from "../stores/preferences";
+import {
+  getHelpModuleKey,
+  getNavigationModules,
+  type ModuleRoute,
+} from "../config/moduleRegistry";
 import api, { logout } from "../lib/api";
 
 const BRAND_LOGO = "/brand/de-paula-teixeira-logo.jpg";
 
-type NavItem = {
-  to: string;
-  label: string;
-  icon: typeof LayoutDashboard;
-  group: string;
-  roles?: string[];
-  end?: boolean;
-  onClick?: () => void;
-};
-
-const NAV: NavItem[] = [
-  // ── Operação ──
-  {
-    to: "/",
-    label: "Dashboard",
-    icon: LayoutDashboard,
-    group: "Operacao",
-    end: true,
-  },
-  {
-    to: "/central-relacionamento",
-    label: "Atendimento",
-    icon: CalendarClock,
-    group: "Operacao",
-    roles: ["superadmin", "admin", "socio"],
-  },
-  { to: "/crm-leads", label: "CRM", icon: Users, group: "Operacao" },
-  { to: "/clientes", label: "Clientes", icon: Briefcase, group: "Operacao" },
-
-  // ── Jurídico ──
-  { to: "/casos", label: "Casos", icon: Gavel, group: "Juridico" },
-  { to: "/datajud", label: "Consulta DataJud (CNJ)", icon: Scale, group: "Juridico" },
-  { to: "/prazos", label: "Prazos", icon: AlarmClock, group: "Juridico" },
-  { to: "/intimacoes", label: "Intimacoes", icon: Inbox, group: "Juridico" },
-  {
-    to: "/atividades",
-    label: "Agenda",
-    icon: CalendarClock,
-    group: "Juridico",
-  },
-  { to: "/tarefas", label: "Tarefas", icon: CheckSquare, group: "Juridico" },
-  {
-    to: "/casos?filtro=ativos",
-    label: "Sala de Guerra",
-    icon: Swords,
-    group: "Juridico",
-    onClick: () =>
-      toast.info("Selecione um caso para acessar a Sala de Guerra"),
-  },
-  { to: "/ramos", label: "Ramos do Direito", icon: Scale, group: "Juridico" },
-
-  // ── Produção ──
-  {
-    to: "/documentos",
-    label: "Documentos",
-    icon: FolderOpen,
-    group: "Producao",
-  },
-  { to: "/pecas", label: "Pecas", icon: FileText, group: "Producao" },
-  {
-    to: "/checklists",
-    label: "Checklists",
-    icon: ListChecks,
-    group: "Producao",
-  },
-  { to: "/workflow", label: "Workflows", icon: GitBranch, group: "Producao" },
-  {
-    to: "/assinaturas",
-    label: "Assinaturas",
-    icon: FileSignature,
-    group: "Producao",
-  },
-
-  // ── Gestão / Financeiro ──
-  {
-    to: "/financeiro",
-    label: "Financeiro",
-    icon: Wallet,
-    group: "Financeiro",
-    roles: ["superadmin", "admin", "socio", "financeiro"],
-  },
-
-  // ── Inteligência ──
-  {
-    to: "/inteligencia",
-    label: "IA Juridica",
-    icon: Sparkles,
-    group: "Inteligencia",
-    roles: [
-      "superadmin",
-      "admin",
-      "socio",
-      "advogado",
-      "advogado_auxiliar",
-      "estagiario",
-    ],
-  },
-  {
-    to: "/ferramentas-ia",
-    label: "Ferramentas IA",
-    icon: Bot,
-    group: "Inteligencia",
-    roles: [
-      "superadmin",
-      "admin",
-      "socio",
-      "advogado",
-      "advogado_auxiliar",
-      "estagiario",
-    ],
-  },
-  {
-    to: "/radar-regulatorio",
-    label: "Radar regulatorio",
-    icon: Bell,
-    group: "Inteligencia",
-  },
-  {
-    to: "/compliance/radar",
-    label: "Radar de Compliance",
-    icon: ShieldAlert,
-    group: "Inteligencia",
-    roles: ["superadmin", "admin", "socio", "advogado"],
-  },
-  {
-    to: "/victory-vault",
-    label: "Victory Vault",
-    icon: Gavel,
-    group: "Inteligencia",
-    roles: [
-      "superadmin",
-      "admin",
-      "socio",
-      "advogado",
-      "advogado_auxiliar",
-      "estagiario",
-    ],
-  },
-  {
-    to: "/jurimetria",
-    label: "Jurimetria",
-    icon: BarChart3,
-    group: "Inteligencia",
-  },
-  {
-    to: "/ia-governanca",
-    label: "Governanca IA",
-    icon: BrainCircuit,
-    group: "Inteligencia",
-    roles: ["superadmin", "admin", "socio"],
-  },
-  { to: "/kanban", label: "Kanban", icon: LayoutGrid, group: "Inteligencia" },
-
-  // ── Biblioteca / Conhecimento ──
-  {
-    to: "/knowledge-hub",
-    label: "Conhecimento",
-    icon: BookOpen,
-    group: "Biblioteca",
-  },
-  { to: "/wiki", label: "Wiki", icon: BookOpen, group: "Biblioteca" },
-  { to: "/noticias", label: "Noticias", icon: Newspaper, group: "Biblioteca" },
-  {
-    to: "/diario-oficial",
-    label: "Diario Oficial",
-    icon: ScrollText,
-    group: "Biblioteca",
-  },
-
-  // ── Administração ──
-  {
-    to: "/auditoria",
-    label: "Auditoria",
-    icon: ShieldCheck,
-    group: "Administracao",
-    roles: ["superadmin", "admin", "socio"],
-  },
-  {
-    to: "/mapa-modulos",
-    label: "Mapa de Modulos",
-    icon: LayoutGrid,
-    group: "Administracao",
-    roles: ["superadmin", "admin", "socio"],
-  },
-  {
-    to: "/produtividade",
-    label: "Produtividade",
-    icon: Activity,
-    group: "Administracao",
-  },
-  {
-    to: "/lixeira",
-    label: "Lixeira",
-    icon: Trash2,
-    group: "Administracao",
-    roles: ["superadmin", "admin", "socio"],
-  },
-  {
-    to: "/configuracoes",
-    label: "Configuracoes",
-    icon: Settings,
-    group: "Administracao",
-    roles: ["superadmin", "admin"],
-  },
-  {
-    to: "/usuarios",
-    label: "Usuarios",
-    icon: Users,
-    group: "Administracao",
-    roles: ["superadmin", "admin"],
-  },
-];
-
-// Ajuda contextual (R1): rota → module_key. Rotas fora da lista → null
-// (o botão "?" vira atalho para a Central de Ajuda /ajuda).
-const HELP_MODULES: Array<[prefix: string, key: string]> = [
-  ["/casos", "casos"],
-  ["/prazos", "prazos"],
-  ["/documentos", "documentos"],
-  ["/pecas", "pecas"],
-  ["/clientes", "clientes"],
-  ["/workflow", "workflow"],
-  ["/checklists", "checklists"],
-  ["/mapa-modulos", "autofix"],
-];
-
-function helpModuleKey(pathname: string): string | null {
-  const hit = HELP_MODULES.find(
-    ([prefix]) => pathname === prefix || pathname.startsWith(prefix + "/"),
-  );
-  return hit ? hit[1] : null;
-}
-
 export default function Layout() {
   const { theme, cycleTheme } = useThemeStore();
-  const { user, updateUser } = useAuth();
+  const user = useAuth((state) => state.user);
+  const {
+    sidebarCollapsed: collapsed,
+    setSidebarCollapsed,
+  } = usePreferencesStore();
   const nav = useNavigate();
   const location = useLocation();
   const moduleKey = useMemo(
-    () => helpModuleKey(location.pathname),
+    () => getHelpModuleKey(location.pathname),
     [location.pathname],
   );
   const [notifCount, setNotifCount] = useState(0);
   const [notifOpen, setNotifOpen] = useState(false);
   const [notifs, setNotifs] = useState<any[]>([]);
   const [menuOpen, setMenuOpen] = useState(false);
-  const [collapsed, setCollapsed] = useState(false);
-  // Grupos do menu colapsáveis (abertos por padrão; estado persiste no navegador)
   const [openGroups, setOpenGroups] = useState<Record<string, boolean>>(() => {
     try {
       return JSON.parse(localStorage.getItem("ejc_menu_groups") || "{}");
@@ -318,13 +65,14 @@ export default function Layout() {
       return {};
     }
   });
-  const toggleGroup = (g: string) =>
-    setOpenGroups((prev) => {
-      const next = { ...prev, [g]: prev[g] === false };
+
+  const toggleGroup = (group: string) =>
+    setOpenGroups((previous) => {
+      const next = { ...previous, [group]: previous[group] === false };
       try {
         localStorage.setItem("ejc_menu_groups", JSON.stringify(next));
       } catch {
-        /* ignore */
+        // Preferência de interface não deve interromper a navegação.
       }
       return next;
     });
@@ -333,9 +81,9 @@ export default function Layout() {
     const load = () =>
       api
         .get("/notifications/?apenas_nao_lidas=false&limit=15")
-        .then((r) => {
-          setNotifs(r.data.data ?? []);
-          setNotifCount(r.data.nao_lidas ?? 0);
+        .then((response) => {
+          setNotifs(response.data.data ?? []);
+          setNotifCount(response.data.nao_lidas ?? 0);
         })
         .catch(() => {});
     load();
@@ -343,34 +91,16 @@ export default function Layout() {
     return () => clearInterval(timer);
   }, []);
 
-  // Hidrata avatar_url (e nome) a partir de /users/me — tolerante: se o
-  // campo não vier, o avatar cai no fallback de iniciais.
-  useEffect(() => {
-    api
-      .get("/users/me")
-      .then((r) => {
-        const patch: { avatar_url: string | null; full_name?: string } = {
-          avatar_url: r.data?.avatar_url ?? null,
-        };
-        if (r.data?.full_name) patch.full_name = r.data.full_name;
-        updateUser(patch);
-      })
-      .catch(() => {});
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
-
   const visible = useMemo(
-    () =>
-      NAV.filter(
-        (item) => !item.roles || (user && item.roles.includes(user.role)),
-      ),
-    [user],
+    () => getNavigationModules(user?.role),
+    [user?.role],
   );
 
   const groups = useMemo(() => {
-    const map = new Map<string, NavItem[]>();
-    for (const item of visible)
+    const map = new Map<string, ModuleRoute[]>();
+    for (const item of visible) {
       map.set(item.group, [...(map.get(item.group) || []), item]);
+    }
     return Array.from(map.entries());
   }, [visible]);
 
@@ -379,13 +109,9 @@ export default function Layout() {
 
   return (
     <div className="min-h-screen bg-canvas text-slate-900">
-      {/* Marca d'água da logomarca — decorativa, some na impressão */}
       <div className="brand-watermark" aria-hidden="true" />
       <CommandPalette />
 
-      {/* ── Header superior fixo (full-width, acima da sidebar) ──
-          Logo grande à esquerda sobre branco, busca central em pill,
-          tema/sino/avatar à direita. */}
       <header className="fixed inset-x-0 top-0 z-50 border-b border-slate-200/60 bg-white/90 backdrop-blur-xl">
         <div className="flex h-16 items-center gap-3 px-3 md:px-6">
           <button
@@ -409,7 +135,6 @@ export default function Layout() {
             />
           </Link>
 
-          {/* Busca global centralizada (Command Palette — Ctrl K) */}
           <div className="flex min-w-0 flex-1 justify-center px-1">
             <button
               type="button"
@@ -454,9 +179,9 @@ export default function Layout() {
           <div className="relative">
             <button
               type="button"
-              onClick={() => setNotifOpen((v) => !v)}
+              onClick={() => setNotifOpen((value) => !value)}
               className="relative flex h-10 w-10 items-center justify-center rounded-xl border border-slate-200 bg-white text-slate-500 hover:bg-slate-50"
-              aria-label="Notificacoes"
+              aria-label="Notificações"
             >
               <Bell className="h-4 w-4" />
               {notifCount > 0 && (
@@ -470,7 +195,7 @@ export default function Layout() {
               <div className="absolute right-0 mt-2 w-80 overflow-hidden rounded-xl border border-slate-200 bg-white shadow-xl">
                 <div className="flex items-center justify-between border-b border-slate-100 px-4 py-3">
                   <div className="text-sm font-semibold text-slate-950">
-                    Notificacoes
+                    Notificações
                   </div>
                   <button
                     type="button"
@@ -487,27 +212,27 @@ export default function Layout() {
                 <div className="max-h-96 overflow-y-auto">
                   {notifs.length === 0 ? (
                     <div className="px-4 py-8 text-center text-sm text-slate-400">
-                      Sem notificacoes
+                      Sem notificações
                     </div>
                   ) : (
-                    notifs.map((n) => (
+                    notifs.map((notification) => (
                       <button
-                        key={n.id}
+                        key={notification.id}
                         type="button"
                         onClick={() => {
-                          if (n.link) nav(n.link);
+                          if (notification.link) nav(notification.link);
                           setNotifOpen(false);
                         }}
                         className={cn(
                           "w-full border-b border-slate-50 px-4 py-3 text-left hover:bg-primary-50/60",
-                          !n.lida && "bg-primary-50/40",
+                          !notification.lida && "bg-primary-50/40",
                         )}
                       >
                         <div className="text-sm font-medium text-slate-900">
-                          {n.titulo}
+                          {notification.titulo}
                         </div>
                         <div className="mt-1 line-clamp-2 text-xs text-slate-500">
-                          {n.mensagem}
+                          {notification.mensagem}
                         </div>
                       </button>
                     ))
@@ -530,7 +255,6 @@ export default function Layout() {
         />
       )}
 
-      {/* ── Sidebar escura em gradiente marrom→bronze ── */}
       <aside
         className={cn(
           "sidebar-bronze fixed bottom-0 left-0 top-16 z-40 flex-col transition-all",
@@ -557,7 +281,7 @@ export default function Layout() {
           <button
             type="button"
             className="hidden rounded-lg p-1.5 text-[rgba(255,245,230,0.55)] hover:bg-[rgba(166,124,82,0.2)] hover:text-[#F5EDD2] md:block"
-            onClick={() => setCollapsed((v) => !v)}
+            onClick={() => setSidebarCollapsed(!collapsed)}
             aria-label={collapsed ? "Expandir menu" : "Recolher menu"}
           >
             {collapsed ? (
@@ -602,20 +326,16 @@ export default function Layout() {
                   <div
                     className={cn(
                       "space-y-1",
-                      // Linha de árvore vertical fina + indentação (referência)
                       !collapsed && "sidebar-tree ml-3 border-l pl-2",
                     )}
                   >
-                    {items.map(({ to, label, icon: Icon, end, onClick }) => {
+                    {items.map(({ path, label, icon: Icon, end }) => {
                       const content = (
                         <NavLink
-                          key={to}
-                          to={to}
+                          key={path}
+                          to={path}
                           end={end}
-                          onClick={() => {
-                            setMenuOpen(false);
-                            onClick?.();
-                          }}
+                          onClick={() => setMenuOpen(false)}
                           className={({ isActive }) =>
                             cn(
                               "sidebar-nav-item group flex h-10 items-center gap-3 rounded-xl px-3 text-sm font-medium transition-all duration-150",
@@ -631,7 +351,7 @@ export default function Layout() {
                         </NavLink>
                       );
                       return collapsed ? (
-                        <Tooltip key={to} label={label}>
+                        <Tooltip key={path} label={label}>
                           {content}
                         </Tooltip>
                       ) : (
@@ -646,7 +366,6 @@ export default function Layout() {
         </nav>
 
         <div className="border-t border-[rgba(255,245,230,0.12)] p-3">
-          {/* Selo de conformidade (padrão "Secure & Compliant" do mockup) */}
           {!collapsed && (
             <div className="mb-2 flex items-center gap-2.5 rounded-xl bg-[rgba(255,245,230,0.06)] px-3 py-2.5 ring-1 ring-inset ring-[rgba(255,245,230,0.1)]">
               <ShieldCheck className="h-4 w-4 shrink-0 text-[#D4AF37]" />
@@ -670,7 +389,7 @@ export default function Layout() {
             {!collapsed && (
               <div className="min-w-0 flex-1">
                 <div className="truncate text-xs font-semibold text-[#F5EDD2]">
-                  {user?.full_name || "Usuario"}
+                  {user?.full_name || "Usuário"}
                 </div>
                 <div className="truncate text-[11px] capitalize text-[rgba(255,245,230,0.55)]">
                   {user?.role || ""}
@@ -701,9 +420,6 @@ export default function Layout() {
       >
         <main className="ejc-modern-scope flex-1 px-4 py-5 md:px-7 md:py-7">
           <div className="mx-auto w-full max-w-[1440px] animate-rise">
-            {/* Um crash de render numa página não derruba mais o app inteiro
-                (tela branca): o ErrorBoundary mostra um fallback e reporta o
-                erro. key=pathname reseta o boundary ao navegar. */}
             <ErrorBoundary key={location.pathname}>
               <Outlet />
             </ErrorBoundary>
@@ -713,7 +429,7 @@ export default function Layout() {
 
       <OnboardingTour />
       <Link
-        to="/assistente-ia"
+        to="/inteligencia?tab=assistente"
         className="fixed bottom-5 right-5 z-30 hidden h-12 w-12 items-center justify-center rounded-2xl bg-ai-600 text-white shadow-lg shadow-ai-600/25 hover:bg-ai-700 md:flex"
         aria-label="Assistente IA"
       >
