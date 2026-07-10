@@ -1,6 +1,6 @@
 # ── app/routers/search.py ─────────────────────────────────────────────────────
 # Busca global unificada respeitando escopo, RBAC e minimização de PII.
-from fastapi import APIRouter, Depends, Query, Request
+from fastapi import APIRouter, Depends, HTTPException, Query, Request
 from sqlalchemy import func, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 

@@ -13,7 +13,7 @@ import magic  # python-magic — validação por magic bytes (server-side)
 from fastapi import BackgroundTasks, APIRouter, Depends, HTTPException, Query, UploadFile, File, Form
 from fastapi.responses import FileResponse
 from pydantic import BaseModel
-from sqlalchemy import select, func as sqlfunc
+from sqlalchemy import select, func as sqlfunc, or_
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.database import get_db
@@ -89,6 +89,58 @@ def _pode_acessar_confidencial(user: User, conf: str) -> bool:
     if conf in ("restrito", "confidencial", "segredo_justica"):
         return ROLE_LEVEL.get(user.role.value, 0) >= ROLE_LEVEL["socio"]
     return True
+
+
+async def _verificar_acesso_cliente_sem_caso(
+    db: AsyncSession,
+    user: User,
+    client_id: str,
+) -> None:
+    """Autoriza cliente avulso por gestão, titular externo ou caso atribuído."""
+    if is_gestao(user):
+        return
+    if user.role.value == "cliente_externo":
+        if getattr(user, "client_id", None) == client_id:
+            return
+        raise HTTPException(status_code=403, detail="Sem permissão para este cliente")
+    case_id = (
+        await db.execute(
+            select(Case.id)
+            .where(
+                Case.client_id == client_id,
+                Case.deleted_at.is_(None),
+                or_(
+                    Case.advogado_responsavel_id == user.id,
+                    Case.advogado_auxiliar_id == user.id,
+                ),
+            )
+            .limit(1)
+        )
+    ).scalar_one_or_none()
+    if case_id is None:
+        raise HTTPException(status_code=403, detail="Sem permissão para este cliente")
+
+
+async def _verificar_acesso_documento(
+    db: AsyncSession,
+    user: User,
+    document: Document,
+) -> None:
+    """Gate único para documento vinculado a caso, cliente ou apenas uploader."""
+    if document.case_id:
+        await verificar_acesso_caso(db, user, document.case_id)
+        return
+    if is_gestao(user) or document.uploaded_by == user.id:
+        return
+    if document.client_id:
+        if (
+            user.role.value == "cliente_externo"
+            and document.confidencialidade.value != "normal"
+        ):
+            raise HTTPException(status_code=403, detail="Documento interno ou restrito")
+        await _verificar_acesso_cliente_sem_caso(db, user, document.client_id)
+        return
+    raise HTTPException(status_code=403, detail="Sem permissão para este documento")
 
 
 
@@ -213,8 +265,7 @@ async def sugerir_tipo_documento(
         if not d:
             raise HTTPException(status_code=404, detail="Documento não encontrado")
         # Mesmos gates do download (IDOR + cofre)
-        if d.case_id:
-            await verificar_acesso_caso(db, cu, d.case_id)
+        await _verificar_acesso_documento(db, cu, d)
         if not _pode_acessar_confidencial(cu, d.confidencialidade.value):
             raise HTTPException(status_code=403, detail="Documento restrito — acesso negado")
         case_id = d.case_id
@@ -290,6 +341,7 @@ async def upload(
         )).scalar_one_or_none()
         if cli is None:
             raise HTTPException(status_code=404, detail="Cliente não encontrado")
+        await _verificar_acesso_cliente_sem_caso(db, cu, client_id)
 
     # #29: confidencialidade chega como string livre do form; validar contra o
     # enum e responder 422 (antes caía direto no SAEnum do model → 500).
@@ -408,22 +460,47 @@ async def listar(
     cu: User = Depends(get_current_user),
 ):
     q = select(Document).where(Document.deleted_at.is_(None))
-    # Esconder confidenciais de quem não pode ver
+    # Cofre + ownership: documento sem case_id não é público para a equipe.
     if ROLE_LEVEL.get(cu.role.value, 0) < ROLE_LEVEL["socio"]:
         q = q.where(Document.confidencialidade.in_(["normal", "interno"]))
-    # Ownership por caso (IDOR): não-gestão só vê docs dos seus casos
-    # (responsável/auxiliar), de casos sem dono (legado/triagem) ou sem caso.
-    # Espelha a semântica de core.ownership.verificar_acesso_caso.
-    if not is_gestao(cu):
+    if cu.role.value == "cliente_externo":
+        if not getattr(cu, "client_id", None):
+            q = q.where(Document.id.is_(None))
+        else:
+            q = q.where(
+                Document.client_id == cu.client_id,
+                Document.confidencialidade == "normal",
+            )
+    elif not is_gestao(cu):
         casos_visiveis = select(Case.id).where(
             Case.deleted_at.is_(None),
-            (
-                (Case.advogado_responsavel_id == cu.id)
-                | (Case.advogado_auxiliar_id == cu.id)
-                | (Case.advogado_responsavel_id.is_(None) & Case.advogado_auxiliar_id.is_(None))
+            or_(
+                Case.advogado_responsavel_id == cu.id,
+                Case.advogado_auxiliar_id == cu.id,
             ),
         )
-        q = q.where(Document.case_id.is_(None) | Document.case_id.in_(casos_visiveis))
+        clientes_visiveis = select(Case.client_id).where(
+            Case.deleted_at.is_(None),
+            Case.client_id.is_not(None),
+            or_(
+                Case.advogado_responsavel_id == cu.id,
+                Case.advogado_auxiliar_id == cu.id,
+            ),
+        )
+        q = q.where(
+            or_(
+                Document.case_id.in_(casos_visiveis),
+                (
+                    Document.case_id.is_(None)
+                    & Document.client_id.in_(clientes_visiveis)
+                ),
+                (
+                    Document.case_id.is_(None)
+                    & Document.client_id.is_(None)
+                    & (Document.uploaded_by == cu.id)
+                ),
+            )
+        )
     if case_id:
         q = q.where(Document.case_id == case_id)
     if client_id:
@@ -468,8 +545,7 @@ async def download(
         raise HTTPException(status_code=404, detail="Documento não encontrado")
 
     # Ownership (IDOR): documento de um caso só é acessível a quem tem o caso.
-    if d.case_id:
-        await verificar_acesso_caso(db, cu, d.case_id)
+    await _verificar_acesso_documento(db, cu, d)
 
     if not _pode_acessar_confidencial(cu, d.confidencialidade.value):
         raise HTTPException(
@@ -508,8 +584,7 @@ async def remover(
     if not d:
         raise HTTPException(status_code=404, detail="Documento não encontrado")
     # Ownership (IDOR): só quem tem o caso pode remover o documento dele.
-    if d.case_id:
-        await verificar_acesso_caso(db, cu, d.case_id)
+    await _verificar_acesso_documento(db, cu, d)
     d.deleted_at = datetime.now(timezone.utc)
     await criar_audit_log(db, cu.id, cu.role.value, "DELETE", "documents", doc_id)
     await db.commit()
@@ -547,8 +622,7 @@ async def classificar_tipo_documento(
         raise HTTPException(status_code=404, detail="Documento não encontrado")
 
     # Mesmos gates do download/sugerir-tipo (IDOR + cofre).
-    if d.case_id:
-        await verificar_acesso_caso(db, cu, d.case_id)
+    await _verificar_acesso_documento(db, cu, d)
     if not _pode_acessar_confidencial(cu, d.confidencialidade.value):
         raise HTTPException(status_code=403, detail="Documento restrito — acesso negado")
 
@@ -649,20 +723,38 @@ async def upload_para_drive(
 
 
 async def _gate_drive_doc(db: AsyncSession, cu: User, file_id: str):
-    """Gate IDOR para docs do Google Drive (auditoria 2026-06-30).
-    Resolve a linha em `documents` pelo drive_file_id e exige acesso ao caso
-    (verificar_acesso_caso) ou, p/ doc sem caso, ser gestão ou o criador."""
+    """Gate IDOR/LGPD para documentos do Drive, inclusive sem case_id."""
     from sqlalchemy import text as sql_text
-    row = (await db.execute(sql_text(
-        "SELECT id, case_id, uploaded_by FROM documents "
-        "WHERE drive_file_id = :fid AND deleted_at IS NULL LIMIT 1"
-    ), {"fid": file_id})).mappings().first()
+
+    row = (
+        await db.execute(
+            sql_text(
+                "SELECT id, case_id, client_id, uploaded_by, confidencialidade "
+                "FROM documents WHERE drive_file_id = :fid "
+                "AND deleted_at IS NULL LIMIT 1"
+            ),
+            {"fid": file_id},
+        )
+    ).mappings().first()
     if not row:
         raise HTTPException(404, "Documento não encontrado")
     if row.get("case_id"):
         await verificar_acesso_caso(db, cu, row["case_id"])
-    elif not (is_gestao(cu) or row.get("uploaded_by") == cu.id):
+    elif is_gestao(cu) or row.get("uploaded_by") == cu.id:
+        pass
+    elif row.get("client_id"):
+        if (
+            cu.role.value == "cliente_externo"
+            and row.get("confidencialidade") != "normal"
+        ):
+            raise HTTPException(403, "Documento interno ou restrito")
+        await _verificar_acesso_cliente_sem_caso(db, cu, row["client_id"])
+    else:
         raise HTTPException(403, "Sem permissão para este documento")
+    if not _pode_acessar_confidencial(
+        cu, row.get("confidencialidade") or "normal"
+    ):
+        raise HTTPException(403, "Documento restrito — acesso negado")
     return row
 
 
