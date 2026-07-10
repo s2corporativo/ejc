@@ -40,7 +40,7 @@ def _so_digitos(coluna):
 
 
 def _mascarar_documento(value: str | None) -> str:
-    digitos = normalizar_documento(value)
+    digitos = normalizar_documento(value) or ""
     if len(digitos) == 11:
         return f"***.{digitos[3:6]}.{digitos[6:9]}-**"
     if len(digitos) == 14:
