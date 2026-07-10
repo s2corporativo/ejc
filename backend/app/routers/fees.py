@@ -8,6 +8,7 @@ from typing import Optional
 from uuid import uuid4
 
 from fastapi import APIRouter, Depends, HTTPException, Query
+from fastapi.encoders import jsonable_encoder
 from sqlalchemy import func as sqlfunc
 from sqlalchemy import or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -178,10 +179,12 @@ async def atualizar(
     if not fee:
         raise HTTPException(status_code=404, detail="Honorário não encontrado")
 
-    dados_antes = {
-        key: getattr(fee, key, None)
-        for key in payload.model_dump(exclude_unset=True)
-    }
+    dados_antes = jsonable_encoder(
+        {
+            key: getattr(fee, key, None)
+            for key in payload.model_dump(exclude_unset=True)
+        }
+    )
     for key, value in payload.model_dump(exclude_unset=True).items():
         setattr(fee, key, value)
 
