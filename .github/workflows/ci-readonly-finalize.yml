@@ -1,4 +1,4 @@
-name: Finalize CI Readonly Cleanup
+name: Finalize P0 Lifecycle Cleanup
 
 on:
   push:
@@ -11,59 +11,89 @@ permissions:
 jobs:
   finalize:
     runs-on: ubuntu-latest
-    timeout-minutes: 5
+    timeout-minutes: 8
     steps:
       - uses: actions/checkout@v4
         with:
           ref: fix/ci-readonly-cleanup
           fetch-depth: 0
 
-      - name: Persist lifecycle integration and self-remove
+      - name: Apply deterministic P0 cleanup and self-remove
         run: |
           set -euo pipefail
           python - <<'PY'
           from pathlib import Path
           import re
 
-          # Backend router registration.
-          main = Path("backend/app/main.py")
-          main_text = main.read_text(encoding="utf-8-sig")
+          def read(path: str) -> str:
+              return Path(path).read_text(encoding="utf-8-sig")
+
+          def write(path: str, text: str) -> None:
+              Path(path).write_text(text, encoding="utf-8")
+
+          # 1. Corrige a cadeia Alembic: a migration 080 nunca entrou em main.
+          migration_path = "backend/alembic/versions/081_system_module_settings.py"
+          migration = read(migration_path)
+          migration = migration.replace(
+              'Revises: 080_notification_preferences',
+              'Revises: 079_client_hash_partial_deleted',
+              1,
+          )
+          migration = migration.replace(
+              'down_revision = "080_notification_preferences"',
+              'down_revision = "079_client_hash_partial_deleted"',
+              1,
+          )
+          write(migration_path, migration)
+
+          # 2. Registra o router de lifecycle no FastAPI.
+          main_path = "backend/app/main.py"
+          main = read(main_path)
           import_marker = "from app.routers import system_modules\n"
           import_line = "from app.routers import module_settings\n"
-          if import_line not in main_text:
-              if import_marker not in main_text:
+          if import_line not in main:
+              if import_marker not in main:
                   raise SystemExit("system_modules import marker not found")
-              main_text = main_text.replace(import_marker, import_marker + import_line, 1)
+              main = main.replace(import_marker, import_marker + import_line, 1)
 
-          include_marker = "app.include_router(system_modules.router, prefix=API)  # Mapa de Módulos — governança modular\n"
-          include_line = "app.include_router(module_settings.router, prefix=API)  # Lifecycle auditável dos módulos\n"
-          if include_line not in main_text:
-              if include_marker not in main_text:
+          include_marker = (
+              "app.include_router(system_modules.router, prefix=API)  "
+              "# Mapa de Módulos — governança modular\n"
+          )
+          include_line = (
+              "app.include_router(module_settings.router, prefix=API)  "
+              "# Lifecycle auditável dos módulos\n"
+          )
+          if include_line not in main:
+              if include_marker not in main:
                   raise SystemExit("system_modules include marker not found")
-              main_text = main_text.replace(include_marker, include_marker + include_line, 1)
-          main.write_text(main_text, encoding="utf-8")
+              main = main.replace(include_marker, include_marker + include_line, 1)
+          write(main_path, main)
 
-          # Alembic metadata registration.
-          models = Path("backend/app/models/__init__.py")
-          models_text = models.read_text(encoding="utf-8-sig")
-          model_import = "from app.models.system_module_setting import SystemModuleSetting  # noqa\n"
-          if model_import not in models_text:
-              models_text = models_text.rstrip() + "\n" + model_import
-          models.write_text(models_text, encoding="utf-8")
+          # 3. Registra o model no metadata do Alembic.
+          models_path = "backend/app/models/__init__.py"
+          models = read(models_path)
+          model_import = (
+              "from app.models.system_module_setting import "
+              "SystemModuleSetting  # noqa\n"
+          )
+          if model_import not in models:
+              models = models.rstrip() + "\n" + model_import
+          write(models_path, models)
 
-          # Frontend lifecycle store, menu filter and route gate.
-          layout = Path("frontend/src/components/Layout.tsx")
-          layout_text = layout.read_text(encoding="utf-8")
+          # 4. Conecta lifecycle ao menu e ao conteúdo roteado.
+          layout_path = "frontend/src/components/Layout.tsx"
+          layout = read(layout_path)
           marker = 'import OnboardingTour from "./OnboardingTour";\n'
           additions = (
               'import ModuleLifecycleGate from "./ModuleLifecycleGate";\n'
               'import { useModuleLifecycleStore } from "../stores/moduleLifecycle";\n'
               'import { filterModulesByLifecycle } from "../lib/moduleLifecycle";\n'
           )
-          if 'import ModuleLifecycleGate from "./ModuleLifecycleGate";\n' not in layout_text:
-              if marker not in layout_text:
+          if 'import ModuleLifecycleGate from "./ModuleLifecycleGate";\n' not in layout:
+              if marker not in layout:
                   raise SystemExit("OnboardingTour import marker not found")
-              layout_text = layout_text.replace(marker, marker + additions, 1)
+              layout = layout.replace(marker, marker + additions, 1)
 
           user_marker = "  const user = useAuth((state) => state.user);\n"
           lifecycle_state = (
@@ -71,10 +101,10 @@ jobs:
               "    (state) => state.settings,\n"
               "  );\n"
           )
-          if lifecycle_state not in layout_text:
-              if user_marker not in layout_text:
+          if lifecycle_state not in layout:
+              if user_marker not in layout:
                   raise SystemExit("Layout user marker not found")
-              layout_text = layout_text.replace(user_marker, user_marker + lifecycle_state, 1)
+              layout = layout.replace(user_marker, user_marker + lifecycle_state, 1)
 
           old_visible = (
               "  const visible = useMemo(\n"
@@ -92,58 +122,81 @@ jobs:
               "    [user?.role, lifecycleSettings],\n"
               "  );\n"
           )
-          if old_visible in layout_text:
-              layout_text = layout_text.replace(old_visible, new_visible, 1)
-          elif new_visible not in layout_text:
-              raise SystemExit("Visible navigation block not found")
+          if old_visible in layout:
+              layout = layout.replace(old_visible, new_visible, 1)
+          elif new_visible not in layout:
+              raise SystemExit("visible navigation block not found")
 
           outlet = "<Outlet />"
           wrapped = "<ModuleLifecycleGate><Outlet /></ModuleLifecycleGate>"
-          if wrapped not in layout_text:
-              if outlet not in layout_text:
+          if wrapped not in layout:
+              if outlet not in layout:
                   raise SystemExit("Layout Outlet not found")
-              layout_text = layout_text.replace(outlet, wrapped, 1)
-          layout.write_text(layout_text, encoding="utf-8")
+              layout = layout.replace(outlet, wrapped, 1)
+          write(layout_path, layout)
 
-          # Replace static module inventory with audited lifecycle manager.
-          settings = Path("frontend/src/pages/Configuracoes.tsx")
-          settings_text = settings.read_text(encoding="utf-8")
-          import_marker = 'import NotificationPreferences from "../components/NotificationPreferences";\n'
-          component_import = 'import ModuleLifecycleSettings from "../components/ModuleLifecycleSettings";\n'
-          if component_import not in settings_text:
-              if import_marker not in settings_text:
-                  raise SystemExit("NotificationPreferences import marker not found")
-              settings_text = settings_text.replace(import_marker, import_marker + component_import, 1)
+          # 5. Substitui inventário estático pelo gestor auditável de lifecycle.
+          settings_path = "frontend/src/pages/Configuracoes.tsx"
+          settings = read(settings_path)
+          import_marker = (
+              'import IntegrationHealthPanel from '
+              '"../components/IntegrationHealthPanel";\n'
+          )
+          component_import = (
+              'import ModuleLifecycleSettings from '
+              '"../components/ModuleLifecycleSettings";\n'
+          )
+          if component_import not in settings:
+              if import_marker not in settings:
+                  raise SystemExit("IntegrationHealthPanel import marker not found")
+              settings = settings.replace(
+                  import_marker, import_marker + component_import, 1
+              )
 
-          settings_text = settings_text.replace(
-              'import {\n  canRoleAccessPath,\n  getModuleCatalog,\n  type ModuleStatus,\n} from "../config/moduleRegistry";\n',
+          settings = settings.replace(
+              'import {\n'
+              '  canRoleAccessPath,\n'
+              '  getModuleCatalog,\n'
+              '  type ModuleStatus,\n'
+              '} from "../config/moduleRegistry";\n',
               'import { canRoleAccessPath } from "../config/moduleRegistry";\n',
               1,
           )
-          settings_text = re.sub(
-              r"\nconst STATUS_LABEL: Record<ModuleStatus, string> = \{.*?\n\};\n\nconst STATUS_CLASS: Record<ModuleStatus, string> = \{.*?\n\};\n",
+          settings = re.sub(
+              r"\nconst STATUS_LABEL: Record<ModuleStatus, string> = \{.*?\n\};"
+              r"\n\nconst STATUS_CLASS: Record<ModuleStatus, string> = \{.*?\n\};\n",
               "\n",
-              settings_text,
+              settings,
               count=1,
               flags=re.DOTALL,
           )
-          settings_text = settings_text.replace("\n  const modules = getModuleCatalog();\n", "\n", 1)
+          settings = settings.replace("\n  const modules = getModuleCatalog();\n", "\n", 1)
 
           start_marker = '      {tab === "modulos" && isAdmin && (\n'
-          end_marker = '      {tab === "integracoes" && isAdmin && <IntegrationHealthPanel />}\n'
-          replacement = '      {tab === "modulos" && isAdmin && <ModuleLifecycleSettings />}\n\n'
-          if start_marker in settings_text:
-              start = settings_text.index(start_marker)
-              end = settings_text.index(end_marker, start)
-              settings_text = settings_text[:start] + replacement + settings_text[end:]
-          elif replacement not in settings_text:
-              raise SystemExit("Static module settings block not found")
-          settings.write_text(settings_text, encoding="utf-8")
+          end_marker = (
+              '      {tab === "integracoes" && isAdmin && '
+              '<IntegrationHealthPanel />}\n'
+          )
+          replacement = (
+              '      {tab === "modulos" && isAdmin && '
+              '<ModuleLifecycleSettings />}\n\n'
+          )
+          if start_marker in settings:
+              start = settings.index(start_marker)
+              end = settings.index(end_marker, start)
+              settings = settings[:start] + replacement + settings[end:]
+          elif replacement not in settings:
+              raise SystemExit("static module settings block not found")
+          write(settings_path, settings)
           PY
 
-          rm .github/workflows/ci-readonly-finalize.yml
+          rm -f .github/workflows/ci-readonly-kick.yml
+          rm -f .github/workflows/restore-module-lifecycle-workflow.yml
+          rm -f scripts/finalize_ci_readonly_cleanup.py
+          rm -f .github/workflows/ci-readonly-finalize.yml
+
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git add backend/app/main.py backend/app/models/__init__.py frontend/src/components/Layout.tsx frontend/src/pages/Configuracoes.tsx .github/workflows/ci-readonly-finalize.yml
-          git commit -m "fix: persiste lifecycle e remove automação temporária"
+          git add -A
+          git commit -m "fix: restaura cadeia Alembic e conclui lifecycle dos módulos"
           git push origin HEAD:fix/ci-readonly-cleanup
