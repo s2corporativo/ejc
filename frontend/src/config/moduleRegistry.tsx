@@ -866,7 +866,7 @@ function routeBase(path: string): string {
 }
 
 export function getNavigationModules(role?: string | null): ModuleRoute[] {
-  const groupIndex = new Map(
+  const groupIndex = new Map<string, number>(
     MODULE_GROUP_ORDER.map((group, index) => [group, index]),
   );
 
