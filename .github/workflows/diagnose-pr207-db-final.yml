@@ -1,0 +1,68 @@
+name: Diagnose PR 207 DB Final
+
+on:
+  pull_request:
+    branches:
+      - main
+
+permissions:
+  contents: read
+
+jobs:
+  database:
+    if: github.event.pull_request.number == 207
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    defaults:
+      run:
+        working-directory: backend
+    services:
+      postgres:
+        image: pgvector/pgvector:pg16
+        env:
+          POSTGRES_USER: ejc_user
+          POSTGRES_PASSWORD: ejc_pass
+          POSTGRES_DB: ejc_db
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U ejc_user -d ejc_db"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 15
+    env:
+      DATABASE_URL: postgresql+asyncpg://ejc_user:ejc_pass@localhost:5432/ejc_db
+      DATABASE_URL_SYNC: postgresql://ejc_user:ejc_pass@localhost:5432/ejc_db
+      SCHEMA_CHECK_DATABASE_URL: postgresql://ejc_user:ejc_pass@localhost:5432/ejc_db
+      APP_ENV: development
+      RUN_DB_TESTS: "1"
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+          cache: pip
+          cache-dependency-path: backend/requirements.txt
+      - name: Install dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends postgresql-client libmagic1 poppler-utils tesseract-ocr libpango-1.0-0 libpangoft2-1.0-0 libcairo2 libgdk-pixbuf-2.0-0
+          python -m pip install --upgrade pip
+          python -m pip install -r requirements.txt
+      - name: Prepare database
+        run: |
+          PGPASSWORD=ejc_pass psql -h localhost -U ejc_user -d ejc_db -c "CREATE EXTENSION IF NOT EXISTS vector;" -c "CREATE EXTENSION IF NOT EXISTS pg_trgm;" -c "CREATE EXTENSION IF NOT EXISTS pgcrypto;"
+          python -m alembic upgrade head
+      - name: Capture database test output
+        run: |
+          set +e
+          python -m pytest tests -v --tb=short > pytest-pr207-db-final.log 2>&1
+          echo $? > pytest-pr207-db-final.exit
+          exit 0
+      - uses: actions/upload-artifact@v4
+        with:
+          name: pr207-db-final-diagnostic
+          path: |
+            backend/pytest-pr207-db-final.log
+            backend/pytest-pr207-db-final.exit
+          retention-days: 1
