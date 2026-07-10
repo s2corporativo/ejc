@@ -1,6 +1,7 @@
 import { useMemo } from "react";
 import { Link, useLocation, useSearchParams } from "react-router-dom";
 import {
+  Bell,
   Check,
   ChevronRight,
   Database,
@@ -20,6 +21,7 @@ import {
 import AccountSecurity from "../components/AccountSecurity";
 import IntegrationHealthPanel from "../components/IntegrationHealthPanel";
 import ModuleLifecycleSettings from "../components/ModuleLifecycleSettings";
+import NotificationPreferences from "../components/NotificationPreferences";
 import { PageHeader, SectionCard, cn } from "../components/UI";
 import { THEME_LABELS, useThemeStore, type ThemeMode } from "../stores/theme";
 import {
@@ -67,11 +69,11 @@ const HOME_OPTIONS: Array<{
 type SettingsTab =
   | "pessoal"
   | "navegacao"
+  | "notificacoes"
   | "seguranca"
   | "modulos"
   | "integracoes"
   | "administracao";
-
 
 export default function Configuracoes() {
   const location = useLocation();
@@ -87,6 +89,7 @@ export default function Configuracoes() {
     () => [
       { key: "pessoal" as const, label: "Pessoal", icon: SlidersHorizontal },
       { key: "navegacao" as const, label: "Navegação", icon: Menu },
+      { key: "notificacoes" as const, label: "Notificações", icon: Bell },
       { key: "seguranca" as const, label: "Segurança", icon: ShieldCheck },
       ...(isAdmin
         ? [
@@ -125,7 +128,6 @@ export default function Configuracoes() {
     canRoleAccessPath(user?.role, option.route),
   );
 
-
   return (
     <div className="max-w-6xl space-y-5">
       <PageHeader
@@ -134,7 +136,7 @@ export default function Configuracoes() {
         subtitle={
           isAdministrationPath
             ? "Governança dos módulos e acesso aos painéis institucionais, sem exposição de segredos operacionais."
-            : "Aparência, navegação e segurança da sua conta."
+            : "Aparência, navegação, notificações e segurança da sua conta."
         }
       />
 
@@ -290,6 +292,8 @@ export default function Configuracoes() {
           </SectionCard>
         </div>
       )}
+
+      {tab === "notificacoes" && <NotificationPreferences />}
 
       {tab === "seguranca" && <AccountSecurity />}
 
