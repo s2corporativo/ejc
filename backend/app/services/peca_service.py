@@ -17,6 +17,7 @@ from app.services.ai_gateway import chat as gw_chat
 from app.services.ai_service import buscar_contexto_rag
 from app.services.document_format import aviso_rascunho_ia, padronizar_documento_juridico
 from app.services.sanitizer import sanitizar_pii
+from app.services.system_prompts.padrao_ouro import PADRAO_OURO_PECA
 
 TIPOS_PECA = {
     "auto": "Identificar automaticamente",
@@ -448,12 +449,49 @@ async def gerar_peca_pipeline(
 
     # Busca contexto adicional do caso se disponível para fundamentação real
     contexto_caso = ""
+    relacao_provas = ""
     if case_id:
         from app.models.case import Case
+        from app.models.document import Document
+        from app.models.prova import Prova
         from sqlalchemy import select
         c_obj = (await db.execute(select(Case).where(Case.id == case_id))).scalar_one_or_none()
         if c_obj:
             contexto_caso = f"\n[CONTEXTO DO CASO]\nTítulo: {c_obj.titulo}\nTese Principal: {c_obj.tese_principal or 'N/A'}\n"
+
+        # Padrão-ouro: a ancoragem dos fatos "(doc. NN)" e a RELAÇÃO DE
+        # DOCUMENTOS ANEXOS partem do acervo probatório REAL do caso — a IA não
+        # inventa documento. Mesma ordenação do Documento Único (ordem, created_at).
+        rows_provas = (await db.execute(
+            select(Prova, Document.titulo)
+            .outerjoin(Document, Document.id == Prova.document_id)
+            .where(Prova.case_id == case_id, Prova.deleted_at.is_(None))
+            .order_by(Prova.ordem, Prova.created_at)
+        )).all()
+        if rows_provas:
+            linhas_provas = []
+            for i, (p_row, doc_titulo) in enumerate(rows_provas, start=1):
+                rotulo = (p_row.titulo or doc_titulo or f"Documento {i}").strip()
+                resumo = (p_row.fato_probando or p_row.descricao or "").strip()
+                linha = f"Doc. {i:02d} — {rotulo}"
+                if resumo:
+                    linha += f": {resumo[:240]}"
+                linhas_provas.append(linha)
+            # Mesmo contrato LGPD dos fatos: PII estrutural sempre removida;
+            # nomes só pré-mascarados quando NÃO há pseudonimização reversível.
+            bloco_provas, _ = sanitizar_pii("\n".join(linhas_provas), _nomes_mascarar)
+            relacao_provas = (
+                "RELAÇÃO DE PROVAS DO CASO — ancore CADA fato relevante à prova "
+                "correspondente com \"(doc. NN)\" e gere a seção final RELAÇÃO DE "
+                "DOCUMENTOS ANEXOS a partir DESTA lista (não invente documentos):\n"
+                f"{bloco_provas}\n\n"
+            )
+    if not relacao_provas:
+        relacao_provas = (
+            "RELAÇÃO DE PROVAS DO CASO: nenhuma prova cadastrada — ancore os fatos "
+            "com o placeholder \"[prova a juntar]\" e monte a RELAÇÃO DE DOCUMENTOS "
+            "ANEXOS com entradas \"[A ser anexado pelo cliente]\".\n\n"
+        )
 
     instrucoes = instrucoes_adicionais or ""
     estrutura_tipo = ESTRUTURA_TIPO.get(tipo_peca_final, "")
@@ -468,12 +506,14 @@ async def gerar_peca_pipeline(
                 "3. Toda saída é RASCUNHO — revisão humana obrigatória (OAB).\n"
                 "4. Use formatação jurídica padrão (Dos Fatos, Do Direito, Dos Pedidos)."
                 + (f"\n5. {estrutura_tipo}" if estrutura_tipo else "")
+                + "\n" + PADRAO_OURO_PECA
             )},
             {"role": "user", "content": (
                 f"TIPO: {nome_peca}\nÁREA: {area_direito}\n\n"
                 f"FATOS:\n{fatos_limpos}\n\n"
                 f"PEDIDOS:\n{pedidos_limpos}\n\n"
                 f"{contexto_caso}"
+                f"{relacao_provas}"
                 f"ENQUADRAMENTO JURÍDICO:\n{r2.texto[:1500]}\n\n"
                 f"JURISPRUDÊNCIA (RAG):\n{r4.texto[:1000]}\n\n"
                 f"ARGUMENTOS ORGANIZADOS:\n{r5.texto[:1500]}\n\n"
@@ -485,7 +525,9 @@ async def gerar_peca_pipeline(
         ],
         task_type="elaboracao_peca",
         temperature=0.3,
-        max_tokens=4000,
+        # Peça padrão-ouro (fatos numerados + subseções + relação de anexos) é
+        # longa — 4000 truncava a redação antes dos pedidos/valor da causa.
+        max_tokens=8000,
         entidades=entidades,
     )
     yield await _emit("step", {"etapa": 7, "titulo": "Documento montado", "status": "concluido"})

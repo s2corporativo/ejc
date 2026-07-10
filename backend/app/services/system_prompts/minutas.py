@@ -1,4 +1,5 @@
 from .base import BASE_PROMPT, AVISO_RASCUNHO
+from .padrao_ouro import PADRAO_OURO_PECA
 from .templates_documentos import (  # noqa: F401
     TEMPLATE_PETICAO_INICIAL, TEMPLATE_CONTESTACAO, TEMPLATE_PARECER,
     TEMPLATE_NOTIFICACAO, DADOS_ESCRITORIO,
@@ -27,4 +28,4 @@ AO FINAL DE QUALQUER PEÇA, INCLUA o CHECKLIST PARA O ADVOGADO REVISOR:
 [ ] Dados das partes [ ] Endereçamento/juízo competente [ ] Foro [ ] Prazo de protocolo
 [ ] Documentos para juntada [ ] Valor da causa [ ] Pedidos coerentes [ ] Jurisprudência verificada
 [ ] Honorários de sucumbência [ ] Assinatura do advogado responsável
-""" + AVISO_RASCUNHO
+""" + PADRAO_OURO_PECA + AVISO_RASCUNHO
