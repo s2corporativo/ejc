@@ -2,7 +2,15 @@ import { useEffect, useState, useRef } from "react";
 import { toast } from "../components/Toast";
 import { Upload, Download, Search, Lock, Sparkles } from "lucide-react";
 import api from "../lib/api";
-import { PageHeader, Modal, Empty, Spinner, fmtDate } from "../components/UI";
+import {
+  PageHeader,
+  Modal,
+  Empty,
+  EmptyState,
+  Spinner,
+  Button,
+  fmtDate,
+} from "../components/UI";
 import { DocumentosStats } from "../components/Dashboards";
 import { asList } from "../lib/list";
 
@@ -45,12 +53,27 @@ export default function Documentos() {
   const [classLoading, setClassLoading] = useState(false);
   const [aplicando, setAplicando] = useState(false);
 
-  const load = () =>
-    api
+  const [erro, setErro] = useState(false);
+  // Guarda de sequência: só a resposta mais recente aplica setData (evita que
+  // a resposta antiga de uma busca com debounce sobrescreva a nova).
+  const seq = useRef(0);
+
+  const load = () => {
+    const my = ++seq.current;
+    setErro(false);
+    return api
       .get("/documents/", {
         params: { search: search || undefined, page_size: 50 },
       })
-      .then((r) => setData(r.data));
+      .then((r) => {
+        if (my === seq.current) setData(r.data);
+      })
+      .catch(() => {
+        if (my !== seq.current) return;
+        setErro(true);
+        toast.error("Falha ao carregar documentos");
+      });
+  };
   useEffect(() => {
     load();
     // M12: lista de casos para vincular o documento (torna o gate IDOR efetivo).
@@ -190,7 +213,17 @@ export default function Documentos() {
         />
       </div>
 
-      {!data ? (
+      {erro && !data ? (
+        <EmptyState
+          title="Falha ao carregar documentos"
+          message="Não foi possível carregar a lista. Verifique sua conexão e tente novamente."
+          action={
+            <Button variant="primary" onClick={load}>
+              Tentar novamente
+            </Button>
+          }
+        />
+      ) : !data ? (
         <Spinner />
       ) : data.data.length === 0 ? (
         <Empty message="Nenhum documento" />

@@ -3,7 +3,7 @@
 // (POST → text/event-stream) precisam de fetch cru. Este helper centraliza a
 // MESMA lógica de token/refresh do cliente axios (api.ts): injeta o Bearer,
 // e num 401 renova o access via cookie httpOnly e repete a requisição uma vez.
-import { getAccessToken, refreshAccessToken } from "./api";
+import { getAccessToken, refreshAccessToken, logout } from "./api";
 
 function withAuth(init: RequestInit, token: string | null): RequestInit {
   const headers = new Headers(init.headers ?? {});
@@ -27,6 +27,9 @@ export async function authFetch(
     const token = await refreshAccessToken();
     return await fetch(url, withAuth(init, token));
   } catch {
+    // Refresh falhou: sessão expirada. Alinha com o interceptor de api.ts
+    // (limpa a sessão e redireciona a /login) em vez de devolver o 401 mudo.
+    logout();
     return res;
   }
 }

@@ -1,4 +1,4 @@
-import { useState, useRef, useCallback } from "react";
+import { useEffect, useState, useRef, useCallback } from "react";
 import { authFetch } from "../lib/stream";
 import { Modal, Button } from "./UI";
 import { toast } from "./Toast";
@@ -111,6 +111,10 @@ export default function PecaGeneratorModal({
   const [nomesProteger, setNomesProteger] = useState("");
 
   const abortRef = useRef<AbortController | null>(null);
+
+  // Aborta o stream SSE em voo ao desmontar — evita setState após unmount e
+  // vazamento da conexão quando o modal é removido durante a geração.
+  useEffect(() => () => abortRef.current?.abort(), []);
 
   const resetForm = () => {
     setFase("form");

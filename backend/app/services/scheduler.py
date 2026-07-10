@@ -14,6 +14,7 @@
 #  09:00 seg — Procurações vencendo em 30 dias
 #  09:15 — Alertas de vencimento societário
 from __future__ import annotations
+import asyncio
 import logging
 from uuid import uuid4
 from datetime import date, timedelta
@@ -193,8 +194,18 @@ async def _alertar_prazos():
 
 
 async def _alertar_ambiental():
-    """Defesas ambientais ≤5 dias → notificação crítica + WhatsApp."""
+    """Defesas ambientais ≤5 dias → notificação crítica + WhatsApp.
+
+    Isolamento por item (padrão de `_alertar_prazos`): uma falha num caso é
+    logada e o lote continua. Dedup SEM migration: reutiliza o próprio modelo
+    `Notification` — se já existe um alerta idêntico (mesmo destinatário/tipo/
+    link/mensagem) criado nas últimas ~20h, não reenvia (evita spam diário no
+    WhatsApp em caso de restart do container / múltiplos disparos no mesmo dia;
+    a janela < 24h preserva o lembrete diário legítimo do prazo urgente).
+    """
+    from datetime import datetime, timezone
     from app.core.database import AsyncSessionLocal
+    from app.models.notification import Notification
     from app.services.notification_service import notificar
     try:
         async with AsyncSessionLocal() as db:
@@ -209,18 +220,42 @@ async def _alertar_ambiental():
                   AND ec.deleted_at IS NULL
                   AND ec.data_prazo_defesa <= :lim
             """), {"lim": limite})
+            corte = datetime.now(timezone.utc) - timedelta(hours=20)
             for r in rows:
-                # r.phone vem do LEFT JOIN em advogado_responsavel_id: só existe
-                # quando há responsável, então o dispatch unificado cobre ambos.
-                if r.advogado_responsavel_id:
+                try:
+                    # r.phone vem do LEFT JOIN em advogado_responsavel_id: só
+                    # existe quando há responsável, então o dispatch unificado
+                    # cobre ambos.
+                    if not r.advogado_responsavel_id:
+                        continue
+                    mensagem = (
+                        f"Auto {r.numero_auto} — prazo: "
+                        f"{r.data_prazo_defesa.strftime('%d/%m/%Y')}"
+                    )
+                    ja_notificado = await db.scalar(
+                        select(Notification.id).where(
+                            Notification.user_id == r.advogado_responsavel_id,
+                            Notification.tipo == "ambiental",
+                            Notification.link == "/ambiental",
+                            Notification.mensagem == mensagem,
+                            Notification.created_at >= corte,
+                        ).limit(1)
+                    )
+                    if ja_notificado:
+                        continue
                     await notificar(
                         db, r.advogado_responsavel_id,
                         "🌿 DEFESA AMBIENTAL URGENTE",
-                        f"Auto {r.numero_auto} — prazo: "
-                        f"{r.data_prazo_defesa.strftime('%d/%m/%Y')}",
+                        mensagem,
                         tipo="ambiental", link="/ambiental",
                         telefone=r.phone or None,
                     )
+                except Exception as e:
+                    logger.error(
+                        f"[Scheduler] alertar_ambiental falhou p/ auto "
+                        f"{getattr(r, 'numero_auto', '?')}: {e}"
+                    )
+                    continue
     except Exception as e:
         logger.error(f"[Scheduler] alertar_ambiental: {e}")
 
@@ -716,25 +751,6 @@ async def _briefing_matinal_advogado():
         logger.error(f"[Scheduler] briefing_matinal_advogado: {e}", exc_info=True)
 
 
-async def _backup_diario():
-    """Backup automatizado do banco de dados (pg_dump) — Auditoria Item 80."""
-    import os
-    import subprocess
-    from datetime import datetime
-    try:
-        hoje = datetime.now().strftime("%Y-%m-%d")
-        # P1-3: usa BACKUP_DIR do config (antes /home/ubuntu/backups, inexistente
-        # no container → backup silenciosamente perdido). pg_dump exige URL SÍNCRONA
-        # (DATABASE_URL é +asyncpg e quebra o pg_dump).
-        os.makedirs(settings.BACKUP_DIR, exist_ok=True)
-        path = f"{settings.BACKUP_DIR}/ejc_db_{hoje}.sql"
-        cmd = f"pg_dump {settings.DATABASE_URL_SYNC} > {path}"
-        subprocess.run(cmd, shell=True, check=True)
-        logger.info(f"[Backup] Diário concluído com sucesso: {path}")
-    except Exception as e:
-        logger.error(f"[Backup] Falha no backup diário: {e}")
-
-
 async def _verificar_sincronia_datajud():
     """Alerta se processos estão há mais de 3 dias sem sincronizar — Auditoria Item 32."""
     from datetime import datetime, timezone
@@ -938,7 +954,12 @@ async def _backup_banco():
             "-U", url.username, "-d", url.path.lstrip("/"), "-Fc",
         ]
         with open(destino, "wb") as f:
-            r = subprocess.run(cmd_dump, stdout=f, env=env, timeout=300)
+            # subprocess.run é bloqueante: rodando dentro de coroutine do
+            # AsyncIOScheduler travaria o event loop de toda a API por dezenas
+            # de segundos. to_thread joga a chamada num worker thread.
+            r = await asyncio.to_thread(
+                subprocess.run, cmd_dump, stdout=f, env=env, timeout=300
+            )
         if r.returncode == 0:
             tamanho_mb = os.path.getsize(destino) / (1024 * 1024)
             logger.info(f"[Backup] Dump criado: {destino} ({tamanho_mb:.1f} MB)")
@@ -950,7 +971,8 @@ async def _backup_banco():
         if settings.BACKUP_REMOTE:
             rclone = shutil.which("rclone")
             if rclone:
-                r2 = subprocess.run(
+                r2 = await asyncio.to_thread(
+                    subprocess.run,
                     [rclone, "copy", destino, settings.BACKUP_REMOTE],
                     timeout=120,
                 )

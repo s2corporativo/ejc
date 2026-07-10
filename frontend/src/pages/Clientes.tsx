@@ -1,5 +1,5 @@
 import { toast } from "../components/Toast";
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { Link } from "react-router-dom";
 import { Plus, Search, ShieldAlert, KeyRound } from "lucide-react";
 import api from "../lib/api";
@@ -10,6 +10,7 @@ import {
   StatusBadge,
   Modal,
   Empty,
+  EmptyState,
   Spinner,
   fmtDate,
   Alert,
@@ -60,13 +61,27 @@ export default function Clientes() {
     estado: "MG",
   });
   const [salvando, setSalvando] = useState(false);
+  const [erro, setErro] = useState(false);
+  // Guarda de sequência: só a resposta do load mais recente aplica setData,
+  // evitando que uma resposta antiga (busca com debounce) sobrescreva a nova.
+  const seq = useRef(0);
 
-  const load = () =>
-    api
+  const load = () => {
+    const my = ++seq.current;
+    setErro(false);
+    return api
       .get("/clients/", {
         params: { search: search || undefined, page_size: 50 },
       })
-      .then((r) => setData(r.data));
+      .then((r) => {
+        if (my === seq.current) setData(r.data);
+      })
+      .catch(() => {
+        if (my !== seq.current) return;
+        setErro(true);
+        toast.error("Falha ao carregar clientes");
+      });
+  };
 
   useEffect(() => {
     load();
@@ -145,7 +160,17 @@ export default function Clientes() {
         />
       </div>
 
-      {!data ? (
+      {erro && !data ? (
+        <EmptyState
+          title="Falha ao carregar clientes"
+          message="Não foi possível carregar a lista. Verifique sua conexão e tente novamente."
+          action={
+            <Button variant="primary" onClick={load}>
+              Tentar novamente
+            </Button>
+          }
+        />
+      ) : !data ? (
         <Spinner />
       ) : data.data.length === 0 ? (
         <Empty message="Nenhum cliente encontrado" />

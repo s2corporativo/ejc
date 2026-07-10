@@ -80,6 +80,7 @@ export default function OfficeContracts() {
   const [editing, setEditing] = useState<Contract | null>(null);
   const [form, setForm] = useState({ ...EMPTY_FORM });
   const [filterStatus, setFilterStatus] = useState("");
+  const [salvando, setSalvando] = useState(false);
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -123,19 +124,41 @@ export default function OfficeContracts() {
   }
 
   async function save() {
+    // Guarda de NaN: alerta em dias e valor precisam ser numéricos válidos —
+    // caso contrário o lançamento chegaria corrompido ao backend financeiro.
+    const alertDays = parseInt(form.alert_days_before, 10);
+    if (!Number.isFinite(alertDays)) {
+      toast.error("Alerta (dias antes) inválido");
+      return;
+    }
+    let value: number | undefined;
+    if (form.value) {
+      value = parseFloat(form.value);
+      if (!Number.isFinite(value)) {
+        toast.error("Valor inválido");
+        return;
+      }
+    }
     const payload = {
       ...form,
-      value: form.value ? parseFloat(form.value) : undefined,
-      alert_days_before: parseInt(form.alert_days_before),
+      value,
+      alert_days_before: alertDays,
       end_date: form.end_date || undefined,
     };
-    if (editing) {
-      await api.patch(`/v1/office-contracts/${editing.id}`, payload);
-    } else {
-      await api.post("/v1/office-contracts", payload);
+    setSalvando(true);
+    try {
+      if (editing) {
+        await api.patch(`/v1/office-contracts/${editing.id}`, payload);
+      } else {
+        await api.post("/v1/office-contracts", payload);
+      }
+      setShowForm(false);
+      load();
+    } catch (e: any) {
+      toast.error(e?.response?.data?.detail || "Erro ao salvar contrato");
+    } finally {
+      setSalvando(false);
     }
-    setShowForm(false);
-    load();
   }
 
   async function remove(id: string) {
@@ -407,8 +430,8 @@ export default function OfficeContracts() {
           <button onClick={() => setShowForm(false)} className="btn-ghost">
             Cancelar
           </button>
-          <button onClick={save} className="btn-primary">
-            Salvar
+          <button onClick={save} disabled={salvando} className="btn-primary">
+            {salvando ? "Salvando..." : "Salvar"}
           </button>
         </div>
       </Modal>

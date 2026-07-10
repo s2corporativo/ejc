@@ -18,7 +18,9 @@ import {
   StatusBadge,
   Modal,
   Empty,
+  EmptyState,
   Spinner,
+  Button,
   fmtDate,
 } from "../components/UI";
 import PecaGeneratorModal from "../components/PecaGeneratorModal";
@@ -112,10 +114,18 @@ export default function Pecas() {
     }
   };
 
-  const load = () =>
-    api
+  const [erro, setErro] = useState(false);
+
+  const load = () => {
+    setErro(false);
+    return api
       .get("/legal-docs/", { params: { page_size: 50 } })
-      .then((r) => setData(r.data));
+      .then((r) => setData(r.data))
+      .catch(() => {
+        setErro(true);
+        toast.error("Falha ao carregar peças");
+      });
+  };
   useEffect(() => {
     load();
   }, []);
@@ -314,7 +324,17 @@ export default function Pecas() {
         }
       />
 
-      {!data ? (
+      {erro && !data ? (
+        <EmptyState
+          title="Falha ao carregar peças"
+          message="Não foi possível carregar a lista. Verifique sua conexão e tente novamente."
+          action={
+            <Button variant="primary" onClick={load}>
+              Tentar novamente
+            </Button>
+          }
+        />
+      ) : !data ? (
         <Spinner />
       ) : data.data.length === 0 ? (
         <Empty message="Nenhuma peça cadastrada" />

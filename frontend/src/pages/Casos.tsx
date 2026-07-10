@@ -1,7 +1,7 @@
 import { exportPdf } from "../utils/exportPdf";
 import { toast } from "../components/Toast";
 import { exportCsv } from "../utils/exportCsv";
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { Link } from "react-router-dom";
 import {
   FileType2,
@@ -29,7 +29,9 @@ import {
   FieldLabel,
   Textarea,
   Empty,
+  EmptyState,
   Spinner,
+  Button,
   fmtDate,
 } from "../components/UI";
 import { useAuth } from "../stores/auth";
@@ -223,9 +225,15 @@ export default function Casos() {
     result: AplicarExtracaoResult;
   } | null>(null);
   const [aplicando, setAplicando] = useState(false);
+  const [erro, setErro] = useState(false);
+  // Guarda de sequência: só a resposta mais recente aplica setData (evita que
+  // a resposta antiga de uma busca/filtro com debounce sobrescreva a nova).
+  const seq = useRef(0);
 
-  const load = () =>
-    api
+  const load = () => {
+    const my = ++seq.current;
+    setErro(false);
+    return api
       .get("/cases/", {
         params: {
           search: search || undefined,
@@ -235,7 +243,15 @@ export default function Casos() {
           page_size: 50,
         },
       })
-      .then((r) => setData(r.data));
+      .then((r) => {
+        if (my === seq.current) setData(r.data);
+      })
+      .catch(() => {
+        if (my !== seq.current) return;
+        setErro(true);
+        toast.error("Falha ao carregar casos");
+      });
+  };
 
   const desarquivar = async (id: string) => {
     setDesarquivandoId(id);
@@ -540,7 +556,17 @@ export default function Casos() {
             </div>
           </div>
 
-          {!data ? (
+          {erro && !data ? (
+            <EmptyState
+              title="Falha ao carregar casos"
+              message="Não foi possível carregar a lista. Verifique sua conexão e tente novamente."
+              action={
+                <Button variant="primary" onClick={load}>
+                  Tentar novamente
+                </Button>
+              }
+            />
+          ) : !data ? (
             <Spinner />
           ) : data.data.length === 0 ? (
             <Empty

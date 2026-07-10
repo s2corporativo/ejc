@@ -524,6 +524,10 @@ function MinutaRevisionalModal({
   const [copiado, setCopiado] = useState(false);
   const abort = useRef<AbortController | null>(null);
 
+  // Aborta o stream SSE em voo ao desmontar — evita setState após unmount e
+  // vazamento da conexão quando o componente sai durante a geração.
+  useEffect(() => () => abort.current?.abort(), []);
+
   useEffect(() => {
     if (!open) return;
     setFase("escolher");
