@@ -5,18 +5,18 @@
 # HITL: todas as saídas de cálculo são minutas — revisão humana obrigatória.
 from __future__ import annotations
 from datetime import date, timedelta
-from decimal import Decimal, ROUND_HALF_UP
+from decimal import Decimal
 from uuid import uuid4
 from typing import Optional, Literal
 
 from fastapi import APIRouter, Depends, HTTPException, Query
-from pydantic import BaseModel, Field
+from pydantic import BaseModel
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.config import get_settings
 from app.core.database import get_db
-from app.core.security import get_current_user, require_roles, ROLE_LEVEL
+from app.core.security import get_current_user, require_roles
 from app.models.user import User
 from app.models.case import Case
 from app.models.audit_log import criar_audit_log
@@ -30,8 +30,7 @@ from app.models.especializado import (
     BancarioCase, BancarioTipo, BancarioStatus,
 )
 from app.services.deadline_calculator import (
-    prazo_dias_uteis, prazo_dias_corridos, proximo_dia_util,
-    prazo_defesa_ambiental,
+    prazo_dias_uteis, prazo_dias_corridos, prazo_defesa_ambiental,
 )
 
 _EQUIPE = ["superadmin", "admin", "socio", "advogado", "advogado_auxiliar", "estagiario"]
@@ -227,7 +226,6 @@ async def emp_cade(valor_faturamento_br: float, valor_operacao: float,
     Lei 12.529/2011 art. 88: um dos grupos com fat. ≥ R$750M e outro ≥ R$75M no Brasil.
     """
     limiar_a = 750_000_000.00
-    limiar_b = 75_000_000.00
     obrigatorio = valor_faturamento_br >= limiar_a
     return {
         "faturamento_informado": valor_faturamento_br,
@@ -354,7 +352,7 @@ async def civ_alimentos(salario_devedor: float, percentual: float,
         "valor_mensal": valor,
         "em_sm": round(valor / sm, 2),
         "base": "CC art. 1.694 §1º + Lei 5.478/68",
-        "referencia": f"Padrão STJ: 1/3 a 30% p/ 1 filho (varia p/ caso)",
+        "referencia": "Padrão STJ: 1/3 a 30% p/ 1 filho (varia p/ caso)",
         "aviso": "MINUTA de estimativa. O magistrado fixa com base no binômio necessidade/possibilidade.",
     }
 
@@ -1496,7 +1494,7 @@ async def ban_ba(
              "desc": "Pagar integral da dívida vencida + encargos em 5 dias",
              "base": "Dec.-Lei 911/69 art. 3º §2º"},
             {"estrategia": "Embargos à BA",
-             "prazo": f"15 dias após citação",
+             "prazo": "15 dias após citação",
              "desc": "Defesa no mérito — adimplemento substancial, invalidade etc.",
              "base": "CPC art. 914 + STJ REsp 1.622.555"},
             {"estrategia": "Adimplemento substancial",

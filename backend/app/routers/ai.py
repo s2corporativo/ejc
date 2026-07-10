@@ -924,12 +924,3 @@ async def analisar_contrato_endpoint(
     if "erro" in r:
         raise HTTPException(status_code=502, detail=r["erro"])
     return r
-
-@router.post("/detectar-prazos")
-async def detectar_prazos(
-    req: ResumirDocRequest,
-    db: AsyncSession = Depends(get_db),
-    cu: User = Depends(get_current_user),
-):
-    """Extração de prazos por IA a partir de texto ou documento."""
-    return await extrair_prazos_ia(db, cu.id, req.texto, req.case_id)

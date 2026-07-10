@@ -4,7 +4,6 @@ Autenticação: rclone (OAuth2, token renovado automaticamente).
 O rclone deve estar configurado em /root/.config/rclone/rclone.conf
 com o remote [gdrive]. O token é gerenciado pelo rclone.
 """
-import io
 import os
 import json
 import logging

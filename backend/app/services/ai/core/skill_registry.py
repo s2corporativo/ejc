@@ -8,7 +8,7 @@
 # em código NUNCA é automática — exige autorização humana explícita e trilha
 # de rollback (política RepairAgent).
 from __future__ import annotations
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from typing import Callable
 
 _STAFF = "qualquer usuário interno (staff); cliente_externo bloqueado no núcleo"

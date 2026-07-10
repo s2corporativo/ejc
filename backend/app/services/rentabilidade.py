@@ -12,7 +12,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.ownership import pode_ver_todos
 from app.models.user import User
-from app.models.case import Case, CaseStatus
+from app.models.case import Case
 from app.models.fee import Fee, FeeStatus
 from app.models.time_entry import TimeEntry
 

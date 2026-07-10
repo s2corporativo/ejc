@@ -25,7 +25,7 @@ from datetime import datetime, timezone
 from uuid import uuid4
 
 import httpx
-from sqlalchemy import select, text as sqltext
+from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models.rag import KnowledgeDoc, KnowledgeChunk, FonteIngestao

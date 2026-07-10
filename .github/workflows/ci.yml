@@ -52,12 +52,13 @@ jobs:
           python -m pip install --upgrade pip
           python -m pip install -r requirements.txt
 
-      # Gate de lint/format — ruff já está no requirements.txt (não precisa de
-      # instalação extra). Non-blocking por ora (continue-on-error) porque pode
-      # haver achados legados; quando o código estiver limpo, REMOVA o
-      # continue-on-error para tornar o lint BLOQUEANTE.
+      # Gate de lint — ruff já está no requirements.txt (não precisa de
+      # instalação extra). BLOQUEANTE (item #12): o backend está limpo para o
+      # ruleset pyflakes (F), configurado em backend/pyproject.toml via
+      # select=["F"]; `ruff check app` herda esse select, então qualquer nova
+      # violação F (import/variável não usados, f-string vazia, redefinição)
+      # falha o CI. Ampliar o ruleset (E/W/I/etc.) exige limpeza própria antes.
       - name: Lint (ruff)
-        continue-on-error: true
         run: python -m ruff check app
 
       # Scan de vulnerabilidades das dependências Python (requirements.txt).

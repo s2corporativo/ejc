@@ -23,8 +23,6 @@
 from __future__ import annotations
 
 import os
-import re
-import time
 from datetime import datetime, timezone
 from typing import Optional
 from uuid import uuid4
@@ -40,7 +38,6 @@ from app.core.ownership import verificar_acesso_caso
 from app.core.rate_limit import rate_limit
 from app.core.security import get_current_user
 from app.models.audit_log import criar_audit_log
-from app.models.case import Case
 from app.models.client import Client
 from app.models.document import Document
 from app.models.prova import Prova

@@ -1,4 +1,3 @@
-import json
 import asyncio
 from app.services.rag_juridico import RAGJuridico
 
@@ -35,10 +34,13 @@ TESES_RENOMADAS = [
 ]
 
 async def seed():
-    rag = RAGJuridico()
+    # `rag`/`texto_completo` alimentam a chamada de indexação que segue
+    # comentada abaixo (vetorização stubbed neste seed); mantidos p/ quando
+    # a indexação for habilitada.
+    rag = RAGJuridico()  # noqa: F841
     print(f"Iniciando inserção de {len(TESES_RENOMADAS)} teses de elite...")
     for tese in TESES_RENOMADAS:
-        texto_completo = f"Título: {tese['titulo']}\nAutor: {tese['autor']}\nRamo: {tese['ramo']}\nConteúdo: {tese['conteudo']}\nPrecedentes: {', '.join(tese['precedentes'])}"
+        texto_completo = f"Título: {tese['titulo']}\nAutor: {tese['autor']}\nRamo: {tese['ramo']}\nConteúdo: {tese['conteudo']}\nPrecedentes: {', '.join(tese['precedentes'])}"  # noqa: F841
         # Simulando vetorização e inserção
         print(f"Vetorizando: {tese['titulo']}")
         # await rag.indexar_documento(texto_completo, metadata={"fonte": "renomados", "ramo": tese['ramo']})

@@ -609,7 +609,6 @@ async def assistente_estrategico_caso(
     """
     from app.core.ai_brain import ai_gateway
     from app.models.case_parte import CaseParte
-    from app.models.document import Document
     
     q = select(Case).where(Case.id == case_id, Case.deleted_at.is_(None))
     q = _filtro_visibilidade(q, cu)

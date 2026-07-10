@@ -517,7 +517,6 @@ async def remover(
 
 # ═══ Validação de documentos + Acesso ao Portal + Relatório LGPD ═══
 from pydantic import BaseModel as _BM, EmailStr as _Email, Field as _Field
-from app.services.validators_service import validar_cpf, validar_cnpj
 from app.core.security import get_password_hash
 from app.models.user import User as _User, UserRole as _Role
 from fastapi.responses import Response as _Resp

@@ -185,7 +185,6 @@ async def upsert_ambiental(
     db: AsyncSession = Depends(get_db),
     cu: User = Depends(get_current_user),
 ):
-    import json
     await verificar_acesso_caso(db, cu, case_id)
     existing = await db.execute(
         text("SELECT id FROM case_ambiental WHERE case_id = :cid"), {"cid": case_id}

@@ -18,7 +18,7 @@ from app.core.ownership import verificar_acesso_caso, is_gestao
 from app.models.case import Case
 from app.models.user import User
 from app.models.legal_doc import LegalDoc, PecaStatus
-from app.models.ai_log import AILog, AIStatusHITL
+from app.models.ai_log import AILog
 from app.models.rag import KnowledgeDoc
 from app.models.audit_log import criar_audit_log
 from app.services.case_intel import indexar_peca_rag

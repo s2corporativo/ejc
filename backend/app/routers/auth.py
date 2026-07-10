@@ -5,7 +5,7 @@ from datetime import datetime, timezone, timedelta
 from uuid import uuid4
 import pyotp
 
-from fastapi import APIRouter, Depends, HTTPException, Request, Response, status
+from fastapi import APIRouter, Depends, HTTPException, Request, Response
 from pydantic import BaseModel, EmailStr, Field
 from sqlalchemy import select, update
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -263,9 +263,7 @@ async def alterar_senha(
     request: Request,
     db: AsyncSession = Depends(get_db),
 ):
-    from app.core.security import get_current_user
     # Recria o fluxo manualmente para aceitar token must_change
-    from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
     auth = request.headers.get("Authorization", "")
     if not auth.startswith("Bearer "):
         raise HTTPException(status_code=401, detail="Não autenticado")

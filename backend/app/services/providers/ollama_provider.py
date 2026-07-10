@@ -3,9 +3,7 @@
 # Comunicação via API REST do Ollama (httpx, já presente no projeto).
 # Soberania de dados: NENHUM dado sai do servidor.
 from __future__ import annotations
-import json
 import logging
-from typing import AsyncGenerator
 
 import httpx
 from app.core.config import get_settings

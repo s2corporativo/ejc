@@ -11,16 +11,14 @@ from datetime import date
 # ─────────────────────────────── Excel ───────────────────────────────────────
 def gerar_excel(analise: dict, transacoes: list[dict], cobrancas: list[dict]) -> bytes:
     from openpyxl import Workbook
-    from openpyxl.styles import Font, PatternFill, Alignment, Border, Side
+    from openpyxl.styles import Font, PatternFill, Alignment
 
     wb = Workbook()
     navy = PatternFill("solid", fgColor="1F2A44")
-    gold = PatternFill("solid", fgColor="C9A86C")
     red = PatternFill("solid", fgColor="F8D7DA")
     hdrf = Font(bold=True, color="FFFFFF")
     bold = Font(bold=True)
     center = Alignment(horizontal="center")
-    thin = Border(*[Side(style="thin", color="DDDDDD")] * 4)
 
     def head(ws, cols, larguras=None):
         for i, c in enumerate(cols, 1):

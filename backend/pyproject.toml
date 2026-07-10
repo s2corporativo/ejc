@@ -1,0 +1,21 @@
+# Configuração do Ruff para o backend do EJC.
+#
+# Escopo controlado (item #12): habilitamos SOMENTE o ruleset pyflakes (F),
+# que é o gate de lint tornado BLOQUEANTE no CI. NÃO habilitar aqui outras
+# famílias (E/W/I/etc.) — está fora do escopo atual e exigiria limpeza própria.
+# O CI roda `python -m ruff check app` a partir de backend/, herdando este
+# `select`, portanto o comando do CI cobre exatamente as regras F.
+
+[tool.ruff]
+target-version = "py311"
+line-length = 88
+
+[tool.ruff.lint]
+select = ["F"]
+
+[tool.ruff.lint.per-file-ignores]
+# __init__.py reexporta símbolos (API pública do pacote). Em app/models/__init__.py
+# os imports também REGISTRAM os models no mapper do SQLAlchemy — efeito colateral
+# necessário para resolução de relationships por nome. Ignorar F401 (unused-import)
+# nesses arquivos preserva os re-exports/registro sem espalhar `# noqa` por linha.
+"__init__.py" = ["F401"]
