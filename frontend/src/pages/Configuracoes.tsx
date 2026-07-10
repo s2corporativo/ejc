@@ -1,6 +1,7 @@
 import { useMemo } from "react";
 import { Link, useLocation, useSearchParams } from "react-router-dom";
 import {
+  Bell,
   Check,
   ChevronRight,
   Database,
@@ -19,6 +20,7 @@ import {
 } from "lucide-react";
 import AccountSecurity from "../components/AccountSecurity";
 import IntegrationHealthPanel from "../components/IntegrationHealthPanel";
+import NotificationPreferences from "../components/NotificationPreferences";
 import { PageHeader, SectionCard, cn } from "../components/UI";
 import { THEME_LABELS, useThemeStore, type ThemeMode } from "../stores/theme";
 import {
@@ -70,6 +72,7 @@ const HOME_OPTIONS: Array<{
 type SettingsTab =
   | "pessoal"
   | "navegacao"
+  | "notificacoes"
   | "seguranca"
   | "modulos"
   | "integracoes"
@@ -103,6 +106,7 @@ export default function Configuracoes() {
     () => [
       { key: "pessoal" as const, label: "Pessoal", icon: SlidersHorizontal },
       { key: "navegacao" as const, label: "Navegação", icon: Menu },
+      { key: "notificacoes" as const, label: "Notificações", icon: Bell },
       { key: "seguranca" as const, label: "Segurança", icon: ShieldCheck },
       ...(isAdmin
         ? [
@@ -307,6 +311,8 @@ export default function Configuracoes() {
           </SectionCard>
         </div>
       )}
+
+      {tab === "notificacoes" && <NotificationPreferences />}
 
       {tab === "seguranca" && <AccountSecurity />}
 
