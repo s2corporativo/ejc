@@ -78,3 +78,13 @@ Teste funcional:
 2. confirmar que o prompt não instrui mais a IA a declarar `RASCUNHO`;
 3. confirmar que o `LegalDoc.titulo` não salva `rascunho IA`;
 4. confirmar que `ai_logs.status_hitl` e `legal_docs.human_reviewed` permanecem como controle interno.
+
+## Validação da PR #194
+
+Estado observado em 2026-07-09:
+
+- `EJC Release Gate`: aprovado, incluindo guard P0, compile backend e build frontend;
+- CI principal: frontend aprovado;
+- CI profunda backend: falha em testes de schema/RAG/pytest no rerun;
+- a falha de backend não foi atribuída diretamente às alterações textuais desta PR porque lint, dependências, migrations, compile backend e build frontend passaram;
+- PR mantida em draft até CI backend ficar verde ou até a falha ser classificada como pré-existente por evidência objetiva.
