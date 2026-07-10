@@ -1,0 +1,60 @@
+name: Alembic Head Diagnostic
+
+on:
+  pull_request:
+    paths:
+      - "backend/alembic/versions/**"
+      - ".github/workflows/alembic-head-diagnostic.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  head:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+      - name: Detect migration heads without importing application
+        run: |
+          python - <<'PY' | tee alembic-head.txt
+          import ast
+          from pathlib import Path
+
+          revisions = {}
+          referenced = set()
+          for path in Path("backend/alembic/versions").glob("*.py"):
+              tree = ast.parse(path.read_text(encoding="utf-8"), filename=str(path))
+              values = {}
+              for node in tree.body:
+                  if isinstance(node, (ast.Assign, ast.AnnAssign)):
+                      targets = node.targets if isinstance(node, ast.Assign) else [node.target]
+                      for target in targets:
+                          if isinstance(target, ast.Name) and target.id in {"revision", "down_revision"}:
+                              try:
+                                  values[target.id] = ast.literal_eval(node.value)
+                              except Exception:
+                                  pass
+              revision = values.get("revision")
+              down = values.get("down_revision")
+              if not revision:
+                  continue
+              revisions[revision] = path.name
+              if isinstance(down, str):
+                  referenced.add(down)
+              elif isinstance(down, (tuple, list)):
+                  referenced.update(item for item in down if isinstance(item, str))
+
+          heads = sorted(set(revisions) - referenced)
+          print(f"migration_count={len(revisions)}")
+          for head in heads:
+              print(f"head={head} file={revisions[head]}")
+          if len(heads) != 1:
+              raise SystemExit(f"Expected exactly one Alembic head, found {len(heads)}")
+          PY
+      - uses: actions/upload-artifact@v4
+        with:
+          name: alembic-head-diagnostic
+          path: alembic-head.txt
+          retention-days: 1
