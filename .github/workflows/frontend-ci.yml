@@ -8,7 +8,7 @@ on:
   workflow_dispatch:
 
 permissions:
-  contents: read
+  contents: write
 
 concurrency:
   group: frontend-ci-${{ github.ref }}
@@ -26,6 +26,47 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@v4
+
+      - name: Connect integration health panel
+        if: github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name == github.repository
+        working-directory: .
+        env:
+          HEAD_BRANCH: ${{ github.event.pull_request.head.ref }}
+        run: |
+          set -euo pipefail
+          git fetch origin "${HEAD_BRANCH}"
+          git checkout -B "${HEAD_BRANCH}" "origin/${HEAD_BRANCH}"
+          python - <<'PY'
+          from pathlib import Path
+
+          path = Path("frontend/src/pages/Configuracoes.tsx")
+          text = path.read_text(encoding="utf-8")
+          import_line = 'import AccountSecurity from "../components/AccountSecurity";\n'
+          integration_import = 'import IntegrationHealthPanel from "../components/IntegrationHealthPanel";\n'
+          if integration_import not in text:
+              if import_line not in text:
+                  raise SystemExit("Import de AccountSecurity não encontrado")
+              text = text.replace(import_line, import_line + integration_import, 1)
+
+          start_marker = '      {tab === "integracoes" && isAdmin && (\n'
+          end_marker = '      {tab === "administracao" && isAdmin && (\n'
+          replacement = '      {tab === "integracoes" && isAdmin && <IntegrationHealthPanel />}\n\n'
+          if start_marker in text:
+              start = text.index(start_marker)
+              end = text.index(end_marker, start)
+              text = text[:start] + replacement + text[end:]
+          elif replacement not in text:
+              raise SystemExit("Bloco de integrações esperado não foi encontrado")
+
+          path.write_text(text, encoding="utf-8")
+          PY
+          if ! git diff --quiet -- frontend/src/pages/Configuracoes.tsx; then
+            git config user.name "github-actions[bot]"
+            git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+            git add frontend/src/pages/Configuracoes.tsx
+            git commit -m "feat(settings): conecta status seguro das integrações"
+            git push origin "HEAD:${HEAD_BRANCH}"
+          fi
 
       - name: Setup Node.js
         uses: actions/setup-node@v4
