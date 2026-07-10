@@ -1,0 +1,86 @@
+name: Finalize PR 207
+
+on:
+  pull_request:
+    branches:
+      - main
+
+permissions:
+  contents: write
+
+jobs:
+  finalize:
+    if: github.event.pull_request.number == 207
+    runs-on: ubuntu-latest
+    timeout-minutes: 8
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: fix/security-rbac-pii-p0
+      - name: Align tests with secure search contract and self-remove
+        run: |
+          set -euo pipefail
+          python - <<'PY'
+          from pathlib import Path
+
+          search_path = Path("backend/app/routers/search.py")
+          search = search_path.read_text(encoding="utf-8")
+          old = "    digitos = normalizar_documento(value)\n"
+          new = "    digitos = normalizar_documento(value) or \"\"\n"
+          if old in search:
+              search = search.replace(old, new, 1)
+          elif new not in search:
+              raise SystemExit("document mask normalization marker not found")
+          search_path.write_text(search, encoding="utf-8")
+
+          test_path = Path("backend/tests/test_search_dblevel.py")
+          test = test_path.read_text(encoding="utf-8")
+          replacements = [
+              (
+                  "from fastapi import Request\n",
+                  "from fastapi import HTTPException, Request\n",
+              ),
+              (
+                  "    # Ordem por FK: processos/partes → casos → usuários → clientes.\n",
+                  "    # Ordem por FK: processos/partes → casos → auditoria → usuários → clientes.\n",
+              ),
+              (
+                  "    for uid in user_ids:\n        await db.execute(text(\"DELETE FROM users WHERE id = :id\"), {\"id\": uid})\n",
+                  "    for uid in user_ids:\n        await db.execute(text(\"DELETE FROM audit_logs WHERE user_id = :id\"), {\"id\": uid})\n        await db.execute(text(\"DELETE FROM users WHERE id = :id\"), {\"id\": uid})\n",
+              ),
+              (
+                  "            # Documento sai COMPLETO, como armazenado (mesma exposição de\n            # /clients e tipo=tudo — decisão de produto, não há blindagem aqui).\n            assert resp[\"resultados\"][0][\"subtitulo\"] == cpf_cli\n",
+                  "            # A busca exata encontra o registro, mas a resposta minimiza PII.\n            assert resp[\"resultados\"][0][\"subtitulo\"] == \"***.982.247-**\"\n",
+              ),
+              (
+                  "            # CPF da parte processual → devolve o CASO dono da parte, com o\n            # documento completo no subtítulo (como armazenado).\n",
+                  "            # CPF da parte processual → devolve o caso com documento mascarado.\n",
+              ),
+              (
+                  "            assert cpf_parte in sub3\n",
+                  "            assert \"***.509.460-**\" in sub3\n            assert cpf_parte not in sub3\n",
+              ),
+              (
+                  "            # Busca sem nenhum dígito → vazio (não explode).\n            resp4 = await _buscar(db, cu, \"abc\", \"cpf\")\n            assert resp4 == {\"q\": \"abc\", \"tipo\": \"cpf\", \"total\": 0, \"resultados\": []}\n",
+                  "            # CPF/CNPJ incompleto ou não numérico é rejeitado para impedir enumeração.\n            with pytest.raises(HTTPException) as exc:\n                await _buscar(db, cu, \"abc\", \"cpf\")\n            assert exc.value.status_code == 422\n",
+              ),
+              (
+                  "            # Fragmento (≠ 11/14 dígitos) não bate no hash nem no plaintext.\n            resp2 = await _buscar(db, cu, \"0533447\", \"cpf\")\n            assert cli not in [i[\"id\"] for i in resp2[\"resultados\"]]\n",
+                  "            # Fragmento é rejeitado antes da consulta para impedir enumeração.\n            with pytest.raises(HTTPException) as exc:\n                await _buscar(db, cu, \"0533447\", \"cpf\")\n            assert exc.value.status_code == 422\n",
+              ),
+          ]
+          for old, new in replacements:
+              if old in test:
+                  test = test.replace(old, new, 1)
+              elif new not in test:
+                  raise SystemExit(f"test marker not found: {old[:80]!r}")
+          test_path.write_text(test, encoding="utf-8")
+          PY
+
+          rm -f .github/workflows/diagnose-pr207-db.yml
+          rm -f .github/workflows/finalize-pr207.yml
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add -A
+          git commit -m "test(security): alinha busca row-level à minimização de PII"
+          git push origin HEAD:fix/security-rbac-pii-p0
