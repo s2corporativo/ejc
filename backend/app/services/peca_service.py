@@ -17,6 +17,7 @@ from app.services.ai_gateway import chat as gw_chat
 from app.services.ai_service import buscar_contexto_rag
 from app.services.document_format import aviso_rascunho_ia, padronizar_documento_juridico
 from app.services.sanitizer import sanitizar_pii
+from app.services.system_prompts import AVISO_RASCUNHO, BASE_PROMPT, SYSTEM_PROMPTS
 from app.services.system_prompts.padrao_ouro import PADRAO_OURO_PECA
 
 TIPOS_PECA = {
@@ -125,7 +126,62 @@ ESTRUTURA_TIPO: dict[str, str] = {
 AREAS_DIREITO = [
     "trabalhista", "civil", "previdenciario", "tributario",
     "criminal", "consumidor", "administrativo", "familia",
+    "empresarial", "ambiental", "bancario", "imobiliario",
+    "sucessoes", "constitucional", "juizados", "digital_lgpd",
+    "transito",
 ]
+
+# Área do pipeline → chave do prompt especializado em SYSTEM_PROMPTS.
+# None = ramo sem prompt dedicado (funciona com o prompt genérico + nome da área).
+# Invariante coberto por backend/tests/test_pecas_areas_invariantes.py.
+_AREA_PROMPT_KEY: dict[str, str | None] = {
+    "trabalhista": "trabalhista",
+    "civil": "civel",
+    "previdenciario": "previdenciario",
+    "tributario": "tributario",
+    "criminal": "criminal",
+    "consumidor": "consumidor",
+    "administrativo": "administrativo",
+    "familia": "familia",
+    "empresarial": "empresarial",
+    "ambiental": "ambiental",
+    "bancario": "bancario",
+    "imobiliario": "imobiliario",
+    "sucessoes": "sucessoes",
+    "constitucional": "constitucional",
+    "juizados": "juizados",
+    "digital_lgpd": "seguranca_lgpd",
+    "transito": None,
+}
+
+# Teto do trecho de especialização injetado nas etapas 2 e 7 — os corpos dos
+# prompts de área têm ~2-3 KB; o cap evita que um prompt futuro muito longo
+# infle o contexto das chamadas do pipeline.
+_ESPECIALIZACAO_MAX_CHARS = 4000
+
+
+def _especializacao_area(area_direito: str) -> str:
+    """Bloco de especialização por ramo para os system prompts das etapas 2 e 7.
+
+    Injeta apenas o CORPO do prompt de área (SYSTEM_PROMPTS), SEM o
+    BASE_PROMPT/AVISO_RASCUNHO que os módulos de área embutem — concatenar o
+    prompt inteiro duplicaria identidade, restrições e aviso de rascunho já
+    presentes no fluxo. Fail-safe: se a extração não for segura (prompt fora do
+    padrão BASE_PROMPT + corpo + AVISO_RASCUNHO), injeta só o nome do ramo.
+    """
+    linha = f"Especialização: use rigorosamente o repertório do ramo {area_direito}."
+    chave = _AREA_PROMPT_KEY.get(area_direito)
+    if not chave:
+        return linha
+    prompt_area = SYSTEM_PROMPTS.get(chave)
+    if not isinstance(prompt_area, str):
+        return linha
+    if not (prompt_area.startswith(BASE_PROMPT) and prompt_area.endswith(AVISO_RASCUNHO)):
+        return linha
+    corpo = prompt_area[len(BASE_PROMPT):len(prompt_area) - len(AVISO_RASCUNHO)].strip()
+    if not corpo:
+        return linha
+    return linha + "\n" + corpo[:_ESPECIALIZACAO_MAX_CHARS]
 
 TIPO_PECA_LEGAL_DOC = {
     "peticao_inicial": PecaTipo.peticao_inicial,
@@ -325,12 +381,17 @@ async def gerar_peca_pipeline(
     # ── ETAPA 2: Estruturar enquadramento jurídico ──────────────────────────
     yield await _emit("step", {"etapa": 2, "titulo": "Estruturando enquadramento jurídico", "status": "em_andamento"})
 
+    # Especialização por ramo (etapas 2 e 7): só o corpo do prompt de área,
+    # sem duplicar BASE_PROMPT/AVISO (ver _especializacao_area).
+    especializacao = _especializacao_area(area_direito)
+
     r2 = await gw_chat(
         messages=[
             {"role": "system", "content": (
                 "Você é especialista em direito " + area_direito + ". "
                 "Estruture o enquadramento jurídico completo: fundamentos legais, "
-                "elementos constitutivos, pressupostos processuais e condições da ação."
+                "elementos constitutivos, pressupostos processuais e condições da ação.\n"
+                + especializacao
             )},
             {"role": "user", "content": (
                 f"Peça: {nome_peca}\nFatos: {fatos_limpos[:2000]}\nPedidos: {pedidos_limpos[:500]}\n\n"
@@ -524,6 +585,7 @@ async def gerar_peca_pipeline(
                 "3. Toda saída é RASCUNHO — revisão humana obrigatória (OAB).\n"
                 "4. Use formatação jurídica padrão (Dos Fatos, Do Direito, Dos Pedidos)."
                 + (f"\n5. {estrutura_tipo}" if estrutura_tipo else "")
+                + "\n" + especializacao
                 + "\n" + PADRAO_OURO_PECA
             )},
             {"role": "user", "content": (
