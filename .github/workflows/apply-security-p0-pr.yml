@@ -22,16 +22,20 @@ jobs:
           set -euo pipefail
           python - <<'PY'
           from pathlib import Path
-          import textwrap
 
           workflow = Path('.github/workflows/apply-security-p0.yml').read_text(encoding='utf-8')
           start = workflow.index("python - <<'PY'\n") + len("python - <<'PY'\n")
           end = workflow.index("\n          PY", start)
-          code = textwrap.dedent(workflow[start:end])
+          raw = workflow[start:end]
+          code = "\n".join(
+              line[10:] if line.startswith("          ") else line
+              for line in raw.splitlines()
+          )
           exec(compile(code, 'apply-security-p0', 'exec'))
           PY
           rm -f .github/workflows/apply-security-p0.yml
           rm -f .github/workflows/apply-security-p0-pr.yml
+          rm -f .github/workflows/diagnose-security-p0.yml
           rm -f scripts/.security-p0-trigger
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
