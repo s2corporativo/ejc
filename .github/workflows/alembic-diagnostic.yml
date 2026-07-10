@@ -4,9 +4,7 @@ on:
   pull_request:
     branches: [main]
     paths:
-      - "backend/alembic/**"
-      - "backend/app/models/**"
-      - "backend/requirements.txt"
+      - "backend/**"
       - ".github/workflows/alembic-diagnostic.yml"
   workflow_dispatch:
 
@@ -15,9 +13,9 @@ permissions:
 
 jobs:
   diagnose:
-    name: Diagnose alembic upgrade head
+    name: Diagnose alembic and pytest
     runs-on: ubuntu-latest
-    timeout-minutes: 20
+    timeout-minutes: 30
     defaults:
       run:
         working-directory: backend
@@ -38,7 +36,9 @@ jobs:
     env:
       DATABASE_URL: postgresql+asyncpg://ejc_user:ejc_pass@localhost:5432/ejc_db
       DATABASE_URL_SYNC: postgresql://ejc_user:ejc_pass@localhost:5432/ejc_db
+      SCHEMA_CHECK_DATABASE_URL: postgresql://ejc_user:ejc_pass@localhost:5432/ejc_db
       APP_ENV: development
+      RUN_DB_TESTS: "1"
     steps:
       - uses: actions/checkout@v4
 
@@ -75,7 +75,7 @@ jobs:
           echo "status=$status" >> "$GITHUB_OUTPUT"
           exit $status
 
-      - name: Aplicar migrations com diagnóstico compacto
+      - name: Aplicar migrations
         id: upgrade
         continue-on-error: true
         run: |
@@ -85,22 +85,51 @@ jobs:
           echo "status=$status" >> "$GITHUB_OUTPUT"
           exit $status
 
-      - name: Publicar diagnóstico Alembic
+      - name: Rodar testes unitários com saída capturada
+        id: unit
+        continue-on-error: true
+        run: |
+          set +e
+          RUN_DB_TESTS=0 python -m pytest tests -q > /tmp/pytest-unit.log 2>&1
+          status=$?
+          echo "status=$status" >> "$GITHUB_OUTPUT"
+          exit $status
+
+      - name: Rodar testes com banco real com saída capturada
+        id: dbtests
+        continue-on-error: true
+        run: |
+          set +e
+          RUN_DB_TESTS=1 python -m pytest tests -q > /tmp/pytest-db.log 2>&1
+          status=$?
+          echo "status=$status" >> "$GITHUB_OUTPUT"
+          exit $status
+
+      - name: Publicar diagnóstico completo
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: alembic-diagnostic
+          name: ejc-backend-diagnostic
           path: |
             /tmp/alembic-tree.log
             /tmp/alembic-upgrade.log
+            /tmp/pytest-unit.log
+            /tmp/pytest-db.log
           if-no-files-found: warn
           retention-days: 3
 
-      - name: Falhar se árvore ou upgrade falharam
+      - name: Falhar se alguma validação falhou
         if: always()
         run: |
           tree_status="${{ steps.tree.outputs.status }}"
           upgrade_status="${{ steps.upgrade.outputs.status }}"
+          unit_status="${{ steps.unit.outputs.status }}"
+          dbtests_status="${{ steps.dbtests.outputs.status }}"
           echo "tree_status=${tree_status:-missing}"
           echo "upgrade_status=${upgrade_status:-missing}"
-          test "${tree_status:-1}" = "0" -a "${upgrade_status:-1}" = "0"
+          echo "unit_status=${unit_status:-missing}"
+          echo "dbtests_status=${dbtests_status:-missing}"
+          test "${tree_status:-1}" = "0" \
+            -a "${upgrade_status:-1}" = "0" \
+            -a "${unit_status:-1}" = "0" \
+            -a "${dbtests_status:-1}" = "0"
