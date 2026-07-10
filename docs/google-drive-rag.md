@@ -20,6 +20,8 @@ As rotas foram registradas sob o router RAG existente:
 - `GET /api/rag/google-drive/status`
 - `GET /api/rag/google-drive/files?limit=100`
 - `GET /api/rag/google-drive/audit?limit=500`
+- `POST /api/rag/google-drive/curadoria/preview`
+- `POST /api/rag/google-drive/curadoria/apply`
 - `POST /api/rag/google-drive/sync`
 - `POST /api/rag/google-drive/reindex/{file_id}`
 
@@ -134,6 +136,53 @@ O script não apaga documentos fisicamente. Quando a taxonomia identificar arqui
 - `vigente = false`.
 
 A alteração preserva histórico em `knowledge_docs.extra.reclassification_history`, permitindo auditoria e rollback manual controlado.
+
+## Curadoria por API
+
+A mesma rotina pode ser usada pelo frontend sem acesso ao terminal da VPS.
+
+### Pré-visualização
+
+```http
+POST /api/rag/google-drive/curadoria/preview
+Content-Type: application/json
+```
+
+```json
+{
+  "limit": 500,
+  "only_changes": true
+}
+```
+
+Essa rota é somente leitura e executa o serviço em `dry_run`.
+
+### Aplicação protegida
+
+```http
+POST /api/rag/google-drive/curadoria/apply
+Content-Type: application/json
+```
+
+```json
+{
+  "limit": 500,
+  "only_changes": true,
+  "confirmacao": "RECLASSIFICAR_RAG_DRIVE"
+}
+```
+
+Controles obrigatórios:
+
+- autenticação ativa;
+- perfil `superadmin`, `admin` ou `socio`;
+- confirmação textual exata;
+- nenhuma exclusão física;
+- histórico preservado em `extra.reclassification_history`;
+- registro da aplicação confirmada em `audit_logs`;
+- rollback por restauração dos valores anteriores gravados no histórico.
+
+A aplicação deve ser executada apenas depois de comparar o resultado de `preview` com os documentos esperados.
 
 ## Autenticação recomendada quando a organização bloqueia chave de Service Account
 
