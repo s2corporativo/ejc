@@ -4,7 +4,7 @@ Cria overrides administrativos para habilitação, visibilidade e substituição
 rotas. A tabela não concede autorização e não substitui RBAC.
 
 Revision ID: 081_system_module_settings
-Revises: 080_notification_preferences
+Revises: 079_client_hash_partial_deleted
 Create Date: 2026-07-10
 """
 
@@ -12,7 +12,7 @@ from alembic import op
 import sqlalchemy as sa
 
 revision = "081_system_module_settings"
-down_revision = "080_notification_preferences"
+down_revision = "079_client_hash_partial_deleted"
 branch_labels = None
 depends_on = None
 

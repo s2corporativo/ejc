@@ -73,3 +73,4 @@ from app.models import prova               # noqa  (Gestão de Provas por caso �
 from app.models import wiki                # noqa
 from app.models import workflow            # noqa
 from app.models import redesign            # noqa  (module_help, area_modulos_mapping, document_types_master, tabela_oab_honorarios — migração 057)
+from app.models.system_module_setting import SystemModuleSetting  # noqa
