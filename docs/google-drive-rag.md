@@ -101,6 +101,40 @@ Para forçar uma categoria única em uma sincronização excepcional:
 
 Use esse modo com cuidado. Ele volta ao comportamento manual e pode gerar erro de curadoria se misturar leis, jurisprudência, doutrina e modelos na mesma pasta.
 
+## Reclassificação de documentos antigos já ingeridos
+
+Se documentos do Google Drive foram sincronizados antes da taxonomia automática, alguns podem ter entrado como `doutrina` mesmo sendo peças, minutas ou material de teste.
+
+Use o script abaixo sempre em duas etapas.
+
+### 1. Simular sem alterar banco
+
+```bash
+docker compose exec backend python scripts/reclassificar_rag_drive.py --dry-run --only-changes --output /tmp/rag-drive-reclassificacao-dry-run.json
+```
+
+Revise o JSON gerado e confira principalmente:
+
+- `categoria_atual`;
+- `categoria_final`;
+- `vigente_atual`;
+- `vigente_final`;
+- `motivo`;
+- `sinais`.
+
+### 2. Aplicar somente após revisar o dry-run
+
+```bash
+docker compose exec backend python scripts/reclassificar_rag_drive.py --apply --only-changes --output /tmp/rag-drive-reclassificacao-apply.json
+```
+
+O script não apaga documentos fisicamente. Quando a taxonomia identificar arquivo de teste, rascunho, backup ou `não indexar`, o documento é marcado como:
+
+- `categoria = nao_indexar`;
+- `vigente = false`.
+
+A alteração preserva histórico em `knowledge_docs.extra.reclassification_history`, permitindo auditoria e rollback manual controlado.
+
 ## Autenticação recomendada quando a organização bloqueia chave de Service Account
 
 Se o Google Cloud mostrar a política `iam.managed.disableServiceAccountKeyCreation`, não tente forçar a criação da chave. Use OAuth de usuário.
