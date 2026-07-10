@@ -114,7 +114,7 @@ async def busca_global(
         return {"q": q, "tipo": tipo, "total": len(out), "resultados": out}
 
     if tipo == "cpf":
-        digitos = normalizar_documento(q)
+        digitos = normalizar_documento(q) or ""
         if len(digitos) not in (11, 14):
             raise HTTPException(
                 status_code=422,
@@ -189,7 +189,7 @@ async def busca_global(
         return {"q": q, "tipo": tipo, "total": len(out), "resultados": out}
 
     if tipo == "processo":
-        digitos = normalizar_documento(q)
+        digitos = normalizar_documento(q) or ""
         casos_vistos: set[str] = set()
         conds = [Case.numero_processo.ilike(termo), Case.numero_interno.ilike(termo)]
         if digitos:
