@@ -2,7 +2,7 @@
 // Módulo de Análise Bancária (EXTRATOS): upload PDF/OFX/CSV → detecta cobranças
 // abusivas (base legal) → Excel + minutas (notificação/petição/BACEN).
 // Determinístico. Tudo é minuta — revisão obrigatória (OAB).
-import { useState, useRef } from "react";
+import { useEffect, useState, useRef } from "react";
 import {
   Landmark,
   UploadCloud,
@@ -127,6 +127,10 @@ export default function AnaliseExtratos() {
   const [minutaErro, setMinutaErro] = useState("");
   const [minutaCopiado, setMinutaCopiado] = useState(false);
   const minutaAbort = useRef<AbortController | null>(null);
+
+  // Aborta o stream SSE em voo ao desmontar — evita setState após unmount e
+  // vazamento da conexão quando o usuário sai da tela durante a geração.
+  useEffect(() => () => minutaAbort.current?.abort(), []);
 
   const fecharMinuta = () => {
     minutaAbort.current?.abort();

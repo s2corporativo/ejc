@@ -47,6 +47,7 @@ export default function PartnerWithdrawals() {
   const [loading, setLoading] = useState(true);
   const [showForm, setShowForm] = useState(false);
   const [form, setForm] = useState({ ...EMPTY });
+  const [salvando, setSalvando] = useState(false);
   const isPrivileged = ["superadmin", "socio"].includes(user?.role ?? "");
 
   const load = useCallback(async () => {
@@ -64,15 +65,30 @@ export default function PartnerWithdrawals() {
   }, [load]);
 
   async function save() {
-    await api.post("/v1/partner-withdrawals", {
-      gross_value: parseFloat(form.gross_value),
-      case_expenses: parseFloat(form.case_expenses || "0"),
-      description: form.description || undefined,
-      period_reference: form.period_reference || undefined,
-    });
-    setShowForm(false);
-    setForm({ ...EMPTY });
-    load();
+    // Guarda de NaN: bruto e despesas precisam ser numéricos válidos antes de
+    // criar o lançamento financeiro.
+    const gross = parseFloat(form.gross_value);
+    const expenses = parseFloat(form.case_expenses || "0");
+    if (!Number.isFinite(gross) || !Number.isFinite(expenses)) {
+      toast.error("Valor inválido");
+      return;
+    }
+    setSalvando(true);
+    try {
+      await api.post("/v1/partner-withdrawals", {
+        gross_value: gross,
+        case_expenses: expenses,
+        description: form.description || undefined,
+        period_reference: form.period_reference || undefined,
+      });
+      setShowForm(false);
+      setForm({ ...EMPTY });
+      load();
+    } catch (e: any) {
+      toast.error(e?.response?.data?.detail || "Erro ao salvar solicitação");
+    } finally {
+      setSalvando(false);
+    }
   }
 
   async function approve(id: string) {
@@ -278,10 +294,10 @@ export default function PartnerWithdrawals() {
             </button>
             <button
               onClick={save}
-              disabled={!form.gross_value}
+              disabled={salvando || !form.gross_value}
               className="btn-primary"
             >
-              Solicitar
+              {salvando ? "Salvando..." : "Solicitar"}
             </button>
           </div>
         </div>

@@ -4,9 +4,12 @@ Verifica honorários vencidos e cria/atualiza alertas escalonados:
   leve (15d) → medio (30d) → critico (60d) → cobranca_formal (90d)
 """
 from __future__ import annotations
+import logging
 from datetime import datetime, timezone
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import text
+
+logger = logging.getLogger(__name__)
 
 
 def _nivel(days: int) -> str:
@@ -39,59 +42,86 @@ async def varrer_inadimplencia(db: AsyncSession) -> dict:
 
     inserted = 0
     updated = 0
+    falhas = 0
 
+    # Commit por item (isolamento, padrão de `_alertar_prazos`): antes, um único
+    # commit no fim do lote de até 500 fees fazia uma linha ruim descartar a
+    # varredura inteira. Agora cada fee é processada em sua própria transação —
+    # a que falha é logada, revertida e o lote segue.
     for fee in fees:
-        days = (now.date() - fee.due_date).days if fee.due_date else 0
-        nivel = _nivel(days)
+        try:
+            days = (now.date() - fee.due_date).days if fee.due_date else 0
+            nivel = _nivel(days)
 
-        # Verificar se já existe alerta não resolvido
-        existing = await db.execute(text("""
-            SELECT id, alert_level FROM inadimplencia_alerts
-            WHERE fee_id = :fee_id AND resolved = FALSE
-            LIMIT 1
-        """), {"fee_id": fee.fee_id})
-        row = existing.fetchone()
+            # Verificar se já existe alerta não resolvido
+            existing = await db.execute(text("""
+                SELECT id, alert_level FROM inadimplencia_alerts
+                WHERE fee_id = :fee_id AND resolved = FALSE
+                LIMIT 1
+            """), {"fee_id": fee.fee_id})
+            row = existing.fetchone()
 
-        if row:
-            # SEMPRE refresca days_overdue/amount_due (não só na troca de nível):
-            # antes, um alerta que permanecia na mesma faixa (ex.: "medio",
-            # 30-59d) congelava days_overdue no valor do dia em que entrou na
-            # faixa — o painel de cobrança (ordenado por days_overdue) mostrava
-            # dias em atraso desatualizados até o nível mudar.
-            await db.execute(text("""
-                UPDATE inadimplencia_alerts
-                SET alert_level = :nivel, days_overdue = :days,
-                    amount_due = :amount, updated_at = NOW()
-                WHERE id = :id
-            """), {"nivel": nivel, "days": days,
-                   "amount": float(fee.amount_due or 0), "id": row.id})
-            updated += 1
-        else:
-            await db.execute(text("""
-                INSERT INTO inadimplencia_alerts
-                    (id, fee_id, case_id, client_id, days_overdue, amount_due, alert_level)
-                VALUES
-                    (gen_random_uuid()::text, :fee_id, :case_id, :client_id,
-                     :days, :amount, :nivel)
-            """), {
-                "fee_id":    fee.fee_id,
-                "case_id":   fee.case_id,
-                "client_id": fee.client_id,
-                "days":      days,
-                "amount":    float(fee.amount_due or 0),
-                "nivel":     nivel,
-            })
-            inserted += 1
+            if row:
+                # SEMPRE refresca days_overdue/amount_due (não só na troca de
+                # nível): antes, um alerta que permanecia na mesma faixa (ex.:
+                # "medio", 30-59d) congelava days_overdue no valor do dia em que
+                # entrou na faixa — o painel de cobrança (ordenado por
+                # days_overdue) mostrava dias em atraso desatualizados até o
+                # nível mudar.
+                await db.execute(text("""
+                    UPDATE inadimplencia_alerts
+                    SET alert_level = :nivel, days_overdue = :days,
+                        amount_due = :amount, updated_at = NOW()
+                    WHERE id = :id
+                """), {"nivel": nivel, "days": days,
+                       "amount": float(fee.amount_due or 0), "id": row.id})
+                acao = "updated"
+            else:
+                await db.execute(text("""
+                    INSERT INTO inadimplencia_alerts
+                        (id, fee_id, case_id, client_id, days_overdue, amount_due, alert_level)
+                    VALUES
+                        (gen_random_uuid()::text, :fee_id, :case_id, :client_id,
+                         :days, :amount, :nivel)
+                """), {
+                    "fee_id":    fee.fee_id,
+                    "case_id":   fee.case_id,
+                    "client_id": fee.client_id,
+                    "days":      days,
+                    "amount":    float(fee.amount_due or 0),
+                    "nivel":     nivel,
+                })
+                acao = "inserted"
 
-        # Atualizar status da fee
-        if days >= 15:
-            await db.execute(text("""
-                UPDATE fees SET status='atrasado', updated_at=NOW()
-                WHERE id = :id AND status='pendente'
-            """), {"id": fee.fee_id})
+            # Atualizar status da fee
+            if days >= 15:
+                await db.execute(text("""
+                    UPDATE fees SET status='atrasado', updated_at=NOW()
+                    WHERE id = :id AND status='pendente'
+                """), {"id": fee.fee_id})
 
-    await db.commit()
-    return {"varridas": len(fees), "inseridas": inserted, "atualizadas": updated}
+            await db.commit()
+            # Só contabiliza após o commit bem-sucedido: se o commit falhar, a
+            # linha não é contada como inserida/atualizada (evita resumo
+            # incoerente onde inseridas+atualizadas+falhas excede varridas).
+            if acao == "inserted":
+                inserted += 1
+            else:
+                updated += 1
+        except Exception as e:
+            await db.rollback()
+            falhas += 1
+            logger.error(
+                f"[Inadimplencia] varrer falhou p/ fee {fee.fee_id}: {e}"
+            )
+            continue
+
+    return {
+        "varridas": len(fees),
+        "inseridas": inserted,
+        "atualizadas": updated,
+        "falhas": falhas,
+    }
 
 
 async def listar_alertas(

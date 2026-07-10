@@ -134,15 +134,133 @@ def _categoria_jurisprudencia(area: str | None, texto: str) -> str:
     return "jurisprudencia"
 
 
+# Termos de sinal normativo forte (usados também na classificação abaixo). Um
+# arquivo com esses sinais NO NOME nunca é descartado por token de exclusão.
+_LEGISLACAO_TERMOS = (
+    "lei", "decreto", "codigo", "código", "constituicao", "constituição",
+    "resolucao", "resolução", "portaria", "instrucao normativa", "instrução normativa",
+    "provimento", "estatuto", "medida provisoria", "medida provisória",
+)
+_JURISPRUDENCIA_TERMOS = (
+    "jurisprudencia", "jurisprudência", "acordao", "acórdão", "ementa",
+    "julgado", "precedente", "repetitivo", "irdr", "iac", "tese fixada",
+    "stj", "stf", "tjmg", "tst", "carf", "tcu",
+)
+
+
+# ── Sinais de PEÇA DE CLIENTE (conteúdo cliente-específico) ───────────────────
+# Documentos vinculados a um cliente/processo concreto NÃO podem entrar no RAG
+# compartilhado como material genérico ("modelo_documento_juridico"/"doutrina"):
+# entrariam com client_id=NULL e seriam recuperáveis em qualquer caso/cliente,
+# vazando conteúdo sigiloso entre clientes (quebra de sigilo/LGPD). Quando um
+# destes sinais aparece, a decisão vira "peca_interna" — categoria RESTRITA que
+# consta de _RESTRICTED_CATS no ai_service: o filtro de escopo do RAG (fail-
+# closed) só recupera o doc quando kd.client_id == escopo do cliente.
+#
+# Os regex numéricos rodam sobre o texto BRUTO (nome/caminho) porque
+# normalizar_chave converte "-" em espaço e destruiria a pontuação de nº de
+# processo/CPF/CNPJ. O nº CNJ segue o padrão NNNNNNN-DD.AAAA.J.TR.OOOO, com
+# pontuação tolerada como opcional. As âncoras (?<!\d)/(?!\d) impedem que um
+# trecho maior de dígitos (ex.: timestamp) case por dentro; CPF/CNPJ ainda são
+# confirmados por dígito verificador para não marcar IDs numéricos aleatórios.
+_CNJ_RE = re.compile(r"(?<!\d)\d{7}-?\d{2}\.?\d{4}\.?\d\.?\d{2}\.?\d{4}(?!\d)")
+_CPF_RE = re.compile(r"(?<!\d)\d{3}\.?\d{3}\.?\d{3}-?\d{2}(?!\d)")
+_CNPJ_RE = re.compile(r"(?<!\d)\d{2}\.?\d{3}\.?\d{3}/?\d{4}-?\d{2}(?!\d)")
+# "processo nº", "proc nº", "autos nº" no texto normalizado (o "nº" vira "no").
+_PROCESSO_MARCADOR_RE = re.compile(r"\b(processo|proc|autos)\s+n[o]?\b")
+# Pastas/segmentos de caminho que indicam material cliente-específico. "contencioso"
+# foi deixado de fora por ser ambíguo com bibliotecas de modelos organizadas por
+# área (ex.: "Modelos/Contencioso Cível/") — evita falso-positivo de sobre-restrição.
+_CLIENTE_PASTA_TERMOS = ("clientes", "cliente", "casos", "processos")
+
+
+def _so_digitos(valor: str) -> str:
+    return re.sub(r"\D", "", valor)
+
+
+def _cpf_valido(valor: str) -> bool:
+    cpf = _so_digitos(valor)
+    if len(cpf) != 11 or cpf == cpf[0] * 11:
+        return False
+    for corte in (9, 10):
+        soma = sum(int(cpf[i]) * ((corte + 1) - i) for i in range(corte))
+        dig = (soma * 10) % 11 % 10
+        if dig != int(cpf[corte]):
+            return False
+    return True
+
+
+def _cnpj_valido(valor: str) -> bool:
+    cnpj = _so_digitos(valor)
+    if len(cnpj) != 14 or cnpj == cnpj[0] * 14:
+        return False
+    pesos1 = (5, 4, 3, 2, 9, 8, 7, 6, 5, 4, 3, 2)
+    pesos2 = (6,) + pesos1
+    for pesos, corte in ((pesos1, 12), (pesos2, 13)):
+        soma = sum(int(cnpj[i]) * pesos[i] for i in range(corte))
+        resto = soma % 11
+        dig = 0 if resto < 2 else 11 - resto
+        if dig != int(cnpj[corte]):
+            return False
+    return True
+
+
+def _detectar_peca_cliente(nome: str, caminho: str | None, texto_norm: str) -> list[str]:
+    """Sinais determinísticos de peça/documento cliente-específico.
+
+    Retorna a lista de sinais encontrados (vazia quando não há). Números de
+    processo/CPF/CNPJ são casados no texto BRUTO (com pontuação preservada) e
+    CPF/CNPJ são confirmados por dígito verificador (evita marcar timestamps/IDs
+    numéricos); pasta de cliente é casada como SEGMENTO do caminho (não como
+    palavra solta no nome de um modelo genérico); marcadores textuais
+    ("processo nº" etc.) no texto já normalizado.
+    """
+    bruto = f"{caminho or ''} {nome}"
+    sinais: list[str] = []
+
+    m_cnj = _CNJ_RE.search(bruto)
+    if m_cnj:
+        sinais.append(f"processo_cnj:{m_cnj.group(0)}")
+    if any(_cnpj_valido(m.group(0)) for m in _CNPJ_RE.finditer(bruto)):
+        sinais.append("cnpj_no_nome")
+    elif any(_cpf_valido(m.group(0)) for m in _CPF_RE.finditer(bruto)):
+        sinais.append("cpf_no_nome")
+    if _PROCESSO_MARCADOR_RE.search(texto_norm):
+        sinais.append("marcador_processo")
+
+    # Pasta de cliente: só conta como segmento do caminho, para não reclassificar
+    # um modelo genérico cujo NOME mencione "processo/caso" de passagem.
+    for seg in normalizar_chave(caminho or "").split("/"):
+        seg = seg.strip()
+        if not seg:
+            continue
+        achados = _tem(seg, _CLIENTE_PASTA_TERMOS)
+        if achados:
+            sinais.append(f"pasta_cliente:{seg}")
+            break
+    return sinais
+
+
 def classificar_drive_file(nome: str, caminho: str | None = None, mime_type: str | None = None) -> DriveTaxonomyDecision:
     texto = normalizar_chave(f"{caminho or ''} {nome}")
+    nome_norm = normalizar_chave(nome)
     area, sinais_area = detectar_area(nome, caminho)
     sinais: list[str] = []
     if sinais_area:
         sinais.extend(sinais_area)
 
-    exclusao = _tem_token_exclusao(texto)
-    if exclusao:
+    # P3: o token de exclusão casa SÓ no NOME do arquivo (não no caminho) — antes
+    # uma pasta "Backup 2023/" descartava uma "Súmula 7 STJ.docx" legítima da
+    # vigência do RAG. Além disso, um sinal normativo forte no nome (súmula/lei/
+    # jurisprudência) tem PRECEDÊNCIA: material normativo nomeado com
+    # "antigo/backup" não é removido silenciosamente da busca.
+    tem_sinal_normativo = (
+        "sumula" in nome_norm
+        or bool(_tem(nome_norm, _LEGISLACAO_TERMOS))
+        or bool(_tem(nome_norm, _JURISPRUDENCIA_TERMOS))
+    )
+    exclusao = _tem_token_exclusao(nome_norm)
+    if exclusao and not tem_sinal_normativo:
         return DriveTaxonomyDecision(
             categoria="nao_indexar",
             confianca="bloqueado",
@@ -150,7 +268,7 @@ def classificar_drive_file(nome: str, caminho: str | None = None, mime_type: str
             tipo_fonte="teste_ou_lixo_operacional",
             area_juridica=area,
             excluir=True,
-            motivo="Arquivo/pasta sinalizado como teste, rascunho, backup ou não indexável.",
+            motivo="Arquivo sinalizado (no nome) como teste, rascunho, backup ou não indexável.",
             sinais=exclusao + sinais,
         )
 
@@ -167,26 +285,39 @@ def classificar_drive_file(nome: str, caminho: str | None = None, mime_type: str
             categoria = "sumula"
         return DriveTaxonomyDecision(categoria, "alta", 95, "sumula", area, False, "Súmula identificada por nome/caminho.", ["sumula"] + sinais)
 
-    legislacao_sinais = _tem(texto, (
-        "lei", "decreto", "codigo", "código", "constituicao", "constituição",
-        "resolucao", "resolução", "portaria", "instrucao normativa", "instrução normativa",
-        "provimento", "estatuto", "medida provisoria", "medida provisória",
-    ))
+    legislacao_sinais = _tem(texto, _LEGISLACAO_TERMOS)
     if legislacao_sinais:
         return DriveTaxonomyDecision(
             _categoria_legislacao(area), "alta", 100, "fonte_oficial_normativa",
             area, False, "Norma/legislação identificada por nome/caminho.", legislacao_sinais + sinais,
         )
 
-    jurisprudencia_sinais = _tem(texto, (
-        "jurisprudencia", "jurisprudência", "acordao", "acórdão", "ementa",
-        "julgado", "precedente", "repetitivo", "irdr", "iac", "tese fixada",
-        "stj", "stf", "tjmg", "tst", "carf", "tcu",
-    ))
+    jurisprudencia_sinais = _tem(texto, _JURISPRUDENCIA_TERMOS)
     if jurisprudencia_sinais:
         return DriveTaxonomyDecision(
             _categoria_jurisprudencia(area, texto), "alta", 90, "jurisprudencia",
             area, False, "Jurisprudência/precedente identificado por nome/caminho.", jurisprudencia_sinais + sinais,
+        )
+
+    # ── PEÇA DE CLIENTE (conteúdo cliente-específico) ─────────────────────────
+    # Precedência: material NORMATIVO genérico (súmula/legislação/jurisprudência)
+    # já retornou acima e nunca chega aqui. Esta detecção vem ANTES do ramo
+    # "modelo_documento_juridico"/"doutrina"/fallback: uma peça vinculada a um
+    # cliente/processo concreto é marcada como RESTRITA (peca_interna) para não
+    # vazar no RAG compartilhado. Um modelo/minuta GENÉRICO (sem nº de processo,
+    # CPF/CNPJ ou pasta de cliente) não dispara aqui e segue como
+    # modelo_documento_juridico no ramo abaixo.
+    peca_cliente_sinais = _detectar_peca_cliente(nome, caminho, texto)
+    if peca_cliente_sinais:
+        return DriveTaxonomyDecision(
+            "peca_interna", "media", 70, "peca_cliente_restrita",
+            area, False,
+            "Peça/documento cliente-específico (nº de processo CNJ, CPF/CNPJ ou "
+            "pasta de cliente): conteúdo legítimo, porém RESTRITO por sigilo/LGPD. "
+            "Fica fora do RAG compartilhado (categoria restrita); via Drive não há "
+            "vínculo de client_id, então não é recuperável até que o escopo do "
+            "cliente seja atribuído — priorize a curadoria manual.",
+            peca_cliente_sinais + sinais,
         )
 
     modelo_sinais = _tem(texto, (

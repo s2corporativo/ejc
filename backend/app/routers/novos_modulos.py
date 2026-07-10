@@ -10,7 +10,7 @@ Endpoints para os módulos da Etapa B:
 from __future__ import annotations
 from typing import Optional
 from fastapi import APIRouter, Depends, HTTPException, Query
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import text
 
@@ -47,7 +47,9 @@ async def precificacao_tabela(
 @router.get("/precificacao/calcular/{rule_id}")
 async def precificacao_calcular(
     rule_id: str,
-    causa_valor: Optional[float] = Query(None, description="Valor da causa em R$"),
+    causa_valor: Optional[float] = Query(
+        None, ge=0, description="Valor da causa em R$"
+    ),
     db: AsyncSession = Depends(get_db),
     cu: User = Depends(get_current_user),
 ):
@@ -59,17 +61,17 @@ async def precificacao_calcular(
 
 
 class PrecificacaoCreate(BaseModel):
-    area: str
-    case_type: str
-    complexity: str = "media"
-    fee_type: str = "fixo"
-    base_amount: Optional[float] = None
-    percentage_of_value: Optional[float] = None
-    min_amount: Optional[float] = None
-    max_amount: Optional[float] = None
-    exit_percentage: Optional[float] = None
-    oab_reference: Optional[str] = None
-    notes: Optional[str] = None
+    area: str = Field(max_length=120)
+    case_type: str = Field(max_length=120)
+    complexity: str = Field("media", max_length=40)
+    fee_type: str = Field("fixo", max_length=40)
+    base_amount: Optional[float] = Field(None, ge=0)
+    percentage_of_value: Optional[float] = Field(None, ge=0, le=100)
+    min_amount: Optional[float] = Field(None, ge=0)
+    max_amount: Optional[float] = Field(None, ge=0)
+    exit_percentage: Optional[float] = Field(None, ge=0, le=100)
+    oab_reference: Optional[str] = Field(None, max_length=120)
+    notes: Optional[str] = Field(None, max_length=2000)
 
 
 @router.post("/precificacao/regras", status_code=201)
@@ -137,26 +139,26 @@ async def resolver_alerta(
 # ════════════════════════════════════════════════════════════
 
 class AmbientalCreate(BaseModel):
-    subtype: Optional[str] = None
-    numero_auto: Optional[str] = None
-    orgao_autuador: Optional[str] = None
-    data_auto: Optional[str] = None
-    prazo_defesa: Optional[str] = None
-    valor_multa: Optional[float] = None
+    subtype: Optional[str] = Field(None, max_length=60)
+    numero_auto: Optional[str] = Field(None, max_length=120)
+    orgao_autuador: Optional[str] = Field(None, max_length=180)
+    data_auto: Optional[str] = Field(None, max_length=40)
+    prazo_defesa: Optional[str] = Field(None, max_length=40)
+    valor_multa: Optional[float] = Field(None, ge=0)
     infracoes: list = []
-    licenca_tipo: Optional[str] = None
-    licenca_numero: Optional[str] = None
-    licenca_validade: Optional[str] = None
-    licenca_orgao: Optional[str] = None
-    car_numero: Optional[str] = None
-    reserva_legal_ha: Optional[float] = None
-    app_area_ha: Optional[float] = None
-    tcfa_cnpj: Optional[str] = None
-    tcfa_atividade: Optional[str] = None
-    tcfa_vencimento: Optional[str] = None
-    tcfa_valor: Optional[float] = None
-    credito_carbono_ton: Optional[float] = None
-    observacoes: Optional[str] = None
+    licenca_tipo: Optional[str] = Field(None, max_length=120)
+    licenca_numero: Optional[str] = Field(None, max_length=120)
+    licenca_validade: Optional[str] = Field(None, max_length=40)
+    licenca_orgao: Optional[str] = Field(None, max_length=180)
+    car_numero: Optional[str] = Field(None, max_length=120)
+    reserva_legal_ha: Optional[float] = Field(None, ge=0)
+    app_area_ha: Optional[float] = Field(None, ge=0)
+    tcfa_cnpj: Optional[str] = Field(None, max_length=20)
+    tcfa_atividade: Optional[str] = Field(None, max_length=180)
+    tcfa_vencimento: Optional[str] = Field(None, max_length=40)
+    tcfa_valor: Optional[float] = Field(None, ge=0)
+    credito_carbono_ton: Optional[float] = Field(None, ge=0)
+    observacoes: Optional[str] = Field(None, max_length=2000)
 
 
 @router.get("/casos/{case_id}/ambiental")

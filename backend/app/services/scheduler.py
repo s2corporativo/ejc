@@ -14,6 +14,7 @@
 #  09:00 seg — Procurações vencendo em 30 dias
 #  09:15 — Alertas de vencimento societário
 from __future__ import annotations
+import asyncio
 import logging
 from uuid import uuid4
 from datetime import date, timedelta
@@ -108,25 +109,19 @@ async def _morning_brief():
             f"</ul><p><a href='https://ejc.depaulateixeira.adv.br'>Acessar EJC</a></p>"
         )
         async with AsyncSessionLocal() as db2:
-            from app.services.notification_service import enviar_email, enviar_push, criar_notificacao_interna
+            from app.services.notification_service import notificar
             if admin_row:
-                # E-mail
+                # Dispatch unificado: sino (sistema, mandatório) + e-mail,
+                # respeitando preferências/quiet hours do admin.
                 try:
-                    await enviar_email(
-                        admin_row.email,
-                        f"[EJC] Morning Brief {hoje.strftime('%d/%m')}",
-                        msg_html,
-                    )
-                except Exception as _e:
-                    logger.warning(f"[Brief] email falhou: {_e}")
-                # Push interno
-                try:
-                    await criar_notificacao_interna(
+                    await notificar(
                         db2, admin_row.id,
                         f"Morning Brief {hoje.strftime('%d/%m/%Y')}",
                         msg_txt, tipo="sistema", link="/",
+                        email=admin_row.email or None,
+                        email_assunto=f"[EJC] Morning Brief {hoje.strftime('%d/%m')}",
+                        email_corpo=msg_html,
                     )
-                    await db2.commit()
                 except Exception as _e:
                     logger.warning(f"[Brief] notif falhou: {_e}")
         logger.info(f"[Brief] {prazos_3d} prazos 3d, {amb_criticas} amb críticas")
@@ -139,9 +134,7 @@ async def _alertar_prazos():
     e-mail e WhatsApp ao responsável. E-mail/WhatsApp só disparam se habilitados
     no .env (EMAIL_ENABLED / WHATSAPP_ENABLED) — caso contrário, no-op seguro."""
     from app.core.database import AsyncSessionLocal
-    from app.services.notification_service import (
-        criar_notificacao_interna, enviar_email, enviar_whatsapp, enviar_push,
-    )
+    from app.services.notification_service import notificar
 
     try:
         async with AsyncSessionLocal() as db:
@@ -171,32 +164,22 @@ async def _alertar_prazos():
                     try:
                         venc = r.data_prazo.strftime('%d/%m/%Y')
                         dias_reais = (r.data_prazo - hoje).days
-                        await criar_notificacao_interna(
+                        # Dispatch unificado (prazo = mandatório): sino sempre,
+                        # canais externos conforme preferência/quiet hours.
+                        await notificar(
                             db, r.responsavel_id,
                             f"⏰ Prazo em {dias_reais} dia(s)",
                             f"{r.titulo} vence em {venc}",
-                            tipo="prazo", link=f"/prazos",
-                        )
-                        await enviar_push(
-                            db, r.responsavel_id,
-                            f"⏰ Prazo em {dias_reais} dia(s)",
-                            f"{r.titulo} vence em {venc}",
-                            link="/prazos",
-                        )
-                        if r.email:
-                            await enviar_email(
-                                r.email,
-                                f"[EJC] Prazo em {dias_reais} dia(s): {r.titulo}",
+                            tipo="prazo", link="/prazos",
+                            email=r.email or None,
+                            telefone=r.phone or None,
+                            email_assunto=f"[EJC] Prazo em {dias_reais} dia(s): {r.titulo}",
+                            email_corpo=(
                                 f"<p>O prazo <b>{r.titulo}</b> vence em "
                                 f"<b>{venc}</b> ({dias_reais} dia(s)).</p>"
-                                f"<p>Acesse o EJC para os detalhes do caso.</p>",
-                            )
-                        if r.phone:
-                            await enviar_whatsapp(
-                                r.phone,
-                                f"⏰ *EJC* — o prazo \"{r.titulo}\" vence em "
-                                f"{venc} ({dias_reais} dia(s)).",
-                            )
+                                f"<p>Acesse o EJC para os detalhes do caso.</p>"
+                            ),
+                        )
                         await db.execute(text(
                             f"UPDATE deadlines SET {flag}=true WHERE id=:id"
                         ), {"id": r.id})
@@ -211,11 +194,19 @@ async def _alertar_prazos():
 
 
 async def _alertar_ambiental():
-    """Defesas ambientais ≤5 dias → notificação crítica + WhatsApp."""
+    """Defesas ambientais ≤5 dias → notificação crítica + WhatsApp.
+
+    Isolamento por item (padrão de `_alertar_prazos`): uma falha num caso é
+    logada e o lote continua. Dedup SEM migration: reutiliza o próprio modelo
+    `Notification` — se já existe um alerta idêntico (mesmo destinatário/tipo/
+    link/mensagem) criado nas últimas ~20h, não reenvia (evita spam diário no
+    WhatsApp em caso de restart do container / múltiplos disparos no mesmo dia;
+    a janela < 24h preserva o lembrete diário legítimo do prazo urgente).
+    """
+    from datetime import datetime, timezone
     from app.core.database import AsyncSessionLocal
-    from app.services.notification_service import (
-        criar_notificacao_interna, enviar_whatsapp,
-    )
+    from app.models.notification import Notification
+    from app.services.notification_service import notificar
     try:
         async with AsyncSessionLocal() as db:
             limite = date.today() + timedelta(days=5)
@@ -229,21 +220,42 @@ async def _alertar_ambiental():
                   AND ec.deleted_at IS NULL
                   AND ec.data_prazo_defesa <= :lim
             """), {"lim": limite})
+            corte = datetime.now(timezone.utc) - timedelta(hours=20)
             for r in rows:
-                if r.advogado_responsavel_id:
-                    await criar_notificacao_interna(
+                try:
+                    # r.phone vem do LEFT JOIN em advogado_responsavel_id: só
+                    # existe quando há responsável, então o dispatch unificado
+                    # cobre ambos.
+                    if not r.advogado_responsavel_id:
+                        continue
+                    mensagem = (
+                        f"Auto {r.numero_auto} — prazo: "
+                        f"{r.data_prazo_defesa.strftime('%d/%m/%Y')}"
+                    )
+                    ja_notificado = await db.scalar(
+                        select(Notification.id).where(
+                            Notification.user_id == r.advogado_responsavel_id,
+                            Notification.tipo == "ambiental",
+                            Notification.link == "/ambiental",
+                            Notification.mensagem == mensagem,
+                            Notification.created_at >= corte,
+                        ).limit(1)
+                    )
+                    if ja_notificado:
+                        continue
+                    await notificar(
                         db, r.advogado_responsavel_id,
                         "🌿 DEFESA AMBIENTAL URGENTE",
-                        f"Auto {r.numero_auto} — prazo: "
-                        f"{r.data_prazo_defesa.strftime('%d/%m/%Y')}",
+                        mensagem,
                         tipo="ambiental", link="/ambiental",
+                        telefone=r.phone or None,
                     )
-                if r.phone:
-                    await enviar_whatsapp(
-                        r.phone,
-                        f"🌿 *URGENTE EJC*: Defesa IBAMA auto {r.numero_auto} "
-                        f"vence {r.data_prazo_defesa.strftime('%d/%m')}!",
+                except Exception as e:
+                    logger.error(
+                        f"[Scheduler] alertar_ambiental falhou p/ auto "
+                        f"{getattr(r, 'numero_auto', '?')}: {e}"
                     )
+                    continue
     except Exception as e:
         logger.error(f"[Scheduler] alertar_ambiental: {e}")
 
@@ -251,7 +263,7 @@ async def _alertar_ambiental():
 async def _alertar_prescricao():
     """Casos com prescrição ≤90 dias → alerta semanal ao responsável."""
     from app.core.database import AsyncSessionLocal
-    from app.services.notification_service import criar_notificacao_interna
+    from app.services.notification_service import notificar
     try:
         async with AsyncSessionLocal() as db:
             limite = date.today() + timedelta(days=90)
@@ -269,7 +281,7 @@ async def _alertar_prescricao():
                 if not r.advogado_responsavel_id:
                     continue
                 dias = (r.data_prescricao.date() - date.today()).days
-                await criar_notificacao_interna(
+                await notificar(
                     db, r.advogado_responsavel_id,
                     "\u23f3 PRESCRIÇÃO SE APROXIMANDO",
                     f"Caso \"{r.titulo}\" — prescrição em {dias} dia(s) "
@@ -306,20 +318,20 @@ async def _verificar_sla_workflows():
     )
     from app.modules.auditoria.middleware import registrar_acao
     from app.services.deadline_calculator import dia_util_anterior, prazo_dias_uteis
-    from app.services.notification_service import criar_notificacao_interna, enviar_email
+    from app.services.notification_service import notificar
 
     async def _notificar_responsavel(db, resp_id, case_id, titulo, msg):
         if not resp_id:
             return
-        await criar_notificacao_interna(
-            db, resp_id, titulo, msg, tipo="workflow", link=f"/casos/{case_id}",
-        )
         email = (await db.execute(
             text("SELECT email FROM users WHERE id=:i AND is_active=true"),
             {"i": resp_id},
         )).scalar()
-        if email:
-            await enviar_email(email, f"[EJC] {titulo}", f"<p>{msg}</p>")
+        # Dispatch unificado: sino (workflow) + e-mail conforme preferências.
+        await notificar(
+            db, resp_id, titulo, msg, tipo="workflow",
+            link=f"/casos/{case_id}", email=email or None,
+        )
 
     try:
         async with AsyncSessionLocal() as db:
@@ -462,9 +474,7 @@ async def _regua_cobranca():
     """
     from app.core.database import AsyncSessionLocal
     from app.services.inadimplencia_service import varrer_inadimplencia
-    from app.services.notification_service import (
-        criar_notificacao_interna, enviar_email, enviar_whatsapp, enviar_push,
-    )
+    from app.services.notification_service import notificar
     try:
         async with AsyncSessionLocal() as db:
             # 1) Recalcula níveis e sincroniza a tabela de alertas (não reimplementar).
@@ -508,32 +518,40 @@ async def _regua_cobranca():
                         f"{dias} dia(s). Nível de cobrança: {r.alert_level}."
                     )
 
-                    # Sino interno — sempre (todos os níveis)
-                    await criar_notificacao_interna(
+                    # Escalonamento por nível (regra de negócio) define QUAIS
+                    # canais externos ficam elegíveis; o dispatch unificado
+                    # ainda respeita preferências/quiet hours do advogado.
+                    #   - e-mail: a partir de 'medio'
+                    #   - whatsapp: apenas 'critico'/'cobranca_formal'
+                    adv_email = (
+                        r.adv_email
+                        if r.alert_level in ("medio", "critico", "cobranca_formal")
+                        else None
+                    )
+                    adv_phone = (
+                        r.adv_phone
+                        if r.alert_level in ("critico", "cobranca_formal")
+                        else None
+                    )
+                    await notificar(
                         db, r.adv_id, titulo, corpo,
                         tipo="financeiro", link="/financeiro",
-                    )
-                    await enviar_push(
-                        db, r.adv_id, titulo, corpo, link="/financeiro",
-                    )
-                    # E-mail — a partir de 'medio'
-                    if r.alert_level in ("medio", "critico", "cobranca_formal") and r.adv_email:
-                        await enviar_email(
-                            r.adv_email,
-                            f"[EJC] Cobrança {r.alert_level}: {nome} ({dias}d)",
+                        email=adv_email,
+                        telefone=adv_phone,
+                        # Item de trabalho operacional: o sino da cobrança é
+                        # sempre registrado (como antes), senão marcaríamos o
+                        # nível como notificado sem nada ter sido entregue,
+                        # suprimindo a cobrança de forma permanente. A categoria
+                        # `financeiro` segue gateando apenas os canais externos.
+                        forcar_sino=True,
+                        email_assunto=f"[EJC] Cobrança {r.alert_level}: {nome} ({dias}d)",
+                        email_corpo=(
                             f"<p>O honorário de <b>{nome}</b> (caso {caso}) está "
                             f"<b>{dias} dia(s)</b> em atraso — R$ {valor:,.2f}.</p>"
                             f"<p>Nível de cobrança: <b>{r.alert_level}</b>. "
-                            f"Acione a régua de cobrança no EJC.</p>",
-                        )
-                    # WhatsApp — apenas níveis mais graves
-                    if r.alert_level in ("critico", "cobranca_formal") and r.adv_phone:
-                        await enviar_whatsapp(
-                            r.adv_phone,
-                            f"💰 *EJC* — Honorário de {nome} (caso {caso}) "
-                            f"{dias}d em atraso (R$ {valor:,.2f}). "
-                            f"Nível: {r.alert_level}.",
-                        )
+                            f"Acione a régua de cobrança no EJC.</p>"
+                        ),
+                    )
 
                     # Marca o nível notificado (sem coluna nova)
                     await db.execute(text(
@@ -569,7 +587,7 @@ async def _alertar_vencimento_societario():
         gatilho e mes_referencia como rótulo.
     """
     from app.core.database import AsyncSessionLocal
-    from app.services.notification_service import criar_notificacao_interna
+    from app.services.notification_service import notificar
     try:
         async with AsyncSessionLocal() as db:
             hoje = date.today()
@@ -595,7 +613,7 @@ async def _alertar_vencimento_societario():
                     continue
                 sufixo = (" · renovação automática" if c.renovacao_automatica
                           else " · SEM renovação automática")
-                await criar_notificacao_interna(
+                await notificar(
                     db, c.created_by,
                     "📄 Contrato societário vencendo",
                     f"\"{c.titulo[:80]}\" encerra em {dias} dia(s) "
@@ -620,7 +638,7 @@ async def _alertar_vencimento_societario():
                 if not destino:
                     continue
                 valor = float(d.valor_total or 0)
-                await criar_notificacao_interna(
+                await notificar(
                     db, destino,
                     "💵 Distribuição de lucros agendada",
                     f"Distribuição {d.mes_referencia} aprovada — "
@@ -651,9 +669,7 @@ async def _briefing_matinal_advogado():
     Só notifica quem tiver algum item — evita briefing vazio.
     """
     from app.core.database import AsyncSessionLocal
-    from app.services.notification_service import (
-        criar_notificacao_interna, enviar_email,
-    )
+    from app.services.notification_service import notificar
     try:
         async with AsyncSessionLocal() as db:
             hoje = date.today()
@@ -710,15 +726,13 @@ async def _briefing_matinal_advogado():
                     f"Tarefas em aberto: {pendentes} (atrasadas: {atrasadas}) | "
                     f"Casos de risco alto: {risco_alto}"
                 )
-                await criar_notificacao_interna(
+                await notificar(
                     db, adv.id,
                     f"☀️ Seu briefing — {hoje.strftime('%d/%m/%Y')}",
                     resumo_txt, tipo="sistema", link="/",
-                )
-                if adv.email:
-                    await enviar_email(
-                        adv.email,
-                        f"[EJC] Seu briefing de {hoje.strftime('%d/%m')}",
+                    email=adv.email or None,
+                    email_assunto=f"[EJC] Seu briefing de {hoje.strftime('%d/%m')}",
+                    email_corpo=(
                         f"<h3>Bom dia, {nome}!</h3>"
                         f"<ul>"
                         f"<li><b>Prazos próximos (7 dias):</b> {prazos}</li>"
@@ -726,33 +740,15 @@ async def _briefing_matinal_advogado():
                         f"(atrasadas: {atrasadas})</li>"
                         f"<li><b>Casos de risco alto:</b> {risco_alto}</li>"
                         f"</ul>"
-                        f"<p><a href='https://ejc.depaulateixeira.adv.br'>Acessar EJC</a></p>",
-                    )
+                        f"<p><a href='https://ejc.depaulateixeira.adv.br'>Acessar EJC</a></p>"
+                    ),
+                )
                 enviados += 1
 
             await db.commit()
             logger.info(f"[Briefing/advogado] {enviados} briefing(s) personalizado(s)")
     except Exception as e:
         logger.error(f"[Scheduler] briefing_matinal_advogado: {e}", exc_info=True)
-
-
-async def _backup_diario():
-    """Backup automatizado do banco de dados (pg_dump) — Auditoria Item 80."""
-    import os
-    import subprocess
-    from datetime import datetime
-    try:
-        hoje = datetime.now().strftime("%Y-%m-%d")
-        # P1-3: usa BACKUP_DIR do config (antes /home/ubuntu/backups, inexistente
-        # no container → backup silenciosamente perdido). pg_dump exige URL SÍNCRONA
-        # (DATABASE_URL é +asyncpg e quebra o pg_dump).
-        os.makedirs(settings.BACKUP_DIR, exist_ok=True)
-        path = f"{settings.BACKUP_DIR}/ejc_db_{hoje}.sql"
-        cmd = f"pg_dump {settings.DATABASE_URL_SYNC} > {path}"
-        subprocess.run(cmd, shell=True, check=True)
-        logger.info(f"[Backup] Diário concluído com sucesso: {path}")
-    except Exception as e:
-        logger.error(f"[Backup] Falha no backup diário: {e}")
 
 
 async def _verificar_sincronia_datajud():
@@ -958,7 +954,12 @@ async def _backup_banco():
             "-U", url.username, "-d", url.path.lstrip("/"), "-Fc",
         ]
         with open(destino, "wb") as f:
-            r = subprocess.run(cmd_dump, stdout=f, env=env, timeout=300)
+            # subprocess.run é bloqueante: rodando dentro de coroutine do
+            # AsyncIOScheduler travaria o event loop de toda a API por dezenas
+            # de segundos. to_thread joga a chamada num worker thread.
+            r = await asyncio.to_thread(
+                subprocess.run, cmd_dump, stdout=f, env=env, timeout=300
+            )
         if r.returncode == 0:
             tamanho_mb = os.path.getsize(destino) / (1024 * 1024)
             logger.info(f"[Backup] Dump criado: {destino} ({tamanho_mb:.1f} MB)")
@@ -970,7 +971,8 @@ async def _backup_banco():
         if settings.BACKUP_REMOTE:
             rclone = shutil.which("rclone")
             if rclone:
-                r2 = subprocess.run(
+                r2 = await asyncio.to_thread(
+                    subprocess.run,
                     [rclone, "copy", destino, settings.BACKUP_REMOTE],
                     timeout=120,
                 )
