@@ -1,4 +1,5 @@
 import { useEffect, useState, useCallback } from "react";
+import { useSearchParams } from "react-router-dom";
 import { toast } from "../components/Toast";
 import {
   Building2,
@@ -24,6 +25,12 @@ const fmtMoney = (v?: number | null) =>
 
 const fmtPct = (v?: number | null) =>
   Number.isFinite(v) ? `${((v as number) * 100).toFixed(1)}%` : "—";
+
+export type SocietyTab = "socios" | "distribuicao" | "saques";
+
+export function isSocietyTab(value: string | null): value is SocietyTab {
+  return ["socios", "distribuicao", "saques"].includes(value ?? "");
+}
 
 interface Socio {
   id: string;
@@ -58,7 +65,6 @@ interface Withdrawal {
   created_at: string;
 }
 
-// Status reais gravados pelo backend (pt-BR): pendente/aprovado/pago/rejeitado
 const STATUS_COLOR: Record<string, string> = {
   pendente: "bg-warn-50 text-warn-700",
   aprovado: "bg-success-50 text-success-700",
@@ -73,6 +79,15 @@ const STATUS_LABEL: Record<string, string> = {
 };
 
 export default function Sociedade() {
+  const [searchParams, setSearchParams] = useSearchParams();
+  const rawTab = searchParams.get("sub");
+  const tab: SocietyTab = isSocietyTab(rawTab) ? rawTab : "socios";
+  const setTab = (next: SocietyTab) => {
+    const params = new URLSearchParams(searchParams);
+    params.set("sub", next);
+    setSearchParams(params, { replace: true });
+  };
+
   const [socios, setSocios] = useState<Socio[]>([]);
   const [totalPart, setTotalPart] = useState(0);
   const [distrib, setDistrib] = useState<Distribuicao[]>([]);
@@ -80,9 +95,6 @@ export default function Sociedade() {
   const [users, setUsers] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
   const [erro, setErro] = useState("");
-  const [tab, setTab] = useState<"socios" | "distribuicao" | "saques">(
-    "socios",
-  );
   const [showFormSocio, setShowFormSocio] = useState(false);
   const [showFormDist, setShowFormDist] = useState(false);
   const [showFormSaque, setShowFormSaque] = useState(false);
@@ -118,9 +130,9 @@ export default function Sociedade() {
       } else setErro("Acesso restrito a sócios.");
       if (d.status === "fulfilled")
         setDistrib(asList<Distribuicao>(d.value.data));
-      if (u.status === "fulfilled")
-        setUsers(asList(u.value.data));
-      if (w.status === "fulfilled") setWithdrawals(asList<Withdrawal>(w.value.data));
+      if (u.status === "fulfilled") setUsers(asList(u.value.data));
+      if (w.status === "fulfilled")
+        setWithdrawals(asList<Withdrawal>(w.value.data));
     } finally {
       setLoading(false);
     }
@@ -220,7 +232,6 @@ export default function Sociedade() {
     }
   };
 
-  // KPIs
   const totalDistrib = distrib.reduce((a, d) => a + (d.valor_total ?? 0), 0);
   const totalSaquesPagos = withdrawals
     .filter((w) => w.status === "pago")
@@ -257,7 +268,6 @@ export default function Sociedade() {
         }
       />
 
-      {/* KPI cards */}
       <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
         <div className="bg-white rounded-xl border border-slate-200 p-4 flex items-center gap-3">
           <div className="p-2.5 bg-primary-50 rounded-lg">
@@ -313,7 +323,6 @@ export default function Sociedade() {
         </div>
       </div>
 
-      {/* Tabs */}
       <div className="flex gap-1 border-b border-slate-200">
         {(["socios", "distribuicao", "saques"] as const).map((t) => (
           <button
@@ -334,14 +343,11 @@ export default function Sociedade() {
         ))}
       </div>
 
-      {/* Tab: Sócios */}
       {tab === "socios" && (
         <div className="bg-white rounded-xl border border-slate-200 p-5">
           <div className="flex items-center justify-between mb-4">
             <div>
-              <h2 className="font-semibold text-slate-800">
-                Quadro Societário
-              </h2>
+              <h2 className="font-semibold text-slate-800">Quadro Societário</h2>
               <p className="text-xs text-slate-400 mt-0.5">
                 Participação total:{" "}
                 <span
@@ -489,7 +495,6 @@ export default function Sociedade() {
         </div>
       )}
 
-      {/* Tab: Distribuição */}
       {tab === "distribuicao" && (
         <div className="bg-white rounded-xl border border-slate-200 p-5">
           <div className="flex items-center justify-between mb-4">
@@ -562,7 +567,7 @@ export default function Sociedade() {
                 Nenhuma distribuição registrada.
               </p>
             ) : (
-              distrib.map((d, i) => {
+              distrib.map((d) => {
                 const quota = socios
                   .filter((s) => s.ativo)
                   .map((s) => ({
@@ -612,7 +617,6 @@ export default function Sociedade() {
         </div>
       )}
 
-      {/* Tab: Saques */}
       {tab === "saques" && (
         <div className="bg-white rounded-xl border border-slate-200 p-5">
           <div className="flex items-center justify-between mb-4">
