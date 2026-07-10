@@ -38,9 +38,8 @@ def _req_clientes(cu: User = Depends(get_current_user)) -> User:
 
 
 def _req_clientes_leitura(cu: User = Depends(get_current_user)) -> User:
-    """Leitura do CRM restrita à equipe interna — bloqueia cliente_externo
-    (portal do cliente NÃO pode listar/consultar a carteira de clientes)."""
-    if cu.role.value == "cliente_externo":
+    """Leitura integral do CRM limitada aos perfis definidos na matriz _CLIENTES."""
+    if cu.role.value not in _CLIENTES:
         raise HTTPException(status_code=403, detail="Sem permissão para consultar clientes")
     return cu
 
