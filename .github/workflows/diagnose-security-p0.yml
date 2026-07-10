@@ -21,17 +21,20 @@ jobs:
         run: |
           python - <<'PY'
           from pathlib import Path
-          import textwrap
           import traceback
 
           try:
               workflow = Path('.github/workflows/apply-security-p0.yml').read_text(encoding='utf-8')
               start = workflow.index("python - <<'PY'\n") + len("python - <<'PY'\n")
               end = workflow.index("\n          PY", start)
-              code = textwrap.dedent(workflow[start:end])
+              raw = workflow[start:end]
+              code = "\n".join(
+                  line[10:] if line.startswith("          ") else line
+                  for line in raw.splitlines()
+              )
               exec(compile(code, 'apply-security-p0', 'exec'))
               Path('security-p0-diagnostic.log').write_text('PATCH_OK\n', encoding='utf-8')
-          except Exception:
+          except BaseException:
               Path('security-p0-diagnostic.log').write_text(traceback.format_exc(), encoding='utf-8')
           PY
       - uses: actions/upload-artifact@v4
