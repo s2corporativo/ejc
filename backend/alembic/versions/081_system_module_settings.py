@@ -2,6 +2,7 @@
 
 Cria overrides administrativos para habilitação, visibilidade e substituição de
 rotas. A tabela não concede autorização e não substitui RBAC.
+A cadeia foi reancorada em 079 porque a migration 080 não integra a branch principal.
 
 Revision ID: 081_system_module_settings
 Revises: 079_client_hash_partial_deleted
