@@ -4,13 +4,14 @@ import {
   AlertCircle,
   ArrowRight,
   LockKeyhole,
-  Scale,
   ShieldCheck,
   Sparkles,
 } from "lucide-react";
 import api from "../lib/api";
 import type { LoginResponse } from "../types";
 import { useAuth } from "../stores/auth";
+import { usePreferencesStore } from "../stores/preferences";
+import { canRoleAccessPath } from "../config/moduleRegistry";
 
 const BRAND_LOGO = "/brand/de-paula-teixeira-logo.jpg";
 
@@ -30,7 +31,6 @@ export default function LoginModern() {
         email,
         password,
       });
-      // Só o access curto em localStorage; o refresh vem em cookie httpOnly (ejc_refresh).
       localStorage.setItem("ejc_access", data.access_token);
       const user = {
         id: data.user_id,
@@ -38,13 +38,17 @@ export default function LoginModern() {
         full_name: data.full_name,
         role: data.role,
       };
-      localStorage.setItem("ejc_user", JSON.stringify(user));
       setSession(user);
       if (data.must_change_password) {
         nav("/trocar-senha");
         return;
       }
-      nav(data.role === "cliente_externo" ? "/portal" : "/");
+      if (data.role === "cliente_externo") {
+        nav("/portal");
+        return;
+      }
+      const preferredHome = usePreferencesStore.getState().homeRoute;
+      nav(canRoleAccessPath(data.role, preferredHome) ? preferredHome : "/");
     } catch (e: any) {
       setErro(e.response?.data?.detail || "Falha no login");
     } finally {
@@ -54,11 +58,9 @@ export default function LoginModern() {
 
   return (
     <div className="min-h-screen overflow-hidden bg-canvas text-slate-950">
-      {/* Marca d'água da logomarca — um pouco mais visível no login */}
       <div className="brand-watermark opacity-[0.05]" aria-hidden="true" />
       <div className="relative z-10 grid min-h-screen lg:grid-cols-[1fr_460px]">
         <section className="relative hidden flex-col justify-between overflow-hidden p-10 text-slate-900 lg:flex">
-          {/* Radiais dourados afastados do canto da logo (fundo da marca fica branco puro) */}
           <div className="pointer-events-none absolute inset-0 bg-[radial-gradient(circle_at_35%_45%,rgba(201,162,39,.10),transparent_30rem),radial-gradient(circle_at_90%_90%,rgba(216,185,78,.12),transparent_26rem)]" />
           <div className="relative flex items-center gap-3">
             <img
@@ -71,21 +73,21 @@ export default function LoginModern() {
           <div className="relative max-w-2xl">
             <div className="mb-4 inline-flex items-center gap-2 rounded-full border border-primary-200 bg-primary-50 px-3 py-1 text-xs font-semibold text-primary-700">
               <Sparkles className="h-3.5 w-3.5" />
-              Plataforma juridica empresarial
+              Plataforma jurídica empresarial
             </div>
             <h1 className="max-w-xl text-5xl font-semibold leading-tight tracking-tight text-slate-950">
-              Gestao juridica com controle, produtividade e IA revisavel.
+              Gestão jurídica com controle, produtividade e IA revisável.
             </h1>
             <p className="mt-5 max-w-xl text-base leading-7 text-slate-500">
               Centralize casos, clientes, prazos, documentos, financeiro e
-              producao juridica em um ambiente seguro para operacao
+              produção jurídica em um ambiente seguro para operação
               profissional.
             </p>
             <div className="mt-8 grid max-w-xl grid-cols-3 gap-3">
               {[
-                ["Prazos", "Alertas criticos"],
-                ["Financeiro", "Honorarios e receitas"],
-                ["IA", "Rascunhos revisaveis"],
+                ["Prazos", "Alertas críticos"],
+                ["Financeiro", "Honorários e receitas"],
+                ["IA", "Respostas revisáveis"],
               ].map(([title, desc]) => (
                 <div
                   key={title}
@@ -102,7 +104,7 @@ export default function LoginModern() {
 
           <div className="relative flex items-center gap-2 text-xs text-slate-500">
             <ShieldCheck className="h-4 w-4 text-primary-500" />
-            Acesso restrito com trilha de auditoria e perfis de permissao.
+            Acesso restrito com trilha de auditoria e perfis de permissão.
           </div>
         </section>
 
@@ -121,12 +123,12 @@ export default function LoginModern() {
                 <div className="mb-3 flex h-11 w-11 items-center justify-center rounded-xl bg-primary-50 text-primary-600">
                   <LockKeyhole className="h-5 w-5" />
                 </div>
-                <p className="eyebrow">Area restrita</p>
+                <p className="eyebrow">Área restrita</p>
                 <h1 className="mt-2 text-2xl font-semibold tracking-tight text-slate-950">
                   Entrar no EJC
                 </h1>
                 <p className="mt-2 text-sm text-slate-500">
-                  Use suas credenciais internas para acessar o escritorio
+                  Use suas credenciais internas para acessar o escritório
                   digital.
                 </p>
               </div>
