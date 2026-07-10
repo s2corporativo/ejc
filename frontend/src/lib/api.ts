@@ -43,6 +43,13 @@ api.interceptors.response.use(
   (r) => r,
   async (error) => {
     const original = error.config;
+    const requestUrl = String(original?.url || "");
+    const isAuthenticationRequest =
+      requestUrl.includes("/auth/login") ||
+      requestUrl.includes("/auth/refresh") ||
+      requestUrl.includes("/auth/recuperar-senha") ||
+      requestUrl.includes("/auth/redefinir-senha");
+
     // Troca de senha obrigatória: backend bloqueia tudo com 403+flag
     if (
       error.response?.status === 403 &&
@@ -58,6 +65,7 @@ api.interceptors.response.use(
     // chegar à tela de autenticação, sem logout ou redirecionamento automático.
     if (
       error.response?.status === 401 &&
+      !isAuthenticationRequest &&
       getAccessToken() &&
       original &&
       !original._retry
