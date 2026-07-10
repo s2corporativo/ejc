@@ -1,0 +1,36 @@
+name: Finalize CI Readonly Cleanup Once
+
+on:
+  pull_request:
+    branches:
+      - main
+    paths:
+      - "scripts/finalize_ci_readonly_cleanup.py"
+      - ".github/workflows/ci-readonly-kick.yml"
+
+permissions:
+  contents: write
+
+jobs:
+  finalize:
+    if: github.event.pull_request.head.ref == 'fix/ci-readonly-cleanup'
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: fix/ci-readonly-cleanup
+          fetch-depth: 0
+
+      - name: Apply deterministic integration and remove temporary files
+        run: |
+          set -euo pipefail
+          python scripts/finalize_ci_readonly_cleanup.py
+          rm scripts/finalize_ci_readonly_cleanup.py
+          rm .github/workflows/ci-readonly-kick.yml
+          rm -f .github/workflows/ci-readonly-finalize.yml
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add backend/app/main.py backend/app/models/__init__.py frontend/src/components/Layout.tsx frontend/src/pages/Configuracoes.tsx scripts/finalize_ci_readonly_cleanup.py .github/workflows/ci-readonly-kick.yml .github/workflows/ci-readonly-finalize.yml
+          git commit -m "fix: persiste lifecycle e elimina automações temporárias"
+          git push origin HEAD:fix/ci-readonly-cleanup
