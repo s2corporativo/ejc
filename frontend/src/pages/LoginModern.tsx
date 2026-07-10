@@ -18,11 +18,13 @@ const BRAND_LOGO = "/brand/de-paula-teixeira-logo.jpg";
 type LoginLocationState = { from?: string } | null;
 
 export default function LoginModern() {
-  const { setSession } = useAuth();
+  const { setSession, bootstrap } = useAuth();
   const nav = useNavigate();
   const location = useLocation();
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
+  const [totpCode, setTotpCode] = useState("");
+  const [requiresTotp, setRequiresTotp] = useState(false);
   const [erro, setErro] = useState("");
   const [loading, setLoading] = useState(false);
 
@@ -30,11 +32,16 @@ export default function LoginModern() {
 
   const submit = async () => {
     setErro("");
+    if (requiresTotp && !/^\d{6}$/.test(totpCode)) {
+      setErro("Informe o código de 6 dígitos do aplicativo autenticador.");
+      return;
+    }
     setLoading(true);
     try {
       const { data } = await api.post<LoginResponse>("/auth/login", {
         email,
         password,
+        ...(totpCode ? { totp_code: totpCode } : {}),
       });
       localStorage.setItem("ejc_access", data.access_token);
       const user = {
@@ -44,6 +51,8 @@ export default function LoginModern() {
         role: data.role,
       };
       setSession(user);
+      await bootstrap();
+
       if (data.must_change_password) {
         nav("/trocar-senha", { replace: true });
         return;
@@ -70,7 +79,17 @@ export default function LoginModern() {
         replace: true,
       });
     } catch (e: any) {
-      setErro(e.response?.data?.detail || "Falha no login");
+      const detail = e.response?.data?.detail;
+      const message =
+        typeof detail === "string"
+          ? detail
+          : detail?.message || "Falha no login";
+      if (message.includes("TOTP obrigatório")) {
+        setRequiresTotp(true);
+        setErro("Confirme o código do aplicativo autenticador.");
+      } else {
+        setErro(message);
+      }
     } finally {
       setLoading(false);
     }
@@ -141,15 +160,22 @@ export default function LoginModern() {
             <div className="rounded-2xl border border-slate-200/60 bg-white p-8 shadow-[0_8px_30px_rgba(16,24,40,.08)]">
               <div className="mb-7">
                 <div className="mb-3 flex h-11 w-11 items-center justify-center rounded-xl bg-primary-50 text-primary-600">
-                  <LockKeyhole className="h-5 w-5" />
+                  {requiresTotp ? (
+                    <ShieldCheck className="h-5 w-5" />
+                  ) : (
+                    <LockKeyhole className="h-5 w-5" />
+                  )}
                 </div>
-                <p className="eyebrow">Área restrita</p>
+                <p className="eyebrow">
+                  {requiresTotp ? "Segunda etapa" : "Área restrita"}
+                </p>
                 <h1 className="mt-2 text-2xl font-semibold tracking-tight text-slate-950">
-                  Entrar no EJC
+                  {requiresTotp ? "Confirmar autenticação" : "Entrar no EJC"}
                 </h1>
                 <p className="mt-2 text-sm text-slate-500">
-                  Use suas credenciais internas para acessar o escritório
-                  digital.
+                  {requiresTotp
+                    ? "Digite o código temporário do aplicativo autenticador."
+                    : "Use suas credenciais internas para acessar o escritório digital."}
                 </p>
               </div>
 
@@ -167,7 +193,8 @@ export default function LoginModern() {
                     className="input h-11"
                     type="email"
                     value={email}
-                    autoFocus
+                    autoFocus={!requiresTotp}
+                    disabled={requiresTotp}
                     placeholder="seu@escritorio.adv.br"
                     onChange={(e) => setEmail(e.target.value)}
                     onKeyDown={(e) => e.key === "Enter" && submit()}
@@ -179,32 +206,66 @@ export default function LoginModern() {
                     className="input h-11"
                     type="password"
                     value={password}
+                    disabled={requiresTotp}
                     placeholder="********"
                     onChange={(e) => setPassword(e.target.value)}
                     onKeyDown={(e) => e.key === "Enter" && submit()}
                   />
                 </div>
+                {requiresTotp && (
+                  <div>
+                    <label className="label">Código de autenticação</label>
+                    <input
+                      className="input h-11 font-mono text-center tracking-[0.4em]"
+                      inputMode="numeric"
+                      autoComplete="one-time-code"
+                      autoFocus
+                      maxLength={6}
+                      value={totpCode}
+                      placeholder="000000"
+                      onChange={(e) =>
+                        setTotpCode(e.target.value.replace(/\D/g, ""))
+                      }
+                      onKeyDown={(e) => e.key === "Enter" && submit()}
+                    />
+                  </div>
+                )}
                 <button
                   className="btn-primary h-11 w-full"
                   disabled={loading}
                   onClick={submit}
                 >
                   {loading ? (
-                    "Entrando..."
+                    "Validando..."
                   ) : (
                     <>
-                      Entrar <ArrowRight className="h-4 w-4" />
+                      {requiresTotp ? "Confirmar" : "Entrar"}{" "}
+                      <ArrowRight className="h-4 w-4" />
                     </>
                   )}
                 </button>
-                <div className="text-center">
-                  <Link
-                    to="/recuperar-senha"
-                    className="text-xs font-medium text-primary-600 transition-colors hover:text-primary-700"
+                {requiresTotp ? (
+                  <button
+                    type="button"
+                    className="btn-ghost w-full justify-center text-xs"
+                    onClick={() => {
+                      setRequiresTotp(false);
+                      setTotpCode("");
+                      setErro("");
+                    }}
                   >
-                    Esqueci minha senha
-                  </Link>
-                </div>
+                    Voltar e alterar credenciais
+                  </button>
+                ) : (
+                  <div className="text-center">
+                    <Link
+                      to="/recuperar-senha"
+                      className="text-xs font-medium text-primary-600 transition-colors hover:text-primary-700"
+                    >
+                      Esqueci minha senha
+                    </Link>
+                  </div>
+                )}
               </div>
             </div>
             <p className="mt-6 text-center text-[11px] tracking-wide text-slate-400">
