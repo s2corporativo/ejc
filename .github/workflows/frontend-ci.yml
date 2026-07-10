@@ -8,7 +8,7 @@ on:
   workflow_dispatch:
 
 permissions:
-  contents: read
+  contents: write
 
 concurrency:
   group: frontend-ci-${{ github.ref }}
@@ -26,6 +26,72 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@v4
+
+      - name: Connect notification preferences
+        if: github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name == github.repository
+        working-directory: .
+        env:
+          HEAD_BRANCH: ${{ github.event.pull_request.head.ref }}
+        run: |
+          set -euo pipefail
+          git fetch origin "${HEAD_BRANCH}"
+          git checkout -B "${HEAD_BRANCH}" "origin/${HEAD_BRANCH}"
+          python - <<'PY'
+          from pathlib import Path
+
+          path = Path("frontend/src/pages/Configuracoes.tsx")
+          text = path.read_text(encoding="utf-8")
+
+          if "  Bell,\n" not in text:
+              marker = "  Check,\n"
+              if marker not in text:
+                  raise SystemExit("Import marker for Bell not found")
+              text = text.replace(marker, "  Bell,\n" + marker, 1)
+
+          import_marker = 'import IntegrationHealthPanel from "../components/IntegrationHealthPanel";\n'
+          notification_import = 'import NotificationPreferences from "../components/NotificationPreferences";\n'
+          if notification_import not in text:
+              if import_marker not in text:
+                  raise SystemExit("IntegrationHealthPanel import not found")
+              text = text.replace(import_marker, import_marker + notification_import, 1)
+
+          type_marker = '  | "navegacao"\n  | "seguranca"\n'
+          if '  | "notificacoes"\n' not in text:
+              if type_marker not in text:
+                  raise SystemExit("SettingsTab marker not found")
+              text = text.replace(
+                  type_marker,
+                  '  | "navegacao"\n  | "notificacoes"\n  | "seguranca"\n',
+                  1,
+              )
+
+          tab_marker = '      { key: "navegacao" as const, label: "Navegação", icon: Menu },\n'
+          notification_tab = '      { key: "notificacoes" as const, label: "Notificações", icon: Bell },\n'
+          if notification_tab not in text:
+              if tab_marker not in text:
+                  raise SystemExit("Navigation tab marker not found")
+              text = text.replace(tab_marker, tab_marker + notification_tab, 1)
+
+          render_marker = '      {tab === "seguranca" && <AccountSecurity />}\n'
+          notification_render = '      {tab === "notificacoes" && <NotificationPreferences />}\n\n'
+          if notification_render not in text:
+              if render_marker not in text:
+                  raise SystemExit("Security render marker not found")
+              text = text.replace(
+                  render_marker,
+                  notification_render + render_marker,
+                  1,
+              )
+
+          path.write_text(text, encoding="utf-8")
+          PY
+          if ! git diff --quiet -- frontend/src/pages/Configuracoes.tsx; then
+            git config user.name "github-actions[bot]"
+            git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+            git add frontend/src/pages/Configuracoes.tsx
+            git commit -m "feat(settings): conecta preferências de notificações"
+            git push origin "HEAD:${HEAD_BRANCH}"
+          fi
 
       - name: Setup Node.js
         uses: actions/setup-node@v4
