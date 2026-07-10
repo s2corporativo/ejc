@@ -8,7 +8,7 @@ on:
   workflow_dispatch:
 
 permissions:
-  contents: write
+  contents: read
 
 concurrency:
   group: frontend-ci-${{ github.ref }}
@@ -27,35 +27,6 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
 
-      - name: Apply deterministic manifest typing fix
-        if: github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name == github.repository
-        working-directory: .
-        env:
-          HEAD_BRANCH: ${{ github.event.pull_request.head.ref }}
-        run: |
-          set -euo pipefail
-          git fetch origin "${HEAD_BRANCH}"
-          git checkout -B "${HEAD_BRANCH}" "origin/${HEAD_BRANCH}"
-          python - <<'PY'
-          from pathlib import Path
-
-          path = Path("frontend/src/config/moduleRegistry.tsx")
-          text = path.read_text(encoding="utf-8")
-          old = "  const groupIndex = new Map(\n"
-          new = "  const groupIndex = new Map<string, number>(\n"
-          if old in text:
-              path.write_text(text.replace(old, new, 1), encoding="utf-8")
-          elif new not in text:
-              raise SystemExit("Trecho esperado do manifesto não foi encontrado")
-          PY
-          if ! git diff --quiet -- frontend/src/config/moduleRegistry.tsx; then
-            git config user.name "github-actions[bot]"
-            git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-            git add frontend/src/config/moduleRegistry.tsx
-            git commit -m "fix(frontend): tipa índice dos grupos do manifesto"
-            git push origin "HEAD:${HEAD_BRANCH}"
-          fi
-
       - name: Setup Node.js
         uses: actions/setup-node@v4
         with:
@@ -67,18 +38,7 @@ jobs:
         run: npm ci
 
       - name: Typecheck and build
-        run: |
-          set -o pipefail
-          npm run build 2>&1 | tee ci-diagnostics.txt
-
-      - name: Upload frontend diagnostics
-        if: always()
-        uses: actions/upload-artifact@v4
-        with:
-          name: frontend-ci-diagnostics
-          path: frontend/ci-diagnostics.txt
-          if-no-files-found: ignore
-          retention-days: 1
+        run: npm run build
 
       - name: Unit tests
         run: npm test
