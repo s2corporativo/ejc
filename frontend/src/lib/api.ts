@@ -52,7 +52,16 @@ api.interceptors.response.use(
       window.location.href = "/trocar-senha";
       return Promise.reject(error);
     }
-    if (error.response?.status === 401 && !original._retry) {
+
+    // Só tenta refresh quando a requisição realmente partiu de uma sessão com
+    // access token. Erros 401 de login (senha incorreta ou desafio TOTP) devem
+    // chegar à tela de autenticação, sem logout ou redirecionamento automático.
+    if (
+      error.response?.status === 401 &&
+      getAccessToken() &&
+      original &&
+      !original._retry
+    ) {
       original._retry = true;
       try {
         const newToken = await refreshAccessToken();
