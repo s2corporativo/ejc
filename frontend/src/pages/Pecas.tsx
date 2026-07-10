@@ -241,7 +241,13 @@ export default function Pecas() {
     }
   };
 
+  // Geração cara (weasyprint + mesclagem de anexos) e rate-limited (5/min):
+  // trava o botão da linha durante a chamada para evitar disparo duplo.
+  const [gerandoVL, setGerandoVL] = useState<string | null>(null);
+
   const baixarDocumentoUnico = async (doc: LegalDoc) => {
+    if (gerandoVL) return;
+    setGerandoVL(doc.id);
     try {
       const r = await api.get(
         `/legal-docs/${doc.id}/documento-unico-impressao`,
@@ -268,6 +274,8 @@ export default function Pecas() {
           ? (detail.mensagem ?? JSON.stringify(detail).slice(0, 200))
           : detail;
       toast.error(msg || "Falha ao gerar o documento único de impressão.");
+    } finally {
+      setGerandoVL(null);
     }
   };
 
@@ -447,8 +455,9 @@ export default function Pecas() {
                       className="btn-ghost px-2 py-1 text-xs"
                       title="Documento único de impressão (peça + anexos com capas Visual Law)"
                       onClick={() => baixarDocumentoUnico(p)}
+                      disabled={gerandoVL !== null}
                     >
-                      <FileDown size={15} /> VL
+                      <FileDown size={15} /> {gerandoVL === p.id ? "Gerando..." : "VL"}
                     </button>
                     <button
                       className="btn-ghost px-2 py-1"

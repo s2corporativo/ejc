@@ -349,11 +349,13 @@ async def gerar_peca_pipeline(
     yield await _emit("step", {"etapa": 3, "titulo": "Buscando fundamentos legais", "status": "em_andamento"})
 
     query_rag = f"{area_direito} {tipo_peca_final} {fatos_limpos[:200]}"
-    fontes = await buscar_contexto_rag(db, query_rag, limite=6, scope_client_id=scope_client_id)
+    # limite=10: a base de conhecimento é alimentada pelo escritório (julgados,
+    # pareceres, docs regulatórios) — peça padrão-ouro consome mais acervo.
+    fontes = await buscar_contexto_rag(db, query_rag, limite=10, scope_client_id=scope_client_id)
     rag_txt = ""
     if fontes:
         linhas = [
-            f"[Fonte {i+1}] {f['titulo']} ({f['categoria']})\n{f['conteudo'][:600]}"
+            f"[Fonte {i+1}] {f['titulo']} ({f['categoria']})\n{f['conteudo'][:900]}"
             for i, f in enumerate(fontes)
         ]
         rag_txt = "\n\n[LEGISLAÇÃO E DOUTRINA ENCONTRADAS]\n" + "\n\n".join(linhas)
@@ -378,7 +380,7 @@ async def gerar_peca_pipeline(
             )},
             {"role": "user", "content": (
                 f"Fatos: {fatos_limpos[:1000]}\nPedidos: {pedidos_limpos[:300]}\n"
-                f"{rag_txt[:3000] if rag_txt else 'Sem fontes RAG disponíveis.'}\n\n"
+                f"{rag_txt[:4500] if rag_txt else 'Sem fontes RAG disponíveis.'}\n\n"
                 "Identifique jurisprudência e doutrina aplicáveis apenas das fontes acima. "
                 "Formato: tribunal, número/ementa, aplicabilidade ao caso."
             )},
@@ -462,9 +464,17 @@ async def gerar_peca_pipeline(
         # Padrão-ouro: a ancoragem dos fatos "(doc. NN)" e a RELAÇÃO DE
         # DOCUMENTOS ANEXOS partem do acervo probatório REAL do caso — a IA não
         # inventa documento. Mesma ordenação do Documento Único (ordem, created_at).
+        # deleted_at do Document no ON (não no WHERE): documento eliminado do
+        # GED (inclusive por pedido LGPD) não pode vazar título para o prompt,
+        # mas a linha da Prova permanece — numeração "(doc. NN)" segue 1:1 com
+        # as capas do Documento Único.
+        from sqlalchemy import and_
         rows_provas = (await db.execute(
             select(Prova, Document.titulo)
-            .outerjoin(Document, Document.id == Prova.document_id)
+            .outerjoin(Document, and_(
+                Document.id == Prova.document_id,
+                Document.deleted_at.is_(None),
+            ))
             .where(Prova.case_id == case_id, Prova.deleted_at.is_(None))
             .order_by(Prova.ordem, Prova.created_at)
         )).all()
@@ -472,14 +482,22 @@ async def gerar_peca_pipeline(
             linhas_provas = []
             for i, (p_row, doc_titulo) in enumerate(rows_provas, start=1):
                 rotulo = (p_row.titulo or doc_titulo or f"Documento {i}").strip()
-                resumo = (p_row.fato_probando or p_row.descricao or "").strip()
+                # Sanitiza ANTES de truncar: cortar um CPF/telefone ao meio
+                # deixaria o fragmento fora do alcance dos regex de PII.
+                resumo, pii_resumo = sanitizar_pii(
+                    (p_row.fato_probando or p_row.descricao or "").strip(),
+                    _nomes_mascarar,
+                )
+                houve_pii = houve_pii or pii_resumo
                 linha = f"Doc. {i:02d} — {rotulo}"
                 if resumo:
                     linha += f": {resumo[:240]}"
                 linhas_provas.append(linha)
             # Mesmo contrato LGPD dos fatos: PII estrutural sempre removida;
             # nomes só pré-mascarados quando NÃO há pseudonimização reversível.
-            bloco_provas, _ = sanitizar_pii("\n".join(linhas_provas), _nomes_mascarar)
+            # O indicador entra no OR de houve_pii (AILog.pii_removida fiel).
+            bloco_provas, pii_provas = sanitizar_pii("\n".join(linhas_provas), _nomes_mascarar)
+            houve_pii = houve_pii or pii_provas
             relacao_provas = (
                 "RELAÇÃO DE PROVAS DO CASO — ancore CADA fato relevante à prova "
                 "correspondente com \"(doc. NN)\" e gere a seção final RELAÇÃO DE "
@@ -518,7 +536,7 @@ async def gerar_peca_pipeline(
                 f"JURISPRUDÊNCIA (RAG):\n{r4.texto[:1000]}\n\n"
                 f"ARGUMENTOS ORGANIZADOS:\n{r5.texto[:1500]}\n\n"
                 f"RISCOS (para evitar na peça):\n{r6.texto[:800]}\n\n"
-                f"{rag_txt[:2000] if rag_txt else ''}\n"
+                f"{rag_txt[:4500] if rag_txt else ''}\n"
                 f"{'INSTRUÇÕES ADICIONAIS: ' + instrucoes if instrucoes else ''}\n\n"
                 f"Redija a {nome_peca} completa com todos os elementos formais obrigatórios."
             )},

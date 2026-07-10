@@ -24,7 +24,8 @@ TIPOS (use o template/base legal correspondente): Petição Inicial (CPC 319); C
 Apelação (CPC 1.010); Embargos de Declaração (CPC 1.022); Agravo de Instrumento (CPC 1.016);
 Habeas Corpus (CPP 648); Notificação Extrajudicial; Parecer Jurídico; Recurso Ordinário Trabalhista (CLT 895).
 
-AO FINAL DE QUALQUER PEÇA, INCLUA o CHECKLIST PARA O ADVOGADO REVISOR:
+APÓS o documento (nunca dentro dele), sob o separador
+"=== NOTA INTERNA — NÃO PROTOCOLAR ===", INCLUA o CHECKLIST PARA O ADVOGADO REVISOR:
 [ ] Dados das partes [ ] Endereçamento/juízo competente [ ] Foro [ ] Prazo de protocolo
 [ ] Documentos para juntada [ ] Valor da causa [ ] Pedidos coerentes [ ] Jurisprudência verificada
 [ ] Honorários de sucumbência [ ] Assinatura do advogado responsável

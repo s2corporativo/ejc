@@ -9,12 +9,12 @@ from uuid import uuid4
 from typing import Optional
 
 from fastapi import APIRouter, Depends, HTTPException, Query, BackgroundTasks
-from sqlalchemy import select, func as sqlfunc, or_
+from sqlalchemy import and_, select, func as sqlfunc, or_
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.database import get_db
 from app.core.rate_limit import rate_limit
-from app.core.security import get_current_user
+from app.core.security import get_current_user, ROLE_LEVEL
 from app.core.ownership import verificar_acesso_caso, is_gestao
 from app.models.case import Case
 from app.models.user import User
@@ -693,8 +693,12 @@ async def documento_unico_impressao(
     seguido, quando o caso tem acervo probatório, do bloco de anexos Visual Law
     (capa + índice + separadores "DOC. NN" + arquivos reais mesclados).
 
-    Mesmos gates de qualidade do /pdf (validação jurídica + auditoria de
-    jurisprudência) — este endpoint é uma exportação FINAL, não rascunho.
+    Decisão de produto: diferente do /pdf (exportação de protocolo, bloqueada
+    até a validação), este endpoint sai em QUALQUER status — a peça é rascunho
+    no fluxo HITL, mas o PDF já tem a forma do documento final protocolável.
+    O controle de revisão permanece no status da LegalDoc (o PATCH continua
+    exigindo revisão humana para aprovar); a auditoria de jurisprudência roda
+    de forma NÃO bloqueante e fica registrada no audit log.
     Sem caso ou sem provas, devolve só o PDF da peça (ainda é o documento de
     impressão).
     """
@@ -702,7 +706,14 @@ async def documento_unico_impressao(
 
     from app.models.document import Document
     from app.models.prova import Prova
+    from app.routers.documents import _pode_acessar_confidencial
     from app.services import anexos_service
+
+    # Piso de papel do fluxo de anexos (anexos.py:_pode_gerar): este endpoint
+    # exporta BYTES de arquivos do caso — a regra anti-lockout do ownership
+    # sozinha liberaria qualquer interno em caso órfão (achado A3 da auditoria).
+    if ROLE_LEVEL.get(getattr(cu.role, "value", str(cu.role)), 0) < ROLE_LEVEL["advogado"]:
+        raise HTTPException(403, "Acesso restrito a advogado ou superior.")
 
     d = (await db.execute(
         select(LegalDoc).where(LegalDoc.id == doc_id, LegalDoc.deleted_at.is_(None))
@@ -714,7 +725,10 @@ async def documento_unico_impressao(
     if d.case_id:
         case = await verificar_acesso_caso(db, cu, d.case_id)
 
-    await _gates_exportacao_protocolo(db, d)
+    # Auditoria de jurisprudência NÃO bloqueante (vs. /pdf, onde bloqueia):
+    # o resultado vai para o audit log — rastro de que o rascunho impresso
+    # ainda carregava citação não validada.
+    auditoria_juris = await _auditar_jurisprudencia_peca(db, d.conteudo or "")
 
     titulo = padronizar_documento_juridico(d.titulo)
     conteudo = padronizar_documento_juridico(d.conteudo)
@@ -728,12 +742,39 @@ async def documento_unico_impressao(
     # casa 1:1 com as capas "DOC. NN" do bloco mesclado.
     total_anexos = 0
     if case is not None:
+        # deleted_at do Document no ON (não no WHERE): arquivo eliminado do GED
+        # (inclusive por pedido LGPD) não entra no pacote, mas a Prova permanece
+        # — a capa "DOC. NN" sai sem o anexo, preservando a numeração da peça.
         rows = (await db.execute(
             select(Prova, Document)
-            .outerjoin(Document, Document.id == Prova.document_id)
+            .outerjoin(Document, and_(
+                Document.id == Prova.document_id,
+                Document.deleted_at.is_(None),
+                # Trava anti-IDOR de leitura (achado A4): o invariante "prova
+                # aponta para doc do mesmo caso" é garantido na escrita, mas
+                # re-verificar aqui protege contra drift futuro (ex.: mover
+                # documento de caso).
+                Document.case_id == d.case_id,
+            ))
             .where(Prova.case_id == d.case_id, Prova.deleted_at.is_(None))
             .order_by(Prova.ordem, Prova.created_at)
         )).all()
+        # Cofre de confidencialidade (achado A1): mesmo gate do download direto
+        # do GED — doc restrito/confidencial/segredo_justica exige socio+. 403
+        # explícito em vez de excluir silenciosamente: pacote incompleto seria
+        # protocolado sem o advogado perceber.
+        bloqueados = [
+            doc.titulo for _, doc in rows
+            if doc is not None and not _pode_acessar_confidencial(cu, doc.confidencialidade.value)
+        ]
+        if bloqueados:
+            raise HTTPException(
+                status_code=403,
+                detail=(
+                    "Documento(s) sob confidencialidade no acervo do caso exigem "
+                    f"perfil sócio ou superior para exportação: {', '.join(bloqueados[:5])}"
+                ),
+            )
         if rows:
             ctx = await anexos_service.montar_contexto(db, case, None)
             itens = anexos_service.itens_de_provas(rows)
@@ -750,7 +791,11 @@ async def documento_unico_impressao(
 
     await criar_audit_log(
         db, cu.id, cu.role.value, "DOWNLOAD", "legal_docs", doc_id,
-        detalhes=f"Documento unico de impressao ({total_anexos} anexo(s))",
+        detalhes=(
+            f"Documento unico de impressao ({total_anexos} anexo(s); "
+            f"status={_status_value(d.status)}; "
+            f"jurisprudencia_apta={bool(auditoria_juris.get('apto'))})"
+        ),
     )
     await db.commit()
 

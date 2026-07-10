@@ -38,4 +38,12 @@ PADRAO_OURO_PECA = """
    caso, uma linha "Doc. NN — descrição — o que comprova". Incluir entradas
    "[A ser anexado pelo cliente]" para os documentos pessoais padrão (RG/CPF,
    comprovante de residência) quando fizer sentido para o tipo de ação.
+9. FORMA FINAL DE PROTOCOLO: o texto deve sair COMPLETO, como o documento final
+   pronto para protocolo — fecho padrão ("Termos em que, pede deferimento."),
+   local e data, e bloco de assinatura (nome e OAB do advogado responsável, com
+   placeholders quando não informados). NÃO escreva no corpo do documento:
+   comentários meta, avisos de rascunho, checklists de revisão, observações ao
+   revisor ou notas da IA — o controle de rascunho/revisão humana é do SISTEMA,
+   fora do texto. Qualquer nota interna necessária vem SOMENTE após o documento,
+   sob o separador "=== NOTA INTERNA — NÃO PROTOCOLAR ===".
 """
