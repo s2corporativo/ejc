@@ -54,3 +54,10 @@ async def mapa_modulos(request: Request, cu: User = Depends(_gestores)):
 async def status_integracoes(cu: User = Depends(require_admin)):
     """Inventário de configuração sem chaves, tokens, senhas ou valores do ambiente."""
     return build_integration_status(get_settings())
+
+
+# Lifecycle/feature flags pertencem ao mesmo domínio de governança modular.
+# O sub-router não possui prefixo próprio; herda /system-modules deste router.
+from app.routers import module_settings as _module_settings  # noqa: E402
+
+router.include_router(_module_settings.router)
