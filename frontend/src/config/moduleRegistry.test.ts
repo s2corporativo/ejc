@@ -50,9 +50,12 @@ describe("moduleRegistry", () => {
     const map = new Map(
       LEGACY_REDIRECTS.map((redirect) => [redirect.from, redirect.to]),
     );
-    expect(map.get("/partner-withdrawals")).toContain("societaria");
+    expect(map.get("/partner-withdrawals")).toBe(
+      "/financeiro?tab=societaria&sub=saques",
+    );
     expect(map.get("/office-contracts")).toContain("contratos");
-    expect(map.get("/agenda")).toContain("/atividades");
+    expect(map.get("/agenda")).toBe("/atividades?view=calendario");
+    expect(map.get("/kanban")).toBe("/atividades?view=kanban");
     expect(map.get("/assistente-ia")).toContain("/inteligencia");
     expect(map.get("/victory-vault")).toBe("/knowledge-hub");
   });

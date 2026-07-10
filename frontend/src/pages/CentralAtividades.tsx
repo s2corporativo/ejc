@@ -1,12 +1,11 @@
 import { useState, useEffect, useCallback, useMemo } from "react";
+import { useSearchParams } from "react-router-dom";
 import { PageHeader } from "../components/UI";
 import { toast } from "../components/Toast";
 import {
   Calendar,
   Clock,
-  AlertTriangle,
   CheckCircle,
-  ChevronRight,
   Filter,
   List,
   LayoutGrid,
@@ -23,7 +22,6 @@ import api from "../lib/api";
 import { asList } from "../lib/list";
 import { Modal } from "../components/UI";
 
-// ── Types ─────────────────────────────────────────────────────────────────────
 type ItemType =
   | "prazo"
   | "tarefa"
@@ -34,20 +32,25 @@ type ItemType =
   | "compromisso"
   | "diligencia";
 
+export type ActivityView = "lista" | "calendario" | "timeline" | "kanban";
+
+export function isActivityView(value: string | null): value is ActivityView {
+  return ["lista", "calendario", "timeline", "kanban"].includes(value ?? "");
+}
+
 interface Activity {
   id: string;
   tipo: ItemType;
   titulo: string;
   descricao?: string;
-  date: string; // ISO date string
+  date: string;
   dias_restantes?: number;
-  urgencia?: string; // vencido|critico|atencao|normal
+  urgencia?: string;
   status: string;
   case_id?: string;
   caso_titulo?: string;
 }
 
-// ── Helpers ───────────────────────────────────────────────────────────────────
 function fmtDate(d: string) {
   if (!d) return "—";
   const dt = new Date(d.includes("T") ? d : d + "T12:00:00");
@@ -57,6 +60,7 @@ function fmtDate(d: string) {
     year: "numeric",
   });
 }
+
 function fmtRelative(dias?: number) {
   if (dias === undefined || dias === null) return "";
   if (dias < 0) return `${Math.abs(dias)}d atraso`;
@@ -90,7 +94,6 @@ const TIPO_CONFIG: Record<
   diligencia: { label: "Diligência", icon: MapPin, color: "text-success-600" },
 };
 
-// ── Activity Row ──────────────────────────────────────────────────────────────
 function ActivityRow({ item }: { item: Activity }) {
   const cfg = TIPO_CONFIG[item.tipo];
   const Icon = cfg.icon;
@@ -134,7 +137,6 @@ function ActivityRow({ item }: { item: Activity }) {
   );
 }
 
-// ── Calendar View ─────────────────────────────────────────────────────────────
 function CalendarView({ items }: { items: Activity[] }) {
   const today = new Date();
   const [month, setMonth] = useState(today.getMonth());
@@ -147,9 +149,7 @@ function CalendarView({ items }: { items: Activity[] }) {
     const map: Record<string, Activity[]> = {};
     items.forEach((item) => {
       const d = item.date?.slice(0, 10);
-      if (d) {
-        map[d] = [...(map[d] ?? []), item];
-      }
+      if (d) map[d] = [...(map[d] ?? []), item];
     });
     return map;
   }, [items]);
@@ -176,6 +176,7 @@ function CalendarView({ items }: { items: Activity[] }) {
       setYear((y) => y - 1);
     } else setMonth((m) => m - 1);
   }
+
   function nextMonth() {
     if (month === 11) {
       setMonth(0);
@@ -279,7 +280,6 @@ function CalendarView({ items }: { items: Activity[] }) {
   );
 }
 
-// ── Timeline View ─────────────────────────────────────────────────────────────
 function TimelineView({ items }: { items: Activity[] }) {
   const grupos: { titulo: string; cor: string; itens: Activity[] }[] = [
     {
@@ -375,7 +375,6 @@ function TimelineView({ items }: { items: Activity[] }) {
   );
 }
 
-// ── Kanban de Atividades (por tipo) ───────────────────────────────────────────
 function KanbanAtividades({ items }: { items: Activity[] }) {
   const tipos: ItemType[] = [
     "prazo",
@@ -446,13 +445,18 @@ function KanbanAtividades({ items }: { items: Activity[] }) {
   );
 }
 
-// ── Main Component ────────────────────────────────────────────────────────────
 export default function CentralAtividades() {
+  const [searchParams, setSearchParams] = useSearchParams();
+  const rawView = searchParams.get("view");
+  const view: ActivityView = isActivityView(rawView) ? rawView : "lista";
+  const setView = (next: ActivityView) => {
+    const params = new URLSearchParams(searchParams);
+    params.set("view", next);
+    setSearchParams(params, { replace: true });
+  };
+
   const [items, setItems] = useState<Activity[]>([]);
   const [loading, setLoading] = useState(true);
-  const [view, setView] = useState<
-    "lista" | "calendario" | "timeline" | "kanban"
-  >("lista");
   const [modal, setModal] = useState(false);
   const [form, setForm] = useState<any>({ tipo: "reuniao", data_evento: "" });
   const [filterTipo, setFilterTipo] = useState<ItemType | "todos">("todos");
@@ -507,7 +511,6 @@ export default function CentralAtividades() {
     return true;
   });
 
-  // Stats
   const stats = {
     vencido: items.filter((i) => i.urgencia === "vencido").length,
     critico: items.filter((i) => i.urgencia === "critico").length,
@@ -567,7 +570,6 @@ export default function CentralAtividades() {
         }
       />
 
-      {/* Stats Cards */}
       <div className="grid grid-cols-4 gap-3 mb-5">
         {[
           {
@@ -606,7 +608,6 @@ export default function CentralAtividades() {
         ))}
       </div>
 
-      {/* Filters */}
       <div className="flex gap-2 mb-4 flex-wrap">
         <div className="flex items-center gap-1 text-xs text-slate-500 mr-1">
           <Filter className="w-3.5 h-3.5" /> Tipo:
