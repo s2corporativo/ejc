@@ -775,7 +775,7 @@ export const LEGACY_REDIRECTS: LegacyRedirect[] = [
   },
   {
     from: "/partner-withdrawals",
-    to: "/financeiro?tab=societaria",
+    to: "/financeiro?tab=societaria&sub=saques",
     reason: "Saques de sócios foram consolidados na gestão societária.",
   },
   {
