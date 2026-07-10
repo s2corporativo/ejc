@@ -17,6 +17,8 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - name: Detect migration heads without importing application
+        id: detect
+        continue-on-error: true
         run: |
           python - <<'PY'
           import ast
@@ -24,8 +26,13 @@ jobs:
 
           revisions = {}
           referenced = set()
+          parse_errors = []
           for path in Path("backend/alembic/versions").glob("*.py"):
-              tree = ast.parse(path.read_text(encoding="utf-8"), filename=str(path))
+              try:
+                  tree = ast.parse(path.read_text(encoding="utf-8"), filename=str(path))
+              except Exception as exc:
+                  parse_errors.append(f"{path.name}: {type(exc).__name__}: {exc}")
+                  continue
               values = {}
               for node in tree.body:
                   if isinstance(node, (ast.Assign, ast.AnnAssign)):
@@ -34,11 +41,14 @@ jobs:
                           if isinstance(target, ast.Name) and target.id in {"revision", "down_revision"}:
                               try:
                                   values[target.id] = ast.literal_eval(node.value)
-                              except Exception:
-                                  pass
+                              except Exception as exc:
+                                  parse_errors.append(
+                                      f"{path.name}:{target.id}: {type(exc).__name__}: {exc}"
+                                  )
               revision = values.get("revision")
               down = values.get("down_revision")
               if not revision:
+                  parse_errors.append(f"{path.name}: revision não detectada")
                   continue
               revisions[revision] = path.name
               if isinstance(down, str):
@@ -47,16 +57,26 @@ jobs:
                   referenced.update(item for item in down if isinstance(item, str))
 
           heads = sorted(set(revisions) - referenced)
-          lines = [f"migration_count={len(revisions)}"]
+          lines = [
+              f"migration_count={len(revisions)}",
+              f"head_count={len(heads)}",
+          ]
           lines.extend(f"head={head} file={revisions[head]}" for head in heads)
+          if parse_errors:
+              lines.append(f"parse_error_count={len(parse_errors)}")
+              lines.extend(f"parse_error={error}" for error in parse_errors)
           Path("alembic-head.txt").write_text("\n".join(lines) + "\n", encoding="utf-8")
           print("\n".join(lines))
-          if len(heads) != 1:
-              raise SystemExit(f"Expected exactly one Alembic head, found {len(heads)}")
+          if len(heads) != 1 or parse_errors:
+              raise SystemExit("Alembic diagnostic requires review")
           PY
-          test -s alembic-head.txt
       - uses: actions/upload-artifact@v4
+        if: always()
         with:
           name: alembic-head-diagnostic
           path: alembic-head.txt
+          if-no-files-found: error
           retention-days: 1
+      - name: Enforce single clean head
+        if: steps.detect.outcome != 'success'
+        run: exit 1
