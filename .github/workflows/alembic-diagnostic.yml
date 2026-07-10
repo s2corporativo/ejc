@@ -60,10 +60,18 @@ jobs:
             -c "CREATE EXTENSION IF NOT EXISTS pg_trgm;" \
             -c "CREATE EXTENSION IF NOT EXISTS pgcrypto;"
 
-      - name: Alembic heads e history
+      - name: Diagnosticar árvore Alembic
         run: |
-          python -m alembic heads
-          python -m alembic history --verbose | tail -n 120
+          set +e
+          {
+            echo "=== HEADS ==="
+            python -m alembic heads
+            echo "=== HISTORY ==="
+            python -m alembic history --verbose
+          } > /tmp/alembic-tree.log 2>&1
+          status=$?
+          tail -n 240 /tmp/alembic-tree.log
+          exit $status
 
       - name: Aplicar migrations com diagnóstico compacto
         run: |
