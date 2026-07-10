@@ -79,7 +79,7 @@ def padronizar_documento_juridico(conteudo: str | None) -> str:
 
 def aviso_rascunho_ia() -> str:
     return (
-        "Documento gerado em padrao juridico-profissional para revisao interna. "
+        "RASCUNHO EM PADRAO JURIDICO-PROFISSIONAL PARA REVISAO INTERNA. "
         "O advogado responsavel deve validar fatos, documentos, valores, prazos, "
         "pedidos, citacoes e estrategia antes de assinatura, protocolo ou uso externo."
     )
@@ -87,7 +87,7 @@ def aviso_rascunho_ia() -> str:
 
 def aviso_minuta_automatica() -> str:
     return (
-        "Documento gerado automaticamente em padrao juridico-profissional para revisao interna. "
+        "RASCUNHO AUTOMATICO EM PADRAO JURIDICO-PROFISSIONAL PARA REVISAO INTERNA. "
         "O advogado responsavel deve conferir campos entre colchetes, fatos, documentos, "
         "valores, prazos e citacoes antes de assinatura, protocolo ou uso externo."
     )
