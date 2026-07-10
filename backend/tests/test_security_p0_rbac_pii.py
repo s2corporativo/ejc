@@ -74,7 +74,18 @@ def test_mascara_cpf_cnpj_sem_retornar_documento_completo():
     assert cpf == "***.456.789-**"
     assert cnpj == "**.345.678/****-**"
     assert "12345678909" not in cpf.replace(".", "").replace("-", "")
-    assert "12345678000190" not in cnpj.replace(".", "").replace("/", "").replace("-", "")
+    assert "12345678000190" not in (
+        cnpj.replace(".", "").replace("/", "").replace("-", "")
+    )
+
+
+@pytest.mark.asyncio
+async def test_gestao_acessa_documento_avulso_sem_consulta_adicional():
+    await _verificar_acesso_documento(
+        None,
+        user("socio", user_id="s1"),
+        document(client_id="client-1", uploaded_by="u2"),
+    )
 
 
 @pytest.mark.asyncio
