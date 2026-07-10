@@ -19,7 +19,7 @@ from app.models.especializado import (
 )
 from app.models.audit_log import AuditLog, criar_audit_log
 from app.models.ai_log import AILog, AIStatusHITL, AITipoUso
-from app.models.notification import Notification
+from app.models.notification import Notification, NotificationPreference
 from app.models.feriado import Feriado
 from app.models.procuracao import Procuracao
 from app.models.rag import KnowledgeDoc, KnowledgeChunk
@@ -37,7 +37,7 @@ __all__ = [
     "EnvironmentalCase", "OrgaoAutuador", "StatusDefesa",
     "AuditLog", "criar_audit_log",
     "AILog", "AIStatusHITL", "AITipoUso",
-    "Notification", "Feriado", "Procuracao",
+    "Notification", "NotificationPreference", "Feriado", "Procuracao",
     "KnowledgeDoc", "KnowledgeChunk",
     "ApiKey",
 ]
