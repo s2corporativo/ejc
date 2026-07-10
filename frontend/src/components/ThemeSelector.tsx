@@ -1,9 +1,6 @@
 import { Monitor, Moon, Sun } from "lucide-react";
-import {
-  THEME_LABELS,
-  ThemeMode,
-  useThemeStore,
-} from "../stores/theme";
+import { THEME_LABELS, useThemeStore } from "../stores/theme";
+import type { ThemeMode } from "../stores/theme";
 import { cn } from "./UI";
 
 const THEME_OPTIONS: Array<{
