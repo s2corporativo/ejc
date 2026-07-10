@@ -160,16 +160,27 @@ async def termo_consentimento_ia(case_id: str, db: AsyncSession = Depends(get_db
 # risco (crítico→baixo) e recência. Cada fonte é isolada em try/except: se uma
 # falhar/estiver vazia, o radar retorna as demais (fail-safe, não quebra tudo).
 
-async def _itens_diario(db: AsyncSession, desde: Optional[date], limit: int) -> list[dict]:
-    """Fonte 'diario_oficial' — item-level, reusa o mesmo model/select de
-    diario_oficial.listar_alertas (DiarioOficialAlerta)."""
-    q = select(DiarioOficialAlerta)
+async def _itens_diario(db: AsyncSession, cu: User, desde: Optional[date], limit: int) -> list[dict]:
+    """Fonte 'diario_oficial' — item-level (DiarioOficialAlerta).
+
+    #10(b): aplica ownership como _itens_ambiental (antes retornava TODOS os
+    alertas sem filtro). Gestão vê tudo; equipe vê os itens office-wide (sem
+    caso) OU dos casos em que é responsável/auxiliar — via _acessa_caso. Faz JOIN
+    com Case e busca margem extra (limit*3), pois parte é filtrada por ownership."""
+    q = (
+        select(DiarioOficialAlerta, Case)
+        .join(Case, Case.id == DiarioOficialAlerta.case_id, isouter=True)
+    )
     if desde:
         q = q.where(DiarioOficialAlerta.data_publicacao >= desde)
-    q = q.order_by(DiarioOficialAlerta.data_publicacao.desc()).limit(limit)
-    rows = (await db.execute(q)).scalars().all()
+    q = q.order_by(DiarioOficialAlerta.data_publicacao.desc()).limit(limit * 3)
+    rows = (await db.execute(q)).all()
     itens = []
-    for a in rows:
+    for a, case in rows:
+        if not _acessa_caso(cu, case):
+            continue
+        if len(itens) >= limit:
+            break
         itens.append({
             "fonte": "diario_oficial",
             "id": a.id,
@@ -276,7 +287,7 @@ async def radar_compliance(
 
     if fonte in (None, "diario_oficial"):
         try:
-            itens += await _itens_diario(db, desde, fetch)
+            itens += await _itens_diario(db, cu, desde, fetch)
         except Exception as e:  # noqa: BLE001 — fail-safe por fonte
             log.warning("radar: fonte diario_oficial falhou: %s", e)
             erros.append("diario_oficial")
