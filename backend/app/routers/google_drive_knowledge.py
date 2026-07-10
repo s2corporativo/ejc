@@ -6,7 +6,8 @@
 # rotas finais: /api/rag/google-drive/*
 from __future__ import annotations
 
-from typing import Optional
+import logging
+from typing import Literal, Optional
 
 from fastapi import APIRouter, Depends, HTTPException, Query
 from pydantic import BaseModel, Field
@@ -17,6 +18,9 @@ from app.core.security import get_current_user, require_roles
 from app.models.user import User
 from app.routers.rag import router as rag_router
 from app.services import google_drive_service as gdrive
+from app.services.rag_drive_reclassifier import reclassificar_docs_drive
+
+logger = logging.getLogger("ejc.rag.google_drive")
 
 router = APIRouter(prefix="/google-drive", tags=["Base de Conhecimento / Google Drive"])
 
@@ -39,6 +43,23 @@ class GoogleDriveSyncRequest(BaseModel):
     categorizar_automaticamente: bool = Field(
         True,
         description="Quando true, evita o erro legado de sincronizar todo o Drive como doutrina.",
+    )
+
+
+class GoogleDriveCuradoriaPreviewRequest(BaseModel):
+    limit: Optional[int] = Field(500, ge=1, le=5000)
+    only_changes: bool = True
+
+
+class GoogleDriveCuradoriaApplyRequest(BaseModel):
+    limit: Optional[int] = Field(500, ge=1, le=5000)
+    only_changes: bool = True
+    confirmacao: Literal["RECLASSIFICAR_RAG_DRIVE"] = Field(
+        ...,
+        description=(
+            "Confirmação operacional obrigatória. Deve ser exatamente "
+            "RECLASSIFICAR_RAG_DRIVE."
+        ),
     )
 
 
@@ -108,6 +129,59 @@ async def auditar_google_drive(
         raise HTTPException(
             status_code=502,
             detail=f"Falha ao auditar Google Drive: {type(exc).__name__}: {str(exc)[:200]}",
+        ) from exc
+
+
+@router.post("/curadoria/preview")
+async def preview_curadoria_google_drive(
+    req: GoogleDriveCuradoriaPreviewRequest,
+    db: AsyncSession = Depends(get_db),
+    cu: User = Depends(require_roles(["superadmin", "admin", "socio"])),
+):
+    """Pré-visualiza reclassificação de documentos já ingeridos, sem alterar banco."""
+    try:
+        return await reclassificar_docs_drive(
+            db,
+            apply=False,
+            limit=req.limit,
+            only_changes=req.only_changes,
+        )
+    except Exception as exc:
+        await db.rollback()
+        raise HTTPException(
+            status_code=500,
+            detail=f"Falha na prévia de curadoria RAG: {type(exc).__name__}: {str(exc)[:300]}",
+        ) from exc
+
+
+@router.post("/curadoria/apply")
+async def aplicar_curadoria_google_drive(
+    req: GoogleDriveCuradoriaApplyRequest,
+    db: AsyncSession = Depends(get_db),
+    cu: User = Depends(require_roles(["superadmin", "admin", "socio"])),
+):
+    """Aplica reclassificação previamente revisada.
+
+    Exige RBAC e confirmação textual explícita. Não remove documentos fisicamente.
+    """
+    try:
+        resultado = await reclassificar_docs_drive(
+            db,
+            apply=True,
+            limit=req.limit,
+            only_changes=req.only_changes,
+        )
+        logger.warning(
+            "[RAG:Drive:Curadoria] aplicação concluída total_lidos=%s total_aplicados=%s",
+            resultado.get("total_docs_drive_lidos"),
+            resultado.get("total_aplicados"),
+        )
+        return resultado
+    except Exception as exc:
+        await db.rollback()
+        raise HTTPException(
+            status_code=500,
+            detail=f"Falha ao aplicar curadoria RAG: {type(exc).__name__}: {str(exc)[:300]}",
         ) from exc
 
 
