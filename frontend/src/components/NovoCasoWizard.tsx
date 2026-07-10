@@ -89,16 +89,23 @@ export default function NovoCasoWizard({
     descricao_fatos: "",
   });
   const [criandoCaso, setCriandoCaso] = useState(false);
+  // Busca por nome pode trazer homônimos que NÃO são o cliente: sem esta
+  // saída, o usuário ficava preso (o form de criação só abria com 0 achados).
+  const [cadastrarNovo, setCadastrarNovo] = useState(false);
 
   const digitos = soDigitos(doc);
-  // 12+ dígitos → CNPJ; até 11 → CPF (heurística igual à do backend /clients/resolver)
-  const ehCnpj = digitos.length > 11;
+  // Comprimento EXATO: 11=CPF, 14=CNPJ. 12-13 dígitos era classificado como
+  // CNPJ e o POST devolvia 422 com rótulo confuso ("CNPJ inválido" para quem
+  // digitou um CPF com dígito a mais) — melhor barrar antes com aviso claro.
+  const ehCnpj = digitos.length === 14;
+  const docValido = digitos.length === 0 || digitos.length === 11 || digitos.length === 14;
 
   const reset = () => {
     setPasso(1);
     setDoc("");
     setResultados(null);
     setCliente(null);
+    setCadastrarNovo(false);
     setNovoCliente({ nome: "", email: "", telefone: "" });
     setCaso({
       titulo: "",
@@ -124,6 +131,7 @@ export default function NovoCasoWizard({
     }
     setBuscando(true);
     setCliente(null);
+    setCadastrarNovo(false);
     try {
       // GET /clients/?search= já cobre nome, razão social, CPF e CNPJ (ilike).
       const { data } = await api.get("/clients/", {
@@ -148,6 +156,12 @@ export default function NovoCasoWizard({
       toast.error("Informe o nome / razão social do cliente.");
       return;
     }
+    if (!docValido) {
+      toast.error(
+        `Documento com ${digitos.length} dígitos — CPF tem 11 e CNPJ tem 14. Confira o número.`,
+      );
+      return;
+    }
     setCriandoCliente(true);
     try {
       // POST /clients/ — mesmo endpoint do cadastro de Clientes.tsx (dedup de
@@ -166,7 +180,15 @@ export default function NovoCasoWizard({
       setCliente(data as Client);
       setPasso(2);
     } catch (e: any) {
-      toast.error(e.response?.data?.detail || "Erro ao criar o cliente");
+      // 409 = documento já cadastrado: em vez de beco sem saída, refaz a
+      // busca (agora com índice cego por hash no backend) para oferecer o
+      // vínculo ao cadastro existente.
+      if (e.response?.status === 409) {
+        toast.error("CPF/CNPJ já cadastrado — localizando o cliente para vincular.");
+        await buscar();
+      } else {
+        toast.error(e.response?.data?.detail || "Erro ao criar o cliente");
+      }
     } finally {
       setCriandoCliente(false);
     }
@@ -288,14 +310,25 @@ export default function NovoCasoWizard({
                   </Button>
                 </div>
               ))}
+              {!cadastrarNovo && (
+                <button
+                  type="button"
+                  className="text-xs font-medium text-slate-500 underline underline-offset-2 hover:text-slate-700"
+                  onClick={() => setCadastrarNovo(true)}
+                >
+                  Não é nenhum destes — cadastrar novo cliente
+                </button>
+              )}
             </div>
           )}
 
-          {!buscando && resultados && resultados.length === 0 && (
+          {!buscando && resultados && (resultados.length === 0 || cadastrarNovo) && (
             <div className="mt-4 rounded-xl border border-slate-200 bg-slate-50 p-4">
               <p className="mb-3 flex items-center gap-2 text-sm text-slate-600">
                 <UserPlus className="h-4 w-4 text-slate-400" />
-                Nenhum cliente encontrado — cadastre o mínimo para continuar
+                {resultados && resultados.length > 0
+                  ? "Cadastrar novo cliente — preencha o mínimo para continuar"
+                  : "Nenhum cliente encontrado — cadastre o mínimo para continuar"}
                 {digitos
                   ? ` (${ehCnpj ? "CNPJ" : "CPF"}: ${digitos})`
                   : ""}

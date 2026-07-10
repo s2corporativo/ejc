@@ -39,9 +39,8 @@ from app.services.case_health import FECHADOS, calcular_score_caso
 router = APIRouter(prefix="/casos/{case_id}/jornada", tags=["Jornada do Caso"])
 
 # Ciclo de vida do LegalDoc (models/legal_doc.py + routers/legal_docs.py):
-# rascunho/em_revisao/corrigida ainda circulam entre redator e revisor;
-# aprovada/final/protocolada já passaram pelo gate humano (HITL).
-_PECA_EM_TRABALHO = {"rascunho", "em_revisao", "corrigida"}
+# rascunho pertence à etapa Produção; em_revisao/corrigida ao ciclo HITL da
+# etapa Revisão; aprovada/final/protocolada já passaram pelo gate humano.
 _PECA_PRONTA = {"aprovada", "final", "protocolada"}
 
 
@@ -203,12 +202,15 @@ def _etapa_producao(contagem_por_status: dict[str, int],
             pendencias=["produzir a primeira peça do caso"], link_modulo=link,
         )
     detalhe = " · ".join(f"{k}: {v}" for k, v in sorted(contagem_por_status.items()))
-    em_trabalho = sum(v for k, v in contagem_por_status.items() if k in _PECA_EM_TRABALHO)
-    if em_trabalho > 0:
+    # Produção mede a REDAÇÃO (rascunhos); o ciclo revisar/aprovar é medido
+    # pela etapa seguinte — sem isso as duas etapas espelhavam o mesmo status
+    # e nunca exibiam "Produção concluída, Revisão em andamento".
+    em_redacao = contagem_por_status.get("rascunho", 0)
+    if em_redacao > 0:
         return EtapaJornada(
             chave="producao", titulo="Produção de peças", status="em_andamento",
             resumo=f"{total} peça(s) ({detalhe}).",
-            pendencias=[f"{em_trabalho} peça(s) ainda em elaboração/correção"],
+            pendencias=[f"{em_redacao} peça(s) ainda em elaboração"],
             link_modulo=link,
         )
     return EtapaJornada(
@@ -230,13 +232,21 @@ def _etapa_revisao(contagem_por_status: dict[str, int],
             resumo="Sem peças para revisar.",
             pendencias=["produzir peças antes da revisão"], link_modulo=link,
         )
-    aguardando = sum(v for k, v in contagem_por_status.items() if k in _PECA_EM_TRABALHO)
+    # Revisão mede o CICLO HITL (em_revisao/corrigida → aprovação): peça em
+    # rascunho ainda não entrou aqui — pertence à etapa de Produção.
+    em_ciclo = sum(contagem_por_status.get(k, 0) for k in ("em_revisao", "corrigida"))
     aprovadas = sum(v for k, v in contagem_por_status.items() if k in _PECA_PRONTA)
-    if aguardando > 0:
+    if em_ciclo > 0:
         return EtapaJornada(
             chave="revisao", titulo="Revisão e aprovação", status="em_andamento",
-            resumo=f"{aguardando} peça(s) aguardando revisão; {aprovadas} aprovada(s).",
-            pendencias=[f"revisar e aprovar {aguardando} peça(s)"], link_modulo=link,
+            resumo=f"{em_ciclo} peça(s) no ciclo de revisão; {aprovadas} aprovada(s).",
+            pendencias=[f"revisar e aprovar {em_ciclo} peça(s)"], link_modulo=link,
+        )
+    if aprovadas <= 0:
+        return EtapaJornada(
+            chave="revisao", titulo="Revisão e aprovação", status="pendente",
+            resumo="Nenhuma peça submetida à revisão ainda.",
+            pendencias=["enviar as peças produzidas para revisão"], link_modulo=link,
         )
     return EtapaJornada(
         chave="revisao", titulo="Revisão e aprovação", status="concluida",
@@ -276,10 +286,12 @@ def _etapa_gestao(caso_fechado: bool, prazos_abertos: int,
     sufixo_saude = f" Saúde do caso: {score}/100." if score is not None else ""
 
     if caso_fechado:
+        # Concluída não carrega pendências: alertas de saúde sob o badge
+        # "Concluída" viravam ruído visual na UI (achado de revisão).
         return EtapaJornada(
             chave="gestao", titulo="Gestão e prazos", status="concluida",
             resumo=f"Caso encerrado/arquivado — gestão finalizada.{sufixo_saude}",
-            pendencias=fatores, link_modulo=link,
+            link_modulo=link,
         )
     if prazos_abertos > 0:
         return EtapaJornada(

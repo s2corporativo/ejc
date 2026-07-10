@@ -319,12 +319,24 @@ async def listar(
 ):
     q = select(Client).where(Client.deleted_at.is_(None))
     if search:
-        q = q.where(or_(
+        condicoes = [
             Client.nome.ilike(f"%{search}%"),
             Client.razao_social.ilike(f"%{search}%"),
             Client.cpf.ilike(f"%{search}%"),
             Client.cnpj.ilike(f"%{search}%"),
-        ))
+        ]
+        # Busca por documento via índice cego: o plaintext de cpf/cnpj é
+        # gravado como digitado (com ou sem máscara), então o ilike não casa
+        # "12345678909" com "123.456.789-09" — o dedup do Novo Caso quebrava
+        # e o POST subsequente colidia no UNIQUE do hash (409 sem saída).
+        # O hash HMAC é normalizado (só dígitos), igual ao checar-conflito.
+        from app.services.pii_crypto import normalizar_documento, hash_documento
+        dig = normalizar_documento(search)
+        if dig and len(dig) == 11:
+            condicoes.append(Client.cpf_hash == hash_documento(dig))
+        elif dig and len(dig) == 14:
+            condicoes.append(Client.cnpj_hash == hash_documento(dig))
+        q = q.where(or_(*condicoes))
     if status_f:
         q = q.where(Client.status == status_f)
     q = q.order_by(Client.created_at.desc())
