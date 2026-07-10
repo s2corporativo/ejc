@@ -107,5 +107,6 @@ async def consultar(
             "modelo": resp.modelo, "provedor": resp.provedor, "nivel_inteligencia": nivel,
             "fontes": [{"titulo": f.get("titulo"), "categoria": f.get("categoria"),
                         "fonte": f.get("fonte")} for f in fontes],
-            "log_id": log_id, "is_rascunho": True,
-            "aviso_hitl": "Rascunho sujeito à revisão humana (HITL obrigatório — OAB)."}
+            "log_id": log_id, "is_rascunho": False,
+            "padrao_saida": "juridico_profissional",
+            "aviso_hitl": "Resposta gerada em padrão jurídico-profissional. Conferir fatos, fontes, documentos, valores e estratégia antes do uso externo."}
