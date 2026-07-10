@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { Link, useNavigate } from "react-router-dom";
+import { Link, useLocation, useNavigate } from "react-router-dom";
 import {
   AlertCircle,
   ArrowRight,
@@ -15,13 +15,18 @@ import { canRoleAccessPath } from "../config/moduleRegistry";
 
 const BRAND_LOGO = "/brand/de-paula-teixeira-logo.jpg";
 
+type LoginLocationState = { from?: string } | null;
+
 export default function LoginModern() {
   const { setSession } = useAuth();
   const nav = useNavigate();
+  const location = useLocation();
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [erro, setErro] = useState("");
   const [loading, setLoading] = useState(false);
+
+  const requestedPath = (location.state as LoginLocationState)?.from;
 
   const submit = async () => {
     setErro("");
@@ -40,15 +45,30 @@ export default function LoginModern() {
       };
       setSession(user);
       if (data.must_change_password) {
-        nav("/trocar-senha");
+        nav("/trocar-senha", { replace: true });
         return;
       }
       if (data.role === "cliente_externo") {
-        nav("/portal");
+        const portalDestination = requestedPath?.startsWith("/portal")
+          ? requestedPath
+          : "/portal";
+        nav(portalDestination, { replace: true });
         return;
       }
+
+      const isValidStaffDestination =
+        requestedPath?.startsWith("/") &&
+        !requestedPath.startsWith("/portal") &&
+        !requestedPath.startsWith("/login");
+      if (isValidStaffDestination) {
+        nav(requestedPath, { replace: true });
+        return;
+      }
+
       const preferredHome = usePreferencesStore.getState().homeRoute;
-      nav(canRoleAccessPath(data.role, preferredHome) ? preferredHome : "/");
+      nav(canRoleAccessPath(data.role, preferredHome) ? preferredHome : "/", {
+        replace: true,
+      });
     } catch (e: any) {
       setErro(e.response?.data?.detail || "Falha no login");
     } finally {
