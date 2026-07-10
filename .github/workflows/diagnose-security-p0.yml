@@ -1,0 +1,41 @@
+name: Diagnose Security P0
+
+on:
+  pull_request:
+    branches:
+      - main
+
+permissions:
+  contents: read
+
+jobs:
+  diagnose:
+    if: github.event.pull_request.head.ref == 'fix/security-rbac-pii-p0'
+    runs-on: ubuntu-latest
+    timeout-minutes: 8
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: fix/security-rbac-pii-p0
+      - name: Capture deterministic patch traceback
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+          import textwrap
+          import traceback
+
+          try:
+              workflow = Path('.github/workflows/apply-security-p0.yml').read_text(encoding='utf-8')
+              start = workflow.index("python - <<'PY'\n") + len("python - <<'PY'\n")
+              end = workflow.index("\n          PY", start)
+              code = textwrap.dedent(workflow[start:end])
+              exec(compile(code, 'apply-security-p0', 'exec'))
+              Path('security-p0-diagnostic.log').write_text('PATCH_OK\n', encoding='utf-8')
+          except Exception:
+              Path('security-p0-diagnostic.log').write_text(traceback.format_exc(), encoding='utf-8')
+          PY
+      - uses: actions/upload-artifact@v4
+        with:
+          name: security-p0-diagnostic
+          path: security-p0-diagnostic.log
+          retention-days: 1
