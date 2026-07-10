@@ -3,20 +3,17 @@
 
 def test_app_monta_com_rotas():
     from app.main import app
+
     paths = {getattr(r, "path", "") for r in app.routes}
     assert len(app.routes) > 300
-    # Fase 1 — prefixos corrigidos existem de fato no backend.
     assert any(p.endswith("/auth/refresh") for p in paths)
     assert any(p.endswith("/auth/logout") for p in paths)
     assert any(p.endswith("/pecas/gerar") for p in paths)
-    # Bloco 1 (Etapa 4): ia_extra passou a ser montado — as 5 rotas que o
-    # frontend chama (AssistenteIA, ExplicarMov, NoticiasCard…) não podem
-    # voltar a ficar 404 por o router deixar de ser incluído em main.py.
     assert any(p.endswith("/ai/traduzir-andamento") for p in paths)
     assert any(p.endswith("/ai/gerar-minuta") for p in paths)
-    # Lifecycle administrativo precisa estar montado no backend; sem estas
-    # rotas o painel de módulos gera 404 e o frontend fica inconsistente.
     assert "/api/system-modules/settings" in paths
+    assert "/api/notifications/preferences" in paths
+    assert "/api/notifications/push/subscriptions" in paths
 
 
 def test_alembic_cadeia_integra():
@@ -24,11 +21,7 @@ def test_alembic_cadeia_integra():
     from alembic.script import ScriptDirectory
 
     script = ScriptDirectory.from_config(Config("alembic.ini"))
-    # Head único atual: 081 cria lifecycle/feature flags de módulos sobre 079.
-    # A migration 080 de preferências de notificações não integra main e não
-    # pode ser referenciada até ser reimplementada em nova revisão linear.
-    assert script.get_heads() == ["081_system_module_settings"]
-    # walk_revisions percorre head→base; lança se houver down_revision ausente.
+    assert script.get_heads() == ["082_notification_preferences"]
     revs = [r.revision for r in script.walk_revisions()]
     assert revs[-1] == "001_inicial"
     assert "048_processes" in revs
@@ -55,3 +48,4 @@ def test_alembic_cadeia_integra():
     assert "078_seed_kanban_columns" in revs
     assert "079_client_hash_partial_deleted" in revs
     assert "081_system_module_settings" in revs
+    assert "082_notification_preferences" in revs
