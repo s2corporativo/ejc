@@ -1,12 +1,10 @@
 import { useMemo } from "react";
 import { Link, useLocation, useSearchParams } from "react-router-dom";
 import {
-  BellRing,
   Check,
   ChevronRight,
   Database,
   Gauge,
-  KeyRound,
   LayoutDashboard,
   Menu,
   Monitor,
@@ -19,6 +17,7 @@ import {
   Sun,
   Users,
 } from "lucide-react";
+import AccountSecurity from "../components/AccountSecurity";
 import { PageHeader, SectionCard, cn } from "../components/UI";
 import { THEME_LABELS, useThemeStore, type ThemeMode } from "../stores/theme";
 import {
@@ -308,65 +307,7 @@ export default function Configuracoes() {
         </div>
       )}
 
-      {tab === "seguranca" && (
-        <div className="space-y-5">
-          <SectionCard
-            title="Credenciais"
-            subtitle="Ações pessoais de segurança da conta."
-          >
-            <div className="space-y-3">
-              <Link
-                to="/trocar-senha"
-                className="flex items-center gap-3 rounded-xl border border-slate-200 bg-white px-4 py-3 transition-all hover:border-slate-300 hover:bg-slate-50"
-              >
-                <span className="rounded-lg bg-slate-100 p-2 text-slate-500">
-                  <KeyRound className="h-4 w-4" />
-                </span>
-                <div className="min-w-0 flex-1">
-                  <div className="text-sm font-medium text-slate-800">
-                    Trocar senha
-                  </div>
-                  <p className="text-xs text-slate-500">
-                    Defina uma nova senha de acesso ao sistema.
-                  </p>
-                </div>
-                <ChevronRight className="h-4 w-4 text-slate-400" />
-              </Link>
-
-              <div className="flex items-start gap-3 rounded-xl border border-warn-200 bg-warn-50/60 px-4 py-3">
-                <span className="rounded-lg bg-warn-100 p-2 text-warn-700">
-                  <ShieldCheck className="h-4 w-4" />
-                </span>
-                <div className="min-w-0 flex-1">
-                  <div className="text-sm font-medium text-slate-800">
-                    Autenticação em duas etapas
-                  </div>
-                  <p className="text-xs text-slate-600">
-                    A interface de ativação do 2FA ainda não está disponível.
-                    Nenhuma proteção inexistente é apresentada como ativa.
-                  </p>
-                </div>
-                <span className="badge badge-warn">Pendente</span>
-              </div>
-
-              <div className="flex items-start gap-3 rounded-xl border border-slate-200 bg-white px-4 py-3">
-                <span className="rounded-lg bg-primary-50 p-2 text-primary-600">
-                  <BellRing className="h-4 w-4" />
-                </span>
-                <div className="min-w-0 flex-1">
-                  <div className="text-sm font-medium text-slate-800">
-                    Push, OAB e calendário
-                  </div>
-                  <p className="text-xs text-slate-500">
-                    Essas ações continuam disponíveis no menu do perfil no
-                    cabeçalho e dependem das integrações configuradas no servidor.
-                  </p>
-                </div>
-              </div>
-            </div>
-          </SectionCard>
-        </div>
-      )}
+      {tab === "seguranca" && <AccountSecurity />}
 
       {tab === "modulos" && isAdmin && (
         <SectionCard
@@ -477,9 +418,8 @@ export default function Configuracoes() {
 
           <div className="rounded-xl border border-slate-200 bg-slate-50/60 p-4 text-sm text-slate-600">
             Segredos operacionais continuam exclusivamente no ambiente de
-            produção. A interface deve mostrar apenas estado, última execução e
-            erro sanitizado quando o backend disponibilizar um endpoint de saúde
-            específico.
+            produção. A interface mostra apenas estados seguros disponibilizados
+            pelo backend; nunca chaves, senhas ou conteúdo do ambiente.
           </div>
         </div>
       )}
