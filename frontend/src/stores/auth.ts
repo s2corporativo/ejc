@@ -1,28 +1,85 @@
 import { create } from "zustand";
+import api, { getAccessToken } from "../lib/api";
 import type { User } from "../types";
+
+export type AuthStatus = "initializing" | "authenticated" | "unauthenticated";
+
+function readStoredUser(): User | null {
+  try {
+    return JSON.parse(localStorage.getItem("ejc_user") || "null") as User | null;
+  } catch {
+    localStorage.removeItem("ejc_user");
+    return null;
+  }
+}
+
+function persistUser(user: User | null) {
+  try {
+    if (user) localStorage.setItem("ejc_user", JSON.stringify(user));
+    else localStorage.removeItem("ejc_user");
+  } catch {
+    // Storage indisponível não deve derrubar a sessão em memória.
+  }
+}
 
 interface AuthState {
   user: User | null;
+  status: AuthStatus;
+  bootstrap: () => Promise<void>;
   setSession: (u: User) => void;
+  clearSession: () => void;
   loadUser: () => void;
   /** Mescla campos no usuário atual (ex.: avatar_url) e persiste. */
   updateUser: (patch: Partial<User>) => void;
 }
 
-export const useAuth = create<AuthState>((set) => ({
-  user: JSON.parse(localStorage.getItem("ejc_user") || "null"),
-  setSession: (u) => set({ user: u }),
-  loadUser: () =>
-    set({ user: JSON.parse(localStorage.getItem("ejc_user") || "null") }),
-  updateUser: (patch) =>
-    set((state) => {
-      if (!state.user) return state;
-      const next = { ...state.user, ...patch };
-      try {
-        localStorage.setItem("ejc_user", JSON.stringify(next));
-      } catch {
-        /* ignore */
-      }
-      return { user: next };
-    }),
+const storedUser = readStoredUser();
+const initialStatus: AuthStatus = getAccessToken()
+  ? "initializing"
+  : "unauthenticated";
+
+export const useAuth = create<AuthState>((set, get) => ({
+  user: storedUser,
+  status: initialStatus,
+  bootstrap: async () => {
+    if (!getAccessToken()) {
+      persistUser(null);
+      set({ user: null, status: "unauthenticated" });
+      return;
+    }
+
+    set({ status: "initializing" });
+    try {
+      const { data } = await api.get<User>("/users/me");
+      persistUser(data);
+      set({ user: data, status: "authenticated" });
+    } catch {
+      localStorage.removeItem("ejc_access");
+      persistUser(null);
+      set({ user: null, status: "unauthenticated" });
+    }
+  },
+  setSession: (user) => {
+    persistUser(user);
+    set({ user, status: "authenticated" });
+  },
+  clearSession: () => {
+    localStorage.removeItem("ejc_access");
+    persistUser(null);
+    set({ user: null, status: "unauthenticated" });
+  },
+  loadUser: () => {
+    const user = readStoredUser();
+    set({
+      user,
+      status: user && getAccessToken() ? "authenticated" : "unauthenticated",
+    });
+  },
+  updateUser: (patch) => {
+    const current = get().user;
+    if (!current) return;
+    const next = { ...current, ...patch };
+    persistUser(next);
+    set({ user: next });
+  },
 }));
