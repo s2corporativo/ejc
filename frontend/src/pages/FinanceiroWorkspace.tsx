@@ -28,21 +28,34 @@ const TABS = [
   { k: "estimador", label: "Estimador OAB", icon: Calculator },
 ] as const;
 
-type Tab = (typeof TABS)[number]["k"];
+export type FinanceTab = (typeof TABS)[number]["k"];
 
-const isTab = (v: string | null): v is Tab => TABS.some((t) => t.k === v);
+export const isFinanceTab = (value: string | null): value is FinanceTab =>
+  TABS.some((tab) => tab.k === value);
+
+export function nextFinanceParams(
+  current: URLSearchParams,
+  next: FinanceTab,
+): URLSearchParams {
+  const params = new URLSearchParams(current);
+  params.set("tab", next);
+  if (next !== "societaria") params.delete("sub");
+  return params;
+}
 
 export default function FinanceiroWorkspace() {
   const [searchParams, setSearchParams] = useSearchParams();
   const raw = searchParams.get("tab");
-  const tab: Tab = isTab(raw) ? raw : "visao";
-  const setTab = (k: Tab) => setSearchParams({ tab: k }, { replace: true });
+  const tab: FinanceTab = isFinanceTab(raw) ? raw : "visao";
+  const setTab = (next: FinanceTab) =>
+    setSearchParams(nextFinanceParams(searchParams, next), { replace: true });
+
   return (
     <div className="executive-workspace space-y-5">
       <PageHeader
-        eyebrow="Gestao financeira"
+        eyebrow="Gestão financeira"
         title="Financeiro"
-        subtitle="Receitas, despesas, honorarios, contratos e distribuicao societaria em uma visao operacional unica."
+        subtitle="Receitas, despesas, honorários, contratos e distribuição societária em uma visão operacional única."
       />
       <div className="overflow-x-auto">
         <div className="flex w-fit gap-1 rounded-xl border border-slate-200 bg-white/80 p-1 shadow-sm">
