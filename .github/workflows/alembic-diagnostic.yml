@@ -1,0 +1,76 @@
+name: Alembic Diagnostic
+
+on:
+  pull_request:
+    branches: [main]
+    paths:
+      - "backend/alembic/**"
+      - "backend/app/models/**"
+      - "backend/requirements.txt"
+      - ".github/workflows/alembic-diagnostic.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  diagnose:
+    name: Diagnose alembic upgrade head
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    defaults:
+      run:
+        working-directory: backend
+    services:
+      postgres:
+        image: pgvector/pgvector:pg16
+        env:
+          POSTGRES_USER: ejc_user
+          POSTGRES_PASSWORD: ejc_pass
+          POSTGRES_DB: ejc_db
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U ejc_user -d ejc_db"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 15
+    env:
+      DATABASE_URL: postgresql+asyncpg://ejc_user:ejc_pass@localhost:5432/ejc_db
+      DATABASE_URL_SYNC: postgresql://ejc_user:ejc_pass@localhost:5432/ejc_db
+      APP_ENV: development
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+          cache: pip
+          cache-dependency-path: backend/requirements.txt
+
+      - name: Instalar dependências mínimas
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install -r requirements.txt
+
+      - name: Criar extensões
+        run: |
+          PGPASSWORD=ejc_pass psql -h localhost -U ejc_user -d ejc_db \
+            -c "CREATE EXTENSION IF NOT EXISTS vector;" \
+            -c "CREATE EXTENSION IF NOT EXISTS pg_trgm;" \
+            -c "CREATE EXTENSION IF NOT EXISTS pgcrypto;"
+
+      - name: Alembic heads e history
+        run: |
+          python -m alembic heads
+          python -m alembic history --verbose | tail -n 120
+
+      - name: Aplicar migrations com diagnóstico compacto
+        run: |
+          set +e
+          python -m alembic upgrade head > /tmp/alembic-upgrade.log 2>&1
+          status=$?
+          echo "=== ÚLTIMAS 240 LINHAS DO ALEMBIC ==="
+          tail -n 240 /tmp/alembic-upgrade.log
+          echo "=== FIM DO DIAGNÓSTICO ==="
+          exit $status
