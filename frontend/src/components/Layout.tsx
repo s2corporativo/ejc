@@ -25,6 +25,9 @@ import {
 import CommandPalette from "./CommandPalette";
 import HelpButton from "./HelpButton";
 import OnboardingTour from "./OnboardingTour";
+import ModuleLifecycleGate from "./ModuleLifecycleGate";
+import { useModuleLifecycleStore } from "../stores/moduleLifecycle";
+import { filterModulesByLifecycle } from "../lib/moduleLifecycle";
 import SecurityMenu from "./SecurityMenu";
 import ErrorBoundary from "./ErrorBoundary";
 import UserAvatar from "./UserAvatar";
@@ -44,6 +47,9 @@ const BRAND_LOGO = "/brand/de-paula-teixeira-logo.jpg";
 export default function Layout() {
   const { theme, cycleTheme } = useThemeStore();
   const user = useAuth((state) => state.user);
+  const lifecycleSettings = useModuleLifecycleStore(
+    (state) => state.settings,
+  );
   const {
     sidebarCollapsed: collapsed,
     setSidebarCollapsed,
@@ -92,8 +98,12 @@ export default function Layout() {
   }, []);
 
   const visible = useMemo(
-    () => getNavigationModules(user?.role),
-    [user?.role],
+    () =>
+      filterModulesByLifecycle(
+        getNavigationModules(user?.role),
+        lifecycleSettings,
+      ),
+    [user?.role, lifecycleSettings],
   );
 
   const groups = useMemo(() => {
@@ -421,7 +431,7 @@ export default function Layout() {
         <main className="ejc-modern-scope flex-1 px-4 py-5 md:px-7 md:py-7">
           <div className="mx-auto w-full max-w-[1440px] animate-rise">
             <ErrorBoundary key={location.pathname}>
-              <Outlet />
+              <ModuleLifecycleGate><Outlet /></ModuleLifecycleGate>
             </ErrorBoundary>
           </div>
         </main>

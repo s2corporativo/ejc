@@ -14,6 +14,9 @@ def test_app_monta_com_rotas():
     # voltar a ficar 404 por o router deixar de ser incluído em main.py.
     assert any(p.endswith("/ai/traduzir-andamento") for p in paths)
     assert any(p.endswith("/ai/gerar-minuta") for p in paths)
+    # Lifecycle administrativo precisa estar montado no backend; sem estas
+    # rotas o painel de módulos gera 404 e o frontend fica inconsistente.
+    assert "/api/system-modules/settings" in paths
 
 
 def test_alembic_cadeia_integra():
@@ -21,9 +24,10 @@ def test_alembic_cadeia_integra():
     from alembic.script import ScriptDirectory
 
     script = ScriptDirectory.from_config(Config("alembic.ini"))
-    # Head único da cadeia atual (migration 079 — #12: ux_clients_*_hash exclui
-    # soft-deleted, habilitando recadastro de CPF/CNPJ após soft-delete).
-    assert script.get_heads() == ["079_client_hash_partial_deleted"]
+    # Head único atual: 081 cria lifecycle/feature flags de módulos sobre 079.
+    # A migration 080 de preferências de notificações não integra main e não
+    # pode ser referenciada até ser reimplementada em nova revisão linear.
+    assert script.get_heads() == ["081_system_module_settings"]
     # walk_revisions percorre head→base; lança se houver down_revision ausente.
     revs = [r.revision for r in script.walk_revisions()]
     assert revs[-1] == "001_inicial"
@@ -49,3 +53,5 @@ def test_alembic_cadeia_integra():
     assert "076_fk_hot_path_indexes" in revs
     assert "077_deadline_confirmado_doc" in revs
     assert "078_seed_kanban_columns" in revs
+    assert "079_client_hash_partial_deleted" in revs
+    assert "081_system_module_settings" in revs

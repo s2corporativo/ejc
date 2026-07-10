@@ -19,6 +19,7 @@ import {
 } from "lucide-react";
 import AccountSecurity from "../components/AccountSecurity";
 import IntegrationHealthPanel from "../components/IntegrationHealthPanel";
+import ModuleLifecycleSettings from "../components/ModuleLifecycleSettings";
 import { PageHeader, SectionCard, cn } from "../components/UI";
 import { THEME_LABELS, useThemeStore, type ThemeMode } from "../stores/theme";
 import {
@@ -26,11 +27,7 @@ import {
   type HomeRoute,
 } from "../stores/preferences";
 import { useAuth } from "../stores/auth";
-import {
-  canRoleAccessPath,
-  getModuleCatalog,
-  type ModuleStatus,
-} from "../config/moduleRegistry";
+import { canRoleAccessPath } from "../config/moduleRegistry";
 
 const THEME_OPTIONS: { mode: ThemeMode; icon: typeof Sun }[] = [
   { mode: "light", icon: Sun },
@@ -75,19 +72,6 @@ type SettingsTab =
   | "integracoes"
   | "administracao";
 
-const STATUS_LABEL: Record<ModuleStatus, string> = {
-  active: "Ativo",
-  beta: "Beta",
-  legacy: "Legado",
-  hidden: "Interno",
-};
-
-const STATUS_CLASS: Record<ModuleStatus, string> = {
-  active: "badge-success",
-  beta: "badge-warn",
-  legacy: "badge-neutral",
-  hidden: "badge-neutral",
-};
 
 export default function Configuracoes() {
   const location = useLocation();
@@ -141,7 +125,6 @@ export default function Configuracoes() {
     canRoleAccessPath(user?.role, option.route),
   );
 
-  const modules = getModuleCatalog();
 
   return (
     <div className="max-w-6xl space-y-5">
@@ -310,54 +293,7 @@ export default function Configuracoes() {
 
       {tab === "seguranca" && <AccountSecurity />}
 
-      {tab === "modulos" && isAdmin && (
-        <SectionCard
-          title="Inventário de módulos e rotas"
-          subtitle="Manifesto central usado pelo roteamento, menu e ajuda contextual. Alterações institucionais devem passar por código, revisão e auditoria."
-        >
-          <div className="overflow-x-auto">
-            <table className="table w-full text-sm">
-              <thead>
-                <tr>
-                  <th className="text-left">Módulo</th>
-                  <th className="text-left">Grupo</th>
-                  <th className="text-left">Rota</th>
-                  <th className="text-left">Status</th>
-                  <th className="text-left">Risco</th>
-                </tr>
-              </thead>
-              <tbody>
-                {modules.map((module) => {
-                  const status = module.status ?? "active";
-                  return (
-                    <tr key={module.key}>
-                      <td>
-                        <div className="font-medium text-slate-800">
-                          {module.label}
-                        </div>
-                        <div className="text-xs text-slate-400">
-                          {module.key}
-                        </div>
-                      </td>
-                      <td>{module.group}</td>
-                      <td className="font-mono text-xs">{module.path}</td>
-                      <td>
-                        <span className={`badge ${STATUS_CLASS[status]}`}>
-                          {STATUS_LABEL[status]}
-                        </span>
-                      </td>
-                      <td className="text-xs text-slate-500">
-                        {module.sensitive ? "dados sensíveis" : "sem sensíveis"}
-                        {module.usesAI ? " · usa IA" : ""}
-                      </td>
-                    </tr>
-                  );
-                })}
-              </tbody>
-            </table>
-          </div>
-        </SectionCard>
-      )}
+      {tab === "modulos" && isAdmin && <ModuleLifecycleSettings />}
 
       {tab === "integracoes" && isAdmin && <IntegrationHealthPanel />}
 
