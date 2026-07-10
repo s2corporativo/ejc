@@ -1,7 +1,9 @@
-import { useState, useEffect, useRef } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { Search as SearchIcon, Users, Briefcase, FileText } from "lucide-react";
 import api from "../lib/api";
+import { useAuth } from "../stores/auth";
+import { getNavigationModules } from "../config/moduleRegistry";
 
 const ICON: Record<string, typeof Users> = {
   cliente: Users,
@@ -40,21 +42,25 @@ const PLACEHOLDER: Record<TipoBusca, string> = {
 
 export default function CommandPalette() {
   const nav = useNavigate();
+  const user = useAuth((state) => state.user);
   const [open, setOpen] = useState(false);
   const [q, setQ] = useState("");
   const [tipo, setTipo] = useState<TipoBusca>("tudo");
   const [res, setRes] = useState<ResultadoBusca[]>([]);
   const [loading, setLoading] = useState(false);
   const inputRef = useRef<HTMLInputElement>(null);
+  const shortcuts = useMemo(
+    () => getNavigationModules(user?.role).slice(0, 10),
+    [user?.role],
+  );
 
-  // Atalho Cmd/Ctrl+K + evento do botão do header
   useEffect(() => {
-    const onKey = (e: KeyboardEvent) => {
-      if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === "k") {
-        e.preventDefault();
-        setOpen((v) => !v);
+    const onKey = (event: KeyboardEvent) => {
+      if ((event.metaKey || event.ctrlKey) && event.key.toLowerCase() === "k") {
+        event.preventDefault();
+        setOpen((value) => !value);
       }
-      if (e.key === "Escape") setOpen(false);
+      if (event.key === "Escape") setOpen(false);
     };
     const onOpen = () => setOpen(true);
     window.addEventListener("keydown", onKey);
@@ -74,7 +80,6 @@ export default function CommandPalette() {
     }
   }, [open]);
 
-  // Busca com debounce
   useEffect(() => {
     if (!open) return;
     if (q.trim().length < 2) {
@@ -84,11 +89,16 @@ export default function CommandPalette() {
     }
     let stale = false;
     setLoading(true);
-    const t = setTimeout(() => {
+    const timer = setTimeout(() => {
       api
         .get("/search", { params: { q, tipo } })
-        .then((r) => {
-          if (!stale) setRes(Array.isArray(r.data?.resultados) ? (r.data.resultados as ResultadoBusca[]) : []);
+        .then((response) => {
+          if (!stale)
+            setRes(
+              Array.isArray(response.data?.resultados)
+                ? (response.data.resultados as ResultadoBusca[])
+                : [],
+            );
         })
         .catch(() => {
           if (!stale) setRes([]);
@@ -99,7 +109,7 @@ export default function CommandPalette() {
     }, 250);
     return () => {
       stale = true;
-      clearTimeout(t);
+      clearTimeout(timer);
     };
   }, [q, tipo, open]);
 
@@ -117,14 +127,14 @@ export default function CommandPalette() {
     >
       <div
         className="w-full max-w-xl card shadow-float overflow-hidden animate-pop"
-        onClick={(e) => e.stopPropagation()}
+        onClick={(event) => event.stopPropagation()}
       >
         <div className="flex items-center gap-3 px-4 py-3 border-b border-bronze-pale">
           <SearchIcon size={18} className="text-bronze" />
           <input
             ref={inputRef}
             value={q}
-            onChange={(e) => setQ(e.target.value)}
+            onChange={(event) => setQ(event.target.value)}
             placeholder={PLACEHOLDER[tipo]}
             className="flex-1 bg-transparent outline-none text-sm text-navy-900 placeholder:text-slate-400"
           />
@@ -133,24 +143,24 @@ export default function CommandPalette() {
           </kbd>
         </div>
         <div className="flex flex-wrap items-center gap-1.5 px-4 py-2 border-b border-bronze-pale">
-          {TIPOS.map((t) => {
-            const ativo = t.value === tipo;
+          {TIPOS.map((item) => {
+            const active = item.value === tipo;
             return (
               <button
-                key={t.value}
+                key={item.value}
                 type="button"
-                aria-pressed={ativo}
+                aria-pressed={active}
                 onClick={() => {
-                  setTipo(t.value);
+                  setTipo(item.value);
                   inputRef.current?.focus();
                 }}
                 className={
-                  ativo
+                  active
                     ? "rounded-full border border-bronze bg-bronze-50 px-2.5 py-1 text-xs font-medium text-bronze transition-colors"
                     : "rounded-full border border-bronze-pale bg-transparent px-2.5 py-1 text-xs text-slate-500 transition-colors hover:bg-bronze-50 hover:text-navy-900"
                 }
               >
-                {t.label}
+                {item.label}
               </button>
             );
           })}
@@ -166,12 +176,12 @@ export default function CommandPalette() {
               Nenhum resultado para “{q}”.
             </div>
           )}
-          {res.map((r, i) => {
-            const Icon = ICON[r.tipo] || FileText;
+          {res.map((result, index) => {
+            const Icon = ICON[result.tipo] || FileText;
             return (
               <button
-                key={i}
-                onClick={() => go(r.link)}
+                key={`${result.tipo}-${result.id}-${index}`}
+                onClick={() => go(result.link)}
                 className="w-full flex items-center gap-3 px-4 py-2.5 hover:bg-bronze-50 text-left transition-colors"
               >
                 <span className="w-7 h-7 rounded-lg bg-bronze-50 grid place-items-center text-bronze shrink-0">
@@ -179,22 +189,40 @@ export default function CommandPalette() {
                 </span>
                 <span className="min-w-0 flex-1">
                   <span className="block text-sm font-medium text-navy-900 truncate">
-                    {r.titulo}
+                    {result.titulo}
                   </span>
                   <span className="block text-xs text-slate-400 truncate">
-                    {LABEL[r.tipo] || r.tipo}
-                    {r.subtitulo ? ` · ${r.subtitulo}` : ""}
+                    {LABEL[result.tipo] || result.tipo}
+                    {result.subtitulo ? ` · ${result.subtitulo}` : ""}
                   </span>
                 </span>
               </button>
             );
           })}
           {q.trim().length < 2 && (
-            <div className="p-6 text-center text-xs text-slate-400">
-              Digite ao menos 2 caracteres. Atalho:{" "}
-              <kbd className="border border-bronze-pale rounded px-1">
-                Ctrl/⌘ K
-              </kbd>
+            <div className="p-3">
+              <div className="px-2 pb-2 text-[10px] font-semibold uppercase tracking-wider text-slate-400">
+                Atalhos do sistema
+              </div>
+              <div className="grid gap-1 sm:grid-cols-2">
+                {shortcuts.map(({ path, label, icon: Icon }) => (
+                  <button
+                    key={path}
+                    type="button"
+                    onClick={() => go(path)}
+                    className="flex items-center gap-2 rounded-lg px-3 py-2 text-left text-sm text-slate-600 hover:bg-bronze-50 hover:text-navy-900"
+                  >
+                    <Icon className="h-4 w-4 text-bronze" />
+                    <span className="truncate">{label}</span>
+                  </button>
+                ))}
+              </div>
+              <div className="mt-2 text-center text-xs text-slate-400">
+                Digite ao menos 2 caracteres para buscar dados. Atalho: {" "}
+                <kbd className="border border-bronze-pale rounded px-1">
+                  Ctrl/⌘ K
+                </kbd>
+              </div>
             </div>
           )}
         </div>
