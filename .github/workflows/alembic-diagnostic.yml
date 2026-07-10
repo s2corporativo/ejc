@@ -61,6 +61,8 @@ jobs:
             -c "CREATE EXTENSION IF NOT EXISTS pgcrypto;"
 
       - name: Diagnosticar árvore Alembic
+        id: tree
+        continue-on-error: true
         run: |
           set +e
           {
@@ -70,15 +72,35 @@ jobs:
             python -m alembic history --verbose
           } > /tmp/alembic-tree.log 2>&1
           status=$?
-          tail -n 240 /tmp/alembic-tree.log
+          echo "status=$status" >> "$GITHUB_OUTPUT"
           exit $status
 
       - name: Aplicar migrations com diagnóstico compacto
+        id: upgrade
+        continue-on-error: true
         run: |
           set +e
           python -m alembic upgrade head > /tmp/alembic-upgrade.log 2>&1
           status=$?
-          echo "=== ÚLTIMAS 240 LINHAS DO ALEMBIC ==="
-          tail -n 240 /tmp/alembic-upgrade.log
-          echo "=== FIM DO DIAGNÓSTICO ==="
+          echo "status=$status" >> "$GITHUB_OUTPUT"
           exit $status
+
+      - name: Publicar diagnóstico Alembic
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: alembic-diagnostic
+          path: |
+            /tmp/alembic-tree.log
+            /tmp/alembic-upgrade.log
+          if-no-files-found: warn
+          retention-days: 3
+
+      - name: Falhar se árvore ou upgrade falharam
+        if: always()
+        run: |
+          tree_status="${{ steps.tree.outputs.status }}"
+          upgrade_status="${{ steps.upgrade.outputs.status }}"
+          echo "tree_status=${tree_status:-missing}"
+          echo "upgrade_status=${upgrade_status:-missing}"
+          test "${tree_status:-1}" = "0" -a "${upgrade_status:-1}" = "0"
