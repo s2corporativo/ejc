@@ -53,10 +53,22 @@ export const useAuth = create<AuthState>((set, get) => ({
       const { data } = await api.get<User>("/users/me");
       persistUser(data);
       set({ user: data, status: "authenticated" });
-    } catch {
-      localStorage.removeItem("ejc_access");
-      persistUser(null);
-      set({ user: null, status: "unauthenticated" });
+    } catch (error: any) {
+      const responseStatus = error?.response?.status;
+      if (responseStatus === 401 || responseStatus === 403) {
+        localStorage.removeItem("ejc_access");
+        persistUser(null);
+        set({ user: null, status: "unauthenticated" });
+        return;
+      }
+
+      // Falha transitória de rede/servidor: preserva a sessão cacheada. O backend
+      // continua sendo a autoridade em todas as requisições e pode negar acesso.
+      const cachedUser = get().user ?? readStoredUser();
+      set({
+        user: cachedUser,
+        status: cachedUser ? "authenticated" : "unauthenticated",
+      });
     }
   },
   setSession: (user) => {
