@@ -162,7 +162,9 @@ export default function Layout() {
             </button>
           </div>
 
-          <Link to="/casos" className="hidden lg:inline-flex">
+          {/* DECISÃO: o atalho do header abre o wizard guiado de Novo Caso
+              (/casos/novo), não mais a listagem de casos. */}
+          <Link to="/casos/novo" className="hidden lg:inline-flex">
             <Button size="md" icon={<Plus className="h-4 w-4" />}>
               Novo caso
             </Button>
