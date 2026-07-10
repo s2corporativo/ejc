@@ -60,7 +60,7 @@ export default function LoginModern() {
         requestedPath?.startsWith("/") &&
         !requestedPath.startsWith("/portal") &&
         !requestedPath.startsWith("/login");
-      if (isValidStaffDestination) {
+      if (isValidStaffDestination && requestedPath) {
         nav(requestedPath, { replace: true });
         return;
       }
