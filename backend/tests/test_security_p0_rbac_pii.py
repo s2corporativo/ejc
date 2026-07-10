@@ -79,8 +79,9 @@ def test_mascara_cpf_cnpj_sem_retornar_documento_completo():
     )
 
 
-def test_mascara_documento_nulo_sem_erro_ou_exposicao():
+def test_mascara_documento_nulo_ou_vazio_sem_erro_ou_exposicao():
     assert _mascarar_documento(None) == ""
+    assert _mascarar_documento("") == ""
 
 
 @pytest.mark.asyncio
