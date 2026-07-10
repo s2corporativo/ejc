@@ -1,6 +1,9 @@
 name: Diagnose PR 204
 
 on:
+  pull_request:
+    branches:
+      - main
   push:
     branches:
       - fix/ci-readonly-cleanup
