@@ -18,6 +18,7 @@ import {
   Users,
 } from "lucide-react";
 import AccountSecurity from "../components/AccountSecurity";
+import IntegrationHealthPanel from "../components/IntegrationHealthPanel";
 import { PageHeader, SectionCard, cn } from "../components/UI";
 import { THEME_LABELS, useThemeStore, type ThemeMode } from "../stores/theme";
 import {
@@ -358,71 +359,7 @@ export default function Configuracoes() {
         </SectionCard>
       )}
 
-      {tab === "integracoes" && isAdmin && (
-        <div className="space-y-5">
-          <SectionCard
-            title="Integrações e infraestrutura"
-            subtitle="A tela não exibe nem permite editar chaves, senhas, tokens ou o conteúdo do ambiente."
-          >
-            <div className="grid gap-3 md:grid-cols-2">
-              {[
-                {
-                  title: "IA e RAG",
-                  description:
-                    "Provedores, curadoria, fontes, guardrails e saúde operacional.",
-                  to: "/ia-governanca",
-                  icon: Gauge,
-                },
-                {
-                  title: "Usuários e acesso",
-                  description: "Perfis, status e credenciais da equipe.",
-                  to: "/usuarios",
-                  icon: Users,
-                },
-                {
-                  title: "Mapa técnico",
-                  description:
-                    "Dependências, endpoints detectados e módulos que exigem revisão.",
-                  to: "/mapa-modulos",
-                  icon: Database,
-                },
-                {
-                  title: "Auditoria",
-                  description:
-                    "Verificação das alterações jurídicas, financeiras e de segurança.",
-                  to: "/auditoria",
-                  icon: ShieldCheck,
-                },
-              ].map(({ title, description, to, icon: Icon }) => (
-                <Link
-                  key={to}
-                  to={to}
-                  className="flex items-start gap-3 rounded-xl border border-slate-200 bg-white p-4 hover:border-primary-300 hover:bg-primary-50/30"
-                >
-                  <span className="rounded-lg bg-primary-50 p-2 text-primary-600">
-                    <Icon className="h-5 w-5" />
-                  </span>
-                  <div className="min-w-0 flex-1">
-                    <div className="text-sm font-semibold text-slate-800">
-                      {title}
-                    </div>
-                    <div className="mt-1 text-xs text-slate-500">
-                      {description}
-                    </div>
-                  </div>
-                  <ChevronRight className="h-4 w-4 text-slate-400" />
-                </Link>
-              ))}
-            </div>
-          </SectionCard>
-
-          <div className="rounded-xl border border-slate-200 bg-slate-50/60 p-4 text-sm text-slate-600">
-            Segredos operacionais continuam exclusivamente no ambiente de
-            produção. A interface mostra apenas estados seguros disponibilizados
-            pelo backend; nunca chaves, senhas ou conteúdo do ambiente.
-          </div>
-        </div>
-      )}
+      {tab === "integracoes" && isAdmin && <IntegrationHealthPanel />}
 
       {tab === "administracao" && isAdmin && (
         <div className="grid gap-4 md:grid-cols-2">
