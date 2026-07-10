@@ -22,7 +22,7 @@ import ErrorBoundary from "../components/ErrorBoundary";
 import { IANotice, PageHeader } from "../components/UI";
 import { useAuth } from "../stores/auth";
 
-const GESTORES = ["superadmin", "admin", "socio"];
+const GESTORES: readonly string[] = ["superadmin", "admin", "socio"];
 
 const TABS = [
   { k: "agente", label: "Agente Pro", icon: Cpu },
@@ -56,7 +56,7 @@ export default function InteligenciaWorkspace() {
       TABS.filter(
         (tab) =>
           !("roles" in tab) ||
-          Boolean(user?.role && tab.roles.includes(user.role as never)),
+          Boolean(user?.role && (tab.roles as readonly string[]).includes(user.role)),
       ),
     [user?.role],
   );
