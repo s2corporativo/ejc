@@ -18,7 +18,9 @@ from app.schemas.system_module_settings import (
     SystemModuleSettingUpdate,
 )
 
-router = APIRouter(prefix="/system-modules", tags=["Lifecycle de Módulos"])
+# Registrado como sub-router de app.routers.system_modules, que já possui o
+# prefixo /system-modules e é montado em main.py sob /api.
+router = APIRouter(tags=["Lifecycle de Módulos"])
 
 _internal_users = require_roles(
     [
