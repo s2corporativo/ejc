@@ -43,6 +43,13 @@ api.interceptors.response.use(
   (r) => r,
   async (error) => {
     const original = error.config;
+    const requestUrl = String(original?.url || "");
+    const isAuthenticationRequest =
+      requestUrl.includes("/auth/login") ||
+      requestUrl.includes("/auth/refresh") ||
+      requestUrl.includes("/auth/recuperar-senha") ||
+      requestUrl.includes("/auth/redefinir-senha");
+
     // Troca de senha obrigatória: backend bloqueia tudo com 403+flag
     if (
       error.response?.status === 403 &&
@@ -52,7 +59,17 @@ api.interceptors.response.use(
       window.location.href = "/trocar-senha";
       return Promise.reject(error);
     }
-    if (error.response?.status === 401 && !original._retry) {
+
+    // Só tenta refresh quando a requisição realmente partiu de uma sessão com
+    // access token. Erros 401 de login (senha incorreta ou desafio TOTP) devem
+    // chegar à tela de autenticação, sem logout ou redirecionamento automático.
+    if (
+      error.response?.status === 401 &&
+      !isAuthenticationRequest &&
+      getAccessToken() &&
+      original &&
+      !original._retry
+    ) {
       original._retry = true;
       try {
         const newToken = await refreshAccessToken();

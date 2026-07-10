@@ -4,6 +4,10 @@ import type { User } from "../types";
 
 export type AuthStatus = "initializing" | "authenticated" | "unauthenticated";
 
+type SecurityState = {
+  permissions?: string[];
+};
+
 function readStoredUser(): User | null {
   try {
     return JSON.parse(localStorage.getItem("ejc_user") || "null") as User | null;
@@ -50,9 +54,19 @@ export const useAuth = create<AuthState>((set, get) => ({
 
     set({ status: "initializing" });
     try {
-      const { data } = await api.get<User>("/users/me");
-      persistUser(data);
-      set({ user: data, status: "authenticated" });
+      const profileResponse = await api.get<User>("/users/me");
+      const securityResponse = await api
+        .get<SecurityState>("/users/me/security")
+        .catch(() => null);
+      const user: User = {
+        ...profileResponse.data,
+        permissions:
+          securityResponse?.data?.permissions ??
+          profileResponse.data.permissions ??
+          get().user?.permissions,
+      };
+      persistUser(user);
+      set({ user, status: "authenticated" });
     } catch (error: any) {
       const responseStatus = error?.response?.status;
       if (responseStatus === 401 || responseStatus === 403) {
