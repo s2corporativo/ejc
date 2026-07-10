@@ -1,0 +1,44 @@
+name: Diagnose PR 194
+
+on:
+  pull_request:
+    branches:
+      - main
+
+permissions:
+  contents: read
+
+jobs:
+  tests:
+    if: github.event.pull_request.number == 194
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    defaults:
+      run:
+        working-directory: backend
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+          cache: pip
+          cache-dependency-path: backend/requirements.txt
+      - name: Install dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends libmagic1 poppler-utils tesseract-ocr libpango-1.0-0 libpangoft2-1.0-0 libcairo2 libgdk-pixbuf-2.0-0
+          python -m pip install --upgrade pip
+          python -m pip install -r requirements.txt
+      - name: Capture pytest output
+        run: |
+          set +e
+          python -m pytest tests -q --tb=short > pytest-pr194.log 2>&1
+          echo $? > pytest-pr194.exit
+          exit 0
+      - uses: actions/upload-artifact@v4
+        with:
+          name: pr194-diagnostic
+          path: |
+            backend/pytest-pr194.log
+            backend/pytest-pr194.exit
+          retention-days: 1
