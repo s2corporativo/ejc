@@ -18,7 +18,7 @@ jobs:
       - uses: actions/checkout@v4
       - name: Detect migration heads without importing application
         run: |
-          python - <<'PY' | tee alembic-head.txt
+          python - <<'PY'
           import ast
           from pathlib import Path
 
@@ -47,12 +47,14 @@ jobs:
                   referenced.update(item for item in down if isinstance(item, str))
 
           heads = sorted(set(revisions) - referenced)
-          print(f"migration_count={len(revisions)}")
-          for head in heads:
-              print(f"head={head} file={revisions[head]}")
+          lines = [f"migration_count={len(revisions)}"]
+          lines.extend(f"head={head} file={revisions[head]}" for head in heads)
+          Path("alembic-head.txt").write_text("\n".join(lines) + "\n", encoding="utf-8")
+          print("\n".join(lines))
           if len(heads) != 1:
               raise SystemExit(f"Expected exactly one Alembic head, found {len(heads)}")
           PY
+          test -s alembic-head.txt
       - uses: actions/upload-artifact@v4
         with:
           name: alembic-head-diagnostic
