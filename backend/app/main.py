@@ -89,6 +89,8 @@ from app.routers import ia_extra
 from app.routers import ia_governanca
 from app.routers import ia_saude
 from app.routers import indice_risco
+from app.routers import infosimples_receita
+from app.routers import infosimples_tjmg
 from app.routers import intelligence_v3
 from app.routers import intimacoes
 from app.routers import jurimetria
@@ -321,6 +323,8 @@ app.include_router(ia_extra.router, prefix=API)  # Bloco 1 (Etapa 4): router ant
 app.include_router(ia_governanca.router, prefix=API)
 app.include_router(ia_saude.router, prefix=API)
 app.include_router(indice_risco.router, prefix=API)
+app.include_router(infosimples_receita.router, prefix=API)
+app.include_router(infosimples_tjmg.router, prefix=API)
 app.include_router(intelligence_v3.router, prefix=API)
 app.include_router(intimacoes.router, prefix=API)
 app.include_router(jurimetria.router, prefix=API)
