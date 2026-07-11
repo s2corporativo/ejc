@@ -904,6 +904,12 @@ def start_scheduler():
     # Recarrega feriados municipais/estaduais (00h05) — pega novas inserções
     # na tabela `feriados` sem precisar reiniciar o backend.
     s.add_job(_recarregar_feriados,   CronTrigger(hour=0, minute=5),  id="feriados",  replace_existing=True)
+    # Sync semanal dos feriados NACIONAIS via BrasilAPI (seg 00h15) — gate
+    # interno FERIADOS_BRASILAPI_ENABLED (default True). Merge aditivo: nunca
+    # altera feriados municipais/estaduais cadastrados à mão.
+    s.add_job(_sincronizar_feriados_brasilapi,
+              CronTrigger(day_of_week="mon", hour=0, minute=15),
+              id="feriados_brasilapi", replace_existing=True)
     s.add_job(_backup_banco,          CronTrigger(hour=2, minute=0),  id="backup",    replace_existing=True)
     s.add_job(_auditoria_processos,   CronTrigger(day_of_week="mon", hour=8, minute=15),  id="auditoria",  replace_existing=True)
     s.add_job(_monitor_diario_oficial, CronTrigger(hour=6, minute=0),                      id="dou_monitor", replace_existing=True)
@@ -1058,6 +1064,17 @@ async def _recarregar_feriados():
     n = await carregar_feriados_db()
     ns = await carregar_suspensoes_db()
     logger.info(f"[Scheduler] Feriados recarregados: {n} | Suspensões: {ns} dia(s)")
+
+
+async def _sincronizar_feriados_brasilapi():
+    """Segunda 00h15 — sync dos feriados NACIONAIS (ano corrente + próximo)
+    via BrasilAPI para a tabela `feriados` (merge aditivo, fail-safe)."""
+    try:
+        from app.services.feriados_service import sincronizar_feriados_nacionais
+        resumo = await sincronizar_feriados_nacionais()
+        logger.info(f"[Scheduler] Feriados BrasilAPI: {resumo}")
+    except Exception as e:
+        logger.error(f"[Scheduler] Feriados BrasilAPI falhou: {e}")
 
 
 async def _monitor_diario_oficial():

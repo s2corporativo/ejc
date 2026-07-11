@@ -360,6 +360,22 @@ class Settings(BaseSettings):
     # com a régua interna do advogado (scheduler._regua_cobranca).
     COBRANCA_ENABLED: bool = False
 
+    # ── Índices oficiais BCB (SGS + Olinda) — services/indices_service.py ─
+    # API pública do Banco Central, gratuita e sem chave: correção monetária,
+    # Taxa Legal (Lei 14.905/2024), Selic EC 113, taxas de juros por
+    # instituição (revisional) e PTAX. LIGADO por padrão (autorizado pelo
+    # dono — não há custo). Cache persistente em indices_bcb_cache.
+    INDICES_BCB_ENABLED: bool = True
+    # Timeout (segundos) das chamadas ao BCB (SGS e Olinda).
+    INDICES_BCB_TIMEOUT: int = 20
+
+    # ── Feriados nacionais via BrasilAPI — services/feriados_service.py ───
+    # Sync automático (job semanal) dos feriados nacionais do ano corrente e
+    # do próximo para a tabela `feriados` (merge aditivo: municipais/
+    # estaduais cadastrados à mão nunca são alterados). Gratuito, sem chave —
+    # ligado por padrão.
+    FERIADOS_BRASILAPI_ENABLED: bool = True
+
     # ── Scheduler ────────────────────────────────────────────────────────
     ENABLE_SCHEDULER: bool = True   # desligar em workers extras (uvicorn --workers)
 
