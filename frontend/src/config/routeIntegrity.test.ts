@@ -85,9 +85,10 @@ describe("integridade App.tsx ↔ moduleRegistry", () => {
     const literals = new Set(extractLiteralPaths(appSrc));
     expect(literals.has("/portal")).toBe(true);
     for (const child of PORTAL_CHILD_LITERALS) {
-      expect(literals.has(child), `rota do portal ausente no App: ${child}`).toBe(
-        true,
-      );
+      expect(
+        literals.has(child),
+        `rota do portal ausente no App: ${child}`,
+      ).toBe(true);
     }
   });
 
@@ -107,7 +108,9 @@ describe("integridade App.tsx ↔ moduleRegistry", () => {
   it("todo LEGACY_REDIRECT aponta para uma rota registrada (sem redirect morto)", () => {
     for (const redirect of LEGACY_REDIRECTS) {
       const pathname = redirect.to.split("?")[0] || "/";
-      const alvoExiste = STAFF_ROUTES.some((m) => routeMatches(m.path, pathname));
+      const alvoExiste = STAFF_ROUTES.some((m) =>
+        routeMatches(m.path, pathname),
+      );
       expect(
         alvoExiste,
         `redirect ${redirect.from} → ${redirect.to} aponta para rota inexistente`,

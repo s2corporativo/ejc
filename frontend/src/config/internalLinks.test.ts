@@ -106,7 +106,8 @@ function routeMatches(routePath: string, pathname: string): boolean {
   if (routePath === "/" || pathname === "/") return routePath === pathname;
   if (routeSegs.length !== linkSegs.length) return false;
   return routeSegs.every(
-    (seg, i) => seg.startsWith(":") || linkSegs[i] === DYN || seg === linkSegs[i],
+    (seg, i) =>
+      seg.startsWith(":") || linkSegs[i] === DYN || seg === linkSegs[i],
   );
 }
 
