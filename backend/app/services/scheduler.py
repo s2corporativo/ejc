@@ -941,6 +941,15 @@ def start_scheduler():
         CronTrigger(hour=_dj_hora, minute=_dj_min, timezone="UTC"),
         id="datajud_sync_clientes", replace_existing=True,
     )
+    # Radar Legislativo (Câmara + Senado + ALMG) — diário 07h00 UTC. Gate
+    # interno RADAR_LEGISLATIVO_ENABLED (default True — APIs públicas sem
+    # custo). Falha de uma fonte (ALMG instável) nunca derruba o job.
+    from app.services.radar_legislativo import job_radar_legislativo
+    s.add_job(
+        job_radar_legislativo,
+        CronTrigger(hour=7, minute=0, timezone="UTC"),
+        id="radar_legislativo", replace_existing=True,
+    )
     # Relatório semanal do dono — segunda 07h20 (RELATORIO_DONO_ENABLED).
     from app.services.relatorio_dono_service import job_relatorio_dono
     s.add_job(

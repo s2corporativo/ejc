@@ -131,6 +131,7 @@ from app.routers import rag
 from app.routers import rag_public
 from app.routers import api_keys as api_keys_router
 from app.routers import regulatorio
+from app.routers import radar_legislativo
 from app.routers import ramos
 from app.routers import previdenciario_beneficio
 from app.routers import relatorio
@@ -366,6 +367,7 @@ app.include_router(rag.router, prefix=API)
 app.include_router(rag_public.router, prefix=API)      # API pública (X-API-Key)
 app.include_router(api_keys_router.router, prefix=API) # admin de chaves (JWT admin)
 app.include_router(regulatorio.router, prefix=API)
+app.include_router(radar_legislativo.router, prefix=API)  # Câmara+Senado+ALMG
 app.include_router(ramos.router, prefix=API)
 app.include_router(previdenciario_beneficio.router, prefix=API)  # vertical Previdenciário — regras de transição EC 103/2019 + RMI
 app.include_router(relatorio.router, prefix=API)

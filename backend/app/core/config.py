@@ -376,6 +376,18 @@ class Settings(BaseSettings):
     # ligado por padrão.
     FERIADOS_BRASILAPI_ENABLED: bool = True
 
+    # ── Radar Legislativo (Câmara + Senado + ALMG) ────────────────────────
+    # Job diário (07h00 UTC) que monitora proposições por termos derivados
+    # dos ramos ativos do escritório e alimenta o Radar Regulatório
+    # (services/radar_legislativo.py). APIs públicas gratuitas, sem chave —
+    # LIGADO por padrão (autorizado pelo dono). Dedup persistente na tabela
+    # radar_legislativo_visto (criada automaticamente — sem migration).
+    RADAR_LEGISLATIVO_ENABLED: bool = True
+    # Termos customizados por ramo (JSON): {"ramo": ["termo", ...]} —
+    # SOBREPÕE os termos default do ramo; ramos extras são aditivos.
+    # Ex.: {"tributario": ["CBS IBS", "split payment"], "agrario": ["MP solo"]}
+    RADAR_LEGISLATIVO_TERMOS: str = ""
+
     # ── Scheduler ────────────────────────────────────────────────────────
     ENABLE_SCHEDULER: bool = True   # desligar em workers extras (uvicorn --workers)
 
