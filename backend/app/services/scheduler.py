@@ -922,6 +922,35 @@ def start_scheduler():
         id="backup_drive", replace_existing=True,
     )
 
+    # ── Automações voltadas ao CLIENTE (migration 084) — gates internos
+    # default False (opt-in no .env); canais: e-mail + sino APENAS. ──────────
+    # Sync diário DataJud + notificação de andamentos ao cliente
+    # (DATAJUD_SYNC_ENABLED; horário UTC — mesmo padrão do backup_drive).
+    from app.services.datajud_sync_service import (
+        hora_sync_clientes_utc, job_datajud_sync_clientes,
+    )
+    _dj_hora, _dj_min = hora_sync_clientes_utc()
+    s.add_job(
+        job_datajud_sync_clientes,
+        CronTrigger(hour=_dj_hora, minute=_dj_min, timezone="UTC"),
+        id="datajud_sync_clientes", replace_existing=True,
+    )
+    # Relatório semanal do dono — segunda 07h20 (RELATORIO_DONO_ENABLED).
+    from app.services.relatorio_dono_service import job_relatorio_dono
+    s.add_job(
+        job_relatorio_dono,
+        CronTrigger(day_of_week="mon", hour=7, minute=20),
+        id="relatorio_dono", replace_existing=True,
+    )
+    # Régua de cobrança ao CLIENTE — diária 08h30 (COBRANCA_ENABLED). NÃO
+    # confundir com _regua_cobranca (08h15), que notifica o ADVOGADO.
+    from app.services.cobranca_cliente_service import job_regua_cobranca_cliente
+    s.add_job(
+        job_regua_cobranca_cliente,
+        CronTrigger(hour=8, minute=30),
+        id="regua_cobranca_cliente", replace_existing=True,
+    )
+
     s.start()
     logger.info("[Scheduler] Iniciado — 24 jobs (+ briefing por advogado, régua de cobrança e alertas societários)")
 
