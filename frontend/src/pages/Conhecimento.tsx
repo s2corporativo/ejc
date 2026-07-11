@@ -588,7 +588,15 @@ function SecaoImportarJuris({ onImportado }: { onImportado: () => void }) {
           `/conhecimento/importar-jurisprudencia/status/${jobId}`,
         );
         if (data.status !== "executando") return data;
-      } catch {
+      } catch (e: any) {
+        // 404 = job não encontrado neste processo (backend reiniciado ou id
+        // expirado) — parar o polling em vez de esperar o timeout de 3 min.
+        if (e?.response?.status === 404) {
+          return {
+            status: "erro",
+            erro: "Job não encontrado neste processo (backend reiniciado ou registro expirado). O resultado durável fica em fontes_ingestao/auditoria.",
+          };
+        }
         /* transiente — tenta de novo */
       }
     }

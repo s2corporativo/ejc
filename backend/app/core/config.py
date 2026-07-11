@@ -322,6 +322,9 @@ class Settings(BaseSettings):
     # Teto do tar.gz de uploads (a criptografia Fernet é em memória): acima
     # disto o backup segue SÓ com o banco e marca status "parcial".
     BACKUP_UPLOADS_MAX_MB: int = 512
+    # Teto do dump do banco (mesma razão: Fernet cifra em memória): acima
+    # disto o backup FALHA com erro claro (alerta dispara) sem ler o arquivo.
+    BACKUP_DB_MAX_MB: int = 2048
     # Timeout (segundos) do pg_dump — bancos maiores podem precisar de mais.
     BACKUP_PG_DUMP_TIMEOUT: int = 600
 

@@ -20,6 +20,10 @@ logger = logging.getLogger("ejc.backup.admin")
 
 router = APIRouter(prefix="/admin/backup", tags=["Admin / Backup"])
 
+# Referências fortes das tasks em voo: sem isto o GC pode coletar a task de
+# backup no meio da execução (asyncio guarda só weakref das tasks).
+_tasks_backup: set[asyncio.Task] = set()
+
 
 @router.post("/executar", status_code=202)
 @limiter.limit("2/minute")
@@ -43,6 +47,9 @@ async def executar_backup_manual(
                 "BACKUP_DRIVE_FOLDER_ID no .env (ver .env.example)."
             ),
         )
+    # 409 best-effort para UX — o guard AUTORITATIVO é a flag síncrona dentro
+    # de executar_backup: dois POSTs que passem por aqui em corrida geram uma
+    # segunda task que retorna "em_execucao" sem executar nada.
     if backup_service.em_execucao():
         raise HTTPException(status_code=409, detail="Já existe um backup em andamento.")
 
@@ -55,9 +62,11 @@ async def executar_backup_manual(
     await db.commit()
 
     # Sessão própria dentro da task — a sessão desta request fecha no retorno.
-    asyncio.create_task(backup_service.executar_backup_background(
+    task = asyncio.create_task(backup_service.executar_backup_background(
         origem="manual", usuario_id=cu.id, usuario_role=role,
     ))
+    _tasks_backup.add(task)
+    task.add_done_callback(_tasks_backup.discard)
     logger.info("[Backup] disparo manual aceito (user=%s)", cu.id)
     return {
         "aceito": True,

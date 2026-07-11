@@ -75,7 +75,10 @@ async def importar_jurisprudencia(
     }
 
 
-@router.get("/importar-jurisprudencia/fontes")
+@router.get(
+    "/importar-jurisprudencia/fontes",
+    dependencies=[Depends(rate_limit("juris_import_fontes", 30))],
+)
 async def listar_fontes(
     db: AsyncSession = Depends(get_db),
     cu: User = Depends(get_current_user),
@@ -95,14 +98,23 @@ async def listar_fontes(
     return {"fontes": fontes}
 
 
-@router.get("/importar-jurisprudencia/status/{job_id}")
+@router.get(
+    "/importar-jurisprudencia/status/{job_id}",
+    dependencies=[Depends(rate_limit("juris_import_status", 30))],
+)
 async def status_importacao(
     job_id: str,
     cu: User = Depends(get_current_user),
 ):
-    """Status do job (executando | concluido | erro) com o resumo da carga."""
+    """Status do job (executando | concluido | erro) com o resumo da carga.
+
+    Ownership: só o usuário que disparou o job (ou superadmin/admin) enxerga o
+    status — job alheio responde o MESMO 404 de job inexistente (sem vazar a
+    existência do id)."""
     st = status_job(job_id)
-    if st is None:
+    role = getattr(cu.role, "value", str(cu.role))
+    dono = st is not None and st.get("user_id") == cu.id
+    if st is None or not (dono or role in ("superadmin", "admin")):
         raise HTTPException(
             status_code=404,
             detail="Job não encontrado (expirado ou id inválido). O resultado "

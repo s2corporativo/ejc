@@ -137,11 +137,21 @@ async def test_lexml_normaliza_e_filtra_jurisprudencia(monkeypatch):
     assert j.chave_dedup() == "julgado:STJ:1186789"
 
     # Contrato da requisição SRU + refinamento por URN do tribunal.
+    # Termos do usuário ENTRE ASPAS: consulta multi-palavra sem quoting vira
+    # CQL inválida ("dano moral and urn any ..." → 0 resultados silencioso).
     p = chamadas[0]["params"]
     assert chamadas[0]["url"] == ji_lexml.SRU_URL
     assert p["operation"] == "searchRetrieve" and p["version"] == "1.1"
-    assert "dano moral" in p["query"]
+    assert '"dano moral"' in p["query"]
     assert 'urn any "superior.tribunal.justica"' in p["query"]
+
+
+def test_lexml_cql_quota_termos_e_remove_aspas_internas():
+    assert ji_lexml._cql("dano moral", None) == '"dano moral"'
+    # Aspas do usuário são removidas antes do quoting (não quebram a CQL).
+    assert ji_lexml._cql('dano "moral"', None) == '"dano  moral"'
+    assert ji_lexml._cql("dano moral", "STJ") == (
+        '"dano moral" and urn any "superior.tribunal.justica"')
 
 
 async def test_lexml_resposta_com_diagnostics_degrada_para_vazio(monkeypatch):
@@ -190,8 +200,11 @@ async def test_stj_filtra_por_termos_e_normaliza(monkeypatch):
     assert j.relator == "FULANA DE TAL"
     assert "NEGATIVA DE COBERTURA" in j.ementa
     assert j.url_fonte == _STJ_PACKAGE["result"]["resources"][0]["url"]
-    # chave legada do ingestor agendado presente p/ dedup cruzado
-    assert "stj:202001234567" in j.chaves_dedup()
+    # Chave PRINCIPAL = a MESMA do ingestor agendado (keyspace compartilhado:
+    # o job diário não reimporta o que o advogado importou hoje)...
+    assert j.chave_dedup() == "stj:202001234567"
+    # ...e a canônica por tribunal+número segue no dedup como chave extra.
+    assert "julgado:STJ:1888888" in j.chaves_dedup()
 
 
 async def test_stj_tribunal_diferente_retorna_vazio(monkeypatch):
@@ -232,6 +245,7 @@ class _FakeDB:
     def __init__(self, existentes: set[str]):
         self.existentes = existentes
         self.commits = 0
+        self.rollbacks = 0
 
     async def execute(self, q):
         # extrai as chaves do IN() da query compilada (bindparam expanding
@@ -249,7 +263,7 @@ class _FakeDB:
         self.commits += 1
 
     async def rollback(self):
-        pass
+        self.rollbacks += 1
 
 
 def _julgado(numero="1234567", tribunal="STJ", **kw):
@@ -280,6 +294,9 @@ async def test_importar_deduplica_por_tribunal_numero(monkeypatch):
     resumo = await ji_ingest.importar_julgados(db, julgados, fonte_slug="t")
     assert resumo == {"importados": 2, "duplicados": 1, "erros": 0}
     assert len(gravados) == 2
+    # Commit POR JULGADO gravado: item contado = item durável (o rollback de
+    # um erro posterior nunca descarta importados já contados).
+    assert db.commits == 2
 
     # Campos exigidos pelos DOIS consumidores (RAG + gate de citações):
     doc = gravados[0]
@@ -318,6 +335,8 @@ async def test_importar_erro_em_um_nao_aborta_os_demais(monkeypatch):
     resumo = await ji_ingest.importar_julgados(
         db, [_julgado(numero="1"), _julgado(numero="2")], fonte_slug="t")
     assert resumo == {"importados": 1, "duplicados": 0, "erros": 1}
+    # Rollback só do item com erro; o item bem-sucedido tem commit próprio.
+    assert db.commits == 1 and db.rollbacks == 1
 
 
 def test_numero_canonico_aplica_mascara_cnj():
@@ -386,9 +405,10 @@ async def test_post_agenda_job_e_status_consultavel(monkeypatch):
     assert len(agendados) == 1
     assert agendados[0][0] is ji_ingest.executar_importacao
 
-    # status consultável (registro em memória do job)
+    # status consultável (registro em memória do job) — pelo DONO do job
     ji_ingest.registrar_job(out["job_id"], {"job_id": out["job_id"],
                                             "status": "concluido",
+                                            "user_id": "u1",
                                             "resumo": {"importados": 3,
                                                        "duplicados": 1,
                                                        "erros": 0}})
@@ -396,6 +416,31 @@ async def test_post_agenda_job_e_status_consultavel(monkeypatch):
         out["job_id"], cu=User(id="u1", role=UserRole.socio))
     assert st["status"] == "concluido"
     assert st["resumo"]["importados"] == 3
+
+
+async def test_status_job_de_outro_usuario_responde_404():
+    """Ownership: job alheio → o MESMO 404 de job inexistente (sem vazar id);
+    superadmin/admin enxergam qualquer job."""
+    from fastapi import HTTPException
+    from app.routers import juris_import as router_mod
+
+    ji_ingest.registrar_job("job-own", {
+        "job_id": "job-own", "status": "concluido", "user_id": "dono",
+        "resumo": {"importados": 1, "duplicados": 0, "erros": 0},
+    })
+    # Outro usuário (não-admin) → 404
+    with pytest.raises(HTTPException) as exc:
+        await router_mod.status_importacao(
+            "job-own", cu=User(id="intruso", role=UserRole.advogado))
+    assert exc.value.status_code == 404
+    # Dono → 200
+    st = await router_mod.status_importacao(
+        "job-own", cu=User(id="dono", role=UserRole.advogado))
+    assert st["status"] == "concluido"
+    # Admin (não-dono) → 200
+    st = await router_mod.status_importacao(
+        "job-own", cu=User(id="adm", role=UserRole.admin))
+    assert st["job_id"] == "job-own"
 
 
 # ── Helpers de normalização ──────────────────────────────────────────────────

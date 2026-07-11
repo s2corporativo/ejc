@@ -5,6 +5,7 @@
 # completo com colaboradores falsificados.
 from __future__ import annotations
 
+import asyncio
 from datetime import datetime, timedelta, timezone
 
 import pytest
@@ -213,6 +214,65 @@ async def test_ciclo_completo_com_fakes(monkeypatch, tmp_path):
     assert all(pasta == "pasta123" for _, pasta in enviados)
     # Nenhum segredo no resultado (vai para log/estado/status).
     assert CHAVE not in str(resultado)
+
+
+async def test_execucao_simultanea_segundo_retorna_em_execucao(monkeypatch, tmp_path):
+    """TOCTOU do disparo: dois executar_backup concorrentes → só UM executa;
+    o outro retorna status em_execucao na hora (flag síncrona, sem await entre
+    o teste e o set)."""
+    monkeypatch.setattr(backup_service.settings, "BACKUP_ENCRYPTION_KEY", CHAVE)
+    monkeypatch.setattr(backup_service.settings, "BACKUP_DRIVE_FOLDER_ID", "pasta123")
+    monkeypatch.setattr(backup_service.settings, "UPLOAD_DIR", str(tmp_path / "sem-uploads"))
+
+    execucoes: list[str] = []
+
+    def _fake_pg_dump(destino):
+        execucoes.append(destino)
+        with open(destino, "wb") as f:
+            f.write(b"PGDMP fake dump")
+        return 15
+
+    monkeypatch.setattr(backup_service, "_pg_dump_para", _fake_pg_dump)
+    monkeypatch.setattr(backup_service, "_drive_client_escrita", lambda: object())
+    monkeypatch.setattr(
+        backup_service, "_upload_drive_sync",
+        lambda s, c, n, f: {"id": "x", "name": n},
+    )
+    monkeypatch.setattr(backup_service, "_rotacionar_sync", lambda s, f, r: 0)
+
+    r1, r2 = await asyncio.gather(
+        backup_service.executar_backup(_FakeDB(), origem="manual"),
+        backup_service.executar_backup(_FakeDB(), origem="manual"),
+    )
+    # UPLOAD_DIR inexistente → o backup que roda termina "parcial" (aviso).
+    assert sorted([r1["status"], r2["status"]]) == ["em_execucao", "parcial"]
+    assert len(execucoes) == 1          # pg_dump rodou UMA vez
+    assert backup_service.em_execucao() is False   # flag liberada no finally
+
+
+async def test_dump_acima_do_teto_falha_sem_ler_o_arquivo(monkeypatch, tmp_path):
+    """Teto BACKUP_DB_MAX_MB: dump maior que o limite → erro claro ANTES de
+    carregar o dump em RAM (a cifragem Fernet leria o arquivo inteiro)."""
+    monkeypatch.setattr(backup_service.settings, "BACKUP_ENCRYPTION_KEY", CHAVE)
+    monkeypatch.setattr(backup_service.settings, "BACKUP_DRIVE_FOLDER_ID", "pasta123")
+    monkeypatch.setattr(backup_service.settings, "BACKUP_DB_MAX_MB", 1)
+
+    def _fake_pg_dump(destino):
+        with open(destino, "wb") as f:
+            f.write(b"PGDMP")
+        return 2 * 1024 * 1024          # acima do teto de 1 MB
+
+    cifrados: list[tuple] = []
+    monkeypatch.setattr(backup_service, "_pg_dump_para", _fake_pg_dump)
+    monkeypatch.setattr(
+        backup_service, "cifrar_arquivo",
+        lambda *a, **kw: cifrados.append(a) or 0,
+    )
+
+    resultado = await backup_service.executar_backup(_FakeDB(), origem="agendado")
+    assert resultado["ok"] is False and resultado["status"] == "erro"
+    assert "BACKUP_DB_MAX_MB" in (resultado["erro"] or "")
+    assert cifrados == []               # o dump nunca foi lido/cifrado
 
 
 async def test_uploads_acima_do_limite_gera_parcial(monkeypatch, tmp_path):

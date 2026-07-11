@@ -25,7 +25,7 @@ import tempfile
 import time
 from datetime import datetime, timedelta, timezone
 from typing import Any
-from urllib.parse import urlparse
+from urllib.parse import unquote, urlparse
 
 from cryptography.fernet import Fernet
 from sqlalchemy import text as sqltext
@@ -43,8 +43,10 @@ PREFIXO_BACKUP = "ejc_backup_"
 # próprio app, e a pasta de backup foi criada pelo usuário no Drive dele.
 DRIVE_WRITE_SCOPE = "https://www.googleapis.com/auth/drive"
 
-# Lock de processo: um backup por vez (pg_dump + upload podem levar minutos).
-_backup_lock = asyncio.Lock()
+# Guard de processo: um backup por vez (pg_dump + upload podem levar minutos).
+# Flag booleana testada-e-setada SINCRONAMENTE (sem await entre teste e set) no
+# início de executar_backup — imune ao TOCTOU de check + `async with Lock`.
+_em_execucao = False
 
 
 # ── Configuração ──────────────────────────────────────────────────────────────
@@ -80,7 +82,7 @@ def configuracao_status() -> dict[str, bool]:
 
 
 def em_execucao() -> bool:
-    return _backup_lock.locked()
+    return _em_execucao
 
 
 # ── Criptografia (Fernet) ─────────────────────────────────────────────────────
@@ -148,14 +150,16 @@ def _pg_dump_para(destino: str) -> int:
             "Dockerfile oficial) — sem ele o backup do banco é impossível."
         )
     url = urlparse(settings.DATABASE_URL_SYNC)
+    # urlparse devolve credenciais PERCENT-ENCODED (senha com @ / : falharia
+    # no pg_dump) — unquote() restaura os valores reais.
     # Senha via env PGPASSWORD (nunca em argv — visível em `ps`).
-    env = {**os.environ, "PGPASSWORD": url.password or ""}
+    env = {**os.environ, "PGPASSWORD": unquote(url.password or "")}
     cmd = [
         pg_dump,
         "-h", url.hostname or "localhost",
         "-p", str(url.port or 5432),
-        "-U", url.username or "",
-        "-d", (url.path or "/").lstrip("/"),
+        "-U", unquote(url.username or ""),
+        "-d", unquote((url.path or "/").lstrip("/")),
         "-Fc",
         "-f", destino,
     ]
@@ -181,9 +185,24 @@ def _tamanho_diretorio(caminho: str) -> int:
 
 
 def _tar_uploads_para(destino: str) -> int:
-    """Empacota UPLOAD_DIR em tar.gz. Bloqueante — usar asyncio.to_thread."""
+    """Empacota UPLOAD_DIR em tar.gz. Bloqueante — usar asyncio.to_thread.
+
+    O diretório está VIVO durante o backup (uploads/remoções concorrentes):
+    arquivo que sumir entre o walk e o tar.add é logado e pulado — nunca
+    derruba o backup inteiro."""
+    base = settings.UPLOAD_DIR
     with tarfile.open(destino, "w:gz") as tar:
-        tar.add(settings.UPLOAD_DIR, arcname="uploads")
+        for raiz, _dirs, arquivos in os.walk(base):
+            for nome in arquivos:
+                caminho = os.path.join(raiz, nome)
+                arcname = os.path.join("uploads", os.path.relpath(caminho, base))
+                try:
+                    tar.add(caminho, arcname=arcname, recursive=False)
+                except FileNotFoundError:
+                    logger.warning(
+                        "[Backup] arquivo removido durante o tar (pulado): %s",
+                        caminho,
+                    )
     return os.path.getsize(destino)
 
 
@@ -404,13 +423,15 @@ async def executar_backup(
     """Executa o ciclo completo: pg_dump + tar de uploads → cifra → Drive →
     rotação → estado/auditoria/alerta. Nunca levanta exceção ao chamador —
     retorna dict com ok/status/erro (padrão sincronizar_pasta_conhecimento)."""
-    if _backup_lock.locked():
+    global _em_execucao
+    if _em_execucao:
         return {
             "ok": False, "status": "em_execucao", "origem": origem,
             "detail": "Já existe um backup em andamento.",
         }
+    _em_execucao = True   # set SÍNCRONO após o teste — sem janela de TOCTOU
 
-    async with _backup_lock:
+    try:
         inicio = time.monotonic()
         ts = datetime.now(timezone.utc)
         artefatos: list[dict[str, Any]] = []
@@ -432,6 +453,18 @@ async def executar_backup(
                 # 1) Dump do Postgres (formato custom -Fc, já comprimido).
                 dump_path = os.path.join(tmp, "db.dump")
                 dump_bytes = await asyncio.to_thread(_pg_dump_para, dump_path)
+
+                # Teto de RAM: a cifragem Fernet lê o dump INTEIRO em memória.
+                # Checado ANTES de ler — acima do teto o backup falha com erro
+                # claro (alerta existente dispara) sem estourar a RAM do VPS.
+                limite_db = settings.BACKUP_DB_MAX_MB * 1024 * 1024
+                if dump_bytes > limite_db:
+                    raise RuntimeError(
+                        f"Dump do banco ({dump_bytes} bytes) excede "
+                        f"BACKUP_DB_MAX_MB={settings.BACKUP_DB_MAX_MB} MB — "
+                        "aumente o teto no .env (garantindo RAM equivalente) "
+                        "para voltar a fazer backup do banco."
+                    )
 
                 # 2) Cifra o dump (LGPD: nada sai do VPS em claro).
                 dump_enc = os.path.join(tmp, "db.dump.enc")
@@ -540,6 +573,8 @@ async def executar_backup(
             await _alertar_falha(db, erro or "erro desconhecido")
 
         return resultado
+    finally:
+        _em_execucao = False
 
 
 async def executar_backup_background(

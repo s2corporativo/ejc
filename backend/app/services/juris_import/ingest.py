@@ -10,8 +10,9 @@
 #      (aprovado|disponivel), casando por extra.numero_processo ou pela URL em
 #      `fonte`. Um único upsert com esses campos alimenta os dois consumidores.
 #
-# DEDUP por tribunal+número: chave_origem "julgado:<TRIB>:<digitos>" (+ chaves
-# legadas do ingestor agendado) — julgado existente NÃO é reimportado.
+# DEDUP por tribunal+número: chave_origem principal do conector (canônica
+# "julgado:<TRIB>:<digitos>" ou a MESMA chave do ingestor agendado, ex.
+# "stj:<registro>") + demais chaves — julgado existente NÃO é reimportado.
 #
 # Execução em background com status consultável: segue o padrão de jobs de
 # ingestão do repo (FonteIngestao/registrar_fonte/marcar_execucao) + trilha em
@@ -37,7 +38,6 @@ from app.services.verificador_jurisprudencia import formatar_cnj
 logger = logging.getLogger("ejc.juris_import")
 
 CATEGORIA_RAG = "jurisprudencia"     # ∈ _JURIS_CATEGORIAS do gate de citações
-_COMMIT_LOTE = 25
 
 
 def _numero_canonico(j: JulgadoNormalizado) -> str:
@@ -52,7 +52,9 @@ async def importar_julgados(
     """Grava julgados no RAG + base de citações validadas, com dedup.
 
     Retorna {"importados": int, "duplicados": int, "erros": int}.
-    Commits em lotes; erro em um julgado não aborta os demais.
+    Commit POR JULGADO após cada upsert bem-sucedido (limite ≤ 100 — custo ok):
+    o rollback de um item com erro nunca descarta itens já contados, e erro em
+    um julgado não aborta os demais.
     """
     importados = duplicados = erros = 0
     for j in julgados:
@@ -99,14 +101,12 @@ async def importar_julgados(
                 importados += 1
             else:               # "inalterado"/"atualizado" — já existia
                 duplicados += 1
-            if (importados + duplicados + erros) % _COMMIT_LOTE == 0:
-                await db.commit()
+            await db.commit()   # durável antes de contar o próximo item
         except Exception as e:
             erros += 1
             logger.warning("[juris_import:%s] falha em %s: %s: %s",
                            fonte_slug, j.numero, type(e).__name__, e)
-            await db.rollback()
-    await db.commit()
+            await db.rollback()  # afeta só o item corrente (já commitados a salvo)
     return {"importados": importados, "duplicados": duplicados, "erros": erros}
 
 
@@ -143,6 +143,7 @@ async def executar_importacao(
     registrar_job(job_id, {
         "job_id": job_id, "status": "executando", "fonte": fonte,
         "consulta": consulta, "tribunal": tribunal, "limite": limite,
+        "user_id": user_id,   # ownership: GET /status só para o dono (ou admin)
         "iniciado_em": datetime.now(timezone.utc).isoformat(),
     })
     resumo = {"importados": 0, "duplicados": 0, "erros": 0}
@@ -188,6 +189,7 @@ async def executar_importacao(
         "job_id": job_id,
         "status": "erro" if erro else "concluido",
         "fonte": fonte, "consulta": consulta, "tribunal": tribunal,
+        "user_id": user_id,
         "encontrados": total, "resumo": resumo, "erro": erro,
         "finalizado_em": datetime.now(timezone.utc).isoformat(),
     })

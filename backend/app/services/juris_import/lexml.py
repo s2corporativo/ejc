@@ -59,10 +59,15 @@ _SIGLA_POR_FRAGMENTO = {
 
 
 def _cql(consulta: str, tribunal: str | None) -> str:
-    """Monta a consulta CQL: termos livres + refinamento opcional por URN."""
-    # Aspas removidas — termo livre em CQL não pode quebrar a sintaxe da query.
+    """Monta a consulta CQL: termos do usuário ENTRE ASPAS + refinamento por URN.
+
+    Sem as aspas, consulta multi-palavra vira CQL inválida ("dano moral and
+    urn any ..." — "moral" seria interpretado como operador/índice) e a busca
+    degrada silenciosamente para 0 resultados.
+    """
+    # Aspas internas removidas — não podem quebrar a sintaxe do termo quotado.
     termos = re.sub(r'["()]', " ", consulta or "").strip()
-    partes = [termos] if termos else []
+    partes = [f'"{termos}"'] if termos else []
     trib = (tribunal or "").strip().upper()
     if trib in _URN_TRIBUNAL:
         partes.append(f'urn any "{_URN_TRIBUNAL[trib]}"')

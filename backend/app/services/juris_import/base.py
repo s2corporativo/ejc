@@ -31,20 +31,31 @@ class JulgadoNormalizado(BaseModel):
     orgao_julgador: str | None = None
     relator: str | None = None
     classe: str | None = None
-    # Chaves extras de dedup (ex.: chave legada do ingestor agendado do STJ,
-    # "stj:<registro>") — evita duplicar doc já ingerido por outro caminho.
+    # Chave PRINCIPAL de gravação (knowledge_docs.chave_origem) quando o
+    # conector compartilha keyspace com um ingestor agendado (ex.: STJ usa a
+    # MESMA chave "stj:<numeroRegistro>" do job diário — assim o job de amanhã
+    # não reimporta o que o advogado importou hoje). None = usa a canônica.
+    chave_principal: str | None = None
+    # Chaves extras de dedup — evita duplicar doc já ingerido por outro caminho.
     chaves_extras: list[str] = Field(default_factory=list)
 
     def numero_digitos(self) -> str:
         return re.sub(r"\D", "", self.numero or "")
 
-    def chave_dedup(self) -> str:
-        """Chave canônica de dedup por tribunal+número (knowledge_docs.chave_origem)."""
+    def chave_canonica(self) -> str:
+        """Chave canônica por tribunal+número (julgado:<TRIB>:<dígitos>)."""
         num = self.numero_digitos() or re.sub(r"\s+", "", (self.numero or "").lower())
         return f"julgado:{(self.tribunal or '').upper()}:{num}"
 
+    def chave_dedup(self) -> str:
+        """Chave usada como knowledge_docs.chave_origem na gravação."""
+        return self.chave_principal or self.chave_canonica()
+
     def chaves_dedup(self) -> list[str]:
-        return [self.chave_dedup(), *self.chaves_extras]
+        """Todas as chaves consultadas no dedup (principal + canônica + extras)."""
+        return list(dict.fromkeys(
+            [self.chave_dedup(), self.chave_canonica(), *self.chaves_extras]
+        ))
 
 
 def normalizar_termos(consulta: str) -> list[str]:

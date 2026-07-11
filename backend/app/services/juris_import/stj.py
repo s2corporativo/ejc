@@ -61,9 +61,11 @@ def normalizar_registro(rec: dict, url_fonte: str) -> JulgadoNormalizado | None:
         orgao_julgador=rec.get("nomeOrgaoJulgador"),
         relator=rec.get("ministroRelator"),
         classe=rec.get("siglaClasse"),
-        # chave legada do ingestor agendado (ingestors/stj.py) — não duplicar
-        # um acórdão que o job diário já ingeriu.
-        chaves_extras=[f"stj:{registro}"] if registro else [],
+        # Chave PRINCIPAL = a MESMA do ingestor agendado (ingestors/stj.py,
+        # "stj:<numeroRegistro>"): o que for importado aqui é reconhecido pelo
+        # job diário (e vice-versa) — a canônica julgado:STJ:<dígitos> entra
+        # automaticamente como chave extra de dedup via chaves_dedup().
+        chave_principal=f"stj:{registro}" if registro else None,
     )
 
 
