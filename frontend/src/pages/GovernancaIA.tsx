@@ -199,7 +199,7 @@ export default function GovernancaIA() {
         {tabs.map(({ k, label, icon: Icon }) => (
           <button
             key={k}
-            className={`btn ${tab === k ? "bg-navy text-white" : "bg-white border border-slate-200 text-slate-600"}`}
+            className={`btn ${tab === k ? "bg-navy text-white" : "bg-slate-900/[0.05] text-slate-600 hover:bg-slate-900/[0.09] dark:bg-white/[0.07] dark:text-slate-300"}`}
             onClick={() => setTab(k)}
           >
             <Icon size={15} /> {label}

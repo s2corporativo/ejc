@@ -37,7 +37,7 @@ export default function ThemeSelector({
   return (
     <div
       className={cn(
-        "rounded-2xl border border-slate-200/80 bg-white/90 p-1.5 shadow-sm backdrop-blur dark:border-white/10 dark:bg-white/[0.04]",
+        "rounded-2xl border border-black/[0.05] bg-white/90 p-1.5 shadow-sm backdrop-blur dark:border-white/10 dark:bg-white/[0.04]",
         className,
       )}
       role="radiogroup"
@@ -60,7 +60,7 @@ export default function ThemeSelector({
                 compact ? "gap-1.5" : "gap-2",
                 active
                   ? "border-primary-300 bg-primary-900 text-white shadow-sm dark:border-primary-400 dark:bg-primary-400 dark:text-primary-950"
-                  : "border-transparent text-slate-500 hover:border-slate-200 hover:bg-slate-50 hover:text-slate-800 dark:text-slate-400 dark:hover:border-white/10 dark:hover:bg-white/[0.06] dark:hover:text-slate-100",
+                  : "border-transparent text-slate-500 hover:bg-slate-900/[0.05] hover:text-slate-800 dark:text-slate-400 dark:hover:bg-white/[0.06] dark:hover:text-slate-100",
               )}
             >
               <Icon className="h-4 w-4 shrink-0" />

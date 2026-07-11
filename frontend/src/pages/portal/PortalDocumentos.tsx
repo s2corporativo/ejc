@@ -10,6 +10,7 @@ import {
 import api from "../../lib/api";
 import { asList } from "../../lib/list";
 import { toast } from "../../components/Toast";
+import { EmptyState, Spinner } from "../../components/UI";
 
 interface ItemSolicitado {
   id: string;
@@ -120,16 +121,12 @@ export default function PortalDocumentos() {
       />
 
       {loading ? (
-        <div className="bg-white rounded-xl border border-slate-200 p-10 text-center text-slate-400 text-sm">
-          Carregando...
-        </div>
+        <Spinner />
       ) : rows.length === 0 ? (
-        <div className="bg-white rounded-xl border border-slate-200 p-10 text-center">
-          <FileText className="w-10 h-10 text-slate-300 mx-auto mb-3" />
-          <p className="text-slate-400 text-sm">
-            Nenhum documento solicitado no momento.
-          </p>
-        </div>
+        <EmptyState
+          icon={FileText}
+          title="Nenhum documento solicitado no momento."
+        />
       ) : (
         rows.map((s) => {
           const [label, cor, bgcor] = ST[s.status] ?? [
@@ -140,7 +137,7 @@ export default function PortalDocumentos() {
           return (
             <div
               key={s.id}
-              className="bg-white rounded-xl border border-slate-200 overflow-hidden"
+              className="card overflow-hidden"
             >
               <div className="px-5 py-4 border-b border-slate-100">
                 <div className="flex flex-wrap items-start justify-between gap-2">

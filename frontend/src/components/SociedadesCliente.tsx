@@ -396,7 +396,7 @@ export default function SociedadesCliente() {
                   {s.client_nome} · {s.cnpj || "CNPJ não informado"}
                 </div>
               </div>
-              <span className="text-[10px] font-semibold uppercase px-2 py-0.5 rounded-full bg-slate-100 text-slate-600 border border-slate-200">
+              <span className="text-[10px] font-semibold uppercase px-2 py-0.5 rounded-full bg-slate-900/[0.05] text-slate-600 dark:bg-white/[0.07] dark:text-slate-300">
                 {rotulo(s.tipo_societario)}
               </span>
               <div className="text-right">
@@ -469,7 +469,7 @@ export default function SociedadesCliente() {
                       return (
                         <div
                           key={s.id}
-                          className="p-2 rounded-lg border border-slate-200"
+                          className="card p-2"
                         >
                           <div className="flex flex-wrap items-center gap-2">
                             <span className="text-sm font-medium text-navy">

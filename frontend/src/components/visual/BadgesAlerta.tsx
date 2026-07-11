@@ -15,7 +15,7 @@ import type {
 const SEVERIDADE_CLASSES: Record<SeveridadeBadge, string> = {
   critica: "bg-red-100 text-red-800 ring-red-200",
   atencao: "bg-amber-100 text-amber-800 ring-amber-200",
-  info: "bg-sky-50 text-sky-700 ring-sky-200",
+  info: "bg-info-50 text-info-700 ring-info-200",
 };
 
 const SCORE_CLASSES: Record<ClassificacaoSaude, string> = {

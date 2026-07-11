@@ -3,6 +3,7 @@ import { useParams, Link } from "react-router-dom";
 import { ArrowLeft, CalendarClock, MessageSquare } from "lucide-react";
 import api from "../../lib/api";
 import { toast } from "../../components/Toast";
+import { Spinner } from "../../components/UI";
 import { asList } from "../../lib/list";
 
 function MensagensCliente({ caseId }: { caseId: string }) {
@@ -97,7 +98,7 @@ export default function PortalCasoDetalhe() {
     api.get(`/portal/casos/${id}`).then((r) => setData(r.data));
   }, [id]);
 
-  if (!data) return <div className="text-slate-400">Carregando…</div>;
+  if (!data) return <Spinner />;
   const { caso, andamentos, proximas_datas } = data;
 
   return (

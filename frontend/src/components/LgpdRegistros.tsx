@@ -455,7 +455,7 @@ export default function LgpdRegistros() {
                           </span>
                         </span>
                       </button>
-                      <span className="text-[10px] font-medium px-2 py-0.5 rounded-full bg-slate-100 text-slate-600 border border-slate-200">
+                      <span className="text-[10px] font-medium px-2 py-0.5 rounded-full bg-slate-900/[0.05] text-slate-600 dark:bg-white/[0.07] dark:text-slate-300">
                         {baseLabel(r.base_legal)}
                       </span>
                       {r.dados_sensiveis && (

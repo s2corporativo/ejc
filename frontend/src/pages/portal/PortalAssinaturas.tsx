@@ -9,6 +9,7 @@ import {
 } from "lucide-react";
 import api from "../../lib/api";
 import { asList } from "../../lib/list";
+import { EmptyState } from "../../components/UI";
 
 export default function PortalAssinaturas() {
   const [rows, setRows] = useState<any[]>([]);
@@ -112,7 +113,7 @@ export default function PortalAssinaturas() {
 
       {/* Pendentes */}
       {pendentes.length > 0 && (
-        <div className="bg-white rounded-xl border border-slate-200 overflow-hidden">
+        <div className="card overflow-hidden">
           <div className="px-5 py-4 border-b border-slate-100 flex items-center gap-2">
             <Clock className="w-4 h-4 text-warn-500" />
             <h2 className="font-semibold text-slate-700">
@@ -159,7 +160,7 @@ export default function PortalAssinaturas() {
 
       {/* Assinados */}
       {assinados.length > 0 && (
-        <div className="bg-white rounded-xl border border-slate-200 overflow-hidden">
+        <div className="card overflow-hidden">
           <div className="px-5 py-4 border-b border-slate-100 flex items-center gap-2">
             <CheckCircle2 className="w-4 h-4 text-success-500" />
             <h2 className="font-semibold text-slate-700">
@@ -198,12 +199,7 @@ export default function PortalAssinaturas() {
       )}
 
       {!loading && rows.length === 0 && (
-        <div className="bg-white rounded-xl border border-slate-200 p-12 text-center">
-          <PenLine className="w-8 h-8 text-slate-300 mx-auto mb-2" />
-          <p className="text-slate-400 text-sm">
-            Nenhum documento para assinar
-          </p>
-        </div>
+        <EmptyState icon={PenLine} title="Nenhum documento para assinar" />
       )}
 
       <p className="text-xs text-slate-400">

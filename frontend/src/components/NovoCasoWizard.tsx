@@ -290,7 +290,7 @@ export default function NovoCasoWizard({
               {resultados.map((c) => (
                 <div
                   key={c.id}
-                  className="flex items-center justify-between gap-3 rounded-xl border border-slate-200 bg-white px-4 py-3"
+                  className="card flex items-center justify-between gap-3 px-4 py-3"
                 >
                   <div className="min-w-0">
                     <div className="truncate text-sm font-medium text-slate-900">
@@ -323,7 +323,7 @@ export default function NovoCasoWizard({
           )}
 
           {!buscando && resultados && (resultados.length === 0 || cadastrarNovo) && (
-            <div className="mt-4 rounded-xl border border-slate-200 bg-slate-50 p-4">
+            <div className="card mt-4 bg-slate-50 p-4">
               <p className="mb-3 flex items-center gap-2 text-sm text-slate-600">
                 <UserPlus className="h-4 w-4 text-slate-400" />
                 {resultados && resultados.length > 0

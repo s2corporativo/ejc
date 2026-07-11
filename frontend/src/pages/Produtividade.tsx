@@ -10,7 +10,7 @@ import {
   Briefcase,
 } from "lucide-react";
 import api from "../lib/api";
-import { PageHeader } from "../components/UI";
+import { PageHeader, Spinner } from "../components/UI";
 
 const PERIODOS = [
   { label: "7 dias", value: "7d" },
@@ -191,9 +191,7 @@ export default function Produtividade() {
       />
 
       {loading ? (
-        <div className="flex items-center justify-center h-40 text-zinc-400 text-sm">
-          Carregando…
-        </div>
+        <Spinner />
       ) : !data ? (
         <div className="text-zinc-400 text-sm">Erro ao carregar dados.</div>
       ) : (

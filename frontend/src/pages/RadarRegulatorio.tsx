@@ -2,7 +2,7 @@ import { useEffect, useState } from "react";
 import { Bell, ExternalLink, FileText, AlertTriangle } from "lucide-react";
 import { Link } from "react-router-dom";
 import api from "../lib/api";
-import { PageHeader } from "../components/UI";
+import { PageHeader, Spinner } from "../components/UI";
 import RadarLegislativo from "../components/RadarLegislativo";
 
 interface Item {
@@ -59,9 +59,7 @@ export default function RadarRegulatorio() {
       </div>
 
       {loading ? (
-        <div className="card p-8 text-center text-sm text-slate-400">
-          Carregando...
-        </div>
+        <Spinner />
       ) : !data ? (
         <div className="card p-8 text-center text-sm text-slate-400">
           Nao foi possivel carregar o digest.

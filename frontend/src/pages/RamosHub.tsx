@@ -63,7 +63,7 @@ const RAMOS = [
     slug: "administrativo",
     label: "Direito Administrativo",
     icon: Landmark,
-    tone: "from-cyan-500/10 to-cyan-500/0 text-cyan-700",
+    tone: "from-ouro/10 to-ouro/0 text-ouro-profundo",
     desc: "Licitações, contratos públicos e atos administrativos",
   },
   {

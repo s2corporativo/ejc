@@ -703,7 +703,7 @@ export default function Pecas() {
           </div>
         )}
         {view?.validacao_juridica && (
-          <div className="mb-3 p-3 rounded-lg bg-slate-50 border border-slate-200 text-xs text-slate-700">
+          <div className="mb-3 p-3 rounded-lg bg-slate-50 border border-black/[0.05] text-xs text-slate-700">
             <strong>Validação jurídica:</strong>{" "}
             {view.validacao_juridica.status} · Score{" "}
             {view.validacao_juridica.score ?? "—"}/

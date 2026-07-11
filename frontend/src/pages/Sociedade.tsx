@@ -342,7 +342,9 @@ export default function Sociedade() {
         <div className="card p-5">
           <div className="flex items-center justify-between mb-4">
             <div>
-              <h2 className="font-semibold text-slate-800">Quadro Societário</h2>
+              <h2 className="font-semibold text-slate-800">
+                Quadro Societário
+              </h2>
               <p className="text-xs text-slate-400 mt-0.5">
                 Participação total:{" "}
                 <span

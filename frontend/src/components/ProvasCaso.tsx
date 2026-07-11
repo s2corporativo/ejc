@@ -112,7 +112,7 @@ const TIPO_COR: Record<ProvaTipo, string> = {
   pericial: "bg-ai-50 text-ai-700 ring-1 ring-ai-200",
   testemunhal: "bg-warn-50 text-warn-700 ring-1 ring-warn-200",
   material: "bg-success-50 text-success-700 ring-1 ring-success-200",
-  digital: "bg-cyan-50 text-cyan-700 ring-1 ring-cyan-200",
+  digital: "bg-info-50 text-info-700 ring-1 ring-info-200",
   outro: "bg-slate-100 text-slate-600 ring-1 ring-slate-200",
 };
 
@@ -455,7 +455,7 @@ export default function ProvasCaso({ caseId }: { caseId: string | number }) {
           {provas.map((p, i) => (
             <div
               key={p.id}
-              className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm"
+              className="card p-4"
             >
               <div className="flex items-start justify-between gap-3">
                 <div className="flex min-w-0 flex-1 items-start gap-3">

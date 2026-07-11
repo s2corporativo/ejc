@@ -32,7 +32,8 @@ export default function Central() {
 
   const rawTab = searchParams.get("tab");
   const tab: CentralTab =
-    isCentralTab(rawTab) && (rawTab !== "relacionamento" || canSeeRelacionamento)
+    isCentralTab(rawTab) &&
+    (rawTab !== "relacionamento" || canSeeRelacionamento)
       ? rawTab
       : "atividades";
 
@@ -49,7 +50,7 @@ export default function Central() {
           <div
             role="tablist"
             aria-label="Seções da central"
-            className="inline-flex gap-1 rounded-xl border border-slate-200 bg-white p-1"
+            className="inline-flex gap-1 rounded-xl bg-slate-900/[0.05] p-1 dark:bg-white/[0.07]"
           >
             {TABS.map(({ key, label, icon: Icon }) => (
               <button
@@ -60,7 +61,7 @@ export default function Central() {
                 className={`flex items-center gap-2 rounded-lg px-3 py-1.5 text-sm font-medium transition-colors ${
                   tab === key
                     ? "bg-navy text-white"
-                    : "text-slate-600 hover:bg-slate-50"
+                    : "text-slate-600 hover:bg-slate-900/[0.09] dark:text-slate-300 dark:hover:bg-white/[0.12]"
                 }`}
               >
                 <Icon className="h-4 w-4" />

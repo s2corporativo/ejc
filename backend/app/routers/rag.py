@@ -448,6 +448,54 @@ async def monitor_legislativo(
     }
 
 
+# ── Seed da Base de Conhecimento (admin, idempotente) ────────────────────────
+@router.post("/seed", summary="Popula a base com o conhecimento inicial do escritório (idempotente)")
+async def seed_base_conhecimento(
+    background_tasks: BackgroundTasks,
+    incluir_jurisprudencia: bool = Query(
+        False,
+        description="Agenda também a importação inicial de jurisprudência REAL "
+                    "(LexML/STJ) para temas comuns, em background — gracioso se "
+                    "as fontes estiverem desabilitadas/indisponíveis.",
+    ),
+    db: AsyncSession = Depends(get_db),
+    cu: User = Depends(require_roles(["superadmin", "admin", "socio"])),
+):
+    """Seed idempotente: README de uso, checklist de curadoria, padrão-ouro de
+    peças, diretrizes internas por área e modelos de estrutura de documento.
+    Reexecutar não duplica (dedup por chave_origem `ejc_seed:*`); conteúdo
+    alterado gera nova versão preservando o histórico. Jurisprudência real
+    entra somente pelo importador oficial (opt-in via query param)."""
+    from app.models.audit_log import criar_audit_log
+    from app.services.seed_conhecimento import (
+        agendar_jurisprudencia_inicial, executar_seed_conhecimento,
+    )
+    resumo = await executar_seed_conhecimento(db)
+    role = getattr(cu.role, "value", str(cu.role))
+    await criar_audit_log(
+        db, user_id=cu.id, user_role=role, acao="CREATE",
+        entidade="rag_seed_conhecimento",
+        detalhes=(f"Seed da base de conhecimento: {resumo['novos']} novos, "
+                  f"{resumo['atualizados']} atualizados, "
+                  f"{resumo['inalterados']} inalterados"
+                  f"{'; jurisprudência inicial agendada' if incluir_jurisprudencia else ''}"),
+    )
+    await db.commit()
+    jobs = []
+    if incluir_jurisprudencia:
+        jobs = agendar_jurisprudencia_inicial(background_tasks, cu.id, role)
+    return {
+        **resumo,
+        "jurisprudencia_agendada": jobs,
+        "detail": (
+            f"Seed aplicado: {resumo['novos']} novos, {resumo['atualizados']} "
+            f"atualizados, {resumo['inalterados']} inalterados de "
+            f"{resumo['total']} documentos."
+            + (f" {len(jobs)} importações de jurisprudência agendadas." if jobs else "")
+        ),
+    }
+
+
 # ── Destilação RAG com gate humano (#15) ─────────────────────────────────────
 class IngerirAILogRequest(BaseModel):
     categoria: str = "conhecimento_ia"

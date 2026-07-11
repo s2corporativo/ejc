@@ -32,9 +32,9 @@ const CATEGORIAS: Array<{
   {
     key: "movimento",
     label: "Movimentos",
-    chip: "border-sky-200 text-sky-700 hover:bg-sky-50",
-    chipAtivo: "bg-sky-600 border-sky-600 text-white",
-    dot: "border-sky-400 bg-sky-50 text-sky-600",
+    chip: "border-primary-200 text-primary-700 hover:bg-primary-50",
+    chipAtivo: "bg-primary-600 border-primary-600 text-white",
+    dot: "border-primary-400 bg-primary-50 text-primary-600",
     icone: <Gavel className="h-3 w-3" />,
   },
   {

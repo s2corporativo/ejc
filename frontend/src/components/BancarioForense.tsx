@@ -462,7 +462,7 @@ function CalculadoraCET() {
             </div>
           )}
 
-          <details className="rounded-lg border border-slate-200 bg-slate-50/60 px-3 py-2">
+          <details className="card bg-slate-50/60 px-3 py-2">
             <summary className="text-xs font-medium text-slate-600 cursor-pointer select-none">
               Memória de cálculo{" "}
               {res.convergencia?.metodo
@@ -772,7 +772,7 @@ function MinutaRevisionalModal({
                 readOnly
                 value={doc}
                 rows={14}
-                className="w-full border border-slate-200 rounded-xl px-4 py-3 text-sm text-slate-800 bg-slate-50 font-mono resize-none focus:outline-none focus:ring-2 focus:ring-bronze"
+                className="input bg-slate-50 font-mono resize-none"
               />
             </div>
             <div className="bg-warn-50 border border-warn-200 rounded-lg px-4 py-3 text-xs text-warn-800">
@@ -1002,7 +1002,7 @@ function VerificadorAbusividade() {
           </div>
 
           {/* Fundamentação + base legal */}
-          <div className="rounded-lg border border-slate-200 bg-slate-50/60 p-3 space-y-2">
+          <div className="card bg-slate-50/60 p-3 space-y-2">
             <p className="text-xs text-slate-600 leading-relaxed">
               {res.fundamentacao}
             </p>

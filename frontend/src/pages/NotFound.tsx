@@ -23,7 +23,7 @@ export default function NotFound() {
           </Link>
           <Link
             to="/login"
-            className="btn bg-white border border-slate-200 text-slate-600"
+            className="btn-secondary"
           >
             Ir para o login
           </Link>

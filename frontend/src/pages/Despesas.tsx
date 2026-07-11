@@ -238,10 +238,7 @@ export default function Despesas() {
             cls: "text-slate-800",
           },
         ].map(({ label, value, cls }) => (
-          <div
-            key={label}
-            className="card p-4"
-          >
+          <div key={label} className="card p-4">
             <p className="text-xs text-slate-500 uppercase tracking-wide">
               {label}
             </p>

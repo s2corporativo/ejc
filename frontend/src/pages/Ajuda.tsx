@@ -1,5 +1,6 @@
 import { useState, useMemo } from "react";
 import { Search, ChevronRight, Lightbulb, ArrowLeft } from "lucide-react";
+import { EmptyState, PageHeader } from "../components/UI";
 
 interface Step {
   title: string;
@@ -771,7 +772,7 @@ export default function Ajuda() {
         >
           <ArrowLeft size={15} /> Voltar
         </button>
-        <div className="bg-white rounded-2xl border border-slate-200 p-6 shadow-sm">
+        <div className="card p-6">
           <div className="flex items-start gap-3 mb-5">
             <span className="text-3xl">{sel.icon}</span>
             <div>
@@ -820,17 +821,14 @@ export default function Ajuda() {
   // Lista de tutoriais
   return (
     <div className="max-w-5xl mx-auto px-4 py-6">
-      <div className="mb-5">
-        <h1 className="text-2xl font-bold text-slate-800">Central de Ajuda</h1>
-        <p className="text-slate-500 text-sm mt-1">
-          Tutoriais passo a passo de cada ferramenta — escolha um tema para
-          aprender.
-        </p>
-      </div>
+      <PageHeader
+        title="Central de Ajuda"
+        subtitle="Tutoriais passo a passo de cada ferramenta — escolha um tema para aprender."
+      />
       <div className="relative max-w-md mb-6">
         <Search size={16} className="absolute left-3 top-2.5 text-slate-400" />
         <input
-          className="w-full pl-9 pr-3 py-2 border border-slate-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-primary-300"
+          className="input pl-9"
           placeholder="Buscar ferramenta ou assunto..."
           value={q}
           onChange={(e) => setQ(e.target.value)}
@@ -838,9 +836,7 @@ export default function Ajuda() {
       </div>
 
       {porSecao.length === 0 ? (
-        <p className="text-slate-400 text-sm text-center py-12">
-          Nenhum tutorial encontrado para "{q}".
-        </p>
+        <EmptyState title={`Nenhum tutorial encontrado para "${q}".`} />
       ) : (
         porSecao.map(({ secao, itens }) => (
           <div key={secao} className="mb-7">
@@ -852,7 +848,7 @@ export default function Ajuda() {
                 <button
                   key={m.id}
                   onClick={() => setSel(m)}
-                  className="text-left bg-white rounded-xl border border-slate-200 p-4 hover:shadow-md hover:border-primary-200 transition-all"
+                  className="text-left card rounded-xl p-4 hover:border-primary-200 transition-all"
                 >
                   <div className="flex items-start justify-between">
                     <span className="text-2xl">{m.icon}</span>

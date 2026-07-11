@@ -2,6 +2,7 @@ import { useEffect, useState } from "react";
 import { Link } from "react-router-dom";
 import { ChevronRight, Scale, Search } from "lucide-react";
 import api from "../../lib/api";
+import { EmptyState, Spinner } from "../../components/UI";
 
 const STATUS_LABEL: Record<string, [string, string]> = {
   triagem: ["Em análise", "bg-warn-100 text-warn-700"],
@@ -60,7 +61,7 @@ export default function PortalCasos() {
         <div className="relative">
           <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400" />
           <input
-            className="w-full pl-9 pr-4 py-2.5 border border-slate-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-primary-300 bg-white"
+            className="input pl-9 pr-4 py-2.5"
             placeholder="Buscar processo..."
             value={busca}
             onChange={(e) => setBusca(e.target.value)}
@@ -70,18 +71,14 @@ export default function PortalCasos() {
 
       {/* Lista */}
       {loading ? (
-        <div className="bg-white rounded-xl border border-slate-200 p-10 text-center text-slate-400 text-sm">
-          Carregando...
-        </div>
+        <Spinner />
       ) : filtered.length === 0 ? (
-        <div className="bg-white rounded-xl border border-slate-200 p-12 text-center">
-          <Scale className="w-8 h-8 text-slate-300 mx-auto mb-2" />
-          <p className="text-slate-400 text-sm">
-            {busca
-              ? "Nenhum processo encontrado"
-              : "Nenhum processo no momento"}
-          </p>
-        </div>
+        <EmptyState
+          icon={Scale}
+          title={
+            busca ? "Nenhum processo encontrado" : "Nenhum processo no momento"
+          }
+        />
       ) : (
         <div className="space-y-2">
           {filtered.map((c) => {
@@ -94,7 +91,7 @@ export default function PortalCasos() {
               <Link
                 key={c.id}
                 to={`/portal/casos/${c.id}`}
-                className="bg-white rounded-xl border border-slate-200 p-4 flex items-center justify-between gap-4 hover:shadow-md hover:border-primary-200 transition-all block"
+                className="card p-4 flex items-center justify-between gap-4 hover:border-primary-200 transition-all block"
               >
                 <div className="flex items-start gap-3 min-w-0">
                   <div className="w-10 h-10 bg-slate-50 rounded-xl flex items-center justify-center flex-shrink-0 text-lg">

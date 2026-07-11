@@ -820,7 +820,7 @@ function TeseCard({
       className={
         principal
           ? "rounded-xl border border-primary-200 bg-primary-50/50 p-3"
-          : "rounded-xl border border-slate-200 p-3"
+          : "rounded-xl border border-black/[0.05] dark:border-white/10 p-3"
       }
     >
       <div className="flex flex-wrap items-center gap-2">

@@ -314,9 +314,7 @@ export default function Casos() {
     // advogados p/ o seletor de responsável — falha silenciosa se o perfil não puder listar usuários
     api
       .get("/users/")
-      .then((r) =>
-        setAdvogados(asList<User>(r.data)),
-      )
+      .then((r) => setAdvogados(asList<User>(r.data)))
       .catch(() => {});
   }, []);
   useEffect(() => {
@@ -444,16 +442,16 @@ export default function Casos() {
         subtitle={`${data?.total ?? 0} casos`}
         actions={
           <div className="flex gap-2 items-center">
-            <div className="flex rounded-lg border border-slate-200 overflow-hidden">
+            <div className="flex rounded-lg overflow-hidden bg-slate-900/[0.05] dark:bg-white/[0.07]">
               <button
                 onClick={() => setView("lista")}
-                className={`flex items-center gap-1 px-3 py-1.5 text-sm ${view === "lista" ? "bg-navy text-white" : "bg-white text-slate-600 hover:bg-slate-50"}`}
+                className={`flex items-center gap-1 px-3 py-1.5 text-sm ${view === "lista" ? "bg-navy text-white" : "text-slate-600 hover:bg-slate-900/[0.09] dark:text-slate-300 dark:hover:bg-white/[0.12]"}`}
               >
                 <List size={15} /> Lista
               </button>
               <button
                 onClick={() => setView("kanban")}
-                className={`flex items-center gap-1 px-3 py-1.5 text-sm ${view === "kanban" ? "bg-navy text-white" : "bg-white text-slate-600 hover:bg-slate-50"}`}
+                className={`flex items-center gap-1 px-3 py-1.5 text-sm ${view === "kanban" ? "bg-navy text-white" : "text-slate-600 hover:bg-slate-900/[0.09] dark:text-slate-300 dark:hover:bg-white/[0.12]"}`}
               >
                 <LayoutGrid size={15} /> Quadro
               </button>
@@ -511,7 +509,7 @@ export default function Casos() {
                 className={`px-3 py-1.5 rounded-lg text-sm font-medium whitespace-nowrap ${
                   advogadoF === user.id
                     ? "bg-gold text-navy"
-                    : "bg-white border border-slate-200 text-slate-600"
+                    : "bg-slate-900/[0.05] text-slate-600 hover:bg-slate-900/[0.09] dark:bg-white/[0.07] dark:text-slate-300"
                 }`}
               >
                 Meus casos
@@ -533,7 +531,7 @@ export default function Casos() {
             <div className="flex gap-1">
               <button
                 onClick={() => setTipoF("")}
-                className={`px-3 py-1.5 rounded-lg text-sm font-medium ${tipoF === "" ? "bg-navy text-white" : "bg-white border border-slate-200 text-slate-600"}`}
+                className={`px-3 py-1.5 rounded-lg text-sm font-medium ${tipoF === "" ? "bg-navy text-white" : "bg-slate-900/[0.05] text-slate-600 hover:bg-slate-900/[0.09] dark:bg-white/[0.07] dark:text-slate-300"}`}
               >
                 Todos
               </button>
@@ -541,14 +539,14 @@ export default function Casos() {
                 <button
                   key={t.k}
                   onClick={() => setTipoF(t.k)}
-                  className={`flex items-center gap-1 px-3 py-1.5 rounded-lg text-sm font-medium ${tipoF === t.k ? "bg-navy text-white" : "bg-white border border-slate-200 text-slate-600"}`}
+                  className={`flex items-center gap-1 px-3 py-1.5 rounded-lg text-sm font-medium ${tipoF === t.k ? "bg-navy text-white" : "bg-slate-900/[0.05] text-slate-600 hover:bg-slate-900/[0.09] dark:bg-white/[0.07] dark:text-slate-300"}`}
                 >
                   <t.icon size={13} /> {t.l}
                 </button>
               ))}
             </div>
             {/* R2 — alterna entre casos ativos/arquivados/todos */}
-            <div className="flex rounded-lg border border-slate-200 overflow-hidden bg-white">
+            <div className="flex rounded-lg overflow-hidden bg-slate-900/[0.05] dark:bg-white/[0.07]">
               {[
                 ["ativos", "Ativos", List],
                 ["arquivados", "Arquivados", Archive],
@@ -557,7 +555,7 @@ export default function Casos() {
                 <button
                   key={k}
                   onClick={() => setArquivoF(k)}
-                  className={`flex items-center gap-1 px-3 py-1.5 text-sm font-medium ${arquivoF === k ? "bg-navy text-white" : "text-slate-600 hover:bg-slate-50"}`}
+                  className={`flex items-center gap-1 px-3 py-1.5 text-sm font-medium ${arquivoF === k ? "bg-navy text-white" : "text-slate-600 hover:bg-slate-900/[0.09] dark:text-slate-300 dark:hover:bg-white/[0.12]"}`}
                 >
                   <Icon size={13} /> {label}
                 </button>
@@ -1059,8 +1057,8 @@ export default function Casos() {
               preview.result.campos_preenchidos.length ===
               0 && (
               <p className="text-xs text-slate-500">
-                Nada novo a aplicar — as partes/área/campos já estão
-                preenchidos no caso.
+                Nada novo a aplicar — as partes/área/campos já estão preenchidos
+                no caso.
               </p>
             )}
             {preview.result.aviso && (

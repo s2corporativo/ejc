@@ -717,36 +717,43 @@ export default function DossieCliente() {
   return (
     <div className="max-w-6xl mx-auto px-4 py-6 space-y-6 animate-rise">
       {/* Header */}
-      <div className="flex items-center gap-3">
+      <div className="flex items-start gap-3">
         <button
           onClick={() => navigate(-1)}
-          className="btn-ghost p-2 rounded-lg"
+          className="btn-ghost p-2 rounded-lg mt-1"
         >
           <ArrowLeft className="w-4 h-4" />
         </button>
         <div className="flex-1 min-w-0">
-          <p className="eyebrow">Ficha Mestra do Cliente</p>
-          <h1 className="text-2xl">{cliente.nome}</h1>
-          <p className="text-sm text-slate-400 mt-0.5">
-            {cliente.cpf_cnpj && (
-              <span className="mr-3">{cliente.cpf_cnpj}</span>
-            )}
-            {cliente.email && <span className="mr-3">{cliente.email}</span>}
-            {cliente.telefone && <span>{cliente.telefone}</span>}
-          </p>
+          <PageHeader
+            eyebrow="Ficha Mestra do Cliente"
+            title={cliente.nome}
+            subtitle={
+              [cliente.cpf_cnpj, cliente.email, cliente.telefone]
+                .filter(Boolean)
+                .join(" · ") || undefined
+            }
+            actions={
+              <>
+                <a
+                  href="/portal"
+                  target="_blank"
+                  rel="noreferrer"
+                  className="btn-ghost text-xs"
+                  title="Abrir o Portal do Cliente em uma nova aba"
+                >
+                  <ExternalLink className="w-3 h-3" /> Portal do Cliente
+                </a>
+                <Link
+                  to={`/clientes/${clientId}`}
+                  className="btn-outline text-xs"
+                >
+                  <User className="w-3 h-3" /> Editar perfil
+                </Link>
+              </>
+            }
+          />
         </div>
-        <a
-          href="/portal"
-          target="_blank"
-          rel="noreferrer"
-          className="btn-ghost text-xs"
-          title="Abrir o Portal do Cliente em uma nova aba"
-        >
-          <ExternalLink className="w-3 h-3" /> Portal do Cliente
-        </a>
-        <Link to={`/clientes/${clientId}`} className="btn-outline text-xs">
-          <User className="w-3 h-3" /> Editar perfil
-        </Link>
       </div>
 
       {/* Seletor de Abas (Ficha Mestra - Seção 2.113) */}

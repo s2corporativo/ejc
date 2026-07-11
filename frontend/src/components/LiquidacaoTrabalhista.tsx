@@ -162,7 +162,7 @@ function BlocoCard({
   children: React.ReactNode;
 }) {
   return (
-    <div className="rounded-xl border border-slate-200 bg-white p-4">
+    <div className="card p-4">
       <div className="flex items-center gap-1.5 mb-2">
         <Icon size={14} className="text-gold-600" />
         <h3 className="font-serif font-semibold text-navy text-sm">{titulo}</h3>
@@ -330,7 +330,7 @@ export default function LiquidacaoTrabalhista() {
       </p>
 
       {/* ── Editor de verbas ────────────────────────────────────────────── */}
-      <div className="rounded-xl border border-slate-200 bg-slate-50/40 p-3">
+      <div className="card bg-slate-50/40 p-3">
         <div className="flex items-center justify-between mb-2">
           <span className="text-xs font-semibold text-slate-600">
             Verbas deferidas
@@ -574,7 +574,7 @@ export default function LiquidacaoTrabalhista() {
 
             {/* Correção */}
             <BlocoCard icon={TrendingUp} titulo="Correção monetária + juros">
-              <div className="mb-2 inline-flex items-center gap-1.5 text-[11px] px-2 py-0.5 rounded-full bg-navy/5 border border-slate-200 text-navy font-medium">
+              <div className="mb-2 inline-flex items-center gap-1.5 text-[11px] px-2 py-0.5 rounded-full bg-navy/5 text-navy font-medium dark:bg-white/[0.07] dark:text-slate-300">
                 <Gavel size={11} className="text-gold-600" /> {res.correcao.regime}
               </div>
               <div className="space-y-1.5">
@@ -630,7 +630,7 @@ export default function LiquidacaoTrabalhista() {
 
           {/* Memória de cálculo */}
           {res.memoria_calculo?.length > 0 && (
-            <details className="rounded-lg border border-slate-200 bg-slate-50/60 px-3 py-2">
+            <details className="card bg-slate-50/60 px-3 py-2">
               <summary className="text-xs font-medium text-slate-600 cursor-pointer select-none">
                 Memória de cálculo
               </summary>

@@ -445,7 +445,7 @@ export default function Jurimetria() {
               </p>
               <p className="text-xs text-danger-600">Taxa hist. desfavorável</p>
             </div>
-            <div className="text-center p-3 bg-gray-50 rounded-lg border border-gray-200">
+            <div className="text-center p-3 bg-gray-50 rounded-lg border border-black/[0.05]">
               <p className="text-2xl font-bold capitalize text-gray-700">
                 {predicao.confianca}
               </p>
