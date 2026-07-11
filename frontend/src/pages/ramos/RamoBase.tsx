@@ -89,7 +89,6 @@ function rotulo(v: string) {
   return v.replace(/_/g, " ").replace(/\b\w/g, (c) => c.toUpperCase());
 }
 
-
 // ── Bloco de uma ferramenta/calculadora ──────────────────────────────────────
 function Ferramenta({ f }: { f: FerramentaConfig }) {
   const [vals, setVals] = useState<Record<string, any>>(() => {

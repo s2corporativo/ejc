@@ -82,10 +82,7 @@ export default function PortalFinanceiro() {
       {/* KPIs */}
       <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
         {kpis.map((k) => (
-          <div
-            key={k.label}
-            className="card p-4"
-          >
+          <div key={k.label} className="card p-4">
             <div
               className={`w-8 h-8 rounded-lg ${k.bg} flex items-center justify-center mb-2`}
             >

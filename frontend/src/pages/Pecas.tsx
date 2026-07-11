@@ -394,234 +394,237 @@ export default function Pecas() {
         <Empty message="Nenhuma peça cadastrada" />
       ) : (
         <>
-        {/* Mobile (<md): cards empilhados com os fluxos essenciais —
+          {/* Mobile (<md): cards empilhados com os fluxos essenciais —
             visualizar, baixar e revisar/aprovar (HITL) usáveis em 390px. */}
-        <div className="space-y-2 md:hidden">
-          {(Array.isArray(data.data) ? data.data : []).map((p) => (
-            <div key={p.id} className="card p-4">
-              <div className="flex items-start justify-between gap-2">
-                <div className="min-w-0">
-                  <div className="font-medium text-navy break-words">
-                    {p.titulo}
+          <div className="space-y-2 md:hidden">
+            {(Array.isArray(data.data) ? data.data : []).map((p) => (
+              <div key={p.id} className="card p-4">
+                <div className="flex items-start justify-between gap-2">
+                  <div className="min-w-0">
+                    <div className="font-medium text-navy break-words">
+                      {p.titulo}
+                    </div>
+                    <div className="mt-0.5 text-xs capitalize text-slate-400">
+                      {p.tipo_peca.replace(/_/g, " ")} · v{p.versao} ·{" "}
+                      {fmtDate(p.created_at)}
+                    </div>
                   </div>
-                  <div className="mt-0.5 text-xs capitalize text-slate-400">
-                    {p.tipo_peca.replace(/_/g, " ")} · v{p.versao} ·{" "}
-                    {fmtDate(p.created_at)}
-                  </div>
+                  <StatusBadge value={p.status} />
                 </div>
-                <StatusBadge value={p.status} />
-              </div>
-              <div className="mt-2 flex flex-wrap items-center gap-1.5">
-                {p.ai_generated ? (
-                  p.human_reviewed ? (
-                    <span className="badge bg-success-100 text-success-700 gap-1">
-                      <ShieldCheck size={12} /> IA revisada
-                    </span>
-                  ) : (
-                    <span className="badge bg-warn-100 text-warn-700 gap-1">
-                      <Sparkles size={12} /> IA — aguarda revisão
-                    </span>
-                  )
-                ) : (
-                  <span className="text-xs text-slate-400">manual</span>
-                )}
-                {(() => {
-                  const v = validacaoLabel(p);
-                  return <span className={`badge ${v.cls}`}>{v.label}</span>;
-                })()}
-              </div>
-              <div className="mt-3 flex flex-wrap gap-2">
-                <button
-                  className="btn-ghost px-2.5 py-1.5 text-xs"
-                  onClick={() => abrirDetalhe(p.id)}
-                >
-                  <Eye size={14} /> Ver
-                </button>
-                <button
-                  className="btn-ghost px-2.5 py-1.5 text-xs"
-                  onClick={() => baixarPdf(p)}
-                >
-                  <FileDown size={14} /> PDF
-                </button>
-                {p.ai_generated && !p.human_reviewed && (
-                  <button
-                    className="btn-ghost px-2.5 py-1.5 text-xs text-warn-700"
-                    onClick={() => setRevisao({ doc: p, notas: "" })}
-                  >
-                    Revisar
-                  </button>
-                )}
-                {p.ai_generated &&
-                  p.status !== "aprovada" &&
-                  p.status !== "versao_final" && (
-                    <button
-                      className="btn-primary px-2.5 py-1.5 text-xs"
-                      onClick={() => setAprovacao({ doc: p, observacoes: "" })}
-                    >
-                      <ShieldCheck size={14} /> Revisar e Aprovar
-                    </button>
-                  )}
-                {(p.human_reviewed || !p.ai_generated) &&
-                  p.status === "corrigida" &&
-                  p.validacao_juridica?.apto_fluxo && (
-                    <button
-                      className="btn-ghost px-2.5 py-1.5 text-xs text-success-700"
-                      onClick={() => avancarStatus(p, "aprovada")}
-                    >
-                      Aprovar
-                    </button>
-                  )}
-              </div>
-            </div>
-          ))}
-        </div>
-        <div className="card hidden overflow-x-auto md:block">
-          <table className="w-full text-sm">
-            <thead className="bg-slate-50 text-left text-xs uppercase text-slate-400">
-              <tr>
-                <th className="px-4 py-3">Título</th>
-                <th className="px-4 py-3">Tipo</th>
-                <th className="px-4 py-3">Status</th>
-                <th className="px-4 py-3">Origem</th>
-                <th className="px-4 py-3">Validação</th>
-                <th className="px-4 py-3">v</th>
-                <th className="px-4 py-3">Criada</th>
-                <th className="px-4 py-3"></th>
-              </tr>
-            </thead>
-            <tbody className="divide-y divide-slate-100">
-              {(Array.isArray(data.data) ? data.data : []).map((p) => (
-                <tr key={p.id} className="hover:bg-slate-50">
-                  <td className="px-4 py-3 font-medium text-navy">
-                    {p.titulo}
-                  </td>
-                  <td className="px-4 py-3 text-xs capitalize">
-                    {p.tipo_peca.replace(/_/g, " ")}
-                  </td>
-                  <td className="px-4 py-3">
-                    <StatusBadge value={p.status} />
-                  </td>
-                  <td className="px-4 py-3">
-                    {p.ai_generated ? (
-                      p.human_reviewed ? (
-                        <span className="badge bg-success-100 text-success-700 gap-1">
-                          <ShieldCheck size={12} /> IA revisada
-                        </span>
-                      ) : (
-                        <span className="badge bg-warn-100 text-warn-700 gap-1">
-                          <Sparkles size={12} /> IA — aguarda revisão
-                        </span>
-                      )
+                <div className="mt-2 flex flex-wrap items-center gap-1.5">
+                  {p.ai_generated ? (
+                    p.human_reviewed ? (
+                      <span className="badge bg-success-100 text-success-700 gap-1">
+                        <ShieldCheck size={12} /> IA revisada
+                      </span>
                     ) : (
-                      <span className="text-xs text-slate-400">manual</span>
-                    )}
-                  </td>
-                  <td className="px-4 py-3">
-                    {(() => {
-                      const v = validacaoLabel(p);
-                      return (
-                        <span className={`badge ${v.cls}`}>{v.label}</span>
-                      );
-                    })()}
-                  </td>
-                  <td className="px-4 py-3 text-slate-400">v{p.versao}</td>
-                  <td className="px-4 py-3 text-slate-400">
-                    {fmtDate(p.created_at)}
-                  </td>
-                  <td className="px-4 py-3 flex gap-1">
+                      <span className="badge bg-warn-100 text-warn-700 gap-1">
+                        <Sparkles size={12} /> IA — aguarda revisão
+                      </span>
+                    )
+                  ) : (
+                    <span className="text-xs text-slate-400">manual</span>
+                  )}
+                  {(() => {
+                    const v = validacaoLabel(p);
+                    return <span className={`badge ${v.cls}`}>{v.label}</span>;
+                  })()}
+                </div>
+                <div className="mt-3 flex flex-wrap gap-2">
+                  <button
+                    className="btn-ghost px-2.5 py-1.5 text-xs"
+                    onClick={() => abrirDetalhe(p.id)}
+                  >
+                    <Eye size={14} /> Ver
+                  </button>
+                  <button
+                    className="btn-ghost px-2.5 py-1.5 text-xs"
+                    onClick={() => baixarPdf(p)}
+                  >
+                    <FileDown size={14} /> PDF
+                  </button>
+                  {p.ai_generated && !p.human_reviewed && (
                     <button
-                      className="btn-ghost px-2 py-1"
-                      onClick={() => abrirDetalhe(p.id)}
+                      className="btn-ghost px-2.5 py-1.5 text-xs text-warn-700"
+                      onClick={() => setRevisao({ doc: p, notas: "" })}
                     >
-                      <Eye size={15} />
+                      Revisar
                     </button>
-                    <button
-                      className="btn-ghost px-2 py-1"
-                      title="Baixar PDF timbrado"
-                      onClick={() => baixarPdf(p)}
-                    >
-                      <FileDown size={15} />
-                    </button>
-                    <button
-                      className="btn-ghost px-2 py-1 text-xs"
-                      title="Exportar DOCX"
-                      onClick={() => baixarDocx(p)}
-                    >
-                      <FileDown size={15} /> DOCX
-                    </button>
-                    <button
-                      className="btn-ghost px-2 py-1 text-xs"
-                      title="Documento único de impressão (peça + anexos com capas Visual Law)"
-                      onClick={() => baixarDocumentoUnico(p)}
-                      disabled={gerandoVL !== null}
-                    >
-                      <FileDown size={15} /> {gerandoVL === p.id ? "Gerando..." : "VL"}
-                    </button>
-                    <button
-                      className="btn-ghost px-2 py-1"
-                      title="Imprimir peça"
-                      onClick={() => imprimirPeca(p)}
-                    >
-                      <Printer size={15} />
-                    </button>
-                    <button
-                      className="btn-ghost px-2 py-1"
-                      title="Checar jurisprudencia validada"
-                      onClick={() => checarJurisprudencia(p)}
-                    >
-                      <ShieldCheck size={15} />
-                    </button>
-                    <button
-                      className="btn-ghost px-2 py-1"
-                      title="Auditar com IA"
-                      onClick={() => auditarIA(p)}
-                    >
-                      <SearchCheck size={15} />
-                    </button>
-                    <button
-                      className="btn-ghost px-2 py-1 text-primary-700"
-                      title="Validar juridicamente antes de finalizar"
-                      onClick={() => validarPeca(p)}
-                    >
-                      <ShieldCheck size={15} />
-                    </button>
-                    {p.ai_generated && !p.human_reviewed && (
+                  )}
+                  {p.ai_generated &&
+                    p.status !== "aprovada" &&
+                    p.status !== "versao_final" && (
                       <button
-                        className="btn-ghost px-2 py-1 text-warn-700 text-xs"
-                        onClick={() => setRevisao({ doc: p, notas: "" })}
+                        className="btn-primary px-2.5 py-1.5 text-xs"
+                        onClick={() =>
+                          setAprovacao({ doc: p, observacoes: "" })
+                        }
                       >
-                        Revisar
+                        <ShieldCheck size={14} /> Revisar e Aprovar
                       </button>
                     )}
-                    {p.ai_generated &&
-                      p.status !== "aprovada" &&
-                      p.status !== "versao_final" && (
-                        <button
-                          className="btn-ghost px-2 py-1 text-emerald-700 text-xs"
-                          title="Revisão humana obrigatória (HITL) para aprovar peça de IA"
-                          onClick={() =>
-                            setAprovacao({ doc: p, observacoes: "" })
-                          }
-                        >
-                          Revisar e Aprovar
-                        </button>
-                      )}
-                    {(p.human_reviewed || !p.ai_generated) &&
-                      p.status === "corrigida" &&
-                      p.validacao_juridica?.apto_fluxo && (
-                        <button
-                          className="btn-ghost px-2 py-1 text-success-700 text-xs"
-                          onClick={() => avancarStatus(p, "aprovada")}
-                        >
-                          Aprovar
-                        </button>
-                      )}
-                  </td>
+                  {(p.human_reviewed || !p.ai_generated) &&
+                    p.status === "corrigida" &&
+                    p.validacao_juridica?.apto_fluxo && (
+                      <button
+                        className="btn-ghost px-2.5 py-1.5 text-xs text-success-700"
+                        onClick={() => avancarStatus(p, "aprovada")}
+                      >
+                        Aprovar
+                      </button>
+                    )}
+                </div>
+              </div>
+            ))}
+          </div>
+          <div className="card hidden overflow-x-auto md:block">
+            <table className="w-full text-sm">
+              <thead className="bg-slate-50 text-left text-xs uppercase text-slate-400">
+                <tr>
+                  <th className="px-4 py-3">Título</th>
+                  <th className="px-4 py-3">Tipo</th>
+                  <th className="px-4 py-3">Status</th>
+                  <th className="px-4 py-3">Origem</th>
+                  <th className="px-4 py-3">Validação</th>
+                  <th className="px-4 py-3">v</th>
+                  <th className="px-4 py-3">Criada</th>
+                  <th className="px-4 py-3"></th>
                 </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
+              </thead>
+              <tbody className="divide-y divide-slate-100">
+                {(Array.isArray(data.data) ? data.data : []).map((p) => (
+                  <tr key={p.id} className="hover:bg-slate-50">
+                    <td className="px-4 py-3 font-medium text-navy">
+                      {p.titulo}
+                    </td>
+                    <td className="px-4 py-3 text-xs capitalize">
+                      {p.tipo_peca.replace(/_/g, " ")}
+                    </td>
+                    <td className="px-4 py-3">
+                      <StatusBadge value={p.status} />
+                    </td>
+                    <td className="px-4 py-3">
+                      {p.ai_generated ? (
+                        p.human_reviewed ? (
+                          <span className="badge bg-success-100 text-success-700 gap-1">
+                            <ShieldCheck size={12} /> IA revisada
+                          </span>
+                        ) : (
+                          <span className="badge bg-warn-100 text-warn-700 gap-1">
+                            <Sparkles size={12} /> IA — aguarda revisão
+                          </span>
+                        )
+                      ) : (
+                        <span className="text-xs text-slate-400">manual</span>
+                      )}
+                    </td>
+                    <td className="px-4 py-3">
+                      {(() => {
+                        const v = validacaoLabel(p);
+                        return (
+                          <span className={`badge ${v.cls}`}>{v.label}</span>
+                        );
+                      })()}
+                    </td>
+                    <td className="px-4 py-3 text-slate-400">v{p.versao}</td>
+                    <td className="px-4 py-3 text-slate-400">
+                      {fmtDate(p.created_at)}
+                    </td>
+                    <td className="px-4 py-3 flex gap-1">
+                      <button
+                        className="btn-ghost px-2 py-1"
+                        onClick={() => abrirDetalhe(p.id)}
+                      >
+                        <Eye size={15} />
+                      </button>
+                      <button
+                        className="btn-ghost px-2 py-1"
+                        title="Baixar PDF timbrado"
+                        onClick={() => baixarPdf(p)}
+                      >
+                        <FileDown size={15} />
+                      </button>
+                      <button
+                        className="btn-ghost px-2 py-1 text-xs"
+                        title="Exportar DOCX"
+                        onClick={() => baixarDocx(p)}
+                      >
+                        <FileDown size={15} /> DOCX
+                      </button>
+                      <button
+                        className="btn-ghost px-2 py-1 text-xs"
+                        title="Documento único de impressão (peça + anexos com capas Visual Law)"
+                        onClick={() => baixarDocumentoUnico(p)}
+                        disabled={gerandoVL !== null}
+                      >
+                        <FileDown size={15} />{" "}
+                        {gerandoVL === p.id ? "Gerando..." : "VL"}
+                      </button>
+                      <button
+                        className="btn-ghost px-2 py-1"
+                        title="Imprimir peça"
+                        onClick={() => imprimirPeca(p)}
+                      >
+                        <Printer size={15} />
+                      </button>
+                      <button
+                        className="btn-ghost px-2 py-1"
+                        title="Checar jurisprudencia validada"
+                        onClick={() => checarJurisprudencia(p)}
+                      >
+                        <ShieldCheck size={15} />
+                      </button>
+                      <button
+                        className="btn-ghost px-2 py-1"
+                        title="Auditar com IA"
+                        onClick={() => auditarIA(p)}
+                      >
+                        <SearchCheck size={15} />
+                      </button>
+                      <button
+                        className="btn-ghost px-2 py-1 text-primary-700"
+                        title="Validar juridicamente antes de finalizar"
+                        onClick={() => validarPeca(p)}
+                      >
+                        <ShieldCheck size={15} />
+                      </button>
+                      {p.ai_generated && !p.human_reviewed && (
+                        <button
+                          className="btn-ghost px-2 py-1 text-warn-700 text-xs"
+                          onClick={() => setRevisao({ doc: p, notas: "" })}
+                        >
+                          Revisar
+                        </button>
+                      )}
+                      {p.ai_generated &&
+                        p.status !== "aprovada" &&
+                        p.status !== "versao_final" && (
+                          <button
+                            className="btn-ghost px-2 py-1 text-emerald-700 text-xs"
+                            title="Revisão humana obrigatória (HITL) para aprovar peça de IA"
+                            onClick={() =>
+                              setAprovacao({ doc: p, observacoes: "" })
+                            }
+                          >
+                            Revisar e Aprovar
+                          </button>
+                        )}
+                      {(p.human_reviewed || !p.ai_generated) &&
+                        p.status === "corrigida" &&
+                        p.validacao_juridica?.apto_fluxo && (
+                          <button
+                            className="btn-ghost px-2 py-1 text-success-700 text-xs"
+                            onClick={() => avancarStatus(p, "aprovada")}
+                          >
+                            Aprovar
+                          </button>
+                        )}
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
         </>
       )}
 

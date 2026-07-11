@@ -250,7 +250,9 @@ export default function GovernancaIA() {
             <div className="grid sm:grid-cols-3 gap-4 mb-4">
               <div>
                 <p className="label-caps text-slate-400">Gasto no período</p>
-                <p className="text-2xl font-serif">{brl(dash?.custo?.total_brl)}</p>
+                <p className="text-2xl font-serif">
+                  {brl(dash?.custo?.total_brl)}
+                </p>
               </div>
               <div>
                 <p className="label-caps text-slate-400">Projeção mensal</p>
@@ -282,7 +284,9 @@ export default function GovernancaIA() {
                       <tr key={m.modelo}>
                         <td className="py-1.5">{m.modelo}</td>
                         <td className="py-1.5">{m.chamadas}</td>
-                        <td className="py-1.5 text-right">{brl(m.custo_brl)}</td>
+                        <td className="py-1.5 text-right">
+                          {brl(m.custo_brl)}
+                        </td>
                       </tr>
                     ))}
                   </tbody>

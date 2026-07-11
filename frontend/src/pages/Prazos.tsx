@@ -171,7 +171,7 @@ export default function Prazos() {
 
       {!data ? (
         <Spinner />
-      ) : (!Array.isArray(data.data) || data.data.length === 0) ? (
+      ) : !Array.isArray(data.data) || data.data.length === 0 ? (
         <Empty message="Nenhum prazo nesta categoria" />
       ) : (
         <div className="space-y-2">
@@ -288,7 +288,11 @@ export default function Prazos() {
                 value={calc.dias_uteis ? "u" : "c"}
                 onChange={(e) => {
                   const u = e.target.value === "u";
-                  setCalc({ ...calc, dias_uteis: u, dobro: u ? calc.dobro : false });
+                  setCalc({
+                    ...calc,
+                    dias_uteis: u,
+                    dobro: u ? calc.dobro : false,
+                  });
                 }}
               >
                 <option value="u">Dias úteis (CPC)</option>

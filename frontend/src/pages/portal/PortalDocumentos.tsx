@@ -135,10 +135,7 @@ export default function PortalDocumentos() {
             "bg-slate-50",
           ];
           return (
-            <div
-              key={s.id}
-              className="card overflow-hidden"
-            >
+            <div key={s.id} className="card overflow-hidden">
               <div className="px-5 py-4 border-b border-slate-100">
                 <div className="flex flex-wrap items-start justify-between gap-2">
                   <div className="min-w-0">

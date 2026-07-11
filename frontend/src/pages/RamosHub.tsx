@@ -158,12 +158,15 @@ export default function RamosHub() {
             </Badge>
             <PageTitle>Ramos do Direito</PageTitle>
             <PageDescription>
-              Escolha uma área para acessar ferramentas especializadas, cálculos,
-              guias, análises e fluxos jurídicos próprios do escritório.
+              Escolha uma área para acessar ferramentas especializadas,
+              cálculos, guias, análises e fluxos jurídicos próprios do
+              escritório.
             </PageDescription>
           </div>
           <PageActions>
-            <Button variant="secondary" onClick={() => navigate("/casos")}>Casos</Button>
+            <Button variant="secondary" onClick={() => navigate("/casos")}>
+              Casos
+            </Button>
             <Button onClick={() => navigate("/ia")}>Abrir IA jurídica</Button>
           </PageActions>
         </PageHeader>
@@ -178,7 +181,9 @@ export default function RamosHub() {
                 className="group text-left outline-none"
               >
                 <Card className="relative h-full overflow-hidden p-5 transition duration-200 group-hover:-translate-y-1 group-hover:shadow-[0_26px_70px_rgba(15,23,42,0.14)]">
-                  <div className={`absolute inset-x-0 top-0 h-24 bg-gradient-to-b ${ramo.tone}`} />
+                  <div
+                    className={`absolute inset-x-0 top-0 h-24 bg-gradient-to-b ${ramo.tone}`}
+                  />
                   <div className="relative flex h-full flex-col gap-5">
                     <div className="flex items-start justify-between gap-3">
                       <div className="grid h-11 w-11 place-items-center rounded-2xl bg-white/85 shadow-[0_10px_30px_rgba(15,23,42,0.08)] ring-1 ring-black/5 dark:bg-white/10">
@@ -200,7 +205,9 @@ export default function RamosHub() {
 
                     <div className="mt-auto flex items-center justify-between pt-2 text-xs font-medium text-primary-800 dark:text-primary-200">
                       <span>Acessar módulo</span>
-                      <span className="transition-transform group-hover:translate-x-1">→</span>
+                      <span className="transition-transform group-hover:translate-x-1">
+                        →
+                      </span>
                     </div>
                   </div>
                 </Card>

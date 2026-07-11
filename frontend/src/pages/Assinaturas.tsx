@@ -188,10 +188,7 @@ export default function Assinaturas() {
             const cfg = STATUS_CONFIG[sol.status];
             const podeAssinar = isSignatario(sol);
             return (
-              <li
-                key={sol.id}
-                className="card p-4"
-              >
+              <li key={sol.id} className="card p-4">
                 <div className="flex items-start justify-between gap-4">
                   <div className="flex-1 min-w-0">
                     <div className="flex flex-wrap items-center gap-2 mb-2">

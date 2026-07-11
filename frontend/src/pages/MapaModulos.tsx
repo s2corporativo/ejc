@@ -79,13 +79,11 @@ export default function MapaModulos() {
           backendModule?.backend_prefixes ?? module.backendPrefixes ?? [],
         status: statusMap[module.status ?? "active"],
         perfis: backendModule?.perfis ?? [...(module.roles ?? [])],
-        dependencias:
-          backendModule?.dependencias ?? module.dependencies ?? [],
+        dependencias: backendModule?.dependencias ?? module.dependencies ?? [],
         usa_ia: module.usesAI ?? backendModule?.usa_ia ?? false,
         dados_sensiveis:
           module.sensitive ?? backendModule?.dados_sensiveis ?? true,
-        qtd_endpoints_detectados:
-          backendModule?.qtd_endpoints_detectados ?? 0,
+        qtd_endpoints_detectados: backendModule?.qtd_endpoints_detectados ?? 0,
         precisa_revisao:
           Boolean(backendModule?.precisa_revisao) || !backendModule,
         origem: backendModule ? "ambos" : "frontend",
@@ -114,7 +112,8 @@ export default function MapaModulos() {
     const termo = q.trim().toLowerCase();
     return modulos.filter((module) => {
       const bateGrupo = grupo === "todos" || module.grupo === grupo;
-      const texto = `${module.nome} ${module.module_key} ${module.frontend_route} ${module.backend_prefixes.join(" ")}`.toLowerCase();
+      const texto =
+        `${module.nome} ${module.module_key} ${module.frontend_route} ${module.backend_prefixes.join(" ")}`.toLowerCase();
       return bateGrupo && (!termo || texto.includes(termo));
     });
   }, [modulos, q, grupo]);
@@ -148,10 +147,7 @@ export default function MapaModulos() {
 
       <div className="grid gap-3 md:grid-cols-5">
         {Object.entries(resumo).map(([key, value]) => (
-          <div
-            key={key}
-            className="card p-4"
-          >
+          <div key={key} className="card p-4">
             <div className="text-xs uppercase tracking-wide text-slate-400">
               {key.split("_").join(" ")}
             </div>
@@ -205,9 +201,7 @@ export default function MapaModulos() {
                       {module.module_key} · {module.origem}
                     </div>
                   </td>
-                  <td className="px-4 py-3 text-slate-600">
-                    {module.grupo}
-                  </td>
+                  <td className="px-4 py-3 text-slate-600">{module.grupo}</td>
                   <td className="px-4 py-3">
                     <span
                       className={`rounded-full border px-2 py-1 text-xs font-semibold ${statusClass[module.status] || statusClass.legado}`}
