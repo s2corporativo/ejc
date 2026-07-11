@@ -22,6 +22,7 @@ import {
   Sun,
   X,
 } from "lucide-react";
+import CaseContextBar from "./CaseContextBar";
 import CommandPalette from "./CommandPalette";
 import HelpButton from "./HelpButton";
 import OnboardingTour from "./OnboardingTour";
@@ -430,6 +431,8 @@ export default function Layout() {
           contentMargin,
         )}
       >
+        {/* Modo Caso: faixa fina de contexto do caso ativo (discreta). */}
+        <CaseContextBar />
         <main className="ejc-modern-scope flex-1 px-4 py-5 md:px-7 md:py-7">
           <div className="mx-auto w-full max-w-[1440px] animate-rise">
             <ErrorBoundary key={location.pathname}>

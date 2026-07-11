@@ -89,14 +89,11 @@ const Prazos = lazy(() => import("../pages/Prazos"));
 const Suspensoes = lazy(() => import("../pages/Suspensoes"));
 const Tarefas = lazy(() => import("../pages/Tarefas"));
 const Intimacoes = lazy(() => import("../pages/Intimacoes"));
-const CentralAtividades = lazy(() => import("../pages/CentralAtividades"));
+const Central = lazy(() => import("../pages/Central"));
 const GestaoDocumental = lazy(() => import("../pages/GestaoDocumental"));
 const Pecas = lazy(() => import("../pages/Pecas"));
 const RamosHub = lazy(() => import("../pages/RamosHub"));
 const RamoBase = lazy(() => import("../pages/ramos/RamoBase"));
-const CentralRelacionamento = lazy(
-  () => import("../pages/CentralRelacionamento"),
-);
 const CRMLeads = lazy(() => import("../pages/CRMLeads"));
 const FinanceiroWorkspace = lazy(() => import("../pages/FinanceiroWorkspace"));
 const InteligenciaWorkspace = lazy(
@@ -174,21 +171,8 @@ export const STAFF_ROUTES: ModuleRoute[] = [
     sensitive: true,
     backendPrefixes: ["/api/cases", "/api/clients"],
   },
-  {
-    key: "relacionamento",
-    path: "/central-relacionamento",
-    label: "Relacionamento",
-    description: "Visão consolidada de atendimento, captação e conversão.",
-    group: "Gestão",
-    icon: CalendarClock,
-    component: CentralRelacionamento,
-    roles: ROLES.gestores,
-    showInNav: true,
-    order: 10,
-    helpKey: "atendimento",
-    sensitive: true,
-    backendPrefixes: ["/api/analytics", "/api/clients", "/api/notifications"],
-  },
+  // CONSOLIDAÇÃO 2026-07: /central-relacionamento virou aba da Central
+  // (/atividades?tab=relacionamento) — ver LEGACY_REDIRECTS.
   {
     key: "crm",
     path: "/crm-leads",
@@ -197,9 +181,8 @@ export const STAFF_ROUTES: ModuleRoute[] = [
     group: "Gestão",
     icon: Users,
     component: CRMLeads,
-    showInNav: true,
-    order: 20,
     helpKey: "crm",
+    status: "hidden",
     sensitive: true,
     backendPrefixes: ["/api/clients"],
   },
@@ -212,7 +195,7 @@ export const STAFF_ROUTES: ModuleRoute[] = [
     icon: Briefcase,
     component: Clientes,
     showInNav: true,
-    order: 30,
+    order: 40,
     helpKey: "clientes",
     sensitive: true,
     backendPrefixes: ["/api/clients", "/api/dossie-cliente"],
@@ -343,19 +326,28 @@ export const STAFF_ROUTES: ModuleRoute[] = [
     usesAI: true,
     sensitive: true,
   },
+  // Central unificada: atividades (agenda/prazos/tarefas/intimações) +
+  // relacionamento (funil, captação e contato) em abas na mesma rota.
   {
     key: "atividades",
     path: "/atividades",
-    label: "Agenda e Atividades",
-    description: "Visão unificada de prazos, tarefas, intimações e eventos.",
+    label: "Central",
+    description:
+      "Agenda, prazos, tarefas e intimações + relacionamento com clientes em abas.",
     group: "Gestão",
     icon: CalendarClock,
-    component: CentralAtividades,
+    component: Central,
     showInNav: true,
-    order: 40,
+    order: 10,
     helpKey: "atividades",
     sensitive: true,
-    backendPrefixes: ["/api/atividades", "/api/agenda-eventos"],
+    backendPrefixes: [
+      "/api/atividades",
+      "/api/agenda-eventos",
+      "/api/analytics",
+      "/api/clients",
+      "/api/notifications",
+    ],
   },
   {
     key: "prazos",
@@ -366,7 +358,7 @@ export const STAFF_ROUTES: ModuleRoute[] = [
     icon: AlarmClock,
     component: Prazos,
     showInNav: true,
-    order: 50,
+    order: 20,
     helpKey: "prazos",
     sensitive: true,
     backendPrefixes: ["/api/deadlines"],
@@ -379,8 +371,8 @@ export const STAFF_ROUTES: ModuleRoute[] = [
     group: "Gestão",
     icon: CheckSquare,
     component: Tarefas,
-    showInNav: true,
-    order: 60,
+    // CONSOLIDAÇÃO 2026-07: coberto pela Central (filtro Tipo=Tarefa); rota ativa.
+    status: "hidden",
     helpKey: "tarefas",
     sensitive: true,
     backendPrefixes: ["/api/tasks"],
@@ -394,7 +386,7 @@ export const STAFF_ROUTES: ModuleRoute[] = [
     icon: Inbox,
     component: Intimacoes,
     showInNav: true,
-    order: 70,
+    order: 30,
     helpKey: "intimacoes",
     sensitive: true,
     usesAI: true,
@@ -408,8 +400,8 @@ export const STAFF_ROUTES: ModuleRoute[] = [
     group: "Gestão",
     icon: Activity,
     component: Suspensoes,
-    showInNav: true,
-    order: 80,
+    // CONSOLIDAÇÃO 2026-07: coberto pela Central (filtro Tipo=Suspensão); rota ativa.
+    status: "hidden",
     helpKey: "prazos",
     sensitive: true,
     backendPrefixes: ["/api/suspensoes"],
@@ -452,8 +444,9 @@ export const STAFF_ROUTES: ModuleRoute[] = [
     group: "Produção",
     icon: FileSignature,
     component: Assinaturas,
-    showInNav: true,
-    order: 30,
+    // PODA 2026-07: fluxo de apoio à produção; acessível pelos atalhos do
+    // Dashboard e pela paleta ⌘K. Rota ativa.
+    status: "hidden",
     helpKey: "assinaturas",
     sensitive: true,
     backendPrefixes: ["/api/signatures"],
@@ -466,8 +459,9 @@ export const STAFF_ROUTES: ModuleRoute[] = [
     group: "Produção",
     icon: GitBranch,
     component: Workflow,
-    showInNav: true,
-    order: 40,
+    // PODA 2026-07: configuração de fluxos usada esporadicamente; atalho no
+    // Dashboard. Rota ativa.
+    status: "hidden",
     helpKey: "workflow",
     sensitive: true,
     backendPrefixes: ["/api/workflow"],
@@ -480,8 +474,9 @@ export const STAFF_ROUTES: ModuleRoute[] = [
     group: "Produção",
     icon: ListChecks,
     component: Checklists,
-    showInNav: true,
-    order: 50,
+    // PODA 2026-07: apoio à produção, alcançável pelo caso e atalhos do
+    // Dashboard. Rota ativa.
+    status: "hidden",
     helpKey: "checklists",
     sensitive: true,
     usesAI: true,
@@ -592,8 +587,9 @@ export const STAFF_ROUTES: ModuleRoute[] = [
     group: "Inteligência Jurídica",
     icon: Scale,
     component: DataJudBusca,
-    showInNav: true,
-    order: 40,
+    // PODA 2026-07: consulta pontual, acessível pelos atalhos do Dashboard
+    // e de dentro do caso. Rota ativa.
+    status: "hidden",
     helpKey: "datajud",
     sensitive: true,
     backendPrefixes: ["/api/v1/datajud"],
@@ -606,8 +602,9 @@ export const STAFF_ROUTES: ModuleRoute[] = [
     group: "Inteligência Jurídica",
     icon: ScrollText,
     component: DiarioOficial,
-    showInNav: true,
-    order: 50,
+    // PODA 2026-07: monitoramento alcançável pelo Radar Regulatório e
+    // atalhos do Dashboard. Rota ativa.
+    status: "hidden",
     helpKey: "diario-oficial",
     sensitive: true,
     usesAI: true,
@@ -621,8 +618,8 @@ export const STAFF_ROUTES: ModuleRoute[] = [
     group: "Inteligência Jurídica",
     icon: Bell,
     component: RadarRegulatorio,
-    showInNav: true,
-    order: 60,
+    // PODA 2026-07: radar consultivo; atalho no Dashboard. Rota ativa.
+    status: "hidden",
     helpKey: "radar-regulatorio",
     sensitive: true,
     usesAI: true,
@@ -637,8 +634,8 @@ export const STAFF_ROUTES: ModuleRoute[] = [
     icon: ShieldAlert,
     component: RadarCompliance,
     roles: ROLES.compliance,
-    showInNav: true,
-    order: 70,
+    // PODA 2026-07: radar consultivo; atalho no Dashboard. Rota ativa.
+    status: "hidden",
     helpKey: "compliance",
     sensitive: true,
     usesAI: true,
@@ -651,8 +648,9 @@ export const STAFF_ROUTES: ModuleRoute[] = [
     group: "Inteligência Jurídica",
     icon: Newspaper,
     component: Noticias,
-    showInNav: true,
-    order: 80,
+    // PODA 2026-07: o card de notícias do Dashboard cobre o uso diário;
+    // página completa segue por atalho/URL. Rota ativa.
+    status: "hidden",
     helpKey: "noticias",
     sensitive: false,
   },
@@ -679,8 +677,9 @@ export const STAFF_ROUTES: ModuleRoute[] = [
     group: "Administração",
     icon: BarChart3,
     component: Produtividade,
-    showInNav: true,
-    order: 10,
+    // PODA 2026-07: indicadores gerenciais; atalho no bloco administrativo
+    // do Dashboard. Rota ativa.
+    status: "hidden",
     helpKey: "produtividade",
     sensitive: true,
   },
@@ -721,8 +720,9 @@ export const STAFF_ROUTES: ModuleRoute[] = [
     icon: Sparkles,
     component: GovernancaIA,
     roles: ROLES.gestores,
-    showInNav: true,
-    order: 40,
+    // PODA 2026-07: painel de governança usado por gestores; atalho no
+    // bloco administrativo do Dashboard. Rota ativa.
+    status: "hidden",
     helpKey: "governanca-ia",
     sensitive: true,
     usesAI: true,
@@ -737,8 +737,9 @@ export const STAFF_ROUTES: ModuleRoute[] = [
     icon: ShieldCheck,
     component: Auditoria,
     roles: ROLES.gestores,
-    showInNav: true,
-    order: 50,
+    // PODA 2026-07: trilha consultada sob demanda; atalho no bloco
+    // administrativo do Dashboard. Rota ativa.
+    status: "hidden",
     helpKey: "auditoria",
     sensitive: true,
     backendPrefixes: ["/api/audit"],
@@ -752,11 +753,11 @@ export const STAFF_ROUTES: ModuleRoute[] = [
     icon: LayoutGrid,
     component: MapaModulos,
     roles: ROLES.gestores,
-    showInNav: true,
-    order: 60,
     helpKey: "autofix",
     sensitive: false,
-    status: "beta",
+    // PODA 2026-07: inventário técnico (beta); atalho no bloco
+    // administrativo do Dashboard. Rota ativa.
+    status: "hidden",
     backendPrefixes: ["/api/system-modules"],
   },
   {
@@ -783,8 +784,9 @@ export const STAFF_ROUTES: ModuleRoute[] = [
     icon: Trash2,
     component: Lixeira,
     roles: ROLES.gestores,
-    showInNav: true,
-    order: 80,
+    // PODA 2026-07: restauração eventual; atalho no bloco administrativo
+    // do Dashboard. Rota ativa.
+    status: "hidden",
     helpKey: "lixeira",
     sensitive: true,
     backendPrefixes: ["/api/trash"],
@@ -817,6 +819,16 @@ export const STAFF_ROUTES: ModuleRoute[] = [
 ];
 
 export const LEGACY_REDIRECTS: LegacyRedirect[] = [
+  {
+    from: "/central-relacionamento",
+    to: "/atividades?tab=relacionamento",
+    reason: "Central de Relacionamento virou aba da Central unificada.",
+  },
+  {
+    from: "/dashboard",
+    to: "/",
+    reason: "O dashboard unificado é a tela inicial.",
+  },
   {
     from: "/honorarios",
     to: "/financeiro?tab=honorarios",

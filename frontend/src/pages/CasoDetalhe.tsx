@@ -23,6 +23,7 @@ import IntakeAnalise from "../components/IntakeAnalise";
 import ConversaoChecklist from "../components/ConversaoChecklist";
 import ProvasCaso from "../components/ProvasCaso";
 import DossieEstrategicoCaso from "../components/DossieEstrategicoCaso";
+import CaseBreadcrumb from "../components/CaseBreadcrumb";
 import type { Case } from "../types";
 import {
   PageHeader,
@@ -1240,9 +1241,11 @@ function TabTimeline({ caseId }: { caseId: string }) {
           {ts.map((t, i) => (
             <div
               key={t.id ?? i}
-              className="card p-3 flex justify-between items-center text-sm"
+              className="card p-3 flex flex-wrap justify-between items-center gap-2 text-sm"
             >
-              <span className="text-gray-700">{t.descricao}</span>
+              <span className="min-w-0 flex-1 break-words text-gray-700">
+                {t.descricao}
+              </span>
               <div className="flex items-center gap-3 shrink-0">
                 <span className="text-gray-400 text-xs">{fmtDate(t.data)}</span>
                 <span className="font-mono font-semibold text-primary-600">
@@ -4080,6 +4083,7 @@ export default function CasoDetalhe() {
 
   return (
     <div className="space-y-5">
+      <CaseBreadcrumb caseId={caso.id} titulo={caso.titulo} tela={activeTabLabel} />
       {/* Sticky header + tabs */}
       <div className="sticky top-[4.25rem] z-20 rounded-2xl border border-slate-200 bg-white/95 shadow-sm backdrop-blur-xl">
         <div className="flex flex-col gap-4 px-4 py-4 lg:flex-row lg:items-start lg:justify-between">

@@ -58,5 +58,43 @@ describe("moduleRegistry", () => {
     expect(map.get("/kanban")).toBe("/atividades?view=kanban");
     expect(map.get("/assistente-ia")).toContain("/inteligencia");
     expect(map.get("/victory-vault")).toBe("/knowledge-hub");
+    expect(map.get("/central-relacionamento")).toBe(
+      "/atividades?tab=relacionamento",
+    );
+    expect(map.get("/dashboard")).toBe("/");
+  });
+
+  it("mantém o menu enxuto (~15 destinos visíveis por perfil)", () => {
+    for (const role of ["superadmin", "admin", "socio", "advogado"]) {
+      expect(getNavigationModules(role).length).toBeLessThanOrEqual(16);
+    }
+    // Telas-fim essenciais continuam visíveis para o advogado.
+    const advogado = getNavigationModules("advogado").map((m) => m.path);
+    for (const path of ["/", "/casos/novo", "/casos", "/atividades", "/prazos", "/clientes"]) {
+      expect(advogado).toContain(path);
+    }
+    // Rotas podadas permanecem ativas (sem 404), apenas fora do menu.
+    const canonical = new Set(STAFF_ROUTES.map((route) => route.path));
+    for (const path of [
+      "/tarefas",
+      "/suspensoes",
+      "/crm-leads",
+      "/assinaturas",
+      "/workflow",
+      "/checklists",
+      "/datajud",
+      "/diario-oficial",
+      "/radar-regulatorio",
+      "/compliance/radar",
+      "/noticias",
+      "/produtividade",
+      "/ia-governanca",
+      "/auditoria",
+      "/mapa-modulos",
+      "/lixeira",
+    ]) {
+      expect(canonical.has(path)).toBe(true);
+      expect(advogado).not.toContain(path);
+    }
   });
 });

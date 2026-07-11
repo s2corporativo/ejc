@@ -12,6 +12,8 @@ import {
   fmtDate,
 } from "../components/UI";
 import { DocumentosStats } from "../components/Dashboards";
+import CaseFilterChip from "../components/CaseFilterChip";
+import { useCasoFiltro } from "../contexts/useCasoFiltro";
 import { asList } from "../lib/list";
 
 /** Item de alternativa devolvido pela classificação por IA. */
@@ -58,12 +60,20 @@ export default function Documentos() {
   // a resposta antiga de uma busca com debounce sobrescreva a nova).
   const seq = useRef(0);
 
+  // Modo Caso: `?caso=` na URL vence; sem query, o caso ativo preenche.
+  // GET /documents/ já aceita case_id (fecha o GAP do link_modulo da jornada).
+  const { casoFiltro, casoFiltroNome, removerFiltro } = useCasoFiltro();
+
   const load = () => {
     const my = ++seq.current;
     setErro(false);
     return api
       .get("/documents/", {
-        params: { search: search || undefined, page_size: 50 },
+        params: {
+          search: search || undefined,
+          case_id: casoFiltro,
+          page_size: 50,
+        },
       })
       .then((r) => {
         if (my === seq.current) setData(r.data);
@@ -75,7 +85,6 @@ export default function Documentos() {
       });
   };
   useEffect(() => {
-    load();
     // M12: lista de casos para vincular o documento (torna o gate IDOR efetivo).
     api
       .get("/cases/", { params: { page_size: 200 } })
@@ -85,7 +94,7 @@ export default function Documentos() {
   useEffect(() => {
     const t = setTimeout(load, 350);
     return () => clearTimeout(t);
-  }, [search]);
+  }, [search, casoFiltro]);
 
   const upload = async () => {
     const file = fileRef.current?.files?.[0];
@@ -195,7 +204,16 @@ export default function Documentos() {
         title="Documentos"
         subtitle="GED do escritório"
         actions={
-          <button className="btn-gold" onClick={() => setModal(true)}>
+          <button
+            className="btn-gold"
+            onClick={() => {
+              // Modo Caso: pré-seleciona o caso filtrado no vínculo do upload.
+              if (casoFiltro && !form.case_id) {
+                setForm((f: any) => ({ ...f, case_id: casoFiltro }));
+              }
+              setModal(true);
+            }}
+          >
             <Upload size={16} /> Enviar
           </button>
         }
@@ -203,14 +221,22 @@ export default function Documentos() {
 
       <DocumentosStats />
 
-      <div className="relative mb-4 max-w-md">
-        <Search size={16} className="absolute left-3 top-2.5 text-slate-400" />
-        <input
-          className="input pl-9"
-          placeholder="Buscar documento..."
-          value={search}
-          onChange={(e) => setSearch(e.target.value)}
-        />
+      <div className="mb-4 flex flex-wrap items-center gap-2">
+        <div className="relative w-full max-w-md">
+          <Search
+            size={16}
+            className="absolute left-3 top-2.5 text-slate-400"
+          />
+          <input
+            className="input pl-9"
+            placeholder="Buscar documento..."
+            value={search}
+            onChange={(e) => setSearch(e.target.value)}
+          />
+        </div>
+        {casoFiltro && (
+          <CaseFilterChip nome={casoFiltroNome} onRemove={removerFiltro} />
+        )}
       </div>
 
       {erro && !data ? (
