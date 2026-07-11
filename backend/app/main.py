@@ -42,6 +42,7 @@ from app.routers import atendimentos
 from app.routers import atividades
 from app.routers import audit
 from app.routers import auth
+from app.routers import backup_admin
 from app.routers import bank_analysis
 from app.routers import calculadoras
 from app.routers import calendar_feed
@@ -92,6 +93,7 @@ from app.routers import intelligence_v3
 from app.routers import intimacoes
 from app.routers import jurimetria
 from app.routers import jurimetria_extra
+from app.routers import juris_import
 from app.routers import jurisprudencia_externa
 from app.routers import honorarios_oab
 from app.routers import intake
@@ -270,6 +272,7 @@ app.include_router(atendimentos.router, prefix=API)
 app.include_router(atividades.router, prefix=API)
 app.include_router(audit.router, prefix=API)
 app.include_router(auth.router, prefix=API)
+app.include_router(backup_admin.router, prefix=API)
 app.include_router(bank_analysis.router, prefix=API)
 app.include_router(calculadoras.router, prefix=API)
 app.include_router(calendar_feed.router, prefix=API)
@@ -320,6 +323,7 @@ app.include_router(intelligence_v3.router, prefix=API)
 app.include_router(intimacoes.router, prefix=API)
 app.include_router(jurimetria.router, prefix=API)
 app.include_router(jurimetria_extra.router, prefix=API)  # A5: router antes órfão (404 silencioso)
+app.include_router(juris_import.router, prefix=API)
 app.include_router(jurisprudencia_externa.router, prefix=API)
 app.include_router(jurisprudencia_interna.router, prefix=API)
 app.include_router(kanban.router, prefix=API)
