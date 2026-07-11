@@ -2381,7 +2381,7 @@ function TabMensagens({ caseId }: { caseId: string }) {
             className={`flex ${m.autor_tipo === "escritorio" ? "justify-end" : "justify-start"}`}
           >
             <div
-              className={`max-w-[75%] rounded-lg px-3 py-2 text-sm ${m.autor_tipo === "escritorio" ? "bg-primary-600 text-white" : "bg-white border border-gray-200"}`}
+              className={`max-w-[75%] rounded-lg px-3 py-2 text-sm ${m.autor_tipo === "escritorio" ? "bg-primary-600 text-white" : "bg-slate-900/[0.05] text-slate-800 dark:bg-white/[0.08] dark:text-slate-200"}`}
             >
               <Markdown source={m.mensagem} />
               <p
@@ -2824,7 +2824,7 @@ function MiniFerramentaCalc({ f }: { f: FerramentaConfig }) {
   }, [f.id]); // eslint-disable-line
 
   return (
-    <div className="border border-gray-200 rounded-lg p-3 bg-white">
+    <div className="card p-3">
       <div className="flex items-center gap-1.5 mb-1">
         <span className="text-xs font-semibold text-navy">{f.titulo}</span>
         {f.autoLoad && res && (
@@ -2988,7 +2988,7 @@ function AnaliseContratoIA({ caseId }: { caseId: string }) {
   ];
 
   return (
-    <div className="border border-gray-200 rounded-xl p-4 bg-white">
+    <div className="card p-4">
       <div className="flex items-center gap-2 mb-3">
         <Sparkles size={16} className="text-gold-600" />
         <h3 className="font-serif font-semibold text-navy text-sm">

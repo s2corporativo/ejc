@@ -576,7 +576,7 @@ export default function Honorarios() {
                   <img
                     src={pixQr}
                     alt="QR PIX"
-                    className="mx-auto rounded-lg border border-slate-200"
+                    className="mx-auto rounded-lg border border-black/[0.05] shadow-sm"
                   />
                 )}
                 <p className="text-xs text-slate-500">PIX copia e cola:</p>

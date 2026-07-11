@@ -269,7 +269,7 @@ export default function DiarioOficial() {
             value={novaKeyword}
             onChange={(e) => setNovaKeyword(e.target.value)}
             placeholder="Ex: S2 Estratégia, CNPJ 32.491.468..."
-            className="flex-1 rounded-lg border border-gray-300 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary-500"
+            className="input flex-1"
           />
           <button
             type="submit"
