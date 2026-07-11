@@ -17,6 +17,8 @@ from app.services.ai_gateway import chat as gw_chat
 from app.services.ai_service import buscar_contexto_rag
 from app.services.document_format import aviso_rascunho_ia, padronizar_documento_juridico
 from app.services.sanitizer import sanitizar_pii
+from app.services.system_prompts import AVISO_RASCUNHO, BASE_PROMPT, SYSTEM_PROMPTS
+from app.services.system_prompts.padrao_ouro import PADRAO_OURO_PECA
 
 TIPOS_PECA = {
     "auto": "Identificar automaticamente",
@@ -124,7 +126,62 @@ ESTRUTURA_TIPO: dict[str, str] = {
 AREAS_DIREITO = [
     "trabalhista", "civil", "previdenciario", "tributario",
     "criminal", "consumidor", "administrativo", "familia",
+    "empresarial", "ambiental", "bancario", "imobiliario",
+    "sucessoes", "constitucional", "juizados", "digital_lgpd",
+    "transito",
 ]
+
+# Área do pipeline → chave do prompt especializado em SYSTEM_PROMPTS.
+# None = ramo sem prompt dedicado (funciona com o prompt genérico + nome da área).
+# Invariante coberto por backend/tests/test_pecas_areas_invariantes.py.
+_AREA_PROMPT_KEY: dict[str, str | None] = {
+    "trabalhista": "trabalhista",
+    "civil": "civel",
+    "previdenciario": "previdenciario",
+    "tributario": "tributario",
+    "criminal": "criminal",
+    "consumidor": "consumidor",
+    "administrativo": "administrativo",
+    "familia": "familia",
+    "empresarial": "empresarial",
+    "ambiental": "ambiental",
+    "bancario": "bancario",
+    "imobiliario": "imobiliario",
+    "sucessoes": "sucessoes",
+    "constitucional": "constitucional",
+    "juizados": "juizados",
+    "digital_lgpd": "seguranca_lgpd",
+    "transito": None,
+}
+
+# Teto do trecho de especialização injetado nas etapas 2 e 7 — os corpos dos
+# prompts de área têm ~2-3 KB; o cap evita que um prompt futuro muito longo
+# infle o contexto das chamadas do pipeline.
+_ESPECIALIZACAO_MAX_CHARS = 4000
+
+
+def _especializacao_area(area_direito: str) -> str:
+    """Bloco de especialização por ramo para os system prompts das etapas 2 e 7.
+
+    Injeta apenas o CORPO do prompt de área (SYSTEM_PROMPTS), SEM o
+    BASE_PROMPT/AVISO_RASCUNHO que os módulos de área embutem — concatenar o
+    prompt inteiro duplicaria identidade, restrições e aviso de rascunho já
+    presentes no fluxo. Fail-safe: se a extração não for segura (prompt fora do
+    padrão BASE_PROMPT + corpo + AVISO_RASCUNHO), injeta só o nome do ramo.
+    """
+    linha = f"Especialização: use rigorosamente o repertório do ramo {area_direito}."
+    chave = _AREA_PROMPT_KEY.get(area_direito)
+    if not chave:
+        return linha
+    prompt_area = SYSTEM_PROMPTS.get(chave)
+    if not isinstance(prompt_area, str):
+        return linha
+    if not (prompt_area.startswith(BASE_PROMPT) and prompt_area.endswith(AVISO_RASCUNHO)):
+        return linha
+    corpo = prompt_area[len(BASE_PROMPT):len(prompt_area) - len(AVISO_RASCUNHO)].strip()
+    if not corpo:
+        return linha
+    return linha + "\n" + corpo[:_ESPECIALIZACAO_MAX_CHARS]
 
 TIPO_PECA_LEGAL_DOC = {
     "peticao_inicial": PecaTipo.peticao_inicial,
@@ -324,12 +381,17 @@ async def gerar_peca_pipeline(
     # ── ETAPA 2: Estruturar enquadramento jurídico ──────────────────────────
     yield await _emit("step", {"etapa": 2, "titulo": "Estruturando enquadramento jurídico", "status": "em_andamento"})
 
+    # Especialização por ramo (etapas 2 e 7): só o corpo do prompt de área,
+    # sem duplicar BASE_PROMPT/AVISO (ver _especializacao_area).
+    especializacao = _especializacao_area(area_direito)
+
     r2 = await gw_chat(
         messages=[
             {"role": "system", "content": (
                 "Você é especialista em direito " + area_direito + ". "
                 "Estruture o enquadramento jurídico completo: fundamentos legais, "
-                "elementos constitutivos, pressupostos processuais e condições da ação."
+                "elementos constitutivos, pressupostos processuais e condições da ação.\n"
+                + especializacao
             )},
             {"role": "user", "content": (
                 f"Peça: {nome_peca}\nFatos: {fatos_limpos[:2000]}\nPedidos: {pedidos_limpos[:500]}\n\n"
@@ -348,11 +410,13 @@ async def gerar_peca_pipeline(
     yield await _emit("step", {"etapa": 3, "titulo": "Buscando fundamentos legais", "status": "em_andamento"})
 
     query_rag = f"{area_direito} {tipo_peca_final} {fatos_limpos[:200]}"
-    fontes = await buscar_contexto_rag(db, query_rag, limite=6, scope_client_id=scope_client_id)
+    # limite=10: a base de conhecimento é alimentada pelo escritório (julgados,
+    # pareceres, docs regulatórios) — peça padrão-ouro consome mais acervo.
+    fontes = await buscar_contexto_rag(db, query_rag, limite=10, scope_client_id=scope_client_id)
     rag_txt = ""
     if fontes:
         linhas = [
-            f"[Fonte {i+1}] {f['titulo']} ({f['categoria']})\n{f['conteudo'][:600]}"
+            f"[Fonte {i+1}] {f['titulo']} ({f['categoria']})\n{f['conteudo'][:900]}"
             for i, f in enumerate(fontes)
         ]
         rag_txt = "\n\n[LEGISLAÇÃO E DOUTRINA ENCONTRADAS]\n" + "\n\n".join(linhas)
@@ -377,7 +441,7 @@ async def gerar_peca_pipeline(
             )},
             {"role": "user", "content": (
                 f"Fatos: {fatos_limpos[:1000]}\nPedidos: {pedidos_limpos[:300]}\n"
-                f"{rag_txt[:3000] if rag_txt else 'Sem fontes RAG disponíveis.'}\n\n"
+                f"{rag_txt[:4500] if rag_txt else 'Sem fontes RAG disponíveis.'}\n\n"
                 "Identifique jurisprudência e doutrina aplicáveis apenas das fontes acima. "
                 "Formato: tribunal, número/ementa, aplicabilidade ao caso."
             )},
@@ -448,12 +512,65 @@ async def gerar_peca_pipeline(
 
     # Busca contexto adicional do caso se disponível para fundamentação real
     contexto_caso = ""
+    relacao_provas = ""
     if case_id:
         from app.models.case import Case
+        from app.models.document import Document
+        from app.models.prova import Prova
         from sqlalchemy import select
         c_obj = (await db.execute(select(Case).where(Case.id == case_id))).scalar_one_or_none()
         if c_obj:
             contexto_caso = f"\n[CONTEXTO DO CASO]\nTítulo: {c_obj.titulo}\nTese Principal: {c_obj.tese_principal or 'N/A'}\n"
+
+        # Padrão-ouro: a ancoragem dos fatos "(doc. NN)" e a RELAÇÃO DE
+        # DOCUMENTOS ANEXOS partem do acervo probatório REAL do caso — a IA não
+        # inventa documento. Mesma ordenação do Documento Único (ordem, created_at).
+        # deleted_at do Document no ON (não no WHERE): documento eliminado do
+        # GED (inclusive por pedido LGPD) não pode vazar título para o prompt,
+        # mas a linha da Prova permanece — numeração "(doc. NN)" segue 1:1 com
+        # as capas do Documento Único.
+        from sqlalchemy import and_
+        rows_provas = (await db.execute(
+            select(Prova, Document.titulo)
+            .outerjoin(Document, and_(
+                Document.id == Prova.document_id,
+                Document.deleted_at.is_(None),
+            ))
+            .where(Prova.case_id == case_id, Prova.deleted_at.is_(None))
+            .order_by(Prova.ordem, Prova.created_at)
+        )).all()
+        if rows_provas:
+            linhas_provas = []
+            for i, (p_row, doc_titulo) in enumerate(rows_provas, start=1):
+                rotulo = (p_row.titulo or doc_titulo or f"Documento {i}").strip()
+                # Sanitiza ANTES de truncar: cortar um CPF/telefone ao meio
+                # deixaria o fragmento fora do alcance dos regex de PII.
+                resumo, pii_resumo = sanitizar_pii(
+                    (p_row.fato_probando or p_row.descricao or "").strip(),
+                    _nomes_mascarar,
+                )
+                houve_pii = houve_pii or pii_resumo
+                linha = f"Doc. {i:02d} — {rotulo}"
+                if resumo:
+                    linha += f": {resumo[:240]}"
+                linhas_provas.append(linha)
+            # Mesmo contrato LGPD dos fatos: PII estrutural sempre removida;
+            # nomes só pré-mascarados quando NÃO há pseudonimização reversível.
+            # O indicador entra no OR de houve_pii (AILog.pii_removida fiel).
+            bloco_provas, pii_provas = sanitizar_pii("\n".join(linhas_provas), _nomes_mascarar)
+            houve_pii = houve_pii or pii_provas
+            relacao_provas = (
+                "RELAÇÃO DE PROVAS DO CASO — ancore CADA fato relevante à prova "
+                "correspondente com \"(doc. NN)\" e gere a seção final RELAÇÃO DE "
+                "DOCUMENTOS ANEXOS a partir DESTA lista (não invente documentos):\n"
+                f"{bloco_provas}\n\n"
+            )
+    if not relacao_provas:
+        relacao_provas = (
+            "RELAÇÃO DE PROVAS DO CASO: nenhuma prova cadastrada — ancore os fatos "
+            "com o placeholder \"[prova a juntar]\" e monte a RELAÇÃO DE DOCUMENTOS "
+            "ANEXOS com entradas \"[A ser anexado pelo cliente]\".\n\n"
+        )
 
     instrucoes = instrucoes_adicionais or ""
     estrutura_tipo = ESTRUTURA_TIPO.get(tipo_peca_final, "")
@@ -468,24 +585,29 @@ async def gerar_peca_pipeline(
                 "3. Toda saída é RASCUNHO — revisão humana obrigatória (OAB).\n"
                 "4. Use formatação jurídica padrão (Dos Fatos, Do Direito, Dos Pedidos)."
                 + (f"\n5. {estrutura_tipo}" if estrutura_tipo else "")
+                + "\n" + especializacao
+                + "\n" + PADRAO_OURO_PECA
             )},
             {"role": "user", "content": (
                 f"TIPO: {nome_peca}\nÁREA: {area_direito}\n\n"
                 f"FATOS:\n{fatos_limpos}\n\n"
                 f"PEDIDOS:\n{pedidos_limpos}\n\n"
                 f"{contexto_caso}"
+                f"{relacao_provas}"
                 f"ENQUADRAMENTO JURÍDICO:\n{r2.texto[:1500]}\n\n"
                 f"JURISPRUDÊNCIA (RAG):\n{r4.texto[:1000]}\n\n"
                 f"ARGUMENTOS ORGANIZADOS:\n{r5.texto[:1500]}\n\n"
                 f"RISCOS (para evitar na peça):\n{r6.texto[:800]}\n\n"
-                f"{rag_txt[:2000] if rag_txt else ''}\n"
+                f"{rag_txt[:4500] if rag_txt else ''}\n"
                 f"{'INSTRUÇÕES ADICIONAIS: ' + instrucoes if instrucoes else ''}\n\n"
                 f"Redija a {nome_peca} completa com todos os elementos formais obrigatórios."
             )},
         ],
         task_type="elaboracao_peca",
         temperature=0.3,
-        max_tokens=4000,
+        # Peça padrão-ouro (fatos numerados + subseções + relação de anexos) é
+        # longa — 4000 truncava a redação antes dos pedidos/valor da causa.
+        max_tokens=8000,
         entidades=entidades,
     )
     yield await _emit("step", {"etapa": 7, "titulo": "Documento montado", "status": "concluido"})

@@ -7,6 +7,7 @@ import enum
 
 
 class CaseArea(str, enum.Enum):
+    # Valores originais (migration 001)
     civil         = "civil"
     trabalhista   = "trabalhista"
     consumidor    = "consumidor"
@@ -16,6 +17,15 @@ class CaseArea(str, enum.Enum):
     previdenciario = "previdenciario"
     empresarial   = "empresarial"
     tributario    = "tributario"
+    # Ramos adicionais alinhados ao frontend (ramosConfig.ts) e à tabela
+    # canônica `areas` — migration 083 (ALTER TYPE casearea ADD VALUE).
+    administrativo = "administrativo"
+    bancario      = "bancario"
+    imobiliario   = "imobiliario"
+    sucessoes     = "sucessoes"
+    constitucional = "constitucional"
+    digital_lgpd  = "digital_lgpd"
+    transito      = "transito"
 
 
 class CaseStatus(str, enum.Enum):

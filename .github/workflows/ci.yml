@@ -18,66 +18,13 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
-  backend-tests:
-    name: Backend — pytest (inclui guarda de drift de schema)
-    runs-on: ubuntu-latest
-    timeout-minutes: 25
-    defaults:
-      run:
-        working-directory: backend
-    steps:
-      - uses: actions/checkout@v4
-
-      - name: Instalar Python 3.11
-        uses: actions/setup-python@v5
-        with:
-          python-version: "3.11"
-          cache: pip
-          cache-dependency-path: backend/requirements.txt
-
-      - name: Dependências nativas do backend
-        run: |
-          sudo apt-get update
-          sudo apt-get install -y --no-install-recommends \
-            libmagic1 \
-            poppler-utils \
-            tesseract-ocr \
-            libpango-1.0-0 \
-            libpangoft2-1.0-0 \
-            libcairo2 \
-            libgdk-pixbuf-2.0-0
-
-      - name: Instalar dependências Python
-        run: |
-          python -m pip install --upgrade pip
-          python -m pip install -r requirements.txt
-
-      # Gate de lint/format — ruff já está no requirements.txt (não precisa de
-      # instalação extra). Non-blocking por ora (continue-on-error) porque pode
-      # haver achados legados; quando o código estiver limpo, REMOVA o
-      # continue-on-error para tornar o lint BLOQUEANTE.
-      - name: Lint (ruff)
-        continue-on-error: true
-        run: python -m ruff check app
-
-      # Scan de vulnerabilidades das dependências Python (requirements.txt).
-      # pip-audit não filtra por severidade nativamente; começa non-blocking
-      # para não travar o CI com achados legados de dependências transitivas.
-      # Meta: remover o continue-on-error e tratar severidade alta como
-      # bloqueante assim que o backlog for triado.
-      - name: Scan de vulnerabilidades (pip-audit)
-        continue-on-error: true
-        run: |
-          python -m pip install pip-audit
-          pip-audit -r requirements.txt --desc
-
-      - name: Rodar testes
-        env:
-          APP_ENV: development
-        run: python -m pytest tests -q
-
+  # O antigo job backend-tests (pytest SEM banco) foi consolidado aqui: o
+  # db-validation roda a MESMA suíte completa (RUN_DB_TESTS=1 só ADICIONA os
+  # testes row-level), então manter os dois pagava a suíte inteira duas vezes
+  # (~8 min de runner por push — cota de Actions em repositório privado).
+  # Lint (ruff) e pip-audit migraram para cá.
   db-validation:
-    name: Validação schema + RAG row-level (Postgres pgvector)
+    name: Backend — suíte completa + schema/RAG (Postgres pgvector)
     runs-on: ubuntu-latest
     timeout-minutes: 30
     defaults:
@@ -138,6 +85,21 @@ jobs:
             -c "CREATE EXTENSION IF NOT EXISTS vector;" \
             -c "CREATE EXTENSION IF NOT EXISTS pg_trgm;" \
             -c "CREATE EXTENSION IF NOT EXISTS pgcrypto;"
+
+      # Gate de lint/format — ruff já está no requirements.txt. Non-blocking
+      # por ora (continue-on-error); quando o código estiver limpo, REMOVA o
+      # continue-on-error para tornar o lint BLOQUEANTE.
+      - name: Lint (ruff)
+        continue-on-error: true
+        run: python -m ruff check app
+
+      # Scan de vulnerabilidades das dependências Python. Non-blocking para
+      # não travar o CI com achados legados de dependências transitivas.
+      - name: Scan de vulnerabilidades (pip-audit)
+        continue-on-error: true
+        run: |
+          python -m pip install pip-audit
+          pip-audit -r requirements.txt --desc
 
       - name: Aplicar migrations (alembic upgrade head)
         run: python -m alembic upgrade head

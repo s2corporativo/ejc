@@ -105,10 +105,11 @@ class Settings(BaseSettings):
     # True = peças de alta complexidade geradas pelo Núcleo de IA recebem uma
     # SEGUNDA passada por uma IA Crítica/Adversarial (advogado da parte
     # contrária + magistrado), preferindo provider DIFERENTE do que gerou a
-    # peça (diversidade reduz erro correlacionado). Default OFF — dobra o
-    # custo por peça. A crítica NUNCA bloqueia a entrega: falhou → anexa
-    # aviso "crítica indisponível" e o revisor HITL segue normalmente.
-    DUAS_IAS_ENABLED: bool = False
+    # peça (diversidade reduz erro correlacionado). Ligado por padrão (decisão
+    # de produto: qualidade padrão-ouro nas peças justifica o custo extra; para
+    # reduzir custo, desligar via .env). A crítica NUNCA bloqueia a entrega:
+    # falhou → anexa aviso "crítica indisponível" e o revisor HITL segue.
+    DUAS_IAS_ENABLED: bool = True
     # CSV de task_types do ai_gateway que disparam a crítica automática
     # (vocabulário de TASK_ROUTING; aliases como "redacao_peca" são
     # normalizados antes da comparação).
@@ -136,15 +137,19 @@ class Settings(BaseSettings):
     INTAKE_EXTERNAL_FALLBACK: bool = True
 
     # ── Fase 6 — Roteamento inteligente por complexidade/custo ────────────
-    # False (default) = comportamento atual por task_type intacto. Quando True,
-    # o model_router (heurística DETERMINÍSTICA, sem IA) propõe o provedor de
-    # PARTIDA da cadeia por complexidade estimada do input; o gateway AINDA
-    # aplica elegibilidade/kill-switch/barreira PII e o fallback continua.
-    ROTEAMENTO_INTELIGENTE_ENABLED: bool = False
+    # Ligado por padrão: o model_router (heurística DETERMINÍSTICA, sem IA)
+    # propõe o provedor de PARTIDA da cadeia por complexidade estimada do
+    # input — tarefas pesadas partem do Anthropic, leves do provedor barato.
+    # O gateway AINDA aplica elegibilidade/kill-switch/barreira PII e o
+    # fallback continua. False via .env = comportamento por task_type intacto.
+    ROTEAMENTO_INTELIGENTE_ENABLED: bool = True
     # Provedor preferido por TIER de complexidade (o roteador só PROPÕE; se
     # inelegível, o gateway ignora e usa a cadeia normal por prioridade).
     ROTEAMENTO_PROVIDER_LEVE: str = "groq"       # rápido/barato p/ tarefas leves
-    ROTEAMENTO_PROVIDER_MEDIO: str = "ollama"    # local, custo zero
+    # médio = anthropic (Haiku, ANTHROPIC_MODEL_RAPIDO): o stack de produção
+    # não sobe ollama (compose: OLLAMA_ENABLED=false) — apontar o tier médio
+    # para provider morto só gerava tentativa-e-fallback a cada tarefa.
+    ROTEAMENTO_PROVIDER_MEDIO: str = "anthropic"
     ROTEAMENTO_PROVIDER_PESADO: str = "anthropic"  # modelo forte p/ raciocínio
     # Limiares (score inteiro) que separam os tiers leve|medio|pesado.
     ROTEAMENTO_LIMIAR_MEDIO: int = 3

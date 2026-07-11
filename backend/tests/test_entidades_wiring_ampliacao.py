@@ -27,6 +27,12 @@ class _Res:
     def scalar_one_or_none(self):
         return self._val
 
+    def all(self):
+        # Padrão-ouro: a etapa 7 do pipeline consulta as provas do caso via
+        # .all(); estes testes exercitam o wiring de entidades SEM acervo
+        # probatório — lista vazia cai no caminho de placeholders.
+        return []
+
 
 class _FakeDB:
     """execute() sempre devolve o mesmo Case; add() captura as linhas gravadas."""

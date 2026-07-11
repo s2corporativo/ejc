@@ -21,7 +21,7 @@ def test_alembic_cadeia_integra():
     from alembic.script import ScriptDirectory
 
     script = ScriptDirectory.from_config(Config("alembic.ini"))
-    assert script.get_heads() == ["082_notification_preferences"]
+    assert script.get_heads() == ["083_case_area_ramos"]
     revs = [r.revision for r in script.walk_revisions()]
     assert revs[-1] == "001_inicial"
     assert "048_processes" in revs

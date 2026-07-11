@@ -67,61 +67,7 @@ jobs:
           path: ci_guard.log
           retention-days: 7
 
-  backend-smoke:
-    name: P1 backend — deps e compile
-    runs-on: ubuntu-latest
-    timeout-minutes: 20
-    needs: p0-guard
-    steps:
-      - name: Checkout
-        uses: actions/checkout@v4
-
-      - name: Setup Python
-        uses: actions/setup-python@v5
-        with:
-          python-version: '3.11'
-          cache: pip
-          cache-dependency-path: backend/requirements.txt
-
-      - name: Dependências nativas mínimas
-        run: |
-          sudo apt-get update
-          sudo apt-get install -y --no-install-recommends \
-            libmagic1 \
-            poppler-utils \
-            tesseract-ocr \
-            libpango-1.0-0 \
-            libpangoft2-1.0-0 \
-            libcairo2 \
-            libgdk-pixbuf-2.0-0
-
-      - name: Instalar dependências backend
-        working-directory: backend
-        run: python -m pip install --upgrade pip && python -m pip install -r requirements.txt
-
-      - name: Compile smoke backend
-        run: python -m compileall -q backend/app
-
-  frontend-build:
-    name: P1 frontend — build
-    runs-on: ubuntu-latest
-    timeout-minutes: 20
-    needs: p0-guard
-    steps:
-      - name: Checkout
-        uses: actions/checkout@v4
-
-      - name: Setup Node
-        uses: actions/setup-node@v4
-        with:
-          node-version: '20'
-          cache: npm
-          cache-dependency-path: frontend/package-lock.json
-
-      - name: Instalar dependências frontend
-        working-directory: frontend
-        run: npm ci
-
-      - name: Build frontend
-        working-directory: frontend
-        run: npm run build
+  # Jobs P1 (backend deps+compile e frontend build) removidos: eram 100%
+  # redundantes com o ci.yml — o pytest do ci.yml já instala e importa o app
+  # inteiro, e o frontend-build do ci.yml faz npm ci + build. Economia de
+  # ~8-10 min de runner por push (cota de Actions em repositório privado).

@@ -241,6 +241,44 @@ export default function Pecas() {
     }
   };
 
+  // Geração cara (weasyprint + mesclagem de anexos) e rate-limited (5/min):
+  // trava o botão da linha durante a chamada para evitar disparo duplo.
+  const [gerandoVL, setGerandoVL] = useState<string | null>(null);
+
+  const baixarDocumentoUnico = async (doc: LegalDoc) => {
+    if (gerandoVL) return;
+    setGerandoVL(doc.id);
+    try {
+      const r = await api.get(
+        `/legal-docs/${doc.id}/documento-unico-impressao`,
+        { responseType: "blob" },
+      );
+      const url = URL.createObjectURL(r.data);
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = `${doc.titulo} — Documento Único.pdf`;
+      a.click();
+      URL.revokeObjectURL(url);
+    } catch (e: any) {
+      let detail = e.response?.data?.detail;
+      // responseType blob: erros 422/503 chegam como Blob JSON — extrai o detail
+      if (!detail && e.response?.data instanceof Blob) {
+        try {
+          detail = JSON.parse(await e.response.data.text())?.detail;
+        } catch {
+          /* corpo não-JSON — usa mensagem padrão */
+        }
+      }
+      const msg =
+        typeof detail === "object" && detail !== null
+          ? (detail.mensagem ?? JSON.stringify(detail).slice(0, 200))
+          : detail;
+      toast.error(msg || "Falha ao gerar o documento único de impressão.");
+    } finally {
+      setGerandoVL(null);
+    }
+  };
+
   const imprimirPeca = async (doc: LegalDoc) => {
     try {
       // A listagem pode não trazer o conteúdo completo — busca a peça inteira
@@ -412,6 +450,14 @@ export default function Pecas() {
                       onClick={() => baixarDocx(p)}
                     >
                       <FileDown size={15} /> DOCX
+                    </button>
+                    <button
+                      className="btn-ghost px-2 py-1 text-xs"
+                      title="Documento único de impressão (peça + anexos com capas Visual Law)"
+                      onClick={() => baixarDocumentoUnico(p)}
+                      disabled={gerandoVL !== null}
+                    >
+                      <FileDown size={15} /> {gerandoVL === p.id ? "Gerando..." : "VL"}
                     </button>
                     <button
                       className="btn-ghost px-2 py-1"

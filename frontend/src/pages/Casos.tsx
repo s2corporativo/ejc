@@ -2,7 +2,7 @@ import { exportPdf } from "../utils/exportPdf";
 import { toast } from "../components/Toast";
 import { exportCsv } from "../utils/exportCsv";
 import { useEffect, useRef, useState } from "react";
-import { Link } from "react-router-dom";
+import { Link, useLocation, useNavigate } from "react-router-dom";
 import {
   FileType2,
   Download,
@@ -37,6 +37,7 @@ import {
 import { useAuth } from "../stores/auth";
 import { CasosStats } from "../components/Dashboards";
 import ImportarDocumento from "../components/ImportarDocumento";
+import NovoCasoWizard from "../components/NovoCasoWizard";
 import Kanban from "./Kanban";
 import { List } from "lucide-react";
 
@@ -211,6 +212,11 @@ export default function Casos() {
   const [delLoading, setDelLoading] = useState(false);
   const [view, setView] = useState<"lista" | "kanban">("lista");
   const [modal, setModal] = useState(false);
+  // Wizard "Novo Caso" (2 passos: cliente → caso). A rota /casos/novo abre o
+  // wizard direto (item de menu primário); fechar volta para /casos.
+  const location = useLocation();
+  const nav = useNavigate();
+  const wizardAberto = location.pathname === "/casos/novo";
   const [form, setForm] = useState<any>({
     area: "civil",
     prioridade: "media",
@@ -452,7 +458,10 @@ export default function Casos() {
                 <LayoutGrid size={15} /> Quadro
               </button>
             </div>
-            <button className="btn-gold" onClick={() => setModal(true)}>
+            {/* DECISÃO: o botão principal abre o wizard guiado (/casos/novo);
+                o cadastro completo (com importação inteligente) continua
+                acessível pelo link dentro do próprio wizard. */}
+            <button className="btn-gold" onClick={() => nav("/casos/novo")}>
               <Plus size={16} /> Novo caso
             </button>
           </div>
@@ -676,10 +685,20 @@ export default function Casos() {
         </>
       )}
 
+      <NovoCasoWizard
+        open={wizardAberto}
+        onClose={() => nav("/casos")}
+        onCadastroCompleto={() => {
+          // Caminho antigo preservado: modal completo com importação de documento.
+          nav("/casos");
+          setModal(true);
+        }}
+      />
+
       <Modal
         open={modal}
         onClose={() => setModal(false)}
-        title="Novo caso"
+        title="Novo caso — cadastro completo"
         wide
       >
         <ImportarDocumento

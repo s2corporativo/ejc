@@ -40,8 +40,16 @@ _RAMO_MAP = {
     "criminal":    (PenalCase,         "Penal"),
     "trabalhista": (TrabalhistaCase,   "Trabalhista"),
     "tributario":  (AdminCase,         "Administrativo/Tributário"),
+    # Áreas próprias desde a migration 083 (antes: satélite aproximada ou
+    # detecção indireta — o comentário antigo sobre "bancário sem área" caiu):
+    "administrativo": (AdminCase,      "Administrativo"),
+    "bancario":       (BancarioCase,   "Bancário"),
+    "imobiliario":    (CivelCase,      "Cível/Imobiliário"),
+    "sucessoes":      (CivelCase,      "Cível/Sucessões"),
+    "constitucional": (AdminCase,      "Administrativo/Constitucional"),
+    "digital_lgpd":   (CivelCase,      "Cível/Digital-LGPD"),
+    "transito":       (AdminCase,      "Administrativo/Trânsito"),
 }
-# Bancário não tem área própria em CaseArea — detectado por presença da satélite.
 
 
 def _fmt_val(v) -> str:
