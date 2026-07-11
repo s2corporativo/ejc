@@ -15,6 +15,42 @@ import { canRoleAccessPath } from "../config/moduleRegistry";
 
 // Logomarca HD com fundo transparente (nunca a versão JPG com fundo)
 const BRAND_LOGO = "/brand/logo-hd.png";
+// Vinheta de marca (10s, muda, toca UMA vez e congela no logo final)
+const BRAND_INTRO_VIDEO = "/brand/logo-intro.mp4";
+const BRAND_INTRO_POSTER = "/brand/logo-intro-poster.jpg";
+
+/** Vinheta da logomarca no login. Respeita prefers-reduced-motion e cai
+ *  para a logomarca estática se o vídeo falhar (rede lenta/bloqueio). */
+function BrandIntro({ className }: { className?: string }) {
+  const [fallback, setFallback] = useState(false);
+  const reduceMotion =
+    typeof window !== "undefined" &&
+    window.matchMedia?.("(prefers-reduced-motion: reduce)").matches;
+
+  if (fallback || reduceMotion) {
+    return (
+      <img
+        src={BRAND_LOGO}
+        alt="De Paula Teixeira Sociedade de Advogados"
+        className={`brand-logo-img h-40 w-auto max-w-[440px] ${className || ""}`}
+      />
+    );
+  }
+  return (
+    <video
+      className={`w-[460px] max-w-full rounded-3xl shadow-card ${className || ""}`}
+      autoPlay
+      muted
+      playsInline
+      preload="auto"
+      poster={BRAND_INTRO_POSTER}
+      onError={() => setFallback(true)}
+      aria-label="De Paula Teixeira Sociedade de Advogados"
+    >
+      <source src={BRAND_INTRO_VIDEO} type="video/mp4" />
+    </video>
+  );
+}
 
 type LoginLocationState = { from?: string } | null;
 
@@ -103,12 +139,8 @@ export default function LoginModern() {
         <section className="relative hidden flex-col justify-between overflow-hidden p-10 text-slate-900 lg:flex">
           <div className="pointer-events-none absolute inset-0 bg-[radial-gradient(circle_at_35%_45%,rgba(201,162,39,.10),transparent_30rem),radial-gradient(circle_at_90%_90%,rgba(216,185,78,.12),transparent_26rem)]" />
           <div className="relative flex items-center gap-3">
-            {/* Logo grande, protagonista — PNG transparente, sem tile branco */}
-            <img
-              src={BRAND_LOGO}
-              alt="De Paula Teixeira Sociedade de Advogados"
-              className="brand-logo-img h-40 w-auto max-w-[440px]"
-            />
+            {/* Vinheta da marca — toca uma vez e congela na logomarca */}
+            <BrandIntro />
           </div>
 
           <div className="relative max-w-2xl">
