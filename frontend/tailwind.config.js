@@ -93,6 +93,22 @@ export default {
           600: "#A6842A",
           50: "#FAF5E3",
         },
+        /*
+         * Ouro institucional "De Paula Teixeira" — paleta oficial dos PDFs
+         * Visual Law (backend/app/services/visual_law_theme.py). Uso com
+         * PARCIMÔNIA: cor de AÇÃO/DESTAQUE (botão primário, tab ativa,
+         * badge de destaque, filetes de título) — nunca fundo dominante.
+         * Contraste sobre branco: profundo #6F5711 = 6,9:1 (AA texto);
+         * DEFAULT #8F7117 = 4,6:1 (AA com texto branco em botões);
+         * claro #C9A227 = só filete/realce gráfico, nunca texto;
+         * palha #F7F1DC = fundo suave (badges, quadros).
+         */
+        ouro: {
+          profundo: "#6F5711",
+          DEFAULT: "#8F7117",
+          claro: "#C9A227",
+          palha: "#F7F1DC",
+        },
         ink: {
           DEFAULT: "#111827",
           light: "#374151",

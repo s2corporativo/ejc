@@ -17,7 +17,7 @@ import {
   X,
 } from "lucide-react";
 
-type Tone = "slate" | "blue" | "green" | "amber" | "red" | "purple";
+type Tone = "slate" | "blue" | "green" | "amber" | "red" | "purple" | "ouro";
 type ButtonVariant = "primary" | "secondary" | "ghost" | "danger" | "ai";
 
 const toneClasses: Record<Tone, string> = {
@@ -27,11 +27,15 @@ const toneClasses: Record<Tone, string> = {
   amber: "bg-warn-50 text-warn-700 ring-warn-200",
   red: "bg-danger-50 text-danger-700 ring-danger-200",
   purple: "bg-ai-50 text-ai-700 ring-ai-200",
+  // Ouro institucional — apenas destaque pontual (nunca tom padrão)
+  ouro: "bg-ouro-palha text-ouro-profundo ring-ouro-claro/60",
 };
 
 const buttonClasses: Record<ButtonVariant, string> = {
+  // Ouro institucional De Paula Teixeira (visual_law_theme): ação primária.
+  // #8F7117 + texto branco = 4,6:1 (AA); hover/active escurecem p/ profundo.
   primary:
-    "bg-primary-600 text-white shadow-sm hover:bg-primary-700 active:bg-primary-800 focus:ring-primary-500/40",
+    "bg-ouro text-white shadow-sm hover:bg-ouro-profundo active:bg-ouro-profundo focus:ring-ouro/40",
   secondary:
     "bg-white text-slate-700 border border-slate-200 hover:bg-slate-50 hover:border-slate-300 focus:ring-primary-500/40",
   ghost:
@@ -289,9 +293,11 @@ export function PageHeader({
     <div className="mb-6 flex flex-col gap-4 sm:flex-row sm:items-end sm:justify-between">
       <div className="min-w-0">
         {eyebrow && <div className="eyebrow mb-2">{eyebrow}</div>}
-        <h1 className="text-2xl font-semibold tracking-tight text-slate-950 md:text-3xl">
+        {/* Serifa institucional + filete ouro: identidade Visual Law, com moderação */}
+        <h1 className="font-serif text-2xl font-semibold tracking-tight text-slate-950 md:text-3xl">
           {title}
         </h1>
+        <div className="mt-2 h-0.5 w-10 rounded-full bg-ouro-claro" />
         {subtitle && (
           <p className="mt-2 max-w-3xl text-sm text-slate-500">{subtitle}</p>
         )}
@@ -489,7 +495,7 @@ export function Tabs({
           className={cn(
             "flex h-9 shrink-0 items-center gap-2 rounded-lg px-3 text-sm font-medium transition-all",
             value === item.value
-              ? "bg-primary-600 text-white shadow-sm"
+              ? "bg-ouro text-white shadow-sm"
               : "text-slate-600 hover:bg-slate-100",
           )}
         >
@@ -874,16 +880,9 @@ export function Alert({
   );
 }
 
-export function Skeleton({ className }: { className?: string }) {
-  return (
-    <div
-      className={cn(
-        "animate-pulse rounded-lg bg-slate-200/70",
-        className || "h-4 w-full",
-      )}
-    />
-  );
-}
+// Skeletons de carregamento (pulse) — implementação em components/base/.
+// Re-exportados aqui para manter o ponto único de import das páginas.
+export { Skeleton, SkeletonList, SkeletonCard } from "./base/Skeleton";
 
 export function EmptyState({
   title = "Nada encontrado",
@@ -910,20 +909,51 @@ export function EmptyState({
   );
 }
 
+/**
+ * Empty state didático. API aditiva — os usos legados com `message`/`icon`
+ * continuam válidos; os novos podem explicar o vazio e oferecer uma saída.
+ *
+ * @example legado
+ * <Empty message="Nenhum caso encontrado" />
+ *
+ * @example didático
+ * <Empty
+ *   titulo="Nenhum caso ainda"
+ *   descricao="Cadastre o primeiro caso para acompanhar prazos e honorários."
+ *   acao={<Button onClick={abrirWizard}>Novo caso</Button>}
+ * />
+ */
 export function Empty({
   message,
   icon: Icon = Inbox,
+  titulo,
+  descricao,
+  acao,
 }: {
-  message: string;
+  /** Legado — vira o título quando `titulo` não é informado. */
+  message?: string;
   icon?: typeof Inbox;
+  /** Título curto do estado vazio (tem precedência sobre `message`). */
+  titulo?: string;
+  /** Texto explicativo: por que está vazio e o que fazer a seguir. */
+  descricao?: string;
+  /** Ação de saída (ex.: <Button> ou <Link>) exibida abaixo do texto. */
+  acao?: ReactNode;
 }) {
-  return <EmptyState title={message} icon={Icon} />;
+  return (
+    <EmptyState
+      title={titulo ?? message ?? "Nada encontrado"}
+      message={descricao}
+      icon={Icon}
+      action={acao}
+    />
+  );
 }
 
 export function Spinner() {
   return (
     <div className="flex items-center justify-center p-12">
-      <Loader2 className="h-8 w-8 animate-spin text-primary-600" />
+      <Loader2 className="h-8 w-8 animate-spin text-ouro" />
     </div>
   );
 }
