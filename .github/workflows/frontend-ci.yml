@@ -1,10 +1,10 @@
 name: Frontend CI
 
+# Gatilho de PR removido: o job frontend-build do ci.yml roda o MESMO
+# typecheck+build+vitest em todo PR — este workflow duplicava ~5 min de
+# runner por push com frontend (cota de Actions em repositório privado).
+# Mantido só o disparo manual para depuração isolada do frontend.
 on:
-  pull_request:
-    paths:
-      - "frontend/**"
-      - ".github/workflows/frontend-ci.yml"
   workflow_dispatch:
 
 permissions:
