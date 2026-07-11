@@ -36,6 +36,7 @@ from app.routers import ai_skills
 from app.routers import ai_tools
 from app.routers import analise_bancaria
 from app.routers import analytics
+from app.routers import andamentos
 from app.routers import areas
 from app.routers import atendimentos
 from app.routers import atividades
@@ -94,6 +95,7 @@ from app.routers import jurimetria_extra
 from app.routers import jurisprudencia_externa
 from app.routers import honorarios_oab
 from app.routers import intake
+from app.routers import triagem_entrevista
 from app.routers import jurisprudencia_interna
 from app.routers import kanban
 from app.routers import legal_docs
@@ -262,6 +264,7 @@ app.include_router(ai_skills.router, prefix=API)
 app.include_router(ai_tools.router, prefix=API)
 app.include_router(analise_bancaria.router, prefix=API)
 app.include_router(analytics.router, prefix=API)
+app.include_router(andamentos.router, prefix=API)
 app.include_router(areas.router, prefix=API)
 app.include_router(atendimentos.router, prefix=API)
 app.include_router(atividades.router, prefix=API)
@@ -324,6 +327,7 @@ app.include_router(legal_docs.router, prefix=API)
 app.include_router(memoria_institucional.router, prefix=API)
 app.include_router(honorarios_oab.router, prefix=API)  # frontend: /api/honorarios-oab/estimar (EstimadorHonorarios)
 app.include_router(intake.router, prefix=API)  # frontend: /api/intake/casos/{id}/analise-completa (IntakeAnalise)
+app.include_router(triagem_entrevista.router, prefix=API)  # frontend: /api/triagem/entrevista (EntrevistaInteligente — Jornada etapa 2)
 app.include_router(mensagens.router, prefix=API)
 app.include_router(module_help.router, prefix=API)  # frontend: /api/module-help/* (HelpButton)
 app.include_router(movimentos.router, prefix=API)

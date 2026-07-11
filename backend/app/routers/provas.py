@@ -8,6 +8,9 @@
 #   DELETE /casos/{case_id}/provas/{prova_id}            → soft delete (audit)
 #   POST   /casos/{case_id}/provas/documento-unico       → {"download_url": ...}
 #   GET    /casos/{case_id}/provas/documento-unico/{id}/download → FileResponse (PDF)
+#   POST   /casos/{case_id}/provas/sugerir-faltantes     → IA sugere provas FALTANTES
+#          (Etapa 6 — Mapa Probatório: advogado+, contexto determinístico do caso,
+#           JSON estrito com parse defensivo, AILog/HITL — são SUGESTÕES)
 #
 # Segurança:
 #   • autorização por caso via core/ownership.verificar_acesso_caso (404 se o caso
@@ -22,9 +25,12 @@
 #     _limpar_pdfs_antigos (TTL/LGPD), rate_limit em TODAS as rotas.
 from __future__ import annotations
 
+import json
+import logging
 import os
 import re
 import time
+import unicodedata
 from datetime import datetime, timezone
 from typing import Optional
 from uuid import uuid4
@@ -38,7 +44,7 @@ from app.core.config import get_settings
 from app.core.database import get_db
 from app.core.ownership import verificar_acesso_caso
 from app.core.rate_limit import rate_limit
-from app.core.security import get_current_user
+from app.core.security import ROLE_LEVEL, get_current_user
 from app.models.audit_log import criar_audit_log
 from app.models.case import Case
 from app.models.client import Client
@@ -47,7 +53,7 @@ from app.models.prova import Prova
 from app.models.tese import Tese
 from app.models.user import User
 from app.schemas.common import MsgResponse
-from app.schemas.prova import ProvaCreate, ProvaUpdate
+from app.schemas.prova import ProvaCreate, ProvaUpdate, SugestaoProvaFaltante
 
 settings = get_settings()
 router = APIRouter(prefix="/casos/{case_id}/provas", tags=["Provas"])
@@ -223,6 +229,215 @@ async def remover_prova(
     await criar_audit_log(db, cu.id, cu.role.value, "DELETE", "provas", prova_id)
     await db.commit()
     return MsgResponse(detail="Prova removida")
+
+
+# ── Provas FALTANTES (sugestão da IA — Etapa 6 do Mapa Probatório) ────────────
+# A IA recebe um contexto DETERMINÍSTICO do caso (área, título, tese principal,
+# tipo de ação e as provas EXISTENTES com fato probando) e devolve JSON estrito
+# com as provas TÍPICAS que estão faltando (ex.: laudo, ata notarial, orçamento,
+# extrato) + justificativa probatória. HITL: são SUGESTÕES — o advogado que
+# acatar cria a Prova pelo fluxo normal (nenhuma escrita automática no acervo).
+
+_CRITICIDADES_VALIDAS = {"alta", "media", "baixa"}
+_MAX_SUGESTOES = 12
+
+
+def _norm_titulo(texto: str) -> str:
+    """Normaliza título p/ deduplicação (minúsculas, sem acentos, espaços únicos)."""
+    s = unicodedata.normalize("NFKD", texto or "")
+    s = "".join(c for c in s if not unicodedata.combining(c))
+    return re.sub(r"\s+", " ", s).strip().lower()
+
+
+def _extrair_lista_json(texto: str) -> Optional[list]:
+    """Extrai a PRIMEIRA lista JSON plausível do texto da IA (parse defensivo):
+    texto puro → cerca ```json``` → maior slice entre '[' e ']'. Aceita também
+    um objeto com a lista dentro (ex.: {"sugestoes": [...]}). None se nada
+    parseável — o chamador degrada p/ lista vazia + aviso (nunca 500)."""
+    candidatos: list[str] = [texto.strip()]
+    cerca = re.search(r"```(?:json)?\s*(.+?)```", texto, re.S)
+    if cerca:
+        candidatos.append(cerca.group(1).strip())
+    ini, fim = texto.find("["), texto.rfind("]")
+    if 0 <= ini < fim:
+        candidatos.append(texto[ini:fim + 1])
+
+    for cand in candidatos:
+        try:
+            parsed = json.loads(cand)
+        except (ValueError, TypeError):
+            continue
+        if isinstance(parsed, list):
+            return parsed
+        if isinstance(parsed, dict):  # {"sugestoes": [...]} / {"provas_faltantes": [...]}
+            for v in parsed.values():
+                if isinstance(v, list):
+                    return v
+    return None
+
+
+def _parse_sugestoes(texto: str, titulos_existentes: list[str]) -> list[dict]:
+    """Valida item a item a resposta da IA (schema SugestaoProvaFaltante como
+    última linha de defesa) e DESCARTA: itens malformados, criticidade fora do
+    domínio (após normalização de acento/caixa) vira "media", e qualquer
+    sugestão cujo título já exista no acervo (a IA é instruída a não repetir,
+    mas o filtro determinístico é a garantia)."""
+    bruto = _extrair_lista_json(texto or "")
+    if not bruto:
+        return []
+
+    existentes = {_norm_titulo(t) for t in titulos_existentes if t}
+    saida: list[dict] = []
+    vistos: set[str] = set()
+    for item in bruto:
+        if not isinstance(item, dict):
+            continue
+        crit = _norm_titulo(str(item.get("criticidade") or ""))
+        try:
+            sug = SugestaoProvaFaltante(
+                titulo=str(item.get("titulo") or "").strip()[:255],
+                por_que_importa=str(item.get("por_que_importa") or "").strip()[:2000],
+                como_obter=str(item.get("como_obter") or "").strip()[:2000],
+                criticidade=crit if crit in _CRITICIDADES_VALIDAS else "media",
+            )
+        except Exception:
+            continue  # item malformado nunca derruba o lote
+        chave = _norm_titulo(sug.titulo)
+        if not chave or chave in existentes or chave in vistos:
+            continue
+        vistos.add(chave)
+        saida.append(sug.model_dump())
+        if len(saida) >= _MAX_SUGESTOES:
+            break
+    return saida
+
+
+def _contexto_sugestao(case: Case, provas: list[Prova]) -> str:
+    """Contexto DETERMINÍSTICO do caso (sem texto livre além dos campos do
+    próprio caso): área, título, tipo de ação, tese principal e o acervo
+    existente com fato probando. É o ÚNICO insumo fático dado à IA."""
+    area = case.area.value if hasattr(case.area, "value") else str(case.area or "—")
+    tipo_acao = (case.tipo_acao_prescricao
+                 or case.extrajudicial_type
+                 or case.case_type
+                 or "não informado")
+    linhas = [
+        f"Área do direito: {area}",
+        f"Título do caso: {case.titulo or '—'}",
+        f"Tipo de ação: {tipo_acao}",
+        f"Tese principal: {(case.tese_principal or 'não informada').strip()[:2000]}",
+        "",
+        "Provas JÁ EXISTENTES no caso:",
+    ]
+    if provas:
+        for p in provas:
+            fato = (p.fato_probando or "não informado").strip()[:500]
+            linhas.append(f"- [{p.tipo}] {p.titulo} — fato probando: {fato}")
+    else:
+        linhas.append("- (nenhuma prova cadastrada ainda)")
+    return "\n".join(linhas)
+
+
+_SYSTEM_SUGESTAO = (
+    "Você é um assistente jurídico do escritório, especializado em instrução "
+    "probatória no direito brasileiro. Dado o contexto de um caso e a lista de "
+    "provas já existentes, aponte APENAS as provas TÍPICAS para aquele tipo de "
+    "ação que estão FALTANDO (ex.: laudo pericial, ata notarial, orçamento, "
+    "extrato bancário, testemunhas, notificação extrajudicial).\n"
+    "Regras OBRIGATÓRIAS:\n"
+    "1. NÃO repita nem parafraseie provas que já constam da lista existente.\n"
+    "2. NÃO invente fatos do caso: justifique cada sugestão apenas pela "
+    "tipicidade probatória da ação/área informada.\n"
+    "3. Responda SOMENTE com um array JSON válido, sem markdown nem texto "
+    "fora do JSON, no formato: [{\"titulo\": str, \"por_que_importa\": str, "
+    "\"como_obter\": str, \"criticidade\": \"alta\"|\"media\"|\"baixa\"}].\n"
+    "4. No máximo 8 sugestões, das mais críticas para as menos críticas. Se "
+    "nada relevante faltar, responda [].\n"
+    "Suas sugestões são RASCUNHO de apoio — a decisão é do advogado (HITL)."
+)
+
+
+@router.post("/sugerir-faltantes",
+             dependencies=[Depends(rate_limit("provas-sugerir-faltantes", 5))])
+async def sugerir_provas_faltantes(
+    case_id: str,
+    db: AsyncSession = Depends(get_db),
+    cu: User = Depends(get_current_user),
+):
+    """IA sugere provas FALTANTES do caso (Mapa Probatório — Etapa 6).
+
+    Piso advogado+ (endpoint de geração), ownership via verificar_acesso_caso,
+    contexto determinístico, JSON estrito com parse defensivo (fallback lista
+    vazia + aviso — nunca 500 por resposta ruim da IA), pseudonimização LGPD
+    das entidades do caso antes de provider externo e AILog registrado (HITL:
+    nada é escrito no acervo — o advogado cria a Prova pelo fluxo normal).
+    """
+    if ROLE_LEVEL.get(cu.role.value, 0) < ROLE_LEVEL["advogado"]:
+        raise HTTPException(403, "Apenas advogados podem gerar sugestões de provas com IA")
+    case = await verificar_acesso_caso(db, cu, case_id)
+
+    provas = list((await db.execute(
+        select(Prova)
+        .where(Prova.case_id == case_id, Prova.deleted_at.is_(None))
+        .order_by(Prova.ordem, Prova.created_at)
+    )).scalars())
+
+    contexto = _contexto_sugestao(case, provas)
+
+    # LGPD: nomes do caso (cliente/partes/advogado) pseudonimizados de forma
+    # REVERSÍVEL pela barreira do gateway antes de qualquer provider externo
+    # (padrão ia_adversarial). Falha do helper degrada com segurança ({}).
+    from app.services.ai.entidades_caso import entidades_do_caso
+    from app.services.ai_gateway import chat as gw_chat
+    entidades = await entidades_do_caso(db, case_id)
+
+    aviso: Optional[str] = None
+    try:
+        resp = await gw_chat(
+            messages=[
+                {"role": "system", "content": _SYSTEM_SUGESTAO},
+                {"role": "user", "content": contexto},
+            ],
+            task_type="analise_juridica",
+            temperature=0.2,
+            max_tokens=1800,
+            entidades=entidades,
+        )
+    except Exception as e:  # provider indisponível NUNCA vira 500 aqui
+        # Detalhe do provider só no log — não vaza infraestrutura na UI.
+        logging.getLogger("ejc.provas").warning(
+            f"sugerir-faltantes: gateway indisponível: {e}")
+        return {"data": [], "total": 0, "modelo": None, "provedor": None,
+                "aviso": "IA indisponível no momento — tente novamente em instantes."}
+
+    sugestoes = _parse_sugestoes(resp.texto, [p.titulo for p in provas])
+    if not sugestoes:
+        aviso = ("A IA não retornou sugestões válidas para este caso — nada "
+                 "foi descartado do acervo; tente novamente ou detalhe a tese "
+                 "principal do caso.")
+
+    # Trilha de auditoria (padrão do projeto: todo uso de IA gera AILog).
+    # prompt SANITIZADO (sem PII) no log; status HITL "gerado" — são sugestões.
+    from app.models.ai_log import AILog, AIStatusHITL, AITipoUso
+    from app.services.sanitizer import sanitizar_pii
+    prompt_log, pii = sanitizar_pii(contexto)
+    db.add(AILog(
+        id=str(uuid4()),
+        user_id=cu.id,
+        case_id=case_id,
+        tipo_uso=AITipoUso.analise_caso,
+        modelo=f"{resp.provedor}/{resp.modelo}"[:50],
+        prompt_sanitizado=("[PROVAS_FALTANTES sugestão IA]\n" + prompt_log)[:8000],
+        pii_removida=pii,
+        resposta=(resp.texto or "")[:8000],
+        tokens_input=resp.input_tokens,
+        tokens_output=resp.output_tokens,
+        status_hitl=AIStatusHITL.gerado,
+    ))
+    await db.commit()
+
+    return {"data": sugestoes, "total": len(sugestoes),
+            "modelo": resp.modelo, "provedor": resp.provedor, "aviso": aviso}
 
 
 # ── Documento Único de Anexos (Visual Law) ────────────────────────────────────

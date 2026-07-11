@@ -186,10 +186,15 @@ class Settings(BaseSettings):
     # URL pública do frontend — usada nos links dos e-mails
     FRONTEND_URL: str = "https://SEU_DOMINIO"
 
-    # ── DataJud/CNJ (consulta processual) ────────────────────────────────
-    # Chave pública divulgada pelo CNJ — pode ser sobrescrita via .env
-    DATAJUD_ENABLED: bool = True
-    DATAJUD_API_KEY: str = ""  # Configurar via .env
+    # ── DataJud/CNJ (consulta processual — API Pública) ──────────────────
+    # Integração EXTERNA é opt-in: desligada por padrão (ligar no .env).
+    DATAJUD_ENABLED: bool = False
+    # O CNJ divulga uma chave PÚBLICA de uso geral na wiki oficial
+    # (https://datajud-wiki.cnj.jus.br/api-publica/acesso/) — copie-a para o
+    # .env. Nunca commitar a chave nem registrá-la em logs/erros.
+    DATAJUD_API_KEY: str = ""
+    # Host oficial da API Pública (POST /{alias_tribunal}/_search).
+    DATAJUD_BASE_URL: str = "https://api-publica.datajud.cnj.jus.br"
 
     # ── DJEN / API Comunica CNJ (Res. CNJ 569/2024) — ingestão RAG ───────
     # Ingestor diário de comunicações processuais (intimações/publicações)

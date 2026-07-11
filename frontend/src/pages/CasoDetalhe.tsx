@@ -22,6 +22,7 @@ import AnaliseEstrategica from "../components/AnaliseEstrategica";
 import IntakeAnalise from "../components/IntakeAnalise";
 import ConversaoChecklist from "../components/ConversaoChecklist";
 import ProvasCaso from "../components/ProvasCaso";
+import DossieEstrategicoCaso from "../components/DossieEstrategicoCaso";
 import type { Case } from "../types";
 import {
   PageHeader,
@@ -4055,26 +4056,7 @@ export default function CasoDetalhe() {
           />
         );
       case "dossie":
-        return (
-          <TabLista
-            titulo="Dossiê Estratégico"
-            endpoint={`/dossie/${id}/historico`}
-            empty="Nenhum dossiê estratégico gerado"
-            renderItem={(d) => (
-              <div className="card p-3 text-sm flex justify-between items-center">
-                <span className="font-medium text-gray-800">
-                  {d.titulo ||
-                    `Versão ${d.versao ?? ""}`.trim() ||
-                    "Snapshot Estratégico"}
-                </span>
-                <span className="text-gray-400 text-xs">
-                  {d.aprovado ? "✓ aprovado" : "rascunho"} ·{" "}
-                  {fmtDate(d.created_at)}
-                </span>
-              </div>
-            )}
-          />
-        );
+        return <DossieEstrategicoCaso caseId={id} />;
       case "iaDefensiva":
         return <IaDefensivaCaso caso={caso} />;
       case "ferramentas":
