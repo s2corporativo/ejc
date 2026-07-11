@@ -61,7 +61,9 @@ export default function Assinaturas() {
   const fetchSolicitacoes = useCallback(async () => {
     setLoading(true);
     try {
-      const res = await api.get("/signatures");
+      // Barra final obrigatória: sem ela o FastAPI responde 307 com Location
+      // absoluto e o browser perde o Authorization no redirect (achado M1).
+      const res = await api.get("/signatures/");
       setSolicitacoes(res.data);
     } catch {
       setSolicitacoes([]);

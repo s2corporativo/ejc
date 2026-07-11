@@ -1,7 +1,7 @@
 import { toast } from "../components/Toast";
 import Markdown from "../components/Markdown";
 import React, { useEffect, useRef, useState } from "react";
-import { useParams, useSearchParams, useNavigate } from "react-router-dom";
+import { Link, useParams, useSearchParams, useNavigate } from "react-router-dom";
 import {
   Sparkles,
   ChevronLeft,
@@ -3816,6 +3816,14 @@ export default function CasoDetalhe() {
         return <TabJurisprudencia caseId={id} caso={caso} />;
       case "documentos":
         return (
+          <div className="space-y-3">
+            {/* CTA de anexar: o upload vive no módulo global de Documentos,
+                que pré-seleciona o caso via ?caso= (achado M2 do E2E). */}
+            <div className="flex justify-end">
+              <Link to={`/documentos?caso=${id}`} className="btn-secondary text-xs">
+                Anexar documento ao caso
+              </Link>
+            </div>
           <TabLista
             titulo="Documentos"
             endpoint={`/documents/?case_id=${id}`}
@@ -3837,6 +3845,7 @@ export default function CasoDetalhe() {
               </div>
             )}
           />
+          </div>
         );
       case "provas":
         return <ProvasCaso caseId={id} />;

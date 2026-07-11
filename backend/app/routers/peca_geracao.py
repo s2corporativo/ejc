@@ -3,6 +3,8 @@ Router: Geração de peças jurídicas com pipeline 7 etapas + SSE streaming.
 """
 from __future__ import annotations
 
+import logging
+
 from fastapi import APIRouter, Depends, HTTPException, Query
 from fastapi.responses import StreamingResponse
 from pydantic import BaseModel, Field
@@ -24,6 +26,7 @@ from datetime import date
 from uuid import uuid4
 
 router = APIRouter(prefix="/pecas", tags=["Geração de Peças"])
+logger = logging.getLogger(__name__)
 
 
 class GerarPecaRequest(BaseModel):
@@ -86,7 +89,18 @@ async def gerar_peca(
                 yield chunk
         except Exception as e:
             import json
-            yield f"event: erro\ndata: {json.dumps({'detail': str(e)[:300]}, ensure_ascii=False)}\n\n"
+            # Detalhe técnico só no log — a UI não deve expor infra interna
+            # (nomes de env vars/provedores) ao advogado.
+            logger.error("[PecaGeracao] pipeline falhou: %s", e)
+            yield (
+                "event: erro\ndata: "
+                + json.dumps(
+                    {"detail": "IA indisponível no momento. Tente novamente "
+                               "em instantes ou contate o administrador."},
+                    ensure_ascii=False,
+                )
+                + "\n\n"
+            )
 
     return StreamingResponse(
         stream(),

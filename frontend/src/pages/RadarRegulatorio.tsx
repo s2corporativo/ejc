@@ -43,7 +43,7 @@ export default function RadarRegulatorio() {
         <div className="flex flex-col gap-4 sm:flex-row sm:items-end sm:justify-between">
           <PageHeader
             eyebrow="Inteligencia"
-            title="Radar regulatorio"
+            title="Radar regulatório"
             subtitle="Resumo dos alertas do Diario Oficial (DOU/DOE-MG) coletados pelo monitoramento, agregados por fonte e palavra-chave."
           />
           <select

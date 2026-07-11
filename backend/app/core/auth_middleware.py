@@ -126,8 +126,13 @@ class AuthMiddleware(BaseHTTPMiddleware):
         # Isolamento LGPD: dados internos do escritório ficam inacessíveis
         # mesmo com token válido. Guarda central — vale p/ TODAS as rotas.
         if request.state.role == "cliente_externo":
+            # /api/users/me incluído: o bootstrap do frontend exige o perfil
+            # próprio para QUALQUER usuário — sem ele o portal fica inacessível
+            # pela UI (achado A2 do E2E). Prefixo sem "/" final = rota exata
+            # ou subrota real (/users/me/security); NÃO libera /users/{id}.
             permitidos = ("/api/portal/", "/api/auth/", "/api/health",
-                          "/api/notifications", "/api/signatures")
+                          "/api/notifications", "/api/signatures",
+                          "/api/users/me")
             if not any(_path_casa_prefixo_publico(path, p) for p in permitidos):
                 return JSONResponse(
                     status_code=403,
