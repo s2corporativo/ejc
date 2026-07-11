@@ -28,6 +28,9 @@ const PortalAssinaturas = lazy(
   () => import("./pages/portal/PortalAssinaturas"),
 );
 const PortalMensagens = lazy(() => import("./pages/portal/PortalMensagens"));
+const PortalDocumentos = lazy(
+  () => import("./pages/portal/PortalDocumentos"),
+);
 const NotFound = lazy(() => import("./pages/NotFound"));
 
 function RouteFallback() {
@@ -78,6 +81,7 @@ export default function App() {
               <Route path="financeiro" element={<PortalFinanceiro />} />
               <Route path="assinaturas" element={<PortalAssinaturas />} />
               <Route path="mensagens" element={<PortalMensagens />} />
+              <Route path="documentos" element={<PortalDocumentos />} />
             </Route>
 
             <Route
