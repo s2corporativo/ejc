@@ -254,7 +254,8 @@ export default function DashboardModern() {
         actions={<ThemeSelector className="w-full sm:min-w-[330px]" />}
       />
 
-      <section className="overflow-hidden rounded-2xl border border-primary-800/20 bg-gradient-to-br from-primary-950 via-primary-900 to-primary-700 p-5 text-white shadow-lg dark:border-primary-300/20 dark:from-[#17100c] dark:via-[#261a13] dark:to-[#4a3427] md:p-6">
+      {/* Faixa hero sépia→bronze com filete dourado no topo (sem borda) */}
+      <section className="relative overflow-hidden rounded-2xl bg-gradient-to-br from-[#211913] via-[#2E241A] to-[#5E4A0E] p-5 text-white shadow-lg before:absolute before:inset-x-0 before:top-0 before:h-0.5 before:bg-gradient-to-r before:from-ouro-claro before:via-ouro-claro/40 before:to-transparent dark:from-[#17110c] dark:via-[#241c14] dark:to-[#4a3a10] md:p-6">
         <div className="flex flex-col gap-5 xl:flex-row xl:items-center xl:justify-between">
           <div className="max-w-2xl">
             <div className="mb-2 flex flex-wrap items-center gap-2">
@@ -281,8 +282,8 @@ export default function DashboardModern() {
                   icon={<Icon className="h-4 w-4" />}
                   className={
                     primary
-                      ? "border-white/20 bg-white text-primary-950 hover:bg-primary-50"
-                      : "text-white hover:bg-white/10"
+                      ? "bg-white text-ouro-profundo shadow-md hover:bg-ouro-palha dark:bg-white dark:text-ouro-profundo dark:hover:bg-ouro-palha"
+                      : "text-white hover:bg-white/10 dark:text-white dark:hover:bg-white/10"
                   }
                 >
                   {label}
@@ -466,7 +467,7 @@ export default function DashboardModern() {
               ].map(({ label, value }) => (
                 <div
                   key={label}
-                  className="rounded-xl border border-slate-200 bg-white p-3 dark:border-white/10 dark:bg-white/[0.03]"
+                  className="rounded-xl border border-black/[0.05] bg-white p-3 dark:border-white/10 dark:bg-white/[0.03]"
                 >
                   <div className="text-xs text-slate-400">{label}</div>
                   <div className="mt-1 text-lg font-semibold text-slate-900 dark:text-slate-100">
@@ -577,7 +578,7 @@ export default function DashboardModern() {
                     to="/atividades"
                     className="flex items-center gap-4 rounded-xl px-2 py-3 transition-colors hover:bg-slate-50 dark:hover:bg-white/[0.04]"
                   >
-                    <div className="flex h-12 w-12 shrink-0 flex-col items-center justify-center rounded-xl border border-slate-200 bg-white dark:border-white/10 dark:bg-white/[0.04]">
+                    <div className="flex h-12 w-12 shrink-0 flex-col items-center justify-center rounded-xl border border-black/[0.05] bg-white dark:border-white/10 dark:bg-white/[0.04]">
                       <span className="text-sm font-semibold text-slate-950 dark:text-slate-100">
                         {deadline.data_prazo ? new Date(deadline.data_prazo).getDate() : "--"}
                       </span>
@@ -670,7 +671,7 @@ export default function DashboardModern() {
                 <Link
                   key={item.id}
                   to={`/casos/${item.id}`}
-                  className="flex items-center gap-3 rounded-xl border border-slate-200 bg-white p-3 transition-colors hover:border-primary-200 hover:bg-primary-50/40 dark:border-white/10 dark:bg-white/[0.03] dark:hover:bg-white/[0.06]"
+                  className="flex items-center gap-3 rounded-xl border border-black/[0.05] bg-white p-3 transition-colors hover:border-primary-200 hover:bg-primary-50/40 dark:border-white/10 dark:bg-white/[0.03] dark:hover:bg-white/[0.06]"
                 >
                   <div className={cn("flex h-10 w-10 shrink-0 items-center justify-center rounded-xl text-xs font-semibold text-white", AREA_TONES[String(item.area || "").toLowerCase()] || "bg-slate-700")}>
                     {initials(item.titulo || item.numero_interno)}
@@ -708,7 +709,7 @@ export default function DashboardModern() {
                 <Link
                   key={movement.id ?? index}
                   to={movement.case_id ? `/casos/${movement.case_id}` : "/atividades"}
-                  className="flex items-start gap-3 rounded-xl border border-slate-100 bg-white p-3 transition-colors hover:bg-slate-50 dark:border-white/[0.07] dark:bg-white/[0.03] dark:hover:bg-white/[0.06]"
+                  className="flex items-start gap-3 rounded-xl border border-black/[0.04] bg-white p-3 transition-colors hover:bg-slate-50 dark:border-white/[0.07] dark:bg-white/[0.03] dark:hover:bg-white/[0.06]"
                 >
                   <div className="mt-0.5 rounded-lg bg-primary-50 p-2 text-primary-700 dark:bg-primary-400/10 dark:text-primary-300">
                     <Gavel className="h-4 w-4" />
@@ -748,7 +749,7 @@ export default function DashboardModern() {
               { to: "/noticias", label: "Notícias Jurídicas", icon: Newspaper },
               { to: "/inteligencia?tab=jurimetria", label: "Jurimetria", icon: Sparkles },
             ].map(({ to, label, icon: Icon }) => (
-              <Link key={to} to={to} className="group flex items-center gap-3 rounded-xl border border-slate-200 bg-white p-4 text-sm font-semibold text-slate-700 transition-all hover:border-primary-200 hover:bg-primary-50 dark:border-white/10 dark:bg-white/[0.03] dark:text-slate-200 dark:hover:bg-white/[0.06]">
+              <Link key={to} to={to} className="group flex items-center gap-3 rounded-xl border border-black/[0.05] bg-white p-4 text-sm font-semibold text-slate-700 transition-all hover:border-primary-200 hover:bg-primary-50 dark:border-white/10 dark:bg-white/[0.03] dark:text-slate-200 dark:hover:bg-white/[0.06]">
                 <div className="rounded-lg bg-primary-50 p-2 text-primary-700 dark:bg-primary-400/10 dark:text-primary-300">
                   <Icon className="h-5 w-5" />
                 </div>
@@ -770,7 +771,7 @@ export default function DashboardModern() {
                   { to: "/mapa-modulos", label: "Mapa de Módulos", icon: GitBranch },
                   { to: "/lixeira", label: "Lixeira", icon: FolderOpen },
                 ].map(({ to, label, icon: Icon }) => (
-                  <Link key={to} to={to} className="group flex items-center gap-3 rounded-xl border border-slate-200 bg-white p-3 text-sm font-medium text-slate-600 transition-all hover:border-primary-200 hover:bg-primary-50 dark:border-white/10 dark:bg-white/[0.03] dark:text-slate-300 dark:hover:bg-white/[0.06]">
+                  <Link key={to} to={to} className="group flex items-center gap-3 rounded-xl border border-black/[0.05] bg-white p-3 text-sm font-medium text-slate-600 transition-all hover:border-primary-200 hover:bg-primary-50 dark:border-white/10 dark:bg-white/[0.03] dark:text-slate-300 dark:hover:bg-white/[0.06]">
                     <Icon className="h-4 w-4 text-slate-400" />
                     <span className="min-w-0 flex-1">{label}</span>
                     <ArrowRight className="h-3.5 w-3.5 text-slate-400" />
