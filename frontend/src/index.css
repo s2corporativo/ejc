@@ -5,23 +5,25 @@
 @layer base {
   :root {
     color-scheme: light;
-    /* Canvas off-white + cartões brancos (DS "De Paula Teixeira" — luxo
-       jurídico: marrom #2D1B14 / bronze #A67C52 / dourado #D4AF37) */
-    --ejc-bg: #f8f9fa;
+    /* SaaS tech premium "De Paula Teixeira": base branca/off-white QUENTE
+       (#FFFFFF / #FAF9F6), dourado como acento cirúrgico (ouro #C9A227 /
+       ouro profundo #8F7117 / bronze #6F5711 / sépia #4A3A26 — logo-hd) */
+    --ejc-bg: #faf9f6;
     --ejc-card: #ffffff;
     --ejc-elev: #ffffff;
     --ejc-ink: #0f172a;
     --ejc-muted: #8a94a6;
-    --ejc-border: #e8e5df;
+    --ejc-border: #ece8e0;
     --ejc-legal: #1e293b;
-    --ejc-action: #2d1b14;
+    --ejc-action: #8f7117;
     --ejc-ai: #f79256;
-    --ejc-bronze: #7a5a3a;
-    --ejc-gold: #d4af37;
-    --ejc-gold-soft: #f5edd9;
+    --ejc-bronze: #6f5711;
+    --ejc-gold: #c9a227;
+    --ejc-gold-soft: #f7f1dc;
     --ejc-shadow-soft: 0 4px 18px rgba(24, 16, 8, 0.05);
-    --ejc-sidebar-top: #2d1b14;
-    --ejc-sidebar-bottom: #4a3427;
+    /* Sidebar off-black quente sofisticado (sépia profundo da logomarca) */
+    --ejc-sidebar-top: #211913;
+    --ejc-sidebar-bottom: #2e241a;
     /* Paleta de gráficos (mockup): marrom / bronze / dourado / creme */
     --ejc-chart-1: #2d1b14;
     --ejc-chart-2: #a67c52;
@@ -45,8 +47,8 @@
     --ejc-legal: #d6cec2;
     --ejc-gold-soft: rgba(212, 175, 55, 0.12);
     --ejc-shadow-soft: 0 8px 30px rgba(0, 0, 0, 0.45);
-    --ejc-sidebar-top: #241511;
-    --ejc-sidebar-bottom: #3a2a1f;
+    --ejc-sidebar-top: #191410;
+    --ejc-sidebar-bottom: #241c14;
     /* No escuro o marrom profundo some sobre o card — troca com o creme */
     --ejc-chart-1: #e8dfd3;
     --ejc-chart-4: #6b4f38;
@@ -88,7 +90,7 @@
   /* Focus ring dourado consistente para navegação por teclado */
   :focus-visible {
     outline: none;
-    box-shadow: 0 0 0 2px rgba(212, 175, 55, 0.65);
+    box-shadow: 0 0 0 2px rgba(201, 162, 39, 0.7);
     border-radius: 6px;
   }
 
@@ -124,9 +126,10 @@
 }
 
 @layer components {
-  /* ── Card — cartão branco flutuante (raio grande + sombra difusa) ── */
+  /* ── Card — branco flutuante, SEM borda dura: hairline quase invisível
+        + sombra difusa (profundidade só por elevação) ── */
   .card {
-    @apply rounded-2xl border border-slate-200/60 bg-white;
+    @apply rounded-2xl border border-black/[0.05] bg-white;
     box-shadow: var(--ejc-shadow-soft);
     transition:
       border-color 0.15s ease-out,
@@ -134,50 +137,61 @@
       transform 0.15s ease-out;
   }
   .card:hover {
-    border-color: #e5e9f0;
     box-shadow:
       0 2px 4px rgba(16, 24, 40, 0.04),
       0 12px 36px rgba(16, 24, 40, 0.1);
   }
 
   .section-card {
-    @apply rounded-2xl border border-slate-200/60 bg-white;
+    @apply rounded-2xl border border-black/[0.05] bg-white;
     box-shadow: var(--ejc-shadow-soft);
   }
 
   /* ── Buttons ──────────────────────────────────────────────── */
+  /* ── Botões SEM BORDA (regra global do DS): primary preenchido em
+        gradiente ouro→ouro profundo, secundário TONAL (fundo levíssimo,
+        sem outline), ghost para ações terciárias. Profundidade apenas
+        por sombra suave; foco acessível com ring dourado. ── */
   .btn {
-    @apply inline-flex items-center justify-center gap-2 rounded-xl px-4 py-2 text-sm font-medium
+    @apply inline-flex items-center justify-center gap-2 rounded-xl border-0 px-4 py-2 text-sm font-medium
            transition-all duration-150 ease-out active:scale-[.98]
-           focus:outline-none focus-visible:ring-2 focus-visible:ring-primary-500/40
+           focus:outline-none focus-visible:ring-2 focus-visible:ring-ouro/40
            disabled:opacity-50 disabled:cursor-not-allowed select-none;
   }
-  /* Botão sólido primário — Ouro institucional #8F7117 (texto branco 4,6:1 AA),
-     hover/active Ouro Profundo #6F5711 (paleta visual_law_theme.py) */
-  .btn-primary {
-    @apply btn text-white shadow-sm bg-ouro hover:bg-ouro-profundo active:bg-ouro-profundo;
-  }
+  /* Primário — gradiente sutil ouro #8F7117 → ouro profundo #6F5711
+     (texto branco 4,6:1+, AA); hover aprofunda cor e sombra. */
+  .btn-primary,
   .btn-gold {
-    @apply btn bg-ouro hover:bg-ouro-profundo active:bg-ouro-profundo text-white;
+    @apply btn text-white shadow-gold hover:shadow-gold-hover;
+    background-image: linear-gradient(180deg, #8f7117 0%, #6f5711 100%);
+  }
+  .btn-primary:hover,
+  .btn-gold:hover,
+  .btn-primary:active,
+  .btn-gold:active {
+    background-image: linear-gradient(180deg, #7d6414 0%, #5e4a0e 100%);
   }
   .btn-ghost {
-    @apply btn bg-transparent hover:bg-slate-100 active:bg-slate-200 text-slate-700;
+    @apply btn bg-transparent hover:bg-slate-900/[0.05] active:bg-slate-900/[0.09] text-slate-700;
   }
-  .btn-secondary {
-    @apply btn border border-slate-200 bg-white hover:bg-slate-50 active:bg-slate-100 text-slate-700;
-  }
+  .btn-secondary,
   .btn-outline {
-    @apply btn border border-slate-200 bg-white hover:bg-slate-50 active:bg-slate-100 text-slate-700;
+    @apply btn bg-slate-900/[0.05] hover:bg-slate-900/[0.09] active:bg-slate-900/[0.12] text-slate-700;
   }
   .btn-danger {
-    @apply btn bg-red-600 hover:bg-red-700 active:bg-red-800 text-white focus-visible:ring-red-500/40;
+    @apply btn bg-red-600 hover:bg-red-700 active:bg-red-800 text-white hover:shadow-md focus-visible:ring-red-500/40;
+  }
+
+  /* Botão de ícone do header — tonal, sem borda */
+  .icon-btn {
+    @apply flex h-10 w-10 items-center justify-center rounded-xl border-0 bg-slate-900/[0.04] text-slate-500 transition-colors hover:bg-slate-900/[0.08] hover:text-slate-700;
   }
 
   /* ── Form inputs ──────────────────────────────────────────── */
   .input {
-    @apply w-full rounded-xl border border-slate-300 bg-white px-3 py-2 text-sm text-slate-900
+    @apply w-full rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm text-slate-900
            placeholder:text-slate-400 transition-all duration-150
-           focus:border-primary-400 focus:outline-none focus:ring-2 focus:ring-primary-500/25;
+           focus:border-ouro-claro focus:outline-none focus:ring-2 focus:ring-ouro-claro/30;
   }
   .label {
     @apply block text-xs font-medium text-gray-600 mb-1;
@@ -292,10 +306,10 @@
     color: #e5ce7f;
   }
 
-  /* Tile branco da logomarca (header) — a logo JPG precisa de fundo
-     branco nos DOIS temas; protegido dos fallbacks do modo escuro. */
+  /* Tile da logomarca (header) — logo-hd.png tem fundo TRANSPARENTE:
+     nenhum fundo branco é necessário em tema algum. */
   .brand-logo-tile {
-    background: #ffffff;
+    background: transparent;
   }
 
   /* ── Item de menu de dropdown (avatar/segurança) ──────────── */
@@ -304,20 +318,18 @@
   }
 
   /* ── Marca d'água da logomarca (decorativa, atrás do conteúdo) ──
-     mix-blend multiply faz o fundo branco do JPG sumir no canvas claro,
-     sobrando só o traço da balança/louros como fantasma. */
+     logo-hd.png tem fundo transparente: basta opacidade baixa. */
   .brand-watermark {
     position: fixed;
     inset: 0;
     z-index: 0;
     pointer-events: none;
     user-select: none;
-    background-image: url("/brand/de-paula-teixeira-logo.jpg");
+    background-image: url("/brand/logo-hd.png");
     background-repeat: no-repeat;
     background-position: center;
-    background-size: min(60vw, 820px);
-    opacity: 0.04;
-    mix-blend-mode: multiply;
+    background-size: min(56vw, 760px);
+    opacity: 0.035;
   }
 
   /* ── Page header ──────────────────────────────────────────── */
@@ -541,13 +553,13 @@
 }
 
 .ejc-modern-scope .btn-primary {
-  /* Ouro institucional (visual_law_theme): OURO base, OURO_PROFUNDO no hover */
-  background: #8f7117;
+  /* Ouro institucional em gradiente sutil (ouro → ouro profundo) */
+  background-image: linear-gradient(180deg, #8f7117 0%, #6f5711 100%);
   box-shadow: 0 10px 24px rgba(111, 87, 17, 0.24);
 }
 
 .ejc-modern-scope .btn-primary:hover {
-  background: #6f5711;
+  background-image: linear-gradient(180deg, #7d6414 0%, #5e4a0e 100%);
 }
 
 .ejc-modern-scope .badge,
@@ -831,10 +843,6 @@
     );
   }
 
-  .btn-primary {
-    box-shadow: 0 4px 12px rgba(143, 113, 23, 0.26);
-  }
-
   .card:hover,
   .section-card:hover,
   .legal-surface:hover {
@@ -917,13 +925,12 @@
 /* ── 2c. Botões / inputs / labels ──────────────────────────── */
 .dark .btn-secondary,
 .dark .btn-outline {
-  background: var(--ejc-elev);
-  border-color: rgba(255, 245, 230, 0.12);
+  background: rgba(255, 245, 230, 0.07);
   color: #d6cec2;
 }
 .dark .btn-secondary:hover,
 .dark .btn-outline:hover {
-  background: #2c241b;
+  background: rgba(255, 245, 230, 0.12);
 }
 .dark .btn-ghost {
   color: #d6cec2;
@@ -931,14 +938,23 @@
 .dark .btn-ghost:hover {
   background: rgba(255, 245, 230, 0.06);
 }
+.dark .icon-btn {
+  background: rgba(255, 245, 230, 0.06);
+  color: #b5ab9c;
+}
+.dark .icon-btn:hover {
+  background: rgba(255, 245, 230, 0.1);
+  color: #e8e0d3;
+}
 .dark .btn-primary,
 .dark .btn-gold {
-  /* marrom profundo some no canvas escuro — sobe para o bronze */
-  background: #7a5a3a;
+  /* mesmo gradiente ouro→profundo: identidade única nos dois temas
+     (texto branco sobre #8F7117 = 4,6:1 AA) */
+  background-image: linear-gradient(180deg, #8f7117 0%, #6f5711 100%);
 }
 .dark .btn-primary:hover,
 .dark .btn-gold:hover {
-  background: #8a6844;
+  background-image: linear-gradient(180deg, #9c7c1a 0%, #7d6414 100%);
 }
 .dark .input,
 .dark .ejc-modern-scope .input,
@@ -1066,12 +1082,10 @@
   );
 }
 
-/* Marca d'água: multiply não funciona sobre fundo escuro — inverte a
-   logo (fundo branco do JPG vira preto e some no blend screen) */
+/* Marca d'água no escuro: o traço dourado da PNG transparente funciona
+   direto sobre o canvas quase-preto — só ajusta a opacidade. */
 .dark .brand-watermark {
-  mix-blend-mode: screen;
   opacity: 0.05;
-  filter: invert(1) grayscale(1);
 }
 
 /* ── 2g. ejc-modern-scope (telas legadas) ──────────────────── */
@@ -1319,13 +1333,8 @@
   color: #fcb985;
 }
 
-/* A logomarca JPG SEMPRE fica sobre branco (protege dos fallbacks) */
+/* Logomarca PNG transparente: nenhum fundo forçado em tema algum. */
 .dark .brand-logo-tile,
 .dark img.brand-logo-img {
-  background-color: #ffffff;
-}
-.dark .brand-logo-tile {
-  box-shadow:
-    0 0 0 1px rgba(212, 175, 55, 0.35),
-    0 6px 22px rgba(0, 0, 0, 0.45);
+  background-color: transparent;
 }

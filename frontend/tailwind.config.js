@@ -113,10 +113,12 @@ export default {
           DEFAULT: "#111827",
           light: "#374151",
         },
-        canvas: "#F8F9FA",
-        parchment: "#F1F5F9",
+        // Canvas branco/off-white QUENTE (pedido do dono: base branca,
+        // nada de cinza pesado) + hairline quente quase invisível.
+        canvas: "#FAF9F6",
+        parchment: "#F5F3EE",
         muted: "#8A94A6",
-        border: "#E5E9F0",
+        border: "#ECE8E0",
         // Status — success=mint (#0CA678), danger/error=soft-red (#E03131),
         // warn/warning=amarelo quente (#FFD166), info=sky (inalterado)
         success: {
@@ -205,7 +207,15 @@ export default {
         },
       },
       fontFamily: {
-        sans: ['"Inter"', "system-ui", "-apple-system", "sans-serif"],
+        sans: [
+          '"Inter"',
+          "ui-sans-serif",
+          "system-ui",
+          "-apple-system",
+          '"Segoe UI"',
+          "Roboto",
+          "sans-serif",
+        ],
         serif: ["Georgia", "Cambria", '"Times New Roman"', "serif"],
         // Mono de sistema — dados processuais (nº CNJ, CPF/CNPJ, valores).
         // Sem fonte externa: usa o que já existe no SO.
@@ -259,6 +269,9 @@ export default {
           "0 2px 4px rgba(24,16,8,0.04), 0 8px 26px rgba(24,16,8,0.08)",
         float: "0 4px 12px rgba(24,16,8,0.07), 0 18px 40px rgba(24,16,8,0.12)",
         logo: "0 2px 8px rgba(24,16,8,0.10)",
+        // Sombra do botão primário ouro (profundidade sem borda)
+        gold: "0 6px 16px rgba(111,87,17,0.22)",
+        "gold-hover": "0 8px 22px rgba(111,87,17,0.3)",
         sm: "0 1px 2px rgba(24,16,8,0.05)",
         md: "0 2px 4px rgba(24,16,8,0.04), 0 6px 22px rgba(24,16,8,0.06)",
       },

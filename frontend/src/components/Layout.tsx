@@ -43,7 +43,8 @@ import {
 } from "../config/moduleRegistry";
 import api, { logout } from "../lib/api";
 
-const BRAND_LOGO = "/brand/de-paula-teixeira-logo.jpg";
+// Logomarca HD com fundo transparente (nunca a versão JPG com fundo)
+const BRAND_LOGO = "/brand/logo-hd.png";
 
 export default function Layout() {
   const { theme, cycleTheme } = useThemeStore();
@@ -136,13 +137,13 @@ export default function Layout() {
 
           <Link
             to="/"
-            className="brand-logo-tile flex shrink-0 items-center rounded-xl px-1.5 py-1"
+            className="flex shrink-0 items-center px-1"
             aria-label="De Paula Teixeira - EJC"
           >
             <img
               src={BRAND_LOGO}
               alt="De Paula Teixeira Sociedade de Advogados"
-              className="brand-logo-img h-11 w-auto max-w-[200px] rounded-lg md:h-[3.25rem] md:max-w-[260px]"
+              className="brand-logo-img h-12 w-auto max-w-[240px] md:h-14 md:max-w-[300px]"
             />
           </Link>
 
@@ -150,14 +151,14 @@ export default function Layout() {
             <button
               type="button"
               onClick={() => window.dispatchEvent(new Event("ejc-open-search"))}
-              className="flex h-10 w-full max-w-xl items-center gap-3 rounded-full border border-slate-200 bg-slate-50 px-4 text-left text-sm text-slate-500 transition-all duration-150 hover:border-primary-300/60 hover:bg-primary-50/50"
+              className="flex h-10 w-full max-w-xl items-center gap-3 rounded-full bg-slate-900/[0.04] px-4 text-left text-sm text-slate-500 transition-all duration-150 hover:bg-ouro-palha/70 dark:bg-white/[0.06] dark:text-slate-400 dark:hover:bg-white/[0.09]"
             >
               <Search className="h-4 w-4 shrink-0" />
               <span className="hidden truncate sm:inline">
                 Buscar processos por parte, CPF ou número…
               </span>
               <span className="truncate sm:hidden">Buscar…</span>
-              <kbd className="ml-auto hidden rounded-md border border-slate-200 bg-white px-1.5 py-0.5 text-[10px] font-medium text-slate-400 sm:block">
+              <kbd className="ml-auto hidden rounded-md bg-white px-1.5 py-0.5 text-[10px] font-medium text-slate-400 shadow-sm sm:block">
                 Ctrl K
               </kbd>
             </button>
@@ -177,7 +178,7 @@ export default function Layout() {
             type="button"
             onClick={cycleTheme}
             title={`Tema: ${THEME_LABELS[theme]} — clique para alternar`}
-            className="hidden h-10 w-10 items-center justify-center rounded-xl border border-slate-200 bg-white text-slate-500 hover:bg-slate-50 sm:flex"
+            className="icon-btn hidden sm:flex"
             aria-label={`Alternar tema (atual: ${THEME_LABELS[theme]})`}
           >
             {theme === "light" ? (
@@ -193,12 +194,12 @@ export default function Layout() {
             <button
               type="button"
               onClick={() => setNotifOpen((value) => !value)}
-              className="relative flex h-10 w-10 items-center justify-center rounded-xl border border-slate-200 bg-white text-slate-500 hover:bg-slate-50"
+              className="icon-btn relative"
               aria-label="Notificações"
             >
               <Bell className="h-4 w-4" />
               {notifCount > 0 && (
-                <span className="absolute -right-1 -top-1 flex h-5 min-w-5 items-center justify-center rounded-full bg-primary-600 px-1 text-[10px] font-semibold text-white ring-2 ring-white">
+                <span className="absolute -right-1 -top-1 flex h-5 min-w-5 items-center justify-center rounded-full bg-ouro px-1 text-[10px] font-semibold text-white ring-2 ring-white">
                   {notifCount}
                 </span>
               )}
