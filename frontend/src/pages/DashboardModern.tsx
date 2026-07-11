@@ -139,7 +139,11 @@ export default function DashboardModern() {
       api.get("/deadlines/?status=pendente&page_size=100"),
       api.get("/movimentos/recentes?limit=8"),
       api.get("/cases/?page_size=200"),
-      api.get("/ia-saude/dashboard?dias=30"),
+      // /ia-saude é restrito a gestão (403 fora de superadmin/admin/socio):
+      // sem o gate, o card ficaria eternamente em "sem dados" para os demais.
+      isManager
+        ? api.get("/ia-saude/dashboard?dias=30")
+        : Promise.reject(new Error("sem permissão de gestão")),
       canSeeFinance
         ? api.get(`/financeiro/consolidado?competencia=${competencia}`)
         : Promise.reject(new Error("sem permissão financeira")),
@@ -154,7 +158,7 @@ export default function DashboardModern() {
         if (fin.status === "fulfilled") setConsolidado(fin.value.data);
       })
       .finally(() => setLoading(false));
-  }, [canSeeFinance]);
+  }, [canSeeFinance, isManager]);
 
   const criticalDeadlines = prazos.filter(
     (deadline) => (deadline.dias_restantes ?? 99) <= 3,
@@ -433,6 +437,7 @@ export default function DashboardModern() {
           )}
         </SectionCard>
 
+        {isManager && (
         <SectionCard
           title="Saúde da IA"
           subtitle="Uso e aproveitamento nos últimos 30 dias."
@@ -478,6 +483,7 @@ export default function DashboardModern() {
             />
           )}
         </SectionCard>
+        )}
 
         {canSeeFinance && (
           <SectionCard

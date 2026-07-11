@@ -52,12 +52,19 @@ interface CaseContextState {
   sair: () => void;
 }
 
+// Token do último ativar() solicitado: em navegação rápida entre casos o GET
+// antigo pode resolver por último — respostas obsoletas são descartadas para
+// o caso ativo nunca divergir da rota atual.
+let ultimoAtivarId: string | null = null;
+
 export const useCaseContext = create<CaseContextState>((set, get) => ({
   caso: readStored(),
   ativar: async (id) => {
     if (!id || get().caso?.id === id) return;
+    ultimoAtivarId = id;
     try {
       const { data } = await api.get(`/cases/${id}`);
+      if (ultimoAtivarId !== id) return; // navegou para outro caso no meio
       const caso: CasoAtivo = {
         id,
         titulo: data?.titulo || "Caso",

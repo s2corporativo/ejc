@@ -952,7 +952,7 @@ def start_scheduler():
     )
 
     s.start()
-    logger.info("[Scheduler] Iniciado — 24 jobs (+ briefing por advogado, régua de cobrança e alertas societários)")
+    logger.info("[Scheduler] Iniciado — %d jobs agendados", len(s.get_jobs()))
 
 
 async def _backup_banco():

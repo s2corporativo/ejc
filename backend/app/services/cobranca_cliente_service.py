@@ -183,6 +183,12 @@ async def executar_regua_cliente(db: AsyncSession, hoje: date | None = None) -> 
           AND f.deleted_at IS NULL
           AND f.valor IS NOT NULL
           AND f.data_vencimento IS NOT NULL
+          -- Parcela cuja régua já terminou (escalada ao advogado) sai da fila:
+          -- sem isto, inadimplência antiga ocuparia os 500 slots para sempre.
+          AND NOT EXISTS (
+            SELECT 1 FROM fee_cobranca_envios e
+            WHERE e.fee_id = f.id AND e.degrau = 'escalado_advogado'
+          )
         ORDER BY f.data_vencimento
         LIMIT 500
     """))).all()
@@ -200,11 +206,16 @@ async def executar_regua_cliente(db: AsyncSession, hoje: date | None = None) -> 
 
             # 1) REGISTRA o degrau (idempotência) ANTES do envio externo —
             # commit por parcela: restart/reexecução nunca duplica cobrança.
-            await db.execute(sqltext(
+            # RETURNING id distingue "registrei agora" de "já existia": se
+            # outra instância do job registrou primeiro, ela é dona do envio.
+            registrado = (await db.execute(sqltext(
                 "INSERT INTO fee_cobranca_envios (id, fee_id, degrau) "
-                "VALUES (:id, :fid, :deg) ON CONFLICT (fee_id, degrau) DO NOTHING"
-            ), {"id": str(uuid4()), "fid": r.id, "deg": degrau})
+                "VALUES (:id, :fid, :deg) ON CONFLICT (fee_id, degrau) "
+                "DO NOTHING RETURNING id"
+            ), {"id": str(uuid4()), "fid": r.id, "deg": degrau})).scalar()
             await db.commit()
+            if registrado is None:
+                continue
 
             # 2) Envio
             if degrau == DEGRAU_ESCALADA:

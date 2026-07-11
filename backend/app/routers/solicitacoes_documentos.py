@@ -192,13 +192,20 @@ async def listar_solicitacoes(
         ).order_by(SolicitacaoDocumento.created_at.desc())
     )).scalars().all()
 
-    data = []
-    for s in sols:
-        itens = (await db.execute(
+    # Itens de todas as solicitações numa query só (evita N+1 no caso).
+    itens_por_sol: dict[str, list] = {}
+    if sols:
+        todos = (await db.execute(
             select(SolicitacaoDocumentoItem).where(
-                SolicitacaoDocumentoItem.solicitacao_id == s.id
+                SolicitacaoDocumentoItem.solicitacao_id.in_([s.id for s in sols])
             ).order_by(SolicitacaoDocumentoItem.created_at)
         )).scalars().all()
+        for i in todos:
+            itens_por_sol.setdefault(i.solicitacao_id, []).append(i)
+
+    data = []
+    for s in sols:
+        itens = itens_por_sol.get(s.id, [])
         data.append({
             "id": s.id,
             "mensagem": s.mensagem,

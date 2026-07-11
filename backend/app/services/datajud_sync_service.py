@@ -266,11 +266,11 @@ async def executar_sync_clientes(db: AsyncSession) -> dict:
             # (a) timeline: upsert idempotente (dedup [dj:hash] + prazos autom.)
             await upsert_movimentos_no_caso(db, case, movimentos)
 
-            # Marcador explícito do último andamento visto (migration 084) —
-            # atualizado a CADA sync, com ou sem novidade.
-            case.datajud_ultimo_andamento_em = datetime.now(timezone.utc)
-
+            # Marcador do último andamento NOVO visto (migration 084) — só
+            # avança quando há novidade, fiel ao nome da coluna (o "último
+            # sync" fica em last_synced_at, atualizado pelo upsert acima).
             if novos:
+                case.datajud_ultimo_andamento_em = datetime.now(timezone.utc)
                 resumo["com_novos"] += 1
                 resumo["movimentos_novos"] += len(novos)
                 await _notificar_andamentos(db, case, novos)

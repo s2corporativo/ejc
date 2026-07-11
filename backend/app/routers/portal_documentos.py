@@ -77,14 +77,24 @@ async def listar_solicitacoes_portal(
         .order_by(SolicitacaoDocumento.created_at.desc())
     )).all()
 
-    data = []
-    for s, caso_titulo, numero_interno in sols:
-        itens = (await db.execute(
+    # Itens de TODAS as solicitações numa única query (evita N+1 por visita
+    # ao portal), agrupados em memória por solicitacao_id.
+    itens_por_sol: dict[str, list] = {}
+    if sols:
+        todos_itens = (await db.execute(
             select(SolicitacaoDocumentoItem, Document.filename)
             .outerjoin(Document, Document.id == SolicitacaoDocumentoItem.documento_id)
-            .where(SolicitacaoDocumentoItem.solicitacao_id == s.id)
+            .where(SolicitacaoDocumentoItem.solicitacao_id.in_(
+                [s.id for s, _, _ in sols]
+            ))
             .order_by(SolicitacaoDocumentoItem.created_at)
         )).all()
+        for i, filename in todos_itens:
+            itens_por_sol.setdefault(i.solicitacao_id, []).append((i, filename))
+
+    data = []
+    for s, caso_titulo, numero_interno in sols:
+        itens = itens_por_sol.get(s.id, [])
         data.append({
             "id": s.id,
             "case_id": s.case_id,
@@ -182,6 +192,9 @@ async def upload_item_solicitacao(
     async with aiofiles.open(f"{settings.UPLOAD_DIR}/{filepath}", "wb") as f:
         await f.write(conteudo)
 
+    # Decisão: o upload do portal NÃO roda OCR/análise IA automática — o
+    # documento entra como recebido e a indexação acontece quando o advogado
+    # triá-lo no GED (evita custo de IA disparado por usuário externo).
     nome_arquivo = (file.filename or f"documento{ext}")[:255]
     d = Document(
         id=doc_id,
