@@ -328,6 +328,21 @@ class Settings(BaseSettings):
     # Timeout (segundos) do pg_dump — bancos maiores podem precisar de mais.
     BACKUP_PG_DUMP_TIMEOUT: int = 600
 
+    # ── Automações voltadas ao CLIENTE (jobs opt-in — default False) ──────
+    # Sync diário DataJud + notificação de andamentos novos ao cliente
+    # (services/datajud_sync_service.py). Exige DATAJUD_ENABLED + API key.
+    DATAJUD_SYNC_ENABLED: bool = False
+    # Horário DIÁRIO do sync, em UTC ("HH:MM") — mesmo padrão de BACKUP_HORA_UTC.
+    # 09:30 UTC = 06:30 BRT (antes do expediente; DataJud atualiza de madrugada).
+    DATAJUD_SYNC_HORA_UTC: str = "09:30"
+    # Relatório semanal do dono (segunda-feira, e-mail aos sócios/admins) —
+    # services/relatorio_dono_service.py.
+    RELATORIO_DONO_ENABLED: bool = False
+    # Régua de cobrança de honorários voltada ao CLIENTE (d-3/d+1/d+7/d+15 +
+    # escalada interna) — services/cobranca_cliente_service.py. NÃO confundir
+    # com a régua interna do advogado (scheduler._regua_cobranca).
+    COBRANCA_ENABLED: bool = False
+
     # ── Scheduler ────────────────────────────────────────────────────────
     ENABLE_SCHEDULER: bool = True   # desligar em workers extras (uvicorn --workers)
 
