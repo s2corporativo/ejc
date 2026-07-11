@@ -339,7 +339,7 @@ export default function Assinaturas() {
                         atualizarSignatario(idx, "nome", e.target.value)
                       }
                       placeholder="Nome"
-                      className="rounded-lg border border-gray-300 px-2 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-primary-500"
+                      className="input px-2 py-1.5"
                     />
                     <input
                       type="email"
@@ -349,7 +349,7 @@ export default function Assinaturas() {
                         atualizarSignatario(idx, "email", e.target.value)
                       }
                       placeholder="E-mail"
-                      className="rounded-lg border border-gray-300 px-2 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-primary-500"
+                      className="input px-2 py-1.5"
                     />
                     <input
                       type="text"
@@ -358,7 +358,7 @@ export default function Assinaturas() {
                         atualizarSignatario(idx, "papel", e.target.value)
                       }
                       placeholder="Papel"
-                      className="rounded-lg border border-gray-300 px-2 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-primary-500"
+                      className="input px-2 py-1.5"
                     />
                   </div>
                   {form.signatarios.length > 1 && (

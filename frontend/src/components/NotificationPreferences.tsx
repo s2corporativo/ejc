@@ -13,7 +13,7 @@ import {
 } from "lucide-react";
 import api from "../lib/api";
 import { toast } from "./Toast";
-import { SectionCard, cn } from "./UI";
+import { Empty, SectionCard, cn } from "./UI";
 
 type ChannelAvailability = {
   push: boolean;
@@ -405,7 +405,7 @@ export default function NotificationPreferences() {
               onChange={(checked) => patch("resumo_diario", checked)}
             />
           </div>
-          <div className="rounded-xl border border-slate-200 bg-white p-4">
+          <div className="card p-4">
             <div className="flex items-center justify-between">
               <div className="inline-flex items-center gap-2 text-sm font-semibold text-slate-800">
                 <Clock3 className="h-4 w-4" /> Horário silencioso
@@ -464,7 +464,7 @@ export default function NotificationPreferences() {
           {(devices?.data || []).map((device) => (
             <div
               key={device.id}
-              className="flex items-center gap-3 rounded-xl border border-slate-200 bg-white p-4"
+              className="card flex items-center gap-3 p-4"
             >
               <Smartphone className="h-5 w-5 text-primary-600" />
               <div className="min-w-0 flex-1">
@@ -486,11 +486,7 @@ export default function NotificationPreferences() {
               </button>
             </div>
           ))}
-          {!devices?.total && (
-            <div className="rounded-xl border border-dashed border-slate-300 p-6 text-center text-sm text-slate-500">
-              Nenhum dispositivo inscrito.
-            </div>
-          )}
+          {!devices?.total && <Empty message="Nenhum dispositivo inscrito." />}
           <button
             type="button"
             className="btn-secondary"
@@ -507,7 +503,7 @@ export default function NotificationPreferences() {
         </div>
       </SectionCard>
 
-      <div className="flex items-center justify-between gap-3 rounded-xl border border-slate-200 bg-white p-4">
+      <div className="card flex items-center justify-between gap-3 p-4">
         <div className="text-xs text-slate-500">
           Última atualização: {formatDate(form.updated_at)}
         </div>

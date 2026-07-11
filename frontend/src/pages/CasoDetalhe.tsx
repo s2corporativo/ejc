@@ -203,9 +203,7 @@ function ExtratoCaso({ caso }: { caso: Case }) {
         {erro ? (
           <div className="py-8 text-center text-danger-600 text-sm">{erro}</div>
         ) : !data ? (
-          <div className="py-8 text-center text-slate-400 text-sm">
-            Carregando…
-          </div>
+          <Spinner />
         ) : (
           <div className="space-y-4">
             <div className="grid grid-cols-2 gap-3">
@@ -326,7 +324,7 @@ function AreasCaso({ caso }: { caso: Case }) {
             <select
               value={add}
               onChange={(e) => setAdd(e.target.value)}
-              className="text-xs border border-slate-200 rounded-lg px-2 py-1 bg-white"
+              className="input text-xs px-2 py-1"
             >
               <option value="">+ área relacionada</option>
               {disponiveis.map((t) => (
@@ -1255,9 +1253,7 @@ function TabTimeline({ caseId }: { caseId: string }) {
             </div>
           ))}
           {ts.length === 0 && !showTsForm && (
-            <p className="text-center py-4 text-gray-400 text-sm">
-              Nenhuma hora lançada
-            </p>
+  <Empty message="Nenhuma hora lançada" />
           )}
         </div>
       </div>
@@ -1346,9 +1342,7 @@ function TabChecklists({ caseId }: { caseId: string }) {
       </div>
 
       {cks.length === 0 && (
-        <p className="text-center py-8 text-gray-400 text-sm">
-          Nenhum checklist neste caso. Gere um por legislação acima.
-        </p>
+        <Empty message="Nenhum checklist neste caso. Gere um por legislação acima." />
       )}
 
       {cks.map((ck) => (
@@ -1506,7 +1500,7 @@ function TabProcessos({ caseId }: { caseId: string }) {
           </p>
         </div>
         <div className="flex flex-wrap justify-end gap-2">
-          <div className="flex rounded-lg border border-slate-200 overflow-hidden bg-white">
+          <div className="flex rounded-lg overflow-hidden bg-slate-900/[0.05] dark:bg-white/[0.07]">
             {[
               ["ativos", "Ativos"],
               ["arquivados", "Arquivados"],
@@ -1515,7 +1509,7 @@ function TabProcessos({ caseId }: { caseId: string }) {
               <button
                 key={k}
                 onClick={() => setArquivo(k as typeof arquivo)}
-                className={`px-3 py-1.5 text-xs font-medium ${arquivo === k ? "bg-navy text-white" : "text-slate-600 hover:bg-slate-50"}`}
+                className={`px-3 py-1.5 text-xs font-medium ${arquivo === k ? "bg-navy text-white" : "text-slate-600 hover:bg-slate-900/[0.09] dark:text-slate-300 dark:hover:bg-white/[0.12]"}`}
               >
                 {label}
               </button>
@@ -1704,9 +1698,7 @@ function TabProcessos({ caseId }: { caseId: string }) {
           </div>
         ))}
         {procs.length === 0 && !showForm && (
-          <p className="text-center py-8 text-gray-400 text-sm">
-            Nenhum processo cadastrado neste caso ainda.
-          </p>
+          <Empty message="Nenhum processo cadastrado neste caso ainda." />
         )}
       </div>
     </div>
@@ -1896,9 +1888,7 @@ function TabPartes({ caseId }: { caseId: string }) {
           </div>
         ))}
         {partes.length === 0 && !showForm && (
-          <p className="text-center py-8 text-gray-400 text-sm">
-            Nenhuma parte cadastrada
-          </p>
+          <Empty message="Nenhuma parte cadastrada" />
         )}
       </div>
     </div>
@@ -2301,9 +2291,7 @@ function TabJurisprudencia({ caseId, caso }: { caseId: string; caso: Case }) {
           </div>
         ))}
         {searched && results.length === 0 && !loading && (
-          <p className="text-center py-8 text-gray-400 text-sm">
-            Nenhum resultado encontrado para esta busca
-          </p>
+          <Empty message="Nenhum resultado encontrado para esta busca" />
         )}
         {!searched && (
           <p className="text-center py-8 text-gray-400 text-sm">
