@@ -42,6 +42,7 @@ from app.routers import atendimentos
 from app.routers import atividades
 from app.routers import audit
 from app.routers import auth
+from app.routers import backup_admin
 from app.routers import bank_analysis
 from app.routers import calculadoras
 from app.routers import calendar_feed
@@ -270,6 +271,7 @@ app.include_router(atendimentos.router, prefix=API)
 app.include_router(atividades.router, prefix=API)
 app.include_router(audit.router, prefix=API)
 app.include_router(auth.router, prefix=API)
+app.include_router(backup_admin.router, prefix=API)
 app.include_router(bank_analysis.router, prefix=API)
 app.include_router(calculadoras.router, prefix=API)
 app.include_router(calendar_feed.router, prefix=API)

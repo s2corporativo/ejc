@@ -297,10 +297,33 @@ class Settings(BaseSettings):
     # no período exceder este valor (R$), o painel sinaliza. 0 = sem alerta.
     AI_BUDGET_ALERTA_BRL: float = 0.0
 
-    # ── Backup offsite (pg_dump via rclone no HOST) ───────────────────────
+    # ── Backup ────────────────────────────────────────────────────────────
+    # (a) Legado: pg_dump local + rclone (scheduler._backup_banco, 02h00).
     BACKUP_REMOTE: str = ""         # ex: "b2:ejc-backups" (rclone remote)
     BACKUP_DIR: str = "/app/backups"  # diretório local de dumps dentro do container postgres
     BACKUP_RETENTION_DAYS: int = 7  # dumps locais mais antigos que isto são apagados na rotação
+    # (b) Backup diário cifrado → Google Drive (services/backup_service.py).
+    # Reusa as credenciais Google da curadoria de conhecimento (GOOGLE_DRIVE_*)
+    # — nenhum fluxo novo de auth. Opt-in: default False mantém tudo desligado.
+    BACKUP_ENABLED: bool = False
+    # Chave Fernet EXCLUSIVA do backup (não reusar PII_ENCRYPTION_KEY — a
+    # rotação de uma não pode invalidar a outra). Default vazio de propósito:
+    # com BACKUP_ENABLED=true em produção a chave é OBRIGATÓRIA (validada
+    # abaixo). AVISO: perder esta chave = perder TODOS os backups cifrados.
+    BACKUP_ENCRYPTION_KEY: str = ""
+    # ID da pasta do Google Drive que recebe os artefatos (a rotação só apaga
+    # arquivos com prefixo ejc_backup_ dentro dela).
+    BACKUP_DRIVE_FOLDER_ID: str = ""
+    # Horário DIÁRIO do job, em UTC ("HH:MM"). 05:00 UTC = 02:00 BRT.
+    BACKUP_HORA_UTC: str = "05:00"
+    # Retenção no Drive: mantém N dias de backups diários; mais antigos são
+    # apagados na rotação (somente arquivos com o prefixo do EJC).
+    BACKUP_RETENCAO_DIAS: int = 14
+    # Teto do tar.gz de uploads (a criptografia Fernet é em memória): acima
+    # disto o backup segue SÓ com o banco e marca status "parcial".
+    BACKUP_UPLOADS_MAX_MB: int = 512
+    # Timeout (segundos) do pg_dump — bancos maiores podem precisar de mais.
+    BACKUP_PG_DUMP_TIMEOUT: int = 600
 
     # ── Scheduler ────────────────────────────────────────────────────────
     ENABLE_SCHEDULER: bool = True   # desligar em workers extras (uvicorn --workers)
@@ -420,6 +443,27 @@ class Settings(BaseSettings):
                     "cryptography.fernet import Fernet; print(Fernet.generate_key()"
                     ".decode())'\"."
                 ) from e
+            # Backup → Google Drive: com o backup LIGADO em produção, a chave
+            # de criptografia é OBRIGATÓRIA e validada no BOOT (mesma promessa
+            # do SECRET_KEY/PII: falha no deploy, não na primeira execução às
+            # 05h UTC). O dump carrega PII — jamais sobe ao Drive em claro.
+            if self.BACKUP_ENABLED:
+                if not self.BACKUP_ENCRYPTION_KEY or self.BACKUP_ENCRYPTION_KEY.startswith("TROCAR"):
+                    raise ValueError(
+                        "BACKUP_ENABLED=true exige BACKUP_ENCRYPTION_KEY em "
+                        "produção (o backup nunca sai do VPS sem cifrar). Gere "
+                        "com \"python3 -c 'from cryptography.fernet import "
+                        "Fernet; print(Fernet.generate_key().decode())'\" e "
+                        "guarde uma cópia FORA do servidor — perder a chave = "
+                        "perder os backups."
+                    )
+                try:
+                    Fernet(self.BACKUP_ENCRYPTION_KEY.encode())
+                except Exception as e:
+                    raise ValueError(
+                        "BACKUP_ENCRYPTION_KEY inválida: precisa ser uma chave "
+                        "Fernet (32 bytes url-safe base64)."
+                    ) from e
         elif not self.SECRET_KEY:
             # Desenvolvimento: gera chave efêmera para não travar o ambiente local.
             self.SECRET_KEY = secrets.token_urlsafe(64)

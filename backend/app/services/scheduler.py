@@ -910,6 +910,18 @@ def start_scheduler():
     s.add_job(_alertar_contratos,     CronTrigger(day_of_week="mon", hour=9, minute=30),  id="contratos",  replace_existing=True)
     # (removido job duplicado id="retencao_ia" — _purgar_logs_ia já agendado em id="purga_ia")
 
+    # Backup diário cifrado → Google Drive (services/backup_service.py).
+    # Gate interno BACKUP_ENABLED (default False — opt-in). O scheduler roda em
+    # America/Sao_Paulo; BACKUP_HORA_UTC é UTC, então o trigger declara a
+    # própria timezone. Convive com o job legado id="backup" (dump local 02h).
+    from app.services.backup_service import hora_backup_utc, job_backup_drive
+    _bk_hora, _bk_min = hora_backup_utc()
+    s.add_job(
+        job_backup_drive,
+        CronTrigger(hour=_bk_hora, minute=_bk_min, timezone="UTC"),
+        id="backup_drive", replace_existing=True,
+    )
+
     s.start()
     logger.info("[Scheduler] Iniciado — 24 jobs (+ briefing por advogado, régua de cobrança e alertas societários)")
 
