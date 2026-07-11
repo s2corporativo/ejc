@@ -152,12 +152,13 @@
            focus:outline-none focus-visible:ring-2 focus-visible:ring-primary-500/40
            disabled:opacity-50 disabled:cursor-not-allowed select-none;
   }
-  /* Botão sólido primário — Marrom Profundo #2D1B14 (texto branco AAA) */
+  /* Botão sólido primário — Ouro institucional #8F7117 (texto branco 4,6:1 AA),
+     hover/active Ouro Profundo #6F5711 (paleta visual_law_theme.py) */
   .btn-primary {
-    @apply btn text-white shadow-sm bg-primary-900 hover:bg-primary-800 active:bg-primary-950;
+    @apply btn text-white shadow-sm bg-ouro hover:bg-ouro-profundo active:bg-ouro-profundo;
   }
   .btn-gold {
-    @apply btn bg-primary-900 hover:bg-primary-800 active:bg-primary-950 text-white;
+    @apply btn bg-ouro hover:bg-ouro-profundo active:bg-ouro-profundo text-white;
   }
   .btn-ghost {
     @apply btn bg-transparent hover:bg-slate-100 active:bg-slate-200 text-slate-700;
@@ -231,7 +232,8 @@
 
   /* ── Eyebrow / section label ──────────────────────────────── */
   .eyebrow {
-    @apply text-[10px] font-bold uppercase tracking-[0.22em] text-primary-700;
+    /* Ouro Profundo #6F5711 — 6,9:1 sobre branco (AA), filete institucional */
+    @apply text-[10px] font-bold uppercase tracking-[0.22em] text-ouro-profundo;
   }
 
   .hero-blue {
@@ -539,12 +541,13 @@
 }
 
 .ejc-modern-scope .btn-primary {
-  background: #2d1b14;
-  box-shadow: 0 10px 24px rgba(45, 27, 20, 0.24);
+  /* Ouro institucional (visual_law_theme): OURO base, OURO_PROFUNDO no hover */
+  background: #8f7117;
+  box-shadow: 0 10px 24px rgba(111, 87, 17, 0.24);
 }
 
 .ejc-modern-scope .btn-primary:hover {
-  background: #44301d;
+  background: #6f5711;
 }
 
 .ejc-modern-scope .badge,

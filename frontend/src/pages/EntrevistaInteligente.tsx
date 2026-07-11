@@ -17,6 +17,8 @@ import {
 } from "lucide-react";
 import api from "../lib/api";
 import { toast } from "../components/Toast";
+import CaseBreadcrumb from "../components/CaseBreadcrumb";
+import { useCaseContext } from "../stores/caseContext";
 import {
   AISurface,
   Badge,
@@ -118,6 +120,8 @@ function TextoOuPendente({ valor }: { valor: ItemConfianca["valor"] }) {
 
 export default function EntrevistaInteligente() {
   const { id } = useParams<{ id: string }>();
+  // Modo Caso: título para o breadcrumb (o CaseContextBar já ativou o caso).
+  const casoAtivo = useCaseContext((state) => state.caso);
   const [relato, setRelato] = useState("");
   const [loading, setLoading] = useState(false);
   const [aplicando, setAplicando] = useState(false);
@@ -185,6 +189,13 @@ export default function EntrevistaInteligente() {
 
   return (
     <div>
+      {id && (
+        <CaseBreadcrumb
+          caseId={id}
+          titulo={casoAtivo?.id === id ? casoAtivo.titulo : undefined}
+          tela="Entrevista"
+        />
+      )}
       <PageHeader
         eyebrow="Jornada do Caso — Etapa 2"
         title="Entrevista Inteligente"

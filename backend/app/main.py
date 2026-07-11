@@ -116,6 +116,8 @@ from app.routers import peca_geracao_router
 from app.routers import pending_items
 from app.routers import pix
 from app.routers import portal
+from app.routers import portal_documentos
+from app.routers import solicitacoes_documentos
 from app.routers import processes
 from app.routers import procuracoes
 from app.routers import produtividade
@@ -346,6 +348,8 @@ app.include_router(peca_geracao_router.router, prefix=API)
 app.include_router(pending_items.router, prefix=API)
 app.include_router(pix.router, prefix=API)
 app.include_router(portal.router, prefix=API)
+app.include_router(portal_documentos.router, prefix=API)  # Portal: solicitações de documentos + upload (migration 084)
+app.include_router(solicitacoes_documentos.router, prefix=API)  # advogado: solicitação de documentos ao cliente (migration 084)
 app.include_router(processes.router, prefix=API)
 app.include_router(procuracoes.router, prefix=API)
 app.include_router(produtividade.router, prefix=API)

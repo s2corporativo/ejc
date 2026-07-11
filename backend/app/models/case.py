@@ -84,6 +84,9 @@ class Case(Base):
     last_synced_at = Column(DateTime(timezone=True), nullable=True)
     sync_pending   = Column(Boolean, default=False)
     sync_error     = Column(Text, nullable=True)
+    # Marcador explícito do último andamento oficial visto pelo sync diário
+    # com notificação ao cliente (migration 084 / datajud_sync_service).
+    datajud_ultimo_andamento_em = Column(DateTime(timezone=True), nullable=True)
 
     # Tipo de caso (núcleo Casos&Processos)
     case_type           = Column(String(50), nullable=True, default="judicial")

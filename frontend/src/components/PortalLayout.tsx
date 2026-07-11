@@ -6,6 +6,7 @@ import {
   Wallet,
   PenLine,
   MessageCircle,
+  FileText,
   LogOut,
 } from "lucide-react";
 import { logout } from "../lib/api";
@@ -19,6 +20,7 @@ const NAV = [
   { to: "/portal/financeiro", label: "Financeiro", icon: Wallet },
   { to: "/portal/assinaturas", label: "Assinaturas", icon: PenLine },
   { to: "/portal/mensagens", label: "Mensagens", icon: MessageCircle },
+  { to: "/portal/documentos", label: "Documentos", icon: FileText },
 ];
 
 export default function PortalLayout() {

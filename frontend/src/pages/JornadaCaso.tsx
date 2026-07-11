@@ -16,6 +16,7 @@ import {
 } from "lucide-react";
 import api from "../lib/api";
 import { toast } from "../components/Toast";
+import CaseBreadcrumb from "../components/CaseBreadcrumb";
 import {
   Badge,
   Button,
@@ -96,8 +97,8 @@ const ETAPA_ICON: Record<JornadaEtapaChave, LucideIcon> = {
 
 // DECISÃO: mapa chave→rota resolvido no frontend (rotas reais do
 // moduleRegistry); link_modulo do backend é usado apenas como fallback.
-// GAPs conhecidos: /documentos (GestaoDocumental) e /pecas (Pecas) não leem
-// query param de caso — navegamos sem filtro para não sujar a URL.
+// GAP fechado (Modo Caso): Documentos, Peças e Prazos agora leem `?caso=`
+// da URL (e o caso ativo do contexto) e filtram a listagem por ele.
 function rotaModulo(etapa: JornadaEtapa, jornada: JornadaCasoResp): string {
   switch (etapa.chave) {
     case "cliente":
@@ -110,7 +111,7 @@ function rotaModulo(etapa: JornadaEtapa, jornada: JornadaCasoResp): string {
     case "protocolo":
       return `/casos/${jornada.case_id}`;
     case "documentos":
-      return "/documentos";
+      return `/documentos?caso=${jornada.case_id}`;
     case "inteligencia":
     case "estrategia":
       // Não existe tela dedicada de dossiê estratégico: a Sala de Guerra
@@ -118,9 +119,9 @@ function rotaModulo(etapa: JornadaEtapa, jornada: JornadaCasoResp): string {
       return `/casos/${jornada.case_id}/sala-de-guerra`;
     case "producao":
     case "revisao":
-      return "/pecas";
+      return `/pecas?caso=${jornada.case_id}`;
     case "gestao":
-      return "/prazos";
+      return `/prazos?caso=${jornada.case_id}`;
     default:
       return etapa.link_modulo || `/casos/${jornada.case_id}`;
   }
@@ -172,6 +173,11 @@ export default function JornadaCaso() {
 
   return (
     <div>
+      <CaseBreadcrumb
+        caseId={jornada.case_id}
+        titulo={jornada.titulo}
+        tela="Jornada"
+      />
       <PageHeader
         eyebrow={jornada.fase ? `Fase: ${jornada.fase}` : undefined}
         title={`Jornada — ${jornada.titulo}`}
@@ -190,8 +196,9 @@ export default function JornadaCaso() {
         }
       />
 
-      {/* Stepper VERTICAL: linha contínua à esquerda ligando as 9 etapas */}
-      <ol className="relative ml-1 space-y-4 border-l border-slate-200 pl-8">
+      {/* Stepper VERTICAL: linha contínua à esquerda ligando as 9 etapas.
+          Mobile: ml maior para o círculo numerado não colar na borda (390px). */}
+      <ol className="relative ml-4 space-y-4 border-l border-slate-200 pl-8 sm:ml-1">
         {jornada.etapas.map((etapa, index) => {
           const meta = STATUS_META[etapa.status] ?? STATUS_META.pendente;
           const Icon = ETAPA_ICON[etapa.chave] ?? FileText;
@@ -239,10 +246,14 @@ export default function JornadaCaso() {
                       </ul>
                     )}
                   </div>
-                  <Link to={rotaModulo(etapa, jornada)} className="shrink-0">
+                  <Link
+                    to={rotaModulo(etapa, jornada)}
+                    className="w-full shrink-0 sm:w-auto"
+                  >
                     <Button
                       variant="secondary"
                       size="sm"
+                      className="w-full sm:w-auto"
                       icon={<ArrowUpRight className="h-3.5 w-3.5" />}
                     >
                       Abrir módulo

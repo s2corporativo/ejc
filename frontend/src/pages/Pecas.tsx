@@ -24,6 +24,8 @@ import {
   fmtDate,
 } from "../components/UI";
 import PecaGeneratorModal from "../components/PecaGeneratorModal";
+import CaseFilterChip from "../components/CaseFilterChip";
+import { useCasoFiltro } from "../contexts/useCasoFiltro";
 
 const TIPOS = [
   "peticao_inicial",
@@ -116,10 +118,16 @@ export default function Pecas() {
 
   const [erro, setErro] = useState(false);
 
+  // Modo Caso: `?caso=` na URL vence; sem query, o caso ativo preenche.
+  // GET /legal-docs/ já aceita case_id (fecha o GAP do link_modulo da jornada).
+  const { casoFiltro, casoFiltroNome, removerFiltro } = useCasoFiltro();
+
   const load = () => {
     setErro(false);
     return api
-      .get("/legal-docs/", { params: { page_size: 50 } })
+      .get("/legal-docs/", {
+        params: { page_size: 50, case_id: casoFiltro },
+      })
       .then((r) => setData(r.data))
       .catch(() => {
         setErro(true);
@@ -128,7 +136,7 @@ export default function Pecas() {
   };
   useEffect(() => {
     load();
-  }, []);
+  }, [casoFiltro]);
 
   const salvar = async () => {
     if (!form.titulo || !form.conteudo) {
@@ -199,6 +207,8 @@ export default function Pecas() {
     ]);
     setTemplates(t.data.data);
     setCasos(c.data.data);
+    // Modo Caso: pré-seleciona o caso filtrado ao gerar de template.
+    setCasoSel((prev) => prev || casoFiltro || "");
     setTplModal(true);
   };
 
@@ -362,6 +372,12 @@ export default function Pecas() {
         }
       />
 
+      {casoFiltro && (
+        <div className="mb-4">
+          <CaseFilterChip nome={casoFiltroNome} onRemove={removerFiltro} />
+        </div>
+      )}
+
       {erro && !data ? (
         <EmptyState
           title="Falha ao carregar peças"
@@ -377,7 +393,89 @@ export default function Pecas() {
       ) : data.data.length === 0 ? (
         <Empty message="Nenhuma peça cadastrada" />
       ) : (
-        <div className="card overflow-x-auto">
+        <>
+        {/* Mobile (<md): cards empilhados com os fluxos essenciais —
+            visualizar, baixar e revisar/aprovar (HITL) usáveis em 390px. */}
+        <div className="space-y-2 md:hidden">
+          {(Array.isArray(data.data) ? data.data : []).map((p) => (
+            <div key={p.id} className="card p-4">
+              <div className="flex items-start justify-between gap-2">
+                <div className="min-w-0">
+                  <div className="font-medium text-navy break-words">
+                    {p.titulo}
+                  </div>
+                  <div className="mt-0.5 text-xs capitalize text-slate-400">
+                    {p.tipo_peca.replace(/_/g, " ")} · v{p.versao} ·{" "}
+                    {fmtDate(p.created_at)}
+                  </div>
+                </div>
+                <StatusBadge value={p.status} />
+              </div>
+              <div className="mt-2 flex flex-wrap items-center gap-1.5">
+                {p.ai_generated ? (
+                  p.human_reviewed ? (
+                    <span className="badge bg-success-100 text-success-700 gap-1">
+                      <ShieldCheck size={12} /> IA revisada
+                    </span>
+                  ) : (
+                    <span className="badge bg-warn-100 text-warn-700 gap-1">
+                      <Sparkles size={12} /> IA — aguarda revisão
+                    </span>
+                  )
+                ) : (
+                  <span className="text-xs text-slate-400">manual</span>
+                )}
+                {(() => {
+                  const v = validacaoLabel(p);
+                  return <span className={`badge ${v.cls}`}>{v.label}</span>;
+                })()}
+              </div>
+              <div className="mt-3 flex flex-wrap gap-2">
+                <button
+                  className="btn-ghost px-2.5 py-1.5 text-xs"
+                  onClick={() => abrirDetalhe(p.id)}
+                >
+                  <Eye size={14} /> Ver
+                </button>
+                <button
+                  className="btn-ghost px-2.5 py-1.5 text-xs"
+                  onClick={() => baixarPdf(p)}
+                >
+                  <FileDown size={14} /> PDF
+                </button>
+                {p.ai_generated && !p.human_reviewed && (
+                  <button
+                    className="btn-ghost px-2.5 py-1.5 text-xs text-warn-700"
+                    onClick={() => setRevisao({ doc: p, notas: "" })}
+                  >
+                    Revisar
+                  </button>
+                )}
+                {p.ai_generated &&
+                  p.status !== "aprovada" &&
+                  p.status !== "versao_final" && (
+                    <button
+                      className="btn-primary px-2.5 py-1.5 text-xs"
+                      onClick={() => setAprovacao({ doc: p, observacoes: "" })}
+                    >
+                      <ShieldCheck size={14} /> Revisar e Aprovar
+                    </button>
+                  )}
+                {(p.human_reviewed || !p.ai_generated) &&
+                  p.status === "corrigida" &&
+                  p.validacao_juridica?.apto_fluxo && (
+                    <button
+                      className="btn-ghost px-2.5 py-1.5 text-xs text-success-700"
+                      onClick={() => avancarStatus(p, "aprovada")}
+                    >
+                      Aprovar
+                    </button>
+                  )}
+              </div>
+            </div>
+          ))}
+        </div>
+        <div className="card hidden overflow-x-auto md:block">
           <table className="w-full text-sm">
             <thead className="bg-slate-50 text-left text-xs uppercase text-slate-400">
               <tr>
@@ -524,6 +622,7 @@ export default function Pecas() {
             </tbody>
           </table>
         </div>
+        </>
       )}
 
       {/* Nova peça */}

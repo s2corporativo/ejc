@@ -4,16 +4,23 @@ import {
   AlertTriangle,
   ArrowRight,
   BarChart3,
+  Bell,
   Bot,
   Briefcase,
   CalendarClock,
   Clock,
   DollarSign,
+  FileSignature,
   FileText,
   FolderOpen,
   Gavel,
+  GitBranch,
+  ListChecks,
+  Newspaper,
   Plus,
   Scale,
+  ScrollText,
+  ShieldAlert,
   ShieldCheck,
   Sparkles,
   Users,
@@ -38,6 +45,15 @@ import {
 } from "../components/UI";
 
 const FINANCE_ROLES = new Set(["superadmin", "admin", "socio", "financeiro"]);
+const MANAGER_ROLES = new Set(["superadmin", "admin", "socio"]);
+
+// Fases encerradas não contam como carteira ativa.
+const INACTIVE_CASE_STATUSES = new Set([
+  "arquivado",
+  "encerrado",
+  "cancelado",
+  "inativo",
+]);
 
 const AREA_TONES: Record<string, string> = {
   civil: "bg-primary-500",
@@ -103,30 +119,46 @@ export default function DashboardModern() {
   const [prazos, setPrazos] = useState<any[]>([]);
   const [movimentos, setMovimentos] = useState<any[]>([]);
   const [casos, setCasos] = useState<any[]>([]);
+  // Blocos incorporados dos antigos DashboardIA e FinanceiroDashboard.
+  const [iaSaude, setIaSaude] = useState<any>(null);
+  const [consolidado, setConsolidado] = useState<any>(null);
   const [loading, setLoading] = useState(true);
+
+  const currentUser = user as any;
+  const firstName = currentUser?.full_name?.split(" ")[0] || "Dr.";
+  const canSeeFinance = FINANCE_ROLES.has(currentUser?.role || "");
+  const isManager = MANAGER_ROLES.has(currentUser?.role || "");
 
   useEffect(() => {
     setLoading(true);
+    const now = new Date();
+    const competencia = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}`;
     Promise.allSettled([
       api.get("/dashboard/"),
       api.get("/jurimetria/overview"),
       api.get("/deadlines/?status=pendente&page_size=100"),
       api.get("/movimentos/recentes?limit=8"),
       api.get("/cases/?page_size=200"),
+      // /ia-saude é restrito a gestão (403 fora de superadmin/admin/socio):
+      // sem o gate, o card ficaria eternamente em "sem dados" para os demais.
+      isManager
+        ? api.get("/ia-saude/dashboard?dias=30")
+        : Promise.reject(new Error("sem permissão de gestão")),
+      canSeeFinance
+        ? api.get(`/financeiro/consolidado?competencia=${competencia}`)
+        : Promise.reject(new Error("sem permissão financeira")),
     ])
-      .then(([dash, juri, deadlines, movements, cases]) => {
+      .then(([dash, juri, deadlines, movements, cases, ia, fin]) => {
         if (dash.status === "fulfilled") setDashboard(dash.value.data);
         if (juri.status === "fulfilled") setJurimetria(juri.value.data);
         if (deadlines.status === "fulfilled") setPrazos(asList(deadlines.value.data));
         if (movements.status === "fulfilled") setMovimentos(asList(movements.value.data));
         if (cases.status === "fulfilled") setCasos(asList(cases.value.data));
+        if (ia.status === "fulfilled") setIaSaude(ia.value.data);
+        if (fin.status === "fulfilled") setConsolidado(fin.value.data);
       })
       .finally(() => setLoading(false));
-  }, []);
-
-  const currentUser = user as any;
-  const firstName = currentUser?.full_name?.split(" ")[0] || "Dr.";
-  const canSeeFinance = FINANCE_ROLES.has(currentUser?.role || "");
+  }, [canSeeFinance, isManager]);
 
   const criticalDeadlines = prazos.filter(
     (deadline) => (deadline.dias_restantes ?? 99) <= 3,
@@ -181,6 +213,21 @@ export default function DashboardModern() {
       .map(([label, value]) => ({ label, value }));
   }, [casos]);
 
+  // Casos ativos agrupados por fase (visão do dia da carteira).
+  const fases = useMemo(() => {
+    const totals = new Map<string, number>();
+    for (const item of casos) {
+      const status = String(item.status || "").toLowerCase();
+      if (item.archived_at || INACTIVE_CASE_STATUSES.has(status)) continue;
+      const fase = String(item.fase || "sem fase").toLowerCase();
+      totals.set(fase, (totals.get(fase) || 0) + 1);
+    }
+    return Array.from(totals.entries())
+      .sort((a, b) => b[1] - a[1])
+      .slice(0, 6)
+      .map(([label, value]) => ({ label, value }));
+  }, [casos]);
+
   const successRate =
     jurimetria?.taxa_sucesso_geral != null
       ? Math.round(jurimetria.taxa_sucesso_geral * 100)
@@ -192,7 +239,7 @@ export default function DashboardModern() {
     dashboard?.financeiro?.honorarios_mes ?? dashboard?.financeiro?.receita_mes;
 
   const quickActions = [
-    { to: "/casos", label: "Novo caso", icon: Plus, primary: true },
+    { to: "/casos/novo", label: "Novo caso", icon: Plus, primary: true },
     { to: "/clientes", label: "Novo cliente", icon: Users },
     { to: "/pecas", label: "Gerar peça", icon: FileText },
     { to: "/inteligencia", label: "Analisar com IA", icon: Sparkles },
@@ -349,6 +396,152 @@ export default function DashboardModern() {
             </div>
           )}
         </SectionCard>
+      </div>
+
+      <div className={cn("grid gap-5", canSeeFinance ? "xl:grid-cols-3" : "xl:grid-cols-2")}>
+        <SectionCard
+          title="Casos ativos por fase"
+          subtitle="Andamento da carteira em cada etapa."
+          actions={
+            <Link to="/casos" className="text-sm font-medium text-primary-600 hover:text-primary-700 dark:text-primary-300">
+              Ver casos
+            </Link>
+          }
+        >
+          {fases.length === 0 ? (
+            <EmptyState title="Sem casos ativos" icon={Briefcase} />
+          ) : (
+            <div className="space-y-3">
+              {fases.map((fase) => {
+                const max = Math.max(1, ...fases.map((item) => item.value));
+                return (
+                  <div key={fase.label}>
+                    <div className="mb-1.5 flex items-center justify-between gap-3 text-xs">
+                      <span className="truncate font-medium capitalize text-slate-600 dark:text-slate-300">
+                        {fase.label.replace(/_/g, " ")}
+                      </span>
+                      <span className="font-semibold tabular-nums text-slate-900 dark:text-slate-100">
+                        {fase.value}
+                      </span>
+                    </div>
+                    <div className="h-2 overflow-hidden rounded-full bg-slate-100 dark:bg-white/[0.06]">
+                      <div
+                        className="h-full rounded-full bg-primary-600"
+                        style={{ width: `${Math.max(8, (fase.value / max) * 100)}%` }}
+                      />
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          )}
+        </SectionCard>
+
+        {isManager && (
+        <SectionCard
+          title="Saúde da IA"
+          subtitle="Uso e aproveitamento nos últimos 30 dias."
+          actions={
+            <Link to="/inteligencia?tab=saude" className="text-sm font-medium text-primary-600 hover:text-primary-700 dark:text-primary-300">
+              Detalhes
+            </Link>
+          }
+        >
+          {iaSaude ? (
+            <div className="grid grid-cols-2 gap-3">
+              {[
+                { label: "Chamadas", value: iaSaude.total_chamadas ?? 0 },
+                { label: "Custo (R$)", value: fmtMoney(iaSaude.custo_total_brl) },
+                {
+                  label: "Aproveitamento",
+                  value:
+                    iaSaude.taxa_aproveitamento_pct != null
+                      ? `${iaSaude.taxa_aproveitamento_pct}%`
+                      : "—",
+                },
+                {
+                  label: "PII removida",
+                  value: iaSaude.chamadas_com_pii_removida ?? 0,
+                },
+              ].map(({ label, value }) => (
+                <div
+                  key={label}
+                  className="rounded-xl border border-slate-200 bg-white p-3 dark:border-white/10 dark:bg-white/[0.03]"
+                >
+                  <div className="text-xs text-slate-400">{label}</div>
+                  <div className="mt-1 text-lg font-semibold text-slate-900 dark:text-slate-100">
+                    {value}
+                  </div>
+                </div>
+              ))}
+            </div>
+          ) : (
+            <EmptyState
+              title="Sem dados de uso da IA"
+              message="As métricas aparecem após as primeiras chamadas assistidas."
+              icon={Bot}
+            />
+          )}
+        </SectionCard>
+        )}
+
+        {canSeeFinance && (
+          <SectionCard
+            title="Recebíveis do mês"
+            subtitle="Situação dos honorários na competência atual."
+            actions={
+              <Link to="/financeiro" className="text-sm font-medium text-primary-600 hover:text-primary-700 dark:text-primary-300">
+                Abrir financeiro
+              </Link>
+            }
+          >
+            {consolidado ? (
+              <div className="space-y-3">
+                {[
+                  {
+                    label: "Recebido no mês",
+                    value: consolidado?.receitas?.recebido_mes,
+                    tone: "text-success-600 dark:text-success-300",
+                  },
+                  {
+                    label: "A receber (pendente)",
+                    value: consolidado?.receitas?.a_receber,
+                    tone: "text-warn-600 dark:text-warn-300",
+                  },
+                  {
+                    label: "Atrasado",
+                    value: consolidado?.receitas?.atrasado,
+                    tone: "text-danger-600 dark:text-danger-300",
+                  },
+                  {
+                    label: "Caixa do período",
+                    value: consolidado?.caixa_periodo,
+                    tone:
+                      (consolidado?.caixa_periodo ?? 0) >= 0
+                        ? "text-success-600 dark:text-success-300"
+                        : "text-danger-600 dark:text-danger-300",
+                  },
+                ].map(({ label, value, tone }) => (
+                  <div
+                    key={label}
+                    className="flex items-center justify-between border-b border-slate-100 py-2 text-sm last:border-0 dark:border-white/[0.07]"
+                  >
+                    <span className="text-slate-600 dark:text-slate-300">{label}</span>
+                    <span className={cn("font-semibold tabular-nums", tone)}>
+                      {fmtMoney(value ?? 0)}
+                    </span>
+                  </div>
+                ))}
+              </div>
+            ) : (
+              <EmptyState
+                title="Consolidado indisponível"
+                message="Abra o financeiro para conferir a competência."
+                icon={Wallet}
+              />
+            )}
+          </SectionCard>
+        )}
       </div>
 
       <div className="grid gap-5 xl:grid-cols-[1.25fr_0.75fr]">
@@ -536,13 +729,24 @@ export default function DashboardModern() {
       </div>
 
       <div className="grid gap-5 xl:grid-cols-[0.9fr_1.1fr]">
-        <SectionCard title="Atalhos operacionais" subtitle="Fluxos frequentes e padronizados.">
+        <SectionCard
+          title="Atalhos operacionais"
+          subtitle="Módulos consolidados fora do menu principal — tudo a um clique."
+        >
           <div className="grid gap-3 sm:grid-cols-2">
             {[
               { to: "/pecas", label: "Produção jurídica", icon: FileText },
               { to: "/documentos", label: "Gestão documental", icon: FolderOpen },
-              { to: "/inteligencia", label: "IA do escritório", icon: Sparkles },
-              { to: "/jurimetria", label: "Jurimetria", icon: Scale },
+              { to: "/assinaturas", label: "Assinaturas", icon: FileSignature },
+              { to: "/checklists", label: "Checklists", icon: ListChecks },
+              { to: "/workflow", label: "Workflows", icon: GitBranch },
+              { to: "/crm-leads", label: "Funil de Leads", icon: Users },
+              { to: "/datajud", label: "Consulta DataJud", icon: Scale },
+              { to: "/diario-oficial", label: "Diário Oficial", icon: ScrollText },
+              { to: "/radar-regulatorio", label: "Radar Regulatório", icon: Bell },
+              { to: "/compliance/radar", label: "Radar de Compliance", icon: ShieldAlert },
+              { to: "/noticias", label: "Notícias Jurídicas", icon: Newspaper },
+              { to: "/inteligencia?tab=jurimetria", label: "Jurimetria", icon: Sparkles },
             ].map(({ to, label, icon: Icon }) => (
               <Link key={to} to={to} className="group flex items-center gap-3 rounded-xl border border-slate-200 bg-white p-4 text-sm font-semibold text-slate-700 transition-all hover:border-primary-200 hover:bg-primary-50 dark:border-white/10 dark:bg-white/[0.03] dark:text-slate-200 dark:hover:bg-white/[0.06]">
                 <div className="rounded-lg bg-primary-50 p-2 text-primary-700 dark:bg-primary-400/10 dark:text-primary-300">
@@ -553,6 +757,28 @@ export default function DashboardModern() {
               </Link>
             ))}
           </div>
+          {isManager && (
+            <>
+              <div className="mt-4 mb-2 text-[10px] font-semibold uppercase tracking-wider text-slate-400">
+                Administração
+              </div>
+              <div className="grid gap-3 sm:grid-cols-2">
+                {[
+                  { to: "/produtividade", label: "Produtividade", icon: BarChart3 },
+                  { to: "/ia-governanca", label: "Governança da IA", icon: Sparkles },
+                  { to: "/auditoria", label: "Auditoria", icon: ShieldCheck },
+                  { to: "/mapa-modulos", label: "Mapa de Módulos", icon: GitBranch },
+                  { to: "/lixeira", label: "Lixeira", icon: FolderOpen },
+                ].map(({ to, label, icon: Icon }) => (
+                  <Link key={to} to={to} className="group flex items-center gap-3 rounded-xl border border-slate-200 bg-white p-3 text-sm font-medium text-slate-600 transition-all hover:border-primary-200 hover:bg-primary-50 dark:border-white/10 dark:bg-white/[0.03] dark:text-slate-300 dark:hover:bg-white/[0.06]">
+                    <Icon className="h-4 w-4 text-slate-400" />
+                    <span className="min-w-0 flex-1">{label}</span>
+                    <ArrowRight className="h-3.5 w-3.5 text-slate-400" />
+                  </Link>
+                ))}
+              </div>
+            </>
+          )}
         </SectionCard>
         <NoticiasCard />
       </div>
