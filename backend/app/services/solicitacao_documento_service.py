@@ -5,6 +5,8 @@
 # do Cliente). Canais: e-mail + sino APENAS (WhatsApp fora de escopo).
 from __future__ import annotations
 
+import html
+
 ASSINATURA_AUTOMATICA = (
     "De Paula Teixeira Advogados — mensagem automática, "
     "não responda este e-mail."
@@ -45,19 +47,22 @@ def montar_email_solicitacao(
     comunicação automática ao final.
     """
     assunto = "[De Paula Teixeira Advogados] Solicitação de documentos"
+    # nome/descricao/mensagem são texto livre do advogado: escape obrigatório
+    # antes de compor o corpo HTML enviado em nome do escritório.
     linhas = "".join(
         "<li><b>{nome}</b>{desc}</li>".format(
-            nome=(i.get("nome") or "").strip(),
-            desc=(f" — {i['descricao'].strip()}"
+            nome=html.escape((i.get("nome") or "").strip()),
+            desc=(f" — {html.escape(i['descricao'].strip())}"
                   if (i.get("descricao") or "").strip() else ""),
         )
         for i in itens
     )
     bloco_mensagem = (
-        f"<p>{mensagem.strip()}</p>" if (mensagem or "").strip() else ""
+        f"<p>{html.escape(mensagem.strip())}</p>"
+        if (mensagem or "").strip() else ""
     )
     corpo = (
-        f"<p>Prezado(a) {nome_cliente or 'cliente'},</p>"
+        f"<p>Prezado(a) {html.escape(nome_cliente or 'cliente')},</p>"
         "<p>Para o andamento do seu caso, solicitamos a gentileza de nos "
         "enviar os seguintes documentos:</p>"
         f"<ul>{linhas}</ul>"

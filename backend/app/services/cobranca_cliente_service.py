@@ -18,6 +18,7 @@
 # no máximo 1 degrau por parcela por execução. Canais: e-mail + sino APENAS.
 from __future__ import annotations
 
+import html
 import logging
 from datetime import date
 from uuid import uuid4
@@ -96,8 +97,9 @@ def montar_email_cobranca(
     sido efetuado. Sem emojis; assinatura de comunicação automática.
     """
     venc = vencimento.strftime("%d/%m/%Y")
+    # descricao é texto livre (financeiro): escape antes do corpo HTML.
     ident = (
-        f"<p><b>Parcela:</b> {descricao}<br>"
+        f"<p><b>Parcela:</b> {html.escape(descricao)}<br>"
         f"<b>Valor:</b> {_brl(valor)}<br>"
         f"<b>Vencimento:</b> {venc}</p>"
     )

@@ -23,7 +23,7 @@ from uuid import uuid4
 
 import aiofiles
 from fastapi import APIRouter, Depends, File, HTTPException, UploadFile
-from sqlalchemy import select
+from sqlalchemy import select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.config import get_settings
@@ -156,12 +156,28 @@ async def upload_item_solicitacao(
     # Magic bytes server-side — nunca confiar na extensão/content_type.
     mime_real = _validar_conteudo(ext, conteudo)
 
+    # ── Claim atômico do item ANTES de gravar o arquivo: uploads concorrentes
+    # no mesmo item disputam o UPDATE condicional (row lock) e só um vence —
+    # o perdedor recebe 422 e nada dele vai a disco (sem arquivo órfão).
+    agora = datetime.now(timezone.utc)
+    doc_id = str(uuid4())
+    claim = await db.execute(
+        update(SolicitacaoDocumentoItem)
+        .where(
+            SolicitacaoDocumentoItem.id == item.id,
+            SolicitacaoDocumentoItem.status == "pendente",
+        )
+        .values(status="enviado", enviado_em=agora, documento_id=doc_id)
+    )
+    if claim.rowcount == 0:
+        raise HTTPException(
+            status_code=422, detail="Este documento já foi enviado"
+        )
+
     # ── Persistência do arquivo (uploads/AAAA/MM/<uuid>.<ext> — o filename do
     # cliente NUNCA compõe o path: sem traversal por construção) ─────────────
-    agora = datetime.now(timezone.utc)
     subdir = f"{agora.year}/{agora.month:02d}"
     os.makedirs(f"{settings.UPLOAD_DIR}/{subdir}", exist_ok=True)
-    doc_id = str(uuid4())
     filepath = f"{subdir}/{doc_id}{ext}"
     async with aiofiles.open(f"{settings.UPLOAD_DIR}/{filepath}", "wb") as f:
         await f.write(conteudo)
@@ -182,11 +198,7 @@ async def upload_item_solicitacao(
     )
     db.add(d)
 
-    # ── Marca o item e recalcula o status agregado da solicitação ────────────
-    item.status = "enviado"
-    item.enviado_em = agora
-    item.documento_id = doc_id
-
+    # ── Recalcula o status agregado da solicitação (item já marcado no claim) ─
     demais = (await db.execute(
         select(SolicitacaoDocumentoItem.id, SolicitacaoDocumentoItem.status)
         .where(SolicitacaoDocumentoItem.solicitacao_id == sol.id)

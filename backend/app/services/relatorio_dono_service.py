@@ -14,6 +14,7 @@
 # Canais: e-mail + sino APENAS (WhatsApp fora de escopo).
 from __future__ import annotations
 
+import html
 import logging
 from datetime import date, timedelta
 
@@ -185,8 +186,9 @@ def montar_email_relatorio(
     top = numeros.get("top_casos_ia") or []
     bloco_top = ""
     if top:
+        # t['caso'] carrega numero_interno/título (texto livre): escape.
         itens = "".join(
-            f"<li>{t['caso']}: {_brl(t['custo'])} "
+            f"<li>{html.escape(str(t['caso']))}: {_brl(t['custo'])} "
             f"({t['chamadas']} chamada(s))</li>"
             for t in top
         )

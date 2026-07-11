@@ -20,6 +20,7 @@
 from __future__ import annotations
 
 import asyncio
+import html
 import logging
 import re
 from datetime import datetime, timezone
@@ -134,9 +135,11 @@ def montar_email_andamentos(
     visiveis = andamentos[:MAX_ANDAMENTOS_EMAIL]
     excedente = len(andamentos) - len(visiveis)
 
+    # Descrições vêm da API pública do CNJ (texto de terceiros): escape
+    # obrigatório antes de entrar no corpo HTML do e-mail do escritório.
     itens = "".join(
-        f"<li><b>{_fmt_data_mov(a.get('data') or '')}</b> — "
-        f"{limpar_descricao(a.get('descricao') or '')}</li>"
+        f"<li><b>{html.escape(_fmt_data_mov(a.get('data') or ''))}</b> — "
+        f"{html.escape(limpar_descricao(a.get('descricao') or ''))}</li>"
         for a in visiveis
     )
     mais = (
@@ -145,7 +148,7 @@ def montar_email_andamentos(
     )
     corpo = (
         "<p>Prezado(a) cliente,</p>"
-        f"<p>Informamos que o processo <b>{numero_processo}</b> teve "
+        f"<p>Informamos que o processo <b>{html.escape(numero_processo)}</b> teve "
         f"nova(s) movimentação(ões) oficial(is):</p>"
         f"<ul>{itens}</ul>"
         f"{mais}"
