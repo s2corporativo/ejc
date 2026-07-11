@@ -333,7 +333,7 @@ export default function NotificationPreferences() {
             const available = data.available_channels[availability];
             const effective = data.effective_channels[availability];
             return (
-              <div key={key} className="rounded-xl border border-slate-200 bg-white p-4">
+              <div key={key} className="card p-4">
                 <div className="flex items-start gap-3">
                   <span className="rounded-xl bg-slate-100 p-2.5 text-slate-600">
                     <Icon className="h-5 w-5" />
@@ -376,7 +376,7 @@ export default function NotificationPreferences() {
           {CATEGORIES.map(([key, label]) => (
             <div
               key={key}
-              className="flex items-center justify-between gap-3 rounded-xl border border-slate-200 bg-white px-4 py-3"
+              className="card flex items-center justify-between gap-3 px-4 py-3"
             >
               <span className="text-sm font-medium text-slate-700">{label}</span>
               <Toggle
@@ -394,7 +394,7 @@ export default function NotificationPreferences() {
         subtitle="O horário silencioso afeta apenas canais externos e usa o fuso informado."
       >
         <div className="grid gap-4 md:grid-cols-2">
-          <div className="flex items-center justify-between rounded-xl border border-slate-200 bg-white p-4">
+          <div className="card flex items-center justify-between p-4">
             <div>
               <div className="text-sm font-semibold text-slate-800">Resumo diário</div>
               <div className="text-xs text-slate-500">Agrupa comunicações externas não urgentes.</div>

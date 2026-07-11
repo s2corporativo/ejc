@@ -291,7 +291,7 @@ export default function PecaGeneratorModal({
                   <select
                     value={tipoPeca}
                     onChange={(e) => setTipoPeca(e.target.value)}
-                    className="w-full border border-slate-200 rounded-lg px-3 py-2 text-sm text-slate-800 bg-white focus:outline-none focus:ring-2 focus:ring-ai-500"
+                    className="input"
                   >
                     {Object.entries(TIPOS_PECA).map(([k, v]) => (
                       <option key={k} value={k}>
@@ -307,7 +307,7 @@ export default function PecaGeneratorModal({
                   <select
                     value={areaDireito}
                     onChange={(e) => setAreaDireito(e.target.value)}
-                    className="w-full border border-slate-200 rounded-lg px-3 py-2 text-sm text-slate-800 bg-white focus:outline-none focus:ring-2 focus:ring-ai-500"
+                    className="input"
                   >
                     {AREAS.map((a) => (
                       <option key={a} value={a}>
@@ -330,7 +330,7 @@ export default function PecaGeneratorModal({
                   onChange={(e) => setFatos(e.target.value)}
                   placeholder="Descreva os fatos de forma detalhada. A IA usa esta descrição como base para todas as 7 etapas do pipeline..."
                   rows={5}
-                  className="w-full border border-slate-200 rounded-lg px-3 py-2 text-sm text-slate-800 placeholder-slate-300 focus:outline-none focus:ring-2 focus:ring-ai-500 resize-none"
+                  className="input resize-none"
                 />
                 <div className="text-right text-xs text-slate-400 mt-0.5">
                   {fatos.length} caracteres
@@ -346,7 +346,7 @@ export default function PecaGeneratorModal({
                   onChange={(e) => setPedidos(e.target.value)}
                   placeholder="Liste os pedidos principais e subsidiários..."
                   rows={3}
-                  className="w-full border border-slate-200 rounded-lg px-3 py-2 text-sm text-slate-800 placeholder-slate-300 focus:outline-none focus:ring-2 focus:ring-ai-500 resize-none"
+                  className="input resize-none"
                 />
               </div>
 
@@ -363,7 +363,7 @@ export default function PecaGeneratorModal({
                     value={nomesProteger}
                     onChange={(e) => setNomesProteger(e.target.value)}
                     placeholder="João Silva, Maria Costa..."
-                    className="w-full border border-slate-200 rounded-lg px-3 py-2 text-sm placeholder-slate-300 focus:outline-none focus:ring-2 focus:ring-ai-500"
+                    className="input"
                   />
                 </div>
                 <div>
@@ -375,7 +375,7 @@ export default function PecaGeneratorModal({
                     value={instrucoes}
                     onChange={(e) => setInstrucoes(e.target.value)}
                     placeholder="Ex: incluir pedido liminar..."
-                    className="w-full border border-slate-200 rounded-lg px-3 py-2 text-sm placeholder-slate-300 focus:outline-none focus:ring-2 focus:ring-ai-500"
+                    className="input"
                   />
                 </div>
               </div>
@@ -521,7 +521,7 @@ export default function PecaGeneratorModal({
                   readOnly
                   value={documento}
                   rows={14}
-                  className="w-full border border-slate-200 rounded-xl px-4 py-3 text-sm text-slate-800 bg-slate-50 font-mono resize-none focus:outline-none focus:ring-2 focus:ring-ai-500"
+                  className="input bg-slate-50 font-mono resize-none"
                 />
               </div>
 
