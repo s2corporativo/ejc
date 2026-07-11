@@ -196,6 +196,23 @@ class Settings(BaseSettings):
     # Host oficial da API Pública (POST /{alias_tribunal}/_search).
     DATAJUD_BASE_URL: str = "https://api-publica.datajud.cnj.jus.br"
 
+    # ── Infosimples — consultas PAGAS a sites públicos (TJMG, Receita…) ──
+    # Agregador comercial (https://infosimples.com/consultas/): cada consulta
+    # EXECUTADA é cobrada. Integração opt-in, desligada por padrão, com teto
+    # diário de custo e cache do mesmo dia (ver services/infosimples_service).
+    INFOSIMPLES_ENABLED: bool = False
+    # Token da conta contratada — vai só no corpo da requisição; NUNCA em
+    # logs, mensagens de erro ou payloads de resposta.
+    INFOSIMPLES_TOKEN: str = ""
+    # Timeout repassado à Infosimples (segundos) — as consultas raspam sites
+    # públicos e podem demorar; o cliente HTTP usa este valor + margem.
+    INFOSIMPLES_TIMEOUT: int = 300
+    # TETO DE CUSTO: máximo de consultas EXECUTADAS (cobradas) por dia UTC.
+    # Atingido o teto, o serviço recusa novas consultas (429) até o dia virar.
+    INFOSIMPLES_MAX_CONSULTAS_DIA: int = 50
+    # Base oficial (POST {base}/{caminho} form-urlencoded). Só mude p/ testes.
+    INFOSIMPLES_BASE_URL: str = "https://api.infosimples.com/api/v2/consultas"
+
     # ── DJEN / API Comunica CNJ (Res. CNJ 569/2024) — ingestão RAG ───────
     # Ingestor diário de comunicações processuais (intimações/publicações)
     # por OAB monitorada. A retenção da API é limitada — o RAG do EJC é o
