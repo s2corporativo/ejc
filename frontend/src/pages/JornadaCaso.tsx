@@ -105,6 +105,8 @@ function rotaModulo(etapa: JornadaEtapa, jornada: JornadaCasoResp): string {
         ? `/clientes/${jornada.cliente_id}`
         : etapa.link_modulo || "/clientes";
     case "triagem":
+      // Etapa 2: Entrevista Inteligente — relato livre + painel de confiança IA
+      return `/casos/${jornada.case_id}/entrevista`;
     case "protocolo":
       return `/casos/${jornada.case_id}`;
     case "documentos":

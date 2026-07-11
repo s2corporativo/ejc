@@ -8,6 +8,9 @@ import {
   FileText,
   Scale,
   FileStack,
+  Sparkles,
+  AlertTriangle,
+  Plus,
 } from "lucide-react";
 import api from "../lib/api";
 import { asList } from "../lib/list";
@@ -46,6 +49,44 @@ export interface Prova {
   tese_titulo?: string | null;
   ordem: number;
 }
+
+// Prova FALTANTE sugerida pela IA (Etapa 6 — Mapa Probatório). É SUGESTÃO/
+// rascunho (HITL): quem acata cria a Prova pelo fluxo normal de cadastro.
+export interface SugestaoFaltante {
+  titulo: string;
+  por_que_importa: string;
+  como_obter: string;
+  criticidade: "alta" | "media" | "baixa";
+}
+
+interface SugerirFaltantesResp {
+  data: SugestaoFaltante[];
+  total: number;
+  aviso?: string | null;
+  modelo?: string | null;
+  provedor?: string | null;
+}
+
+const CRITICIDADE_UI: Record<
+  SugestaoFaltante["criticidade"],
+  { label: string; badge: string; card: string }
+> = {
+  alta: {
+    label: "Criticidade alta",
+    badge: "bg-danger-50 text-danger-700 ring-1 ring-danger-200",
+    card: "border-danger-200",
+  },
+  media: {
+    label: "Criticidade média",
+    badge: "bg-warn-50 text-warn-700 ring-1 ring-warn-200",
+    card: "border-warn-200",
+  },
+  baixa: {
+    label: "Criticidade baixa",
+    badge: "bg-slate-100 text-slate-600 ring-1 ring-slate-200",
+    card: "border-slate-200",
+  },
+};
 
 interface DocResumo {
   id: number;
@@ -121,6 +162,14 @@ export default function ProvasCaso({ caseId }: { caseId: string | number }) {
   const [reordenando, setReordenando] = useState(false);
   const [gerandoPdf, setGerandoPdf] = useState(false);
 
+  // PROVAS FALTANTES (sugestão da IA — Etapa 6 do Mapa Probatório)
+  const [sugestoes, setSugestoes] = useState<SugestaoFaltante[]>([]);
+  const [sugerindo, setSugerindo] = useState(false);
+  const [avisoIa, setAvisoIa] = useState("");
+  const [sugeriu, setSugeriu] = useState(false);
+  // índice da sugestão sendo acatada — removida da lista após o cadastro
+  const [sugestaoIdx, setSugestaoIdx] = useState<number | null>(null);
+
   const carregar = () => {
     setErro("");
     return api
@@ -169,21 +218,65 @@ export default function ProvasCaso({ caseId }: { caseId: string | number }) {
 
   useEffect(() => {
     setLoading(true);
+    setSugestoes([]);
+    setAvisoIa("");
+    setSugeriu(false);
+    setSugestaoIdx(null);
     carregar();
     carregarDocs();
     carregarTeses();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [caseId]);
 
+  // IA sugere provas FALTANTES (endpoint caro: rate-limited, botão disabled)
+  const sugerirComIA = async () => {
+    if (sugerindo) return;
+    setSugerindo(true);
+    setAvisoIa("");
+    try {
+      const r = await api.post<SugerirFaltantesResp>(
+        `/casos/${caseId}/provas/sugerir-faltantes`,
+      );
+      setSugestoes(asList<SugestaoFaltante>(r.data));
+      setAvisoIa(r.data?.aviso || "");
+      setSugeriu(true);
+    } catch (e) {
+      setSugestoes([]);
+      setAvisoIa(
+        apiDetail(e, "Falha ao gerar sugestões de provas faltantes com a IA."),
+      );
+      setSugeriu(true);
+    } finally {
+      setSugerindo(false);
+    }
+  };
+
   const abrirNova = () => {
     setEditId(null);
+    setSugestaoIdx(null);
     setForm(FORM_VAZIO);
+    setFormErro("");
+    setFormOpen(true);
+  };
+
+  // Acata uma sugestão da IA: abre o formulário NORMAL de cadastro pré-preenchido
+  // (HITL — a prova só entra no mapa depois que o advogado revisar e salvar).
+  const abrirDeSugestao = (s: SugestaoFaltante, idx: number) => {
+    setEditId(null);
+    setSugestaoIdx(idx);
+    setForm({
+      ...FORM_VAZIO,
+      titulo: s.titulo,
+      fato_probando: s.por_que_importa,
+      descricao: s.como_obter ? `Como obter: ${s.como_obter}` : "",
+    });
     setFormErro("");
     setFormOpen(true);
   };
 
   const abrirEdicao = (p: Prova) => {
     setEditId(p.id);
+    setSugestaoIdx(null);
     setForm({
       tipo: p.tipo,
       titulo: p.titulo,
@@ -221,6 +314,11 @@ export default function ProvasCaso({ caseId }: { caseId: string | number }) {
           : 1;
         await api.post(`/casos/${caseId}/provas`, payload);
         toast.success("Prova cadastrada.");
+        // Sugestão da IA acatada → sai da lista de faltantes.
+        if (sugestaoIdx != null) {
+          setSugestoes((s) => s.filter((_, i) => i !== sugestaoIdx));
+          setSugestaoIdx(null);
+        }
       }
       setFormOpen(false);
       await carregar();
@@ -445,6 +543,117 @@ export default function ProvasCaso({ caseId }: { caseId: string | number }) {
           ))}
         </div>
       )}
+
+      {/* ── PROVAS FALTANTES (sugestão da IA — Etapa 6 do Mapa Probatório) ── */}
+      <div className="rounded-2xl border border-ai-200 bg-ai-50/40 p-4">
+        <div className="flex flex-wrap items-center justify-between gap-2">
+          <div className="flex items-center gap-2">
+            <Sparkles size={18} className="text-ai-600" />
+            <div>
+              <h3 className="text-sm font-semibold text-navy">
+                Provas faltantes (sugestão da IA)
+              </h3>
+              <p className="text-xs text-slate-500">
+                A IA aponta provas típicas para este tipo de ação que ainda não
+                estão no mapa — com justificativa probatória e como obter.
+              </p>
+            </div>
+          </div>
+          <Button
+            size="sm"
+            onClick={sugerirComIA}
+            disabled={sugerindo || loading}
+            icon={<Sparkles size={15} />}
+          >
+            {sugerindo ? "Analisando o caso…" : "Sugerir com IA"}
+          </Button>
+        </div>
+
+        <p className="mt-2 text-[11px] text-slate-500">
+          Sugestões geradas por IA são <strong>rascunho de apoio</strong> — não
+          criam nada automaticamente. A avaliação e o cadastro de cada prova
+          são do advogado (revisão humana obrigatória).
+        </p>
+
+        {avisoIa && (
+          <div className="mt-3">
+            <Alert variant="warning">{avisoIa}</Alert>
+          </div>
+        )}
+
+        {sugerindo ? (
+          <div className="mt-4">
+            <Spinner />
+          </div>
+        ) : sugestoes.length > 0 ? (
+          <div className="mt-3 space-y-2">
+            {sugestoes.map((s, idx) => {
+              const ui = CRITICIDADE_UI[s.criticidade] ?? CRITICIDADE_UI.media;
+              return (
+                <div
+                  key={`${s.titulo}-${idx}`}
+                  className={`rounded-xl border bg-white p-3 shadow-sm ${ui.card}`}
+                >
+                  <div className="flex items-start justify-between gap-3">
+                    <div className="min-w-0 flex-1">
+                      <div className="mb-1 flex flex-wrap items-center gap-2">
+                        <AlertTriangle
+                          size={15}
+                          className={
+                            s.criticidade === "alta"
+                              ? "text-danger-600"
+                              : s.criticidade === "media"
+                                ? "text-warn-600"
+                                : "text-slate-400"
+                          }
+                        />
+                        <span className="font-medium text-slate-900">
+                          {s.titulo}
+                        </span>
+                        <span
+                          className={`rounded-full px-2 py-0.5 text-[11px] font-semibold ${ui.badge}`}
+                        >
+                          {ui.label}
+                        </span>
+                      </div>
+                      {s.por_que_importa && (
+                        <p className="text-sm text-slate-700">
+                          <span className="font-medium text-gold-700">
+                            Por que importa:{" "}
+                          </span>
+                          {s.por_que_importa}
+                        </p>
+                      )}
+                      {s.como_obter && (
+                        <p className="mt-0.5 text-xs text-slate-500">
+                          <span className="font-medium">Como obter: </span>
+                          {s.como_obter}
+                        </p>
+                      )}
+                    </div>
+                    <Button
+                      size="sm"
+                      variant="secondary"
+                      onClick={() => abrirDeSugestao(s, idx)}
+                      icon={<Plus size={14} />}
+                    >
+                      Adicionar ao mapa
+                    </Button>
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+        ) : (
+          sugeriu &&
+          !avisoIa && (
+            <p className="mt-3 text-sm text-slate-500">
+              Nenhuma prova faltante sugerida — o mapa probatório parece cobrir
+              o essencial para este tipo de ação.
+            </p>
+          )
+        )}
+      </div>
 
       {/* ── Formulário criar/editar ────────────────────────────────────────── */}
       <Modal

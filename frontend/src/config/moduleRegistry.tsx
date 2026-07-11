@@ -11,6 +11,7 @@ import {
   CheckSquare,
   FileSignature,
   FileText,
+  Filter,
   FolderOpen,
   Gavel,
   GitBranch,
@@ -81,6 +82,9 @@ const DossieCliente = lazy(() => import("../pages/DossieCliente"));
 const Casos = lazy(() => import("../pages/Casos"));
 const CasoDetalhe = lazy(() => import("../pages/CasoDetalhe"));
 const SalaDeGuerra = lazy(() => import("../pages/SalaDeGuerra"));
+const EntrevistaInteligente = lazy(
+  () => import("../pages/EntrevistaInteligente"),
+);
 const Prazos = lazy(() => import("../pages/Prazos"));
 const Suspensoes = lazy(() => import("../pages/Suspensoes"));
 const Tarefas = lazy(() => import("../pages/Tarefas"));
@@ -159,7 +163,8 @@ export const STAFF_ROUTES: ModuleRoute[] = [
     key: "caso-novo",
     path: "/casos/novo",
     label: "Novo Caso",
-    description: "Abertura guiada de caso: cliente (dedup por CPF/CNPJ) e dados básicos.",
+    description:
+      "Abertura guiada de caso: cliente (dedup por CPF/CNPJ) e dados básicos.",
     group: "Principal",
     icon: Plus,
     component: Casos,
@@ -269,13 +274,34 @@ export const STAFF_ROUTES: ModuleRoute[] = [
     key: "caso-jornada",
     path: "/casos/:id/jornada",
     label: "Jornada do Caso",
-    description: "Linha de etapas do caso, da entrada do cliente à gestão contínua.",
+    description:
+      "Linha de etapas do caso, da entrada do cliente à gestão contínua.",
     group: "Principal",
     icon: GitBranch,
     component: JornadaCaso,
     helpKey: "casos",
     status: "hidden",
     sensitive: true,
+  },
+  // Etapa 2 da jornada (Triagem): entrevista em texto livre com painel de
+  // confiança da IA. status hidden = fora do menu, igual a caso-jornada.
+  {
+    key: "caso-entrevista",
+    path: "/casos/:id/entrevista",
+    label: "Entrevista Inteligente",
+    description:
+      "Relato livre do ocorrido com triagem preliminar da IA e confiança por item.",
+    group: "Principal",
+    icon: Filter,
+    component: EntrevistaInteligente,
+    helpKey: "casos",
+    status: "hidden",
+    sensitive: true,
+    usesAI: true,
+    // Backend exige advogado+ — sem o gate aqui, perfis de apoio navegavam
+    // até a tela e só viam o 403 ao clicar em "Analisar".
+    roles: ROLES.compliance,
+    backendPrefixes: ["/api/triagem"],
   },
   {
     key: "sala-de-guerra",
@@ -675,7 +701,8 @@ export const STAFF_ROUTES: ModuleRoute[] = [
     key: "administracao-configuracoes",
     path: "/administracao/configuracoes",
     label: "Administração do EJC",
-    description: "Governança institucional e acesso aos painéis administrativos.",
+    description:
+      "Governança institucional e acesso aos painéis administrativos.",
     group: "Administração",
     icon: Settings,
     component: Configuracoes,
@@ -843,12 +870,14 @@ export const LEGACY_REDIRECTS: LegacyRedirect[] = [
   {
     from: "/ia",
     to: "/inteligencia?tab=ia",
-    reason: "IA Jurídica foi incorporada ao workspace de Inteligência Jurídica.",
+    reason:
+      "IA Jurídica foi incorporada ao workspace de Inteligência Jurídica.",
   },
   {
     from: "/ferramentas-ia",
     to: "/inteligencia?tab=ferramentas",
-    reason: "Ferramentas de IA foram incorporadas ao workspace de Inteligência Jurídica.",
+    reason:
+      "Ferramentas de IA foram incorporadas ao workspace de Inteligência Jurídica.",
   },
   {
     from: "/jurimetria",
@@ -858,12 +887,14 @@ export const LEGACY_REDIRECTS: LegacyRedirect[] = [
   {
     from: "/ia-saude",
     to: "/inteligencia?tab=saude",
-    reason: "Saúde da IA foi incorporada ao workspace de Inteligência Jurídica.",
+    reason:
+      "Saúde da IA foi incorporada ao workspace de Inteligência Jurídica.",
   },
   {
     from: "/conteudo-juridico",
     to: "/inteligencia?tab=conteudo",
-    reason: "Conteúdo jurídico foi incorporado ao workspace de Inteligência Jurídica.",
+    reason:
+      "Conteúdo jurídico foi incorporado ao workspace de Inteligência Jurídica.",
   },
   {
     from: "/victory-vault",
@@ -928,7 +959,10 @@ export function getHelpModuleKey(pathname: string): string | null {
   return match?.helpKey ?? null;
 }
 
-export function canRoleAccessPath(role: string | undefined, route: string): boolean {
+export function canRoleAccessPath(
+  role: string | undefined,
+  route: string,
+): boolean {
   const pathname = route.split("?")[0] || "/";
   const module = STAFF_ROUTES.find((item) => item.path === pathname);
   if (!module?.roles) return Boolean(module);
