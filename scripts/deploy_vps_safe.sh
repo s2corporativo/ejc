@@ -44,8 +44,18 @@ docker compose build backend frontend
 
 log "Subindo backend"
 docker compose up -d --no-deps backend
-sleep 10
-curl -fsS http://127.0.0.1:8000/api/health >/dev/null
+# Boot frio pós-build leva mais que 10s: espera até 60s (12 x 5s) antes de
+# declarar falha — o teto curto gerava rollback falso-negativo com o deploy
+# na prática saudável.
+backend_ok=0
+for _ in $(seq 1 12); do
+  sleep 5
+  if curl -fsS http://127.0.0.1:8000/api/health >/dev/null 2>&1; then
+    backend_ok=1
+    break
+  fi
+done
+[ "$backend_ok" = "1" ] || { log "Backend não respondeu em 60s"; exit 1; }
 
 if [ "$RUN_MIGRATIONS" = "1" ]; then
   log "RUN_MIGRATIONS=1: aplicando Alembic"
