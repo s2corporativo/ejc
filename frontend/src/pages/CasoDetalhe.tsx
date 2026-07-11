@@ -24,6 +24,7 @@ import ConversaoChecklist from "../components/ConversaoChecklist";
 import ProvasCaso from "../components/ProvasCaso";
 import DossieEstrategicoCaso from "../components/DossieEstrategicoCaso";
 import CaseBreadcrumb from "../components/CaseBreadcrumb";
+import { ConsultaProfundaTJMG } from "../components/Infosimples";
 import type { Case } from "../types";
 import {
   PageHeader,
@@ -1515,6 +1516,7 @@ function TabProcessos({ caseId }: { caseId: string }) {
               </button>
             ))}
           </div>
+          <ConsultaProfundaTJMG caseId={caseId} />
           <button
             onClick={() => setShowForm(!showForm)}
             className="btn-primary text-sm"
