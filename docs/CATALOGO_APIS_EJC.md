@@ -8,6 +8,19 @@
 > Já integrados no EJC: DataJud/CNJ, LexML SRU, STJ Dados Abertos, DJEN/Comunica
 > CNJ, Infosimples (TJMG processo + Receita CPF/CNPJ), Google Drive, BCB (a
 > integrar), Anthropic/Groq.
+>
+> **Sondagem AO VIVO (11/07/2026, workflow probe-apis)**: BCB SGS 14/14 séries OK
+> (incl. Taxa Legal 29543 = 0,706607 em 07/2026; CDI 4391 e IPCA-E 10764
+> confirmados), Olinda taxaJuros OK, BrasilAPI feriados OK (13 em 2026),
+> IBGE OK, Câmara OK (~13s), Senado OK, STJ CKAN OK (20 datasets), Normas
+> RFB OK, ANPD OK, TPU OK, DataJud TJMG OK com a chave pública (~16s),
+> Portal Transparência 401 estruturado (falta só token gratuito).
+> PTAX respondeu 400 por sintaxe OData do probe (API viva). CNPJ
+> (BrasilAPI/OpenCNPJ) 200 com corpo válido (parser do probe truncou).
+> ALMG: timeout 25s — integrar com timeout alto e degradação. Querido
+> Diário devolveu HTML no probe — reverificar contrato. TCU REST: endpoint
+> do probe errado (site oficial ok) — descobrir na implementação.
+> DJEN 403 para runner GitHub (WAF) — já integrado no EJC via VPS.
 
 ## Prioridade P0 — integrar já (alto valor, gratuito, acesso fácil)
 
