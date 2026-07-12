@@ -19,6 +19,7 @@ import {
   Alert,
   Button,
   Badge,
+  EmptyState,
   fmtDate,
 } from "../components/UI";
 import { toast } from "../components/Toast";
@@ -276,13 +277,11 @@ export default function Intimacoes() {
 
       <div className="card divide-y divide-slate-100">
         {items.length === 0 && (
-          <div className="p-10 text-center text-slate-400">
-            <Inbox className="mx-auto mb-2" />
-            Nenhuma intimação {pendentes ? "pendente" : ""}
-            <p className="text-xs mt-2">
-              Captura automática diária às 06h30 (configure sua OAB no avatar)
-            </p>
-          </div>
+          <EmptyState
+            title={`Nenhuma intimação${pendentes ? " pendente" : ""}`}
+            message="Captura automática diária às 06h30 (configure sua OAB no avatar)"
+            icon={Inbox}
+          />
         )}
         {items.map((c) => {
           const st = statusDe(c);
@@ -408,7 +407,7 @@ export default function Intimacoes() {
             {sugestao.dados.disponivel ? (
               <>
                 <div className="grid grid-cols-2 gap-3 sm:grid-cols-3">
-                  <div className="rounded-lg border border-slate-200 bg-slate-50 px-3 py-2">
+                  <div className="rounded-lg border border-black/[0.05] bg-slate-50 px-3 py-2">
                     <div className="text-[10px] font-bold uppercase text-slate-500">
                       Tipo detectado
                     </div>
@@ -419,7 +418,7 @@ export default function Intimacoes() {
                       )}
                     </div>
                   </div>
-                  <div className="rounded-lg border border-slate-200 bg-slate-50 px-3 py-2">
+                  <div className="rounded-lg border border-black/[0.05] bg-slate-50 px-3 py-2">
                     <div className="text-[10px] font-bold uppercase text-slate-500">
                       Prazo
                     </div>
@@ -427,7 +426,7 @@ export default function Intimacoes() {
                       {sugestao.dados.dias ?? "—"} dias
                     </div>
                   </div>
-                  <div className="rounded-lg border border-slate-200 bg-slate-50 px-3 py-2">
+                  <div className="rounded-lg border border-black/[0.05] bg-slate-50 px-3 py-2">
                     <div className="text-[10px] font-bold uppercase text-slate-500">
                       Data sugerida
                     </div>
@@ -447,7 +446,7 @@ export default function Intimacoes() {
                 )}
 
                 {sugestao.dados.fundamentacao && (
-                  <div className="rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm text-slate-700">
+                  <div className="card rounded-lg px-3 py-2 text-sm text-slate-700">
                     <span className="font-semibold text-slate-900">
                       Fundamentação:
                     </span>{" "}

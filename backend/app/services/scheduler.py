@@ -900,10 +900,22 @@ def start_scheduler():
     # TJMG → RAG: gate interno TJMG_INGEST_ENABLED (default False). Semanal
     # (sáb 04h30) — crawler de jurisprudência estadual MG por temas curados.
     s.add_job(job_ingestao_tjmg,     CronTrigger(day_of_week="sat", hour=4, minute=30), id="ing_tjmg", replace_existing=True)
+    # Conhecimento oficial (ANPD + Normas RFB) → RAG: gate interno
+    # CONHECIMENTO_INGEST_ENABLED (default True). Semanal, DOMINGO 03h00 UTC
+    # (trigger declara a própria timezone — o scheduler roda em America/Sao_Paulo).
+    s.add_job(job_ingestao_conhecimento,
+              CronTrigger(day_of_week="sun", hour=3, minute=0, timezone="UTC"),
+              id="ing_conhecimento", replace_existing=True)
 
     # Recarrega feriados municipais/estaduais (00h05) — pega novas inserções
     # na tabela `feriados` sem precisar reiniciar o backend.
     s.add_job(_recarregar_feriados,   CronTrigger(hour=0, minute=5),  id="feriados",  replace_existing=True)
+    # Sync semanal dos feriados NACIONAIS via BrasilAPI (seg 00h15) — gate
+    # interno FERIADOS_BRASILAPI_ENABLED (default True). Merge aditivo: nunca
+    # altera feriados municipais/estaduais cadastrados à mão.
+    s.add_job(_sincronizar_feriados_brasilapi,
+              CronTrigger(day_of_week="mon", hour=0, minute=15),
+              id="feriados_brasilapi", replace_existing=True)
     s.add_job(_backup_banco,          CronTrigger(hour=2, minute=0),  id="backup",    replace_existing=True)
     s.add_job(_auditoria_processos,   CronTrigger(day_of_week="mon", hour=8, minute=15),  id="auditoria",  replace_existing=True)
     s.add_job(_monitor_diario_oficial, CronTrigger(hour=6, minute=0),                      id="dou_monitor", replace_existing=True)
@@ -934,6 +946,15 @@ def start_scheduler():
         job_datajud_sync_clientes,
         CronTrigger(hour=_dj_hora, minute=_dj_min, timezone="UTC"),
         id="datajud_sync_clientes", replace_existing=True,
+    )
+    # Radar Legislativo (Câmara + Senado + ALMG) — diário 07h00 UTC. Gate
+    # interno RADAR_LEGISLATIVO_ENABLED (default True — APIs públicas sem
+    # custo). Falha de uma fonte (ALMG instável) nunca derruba o job.
+    from app.services.radar_legislativo import job_radar_legislativo
+    s.add_job(
+        job_radar_legislativo,
+        CronTrigger(hour=7, minute=0, timezone="UTC"),
+        id="radar_legislativo", replace_existing=True,
     )
     # Relatório semanal do dono — segunda 07h20 (RELATORIO_DONO_ENABLED).
     from app.services.relatorio_dono_service import job_relatorio_dono
@@ -1058,6 +1079,17 @@ async def _recarregar_feriados():
     n = await carregar_feriados_db()
     ns = await carregar_suspensoes_db()
     logger.info(f"[Scheduler] Feriados recarregados: {n} | Suspensões: {ns} dia(s)")
+
+
+async def _sincronizar_feriados_brasilapi():
+    """Segunda 00h15 — sync dos feriados NACIONAIS (ano corrente + próximo)
+    via BrasilAPI para a tabela `feriados` (merge aditivo, fail-safe)."""
+    try:
+        from app.services.feriados_service import sincronizar_feriados_nacionais
+        resumo = await sincronizar_feriados_nacionais()
+        logger.info(f"[Scheduler] Feriados BrasilAPI: {resumo}")
+    except Exception as e:
+        logger.error(f"[Scheduler] Feriados BrasilAPI falhou: {e}")
 
 
 async def _monitor_diario_oficial():
@@ -1453,3 +1485,23 @@ async def job_ingestao_tjmg():
         "tjmg", "Jurisprudência TJMG (crawler — base de acórdãos)",
         "jurisprudencia", tjmg.ingerir,
     )
+
+
+async def job_ingestao_conhecimento():
+    """Domingo 03h00 UTC — ingestão contínua de conhecimento oficial → RAG
+    (Bloco 3): ANPD (regulamentações + guias, LGPD) e Normas RFB
+    (sijut2consulta, tributário).
+
+    Gate: CONHECIMENTO_INGEST_ENABLED (default True — fontes públicas sem
+    custo, autorizado pelo dono). O orquestrador isola falhas POR FONTE e
+    registra métricas em fontes_ingestao — nunca levanta para o scheduler.
+    O dedup é o próprio chave_origem do upsert (idempotente/versionado).
+    """
+    from app.core.config import get_settings as _gs
+    if not _gs().CONHECIMENTO_INGEST_ENABLED:
+        logger.info("[Ingestao:conhecimento] desabilitado "
+                    "(CONHECIMENTO_INGEST_ENABLED=false)")
+        return
+    from app.services.conhecimento_ingest import executar_ingest_conhecimento
+    resumo = await executar_ingest_conhecimento()
+    logger.info(f"[Ingestao:conhecimento] resumo: {resumo}")

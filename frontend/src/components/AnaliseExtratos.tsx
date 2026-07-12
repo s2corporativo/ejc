@@ -464,7 +464,7 @@ export default function AnaliseExtratos() {
                   readOnly
                   value={minutaDoc}
                   rows={14}
-                  className="w-full border border-slate-200 rounded-xl px-4 py-3 text-sm text-slate-800 bg-slate-50 font-mono resize-none focus:outline-none focus:ring-2 focus:ring-bronze"
+                  className="input bg-slate-50 font-mono resize-none"
                 />
               </div>
 

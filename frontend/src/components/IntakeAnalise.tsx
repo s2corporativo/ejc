@@ -358,7 +358,7 @@ export default function IntakeAnalise({ caseId }: { caseId: string }) {
                 {dados.honorarios.itens.map((h, i) => (
                   <div
                     key={h.item_codigo || i}
-                    className="rounded-lg border border-slate-200 bg-white p-3 text-sm"
+                    className="card p-3 text-sm"
                   >
                     <div className="flex flex-wrap items-center justify-between gap-2">
                       <span className="font-medium text-slate-800">

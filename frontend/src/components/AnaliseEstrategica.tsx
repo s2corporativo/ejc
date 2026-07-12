@@ -128,7 +128,7 @@ function Secao({
 }) {
   const [aberta, setAberta] = useState(true);
   return (
-    <div className="border border-slate-200 rounded-xl overflow-hidden">
+    <div className="card overflow-hidden">
       <button
         onClick={() => setAberta(!aberta)}
         className="w-full flex items-center justify-between px-5 py-3.5 bg-white hover:bg-slate-50 transition-colors text-left"
@@ -234,7 +234,7 @@ export default function AnaliseEstrategica({
               value={textDoc}
               onChange={(e) => setTextDoc(e.target.value)}
               placeholder="Cole aqui o texto extraído de uma petição, contrato, documento oficial..."
-              className="w-full border border-slate-200 rounded-lg p-3 text-sm h-28 resize-none focus:ring-2 focus:ring-ai-300 focus:border-ai-400 outline-none"
+              className="input h-28 resize-none"
             />
           )}
           <Button
@@ -479,7 +479,7 @@ export default function AnaliseEstrategica({
                 {analise.teses_campeas.map((t, i) => (
                   <div
                     key={i}
-                    className="border border-slate-200 rounded-xl p-4 bg-gradient-to-br from-white to-success-50"
+                    className="card p-4 bg-gradient-to-br from-white to-success-50"
                   >
                     <div className="flex items-start justify-between mb-2">
                       <h4 className="font-semibold text-slate-800 text-sm pr-2">
@@ -569,7 +569,7 @@ export default function AnaliseEstrategica({
                 {analise.riscos.map((r, i) => (
                   <div
                     key={i}
-                    className="border border-slate-200 rounded-xl p-4 bg-white"
+                    className="card p-4"
                   >
                     <div className="flex items-start justify-between mb-2">
                       <p className="text-sm font-medium text-slate-800 pr-2">
@@ -622,7 +622,7 @@ export default function AnaliseEstrategica({
                   .map((p, i) => (
                     <div
                       key={i}
-                      className="flex items-start gap-3 p-3 bg-white border border-slate-200 rounded-xl"
+                      className="card flex items-start gap-3 p-3"
                     >
                       <div
                         className={`text-xs font-bold px-2 py-1 rounded-lg shrink-0 ${

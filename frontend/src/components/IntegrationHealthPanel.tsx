@@ -8,7 +8,7 @@ import {
 } from "lucide-react";
 import api from "../lib/api";
 import { toast } from "./Toast";
-import { SectionCard } from "./UI";
+import { SectionCard, Spinner } from "./UI";
 
 export type IntegrationState = "ready" | "attention" | "disabled";
 
@@ -111,7 +111,7 @@ export default function IntegrationHealthPanel() {
             ].map(([label, value]) => (
               <div
                 key={label}
-                className="rounded-xl border border-slate-200 bg-white p-3"
+                className="card p-3"
               >
                 <div className="text-xs text-slate-400">{label}</div>
                 <div className="mt-1 text-xl font-semibold text-slate-800">
@@ -150,9 +150,7 @@ export default function IntegrationHealthPanel() {
       </SectionCard>
 
       {loading && !data ? (
-        <div className="card p-10 text-center text-sm text-slate-400">
-          Carregando integrações...
-        </div>
+        <Spinner />
       ) : (
         groups.map(([group, items]) => (
           <SectionCard key={group} title={group}>
@@ -163,7 +161,7 @@ export default function IntegrationHealthPanel() {
                 return (
                   <div
                     key={item.key}
-                    className="flex items-start gap-3 rounded-xl border border-slate-200 bg-white p-4"
+                    className="card flex items-start gap-3 p-4"
                   >
                     <span className={`rounded-xl p-2.5 ${meta.iconClass}`}>
                       <Icon className="h-5 w-5" />

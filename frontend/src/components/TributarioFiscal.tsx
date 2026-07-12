@@ -92,7 +92,7 @@ function TeseCard({ tese }: { tese: TeseFiscal }) {
       className={`rounded-xl border-2 p-4 ${
         tese.aplicavel
           ? "border-gold-light bg-white"
-          : "border-slate-200 bg-slate-50/60 opacity-60"
+          : "border-transparent bg-slate-900/[0.04] opacity-60 dark:bg-white/[0.06]"
       }`}
     >
       <div className="flex flex-wrap items-start gap-2">
@@ -112,7 +112,7 @@ function TeseCard({ tese }: { tese: TeseFiscal }) {
           <span className="text-xl font-bold text-gold-700">
             {fmtBRL(tese.valor_estimado)}
           </span>
-          <span className="text-[10px] px-2 py-0.5 rounded-full bg-slate-100 border border-slate-200 text-slate-500 uppercase tracking-wide">
+          <span className="text-[10px] px-2 py-0.5 rounded-full bg-slate-900/[0.05] text-slate-500 dark:bg-white/[0.07] dark:text-slate-400 uppercase tracking-wide">
             {tese.nivel_confianca.replace(/_/g, " ")}
           </span>
         </div>
@@ -124,7 +124,7 @@ function TeseCard({ tese }: { tese: TeseFiscal }) {
       )}
 
       {tese.memoria_calculo?.length > 0 && (
-        <details className="mt-2 rounded-lg border border-slate-200 bg-slate-50/60 px-3 py-2">
+        <details className="card mt-2 bg-slate-50/60 px-3 py-2">
           <summary className="text-xs font-medium text-slate-600 cursor-pointer select-none">
             Como chegamos neste número
           </summary>
@@ -282,7 +282,7 @@ export default function TributarioFiscal() {
         />
 
         {arquivos.length > 0 && (
-          <div className="rounded-lg border border-slate-200 bg-slate-50/60 p-3">
+          <div className="card bg-slate-50/60 p-3">
             <div className="flex items-center justify-between mb-2">
               <span
                 className={`text-xs font-semibold ${excedeu ? "text-danger-600" : "text-slate-600"}`}
@@ -444,7 +444,7 @@ export default function TributarioFiscal() {
           </button>
 
           {/* Notas analisadas */}
-          <details className="rounded-lg border border-slate-200 bg-slate-50/60 px-3 py-2">
+          <details className="card bg-slate-50/60 px-3 py-2">
             <summary className="text-xs font-medium text-slate-600 cursor-pointer select-none">
               Notas analisadas ({res.notas.length})
             </summary>

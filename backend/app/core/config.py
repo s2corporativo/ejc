@@ -196,6 +196,23 @@ class Settings(BaseSettings):
     # Host oficial da API Pública (POST /{alias_tribunal}/_search).
     DATAJUD_BASE_URL: str = "https://api-publica.datajud.cnj.jus.br"
 
+    # ── Infosimples — consultas PAGAS a sites públicos (TJMG, Receita…) ──
+    # Agregador comercial (https://infosimples.com/consultas/): cada consulta
+    # EXECUTADA é cobrada. Integração opt-in, desligada por padrão, com teto
+    # diário de custo e cache do mesmo dia (ver services/infosimples_service).
+    INFOSIMPLES_ENABLED: bool = False
+    # Token da conta contratada — vai só no corpo da requisição; NUNCA em
+    # logs, mensagens de erro ou payloads de resposta.
+    INFOSIMPLES_TOKEN: str = ""
+    # Timeout repassado à Infosimples (segundos) — as consultas raspam sites
+    # públicos e podem demorar; o cliente HTTP usa este valor + margem.
+    INFOSIMPLES_TIMEOUT: int = 300
+    # TETO DE CUSTO: máximo de consultas EXECUTADAS (cobradas) por dia UTC.
+    # Atingido o teto, o serviço recusa novas consultas (429) até o dia virar.
+    INFOSIMPLES_MAX_CONSULTAS_DIA: int = 50
+    # Base oficial (POST {base}/{caminho} form-urlencoded). Só mude p/ testes.
+    INFOSIMPLES_BASE_URL: str = "https://api.infosimples.com/api/v2/consultas"
+
     # ── DJEN / API Comunica CNJ (Res. CNJ 569/2024) — ingestão RAG ───────
     # Ingestor diário de comunicações processuais (intimações/publicações)
     # por OAB monitorada. A retenção da API é limitada — o RAG do EJC é o
@@ -227,6 +244,19 @@ class Settings(BaseSettings):
     # Teto de acórdãos por tema/execução (controle de volume e de carga no
     # portal do TJMG — evita varredura abusiva).
     TJMG_INGEST_MAX_POR_TEMA: int = 50
+
+    # ── Ingestão contínua de conhecimento (ANPD + Normas RFB → RAG) ──────
+    # Job SEMANAL (domingo 03h00 UTC) que raspa fontes oficiais e alimenta a
+    # base de conhecimento: regulamentações/guias da ANPD (LGPD) e atos
+    # tributários do sijut2consulta da RFB. Idempotente por chave_origem
+    # (anpd:<slug> / rfb:<tipo>:<numero>:<ano>) — reexecução não duplica.
+    # Default True (ligado — autorização do dono; fontes públicas sem custo).
+    # Disparo manual: POST /rag/ingest-fontes-oficiais (socio+).
+    CONHECIMENTO_INGEST_ENABLED: bool = True
+    # CSV de termos de busca do sijut2consulta (Normas RFB). Vazio = lista
+    # padrão do ramo tributário (services/conhecimento_ingest/normas_rfb.py::
+    # TERMOS_PADRAO — Solução de Consulta ISS, IRPF, Simples Nacional...).
+    NORMAS_RFB_TERMOS: str = ""
 
     # ── Embeddings locais/remotos (busca semântica RAG) ─────────────────
     # local = fastembed (ONNX, sem torch) no mesmo processo; http = serviço interno separado.
@@ -343,8 +373,41 @@ class Settings(BaseSettings):
     # com a régua interna do advogado (scheduler._regua_cobranca).
     COBRANCA_ENABLED: bool = False
 
+    # ── Índices oficiais BCB (SGS + Olinda) — services/indices_service.py ─
+    # API pública do Banco Central, gratuita e sem chave: correção monetária,
+    # Taxa Legal (Lei 14.905/2024), Selic EC 113, taxas de juros por
+    # instituição (revisional) e PTAX. LIGADO por padrão (autorizado pelo
+    # dono — não há custo). Cache persistente em indices_bcb_cache.
+    INDICES_BCB_ENABLED: bool = True
+    # Timeout (segundos) das chamadas ao BCB (SGS e Olinda).
+    INDICES_BCB_TIMEOUT: int = 20
+
+    # ── Feriados nacionais via BrasilAPI — services/feriados_service.py ───
+    # Sync automático (job semanal) dos feriados nacionais do ano corrente e
+    # do próximo para a tabela `feriados` (merge aditivo: municipais/
+    # estaduais cadastrados à mão nunca são alterados). Gratuito, sem chave —
+    # ligado por padrão.
+    FERIADOS_BRASILAPI_ENABLED: bool = True
+
+    # ── Radar Legislativo (Câmara + Senado + ALMG) ────────────────────────
+    # Job diário (07h00 UTC) que monitora proposições por termos derivados
+    # dos ramos ativos do escritório e alimenta o Radar Regulatório
+    # (services/radar_legislativo.py). APIs públicas gratuitas, sem chave —
+    # LIGADO por padrão (autorizado pelo dono). Dedup persistente na tabela
+    # radar_legislativo_visto (criada automaticamente — sem migration).
+    RADAR_LEGISLATIVO_ENABLED: bool = True
+    # Termos customizados por ramo (JSON): {"ramo": ["termo", ...]} —
+    # SOBREPÕE os termos default do ramo; ramos extras são aditivos.
+    # Ex.: {"tributario": ["CBS IBS", "split payment"], "agrario": ["MP solo"]}
+    RADAR_LEGISLATIVO_TERMOS: str = ""
+
     # ── Scheduler ────────────────────────────────────────────────────────
     ENABLE_SCHEDULER: bool = True   # desligar em workers extras (uvicorn --workers)
+
+    # ── Central Eletrônica de Diagnóstico (routers/diagnostico.py) ────────
+    # Endpoint SOCIO+ que agrega a saúde de todos os subsistemas. Somente
+    # leitura; sem integração externa nova. False → GET /diagnostico/central 503.
+    DIAGNOSTICO_ENABLED: bool = True
 
     # ── Fila assíncrona (Celery + Redis — Fase 3A) ────────────────────────
     # CELERY_ENABLED=False (default) preserva o comportamento atual: tarefas

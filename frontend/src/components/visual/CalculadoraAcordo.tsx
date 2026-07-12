@@ -1,14 +1,16 @@
 // ── Visual Law: Calculadora de acordo (breakeven do litígio) ─────────────────
 // POST /visual-law/breakeven — compara VPL do litígio × acordo imediato.
 // Inclui seção opcional "Perfil do julgador" (POST /diplomacia-v3/analisar-magistrado).
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import {
   Calculator,
   ChevronDown,
   Gavel,
   Hourglass,
+  Landmark,
   Scale,
   Sparkles,
+  TrendingUp,
 } from "lucide-react";
 import api from "../../lib/api";
 import Markdown from "../Markdown";
@@ -31,7 +33,6 @@ import type {
   BreakevenResponse,
   SelicFonte,
 } from "../../types/visualLaw";
-
 
 const TRIBUNAIS = ["TJMG", "TJSP", "TRT3", "TRF6", "STJ", "outro"] as const;
 
@@ -170,7 +171,7 @@ function PerfilJulgador() {
   };
 
   return (
-    <details className="rounded-xl border border-slate-200 bg-white">
+    <details className="card">
       <summary className="flex cursor-pointer list-none items-center gap-2 px-4 py-3 text-sm font-medium text-slate-700 hover:bg-slate-50">
         <Gavel className="h-4 w-4 text-slate-400" />
         Perfil do julgador (opcional)
@@ -209,13 +210,427 @@ function PerfilJulgador() {
             <IANotice>
               Análise gerada por IA — revisão obrigatória do advogado.
             </IANotice>
-            <div className="rounded-xl border border-slate-200 bg-slate-50/70 p-4 text-sm">
+            <div className="card bg-slate-50/70 p-4 text-sm">
               <Markdown source={analise} />
             </div>
           </div>
         )}
       </div>
     </details>
+  );
+}
+
+// ── Correção monetária por índice oficial do BCB ─────────────────────────────
+// GET /indices/series (catálogo + último valor divulgado) ·
+// POST /indices/atualizar-valor (valor final + memória de cálculo mês a mês).
+// Fonte oficial (BCB SGS) — MINUTA para conferência do advogado (HITL).
+type RegraCorrecao = "correcao" | "correcao_mais_taxa_legal" | "selic_ec113";
+
+interface SerieInfo {
+  indice: string;
+  nome: string;
+  codigo_sgs: number;
+  tipo: string;
+  ultimo_valor: number | null;
+  ultima_data: string | null;
+}
+
+interface EtapaMemoria {
+  competencia: string;
+  valor_pct: number;
+  fator_periodo: number;
+  fator_acumulado: number;
+}
+
+interface EtapaCorrecao {
+  nome?: string;
+  fator?: number;
+  meses_aplicados?: number;
+  percentual_acumulado?: number;
+  periodo?: string;
+  memoria_calculo?: EtapaMemoria[];
+  base_legal?: string;
+  fonte?: string;
+}
+
+interface AtualizarValorResposta {
+  regra: RegraCorrecao;
+  valor_original: number;
+  valor_final: number;
+  etapas: EtapaCorrecao[];
+}
+
+const REGRAS_CORRECAO: {
+  id: RegraCorrecao;
+  label: string;
+  hint: string;
+}[] = [
+  {
+    id: "correcao",
+    label: "Somente correção monetária",
+    hint: "Atualiza o valor pelo índice escolhido, competência a competência.",
+  },
+  {
+    id: "correcao_mais_taxa_legal",
+    label: "Correção + Taxa Legal (Lei 14.905/2024)",
+    hint: "Correção pelo índice + juros da Taxa Legal (série SGS 29543) sobre o valor já corrigido.",
+  },
+  {
+    id: "selic_ec113",
+    label: "SELIC exclusiva (EC 113/2021 — Fazenda Pública)",
+    hint: "Selic acumulada, vedada a cumulação com correção ou juros (débitos da Fazenda Pública).",
+  },
+];
+
+// Correção monetária usa séries MENSAIS; diárias (Selic/CDI diária, meta) não
+// entram no fator. Fallback usado quando o catálogo do BCB não responde.
+const INDICES_FALLBACK: SerieInfo[] = [
+  {
+    indice: "ipca",
+    nome: "IPCA (IBGE, % a.m.)",
+    codigo_sgs: 433,
+    tipo: "mensal",
+    ultimo_valor: null,
+    ultima_data: null,
+  },
+  {
+    indice: "ipca_e",
+    nome: "IPCA-E (IBGE, % acum. trim.)",
+    codigo_sgs: 10764,
+    tipo: "mensal",
+    ultimo_valor: null,
+    ultima_data: null,
+  },
+  {
+    indice: "inpc",
+    nome: "INPC (IBGE, % a.m.)",
+    codigo_sgs: 188,
+    tipo: "mensal",
+    ultimo_valor: null,
+    ultima_data: null,
+  },
+  {
+    indice: "igpm",
+    nome: "IGP-M (FGV, % a.m.)",
+    codigo_sgs: 189,
+    tipo: "mensal",
+    ultimo_valor: null,
+    ultima_data: null,
+  },
+  {
+    indice: "selic_mensal",
+    nome: "SELIC acumulada no mês (%)",
+    codigo_sgs: 4390,
+    tipo: "mensal",
+    ultimo_valor: null,
+    ultima_data: null,
+  },
+  {
+    indice: "tr",
+    nome: "TR (% a.m.)",
+    codigo_sgs: 226,
+    tipo: "mensal",
+    ultimo_valor: null,
+    ultima_data: null,
+  },
+];
+
+function fmtPct(n: number | null | undefined, casas = 4): string {
+  return Number(n ?? 0).toLocaleString("pt-BR", {
+    minimumFractionDigits: 2,
+    maximumFractionDigits: casas,
+  });
+}
+function fmtFator(n: number | null | undefined): string {
+  return Number(n ?? 0).toLocaleString("pt-BR", {
+    minimumFractionDigits: 6,
+    maximumFractionDigits: 8,
+  });
+}
+
+function MemoriaEtapa({ etapa }: { etapa: EtapaCorrecao }) {
+  const linhas = etapa.memoria_calculo ?? [];
+  return (
+    <div className="rounded-xl border border-slate-100 bg-slate-50/60 p-3">
+      <div className="mb-2 flex flex-wrap items-center justify-between gap-2">
+        <span className="text-xs font-semibold text-slate-700">
+          {etapa.nome || "Etapa"}
+        </span>
+        <span className="text-[11px] tabular-nums text-slate-500">
+          fator {fmtFator(etapa.fator)}
+          {etapa.meses_aplicados != null
+            ? ` · ${etapa.meses_aplicados} competência(s)`
+            : ""}
+        </span>
+      </div>
+      {linhas.length > 0 && (
+        <div className="overflow-x-auto">
+          <table className="w-full min-w-[420px] text-[11px]">
+            <thead>
+              <tr className="text-left text-slate-400">
+                <th className="py-1 pr-2 font-medium">Competência</th>
+                <th className="py-1 pr-2 text-right font-medium">Índice (%)</th>
+                <th className="py-1 pr-2 text-right font-medium">
+                  Fator período
+                </th>
+                <th className="py-1 text-right font-medium">Fator acumulado</th>
+              </tr>
+            </thead>
+            <tbody className="tabular-nums text-slate-600">
+              {linhas.map((l, i) => (
+                <tr key={i} className="border-t border-slate-100">
+                  <td className="py-1 pr-2">{l.competencia}</td>
+                  <td className="py-1 pr-2 text-right">
+                    {fmtPct(l.valor_pct)}
+                  </td>
+                  <td className="py-1 pr-2 text-right">
+                    {fmtFator(l.fator_periodo)}
+                  </td>
+                  <td className="py-1 text-right font-medium text-slate-700">
+                    {fmtFator(l.fator_acumulado)}
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      )}
+      {(etapa.base_legal || etapa.fonte) && (
+        <p className="mt-2 text-[10px] text-slate-500">
+          {etapa.base_legal || etapa.fonte}
+        </p>
+      )}
+    </div>
+  );
+}
+
+function CorrecaoMonetariaOficial() {
+  const [series, setSeries] = useState<SerieInfo[] | null>(null);
+  const [catalogoIndisponivel, setCatalogoIndisponivel] = useState(false);
+  const [valor, setValor] = useState("");
+  const [indice, setIndice] = useState("ipca");
+  const [dataInicial, setDataInicial] = useState("");
+  const [dataFinal, setDataFinal] = useState("");
+  const [regra, setRegra] = useState<RegraCorrecao>("correcao");
+  const [calculando, setCalculando] = useState(false);
+  const [resultado, setResultado] = useState<AtualizarValorResposta | null>(
+    null,
+  );
+
+  useEffect(() => {
+    let vivo = true;
+    api
+      .get<{ series: SerieInfo[] }>("/indices/series")
+      .then((r) => {
+        if (!vivo) return;
+        const mensais = (r.data.series ?? []).filter(
+          (s) => s.tipo === "mensal",
+        );
+        setSeries(mensais.length ? mensais : INDICES_FALLBACK);
+      })
+      .catch(() => {
+        if (!vivo) return;
+        setSeries(INDICES_FALLBACK);
+        setCatalogoIndisponivel(true);
+      });
+    return () => {
+      vivo = false;
+    };
+  }, []);
+
+  const listaIndices = series ?? INDICES_FALLBACK;
+  const usaIndice = regra !== "selic_ec113";
+  const selInfo = listaIndices.find((s) => s.indice === indice);
+  const regraInfo = REGRAS_CORRECAO.find((r) => r.id === regra);
+  const variacaoPct =
+    resultado && resultado.valor_original > 0
+      ? (resultado.valor_final / resultado.valor_original - 1) * 100
+      : 0;
+
+  const calcular = async (e: React.FormEvent) => {
+    e.preventDefault();
+    const v = Number(valor);
+    if (!Number.isFinite(v) || v <= 0) {
+      toast.error("Informe um valor a corrigir maior que zero");
+      return;
+    }
+    if (!dataInicial || !dataFinal) {
+      toast.error("Informe a data inicial e a data final da correção");
+      return;
+    }
+    if (dataFinal < dataInicial) {
+      toast.error("A data final não pode ser anterior à data inicial");
+      return;
+    }
+    setCalculando(true);
+    try {
+      const r = await api.post<AtualizarValorResposta>(
+        "/indices/atualizar-valor",
+        {
+          valor: v,
+          indice,
+          data_inicial: dataInicial,
+          data_final: dataFinal,
+          regra,
+        },
+      );
+      setResultado(r.data);
+    } catch (err) {
+      toast.error(
+        detalheErro(err, "Falha ao atualizar o valor pelo índice oficial"),
+      );
+    } finally {
+      setCalculando(false);
+    }
+  };
+
+  return (
+    <SectionCard
+      title="Correção monetária por índice oficial (BCB)"
+      subtitle="Atualiza valores por índices oficiais do Banco Central (SGS), com memória de cálculo mês a mês para juntar aos autos"
+      actions={
+        catalogoIndisponivel ? (
+          <Badge tone="amber">Catálogo BCB indisponível</Badge>
+        ) : (
+          <Badge tone="green">Fonte oficial · BCB</Badge>
+        )
+      }
+    >
+      <form onSubmit={calcular} className="space-y-4">
+        <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">
+          <div>
+            <FieldLabel required>Valor a corrigir (R$)</FieldLabel>
+            <Input
+              type="number"
+              min="0.01"
+              step="0.01"
+              required
+              value={valor}
+              onChange={(e) => setValor(e.target.value)}
+              placeholder="Ex.: 10000"
+            />
+          </div>
+          <div>
+            <FieldLabel required>Data inicial</FieldLabel>
+            <Input
+              type="date"
+              required
+              value={dataInicial}
+              onChange={(e) => setDataInicial(e.target.value)}
+            />
+          </div>
+          <div>
+            <FieldLabel required>Data final</FieldLabel>
+            <Input
+              type="date"
+              required
+              value={dataFinal}
+              onChange={(e) => setDataFinal(e.target.value)}
+            />
+          </div>
+          <div>
+            <FieldLabel>Índice</FieldLabel>
+            <Select
+              value={indice}
+              disabled={!usaIndice}
+              onChange={(e) => setIndice(e.target.value)}
+            >
+              {listaIndices.map((s) => (
+                <option key={s.indice} value={s.indice}>
+                  {s.nome}
+                  {s.ultimo_valor != null
+                    ? ` — último ${fmtPct(s.ultimo_valor)}%`
+                    : ""}
+                </option>
+              ))}
+            </Select>
+            {usaIndice && selInfo?.ultimo_valor != null && (
+              <p className="mt-1 text-[11px] text-slate-400">
+                Último {selInfo.nome}: {fmtPct(selInfo.ultimo_valor)}%
+                {selInfo.ultima_data
+                  ? ` em ${selInfo.ultima_data.split("-").reverse().join("/")}`
+                  : ""}
+              </p>
+            )}
+            {!usaIndice && (
+              <p className="mt-1 text-[11px] text-slate-400">
+                A regra EC 113/2021 usa a Selic acumulada — índice fixo.
+              </p>
+            )}
+          </div>
+        </div>
+
+        <div>
+          <FieldLabel>Regra de atualização</FieldLabel>
+          <Select
+            value={regra}
+            onChange={(e) => setRegra(e.target.value as RegraCorrecao)}
+          >
+            {REGRAS_CORRECAO.map((r) => (
+              <option key={r.id} value={r.id}>
+                {r.label}
+              </option>
+            ))}
+          </Select>
+          {regraInfo && (
+            <p className="mt-1 text-[11px] text-slate-400">{regraInfo.hint}</p>
+          )}
+        </div>
+
+        <Button
+          type="submit"
+          disabled={calculando}
+          icon={<TrendingUp className="h-4 w-4" />}
+        >
+          {calculando ? "Atualizando…" : "Atualizar valor"}
+        </Button>
+      </form>
+
+      {calculando && <Spinner />}
+
+      {resultado && !calculando && (
+        <div className="mt-5 space-y-4">
+          <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+            <div className="rounded-xl border border-slate-200 bg-slate-50/60 p-5">
+              <div className="text-xs font-semibold uppercase tracking-wide text-slate-500">
+                Valor original
+              </div>
+              <p className="mt-2 text-2xl font-bold tabular-nums text-slate-700">
+                {fmtMoney(resultado.valor_original)}
+              </p>
+            </div>
+            <div className="rounded-xl border border-emerald-200 bg-emerald-50/60 p-5">
+              <div className="flex items-center gap-2 text-xs font-semibold uppercase tracking-wide text-emerald-700">
+                <Landmark className="h-4 w-4" />
+                Valor atualizado
+              </div>
+              <p className="mt-2 text-3xl font-bold tabular-nums text-emerald-800">
+                {fmtMoney(resultado.valor_final)}
+              </p>
+              <p className="mt-1 text-xs text-slate-500">
+                Variação de {fmtPct(variacaoPct, 2)}% no período
+              </p>
+            </div>
+          </div>
+
+          <IANotice>
+            Cálculo determinístico com base nos índices oficiais do BCB — MINUTA
+            para conferência do advogado (HITL) antes de juntar aos autos.
+          </IANotice>
+
+          <div className="space-y-3">
+            <div className="flex items-center gap-2 text-xs font-semibold uppercase tracking-wide text-slate-500">
+              <Calculator className="h-4 w-4" />
+              Memória de cálculo ({resultado.etapas.length}{" "}
+              {resultado.etapas.length === 1 ? "etapa" : "etapas"})
+            </div>
+            {resultado.etapas.map((etapa, i) => (
+              <MemoriaEtapa key={i} etapa={etapa} />
+            ))}
+          </div>
+        </div>
+      )}
+    </SectionCard>
   );
 }
 
@@ -351,7 +766,7 @@ export default function CalculadoraAcordo({
             </div>
           </div>
 
-          <details className="rounded-xl border border-slate-200">
+          <details className="card">
             <summary className="flex cursor-pointer list-none items-center gap-2 px-4 py-2.5 text-xs font-medium text-slate-600 hover:bg-slate-50">
               <ChevronDown className="h-3.5 w-3.5 text-slate-400" />
               Parâmetros avançados (custas e sucumbência)
@@ -418,9 +833,9 @@ export default function CalculadoraAcordo({
                   {fmtMoney(resultado.vpl_litigio)}
                 </p>
                 <p className="mt-1 text-xs text-slate-500">
-                  Valor esperado {fmtMoney(resultado.valor_esperado)} −
-                  custos {fmtMoney(resultado.custos_estimados)}, trazidos a
-                  valor presente ({resultado.parametros.tempo_anos}{" "}
+                  Valor esperado {fmtMoney(resultado.valor_esperado)} − custos{" "}
+                  {fmtMoney(resultado.custos_estimados)}, trazidos a valor
+                  presente ({resultado.parametros.tempo_anos}{" "}
                   {resultado.parametros.tempo_anos === 1 ? "ano" : "anos"}
                   {resultado.parametros.tribunal
                     ? ` · ${resultado.parametros.tribunal}`
@@ -466,7 +881,7 @@ export default function CalculadoraAcordo({
 
             {/* Memória de cálculo */}
             {resultado.memoria_calculo.length > 0 && (
-              <details className="rounded-xl border border-slate-200">
+              <details className="card">
                 <summary className="flex cursor-pointer list-none items-center gap-2 px-4 py-2.5 text-xs font-medium text-slate-600 hover:bg-slate-50">
                   <ChevronDown className="h-3.5 w-3.5 text-slate-400" />
                   Memória de cálculo ({resultado.memoria_calculo.length} passos)
@@ -481,6 +896,8 @@ export default function CalculadoraAcordo({
           </div>
         </SectionCard>
       )}
+
+      <CorrecaoMonetariaOficial />
 
       <PerfilJulgador />
     </div>

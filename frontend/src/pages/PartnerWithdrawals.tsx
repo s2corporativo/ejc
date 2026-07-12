@@ -2,7 +2,14 @@ import { useState, useEffect, useCallback } from "react";
 import { Plus, Check, CreditCard, Trash2 } from "lucide-react";
 import api from "../lib/api";
 import { useAuth } from "../stores/auth";
-import { Modal, PageHeader, fmtMoney, fmtDate } from "../components/UI";
+import {
+  EmptyState,
+  Modal,
+  PageHeader,
+  Spinner,
+  fmtMoney,
+  fmtDate,
+} from "../components/UI";
 import { toast } from "../components/Toast";
 
 interface Withdrawal {
@@ -127,13 +134,11 @@ export default function PartnerWithdrawals() {
       />
 
       {loading ? (
-        <div className="text-center py-12 text-slate-400">Carregando...</div>
+        <Spinner />
       ) : data.length === 0 ? (
-        <div className="text-center py-12 text-slate-400">
-          Nenhuma solicitação encontrada
-        </div>
+        <EmptyState title="Nenhuma solicitação encontrada" />
       ) : (
-        <div className="bg-white rounded-xl border border-slate-200 overflow-hidden">
+        <div className="card overflow-hidden">
           <table className="w-full text-sm">
             <thead className="bg-slate-50 text-slate-600 text-xs uppercase tracking-wider">
               <tr>
@@ -228,7 +233,7 @@ export default function PartnerWithdrawals() {
               </label>
               <input
                 type="number"
-                className="w-full border border-slate-200 rounded-lg px-3 py-2 text-sm"
+                className="input"
                 value={form.gross_value}
                 onChange={(e) =>
                   setForm({ ...form, gross_value: e.target.value })
@@ -241,7 +246,7 @@ export default function PartnerWithdrawals() {
               </label>
               <input
                 type="number"
-                className="w-full border border-slate-200 rounded-lg px-3 py-2 text-sm"
+                className="input"
                 value={form.case_expenses}
                 onChange={(e) =>
                   setForm({ ...form, case_expenses: e.target.value })
@@ -267,7 +272,7 @@ export default function PartnerWithdrawals() {
             </label>
             <input
               type="text"
-              className="w-full border border-slate-200 rounded-lg px-3 py-2 text-sm"
+              className="input"
               placeholder="AAAA-MM"
               value={form.period_reference}
               onChange={(e) =>
@@ -281,7 +286,7 @@ export default function PartnerWithdrawals() {
             </label>
             <textarea
               rows={2}
-              className="w-full border border-slate-200 rounded-lg px-3 py-2 text-sm resize-none"
+              className="input resize-none"
               value={form.description}
               onChange={(e) =>
                 setForm({ ...form, description: e.target.value })

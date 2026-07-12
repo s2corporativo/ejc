@@ -126,8 +126,21 @@ class AuthMiddleware(BaseHTTPMiddleware):
         # Isolamento LGPD: dados internos do escritório ficam inacessíveis
         # mesmo com token válido. Guarda central — vale p/ TODAS as rotas.
         if request.state.role == "cliente_externo":
+            # /api/users/me incluído: o bootstrap do frontend exige o perfil
+            # próprio para QUALQUER usuário — sem ele o portal fica inacessível
+            # pela UI (achado A2 do E2E). Prefixo sem "/" final = rota exata
+            # ou subrota real (/users/me/security); NÃO libera /users/{id}.
+            # /api/signatures liberado ao cliente_externo é SEGURO: o router
+            # de signatures aplica ownership por client_id em toda leitura e
+            # escrita acessível ao portal — GET /signatures filtra
+            # `client_id == cu.client_id` (só as próprias) e
+            # POST /signatures/{id}/assinar exige role cliente_externo E filtra
+            # pelo `client_id` do solicitante (não vê nem assina de terceiros).
+            # POST /signatures/ (criar) exige role de staff (require_roles),
+            # inacessível ao cliente_externo. Ver app/routers/signatures.py.
             permitidos = ("/api/portal/", "/api/auth/", "/api/health",
-                          "/api/notifications", "/api/signatures")
+                          "/api/notifications", "/api/signatures",
+                          "/api/users/me")
             if not any(_path_casa_prefixo_publico(path, p) for p in permitidos):
                 return JSONResponse(
                     status_code=403,

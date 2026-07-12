@@ -447,7 +447,7 @@ export default function Documentos() {
           </div>
         ) : (
           <div className="space-y-4">
-            <div className="rounded-xl border border-slate-200 bg-slate-50 p-4">
+            <div className="rounded-xl bg-slate-900/[0.04] p-4 dark:bg-white/[0.06]">
               <div className="text-xs uppercase text-slate-400">
                 Tipo sugerido
               </div>
@@ -491,7 +491,7 @@ export default function Documentos() {
                   {classResult.alternativas.map((a) => (
                     <span
                       key={a.tipo_key}
-                      className="rounded-full border border-slate-200 px-2.5 py-0.5 text-xs text-slate-600"
+                      className="rounded-full bg-slate-900/[0.05] px-2.5 py-0.5 text-xs text-slate-600 dark:bg-white/[0.07] dark:text-slate-300"
                       title={a.tipo_key}
                     >
                       {a.nome}

@@ -13,7 +13,7 @@ import {
 } from "lucide-react";
 import api from "../lib/api";
 import { toast } from "./Toast";
-import { SectionCard, cn } from "./UI";
+import { Empty, SectionCard, cn } from "./UI";
 
 type ChannelAvailability = {
   push: boolean;
@@ -333,7 +333,7 @@ export default function NotificationPreferences() {
             const available = data.available_channels[availability];
             const effective = data.effective_channels[availability];
             return (
-              <div key={key} className="rounded-xl border border-slate-200 bg-white p-4">
+              <div key={key} className="card p-4">
                 <div className="flex items-start gap-3">
                   <span className="rounded-xl bg-slate-100 p-2.5 text-slate-600">
                     <Icon className="h-5 w-5" />
@@ -376,7 +376,7 @@ export default function NotificationPreferences() {
           {CATEGORIES.map(([key, label]) => (
             <div
               key={key}
-              className="flex items-center justify-between gap-3 rounded-xl border border-slate-200 bg-white px-4 py-3"
+              className="card flex items-center justify-between gap-3 px-4 py-3"
             >
               <span className="text-sm font-medium text-slate-700">{label}</span>
               <Toggle
@@ -394,7 +394,7 @@ export default function NotificationPreferences() {
         subtitle="O horário silencioso afeta apenas canais externos e usa o fuso informado."
       >
         <div className="grid gap-4 md:grid-cols-2">
-          <div className="flex items-center justify-between rounded-xl border border-slate-200 bg-white p-4">
+          <div className="card flex items-center justify-between p-4">
             <div>
               <div className="text-sm font-semibold text-slate-800">Resumo diário</div>
               <div className="text-xs text-slate-500">Agrupa comunicações externas não urgentes.</div>
@@ -405,7 +405,7 @@ export default function NotificationPreferences() {
               onChange={(checked) => patch("resumo_diario", checked)}
             />
           </div>
-          <div className="rounded-xl border border-slate-200 bg-white p-4">
+          <div className="card p-4">
             <div className="flex items-center justify-between">
               <div className="inline-flex items-center gap-2 text-sm font-semibold text-slate-800">
                 <Clock3 className="h-4 w-4" /> Horário silencioso
@@ -464,7 +464,7 @@ export default function NotificationPreferences() {
           {(devices?.data || []).map((device) => (
             <div
               key={device.id}
-              className="flex items-center gap-3 rounded-xl border border-slate-200 bg-white p-4"
+              className="card flex items-center gap-3 p-4"
             >
               <Smartphone className="h-5 w-5 text-primary-600" />
               <div className="min-w-0 flex-1">
@@ -486,11 +486,7 @@ export default function NotificationPreferences() {
               </button>
             </div>
           ))}
-          {!devices?.total && (
-            <div className="rounded-xl border border-dashed border-slate-300 p-6 text-center text-sm text-slate-500">
-              Nenhum dispositivo inscrito.
-            </div>
-          )}
+          {!devices?.total && <Empty message="Nenhum dispositivo inscrito." />}
           <button
             type="button"
             className="btn-secondary"
@@ -507,7 +503,7 @@ export default function NotificationPreferences() {
         </div>
       </SectionCard>
 
-      <div className="flex items-center justify-between gap-3 rounded-xl border border-slate-200 bg-white p-4">
+      <div className="card flex items-center justify-between gap-3 p-4">
         <div className="text-xs text-slate-500">
           Última atualização: {formatDate(form.updated_at)}
         </div>

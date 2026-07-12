@@ -12,6 +12,7 @@ import {
   RefreshCw,
 } from "lucide-react";
 import api from "../lib/api";
+import { Spinner, Empty } from "./UI";
 
 type Noticia = {
   titulo: string;
@@ -165,7 +166,7 @@ export default function NoticiasCard() {
             className={`text-[11px] px-2 py-0.5 rounded-full border transition-colors ${
               ramo === r.k
                 ? "bg-navy text-white border-navy"
-                : "bg-white text-slate-500 border-bronze-pale hover:border-bronze"
+                : "border-transparent bg-slate-900/[0.05] text-slate-600 hover:bg-slate-900/[0.09] dark:bg-white/[0.07] dark:text-slate-300"
             }`}
           >
             {r.label}
@@ -174,13 +175,9 @@ export default function NoticiasCard() {
       </div>
 
       {loading ? (
-        <p className="text-sm text-slate-400 py-6 text-center">
-          Carregando notícias…
-        </p>
+        <Spinner />
       ) : filtradas.length === 0 ? (
-        <p className="text-sm text-slate-400 py-6 text-center">
-          Sem notícias para este ramo.
-        </p>
+        <Empty message="Sem notícias para este ramo." />
       ) : (
         <div className="space-y-2.5 max-h-[420px] overflow-y-auto pr-1">
           {filtradas.slice(0, 15).map((n, i) => (

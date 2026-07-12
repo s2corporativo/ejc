@@ -13,7 +13,7 @@ import {
 } from "lucide-react";
 import api from "../lib/api";
 import { toast } from "../components/Toast";
-import { Modal } from "../components/UI";
+import { Modal, PageHeader } from "../components/UI";
 import { asList } from "../lib/list";
 
 const COLS = [
@@ -153,48 +153,43 @@ export default function Tarefas() {
   return (
     <div className="p-6 max-w-7xl mx-auto space-y-5">
       {/* Header */}
-      <div className="flex items-center justify-between flex-wrap gap-3">
-        <div>
-          <h1 className="text-2xl font-bold text-slate-800">Tarefas</h1>
-          <p className="text-slate-500 text-sm mt-0.5">
-            {stats.total} total · {stats.fazendo} em andamento ·{" "}
-            {stats.vencidas > 0 && (
-              <span className="text-danger-600 font-medium">
-                {stats.vencidas} vencidas
-              </span>
-            )}
-          </p>
-        </div>
-        <div className="flex items-center gap-2">
-          <button onClick={load} className="btn-secondary p-2">
-            <RefreshCw
-              className={`w-4 h-4 text-slate-400 ${loading ? "animate-spin" : ""}`}
-            />
-          </button>
-          <div className="flex border border-slate-200 rounded-lg overflow-hidden">
-            <button
-              onClick={() => setView("kanban")}
-              className={`p-2 ${view === "kanban" ? "bg-slate-100" : "hover:bg-slate-50"}`}
-            >
-              <LayoutGrid className="w-4 h-4 text-slate-500" />
+      <PageHeader
+        title="Tarefas"
+        subtitle={`${stats.total} total · ${stats.fazendo} em andamento${
+          stats.vencidas > 0 ? ` · ${stats.vencidas} vencidas` : ""
+        }`}
+        actions={
+          <>
+            <button onClick={load} className="btn-secondary p-2">
+              <RefreshCw
+                className={`w-4 h-4 text-slate-400 ${loading ? "animate-spin" : ""}`}
+              />
             </button>
-            <button
-              onClick={() => setView("list")}
-              className={`p-2 ${view === "list" ? "bg-slate-100" : "hover:bg-slate-50"}`}
-            >
-              <List className="w-4 h-4 text-slate-500" />
+            <div className="flex rounded-lg overflow-hidden bg-slate-900/[0.05] dark:bg-white/[0.07]">
+              <button
+                onClick={() => setView("kanban")}
+                className={`p-2 ${view === "kanban" ? "bg-slate-900/[0.09] dark:bg-white/[0.12]" : "hover:bg-slate-900/[0.04] dark:hover:bg-white/[0.05]"}`}
+              >
+                <LayoutGrid className="w-4 h-4 text-slate-500 dark:text-slate-300" />
+              </button>
+              <button
+                onClick={() => setView("list")}
+                className={`p-2 ${view === "list" ? "bg-slate-900/[0.09] dark:bg-white/[0.12]" : "hover:bg-slate-900/[0.04] dark:hover:bg-white/[0.05]"}`}
+              >
+                <List className="w-4 h-4 text-slate-500 dark:text-slate-300" />
+              </button>
+            </div>
+            <button onClick={openNew} className="btn-primary text-sm px-3 py-2">
+              <Plus className="w-4 h-4" /> Nova tarefa
             </button>
-          </div>
-          <button onClick={openNew} className="btn-primary text-sm px-3 py-2">
-            <Plus className="w-4 h-4" /> Nova tarefa
-          </button>
-        </div>
-      </div>
+          </>
+        }
+      />
 
       {/* Filters */}
       <div className="flex gap-2 flex-wrap">
         <select
-          className="border border-slate-200 rounded-lg px-3 py-1.5 text-sm bg-white"
+          className="input w-auto px-3 py-1.5 text-sm"
           value={filterPrio}
           onChange={(e) => setFilterPrio(e.target.value)}
         >
@@ -204,7 +199,7 @@ export default function Tarefas() {
           <option value="baixa">Baixa</option>
         </select>
         <select
-          className="border border-slate-200 rounded-lg px-3 py-1.5 text-sm bg-white"
+          className="input w-auto px-3 py-1.5 text-sm"
           value={filterResp}
           onChange={(e) => setFilterResp(e.target.value)}
         >
@@ -233,7 +228,7 @@ export default function Tarefas() {
                   <span className="font-semibold text-sm text-slate-700">
                     {col.label}
                   </span>
-                  <span className="text-xs bg-white border border-slate-200 px-2 py-0.5 rounded-full text-slate-500">
+                  <span className="text-xs bg-slate-900/[0.05] dark:bg-white/[0.07] px-2 py-0.5 rounded-full text-slate-500 dark:text-slate-300">
                     {colTasks.length}
                   </span>
                 </div>
@@ -244,10 +239,10 @@ export default function Tarefas() {
                       draggable
                       onDragStart={() => setDrag(t.id)}
                       onClick={() => openEdit(t)}
-                      className={`bg-white rounded-lg border p-3 cursor-pointer hover:shadow-sm transition-shadow ${
+                      className={`card rounded-lg p-3 cursor-pointer ${
                         isVencida(t.data_limite) && t.status !== "concluida"
                           ? "border-danger-200"
-                          : "border-slate-200"
+                          : ""
                       }`}
                     >
                       <div className="flex justify-between items-start gap-2">
@@ -308,7 +303,7 @@ export default function Tarefas() {
 
       {/* List view */}
       {view === "list" && (
-        <div className="bg-white rounded-xl border border-slate-200 overflow-hidden">
+        <div className="card overflow-hidden">
           <table className="w-full text-sm">
             <thead className="bg-slate-50 text-xs uppercase text-slate-400 text-left">
               <tr>
@@ -354,7 +349,7 @@ export default function Tarefas() {
                     </td>
                     <td className="px-4 py-3">
                       <select
-                        className="text-xs border border-slate-200 rounded-lg px-2 py-1 bg-white"
+                        className="input w-auto text-xs px-2 py-1"
                         value={t.status}
                         onClick={(e) => e.stopPropagation()}
                         onChange={(e) => mover(t.id, e.target.value)}
@@ -413,7 +408,7 @@ export default function Tarefas() {
               Título *
             </label>
             <input
-              className="w-full border border-slate-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary-300"
+              className="input"
               placeholder="Título da tarefa"
               value={form.titulo}
               onChange={(e) => setForm({ ...form, titulo: e.target.value })}
@@ -424,7 +419,7 @@ export default function Tarefas() {
               Descrição
             </label>
             <textarea
-              className="w-full border border-slate-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary-300"
+              className="input"
               rows={2}
               placeholder="Detalhe opcional..."
               value={form.descricao ?? ""}
@@ -437,7 +432,7 @@ export default function Tarefas() {
                 Prioridade
               </label>
               <select
-                className="w-full border border-slate-200 rounded-lg px-3 py-2 text-sm"
+                className="input"
                 value={form.prioridade}
                 onChange={(e) =>
                   setForm({ ...form, prioridade: e.target.value })
@@ -452,7 +447,7 @@ export default function Tarefas() {
               <label className="block text-xs text-slate-500 mb-1">Prazo</label>
               <input
                 type="date"
-                className="w-full border border-slate-200 rounded-lg px-3 py-2 text-sm"
+                className="input"
                 value={form.data_limite ?? ""}
                 onChange={(e) =>
                   setForm({ ...form, data_limite: e.target.value })
@@ -465,7 +460,7 @@ export default function Tarefas() {
               Responsável
             </label>
             <select
-              className="w-full border border-slate-200 rounded-lg px-3 py-2 text-sm"
+              className="input"
               value={form.responsavel_id ?? ""}
               onChange={(e) =>
                 setForm({

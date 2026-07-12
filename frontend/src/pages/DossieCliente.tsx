@@ -28,7 +28,7 @@ import {
 } from "lucide-react";
 import api from "../lib/api";
 import { soDigitos } from "../utils/phone";
-import { StatusBadge, fmtMoney } from "../components/UI";
+import { PageHeader, Spinner, StatusBadge, fmtMoney } from "../components/UI";
 
 interface DossieData {
   cliente: {
@@ -269,7 +269,7 @@ function PendingItemsPanel({ clientId }: { clientId: string | number }) {
         <div className="p-3 bg-slate-50 border-b border-bronze-pale/50 space-y-2">
           <div className="grid grid-cols-2 gap-2">
             <select
-              className="text-xs border border-slate-200 rounded px-2 py-1.5"
+              className="input py-1.5 text-xs"
               value={form.type}
               onChange={(e) => setForm({ ...form, type: e.target.value })}
             >
@@ -283,7 +283,7 @@ function PendingItemsPanel({ clientId }: { clientId: string | number }) {
             </select>
             <input
               type="date"
-              className="text-xs border border-slate-200 rounded px-2 py-1.5"
+              className="input py-1.5 text-xs"
               value={form.due_date}
               onChange={(e) => setForm({ ...form, due_date: e.target.value })}
               placeholder="Prazo"
@@ -292,28 +292,25 @@ function PendingItemsPanel({ clientId }: { clientId: string | number }) {
           <input
             type="text"
             placeholder="Título da pendência *"
-            className="w-full text-xs border border-slate-200 rounded px-2 py-1.5"
+            className="input py-1.5 text-xs"
             value={form.title}
             onChange={(e) => setForm({ ...form, title: e.target.value })}
           />
           <input
             type="text"
             placeholder="Descrição (opcional)"
-            className="w-full text-xs border border-slate-200 rounded px-2 py-1.5"
+            className="input py-1.5 text-xs"
             value={form.description}
             onChange={(e) => setForm({ ...form, description: e.target.value })}
           />
           <div className="flex gap-2 justify-end">
             <button
               onClick={() => setShowAdd(false)}
-              className="text-xs text-slate-500 px-3 py-1 hover:bg-slate-100 rounded"
+              className="btn-ghost px-3 py-1 text-xs"
             >
               Cancelar
             </button>
-            <button
-              onClick={create}
-              className="text-xs bg-bronze text-white px-3 py-1 rounded hover:bg-bronze-dark transition-colors"
-            >
+            <button onClick={create} className="btn-primary px-3 py-1 text-xs">
               Salvar
             </button>
           </div>
@@ -321,11 +318,7 @@ function PendingItemsPanel({ clientId }: { clientId: string | number }) {
       )}
 
       <div className="divide-y divide-bronze-pale/50">
-        {loading && (
-          <p className="px-4 py-4 text-xs text-slate-400 text-center">
-            Carregando...
-          </p>
-        )}
+        {loading && <Spinner />}
         {!loading && active.length === 0 && done.length === 0 && (
           <div className="px-4 py-5 flex items-center gap-2 text-sm text-success-600">
             <CheckCircle className="w-4 h-4" /> Sem pendências em aberto
@@ -367,7 +360,7 @@ function PendingItemsPanel({ clientId }: { clientId: string | number }) {
             <div className="flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity flex-shrink-0">
               {item.status !== "concluido" && (
                 <select
-                  className="text-[10px] border border-slate-200 rounded px-1 py-0.5 bg-white"
+                  className="input w-auto px-1 py-0.5 text-[10px]"
                   value={item.status}
                   onChange={(e) => updateStatus(item.id, e.target.value)}
                 >
@@ -697,15 +690,7 @@ export default function DossieCliente() {
       .finally(() => setLoading(false));
   }, [clientId]);
 
-  if (loading)
-    return (
-      <div className="flex items-center justify-center h-64 text-slate-400">
-        <div className="text-center">
-          <Scale className="w-8 h-8 mx-auto mb-3 animate-pulse text-bronze-pale" />
-          <p className="text-sm">Carregando dossiê…</p>
-        </div>
-      </div>
-    );
+  if (loading) return <Spinner />;
 
   if (erro || !data)
     return (
@@ -732,36 +717,43 @@ export default function DossieCliente() {
   return (
     <div className="max-w-6xl mx-auto px-4 py-6 space-y-6 animate-rise">
       {/* Header */}
-      <div className="flex items-center gap-3">
+      <div className="flex items-start gap-3">
         <button
           onClick={() => navigate(-1)}
-          className="btn-ghost p-2 rounded-lg"
+          className="btn-ghost p-2 rounded-lg mt-1"
         >
           <ArrowLeft className="w-4 h-4" />
         </button>
         <div className="flex-1 min-w-0">
-          <p className="eyebrow">Ficha Mestra do Cliente</p>
-          <h1 className="text-2xl">{cliente.nome}</h1>
-          <p className="text-sm text-slate-400 mt-0.5">
-            {cliente.cpf_cnpj && (
-              <span className="mr-3">{cliente.cpf_cnpj}</span>
-            )}
-            {cliente.email && <span className="mr-3">{cliente.email}</span>}
-            {cliente.telefone && <span>{cliente.telefone}</span>}
-          </p>
+          <PageHeader
+            eyebrow="Ficha Mestra do Cliente"
+            title={cliente.nome}
+            subtitle={
+              [cliente.cpf_cnpj, cliente.email, cliente.telefone]
+                .filter(Boolean)
+                .join(" · ") || undefined
+            }
+            actions={
+              <>
+                <a
+                  href="/portal"
+                  target="_blank"
+                  rel="noreferrer"
+                  className="btn-ghost text-xs"
+                  title="Abrir o Portal do Cliente em uma nova aba"
+                >
+                  <ExternalLink className="w-3 h-3" /> Portal do Cliente
+                </a>
+                <Link
+                  to={`/clientes/${clientId}`}
+                  className="btn-outline text-xs"
+                >
+                  <User className="w-3 h-3" /> Editar perfil
+                </Link>
+              </>
+            }
+          />
         </div>
-        <a
-          href="/portal"
-          target="_blank"
-          rel="noreferrer"
-          className="btn-ghost text-xs"
-          title="Abrir o Portal do Cliente em uma nova aba"
-        >
-          <ExternalLink className="w-3 h-3" /> Portal do Cliente
-        </a>
-        <Link to={`/clientes/${clientId}`} className="btn-outline text-xs">
-          <User className="w-3 h-3" /> Editar perfil
-        </Link>
       </div>
 
       {/* Seletor de Abas (Ficha Mestra - Seção 2.113) */}

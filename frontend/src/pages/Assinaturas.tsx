@@ -1,6 +1,6 @@
 import { useState, useEffect, useCallback } from "react";
 import api from "../lib/api";
-import { PageHeader, Spinner, Modal } from "../components/UI";
+import { EmptyState, PageHeader, Spinner, Modal } from "../components/UI";
 import {
   FileSignature,
   Plus,
@@ -61,7 +61,9 @@ export default function Assinaturas() {
   const fetchSolicitacoes = useCallback(async () => {
     setLoading(true);
     try {
-      const res = await api.get("/signatures");
+      // Barra final obrigatória: sem ela o FastAPI responde 307 com Location
+      // absoluto e o browser perde o Authorization no redirect (achado M1).
+      const res = await api.get("/signatures/");
       setSolicitacoes(res.data);
     } catch {
       setSolicitacoes([]);
@@ -177,25 +179,18 @@ export default function Assinaturas() {
           <Spinner />
         </div>
       ) : solicitacoes.length === 0 ? (
-        <div className="text-center py-16 bg-gray-50 rounded-xl border border-dashed border-gray-200">
-          <FileSignature className="w-10 h-10 text-gray-300 mx-auto mb-3" />
-          <p className="text-gray-500 font-medium">
-            Nenhuma solicitação de assinatura
-          </p>
-          <p className="text-gray-400 text-sm mt-1">
-            Clique em "Nova Assinatura" para criar uma solicitação.
-          </p>
-        </div>
+        <EmptyState
+          title="Nenhuma solicitação de assinatura"
+          message={'Clique em "Nova Assinatura" para criar uma solicitação.'}
+          icon={FileSignature}
+        />
       ) : (
         <ul className="space-y-3">
           {solicitacoes.map((sol) => {
             const cfg = STATUS_CONFIG[sol.status];
             const podeAssinar = isSignatario(sol);
             return (
-              <li
-                key={sol.id}
-                className="rounded-xl border border-gray-100 bg-white p-4 shadow-sm"
-              >
+              <li key={sol.id} className="card p-4">
                 <div className="flex items-start justify-between gap-4">
                   <div className="flex-1 min-w-0">
                     <div className="flex flex-wrap items-center gap-2 mb-2">
@@ -281,7 +276,7 @@ export default function Assinaturas() {
                 setForm((p) => ({ ...p, documento_nome: e.target.value }))
               }
               placeholder="Ex: Contrato de Prestação de Serviços"
-              className="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary-500"
+              className="input"
             />
           </div>
 
@@ -297,7 +292,7 @@ export default function Assinaturas() {
                   setForm((p) => ({ ...p, case_id: e.target.value }))
                 }
                 placeholder="Opcional"
-                className="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary-500"
+                className="input"
               />
             </div>
             <div>
@@ -311,7 +306,7 @@ export default function Assinaturas() {
                   setForm((p) => ({ ...p, document_id: e.target.value }))
                 }
                 placeholder="Opcional"
-                className="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary-500"
+                className="input"
               />
             </div>
           </div>
@@ -343,7 +338,7 @@ export default function Assinaturas() {
                         atualizarSignatario(idx, "nome", e.target.value)
                       }
                       placeholder="Nome"
-                      className="rounded-lg border border-gray-300 px-2 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-primary-500"
+                      className="input px-2 py-1.5"
                     />
                     <input
                       type="email"
@@ -353,7 +348,7 @@ export default function Assinaturas() {
                         atualizarSignatario(idx, "email", e.target.value)
                       }
                       placeholder="E-mail"
-                      className="rounded-lg border border-gray-300 px-2 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-primary-500"
+                      className="input px-2 py-1.5"
                     />
                     <input
                       type="text"
@@ -362,7 +357,7 @@ export default function Assinaturas() {
                         atualizarSignatario(idx, "papel", e.target.value)
                       }
                       placeholder="Papel"
-                      className="rounded-lg border border-gray-300 px-2 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-primary-500"
+                      className="input px-2 py-1.5"
                     />
                   </div>
                   {form.signatarios.length > 1 && (

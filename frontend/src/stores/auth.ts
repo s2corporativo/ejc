@@ -69,6 +69,24 @@ export const useAuth = create<AuthState>((set, get) => ({
       set({ user, status: "authenticated" });
     } catch (error: any) {
       const responseStatus = error?.response?.status;
+
+      // Troca de senha OBRIGATÓRIA: o middleware devolve 403 em /users/me até
+      // o usuário trocar a senha. NÃO é sessão inválida — derrubar o token
+      // aqui expulsava o usuário do /trocar-senha em loop (achado A1 do E2E).
+      // Mantém a sessão cacheada; o interceptor do api.ts redireciona para
+      // /trocar-senha e o middleware bloqueia todo o resto até a troca.
+      if (
+        responseStatus === 403 &&
+        error?.response?.data?.must_change_password
+      ) {
+        const cachedUser = get().user ?? readStoredUser();
+        set({
+          user: cachedUser,
+          status: cachedUser ? "authenticated" : "unauthenticated",
+        });
+        return;
+      }
+
       if (responseStatus === 401 || responseStatus === 403) {
         localStorage.removeItem("ejc_access");
         persistUser(null);

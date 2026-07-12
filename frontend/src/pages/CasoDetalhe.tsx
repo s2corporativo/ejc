@@ -1,7 +1,7 @@
 import { toast } from "../components/Toast";
 import Markdown from "../components/Markdown";
 import React, { useEffect, useRef, useState } from "react";
-import { useParams, useSearchParams, useNavigate } from "react-router-dom";
+import { Link, useParams, useSearchParams, useNavigate } from "react-router-dom";
 import {
   Sparkles,
   ChevronLeft,
@@ -24,6 +24,7 @@ import ConversaoChecklist from "../components/ConversaoChecklist";
 import ProvasCaso from "../components/ProvasCaso";
 import DossieEstrategicoCaso from "../components/DossieEstrategicoCaso";
 import CaseBreadcrumb from "../components/CaseBreadcrumb";
+import { ConsultaProfundaTJMG } from "../components/Infosimples";
 import type { Case } from "../types";
 import {
   PageHeader,
@@ -203,9 +204,7 @@ function ExtratoCaso({ caso }: { caso: Case }) {
         {erro ? (
           <div className="py-8 text-center text-danger-600 text-sm">{erro}</div>
         ) : !data ? (
-          <div className="py-8 text-center text-slate-400 text-sm">
-            Carregando…
-          </div>
+          <Spinner />
         ) : (
           <div className="space-y-4">
             <div className="grid grid-cols-2 gap-3">
@@ -326,7 +325,7 @@ function AreasCaso({ caso }: { caso: Case }) {
             <select
               value={add}
               onChange={(e) => setAdd(e.target.value)}
-              className="text-xs border border-slate-200 rounded-lg px-2 py-1 bg-white"
+              className="input text-xs px-2 py-1"
             >
               <option value="">+ área relacionada</option>
               {disponiveis.map((t) => (
@@ -1255,9 +1254,7 @@ function TabTimeline({ caseId }: { caseId: string }) {
             </div>
           ))}
           {ts.length === 0 && !showTsForm && (
-            <p className="text-center py-4 text-gray-400 text-sm">
-              Nenhuma hora lançada
-            </p>
+            <Empty message="Nenhuma hora lançada" />
           )}
         </div>
       </div>
@@ -1346,9 +1343,7 @@ function TabChecklists({ caseId }: { caseId: string }) {
       </div>
 
       {cks.length === 0 && (
-        <p className="text-center py-8 text-gray-400 text-sm">
-          Nenhum checklist neste caso. Gere um por legislação acima.
-        </p>
+        <Empty message="Nenhum checklist neste caso. Gere um por legislação acima." />
       )}
 
       {cks.map((ck) => (
@@ -1506,7 +1501,7 @@ function TabProcessos({ caseId }: { caseId: string }) {
           </p>
         </div>
         <div className="flex flex-wrap justify-end gap-2">
-          <div className="flex rounded-lg border border-slate-200 overflow-hidden bg-white">
+          <div className="flex rounded-lg overflow-hidden bg-slate-900/[0.05] dark:bg-white/[0.07]">
             {[
               ["ativos", "Ativos"],
               ["arquivados", "Arquivados"],
@@ -1515,12 +1510,13 @@ function TabProcessos({ caseId }: { caseId: string }) {
               <button
                 key={k}
                 onClick={() => setArquivo(k as typeof arquivo)}
-                className={`px-3 py-1.5 text-xs font-medium ${arquivo === k ? "bg-navy text-white" : "text-slate-600 hover:bg-slate-50"}`}
+                className={`px-3 py-1.5 text-xs font-medium ${arquivo === k ? "bg-navy text-white" : "text-slate-600 hover:bg-slate-900/[0.09] dark:text-slate-300 dark:hover:bg-white/[0.12]"}`}
               >
                 {label}
               </button>
             ))}
           </div>
+          <ConsultaProfundaTJMG caseId={caseId} />
           <button
             onClick={() => setShowForm(!showForm)}
             className="btn-primary text-sm"
@@ -1681,7 +1677,7 @@ function TabProcessos({ caseId }: { caseId: string }) {
                 {p.status === "arquivado" ? (
                   <button
                     onClick={() => desarquivar(p.id)}
-                    className="text-blue-600 hover:text-blue-800 text-xs"
+                    className="text-primary-600 hover:text-primary-800 text-xs"
                   >
                     Desarquivar
                   </button>
@@ -1704,9 +1700,7 @@ function TabProcessos({ caseId }: { caseId: string }) {
           </div>
         ))}
         {procs.length === 0 && !showForm && (
-          <p className="text-center py-8 text-gray-400 text-sm">
-            Nenhum processo cadastrado neste caso ainda.
-          </p>
+          <Empty message="Nenhum processo cadastrado neste caso ainda." />
         )}
       </div>
     </div>
@@ -1896,9 +1890,7 @@ function TabPartes({ caseId }: { caseId: string }) {
           </div>
         ))}
         {partes.length === 0 && !showForm && (
-          <p className="text-center py-8 text-gray-400 text-sm">
-            Nenhuma parte cadastrada
-          </p>
+          <Empty message="Nenhuma parte cadastrada" />
         )}
       </div>
     </div>
@@ -2301,9 +2293,7 @@ function TabJurisprudencia({ caseId, caso }: { caseId: string; caso: Case }) {
           </div>
         ))}
         {searched && results.length === 0 && !loading && (
-          <p className="text-center py-8 text-gray-400 text-sm">
-            Nenhum resultado encontrado para esta busca
-          </p>
+          <Empty message="Nenhum resultado encontrado para esta busca" />
         )}
         {!searched && (
           <p className="text-center py-8 text-gray-400 text-sm">
@@ -2331,9 +2321,7 @@ function TabLista({
   useEffect(() => {
     api
       .get(endpoint)
-      .then((r) =>
-        setItems(asList(r.data)),
-      )
+      .then((r) => setItems(asList(r.data)))
       .catch(() => {});
   }, [endpoint]);
   return (
@@ -2395,7 +2383,7 @@ function TabMensagens({ caseId }: { caseId: string }) {
             className={`flex ${m.autor_tipo === "escritorio" ? "justify-end" : "justify-start"}`}
           >
             <div
-              className={`max-w-[75%] rounded-lg px-3 py-2 text-sm ${m.autor_tipo === "escritorio" ? "bg-primary-600 text-white" : "bg-white border border-gray-200"}`}
+              className={`max-w-[75%] rounded-lg px-3 py-2 text-sm ${m.autor_tipo === "escritorio" ? "bg-primary-600 text-white" : "bg-slate-900/[0.05] text-slate-800 dark:bg-white/[0.08] dark:text-slate-200"}`}
             >
               <Markdown source={m.mensagem} />
               <p
@@ -2408,11 +2396,7 @@ function TabMensagens({ caseId }: { caseId: string }) {
             </div>
           </div>
         ))}
-        {msgs.length === 0 && (
-          <p className="text-center text-gray-400 text-sm py-10">
-            Nenhuma mensagem ainda
-          </p>
-        )}
+        {msgs.length === 0 && <Empty message="Nenhuma mensagem ainda" />}
       </div>
       <div className="flex gap-2">
         <input
@@ -2763,9 +2747,7 @@ function TabMemoria({ caseId }: { caseId: string }) {
           </div>
         ))}
         {itens.length === 0 && !showForm && (
-          <p className="text-center py-8 text-gray-400 text-sm">
-            Nenhum registro de memória para este caso
-          </p>
+          <Empty message="Nenhum registro de memória para este caso" />
         )}
       </div>
     </div>
@@ -2844,7 +2826,7 @@ function MiniFerramentaCalc({ f }: { f: FerramentaConfig }) {
   }, [f.id]); // eslint-disable-line
 
   return (
-    <div className="border border-gray-200 rounded-lg p-3 bg-white">
+    <div className="card p-3">
       <div className="flex items-center gap-1.5 mb-1">
         <span className="text-xs font-semibold text-navy">{f.titulo}</span>
         {f.autoLoad && res && (
@@ -3008,7 +2990,7 @@ function AnaliseContratoIA({ caseId }: { caseId: string }) {
   ];
 
   return (
-    <div className="border border-gray-200 rounded-xl p-4 bg-white">
+    <div className="card p-4">
       <div className="flex items-center gap-2 mb-3">
         <Sparkles size={16} className="text-gold-600" />
         <h3 className="font-serif font-semibold text-navy text-sm">
@@ -3330,7 +3312,7 @@ function IaDefensivaCaso({ caso }: { caso: Case }) {
       </div>
 
       <div className="grid gap-4 lg:grid-cols-[minmax(0,0.92fr)_minmax(0,1.08fr)]">
-        <div className="space-y-3 rounded-xl border border-slate-200 bg-white p-4 shadow-sm">
+        <div className="space-y-3 card p-4">
           <div className="grid gap-3 md:grid-cols-4">
             <div>
               <label className="mb-1 block text-xs font-medium text-slate-600">
@@ -3465,7 +3447,7 @@ function IaDefensivaCaso({ caso }: { caso: Case }) {
           </button>
         </div>
 
-        <div className="rounded-xl border border-slate-200 bg-white p-4 shadow-sm">
+        <div className="card p-4">
           <div className="mb-3 flex items-center justify-between gap-2">
             <div>
               <h3 className="text-sm font-semibold text-slate-950">
@@ -3513,7 +3495,7 @@ function IaDefensivaCaso({ caso }: { caso: Case }) {
         </div>
       </div>
 
-      <div className="rounded-xl border border-slate-200 bg-white p-4 shadow-sm">
+      <div className="card p-4">
         <div className="mb-3 flex flex-col gap-2 md:flex-row md:items-center md:justify-between">
           <div>
             <h3 className="text-sm font-semibold text-slate-950">
@@ -3533,9 +3515,7 @@ function IaDefensivaCaso({ caso }: { caso: Case }) {
           </button>
         </div>
         {historico.length === 0 ? (
-          <div className="rounded-lg border border-dashed border-slate-200 bg-slate-50 p-5 text-center text-sm text-slate-400">
-            Nenhuma analise defensiva registrada para este caso.
-          </div>
+          <Empty message="Nenhuma analise defensiva registrada para este caso." />
         ) : (
           <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-3">
             {historico.map((item) => (
@@ -3577,7 +3557,7 @@ function IaDefensivaCaso({ caso }: { caso: Case }) {
                     Aplicado
                   </button>
                   <button
-                    className="rounded-md border border-slate-200 px-2 py-1 text-slate-500 hover:bg-slate-50"
+                    className="btn-ghost rounded-md px-2 py-1 text-xs text-slate-500"
                     onClick={() => atualizarStatus(item.id, "descartado")}
                   >
                     Descartar
@@ -3838,6 +3818,14 @@ export default function CasoDetalhe() {
         return <TabJurisprudencia caseId={id} caso={caso} />;
       case "documentos":
         return (
+          <div className="space-y-3">
+            {/* CTA de anexar: o upload vive no módulo global de Documentos,
+                que pré-seleciona o caso via ?caso= (achado M2 do E2E). */}
+            <div className="flex justify-end">
+              <Link to={`/documentos?caso=${id}`} className="btn-secondary text-xs">
+                Anexar documento ao caso
+              </Link>
+            </div>
           <TabLista
             titulo="Documentos"
             endpoint={`/documents/?case_id=${id}`}
@@ -3859,6 +3847,7 @@ export default function CasoDetalhe() {
               </div>
             )}
           />
+          </div>
         );
       case "provas":
         return <ProvasCaso caseId={id} />;
@@ -4083,13 +4072,17 @@ export default function CasoDetalhe() {
 
   return (
     <div className="space-y-5">
-      <CaseBreadcrumb caseId={caso.id} titulo={caso.titulo} tela={activeTabLabel} />
+      <CaseBreadcrumb
+        caseId={caso.id}
+        titulo={caso.titulo}
+        tela={activeTabLabel}
+      />
       {/* Sticky header + tabs */}
-      <div className="sticky top-[4.25rem] z-20 rounded-2xl border border-slate-200 bg-white/95 shadow-sm backdrop-blur-xl">
+      <div className="sticky top-[4.25rem] z-20 card bg-white/95 backdrop-blur-xl">
         <div className="flex flex-col gap-4 px-4 py-4 lg:flex-row lg:items-start lg:justify-between">
           <button
             onClick={() => navigate("/casos")}
-            className="mt-1 flex h-9 w-9 shrink-0 items-center justify-center rounded-xl border border-slate-200 bg-white text-slate-500 transition-colors hover:bg-slate-50 hover:text-slate-800"
+            className="icon-btn mt-1 h-9 w-9 shrink-0"
           >
             <ChevronLeft size={18} />
           </button>

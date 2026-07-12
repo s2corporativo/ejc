@@ -1,7 +1,7 @@
 import { useState, useEffect, useCallback } from "react";
 import { RefreshCw, Check, AlertCircle, Calendar, Repeat } from "lucide-react";
 import api from "../lib/api";
-import { PageHeader } from "../components/UI";
+import { PageHeader, Spinner } from "../components/UI";
 
 interface Despesa {
   id: string;
@@ -102,13 +102,13 @@ export default function DespesasRecorrentes() {
       />
 
       {/* Action card */}
-      <div className="bg-white rounded-xl border border-slate-200 p-5">
+      <div className="card p-5">
         <h2 className="font-semibold text-slate-800 mb-3 flex items-center gap-2">
           <Repeat className="w-4 h-4 text-primary-500" />
           Gerar lançamentos para novo mês
         </h2>
         <div className="flex items-center gap-4">
-          <div className="flex items-center gap-2 border border-slate-200 rounded-lg px-3 py-2">
+          <div className="input flex w-auto items-center gap-2">
             <Calendar className="w-4 h-4 text-slate-400" />
             <input
               type="month"
@@ -149,7 +149,7 @@ export default function DespesasRecorrentes() {
       </div>
 
       {/* Summary */}
-      <div className="bg-slate-50 rounded-xl border border-slate-200 p-4 flex items-center justify-between">
+      <div className="rounded-xl bg-slate-900/[0.04] p-4 flex items-center justify-between dark:bg-white/[0.06]">
         <span className="text-sm text-slate-600">
           {recorrentes.length} despesas recorrentes cadastradas
         </span>
@@ -160,9 +160,9 @@ export default function DespesasRecorrentes() {
 
       {/* List */}
       {loading ? (
-        <div className="text-center py-10 text-slate-400">Carregando...</div>
+        <Spinner />
       ) : (
-        <div className="bg-white rounded-xl border border-slate-200 overflow-hidden">
+        <div className="card overflow-hidden">
           <table className="w-full text-sm">
             <thead className="bg-slate-50 text-slate-500 text-xs uppercase tracking-wider">
               <tr>

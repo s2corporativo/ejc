@@ -203,7 +203,7 @@ export default function ConversaoChecklist({
                 )}
               </div>
             )}
-            <ul className="divide-y divide-slate-100 rounded-xl border border-slate-200 bg-white">
+            <ul className="card divide-y divide-slate-100">
               {itens.map((item) => (
                 <li key={item.key} className="flex items-start gap-3 px-4 py-3">
                   {item.ok ? (

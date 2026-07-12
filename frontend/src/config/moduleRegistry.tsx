@@ -15,6 +15,7 @@ import {
   FolderOpen,
   Gavel,
   GitBranch,
+  HeartPulse,
   Inbox,
   LayoutDashboard,
   LayoutGrid,
@@ -124,6 +125,7 @@ const Usuarios = lazy(() => import("../pages/Usuarios"));
 const Lixeira = lazy(() => import("../pages/Lixeira"));
 const Ajuda = lazy(() => import("../pages/Ajuda"));
 const Whatsapp = lazy(() => import("../pages/Whatsapp"));
+const CentralDiagnostico = lazy(() => import("../pages/CentralDiagnostico"));
 const JornadaCaso = lazy(() => import("../pages/JornadaCaso"));
 
 // DECISÃO: menu centrado no caso — o grupo "Principal" destaca Novo Caso e
@@ -727,6 +729,21 @@ export const STAFF_ROUTES: ModuleRoute[] = [
     sensitive: true,
     usesAI: true,
     backendPrefixes: ["/api/ia-governanca"],
+  },
+  {
+    key: "central-diagnostico",
+    path: "/diagnostico",
+    label: "Central de Diagnóstico",
+    description: "Saúde dos subsistemas do EJC em tempo real.",
+    group: "Administração",
+    icon: HeartPulse,
+    component: CentralDiagnostico,
+    roles: ROLES.gestores,
+    showInNav: true,
+    order: 40,
+    helpKey: "autofix",
+    sensitive: true,
+    backendPrefixes: ["/api/diagnostico"],
   },
   {
     key: "auditoria",

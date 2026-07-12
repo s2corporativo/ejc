@@ -3,6 +3,7 @@ import { useParams, Link } from "react-router-dom";
 import { ArrowLeft, CalendarClock, MessageSquare } from "lucide-react";
 import api from "../../lib/api";
 import { toast } from "../../components/Toast";
+import { Spinner } from "../../components/UI";
 import { asList } from "../../lib/list";
 
 function MensagensCliente({ caseId }: { caseId: string }) {
@@ -97,7 +98,7 @@ export default function PortalCasoDetalhe() {
     api.get(`/portal/casos/${id}`).then((r) => setData(r.data));
   }, [id]);
 
-  if (!data) return <div className="text-slate-400">Carregando…</div>;
+  if (!data) return <Spinner />;
   const { caso, andamentos, proximas_datas } = data;
 
   return (
@@ -122,17 +123,19 @@ export default function PortalCasoDetalhe() {
           <h2 className="font-medium text-navy mb-3 flex items-center gap-2">
             <CalendarClock size={16} /> Próximas datas
           </h2>
-          {(Array.isArray(proximas_datas) ? proximas_datas : []).map((d: any, i: number) => (
-            <div
-              key={i}
-              className="flex justify-between py-2 border-b border-slate-100 last:border-0 text-sm"
-            >
-              <span>{d.titulo}</span>
-              <span className="font-medium">
-                {new Date(d.data + "T12:00").toLocaleDateString("pt-BR")}
-              </span>
-            </div>
-          ))}
+          {(Array.isArray(proximas_datas) ? proximas_datas : []).map(
+            (d: any, i: number) => (
+              <div
+                key={i}
+                className="flex justify-between py-2 border-b border-slate-100 last:border-0 text-sm"
+              >
+                <span>{d.titulo}</span>
+                <span className="font-medium">
+                  {new Date(d.data + "T12:00").toLocaleDateString("pt-BR")}
+                </span>
+              </div>
+            ),
+          )}
         </div>
       )}
 
@@ -142,17 +145,19 @@ export default function PortalCasoDetalhe() {
           {(!Array.isArray(andamentos) || andamentos.length === 0) && (
             <p className="text-sm text-slate-400">Sem andamentos registrados</p>
           )}
-          {(Array.isArray(andamentos) ? andamentos : []).map((m: any, i: number) => (
-            <div key={i} className="flex gap-3 text-sm">
-              <div className="w-2 h-2 rounded-full bg-gold mt-1.5 shrink-0" />
-              <div>
-                <div className="text-xs text-slate-400">
-                  {m.data && new Date(m.data).toLocaleDateString("pt-BR")}
+          {(Array.isArray(andamentos) ? andamentos : []).map(
+            (m: any, i: number) => (
+              <div key={i} className="flex gap-3 text-sm">
+                <div className="w-2 h-2 rounded-full bg-gold mt-1.5 shrink-0" />
+                <div>
+                  <div className="text-xs text-slate-400">
+                    {m.data && new Date(m.data).toLocaleDateString("pt-BR")}
+                  </div>
+                  <div>{m.descricao}</div>
                 </div>
-                <div>{m.descricao}</div>
               </div>
-            </div>
-          ))}
+            ),
+          )}
         </div>
       </div>
 

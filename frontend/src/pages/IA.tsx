@@ -2,7 +2,13 @@ import { useEffect, useState } from "react";
 import Markdown from "../components/Markdown";
 import { Sparkles, FileText, History, Eye, ShieldCheck } from "lucide-react";
 import api from "../lib/api";
-import { PageHeader, Spinner, fmtDate, StatusBadge } from "../components/UI";
+import {
+  EmptyState,
+  PageHeader,
+  Spinner,
+  fmtDate,
+  StatusBadge,
+} from "../components/UI";
 import { asList } from "../lib/list";
 
 const AREAS = [
@@ -160,7 +166,7 @@ export default function IA() {
               setTab(k);
               setResp(null);
             }}
-            className={`btn ${tab === k ? "bg-navy text-white" : "bg-white border border-slate-200 text-slate-600"}`}
+            className={`btn ${tab === k ? "bg-navy text-white" : "bg-slate-900/[0.05] text-slate-600 hover:bg-slate-900/[0.09] dark:bg-white/[0.07] dark:text-slate-300"}`}
           >
             <Icon size={15} /> {label}
           </button>
@@ -187,7 +193,7 @@ export default function IA() {
               ))}
             </select>
             <button
-              className="btn bg-white border border-gold-300 text-gold-700"
+              className="btn-secondary text-gold-700"
               disabled={!caseId || loadingDossie}
               onClick={verDossie}
             >
@@ -201,7 +207,7 @@ export default function IA() {
               </summary>
               <Markdown
                 source={dossie}
-                className="mt-2 text-xs bg-white border border-slate-200 rounded p-3 max-h-72 overflow-y-auto"
+                className="mt-2 text-xs card p-3 max-h-72 overflow-y-auto"
               />
             </details>
           )}
@@ -414,9 +420,7 @@ export default function IA() {
             </div>
           ))}
           {logs.length === 0 && (
-            <div className="card p-8 text-center text-sm text-slate-400">
-              Nenhum uso de IA registrado
-            </div>
+            <EmptyState title="Nenhum uso de IA registrado" />
           )}
         </div>
       )}
@@ -441,17 +445,17 @@ export default function IA() {
           </div>
           {resp.metricas && (
             <div className="grid sm:grid-cols-3 gap-3 mb-4 text-xs">
-              <div className="rounded border border-slate-200 p-3">
+              <div className="card p-3">
                 <b>Artigos</b>
                 <br />
                 {resp.metricas.artigos_detectados?.length || 0}
               </div>
-              <div className="rounded border border-slate-200 p-3">
+              <div className="card p-3">
                 <b>Jurisprudência pendente</b>
                 <br />
                 {resp.metricas.jurisprudencia_pendente_verificacao?.length || 0}
               </div>
-              <div className="rounded border border-slate-200 p-3">
+              <div className="card p-3">
                 <b>Provas indicadas</b>
                 <br />
                 {resp.metricas.indicadores_prova?.length || 0}

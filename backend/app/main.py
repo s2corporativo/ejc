@@ -65,6 +65,7 @@ from app.routers import data_room_v4
 from app.routers import datajud
 from app.routers import deadlines
 from app.routers import despesas
+from app.routers import diagnostico
 from app.routers import diario_oficial
 from app.routers import diplomacia_v3
 from app.routers import documento_ia
@@ -89,6 +90,9 @@ from app.routers import ia_extra
 from app.routers import ia_governanca
 from app.routers import ia_saude
 from app.routers import indice_risco
+from app.routers import indices
+from app.routers import infosimples_receita
+from app.routers import infosimples_tjmg
 from app.routers import intelligence_v3
 from app.routers import intimacoes
 from app.routers import jurimetria
@@ -128,6 +132,7 @@ from app.routers import rag
 from app.routers import rag_public
 from app.routers import api_keys as api_keys_router
 from app.routers import regulatorio
+from app.routers import radar_legislativo
 from app.routers import ramos
 from app.routers import previdenciario_beneficio
 from app.routers import relatorio
@@ -321,6 +326,9 @@ app.include_router(ia_extra.router, prefix=API)  # Bloco 1 (Etapa 4): router ant
 app.include_router(ia_governanca.router, prefix=API)
 app.include_router(ia_saude.router, prefix=API)
 app.include_router(indice_risco.router, prefix=API)
+app.include_router(indices.router, prefix=API)  # Índices oficiais BCB (SGS + Olinda) — Bloco 1 das APIs públicas
+app.include_router(infosimples_receita.router, prefix=API)
+app.include_router(infosimples_tjmg.router, prefix=API)
 app.include_router(intelligence_v3.router, prefix=API)
 app.include_router(intimacoes.router, prefix=API)
 app.include_router(jurimetria.router, prefix=API)
@@ -360,6 +368,7 @@ app.include_router(rag.router, prefix=API)
 app.include_router(rag_public.router, prefix=API)      # API pública (X-API-Key)
 app.include_router(api_keys_router.router, prefix=API) # admin de chaves (JWT admin)
 app.include_router(regulatorio.router, prefix=API)
+app.include_router(radar_legislativo.router, prefix=API)  # Câmara+Senado+ALMG
 app.include_router(ramos.router, prefix=API)
 app.include_router(previdenciario_beneficio.router, prefix=API)  # vertical Previdenciário — regras de transição EC 103/2019 + RMI
 app.include_router(relatorio.router, prefix=API)
@@ -376,6 +385,7 @@ app.include_router(lgpd_registros.router, prefix=API)  # vertical LGPD — ROPA 
 app.include_router(sumulas.router, prefix=API)
 app.include_router(suspensoes.router, prefix=API)
 app.include_router(system_modules.router, prefix=API)  # Mapa de Módulos — governança modular
+app.include_router(diagnostico.router, prefix=API)  # Central Eletrônica de Diagnóstico
 app.include_router(module_settings.router, prefix=API)  # Lifecycle auditável dos módulos
 app.include_router(tributario_fiscal.router, prefix=API)  # vertical Tributário — XML fiscal + recuperação de créditos
 app.include_router(trabalhista_liquidacao.router, prefix=API)  # vertical Trabalhista — liquidação de sentença (ADC 58 / Selic real BCB)

@@ -17,7 +17,7 @@ import {
   type ModuleLifecycleStatus,
 } from "../stores/moduleLifecycle";
 import { toast } from "./Toast";
-import { SectionCard, cn } from "./UI";
+import { SectionCard, Spinner, cn } from "./UI";
 
 const STATUS_OPTIONS: Array<{
   value: ModuleLifecycleStatus;
@@ -218,11 +218,9 @@ export default function ModuleLifecycleSettings() {
         </div>
 
         {!loaded ? (
-          <div className="py-10 text-center text-sm text-slate-400">
-            Carregando lifecycle...
-          </div>
+          <Spinner />
         ) : (
-          <div className="overflow-x-auto rounded-xl border border-slate-200">
+          <div className="card overflow-x-auto">
             <table className="table w-full text-sm">
               <thead>
                 <tr>

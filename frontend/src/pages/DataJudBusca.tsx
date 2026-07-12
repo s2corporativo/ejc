@@ -30,7 +30,6 @@ interface ProcessoDataJud {
   partes?: { tipo: string; nome: string }[];
 }
 
-
 function formatCNJ(raw: string) {
   const d = raw.replace(/\D/g, "");
   if (d.length !== 20) return raw;
@@ -90,7 +89,7 @@ export default function DataJudBusca() {
       />
 
       {/* Search */}
-      <div className="bg-white rounded-xl border border-slate-200 p-5">
+      <div className="card p-5">
         <label className="block text-sm font-medium text-slate-700 mb-2">
           Número do processo (CNJ)
         </label>
@@ -98,7 +97,7 @@ export default function DataJudBusca() {
           <input
             type="text"
             placeholder="0000000-00.0000.0.00.0000 ou 20 dígitos"
-            className="flex-1 border border-slate-200 rounded-lg px-4 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-primary-300"
+            className="input flex-1 px-4 py-2.5"
             value={numero}
             onChange={(e) => setNumero(e.target.value)}
             onKeyDown={(e) => e.key === "Enter" && buscar()}
@@ -134,7 +133,7 @@ export default function DataJudBusca() {
       {processo && (
         <div className="space-y-4">
           {/* Dados básicos */}
-          <div className="bg-white rounded-xl border border-slate-200 p-5">
+          <div className="card p-5">
             <div className="flex items-start justify-between mb-4">
               <div>
                 <h2 className="font-semibold text-slate-800 text-lg">
@@ -161,7 +160,10 @@ export default function DataJudBusca() {
                   label: "Distribuição",
                   value: fmtDate(processo.data_distribuicao),
                 },
-                { label: "Valor da causa", value: fmtMoney(processo.valor_causa) },
+                {
+                  label: "Valor da causa",
+                  value: fmtMoney(processo.valor_causa),
+                },
               ].map(
                 ({ label, value }) =>
                   value && (
@@ -180,7 +182,7 @@ export default function DataJudBusca() {
 
           {/* Partes */}
           {processo.partes && processo.partes.length > 0 && (
-            <div className="bg-white rounded-xl border border-slate-200 p-5">
+            <div className="card p-5">
               <h3 className="font-semibold text-slate-800 mb-3 flex items-center gap-2">
                 <FileText className="w-4 h-4 text-slate-400" />
                 Partes do processo
@@ -203,7 +205,7 @@ export default function DataJudBusca() {
 
           {/* Movimentos */}
           {processo.movimentos && processo.movimentos.length > 0 && (
-            <div className="bg-white rounded-xl border border-slate-200 p-5">
+            <div className="card p-5">
               <h3 className="font-semibold text-slate-800 mb-3 flex items-center gap-2">
                 <Clock className="w-4 h-4 text-slate-400" />
                 Movimentações ({processo.movimentos.length})

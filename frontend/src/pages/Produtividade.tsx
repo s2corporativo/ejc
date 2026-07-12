@@ -10,7 +10,7 @@ import {
   Briefcase,
 } from "lucide-react";
 import api from "../lib/api";
-import { PageHeader } from "../components/UI";
+import { PageHeader, Spinner } from "../components/UI";
 
 const PERIODOS = [
   { label: "7 dias", value: "7d" },
@@ -124,9 +124,21 @@ export default function Produtividade() {
   }, [periodo]);
 
   const maxAdv = data
-    ? Math.max(...(Array.isArray(data.por_advogado) ? data.por_advogado : []).map((a) => a.horas), 1)
+    ? Math.max(
+        ...(Array.isArray(data.por_advogado) ? data.por_advogado : []).map(
+          (a) => a.horas,
+        ),
+        1,
+      )
     : 1;
-  const maxArea = data ? Math.max(...(Array.isArray(data.por_area) ? data.por_area : []).map((a) => a.horas), 1) : 1;
+  const maxArea = data
+    ? Math.max(
+        ...(Array.isArray(data.por_area) ? data.por_area : []).map(
+          (a) => a.horas,
+        ),
+        1,
+      )
+    : 1;
 
   return (
     <div className="max-w-6xl mx-auto px-4 py-6 space-y-6">
@@ -191,9 +203,7 @@ export default function Produtividade() {
       />
 
       {loading ? (
-        <div className="flex items-center justify-center h-40 text-zinc-400 text-sm">
-          Carregando…
-        </div>
+        <Spinner />
       ) : !data ? (
         <div className="text-zinc-400 text-sm">Erro ao carregar dados.</div>
       ) : (
@@ -283,20 +293,27 @@ export default function Produtividade() {
               </h3>
               <div className="flex items-end gap-0.5 h-24 overflow-x-auto pb-2">
                 {(() => {
-                  const mx = Math.max(...(Array.isArray(data.trend) ? data.trend : []).map((t) => t.horas), 1);
-                  return (Array.isArray(data.trend) ? data.trend : []).map((t, i) => (
-                    <div
-                      key={i}
-                      className="flex flex-col items-center gap-1 shrink-0"
-                      style={{ minWidth: "10px", flex: "1 0 10px" }}
-                    >
+                  const mx = Math.max(
+                    ...(Array.isArray(data.trend) ? data.trend : []).map(
+                      (t) => t.horas,
+                    ),
+                    1,
+                  );
+                  return (Array.isArray(data.trend) ? data.trend : []).map(
+                    (t, i) => (
                       <div
-                        className="w-full bg-bronze/50 rounded-t"
-                        style={{ height: `${(t.horas / mx) * 80}px` }}
-                        title={`${t.dia}: ${t.horas}h`}
-                      />
-                    </div>
-                  ));
+                        key={i}
+                        className="flex flex-col items-center gap-1 shrink-0"
+                        style={{ minWidth: "10px", flex: "1 0 10px" }}
+                      >
+                        <div
+                          className="w-full bg-bronze/50 rounded-t"
+                          style={{ height: `${(t.horas / mx) * 80}px` }}
+                          title={`${t.dia}: ${t.horas}h`}
+                        />
+                      </div>
+                    ),
+                  );
                 })()}
               </div>
               <div className="flex justify-between text-xs text-zinc-300 mt-1">

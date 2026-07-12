@@ -206,7 +206,7 @@ export default function Layout() {
             </button>
 
             {notifOpen && (
-              <div className="absolute right-0 mt-2 w-80 overflow-hidden rounded-xl border border-slate-200 bg-white shadow-xl">
+              <div className="absolute right-0 mt-2 w-80 overflow-hidden rounded-xl border border-black/[0.05] bg-white shadow-xl">
                 <div className="flex items-center justify-between border-b border-slate-100 px-4 py-3">
                   <div className="text-sm font-semibold text-slate-950">
                     Notificações
