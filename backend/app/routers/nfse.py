@@ -22,6 +22,7 @@ from uuid import uuid4
 from fastapi import APIRouter, Depends, HTTPException, Response
 from pydantic import BaseModel, Field, model_validator
 from sqlalchemy import select
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.database import get_db
@@ -177,37 +178,21 @@ async def emitir_nfse(
 ):
     """Emite uma NFS-e a partir de um honorário (fee_id) ou avulsa."""
     provider = _provider_ou_http()
+    ambiente_atual = nfse_service.status_atual()["ambiente"]
 
-    fee = None
     client_id = None
     if body.fee_id:
         fee = await db.get(Fee, body.fee_id)
         if fee is None or getattr(fee, "deleted_at", None) is not None:
             raise HTTPException(status_code=404, detail="Honorário não encontrado.")
         referencia = f"fee-{fee.id}"
-        # Idempotência: já existe nota em curso/autorizada para este honorário?
-        existente = await db.scalar(
-            select(NotaFiscalServico).where(
-                NotaFiscalServico.referencia == referencia,
-                NotaFiscalServico.status.in_(_STATUS_ATIVOS),
-            )
-        )
-        if existente is not None:
-            raise HTTPException(
-                status_code=409,
-                detail=(
-                    f"Já existe NFS-e ({existente.status}) para este honorário "
-                    f"(nota {existente.id}). Cancele-a antes de reemitir."
-                ),
-            )
         cliente = await db.get(Client, fee.client_id) if fee.client_id else None
-        tomador = _tomador_de(cliente, body.tomador)
         valor = body.valor if body.valor is not None else fee.valor
         descricao = body.descricao or fee.descricao
         client_id = fee.client_id
     else:
         referencia = f"avulso-{uuid4().hex[:16]}"
-        tomador = _tomador_de(None, body.tomador)
+        cliente = None
         valor = body.valor
         descricao = body.descricao
 
@@ -217,40 +202,98 @@ async def emitir_nfse(
             detail="Honorário sem valor/descrição — informe valor e descricao no body.",
         )
 
-    pedido = NFSePedidoEmissao(
-        referencia=referencia, tomador=tomador,
-        descricao=descricao, valor=Decimal(str(valor)), competencia=body.competencia,
+    # ── RESERVA ATÔMICA (fix corrida TOCTOU de duplo-clique/retry) ───────────
+    # A linha é criada em `processando` e COMITADA *antes* de tocar o provedor.
+    # O UNIQUE(provider, referencia) serializa: se duas requisições para o mesmo
+    # honorário chegam juntas, só a 1ª reserva a referência; a 2ª cai no
+    # IntegrityError → 409, sem uma segunda emissão real no provedor.
+    # Bloqueio da linha (with_for_update) evita reemissão dupla quando já existe
+    # uma nota terminal (rejeitada/cancelada) sendo reaproveitada.
+    existente = await db.scalar(
+        select(NotaFiscalServico)
+        .where(
+            NotaFiscalServico.provider == "nuvemfiscal",
+            NotaFiscalServico.referencia == referencia,
+        )
+        .with_for_update()
     )
+    if existente is not None:
+        if existente.status in _STATUS_ATIVOS:
+            raise HTTPException(
+                status_code=409,
+                detail=(
+                    f"Já existe NFS-e ({existente.status}) para este honorário "
+                    f"(nota {existente.id}). Cancele-a antes de reemitir."
+                ),
+            )
+        # Terminal (rejeitada/cancelada): reaproveita a linha para reemitir.
+        nota = existente
+        nota.status = NFSeStatus.processando.value
+        nota.ambiente = ambiente_atual
+        nota.valor = Decimal(str(valor))
+        nota.descricao = descricao
+        nota.client_id = client_id
+        nota.provider_id = None
+        nota.numero = None
+        nota.chave_acesso = None
+        nota.pdf_url = None
+        nota.xml_url = None
+        nota.mensagem_erro = None
+    else:
+        nota = NotaFiscalServico(
+            id=str(uuid4()),
+            fee_id=body.fee_id, client_id=client_id,
+            provider="nuvemfiscal", referencia=referencia,
+            ambiente=ambiente_atual, status=NFSeStatus.processando.value,
+            valor=Decimal(str(valor)), descricao=descricao, created_by=cu.id,
+        )
+        db.add(nota)
+
+    # Tomador resolvido só depois do short-circuit de idempotência (nota ativa
+    # → 409) e antes do commit da reserva: se faltar tomador (422), a transação
+    # é descartada sem deixar a referência presa em `processando`.
+    tomador = _tomador_de(cliente, body.tomador)
 
     # Audit ANTES (durável): registra a INTENÇÃO de emitir antes de tocar o
     # provedor — se a chamada externa falhar, a tentativa fica na trilha.
     await criar_audit_log(
-        db, cu.id, _role(cu), "NFSE_EMITIR", "nfse", None,
-        detalhes=f"ref={referencia} ambiente={nfse_service.status_atual()['ambiente']}",
+        db, cu.id, _role(cu), "NFSE_EMITIR", "nfse", nota.id,
+        detalhes=f"ref={referencia} ambiente={ambiente_atual}",
         dados_depois={"referencia": referencia, "fee_id": body.fee_id,
                       "valor": str(valor), "descricao": descricao},
     )
-    await db.commit()
+    try:
+        await db.commit()   # reserva a referência (UNIQUE fecha a corrida)
+    except IntegrityError:
+        await db.rollback()
+        raise HTTPException(
+            status_code=409,
+            detail="Já existe NFS-e em emissão para este honorário. Aguarde e consulte.",
+        )
 
+    pedido = NFSePedidoEmissao(
+        referencia=referencia, tomador=tomador,
+        descricao=descricao, valor=Decimal(str(valor)), competencia=body.competencia,
+    )
     try:
         resultado = await provider.emitir(pedido)
     except (nfse_service.NFSeConfigError, nfse_service.NFSeDesabilitadaError,
             nfse_service.NFSeProviderError) as e:
+        # Falha ao emitir: marca a nota como rejeitada (estado terminal) para
+        # não deixar a referência presa em `processando` — assim uma nova
+        # tentativa pode reaproveitar a linha. A trilha do "antes" já foi
+        # commitada; registra também a falha.
         code, detail = nfse_service.http_status_para_erro(e)
+        nota.status = NFSeStatus.rejeitada.value
+        nota.mensagem_erro = detail
+        await criar_audit_log(
+            db, cu.id, _role(cu), "NFSE_EMISSAO_FALHOU", "nfse", nota.id,
+            detalhes=f"http={code}", dados_depois={"status": nota.status},
+        )
+        await db.commit()
         raise HTTPException(status_code=code, detail=detail)
 
-    nota = NotaFiscalServico(
-        id=str(uuid4()),
-        fee_id=body.fee_id, client_id=client_id,
-        provider="nuvemfiscal", provider_id=resultado.provider_id,
-        referencia=referencia, ambiente=resultado.ambiente or nfse_service.status_atual()["ambiente"],
-        status=resultado.status, numero=resultado.numero, chave_acesso=resultado.chave_acesso,
-        valor=Decimal(str(valor)), descricao=descricao,
-        xml_url=resultado.xml_url, pdf_url=resultado.pdf_url,
-        mensagem_erro="; ".join(resultado.mensagens) if resultado.mensagens else None,
-        created_by=cu.id,
-    )
-    db.add(nota)
+    _aplicar_resultado(nota, resultado)
     await criar_audit_log(
         db, cu.id, _role(cu), "NFSE_EMITIDA", "nfse", nota.id,
         detalhes=f"status={resultado.status} provider_id={resultado.provider_id}",
@@ -331,7 +374,7 @@ async def baixar_xml_nfse(
     )
 
 
-@router.post("/{nota_id}/cancelar")
+@router.post("/{nota_id}/cancelar", dependencies=[Depends(rate_limit("nfse_cancelar", 6))])
 async def cancelar_nfse(
     nota_id: str,
     body: CancelarIn,

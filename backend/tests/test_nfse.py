@@ -375,3 +375,89 @@ async def test_endpoint_status_advogado(nfse_ligado):
     resp = await status_nfse(cu=User(id="a1", role=UserRole.advogado))
     assert resp["enabled"] is True and resp["ambiente"] == "homologacao"
     assert CLIENT_SECRET not in str(resp)
+
+
+# ── Reserva atômica (fix TOCTOU) ────────────────────────────────────────────────
+
+class _FakeProviderErro:
+    """Provedor que estoura na emissão (simula falha externa)."""
+    def __init__(self, exc):
+        self._exc = exc
+
+    async def emitir(self, pedido):
+        raise self._exc
+
+
+class _FakeDBIntegrity(_FakeDB):
+    """FakeDB cujo 1º commit estoura IntegrityError (corrida na reserva)."""
+    async def commit(self):
+        from sqlalchemy.exc import IntegrityError
+        self.commits += 1
+        if self.commits == 1:
+            raise IntegrityError("INSERT", {}, Exception("uq viol"))
+
+    async def rollback(self):
+        self.rolledback = True
+
+
+async def test_endpoint_emitir_reaproveita_nota_terminal(nfse_ligado, monkeypatch):
+    """Nota anterior rejeitada/cancelada → reaproveita a linha, não cria outra."""
+    from app.routers import nfse as router_mod
+    from app.services.nfse import NFSeResultado
+
+    resultado = NFSeResultado(status="processando", provider_id="nf_re",
+                              ambiente="homologacao", numero=None)
+    monkeypatch.setattr("app.services.nfse.get_provider",
+                        lambda: _FakeProvider(resultado))
+    terminal = NotaFiscalServico(id="nf_x", referencia="fee-f1",
+                                 status=NFSeStatus.rejeitada.value)
+    db = _FakeDB(objs={("Fee", "f1"): _fee(), ("Client", "c1"): _cliente()},
+                 scalar_result=terminal)
+    resp = await router_mod.emitir_nfse(router_mod.EmitirIn(fee_id="f1"),
+                                        db=db, cu=_socio())
+    assert resp["id"] == "nf_x" and resp["status"] == "processando"
+    # Reaproveita a linha existente — nenhuma NotaFiscalServico nova adicionada.
+    assert not any(isinstance(o, NotaFiscalServico) for o in db.added)
+
+
+async def test_endpoint_emitir_falha_provedor_marca_rejeitada(nfse_ligado, monkeypatch):
+    """Falha do provedor → nota fica `rejeitada` (não presa em processando)."""
+    from app.routers import nfse as router_mod
+
+    prov = _FakeProviderErro(NFSeProviderError(502, "provedor fora do ar"))
+    monkeypatch.setattr("app.services.nfse.get_provider", lambda: prov)
+    db = _FakeDB(objs={("Fee", "f1"): _fee(), ("Client", "c1"): _cliente()},
+                 scalar_result=None)
+    with pytest.raises(HTTPException) as exc:
+        await router_mod.emitir_nfse(router_mod.EmitirIn(fee_id="f1"),
+                                     db=db, cu=_socio())
+    assert exc.value.status_code == 502
+    nota = next(o for o in db.added if isinstance(o, NotaFiscalServico))
+    assert nota.status == NFSeStatus.rejeitada.value
+    # Reserva (commit 1) + persistência da falha (commit 2).
+    assert db.commits >= 2
+    acoes = {o.acao for o in db.added if o.__class__.__name__ == "AuditLog"}
+    assert "NFSE_EMISSAO_FALHOU" in acoes
+
+
+async def test_endpoint_emitir_corrida_integrityerror_409(nfse_ligado, monkeypatch):
+    """Duplo-clique: 2ª reserva colide no UNIQUE → 409 sem emitir de novo."""
+    from app.routers import nfse as router_mod
+    from app.services.nfse import NFSeResultado
+
+    chamou = {"emitir": False}
+
+    class _Prov:
+        async def emitir(self, pedido):
+            chamou["emitir"] = True
+            return NFSeResultado(status="processando", provider_id="x")
+
+    monkeypatch.setattr("app.services.nfse.get_provider", lambda: _Prov())
+    db = _FakeDBIntegrity(objs={("Fee", "f1"): _fee(), ("Client", "c1"): _cliente()},
+                          scalar_result=None)
+    with pytest.raises(HTTPException) as exc:
+        await router_mod.emitir_nfse(router_mod.EmitirIn(fee_id="f1"),
+                                     db=db, cu=_socio())
+    assert exc.value.status_code == 409
+    # A colisão barra ANTES de tocar o provedor — sem emissão dupla real.
+    assert chamou["emitir"] is False
