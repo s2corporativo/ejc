@@ -71,6 +71,10 @@ services:
       # Rate limit distribuído: com o Redis já disponível aqui, contar no Redis
       # torna seguro subir uvicorn com >1 worker (o contador em memória só vale
       # para 1 processo). Redis fora do ar → fallback para o contador local.
+      # LIMITE (item 11 — auditoria): esta flag cobre SÓ a dependency
+      # consumir()/rate_limit() (core/rate_limit.py). O anti-brute-force do
+      # login (security_service.py) e o slowapi @limiter.limit continuam POR
+      # PROCESSO — não escalar uvicorn com --workers sem migrá-los para Redis.
       RATE_LIMIT_REDIS_ENABLED: "true"
       # IA: este stack NÃO sobe um serviço `ollama` (OLLAMA_BASE_URL default
       # aponta para http://ollama:11434, inexistente aqui). Mantê-lo "enabled"

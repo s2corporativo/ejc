@@ -19,6 +19,7 @@ from app.core.security import (
 )
 from app.models.user import User, RefreshToken
 from app.models.audit_log import criar_audit_log
+from app.services import pii_crypto
 from app.services.security_service import (
     esta_bloqueado, registrar_falha, limpar_falhas, obter_ip_real,
     verificar_novo_dispositivo,
@@ -66,6 +67,25 @@ def _clear_refresh_cookie(response: Response) -> None:
 def _refresh_from(req: RefreshRequest, request: Request) -> str:
     """Token do cookie httpOnly (preferido) ou do corpo (retrocompat)."""
     return request.cookies.get(REFRESH_COOKIE) or (req.refresh_token or "")
+
+
+# ─── Segredo TOTP cifrado em repouso (auditoria pré-produção, item 4) ─────────
+# O segredo é gravado cifrado (Fernet — mesma infra pii_crypto de CPF/CNPJ).
+# Segredos LEGADOS gravados em claro continuam válidos: a leitura tenta decifrar
+# e cai para o texto claro; no primeiro uso autenticado bem-sucedido o valor é
+# re-cifrado oportunisticamente (sem migration de dados obrigatória).
+def _totp_secret_de(user: User) -> tuple[str | None, bool]:
+    """Retorna (segredo em claro p/ verificação, é_legado_em_claro)."""
+    try:
+        return pii_crypto.decrypt(user.totp_secret), False
+    except (ValueError, RuntimeError):
+        return user.totp_secret, True
+
+
+def _recifrar_totp_legado(user: User, secret: str, legado: bool) -> None:
+    """Re-cifragem oportunista pós-verificação (mesma transação do chamador)."""
+    if legado and secret:
+        user.totp_secret = pii_crypto.encrypt(secret)
 
 
 class AlterarSenhaRequest(BaseModel):
@@ -134,14 +154,28 @@ async def login(
     # ── 3. TOTP (se habilitado) ──────────────────────────────────────
     if user.totp_enabled:
         if not req.totp_code:
+            # Item 9 (auditoria pré-produção): chegar aqui já CONFIRMA que
+            # email+senha são válidos. Sem registrar a tentativa, este passo
+            # virava oráculo de credenciais fora do anti-brute-force. A conta
+            # entra no contador; o login completo bem-sucedido limpa as falhas.
+            registrar_falha(chave_bf)
+            registrar_falha(chave_em)
+            await criar_audit_log(
+                db, user.id, user.role.value, "LOGIN_TOTP_PENDENTE", "users",
+                user.id, detalhes="Senha válida sem código TOTP", ip=ip,
+            )
+            await db.commit()
             raise HTTPException(status_code=401, detail="TOTP obrigatório. Informe o código do autenticador.")
-        totp = pyotp.TOTP(user.totp_secret)
+        secret, legado = _totp_secret_de(user)
+        totp = pyotp.TOTP(secret)
         if not totp.verify(req.totp_code, valid_window=1):
             registrar_falha(chave_bf)
             registrar_falha(chave_em)
             await criar_audit_log(db, user.id, user.role.value, "LOGIN_TOTP_FALHA", "users", user.id, ip=ip)
             await db.commit()
             raise HTTPException(status_code=401, detail="Código TOTP inválido ou expirado")
+        # Segredo legado em claro → re-grava cifrado (commit do login abaixo).
+        _recifrar_totp_legado(user, secret, legado)
 
     # ── 4. Login OK ──────────────────────────────────────────────────
     limpar_falhas(chave_bf)
@@ -193,23 +227,48 @@ async def refresh(req: RefreshRequest, request: Request, response: Response,
         raise HTTPException(status_code=401, detail="Refresh token inválido")
 
     jti = payload.get("jti")
+    user_id = payload.get("sub")
     record = (await db.execute(
-        select(RefreshToken).where(
-            RefreshToken.jti == jti,
-            RefreshToken.revoked == False,
-            RefreshToken.expires_at > datetime.now(timezone.utc),
-        )
+        select(RefreshToken).where(RefreshToken.jti == jti)
     )).scalar_one_or_none()
 
-    if not record:
+    # ── Detecção de REUSO (item 1 — auditoria pré-produção; OAuth 2.0 Security
+    # BCP §4.14.2): token criptograficamente VÁLIDO cujo JTI já foi revogado
+    # (rotação anterior) ou nunca foi registrado = replay. Ex.: atacante roubou
+    # o refresh e rotacionou primeiro — antes, a cadeia dele continuava válida
+    # por 7 dias. Resposta padrão: revogar TODAS as sessões do `sub` (derruba
+    # também a cadeia do atacante) + trilha de auditoria.
+    if record is None or record.revoked:
+        if user_id:
+            await db.execute(
+                update(RefreshToken)
+                .where(RefreshToken.user_id == user_id,
+                       RefreshToken.revoked == False)
+                .values(revoked=True)
+            )
+            await criar_audit_log(
+                db, user_id, None, "REFRESH_REUSE", "users", user_id,
+                detalhes=f"Reuso de refresh token detectado (jti={jti}) — "
+                         "todas as sessões do usuário foram revogadas.",
+                ip=obter_ip_real(request),
+            )
+            await db.commit()
+        _clear_refresh_cookie(response)
+        raise HTTPException(status_code=401, detail="Token revogado ou expirado")
+
+    if record.expires_at <= datetime.now(timezone.utc):
+        # Expiração natural não é reuso — nega sem punir as demais sessões.
         raise HTTPException(status_code=401, detail="Token revogado ou expirado")
 
     # Rotação: revogar o atual, emitir novo par
     record.revoked = True
-    user_id = payload.get("sub")
 
     user = (await db.execute(
-        select(User).where(User.id == user_id, User.is_active == True)
+        select(User).where(
+            User.id == user_id,
+            User.is_active == True,
+            User.deleted_at.is_(None),  # item 10: mesmo filtro do get_current_user
+        )
     )).scalar_one_or_none()
     if not user:
         raise HTTPException(status_code=401, detail="Usuário inativo")
@@ -275,7 +334,11 @@ async def alterar_senha(
         raise HTTPException(status_code=401, detail="Token inválido")
 
     user = (await db.execute(
-        select(User).where(User.id == payload.get("sub"), User.is_active == True)
+        select(User).where(
+            User.id == payload.get("sub"),
+            User.is_active == True,
+            User.deleted_at.is_(None),  # item 10: mesmo filtro do get_current_user
+        )
     )).scalar_one_or_none()
     if not user:
         raise HTTPException(status_code=401, detail="Usuário não encontrado")
@@ -343,14 +406,20 @@ async def totp_setup(
     if not payload or payload.get("type") != "access":
         raise HTTPException(status_code=401, detail="Token inválido")
     user = (await db.execute(
-        select(User).where(User.id == payload.get("sub"), User.is_active == True)
+        select(User).where(
+            User.id == payload.get("sub"),
+            User.is_active == True,
+            User.deleted_at.is_(None),  # item 10: mesmo filtro do get_current_user
+        )
     )).scalar_one_or_none()
     if not user:
         raise HTTPException(status_code=401, detail="Usuário não encontrado")
     if user.totp_enabled:
         raise HTTPException(status_code=400, detail="TOTP já está ativo. Desative antes de reconfigurar.")
     secret = pyotp.random_base32()
-    user.totp_secret = secret
+    # Item 4: em repouso o segredo vai CIFRADO (Fernet — pii_crypto). O valor em
+    # claro só aparece na resposta deste setup (QR code) e nunca mais.
+    user.totp_secret = pii_crypto.encrypt(secret)
     await db.commit()
     totp = pyotp.TOTP(secret)
     uri = totp.provisioning_uri(name=user.email, issuer_name="EJC — De Paula Teixeira")
@@ -372,15 +441,21 @@ async def totp_verificar(
     if not payload or payload.get("type") != "access":
         raise HTTPException(status_code=401, detail="Token inválido")
     user = (await db.execute(
-        select(User).where(User.id == payload.get("sub"), User.is_active == True)
+        select(User).where(
+            User.id == payload.get("sub"),
+            User.is_active == True,
+            User.deleted_at.is_(None),  # item 10: mesmo filtro do get_current_user
+        )
     )).scalar_one_or_none()
     if not user:
         raise HTTPException(status_code=401, detail="Usuário não encontrado")
     if not user.totp_secret:
         raise HTTPException(status_code=400, detail="Execute /totp/setup primeiro")
-    totp = pyotp.TOTP(user.totp_secret)
+    secret, legado = _totp_secret_de(user)
+    totp = pyotp.TOTP(secret)
     if not totp.verify(req.codigo, valid_window=1):
         raise HTTPException(status_code=400, detail="Código inválido. Verifique o relógio do dispositivo.")
+    _recifrar_totp_legado(user, secret, legado)
     user.totp_enabled = True
     await criar_audit_log(db, user.id, user.role.value, "TOTP_ATIVADO", "users", user.id, ip=obter_ip_real(request))
     await db.commit()
@@ -402,14 +477,24 @@ async def totp_desativar(
     if not payload or payload.get("type") != "access":
         raise HTTPException(status_code=401, detail="Token inválido")
     user = (await db.execute(
-        select(User).where(User.id == payload.get("sub"), User.is_active == True)
+        select(User).where(
+            User.id == payload.get("sub"),
+            User.is_active == True,
+            User.deleted_at.is_(None),  # item 10: mesmo filtro do get_current_user
+        )
     )).scalar_one_or_none()
     if not user:
         raise HTTPException(status_code=401, detail="Usuário não encontrado")
     if not user.totp_enabled:
         raise HTTPException(status_code=400, detail="TOTP não está ativo")
-    totp = pyotp.TOTP(user.totp_secret)
+    secret, _legado = _totp_secret_de(user)
+    totp = pyotp.TOTP(secret)
     if not totp.verify(req.codigo, valid_window=1):
+        # Item 9: código TOTP inválido também conta no anti-brute-force —
+        # este endpoint autenticado permitia adivinhar o código sem custo.
+        ip = obter_ip_real(request)
+        registrar_falha(f"ip:{ip}")
+        registrar_falha(f"em:{user.email.lower()}")
         raise HTTPException(status_code=400, detail="Código inválido")
     user.totp_enabled = False
     user.totp_secret = None

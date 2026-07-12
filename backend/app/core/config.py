@@ -495,6 +495,17 @@ class Settings(BaseSettings):
                     "Gere uma chave: python3 -c \"import secrets; "
                     "print(secrets.token_urlsafe(64))\" e defina no .env."
                 )
+            # Item 3 (auditoria pré-produção): chave curta = espaço de busca
+            # brute-forçável para forjar JWTs (HS256). 32 chars é o piso.
+            if len(self.SECRET_KEY) < 32:
+                raise ValueError(
+                    f"SECRET_KEY muito curta para produção "
+                    f"({len(self.SECRET_KEY)} caracteres; mínimo 32). Uma chave "
+                    "curta permite forjar tokens JWT por força bruta. Gere uma "
+                    "nova: python3 -c \"import secrets; "
+                    "print(secrets.token_urlsafe(64))\" e defina no .env "
+                    "(atenção: trocar a chave desloga todos os usuários)."
+                )
             if "SEU_DOMINIO" in getattr(self, 'FRONTEND_URL', ''):
                 raise ValueError("FRONTEND_URL não configurada para produção.")
             # CORS wildcard em produção é proibido: o app usa

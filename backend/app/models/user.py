@@ -46,7 +46,10 @@ class User(Base):
     custo_hora     = Column(Numeric(10, 2), nullable=True)
     # Segurança: força troca de senha no 1º login (seed define True p/ usuários novos)
     must_change_password = Column(Boolean, default=False, nullable=False)
-    totp_secret        = Column(String(64), nullable=True)
+    # Cifrado em repouso (Fernet/pii_crypto — migr. 086): o token Fernet de um
+    # segredo base32 tem ~140 chars; 255 dá folga. Legado em claro (<=64) ainda
+    # cabe e é re-cifrado oportunisticamente no uso (routers/auth.py).
+    totp_secret        = Column(String(255), nullable=True)
     totp_enabled       = Column(Boolean, default=False, nullable=False)
     is_active      = Column(Boolean, default=True, nullable=False)
 

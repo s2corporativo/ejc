@@ -377,6 +377,37 @@ async def test_endpoint_status_advogado(nfse_ligado):
     assert CLIENT_SECRET not in str(resp)
 
 
+# ── Gate de leitura (auditoria pré-produção, item 5) ────────────────────────────
+# Consulta/PDF/XML expõem honorários e CPF/CNPJ do tomador → restritos aos
+# perfis fiduciários do módulo financeiro (fees.py), não a advogado+.
+
+def test_leitura_nfse_usa_gate_financeiro():
+    import inspect
+
+    from app.routers.nfse import (
+        _req_financeiro_leitura, baixar_pdf_nfse, baixar_xml_nfse, obter_nfse,
+    )
+
+    for endpoint in (obter_nfse, baixar_pdf_nfse, baixar_xml_nfse):
+        dep = inspect.signature(endpoint).parameters["cu"].default.dependency
+        assert dep is _req_financeiro_leitura, endpoint.__name__
+
+
+def test_gate_financeiro_perfis():
+    from app.routers.nfse import _req_financeiro_leitura
+
+    for role in (UserRole.superadmin, UserRole.admin, UserRole.socio,
+                 UserRole.financeiro):
+        cu = User(id="u1", role=role)
+        assert _req_financeiro_leitura(cu) is cu
+    for role in (UserRole.advogado, UserRole.advogado_auxiliar,
+                 UserRole.estagiario, UserRole.secretaria,
+                 UserRole.cliente_externo):
+        with pytest.raises(HTTPException) as exc:
+            _req_financeiro_leitura(User(id="u1", role=role))
+        assert exc.value.status_code == 403
+
+
 # ── Reserva atômica (fix TOCTOU) ────────────────────────────────────────────────
 
 class _FakeProviderErro:

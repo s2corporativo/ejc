@@ -671,11 +671,19 @@ async def upload_para_drive(
     if case_id:
         await verificar_acesso_caso(db, current_user, case_id)
 
+    # Item 2 (auditoria pré-produção) — MESMA validação do /documents/upload:
+    # extensão permitida + magic bytes + MIME derivado do CONTEÚDO no servidor.
+    # Antes, o content_type do cliente era persistido e devolvido intacto pelo
+    # download-proxy (/drive/{id}/download) → XSS armazenado (ex.: text/html).
+    ext = os.path.splitext(file.filename or "")[1].lower()
+    if ext not in EXTENSOES_PERMITIDAS:
+        raise HTTPException(status_code=422, detail=f"Extensão não permitida: {ext}")
+
     content = await file.read()
     if len(content) > 50 * 1024 * 1024:
         raise HTTPException(413, "Arquivo muito grande (máx 50 MB)")
 
-    mime = file.content_type or "application/octet-stream"
+    mime = _validar_conteudo(ext, content)  # 415 se conteúdo ≠ extensão
     # Organizar em subpasta do caso se fornecido
     folder_id = None
     if case_id:
@@ -848,7 +856,9 @@ async def _get_or_create_case_folder(case_id: str, db) -> str:
     from google.oauth2 import service_account
     from googleapiclient.discovery import build
     import json as _json
-    sa_json = os.getenv("GOOGLE_DRIVE_SA_JSON")
+    # Item 12: GOOGLE_DRIVE_SERVICE_ACCOUNT_JSON é o nome canônico (mesmo do
+    # google_drive_service.py); GOOGLE_DRIVE_SA_JSON fica como alias legado.
+    sa_json = os.getenv("GOOGLE_DRIVE_SERVICE_ACCOUNT_JSON") or os.getenv("GOOGLE_DRIVE_SA_JSON")
     if not sa_json:
         return os.getenv("GOOGLE_DRIVE_FOLDER_ID", "")
     creds = service_account.Credentials.from_service_account_info(
