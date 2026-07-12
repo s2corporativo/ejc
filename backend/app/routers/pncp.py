@@ -18,7 +18,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.database import get_db
 from app.core.rate_limit import rate_limit
-from app.core.security import get_current_user, require_roles
+from app.core.security import require_roles
 from app.models.user import User
 from app.services import pncp_service
 
@@ -30,7 +30,7 @@ _ADVOGADO_MAIS = require_roles(["advogado"])
 
 
 @router.get("/status")
-async def status_pncp(cu: User = Depends(get_current_user)):
+async def status_pncp(cu: User = Depends(_ADVOGADO_MAIS)):
     """Status da integração PNCP — booleans (sem segredo; PNCP é aberto)."""
     return await pncp_service.status()
 
@@ -44,8 +44,8 @@ async def listar_contratacoes(
     data_final: date = Query(..., description="Fim do período (YYYY-MM-DD)"),
     uf: str = Query("MG", max_length=2, description="UF (sigla, ex.: MG)"),
     municipio_ibge: str | None = Query(
-        None, max_length=7,
-        description="Código IBGE do município (Betim = 3106705)"),
+        None, pattern=r"^\d{7}$",
+        description="Código IBGE do município, 7 dígitos (Betim = 3106705)"),
     modalidade: int = Query(6, ge=1, le=99,
                             description="Código da modalidade (6 = pregão eletrônico)"),
     pagina: int = Query(1, ge=1),

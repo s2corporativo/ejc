@@ -19,7 +19,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.database import get_db
 from app.core.rate_limit import rate_limit
-from app.core.security import get_current_user, require_roles
+from app.core.security import require_roles
 from app.models.user import User
 from app.services import transparencia_service
 
@@ -46,7 +46,7 @@ class SancoesIn(BaseModel):
 @router.get("/status")
 async def status_transparencia(
     db: AsyncSession = Depends(get_db),
-    cu: User = Depends(get_current_user),
+    cu: User = Depends(_ADVOGADO_MAIS),
 ):
     """Status da integração CGU — booleans, sem a chave de API."""
     return await transparencia_service.status(db)
