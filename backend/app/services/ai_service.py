@@ -533,6 +533,70 @@ async def resumir_documento(
     }
 
 
+SYSTEM_EXTRACAO_PRAZOS = """Você é um assistente jurídico brasileiro especializado em identificar PRAZOS processuais e contratuais em documentos (intimações, decisões, despachos, contratos).
+
+REGRAS ABSOLUTAS:
+- NUNCA invente prazo, data ou base legal que não esteja no texto.
+- Se não houver data fatal clara (termo final) para um prazo, NÃO inclua o item.
+- Responda APENAS com JSON válido, sem comentários nem texto ao redor.
+
+FORMATO (obrigatório):
+{"prazos": [{"tipo": "contestação|recurso|manifestação|...", "data_base": "descrição da data-base, se houver", "termo_final": "dd/mm/aaaa", "fatal": true, "base_legal": "dispositivo citado no texto, se houver"}]}
+
+Sem prazos identificáveis → {"prazos": []}."""
+
+
+async def extrair_prazos_ia(
+    db: AsyncSession, user_id: str, texto: str,
+    case_id: str | None = None,
+) -> dict:
+    """Extração de prazos por IA (endpoint /ai/detectar-prazos).
+
+    Mesma pipeline de segurança do resumir_documento: sanitização LGPD →
+    gateway → AILog (HITL). O parse reaproveita o caminho fail-safe do intake
+    (`_parse_json`/`_prazos_extraidos` de documento_service): item sem data
+    fatal parseável é DESCARTADO — a IA nunca materializa prazo inventado.
+    """
+    if not settings.AI_ENABLED:
+        return {"erro": "IA desabilitada"}
+
+    texto_limpo, houve_pii = sanitizar_pii(texto[:12000])
+
+    try:
+        resposta, resp = await _gateway_text(
+            SYSTEM_EXTRACAO_PRAZOS, texto_limpo,
+            task_type="resumo", temperature=0.0, max_tokens=1500, nivel="alto",
+        )
+    except Exception as e:
+        logger.error(f"AI Gateway (detectar-prazos) falhou: {e}")
+        return {"erro": f"Falha na IA: {str(e)[:200]}"}
+
+    from app.services.documento_service import _parse_json, _prazos_extraidos
+    llm = _parse_json(resposta) or {}
+    prazos = [p.model_dump() for p in _prazos_extraidos(llm)]
+
+    log = AILog(
+        id=str(uuid4()), user_id=user_id, case_id=case_id,
+        tipo_uso=AITipoUso.outro, modelo=_modelo_log(resp),
+        prompt_sanitizado=texto_limpo[:8000], pii_removida=houve_pii,
+        resposta=resposta,
+        tokens_input=_tokens_input(resp), tokens_output=_tokens_output(resp),
+        status_hitl=AIStatusHITL.gerado,
+    )
+    db.add(log)
+    await db.commit()
+
+    return {
+        "ai_log_id": log.id,
+        "prazos": prazos,
+        "total": len(prazos),
+        "pii_removida": houve_pii,
+        "aviso": "⚠️ Prazos extraídos por IA — RASCUNHO. Conferência e cálculo "
+                 "pelo advogado responsável OBRIGATÓRIOS antes de registrar.",
+        "status_hitl": "gerado",
+    }
+
+
 async def _log_ai(db, user_id, tipo_uso_str, prompt, resposta,
                   pii, fontes, resp_groq, case_id):
     """Helper de log para as funções ECJ — mesmo padrão do analisar_caso."""

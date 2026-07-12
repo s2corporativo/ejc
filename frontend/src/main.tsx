@@ -2,6 +2,7 @@ import React from "react";
 import ReactDOM from "react-dom/client";
 import App from "./App";
 import { initTheme } from "./stores/theme";
+import "./styles/fonts.css";
 import "./index.css";
 import "./styles/site-system.css";
 

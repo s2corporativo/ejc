@@ -3,7 +3,6 @@ Geração Documental Automática EJC v4.0 (Etapa 5).
 Contratos, Procurações e Checklists baseados no contexto do cliente e caso.
 """
 from typing import Dict
-from app.services.visual_law_pdf import visual_law_pdf
 
 class GeracaoDocumental:
     async def gerar_kit_inicial(self, cliente_data: dict, caso_data: dict) -> Dict[str, str]:

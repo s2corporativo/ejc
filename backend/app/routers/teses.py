@@ -9,7 +9,7 @@ from typing import Optional
 
 from fastapi import APIRouter, Depends, HTTPException, Query
 from pydantic import BaseModel, Field
-from sqlalchemy import select, or_, func, text
+from sqlalchemy import select, or_, func
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.database import get_db
@@ -499,8 +499,7 @@ async def motor_teses(
     if not _pode_editar(cu):
         raise HTTPException(403)
 
-    from app.services.ai_guard import sanitizar_ou_abortar, registrar_ai_log
-    from app.models.ai_log import AITipoUso
+    from app.services.ai_guard import sanitizar_ou_abortar
     from app.services.ai_gateway import chat as gw_chat
     from app.services.ai_service import buscar_contexto_rag, _escopo_cliente_do_caso
     from app.core.ownership import verificar_acesso_caso

@@ -1,10 +1,7 @@
 import { useState } from "react";
-import { toast } from "../components/Toast";
-import { useNavigate } from "react-router-dom";
 import api, { logout } from "../lib/api";
 
 export default function TrocarSenha() {
-  const nav = useNavigate();
   const [atual, setAtual] = useState("");
   const [nova, setNova] = useState("");
   const [conf, setConf] = useState("");
@@ -25,8 +22,9 @@ export default function TrocarSenha() {
         senha_atual: atual,
         nova_senha: nova,
       });
-      toast.success("Senha alterada! Entre novamente.");
-      logout();
+      // logout() faz redirect HARD para /login (o toast não sobreviveria à
+      // recarga) — o aviso de sucesso é exibido pela tela de login via query.
+      logout("/login?motivo=senha-alterada");
     } catch (e: any) {
       setErro(e.response?.data?.detail || "Erro ao trocar a senha");
     }

@@ -22,7 +22,14 @@ class Settings(BaseSettings):
     # abaixo); em desenvolvimento, uma chave efêmera é gerada automaticamente.
     SECRET_KEY: str = ""
     ALGORITHM: str = "HS256"
-    ACCESS_TOKEN_EXPIRE_HOURS: int = 8
+    # 2h (era 8h — hardening pós-auditoria de 2026-07-12): janela de exposição
+    # menor para um access token vazado/pós-revogação. Não incomoda o usuário:
+    # o frontend renova automaticamente via interceptor 401 + POST /auth/refresh
+    # (rotação de refresh token, sessão de até REFRESH_TOKEN_EXPIRE_DAYS). O
+    # Portal do Cliente usa o MESMO fluxo (get_current_user + refresh) — nenhum
+    # fluxo longo depende do access token sobreviver além de 2h. Override por
+    # env var ACCESS_TOKEN_EXPIRE_HOURS (ver .env.example).
+    ACCESS_TOKEN_EXPIRE_HOURS: int = 2
     REFRESH_TOKEN_EXPIRE_DAYS: int = 7
 
     # ── Criptografia de PII em repouso (LGPD, achado C6 / Bloco 6a) ────────
@@ -511,6 +518,17 @@ class Settings(BaseSettings):
                     "SECRET_KEY ausente ou placeholder em produção. "
                     "Gere uma chave: python3 -c \"import secrets; "
                     "print(secrets.token_urlsafe(64))\" e defina no .env."
+                )
+            # Item 3 (auditoria pré-produção): chave curta = espaço de busca
+            # brute-forçável para forjar JWTs (HS256). 32 chars é o piso.
+            if len(self.SECRET_KEY) < 32:
+                raise ValueError(
+                    f"SECRET_KEY muito curta para produção "
+                    f"({len(self.SECRET_KEY)} caracteres; mínimo 32). Uma chave "
+                    "curta permite forjar tokens JWT por força bruta. Gere uma "
+                    "nova: python3 -c \"import secrets; "
+                    "print(secrets.token_urlsafe(64))\" e defina no .env "
+                    "(atenção: trocar a chave desloga todos os usuários)."
                 )
             if "SEU_DOMINIO" in getattr(self, 'FRONTEND_URL', ''):
                 raise ValueError("FRONTEND_URL não configurada para produção.")

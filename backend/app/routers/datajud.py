@@ -1,9 +1,8 @@
 """DataJud CNJ public API endpoints"""
 import logging
-from fastapi import APIRouter, Depends, HTTPException, Query
+from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy import text, select
-from typing import Optional
+from sqlalchemy import select
 from app.core.database import get_db
 from app.core.security import get_current_user
 from app.core.ownership import verificar_acesso_caso

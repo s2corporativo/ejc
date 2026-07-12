@@ -6,8 +6,9 @@
   <meta name="theme-color" content="#FAF9F6" />
   <meta name="description" content="EJC — Sistema de Gestão Jurídica" />
   <link rel="manifest" href="/manifest.json" />
-  <!-- Sem fontes externas: a CSP de produção usa font-src 'self'. O stack de
-       fontes do sistema (Tailwind fontFamily.sans / index.css) cobre a UI. -->
+  <!-- Fonte Inter auto-hospedada (LGPD): @font-face em src/styles/fonts.css
+       + woff2 em /fonts — sem requisições a fonts.googleapis.com. -->
+  <link rel="preload" href="/fonts/inter-latin.woff2" as="font" type="font/woff2" crossorigin />
   <title>EJC — Ecossistema Jurídico</title>
 </head>
 <body>

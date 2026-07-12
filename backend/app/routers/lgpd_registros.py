@@ -22,15 +22,13 @@
 from __future__ import annotations
 
 import os
-import re
-import time
 from datetime import datetime, timezone
 from typing import Optional
 from uuid import uuid4
 
 from fastapi import APIRouter, Depends, HTTPException, Query
 from fastapi.responses import FileResponse
-from sqlalchemy import select, func as sqlfunc
+from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.config import get_settings

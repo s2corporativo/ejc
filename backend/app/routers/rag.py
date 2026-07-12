@@ -26,8 +26,6 @@ from app.routers.ia_governanca import Confianca
 # senão BackgroundTasks (comportamento idêntico ao anterior com CELERY_ENABLED=False).
 from app.tasks.dispatcher import agendar_indexacao
 from app.schemas.common import MsgResponse
-from app.core.ai_brain import ai_brain
-from app.core.public_apis import api_client
 
 router = APIRouter(prefix="/rag", tags=["Base de Conhecimento"])
 

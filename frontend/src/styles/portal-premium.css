@@ -5,7 +5,7 @@
   border: 0;
   background:
     radial-gradient(circle at 12% 18%, rgba(212, 175, 55, 0.2), transparent 19rem),
-    linear-gradient(135deg, #2d1b14 0%, #5e4429 58%, #a67c52 100%);
+    linear-gradient(135deg, #3b2f0b 0%, #55420d 58%, #a6842a 100%);
   box-shadow: 0 24px 72px rgba(45, 27, 20, 0.22);
 }
 
@@ -38,7 +38,7 @@
 
 .ejc-modern-scope > header.bg-navy nav a.bg-canvas {
   background: #fffaf0;
-  color: #2d1b14;
+  color: #3b2f0b;
   box-shadow: 0 12px 28px rgba(45, 27, 20, 0.2);
 }
 
@@ -72,7 +72,7 @@
 
 .ejc-modern-scope > header.bg-navy + main h1,
 .ejc-modern-scope > header.bg-navy + main h2 {
-  color: #2d1b14;
+  color: #3b2f0b;
   letter-spacing: -0.02em;
 }
 

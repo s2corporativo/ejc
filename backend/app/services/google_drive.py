@@ -4,7 +4,6 @@ Autenticação: rclone (OAuth2, token renovado automaticamente).
 O rclone deve estar configurado em /root/.config/rclone/rclone.conf
 com o remote [gdrive]. O token é gerenciado pelo rclone.
 """
-import io
 import os
 import json
 import logging
@@ -38,6 +37,12 @@ DRIVE_AVAILABLE = os.path.exists(RCLONE_CONF) and bool(
 )
 
 
+class DriveIndisponivelError(RuntimeError):
+    """Google Drive não configurado/indisponível (rclone ausente ou sem
+    rclone.conf). Os endpoints /documents/drive/* convertem em 503 controlado —
+    antes vazava como RuntimeError genérico → 500."""
+
+
 def _subfolder(folder_id: Optional[str]) -> str:
     """Converte folder_id (env var) em nome de subpasta legível."""
     if folder_id and folder_id in _FOLDER_NAMES:
@@ -62,7 +67,7 @@ def upload_file(
 ) -> dict:
     """Faz upload de bytes para o Drive. Retorna {id, name, webViewLink, webContentLink}."""
     if not DRIVE_AVAILABLE:
-        raise RuntimeError("rclone não configurado — execute: rclone config create gdrive drive")
+        raise DriveIndisponivelError("rclone não configurado — execute: rclone config create gdrive drive")
 
     subfolder = _subfolder(folder_id)
     dest_path  = _rclone_path(subfolder)
@@ -143,7 +148,7 @@ def download_file(file_id: str) -> tuple[bytes, str]:
     em modo binário — nunca `rclone cat` com re-encode em texto (corromperia
     PDF/DOCX)."""
     if not DRIVE_AVAILABLE:
-        raise RuntimeError("rclone não configurado")
+        raise DriveIndisponivelError("rclone não configurado")
     src = _resolver_path_por_id(file_id)
     with tempfile.NamedTemporaryFile(delete=False) as tmp:
         tmp_path = tmp.name
@@ -166,7 +171,7 @@ def delete_file(file_id: str) -> None:
     para o chamador saber que o dado permanece no Drive (o caller decide como
     tratar — ex.: manter o registro/alertar em vez de assumir eliminação)."""
     if not DRIVE_AVAILABLE:
-        raise RuntimeError(f"rclone não configurado — arquivo {file_id} NÃO removido do Drive")
+        raise DriveIndisponivelError(f"rclone não configurado — arquivo {file_id} NÃO removido do Drive")
     if not file_id:
         raise ValueError("delete_file: file_id vazio")
     dest = _resolver_path_por_id(file_id)

@@ -21,37 +21,37 @@
     --ejc-gold: #c9a227;
     --ejc-gold-soft: #f7f1dc;
     --ejc-shadow-soft: 0 4px 18px rgba(24, 16, 8, 0.05);
-    /* Sidebar off-black quente sofisticado (sépia profundo da logomarca) */
-    --ejc-sidebar-top: #211913;
-    --ejc-sidebar-bottom: #2e241a;
-    /* Paleta de gráficos (mockup): marrom / bronze / dourado / creme */
-    --ejc-chart-1: #2d1b14;
-    --ejc-chart-2: #a67c52;
+    /* Sidebar off-black quente sofisticado (ouro profundo da logomarca) */
+    --ejc-sidebar-top: #201a0f;
+    --ejc-sidebar-bottom: #2f260f;
+    /* Paleta de gráficos: ouro near-black / ouro claro / dourado / creme */
+    --ejc-chart-1: #3b2f0b;
+    --ejc-chart-2: #c9a227;
     --ejc-chart-3: #d4af37;
     --ejc-chart-4: #e8dfd3;
-    --ejc-chart-5: #7a5a3a;
+    --ejc-chart-5: #8f7117;
     --ejc-chart-6: #e5ce7f;
   }
 
   /* ── Tema ESCURO (classe `dark` no <html> — stores/theme.ts) ──
-     Tons quentes que harmonizam com a sidebar bronze: canvas
-     #14100D, cartões #1C1712, textos creme, dourado como acento. */
+     Tons quentes que harmonizam com a sidebar ouro-escura: canvas
+     #14110A, cartões #1C180E, textos creme, dourado como acento. */
   .dark {
     color-scheme: dark;
-    --ejc-bg: #14100d;
-    --ejc-card: #1c1712;
-    --ejc-elev: #241d16;
+    --ejc-bg: #14110a;
+    --ejc-card: #1c180e;
+    --ejc-elev: #241e10;
     --ejc-ink: #ede6da;
     --ejc-muted: #a89e8f;
     --ejc-border: rgba(255, 245, 230, 0.08);
     --ejc-legal: #d6cec2;
     --ejc-gold-soft: rgba(212, 175, 55, 0.12);
     --ejc-shadow-soft: 0 8px 30px rgba(0, 0, 0, 0.45);
-    --ejc-sidebar-top: #191410;
-    --ejc-sidebar-bottom: #241c14;
-    /* No escuro o marrom profundo some sobre o card — troca com o creme */
+    --ejc-sidebar-top: #191509;
+    --ejc-sidebar-bottom: #251d0c;
+    /* No escuro o ouro near-black some sobre o card — troca com o creme */
     --ejc-chart-1: #e8dfd3;
-    --ejc-chart-4: #6b4f38;
+    --ejc-chart-4: #6f5711;
   }
 
   html {
@@ -244,6 +244,14 @@
     backdrop-filter: blur(4px);
   }
 
+  /* O conteúdo das páginas vive num wrapper `relative z-10` (Layout), então
+     modais abertos ali ficariam ABAIXO do OnboardingTour (z-50 na raiz do
+     Layout). Em vez de brigar com stacking contexts, o tour pausa (some)
+     enquanto qualquer modal/drawer estiver aberto e volta ao fechá-lo. */
+  body:has([role="dialog"][aria-modal="true"]) .onboarding-tour {
+    display: none;
+  }
+
   /* ── Eyebrow / section label ──────────────────────────────── */
   .eyebrow {
     /* Ouro Profundo #6F5711 — 6,9:1 sobre branco (AA), filete institucional */
@@ -258,11 +266,71 @@
         rgba(255, 255, 255, 0.12),
         transparent 18rem
       ),
-      linear-gradient(135deg, #2d1b14 0%, #5e4429 55%, #a67c52 100%);
-    box-shadow: 0 18px 45px rgba(45, 27, 20, 0.28);
+      linear-gradient(135deg, #3b2f0b 0%, #6f5711 55%, #8f7117 100%);
+    box-shadow: 0 18px 45px rgba(59, 47, 11, 0.28);
   }
 
-  /* ── Sidebar bronze (gradiente marrom→bronze — igual nos 2 temas) ── */
+  /* ── Degradê OURO metálico (destaques de marca: heros, painéis) ──
+     Fundo escuro→ouro; todo texto branco/creme fica sobre trechos
+     com ≥4,6:1 (fim #8F7117). O brilho vem do radial claro no topo. */
+  .gold-gradient {
+    color: #fff;
+    background:
+      radial-gradient(
+        circle at 12% 18%,
+        rgba(255, 244, 200, 0.16),
+        transparent 16rem
+      ),
+      linear-gradient(135deg, #2a2108 0%, #55420d 45%, #8f7117 100%);
+    box-shadow: 0 18px 45px rgba(59, 47, 11, 0.28);
+  }
+  /* Variante CLARA (painéis com texto escuro — ex.: hero do login) */
+  .gold-gradient-soft {
+    background:
+      radial-gradient(
+        circle at 88% 92%,
+        rgba(201, 162, 39, 0.28),
+        transparent 26rem
+      ),
+      linear-gradient(150deg, #fdfbf3 0%, #f7f1dc 45%, #efe3b4 80%, #e5ce7f 110%);
+  }
+  /* "Shine" sutil — faixa diagonal branca translúcida; estática por
+     padrão, com varredura MUITO lenta apenas sem reduced-motion. */
+  .gold-shine {
+    position: relative;
+    overflow: hidden;
+  }
+  .gold-shine::after {
+    content: "";
+    position: absolute;
+    inset: 0;
+    background: linear-gradient(
+      115deg,
+      transparent 42%,
+      rgba(255, 255, 255, 0.1) 50%,
+      transparent 58%
+    );
+    pointer-events: none;
+  }
+  @media (prefers-reduced-motion: no-preference) {
+    .gold-shine::after {
+      animation: gold-gleam 9s ease-in-out infinite;
+    }
+  }
+  @keyframes gold-gleam {
+    0%,
+    60%,
+    100% {
+      transform: translateX(-14%);
+      opacity: 0.75;
+    }
+    80% {
+      transform: translateX(14%);
+      opacity: 1;
+    }
+  }
+
+  /* ── Sidebar ouro-escura (gradiente — igual nos 2 temas) ── */
   .sidebar-bronze {
     background: linear-gradient(
       180deg,
@@ -275,11 +343,11 @@
     color: rgba(255, 245, 230, 0.72);
   }
   .sidebar-nav-item:hover {
-    background: rgba(166, 124, 82, 0.18);
+    background: rgba(201, 162, 39, 0.16);
     color: #f5edd2;
   }
   .sidebar-nav-item.is-active {
-    background: rgba(166, 124, 82, 0.2);
+    background: rgba(201, 162, 39, 0.2);
     color: #e5ce7f;
   }
   .sidebar-nav-item.is-active::before {
@@ -583,7 +651,7 @@
 
 .ejc-modern-scope .bg-slate-100.p-1.rounded-xl button.bg-white,
 .ejc-modern-scope .bg-gray-100.p-1.rounded-xl button.bg-white {
-  color: #7a5a3a !important;
+  color: #8f7117 !important;
   box-shadow: 0 8px 18px rgba(16, 24, 40, 0.1) !important;
 }
 
