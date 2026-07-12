@@ -212,7 +212,7 @@ async def pre_preencher(db: AsyncSession, case_id: str, *,
         raise HTTPException(503, "IA indisponível no momento. Tente novamente.")
 
     dados = _parse_json(resp.texto)
-    campos, confianca = _normalizar_campos(dados, provas)
+    campos, confianca = _normalizar_campos(dados, provas, case)
 
     # AILog obrigatório (padrão ai_guard) — prompt sanitizado, sem PII.
     from app.services.ai_guard import registrar_ai_log
@@ -245,7 +245,8 @@ async def pre_preencher(db: AsyncSession, case_id: str, *,
 
 
 def _normalizar_campos(dados: Optional[dict],
-                       provas: list[Prova]) -> tuple[dict, dict]:
+                       provas: list[Prova],
+                       case: Optional[Case] = None) -> tuple[dict, dict]:
     """Sempre devolve os 12 campos + confiança por campo (fallback null)."""
     d = dados or {}
     campos: dict[str, Any] = {}
@@ -269,7 +270,58 @@ def _normalizar_campos(dados: Optional[dict],
     campos["provas_disponiveis"] = disp
     confianca["provas_disponiveis"] = 100 if disp else None
 
+    # provas_faltantes: REFORÇO determinístico pela matriz tese×prova (Fase C).
+    # Cruza os pedidos/tese do caso com a matriz e inclui as provas mínimas
+    # recomendadas que ainda NÃO constam do acervo. Se não houver caso/contexto
+    # ou nada casar, o comportamento anterior (só a IA) é preservado.
+    campos["provas_faltantes"] = _reforcar_faltantes_matriz(
+        campos.get("provas_faltantes"), case, disp)
+
     return campos, confianca
+
+
+def _norm_txt(texto: object) -> str:
+    """lower + sem acento — para comparar provas já mencionadas (dedup)."""
+    import unicodedata
+    if not isinstance(texto, str):
+        texto = "" if texto is None else str(texto)
+    nfkd = unicodedata.normalize("NFKD", texto)
+    return "".join(c for c in nfkd if not unicodedata.combining(c)).lower()
+
+
+def _reforcar_faltantes_matriz(valor_ia: Optional[str], case: Optional[Case],
+                               disp: Optional[str]) -> Optional[str]:
+    """Anexa ao provas_faltantes da IA as provas mínimas da matriz que ainda não
+    constam nem do acervo (disp) nem do próprio texto da IA. Marca origem
+    'matriz'. Nunca levanta exceção; sem caso/contexto → devolve valor_ia."""
+    if case is None:
+        return valor_ia
+    try:
+        from app.services.matriz_provas import provas_recomendadas
+        area = case.area.value if hasattr(case.area, "value") else str(case.area or "")
+        texto = " ".join(filter(None, [
+            case.titulo, case.tese_principal,
+            getattr(case, "descricao_fatos", None),
+        ]))
+        recs = provas_recomendadas(area, texto)
+        if not recs:
+            return valor_ia
+        ja_mencionado = _norm_txt(f"{valor_ia or ''} {disp or ''}")
+        faltantes: list[str] = []
+        vistas: set[str] = set()
+        for r in recs:
+            for p in r.get("provas", []):
+                chave = _norm_txt(p)
+                if not chave or chave in vistas or chave in ja_mencionado:
+                    continue
+                vistas.add(chave)
+                faltantes.append(p)
+        if not faltantes:
+            return valor_ia
+        reforco = "Sugeridas pela matriz tese×prova: " + "; ".join(faltantes)
+        return f"{valor_ia.strip()} — {reforco}" if (valor_ia and valor_ia.strip()) else reforco
+    except Exception:
+        return valor_ia
 
 
 # ── obter / salvar / gate helpers ─────────────────────────────────────────────
