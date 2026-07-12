@@ -34,7 +34,6 @@ import type {
   SelicFonte,
 } from "../../types/visualLaw";
 
-
 const TRIBUNAIS = ["TJMG", "TJSP", "TRT3", "TRF6", "STJ", "outro"] as const;
 
 /** Badge da fonte da Selic — exaustivo sobre SelicFonte (erro de tipo se o union crescer). */
@@ -286,12 +285,54 @@ const REGRAS_CORRECAO: {
 // Correção monetária usa séries MENSAIS; diárias (Selic/CDI diária, meta) não
 // entram no fator. Fallback usado quando o catálogo do BCB não responde.
 const INDICES_FALLBACK: SerieInfo[] = [
-  { indice: "ipca", nome: "IPCA (IBGE, % a.m.)", codigo_sgs: 433, tipo: "mensal", ultimo_valor: null, ultima_data: null },
-  { indice: "ipca_e", nome: "IPCA-E (IBGE, % acum. trim.)", codigo_sgs: 10764, tipo: "mensal", ultimo_valor: null, ultima_data: null },
-  { indice: "inpc", nome: "INPC (IBGE, % a.m.)", codigo_sgs: 188, tipo: "mensal", ultimo_valor: null, ultima_data: null },
-  { indice: "igpm", nome: "IGP-M (FGV, % a.m.)", codigo_sgs: 189, tipo: "mensal", ultimo_valor: null, ultima_data: null },
-  { indice: "selic_mensal", nome: "SELIC acumulada no mês (%)", codigo_sgs: 4390, tipo: "mensal", ultimo_valor: null, ultima_data: null },
-  { indice: "tr", nome: "TR (% a.m.)", codigo_sgs: 226, tipo: "mensal", ultimo_valor: null, ultima_data: null },
+  {
+    indice: "ipca",
+    nome: "IPCA (IBGE, % a.m.)",
+    codigo_sgs: 433,
+    tipo: "mensal",
+    ultimo_valor: null,
+    ultima_data: null,
+  },
+  {
+    indice: "ipca_e",
+    nome: "IPCA-E (IBGE, % acum. trim.)",
+    codigo_sgs: 10764,
+    tipo: "mensal",
+    ultimo_valor: null,
+    ultima_data: null,
+  },
+  {
+    indice: "inpc",
+    nome: "INPC (IBGE, % a.m.)",
+    codigo_sgs: 188,
+    tipo: "mensal",
+    ultimo_valor: null,
+    ultima_data: null,
+  },
+  {
+    indice: "igpm",
+    nome: "IGP-M (FGV, % a.m.)",
+    codigo_sgs: 189,
+    tipo: "mensal",
+    ultimo_valor: null,
+    ultima_data: null,
+  },
+  {
+    indice: "selic_mensal",
+    nome: "SELIC acumulada no mês (%)",
+    codigo_sgs: 4390,
+    tipo: "mensal",
+    ultimo_valor: null,
+    ultima_data: null,
+  },
+  {
+    indice: "tr",
+    nome: "TR (% a.m.)",
+    codigo_sgs: 226,
+    tipo: "mensal",
+    ultimo_valor: null,
+    ultima_data: null,
+  },
 ];
 
 function fmtPct(n: number | null | undefined, casas = 4): string {
@@ -329,7 +370,9 @@ function MemoriaEtapa({ etapa }: { etapa: EtapaCorrecao }) {
               <tr className="text-left text-slate-400">
                 <th className="py-1 pr-2 font-medium">Competência</th>
                 <th className="py-1 pr-2 text-right font-medium">Índice (%)</th>
-                <th className="py-1 pr-2 text-right font-medium">Fator período</th>
+                <th className="py-1 pr-2 text-right font-medium">
+                  Fator período
+                </th>
                 <th className="py-1 text-right font-medium">Fator acumulado</th>
               </tr>
             </thead>
@@ -337,8 +380,12 @@ function MemoriaEtapa({ etapa }: { etapa: EtapaCorrecao }) {
               {linhas.map((l, i) => (
                 <tr key={i} className="border-t border-slate-100">
                   <td className="py-1 pr-2">{l.competencia}</td>
-                  <td className="py-1 pr-2 text-right">{fmtPct(l.valor_pct)}</td>
-                  <td className="py-1 pr-2 text-right">{fmtFator(l.fator_periodo)}</td>
+                  <td className="py-1 pr-2 text-right">
+                    {fmtPct(l.valor_pct)}
+                  </td>
+                  <td className="py-1 pr-2 text-right">
+                    {fmtFator(l.fator_periodo)}
+                  </td>
                   <td className="py-1 text-right font-medium text-slate-700">
                     {fmtFator(l.fator_acumulado)}
                   </td>
@@ -786,9 +833,9 @@ export default function CalculadoraAcordo({
                   {fmtMoney(resultado.vpl_litigio)}
                 </p>
                 <p className="mt-1 text-xs text-slate-500">
-                  Valor esperado {fmtMoney(resultado.valor_esperado)} −
-                  custos {fmtMoney(resultado.custos_estimados)}, trazidos a
-                  valor presente ({resultado.parametros.tempo_anos}{" "}
+                  Valor esperado {fmtMoney(resultado.valor_esperado)} − custos{" "}
+                  {fmtMoney(resultado.custos_estimados)}, trazidos a valor
+                  presente ({resultado.parametros.tempo_anos}{" "}
                   {resultado.parametros.tempo_anos === 1 ? "ano" : "anos"}
                   {resultado.parametros.tribunal
                     ? ` · ${resultado.parametros.tribunal}`

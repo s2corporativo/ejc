@@ -37,10 +37,12 @@ function fmtDataISO(iso: string | null | undefined) {
   return d && m && a ? `${d}/${m}/${a}` : String(iso);
 }
 function fmtFator(v: number | null | undefined) {
-  return v == null ? "—" : Number(v).toLocaleString("pt-BR", {
-    minimumFractionDigits: 4,
-    maximumFractionDigits: 6,
-  });
+  return v == null
+    ? "—"
+    : Number(v).toLocaleString("pt-BR", {
+        minimumFractionDigits: 4,
+        maximumFractionDigits: 6,
+      });
 }
 function apiDetail(e: any, fallback: string): string {
   const d = e?.response?.data?.detail;
@@ -190,7 +192,8 @@ function TributoLinha({ label, t }: { label: string; t: TributoOut }) {
         )}
       </div>
       <div className="mt-1 text-[11px] text-slate-500">
-        Base de cálculo: <b className="text-slate-600">{fmtBRL(t.base_calculo)}</b>
+        Base de cálculo:{" "}
+        <b className="text-slate-600">{fmtBRL(t.base_calculo)}</b>
       </div>
       {t.observacao && (
         <p className="mt-1 text-[11px] text-warn-700 leading-relaxed">
@@ -263,18 +266,24 @@ export default function LiquidacaoTrabalhista() {
       ? Number(String(fatorIpcae).replace(",", "."))
       : null;
     if (fator != null && (isNaN(fator) || fator <= 0)) {
-      setErro("Fator IPCA-E inválido — deixe em branco ou informe um número > 0.");
+      setErro(
+        "Fator IPCA-E inválido — deixe em branco ou informe um número > 0.",
+      );
       return;
     }
     // Índice oficial só entra quando não há fator manual (que tem precedência).
     const usarOficial = usarIndiceOficial && fator == null;
     if (usarOficial) {
       if (!dataInicioCorrecao) {
-        setErro("Informe a data de início da correção (IPCA-E oficial) ou desligue a opção.");
+        setErro(
+          "Informe a data de início da correção (IPCA-E oficial) ou desligue a opção.",
+        );
         return;
       }
       if (dataInicioCorrecao >= dataAjuizamento) {
-        setErro("A data de início da correção deve ser anterior ao ajuizamento.");
+        setErro(
+          "A data de início da correção deve ser anterior ao ajuizamento.",
+        );
         return;
       }
     }
@@ -369,7 +378,9 @@ export default function LiquidacaoTrabalhista() {
                   className="input text-sm"
                   placeholder="Ex.: Horas extras"
                   value={v.rubrica}
-                  onChange={(e) => atualizarVerba(i, { rubrica: e.target.value })}
+                  onChange={(e) =>
+                    atualizarVerba(i, { rubrica: e.target.value })
+                  }
                 />
               </div>
               <div>
@@ -411,9 +422,9 @@ export default function LiquidacaoTrabalhista() {
           ))}
         </div>
         <p className="text-[10px] text-slate-400 mt-2">
-          <b>Salarial</b> entra na base de FGTS/INSS (ex.: horas extras, salário).{" "}
-          <b>Indenizatória</b> não integra essas bases (ex.: indenização do art.
-          477, danos morais).
+          <b>Salarial</b> entra na base de FGTS/INSS (ex.: horas extras,
+          salário). <b>Indenizatória</b> não integra essas bases (ex.:
+          indenização do art. 477, danos morais).
         </p>
         <button
           type="button"
@@ -527,10 +538,10 @@ export default function LiquidacaoTrabalhista() {
                   onChange={(e) => setDataInicioCorrecao(e.target.value)}
                 />
                 <p className="text-[10px] text-gold-700 mt-1.5 flex items-start gap-1.5">
-                  <Landmark size={11} className="mt-0.5 shrink-0" />
-                  O fator IPCA-E virá da fonte oficial (Banco Central). Se o BCB
-                  estiver indisponível, o cálculo segue sem a correção
-                  pré-ajuizamento e emite alerta.
+                  <Landmark size={11} className="mt-0.5 shrink-0" />O fator
+                  IPCA-E virá da fonte oficial (Banco Central). Se o BCB estiver
+                  indisponível, o cálculo segue sem a correção pré-ajuizamento e
+                  emite alerta.
                 </p>
               </>
             )}
@@ -572,8 +583,7 @@ export default function LiquidacaoTrabalhista() {
                 <b>{fmtBRL(res.subtotal_credito_trabalhista)}</b>
               </span>
               <span>
-                Com honorários:{" "}
-                <b>{fmtBRL(res.total_bruto_com_honorarios)}</b>
+                Com honorários: <b>{fmtBRL(res.total_bruto_com_honorarios)}</b>
               </span>
               <span>
                 Período: <b>{fmtDataISO(res.data_ajuizamento)}</b> a{" "}
@@ -584,7 +594,10 @@ export default function LiquidacaoTrabalhista() {
 
           {/* Aviso HITL — sempre visível */}
           <div className="rounded-xl border-2 border-warn-200 bg-warn-50 p-3 flex items-start gap-2">
-            <AlertTriangle size={15} className="text-warn-700 shrink-0 mt-0.5" />
+            <AlertTriangle
+              size={15}
+              className="text-warn-700 shrink-0 mt-0.5"
+            />
             <p className="text-xs text-warn-700 leading-relaxed">
               {res.aviso_hitl}
             </p>
@@ -648,7 +661,8 @@ export default function LiquidacaoTrabalhista() {
             {/* Correção */}
             <BlocoCard icon={TrendingUp} titulo="Correção monetária + juros">
               <div className="mb-2 inline-flex items-center gap-1.5 text-[11px] px-2 py-0.5 rounded-full bg-navy/5 text-navy font-medium dark:bg-white/[0.07] dark:text-slate-300">
-                <Gavel size={11} className="text-gold-600" /> {res.correcao.regime}
+                <Gavel size={11} className="text-gold-600" />{" "}
+                {res.correcao.regime}
               </div>
               <div className="space-y-1.5">
                 {res.correcao.fator_ipcae_pre_ajuizamento != null && (
@@ -694,7 +708,10 @@ export default function LiquidacaoTrabalhista() {
           </div>
 
           {/* INSS / IRRF — podem estar "a apurar" */}
-          <BlocoCard icon={Scale} titulo="Encargos do trabalhador (INSS / IRRF)">
+          <BlocoCard
+            icon={Scale}
+            titulo="Encargos do trabalhador (INSS / IRRF)"
+          >
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
               <TributoLinha label="INSS" t={res.inss} />
               <TributoLinha label="IRRF" t={res.irrf} />

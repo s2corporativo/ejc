@@ -1138,7 +1138,9 @@ function TaxaMediaMercado() {
           "Integração de índices do BCB desabilitada no servidor (INDICES_BCB_ENABLED=false).",
         );
       } else if (status === 502) {
-        setErro("O serviço do BCB (Olinda) está indisponível no momento — tente novamente em instantes.");
+        setErro(
+          "O serviço do BCB (Olinda) está indisponível no momento — tente novamente em instantes.",
+        );
       } else {
         setErro(apiDetail(e, "Falha ao consultar as taxas médias do BCB."));
       }
@@ -1153,9 +1155,7 @@ function TaxaMediaMercado() {
         Compare a taxa do contrato do cliente com a{" "}
         <b>média de mercado praticada por instituição/modalidade</b>, no mês de
         referência mais recente ·{" "}
-        <span className="text-gold-700">
-          Banco Central — Olinda taxaJuros
-        </span>
+        <span className="text-gold-700">Banco Central — Olinda taxaJuros</span>
       </p>
       <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
         <div>
@@ -1169,7 +1169,9 @@ function TaxaMediaMercado() {
           />
         </div>
         <div>
-          <label className="label text-xs">Instituição financeira (contém)</label>
+          <label className="label text-xs">
+            Instituição financeira (contém)
+          </label>
           <input
             className="input text-sm"
             placeholder="ex: Nubank, Itaú, Bradesco…"
@@ -1184,7 +1186,8 @@ function TaxaMediaMercado() {
         disabled={loading}
         onClick={buscar}
       >
-        <Scale size={14} /> {loading ? "Consultando BCB…" : "Consultar taxas médias"}
+        <Scale size={14} />{" "}
+        {loading ? "Consultando BCB…" : "Consultar taxas médias"}
       </button>
       <p className="text-[11px] text-slate-400 mt-2">
         Deixe os dois campos em branco para trazer o ranking completo do mês. Os
