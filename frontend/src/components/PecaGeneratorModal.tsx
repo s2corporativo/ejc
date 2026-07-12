@@ -86,6 +86,37 @@ const AREAS_FALLBACK: AreaMeta[] = [
   { value: "familia", label: "Família" },
 ];
 
+// Nível de complexidade / rito (GET /pecas/meta → niveis_complexidade). Fallback
+// embutido usado APENAS se o meta não trouxer a lista. Rótulos legíveis abaixo.
+const NIVEIS_FALLBACK = [
+  "comum",
+  "simples",
+  "completa",
+  "estrategica",
+  "juizado_especial",
+];
+const NIVEL_LABEL: Record<string, string> = {
+  comum: "Procedimento comum",
+  simples: "Simples/enxuta",
+  completa: "Completa",
+  estrategica: "Estratégica (+ teses alternativas)",
+  juizado_especial: "Juizado Especial (sumaríssimo)",
+};
+
+// Teses condicionais — adição/override MANUAL do advogado. O backend também
+// deriva algumas automaticamente pelo caso/ficha; estas somam às automáticas.
+// Flags desconhecidas são ignoradas pelo backend.
+const FLAGS_TESES: { value: string; label: string }[] = [
+  { value: "dano_moral", label: "Dano moral" },
+  { value: "relacao_consumo", label: "Relação de consumo" },
+  { value: "hipossuficiencia", label: "Hipossuficiência" },
+  {
+    value: "prova_documental_suficiente",
+    label: "Prova documental suficiente",
+  },
+  { value: "pedido_tutela", label: "Pedido de tutela de urgência" },
+];
+
 interface Etapa {
   num: number;
   titulo: string;
@@ -148,6 +179,8 @@ export default function PecaGeneratorModal({
 
   const [tipoPeca, setTipoPeca] = useState("peticao_inicial");
   const [areaDireito, setAreaDireito] = useState("trabalhista");
+  const [nivelComplexidade, setNivelComplexidade] = useState("comum");
+  const [flagsTeses, setFlagsTeses] = useState<Set<string>>(new Set());
   const [fatos, setFatos] = useState("");
   const [pedidos, setPedidos] = useState("");
   const [instrucoes, setInstrucoes] = useState("");
@@ -156,6 +189,7 @@ export default function PecaGeneratorModal({
   // Catálogo (/pecas/meta): parte do fallback e é substituído ao carregar.
   const [tipos, setTipos] = useState<TipoMeta[]>(TIPOS_FALLBACK);
   const [areas, setAreas] = useState<AreaMeta[]>(AREAS_FALLBACK);
+  const [niveis, setNiveis] = useState<string[]>(NIVEIS_FALLBACK);
   const [metaLoading, setMetaLoading] = useState(false);
   const metaLoadedRef = useRef(false);
 
@@ -177,6 +211,11 @@ export default function PecaGeneratorModal({
       .then(({ data }) => {
         if (Array.isArray(data.tipos) && data.tipos.length) setTipos(data.tipos);
         if (Array.isArray(data.areas) && data.areas.length) setAreas(data.areas);
+        if (
+          Array.isArray(data.niveis_complexidade) &&
+          data.niveis_complexidade.length
+        )
+          setNiveis(data.niveis_complexidade);
       })
       .catch(() => {
         metaLoadedRef.current = false;
@@ -220,6 +259,14 @@ export default function PecaGeneratorModal({
     );
   };
 
+  const toggleFlagTese = (value: string) => {
+    setFlagsTeses((prev) => {
+      const next = new Set(prev);
+      next.has(value) ? next.delete(value) : next.add(value);
+      return next;
+    });
+  };
+
   const toggleExpandir = (num: number) => {
     setExpandidos((prev) => {
       const next = new Set(prev);
@@ -246,6 +293,8 @@ export default function PecaGeneratorModal({
     const body = JSON.stringify({
       tipo_peca: tipoPeca,
       area_direito: areaDireito,
+      nivel_complexidade: nivelComplexidade,
+      flags_teses: Array.from(flagsTeses),
       descricao_fatos: fatos,
       pedidos,
       nomes_proteger: nomesProteger
@@ -336,6 +385,8 @@ export default function PecaGeneratorModal({
   }, [
     tipoPeca,
     areaDireito,
+    nivelComplexidade,
+    flagsTeses,
     fatos,
     pedidos,
     instrucoes,
@@ -433,6 +484,55 @@ export default function PecaGeneratorModal({
                   </select>
                 </div>
               </div>
+
+              <div>
+                <label
+                  htmlFor="peca-nivel"
+                  className="block text-xs font-medium text-slate-600 mb-1"
+                >
+                  Nível / rito
+                </label>
+                <select
+                  id="peca-nivel"
+                  value={nivelComplexidade}
+                  onChange={(e) => setNivelComplexidade(e.target.value)}
+                  className="input"
+                  disabled={metaLoading}
+                >
+                  {niveis.map((n) => (
+                    <option key={n} value={n}>
+                      {NIVEL_LABEL[n] ?? n}
+                    </option>
+                  ))}
+                </select>
+              </div>
+
+              <fieldset className="border border-slate-100 rounded-xl px-4 py-3">
+                <legend className="text-xs font-medium text-slate-600 px-1">
+                  Teses condicionais (opcional)
+                </legend>
+                <p className="text-xs text-slate-400 mb-2">
+                  O sistema já detecta algumas automaticamente pelo caso/ficha.
+                  Marque aqui apenas as que deseja adicionar manualmente — elas
+                  somam às automáticas.
+                </p>
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-x-4 gap-y-1.5">
+                  {FLAGS_TESES.map((f) => (
+                    <label
+                      key={f.value}
+                      className="flex items-center gap-2 text-sm text-slate-700 cursor-pointer"
+                    >
+                      <input
+                        type="checkbox"
+                        checked={flagsTeses.has(f.value)}
+                        onChange={() => toggleFlagTese(f.value)}
+                        className="rounded border-slate-300 text-ai-600 focus:ring-ai-500"
+                      />
+                      {f.label}
+                    </label>
+                  ))}
+                </div>
+              </fieldset>
 
               <div>
                 <label className="block text-xs font-medium text-slate-600 mb-1">
