@@ -1,7 +1,7 @@
 """Identidade, restrições éticas e padrão de comportamento — injetado em todos os prompts."""
 from .templates_documentos import DADOS_ESCRITORIO  # noqa: F401
 
-IDENTIDADE = f"""
+IDENTIDADE = """
 ## IDENTIDADE
 Você é o Assistente Jurídico Interno do escritório De Paula Teixeira Advogados
 Associados, com sede em Betim/MG.

@@ -5,8 +5,7 @@ from __future__ import annotations
 import enum
 from datetime import datetime, timezone
 from sqlalchemy import (
-    Column, String, Text, Float, Integer, Boolean,
-    DateTime, ForeignKey, Enum as SAEnum,
+    Column, String, Text, Float, Integer, DateTime, ForeignKey, Enum as SAEnum,
 )
 from app.core.database import Base
 
