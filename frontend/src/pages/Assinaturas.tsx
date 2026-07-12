@@ -1,5 +1,6 @@
 import { useState, useEffect, useCallback } from "react";
 import api from "../lib/api";
+import { asList } from "../lib/list";
 import { EmptyState, PageHeader, Spinner, Modal } from "../components/UI";
 import {
   FileSignature,
@@ -64,7 +65,7 @@ export default function Assinaturas() {
       // Barra final obrigatória: sem ela o FastAPI responde 307 com Location
       // absoluto e o browser perde o Authorization no redirect (achado M1).
       const res = await api.get("/signatures/");
-      setSolicitacoes(res.data);
+      setSolicitacoes(asList<SolicitacaoAssinatura>(res.data));
     } catch {
       setSolicitacoes([]);
     } finally {

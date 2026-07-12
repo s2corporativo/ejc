@@ -371,24 +371,31 @@ function StatsErro() {
 }
 
 export function CasosStats() {
-  const [d, setD] = useState<any>(null);
+  const [d, setD] = useState<any>(null); // /dashboard: prazos e clientes
+  const [cs, setCs] = useState<any>(null); // /cases/stats: contagem escopada
   const [erro, setErro] = useState(false);
   useEffect(() => {
-    api
-      .get("/dashboard/")
-      .then((r) => setD(r.data))
-      .catch(() => setErro(true));
+    // /cases/stats respeita _filtro_visibilidade (MESMO escopo da lista /cases),
+    // evitando que os cards contem casos que o usuário não vê na listagem.
+    Promise.allSettled([api.get("/cases/stats"), api.get("/dashboard/")]).then(
+      ([stats, dash]) => {
+        if (stats.status === "fulfilled") setCs(stats.value.data);
+        if (dash.status === "fulfilled") setD(dash.value.data);
+        if (stats.status === "rejected" && dash.status === "rejected")
+          setErro(true);
+      },
+    );
   }, []);
   if (erro) return <StatsErro />;
-  if (!d) return null;
+  if (!cs && !d) return null;
 
-  const porArea = d?.casos?.por_area ?? [];
-  const areas = porArea.map((a: any) => ({
-    label: AREA_LABEL[a.area] ?? a.area,
-    value: a.total,
+  const porAreaObj: Record<string, number> = cs?.por_area ?? {};
+  const areas = Object.entries(porAreaObj).map(([area, value]) => ({
+    label: AREA_LABEL[area] ?? area,
+    value,
   }));
-  const somaArea = porArea.reduce((s: number, a: any) => s + (a.total || 0), 0);
-  const total = d?.casos?.total || somaArea || "—";
+  const total = cs?.total ?? "—";
+  const ativos = cs?.ativos ?? "—";
   const novos = d?.casos?.novos_mes ?? d?.casos?.novos_30d;
 
   return (
@@ -402,7 +409,7 @@ export function CasosStats() {
         />
         <Kpi
           label="Casos ativos"
-          value={d?.casos?.ativos ?? "—"}
+          value={ativos}
           icon={FolderOpen}
           accent="emerald"
           sub={novos != null ? `${novos} novos no mês` : undefined}

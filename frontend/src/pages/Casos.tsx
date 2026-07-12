@@ -308,14 +308,17 @@ export default function Casos() {
 
   useEffect(() => {
     // load() inicial fica a cargo do effect de [arquivoF] abaixo
+    // clientes p/ filtro/seletor — falha silenciosa se o perfil (ex.: financeiro)
+    // não puder listar clientes (403); o restante de /casos segue funcionando.
     api
       .get("/clients/", { params: { page_size: 100 } })
-      .then((r) => setClientes(asList<Client>(r.data)));
+      .then((r) => setClientes(asList<Client>(r.data)))
+      .catch(() => setClientes([]));
     // advogados p/ o seletor de responsável — falha silenciosa se o perfil não puder listar usuários
     api
       .get("/users/")
       .then((r) => setAdvogados(asList<User>(r.data)))
-      .catch(() => {});
+      .catch(() => setAdvogados([]));
   }, []);
   useEffect(() => {
     const t = setTimeout(load, 350);

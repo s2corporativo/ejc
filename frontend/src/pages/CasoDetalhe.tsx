@@ -86,7 +86,8 @@ const TABS = [
   { key: "score", label: "Score Jurídico" },
   { key: "risco", label: "Índice de Risco" },
   { key: "memoria", label: "Memória" },
-  { key: "jurimetria", label: "Jurimetria" },
+  // Aba "Jurimetria" por caso removida do menu: era um stub "em implementação".
+  // A jurimetria é agregada e vive no menu Jurimetria (/inteligencia).
   { key: "dossie", label: "Dossiê Estratégico" },
   { key: "iaDefensiva", label: "IA Defensiva" },
   { key: "ferramentas", label: "⚡ Ferramentas" },
@@ -96,7 +97,7 @@ type TabKey = (typeof TABS)[number]["key"];
 const GROUPS: { label: string; tabs: TabKey[] }[] = [
   {
     label: "Visão",
-    tabs: ["resumo", "processos", "score", "risco", "jurimetria"],
+    tabs: ["resumo", "processos", "score", "risco"],
   },
   {
     label: "Andamentos",
@@ -1406,6 +1407,10 @@ function TabProcessos({ caseId }: { caseId: string }) {
   const [arquivo, setArquivo] = useState<"ativos" | "arquivados" | "todos">(
     "ativos",
   );
+  // Modal de arquivamento (substitui o prompt() nativo por UI do projeto).
+  const [arqPid, setArqPid] = useState<string | null>(null);
+  const [arqMotivo, setArqMotivo] = useState("");
+  const [arqSaving, setArqSaving] = useState(false);
   const vazio = {
     tipo: "judicial",
     numero_cnj: "",
@@ -1468,16 +1473,25 @@ function TabProcessos({ caseId }: { caseId: string }) {
       toast.error(err.response?.data?.detail || "Falha ao remover");
     }
   };
-  const arquivar = async (pid: string) => {
-    const motivo = prompt("Motivo do arquivamento (opcional)") || "";
+  const arquivar = (pid: string) => {
+    setArqMotivo("");
+    setArqPid(pid);
+  };
+  const confirmarArquivamento = async () => {
+    if (!arqPid) return;
+    setArqSaving(true);
     try {
-      await api.post(`/processes/${pid}/arquivar`, {
-        motivo: motivo || undefined,
+      await api.post(`/processes/${arqPid}/arquivar`, {
+        motivo: arqMotivo.trim() || undefined,
       });
       toast.success("Processo arquivado.");
+      setArqPid(null);
+      setArqMotivo("");
       carregar();
     } catch (err: any) {
       toast.error(err.response?.data?.detail || "Falha ao arquivar");
+    } finally {
+      setArqSaving(false);
     }
   };
   const desarquivar = async (pid: string) => {
@@ -1703,6 +1717,42 @@ function TabProcessos({ caseId }: { caseId: string }) {
           <Empty message="Nenhum processo cadastrado neste caso ainda." />
         )}
       </div>
+
+      <Modal
+        open={arqPid !== null}
+        onClose={() => setArqPid(null)}
+        title="Arquivar processo"
+      >
+        <div className="space-y-4">
+          <p className="text-sm text-gray-500">
+            Informe o motivo do arquivamento (opcional). O processo pode ser
+            desarquivado depois.
+          </p>
+          <textarea
+            className="input min-h-[90px]"
+            value={arqMotivo}
+            onChange={(e) => setArqMotivo(e.target.value)}
+            placeholder="Motivo do arquivamento (opcional)"
+          />
+          <div className="flex gap-3 justify-end">
+            <button
+              type="button"
+              className="btn-secondary"
+              onClick={() => setArqPid(null)}
+            >
+              Cancelar
+            </button>
+            <button
+              type="button"
+              className="btn-primary"
+              disabled={arqSaving}
+              onClick={confirmarArquivamento}
+            >
+              {arqSaving ? "Arquivando..." : "Arquivar"}
+            </button>
+          </div>
+        </div>
+      </Modal>
     </div>
   );
 }
@@ -2755,27 +2805,6 @@ function TabMemoria({ caseId }: { caseId: string }) {
 }
 
 // ── Tab placeholder (módulo ainda não disponível) ────────────────────────────
-function TabEmBreve({
-  titulo,
-  descricao,
-}: {
-  titulo: string;
-  descricao: string;
-}) {
-  return (
-    <div className="space-y-4">
-      <h2 className="font-semibold">{titulo}</h2>
-      <div className="card p-8 text-center text-gray-400 border border-dashed">
-        <p className="text-3xl mb-2">🚧</p>
-        <p className="font-medium text-gray-500">
-          Módulo em implementação (FASE 8)
-        </p>
-        <p className="text-xs mt-1">{descricao}</p>
-      </div>
-    </div>
-  );
-}
-
 // ── Componente principal ──────────────────────────────────────────────────────
 
 // ── Mapa área do caso → slugs de ramo ────────────────────────────────────────
@@ -4040,13 +4069,6 @@ export default function CasoDetalhe() {
         );
       case "memoria":
         return <TabMemoria caseId={id} />;
-      case "jurimetria":
-        return (
-          <TabEmBreve
-            titulo="Jurimetria"
-            descricao="A jurimetria é agregada (por área/tribunal/magistrado) e fica no menu Jurimetria — não há recorte por caso individual."
-          />
-        );
       case "dossie":
         return <DossieEstrategicoCaso caseId={id} />;
       case "iaDefensiva":

@@ -16,6 +16,7 @@ import {
   PageHeader,
   Spinner,
   fmtDate,
+  ConfirmModal,
 } from "../components/UI";
 import { toast } from "../components/Toast";
 
@@ -87,6 +88,7 @@ export default function OfficeContracts() {
   const [form, setForm] = useState({ ...EMPTY_FORM });
   const [filterStatus, setFilterStatus] = useState("");
   const [salvando, setSalvando] = useState(false);
+  const [pendenteExcluir, setPendenteExcluir] = useState<string | null>(null);
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -167,10 +169,15 @@ export default function OfficeContracts() {
     }
   }
 
-  async function remove(id: string) {
-    if (!window.confirm("Excluir contrato?")) return;
+  function remove(id: string) {
+    setPendenteExcluir(id);
+  }
+
+  async function confirmarExclusao() {
+    if (!pendenteExcluir) return;
     try {
-      await api.delete(`/v1/office-contracts/${id}`);
+      await api.delete(`/v1/office-contracts/${pendenteExcluir}`);
+      setPendenteExcluir(null);
       load();
     } catch (e: any) {
       toast.error(e.response?.data?.detail || "Erro ao excluir contrato");
@@ -438,6 +445,16 @@ export default function OfficeContracts() {
           </button>
         </div>
       </Modal>
+
+      <ConfirmModal
+        open={pendenteExcluir !== null}
+        onClose={() => setPendenteExcluir(null)}
+        onConfirm={confirmarExclusao}
+        title="Excluir"
+        message="Excluir este contrato do escritório?"
+        confirmLabel="Excluir"
+        variant="danger"
+      />
     </div>
   );
 }

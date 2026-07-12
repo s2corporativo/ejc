@@ -42,7 +42,17 @@ export default function DiarioOficial() {
     try {
       const res = await api.get("/diario-oficial/alertas/nao-lidos/count");
       setNaoLidosCount(res.data?.nao_lidos ?? 0);
-    } catch {}
+    } catch (e: any) {
+      // 403 (perfil sem acesso) é degradação esperada: zera sem alarme.
+      if (e?.response?.status === 403) {
+        setNaoLidosCount(0);
+      } else {
+        toast.error(
+          e?.response?.data?.detail ||
+            "Não foi possível atualizar a contagem de alertas não lidos.",
+        );
+      }
+    }
   }, []);
 
   const fetchAlertas = useCallback(async () => {

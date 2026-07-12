@@ -25,7 +25,7 @@ import {
 } from "lucide-react";
 import api from "../lib/api";
 import { toast } from "./Toast";
-import { Modal, Spinner, Empty } from "./UI";
+import { Modal, Spinner, Empty, ConfirmModal } from "./UI";
 import type { Client } from "../types";
 import { asList } from "../lib/list";
 
@@ -163,6 +163,7 @@ export default function SociedadesCliente() {
   const [salvandoSocio, setSalvandoSocio] = useState(false);
   const [formEvento, setFormEvento] = useState({ ...FORM_EVENTO_VAZIO });
   const [salvandoEvento, setSalvandoEvento] = useState(false);
+  const [pendenteExcluir, setPendenteExcluir] = useState<string | null>(null);
 
   useEffect(() => {
     api
@@ -280,11 +281,16 @@ export default function SociedadesCliente() {
     }
   };
 
-  const removerSocio = async (socioId: string) => {
-    if (!window.confirm("Remover este sócio do quadro societário?")) return;
+  const removerSocio = (socioId: string) => {
+    setPendenteExcluir(socioId);
+  };
+
+  const confirmarExclusao = async () => {
+    if (!pendenteExcluir) return;
     try {
-      await api.delete(`/empresarial/sociedades/socios/${socioId}`);
+      await api.delete(`/empresarial/sociedades/socios/${pendenteExcluir}`);
       toast.success("Sócio removido.");
+      setPendenteExcluir(null);
       recarregar();
     } catch (e: any) {
       toast.error(e.response?.data?.detail || "Erro ao remover sócio.");
@@ -778,6 +784,16 @@ export default function SociedadesCliente() {
           </button>
         </div>
       </Modal>
+
+      <ConfirmModal
+        open={pendenteExcluir !== null}
+        onClose={() => setPendenteExcluir(null)}
+        onConfirm={confirmarExclusao}
+        title="Remover sócio"
+        message="Remover este sócio do quadro societário?"
+        confirmLabel="Remover"
+        variant="danger"
+      />
     </div>
   );
 }

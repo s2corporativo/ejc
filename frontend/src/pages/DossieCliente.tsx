@@ -28,7 +28,13 @@ import {
 } from "lucide-react";
 import api from "../lib/api";
 import { soDigitos } from "../utils/phone";
-import { PageHeader, Spinner, StatusBadge, fmtMoney } from "../components/UI";
+import {
+  PageHeader,
+  Spinner,
+  StatusBadge,
+  fmtMoney,
+  ConfirmModal,
+} from "../components/UI";
 
 interface DossieData {
   cliente: {
@@ -197,6 +203,7 @@ function PendingItemsPanel({ clientId }: { clientId: string | number }) {
   const [items, setItems] = useState<PendingItem[]>([]);
   const [loading, setLoading] = useState(true);
   const [showAdd, setShowAdd] = useState(false);
+  const [pendenteExcluir, setPendenteExcluir] = useState<string | null>(null);
   const [form, setForm] = useState({
     title: "",
     type: "documento",
@@ -236,9 +243,16 @@ function PendingItemsPanel({ clientId }: { clientId: string | number }) {
     load();
   }
 
-  async function remove(id: string) {
-    if (!window.confirm("Remover pendência?")) return;
-    await api.delete(`/v1/clients/${clientId}/pending-items/${id}`);
+  function remove(id: string) {
+    setPendenteExcluir(id);
+  }
+
+  async function confirmarExclusao() {
+    if (!pendenteExcluir) return;
+    await api.delete(
+      `/v1/clients/${clientId}/pending-items/${pendenteExcluir}`,
+    );
+    setPendenteExcluir(null);
     load();
   }
 
@@ -399,6 +413,16 @@ function PendingItemsPanel({ clientId }: { clientId: string | number }) {
           </details>
         )}
       </div>
+
+      <ConfirmModal
+        open={pendenteExcluir !== null}
+        onClose={() => setPendenteExcluir(null)}
+        onConfirm={confirmarExclusao}
+        title="Remover pendência"
+        message="Remover esta pendência?"
+        confirmLabel="Remover"
+        variant="danger"
+      />
     </div>
   );
 }
