@@ -85,6 +85,12 @@ interface Props {
   onClose: () => void;
   caseId?: string;
   onConcluido?: (logId: string, documento: string) => void;
+  /**
+   * Chamado quando o backend barra a geração por falta de ficha de triagem
+   * confirmada (HTTP 409 { need_ficha_triagem: true, case_id }). O pai deve
+   * levar o usuário à ficha. Recebe o case_id devolvido pelo backend.
+   */
+  onNeedFicha?: (caseId: string) => void;
 }
 
 type Fase = "form" | "gerando" | "concluido" | "erro";
@@ -94,6 +100,7 @@ export default function PecaGeneratorModal({
   onClose,
   caseId,
   onConcluido,
+  onNeedFicha,
 }: Props) {
   const [fase, setFase] = useState<Fase>("form");
   const [etapas, setEtapas] = useState<Etapa[]>(etapasInit());
@@ -194,7 +201,23 @@ export default function PecaGeneratorModal({
         const err = await res
           .json()
           .catch(() => ({ detail: "Erro desconhecido" }));
-        throw new Error(err.detail ?? "Erro na requisição");
+        // Gate da ficha de triagem: peça com case_id exige ficha confirmada.
+        // FastAPI aninha o payload sob `detail`:
+        //   { detail: { detail, need_ficha_triagem: true, case_id } }
+        // O pai leva o usuário até a ficha; abortamos a geração sem erro cru.
+        const detailObj =
+          typeof err.detail === "object" && err.detail !== null
+            ? (err.detail as Record<string, any>)
+            : null;
+        if (res.status === 409 && detailObj?.need_ficha_triagem) {
+          setFase("form");
+          onNeedFicha?.(detailObj.case_id ?? caseId ?? "");
+          return;
+        }
+        const detail = detailObj
+          ? (detailObj.mensagem ?? detailObj.detail ?? JSON.stringify(detailObj))
+          : err.detail;
+        throw new Error(detail ?? "Erro na requisição");
       }
 
       const reader = res.body!.getReader();
@@ -252,6 +275,7 @@ export default function PecaGeneratorModal({
     nomesProteger,
     caseId,
     onConcluido,
+    onNeedFicha,
   ]);
 
   const copiar = () => {

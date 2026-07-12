@@ -12,6 +12,7 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 from typing import Optional
 
+from app.core.config import get_settings
 from app.core.database import get_db
 from app.core.security import get_current_user, ROLE_LEVEL
 from app.core.ownership import verificar_acesso_caso
@@ -59,14 +60,34 @@ async def gerar_peca(
         raise HTTPException(422, f"Área inválida. Use: {', '.join(AREAS_DIREITO)}")
 
     escopo_cli = None
+    ficha_resumo = ""
     if req.case_id:
         await verificar_acesso_caso(db, cu, req.case_id)
         from app.services.ai_service import _escopo_cliente_do_caso
         escopo_cli = await _escopo_cliente_do_caso(db, req.case_id)
 
+        # GATE de qualidade: a peça só nasce ancorada numa ficha de triagem
+        # CONFIRMADA (evita "bom modelo no caso errado"). Geração AVULSA (sem
+        # case_id) NUNCA é gateada. 409 ANTES de abrir o stream.
+        from app.services import ficha_triagem_service as fts
+        if get_settings().FICHA_TRIAGEM_OBRIGATORIA:
+            ficha = await fts.ficha_confirmada(db, req.case_id)
+            if ficha is None:
+                raise HTTPException(409, detail={
+                    "detail": "Confirme a Ficha de Triagem do caso antes de gerar "
+                              "a peça (gate de qualidade).",
+                    "need_ficha_triagem": True,
+                    "case_id": req.case_id,
+                })
+            ficha_resumo = fts.resumo_para_prompt(ficha)
+
     async def stream():
         try:
             instrucoes = req.instrucoes_adicionais or ""
+            if ficha_resumo:
+                # Ancora a peça na triagem confirmada (respeitando o limite).
+                bloco = f"[FICHA DE TRIAGEM CONFIRMADA]\n{ficha_resumo}"[:2000]
+                instrucoes = (f"{instrucoes}\n\n{bloco}" if instrucoes else bloco)
             estilo = await montar_instrucoes_estilo_para_prompt(db, cu.id)
             if estilo:
                 instrucoes = (
