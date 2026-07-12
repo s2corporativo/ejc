@@ -97,7 +97,10 @@ def upload_file(
             if entries:
                 file_id = entries[0].get("ID", "")
         except Exception:
-            pass
+            logger.warning(
+                "[drive] falha ao ler ID do arquivo em %s (segue sem file_id)",
+                dest_path, exc_info=True,
+            )
 
     return {
         "id": file_id,

@@ -469,7 +469,8 @@ class MotorTesesRequest(_BM):
 
 
 def _parse_json_motor(txt: str):
-    import json as _j, re as _re
+    import json as _j
+    import re as _re
     if not txt:
         return None
     try:

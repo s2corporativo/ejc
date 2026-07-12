@@ -116,7 +116,7 @@ async def list_chats(
             use_instance_key=True
         )
         return data if isinstance(data, list) else data
-    except Exception as e:
+    except Exception:
         return []
 
 
@@ -139,5 +139,5 @@ async def get_messages(
             use_instance_key=True
         )
         return data if isinstance(data, (list, dict)) else []
-    except Exception as e:
+    except Exception:
         return []

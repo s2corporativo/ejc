@@ -50,7 +50,8 @@ def test_get_client_falha_vira_none_sem_levantar(monkeypatch):
     # Habilitado com chaves, mas o SDK falha ao instanciar → wrapper degrada p/ None.
     _cfg(monkeypatch, LANGFUSE_ENABLED=True, LANGFUSE_PUBLIC_KEY="pk", LANGFUSE_SECRET_KEY="sk")
 
-    import sys, types
+    import sys
+    import types
     fake_mod = types.ModuleType("langfuse")
 
     class _Boom:
@@ -66,7 +67,8 @@ def test_get_client_falha_vira_none_sem_levantar(monkeypatch):
 
 def _fake_sdk(monkeypatch):
     """Injeta um SDK Langfuse falso que instancia sem erro."""
-    import sys, types
+    import sys
+    import types
     fake_mod = types.ModuleType("langfuse")
 
     class _OK:

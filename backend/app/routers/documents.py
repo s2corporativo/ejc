@@ -1,7 +1,6 @@
 # ── app/routers/documents.py ─────────────────────────────────────────────────
 # GED: upload/download com controle de confidencialidade (cofre).
 # Acesso a docs restritos: audit log obrigatório (LGPD art. 37).
-import json
 import logging
 import os
 from datetime import datetime, timezone
@@ -28,7 +27,6 @@ from app.models.redesign import DocumentTypeMaster
 from app.models.audit_log import criar_audit_log
 from app.core.ownership import verificar_acesso_caso, is_gestao
 from app.schemas.common import MsgResponse
-import asyncio
 from app.services.ocr_service import extrair_texto, extrair_xml
 
 settings = get_settings()
@@ -655,7 +653,6 @@ async def classificar_tipo_documento(
 # ─────────────────────────────────────────────────────────────────────────────
 from fastapi import UploadFile, File as FastFile, Form
 from app.services import google_drive as gd
-import os
 
 @router.post("/drive/upload")
 async def upload_para_drive(

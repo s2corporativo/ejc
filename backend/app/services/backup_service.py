@@ -376,7 +376,10 @@ def proximo_agendamento() -> str | None:
         if job and job.next_run_time:
             return job.next_run_time.isoformat()
     except Exception:
-        pass
+        logger.warning(
+            "[backup] não foi possível obter o próximo agendamento (segue com None)",
+            exc_info=True,
+        )
     return None
 
 

@@ -995,8 +995,17 @@ async def gerar_peca_pipeline(
     )
 
     # Código estável por ramo (EJC-<SIGLA>-<NNN>), reservado atomicamente.
+    # Numeração é acessória: se o contador falhar, a peça ainda é gerada.
     from app.services.peca_numeracao import proximo_codigo_peca
-    codigo_peca = await proximo_codigo_peca(db, area_direito)
+    codigo_peca = None
+    try:
+        codigo_peca = await proximo_codigo_peca(db, area_direito)
+    except Exception:
+        import logging as _lg
+        _lg.getLogger(__name__).warning(
+            "Falha ao numerar a peça (área=%s) — segue sem código",
+            area_direito, exc_info=True,
+        )
 
     legal_doc = LegalDoc(
         id=str(uuid4()),

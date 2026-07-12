@@ -185,7 +185,7 @@ class TestModosSanitizacaoGateway:
             capturado["provider"] = provider
             capturado["conteudo"] = " ".join(m.get("content", "") for m in messages)
             # O modelo devolve a resposta usando o MARCADOR (como faria de fato).
-            return f"Análise do CPF [CPF_1] concluída.", {
+            return "Análise do CPF [CPF_1] concluída.", {
                 "model": model or provider, "input_tokens": 5, "output_tokens": 9,
             }
 
