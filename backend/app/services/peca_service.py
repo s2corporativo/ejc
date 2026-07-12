@@ -101,9 +101,68 @@ TIPOS_PECA_GRUPO: dict[str, str] = {
 
 GRUPOS_PECA_VALIDOS = ("judicial_inicial", "judicial_pos", "extrajudicial", "recurso")
 
-# Níveis de complexidade — placeholder da Fase B; exposto já no /pecas/meta
-# para o frontend deixar de espelhar a lista manualmente.
+# Níveis de complexidade — expostos no /pecas/meta para o frontend deixar de
+# espelhar a lista manualmente. A ORDEM é o contrato do catálogo (índice 0 =
+# default). Cada nível casa com um PERFIL_COMPLEXIDADE (estrutura/tom + geração).
 NIVEIS_COMPLEXIDADE = ["comum", "simples", "completa", "estrategica", "juizado_especial"]
+
+# Fase B (#3) — Perfil de geração por grau de complexidade. Cada perfil injeta uma
+# `instrucao` de estrutura/tom/extensão no SYSTEM da etapa 7 (redação) e define os
+# parâmetros de amostragem (`max_tokens`, `temperature`) daquela chamada. Peças
+# curtas/sumaríssimas usam teto menor (evita divagação); a estratégica pede um teto
+# um pouco maior para acomodar teses subsidiárias + análise de risco.
+PERFIL_COMPLEXIDADE: dict[str, dict] = {
+    "comum": {
+        "instrucao": (
+            "NÍVEL DE COMPLEXIDADE: procedimento comum padrão (CPC). Peça completa, "
+            "bem fundamentada e proporcional à causa, com fatos numerados e "
+            "subseções temáticas."
+        ),
+        "max_tokens": 8000,
+        "temperature": 0.3,
+    },
+    "simples": {
+        "instrucao": (
+            "NÍVEL DE COMPLEXIDADE: SIMPLES. Redija de forma ENXUTA e DIRETA — vá ao "
+            "ponto: fatos objetivos, fundamentação essencial (sem digressões "
+            "doutrinárias longas) e pedidos claros. Menor extensão, PRESERVANDO todos "
+            "os requisitos formais obrigatórios da peça."
+        ),
+        "max_tokens": 4000,
+        "temperature": 0.25,
+    },
+    "completa": {
+        "instrucao": (
+            "NÍVEL DE COMPLEXIDADE: COMPLETA (robusta). Fundamentação aprofundada, "
+            "fatos numerados, subseções temáticas, jurisprudência e doutrina "
+            "pertinentes e relação de anexos."
+        ),
+        "max_tokens": 8000,
+        "temperature": 0.3,
+    },
+    "estrategica": {
+        "instrucao": (
+            "NÍVEL DE COMPLEXIDADE: ESTRATÉGICA. Além da estrutura completa, inclua "
+            "uma seção de TESES ALTERNATIVAS/SUBSIDIÁRIAS (pedidos sucessivos, na "
+            "ordem de preferência) e uma ANÁLISE DE RISCO processual sucinta que "
+            "oriente a estratégia. Antecipe e neutralize os prováveis "
+            "contra-argumentos da parte adversa."
+        ),
+        "max_tokens": 9000,
+        "temperature": 0.35,
+    },
+    "juizado_especial": {
+        "instrucao": (
+            "NÍVEL DE COMPLEXIDADE: JUIZADO ESPECIAL — rito sumaríssimo (Lei "
+            "9.099/95). Linguagem SIMPLES e acessível, sob os princípios da "
+            "oralidade, simplicidade, informalidade e celeridade. Dispense "
+            "formalismos excessivos e NÃO faça citação doutrinária longa; seja "
+            "conciso e objetivo."
+        ),
+        "max_tokens": 4000,
+        "temperature": 0.25,
+    },
+}
 
 # Roteiro estrutural obrigatório por tipo — injetado na etapa de redação para
 # que cada preset saia com a espinha dorsal processual correta (CPC/CLT).
@@ -552,6 +611,7 @@ async def gerar_peca_pipeline(
     case_id: str | None,
     instrucoes_adicionais: str | None,
     scope_client_id: str | None = None,
+    nivel_complexidade: str = "comum",
 ) -> AsyncGenerator[str, None]:
     """
     Pipeline SSE de 7 etapas para geração de peça jurídica.
@@ -836,6 +896,9 @@ async def gerar_peca_pipeline(
 
     instrucoes = instrucoes_adicionais or ""
     estrutura_tipo = ESTRUTURA_TIPO.get(tipo_peca_final, "")
+    # Fase B (#3): perfil por grau de complexidade — instrução de estrutura/tom no
+    # system + parâmetros de geração (max_tokens/temperature) desta etapa.
+    perfil = PERFIL_COMPLEXIDADE.get(nivel_complexidade, PERFIL_COMPLEXIDADE["comum"])
     r7 = await gw_chat(
         messages=[
             {"role": "system", "content": (
@@ -847,6 +910,7 @@ async def gerar_peca_pipeline(
                 "3. Toda saída é RASCUNHO — revisão humana obrigatória (OAB).\n"
                 "4. Use formatação jurídica padrão (Dos Fatos, Do Direito, Dos Pedidos)."
                 + (f"\n5. {estrutura_tipo}" if estrutura_tipo else "")
+                + "\n" + perfil["instrucao"]
                 + "\n" + especializacao
                 + "\n" + PADRAO_OURO_PECA
             )},
@@ -866,10 +930,12 @@ async def gerar_peca_pipeline(
             )},
         ],
         task_type="elaboracao_peca",
-        temperature=0.3,
-        # Peça padrão-ouro (fatos numerados + subseções + relação de anexos) é
-        # longa — 4000 truncava a redação antes dos pedidos/valor da causa.
-        max_tokens=8000,
+        # Fase B (#3): amostragem por perfil de complexidade. A peça padrão-ouro
+        # (fatos numerados + subseções + relação de anexos) é longa — o teto do
+        # perfil "comum"/"completa" (8000) evita truncar antes dos pedidos/valor da
+        # causa; níveis simples/juizado usam teto menor, estratégica um pouco maior.
+        temperature=perfil["temperature"],
+        max_tokens=perfil["max_tokens"],
         entidades=entidades,
     )
     yield await _emit("step", {"etapa": 7, "titulo": "Documento montado", "status": "concluido"})

@@ -29,6 +29,10 @@ from app.services.peca_service import (
     AREAS_DIREITO_LABEL,
     NIVEIS_COMPLEXIDADE,
 )
+from app.services.system_prompts.blocos_condicionais import (
+    FLAGS_VALIDAS,
+    montar_instrucao_blocos,
+)
 from app.services.advogado_style_service import montar_instrucoes_estilo_para_prompt
 from app.services.deep_research_service import DeepResearchInput, executar_deep_research
 from datetime import date
@@ -46,6 +50,18 @@ class GerarPecaRequest(BaseModel):
     nomes_proteger: list[str] = Field(default=[], description="Nomes para anonimizar (LGPD)")
     case_id: Optional[str] = None
     instrucoes_adicionais: Optional[str] = Field(None, max_length=1000)
+    # Fase B (#3): grau de complexidade da peça — validado contra NIVEIS_COMPLEXIDADE
+    # no handler (422 se inválido). Default "comum" (procedimento comum padrão).
+    nivel_complexidade: str = Field(
+        default="comum",
+        description=f"Complexidade: {', '.join(NIVEIS_COMPLEXIDADE)}",
+    )
+    # Fase B (#2): flags de teses selecionadas MANUALMENTE pelo advogado (override/
+    # adição às determinísticas). Flags desconhecidas são ignoradas silenciosamente.
+    flags_teses: list[str] = Field(
+        default=[],
+        description=f"Teses condicionais: {', '.join(sorted(FLAGS_VALIDAS))}",
+    )
 
 
 @router.get("/meta")
@@ -94,27 +110,53 @@ async def gerar_peca(
     if req.area_direito not in AREAS_DIREITO:
         raise HTTPException(422, f"Área inválida. Use: {', '.join(AREAS_DIREITO)}")
 
+    if req.nivel_complexidade not in NIVEIS_COMPLEXIDADE:
+        raise HTTPException(
+            422, f"Nível inválido. Use: {', '.join(NIVEIS_COMPLEXIDADE)}"
+        )
+
     escopo_cli = None
     ficha_resumo = ""
+    ficha = None
     if req.case_id:
         await verificar_acesso_caso(db, cu, req.case_id)
         from app.services.ai_service import _escopo_cliente_do_caso
         escopo_cli = await _escopo_cliente_do_caso(db, req.case_id)
 
+        # Ficha de triagem CONFIRMADA do caso: fonte dos sinais determinísticos das
+        # teses (#2) E âncora da peça. Carregada sempre que houver caso — o gate
+        # abaixo só é fatal quando FICHA_TRIAGEM_OBRIGATORIA.
+        from app.services import ficha_triagem_service as fts
+        ficha = await fts.ficha_confirmada(db, req.case_id)
+
         # GATE de qualidade: a peça só nasce ancorada numa ficha de triagem
         # CONFIRMADA (evita "bom modelo no caso errado"). Geração AVULSA (sem
         # case_id) NUNCA é gateada. 409 ANTES de abrir o stream.
-        from app.services import ficha_triagem_service as fts
-        if get_settings().FICHA_TRIAGEM_OBRIGATORIA:
-            ficha = await fts.ficha_confirmada(db, req.case_id)
-            if ficha is None:
-                raise HTTPException(409, detail={
-                    "detail": "Confirme a Ficha de Triagem do caso antes de gerar "
-                              "a peça (gate de qualidade).",
-                    "need_ficha_triagem": True,
-                    "case_id": req.case_id,
-                })
+        if get_settings().FICHA_TRIAGEM_OBRIGATORIA and ficha is None:
+            raise HTTPException(409, detail={
+                "detail": "Confirme a Ficha de Triagem do caso antes de gerar "
+                          "a peça (gate de qualidade).",
+                "need_ficha_triagem": True,
+                "case_id": req.case_id,
+            })
+        if ficha is not None:
             ficha_resumo = fts.resumo_para_prompt(ficha)
+
+    # Fase B (#2) — flags de teses condicionais. DETERMINÍSTICAS a partir de sinais
+    # confiáveis (área + ficha CONFIRMADA) + adição/override MANUAL do advogado.
+    # União validada contra FLAGS_VALIDAS (desconhecidas ignoradas). Geração avulsa
+    # (sem case_id → sem ficha) usa só área + flags manuais.
+    flags_teses: set[str] = set()
+    if req.area_direito == "consumidor":
+        flags_teses.add("relacao_consumo")
+    if ficha is not None:
+        if ficha.tutela_urgencia:
+            flags_teses.add("pedido_tutela")
+        if (ficha.provas_disponiveis or "").strip():
+            flags_teses.add("prova_documental_suficiente")
+    flags_teses.update(req.flags_teses or [])
+    flags_teses &= FLAGS_VALIDAS
+    bloco_teses = montar_instrucao_blocos(flags_teses)
 
     async def stream():
         try:
@@ -129,6 +171,14 @@ async def gerar_peca(
                     f"{instrucoes}\n\n[ESTILO DO ADVOGADO]\n{estilo}"
                     if instrucoes else f"[ESTILO DO ADVOGADO]\n{estilo}"
                 )[:2500]
+            # Teses condicionais (#2) — bloco próprio, DEPOIS do cap do estilo para
+            # não ser truncado; auto-limitado (poucas teses + regra curta).
+            if bloco_teses:
+                bloco_teses_cap = bloco_teses[:2000]
+                instrucoes = (
+                    f"{instrucoes}\n\n{bloco_teses_cap}" if instrucoes
+                    else bloco_teses_cap
+                )
 
             async for chunk in gerar_peca_pipeline(
                 db=db,
@@ -141,6 +191,7 @@ async def gerar_peca(
                 nomes_proteger=req.nomes_proteger,
                 case_id=req.case_id,
                 instrucoes_adicionais=instrucoes,
+                nivel_complexidade=req.nivel_complexidade,
             ):
                 yield chunk
         except Exception as e:
