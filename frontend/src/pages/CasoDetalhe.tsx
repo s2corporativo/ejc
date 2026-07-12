@@ -1,6 +1,6 @@
 import { toast } from "../components/Toast";
 import Markdown from "../components/Markdown";
-import React, { useEffect, useRef, useState } from "react";
+import React, { useEffect, useState } from "react";
 import { Link, useParams, useSearchParams, useNavigate } from "react-router-dom";
 import {
   Sparkles,
@@ -8,7 +8,6 @@ import {
   RefreshCw,
   ShieldCheck,
   Copy,
-  Archive,
   ArchiveRestore,
 } from "lucide-react";
 import api from "../lib/api";
@@ -27,7 +26,6 @@ import CaseBreadcrumb from "../components/CaseBreadcrumb";
 import { ConsultaProfundaTJMG } from "../components/Infosimples";
 import type { Case } from "../types";
 import {
-  PageHeader,
   StatusBadge,
   Spinner,
   fmtDate,

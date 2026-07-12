@@ -1,11 +1,7 @@
-import { exportPdf } from "../utils/exportPdf";
 import { toast } from "../components/Toast";
-import { exportCsv } from "../utils/exportCsv";
 import { useEffect, useRef, useState } from "react";
 import { Link, useLocation, useNavigate } from "react-router-dom";
 import {
-  FileType2,
-  Download,
   Plus,
   Search,
   LayoutGrid,
@@ -16,7 +12,6 @@ import {
   ArchiveRestore,
   Trash2,
 } from "lucide-react";
-import { Link as RLink } from "react-router-dom";
 import api, { aplicarExtracao } from "../lib/api";
 import { asList } from "../lib/list";
 import type { AplicarExtracaoResult, ExtracaoPayload } from "../lib/api";

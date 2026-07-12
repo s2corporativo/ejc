@@ -15,7 +15,6 @@ import {
   XCircle,
   MinusCircle,
   Clock,
-  Filter,
   Tag,
   Calendar,
   Edit3,
