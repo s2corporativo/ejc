@@ -40,7 +40,14 @@ async def verificar_conflito(
 
     # ── 1. Parte contrária é cliente ativo por documento? ─────────────────────
     if parte_contraria_doc:
-        doc_clean = parte_contraria_doc.replace(".", "").replace("-", "").replace("/", "")
+        # Casa tanto o texto puro (clientes ainda não migrados) quanto o hash
+        # determinístico (clientes com PII cifrada — cpf_enc/cnpj_enc + cpf_hash/
+        # cnpj_hash no model). SEM o hash, um cliente já cifrado NÃO seria
+        # encontrado → FALSO NEGATIVO numa checagem ética (EOAB). Mesmo padrão
+        # de conflito_service.detectar_conflito (cobre os dois estados de transição).
+        from app.services.pii_crypto import normalizar_documento, hash_documento
+        doc_clean = normalizar_documento(parte_contraria_doc) or ""
+        doc_hash = hash_documento(doc_clean) if doc_clean else None
         r = await db.execute(text("""
             SELECT id, COALESCE(nome, razao_social, 'N/D') AS nome_cliente,
                    COALESCE(cpf, cnpj) AS doc
@@ -48,9 +55,11 @@ async def verificar_conflito(
             WHERE (
                 REPLACE(REPLACE(REPLACE(cpf, '.',''), '-',''), '/','') = :doc
                 OR REPLACE(REPLACE(REPLACE(cnpj, '.',''), '-',''), '/','') = :doc
+                OR (:dochash IS NOT NULL AND cpf_hash = :dochash)
+                OR (:dochash IS NOT NULL AND cnpj_hash = :dochash)
             )
             AND deleted_at IS NULL
-        """), {"doc": doc_clean})
+        """), {"doc": doc_clean, "dochash": doc_hash})
         for row in r.fetchall():
             matches.append({
                 "tipo": "CLIENTE_ATIVO",
@@ -149,7 +158,16 @@ async def verificar_conflito(
         })
         await db.commit()
     except Exception:
-        pass
+        # NÃO engolir em silêncio: a trilha de auditoria da verificação de
+        # conflito é exigência de compliance (OAB). Registra a falha e desfaz
+        # a transação suja para não deixar a sessão inutilizável — a checagem
+        # em si (resultado abaixo) continua válida e é devolvida.
+        logger.warning(
+            "Falha ao gravar audit_log da verificação de conflito "
+            "(case_id=%s): a trilha desta verificação não foi persistida.",
+            case_id, exc_info=True,
+        )
+        await db.rollback()
 
     return {
         "resultado":             resultado,
