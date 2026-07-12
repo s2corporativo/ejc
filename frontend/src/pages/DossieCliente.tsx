@@ -6,17 +6,14 @@ import {
   Clock,
   FileText,
   DollarSign,
-  AlertTriangle,
   ChevronRight,
   ArrowLeft,
   TrendingUp,
   CheckCircle,
-  XCircle,
   Calendar,
   Scale,
   ClipboardList,
   Plus,
-  Send,
   MessageCircle,
   Mail,
   Phone,
@@ -86,14 +83,6 @@ interface DossieData {
   }>;
 }
 
-const STATUS_LABEL: Record<string, string> = {
-  em_andamento: "Em andamento",
-  ativo: "Ativo",
-  encerrado: "Encerrado",
-  arquivado: "Arquivado",
-  suspenso: "Suspenso",
-  aguardando: "Aguardando",
-};
 
 const AREA_LABEL: Record<string, string> = {
   civel: "Cível",

@@ -67,6 +67,12 @@ class Settings(BaseSettings):
     GROQ_TIMEOUT: int = 60               # segundos
     AI_ENABLED: bool = True
 
+    # ── Ficha de Triagem pré-peça (gate de qualidade) ────────────────────
+    # True = POST /pecas/gerar com case_id EXIGE ficha de triagem CONFIRMADA
+    # para o caso (evita "bom modelo no caso errado"). Geração AVULSA (sem
+    # case_id) nunca é gateada. Desligar só com aval do responsável do fluxo.
+    FICHA_TRIAGEM_OBRIGATORIA: bool = True
+
     # ── IA — Anthropic (Claude) — módulo IA profissional por tarefa ───────
     # Chave OBRIGATÓRIA para usar Claude (router.py/anthropic_provider.py).
     # NUNCA hardcodar aqui: definir o valor real APENAS no .env. Vazio = Claude

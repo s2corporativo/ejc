@@ -659,7 +659,11 @@ async def exportar_pdf(
     conteudo = padronizar_documento_juridico(d.conteudo)
 
     try:
-        pdf_bytes = await peca_para_pdf_async(titulo, conteudo, pronto_protocolo=True)
+        pdf_bytes = await peca_para_pdf_async(
+            titulo, conteudo, pronto_protocolo=True,
+            codigo_peca=d.codigo_peca, versao=d.versao,
+            status=d.status, revisado_em=d.revisado_em,
+        )
     except RuntimeError as e:
         raise HTTPException(status_code=503, detail=str(e))
 
@@ -735,7 +739,11 @@ async def documento_unico_impressao(
     titulo = padronizar_documento_juridico(d.titulo)
     conteudo = padronizar_documento_juridico(d.conteudo)
     try:
-        pdf_final = await peca_para_pdf_async(titulo, conteudo, pronto_protocolo=True)
+        pdf_final = await peca_para_pdf_async(
+            titulo, conteudo, pronto_protocolo=True,
+            codigo_peca=d.codigo_peca, versao=d.versao,
+            status=d.status, revisado_em=d.revisado_em,
+        )
     except RuntimeError as e:
         raise HTTPException(status_code=503, detail=str(e))
 
@@ -831,6 +839,16 @@ async def exportar_docx(
         case = await verificar_acesso_caso(db, cu, d.case_id)
         if case.numero_processo:
             meta["numero_processo"] = case.numero_processo
+
+    # Controle/versionamento (Fase D): meta é render-only, nunca toca o conteúdo.
+    from app.services.peca_numeracao import linha_controle, status_label
+    meta["codigo_peca"] = d.codigo_peca
+    meta["versao"] = d.versao
+    meta["status"] = status_label(d.status)
+    meta["linha_controle"] = linha_controle(
+        codigo_peca=d.codigo_peca, titulo=d.titulo, versao=d.versao,
+        status=d.status, revisado_em=d.revisado_em,
+    )
 
     titulo = padronizar_documento_juridico(d.titulo)
     conteudo = padronizar_documento_juridico(d.conteudo)

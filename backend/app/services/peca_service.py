@@ -40,9 +40,129 @@ TIPOS_PECA = {
     "notificacao": "Notificação Extrajudicial",
     "contrato": "Minuta de Contrato",
     "impugnacao": "Impugnação",
+    # ── Fase A — lacunas judiciais (manifestações no curso do processo) ──
+    "impugnacao_documentos": "Impugnação a Documentos",
+    "manifestacao_preliminares": "Manifestação sobre Preliminares",
+    "especificacao_provas": "Especificação de Provas",
+    "alegacoes_finais": "Alegações Finais",
+    # ── Fase A — recursos aos tribunais superiores ──
+    "recurso_especial": "Recurso Especial (STJ)",
+    "recurso_extraordinario": "Recurso Extraordinário (STF)",
+    # ── Fase A — instrumentos extrajudiciais ──
+    "resposta_notificacao": "Resposta à Notificação Extrajudicial",
+    "confissao_divida": "Confissão de Dívida",
+    "termo_quitacao": "Termo de Quitação",
+    "distrato": "Distrato",
+    "requerimento_administrativo": "Requerimento Administrativo",
+    "defesa_administrativa": "Defesa Administrativa",
+    "recurso_administrativo": "Recurso Administrativo",
+    "ata_reuniao": "Ata de Reunião",
 }
 
 TIPOS_PECA_VALIDOS = [k for k in TIPOS_PECA if k != "auto"]
+
+# Grupo de cada tipo (para catálogo /pecas/meta e agrupamento no frontend).
+# grupo ∈ {"judicial_inicial", "judicial_pos", "extrajudicial", "recurso"}.
+# Invariante: todo tipo válido tem grupo; todo grupo é um dos quatro valores.
+TIPOS_PECA_GRUPO: dict[str, str] = {
+    "peticao_inicial": "judicial_inicial",
+    "mandado_seguranca": "judicial_inicial",
+    "contestacao": "judicial_pos",
+    "replica": "judicial_pos",
+    "impugnacao": "judicial_pos",
+    "impugnacao_documentos": "judicial_pos",
+    "manifestacao_preliminares": "judicial_pos",
+    "especificacao_provas": "judicial_pos",
+    "alegacoes_finais": "judicial_pos",
+    "memorias": "judicial_pos",
+    "cumprimento_sentenca": "judicial_pos",
+    "impugnacao_cumprimento": "judicial_pos",
+    "embargos_execucao": "judicial_pos",
+    "recurso_ordinario": "recurso",
+    "apelacao": "recurso",
+    "contrarrazoes": "recurso",
+    "embargos_declaracao": "recurso",
+    "agravo": "recurso",
+    "recurso_especial": "recurso",
+    "recurso_extraordinario": "recurso",
+    "acordo": "extrajudicial",
+    "parecer": "extrajudicial",
+    "notificacao": "extrajudicial",
+    "contrato": "extrajudicial",
+    "resposta_notificacao": "extrajudicial",
+    "confissao_divida": "extrajudicial",
+    "termo_quitacao": "extrajudicial",
+    "distrato": "extrajudicial",
+    "requerimento_administrativo": "extrajudicial",
+    "defesa_administrativa": "extrajudicial",
+    "recurso_administrativo": "extrajudicial",
+    "ata_reuniao": "extrajudicial",
+}
+
+GRUPOS_PECA_VALIDOS = ("judicial_inicial", "judicial_pos", "extrajudicial", "recurso")
+
+# Níveis de complexidade — expostos no /pecas/meta para o frontend deixar de
+# espelhar a lista manualmente. A ORDEM é o contrato do catálogo (índice 0 =
+# default). Cada nível casa com um PERFIL_COMPLEXIDADE (estrutura/tom + geração).
+NIVEIS_COMPLEXIDADE = ["comum", "simples", "completa", "estrategica", "juizado_especial"]
+
+# Fase B (#3) — Perfil de geração por grau de complexidade. Cada perfil injeta uma
+# `instrucao` de estrutura/tom/extensão no SYSTEM da etapa 7 (redação) e define os
+# parâmetros de amostragem (`max_tokens`, `temperature`) daquela chamada. Peças
+# curtas/sumaríssimas usam teto menor (evita divagação); a estratégica pede um teto
+# um pouco maior para acomodar teses subsidiárias + análise de risco.
+PERFIL_COMPLEXIDADE: dict[str, dict] = {
+    "comum": {
+        "instrucao": (
+            "NÍVEL DE COMPLEXIDADE: procedimento comum padrão (CPC). Peça completa, "
+            "bem fundamentada e proporcional à causa, com fatos numerados e "
+            "subseções temáticas."
+        ),
+        "max_tokens": 8000,
+        "temperature": 0.3,
+    },
+    "simples": {
+        "instrucao": (
+            "NÍVEL DE COMPLEXIDADE: SIMPLES. Redija de forma ENXUTA e DIRETA — vá ao "
+            "ponto: fatos objetivos, fundamentação essencial (sem digressões "
+            "doutrinárias longas) e pedidos claros. Menor extensão, PRESERVANDO todos "
+            "os requisitos formais obrigatórios da peça."
+        ),
+        "max_tokens": 4000,
+        "temperature": 0.25,
+    },
+    "completa": {
+        "instrucao": (
+            "NÍVEL DE COMPLEXIDADE: COMPLETA (robusta). Fundamentação aprofundada, "
+            "fatos numerados, subseções temáticas, jurisprudência e doutrina "
+            "pertinentes e relação de anexos."
+        ),
+        "max_tokens": 8000,
+        "temperature": 0.3,
+    },
+    "estrategica": {
+        "instrucao": (
+            "NÍVEL DE COMPLEXIDADE: ESTRATÉGICA. Além da estrutura completa, inclua "
+            "uma seção de TESES ALTERNATIVAS/SUBSIDIÁRIAS (pedidos sucessivos, na "
+            "ordem de preferência) e uma ANÁLISE DE RISCO processual sucinta que "
+            "oriente a estratégia. Antecipe e neutralize os prováveis "
+            "contra-argumentos da parte adversa."
+        ),
+        "max_tokens": 9000,
+        "temperature": 0.35,
+    },
+    "juizado_especial": {
+        "instrucao": (
+            "NÍVEL DE COMPLEXIDADE: JUIZADO ESPECIAL — rito sumaríssimo (Lei "
+            "9.099/95). Linguagem SIMPLES e acessível, sob os princípios da "
+            "oralidade, simplicidade, informalidade e celeridade. Dispense "
+            "formalismos excessivos e NÃO faça citação doutrinária longa; seja "
+            "conciso e objetivo."
+        ),
+        "max_tokens": 4000,
+        "temperature": 0.25,
+    },
+}
 
 # Roteiro estrutural obrigatório por tipo — injetado na etapa de redação para
 # que cada preset saia com a espinha dorsal processual correta (CPC/CLT).
@@ -120,6 +240,120 @@ ESTRUTURA_TIPO: dict[str, str] = {
         "plano por prova PRÉ-CONSTITUÍDA (documental); ilegalidade/abuso de poder; prazo "
         "decadencial de 120 dias (art. 23); pedido de liminar (art. 7º, III) e a concessão "
         "final da ordem."
+    ),
+    # ── Backfill de tipos judiciais pré-existentes sem roteiro ──
+    "impugnacao": (
+        "Estrutura obrigatória: endereçamento ao juízo; identificação PRECISA do ato/"
+        "documento/valor impugnado; tempestividade; fundamentos de fato e de direito da "
+        "impugnação; pedido de rejeição/desconsideração do que se impugna; requerimentos."
+    ),
+    "memorias": (
+        "Estrutura obrigatória (memoriais — alegações finais por memoriais, CPC art. 364 "
+        "§2º): síntese da lide e do que foi provado na instrução; confronto da prova "
+        "produzida com cada tese (remissão às fls./ID dos autos); refutação das teses "
+        "adversárias; reafirmação dos pedidos à luz do conjunto probatório; conclusão."
+    ),
+    # ── Fase A — novos tipos judiciais ──
+    "impugnacao_documentos": (
+        "Estrutura obrigatória (CPC arts. 436-438 e 411, II): endereçamento ao juízo; "
+        "tempestividade (15 dias da intimação da juntada, CPC art. 437 §1º); indicação "
+        "individualizada de CADA documento impugnado; impugnação quanto à admissibilidade, "
+        "à autenticidade (falsidade — arguição incidental, art. 430) ou ao conteúdo/"
+        "valoração; pedido de desentranhamento/desconsideração; requerimento de prova "
+        "pericial quando arguida falsidade."
+    ),
+    "manifestacao_preliminares": (
+        "Estrutura obrigatória (CPC art. 351 — réplica com foco nas preliminares): "
+        "endereçamento; enfrentamento de CADA preliminar arguida na contestação (CPC "
+        "art. 337) demonstrando sua improcedência; quando sanável, requerimento de "
+        "correção do vício (art. 352); pedido de rejeição das preliminares e prosseguimento "
+        "do feito no mérito."
+    ),
+    "especificacao_provas": (
+        "Estrutura obrigatória (CPC arts. 357 e 369-370): endereçamento ao juízo; "
+        "indicação das provas que pretende produzir (documental, testemunhal, pericial, "
+        "depoimento pessoal); JUSTIFICATIVA da pertinência e utilidade de cada prova "
+        "frente aos pontos controvertidos; para prova pericial, área e quesitos; para "
+        "testemunhal, rol; requerimento de fixação dos pontos controvertidos e do ônus."
+    ),
+    "alegacoes_finais": (
+        "Estrutura obrigatória (CPC art. 364 — alegações finais orais reduzidas a termo "
+        "ou por memoriais): síntese do pedido e da defesa; análise da prova efetivamente "
+        "produzida na instrução, ponto controvertido a ponto controvertido, com remissão "
+        "aos autos; demonstração de que a prova favorece a tese; refutação da tese "
+        "contrária; reafirmação do pedido de procedência/improcedência. Distinta de "
+        "'memoriais' apenas na denominação processual — mesmo conteúdo de encerramento."
+    ),
+    "recurso_especial": (
+        "Estrutura obrigatória (CF art. 105, III; CPC arts. 1.029-1.030): interposição "
+        "dirigida ao presidente/vice do tribunal a quo; cabimento por alínea (a "
+        "contrariedade a lei federal; b validade de ato local contestado; c dissídio "
+        "jurisprudencial — com cotejo analítico); PREQUESTIONAMENTO explícito da matéria "
+        "federal; demonstração de admissibilidade (tempestividade, preparo, "
+        "repercussão da questão); NÃO reexame de prova (Súmula 7/STJ); razões de reforma; "
+        "pedido de provimento."
+    ),
+    "recurso_extraordinario": (
+        "Estrutura obrigatória (CF art. 102, III; CPC arts. 1.029 e 1.035): interposição "
+        "ao presidente/vice do tribunal a quo; cabimento por alínea do art. 102, III; "
+        "PREQUESTIONAMENTO da questão constitucional; preliminar FORMAL e fundamentada de "
+        "REPERCUSSÃO GERAL (CPC art. 1.035 — requisito de admissibilidade); demonstração "
+        "de ofensa DIRETA à Constituição; tempestividade e preparo; razões de reforma; "
+        "pedido de provimento."
+    ),
+    # ── Fase A — instrumentos extrajudiciais (roteiro; não seguem CPC) ──
+    "resposta_notificacao": (
+        "Estrutura de contranotificação extrajudicial: identificação do notificante "
+        "original e da notificação respondida (data/protocolo); resposta ponto a ponto às "
+        "alegações; posição do notificado (aceita/recusa/contrapropõe); ressalva de "
+        "direitos e de que a resposta não importa reconhecimento de dívida/obrigação; "
+        "fecho, local, data e assinatura."
+    ),
+    "confissao_divida": (
+        "Estrutura de instrumento de confissão de dívida (título executivo extrajudicial, "
+        "CPC art. 784, III): qualificação de credor e devedor; origem e reconhecimento "
+        "expresso da dívida; valor certo, líquido e atualizado; forma de pagamento "
+        "(parcelas, vencimentos, índice de correção, juros e multa); cláusula de "
+        "vencimento antecipado; foro; DUAS TESTEMUNHAS; local, data e assinaturas."
+    ),
+    "termo_quitacao": (
+        "Estrutura de termo de quitação: qualificação das partes; identificação da "
+        "obrigação/contrato quitado e do valor recebido; declaração de quitação PLENA, "
+        "geral, rasa e irrevogável quanto ao objeto, para nada mais reclamar; ressalvas "
+        "expressas se houver; local, data e assinaturas."
+    ),
+    "distrato": (
+        "Estrutura de distrato (art. 472 CC — mesma forma do contrato desfeito): "
+        "qualificação das partes; identificação do contrato original (data/objeto); "
+        "manifestação de vontade de rescindir de comum acordo; acerto de valores/"
+        "obrigações pendentes e sua liquidação; quitação recíproca quanto ao desfeito; "
+        "foro; local, data e assinaturas (testemunhas quando exigidas)."
+    ),
+    "requerimento_administrativo": (
+        "Estrutura de requerimento administrativo (Lei 9.784/99): endereçamento à "
+        "autoridade/órgão competente; qualificação do requerente; exposição objetiva dos "
+        "fatos e do fundamento legal do pedido; pedido certo e determinado; documentos "
+        "instrutórios; local, data e assinatura."
+    ),
+    "defesa_administrativa": (
+        "Estrutura de defesa administrativa (Lei 9.784/99 e norma específica do órgão): "
+        "endereçamento à autoridade julgadora; identificação do processo/auto de "
+        "infração; tempestividade; preliminares e vícios formais (competência, "
+        "cerceamento de defesa, decadência); mérito com impugnação dos fatos imputados; "
+        "dosimetria subsidiária da sanção; pedido de arquivamento/absolvição."
+    ),
+    "recurso_administrativo": (
+        "Estrutura de recurso administrativo (Lei 9.784/99, arts. 56-65): endereçamento "
+        "à autoridade que proferiu a decisão (juízo de retratação) e, se mantida, à "
+        "superior; tempestividade (10 dias, salvo prazo especial); síntese da decisão "
+        "recorrida; razões de reforma de fato e de direito; pedido de reforma/anulação; "
+        "local, data e assinatura."
+    ),
+    "ata_reuniao": (
+        "Estrutura de ata de reunião: cabeçalho (órgão/entidade, data, hora, local); "
+        "presentes e quórum; ordem do dia; registro objetivo das deliberações e votações "
+        "item a item; encaminhamentos e responsáveis; encerramento; assinatura do "
+        "presidente e do secretário (e demais presentes quando exigido)."
     ),
 }
 
@@ -202,6 +436,43 @@ TIPO_PECA_LEGAL_DOC = {
     "notificacao": PecaTipo.notificacao_extrajudicial,
     "contrato": PecaTipo.contrato,
     "impugnacao": PecaTipo.recurso,
+    # ── Fase A — novos tipos (mapeados a valores EXISTENTES do enum PecaTipo,
+    # sem migration). ──
+    "impugnacao_documentos": PecaTipo.outro,
+    "manifestacao_preliminares": PecaTipo.outro,
+    "especificacao_provas": PecaTipo.outro,
+    "alegacoes_finais": PecaTipo.outro,
+    "recurso_especial": PecaTipo.recurso,
+    "recurso_extraordinario": PecaTipo.recurso,
+    "resposta_notificacao": PecaTipo.notificacao_extrajudicial,
+    "confissao_divida": PecaTipo.contrato,
+    "termo_quitacao": PecaTipo.contrato,
+    "distrato": PecaTipo.contrato,
+    "requerimento_administrativo": PecaTipo.outro,
+    "defesa_administrativa": PecaTipo.outro,
+    "recurso_administrativo": PecaTipo.recurso,
+    "ata_reuniao": PecaTipo.outro,
+}
+
+# Rótulos legíveis das áreas do direito — fonte única para o catálogo /pecas/meta.
+AREAS_DIREITO_LABEL: dict[str, str] = {
+    "trabalhista": "Trabalhista",
+    "civil": "Cível",
+    "previdenciario": "Previdenciário",
+    "tributario": "Tributário",
+    "criminal": "Criminal",
+    "consumidor": "Consumidor",
+    "administrativo": "Administrativo",
+    "familia": "Família",
+    "empresarial": "Empresarial",
+    "ambiental": "Ambiental",
+    "bancario": "Bancário",
+    "imobiliario": "Imobiliário",
+    "sucessoes": "Sucessões",
+    "constitucional": "Constitucional",
+    "juizados": "Juizados Especiais",
+    "digital_lgpd": "Direito Digital / LGPD",
+    "transito": "Trânsito",
 }
 
 TIPOS_PECA_ALIASES = {
@@ -239,6 +510,46 @@ TIPOS_PECA_ALIASES = {
     "contrato": "contrato",
     "minuta de contrato": "contrato",
     "impugnacao": "impugnacao",
+    # ── Fase A — novos tipos judiciais ──
+    "impugnacao a documentos": "impugnacao_documentos",
+    "impugnacao aos documentos": "impugnacao_documentos",
+    "impugnacao de documentos": "impugnacao_documentos",
+    "impugnacao a documento": "impugnacao_documentos",
+    "impugnacao aos documentos juntados": "impugnacao_documentos",
+    "manifestacao sobre preliminares": "manifestacao_preliminares",
+    "manifestacao as preliminares": "manifestacao_preliminares",
+    "manifestacao sobre as preliminares": "manifestacao_preliminares",
+    "replica as preliminares": "manifestacao_preliminares",
+    "especificacao de provas": "especificacao_provas",
+    "especificacao das provas": "especificacao_provas",
+    "especificar provas": "especificacao_provas",
+    "alegacoes finais": "alegacoes_finais",
+    "alegacoes finais escritas": "alegacoes_finais",
+    "razoes finais": "alegacoes_finais",
+    "recurso especial": "recurso_especial",
+    "recurso especial ao stj": "recurso_especial",
+    "recurso extraordinario": "recurso_extraordinario",
+    "recurso extraordinario ao stf": "recurso_extraordinario",
+    # ── Fase A — instrumentos extrajudiciais ──
+    "resposta a notificacao": "resposta_notificacao",
+    "resposta a notificacao extrajudicial": "resposta_notificacao",
+    "resposta notificacao extrajudicial": "resposta_notificacao",
+    "contranotificacao": "resposta_notificacao",
+    "contra notificacao": "resposta_notificacao",
+    "confissao de divida": "confissao_divida",
+    "instrumento de confissao de divida": "confissao_divida",
+    "termo de confissao de divida": "confissao_divida",
+    "termo de quitacao": "termo_quitacao",
+    "recibo de quitacao": "termo_quitacao",
+    "quitacao": "termo_quitacao",
+    "distrato": "distrato",
+    "distrato contratual": "distrato",
+    "rescisao contratual amigavel": "distrato",
+    "requerimento administrativo": "requerimento_administrativo",
+    "defesa administrativa": "defesa_administrativa",
+    "recurso administrativo": "recurso_administrativo",
+    "ata de reuniao": "ata_reuniao",
+    "ata reuniao": "ata_reuniao",
 }
 
 
@@ -262,15 +573,25 @@ def _tipo_identificado(texto: str) -> str | None:
         normalizado = "".join(c for c in normalizado if not unicodedata.combining(c))
         if normalizado in TIPOS_PECA_ALIASES:
             return TIPOS_PECA_ALIASES[normalizado]
+        # Correspondência EXATA pelo nome da chave (forma normalizada), antes de
+        # qualquer casamento por substring — evita que o alias genérico
+        # "impugnacao" sombreie a chave "impugnacao_documentos" quando a etapa 1
+        # devolve o próprio value (via JSON tipo_confirmado).
         for chave in TIPOS_PECA_VALIDOS:
-            if chave.replace("_", " ") in normalizado:
+            if normalizado == chave.replace("_", " "):
                 return chave
-        # Alias por substring: casa a MAIS ESPECÍFICA (mais longa) primeiro, para
-        # que a genérica "embargos" não sombreie "embargos a execucao" no texto
-        # livre (senão a ordem do dict decidiria e classificaria errado).
+        # Alias por substring, da MAIS ESPECÍFICA (mais longa) para a mais curta —
+        # ANTES do fallback pelo nome da chave. Assim a genérica "embargos" não
+        # sombreia "embargos a execucao", nem "impugnacao" sombreia "impugnacao a
+        # documentos", no texto livre.
         for alias in sorted(TIPOS_PECA_ALIASES, key=len, reverse=True):
             if alias in normalizado:
                 return TIPOS_PECA_ALIASES[alias]
+        # Fallback: nome da própria chave (também da mais longa para a mais curta,
+        # p/ "recurso_especial" não perder para "recurso_ordinario" por ordem).
+        for chave in sorted(TIPOS_PECA_VALIDOS, key=len, reverse=True):
+            if chave.replace("_", " ") in normalizado:
+                return chave
     return None
 
 
@@ -290,6 +611,7 @@ async def gerar_peca_pipeline(
     case_id: str | None,
     instrucoes_adicionais: str | None,
     scope_client_id: str | None = None,
+    nivel_complexidade: str = "comum",
 ) -> AsyncGenerator[str, None]:
     """
     Pipeline SSE de 7 etapas para geração de peça jurídica.
@@ -574,6 +896,9 @@ async def gerar_peca_pipeline(
 
     instrucoes = instrucoes_adicionais or ""
     estrutura_tipo = ESTRUTURA_TIPO.get(tipo_peca_final, "")
+    # Fase B (#3): perfil por grau de complexidade — instrução de estrutura/tom no
+    # system + parâmetros de geração (max_tokens/temperature) desta etapa.
+    perfil = PERFIL_COMPLEXIDADE.get(nivel_complexidade, PERFIL_COMPLEXIDADE["comum"])
     r7 = await gw_chat(
         messages=[
             {"role": "system", "content": (
@@ -585,6 +910,7 @@ async def gerar_peca_pipeline(
                 "3. Toda saída é RASCUNHO — revisão humana obrigatória (OAB).\n"
                 "4. Use formatação jurídica padrão (Dos Fatos, Do Direito, Dos Pedidos)."
                 + (f"\n5. {estrutura_tipo}" if estrutura_tipo else "")
+                + "\n" + perfil["instrucao"]
                 + "\n" + especializacao
                 + "\n" + PADRAO_OURO_PECA
             )},
@@ -604,10 +930,12 @@ async def gerar_peca_pipeline(
             )},
         ],
         task_type="elaboracao_peca",
-        temperature=0.3,
-        # Peça padrão-ouro (fatos numerados + subseções + relação de anexos) é
-        # longa — 4000 truncava a redação antes dos pedidos/valor da causa.
-        max_tokens=8000,
+        # Fase B (#3): amostragem por perfil de complexidade. A peça padrão-ouro
+        # (fatos numerados + subseções + relação de anexos) é longa — o teto do
+        # perfil "comum"/"completa" (8000) evita truncar antes dos pedidos/valor da
+        # causa; níveis simples/juizado usam teto menor, estratégica um pouco maior.
+        temperature=perfil["temperature"],
+        max_tokens=perfil["max_tokens"],
         entidades=entidades,
     )
     yield await _emit("step", {"etapa": 7, "titulo": "Documento montado", "status": "concluido"})
@@ -666,6 +994,19 @@ async def gerar_peca_pipeline(
         status_hitl=AIStatusHITL.gerado,
     )
 
+    # Código estável por ramo (EJC-<SIGLA>-<NNN>), reservado atomicamente.
+    # Numeração é acessória: se o contador falhar, a peça ainda é gerada.
+    from app.services.peca_numeracao import proximo_codigo_peca
+    codigo_peca = None
+    try:
+        codigo_peca = await proximo_codigo_peca(db, area_direito)
+    except Exception:
+        import logging as _lg
+        _lg.getLogger(__name__).warning(
+            "Falha ao numerar a peça (área=%s) — segue sem código",
+            area_direito, exc_info=True,
+        )
+
     legal_doc = LegalDoc(
         id=str(uuid4()),
         titulo=f"{nome_peca} - rascunho IA",
@@ -675,6 +1016,8 @@ async def gerar_peca_pipeline(
         human_reviewed=False,
         case_id=case_id,
         created_by=user_id,
+        area=area_direito,
+        codigo_peca=codigo_peca,
     )
     db.add(log)
     db.add(legal_doc)
@@ -683,6 +1026,7 @@ async def gerar_peca_pipeline(
     yield await _emit("concluido", {
         "ai_log_id": log.id,
         "legal_doc_id": legal_doc.id,
+        "codigo_peca": codigo_peca,
         "tipo_peca_identificado": tipo_peca_final,
         "documento": documento_final,
         "modelo": r7.modelo,

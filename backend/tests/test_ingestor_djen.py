@@ -16,7 +16,6 @@ from __future__ import annotations
 import copy
 
 import httpx
-import pytest
 
 import app.services.ingestors.djen as djen
 from app.core.config import get_settings

@@ -21,8 +21,9 @@ pytestmark = pytest.mark.skipif(
 
 @pytest.fixture(autouse=True)
 async def _dispose_engine_apos_teste():
-    yield
     from app.core.database import engine
+    await engine.dispose()
+    yield
     await engine.dispose()
 
 

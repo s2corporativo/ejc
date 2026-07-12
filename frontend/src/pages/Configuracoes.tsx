@@ -4,7 +4,6 @@ import {
   Bell,
   Check,
   ChevronRight,
-  Database,
   Gauge,
   LayoutDashboard,
   Menu,

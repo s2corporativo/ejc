@@ -982,7 +982,8 @@ async def _backup_banco():
     Aqui, registramos o evento no log e verificamos se o dump do dia já existe.
     O backup efetivo é executado pelo script scripts/backup.sh no HOST via cron.
     """
-    import os, glob as _glob
+    import os
+    import glob as _glob
     from datetime import date as _date
 
     backup_dir = settings.BACKUP_DIR
@@ -995,7 +996,8 @@ async def _backup_banco():
         return
 
     # Backup do dia não encontrado — tentar pg_dump diretamente se disponível
-    import subprocess, shutil
+    import subprocess
+    import shutil
     pg_dump = shutil.which("pg_dump")
     if not pg_dump:
         logger.warning(

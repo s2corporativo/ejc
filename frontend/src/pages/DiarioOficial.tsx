@@ -15,7 +15,6 @@ import {
   ExternalLink,
   CheckCheck,
   Link2,
-  Newspaper,
 } from "lucide-react";
 
 /** Vinculação feita automaticamente pelo backend (marcada na observação/texto). */

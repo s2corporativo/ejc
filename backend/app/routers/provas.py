@@ -334,6 +334,23 @@ def _contexto_sugestao(case: Case, provas: list[Prova]) -> str:
             linhas.append(f"- [{p.tipo}] {p.titulo} — fato probando: {fato}")
     else:
         linhas.append("- (nenhuma prova cadastrada ainda)")
+
+    # ── Âncora determinística: matriz tese×prova (Fase C) ──────────────────────
+    # Piso mínimo por área/tese, sem IA. Se nada casar, não injeta nada (o
+    # comportamento atual é preservado). Só rótulos jurídicos — sem PII.
+    from app.services.matriz_provas import provas_recomendadas_texto
+    texto_alvo = " ".join(filter(None, [
+        case.titulo, case.tese_principal, str(tipo_acao),
+        getattr(case, "descricao_fatos", None),
+    ]))
+    matriz_txt = provas_recomendadas_texto(area, texto_alvo)
+    if matriz_txt:
+        linhas += [
+            "",
+            "REFERÊNCIA (matriz tese×prova) — provas mínimas típicas para as "
+            "teses/pedidos deste caso (piso determinístico, use como âncora):",
+            matriz_txt,
+        ]
     return "\n".join(linhas)
 
 
@@ -352,6 +369,10 @@ _SYSTEM_SUGESTAO = (
     "\"como_obter\": str, \"criticidade\": \"alta\"|\"media\"|\"baixa\"}].\n"
     "4. No máximo 8 sugestões, das mais críticas para as menos críticas. Se "
     "nada relevante faltar, responda [].\n"
+    "5. Se o contexto trouxer uma REFERÊNCIA (matriz tese×prova), trate-a como "
+    "PISO mínimo: as provas ali listadas que ainda NÃO constarem do acervo "
+    "devem figurar entre as sugestões (com criticidade coerente). Você pode e "
+    "deve acrescentar outras provas típicas além do piso.\n"
     "Suas sugestões são RASCUNHO de apoio — a decisão é do advogado (HITL)."
 )
 
@@ -437,6 +458,36 @@ async def sugerir_provas_faltantes(
 
     return {"data": sugestoes, "total": len(sugestoes),
             "modelo": resp.modelo, "provedor": resp.provedor, "aviso": aviso}
+
+
+@router.get("/matriz",
+            dependencies=[Depends(rate_limit("provas-matriz", 30))])
+async def matriz_provas_referencia(
+    case_id: str,
+    area: Optional[str] = None,
+    pedidos: Optional[str] = None,
+    db: AsyncSession = Depends(get_db),
+    cu: User = Depends(get_current_user),
+):
+    """Referência determinística (matriz tese×prova) — provas mínimas típicas.
+
+    Piso estagiário+ (leitura de referência estática, sem IA e sem PII).
+    Ownership via verificar_acesso_caso. Se ``area``/``pedidos`` não vierem,
+    são derivados do próprio caso (área + título + tese principal). Nunca 500:
+    a matriz degrada para lista vazia quando nada casa.
+    """
+    if ROLE_LEVEL.get(cu.role.value, 0) < ROLE_LEVEL["estagiario"]:
+        raise HTTPException(403, "Sem permissão para consultar a matriz de provas")
+    case = await verificar_acesso_caso(db, cu, case_id)
+
+    from app.services.matriz_provas import provas_recomendadas
+    area_ef = area or (case.area.value if hasattr(case.area, "value") else str(case.area or ""))
+    texto = pedidos or " ".join(filter(None, [
+        case.titulo, case.tese_principal,
+        getattr(case, "descricao_fatos", None),
+    ]))
+    data = provas_recomendadas(area_ef, texto)
+    return {"data": data, "total": len(data), "area": area_ef}
 
 
 # ── Documento Único de Anexos (Visual Law) ────────────────────────────────────

@@ -257,6 +257,138 @@ De Paula Teixeira Advogados Associados
 {rodape}
 """
 
+TEMPLATE_RESPOSTA_NOTIFICACAO = """
+{timbrado}
+
+RESPOSTA À NOTIFICAÇÃO EXTRAJUDICIAL
+
+NOTIFICANTE ORIGINAL: {nome_notificante}
+NOTIFICADO(A) / ORA RESPONDENTE: {nome_notificado}
+REFERÊNCIA: Notificação recebida em {data_notificacao_original}
+DATA: {data}
+
+Senhor(a) {nome_notificante},
+
+Em atenção à notificação extrajudicial em referência, vem o(a) respondente,
+respeitosamente, apresentar sua RESPOSTA, nos seguintes termos:
+
+I — DAS ALEGAÇÕES DA NOTIFICAÇÃO
+{sintese_alegacoes}
+
+II — DA RESPOSTA
+{corpo_resposta}
+
+III — DA POSIÇÃO DO RESPONDENTE
+{posicao_final}
+
+A presente resposta é apresentada com expressa RESSALVA de todos os direitos
+do(a) respondente e NÃO importa reconhecimento de qualquer dívida, culpa ou
+obrigação não expressamente admitida.
+
+{cidade}, {data_por_extenso}.
+
+_____________________________________________
+{nome_advogado}
+OAB/MG {oab_advogado}
+De Paula Teixeira Advogados Associados
+{rodape}
+"""
+
+TEMPLATE_CONFISSAO_DIVIDA = """
+INSTRUMENTO PARTICULAR DE CONFISSÃO DE DÍVIDA
+
+CREDOR(A): {qualificacao_credor}
+DEVEDOR(A): {qualificacao_devedor}
+
+As partes acima qualificadas têm, entre si, justo e acordado o presente
+Instrumento Particular de Confissão de Dívida, que se regerá pelas cláusulas
+seguintes (título executivo extrajudicial — art. 784, III, do CPC):
+
+CLÁUSULA 1ª — DA ORIGEM E DO RECONHECIMENTO DA DÍVIDA
+{origem_divida}
+O(A) DEVEDOR(A) reconhece e confessa dever ao(à) CREDOR(A) a quantia certa,
+líquida e atualizada de R$ {valor_divida} ({valor_divida_extenso}).
+
+CLÁUSULA 2ª — DA FORMA DE PAGAMENTO
+{forma_pagamento}
+
+CLÁUSULA 3ª — DA CORREÇÃO, JUROS E ENCARGOS
+{encargos_mora}
+
+CLÁUSULA 4ª — DO VENCIMENTO ANTECIPADO
+O inadimplemento de qualquer parcela acarretará o vencimento antecipado de
+toda a dívida, independentemente de notificação, sujeitando o débito aos
+encargos moratórios pactuados.
+
+CLÁUSULA 5ª — DO FORO
+Fica eleito o foro da Comarca de {comarca_foro}, com renúncia a qualquer outro.
+
+E, por estarem assim justas e acordadas, firmam o presente em duas vias, na
+presença das testemunhas abaixo.
+
+{cidade}, {data_por_extenso}.
+
+_____________________________________  _____________________________________
+CREDOR(A)                              DEVEDOR(A)
+
+TESTEMUNHAS:
+1. _______________________________ CPF: ______________________
+2. _______________________________ CPF: ______________________
+"""
+
+TEMPLATE_TERMO_QUITACAO = """
+TERMO DE QUITAÇÃO
+
+Pelo presente instrumento, {qualificacao_credor}, doravante denominado(a)
+CREDOR(A)/OUTORGANTE, DECLARA ter recebido de {qualificacao_devedor},
+doravante denominado(a) DEVEDOR(A)/OUTORGADO(A), a importância de
+R$ {valor_recebido} ({valor_recebido_extenso}), referente a
+{objeto_quitacao}.
+
+Diante do integral recebimento, o(a) CREDOR(A) outorga ao(à) DEVEDOR(A) a mais
+plena, geral, rasa, irrevogável e irretratável QUITAÇÃO quanto ao objeto acima,
+para nada mais reclamar, a qualquer tempo ou título, com relação à obrigação
+ora quitada.
+{ressalvas}
+
+{cidade}, {data_por_extenso}.
+
+_____________________________________________
+{qualificacao_credor}
+(CREDOR(A) / OUTORGANTE DA QUITAÇÃO)
+"""
+
+TEMPLATE_DISTRATO = """
+INSTRUMENTO PARTICULAR DE DISTRATO
+
+{qualificacao_parte1} e {qualificacao_parte2}, doravante denominadas
+DISTRATANTES, tendo firmado {identificacao_contrato} em {data_contrato_original},
+resolvem, de comum acordo e na melhor forma de direito (art. 472 do Código
+Civil), celebrar o presente DISTRATO, mediante as cláusulas seguintes:
+
+CLÁUSULA 1ª — DA RESCISÃO
+As DISTRATANTES rescindem, por mútuo consenso, o contrato acima identificado,
+que se dá por extinto a partir de {data_efeito_distrato}.
+
+CLÁUSULA 2ª — DO ACERTO DE OBRIGAÇÕES PENDENTES
+{acerto_obrigacoes}
+
+CLÁUSULA 3ª — DA QUITAÇÃO RECÍPROCA
+Cumpridas as obrigações da Cláusula 2ª, as DISTRATANTES dão-se mútua, plena e
+irrevogável quitação quanto ao contrato distratado, nada mais tendo a reclamar
+uma da outra em razão dele.
+
+CLÁUSULA 4ª — DO FORO
+Fica eleito o foro da Comarca de {comarca_foro} para dirimir eventuais dúvidas.
+
+E, por estarem assim justas e acordadas, firmam o presente em duas vias.
+
+{cidade}, {data_por_extenso}.
+
+_____________________________________  _____________________________________
+{qualificacao_parte1}                  {qualificacao_parte2}
+"""
+
 TEMPLATE_DEFESA_IBAMA = """
 {timbrado}
 

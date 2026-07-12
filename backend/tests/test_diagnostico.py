@@ -10,7 +10,6 @@ from __future__ import annotations
 from collections import namedtuple
 from types import SimpleNamespace
 
-import pytest
 
 from app.core.config import get_settings
 from app.services import diagnostico_service as dg

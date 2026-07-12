@@ -7,7 +7,6 @@ import {
   Phone,
   Mail,
   UserCheck,
-  UserX,
   Clock,
   ChevronRight,
   RefreshCw,

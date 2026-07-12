@@ -3,7 +3,6 @@ import {
   Brain,
   Target,
   AlertTriangle,
-  TrendingUp,
   Scale,
   ChevronDown,
   ChevronUp,

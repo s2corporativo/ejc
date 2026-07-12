@@ -1,6 +1,7 @@
 import { useEffect, useState, useRef, useCallback } from "react";
 import { authFetch } from "../lib/stream";
-import { Modal, Button } from "./UI";
+import api from "../lib/api";
+import { Modal, Button, Badge } from "./UI";
 import { toast } from "./Toast";
 import {
   Sparkles,
@@ -18,36 +19,102 @@ import {
   ChevronUp,
 } from "lucide-react";
 
-const TIPOS_PECA: Record<string, string> = {
-  peticao_inicial: "Petição Inicial",
-  contestacao: "Contestação",
-  replica: "Réplica (Impugnação à Contestação)",
-  recurso_ordinario: "Recurso Ordinário",
-  apelacao: "Apelação",
-  contrarrazoes: "Contrarrazões",
-  embargos_declaracao: "Embargos de Declaração",
-  agravo: "Agravo",
-  cumprimento_sentenca: "Cumprimento de Sentença",
-  impugnacao_cumprimento: "Impugnação ao Cumprimento de Sentença",
-  embargos_execucao: "Embargos à Execução",
-  mandado_seguranca: "Mandado de Segurança",
-  memorias: "Memoriais",
-  acordo: "Proposta de Acordo",
-  parecer: "Parecer Jurídico",
-  notificacao: "Notificação Extrajudicial",
-  contrato: "Minuta de Contrato",
-  impugnacao: "Impugnação",
+// Catálogo de peças e áreas vem de GET /pecas/meta (fonte única no backend).
+// O modal não espelha mais essas listas manualmente — busca no mount.
+interface TipoMeta {
+  value: string;
+  label: string;
+  grupo: string;
+}
+interface AreaMeta {
+  value: string;
+  label: string;
+}
+interface PecasMeta {
+  tipos?: TipoMeta[];
+  areas?: AreaMeta[];
+  niveis_complexidade?: string[];
+}
+
+// Rótulos legíveis dos grupos de tipo (TIPOS_PECA_GRUPO no backend) e a ordem
+// em que os <optgroup> aparecem no <select>.
+const GRUPO_LABEL: Record<string, string> = {
+  judicial_inicial: "Peça inicial",
+  judicial_pos: "Fase pós-inicial",
+  recurso: "Recursos",
+  extrajudicial: "Extrajudicial",
+};
+const GRUPO_ORDEM = [
+  "judicial_inicial",
+  "judicial_pos",
+  "recurso",
+  "extrajudicial",
+];
+
+// Fallback mínimo embutido — usado APENAS se GET /pecas/meta falhar, para não
+// quebrar o modal. Cobre um tipo de cada grupo e as áreas mais comuns.
+const TIPOS_FALLBACK: TipoMeta[] = [
+  {
+    value: "peticao_inicial",
+    label: "Petição Inicial",
+    grupo: "judicial_inicial",
+  },
+  { value: "contestacao", label: "Contestação", grupo: "judicial_pos" },
+  {
+    value: "replica",
+    label: "Réplica (Impugnação à Contestação)",
+    grupo: "judicial_pos",
+  },
+  { value: "recurso_ordinario", label: "Recurso Ordinário", grupo: "recurso" },
+  { value: "apelacao", label: "Apelação", grupo: "recurso" },
+  { value: "acordo", label: "Proposta de Acordo", grupo: "extrajudicial" },
+  {
+    value: "notificacao",
+    label: "Notificação Extrajudicial",
+    grupo: "extrajudicial",
+  },
+  { value: "contrato", label: "Minuta de Contrato", grupo: "extrajudicial" },
+];
+const AREAS_FALLBACK: AreaMeta[] = [
+  { value: "trabalhista", label: "Trabalhista" },
+  { value: "civil", label: "Cível" },
+  { value: "previdenciario", label: "Previdenciário" },
+  { value: "tributario", label: "Tributário" },
+  { value: "criminal", label: "Criminal" },
+  { value: "consumidor", label: "Consumidor" },
+  { value: "administrativo", label: "Administrativo" },
+  { value: "familia", label: "Família" },
+];
+
+// Nível de complexidade / rito (GET /pecas/meta → niveis_complexidade). Fallback
+// embutido usado APENAS se o meta não trouxer a lista. Rótulos legíveis abaixo.
+const NIVEIS_FALLBACK = [
+  "comum",
+  "simples",
+  "completa",
+  "estrategica",
+  "juizado_especial",
+];
+const NIVEL_LABEL: Record<string, string> = {
+  comum: "Procedimento comum",
+  simples: "Simples/enxuta",
+  completa: "Completa",
+  estrategica: "Estratégica (+ teses alternativas)",
+  juizado_especial: "Juizado Especial (sumaríssimo)",
 };
 
-const AREAS: string[] = [
-  "trabalhista",
-  "civil",
-  "previdenciario",
-  "tributario",
-  "criminal",
-  "consumidor",
-  "administrativo",
-  "familia",
+// Teses condicionais — adição/override MANUAL do advogado. O backend também
+// deriva algumas automaticamente pelo caso/ficha; estas somam às automáticas.
+// Flags desconhecidas são ignoradas pelo backend.
+const FLAGS_TESES: { value: string; label: string }[] = [
+  { value: "dano_moral", label: "Dano moral" },
+  { value: "relacao_consumo", label: "Relação de consumo" },
+  { value: "hipossuficiencia", label: "Hipossuficiência" },
+  {
+    value: "prova_documental_suficiente",
+    label: "Prova documental suficiente",
+  },
+  { value: "pedido_tutela", label: "Pedido de tutela de urgência" },
 ];
 
 interface Etapa {
@@ -85,6 +152,12 @@ interface Props {
   onClose: () => void;
   caseId?: string;
   onConcluido?: (logId: string, documento: string) => void;
+  /**
+   * Chamado quando o backend barra a geração por falta de ficha de triagem
+   * confirmada (HTTP 409 { need_ficha_triagem: true, case_id }). O pai deve
+   * levar o usuário à ficha. Recebe o case_id devolvido pelo backend.
+   */
+  onNeedFicha?: (caseId: string) => void;
 }
 
 type Fase = "form" | "gerando" | "concluido" | "erro";
@@ -94,21 +167,32 @@ export default function PecaGeneratorModal({
   onClose,
   caseId,
   onConcluido,
+  onNeedFicha,
 }: Props) {
   const [fase, setFase] = useState<Fase>("form");
   const [etapas, setEtapas] = useState<Etapa[]>(etapasInit());
   const [documento, setDocumento] = useState("");
   const [aiLogId, setAiLogId] = useState("");
+  const [codigoPeca, setCodigoPeca] = useState("");
   const [erroMsg, setErroMsg] = useState("");
   const [copiado, setCopiado] = useState(false);
   const [expandidos, setExpandidos] = useState<Set<number>>(new Set());
 
   const [tipoPeca, setTipoPeca] = useState("peticao_inicial");
   const [areaDireito, setAreaDireito] = useState("trabalhista");
+  const [nivelComplexidade, setNivelComplexidade] = useState("comum");
+  const [flagsTeses, setFlagsTeses] = useState<Set<string>>(new Set());
   const [fatos, setFatos] = useState("");
   const [pedidos, setPedidos] = useState("");
   const [instrucoes, setInstrucoes] = useState("");
   const [nomesProteger, setNomesProteger] = useState("");
+
+  // Catálogo (/pecas/meta): parte do fallback e é substituído ao carregar.
+  const [tipos, setTipos] = useState<TipoMeta[]>(TIPOS_FALLBACK);
+  const [areas, setAreas] = useState<AreaMeta[]>(AREAS_FALLBACK);
+  const [niveis, setNiveis] = useState<string[]>(NIVEIS_FALLBACK);
+  const [metaLoading, setMetaLoading] = useState(false);
+  const metaLoadedRef = useRef(false);
 
   const abortRef = useRef<AbortController | null>(null);
 
@@ -116,11 +200,42 @@ export default function PecaGeneratorModal({
   // vazamento da conexão quando o modal é removido durante a geração.
   useEffect(() => () => abortRef.current?.abort(), []);
 
+  // Busca o catálogo de peças/áreas na primeira abertura do modal. Falha é
+  // silenciosa (mantém o fallback embutido + toast discreto) para não quebrar
+  // o fluxo. Permite retry numa próxima abertura se a chamada falhar.
+  useEffect(() => {
+    if (!open || metaLoadedRef.current) return;
+    metaLoadedRef.current = true;
+    setMetaLoading(true);
+    api
+      .get<PecasMeta>("/pecas/meta")
+      .then(({ data }) => {
+        if (Array.isArray(data.tipos) && data.tipos.length) setTipos(data.tipos);
+        if (Array.isArray(data.areas) && data.areas.length) setAreas(data.areas);
+        if (
+          Array.isArray(data.niveis_complexidade) &&
+          data.niveis_complexidade.length
+        )
+          setNiveis(data.niveis_complexidade);
+      })
+      .catch(() => {
+        metaLoadedRef.current = false;
+        toast.error(
+          "Não foi possível carregar o catálogo de peças. Usando lista básica.",
+        );
+      })
+      .finally(() => setMetaLoading(false));
+  }, [open]);
+
+  const tipoLabel = (v: string) => tipos.find((t) => t.value === v)?.label ?? v;
+  const areaLabel = (v: string) => areas.find((a) => a.value === v)?.label ?? v;
+
   const resetForm = () => {
     setFase("form");
     setEtapas(etapasInit());
     setDocumento("");
     setAiLogId("");
+    setCodigoPeca("");
     setErroMsg("");
     setCopiado(false);
     setExpandidos(new Set());
@@ -144,6 +259,14 @@ export default function PecaGeneratorModal({
           : e,
       ),
     );
+  };
+
+  const toggleFlagTese = (value: string) => {
+    setFlagsTeses((prev) => {
+      const next = new Set(prev);
+      next.has(value) ? next.delete(value) : next.add(value);
+      return next;
+    });
   };
 
   const toggleExpandir = (num: number) => {
@@ -172,6 +295,8 @@ export default function PecaGeneratorModal({
     const body = JSON.stringify({
       tipo_peca: tipoPeca,
       area_direito: areaDireito,
+      nivel_complexidade: nivelComplexidade,
+      flags_teses: Array.from(flagsTeses),
       descricao_fatos: fatos,
       pedidos,
       nomes_proteger: nomesProteger
@@ -194,7 +319,23 @@ export default function PecaGeneratorModal({
         const err = await res
           .json()
           .catch(() => ({ detail: "Erro desconhecido" }));
-        throw new Error(err.detail ?? "Erro na requisição");
+        // Gate da ficha de triagem: peça com case_id exige ficha confirmada.
+        // FastAPI aninha o payload sob `detail`:
+        //   { detail: { detail, need_ficha_triagem: true, case_id } }
+        // O pai leva o usuário até a ficha; abortamos a geração sem erro cru.
+        const detailObj =
+          typeof err.detail === "object" && err.detail !== null
+            ? (err.detail as Record<string, any>)
+            : null;
+        if (res.status === 409 && detailObj?.need_ficha_triagem) {
+          setFase("form");
+          onNeedFicha?.(detailObj.case_id ?? caseId ?? "");
+          return;
+        }
+        const detail = detailObj
+          ? (detailObj.mensagem ?? detailObj.detail ?? JSON.stringify(detailObj))
+          : err.detail;
+        throw new Error(detail ?? "Erro na requisição");
       }
 
       const reader = res.body!.getReader();
@@ -231,6 +372,7 @@ export default function PecaGeneratorModal({
           } else if (eventLine === "concluido") {
             setDocumento(payload.documento ?? "");
             setAiLogId(payload.ai_log_id ?? "");
+            setCodigoPeca(payload.codigo_peca ?? "");
             setFase("concluido");
             onConcluido?.(payload.ai_log_id, payload.documento);
           } else if (eventLine === "erro") {
@@ -246,12 +388,15 @@ export default function PecaGeneratorModal({
   }, [
     tipoPeca,
     areaDireito,
+    nivelComplexidade,
+    flagsTeses,
     fatos,
     pedidos,
     instrucoes,
     nomesProteger,
     caseId,
     onConcluido,
+    onNeedFicha,
   ]);
 
   const copiar = () => {
@@ -265,7 +410,7 @@ export default function PecaGeneratorModal({
     const url = URL.createObjectURL(blob);
     const a = document.createElement("a");
     a.href = url;
-    a.download = `${TIPOS_PECA[tipoPeca] ?? "peca"}_EJC.txt`;
+    a.download = `${tipoLabel(tipoPeca)}_EJC.txt`;
     a.click();
     URL.revokeObjectURL(url);
   };
@@ -292,12 +437,36 @@ export default function PecaGeneratorModal({
                     value={tipoPeca}
                     onChange={(e) => setTipoPeca(e.target.value)}
                     className="input"
+                    disabled={metaLoading}
                   >
-                    {Object.entries(TIPOS_PECA).map(([k, v]) => (
-                      <option key={k} value={k}>
-                        {v}
-                      </option>
+                    {GRUPO_ORDEM.filter((g) =>
+                      tipos.some((t) => t.grupo === g),
+                    ).map((g) => (
+                      <optgroup key={g} label={GRUPO_LABEL[g] ?? g}>
+                        {tipos
+                          .filter((t) => t.grupo === g)
+                          .map((t) => (
+                            <option key={t.value} value={t.value}>
+                              {t.label}
+                            </option>
+                          ))}
+                      </optgroup>
                     ))}
+                    {/* Defensivo: tipos com grupo fora dos quatro conhecidos */}
+                    {(() => {
+                      const extras = tipos.filter(
+                        (t) => !GRUPO_ORDEM.includes(t.grupo),
+                      );
+                      return extras.length ? (
+                        <optgroup label="Outros">
+                          {extras.map((t) => (
+                            <option key={t.value} value={t.value}>
+                              {t.label}
+                            </option>
+                          ))}
+                        </optgroup>
+                      ) : null;
+                    })()}
                   </select>
                 </div>
                 <div>
@@ -308,15 +477,65 @@ export default function PecaGeneratorModal({
                     value={areaDireito}
                     onChange={(e) => setAreaDireito(e.target.value)}
                     className="input"
+                    disabled={metaLoading}
                   >
-                    {AREAS.map((a) => (
-                      <option key={a} value={a}>
-                        {a.charAt(0).toUpperCase() + a.slice(1)}
+                    {areas.map((a) => (
+                      <option key={a.value} value={a.value}>
+                        {a.label}
                       </option>
                     ))}
                   </select>
                 </div>
               </div>
+
+              <div>
+                <label
+                  htmlFor="peca-nivel"
+                  className="block text-xs font-medium text-slate-600 mb-1"
+                >
+                  Nível / rito
+                </label>
+                <select
+                  id="peca-nivel"
+                  value={nivelComplexidade}
+                  onChange={(e) => setNivelComplexidade(e.target.value)}
+                  className="input"
+                  disabled={metaLoading}
+                >
+                  {niveis.map((n) => (
+                    <option key={n} value={n}>
+                      {NIVEL_LABEL[n] ?? n}
+                    </option>
+                  ))}
+                </select>
+              </div>
+
+              <fieldset className="border border-slate-100 rounded-xl px-4 py-3">
+                <legend className="text-xs font-medium text-slate-600 px-1">
+                  Teses condicionais (opcional)
+                </legend>
+                <p className="text-xs text-slate-400 mb-2">
+                  O sistema já detecta algumas automaticamente pelo caso/ficha.
+                  Marque aqui apenas as que deseja adicionar manualmente — elas
+                  somam às automáticas.
+                </p>
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-x-4 gap-y-1.5">
+                  {FLAGS_TESES.map((f) => (
+                    <label
+                      key={f.value}
+                      className="flex items-center gap-2 text-sm text-slate-700 cursor-pointer"
+                    >
+                      <input
+                        type="checkbox"
+                        checked={flagsTeses.has(f.value)}
+                        onChange={() => toggleFlagTese(f.value)}
+                        className="rounded border-slate-300 text-ai-600 focus:ring-ai-500"
+                      />
+                      {f.label}
+                    </label>
+                  ))}
+                </div>
+              </fieldset>
 
               <div>
                 <label className="block text-xs font-medium text-slate-600 mb-1">
@@ -398,7 +617,7 @@ export default function PecaGeneratorModal({
                     : "Erro na geração"}
                 </h3>
                 <p className="text-xs text-slate-400">
-                  {TIPOS_PECA[tipoPeca]} · {areaDireito}
+                  {tipoLabel(tipoPeca)} · {areaLabel(areaDireito)}
                 </p>
               </div>
 
@@ -486,8 +705,15 @@ export default function PecaGeneratorModal({
                   className="text-green-600 flex-shrink-0"
                 />
                 <div className="flex-1">
-                  <div className="text-sm font-medium text-green-800">
-                    Peça gerada com sucesso
+                  <div className="flex flex-wrap items-center gap-2">
+                    <span className="text-sm font-medium text-green-800">
+                      Peça gerada com sucesso
+                    </span>
+                    {codigoPeca && (
+                      <Badge tone="ouro" className="font-mono">
+                        {codigoPeca}
+                      </Badge>
+                    )}
                   </div>
                   <div className="text-xs text-green-600">
                     Log ID: {aiLogId} · Aguarda revisão HITL

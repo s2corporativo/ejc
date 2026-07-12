@@ -7,7 +7,6 @@ import {
   Bell,
   ChevronRight,
   CheckCircle,
-  Clock,
   AlertCircle,
 } from "lucide-react";
 import api from "../../lib/api";

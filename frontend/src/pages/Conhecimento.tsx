@@ -16,9 +16,6 @@ import {
   AlertCircle,
   Filter,
   X,
-  ChevronDown,
-  Upload,
-  Link2,
   Download,
 } from "lucide-react";
 import api from "../lib/api";

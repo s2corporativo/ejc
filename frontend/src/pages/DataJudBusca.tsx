@@ -2,7 +2,6 @@ import { useState } from "react";
 import {
   Search,
   RefreshCw,
-  ExternalLink,
   AlertTriangle,
   CheckCircle,
   Clock,

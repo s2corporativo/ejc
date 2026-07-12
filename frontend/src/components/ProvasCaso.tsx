@@ -11,6 +11,9 @@ import {
   Sparkles,
   AlertTriangle,
   Plus,
+  ListChecks,
+  CheckCircle2,
+  Circle,
 } from "lucide-react";
 import api from "../lib/api";
 import { asList } from "../lib/list";
@@ -19,6 +22,7 @@ import {
   Modal,
   Alert,
   Spinner,
+  Badge,
   FieldLabel,
   Input,
   Select,
@@ -97,6 +101,48 @@ interface TeseResumo {
   label: string;
 }
 
+// ── Matriz tese×prova (referência determinística — Fase C) ────────────────────
+// GET /casos/{id}/provas/matriz → { data: [{ tese, provas: [...] }], total, area }
+interface MatrizTese {
+  tese: string;
+  provas: string[];
+}
+interface MatrizResp {
+  data: MatrizTese[];
+  total: number;
+  area: string;
+}
+
+// Normaliza texto p/ comparação: minúsculas, sem acento, só alfanumérico.
+function normalizar(s: string): string {
+  const diacriticos = /[̀-ͯ]/g;
+  return s
+    .toLowerCase()
+    .normalize("NFD")
+    .replace(diacriticos, "")
+    .replace(/[^a-z0-9\s]/g, " ")
+    .replace(/\s+/g, " ")
+    .trim();
+}
+
+// Heurística leve: a prova recomendada PROVAVELMENTE já está no acervo quando
+// alguma prova cadastrada contém o texto recomendado, ou cobre a maioria de
+// suas palavras significativas (≥4 letras). Só um indício visual — não afirma.
+function provavelmentePresente(
+  recomendada: string,
+  corpus: string[],
+): boolean {
+  const rec = normalizar(recomendada);
+  if (!rec) return false;
+  const palavras = rec.split(" ").filter((w) => w.length >= 4);
+  return corpus.some((item) => {
+    if (item.includes(rec)) return true;
+    if (palavras.length === 0) return false;
+    const casadas = palavras.filter((w) => item.includes(w)).length;
+    return casadas / palavras.length >= 0.6;
+  });
+}
+
 const TIPOS: { key: ProvaTipo; label: string }[] = [
   { key: "documental", label: "Documental" },
   { key: "pericial", label: "Pericial" },
@@ -162,6 +208,11 @@ export default function ProvasCaso({ caseId }: { caseId: string | number }) {
   const [reordenando, setReordenando] = useState(false);
   const [gerandoPdf, setGerandoPdf] = useState(false);
 
+  // MATRIZ tese×prova (referência determinística — Fase C, sem IA)
+  const [matriz, setMatriz] = useState<MatrizTese[]>([]);
+  const [matrizArea, setMatrizArea] = useState("");
+  const [matrizLoading, setMatrizLoading] = useState(true);
+
   // PROVAS FALTANTES (sugestão da IA — Etapa 6 do Mapa Probatório)
   const [sugestoes, setSugestoes] = useState<SugestaoFaltante[]>([]);
   const [sugerindo, setSugerindo] = useState(false);
@@ -201,6 +252,23 @@ export default function ProvasCaso({ caseId }: { caseId: string | number }) {
       })
       .catch(() => setDocs([]));
 
+  // Matriz tese×prova (referência estática). Erro é silencioso: não pode
+  // quebrar a tela — degrada para lista vazia (estado vazio discreto).
+  const carregarMatriz = () => {
+    setMatrizLoading(true);
+    return api
+      .get<MatrizResp>(`/casos/${caseId}/provas/matriz`)
+      .then((r) => {
+        setMatriz(asList<MatrizTese>(r.data));
+        setMatrizArea(r.data?.area || "");
+      })
+      .catch(() => {
+        setMatriz([]);
+        setMatrizArea("");
+      })
+      .finally(() => setMatrizLoading(false));
+  };
+
   // Teses/pedidos vinculados ao caso para vínculo opcional
   const carregarTeses = () =>
     api
@@ -225,6 +293,7 @@ export default function ProvasCaso({ caseId }: { caseId: string | number }) {
     carregar();
     carregarDocs();
     carregarTeses();
+    carregarMatriz();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [caseId]);
 
@@ -392,6 +461,14 @@ export default function ProvasCaso({ caseId }: { caseId: string | number }) {
     }
   };
 
+  // Corpus normalizado do acervo já cadastrado (título + descrição + fato),
+  // usado só para o indício visual "provável no acervo" na matriz.
+  const corpusProvas = provas.map((p) =>
+    normalizar(
+      [p.titulo, p.descricao ?? "", p.fato_probando ?? ""].join(" "),
+    ),
+  );
+
   return (
     <div className="space-y-4">
       <div className="flex flex-wrap items-center justify-between gap-2">
@@ -543,6 +620,84 @@ export default function ProvasCaso({ caseId }: { caseId: string | number }) {
           ))}
         </div>
       )}
+
+      {/* ── PROVA MÍNIMA RECOMENDADA (matriz tese×prova — referência estática) ── */}
+      <section
+        aria-labelledby="matriz-prova-titulo"
+        className="rounded-2xl border border-gold-200 bg-gold-50/40 p-4"
+      >
+        <div className="flex items-center gap-2">
+          <ListChecks size={18} className="text-gold-600" />
+          <div>
+            <h3
+              id="matriz-prova-titulo"
+              className="text-sm font-semibold text-navy"
+            >
+              Prova mínima recomendada (matriz tese×prova)
+            </h3>
+            <p className="text-xs text-slate-500">
+              Referência determinística das provas mínimas típicas por tese/pedido
+              {matrizArea ? ` · área: ${matrizArea}` : ""}. O indício “provável no
+              acervo” é apenas orientativo.
+            </p>
+          </div>
+        </div>
+
+        {matrizLoading ? (
+          <Spinner />
+        ) : matriz.length === 0 ? (
+          <p className="mt-3 text-sm text-slate-500">
+            Sem recomendações para esta área/tese.
+          </p>
+        ) : (
+          <div className="mt-3 space-y-3">
+            {matriz.map((linha, li) => (
+              <div
+                key={`${linha.tese}-${li}`}
+                className="rounded-xl border border-gold-100 bg-white p-3 shadow-sm"
+              >
+                <div className="mb-2 flex items-center gap-1.5">
+                  <Scale size={14} className="text-gold-700" />
+                  <span className="text-sm font-medium text-slate-900">
+                    {linha.tese}
+                  </span>
+                </div>
+                <ul className="space-y-1.5">
+                  {linha.provas.map((rec, pi) => {
+                    const provavel = provavelmentePresente(rec, corpusProvas);
+                    return (
+                      <li
+                        key={`${rec}-${pi}`}
+                        className="flex flex-wrap items-center gap-2 text-sm text-slate-700"
+                      >
+                        {provavel ? (
+                          <CheckCircle2
+                            size={15}
+                            className="shrink-0 text-success-600"
+                            aria-hidden
+                          />
+                        ) : (
+                          <Circle
+                            size={15}
+                            className="shrink-0 text-slate-300"
+                            aria-hidden
+                          />
+                        )}
+                        <span className="min-w-0 flex-1">{rec}</span>
+                        {provavel ? (
+                          <Badge tone="green">Provável no acervo</Badge>
+                        ) : (
+                          <Badge tone="slate">Recomendada</Badge>
+                        )}
+                      </li>
+                    );
+                  })}
+                </ul>
+              </div>
+            ))}
+          </div>
+        )}
+      </section>
 
       {/* ── PROVAS FALTANTES (sugestão da IA — Etapa 6 do Mapa Probatório) ── */}
       <div className="rounded-2xl border border-ai-200 bg-ai-50/40 p-4">

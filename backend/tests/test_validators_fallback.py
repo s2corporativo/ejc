@@ -3,7 +3,6 @@
 CNPJ: OpenCNPJ → BrasilAPI → ReceitaWS · CEP: BrasilAPI v2 → ViaCEP.
 Tudo sem rede — httpx mockado na indireção _get_json.
 """
-import pytest
 
 from app.services import validators_service as vs
 
