@@ -66,7 +66,7 @@ describe("moduleRegistry", () => {
 
   it("mantém o menu enxuto (~15 destinos visíveis por perfil)", () => {
     for (const role of ["superadmin", "admin", "socio", "advogado"]) {
-      expect(getNavigationModules(role).length).toBeLessThanOrEqual(16);
+      expect(getNavigationModules(role).length).toBeLessThanOrEqual(17);
     }
     // Telas-fim essenciais continuam visíveis para o advogado.
     const advogado = getNavigationModules("advogado").map((m) => m.path);

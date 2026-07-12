@@ -1,14 +1,16 @@
 // ── Visual Law: Calculadora de acordo (breakeven do litígio) ─────────────────
 // POST /visual-law/breakeven — compara VPL do litígio × acordo imediato.
 // Inclui seção opcional "Perfil do julgador" (POST /diplomacia-v3/analisar-magistrado).
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import {
   Calculator,
   ChevronDown,
   Gavel,
   Hourglass,
+  Landmark,
   Scale,
   Sparkles,
+  TrendingUp,
 } from "lucide-react";
 import api from "../../lib/api";
 import Markdown from "../Markdown";
