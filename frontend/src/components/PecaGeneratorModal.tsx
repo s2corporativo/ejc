@@ -1,5 +1,6 @@
 import { useEffect, useState, useRef, useCallback } from "react";
 import { authFetch } from "../lib/stream";
+import api from "../lib/api";
 import { Modal, Button } from "./UI";
 import { toast } from "./Toast";
 import {
@@ -18,36 +19,71 @@ import {
   ChevronUp,
 } from "lucide-react";
 
-const TIPOS_PECA: Record<string, string> = {
-  peticao_inicial: "Petição Inicial",
-  contestacao: "Contestação",
-  replica: "Réplica (Impugnação à Contestação)",
-  recurso_ordinario: "Recurso Ordinário",
-  apelacao: "Apelação",
-  contrarrazoes: "Contrarrazões",
-  embargos_declaracao: "Embargos de Declaração",
-  agravo: "Agravo",
-  cumprimento_sentenca: "Cumprimento de Sentença",
-  impugnacao_cumprimento: "Impugnação ao Cumprimento de Sentença",
-  embargos_execucao: "Embargos à Execução",
-  mandado_seguranca: "Mandado de Segurança",
-  memorias: "Memoriais",
-  acordo: "Proposta de Acordo",
-  parecer: "Parecer Jurídico",
-  notificacao: "Notificação Extrajudicial",
-  contrato: "Minuta de Contrato",
-  impugnacao: "Impugnação",
-};
+// Catálogo de peças e áreas vem de GET /pecas/meta (fonte única no backend).
+// O modal não espelha mais essas listas manualmente — busca no mount.
+interface TipoMeta {
+  value: string;
+  label: string;
+  grupo: string;
+}
+interface AreaMeta {
+  value: string;
+  label: string;
+}
+interface PecasMeta {
+  tipos?: TipoMeta[];
+  areas?: AreaMeta[];
+  niveis_complexidade?: string[];
+}
 
-const AREAS: string[] = [
-  "trabalhista",
-  "civil",
-  "previdenciario",
-  "tributario",
-  "criminal",
-  "consumidor",
-  "administrativo",
-  "familia",
+// Rótulos legíveis dos grupos de tipo (TIPOS_PECA_GRUPO no backend) e a ordem
+// em que os <optgroup> aparecem no <select>.
+const GRUPO_LABEL: Record<string, string> = {
+  judicial_inicial: "Peça inicial",
+  judicial_pos: "Fase pós-inicial",
+  recurso: "Recursos",
+  extrajudicial: "Extrajudicial",
+};
+const GRUPO_ORDEM = [
+  "judicial_inicial",
+  "judicial_pos",
+  "recurso",
+  "extrajudicial",
+];
+
+// Fallback mínimo embutido — usado APENAS se GET /pecas/meta falhar, para não
+// quebrar o modal. Cobre um tipo de cada grupo e as áreas mais comuns.
+const TIPOS_FALLBACK: TipoMeta[] = [
+  {
+    value: "peticao_inicial",
+    label: "Petição Inicial",
+    grupo: "judicial_inicial",
+  },
+  { value: "contestacao", label: "Contestação", grupo: "judicial_pos" },
+  {
+    value: "replica",
+    label: "Réplica (Impugnação à Contestação)",
+    grupo: "judicial_pos",
+  },
+  { value: "recurso_ordinario", label: "Recurso Ordinário", grupo: "recurso" },
+  { value: "apelacao", label: "Apelação", grupo: "recurso" },
+  { value: "acordo", label: "Proposta de Acordo", grupo: "extrajudicial" },
+  {
+    value: "notificacao",
+    label: "Notificação Extrajudicial",
+    grupo: "extrajudicial",
+  },
+  { value: "contrato", label: "Minuta de Contrato", grupo: "extrajudicial" },
+];
+const AREAS_FALLBACK: AreaMeta[] = [
+  { value: "trabalhista", label: "Trabalhista" },
+  { value: "civil", label: "Cível" },
+  { value: "previdenciario", label: "Previdenciário" },
+  { value: "tributario", label: "Tributário" },
+  { value: "criminal", label: "Criminal" },
+  { value: "consumidor", label: "Consumidor" },
+  { value: "administrativo", label: "Administrativo" },
+  { value: "familia", label: "Família" },
 ];
 
 interface Etapa {
@@ -117,11 +153,42 @@ export default function PecaGeneratorModal({
   const [instrucoes, setInstrucoes] = useState("");
   const [nomesProteger, setNomesProteger] = useState("");
 
+  // Catálogo (/pecas/meta): parte do fallback e é substituído ao carregar.
+  const [tipos, setTipos] = useState<TipoMeta[]>(TIPOS_FALLBACK);
+  const [areas, setAreas] = useState<AreaMeta[]>(AREAS_FALLBACK);
+  const [metaLoading, setMetaLoading] = useState(false);
+  const metaLoadedRef = useRef(false);
+
   const abortRef = useRef<AbortController | null>(null);
 
   // Aborta o stream SSE em voo ao desmontar — evita setState após unmount e
   // vazamento da conexão quando o modal é removido durante a geração.
   useEffect(() => () => abortRef.current?.abort(), []);
+
+  // Busca o catálogo de peças/áreas na primeira abertura do modal. Falha é
+  // silenciosa (mantém o fallback embutido + toast discreto) para não quebrar
+  // o fluxo. Permite retry numa próxima abertura se a chamada falhar.
+  useEffect(() => {
+    if (!open || metaLoadedRef.current) return;
+    metaLoadedRef.current = true;
+    setMetaLoading(true);
+    api
+      .get<PecasMeta>("/pecas/meta")
+      .then(({ data }) => {
+        if (Array.isArray(data.tipos) && data.tipos.length) setTipos(data.tipos);
+        if (Array.isArray(data.areas) && data.areas.length) setAreas(data.areas);
+      })
+      .catch(() => {
+        metaLoadedRef.current = false;
+        toast.error(
+          "Não foi possível carregar o catálogo de peças. Usando lista básica.",
+        );
+      })
+      .finally(() => setMetaLoading(false));
+  }, [open]);
+
+  const tipoLabel = (v: string) => tipos.find((t) => t.value === v)?.label ?? v;
+  const areaLabel = (v: string) => areas.find((a) => a.value === v)?.label ?? v;
 
   const resetForm = () => {
     setFase("form");
@@ -289,7 +356,7 @@ export default function PecaGeneratorModal({
     const url = URL.createObjectURL(blob);
     const a = document.createElement("a");
     a.href = url;
-    a.download = `${TIPOS_PECA[tipoPeca] ?? "peca"}_EJC.txt`;
+    a.download = `${tipoLabel(tipoPeca)}_EJC.txt`;
     a.click();
     URL.revokeObjectURL(url);
   };
@@ -316,12 +383,36 @@ export default function PecaGeneratorModal({
                     value={tipoPeca}
                     onChange={(e) => setTipoPeca(e.target.value)}
                     className="input"
+                    disabled={metaLoading}
                   >
-                    {Object.entries(TIPOS_PECA).map(([k, v]) => (
-                      <option key={k} value={k}>
-                        {v}
-                      </option>
+                    {GRUPO_ORDEM.filter((g) =>
+                      tipos.some((t) => t.grupo === g),
+                    ).map((g) => (
+                      <optgroup key={g} label={GRUPO_LABEL[g] ?? g}>
+                        {tipos
+                          .filter((t) => t.grupo === g)
+                          .map((t) => (
+                            <option key={t.value} value={t.value}>
+                              {t.label}
+                            </option>
+                          ))}
+                      </optgroup>
                     ))}
+                    {/* Defensivo: tipos com grupo fora dos quatro conhecidos */}
+                    {(() => {
+                      const extras = tipos.filter(
+                        (t) => !GRUPO_ORDEM.includes(t.grupo),
+                      );
+                      return extras.length ? (
+                        <optgroup label="Outros">
+                          {extras.map((t) => (
+                            <option key={t.value} value={t.value}>
+                              {t.label}
+                            </option>
+                          ))}
+                        </optgroup>
+                      ) : null;
+                    })()}
                   </select>
                 </div>
                 <div>
@@ -332,10 +423,11 @@ export default function PecaGeneratorModal({
                     value={areaDireito}
                     onChange={(e) => setAreaDireito(e.target.value)}
                     className="input"
+                    disabled={metaLoading}
                   >
-                    {AREAS.map((a) => (
-                      <option key={a} value={a}>
-                        {a.charAt(0).toUpperCase() + a.slice(1)}
+                    {areas.map((a) => (
+                      <option key={a.value} value={a.value}>
+                        {a.label}
                       </option>
                     ))}
                   </select>
@@ -422,7 +514,7 @@ export default function PecaGeneratorModal({
                     : "Erro na geração"}
                 </h3>
                 <p className="text-xs text-slate-400">
-                  {TIPOS_PECA[tipoPeca]} · {areaDireito}
+                  {tipoLabel(tipoPeca)} · {areaLabel(areaDireito)}
                 </p>
               </div>
 
