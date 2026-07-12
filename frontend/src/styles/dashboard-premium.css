@@ -43,7 +43,7 @@
 
 .ejc-modern-scope > div > .space-y-6 > .flex.flex-col.gap-4:first-child .btn-primary {
   background: #d4af37;
-  color: #2d1b14;
+  color: #3b2f0b;
   box-shadow: 0 16px 34px rgba(212, 175, 55, 0.28);
 }
 
@@ -111,7 +111,7 @@
 .dark .ejc-modern-scope > div > .space-y-6 > .flex.flex-col.gap-4:first-child {
   background:
     radial-gradient(circle at 10% 15%, rgba(212, 175, 55, 0.18), transparent 18rem),
-    linear-gradient(135deg, #21150f, #3a2a1f 58%, #5e4429);
+    linear-gradient(135deg, #251d06, #3b2f0b 58%, #55420d);
   box-shadow:
     0 1px 2px rgba(0, 0, 0, 0.28),
     0 28px 80px rgba(0, 0, 0, 0.46);

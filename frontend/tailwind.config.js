@@ -6,46 +6,50 @@ export default {
     extend: {
       colors: {
         /*
-         * Design System "De Paula Teixeira" — luxo jurídico (mockup Opção 1).
+         * Design System "De Paula Teixeira" — luxo jurídico DOURADO.
+         * O papel do marrom/bronze foi transferido para a família OURO
+         * (mesma família dos PDFs Visual Law — token `ouro` abaixo).
          * Tokens oficiais (fonte única — documentados aqui):
-         *   Marrom Profundo #2D1B14 — topo da sidebar em gradiente e botões
-         *     sólidos primários (texto branco = 16,4:1, AAA).
-         *   Bronze Metálico #A67C52 — hover/ativo da sidebar, ícones e
-         *     bordas de destaque (3,7:1 — só componente de UI, nunca texto
-         *     pequeno sobre branco; para texto use #7A5A3A = 6,3:1 AA).
-         *   Dourado #D4AF37 — destaques GRÁFICOS (linhas de gráfico,
-         *     indicadores, filetes, ícones de KPI). Não é texto sobre
-         *     branco (2,1:1); no modo ESCURO vira texto-acento (#E5CE7F
-         *     = 11,4:1 sobre #1C1712).
-         *   Canvas Off-White #F8F9FA + cards branco puro; raio 12–16px
+         *   Ouro Near-Black #3B2F0B — texto de destaque e início dos
+         *     gradientes escuros (13,2:1 sobre branco, AAA).
+         *   Ouro #8F7117 — ação/texto-acento (4,6:1 sobre branco = AA;
+         *     texto branco sobre ele = 4,6:1 AA).
+         *   Ouro Profundo #6F5711 — texto-acento forte (6,9:1 AA/AAA).
+         *   Ouro Claro #C9A227 / Dourado #D4AF37 — destaques GRÁFICOS
+         *     (filetes, ícones de KPI, fim de gradiente metálico). Não é
+         *     texto sobre branco (2,1–2,4:1); no modo ESCURO o acento de
+         *     texto é #E5CE7F (11,4:1 sobre #1C180E).
+         *   Canvas Off-White quente + cards branco puro; raio 12–16px
          *     (rounded-xl/2xl); sombras muito suaves.
          * Nomes de tokens preservados (fan-in alto nas 64 páginas);
-         * apenas os VALORES foram repintados.
+         * apenas os VALORES foram repintados (marrom → ouro).
          */
 
-        // Sidebar — gradiente marrom→bronze (ver .sidebar-bronze no CSS)
+        // Sidebar — gradiente ouro-escuro (ver .sidebar-bronze no CSS)
         sidebar: {
-          DEFAULT: "#2D1B14",
-          light: "#4A3427",
-          hover: "rgba(166,124,82,0.18)",
-          active: "rgba(166,124,82,0.20)",
+          DEFAULT: "#3B2F0B",
+          light: "#55420D",
+          hover: "rgba(201,162,39,0.16)",
+          active: "rgba(201,162,39,0.20)",
         },
-        // Primária — marrom/bronze/dourado (ação/marca)
+        // Primária — escala OURO (ação/marca)
         primary: {
-          DEFAULT: "#A67C52",
-          50: "#FAF7F0",
-          100: "#F2E9D8",
-          200: "#E9DCB8",
+          DEFAULT: "#A6842A",
+          50: "#FBF8EC",
+          100: "#F7F1DC",
+          200: "#EFE3B4",
           300: "#E5CE7F",
           400: "#D4AF37",
-          500: "#A67C52",
-          // 600 calibrado p/ WCAG AA: 6,3:1 sobre branco (texto-acento
-          // bronze; #A67C52 puro = 3,7:1 falharia em texto pequeno)
-          600: "#7A5A3A",
-          700: "#5E4429",
-          800: "#44301D",
-          900: "#2D1B14",
-          950: "#1C110C",
+          // 500 calibrado: 3,5:1 sobre branco — só UI/ícone, nunca
+          // texto pequeno sobre branco (para texto use 600+)
+          500: "#A6842A",
+          // 600 calibrado p/ WCAG AA: 4,6:1 sobre branco (texto-acento
+          // ouro; #C9A227 puro = 2,4:1 falharia em texto pequeno)
+          600: "#8F7117",
+          700: "#6F5711",
+          800: "#55420D",
+          900: "#3B2F0B",
+          950: "#251D06",
         },
         // IA — laranja quente (superfícies de inteligência / acento)
         ai: {
