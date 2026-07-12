@@ -178,7 +178,11 @@ class NuvemFiscalProvider(NFSeProvider):
                     else:
                         detalhes.append(str(e))
         except Exception:
-            pass
+            logger.warning(
+                "[NFSe] Falha ao extrair detalhes do corpo de erro do provedor "
+                "(fail-soft): erro base preservado.",
+                exc_info=True,
+            )
         return NFSeProviderError(code, msg, detalhes)
 
     # ── Montagem do DPS (padrão nacional) ──────────────────────────────────────

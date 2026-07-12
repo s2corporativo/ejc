@@ -878,6 +878,8 @@ export default function SalaDeGuerra() {
           observacoes: c.observacoes ?? "",
         });
       })
+      // 403/erro (sem acesso ao caso): degrada para o EmptyState, sem crash.
+      .catch(() => setData(null))
       .finally(() => setLoading(false));
   }, [caseId]);
 

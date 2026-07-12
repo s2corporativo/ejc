@@ -23,7 +23,7 @@ import {
 } from "lucide-react";
 import api from "../lib/api";
 import { toast } from "./Toast";
-import { Modal, Spinner, Empty } from "./UI";
+import { Modal, Spinner, Empty, ConfirmModal } from "./UI";
 import type { Client } from "../types";
 import { asList } from "../lib/list";
 
@@ -138,6 +138,8 @@ export default function LgpdRegistros() {
 
   // RIPD PDF
   const [gerandoRipd, setGerandoRipd] = useState(false);
+  const [pendenteExcluir, setPendenteExcluir] =
+    useState<RegistroTratamento | null>(null);
 
   useEffect(() => {
     api
@@ -244,17 +246,18 @@ export default function LgpdRegistros() {
     }
   };
 
-  const excluir = async (r: RegistroTratamento) => {
-    if (
-      !window.confirm(
-        `Remover a operação "${r.nome_operacao}" do registro (ROPA)?`,
-      )
-    )
-      return;
+  const excluir = (r: RegistroTratamento) => {
+    setPendenteExcluir(r);
+  };
+
+  const confirmarExclusao = async () => {
+    if (!pendenteExcluir) return;
+    const r = pendenteExcluir;
     try {
       await api.delete(`/lgpd/registros/${r.id}`);
       toast.success("Operação removida do registro.");
       if (expandido === r.id) setExpandido(null);
+      setPendenteExcluir(null);
       carregar();
     } catch (e: any) {
       toast.error(detalheErro(e, "Erro ao remover a operação."));
@@ -712,6 +715,20 @@ export default function LgpdRegistros() {
           </button>
         </div>
       </Modal>
+
+      <ConfirmModal
+        open={pendenteExcluir !== null}
+        onClose={() => setPendenteExcluir(null)}
+        onConfirm={confirmarExclusao}
+        title="Remover registro"
+        message={
+          pendenteExcluir
+            ? `Remover a operação "${pendenteExcluir.nome_operacao}" do registro (ROPA)?`
+            : undefined
+        }
+        confirmLabel="Remover"
+        variant="danger"
+      />
     </div>
   );
 }

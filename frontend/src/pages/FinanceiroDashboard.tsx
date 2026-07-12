@@ -110,7 +110,13 @@ export default function FinanceiroDashboard() {
     try {
       const r = await api.get(`/relatorio/mensal?mes=${competencia}`);
       setRelatorio(r.data);
-    } catch {}
+    } catch (e: any) {
+      setRelatorio(null);
+      setErro(
+        e?.response?.data?.detail ||
+          "Não foi possível carregar o relatório mensal. Tente atualizar.",
+      );
+    }
   };
 
   const exportarCSV = async () => {

@@ -47,6 +47,9 @@ export const ROLES = {
     "estagiario",
   ],
   compliance: ["superadmin", "admin", "socio", "advogado"],
+  // Espelha a matriz `_CLIENTES` do backend (routers/clients.py): gestão e
+  // consulta de clientes. financeiro/estagiario/advogado_auxiliar recebem 403.
+  clientes: ["superadmin", "admin", "socio", "advogado", "secretaria"],
 } as const;
 
 export type ModuleStatus = "active" | "beta" | "legacy" | "hidden";
@@ -167,6 +170,9 @@ export const STAFF_ROUTES: ModuleRoute[] = [
     group: "Principal",
     icon: Plus,
     component: Casos,
+    // Abertura de caso cria/seleciona cliente (POST /clients → matriz
+    // _CLIENTES) e busca /users; perfis fora dessa matriz recebem 403.
+    roles: ROLES.clientes,
     showInNav: true,
     order: 20,
     helpKey: "casos",
@@ -196,6 +202,8 @@ export const STAFF_ROUTES: ModuleRoute[] = [
     group: "Gestão",
     icon: Briefcase,
     component: Clientes,
+    // Backend /clients (matriz _CLIENTES) nega financeiro/estagiario/auxiliar.
+    roles: ROLES.clientes,
     showInNav: true,
     order: 40,
     helpKey: "clientes",
@@ -309,6 +317,9 @@ export const STAFF_ROUTES: ModuleRoute[] = [
     group: "Inteligência Jurídica",
     icon: Scale,
     component: RamosHub,
+    // Ferramentas dos ramos exigem a equipe jurídica (_EQUIPE no backend);
+    // financeiro/secretaria recebem 403 ao acionar qualquer ferramenta.
+    roles: ROLES.juridico,
     showInNav: true,
     order: 30,
     helpKey: "ramos",
@@ -828,7 +839,8 @@ export const STAFF_ROUTES: ModuleRoute[] = [
     group: "Gestão",
     icon: Bell,
     component: Whatsapp,
-    status: "beta",
+    // Stub "em desenvolvimento": oculto da navegação até a integração existir.
+    status: "hidden",
     showInNav: false,
     sensitive: true,
     backendPrefixes: ["/api/whatsapp", "/api/webhooks"],

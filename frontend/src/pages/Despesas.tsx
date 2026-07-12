@@ -9,6 +9,7 @@ import {
   fmtDate,
   Spinner,
   Empty,
+  ConfirmModal,
 } from "../components/UI";
 
 interface Despesa {
@@ -96,6 +97,7 @@ export default function Despesas() {
   const [showForm, setShowForm] = useState(false);
   const [editId, setEditId] = useState<string | null>(null);
   const [form, setForm] = useState<FormState>({ ...EMPTY_FORM });
+  const [pendenteExcluir, setPendenteExcluir] = useState<string | null>(null);
 
   // filters
   const [filterCat, setFilterCat] = useState("");
@@ -192,9 +194,14 @@ export default function Despesas() {
     load();
   }
 
-  async function remove(id: string) {
-    if (!window.confirm("Excluir despesa?")) return;
-    await api.delete(`/v1/despesas/${id}`);
+  function remove(id: string) {
+    setPendenteExcluir(id);
+  }
+
+  async function confirmarExclusao() {
+    if (!pendenteExcluir) return;
+    await api.delete(`/v1/despesas/${pendenteExcluir}`);
+    setPendenteExcluir(null);
     load();
   }
 
@@ -541,6 +548,16 @@ export default function Despesas() {
           </div>
         </>
       </Modal>
+
+      <ConfirmModal
+        open={pendenteExcluir !== null}
+        onClose={() => setPendenteExcluir(null)}
+        onConfirm={confirmarExclusao}
+        title="Excluir"
+        message="Excluir esta despesa? Esta ação não pode ser desfeita."
+        confirmLabel="Excluir"
+        variant="danger"
+      />
     </div>
   );
 }

@@ -93,6 +93,9 @@ from app.routers import indice_risco
 from app.routers import indices
 from app.routers import infosimples_receita
 from app.routers import infosimples_tjmg
+from app.routers import car  # CAR/SICAR via conector Infosimples (reuso)
+from app.routers import transparencia  # CGU Portal da Transparência (sanções) — GATED
+from app.routers import pncp  # PNCP contratações públicas — GATED
 from app.routers import nfse
 from app.routers import intelligence_v3
 from app.routers import intimacoes
@@ -330,6 +333,9 @@ app.include_router(indice_risco.router, prefix=API)
 app.include_router(indices.router, prefix=API)  # Índices oficiais BCB (SGS + Olinda) — Bloco 1 das APIs públicas
 app.include_router(infosimples_receita.router, prefix=API)
 app.include_router(infosimples_tjmg.router, prefix=API)
+app.include_router(car.router, prefix=API)  # CAR/SICAR via Infosimples (consulta paga, reuso do conector)
+app.include_router(transparencia.router, prefix=API)  # CGU sanções CEIS/CNEP/CEPIM — GATED (default off)
+app.include_router(pncp.router, prefix=API)  # PNCP contratações públicas — GATED (default off)
 app.include_router(nfse.router, prefix=API)  # NFS-e (emissão fiscal GATED, homologação) — migração 085
 app.include_router(intelligence_v3.router, prefix=API)
 app.include_router(intimacoes.router, prefix=API)

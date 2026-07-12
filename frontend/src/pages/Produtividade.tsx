@@ -120,6 +120,8 @@ export default function Produtividade() {
     api
       .get(`/analytics/produtividade?periodo=${periodo}`)
       .then((r: { data: ProdData }) => setData(r.data))
+      // 403/erro (perfil sem acesso aos indicadores): degrada para "sem dados".
+      .catch(() => setData(null))
       .finally(() => setLoading(false));
   }, [periodo]);
 

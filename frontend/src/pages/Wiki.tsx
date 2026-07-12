@@ -1,12 +1,13 @@
 import { useEffect, useState } from "react";
 import api from "../lib/api";
-import { PageHeader, Spinner, Modal, Empty } from "../components/UI";
+import { PageHeader, Spinner, Modal, Empty, ConfirmModal } from "../components/UI";
 
 export default function Wiki() {
   const [paginas, setPaginas] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
   const [sel, setSel] = useState<any>(null);
   const [edit, setEdit] = useState<any>(null);
+  const [pendenteExcluir, setPendenteExcluir] = useState<string | null>(null);
 
   const carregar = () => {
     setLoading(true);
@@ -36,11 +37,15 @@ export default function Wiki() {
     });
   };
   const excluir = (id: string) => {
-    if (window.confirm("Remover esta página?"))
-      api.delete(`/wiki/${id}`).then(() => {
-        setSel(null);
-        carregar();
-      });
+    setPendenteExcluir(id);
+  };
+  const confirmarExclusao = () => {
+    if (!pendenteExcluir) return;
+    api.delete(`/wiki/${pendenteExcluir}`).then(() => {
+      setPendenteExcluir(null);
+      setSel(null);
+      carregar();
+    });
   };
 
   if (loading)
@@ -157,6 +162,16 @@ export default function Wiki() {
           </div>
         )}
       </Modal>
+
+      <ConfirmModal
+        open={pendenteExcluir !== null}
+        onClose={() => setPendenteExcluir(null)}
+        onConfirm={confirmarExclusao}
+        title="Remover página"
+        message="Remover esta página?"
+        confirmLabel="Remover"
+        variant="danger"
+      />
     </div>
   );
 }

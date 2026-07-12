@@ -218,6 +218,48 @@ def normalizar_receita_cnpj(item: dict) -> dict:
     }
 
 
+def normalizar_car_imovel(item: dict) -> dict:
+    """Normaliza um resultado de car-imovel (SICAR — Cadastro Ambiental Rural).
+
+    Tolerante a variações de campo (a Infosimples raspa o SICAR; o shape pode
+    evoluir). Coordenadas/polígono são devolvidos como vieram, quando houver.
+    """
+    item = item or {}
+    return {
+        "numero_car": _primeiro(item, "numero_car", "numero", "codigo_car", "registro_car", "car"),
+        "area_ha": _primeiro(item, "area_ha", "area", "area_imovel", "area_total_ha"),
+        "municipio": _primeiro(item, "municipio", "municipio_nome", "cidade"),
+        "uf": _primeiro(item, "uf", "estado", "sigla_uf"),
+        "situacao": _primeiro(item, "situacao", "situacao_cadastro", "status"),
+        "condicao_cadastro": _primeiro(
+            item, "condicao_cadastro", "condicao", "condicao_imovel"),
+        "coordenadas": _primeiro(item, "coordenadas", "centroide", "latitude_longitude"),
+        "poligono": _primeiro(item, "poligono", "perimetro", "geometria", "geometry"),
+        "nome_imovel": _primeiro(item, "nome_imovel", "nome", "denominacao"),
+    }
+
+
+def normalizar_car_demonstrativo(item: dict) -> dict:
+    """Normaliza um resultado de car-demonstrativo (situação/áreas ambientais).
+
+    Tolerante a campos ausentes: reserva legal, APP, uso restrito e situação
+    podem não vir em todos os imóveis."""
+    item = item or {}
+    return {
+        "situacao": _primeiro(item, "situacao", "situacao_cadastro", "status"),
+        "area_total": _primeiro(item, "area_total", "area_imovel", "area", "area_ha"),
+        "reserva_legal": _primeiro(
+            item, "reserva_legal", "area_reserva_legal", "rl"),
+        "app": _primeiro(item, "app", "area_preservacao_permanente", "area_app"),
+        "uso_restrito": _primeiro(item, "uso_restrito", "area_uso_restrito"),
+        "area_consolidada": _primeiro(
+            item, "area_consolidada", "area_rural_consolidada"),
+        "vegetacao_nativa": _primeiro(
+            item, "vegetacao_nativa", "remanescente_vegetacao_nativa"),
+        "modulos_fiscais": _primeiro(item, "modulos_fiscais", "modulo_fiscal"),
+    }
+
+
 # ── Estado persistido (sem migration — precedente backup_drive_state) ─────────
 
 async def _ensure_tabela(db: AsyncSession) -> None:

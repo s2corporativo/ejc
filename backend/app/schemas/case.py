@@ -1,6 +1,6 @@
 # ── app/schemas/case.py ──────────────────────────────────────────────────────
 from __future__ import annotations
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, field_validator
 from typing import Optional, List
 from datetime import datetime, date
 from decimal import Decimal
@@ -23,6 +23,19 @@ class CaseCreate(BaseModel):
     case_type: Optional[str] = "judicial"
     extrajudicial_type: Optional[str] = None
     has_judicial_process: Optional[bool] = False
+
+    @field_validator("area")
+    @classmethod
+    def _area_valida(cls, v: str) -> str:
+        # A coluna `area` é ENUM casearea no banco; um valor fora do enum estoura
+        # InvalidTextRepresentationError → 500. Validar aqui devolve 422 claro.
+        from app.models.case import CaseArea
+        validas = {a.value for a in CaseArea}
+        if v not in validas:
+            raise ValueError(
+                f"Área inválida: {v!r}. Válidas: {sorted(validas)}"
+            )
+        return v
 
 class CaseUpdate(BaseModel):
     titulo: Optional[str] = None

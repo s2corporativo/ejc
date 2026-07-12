@@ -1300,7 +1300,11 @@ async def _auditoria_processos():
                         except Exception as e:
                             logger.warning(f"[Auditoria] notif clientes {resp_id} falhou: {e}")
             except Exception:
-                pass  # tabela atendimentos pode não existir ainda (migration pendente)
+                logger.warning(
+                    "[Auditoria] Falha no bloco de clientes sem contato (fail-soft): "
+                    "o restante da auditoria segue.",
+                    exc_info=True,
+                )
 
             total_alertas = len(rows_mov) + len(rows_prazos)
             logger.info(f"[Auditoria] Concluída — {total_alertas} alerta(s) emitido(s)")

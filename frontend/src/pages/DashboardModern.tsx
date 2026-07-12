@@ -135,7 +135,11 @@ export default function DashboardModern() {
     const competencia = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}`;
     Promise.allSettled([
       api.get("/dashboard/"),
-      api.get("/jurimetria/overview"),
+      // /jurimetria/overview é restrito a sócio+ (403 para advogado/financeiro/
+      // estagiário): sem o gate, o widget dispararia um 403 a cada carga.
+      isManager
+        ? api.get("/jurimetria/overview")
+        : Promise.reject(new Error("sem permissão de jurimetria")),
       api.get("/deadlines/?status=pendente&page_size=100"),
       api.get("/movimentos/recentes?limit=8"),
       api.get("/cases/?page_size=200"),
