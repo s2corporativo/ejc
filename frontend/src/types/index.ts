@@ -99,6 +99,8 @@ export interface LegalDoc {
   tipo_peca: string;
   status: string;
   versao: number;
+  codigo_peca?: string | null;
+  area?: string | null;
   ai_generated: boolean;
   human_reviewed: boolean;
   case_id?: string;

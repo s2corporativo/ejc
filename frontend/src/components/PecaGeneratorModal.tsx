@@ -1,7 +1,7 @@
 import { useEffect, useState, useRef, useCallback } from "react";
 import { authFetch } from "../lib/stream";
 import api from "../lib/api";
-import { Modal, Button } from "./UI";
+import { Modal, Button, Badge } from "./UI";
 import { toast } from "./Toast";
 import {
   Sparkles,
@@ -173,6 +173,7 @@ export default function PecaGeneratorModal({
   const [etapas, setEtapas] = useState<Etapa[]>(etapasInit());
   const [documento, setDocumento] = useState("");
   const [aiLogId, setAiLogId] = useState("");
+  const [codigoPeca, setCodigoPeca] = useState("");
   const [erroMsg, setErroMsg] = useState("");
   const [copiado, setCopiado] = useState(false);
   const [expandidos, setExpandidos] = useState<Set<number>>(new Set());
@@ -234,6 +235,7 @@ export default function PecaGeneratorModal({
     setEtapas(etapasInit());
     setDocumento("");
     setAiLogId("");
+    setCodigoPeca("");
     setErroMsg("");
     setCopiado(false);
     setExpandidos(new Set());
@@ -370,6 +372,7 @@ export default function PecaGeneratorModal({
           } else if (eventLine === "concluido") {
             setDocumento(payload.documento ?? "");
             setAiLogId(payload.ai_log_id ?? "");
+            setCodigoPeca(payload.codigo_peca ?? "");
             setFase("concluido");
             onConcluido?.(payload.ai_log_id, payload.documento);
           } else if (eventLine === "erro") {
@@ -702,8 +705,15 @@ export default function PecaGeneratorModal({
                   className="text-green-600 flex-shrink-0"
                 />
                 <div className="flex-1">
-                  <div className="text-sm font-medium text-green-800">
-                    Peça gerada com sucesso
+                  <div className="flex flex-wrap items-center gap-2">
+                    <span className="text-sm font-medium text-green-800">
+                      Peça gerada com sucesso
+                    </span>
+                    {codigoPeca && (
+                      <Badge tone="ouro" className="font-mono">
+                        {codigoPeca}
+                      </Badge>
+                    )}
                   </div>
                   <div className="text-xs text-green-600">
                     Log ID: {aiLogId} · Aguarda revisão HITL

@@ -511,8 +511,15 @@ export default function Pecas() {
                     <div className="font-medium text-navy break-words">
                       {p.titulo}
                     </div>
+                    {p.codigo_peca && (
+                      <div className="mt-1">
+                        <Badge tone="slate" className="font-mono">
+                          {p.codigo_peca}
+                        </Badge>
+                      </div>
+                    )}
                     <div className="mt-0.5 text-xs capitalize text-slate-400">
-                      {p.tipo_peca.replace(/_/g, " ")} · v{p.versao} ·{" "}
+                      {p.tipo_peca.replace(/_/g, " ")} · v{p.versao}.0 ·{" "}
                       {fmtDate(p.created_at)}
                     </div>
                   </div>
@@ -602,7 +609,15 @@ export default function Pecas() {
                 {(Array.isArray(data.data) ? data.data : []).map((p) => (
                   <tr key={p.id} className="hover:bg-slate-50">
                     <td className="px-4 py-3 font-medium text-navy">
-                      {p.titulo}
+                      <div>{p.titulo}</div>
+                      {p.codigo_peca && (
+                        <Badge
+                          tone="slate"
+                          className="mt-1 font-mono font-normal"
+                        >
+                          {p.codigo_peca}
+                        </Badge>
+                      )}
                     </td>
                     <td className="px-4 py-3 text-xs capitalize">
                       {p.tipo_peca.replace(/_/g, " ")}
@@ -633,7 +648,9 @@ export default function Pecas() {
                         );
                       })()}
                     </td>
-                    <td className="px-4 py-3 text-slate-400">v{p.versao}</td>
+                    <td className="px-4 py-3 text-slate-400">
+                      v{p.versao}.0
+                    </td>
                     <td className="px-4 py-3 text-slate-400">
                       {fmtDate(p.created_at)}
                     </td>
