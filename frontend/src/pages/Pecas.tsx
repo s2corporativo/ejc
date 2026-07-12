@@ -27,6 +27,22 @@ import PecaGeneratorModal from "../components/PecaGeneratorModal";
 import CaseFilterChip from "../components/CaseFilterChip";
 import { useCasoFiltro } from "../contexts/useCasoFiltro";
 
+// responseType blob: erros 4xx/5xx chegam como Blob JSON — extrai o `detail`
+// legível para o toast (senão a falha seria silenciosa ou ilegível).
+async function blobErrorDetail(e: any): Promise<string | undefined> {
+  let detail = e.response?.data?.detail;
+  if (!detail && e.response?.data instanceof Blob) {
+    try {
+      detail = JSON.parse(await e.response.data.text())?.detail;
+    } catch {
+      /* corpo não-JSON — usa mensagem padrão do chamador */
+    }
+  }
+  return typeof detail === "object" && detail !== null
+    ? (detail.mensagem ?? JSON.stringify(detail).slice(0, 200))
+    : detail;
+}
+
 const TIPOS = [
   "peticao_inicial",
   "contestacao",
@@ -223,14 +239,19 @@ export default function Pecas() {
   };
 
   const baixarPdf = async (doc: LegalDoc) => {
-    const r = await api.get(`/legal-docs/${doc.id}/pdf`, {
-      responseType: "blob",
-    });
-    const url = URL.createObjectURL(r.data);
-    const a = document.createElement("a");
-    a.href = url;
-    a.download = `${doc.titulo}.pdf`;
-    a.click();
+    try {
+      const r = await api.get(`/legal-docs/${doc.id}/pdf`, {
+        responseType: "blob",
+      });
+      const url = URL.createObjectURL(r.data);
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = `${doc.titulo}.pdf`;
+      a.click();
+      URL.revokeObjectURL(url);
+    } catch (e: any) {
+      toast.error((await blobErrorDetail(e)) || "Falha ao gerar o PDF.");
+    }
   };
 
   const baixarDocx = async (doc: LegalDoc) => {
@@ -270,20 +291,10 @@ export default function Pecas() {
       a.click();
       URL.revokeObjectURL(url);
     } catch (e: any) {
-      let detail = e.response?.data?.detail;
-      // responseType blob: erros 422/503 chegam como Blob JSON — extrai o detail
-      if (!detail && e.response?.data instanceof Blob) {
-        try {
-          detail = JSON.parse(await e.response.data.text())?.detail;
-        } catch {
-          /* corpo não-JSON — usa mensagem padrão */
-        }
-      }
-      const msg =
-        typeof detail === "object" && detail !== null
-          ? (detail.mensagem ?? JSON.stringify(detail).slice(0, 200))
-          : detail;
-      toast.error(msg || "Falha ao gerar o documento único de impressão.");
+      toast.error(
+        (await blobErrorDetail(e)) ||
+          "Falha ao gerar o documento único de impressão.",
+      );
     } finally {
       setGerandoVL(null);
     }

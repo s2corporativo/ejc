@@ -71,7 +71,7 @@ export default function OnboardingTour() {
 
   return (
     <div
-      className="fixed inset-0 z-50 flex items-end sm:items-center justify-center p-4"
+      className="onboarding-tour fixed inset-0 z-50 flex items-end sm:items-center justify-center p-4"
       style={{ background: "rgba(0,0,0,0.35)" }}
       onClick={(event) => {
         if (event.target === event.currentTarget) fechar();
