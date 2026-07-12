@@ -3,46 +3,61 @@ from __future__ import annotations
 import re
 import unicodedata
 
-
+# Normalizações SEGURAS de apresentação: removem apenas o que realmente causa
+# mojibake/instabilidade (BOM, zero-width, NBSP, aspas curvas, travessões,
+# marcadores), PRESERVANDO a acentuação do português ("Petição" continua
+# "Petição"). A antiga dobra agressiva para ASCII mutilava texto jurídico
+# pt-BR armazenado/exibido e foi removida — WeasyPrint (PDF) e python-docx
+# (DOCX) suportam UTF-8 nativamente (fonte DejaVu Sans no template PDF).
 _REPLACEMENTS = {
-    "\ufeff": "",
-    "\u200b": "",
-    "\u200c": "",
-    "\u200d": "",
-    "\ufe0f": "",
-    "\u00a0": " ",
-    "\u2013": "-",
-    "\u2014": "-",
-    "\u2015": "-",
-    "\u2212": "-",
+    "\ufeff": "",   # BOM
+    "\u200b": "",   # zero-width space
+    "\u200c": "",   # zero-width non-joiner
+    "\u200d": "",   # zero-width joiner
+    "\ufe0f": "",   # variation selector (emoji)
+    "\u00a0": " ",  # NBSP
+    "\u2013": "-",  # en dash
+    "\u2014": "-",  # em dash
+    "\u2015": "-",  # horizontal bar
+    "\u2212": "-",  # minus sign
     "\u2018": "'",
     "\u2019": "'",
     "\u201c": '"',
     "\u201d": '"',
-    "\u2022": "-",
-    "\u00b7": "-",
+    "\u2022": "-",  # bullet
+    "\u00b7": "-",  # middle dot
     "\u2192": "->",
-    "\u00ba": "o",
-    "\u00aa": "a",
-    "\u00a7": "paragrafo",
 }
 
 
+# Reparo de mojibake UTF-8 lido como Latin-1 ("Ã§" no lugar de "ç"): restaura
+# o caractere CORRETO em vez de rebaixar para ASCII. Sequências mais longas
+# primeiro (o dict preserva ordem de inserção) para não quebrar pares.
 _MOJIBAKE = {
-    "Ã¡": "a", "Ã ": "a", "Ã¢": "a", "Ã£": "a", "Ã©": "e", "Ãª": "e",
-    "Ã­": "i", "Ã³": "o", "Ã´": "o", "Ãµ": "o", "Ãº": "u", "Ã§": "c",
-    "Ã": "A", "Ã€": "A", "Ã‚": "A", "Ãƒ": "A", "Ã‰": "E", "ÃŠ": "E",
-    "Ã": "I", "Ã“": "O", "Ã”": "O", "Ã•": "O", "Ãš": "U", "Ã‡": "C",
-    "NÂº": "No", "nÂº": "no", "Âº": "o", "Âª": "a", "Â§": "paragrafo", "Â·": "-",
-    "â€”": "-", "â€“": "-", "â†’": "->", "â€¢": "-", "âš ï¸": "ATENCAO:",
+    # minúsculas acentuadas
+    "\u00c3\u00a1": "á", "\u00c3\u00a0": "à", "\u00c3\u00a2": "â", "\u00c3\u00a3": "ã",
+    "\u00c3\u00a9": "é", "\u00c3\u00aa": "ê", "\u00c3\u00ad": "í",
+    "\u00c3\u00b3": "ó", "\u00c3\u00b4": "ô", "\u00c3\u00b5": "õ",
+    "\u00c3\u00ba": "ú", "\u00c3\u00a7": "ç",
+    # maiúsculas acentuadas (o 2º byte é um caractere de controle C1)
+    "\u00c3\x81": "Á", "\u00c3\x80": "À", "\u00c3\x82": "Â", "\u00c3\x83": "Ã",
+    "\u00c3\x89": "É", "\u00c3\x8a": "Ê", "\u00c3\x8d": "Í",
+    "\u00c3\x93": "Ó", "\u00c3\x94": "Ô", "\u00c3\x95": "Õ", "\u00c3\x9a": "Ú",
+    "\u00c3\x87": "Ç",
+    # símbolos comuns em texto jurídico
+    "N\u00c2\u00ba": "Nº", "n\u00c2\u00ba": "nº",
+    "\u00c2\u00ba": "º", "\u00c2\u00aa": "ª", "\u00c2\u00a7": "§", "\u00c2\u00b7": "-",
+    "\u00e2\x80\x94": "-", "\u00e2\x80\x93": "-", "\u00e2\x86\x92": "->",
+    "\u00e2\x80\u00a2": "-", "\u00e2\u0161\u00a0\u00ef\u00b8\u008f": "ATENÇÃO:",
 }
 
 
 def sem_caracteres_problematicos(texto: str | None) -> str:
-    """Remove simbolos instaveis para PDF/DOCX mantendo texto juridico legivel.
+    """Normaliza símbolos instáveis para armazenamento/exibição/PDF/DOCX.
 
-    A saida fica em ASCII para evitar mojibake em ambientes de VPS, PDF, DOCX,
-    downloads e impressao. Nao altera dados juridicos, apenas a apresentacao.
+    Repara mojibake, remove caracteres invisíveis/de controle e normaliza
+    aspas curvas/travessões. PRESERVA acentuação e símbolos jurídicos
+    (§, º, ª) — não altera o teor nem a grafia do texto jurídico.
     """
     if not texto:
         return ""
@@ -54,12 +69,25 @@ def sem_caracteres_problematicos(texto: str | None) -> str:
         saida = saida.replace(antigo, novo)
 
     saida = "".join(ch for ch in saida if ch == "\n" or ch == "\t" or unicodedata.category(ch)[0] != "C")
-    saida = unicodedata.normalize("NFKD", saida)
-    saida = "".join(ch for ch in saida if not unicodedata.combining(ch))
-    saida = saida.encode("ascii", "ignore").decode("ascii")
+    saida = unicodedata.normalize("NFC", saida)
     saida = re.sub(r"[^\S\n]+", " ", saida)
     saida = re.sub(r"\n{3,}", "\n\n", saida)
     return saida.strip()
+
+
+def ascii_seguro(texto: str | None) -> str:
+    """Dobra agressiva para ASCII (comportamento antigo de
+    sem_caracteres_problematicos). Use APENAS onde ASCII é obrigatório —
+    ex.: nomes de arquivo em Content-Disposition. NUNCA para conteúdo
+    jurídico armazenado ou exibido.
+    """
+    saida = sem_caracteres_problematicos(texto)
+    if not saida:
+        return ""
+    saida = saida.replace("º", "o").replace("ª", "a").replace("§", "paragrafo")
+    saida = unicodedata.normalize("NFKD", saida)
+    saida = "".join(ch for ch in saida if not unicodedata.combining(ch))
+    return saida.encode("ascii", "ignore").decode("ascii").strip()
 
 
 def padronizar_documento_juridico(conteudo: str | None) -> str:

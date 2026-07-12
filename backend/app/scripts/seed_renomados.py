@@ -1,4 +1,3 @@
-import json
 import asyncio
 from app.services.rag_juridico import RAGJuridico
 

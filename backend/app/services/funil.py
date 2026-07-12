@@ -9,7 +9,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.security import ROLE_LEVEL
 from app.models.user import User
-from app.models.client import Client, ClientStatus
+from app.models.client import Client
 
 ESTAGIOS = ["lead", "ativo", "inativo", "arquivado"]
 

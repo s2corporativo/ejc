@@ -1,7 +1,7 @@
 # ── app/schemas/auth.py ──────────────────────────────────────────────────────
 from __future__ import annotations
 from pydantic import BaseModel, EmailStr
-from typing import Literal, Optional
+from typing import Optional
 
 class LoginRequest(BaseModel):
     email: EmailStr

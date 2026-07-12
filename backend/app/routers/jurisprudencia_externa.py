@@ -8,8 +8,7 @@ Endpoints:
 """
 from __future__ import annotations
 
-from datetime import datetime, timezone, date as _date
-from typing import Optional
+from datetime import date as _date
 from uuid import uuid4
 
 from fastapi import APIRouter, Body, Depends, HTTPException, Query

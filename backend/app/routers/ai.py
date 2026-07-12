@@ -16,7 +16,7 @@ from app.core.security import get_current_user, ROLE_LEVEL
 from app.models.user import User
 from app.models.case import Case
 from app.models.ai_log import AILog, AIStatusHITL
-from app.services.ai_service import analisar_caso, resumir_documento
+from app.services.ai_service import analisar_caso, extrair_prazos_ia, resumir_documento
 from app.services.case_context import montar_dossie
 from app.schemas.ai import (
     AnalisarCasoRequest, ResumirDocRequest, HITLRevisaoRequest,
@@ -931,5 +931,14 @@ async def detectar_prazos(
     db: AsyncSession = Depends(get_db),
     cu: User = Depends(get_current_user),
 ):
-    """Extração de prazos por IA a partir de texto ou documento."""
-    return await extrair_prazos_ia(db, cu.id, req.texto, req.case_id)
+    """Extração de prazos por IA a partir de texto ou documento.
+
+    Retorna prazos estruturados (fail-safe: sem data fatal clara → descartado)
+    + AILog HITL, no mesmo padrão dos endpoints vizinhos.
+    """
+    if len(req.texto.strip()) < 50:
+        raise HTTPException(status_code=422, detail="Texto muito curto")
+    resultado = await extrair_prazos_ia(db, cu.id, req.texto, req.case_id)
+    if "erro" in resultado:
+        raise HTTPException(status_code=502, detail=resultado["erro"])
+    return resultado

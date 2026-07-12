@@ -5,7 +5,7 @@ arquivamento. Não substitui orientação jurídica — é documento operacional
 """
 from __future__ import annotations
 import logging
-from datetime import date, datetime, timedelta
+from datetime import date
 from typing import Optional
 
 from fastapi import APIRouter, Depends, HTTPException, Query

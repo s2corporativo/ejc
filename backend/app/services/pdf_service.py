@@ -90,8 +90,11 @@ _HTML_BASE = (
     .replace("§OURO§", vlt.OURO)
 )
 
-_HEADING_RE = re.compile(r"^(?:[IVXLCDM]+\.|[0-9]+\.|[A-Z][A-Z0-9 ,:/().-]{7,})\s*$")
-_ALERT_WORDS = ("ATENCAO", "REVISAO HUMANA", "NAO PROTOCOLAR", "RISCO", "ALERTA")
+# Aceita maiúsculas acentuadas ("PETIÇÃO INICIAL", "AÇÃO DE COBRANÇA") — o
+# conteúdo armazenado agora preserva acentuação (document_format).
+_HEADING_RE = re.compile(r"^(?:[IVXLCDM]+\.|[0-9]+\.|[A-ZÁÂÃÀÄÇÉÊËÍÎÏÓÔÕÖÚÛÜ][A-ZÁÂÃÀÄÇÉÊËÍÎÏÓÔÕÖÚÛÜ0-9ºª§ ,:/().-]{7,})\s*$")
+_ALERT_WORDS = ("ATENCAO", "ATENÇÃO", "REVISAO HUMANA", "REVISÃO HUMANA",
+                "NAO PROTOCOLAR", "NÃO PROTOCOLAR", "RISCO", "ALERTA")
 
 
 def _linha_e_titulo(linha: str) -> bool:

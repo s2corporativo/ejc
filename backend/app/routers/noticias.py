@@ -9,7 +9,6 @@ import re
 import asyncio
 import logging
 from xml.etree import ElementTree as ET
-from typing import Optional
 import httpx
 from fastapi import APIRouter, Depends, Query
 from app.core.security import get_current_user

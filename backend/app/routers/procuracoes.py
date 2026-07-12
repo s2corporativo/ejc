@@ -1,6 +1,6 @@
 # ── app/routers/procuracoes.py ───────────────────────────────────────────────
 from __future__ import annotations
-from datetime import datetime, timezone, date
+from datetime import date
 from uuid import uuid4
 from typing import Optional
 

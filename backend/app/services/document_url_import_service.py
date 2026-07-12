@@ -19,7 +19,6 @@ import ipaddress
 import re
 import socket
 from html.parser import HTMLParser
-from typing import Iterable
 from urllib.parse import urljoin, urlparse, urlunparse
 
 import httpx
