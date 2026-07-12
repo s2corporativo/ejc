@@ -37,7 +37,9 @@ slowapi==0.1.9
 bcrypt==4.0.1
 pyotp==2.9.0
 PyJWT==2.8.0
-cryptography==42.0.8
+# Item pós-auditoria (2026-07-12): bump 42.0.8 → 44.0.1 (CVE-2024-12797,
+# raw public key TLS; corrigido em 44.0.1). Testado com a suíte completa.
+cryptography==44.0.1
 
 # HTTP and integrations
 httpx==0.27.0
@@ -80,10 +82,11 @@ pydyf==0.10.0  # pin transitivo: pydyf>=0.11 quebra write_pdf no weasyprint 62.x
 reportlab==4.2.0  # relatorio_visual_law.py, visual_law_templates.py
 
 # AI/RAG
-langchain==0.2.5
-langchain-community==0.2.5
-langchain-core==0.2.9
-langchain-groq==0.1.6
+# Item pós-auditoria (2026-07-12): langchain/-community/-core/-groq/-text-splitters
+# REMOVIDOS — zero import em app/scripts/tests/alembic/seeds (o RAG usa
+# embedding_service + pgvector diretos; langfuse não depende de langchain em
+# runtime). Elimina a exposição às CVE-2024-8309 (SQLi) e CVE-2024-7774 (path
+# traversal) do langchain-community 0.2.x. Validado: suíte completa verde sem eles.
 anthropic==0.113.0  # providers/anthropic_provider.py (ai_gateway)
 fastembed==0.8.0  # PINADO (auditoria P2): versao flutuante = supply chain risk
 numpy==1.26.4
