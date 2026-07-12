@@ -28,6 +28,8 @@ from app.services.infosimples_service import (
     consultar,
     hash_parametros,
     mascarar_parametros,
+    normalizar_car_demonstrativo,
+    normalizar_car_imovel,
     normalizar_processo_tjmg,
     normalizar_receita_cnpj,
     normalizar_receita_cpf,
@@ -447,6 +449,82 @@ async def test_endpoint_receita_cnpj_503_flag_desligada(monkeypatch):
     with pytest.raises(HTTPException) as exc:
         await consultar_cnpj(body, db=_FakeDB(), cu=_socio())
     assert exc.value.status_code == 503
+
+
+# ── CAR (SICAR) via conector Infosimples — normalizers + endpoints ────────────
+
+def test_normalizar_car_imovel_tolerante():
+    imovel = normalizar_car_imovel({
+        "numero": "MG-3106705-ABCD", "area": "42.5", "municipio": "Betim",
+        "estado": "MG", "situacao_cadastro": "Ativo",
+        "coordenadas": {"lat": -19.9, "lng": -44.2},
+    })
+    assert imovel["numero_car"] == "MG-3106705-ABCD"
+    assert imovel["area_ha"] == "42.5"
+    assert imovel["municipio"] == "Betim" and imovel["uf"] == "MG"
+    assert imovel["situacao"] == "Ativo"
+    # Campos ausentes não quebram (tolerância).
+    assert normalizar_car_imovel({})["numero_car"] is None
+
+
+def test_normalizar_car_demonstrativo_tolerante():
+    demo = normalizar_car_demonstrativo({
+        "situacao": "Analisado", "area_imovel": "42.5",
+        "area_reserva_legal": "8.5", "area_app": "3.0",
+    })
+    assert demo["situacao"] == "Analisado"
+    assert demo["area_total"] == "42.5"
+    assert demo["reserva_legal"] == "8.5"
+    assert demo["app"] == "3.0"
+    assert normalizar_car_demonstrativo({})["situacao"] is None
+
+
+def test_rotas_car_montadas_em_main():
+    from app.main import app
+    paths = {getattr(r, "path", "") for r in app.routes}
+    assert any(p.endswith("/car/imovel") for p in paths)
+    assert any(p.endswith("/car/demonstrativo") for p in paths)
+
+
+async def test_endpoint_car_imovel_503_flag_desligada(monkeypatch):
+    from app.routers.car import CARIn, consultar_imovel
+
+    monkeypatch.setattr(get_settings(), "INFOSIMPLES_ENABLED", False)
+    with pytest.raises(HTTPException) as exc:
+        await consultar_imovel(CARIn(car="MG-3106705-ABCD"), db=_FakeDB(), cu=_socio())
+    assert exc.value.status_code == 503
+
+
+async def test_endpoint_car_imovel_normaliza(infosimples_ligado, monkeypatch):
+    from app.routers.car import CARIn, consultar_imovel
+
+    resposta = {**RESPOSTA_OK, "data": [{
+        "numero": "MG-3106705-ABCD", "area": "42.5", "municipio": "Betim",
+        "uf": "MG", "situacao": "Ativo",
+    }]}
+    chamadas: list = []
+    monkeypatch.setattr(infosimples_service, "_post_form", _fake_post(resposta, chamadas))
+
+    resp = await consultar_imovel(CARIn(car="MG-3106705-ABCD"), db=_FakeDB(), cu=_socio())
+
+    assert resp["numero_car"] == "MG-3106705-ABCD"
+    assert resp["municipio"] == "Betim"
+    assert resp["cache"] is False
+    # Caminho Infosimples correto e o número CAR vai no corpo (nunca na URL).
+    assert chamadas[0]["url"].endswith("/car-imovel")
+    assert chamadas[0]["dados"]["car"] == "MG-3106705-ABCD"
+    assert TOKEN_TESTE not in chamadas[0]["url"]
+
+
+async def test_endpoint_car_demonstrativo_404_sem_resultado(infosimples_ligado, monkeypatch):
+    from app.routers.car import CARIn, consultar_demonstrativo
+
+    monkeypatch.setattr(infosimples_service, "_post_form",
+                        _fake_post({**RESPOSTA_OK, "data": []}))
+    with pytest.raises(HTTPException) as exc:
+        await consultar_demonstrativo(CARIn(car="MG-3106705-ABCD"),
+                                      db=_FakeDB(), cu=_socio())
+    assert exc.value.status_code == 404
 
 
 # ── Status: booleans/contadores, sem segredos ──────────────────────────────────

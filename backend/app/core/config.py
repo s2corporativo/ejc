@@ -213,6 +213,23 @@ class Settings(BaseSettings):
     # Base oficial (POST {base}/{caminho} form-urlencoded). Só mude p/ testes.
     INFOSIMPLES_BASE_URL: str = "https://api.infosimples.com/api/v2/consultas"
 
+    # ── CGU Portal da Transparência — sanções (CEIS/CNEP/CEPIM) — GATED ──
+    # API pública de dados do governo federal (chave GRÁTIS, cadastro no portal).
+    # Só CONSULTA (GET); cache diário por (base, cnpj) com purga LGPD. Opt-in,
+    # desligada por padrão. Ver services/transparencia_service.
+    TRANSPARENCIA_ENABLED: bool = False
+    # Chave de acesso (header `chave-api-dados`) — NUNCA em logs/erros/retornos.
+    TRANSPARENCIA_API_KEY: str = ""
+    # Host oficial (default fixo anti-SSRF; a URL nunca vem de input do usuário).
+    TRANSPARENCIA_BASE_URL: str = "https://api.portaldatransparencia.gov.br/api-de-dados"
+
+    # ── PNCP — contratações públicas (consulta pública, sem chave) — GATED ──
+    # Portal Nacional de Contratações Públicas (Lei 14.133/2021). API pública,
+    # sem chave/segredo. Opt-in, desligada por padrão. Ver services/pncp_service.
+    PNCP_ENABLED: bool = False
+    # Host oficial (default fixo anti-SSRF; a URL nunca vem de input do usuário).
+    PNCP_BASE_URL: str = "https://pncp.gov.br/api/consulta/v1"
+
     # ── NFS-e — emissão fiscal via provedor (Nuvem Fiscal) — GATED ──────
     # Nasce DESLIGADO e em HOMOLOGAÇÃO: nunca emite nota real sem ativação
     # explícita do dono. A emissão REAL ainda exige (fora do EJC): certificado
