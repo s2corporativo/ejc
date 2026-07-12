@@ -143,10 +143,16 @@ export default function SecurityMenu({ user }: { user: any }) {
         <ChevronDown size={14} className="text-slate-400" />
       </button>
 
+      {/* Input oculto acionado apenas pelo item "Trocar foto de perfil".
+          aria-hidden + tabIndex=-1 tiram-no do fluxo de foco/acessibilidade:
+          por ser o primeiro input do DOM, automação e leitores de tela
+          podiam atingi-lo por engano (achado A11y da auditoria). */}
       <input
         ref={fileRef}
         type="file"
         accept="image/jpeg,image/png,image/webp"
+        aria-hidden="true"
+        tabIndex={-1}
         className="hidden"
         onChange={(event) => {
           const file = event.target.files?.[0];

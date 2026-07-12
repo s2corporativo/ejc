@@ -92,6 +92,12 @@ class Client(Base):
     # CRM
     origem         = Column(SAEnum(ClientOrigem), nullable=True)
     status         = Column(SAEnum(ClientStatus), nullable=False, default=ClientStatus.ativo)
+    # Funil de leads (CRMLeads/CentralRelacionamento — migration 087). Strings
+    # livres validadas no schema Pydantic (etapa restrita a ETAPAS_FUNIL) para
+    # não criar novo ENUM Postgres por valor de coluna de board.
+    etapa_funil    = Column(String(20),  nullable=True, index=True)   # lead|contato|reuniao|proposta|convertido|perdido
+    origem_lead    = Column(String(50),  nullable=True)               # ex.: "Indicação", "Instagram"
+    area_interesse = Column(String(100), nullable=True)               # ex.: "Trabalhista"
     observacoes    = Column(Text, nullable=True)
     # A FK para users.id EXISTE no banco desde a migration 001 (linha 85). O model
     # não a declarava — drift model↔banco (achado M9, Etapa 3). Declarar aqui apenas

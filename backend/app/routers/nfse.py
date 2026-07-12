@@ -7,11 +7,11 @@
 # o provedor, para não se perder se a chamada externa falhar). Idempotência:
 # referencia = fee-<id> — não emite segunda nota para um honorário já em curso.
 #
-#   GET  /nfse/status          — advogado+  (booleans/ambiente p/ gate da UI)
+#   GET  /nfse/status          — advogado+  (booleans/ambiente p/ gate da UI — sem dados)
 #   POST /nfse/emitir          — socio+     (rate limit; audit; idempotente)
-#   GET  /nfse/{id}            — advogado+  (atualiza do provedor se processando)
-#   GET  /nfse/{id}/pdf        — advogado+  (DANFSe)
-#   GET  /nfse/{id}/xml        — advogado+
+#   GET  /nfse/{id}            — perfil financeiro (socio+/financeiro — expõe honorários e CPF/CNPJ)
+#   GET  /nfse/{id}/pdf        — perfil financeiro (DANFSe)
+#   GET  /nfse/{id}/xml        — perfil financeiro
 #   POST /nfse/{id}/cancelar   — socio+     (motivo; audit)
 from __future__ import annotations
 
@@ -43,6 +43,22 @@ router = APIRouter(prefix="/nfse", tags=["NFS-e (emissão fiscal)"])
 # socio+ = socio, admin, superadmin (hierarquia ROLE_LEVEL). advogado+ inclui advogado.
 _SOCIO_MAIS = require_roles(["socio"])
 _ADVOGADO_MAIS = require_roles(["advogado"])
+
+# Item 5 (auditoria pré-produção): LEITURA de nota (consulta/PDF/XML) expõe
+# honorários e CPF/CNPJ do tomador — alinhado ao gate do módulo financeiro
+# (fees.py: _FINANCEIRO_TOTAL). `financeiro` tem nível hierárquico BAIXO (4),
+# então require_roles não serve aqui — é allowlist explícita de perfis.
+_PERFIS_FINANCEIROS = {"superadmin", "admin", "socio", "financeiro"}
+
+
+def _req_financeiro_leitura(cu: User = Depends(get_current_user)) -> User:
+    """Leitura de dados fiscais reservada aos perfis fiduciários (fees.py)."""
+    if getattr(cu.role, "value", str(cu.role)) not in _PERFIS_FINANCEIROS:
+        raise HTTPException(
+            status_code=403,
+            detail="Sem permissão para consultar dados fiscais",
+        )
+    return cu
 
 # Status em que uma nota "ocupa" a referência (idempotência do fee).
 _STATUS_ATIVOS = (NFSeStatus.processando.value, NFSeStatus.autorizada.value)
@@ -308,7 +324,7 @@ async def emitir_nfse(
 async def obter_nfse(
     nota_id: str,
     db: AsyncSession = Depends(get_db),
-    cu: User = Depends(_ADVOGADO_MAIS),
+    cu: User = Depends(_req_financeiro_leitura),
 ):
     """Consulta a nota; se `processando`, tenta atualizar do provedor."""
     nota = await db.get(NotaFiscalServico, nota_id)
@@ -330,7 +346,7 @@ async def obter_nfse(
 async def baixar_pdf_nfse(
     nota_id: str,
     db: AsyncSession = Depends(get_db),
-    cu: User = Depends(_ADVOGADO_MAIS),
+    cu: User = Depends(_req_financeiro_leitura),
 ):
     """Stream do DANFSe (PDF) da nota."""
     nota = await db.get(NotaFiscalServico, nota_id)
@@ -354,7 +370,7 @@ async def baixar_pdf_nfse(
 async def baixar_xml_nfse(
     nota_id: str,
     db: AsyncSession = Depends(get_db),
-    cu: User = Depends(_ADVOGADO_MAIS),
+    cu: User = Depends(_req_financeiro_leitura),
 ):
     """XML autorizado da nota."""
     nota = await db.get(NotaFiscalServico, nota_id)

@@ -7,7 +7,7 @@ from __future__ import annotations
 import enum
 from sqlalchemy import (
     Column, String, Date, DateTime, Text, Numeric, Boolean,
-    Enum as SAEnum, ForeignKey, Integer, func,
+    ForeignKey, Integer, func,
 )
 from sqlalchemy.orm import relationship
 from app.core.database import Base

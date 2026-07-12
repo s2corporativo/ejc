@@ -39,7 +39,7 @@ class PublicAPIClient:
 
     async def get_stf_jurisprudencia(self, query: str):
         # Exemplo de endpoint (requer ajuste conforme documentação oficial do STF)
-        url = f"https://api.stf.jus.br/jurisprudencia/v1/pesquisa"
+        url = "https://api.stf.jus.br/jurisprudencia/v1/pesquisa"
         return await self._fetch_with_cache(f"stf_{query}", url, {"q": query})
 
     async def get_cnpj_info(self, cnpj: str):

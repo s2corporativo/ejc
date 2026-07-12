@@ -5,7 +5,7 @@ Permite criar, editar, versionar e executar prompts com um clique.
 from uuid import uuid4
 from typing import List, Optional
 from fastapi import APIRouter, Depends, HTTPException, Body
-from sqlalchemy import Column, String, Text, DateTime, func, select
+from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 from pydantic import BaseModel
 

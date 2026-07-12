@@ -1,7 +1,7 @@
 # ── app/routers/case_partes.py ────────────────────────────────────────────────
 from __future__ import annotations
 from typing import Optional
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends
 from pydantic import BaseModel
 from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncSession

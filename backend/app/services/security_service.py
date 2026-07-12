@@ -62,12 +62,16 @@ def registrar_falha(chave: str) -> None:
     _falhas[chave] = [t for t in _falhas[chave] if t > corte]
 
 
-def esta_bloqueado(chave: str) -> tuple[bool, int]:
-    """Retorna (bloqueado, segundos_restantes)."""
+def esta_bloqueado(chave: str, max_falhas: int = MAX_FALHAS) -> tuple[bool, int]:
+    """Retorna (bloqueado, segundos_restantes).
+
+    `max_falhas` permite tetos por contexto: o padrão (5) protege o login;
+    contadores auxiliares (ex.: totp_pend:{ip} — passo "TOTP obrigatório" do
+    fluxo em 2 etapas) usam teto maior para não punir uso legítimo."""
     agora = datetime.now(timezone.utc)
     corte = agora - timedelta(seconds=JANELA_SEGUNDOS)
     recentes = [t for t in _falhas.get(chave, []) if t > corte]
-    if len(recentes) >= MAX_FALHAS:
+    if len(recentes) >= max_falhas:
         mais_antiga = min(recentes)
         restante = int((mais_antiga + timedelta(seconds=BLOQUEIO_SEGUNDOS)
                         - agora).total_seconds())

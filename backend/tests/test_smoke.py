@@ -21,7 +21,11 @@ def test_alembic_cadeia_integra():
     from alembic.script import ScriptDirectory
 
     script = ScriptDirectory.from_config(Config("alembic.ini"))
-    assert script.get_heads() == ["085_nfse"]
+    # Integridade = UMA head (sem bifurcação) e cadeia completa até a raiz.
+    # A head não é mais hardcoded: com agentes/PRs paralelos criando migrations
+    # que encadeiam entre si, fixar o nome do topo gerava falso-negativo a cada
+    # merge (o teste quebrava sem nenhuma bifurcação real).
+    assert len(script.get_heads()) == 1, f"cadeia bifurcada: {script.get_heads()}"
     revs = [r.revision for r in script.walk_revisions()]
     assert revs[-1] == "001_inicial"
     assert "048_processes" in revs
@@ -49,3 +53,5 @@ def test_alembic_cadeia_integra():
     assert "079_client_hash_partial_deleted" in revs
     assert "081_system_module_settings" in revs
     assert "082_notification_preferences" in revs
+    assert "085_nfse" in revs
+    assert "086_totp_secret_cifrado" in revs

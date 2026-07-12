@@ -259,15 +259,19 @@ export default function DashboardModern() {
         <div className="flex flex-col gap-5 xl:flex-row xl:items-center xl:justify-between">
           <div className="max-w-2xl">
             <div className="mb-2 flex flex-wrap items-center gap-2">
-              <Badge className="bg-white/10 text-primary-100 ring-white/15">
-                Operação segura
-              </Badge>
+              {/* tone="ouro" (pill clara + texto ouro-profundo) — as classes
+                  extras bg-white/10 + text-primary-100 disputavam com o tone
+                  padrão slate e o badge ficava ilegível no fundo sépia. */}
+              <Badge tone="ouro">Operação segura</Badge>
               <span className="inline-flex items-center gap-1.5 text-xs text-primary-100/80">
                 <ShieldCheck className="h-3.5 w-3.5" />
                 Auditoria e LGPD preservadas
               </span>
             </div>
-            <h2 className="text-xl font-semibold text-white md:text-2xl">
+            {/* !text-white: o seletor global `.ejc-modern-scope h2` (index.css)
+                pinta headings de #111827 e vencia o utilitário text-white,
+                deixando o título ilegível sobre o gradiente sépia escuro. */}
+            <h2 className="text-xl font-semibold !text-white md:text-2xl">
               Decida o que precisa de atenção agora
             </h2>
             <p className="mt-2 text-sm leading-6 text-primary-100/80">

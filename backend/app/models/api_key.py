@@ -9,7 +9,7 @@
 # chave é forçado ao escopo daquele cliente (isolamento LGPD — migration 055).
 from __future__ import annotations
 
-from sqlalchemy import Column, String, Boolean, DateTime, func, ForeignKey
+from sqlalchemy import Column, String, Boolean, DateTime, func
 
 from app.core.database import Base
 

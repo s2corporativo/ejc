@@ -132,12 +132,19 @@ export async function confirmarPrazo(deadlineId: string): Promise<Deadline> {
   return data;
 }
 
-export function logout() {
+// `redirectTo` permite chegar ao /login com contexto (ex.: ?motivo=senha-alterada
+// após a troca de senha obrigatória) — o redirect é hard, então toasts não
+// sobrevivem. Tipado como `unknown` porque logout também é usado direto como
+// onClick handler (recebe MouseEvent, que é ignorado).
+export function logout(redirectTo?: unknown) {
   // O backend limpa o cookie httpOnly ejc_refresh; o cookie vai junto via withCredentials.
   axios.post("/api/auth/logout", {}, { withCredentials: true }).catch(() => {});
   localStorage.removeItem("ejc_access");
   localStorage.removeItem("ejc_user");
-  window.location.href = "/login";
+  window.location.href =
+    typeof redirectTo === "string" && redirectTo.startsWith("/login?")
+      ? redirectTo
+      : "/login";
 }
 
 export default api;

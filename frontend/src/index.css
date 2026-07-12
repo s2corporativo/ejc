@@ -244,6 +244,14 @@
     backdrop-filter: blur(4px);
   }
 
+  /* O conteúdo das páginas vive num wrapper `relative z-10` (Layout), então
+     modais abertos ali ficariam ABAIXO do OnboardingTour (z-50 na raiz do
+     Layout). Em vez de brigar com stacking contexts, o tour pausa (some)
+     enquanto qualquer modal/drawer estiver aberto e volta ao fechá-lo. */
+  body:has([role="dialog"][aria-modal="true"]) .onboarding-tour {
+    display: none;
+  }
+
   /* ── Eyebrow / section label ──────────────────────────────── */
   .eyebrow {
     /* Ouro Profundo #6F5711 — 6,9:1 sobre branco (AA), filete institucional */

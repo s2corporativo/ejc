@@ -1,9 +1,16 @@
 # EJC backend dependencies
 
 # API
-fastapi==0.111.0
+# fastapi 0.116.x permite starlette <0.48; o pin explícito starlette>=0.47.2
+# garante as correções de segurança do Starlette:
+#   - CVE-2024-47874 / GHSA-f96h-pmfr-66vw (DoS por multipart sem limite,
+#     corrigido no 0.40);
+#   - CVE-2025-54121 / GHSA-2c2j-9gv5-cj73 (spool de multipart grande rodando
+#     no event loop → bloqueio do loop, corrigido no 0.47.2).
+fastapi==0.116.2
+starlette==0.47.3
 uvicorn[standard]==0.29.0
-python-multipart==0.0.9
+python-multipart==0.0.20  # >=0.0.18: CVE-2024-53981 (DoS por parsing multipart)
 
 # Database
 asyncpg==0.29.0
@@ -22,11 +29,13 @@ validators==0.28.3
 python-dateutil==2.9.0
 
 # Security
+# Item 7 da auditoria: python-jose[cryptography] e passlib REMOVIDOS — sem
+# nenhum import em app/ (o código usa PyJWT p/ JWT e bcrypt puro p/ senha,
+# ver core/security.py). A remoção também elimina `ecdsa` (transitiva do
+# python-jose, sem correção para CVE-2024-23342/Minerva) do ambiente.
 slowapi==0.1.9
-passlib[bcrypt]==1.7.4
 bcrypt==4.0.1
 pyotp==2.9.0
-python-jose[cryptography]==3.3.0
 PyJWT==2.8.0
 cryptography==42.0.8
 
@@ -63,6 +72,9 @@ Pillow==10.4.0
 pdf2image==1.17.0
 pytesseract==0.3.10
 defusedxml==0.7.1  # parse SEGURO de XML de terceiros (NF-e) — mitiga XXE/billion laughs (ocr_service.py, services/fiscal/nfe_parser.py)
+jinja2==3.1.6  # core/document_template_engine.py (import direto). Antes vinha
+               # por transitividade do fastapi 0.111 "gordo"; o 0.115 (slim)
+               # não a arrasta mais — dependência direta declarada aqui.
 weasyprint==62.1  # dossie_estrategico.py, pdf_service.py, visual_law_theme.py
 pydyf==0.10.0  # pin transitivo: pydyf>=0.11 quebra write_pdf no weasyprint 62.x
 reportlab==4.2.0  # relatorio_visual_law.py, visual_law_templates.py

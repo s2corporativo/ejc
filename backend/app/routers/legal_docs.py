@@ -19,7 +19,7 @@ from app.core.ownership import verificar_acesso_caso, is_gestao
 from app.models.case import Case
 from app.models.user import User
 from app.models.legal_doc import LegalDoc, PecaStatus
-from app.models.ai_log import AILog, AIStatusHITL
+from app.models.ai_log import AILog
 from app.models.rag import KnowledgeDoc
 from app.models.audit_log import criar_audit_log
 from app.services.case_intel import indexar_peca_rag
@@ -667,7 +667,9 @@ async def exportar_pdf(
                           doc_id, detalhes="Exportacao PDF protocolo")
     await db.commit()
 
-    safe_name = "".join(c if c.isalnum() or c in " -_" else "_" for c in titulo)[:60]
+    # Filename ASCII (Content-Disposition é latin-1): dobra só o NOME DO
+    # ARQUIVO — o conteúdo do PDF preserva a acentuação.
+    safe_name = _slug_arquivo(titulo, fallback="peca")
     return Response(
         content=pdf_bytes, media_type="application/pdf",
         headers={"Content-Disposition": f'attachment; filename="{safe_name}.pdf"'},

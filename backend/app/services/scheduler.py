@@ -43,7 +43,6 @@ def get_scheduler() -> AsyncIOScheduler:
 async def _morning_brief():
     """Briefing diário 07h00 — WhatsApp para o admin."""
     from app.core.database import AsyncSessionLocal
-    from app.services.notification_service import enviar_whatsapp
 
     try:
         async with AsyncSessionLocal() as db:
