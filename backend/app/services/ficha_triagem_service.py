@@ -312,10 +312,11 @@ async def salvar(db: AsyncSession, case_id: str, dados: dict, *,
         ficha.risco_processual = rp if rp in _RISCOS_VALIDOS else None
 
     if "confianca" in dados and isinstance(dados["confianca"], dict):
-        # Só ints 0-100 por chave — nunca persiste lixo.
+        # Só ints 0-100 e SÓ chaves conhecidas (CAMPOS_TRIAGEM) — nunca persiste
+        # lixo nem permite inflar o JSONB com chaves arbitrárias (auditoria).
         ficha.confianca = {
-            str(k): c for k, v in dados["confianca"].items()
-            if (c := _conf(v)) is not None
+            k: c for k, v in dados["confianca"].items()
+            if k in CAMPOS_TRIAGEM and (c := _conf(v)) is not None
         } or None
 
     ficha.status = "confirmada" if confirmar else "rascunho"
