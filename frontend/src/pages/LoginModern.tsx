@@ -1,8 +1,14 @@
 import { useState } from "react";
-import { Link, useLocation, useNavigate } from "react-router-dom";
+import {
+  Link,
+  useLocation,
+  useNavigate,
+  useSearchParams,
+} from "react-router-dom";
 import {
   AlertCircle,
   ArrowRight,
+  CheckCircle2,
   LockKeyhole,
   ShieldCheck,
   Sparkles,
@@ -66,6 +72,11 @@ export default function LoginModern() {
   const [loading, setLoading] = useState(false);
 
   const requestedPath = (location.state as LoginLocationState)?.from;
+
+  // Aviso pós-troca de senha obrigatória: logout() redireciona (hard) para
+  // /login?motivo=senha-alterada — sem isto o usuário caía deslogado sem feedback.
+  const [searchParams] = useSearchParams();
+  const senhaAlterada = searchParams.get("motivo") === "senha-alterada";
 
   const submit = async () => {
     setErro("");
@@ -214,6 +225,18 @@ export default function LoginModern() {
                 </p>
               </div>
 
+              {senhaAlterada && !erro && (
+                <div
+                  role="status"
+                  className="mb-4 flex items-start gap-2 rounded-xl bg-success-50 px-3 py-2.5 text-sm text-success-700 ring-1 ring-inset ring-success-200"
+                >
+                  <CheckCircle2 className="mt-0.5 h-4 w-4 shrink-0" />
+                  <span>
+                    Senha alterada com sucesso — entre novamente com a nova
+                    senha.
+                  </span>
+                </div>
+              )}
               {erro && (
                 <div className="mb-4 flex items-start gap-2 rounded-xl bg-danger-50 px-3 py-2.5 text-sm text-danger-700 ring-1 ring-inset ring-danger-200">
                   <AlertCircle className="mt-0.5 h-4 w-4 shrink-0" />

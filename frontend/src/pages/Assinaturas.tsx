@@ -1,5 +1,7 @@
 import { useState, useEffect, useCallback } from "react";
 import api from "../lib/api";
+import { asList } from "../lib/list";
+import { useAuth } from "../stores/auth";
 import { EmptyState, PageHeader, Spinner, Modal } from "../components/UI";
 import {
   FileSignature,
@@ -49,7 +51,9 @@ export default function Assinaturas() {
   const [modalAberto, setModalAberto] = useState(false);
   const [salvando, setSalvando] = useState(false);
   const [assinando, setAssinando] = useState<number | null>(null);
-  const [userEmail, setUserEmail] = useState<string>("");
+  // E-mail do usuário logado vem da sessão já carregada no bootstrap —
+  // evita uma chamada redundante (e ruidosa) a /users/me nesta página.
+  const userEmail = useAuth((s) => s.user?.email ?? "");
 
   const [form, setForm] = useState<NovaAssinaturaForm>({
     documento_nome: "",
@@ -64,7 +68,9 @@ export default function Assinaturas() {
       // Barra final obrigatória: sem ela o FastAPI responde 307 com Location
       // absoluto e o browser perde o Authorization no redirect (achado M1).
       const res = await api.get("/signatures/");
-      setSolicitacoes(res.data);
+      // O backend responde envelope { data: [...] } — asList() normaliza
+      // (array cru | { items } | { data }) e nunca quebra o .map da lista.
+      setSolicitacoes(asList<SolicitacaoAssinatura>(res.data));
     } catch {
       setSolicitacoes([]);
     } finally {
@@ -74,11 +80,6 @@ export default function Assinaturas() {
 
   useEffect(() => {
     fetchSolicitacoes();
-    // Tenta pegar email do usuário logado via token/storage
-    api
-      .get("/users/me")
-      .then((r: any) => setUserEmail(r.data?.email || ""))
-      .catch(() => {});
   }, [fetchSolicitacoes]);
 
   const abrirModal = () => {
@@ -129,7 +130,9 @@ export default function Assinaturas() {
       };
       if (form.case_id) payload.case_id = Number(form.case_id);
       if (form.document_id) payload.document_id = Number(form.document_id);
-      await api.post("/signatures", payload);
+      // Barra final obrigatória (mesmo motivo do GET acima): evita 307 que
+      // derruba o Authorization no redirect.
+      await api.post("/signatures/", payload);
       fecharModal();
       await fetchSolicitacoes();
     } finally {
