@@ -151,7 +151,12 @@ def parse_biblia(paras: list[list[str]]) -> tuple[list[dict[str, Any]], dict[str
         if d is None:
             stats["secoes_vazias_descartadas"] += 1
             return
-        # chave única: sufixo -2, -3... para títulos repetidos (ex.: MODELO A/B)
+        # chave única: sufixo -2, -3... para títulos repetidos (ex.: MODELO A/B).
+        # ATENÇÃO — os sufixos são POSICIONAIS (ordem de aparição no DOCX):
+        # reordenar/inserir/remover seções de mesmo título desloca as chaves
+        # (-2 vira -3 etc.); como o seed deduplica por chave_origem, isso NÃO
+        # duplica, mas cria VERSÕES novas dos docs cujas chaves mudaram (e as
+        # versões antigas ficam no histórico). Ver seeds/biblia_ejc/README.md.
         chave = d["chave_origem"]
         n = 2
         while d["chave_origem"] in chaves_vistas:

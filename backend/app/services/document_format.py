@@ -30,26 +30,45 @@ _REPLACEMENTS = {
 }
 
 
-# Reparo de mojibake UTF-8 lido como Latin-1 ("Ã§" no lugar de "ç"): restaura
-# o caractere CORRETO em vez de rebaixar para ASCII. Sequências mais longas
-# primeiro (o dict preserva ordem de inserção) para não quebrar pares.
-_MOJIBAKE = {
-    # minúsculas acentuadas
-    "\u00c3\u00a1": "á", "\u00c3\u00a0": "à", "\u00c3\u00a2": "â", "\u00c3\u00a3": "ã",
-    "\u00c3\u00a9": "é", "\u00c3\u00aa": "ê", "\u00c3\u00ad": "í",
-    "\u00c3\u00b3": "ó", "\u00c3\u00b4": "ô", "\u00c3\u00b5": "õ",
-    "\u00c3\u00ba": "ú", "\u00c3\u00a7": "ç",
-    # maiúsculas acentuadas (o 2º byte é um caractere de controle C1)
-    "\u00c3\x81": "Á", "\u00c3\x80": "À", "\u00c3\x82": "Â", "\u00c3\x83": "Ã",
-    "\u00c3\x89": "É", "\u00c3\x8a": "Ê", "\u00c3\x8d": "Í",
-    "\u00c3\x93": "Ó", "\u00c3\x94": "Ô", "\u00c3\x95": "Õ", "\u00c3\x9a": "Ú",
-    "\u00c3\x87": "Ç",
-    # símbolos comuns em texto jurídico
-    "N\u00c2\u00ba": "Nº", "n\u00c2\u00ba": "nº",
-    "\u00c2\u00ba": "º", "\u00c2\u00aa": "ª", "\u00c2\u00a7": "§", "\u00c2\u00b7": "-",
-    "\u00e2\x80\x94": "-", "\u00e2\x80\x93": "-", "\u00e2\x86\x92": "->",
-    "\u00e2\x80\u00a2": "-", "\u00e2\u0161\u00a0\u00ef\u00b8\u008f": "ATENÇÃO:",
-}
+# Reparo de mojibake UTF-8 lido como Latin-1 OU como cp1252 ("\u00c3\u00a7" no
+# lugar de "\u00e7"; "\u00c3\u2030", "\u00c3\u2021", "\u00e2\u20ac\u201d" — a forma cp1252, a MAIS
+# comum, gerada por Word/Windows): restaura o caractere CORRETO acentuado em
+# vez de rebaixar para ASCII. A tabela é GERADA a partir das duas
+# decodificações erradas de cada caractere — as formas divergem quando um byte
+# cai em 0x80–0x9F (controles C1 no latin-1; aspas curvas/travessões no
+# cp1252). PRECISA rodar ANTES de _REPLACEMENTS: as substituições de aspas
+# curvas/travessões destruiriam os trigramas cp1252 (ex.: "â€\u201d" contém "\u201d").
+_CHARS_MOJIBAKE = (
+    "áàâãéêíóôõúüçÁÀÂÃÉÊÍÓÔÕÚÜÇºª§"  # acentuação/símbolos jurídicos pt-BR
+    "\u2013\u2014\u2018\u2019\u201c\u201d\u2022\u2192"  # – — ‘ ’ “ ” • → (viram ASCII depois, em _REPLACEMENTS)
+)
+
+# Bytes sem definição no cp1252 — o WHATWG windows-1252 (usado pelos leitores
+# reais que produzem esse mojibake) os mantém como controles C1.
+_CP1252_INDEFINIDOS = {0x81, 0x8D, 0x8F, 0x90, 0x9D}
+
+
+def _decode_cp1252_tolerante(raw: bytes) -> str:
+    return "".join(
+        chr(b) if b in _CP1252_INDEFINIDOS else bytes([b]).decode("cp1252")
+        for b in raw
+    )
+
+
+def _gerar_mojibake() -> dict[str, str]:
+    tabela: dict[str, str] = {}
+    for ch in _CHARS_MOJIBAKE:
+        raw = ch.encode("utf-8")
+        for forma in (raw.decode("latin-1"), _decode_cp1252_tolerante(raw)):
+            if forma != ch:
+                tabela[forma] = ch
+    # caso especial observado no corpus (emoji ⚠️ duplamente codificado)
+    tabela["\u00e2\u0161\u00a0\u00ef\u00b8\u008f"] = "ATENÇÃO:"
+    # sequências mais longas primeiro, para não quebrar trigramas em pares
+    return dict(sorted(tabela.items(), key=lambda kv: -len(kv[0])))
+
+
+_MOJIBAKE = _gerar_mojibake()
 
 
 def sem_caracteres_problematicos(texto: str | None) -> str:

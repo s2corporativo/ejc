@@ -1,9 +1,14 @@
 # EJC backend dependencies
 
 # API
-# fastapi >=0.115 arrasta starlette >=0.40 — corrige CVE-2024-47874 (DoS por
-# multipart sem limite no Starlette) e CVE-2026-48817. Item 6 da auditoria.
-fastapi==0.115.14
+# fastapi 0.116.x permite starlette <0.48; o pin explícito starlette>=0.47.2
+# garante as correções de segurança do Starlette:
+#   - CVE-2024-47874 / GHSA-f96h-pmfr-66vw (DoS por multipart sem limite,
+#     corrigido no 0.40);
+#   - CVE-2025-54121 / GHSA-2c2j-9gv5-cj73 (spool de multipart grande rodando
+#     no event loop → bloqueio do loop, corrigido no 0.47.2).
+fastapi==0.116.2
+starlette==0.47.3
 uvicorn[standard]==0.29.0
 python-multipart==0.0.20  # >=0.0.18: CVE-2024-53981 (DoS por parsing multipart)
 

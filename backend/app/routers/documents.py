@@ -689,7 +689,15 @@ async def upload_para_drive(
     if case_id:
         folder_id = await _get_or_create_case_folder(case_id, db)
 
-    result = gd.upload_file(content, file.filename or "documento", mime, folder_id)
+    try:
+        result = gd.upload_file(content, file.filename or "documento", mime, folder_id)
+    except gd.DriveIndisponivelError:
+        # rclone/Google não configurado neste ambiente — 503 controlado
+        # (antes o RuntimeError vazava como 500).
+        raise HTTPException(
+            status_code=503,
+            detail="Google Drive não configurado/indisponível",
+        )
 
     # Salvar referência no banco
     from sqlalchemy import text as sql_text
@@ -794,15 +802,31 @@ async def download_documento(
 ):
     """Proxy de download — baixa do Drive e retorna ao cliente."""
     await _gate_drive_doc(db, current_user, file_id)
+    from urllib.parse import quote
     from fastapi.responses import Response
+    from app.services.document_format import ascii_seguro
     try:
         content, mime = gd.download_file(file_id)
         info = gd.get_file_link(file_id)
+        # Item 8: filename vem do Drive sem sanitização — aspas/;/CR-LF manglam
+        # (ou injetam) o header. ascii_seguro() remove controles e acentos;
+        # aspas/;/barras saem também. filename* (RFC 5987) preserva o nome real.
+        nome = (info.get("name") or "documento").strip()
+        nome_ascii = ascii_seguro(nome)
+        for ch in ('"', ";", "\\", "/"):
+            nome_ascii = nome_ascii.replace(ch, "")
+        # Colapsa QUALQUER whitespace (inclusive \n, que ascii_seguro preserva)
+        # — CR/LF em header = response splitting.
+        nome_ascii = " ".join(nome_ascii.split()) or "documento"
         return Response(
             content=content,
             media_type=mime,
-            headers={"Content-Disposition": f'attachment; filename="{info.get("name","documento")}"'},
+            headers={"Content-Disposition":
+                     f'attachment; filename="{nome_ascii}"; '
+                     f"filename*=UTF-8''{quote(nome, safe='')}"},
         )
+    except gd.DriveIndisponivelError:
+        raise HTTPException(503, "Google Drive não configurado/indisponível")
     except Exception:
         logger.warning("Falha ao baixar arquivo %s do Drive", file_id, exc_info=True)
         raise HTTPException(404, "Erro ao baixar o arquivo")
@@ -821,6 +845,11 @@ async def deletar_documento_drive(
     row = await _gate_drive_doc(db, current_user, file_id)
     try:
         gd.delete_file(file_id)
+    except gd.DriveIndisponivelError:
+        # Serviço indisponível ≠ "arquivo já não existe": apagar só o registro
+        # local deixaria o dado órfão no Drive (LGPD art. 18, V) — 503 e o
+        # cliente tenta de novo quando o Drive voltar.
+        raise HTTPException(503, "Google Drive não configurado/indisponível")
     except Exception:
         # Pode já ter sido removido do Drive — registra para diagnóstico.
         _logging.getLogger(__name__).warning(

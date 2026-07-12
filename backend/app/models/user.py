@@ -82,6 +82,13 @@ class RefreshToken(Base):
     jti        = Column(String(36), unique=True, nullable=False)  # JWT ID único
     expires_at = Column(DateTime(timezone=True), nullable=False)
     revoked    = Column(Boolean, default=False, nullable=False)
+    # Janela de graça anti-corrida multi-aba (migr. 088): quando a rotação
+    # revoga este token, grava QUANDO (revoked_at) e POR QUAL jti ele foi
+    # substituído (replaced_by_jti). Reuso do token da ÚLTIMA rotação dentro
+    # da graça (~60s) = corrida benigna entre abas → 401 simples; fora dela
+    # (ou token de rotação mais antiga) = replay → revoga todas as sessões.
+    revoked_at      = Column(DateTime(timezone=True), nullable=True)
+    replaced_by_jti = Column(String(36), nullable=True)
     created_at = Column(DateTime(timezone=True), server_default=func.now())
 
     user = relationship("User", back_populates="refresh_tokens")

@@ -218,23 +218,62 @@ def test_login_totp_codigo_invalido_401():
     assert r.status_code == 401
 
 
-# ── 3. Passo "TOTP obrigatório" conta no anti-brute-force ────────────────────
+# ── 3. Passo "TOTP obrigatório" — contador PRÓPRIO (totp_pend), teto maior ───
+# Item 5 (go-live): o fluxo em 2 etapas do frontend SEMPRE faz o 1º POST sem
+# totp_code, então esse passo NÃO pode consumir o orçamento principal do login
+# (ip:/em: 5/15min) — 5 usuários TOTP no mesmo IP de escritório = 429 geral.
+# Contador separado totp_pend:{ip} (teto 20/15min) ainda limita a sondagem de
+# senhas válidas, e o audit LOGIN_TOTP_PENDENTE preserva a trilha.
 
-def test_login_sem_codigo_totp_registra_tentativa_e_bloqueia():
+def test_login_sem_codigo_totp_nao_consome_orcamento_principal():
+    from app.services.security_service import esta_bloqueado, registrar_falha
+
     secret = pyotp.random_base32()
     user = _user_totp(pii_crypto.encrypt(secret))
     user.email = "totp-bf@teste.com"
     db = _FakeDB(results=[user] * 10)
     client = TestClient(_montar(db))
-    codes = [
-        _login(client, "10.31.0.99", email="totp-bf@teste.com").status_code
-        for _ in range(6)
-    ]
-    # 5 sondagens de senha válida sem código (401) e a 6ª bloqueada (429).
-    assert codes[:5] == [401] * 5
-    assert codes[5] == 429
-    # A intenção fica na trilha de auditoria.
+    ip = "10.31.0.99"
+
+    codes = [_login(client, ip, email="totp-bf@teste.com").status_code
+             for _ in range(6)]
+    # Antes: a 6ª tentativa era 429 (orçamento principal). Agora as 6 passam
+    # pelo passo pendente (401) sem tocar ip:/em:.
+    assert codes == [401] * 6
+    assert esta_bloqueado(f"ip:{ip}") == (False, 0)
+    assert esta_bloqueado("em:totp-bf@teste.com") == (False, 0)
     assert any(l.acao == "LOGIN_TOTP_PENDENTE" for l in _audits(db))
+
+    # Teto do contador próprio (20/15min): completa 19 falhas pré-semeadas +
+    # 1 request real = 20 → a próxima é 429 (sem passar do limiter 10/min).
+    for _ in range(13):        # 6 já registradas acima
+        registrar_falha(f"totp_pend:{ip}")
+    r_20 = _login(client, ip, email="totp-bf@teste.com")
+    assert r_20.status_code == 401          # 20ª ainda passa
+    r_21 = _login(client, ip, email="totp-bf@teste.com")
+    assert r_21.status_code == 429          # 21ª bloqueada pelo teto próprio
+    # E mesmo bloqueado o passo pendente, o orçamento do login segue intacto.
+    assert esta_bloqueado(f"ip:{ip}") == (False, 0)
+
+
+def test_login_totp_codigo_errado_continua_no_orcamento_principal():
+    """Código TOTP ERRADO (≠ passo pendente) segue contando em ip:/em:."""
+    from app.services.security_service import esta_bloqueado
+
+    secret = pyotp.random_base32()
+    user = _user_totp(pii_crypto.encrypt(secret))
+    user.email = "totp-errado@teste.com"
+    db = _FakeDB(results=[user] * 10)
+    client = TestClient(_montar(db))
+    ip = "10.31.0.98"
+
+    for _ in range(5):
+        assert _login(client, ip, code="000000",
+                      email="totp-errado@teste.com").status_code == 401
+    bloqueado, _seg = esta_bloqueado("em:totp-errado@teste.com")
+    assert bloqueado
+    assert _login(client, ip, code="000000",
+                  email="totp-errado@teste.com").status_code == 429
 
 
 # ── 4. Drive upload — validação de conteúdo (item 2) ─────────────────────────

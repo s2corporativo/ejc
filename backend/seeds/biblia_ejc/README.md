@@ -26,6 +26,15 @@ python scripts/vetorizar_documentos.py           # vetoriza os pendentes depois
 Idempotente: dedup por `chave_origem` (`biblia_ejc:*`); reexecutar não duplica
 e edições futuras do corpus geram novas versões (histórico preservado).
 
+> **Nota — sufixos `-2`/`-3` nas chaves são POSICIONAIS.** Quando títulos se
+> repetem (ex.: "MODELO A"), o parser desambigua na ordem de aparição no DOCX
+> (`chave`, `chave-2`, `chave-3`…). Reordenar, inserir ou remover seções de
+> mesmo título em uma nova edição DESLOCA essas chaves: o conteúdo que era
+> `-2` pode virar `-3`, e o seed tratará como documento com `chave_origem`
+> diferente — criando versões novas (sem duplicar, mas com histórico das
+> chaves antigas). Ao regenerar o corpus, confira o diff dos `.jsonl` antes
+> de commitar.
+
 ## Como regenerar o corpus (nova edição do DOCX)
 
 1. Extraia os parágrafos do DOCX para JSON (lista de pares `[estilo, texto]`,

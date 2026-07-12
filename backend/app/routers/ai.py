@@ -938,6 +938,12 @@ async def detectar_prazos(
     """
     if len(req.texto.strip()) < 50:
         raise HTTPException(status_code=422, detail="Texto muito curto")
+    if req.case_id:
+        # Valida ANTES da chamada de IA: case_id inexistente estourava a FK do
+        # AILog (500) DEPOIS de já ter pago o custo do gateway; e sem o gate de
+        # ownership qualquer usuário anexava logs a casos alheios.
+        from app.core.ownership import verificar_acesso_caso
+        await verificar_acesso_caso(db, cu, req.case_id)   # 404/403 controlados
     resultado = await extrair_prazos_ia(db, cu.id, req.texto, req.case_id)
     if "erro" in resultado:
         raise HTTPException(status_code=502, detail=resultado["erro"])
