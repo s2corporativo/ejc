@@ -22,7 +22,14 @@ class Settings(BaseSettings):
     # abaixo); em desenvolvimento, uma chave efêmera é gerada automaticamente.
     SECRET_KEY: str = ""
     ALGORITHM: str = "HS256"
-    ACCESS_TOKEN_EXPIRE_HOURS: int = 8
+    # 2h (era 8h — hardening pós-auditoria de 2026-07-12): janela de exposição
+    # menor para um access token vazado/pós-revogação. Não incomoda o usuário:
+    # o frontend renova automaticamente via interceptor 401 + POST /auth/refresh
+    # (rotação de refresh token, sessão de até REFRESH_TOKEN_EXPIRE_DAYS). O
+    # Portal do Cliente usa o MESMO fluxo (get_current_user + refresh) — nenhum
+    # fluxo longo depende do access token sobreviver além de 2h. Override por
+    # env var ACCESS_TOKEN_EXPIRE_HOURS (ver .env.example).
+    ACCESS_TOKEN_EXPIRE_HOURS: int = 2
     REFRESH_TOKEN_EXPIRE_DAYS: int = 7
 
     # ── Criptografia de PII em repouso (LGPD, achado C6 / Bloco 6a) ────────

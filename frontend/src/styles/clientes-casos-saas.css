@@ -16,7 +16,7 @@
 
 .ejc-modern-scope .card.overflow-x-auto thead th {
   border-bottom: 1px solid rgba(212, 175, 55, 0.16);
-  color: #7a5a3a;
+  color: #6f5711;
   font-size: 0.68rem;
   font-weight: 850;
   letter-spacing: 0.1em;
@@ -33,14 +33,14 @@
 
 .ejc-modern-scope .card.overflow-x-auto tbody td:first-child a,
 .ejc-modern-scope .card.overflow-x-auto tbody td:nth-child(2) a {
-  color: #2d1b14;
+  color: #3b2f0b;
   font-weight: 650;
   text-decoration: none;
 }
 
 .ejc-modern-scope .card.overflow-x-auto tbody td:first-child a:hover,
 .ejc-modern-scope .card.overflow-x-auto tbody td:nth-child(2) a:hover {
-  color: #a67c52;
+  color: #6f5711;
   text-decoration: underline;
   text-underline-offset: 0.18rem;
 }
