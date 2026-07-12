@@ -245,6 +245,19 @@ class Settings(BaseSettings):
     # portal do TJMG — evita varredura abusiva).
     TJMG_INGEST_MAX_POR_TEMA: int = 50
 
+    # ── Ingestão contínua de conhecimento (ANPD + Normas RFB → RAG) ──────
+    # Job SEMANAL (domingo 03h00 UTC) que raspa fontes oficiais e alimenta a
+    # base de conhecimento: regulamentações/guias da ANPD (LGPD) e atos
+    # tributários do sijut2consulta da RFB. Idempotente por chave_origem
+    # (anpd:<slug> / rfb:<tipo>:<numero>:<ano>) — reexecução não duplica.
+    # Default True (ligado — autorização do dono; fontes públicas sem custo).
+    # Disparo manual: POST /rag/ingest-fontes-oficiais (socio+).
+    CONHECIMENTO_INGEST_ENABLED: bool = True
+    # CSV de termos de busca do sijut2consulta (Normas RFB). Vazio = lista
+    # padrão do ramo tributário (services/conhecimento_ingest/normas_rfb.py::
+    # TERMOS_PADRAO — Solução de Consulta ISS, IRPF, Simples Nacional...).
+    NORMAS_RFB_TERMOS: str = ""
+
     # ── Embeddings locais/remotos (busca semântica RAG) ─────────────────
     # local = fastembed (ONNX, sem torch) no mesmo processo; http = serviço interno separado.
     # Default True: fastembed é dependência pinada (requirements.txt) e o

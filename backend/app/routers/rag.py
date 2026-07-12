@@ -496,6 +496,47 @@ async def seed_base_conhecimento(
     }
 
 
+# ── Ingestão de fontes oficiais de conhecimento (Bloco 3) ────────────────────
+@router.post(
+    "/ingest-fontes-oficiais", status_code=202,
+    summary="Dispara a ingestão das fontes oficiais de conhecimento (ANPD + Normas RFB)",
+)
+async def ingest_fontes_oficiais(
+    background_tasks: BackgroundTasks,
+    db: AsyncSession = Depends(get_db),
+    cu: User = Depends(require_roles(["superadmin", "admin", "socio"])),
+):
+    """Disparo MANUAL do mesmo pipeline do job semanal (domingo 03h00 UTC):
+    ANPD (regulamentações + guias orientativos) e Normas RFB (sijut2consulta).
+
+    Roda em background (202) — o resultado durável fica no painel de fontes
+    (tabela fontes_ingestao, slugs `anpd` e `normas_rfb`). Idempotente: o
+    dedup/versionamento por chave_origem do upsert garante que reexecutar não
+    duplica documentos. Auditado em audit_logs (INGESTAO_FONTES_OFICIAIS).
+    """
+    from app.models.audit_log import criar_audit_log
+    from app.services.conhecimento_ingest import (
+        FONTES_SLUGS, executar_ingest_conhecimento,
+    )
+    role = getattr(cu.role, "value", str(cu.role))
+    await criar_audit_log(
+        db, user_id=cu.id, user_role=role,
+        acao="INGESTAO_FONTES_OFICIAIS", entidade="knowledge_docs",
+        detalhes=("Disparo manual da ingestão de fontes oficiais de "
+                  f"conhecimento: {', '.join(FONTES_SLUGS)}"),
+    )
+    await db.commit()
+    # executar_ingest_conhecimento nunca levanta (try/except por fonte) e abre
+    # as próprias sessões — seguro como BackgroundTask pós-resposta.
+    background_tasks.add_task(executar_ingest_conhecimento)
+    return {
+        "detail": "Ingestão de fontes oficiais agendada em background.",
+        "fontes": FONTES_SLUGS,
+        "acompanhamento": ("Painel de fontes de ingestão (fontes_ingestao): "
+                           "última execução, status e contagens por fonte."),
+    }
+
+
 # ── Destilação RAG com gate humano (#15) ─────────────────────────────────────
 class IngerirAILogRequest(BaseModel):
     categoria: str = "conhecimento_ia"

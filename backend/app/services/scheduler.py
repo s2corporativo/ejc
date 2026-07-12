@@ -900,6 +900,12 @@ def start_scheduler():
     # TJMG → RAG: gate interno TJMG_INGEST_ENABLED (default False). Semanal
     # (sáb 04h30) — crawler de jurisprudência estadual MG por temas curados.
     s.add_job(job_ingestao_tjmg,     CronTrigger(day_of_week="sat", hour=4, minute=30), id="ing_tjmg", replace_existing=True)
+    # Conhecimento oficial (ANPD + Normas RFB) → RAG: gate interno
+    # CONHECIMENTO_INGEST_ENABLED (default True). Semanal, DOMINGO 03h00 UTC
+    # (trigger declara a própria timezone — o scheduler roda em America/Sao_Paulo).
+    s.add_job(job_ingestao_conhecimento,
+              CronTrigger(day_of_week="sun", hour=3, minute=0, timezone="UTC"),
+              id="ing_conhecimento", replace_existing=True)
 
     # Recarrega feriados municipais/estaduais (00h05) — pega novas inserções
     # na tabela `feriados` sem precisar reiniciar o backend.
@@ -1479,3 +1485,23 @@ async def job_ingestao_tjmg():
         "tjmg", "Jurisprudência TJMG (crawler — base de acórdãos)",
         "jurisprudencia", tjmg.ingerir,
     )
+
+
+async def job_ingestao_conhecimento():
+    """Domingo 03h00 UTC — ingestão contínua de conhecimento oficial → RAG
+    (Bloco 3): ANPD (regulamentações + guias, LGPD) e Normas RFB
+    (sijut2consulta, tributário).
+
+    Gate: CONHECIMENTO_INGEST_ENABLED (default True — fontes públicas sem
+    custo, autorizado pelo dono). O orquestrador isola falhas POR FONTE e
+    registra métricas em fontes_ingestao — nunca levanta para o scheduler.
+    O dedup é o próprio chave_origem do upsert (idempotente/versionado).
+    """
+    from app.core.config import get_settings as _gs
+    if not _gs().CONHECIMENTO_INGEST_ENABLED:
+        logger.info("[Ingestao:conhecimento] desabilitado "
+                    "(CONHECIMENTO_INGEST_ENABLED=false)")
+        return
+    from app.services.conhecimento_ingest import executar_ingest_conhecimento
+    resumo = await executar_ingest_conhecimento()
+    logger.info(f"[Ingestao:conhecimento] resumo: {resumo}")
