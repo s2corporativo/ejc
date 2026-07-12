@@ -55,8 +55,8 @@ async def verificar_conflito(
             WHERE (
                 REPLACE(REPLACE(REPLACE(cpf, '.',''), '-',''), '/','') = :doc
                 OR REPLACE(REPLACE(REPLACE(cnpj, '.',''), '-',''), '/','') = :doc
-                OR (:dochash IS NOT NULL AND cpf_hash = :dochash)
-                OR (:dochash IS NOT NULL AND cnpj_hash = :dochash)
+                OR cpf_hash = :dochash
+                OR cnpj_hash = :dochash
             )
             AND deleted_at IS NULL
         """), {"doc": doc_clean, "dochash": doc_hash})

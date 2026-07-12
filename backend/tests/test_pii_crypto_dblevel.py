@@ -111,8 +111,6 @@ async def test_verificar_conflito_encontra_cliente_so_por_hash():
             assert "CLIENTE_ATIVO" in tipos
         finally:
             await db.execute(text("DELETE FROM clients WHERE id = :id"), {"id": client_id})
-            await db.execute(
-                text("DELETE FROM audit_logs WHERE acao = 'CONFLICT_CHECK' AND registro_id IS NULL"))
             await db.commit()
 
 
@@ -134,6 +132,4 @@ async def test_verificar_conflito_ainda_encontra_cliente_texto_puro():
             assert resultado["resultado"] == "conflito_identificado"
         finally:
             await db.execute(text("DELETE FROM clients WHERE id = :id"), {"id": client_id})
-            await db.execute(
-                text("DELETE FROM audit_logs WHERE acao = 'CONFLICT_CHECK' AND registro_id IS NULL"))
             await db.commit()
