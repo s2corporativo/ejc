@@ -20,7 +20,15 @@ from app.core.rate_limit import rate_limit
 from app.models.user import User
 from app.models.ai_log import AILog
 from app.models.legal_doc import LegalDoc, PecaTipo, PecaStatus
-from app.services.peca_service import gerar_peca_pipeline, TIPOS_PECA, AREAS_DIREITO
+from app.services.peca_service import (
+    gerar_peca_pipeline,
+    TIPOS_PECA,
+    TIPOS_PECA_VALIDOS,
+    TIPOS_PECA_GRUPO,
+    AREAS_DIREITO,
+    AREAS_DIREITO_LABEL,
+    NIVEIS_COMPLEXIDADE,
+)
 from app.services.advogado_style_service import montar_instrucoes_estilo_para_prompt
 from app.services.deep_research_service import DeepResearchInput, executar_deep_research
 from datetime import date
@@ -38,6 +46,33 @@ class GerarPecaRequest(BaseModel):
     nomes_proteger: list[str] = Field(default=[], description="Nomes para anonimizar (LGPD)")
     case_id: Optional[str] = None
     instrucoes_adicionais: Optional[str] = Field(None, max_length=1000)
+
+
+@router.get("/meta")
+async def meta_pecas(
+    cu: User = Depends(get_current_user),
+):
+    """Catálogo (fonte única) para o formulário de geração de peças: tipos
+    agrupados, áreas do direito e níveis de complexidade. Elimina o espelhamento
+    manual desses metadados no frontend. Piso de role igual ao /gerar."""
+    if ROLE_LEVEL.get(cu.role.value, 0) < ROLE_LEVEL["estagiario"]:
+        raise HTTPException(403, "Acesso negado")
+
+    return {
+        "tipos": [
+            {
+                "value": value,
+                "label": TIPOS_PECA[value],
+                "grupo": TIPOS_PECA_GRUPO[value],
+            }
+            for value in TIPOS_PECA_VALIDOS
+        ],
+        "areas": [
+            {"value": area, "label": AREAS_DIREITO_LABEL.get(area, area)}
+            for area in AREAS_DIREITO
+        ],
+        "niveis_complexidade": list(NIVEIS_COMPLEXIDADE),
+    }
 
 
 @router.post("/gerar")
