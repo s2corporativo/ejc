@@ -210,6 +210,10 @@ export default function LiquidacaoTrabalhista() {
   const [dataCalculo, setDataCalculo] = useState("");
   const [percentualHonorarios, setPercentualHonorarios] = useState("10");
   const [fatorIpcae, setFatorIpcae] = useState("");
+  // Índice oficial do BCB (IPCA-E) para o fator pré-ajuizamento: quando ligado
+  // e sem fator manual, o backend calcula de data_inicio_correcao → ajuizamento.
+  const [usarIndiceOficial, setUsarIndiceOficial] = useState(false);
+  const [dataInicioCorrecao, setDataInicioCorrecao] = useState("");
 
   const [calculando, setCalculando] = useState(false);
   const [gerandoPdf, setGerandoPdf] = useState(false);
@@ -262,6 +266,18 @@ export default function LiquidacaoTrabalhista() {
       setErro("Fator IPCA-E inválido — deixe em branco ou informe um número > 0.");
       return;
     }
+    // Índice oficial só entra quando não há fator manual (que tem precedência).
+    const usarOficial = usarIndiceOficial && fator == null;
+    if (usarOficial) {
+      if (!dataInicioCorrecao) {
+        setErro("Informe a data de início da correção (IPCA-E oficial) ou desligue a opção.");
+        return;
+      }
+      if (dataInicioCorrecao >= dataAjuizamento) {
+        setErro("A data de início da correção deve ser anterior ao ajuizamento.");
+        return;
+      }
+    }
 
     setCalculando(true);
     setErro("");
@@ -275,6 +291,8 @@ export default function LiquidacaoTrabalhista() {
           data_calculo: dataCalculo,
           percentual_honorarios: pct,
           fator_ipcae_pre_ajuizamento: fator,
+          usar_indice_oficial: usarOficial,
+          data_inicio_correcao: usarOficial ? dataInicioCorrecao : null,
         },
       );
       setRes(data);
@@ -459,10 +477,65 @@ export default function LiquidacaoTrabalhista() {
             onChange={(e) => setFatorIpcae(e.target.value)}
           />
           <p className="text-[10px] text-slate-400 mt-1">
-            Se não informado, o sistema aplica só a Selic desde o ajuizamento e
-            avisa.
+            Se não informado, o sistema aplica só a Selic desde o ajuizamento
+            (ou busca o IPCA-E oficial, se ativado abaixo).
           </p>
         </div>
+      </div>
+
+      {/* ── Índice oficial do BCB (IPCA-E) para o fator pré-ajuizamento ─────── */}
+      <div className="card bg-slate-50/40 p-3 mt-3">
+        <label className="flex items-start gap-2.5 cursor-pointer">
+          <input
+            type="checkbox"
+            className="mt-0.5 h-4 w-4 rounded border-slate-300 text-gold-600 focus:ring-gold-500"
+            checked={usarIndiceOficial}
+            onChange={(e) => setUsarIndiceOficial(e.target.checked)}
+          />
+          <span className="text-xs">
+            <span className="font-semibold text-navy flex items-center gap-1">
+              <TrendingUp size={13} className="text-gold-600" />
+              Usar índice oficial do BCB (IPCA-E)
+            </span>
+            <span className="text-slate-500 leading-relaxed">
+              Calcula o fator de correção pré-ajuizamento direto da fonte
+              oficial (BCB SGS, série IPCA-E) entre a data de início da correção
+              e o ajuizamento.
+            </span>
+          </span>
+        </label>
+
+        {usarIndiceOficial && (
+          <div className="mt-3 pl-6">
+            {fatorIpcae.trim() ? (
+              <p className="text-[11px] text-warn-700 flex items-start gap-1.5">
+                <AlertTriangle size={12} className="mt-0.5 shrink-0" />
+                Há um fator IPCA-E manual informado acima — ele tem precedência,
+                então o índice oficial não será usado. Limpe o campo manual para
+                buscar o fator oficial.
+              </p>
+            ) : (
+              <>
+                <label className="label text-xs">
+                  Data de início da correção
+                </label>
+                <input
+                  className="input text-sm max-w-[220px]"
+                  type="date"
+                  value={dataInicioCorrecao}
+                  max={dataAjuizamento || undefined}
+                  onChange={(e) => setDataInicioCorrecao(e.target.value)}
+                />
+                <p className="text-[10px] text-gold-700 mt-1.5 flex items-start gap-1.5">
+                  <Landmark size={11} className="mt-0.5 shrink-0" />
+                  O fator IPCA-E virá da fonte oficial (Banco Central). Se o BCB
+                  estiver indisponível, o cálculo segue sem a correção
+                  pré-ajuizamento e emite alerta.
+                </p>
+              </>
+            )}
+          </div>
+        )}
       </div>
 
       <button
