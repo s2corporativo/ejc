@@ -38,34 +38,30 @@ async def verificar_conflito(
 
     matches: list[dict] = []
 
+    # Núcleo de matching COMPARTILHADO com detectar_conflito (mesmas regras,
+    # hash-aware): cliente por documento (texto puro + cpf_hash/cnpj_hash),
+    # cliente por nome e parte contrária em casos. Aqui só formatamos o schema
+    # próprio deste endpoint ({resultado, matches, recomendacao, ...}).
+    from app.services.conflito_service import (
+        _clientes_por_documentos,
+        _clientes_por_nome,
+        _casos_por_parte_contraria,
+    )
+
+    def _doc(c) -> Optional[str]:
+        return c.cpf or c.cnpj
+
+    def _nome(c) -> str:
+        return c.nome or c.razao_social or "N/D"
+
     # ── 1. Parte contrária é cliente ativo por documento? ─────────────────────
     if parte_contraria_doc:
-        # Casa tanto o texto puro (clientes ainda não migrados) quanto o hash
-        # determinístico (clientes com PII cifrada — cpf_enc/cnpj_enc + cpf_hash/
-        # cnpj_hash no model). SEM o hash, um cliente já cifrado NÃO seria
-        # encontrado → FALSO NEGATIVO numa checagem ética (EOAB). Mesmo padrão
-        # de conflito_service.detectar_conflito (cobre os dois estados de transição).
-        from app.services.pii_crypto import normalizar_documento, hash_documento
-        doc_clean = normalizar_documento(parte_contraria_doc) or ""
-        doc_hash = hash_documento(doc_clean) if doc_clean else None
-        r = await db.execute(text("""
-            SELECT id, COALESCE(nome, razao_social, 'N/D') AS nome_cliente,
-                   COALESCE(cpf, cnpj) AS doc
-            FROM clients
-            WHERE (
-                REPLACE(REPLACE(REPLACE(cpf, '.',''), '-',''), '/','') = :doc
-                OR REPLACE(REPLACE(REPLACE(cnpj, '.',''), '-',''), '/','') = :doc
-                OR cpf_hash = :dochash
-                OR cnpj_hash = :dochash
-            )
-            AND deleted_at IS NULL
-        """), {"doc": doc_clean, "dochash": doc_hash})
-        for row in r.fetchall():
+        for c in await _clientes_por_documentos(db, [parte_contraria_doc]):
             matches.append({
                 "tipo": "CLIENTE_ATIVO",
                 "gravidade": "critico",
-                "entidade": row.nome_cliente,
-                "documento": row.doc,
+                "entidade": _nome(c),
+                "documento": _doc(c),
                 "detalhe": (
                     "A parte contrária consta como cliente do escritório. "
                     "Representação proibida — EOAB art. 34, XVII."
@@ -74,43 +70,30 @@ async def verificar_conflito(
 
     # ── 2. Parte contrária por nome nos clientes ──────────────────────────────
     if parte_contraria_nome and not matches:
-        r = await db.execute(text("""
-            SELECT id, COALESCE(nome, razao_social, 'N/D') AS nome_cliente,
-                   COALESCE(cpf, cnpj) AS doc
-            FROM clients
-            WHERE (LOWER(nome) ILIKE :nm OR LOWER(razao_social) ILIKE :nm)
-              AND deleted_at IS NULL
-        """), {"nm": f"%{parte_contraria_nome.lower()}%"})
-        for row in r.fetchall():
+        for c in await _clientes_por_nome(db, parte_contraria_nome):
             matches.append({
                 "tipo": "POSSIVEL_CLIENTE",
                 "gravidade": "alto",
-                "entidade": row.nome_cliente,
-                "documento": row.doc,
+                "entidade": _nome(c),
+                "documento": _doc(c),
                 "detalhe": (
-                    f"Nome '{row.nome_cliente}' encontrado nos clientes. "
+                    f"Nome '{_nome(c)}' encontrado nos clientes. "
                     "Confirme se é a mesma pessoa antes de prosseguir."
                 ),
             })
 
     # ── 3. Parte contrária aparece em casos ativos (pelo nome)? ──────────────
     if parte_contraria_nome:
-        r = await db.execute(text("""
-            SELECT numero_interno, titulo, area, status
-            FROM cases
-            WHERE LOWER(parte_contraria) ILIKE :nm
-              AND status NOT IN ('encerrado', 'arquivado')
-              AND deleted_at IS NULL
-              AND (:cid IS NULL OR id != :cid)
-        """), {"nm": f"%{parte_contraria_nome.lower()}%", "cid": case_id})
-        rows = r.fetchall()
-        if len(rows) > 1:
+        casos = await _casos_por_parte_contraria(
+            db, parte_contraria_nome, somente_ativos=True, ignorar_case_id=case_id
+        )
+        if len(casos) > 1:
             matches.append({
                 "tipo": "MULTIPLOS_CASOS_MESMA_PARTE",
                 "gravidade": "baixo",
                 "entidade": parte_contraria_nome,
                 "detalhe": (
-                    f"A mesma parte contrária aparece em {len(rows)} casos ativos. "
+                    f"A mesma parte contrária aparece em {len(casos)} casos ativos. "
                     "Verificar possível vinculação de interesses."
                 ),
             })

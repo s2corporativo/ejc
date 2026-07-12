@@ -7,7 +7,7 @@ from typing import Optional
 
 from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy import select, or_, func as sqlfunc
-from sqlalchemy.exc import IntegrityError
+from sqlalchemy.exc import IntegrityError, DataError
 from sqlalchemy.ext.asyncio import AsyncSession
 from pydantic import BaseModel  # noqa: E402 (module-level p/ _ResolverClienteReq)
 
@@ -411,6 +411,11 @@ async def criar(
     except IntegrityError:
         await db.rollback()
         raise HTTPException(status_code=409, detail="CPF/CNPJ já cadastrado")
+    except (DataError, ValueError) as e:
+        # Ex.: valor incompatível com uma coluna tipada (DATE etc.). Vira 422
+        # com mensagem clara em vez de 500 opaco.
+        await db.rollback()
+        raise HTTPException(status_code=422, detail=f"Dados inválidos: {e}")
     await db.refresh(c)
     return c
 
@@ -506,6 +511,11 @@ async def atualizar(
     except IntegrityError:
         await db.rollback()
         raise HTTPException(status_code=409, detail="CPF/CNPJ já cadastrado")
+    except (DataError, ValueError) as e:
+        # Ex.: valor incompatível com uma coluna tipada (DATE etc.). Vira 422
+        # com mensagem clara em vez de 500 opaco.
+        await db.rollback()
+        raise HTTPException(status_code=422, detail=f"Dados inválidos: {e}")
     await db.refresh(c)
     return c
 
