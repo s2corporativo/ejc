@@ -404,6 +404,11 @@ class Settings(BaseSettings):
     # ── Scheduler ────────────────────────────────────────────────────────
     ENABLE_SCHEDULER: bool = True   # desligar em workers extras (uvicorn --workers)
 
+    # ── Central Eletrônica de Diagnóstico (routers/diagnostico.py) ────────
+    # Endpoint SOCIO+ que agrega a saúde de todos os subsistemas. Somente
+    # leitura; sem integração externa nova. False → GET /diagnostico/central 503.
+    DIAGNOSTICO_ENABLED: bool = True
+
     # ── Fila assíncrona (Celery + Redis — Fase 3A) ────────────────────────
     # CELERY_ENABLED=False (default) preserva o comportamento atual: tarefas
     # de indexação rodam em BackgroundTasks no próprio processo da API.

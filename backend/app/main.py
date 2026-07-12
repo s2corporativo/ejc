@@ -65,6 +65,7 @@ from app.routers import data_room_v4
 from app.routers import datajud
 from app.routers import deadlines
 from app.routers import despesas
+from app.routers import diagnostico
 from app.routers import diario_oficial
 from app.routers import diplomacia_v3
 from app.routers import documento_ia
@@ -384,6 +385,7 @@ app.include_router(lgpd_registros.router, prefix=API)  # vertical LGPD — ROPA 
 app.include_router(sumulas.router, prefix=API)
 app.include_router(suspensoes.router, prefix=API)
 app.include_router(system_modules.router, prefix=API)  # Mapa de Módulos — governança modular
+app.include_router(diagnostico.router, prefix=API)  # Central Eletrônica de Diagnóstico
 app.include_router(module_settings.router, prefix=API)  # Lifecycle auditável dos módulos
 app.include_router(tributario_fiscal.router, prefix=API)  # vertical Tributário — XML fiscal + recuperação de créditos
 app.include_router(trabalhista_liquidacao.router, prefix=API)  # vertical Trabalhista — liquidação de sentença (ADC 58 / Selic real BCB)
