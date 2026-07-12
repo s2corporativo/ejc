@@ -166,6 +166,58 @@ async def test_bcb_fora_serve_cache_com_warning(monkeypatch, caplog):
     assert any("usando cache" in r.message for r in caplog.records)
 
 
+async def test_cache_faixas_disjuntas_busca_envelope(monkeypatch):
+    """Regressão: duas faixas NÃO contíguas (2023 e depois 2020) deixariam o
+    miolo 2021-2022 sem dados, mas com [ini,fim] declarando cobertura → um
+    pedido no buraco voltava série VAZIA e o fator de correção ZERAVA (1.0)
+    silenciosamente. O fix busca a ENVELOPE inteira ao mesclar faixa disjunta."""
+    valores = {date(a, m, 1): "0.5"
+               for a in range(2020, 2024) for m in range(1, 13)}
+    _mock_sgs(monkeypatch, valores)
+
+    await isvc.obter_serie("ipca", date(2023, 1, 1), date(2023, 12, 31))
+    await isvc.obter_serie("ipca", date(2020, 1, 1), date(2020, 12, 31))  # disjunto
+
+    # pedido no MIOLO (antes declarado "coberto" mas sem dados)
+    fc = await isvc.fator_correcao("ipca", date(2021, 6, 1), date(2022, 6, 30))
+    assert fc["meses_aplicados"] == 13                 # dados REAIS de 2021-2022
+    assert fc["fator"] == pytest.approx(1.005 ** 13)   # composto sobre 13 meses
+    assert fc["fator"] != 1.0                           # correção NÃO zerada
+
+
+async def test_selic_ec113_acumula_por_soma_nao_capitaliza(monkeypatch):
+    """Regressão: sob a EC 113/2021, art. 3º, a Selic mensal (série 4390) é
+    acumulada por SOMA dos percentuais (Manual de Cálculos da JF), NÃO por
+    capitalização composta."""
+    valores = {date(2022 + i // 12, i % 12 + 1, 1): "1.0" for i in range(24)}
+    _mock_sgs(monkeypatch, valores)
+
+    r = await isvc.selic_acumulada(date(2022, 1, 1), date(2023, 12, 31))
+    assert r["meses_aplicados"] == 24
+    # SOMA: 1 + 24×0,01 = 1,24 (e NÃO 1,01^24 ≈ 1,2697 da capitalização)
+    assert r["fator"] == pytest.approx(1.24)
+    assert r["fator"] != pytest.approx(1.01 ** 24, abs=1e-4)
+    assert "soma" in r["metodo_acumulacao"].lower()
+
+
+async def test_ipca_continua_capitalizando(monkeypatch):
+    """Contraprova: índices de correção monetária (IPCA) seguem capitalização
+    composta (produto), não a soma da Selic."""
+    valores = {date(2022 + i // 12, i % 12 + 1, 1): "1.0" for i in range(24)}
+    _mock_sgs(monkeypatch, valores)
+    fc = await isvc.fator_correcao("ipca", date(2022, 1, 1), date(2023, 12, 31))
+    assert fc["fator"] == pytest.approx(1.01 ** 24)     # produto, não soma
+    assert "composta" in fc["metodo_acumulacao"].lower()
+
+
+async def test_ipca_e_rotulo_variacao_mensal():
+    """Regressão de metadado: a SGS 10764 é publicada como variação MENSAL
+    (evidência da sondagem), então o rótulo não deve induzir 'acum. trim.'."""
+    nome = isvc.SERIES["ipca_e"]["nome"].lower()
+    assert "mensal" in nome
+    assert "trim" not in nome
+
+
 async def test_bcb_fora_sem_cache_levanta(monkeypatch):
     async def caiu(url, params=None):
         raise RuntimeError("BCB fora do ar")

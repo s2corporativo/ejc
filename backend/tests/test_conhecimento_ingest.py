@@ -21,6 +21,8 @@ from __future__ import annotations
 from types import SimpleNamespace
 from urllib.parse import urljoin
 
+import pytest
+
 import app.services.conhecimento_ingest as ci
 import app.services.conhecimento_ingest.anpd as anpd
 import app.services.conhecimento_ingest.normas_rfb as rfb
@@ -121,6 +123,54 @@ def test_extrair_links_anpd_filtra_navegacao_e_externos():
     assert len(links) == 2
     # título com entidades decodificadas
     assert any("Resolução CD/ANPD" in lk["titulo"] for lk in links)
+
+
+def test_extrair_links_anpd_bloqueia_dominio_lookalike():
+    """Regressão: netloc.endswith('gov.br') sozinho casa o lookalike
+    'malicioso-gov.br'. O fix exige == 'gov.br' ou subdomínio '.gov.br'."""
+    base = anpd.PAGINAS[0][2]
+    lookalike = ('<div id="content-core"><ul><li>'
+                 '<a href="https://www.malicioso-gov.br/anpd/resolucao-falsa">'
+                 'Resolu&ccedil;&atilde;o maliciosa de teste</a></li></ul></div>')
+    assert anpd.extrair_links(lookalike, base) == []           # bloqueado
+    # sanity: subdomínio oficial .gov.br segue aceito
+    oficial = ('<div id="content-core"><ul><li>'
+               '<a href="https://www.gov.br/anpd/resolucao-verdadeira">'
+               'Resolu&ccedil;&atilde;o oficial de teste</a></li></ul></div>')
+    assert anpd.extrair_links(oficial, base)                   # aceito
+
+
+async def test_fetch_bloqueia_ssrf_para_ip_interno():
+    """Regressão SSRF: no caminho de ingestão automática (validar_ssrf=True) a
+    URL alvo é revalidada contra IP privado/loopback/link-local ANTES de sair
+    à rede — sem depender de rede (IP literal não faz DNS)."""
+    from app.services import ingestion_service as ing
+    for u in ("http://169.254.169.254/latest/meta-data/",   # metadata cloud
+              "http://127.0.0.1:8000/admin",                 # loopback
+              "http://10.0.0.5/interno"):                    # privado
+        with pytest.raises(ValueError):
+            await ing.fetch(u, validar_ssrf=True)
+
+
+def test_validar_sem_ssrf_bloqueia_destino_e_esquema():
+    """O revalidador por salto (usado em cada redirect) barra destino interno e
+    esquema não-http — impede que um redirect leve a 169.254.169.254/loopback."""
+    from app.services import ingestion_service as ing
+    with pytest.raises(ValueError):
+        ing._validar_sem_ssrf("http://169.254.169.254/")   # destino de redirect
+    with pytest.raises(ValueError):
+        ing._validar_sem_ssrf("ftp://host/x")               # esquema não-http
+
+
+def test_rag_admin_endpoints_tem_rate_limit():
+    """Endpoints admin de RAG (/seed, /ingest-fontes-oficiais) com rate limit."""
+    from app.routers.rag import router
+    for path in ("/rag/seed", "/rag/ingest-fontes-oficiais"):
+        rota = next(r for r in router.routes if getattr(r, "path", "") == path)
+        assert any(
+            getattr(dep.dependency, "__qualname__", "").startswith("rate_limit")
+            for dep in rota.dependencies
+        ), f"{path} sem rate_limit"
 
 
 def test_chave_anpd_slug_html_e_pdf():
