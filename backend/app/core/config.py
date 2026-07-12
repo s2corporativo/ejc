@@ -213,6 +213,30 @@ class Settings(BaseSettings):
     # Base oficial (POST {base}/{caminho} form-urlencoded). Só mude p/ testes.
     INFOSIMPLES_BASE_URL: str = "https://api.infosimples.com/api/v2/consultas"
 
+    # ── NFS-e — emissão fiscal via provedor (Nuvem Fiscal) — GATED ──────
+    # Nasce DESLIGADO e em HOMOLOGAÇÃO: nunca emite nota real sem ativação
+    # explícita do dono. A emissão REAL ainda exige (fora do EJC): certificado
+    # digital A1 no painel do provedor + confirmação das definições fiscais
+    # (alíquota ISS de advocacia em Betim, item LC116, cTribNac) com o contador.
+    # Ver docs/NFSE_VIABILIDADE.md.
+    NFSE_ENABLED: bool = False
+    NFSE_MODO: str = "homologacao"       # homologacao | producao
+    NFSE_PROVEDOR: str = "nuvemfiscal"   # só "nuvemfiscal" por ora
+    NFSE_NUVEMFISCAL_BASE_URL: str = "https://api.nuvemfiscal.com.br"
+    NFSE_NUVEMFISCAL_AUTH_URL: str = "https://auth.nuvemfiscal.com.br"
+    # Credenciais OAuth2 do provedor — só no .env da VPS; nunca em log/resposta.
+    NFSE_NUVEMFISCAL_CLIENT_ID: str = ""
+    NFSE_NUVEMFISCAL_CLIENT_SECRET: str = ""
+    # CNPJ do escritório emitente (com ou sem máscara).
+    NFSE_EMITENTE_CNPJ: str = ""
+    # Município do emitente (código IBGE, 7 díg). Betim/MG = 3106200.
+    NFSE_EMITENTE_MUN_IBGE: str = "3106200"
+    # Definições fiscais — CONFIRMAR COM O CONTADOR antes de produção.
+    NFSE_ISS_ALIQUOTA: float = 0.0       # alíquota ISS advocacia em Betim (%). A confirmar.
+    NFSE_ITEM_LC116: str = "17.14"       # item da lista LC 116/03 (advocacia)
+    NFSE_CTRIB_NAC: str = ""             # cTribNac (GET /nfse/cidades/3106200). A confirmar.
+    NFSE_TIMEOUT: int = 60               # timeout (s) das chamadas ao provedor
+
     # ── DJEN / API Comunica CNJ (Res. CNJ 569/2024) — ingestão RAG ───────
     # Ingestor diário de comunicações processuais (intimações/publicações)
     # por OAB monitorada. A retenção da API é limitada — o RAG do EJC é o
