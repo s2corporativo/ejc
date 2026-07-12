@@ -125,6 +125,7 @@ async def ingerir(db: AsyncSession) -> dict:
                 params={"termoBusca": termo, "p": "1"},
                 headers={"Accept": "text/html"},
                 timeout=45,
+                validar_ssrf=True,
             )
             atos = parse_resultados(r.text)
         except Exception as e:   # portal fora do ar/HTML mudou → pula o termo
@@ -145,7 +146,8 @@ async def ingerir(db: AsyncSession) -> dict:
             vistos.add(chave)
             url = _url_ato(ato["id_ato"])
             try:
-                rv = await fetch(url, headers={"Accept": "text/html"}, timeout=45)
+                rv = await fetch(url, headers={"Accept": "text/html"}, timeout=45,
+                                 validar_ssrf=True)
                 texto = html_para_texto(rv.text)
                 if not texto or len(texto) < MIN_CONTEUDO:
                     logger.warning("RFB %s: conteúdo curto/vazio, pulado", chave)
@@ -157,9 +159,12 @@ async def ingerir(db: AsyncSession) -> dict:
                     conteudo=texto,
                     chave_origem=chave,
                     fonte=url,                  # URL oficial do ato
-                    confianca="alta",           # fonte oficial (RFB)
+                    # Conteúdo raspado (tolerante a layout) → confiança MEDIA
+                    # (distingue de jurisprudência curada no gate de citação).
+                    confianca="media",
                     extra={
                         "origem": "normas_rfb",
+                        "proveniencia": "auto-scraped",
                         "termo_busca": termo,
                         "id_ato": ato["id_ato"],
                         "titulo_original": ato["titulo"][:300],

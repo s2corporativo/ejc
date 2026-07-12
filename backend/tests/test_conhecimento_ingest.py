@@ -245,9 +245,11 @@ async def test_ingerir_anpd_upserta_html_e_pdf(monkeypatch):
     assert resumo == {"novos": 2, "atualizados": 0, "inalterados": 0, "erros": 0}
     chaves = {u["chave_origem"] for u in ups}
     assert chaves == {"anpd:resolucao-cd-anpd-no-15", "anpd:guia-cookies"}
-    # governança: categoria NÃO restrita, confiança alta, fonte = URL oficial
+    # governança: categoria NÃO restrita, confiança MEDIA (conteúdo raspado),
+    # proveniência auto-scraped, fonte = URL oficial
     assert all(u["categoria"] in ("legislacao", "doutrina") for u in ups)
-    assert all(u["confianca"] == "alta" for u in ups)
+    assert all(u["confianca"] == "media" for u in ups)
+    assert all(u["extra"]["proveniencia"] == "auto-scraped" for u in ups)
     assert all(u["fonte"].startswith("https://www.gov.br/") for u in ups)
     assert all(u["extra"]["origem"] == "anpd" for u in ups)
     reso = next(u for u in ups if u["chave_origem"].endswith("no-15"))
@@ -342,7 +344,8 @@ async def test_ingerir_rfb_upserta_com_chave_e_metadados(monkeypatch):
     assert "rfb:instrucao-normativa-rfb:2110:2022" in chaves
     assert "rfb:solucao-de-consulta-cosit:99001:2024" in chaves
     assert all(u["categoria"] == "legislacao_tributaria" for u in ups)
-    assert all(u["confianca"] == "alta" for u in ups)
+    assert all(u["confianca"] == "media" for u in ups)          # conteúdo raspado
+    assert all(u["extra"]["proveniencia"] == "auto-scraped" for u in ups)
     assert all("sijut2consulta/link.action" in u["fonte"] for u in ups)
     assert all(u["extra"]["origem"] == "normas_rfb" for u in ups)
     assert all(u["extra"]["termo_busca"] == "IRPF" for u in ups)

@@ -250,10 +250,12 @@ async def test_endpoint_regras(monkeypatch):
     assert len(out2["etapas"]) == 2
     assert "14.905" in out2["etapas"][1]["base_legal"]
 
-    # selic_ec113: Selic exclusiva (série 4390), sem cumulação
+    # selic_ec113: Selic exclusiva (série 4390), sem cumulação. Acumulação por
+    # SOMA (EC 113/2021): 1 + 0,01 + 0,01 = 1,02 → 1000 × 1,02 = 1020,00
+    # (NÃO 1,01² = 1,0201, que daria 1020,10 — capitalização, incorreta aqui).
     out3 = await r_ind.atualizar_valor(
         r_ind.AtualizarValorIn(indice="ipca", regra="selic_ec113", **base), cu=None)
-    assert out3["valor_final"] == 1020.10
+    assert out3["valor_final"] == 1020.00
     assert "EC 113" in out3["etapas"][0]["base_legal"]
 
 

@@ -10,6 +10,7 @@ from sqlalchemy import select, update, func as sqlfunc
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.database import get_db, AsyncSessionLocal
+from app.core.rate_limit import rate_limit
 from app.core.security import get_current_user, require_roles
 from app.models.user import User
 from app.models.rag import KnowledgeDoc, KnowledgeChunk, FonteIngestao
@@ -449,7 +450,8 @@ async def monitor_legislativo(
 
 
 # ── Seed da Base de Conhecimento (admin, idempotente) ────────────────────────
-@router.post("/seed", summary="Popula a base com o conhecimento inicial do escritório (idempotente)")
+@router.post("/seed", summary="Popula a base com o conhecimento inicial do escritório (idempotente)",
+             dependencies=[Depends(rate_limit("rag_seed", 3))])
 async def seed_base_conhecimento(
     background_tasks: BackgroundTasks,
     incluir_jurisprudencia: bool = Query(
@@ -500,6 +502,7 @@ async def seed_base_conhecimento(
 @router.post(
     "/ingest-fontes-oficiais", status_code=202,
     summary="Dispara a ingestão das fontes oficiais de conhecimento (ANPD + Normas RFB)",
+    dependencies=[Depends(rate_limit("rag_fontes", 3))],
 )
 async def ingest_fontes_oficiais(
     background_tasks: BackgroundTasks,

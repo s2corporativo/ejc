@@ -441,6 +441,19 @@ def _path_existente(p: str) -> str:
     return str(cand)
 
 
+def _rotulo_mount(p: str) -> str:
+    """Rótulo do ponto de MONTAGEM do caminho — NUNCA o path absoluto do host.
+    Expor o caminho absoluto (ex.: /srv/ejc/uploads) no diagnóstico vaza layout
+    interno de disco. Sobe até o mount e devolve seu nome (ou '/')."""
+    try:
+        cand = Path(p).resolve()
+        while not os.path.ismount(cand) and cand != cand.parent:
+            cand = cand.parent
+        return cand.name or "/"
+    except Exception:
+        return "uploads"
+
+
 async def _probe_disco(
     settings: Settings,
     disk_usage_fn: Callable[[str], Any] | None = None,
@@ -456,7 +469,7 @@ async def _probe_disco(
         return _sub(
             "Disco / uploads",
             "erro",
-            f"Não foi possível ler o uso de disco de {alvo}.",
+            f"Não foi possível ler o uso de disco do volume {_rotulo_mount(alvo)}.",
             "Verifique se o volume de uploads está montado e acessível.",
             _ms(inicio),
         )
@@ -464,8 +477,9 @@ async def _probe_disco(
     pct_livre = round((livre / total * 100), 1) if total else 0.0
     livre_gb = round(livre / (1024 ** 3), 2)
     total_gb = round(total / (1024 ** 3), 2)
+    rotulo = _rotulo_mount(alvo)   # só o mount/rótulo — nunca o path absoluto
     extras = {
-        "caminho": alvo,
+        "caminho": rotulo,
         "livre_gb": livre_gb,
         "total_gb": total_gb,
         "percentual_livre": pct_livre,
@@ -474,7 +488,7 @@ async def _probe_disco(
         return _sub(
             "Disco / uploads",
             "alerta",
-            f"Espaço livre baixo: {pct_livre}% ({livre_gb} GB de {total_gb} GB) em {alvo}.",
+            f"Espaço livre baixo: {pct_livre}% ({livre_gb} GB de {total_gb} GB) no volume {rotulo}.",
             "Libere espaço, expanda o volume ou mova/rotacione uploads e backups antigos.",
             _ms(inicio),
             **extras,
@@ -482,7 +496,7 @@ async def _probe_disco(
     return _sub(
         "Disco / uploads",
         "ok",
-        f"Espaço livre saudável: {pct_livre}% ({livre_gb} GB de {total_gb} GB) em {alvo}.",
+        f"Espaço livre saudável: {pct_livre}% ({livre_gb} GB de {total_gb} GB) no volume {rotulo}.",
         "Nenhuma ação necessária.",
         _ms(inicio),
         **extras,

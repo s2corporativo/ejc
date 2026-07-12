@@ -43,7 +43,12 @@ SERIES: dict[str, dict] = {
     "inpc":            {"codigo": 188,   "nome": "INPC (IBGE, % a.m.)",                     "tipo": "mensal"},
     "igpm":            {"codigo": 189,   "nome": "IGP-M (FGV, % a.m.)",                     "tipo": "mensal"},
     "ipca15":          {"codigo": 7478,  "nome": "IPCA-15 (IBGE, % a.m.)",                  "tipo": "mensal"},
-    "ipca_e":          {"codigo": 10764, "nome": "IPCA-E (IBGE, % acum. trim.)",            "tipo": "mensal"},
+    # IPCA-E (SGS 10764): apesar do nome ("acumulado trimestral"), a sondagem ao
+    # vivo (scripts/probe_apis.py) mostrou que a 10764 devolve o MESMO valor
+    # MENSAL que a 7478 (IPCA-15) — no SGS ela é publicada como VARIAÇÃO MENSAL;
+    # o acumulado trimestral é uma agregação externa. Por isso o rótulo diz
+    # "variação mensal" e a composição mensal (produto de 1+v/100) está correta.
+    "ipca_e":          {"codigo": 10764, "nome": "IPCA-E (IBGE, variação mensal — IPCA-15/IPCA-E)", "tipo": "mensal"},
     "tr":              {"codigo": 226,   "nome": "TR (% a.m.)",                             "tipo": "mensal"},
     "poupanca_antiga": {"codigo": 25,    "nome": "Poupança até 03/05/2012 (% a.m.)",        "tipo": "mensal"},
     "poupanca":        {"codigo": 195,   "nome": "Poupança após 04/05/2012 (% a.m.)",       "tipo": "mensal"},
@@ -251,16 +256,31 @@ async def obter_serie(indice: str, data_inicial: date, data_final: date
 
     if not _cache_cobre(ent, cfg, data_inicial, data_final):
         try:
-            novos = await _sgs_buscar(codigo, data_inicial, data_final)
             if ent:
+                # INVARIANTE de integridade: o range declarado [ini,fim] SEMPRE
+                # tem os dados de fato armazenados. Se o pedido é DISJUNTO do
+                # envelope já cacheado (deixa um buraco entre os dois intervalos),
+                # buscar só [data_inicial, data_final] estenderia [ini,fim] para
+                # [min,max] com o MIOLO vazio — e um pedido futuro que caísse no
+                # buraco seria declarado "coberto" e voltaria série VAZIA, zerando
+                # o fator de correção (fator=1.0) sem erro. Nesses casos buscamos
+                # a ENVELOPE INTEIRA no BCB para preencher o buraco.
+                disjunto = data_inicial > ent["fim"] or data_final < ent["ini"]
+                busca_ini = min(ent["ini"], data_inicial) if disjunto else data_inicial
+                busca_fim = max(ent["fim"], data_final) if disjunto else data_final
+                novos = await _sgs_buscar(codigo, busca_ini, busca_fim)
                 ent["valores"].update(novos)
                 ent["ini"] = min(ent["ini"], data_inicial)
                 ent["fim"] = max(ent["fim"], data_final)
                 ent["fetched_at"] = _agora()
             else:
+                novos = await _sgs_buscar(codigo, data_inicial, data_final)
                 ent = {"valores": novos, "ini": data_inicial,
                        "fim": data_final, "fetched_at": _agora()}
             _MEM[codigo] = ent
+            # _db_persistir grava TODOS os pontos de ent["valores"] (não só os
+            # novos) + meta LEAST/GREATEST → o cache DB mantém o mesmo invariante:
+            # meta[ini,fim] ⟹ linhas cobrindo [ini,fim] (o envelope acima garante).
             await _db_persistir(codigo, ent)
         except Exception as exc:
             if ent and ent["valores"]:
@@ -286,13 +306,33 @@ _Q8 = Decimal("0.00000001")
 _Q2 = Decimal("0.01")
 
 
-def _compor(serie: list[tuple[date, Decimal]]) -> tuple[Decimal, list[dict]]:
-    """Produto dos (1 + v/100) com memória passo a passo."""
+# Séries cuja acumulação é ADITIVA (soma dos percentuais), não capitalização.
+# Base metodológica: para débitos da Fazenda sob a EC 113/2021, art. 3º, o
+# Manual de Cálculos da Justiça Federal ACUMULA a Selic mensal por SOMA dos
+# percentuais mensais (a série SGS 4390 já é "Selic acumulada no mês") — NÃO
+# por produto (1+vᵢ/100). Índices de correção monetária (IPCA, INPC, IGP-M...)
+# seguem a capitalização multiplicativa normal.
+_ACUMULA_POR_SOMA: frozenset[str] = frozenset({"selic_mensal"})
+
+
+def _compor(serie: list[tuple[date, Decimal]], *, soma: bool = False
+            ) -> tuple[Decimal, list[dict]]:
+    """Fator acumulado com memória passo a passo.
+
+    - soma=False (default): capitalização composta Π(1 + vᵢ/100) — correta para
+      ÍNDICES de correção monetária (IPCA, INPC, IGP-M, taxa legal...).
+    - soma=True: acumulação ADITIVA 1 + Σ(vᵢ/100) — Selic mensal (série 4390)
+      sob a EC 113/2021, art. 3º (Manual de Cálculos da Justiça Federal).
+    """
     fator = Decimal("1")
     memoria = []
     for d, pct in serie:
-        f_mes = Decimal("1") + pct / Decimal("100")
-        fator *= f_mes
+        parcela = pct / Decimal("100")
+        f_mes = Decimal("1") + parcela      # informativo (fator do mês isolado)
+        if soma:
+            fator += parcela                # 1 + Σ(vᵢ/100)
+        else:
+            fator *= f_mes                  # Π(1 + vᵢ/100)
         memoria.append({
             "competencia": d.strftime("%m/%Y"),
             "data": d.isoformat(),
@@ -304,7 +344,9 @@ def _compor(serie: list[tuple[date, Decimal]]) -> tuple[Decimal, list[dict]]:
 
 
 async def fator_correcao(indice: str, data_inicial: date, data_final: date) -> dict:
-    """Fator de correção monetária: produto dos (1+v/100) MENSAIS do índice."""
+    """Fator de correção/acumulação MENSAL do índice. Capitalização composta
+    (produto de 1+v/100) para índices de correção; acumulação por SOMA para a
+    Selic mensal (série 4390) sob a EC 113/2021 (ver _ACUMULA_POR_SOMA)."""
     cfg = SERIES.get(indice)
     if not cfg:
         raise ValueError(f"Índice inválido. Use: {list(SERIES)}")
@@ -312,13 +354,17 @@ async def fator_correcao(indice: str, data_inicial: date, data_final: date) -> d
         raise ValueError(f"'{indice}' é série diária — o fator de correção usa "
                          "séries mensais (ex.: ipca, inpc, igpm, selic_mensal)")
     serie = await obter_serie(indice, data_inicial, data_final)
-    fator, memoria = _compor(serie)
+    # selic_mensal (EC 113/2021) acumula por SOMA; demais índices, por produto.
+    fator, memoria = _compor(serie, soma=indice in _ACUMULA_POR_SOMA)
+    metodo = "soma dos percentuais (EC 113/2021, art. 3º)" \
+        if indice in _ACUMULA_POR_SOMA else "capitalização composta (produto)"
     return {
         "indice": indice,
         "nome": cfg["nome"],
         "codigo_sgs": cfg["codigo"],
         "periodo": f"{data_inicial.isoformat()} → {data_final.isoformat()}",
         "meses_aplicados": len(serie),
+        "metodo_acumulacao": metodo,
         "fator": float(fator.quantize(_Q8)),
         "percentual_acumulado": float(((fator - 1) * 100).quantize(Decimal("0.000001"))),
         "memoria_calculo": memoria,

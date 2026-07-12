@@ -75,7 +75,9 @@ def extrair_links(html: str, url_base: str) -> list[dict]:
         if any(x in url for x in _URL_IGNORAR) or "#" in url:
             continue
         parte = urlparse(url)
-        if not parte.netloc.endswith("gov.br"):
+        # Domínio oficial: casa "gov.br" exato ou subdomínio ".gov.br".
+        # endswith("gov.br") sozinho casaria lookalike "malicioso-gov.br".
+        if not (parte.netloc == "gov.br" or parte.netloc.endswith(".gov.br")):
             continue          # só domínio oficial
         eh_pdf = parte.path.lower().endswith(".pdf")
         if not eh_pdf and "/anpd/" not in parte.path:
@@ -112,14 +114,14 @@ def _texto_pdf(raw: bytes) -> str:
 async def _conteudo(url: str) -> str | None:
     """Baixa e extrai o texto do documento (HTML ou PDF). None = sem conteúdo."""
     if urlparse(url).path.lower().endswith(".pdf"):
-        r = await fetch(url, headers={"Accept": "*/*"}, timeout=60)
+        r = await fetch(url, headers={"Accept": "*/*"}, timeout=60, validar_ssrf=True)
         if len(r.content) > MAX_PDF_BYTES:
             logger.warning("ANPD: PDF muito grande (%d bytes), pulado: %s",
                            len(r.content), url)
             return None
         # extração é CPU-bound → thread para não travar o event loop
         return await asyncio.to_thread(_texto_pdf, r.content)
-    r = await fetch(url, headers={"Accept": "text/html"}, timeout=30)
+    r = await fetch(url, headers={"Accept": "text/html"}, timeout=30, validar_ssrf=True)
     return html_para_texto(r.text)
 
 
@@ -138,7 +140,8 @@ async def ingerir(db: AsyncSession) -> dict:
         if processados >= MAX_DOCS_POR_EXECUCAO:
             break
         try:
-            r = await fetch(pagina, headers={"Accept": "text/html"}, timeout=30)
+            r = await fetch(pagina, headers={"Accept": "text/html"}, timeout=30,
+                            validar_ssrf=True)
             links = extrair_links(r.text, pagina)
         except Exception as e:   # página indisponível/fora do padrão → pula
             resumo["erros"] += 1
@@ -168,9 +171,13 @@ async def ingerir(db: AsyncSession) -> dict:
                     conteudo=texto,
                     chave_origem=chave,
                     fonte=link["url"],          # URL oficial gov.br
-                    confianca="alta",           # fonte oficial (autoridade)
+                    # Conteúdo raspado (tolerante a layout) → confiança MEDIA:
+                    # o gate de citação distingue de jurisprudência/doutrina
+                    # curada. Proveniência auto-scraped registrada no extra.
+                    confianca="media",
                     extra={
                         "origem": "anpd",
+                        "proveniencia": "auto-scraped",
                         "secao": rotulo,
                         "url": link["url"],
                         "titulo_original": link["titulo"][:300],
