@@ -994,6 +994,10 @@ async def gerar_peca_pipeline(
         status_hitl=AIStatusHITL.gerado,
     )
 
+    # Código estável por ramo (EJC-<SIGLA>-<NNN>), reservado atomicamente.
+    from app.services.peca_numeracao import proximo_codigo_peca
+    codigo_peca = await proximo_codigo_peca(db, area_direito)
+
     legal_doc = LegalDoc(
         id=str(uuid4()),
         titulo=f"{nome_peca} - rascunho IA",
@@ -1003,6 +1007,8 @@ async def gerar_peca_pipeline(
         human_reviewed=False,
         case_id=case_id,
         created_by=user_id,
+        area=area_direito,
+        codigo_peca=codigo_peca,
     )
     db.add(log)
     db.add(legal_doc)
@@ -1011,6 +1017,7 @@ async def gerar_peca_pipeline(
     yield await _emit("concluido", {
         "ai_log_id": log.id,
         "legal_doc_id": legal_doc.id,
+        "codigo_peca": codigo_peca,
         "tipo_peca_identificado": tipo_peca_final,
         "documento": documento_final,
         "modelo": r7.modelo,

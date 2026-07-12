@@ -109,11 +109,77 @@ def _linha_e_alerta(linha: str) -> bool:
     return any(palavra in alta for palavra in _ALERT_WORDS)
 
 
-def _texto_peca_para_html(titulo: str, conteudo: str, pronto_protocolo: bool = False) -> str:
+def _art_peca_html(
+    titulo: str,
+    corpo_html: str,
+    *,
+    pronto_protocolo: bool,
+    codigo_peca: str | None = None,
+    versao: int | None = None,
+    status: Any = None,
+    revisado_em: Any = None,
+) -> str:
+    """Monta o <article> Visual Law da peça: capa + meta-grid + corpo + rodapé.
+
+    Fonte única para os dois caminhos de render (texto puro e HTML pré-montado).
+    O meta-grid exibe Controle (código), Versão e Status; o rodapé recebe a
+    linha de controle EJC-... — ambos INJETADOS SÓ NO RENDER, nunca no texto da
+    IA. Degrada sem quebrar quando falta código (peças antigas).
+    """
+    import html as html_lib
+    from app.services.peca_numeracao import linha_controle, status_label
+
+    titulo_esc = html_lib.escape(titulo or "Documento juridico")
+    controle_val = html_lib.escape(
+        codigo_peca or ("Pronto para protocolo" if pronto_protocolo else "Minuta revisavel")
+    )
+    versao_val = html_lib.escape(f"v{int(versao or 1)}.0")
+    status_val = html_lib.escape(
+        status_label(status) if status is not None
+        else ("Peca final validada" if pronto_protocolo else "Rascunho controlado")
+    )
+    aviso = (
+        "Documento aprovado e validado para protocolo. Conferir dados variaveis, anexos e assinatura antes do envio ao tribunal."
+        if pronto_protocolo
+        else "ATENCAO: Rascunho sujeito a revisao humana obrigatoria por advogado responsavel antes de protocolo, envio ou assinatura."
+    )
+    rodape = ""
+    if codigo_peca:
+        linha = html_lib.escape(linha_controle(
+            codigo_peca=codigo_peca, titulo=titulo, versao=versao,
+            status=status, revisado_em=revisado_em,
+        ))
+        rodape = f'\n  <div class="footer-doc">{linha}</div>'
+    return f"""
+<article class=\"visual-law legal-doc\">
+  <div class=\"doc-cover\">
+    <div class=\"doc-kicker\">Peca juridica | Padrao Visual Law EJC</div>
+    <h1>{titulo_esc}</h1>
+    <table class=\"meta-grid\"><tr>
+      <td><span class=\"meta-label\">Controle</span><span class=\"meta-value\">{controle_val}</span></td>
+      <td><span class=\"meta-label\">Versao</span><span class=\"meta-value\">{versao_val}</span></td>
+      <td><span class=\"meta-label\">Status</span><span class=\"meta-value\">{status_val}</span></td>
+    </tr></table>
+  </div>
+  <div class=\"review-stamp\">{aviso}</div>
+  <div class=\"doc-body\">{corpo_html}</div>{rodape}
+</article>
+"""
+
+
+def _texto_peca_para_html(
+    titulo: str,
+    conteudo: str,
+    pronto_protocolo: bool = False,
+    *,
+    codigo_peca: str | None = None,
+    versao: int | None = None,
+    status: Any = None,
+    revisado_em: Any = None,
+) -> str:
     """Converte texto juridico puro em HTML Visual Law sem mudar o teor."""
     import html as html_lib
 
-    titulo_esc = html_lib.escape(titulo or "Documento juridico")
     linhas = [linha.rstrip() for linha in (conteudo or "").splitlines()]
     blocos: list[str] = []
     itens_lista: list[str] = []
@@ -145,28 +211,11 @@ def _texto_peca_para_html(titulo: str, conteudo: str, pronto_protocolo: bool = F
 
     fecha_lista()
     corpo = "\n".join(blocos)
-    controle = "Pronto para protocolo" if pronto_protocolo else "Minuta revisavel"
-    status_final = "Peca final validada" if pronto_protocolo else "Rascunho controlado"
-    aviso = (
-        "Documento aprovado e validado para protocolo. Conferir dados variaveis, anexos e assinatura antes do envio ao tribunal."
-        if pronto_protocolo
-        else "ATENCAO: Rascunho sujeito a revisao humana obrigatoria por advogado responsavel antes de protocolo, envio ou assinatura."
+    return _art_peca_html(
+        titulo, corpo,
+        pronto_protocolo=pronto_protocolo,
+        codigo_peca=codigo_peca, versao=versao, status=status, revisado_em=revisado_em,
     )
-    return f"""
-<article class=\"visual-law legal-doc\">
-  <div class=\"doc-cover\">
-    <div class=\"doc-kicker\">Peca juridica | Padrao Visual Law EJC</div>
-    <h1>{titulo_esc}</h1>
-    <table class=\"meta-grid\"><tr>
-      <td><span class=\"meta-label\">Origem</span><span class=\"meta-value\">Sistema EJC</span></td>
-      <td><span class=\"meta-label\">Controle</span><span class=\"meta-value\">{controle}</span></td>
-      <td><span class=\"meta-label\">Status</span><span class=\"meta-value\">{status_final}</span></td>
-    </tr></table>
-  </div>
-  <div class=\"review-stamp\">{aviso}</div>
-  <div class=\"doc-body\">{corpo}</div>
-</article>
-"""
 
 
 def _html_para_pdf(html: str) -> bytes:
@@ -347,44 +396,41 @@ async def gerar_caso_pdf(db, case_id: str, user_id: str) -> bytes:
     return _html_para_pdf(html)
 
 
-async def peca_para_pdf_async(titulo: str, conteudo: str, *, pronto_protocolo: bool = False) -> bytes:
+async def peca_para_pdf_async(
+    titulo: str,
+    conteudo: str,
+    *,
+    pronto_protocolo: bool = False,
+    codigo_peca: str | None = None,
+    versao: int | None = None,
+    status: Any = None,
+    revisado_em: Any = None,
+) -> bytes:
     """Converte uma peca juridica em PDF Visual Law.
 
     Quando pronto_protocolo=True, o PDF sai como versao final para protocolo.
     Caso contrario, permanece marcado como rascunho controlado.
+
+    codigo_peca/versao/status/revisado_em (do LegalDoc) alimentam o meta-grid e
+    a linha de controle do rodape — INJETADOS SO NO RENDER, nunca no texto da
+    IA. Ausentes (pecas antigas), o render degrada sem quebrar.
     """
     import asyncio
-    import html as html_lib
     from datetime import date
 
     titulo = padronizar_documento_juridico(titulo) or "Documento juridico"
     conteudo = padronizar_documento_juridico(conteudo)
-    controle = "Pronto para protocolo" if pronto_protocolo else "Minuta revisavel"
-    status_final = "Peca final validada" if pronto_protocolo else "Rascunho controlado"
-    aviso = (
-        "Documento aprovado e validado para protocolo. Conferir dados variaveis, anexos e assinatura antes do envio ao tribunal."
-        if pronto_protocolo
-        else "ATENCAO: Rascunho sujeito a revisao humana obrigatoria por advogado responsavel antes de protocolo, envio ou assinatura."
-    )
     if conteudo.strip().startswith("<"):
-        titulo_esc = html_lib.escape(titulo)
-        corpo = f"""
-<article class=\"visual-law legal-doc\">
-  <div class=\"doc-cover\">
-    <div class=\"doc-kicker\">Peca juridica | Padrao Visual Law EJC</div>
-    <h1>{titulo_esc}</h1>
-    <table class=\"meta-grid\"><tr>
-      <td><span class=\"meta-label\">Origem</span><span class=\"meta-value\">Sistema EJC</span></td>
-      <td><span class=\"meta-label\">Controle</span><span class=\"meta-value\">{controle}</span></td>
-      <td><span class=\"meta-label\">Status</span><span class=\"meta-value\">{status_final}</span></td>
-    </tr></table>
-  </div>
-  <div class=\"review-stamp\">{aviso}</div>
-  <div class=\"doc-body\">{conteudo}</div>
-</article>
-"""
+        corpo = _art_peca_html(
+            titulo, conteudo,
+            pronto_protocolo=pronto_protocolo,
+            codigo_peca=codigo_peca, versao=versao, status=status, revisado_em=revisado_em,
+        )
     else:
-        corpo = _texto_peca_para_html(titulo, conteudo, pronto_protocolo=pronto_protocolo)
+        corpo = _texto_peca_para_html(
+            titulo, conteudo, pronto_protocolo=pronto_protocolo,
+            codigo_peca=codigo_peca, versao=versao, status=status, revisado_em=revisado_em,
+        )
 
     html_doc = _HTML_BASE.format(
         corpo=corpo,

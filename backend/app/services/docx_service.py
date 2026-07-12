@@ -219,6 +219,16 @@ def gerar_docx(titulo: str, conteudo_md: str, meta: dict | None = None) -> bytes
     r1.font.size = Pt(8)
     r2.font.size = Pt(8)
 
+    # Linha de controle EJC-<...> (Fase D) — render-only, montada pelo chamador.
+    linha_controle = meta.get("linha_controle")
+    if linha_controle:
+        pctrl = footer.add_paragraph()
+        pctrl.alignment = WD_ALIGN_PARAGRAPH.CENTER
+        rc = pctrl.add_run(str(linha_controle))
+        rc.font.name = fonte
+        rc.font.size = Pt(7.5)
+        rc.font.color.rgb = RGBColor(75, 85, 99)
+
     # ── Título do documento ─────────────────────────────────────────────
     pt = doc.add_paragraph()
     pt.alignment = WD_ALIGN_PARAGRAPH.CENTER
@@ -238,13 +248,16 @@ def gerar_docx(titulo: str, conteudo_md: str, meta: dict | None = None) -> bytes
     q.font.size = Pt(10)
     q.font.color.rgb = cor_titulo
 
+    codigo_peca = meta.get("codigo_peca")
+    versao_doc = f"v{int(meta.get('versao') or 1)}.0"
+    status_doc = meta.get("status") or "Versão de trabalho"
     tabela = doc.add_table(rows=2, cols=3)
     campos = [
-        ("Origem", "Sistema EJC"),
-        ("Formato", "DOCX editável"),
-        ("Status", "Versão de trabalho"),
+        ("Controle", str(codigo_peca or "Visual Law")),
+        ("Versão", versao_doc),
+        ("Status", str(status_doc)),
         ("Processo", str(numero_processo or "—")),
-        ("Controle", "Visual Law"),
+        ("Formato", "DOCX editável"),
         ("Revisão", "Obrigatória"),
     ]
     for cell, (label, valor) in zip(tabela._cells, campos):
