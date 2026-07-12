@@ -71,3 +71,28 @@ inventar:
   especificamente (confirmar com contador/Secretaria da Fazenda de Betim).
 - Data de obrigatoriedade efetiva vigente para Betim (fontes citam 01/01/2026 e
   01/07/2026).
+
+---
+
+## Contrato do adapter — Nuvem Fiscal (provedor padrão, pronto para implementar)
+
+Extraído do OpenAPI/SDK oficial. Interface `NFSeProvider` (emit/get_status/get_pdf/get_xml/cancel); primeiro adapter = `NuvemFiscalProvider`.
+
+**Auth** (OAuth2 client_credentials, token cacheado por `expires_in`):
+`POST https://auth.nuvemfiscal.com.br/oauth/token` (form-urlencoded)
+`grant_type=client_credentials&client_id=...&client_secret=...&scope=nfse empresa cnpj cep`
+→ `Authorization: Bearer <access_token>` nas chamadas. Base da API: `https://api.nuvemfiscal.com.br`. **Um só host** — produção vs. homologação é campo no payload (`ambiente: "homologacao"|"producao"`, `tpAmb: 2|1`).
+
+**Endpoints essenciais:**
+- Emitir (modelo nacional/DPS): `POST /nfse/dps` (corpo `NfseDpsPedidoEmissao`) → retorna `{id, status:"processando"}` (ASSÍNCRONO)
+- Status: `GET /nfse/{id}` (polling até `autorizada`/`rejeitada`)
+- PDF DANFSe: `GET /nfse/{id}/pdf` · XML: `GET /nfse/{id}/xml`
+- Cancelar: `POST /nfse/{id}/cancelamento`
+- Empresa emitente (1x): `POST /empresas` + `PUT /empresas/{cnpj}/nfse`; certificado A1 (1x): `PUT /empresas/{cnpj}/certificado/upload` (multipart .pfx + senha) — **o certificado vai para o provedor, não para o EJC**.
+
+**Shape mínimo do `POST /nfse/dps`** (prestador vem do cadastro, só CNPJ+regime no payload):
+`infDPS`: `tpAmb`, `dhEmi`, `dCompet`, `prest{CNPJ, regTrib}`, `toma{CNPJ/CPF, xNome, end{cMun IBGE, UF, CEP}}`, `serv{locPrest{cLocPrestacao IBGE}, cServ{cTribNac (item 17.14 advocacia), xDescServ}}`, `valores{vServPrest{vServ}, trib{tribMun{tribISSQN, cLocIncid IBGE, pAliq, tpRetISSQN}}}`. Campo `referencia` = chave de idempotência (evita nota duplicada).
+
+**A confirmar na implementação** (via `GET /nfse/cidades/{ibge_betim=3106200}`): formato exato de `cTribNac`/`cTribMun` de Betim para advocacia; disponibilidade de homologação real em Betim; valores dos enums (`tribISSQN`, `tpRetISSQN`, `opSimpNac`).
+
+**Alternativas de adapter** (interface trocável): Focus NFe (host de homologação dedicado, `ref` idempotente, Betim já integrado, Postman público — melhor sandbox), eNotas (mais barato ~R$137, API Key via Basic, modelo mais simples). O fluxo POST→id→polling é ~idêntico entre os três.
