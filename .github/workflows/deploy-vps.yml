@@ -13,8 +13,10 @@
 #   VPS_PORT      — opcional (default 22)
 #
 # Segurança: o rsync NUNCA toca .env, uploads/, backups/ do servidor e não usa
-# --delete. Migrations NÃO rodam por padrão (input run_migrations) — inclusive
-# no disparo automático, que nunca roda migrations.
+# --delete. Migrations: o deploy AUTOMÁTICO (workflow_run pós-CI) SEMPRE aplica
+# (alembic upgrade head) — com backup antes e rollback se o health-check falhar;
+# evita subir código na frente do schema. O disparo manual respeita o input
+# run_migrations.
 name: Deploy VPS
 
 on:
@@ -107,7 +109,13 @@ jobs:
 
       - name: Deploy seguro (backup → build → health-check → rollback em falha)
         env:
-          RUN_MIGRATIONS: ${{ inputs.run_migrations && '1' || '0' }}
+          # Deploy automático (workflow_run pós-CI) SEMPRE aplica as migrations —
+          # senão o código sobe na frente do schema e quebra em produção (ex.:
+          # peça grava colunas/tabela que a migration ainda não criou). É seguro:
+          # deploy_vps_safe.sh faz backup ANTES e rollback se o health-check
+          # falhar, e as migrations do EJC são aditivas/idempotentes. O disparo
+          # manual (workflow_dispatch) continua respeitando o input run_migrations.
+          RUN_MIGRATIONS: ${{ (github.event_name == 'workflow_run' || inputs.run_migrations) && '1' || '0' }}
         run: |
           ${RSH} "${VPS_USER}@${VPS_HOST}" \
             "cd /opt/ejc && RUN_MIGRATIONS=${RUN_MIGRATIONS} bash scripts/deploy_vps_safe.sh"
