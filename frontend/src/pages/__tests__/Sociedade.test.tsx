@@ -9,7 +9,7 @@
  * É exatamente a classe de teste que teria pego o bug antes de produção.
  */
 import { describe, it, expect, vi, beforeEach } from "vitest";
-import { render, waitFor } from "@testing-library/react";
+import { render, screen } from "@testing-library/react";
 import { MemoryRouter } from "react-router-dom";
 
 // vi.hoisted: o factory de vi.mock é içado ao topo — precisa acessar `get` assim.
@@ -40,15 +40,20 @@ describe("Sociedade — resposta não-array não quebra o render", () => {
       data: { items: [], socios: [], total_participacao: 0, total: 0, data: [] },
     });
     renderPage();
-    await waitFor(() => expect(get).toHaveBeenCalled());
-    // Não houve tela branca: há conteúdo renderizado.
-    expect(document.body.textContent?.length ?? 0).toBeGreaterThan(0);
+    // Não houve tela branca: aguarda o conteúdo REAL da página (o título do
+    // PageHeader, renderizado só depois de sair do estado de loading). Ancorar
+    // no heading evita a race em que a asserção rodava enquanto o Spinner
+    // (sem texto) ainda estava na tela.
+    expect(
+      await screen.findByRole("heading", { name: /Gestão Societária/ }),
+    ).toBeTruthy();
   });
 
   it("API devolvendo objeto de erro (não-array) → ainda não quebra", async () => {
     get.mockResolvedValue({ data: { detail: "erro qualquer" } });
     renderPage();
-    await waitFor(() => expect(get).toHaveBeenCalled());
-    expect(document.body.textContent?.length ?? 0).toBeGreaterThan(0);
+    expect(
+      await screen.findByRole("heading", { name: /Gestão Societária/ }),
+    ).toBeTruthy();
   });
 });
