@@ -55,12 +55,34 @@ async def get_db() -> AsyncSession:
 
 
 async def check_db() -> bool:
-    """Verifica conectividade com o banco (usado no /health)."""
-    try:
+    """Verifica conectividade com o banco (usado no /health/ready).
+
+    Resiliente ao cross-loop dos testes: o pool do engine pode reter conexões
+    asyncpg presas a um event loop já fechado (pytest-asyncio/TestClient criam
+    um loop por chamada). A 1ª tentativa então falha com RuntimeError ("got
+    Future attached to a different loop" / "Event loop is closed") — que NÃO é o
+    banco fora do ar. Nesse caso descartamos o pool poluído (dispose(close=False)
+    abandona as conexões do loop morto sem aguardar close nelas) e refazemos numa
+    conexão nova. Em produção (loop único do uvicorn) a 1ª tentativa já passa e o
+    dispose nunca roda. DB realmente fora → ambas as tentativas falham → False.
+    """
+    async def _probe() -> None:
         async with engine.connect() as conn:
             await conn.execute(text("SELECT 1"))
             await conn.execute(text("SELECT 1 FROM pg_extension WHERE extname='vector'"))
+
+    try:
+        await _probe()
         return True
     except Exception as e:
+        if "loop" in str(e).lower():
+            # Artefato de cross-loop do pool sob teste — reseta e reconsulta.
+            try:
+                await engine.dispose(close=False)
+                await _probe()
+                return True
+            except Exception as e2:
+                logger.error(f"Database check failed after pool reset: {e2}")
+                return False
         logger.error(f"Database check failed: {e}")
         return False
