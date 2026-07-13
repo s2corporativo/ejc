@@ -364,10 +364,10 @@
     background: #d4af37;
   }
   .sidebar-group-label {
-    color: #94a3b8;
+    color: #64748b;
   }
   .sidebar-group-label:hover {
-    color: #64748b;
+    color: #475569;
   }
   .sidebar-tree {
     border-color: var(--ejc-border);

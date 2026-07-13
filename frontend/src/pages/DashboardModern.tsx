@@ -258,8 +258,8 @@ export default function DashboardModern() {
         actions={<ThemeSelector className="w-full sm:min-w-[330px]" />}
       />
 
-      {/* Faixa hero sépia→bronze com filete dourado no topo (sem borda) */}
-      <section className="relative overflow-hidden rounded-2xl bg-gradient-to-br from-[#211913] via-[#2E241A] to-[#5E4A0E] p-5 text-white shadow-lg before:absolute before:inset-x-0 before:top-0 before:h-0.5 before:bg-gradient-to-r before:from-ouro-claro before:via-ouro-claro/40 before:to-transparent dark:from-[#17110c] dark:via-[#241c14] dark:to-[#4a3a10] md:p-6">
+      {/* Faixa hero — claro: branco/creme com filete dourado; escuro: sépia→bronze */}
+      <section className="relative overflow-hidden rounded-2xl border border-ouro-claro/30 bg-gradient-to-br from-white via-ouro-palha/50 to-ouro-palha p-5 text-slate-700 shadow-soft before:absolute before:inset-x-0 before:top-0 before:h-0.5 before:bg-gradient-to-r before:from-ouro-claro before:via-ouro-claro/40 before:to-transparent dark:border-transparent dark:from-[#17110c] dark:via-[#241c14] dark:to-[#4a3a10] dark:text-white dark:shadow-lg md:p-6">
         <div className="flex flex-col gap-5 xl:flex-row xl:items-center xl:justify-between">
           <div className="max-w-2xl">
             <div className="mb-2 flex flex-wrap items-center gap-2">
@@ -267,18 +267,18 @@ export default function DashboardModern() {
                   extras bg-white/10 + text-primary-100 disputavam com o tone
                   padrão slate e o badge ficava ilegível no fundo sépia. */}
               <Badge tone="ouro">Operação segura</Badge>
-              <span className="inline-flex items-center gap-1.5 text-xs text-primary-100/80">
+              <span className="inline-flex items-center gap-1.5 text-xs text-ouro-profundo/90 dark:text-primary-100/80">
                 <ShieldCheck className="h-3.5 w-3.5" />
                 Auditoria e LGPD preservadas
               </span>
             </div>
-            {/* !text-white: o seletor global `.ejc-modern-scope h2` (index.css)
-                pinta headings de #111827 e vencia o utilitário text-white,
-                deixando o título ilegível sobre o gradiente sépia escuro. */}
-            <h2 className="text-xl font-semibold !text-white md:text-2xl">
+            {/* Título forçado (!) porque o seletor global `.ejc-modern-scope h2`
+                (index.css) pinta headings de #111827: no claro = tinta escura
+                sobre o hero branco/creme; no escuro = branco sobre o sépia. */}
+            <h2 className="text-xl font-semibold !text-slate-900 dark:!text-white md:text-2xl">
               Decida o que precisa de atenção agora
             </h2>
-            <p className="mt-2 text-sm leading-6 text-primary-100/80">
+            <p className="mt-2 text-sm leading-6 text-slate-600 dark:text-primary-100/80">
               O painel prioriza riscos, vencimentos e movimentações sem substituir a validação profissional do advogado.
             </p>
           </div>
@@ -291,7 +291,7 @@ export default function DashboardModern() {
                   className={
                     primary
                       ? "bg-white text-ouro-profundo shadow-md hover:bg-ouro-palha dark:bg-white dark:text-ouro-profundo dark:hover:bg-ouro-palha"
-                      : "text-white hover:bg-white/10 dark:text-white dark:hover:bg-white/10"
+                      : "text-ouro-profundo hover:bg-ouro/10 dark:text-white dark:hover:bg-white/10"
                   }
                 >
                   {label}
