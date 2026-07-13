@@ -2124,8 +2124,6 @@ export const RAMOS: Record<string, RamoConfig> = {
   transito,
 };
 
-export const RAMOS_LISTA = Object.values(RAMOS);
-
 // ══════════════════════════════════════════════════════════════════════════
 // SUBÁREAS DE ATUAÇÃO + FERRAMENTAS PÚBLICAS EXTERNAS (por ramo)
 // ══════════════════════════════════════════════════════════════════════════
@@ -2837,5 +2835,3 @@ for (const slug of Object.keys(RAMOS)) {
   if (FERRAMENTAS_EXTERNAS[slug])
     RAMOS[slug].ferramentasExternas = FERRAMENTAS_EXTERNAS[slug];
 }
-
-export const RAMOS_LISTA_FINAL = Object.values(RAMOS);

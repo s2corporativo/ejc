@@ -7,7 +7,7 @@ import { cn } from "../../lib/cn";
  * tabelas), pois evitam "salto" de layout.
  *
  * @example
- * {loading ? <SkeletonList rows={5} /> : <Table>…</Table>}
+ * {loading ? <Skeleton height={20} /> : <Row>…</Row>}
  */
 export function Skeleton({
   className,
@@ -38,60 +38,5 @@ export function Skeleton({
         className || (width == null && height == null ? "h-4 w-full" : ""),
       )}
     />
-  );
-}
-
-/**
- * Lista de linhas em pulse — placeholder de listas e tabelas.
- * Larguras levemente variadas para leitura mais natural.
- */
-export function SkeletonList({
-  rows = 4,
-  withAvatar = false,
-  className,
-}: {
-  rows?: number;
-  /** Círculo à esquerda de cada linha (listas com avatar/ícone). */
-  withAvatar?: boolean;
-  className?: string;
-}) {
-  const widths = ["w-full", "w-11/12", "w-4/5", "w-full", "w-3/4"];
-  return (
-    <div className={cn("space-y-3", className)} aria-hidden="true">
-      {Array.from({ length: rows }, (_, i) => (
-        <div key={i} className="flex items-center gap-3">
-          {withAvatar && <Skeleton circle width={32} height={32} />}
-          <Skeleton className={cn("h-4", widths[i % widths.length])} />
-        </div>
-      ))}
-    </div>
-  );
-}
-
-/**
- * Card em pulse — placeholder de StatCard/SectionCard enquanto carrega.
- */
-export function SkeletonCard({
-  lines = 3,
-  header = true,
-  className,
-}: {
-  /** Linhas de "texto" no corpo. */
-  lines?: number;
-  /** Exibe barra de título mais curta no topo. */
-  header?: boolean;
-  className?: string;
-}) {
-  return (
-    <div
-      aria-hidden="true"
-      className={cn(
-        "rounded-xl border border-slate-200 bg-white p-5",
-        className,
-      )}
-    >
-      {header && <Skeleton className="mb-4 h-5 w-1/3" />}
-      <SkeletonList rows={lines} />
-    </div>
   );
 }

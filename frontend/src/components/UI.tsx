@@ -6,14 +6,10 @@ import {
   ArrowUp,
   Bot,
   CheckCircle2,
-  FileText,
-  ChevronDown,
-  Filter,
   Inbox,
   Info,
   Loader2,
   Search,
-  SlidersHorizontal,
   X,
 } from "lucide-react";
 
@@ -184,17 +180,6 @@ export function StatusBadge({ value }: { value?: string | null }) {
   );
 }
 
-export function PriorityBadge({ value }: { value?: string | null }) {
-  const priority = (value || "normal").toLowerCase();
-  const tone: Tone =
-    priority === "alta" || priority === "critica"
-      ? "red"
-      : priority === "media"
-        ? "amber"
-        : "slate";
-  return <Badge tone={tone}>{priority}</Badge>;
-}
-
 export function FieldLabel({
   children,
   required,
@@ -247,35 +232,6 @@ export function SearchBar({
         placeholder={placeholder}
         className="pl-9"
       />
-    </div>
-  );
-}
-
-export function FilterBar({
-  children,
-  onClear,
-}: {
-  children: ReactNode;
-  onClear?: () => void;
-}) {
-  return (
-    <div className="flex flex-wrap items-center gap-2 rounded-xl border border-black/[0.05] bg-white p-3 shadow-sm">
-      <div className="flex items-center gap-2 text-xs font-medium text-slate-500">
-        <SlidersHorizontal className="h-4 w-4" />
-        Filtros
-      </div>
-      <div className="flex flex-1 flex-wrap items-center gap-2">{children}</div>
-      {onClear && (
-        <Button
-          type="button"
-          variant="ghost"
-          size="sm"
-          icon={<Filter className="h-3.5 w-3.5" />}
-          onClick={onClear}
-        >
-          Limpar
-        </Button>
-      )}
     </div>
   );
 }
@@ -475,59 +431,6 @@ export function TD({
     <td {...props} className={className}>
       {children}
     </td>
-  );
-}
-
-export function Tabs({
-  items,
-  value,
-  onChange,
-}: {
-  items: Array<{ value: string; label: string; icon?: ReactNode }>;
-  value: string;
-  onChange: (value: string) => void;
-}) {
-  // Segmentado tonal SEM borda; aba ativa em branco elevado com
-  // indicador dourado FINO (filete 2px) — dourado como acento cirúrgico.
-  return (
-    <div className="flex gap-1 overflow-x-auto rounded-xl bg-slate-900/[0.04] p-1 dark:bg-white/[0.06]">
-      {items.map((item) => (
-        <button
-          key={item.value}
-          type="button"
-          onClick={() => onChange(item.value)}
-          className={cn(
-            "relative flex h-9 shrink-0 items-center gap-2 rounded-lg px-3 text-sm font-medium transition-all",
-            value === item.value
-              ? "bg-white text-ouro-profundo shadow-sm after:absolute after:inset-x-3 after:bottom-1 after:h-0.5 after:rounded-full after:bg-ouro-claro dark:bg-white/[0.1] dark:text-[#E5CE7F]"
-              : "text-slate-600 hover:bg-slate-900/[0.04] dark:text-slate-300 dark:hover:bg-white/[0.05]",
-          )}
-        >
-          {item.icon}
-          {item.label}
-        </button>
-      ))}
-    </div>
-  );
-}
-
-export function Dropdown({
-  label,
-  children,
-}: {
-  label: ReactNode;
-  children: ReactNode;
-}) {
-  return (
-    <details className="relative">
-      <summary className="flex h-10 cursor-pointer list-none items-center gap-2 rounded-lg bg-slate-900/[0.05] px-3 text-sm font-medium text-slate-700 hover:bg-slate-900/[0.09] dark:bg-white/[0.07] dark:text-slate-200 dark:hover:bg-white/[0.12]">
-        {label}
-        <ChevronDown className="h-4 w-4 text-slate-400" />
-      </summary>
-      <div className="absolute right-0 z-40 mt-2 min-w-48 rounded-xl border border-slate-200 bg-white p-2 shadow-lg">
-        {children}
-      </div>
-    </details>
   );
 }
 
@@ -886,7 +789,7 @@ export function Alert({
 
 // Skeletons de carregamento (pulse) — implementação em components/base/.
 // Re-exportados aqui para manter o ponto único de import das páginas.
-export { Skeleton, SkeletonList, SkeletonCard } from "./base/Skeleton";
+export { Skeleton } from "./base/Skeleton";
 
 export function EmptyState({
   title = "Nada encontrado",
@@ -1025,49 +928,6 @@ export function ConfidenceBadge({ value }: { value?: number | null }) {
       <CheckCircle2 className="h-3 w-3" />
       {score == null ? "confianca pendente" : `${score}% confianca`}
     </Badge>
-  );
-}
-
-export function VisualLawDocument({
-  title,
-  subtitle,
-  meta = [],
-  children,
-  className,
-}: {
-  title: string;
-  subtitle?: string;
-  meta?: Array<{ label: string; value: ReactNode }>;
-  children: ReactNode;
-  className?: string;
-}) {
-  return (
-    <article className={cn("visual-law-document overflow-hidden", className)}>
-      <header className="visual-law-document-header">
-        <div className="flex items-start gap-3">
-          <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-lg bg-primary-700 text-white">
-            <FileText className="h-5 w-5" />
-          </div>
-          <div className="min-w-0">
-            <h1>{title}</h1>
-            {subtitle && (
-              <p className="mt-1 text-sm text-slate-500">{subtitle}</p>
-            )}
-          </div>
-        </div>
-        {meta.length > 0 && (
-          <div className="visual-law-meta-grid">
-            {meta.map((item) => (
-              <div key={item.label} className="visual-law-meta-item">
-                <div className="visual-law-meta-label">{item.label}</div>
-                <div className="visual-law-meta-value">{item.value}</div>
-              </div>
-            ))}
-          </div>
-        )}
-      </header>
-      <div className="visual-law-document-body">{children}</div>
-    </article>
   );
 }
 

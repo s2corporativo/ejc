@@ -60,20 +60,3 @@ export function RoleOnly({
   }
   return children;
 }
-
-export function PermissionOnly({
-  permissions,
-  children,
-}: {
-  permissions: readonly string[];
-  children: ReactElement;
-}) {
-  const { status, user } = useAuth();
-  if (status === "initializing") return <RouteLoading />;
-  if (user?.role === "superadmin") return children;
-  const current = new Set(user?.permissions ?? []);
-  if (!permissions.every((permission) => current.has(permission))) {
-    return <Navigate to="/" replace />;
-  }
-  return children;
-}
