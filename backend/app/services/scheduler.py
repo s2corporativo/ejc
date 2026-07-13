@@ -1109,7 +1109,6 @@ async def _alertar_contratos():
     from app.services.notification_service import criar_notificacao_interna
     try:
         async with AsyncSessionLocal() as db:
-            hoje = date.today()
             rows = (await db.execute(text("""
                 SELECT c.id, c.titulo, c.data_fim,
                        COALESCE(c.created_by, cs.advogado_responsavel_id) AS responsavel_id
@@ -1197,7 +1196,6 @@ async def _auditoria_processos():
             hoje = date.today()
             limite_30 = hoje - timedelta(days=30)
             limite_60 = hoje - timedelta(days=60)
-            limite_90 = hoje - timedelta(days=90)
 
             # 1. Casos sem movimentação DataJud há 30+ dias
             rows_mov = (await db.execute(text("""
