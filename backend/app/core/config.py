@@ -323,6 +323,15 @@ class Settings(BaseSettings):
     EMBEDDINGS_API_URL: str = "http://embeddings:8010/embed"
     EMBEDDINGS_TIMEOUT: int = 120
 
+    # ── RAG de MODELOS na geração de peças (Bíblia de Conhecimento) ───────
+    # Recupera os modelos de peça (categoria "modelo_documento_juridico") como
+    # REFERÊNCIA de estrutura/tese na montagem final (Etapa 7). Gated e fail-safe:
+    # OFF ou qualquer falha/vazio degrada para o comportamento atual (peça gerada
+    # sem modelos), NUNCA propaga erro. Query dedicada com filtro por categoria
+    # para os modelos não serem afogados por legislação/jurisprudência no top-k.
+    PECAS_RAG_MODELOS_ENABLED: bool = True
+    PECAS_RAG_MODELOS_TOPK: int = 3
+
     # ── Web Push (alertas no celular via PWA) ────────────────────────────
     # Gerar chaves: python scripts/gen_vapid.py (uma vez no deploy)
     VAPID_PUBLIC_KEY: str = ""
