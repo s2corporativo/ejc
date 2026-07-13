@@ -79,7 +79,7 @@ export default function Kanban() {
     Promise.all([loadCols(area), loadCasos()]).finally(() => setLoading(false));
   }, [area, loadCols, loadCasos]);
 
-  const getColKey = (c: Caso, colName: string, flowList?: Caso[]) => {
+  const getColKey = (c: Caso, colName: string, _flowList?: Caso[]) => {
     // Casos já posicionados: respeitam o kanban_column SE pertencer a este fluxo
     const colNames = cols.map((k) => k.name);
     if (c.kanban_column && colNames.includes(c.kanban_column))

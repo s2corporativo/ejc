@@ -153,7 +153,7 @@ function Secao({
 
 export default function AnaliseEstrategica({
   caseId,
-  onClose,
+  onClose: _onClose,
 }: {
   caseId: string;
   onClose?: () => void;

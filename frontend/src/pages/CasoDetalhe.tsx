@@ -2276,7 +2276,13 @@ function TabRisco({ caseId }: { caseId: string }) {
 }
 
 // ── Tab: Jurisprudência (RAG) ─────────────────────────────────────────────────
-function TabJurisprudencia({ caseId, caso }: { caseId: string; caso: Case }) {
+function TabJurisprudencia({
+  caseId: _caseId,
+  caso,
+}: {
+  caseId: string;
+  caso: Case;
+}) {
   const [query, setQuery] = useState("");
   const [results, setResults] = useState<any[]>([]);
   const [loading, setLoading] = useState(false);

@@ -40,7 +40,6 @@ export default function DataJudBusca() {
   const [loading, setLoading] = useState(false);
   const [processo, setProcesso] = useState<ProcessoDataJud | null>(null);
   const [erro, setErro] = useState<string | null>(null);
-  const [syncingId, setSyncingId] = useState<string | null>(null);
   const [syncMsg, setSyncMsg] = useState<string | null>(null);
 
   async function buscar() {
@@ -61,21 +60,6 @@ export default function DataJudBusca() {
       setErro(msg);
     } finally {
       setLoading(false);
-    }
-  }
-
-  async function sincronizar(caseId: string) {
-    setSyncingId(caseId);
-    setSyncMsg(null);
-    try {
-      const res = await api.post(`/v1/datajud/cases/${caseId}/sync`);
-      setSyncMsg(`Sincronizado: ${res.data.synced} movimentos atualizados`);
-    } catch (e: any) {
-      setSyncMsg(
-        `Erro: ${e.response?.data?.detail ?? "Falha na sincronização"}`,
-      );
-    } finally {
-      setSyncingId(null);
     }
   }
 

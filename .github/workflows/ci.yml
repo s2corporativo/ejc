@@ -152,5 +152,11 @@ jobs:
         continue-on-error: true
         run: npm audit --audit-level=high
 
+      # Gate de código morto — knip. Non-blocking por ora (continue-on-error);
+      # remova o continue-on-error para torná-lo BLOQUEANTE quando estiver limpo.
+      - name: Código morto (knip)
+        continue-on-error: true
+        run: npm run knip
+
       - name: Typecheck + build
         run: npm run build
