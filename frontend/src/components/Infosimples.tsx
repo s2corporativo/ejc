@@ -73,7 +73,7 @@ function fetchStatus(): Promise<InfosimplesStatus | null> {
  * enabled && configured. Em erro ou integração desligada → false
  * (botões somem, sem toast — invisível quando desligada).
  */
-export function useInfosimplesStatus() {
+function useInfosimplesStatus() {
   const [status, setStatus] = useState<InfosimplesStatus | null>(null);
   useEffect(() => {
     let vivo = true;
@@ -100,7 +100,7 @@ const ERRO_PADRAO: Record<number, string> = {
 };
 
 /** Toast de erro padronizado: prioriza o `detail` do backend (429 tem detail claro). */
-export function toastErroInfosimples(err: unknown) {
+function toastErroInfosimples(err: unknown) {
   const e = err as {
     response?: { status?: number; data?: { detail?: unknown } };
   };

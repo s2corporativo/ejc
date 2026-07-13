@@ -6,7 +6,7 @@ import { useEffect, useState } from "react";
 import api from "../lib/api";
 import { cn } from "./UI";
 
-export function userInitials(name?: string | null): string {
+function userInitials(name?: string | null): string {
   return (name || "?")
     .split(" ")
     .filter(Boolean)

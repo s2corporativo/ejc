@@ -134,7 +134,7 @@ const JornadaCaso = lazy(() => import("../pages/JornadaCaso"));
 // DECISÃO: menu centrado no caso — o grupo "Principal" destaca Novo Caso e
 // Casos logo abaixo do Dashboard; os demais módulos foram reagrupados em
 // 5 famílias SEM alterar nenhum path existente (usuários têm rotas salvas).
-export const MODULE_GROUP_ORDER = [
+const MODULE_GROUP_ORDER = [
   "Principal",
   "Inteligência Jurídica",
   "Produção",

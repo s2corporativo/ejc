@@ -28,7 +28,7 @@ import api from "../lib/api";
 import { fmtMoney } from "./UI";
 
 // Acentos por cor — ícone com fundo suave colorido
-export const ACCENTS: Record<
+const ACCENTS: Record<
   string,
   { bg: string; fg: string; bar: string; ring: string }
 > = {
@@ -88,7 +88,7 @@ export const ACCENTS: Record<
   },
 };
 
-export const RAMO_ACCENT: Record<string, string> = {
+const RAMO_ACCENT: Record<string, string> = {
   amber: "amber",
   blue: "blue",
   red: "red",
@@ -99,7 +99,7 @@ export const RAMO_ACCENT: Record<string, string> = {
 };
 
 // ── KPI card ────────────────────────────────────────────────────────────────
-export function Kpi({
+function Kpi({
   label,
   value,
   sub,
@@ -173,13 +173,7 @@ export function Kpi({
   );
 }
 
-export function KpiGrid({
-  children,
-  cols = 4,
-}: {
-  children: any;
-  cols?: 2 | 3 | 4;
-}) {
+function KpiGrid({ children, cols = 4 }: { children: any; cols?: 2 | 3 | 4 }) {
   const g =
     cols === 2
       ? "lg:grid-cols-2"
@@ -190,7 +184,7 @@ export function KpiGrid({
 }
 
 // ── Barras horizontais ───────────────────────────────────────────────────────
-export function BarsH({
+function BarsH({
   data,
   accent = "blue",
 }: {
@@ -224,7 +218,7 @@ export function BarsH({
 }
 
 // ── Painel (card com título) ─────────────────────────────────────────────────
-export function Panel({
+function Panel({
   title,
   icon: Icon,
   action,

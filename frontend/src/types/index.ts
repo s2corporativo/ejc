@@ -129,17 +129,6 @@ export interface Fee {
   case_id?: string;
   created_at: string;
 }
-export interface EnvCase {
-  id: string;
-  case_id: string;
-  orgao_autuador: string;
-  numero_auto: string;
-  data_ciencia?: string;
-  data_prazo_defesa?: string;
-  status_defesa: string;
-  valor_multa?: number;
-  created_at: string;
-}
 // ── Autenticação ─────────────────────────────────────────
 export interface AuthTokens {
   access_token: string;

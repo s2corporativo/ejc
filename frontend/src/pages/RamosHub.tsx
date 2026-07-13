@@ -18,17 +18,7 @@ import {
   Sparkles,
   Users,
 } from "lucide-react";
-import {
-  Badge,
-  Button,
-  Card,
-  Page,
-  PageActions,
-  PageDescription,
-  PageGrid,
-  PageHeader,
-  PageTitle,
-} from "../components/ui";
+import { Badge, Button, Card } from "../components/UI";
 
 const RAMOS = [
   {
@@ -149,29 +139,31 @@ export default function RamosHub() {
   const navigate = useNavigate();
 
   return (
-    <Page className="surface-soft min-h-full px-6 py-8">
+    <main className="space-y-6 surface-soft min-h-full px-6 py-8">
       <div className="mx-auto max-w-7xl space-y-8">
-        <PageHeader className="rounded-[2rem] bg-white/70 p-6 shadow-[0_18px_60px_rgba(15,23,42,0.08)] backdrop-blur dark:bg-white/[0.03]">
+        <header className="flex flex-col gap-3 rounded-[2rem] bg-white/70 p-6 shadow-[0_18px_60px_rgba(15,23,42,0.08)] backdrop-blur sm:flex-row sm:items-start sm:justify-between dark:bg-white/[0.03]">
           <div>
-            <Badge variant="gold" className="mb-3 gap-1">
+            <Badge tone="ouro" className="mb-3 gap-1">
               <Sparkles className="h-3 w-3" /> Áreas estratégicas
             </Badge>
-            <PageTitle>Ramos do Direito</PageTitle>
-            <PageDescription>
+            <h1 className="text-2xl font-semibold tracking-tight text-slate-950">
+              Ramos do Direito
+            </h1>
+            <p className="mt-1 max-w-3xl text-sm leading-6 text-slate-500">
               Escolha uma área para acessar ferramentas especializadas,
               cálculos, guias, análises e fluxos jurídicos próprios do
               escritório.
-            </PageDescription>
+            </p>
           </div>
-          <PageActions>
+          <div className="flex flex-wrap items-center gap-2">
             <Button variant="secondary" onClick={() => navigate("/casos")}>
               Casos
             </Button>
             <Button onClick={() => navigate("/ia")}>Abrir IA jurídica</Button>
-          </PageActions>
-        </PageHeader>
+          </div>
+        </header>
 
-        <PageGrid className="grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
+        <section className="grid gap-4 md:grid-cols-2 xl:grid-cols-3 grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
           {RAMOS.map((ramo) => {
             const Icon = ramo.icon;
             return (
@@ -214,8 +206,8 @@ export default function RamosHub() {
               </button>
             );
           })}
-        </PageGrid>
+        </section>
       </div>
-    </Page>
+    </main>
   );
 }
