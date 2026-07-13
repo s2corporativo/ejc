@@ -72,7 +72,7 @@ xlrd==2.0.2                    # extração de texto de .xls legado (ocr_service
 qrcode[pil]==7.4.2
 Pillow==10.4.0
 pdf2image==1.17.0
-pytesseract==0.3.10
+pytesseract==0.3.13
 defusedxml==0.7.1  # parse SEGURO de XML de terceiros (NF-e) — mitiga XXE/billion laughs (ocr_service.py, services/fiscal/nfe_parser.py)
 jinja2==3.1.6  # core/document_template_engine.py (import direto). Antes vinha
                # por transitividade do fastapi 0.111 "gordo"; o 0.115 (slim)
