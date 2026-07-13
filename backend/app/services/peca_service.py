@@ -11,6 +11,7 @@ from uuid import uuid4
 
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.core.config import get_settings
 from app.models.ai_log import AILog, AITipoUso, AIStatusHITL
 from app.models.legal_doc import LegalDoc, PecaTipo
 from app.services.ai_gateway import chat as gw_chat
@@ -595,6 +596,73 @@ def _tipo_identificado(texto: str) -> str | None:
     return None
 
 
+async def _recuperar_modelos_referencia(
+    db: AsyncSession,
+    area_direito: str,
+    tipo_peca_final: str,
+    pedidos_limpos: str,
+    tese_txt: str,
+) -> list[dict]:
+    """
+    Recupera modelos de peça da Bíblia de Conhecimento (categoria
+    "modelo_documento_juridico") como REFERÊNCIA de estrutura/tese na montagem
+    final. Query DEDICADA com filtro por categoria: sem esse filtro os modelos
+    são afogados por legislação/jurisprudência num único top-k global.
+
+    Gated e fail-safe:
+      - flag OFF → retorna [] SEM chamar o RAG (comportamento atual idêntico);
+      - qualquer exceção OU resultado vazio → retorna [] (degradação graciosa:
+        a peça é gerada sem modelos, NUNCA propaga erro para o pipeline).
+    """
+    settings = get_settings()
+    if not settings.PECAS_RAG_MODELOS_ENABLED:
+        return []
+    try:
+        nome_tipo = TIPOS_PECA.get(tipo_peca_final, tipo_peca_final)
+        query = (
+            f"{nome_tipo} {area_direito} "
+            f"{(pedidos_limpos or '')[:300]} {(tese_txt or '')[:200]}"
+        ).strip()
+        modelos = await buscar_contexto_rag(
+            db,
+            query,
+            limite=settings.PECAS_RAG_MODELOS_TOPK,
+            categorias=["modelo_documento_juridico"],
+            modo_or=True,
+        )
+        return modelos or []
+    except Exception as _e:
+        import logging as _lg
+        _lg.getLogger(__name__).warning(
+            "RAG de modelos de referência falhou — peça segue sem modelos: %s", _e
+        )
+        return []
+
+
+def _formatar_bloco_modelos(modelos: list[dict]) -> str:
+    """
+    Monta o bloco de MODELOS DE REFERÊNCIA para o user-content da Etapa 7.
+    Função pura (testável isoladamente). Vazio → string vazia (sem bloco).
+    """
+    if not modelos:
+        return ""
+    linhas = [
+        "MODELOS DE REFERÊNCIA (uso interno — NÃO copiar literalmente):",
+        "Material didático FICTÍCIO da base metodológica do escritório. Inspire-se "
+        "na ESTRUTURA, no encadeamento de teses e na técnica de redação; NÃO "
+        "reproduza texto, nomes, números de processo ou jurisprudência daqui "
+        "(são fictícios — confira toda citação legal na fonte oficial).",
+        "",
+    ]
+    for i, m in enumerate(modelos, start=1):
+        titulo = (m.get("titulo") or f"Modelo {i}").strip()
+        conteudo = (m.get("conteudo") or "")[:1200]
+        linhas.append(f"[Modelo {i}] {titulo}")
+        linhas.append(conteudo)
+        linhas.append("")
+    return "\n".join(linhas).strip()
+
+
 async def _emit(event: str, data: dict) -> str:
     """Formata um evento SSE."""
     return f"event: {event}\ndata: {json.dumps(data, ensure_ascii=False)}\n\n"
@@ -743,11 +811,19 @@ async def gerar_peca_pipeline(
         ]
         rag_txt = "\n\n[LEGISLAÇÃO E DOUTRINA ENCONTRADAS]\n" + "\n\n".join(linhas)
 
+    # Modelos da Bíblia de Conhecimento como REFERÊNCIA de estrutura/tese (gated,
+    # fail-safe). Query DEDICADA filtrada por categoria — não misturada ao top-k
+    # de legislação/jurisprudência acima. Só entra no user-content da Etapa 7.
+    modelos_referencia = await _recuperar_modelos_referencia(
+        db, area_direito, tipo_peca_final, pedidos_limpos, r2.texto
+    )
+
     yield await _emit("step", {
         "etapa": 3,
         "titulo": "Fundamentos legais encontrados",
         "status": "concluido",
         "fontes_encontradas": len(fontes),
+        "modelos_referencia": len(modelos_referencia),
         "resultado": f"{len(fontes)} fontes no acervo RAG",
     })
 
@@ -913,6 +989,8 @@ async def gerar_peca_pipeline(
                 + "\n" + perfil["instrucao"]
                 + "\n" + especializacao
                 + "\n" + PADRAO_OURO_PECA
+                + "\nSe houver MODELOS DE REFERÊNCIA, use-os apenas como guia de "
+                "estrutura/tese — jamais como fonte factual ou jurisprudencial."
             )},
             {"role": "user", "content": (
                 f"TIPO: {nome_peca}\nÁREA: {area_direito}\n\n"
@@ -925,6 +1003,7 @@ async def gerar_peca_pipeline(
                 f"ARGUMENTOS ORGANIZADOS:\n{r5.texto[:1500]}\n\n"
                 f"RISCOS (para evitar na peça):\n{r6.texto[:800]}\n\n"
                 f"{rag_txt[:4500] if rag_txt else ''}\n"
+                f"{_formatar_bloco_modelos(modelos_referencia)}\n"
                 f"{'INSTRUÇÕES ADICIONAIS: ' + instrucoes if instrucoes else ''}\n\n"
                 f"Redija a {nome_peca} completa com todos os elementos formais obrigatórios."
             )},
@@ -980,7 +1059,15 @@ async def gerar_peca_pipeline(
         prompt_sanitizado=fatos_log[:4000],
         pii_removida=houve_pii,
         resposta=documento_final,
-        fontes_rag="; ".join(f["chunk_id"] for f in fontes) if fontes else None,
+        # Auditoria: fontes RAG de fundamentação + modelos de referência da Bíblia
+        # (prefixados "modelo:") para rastrear o que inspirou a estrutura da peça.
+        fontes_rag=(
+            "; ".join(
+                [f["chunk_id"] for f in fontes]
+                + [f"modelo:{m['chunk_id']}" for m in modelos_referencia]
+            )
+            or None
+        ) if (fontes or modelos_referencia) else None,
         tokens_input=(
             (r1.input_tokens or 0) + (r2.input_tokens or 0) +
             (r4.input_tokens or 0) + (r5.input_tokens or 0) +
