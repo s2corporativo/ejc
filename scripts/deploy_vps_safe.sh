@@ -4,6 +4,7 @@ set -euo pipefail
 APP_DIR="${APP_DIR:-/opt/ejc}"
 DOMAIN="${EJC_DOMAIN:-ejc.depaulateixeira.adv.br}"
 RUN_MIGRATIONS="${RUN_MIGRATIONS:-0}"
+RUN_SEEDS="${RUN_SEEDS:-0}"
 
 cd "$APP_DIR"
 
@@ -62,6 +63,22 @@ if [ "$RUN_MIGRATIONS" = "1" ]; then
   docker compose exec -T backend alembic upgrade head
 else
   log "Migrations nao executadas. Use RUN_MIGRATIONS=1 apenas quando houver migracao revisada."
+fi
+
+# Seed do corpus RAG da "Bíblia de Conhecimento EJC" (situações + modelos,
+# incluindo o Volume III) — idempotente (dedup por chave_origem). Roda DEPOIS
+# das migrations (depende das tabelas knowledge_*). NÃO-FATAL de propósito: o
+# app funciona sem o corpus, então uma falha aqui é logada e o deploy segue —
+# o `if ... then` isenta o comando do `set -e`/trap ERR (sem rollback falso).
+if [ "$RUN_SEEDS" = "1" ]; then
+  log "RUN_SEEDS=1: aplicando seed da Biblia de Conhecimento EJC (nao-fatal)"
+  if docker compose exec -T backend python scripts/seed_biblia_ejc.py; then
+    log "Seed da Biblia concluido."
+  else
+    log "AVISO: seed da Biblia falhou (nao-fatal) — deploy segue; app opera sem o corpus. Rode manualmente: docker compose exec backend python scripts/seed_biblia_ejc.py"
+  fi
+else
+  log "Seeds nao executados. Use RUN_SEEDS=1 para ingerir o corpus da Biblia (situacoes + modelos + Volume III)."
 fi
 
 log "Subindo frontend"

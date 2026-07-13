@@ -14,6 +14,7 @@ Arquivos (1 documento RAG por linha JSONL: `chave_origem`, `titulo`,
 | `instrucoes.jsonl` | AVISO FUNDAMENTAL (I/II), INTRODUÇÃO METODOLÓGICA, NOTAS FINAIS (I/II) | `referencia_interna` |
 | `governanca.jsonl` | Parte B: mapa SIT→modelo, Relatório de Auditoria, Índice Mestre, Padrão de Integração, avisos/apêndices dos volumes | `referencia_interna` |
 | `modelos.jsonl` | Parte B: 221 modelos de peça (Volumes I–V) | `modelo_documento_juridico` |
+| `modelos_vol3.jsonl` | Compêndio de Modelos Processuais **Volume III**: 48 modelos em 24 pares (iniciativa + reação) — bancário, consumidor, empresarial, licitações/contratos administrativos, trabalhista empresarial, ambiental | `modelo_documento_juridico` |
 
 ## Como ingerir (produção, dentro do container backend)
 
@@ -42,3 +43,18 @@ e edições futuras do corpus geram novas versões (histórico preservado).
 2. `python scripts/parse_biblia_ejc.py <biblia_paras.json>` (reescreve os
    .jsonl deste diretório).
 3. Rode `pytest tests/test_biblia_ejc_seed.py` e commite os .jsonl alterados.
+
+### Volume III (Compêndio de Modelos Processuais)
+
+O `modelos_vol3.jsonl` vem de um DOCX próprio, convertido por
+`scripts/parse_volume3.py` (lê o `.docx` direto via python-docx, incluindo as
+tabelas de ficha de adaptação e matriz tese–prova):
+
+```bash
+python scripts/parse_volume3.py <Compendio_Modelos_Processuais_Volume_III.docx>
+```
+
+Segmenta pelos títulos "NN - ..." da seção "5. MODELOS" (48 modelos), deriva a
+área do sumário e marca `iniciativa` (ímpar) / `reação` (par). Chaves estáveis
+`biblia_ejc:vol3:<NN>-<slug>`. Mesmo aviso fictício e categoria
+`modelo_documento_juridico` dos demais modelos.
