@@ -237,6 +237,15 @@ async def upsert_documento(
         )
     )).scalar_one_or_none()
 
+    # Atalho ANTES de vetorizar: documento vigente com conteúdo idêntico (mesmo
+    # hash) → "inalterado", sem tocar nos vetores. `gerar_embeddings` é caro
+    # (segundos por doc na CPU); embedar aqui e só depois descartar fazia o
+    # re-seed a cada deploy re-vetorizar TODO o corpus (~400 docs, minutos em
+    # silêncio) e estourar o timeout do SSH. Após o 1º seed completo, os deploys
+    # seguintes passam por aqui de imediato.
+    if existente and existente.hash_conteudo == h:
+        return "inalterado"
+
     chunks = chunk_texto(conteudo)
     # `embutir_vetores=False` → vetorização adiada (fica "pendente"; o chamador
     # agenda a indexação em background — ex.: lote da API pública, que não pode

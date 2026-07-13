@@ -83,13 +83,19 @@ jobs:
         run: |
           PORT="${VPS_PORT:-22}"
           mkdir -p ~/.ssh && chmod 700 ~/.ssh
+          # ServerAliveInterval/CountMax: mantêm a sessão viva durante operações
+          # longas e SILENCIOSAS no VPS (o seed do RAG vetoriza ~400 docs na CPU
+          # e fica minutos sem produzir output) — sem isto o SSH caía com
+          # "Broken pipe" e o deploy inteiro falhava no meio do seed. 30s x 20 =
+          # tolera ~10 min de silêncio.
+          KEEPALIVE="-o ServerAliveInterval=30 -o ServerAliveCountMax=20"
           if [ -n "$VPS_SSH_KEY" ]; then
             printf '%s\n' "$VPS_SSH_KEY" > ~/.ssh/deploy_key
             chmod 600 ~/.ssh/deploy_key
-            echo "RSH=ssh -i $HOME/.ssh/deploy_key -o IdentitiesOnly=yes -o StrictHostKeyChecking=accept-new -p ${PORT}" >> "$GITHUB_ENV"
+            echo "RSH=ssh -i $HOME/.ssh/deploy_key -o IdentitiesOnly=yes ${KEEPALIVE} -o StrictHostKeyChecking=accept-new -p ${PORT}" >> "$GITHUB_ENV"
             echo "Autenticação: chave SSH"
           else
-            echo "RSH=sshpass -e ssh -o PreferredAuthentications=password,keyboard-interactive -o StrictHostKeyChecking=accept-new -p ${PORT}" >> "$GITHUB_ENV"
+            echo "RSH=sshpass -e ssh -o PreferredAuthentications=password,keyboard-interactive ${KEEPALIVE} -o StrictHostKeyChecking=accept-new -p ${PORT}" >> "$GITHUB_ENV"
             echo "Autenticação: senha (sshpass)"
           fi
 
