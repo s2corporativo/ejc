@@ -187,20 +187,12 @@ from app.core.logging_config import setup_logging
 setup_logging(json_logs=settings.LOG_JSON, level=settings.LOG_LEVEL)
 logger = logging.getLogger("ejc")
 
-# ── Sentry (desabilitado se SENTRY_DSN vazio) ─────────────────────────────────
-if settings.SENTRY_DSN:
-    import sentry_sdk
-    from sentry_sdk.integrations.fastapi import FastApiIntegration
-    from sentry_sdk.integrations.sqlalchemy import SqlalchemyIntegration
-    sentry_sdk.init(
-        dsn=settings.SENTRY_DSN,
-        environment=settings.APP_ENV,
-        traces_sample_rate=0.1,       # 10% das transações para performance
-        profiles_sample_rate=0.05,
-        integrations=[FastApiIntegration(), SqlalchemyIntegration()],
-        send_default_pii=False,       # LGPD: sem PII nos eventos Sentry
-    )
-    logger.info("[EJC] Sentry inicializado")
+# ── Observabilidade: Sentry gated (no-op sem SENTRY_DSN) ──────────────────────
+# init_sentry() é defensivo: sem SENTRY_DSN é no-op e nunca levanta exceção,
+# então o boot fica idêntico ao de hoje. Com DSN, aplica scrub LGPD (before_send)
+# e send_default_pii=False. Ver app/core/observability.py.
+from app.core.observability import app_version, init_sentry, uptime_seconds
+init_sentry()
 
 
 @asynccontextmanager
@@ -420,14 +412,17 @@ app.include_router(workflow.router, prefix=API)
 
 
 
-# ── Health check (público — usado pelo Docker healthcheck) ────────────────────
+# ── Health check / LIVENESS (público — Docker healthcheck + UptimeRobot) ──────
+# Contrato: SEMPRE HTTP 200 enquanto o processo respira (não depende de I/O
+# externo). scripts/post_deploy_check.sh e o monitor externo dependem disso.
+# Dependências (DB, migrations) são checadas em /api/health/ready.
 @app.get("/api/health")
 async def health():
-    db_ok = await check_db()
     return {
-        "status": "ok" if db_ok else "degraded",
-        "version": "3.0.0",
-        "database": db_ok,
+        "status": "ok",
+        "version": app_version(),
+        "uptime_seconds": uptime_seconds(),
+        "environment": settings.APP_ENV,
     }
 
 
@@ -438,8 +433,20 @@ async def health():
 # passava despercebido). Redis/embeddings são informativos (não derrubam o 200).
 @app.get("/api/health/ready")
 async def readiness():
+    import asyncio
+
     settings = get_settings()
-    db_ok = await check_db()
+
+    # DB com timeout curto: nunca prende o monitor; o context manager de
+    # check_db() fecha a conexão mesmo em timeout (não vaza conexão).
+    try:
+        db_ok = await asyncio.wait_for(check_db(), timeout=3.0)
+    except Exception:
+        db_ok = False
+
+    # Migrations: True/False se determinável, None = indeterminado (informativo).
+    from app.core.observability import check_migrations_head
+    migrations_ok = await check_migrations_head()
 
     # Redis só é checado quando alguma feature depende dele; senão, "não usado".
     redis_ok = None
@@ -449,11 +456,13 @@ async def readiness():
 
     from app.services.embedding_service import disponivel as _emb_disponivel
     checks = {
-        "database": db_ok,          # crítico
+        "database": db_ok,          # crítico (bloqueia readiness)
+        "migrations": migrations_ok,  # crítico se determinável (None = ignora)
         "redis": redis_ok,          # informativo (None = não utilizado)
         "embeddings": _emb_disponivel(),  # informativo
     }
-    pronto = db_ok                  # só o DB é bloqueante para "ready"
+    # Bloqueantes: DB e (migrations quando puder ser confirmada como desatualizada).
+    pronto = db_ok and (migrations_ok is not False)
     return JSONResponse(
         status_code=200 if pronto else 503,
         content={"status": "ready" if pronto else "not_ready", "checks": checks},

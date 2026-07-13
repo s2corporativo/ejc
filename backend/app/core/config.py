@@ -375,6 +375,8 @@ class Settings(BaseSettings):
 
     # ── Sentry — rastreamento de erros em produção ────────────────────────
     SENTRY_DSN: str = ""            # deixar vazio para desabilitar
+    SENTRY_ENVIRONMENT: str = "production"   # tag de ambiente nos eventos
+    SENTRY_TRACES_SAMPLE_RATE: float = 0.0   # 0.0 = performance tracing off
 
     # ── Governança de custo de IA ─────────────────────────────────────────
     # Alerta de gasto no painel de Governança da IA: se o custo estimado de IA
