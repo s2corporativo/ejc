@@ -61,7 +61,7 @@ jobs:
 
       - name: Publicar diagnóstico P0
         if: always()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: p0-guard-log
           path: ci_guard.log
