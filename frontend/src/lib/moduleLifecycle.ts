@@ -44,14 +44,18 @@ export function lifecycleForPath(
   settings: Record<string, ModuleLifecycleOverride>,
 ): ModuleLifecycleOverride | null {
   const module = matchModuleByPath(pathname);
-  return module ? settings[module.key] ?? null : null;
+  return module ? (settings[module.key] ?? null) : null;
 }
 
 export function safeReplacementRoute(
   currentPath: string,
   replacement?: string | null,
 ): string | null {
-  if (!replacement || !replacement.startsWith("/") || replacement.startsWith("//")) {
+  if (
+    !replacement ||
+    !replacement.startsWith("/") ||
+    replacement.startsWith("//")
+  ) {
     return null;
   }
   const replacementPath = replacement.split("?", 1)[0];

@@ -20,9 +20,7 @@ export default function Checklists() {
   const load = () => {
     api
       .get("/checklists/templates")
-      .then((r) =>
-        setTpls(asList(r.data)),
-      )
+      .then((r) => setTpls(asList(r.data)))
       .catch(() => {})
       .finally(() => setLoading(false));
   };

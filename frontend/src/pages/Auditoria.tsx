@@ -79,7 +79,7 @@ export default function Auditoria() {
 
       {!data ? (
         <Spinner />
-      ) : (!Array.isArray(data.data) || data.data.length === 0) ? (
+      ) : !Array.isArray(data.data) || data.data.length === 0 ? (
         <Empty message="Nenhum log com esses filtros" />
       ) : (
         <div className="card overflow-x-auto">

@@ -192,7 +192,8 @@ export default function FerramentasIA() {
             <div className="mt-2 rounded-lg border border-bronze-200 bg-bronze-50/40 p-4">
               <div className="flex items-center gap-2 text-[11px] font-semibold uppercase text-bronze-700 mb-2">
                 <AlertTriangle size={13} />
-                {res.aviso || "Conferir fatos, documentos, prazos, valores e fontes antes do uso externo."}
+                {res.aviso ||
+                  "Conferir fatos, documentos, prazos, valores e fontes antes do uso externo."}
               </div>
               <Markdown
                 source={res.conteudo}

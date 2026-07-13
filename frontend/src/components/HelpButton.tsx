@@ -165,10 +165,7 @@ export default function HelpButton({
         {carregando ? (
           <div className="space-y-4">
             {[0, 1, 2].map((i) => (
-              <div
-                key={i}
-                className="card p-4"
-              >
+              <div key={i} className="card p-4">
                 <Skeleton className="h-4 w-1/2" />
                 <Skeleton className="mt-3 h-3 w-full" />
                 <Skeleton className="mt-2 h-3 w-5/6" />
@@ -201,10 +198,7 @@ export default function HelpButton({
               </p>
             )}
             {exibidos.map((t, i) => (
-              <section
-                key={t.id ?? `${t.titulo}-${i}`}
-                className="card p-4"
-              >
+              <section key={t.id ?? `${t.titulo}-${i}`} className="card p-4">
                 <h3 className="mb-2 text-sm font-semibold text-slate-900">
                   {t.titulo}
                 </h3>

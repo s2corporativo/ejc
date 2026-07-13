@@ -187,7 +187,10 @@ export default function NotificationPreferences() {
     return JSON.stringify(data.preferences) !== JSON.stringify(form);
   }, [data, form]);
 
-  const patch = <K extends keyof Preferences>(key: K, value: Preferences[K]) => {
+  const patch = <K extends keyof Preferences>(
+    key: K,
+    value: Preferences[K],
+  ) => {
     setForm((current) => (current ? { ...current, [key]: value } : current));
   };
 
@@ -252,7 +255,11 @@ export default function NotificationPreferences() {
         applicationServerKey: urlBase64ToUint8Array(vapid.public_key),
       });
       const serialized = subscription.toJSON();
-      if (!serialized.endpoint || !serialized.keys?.p256dh || !serialized.keys?.auth) {
+      if (
+        !serialized.endpoint ||
+        !serialized.keys?.p256dh ||
+        !serialized.keys?.auth
+      ) {
         throw new Error("Assinatura push incompleta");
       }
       await api.post("/notifications/push/subscribe", {
@@ -280,7 +287,8 @@ export default function NotificationPreferences() {
       await load();
     } catch (error: any) {
       toast.error(
-        error?.response?.data?.detail || "Não foi possível revogar o dispositivo.",
+        error?.response?.data?.detail ||
+          "Não foi possível revogar o dispositivo.",
       );
     } finally {
       setBusyDevice(null);
@@ -329,42 +337,48 @@ export default function NotificationPreferences() {
         subtitle="Um canal só envia quando a preferência pessoal e a configuração institucional estiverem ativas."
       >
         <div className="grid gap-3 md:grid-cols-3">
-          {CHANNELS.map(({ key, availability, label, description, icon: Icon }) => {
-            const available = data.available_channels[availability];
-            const effective = data.effective_channels[availability];
-            return (
-              <div key={key} className="card p-4">
-                <div className="flex items-start gap-3">
-                  <span className="rounded-xl bg-slate-100 p-2.5 text-slate-600">
-                    <Icon className="h-5 w-5" />
-                  </span>
-                  <div className="min-w-0 flex-1">
-                    <div className="flex items-center justify-between gap-2">
-                      <div className="text-sm font-semibold text-slate-800">{label}</div>
-                      <Toggle
-                        label={label}
-                        checked={form[key]}
-                        disabled={!available}
-                        onChange={(checked) => patch(key, checked)}
-                      />
-                    </div>
-                    <p className="mt-1 text-xs leading-5 text-slate-500">{description}</p>
-                    <div className="mt-2 text-[11px] text-slate-400">
-                      {effective ? (
-                        <span className="inline-flex items-center gap-1 text-success-700">
-                          <CheckCircle2 className="h-3.5 w-3.5" /> Efetivo
-                        </span>
-                      ) : available ? (
-                        "Desativado pelo usuário"
-                      ) : (
-                        "Indisponível no servidor"
-                      )}
+          {CHANNELS.map(
+            ({ key, availability, label, description, icon: Icon }) => {
+              const available = data.available_channels[availability];
+              const effective = data.effective_channels[availability];
+              return (
+                <div key={key} className="card p-4">
+                  <div className="flex items-start gap-3">
+                    <span className="rounded-xl bg-slate-100 p-2.5 text-slate-600">
+                      <Icon className="h-5 w-5" />
+                    </span>
+                    <div className="min-w-0 flex-1">
+                      <div className="flex items-center justify-between gap-2">
+                        <div className="text-sm font-semibold text-slate-800">
+                          {label}
+                        </div>
+                        <Toggle
+                          label={label}
+                          checked={form[key]}
+                          disabled={!available}
+                          onChange={(checked) => patch(key, checked)}
+                        />
+                      </div>
+                      <p className="mt-1 text-xs leading-5 text-slate-500">
+                        {description}
+                      </p>
+                      <div className="mt-2 text-[11px] text-slate-400">
+                        {effective ? (
+                          <span className="inline-flex items-center gap-1 text-success-700">
+                            <CheckCircle2 className="h-3.5 w-3.5" /> Efetivo
+                          </span>
+                        ) : available ? (
+                          "Desativado pelo usuário"
+                        ) : (
+                          "Indisponível no servidor"
+                        )}
+                      </div>
                     </div>
                   </div>
                 </div>
-              </div>
-            );
-          })}
+              );
+            },
+          )}
         </div>
       </SectionCard>
 
@@ -378,7 +392,9 @@ export default function NotificationPreferences() {
               key={key}
               className="card flex items-center justify-between gap-3 px-4 py-3"
             >
-              <span className="text-sm font-medium text-slate-700">{label}</span>
+              <span className="text-sm font-medium text-slate-700">
+                {label}
+              </span>
               <Toggle
                 label={label}
                 checked={form[key]}
@@ -396,8 +412,12 @@ export default function NotificationPreferences() {
         <div className="grid gap-4 md:grid-cols-2">
           <div className="card flex items-center justify-between p-4">
             <div>
-              <div className="text-sm font-semibold text-slate-800">Resumo diário</div>
-              <div className="text-xs text-slate-500">Agrupa comunicações externas não urgentes.</div>
+              <div className="text-sm font-semibold text-slate-800">
+                Resumo diário
+              </div>
+              <div className="text-xs text-slate-500">
+                Agrupa comunicações externas não urgentes.
+              </div>
             </div>
             <Toggle
               label="Resumo diário"
@@ -425,13 +445,17 @@ export default function NotificationPreferences() {
                   type="time"
                   className="input"
                   value={(form.quiet_hours_start || "22:00").slice(0, 5)}
-                  onChange={(event) => patch("quiet_hours_start", event.target.value)}
+                  onChange={(event) =>
+                    patch("quiet_hours_start", event.target.value)
+                  }
                 />
                 <input
                   type="time"
                   className="input"
                   value={(form.quiet_hours_end || "07:00").slice(0, 5)}
-                  onChange={(event) => patch("quiet_hours_end", event.target.value)}
+                  onChange={(event) =>
+                    patch("quiet_hours_end", event.target.value)
+                  }
                 />
               </div>
             )}
@@ -447,7 +471,10 @@ export default function NotificationPreferences() {
 
       <SectionCard
         title="Dispositivos Web Push"
-        subtitle={devices?.notice || "Gerencie somente os dispositivos vinculados à sua conta."}
+        subtitle={
+          devices?.notice ||
+          "Gerencie somente os dispositivos vinculados à sua conta."
+        }
         actions={
           <button
             type="button"
@@ -462,14 +489,15 @@ export default function NotificationPreferences() {
       >
         <div className="space-y-2">
           {(devices?.data || []).map((device) => (
-            <div
-              key={device.id}
-              className="card flex items-center gap-3 p-4"
-            >
+            <div key={device.id} className="card flex items-center gap-3 p-4">
               <Smartphone className="h-5 w-5 text-primary-600" />
               <div className="min-w-0 flex-1">
-                <div className="text-sm font-semibold text-slate-800">Dispositivo inscrito</div>
-                <div className="text-xs text-slate-500">Criado em {formatDate(device.created_at)}</div>
+                <div className="text-sm font-semibold text-slate-800">
+                  Dispositivo inscrito
+                </div>
+                <div className="text-xs text-slate-500">
+                  Criado em {formatDate(device.created_at)}
+                </div>
               </div>
               <button
                 type="button"
@@ -491,7 +519,9 @@ export default function NotificationPreferences() {
             type="button"
             className="btn-secondary"
             onClick={() => void activatePush()}
-            disabled={busyDevice === "activate" || !data.available_channels.push}
+            disabled={
+              busyDevice === "activate" || !data.available_channels.push
+            }
           >
             {busyDevice === "activate" ? (
               <Loader2 className="h-4 w-4 animate-spin" />

@@ -356,10 +356,7 @@ export default function IntakeAnalise({ caseId }: { caseId: string }) {
             {dados.honorarios?.itens && dados.honorarios.itens.length > 0 ? (
               <div className="space-y-2">
                 {dados.honorarios.itens.map((h, i) => (
-                  <div
-                    key={h.item_codigo || i}
-                    className="card p-3 text-sm"
-                  >
+                  <div key={h.item_codigo || i} className="card p-3 text-sm">
                     <div className="flex flex-wrap items-center justify-between gap-2">
                       <span className="font-medium text-slate-800">
                         {h.item_codigo ? `${h.item_codigo} — ` : ""}

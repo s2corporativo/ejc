@@ -24,9 +24,7 @@ function readStored(): CasoAtivo | null {
     const raw = sessionStorage.getItem(STORAGE_KEY);
     if (!raw) return null;
     const parsed = JSON.parse(raw) as CasoAtivo;
-    return parsed && typeof parsed.id === "string" && parsed.id
-      ? parsed
-      : null;
+    return parsed && typeof parsed.id === "string" && parsed.id ? parsed : null;
   } catch {
     return null;
   }

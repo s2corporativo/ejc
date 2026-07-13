@@ -28,9 +28,7 @@ const PortalAssinaturas = lazy(
   () => import("./pages/portal/PortalAssinaturas"),
 );
 const PortalMensagens = lazy(() => import("./pages/portal/PortalMensagens"));
-const PortalDocumentos = lazy(
-  () => import("./pages/portal/PortalDocumentos"),
-);
+const PortalDocumentos = lazy(() => import("./pages/portal/PortalDocumentos"));
 const NotFound = lazy(() => import("./pages/NotFound"));
 
 function RouteFallback() {

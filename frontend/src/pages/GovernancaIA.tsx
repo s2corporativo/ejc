@@ -13,12 +13,7 @@ import api from "../lib/api";
 import { PageHeader, Spinner, fmtDate } from "../components/UI";
 
 type Tab =
-  | "visao"
-  | "curadoria"
-  | "mgjec"
-  | "prompts"
-  | "fontes"
-  | "guardrails";
+  "visao" | "curadoria" | "mgjec" | "prompts" | "fontes" | "guardrails";
 
 const brl = (v?: number | null) =>
   (v ?? 0).toLocaleString("pt-BR", { style: "currency", currency: "BRL" });

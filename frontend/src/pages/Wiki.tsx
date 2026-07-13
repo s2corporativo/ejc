@@ -1,6 +1,12 @@
 import { useEffect, useState } from "react";
 import api from "../lib/api";
-import { PageHeader, Spinner, Modal, Empty, ConfirmModal } from "../components/UI";
+import {
+  PageHeader,
+  Spinner,
+  Modal,
+  Empty,
+  ConfirmModal,
+} from "../components/UI";
 
 export default function Wiki() {
   const [paginas, setPaginas] = useState<any[]>([]);

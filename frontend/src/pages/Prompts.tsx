@@ -37,9 +37,7 @@ export default function Prompts() {
   const load = () => {
     api
       .get("/prompts-juridicos")
-      .then((r) =>
-        setPrompts(asList(r.data)),
-      )
+      .then((r) => setPrompts(asList(r.data)))
       .catch(() => {})
       .finally(() => setLoading(false));
   };

@@ -52,12 +52,8 @@ export default function KnowledgeHub() {
     ]);
     setRes({
       rag: rag.status === "fulfilled" ? (rag.value.data?.resultados ?? []) : [],
-      teses:
-        teses.status === "fulfilled"
-          ? asList(teses.value.data)
-          : [],
-      juris:
-        juris.status === "fulfilled" ? asList(juris.value.data) : [],
+      teses: teses.status === "fulfilled" ? asList(teses.value.data) : [],
+      juris: juris.status === "fulfilled" ? asList(juris.value.data) : [],
       memoria: mem.status === "fulfilled" ? asList(mem.value.data) : [],
     });
     setLoading(false);
@@ -91,7 +87,9 @@ export default function KnowledgeHub() {
       <ConhecimentoStats />
 
       <div className="mb-6">
-        <h2 className="text-sm font-semibold text-slate-700 mb-3">Categorias</h2>
+        <h2 className="text-sm font-semibold text-slate-700 mb-3">
+          Categorias
+        </h2>
         <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
           {CATEGORIAS.map(({ to, label, desc, icon: Icon }) => (
             <Link

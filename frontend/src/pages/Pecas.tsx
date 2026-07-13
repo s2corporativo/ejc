@@ -648,9 +648,7 @@ export default function Pecas() {
                         );
                       })()}
                     </td>
-                    <td className="px-4 py-3 text-slate-400">
-                      v{p.versao}.0
-                    </td>
+                    <td className="px-4 py-3 text-slate-400">v{p.versao}.0</td>
                     <td className="px-4 py-3 text-slate-400">
                       {fmtDate(p.created_at)}
                     </td>
@@ -1000,7 +998,10 @@ export default function Pecas() {
 }
 
 // Semáforo de risco reaproveitando os tons do DS (Badge).
-const RISCO_TONE: Record<FichaTriagemCampos["risco_processual"], "green" | "amber" | "red"> = {
+const RISCO_TONE: Record<
+  FichaTriagemCampos["risco_processual"],
+  "green" | "amber" | "red"
+> = {
   baixo: "green",
   medio: "amber",
   alto: "red",
@@ -1008,7 +1009,12 @@ const RISCO_TONE: Record<FichaTriagemCampos["risco_processual"], "green" | "ambe
 
 // valor_causa é string livre; formata como moeda quando for numérico.
 function fmtValorCausa(v: string): string {
-  const n = Number(String(v).replace(/[^\d.,-]/g, "").replace(/\.(?=\d{3})/g, "").replace(",", "."));
+  const n = Number(
+    String(v)
+      .replace(/[^\d.,-]/g, "")
+      .replace(/\.(?=\d{3})/g, "")
+      .replace(",", "."),
+  );
   return Number.isFinite(n) && v.trim() !== "" ? fmtMoney(n) : v;
 }
 

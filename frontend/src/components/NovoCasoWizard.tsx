@@ -98,7 +98,8 @@ export default function NovoCasoWizard({
   // CNPJ e o POST devolvia 422 com rótulo confuso ("CNPJ inválido" para quem
   // digitou um CPF com dígito a mais) — melhor barrar antes com aviso claro.
   const ehCnpj = digitos.length === 14;
-  const docValido = digitos.length === 0 || digitos.length === 11 || digitos.length === 14;
+  const docValido =
+    digitos.length === 0 || digitos.length === 11 || digitos.length === 14;
 
   const reset = () => {
     setPasso(1);
@@ -184,7 +185,9 @@ export default function NovoCasoWizard({
       // busca (agora com índice cego por hash no backend) para oferecer o
       // vínculo ao cadastro existente.
       if (e.response?.status === 409) {
-        toast.error("CPF/CNPJ já cadastrado — localizando o cliente para vincular.");
+        toast.error(
+          "CPF/CNPJ já cadastrado — localizando o cliente para vincular.",
+        );
         await buscar();
       } else {
         toast.error(e.response?.data?.detail || "Erro ao criar o cliente");
@@ -322,68 +325,70 @@ export default function NovoCasoWizard({
             </div>
           )}
 
-          {!buscando && resultados && (resultados.length === 0 || cadastrarNovo) && (
-            <div className="card mt-4 bg-slate-50 p-4">
-              <p className="mb-3 flex items-center gap-2 text-sm text-slate-600">
-                <UserPlus className="h-4 w-4 text-slate-400" />
-                {resultados && resultados.length > 0
-                  ? "Cadastrar novo cliente — preencha o mínimo para continuar"
-                  : "Nenhum cliente encontrado — cadastre o mínimo para continuar"}
-                {digitos
-                  ? ` (${ehCnpj ? "CNPJ" : "CPF"}: ${digitos})`
-                  : ""}
-                .
-              </p>
-              <div className="grid gap-3 sm:grid-cols-2">
-                <div className="sm:col-span-2">
-                  <label className="label">
-                    {ehCnpj ? "Razão social *" : "Nome completo *"}
-                  </label>
-                  <input
-                    className="input"
-                    value={novoCliente.nome}
-                    onChange={(e) =>
-                      setNovoCliente({ ...novoCliente, nome: e.target.value })
-                    }
-                  />
+          {!buscando &&
+            resultados &&
+            (resultados.length === 0 || cadastrarNovo) && (
+              <div className="card mt-4 bg-slate-50 p-4">
+                <p className="mb-3 flex items-center gap-2 text-sm text-slate-600">
+                  <UserPlus className="h-4 w-4 text-slate-400" />
+                  {resultados && resultados.length > 0
+                    ? "Cadastrar novo cliente — preencha o mínimo para continuar"
+                    : "Nenhum cliente encontrado — cadastre o mínimo para continuar"}
+                  {digitos ? ` (${ehCnpj ? "CNPJ" : "CPF"}: ${digitos})` : ""}.
+                </p>
+                <div className="grid gap-3 sm:grid-cols-2">
+                  <div className="sm:col-span-2">
+                    <label className="label">
+                      {ehCnpj ? "Razão social *" : "Nome completo *"}
+                    </label>
+                    <input
+                      className="input"
+                      value={novoCliente.nome}
+                      onChange={(e) =>
+                        setNovoCliente({ ...novoCliente, nome: e.target.value })
+                      }
+                    />
+                  </div>
+                  <div>
+                    <label className="label">E-mail</label>
+                    <input
+                      className="input"
+                      type="email"
+                      value={novoCliente.email}
+                      onChange={(e) =>
+                        setNovoCliente({
+                          ...novoCliente,
+                          email: e.target.value,
+                        })
+                      }
+                    />
+                  </div>
+                  <div>
+                    <label className="label">Telefone</label>
+                    <input
+                      className="input"
+                      value={novoCliente.telefone}
+                      onChange={(e) =>
+                        setNovoCliente({
+                          ...novoCliente,
+                          telefone: e.target.value,
+                        })
+                      }
+                    />
+                  </div>
                 </div>
-                <div>
-                  <label className="label">E-mail</label>
-                  <input
-                    className="input"
-                    type="email"
-                    value={novoCliente.email}
-                    onChange={(e) =>
-                      setNovoCliente({ ...novoCliente, email: e.target.value })
-                    }
-                  />
-                </div>
-                <div>
-                  <label className="label">Telefone</label>
-                  <input
-                    className="input"
-                    value={novoCliente.telefone}
-                    onChange={(e) =>
-                      setNovoCliente({
-                        ...novoCliente,
-                        telefone: e.target.value,
-                      })
-                    }
-                  />
+                <div className="mt-3 flex justify-end">
+                  <Button
+                    disabled={criandoCliente}
+                    onClick={criarClienteEContinuar}
+                  >
+                    {criandoCliente
+                      ? "Criando..."
+                      : "Criar cliente e continuar"}
+                  </Button>
                 </div>
               </div>
-              <div className="mt-3 flex justify-end">
-                <Button
-                  disabled={criandoCliente}
-                  onClick={criarClienteEContinuar}
-                >
-                  {criandoCliente
-                    ? "Criando..."
-                    : "Criar cliente e continuar"}
-                </Button>
-              </div>
-            </div>
-          )}
+            )}
 
           {onCadastroCompleto && (
             <div className="mt-5 border-t border-slate-100 pt-3 text-right">

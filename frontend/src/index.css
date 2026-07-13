@@ -293,7 +293,13 @@
         rgba(201, 162, 39, 0.28),
         transparent 26rem
       ),
-      linear-gradient(150deg, #fdfbf3 0%, #f7f1dc 45%, #efe3b4 80%, #e5ce7f 110%);
+      linear-gradient(
+        150deg,
+        #fdfbf3 0%,
+        #f7f1dc 45%,
+        #efe3b4 80%,
+        #e5ce7f 110%
+      );
   }
   /* "Shine" sutil — faixa diagonal branca translúcida; estática por
      padrão, com varredura MUITO lenta apenas sem reduced-motion. */

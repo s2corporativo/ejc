@@ -15,7 +15,13 @@ import { MemoryRouter } from "react-router-dom";
 // vi.hoisted: o factory de vi.mock é içado ao topo — precisa acessar `get` assim.
 const { get } = vi.hoisted(() => ({ get: vi.fn() }));
 vi.mock("../../lib/api", () => ({
-  default: { get, post: vi.fn(), put: vi.fn(), patch: vi.fn(), delete: vi.fn() },
+  default: {
+    get,
+    post: vi.fn(),
+    put: vi.fn(),
+    patch: vi.fn(),
+    delete: vi.fn(),
+  },
 }));
 vi.mock("../../components/Toast", () => ({
   toast: { success: vi.fn(), error: vi.fn(), info: vi.fn() },
@@ -37,7 +43,13 @@ describe("Sociedade — resposta não-array não quebra o render", () => {
     // Todas as chamadas devolvem um ENVELOPE (não um array cru): distribuicao
     // via .items, socios via .socios — exatamente a forma que causava o crash.
     get.mockResolvedValue({
-      data: { items: [], socios: [], total_participacao: 0, total: 0, data: [] },
+      data: {
+        items: [],
+        socios: [],
+        total_participacao: 0,
+        total: 0,
+        data: [],
+      },
     });
     renderPage();
     // Não houve tela branca: aguarda o conteúdo REAL da página (o título do

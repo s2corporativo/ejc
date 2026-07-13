@@ -155,8 +155,10 @@ const RISCO_CORES: Record<
   },
 };
 
-const SEVERIDADE_TONE: Record<FatorRisco["severidade"], "red" | "amber" | "slate"> =
-  { alta: "red", media: "amber", baixa: "slate" };
+const SEVERIDADE_TONE: Record<
+  FatorRisco["severidade"],
+  "red" | "amber" | "slate"
+> = { alta: "red", media: "amber", baixa: "slate" };
 
 const CATEGORIA_EVENTO: Record<EventoTimeline["categoria"], string> = {
   movimento: "bg-primary-400",
@@ -369,9 +371,7 @@ export default function DossieEstrategicoCaso({ caseId }: { caseId: string }) {
                   <span className="text-[10px] text-slate-500">/100</span>
                 </div>
                 <div className="min-w-0 flex-1">
-                  <span
-                    className={`text-sm font-semibold ${riscoCor.texto}`}
-                  >
+                  <span className={`text-sm font-semibold ${riscoCor.texto}`}>
                     {riscoCor.label}
                   </span>
                   <p className="text-xs text-slate-500 mt-0.5">
@@ -448,7 +448,9 @@ export default function DossieEstrategicoCaso({ caseId }: { caseId: string }) {
                   <span>
                     Caso parado há <strong>{lt.estagnacao.dias_parado}</strong>{" "}
                     dia(s) — nível{" "}
-                    {lt.estagnacao.nivel === "critico" ? "crítico" : "de atenção"}
+                    {lt.estagnacao.nivel === "critico"
+                      ? "crítico"
+                      : "de atenção"}
                     .
                   </span>
                 </div>
@@ -622,18 +624,20 @@ export default function DossieEstrategicoCaso({ caseId }: { caseId: string }) {
             </div>
             {faltantes === null && !sugerindo && (
               <p className="text-xs text-slate-400">
-                Peça à IA sugestões de provas típicas que ainda faltam no
-                acervo deste caso (rascunho — revisão do advogado).
+                Peça à IA sugestões de provas típicas que ainda faltam no acervo
+                deste caso (rascunho — revisão do advogado).
               </p>
             )}
             {avisoFaltantes && (
               <p className="text-xs text-amber-600">{avisoFaltantes}</p>
             )}
-            {Array.isArray(faltantes) && faltantes.length === 0 && !avisoFaltantes && (
-              <p className="text-xs text-slate-500">
-                Nenhuma sugestão — o acervo cobre as provas típicas da ação.
-              </p>
-            )}
+            {Array.isArray(faltantes) &&
+              faltantes.length === 0 &&
+              !avisoFaltantes && (
+                <p className="text-xs text-slate-500">
+                  Nenhuma sugestão — o acervo cobre as provas típicas da ação.
+                </p>
+              )}
             {Array.isArray(faltantes) && faltantes.length > 0 && (
               <ul className="space-y-1.5">
                 {faltantes.map((item, i) => (
@@ -749,8 +753,8 @@ export default function DossieEstrategicoCaso({ caseId }: { caseId: string }) {
               <div className="flex items-center gap-2 rounded-xl border border-amber-200 bg-amber-50 p-3 text-xs text-amber-700">
                 <AlertTriangle size={14} className="shrink-0" />
                 <span>
-                  Rascunho gerado por IA — <strong>revisão humana
-                  obrigatória</strong> antes de uso.
+                  Rascunho gerado por IA —{" "}
+                  <strong>revisão humana obrigatória</strong> antes de uso.
                 </span>
               </div>
             )}

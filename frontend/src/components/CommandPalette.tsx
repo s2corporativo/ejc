@@ -218,7 +218,7 @@ export default function CommandPalette() {
                 ))}
               </div>
               <div className="mt-2 text-center text-xs text-slate-400">
-                Digite ao menos 2 caracteres para buscar dados. Atalho: {" "}
+                Digite ao menos 2 caracteres para buscar dados. Atalho:{" "}
                 <kbd className="border border-bronze-pale rounded px-1">
                   Ctrl/⌘ K
                 </kbd>

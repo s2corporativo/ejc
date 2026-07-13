@@ -56,7 +56,9 @@ export default function InteligenciaWorkspace() {
       TABS.filter(
         (tab) =>
           !("roles" in tab) ||
-          Boolean(user?.role && (tab.roles as readonly string[]).includes(user.role)),
+          Boolean(
+            user?.role && (tab.roles as readonly string[]).includes(user.role),
+          ),
       ),
     [user?.role],
   );

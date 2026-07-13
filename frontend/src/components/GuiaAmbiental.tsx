@@ -125,7 +125,9 @@ export default function GuiaAmbiental() {
           No sistema
         </span>
         <span className="text-slate-600 flex-1 min-w-[200px]">
-          <b className="text-navy">Simulador de Estratégia do Auto de Infração</b>{" "}
+          <b className="text-navy">
+            Simulador de Estratégia do Auto de Infração
+          </b>{" "}
           — compare o custo de pagar à vista, converter a multa em serviços
           (−40%), defender ou prescrição, e gere o requerimento de conversão.
         </span>

@@ -566,10 +566,7 @@ export default function AnaliseEstrategica({
             >
               <div className="space-y-2">
                 {analise.riscos.map((r, i) => (
-                  <div
-                    key={i}
-                    className="card p-4"
-                  >
+                  <div key={i} className="card p-4">
                     <div className="flex items-start justify-between mb-2">
                       <p className="text-sm font-medium text-slate-800 pr-2">
                         {r.descricao}
@@ -619,10 +616,7 @@ export default function AnaliseEstrategica({
                     );
                   })
                   .map((p, i) => (
-                    <div
-                      key={i}
-                      className="card flex items-start gap-3 p-3"
-                    >
+                    <div key={i} className="card flex items-start gap-3 p-3">
                       <div
                         className={`text-xs font-bold px-2 py-1 rounded-lg shrink-0 ${
                           p.prioridade === "alta"

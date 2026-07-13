@@ -83,7 +83,6 @@ interface DossieData {
   }>;
 }
 
-
 const AREA_LABEL: Record<string, string> = {
   civel: "Cível",
   trabalhista: "Trabalhista",

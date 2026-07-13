@@ -175,7 +175,6 @@ function CardTese({ t, onClick }: { t: Tese; onClick: () => void }) {
 function CardMemoria({ m }: { m: Memoria }) {
   return (
     <div className="card p-4">
-
       <div className="flex items-start gap-3">
         <div className="p-2 rounded-lg bg-navy-50 text-navy-600 flex-shrink-0 mt-0.5">
           <CheckCircle className="w-4 h-4" />

@@ -1,7 +1,12 @@
 import { toast } from "../components/Toast";
 import Markdown from "../components/Markdown";
 import React, { useEffect, useState } from "react";
-import { Link, useParams, useSearchParams, useNavigate } from "react-router-dom";
+import {
+  Link,
+  useParams,
+  useSearchParams,
+  useNavigate,
+} from "react-router-dom";
 import {
   Sparkles,
   ChevronLeft,
@@ -3849,31 +3854,34 @@ export default function CasoDetalhe() {
             {/* CTA de anexar: o upload vive no módulo global de Documentos,
                 que pré-seleciona o caso via ?caso= (achado M2 do E2E). */}
             <div className="flex justify-end">
-              <Link to={`/documentos?caso=${id}`} className="btn-secondary text-xs">
+              <Link
+                to={`/documentos?caso=${id}`}
+                className="btn-secondary text-xs"
+              >
                 Anexar documento ao caso
               </Link>
             </div>
-          <TabLista
-            titulo="Documentos"
-            endpoint={`/documents/?case_id=${id}`}
-            empty="Nenhum documento vinculado a este caso"
-            renderItem={(d) => (
-              <div
-                className="card p-3 flex justify-between items-center text-sm cursor-pointer hover:bg-slate-50"
-                onClick={() =>
-                  baixarDoc(d.id, d.filename || d.nome_arquivo || d.titulo)
-                }
-                title="Clique para baixar"
-              >
-                <span className="text-gray-800">
-                  {d.titulo || d.filename || d.nome_arquivo}
-                </span>
-                <span className="text-gray-400 text-xs">
-                  {d.tipo_peca || d.tipo}
-                </span>
-              </div>
-            )}
-          />
+            <TabLista
+              titulo="Documentos"
+              endpoint={`/documents/?case_id=${id}`}
+              empty="Nenhum documento vinculado a este caso"
+              renderItem={(d) => (
+                <div
+                  className="card p-3 flex justify-between items-center text-sm cursor-pointer hover:bg-slate-50"
+                  onClick={() =>
+                    baixarDoc(d.id, d.filename || d.nome_arquivo || d.titulo)
+                  }
+                  title="Clique para baixar"
+                >
+                  <span className="text-gray-800">
+                    {d.titulo || d.filename || d.nome_arquivo}
+                  </span>
+                  <span className="text-gray-400 text-xs">
+                    {d.tipo_peca || d.tipo}
+                  </span>
+                </div>
+              )}
+            />
           </div>
         );
       case "provas":

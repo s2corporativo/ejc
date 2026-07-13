@@ -210,8 +210,10 @@ export default function PecaGeneratorModal({
     api
       .get<PecasMeta>("/pecas/meta")
       .then(({ data }) => {
-        if (Array.isArray(data.tipos) && data.tipos.length) setTipos(data.tipos);
-        if (Array.isArray(data.areas) && data.areas.length) setAreas(data.areas);
+        if (Array.isArray(data.tipos) && data.tipos.length)
+          setTipos(data.tipos);
+        if (Array.isArray(data.areas) && data.areas.length)
+          setAreas(data.areas);
         if (
           Array.isArray(data.niveis_complexidade) &&
           data.niveis_complexidade.length
@@ -333,7 +335,9 @@ export default function PecaGeneratorModal({
           return;
         }
         const detail = detailObj
-          ? (detailObj.mensagem ?? detailObj.detail ?? JSON.stringify(detailObj))
+          ? (detailObj.mensagem ??
+            detailObj.detail ??
+            JSON.stringify(detailObj))
           : err.detail;
         throw new Error(detail ?? "Erro na requisição");
       }

@@ -49,13 +49,9 @@ const BRAND_LOGO = "/brand/logo-hd.png";
 export default function Layout() {
   const { theme, cycleTheme } = useThemeStore();
   const user = useAuth((state) => state.user);
-  const lifecycleSettings = useModuleLifecycleStore(
-    (state) => state.settings,
-  );
-  const {
-    sidebarCollapsed: collapsed,
-    setSidebarCollapsed,
-  } = usePreferencesStore();
+  const lifecycleSettings = useModuleLifecycleStore((state) => state.settings);
+  const { sidebarCollapsed: collapsed, setSidebarCollapsed } =
+    usePreferencesStore();
   const nav = useNavigate();
   const location = useLocation();
   const moduleKey = useMemo(
@@ -437,7 +433,9 @@ export default function Layout() {
         <main className="ejc-modern-scope flex-1 px-4 py-5 md:px-7 md:py-7">
           <div className="mx-auto w-full max-w-[1440px] animate-rise">
             <ErrorBoundary key={location.pathname}>
-              <ModuleLifecycleGate><Outlet /></ModuleLifecycleGate>
+              <ModuleLifecycleGate>
+                <Outlet />
+              </ModuleLifecycleGate>
             </ErrorBoundary>
           </div>
         </main>

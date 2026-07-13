@@ -48,10 +48,7 @@ function apiDetail(e: any, fallback: string): string {
 
 // ── Tipos da resposta (contrato /ambiental/estrategia/simular) ───────────────
 type CenarioId =
-  | "pagar_a_vista"
-  | "converter_servicos"
-  | "defender"
-  | "prescricao";
+  "pagar_a_vista" | "converter_servicos" | "defender" | "prescricao";
 
 interface Cenario {
   id: CenarioId;
@@ -405,7 +402,10 @@ export default function AmbientalEstrategia() {
 
       {/* Banner HITL fixo (âmbar) */}
       <div className="mb-4 rounded-lg bg-warn-50 border border-warn-200 px-3 py-2 flex items-start gap-2">
-        <AlertTriangle size={15} className="text-warn-600 flex-shrink-0 mt-0.5" />
+        <AlertTriangle
+          size={15}
+          className="text-warn-600 flex-shrink-0 mt-0.5"
+        />
         <p className="text-[11px] text-warn-800">
           {res?.aviso_hitl || AVISO_HITL_FALLBACK}
         </p>
@@ -457,9 +457,7 @@ export default function AmbientalEstrategia() {
             max={100}
             step={5}
             value={form.prob_manutencao_pct}
-            onChange={(e) =>
-              set("prob_manutencao_pct")(Number(e.target.value))
-            }
+            onChange={(e) => set("prob_manutencao_pct")(Number(e.target.value))}
             className="w-full accent-green-600"
           />
           <p className="text-[10px] text-slate-400 mt-0.5">
@@ -476,9 +474,7 @@ export default function AmbientalEstrategia() {
             inputMode="decimal"
             placeholder="opcional"
             value={form.custo_recuperacao_estimado}
-            onChange={(e) =>
-              set("custo_recuperacao_estimado")(e.target.value)
-            }
+            onChange={(e) => set("custo_recuperacao_estimado")(e.target.value)}
           />
           <p className="text-[10px] text-slate-400 mt-0.5">
             Serviço que o cliente já faria — abate no cenário de conversão.

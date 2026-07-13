@@ -64,7 +64,9 @@ export default function ThemeSelector({
               )}
             >
               <Icon className="h-4 w-4 shrink-0" />
-              {!compact && <span className="truncate">{THEME_LABELS[value]}</span>}
+              {!compact && (
+                <span className="truncate">{THEME_LABELS[value]}</span>
+              )}
             </button>
           );
         })}

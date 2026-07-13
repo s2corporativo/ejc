@@ -29,15 +29,13 @@ const settings: Record<string, ModuleLifecycleOverride> = {
 
 describe("moduleLifecycle", () => {
   it("remove módulos ocultos e desabilitados da navegação", () => {
-    expect(filterModulesByLifecycle(modules, settings).map((item) => item.key)).toEqual([
-      "ativo",
-    ]);
+    expect(
+      filterModulesByLifecycle(modules, settings).map((item) => item.key),
+    ).toEqual(["ativo"]);
   });
 
   it("aceita apenas rotas internas diferentes da rota atual", () => {
-    expect(safeReplacementRoute("/antigo", "/novo?tab=1")).toBe(
-      "/novo?tab=1",
-    );
+    expect(safeReplacementRoute("/antigo", "/novo?tab=1")).toBe("/novo?tab=1");
     expect(safeReplacementRoute("/antigo", "https://example.com")).toBeNull();
     expect(safeReplacementRoute("/antigo", "//example.com")).toBeNull();
     expect(safeReplacementRoute("/antigo", "/antigo")).toBeNull();

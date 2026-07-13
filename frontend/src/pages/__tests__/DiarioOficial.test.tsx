@@ -11,7 +11,13 @@ import { MemoryRouter } from "react-router-dom";
 // vi.hoisted: o factory de vi.mock é içado ao topo — precisa acessar `get` assim.
 const { get } = vi.hoisted(() => ({ get: vi.fn() }));
 vi.mock("../../lib/api", () => ({
-  default: { get, post: vi.fn(), put: vi.fn(), patch: vi.fn(), delete: vi.fn() },
+  default: {
+    get,
+    post: vi.fn(),
+    put: vi.fn(),
+    patch: vi.fn(),
+    delete: vi.fn(),
+  },
 }));
 vi.mock("../../components/Toast", () => ({
   toast: { success: vi.fn(), error: vi.fn(), info: vi.fn() },

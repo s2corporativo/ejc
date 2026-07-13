@@ -1,11 +1,6 @@
 ﻿// ── src/pages/ramos/ramosConfig.ts ───────────────────────────────────────────
 export type CampoTipo =
-  | "text"
-  | "number"
-  | "date"
-  | "select"
-  | "textarea"
-  | "checkbox";
+  "text" | "number" | "date" | "select" | "textarea" | "checkbox";
 
 export interface CampoConfig {
   nome: string;

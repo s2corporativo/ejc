@@ -27,7 +27,8 @@
 .input,
 .select,
 .textarea,
-.ejc-modern-scope input:not([type="checkbox"]):not([type="radio"]):not([type="range"]),
+.ejc-modern-scope
+  input:not([type="checkbox"]):not([type="radio"]):not([type="range"]),
 .ejc-modern-scope select,
 .ejc-modern-scope textarea {
   border: 0;
@@ -40,7 +41,8 @@
 .input:hover,
 .select:hover,
 .textarea:hover,
-.ejc-modern-scope input:not([type="checkbox"]):not([type="radio"]):not([type="range"]):hover,
+.ejc-modern-scope
+  input:not([type="checkbox"]):not([type="radio"]):not([type="range"]):hover,
 .ejc-modern-scope select:hover,
 .ejc-modern-scope textarea:hover {
   box-shadow:
@@ -51,7 +53,8 @@
 .input:focus,
 .select:focus,
 .textarea:focus,
-.ejc-modern-scope input:not([type="checkbox"]):not([type="radio"]):not([type="range"]):focus,
+.ejc-modern-scope
+  input:not([type="checkbox"]):not([type="radio"]):not([type="range"]):focus,
 .ejc-modern-scope select:focus,
 .ejc-modern-scope textarea:focus {
   border-color: transparent;
@@ -65,7 +68,9 @@
 .dark .input,
 .dark .select,
 .dark .textarea,
-.dark .ejc-modern-scope input:not([type="checkbox"]):not([type="radio"]):not([type="range"]),
+.dark
+  .ejc-modern-scope
+  input:not([type="checkbox"]):not([type="radio"]):not([type="range"]),
 .dark .ejc-modern-scope select,
 .dark .ejc-modern-scope textarea {
   background: var(--ejc-elev);
@@ -77,18 +82,34 @@
 .surface-soft,
 .ejc-modern-scope {
   background:
-    radial-gradient(circle at top left, rgba(212, 175, 55, 0.08), transparent 24rem),
+    radial-gradient(
+      circle at top left,
+      rgba(212, 175, 55, 0.08),
+      transparent 24rem
+    ),
     linear-gradient(180deg, rgba(255, 255, 255, 0.68), rgba(255, 255, 255, 0));
 }
 
 .dark .surface-soft,
 .dark .ejc-modern-scope {
   background:
-    radial-gradient(circle at top left, rgba(212, 175, 55, 0.08), transparent 24rem),
+    radial-gradient(
+      circle at top left,
+      rgba(212, 175, 55, 0.08),
+      transparent 24rem
+    ),
     linear-gradient(180deg, rgba(255, 245, 230, 0.04), rgba(255, 245, 230, 0));
 }
 
-.ejc-modern-scope :where(.bg-white.border, .bg-white.shadow, .bg-white.shadow-sm, .bg-white.shadow-md, .bg-white.rounded-xl, .bg-white.rounded-2xl):not(input):not(select):not(textarea):not(button),
+.ejc-modern-scope
+  :where(
+    .bg-white.border,
+    .bg-white.shadow,
+    .bg-white.shadow-sm,
+    .bg-white.shadow-md,
+    .bg-white.rounded-xl,
+    .bg-white.rounded-2xl
+  ):not(input):not(select):not(textarea):not(button),
 .ejc-modern-scope :where(.card, .section-card) {
   border-color: transparent !important;
   box-shadow:
@@ -96,7 +117,15 @@
     0 1px 2px rgba(15, 23, 42, 0.04) !important;
 }
 
-.ejc-modern-scope :where(.bg-white.border, .bg-white.shadow, .bg-white.shadow-sm, .bg-white.shadow-md, .bg-white.rounded-xl, .bg-white.rounded-2xl):not(input):not(select):not(textarea):not(button):hover,
+.ejc-modern-scope
+  :where(
+    .bg-white.border,
+    .bg-white.shadow,
+    .bg-white.shadow-sm,
+    .bg-white.shadow-md,
+    .bg-white.rounded-xl,
+    .bg-white.rounded-2xl
+  ):not(input):not(select):not(textarea):not(button):hover,
 .ejc-modern-scope :where(.card, .section-card):hover {
   box-shadow:
     0 24px 64px rgba(15, 23, 42, 0.11),
@@ -141,7 +170,11 @@
   border-radius: 2rem;
   padding: 1.35rem;
   background:
-    radial-gradient(circle at 10% 15%, rgba(212, 175, 55, 0.14), transparent 18rem),
+    radial-gradient(
+      circle at 10% 15%,
+      rgba(212, 175, 55, 0.14),
+      transparent 18rem
+    ),
     linear-gradient(135deg, #ffffff 0%, #fffaf0 100%);
   color: #1e293b;
   border: 1px solid rgba(201, 162, 39, 0.22);
@@ -162,7 +195,11 @@
   pointer-events: none;
 }
 
-.ejc-modern-scope > div > .space-y-6 > .flex.flex-col.gap-4:first-child .eyebrow {
+.ejc-modern-scope
+  > div
+  > .space-y-6
+  > .flex.flex-col.gap-4:first-child
+  .eyebrow {
   color: #8f7117;
 }
 
@@ -176,20 +213,32 @@
   color: #475569;
 }
 
-.ejc-modern-scope > div > .space-y-6 > .flex.flex-col.gap-4:first-child .btn-primary {
+.ejc-modern-scope
+  > div
+  > .space-y-6
+  > .flex.flex-col.gap-4:first-child
+  .btn-primary {
   background: #d4af37;
   color: #3b2f0b;
   box-shadow: 0 16px 34px rgba(212, 175, 55, 0.28);
 }
 
-.ejc-modern-scope > div > .space-y-6 > .flex.flex-col.gap-4:first-child .btn-secondary {
+.ejc-modern-scope
+  > div
+  > .space-y-6
+  > .flex.flex-col.gap-4:first-child
+  .btn-secondary {
   border-color: rgba(201, 162, 39, 0.35);
   background: rgba(255, 255, 255, 0.6);
   color: #6f5711;
   backdrop-filter: blur(12px);
 }
 
-.ejc-modern-scope > div > .space-y-6 > .flex.flex-col.gap-4:first-child .btn-secondary:hover {
+.ejc-modern-scope
+  > div
+  > .space-y-6
+  > .flex.flex-col.gap-4:first-child
+  .btn-secondary:hover {
   background: rgba(201, 162, 39, 0.1);
 }
 
@@ -199,14 +248,26 @@
   min-height: 9rem;
   border: 0;
   background:
-    linear-gradient(180deg, rgba(255, 255, 255, 0.98), rgba(255, 255, 255, 0.91)),
-    radial-gradient(circle at top right, rgba(212, 175, 55, 0.16), transparent 14rem);
+    linear-gradient(
+      180deg,
+      rgba(255, 255, 255, 0.98),
+      rgba(255, 255, 255, 0.91)
+    ),
+    radial-gradient(
+      circle at top right,
+      rgba(212, 175, 55, 0.16),
+      transparent 14rem
+    );
   box-shadow:
     0 1px 2px rgba(15, 23, 42, 0.04),
     0 24px 64px rgba(15, 23, 42, 0.095);
 }
 
-.ejc-modern-scope > div > .space-y-6 > .grid[class*="xl:grid-cols-4"] > .card::before {
+.ejc-modern-scope
+  > div
+  > .space-y-6
+  > .grid[class*="xl:grid-cols-4"]
+  > .card::before {
   content: "";
   position: absolute;
   inset: 0 auto 0 0;
@@ -214,14 +275,23 @@
   background: linear-gradient(180deg, #d4af37, rgba(201, 162, 39, 0.18));
 }
 
-.ejc-modern-scope > div > .space-y-6 > .grid[class*="xl:grid-cols-4"] > .card:hover {
+.ejc-modern-scope
+  > div
+  > .space-y-6
+  > .grid[class*="xl:grid-cols-4"]
+  > .card:hover {
   transform: translateY(-2px);
   box-shadow:
     0 2px 6px rgba(15, 23, 42, 0.05),
     0 32px 78px rgba(15, 23, 42, 0.13);
 }
 
-.ejc-modern-scope > div > .space-y-6 > .grid[class*="xl:grid-cols-4"] > .card p:first-child {
+.ejc-modern-scope
+  > div
+  > .space-y-6
+  > .grid[class*="xl:grid-cols-4"]
+  > .card
+  p:first-child {
   text-transform: uppercase;
   letter-spacing: 0.1em;
   font-weight: 800;
@@ -235,7 +305,11 @@
 
 .ejc-modern-scope > div > .space-y-6 .section-card > div:first-child {
   border-bottom-color: rgba(212, 175, 55, 0.12);
-  background: linear-gradient(90deg, rgba(250, 247, 240, 0.8), rgba(255, 255, 255, 0));
+  background: linear-gradient(
+    90deg,
+    rgba(250, 247, 240, 0.8),
+    rgba(255, 255, 255, 0)
+  );
 }
 
 .ejc-modern-scope > div > .space-y-6 .section-card h2 {
@@ -245,21 +319,34 @@
 
 .dark .ejc-modern-scope > div > .space-y-6 > .flex.flex-col.gap-4:first-child {
   background:
-    radial-gradient(circle at 10% 15%, rgba(212, 175, 55, 0.18), transparent 18rem),
+    radial-gradient(
+      circle at 10% 15%,
+      rgba(212, 175, 55, 0.18),
+      transparent 18rem
+    ),
     linear-gradient(135deg, #1b1506, #2a2108 58%, #55420d);
   box-shadow:
     0 1px 2px rgba(0, 0, 0, 0.28),
     0 28px 80px rgba(0, 0, 0, 0.46);
 }
 
-.dark .ejc-modern-scope > div > .space-y-6 > .grid[class*="xl:grid-cols-4"] > .card,
+.dark
+  .ejc-modern-scope
+  > div
+  > .space-y-6
+  > .grid[class*="xl:grid-cols-4"]
+  > .card,
 .dark .ejc-modern-scope > div > .space-y-6 .section-card {
   background: rgba(28, 24, 14, 0.92);
 }
 
 .dark .ejc-modern-scope > div > .space-y-6 .section-card > div:first-child {
   border-bottom-color: rgba(255, 245, 230, 0.08);
-  background: linear-gradient(90deg, rgba(255, 245, 230, 0.04), rgba(255, 245, 230, 0));
+  background: linear-gradient(
+    90deg,
+    rgba(255, 245, 230, 0.04),
+    rgba(255, 245, 230, 0)
+  );
 }
 
 /* Pré-visualização de peças jurídicas em Visual Law.
@@ -275,8 +362,7 @@
   position: relative;
   overflow: hidden;
   border-radius: 1.6rem;
-  background:
-    linear-gradient(180deg, #ffffff 0%, #fffaf0 100%);
+  background: linear-gradient(180deg, #ffffff 0%, #fffaf0 100%);
   padding: 2rem;
   color: #3b2f0b;
   font-size: 0.96rem;
@@ -286,12 +372,19 @@
     0 22px 70px rgba(15, 23, 42, 0.1);
 }
 
-.modal-backdrop [role="dialog"].max-w-4xl > .p-5 > .text-sm.text-slate-700::before {
+.modal-backdrop
+  [role="dialog"].max-w-4xl
+  > .p-5
+  > .text-sm.text-slate-700::before {
   display: block;
   margin: -2rem -2rem 1.5rem;
   padding: 1.55rem 2rem;
   background:
-    radial-gradient(circle at 12% 22%, rgba(212, 175, 55, 0.16), transparent 18rem),
+    radial-gradient(
+      circle at 12% 22%,
+      rgba(212, 175, 55, 0.16),
+      transparent 18rem
+    ),
     linear-gradient(135deg, #fffaf0 0%, #ffffff 100%);
   color: #6f5711;
   border-bottom: 2px solid #d4af37;
@@ -302,8 +395,16 @@
   text-transform: uppercase;
 }
 
-.modal-backdrop [role="dialog"].max-w-4xl > .p-5 > .text-sm.text-slate-700 > div[class*="font-bold"],
-.modal-backdrop [role="dialog"].max-w-4xl > .p-5 > .text-sm.text-slate-700 > div[class*="font-semibold"] {
+.modal-backdrop
+  [role="dialog"].max-w-4xl
+  > .p-5
+  > .text-sm.text-slate-700
+  > div[class*="font-bold"],
+.modal-backdrop
+  [role="dialog"].max-w-4xl
+  > .p-5
+  > .text-sm.text-slate-700
+  > div[class*="font-semibold"] {
   margin-top: 1.4rem;
   border-left: 4px solid #d4af37;
   padding-left: 0.85rem;
@@ -316,7 +417,11 @@
   text-align: justify;
 }
 
-.modal-backdrop [role="dialog"].max-w-4xl > .p-5 > .text-sm.text-slate-700 blockquote {
+.modal-backdrop
+  [role="dialog"].max-w-4xl
+  > .p-5
+  > .text-sm.text-slate-700
+  blockquote {
   border-left: 4px solid #d4af37;
   border-radius: 1rem;
   background: #fbf8ee;
@@ -331,17 +436,34 @@
   padding: 1rem 1.25rem 1rem 2rem;
 }
 
-.dark .modal-backdrop [role="dialog"].max-w-4xl > .p-5 > .text-sm.text-slate-700 {
-  background:
-    linear-gradient(180deg, rgba(28, 24, 14, 0.98), rgba(42, 33, 8, 0.92));
+.dark
+  .modal-backdrop
+  [role="dialog"].max-w-4xl
+  > .p-5
+  > .text-sm.text-slate-700 {
+  background: linear-gradient(
+    180deg,
+    rgba(28, 24, 14, 0.98),
+    rgba(42, 33, 8, 0.92)
+  );
   color: rgba(255, 245, 230, 0.88);
   box-shadow:
     inset 0 0 0 1px rgba(212, 175, 55, 0.16),
     0 22px 70px rgba(0, 0, 0, 0.36);
 }
 
-.dark .modal-backdrop [role="dialog"].max-w-4xl > .p-5 > .text-sm.text-slate-700 > div[class*="font-bold"],
-.dark .modal-backdrop [role="dialog"].max-w-4xl > .p-5 > .text-sm.text-slate-700 > div[class*="font-semibold"] {
+.dark
+  .modal-backdrop
+  [role="dialog"].max-w-4xl
+  > .p-5
+  > .text-sm.text-slate-700
+  > div[class*="font-bold"],
+.dark
+  .modal-backdrop
+  [role="dialog"].max-w-4xl
+  > .p-5
+  > .text-sm.text-slate-700
+  > div[class*="font-semibold"] {
   color: #fff5e6;
 }
 
@@ -359,7 +481,11 @@
   position: relative;
   padding: 2rem;
   background:
-    radial-gradient(circle at 15% 20%, rgba(212, 175, 55, 0.16), transparent 18rem),
+    radial-gradient(
+      circle at 15% 20%,
+      rgba(212, 175, 55, 0.16),
+      transparent 18rem
+    ),
     linear-gradient(135deg, #ffffff 0%, #fffaf0 100%);
   color: #1e293b;
   border-bottom: 3px solid #d4af37;
@@ -489,7 +615,11 @@
   margin: 0;
   padding: 2rem 2rem 0.75rem;
   background:
-    radial-gradient(circle at 15% 20%, rgba(212, 175, 55, 0.16), transparent 18rem),
+    radial-gradient(
+      circle at 15% 20%,
+      rgba(212, 175, 55, 0.16),
+      transparent 18rem
+    ),
     linear-gradient(135deg, #ffffff 0%, #fffaf0 100%);
   color: #1e293b;
   border-bottom: 3px solid #d4af37;

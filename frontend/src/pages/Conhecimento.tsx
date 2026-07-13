@@ -637,7 +637,8 @@ function SecaoImportarJuris({ onImportado }: { onImportado: () => void }) {
       }
     } catch (e: any) {
       setErro(
-        e.response?.data?.detail?.toString?.() || "Erro ao iniciar a importação",
+        e.response?.data?.detail?.toString?.() ||
+          "Erro ao iniciar a importação",
       );
     } finally {
       if (vivoRef.current) setImportando(false);
