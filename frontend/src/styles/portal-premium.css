@@ -3,10 +3,11 @@
 
 .ejc-modern-scope > header.bg-navy {
   border: 0;
+  border-bottom: 3px solid #d4af37;
   background:
-    radial-gradient(circle at 12% 18%, rgba(212, 175, 55, 0.2), transparent 19rem),
-    linear-gradient(135deg, #3b2f0b 0%, #55420d 58%, #a6842a 100%);
-  box-shadow: 0 24px 72px rgba(45, 27, 20, 0.22);
+    radial-gradient(circle at 12% 18%, rgba(212, 175, 55, 0.14), transparent 19rem),
+    linear-gradient(135deg, #ffffff 0%, #fffaf0 100%);
+  box-shadow: 0 20px 56px rgba(15, 23, 42, 0.1);
 }
 
 .ejc-modern-scope > header.bg-navy .rounded-lg.bg-white {
@@ -24,7 +25,7 @@
 .ejc-modern-scope > header.bg-navy nav a {
   border-radius: 999px;
   margin-bottom: 0.35rem;
-  color: rgba(255, 245, 230, 0.78);
+  color: #475569;
   transition:
     background-color 0.16s ease,
     color 0.16s ease,
@@ -32,14 +33,14 @@
 }
 
 .ejc-modern-scope > header.bg-navy nav a:hover {
-  background: rgba(255, 255, 255, 0.12);
-  color: #fff5e6;
+  background: rgba(201, 162, 39, 0.1);
+  color: #6f5711;
 }
 
 .ejc-modern-scope > header.bg-navy nav a.bg-canvas {
-  background: #fffaf0;
-  color: #3b2f0b;
-  box-shadow: 0 12px 28px rgba(45, 27, 20, 0.2);
+  background: rgba(201, 162, 39, 0.16);
+  color: #6f5711;
+  box-shadow: inset 0 0 0 1px rgba(212, 175, 55, 0.4);
 }
 
 .ejc-modern-scope > header.bg-navy + main {

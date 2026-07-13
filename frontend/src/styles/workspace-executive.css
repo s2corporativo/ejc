@@ -21,8 +21,8 @@
 }
 
 .executive-workspace > .overflow-x-auto button.bg-primary-600 {
-  background: linear-gradient(135deg, #3b2f0b, #55420d 58%, #a6842a);
-  box-shadow: 0 12px 28px rgba(45, 27, 20, 0.18);
+  background: linear-gradient(135deg, #c9a227, #a6842a 58%, #8f7117);
+  box-shadow: 0 12px 28px rgba(143, 113, 23, 0.18);
 }
 
 .executive-workspace .max-w-6xl {

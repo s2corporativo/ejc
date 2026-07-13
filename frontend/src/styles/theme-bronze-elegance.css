@@ -300,13 +300,10 @@ tbody tr:hover {
 
 /* Sidebar */
 .sidebar {
-  background: linear-gradient(
-    135deg,
-    var(--bronze-dark) 0%,
-    var(--bronze-primary) 100%
-  );
-  color: var(--off-white);
+  background: linear-gradient(135deg, #ffffff 0%, #fdfcf9 100%);
+  color: #475569;
   padding: var(--spacing-xl);
+  border: 1px solid rgba(201, 162, 39, 0.18);
   border-radius: var(--border-radius-lg);
   box-shadow: var(--shadow-lg);
 }
@@ -321,7 +318,7 @@ tbody tr:hover {
 }
 
 .sidebar-item:hover {
-  background-color: rgba(255, 255, 255, 0.1);
+  background-color: rgba(201, 162, 39, 0.1);
   transform: translateX(4px);
 }
 

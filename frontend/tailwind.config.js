@@ -66,16 +66,20 @@ export default {
           900: "#7F3E1C",
           950: "#451E0B",
         },
-        // navy — slate escuro (legado)
+        // navy — token legado de "escuro/ação". Repintado para a família
+        // OURO near-black (site branco + acento dourado): fills `bg-navy`
+        // com texto branco = #3B2F0B (12:1 AAA); texto `text-navy-600..900`
+        // sobre branco = ouro 4,6:1→13:1 (AA/AAA); `-50/-100` = palha quente.
+        // Espelha a escala `primary`/`ouro` para acento gráfico consistente.
         navy: {
-          DEFAULT: "#0F172A",
-          950: "#020617",
-          900: "#0F172A",
-          800: "#1E293B",
-          700: "#334155",
-          600: "#475569",
-          100: "#F1F5F9",
-          50: "#F8FAFC",
+          DEFAULT: "#3B2F0B",
+          950: "#251D06",
+          900: "#3B2F0B",
+          800: "#55420D",
+          700: "#6F5711",
+          600: "#8F7117",
+          100: "#F7F1DC",
+          50: "#FBF8EC",
         },
         // bronze/gold — legados repintados: bronze=neutro slate com pontas
         // douradas pálidas; gold=amarelo #FFD166 (acento da referência)

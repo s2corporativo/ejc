@@ -8,7 +8,7 @@
     /* SaaS tech premium "De Paula Teixeira": base branca/off-white QUENTE
        (#FFFFFF / #FAF9F6), dourado como acento cirúrgico (ouro #C9A227 /
        ouro profundo #8F7117 / bronze #6F5711 / sépia #4A3A26 — logo-hd) */
-    --ejc-bg: #faf9f6;
+    --ejc-bg: #ffffff;
     --ejc-card: #ffffff;
     --ejc-elev: #ffffff;
     --ejc-ink: #0f172a;
@@ -21,9 +21,10 @@
     --ejc-gold: #c9a227;
     --ejc-gold-soft: #f7f1dc;
     --ejc-shadow-soft: 0 4px 18px rgba(24, 16, 8, 0.05);
-    /* Sidebar off-black quente sofisticado (ouro profundo da logomarca) */
-    --ejc-sidebar-top: #201a0f;
-    --ejc-sidebar-bottom: #2f260f;
+    /* Sidebar/menu BRANCO: off-white sutil só para leve profundidade;
+       o dourado brilhante entra como detalhe (item ativo, hovers, filetes). */
+    --ejc-sidebar-top: #ffffff;
+    --ejc-sidebar-bottom: #fdfcf9;
     /* Paleta de gráficos: ouro near-black / ouro claro / dourado / creme */
     --ejc-chart-1: #3b2f0b;
     --ejc-chart-2: #c9a227;
@@ -330,25 +331,27 @@
     }
   }
 
-  /* ── Sidebar ouro-escura (gradiente — igual nos 2 temas) ── */
+  /* ── Sidebar BRANCA (tema claro): texto slate, dourado como acento.
+        O gradiente vem das vars (branco no claro / ouro-escuro no dark). ── */
   .sidebar-bronze {
     background: linear-gradient(
       180deg,
       var(--ejc-sidebar-top) 0%,
       var(--ejc-sidebar-bottom) 100%
     );
+    border-right: 1px solid var(--ejc-border);
   }
   .sidebar-nav-item {
     position: relative;
-    color: rgba(255, 245, 230, 0.72);
+    color: #475569;
   }
   .sidebar-nav-item:hover {
-    background: rgba(201, 162, 39, 0.16);
-    color: #f5edd2;
+    background: rgba(201, 162, 39, 0.1);
+    color: #6f5711;
   }
   .sidebar-nav-item.is-active {
-    background: rgba(201, 162, 39, 0.2);
-    color: #e5ce7f;
+    background: rgba(201, 162, 39, 0.14);
+    color: #6f5711;
   }
   .sidebar-nav-item.is-active::before {
     content: "";
@@ -361,15 +364,44 @@
     background: #d4af37;
   }
   .sidebar-group-label {
-    color: rgba(255, 245, 230, 0.45);
+    color: #94a3b8;
   }
   .sidebar-group-label:hover {
-    color: rgba(255, 245, 230, 0.7);
+    color: #64748b;
   }
   .sidebar-tree {
-    border-color: rgba(255, 245, 230, 0.14);
+    border-color: var(--ejc-border);
   }
   .sidebar-count {
+    background: rgba(212, 175, 55, 0.16);
+    color: #6f5711;
+  }
+
+  /* ── Tema ESCURO: restaura a sidebar ouro-escura (texto creme) ── */
+  .dark .sidebar-bronze {
+    border-right-color: rgba(255, 245, 230, 0.08);
+  }
+  .dark .sidebar-nav-item {
+    color: rgba(255, 245, 230, 0.72);
+  }
+  .dark .sidebar-nav-item:hover {
+    background: rgba(201, 162, 39, 0.16);
+    color: #f5edd2;
+  }
+  .dark .sidebar-nav-item.is-active {
+    background: rgba(201, 162, 39, 0.2);
+    color: #e5ce7f;
+  }
+  .dark .sidebar-group-label {
+    color: rgba(255, 245, 230, 0.45);
+  }
+  .dark .sidebar-group-label:hover {
+    color: rgba(255, 245, 230, 0.7);
+  }
+  .dark .sidebar-tree {
+    border-color: rgba(255, 245, 230, 0.14);
+  }
+  .dark .sidebar-count {
     background: rgba(212, 175, 55, 0.18);
     color: #e5ce7f;
   }

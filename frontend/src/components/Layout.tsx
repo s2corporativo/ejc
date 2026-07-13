@@ -284,17 +284,17 @@ export default function Layout() {
         >
           {!collapsed && (
             <div className="min-w-0 flex-1">
-              <div className="truncate text-[11px] font-semibold uppercase tracking-[0.18em] text-[#E5CE7F]">
+              <div className="truncate text-[11px] font-semibold uppercase tracking-[0.18em] text-[#8f7117] dark:text-[#E5CE7F]">
                 De Paula Teixeira
               </div>
-              <div className="mt-0.5 truncate text-[10px] text-[rgba(255,245,230,0.5)]">
+              <div className="mt-0.5 truncate text-[10px] text-slate-400 dark:text-[rgba(255,245,230,0.5)]">
                 Sociedade de Advogados
               </div>
             </div>
           )}
           <button
             type="button"
-            className="hidden rounded-lg p-1.5 text-[rgba(255,245,230,0.55)] hover:bg-[rgba(166,124,82,0.2)] hover:text-[#F5EDD2] md:block"
+            className="hidden rounded-lg p-1.5 text-slate-400 hover:bg-[rgba(201,162,39,0.12)] hover:text-[#6f5711] dark:text-[rgba(255,245,230,0.55)] dark:hover:bg-[rgba(166,124,82,0.2)] dark:hover:text-[#F5EDD2] md:block"
             onClick={() => setSidebarCollapsed(!collapsed)}
             aria-label={collapsed ? "Expandir menu" : "Recolher menu"}
           >
@@ -306,7 +306,7 @@ export default function Layout() {
           </button>
           <button
             type="button"
-            className="rounded-lg p-1.5 text-[rgba(255,245,230,0.55)] hover:bg-[rgba(166,124,82,0.2)] hover:text-[#F5EDD2] md:hidden"
+            className="rounded-lg p-1.5 text-slate-400 hover:bg-[rgba(201,162,39,0.12)] hover:text-[#6f5711] dark:text-[rgba(255,245,230,0.55)] dark:hover:bg-[rgba(166,124,82,0.2)] dark:hover:text-[#F5EDD2] md:hidden"
             onClick={() => setMenuOpen(false)}
             aria-label="Fechar menu"
           >
@@ -379,15 +379,15 @@ export default function Layout() {
           })}
         </nav>
 
-        <div className="border-t border-[rgba(255,245,230,0.12)] p-3">
+        <div className="border-t border-slate-200 p-3 dark:border-[rgba(255,245,230,0.12)]">
           {!collapsed && (
-            <div className="mb-2 flex items-center gap-2.5 rounded-xl bg-[rgba(255,245,230,0.06)] px-3 py-2.5 ring-1 ring-inset ring-[rgba(255,245,230,0.1)]">
+            <div className="mb-2 flex items-center gap-2.5 rounded-xl bg-[rgba(201,162,39,0.08)] px-3 py-2.5 ring-1 ring-inset ring-[rgba(201,162,39,0.16)] dark:bg-[rgba(255,245,230,0.06)] dark:ring-[rgba(255,245,230,0.1)]">
               <ShieldCheck className="h-4 w-4 shrink-0 text-[#D4AF37]" />
               <div className="min-w-0">
-                <div className="truncate text-[11px] font-semibold text-[#F5EDD2]">
+                <div className="truncate text-[11px] font-semibold text-slate-700 dark:text-[#F5EDD2]">
                   Seguro &amp; Conforme
                 </div>
-                <div className="truncate text-[10px] text-[rgba(255,245,230,0.55)]">
+                <div className="truncate text-[10px] text-slate-400 dark:text-[rgba(255,245,230,0.55)]">
                   Dados protegidos — LGPD
                 </div>
               </div>
@@ -395,17 +395,17 @@ export default function Layout() {
           )}
           <div
             className={cn(
-              "flex items-center gap-3 rounded-xl bg-[rgba(255,245,230,0.06)] p-2",
+              "flex items-center gap-3 rounded-xl bg-[rgba(201,162,39,0.08)] p-2 dark:bg-[rgba(255,245,230,0.06)]",
               collapsed && "justify-center",
             )}
           >
             <UserAvatar user={user} size="md" />
             {!collapsed && (
               <div className="min-w-0 flex-1">
-                <div className="truncate text-xs font-semibold text-[#F5EDD2]">
+                <div className="truncate text-xs font-semibold text-slate-700 dark:text-[#F5EDD2]">
                   {user?.full_name || "Usuário"}
                 </div>
-                <div className="truncate text-[11px] capitalize text-[rgba(255,245,230,0.55)]">
+                <div className="truncate text-[11px] capitalize text-slate-400 dark:text-[rgba(255,245,230,0.55)]">
                   {user?.role || ""}
                 </div>
               </div>
@@ -415,7 +415,7 @@ export default function Layout() {
             type="button"
             onClick={logout}
             className={cn(
-              "mt-2 flex h-10 w-full items-center gap-3 rounded-xl px-3 text-sm font-medium text-[rgba(255,245,230,0.65)] transition-colors hover:bg-danger-600/25 hover:text-[#F8B9BC]",
+              "mt-2 flex h-10 w-full items-center gap-3 rounded-xl px-3 text-sm font-medium text-slate-500 transition-colors hover:bg-danger-50 hover:text-danger-600 dark:text-[rgba(255,245,230,0.65)] dark:hover:bg-danger-600/25 dark:hover:text-[#F8B9BC]",
               collapsed && "justify-center px-0",
             )}
             aria-label="Sair"
