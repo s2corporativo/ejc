@@ -2362,7 +2362,7 @@ function TabLista({
 }: {
   titulo: string;
   endpoint: string;
-  renderItem: (item: any) => JSX.Element;
+  renderItem: (item: any) => React.JSX.Element;
   empty: string;
 }) {
   const [items, setItems] = useState<any[]>([]);

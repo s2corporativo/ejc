@@ -264,7 +264,8 @@ export default function PecaGeneratorModal({
   const toggleFlagTese = (value: string) => {
     setFlagsTeses((prev) => {
       const next = new Set(prev);
-      next.has(value) ? next.delete(value) : next.add(value);
+      if (next.has(value)) next.delete(value);
+      else next.add(value);
       return next;
     });
   };
@@ -272,7 +273,8 @@ export default function PecaGeneratorModal({
   const toggleExpandir = (num: number) => {
     setExpandidos((prev) => {
       const next = new Set(prev);
-      next.has(num) ? next.delete(num) : next.add(num);
+      if (next.has(num)) next.delete(num);
+      else next.add(num);
       return next;
     });
   };
