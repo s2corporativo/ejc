@@ -156,7 +156,7 @@ export default function RamosHub() {
             <Badge variant="gold" className="mb-3 gap-1">
               <Sparkles className="h-3 w-3" /> Áreas estratégicas
             </Badge>
-            <PageTitle>Ramos do Direito</PageTitle>
+            <PageTitle>Áreas de Atuação</PageTitle>
             <PageDescription>
               Escolha uma área para acessar ferramentas especializadas,
               cálculos, guias, análises e fluxos jurídicos próprios do
