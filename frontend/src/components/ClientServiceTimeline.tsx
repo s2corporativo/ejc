@@ -78,6 +78,11 @@ export interface ClientServiceEntry {
 
 interface TimelineResponse {
   total: number;
+  resumo_solicitacoes?: {
+    pendentes: number;
+    atrasadas: number;
+    atendidas: number;
+  };
   items: ClientServiceEntry[];
 }
 
@@ -168,6 +173,11 @@ export default function ClientServiceTimeline({ clientId, cases = [] }: Props) {
   const [items, setItems] = useState<ClientServiceEntry[]>([]);
   const [responsaveis, setResponsaveis] = useState<Responsavel[]>([]);
   const [total, setTotal] = useState(0);
+  const [resumoSolicitacoes, setResumoSolicitacoes] = useState<{
+    pendentes: number;
+    atrasadas: number;
+    atendidas: number;
+  } | null>(null);
   const [page, setPage] = useState(1);
   const [loading, setLoading] = useState(true);
   const [loadingMore, setLoadingMore] = useState(false);
@@ -194,6 +204,7 @@ export default function ClientServiceTimeline({ clientId, cases = [] }: Props) {
         const incoming = response.data.items ?? [];
         setItems((current) => (append ? [...current, ...incoming] : incoming));
         setTotal(response.data.total ?? 0);
+        setResumoSolicitacoes(response.data.resumo_solicitacoes ?? null);
         setPage(targetPage);
       } catch (error: any) {
         toast.error(
@@ -203,6 +214,7 @@ export default function ClientServiceTimeline({ clientId, cases = [] }: Props) {
         if (!append) {
           setItems([]);
           setTotal(0);
+          setResumoSolicitacoes(null);
         }
       } finally {
         setLoading(false);
@@ -236,24 +248,31 @@ export default function ClientServiceTimeline({ clientId, cases = [] }: Props) {
     [responsaveis],
   );
 
-  const pendentes = useMemo(
+  const pendentesCarregadas = useMemo(
     () =>
       items.filter(
         (item) => Boolean(item.solicitacao) && !item.solicitacao_atendida,
       ).length,
     [items],
   );
-  const atrasados = useMemo(
+  const atrasadasCarregadas = useMemo(
     () => items.filter((item) => item.solicitacao_atrasada).length,
     [items],
   );
-  const atendidos = useMemo(
+  const atendidasCarregadas = useMemo(
     () =>
       items.filter(
         (item) => Boolean(item.solicitacao) && item.solicitacao_atendida,
       ).length,
     [items],
   );
+
+  const pendentes =
+    resumoSolicitacoes?.pendentes ?? pendentesCarregadas;
+  const atrasados =
+    resumoSolicitacoes?.atrasadas ?? atrasadasCarregadas;
+  const atendidos =
+    resumoSolicitacoes?.atendidas ?? atendidasCarregadas;
 
   const filteredItems = useMemo(() => {
     if (filter === "pendentes") {
