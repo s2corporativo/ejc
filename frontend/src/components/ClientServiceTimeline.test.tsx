@@ -1,10 +1,5 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import {
-  fireEvent,
-  render,
-  screen,
-  waitFor,
-} from "@testing-library/react";
+import { fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { MemoryRouter } from "react-router-dom";
 
 const { get, post, patch } = vi.hoisted(() => ({
@@ -80,9 +75,7 @@ describe("ClientServiceTimeline", () => {
         "Cliente pediu retorno sobre a movimentação processual.",
       ),
     ).toBeTruthy();
-    expect(
-      screen.getByText("Enviar a cópia da última decisão."),
-    ).toBeTruthy();
+    expect(screen.getByText("Enviar a cópia da última decisão.")).toBeTruthy();
     expect(screen.getByText("Solicitação pendente")).toBeTruthy();
     expect(screen.getByText(/14:30/)).toBeTruthy();
     expect(get).toHaveBeenCalledWith("/atendimentos", {
