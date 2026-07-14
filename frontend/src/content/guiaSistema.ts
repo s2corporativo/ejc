@@ -494,7 +494,7 @@ export const GUIA_SISTEMA: GrupoGuia[] = [
       {
         id: "conhecimento-curadoria",
         titulo: "Curadoria RAG",
-        rota: "/conhecimento",
+        rota: "/inteligencia?tab=conhecimento",
         oQueE:
           "A ingestão e curadoria da base de conhecimento vetorial que alimenta a IA.",
         paraQueServe:
@@ -685,24 +685,6 @@ export const GUIA_SISTEMA: GrupoGuia[] = [
         ],
         perfil: "gestor",
       },
-      {
-        id: "whatsapp",
-        titulo: "WhatsApp",
-        rota: "/whatsapp",
-        oQueE:
-          "A conversa com clientes pelo WhatsApp dentro do sistema (integração em evolução).",
-        paraQueServe:
-          "Mantém o histórico de conversas com o cliente registrado no EJC, sem depender só do celular pessoal — recurso ainda em amadurecimento.",
-        comoUsar: [
-          "Abra WhatsApp (acesso direto; ainda fora do menu principal).",
-          "Na primeira vez, leia o QR Code pelo app do celular (Aparelhos conectados).",
-          "Escolha uma conversa na lista e envie mensagens pelo campo inferior.",
-          "Pelo Dossiê do Cliente, o botão WhatsApp já abre a conversa no número cadastrado.",
-        ],
-        dica: "Se aparecer desconectado, refaça a leitura do QR Code — o celular precisa estar com internet.",
-        perfil: "todos",
-        badge: "Beta",
-      },
     ],
   },
   {
@@ -729,7 +711,7 @@ export const GUIA_SISTEMA: GrupoGuia[] = [
       {
         id: "administracao-configuracoes",
         titulo: "Administração do EJC",
-        rota: "/administracao/configuracoes",
+        rota: "/configuracoes?tab=administracao",
         oQueE:
           "O painel de governança institucional e acesso aos painéis administrativos.",
         paraQueServe:

@@ -44,12 +44,7 @@ describe("moduleRegistry", () => {
 
   it("mantém preferências pessoais acessíveis a qualquer usuário interno", () => {
     expect(canRoleAccessPath("advogado", "/configuracoes")).toBe(true);
-    expect(
-      canRoleAccessPath("advogado", "/administracao/configuracoes"),
-    ).toBe(false);
-    expect(
-      canRoleAccessPath("admin", "/administracao/configuracoes"),
-    ).toBe(true);
+    expect(canRoleAccessPath("admin", "/configuracoes")).toBe(true);
   });
 
   it("preserva redirecionamentos das duplicidades consolidadas", () => {
@@ -73,6 +68,10 @@ describe("moduleRegistry", () => {
   it("mantém o menu enxuto (~15 destinos visíveis por perfil)", () => {
     for (const role of ["superadmin", "admin", "socio", "advogado"]) {
       expect(getNavigationModules(role).length).toBeLessThanOrEqual(17);
+      // /ferramentas não tem restrição de papel: visível para toda a equipe.
+      expect(
+        getNavigationModules(role).some((m) => m.path === "/ferramentas"),
+      ).toBe(true);
     }
     // Telas-fim essenciais continuam visíveis para o advogado.
     const advogado = getNavigationModules("advogado").map((m) => m.path);

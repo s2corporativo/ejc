@@ -165,12 +165,6 @@ export default function CentralRelacionamento() {
         actions={
           <div className="flex gap-2">
             <button
-              onClick={() => nav("/whatsapp")}
-              className="flex items-center gap-2 px-3 py-2 bg-green-500 text-white rounded-lg hover:bg-green-600 text-sm"
-            >
-              <MessageCircle className="w-4 h-4" /> WhatsApp
-            </button>
-            <button
               onClick={() => nav("/crm-leads")}
               className="btn-primary text-sm"
             >
@@ -442,7 +436,7 @@ export default function CentralRelacionamento() {
                     </a>
                   )}
                   <button
-                    onClick={() => nav(`/clientes/${c.id}/dossie`)}
+                    onClick={() => nav(`/clientes/${c.id}`)}
                     className="p-1.5 bg-slate-50 text-slate-500 rounded-lg hover:bg-slate-100"
                   >
                     <ChevronRight className="w-3.5 h-3.5" />
