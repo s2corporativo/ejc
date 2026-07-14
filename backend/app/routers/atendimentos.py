@@ -311,6 +311,7 @@ async def _notificar_nova_solicitacao(
             forcar_sino=True,
         )
     except Exception:
+        await db.rollback()
         logger.exception(
             "Falha ao notificar responsável da solicitação %s",
             atendimento.id,
@@ -410,7 +411,12 @@ async def criar_atendimento(
         data["advogado_responsavel_id"] = cu.id
     await _validar_responsavel(db, data["advogado_responsavel_id"])
 
-    if data["solicitacao"] and not data.get("solicitacao_responsavel_id"):
+    if not data["solicitacao"]:
+        # Metadados de SLA sem uma solicitação gerariam pendências órfãs.
+        data["solicitacao_prazo"] = None
+        data["solicitacao_responsavel_id"] = None
+        data["solicitacao_prioridade"] = "normal"
+    elif not data.get("solicitacao_responsavel_id"):
         data["solicitacao_responsavel_id"] = data["advogado_responsavel_id"]
     responsavel_solicitacao = await _validar_responsavel(
         db,
@@ -852,10 +858,23 @@ async def atualizar_atendimento(
         data["data_atendimento"] = _utc(data["data_atendimento"])
     if "solicitacao_prazo" in data:
         data["solicitacao_prazo"] = _utc(data["solicitacao_prazo"])
+
+    if {
+        "solicitacao",
+        "solicitacao_prazo",
+        "solicitacao_prioridade",
+        "solicitacao_responsavel_id",
+    }.intersection(data):
         atendimento.solicitacao_alerta_nivel = None
 
     for campo, valor in data.items():
         setattr(atendimento, campo, valor)
+
+    if "solicitacao" in data and data["solicitacao"] is None:
+        atendimento.solicitacao_prazo = None
+        atendimento.solicitacao_prioridade = "normal"
+        atendimento.solicitacao_responsavel_id = None
+        atendimento.solicitacao_alerta_nivel = None
 
     if status_solicitacao is not None:
         _aplicar_status_solicitacao(atendimento, status_solicitacao, cu.id)
