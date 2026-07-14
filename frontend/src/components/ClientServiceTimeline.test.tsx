@@ -30,6 +30,11 @@ const response = {
     total: 1,
     page: 1,
     per_page: 100,
+    resumo_solicitacoes: {
+      pendentes: 4,
+      atrasadas: 2,
+      atendidas: 3,
+    },
     items: [
       {
         id: "atendimento-1",
@@ -104,6 +109,9 @@ describe("ClientServiceTimeline", () => {
     expect(screen.getByText("Enviar a cópia da última decisão.")).toBeTruthy();
     expect(screen.getByText("Solicitação pendente")).toBeTruthy();
     expect(screen.getByText(/14:30/)).toBeTruthy();
+    expect(screen.getByText("Pendentes").nextElementSibling?.textContent).toBe(
+      "4",
+    );
     expect(get).toHaveBeenCalledWith("/atendimentos", {
       params: { client_id: "cliente-1", page: 1, per_page: 100 },
     });
