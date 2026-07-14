@@ -262,6 +262,10 @@ async def upsert_documento(
         # Conteúdo mudou → NOVA VERSÃO. A versão antiga vira histórico
         # (vigente=False), seus chunks NÃO são tocados.
         existente.vigente = False
+        # flush do UPDATE antes do INSERT: índice único parcial exige que a
+        # versão anterior saia de vigente=true primeiro (senão o INSERT da nova
+        # versão vigente colide com a antiga na mesma chave_origem).
+        await db.flush()
         doc_id = str(uuid4())
         db.add(KnowledgeDoc(
             id=doc_id, titulo=titulo, categoria=categoria,

@@ -4,6 +4,7 @@ from __future__ import annotations
 import re
 from datetime import datetime, timezone, timedelta
 from typing import Literal
+from urllib.parse import urlparse
 from uuid import uuid4
 
 from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, Query
@@ -17,7 +18,7 @@ from app.core.security import get_current_user
 from app.models.user import User
 from app.models.ai_log import AILog
 from app.models.rag import KnowledgeDoc, KnowledgeChunk, FonteIngestao
-from app.services.ingestion_service import upsert_documento, registrar_fonte
+from app.services.ingestion_service import upsert_documento, registrar_fonte, fetch
 from app.models.prompt_juridico import PromptJuridico
 from app.models.legal_doc import LegalDoc
 
@@ -162,10 +163,22 @@ _OFICIAL_DOMAINS = (
 
 
 def _fonte_oficial(url: str | None) -> bool:
-    if not url or not url.startswith(("http://", "https://")):
+    """True apenas se o HOSTNAME da URL for um dominio oficial (ou subdominio
+    legitimo) e o esquema for https. Valida por hostname normalizado, nunca por
+    substring solta — evita bypass como https://evil.com/?x=tjmg.jus.br ou
+    https://tjmg.jus.br.evil.net/."""
+    if not url:
         return False
-    low = url.lower()
-    return any(domain in low for domain in _OFICIAL_DOMAINS)
+    try:
+        parsed = urlparse(url)
+    except ValueError:
+        return False
+    if parsed.scheme != "https":
+        return False
+    host = (parsed.hostname or "").lower().rstrip(".")
+    if not host:
+        return False
+    return any(host == d or host.endswith("." + d) for d in _OFICIAL_DOMAINS)
 
 
 def _colecao_mg(tipo_fonte: str, rito: str | None) -> str:
@@ -608,11 +621,20 @@ async def extrair_jurisprudencia_url(
         raise HTTPException(422, "URL invalida")
     if not _fonte_oficial(req.url):
         raise HTTPException(422, "Use uma URL oficial TJMG/CNJ/STJ/STF/FONAJE para importacao assistida")
-    import httpx
+    # Anti-SSRF: fetch(validar_ssrf=True) desabilita follow_redirects automatico
+    # e revalida a URL inicial + CADA salto de redirect contra IP interno
+    # (169.254.169.254/127.0.0.1/10.*/link-local/reservado). Nenhum host que
+    # resolva para IP privado/loopback pode ser buscado, nem via redirect.
     try:
-        async with httpx.AsyncClient(timeout=25, follow_redirects=True) as client:
-            resp = await client.get(req.url, headers={"User-Agent": "Mozilla/5.0 EJC-Jurisprudencia/1.0"})
-            resp.raise_for_status()
+        resp = await fetch(
+            req.url,
+            headers={
+                "User-Agent": "Mozilla/5.0 EJC-Jurisprudencia/1.0",
+                "Accept": "text/html,application/xhtml+xml",
+            },
+            timeout=25,
+            validar_ssrf=True,
+        )
     except Exception as e:
         raise HTTPException(422, f"Falha ao acessar URL oficial: {str(e)[:160]}")
     html = resp.text or ""

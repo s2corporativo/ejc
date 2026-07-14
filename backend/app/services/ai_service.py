@@ -62,7 +62,11 @@ _AVISOU_SEM_EMBEDDINGS = False  # warning único de degradação p/ ILIKE
 # Categorias RESTRITAS = conteúdo derivado de casos de clientes (peças/precedentes
 # internos): só recuperáveis no escopo do próprio cliente. Demais categorias
 # (legislação, súmulas, jurisprudência, doutrina) são públicas/globais.
-_RESTRICTED_CATS = ["peca_interna", "peca_escritorio", "precedente_interno"]
+# "comunicacao_processual" (DJEN/intimações): fail-closed por cliente — sem
+# client_id do escopo, a comunicação NÃO é recuperável (só dentro do escopo do
+# cliente dono, populado no ingestor djen.py).
+_RESTRICTED_CATS = ["peca_interna", "peca_escritorio", "precedente_interno",
+                    "comunicacao_processual"]
 # Fail-closed: sem escopo de cliente (scope_cli=""), o conteúdo restrito é
 # EXCLUÍDO da busca — fecha o vazamento cruzado entre clientes.
 _FILTRO_ESCOPO_RAG = "AND (kd.categoria <> ALL(:restr_cats) OR kd.client_id = :scope_cli)"
@@ -71,6 +75,50 @@ _FILTRO_ESCOPO_RAG = "AND (kd.categoria <> ALL(:restr_cats) OR kd.client_id = :s
 # documento entra na busca RAG. `:incl_hist` (bool) permite incluir versões
 # históricas (auditoria de citações antigas, pesquisa de evolução de tese).
 _FILTRO_VIGENTE_RAG = "AND (kd.vigente = TRUE OR :incl_hist)"
+
+# ── Gate de governança na recuperação (Auditoria RAG) ─────────────────────────
+# Os campos de curadoria (confidence_level/rag_status) vivem em
+# knowledge_docs.extra (JSONB). Este gate FAIL-CLOSED é aplicado a TODAS as
+# consultas de recuperação: um documento explicitamente bloqueado/recusado/
+# reprovado/pendente NUNCA entra no prompt. NÃO exige aprovação por padrão
+# (não esvazia o acervo legado nunca curado) — ver RAG_EXIGIR_APROVADO.
+_FILTRO_GATE_RAG = (
+    "AND NOT ("
+    "COALESCE(kd.extra->>'confidence_level','') = 'bloqueado' "
+    "OR COALESCE(kd.extra->>'rag_status','') IN "
+    "('bloqueado','recusado','reprovado','pendente'))"
+)
+# Regime estrito opcional: quando RAG_EXIGIR_APROVADO=true, só documentos
+# explicitamente aprovados entram na recuperação.
+_FILTRO_APROVADO_RAG = "AND COALESCE(kd.extra->>'rag_status','') = 'aprovado'"
+# Quarentena de súmulas: o seed estático foi indexado com chave_origem
+# 'sumula:<uuid>' e fonte='sumula'. Enquanto RAG_SUMULAS_QUARENTENA=true (padrão)
+# esses docs são excluídos da recuperação — conteúdo não conferido com fontes
+# oficiais (ver auditoria RAG e sumulas_ingestion.py).
+_FILTRO_SUMULAS_QUARENTENA = (
+    "AND NOT (COALESCE(kd.chave_origem,'') LIKE 'sumula:%' "
+    "OR COALESCE(kd.fonte,'') = 'sumula')"
+)
+# Corpus FICTÍCIO (Bíblia EJC): extra->>'ficticio'='true'. É material de
+# estrutura/metodologia, NUNCA fundamentação — excluído por padrão das buscas
+# amplas; só entra quando o call site pede incluir_ficticio=True (geração de
+# peça a partir de modelos).
+_FILTRO_FICTICIO_RAG = "AND COALESCE((kd.extra->>'ficticio')::boolean, false) = false"
+
+
+def _filtros_gate_rag(incluir_ficticio: bool = False) -> str:
+    """Fragmento SQL (sem bind params) com o gate de governança/quarentena
+    aplicado a TODAS as consultas de recuperação RAG. A decisão é feita em
+    Python a partir das flags de config, então não há parâmetros novos para
+    propagar aos dicionários de params das queries. Fail-closed."""
+    partes = [_FILTRO_GATE_RAG]
+    if settings.RAG_EXIGIR_APROVADO:
+        partes.append(_FILTRO_APROVADO_RAG)
+    if settings.RAG_SUMULAS_QUARENTENA:
+        partes.append(_FILTRO_SUMULAS_QUARENTENA)
+    if not incluir_ficticio:
+        partes.append(_FILTRO_FICTICIO_RAG)
+    return "\n              ".join(partes)
 
 # RAG-04: limiar mínimo de similaridade na busca semântica — evita que matches
 # fracos/irrelevantes entrem como "fonte" e poluam o contexto da IA (risco de
@@ -104,7 +152,7 @@ async def _escopo_cliente_do_caso(db: AsyncSession, case_id: str | None) -> str 
 
 
 async def _fundir_lexical(db, consulta, semanticos, limite, categorias, scope_client_id=None,
-                          incluir_historico=False):
+                          incluir_historico=False, incluir_ficticio=False):
     """Busca híbrida: funde ranking SEMÂNTICO (pgvector) + LEXICAL (pg_trgm) via
     Reciprocal Rank Fusion (RRF). Aditivo — se a parte lexical falhar, devolve o
     semântico intacto. k=60 é o padrão de RRF."""
@@ -137,6 +185,7 @@ async def _fundir_lexical(db, consulta, semanticos, limite, categorias, scope_cl
               {filtro}
               {_FILTRO_ESCOPO_RAG}
               {_FILTRO_VIGENTE_RAG}
+              {_filtros_gate_rag(incluir_ficticio)}
             ORDER BY sim DESC
             LIMIT :lim
         """)
@@ -163,6 +212,7 @@ async def buscar_contexto_rag(
     modo_or: bool = False,
     scope_client_id: str | None = None,
     incluir_historico: bool = False,
+    incluir_ficticio: bool = False,
 ) -> list[dict]:
     """
     Busca semântica na base de conhecimento via pgvector.
@@ -175,6 +225,16 @@ async def buscar_contexto_rag(
     incluir_historico=True: inclui versões não-vigentes (migration 068) —
     útil para auditoria de citações antigas ou pesquisa da evolução de uma
     tese/entendimento. Por padrão (False) só a versão vigente é retornada.
+
+    incluir_ficticio=True: permite recuperar o corpus FICTÍCIO da Bíblia EJC
+    (extra.ficticio=true — modelos de peça/referência interna). SÓ deve ser
+    usado por call sites que consomem esses docs como ESTRUTURA (geração de
+    peça a partir de modelo). Por padrão (False) o corpus fictício é EXCLUÍDO,
+    para nunca aparecer como fundamentação em buscas amplas.
+
+    Gate de governança (fail-closed) é aplicado a TODAS as consultas via
+    _filtros_gate_rag: docs bloqueados/recusados/pendentes nunca entram; súmulas
+    e corpus fictício são excluídos conforme quarentena/flags de config.
     """
     # Tentativa 0: busca SEMÂNTICA via pgvector (se embeddings habilitados).
     # Usa distância de cosseno (operador <=> do pgvector). Cai no textual se
@@ -216,6 +276,7 @@ async def buscar_contexto_rag(
                   {filtro_cat_v}
                   {_FILTRO_ESCOPO_RAG}
                   {_FILTRO_VIGENTE_RAG}
+                  {_filtros_gate_rag(incluir_ficticio)}
                 ORDER BY kc.embedding <=> :vec
                 LIMIT :lim
             """)
@@ -239,7 +300,8 @@ async def buscar_contexto_rag(
                 ]
                 if resultados:
                     return await _fundir_lexical(db, consulta, resultados, limite, categorias,
-                                                 scope_client_id, incluir_historico)
+                                                 scope_client_id, incluir_historico,
+                                                 incluir_ficticio)
                 # Sem vetores gravados ainda → cai no textual abaixo
             except Exception as e:
                 logger.warning(f"Busca vetorial falhou, usando textual: {e}")
@@ -277,6 +339,7 @@ async def buscar_contexto_rag(
           {filtro_cat}
           {_FILTRO_ESCOPO_RAG}
           {_FILTRO_VIGENTE_RAG}
+          {_filtros_gate_rag(incluir_ficticio)}
         LIMIT :lim
     """)
     try:

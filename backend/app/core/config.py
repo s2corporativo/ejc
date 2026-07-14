@@ -332,6 +332,24 @@ class Settings(BaseSettings):
     PECAS_RAG_MODELOS_ENABLED: bool = True
     PECAS_RAG_MODELOS_TOPK: int = 3
 
+    # ── Governança/curadoria na RECUPERAÇÃO RAG (gate fail-closed) ───────
+    # Auditoria RAG: os campos de curadoria (confidence_level/rag_status) vivem
+    # em knowledge_docs.extra (JSONB) mas NÃO eram usados no WHERE das buscas.
+    # O gate exclui SEMPRE docs explicitamente bloqueados/recusados/pendentes
+    # (ver ai_service._FILTRO_GATE_RAG). Não exige aprovação por padrão (não
+    # quebra o acervo legado nunca curado). Ligue RAG_EXIGIR_APROVADO=true para
+    # exigir rag_status='aprovado' em TODA recuperação (regime estrito).
+    RAG_EXIGIR_APROVADO: bool = False
+    # Quarentena das súmulas: o seed estático continha texto juridicamente
+    # incorreto marcado como confianca="alta". Enquanto True (padrão), nenhum
+    # doc de fonte súmula (chave_origem 'sumula:%' / fonte='sumula') entra na
+    # recuperação RAG. Desligue só após reconferência com as fontes oficiais.
+    RAG_SUMULAS_QUARENTENA: bool = True
+    # Reabilita a INGESTÃO do seed estático de súmulas (sumulas_ingestion.py).
+    # Padrão False (quarentena): o conteúdo não foi conferido com fontes
+    # oficiais. Enquanto False o endpoint /sumulas/ingerir-seed responde 423.
+    RAG_SUMULAS_SEED_ENABLED: bool = False
+
     # ── Web Push (alertas no celular via PWA) ────────────────────────────
     # Gerar chaves: python scripts/gen_vapid.py (uma vez no deploy)
     VAPID_PUBLIC_KEY: str = ""

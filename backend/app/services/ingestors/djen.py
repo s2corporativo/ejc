@@ -32,7 +32,11 @@ import re
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.config import get_settings
-from app.services.djen_service import extrair_numero_cnj, normalizar_processo
+from app.services.djen_service import (
+    buscar_caso_ativo_por_processo,
+    extrair_numero_cnj,
+    normalizar_processo,
+)
 from app.services.ingestion_service import fetch, upsert_documento
 
 logger = logging.getLogger("ejc.ingestao.djen")
@@ -214,6 +218,30 @@ async def ingerir(db: AsyncSession) -> tuple[int, int]:
                 doc = montar_documento(it)
                 if not doc:
                     continue
+                # LGPD / isolamento cross-tenant: a comunicação processual
+                # contém PII de terceiros (nomes das partes, nº e teor da
+                # intimação). Ela SÓ pode entrar no RAG vinculada ao escopo do
+                # caso/cliente correto — nunca como conhecimento global
+                # recuperável por qualquer cliente. Resolve o caso ATIVO pelo
+                # nº do processo (normalizado no extra por montar_documento).
+                num_proc = (doc.get("extra") or {}).get("numero_processo")
+                case = await buscar_caso_ativo_por_processo(db, num_proc)
+                if case is None:
+                    # Processo não cadastrado (ou caso encerrado/arquivado):
+                    # NÃO poluir o RAG global com PII de terceiros. Pula a
+                    # ingestão desta comunicação (o fluxo de intimações em
+                    # djen_service segue independente deste ingestor RAG).
+                    logger.info(
+                        "DJEN OAB %s/%s: comunicação do processo %s sem caso "
+                        "ativo cadastrado — ingestão RAG pulada (evita PII de "
+                        "terceiros no conhecimento global)",
+                        numero, uf, num_proc or "?",
+                    )
+                    continue
+                # Vincula ao escopo correto: recuperável apenas dentro do caso
+                # e do cliente donos do processo.
+                doc["case_id"] = case.id
+                doc["client_id"] = case.client_id
                 doc["extra"]["oab_monitorada"] = f"{numero}/{uf}"
                 total += 1
                 res = await upsert_documento(db, **doc)
