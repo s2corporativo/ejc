@@ -241,9 +241,10 @@ def _aplicar_status_solicitacao(
     atendimento.solicitacao_alerta_nivel = None if not atendida else "concluido"
 
 
-def _titulo_tarefa(solicitacao: str) -> str:
-    primeira_linha = " ".join(solicitacao.split())
-    return f"Solicitação de cliente: {primeira_linha}"[:255]
+def _titulo_tarefa(_solicitacao: str) -> str:
+    # Tarefas sem caso podem ter alcance mais amplo que o CRM. O conteúdo do
+    # pedido permanece somente na timeline do cliente, protegida pelo RBAC.
+    return "Solicitação de cliente"
 
 
 async def _obter_tarefa_vinculada(
@@ -271,8 +272,8 @@ async def _sincronizar_tarefa(
         return
     tarefa.titulo = _titulo_tarefa(atendimento.solicitacao or "Solicitação")
     tarefa.descricao = (
-        "Tarefa originada na linha do tempo de atendimento.\n\n"
-        f"Solicitação: {atendimento.solicitacao or 'Não informada'}"
+        "Tarefa originada na linha do tempo de atendimento. "
+        "Consulte o dossiê do cliente para ver o pedido completo."
     )
     tarefa.prioridade = _TASK_PRIORIDADE.get(
         atendimento.solicitacao_prioridade or "normal",
@@ -437,8 +438,8 @@ async def criar_atendimento(
             id=str(uuid4()),
             titulo=_titulo_tarefa(data["solicitacao"]),
             descricao=(
-                "Tarefa originada na linha do tempo de atendimento.\n\n"
-                f"Solicitação: {data['solicitacao']}"
+                "Tarefa originada na linha do tempo de atendimento. "
+                "Consulte o dossiê do cliente para ver o pedido completo."
             ),
             status=(
                 TaskStatus.concluida
