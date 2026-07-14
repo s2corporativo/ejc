@@ -107,7 +107,7 @@ export default function PortalDashboard() {
         {[
           {
             to: "/portal/casos",
-            label: "Processos",
+            label: "Casos",
             icon: Scale,
             color: "text-primary-600 bg-primary-50",
           },

@@ -75,7 +75,14 @@ describe("moduleRegistry", () => {
     }
     // Telas-fim essenciais continuam visíveis para o advogado.
     const advogado = getNavigationModules("advogado").map((m) => m.path);
-    for (const path of ["/", "/casos/novo", "/casos", "/atividades", "/prazos", "/clientes"]) {
+    for (const path of [
+      "/",
+      "/casos/novo",
+      "/casos",
+      "/atividades",
+      "/prazos",
+      "/clientes",
+    ]) {
       expect(advogado).toContain(path);
     }
     // Rotas podadas permanecem ativas (sem 404), apenas fora do menu.

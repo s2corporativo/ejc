@@ -10,7 +10,11 @@ import {
   PageHeader,
   PageTitle,
 } from "../components/ui";
-import { STAFF_ROUTES, type ModuleRoute } from "../config/moduleRegistry";
+import {
+  canRoleAccessPath,
+  STAFF_ROUTES,
+  type ModuleRoute,
+} from "../config/moduleRegistry";
 import { useAuth } from "../stores/auth";
 
 // Hub de descoberta: reúne os módulos reais que ficaram fora do menu
@@ -47,11 +51,6 @@ const CATEGORIES: { title: string; description: string; keys: string[] }[] = [
   },
 ];
 
-function canAccess(module: ModuleRoute, role?: string | null): boolean {
-  if (!module.roles) return true;
-  return Boolean(role && module.roles.includes(role));
-}
-
 export default function Ferramentas() {
   const navigate = useNavigate();
   const user = useAuth((state) => state.user);
@@ -68,7 +67,7 @@ export default function Ferramentas() {
         modules: category.keys
           .map((key) => modulesByKey.get(key))
           .filter((module): module is ModuleRoute => Boolean(module))
-          .filter((module) => canAccess(module, user?.role)),
+          .filter((module) => canRoleAccessPath(user?.role, module.path)),
       })).filter((category) => category.modules.length > 0),
     [modulesByKey, user?.role],
   );
@@ -83,9 +82,9 @@ export default function Ferramentas() {
             </Badge>
             <PageTitle>Mais Ferramentas</PageTitle>
             <PageDescription>
-              Módulos avançados e complementares do EJC, organizados por
-              tema. Eles não ficam na barra lateral para manter o menu
-              enxuto, mas continuam totalmente funcionais.
+              Módulos avançados e complementares do EJC, organizados por tema.
+              Eles não ficam na barra lateral para manter o menu enxuto, mas
+              continuam totalmente funcionais.
             </PageDescription>
           </div>
         </PageHeader>

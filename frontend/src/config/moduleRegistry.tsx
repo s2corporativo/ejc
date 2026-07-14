@@ -208,7 +208,7 @@ export const STAFF_ROUTES: ModuleRoute[] = [
     order: 40,
     helpKey: "clientes",
     sensitive: true,
-    backendPrefixes: ["/api/clients", "/api/clients/:clientId/dossie"],
+    backendPrefixes: ["/api/clients", "/api/clients/{client_id}/dossie"],
   },
   {
     key: "cliente-detalhe",
@@ -420,7 +420,11 @@ export const STAFF_ROUTES: ModuleRoute[] = [
     helpKey: "documentos",
     sensitive: true,
     usesAI: true,
-    backendPrefixes: ["/api/documents", "/api/data-rooms", "/api/documentos-ia"],
+    backendPrefixes: [
+      "/api/documents",
+      "/api/data-rooms",
+      "/api/documentos-ia",
+    ],
   },
   {
     key: "pecas",
@@ -497,7 +501,7 @@ export const STAFF_ROUTES: ModuleRoute[] = [
     helpKey: "inteligencia",
     sensitive: true,
     usesAI: true,
-    backendPrefixes: ["/api/ai", "/api/ai/core", "/api/ai-skills"],
+    backendPrefixes: ["/api/ai", "/api/ai/core", "/api/ai/skills"],
   },
   {
     key: "knowledge-hub",
@@ -610,7 +614,7 @@ export const STAFF_ROUTES: ModuleRoute[] = [
     helpKey: "radar-regulatorio",
     sensitive: true,
     usesAI: true,
-    backendPrefixes: ["/api/radar-legislativo"],
+    backendPrefixes: ["/api/v1/regulatorio"],
   },
   {
     key: "radar-compliance",
@@ -796,7 +800,8 @@ export const STAFF_ROUTES: ModuleRoute[] = [
     key: "ferramentas",
     path: "/ferramentas",
     label: "Mais Ferramentas",
-    description: "Catálogo dos módulos avançados que não ficam no menu principal.",
+    description:
+      "Catálogo dos módulos avançados que não ficam no menu principal.",
     group: "Mais",
     icon: LayoutGrid,
     component: Ferramentas,

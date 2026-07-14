@@ -386,8 +386,7 @@ export const GUIA_SISTEMA: GrupoGuia[] = [
         id: "workflow",
         titulo: "Workflows",
         rota: "/workflow",
-        oQueE:
-          "A configuração de fluxos, etapas e SLAs por área jurídica.",
+        oQueE: "A configuração de fluxos, etapas e SLAs por área jurídica.",
         paraQueServe:
           "Define como o trabalho anda em cada área (etapas e prazos internos), padronizando a operação e deixando claro o que vem depois de cada passo.",
         comoUsar: [
@@ -570,8 +569,7 @@ export const GUIA_SISTEMA: GrupoGuia[] = [
         id: "radar-compliance",
         titulo: "Radar de Compliance",
         rota: "/compliance/radar",
-        oQueE:
-          "A avaliação de riscos regulatórios e de conformidade.",
+        oQueE: "A avaliação de riscos regulatórios e de conformidade.",
         paraQueServe:
           "Ajuda a mapear riscos de compliance e conformidade, apoiando pareceres e a orientação preventiva a clientes.",
         comoUsar: [
@@ -727,8 +725,7 @@ export const GUIA_SISTEMA: GrupoGuia[] = [
         id: "usuarios",
         titulo: "Usuários e Acessos",
         rota: "/usuarios",
-        oQueE:
-          "O cadastro da equipe, com status e perfis de acesso.",
+        oQueE: "O cadastro da equipe, com status e perfis de acesso.",
         paraQueServe:
           "Controla quem entra no sistema e o que cada um pode ver ou fazer, respeitando a divisão de responsabilidades do escritório.",
         comoUsar: [
@@ -807,8 +804,7 @@ export const GUIA_SISTEMA: GrupoGuia[] = [
         id: "mapa-modulos",
         titulo: "Mapa de Módulos",
         rota: "/mapa-modulos",
-        oQueE:
-          "O inventário técnico e funcional de todos os módulos do EJC.",
+        oQueE: "O inventário técnico e funcional de todos os módulos do EJC.",
         paraQueServe:
           "Dá uma visão de conjunto do que existe no sistema e como se relaciona, útil para gestão e para entender a cobertura funcional.",
         comoUsar: [
