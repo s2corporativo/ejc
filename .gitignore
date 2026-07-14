@@ -54,3 +54,7 @@ vps-tools/_*
 
 # graphify — grafo de conhecimento local (regenerável, não versionar)
 graphify-out/
+
+# Worktrees efêmeros de subagentes (Claude Code)
+.claude/worktrees/
+secrets/

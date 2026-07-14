@@ -7,7 +7,7 @@ from typing import Optional
 
 from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy import select, or_, func as sqlfunc
-from sqlalchemy.exc import IntegrityError
+from sqlalchemy.exc import IntegrityError, DataError
 from sqlalchemy.ext.asyncio import AsyncSession
 from pydantic import BaseModel  # noqa: E402 (module-level p/ _ResolverClienteReq)
 
@@ -15,7 +15,7 @@ from app.core.database import get_db
 from app.core.rate_limit import rate_limit
 from app.core.security import get_current_user, require_roles
 from app.models.user import User
-from app.models.client import Client
+from app.models.client import Client, ClientStatus
 from app.models.case import Case
 from app.models.audit_log import criar_audit_log
 from app.schemas.client import (
@@ -385,6 +385,10 @@ async def criar(
         id=str(uuid4()), responsavel_id=cu.id,
         **payload.model_dump(),
     )
+    # CRM: lead entra no funil sempre com etapa preenchida — o board agrupa
+    # por etapa_funil e o GET /clients/?status=lead precisa devolvê-la.
+    if c.status == ClientStatus.lead.value and not c.etapa_funil:
+        c.etapa_funil = "lead"
     # Bloco 6a (LGPD): dual-write — popula cpf_enc/cnpj_enc/cpf_hash/cnpj_hash
     # em PARALELO ao cpf/cnpj em texto puro (que segue sendo o valor lido pelo
     # resto do sistema nesta fase de transição). Backfill dos clientes já
@@ -411,6 +415,11 @@ async def criar(
     except IntegrityError:
         await db.rollback()
         raise HTTPException(status_code=409, detail="CPF/CNPJ já cadastrado")
+    except (DataError, ValueError) as e:
+        # Ex.: valor incompatível com uma coluna tipada (DATE etc.). Vira 422
+        # com mensagem clara em vez de 500 opaco.
+        await db.rollback()
+        raise HTTPException(status_code=422, detail=f"Dados inválidos: {e}")
     await db.refresh(c)
     return c
 
@@ -506,6 +515,11 @@ async def atualizar(
     except IntegrityError:
         await db.rollback()
         raise HTTPException(status_code=409, detail="CPF/CNPJ já cadastrado")
+    except (DataError, ValueError) as e:
+        # Ex.: valor incompatível com uma coluna tipada (DATE etc.). Vira 422
+        # com mensagem clara em vez de 500 opaco.
+        await db.rollback()
+        raise HTTPException(status_code=422, detail=f"Dados inválidos: {e}")
     await db.refresh(c)
     return c
 
@@ -529,7 +543,6 @@ async def remover(
 
 # ═══ Validação de documentos + Acesso ao Portal + Relatório LGPD ═══
 from pydantic import BaseModel as _BM, EmailStr as _Email, Field as _Field
-from app.services.validators_service import validar_cpf, validar_cnpj
 from app.core.security import get_password_hash
 from app.models.user import User as _User, UserRole as _Role
 from fastapi.responses import Response as _Resp

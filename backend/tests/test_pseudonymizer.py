@@ -14,7 +14,6 @@ toca rede. Contrato:
 """
 from __future__ import annotations
 
-import pytest
 
 from app.core.config import get_settings
 from app.services.ai.pseudonymizer import (

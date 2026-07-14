@@ -22,7 +22,14 @@ class Settings(BaseSettings):
     # abaixo); em desenvolvimento, uma chave efêmera é gerada automaticamente.
     SECRET_KEY: str = ""
     ALGORITHM: str = "HS256"
-    ACCESS_TOKEN_EXPIRE_HOURS: int = 8
+    # 2h (era 8h — hardening pós-auditoria de 2026-07-12): janela de exposição
+    # menor para um access token vazado/pós-revogação. Não incomoda o usuário:
+    # o frontend renova automaticamente via interceptor 401 + POST /auth/refresh
+    # (rotação de refresh token, sessão de até REFRESH_TOKEN_EXPIRE_DAYS). O
+    # Portal do Cliente usa o MESMO fluxo (get_current_user + refresh) — nenhum
+    # fluxo longo depende do access token sobreviver além de 2h. Override por
+    # env var ACCESS_TOKEN_EXPIRE_HOURS (ver .env.example).
+    ACCESS_TOKEN_EXPIRE_HOURS: int = 2
     REFRESH_TOKEN_EXPIRE_DAYS: int = 7
 
     # ── Criptografia de PII em repouso (LGPD, achado C6 / Bloco 6a) ────────
@@ -59,6 +66,12 @@ class Settings(BaseSettings):
     GROQ_MODEL: str = "llama-3.3-70b-versatile"   # 128k (llama3-70b-8192 descomissionado pelo Groq)
     GROQ_TIMEOUT: int = 60               # segundos
     AI_ENABLED: bool = True
+
+    # ── Ficha de Triagem pré-peça (gate de qualidade) ────────────────────
+    # True = POST /pecas/gerar com case_id EXIGE ficha de triagem CONFIRMADA
+    # para o caso (evita "bom modelo no caso errado"). Geração AVULSA (sem
+    # case_id) nunca é gateada. Desligar só com aval do responsável do fluxo.
+    FICHA_TRIAGEM_OBRIGATORIA: bool = True
 
     # ── IA — Anthropic (Claude) — módulo IA profissional por tarefa ───────
     # Chave OBRIGATÓRIA para usar Claude (router.py/anthropic_provider.py).
@@ -196,6 +209,64 @@ class Settings(BaseSettings):
     # Host oficial da API Pública (POST /{alias_tribunal}/_search).
     DATAJUD_BASE_URL: str = "https://api-publica.datajud.cnj.jus.br"
 
+    # ── Infosimples — consultas PAGAS a sites públicos (TJMG, Receita…) ──
+    # Agregador comercial (https://infosimples.com/consultas/): cada consulta
+    # EXECUTADA é cobrada. Integração opt-in, desligada por padrão, com teto
+    # diário de custo e cache do mesmo dia (ver services/infosimples_service).
+    INFOSIMPLES_ENABLED: bool = False
+    # Token da conta contratada — vai só no corpo da requisição; NUNCA em
+    # logs, mensagens de erro ou payloads de resposta.
+    INFOSIMPLES_TOKEN: str = ""
+    # Timeout repassado à Infosimples (segundos) — as consultas raspam sites
+    # públicos e podem demorar; o cliente HTTP usa este valor + margem.
+    INFOSIMPLES_TIMEOUT: int = 300
+    # TETO DE CUSTO: máximo de consultas EXECUTADAS (cobradas) por dia UTC.
+    # Atingido o teto, o serviço recusa novas consultas (429) até o dia virar.
+    INFOSIMPLES_MAX_CONSULTAS_DIA: int = 50
+    # Base oficial (POST {base}/{caminho} form-urlencoded). Só mude p/ testes.
+    INFOSIMPLES_BASE_URL: str = "https://api.infosimples.com/api/v2/consultas"
+
+    # ── CGU Portal da Transparência — sanções (CEIS/CNEP/CEPIM) — GATED ──
+    # API pública de dados do governo federal (chave GRÁTIS, cadastro no portal).
+    # Só CONSULTA (GET); cache diário por (base, cnpj) com purga LGPD. Opt-in,
+    # desligada por padrão. Ver services/transparencia_service.
+    TRANSPARENCIA_ENABLED: bool = False
+    # Chave de acesso (header `chave-api-dados`) — NUNCA em logs/erros/retornos.
+    TRANSPARENCIA_API_KEY: str = ""
+    # Host oficial (default fixo anti-SSRF; a URL nunca vem de input do usuário).
+    TRANSPARENCIA_BASE_URL: str = "https://api.portaldatransparencia.gov.br/api-de-dados"
+
+    # ── PNCP — contratações públicas (consulta pública, sem chave) — GATED ──
+    # Portal Nacional de Contratações Públicas (Lei 14.133/2021). API pública,
+    # sem chave/segredo. Opt-in, desligada por padrão. Ver services/pncp_service.
+    PNCP_ENABLED: bool = False
+    # Host oficial (default fixo anti-SSRF; a URL nunca vem de input do usuário).
+    PNCP_BASE_URL: str = "https://pncp.gov.br/api/consulta/v1"
+
+    # ── NFS-e — emissão fiscal via provedor (Nuvem Fiscal) — GATED ──────
+    # Nasce DESLIGADO e em HOMOLOGAÇÃO: nunca emite nota real sem ativação
+    # explícita do dono. A emissão REAL ainda exige (fora do EJC): certificado
+    # digital A1 no painel do provedor + confirmação das definições fiscais
+    # (alíquota ISS de advocacia em Betim, item LC116, cTribNac) com o contador.
+    # Ver docs/NFSE_VIABILIDADE.md.
+    NFSE_ENABLED: bool = False
+    NFSE_MODO: str = "homologacao"       # homologacao | producao
+    NFSE_PROVEDOR: str = "nuvemfiscal"   # só "nuvemfiscal" por ora
+    NFSE_NUVEMFISCAL_BASE_URL: str = "https://api.nuvemfiscal.com.br"
+    NFSE_NUVEMFISCAL_AUTH_URL: str = "https://auth.nuvemfiscal.com.br"
+    # Credenciais OAuth2 do provedor — só no .env da VPS; nunca em log/resposta.
+    NFSE_NUVEMFISCAL_CLIENT_ID: str = ""
+    NFSE_NUVEMFISCAL_CLIENT_SECRET: str = ""
+    # CNPJ do escritório emitente (com ou sem máscara).
+    NFSE_EMITENTE_CNPJ: str = ""
+    # Município do emitente (código IBGE, 7 díg). Betim/MG = 3106200.
+    NFSE_EMITENTE_MUN_IBGE: str = "3106200"
+    # Definições fiscais — CONFIRMAR COM O CONTADOR antes de produção.
+    NFSE_ISS_ALIQUOTA: float = 0.0       # alíquota ISS advocacia em Betim (%). A confirmar.
+    NFSE_ITEM_LC116: str = "17.14"       # item da lista LC 116/03 (advocacia)
+    NFSE_CTRIB_NAC: str = ""             # cTribNac (GET /nfse/cidades/3106200). A confirmar.
+    NFSE_TIMEOUT: int = 60               # timeout (s) das chamadas ao provedor
+
     # ── DJEN / API Comunica CNJ (Res. CNJ 569/2024) — ingestão RAG ───────
     # Ingestor diário de comunicações processuais (intimações/publicações)
     # por OAB monitorada. A retenção da API é limitada — o RAG do EJC é o
@@ -228,6 +299,19 @@ class Settings(BaseSettings):
     # portal do TJMG — evita varredura abusiva).
     TJMG_INGEST_MAX_POR_TEMA: int = 50
 
+    # ── Ingestão contínua de conhecimento (ANPD + Normas RFB → RAG) ──────
+    # Job SEMANAL (domingo 03h00 UTC) que raspa fontes oficiais e alimenta a
+    # base de conhecimento: regulamentações/guias da ANPD (LGPD) e atos
+    # tributários do sijut2consulta da RFB. Idempotente por chave_origem
+    # (anpd:<slug> / rfb:<tipo>:<numero>:<ano>) — reexecução não duplica.
+    # Default True (ligado — autorização do dono; fontes públicas sem custo).
+    # Disparo manual: POST /rag/ingest-fontes-oficiais (socio+).
+    CONHECIMENTO_INGEST_ENABLED: bool = True
+    # CSV de termos de busca do sijut2consulta (Normas RFB). Vazio = lista
+    # padrão do ramo tributário (services/conhecimento_ingest/normas_rfb.py::
+    # TERMOS_PADRAO — Solução de Consulta ISS, IRPF, Simples Nacional...).
+    NORMAS_RFB_TERMOS: str = ""
+
     # ── Embeddings locais/remotos (busca semântica RAG) ─────────────────
     # local = fastembed (ONNX, sem torch) no mesmo processo; http = serviço interno separado.
     # Default True: fastembed é dependência pinada (requirements.txt) e o
@@ -238,6 +322,15 @@ class Settings(BaseSettings):
     EMBEDDINGS_PROVIDER: str = "local"  # local | http
     EMBEDDINGS_API_URL: str = "http://embeddings:8010/embed"
     EMBEDDINGS_TIMEOUT: int = 120
+
+    # ── RAG de MODELOS na geração de peças (Bíblia de Conhecimento) ───────
+    # Recupera os modelos de peça (categoria "modelo_documento_juridico") como
+    # REFERÊNCIA de estrutura/tese na montagem final (Etapa 7). Gated e fail-safe:
+    # OFF ou qualquer falha/vazio degrada para o comportamento atual (peça gerada
+    # sem modelos), NUNCA propaga erro. Query dedicada com filtro por categoria
+    # para os modelos não serem afogados por legislação/jurisprudência no top-k.
+    PECAS_RAG_MODELOS_ENABLED: bool = True
+    PECAS_RAG_MODELOS_TOPK: int = 3
 
     # ── Web Push (alertas no celular via PWA) ────────────────────────────
     # Gerar chaves: python scripts/gen_vapid.py (uma vez no deploy)
@@ -291,6 +384,8 @@ class Settings(BaseSettings):
 
     # ── Sentry — rastreamento de erros em produção ────────────────────────
     SENTRY_DSN: str = ""            # deixar vazio para desabilitar
+    SENTRY_ENVIRONMENT: str = "production"   # tag de ambiente nos eventos
+    SENTRY_TRACES_SAMPLE_RATE: float = 0.0   # 0.0 = performance tracing off
 
     # ── Governança de custo de IA ─────────────────────────────────────────
     # Alerta de gasto no painel de Governança da IA: se o custo estimado de IA
@@ -343,8 +438,41 @@ class Settings(BaseSettings):
     # com a régua interna do advogado (scheduler._regua_cobranca).
     COBRANCA_ENABLED: bool = False
 
+    # ── Índices oficiais BCB (SGS + Olinda) — services/indices_service.py ─
+    # API pública do Banco Central, gratuita e sem chave: correção monetária,
+    # Taxa Legal (Lei 14.905/2024), Selic EC 113, taxas de juros por
+    # instituição (revisional) e PTAX. LIGADO por padrão (autorizado pelo
+    # dono — não há custo). Cache persistente em indices_bcb_cache.
+    INDICES_BCB_ENABLED: bool = True
+    # Timeout (segundos) das chamadas ao BCB (SGS e Olinda).
+    INDICES_BCB_TIMEOUT: int = 20
+
+    # ── Feriados nacionais via BrasilAPI — services/feriados_service.py ───
+    # Sync automático (job semanal) dos feriados nacionais do ano corrente e
+    # do próximo para a tabela `feriados` (merge aditivo: municipais/
+    # estaduais cadastrados à mão nunca são alterados). Gratuito, sem chave —
+    # ligado por padrão.
+    FERIADOS_BRASILAPI_ENABLED: bool = True
+
+    # ── Radar Legislativo (Câmara + Senado + ALMG) ────────────────────────
+    # Job diário (07h00 UTC) que monitora proposições por termos derivados
+    # dos ramos ativos do escritório e alimenta o Radar Regulatório
+    # (services/radar_legislativo.py). APIs públicas gratuitas, sem chave —
+    # LIGADO por padrão (autorizado pelo dono). Dedup persistente na tabela
+    # radar_legislativo_visto (criada automaticamente — sem migration).
+    RADAR_LEGISLATIVO_ENABLED: bool = True
+    # Termos customizados por ramo (JSON): {"ramo": ["termo", ...]} —
+    # SOBREPÕE os termos default do ramo; ramos extras são aditivos.
+    # Ex.: {"tributario": ["CBS IBS", "split payment"], "agrario": ["MP solo"]}
+    RADAR_LEGISLATIVO_TERMOS: str = ""
+
     # ── Scheduler ────────────────────────────────────────────────────────
     ENABLE_SCHEDULER: bool = True   # desligar em workers extras (uvicorn --workers)
+
+    # ── Central Eletrônica de Diagnóstico (routers/diagnostico.py) ────────
+    # Endpoint SOCIO+ que agrega a saúde de todos os subsistemas. Somente
+    # leitura; sem integração externa nova. False → GET /diagnostico/central 503.
+    DIAGNOSTICO_ENABLED: bool = True
 
     # ── Fila assíncrona (Celery + Redis — Fase 3A) ────────────────────────
     # CELERY_ENABLED=False (default) preserva o comportamento atual: tarefas
@@ -407,6 +535,17 @@ class Settings(BaseSettings):
                     "SECRET_KEY ausente ou placeholder em produção. "
                     "Gere uma chave: python3 -c \"import secrets; "
                     "print(secrets.token_urlsafe(64))\" e defina no .env."
+                )
+            # Item 3 (auditoria pré-produção): chave curta = espaço de busca
+            # brute-forçável para forjar JWTs (HS256). 32 chars é o piso.
+            if len(self.SECRET_KEY) < 32:
+                raise ValueError(
+                    f"SECRET_KEY muito curta para produção "
+                    f"({len(self.SECRET_KEY)} caracteres; mínimo 32). Uma chave "
+                    "curta permite forjar tokens JWT por força bruta. Gere uma "
+                    "nova: python3 -c \"import secrets; "
+                    "print(secrets.token_urlsafe(64))\" e defina no .env "
+                    "(atenção: trocar a chave desloga todos os usuários)."
                 )
             if "SEU_DOMINIO" in getattr(self, 'FRONTEND_URL', ''):
                 raise ValueError("FRONTEND_URL não configurada para produção.")

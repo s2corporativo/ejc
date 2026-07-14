@@ -27,7 +27,7 @@ function Sec({
 }) {
   const [isOpen, setIsOpen] = useState(open);
   return (
-    <div className="border border-slate-200 rounded-lg overflow-hidden">
+    <div className="border border-bronze-pale rounded-lg overflow-hidden">
       <button
         onClick={() => setIsOpen(!isOpen)}
         className="w-full flex items-center justify-between p-4 bg-white hover:bg-slate-50 text-left"
@@ -56,7 +56,7 @@ function Tab({ headers, rows }: { headers: string[]; rows: string[][] }) {
             {headers.map((h, i) => (
               <th
                 key={i}
-                className="border border-slate-300 px-3 py-2 text-left font-semibold"
+                className="border border-bronze-pale px-3 py-2 text-left font-semibold"
               >
                 {h}
               </th>
@@ -67,7 +67,7 @@ function Tab({ headers, rows }: { headers: string[]; rows: string[][] }) {
           {rows.map((row, i) => (
             <tr key={i} className={i % 2 === 0 ? "bg-white" : "bg-slate-50"}>
               {row.map((cell, j) => (
-                <td key={j} className="border border-slate-300 px-3 py-2">
+                <td key={j} className="border border-bronze-pale px-3 py-2">
                   {cell}
                 </td>
               ))}

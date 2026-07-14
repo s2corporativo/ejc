@@ -2,7 +2,15 @@ import { useState, useEffect, useCallback } from "react";
 import { Plus, Check, Trash2, RefreshCw, Filter, Download } from "lucide-react";
 import api from "../lib/api";
 import { toast } from "../components/Toast";
-import { Modal, Button, PageHeader, fmtDate } from "../components/UI";
+import {
+  Modal,
+  Button,
+  PageHeader,
+  fmtDate,
+  Spinner,
+  Empty,
+  ConfirmModal,
+} from "../components/UI";
 
 interface Despesa {
   id: string;
@@ -89,6 +97,7 @@ export default function Despesas() {
   const [showForm, setShowForm] = useState(false);
   const [editId, setEditId] = useState<string | null>(null);
   const [form, setForm] = useState<FormState>({ ...EMPTY_FORM });
+  const [pendenteExcluir, setPendenteExcluir] = useState<string | null>(null);
 
   // filters
   const [filterCat, setFilterCat] = useState("");
@@ -185,9 +194,14 @@ export default function Despesas() {
     load();
   }
 
-  async function remove(id: string) {
-    if (!window.confirm("Excluir despesa?")) return;
-    await api.delete(`/v1/despesas/${id}`);
+  function remove(id: string) {
+    setPendenteExcluir(id);
+  }
+
+  async function confirmarExclusao() {
+    if (!pendenteExcluir) return;
+    await api.delete(`/v1/despesas/${pendenteExcluir}`);
+    setPendenteExcluir(null);
     load();
   }
 
@@ -231,10 +245,7 @@ export default function Despesas() {
             cls: "text-slate-800",
           },
         ].map(({ label, value, cls }) => (
-          <div
-            key={label}
-            className="bg-white rounded-xl border border-slate-200 p-4"
-          >
+          <div key={label} className="card p-4">
             <p className="text-xs text-slate-500 uppercase tracking-wide">
               {label}
             </p>
@@ -244,10 +255,10 @@ export default function Despesas() {
       </div>
 
       {/* Filters */}
-      <div className="flex flex-wrap gap-3 items-center bg-white p-3 rounded-xl border border-slate-200">
+      <div className="card flex flex-wrap gap-3 items-center p-3">
         <Filter className="w-4 h-4 text-slate-400" />
         <select
-          className="text-sm border border-slate-200 rounded px-2 py-1.5"
+          className="input w-auto py-1.5"
           value={filterCat}
           onChange={(e) => setFilterCat(e.target.value)}
         >
@@ -259,7 +270,7 @@ export default function Despesas() {
           ))}
         </select>
         <select
-          className="text-sm border border-slate-200 rounded px-2 py-1.5"
+          className="input w-auto py-1.5"
           value={filterStatus}
           onChange={(e) => setFilterStatus(e.target.value)}
         >
@@ -270,7 +281,7 @@ export default function Despesas() {
         </select>
         <input
           type="month"
-          className="text-sm border border-slate-200 rounded px-2 py-1.5"
+          className="input w-auto py-1.5"
           value={filterComp}
           onChange={(e) => setFilterComp(e.target.value)}
         />
@@ -288,13 +299,11 @@ export default function Despesas() {
 
       {/* Table */}
       {loading ? (
-        <div className="text-center py-12 text-slate-400">Carregando...</div>
+        <Spinner />
       ) : items.length === 0 ? (
-        <div className="text-center py-12 text-slate-400">
-          Nenhuma despesa encontrada
-        </div>
+        <Empty message="Nenhuma despesa encontrada" />
       ) : (
-        <div className="bg-white rounded-xl border border-slate-200 overflow-hidden">
+        <div className="card overflow-hidden">
           <table className="w-full text-sm">
             <thead className="bg-slate-50 text-slate-500 text-xs uppercase tracking-wider">
               <tr>
@@ -385,7 +394,7 @@ export default function Despesas() {
                   Categoria *
                 </label>
                 <select
-                  className="w-full border border-slate-200 rounded-lg px-3 py-2 text-sm"
+                  className="input"
                   value={form.categoria}
                   onChange={(e) =>
                     setForm({ ...form, categoria: e.target.value })
@@ -403,7 +412,7 @@ export default function Despesas() {
                   Tipo
                 </label>
                 <select
-                  className="w-full border border-slate-200 rounded-lg px-3 py-2 text-sm"
+                  className="input"
                   value={form.tipo}
                   onChange={(e) =>
                     setForm({
@@ -423,7 +432,7 @@ export default function Despesas() {
               </label>
               <input
                 type="text"
-                className="w-full border border-slate-200 rounded-lg px-3 py-2 text-sm"
+                className="input"
                 value={form.descricao}
                 onChange={(e) =>
                   setForm({ ...form, descricao: e.target.value })
@@ -438,7 +447,7 @@ export default function Despesas() {
                 <input
                   type="number"
                   step="0.01"
-                  className="w-full border border-slate-200 rounded-lg px-3 py-2 text-sm"
+                  className="input"
                   value={form.valor}
                   onChange={(e) => setForm({ ...form, valor: e.target.value })}
                 />
@@ -455,7 +464,7 @@ export default function Despesas() {
                 </label>
                 <input
                   type="month"
-                  className="w-full border border-slate-200 rounded-lg px-3 py-2 text-sm"
+                  className="input"
                   value={form.competencia}
                   onChange={(e) =>
                     setForm({ ...form, competencia: e.target.value })
@@ -470,7 +479,7 @@ export default function Despesas() {
                 </label>
                 <input
                   type="date"
-                  className="w-full border border-slate-200 rounded-lg px-3 py-2 text-sm"
+                  className="input"
                   value={form.vencimento}
                   onChange={(e) =>
                     setForm({ ...form, vencimento: e.target.value })
@@ -482,7 +491,7 @@ export default function Despesas() {
                   Status
                 </label>
                 <select
-                  className="w-full border border-slate-200 rounded-lg px-3 py-2 text-sm"
+                  className="input"
                   value={form.status}
                   onChange={(e) =>
                     setForm({
@@ -512,7 +521,7 @@ export default function Despesas() {
               </label>
               {form.recorrente && (
                 <select
-                  className="ml-auto text-sm border border-slate-200 rounded px-2 py-1"
+                  className="input ml-auto w-auto py-1"
                   value={form.recorrencia}
                   onChange={(e) =>
                     setForm({ ...form, recorrencia: e.target.value })
@@ -539,6 +548,16 @@ export default function Despesas() {
           </div>
         </>
       </Modal>
+
+      <ConfirmModal
+        open={pendenteExcluir !== null}
+        onClose={() => setPendenteExcluir(null)}
+        onConfirm={confirmarExclusao}
+        title="Excluir"
+        message="Excluir esta despesa? Esta ação não pode ser desfeita."
+        confirmLabel="Excluir"
+        variant="danger"
+      />
     </div>
   );
 }

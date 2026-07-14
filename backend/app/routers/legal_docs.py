@@ -19,7 +19,7 @@ from app.core.ownership import verificar_acesso_caso, is_gestao
 from app.models.case import Case
 from app.models.user import User
 from app.models.legal_doc import LegalDoc, PecaStatus
-from app.models.ai_log import AILog, AIStatusHITL
+from app.models.ai_log import AILog
 from app.models.rag import KnowledgeDoc
 from app.models.audit_log import criar_audit_log
 from app.services.case_intel import indexar_peca_rag
@@ -659,7 +659,11 @@ async def exportar_pdf(
     conteudo = padronizar_documento_juridico(d.conteudo)
 
     try:
-        pdf_bytes = await peca_para_pdf_async(titulo, conteudo, pronto_protocolo=True)
+        pdf_bytes = await peca_para_pdf_async(
+            titulo, conteudo, pronto_protocolo=True,
+            codigo_peca=d.codigo_peca, versao=d.versao,
+            status=d.status, revisado_em=d.revisado_em,
+        )
     except RuntimeError as e:
         raise HTTPException(status_code=503, detail=str(e))
 
@@ -667,7 +671,9 @@ async def exportar_pdf(
                           doc_id, detalhes="Exportacao PDF protocolo")
     await db.commit()
 
-    safe_name = "".join(c if c.isalnum() or c in " -_" else "_" for c in titulo)[:60]
+    # Filename ASCII (Content-Disposition é latin-1): dobra só o NOME DO
+    # ARQUIVO — o conteúdo do PDF preserva a acentuação.
+    safe_name = _slug_arquivo(titulo, fallback="peca")
     return Response(
         content=pdf_bytes, media_type="application/pdf",
         headers={"Content-Disposition": f'attachment; filename="{safe_name}.pdf"'},
@@ -733,7 +739,11 @@ async def documento_unico_impressao(
     titulo = padronizar_documento_juridico(d.titulo)
     conteudo = padronizar_documento_juridico(d.conteudo)
     try:
-        pdf_final = await peca_para_pdf_async(titulo, conteudo, pronto_protocolo=True)
+        pdf_final = await peca_para_pdf_async(
+            titulo, conteudo, pronto_protocolo=True,
+            codigo_peca=d.codigo_peca, versao=d.versao,
+            status=d.status, revisado_em=d.revisado_em,
+        )
     except RuntimeError as e:
         raise HTTPException(status_code=503, detail=str(e))
 
@@ -829,6 +839,16 @@ async def exportar_docx(
         case = await verificar_acesso_caso(db, cu, d.case_id)
         if case.numero_processo:
             meta["numero_processo"] = case.numero_processo
+
+    # Controle/versionamento (Fase D): meta é render-only, nunca toca o conteúdo.
+    from app.services.peca_numeracao import linha_controle, status_label
+    meta["codigo_peca"] = d.codigo_peca
+    meta["versao"] = d.versao
+    meta["status"] = status_label(d.status)
+    meta["linha_controle"] = linha_controle(
+        codigo_peca=d.codigo_peca, titulo=d.titulo, versao=d.versao,
+        status=d.status, revisado_em=d.revisado_em,
+    )
 
     titulo = padronizar_documento_juridico(d.titulo)
     conteudo = padronizar_documento_juridico(d.conteudo)

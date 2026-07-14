@@ -184,7 +184,10 @@ async def executar_importacao(
                                       novos=0, total=total, erro=erro)
                 await db.commit()
         except Exception:
-            pass
+            logger.warning(
+                "[juris_import:%s] Falha ao registrar execução de erro (fail-soft).",
+                fonte, exc_info=True,
+            )
     registrar_job(job_id, {
         "job_id": job_id,
         "status": "erro" if erro else "concluido",

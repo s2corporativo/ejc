@@ -171,7 +171,7 @@ export default function Honorarios() {
                 }));
                 exportCsv(rows as any, "honorarios.csv");
               }}
-              className="flex items-center gap-1 px-3 py-1.5 text-xs border rounded-lg text-gray-600 hover:bg-gray-50 transition-colors"
+              className="btn-secondary px-3 py-1.5 text-xs"
             >
               <Download size={13} /> CSV
             </button>
@@ -198,7 +198,7 @@ export default function Honorarios() {
                   rows,
                 );
               }}
-              className="flex items-center gap-1 px-3 py-1.5 text-xs border rounded-lg text-gray-600 hover:bg-gray-50 transition-colors"
+              className="btn-secondary px-3 py-1.5 text-xs"
             >
               <FileType2 size={13} /> PDF
             </button>
@@ -243,7 +243,7 @@ export default function Honorarios() {
           <button
             key={s}
             onClick={() => setStatusF(s)}
-            className={`px-3 py-1.5 rounded-lg text-sm font-medium ${statusF === s ? "bg-navy text-white" : "bg-white border border-slate-200 text-slate-600"}`}
+            className={`px-3 py-1.5 rounded-lg text-sm font-medium ${statusF === s ? "bg-navy text-white" : "bg-slate-900/[0.05] text-slate-600 hover:bg-slate-900/[0.09] dark:bg-white/[0.07] dark:text-slate-300"}`}
           >
             {s || "Todos"}
           </button>
@@ -459,9 +459,7 @@ export default function Honorarios() {
         title="Rateio de Êxito — 50% Titular / 50% Escritório"
       >
         {rateioLoading || !rateioModal?.calc ? (
-          <div className="py-8 text-center text-slate-400 text-sm">
-            Calculando...
-          </div>
+          <Spinner />
         ) : (
           <div className="space-y-4">
             <div className="text-sm text-slate-600">
@@ -578,7 +576,7 @@ export default function Honorarios() {
                   <img
                     src={pixQr}
                     alt="QR PIX"
-                    className="mx-auto rounded-lg border border-slate-200"
+                    className="mx-auto rounded-lg border border-black/[0.05] shadow-sm"
                   />
                 )}
                 <p className="text-xs text-slate-500">PIX copia e cola:</p>

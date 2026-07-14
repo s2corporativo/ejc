@@ -16,7 +16,7 @@ import {
   PiggyBank,
 } from "lucide-react";
 import api from "../lib/api";
-import { PageHeader } from "../components/UI";
+import { Empty, PageHeader, Spinner } from "../components/UI";
 
 function fmtR$(v: number | undefined | null) {
   if (v == null) return "R$ 0,00";
@@ -58,7 +58,7 @@ function StatCard({
     bronze: "bg-orange-50 text-orange-600",
   };
   return (
-    <div className="bg-white rounded-xl border border-slate-200 p-4 flex items-center gap-3">
+    <div className="card p-4 flex items-center gap-3">
       <div className={`p-2.5 rounded-lg ${colors[color]}`}>
         <Icon className="w-5 h-5" />
       </div>
@@ -110,7 +110,13 @@ export default function FinanceiroDashboard() {
     try {
       const r = await api.get(`/relatorio/mensal?mes=${competencia}`);
       setRelatorio(r.data);
-    } catch {}
+    } catch (e: any) {
+      setRelatorio(null);
+      setErro(
+        e?.response?.data?.detail ||
+          "Não foi possível carregar o relatório mensal. Tente atualizar.",
+      );
+    }
   };
 
   const exportarCSV = async () => {
@@ -143,7 +149,7 @@ export default function FinanceiroDashboard() {
         subtitle="Controle integrado do escritório"
         actions={
           <div className="flex items-center gap-2 flex-wrap">
-            <div className="flex items-center gap-2 border border-slate-200 rounded-lg px-3 py-1.5">
+            <div className="input flex w-auto items-center gap-2 py-1.5">
               <Calendar className="w-4 h-4 text-slate-400" />
               <input
                 type="month"
@@ -160,7 +166,7 @@ export default function FinanceiroDashboard() {
             </button>
             <button
               onClick={load}
-              className="p-2 rounded-lg border border-slate-200 hover:bg-slate-50 text-slate-500"
+              className="btn-secondary p-2"
               aria-label="Atualizar"
             >
               <RefreshCw
@@ -172,7 +178,7 @@ export default function FinanceiroDashboard() {
       />
 
       {loading ? (
-        <div className="text-center py-16 text-slate-400">Carregando...</div>
+        <Spinner />
       ) : erro ? (
         <div className="rounded-xl border border-danger-200 bg-danger-50 p-4 text-sm text-danger-700">
           {erro}
@@ -285,7 +291,7 @@ export default function FinanceiroDashboard() {
           {/* Duas colunas: receita detalhe + despesas */}
           <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
             {/* Honorários (status) */}
-            <div className="bg-white rounded-xl border border-slate-200 p-5">
+            <div className="card p-5">
               <h2 className="font-semibold text-slate-800 mb-4 flex items-center gap-2">
                 <Wallet className="w-4 h-4 text-primary-500" /> Honorários —
                 situação
@@ -322,15 +328,13 @@ export default function FinanceiroDashboard() {
             </div>
 
             {/* Despesas por categoria + fixo/variável */}
-            <div className="bg-white rounded-xl border border-slate-200 p-5">
+            <div className="card p-5">
               <h2 className="font-semibold text-slate-800 mb-4 flex items-center gap-2">
                 <BarChart3 className="w-4 h-4 text-danger-500" /> Despesas por
                 categoria
               </h2>
               {!desp.por_categoria?.length ? (
-                <p className="text-sm text-slate-400 text-center py-6">
-                  Sem despesas no mês
-                </p>
+                <Empty message="Sem despesas no mês" />
               ) : (
                 <div className="space-y-2.5">
                   {desp.por_categoria.map(({ categoria, total }: any) => {
@@ -376,7 +380,7 @@ export default function FinanceiroDashboard() {
 
           {/* Relatório gerencial */}
           {relatorio && (
-            <div className="bg-white rounded-xl border border-slate-200 p-5">
+            <div className="card p-5">
               <div className="flex items-center justify-between mb-4">
                 <h2 className="font-semibold text-slate-800 flex items-center gap-2">
                   <FileText className="w-4 h-4 text-ai-500" /> Relatório

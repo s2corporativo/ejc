@@ -1,7 +1,6 @@
 # ── app/routers/documents.py ─────────────────────────────────────────────────
 # GED: upload/download com controle de confidencialidade (cofre).
 # Acesso a docs restritos: audit log obrigatório (LGPD art. 37).
-import json
 import logging
 import os
 from datetime import datetime, timezone
@@ -28,7 +27,6 @@ from app.models.redesign import DocumentTypeMaster
 from app.models.audit_log import criar_audit_log
 from app.core.ownership import verificar_acesso_caso, is_gestao
 from app.schemas.common import MsgResponse
-import asyncio
 from app.services.ocr_service import extrair_texto, extrair_xml
 
 settings = get_settings()
@@ -655,7 +653,6 @@ async def classificar_tipo_documento(
 # ─────────────────────────────────────────────────────────────────────────────
 from fastapi import UploadFile, File as FastFile, Form
 from app.services import google_drive as gd
-import os
 
 @router.post("/drive/upload")
 async def upload_para_drive(
@@ -671,17 +668,33 @@ async def upload_para_drive(
     if case_id:
         await verificar_acesso_caso(db, current_user, case_id)
 
+    # Item 2 (auditoria pré-produção) — MESMA validação do /documents/upload:
+    # extensão permitida + magic bytes + MIME derivado do CONTEÚDO no servidor.
+    # Antes, o content_type do cliente era persistido e devolvido intacto pelo
+    # download-proxy (/drive/{id}/download) → XSS armazenado (ex.: text/html).
+    ext = os.path.splitext(file.filename or "")[1].lower()
+    if ext not in EXTENSOES_PERMITIDAS:
+        raise HTTPException(status_code=422, detail=f"Extensão não permitida: {ext}")
+
     content = await file.read()
     if len(content) > 50 * 1024 * 1024:
         raise HTTPException(413, "Arquivo muito grande (máx 50 MB)")
 
-    mime = file.content_type or "application/octet-stream"
+    mime = _validar_conteudo(ext, content)  # 415 se conteúdo ≠ extensão
     # Organizar em subpasta do caso se fornecido
     folder_id = None
     if case_id:
         folder_id = await _get_or_create_case_folder(case_id, db)
 
-    result = gd.upload_file(content, file.filename or "documento", mime, folder_id)
+    try:
+        result = gd.upload_file(content, file.filename or "documento", mime, folder_id)
+    except gd.DriveIndisponivelError:
+        # rclone/Google não configurado neste ambiente — 503 controlado
+        # (antes o RuntimeError vazava como 500).
+        raise HTTPException(
+            status_code=503,
+            detail="Google Drive não configurado/indisponível",
+        )
 
     # Salvar referência no banco
     from sqlalchemy import text as sql_text
@@ -786,15 +799,31 @@ async def download_documento(
 ):
     """Proxy de download — baixa do Drive e retorna ao cliente."""
     await _gate_drive_doc(db, current_user, file_id)
+    from urllib.parse import quote
     from fastapi.responses import Response
+    from app.services.document_format import ascii_seguro
     try:
         content, mime = gd.download_file(file_id)
         info = gd.get_file_link(file_id)
+        # Item 8: filename vem do Drive sem sanitização — aspas/;/CR-LF manglam
+        # (ou injetam) o header. ascii_seguro() remove controles e acentos;
+        # aspas/;/barras saem também. filename* (RFC 5987) preserva o nome real.
+        nome = (info.get("name") or "documento").strip()
+        nome_ascii = ascii_seguro(nome)
+        for ch in ('"', ";", "\\", "/"):
+            nome_ascii = nome_ascii.replace(ch, "")
+        # Colapsa QUALQUER whitespace (inclusive \n, que ascii_seguro preserva)
+        # — CR/LF em header = response splitting.
+        nome_ascii = " ".join(nome_ascii.split()) or "documento"
         return Response(
             content=content,
             media_type=mime,
-            headers={"Content-Disposition": f'attachment; filename="{info.get("name","documento")}"'},
+            headers={"Content-Disposition":
+                     f'attachment; filename="{nome_ascii}"; '
+                     f"filename*=UTF-8''{quote(nome, safe='')}"},
         )
+    except gd.DriveIndisponivelError:
+        raise HTTPException(503, "Google Drive não configurado/indisponível")
     except Exception:
         logger.warning("Falha ao baixar arquivo %s do Drive", file_id, exc_info=True)
         raise HTTPException(404, "Erro ao baixar o arquivo")
@@ -813,6 +842,11 @@ async def deletar_documento_drive(
     row = await _gate_drive_doc(db, current_user, file_id)
     try:
         gd.delete_file(file_id)
+    except gd.DriveIndisponivelError:
+        # Serviço indisponível ≠ "arquivo já não existe": apagar só o registro
+        # local deixaria o dado órfão no Drive (LGPD art. 18, V) — 503 e o
+        # cliente tenta de novo quando o Drive voltar.
+        raise HTTPException(503, "Google Drive não configurado/indisponível")
     except Exception:
         # Pode já ter sido removido do Drive — registra para diagnóstico.
         _logging.getLogger(__name__).warning(
@@ -848,7 +882,9 @@ async def _get_or_create_case_folder(case_id: str, db) -> str:
     from google.oauth2 import service_account
     from googleapiclient.discovery import build
     import json as _json
-    sa_json = os.getenv("GOOGLE_DRIVE_SA_JSON")
+    # Item 12: GOOGLE_DRIVE_SERVICE_ACCOUNT_JSON é o nome canônico (mesmo do
+    # google_drive_service.py); GOOGLE_DRIVE_SA_JSON fica como alias legado.
+    sa_json = os.getenv("GOOGLE_DRIVE_SERVICE_ACCOUNT_JSON") or os.getenv("GOOGLE_DRIVE_SA_JSON")
     if not sa_json:
         return os.getenv("GOOGLE_DRIVE_FOLDER_ID", "")
     creds = service_account.Credentials.from_service_account_info(

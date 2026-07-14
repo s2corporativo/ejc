@@ -8,7 +8,7 @@ import {
 } from "lucide-react";
 import api from "../../lib/api";
 import { asList } from "../../lib/list";
-import { fmtMoney } from "../../components/UI";
+import { Spinner, fmtMoney } from "../../components/UI";
 
 const ST: Record<string, [string, string, string]> = {
   pago: ["Pago", "text-success-600", "bg-success-50"],
@@ -82,10 +82,7 @@ export default function PortalFinanceiro() {
       {/* KPIs */}
       <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
         {kpis.map((k) => (
-          <div
-            key={k.label}
-            className="bg-white rounded-xl border border-slate-200 p-4"
-          >
+          <div key={k.label} className="card p-4">
             <div
               className={`w-8 h-8 rounded-lg ${k.bg} flex items-center justify-center mb-2`}
             >
@@ -116,16 +113,14 @@ export default function PortalFinanceiro() {
       )}
 
       {/* Table */}
-      <div className="bg-white rounded-xl border border-slate-200 overflow-hidden">
+      <div className="card overflow-hidden">
         <div className="px-5 py-4 border-b border-slate-100">
           <h2 className="font-semibold text-slate-700 flex items-center gap-2">
             <DollarSign className="w-4 h-4 text-slate-400" /> Lançamentos
           </h2>
         </div>
         {loading ? (
-          <div className="p-10 text-center text-slate-400 text-sm">
-            Carregando...
-          </div>
+          <Spinner />
         ) : rows.length === 0 ? (
           <div className="p-10 text-center text-slate-400 text-sm">
             Nenhum lançamento

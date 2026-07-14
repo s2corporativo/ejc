@@ -1,6 +1,5 @@
 from types import SimpleNamespace
 
-import pytest
 
 from app.services.autofix_scanner import EXPECTED_MODULES, _coletar_rotas_api, _normalizar_module_key
 

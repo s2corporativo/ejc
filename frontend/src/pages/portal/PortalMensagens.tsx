@@ -2,6 +2,7 @@ import { useEffect, useState, useRef, useCallback } from "react";
 import { Send, MessageCircle, RefreshCw } from "lucide-react";
 import api from "../../lib/api";
 import { toast } from "../../components/Toast";
+import { EmptyState } from "../../components/UI";
 import { asList } from "../../lib/list";
 
 interface Mensagem {
@@ -91,18 +92,16 @@ export default function PortalMensagens() {
       <h1 className="text-xl font-semibold text-slate-800">Mensagens</h1>
 
       {casos.length === 0 ? (
-        <div className="bg-white rounded-xl border border-slate-200 p-10 text-center">
-          <MessageCircle className="w-10 h-10 text-slate-300 mx-auto mb-3" />
-          <p className="text-slate-400 text-sm">
-            Nenhum processo ativo para enviar mensagens
-          </p>
-        </div>
+        <EmptyState
+          icon={MessageCircle}
+          title="Nenhum processo ativo para enviar mensagens"
+        />
       ) : (
         <>
           {/* Case selector */}
           {casos.length > 1 && (
             <select
-              className="w-full border border-slate-200 rounded-lg px-3 py-2 text-sm bg-white"
+              className="input"
               value={selectedId ?? ""}
               onChange={(e) => setSelectedId(e.target.value)}
             >
@@ -115,7 +114,7 @@ export default function PortalMensagens() {
           )}
 
           <div
-            className="bg-white rounded-xl border border-slate-200 flex flex-col"
+            className="card flex flex-col"
             style={{ minHeight: 400, maxHeight: 500 }}
           >
             {/* Header */}
@@ -175,7 +174,7 @@ export default function PortalMensagens() {
               <input
                 type="text"
                 placeholder="Digite sua mensagem..."
-                className="flex-1 border border-slate-200 rounded-xl px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary-300"
+                className="input flex-1"
                 value={text}
                 onChange={(e) => setText(e.target.value)}
                 onKeyDown={(e) => e.key === "Enter" && !e.shiftKey && send()}

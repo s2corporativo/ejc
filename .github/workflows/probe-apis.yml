@@ -1,0 +1,27 @@
+# Sondagem ao vivo das APIs candidatas (docs/CATALOGO_APIS_EJC.md).
+# Roda SOMENTE quando o script de sondagem (ou este workflow) muda — não
+# consome minutos nos pushes normais. Resultado sai no log do job.
+name: Probe APIs
+
+on:
+  push:
+    branches: ["claude/**"]
+    paths:
+      - "scripts/probe_apis.py"
+      - ".github/workflows/probe-apis.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  probe:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+      - name: Sondar APIs
+        run: python scripts/probe_apis.py

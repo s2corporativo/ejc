@@ -18,6 +18,7 @@ import {
   Button,
 } from "../components/UI";
 import { ClientesStats } from "../components/Dashboards";
+import { VerificarReceita } from "../components/Infosimples";
 
 // Resposta de POST /clients/checar-conflito (nome/documento completos —
 // o advogado precisa saber com quem é o conflito; endpoint restrito ao CRM).
@@ -316,12 +317,19 @@ export default function Clientes() {
               </div>
               <div>
                 <label className="label">CPF</label>
-                <input
-                  className="input"
-                  value={form.cpf || ""}
-                  onChange={(e) => setForm({ ...form, cpf: e.target.value })}
-                  onBlur={checarConflito}
-                />
+                <div className="flex gap-2">
+                  <input
+                    className="input flex-1"
+                    value={form.cpf || ""}
+                    onChange={(e) => setForm({ ...form, cpf: e.target.value })}
+                    onBlur={checarConflito}
+                  />
+                  <VerificarReceita
+                    tipo="cpf"
+                    documento={form.cpf || ""}
+                    onUsarNome={(nome) => setForm((f: any) => ({ ...f, nome }))}
+                  />
+                </div>
               </div>
             </>
           ) : (
@@ -373,6 +381,13 @@ export default function Clientes() {
                   >
                     🔍 Receita
                   </button>
+                  <VerificarReceita
+                    tipo="cnpj"
+                    documento={form.cnpj || ""}
+                    onUsarNome={(razao_social) =>
+                      setForm((f: any) => ({ ...f, razao_social }))
+                    }
+                  />
                 </div>
               </div>
             </>

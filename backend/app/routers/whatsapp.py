@@ -1,7 +1,5 @@
 """WhatsApp via Evolution API — proxy endpoints"""
 from fastapi import APIRouter, Body, Depends, HTTPException, Query
-from sqlalchemy.ext.asyncio import AsyncSession
-from app.core.database import get_db
 from app.core.security import get_current_user
 from app.models.user import User
 import httpx
@@ -118,7 +116,7 @@ async def list_chats(
             use_instance_key=True
         )
         return data if isinstance(data, list) else data
-    except Exception as e:
+    except Exception:
         return []
 
 
@@ -141,5 +139,5 @@ async def get_messages(
             use_instance_key=True
         )
         return data if isinstance(data, (list, dict)) else []
-    except Exception as e:
+    except Exception:
         return []

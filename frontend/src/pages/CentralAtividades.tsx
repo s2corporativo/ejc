@@ -1,6 +1,6 @@
 import { useState, useEffect, useCallback, useMemo } from "react";
 import { useSearchParams } from "react-router-dom";
-import { PageHeader } from "../components/UI";
+import { PageHeader, Spinner, Empty, EmptyState } from "../components/UI";
 import { toast } from "../components/Toast";
 import {
   Calendar,
@@ -185,7 +185,7 @@ function CalendarView({ items }: { items: Activity[] }) {
   }
 
   return (
-    <div className="bg-white rounded-xl border border-slate-200 overflow-hidden">
+    <div className="card overflow-hidden">
       <div className="flex items-center justify-between px-4 py-3 border-b border-slate-100">
         <button
           onClick={prevMonth}
@@ -315,17 +315,15 @@ function TimelineView({ items }: { items: Activity[] }) {
 
   if (items.length === 0) {
     return (
-      <div className="bg-white rounded-xl border border-slate-200 py-16 text-center">
-        <CheckCircle className="w-10 h-10 text-success-400 mx-auto mb-3" />
-        <p className="text-slate-500 font-medium">
-          Nenhuma atividade na linha do tempo
-        </p>
-      </div>
+      <EmptyState
+        icon={CheckCircle}
+        title="Nenhuma atividade na linha do tempo"
+      />
     );
   }
 
   return (
-    <div className="bg-white rounded-xl border border-slate-200 p-5">
+    <div className="card p-5">
       <div className="relative pl-6">
         <div className="absolute left-2 top-1 bottom-1 w-px bg-slate-200" />
         {grupos.map((g) => (
@@ -394,27 +392,20 @@ function KanbanAtividades({ items }: { items: Activity[] }) {
     }))
     .filter((col) => col.itens.length > 0);
   if (items.length === 0) {
-    return (
-      <div className="bg-white rounded-xl border border-slate-200 py-16 text-center text-slate-400 text-sm">
-        Nada na agenda
-      </div>
-    );
+    return <Empty message="Nada na agenda" />;
   }
   return (
     <div className="flex gap-3 overflow-x-auto pb-3">
       {cols.map(({ tipo, cfg, itens }) => {
         const Icon = cfg.icon;
         return (
-          <div
-            key={tipo}
-            className="flex-shrink-0 w-64 bg-slate-50 rounded-xl border border-slate-200"
-          >
+          <div key={tipo} className="flex-shrink-0 w-64 bg-slate-50 rounded-xl">
             <div className="px-3 py-2.5 flex items-center gap-2 border-b border-slate-200">
               <Icon className={`w-4 h-4 ${cfg.color}`} />
               <span className="text-sm font-semibold text-slate-700">
                 {cfg.label}
               </span>
-              <span className="ml-auto text-[11px] text-slate-400 bg-white border border-slate-200 rounded-full px-1.5">
+              <span className="ml-auto text-[11px] text-slate-400 bg-slate-900/[0.05] rounded-full px-1.5 dark:bg-white/[0.07]">
                 {itens.length}
               </span>
             </div>
@@ -529,7 +520,7 @@ export default function CentralAtividades() {
               onClick={() => setView("lista")}
               aria-label="Visualização em lista"
               title="Lista"
-              className={`p-2 rounded-lg border transition-colors ${view === "lista" ? "bg-navy text-white border-navy" : "bg-white text-slate-500 border-slate-200 hover:border-slate-300"}`}
+              className={`p-2 rounded-lg transition-colors ${view === "lista" ? "bg-navy text-white" : "bg-slate-900/[0.05] text-slate-500 hover:bg-slate-900/[0.09] dark:bg-white/[0.07] dark:text-slate-300"}`}
             >
               <List className="w-4 h-4" />
             </button>
@@ -537,7 +528,7 @@ export default function CentralAtividades() {
               onClick={() => setView("calendario")}
               aria-label="Visualização em calendário"
               title="Calendário"
-              className={`p-2 rounded-lg border transition-colors ${view === "calendario" ? "bg-navy text-white border-navy" : "bg-white text-slate-500 border-slate-200 hover:border-slate-300"}`}
+              className={`p-2 rounded-lg transition-colors ${view === "calendario" ? "bg-navy text-white" : "bg-slate-900/[0.05] text-slate-500 hover:bg-slate-900/[0.09] dark:bg-white/[0.07] dark:text-slate-300"}`}
             >
               <Calendar className="w-4 h-4" />
             </button>
@@ -545,7 +536,7 @@ export default function CentralAtividades() {
               onClick={() => setView("timeline")}
               aria-label="Visualização em timeline"
               title="Timeline"
-              className={`p-2 rounded-lg border transition-colors ${view === "timeline" ? "bg-navy text-white border-navy" : "bg-white text-slate-500 border-slate-200 hover:border-slate-300"}`}
+              className={`p-2 rounded-lg transition-colors ${view === "timeline" ? "bg-navy text-white" : "bg-slate-900/[0.05] text-slate-500 hover:bg-slate-900/[0.09] dark:bg-white/[0.07] dark:text-slate-300"}`}
             >
               <FileText className="w-4 h-4" />
             </button>
@@ -553,7 +544,7 @@ export default function CentralAtividades() {
               onClick={() => setView("kanban")}
               aria-label="Visualização em quadro"
               title="Quadro"
-              className={`p-2 rounded-lg border transition-colors ${view === "kanban" ? "bg-navy text-white border-navy" : "bg-white text-slate-500 border-slate-200 hover:border-slate-300"}`}
+              className={`p-2 rounded-lg transition-colors ${view === "kanban" ? "bg-navy text-white" : "bg-slate-900/[0.05] text-slate-500 hover:bg-slate-900/[0.09] dark:bg-white/[0.07] dark:text-slate-300"}`}
             >
               <LayoutGrid className="w-4 h-4" />
             </button>
@@ -628,7 +619,7 @@ export default function CentralAtividades() {
           <button
             key={t}
             onClick={() => setFilterTipo(t)}
-            className={`px-3 py-1.5 rounded-lg text-xs font-medium border transition-colors ${filterTipo === t ? "bg-navy text-white border-navy" : "bg-white text-slate-600 border-slate-200 hover:border-bronze-pale"}`}
+            className={`px-3 py-1.5 rounded-lg text-xs font-medium transition-colors ${filterTipo === t ? "bg-navy text-white" : "bg-slate-900/[0.05] text-slate-600 hover:bg-slate-900/[0.09] dark:bg-white/[0.07] dark:text-slate-300"}`}
           >
             {t === "todos" ? "Todos" : TIPO_CONFIG[t]?.label}
           </button>
@@ -636,15 +627,13 @@ export default function CentralAtividades() {
       </div>
 
       {loading ? (
-        <div className="text-center py-12 text-slate-400">
-          Carregando atividades...
-        </div>
+        <Spinner />
       ) : view === "calendario" ? (
         <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
           <div className="lg:col-span-2">
             <CalendarView items={filtered} />
           </div>
-          <div className="bg-white rounded-xl border border-slate-200 overflow-hidden">
+          <div className="card overflow-hidden">
             <div className="px-4 py-3 border-b border-slate-100">
               <p className="text-sm font-semibold text-slate-700">
                 Próximas atividades
@@ -662,7 +651,7 @@ export default function CentralAtividades() {
       ) : view === "timeline" ? (
         <TimelineView items={filtered} />
       ) : (
-        <div className="bg-white rounded-xl border border-slate-200 overflow-hidden">
+        <div className="card overflow-hidden">
           {filtered.length === 0 ? (
             <div className="py-16 text-center">
               <CheckCircle className="w-10 h-10 text-success-400 mx-auto mb-3" />
@@ -688,14 +677,14 @@ export default function CentralAtividades() {
       >
         <div className="space-y-3">
           <input
-            className="w-full border border-slate-200 rounded-lg px-3 py-2 text-sm"
+            className="input w-full text-sm"
             placeholder="Título *"
             value={form.titulo ?? ""}
             onChange={(e) => setForm({ ...form, titulo: e.target.value })}
           />
           <div className="grid grid-cols-2 gap-2">
             <select
-              className="border border-slate-200 rounded-lg px-3 py-2 text-sm"
+              className="input text-sm"
               value={form.tipo}
               onChange={(e) => setForm({ ...form, tipo: e.target.value })}
             >
@@ -707,7 +696,7 @@ export default function CentralAtividades() {
             </select>
             <input
               type="date"
-              className="border border-slate-200 rounded-lg px-3 py-2 text-sm"
+              className="input text-sm"
               value={form.data_evento}
               onChange={(e) =>
                 setForm({ ...form, data_evento: e.target.value })
@@ -716,20 +705,20 @@ export default function CentralAtividades() {
           </div>
           <div className="grid grid-cols-2 gap-2">
             <input
-              className="border border-slate-200 rounded-lg px-3 py-2 text-sm"
+              className="input text-sm"
               placeholder="Hora (ex: 14:30)"
               value={form.hora ?? ""}
               onChange={(e) => setForm({ ...form, hora: e.target.value })}
             />
             <input
-              className="border border-slate-200 rounded-lg px-3 py-2 text-sm"
+              className="input text-sm"
               placeholder="Local"
               value={form.local ?? ""}
               onChange={(e) => setForm({ ...form, local: e.target.value })}
             />
           </div>
           <textarea
-            className="w-full border border-slate-200 rounded-lg px-3 py-2 text-sm"
+            className="input w-full text-sm"
             rows={2}
             placeholder="Descrição"
             value={form.descricao ?? ""}

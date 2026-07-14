@@ -1,6 +1,7 @@
 # ── app/routers/score_juridico.py ────────────────────────────────────────────
 from __future__ import annotations
-import json, re
+import json
+import re
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncSession

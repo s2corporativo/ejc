@@ -1,6 +1,5 @@
 import { useEffect, useState, useCallback } from "react";
 import {
-  Library,
   Search,
   Plus,
   Star,
@@ -9,8 +8,6 @@ import {
   BookOpen,
   Gavel,
   ScrollText,
-  ChevronRight,
-  Filter,
   Tag,
   CheckCircle,
   X,

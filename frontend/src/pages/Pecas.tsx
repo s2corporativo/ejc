@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState, useCallback } from "react";
 import { toast } from "../components/Toast";
 import Markdown from "../components/Markdown";
 import {
@@ -10,6 +10,7 @@ import {
   LayoutTemplate,
   Printer,
   SearchCheck,
+  ClipboardCheck,
 } from "lucide-react";
 import api from "../lib/api";
 import type { LegalDoc, Paged } from "../types";
@@ -21,11 +22,33 @@ import {
   EmptyState,
   Spinner,
   Button,
+  Badge,
   fmtDate,
+  fmtMoney,
 } from "../components/UI";
 import PecaGeneratorModal from "../components/PecaGeneratorModal";
 import CaseFilterChip from "../components/CaseFilterChip";
 import { useCasoFiltro } from "../contexts/useCasoFiltro";
+import FichaTriagem, {
+  type FichaTriagemCampos,
+  type FichaStatus,
+} from "../components/FichaTriagem";
+
+// responseType blob: erros 4xx/5xx chegam como Blob JSON — extrai o `detail`
+// legível para o toast (senão a falha seria silenciosa ou ilegível).
+async function blobErrorDetail(e: any): Promise<string | undefined> {
+  let detail = e.response?.data?.detail;
+  if (!detail && e.response?.data instanceof Blob) {
+    try {
+      detail = JSON.parse(await e.response.data.text())?.detail;
+    } catch {
+      /* corpo não-JSON — usa mensagem padrão do chamador */
+    }
+  }
+  return typeof detail === "object" && detail !== null
+    ? (detail.mensagem ?? JSON.stringify(detail).slice(0, 200))
+    : detail;
+}
 
 const TIPOS = [
   "peticao_inicial",
@@ -121,6 +144,48 @@ export default function Pecas() {
   // Modo Caso: `?caso=` na URL vence; sem query, o caso ativo preenche.
   // GET /legal-docs/ já aceita case_id (fecha o GAP do link_modulo da jornada).
   const { casoFiltro, casoFiltroNome, removerFiltro } = useCasoFiltro();
+
+  // ── Gate da Ficha de Triagem (só quando há caso vinculado) ──────────
+  // Sem caso (geração avulsa) a ficha NÃO é exigida. Com caso, a peça só é
+  // liberada após a ficha estar "confirmada". O 409 do backend é o fallback.
+  const [fichaStatus, setFichaStatus] = useState<FichaStatus>("rascunho");
+  const [fichaCampos, setFichaCampos] = useState<FichaTriagemCampos | null>(
+    null,
+  );
+  const [refreshFicha, setRefreshFicha] = useState(0);
+  const fichaRef = useRef<HTMLDivElement>(null);
+  const fichaConfirmada = fichaStatus === "confirmada";
+
+  const onFichaStatus = useCallback(
+    (status: FichaStatus, campos: FichaTriagemCampos) => {
+      setFichaStatus(status);
+      setFichaCampos(campos);
+    },
+    [],
+  );
+
+  const irParaFicha = useCallback(() => {
+    toast.error("Confirme a ficha de triagem antes de gerar a peça");
+    fichaRef.current?.scrollIntoView({ behavior: "smooth", block: "start" });
+  }, []);
+
+  // Abre o gerador de IA respeitando o gate: com caso e sem ficha confirmada,
+  // leva o usuário à ficha em vez de abrir o modal.
+  const abrirGeradorIA = () => {
+    if (casoFiltro && !fichaConfirmada) {
+      irParaFicha();
+      return;
+    }
+    setModalIA(true);
+  };
+
+  // Fallback: backend barrou a geração (409 need_ficha_triagem).
+  const onNeedFicha = useCallback(() => {
+    setModalIA(false);
+    setFichaStatus("rascunho");
+    setRefreshFicha((n) => n + 1);
+    setTimeout(irParaFicha, 60);
+  }, [irParaFicha]);
 
   const load = () => {
     setErro(false);
@@ -223,14 +288,19 @@ export default function Pecas() {
   };
 
   const baixarPdf = async (doc: LegalDoc) => {
-    const r = await api.get(`/legal-docs/${doc.id}/pdf`, {
-      responseType: "blob",
-    });
-    const url = URL.createObjectURL(r.data);
-    const a = document.createElement("a");
-    a.href = url;
-    a.download = `${doc.titulo}.pdf`;
-    a.click();
+    try {
+      const r = await api.get(`/legal-docs/${doc.id}/pdf`, {
+        responseType: "blob",
+      });
+      const url = URL.createObjectURL(r.data);
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = `${doc.titulo}.pdf`;
+      a.click();
+      URL.revokeObjectURL(url);
+    } catch (e: any) {
+      toast.error((await blobErrorDetail(e)) || "Falha ao gerar o PDF.");
+    }
   };
 
   const baixarDocx = async (doc: LegalDoc) => {
@@ -270,20 +340,10 @@ export default function Pecas() {
       a.click();
       URL.revokeObjectURL(url);
     } catch (e: any) {
-      let detail = e.response?.data?.detail;
-      // responseType blob: erros 422/503 chegam como Blob JSON — extrai o detail
-      if (!detail && e.response?.data instanceof Blob) {
-        try {
-          detail = JSON.parse(await e.response.data.text())?.detail;
-        } catch {
-          /* corpo não-JSON — usa mensagem padrão */
-        }
-      }
-      const msg =
-        typeof detail === "object" && detail !== null
-          ? (detail.mensagem ?? JSON.stringify(detail).slice(0, 200))
-          : detail;
-      toast.error(msg || "Falha ao gerar o documento único de impressão.");
+      toast.error(
+        (await blobErrorDetail(e)) ||
+          "Falha ao gerar o documento único de impressão.",
+      );
     } finally {
       setGerandoVL(null);
     }
@@ -359,7 +419,7 @@ export default function Pecas() {
               <LayoutTemplate size={16} /> De template
             </button>
             <button
-              onClick={() => setModalIA(true)}
+              onClick={abrirGeradorIA}
               className="btn btn-primary flex items-center gap-2"
             >
               <Sparkles size={15} />
@@ -375,6 +435,53 @@ export default function Pecas() {
       {casoFiltro && (
         <div className="mb-4">
           <CaseFilterChip nome={casoFiltroNome} onRemove={removerFiltro} />
+        </div>
+      )}
+
+      {/* Ficha de triagem: gate obrigatório antes de gerar peça com caso. */}
+      {casoFiltro && (
+        <div className="mb-6 space-y-4">
+          {fichaConfirmada && fichaCampos && (
+            <div className="card flex flex-wrap items-center gap-x-6 gap-y-2 border-l-4 border-l-success-400 p-4">
+              <div className="flex items-center gap-2 text-sm font-medium text-success-700">
+                <ShieldCheck size={16} /> Triagem confirmada
+              </div>
+              <ResumoItem label="Competência" valor={fichaCampos.competencia} />
+              <ResumoItem label="Rito" valor={fichaCampos.rito} />
+              <ResumoItem
+                label="Valor"
+                valor={
+                  fichaCampos.valor_causa
+                    ? fmtValorCausa(fichaCampos.valor_causa)
+                    : "—"
+                }
+              />
+              <div className="flex items-center gap-1.5">
+                <span className="text-xs uppercase tracking-wide text-slate-400">
+                  Risco
+                </span>
+                <Badge tone={RISCO_TONE[fichaCampos.risco_processual]}>
+                  {fichaCampos.risco_processual}
+                </Badge>
+              </div>
+            </div>
+          )}
+          {!fichaConfirmada && (
+            <div className="flex items-start gap-2 rounded-lg border border-warn-200 bg-warn-50 px-4 py-3 text-xs text-warn-800">
+              <ClipboardCheck size={15} className="mt-0.5 shrink-0" />
+              <span>
+                Este caso ainda não tem ficha de triagem confirmada. Preencha e
+                confirme a ficha abaixo para liberar a geração de peças.
+              </span>
+            </div>
+          )}
+          <div ref={fichaRef}>
+            <FichaTriagem
+              caseId={casoFiltro}
+              onStatusChange={onFichaStatus}
+              refreshSignal={refreshFicha}
+            />
+          </div>
         </div>
       )}
 
@@ -394,234 +501,254 @@ export default function Pecas() {
         <Empty message="Nenhuma peça cadastrada" />
       ) : (
         <>
-        {/* Mobile (<md): cards empilhados com os fluxos essenciais —
+          {/* Mobile (<md): cards empilhados com os fluxos essenciais —
             visualizar, baixar e revisar/aprovar (HITL) usáveis em 390px. */}
-        <div className="space-y-2 md:hidden">
-          {(Array.isArray(data.data) ? data.data : []).map((p) => (
-            <div key={p.id} className="card p-4">
-              <div className="flex items-start justify-between gap-2">
-                <div className="min-w-0">
-                  <div className="font-medium text-navy break-words">
-                    {p.titulo}
-                  </div>
-                  <div className="mt-0.5 text-xs capitalize text-slate-400">
-                    {p.tipo_peca.replace(/_/g, " ")} · v{p.versao} ·{" "}
-                    {fmtDate(p.created_at)}
-                  </div>
-                </div>
-                <StatusBadge value={p.status} />
-              </div>
-              <div className="mt-2 flex flex-wrap items-center gap-1.5">
-                {p.ai_generated ? (
-                  p.human_reviewed ? (
-                    <span className="badge bg-success-100 text-success-700 gap-1">
-                      <ShieldCheck size={12} /> IA revisada
-                    </span>
-                  ) : (
-                    <span className="badge bg-warn-100 text-warn-700 gap-1">
-                      <Sparkles size={12} /> IA — aguarda revisão
-                    </span>
-                  )
-                ) : (
-                  <span className="text-xs text-slate-400">manual</span>
-                )}
-                {(() => {
-                  const v = validacaoLabel(p);
-                  return <span className={`badge ${v.cls}`}>{v.label}</span>;
-                })()}
-              </div>
-              <div className="mt-3 flex flex-wrap gap-2">
-                <button
-                  className="btn-ghost px-2.5 py-1.5 text-xs"
-                  onClick={() => abrirDetalhe(p.id)}
-                >
-                  <Eye size={14} /> Ver
-                </button>
-                <button
-                  className="btn-ghost px-2.5 py-1.5 text-xs"
-                  onClick={() => baixarPdf(p)}
-                >
-                  <FileDown size={14} /> PDF
-                </button>
-                {p.ai_generated && !p.human_reviewed && (
-                  <button
-                    className="btn-ghost px-2.5 py-1.5 text-xs text-warn-700"
-                    onClick={() => setRevisao({ doc: p, notas: "" })}
-                  >
-                    Revisar
-                  </button>
-                )}
-                {p.ai_generated &&
-                  p.status !== "aprovada" &&
-                  p.status !== "versao_final" && (
-                    <button
-                      className="btn-primary px-2.5 py-1.5 text-xs"
-                      onClick={() => setAprovacao({ doc: p, observacoes: "" })}
-                    >
-                      <ShieldCheck size={14} /> Revisar e Aprovar
-                    </button>
-                  )}
-                {(p.human_reviewed || !p.ai_generated) &&
-                  p.status === "corrigida" &&
-                  p.validacao_juridica?.apto_fluxo && (
-                    <button
-                      className="btn-ghost px-2.5 py-1.5 text-xs text-success-700"
-                      onClick={() => avancarStatus(p, "aprovada")}
-                    >
-                      Aprovar
-                    </button>
-                  )}
-              </div>
-            </div>
-          ))}
-        </div>
-        <div className="card hidden overflow-x-auto md:block">
-          <table className="w-full text-sm">
-            <thead className="bg-slate-50 text-left text-xs uppercase text-slate-400">
-              <tr>
-                <th className="px-4 py-3">Título</th>
-                <th className="px-4 py-3">Tipo</th>
-                <th className="px-4 py-3">Status</th>
-                <th className="px-4 py-3">Origem</th>
-                <th className="px-4 py-3">Validação</th>
-                <th className="px-4 py-3">v</th>
-                <th className="px-4 py-3">Criada</th>
-                <th className="px-4 py-3"></th>
-              </tr>
-            </thead>
-            <tbody className="divide-y divide-slate-100">
-              {(Array.isArray(data.data) ? data.data : []).map((p) => (
-                <tr key={p.id} className="hover:bg-slate-50">
-                  <td className="px-4 py-3 font-medium text-navy">
-                    {p.titulo}
-                  </td>
-                  <td className="px-4 py-3 text-xs capitalize">
-                    {p.tipo_peca.replace(/_/g, " ")}
-                  </td>
-                  <td className="px-4 py-3">
-                    <StatusBadge value={p.status} />
-                  </td>
-                  <td className="px-4 py-3">
-                    {p.ai_generated ? (
-                      p.human_reviewed ? (
-                        <span className="badge bg-success-100 text-success-700 gap-1">
-                          <ShieldCheck size={12} /> IA revisada
-                        </span>
-                      ) : (
-                        <span className="badge bg-warn-100 text-warn-700 gap-1">
-                          <Sparkles size={12} /> IA — aguarda revisão
-                        </span>
-                      )
-                    ) : (
-                      <span className="text-xs text-slate-400">manual</span>
+          <div className="space-y-2 md:hidden">
+            {(Array.isArray(data.data) ? data.data : []).map((p) => (
+              <div key={p.id} className="card p-4">
+                <div className="flex items-start justify-between gap-2">
+                  <div className="min-w-0">
+                    <div className="font-medium text-navy break-words">
+                      {p.titulo}
+                    </div>
+                    {p.codigo_peca && (
+                      <div className="mt-1">
+                        <Badge tone="slate" className="font-mono">
+                          {p.codigo_peca}
+                        </Badge>
+                      </div>
                     )}
-                  </td>
-                  <td className="px-4 py-3">
-                    {(() => {
-                      const v = validacaoLabel(p);
-                      return (
-                        <span className={`badge ${v.cls}`}>{v.label}</span>
-                      );
-                    })()}
-                  </td>
-                  <td className="px-4 py-3 text-slate-400">v{p.versao}</td>
-                  <td className="px-4 py-3 text-slate-400">
-                    {fmtDate(p.created_at)}
-                  </td>
-                  <td className="px-4 py-3 flex gap-1">
+                    <div className="mt-0.5 text-xs capitalize text-slate-400">
+                      {p.tipo_peca.replace(/_/g, " ")} · v{p.versao}.0 ·{" "}
+                      {fmtDate(p.created_at)}
+                    </div>
+                  </div>
+                  <StatusBadge value={p.status} />
+                </div>
+                <div className="mt-2 flex flex-wrap items-center gap-1.5">
+                  {p.ai_generated ? (
+                    p.human_reviewed ? (
+                      <span className="badge bg-success-100 text-success-700 gap-1">
+                        <ShieldCheck size={12} /> IA revisada
+                      </span>
+                    ) : (
+                      <span className="badge bg-warn-100 text-warn-700 gap-1">
+                        <Sparkles size={12} /> IA — aguarda revisão
+                      </span>
+                    )
+                  ) : (
+                    <span className="text-xs text-slate-400">manual</span>
+                  )}
+                  {(() => {
+                    const v = validacaoLabel(p);
+                    return <span className={`badge ${v.cls}`}>{v.label}</span>;
+                  })()}
+                </div>
+                <div className="mt-3 flex flex-wrap gap-2">
+                  <button
+                    className="btn-ghost px-2.5 py-1.5 text-xs"
+                    onClick={() => abrirDetalhe(p.id)}
+                  >
+                    <Eye size={14} /> Ver
+                  </button>
+                  <button
+                    className="btn-ghost px-2.5 py-1.5 text-xs"
+                    onClick={() => baixarPdf(p)}
+                  >
+                    <FileDown size={14} /> PDF
+                  </button>
+                  {p.ai_generated && !p.human_reviewed && (
                     <button
-                      className="btn-ghost px-2 py-1"
-                      onClick={() => abrirDetalhe(p.id)}
+                      className="btn-ghost px-2.5 py-1.5 text-xs text-warn-700"
+                      onClick={() => setRevisao({ doc: p, notas: "" })}
                     >
-                      <Eye size={15} />
+                      Revisar
                     </button>
-                    <button
-                      className="btn-ghost px-2 py-1"
-                      title="Baixar PDF timbrado"
-                      onClick={() => baixarPdf(p)}
-                    >
-                      <FileDown size={15} />
-                    </button>
-                    <button
-                      className="btn-ghost px-2 py-1 text-xs"
-                      title="Exportar DOCX"
-                      onClick={() => baixarDocx(p)}
-                    >
-                      <FileDown size={15} /> DOCX
-                    </button>
-                    <button
-                      className="btn-ghost px-2 py-1 text-xs"
-                      title="Documento único de impressão (peça + anexos com capas Visual Law)"
-                      onClick={() => baixarDocumentoUnico(p)}
-                      disabled={gerandoVL !== null}
-                    >
-                      <FileDown size={15} /> {gerandoVL === p.id ? "Gerando..." : "VL"}
-                    </button>
-                    <button
-                      className="btn-ghost px-2 py-1"
-                      title="Imprimir peça"
-                      onClick={() => imprimirPeca(p)}
-                    >
-                      <Printer size={15} />
-                    </button>
-                    <button
-                      className="btn-ghost px-2 py-1"
-                      title="Checar jurisprudencia validada"
-                      onClick={() => checarJurisprudencia(p)}
-                    >
-                      <ShieldCheck size={15} />
-                    </button>
-                    <button
-                      className="btn-ghost px-2 py-1"
-                      title="Auditar com IA"
-                      onClick={() => auditarIA(p)}
-                    >
-                      <SearchCheck size={15} />
-                    </button>
-                    <button
-                      className="btn-ghost px-2 py-1 text-primary-700"
-                      title="Validar juridicamente antes de finalizar"
-                      onClick={() => validarPeca(p)}
-                    >
-                      <ShieldCheck size={15} />
-                    </button>
-                    {p.ai_generated && !p.human_reviewed && (
+                  )}
+                  {p.ai_generated &&
+                    p.status !== "aprovada" &&
+                    p.status !== "versao_final" && (
                       <button
-                        className="btn-ghost px-2 py-1 text-warn-700 text-xs"
-                        onClick={() => setRevisao({ doc: p, notas: "" })}
+                        className="btn-primary px-2.5 py-1.5 text-xs"
+                        onClick={() =>
+                          setAprovacao({ doc: p, observacoes: "" })
+                        }
                       >
-                        Revisar
+                        <ShieldCheck size={14} /> Revisar e Aprovar
                       </button>
                     )}
-                    {p.ai_generated &&
-                      p.status !== "aprovada" &&
-                      p.status !== "versao_final" && (
-                        <button
-                          className="btn-ghost px-2 py-1 text-emerald-700 text-xs"
-                          title="Revisão humana obrigatória (HITL) para aprovar peça de IA"
-                          onClick={() =>
-                            setAprovacao({ doc: p, observacoes: "" })
-                          }
-                        >
-                          Revisar e Aprovar
-                        </button>
-                      )}
-                    {(p.human_reviewed || !p.ai_generated) &&
-                      p.status === "corrigida" &&
-                      p.validacao_juridica?.apto_fluxo && (
-                        <button
-                          className="btn-ghost px-2 py-1 text-success-700 text-xs"
-                          onClick={() => avancarStatus(p, "aprovada")}
-                        >
-                          Aprovar
-                        </button>
-                      )}
-                  </td>
+                  {(p.human_reviewed || !p.ai_generated) &&
+                    p.status === "corrigida" &&
+                    p.validacao_juridica?.apto_fluxo && (
+                      <button
+                        className="btn-ghost px-2.5 py-1.5 text-xs text-success-700"
+                        onClick={() => avancarStatus(p, "aprovada")}
+                      >
+                        Aprovar
+                      </button>
+                    )}
+                </div>
+              </div>
+            ))}
+          </div>
+          <div className="card hidden overflow-x-auto md:block">
+            <table className="w-full text-sm">
+              <thead className="bg-slate-50 text-left text-xs uppercase text-slate-400">
+                <tr>
+                  <th className="px-4 py-3">Título</th>
+                  <th className="px-4 py-3">Tipo</th>
+                  <th className="px-4 py-3">Status</th>
+                  <th className="px-4 py-3">Origem</th>
+                  <th className="px-4 py-3">Validação</th>
+                  <th className="px-4 py-3">v</th>
+                  <th className="px-4 py-3">Criada</th>
+                  <th className="px-4 py-3"></th>
                 </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
+              </thead>
+              <tbody className="divide-y divide-slate-100">
+                {(Array.isArray(data.data) ? data.data : []).map((p) => (
+                  <tr key={p.id} className="hover:bg-slate-50">
+                    <td className="px-4 py-3 font-medium text-navy">
+                      <div>{p.titulo}</div>
+                      {p.codigo_peca && (
+                        <Badge
+                          tone="slate"
+                          className="mt-1 font-mono font-normal"
+                        >
+                          {p.codigo_peca}
+                        </Badge>
+                      )}
+                    </td>
+                    <td className="px-4 py-3 text-xs capitalize">
+                      {p.tipo_peca.replace(/_/g, " ")}
+                    </td>
+                    <td className="px-4 py-3">
+                      <StatusBadge value={p.status} />
+                    </td>
+                    <td className="px-4 py-3">
+                      {p.ai_generated ? (
+                        p.human_reviewed ? (
+                          <span className="badge bg-success-100 text-success-700 gap-1">
+                            <ShieldCheck size={12} /> IA revisada
+                          </span>
+                        ) : (
+                          <span className="badge bg-warn-100 text-warn-700 gap-1">
+                            <Sparkles size={12} /> IA — aguarda revisão
+                          </span>
+                        )
+                      ) : (
+                        <span className="text-xs text-slate-400">manual</span>
+                      )}
+                    </td>
+                    <td className="px-4 py-3">
+                      {(() => {
+                        const v = validacaoLabel(p);
+                        return (
+                          <span className={`badge ${v.cls}`}>{v.label}</span>
+                        );
+                      })()}
+                    </td>
+                    <td className="px-4 py-3 text-slate-400">
+                      v{p.versao}.0
+                    </td>
+                    <td className="px-4 py-3 text-slate-400">
+                      {fmtDate(p.created_at)}
+                    </td>
+                    <td className="px-4 py-3 flex gap-1">
+                      <button
+                        className="btn-ghost px-2 py-1"
+                        onClick={() => abrirDetalhe(p.id)}
+                      >
+                        <Eye size={15} />
+                      </button>
+                      <button
+                        className="btn-ghost px-2 py-1"
+                        title="Baixar PDF timbrado"
+                        onClick={() => baixarPdf(p)}
+                      >
+                        <FileDown size={15} />
+                      </button>
+                      <button
+                        className="btn-ghost px-2 py-1 text-xs"
+                        title="Exportar DOCX"
+                        onClick={() => baixarDocx(p)}
+                      >
+                        <FileDown size={15} /> DOCX
+                      </button>
+                      <button
+                        className="btn-ghost px-2 py-1 text-xs"
+                        title="Documento único de impressão (peça + anexos com capas Visual Law)"
+                        onClick={() => baixarDocumentoUnico(p)}
+                        disabled={gerandoVL !== null}
+                      >
+                        <FileDown size={15} />{" "}
+                        {gerandoVL === p.id ? "Gerando..." : "VL"}
+                      </button>
+                      <button
+                        className="btn-ghost px-2 py-1"
+                        title="Imprimir peça"
+                        onClick={() => imprimirPeca(p)}
+                      >
+                        <Printer size={15} />
+                      </button>
+                      <button
+                        className="btn-ghost px-2 py-1"
+                        title="Checar jurisprudencia validada"
+                        onClick={() => checarJurisprudencia(p)}
+                      >
+                        <ShieldCheck size={15} />
+                      </button>
+                      <button
+                        className="btn-ghost px-2 py-1"
+                        title="Auditar com IA"
+                        onClick={() => auditarIA(p)}
+                      >
+                        <SearchCheck size={15} />
+                      </button>
+                      <button
+                        className="btn-ghost px-2 py-1 text-primary-700"
+                        title="Validar juridicamente antes de finalizar"
+                        onClick={() => validarPeca(p)}
+                      >
+                        <ShieldCheck size={15} />
+                      </button>
+                      {p.ai_generated && !p.human_reviewed && (
+                        <button
+                          className="btn-ghost px-2 py-1 text-warn-700 text-xs"
+                          onClick={() => setRevisao({ doc: p, notas: "" })}
+                        >
+                          Revisar
+                        </button>
+                      )}
+                      {p.ai_generated &&
+                        p.status !== "aprovada" &&
+                        p.status !== "versao_final" && (
+                          <button
+                            className="btn-ghost px-2 py-1 text-emerald-700 text-xs"
+                            title="Revisão humana obrigatória (HITL) para aprovar peça de IA"
+                            onClick={() =>
+                              setAprovacao({ doc: p, observacoes: "" })
+                            }
+                          >
+                            Revisar e Aprovar
+                          </button>
+                        )}
+                      {(p.human_reviewed || !p.ai_generated) &&
+                        p.status === "corrigida" &&
+                        p.validacao_juridica?.apto_fluxo && (
+                          <button
+                            className="btn-ghost px-2 py-1 text-success-700 text-xs"
+                            onClick={() => avancarStatus(p, "aprovada")}
+                          >
+                            Aprovar
+                          </button>
+                        )}
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
         </>
       )}
 
@@ -703,7 +830,7 @@ export default function Pecas() {
           </div>
         )}
         {view?.validacao_juridica && (
-          <div className="mb-3 p-3 rounded-lg bg-slate-50 border border-slate-200 text-xs text-slate-700">
+          <div className="mb-3 p-3 rounded-lg bg-slate-50 border border-black/[0.05] text-xs text-slate-700">
             <strong>Validação jurídica:</strong>{" "}
             {view.validacao_juridica.status} · Score{" "}
             {view.validacao_juridica.score ?? "—"}/
@@ -849,6 +976,8 @@ export default function Pecas() {
       <PecaGeneratorModal
         open={modalIA}
         onClose={() => setModalIA(false)}
+        caseId={casoFiltro}
+        onNeedFicha={onNeedFicha}
         onConcluido={(_logId, _doc) => {
           setModalIA(false);
           load();
@@ -866,6 +995,30 @@ export default function Pecas() {
           <Markdown source={printDoc.conteudo} />
         </div>
       )}
+    </div>
+  );
+}
+
+// Semáforo de risco reaproveitando os tons do DS (Badge).
+const RISCO_TONE: Record<FichaTriagemCampos["risco_processual"], "green" | "amber" | "red"> = {
+  baixo: "green",
+  medio: "amber",
+  alto: "red",
+};
+
+// valor_causa é string livre; formata como moeda quando for numérico.
+function fmtValorCausa(v: string): string {
+  const n = Number(String(v).replace(/[^\d.,-]/g, "").replace(/\.(?=\d{3})/g, "").replace(",", "."));
+  return Number.isFinite(n) && v.trim() !== "" ? fmtMoney(n) : v;
+}
+
+function ResumoItem({ label, valor }: { label: string; valor?: string }) {
+  return (
+    <div className="flex items-center gap-1.5">
+      <span className="text-xs uppercase tracking-wide text-slate-400">
+        {label}
+      </span>
+      <span className="text-sm font-medium text-navy">{valor || "—"}</span>
     </div>
   );
 }

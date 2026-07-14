@@ -1,14 +1,23 @@
 # ── app/schemas/client.py ────────────────────────────────────────────────────
 from __future__ import annotations
-from pydantic import BaseModel
+from pydantic import BaseModel, field_validator
 from typing import Optional
-from datetime import datetime
+from datetime import datetime, date
+
+from app.models.client import ClientStatus
+
+# Etapas do funil de leads (CRM) — mesmas colunas do board CRMLeads.tsx.
+ETAPAS_FUNIL = {"lead", "contato", "reuniao", "proposta", "convertido", "perdido"}
+_STATUS_VALIDOS = {s.value for s in ClientStatus}
 
 class ClientBase(BaseModel):
     tipo: str = "PF"
     nome: Optional[str] = None
     cpf: Optional[str] = None
-    data_nascimento: Optional[str] = None
+    # Coluna DATE no banco (models/client.py). Pydantic v2 converte "YYYY-MM-DD"
+    # em date automaticamente e rejeita string inválida com 422 ANTES do INSERT
+    # (evita o asyncpg DataError 500 quando a string crua ia parar na coluna DATE).
+    data_nascimento: Optional[date] = None
     profissao: Optional[str] = None
     razao_social: Optional[str] = None
     cnpj: Optional[str] = None
@@ -26,8 +35,40 @@ class ClientBase(BaseModel):
     origem: Optional[str] = None
     observacoes: Optional[str] = None
 
+    @field_validator("data_nascimento", mode="before")
+    @classmethod
+    def _data_nascimento_vazio_para_none(cls, v):
+        # Aceita "" / espaços vindos do formulário como ausência de data (None),
+        # em vez de estourar validação. Strings ISO válidas seguem para o parser
+        # padrão do Pydantic; inválidas viram 422 (não 500).
+        if isinstance(v, str) and not v.strip():
+            return None
+        return v
+
+
 class ClientCreate(ClientBase):
-    pass
+    # CRM: o board de leads (CRMLeads.tsx) cria o cliente já com status="lead"
+    # e etapa_funil="lead". Antes estes campos não existiam no schema: o
+    # Pydantic descartava e o lead nascia "ativo" — sumia do funil e poluía a
+    # lista de clientes ativos.
+    status: str = ClientStatus.ativo.value
+    etapa_funil: Optional[str] = None
+    origem_lead: Optional[str] = None
+    area_interesse: Optional[str] = None
+
+    @field_validator("status")
+    @classmethod
+    def _valida_status(cls, v: str) -> str:
+        if v not in _STATUS_VALIDOS:
+            raise ValueError(f"status inválido; use um de: {sorted(_STATUS_VALIDOS)}")
+        return v
+
+    @field_validator("etapa_funil")
+    @classmethod
+    def _valida_etapa(cls, v: Optional[str]) -> Optional[str]:
+        if v is not None and v not in ETAPAS_FUNIL:
+            raise ValueError(f"etapa_funil inválida; use uma de: {sorted(ETAPAS_FUNIL)}")
+        return v
 
 class ClientUpdate(BaseModel):
     nome: Optional[str] = None
@@ -44,11 +85,31 @@ class ClientUpdate(BaseModel):
     cidade: Optional[str] = None
     estado: Optional[str] = None
     status: Optional[str] = None
+    etapa_funil: Optional[str] = None
+    origem_lead: Optional[str] = None
+    area_interesse: Optional[str] = None
     observacoes: Optional[str] = None
+
+    @field_validator("status")
+    @classmethod
+    def _valida_status(cls, v: Optional[str]) -> Optional[str]:
+        if v is not None and v not in _STATUS_VALIDOS:
+            raise ValueError(f"status inválido; use um de: {sorted(_STATUS_VALIDOS)}")
+        return v
+
+    @field_validator("etapa_funil")
+    @classmethod
+    def _valida_etapa(cls, v: Optional[str]) -> Optional[str]:
+        if v is not None and v not in ETAPAS_FUNIL:
+            raise ValueError(f"etapa_funil inválida; use uma de: {sorted(ETAPAS_FUNIL)}")
+        return v
 
 class ClientResponse(ClientBase):
     id: str
     status: str
+    etapa_funil: Optional[str] = None
+    origem_lead: Optional[str] = None
+    area_interesse: Optional[str] = None
     responsavel_id: Optional[str] = None
     created_at: datetime
     class Config:

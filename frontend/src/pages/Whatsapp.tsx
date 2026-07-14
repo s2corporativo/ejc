@@ -15,7 +15,7 @@ export default function Whatsapp() {
         title="WhatsApp"
         subtitle="Atendimento e disparos via WhatsApp integrados ao CRM."
       />
-      <div className="mx-auto max-w-xl rounded-xl border border-slate-200 bg-white p-10 text-center">
+      <div className="card mx-auto max-w-xl p-10 text-center">
         <div className="mx-auto mb-4 flex h-14 w-14 items-center justify-center rounded-full bg-green-50">
           <MessageCircle className="h-7 w-7 text-green-600" />
         </div>

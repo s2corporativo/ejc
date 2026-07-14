@@ -2,7 +2,7 @@ import { useEffect, useState } from "react";
 import { Bell, ExternalLink, FileText, AlertTriangle } from "lucide-react";
 import { Link } from "react-router-dom";
 import api from "../lib/api";
-import { PageHeader } from "../components/UI";
+import { PageHeader, Spinner } from "../components/UI";
 import RadarLegislativo from "../components/RadarLegislativo";
 
 interface Item {
@@ -43,7 +43,7 @@ export default function RadarRegulatorio() {
         <div className="flex flex-col gap-4 sm:flex-row sm:items-end sm:justify-between">
           <PageHeader
             eyebrow="Inteligencia"
-            title="Radar regulatorio"
+            title="Radar regulatório"
             subtitle="Resumo dos alertas do Diario Oficial (DOU/DOE-MG) coletados pelo monitoramento, agregados por fonte e palavra-chave."
           />
           <select
@@ -59,9 +59,7 @@ export default function RadarRegulatorio() {
       </div>
 
       {loading ? (
-        <div className="card p-8 text-center text-sm text-slate-400">
-          Carregando...
-        </div>
+        <Spinner />
       ) : !data ? (
         <div className="card p-8 text-center text-sm text-slate-400">
           Nao foi possivel carregar o digest.

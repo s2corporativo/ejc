@@ -7,7 +7,6 @@ import {
   Bell,
   ChevronRight,
   CheckCircle,
-  Clock,
   AlertCircle,
 } from "lucide-react";
 import api from "../../lib/api";
@@ -51,7 +50,7 @@ export default function PortalDashboard() {
   return (
     <div className="space-y-6">
       {/* Welcome */}
-      <div className="bg-white rounded-xl border border-slate-200 p-6">
+      <div className="card p-6">
         <h1 className="text-xl font-bold text-slate-800">
           Olá, {user?.full_name?.split(" ")[0] ?? "cliente"}
         </h1>
@@ -62,7 +61,7 @@ export default function PortalDashboard() {
 
       {/* KPI cards */}
       <div className="grid grid-cols-2 lg:grid-cols-3 gap-4">
-        <div className="bg-white rounded-xl border border-slate-200 p-4 flex items-center gap-3">
+        <div className="card p-4 flex items-center gap-3">
           <div className="p-2.5 bg-primary-50 rounded-lg">
             <Scale className="w-5 h-5 text-primary-600" />
           </div>
@@ -75,7 +74,7 @@ export default function PortalDashboard() {
             </p>
           </div>
         </div>
-        <div className="bg-white rounded-xl border border-slate-200 p-4 flex items-center gap-3">
+        <div className="card p-4 flex items-center gap-3">
           <div className="p-2.5 bg-warn-50 rounded-lg">
             <DollarSign className="w-5 h-5 text-warn-600" />
           </div>
@@ -88,7 +87,7 @@ export default function PortalDashboard() {
             </p>
           </div>
         </div>
-        <div className="bg-white rounded-xl border border-slate-200 p-4 flex items-center gap-3">
+        <div className="card p-4 flex items-center gap-3">
           <div className="p-2.5 bg-success-50 rounded-lg">
             <CheckCircle className="w-5 h-5 text-success-600" />
           </div>
@@ -134,7 +133,7 @@ export default function PortalDashboard() {
           <Link
             key={to}
             to={to}
-            className="bg-white rounded-xl border border-slate-200 p-4 flex flex-col items-center gap-2 hover:shadow-sm hover:border-slate-300 transition-all"
+            className="card p-4 flex flex-col items-center gap-2 transition-all"
           >
             <div className={`p-2.5 rounded-lg ${color}`}>
               <Icon className="w-5 h-5" />
@@ -146,7 +145,7 @@ export default function PortalDashboard() {
 
       {/* Recent cases */}
       {!loading && casos.length > 0 && (
-        <div className="bg-white rounded-xl border border-slate-200 p-5">
+        <div className="card p-5">
           <div className="flex items-center justify-between mb-4">
             <h2 className="font-semibold text-slate-800">Meus processos</h2>
             <Link

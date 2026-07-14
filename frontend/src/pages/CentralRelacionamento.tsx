@@ -7,7 +7,6 @@ import {
   Phone,
   Mail,
   UserCheck,
-  UserX,
   Clock,
   ChevronRight,
   RefreshCw,
@@ -16,7 +15,7 @@ import {
 import api from "../lib/api";
 import { soDigitos } from "../utils/phone";
 import { AtendimentoStats } from "../components/Dashboards";
-import { Button, PageHeader } from "../components/UI";
+import { Button, PageHeader, Spinner } from "../components/UI";
 import { asList } from "../lib/list";
 
 interface FunilData {
@@ -79,7 +78,7 @@ function StatCard({
     slate: "bg-slate-100 text-slate-500",
   }[color];
   return (
-    <div className="bg-white rounded-xl border border-slate-200 p-4 flex items-center gap-4">
+    <div className="card p-4 flex items-center gap-4">
       <div className={`p-3 rounded-lg ${cls}`}>
         <Icon className="w-5 h-5" />
       </div>
@@ -227,14 +226,12 @@ export default function CentralRelacionamento() {
 
       <div className="grid lg:grid-cols-3 gap-6">
         {/* Funil por estágio */}
-        <div className="bg-white rounded-xl border border-slate-200 p-5">
+        <div className="card p-5">
           <h2 className="font-semibold text-slate-800 mb-4">
             Funil por estágio
           </h2>
           {loading ? (
-            <div className="text-center py-6 text-slate-400 text-sm">
-              Carregando...
-            </div>
+            <Spinner />
           ) : (
             <div className="space-y-2.5">
               {[
@@ -272,14 +269,12 @@ export default function CentralRelacionamento() {
         </div>
 
         {/* Por origem */}
-        <div className="bg-white rounded-xl border border-slate-200 p-5">
+        <div className="card p-5">
           <h2 className="font-semibold text-slate-800 mb-4">
             Por origem de captação
           </h2>
           {loading ? (
-            <div className="text-center py-6 text-slate-400 text-sm">
-              Carregando...
-            </div>
+            <Spinner />
           ) : !funil?.por_origem?.length ? (
             <p className="text-slate-400 text-sm text-center py-6">
               Sem dados de origem ainda
@@ -312,7 +307,7 @@ export default function CentralRelacionamento() {
         </div>
 
         {/* Leads recentes */}
-        <div className="bg-white rounded-xl border border-slate-200 p-5">
+        <div className="card p-5">
           <div className="flex items-center justify-between mb-4">
             <h2 className="font-semibold text-slate-800">Leads recentes</h2>
             <button
@@ -324,9 +319,7 @@ export default function CentralRelacionamento() {
           </div>
           <div className="space-y-2">
             {loading ? (
-              <div className="text-center py-6 text-slate-400 text-sm">
-                Carregando...
-              </div>
+              <Spinner />
             ) : leads.length === 0 ? (
               <p className="text-slate-400 text-sm text-center py-6">
                 Nenhum lead cadastrado
@@ -387,7 +380,7 @@ export default function CentralRelacionamento() {
       </div>
 
       {/* Clientes ativos recentes */}
-      <div className="bg-white rounded-xl border border-slate-200 p-5">
+      <div className="card p-5">
         <div className="flex items-center justify-between mb-4">
           <h2 className="font-semibold text-slate-800">
             Clientes ativos — contato rápido
@@ -401,7 +394,7 @@ export default function CentralRelacionamento() {
         </div>
         <div className="grid grid-cols-1 lg:grid-cols-2 gap-2">
           {loading ? (
-            <p className="text-slate-400 text-sm">Carregando...</p>
+            <Spinner />
           ) : clientes.length === 0 ? (
             <p className="text-slate-400 text-sm">
               Nenhum cliente ativo encontrado

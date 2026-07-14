@@ -40,6 +40,14 @@ class LegalDoc(Base):
     conteudo  = Column(Text, nullable=False)          # markdown
     versao    = Column(Integer, default=1)
 
+    # ── Controle/versionamento (Fase D) ──────────────────────────────────
+    # `area`: ramo do direito da geração (chave de AREAS_DIREITO).
+    # `codigo_peca`: identificador estável por ramo EJC-<SIGLA>-<NNN>,
+    # reservado atomicamente em app.services.peca_numeracao. Nullable p/ peças
+    # antigas geradas antes do versionamento.
+    area        = Column(String(40), nullable=True)
+    codigo_peca = Column(String(30), nullable=True, index=True)
+
     # ── HITL — Human-in-the-Loop (obrigatório p/ IA) ────────────────────
     ai_generated   = Column(Boolean, default=False, nullable=False)
     human_reviewed = Column(Boolean, default=False, nullable=False)

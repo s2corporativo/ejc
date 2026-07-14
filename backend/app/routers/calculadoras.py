@@ -43,7 +43,10 @@ class CorrecaoIn(BaseModel):
     valor: float = Field(..., gt=0)
     data_inicial: date
     data_final: date
-    indice: str = Field("ipca", description="ipca | ipca_e | inpc | selic | tr")
+    indice: str = Field("ipca", description=(
+        "Legados: ipca | ipca_e | inpc | selic | tr. Com INDICES_BCB_ENABLED "
+        "aceita também as séries oficiais do indices_service (igpm, ipca15, "
+        "cdi_mensal, selic_mensal, poupanca, taxa_legal…)"))
     juros_mora_pct_mes: float = Field(0.0, ge=0, le=100)
 
 
@@ -99,9 +102,21 @@ async def irrf_endpoint(
 async def correcao_monetaria(req: CorrecaoIn, cu: User = Depends(require_roles(_EQUIPE))):
     """Atualização monetária por índice oficial (BCB SGS) + juros de mora.
 
-    Índices: ipca/ipca_e/inpc/selic/tr. Memória mês a mês. MINUTA — HITL.
+    Índices: ipca/ipca_e/inpc/selic/tr (legado bcb_service) e, com
+    INDICES_BCB_ENABLED, qualquer série mensal do indices_service (igpm,
+    ipca15, cdi_mensal, taxa_legal…). Memória mês a mês. MINUTA — HITL.
     """
     try:
+        # Séries além das legadas → fonte oficial nova (cache persistente).
+        if req.indice not in bcb_service.SERIES:
+            from app.core.config import get_settings
+            from app.services import indices_service
+            if (get_settings().INDICES_BCB_ENABLED
+                    and req.indice in indices_service.SERIES):
+                return await indices_service.atualizar_valor(
+                    req.valor, req.indice, req.data_inicial, req.data_final,
+                    juros_mora_pct_mes=req.juros_mora_pct_mes,
+                )
         return await bcb_service.atualizar_valor(
             req.valor, req.data_inicial, req.data_final,
             indice=req.indice, juros_mora_pct_mes=req.juros_mora_pct_mes,

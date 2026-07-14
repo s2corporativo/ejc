@@ -16,7 +16,6 @@ from decimal import Decimal
 import pytest
 
 from app.services import abusividade_service as ab
-from app.services.calc import cet as cet_calc
 from app.services.calc.cet import calcular_cet, parcela_price, add_months
 from app.routers import analise_bancaria
 

@@ -1,8 +1,14 @@
 import { useState } from "react";
-import { Link, useLocation, useNavigate } from "react-router-dom";
+import {
+  Link,
+  useLocation,
+  useNavigate,
+  useSearchParams,
+} from "react-router-dom";
 import {
   AlertCircle,
   ArrowRight,
+  CheckCircle2,
   LockKeyhole,
   ShieldCheck,
   Sparkles,
@@ -13,7 +19,44 @@ import { useAuth } from "../stores/auth";
 import { usePreferencesStore } from "../stores/preferences";
 import { canRoleAccessPath } from "../config/moduleRegistry";
 
-const BRAND_LOGO = "/brand/de-paula-teixeira-logo.jpg";
+// Logomarca HD com fundo transparente (nunca a versão JPG com fundo)
+const BRAND_LOGO = "/brand/logo-hd.png";
+// Vinheta de marca (10s, muda, toca UMA vez e congela no logo final)
+const BRAND_INTRO_VIDEO = "/brand/logo-intro.mp4";
+const BRAND_INTRO_POSTER = "/brand/logo-intro-poster.jpg";
+
+/** Vinheta da logomarca no login. Respeita prefers-reduced-motion e cai
+ *  para a logomarca estática se o vídeo falhar (rede lenta/bloqueio). */
+function BrandIntro({ className }: { className?: string }) {
+  const [fallback, setFallback] = useState(false);
+  const reduceMotion =
+    typeof window !== "undefined" &&
+    window.matchMedia?.("(prefers-reduced-motion: reduce)").matches;
+
+  if (fallback || reduceMotion) {
+    return (
+      <img
+        src={BRAND_LOGO}
+        alt="De Paula Teixeira Sociedade de Advogados"
+        className={`brand-logo-img h-40 w-auto max-w-[440px] ${className || ""}`}
+      />
+    );
+  }
+  return (
+    <video
+      className={`w-[460px] max-w-full rounded-3xl shadow-card ${className || ""}`}
+      autoPlay
+      muted
+      playsInline
+      preload="auto"
+      poster={BRAND_INTRO_POSTER}
+      onError={() => setFallback(true)}
+      aria-label="De Paula Teixeira Sociedade de Advogados"
+    >
+      <source src={BRAND_INTRO_VIDEO} type="video/mp4" />
+    </video>
+  );
+}
 
 type LoginLocationState = { from?: string } | null;
 
@@ -29,6 +72,11 @@ export default function LoginModern() {
   const [loading, setLoading] = useState(false);
 
   const requestedPath = (location.state as LoginLocationState)?.from;
+
+  // Aviso pós-troca de senha obrigatória: logout() redireciona (hard) para
+  // /login?motivo=senha-alterada — sem isto o usuário caía deslogado sem feedback.
+  const [searchParams] = useSearchParams();
+  const senhaAlterada = searchParams.get("motivo") === "senha-alterada";
 
   const submit = async () => {
     setErro("");
@@ -102,15 +150,12 @@ export default function LoginModern() {
         <section className="relative hidden flex-col justify-between overflow-hidden p-10 text-slate-900 lg:flex">
           <div className="pointer-events-none absolute inset-0 bg-[radial-gradient(circle_at_35%_45%,rgba(201,162,39,.10),transparent_30rem),radial-gradient(circle_at_90%_90%,rgba(216,185,78,.12),transparent_26rem)]" />
           <div className="relative flex items-center gap-3">
-            <img
-              src={BRAND_LOGO}
-              alt="De Paula Teixeira Sociedade de Advogados"
-              className="brand-logo-img h-28 w-auto max-w-[360px] rounded-xl bg-white p-2 shadow-soft ring-1 ring-slate-100"
-            />
+            {/* Vinheta da marca — toca uma vez e congela na logomarca */}
+            <BrandIntro />
           </div>
 
           <div className="relative max-w-2xl">
-            <div className="mb-4 inline-flex items-center gap-2 rounded-full border border-primary-200 bg-primary-50 px-3 py-1 text-xs font-semibold text-primary-700">
+            <div className="mb-4 inline-flex items-center gap-2 rounded-full bg-ouro-palha px-3 py-1 text-xs font-semibold text-ouro-profundo">
               <Sparkles className="h-3.5 w-3.5" />
               Plataforma jurídica empresarial
             </div>
@@ -130,7 +175,7 @@ export default function LoginModern() {
               ].map(([title, desc]) => (
                 <div
                   key={title}
-                  className="rounded-2xl border border-slate-200/60 bg-white p-4 shadow-soft"
+                  className="rounded-2xl bg-white p-4 shadow-card"
                 >
                   <div className="text-sm font-semibold text-slate-950">
                     {title}
@@ -149,17 +194,18 @@ export default function LoginModern() {
 
         <section className="flex min-h-screen items-center justify-center px-5 py-10">
           <div className="w-full max-w-md animate-rise">
-            <div className="mb-8 flex items-center lg:hidden">
+            <div className="mb-8 flex items-center justify-center lg:hidden">
               <img
                 src={BRAND_LOGO}
                 alt="De Paula Teixeira Sociedade de Advogados"
-                className="brand-logo-img h-20 w-auto max-w-[280px] rounded-xl bg-white p-1.5 shadow-soft ring-1 ring-slate-100"
+                className="brand-logo-img h-28 w-auto max-w-[320px]"
               />
             </div>
 
-            <div className="rounded-2xl border border-slate-200/60 bg-white p-8 shadow-[0_8px_30px_rgba(16,24,40,.08)]">
+            {/* Card limpo SEM borda — profundidade só por sombra difusa */}
+            <div className="rounded-2xl bg-white p-8 shadow-[0_1px_2px_rgba(16,24,40,.04),0_18px_50px_rgba(16,24,40,.1)]">
               <div className="mb-7">
-                <div className="mb-3 flex h-11 w-11 items-center justify-center rounded-xl bg-primary-50 text-primary-600">
+                <div className="mb-3 flex h-11 w-11 items-center justify-center rounded-xl bg-ouro-palha text-ouro-profundo">
                   {requiresTotp ? (
                     <ShieldCheck className="h-5 w-5" />
                   ) : (
@@ -179,6 +225,18 @@ export default function LoginModern() {
                 </p>
               </div>
 
+              {senhaAlterada && !erro && (
+                <div
+                  role="status"
+                  className="mb-4 flex items-start gap-2 rounded-xl bg-success-50 px-3 py-2.5 text-sm text-success-700 ring-1 ring-inset ring-success-200"
+                >
+                  <CheckCircle2 className="mt-0.5 h-4 w-4 shrink-0" />
+                  <span>
+                    Senha alterada com sucesso — entre novamente com a nova
+                    senha.
+                  </span>
+                </div>
+              )}
               {erro && (
                 <div className="mb-4 flex items-start gap-2 rounded-xl bg-danger-50 px-3 py-2.5 text-sm text-danger-700 ring-1 ring-inset ring-danger-200">
                   <AlertCircle className="mt-0.5 h-4 w-4 shrink-0" />

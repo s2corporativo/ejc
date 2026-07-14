@@ -89,7 +89,6 @@ function rotulo(v: string) {
   return v.replace(/_/g, " ").replace(/\b\w/g, (c) => c.toUpperCase());
 }
 
-
 // ── Bloco de uma ferramenta/calculadora ──────────────────────────────────────
 function Ferramenta({ f }: { f: FerramentaConfig }) {
   const [vals, setVals] = useState<Record<string, any>>(() => {
@@ -951,7 +950,7 @@ export default function RamoBase() {
             {cfg.subareas.map((sa) => (
               <span
                 key={sa}
-                className="text-xs px-2.5 py-1 rounded-full bg-slate-100 text-slate-600 border border-slate-200"
+                className="text-xs px-2.5 py-1 rounded-full bg-slate-900/[0.05] text-slate-600 dark:bg-white/[0.07] dark:text-slate-300"
               >
                 {sa}
               </span>
@@ -973,7 +972,7 @@ export default function RamoBase() {
                 href={fe.url}
                 target="_blank"
                 rel="noopener noreferrer"
-                className="flex items-start gap-2 p-2.5 rounded-lg border border-slate-200 hover:border-gold-400 hover:bg-gold-50/30 transition-colors group"
+                className="flex items-start gap-2 p-2.5 rounded-lg border border-black/[0.05] hover:border-gold-400 hover:bg-gold-50/30 transition-colors group"
               >
                 <div className="min-w-0">
                   <p className="text-sm font-medium text-navy group-hover:text-gold-700">

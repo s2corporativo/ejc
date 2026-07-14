@@ -96,7 +96,7 @@ function ComparacaoDesembolsos({
   const max = Math.max(...aplicaveis.map((c) => c.desembolso_estimado), 1);
   const min = Math.min(...aplicaveis.map((c) => c.desembolso_estimado));
   return (
-    <div className="rounded-xl border border-slate-200 bg-slate-50/60 p-4 space-y-2.5">
+    <div className="rounded-xl border border-black/[0.05] dark:border-white/10 bg-slate-50/60 p-4 space-y-2.5">
       <div className="text-xs font-bold text-slate-500 uppercase tracking-wide">
         Comparação de desembolso estimado
       </div>
@@ -155,7 +155,7 @@ function CardCenario({
           ? "border-2 border-gold bg-gold-50/50"
           : inaplicavel
             ? "border-slate-200 bg-slate-50/40 opacity-60"
-            : "border-slate-200 bg-white"
+            : "border-black/[0.05] dark:border-white/10 bg-white"
       }`}
     >
       {recomendado && (

@@ -239,7 +239,7 @@ export default function AmbientalAutos({ casos }: { casos: Case[] }) {
             return (
               <div
                 key={e.id}
-                className="flex flex-wrap items-center gap-3 p-3 rounded-lg border border-slate-200"
+                className="flex flex-wrap items-center gap-3 p-3 rounded-lg border border-black/[0.05] dark:border-white/10"
               >
                 <div className="flex-1 min-w-[180px]">
                   <div className="text-sm font-medium text-navy">

@@ -65,6 +65,7 @@ from app.routers import data_room_v4
 from app.routers import datajud
 from app.routers import deadlines
 from app.routers import despesas
+from app.routers import diagnostico
 from app.routers import diario_oficial
 from app.routers import diplomacia_v3
 from app.routers import documento_ia
@@ -89,6 +90,13 @@ from app.routers import ia_extra
 from app.routers import ia_governanca
 from app.routers import ia_saude
 from app.routers import indice_risco
+from app.routers import indices
+from app.routers import infosimples_receita
+from app.routers import infosimples_tjmg
+from app.routers import car  # CAR/SICAR via conector Infosimples (reuso)
+from app.routers import transparencia  # CGU Portal da Transparência (sanções) — GATED
+from app.routers import pncp  # PNCP contratações públicas — GATED
+from app.routers import nfse
 from app.routers import intelligence_v3
 from app.routers import intimacoes
 from app.routers import jurimetria
@@ -98,6 +106,7 @@ from app.routers import jurisprudencia_externa
 from app.routers import honorarios_oab
 from app.routers import intake
 from app.routers import triagem_entrevista
+from app.routers import ficha_triagem
 from app.routers import jurisprudencia_interna
 from app.routers import kanban
 from app.routers import legal_docs
@@ -128,6 +137,7 @@ from app.routers import rag
 from app.routers import rag_public
 from app.routers import api_keys as api_keys_router
 from app.routers import regulatorio
+from app.routers import radar_legislativo
 from app.routers import ramos
 from app.routers import previdenciario_beneficio
 from app.routers import relatorio
@@ -177,20 +187,12 @@ from app.core.logging_config import setup_logging
 setup_logging(json_logs=settings.LOG_JSON, level=settings.LOG_LEVEL)
 logger = logging.getLogger("ejc")
 
-# ── Sentry (desabilitado se SENTRY_DSN vazio) ─────────────────────────────────
-if settings.SENTRY_DSN:
-    import sentry_sdk
-    from sentry_sdk.integrations.fastapi import FastApiIntegration
-    from sentry_sdk.integrations.sqlalchemy import SqlalchemyIntegration
-    sentry_sdk.init(
-        dsn=settings.SENTRY_DSN,
-        environment=settings.APP_ENV,
-        traces_sample_rate=0.1,       # 10% das transações para performance
-        profiles_sample_rate=0.05,
-        integrations=[FastApiIntegration(), SqlalchemyIntegration()],
-        send_default_pii=False,       # LGPD: sem PII nos eventos Sentry
-    )
-    logger.info("[EJC] Sentry inicializado")
+# ── Observabilidade: Sentry gated (no-op sem SENTRY_DSN) ──────────────────────
+# init_sentry() é defensivo: sem SENTRY_DSN é no-op e nunca levanta exceção,
+# então o boot fica idêntico ao de hoje. Com DSN, aplica scrub LGPD (before_send)
+# e send_default_pii=False. Ver app/core/observability.py.
+from app.core.observability import app_version, init_sentry, uptime_seconds
+init_sentry()
 
 
 @asynccontextmanager
@@ -321,6 +323,13 @@ app.include_router(ia_extra.router, prefix=API)  # Bloco 1 (Etapa 4): router ant
 app.include_router(ia_governanca.router, prefix=API)
 app.include_router(ia_saude.router, prefix=API)
 app.include_router(indice_risco.router, prefix=API)
+app.include_router(indices.router, prefix=API)  # Índices oficiais BCB (SGS + Olinda) — Bloco 1 das APIs públicas
+app.include_router(infosimples_receita.router, prefix=API)
+app.include_router(infosimples_tjmg.router, prefix=API)
+app.include_router(car.router, prefix=API)  # CAR/SICAR via Infosimples (consulta paga, reuso do conector)
+app.include_router(transparencia.router, prefix=API)  # CGU sanções CEIS/CNEP/CEPIM — GATED (default off)
+app.include_router(pncp.router, prefix=API)  # PNCP contratações públicas — GATED (default off)
+app.include_router(nfse.router, prefix=API)  # NFS-e (emissão fiscal GATED, homologação) — migração 085
 app.include_router(intelligence_v3.router, prefix=API)
 app.include_router(intimacoes.router, prefix=API)
 app.include_router(jurimetria.router, prefix=API)
@@ -334,6 +343,7 @@ app.include_router(memoria_institucional.router, prefix=API)
 app.include_router(honorarios_oab.router, prefix=API)  # frontend: /api/honorarios-oab/estimar (EstimadorHonorarios)
 app.include_router(intake.router, prefix=API)  # frontend: /api/intake/casos/{id}/analise-completa (IntakeAnalise)
 app.include_router(triagem_entrevista.router, prefix=API)  # frontend: /api/triagem/entrevista (EntrevistaInteligente — Jornada etapa 2)
+app.include_router(ficha_triagem.router, prefix=API)  # frontend: /api/triagem/ficha (Ficha de Triagem pré-peça — gate de geração)
 app.include_router(mensagens.router, prefix=API)
 app.include_router(module_help.router, prefix=API)  # frontend: /api/module-help/* (HelpButton)
 app.include_router(movimentos.router, prefix=API)
@@ -360,6 +370,7 @@ app.include_router(rag.router, prefix=API)
 app.include_router(rag_public.router, prefix=API)      # API pública (X-API-Key)
 app.include_router(api_keys_router.router, prefix=API) # admin de chaves (JWT admin)
 app.include_router(regulatorio.router, prefix=API)
+app.include_router(radar_legislativo.router, prefix=API)  # Câmara+Senado+ALMG
 app.include_router(ramos.router, prefix=API)
 app.include_router(previdenciario_beneficio.router, prefix=API)  # vertical Previdenciário — regras de transição EC 103/2019 + RMI
 app.include_router(relatorio.router, prefix=API)
@@ -376,6 +387,7 @@ app.include_router(lgpd_registros.router, prefix=API)  # vertical LGPD — ROPA 
 app.include_router(sumulas.router, prefix=API)
 app.include_router(suspensoes.router, prefix=API)
 app.include_router(system_modules.router, prefix=API)  # Mapa de Módulos — governança modular
+app.include_router(diagnostico.router, prefix=API)  # Central Eletrônica de Diagnóstico
 app.include_router(module_settings.router, prefix=API)  # Lifecycle auditável dos módulos
 app.include_router(tributario_fiscal.router, prefix=API)  # vertical Tributário — XML fiscal + recuperação de créditos
 app.include_router(trabalhista_liquidacao.router, prefix=API)  # vertical Trabalhista — liquidação de sentença (ADC 58 / Selic real BCB)
@@ -400,14 +412,17 @@ app.include_router(workflow.router, prefix=API)
 
 
 
-# ── Health check (público — usado pelo Docker healthcheck) ────────────────────
+# ── Health check / LIVENESS (público — Docker healthcheck + UptimeRobot) ──────
+# Contrato: SEMPRE HTTP 200 enquanto o processo respira (não depende de I/O
+# externo). scripts/post_deploy_check.sh e o monitor externo dependem disso.
+# Dependências (DB, migrations) são checadas em /api/health/ready.
 @app.get("/api/health")
 async def health():
-    db_ok = await check_db()
     return {
-        "status": "ok" if db_ok else "degraded",
-        "version": "3.0.0",
-        "database": db_ok,
+        "status": "ok",
+        "version": app_version(),
+        "uptime_seconds": uptime_seconds(),
+        "environment": settings.APP_ENV,
     }
 
 
@@ -418,8 +433,20 @@ async def health():
 # passava despercebido). Redis/embeddings são informativos (não derrubam o 200).
 @app.get("/api/health/ready")
 async def readiness():
+    import asyncio
+
     settings = get_settings()
-    db_ok = await check_db()
+
+    # DB com timeout curto: nunca prende o monitor; o context manager de
+    # check_db() fecha a conexão mesmo em timeout (não vaza conexão).
+    try:
+        db_ok = await asyncio.wait_for(check_db(), timeout=3.0)
+    except Exception:
+        db_ok = False
+
+    # Migrations: True/False se determinável, None = indeterminado (informativo).
+    from app.core.observability import check_migrations_head
+    migrations_ok = await check_migrations_head()
 
     # Redis só é checado quando alguma feature depende dele; senão, "não usado".
     redis_ok = None
@@ -429,11 +456,13 @@ async def readiness():
 
     from app.services.embedding_service import disponivel as _emb_disponivel
     checks = {
-        "database": db_ok,          # crítico
+        "database": db_ok,          # crítico (bloqueia readiness)
+        "migrations": migrations_ok,  # crítico se determinável (None = ignora)
         "redis": redis_ok,          # informativo (None = não utilizado)
         "embeddings": _emb_disponivel(),  # informativo
     }
-    pronto = db_ok                  # só o DB é bloqueante para "ready"
+    # Bloqueantes: DB e (migrations quando puder ser confirmada como desatualizada).
+    pronto = db_ok and (migrations_ok is not False)
     return JSONResponse(
         status_code=200 if pronto else 503,
         content={"status": "ready" if pronto else "not_ready", "checks": checks},

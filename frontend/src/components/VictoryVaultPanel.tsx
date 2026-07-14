@@ -2,6 +2,7 @@ import React, { useState, useEffect } from "react";
 import { Search } from "lucide-react";
 import api from "../lib/api";
 import { asList } from "../lib/list";
+import { Spinner } from "./UI";
 
 interface TeseVitoriosa {
   id: string;
@@ -130,9 +131,7 @@ export const VictoryVaultPanel: React.FC = () => {
       </form>
 
       {loading ? (
-        <div className="py-10 text-center text-sm text-slate-400">
-          Carregando...
-        </div>
+        <Spinner />
       ) : selectedTab === "teses" ? (
         <div className="space-y-3">
           {teses.length === 0 ? (

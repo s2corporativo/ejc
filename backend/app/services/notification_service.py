@@ -136,8 +136,16 @@ async def enviar_push(db, user_id: str, titulo: str, mensagem: str, link: str = 
         _vapid_pem = settings.VAPID_PRIVATE_KEY
         if _vapid_pem and "BEGIN" not in _vapid_pem:
             import base64 as _b64
-            try: _vapid_pem = _b64.b64decode(_vapid_pem).decode()
-            except Exception: pass
+            try:
+                _vapid_pem = _b64.b64decode(_vapid_pem).decode()
+            except Exception:
+                # Não era base64 — segue com o valor original (fail-soft), mas
+                # registra: chave VAPID malformada faz o push falhar depois.
+                logger.warning(
+                    "Push: VAPID_PRIVATE_KEY sem 'BEGIN' e não decodificável como "
+                    "base64 — usando valor original.",
+                    exc_info=True,
+                )
 
         subs = (await db.execute(
             select(PushSubscription).where(PushSubscription.user_id == user_id)

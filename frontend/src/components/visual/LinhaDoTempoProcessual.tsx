@@ -32,9 +32,9 @@ const CATEGORIAS: Array<{
   {
     key: "movimento",
     label: "Movimentos",
-    chip: "border-sky-200 text-sky-700 hover:bg-sky-50",
-    chipAtivo: "bg-sky-600 border-sky-600 text-white",
-    dot: "border-sky-400 bg-sky-50 text-sky-600",
+    chip: "border-primary-200 text-primary-700 hover:bg-primary-50",
+    chipAtivo: "bg-primary-600 border-primary-600 text-white",
+    dot: "border-primary-400 bg-primary-50 text-primary-600",
     icone: <Gavel className="h-3 w-3" />,
   },
   {
@@ -48,17 +48,17 @@ const CATEGORIAS: Array<{
   {
     key: "documento",
     label: "Documentos",
-    chip: "border-violet-200 text-violet-700 hover:bg-violet-50",
-    chipAtivo: "bg-violet-600 border-violet-600 text-white",
-    dot: "border-violet-400 bg-violet-50 text-violet-600",
+    chip: "border-ai-200 text-ai-700 hover:bg-ai-50",
+    chipAtivo: "bg-ai-600 border-ai-600 text-white",
+    dot: "border-ai-400 bg-ai-50 text-ai-600",
     icone: <FileText className="h-3 w-3" />,
   },
   {
     key: "honorario",
     label: "Honorários",
-    chip: "border-emerald-200 text-emerald-700 hover:bg-emerald-50",
-    chipAtivo: "bg-emerald-600 border-emerald-600 text-white",
-    dot: "border-emerald-400 bg-emerald-50 text-emerald-600",
+    chip: "border-success-200 text-success-700 hover:bg-success-50",
+    chipAtivo: "bg-success-600 border-success-600 text-white",
+    dot: "border-success-400 bg-success-50 text-success-600",
     icone: <Wallet className="h-3 w-3" />,
   },
 ];

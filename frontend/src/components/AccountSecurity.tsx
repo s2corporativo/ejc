@@ -187,7 +187,7 @@ export default function AccountSecurity() {
         title="Autenticação em duas etapas"
         subtitle="Protege o login com um código temporário gerado no aplicativo autenticador."
       >
-        <div className="flex items-start gap-3 rounded-xl border border-slate-200 bg-white p-4">
+        <div className="card flex items-start gap-3 p-4">
           <span
             className={`rounded-xl p-3 ${
               status?.totp_enabled
@@ -234,7 +234,7 @@ export default function AccountSecurity() {
 
         {setup && !status?.totp_enabled && (
           <div className="mt-4 grid gap-5 rounded-xl border border-primary-200 bg-primary-50/40 p-5 md:grid-cols-[220px_1fr]">
-            <div className="rounded-xl border border-slate-200 bg-white p-3">
+            <div className="card p-3">
               {qrUrl ? (
                 <img
                   src={qrUrl}
@@ -261,7 +261,7 @@ export default function AccountSecurity() {
                 <div className="text-sm font-semibold text-slate-800">
                   2. Alternativa manual
                 </div>
-                <div className="mt-2 flex items-center gap-2 rounded-lg border border-slate-200 bg-white px-3 py-2">
+                <div className="card mt-2 flex items-center gap-2 px-3 py-2">
                   <code className="min-w-0 flex-1 break-all text-xs text-slate-700">
                     {setup.secret}
                   </code>
@@ -387,7 +387,7 @@ export default function AccountSecurity() {
           </div>
         </div>
 
-        <div className="divide-y divide-slate-100 overflow-hidden rounded-xl border border-slate-200 bg-white">
+        <div className="card divide-y divide-slate-100 overflow-hidden">
           {sessions.length === 0 ? (
             <div className="p-6 text-center text-sm text-slate-400">
               Nenhuma sessão refresh ativa encontrada.
@@ -435,7 +435,7 @@ export default function AccountSecurity() {
         title="Permissões efetivas"
         subtitle="Derivadas da matriz central do backend; a interface não concede permissões por conta própria."
       >
-        <div className="flex items-center gap-3 rounded-xl border border-slate-200 bg-white p-4">
+        <div className="card flex items-center gap-3 p-4">
           <ShieldCheck className="h-5 w-5 text-primary-600" />
           <div className="min-w-0 flex-1">
             <div className="text-sm font-semibold text-slate-800">

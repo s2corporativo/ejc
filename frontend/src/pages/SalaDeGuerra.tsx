@@ -1,7 +1,7 @@
 import { useEffect, useState } from "react";
 import Markdown from "../components/Markdown";
 import { useParams, useNavigate } from "react-router-dom";
-import { Button } from "../components/UI";
+import { Button, EmptyState, PageHeader, Spinner } from "../components/UI";
 import { toast } from "../components/Toast";
 import {
   AlertTriangle,
@@ -878,6 +878,8 @@ export default function SalaDeGuerra() {
           observacoes: c.observacoes ?? "",
         });
       })
+      // 403/erro (sem acesso ao caso): degrada para o EmptyState, sem crash.
+      .catch(() => setData(null))
       .finally(() => setLoading(false));
   }, [caseId]);
 
@@ -894,18 +896,8 @@ export default function SalaDeGuerra() {
     setData(r.data);
   };
 
-  if (loading)
-    return (
-      <div className="flex items-center justify-center h-64 text-zinc-400 text-sm">
-        Carregando Sala de Guerra…
-      </div>
-    );
-  if (!data)
-    return (
-      <div className="flex items-center justify-center h-64 text-danger-400 text-sm">
-        Caso não encontrado.
-      </div>
-    );
+  if (loading) return <Spinner />;
+  if (!data) return <EmptyState title="Caso não encontrado." />;
 
   const {
     caso,
@@ -925,52 +917,43 @@ export default function SalaDeGuerra() {
   return (
     <div className="max-w-7xl mx-auto px-4 py-6 space-y-6">
       {/* Header */}
-      <div className="flex items-start justify-between gap-4">
-        <div className="flex items-start gap-3">
-          <Button
-            type="button"
-            variant="ghost"
-            size="icon"
-            className="mt-1 h-auto w-auto p-1.5 text-zinc-400"
-            aria-label="Voltar"
-            onClick={() => navigate(-1)}
-            icon={<ArrowLeft className="w-4 h-4" />}
+      <div className="flex items-start gap-3">
+        <Button
+          type="button"
+          variant="ghost"
+          size="icon"
+          className="mt-1 h-auto w-auto p-1.5 text-zinc-400"
+          aria-label="Voltar"
+          onClick={() => navigate(-1)}
+          icon={<ArrowLeft className="w-4 h-4" />}
+        />
+        <div className="flex-1 min-w-0">
+          <PageHeader
+            eyebrow={`Sala de Guerra · ${caso.numero_interno}`}
+            title={caso.titulo}
+            subtitle={`${
+              caso.parte_contraria ? `vs. ${caso.parte_contraria} · ` : ""
+            }${caso.tribunal ?? caso.comarca ?? ""}`}
+            actions={
+              <>
+                {caso.prioridade && (
+                  <span
+                    className={`text-xs px-2 py-0.5 rounded-full font-medium ${PRIORIDADE_COLOR[caso.prioridade] ?? "bg-zinc-100 text-zinc-500"}`}
+                  >
+                    {caso.prioridade.toUpperCase()}
+                  </span>
+                )}
+                {risco.nivel && (
+                  <span
+                    className={`text-sm font-medium ${RISCO_COLOR[risco.nivel] ?? "text-zinc-500"}`}
+                  >
+                    Risco {risco.nivel}{" "}
+                    {risco.indice !== null ? `(${risco.indice})` : ""}
+                  </span>
+                )}
+              </>
+            }
           />
-          <div>
-            <div className="flex items-center gap-2 flex-wrap">
-              <span className="text-xs text-zinc-400 font-medium uppercase tracking-wider">
-                Sala de Guerra
-              </span>
-              <span className="text-zinc-300">·</span>
-              <span className="text-xs text-zinc-400">
-                {caso.numero_interno}
-              </span>
-              {caso.prioridade && (
-                <span
-                  className={`text-xs px-2 py-0.5 rounded-full font-medium ${PRIORIDADE_COLOR[caso.prioridade] ?? "bg-zinc-100 text-zinc-500"}`}
-                >
-                  {caso.prioridade.toUpperCase()}
-                </span>
-              )}
-            </div>
-            <h1 className="text-2xl font-light text-zinc-800 mt-0.5">
-              {caso.titulo}
-            </h1>
-            <p className="text-sm text-zinc-400 mt-0.5">
-              {caso.parte_contraria && `vs. ${caso.parte_contraria} · `}
-              {caso.tribunal ?? caso.comarca ?? ""}
-            </p>
-          </div>
-        </div>
-        <div className="flex items-center gap-2">
-          {risco.nivel && (
-            <span
-              className={`text-sm font-medium ${RISCO_COLOR[risco.nivel] ?? "text-zinc-500"}`}
-            >
-              Risco {risco.nivel}{" "}
-              {risco.indice !== null ? `(${risco.indice})` : ""}
-            </span>
-          )}
         </div>
       </div>
 

@@ -48,4 +48,11 @@ echo "[entrypoint] Semeando usuário admin (idempotente)..."
 python seeds/seed_all.py
 
 echo "[entrypoint] Iniciando uvicorn..."
+# ATENÇÃO (item 11 — auditoria pré-produção): NÃO adicionar --workers N sem
+# antes migrar TODOS os contadores de segurança para armazenamento compartilhado:
+#   • anti-brute-force do login (services/security_service.py: dict em memória)
+#   • slowapi @limiter.limit (core/rate_limit.py: storage em memória)
+# Ambos são POR PROCESSO: com N workers, o atacante ganha N× o limite (cada
+# worker conta suas próprias falhas). RATE_LIMIT_REDIS_ENABLED cobre apenas a
+# dependency consumir()/rate_limit() — não cobre os dois itens acima.
 exec uvicorn app.main:app --host 0.0.0.0 --port 8000 --proxy-headers

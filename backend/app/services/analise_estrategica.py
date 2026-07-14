@@ -5,7 +5,6 @@ Atua como advogado sênior com 20 anos de experiência.
 import json
 import logging
 import re
-from typing import Optional
 
 from app.services.system_prompts.base import RESTRICOES
 

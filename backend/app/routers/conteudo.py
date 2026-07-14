@@ -5,7 +5,7 @@ Para portal do cliente / equipe. IA via ai_gateway (Groq). FAQ é ancorado no RA
 Saída é rascunho — revisão humana antes de publicar.
 """
 from __future__ import annotations
-from fastapi import APIRouter, Depends, Query
+from fastapi import APIRouter, Depends
 from pydantic import BaseModel, Field
 from sqlalchemy.ext.asyncio import AsyncSession
 

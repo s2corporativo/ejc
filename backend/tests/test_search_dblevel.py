@@ -117,9 +117,18 @@ async def _buscar(db, cu, q: str, tipo: str, limit: int = 6) -> dict:
 
 @pytest.fixture(autouse=True)
 async def _dispose_engine_apos_teste():
-    """Evita 'Event loop is closed' entre testes async (loop por função)."""
-    yield
+    """Isola o engine async do loop-por-função do pytest-asyncio.
+
+    Descarta ANTES e DEPOIS: o pool asyncpg do engine global se prende ao
+    primeiro loop que o usa; se um teste de OUTRO arquivo rodar antes e deixar
+    o pool preso a um loop já fechado, o PRIMEIRO teste deste arquivo herdaria
+    o pool contaminado e falharia com 'got Future attached to a different loop'
+    (flaky, dependente de ordem — visto no CI). Descartar antes força um pool
+    novo, ligado ao loop deste teste.
+    """
     from app.core.database import engine
+    await engine.dispose()
+    yield
     await engine.dispose()
 
 

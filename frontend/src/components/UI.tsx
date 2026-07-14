@@ -31,18 +31,20 @@ const toneClasses: Record<Tone, string> = {
   ouro: "bg-ouro-palha text-ouro-profundo ring-ouro-claro/60",
 };
 
+// Botões SEM BORDA (regra global do DS "De Paula Teixeira"): primary em
+// gradiente ouro #8F7117 → ouro profundo #6F5711 (texto branco 4,6:1+ AA),
+// secundário TONAL (fundo levíssimo, sem outline), ghost terciário.
+// Profundidade só por sombra suave; foco com ring dourado acessível.
 const buttonClasses: Record<ButtonVariant, string> = {
-  // Ouro institucional De Paula Teixeira (visual_law_theme): ação primária.
-  // #8F7117 + texto branco = 4,6:1 (AA); hover/active escurecem p/ profundo.
   primary:
-    "bg-ouro text-white shadow-sm hover:bg-ouro-profundo active:bg-ouro-profundo focus:ring-ouro/40",
+    "bg-gradient-to-b from-ouro to-ouro-profundo text-white shadow-gold hover:from-ouro-profundo hover:to-ouro-profundo hover:shadow-gold-hover focus:ring-ouro/40",
   secondary:
-    "bg-white text-slate-700 border border-slate-200 hover:bg-slate-50 hover:border-slate-300 focus:ring-primary-500/40",
+    "bg-slate-900/[0.05] text-slate-700 hover:bg-slate-900/[0.09] active:bg-slate-900/[0.12] focus:ring-ouro/30 dark:bg-white/[0.07] dark:text-slate-200 dark:hover:bg-white/[0.12]",
   ghost:
-    "bg-transparent text-slate-600 hover:bg-slate-100 focus:ring-slate-400/40",
+    "bg-transparent text-slate-600 hover:bg-slate-900/[0.05] focus:ring-ouro/30 dark:text-slate-300 dark:hover:bg-white/[0.06]",
   danger:
-    "bg-danger-600 text-white hover:bg-danger-700 focus:ring-danger-500/40",
-  ai: "bg-ai-600 text-white shadow-sm hover:bg-ai-500 active:bg-ai-700 focus:ring-ai-500/40",
+    "bg-danger-600 text-white hover:bg-danger-700 hover:shadow-md focus:ring-danger-500/40",
+  ai: "bg-ai-600 text-white shadow-sm hover:bg-ai-500 active:bg-ai-700 hover:shadow-md focus:ring-ai-500/40",
 };
 
 export function cn(...classes: Array<string | false | null | undefined>) {
@@ -257,7 +259,7 @@ export function FilterBar({
   onClear?: () => void;
 }) {
   return (
-    <div className="flex flex-wrap items-center gap-2 rounded-xl border border-slate-200 bg-white p-3">
+    <div className="flex flex-wrap items-center gap-2 rounded-xl border border-black/[0.05] bg-white p-3 shadow-sm">
       <div className="flex items-center gap-2 text-xs font-medium text-slate-500">
         <SlidersHorizontal className="h-4 w-4" />
         Filtros
@@ -404,7 +406,7 @@ export function Table({
   return (
     <div
       className={cn(
-        "overflow-hidden rounded-xl border border-slate-200 bg-white",
+        "overflow-hidden rounded-xl border border-black/[0.05] bg-white shadow-sm",
         className,
       )}
     >
@@ -485,18 +487,20 @@ export function Tabs({
   value: string;
   onChange: (value: string) => void;
 }) {
+  // Segmentado tonal SEM borda; aba ativa em branco elevado com
+  // indicador dourado FINO (filete 2px) — dourado como acento cirúrgico.
   return (
-    <div className="flex gap-1 overflow-x-auto rounded-xl border border-slate-200 bg-white p-1">
+    <div className="flex gap-1 overflow-x-auto rounded-xl bg-slate-900/[0.04] p-1 dark:bg-white/[0.06]">
       {items.map((item) => (
         <button
           key={item.value}
           type="button"
           onClick={() => onChange(item.value)}
           className={cn(
-            "flex h-9 shrink-0 items-center gap-2 rounded-lg px-3 text-sm font-medium transition-all",
+            "relative flex h-9 shrink-0 items-center gap-2 rounded-lg px-3 text-sm font-medium transition-all",
             value === item.value
-              ? "bg-ouro text-white shadow-sm"
-              : "text-slate-600 hover:bg-slate-100",
+              ? "bg-white text-ouro-profundo shadow-sm after:absolute after:inset-x-3 after:bottom-1 after:h-0.5 after:rounded-full after:bg-ouro-claro dark:bg-white/[0.1] dark:text-[#E5CE7F]"
+              : "text-slate-600 hover:bg-slate-900/[0.04] dark:text-slate-300 dark:hover:bg-white/[0.05]",
           )}
         >
           {item.icon}
@@ -516,7 +520,7 @@ export function Dropdown({
 }) {
   return (
     <details className="relative">
-      <summary className="flex h-10 cursor-pointer list-none items-center gap-2 rounded-lg border border-slate-200 bg-white px-3 text-sm font-medium text-slate-700 hover:bg-slate-50">
+      <summary className="flex h-10 cursor-pointer list-none items-center gap-2 rounded-lg bg-slate-900/[0.05] px-3 text-sm font-medium text-slate-700 hover:bg-slate-900/[0.09] dark:bg-white/[0.07] dark:text-slate-200 dark:hover:bg-white/[0.12]">
         {label}
         <ChevronDown className="h-4 w-4 text-slate-400" />
       </summary>

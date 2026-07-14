@@ -30,6 +30,18 @@ class CriarSolicitacaoReq(BaseModel):
     client_id: str
 
 
+def _signatario(u: User, sr: SignatureRequest) -> dict:
+    """Shape de um signatário (usuário do portal do cliente) esperado pelo
+    frontend (Assinaturas.tsx): nome/email/papel + estado da assinatura."""
+    return {
+        "nome": u.full_name,
+        "email": u.email,
+        "papel": "cliente",
+        "assinado": (sr.status == SignatureStatus.assinado
+                     and sr.assinado_por_user == u.id),
+    }
+
+
 @router.post("/", status_code=201)
 async def criar_solicitacao(
     payload: CriarSolicitacaoReq,
@@ -87,7 +99,8 @@ async def criar_solicitacao(
                           "signature_requests", sr.id,
                           detalhes=f"Doc: {doc.titulo}")
     await db.commit()
-    return {"id": sr.id, "hash": h, "detail": "Solicitação criada"}
+    return {"id": sr.id, "hash": h, "detail": "Solicitação criada",
+            "signatarios": [_signatario(p, sr) for p in portais]}
 
 
 @router.get("/")
@@ -111,11 +124,30 @@ async def listar(
             select(Document.id, Document.titulo).where(Document.id.in_(doc_ids))
         )).all()
         titulos = {did: titulo for did, titulo in docs}
+
+    # Signatários (logins do portal de cada cliente) em UMA query — o frontend
+    # (Assinaturas.tsx: isSignatario) exige `signatarios` em CADA item; sem o
+    # campo a página quebrava com TypeError quando existia registro.
+    client_ids = {s.client_id for s in rows if s.client_id}
+    por_cliente: dict[str, list[User]] = {}
+    if client_ids:
+        portais = (await db.execute(select(User).where(
+            User.client_id.in_(client_ids),
+            User.role == UserRole.cliente_externo,
+            User.is_active.is_(True),
+            User.deleted_at.is_(None),
+        ))).scalars().all()
+        for u in portais:
+            por_cliente.setdefault(u.client_id, []).append(u)
+
     out = []
     for s in rows:
         out.append({
             "id": s.id, "document_id": s.document_id,
             "documento": titulos.get(s.document_id, "—"),
+            "client_id": s.client_id,
+            "signatarios": [_signatario(u, s)
+                            for u in por_cliente.get(s.client_id, [])],
             "status": s.status.value, "hash": s.hash_sha256[:16] + "…",
             "assinado_em": s.assinado_em, "created_at": s.created_at,
         })

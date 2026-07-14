@@ -58,7 +58,7 @@ export default function FinanceiroWorkspace() {
         subtitle="Receitas, despesas, honorários, contratos e distribuição societária em uma visão operacional única."
       />
       <div className="overflow-x-auto">
-        <div className="flex w-fit gap-1 rounded-xl border border-slate-200 bg-white/80 p-1 shadow-sm">
+        <div className="flex w-fit gap-1 rounded-xl bg-slate-900/[0.05] p-1 dark:bg-white/[0.07]">
           {TABS.map(({ k, label, icon: Icon }) => (
             <button
               key={k}
