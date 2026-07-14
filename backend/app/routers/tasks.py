@@ -19,6 +19,7 @@ from app.models.case import Case
 from app.models.notification import Notification
 from app.schemas.common import MsgResponse
 from app.core.ownership import verificar_acesso_caso, is_gestao
+from app.modules.auditoria.middleware import registrar_acao
 
 router = APIRouter(prefix="/tasks", tags=["Tarefas"])
 
@@ -144,6 +145,22 @@ async def atualizar(
         atendimento.updated_at = datetime.now(timezone.utc)
 
     await db.commit()
+
+    if atendimento is not None and novo_status is not None:
+        role = cu.role.value if hasattr(cu.role, "value") else str(cu.role)
+        await registrar_acao(
+            db,
+            cu.id,
+            "atualizar",
+            "atendimentos",
+            atendimento.id,
+            (
+                "Solicitação sincronizada pela tarefa vinculada: "
+                f"status {novo_status.value}"
+            ),
+            user_role=role,
+            dados_depois={"solicitacao_atendida": atendimento.solicitacao_atendida},
+        )
     return {"detail": "Tarefa atualizada"}
 
 
@@ -173,4 +190,17 @@ async def remover(
         atendimento.updated_at = datetime.now(timezone.utc)
 
     await db.commit()
+
+    if atendimento is not None:
+        role = cu.role.value if hasattr(cu.role, "value") else str(cu.role)
+        await registrar_acao(
+            db,
+            cu.id,
+            "atualizar",
+            "atendimentos",
+            atendimento.id,
+            "Tarefa vinculada removida; solicitação mantida na linha do tempo",
+            user_role=role,
+            dados_depois={"tarefa_vinculada": False},
+        )
     return MsgResponse(detail="Tarefa removida")
