@@ -114,8 +114,6 @@ describe("ClientServiceTimeline", () => {
       });
     });
   });
-});
-
 
   it("cria tarefa com prioridade e responsável a partir da solicitação", async () => {
     renderTimeline();
@@ -191,3 +189,4 @@ describe("ClientServiceTimeline", () => {
       });
     });
   });
+});
