@@ -16,6 +16,7 @@ import {
   Gavel,
   GitBranch,
   ListChecks,
+  MessageSquare,
   Newspaper,
   Plus,
   Scale,
@@ -46,6 +47,13 @@ import {
 
 const FINANCE_ROLES = new Set(["superadmin", "admin", "socio", "financeiro"]);
 const MANAGER_ROLES = new Set(["superadmin", "admin", "socio"]);
+const CRM_ROLES = new Set([
+  "superadmin",
+  "admin",
+  "socio",
+  "advogado",
+  "secretaria",
+]);
 
 // Fases encerradas não contam como carteira ativa.
 const INACTIVE_CASE_STATUSES = new Set([
@@ -122,12 +130,14 @@ export default function DashboardModern() {
   // Blocos incorporados dos antigos DashboardIA e FinanceiroDashboard.
   const [iaSaude, setIaSaude] = useState<any>(null);
   const [consolidado, setConsolidado] = useState<any>(null);
+  const [solicitacoes, setSolicitacoes] = useState<any>(null);
   const [loading, setLoading] = useState(true);
 
   const currentUser = user as any;
   const firstName = currentUser?.full_name?.split(" ")[0] || "Dr.";
   const canSeeFinance = FINANCE_ROLES.has(currentUser?.role || "");
   const isManager = MANAGER_ROLES.has(currentUser?.role || "");
+  const canSeeCRM = CRM_ROLES.has(currentUser?.role || "");
 
   useEffect(() => {
     setLoading(true);
@@ -151,8 +161,21 @@ export default function DashboardModern() {
       canSeeFinance
         ? api.get(`/financeiro/consolidado?competencia=${competencia}`)
         : Promise.reject(new Error("sem permissão financeira")),
+      canSeeCRM
+        ? api.get("/atendimentos/solicitacoes-resumo")
+        : Promise.reject(new Error("sem permissão de CRM")),
     ])
-      .then(([dash, juri, deadlines, movements, cases, ia, fin]) => {
+      .then(
+        ([
+          dash,
+          juri,
+          deadlines,
+          movements,
+          cases,
+          ia,
+          fin,
+          solicitacoesReq,
+        ]) => {
         if (dash.status === "fulfilled") setDashboard(dash.value.data);
         if (juri.status === "fulfilled") setJurimetria(juri.value.data);
         if (deadlines.status === "fulfilled") setPrazos(asList(deadlines.value.data));
@@ -160,9 +183,12 @@ export default function DashboardModern() {
         if (cases.status === "fulfilled") setCasos(asList(cases.value.data));
         if (ia.status === "fulfilled") setIaSaude(ia.value.data);
         if (fin.status === "fulfilled") setConsolidado(fin.value.data);
-      })
+        if (solicitacoesReq.status === "fulfilled")
+          setSolicitacoes(solicitacoesReq.value.data);
+        },
+      )
       .finally(() => setLoading(false));
-  }, [canSeeFinance, isManager]);
+  }, [canSeeCRM, canSeeFinance, isManager]);
 
   const criticalDeadlines = prazos.filter(
     (deadline) => (deadline.dias_restantes ?? 99) <= 3,
@@ -303,7 +329,12 @@ export default function DashboardModern() {
         </div>
       </section>
 
-      <div className="grid gap-5 sm:grid-cols-2 xl:grid-cols-4">
+      <div
+        className={cn(
+          "grid gap-5 sm:grid-cols-2",
+          canSeeCRM ? "xl:grid-cols-5" : "xl:grid-cols-4",
+        )}
+      >
         <StatCard
           label="Casos ativos"
           value={dashboard?.casos?.ativos ?? "—"}
@@ -355,6 +386,19 @@ export default function DashboardModern() {
           icon={canSeeFinance ? <Wallet className="h-5 w-5" /> : <BarChart3 className="h-5 w-5" />}
           tone="amber"
         />
+        {canSeeCRM && (
+          <StatCard
+            label="Solicitações de clientes"
+            value={solicitacoes?.pendentes ?? "—"}
+            subtitle={
+              solicitacoes
+                ? `${solicitacoes.atrasadas} atrasada(s) · ${solicitacoes.proximas_24h} em 24h`
+                : "Linha do tempo de atendimento"
+            }
+            icon={<MessageSquare className="h-5 w-5" />}
+            tone={solicitacoes?.atrasadas ? "red" : "blue"}
+          />
+        )}
       </div>
 
       <div className="grid gap-5 xl:grid-cols-[1.35fr_0.65fr]">
@@ -619,6 +663,57 @@ export default function DashboardModern() {
           actions={<Sparkles className="h-4 w-4 text-ai-600 dark:text-ai-300" />}
         >
           <div className="space-y-3">
+            {canSeeCRM && (
+              <Link
+                to={
+                  solicitacoes?.destaque?.client_id
+                    ? `/clientes/${solicitacoes.destaque.client_id}?tab=atendimentos`
+                    : "/clientes"
+                }
+                className={cn(
+                  "block rounded-xl border p-4",
+                  solicitacoes?.atrasadas
+                    ? "border-danger-100 bg-danger-50 dark:border-danger-500/20 dark:bg-danger-500/10"
+                    : "border-primary-100 bg-primary-50 dark:border-primary-500/20 dark:bg-primary-500/10",
+                )}
+              >
+                <div className="flex items-start gap-3">
+                  <MessageSquare
+                    className={cn(
+                      "mt-0.5 h-4 w-4",
+                      solicitacoes?.atrasadas
+                        ? "text-danger-600 dark:text-danger-300"
+                        : "text-primary-700 dark:text-primary-300",
+                    )}
+                  />
+                  <div>
+                    <div
+                      className={cn(
+                        "text-sm font-semibold",
+                        solicitacoes?.atrasadas
+                          ? "text-danger-800 dark:text-danger-200"
+                          : "text-primary-900 dark:text-primary-200",
+                      )}
+                    >
+                      {solicitacoes?.pendentes ?? 0} solicitação(ões) de cliente
+                      pendente(s)
+                    </div>
+                    <p
+                      className={cn(
+                        "mt-1 text-xs",
+                        solicitacoes?.atrasadas
+                          ? "text-danger-700 dark:text-danger-300/80"
+                          : "text-primary-700 dark:text-primary-300/80",
+                      )}
+                    >
+                      {solicitacoes?.atrasadas
+                        ? `${solicitacoes.atrasadas} atrasada(s); abra a linha do tempo prioritária.`
+                        : "Acompanhe prazo, responsável e confirmação de atendimento."}
+                    </p>
+                  </div>
+                </div>
+              </Link>
+            )}
             <Link to="/prazos" className="block rounded-xl border border-danger-100 bg-danger-50 p-4 dark:border-danger-500/20 dark:bg-danger-500/10">
               <div className="flex items-start gap-3">
                 <AlertTriangle className="mt-0.5 h-4 w-4 text-danger-600 dark:text-danger-300" />
