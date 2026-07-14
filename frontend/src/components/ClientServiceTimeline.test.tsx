@@ -33,6 +33,12 @@ const response = {
         resumo: "Cliente pediu retorno sobre a movimentação processual.",
         solicitacao: "Enviar a cópia da última decisão.",
         solicitacao_atendida: false,
+        solicitacao_atrasada: false,
+        solicitacao_prazo: "2026-07-15T18:00:00Z",
+        solicitacao_prioridade: "alta",
+        solicitacao_responsavel_id: "user-1",
+        task_id: "task-1",
+        contato_status: "confirmado",
         atendida_em: null,
         proximo_passo: null,
         pode_editar: true,
@@ -63,7 +69,18 @@ describe("ClientServiceTimeline", () => {
     get.mockReset();
     post.mockReset();
     patch.mockReset();
-    get.mockResolvedValue(response);
+    get.mockImplementation((url: string) => {
+      if (url === "/atendimentos/responsaveis") {
+        return Promise.resolve({
+          data: [{ id: "user-1", nome: "Dra. Responsável", role: "advogado" }],
+        });
+      }
+      if (url.endsWith("/historico")) {
+        return Promise.resolve({ data: [] });
+      }
+      return Promise.resolve(response);
+    });
+    post.mockResolvedValue({ data: { id: "novo-atendimento" } });
     patch.mockResolvedValue({ data: { ok: true } });
   });
 
@@ -98,3 +115,79 @@ describe("ClientServiceTimeline", () => {
     });
   });
 });
+
+
+  it("cria tarefa com prioridade e responsável a partir da solicitação", async () => {
+    renderTimeline();
+
+    fireEvent.click(
+      await screen.findByRole("button", { name: "Novo atendimento" }),
+    );
+    fireEvent.change(
+      screen.getByLabelText("Recado / registro do atendimento"),
+      {
+        target: {
+          value: "Cliente solicitou análise e retorno sobre o documento.",
+        },
+      },
+    );
+    fireEvent.change(screen.getByLabelText("O que foi solicitado"), {
+      target: { value: "Revisar o documento enviado pelo cliente." },
+    });
+    fireEvent.change(screen.getByLabelText("Prioridade"), {
+      target: { value: "urgente" },
+    });
+    fireEvent.change(screen.getByLabelText("Responsável pela solicitação"), {
+      target: { value: "user-1" },
+    });
+
+    fireEvent.click(
+      screen.getByRole("button", { name: "Registrar atendimento" }),
+    );
+
+    await waitFor(() => {
+      expect(post).toHaveBeenCalledWith(
+        "/atendimentos",
+        expect.objectContaining({
+          solicitacao: "Revisar o documento enviado pelo cliente.",
+          solicitacao_prioridade: "urgente",
+          solicitacao_responsavel_id: "user-1",
+          criar_tarefa: true,
+          contato_status: "confirmado",
+        }),
+      );
+    });
+  });
+
+  it("exige confirmação humana após uma ação de contato rápido", async () => {
+    const initiatedResponse = {
+      ...response,
+      data: {
+        ...response.data,
+        items: [
+          {
+            ...response.data.items[0],
+            contato_status: "iniciado",
+          },
+        ],
+      },
+    };
+    get.mockImplementation((url: string) => {
+      if (url === "/atendimentos/responsaveis") {
+        return Promise.resolve({ data: [] });
+      }
+      return Promise.resolve(initiatedResponse);
+    });
+
+    renderTimeline();
+
+    fireEvent.click(
+      await screen.findByRole("button", { name: "Confirmar contato" }),
+    );
+
+    await waitFor(() => {
+      expect(patch).toHaveBeenCalledWith("/atendimentos/atendimento-1", {
+        contato_status: "confirmado",
+      });
+    });
+  });
