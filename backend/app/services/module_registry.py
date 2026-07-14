@@ -136,7 +136,7 @@ MODULE_REGISTRY: list[dict[str, Any]] = [
     ),
     _mod(
         "ramos",
-        "Ramos do Direito",
+        "Áreas de Atuação",
         "Jurídico",
         "/ramos",
         ["/api/ramos", "/api/areas", "/api/ambiental-estrategia", "/api/trabalhista-liquidacao", "/api/tributario-fiscal"],
