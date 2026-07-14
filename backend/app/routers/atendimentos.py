@@ -387,7 +387,7 @@ async def listar_atendimentos(
                     func.length(func.trim(resumo_base.c.solicitacao)) > 0,
                     resumo_base.c.solicitacao_atendida.is_(True),
                 ).label("atendidas"),
-            )
+            ).select_from(resumo_base)
         )
     ).one()
 
