@@ -267,12 +267,9 @@ export default function ClientServiceTimeline({ clientId, cases = [] }: Props) {
     [items],
   );
 
-  const pendentes =
-    resumoSolicitacoes?.pendentes ?? pendentesCarregadas;
-  const atrasados =
-    resumoSolicitacoes?.atrasadas ?? atrasadasCarregadas;
-  const atendidos =
-    resumoSolicitacoes?.atendidas ?? atendidasCarregadas;
+  const pendentes = resumoSolicitacoes?.pendentes ?? pendentesCarregadas;
+  const atrasados = resumoSolicitacoes?.atrasadas ?? atrasadasCarregadas;
+  const atendidos = resumoSolicitacoes?.atendidas ?? atendidasCarregadas;
 
   const filteredItems = useMemo(() => {
     if (filter === "pendentes") {
