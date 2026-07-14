@@ -171,6 +171,14 @@ export default function ClientServiceTimeline({
       toast.error("O recado deve ter pelo menos 10 caracteres.");
       return;
     }
+    const dataAtendimento = new Date(form.data_atendimento);
+    if (
+      !form.data_atendimento ||
+      Number.isNaN(dataAtendimento.getTime())
+    ) {
+      toast.error("Informe uma data e hora válidas.");
+      return;
+    }
 
     setSaving(true);
     try {
@@ -178,7 +186,7 @@ export default function ClientServiceTimeline({
         client_id: String(clientId),
         case_id: form.case_id || undefined,
         tipo: form.tipo,
-        data_atendimento: new Date(form.data_atendimento).toISOString(),
+        data_atendimento: dataAtendimento.toISOString(),
         resumo,
         solicitacao: solicitacao || undefined,
         solicitacao_atendida:
