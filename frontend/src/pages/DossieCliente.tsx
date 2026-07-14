@@ -1,5 +1,10 @@
 import { useEffect, useState, useCallback } from "react";
-import { useParams, useNavigate, Link } from "react-router-dom";
+import {
+  useParams,
+  useNavigate,
+  useSearchParams,
+  Link,
+} from "react-router-dom";
 import {
   User,
   Briefcase,
@@ -436,7 +441,8 @@ function ComunicacaoRapida({
         client_id: String(cliente.id),
         tipo,
         data_atendimento: new Date().toISOString(),
-        resumo: resumo.length >= 10 ? resumo : resumo + " — contato registrado",
+        resumo: resumo.length >= 10 ? resumo : resumo + " — contato iniciado",
+        contato_status: "iniciado",
       })
       .catch(() => {});
   };
@@ -458,7 +464,7 @@ function ComunicacaoRapida({
             onClick={() =>
               registrarAtendimento(
                 "whatsapp",
-                "Contato via WhatsApp com " + cliente.nome,
+                "Contato iniciado via WhatsApp com " + cliente.nome,
               )
             }
             className="flex items-center gap-1 px-2.5 py-1.5 bg-green-500 text-white rounded-lg hover:bg-green-600 transition-colors text-xs font-medium"
@@ -470,7 +476,10 @@ function ComunicacaoRapida({
           <a
             href={`tel:${phone}`}
             onClick={() =>
-              registrarAtendimento("ligacao", "Ligação para " + cliente.nome)
+              registrarAtendimento(
+                "ligacao",
+                "Tentativa de ligação iniciada para " + cliente.nome,
+              )
             }
             className="flex items-center gap-1 px-2.5 py-1.5 bg-primary-500 text-white rounded-lg hover:bg-primary-600 transition-colors text-xs font-medium"
           >
@@ -483,7 +492,7 @@ function ComunicacaoRapida({
             onClick={() =>
               registrarAtendimento(
                 "email",
-                "E-mail enviado para " + cliente.nome,
+                "Contato por e-mail iniciado para " + cliente.nome,
               )
             }
             className="flex items-center gap-1 px-2.5 py-1.5 bg-slate-600 text-white rounded-lg hover:bg-slate-700 transition-colors text-xs font-medium"
@@ -498,7 +507,7 @@ function ComunicacaoRapida({
           onClick={() =>
             registrarAtendimento(
               "reuniao_virtual",
-              "Reunião agendada com " + cliente.nome,
+              "Agendamento de reunião iniciado com " + cliente.nome,
             )
           }
           className="flex items-center gap-1 px-2.5 py-1.5 bg-ai-600 text-white rounded-lg hover:bg-ai-700 transition-colors text-xs font-medium"
@@ -690,10 +699,28 @@ function RelatorioFinanceiro({
 export default function DossieCliente() {
   const { clientId } = useParams<{ clientId: string }>();
   const navigate = useNavigate();
+  const [searchParams, setSearchParams] = useSearchParams();
+  const requestedTab = searchParams.get("tab");
+  const validTabs = [
+    "resumo",
+    "atendimentos",
+    "casos",
+    "prazos",
+    "financeiro",
+    "documentos",
+    "ia_cliente",
+  ];
   const [data, setData] = useState<DossieData | null>(null);
   const [loading, setLoading] = useState(true);
   const [erro, setErro] = useState("");
-  const [abaAtiva, setAbaAtiva] = useState("resumo");
+  const [abaAtiva, setAbaAtiva] = useState(
+    requestedTab && validTabs.includes(requestedTab) ? requestedTab : "resumo",
+  );
+
+  useEffect(() => {
+    const tab = searchParams.get("tab");
+    if (tab && validTabs.includes(tab)) setAbaAtiva(tab);
+  }, [searchParams]);
 
   useEffect(() => {
     if (!clientId) return;
@@ -776,7 +803,10 @@ export default function DossieCliente() {
         {abas.map((aba) => (
           <button
             key={aba.id}
-            onClick={() => setAbaAtiva(aba.id)}
+            onClick={() => {
+              setAbaAtiva(aba.id);
+              setSearchParams({ tab: aba.id }, { replace: true });
+            }}
             className={`flex items-center gap-2 px-6 py-3 text-sm font-medium transition-all border-b-2 whitespace-nowrap ${
               abaAtiva === aba.id
                 ? "border-bronze text-bronze"
