@@ -247,6 +247,7 @@ export default function DashboardModern() {
     { to: "/clientes", label: "Novo cliente", icon: Users },
     { to: "/pecas", label: "Gerar peça", icon: FileText },
     { to: "/inteligencia", label: "Analisar com IA", icon: Sparkles },
+    { to: "/ramos", label: "Áreas de Atuação", icon: Scale },
   ];
 
   return (
