@@ -1,16 +1,12 @@
-"""091 — Linha do tempo de atendimentos do cliente
+"""091 — Linha do tempo e SLA de atendimentos do cliente
 
-Amplia a tabela existente `atendimentos` sem criar um histórico paralelo:
-  - solicitacao            — o que o cliente solicitou;
-  - solicitacao_atendida   — estado objetivo de atendimento;
-  - atendida_em            — quando a solicitação foi concluída;
-  - atendida_por_id        — responsável pela conclusão.
+Amplia a tabela existente `atendimentos` sem criar históricos paralelos:
+  - registra solicitação, conclusão, prazo, prioridade e responsável;
+  - vincula opcionalmente uma tarefa operacional;
+  - distingue contato iniciado, confirmado ou não concluído;
+  - guarda apenas o nível do último alerta para evitar notificações duplicadas.
 
-O campo `resumo` permanece como recado/registro do atendimento. O índice
-composto acelera a linha do tempo por cliente em ordem cronológica.
-
-Alteração aditiva: registros antigos passam a pendentes apenas no sentido
-técnico (`solicitacao_atendida = false`), sem fabricar uma solicitação.
+O GED existente continua responsável pelos anexos sensíveis.
 
 Revision ID: 091_atendimento_timeline
 Revises: 090_peca_versionamento
@@ -27,10 +23,7 @@ depends_on = None
 
 
 def upgrade() -> None:
-    op.add_column(
-        "atendimentos",
-        sa.Column("solicitacao", sa.Text(), nullable=True),
-    )
+    op.add_column("atendimentos", sa.Column("solicitacao", sa.Text(), nullable=True))
     op.add_column(
         "atendimentos",
         sa.Column(
@@ -48,11 +41,62 @@ def upgrade() -> None:
         "atendimentos",
         sa.Column("atendida_por_id", sa.String(length=36), nullable=True),
     )
+    op.add_column(
+        "atendimentos",
+        sa.Column("solicitacao_prazo", sa.DateTime(timezone=True), nullable=True),
+    )
+    op.add_column(
+        "atendimentos",
+        sa.Column(
+            "solicitacao_prioridade",
+            sa.String(length=10),
+            nullable=False,
+            server_default="normal",
+        ),
+    )
+    op.add_column(
+        "atendimentos",
+        sa.Column("solicitacao_responsavel_id", sa.String(length=36), nullable=True),
+    )
+    op.add_column(
+        "atendimentos",
+        sa.Column("solicitacao_alerta_nivel", sa.String(length=20), nullable=True),
+    )
+    op.add_column(
+        "atendimentos",
+        sa.Column("task_id", sa.String(length=36), nullable=True),
+    )
+    op.add_column(
+        "atendimentos",
+        sa.Column(
+            "contato_status",
+            sa.String(length=20),
+            nullable=False,
+            server_default="confirmado",
+        ),
+    )
+
     op.create_foreign_key(
         "fk_atendimentos_atendida_por_id_users",
         "atendimentos",
         "users",
         ["atendida_por_id"],
+        ["id"],
+        ondelete="SET NULL",
+    )
+    op.create_foreign_key(
+        "fk_atendimentos_solicitacao_responsavel_id_users",
+        "atendimentos",
+        "users",
+        ["solicitacao_responsavel_id"],
+        ["id"],
+        ondelete="SET NULL",
+    )
+    op.create_foreign_key(
+        "fk_atendimentos_task_id_tasks",
+        "atendimentos",
+        "tasks",
+        ["task_id"],
         ["id"],
         ondelete="SET NULL",
     )
@@ -62,15 +106,55 @@ def upgrade() -> None:
         ["client_id", "data_atendimento"],
         unique=False,
     )
+    op.create_index(
+        "ix_atendimentos_solicitacao_sla",
+        "atendimentos",
+        ["solicitacao_atendida", "solicitacao_prazo"],
+        unique=False,
+    )
+    op.create_index(
+        "ix_atendimentos_solicitacao_responsavel_id",
+        "atendimentos",
+        ["solicitacao_responsavel_id"],
+        unique=False,
+    )
+    op.create_index(
+        "ix_atendimentos_task_id",
+        "atendimentos",
+        ["task_id"],
+        unique=True,
+    )
 
 
 def downgrade() -> None:
+    op.drop_index("ix_atendimentos_task_id", table_name="atendimentos")
+    op.drop_index(
+        "ix_atendimentos_solicitacao_responsavel_id",
+        table_name="atendimentos",
+    )
+    op.drop_index("ix_atendimentos_solicitacao_sla", table_name="atendimentos")
     op.drop_index("ix_atendimentos_client_data", table_name="atendimentos")
+    op.drop_constraint(
+        "fk_atendimentos_task_id_tasks",
+        "atendimentos",
+        type_="foreignkey",
+    )
+    op.drop_constraint(
+        "fk_atendimentos_solicitacao_responsavel_id_users",
+        "atendimentos",
+        type_="foreignkey",
+    )
     op.drop_constraint(
         "fk_atendimentos_atendida_por_id_users",
         "atendimentos",
         type_="foreignkey",
     )
+    op.drop_column("atendimentos", "contato_status")
+    op.drop_column("atendimentos", "task_id")
+    op.drop_column("atendimentos", "solicitacao_alerta_nivel")
+    op.drop_column("atendimentos", "solicitacao_responsavel_id")
+    op.drop_column("atendimentos", "solicitacao_prioridade")
+    op.drop_column("atendimentos", "solicitacao_prazo")
     op.drop_column("atendimentos", "atendida_por_id")
     op.drop_column("atendimentos", "atendida_em")
     op.drop_column("atendimentos", "solicitacao_atendida")
