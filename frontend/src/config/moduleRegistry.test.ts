@@ -14,6 +14,12 @@ describe("moduleRegistry", () => {
     expect(new Set(paths).size).toBe(paths.length);
   });
 
+  it("expõe o módulo jurídico como Áreas de Atuação", () => {
+    const areas = STAFF_ROUTES.find((route) => route.key === "ramos");
+    expect(areas?.label).toBe("Áreas de Atuação");
+    expect(areas?.path).toBe("/ramos");
+  });
+
   it("não possui aliases duplicados nem aliases sobre rotas canônicas", () => {
     const aliases = LEGACY_REDIRECTS.map((redirect) => redirect.from);
     const canonical = new Set(STAFF_ROUTES.map((route) => route.path));

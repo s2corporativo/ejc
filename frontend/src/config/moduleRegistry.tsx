@@ -312,8 +312,8 @@ export const STAFF_ROUTES: ModuleRoute[] = [
   {
     key: "ramos",
     path: "/ramos",
-    label: "Ramos do Direito",
-    description: "Ferramentas jurídicas organizadas por área.",
+    label: "Áreas de Atuação",
+    description: "Áreas jurídicas e ferramentas especializadas do escritório.",
     group: "Inteligência Jurídica",
     icon: Scale,
     component: RamosHub,
