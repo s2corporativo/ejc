@@ -8,6 +8,7 @@
 #  07:00 — Morning Brief WhatsApp (consolidado do dia)
 #  07:15 — Alertas de prazos (7d/3d/1d)
 #  07:30 — SLA de etapas BPM (workflow) — vencidos + vésperas
+#  07:45 — SLA de solicitações registradas em atendimentos
 #  08:00 — Honorários vencidos
 #  08:15 — Régua de cobrança escalonada (inadimplência)
 #  08:30 — Defesas ambientais ≤ 5 dias (crítico)
@@ -21,7 +22,7 @@ from datetime import date, timedelta
 
 from apscheduler.schedulers.asyncio import AsyncIOScheduler
 from apscheduler.triggers.cron import CronTrigger
-from sqlalchemy import text, select
+from sqlalchemy import func, text, select
 
 from app.core.config import get_settings
 from app.core.database import AsyncSessionLocal
@@ -438,6 +439,96 @@ async def _verificar_sla_workflows():
             )
     except Exception as e:
         logger.error(f"[Scheduler] workflow_sla: {e}", exc_info=True)
+
+
+async def _alertar_solicitacoes_clientes():
+    """07h45 — alerta o responsável quando uma solicitação vence em até 24h
+    ou já está atrasada.
+
+    A coluna `solicitacao_alerta_nivel` funciona como marcador idempotente:
+    cada solicitação recebe no máximo um alerta de proximidade e um de atraso.
+    Mudanças de prazo e reaberturas limpam o marcador na API.
+    """
+    from datetime import datetime, timezone
+
+    from app.models.atendimento import Atendimento
+    from app.services.notification_service import notificar
+
+    try:
+        async with AsyncSessionLocal() as db:
+            agora = datetime.now(timezone.utc)
+            limite = agora + timedelta(hours=24)
+            solicitacoes = (
+                await db.execute(
+                    select(Atendimento).where(
+                        Atendimento.solicitacao.is_not(None),
+                        func.length(func.trim(Atendimento.solicitacao)) > 0,
+                        Atendimento.solicitacao_atendida.is_(False),
+                        Atendimento.solicitacao_prazo.is_not(None),
+                        Atendimento.solicitacao_prazo <= limite,
+                    )
+                )
+            ).scalars().all()
+
+            notificados = 0
+            for atendimento in solicitacoes:
+                prazo = atendimento.solicitacao_prazo
+                if prazo.tzinfo is None:
+                    prazo = prazo.replace(tzinfo=timezone.utc)
+                else:
+                    prazo = prazo.astimezone(timezone.utc)
+
+                nivel = "atrasado" if prazo < agora else "proximo"
+                if atendimento.solicitacao_alerta_nivel == nivel:
+                    continue
+
+                responsavel_id = (
+                    atendimento.solicitacao_responsavel_id
+                    or atendimento.advogado_responsavel_id
+                )
+                if not responsavel_id:
+                    continue
+
+                titulo = (
+                    "Solicitação de cliente atrasada"
+                    if nivel == "atrasado"
+                    else "Solicitação de cliente vence em até 24h"
+                )
+                mensagem = (
+                    f"Prioridade {atendimento.solicitacao_prioridade or 'normal'}. "
+                    "Abra a linha do tempo do cliente para tratar a pendência."
+                )
+                try:
+                    await notificar(
+                        db,
+                        responsavel_id,
+                        titulo,
+                        mensagem,
+                        tipo="tarefa",
+                        link=(
+                            f"/clientes/{atendimento.client_id}"
+                            "?tab=atendimentos"
+                        ),
+                        forcar_sino=True,
+                    )
+                    atendimento.solicitacao_alerta_nivel = nivel
+                    await db.commit()
+                    notificados += 1
+                except Exception as exc:
+                    await db.rollback()
+                    logger.error(
+                        "[Solicitações] alerta falhou para atendimento %s: %s",
+                        atendimento.id,
+                        exc,
+                    )
+
+            logger.info(
+                "[Solicitações] verificadas=%s notificadas=%s",
+                len(solicitacoes),
+                notificados,
+            )
+    except Exception as exc:
+        logger.error("[Scheduler] solicitacoes_clientes: %s", exc, exc_info=True)
 
 
 async def _alertar_honorarios():
@@ -874,6 +965,7 @@ def start_scheduler():
     s.add_job(_morning_brief,       CronTrigger(hour=7,  minute=0),  id="brief",       replace_existing=True)
     s.add_job(_alertar_prazos,      CronTrigger(hour=7,  minute=15), id="prazos",      replace_existing=True)
     s.add_job(_verificar_sla_workflows, CronTrigger(hour=7, minute=30), id="workflow_sla", replace_existing=True)
+    s.add_job(_alertar_solicitacoes_clientes, CronTrigger(hour=7, minute=45), id="solicitacoes_clientes", replace_existing=True)
     s.add_job(_briefing_matinal_advogado, CronTrigger(hour=6, minute=55), id="briefing_adv", replace_existing=True)
     s.add_job(_alertar_honorarios,  CronTrigger(hour=8,  minute=0),  id="honorarios",  replace_existing=True)
     s.add_job(_regua_cobranca,      CronTrigger(hour=8,  minute=15), id="regua_cobranca", replace_existing=True)
