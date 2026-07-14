@@ -365,6 +365,32 @@ async def listar_atendimentos(
         )
         q = q.where(condicao if solicitacao_atrasada else ~condicao)
 
+    resumo_base = q.subquery()
+    agora = datetime.now(timezone.utc)
+    resumo = (
+        await db.execute(
+            select(
+                func.count().filter(
+                    resumo_base.c.solicitacao.is_not(None),
+                    func.length(func.trim(resumo_base.c.solicitacao)) > 0,
+                    resumo_base.c.solicitacao_atendida.is_(False),
+                ).label("pendentes"),
+                func.count().filter(
+                    resumo_base.c.solicitacao.is_not(None),
+                    func.length(func.trim(resumo_base.c.solicitacao)) > 0,
+                    resumo_base.c.solicitacao_atendida.is_(False),
+                    resumo_base.c.solicitacao_prazo.is_not(None),
+                    resumo_base.c.solicitacao_prazo < agora,
+                ).label("atrasadas"),
+                func.count().filter(
+                    resumo_base.c.solicitacao.is_not(None),
+                    func.length(func.trim(resumo_base.c.solicitacao)) > 0,
+                    resumo_base.c.solicitacao_atendida.is_(True),
+                ).label("atendidas"),
+            )
+        )
+    ).one()
+
     q = q.order_by(Atendimento.data_atendimento.desc())
     total = (await db.execute(select(func.count()).select_from(q.subquery()))).scalar() or 0
     items = (
@@ -375,6 +401,11 @@ async def listar_atendimentos(
         "total": total,
         "page": page,
         "per_page": per_page,
+        "resumo_solicitacoes": {
+            "pendentes": resumo.pendentes or 0,
+            "atrasadas": resumo.atrasadas or 0,
+            "atendidas": resumo.atendidas or 0,
+        },
         "items": [_out(a, cu, com_privado=privado) for a in items],
     }
 
