@@ -5,6 +5,10 @@
 !.env.example
 !**/.env.example
 vps-tools/.env
+.env.bak*
+.env.save
+**/.env.bak*
+**/.env.save
 
 # Chaves e credenciais
 *.pem
@@ -46,6 +50,7 @@ _session_componentes_bronze/
 
 # ── Backups locais de arquivos ───────────────────────────────────────
 *.bak
+*.bak.*
 *.old
 *.orig
 
@@ -57,3 +62,8 @@ graphify-out/
 
 # Worktrees efêmeros de subagentes (Claude Code)
 .claude/worktrees/
+.claude/launch.json
+frontend/.claude/
+
+# Segredos aplicados direto na VPS (OAuth Google Drive etc.) — nunca versionar
+secrets/
