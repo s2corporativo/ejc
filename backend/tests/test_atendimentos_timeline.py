@@ -1,3 +1,4 @@
+from datetime import datetime, timedelta, timezone
 from types import SimpleNamespace
 
 import pytest
@@ -8,6 +9,8 @@ from app.routers.atendimentos import (
     _aplicar_status_solicitacao,
     _is_staff,
     _out,
+    _validar_contato_status,
+    _validar_prioridade,
     _pode_editar_atendimento,
 )
 
@@ -31,6 +34,12 @@ def _atendimento(**overrides):
         "solicitacao_atendida": False,
         "atendida_em": None,
         "atendida_por_id": None,
+        "solicitacao_prazo": None,
+        "solicitacao_prioridade": "normal",
+        "solicitacao_responsavel_id": "user-1",
+        "solicitacao_alerta_nivel": None,
+        "task_id": None,
+        "contato_status": "confirmado",
         "observacoes_privadas": "Nota interna protegida.",
         "advogado_responsavel_id": "user-1",
         "satisfacao_cliente": None,
@@ -75,6 +84,10 @@ def test_gestao_edita_qualquer_registro_e_equipe_apenas_o_proprio():
         atendimento,
         _user("secretaria", "criador"),
     )
+    assert _pode_editar_atendimento(
+        atendimento,
+        _user("advogado", "user-1"),
+    )
     assert not _pode_editar_atendimento(
         atendimento,
         _user("advogado", "outro"),
@@ -118,3 +131,49 @@ def test_saida_da_timeline_oculta_nota_privada_e_informa_permissao():
     assert payload["solicitacao_atendida"] is False
     assert payload["observacoes_privadas"] is None
     assert payload["pode_editar"] is True
+
+
+@pytest.mark.parametrize("prioridade", ["baixa", "normal", "alta", "urgente"])
+def test_prioridades_validas_sao_normalizadas(prioridade):
+    assert _validar_prioridade(prioridade.upper()) == prioridade
+
+
+@pytest.mark.parametrize(
+    "status",
+    ["iniciado", "confirmado", "nao_concluido"],
+)
+def test_status_de_contato_validos(status):
+    assert _validar_contato_status(status) == status
+
+
+def test_rejeita_prioridade_e_status_de_contato_invalidos():
+    with pytest.raises(HTTPException):
+        _validar_prioridade("critica")
+    with pytest.raises(HTTPException):
+        _validar_contato_status("enviado")
+
+
+def test_saida_identifica_solicitacao_atrasada_e_vinculos():
+    atendimento = _atendimento(
+        solicitacao_prazo=datetime.now(timezone.utc) - timedelta(hours=1),
+        solicitacao_prioridade="urgente",
+        task_id="task-1",
+        contato_status="iniciado",
+    )
+
+    payload = _out(atendimento, _user("advogado", "user-1"))
+
+    assert payload["solicitacao_atrasada"] is True
+    assert payload["solicitacao_prioridade"] == "urgente"
+    assert payload["task_id"] == "task-1"
+    assert payload["contato_status"] == "iniciado"
+
+
+def test_conclusao_e_reabertura_controlam_marcador_de_alerta():
+    atendimento = _atendimento(solicitacao_alerta_nivel="proximo")
+
+    _aplicar_status_solicitacao(atendimento, True, "user-2")
+    assert atendimento.solicitacao_alerta_nivel == "concluido"
+
+    _aplicar_status_solicitacao(atendimento, False, "user-2")
+    assert atendimento.solicitacao_alerta_nivel is None
