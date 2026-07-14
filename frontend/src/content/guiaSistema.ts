@@ -599,20 +599,20 @@ export const GUIA_SISTEMA: GrupoGuia[] = [
   },
   {
     id: "ramos",
-    titulo: "Ramos do Direito",
+    titulo: "Áreas de Atuação",
     descricao:
       "Ferramentas, calculadoras e guias organizados por área de atuação.",
     ferramentas: [
       {
         id: "ramos",
-        titulo: "Ramos do Direito",
+        titulo: "Áreas de Atuação",
         rota: "/ramos",
         oQueE:
           "O hub das áreas jurídicas, cada uma com suas subáreas, guias e ferramentas oficiais.",
         paraQueServe:
           "Organiza por área (trabalhista, bancário, ambiental, tributário, previdenciário...) as subáreas atendidas, os links oficiais e as calculadoras, para orientar o atendimento e agilizar cálculos.",
         comoUsar: [
-          "Abra Ramos do Direito no menu Inteligência Jurídica.",
+          "Abra Áreas de Atuação no menu Inteligência Jurídica.",
           "Clique na área desejada para ver as subáreas de atuação.",
           "Use os links de ferramentas públicas oficiais (PJe-Calc, Registrato/BACEN, Meu INSS, e-CAC, Consumidor.gov...).",
           "Aproveite as calculadoras embutidas de cada ramo (juros, prazos, liquidação...).",
@@ -630,7 +630,7 @@ export const GUIA_SISTEMA: GrupoGuia[] = [
         paraQueServe:
           "Concentra tudo de uma área — guia prático, calculadoras e integrações (como índices BCB e consultas Infosimples) — no contexto certo para quem atua naquele ramo.",
         comoUsar: [
-          "Em Ramos do Direito, clique na área desejada.",
+          "Em Áreas de Atuação, clique na área desejada.",
           "Leia o guia da área e as subáreas atendidas.",
           "Preencha as calculadoras específicas e clique em calcular.",
           "Use as integrações do ramo (consultas oficiais, índices) quando disponíveis.",
