@@ -217,7 +217,7 @@ export default function ClientServiceTimeline({ clientId, cases = [] }: Props) {
       const response = await api.get<Responsavel[]>(
         "/atendimentos/responsaveis",
       );
-      setResponsaveis(response.data ?? []);
+      setResponsaveis(Array.isArray(response.data) ? response.data : []);
     } catch {
       setResponsaveis([]);
     }
