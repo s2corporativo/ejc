@@ -12,6 +12,7 @@ from app.routers.atendimentos import (
     _validar_contato_status,
     _validar_prioridade,
     _pode_editar_atendimento,
+    _titulo_tarefa,
 )
 
 
@@ -177,3 +178,12 @@ def test_conclusao_e_reabertura_controlam_marcador_de_alerta():
 
     _aplicar_status_solicitacao(atendimento, False, "user-2")
     assert atendimento.solicitacao_alerta_nivel is None
+
+
+def test_tarefa_vinculada_nao_replica_conteudo_sensivel():
+    conteudo = "Pedido sigiloso do cliente com dados pessoais"
+
+    titulo = _titulo_tarefa(conteudo)
+
+    assert titulo == "Solicitação de cliente"
+    assert conteudo not in titulo
