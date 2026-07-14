@@ -9,8 +9,16 @@ from uuid import uuid4
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import text
 
+from app.core.config import get_settings
+
 logger = logging.getLogger("ejc.sumulas")
 
+# QUARENTENA: conteúdo não conferido com fontes oficiais — ver auditoria RAG.
+# Este dataset foi indexado com confianca="alta" mas contém texto de súmula
+# juridicamente INCORRETO/desatualizado. A ingestão está desativada por padrão
+# (RAG_SUMULAS_SEED_ENABLED=False) e a recuperação em quarentena
+# (RAG_SUMULAS_QUARENTENA=True). NÃO reabilitar sem reconferir cada verbete
+# com STF/STJ/TST. Mantido apenas como referência para a futura curadoria.
 SUMULAS_SEED = [
     # ── TST — Trabalhista ──────────────────────────────────────────────────────
     {"tribunal":"TST","numero":"12","texto":"O cômputo do percentual de 40% (quarenta por cento) sobre os depósitos do FGTS, na hipótese de despedida arbitrária ou sem justa causa, deve tomar por base a totalidade dos recolhimentos efetuados durante a vigência do contrato de trabalho.","area":"trabalhista","tema":"FGTS multa 40%"},
@@ -50,7 +58,26 @@ async def ingerir_sumulas_seed(db: AsyncSession) -> dict:
     """
     Ingere o dataset de súmulas na tabela `teses`.
     Idempotente — ignora súmulas já existentes pelo título+tribunal.
+
+    QUARENTENA (auditoria RAG): enquanto RAG_SUMULAS_SEED_ENABLED=False (padrão)
+    a função retorna cedo SEM inserir nada — o conteúdo do seed não foi conferido
+    com as fontes oficiais e não deve ser persistido nem indexado no RAG.
     """
+    settings = get_settings()
+    if not settings.RAG_SUMULAS_SEED_ENABLED:
+        logger.warning(
+            "Seed de súmulas DESATIVADO (RAG_SUMULAS_SEED_ENABLED=false) — "
+            "quarentena da auditoria RAG: conteúdo não reconferido com fontes "
+            "oficiais (STF/STJ/TST). Nada foi inserido."
+        )
+        return {
+            "inseridas": 0,
+            "ignoradas": 0,
+            "total_seed": len(SUMULAS_SEED),
+            "quarentena": True,
+            "motivo": "Seed em quarentena — conteúdo não conferido com fontes oficiais.",
+        }
+
     inseridas = 0
     ignoradas  = 0
 
@@ -112,7 +139,11 @@ async def ingerir_sumulas_seed(db: AsyncSession) -> dict:
                 confianca="alta",
             )
         except Exception as exc:
-            logger.debug("RAG skip para %s: %s", titulo, exc)
+            # Robustez (auditoria RAG): falha de indexação NÃO pode ser silenciosa
+            # — a tese fica sem lastro no RAG. Logar em ERROR para visibilidade.
+            # (Atomicidade tese+doc RAG exigiria mudar ingestion_service.py — fora
+            # do escopo deste arquivo; ver relatório da auditoria.)
+            logger.error("Falha ao indexar súmula no RAG (%s): %s", titulo, exc)
 
         inseridas += 1
 

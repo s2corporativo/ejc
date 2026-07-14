@@ -134,12 +134,32 @@ class _FakeDB:
         pass
 
 
-def _prepara(monkeypatch, *, oabs="12345/MG", respostas=None, upserts=None):
-    """Configura settings + mocks de fetch/upsert no namespace do módulo."""
+class _FakeCaso:
+    """Caso ativo devolvido pelo resolvedor por nº de processo (id + client_id)."""
+    def __init__(self, id="case-1", client_id="cli-1"):
+        self.id = id
+        self.client_id = client_id
+
+
+_SEM_CASO = object()  # sentinela: distingue "default (resolve)" de "None (não resolve)"
+
+
+def _prepara(monkeypatch, *, oabs="12345/MG", respostas=None, upserts=None, caso=_SEM_CASO):
+    """Configura settings + mocks de fetch/upsert/resolvedor no namespace do módulo."""
     s = get_settings()
     monkeypatch.setattr(s, "DJEN_OABS_MONITORADAS", oabs)
     monkeypatch.setattr(s, "DJEN_INGEST_JANELA_DIAS", 2)
     monkeypatch.setattr(djen, "PAUSA_ENTRE_PAGINAS", 0)
+
+    # Auditoria RAG/LGPD: a ingestão DJEN resolve o caso ATIVO pelo nº do
+    # processo e só indexa vinculada ao escopo tenant/caso. Por padrão o mock
+    # resolve um caso; passe caso=None para exercitar o skip (PII de terceiros).
+    caso_ret = _FakeCaso() if caso is _SEM_CASO else caso
+
+    async def fake_buscar_caso(db, numero):
+        return caso_ret
+
+    monkeypatch.setattr(djen, "buscar_caso_ativo_por_processo", fake_buscar_caso)
 
     chamadas = []
 
@@ -172,6 +192,9 @@ async def test_ingerir_upserta_cada_comunicacao(monkeypatch):
     assert [u["chave_origem"] for u in ups][0] == "djen:987654"
     assert all(u["fonte"] == "djen" and u["confianca"] == "alta" for u in ups)
     assert all(u["extra"]["oab_monitorada"] == "12345/MG" for u in ups)
+    # Auditoria RAG/LGPD: comunicação vinculada ao escopo tenant/caso resolvido
+    # (nunca conhecimento global recuperável por qualquer cliente).
+    assert all(u["case_id"] == "case-1" and u["client_id"] == "cli-1" for u in ups)
     # parâmetros da API: OAB + janela incremental + paginação conservadora
     p = chamadas[0]
     assert p["numeroOab"] == "12345" and p["ufOab"] == "MG"
@@ -197,6 +220,17 @@ async def test_ingerir_pagina_ate_lote_incompleto(monkeypatch):
     assert total == djen.ITENS_POR_PAGINA + 1
     # chaves determinísticas distintas por item
     assert len({u["chave_origem"] for u in ups}) == total
+
+
+async def test_ingerir_pula_comunicacao_sem_caso_ativo(monkeypatch):
+    """Auditoria RAG/LGPD: comunicação de processo SEM caso ativo cadastrado
+    NÃO entra no RAG global (contém PII de terceiros — partes, teor da
+    intimação). É pulada: nenhum upsert, contadores zerados."""
+    ups: list[dict] = []
+    _prepara(monkeypatch, respostas=[dict(RESPOSTA_API)], upserts=ups, caso=None)
+    novos, total = await djen.ingerir(_FakeDB())
+    assert (novos, total) == (0, 0)
+    assert ups == []
 
 
 async def test_ingerir_sem_oabs_configuradas_e_noop(monkeypatch):

@@ -34,6 +34,59 @@ def _trunca(texto: str, limite: int) -> str:
     return texto[:limite] + "\n[... truncado para caber no contexto ...]"
 
 
+async def _acesso_caso_ok(db, user, alvo_case_id: str) -> bool:
+    """Prova (fail-closed) que `user` pode acessar `alvo_case_id`.
+
+    Reusa o gate canônico `verificar_acesso_caso` (mesma regra RBAC/ABAC e a
+    mesma exceção do projeto), convertendo o 403/404 em False para o chamador
+    apenas OMITIR o trecho — sem vazar existência do recurso cross-tenant.
+    Sem `user` autenticado não há como provar o vínculo → nega.
+    """
+    if user is None or not alvo_case_id:
+        return False
+    from fastapi import HTTPException
+    from app.core.ownership import verificar_acesso_caso
+    try:
+        await verificar_acesso_caso(db, user, alvo_case_id)
+        return True
+    except HTTPException:
+        return False
+
+
+async def _documento_autorizado(db, user, doc, case_id: str | None) -> bool:
+    """Ownership de DOCUMENTO antes de injetar seu conteúdo no prompt (IDOR guard).
+
+    - Vínculo por caso é a fonte primária: se o contexto trouxe `case_id`, o
+      documento TEM de ser daquele caso (bloqueia doc de outro caso/cliente);
+      além disso, prova o acesso do usuário ao caso do próprio documento.
+    - Documento sem caso: só gestão ou o próprio uploader (fail-closed p/ o
+      resto — validação por cliente sem caso fica em routers.documents._verificar_
+      acesso_documento; não importável aqui sem acoplar service→router).
+    """
+    doc_case = getattr(doc, "case_id", None)
+    if doc_case:
+        if case_id and doc_case != case_id:
+            return False
+        return await _acesso_caso_ok(db, user, doc_case)
+    if user is None:
+        return False
+    from app.core.ownership import is_gestao
+    if is_gestao(user):
+        return True
+    uploader = getattr(doc, "uploaded_by", None)
+    return bool(uploader) and uploader == getattr(user, "id", None)
+
+
+async def _processo_autorizado(db, user, proc, case_id: str | None) -> bool:
+    """Ownership de PROCESSO (Process.case_id é NOT NULL) antes do prompt."""
+    proc_case = getattr(proc, "case_id", None)
+    if not proc_case:
+        return False
+    if case_id and proc_case != case_id:
+        return False
+    return await _acesso_caso_ok(db, user, proc_case)
+
+
 async def montar_contexto(
     db,
     *,
@@ -41,6 +94,7 @@ async def montar_contexto(
     case_id: str | None = None,
     document_id: str | None = None,
     process_id: str | None = None,
+    user=None,
     usar_rag: bool = True,
     exige_fonte: bool = False,
 ) -> ContextoMontado:
@@ -69,6 +123,10 @@ async def montar_contexto(
         )).scalar_one_or_none()
         if doc is None:
             ctx.avisos.append("Documento não encontrado — contexto documental omitido.")
+        elif not await _documento_autorizado(db, user, doc, case_id):
+            # IDOR guard: doc de outro caso/cliente (ou vínculo não provável)
+            # é tratado como INEXISTENTE — mesma mensagem, sem vazar existência.
+            ctx.avisos.append("Documento não encontrado — contexto documental omitido.")
         elif doc.confidencialidade not in (DocConfidencialidade.normal,
                                            DocConfidencialidade.interno):
             # Cofre (>= restrito): documento sigiloso jamais vira prompt de IA.
@@ -92,6 +150,9 @@ async def montar_contexto(
             select(Process).where(Process.id == process_id)
         )).scalar_one_or_none()
         if proc is None:
+            ctx.avisos.append("Processo não encontrado — contexto processual omitido.")
+        elif not await _processo_autorizado(db, user, proc, case_id):
+            # IDOR guard: processo de outro caso/cliente → tratado como inexistente.
             ctx.avisos.append("Processo não encontrado — contexto processual omitido.")
         else:
             partes = [f"[PROCESSO] status: {getattr(proc, 'status', '?')}"]

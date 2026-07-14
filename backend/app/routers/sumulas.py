@@ -30,10 +30,23 @@ async def ingerir_seed(
     db: AsyncSession = Depends(get_db),
     cu: User = Depends(get_current_user),
 ):
-    """Ingere dataset de súmulas STF/STJ/TST na tabela teses. Apenas admin/superadmin."""
+    """Ingere dataset de súmulas STF/STJ/TST na tabela teses. Apenas admin/superadmin.
+
+    QUARENTENA (auditoria RAG): enquanto RAG_SUMULAS_SEED_ENABLED=False (padrão)
+    o endpoint responde 423 Locked — o seed contém conteúdo não conferido com as
+    fontes oficiais e está desativado até a reconferência.
+    """
+    from fastapi import HTTPException
     if ROLE_LEVEL.get(cu.role.value, 0) < ROLE_LEVEL["admin"]:
-        from fastapi import HTTPException
         raise HTTPException(status_code=403, detail="Apenas admin pode ingerir súmulas.")
+    from app.core.config import get_settings
+    if not get_settings().RAG_SUMULAS_SEED_ENABLED:
+        raise HTTPException(
+            status_code=423,
+            detail=("Seed de súmulas em QUARENTENA (auditoria RAG): conteúdo não "
+                    "conferido com as fontes oficiais (STF/STJ/TST). Ingestão "
+                    "desabilitada até reconferência (RAG_SUMULAS_SEED_ENABLED)."),
+        )
     from app.services.sumulas_ingestion import ingerir_sumulas_seed
     return await ingerir_sumulas_seed(db)
 

@@ -103,12 +103,17 @@ class SingleAICoreOrchestrator:
             await verificar_acesso_caso(db, user, case_id)  # 403/404 se indevido
 
         # 3) Contexto real (backend monta; frontend só envia IDs) ─────────────
+        # `user` repassado ao builder: ownership de document_id/process_id é
+        # validado LÁ (fail-closed) — não basta o gate de case_id acima, pois
+        # doc/processo chegam por IDs independentes do corpo e poderiam pertencer
+        # a OUTRO caso/cliente (IDOR/vazamento cross-tenant, risco LGPD).
         ctx = await context_builder.montar_contexto(
             db,
             mensagem=mensagem,
             case_id=case_id,
             document_id=document_id,
             process_id=process_id,
+            user=user,
             usar_rag=usar_rag,
             exige_fonte=intent.exige_fonte,
         )

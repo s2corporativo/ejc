@@ -629,6 +629,10 @@ async def _recuperar_modelos_referencia(
             limite=settings.PECAS_RAG_MODELOS_TOPK,
             categorias=["modelo_documento_juridico"],
             modo_or=True,
+            # Este é o ÚNICO uso legítimo do corpus FICTÍCIO (Bíblia EJC): modelos
+            # consumidos como ESTRUTURA da peça, nunca como fundamentação. Opt-in
+            # explícito porque o gate RAG exclui fictício por padrão (auditoria RAG).
+            incluir_ficticio=True,
         )
         return modelos or []
     except Exception as _e:
