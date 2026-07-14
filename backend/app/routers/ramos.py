@@ -37,7 +37,7 @@ _EQUIPE = ["superadmin", "admin", "socio", "advogado", "advogado_auxiliar", "est
 _ADM    = ["superadmin", "admin", "socio"]
 _CENT   = Decimal("0.01")
 
-router = APIRouter(tags=["Ramos Jurídicos"])
+router = APIRouter(tags=["Áreas de Atuação"])
 
 
 # ════════════════════════════════════════════════════════════════════════════
