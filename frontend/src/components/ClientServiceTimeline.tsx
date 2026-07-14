@@ -231,10 +231,7 @@ export default function ClientServiceTimeline({ clientId, cases = [] }: Props) {
   const responsavelById = useMemo(
     () =>
       new Map(
-        responsaveis.map((responsavel) => [
-          responsavel.id,
-          responsavel.nome,
-        ]),
+        responsaveis.map((responsavel) => [responsavel.id, responsavel.nome]),
       ),
     [responsaveis],
   );
@@ -368,8 +365,7 @@ export default function ClientServiceTimeline({ clientId, cases = [] }: Props) {
       await load(1, false);
     } catch (error: any) {
       toast.error(
-        error.response?.data?.detail ||
-          "Não foi possível atualizar o contato.",
+        error.response?.data?.detail || "Não foi possível atualizar o contato.",
       );
     } finally {
       setUpdatingId(null);
@@ -854,9 +850,7 @@ export default function ClientServiceTimeline({ clientId, cases = [] }: Props) {
                               type="button"
                               className="btn-outline text-xs"
                               disabled={updatingId === item.id}
-                              onClick={() =>
-                                updateContact(item, "confirmado")
-                              }
+                              onClick={() => updateContact(item, "confirmado")}
                             >
                               <CheckCircle className="h-3.5 w-3.5" />
                               Confirmar contato
