@@ -98,10 +98,7 @@ function emptyForm() {
   };
 }
 
-export default function ClientServiceTimeline({
-  clientId,
-  cases = [],
-}: Props) {
+export default function ClientServiceTimeline({ clientId, cases = [] }: Props) {
   const [items, setItems] = useState<ClientServiceEntry[]>([]);
   const [total, setTotal] = useState(0);
   const [loading, setLoading] = useState(true);
@@ -172,10 +169,7 @@ export default function ClientServiceTimeline({
       return;
     }
     const dataAtendimento = new Date(form.data_atendimento);
-    if (
-      !form.data_atendimento ||
-      Number.isNaN(dataAtendimento.getTime())
-    ) {
+    if (!form.data_atendimento || Number.isNaN(dataAtendimento.getTime())) {
       toast.error("Informe uma data e hora válidas.");
       return;
     }
@@ -189,8 +183,7 @@ export default function ClientServiceTimeline({
         data_atendimento: dataAtendimento.toISOString(),
         resumo,
         solicitacao: solicitacao || undefined,
-        solicitacao_atendida:
-          Boolean(solicitacao) && form.solicitacao_atendida,
+        solicitacao_atendida: Boolean(solicitacao) && form.solicitacao_atendida,
       });
       toast.success("Atendimento registrado na linha do tempo.");
       setForm(emptyForm());
@@ -198,7 +191,8 @@ export default function ClientServiceTimeline({
       await load();
     } catch (error: any) {
       toast.error(
-        error.response?.data?.detail || "Não foi possível salvar o atendimento.",
+        error.response?.data?.detail ||
+          "Não foi possível salvar o atendimento.",
       );
     } finally {
       setSaving(false);
@@ -228,7 +222,10 @@ export default function ClientServiceTimeline({
   }
 
   return (
-    <section className="space-y-4" aria-labelledby="timeline-atendimentos-title">
+    <section
+      className="space-y-4"
+      aria-labelledby="timeline-atendimentos-title"
+    >
       <div className="card p-4">
         <div className="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
           <div>
