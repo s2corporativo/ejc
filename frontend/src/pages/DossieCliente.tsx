@@ -24,6 +24,7 @@ import {
   ExternalLink,
 } from "lucide-react";
 import api from "../lib/api";
+import ClientServiceTimeline from "../components/ClientServiceTimeline";
 import { soDigitos } from "../utils/phone";
 import {
   PageHeader,
@@ -720,6 +721,7 @@ export default function DossieCliente() {
 
   const abas = [
     { id: "resumo", label: "Resumo", icon: TrendingUp },
+    { id: "atendimentos", label: "Atendimentos", icon: MessageCircle },
     { id: "casos", label: "Casos", icon: Briefcase },
     { id: "prazos", label: "Prazos", icon: Calendar },
     { id: "financeiro", label: "Financeiro", icon: DollarSign },
@@ -824,6 +826,12 @@ export default function DossieCliente() {
             <PendingItemsPanel clientId={clientId!} />
             <ComunicacaoRapida cliente={cliente} />
           </div>
+        </div>
+      )}
+
+      {abaAtiva === "atendimentos" && (
+        <div className="animate-fade-in">
+          <ClientServiceTimeline clientId={clientId!} cases={casos} />
         </div>
       )}
 
