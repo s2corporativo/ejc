@@ -34,7 +34,7 @@ const response = {
         client_id: "cliente-1",
         case_id: "caso-1",
         tipo: "whatsapp",
-        data_atendimento: "2026-07-13T14:30:00-03:00",
+        data_atendimento: "2026-07-13T14:30:00",
         resumo: "Cliente pediu retorno sobre a movimentação processual.",
         solicitacao: "Enviar a cópia da última decisão.",
         solicitacao_atendida: false,
