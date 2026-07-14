@@ -386,8 +386,7 @@ export const GUIA_SISTEMA: GrupoGuia[] = [
         id: "workflow",
         titulo: "Workflows",
         rota: "/workflow",
-        oQueE:
-          "A configuração de fluxos, etapas e SLAs por área jurídica.",
+        oQueE: "A configuração de fluxos, etapas e SLAs por área jurídica.",
         paraQueServe:
           "Define como o trabalho anda em cada área (etapas e prazos internos), padronizando a operação e deixando claro o que vem depois de cada passo.",
         comoUsar: [
@@ -494,7 +493,7 @@ export const GUIA_SISTEMA: GrupoGuia[] = [
       {
         id: "conhecimento-curadoria",
         titulo: "Curadoria RAG",
-        rota: "/conhecimento",
+        rota: "/inteligencia?tab=conhecimento",
         oQueE:
           "A ingestão e curadoria da base de conhecimento vetorial que alimenta a IA.",
         paraQueServe:
@@ -570,8 +569,7 @@ export const GUIA_SISTEMA: GrupoGuia[] = [
         id: "radar-compliance",
         titulo: "Radar de Compliance",
         rota: "/compliance/radar",
-        oQueE:
-          "A avaliação de riscos regulatórios e de conformidade.",
+        oQueE: "A avaliação de riscos regulatórios e de conformidade.",
         paraQueServe:
           "Ajuda a mapear riscos de compliance e conformidade, apoiando pareceres e a orientação preventiva a clientes.",
         comoUsar: [
@@ -685,24 +683,6 @@ export const GUIA_SISTEMA: GrupoGuia[] = [
         ],
         perfil: "gestor",
       },
-      {
-        id: "whatsapp",
-        titulo: "WhatsApp",
-        rota: "/whatsapp",
-        oQueE:
-          "A conversa com clientes pelo WhatsApp dentro do sistema (integração em evolução).",
-        paraQueServe:
-          "Mantém o histórico de conversas com o cliente registrado no EJC, sem depender só do celular pessoal — recurso ainda em amadurecimento.",
-        comoUsar: [
-          "Abra WhatsApp (acesso direto; ainda fora do menu principal).",
-          "Na primeira vez, leia o QR Code pelo app do celular (Aparelhos conectados).",
-          "Escolha uma conversa na lista e envie mensagens pelo campo inferior.",
-          "Pelo Dossiê do Cliente, o botão WhatsApp já abre a conversa no número cadastrado.",
-        ],
-        dica: "Se aparecer desconectado, refaça a leitura do QR Code — o celular precisa estar com internet.",
-        perfil: "todos",
-        badge: "Beta",
-      },
     ],
   },
   {
@@ -729,7 +709,7 @@ export const GUIA_SISTEMA: GrupoGuia[] = [
       {
         id: "administracao-configuracoes",
         titulo: "Administração do EJC",
-        rota: "/administracao/configuracoes",
+        rota: "/configuracoes?tab=administracao",
         oQueE:
           "O painel de governança institucional e acesso aos painéis administrativos.",
         paraQueServe:
@@ -745,8 +725,7 @@ export const GUIA_SISTEMA: GrupoGuia[] = [
         id: "usuarios",
         titulo: "Usuários e Acessos",
         rota: "/usuarios",
-        oQueE:
-          "O cadastro da equipe, com status e perfis de acesso.",
+        oQueE: "O cadastro da equipe, com status e perfis de acesso.",
         paraQueServe:
           "Controla quem entra no sistema e o que cada um pode ver ou fazer, respeitando a divisão de responsabilidades do escritório.",
         comoUsar: [
@@ -825,8 +804,7 @@ export const GUIA_SISTEMA: GrupoGuia[] = [
         id: "mapa-modulos",
         titulo: "Mapa de Módulos",
         rota: "/mapa-modulos",
-        oQueE:
-          "O inventário técnico e funcional de todos os módulos do EJC.",
+        oQueE: "O inventário técnico e funcional de todos os módulos do EJC.",
         paraQueServe:
           "Dá uma visão de conjunto do que existe no sistema e como se relaciona, útil para gestão e para entender a cobertura funcional.",
         comoUsar: [

@@ -1,5 +1,5 @@
 import { useMemo } from "react";
-import { Link, useLocation, useSearchParams } from "react-router-dom";
+import { Link, useSearchParams } from "react-router-dom";
 import {
   Bell,
   Check,
@@ -72,14 +72,12 @@ type SettingsTab =
   | "administracao";
 
 export default function Configuracoes() {
-  const location = useLocation();
   const [searchParams, setSearchParams] = useSearchParams();
   const { theme, setTheme } = useThemeStore();
   const { homeRoute, setHomeRoute, sidebarCollapsed, setSidebarCollapsed } =
     usePreferencesStore();
   const user = useAuth((state) => state.user);
   const isAdmin = user?.role === "superadmin" || user?.role === "admin";
-  const isAdministrationPath = location.pathname.startsWith("/administracao/");
 
   const tabs = useMemo(
     () => [
@@ -107,12 +105,10 @@ export default function Configuracoes() {
   );
 
   const requested = searchParams.get("tab") as SettingsTab | null;
-  const defaultTab: SettingsTab = isAdministrationPath
-    ? "administracao"
-    : "pessoal";
   const tab = tabs.some((item) => item.key === requested)
     ? (requested as SettingsTab)
-    : defaultTab;
+    : "pessoal";
+  const isAdministrationPath = tab === "administracao";
 
   const selectTab = (next: SettingsTab) => {
     const params = new URLSearchParams(searchParams);

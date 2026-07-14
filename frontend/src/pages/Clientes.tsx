@@ -209,7 +209,7 @@ export default function Clientes() {
                       className="text-bronze hover:text-bronze-dark px-1.5 font-medium text-xs"
                       onClick={(e) => {
                         e.stopPropagation();
-                        window.location.href = `/clientes/${c.id}/dossie`;
+                        window.location.href = `/clientes/${c.id}`;
                       }}
                     >
                       📋

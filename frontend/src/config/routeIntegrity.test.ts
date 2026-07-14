@@ -33,6 +33,13 @@ export const PORTAL_APP_ROUTES = [
   "/portal/mensagens",
   "/portal/documentos",
 ] as const;
+// Aliases legados com segmento dinâmico: LEGACY_REDIRECTS só suporta `to`
+// estático (Navigate não interpola :params), então precisam de uma <Route>
+// dedicada no App montando um pequeno redirect component em vez de entrar
+// no map genérico.
+export const DYNAMIC_LEGACY_APP_ROUTES = [
+  "/clientes/:clientId/dossie", // alias removido de STAFF_ROUTES; redireciona para /clientes/:clientId
+] as const;
 
 // Literais relativos esperados DENTRO do bloco /portal do App.tsx.
 const PORTAL_CHILD_LITERALS = PORTAL_APP_ROUTES.filter(
@@ -71,6 +78,7 @@ describe("integridade App.tsx ↔ moduleRegistry", () => {
       ...PUBLIC_APP_ROUTES,
       "/portal",
       ...PORTAL_CHILD_LITERALS,
+      ...DYNAMIC_LEGACY_APP_ROUTES,
       "*", // catch-all → NotFound
     ]);
     const orfas = literals.filter((p) => !permitidos.has(p));

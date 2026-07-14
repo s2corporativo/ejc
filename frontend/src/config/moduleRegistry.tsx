@@ -103,7 +103,6 @@ const FinanceiroWorkspace = lazy(() => import("../pages/FinanceiroWorkspace"));
 const InteligenciaWorkspace = lazy(
   () => import("../pages/InteligenciaWorkspace"),
 );
-const Conhecimento = lazy(() => import("../pages/Conhecimento"));
 const GovernancaIA = lazy(() => import("../pages/GovernancaIA"));
 const KnowledgeHub = lazy(() => import("../pages/KnowledgeHub"));
 const Biblioteca = lazy(() => import("../pages/Biblioteca"));
@@ -127,9 +126,9 @@ const Configuracoes = lazy(() => import("../pages/Configuracoes"));
 const Usuarios = lazy(() => import("../pages/Usuarios"));
 const Lixeira = lazy(() => import("../pages/Lixeira"));
 const Ajuda = lazy(() => import("../pages/Ajuda"));
-const Whatsapp = lazy(() => import("../pages/Whatsapp"));
 const CentralDiagnostico = lazy(() => import("../pages/CentralDiagnostico"));
 const JornadaCaso = lazy(() => import("../pages/JornadaCaso"));
+const Ferramentas = lazy(() => import("../pages/Ferramentas"));
 
 // DECISÃO: menu centrado no caso — o grupo "Principal" destaca Novo Caso e
 // Casos logo abaixo do Dashboard; os demais módulos foram reagrupados em
@@ -141,6 +140,7 @@ export const MODULE_GROUP_ORDER = [
   "Gestão",
   "Financeiro",
   "Administração",
+  "Mais",
 ] as const;
 
 export const STAFF_ROUTES: ModuleRoute[] = [
@@ -208,25 +208,13 @@ export const STAFF_ROUTES: ModuleRoute[] = [
     order: 40,
     helpKey: "clientes",
     sensitive: true,
-    backendPrefixes: ["/api/clients", "/api/dossie-cliente"],
+    backendPrefixes: ["/api/clients", "/api/clients/{client_id}/dossie"],
   },
   {
     key: "cliente-detalhe",
     path: "/clientes/:clientId",
     label: "Dossiê do Cliente",
     description: "Detalhes e histórico do cliente.",
-    group: "Gestão",
-    icon: Briefcase,
-    component: DossieCliente,
-    helpKey: "clientes",
-    status: "hidden",
-    sensitive: true,
-  },
-  {
-    key: "cliente-dossie-alias",
-    path: "/clientes/:clientId/dossie",
-    label: "Dossiê do Cliente",
-    description: "Alias compatível do dossiê do cliente.",
     group: "Gestão",
     icon: Briefcase,
     component: DossieCliente,
@@ -432,7 +420,11 @@ export const STAFF_ROUTES: ModuleRoute[] = [
     helpKey: "documentos",
     sensitive: true,
     usesAI: true,
-    backendPrefixes: ["/api/documents", "/api/data-room", "/api/documentos-ia"],
+    backendPrefixes: [
+      "/api/documents",
+      "/api/data-rooms",
+      "/api/documentos-ia",
+    ],
   },
   {
     key: "pecas",
@@ -509,7 +501,7 @@ export const STAFF_ROUTES: ModuleRoute[] = [
     helpKey: "inteligencia",
     sensitive: true,
     usesAI: true,
-    backendPrefixes: ["/api/ai", "/api/ai-core", "/api/ai-skills"],
+    backendPrefixes: ["/api/ai", "/api/ai/core", "/api/ai/skills"],
   },
   {
     key: "knowledge-hub",
@@ -563,20 +555,6 @@ export const STAFF_ROUTES: ModuleRoute[] = [
     helpKey: "conhecimento",
     status: "hidden",
     sensitive: true,
-  },
-  {
-    key: "conhecimento-curadoria",
-    path: "/conhecimento",
-    label: "Curadoria RAG",
-    description: "Ingestão e curadoria da base vetorial.",
-    group: "Administração",
-    icon: BookOpen,
-    component: Conhecimento,
-    roles: ROLES.gestores,
-    helpKey: "conhecimento",
-    status: "hidden",
-    sensitive: true,
-    usesAI: true,
   },
   {
     key: "prompts",
@@ -680,7 +658,7 @@ export const STAFF_ROUTES: ModuleRoute[] = [
     order: 10,
     helpKey: "financeiro",
     sensitive: true,
-    backendPrefixes: ["/api/financeiro", "/api/fees", "/api/despesas"],
+    backendPrefixes: ["/api/financeiro", "/api/fees", "/api/v1/despesas"],
   },
   {
     key: "produtividade",
@@ -708,21 +686,6 @@ export const STAFF_ROUTES: ModuleRoute[] = [
     order: 20,
     helpKey: "configuracoes",
     sensitive: false,
-  },
-  {
-    key: "administracao-configuracoes",
-    path: "/administracao/configuracoes",
-    label: "Administração do EJC",
-    description:
-      "Governança institucional e acesso aos painéis administrativos.",
-    group: "Administração",
-    icon: Settings,
-    component: Configuracoes,
-    roles: ROLES.administradores,
-    showInNav: true,
-    order: 30,
-    helpKey: "configuracoes",
-    sensitive: true,
   },
   {
     key: "governanca-ia",
@@ -831,19 +794,21 @@ export const STAFF_ROUTES: ModuleRoute[] = [
     status: "hidden",
     sensitive: false,
   },
+  // PODA 2026-07: hub de descoberta para os módulos reais que ficaram fora
+  // do menu principal — evita reabrir 18 itens na barra lateral.
   {
-    key: "whatsapp",
-    path: "/whatsapp",
-    label: "WhatsApp",
-    description: "Integração ainda incompleta; acesso direto oculto do menu.",
-    group: "Gestão",
-    icon: Bell,
-    component: Whatsapp,
-    // Stub "em desenvolvimento": oculto da navegação até a integração existir.
-    status: "hidden",
-    showInNav: false,
-    sensitive: true,
-    backendPrefixes: ["/api/whatsapp", "/api/webhooks"],
+    key: "ferramentas",
+    path: "/ferramentas",
+    label: "Mais Ferramentas",
+    description:
+      "Catálogo dos módulos avançados que não ficam no menu principal.",
+    group: "Mais",
+    icon: LayoutGrid,
+    component: Ferramentas,
+    showInNav: true,
+    order: 10,
+    helpKey: "ferramentas",
+    sensitive: false,
   },
 ];
 
@@ -961,6 +926,17 @@ export const LEGACY_REDIRECTS: LegacyRedirect[] = [
     from: "/preferencias",
     to: "/configuracoes?tab=pessoal",
     reason: "Preferências pessoais ficam no workspace de configurações.",
+  },
+  {
+    from: "/administracao/configuracoes",
+    to: "/configuracoes?tab=administracao",
+    reason: "Administração do EJC virou uma aba do workspace de configurações.",
+  },
+  {
+    from: "/conhecimento",
+    to: "/inteligencia?tab=conhecimento",
+    reason:
+      "Curadoria RAG foi incorporada ao workspace de Inteligência Jurídica.",
   },
 ];
 

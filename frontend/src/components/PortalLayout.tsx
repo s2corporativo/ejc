@@ -17,7 +17,7 @@ const BRAND_LOGO = "/brand/logo-hd.png";
 
 const NAV = [
   { to: "/portal", label: "Início", icon: Home, end: true },
-  { to: "/portal/casos", label: "Processos", icon: Briefcase },
+  { to: "/portal/casos", label: "Casos", icon: Briefcase },
   { to: "/portal/financeiro", label: "Financeiro", icon: Wallet },
   { to: "/portal/assinaturas", label: "Assinaturas", icon: PenLine },
   { to: "/portal/mensagens", label: "Mensagens", icon: MessageCircle },
