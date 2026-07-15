@@ -85,6 +85,42 @@ async def test_lista_vazia_retorna_none(_local_on):
     assert await es.gerar_embeddings([]) is None
 
 
+async def test_contagem_divergente_do_provider_http_e_descartada(monkeypatch, caplog):
+    """Auditoria RAG: um provider HTTP que devolve MENOS vetores do que textos
+    pedidos não pode ser aceito — senão o chamador casaria vetor com chunk por
+    posição (zip/index) e deixaria os chunks finais sem embedding, mesmo o doc
+    sendo marcado 'indexado' (causa real de 26k chunks órfãos em produção)."""
+    monkeypatch.setattr(es.settings, "EMBEDDINGS_ENABLED", True)
+    monkeypatch.setattr(es.settings, "EMBEDDINGS_PROVIDER", "http")
+    monkeypatch.setattr(es.settings, "EMBEDDINGS_API_URL", "http://fake/embed")
+
+    async def _http_curto(textos, modo):
+        # devolve só 2 vetores para 3 textos pedidos — dimensão certa, contagem errada
+        return [[0.0] * es.EMBED_DIM, [0.0] * es.EMBED_DIM]
+
+    monkeypatch.setattr(es, "_embed_http", _http_curto)
+
+    with caplog.at_level("WARNING", logger="ejc.embeddings"):
+        vetores = await es.gerar_embeddings(["um", "dois", "tres"], modo="passage")
+
+    assert vetores is None
+    assert any("contagem não bate" in r.message for r in caplog.records)
+
+
+async def test_contagem_certa_do_provider_http_e_aceita(monkeypatch):
+    monkeypatch.setattr(es.settings, "EMBEDDINGS_ENABLED", True)
+    monkeypatch.setattr(es.settings, "EMBEDDINGS_PROVIDER", "http")
+    monkeypatch.setattr(es.settings, "EMBEDDINGS_API_URL", "http://fake/embed")
+
+    async def _http_certo(textos, modo):
+        return [[0.0] * es.EMBED_DIM for _ in textos]
+
+    monkeypatch.setattr(es, "_embed_http", _http_certo)
+
+    vetores = await es.gerar_embeddings(["um", "dois", "tres"], modo="passage")
+    assert vetores is not None and len(vetores) == 3
+
+
 def test_singleton_lazy_nao_carrega_no_import():
     # O import do módulo nunca deve materializar o modelo (boot leve).
     assert es._model is None or isinstance(es._model, _FakeModel) is False
