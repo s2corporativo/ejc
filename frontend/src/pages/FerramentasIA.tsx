@@ -31,10 +31,10 @@ const AREA_LABEL: Record<string, string> = {
   familia: "Família e sucessões",
   financeiro: "Financeiro",
   imobiliario: "Imobiliário",
-  penal: "Penal",
-  previdenciario: "Previdenciário",
   juridico: "Jurídico",
   operacional: "Operacional",
+  penal: "Penal",
+  previdenciario: "Previdenciário",
   provas: "Provas e audiência",
   saude: "Saúde",
   trabalhista: "Trabalhista",
@@ -181,9 +181,9 @@ export default function FerramentasIA() {
   return (
     <div className="space-y-5">
       <PageHeader
-        eyebrow="Inteligência"
-        title="Centro de Inteligência Jurídica"
-        subtitle={`${skills.length} fluxos especializados no mesmo núcleo: triagem, RAG interno, documentos e mídia, sempre como rascunho revisável.`}
+        eyebrow="Ferramentas"
+        title="Ferramentas de IA"
+        subtitle={`${skills.length} fluxos especializados no catálogo existente. Dentro de cada caso, o EJC recomenda apenas as ações adequadas à aba e ao contexto.`}
       />
 
       {casoFiltro && (
