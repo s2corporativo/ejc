@@ -114,6 +114,20 @@ class AIGateway:
         r = await self._chamar_central(prompt, tipo)
         return r["texto"]
 
+    async def generate_com_metadados(self, prompt: str, modo: str = "principal") -> Dict[str, Any]:
+        """Como `generate()`, mas devolve também o `modelo` (provedor/modelo) usado.
+
+        Auditoria 2026-07-15 (lacuna do relatório final do Núcleo Único de IA,
+        seção 13, item 1): `generate()` descarta o `modelo` retornado por
+        `_chamar_central`, o que impedia os consumidores legados de gravar
+        AILog (falta o campo `modelo`, obrigatório no model). Este método reusa
+        `_chamar_central` (MESMA sanitização de PII e MESMO transporte — nenhuma
+        lógica nova) e expõe `{"ok", "texto", "modelo"}` para quem precisa
+        registrar a auditoria via `app.services.ai.core.audit_logger.registrar`.
+        """
+        tipo = "juridico_profundo" if modo == "principal" else "default"
+        return await self._chamar_central(prompt, tipo)
+
     async def modo_duas_ias(self, demanda: str, contexto: str = "") -> Dict[str, Any]:
         """
         DEPRECATED — Análise Crítica Cruzada (Seção 23), agora via gateway central.

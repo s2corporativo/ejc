@@ -61,7 +61,13 @@ const TRATAMENTO: Record<
 
 const FONTE_PROB: Record<string, string> = {
   risco_cadastrado: "Risco cadastrado manualmente no caso",
-  score_saude: "Derivada do score de saúde do caso",
+  score_saude: "Regra interna sobre o score de saúde do caso",
+};
+
+// Rótulo amigável para `probabilidade.metodo`, quando o backend enviar esse
+// campo explícito (compatibilidade futura — ver types/visualLaw.ts).
+const METODO_LABEL: Record<string, string> = {
+  heuristica_deterministica: "Heurística determinística (regras fixas)",
 };
 
 const EIXO_X = ["Remoto", "Possível", "Provável"];
@@ -246,6 +252,19 @@ export default function MatrizRisco({ caseId }: { caseId: string }) {
               <span className="capitalize text-slate-400">
                 ({data.probabilidade.nivel})
               </span>
+            </p>
+            <p className="mt-1 text-xs italic text-slate-400">
+              Estimativa por regras internas do sistema — não é uma predição
+              gerada por IA generativa.
+              {data.probabilidade.metodo && (
+                <>
+                  {" "}
+                  Método:{" "}
+                  {METODO_LABEL[data.probabilidade.metodo] ??
+                    data.probabilidade.metodo}
+                  .
+                </>
+              )}
             </p>
           </div>
           <div>

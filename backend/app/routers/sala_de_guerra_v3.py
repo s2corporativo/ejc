@@ -16,7 +16,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.core.database import get_db
 from app.core.rate_limit import rate_limit
 from app.core.security import get_current_user
-from app.core.ownership import is_gestao
+from app.core.ownership import is_gestao, verificar_acesso_caso
 from app.core.config import get_settings
 from app.models.user import User
 from app.services.ia_sentinela import IASentinela
@@ -36,11 +36,20 @@ async def auditoria_sentinela(db: AsyncSession = Depends(get_db), cu: User = Dep
 
 
 @router.post("/war-room/simular", dependencies=[Depends(rate_limit("war-room-simular", 10))])
-async def simular_war_room(payload: dict, cu: User = Depends(get_current_user)):
+async def simular_war_room(
+    payload: dict,
+    db: AsyncSession = Depends(get_db),
+    cu: User = Depends(get_current_user),
+):
     peticao = payload.get("peticao")
     if not peticao:
         raise HTTPException(400, "Petição inicial é necessária para simulação.")
-    return await war_room.simular_contestacao(peticao)
+    case_id = payload.get("case_id")
+    if case_id:
+        await verificar_acesso_caso(db, cu, case_id)  # 403/404 se o caso não for visível
+    # Contrato de resposta preservado (string simples) — o frontend
+    # (SalaDeGuerra.tsx) espera `r.data` como string ou `{texto}`.
+    return await war_room.simular_contestacao(peticao, db=db, user=cu, case_id=case_id)
 
 
 # ── Visual Law PDF (cronologia por caso) ──────────────────────────────────────

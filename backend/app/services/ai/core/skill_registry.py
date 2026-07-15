@@ -87,6 +87,111 @@ def _h_estimate_cost(model, tokens_input, tokens_output):
     return _custo_brl(model, tokens_input or 0, tokens_output or 0)
 
 
+async def _documento_liberado_para_ia(db, user, case_id, document_id):
+    """IDOR + cofre guard, ANTES de delegar a `documento_service.extrair_e_analisar`.
+
+    Reusa a MESMA regra de `context_builder._documento_autorizado` (ownership:
+    documento tem de pertencer ao `case_id` esperado e o `user` provar acesso ao
+    caso do documento via `verificar_acesso_caso`) e a mesma regra de
+    `montar_contexto` para o "cofre" (confidencialidade >= restrito NUNCA entra
+    em pipeline de IA). Retorna (doc, None) se liberado, ou (None, dict-erro)
+    caso contrário — mesma mensagem genérica de "não encontrado" usada no resto
+    do núcleo, para não vazar a existência do recurso cross-tenant.
+    """
+    from sqlalchemy import select
+    from app.models.document import Document, DocConfidencialidade
+    from app.services.ai.core.context_builder import _documento_autorizado
+
+    doc = (await db.execute(
+        select(Document).where(Document.id == document_id, Document.deleted_at.is_(None))
+    )).scalar_one_or_none()
+    if doc is None:
+        return None, {"ok": False, "erro": "Documento não encontrado."}
+    if not await _documento_autorizado(db, user, doc, case_id):
+        return None, {"ok": False, "erro": "Documento não encontrado."}
+    if doc.confidencialidade not in (DocConfidencialidade.normal, DocConfidencialidade.interno):
+        return None, {
+            "ok": False,
+            "erro": "Documento em confidencialidade elevada (cofre) — bloqueado para IA.",
+        }
+    return doc, None
+
+
+async def _h_summarize_document(db, document_id, *, case_id=None, user=None, user_id=None, **kw):
+    """Resume um documento do GED, delegando ao pipeline de intake JÁ EXISTENTE
+    (`documento_service.extrair_e_analisar` — o mesmo usado por
+    POST /documentos-ia/analisar). Não reimplementa OCR nem chamada de modelo:
+    só localiza o documento (validando ownership/cofre — ver
+    `_documento_liberado_para_ia`) e projeta o resumo do resultado já computado.
+
+    Este handler HOJE não é despachado por nenhum fluxo real: `orchestrator.run()`
+    nunca chama `.handler(...)` genericamente por skill (o único `.handler(...)`
+    invocado em produção é o de `diagnose_system_module`; `agente.skills` nos
+    demais agentes é só metadado/documentação). É infraestrutura para uso
+    futuro/direto (ex.: chamada explícita fora do orchestrator).
+
+    ATENÇÃO se um dia for conectado ao `orchestrator.run()`: risco de AILog
+    DUPLICADO. Este handler já grava seu próprio AILog via
+    `documento_service.extrair_e_analisar` (quando recebe db+user_id) e o
+    orchestrator grava OUTRO ao final do fluxo (`audit_logger.registrar`) —
+    revisar essa duplicidade antes de qualquer dispatch automático.
+    """
+    from app.services import documento_service
+
+    doc, erro = await _documento_liberado_para_ia(db, user, case_id, document_id)
+    if erro is not None:
+        return erro
+
+    resultado = await documento_service.extrair_e_analisar(
+        doc.filepath, doc.mimetype, db=db, enriquecer_rag=False,
+        user_id=user_id or getattr(user, "id", None),
+    )
+    if not resultado.get("ok"):
+        return resultado
+
+    resumo_fatos = (
+        (resultado.get("intake_result") or {}).get("resumo_fatos")
+        or (resultado.get("resumo_executivo") or {}).get("fatos")
+    )
+    return {
+        "ok": True,
+        "resumo_fatos": resumo_fatos,
+        "diagnostico": resultado.get("diagnostico"),
+        "parcial": resultado.get("parcial", False),
+        "_aviso": resultado.get("_aviso"),
+    }
+
+
+async def _h_extract_structured_data(db, document_id, *, case_id=None, user=None, user_id=None, **kw):
+    """Extrai campos estruturados de um documento do GED, delegando ao MESMO
+    pipeline de `documento_service.extrair_e_analisar` (sem duplicar a lógica
+    de extração/OCR/LLM). Ver `_h_summarize_document` para o guard de
+    ownership/cofre (`_documento_liberado_para_ia`), para o status real de
+    dispatch (nenhum fluxo de produção chama este handler hoje) e para o risco
+    de AILog duplicado caso um dia seja conectado ao orchestrator.
+    """
+    from app.services import documento_service
+
+    doc, erro = await _documento_liberado_para_ia(db, user, case_id, document_id)
+    if erro is not None:
+        return erro
+
+    resultado = await documento_service.extrair_e_analisar(
+        doc.filepath, doc.mimetype, db=db, enriquecer_rag=True,
+        user_id=user_id or getattr(user, "id", None),
+    )
+    if not resultado.get("ok"):
+        return resultado
+
+    return {
+        "ok": True,
+        "intake_result": resultado.get("intake_result"),
+        "dados_estruturados": resultado.get("dados_estruturados"),
+        "parcial": resultado.get("parcial", False),
+        "_aviso": resultado.get("_aviso"),
+    }
+
+
 def _h_diagnose_system(max_chars: int = 12000):
     """Lê o GRAPH_REPORT (contexto técnico) — SEM segredos, com truncamento."""
     from pathlib import Path
@@ -157,9 +262,15 @@ SKILL_REGISTRY: dict[str, Skill] = {s.nome: s for s in [
           riscos="alto — conteúdo jurídico; SEMPRE rascunho",
           pos_condicoes="citation_check aplicado; HITL obrigatório", handler=None),
     Skill("summarize_document", "Resumir documento (OCR) de forma estruturada",
-          "texto do documento", "resumo técnico", handler=None),
+          "db, document_id, case_id, user", "dict{resumo_fatos, diagnostico}",
+          pre_condicoes="ownership do documento (case_id/verificar_acesso_caso) + "
+                        "documento FORA do cofre (mesma regra de build_document_context)",
+          handler=_h_summarize_document),
     Skill("extract_structured_data", "Extrair campos estruturados de documento",
-          "texto, schema desejado", "dict campos", handler=None),
+          "db, document_id, case_id, user", "dict{intake_result, dados_estruturados}",
+          pre_condicoes="ownership do documento (case_id/verificar_acesso_caso) + "
+                        "documento FORA do cofre (mesma regra de build_document_context)",
+          handler=_h_extract_structured_data),
     Skill("analyze_deadline", "Analisar prazos processuais e datas fatais",
           "contexto processual", "prazos + base legal",
           riscos="alto — prazo fatal; dupla conferência humana", handler=None),

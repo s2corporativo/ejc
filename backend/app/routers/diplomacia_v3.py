@@ -104,6 +104,15 @@ async def dossie_pressao(
 
 
 @router.post("/analisar-magistrado")
-async def analisar_magistrado(payload: dict, cu: User = Depends(get_current_user)):
+async def analisar_magistrado(
+    payload: dict,
+    db: AsyncSession = Depends(get_db),
+    cu: User = Depends(get_current_user),
+):
     decisoes = payload.get("decisoes", [])
-    return await sentimento_ia.analisar_tendencia(decisoes)
+    case_id = payload.get("case_id")
+    if case_id:
+        await verificar_acesso_caso(db, cu, case_id)  # 403/404 se o caso não for visível
+    # Contrato de resposta preservado (string simples) — CalculadoraAcordo.tsx
+    # (extrairTextoAnalise) já aceita string ou objeto com {resultado|texto|...}.
+    return await sentimento_ia.analisar_tendencia(decisoes, db=db, user=cu, case_id=case_id)

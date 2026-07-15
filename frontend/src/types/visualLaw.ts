@@ -60,6 +60,14 @@ export interface MatrizRiscoResponse {
   probabilidade: {
     nivel: NivelProbabilidade;
     fonte: "risco_cadastrado" | "score_saude";
+    /**
+     * Opcional / compatibilidade futura: identificador explícito do método de
+     * cálculo (ex.: "heuristica_deterministica"), quando o backend passar a
+     * enviá-lo. A UI já é honesta sem este campo — `fonte` acima já deixa
+     * claro que não há IA generativa envolvida — mas se o campo vier
+     * preenchido, exibimos o rótulo bruto como reforço.
+     */
+    metodo?: string | null;
   };
   impacto: {
     nivel: NivelImpacto;
@@ -93,6 +101,8 @@ export interface AlertasResponse {
   score: number;
   classificacao: ClassificacaoSaude;
   badges: AlertaBadge[];
+  /** Opcional / compatibilidade futura — ver nota em MatrizRiscoResponse.probabilidade.metodo. */
+  metodo?: string | null;
 }
 
 // POST /visual-law/breakeven
