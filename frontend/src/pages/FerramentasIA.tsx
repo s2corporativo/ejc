@@ -27,11 +27,17 @@ const AREA_LABEL: Record<string, string> = {
   administrativo: "Administrativo",
   civel: "Cível e processual",
   consumidor: "Consumidor",
+  estrategia: "Estratégia processual",
+  familia: "Família e sucessões",
   financeiro: "Financeiro",
   imobiliario: "Imobiliário",
+  penal: "Penal",
+  previdenciario: "Previdenciário",
   juridico: "Jurídico",
   operacional: "Operacional",
   provas: "Provas e audiência",
+  saude: "Saúde",
+  trabalhista: "Trabalhista",
   tributario: "Tributário",
 };
 
