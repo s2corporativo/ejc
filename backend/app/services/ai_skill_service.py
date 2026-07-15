@@ -128,7 +128,7 @@ async def executar_skill(
     modelo_log = f"{resp.provedor}/{resp.modelo}" if resp.provedor else resp.modelo
     # registrar_ai_log PROPAGA erro (não engole em try/except com só warning) —
     # log de uso de IA é parte da própria correção, não pode falhar em silêncio.
-    await registrar_ai_log(
+    log_id = await registrar_ai_log(
         db,
         user_id=user_id,
         tipo_uso=AITipoUso.outro,
@@ -145,11 +145,13 @@ async def executar_skill(
     return {
         "conteudo": resp.texto,
         "skill": skill.display_name,
+        "skill_name": skill.name,
         "engine": skill.engine,
         "is_rascunho": True,
         "requer_revisao": skill.requires_human_review,
         "tokens_usados": inp + out,
         "custo_estimado_brl": custo,
+        "ai_log_id": log_id,
     }
 
 
@@ -307,7 +309,7 @@ async def executar_skill_documento_longo(
         or any(item[2] for item in parciais)
     )
     modelo_log = f"{final.provedor}/{final.modelo}" if final.provedor else final.modelo
-    await registrar_ai_log(
+    log_id = await registrar_ai_log(
         db,
         user_id=user_id,
         tipo_uso=AITipoUso.resumo_documento,
@@ -326,11 +328,13 @@ async def executar_skill_documento_longo(
     return {
         "conteudo": final.texto,
         "skill": skill.display_name,
+        "skill_name": skill.name,
         "engine": skill.engine,
         "is_rascunho": True,
         "requer_revisao": skill.requires_human_review,
         "tokens_usados": tokens_input + tokens_output,
         "custo_estimado_brl": custo,
+        "ai_log_id": log_id,
         "processamento": {
             "modo": "map_reduce",
             "caracteres": len(texto_documento),
