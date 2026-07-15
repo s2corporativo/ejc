@@ -1,5 +1,5 @@
 from __future__ import annotations
-from typing import Optional
+from typing import Any, Optional
 from pydantic import BaseModel, Field
 
 
@@ -21,7 +21,7 @@ class SkillExecuteRequest(BaseModel):
     skill_name: str = Field(..., description="Nome da skill (campo 'name')")
     query: str = Field(..., min_length=5, max_length=12000)
     case_id: Optional[str] = Field(None)
-    usar_rag: bool = Field(False)
+    usar_rag: bool = Field(True)
 
 
 class SkillExecuteResponse(BaseModel):
@@ -32,4 +32,7 @@ class SkillExecuteResponse(BaseModel):
     requer_revisao: bool = True
     tokens_usados: int = 0
     custo_estimado_brl: float = 0.0
+    processamento: Optional[dict[str, Any]] = None
+    transcricao: Optional[str] = None
+    aviso_privacidade: Optional[str] = None
     aviso: str = "RASCUNHO — revisão humana obrigatória antes de qualquer uso (OAB)."

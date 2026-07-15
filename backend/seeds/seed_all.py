@@ -86,8 +86,13 @@ async def main() -> None:
     # Seeds idempotentes (por name); ferramentas dependem das skills, nesta ordem.
     from app.seeds.skills_seed import seed_skills_sync
     from app.seeds.skills_ferramentas_seed import seed as seed_skills_ferramentas
+    from app.seeds.skills_workflows_seed import seed as seed_skills_workflows
     await _rodar_seed_sync("ejc_skills", seed_skills_sync)
     await _rodar_seed_sync("ejc_skills_ferramentas", seed_skills_ferramentas)
+    # Fluxos especializados por matéria (tributário, imobiliário, cível,
+    # consumidor, administrativo e provas). Permanecem no MESMO núcleo de
+    # skills; este seed só amplia o catálogo sem criar agentes paralelos.
+    await _rodar_seed_sync("ejc_skills_workflows", seed_skills_workflows)
     print("[seed] concluído.")
 
 

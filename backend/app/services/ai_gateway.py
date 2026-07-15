@@ -458,6 +458,81 @@ async def chat(
     )
 
 
+async def transcrever_audio(
+    *,
+    file_bytes: bytes,
+    filename: str,
+    language: str = "pt",
+    confirmacao_envio_externo: bool = False,
+) -> dict:
+    """Ponto único para transcrição de mídia em provedor externo.
+
+    Diferentemente de texto, o áudio bruto não pode ser pseudonimizado antes da
+    transcrição. Por isso o recurso nasce desligado, exige confirmação em cada
+    requisição e respeita o kill-switch global de provedores externos. O arquivo
+    não é persistido nem enviado à observabilidade por este fluxo.
+    """
+    if not confirmacao_envio_externo:
+        raise PermissionError(
+            "Confirme o envio temporário da mídia ao provedor externo para transcrição."
+        )
+    if not settings.AI_ENABLED or not settings.AUDIO_TRANSCRIPTION_ENABLED:
+        raise RuntimeError(
+            "Transcrição de mídia desabilitada. Ative AUDIO_TRANSCRIPTION_ENABLED após validação de privacidade."
+        )
+    if not settings.AI_EXTERNAL_PROVIDERS_ALLOWED:
+        raise RuntimeError(
+            "Provedores externos estão desabilitados pela política de soberania de dados."
+        )
+    if not settings.GROQ_ZDR_VERIFIED:
+        raise RuntimeError(
+            "Transcrição bloqueada: confirme Zero Data Retention nos Data Controls do Groq e marque GROQ_ZDR_VERIFIED."
+        )
+    if not settings.AUDIO_TRANSCRIPTION_DPA_APPROVED:
+        raise RuntimeError(
+            "Transcrição bloqueada: aprove e documente DPA/transferência internacional antes de marcar AUDIO_TRANSCRIPTION_DPA_APPROVED."
+        )
+    if not settings.GROQ_API_KEY:
+        raise RuntimeError("GROQ_API_KEY não configurada para transcrição.")
+    if not file_bytes:
+        raise ValueError("Mídia vazia.")
+    limite = settings.AUDIO_TRANSCRIPTION_MAX_MB * 1024 * 1024
+    if len(file_bytes) > limite:
+        raise ValueError(
+            f"Mídia excede o limite configurado de {settings.AUDIO_TRANSCRIPTION_MAX_MB} MB."
+        )
+    language = (language or "pt").strip().lower()
+    if language not in {"pt", "en", "es"}:
+        raise ValueError("Idioma não suportado. Use pt, en ou es.")
+
+    from app.services.providers import groq_provider
+
+    try:
+        texto, metadata = await groq_provider.transcrever(
+            file_bytes,
+            filename,
+            language=language,
+            model=settings.GROQ_TRANSCRIPTION_MODEL,
+            timeout=settings.AUDIO_TRANSCRIPTION_TIMEOUT,
+        )
+    except (ValueError, PermissionError):
+        raise
+    except Exception as exc:
+        logger.warning(
+            "[Gateway] transcrição Groq falhou: %s", type(exc).__name__
+        )
+        raise RuntimeError(
+            "Não foi possível transcrever a mídia no provedor configurado."
+        ) from exc
+
+    logger.info(
+        "[Gateway] mídia transcrita por groq/%s (%d bytes; conteúdo não registrado)",
+        metadata.get("model"),
+        len(file_bytes),
+    )
+    return {"texto": texto, **metadata}
+
+
 async def health() -> dict:
     """Retorna status de saúde de cada provedor."""
     from app.services.providers import groq_provider, ollama_provider, anthropic_provider

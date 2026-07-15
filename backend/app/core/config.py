@@ -65,7 +65,24 @@ class Settings(BaseSettings):
     GROQ_API_KEY: str = ""
     GROQ_MODEL: str = "llama-3.3-70b-versatile"   # 128k (llama3-70b-8192 descomissionado pelo Groq)
     GROQ_TIMEOUT: int = 60               # segundos
+    # Transcrição de áudio/vídeo é uma operação EXTERNA distinta do chat:
+    # nasce desligada, exige confirmação por requisição e respeita o
+    # kill-switch AI_EXTERNAL_PROVIDERS_ALLOWED.
+    AUDIO_TRANSCRIPTION_ENABLED: bool = False
+    AUDIO_TRANSCRIPTION_MAX_MB: int = 25
+    AUDIO_TRANSCRIPTION_TIMEOUT: int = 180
+    # Gates organizacionais: só marcar True após habilitar Zero Data Retention
+    # na conta Groq e documentar DPA/transferência internacional com o DPO.
+    GROQ_ZDR_VERIFIED: bool = False
+    AUDIO_TRANSCRIPTION_DPA_APPROVED: bool = False
+    GROQ_TRANSCRIPTION_MODEL: str = "whisper-large-v3"
     AI_ENABLED: bool = True
+
+    # Documento grande: leitura em blocos + síntese, sem truncamento silencioso.
+    # O teto é propositalmente explícito para respeitar TPM/contexto do provedor.
+    AI_LONG_DOCUMENT_MAX_CHARS: int = 120_000
+    AI_LONG_DOCUMENT_CHUNK_CHARS: int = 16_000
+    AI_LONG_DOCUMENT_MAX_CHUNKS: int = 12
 
     # ── Ficha de Triagem pré-peça (gate de qualidade) ────────────────────
     # True = POST /pecas/gerar com case_id EXIGE ficha de triagem CONFIRMADA
