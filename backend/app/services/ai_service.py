@@ -91,13 +91,17 @@ _FILTRO_GATE_RAG = (
 # Regime estrito opcional: quando RAG_EXIGIR_APROVADO=true, só documentos
 # explicitamente aprovados entram na recuperação.
 _FILTRO_APROVADO_RAG = "AND COALESCE(kd.extra->>'rag_status','') = 'aprovado'"
-# Quarentena de súmulas: o seed estático foi indexado com chave_origem
-# 'sumula:<uuid>' e fonte='sumula'. Enquanto RAG_SUMULAS_QUARENTENA=true (padrão)
-# esses docs são excluídos da recuperação — conteúdo não conferido com fontes
-# oficiais (ver auditoria RAG e sumulas_ingestion.py).
+# Quarentena de súmulas: o seed foi reconstruído e cada verbete reconferido
+# individualmente contra fonte oficial (sumulas_ingestion.py), gravando
+# extra->>'conferido'='true' SÓ nos que passaram nessa reconferência. Enquanto
+# RAG_SUMULAS_QUARENTENA=true (padrão), qualquer doc de súmula (chave_origem
+# 'sumula:%' ou fonte='sumula') SEM esse marcador é excluído — protege contra
+# reintrodução de conteúdo não conferido (seed antigo, ingestão manual futura).
 _FILTRO_SUMULAS_QUARENTENA = (
-    "AND NOT (COALESCE(kd.chave_origem,'') LIKE 'sumula:%' "
-    "OR COALESCE(kd.fonte,'') = 'sumula')"
+    "AND NOT ("
+    "(COALESCE(kd.chave_origem,'') LIKE 'sumula:%' OR COALESCE(kd.fonte,'') = 'sumula') "
+    "AND COALESCE((kd.extra->>'conferido')::boolean, false) = false"
+    ")"
 )
 # Corpus FICTÍCIO (Bíblia EJC): extra->>'ficticio'='true'. É material de
 # estrutura/metodologia, NUNCA fundamentação — excluído por padrão das buscas
