@@ -66,22 +66,86 @@ async def _datajud_search(alias: str, payload: dict, headers: dict) -> dict:
 
 
 # Segmento J.TR do número CNJ (NNNNNNN-DD.AAAA.J.TR.OOOO) → alias do endpoint.
-# Principais tribunais; demais aliases seguem o padrão api_publica_<sigla>
-# (lista completa na wiki oficial) e podem ser adicionados sob demanda.
+# Tabela de códigos J/TR: Resolução CNJ nº 65/2008 (numeração única) — cruzada
+# e confirmada contra as entradas já existentes (TJMG=8.13, TJSP=8.26,
+# TJRJ=8.19 batem exatamente com a tabela oficial). Cobertura ampliada
+# (auditoria RAG) para TODOS os TJs e TRTs — antes só 3 TJs e 1 TRT tinham
+# alias mapeado, o que limitava a consulta de andamentos (DataJud) a uma
+# fração pequena da Justiça Estadual/Trabalhista.
+#   J=8 Justiça Estadual/DF | J=5 Justiça do Trabalho | J=4 Justiça Federal
+#   J=3 STJ | J=1 STF (numeração própria, não mapeada aqui — ver nota abaixo)
 _SEG_TR_ALIAS = {
+    # ── Justiça Estadual (J=8) — todos os 26 estados + DF ──────────────────
+    ("8", "01"): "api_publica_tjac",
+    ("8", "02"): "api_publica_tjal",
+    ("8", "03"): "api_publica_tjap",
+    ("8", "04"): "api_publica_tjam",
+    ("8", "05"): "api_publica_tjba",
+    ("8", "06"): "api_publica_tjce",
+    ("8", "07"): "api_publica_tjdft",  # Distrito Federal e Territórios
+    ("8", "08"): "api_publica_tjes",
+    ("8", "09"): "api_publica_tjgo",
+    ("8", "10"): "api_publica_tjma",
+    ("8", "11"): "api_publica_tjmt",
+    ("8", "12"): "api_publica_tjms",
     ("8", "13"): "api_publica_tjmg",   # Justiça Estadual MG
-    ("8", "26"): "api_publica_tjsp",   # Justiça Estadual SP
+    ("8", "14"): "api_publica_tjpa",
+    ("8", "15"): "api_publica_tjpb",
+    ("8", "16"): "api_publica_tjpr",
+    ("8", "17"): "api_publica_tjpe",
+    ("8", "18"): "api_publica_tjpi",
     ("8", "19"): "api_publica_tjrj",   # Justiça Estadual RJ
+    ("8", "20"): "api_publica_tjrn",
+    ("8", "21"): "api_publica_tjrs",
+    ("8", "22"): "api_publica_tjro",
+    ("8", "23"): "api_publica_tjrr",
+    ("8", "24"): "api_publica_tjsc",
+    ("8", "25"): "api_publica_tjse",
+    ("8", "26"): "api_publica_tjsp",   # Justiça Estadual SP
+    ("8", "27"): "api_publica_tjto",
+    # ── Justiça do Trabalho (J=5) — TST + todas as 24 regiões ──────────────
     ("5", "00"): "api_publica_tst",    # TST (TR=00 no segmento trabalhista)
+    ("5", "01"): "api_publica_trt1",
+    ("5", "02"): "api_publica_trt2",
     ("5", "03"): "api_publica_trt3",   # Justiça do Trabalho 3ª Região (MG)
+    ("5", "04"): "api_publica_trt4",
+    ("5", "05"): "api_publica_trt5",
+    ("5", "06"): "api_publica_trt6",
+    ("5", "07"): "api_publica_trt7",
+    ("5", "08"): "api_publica_trt8",
+    ("5", "09"): "api_publica_trt9",
+    ("5", "10"): "api_publica_trt10",
+    ("5", "11"): "api_publica_trt11",
+    ("5", "12"): "api_publica_trt12",
+    ("5", "13"): "api_publica_trt13",
+    ("5", "14"): "api_publica_trt14",
+    ("5", "15"): "api_publica_trt15",
+    ("5", "16"): "api_publica_trt16",
+    ("5", "17"): "api_publica_trt17",
+    ("5", "18"): "api_publica_trt18",
+    ("5", "19"): "api_publica_trt19",
+    ("5", "20"): "api_publica_trt20",
+    ("5", "21"): "api_publica_trt21",
+    ("5", "22"): "api_publica_trt22",
+    ("5", "23"): "api_publica_trt23",
+    ("5", "24"): "api_publica_trt24",
+    # ── Justiça Federal (J=4) — todos os 6 TRFs ─────────────────────────────
     ("4", "01"): "api_publica_trf1",   # Justiça Federal 1ª Região
     ("4", "02"): "api_publica_trf2",
     ("4", "03"): "api_publica_trf3",
     ("4", "04"): "api_publica_trf4",
     ("4", "05"): "api_publica_trf5",
     ("4", "06"): "api_publica_trf6",   # TRF6 (MG, criado em 2022)
+    # ── STJ (J=3) ────────────────────────────────────────────────────────────
     ("3", "00"): "api_publica_stj",    # STJ
 }
+# NOTA: STF (J=1) não foi incluído — sua numeração de processos não segue o
+# mesmo padrão J.TR de tribunal regional/regional (é o topo da hierarquia,
+# sem "regiões"), e o DataJud também não fornece texto integral de acórdãos
+# (só metadados de movimentação) — não resolve o gap de INGESTÃO DE
+# JURISPRUDÊNCIA (STF/TCU/CARF) apontado na auditoria, apenas o de consulta
+# de andamento processual. Ver auditoria RAG para o roadmap de conectores de
+# jurisprudência propriamente ditos (texto integral/ementas).
 
 
 def alias_do_numero(numero_cnj: str) -> str | None:

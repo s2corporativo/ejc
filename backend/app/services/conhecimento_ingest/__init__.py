@@ -28,6 +28,22 @@
 # Estado/dedup: a própria chave_origem do upsert_documento (idempotente e
 # versionado — migration 068) resolve; reexecução não duplica nada.
 #
+# ROADMAP — fontes ainda ausentes (auditoria RAG, item "conectores"): STF,
+# TST (jurisprudência — súmulas já cobertas em sumulas_ingestion.py), TCU,
+# CARF. Não implementadas nesta rodada porque exigem raspagem de páginas de
+# busca (não APIs estáveis como STJ CKAN/Câmara/Senado) que não puderam ser
+# verificadas ponta a ponta contra o site real nesta sessão — implementar
+# sem essa verificação arriscaria produzir conector silenciosamente quebrado
+# ou, pior, extrair conteúdo incorreto (exatamente a classe de erro que esta
+# auditoria corrigiu nas súmulas). A expansão de cobertura feita nesta rodada
+# foi no DataJud/CNJ (app/services/datajud_service.py — de 3 TJs/1 TRT para
+# todos os 27 TJs e 24 TRTs), que é uma API documentada e já testada no
+# projeto — mas o DataJud só devolve METADADOS de movimentação processual,
+# não texto integral de acórdão/ementa, então não fecha o gap de ingestão de
+# JURISPRUDÊNCIA de STF/TST/TCU/CARF apontado na auditoria. Próximo passo
+# recomendado: verificar (com acesso de rede real) se cada tribunal tem API
+# documentada equivalente à do STJ CKAN antes de escrever o scraper.
+#
 # Agendamento: job semanal DOMINGO 03h00 UTC (scheduler.job_ingestao_conhecimento),
 # gate CONHECIMENTO_INGEST_ENABLED (default True — autorizado pelo dono).
 # Disparo manual: POST /rag/ingest-fontes-oficiais (socio+, audit log,
