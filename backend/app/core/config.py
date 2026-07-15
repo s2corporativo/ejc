@@ -340,15 +340,20 @@ class Settings(BaseSettings):
     # quebra o acervo legado nunca curado). Ligue RAG_EXIGIR_APROVADO=true para
     # exigir rag_status='aprovado' em TODA recuperação (regime estrito).
     RAG_EXIGIR_APROVADO: bool = False
-    # Quarentena das súmulas: o seed estático continha texto juridicamente
-    # incorreto marcado como confianca="alta". Enquanto True (padrão), nenhum
-    # doc de fonte súmula (chave_origem 'sumula:%' / fonte='sumula') entra na
-    # recuperação RAG. Desligue só após reconferência com as fontes oficiais.
+    # Quarentena das súmulas: mesmo após a reconstrução do seed (cada verbete
+    # reconferido individualmente contra fonte oficial — ver DATA_CONFERENCIA
+    # em sumulas_ingestion.py), este filtro continua ligado por padrão como
+    # rede de segurança: só deixa passar doc de súmula com extra.conferido=true
+    # (gravado pelo próprio seed corrigido). Protege contra reintrodução de
+    # conteúdo não conferido por outra via (ingestão manual futura, por ex.).
     RAG_SUMULAS_QUARENTENA: bool = True
-    # Reabilita a INGESTÃO do seed estático de súmulas (sumulas_ingestion.py).
-    # Padrão False (quarentena): o conteúdo não foi conferido com fontes
-    # oficiais. Enquanto False o endpoint /sumulas/ingerir-seed responde 423.
-    RAG_SUMULAS_SEED_ENABLED: bool = False
+    # Ingestão do seed de súmulas (sumulas_ingestion.py) — RECONSTRUÍDO na
+    # auditoria RAG: os 27 verbetes foram reconferidos individualmente contra
+    # fonte oficial (STF/STJ/TST). Súmulas cancelada/suspensa são marcadas e
+    # NÃO entram no RAG buscável (só ficam em `teses` como histórico). Padrão
+    # True — desligue (False) só se precisar suspender a ingestão rapidamente
+    # sem reverter código (o endpoint responde 423 quando False).
+    RAG_SUMULAS_SEED_ENABLED: bool = True
 
     # ── Web Push (alertas no celular via PWA) ────────────────────────────
     # Gerar chaves: python scripts/gen_vapid.py (uma vez no deploy)
