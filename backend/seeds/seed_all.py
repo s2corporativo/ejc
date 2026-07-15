@@ -87,12 +87,16 @@ async def main() -> None:
     from app.seeds.skills_seed import seed_skills_sync
     from app.seeds.skills_ferramentas_seed import seed as seed_skills_ferramentas
     from app.seeds.skills_workflows_seed import seed as seed_skills_workflows
+    from app.seeds.skills_expansion_seed import seed as seed_skills_expansion
     await _rodar_seed_sync("ejc_skills", seed_skills_sync)
     await _rodar_seed_sync("ejc_skills_ferramentas", seed_skills_ferramentas)
     # Fluxos especializados por matéria (tributário, imobiliário, cível,
     # consumidor, administrativo e provas). Permanecem no MESMO núcleo de
     # skills; este seed só amplia o catálogo sem criar agentes paralelos.
     await _rodar_seed_sync("ejc_skills_workflows", seed_skills_workflows)
+    # Segunda onda: consumidor/saúde, trabalhista, previdenciário, penal,
+    # família, provas e estratégia processual, com as mesmas salvaguardas.
+    await _rodar_seed_sync("ejc_skills_expansion", seed_skills_expansion)
     print("[seed] concluído.")
 
 
