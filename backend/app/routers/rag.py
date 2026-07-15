@@ -1,5 +1,6 @@
 # ── app/routers/rag.py ───────────────────────────────────────────────────────
 # Base de conhecimento RAG: ingestão de docs + consulta.
+import logging
 from datetime import datetime, timezone
 from uuid import uuid4
 from typing import Optional, List
@@ -26,6 +27,8 @@ from app.routers.ia_governanca import Confianca
 # senão BackgroundTasks (comportamento idêntico ao anterior com CELERY_ENABLED=False).
 from app.tasks.dispatcher import agendar_indexacao
 from app.schemas.common import MsgResponse
+
+logger = logging.getLogger("ejc.rag")
 
 router = APIRouter(prefix="/rag", tags=["Base de Conhecimento"])
 
@@ -240,11 +243,22 @@ async def _indexar_doc_bg(doc_id: str) -> None:
             await db.commit()
             return
         vetores = await gerar_embeddings([c.conteudo for c in chunks])
-        if vetores:
+        # gerar_embeddings já garante len(vetores) == len(chunks) quando não é
+        # None (auditoria RAG: contagem divergente vinha sendo aceita aqui via
+        # zip(), que trunca silenciosamente e deixava chunks finais sem
+        # embedding com o doc já marcado "indexado"). Ainda assim, checagem
+        # defensiva aqui: só aplica e marca "indexado" se bater 1:1.
+        if vetores and len(vetores) == len(chunks):
             for ch, v in zip(chunks, vetores):
                 ch.embedding = v
             novo_status = "indexado"
         else:
+            if vetores:
+                logger.warning(
+                    "_indexar_doc_bg %s: %d vetores para %d chunks — "
+                    "descartado, doc permanece sem embeddings", doc_id,
+                    len(vetores), len(chunks),
+                )
             novo_status = "sem_embeddings"
         await db.execute(
             update(KnowledgeDoc)

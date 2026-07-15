@@ -155,6 +155,18 @@ async def gerar_embeddings(
         except Exception as e:
             logger.warning(f"Falha ao gerar embeddings: {e}")
             vetores = None
+    # Contagem: um provider (sobretudo o HTTP, serviço externo fora do nosso
+    # controle) pode devolver MENOS vetores do que textos pedidos — sem isto,
+    # o chamador casaria vetores com chunks por POSIÇÃO (zip/index) e deixaria
+    # os chunks finais sem embedding, mesmo o doc sendo marcado "indexado"
+    # (achado da auditoria RAG: 26k chunks órfãos com doc status='indexado').
+    # Tudo-ou-nada: contagem errada é falha total, cai para o textual.
+    if vetores is not None and len(vetores) != len(textos):
+        logger.warning(
+            "Embeddings: provider devolveu %d vetores para %d textos — "
+            "descartando o lote (contagem não bate)", len(vetores), len(textos),
+        )
+        vetores = None
     if cacheavel and vetores:
         _cache_query_put(modo, textos[0], vetores[0])
     return vetores
