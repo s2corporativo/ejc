@@ -11,6 +11,7 @@ import asyncio
 import logging
 import os
 import tempfile
+from datetime import datetime, timezone
 from pathlib import Path
 from typing import List, Optional
 
@@ -25,17 +26,24 @@ from fastapi import (
     status,
 )
 from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy import select
 
 from app.core.config import get_settings
 from app.core.database import get_db
 from app.core.security import get_current_user
 from app.models.user import User
 from app.schemas.ai_skill import (
+    ContextualActionsResponse,
     SkillExecuteRequest,
     SkillExecuteResponse,
     SkillListItem,
 )
 from app.services import ai_gateway, ai_skill_service
+from app.services.ai_contextual import (
+    classificar_documento,
+    proximas_skills,
+    ranquear_skills_contextuais,
+)
 
 router = APIRouter(prefix="/ai/skills", tags=["AI Skills"])
 logger = logging.getLogger("ejc.ai.skills.router")
@@ -123,6 +131,128 @@ async def _buscar_contexto(
         return None
 
 
+async def _metadados_caso(
+    db: AsyncSession,
+    case_id: str | None,
+    area: str | None,
+    phase: str | None,
+) -> tuple[str | None, str | None]:
+    """Usa área/fase do caso como fonte canônica quando houver vínculo."""
+    if not case_id:
+        return area, phase
+    from app.models.case import Case
+
+    row = (
+        await db.execute(
+            select(Case.area, Case.fase).where(Case.id == case_id)
+        )
+    ).one_or_none()
+    if row is None:
+        raise ValueError("Caso não encontrado.")
+    return row.area or area, row.fase or phase
+
+
+def _acao_contextual(item: dict) -> dict:
+    skill = item["skill"]
+    return {
+        "id": skill.id,
+        "name": skill.name,
+        "display_name": skill.display_name,
+        "description": skill.description,
+        "area": skill.area,
+        "requires_case": skill.requires_case,
+        "requires_human_review": skill.requires_human_review,
+        "oab_restricted": skill.oab_restricted,
+        "reason": item["reason"],
+        "score": item["score"],
+    }
+
+
+async def _proximas_acoes_disponiveis(
+    db: AsyncSession,
+    skill_name: str | None,
+) -> list[dict]:
+    desejadas = proximas_skills(skill_name)
+    catalogo = await ai_skill_service.listar_skills(db)
+    por_nome = {skill.name: skill for skill in catalogo}
+    return [
+        {
+            "name": por_nome[nome].name,
+            "display_name": por_nome[nome].display_name,
+            "description": por_nome[nome].description,
+        }
+        for nome in desejadas
+        if nome in por_nome
+    ][:3]
+
+
+async def _enriquecer_resultado(
+    db: AsyncSession,
+    resultado: dict,
+    *,
+    case_id: str | None,
+    surface: str | None,
+    area: str | None,
+    phase: str | None,
+    usar_rag: bool,
+    input_type: str,
+    classificacao: dict | None = None,
+) -> dict:
+    resultado["classificacao"] = classificacao
+    resultado["proximas_acoes"] = await _proximas_acoes_disponiveis(
+        db, resultado.get("skill_name")
+    )
+    resultado["auditoria"] = {
+        "case_id": case_id,
+        "surface": surface or "geral",
+        "area": area,
+        "phase": phase,
+        "input_type": input_type,
+        "rag_habilitado": usar_rag,
+        "classificacao_local": bool(classificacao),
+        "gerado_em": datetime.now(timezone.utc).isoformat(),
+        "revisao_humana_obrigatoria": bool(resultado.get("requer_revisao", True)),
+    }
+    return resultado
+
+
+@router.get("/contextual", response_model=ContextualActionsResponse)
+async def listar_acoes_contextuais(
+    surface: str = Query("resumo", max_length=60),
+    case_id: Optional[str] = Query(None),
+    area: Optional[str] = Query(None, max_length=80),
+    phase: Optional[str] = Query(None, max_length=80),
+    document_type: Optional[str] = Query(None, max_length=80),
+    limit: int = Query(5, ge=1, le=8),
+    db: AsyncSession = Depends(get_db),
+    cu: User = Depends(get_current_user),
+):
+    """Recomenda poucas skills dentro do módulo que o usuário já está usando."""
+    if case_id:
+        await _preparar_caso(db, cu, case_id)
+    area, phase = await _metadados_caso(db, case_id, area, phase)
+    catalogo = await ai_skill_service.listar_skills(db)
+    ranqueadas = ranquear_skills_contextuais(
+        catalogo,
+        surface=surface,
+        area=area,
+        phase=phase,
+        document_type=document_type,
+        has_case=bool(case_id),
+        limit=limit,
+    )
+    return {
+        "surface": surface,
+        "area": area,
+        "phase": phase,
+        "document_type": document_type,
+        "case_id": case_id,
+        "actions": [_acao_contextual(item) for item in ranqueadas],
+        "total_catalog": len(catalogo),
+        "selection_method": "contextual_rules_v1",
+    }
+
+
 @router.get("/list", response_model=List[SkillListItem])
 async def listar_skills(
     area: Optional[str] = Query(None, description="Área do catálogo"),
@@ -139,6 +269,7 @@ async def executar_skill(
     cu: User = Depends(get_current_user),
 ):
     escopo, entidades = await _preparar_caso(db, cu, req.case_id)
+    area, phase = await _metadados_caso(db, req.case_id, req.area, req.phase)
     contexto_rag = await _buscar_contexto(
         db,
         req.query,
@@ -158,16 +289,29 @@ async def executar_skill(
         )
     except (ValueError, PermissionError, RuntimeError) as exc:
         raise _http_error(exc) from exc
+    resultado = await _enriquecer_resultado(
+        db,
+        resultado,
+        case_id=req.case_id,
+        surface=req.surface,
+        area=area,
+        phase=phase,
+        usar_rag=req.usar_rag,
+        input_type="texto",
+    )
     return SkillExecuteResponse(**resultado)
 
 
 @router.post("/execute-doc", response_model=SkillExecuteResponse)
 async def executar_skill_documento(
-    skill_name: str = Form(...),
+    skill_name: Optional[str] = Form(None),
     file: UploadFile = File(...),
     case_id: Optional[str] = Form(None),
     instrucoes: Optional[str] = Form(None),
     usar_rag: bool = Form(True),
+    surface: str = Form("documentos"),
+    area: Optional[str] = Form(None),
+    phase: Optional[str] = Form(None),
     db: AsyncSession = Depends(get_db),
     cu: User = Depends(get_current_user),
 ):
@@ -228,6 +372,27 @@ async def executar_skill_documento(
             "Não foi possível extrair texto útil do documento.",
         )
 
+    area, phase = await _metadados_caso(db, case_id, area, phase)
+    classificacao = classificar_documento(nome_arquivo, texto)
+    if not skill_name or skill_name == "auto":
+        catalogo = await ai_skill_service.listar_skills(db)
+        ranqueadas = ranquear_skills_contextuais(
+            catalogo,
+            surface=surface or classificacao["surface_sugerida"],
+            area=area,
+            phase=phase,
+            document_type=classificacao["tipo"],
+            document_skills=classificacao["skills_sugeridas"],
+            has_case=bool(case_id),
+            limit=1,
+        )
+        if not ranqueadas:
+            raise HTTPException(
+                status.HTTP_422_UNPROCESSABLE_ENTITY,
+                "Nenhuma ação contextual disponível para o documento.",
+            )
+        skill_name = ranqueadas[0]["skill"].name
+
     consulta_rag = "\n".join(
         parte for parte in (skill_name, instrucoes or "", texto[:1_500]) if parte
     )
@@ -274,6 +439,17 @@ async def executar_skill_documento(
             }
     except (ValueError, PermissionError, RuntimeError) as exc:
         raise _http_error(exc) from exc
+    resultado = await _enriquecer_resultado(
+        db,
+        resultado,
+        case_id=case_id,
+        surface=surface,
+        area=area,
+        phase=phase,
+        usar_rag=usar_rag,
+        input_type="documento",
+        classificacao=classificacao,
+    )
     return SkillExecuteResponse(**resultado)
 
 
@@ -287,6 +463,9 @@ async def transcrever_midia(
     idioma: str = Form("pt"),
     base_legal_registrada: str = Form(...),
     confirmar_envio_externo: bool = Form(False),
+    surface: str = Form("audiencias"),
+    area: Optional[str] = Form(None),
+    phase: Optional[str] = Form(None),
     db: AsyncSession = Depends(get_db),
     cu: User = Depends(get_current_user),
 ):
@@ -318,6 +497,7 @@ async def transcrever_midia(
 
     # Ownership é verificado antes de incorrer em chamada externa/custo.
     escopo, entidades = await _preparar_caso(db, cu, case_id)
+    area, phase = await _metadados_caso(db, case_id, area, phase)
     limite = settings.AUDIO_TRANSCRIPTION_MAX_MB * 1024 * 1024
     conteudo = await file.read(limite + 1)
     if not conteudo:
@@ -411,5 +591,15 @@ async def transcrever_midia(
         "persistiu o arquivo nem a transcrição bruta; registrou apenas metadados "
         "da operação. Esses gates registram a validação do responsável; não substituem "
         "a avaliação da base legal, do sigilo e da transferência internacional."
+    )
+    resultado = await _enriquecer_resultado(
+        db,
+        resultado,
+        case_id=case_id,
+        surface=surface,
+        area=area,
+        phase=phase,
+        usar_rag=usar_rag,
+        input_type="midia",
     )
     return SkillExecuteResponse(**resultado)
