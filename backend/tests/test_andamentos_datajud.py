@@ -139,11 +139,22 @@ def test_alias_do_numero_principais_tribunais():
     assert alias_do_numero("0000001-02.2020.3.00.0000") == "api_publica_stj"
 
 
+def test_alias_do_numero_cobertura_ampliada_todos_tjs_trts_trfs():
+    """Auditoria RAG: cobertura ampliada de 3 TJs/1 TRT para todos os 27
+    TJs e 24 TRTs (Resolução CNJ 65/2008)."""
+    assert alias_do_numero("0722391-40.2017.8.07.0001") == "api_publica_tjdft"
+    assert alias_do_numero("0000001-02.2020.8.01.0001") == "api_publica_tjac"
+    assert alias_do_numero("0000001-02.2020.8.27.0001") == "api_publica_tjto"
+    assert alias_do_numero("0000001-02.2020.5.24.0001") == "api_publica_trt24"
+    assert alias_do_numero("0000001-02.2020.4.02.0001") == "api_publica_trf2"
+
+
 def test_alias_do_numero_fallback_claro():
     # Só dígitos (sem máscara) também resolve.
     assert alias_do_numero("00000010220208130000") == "api_publica_tjmg"
-    # Tribunal fora do mapa (TJDFT = 8.07) → None, nunca chute.
-    assert alias_do_numero("0722391-40.2017.8.07.0001") is None
+    # Segmento fora do escopo mapeado (J=6, Justiça Eleitoral) → None, nunca
+    # chute — DataJud/RAG cobre J∈{3,4,5,8} (STJ/Federal/Trabalho/Estadual).
+    assert alias_do_numero("0000001-02.2020.6.00.0001") is None
     # Número inválido/curto → None.
     assert alias_do_numero("123") is None
     assert alias_do_numero("") is None
@@ -195,7 +206,8 @@ async def test_consultar_movimentos_gate_flag_desligada(monkeypatch):
 
 async def test_consultar_movimentos_tribunal_nao_mapeado(datajud_ligado):
     with pytest.raises(TribunalNaoMapeadoError):
-        await consultar_movimentos("0722391-40.2017.8.07.0001")  # TJDFT fora do mapa
+        # J=6 (Justiça Eleitoral) — fora do escopo mapeado (STJ/Federal/Trabalho/Estadual)
+        await consultar_movimentos("0000001-02.2020.6.00.0001")
 
 
 # ── Upsert idempotente em case_movimentos ─────────────────────────────────────
