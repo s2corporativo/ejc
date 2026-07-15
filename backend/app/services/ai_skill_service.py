@@ -29,7 +29,13 @@ _AREA_TASK = {
     "administrativo": "elaboracao_peca",
     "civel": "elaboracao_peca",
     "consumidor": "elaboracao_peca",
+    "estrategia": "analise_juridica",
+    "familia": "elaboracao_peca",
     "imobiliario": "elaboracao_peca",
+    "penal": "elaboracao_peca",
+    "previdenciario": "elaboracao_peca",
+    "saude": "elaboracao_peca",
+    "trabalhista": "elaboracao_peca",
     "provas": "resumo",
     "tributario": "elaboracao_peca",
 }
