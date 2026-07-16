@@ -19,6 +19,7 @@ import {
   StatusBadge,
   Modal,
   Empty,
+  ErrorState,
   Spinner,
   fmtDate,
   fmtMoney,
@@ -47,14 +48,20 @@ export default function Honorarios() {
   const [pixRes, setPixRes] = useState<any>(null);
   const [pixQr, setPixQr] = useState("");
   const [rateioLoading, setRateioLoading] = useState(false);
+  const [error, setError] = useState(false);
 
   const load = () => {
+    setError(false);
     api
       .get("/fees/", {
         params: { status: statusF || undefined, page_size: 50 },
       })
-      .then((r) => setData(r.data));
-    api.get("/fees/resumo").then((r) => setResumo(r.data));
+      .then((r) => setData(r.data))
+      .catch(() => setError(true));
+    api
+      .get("/fees/resumo")
+      .then((r) => setResumo(r.data))
+      .catch(() => {});
   };
   useEffect(() => {
     load();
@@ -250,7 +257,12 @@ export default function Honorarios() {
         ))}
       </div>
 
-      {!data ? (
+      {error ? (
+        <ErrorState
+          message="Não foi possível carregar os honorários. Tente novamente."
+          onRetry={load}
+        />
+      ) : !data ? (
         <Spinner />
       ) : data.data.length === 0 ? (
         <Empty message="Nenhum lançamento" />

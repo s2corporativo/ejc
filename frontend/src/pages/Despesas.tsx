@@ -9,6 +9,8 @@ import {
   fmtDate,
   Spinner,
   Empty,
+  ErrorState,
+  StatusBadge,
   ConfirmModal,
 } from "../components/UI";
 
@@ -52,12 +54,6 @@ const CAT_LABEL: Record<string, string> = {
   outro: "Outros",
 };
 
-const STATUS_COLOR: Record<string, string> = {
-  pendente: "bg-yellow-100 text-yellow-700",
-  pago: "bg-success-100 text-success-700",
-  cancelado: "bg-slate-100 text-slate-500",
-};
-
 function fmtR$(v: number) {
   return (v ?? 0).toLocaleString("pt-BR", {
     style: "currency",
@@ -94,6 +90,7 @@ const EMPTY_FORM: FormState = {
 export default function Despesas() {
   const [items, setItems] = useState<Despesa[]>([]);
   const [loading, setLoading] = useState(true);
+  const [error, setError] = useState(false);
   const [showForm, setShowForm] = useState(false);
   const [editId, setEditId] = useState<string | null>(null);
   const [form, setForm] = useState<FormState>({ ...EMPTY_FORM });
@@ -129,6 +126,7 @@ export default function Despesas() {
 
   const load = useCallback(async () => {
     setLoading(true);
+    setError(false);
     try {
       const params: Record<string, string> = {};
       if (filterCat) params.categoria = filterCat;
@@ -136,6 +134,8 @@ export default function Despesas() {
       if (filterComp) params.competencia = filterComp;
       const res = await api.get("/v1/despesas", { params });
       setItems(res.data ?? []);
+    } catch {
+      setError(true);
     } finally {
       setLoading(false);
     }
@@ -300,6 +300,11 @@ export default function Despesas() {
       {/* Table */}
       {loading ? (
         <Spinner />
+      ) : error ? (
+        <ErrorState
+          message="Não foi possível carregar as despesas. Tente novamente."
+          onRetry={load}
+        />
       ) : items.length === 0 ? (
         <Empty message="Nenhuma despesa encontrada" />
       ) : (
@@ -344,11 +349,7 @@ export default function Despesas() {
                     {fmtDate(d.vencimento)}
                   </td>
                   <td className="px-4 py-3">
-                    <span
-                      className={`px-2 py-0.5 rounded-full text-xs font-medium ${STATUS_COLOR[d.status] ?? "bg-slate-100 text-slate-500"}`}
-                    >
-                      {d.status}
-                    </span>
+                    <StatusBadge value={d.status} />
                   </td>
                   <td
                     className="px-4 py-3"

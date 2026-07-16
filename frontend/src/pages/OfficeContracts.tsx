@@ -12,6 +12,7 @@ import {
 import api from "../lib/api";
 import {
   EmptyState,
+  ErrorState,
   Modal,
   PageHeader,
   Spinner,
@@ -83,6 +84,7 @@ export default function OfficeContracts() {
   const [contracts, setContracts] = useState<Contract[]>([]);
   const [expiring, setExpiring] = useState<Contract[]>([]);
   const [loading, setLoading] = useState(true);
+  const [error, setError] = useState(false);
   const [showForm, setShowForm] = useState(false);
   const [editing, setEditing] = useState<Contract | null>(null);
   const [form, setForm] = useState({ ...EMPTY_FORM });
@@ -92,6 +94,7 @@ export default function OfficeContracts() {
 
   const load = useCallback(async () => {
     setLoading(true);
+    setError(false);
     try {
       const [all, exp] = await Promise.all([
         api.get("/v1/office-contracts", {
@@ -101,6 +104,8 @@ export default function OfficeContracts() {
       ]);
       setContracts(all.data.data || []);
       setExpiring(exp.data || []);
+    } catch {
+      setError(true);
     } finally {
       setLoading(false);
     }
@@ -224,6 +229,11 @@ export default function OfficeContracts() {
 
       {loading ? (
         <Spinner />
+      ) : error ? (
+        <ErrorState
+          message="Não foi possível carregar os contratos do escritório. Tente novamente."
+          onRetry={load}
+        />
       ) : contracts.length === 0 ? (
         <EmptyState title="Nenhum contrato encontrado" icon={FileText} />
       ) : (
