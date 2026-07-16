@@ -1,9 +1,9 @@
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import { useParams, Link } from "react-router-dom";
 import { ArrowLeft, CalendarClock, MessageSquare } from "lucide-react";
 import api from "../../lib/api";
 import { toast } from "../../components/Toast";
-import { Spinner } from "../../components/UI";
+import { ErrorState, Spinner } from "../../components/UI";
 import { asList } from "../../lib/list";
 
 function MensagensCliente({ caseId }: { caseId: string }) {
@@ -93,11 +93,28 @@ function MensagensCliente({ caseId }: { caseId: string }) {
 export default function PortalCasoDetalhe() {
   const { id } = useParams();
   const [data, setData] = useState<any>(null);
+  const [error, setError] = useState(false);
 
-  useEffect(() => {
-    api.get(`/portal/casos/${id}`).then((r) => setData(r.data));
+  const load = useCallback(() => {
+    setError(false);
+    setData(null);
+    api
+      .get(`/portal/casos/${id}`)
+      .then((r) => setData(r.data))
+      .catch(() => setError(true));
   }, [id]);
 
+  useEffect(() => {
+    load();
+  }, [load]);
+
+  if (error)
+    return (
+      <ErrorState
+        message="Não foi possível carregar este processo."
+        onRetry={load}
+      />
+    );
   if (!data) return <Spinner />;
   const { caso, andamentos, proximas_datas } = data;
 

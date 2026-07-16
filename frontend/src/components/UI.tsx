@@ -6,18 +6,39 @@ import {
   ArrowUp,
   Bot,
   CheckCircle2,
+  Clock,
+  Eye,
+  FileClock,
   FileText,
   ChevronDown,
   Filter,
   Inbox,
   Info,
   Loader2,
+  PauseCircle,
+  PenLine,
+  PlusCircle,
+  ScanSearch,
   Search,
+  Send,
+  ShieldAlert,
+  ShieldCheck,
   SlidersHorizontal,
   X,
+  XCircle,
 } from "lucide-react";
 
-type Tone = "slate" | "blue" | "green" | "amber" | "red" | "purple" | "ouro";
+type Tone =
+  | "slate"
+  | "blue"
+  | "green"
+  | "amber"
+  | "orange"
+  | "red"
+  | "purple"
+  | "violet"
+  | "teal"
+  | "ouro";
 type ButtonVariant = "primary" | "secondary" | "ghost" | "danger" | "ai";
 
 const toneClasses: Record<Tone, string> = {
@@ -25,8 +46,14 @@ const toneClasses: Record<Tone, string> = {
   blue: "bg-primary-50 text-primary-700 ring-primary-200",
   green: "bg-success-50 text-success-700 ring-success-200",
   amber: "bg-warn-50 text-warn-700 ring-warn-200",
+  // Laranja/violeta/verde-azulado usam a paleta padrão do Tailwind (default
+  // preservado porque tailwind.config estende, não substitui, `colors`) para
+  // dar tons próprios aos status do Command Center sem inventar novos tokens.
+  orange: "bg-orange-50 text-orange-700 ring-orange-200",
   red: "bg-danger-50 text-danger-700 ring-danger-200",
   purple: "bg-ai-50 text-ai-700 ring-ai-200",
+  violet: "bg-violet-50 text-violet-700 ring-violet-200",
+  teal: "bg-teal-50 text-teal-700 ring-teal-200",
   // Ouro institucional — apenas destaque pontual (nunca tom padrão)
   ouro: "bg-ouro-palha text-ouro-profundo ring-ouro-claro/60",
 };
@@ -154,21 +181,50 @@ export function Badge({
   );
 }
 
-const STATUS_TONE: Record<string, Tone> = {
+type StatusIcon = typeof CheckCircle2;
+
+// Normaliza um status vindo do backend/telas para uma chave estável:
+// minúsculas, sem acento, com `_`/`-`/espaços colapsados. Assim
+// "Em Revisão", "em_revisao" e "em-revisao" caem na mesma entrada.
+function normalizeStatus(value: string): string {
+  return value
+    .toLowerCase()
+    .normalize("NFD")
+    .replace(/\p{Diacritic}/gu, "")
+    .replace(/[_-]+/g, " ")
+    .replace(/\s+/g, " ")
+    .trim();
+}
+
+// Vocabulário canônico de status do EJC Command Center (cor + ÍCONE + texto —
+// nunca só cor, cumprindo WCAG 2.2). Sinônimos legados apontam para a mesma
+// entrada para não quebrar as telas que já emitem esses valores.
+const STATUS_REGISTRY: Record<string, { tone: Tone; icon: StatusIcon; label: string }> = {
+  novo: { tone: "blue", icon: PlusCircle, label: "Novo" },
+  "em analise": { tone: "purple", icon: ScanSearch, label: "Em análise" },
+  triagem: { tone: "purple", icon: ScanSearch, label: "Em análise" },
+  "aguardando cliente": { tone: "amber", icon: Clock, label: "Aguardando cliente" },
+  "aguardando documento": { tone: "orange", icon: FileClock, label: "Aguardando documento" },
+  "em producao": { tone: "blue", icon: PenLine, label: "Em produção" },
+  "em revisao": { tone: "violet", icon: Eye, label: "Em revisão" },
+  protocolado: { tone: "teal", icon: Send, label: "Protocolado" },
+  concluido: { tone: "green", icon: CheckCircle2, label: "Concluído" },
+  suspenso: { tone: "slate", icon: PauseCircle, label: "Suspenso" },
+  critico: { tone: "red", icon: AlertTriangle, label: "Crítico" },
+};
+
+// Tons dos status legados que ainda NÃO fazem parte do vocabulário canônico —
+// preservam exatamente a aparência anterior (cor + rótulo, sem ícone).
+const LEGACY_STATUS_TONE: Record<string, Tone> = {
   ativo: "green",
   aberto: "green",
-  concluido: "green",
   aprovada: "green",
   pago: "green",
-  triagem: "amber",
   pendente: "amber",
-  em_revisao: "amber",
-  suspenso: "amber",
   vencido: "red",
   atrasado: "red",
   cancelado: "red",
   rejeitado: "red",
-  critico: "red",
   ia: "purple",
   rascunho: "slate",
   arquivado: "slate",
@@ -176,10 +232,44 @@ const STATUS_TONE: Record<string, Tone> = {
 };
 
 export function StatusBadge({ value }: { value?: string | null }) {
-  const label = value || "sem status";
+  if (!value) return <Badge tone="slate">sem status</Badge>;
+  const key = normalizeStatus(value);
+  const meta = STATUS_REGISTRY[key];
+  if (meta) {
+    const Icon = meta.icon;
+    return (
+      <Badge tone={meta.tone} className="gap-1">
+        <Icon className="h-3 w-3 shrink-0" aria-hidden="true" />
+        {meta.label}
+      </Badge>
+    );
+  }
   return (
-    <Badge tone={STATUS_TONE[label] || "slate"}>
-      {label.replace(/_/g, " ")}
+    <Badge tone={LEGACY_STATUS_TONE[key] || "slate"}>
+      {value.replace(/_/g, " ")}
+    </Badge>
+  );
+}
+
+// Grau de risco do caso (baixo/médio/alto/crítico) com cor + ícone + texto.
+const RISK_REGISTRY: Record<string, { tone: Tone; icon: StatusIcon; label: string }> = {
+  baixo: { tone: "green", icon: ShieldCheck, label: "Risco baixo" },
+  medio: { tone: "amber", icon: ShieldAlert, label: "Risco médio" },
+  alto: { tone: "orange", icon: ShieldAlert, label: "Risco alto" },
+  critico: { tone: "red", icon: ShieldAlert, label: "Risco crítico" },
+};
+
+export function RiskBadge({ value }: { value?: string | null }) {
+  if (!value) return <Badge tone="slate">Risco —</Badge>;
+  const meta = RISK_REGISTRY[normalizeStatus(value)];
+  if (!meta) {
+    return <Badge tone="slate">Risco {value.replace(/_/g, " ")}</Badge>;
+  }
+  const Icon = meta.icon;
+  return (
+    <Badge tone={meta.tone} className="gap-1">
+      <Icon className="h-3 w-3 shrink-0" aria-hidden="true" />
+      {meta.label}
     </Badge>
   );
 }
@@ -914,6 +1004,47 @@ export function EmptyState({
 }
 
 /**
+ * Estado de ERRO de carregamento — par do <EmptyState /> para quando a
+ * requisição falha (em vez de simplesmente não ter dados). Oferece uma ação
+ * de "tentar novamente" para não deixar o usuário sem saída.
+ */
+export function ErrorState({
+  title = "Não foi possível carregar",
+  message = "Ocorreu um erro ao buscar estes dados. Tente novamente em instantes.",
+  icon: Icon = AlertCircle,
+  onRetry,
+  retryLabel = "Tentar novamente",
+}: {
+  title?: string;
+  message?: string;
+  icon?: typeof AlertCircle;
+  onRetry?: () => void;
+  retryLabel?: string;
+}) {
+  return (
+    <div
+      role="alert"
+      className="flex flex-col items-center justify-center rounded-xl border border-dashed border-danger-200 bg-danger-50/40 px-6 py-12 text-center"
+    >
+      <div className="mb-3 flex h-12 w-12 items-center justify-center rounded-xl bg-danger-100 text-danger-600">
+        <Icon className="h-6 w-6" />
+      </div>
+      <h3 className="text-sm font-semibold text-slate-900">{title}</h3>
+      {message && (
+        <p className="mt-1 max-w-md text-sm text-slate-500">{message}</p>
+      )}
+      {onRetry && (
+        <div className="mt-4">
+          <Button variant="secondary" onClick={onRetry}>
+            {retryLabel}
+          </Button>
+        </div>
+      )}
+    </div>
+  );
+}
+
+/**
  * Empty state didático. API aditiva — os usos legados com `message`/`icon`
  * continuam válidos; os novos podem explicar o vazio e oferecer uma saída.
  *
@@ -1025,6 +1156,103 @@ export function ConfidenceBadge({ value }: { value?: number | null }) {
       <CheckCircle2 className="h-3 w-3" />
       {score == null ? "confianca pendente" : `${score}% confianca`}
     </Badge>
+  );
+}
+
+// Ciclo de validação humana de uma saída de IA. Torna EXPLÍCITO o grau de
+// confiança editorial — nenhuma conclusão de IA deve parecer um fato já
+// confirmado (requisito central do diagnóstico do Command Center).
+const VALIDATION_REGISTRY: Record<string, { tone: Tone; icon: StatusIcon; label: string }> = {
+  "nao revisado": { tone: "slate", icon: Clock, label: "Não revisado" },
+  "em revisao": { tone: "amber", icon: Eye, label: "Em revisão" },
+  validado: { tone: "green", icon: CheckCircle2, label: "Validado" },
+  rejeitado: { tone: "red", icon: XCircle, label: "Rejeitado" },
+  "parcialmente validado": {
+    tone: "amber",
+    icon: ShieldAlert,
+    label: "Parcialmente validado",
+  },
+};
+
+export function HumanValidationStatus({ value }: { value?: string | null }) {
+  const meta = VALIDATION_REGISTRY[normalizeStatus(value || "nao revisado")];
+  const resolved = meta ?? VALIDATION_REGISTRY["nao revisado"];
+  const Icon = resolved.icon;
+  return (
+    <Badge tone={resolved.tone} className="gap-1">
+      <Icon className="h-3 w-3 shrink-0" aria-hidden="true" />
+      {resolved.label}
+    </Badge>
+  );
+}
+
+// Citação de fonte usada por uma resposta de IA (documento, legislação ou
+// precedente). Vira link quando há `href`; caso contrário, chip estático.
+export function SourceCitation({
+  tipo,
+  titulo,
+  referencia,
+  href,
+}: {
+  tipo?: string;
+  titulo: string;
+  referencia?: string;
+  href?: string;
+}) {
+  const inner = (
+    <span className="inline-flex max-w-full items-center gap-1.5 rounded-lg border border-slate-200 bg-slate-50 px-2 py-1 text-xs text-slate-600">
+      <FileText className="h-3.5 w-3.5 shrink-0 text-slate-400" />
+      {tipo && <span className="font-medium text-slate-500">{tipo}:</span>}
+      <span className="truncate">{titulo}</span>
+      {referencia && <span className="shrink-0 text-slate-400">· {referencia}</span>}
+    </span>
+  );
+  return href ? (
+    <a
+      href={href}
+      target="_blank"
+      rel="noreferrer"
+      className="inline-flex max-w-full hover:opacity-80"
+    >
+      {inner}
+    </a>
+  ) : (
+    inner
+  );
+}
+
+// Legenda que enquadra a leitura de uma saída de IA: separa o que consta nos
+// documentos, o que é inferência do modelo e o que ainda não foi confirmado.
+// Reforça, no ponto de consumo, que a IA pode misturar as três coisas.
+export function AIFactualityLegend({ className }: { className?: string }) {
+  const items: Array<{ tone: Tone; icon: StatusIcon; label: string }> = [
+    { tone: "green", icon: CheckCircle2, label: "Consta nos documentos" },
+    { tone: "purple", icon: Bot, label: "Inferência da IA" },
+    { tone: "amber", icon: AlertTriangle, label: "Não confirmado / lacuna" },
+  ];
+  return (
+    <div
+      className={cn(
+        "rounded-lg border border-slate-200 bg-slate-50/70 px-3 py-2",
+        className,
+      )}
+    >
+      <div className="flex flex-wrap items-center gap-2">
+        {items.map((item) => {
+          const Icon = item.icon;
+          return (
+            <Badge key={item.label} tone={item.tone} className="gap-1">
+              <Icon className="h-3 w-3 shrink-0" aria-hidden="true" />
+              {item.label}
+            </Badge>
+          );
+        })}
+      </div>
+      <p className="mt-1.5 text-[11px] leading-4 text-slate-500">
+        A IA pode misturar fatos, inferências e lacunas. Valide cada ponto nas
+        fontes antes de usar — a validação profissional continua obrigatória.
+      </p>
+    </div>
   );
 }
 

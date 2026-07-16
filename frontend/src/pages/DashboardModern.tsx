@@ -8,6 +8,7 @@ import {
   Bot,
   Briefcase,
   CalendarClock,
+  CheckCircle2,
   Clock,
   DollarSign,
   FileSignature,
@@ -16,6 +17,7 @@ import {
   FolderOpen,
   Gavel,
   GitBranch,
+  Headset,
   ListChecks,
   MessageSquare,
   Newspaper,
@@ -68,6 +70,13 @@ const INACTIVE_CASE_STATUSES = new Set([
   "cancelado",
   "inativo",
 ]);
+
+// Tons dos chips da faixa "Prioridades de hoje" (cor + ícone + texto).
+const PRIORITY_CHIP_TONE: Record<"red" | "amber" | "blue", string> = {
+  red: "bg-danger-50 text-danger-700 ring-danger-200 hover:bg-danger-100",
+  amber: "bg-warn-50 text-warn-700 ring-warn-200 hover:bg-warn-100",
+  blue: "bg-primary-50 text-primary-700 ring-primary-200 hover:bg-primary-100",
+};
 
 const AREA_TONES: Record<string, string> = {
   civil: "bg-primary-500",
@@ -279,6 +288,8 @@ export default function DashboardModern() {
   const monthlyRevenue =
     dashboard?.financeiro?.honorarios_mes ?? dashboard?.financeiro?.receita_mes;
 
+  // As 4 ações principais do Command Center (documento IA · manual · Raio-X ·
+  // atendimento) vêm primeiro como `primary`; as demais seguem como atalhos.
   const quickActions = [
     {
       to: NOVO_CASO_DOCUMENTO_PATH,
@@ -290,13 +301,62 @@ export default function DashboardModern() {
       to: NOVO_CASO_MANUAL_PATH,
       label: "Caso manual",
       icon: PenLine,
+      primary: true,
+    },
+    { to: "/raio-x", label: "Raio-X preliminar", icon: ScanSearch, primary: true },
+    {
+      to: "/atividades?tab=relacionamento",
+      label: "Novo atendimento",
+      icon: Headset,
+      primary: true,
     },
     { to: "/clientes", label: "Novo cliente", icon: Users },
     { to: "/pecas", label: "Gerar peça", icon: FileText },
     { to: "/inteligencia", label: "Analisar com IA", icon: Sparkles },
-    { to: "/raio-x", label: "Raio-X preliminar", icon: ScanSearch },
     { to: "/ramos", label: "Áreas de Atuação", icon: Scale },
   ];
+
+  // Faixa "Prioridades de hoje": o que exige atenção AGORA, como atalhos.
+  // Usa dados já carregados; só mostra o que tem contagem > 0. `clientes
+  // aguardando` só aparece para quem enxerga o CRM (RBAC preservado).
+  const priorityItems: Array<{
+    key: string;
+    count: number;
+    label: string;
+    to: string;
+    tone: "red" | "amber" | "blue";
+    icon: typeof AlertTriangle;
+  }> = [
+    {
+      key: "prazos",
+      count: criticalDeadlines.length,
+      label: "prazos críticos",
+      to: "/prazos",
+      tone: "red",
+      icon: AlertTriangle,
+    },
+    {
+      key: "hoje",
+      count: deadlinesToday,
+      label: "vencendo hoje",
+      to: "/atividades",
+      tone: "amber",
+      icon: Clock,
+    },
+    ...(canSeeCRM
+      ? [
+          {
+            key: "clientes",
+            count: Number(solicitacoes?.pendentes ?? 0),
+            label: "clientes aguardando",
+            to: "/atividades?tab=relacionamento",
+            tone: "amber" as const,
+            icon: MessageSquare,
+          },
+        ]
+      : []),
+  ];
+  const activePriorities = priorityItems.filter((item) => item.count > 0);
 
   return (
     <div className="space-y-6">
@@ -348,6 +408,52 @@ export default function DashboardModern() {
                 </Button>
               </Link>
             ))}
+          </div>
+        </div>
+      </section>
+
+      {/* Faixa "Prioridades de hoje" — o que exige atenção agora, com atalho. */}
+      <section
+        aria-label="Prioridades de hoje"
+        className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm dark:border-white/10 dark:bg-white/[0.03]"
+      >
+        <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+          <div className="flex shrink-0 items-center gap-2 text-[11px] font-semibold uppercase tracking-[0.16em] text-slate-500">
+            <ListChecks className="h-4 w-4 text-ouro" />
+            Prioridades de hoje
+          </div>
+          <div className="flex flex-wrap items-center gap-2">
+            {loading ? (
+              <span className="text-sm text-slate-400">
+                Carregando prioridades…
+              </span>
+            ) : activePriorities.length ? (
+              activePriorities.map((item) => {
+                const Icon = item.icon;
+                return (
+                  <Link
+                    key={item.key}
+                    to={item.to}
+                    className={cn(
+                      "group inline-flex items-center gap-2 rounded-xl px-3 py-1.5 text-sm font-medium ring-1 ring-inset transition",
+                      PRIORITY_CHIP_TONE[item.tone],
+                    )}
+                  >
+                    <Icon className="h-4 w-4 shrink-0" aria-hidden="true" />
+                    <span className="text-base font-semibold tabular-nums">
+                      {item.count}
+                    </span>
+                    <span>{item.label}</span>
+                    <ArrowRight className="h-3.5 w-3.5 shrink-0 opacity-0 transition group-hover:translate-x-0.5 group-hover:opacity-100" />
+                  </Link>
+                );
+              })
+            ) : (
+              <span className="inline-flex items-center gap-2 rounded-xl bg-success-50 px-3 py-1.5 text-sm font-medium text-success-700 ring-1 ring-inset ring-success-200">
+                <CheckCircle2 className="h-4 w-4 shrink-0" aria-hidden="true" />
+                Sem pendências críticas para hoje
+              </span>
+            )}
           </div>
         </div>
       </section>

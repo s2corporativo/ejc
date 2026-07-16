@@ -13,6 +13,7 @@ import {
   ThumbsUp,
 } from "lucide-react";
 import Markdown from "./Markdown";
+import { AIFactualityLegend, HumanValidationStatus } from "./UI";
 import { toast } from "./Toast";
 import api from "../lib/api";
 import type { Case } from "../types";
@@ -455,9 +456,14 @@ export default function ContextualAIAssistant({
                   <span className="text-[11px] font-semibold uppercase tracking-wide text-ai-700">
                     {result.skill}
                   </span>
-                  <h3 className="mt-0.5 text-base font-semibold text-slate-900">
-                    Resultado auditável
-                  </h3>
+                  <div className="mt-0.5 flex flex-wrap items-center gap-2">
+                    <h3 className="text-base font-semibold text-slate-900">
+                      Resultado auditável
+                    </h3>
+                    <HumanValidationStatus
+                      value={reviewConfirmed ? "validado" : "nao revisado"}
+                    />
+                  </div>
                 </div>
                 <div className="flex gap-1">
                   <button
@@ -500,6 +506,8 @@ export default function ContextualAIAssistant({
                   ) : null}
                 </div>
               )}
+
+              <AIFactualityLegend />
 
               <div className="prose prose-sm max-w-none text-slate-700">
                 <Markdown source={result.conteudo} />

@@ -10,7 +10,7 @@ import {
 import api from "../../lib/api";
 import { asList } from "../../lib/list";
 import { toast } from "../../components/Toast";
-import { EmptyState, Spinner } from "../../components/UI";
+import { EmptyState, ErrorState, Spinner } from "../../components/UI";
 
 interface ItemSolicitado {
   id: string;
@@ -50,16 +50,19 @@ function fmtDate(d?: string | null) {
 export default function PortalDocumentos() {
   const [rows, setRows] = useState<Solicitacao[]>([]);
   const [loading, setLoading] = useState(true);
+  const [error, setError] = useState(false);
   const [uploadingId, setUploadingId] = useState<string | null>(null);
   const inputRef = useRef<HTMLInputElement>(null);
   const pendingItemRef = useRef<string | null>(null);
 
   const load = useCallback(async () => {
+    setLoading(true);
+    setError(false);
     try {
       const r = await api.get("/portal/solicitacoes-documentos");
       setRows(asList<Solicitacao>(r.data));
     } catch {
-      setRows([]);
+      setError(true);
     } finally {
       setLoading(false);
     }
@@ -122,6 +125,11 @@ export default function PortalDocumentos() {
 
       {loading ? (
         <Spinner />
+      ) : error ? (
+        <ErrorState
+          message="Não foi possível carregar os documentos solicitados."
+          onRetry={load}
+        />
       ) : rows.length === 0 ? (
         <EmptyState
           icon={FileText}
