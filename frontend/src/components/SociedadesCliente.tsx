@@ -25,7 +25,7 @@ import {
 } from "lucide-react";
 import api from "../lib/api";
 import { toast } from "./Toast";
-import { Modal, Spinner, Empty, ConfirmModal } from "./UI";
+import { Modal, Spinner, Empty, ErrorState, ConfirmModal } from "./UI";
 import type { Client } from "../types";
 import { asList } from "../lib/list";
 
@@ -149,6 +149,7 @@ export default function SociedadesCliente() {
   const [page, setPage] = useState(1);
   const [total, setTotal] = useState(0);
   const [lista, setLista] = useState<Sociedade[] | null>(null);
+  const [erroLista, setErroLista] = useState(false);
 
   // Detalhe
   const [selId, setSelId] = useState<string | null>(null);
@@ -173,6 +174,7 @@ export default function SociedadesCliente() {
   }, []);
 
   const loadLista = () => {
+    setErroLista(false);
     api
       .get("/empresarial/sociedades", {
         params: { client_id: filtroCliente || undefined, page },
@@ -182,6 +184,7 @@ export default function SociedadesCliente() {
         setTotal(r.data?.total ?? 0);
       })
       .catch(() => {
+        setErroLista(true);
         setLista([]);
         setTotal(0);
       });
@@ -378,7 +381,12 @@ export default function SociedadesCliente() {
       </div>
 
       {/* Listagem */}
-      {lista === null ? (
+      {erroLista ? (
+        <ErrorState
+          message="Não foi possível carregar as sociedades. Tente novamente."
+          onRetry={loadLista}
+        />
+      ) : lista === null ? (
         <Spinner />
       ) : lista.length === 0 ? (
         <Empty message="Nenhuma sociedade registrada" />

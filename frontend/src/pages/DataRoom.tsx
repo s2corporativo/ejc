@@ -1,7 +1,7 @@
 import { useEffect, useState } from "react";
 import { toast } from "../components/Toast";
 import api from "../lib/api";
-import { PageHeader, Spinner, fmtDate, Modal } from "../components/UI";
+import { PageHeader, Spinner, ErrorState, fmtDate, Modal } from "../components/UI";
 import { asList } from "../lib/list";
 
 interface Room {
@@ -31,6 +31,7 @@ interface Link {
 export default function DataRoom() {
   const [rooms, setRooms] = useState<Room[]>([]);
   const [loading, setLoading] = useState(true);
+  const [erro, setErro] = useState(false);
   const [novo, setNovo] = useState(false);
   const [form, setForm] = useState({ nome: "", descricao: "" });
   const [aberta, setAberta] = useState<any>(null); // detalhe da sala
@@ -39,10 +40,11 @@ export default function DataRoom() {
 
   const carregar = () => {
     setLoading(true);
+    setErro(false);
     api
       .get("/data-rooms?per_page=50")
       .then((r) => setRooms(asList<Room>(r.data)))
-      .catch(() => {})
+      .catch(() => setErro(true))
       .finally(() => setLoading(false));
   };
   useEffect(() => {
@@ -104,6 +106,11 @@ export default function DataRoom() {
         <div className="flex justify-center py-16">
           <Spinner />
         </div>
+      ) : erro ? (
+        <ErrorState
+          message="Não foi possível carregar as salas de documentos. Tente novamente."
+          onRetry={carregar}
+        />
       ) : (
         <div className="grid md:grid-cols-2 lg:grid-cols-3 gap-4">
           {rooms.map((r) => (
