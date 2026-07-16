@@ -25,6 +25,7 @@ import {
   ShieldCheck,
   SlidersHorizontal,
   X,
+  XCircle,
 } from "lucide-react";
 
 type Tone =
@@ -1155,6 +1156,103 @@ export function ConfidenceBadge({ value }: { value?: number | null }) {
       <CheckCircle2 className="h-3 w-3" />
       {score == null ? "confianca pendente" : `${score}% confianca`}
     </Badge>
+  );
+}
+
+// Ciclo de validação humana de uma saída de IA. Torna EXPLÍCITO o grau de
+// confiança editorial — nenhuma conclusão de IA deve parecer um fato já
+// confirmado (requisito central do diagnóstico do Command Center).
+const VALIDATION_REGISTRY: Record<string, { tone: Tone; icon: StatusIcon; label: string }> = {
+  "nao revisado": { tone: "slate", icon: Clock, label: "Não revisado" },
+  "em revisao": { tone: "amber", icon: Eye, label: "Em revisão" },
+  validado: { tone: "green", icon: CheckCircle2, label: "Validado" },
+  rejeitado: { tone: "red", icon: XCircle, label: "Rejeitado" },
+  "parcialmente validado": {
+    tone: "amber",
+    icon: ShieldAlert,
+    label: "Parcialmente validado",
+  },
+};
+
+export function HumanValidationStatus({ value }: { value?: string | null }) {
+  const meta = VALIDATION_REGISTRY[normalizeStatus(value || "nao revisado")];
+  const resolved = meta ?? VALIDATION_REGISTRY["nao revisado"];
+  const Icon = resolved.icon;
+  return (
+    <Badge tone={resolved.tone} className="gap-1">
+      <Icon className="h-3 w-3 shrink-0" aria-hidden="true" />
+      {resolved.label}
+    </Badge>
+  );
+}
+
+// Citação de fonte usada por uma resposta de IA (documento, legislação ou
+// precedente). Vira link quando há `href`; caso contrário, chip estático.
+export function SourceCitation({
+  tipo,
+  titulo,
+  referencia,
+  href,
+}: {
+  tipo?: string;
+  titulo: string;
+  referencia?: string;
+  href?: string;
+}) {
+  const inner = (
+    <span className="inline-flex max-w-full items-center gap-1.5 rounded-lg border border-slate-200 bg-slate-50 px-2 py-1 text-xs text-slate-600">
+      <FileText className="h-3.5 w-3.5 shrink-0 text-slate-400" />
+      {tipo && <span className="font-medium text-slate-500">{tipo}:</span>}
+      <span className="truncate">{titulo}</span>
+      {referencia && <span className="shrink-0 text-slate-400">· {referencia}</span>}
+    </span>
+  );
+  return href ? (
+    <a
+      href={href}
+      target="_blank"
+      rel="noreferrer"
+      className="inline-flex max-w-full hover:opacity-80"
+    >
+      {inner}
+    </a>
+  ) : (
+    inner
+  );
+}
+
+// Legenda que enquadra a leitura de uma saída de IA: separa o que consta nos
+// documentos, o que é inferência do modelo e o que ainda não foi confirmado.
+// Reforça, no ponto de consumo, que a IA pode misturar as três coisas.
+export function AIFactualityLegend({ className }: { className?: string }) {
+  const items: Array<{ tone: Tone; icon: StatusIcon; label: string }> = [
+    { tone: "green", icon: CheckCircle2, label: "Consta nos documentos" },
+    { tone: "purple", icon: Bot, label: "Inferência da IA" },
+    { tone: "amber", icon: AlertTriangle, label: "Não confirmado / lacuna" },
+  ];
+  return (
+    <div
+      className={cn(
+        "rounded-lg border border-slate-200 bg-slate-50/70 px-3 py-2",
+        className,
+      )}
+    >
+      <div className="flex flex-wrap items-center gap-2">
+        {items.map((item) => {
+          const Icon = item.icon;
+          return (
+            <Badge key={item.label} tone={item.tone} className="gap-1">
+              <Icon className="h-3 w-3 shrink-0" aria-hidden="true" />
+              {item.label}
+            </Badge>
+          );
+        })}
+      </div>
+      <p className="mt-1.5 text-[11px] leading-4 text-slate-500">
+        A IA pode misturar fatos, inferências e lacunas. Valide cada ponto nas
+        fontes antes de usar — a validação profissional continua obrigatória.
+      </p>
+    </div>
   );
 }
 
