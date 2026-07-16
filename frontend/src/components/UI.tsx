@@ -6,18 +6,38 @@ import {
   ArrowUp,
   Bot,
   CheckCircle2,
+  Clock,
+  Eye,
+  FileClock,
   FileText,
   ChevronDown,
   Filter,
   Inbox,
   Info,
   Loader2,
+  PauseCircle,
+  PenLine,
+  PlusCircle,
+  ScanSearch,
   Search,
+  Send,
+  ShieldAlert,
+  ShieldCheck,
   SlidersHorizontal,
   X,
 } from "lucide-react";
 
-type Tone = "slate" | "blue" | "green" | "amber" | "red" | "purple" | "ouro";
+type Tone =
+  | "slate"
+  | "blue"
+  | "green"
+  | "amber"
+  | "orange"
+  | "red"
+  | "purple"
+  | "violet"
+  | "teal"
+  | "ouro";
 type ButtonVariant = "primary" | "secondary" | "ghost" | "danger" | "ai";
 
 const toneClasses: Record<Tone, string> = {
@@ -25,8 +45,14 @@ const toneClasses: Record<Tone, string> = {
   blue: "bg-primary-50 text-primary-700 ring-primary-200",
   green: "bg-success-50 text-success-700 ring-success-200",
   amber: "bg-warn-50 text-warn-700 ring-warn-200",
+  // Laranja/violeta/verde-azulado usam a paleta padrão do Tailwind (default
+  // preservado porque tailwind.config estende, não substitui, `colors`) para
+  // dar tons próprios aos status do Command Center sem inventar novos tokens.
+  orange: "bg-orange-50 text-orange-700 ring-orange-200",
   red: "bg-danger-50 text-danger-700 ring-danger-200",
   purple: "bg-ai-50 text-ai-700 ring-ai-200",
+  violet: "bg-violet-50 text-violet-700 ring-violet-200",
+  teal: "bg-teal-50 text-teal-700 ring-teal-200",
   // Ouro institucional — apenas destaque pontual (nunca tom padrão)
   ouro: "bg-ouro-palha text-ouro-profundo ring-ouro-claro/60",
 };
@@ -154,21 +180,50 @@ export function Badge({
   );
 }
 
-const STATUS_TONE: Record<string, Tone> = {
+type StatusIcon = typeof CheckCircle2;
+
+// Normaliza um status vindo do backend/telas para uma chave estável:
+// minúsculas, sem acento, com `_`/`-`/espaços colapsados. Assim
+// "Em Revisão", "em_revisao" e "em-revisao" caem na mesma entrada.
+function normalizeStatus(value: string): string {
+  return value
+    .toLowerCase()
+    .normalize("NFD")
+    .replace(/\p{Diacritic}/gu, "")
+    .replace(/[_-]+/g, " ")
+    .replace(/\s+/g, " ")
+    .trim();
+}
+
+// Vocabulário canônico de status do EJC Command Center (cor + ÍCONE + texto —
+// nunca só cor, cumprindo WCAG 2.2). Sinônimos legados apontam para a mesma
+// entrada para não quebrar as telas que já emitem esses valores.
+const STATUS_REGISTRY: Record<string, { tone: Tone; icon: StatusIcon; label: string }> = {
+  novo: { tone: "blue", icon: PlusCircle, label: "Novo" },
+  "em analise": { tone: "purple", icon: ScanSearch, label: "Em análise" },
+  triagem: { tone: "purple", icon: ScanSearch, label: "Em análise" },
+  "aguardando cliente": { tone: "amber", icon: Clock, label: "Aguardando cliente" },
+  "aguardando documento": { tone: "orange", icon: FileClock, label: "Aguardando documento" },
+  "em producao": { tone: "blue", icon: PenLine, label: "Em produção" },
+  "em revisao": { tone: "violet", icon: Eye, label: "Em revisão" },
+  protocolado: { tone: "teal", icon: Send, label: "Protocolado" },
+  concluido: { tone: "green", icon: CheckCircle2, label: "Concluído" },
+  suspenso: { tone: "slate", icon: PauseCircle, label: "Suspenso" },
+  critico: { tone: "red", icon: AlertTriangle, label: "Crítico" },
+};
+
+// Tons dos status legados que ainda NÃO fazem parte do vocabulário canônico —
+// preservam exatamente a aparência anterior (cor + rótulo, sem ícone).
+const LEGACY_STATUS_TONE: Record<string, Tone> = {
   ativo: "green",
   aberto: "green",
-  concluido: "green",
   aprovada: "green",
   pago: "green",
-  triagem: "amber",
   pendente: "amber",
-  em_revisao: "amber",
-  suspenso: "amber",
   vencido: "red",
   atrasado: "red",
   cancelado: "red",
   rejeitado: "red",
-  critico: "red",
   ia: "purple",
   rascunho: "slate",
   arquivado: "slate",
@@ -176,10 +231,44 @@ const STATUS_TONE: Record<string, Tone> = {
 };
 
 export function StatusBadge({ value }: { value?: string | null }) {
-  const label = value || "sem status";
+  if (!value) return <Badge tone="slate">sem status</Badge>;
+  const key = normalizeStatus(value);
+  const meta = STATUS_REGISTRY[key];
+  if (meta) {
+    const Icon = meta.icon;
+    return (
+      <Badge tone={meta.tone} className="gap-1">
+        <Icon className="h-3 w-3 shrink-0" aria-hidden="true" />
+        {meta.label}
+      </Badge>
+    );
+  }
   return (
-    <Badge tone={STATUS_TONE[label] || "slate"}>
-      {label.replace(/_/g, " ")}
+    <Badge tone={LEGACY_STATUS_TONE[key] || "slate"}>
+      {value.replace(/_/g, " ")}
+    </Badge>
+  );
+}
+
+// Grau de risco do caso (baixo/médio/alto/crítico) com cor + ícone + texto.
+const RISK_REGISTRY: Record<string, { tone: Tone; icon: StatusIcon; label: string }> = {
+  baixo: { tone: "green", icon: ShieldCheck, label: "Risco baixo" },
+  medio: { tone: "amber", icon: ShieldAlert, label: "Risco médio" },
+  alto: { tone: "orange", icon: ShieldAlert, label: "Risco alto" },
+  critico: { tone: "red", icon: ShieldAlert, label: "Risco crítico" },
+};
+
+export function RiskBadge({ value }: { value?: string | null }) {
+  if (!value) return <Badge tone="slate">Risco —</Badge>;
+  const meta = RISK_REGISTRY[normalizeStatus(value)];
+  if (!meta) {
+    return <Badge tone="slate">Risco {value.replace(/_/g, " ")}</Badge>;
+  }
+  const Icon = meta.icon;
+  return (
+    <Badge tone={meta.tone} className="gap-1">
+      <Icon className="h-3 w-3 shrink-0" aria-hidden="true" />
+      {meta.label}
     </Badge>
   );
 }
@@ -909,6 +998,47 @@ export function EmptyState({
         <p className="mt-1 max-w-md text-sm text-slate-500">{message}</p>
       )}
       {action && <div className="mt-4">{action}</div>}
+    </div>
+  );
+}
+
+/**
+ * Estado de ERRO de carregamento — par do <EmptyState /> para quando a
+ * requisição falha (em vez de simplesmente não ter dados). Oferece uma ação
+ * de "tentar novamente" para não deixar o usuário sem saída.
+ */
+export function ErrorState({
+  title = "Não foi possível carregar",
+  message = "Ocorreu um erro ao buscar estes dados. Tente novamente em instantes.",
+  icon: Icon = AlertCircle,
+  onRetry,
+  retryLabel = "Tentar novamente",
+}: {
+  title?: string;
+  message?: string;
+  icon?: typeof AlertCircle;
+  onRetry?: () => void;
+  retryLabel?: string;
+}) {
+  return (
+    <div
+      role="alert"
+      className="flex flex-col items-center justify-center rounded-xl border border-dashed border-danger-200 bg-danger-50/40 px-6 py-12 text-center"
+    >
+      <div className="mb-3 flex h-12 w-12 items-center justify-center rounded-xl bg-danger-100 text-danger-600">
+        <Icon className="h-6 w-6" />
+      </div>
+      <h3 className="text-sm font-semibold text-slate-900">{title}</h3>
+      {message && (
+        <p className="mt-1 max-w-md text-sm text-slate-500">{message}</p>
+      )}
+      {onRetry && (
+        <div className="mt-4">
+          <Button variant="secondary" onClick={onRetry}>
+            {retryLabel}
+          </Button>
+        </div>
+      )}
     </div>
   );
 }
