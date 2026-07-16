@@ -106,21 +106,27 @@ def gerar_pdf(titulo: str, report: dict[str, Any]) -> bytes:
     pdf.set_auto_page_break(auto=True, margin=16)
     pdf.add_page()
     pdf.set_font("Helvetica", "B", 12)
-    pdf.multi_cell(0, 7, _pdf_text(titulo), align="C")
+    pdf.multi_cell(0, 7, _pdf_text(titulo), align="C", new_x="LMARGIN", new_y="NEXT")
     pdf.set_font("Helvetica", size=9)
-    pdf.multi_cell(0, 5, _pdf_text(report.get("aviso") or "Análise preliminar sujeita à revisão humana."))
+    pdf.multi_cell(
+        0,
+        5,
+        _pdf_text(report.get("aviso") or "Análise preliminar sujeita à revisão humana."),
+        new_x="LMARGIN",
+        new_y="NEXT",
+    )
     pdf.ln(3)
 
     def section(title: str, value: Any):
         pdf.set_font("Helvetica", "B", 11)
-        pdf.multi_cell(0, 7, _pdf_text(title))
+        pdf.multi_cell(0, 7, _pdf_text(title), new_x="LMARGIN", new_y="NEXT")
         pdf.set_font("Helvetica", size=9)
         values = value if isinstance(value, list) else [value]
         values = [item for item in values if item not in (None, "", [], {})]
         if not values:
-            pdf.multi_cell(0, 5, "Nenhuma informacao identificada com seguranca.")
+            pdf.multi_cell(0, 5, "Nenhuma informacao identificada com seguranca.", new_x="LMARGIN", new_y="NEXT")
         for item in values:
-            pdf.multi_cell(0, 5, _pdf_text(item))
+            pdf.multi_cell(0, 5, _pdf_text(item), new_x="LMARGIN", new_y="NEXT")
             pdf.ln(1)
         pdf.ln(2)
 
