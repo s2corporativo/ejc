@@ -502,7 +502,7 @@ export default function ContextualAIAssistant({
               )}
 
               <div className="prose prose-sm max-w-none text-slate-700">
-                <Markdown>{result.conteudo}</Markdown>
+                <Markdown source={result.conteudo} />
               </div>
 
               <div className="flex flex-wrap gap-1.5">
