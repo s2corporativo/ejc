@@ -142,6 +142,41 @@ const CONF_SUGESTAO_TONE: Record<string, "green" | "amber" | "red"> = {
   baixa: "red",
 };
 
+// Mesmas chaves do enum CaseArea. A lista deixa de limitar a importação às
+// nove áreas antigas e passa a aceitar toda a taxonomia do EJC.
+const AREA_OK = [
+  "civil",
+  "trabalhista",
+  "consumidor",
+  "familia",
+  "ambiental",
+  "criminal",
+  "previdenciario",
+  "empresarial",
+  "tributario",
+  "administrativo",
+  "bancario",
+  "imobiliario",
+  "sucessoes",
+  "constitucional",
+  "digital_lgpd",
+  "transito",
+];
+
+const TIPO_PARA_AREA: Record<string, string> = {
+  multa_transito: "transito",
+  suspensao_cnh: "transito",
+  multa_ambiental: "ambiental",
+  auto_infracao_ambiental: "ambiental",
+  auto_infracao: "administrativo",
+  licitacao_contrato_administrativo: "administrativo",
+  contrato_bancario: "bancario",
+  cnis: "previdenciario",
+  ppp: "previdenciario",
+  denuncia: "criminal",
+  boletim_ocorrencia: "criminal",
+};
+
 function rotuloCampo(campo: string) {
   const s = campo.replace(/_/g, " ");
   return s.charAt(0).toUpperCase() + s.slice(1);
@@ -250,30 +285,22 @@ export default function ImportarDocumento({
       setD(data);
       // Revisão campo a campo (R4) — só quando o backend retornar campos_v2.
       setCamposRevisao(normalizarCamposV2(data?.campos_v2));
-      // Pré-preenche o formulário do caso com o que foi extraído
+      // Pré-preenche o formulário do caso com o que foi extraído.
       const ip = data.identificacao_processual || {};
       const pa = data.partes || {};
       const cl = data.classificacao || {};
+      const cc = data.classificacao_contextual || {};
       const re = data.resumo_executivo || {};
-      const AREA_OK = [
-        "civil",
-        "trabalhista",
-        "consumidor",
-        "familia",
-        "ambiental",
-        "criminal",
-        "previdenciario",
-        "empresarial",
-        "tributario",
-      ];
+      const areaDetectada = cc.area_sugerida || cl.area;
       // Extração determinística local (regex, sem IA) — presente mesmo quando
       // a interpretação por LLM está indisponível (analise_llm_indisponivel).
       const de = data.dados_estruturados || {};
       const primeiro = (lista?: { valor: string }[]) => lista?.[0]?.valor || "";
       const patch: Patch = {};
-      const titulo = cl.materia || re.fatos?.slice(0, 70);
+      const titulo = cl.materia || cc.subarea_sugerida || re.fatos?.slice(0, 70);
       if (titulo) patch.titulo = titulo;
-      if (cl.area && AREA_OK.includes(cl.area)) patch.area = cl.area;
+      if (areaDetectada && AREA_OK.includes(areaDetectada))
+        patch.area = areaDetectada;
       if (ip.numero_processo) patch.numero_processo = ip.numero_processo;
       else if (primeiro(de.processos_cnj))
         patch.numero_processo = primeiro(de.processos_cnj);
@@ -295,7 +322,13 @@ export default function ImportarDocumento({
       patch._extracao = {
         identificacao_processual: ip,
         partes: pa,
-        classificacao: cl,
+        classificacao: {
+          ...cl,
+          area: areaDetectada || cl.area,
+          subarea: cc.subarea_sugerida || cl.subarea,
+          rito: cc.rito_sugerido || cl.rito,
+          classificacao_contextual: cc,
+        },
         dados_pessoais: dp2,
       };
       patch._cliente_candidato = {
@@ -350,7 +383,13 @@ export default function ImportarDocumento({
 
   const selecionarTipo = (key: string) => {
     setTipoSelecionado(key);
-    if (d) onPrefill({ _tipo_documento: key });
+    if (d) {
+      const area = TIPO_PARA_AREA[key];
+      onPrefill({
+        _tipo_documento: key,
+        ...(area && AREA_OK.includes(area) ? { area } : {}),
+      });
+    }
   };
 
   const tipoSugeridoInfo = sugestao
@@ -372,6 +411,7 @@ export default function ImportarDocumento({
   const pa = d?.partes || {};
   const dp = d?.dados_pessoais || {};
   const cl = d?.classificacao || {};
+  const cc = d?.classificacao_contextual || {};
   const re = d?.resumo_executivo || {};
   const di = d?.diagnostico || {};
   const br = d?.brechas_processuais || {};
@@ -461,6 +501,31 @@ export default function ImportarDocumento({
               {d.aviso_llm ||
                 "A interpretação por IA está indisponível no momento. Os dados abaixo foram extraídos localmente (sem IA) — revise e complete o caso manualmente."}
             </Alert>
+          )}
+
+          {cc.tipo && (
+            <div className="rounded-xl border border-primary-200 bg-primary-50 px-4 py-3 text-xs text-primary-900">
+              <div className="flex flex-wrap items-center gap-2">
+                <FileSearch className="h-4 w-4" />
+                <b>Reconhecimento contextual:</b>
+                <span>{String(cc.tipo).replaceAll("_", " ")}</span>
+                {cc.area_sugerida && <Badge tone="blue">{cc.area_sugerida}</Badge>}
+                {typeof cc.confianca === "number" && (
+                  <Badge tone={cc.confianca >= 0.8 ? "green" : "amber"}>
+                    confiança {Math.round(cc.confianca * 100)}%
+                  </Badge>
+                )}
+              </div>
+              {(cc.subarea_sugerida || cc.rito_sugerido) && (
+                <p className="mt-2">
+                  {cc.subarea_sugerida && <span>Subárea: {cc.subarea_sugerida}. </span>}
+                  {cc.rito_sugerido && <span>Rito sugerido: {cc.rito_sugerido}.</span>}
+                </p>
+              )}
+              <p className="mt-1 text-primary-700">
+                Confirme área, rito e fase antes de criar o caso oficial.
+              </p>
+            </div>
           )}
 
           {/* Sugestão de tipo por IA — exige confirmação humana explícita */}
@@ -677,10 +742,17 @@ export default function ImportarDocumento({
                 <b>Réu:</b> {pa.reu}
               </p>
             )}
-            {cl.area && (
+            {(cc.area_sugerida || cl.area) && (
               <p>
-                <b>Área:</b> {cl.area}
-                {cl.subarea ? ` · ${cl.subarea}` : ""}
+                <b>Área:</b> {cc.area_sugerida || cl.area}
+                {(cc.subarea_sugerida || cl.subarea)
+                  ? ` · ${cc.subarea_sugerida || cl.subarea}`
+                  : ""}
+              </p>
+            )}
+            {(cc.rito_sugerido || cl.rito) && (
+              <p>
+                <b>Rito sugerido:</b> {cc.rito_sugerido || cl.rito}
               </p>
             )}
             {cl.complexidade && (
