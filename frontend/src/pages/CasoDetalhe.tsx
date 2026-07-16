@@ -28,6 +28,8 @@ import { ConsultaProfundaTJMG } from "../components/Infosimples";
 import type { Case } from "../types";
 import {
   StatusBadge,
+  PriorityBadge,
+  RiskBadge,
   Spinner,
   fmtDate,
   fmtMoney,
@@ -781,10 +783,16 @@ function TabResumo({ caso }: { caso: Case }) {
                 {caso.fase?.replace(/_/g, " ")}
               </span>
             </div>
-            <div>
+            <div className="flex items-center gap-1.5">
               <span className="text-slate-400">Prioridade:</span>{" "}
-              <span className="capitalize ml-1">{caso.prioridade}</span>
+              <PriorityBadge value={caso.prioridade} />
             </div>
+            {(caso.risco_nivel || caso.risco) && (
+              <div className="flex items-center gap-1.5">
+                <span className="text-slate-400">Risco:</span>{" "}
+                <RiskBadge value={caso.risco_nivel || caso.risco} />
+              </div>
+            )}
             <div>
               <span className="text-slate-400">Parte contrária:</span>{" "}
               <span className="ml-1">{caso.parte_contraria || "—"}</span>
