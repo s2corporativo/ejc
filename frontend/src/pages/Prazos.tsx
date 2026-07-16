@@ -16,6 +16,7 @@ import {
   Badge,
   Modal,
   Empty,
+  ErrorState,
   Spinner,
   fmtDate,
 } from "../components/UI";
@@ -35,13 +36,15 @@ export default function Prazos() {
   const [calc, setCalc] = useState<any>({ dias: 15, dias_uteis: true });
   const [calcResp, setCalcResp] = useState<any>(null);
   const [salvando, setSalvando] = useState(false);
+  const [error, setError] = useState(false);
 
   // Modo Caso: `?caso=` na URL vence; sem query, o caso ativo preenche.
   // GET /deadlines/ já aceita case_id (link /prazos?caso= da jornada).
   const { casoFiltro, casoFiltroNome, removerFiltro } = useCasoFiltro();
 
-  const load = () =>
-    api
+  const load = () => {
+    setError(false);
+    return api
       .get("/deadlines/", {
         params: {
           status: statusF || undefined,
@@ -49,7 +52,9 @@ export default function Prazos() {
           page_size: 100,
         },
       })
-      .then((r) => setData(r.data));
+      .then((r) => setData(r.data))
+      .catch(() => setError(true));
+  };
   useEffect(() => {
     load();
   }, [statusF, casoFiltro]);
@@ -169,7 +174,12 @@ export default function Prazos() {
         )}
       </div>
 
-      {!data ? (
+      {error ? (
+        <ErrorState
+          message="Não foi possível carregar os prazos. Tente novamente."
+          onRetry={load}
+        />
+      ) : !data ? (
         <Spinner />
       ) : !Array.isArray(data.data) || data.data.length === 0 ? (
         <Empty message="Nenhum prazo nesta categoria" />

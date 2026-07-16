@@ -1,9 +1,10 @@
-import { useEffect, useState } from "react";
+import { useEffect, useState, useCallback } from "react";
 import Markdown from "../components/Markdown";
 import { Sparkles, FileText, History, Eye, ShieldCheck } from "lucide-react";
 import api from "../lib/api";
 import {
   EmptyState,
+  ErrorState,
   PageHeader,
   Spinner,
   fmtDate,
@@ -40,17 +41,29 @@ export default function IA() {
   const [resp, setResp] = useState<any>(null);
   const [loading, setLoading] = useState(false);
   const [logs, setLogs] = useState<any[]>([]);
+  const [loadingLogs, setLoadingLogs] = useState(false);
+  const [logsError, setLogsError] = useState(false);
   const [caseId, setCaseId] = useState("");
   const [casos, setCasos] = useState<any[]>([]);
   const [dossie, setDossie] = useState<string | null>(null);
   const [loadingDossie, setLoadingDossie] = useState(false);
 
+  const carregarLogs = useCallback(async () => {
+    setLoadingLogs(true);
+    setLogsError(false);
+    try {
+      const r = await api.get("/ai/logs", { params: { page_size: 30 } });
+      setLogs(asList(r.data));
+    } catch {
+      setLogsError(true);
+    } finally {
+      setLoadingLogs(false);
+    }
+  }, []);
+
   useEffect(() => {
-    if (tab === "logs")
-      api
-        .get("/ai/logs", { params: { page_size: 30 } })
-        .then((r) => setLogs(asList(r.data)));
-  }, [tab]);
+    if (tab === "logs") carregarLogs();
+  }, [tab, carregarLogs]);
 
   useEffect(() => {
     api
@@ -369,8 +382,16 @@ export default function IA() {
         </div>
       )}
 
-      {tab === "logs" && (
-        <div className="space-y-2">
+      {tab === "logs" &&
+        (loadingLogs ? (
+          <Spinner />
+        ) : logsError ? (
+          <ErrorState
+            message="Não foi possível carregar o histórico de uso da IA."
+            onRetry={carregarLogs}
+          />
+        ) : (
+          <div className="space-y-2">
           {logs.map((l) => (
             <div key={l.id} className="card p-4">
               <div className="flex flex-wrap items-center gap-3 mb-2">
@@ -422,8 +443,8 @@ export default function IA() {
           {logs.length === 0 && (
             <EmptyState title="Nenhum uso de IA registrado" />
           )}
-        </div>
-      )}
+          </div>
+        ))}
 
       {loading && <Spinner />}
       {resp?.erro && (
