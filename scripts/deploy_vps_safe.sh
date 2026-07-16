@@ -75,7 +75,7 @@ bash scripts/backup.sh
 log "Build frontend"
 docker compose build frontend
 log "Build backend"
-docker compose build backend
+docker compose build backend worker
 
 log "Subindo backend"
 docker compose up -d --no-deps backend

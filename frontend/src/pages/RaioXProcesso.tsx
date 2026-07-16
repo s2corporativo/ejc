@@ -172,9 +172,9 @@ const CONVERSION_ROLES = new Set([
 ]);
 
 const humanize = (value: string) =>
-  value.replaceAll("_", " ").replace(/\b\w/g, (char) => char.toUpperCase());
+  value.replace(/_/g, " ").replace(/\b\w/g, (char) => char.toUpperCase());
 
-const stringify = (value: unknown) => {
+const stringify = (value: unknown): string => {
   if (value == null) return "—";
   if (typeof value === "string" || typeof value === "number") return String(value);
   if (typeof value === "boolean") return value ? "Sim" : "Não";
