@@ -260,8 +260,12 @@ async def analisar_documentos(
             erros.append({"arquivo": filename, "erro": str(exc)[:300]})
 
     await db.flush()
-    await db.refresh(analise, attribute_names=["documentos"])
-    analise.relatorio = consolidar_relatorio(list(analise.documentos))
+    documentos_result = await db.execute(
+        select(RaioXDocumento)
+        .where(RaioXDocumento.analise_id == analise.id)
+        .order_by(RaioXDocumento.created_at.asc())
+    )
+    analise.relatorio = consolidar_relatorio(list(documentos_result.scalars().all()))
     ident = analise.relatorio.get("identificacao") or {}
     analise.numero_processo = analise.numero_processo or ident.get("numero_processo")
     analise.area = analise.area or ident.get("area")
