@@ -14,6 +14,7 @@ import {
   PageHeader,
   StatusBadge,
   Badge,
+  Button,
   Modal,
   Empty,
   ErrorState,
@@ -182,7 +183,19 @@ export default function Prazos() {
       ) : !data ? (
         <Spinner />
       ) : !Array.isArray(data.data) || data.data.length === 0 ? (
-        <Empty message="Nenhum prazo nesta categoria" />
+        <Empty
+          titulo="Nenhum prazo nesta categoria"
+          descricao="Prazos processuais e compromissos com data aparecem aqui. Cadastre um prazo para acompanhar vencimentos e confirmações de ciência."
+          acao={
+            <Button
+              variant="primary"
+              icon={<Plus size={16} />}
+              onClick={() => setModal(true)}
+            >
+              Cadastrar um prazo
+            </Button>
+          }
+        />
       ) : (
         <div className="space-y-2">
           {(Array.isArray(data.data) ? data.data : []).map((d: any) => (

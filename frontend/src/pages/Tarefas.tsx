@@ -13,7 +13,7 @@ import {
 } from "lucide-react";
 import api from "../lib/api";
 import { toast } from "../components/Toast";
-import { Modal, PageHeader } from "../components/UI";
+import { Button, Empty, Modal, PageHeader } from "../components/UI";
 import { asList } from "../lib/list";
 
 const COLS = [
@@ -212,8 +212,25 @@ export default function Tarefas() {
         </select>
       </div>
 
+      {/* Estado vazio didático: sem NENHUMA tarefa (independe da visão). */}
+      {!loading && tasks.length === 0 && (
+        <Empty
+          titulo="Nenhuma tarefa por aqui ainda"
+          descricao="Tarefas são as ações operacionais da equipe ligadas aos casos. Crie a primeira para organizar e distribuir o trabalho."
+          acao={
+            <Button
+              variant="primary"
+              icon={<Plus className="h-4 w-4" />}
+              onClick={openNew}
+            >
+              Criar sua primeira tarefa
+            </Button>
+          }
+        />
+      )}
+
       {/* Kanban view */}
-      {view === "kanban" && (
+      {tasks.length > 0 && view === "kanban" && (
         <div className="grid md:grid-cols-3 gap-4">
           {COLS.map((col) => {
             const colTasks = filtered.filter((t) => t.status === col.id);
@@ -302,7 +319,7 @@ export default function Tarefas() {
       )}
 
       {/* List view */}
-      {view === "list" && (
+      {tasks.length > 0 && view === "list" && (
         <div className="card overflow-hidden">
           <table className="w-full text-sm">
             <thead className="bg-slate-50 text-xs uppercase text-slate-400 text-left">
@@ -322,7 +339,7 @@ export default function Tarefas() {
                     colSpan={6}
                     className="px-4 py-8 text-center text-slate-400"
                   >
-                    Nenhuma tarefa
+                    Nenhuma tarefa com os filtros atuais
                   </td>
                 </tr>
               ) : (
