@@ -1,22 +1,12 @@
-// ── src/components/ImportarDocumento.tsx ─────────────────────────────────────
-// Importação inteligente de documento no intake de Casos. Upload PDF/DOCX/imagem/
-// XML (NF-e) → /api/documentos-ia/analisar (OCR + extração + diagnóstico) →
-// pré-preenche o formulário do caso e exibe a análise. Evoluções R3/R4:
-//  • seletor de tipo (GET /documents/tipos, fallback estático — 14 tipos);
-//  • sugestão de tipo por IA (POST /documents/sugerir-tipo) com confirmação
-//    humana obrigatória — nunca aplicada automaticamente;
-//  • revisão da extração campo a campo (campos_v2: valor editável + confiança
-//    + trecho de origem). Tudo é MINUTA (revisão obrigatória OAB Prov. 205/2021).
-import { Fragment, useEffect, useRef, useState } from "react";
+import { Fragment, useEffect, useMemo, useRef, useState } from "react";
 import {
-  UploadCloud,
-  FileSearch,
   AlertTriangle,
   CheckCircle2,
   ChevronDown,
   ChevronRight,
-  ScrollText,
+  FileSearch,
   Sparkles,
+  UploadCloud,
 } from "lucide-react";
 import api from "../lib/api";
 import {
@@ -24,127 +14,64 @@ import {
   Badge,
   Button,
   FieldLabel,
-  Select,
   Input,
+  Select,
   Table,
+  TD,
+  TH,
   THead,
   TR,
-  TH,
-  TD,
 } from "./UI";
 
 type Patch = Record<string, any>;
 
-// ── Tipos de documento (contrato GET /documents/tipos) ───────────────────────
-interface TipoDocumento {
+type TipoDocumento = {
   tipo_key: string;
   nome: string;
   categoria: string;
   campos_extracao?: string[] | null;
-  extensoes_aceitas?: string[] | null;
-}
+};
 
-interface SugestaoTipo {
+type Area = { slug: string; nome: string; ativo?: boolean };
+
+type SugestaoTipo = {
   tipo_sugerido: string;
   confianca: "alta" | "media" | "baixa" | string;
   justificativa?: string | null;
-}
+};
 
-// Linha normalizada de campos_v2 (contrato: {valor, trecho_origem, confianca 0-1,
-// origem_verificada}).
-interface CampoRevisao {
+type CampoRevisao = {
   campo: string;
   valorOriginal: string;
   valor: string;
   trecho: string;
   confianca: number | null;
   verificada: boolean;
-}
+};
 
-// Fallback estático (espelha document_types_master / redesign_seed.py — 14 tipos)
-// usado apenas se GET /documents/tipos falhar.
 const FALLBACK_TIPOS: TipoDocumento[] = [
   { tipo_key: "contrato", nome: "Contrato", categoria: "juridico" },
   { tipo_key: "peticao", nome: "Petição", categoria: "juridico" },
   { tipo_key: "procuracao", nome: "Procuração", categoria: "juridico" },
-  {
-    tipo_key: "denuncia",
-    nome: "Denúncia / Queixa-crime",
-    categoria: "juridico",
-  },
-  {
-    tipo_key: "boletim_ocorrencia",
-    nome: "Boletim de Ocorrência",
-    categoria: "juridico",
-  },
-  {
-    tipo_key: "laudo_tecnico",
-    nome: "Laudo Técnico / Perícia",
-    categoria: "juridico",
-  },
-  {
-    tipo_key: "multa_transito",
-    nome: "Multa de Trânsito",
-    categoria: "administrativo",
-  },
-  {
-    tipo_key: "multa_ambiental",
-    nome: "Multa Ambiental",
-    categoria: "administrativo",
-  },
-  {
-    tipo_key: "auto_infracao",
-    nome: "Auto de Infração (geral)",
-    categoria: "administrativo",
-  },
-  {
-    tipo_key: "nfe_xml",
-    nome: "Nota Fiscal Eletrônica (XML)",
-    categoria: "fiscal",
-  },
-  {
-    tipo_key: "doc_identificacao",
-    nome: "Documento de Identificação",
-    categoria: "pessoal",
-  },
-  {
-    tipo_key: "comprovante_residencia",
-    nome: "Comprovante de Residência",
-    categoria: "pessoal",
-  },
+  { tipo_key: "denuncia", nome: "Denúncia / Queixa-crime", categoria: "juridico" },
+  { tipo_key: "boletim_ocorrencia", nome: "Boletim de Ocorrência", categoria: "juridico" },
+  { tipo_key: "laudo_tecnico", nome: "Laudo Técnico / Perícia", categoria: "juridico" },
+  { tipo_key: "sentenca_acordao", nome: "Sentença / Acórdão", categoria: "juridico" },
+  { tipo_key: "multa_transito", nome: "Multa de Trânsito", categoria: "administrativo" },
+  { tipo_key: "multa_ambiental", nome: "Multa Ambiental", categoria: "administrativo" },
+  { tipo_key: "auto_infracao", nome: "Auto de Infração", categoria: "administrativo" },
+  { tipo_key: "licitacao_contrato_administrativo", nome: "Licitação / Contrato Administrativo", categoria: "administrativo" },
+  { tipo_key: "contrato_bancario", nome: "Contrato Bancário", categoria: "financeiro" },
+  { tipo_key: "indeferimento_inss", nome: "Decisão / Indeferimento do INSS", categoria: "previdenciario" },
+  { tipo_key: "plano_saude_negativa", nome: "Negativa de Plano de Saúde", categoria: "saude" },
+  { tipo_key: "inventario_sucessoes", nome: "Inventário / Sucessões", categoria: "familia" },
+  { tipo_key: "nfe_xml", nome: "Nota Fiscal Eletrônica (XML)", categoria: "fiscal" },
+  { tipo_key: "doc_identificacao", nome: "Documento de Identificação", categoria: "pessoal" },
+  { tipo_key: "comprovante_residencia", nome: "Comprovante de Residência", categoria: "pessoal" },
   { tipo_key: "outro", nome: "Outro Documento", categoria: "outro" },
 ];
 
-const CATEGORIA_LABEL: Record<string, string> = {
-  juridico: "Jurídico",
-  administrativo: "Administrativo",
-  fiscal: "Fiscal",
-  pessoal: "Pessoal",
-  outro: "Outros",
-};
-
-// Campos de campos_v2 que, quando editados, sobrescrevem o patch do formulário.
-const CAMPO_PARA_PATCH: Record<string, string> = {
-  numero_processo: "numero_processo",
-  tribunal: "tribunal",
-  comarca: "comarca",
-  vara: "vara",
-  valor: "valor_causa",
-  valor_causa: "valor_causa",
-  valor_total: "valor_causa",
-  reu: "parte_contraria",
-  denunciado: "parte_contraria",
-};
-
-const CONF_SUGESTAO_TONE: Record<string, "green" | "amber" | "red"> = {
-  alta: "green",
-  media: "amber",
-  baixa: "red",
-};
-
-// Mesmas chaves do enum CaseArea. A lista deixa de limitar a importação às
-// nove áreas antigas e passa a aceitar toda a taxonomia do EJC.
-const AREA_OK = [
+const FALLBACK_AREAS = new Set([
   "civil",
   "trabalhista",
   "consumidor",
@@ -161,7 +88,40 @@ const AREA_OK = [
   "constitucional",
   "digital_lgpd",
   "transito",
-];
+  "saude",
+  "medico",
+  "agrario",
+  "agronegocio",
+  "eleitoral",
+  "internacional",
+  "contratual",
+  "societario",
+  "licitacoes",
+]);
+
+const CATEGORIA_LABEL: Record<string, string> = {
+  juridico: "Jurídico",
+  administrativo: "Administrativo",
+  financeiro: "Financeiro",
+  previdenciario: "Previdenciário",
+  saude: "Saúde",
+  familia: "Família e Sucessões",
+  fiscal: "Fiscal",
+  pessoal: "Pessoal",
+  outro: "Outros",
+};
+
+const CAMPO_PARA_PATCH: Record<string, string> = {
+  numero_processo: "numero_processo",
+  tribunal: "tribunal",
+  comarca: "comarca",
+  vara: "vara",
+  valor: "valor_causa",
+  valor_causa: "valor_causa",
+  valor_total: "valor_causa",
+  reu: "parte_contraria",
+  denunciado: "parte_contraria",
+};
 
 const TIPO_PARA_AREA: Record<string, string> = {
   multa_transito: "transito",
@@ -169,504 +129,308 @@ const TIPO_PARA_AREA: Record<string, string> = {
   multa_ambiental: "ambiental",
   auto_infracao_ambiental: "ambiental",
   auto_infracao: "administrativo",
-  licitacao_contrato_administrativo: "administrativo",
+  licitacao_contrato_administrativo: "licitacoes",
   contrato_bancario: "bancario",
   cnis: "previdenciario",
   ppp: "previdenciario",
+  indeferimento_inss: "previdenciario",
+  plano_saude_negativa: "saude",
+  inventario_sucessoes: "sucessoes",
   denuncia: "criminal",
   boletim_ocorrencia: "criminal",
 };
 
-function rotuloCampo(campo: string) {
-  const s = campo.replace(/_/g, " ");
-  return s.charAt(0).toUpperCase() + s.slice(1);
-}
+const rotuloCampo = (campo: string) => {
+  const text = campo.replaceAll("_", " ");
+  return text.charAt(0).toUpperCase() + text.slice(1);
+};
 
-// Badge de confiança por campo (0-1): ≥0.8 alta/verde · 0.5–0.8 média/âmbar ·
-// <0.5 baixa/vermelho.
-function BadgeConfiancaCampo({ score }: { score: number | null }) {
-  if (score == null) return <Badge tone="slate">sem score</Badge>;
-  const tone = score >= 0.8 ? "green" : score >= 0.5 ? "amber" : "red";
-  const label = score >= 0.8 ? "alta" : score >= 0.5 ? "média" : "baixa";
-  return (
-    <Badge tone={tone}>
-      {label} · {Math.round(score * 100)}%
-    </Badge>
-  );
-}
+const primeiro = (items?: Array<{ valor?: string }>) => items?.[0]?.valor || "";
 
-function normalizarCamposV2(cv: unknown): CampoRevisao[] {
-  if (!cv || typeof cv !== "object" || Array.isArray(cv)) return [];
-  return Object.entries(cv as Record<string, unknown>).map(([campo, raw]) => {
-    const o = (raw && typeof raw === "object" ? raw : { valor: raw }) as Record<
-      string,
-      unknown
-    >;
-    const valor = o.valor == null ? "" : String(o.valor);
+function normalizarCamposV2(value: unknown): CampoRevisao[] {
+  if (!value || typeof value !== "object" || Array.isArray(value)) return [];
+  return Object.entries(value as Record<string, unknown>).map(([campo, raw]) => {
+    const item = (raw && typeof raw === "object" ? raw : { valor: raw }) as Record<string, unknown>;
+    const normalized = item.valor == null ? "" : String(item.valor);
     return {
       campo,
-      valorOriginal: valor,
-      valor,
-      trecho: typeof o.trecho_origem === "string" ? o.trecho_origem : "",
-      confianca: typeof o.confianca === "number" ? o.confianca : null,
-      verificada: o.origem_verificada !== false,
+      valorOriginal: normalized,
+      valor: normalized,
+      trecho: typeof item.trecho_origem === "string" ? item.trecho_origem : "",
+      confianca: typeof item.confianca === "number" ? item.confianca : null,
+      verificada: item.origem_verificada !== false,
     };
   });
 }
 
-function Bloco({ titulo, itens }: { titulo: string; itens?: string[] }) {
-  if (!itens || itens.length === 0) return null;
+function BadgeConfianca({ score }: { score: number | null }) {
+  if (score == null) return <Badge tone="slate">sem score</Badge>;
+  const tone: "green" | "amber" | "red" = score >= 0.8 ? "green" : score >= 0.5 ? "amber" : "red";
+  return <Badge tone={tone}>{score >= 0.8 ? "alta" : score >= 0.5 ? "média" : "baixa"} · {Math.round(score * 100)}%</Badge>;
+}
+
+function Bloco({ titulo, itens }: { titulo: string; itens?: unknown[] }) {
+  if (!itens?.length) return null;
   return (
     <div>
-      <p className="text-[11px] font-semibold text-slate-500 uppercase tracking-wide mb-1">
-        {titulo}
-      </p>
-      <ul className="list-disc list-inside text-xs text-slate-700 space-y-0.5">
-        {itens.map((x, i) => (
-          <li key={i}>{x}</li>
+      <p className="mb-1 text-[11px] font-semibold uppercase tracking-wide text-slate-500">{titulo}</p>
+      <ul className="space-y-1 text-xs text-slate-700">
+        {itens.map((item, index) => (
+          <li key={index} className="rounded-lg bg-white/70 px-3 py-2 dark:bg-white/[0.04]">
+            {typeof item === "string" ? item : JSON.stringify(item)}
+          </li>
         ))}
       </ul>
     </div>
   );
 }
 
-export default function ImportarDocumento({
-  onPrefill,
-}: {
-  onPrefill: (p: Patch) => void;
-}) {
-  const ref = useRef<HTMLInputElement>(null);
+export default function ImportarDocumento({ onPrefill }: { onPrefill: (patch: Patch) => void }) {
+  const inputRef = useRef<HTMLInputElement>(null);
   const [loading, setLoading] = useState(false);
   const [erro, setErro] = useState("");
-  const [d, setD] = useState<any>(null);
-
-  // Tipos de documento + seleção do usuário
+  const [resultado, setResultado] = useState<any>(null);
   const [tipos, setTipos] = useState<TipoDocumento[]>(FALLBACK_TIPOS);
+  const [areasPermitidas, setAreasPermitidas] = useState<Set<string>>(FALLBACK_AREAS);
   const [tipoSelecionado, setTipoSelecionado] = useState("");
-
-  // Sugestão de tipo por IA (nunca aplicada automaticamente)
   const [sugestao, setSugestao] = useState<SugestaoTipo | null>(null);
-
-  // Revisão campo a campo (campos_v2)
-  const [camposRevisao, setCamposRevisao] = useState<CampoRevisao[]>([]);
+  const [campos, setCampos] = useState<CampoRevisao[]>([]);
   const [trechoAberto, setTrechoAberto] = useState<string | null>(null);
 
   useEffect(() => {
-    let ativo = true;
-    api
-      .get<TipoDocumento[]>("/documents/tipos")
-      .then(({ data }) => {
-        if (ativo && Array.isArray(data) && data.length > 0) setTipos(data);
-      })
-      .catch(() => {
-        // Mantém o fallback estático dos 14 tipos.
-      });
+    let active = true;
+    Promise.allSettled([api.get("/documents/tipos"), api.get("/areas")]).then(([typesResult, areasResult]) => {
+      if (!active) return;
+      if (typesResult.status === "fulfilled" && Array.isArray(typesResult.value.data) && typesResult.value.data.length) {
+        setTipos(typesResult.value.data);
+      }
+      if (areasResult.status === "fulfilled") {
+        const raw = Array.isArray(areasResult.value.data) ? areasResult.value.data : areasResult.value.data?.areas;
+        if (Array.isArray(raw) && raw.length) {
+          setAreasPermitidas(new Set(raw.filter((area: Area) => area.ativo !== false).map((area: Area) => area.slug)));
+        }
+      }
+    });
     return () => {
-      ativo = false;
+      active = false;
     };
   }, []);
 
-  const categorias = Array.from(new Set(tipos.map((t) => t.categoria)));
+  const categorias = useMemo(() => Array.from(new Set(tipos.map((tipo) => tipo.categoria))), [tipos]);
+
+  const emitirRevisao = (linhas: CampoRevisao[]) => {
+    const patch: Patch = {
+      _campos_revisados: Object.fromEntries(linhas.map((linha) => [linha.campo, linha.valor])),
+    };
+    for (const linha of linhas) {
+      const target = CAMPO_PARA_PATCH[linha.campo];
+      if (target && linha.valor && linha.valor !== linha.valorOriginal) patch[target] = linha.valor;
+    }
+    onPrefill(patch);
+  };
+
+  const selecionarTipo = (key: string) => {
+    setTipoSelecionado(key);
+    const area = TIPO_PARA_AREA[key];
+    onPrefill({
+      _tipo_documento: key || undefined,
+      ...(area && areasPermitidas.has(area) ? { area } : {}),
+    });
+  };
 
   const analisar = async (file: File) => {
     setLoading(true);
     setErro("");
-    setD(null);
+    setResultado(null);
     setSugestao(null);
-    setCamposRevisao([]);
+    setCampos([]);
     setTrechoAberto(null);
     try {
-      const fd = new FormData();
-      fd.append("file", file);
-      if (tipoSelecionado) fd.append("tipo_documento", tipoSelecionado);
-      const { data } = await api.post("/documentos-ia/analisar", fd, {
+      const body = new FormData();
+      body.append("file", file);
+      if (tipoSelecionado) body.append("tipo_documento", tipoSelecionado);
+      const { data } = await api.post("/documentos-ia/analisar", body, {
         headers: { "Content-Type": "multipart/form-data" },
       });
-      setD(data);
-      // Revisão campo a campo (R4) — só quando o backend retornar campos_v2.
-      setCamposRevisao(normalizarCamposV2(data?.campos_v2));
-      // Pré-preenche o formulário do caso com o que foi extraído.
-      const ip = data.identificacao_processual || {};
-      const pa = data.partes || {};
-      const cl = data.classificacao || {};
-      const cc = data.classificacao_contextual || {};
-      const re = data.resumo_executivo || {};
-      const areaDetectada = cc.area_sugerida || cl.area;
-      // Extração determinística local (regex, sem IA) — presente mesmo quando
-      // a interpretação por LLM está indisponível (analise_llm_indisponivel).
-      const de = data.dados_estruturados || {};
-      const primeiro = (lista?: { valor: string }[]) => lista?.[0]?.valor || "";
+      setResultado(data);
+      setCampos(normalizarCamposV2(data?.campos_v2));
+
+      const identification = data.identificacao_processual || {};
+      const parties = data.partes || {};
+      const classification = data.classificacao || {};
+      const contextual = data.classificacao_contextual || {};
+      const summary = data.resumo_executivo || {};
+      const structured = data.dados_estruturados || {};
+      const personal = data.dados_pessoais || {};
+      const areaDetected = contextual.area_sugerida || classification.area;
       const patch: Patch = {};
-      const titulo = cl.materia || cc.subarea_sugerida || re.fatos?.slice(0, 70);
-      if (titulo) patch.titulo = titulo;
-      if (areaDetectada && AREA_OK.includes(areaDetectada))
-        patch.area = areaDetectada;
-      if (ip.numero_processo) patch.numero_processo = ip.numero_processo;
-      else if (primeiro(de.processos_cnj))
-        patch.numero_processo = primeiro(de.processos_cnj);
-      if (ip.tribunal) patch.tribunal = ip.tribunal;
-      if (ip.comarca) patch.comarca = ip.comarca;
-      if (ip.vara) patch.vara = ip.vara;
-      if (pa.reu) patch.parte_contraria = pa.reu;
-      if (data.valor_causa_estimado)
-        patch.valor_causa = data.valor_causa_estimado;
-      if (re.fatos) patch.descricao_fatos = re.fatos;
-      if (cl.complexidade)
-        patch.prioridade =
-          cl.complexidade === "alta"
-            ? "alta"
-            : cl.complexidade === "baixa"
-              ? "baixa"
-              : "media";
-      const dp2 = data.dados_pessoais || {};
+      const title = classification.materia || contextual.subarea_sugerida || summary.fatos?.slice(0, 70);
+      if (title) patch.titulo = title;
+      if (areaDetected && areasPermitidas.has(areaDetected)) patch.area = areaDetected;
+      if (identification.numero_processo || primeiro(structured.processos_cnj)) patch.numero_processo = identification.numero_processo || primeiro(structured.processos_cnj);
+      if (identification.tribunal) patch.tribunal = identification.tribunal;
+      if (identification.comarca) patch.comarca = identification.comarca;
+      if (identification.vara) patch.vara = identification.vara;
+      if (parties.reu) patch.parte_contraria = parties.reu;
+      if (data.valor_causa_estimado) patch.valor_causa = data.valor_causa_estimado;
+      if (summary.fatos) patch.descricao_fatos = summary.fatos;
+      if (classification.complexidade) {
+        patch.prioridade = classification.complexidade === "alta" ? "alta" : classification.complexidade === "baixa" ? "baixa" : "media";
+      }
       patch._extracao = {
-        identificacao_processual: ip,
-        partes: pa,
+        identificacao_processual: identification,
+        partes: parties,
         classificacao: {
-          ...cl,
-          area: areaDetectada || cl.area,
-          subarea: cc.subarea_sugerida || cl.subarea,
-          rito: cc.rito_sugerido || cl.rito,
-          classificacao_contextual: cc,
+          ...classification,
+          area: areaDetected || classification.area,
+          subarea: contextual.subarea_sugerida || classification.subarea,
+          rito: contextual.rito_sugerido || classification.rito,
+          fase: contextual.fase_sugerida || classification.fase,
+          jornada: contextual.jornada_sugerida,
+          classificacao_contextual: contextual,
         },
-        dados_pessoais: dp2,
+        dados_pessoais: personal,
       };
       patch._cliente_candidato = {
-        nome: pa.autor || "",
-        cpf: dp2.cpf || primeiro(de.cpfs),
-        cnpj: dp2.cnpj || primeiro(de.cnpjs),
+        nome: parties.autor || "",
+        cpf: personal.cpf || primeiro(structured.cpfs),
+        cnpj: personal.cnpj || primeiro(structured.cnpjs),
       };
-      if (tipoSelecionado) patch._tipo_documento = tipoSelecionado;
-      // Item 4.2: retém o arquivo original para que Casos.tsx o persista na GED
-      // (vinculado ao caso) após criar o caso — antes o PDF era só analisado e
-      // descartado, e a aba Documentos ficava em "Documentos (0)".
       patch._arquivo_original = file;
+      if (tipoSelecionado) patch._tipo_documento = tipoSelecionado;
       onPrefill(patch);
-      // Sugestão de tipo por IA — best-effort; falha não interrompe o fluxo.
+
       try {
-        const { data: sug } = await api.post<SugestaoTipo>(
-          "/documents/sugerir-tipo",
-          { nome_arquivo: file.name, analise: data },
-        );
-        if (sug?.tipo_sugerido) setSugestao(sug);
+        const { data: suggestion } = await api.post<SugestaoTipo>("/documents/sugerir-tipo", {
+          nome_arquivo: file.name,
+          analise: data,
+        });
+        if (suggestion?.tipo_sugerido) setSugestao(suggestion);
       } catch {
-        // Sem sugestão — usuário escolhe manualmente no select.
+        // A classificação contextual local continua válida sem esta sugestão.
       }
-    } catch (e: any) {
-      setErro(e.response?.data?.detail || "Falha ao analisar o documento.");
+    } catch (error: any) {
+      setErro(error?.response?.data?.detail || "Falha ao analisar o documento.");
     } finally {
       setLoading(false);
     }
   };
 
-  // Valores revisados pelo usuário seguem no fluxo: sobrescrevem o patch do
-  // formulário (campos mapeados) e viajam completos em _campos_revisados.
-  const emitirRevisao = (linhas: CampoRevisao[]) => {
-    const patch: Patch = {
-      _campos_revisados: Object.fromEntries(
-        linhas.map((l) => [l.campo, l.valor]),
-      ),
-    };
-    for (const l of linhas) {
-      const chave = CAMPO_PARA_PATCH[l.campo];
-      if (chave && l.valor && l.valor !== l.valorOriginal)
-        patch[chave] = l.valor;
-    }
-    onPrefill(patch);
-  };
-
-  const editarCampo = (campo: string, valor: string) => {
-    setCamposRevisao((prev) =>
-      prev.map((l) => (l.campo === campo ? { ...l, valor } : l)),
-    );
-  };
-
-  const selecionarTipo = (key: string) => {
-    setTipoSelecionado(key);
-    if (d) {
-      const area = TIPO_PARA_AREA[key];
-      onPrefill({
-        _tipo_documento: key,
-        ...(area && AREA_OK.includes(area) ? { area } : {}),
-      });
-    }
-  };
-
-  const tipoSugeridoInfo = sugestao
-    ? tipos.find((t) => t.tipo_key === sugestao.tipo_sugerido)
-    : undefined;
-
-  const confirmarSugestao = () => {
-    if (!sugestao) return;
-    selecionarTipo(sugestao.tipo_sugerido);
-    setSugestao(null);
-  };
-
-  const escolherOutro = () => {
-    setSugestao(null);
-    document.getElementById("importar-doc-tipo")?.focus();
-  };
-
-  const ip = d?.identificacao_processual || {};
-  const pa = d?.partes || {};
-  const dp = d?.dados_pessoais || {};
-  const cl = d?.classificacao || {};
-  const cc = d?.classificacao_contextual || {};
-  const re = d?.resumo_executivo || {};
-  const di = d?.diagnostico || {};
-  const br = d?.brechas_processuais || {};
-  const es = d?.estrategia || {};
-  const ho = d?.honorarios_sugeridos || {};
+  const contextual = resultado?.classificacao_contextual || {};
+  const classification = resultado?.classificacao || {};
+  const summary = resultado?.resumo_executivo || {};
+  const diagnosis = resultado?.diagnostico || {};
+  const strategy = resultado?.estrategia || {};
+  const typeInfo = sugestao ? tipos.find((tipo) => tipo.tipo_key === sugestao.tipo_sugerido) : undefined;
 
   return (
-    <div className="card p-4 mb-5 border-l-4 border-bronze bg-bronze-50/20">
-      <div className="flex items-center gap-2 mb-1">
+    <div className="card mb-5 border-l-4 border-bronze bg-bronze-50/20 p-4">
+      <div className="mb-1 flex items-center gap-2">
         <FileSearch size={16} className="text-bronze" />
-        <h3 className="font-serif font-semibold text-navy text-sm">
-          Importação inteligente (IA)
-        </h3>
+        <h3 className="font-serif text-sm font-semibold text-navy">Importação inteligente</h3>
       </div>
-      <p className="text-xs text-slate-500 mb-3">
-        Envie a petição, sentença, contrato, multa, NF-e (XML) ou processo
-        digitalizado. A IA lê (OCR), extrai partes, número, área e produz um
-        diagnóstico — e pré-preenche o caso. Tudo é minuta: revise.
+      <p className="mb-3 text-xs text-slate-500">
+        Envie petição, sentença, contrato, multa, documento administrativo ou processo digitalizado. O sistema reconhece área, rito e fase e pré-preenche o caso; tudo permanece sujeito à revisão.
       </p>
 
-      {/* Seletor de tipo de documento (agrupado por categoria) */}
       <div className="mb-3 max-w-sm">
         <FieldLabel>Tipo de documento</FieldLabel>
-        <Select
-          id="importar-doc-tipo"
-          value={tipoSelecionado}
-          onChange={(e) => selecionarTipo(e.target.value)}
-          disabled={loading}
-        >
-          <option value="">Detectar automaticamente (IA sugere)</option>
-          {categorias.map((cat) => (
-            <optgroup key={cat} label={CATEGORIA_LABEL[cat] || cat}>
-              {tipos
-                .filter((t) => t.categoria === cat)
-                .map((t) => (
-                  <option key={t.tipo_key} value={t.tipo_key}>
-                    {t.nome}
-                  </option>
-                ))}
+        <Select id="importar-doc-tipo" value={tipoSelecionado} onChange={(event) => selecionarTipo(event.target.value)} disabled={loading}>
+          <option value="">Detectar automaticamente</option>
+          {categorias.map((category) => (
+            <optgroup key={category} label={CATEGORIA_LABEL[category] || category}>
+              {tipos.filter((tipo) => tipo.categoria === category).map((tipo) => (
+                <option key={tipo.tipo_key} value={tipo.tipo_key}>{tipo.nome}</option>
+              ))}
             </optgroup>
           ))}
         </Select>
       </div>
 
       <input
-        ref={ref}
+        ref={inputRef}
         type="file"
-        accept=".pdf,.docx,.png,.jpg,.jpeg,.tiff,.webp,.xml,application/pdf,image/*,text/xml,application/xml"
+        accept=".pdf,.docx,.txt,.png,.jpg,.jpeg,.tiff,.webp,.xml,application/pdf,image/*,text/xml,application/xml"
         className="hidden"
-        onChange={(e) => {
-          const f = e.target.files?.[0];
-          if (f) analisar(f);
-          e.target.value = "";
+        onChange={(event) => {
+          const file = event.target.files?.[0];
+          if (file) void analisar(file);
+          event.target.value = "";
         }}
       />
-      <button
-        onClick={() => ref.current?.click()}
-        disabled={loading}
-        className="btn-gold text-sm"
-      >
-        <UploadCloud size={15} />{" "}
-        {loading ? "Analisando documento…" : "Enviar documento"}
+      <button onClick={() => inputRef.current?.click()} disabled={loading} className="btn-gold text-sm">
+        <UploadCloud size={15} /> {loading ? "Analisando documento…" : "Enviar documento"}
       </button>
-      {erro && <p className="text-xs text-danger-600 mt-2">{erro}</p>}
+      {erro && <p className="mt-2 text-xs text-danger-600">{erro}</p>}
 
-      {d && (
+      {resultado && (
         <div className="mt-4 space-y-3 text-sm">
-          {/* Aviso permanente — OAB Prov. 205/2021 */}
-          <Alert variant="info">
-            Dados extraídos por IA — revisão humana obrigatória antes de gravar
-            (OAB Prov. 205/2021).
-          </Alert>
-
-          {/* Transparência LGPD (arts. 33/37) — provedor externo com texto
-              mascarado quando o modelo local estiver indisponível */}
-          <p className="text-[11px] leading-relaxed text-slate-500">
-            A interpretação do documento pode usar provedor de IA externo (EUA)
-            sobre texto com identificadores mascarados (CPF/CNPJ/OAB/processo)
-            quando o modelo local estiver indisponível. Dados exatos são
-            extraídos localmente.
-          </p>
-
-          {/* Interpretação por LLM indisponível — a extração determinística
-              local (regex, sem IA) segue válida e pré-preenche o caso. */}
-          {d.analise_llm_indisponivel && (
+          <Alert variant="info">Dados extraídos automaticamente — revisão humana obrigatória antes de gravar ou utilizar externamente.</Alert>
+          {resultado.analise_llm_indisponivel && (
             <Alert variant="warning" title="Interpretação por IA indisponível">
-              {d.aviso_llm ||
-                "A interpretação por IA está indisponível no momento. Os dados abaixo foram extraídos localmente (sem IA) — revise e complete o caso manualmente."}
+              {resultado.aviso_llm || "Os dados estruturados foram extraídos localmente. Complete e confira o caso manualmente."}
             </Alert>
           )}
 
-          {cc.tipo && (
+          {contextual.tipo && (
             <div className="rounded-xl border border-primary-200 bg-primary-50 px-4 py-3 text-xs text-primary-900">
               <div className="flex flex-wrap items-center gap-2">
                 <FileSearch className="h-4 w-4" />
                 <b>Reconhecimento contextual:</b>
-                <span>{String(cc.tipo).replaceAll("_", " ")}</span>
-                {cc.area_sugerida && <Badge tone="blue">{cc.area_sugerida}</Badge>}
-                {typeof cc.confianca === "number" && (
-                  <Badge tone={cc.confianca >= 0.8 ? "green" : "amber"}>
-                    confiança {Math.round(cc.confianca * 100)}%
-                  </Badge>
-                )}
+                <span>{String(contextual.tipo).replaceAll("_", " ")}</span>
+                {contextual.area_sugerida && <Badge tone="blue">{contextual.area_sugerida}</Badge>}
+                {typeof contextual.confianca === "number" && <Badge tone={contextual.confianca >= 0.8 ? "green" : "amber"}>confiança {Math.round(contextual.confianca * 100)}%</Badge>}
               </div>
-              {(cc.subarea_sugerida || cc.rito_sugerido) && (
-                <p className="mt-2">
-                  {cc.subarea_sugerida && <span>Subárea: {cc.subarea_sugerida}. </span>}
-                  {cc.rito_sugerido && <span>Rito sugerido: {cc.rito_sugerido}.</span>}
-                </p>
-              )}
-              <p className="mt-1 text-primary-700">
-                Confirme área, rito e fase antes de criar o caso oficial.
+              <p className="mt-2">
+                {contextual.subarea_sugerida && <>Subárea: {contextual.subarea_sugerida}. </>}
+                {contextual.rito_sugerido && <>Rito: {contextual.rito_sugerido}. </>}
+                {contextual.fase_sugerida && <>Fase: {contextual.fase_sugerida}.</>}
               </p>
+              {Array.isArray(contextual.jornada_sugerida?.proximas_etapas) && (
+                <p className="mt-1 text-primary-700">Próximas etapas sugeridas: {contextual.jornada_sugerida.proximas_etapas.join(" → ")}.</p>
+              )}
             </div>
           )}
 
-          {/* Sugestão de tipo por IA — exige confirmação humana explícita */}
           {sugestao && (
             <div className="rounded-xl border border-ai-200 bg-ai-50 px-4 py-3">
               <div className="flex flex-wrap items-center gap-2">
-                <Sparkles className="h-4 w-4 shrink-0 text-ai-600" />
-                <p className="text-xs text-ai-800">
-                  Tipo detectado:{" "}
-                  <b>{tipoSugeridoInfo?.nome || sugestao.tipo_sugerido}</b>
-                </p>
-                <Badge
-                  tone={
-                    CONF_SUGESTAO_TONE[
-                      String(sugestao.confianca).toLowerCase()
-                    ] || "slate"
-                  }
-                >
-                  confiança {sugestao.confianca}
-                </Badge>
+                <Sparkles className="h-4 w-4 text-ai-600" />
+                <span className="text-xs text-ai-800">Tipo sugerido: <b>{typeInfo?.nome || sugestao.tipo_sugerido}</b></span>
+                <Badge tone={String(sugestao.confianca).toLowerCase() === "alta" ? "green" : String(sugestao.confianca).toLowerCase() === "baixa" ? "red" : "amber"}>{sugestao.confianca}</Badge>
               </div>
-              {sugestao.justificativa && (
-                <p className="mt-1 text-[11px] text-ai-800/80">
-                  {sugestao.justificativa}
-                </p>
-              )}
-              <p className="mt-1 text-[11px] text-ai-700">
-                Sugestão de IA — nada é aplicado sem a sua confirmação.
-              </p>
+              {sugestao.justificativa && <p className="mt-1 text-[11px] text-ai-800/80">{sugestao.justificativa}</p>}
               <div className="mt-2 flex gap-2">
-                {tipoSugeridoInfo && (
-                  <Button
-                    type="button"
-                    variant="ai"
-                    size="sm"
-                    icon={<CheckCircle2 className="h-3.5 w-3.5" />}
-                    onClick={confirmarSugestao}
-                  >
-                    Confirmar
-                  </Button>
-                )}
-                <Button
-                  type="button"
-                  variant="secondary"
-                  size="sm"
-                  onClick={escolherOutro}
-                >
-                  Escolher outro
-                </Button>
+                <Button type="button" variant="ai" size="sm" onClick={() => { selecionarTipo(sugestao.tipo_sugerido); setSugestao(null); }}><CheckCircle2 className="h-3.5 w-3.5" /> Confirmar</Button>
+                <Button type="button" variant="secondary" size="sm" onClick={() => setSugestao(null)}>Escolher outro</Button>
               </div>
             </div>
           )}
 
-          <div className="flex items-center gap-2 text-success-700 text-xs">
-            <CheckCircle2 size={14} /> Campos do caso pré-preenchidos — confira
-            abaixo e ajuste.
-          </div>
+          <div className="flex items-center gap-2 text-xs text-success-700"><CheckCircle2 size={14} /> Campos pré-preenchidos; confira todos antes de criar o caso.</div>
 
-          {/* Revisão da extração campo a campo (R4 — campos_v2) */}
-          {camposRevisao.length > 0 && (
+          {campos.length > 0 && (
             <div>
-              <p className="text-[11px] font-semibold text-slate-500 uppercase tracking-wide mb-1.5">
-                Revisão da extração — edite os valores antes de gravar
-              </p>
+              <p className="mb-1.5 text-[11px] font-semibold uppercase tracking-wide text-slate-500">Revisão da extração</p>
               <Table>
-                <THead>
-                  <TR zebra={false}>
-                    <TH>Campo</TH>
-                    <TH>Valor (editável)</TH>
-                    <TH>Confiança</TH>
-                    <TH>Origem</TH>
-                  </TR>
-                </THead>
+                <THead><TR zebra={false}><TH>Campo</TH><TH>Valor editável</TH><TH>Confiança</TH><TH>Origem</TH></TR></THead>
                 <tbody>
-                  {camposRevisao.map((l) => (
-                    <Fragment key={l.campo}>
+                  {campos.map((linha) => (
+                    <Fragment key={linha.campo}>
                       <TR>
-                        <TD className="text-xs font-medium text-slate-700 whitespace-nowrap">
-                          {rotuloCampo(l.campo)}
-                        </TD>
-                        <TD className="min-w-48">
-                          <Input
-                            value={l.valor}
-                            onChange={(e) =>
-                              editarCampo(l.campo, e.target.value)
-                            }
-                            onBlur={() => emitirRevisao(camposRevisao)}
-                            className="h-8 text-xs"
-                            aria-label={`Valor extraído de ${rotuloCampo(l.campo)}`}
-                          />
-                        </TD>
+                        <TD className="whitespace-nowrap text-xs font-medium">{rotuloCampo(linha.campo)}</TD>
+                        <TD className="min-w-48"><Input value={linha.valor} onChange={(event) => setCampos((current) => current.map((item) => item.campo === linha.campo ? { ...item, valor: event.target.value } : item))} onBlur={() => emitirRevisao(campos)} className="h-8 text-xs" /></TD>
+                        <TD><BadgeConfianca score={linha.confianca} /></TD>
                         <TD>
-                          <BadgeConfiancaCampo score={l.confianca} />
-                        </TD>
-                        <TD>
-                          <div className="flex items-center gap-1.5">
-                            <button
-                              type="button"
-                              onClick={() =>
-                                setTrechoAberto(
-                                  trechoAberto === l.campo ? null : l.campo,
-                                )
-                              }
-                              className="inline-flex items-center gap-1 text-xs text-slate-500 hover:text-slate-800"
-                            >
-                              {trechoAberto === l.campo ? (
-                                <ChevronDown className="h-3.5 w-3.5" />
-                              ) : (
-                                <ChevronRight className="h-3.5 w-3.5" />
-                              )}
-                              trecho
+                          {linha.trecho ? (
+                            <button type="button" onClick={() => setTrechoAberto((current) => current === linha.campo ? null : linha.campo)} className="inline-flex items-center gap-1 text-xs text-primary-700">
+                              {trechoAberto === linha.campo ? <ChevronDown size={13} /> : <ChevronRight size={13} />} Ver trecho
                             </button>
-                            {!l.verificada && (
-                              <span title="Trecho não localizado no documento — confira">
-                                <AlertTriangle className="h-3.5 w-3.5 text-warn-600" />
-                              </span>
-                            )}
-                          </div>
+                          ) : linha.verificada ? <Badge tone="green">verificada</Badge> : <Badge tone="amber">conferir</Badge>}
                         </TD>
                       </TR>
-                      {trechoAberto === l.campo && (
-                        <TR zebra={false}>
-                          <TD colSpan={4} className="bg-slate-50/70">
-                            {l.trecho ? (
-                              <blockquote className="border-l-2 border-slate-300 pl-3 text-xs italic text-slate-600">
-                                “{l.trecho}”
-                              </blockquote>
-                            ) : (
-                              <p className="text-xs text-slate-400">
-                                Sem trecho de origem para este campo.
-                              </p>
-                            )}
-                            {!l.verificada && (
-                              <p className="mt-1.5 flex items-center gap-1.5 text-xs text-warn-700">
-                                <AlertTriangle className="h-3.5 w-3.5 shrink-0" />
-                                Trecho não localizado no documento — confira o
-                                original antes de gravar.
-                              </p>
-                            )}
-                          </TD>
-                        </TR>
+                      {trechoAberto === linha.campo && linha.trecho && (
+                        <TR><TD colSpan={4}><div className="rounded-lg bg-slate-50 p-3 text-xs italic text-slate-600">“{linha.trecho}”</div></TD></TR>
                       )}
                     </Fragment>
                   ))}
@@ -675,195 +439,21 @@ export default function ImportarDocumento({
             </div>
           )}
 
-          {/* Dados extraídos localmente (determinístico, sem IA) — exibidos
-              quando a interpretação por LLM não está disponível. */}
-          {d.analise_llm_indisponivel && d.dados_estruturados && (
-            <div className="grid sm:grid-cols-2 gap-2 text-xs">
-              {(d.dados_estruturados.processos_cnj || [])
-                .slice(0, 3)
-                .map((o: { valor: string }, i: number) => (
-                  <p key={`cnj-${i}`}>
-                    <b>Processo:</b> {o.valor}
-                  </p>
-                ))}
-              {(d.dados_estruturados.cpfs || [])
-                .slice(0, 3)
-                .map((o: { valor: string }, i: number) => (
-                  <p key={`cpf-${i}`}>
-                    <b>CPF:</b> {o.valor}
-                  </p>
-                ))}
-              {(d.dados_estruturados.cnpjs || [])
-                .slice(0, 3)
-                .map((o: { valor: string }, i: number) => (
-                  <p key={`cnpj-${i}`}>
-                    <b>CNPJ:</b> {o.valor}
-                  </p>
-                ))}
-              {(d.dados_estruturados.valores || [])
-                .slice(0, 3)
-                .map((o: { valor: string }, i: number) => (
-                  <p key={`val-${i}`}>
-                    <b>Valor:</b> {o.valor}
-                  </p>
-                ))}
-            </div>
-          )}
-
-          {/* Identificação + partes */}
-          <div className="grid sm:grid-cols-2 gap-2 text-xs">
-            {ip.numero_processo && (
-              <p>
-                <b>Processo:</b> {ip.numero_processo}
-              </p>
-            )}
-            {ip.tribunal && (
-              <p>
-                <b>Tribunal:</b> {ip.tribunal}
-              </p>
-            )}
-            {ip.comarca && (
-              <p>
-                <b>Comarca:</b> {ip.comarca}
-              </p>
-            )}
-            {ip.vara && (
-              <p>
-                <b>Vara:</b> {ip.vara}
-              </p>
-            )}
-            {pa.autor && (
-              <p>
-                <b>Autor:</b> {pa.autor}
-              </p>
-            )}
-            {pa.reu && (
-              <p>
-                <b>Réu:</b> {pa.reu}
-              </p>
-            )}
-            {(cc.area_sugerida || cl.area) && (
-              <p>
-                <b>Área:</b> {cc.area_sugerida || cl.area}
-                {(cc.subarea_sugerida || cl.subarea)
-                  ? ` · ${cc.subarea_sugerida || cl.subarea}`
-                  : ""}
-              </p>
-            )}
-            {(cc.rito_sugerido || cl.rito) && (
-              <p>
-                <b>Rito sugerido:</b> {cc.rito_sugerido || cl.rito}
-              </p>
-            )}
-            {cl.complexidade && (
-              <p>
-                <b>Complexidade:</b> {cl.complexidade}
-              </p>
-            )}
-            {(dp.cpf || dp.cnpj) && (
-              <p>
-                <b>Doc:</b> {dp.cpf || dp.cnpj}
-              </p>
-            )}
+          <div className="grid gap-3 md:grid-cols-2">
+            <Bloco titulo="Fatos" itens={summary.fatos ? [summary.fatos] : []} />
+            <Bloco titulo="Pedidos" itens={resultado.pedidos || []} />
+            <Bloco titulo="Riscos" itens={diagnosis.riscos || resultado.riscos || []} />
+            <Bloco titulo="Próximos passos" itens={strategy.proximos_passos || resultado.acoes_contextuais_sugeridas || []} />
           </div>
 
-          {re.fatos && (
-            <div className="bg-white rounded-lg p-3 border border-bronze-pale">
-              <p className="text-[11px] font-semibold text-slate-500 uppercase mb-1 flex items-center gap-1">
-                <ScrollText size={12} /> Resumo executivo
-              </p>
-              <p className="text-xs text-slate-700">{re.fatos}</p>
-              {re.pedidos && (
-                <p className="text-xs text-slate-600 mt-1">
-                  <b>Pedidos:</b> {re.pedidos}
-                </p>
-              )}
-              {re.situacao_processual && (
-                <p className="text-xs text-slate-600 mt-1">
-                  <b>Situação:</b> {re.situacao_processual}
-                </p>
-              )}
-            </div>
+          {!areasPermitidas.has(contextual.area_sugerida) && contextual.area_sugerida && (
+            <Alert variant="warning" title="Área ainda não disponível">
+              A área detectada “{contextual.area_sugerida}” não consta na taxonomia ativa. Selecione uma área manualmente antes de criar o caso.
+            </Alert>
           )}
 
-          <div className="grid sm:grid-cols-2 gap-3">
-            <Bloco titulo="Pontos fortes" itens={di.pontos_fortes} />
-            <Bloco
-              titulo="Pontos fracos / riscos"
-              itens={[...(di.pontos_fracos || []), ...(di.riscos || [])]}
-            />
-          </div>
-
-          {/* Brechas processuais */}
-          {br.nulidades?.length ||
-          br.teses_defensivas?.length ||
-          br.prescricao ||
-          br.falhas_documentais?.length ? (
-            <div className="bg-warn-50/60 rounded-lg p-3 border border-warn-200">
-              <p className="text-[11px] font-semibold text-warn-800 uppercase mb-1 flex items-center gap-1">
-                <AlertTriangle size={12} /> Brechas processuais (verificar)
-              </p>
-              {br.prescricao && (
-                <p className="text-xs text-slate-700">
-                  <b>Prescrição:</b> {br.prescricao}
-                </p>
-              )}
-              {br.decadencia && (
-                <p className="text-xs text-slate-700">
-                  <b>Decadência:</b> {br.decadencia}
-                </p>
-              )}
-              <Bloco titulo="Nulidades" itens={br.nulidades} />
-              <Bloco
-                titulo="Falhas documentais"
-                itens={br.falhas_documentais}
-              />
-              <Bloco titulo="Teses defensivas" itens={br.teses_defensivas} />
-            </div>
-          ) : null}
-
-          <div className="grid sm:grid-cols-2 gap-3">
-            <Bloco
-              titulo="Medidas / ações cabíveis"
-              itens={[...(es.medidas_cabiveis || []), ...(es.acoes || [])]}
-            />
-            <Bloco titulo="Provas a produzir" itens={es.producao_de_provas} />
-          </div>
-
-          {(ho.recomendado || ho.minimo) && (
-            <div className="bg-white rounded-lg p-3 border border-bronze-pale text-xs">
-              <p className="text-[11px] font-semibold text-slate-500 uppercase mb-1">
-                Honorários sugeridos (tabela OAB — referência)
-              </p>
-              <div className="grid grid-cols-3 gap-2">
-                <p>
-                  <b>Mínimo:</b>
-                  <br />
-                  {ho.minimo || "—"}
-                </p>
-                <p>
-                  <b>Recomendado:</b>
-                  <br />
-                  {ho.recomendado || "—"}
-                </p>
-                <p>
-                  <b>Estratégico:</b>
-                  <br />
-                  {ho.estrategico || "—"}
-                </p>
-              </div>
-              {ho.contrato_sugerido && (
-                <p className="mt-1">
-                  <b>Contrato:</b> {ho.contrato_sugerido}
-                </p>
-              )}
-            </div>
-          )}
-
-          {d._aviso && (
-            <p className="text-[11px] text-warn-700 border-t border-warn-100 pt-2">
-              ⚠ {d._aviso}
-            </p>
+          {classification.requer_confirmacao_humana !== false && (
+            <div className="flex gap-2 rounded-lg bg-amber-50 p-3 text-xs text-amber-800"><AlertTriangle size={15} className="shrink-0" /> Área, rito, fase, partes, valores e prazos devem ser confirmados pelo advogado.</div>
           )}
         </div>
       )}
