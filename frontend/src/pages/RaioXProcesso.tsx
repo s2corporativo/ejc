@@ -22,6 +22,7 @@ import {
 import api from "../lib/api";
 import { useAuth } from "../stores/auth";
 import {
+  AIFactualityLegend,
   Badge,
   Button,
   EmptyState,
@@ -844,6 +845,8 @@ export default function RaioXProcesso() {
               )}
             </SectionCard>
           )}
+
+          <AIFactualityLegend />
 
           <div className="grid gap-5 xl:grid-cols-[1.4fr_0.6fr]">
             <div className="space-y-5">
