@@ -9,6 +9,7 @@ import {
   Briefcase,
   CalendarClock,
   CheckCircle2,
+  ChevronDown,
   Clock,
   DollarSign,
   FileSignature,
@@ -159,6 +160,9 @@ export default function DashboardModern() {
     localStorage.setItem("ejc_comece_aqui_done", "1");
     setComeceAqui(false);
   };
+  // "Gestão do escritório": widgets analíticos/gerenciais e financeiros,
+  // recolhidos por padrão para priorizar o operacional do dia do advogado.
+  const [gestaoOpen, setGestaoOpen] = useState(false);
 
   const currentUser = user as any;
   const firstName = currentUser?.full_name?.split(" ")[0] || "Dr.";
@@ -302,20 +306,20 @@ export default function DashboardModern() {
   const quickActions = [
     {
       to: NOVO_CASO_DOCUMENTO_PATH,
-      label: "Caso por documento",
+      label: "Novo caso por documento",
       icon: FileUp,
       primary: true,
     },
     {
       to: NOVO_CASO_MANUAL_PATH,
-      label: "Caso manual",
+      label: "Novo caso manual",
       icon: PenLine,
       primary: true,
     },
-    { to: "/raio-x", label: "Raio-X preliminar", icon: ScanSearch, primary: true },
+    { to: "/raio-x", label: "Analisar processo externo", icon: ScanSearch, primary: true },
     {
       to: "/atividades?tab=relacionamento",
-      label: "Novo atendimento",
+      label: "Registrar atendimento",
       icon: Headset,
       primary: true,
     },
@@ -459,6 +463,22 @@ export default function DashboardModern() {
         </section>
       )}
 
+      {/* ===================== MEU DIA ===================== */}
+      {/* Prioridade operacional do advogado: ações, pendências, agenda e
+          casos recentes. KPIs/indicadores gerenciais saem do topo. */}
+      <section aria-label="Meu dia" className="space-y-6">
+        <div className="flex flex-wrap items-center gap-2">
+          <span className="flex h-7 w-7 items-center justify-center rounded-lg bg-ouro/15 text-ouro">
+            <CalendarClock className="h-4 w-4" />
+          </span>
+          <h2 className="text-base font-semibold text-slate-900 dark:text-slate-100">
+            Meu dia
+          </h2>
+          <span className="text-sm text-slate-500 dark:text-slate-400">
+            O que precisa de você agora
+          </span>
+        </div>
+
       {/* Faixa hero sépia→bronze com filete dourado no topo (sem borda) */}
       <section className="relative overflow-hidden rounded-2xl bg-gradient-to-br from-[#211913] via-[#2E241A] to-[#5E4A0E] p-5 text-white shadow-lg before:absolute before:inset-x-0 before:top-0 before:h-0.5 before:bg-gradient-to-r before:from-ouro-claro before:via-ouro-claro/40 before:to-transparent dark:from-[#17110c] dark:via-[#241c14] dark:to-[#4a3a10] md:p-6">
         <div className="flex flex-col gap-5 xl:flex-row xl:items-center xl:justify-between">
@@ -577,325 +597,6 @@ export default function DashboardModern() {
           <ArrowRight className="h-4 w-4 transition group-hover:translate-x-1" />
         </span>
       </Link>
-
-      <div
-        className={cn(
-          "grid gap-5 sm:grid-cols-2",
-          canSeeCRM ? "xl:grid-cols-5" : "xl:grid-cols-4",
-        )}
-      >
-        <StatCard
-          label="Casos ativos"
-          value={dashboard?.casos?.ativos ?? "—"}
-          subtitle={
-            dashboard?.casos?.total
-              ? `${dashboard.casos.total} casos cadastrados`
-              : "Carteira atual"
-          }
-          icon={<Briefcase className="h-5 w-5" />}
-          tone="blue"
-        />
-        <StatCard
-          label="Prazos críticos"
-          value={criticalDeadlines.length}
-          subtitle={`${deadlinesToday} vencendo hoje`}
-          icon={<AlertTriangle className="h-5 w-5" />}
-          tone={criticalDeadlines.length ? "red" : "amber"}
-          trend={criticalDeadlines.length ? "down" : undefined}
-        />
-        {canSeeFinance ? (
-          <StatCard
-            label="Receita do mês"
-            value={
-              typeof monthlyRevenue === "number"
-                ? fmtMoney(monthlyRevenue)
-                : "—"
-            }
-            subtitle="Honorários recebidos"
-            icon={<DollarSign className="h-5 w-5" />}
-            tone="green"
-          />
-        ) : (
-          <StatCard
-            label="Movimentações"
-            value={movimentos.length}
-            subtitle="Atividades recentes"
-            icon={<Gavel className="h-5 w-5" />}
-            tone="green"
-          />
-        )}
-        <StatCard
-          label={canSeeFinance ? "A receber" : "Taxa de êxito"}
-          value={
-            canSeeFinance
-              ? typeof pendingFees === "number"
-                ? fmtMoney(pendingFees)
-                : "—"
-              : successRate != null
-                ? `${successRate}%`
-                : "—"
-          }
-          subtitle={
-            canSeeFinance
-              ? "Honorários pendentes"
-              : "Base jurimétrica disponível"
-          }
-          icon={
-            canSeeFinance ? (
-              <Wallet className="h-5 w-5" />
-            ) : (
-              <BarChart3 className="h-5 w-5" />
-            )
-          }
-          tone="amber"
-        />
-        {canSeeCRM && (
-          <StatCard
-            label="Solicitações de clientes"
-            value={solicitacoes?.pendentes ?? "—"}
-            subtitle={
-              solicitacoes
-                ? `${solicitacoes.atrasadas} atrasada(s) · ${solicitacoes.proximas_24h} em 24h`
-                : "Linha do tempo de atendimento"
-            }
-            icon={<MessageSquare className="h-5 w-5" />}
-            tone={solicitacoes?.atrasadas ? "red" : "blue"}
-          />
-        )}
-      </div>
-
-      <div className="grid gap-5 xl:grid-cols-[1.35fr_0.65fr]">
-        <SectionCard
-          title="Prazos das próximas semanas"
-          subtitle="Distribuição temporal dos compromissos pendentes."
-          actions={
-            <Link
-              to="/prazos"
-              className="text-sm font-medium text-primary-600 hover:text-primary-700 dark:text-primary-300"
-            >
-              Ver prazos
-            </Link>
-          }
-        >
-          {loading ? (
-            <div className="h-52 animate-pulse rounded-xl bg-slate-100 dark:bg-white/[0.05]" />
-          ) : (
-            <DeadlineBars points={weeklySeries} />
-          )}
-        </SectionCard>
-
-        <SectionCard
-          title="Carteira por área"
-          subtitle="Concentração dos casos cadastrados."
-        >
-          {areas.length === 0 ? (
-            <EmptyState title="Sem casos na carteira" icon={Briefcase} />
-          ) : (
-            <div className="space-y-3">
-              {areas.map((area, index) => {
-                const max = Math.max(1, ...areas.map((item) => item.value));
-                return (
-                  <div key={area.label}>
-                    <div className="mb-1.5 flex items-center justify-between gap-3 text-xs">
-                      <span className="truncate font-medium capitalize text-slate-600 dark:text-slate-300">
-                        {area.label}
-                      </span>
-                      <span className="font-semibold tabular-nums text-slate-900 dark:text-slate-100">
-                        {area.value}
-                      </span>
-                    </div>
-                    <div className="h-2 overflow-hidden rounded-full bg-slate-100 dark:bg-white/[0.06]">
-                      <div
-                        className={cn(
-                          "h-full rounded-full",
-                          [
-                            "bg-primary-700",
-                            "bg-primary-500",
-                            "bg-primary-300",
-                            "bg-ai-500",
-                            "bg-success-500",
-                            "bg-warn-500",
-                          ][index],
-                        )}
-                        style={{
-                          width: `${Math.max(8, (area.value / max) * 100)}%`,
-                        }}
-                      />
-                    </div>
-                  </div>
-                );
-              })}
-            </div>
-          )}
-        </SectionCard>
-      </div>
-
-      <div
-        className={cn(
-          "grid gap-5",
-          canSeeFinance ? "xl:grid-cols-3" : "xl:grid-cols-2",
-        )}
-      >
-        <SectionCard
-          title="Casos ativos por fase"
-          subtitle="Andamento da carteira em cada etapa."
-          actions={
-            <Link
-              to="/casos"
-              className="text-sm font-medium text-primary-600 hover:text-primary-700 dark:text-primary-300"
-            >
-              Ver casos
-            </Link>
-          }
-        >
-          {fases.length === 0 ? (
-            <EmptyState title="Sem casos ativos" icon={Briefcase} />
-          ) : (
-            <div className="space-y-3">
-              {fases.map((fase) => {
-                const max = Math.max(1, ...fases.map((item) => item.value));
-                return (
-                  <div key={fase.label}>
-                    <div className="mb-1.5 flex items-center justify-between gap-3 text-xs">
-                      <span className="truncate font-medium capitalize text-slate-600 dark:text-slate-300">
-                        {fase.label.replace(/_/g, " ")}
-                      </span>
-                      <span className="font-semibold tabular-nums text-slate-900 dark:text-slate-100">
-                        {fase.value}
-                      </span>
-                    </div>
-                    <div className="h-2 overflow-hidden rounded-full bg-slate-100 dark:bg-white/[0.06]">
-                      <div
-                        className="h-full rounded-full bg-primary-600"
-                        style={{
-                          width: `${Math.max(8, (fase.value / max) * 100)}%`,
-                        }}
-                      />
-                    </div>
-                  </div>
-                );
-              })}
-            </div>
-          )}
-        </SectionCard>
-
-        {isManager && (
-          <SectionCard
-            title="Saúde da IA"
-            subtitle="Uso e aproveitamento nos últimos 30 dias."
-            actions={
-              <Link
-                to="/inteligencia?tab=saude"
-                className="text-sm font-medium text-primary-600 hover:text-primary-700 dark:text-primary-300"
-              >
-                Detalhes
-              </Link>
-            }
-          >
-            {iaSaude ? (
-              <div className="grid grid-cols-2 gap-3">
-                {[
-                  { label: "Chamadas", value: iaSaude.total_chamadas ?? 0 },
-                  {
-                    label: "Custo (R$)",
-                    value: fmtMoney(iaSaude.custo_total_brl),
-                  },
-                  {
-                    label: "Aproveitamento",
-                    value:
-                      iaSaude.taxa_aproveitamento_pct != null
-                        ? `${iaSaude.taxa_aproveitamento_pct}%`
-                        : "—",
-                  },
-                  {
-                    label: "PII removida",
-                    value: iaSaude.chamadas_com_pii_removida ?? 0,
-                  },
-                ].map(({ label, value }) => (
-                  <div
-                    key={label}
-                    className="rounded-xl border border-black/[0.05] bg-white p-3 dark:border-white/10 dark:bg-white/[0.03]"
-                  >
-                    <div className="text-xs text-slate-400">{label}</div>
-                    <div className="mt-1 text-lg font-semibold text-slate-900 dark:text-slate-100">
-                      {value}
-                    </div>
-                  </div>
-                ))}
-              </div>
-            ) : (
-              <EmptyState
-                title="Sem dados de uso da IA"
-                message="As métricas aparecem após as primeiras chamadas assistidas."
-                icon={Bot}
-              />
-            )}
-          </SectionCard>
-        )}
-
-        {canSeeFinance && (
-          <SectionCard
-            title="Recebíveis do mês"
-            subtitle="Situação dos honorários na competência atual."
-            actions={
-              <Link
-                to="/financeiro"
-                className="text-sm font-medium text-primary-600 hover:text-primary-700 dark:text-primary-300"
-              >
-                Abrir financeiro
-              </Link>
-            }
-          >
-            {consolidado ? (
-              <div className="space-y-3">
-                {[
-                  {
-                    label: "Recebido no mês",
-                    value: consolidado?.receitas?.recebido_mes,
-                    tone: "text-success-600 dark:text-success-300",
-                  },
-                  {
-                    label: "A receber (pendente)",
-                    value: consolidado?.receitas?.a_receber,
-                    tone: "text-warn-600 dark:text-warn-300",
-                  },
-                  {
-                    label: "Atrasado",
-                    value: consolidado?.receitas?.atrasado,
-                    tone: "text-danger-600 dark:text-danger-300",
-                  },
-                  {
-                    label: "Caixa do período",
-                    value: consolidado?.caixa_periodo,
-                    tone:
-                      (consolidado?.caixa_periodo ?? 0) >= 0
-                        ? "text-success-600 dark:text-success-300"
-                        : "text-danger-600 dark:text-danger-300",
-                  },
-                ].map(({ label, value, tone }) => (
-                  <div
-                    key={label}
-                    className="flex items-center justify-between border-b border-slate-100 py-2 text-sm last:border-0 dark:border-white/[0.07]"
-                  >
-                    <span className="text-slate-600 dark:text-slate-300">
-                      {label}
-                    </span>
-                    <span className={cn("font-semibold tabular-nums", tone)}>
-                      {fmtMoney(value ?? 0)}
-                    </span>
-                  </div>
-                ))}
-              </div>
-            ) : (
-              <EmptyState
-                title="Consolidado indisponível"
-                message="Abra o financeiro para conferir a competência."
-                icon={Wallet}
-              />
-            )}
-          </SectionCard>
-        )}
-      </div>
 
       <div className="grid gap-5 xl:grid-cols-[1.25fr_0.75fr]">
         <SectionCard
@@ -1271,6 +972,369 @@ export default function DashboardModern() {
         </SectionCard>
         <NoticiasCard />
       </div>
+      </section>
+
+      {/* ================= GESTÃO DO ESCRITÓRIO ================= */}
+      {/* Widgets analíticos/gerenciais e financeiros, recolhidos por padrão.
+          Blocos financeiros seguem restritos a canSeeFinance (RBAC intacto). */}
+      <section
+        aria-label="Gestão do escritório"
+        className="rounded-2xl border border-slate-200 bg-white shadow-sm dark:border-white/10 dark:bg-white/[0.03]"
+      >
+        <button
+          type="button"
+          onClick={() => setGestaoOpen((open) => !open)}
+          aria-expanded={gestaoOpen}
+          aria-controls="gestao-escritorio-conteudo"
+          className="flex w-full items-center justify-between gap-3 rounded-2xl px-4 py-4 text-left transition-colors hover:bg-slate-50 dark:hover:bg-white/[0.04]"
+        >
+          <span className="flex min-w-0 items-center gap-2">
+            <span className="flex h-7 w-7 shrink-0 items-center justify-center rounded-lg bg-primary-50 text-primary-700 dark:bg-primary-400/10 dark:text-primary-300">
+              <BarChart3 className="h-4 w-4" />
+            </span>
+            <span className="text-base font-semibold text-slate-900 dark:text-slate-100">
+              Gestão do escritório
+            </span>
+            <span className="hidden text-sm text-slate-500 dark:text-slate-400 sm:inline">
+              Indicadores, gráficos, jurimetria, saúde da IA e financeiro
+            </span>
+          </span>
+          <ChevronDown
+            className={cn(
+              "h-5 w-5 shrink-0 text-slate-400 transition-transform",
+              gestaoOpen && "rotate-180",
+            )}
+            aria-hidden="true"
+          />
+        </button>
+        {gestaoOpen && (
+          <div
+            id="gestao-escritorio-conteudo"
+            className="space-y-5 border-t border-slate-100 p-4 dark:border-white/[0.07]"
+          >
+      <div
+        className={cn(
+          "grid gap-5 sm:grid-cols-2",
+          canSeeCRM ? "xl:grid-cols-5" : "xl:grid-cols-4",
+        )}
+      >
+        <StatCard
+          label="Casos ativos"
+          value={dashboard?.casos?.ativos ?? "—"}
+          subtitle={
+            dashboard?.casos?.total
+              ? `${dashboard.casos.total} casos cadastrados`
+              : "Carteira atual"
+          }
+          icon={<Briefcase className="h-5 w-5" />}
+          tone="blue"
+        />
+        <StatCard
+          label="Prazos críticos"
+          value={criticalDeadlines.length}
+          subtitle={`${deadlinesToday} vencendo hoje`}
+          icon={<AlertTriangle className="h-5 w-5" />}
+          tone={criticalDeadlines.length ? "red" : "amber"}
+          trend={criticalDeadlines.length ? "down" : undefined}
+        />
+        {canSeeFinance ? (
+          <StatCard
+            label="Receita do mês"
+            value={
+              typeof monthlyRevenue === "number"
+                ? fmtMoney(monthlyRevenue)
+                : "—"
+            }
+            subtitle="Honorários recebidos"
+            icon={<DollarSign className="h-5 w-5" />}
+            tone="green"
+          />
+        ) : (
+          <StatCard
+            label="Movimentações"
+            value={movimentos.length}
+            subtitle="Atividades recentes"
+            icon={<Gavel className="h-5 w-5" />}
+            tone="green"
+          />
+        )}
+        <StatCard
+          label={canSeeFinance ? "A receber" : "Taxa de êxito"}
+          value={
+            canSeeFinance
+              ? typeof pendingFees === "number"
+                ? fmtMoney(pendingFees)
+                : "—"
+              : successRate != null
+                ? `${successRate}%`
+                : "—"
+          }
+          subtitle={
+            canSeeFinance
+              ? "Honorários pendentes"
+              : "Base jurimétrica disponível"
+          }
+          icon={
+            canSeeFinance ? (
+              <Wallet className="h-5 w-5" />
+            ) : (
+              <BarChart3 className="h-5 w-5" />
+            )
+          }
+          tone="amber"
+        />
+        {canSeeCRM && (
+          <StatCard
+            label="Solicitações de clientes"
+            value={solicitacoes?.pendentes ?? "—"}
+            subtitle={
+              solicitacoes
+                ? `${solicitacoes.atrasadas} atrasada(s) · ${solicitacoes.proximas_24h} em 24h`
+                : "Linha do tempo de atendimento"
+            }
+            icon={<MessageSquare className="h-5 w-5" />}
+            tone={solicitacoes?.atrasadas ? "red" : "blue"}
+          />
+        )}
+      </div>
+
+      <div className="grid gap-5 xl:grid-cols-[1.35fr_0.65fr]">
+        <SectionCard
+          title="Prazos das próximas semanas"
+          subtitle="Distribuição temporal dos compromissos pendentes."
+          actions={
+            <Link
+              to="/prazos"
+              className="text-sm font-medium text-primary-600 hover:text-primary-700 dark:text-primary-300"
+            >
+              Ver prazos
+            </Link>
+          }
+        >
+          {loading ? (
+            <div className="h-52 animate-pulse rounded-xl bg-slate-100 dark:bg-white/[0.05]" />
+          ) : (
+            <DeadlineBars points={weeklySeries} />
+          )}
+        </SectionCard>
+
+        <SectionCard
+          title="Carteira por área"
+          subtitle="Concentração dos casos cadastrados."
+        >
+          {areas.length === 0 ? (
+            <EmptyState title="Sem casos na carteira" icon={Briefcase} />
+          ) : (
+            <div className="space-y-3">
+              {areas.map((area, index) => {
+                const max = Math.max(1, ...areas.map((item) => item.value));
+                return (
+                  <div key={area.label}>
+                    <div className="mb-1.5 flex items-center justify-between gap-3 text-xs">
+                      <span className="truncate font-medium capitalize text-slate-600 dark:text-slate-300">
+                        {area.label}
+                      </span>
+                      <span className="font-semibold tabular-nums text-slate-900 dark:text-slate-100">
+                        {area.value}
+                      </span>
+                    </div>
+                    <div className="h-2 overflow-hidden rounded-full bg-slate-100 dark:bg-white/[0.06]">
+                      <div
+                        className={cn(
+                          "h-full rounded-full",
+                          [
+                            "bg-primary-700",
+                            "bg-primary-500",
+                            "bg-primary-300",
+                            "bg-ai-500",
+                            "bg-success-500",
+                            "bg-warn-500",
+                          ][index],
+                        )}
+                        style={{
+                          width: `${Math.max(8, (area.value / max) * 100)}%`,
+                        }}
+                      />
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          )}
+        </SectionCard>
+      </div>
+
+      <div
+        className={cn(
+          "grid gap-5",
+          canSeeFinance ? "xl:grid-cols-3" : "xl:grid-cols-2",
+        )}
+      >
+        <SectionCard
+          title="Casos ativos por fase"
+          subtitle="Andamento da carteira em cada etapa."
+          actions={
+            <Link
+              to="/casos"
+              className="text-sm font-medium text-primary-600 hover:text-primary-700 dark:text-primary-300"
+            >
+              Ver casos
+            </Link>
+          }
+        >
+          {fases.length === 0 ? (
+            <EmptyState title="Sem casos ativos" icon={Briefcase} />
+          ) : (
+            <div className="space-y-3">
+              {fases.map((fase) => {
+                const max = Math.max(1, ...fases.map((item) => item.value));
+                return (
+                  <div key={fase.label}>
+                    <div className="mb-1.5 flex items-center justify-between gap-3 text-xs">
+                      <span className="truncate font-medium capitalize text-slate-600 dark:text-slate-300">
+                        {fase.label.replace(/_/g, " ")}
+                      </span>
+                      <span className="font-semibold tabular-nums text-slate-900 dark:text-slate-100">
+                        {fase.value}
+                      </span>
+                    </div>
+                    <div className="h-2 overflow-hidden rounded-full bg-slate-100 dark:bg-white/[0.06]">
+                      <div
+                        className="h-full rounded-full bg-primary-600"
+                        style={{
+                          width: `${Math.max(8, (fase.value / max) * 100)}%`,
+                        }}
+                      />
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          )}
+        </SectionCard>
+
+        {isManager && (
+          <SectionCard
+            title="Saúde da IA"
+            subtitle="Uso e aproveitamento nos últimos 30 dias."
+            actions={
+              <Link
+                to="/inteligencia?tab=saude"
+                className="text-sm font-medium text-primary-600 hover:text-primary-700 dark:text-primary-300"
+              >
+                Detalhes
+              </Link>
+            }
+          >
+            {iaSaude ? (
+              <div className="grid grid-cols-2 gap-3">
+                {[
+                  { label: "Chamadas", value: iaSaude.total_chamadas ?? 0 },
+                  {
+                    label: "Custo (R$)",
+                    value: fmtMoney(iaSaude.custo_total_brl),
+                  },
+                  {
+                    label: "Aproveitamento",
+                    value:
+                      iaSaude.taxa_aproveitamento_pct != null
+                        ? `${iaSaude.taxa_aproveitamento_pct}%`
+                        : "—",
+                  },
+                  {
+                    label: "PII removida",
+                    value: iaSaude.chamadas_com_pii_removida ?? 0,
+                  },
+                ].map(({ label, value }) => (
+                  <div
+                    key={label}
+                    className="rounded-xl border border-black/[0.05] bg-white p-3 dark:border-white/10 dark:bg-white/[0.03]"
+                  >
+                    <div className="text-xs text-slate-400">{label}</div>
+                    <div className="mt-1 text-lg font-semibold text-slate-900 dark:text-slate-100">
+                      {value}
+                    </div>
+                  </div>
+                ))}
+              </div>
+            ) : (
+              <EmptyState
+                title="Sem dados de uso da IA"
+                message="As métricas aparecem após as primeiras chamadas assistidas."
+                icon={Bot}
+              />
+            )}
+          </SectionCard>
+        )}
+
+        {canSeeFinance && (
+          <SectionCard
+            title="Recebíveis do mês"
+            subtitle="Situação dos honorários na competência atual."
+            actions={
+              <Link
+                to="/financeiro"
+                className="text-sm font-medium text-primary-600 hover:text-primary-700 dark:text-primary-300"
+              >
+                Abrir financeiro
+              </Link>
+            }
+          >
+            {consolidado ? (
+              <div className="space-y-3">
+                {[
+                  {
+                    label: "Recebido no mês",
+                    value: consolidado?.receitas?.recebido_mes,
+                    tone: "text-success-600 dark:text-success-300",
+                  },
+                  {
+                    label: "A receber (pendente)",
+                    value: consolidado?.receitas?.a_receber,
+                    tone: "text-warn-600 dark:text-warn-300",
+                  },
+                  {
+                    label: "Atrasado",
+                    value: consolidado?.receitas?.atrasado,
+                    tone: "text-danger-600 dark:text-danger-300",
+                  },
+                  {
+                    label: "Caixa do período",
+                    value: consolidado?.caixa_periodo,
+                    tone:
+                      (consolidado?.caixa_periodo ?? 0) >= 0
+                        ? "text-success-600 dark:text-success-300"
+                        : "text-danger-600 dark:text-danger-300",
+                  },
+                ].map(({ label, value, tone }) => (
+                  <div
+                    key={label}
+                    className="flex items-center justify-between border-b border-slate-100 py-2 text-sm last:border-0 dark:border-white/[0.07]"
+                  >
+                    <span className="text-slate-600 dark:text-slate-300">
+                      {label}
+                    </span>
+                    <span className={cn("font-semibold tabular-nums", tone)}>
+                      {fmtMoney(value ?? 0)}
+                    </span>
+                  </div>
+                ))}
+              </div>
+            ) : (
+              <EmptyState
+                title="Consolidado indisponível"
+                message="Abra o financeiro para conferir a competência."
+                icon={Wallet}
+              />
+            )}
+          </SectionCard>
+        )}
+      </div>
+
+          </div>
+        )}
+      </section>
+
     </div>
   );
 }
