@@ -19,7 +19,7 @@ import {
   Download,
 } from "lucide-react";
 import api from "../lib/api";
-import { PageHeader, Empty, Spinner, fmtDate } from "../components/UI";
+import { PageHeader, Empty, ErrorState, Spinner, fmtDate } from "../components/UI";
 import { asList } from "../lib/list";
 
 // ── Categorias ────────────────────────────────────────────────────────────────
@@ -777,6 +777,7 @@ function SecaoImportarJuris({ onImportado }: { onImportado: () => void }) {
 
 export default function Conhecimento() {
   const [docs, setDocs] = useState<any>(null);
+  const [erroDocs, setErroDocs] = useState(false);
   const [total, setTotal] = useState(0);
   const [pagina, setPagina] = useState(1);
   const [catFiltro, setCatFiltro] = useState("");
@@ -789,8 +790,9 @@ export default function Conhecimento() {
 
   const PER_PAGE = 30;
 
-  const load = (pag = pagina, cat = catFiltro) =>
-    api
+  const load = (pag = pagina, cat = catFiltro) => {
+    setErroDocs(false);
+    return api
       .get("/rag/docs", {
         params: {
           page: pag,
@@ -802,7 +804,8 @@ export default function Conhecimento() {
         setDocs(asList(r.data));
         setTotal(r.data.total ?? 0);
       })
-      .catch(() => setDocs([]));
+      .catch(() => setErroDocs(true));
+  };
 
   useEffect(() => {
     load(pagina, catFiltro);
@@ -965,7 +968,12 @@ export default function Conhecimento() {
           </div>
         </div>
 
-        {!docs ? (
+        {erroDocs ? (
+          <ErrorState
+            message="Não foi possível carregar a base de conhecimento. Tente novamente."
+            onRetry={() => load()}
+          />
+        ) : !docs ? (
           <div className="flex justify-center py-10">
             <Spinner />
           </div>

@@ -1,6 +1,6 @@
 import { useState, useEffect, useCallback, useMemo } from "react";
 import { useSearchParams } from "react-router-dom";
-import { PageHeader, Spinner, Empty, EmptyState } from "../components/UI";
+import { PageHeader, Spinner, Empty, EmptyState, ErrorState } from "../components/UI";
 import { toast } from "../components/Toast";
 import {
   Calendar,
@@ -448,6 +448,7 @@ export default function CentralAtividades() {
 
   const [items, setItems] = useState<Activity[]>([]);
   const [loading, setLoading] = useState(true);
+  const [error, setError] = useState(false);
   const [modal, setModal] = useState(false);
   const [form, setForm] = useState<any>({ tipo: "reuniao", data_evento: "" });
   const [filterTipo, setFilterTipo] = useState<ItemType | "todos">("todos");
@@ -455,6 +456,7 @@ export default function CentralAtividades() {
 
   const load = useCallback(async () => {
     setLoading(true);
+    setError(false);
     try {
       const r = await api.get("/atividades", {
         params: { apenas_pendentes: false },
@@ -472,6 +474,8 @@ export default function CentralAtividades() {
         caso_titulo: a.caso_titulo,
       }));
       setItems(all);
+    } catch {
+      setError(true);
     } finally {
       setLoading(false);
     }
@@ -628,6 +632,11 @@ export default function CentralAtividades() {
 
       {loading ? (
         <Spinner />
+      ) : error ? (
+        <ErrorState
+          message="Não foi possível carregar as atividades. Verifique sua conexão e tente novamente."
+          onRetry={load}
+        />
       ) : view === "calendario" ? (
         <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
           <div className="lg:col-span-2">

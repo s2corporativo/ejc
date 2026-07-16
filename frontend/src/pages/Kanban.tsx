@@ -3,7 +3,7 @@ import { useNavigate } from "react-router-dom";
 import { ChevronDown } from "lucide-react";
 import api from "../lib/api";
 import { asList } from "../lib/list";
-import { Spinner, PageHeader } from "../components/UI";
+import { Spinner, PageHeader, ErrorState } from "../components/UI";
 
 interface KanbanCol {
   id: string;
@@ -60,6 +60,7 @@ export default function Kanban() {
   const [cols, setCols] = useState<KanbanCol[]>([]);
   const [casos, setCasos] = useState<Caso[]>([]);
   const [loading, setLoading] = useState(true);
+  const [error, setError] = useState(false);
   const [dragId, setDragId] = useState<string | null>(null);
   const [overCol, setOverCol] = useState<string | null>(null);
   const nav = useNavigate();
@@ -74,10 +75,17 @@ export default function Kanban() {
     setCasos(asList<Caso>(res.data));
   }, []);
 
-  useEffect(() => {
+  const load = useCallback(() => {
     setLoading(true);
-    Promise.all([loadCols(area), loadCasos()]).finally(() => setLoading(false));
+    setError(false);
+    return Promise.all([loadCols(area), loadCasos()])
+      .catch(() => setError(true))
+      .finally(() => setLoading(false));
   }, [area, loadCols, loadCasos]);
+
+  useEffect(() => {
+    load();
+  }, [load]);
 
   const getColKey = (c: Caso, colName: string, flowList?: Caso[]) => {
     // Casos já posicionados: respeitam o kanban_column SE pertencer a este fluxo
@@ -112,6 +120,16 @@ export default function Kanban() {
     return (
       <div className="flex justify-center py-20">
         <Spinner />
+      </div>
+    );
+
+  if (error)
+    return (
+      <div className="p-6">
+        <ErrorState
+          message="Não foi possível carregar o quadro Kanban. Tente novamente."
+          onRetry={load}
+        />
       </div>
     );
 

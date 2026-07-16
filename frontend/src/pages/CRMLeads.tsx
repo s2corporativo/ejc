@@ -10,7 +10,7 @@ import {
 } from "lucide-react";
 import api from "../lib/api";
 import { soDigitos } from "../utils/phone";
-import { Modal, Button, PageHeader, Spinner } from "../components/UI";
+import { Modal, Button, PageHeader, Spinner, ErrorState } from "../components/UI";
 import { asList } from "../lib/list";
 
 interface Lead {
@@ -90,6 +90,7 @@ const EMPTY_FORM: FormState = {
 export default function CRMLeads() {
   const [leads, setLeads] = useState<Lead[]>([]);
   const [loading, setLoading] = useState(true);
+  const [error, setError] = useState(false);
   const [showForm, setShowForm] = useState(false);
   const [form, setForm] = useState<FormState>({ ...EMPTY_FORM });
   const [dragId, setDragId] = useState<string | null>(null);
@@ -98,12 +99,14 @@ export default function CRMLeads() {
 
   const load = useCallback(async () => {
     setLoading(true);
+    setError(false);
     try {
       const res = await api.get("/clients/?page_size=500&status=lead");
       const all: Lead[] = asList<Lead>(res.data);
       setLeads(all);
     } catch {
       setLeads([]);
+      setError(true);
     } finally {
       setLoading(false);
     }
@@ -180,6 +183,13 @@ export default function CRMLeads() {
       {loading ? (
         <div className="flex-1 flex items-center justify-center">
           <Spinner />
+        </div>
+      ) : error ? (
+        <div className="flex-1 flex items-center justify-center px-6 pb-6">
+          <ErrorState
+            message="Não foi possível carregar os leads do funil."
+            onRetry={load}
+          />
         </div>
       ) : (
         <div className="flex-1 overflow-x-auto px-6 pb-6">
