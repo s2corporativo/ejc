@@ -13,6 +13,7 @@ from pathlib import Path
 from typing import Any, Iterable
 from uuid import uuid4
 
+from fastapi import HTTPException
 from sqlalchemy import or_, select, text
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -28,6 +29,11 @@ from app.models.user import User
 from app.schemas.raio_x import RaioXConverterRequest
 
 settings = get_settings()
+_CONVERSION_ROLES = {"superadmin", "admin", "socio", "advogado", "advogado_auxiliar"}
+
+
+def _role(user: User) -> str:
+    return user.role.value if hasattr(user.role, "value") else str(user.role)
 
 
 def _valor(campo: Any) -> Any:
@@ -191,9 +197,13 @@ def serializar_analise(analise: RaioXAnalise, incluir_documentos: bool = True) -
     if incluir_documentos:
         result["documentos"] = [
             {
-                "id": d.id, "nome_original": d.nome_original, "mimetype": d.mimetype,
-                "size_bytes": d.size_bytes, "sha256": d.sha256,
-                "tipo_documento": d.tipo_documento, "paginas": d.paginas,
+                "id": d.id,
+                "nome_original": d.nome_original,
+                "mimetype": d.mimetype,
+                "size_bytes": d.size_bytes,
+                "sha256": d.sha256,
+                "tipo_documento": d.tipo_documento,
+                "paginas": d.paginas,
                 "ocr_utilizado": d.ocr_utilizado,
                 "created_at": d.created_at.isoformat() if d.created_at else None,
             }
@@ -214,7 +224,11 @@ async def _proximo_numero_interno(db: AsyncSession) -> str:
     return f"DPT-{ano}-{seq:04d}"
 
 
-async def preview_conversao(db: AsyncSession, analise: RaioXAnalise, payload: RaioXConverterRequest | None = None) -> dict[str, Any]:
+async def preview_conversao(
+    db: AsyncSession,
+    analise: RaioXAnalise,
+    payload: RaioXConverterRequest | None = None,
+) -> dict[str, Any]:
     relatorio = analise.relatorio or {}
     identificacao = relatorio.get("identificacao") or {}
     numero = (payload.caso.numero_processo if payload else None) or analise.numero_processo or identificacao.get("numero_processo")
@@ -266,9 +280,11 @@ async def _resolver_cliente(db: AsyncSession, payload: RaioXConverterRequest, us
         raise ValueError("Informe os dados mínimos do novo cliente")
 
     from app.services.pii_crypto import encrypt, hash_documento
+
     tipo = ClientTipo.PJ if digits_cnpj else ClientTipo.PF
     client = Client(
-        id=str(uuid4()), tipo=tipo,
+        id=str(uuid4()),
+        tipo=tipo,
         nome=req.nome if tipo == ClientTipo.PF else None,
         razao_social=req.nome if tipo == ClientTipo.PJ else None,
         cpf=digits_cpf if tipo == ClientTipo.PF else None,
@@ -277,37 +293,54 @@ async def _resolver_cliente(db: AsyncSession, payload: RaioXConverterRequest, us
         cnpj_enc=encrypt(digits_cnpj) if digits_cnpj else None,
         cpf_hash=hash_documento(digits_cpf) if digits_cpf else None,
         cnpj_hash=hash_documento(digits_cnpj) if digits_cnpj else None,
-        email=req.email, telefone=req.telefone,
-        status=ClientStatus.ativo, origem=ClientOrigem.escritorio,
+        email=req.email,
+        telefone=req.telefone,
+        status=ClientStatus.ativo,
+        origem=ClientOrigem.escritorio,
         responsavel_id=user.id,
         observacoes="Criado por conversão confirmada do Raio-X preliminar; revisar dados.",
     )
     db.add(client)
-    await criar_audit_log(db, user.id, user.role.value, "CREATE_AUTO", "clients", client.id, detalhes="Conversão do Raio-X")
+    await criar_audit_log(db, user.id, _role(user), "CREATE_AUTO", "clients", client.id, detalhes="Conversão do Raio-X")
     return client
 
 
 def _copiar_documento(documento: RaioXDocumento, case: Case, client: Client, user: User) -> Document:
     source = Path(settings.UPLOAD_DIR) / documento.filepath
+    if not source.exists() or not source.is_file():
+        raise ValueError(f"Arquivo físico indisponível para transferência: {documento.nome_original}")
     rel = Path("raio-x-convertidos") / case.id / f"{uuid4()}{source.suffix}"
     target = Path(settings.UPLOAD_DIR) / rel
-    if source.exists():
-        target.parent.mkdir(parents=True, exist_ok=True)
-        shutil.copy2(source, target)
-        stored_path = str(rel)
-    else:
-        stored_path = documento.filepath
+    target.parent.mkdir(parents=True, exist_ok=True)
+    shutil.copy2(source, target)
     return Document(
-        id=str(uuid4()), titulo=documento.nome_original[:255],
+        id=str(uuid4()),
+        titulo=documento.nome_original[:255],
         descricao="Documento transferido de análise preliminar Raio-X.",
-        tipo=documento.tipo_documento or "outro", filename=documento.nome_original,
-        filepath=stored_path, mimetype=documento.mimetype, size_bytes=documento.size_bytes,
+        tipo=documento.tipo_documento or "outro",
+        filename=documento.nome_original,
+        filepath=str(rel),
+        mimetype=documento.mimetype,
+        size_bytes=documento.size_bytes,
         confidencialidade=DocConfidencialidade.interno,
-        case_id=case.id, client_id=client.id, uploaded_by=user.id,
+        case_id=case.id,
+        client_id=client.id,
+        uploaded_by=user.id,
     )
 
 
-async def converter_em_caso(db: AsyncSession, analise: RaioXAnalise, payload: RaioXConverterRequest, user: User) -> dict[str, Any]:
+async def converter_em_caso(
+    db: AsyncSession,
+    analise: RaioXAnalise,
+    payload: RaioXConverterRequest,
+    user: User,
+) -> dict[str, Any]:
+    if _role(user) not in _CONVERSION_ROLES:
+        raise HTTPException(
+            status_code=403,
+            detail="Seu perfil pode analisar documentos, mas não possui autorização para criar casos oficiais.",
+        )
+
     preview = await preview_conversao(db, analise, payload)
     if preview["casos_possivelmente_duplicados"] and not payload.duplicate_confirmed:
         raise ValueError("Há caso possivelmente duplicado; confirme conscientemente para continuar")
@@ -316,24 +349,41 @@ async def converter_em_caso(db: AsyncSession, analise: RaioXAnalise, payload: Ra
     if analise.convertido_case_id:
         return {"case_id": analise.convertido_case_id, "ja_convertido": True}
 
+    ids_disponiveis = {d.id for d in analise.documentos}
+    ids_solicitados = set(payload.documento_ids)
+    ids_invalidos = ids_solicitados - ids_disponiveis
+    if ids_invalidos:
+        raise ValueError("A seleção contém documento que não pertence a esta análise")
+    docs = [d for d in analise.documentos if d.id in ids_solicitados]
+    for item in docs:
+        source = Path(settings.UPLOAD_DIR) / item.filepath
+        if not source.exists() or not source.is_file():
+            raise ValueError(f"Arquivo físico indisponível para transferência: {item.nome_original}")
+
     client = await _resolver_cliente(db, payload, user)
     area = payload.caso.area if payload.caso.area in {a.value for a in CaseArea} else CaseArea.civil.value
     case = Case(
-        id=str(uuid4()), numero_interno=await _proximo_numero_interno(db),
-        titulo=payload.caso.titulo, area=CaseArea(area), status=CaseStatus.triagem,
-        fase=CaseFase.pre_processual, prioridade=CasePrioridade(payload.caso.prioridade),
-        numero_processo=payload.caso.numero_processo, tribunal=payload.caso.tribunal,
-        comarca=payload.caso.comarca, vara=payload.caso.vara,
+        id=str(uuid4()),
+        numero_interno=await _proximo_numero_interno(db),
+        titulo=payload.caso.titulo,
+        area=CaseArea(area),
+        status=CaseStatus.triagem,
+        fase=CaseFase.pre_processual,
+        prioridade=CasePrioridade(payload.caso.prioridade),
+        numero_processo=payload.caso.numero_processo,
+        tribunal=payload.caso.tribunal,
+        comarca=payload.caso.comarca,
+        vara=payload.caso.vara,
         parte_contraria=payload.caso.parte_contraria,
         descricao_fatos=payload.caso.descricao_fatos or (analise.relatorio or {}).get("sintese_executiva"),
-        case_type=payload.caso.case_type, has_judicial_process=bool(payload.caso.numero_processo),
-        client_id=client.id, advogado_responsavel_id=user.id,
+        case_type=payload.caso.case_type,
+        has_judicial_process=bool(payload.caso.numero_processo),
+        client_id=client.id,
+        advogado_responsavel_id=user.id,
         observacoes=f"Originado do Raio-X preliminar {analise.id}. Relatório preservado na origem.",
     )
     db.add(case)
 
-    selected = set(payload.documento_ids)
-    docs = [d for d in analise.documentos if not selected or d.id in selected]
     official_documents = []
     for item in docs:
         doc = _copiar_documento(item, case, client, user)
@@ -349,13 +399,18 @@ async def converter_em_caso(db: AsyncSession, analise: RaioXAnalise, payload: Ra
             if not raw_date:
                 continue
             deadline = Deadline(
-                id=str(uuid4()), titulo=str(_valor(item.get("titulo") or item.get("descricao") or "Prazo extraído"))[:255],
+                id=str(uuid4()),
+                titulo=str(_valor(item.get("titulo") or item.get("descricao") or "Prazo extraído"))[:255],
                 descricao="Importado do Raio-X; revisão humana obrigatória.",
-                tipo=DeadlineTipo.processual, prioridade=DeadlinePrioridade.alta,
-                status=DeadlineStatus.pendente, data_prazo=date.fromisoformat(raw_date),
+                tipo=DeadlineTipo.processual,
+                prioridade=DeadlinePrioridade.alta,
+                status=DeadlineStatus.pendente,
+                data_prazo=date.fromisoformat(raw_date),
                 base_legal=str(_valor(item.get("base_legal")) or "")[:255] or None,
-                case_id=case.id, responsavel_id=user.id,
-                origem="importacao_ia", confirmado=False,
+                case_id=case.id,
+                responsavel_id=user.id,
+                origem="importacao_ia",
+                confirmado=False,
             )
             db.add(deadline)
             prazos_criados.append(deadline.id)
@@ -367,9 +422,14 @@ async def converter_em_caso(db: AsyncSession, analise: RaioXAnalise, payload: Ra
             if not title:
                 continue
             task = Task(
-                id=str(uuid4()), titulo=title[:255], descricao="Sugestão transferida do Raio-X; validar escopo.",
-                status=TaskStatus.a_fazer, prioridade="media", case_id=case.id,
-                responsavel_id=user.id, criado_por=user.id,
+                id=str(uuid4()),
+                titulo=title[:255],
+                descricao="Sugestão transferida do Raio-X; validar escopo.",
+                status=TaskStatus.a_fazer,
+                prioridade="media",
+                case_id=case.id,
+                responsavel_id=user.id,
+                criado_por=user.id,
             )
             db.add(task)
             tarefas_criadas.append(task.id)
@@ -378,15 +438,28 @@ async def converter_em_caso(db: AsyncSession, analise: RaioXAnalise, payload: Ra
     analise.convertido_case_id = case.id
     analise.converted_at = datetime.now(timezone.utc)
     await criar_audit_log(
-        db, user.id, user.role.value, "CONVERT", "raio_x_analises", analise.id,
+        db,
+        user.id,
+        _role(user),
+        "CONVERT",
+        "raio_x_analises",
+        analise.id,
         detalhes=f"Raio-X convertido no caso {case.id}",
-        dados_depois={"case_id": case.id, "client_id": client.id, "documentos": official_documents,
-                       "prazos": prazos_criados, "tarefas": tarefas_criadas},
+        dados_depois={
+            "case_id": case.id,
+            "client_id": client.id,
+            "documentos": official_documents,
+            "prazos": prazos_criados,
+            "tarefas": tarefas_criadas,
+        },
     )
     await db.commit()
     return {
-        "case_id": case.id, "client_id": client.id, "ja_convertido": False,
+        "case_id": case.id,
+        "client_id": client.id,
+        "ja_convertido": False,
         "documentos_transferidos": official_documents,
-        "prazos_criados": prazos_criados, "tarefas_criadas": tarefas_criadas,
+        "prazos_criados": prazos_criados,
+        "tarefas_criadas": tarefas_criadas,
         "aviso": "Caso criado em triagem. Prazos importados permanecem não confirmados.",
     }
