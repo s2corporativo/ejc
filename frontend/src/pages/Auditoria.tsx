@@ -1,14 +1,16 @@
 import { useEffect, useState } from "react";
 import api from "../lib/api";
-import { PageHeader, Empty, Spinner } from "../components/UI";
+import { PageHeader, Empty, Spinner, ErrorState } from "../components/UI";
 
 export default function Auditoria() {
   const [data, setData] = useState<any>(null);
+  const [erro, setErro] = useState(false);
   const [acao, setAcao] = useState("");
   const [modulo, setModulo] = useState("");
 
-  const load = () =>
-    api
+  const load = () => {
+    setErro(false);
+    return api
       .get("/audit/", {
         params: {
           acao: acao || undefined,
@@ -17,7 +19,8 @@ export default function Auditoria() {
         },
       })
       .then((r) => setData(r.data))
-      .catch(() => setData({ data: [], total: 0 }));
+      .catch(() => setErro(true));
+  };
   useEffect(() => {
     load();
   }, [acao, modulo]);
@@ -77,7 +80,12 @@ export default function Auditoria() {
         </select>
       </div>
 
-      {!data ? (
+      {erro ? (
+        <ErrorState
+          message="Não foi possível carregar os logs de auditoria. Tente novamente."
+          onRetry={load}
+        />
+      ) : !data ? (
         <Spinner />
       ) : (!Array.isArray(data.data) || data.data.length === 0) ? (
         <Empty message="Nenhum log com esses filtros" />
