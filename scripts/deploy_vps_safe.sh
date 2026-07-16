@@ -11,15 +11,34 @@ cd "$APP_DIR"
 timestamp() { date +"%Y%m%d_%H%M%S"; }
 log() { echo "[$(date '+%F %T')] $*"; }
 
+ROLLBACK_SUFFIX="$(timestamp)"
+OLD_BACKEND_IMAGE=""
+OLD_FRONTEND_IMAGE=""
+OLD_BACKEND_TAG=""
+OLD_FRONTEND_TAG=""
+
+cleanup_rollback_tags() {
+  if [ -n "${OLD_BACKEND_TAG:-}" ]; then
+    docker image rm "$OLD_BACKEND_TAG" >/dev/null 2>&1 || true
+  fi
+  if [ -n "${OLD_FRONTEND_TAG:-}" ]; then
+    docker image rm "$OLD_FRONTEND_TAG" >/dev/null 2>&1 || true
+  fi
+}
+
 rollback() {
   log "Deploy falhou. Iniciando rollback seguro."
-  if [ -n "${OLD_BACKEND_IMAGE:-}" ]; then
+  if [ -n "${OLD_BACKEND_TAG:-}" ]; then
+    docker tag "$OLD_BACKEND_TAG" ejc-backend:latest || true
+  elif [ -n "${OLD_BACKEND_IMAGE:-}" ]; then
     docker tag "$OLD_BACKEND_IMAGE" ejc-backend:latest || true
   fi
-  if [ -n "${OLD_FRONTEND_IMAGE:-}" ]; then
+  if [ -n "${OLD_FRONTEND_TAG:-}" ]; then
+    docker tag "$OLD_FRONTEND_TAG" ejc-frontend:latest || true
+  elif [ -n "${OLD_FRONTEND_IMAGE:-}" ]; then
     docker tag "$OLD_FRONTEND_IMAGE" ejc-frontend:latest || true
   fi
-  docker compose up -d --no-deps backend frontend || true
+  docker compose up -d --no-deps backend worker frontend || true
   sleep 8
   bash "$APP_DIR/scripts/post_deploy_check.sh" || true
   exit 1
@@ -37,17 +56,31 @@ OLD_FRONTEND_IMAGE="$(docker inspect -f '{{.Image}}' ejc_frontend 2>/dev/null ||
 log "Imagem backend anterior: ${OLD_BACKEND_IMAGE:-indisponivel}"
 log "Imagem frontend anterior: ${OLD_FRONTEND_IMAGE:-indisponivel}"
 
+# Preserva tags imutáveis antes do build. Sem isso, o Docker pode remover a
+# imagem anterior quando a tag :latest é substituída, inviabilizando o rollback.
+if [ -n "$OLD_BACKEND_IMAGE" ]; then
+  OLD_BACKEND_TAG="ejc-backend:rollback-${ROLLBACK_SUFFIX}"
+  docker tag "$OLD_BACKEND_IMAGE" "$OLD_BACKEND_TAG"
+fi
+if [ -n "$OLD_FRONTEND_IMAGE" ]; then
+  OLD_FRONTEND_TAG="ejc-frontend:rollback-${ROLLBACK_SUFFIX}"
+  docker tag "$OLD_FRONTEND_IMAGE" "$OLD_FRONTEND_TAG"
+fi
+
 log "Backup antes do deploy"
 bash scripts/backup.sh
 
-log "Build backend e frontend"
-docker compose build backend frontend
+# O frontend é compilado primeiro. Assim, uma falha de TypeScript não substitui
+# a imagem do backend em produção e evita versão mista entre API e interface.
+log "Build frontend"
+docker compose build frontend
+log "Build backend"
+docker compose build backend
 
 log "Subindo backend"
 docker compose up -d --no-deps backend
 # Boot frio pós-build leva mais que 10s: espera até 60s (12 x 5s) antes de
-# declarar falha — o teto curto gerava rollback falso-negativo com o deploy
-# na prática saudável.
+# declarar falha.
 backend_ok=0
 for _ in $(seq 1 12); do
   sleep 5
@@ -65,11 +98,11 @@ else
   log "Migrations nao executadas. Use RUN_MIGRATIONS=1 apenas quando houver migracao revisada."
 fi
 
-# Seed do corpus RAG da "Bíblia de Conhecimento EJC" (situações + modelos,
-# incluindo o Volume III) — idempotente (dedup por chave_origem). Roda DEPOIS
-# das migrations (depende das tabelas knowledge_*). NÃO-FATAL de propósito: o
-# app funciona sem o corpus, então uma falha aqui é logada e o deploy segue —
-# o `if ... then` isenta o comando do `set -e`/trap ERR (sem rollback falso).
+# O worker usa a mesma imagem do backend e precisa ser recriado a cada deploy.
+log "Atualizando worker"
+docker compose up -d --no-deps worker
+
+# Seed do corpus RAG da "Bíblia de Conhecimento EJC" — idempotente e não fatal.
 if [ "$RUN_SEEDS" = "1" ]; then
   log "RUN_SEEDS=1: aplicando seed da Biblia de Conhecimento EJC (nao-fatal)"
   if docker compose exec -T backend python scripts/seed_biblia_ejc.py; then
@@ -89,4 +122,5 @@ sleep 8
 EJC_DOMAIN="$DOMAIN" bash scripts/post_deploy_check.sh
 
 trap - ERR
+cleanup_rollback_tags
 log "Deploy seguro concluido com sucesso."
