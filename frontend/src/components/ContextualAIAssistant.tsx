@@ -490,7 +490,7 @@ export default function ContextualAIAssistant({
               {result.classificacao && (
                 <div className="rounded-lg border border-sky-200 bg-sky-50 p-3 text-xs text-sky-900">
                   <strong>Documento identificado:</strong>{" "}
-                  {result.classificacao.tipo.replaceAll("_", " ")} · confiança{" "}
+                  {result.classificacao.tipo.replace(/_/g, " ")} · confiança{" "}
                   {Math.round(result.classificacao.confianca * 100)}%
                   {result.classificacao.sinais?.length ? (
                     <span>

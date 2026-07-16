@@ -141,7 +141,7 @@ const TIPO_PARA_AREA: Record<string, string> = {
 };
 
 const rotuloCampo = (campo: string) => {
-  const text = campo.replaceAll("_", " ");
+  const text = campo.replace(/_/g, " ");
   return text.charAt(0).toUpperCase() + text.slice(1);
 };
 
@@ -377,7 +377,7 @@ export default function ImportarDocumento({ onPrefill }: { onPrefill: (patch: Pa
               <div className="flex flex-wrap items-center gap-2">
                 <FileSearch className="h-4 w-4" />
                 <b>Reconhecimento contextual:</b>
-                <span>{String(contextual.tipo).replaceAll("_", " ")}</span>
+                <span>{String(contextual.tipo).replace(/_/g, " ")}</span>
                 {contextual.area_sugerida && <Badge tone="blue">{contextual.area_sugerida}</Badge>}
                 {typeof contextual.confianca === "number" && <Badge tone={contextual.confianca >= 0.8 ? "green" : "amber"}>confiança {Math.round(contextual.confianca * 100)}%</Badge>}
               </div>
