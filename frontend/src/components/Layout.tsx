@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import {
   Link,
   NavLink,
@@ -16,7 +16,9 @@ import {
   Menu,
   Monitor,
   Moon,
+  Pencil,
   Plus,
+  ScanSearch,
   Search,
   ShieldCheck,
   Sun,
@@ -41,6 +43,10 @@ import {
   getNavigationModules,
   type ModuleRoute,
 } from "../config/moduleRegistry";
+import {
+  NOVO_CASO_DOCUMENTO_PATH,
+  NOVO_CASO_MANUAL_PATH,
+} from "../lib/novoCaso";
 import api, { logout } from "../lib/api";
 
 // Logomarca HD com fundo transparente (nunca a versão JPG com fundo)
@@ -66,6 +72,10 @@ export default function Layout() {
   const [notifOpen, setNotifOpen] = useState(false);
   const [notifs, setNotifs] = useState<any[]>([]);
   const [menuOpen, setMenuOpen] = useState(false);
+  // Atalho "Novo caso" do cabeçalho: menu com os dois modos de abertura
+  // (analisar documento | cadastro manual), ambos na rota /casos/novo.
+  const [novoCasoOpen, setNovoCasoOpen] = useState(false);
+  const novoCasoRef = useRef<HTMLDivElement>(null);
   const [openGroups, setOpenGroups] = useState<Record<string, boolean>>(() => {
     try {
       return JSON.parse(localStorage.getItem("ejc_menu_groups") || "{}");
@@ -113,6 +123,25 @@ export default function Layout() {
     const timer = setInterval(load, 60_000);
     return () => clearInterval(timer);
   }, []);
+
+  // Fecha o menu "Novo caso" ao clicar fora ou pressionar Esc.
+  useEffect(() => {
+    if (!novoCasoOpen) return;
+    const onPointerDown = (event: PointerEvent) => {
+      if (!novoCasoRef.current?.contains(event.target as Node)) {
+        setNovoCasoOpen(false);
+      }
+    };
+    const onKeyDown = (event: KeyboardEvent) => {
+      if (event.key === "Escape") setNovoCasoOpen(false);
+    };
+    document.addEventListener("pointerdown", onPointerDown);
+    document.addEventListener("keydown", onKeyDown);
+    return () => {
+      document.removeEventListener("pointerdown", onPointerDown);
+      document.removeEventListener("keydown", onKeyDown);
+    };
+  }, [novoCasoOpen]);
 
   const visible = useMemo(
     () =>
@@ -235,12 +264,62 @@ export default function Layout() {
           </div>
 
           {/* DECISÃO: o atalho do header abre o wizard guiado de Novo Caso
-              (/casos/novo), não mais a listagem de casos. */}
-          <Link to="/casos/novo" className="hidden lg:inline-flex">
-            <Button size="md" icon={<Plus className="h-4 w-4" />}>
+              (/casos/novo) com dois modos de entrada (analisar documento |
+              cadastro manual), selecionados por query param `modo` — sem
+              criar rota nova. */}
+          <div ref={novoCasoRef} className="relative hidden lg:inline-flex">
+            <Button
+              type="button"
+              size="md"
+              icon={<Plus className="h-4 w-4" />}
+              onClick={() => setNovoCasoOpen((value) => !value)}
+              aria-haspopup="menu"
+              aria-expanded={novoCasoOpen}
+            >
               Novo caso
+              <ChevronDown className="h-4 w-4" />
             </Button>
-          </Link>
+            {novoCasoOpen && (
+              <div
+                role="menu"
+                aria-label="Como abrir o novo caso"
+                className="card absolute right-0 top-full z-50 mt-2 w-72 py-1"
+              >
+                <Link
+                  to={NOVO_CASO_DOCUMENTO_PATH}
+                  role="menuitem"
+                  onClick={() => setNovoCasoOpen(false)}
+                  className="menu-item items-start"
+                >
+                  <ScanSearch className="mt-0.5 h-4 w-4 shrink-0" />
+                  <span className="min-w-0">
+                    <span className="block font-medium">
+                      Analisar documento e preencher
+                    </span>
+                    <span className="block text-[11px] text-slate-400">
+                      Recomendado — a IA extrai os dados do arquivo
+                    </span>
+                  </span>
+                </Link>
+                <Link
+                  to={NOVO_CASO_MANUAL_PATH}
+                  role="menuitem"
+                  onClick={() => setNovoCasoOpen(false)}
+                  className="menu-item items-start"
+                >
+                  <Pencil className="mt-0.5 h-4 w-4 shrink-0" />
+                  <span className="min-w-0">
+                    <span className="block font-medium">
+                      Cadastrar manualmente
+                    </span>
+                    <span className="block text-[11px] text-slate-400">
+                      Preencho os campos do caso por conta própria
+                    </span>
+                  </span>
+                </Link>
+              </div>
+            )}
+          </div>
 
           <HelpButton moduleKey={moduleKey} />
 

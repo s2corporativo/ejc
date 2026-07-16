@@ -65,7 +65,7 @@ export type ModuleRoute = {
   component: LazyExoticComponent<ComponentType>;
   roles?: readonly string[];
   showInNav?: boolean;
-  // Modo Essencial: marca os ~8-10 módulos do dia a dia do advogado que ficam
+  // Modo Essencial: marca os 7 destinos do dia a dia do advogado que ficam
   // sempre visíveis no topo da barra lateral (campo aditivo — não altera
   // rota/RBAC nem a ordenação de getNavigationModules).
   essential?: boolean;
@@ -155,7 +155,7 @@ export const STAFF_ROUTES: ModuleRoute[] = [
   {
     key: "dashboard",
     path: "/",
-    label: "Dashboard",
+    label: "Início",
     description: "Visão executiva da operação jurídica.",
     group: "Início",
     icon: LayoutDashboard,
@@ -183,7 +183,10 @@ export const STAFF_ROUTES: ModuleRoute[] = [
     // _CLIENTES) e busca /users; perfis fora dessa matriz recebem 403.
     roles: ROLES.clientes,
     showInNav: true,
-    essential: true,
+    // Fora do Modo Essencial: o atalho "Novo caso" vive no cabeçalho.
+    // Mantém showInNav (aparece em "Mais / Avançado") porque
+    // moduleRegistry.test.ts exige /casos/novo na navegação do advogado.
+    essential: false,
     order: 10,
     helpKey: "casos",
     sensitive: true,
@@ -257,7 +260,7 @@ export const STAFF_ROUTES: ModuleRoute[] = [
   {
     key: "casos",
     path: "/casos",
-    label: "Casos e Processos",
+    label: "Casos",
     description: "Gestão jurídica central de casos e processos.",
     group: "Operação Jurídica",
     icon: Gavel,
@@ -365,7 +368,7 @@ export const STAFF_ROUTES: ModuleRoute[] = [
   {
     key: "atividades",
     path: "/atividades",
-    label: "Central",
+    label: "Agenda e Prazos",
     description:
       "Agenda, prazos, tarefas e intimações + relacionamento com clientes em abas.",
     group: "Operação Jurídica",
@@ -393,7 +396,6 @@ export const STAFF_ROUTES: ModuleRoute[] = [
     icon: AlarmClock,
     component: Prazos,
     showInNav: true,
-    essential: true,
     order: 40,
     helpKey: "prazos",
     sensitive: true,
@@ -422,7 +424,6 @@ export const STAFF_ROUTES: ModuleRoute[] = [
     icon: Inbox,
     component: Intimacoes,
     showInNav: true,
-    essential: true,
     order: 50,
     helpKey: "intimacoes",
     sensitive: true,
@@ -446,7 +447,7 @@ export const STAFF_ROUTES: ModuleRoute[] = [
   {
     key: "documentos",
     path: "/documentos",
-    label: "Documentos e Data Room",
+    label: "Documentos",
     description: "Gestão documental e compartilhamento controlado.",
     group: "Operação Jurídica",
     icon: FolderOpen,
@@ -466,7 +467,7 @@ export const STAFF_ROUTES: ModuleRoute[] = [
   {
     key: "pecas",
     path: "/pecas",
-    label: "Peças Jurídicas",
+    label: "Peças",
     description: "Produção, validação, revisão e aprovação de peças.",
     group: "Operação Jurídica",
     icon: FileText,
@@ -528,13 +529,15 @@ export const STAFF_ROUTES: ModuleRoute[] = [
   {
     key: "inteligencia",
     path: "/inteligencia",
-    label: "Inteligência Jurídica",
-    description: "Agentes, análise, validação, jurimetria e conhecimento.",
+    label: "Pesquisa e IA",
+    description:
+      "Pesquisa jurídica com IA: agentes, análise, jurimetria e conhecimento.",
     group: "Conhecimento e Inteligência",
     icon: Sparkles,
     component: InteligenciaWorkspace,
     roles: ROLES.juridico,
     showInNav: true,
+    essential: true,
     order: 10,
     helpKey: "inteligencia",
     sensitive: true,
