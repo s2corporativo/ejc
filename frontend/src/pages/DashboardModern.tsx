@@ -12,13 +12,14 @@ import {
   DollarSign,
   FileSignature,
   FileText,
+  FileUp,
   FolderOpen,
   Gavel,
   GitBranch,
   ListChecks,
   MessageSquare,
   Newspaper,
-  Plus,
+  PenLine,
   Scale,
   ScrollText,
   ShieldAlert,
@@ -32,6 +33,10 @@ import { asList } from "../lib/list";
 import { useAuth } from "../stores/auth";
 import NoticiasCard from "../components/NoticiasCard";
 import ThemeSelector from "../components/ThemeSelector";
+import {
+  NOVO_CASO_DOCUMENTO_PATH,
+  NOVO_CASO_MANUAL_PATH,
+} from "../lib/novoCaso";
 import {
   Badge,
   Button,
@@ -274,7 +279,17 @@ export default function DashboardModern() {
     dashboard?.financeiro?.honorarios_mes ?? dashboard?.financeiro?.receita_mes;
 
   const quickActions = [
-    { to: "/casos/novo", label: "Novo caso", icon: Plus, primary: true },
+    {
+      to: NOVO_CASO_DOCUMENTO_PATH,
+      label: "Caso por documento",
+      icon: FileUp,
+      primary: true,
+    },
+    {
+      to: NOVO_CASO_MANUAL_PATH,
+      label: "Caso manual",
+      icon: PenLine,
+    },
     { to: "/clientes", label: "Novo cliente", icon: Users },
     { to: "/pecas", label: "Gerar peça", icon: FileText },
     { to: "/inteligencia", label: "Analisar com IA", icon: Sparkles },
