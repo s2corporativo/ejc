@@ -1,0 +1,364 @@
+"""Raio-X do Processo — análise preliminar autônoma e conversão confirmada."""
+from __future__ import annotations
+
+import hashlib
+import os
+from datetime import datetime, timedelta, timezone
+from pathlib import Path
+from typing import Optional
+from uuid import uuid4
+
+import aiofiles
+from fastapi import APIRouter, Depends, File, HTTPException, Query, UploadFile
+from fastapi.encoders import jsonable_encoder
+from fastapi.responses import FileResponse
+from sqlalchemy import func, or_, select
+from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy.orm import selectinload
+
+from app.core.config import get_settings
+from app.core.database import get_db
+from app.core.ownership import is_gestao, verificar_acesso_caso
+from app.core.rate_limit import rate_limit
+from app.core.security import get_current_user
+from app.models.audit_log import criar_audit_log
+from app.models.case import Case
+from app.models.deadline import Deadline
+from app.models.document import Document
+from app.models.raio_x import RaioXAnalise, RaioXDocumento
+from app.models.task import Task
+from app.models.user import User
+from app.schemas.raio_x import RaioXCreate, RaioXConverterRequest, RaioXUpdate
+from app.services import documento_service
+from app.services.raio_x_service import (
+    consolidar_relatorio, converter_em_caso, preview_conversao, serializar_analise,
+)
+
+settings = get_settings()
+router = APIRouter(prefix="/raio-x", tags=["Raio-X do Processo"])
+
+EXTENSOES = {".pdf", ".docx", ".txt", ".png", ".jpg", ".jpeg", ".tiff", ".webp"}
+MAX_ARQUIVOS = 20
+
+
+def _role(user: User) -> str:
+    return user.role.value if hasattr(user.role, "value") else str(user.role)
+
+
+def _permitido(user: User) -> bool:
+    return _role(user) in {"superadmin", "admin", "socio", "advogado", "advogado_auxiliar", "estagiario", "secretaria"}
+
+
+async def _obter(db: AsyncSession, analise_id: str, user: User) -> RaioXAnalise:
+    analise = (await db.execute(
+        select(RaioXAnalise)
+        .options(selectinload(RaioXAnalise.documentos))
+        .where(RaioXAnalise.id == analise_id, RaioXAnalise.deleted_at.is_(None))
+    )).scalar_one_or_none()
+    if not analise:
+        raise HTTPException(404, "Análise Raio-X não encontrada")
+    if not is_gestao(user) and analise.created_by != user.id:
+        raise HTTPException(403, "Sem permissão para esta análise preliminar")
+    return analise
+
+
+@router.get("/stats")
+async def stats(db: AsyncSession = Depends(get_db), user: User = Depends(get_current_user)):
+    if not _permitido(user):
+        raise HTTPException(403, "Perfil sem acesso ao Raio-X")
+    q = select(RaioXAnalise.status, func.count(RaioXAnalise.id)).where(RaioXAnalise.deleted_at.is_(None))
+    if not is_gestao(user):
+        q = q.where(RaioXAnalise.created_by == user.id)
+    rows = (await db.execute(q.group_by(RaioXAnalise.status))).all()
+    por_status = {status: total for status, total in rows}
+    return {
+        "total": sum(por_status.values()), "por_status": por_status,
+        "pendentes_conferencia": por_status.get("aguardando_conferencia", 0),
+        "convertidos": por_status.get("convertido_em_caso", 0),
+    }
+
+
+@router.get("/")
+async def listar(
+    search: Optional[str] = None, status: Optional[str] = None,
+    area: Optional[str] = None, page: int = Query(1, ge=1),
+    page_size: int = Query(20, ge=1, le=100),
+    db: AsyncSession = Depends(get_db), user: User = Depends(get_current_user),
+):
+    if not _permitido(user):
+        raise HTTPException(403, "Perfil sem acesso ao Raio-X")
+    q = select(RaioXAnalise).where(RaioXAnalise.deleted_at.is_(None))
+    if not is_gestao(user):
+        q = q.where(RaioXAnalise.created_by == user.id)
+    if search:
+        term = f"%{search.strip()}%"
+        q = q.where(or_(RaioXAnalise.titulo.ilike(term), RaioXAnalise.potencial_cliente.ilike(term), RaioXAnalise.numero_processo.ilike(term)))
+    if status:
+        q = q.where(RaioXAnalise.status == status)
+    if area:
+        q = q.where(RaioXAnalise.area == area)
+    count = await db.scalar(select(func.count()).select_from(q.subquery()))
+    items = (await db.execute(q.order_by(RaioXAnalise.updated_at.desc()).offset((page - 1) * page_size).limit(page_size))).scalars().all()
+    return {"data": [serializar_analise(a, False) for a in items], "total": count or 0, "page": page, "page_size": page_size}
+
+
+@router.post("/", status_code=201)
+async def criar(
+    payload: RaioXCreate, db: AsyncSession = Depends(get_db),
+    user: User = Depends(get_current_user),
+):
+    if not _permitido(user):
+        raise HTTPException(403, "Perfil sem acesso ao Raio-X")
+    now = datetime.now(timezone.utc)
+    analise = RaioXAnalise(
+        id=str(uuid4()), titulo=payload.titulo, potencial_cliente=payload.potencial_cliente,
+        status="novo", created_by=user.id,
+        retention_until=now + timedelta(days=payload.retention_days),
+    )
+    db.add(analise)
+    await criar_audit_log(db, user.id, _role(user), "CREATE", "raio_x_analises", analise.id,
+                          detalhes="Criada análise preliminar; sem cliente/caso oficial")
+    await db.commit()
+    await db.refresh(analise)
+    analise.documentos = []
+    return serializar_analise(analise)
+
+
+@router.get("/contextual/{case_id}")
+async def contextual(
+    case_id: str, db: AsyncSession = Depends(get_db),
+    user: User = Depends(get_current_user),
+):
+    await verificar_acesso_caso(db, user, case_id)
+    case = (await db.execute(select(Case).where(Case.id == case_id, Case.deleted_at.is_(None)))).scalar_one_or_none()
+    if not case:
+        raise HTTPException(404, "Caso não encontrado")
+    docs = (await db.execute(select(Document).where(Document.case_id == case_id, Document.deleted_at.is_(None)))).scalars().all()
+    deadlines = (await db.execute(select(Deadline).where(Deadline.case_id == case_id, Deadline.deleted_at.is_(None)))).scalars().all()
+    tasks = (await db.execute(select(Task).where(Task.case_id == case_id, Task.deleted_at.is_(None)))).scalars().all()
+    report = {
+        "modo": "contextual",
+        "case_id": case.id,
+        "aviso": "Relatório contextual do caso existente. Não cria ou converte cadastros.",
+        "identificacao": {
+            "titulo": case.titulo, "numero_processo": case.numero_processo,
+            "area": case.area.value if hasattr(case.area, "value") else case.area,
+            "fase": case.fase.value if hasattr(case.fase, "value") else case.fase,
+            "tribunal": case.tribunal, "parte_contraria": case.parte_contraria,
+        },
+        "sintese_executiva": case.descricao_fatos or "Síntese ainda não registrada.",
+        "pontos_fortes": [case.pontos_fortes] if case.pontos_fortes else [],
+        "pontos_fracos": [case.pontos_fracos] if case.pontos_fracos else [],
+        "tese_principal": case.tese_principal,
+        "documentos": [{"id": d.id, "titulo": d.titulo, "tipo": d.tipo} for d in docs],
+        "prazos": [{"id": d.id, "titulo": d.titulo, "data": d.data_prazo.isoformat(), "confirmado": d.confirmado} for d in deadlines],
+        "tarefas": [{"id": t.id, "titulo": t.titulo, "status": t.status.value if hasattr(t.status, "value") else t.status} for t in tasks],
+        "proximos_passos": [t.titulo for t in tasks if str(getattr(t.status, "value", t.status)) != "concluida"],
+    }
+    await criar_audit_log(db, user.id, _role(user), "VIEW", "raio_x_contextual", case.id, detalhes="Raio-X contextual gerado")
+    await db.commit()
+    return report
+
+
+@router.get("/{analise_id}")
+async def detalhar(analise_id: str, db: AsyncSession = Depends(get_db), user: User = Depends(get_current_user)):
+    analise = await _obter(db, analise_id, user)
+    await criar_audit_log(db, user.id, _role(user), "VIEW", "raio_x_analises", analise.id)
+    await db.commit()
+    return serializar_analise(analise)
+
+
+@router.patch("/{analise_id}")
+async def atualizar(
+    analise_id: str, payload: RaioXUpdate, db: AsyncSession = Depends(get_db),
+    user: User = Depends(get_current_user),
+):
+    analise = await _obter(db, analise_id, user)
+    if analise.status == "convertido_em_caso":
+        raise HTTPException(409, "Relatório convertido está congelado para auditoria")
+    before = serializar_analise(analise, False)
+    for key, value in payload.model_dump(exclude_unset=True).items():
+        setattr(analise, key, value)
+    await criar_audit_log(db, user.id, _role(user), "UPDATE", "raio_x_analises", analise.id,
+                          dados_antes=before, dados_depois=payload.model_dump(exclude_unset=True))
+    await db.commit()
+    await db.refresh(analise)
+    return serializar_analise(analise)
+
+
+@router.post("/{analise_id}/documentos/analisar", dependencies=[Depends(rate_limit("raio-x-upload", 10))])
+async def analisar_documentos(
+    analise_id: str, files: list[UploadFile] = File(...),
+    db: AsyncSession = Depends(get_db), user: User = Depends(get_current_user),
+):
+    analise = await _obter(db, analise_id, user)
+    if analise.status == "convertido_em_caso":
+        raise HTTPException(409, "Análise já convertida; o relatório está congelado")
+    if not files or len(files) > MAX_ARQUIVOS:
+        raise HTTPException(422, f"Envie de 1 a {MAX_ARQUIVOS} arquivos por lote")
+    analise.status = "em_processamento"
+    await db.flush()
+
+    existing_hashes = {d.sha256 for d in analise.documentos}
+    novos: list[RaioXDocumento] = []
+    duplicados: list[str] = []
+    erros: list[dict] = []
+    total_tokens = 0
+    from app.routers.documents import _validar_conteudo
+
+    for upload in files:
+        filename = Path(upload.filename or "documento").name[:255]
+        ext = Path(filename).suffix.lower()
+        if ext not in EXTENSOES:
+            erros.append({"arquivo": filename, "erro": "Formato não suportado"})
+            continue
+        content = await upload.read()
+        if not content:
+            erros.append({"arquivo": filename, "erro": "Arquivo vazio"})
+            continue
+        if len(content) > settings.MAX_UPLOAD_MB * 1024 * 1024:
+            erros.append({"arquivo": filename, "erro": f"Excede {settings.MAX_UPLOAD_MB} MB"})
+            continue
+        digest = hashlib.sha256(content).hexdigest()
+        if digest in existing_hashes:
+            duplicados.append(filename)
+            continue
+        mime_real = _validar_conteudo(ext, content)
+        now = datetime.now(timezone.utc)
+        rel = Path("raio-x") / f"{now.year}" / f"{now.month:02d}" / analise.id / f"{uuid4()}{ext}"
+        full = Path(settings.UPLOAD_DIR) / rel
+        full.parent.mkdir(parents=True, exist_ok=True)
+        async with aiofiles.open(full, "wb") as target:
+            await target.write(content)
+        try:
+            result = await documento_service.extrair_e_analisar(
+                str(full), mime_real or upload.content_type, db=db, enriquecer_rag=True, user_id=user.id,
+            )
+            if not result.get("ok"):
+                raise ValueError(result.get("erro") or "Falha na extração")
+            result.pop("_texto_sanitizado", None)
+            encoded = jsonable_encoder(result)
+            intake = encoded.get("intake_result") or encoded
+            tipo = intake.get("tipo_documento")
+            tipo = tipo.get("valor") if isinstance(tipo, dict) else tipo
+            doc = RaioXDocumento(
+                id=str(uuid4()), analise_id=analise.id, nome_original=filename,
+                filepath=str(rel), mimetype=mime_real, size_bytes=len(content), sha256=digest,
+                tipo_documento=str(tipo)[:100] if tipo else None,
+                ocr_utilizado=ext in {".pdf", ".png", ".jpg", ".jpeg", ".tiff", ".webp"},
+                resultado_analise=encoded, uploaded_by=user.id,
+            )
+            db.add(doc)
+            novos.append(doc)
+            existing_hashes.add(digest)
+            total_tokens += int(encoded.get("tokens_total") or encoded.get("tokens") or 0)
+        except Exception as exc:
+            try:
+                full.unlink(missing_ok=True)
+            except Exception:
+                pass
+            erros.append({"arquivo": filename, "erro": str(exc)[:300]})
+
+    await db.flush()
+    await db.refresh(analise, attribute_names=["documentos"])
+    analise.relatorio = consolidar_relatorio(list(analise.documentos))
+    ident = analise.relatorio.get("identificacao") or {}
+    analise.numero_processo = analise.numero_processo or ident.get("numero_processo")
+    analise.area = analise.area or ident.get("area")
+    analise.fase = analise.fase or ident.get("fase")
+    analise.tribunal = analise.tribunal or ident.get("tribunal")
+    analise.status = "aguardando_conferencia" if analise.documentos else "documentos_pendentes"
+    analise.custo_ia = {**(analise.custo_ia or {}), "tokens_ultimo_lote": total_tokens, "arquivos_ultimo_lote": len(novos)}
+    await criar_audit_log(
+        db, user.id, _role(user), "AI_USE", "raio_x_analises", analise.id,
+        detalhes=f"{len(novos)} documento(s) analisado(s); {len(duplicados)} duplicado(s); {len(erros)} erro(s)",
+        dados_depois={"documentos": [d.id for d in novos], "duplicados": duplicados, "erros": erros},
+    )
+    await db.commit()
+    refreshed = await _obter(db, analise.id, user)
+    return {"analise": serializar_analise(refreshed), "duplicados": duplicados, "erros": erros}
+
+
+@router.post("/{analise_id}/reanalisar")
+async def reanalisar(analise_id: str, db: AsyncSession = Depends(get_db), user: User = Depends(get_current_user)):
+    analise = await _obter(db, analise_id, user)
+    if analise.status == "convertido_em_caso":
+        raise HTTPException(409, "Relatório convertido está congelado")
+    analise.relatorio = consolidar_relatorio(list(analise.documentos))
+    analise.status = "aguardando_conferencia" if analise.documentos else "documentos_pendentes"
+    await criar_audit_log(db, user.id, _role(user), "REPROCESS", "raio_x_analises", analise.id)
+    await db.commit()
+    return serializar_analise(analise)
+
+
+@router.get("/{analise_id}/documentos/{documento_id}/download")
+async def download(
+    analise_id: str, documento_id: str, db: AsyncSession = Depends(get_db),
+    user: User = Depends(get_current_user),
+):
+    analise = await _obter(db, analise_id, user)
+    doc = next((d for d in analise.documentos if d.id == documento_id), None)
+    if not doc:
+        raise HTTPException(404, "Documento preliminar não encontrado")
+    full = Path(settings.UPLOAD_DIR) / doc.filepath
+    if not full.exists():
+        raise HTTPException(404, "Arquivo físico indisponível")
+    await criar_audit_log(db, user.id, _role(user), "DOWNLOAD", "raio_x_documentos", doc.id, detalhes=doc.nome_original)
+    await db.commit()
+    return FileResponse(str(full), filename=doc.nome_original, media_type=doc.mimetype)
+
+
+@router.get("/{analise_id}/conversao/preview")
+async def conversao_preview(analise_id: str, db: AsyncSession = Depends(get_db), user: User = Depends(get_current_user)):
+    analise = await _obter(db, analise_id, user)
+    return await preview_conversao(db, analise)
+
+
+@router.post("/{analise_id}/converter")
+async def converter(
+    analise_id: str, payload: RaioXConverterRequest,
+    db: AsyncSession = Depends(get_db), user: User = Depends(get_current_user),
+):
+    analise = await _obter(db, analise_id, user)
+    if analise.status not in {"aguardando_conferencia", "em_analise", "analise_concluida", "convertido_em_caso"}:
+        raise HTTPException(409, "Conclua e confira a análise antes da conversão")
+    try:
+        return await converter_em_caso(db, analise, payload, user)
+    except ValueError as exc:
+        await db.rollback()
+        raise HTTPException(409, str(exc))
+
+
+@router.post("/{analise_id}/arquivar")
+async def arquivar(analise_id: str, db: AsyncSession = Depends(get_db), user: User = Depends(get_current_user)):
+    analise = await _obter(db, analise_id, user)
+    analise.status = "arquivado"
+    analise.archived_at = datetime.now(timezone.utc)
+    await criar_audit_log(db, user.id, _role(user), "ARCHIVE", "raio_x_analises", analise.id)
+    await db.commit()
+    return {"ok": True, "status": analise.status}
+
+
+@router.post("/{analise_id}/descartar")
+async def descartar(analise_id: str, db: AsyncSession = Depends(get_db), user: User = Depends(get_current_user)):
+    analise = await _obter(db, analise_id, user)
+    if analise.status == "convertido_em_caso":
+        raise HTTPException(409, "Análise convertida não pode ser descartada")
+    analise.status = "descartado"
+    analise.discarded_at = datetime.now(timezone.utc)
+    await criar_audit_log(db, user.id, _role(user), "DISCARD", "raio_x_analises", analise.id)
+    await db.commit()
+    return {"ok": True, "status": analise.status}
+
+
+@router.delete("/{analise_id}")
+async def excluir(analise_id: str, db: AsyncSession = Depends(get_db), user: User = Depends(get_current_user)):
+    analise = await _obter(db, analise_id, user)
+    if analise.status == "convertido_em_caso":
+        raise HTTPException(409, "Análise convertida deve ser preservada para auditoria")
+    if analise.retention_until and analise.retention_until > datetime.now(timezone.utc) and not is_gestao(user):
+        raise HTTPException(409, "Prazo de retenção vigente; arquive ou solicite exclusão à gestão")
+    analise.deleted_at = datetime.now(timezone.utc)
+    await criar_audit_log(db, user.id, _role(user), "DELETE", "raio_x_analises", analise.id, detalhes="Soft delete controlado")
+    await db.commit()
+    return {"ok": True}
