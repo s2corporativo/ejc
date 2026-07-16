@@ -21,6 +21,7 @@ import {
   Newspaper,
   PenLine,
   Scale,
+  ScanSearch,
   ScrollText,
   ShieldAlert,
   ShieldCheck,
@@ -293,6 +294,7 @@ export default function DashboardModern() {
     { to: "/clientes", label: "Novo cliente", icon: Users },
     { to: "/pecas", label: "Gerar peça", icon: FileText },
     { to: "/inteligencia", label: "Analisar com IA", icon: Sparkles },
+    { to: "/raio-x", label: "Raio-X preliminar", icon: ScanSearch },
     { to: "/ramos", label: "Áreas de Atuação", icon: Scale },
   ];
 
@@ -349,6 +351,34 @@ export default function DashboardModern() {
           </div>
         </div>
       </section>
+
+      <Link
+        to="/raio-x"
+        className="group flex flex-col gap-4 rounded-2xl bg-gradient-to-r from-primary-950 via-primary-900 to-ai-900 p-5 text-white shadow-lg transition hover:-translate-y-0.5 hover:shadow-xl sm:flex-row sm:items-center sm:justify-between"
+      >
+        <div className="flex items-start gap-4">
+          <span className="rounded-2xl bg-white/10 p-3 ring-1 ring-inset ring-white/15">
+            <ScanSearch className="h-6 w-6" />
+          </span>
+          <div>
+            <div className="flex flex-wrap items-center gap-2">
+              <h2 className="font-serif text-xl font-semibold">
+                Analisar antes de cadastrar
+              </h2>
+              <Badge tone="blue">Raio-X preliminar</Badge>
+            </div>
+            <p className="mt-1 max-w-3xl text-sm leading-6 text-primary-100/80">
+              Envie documentos externos, confira o diagnóstico e só transforme
+              em caso após a decisão humana. A análise não altera a carteira nem
+              os indicadores oficiais.
+            </p>
+          </div>
+        </div>
+        <span className="inline-flex shrink-0 items-center gap-2 text-sm font-semibold text-ouro-claro">
+          Abrir Raio-X
+          <ArrowRight className="h-4 w-4 transition group-hover:translate-x-1" />
+        </span>
+      </Link>
 
       <div
         className={cn(
