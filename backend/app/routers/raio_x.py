@@ -2,7 +2,6 @@
 from __future__ import annotations
 
 import hashlib
-import os
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from typing import Optional
@@ -46,7 +45,7 @@ def _role(user: User) -> str:
 
 
 def _permitido(user: User) -> bool:
-    return _role(user) in {"superadmin", "admin", "socio", "advogado", "advogado_auxiliar", "estagiario", "secretaria"}
+    return _role(user) in {"superadmin", "admin", "socio", "advogado", "advogado_auxiliar", "estagiario"}
 
 
 async def _obter(db: AsyncSession, analise_id: str, user: User) -> RaioXAnalise:
@@ -176,8 +175,11 @@ async def atualizar(
     analise = await _obter(db, analise_id, user)
     if analise.status == "convertido_em_caso":
         raise HTTPException(409, "Relatório convertido está congelado para auditoria")
+    updates = payload.model_dump(exclude_unset=True)
+    if updates.get("status") == "convertido_em_caso":
+        raise HTTPException(422, "Status reservado à conversão confirmada em caso")
     before = serializar_analise(analise, False)
-    for key, value in payload.model_dump(exclude_unset=True).items():
+    for key, value in updates.items():
         setattr(analise, key, value)
     await criar_audit_log(db, user.id, _role(user), "UPDATE", "raio_x_analises", analise.id,
                           dados_antes=before, dados_depois=payload.model_dump(exclude_unset=True))
@@ -337,6 +339,8 @@ async def converter(
 @router.post("/{analise_id}/arquivar")
 async def arquivar(analise_id: str, db: AsyncSession = Depends(get_db), user: User = Depends(get_current_user)):
     analise = await _obter(db, analise_id, user)
+    if analise.status == "convertido_em_caso":
+        raise HTTPException(409, "Análise convertida deve ser preservada para auditoria")
     analise.status = "arquivado"
     analise.archived_at = datetime.now(timezone.utc)
     await criar_audit_log(db, user.id, _role(user), "ARCHIVE", "raio_x_analises", analise.id)
