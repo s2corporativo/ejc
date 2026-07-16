@@ -688,6 +688,12 @@ function TabResumo({ caso }: { caso: Case }) {
             🗑️ Excluir
           </button>
         )}
+        <Link
+          to={`/raio-x?case_id=${caso.id}`}
+          className="btn-secondary flex items-center gap-1 text-primary-700"
+        >
+          🔎 Raio-X do processo
+        </Link>
         <button
           onClick={() => navigate(`/casos/${caso.id}/sala-de-guerra`)}
           className="btn-secondary flex items-center gap-1"
