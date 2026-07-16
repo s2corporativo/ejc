@@ -1,8 +1,8 @@
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import { Link } from "react-router-dom";
 import { ChevronRight, Scale, Search } from "lucide-react";
 import api from "../../lib/api";
-import { EmptyState, Spinner } from "../../components/UI";
+import { EmptyState, ErrorState, Spinner } from "../../components/UI";
 
 const STATUS_LABEL: Record<string, [string, string]> = {
   triagem: ["Em análise", "bg-warn-100 text-warn-700"],
@@ -25,9 +25,12 @@ const AREA_ICON: Record<string, string> = {
 export default function PortalCasos() {
   const [casos, setCasos] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
+  const [error, setError] = useState(false);
   const [busca, setBusca] = useState("");
 
-  useEffect(() => {
+  const load = useCallback(() => {
+    setLoading(true);
+    setError(false);
     api
       .get("/portal/meus-casos")
       .then((r) =>
@@ -39,8 +42,13 @@ export default function PortalCasos() {
               : [],
         ),
       )
+      .catch(() => setError(true))
       .finally(() => setLoading(false));
   }, []);
+
+  useEffect(() => {
+    load();
+  }, [load]);
 
   const filtered = casos.filter(
     (c) =>
@@ -80,6 +88,11 @@ export default function PortalCasos() {
       {/* Lista */}
       {loading ? (
         <Spinner />
+      ) : error ? (
+        <ErrorState
+          message="Não foi possível carregar seus processos."
+          onRetry={load}
+        />
       ) : filtered.length === 0 ? (
         <EmptyState
           icon={Scale}

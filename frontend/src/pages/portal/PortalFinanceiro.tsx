@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import {
   DollarSign,
   Clock,
@@ -8,7 +8,7 @@ import {
 } from "lucide-react";
 import api from "../../lib/api";
 import { asList } from "../../lib/list";
-import { Spinner, fmtMoney } from "../../components/UI";
+import { ErrorState, Spinner, fmtMoney } from "../../components/UI";
 
 const ST: Record<string, [string, string, string]> = {
   pago: ["Pago", "text-success-600", "bg-success-50"],
@@ -20,13 +20,21 @@ const ST: Record<string, [string, string, string]> = {
 export default function PortalFinanceiro() {
   const [rows, setRows] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
+  const [error, setError] = useState(false);
 
-  useEffect(() => {
+  const load = useCallback(() => {
+    setLoading(true);
+    setError(false);
     api
       .get("/portal/financeiro")
       .then((r) => setRows(asList(r.data)))
+      .catch(() => setError(true))
       .finally(() => setLoading(false));
   }, []);
+
+  useEffect(() => {
+    load();
+  }, [load]);
 
   const total = rows.reduce((s, r) => s + (r.valor ?? 0), 0);
   const pago = rows
@@ -121,6 +129,11 @@ export default function PortalFinanceiro() {
         </div>
         {loading ? (
           <Spinner />
+        ) : error ? (
+          <ErrorState
+            message="Não foi possível carregar seus lançamentos financeiros."
+            onRetry={load}
+          />
         ) : rows.length === 0 ? (
           <div className="p-10 text-center text-slate-400 text-sm">
             Nenhum lançamento
