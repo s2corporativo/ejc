@@ -65,6 +65,10 @@ export type ModuleRoute = {
   component: LazyExoticComponent<ComponentType>;
   roles?: readonly string[];
   showInNav?: boolean;
+  // Modo Essencial: marca os ~8-10 módulos do dia a dia do advogado que ficam
+  // sempre visíveis no topo da barra lateral (campo aditivo — não altera
+  // rota/RBAC nem a ordenação de getNavigationModules).
+  essential?: boolean;
   end?: boolean;
   order?: number;
   status?: ModuleStatus;
@@ -157,6 +161,7 @@ export const STAFF_ROUTES: ModuleRoute[] = [
     icon: LayoutDashboard,
     component: Dashboard,
     showInNav: true,
+    essential: true,
     end: true,
     order: 10,
     helpKey: "dashboard",
@@ -178,6 +183,7 @@ export const STAFF_ROUTES: ModuleRoute[] = [
     // _CLIENTES) e busca /users; perfis fora dessa matriz recebem 403.
     roles: ROLES.clientes,
     showInNav: true,
+    essential: true,
     order: 10,
     helpKey: "casos",
     sensitive: true,
@@ -209,6 +215,7 @@ export const STAFF_ROUTES: ModuleRoute[] = [
     // Backend /clients (matriz _CLIENTES) nega financeiro/estagiario/auxiliar.
     roles: ROLES.clientes,
     showInNav: true,
+    essential: true,
     order: 10,
     helpKey: "clientes",
     sensitive: true,
@@ -256,6 +263,7 @@ export const STAFF_ROUTES: ModuleRoute[] = [
     icon: Gavel,
     component: Casos,
     showInNav: true,
+    essential: true,
     order: 20,
     helpKey: "casos",
     sensitive: true,
@@ -364,6 +372,7 @@ export const STAFF_ROUTES: ModuleRoute[] = [
     icon: CalendarClock,
     component: Central,
     showInNav: true,
+    essential: true,
     order: 30,
     helpKey: "atividades",
     sensitive: true,
@@ -384,6 +393,7 @@ export const STAFF_ROUTES: ModuleRoute[] = [
     icon: AlarmClock,
     component: Prazos,
     showInNav: true,
+    essential: true,
     order: 40,
     helpKey: "prazos",
     sensitive: true,
@@ -412,6 +422,7 @@ export const STAFF_ROUTES: ModuleRoute[] = [
     icon: Inbox,
     component: Intimacoes,
     showInNav: true,
+    essential: true,
     order: 50,
     helpKey: "intimacoes",
     sensitive: true,
@@ -441,6 +452,7 @@ export const STAFF_ROUTES: ModuleRoute[] = [
     icon: FolderOpen,
     component: GestaoDocumental,
     showInNav: true,
+    essential: true,
     order: 60,
     helpKey: "documentos",
     sensitive: true,
@@ -460,6 +472,7 @@ export const STAFF_ROUTES: ModuleRoute[] = [
     icon: FileText,
     component: Pecas,
     showInNav: true,
+    essential: true,
     order: 70,
     helpKey: "pecas",
     sensitive: true,

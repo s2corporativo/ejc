@@ -74,14 +74,29 @@ export default function Layout() {
     }
   });
 
+  const persistGroups = (next: Record<string, boolean>) => {
+    try {
+      localStorage.setItem("ejc_menu_groups", JSON.stringify(next));
+    } catch {
+      // Preferência de interface não deve interromper a navegação.
+    }
+  };
+
   const toggleGroup = (group: string) =>
     setOpenGroups((previous) => {
       const next = { ...previous, [group]: previous[group] === false };
-      try {
-        localStorage.setItem("ejc_menu_groups", JSON.stringify(next));
-      } catch {
-        // Preferência de interface não deve interromper a navegação.
-      }
+      persistGroups(next);
+      return next;
+    });
+
+  // Modo Essencial: os módulos avançados moram sob uma única seção "Mais /
+  // Avançado" RECOLHIDA por padrão (default fechado → só abre com `=== true`).
+  const MAIS_KEY = "__mais__";
+  const maisOpen = openGroups[MAIS_KEY] === true;
+  const toggleMais = () =>
+    setOpenGroups((previous) => {
+      const next = { ...previous, [MAIS_KEY]: previous[MAIS_KEY] !== true };
+      persistGroups(next);
       return next;
     });
 
@@ -108,13 +123,68 @@ export default function Layout() {
     [user?.role, lifecycleSettings],
   );
 
+  // FRENTE 1 (Modo Essencial): `visible` já vem ordenado por grupo/order.
+  // Particiona em essenciais (lista plana no topo, sempre visível) e resto
+  // (agrupado dentro de "Mais / Avançado"). Ordem preservada da fonte.
+  const essentials = useMemo(
+    () => visible.filter((item) => item.essential),
+    [visible],
+  );
+  const resto = useMemo(
+    () => visible.filter((item) => !item.essential),
+    [visible],
+  );
+
   const groups = useMemo(() => {
     const map = new Map<string, ModuleRoute[]>();
-    for (const item of visible) {
+    for (const item of resto) {
       map.set(item.group, [...(map.get(item.group) || []), item]);
     }
     return Array.from(map.entries());
-  }, [visible]);
+  }, [resto]);
+
+  // Item de navegação reutilizado por essenciais e pela seção "Mais": quando
+  // expandido mostra `label` + `description` (subtítulo discreto, line-clamp-1)
+  // e `title` nativo; quando recolhido, só o ícone com Tooltip (comportamento
+  // atual do rail estreito).
+  const renderNavItem = (item: ModuleRoute) => {
+    const { path, label, description, icon: Icon, end } = item;
+    const content = (
+      <NavLink
+        key={path}
+        to={path}
+        end={end}
+        onClick={() => setMenuOpen(false)}
+        title={collapsed ? undefined : description}
+        className={({ isActive }) =>
+          cn(
+            "sidebar-nav-item group flex items-center gap-3 rounded-xl px-3 text-sm font-medium transition-all duration-150",
+            collapsed ? "h-10 justify-center px-0" : "py-2",
+            isActive && "is-active",
+          )
+        }
+      >
+        <Icon className="h-4 w-4 shrink-0" />
+        {!collapsed && (
+          <span className="min-w-0 flex-1">
+            <span className="block truncate leading-tight">{label}</span>
+            {description && (
+              <span className="mt-0.5 block line-clamp-1 text-[11px] font-normal leading-tight text-[rgba(255,245,230,0.5)]">
+                {description}
+              </span>
+            )}
+          </span>
+        )}
+      </NavLink>
+    );
+    return collapsed ? (
+      <Tooltip key={path} label={label}>
+        {content}
+      </Tooltip>
+    ) : (
+      content
+    );
+  };
 
   const sidebarWidth = collapsed ? "md:w-[5.25rem]" : "md:w-72";
   const contentMargin = collapsed ? "md:ml-[5.25rem]" : "md:ml-72";
@@ -316,67 +386,83 @@ export default function Layout() {
         <div className="brand-accent-line mx-4 h-px" aria-hidden="true" />
 
         <nav className="flex-1 overflow-y-auto px-3 py-4 scrollbar-thin">
-          {groups.map(([group, items]) => {
-            const isOpen = openGroups[group] !== false;
-            return (
-              <div key={group} className="mb-4">
-                {!collapsed && (
-                  <button
-                    type="button"
-                    onClick={() => toggleGroup(group)}
-                    className="sidebar-group-label mb-2 flex w-full items-center justify-between px-2 text-2xs font-semibold uppercase tracking-[0.2em] transition-colors"
-                    aria-expanded={isOpen}
-                  >
-                    <span>{group}</span>
-                    <ChevronDown
-                      className={cn(
-                        "h-3 w-3 transition-transform",
-                        !isOpen && "-rotate-90",
-                      )}
-                    />
-                  </button>
+          {/* Essenciais — dia a dia do advogado, sempre visíveis no topo. */}
+          {essentials.length > 0 && (
+            <div className="mb-4">
+              {!collapsed && (
+                <div className="sidebar-group-label mb-2 px-2 text-2xs font-semibold uppercase tracking-[0.2em]">
+                  Essencial
+                </div>
+              )}
+              <div
+                className={cn(
+                  "space-y-1",
+                  !collapsed && "sidebar-tree ml-3 border-l pl-2",
                 )}
-                {(collapsed || isOpen) && (
-                  <div
+              >
+                {essentials.map((item) => renderNavItem(item))}
+              </div>
+            </div>
+          )}
+
+          {/* Mais / Avançado — todo o restante dos módulos.
+              Rail estreito (collapsed): lista plana de ícones+tooltip, sempre
+              visível (mantém o comportamento atual). Expandido: uma única
+              seção colapsável, RECOLHIDA por padrão, com os grupos dentro. */}
+          {resto.length > 0 &&
+            (collapsed ? (
+              <div className="space-y-1">
+                {resto.map((item) => renderNavItem(item))}
+              </div>
+            ) : (
+              <div className="mb-2">
+                <button
+                  type="button"
+                  onClick={toggleMais}
+                  className="sidebar-group-label mb-2 flex w-full items-center justify-between px-2 text-2xs font-semibold uppercase tracking-[0.2em] transition-colors"
+                  aria-expanded={maisOpen}
+                  aria-controls="sidebar-mais"
+                >
+                  <span>Mais / Avançado</span>
+                  <ChevronDown
                     className={cn(
-                      "space-y-1",
-                      !collapsed && "sidebar-tree ml-3 border-l pl-2",
+                      "h-3 w-3 transition-transform",
+                      !maisOpen && "-rotate-90",
                     )}
-                  >
-                    {items.map(({ path, label, icon: Icon, end }) => {
-                      const content = (
-                        <NavLink
-                          key={path}
-                          to={path}
-                          end={end}
-                          onClick={() => setMenuOpen(false)}
-                          className={({ isActive }) =>
-                            cn(
-                              "sidebar-nav-item group flex h-10 items-center gap-3 rounded-xl px-3 text-sm font-medium transition-all duration-150",
-                              collapsed && "justify-center px-0",
-                              isActive && "is-active",
-                            )
-                          }
-                        >
-                          <Icon className="h-4 w-4 shrink-0" />
-                          {!collapsed && (
-                            <span className="truncate">{label}</span>
+                  />
+                </button>
+                {maisOpen && (
+                  <div id="sidebar-mais" className="space-y-4">
+                    {groups.map(([group, items]) => {
+                      const isOpen = openGroups[group] !== false;
+                      return (
+                        <div key={group}>
+                          <button
+                            type="button"
+                            onClick={() => toggleGroup(group)}
+                            className="sidebar-group-label mb-2 flex w-full items-center justify-between px-2 text-2xs font-semibold uppercase tracking-[0.2em] transition-colors"
+                            aria-expanded={isOpen}
+                          >
+                            <span>{group}</span>
+                            <ChevronDown
+                              className={cn(
+                                "h-3 w-3 transition-transform",
+                                !isOpen && "-rotate-90",
+                              )}
+                            />
+                          </button>
+                          {isOpen && (
+                            <div className="space-y-1 sidebar-tree ml-3 border-l pl-2">
+                              {items.map((item) => renderNavItem(item))}
+                            </div>
                           )}
-                        </NavLink>
-                      );
-                      return collapsed ? (
-                        <Tooltip key={path} label={label}>
-                          {content}
-                        </Tooltip>
-                      ) : (
-                        content
+                        </div>
                       );
                     })}
                   </div>
                 )}
               </div>
-            );
-          })}
+            ))}
         </nav>
 
         <div className="border-t border-[rgba(255,245,230,0.12)] p-3">
