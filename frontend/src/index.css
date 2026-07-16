@@ -330,25 +330,22 @@
     }
   }
 
-  /* ── Sidebar ouro-escura (gradiente — igual nos 2 temas) ── */
+  /* ── Sidebar clara (branca) — igual nos 2 temas ── */
   .sidebar-bronze {
-    background: linear-gradient(
-      180deg,
-      var(--ejc-sidebar-top) 0%,
-      var(--ejc-sidebar-bottom) 100%
-    );
+    background: #ffffff;
+    border-right: 1px solid rgb(226 232 240); /* slate-200 */
   }
   .sidebar-nav-item {
     position: relative;
-    color: rgba(255, 245, 230, 0.72);
+    color: rgb(51 65 85); /* slate-700 */
   }
   .sidebar-nav-item:hover {
-    background: rgba(201, 162, 39, 0.16);
-    color: #f5edd2;
+    background: rgba(201, 162, 39, 0.12);
+    color: rgb(15 23 42); /* slate-900 */
   }
   .sidebar-nav-item.is-active {
-    background: rgba(201, 162, 39, 0.2);
-    color: #e5ce7f;
+    background: rgba(201, 162, 39, 0.16);
+    color: #8a6d2f; /* ouro escuro, legível no branco */
   }
   .sidebar-nav-item.is-active::before {
     content: "";
@@ -361,17 +358,17 @@
     background: #d4af37;
   }
   .sidebar-group-label {
-    color: rgba(255, 245, 230, 0.45);
+    color: rgb(100 116 139); /* slate-500 */
   }
   .sidebar-group-label:hover {
-    color: rgba(255, 245, 230, 0.7);
+    color: rgb(51 65 85); /* slate-700 */
   }
   .sidebar-tree {
-    border-color: rgba(255, 245, 230, 0.14);
+    border-color: rgb(226 232 240); /* slate-200 */
   }
   .sidebar-count {
-    background: rgba(212, 175, 55, 0.18);
-    color: #e5ce7f;
+    background: rgba(212, 175, 55, 0.16);
+    color: #8a6d2f;
   }
 
   /* Tile da logomarca (header) — logo-hd.png tem fundo TRANSPARENTE:
