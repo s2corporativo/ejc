@@ -220,6 +220,76 @@ async function anexarDocumento(
   });
 }
 
+interface ResumoRevisao {
+  principais: { label: string; valor: string }[];
+  aplicar: { label: string; valor: string }[];
+  ausentes: string[];
+  alertas: string[];
+}
+
+const txtResumo = (v: unknown): string => (v == null ? "" : String(v).trim());
+
+// Resumo de revisão 100% client-side (form + _extracao) — NÃO chama o backend.
+// Alimenta o passo "Revisar dados" ANTES de confirmar a criação do caso, para
+// que nada seja gravado sem a conferência do advogado (fluxograma documental).
+function montarResumoRevisao(
+  form: Record<string, any>,
+  clienteLabel: string,
+): ResumoRevisao {
+  const ex = (form?._extracao || {}) as Record<string, any>;
+  const partes = (ex.partes || {}) as Record<string, any>;
+  const classificacao = (ex.classificacao || {}) as Record<string, any>;
+
+  const principais = [
+    { label: "Título", valor: txtResumo(form?.titulo) || "—" },
+    { label: "Cliente", valor: clienteLabel || "—" },
+    {
+      label: "Área",
+      valor: AREA_LABELS[form?.area] || txtResumo(form?.area) || "—",
+    },
+    { label: "Tipo", valor: CASE_TYPE_LABEL[form?.case_type] || "—" },
+    { label: "Nº do processo", valor: txtResumo(form?.numero_processo) || "—" },
+  ];
+
+  const aplicar: { label: string; valor: string }[] = [];
+  const push = (label: string, valor: unknown) => {
+    const s = txtResumo(valor);
+    if (s) aplicar.push({ label, valor: s });
+  };
+  push("Autor (parte)", partes.autor);
+  push("Réu / parte contrária", partes.reu || form?.parte_contraria);
+  push("Subárea", classificacao.subarea);
+  push("Rito", classificacao.rito);
+  push("Fase", classificacao.fase);
+  push("Tribunal", form?.tribunal);
+  push("Comarca", form?.comarca);
+  push("Vara", form?.vara);
+  if (txtResumo(form?.valor_causa))
+    push("Valor da causa", `R$ ${form.valor_causa}`);
+
+  const ausentes: string[] = [];
+  if (!txtResumo(form?.titulo)) ausentes.push("Título");
+  if (!txtResumo(form?.numero_processo)) ausentes.push("Número do processo");
+  if (!txtResumo(form?.parte_contraria) && !txtResumo(partes.reu))
+    ausentes.push("Parte contrária");
+  if (!txtResumo(form?.valor_causa)) ausentes.push("Valor da causa");
+
+  const alertas: string[] = [];
+  if (
+    txtResumo(form?.tipo_acao_prescricao) &&
+    txtResumo(form?.data_fato_prescricao)
+  ) {
+    alertas.push(
+      "Prazo prescricional/decadencial será calculado na criação — confira suspensões e interrupções (CC arts. 197–204).",
+    );
+  }
+  const etapas = classificacao?.jornada?.proximas_etapas;
+  if (Array.isArray(etapas) && etapas.length) {
+    alertas.push(`Próximas etapas sugeridas pela IA: ${etapas.join(" → ")}.`);
+  }
+  return { principais, aplicar, ausentes, alertas };
+}
+
 export default function Casos() {
   const [data, setData] = useState<Paged<Case> | null>(null);
   const [clientes, setClientes] = useState<Client[]>([]);
@@ -280,6 +350,8 @@ export default function Casos() {
     clientId?: string;
   } | null>(null);
   const [reanexando, setReanexando] = useState(false);
+  // Passo de revisão (client-side) antes de confirmar a criação do caso.
+  const [revisao, setRevisao] = useState<ResumoRevisao | null>(null);
   const [erro, setErro] = useState(false);
   // Guarda de sequência: só a resposta mais recente aplica setData (evita que
   // a resposta antiga de uma busca/filtro com debounce sobrescreva a nova).
@@ -390,6 +462,30 @@ export default function Casos() {
     const t = setTimeout(load, 350);
     return () => clearTimeout(t);
   }, [search, areaF, advogadoF, arquivoF]);
+
+  // Passo 3 do fluxograma documental: abre a REVISÃO antes de qualquer escrita.
+  // Só depois de "Confirmar criação" é que salvar() cria o caso e anexa o doc.
+  const abrirRevisao = () => {
+    if (!form._arquivo_original) {
+      toast.error(
+        "Envie e analise o documento do cliente antes de criar o caso.",
+      );
+      return;
+    }
+    const cand = form._cliente_candidato;
+    const temCandidato = !!(cand && (cand.nome || cand.cpf || cand.cnpj));
+    if (!form.titulo || (!form.client_id && !temCandidato)) {
+      toast.error("Título e cliente são obrigatórios (ou importe um documento).");
+      return;
+    }
+    const selecionado = clientes.find((c) => c.id === form.client_id);
+    const clienteLabel =
+      selecionado?.nome ||
+      (selecionado as any)?.razao_social ||
+      cand?.nome ||
+      "";
+    setRevisao(montarResumoRevisao(form, clienteLabel));
+  };
 
   const salvar = async () => {
     if (novoCasoModo === "documento" && !form._arquivo_original) {
@@ -1218,10 +1314,115 @@ export default function Casos() {
           </div>
         </div>
         <div className="flex justify-end mt-5">
-          <button className="btn-primary" disabled={salvando} onClick={salvar}>
-            {salvando ? "Criando caso..." : "Criar caso e revisar jornada"}
+          <button
+            className="btn-primary"
+            disabled={salvando}
+            onClick={abrirRevisao}
+          >
+            {salvando ? "Criando caso..." : "Revisar e criar o caso"}
           </button>
         </div>
+      </Modal>
+
+      {/* Passo de REVISÃO — o que será criado/aplicado, antes de qualquer
+          escrita no backend. "Confirmar" dispara a criação (salvar). */}
+      <Modal
+        open={!!revisao}
+        onClose={() => setRevisao(null)}
+        title="Revisar antes de criar o caso"
+        footer={
+          <>
+            <button
+              className="btn-ghost"
+              disabled={salvando}
+              onClick={() => setRevisao(null)}
+            >
+              Voltar e editar
+            </button>
+            <button
+              className="btn-primary"
+              disabled={salvando}
+              onClick={() => {
+                setRevisao(null);
+                salvar();
+              }}
+            >
+              {salvando ? "Criando caso..." : "Confirmar criação"}
+            </button>
+          </>
+        }
+      >
+        {revisao && (
+          <div className="space-y-5 text-sm">
+            <p className="text-xs leading-5 text-slate-500">
+              Confira o que será criado. Nada é gravado até você confirmar — ao
+              confirmar, o caso é criado, o documento é anexado e os dados
+              extraídos abaixo são aplicados.
+            </p>
+            <section>
+              <p className="mb-2 text-[11px] font-bold uppercase tracking-wide text-slate-400">
+                Caso
+              </p>
+              <dl className="grid gap-x-4 gap-y-1.5 sm:grid-cols-2">
+                {revisao.principais.map((it) => (
+                  <div
+                    key={it.label}
+                    className="flex justify-between gap-3 border-b border-slate-100 py-1"
+                  >
+                    <dt className="text-slate-500">{it.label}</dt>
+                    <dd className="text-right font-medium text-slate-800">
+                      {it.valor}
+                    </dd>
+                  </div>
+                ))}
+              </dl>
+            </section>
+            {revisao.aplicar.length > 0 && (
+              <section>
+                <p className="mb-2 text-[11px] font-bold uppercase tracking-wide text-slate-400">
+                  Dados extraídos que serão aplicados
+                </p>
+                <ul className="space-y-1">
+                  {revisao.aplicar.map((it) => (
+                    <li
+                      key={it.label}
+                      className="flex justify-between gap-3 border-b border-slate-100 py-1"
+                    >
+                      <span className="text-slate-500">{it.label}</span>
+                      <span className="text-right font-medium text-slate-800">
+                        {it.valor}
+                      </span>
+                    </li>
+                  ))}
+                </ul>
+              </section>
+            )}
+            {revisao.ausentes.length > 0 && (
+              <section className="rounded-xl border border-slate-200 bg-slate-50 px-4 py-3">
+                <p className="text-xs font-semibold text-slate-700">
+                  Informação ausente — você pode completar agora ou depois
+                </p>
+                <p className="mt-1 text-xs text-slate-500">
+                  {revisao.ausentes.join(" · ")}
+                </p>
+              </section>
+            )}
+            {revisao.alertas.length > 0 && (
+              <section className="rounded-xl border border-warn-200 bg-warn-100 px-4 py-3">
+                <div className="flex items-start gap-2">
+                  <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0 text-warn-700" />
+                  <div className="space-y-1">
+                    {revisao.alertas.map((a, i) => (
+                      <p key={i} className="text-xs leading-5 text-warn-800">
+                        {a}
+                      </p>
+                    ))}
+                  </div>
+                </div>
+              </section>
+            )}
+          </div>
+        )}
       </Modal>
 
       {/* Preview EXPLÍCITO da materialização da extração de IA (dry_run).
