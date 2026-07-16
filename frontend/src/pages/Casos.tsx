@@ -13,10 +13,20 @@ import {
   Archive,
   ArchiveRestore,
   Trash2,
+  AlertTriangle,
+  RotateCw,
 } from "lucide-react";
 import api, { aplicarExtracao } from "../lib/api";
 import { asList } from "../lib/list";
 import type { AplicarExtracaoResult, ExtracaoPayload } from "../lib/api";
+import {
+  carregarRascunho,
+  salvarRascunho,
+  atualizarRascunho,
+  limparRascunho,
+  snapshotForm,
+  type IntakeRascunho,
+} from "../lib/intakeRascunho";
 import type { Case, Client, Paged, User } from "../types";
 import {
   PageHeader,
@@ -190,6 +200,26 @@ const PRESCRICAO: {
   },
 ];
 
+// Upload do documento importado para a GED, vinculado ao caso. Reutilizado no
+// fluxo normal de criação e no retry de recuperação (reanexar) — sem recriar.
+async function anexarDocumento(
+  caseId: string,
+  clientId: string | undefined,
+  arquivo: File,
+  tituloDoc: string,
+  tipoDoc?: string,
+): Promise<void> {
+  const fd = new FormData();
+  fd.append("file", arquivo);
+  fd.append("titulo", tituloDoc);
+  if (tipoDoc) fd.append("tipo", tipoDoc);
+  fd.append("case_id", caseId);
+  if (clientId) fd.append("client_id", clientId);
+  await api.post("/documents/upload", fd, {
+    headers: { "Content-Type": "multipart/form-data" },
+  });
+}
+
 export default function Casos() {
   const [data, setData] = useState<Paged<Case> | null>(null);
   const [clientes, setClientes] = useState<Client[]>([]);
@@ -237,13 +267,32 @@ export default function Casos() {
     result: AplicarExtracaoResult;
   } | null>(null);
   const [aplicando, setAplicando] = useState(false);
+  // Rascunho recuperável do intake documental (localStorage): banner de retomada
+  // ao reabrir, e recuperação SEM recriar quando o caso já foi criado mas o
+  // anexo do documento falhou.
+  const [rascunhoSalvo, setRascunhoSalvo] = useState<IntakeRascunho | null>(null);
+  const [pendencia, setPendencia] = useState<{
+    caseId: string;
+    caseTitulo: string;
+    arquivo: File;
+    tituloDoc: string;
+    tipoDoc?: string;
+    clientId?: string;
+  } | null>(null);
+  const [reanexando, setReanexando] = useState(false);
   const [erro, setErro] = useState(false);
   // Guarda de sequência: só a resposta mais recente aplica setData (evita que
   // a resposta antiga de uma busca/filtro com debounce sobrescreva a nova).
   const seq = useRef(0);
 
   useEffect(() => {
-    if (novoCasoModo === "documento") setModal(true);
+    if (novoCasoModo === "documento") {
+      setModal(true);
+      // Ao (re)abrir o intake, oferece retomar um cadastro por documento não
+      // finalizado (banner) e zera qualquer pendência de anexo obsoleta.
+      setRascunhoSalvo(carregarRascunho());
+      setPendencia(null);
+    }
   }, [novoCasoModo]);
 
   const fecharCadastroCompleto = () => {
@@ -358,6 +407,23 @@ export default function Casos() {
       return;
     }
     setSalvando(true);
+    // Metadados do intake documental capturados ANTES de qualquer escrita.
+    const extracao = form._extracao as ExtracaoPayload | undefined;
+    const arquivoOriginal = form._arquivo_original as File | undefined;
+    const tipoDoc = form._tipo_documento as string | undefined;
+    // Rascunho recuperável: persistido ANTES de criar. Se qualquer passo falhar
+    // (ou a aba fechar), o trabalho analisado não se perde. Limpo só no sucesso.
+    if (arquivoOriginal) {
+      salvarRascunho({
+        form: snapshotForm(form),
+        extracao: extracao ?? null,
+        arquivoNome: arquivoOriginal.name,
+        arquivoTipo: tipoDoc ?? null,
+        clientId: form.client_id || null,
+        caseId: null,
+        uploadFeito: false,
+      });
+    }
     try {
       let clientId = form.client_id;
       // Importação inteligente: cria/vincula cliente por CPF/CNPJ (dedup no backend)
@@ -373,21 +439,44 @@ export default function Casos() {
       }
       payload.client_id = clientId;
       const { data: novo } = await api.post("/cases/", payload);
-      // Captura a extração antes de limpar o form (será materializada abaixo).
-      const extracao = form._extracao as ExtracaoPayload | undefined;
-      // Item 4.2: captura o arquivo importado (e metadados) ANTES do reset do
-      // form, para persisti-lo na GED vinculado ao caso recém-criado.
-      const arquivoOriginal = form._arquivo_original as File | undefined;
-      const tipoDoc = form._tipo_documento as string | undefined;
       const tituloDoc =
         (payload.titulo as string) || novo?.titulo || "Documento importado";
-      setModal(false);
-      nav("/casos", { replace: true });
-      setForm({ area: "civil", prioridade: "media", case_type: "judicial" });
-      load();
-      // Materialização EXPLÍCITA: primeiro um preview (dry_run) do que SERIA
-      // aplicado; o usuário confirma ("Aplicar ao caso") ou pula. Erros são
-      // visíveis (nunca engolidos) — o caso já foi criado.
+      if (arquivoOriginal)
+        atualizarRascunho({ caseId: novo?.id ?? null, clientId });
+
+      // ANEXA o documento ANTES de navegar: uma falha de anexo não deixa mais o
+      // usuário numa lista com um caso órfão do seu documento de origem.
+      if (arquivoOriginal && novo?.id) {
+        try {
+          await anexarDocumento(
+            novo.id,
+            clientId,
+            arquivoOriginal,
+            tituloDoc,
+            tipoDoc,
+          );
+          atualizarRascunho({ uploadFeito: true });
+        } catch (e: any) {
+          // Caso criado, anexo falhou: NÃO navega. Mantém o arquivo em memória e
+          // oferece retomada (retry) sem recriar o caso (ele permanece em triagem).
+          setPendencia({
+            caseId: novo.id,
+            caseTitulo: novo.titulo || tituloDoc,
+            arquivo: arquivoOriginal,
+            tituloDoc,
+            tipoDoc,
+            clientId,
+          });
+          toast.error(
+            e.response?.data?.detail ||
+              "O caso foi criado, mas o documento não foi anexado. Tente novamente abaixo — o caso não será duplicado.",
+          );
+          return;
+        }
+      }
+
+      // Materialização EXPLÍCITA (preview dry_run) — agora DEPOIS do anexo.
+      // O usuário confirma ("Aplicar ao caso") ou pula; erros são visíveis.
       if (extracao && novo?.id) {
         try {
           const result = await aplicarExtracao(novo.id, extracao, {
@@ -406,32 +495,70 @@ export default function Casos() {
           );
         }
       }
-      // Item 4.2: persiste o PDF/arquivo da Importação Inteligente na GED,
-      // vinculado ao caso (mesmo endpoint do upload manual). Antes, o arquivo
-      // era só analisado e descartado → aba Documentos ficava vazia.
-      if (arquivoOriginal && novo?.id) {
-        try {
-          const fd = new FormData();
-          fd.append("file", arquivoOriginal);
-          fd.append("titulo", tituloDoc);
-          if (tipoDoc) fd.append("tipo", tipoDoc);
-          fd.append("case_id", novo.id);
-          if (clientId) fd.append("client_id", clientId);
-          await api.post("/documents/upload", fd, {
-            headers: { "Content-Type": "multipart/form-data" },
-          });
-        } catch (e: any) {
-          toast.error(
-            e.response?.data?.detail ||
-              "Caso criado, mas não foi possível anexar o documento importado.",
-          );
-        }
-      }
+
+      // Sucesso: o rascunho não é mais necessário; fecha e navega.
+      limparRascunho();
+      setPendencia(null);
+      setRascunhoSalvo(null);
+      setModal(false);
+      nav("/casos", { replace: true });
+      setForm({ area: "civil", prioridade: "media", case_type: "judicial" });
+      load();
     } catch (e: any) {
+      // Falha antes/na criação do caso: o caso NÃO foi criado; o rascunho (se
+      // documental) permanece para retomada.
       toast.error(e.response?.data?.detail || "Erro ao salvar");
     } finally {
       setSalvando(false);
     }
+  };
+
+  // Retry do anexo quando o caso JÁ existe (pendência) — nunca recria o caso.
+  const reanexarDocumento = async () => {
+    if (!pendencia) return;
+    setReanexando(true);
+    try {
+      await anexarDocumento(
+        pendencia.caseId,
+        pendencia.clientId,
+        pendencia.arquivo,
+        pendencia.tituloDoc,
+        pendencia.tipoDoc,
+      );
+      atualizarRascunho({ uploadFeito: true });
+      limparRascunho();
+      toast.success("Documento anexado ao caso.");
+      setPendencia(null);
+      setRascunhoSalvo(null);
+      setModal(false);
+      nav("/casos", { replace: true });
+      setForm({ area: "civil", prioridade: "media", case_type: "judicial" });
+      load();
+    } catch (e: any) {
+      toast.error(
+        e.response?.data?.detail ||
+          "Ainda não foi possível anexar. Tente de novo ou conclua sem o documento.",
+      );
+    } finally {
+      setReanexando(false);
+    }
+  };
+
+  // Conclui deixando o caso sem o documento (escolha EXPLÍCITA do usuário).
+  const concluirSemDocumento = () => {
+    limparRascunho();
+    setPendencia(null);
+    setRascunhoSalvo(null);
+    setModal(false);
+    nav("/casos", { replace: true });
+    setForm({ area: "civil", prioridade: "media", case_type: "judicial" });
+    load();
+  };
+
+  // Descarta o rascunho de retomada (banner) sem afetar nenhum caso.
+  const descartarRascunho = () => {
+    limparRascunho();
+    setRascunhoSalvo(null);
   };
 
   // Aplica de fato (dry_run=false) o que foi mostrado no preview.
@@ -771,6 +898,67 @@ export default function Casos() {
             Prefiro cadastrar sem IA
           </Button>
         </div>
+        {pendencia && (
+          <div className="mb-5 rounded-xl border border-warn-200 bg-warn-100 px-4 py-3">
+            <div className="flex items-start gap-2">
+              <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0 text-warn-700" />
+              <div className="min-w-0 flex-1">
+                <p className="text-sm font-semibold text-warn-800">
+                  O caso “{pendencia.caseTitulo}” foi criado, mas o documento não
+                  foi anexado.
+                </p>
+                <p className="mt-1 text-xs leading-5 text-warn-700">
+                  Nada foi perdido: o caso está salvo (em triagem) e o documento “
+                  {pendencia.arquivo.name}” continua aqui. Tente anexar de novo — o
+                  caso não será duplicado.
+                </p>
+                <div className="mt-3 flex flex-wrap gap-2">
+                  <Button
+                    size="sm"
+                    variant="primary"
+                    icon={<RotateCw className="h-3.5 w-3.5" />}
+                    onClick={reanexarDocumento}
+                    disabled={reanexando}
+                  >
+                    {reanexando ? "Anexando..." : "Tentar anexar novamente"}
+                  </Button>
+                  <Button
+                    size="sm"
+                    variant="secondary"
+                    onClick={concluirSemDocumento}
+                    disabled={reanexando}
+                  >
+                    Concluir sem o documento
+                  </Button>
+                </div>
+              </div>
+            </div>
+          </div>
+        )}
+        {!pendencia && rascunhoSalvo && (
+          <div className="mb-5 rounded-xl border border-primary-200 bg-primary-50 px-4 py-3">
+            <div className="flex items-start gap-2">
+              <FileUp className="mt-0.5 h-4 w-4 shrink-0 text-primary-600" />
+              <div className="min-w-0 flex-1">
+                <p className="text-sm font-semibold text-primary-800">
+                  Cadastro por documento não finalizado
+                </p>
+                <p className="mt-1 text-xs leading-5 text-primary-700">
+                  {rascunhoSalvo.arquivoNome
+                    ? `Havia um cadastro em andamento com o documento “${rascunhoSalvo.arquivoNome}”. `
+                    : "Havia um cadastro por documento em andamento. "}
+                  Reenvie o documento abaixo para retomar, ou descarte este
+                  rascunho.
+                </p>
+                <div className="mt-3">
+                  <Button size="sm" variant="ghost" onClick={descartarRascunho}>
+                    Descartar rascunho
+                  </Button>
+                </div>
+              </div>
+            </div>
+          </div>
+        )}
         <ImportarDocumento
           onPrefill={(p) => setForm((f: any) => ({ ...f, ...p }))}
         />
