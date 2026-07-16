@@ -19,7 +19,7 @@ import Jurimetria from "./Jurimetria";
 import Conhecimento from "./Conhecimento";
 import DashboardIA from "./DashboardIA";
 import ErrorBoundary from "../components/ErrorBoundary";
-import { IANotice, PageHeader } from "../components/UI";
+import { AIFactualityLegend, IANotice, PageHeader } from "../components/UI";
 import { useAuth } from "../stores/auth";
 
 const GESTORES: readonly string[] = ["superadmin", "admin", "socio"];
@@ -84,6 +84,7 @@ export default function InteligenciaWorkspace() {
         valores, prazos, pedidos, citações e estratégia antes de qualquer uso
         jurídico.
       </IANotice>
+      <AIFactualityLegend />
       <div className="overflow-x-auto">
         <div className="flex w-fit gap-1 rounded-xl border border-ai-100 bg-white/80 p-1 shadow-sm">
           {availableTabs.map(({ k, label, icon: Icon }) => (
