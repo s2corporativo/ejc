@@ -30,7 +30,33 @@ def test_classifica_contestacao_sem_expor_trecho():
     assert resultado["confianca"] >= 0.7
     assert "maquina-replica" in resultado["skills_sugeridas"]
     assert "CONTESTAÇÃO" not in str(resultado)
-    assert resultado["metodo"] == "regras_locais_v1"
+    assert resultado["metodo"] == "regras_locais_v2"
+
+
+def test_reconhece_multa_transito_e_sugere_fluxo_pertinente():
+    resultado = classificar_documento(
+        "auto_infracao.pdf",
+        "Auto de Infração de Trânsito. Órgão autuador, placa, RENAVAM, código da infração e prazo para recurso à JARI.",
+    )
+
+    assert resultado["tipo"] == "multa_transito"
+    assert resultado["area_sugerida"] == "transito"
+    assert resultado["rito_sugerido"] == "administrativo de transito"
+    assert "recurso-jari-cetran" in resultado["skills_sugeridas"]
+    assert "renavam" in resultado["campos_esperados"]
+
+
+def test_reconhece_contrato_bancario_e_sugere_analise_financeira():
+    resultado = classificar_documento(
+        "financiamento.pdf",
+        "Instituição financeira. Custo Efetivo Total, taxa efetiva mensal e anual, saldo devedor e sistema de amortização.",
+    )
+
+    assert resultado["tipo"] == "contrato_bancario"
+    assert resultado["area_sugerida"] == "bancario"
+    assert resultado["surface_sugerida"] == "financeiro"
+    assert "revisional-juros-bancarios" in resultado["skills_sugeridas"]
+    assert "cet" in resultado["campos_esperados"]
 
 
 def test_ranqueia_poucas_acoes_por_aba_e_area():
