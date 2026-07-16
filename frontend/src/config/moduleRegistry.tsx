@@ -23,6 +23,7 @@ import {
   Newspaper,
   Plus,
   Scale,
+  ScanSearch,
   ScrollText,
   Settings,
   ShieldAlert,
@@ -85,6 +86,7 @@ const Clientes = lazy(() => import("../pages/Clientes"));
 const DossieCliente = lazy(() => import("../pages/DossieCliente"));
 const Casos = lazy(() => import("../pages/Casos"));
 const CasoDetalhe = lazy(() => import("../pages/CasoDetalhe"));
+const RaioXProcesso = lazy(() => import("../pages/RaioXProcesso"));
 const SalaDeGuerra = lazy(() => import("../pages/SalaDeGuerra"));
 const EntrevistaInteligente = lazy(
   () => import("../pages/EntrevistaInteligente"),
@@ -221,6 +223,27 @@ export const STAFF_ROUTES: ModuleRoute[] = [
     helpKey: "clientes",
     status: "hidden",
     sensitive: true,
+  },
+  {
+    key: "raio-x-processo",
+    path: "/raio-x",
+    label: "Raio-X do Processo",
+    description:
+      "Análise preliminar autônoma de documentos antes da abertura de um caso.",
+    group: "Inteligência Jurídica",
+    icon: ScanSearch,
+    component: RaioXProcesso,
+    roles: ROLES.juridico,
+    showInNav: false,
+    status: "hidden",
+    helpKey: "inteligencia",
+    usesAI: true,
+    sensitive: true,
+    backendPrefixes: [
+      "/api/raio-x",
+      "/api/documentos-ia",
+      "/api/ai/skills",
+    ],
   },
   {
     key: "casos",
