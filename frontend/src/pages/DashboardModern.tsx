@@ -30,6 +30,7 @@ import {
   Sparkles,
   Users,
   Wallet,
+  X,
 } from "lucide-react";
 import api from "../lib/api";
 import { asList } from "../lib/list";
@@ -150,6 +151,14 @@ export default function DashboardModern() {
   const [consolidado, setConsolidado] = useState<any>(null);
   const [solicitacoes, setSolicitacoes] = useState<any>(null);
   const [loading, setLoading] = useState(true);
+  // Card "Comece aqui" (first-run): guiado por flag local, dismissível.
+  const [comeceAqui, setComeceAqui] = useState(
+    () => !localStorage.getItem("ejc_comece_aqui_done"),
+  );
+  const dispensarComeceAqui = () => {
+    localStorage.setItem("ejc_comece_aqui_done", "1");
+    setComeceAqui(false);
+  };
 
   const currentUser = user as any;
   const firstName = currentUser?.full_name?.split(" ")[0] || "Dr.";
@@ -366,6 +375,89 @@ export default function DashboardModern() {
         subtitle="Visão consolidada da operação jurídica, com foco em prazos, carteira, produtividade e segurança decisória."
         actions={<ThemeSelector className="w-full sm:min-w-[330px]" />}
       />
+
+      {/* Card "Comece aqui" — first-run guiado (3 passos), dismissível. */}
+      {comeceAqui && (
+        <section
+          aria-label="Comece por aqui"
+          className="relative overflow-hidden rounded-2xl border border-ouro/30 bg-gradient-to-br from-ouro-palha/70 via-white to-white p-5 shadow-sm dark:border-ouro/20 dark:from-white/[0.05] dark:via-white/[0.02] dark:to-transparent"
+        >
+          <button
+            type="button"
+            onClick={dispensarComeceAqui}
+            aria-label="Dispensar guia de primeiros passos"
+            className="absolute right-3 top-3 rounded-lg p-1.5 text-slate-400 transition-colors hover:bg-slate-900/[0.05] hover:text-slate-600 dark:hover:bg-white/10"
+          >
+            <X className="h-4 w-4" />
+          </button>
+
+          <div className="mb-1 flex flex-wrap items-center gap-2">
+            <Sparkles className="h-4 w-4 text-ouro" />
+            <h2 className="text-sm font-semibold text-slate-900 dark:text-slate-100">
+              Comece por aqui
+            </h2>
+            <Badge tone="ouro">Primeiros passos</Badge>
+          </div>
+          <p className="mb-4 max-w-2xl text-sm text-slate-600 dark:text-slate-300">
+            Três passos para se ambientar no EJC. Você pode dispensar quando
+            quiser.
+          </p>
+
+          <div className="grid gap-3 sm:grid-cols-3">
+            {[
+              {
+                n: 1,
+                to: "/casos/novo",
+                label: "Criar seu primeiro caso",
+                desc: "Cadastro guiado: cliente e dados básicos do caso.",
+                icon: Gavel,
+              },
+              {
+                n: 2,
+                to: "/prazos",
+                label: "Cadastrar um prazo",
+                desc: "Acompanhe vencimentos e confirmações de ciência.",
+                icon: CalendarClock,
+              },
+              {
+                n: 3,
+                to: "/pecas",
+                label: "Gerar uma peça",
+                desc: "Produza documentos com apoio da IA e revisão humana.",
+                icon: FileText,
+              },
+            ].map(({ n, to, label, desc, icon: Icon }) => (
+              <Link
+                key={to}
+                to={to}
+                className="group flex flex-col gap-2 rounded-xl border border-black/[0.05] bg-white p-4 transition-all hover:border-ouro/40 hover:shadow-sm dark:border-white/10 dark:bg-white/[0.03]"
+              >
+                <div className="flex items-center gap-2">
+                  <span className="flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-ouro/15 text-xs font-semibold text-ouro-profundo dark:text-ouro-claro">
+                    {n}
+                  </span>
+                  <Icon className="h-4 w-4 text-ouro" />
+                </div>
+                <div>
+                  <div className="flex items-center gap-1 text-sm font-semibold text-slate-900 dark:text-slate-100">
+                    {label}
+                    <ArrowRight className="h-3.5 w-3.5 text-slate-400 transition group-hover:translate-x-0.5" />
+                  </div>
+                  <p className="mt-0.5 text-xs text-slate-500 dark:text-slate-400">
+                    {desc}
+                  </p>
+                </div>
+              </Link>
+            ))}
+          </div>
+
+          <div className="mt-4">
+            <Button variant="ghost" size="sm" onClick={dispensarComeceAqui}>
+              Dispensar
+            </Button>
+          </div>
+        </section>
+      )}
 
       {/* Faixa hero sépia→bronze com filete dourado no topo (sem borda) */}
       <section className="relative overflow-hidden rounded-2xl bg-gradient-to-br from-[#211913] via-[#2E241A] to-[#5E4A0E] p-5 text-white shadow-lg before:absolute before:inset-x-0 before:top-0 before:h-0.5 before:bg-gradient-to-r before:from-ouro-claro before:via-ouro-claro/40 before:to-transparent dark:from-[#17110c] dark:via-[#241c14] dark:to-[#4a3a10] md:p-6">

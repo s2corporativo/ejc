@@ -1,49 +1,41 @@
 import { useEffect, useState } from "react";
-import { X, ChevronRight, ChevronLeft } from "lucide-react";
+import { useNavigate } from "react-router-dom";
+import { X, ChevronRight, ChevronLeft, ArrowRight } from "lucide-react";
 
-const TOUR_KEY = "ejc_tour_v2_done";
+// v3: tour enxuto e orientado à ação — o último slide leva à criação do
+// primeiro caso. Nova key para que quem já viu a v2 veja a versão nova uma vez.
+const TOUR_KEY = "ejc_tour_v3_done";
+
+// Rota do wizard guiado de abertura de caso (já registrada no moduleRegistry).
+const NOVO_CASO_PATH = "/casos/novo";
 
 const SLIDES = [
   {
     emoji: "⚖️",
     title: "Bem-vindo ao EJC",
-    body: "O sistema agora está organizado por workspaces. Menu, rotas, ajuda e permissões usam o mesmo manifesto de módulos.",
+    body: "Seu escritório em um só lugar: casos, prazos, documentos e clientes conectados. O menu começa enxuto — o que você usa todo dia fica no topo.",
   },
   {
     emoji: "📁",
-    title: "Casos e Processos",
-    body: "Acesse Casos para acompanhar o processo completo. A Sala de Guerra fica dentro do caso, preservando contexto e confidencialidade.",
+    title: "Tudo gira em torno do caso",
+    body: "Cada caso reúne prazos, documentos, peças e honorários. É por ele que você acompanha o andamento do início ao fim.",
   },
   {
     emoji: "📅",
-    title: "Agenda e Atividades",
-    body: "Prazos, tarefas, intimações, suspensões e eventos aparecem em uma central operacional, sem transformar prazo jurídico em tarefa comum.",
-  },
-  {
-    emoji: "✨",
-    title: "Inteligência Jurídica",
-    body: "Assistente, análise, validação, ferramentas especializadas, jurimetria e conhecimento foram reunidos em um único workspace com revisão humana.",
-  },
-  {
-    emoji: "📚",
-    title: "Conhecimento Jurídico",
-    body: "A busca unificada consulta RAG, teses, jurisprudência e memória institucional, mantendo as fontes e entidades separadas no backend.",
-  },
-  {
-    emoji: "⚙️",
-    title: "Preferências e Administração",
-    body: "Cada usuário pode ajustar tema, página inicial e menu. Administradores têm acesso separado ao mapa de módulos, usuários, auditoria e governança da IA.",
+    title: "Nada passa despercebido",
+    body: "A Central mostra prazos, tarefas e intimações juntos. Prazos processuais têm tratamento próprio, com confirmação de ciência.",
   },
   {
     emoji: "🎯",
-    title: "Pronto",
-    body: "Use Ctrl ou Command + K para buscar dados e abrir módulos autorizados. A Central de Ajuda continua disponível no cabeçalho.",
+    title: "Vamos começar",
+    body: "O jeito mais rápido de conhecer o EJC é abrindo seu primeiro caso pelo cadastro guiado. Leva menos de um minuto.",
   },
 ];
 
 export default function OnboardingTour() {
   const [visible, setVisible] = useState(false);
   const [step, setStep] = useState(0);
+  const navigate = useNavigate();
 
   useEffect(() => {
     if (!localStorage.getItem(TOUR_KEY)) {
@@ -60,6 +52,11 @@ export default function OnboardingTour() {
   const avancar = () => {
     if (step < SLIDES.length - 1) setStep((current) => current + 1);
     else fechar();
+  };
+
+  const criarPrimeiroCaso = () => {
+    fechar();
+    navigate(NOVO_CASO_PATH);
   };
 
   const voltar = () => setStep((current) => Math.max(0, current - 1));
@@ -102,6 +99,16 @@ export default function OnboardingTour() {
           </h2>
           <p className="text-sm text-zinc-500 leading-relaxed">{slide.body}</p>
 
+          {isLast && (
+            <button
+              onClick={criarPrimeiroCaso}
+              className="btn-primary mt-6 flex w-full items-center justify-center gap-2"
+            >
+              Criar meu primeiro caso
+              <ArrowRight className="w-4 h-4" />
+            </button>
+          )}
+
           <div className="flex items-center justify-between mt-7">
             <button
               onClick={voltar}
@@ -114,13 +121,21 @@ export default function OnboardingTour() {
               {step + 1} / {SLIDES.length}
             </span>
 
-            <button
-              onClick={avancar}
-              className="btn-primary flex items-center gap-1.5"
-            >
-              {isLast ? "Concluir" : "Próximo"}{" "}
-              {!isLast && <ChevronRight className="w-4 h-4" />}
-            </button>
+            {isLast ? (
+              <button
+                onClick={fechar}
+                className="btn-ghost text-sm text-zinc-400"
+              >
+                Explorar depois
+              </button>
+            ) : (
+              <button
+                onClick={avancar}
+                className="btn-primary flex items-center gap-1.5"
+              >
+                Próximo <ChevronRight className="w-4 h-4" />
+              </button>
+            )}
           </div>
         </div>
       </div>
