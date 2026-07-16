@@ -174,7 +174,19 @@ export default function Clientes() {
       ) : !data ? (
         <Spinner />
       ) : data.data.length === 0 ? (
-        <Empty message="Nenhum cliente encontrado" />
+        <Empty
+          titulo="Nenhum cliente cadastrado"
+          descricao="O cadastro de clientes centraliza contatos, documentos e casos de cada pessoa ou empresa. Cadastre o primeiro para vinculá-lo aos casos."
+          acao={
+            <Button
+              variant="primary"
+              icon={<Plus size={16} />}
+              onClick={() => setModal(true)}
+            >
+              Cadastrar um cliente
+            </Button>
+          }
+        />
       ) : (
         <div className="card overflow-x-auto">
           <table className="w-full text-sm">

@@ -619,13 +619,27 @@ export default function Casos() {
           ) : !data ? (
             <Spinner />
           ) : data.data.length === 0 ? (
-            <Empty
-              message={
-                arquivoF === "arquivados"
-                  ? "Nenhum caso arquivado"
-                  : "Nenhum caso encontrado"
-              }
-            />
+            arquivoF === "arquivados" ? (
+              <Empty
+                titulo="Nenhum caso arquivado"
+                descricao="Casos que você arquivar ficam guardados aqui — nenhum foi arquivado ainda."
+              />
+            ) : (
+              <Empty
+                titulo="Nenhum caso por aqui ainda"
+                descricao="Os casos são o centro do EJC: cada um reúne prazos, documentos, peças e honorários. Comece abrindo o primeiro pelo cadastro guiado."
+                acao={
+                  <Link to="/casos/novo">
+                    <Button
+                      variant="primary"
+                      icon={<Plus className="h-4 w-4" />}
+                    >
+                      Criar seu primeiro caso
+                    </Button>
+                  </Link>
+                }
+              />
+            )
           ) : (
             <div className="card overflow-x-auto">
               <table className="w-full text-sm">
