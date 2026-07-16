@@ -31,6 +31,7 @@ from app.models.case import Case, CaseMovimento
 from app.models.user import User
 from app.schemas.document_intake import DocumentoIntakeResult
 from app.services import documento_service
+from app.services.ai_contextual import classificar_documento
 from app.services.document_url_import_service import importar_url_juridica
 
 logger = logging.getLogger("ejc.documento_ia")
@@ -54,6 +55,52 @@ class AnalisarUrlRequest(BaseModel):
         False,
         description="Quando true e case_id informado, roda análise estratégica como rascunho.",
     )
+
+
+def _aplicar_classificacao_contextual(
+    resultado: dict,
+    *,
+    filename: str | None,
+    texto_sanitizado: str,
+) -> dict:
+    """Acrescenta área, subárea, rito e ações por regras locais auditáveis.
+
+    A classificação contextual só prevalece sobre a classificação genérica do
+    LLM quando há área específica e confiança suficiente. A origem anterior é
+    preservada para conferência humana.
+    """
+    classificacao = classificar_documento(filename, texto_sanitizado)
+    resultado["classificacao_contextual"] = classificacao
+    resultado["acoes_contextuais_sugeridas"] = classificacao.get("skills_sugeridas", [])
+
+    area = classificacao.get("area_sugerida")
+    confianca = float(classificacao.get("confianca") or 0)
+    if area and confianca >= 0.64:
+        atual = dict(resultado.get("classificacao") or {})
+        area_anterior = atual.get("area")
+        if area_anterior and area_anterior != area:
+            atual["area_anterior"] = area_anterior
+        atual["area"] = area
+        atual["subarea"] = classificacao.get("subarea_sugerida") or atual.get("subarea")
+        atual["rito"] = classificacao.get("rito_sugerido") or atual.get("rito")
+        atual["tipo_documento_contextual"] = classificacao.get("tipo")
+        atual["confianca_contextual"] = confianca
+        atual["origem_classificacao"] = classificacao.get("metodo")
+        atual["requer_confirmacao_humana"] = True
+        resultado["classificacao"] = atual
+
+        intake = resultado.get("intake_result")
+        if isinstance(intake, dict):
+            caso = intake.get("caso")
+            if not isinstance(caso, dict):
+                caso = {}
+            caso["area"] = area
+            caso["ramo_direito"] = area
+            if classificacao.get("rito_sugerido"):
+                caso["rito"] = classificacao["rito_sugerido"]
+            intake["caso"] = caso
+
+    return resultado
 
 
 @router.post("/analisar")
@@ -100,6 +147,12 @@ async def analisar(
         # estruturada, honorários, referências) são preservados; os campos do
         # núcleo são ACRESCENTADOS — o frontend antigo continua funcionando.
         texto_sanitizado = resultado.pop("_texto_sanitizado", "") or ""
+        _aplicar_classificacao_contextual(
+            resultado,
+            filename=file.filename,
+            texto_sanitizado=texto_sanitizado,
+        )
+
         # Retorno degradado (analise_llm_indisponivel=True): TODA a cadeia de
         # IA acabou de falhar no serviço — chamar o orchestrator agora só
         # adiciona latência para falhar de novo. Pula o núcleo e mantém o
@@ -117,7 +170,9 @@ async def analisar(
                     mensagem=(
                         "Analise juridicamente o documento abaixo (já sanitizado) e "
                         "aponte natureza, riscos, providências e pontos de atenção "
-                        "para o advogado responsável.\n\nDOCUMENTO:\n"
+                        "para o advogado responsável. Considere a classificação local "
+                        f"como sugestão revisável: {resultado.get('classificacao_contextual')}.\n\n"
+                        "DOCUMENTO:\n"
                         f"{texto_sanitizado}"
                     ),
                     usar_rag=True,

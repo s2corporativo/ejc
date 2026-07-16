@@ -91,6 +91,30 @@ export interface ExtracaoPayload {
   classificacao?: Record<string, unknown> | null;
 }
 
+export interface DocumentoIntakeResultPayload {
+  tipo_documento?: string | null;
+  confianca_classificacao?: number | null;
+  cliente?: Record<string, unknown> | null;
+  caso?: Record<string, unknown> | null;
+  partes?: Array<Record<string, unknown>>;
+  pedidos?: Array<Record<string, unknown>>;
+  provas?: Array<Record<string, unknown>>;
+  prazos?: Array<Record<string, unknown>>;
+  riscos?: Array<Record<string, unknown>>;
+  teses?: Array<Record<string, unknown>>;
+  pendencias?: Array<Record<string, unknown>>;
+  resumo_fatos?: string | null;
+  necessita_revisao_humana?: boolean;
+  [key: string]: unknown;
+}
+
+export interface AplicarAcoesDocumentoResult {
+  ok: boolean;
+  prazos_criados: string[];
+  tarefas_criadas: string[];
+  aviso: string;
+}
+
 // Resposta de POST /cases/{id}/aplicar-extracao (idêntica em preview e aplicação).
 export interface AplicarExtracaoResult {
   aplicado: boolean;
@@ -117,6 +141,27 @@ export async function aplicarExtracao(
     `/cases/${caseId}/aplicar-extracao`,
     extracao,
     { params: { dry_run: dryRun } },
+  );
+  return data;
+}
+
+/**
+ * Depois da revisão humana, materializa prazos e pendências da análise na
+ * jornada do caso. O backend cria tudo como rascunho auditável.
+ */
+export async function aplicarAcoesDocumento(
+  caseId: string,
+  intakeResult: DocumentoIntakeResultPayload,
+): Promise<AplicarAcoesDocumentoResult> {
+  const { data } = await api.post<AplicarAcoesDocumentoResult>(
+    "/documentos-ia/aplicar-acoes",
+    {
+      case_id: caseId,
+      intake_result: intakeResult,
+      criar_prazos: true,
+      criar_tarefas: true,
+      criar_alerta: true,
+    },
   );
   return data;
 }

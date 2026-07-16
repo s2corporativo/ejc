@@ -8,6 +8,8 @@ import {
   Gavel,
   Handshake,
   FileSignature,
+  FileUp,
+  PenLine,
   Archive,
   ArchiveRestore,
   Trash2,
@@ -33,6 +35,11 @@ import { useAuth } from "../stores/auth";
 import { CasosStats } from "../components/Dashboards";
 import ImportarDocumento from "../components/ImportarDocumento";
 import NovoCasoWizard from "../components/NovoCasoWizard";
+import {
+  NOVO_CASO_DOCUMENTO_PATH,
+  NOVO_CASO_MANUAL_PATH,
+  resolverModoNovoCaso,
+} from "../lib/novoCaso";
 import Kanban from "./Kanban";
 import { List } from "lucide-react";
 
@@ -207,11 +214,15 @@ export default function Casos() {
   const [delLoading, setDelLoading] = useState(false);
   const [view, setView] = useState<"lista" | "kanban">("lista");
   const [modal, setModal] = useState(false);
-  // Wizard "Novo Caso" (2 passos: cliente → caso). A rota /casos/novo abre o
-  // wizard direto (item de menu primário); fechar volta para /casos.
+  // A mesma rota mantém dois caminhos explícitos, sem criar módulo paralelo:
+  // documento (IA + revisão) ou cadastro rápido manual (sem IA).
   const location = useLocation();
   const nav = useNavigate();
-  const wizardAberto = location.pathname === "/casos/novo";
+  const novoCasoModo = resolverModoNovoCaso(
+    location.pathname,
+    location.search,
+  );
+  const wizardAberto = novoCasoModo === "manual";
   const [form, setForm] = useState<any>({
     area: "civil",
     prioridade: "media",
@@ -230,6 +241,17 @@ export default function Casos() {
   // Guarda de sequência: só a resposta mais recente aplica setData (evita que
   // a resposta antiga de uma busca/filtro com debounce sobrescreva a nova).
   const seq = useRef(0);
+
+  useEffect(() => {
+    if (novoCasoModo === "documento") setModal(true);
+  }, [novoCasoModo]);
+
+  const fecharCadastroCompleto = () => {
+    setModal(false);
+    if (location.pathname === "/casos/novo") {
+      nav("/casos", { replace: true });
+    }
+  };
 
   const load = () => {
     const my = ++seq.current;
@@ -321,6 +343,12 @@ export default function Casos() {
   }, [search, areaF, advogadoF, arquivoF]);
 
   const salvar = async () => {
+    if (novoCasoModo === "documento" && !form._arquivo_original) {
+      toast.error(
+        "Envie e analise o documento do cliente antes de criar o caso.",
+      );
+      return;
+    }
     const cand = form._cliente_candidato;
     const temCandidato = !!(cand && (cand.nome || cand.cpf || cand.cnpj));
     if (!form.titulo || (!form.client_id && !temCandidato)) {
@@ -354,6 +382,7 @@ export default function Casos() {
       const tituloDoc =
         (payload.titulo as string) || novo?.titulo || "Documento importado";
       setModal(false);
+      nav("/casos", { replace: true });
       setForm({ area: "civil", prioridade: "media", case_type: "judicial" });
       load();
       // Materialização EXPLÍCITA: primeiro um preview (dry_run) do que SERIA
@@ -408,9 +437,10 @@ export default function Casos() {
   // Aplica de fato (dry_run=false) o que foi mostrado no preview.
   const aplicarPreviewNoCaso = async () => {
     if (!preview) return;
+    const caseId = preview.caseId;
     setAplicando(true);
     try {
-      const r = await aplicarExtracao(preview.caseId, preview.extracao, {
+      const r = await aplicarExtracao(caseId, preview.extracao, {
         dryRun: false,
       });
       const campos = r.campos_preenchidos.length
@@ -424,6 +454,7 @@ export default function Casos() {
       );
       setPreview(null);
       load();
+      nav(`/casos/${caseId}/jornada`);
     } catch (e: any) {
       toast.error(
         e.response?.data?.detail || "Erro ao aplicar os dados ao caso.",
@@ -431,6 +462,13 @@ export default function Casos() {
     } finally {
       setAplicando(false);
     }
+  };
+
+  const abrirJornadaSemAplicar = () => {
+    if (!preview) return;
+    const caseId = preview.caseId;
+    setPreview(null);
+    nav(`/casos/${caseId}/jornada`);
   };
 
   return (
@@ -454,11 +492,18 @@ export default function Casos() {
                 <LayoutGrid size={15} /> Quadro
               </button>
             </div>
-            {/* DECISÃO: o botão principal abre o wizard guiado (/casos/novo);
-                o cadastro completo (com importação inteligente) continua
-                acessível pelo link dentro do próprio wizard. */}
-            <button className="btn-gold" onClick={() => nav("/casos/novo")}>
-              <Plus size={16} /> Novo caso
+            <Button
+              variant="secondary"
+              icon={<PenLine size={16} />}
+              onClick={() => nav(NOVO_CASO_MANUAL_PATH)}
+            >
+              Cadastro manual
+            </Button>
+            <button
+              className="btn-gold"
+              onClick={() => nav(NOVO_CASO_DOCUMENTO_PATH)}
+            >
+              <FileUp size={16} /> Novo caso por documento
             </button>
           </div>
         }
@@ -684,19 +729,34 @@ export default function Casos() {
       <NovoCasoWizard
         open={wizardAberto}
         onClose={() => nav("/casos")}
-        onCadastroCompleto={() => {
-          // Caminho antigo preservado: modal completo com importação de documento.
-          nav("/casos");
-          setModal(true);
-        }}
+        onCadastroCompleto={() => nav(NOVO_CASO_DOCUMENTO_PATH)}
       />
 
       <Modal
         open={modal}
-        onClose={() => setModal(false)}
-        title="Novo caso — cadastro completo"
+        onClose={fecharCadastroCompleto}
+        title="Novo caso por documento — IA assistida"
         wide
       >
+        <div className="mb-5 flex flex-col gap-3 rounded-xl border border-primary-200 bg-primary-50 px-4 py-3 sm:flex-row sm:items-center sm:justify-between">
+          <div>
+            <p className="text-sm font-semibold text-primary-800">
+              1. Analise o documento · 2. Revise os dados · 3. Confirme a jornada
+            </p>
+            <p className="mt-1 text-xs leading-5 text-primary-700">
+              Nada é gravado silenciosamente: cliente, caso, partes, área e
+              prazos só são aplicados após sua conferência.
+            </p>
+          </div>
+          <Button
+            size="sm"
+            variant="secondary"
+            icon={<PenLine className="h-3.5 w-3.5" />}
+            onClick={() => nav(NOVO_CASO_MANUAL_PATH)}
+          >
+            Prefiro cadastrar sem IA
+          </Button>
+        </div>
         <ImportarDocumento
           onPrefill={(p) => setForm((f: any) => ({ ...f, ...p }))}
         />
@@ -957,7 +1017,7 @@ export default function Casos() {
         </div>
         <div className="flex justify-end mt-5">
           <button className="btn-primary" disabled={salvando} onClick={salvar}>
-            {salvando ? "Salvando..." : "Abrir caso"}
+            {salvando ? "Criando caso..." : "Criar caso e revisar jornada"}
           </button>
         </div>
       </Modal>
@@ -973,9 +1033,9 @@ export default function Casos() {
             <button
               className="btn-ghost"
               disabled={aplicando}
-              onClick={() => setPreview(null)}
+              onClick={abrirJornadaSemAplicar}
             >
-              Pular
+              Abrir jornada sem aplicar
             </button>
             <button
               className="btn-primary"
@@ -991,7 +1051,9 @@ export default function Casos() {
               }
               onClick={aplicarPreviewNoCaso}
             >
-              {aplicando ? "Aplicando..." : "Aplicar ao caso"}
+              {aplicando
+                ? "Preenchendo jornada..."
+                : "Confirmar e preencher jornada"}
             </button>
           </>
         }

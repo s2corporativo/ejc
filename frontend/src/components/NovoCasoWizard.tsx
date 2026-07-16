@@ -36,8 +36,8 @@ const soDigitos = (v: string) => v.replace(/\D/g, "");
  *
  * DECISÃO: reusa somente endpoints existentes — GET /clients/ (param search
  * cobre nome/razão social/CPF/CNPJ), POST /clients/ e POST /cases/. O caminho
- * antigo de criação (modal completo com importação inteligente) continua
- * disponível em Casos.tsx via onCadastroCompleto.
+ * documental com IA permanece separado em Casos.tsx via
+ * onCadastroCompleto. Este wizard não envia documentos nem chama IA.
  */
 export default function NovoCasoWizard({
   open,
@@ -221,7 +221,22 @@ export default function NovoCasoWizard({
   const nomeCliente = (c: Client) => c.nome || c.razao_social || "Sem nome";
 
   return (
-    <Modal open={open} onClose={fechar} title="Novo caso" wide>
+    <Modal
+      open={open}
+      onClose={fechar}
+      title="Novo caso manual — sem IA"
+      wide
+    >
+      <div className="mb-5 rounded-xl border border-success-200 bg-success-50 px-4 py-3">
+        <p className="text-sm font-semibold text-success-800">
+          Cadastro rápido e totalmente manual
+        </p>
+        <p className="mt-1 text-xs leading-5 text-success-700">
+          Nenhum documento é enviado para análise. Você informa apenas os dados
+          necessários do cliente e do caso e pode completar a jornada depois.
+        </p>
+      </div>
+
       {/* Indicador dos passos */}
       <div className="mb-5 flex items-center gap-2 text-xs font-medium">
         {[
@@ -395,7 +410,7 @@ export default function NovoCasoWizard({
                   onCadastroCompleto();
                 }}
               >
-                Prefere o cadastro completo (com importação de documento)?
+                Usar um documento e preencher o caso com IA
               </button>
             </div>
           )}

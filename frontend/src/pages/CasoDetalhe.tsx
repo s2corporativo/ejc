@@ -18,6 +18,7 @@ import MatrizRisco from "../components/visual/MatrizRisco";
 import BadgesAlerta from "../components/visual/BadgesAlerta";
 import CalculadoraAcordo from "../components/visual/CalculadoraAcordo";
 import AnaliseEstrategica from "../components/AnaliseEstrategica";
+import ContextualAIAssistant from "../components/ContextualAIAssistant";
 import IntakeAnalise from "../components/IntakeAnalise";
 import ConversaoChecklist from "../components/ConversaoChecklist";
 import ProvasCaso from "../components/ProvasCaso";
@@ -687,6 +688,12 @@ function TabResumo({ caso }: { caso: Case }) {
             🗑️ Excluir
           </button>
         )}
+        <Link
+          to={`/raio-x?case_id=${caso.id}`}
+          className="btn-secondary flex items-center gap-1 text-primary-700"
+        >
+          🔎 Raio-X do processo
+        </Link>
         <button
           onClick={() => navigate(`/casos/${caso.id}/sala-de-guerra`)}
           className="btn-secondary flex items-center gap-1"
@@ -4228,6 +4235,8 @@ export default function CasoDetalhe() {
           </h2>
         </div>
       </div>
+
+      <ContextualAIAssistant caso={caso} surface={activeTab} />
 
       <div>{renderTab()}</div>
     </div>
