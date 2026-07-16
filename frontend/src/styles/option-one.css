@@ -1,0 +1,316 @@
+/* EJC — Opção 01
+ * Shell institucional claro, menu branco, azul-marinho e ouro como acentos.
+ * Este arquivo é carregado pelo LayoutOptionOne e afeta somente a área interna.
+ */
+
+.ejc-option-one-shell {
+  --option-one-navy: #071a3a;
+  --option-one-navy-soft: #0d2d5b;
+  --option-one-gold: #b88927;
+  --option-one-gold-deep: #8f681d;
+  --option-one-canvas: #f7f9fc;
+  --option-one-border: #e5eaf1;
+  --option-one-muted: #667085;
+  min-height: 100vh;
+  background:
+    radial-gradient(circle at 62% 0%, rgba(184, 137, 39, 0.045), transparent 28rem),
+    var(--option-one-canvas);
+}
+
+.ejc-option-one-topbar {
+  box-shadow: 0 1px 0 rgba(15, 23, 42, 0.03);
+}
+
+.ejc-option-one-sidebar {
+  color: #1e293b;
+  box-shadow: 8px 0 30px rgba(15, 23, 42, 0.025);
+}
+
+.dark .ejc-option-one-sidebar,
+.dark .ejc-option-one-topbar {
+  background: #ffffff !important;
+  color: #1e293b !important;
+  border-color: #e5eaf1 !important;
+}
+
+.ejc-option-one-search {
+  height: 42px;
+  max-width: 680px;
+  border: 1px solid #dce3ec;
+  border-radius: 11px;
+  background: #ffffff;
+  color: #667085;
+  transition:
+    border-color 150ms ease,
+    box-shadow 150ms ease,
+    background 150ms ease;
+}
+
+.ejc-option-one-search:hover,
+.ejc-option-one-search:focus-visible {
+  border-color: rgba(184, 137, 39, 0.55);
+  background: #fffdf8;
+  box-shadow: 0 0 0 3px rgba(184, 137, 39, 0.11);
+}
+
+.ejc-option-one-command,
+.ejc-option-one-new-button,
+.ejc-option-one-icon-button {
+  align-items: center;
+  justify-content: center;
+  border-radius: 11px;
+  font-size: 0.8rem;
+  font-weight: 650;
+  transition:
+    transform 150ms ease,
+    background 150ms ease,
+    color 150ms ease,
+    box-shadow 150ms ease;
+}
+
+.ejc-option-one-command {
+  height: 42px;
+  gap: 0.5rem;
+  padding: 0 1rem;
+  color: #ffffff;
+  background: linear-gradient(180deg, #0c2853 0%, #071a3a 100%);
+  box-shadow: 0 8px 18px rgba(7, 26, 58, 0.14);
+}
+
+.ejc-option-one-command:hover {
+  transform: translateY(-1px);
+  box-shadow: 0 10px 24px rgba(7, 26, 58, 0.2);
+}
+
+.ejc-option-one-new-button {
+  display: inline-flex;
+  height: 42px;
+  gap: 0.45rem;
+  padding: 0 1rem;
+  color: #ffffff;
+  background: linear-gradient(180deg, #c79a3c 0%, #a5761f 100%);
+  box-shadow: 0 8px 18px rgba(143, 104, 29, 0.16);
+}
+
+.ejc-option-one-new-button:hover {
+  transform: translateY(-1px);
+  background: linear-gradient(180deg, #b88927 0%, #8f681d 100%);
+}
+
+.ejc-option-one-icon-button {
+  display: inline-flex;
+  height: 40px;
+  min-width: 40px;
+  padding: 0 0.65rem;
+  border: 1px solid transparent;
+  color: #526071;
+  background: #f5f7fa;
+}
+
+.ejc-option-one-icon-button:hover {
+  color: var(--option-one-navy);
+  border-color: #e3e8ef;
+  background: #eef2f7;
+}
+
+.ejc-option-one-group-label {
+  color: #8792a2;
+  font-size: 0.66rem;
+  font-weight: 750;
+  letter-spacing: 0.075em;
+  text-transform: uppercase;
+}
+
+.ejc-option-one-group-label:hover {
+  color: #4a5565;
+}
+
+.ejc-option-one-nav-item {
+  position: relative;
+  color: #344054;
+  transition:
+    background 140ms ease,
+    color 140ms ease,
+    transform 140ms ease;
+}
+
+.ejc-option-one-nav-item:hover {
+  color: var(--option-one-navy);
+  background: #f4f6f9;
+}
+
+.ejc-option-one-nav-item.is-active {
+  color: var(--option-one-navy);
+  background: linear-gradient(90deg, rgba(184, 137, 39, 0.12), rgba(184, 137, 39, 0.035));
+  box-shadow: inset 3px 0 0 var(--option-one-gold);
+}
+
+.ejc-option-one-nav-item.is-active svg {
+  color: var(--option-one-gold-deep);
+}
+
+.ejc-option-one-main {
+  min-width: 0;
+}
+
+.ejc-option-one-ai-button {
+  background: linear-gradient(145deg, #0c2853, #071a3a);
+  box-shadow: 0 14px 30px rgba(7, 26, 58, 0.28);
+}
+
+.ejc-option-one-ai-button:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 18px 34px rgba(7, 26, 58, 0.34);
+}
+
+/* Padronização global dos módulos existentes. */
+.ejc-option-one-main :where(.card, .section-card) {
+  border: 1px solid var(--option-one-border);
+  border-radius: 16px;
+  background: rgba(255, 255, 255, 0.98);
+  box-shadow: 0 8px 24px rgba(15, 23, 42, 0.045);
+}
+
+.ejc-option-one-main :where(.card, .section-card):hover {
+  border-color: #d9e0e9;
+  box-shadow: 0 12px 30px rgba(15, 23, 42, 0.07);
+}
+
+.ejc-option-one-main :where(h1, h2, h3, h4) {
+  color: #14213d;
+}
+
+.ejc-option-one-main :where(.eyebrow) {
+  color: var(--option-one-gold-deep);
+}
+
+.ejc-option-one-main :where(.btn-primary, .btn-gold) {
+  background-image: linear-gradient(180deg, #b88927 0%, #8f681d 100%);
+}
+
+.ejc-option-one-main :where(.btn-primary, .btn-gold):hover {
+  background-image: linear-gradient(180deg, #a5761f 0%, #775314 100%);
+}
+
+.ejc-option-one-main :where(.input, input:not([type="checkbox"]):not([type="radio"]), select, textarea) {
+  border-color: #dfe5ed;
+  border-radius: 11px;
+}
+
+.ejc-option-one-main :where(.input, input:not([type="checkbox"]):not([type="radio"]), select, textarea):focus {
+  border-color: rgba(184, 137, 39, 0.7);
+  box-shadow: 0 0 0 3px rgba(184, 137, 39, 0.12);
+}
+
+.ejc-option-one-main :where(.table, table) {
+  border-collapse: separate;
+  border-spacing: 0;
+}
+
+.ejc-option-one-main :where(.table th, table th) {
+  background: #f8fafc;
+  color: #667085;
+  font-size: 0.69rem;
+  font-weight: 750;
+  letter-spacing: 0.045em;
+}
+
+.ejc-option-one-main :where(.table td, table td) {
+  border-color: #edf0f4;
+}
+
+.ejc-option-one-main :where(.table tbody tr, table tbody tr) {
+  transition: background 120ms ease;
+}
+
+.ejc-option-one-main :where(.table tbody tr:hover, table tbody tr:hover) {
+  background: #fafbfd;
+}
+
+/* Modo apresentação/reunião: o conteúdo é ocultado sem desmontar a rota. */
+.ejc-privacy-mode .ejc-option-one-main {
+  filter: blur(10px);
+  pointer-events: none;
+  user-select: none;
+}
+
+.ejc-privacy-mode .ejc-option-one-main::after {
+  content: "Conteúdo ocultado pelo modo privacidade";
+  position: fixed;
+  inset: 50% auto auto 50%;
+  z-index: 80;
+  transform: translate(-50%, -50%);
+  padding: 0.9rem 1.1rem;
+  border: 1px solid rgba(184, 137, 39, 0.35);
+  border-radius: 14px;
+  color: #071a3a;
+  background: rgba(255, 255, 255, 0.96);
+  box-shadow: 0 16px 40px rgba(15, 23, 42, 0.18);
+  filter: none;
+  font-size: 0.82rem;
+  font-weight: 700;
+}
+
+/* Dashboard opção 01. */
+.ejc-option-one-dashboard {
+  --dashboard-navy: #071a3a;
+  --dashboard-gold: #b88927;
+}
+
+.ejc-option-one-dashboard .option-one-action-card {
+  min-height: 140px;
+  border: 1px solid #e5eaf1;
+  border-radius: 16px;
+  background: #ffffff;
+  box-shadow: 0 8px 24px rgba(15, 23, 42, 0.04);
+  transition:
+    transform 150ms ease,
+    border-color 150ms ease,
+    box-shadow 150ms ease;
+}
+
+.ejc-option-one-dashboard .option-one-action-card:hover {
+  transform: translateY(-2px);
+  border-color: rgba(184, 137, 39, 0.42);
+  box-shadow: 0 14px 32px rgba(15, 23, 42, 0.075);
+}
+
+.ejc-option-one-dashboard .option-one-panel {
+  border: 1px solid #e5eaf1;
+  border-radius: 16px;
+  background: #ffffff;
+  box-shadow: 0 8px 24px rgba(15, 23, 42, 0.04);
+}
+
+.ejc-option-one-dashboard .option-one-priority-item + .option-one-priority-item {
+  border-left: 1px solid #e7ebf1;
+}
+
+@media (max-width: 1023px) {
+  .ejc-option-one-command {
+    display: none;
+  }
+}
+
+@media (max-width: 767px) {
+  .ejc-option-one-dashboard .option-one-priority-item + .option-one-priority-item {
+    border-left: 0;
+    border-top: 1px solid #e7ebf1;
+  }
+
+  .ejc-option-one-search {
+    border-color: transparent;
+    background: #f5f7fa;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .ejc-option-one-shell *,
+  .ejc-option-one-shell *::before,
+  .ejc-option-one-shell *::after {
+    scroll-behavior: auto !important;
+    transition-duration: 0.01ms !important;
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+  }
+}
