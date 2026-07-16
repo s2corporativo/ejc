@@ -415,11 +415,19 @@ async def criar(
     except IntegrityError:
         await db.rollback()
         raise HTTPException(status_code=409, detail="CPF/CNPJ já cadastrado")
-    except (DataError, ValueError) as e:
-        # Ex.: valor incompatível com uma coluna tipada (DATE etc.). Vira 422
-        # com mensagem clara em vez de 500 opaco.
+    except ValueError as e:
+        # ValueError é controlado pelo código (mensagem limpa de validação).
         await db.rollback()
         raise HTTPException(status_code=422, detail=f"Dados inválidos: {e}")
+    except DataError:
+        # DataError do driver carrega o statement SQL e nomes de coluna — NÃO ecoar
+        # (disclosure de esquema). Loga server-side e devolve mensagem genérica.
+        await db.rollback()
+        logger.warning("DataError ao gravar cliente (valor fora do tipo/tamanho da coluna)", exc_info=True)
+        raise HTTPException(
+            status_code=422,
+            detail="Dados inválidos — verifique o formato/tamanho dos campos (datas, textos longos, etc.).",
+        )
     await db.refresh(c)
     return c
 
@@ -515,11 +523,19 @@ async def atualizar(
     except IntegrityError:
         await db.rollback()
         raise HTTPException(status_code=409, detail="CPF/CNPJ já cadastrado")
-    except (DataError, ValueError) as e:
-        # Ex.: valor incompatível com uma coluna tipada (DATE etc.). Vira 422
-        # com mensagem clara em vez de 500 opaco.
+    except ValueError as e:
+        # ValueError é controlado pelo código (mensagem limpa de validação).
         await db.rollback()
         raise HTTPException(status_code=422, detail=f"Dados inválidos: {e}")
+    except DataError:
+        # DataError do driver carrega o statement SQL e nomes de coluna — NÃO ecoar
+        # (disclosure de esquema). Loga server-side e devolve mensagem genérica.
+        await db.rollback()
+        logger.warning("DataError ao gravar cliente (valor fora do tipo/tamanho da coluna)", exc_info=True)
+        raise HTTPException(
+            status_code=422,
+            detail="Dados inválidos — verifique o formato/tamanho dos campos (datas, textos longos, etc.).",
+        )
     await db.refresh(c)
     return c
 
