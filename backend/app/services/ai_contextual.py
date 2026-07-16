@@ -28,10 +28,20 @@ _AREA_ALIASES = {
     "familia-e-sucessoes": "familia",
     "imobiliario-e-posse": "imobiliario",
     "penal-e-defesa-criminal": "penal",
+    "criminal": "penal",
     "previdenciario-inss": "previdenciario",
     "saude": "saude",
     "trabalhista-ia": "trabalhista",
     "tributario-e-cobranca": "tributario",
+    "direito-bancario": "bancario",
+    "contratos-bancarios": "bancario",
+    "direito-de-transito": "transito",
+    "multas-de-transito": "transito",
+    "direito-administrativo": "administrativo",
+    "licitacoes-e-contratos": "administrativo",
+    "direito-ambiental": "ambiental",
+    "direito-empresarial": "empresarial",
+    "direito-digital-e-lgpd": "digital_lgpd",
 }
 
 
@@ -146,6 +156,12 @@ _AREA_SKILLS = {
     "saude": ["plano-saude-negativa-liminar", "execucao-decisao-saude", "liminar-saude"],
     "trabalhista": ["contestacao-trabalhista", "reclamacao-trabalhista", "mapa-risco-condenacao-trabalhista"],
     "tributario": ["raio-x-cda", "defesa-administrativa-tributaria", "excecao-pre-executividade"],
+    "bancario": ["revisional-juros-bancarios", "consumidor-bancario", "revisor-contratos"],
+    "transito": ["defesa-multa-transito", "recurso-jari-cetran", "prescricao-decadencia"],
+    "administrativo": ["defesa-administrativa", "recurso-administrativo", "raio-x-processual"],
+    "ambiental": ["defesa-auto-infracao-ambiental", "raio-x-processual", "desmistificador-laudos"],
+    "empresarial": ["revisor-contratos", "simulador-defesa-adversarial", "gerador-notificacao-extrajudicial"],
+    "digital_lgpd": ["scanner-anti-sabotagem", "detetive-prints", "gerador-notificacao-extrajudicial"],
 }
 
 
@@ -155,9 +171,63 @@ class RegraDocumento:
     termos: tuple[str, ...]
     skills: tuple[str, ...]
     surface: str
+    area: str | None = None
+    subarea: str | None = None
+    rito: str | None = None
+    campos_esperados: tuple[str, ...] = ()
 
 
 _REGRAS_DOCUMENTO = (
+    RegraDocumento(
+        "multa_transito",
+        ("auto de infracao de transito", "codigo da infracao", "renavam", "orgao autuador", "jari", "cetran", "identificacao do condutor"),
+        ("defesa-multa-transito", "recurso-jari-cetran", "prescricao-decadencia"),
+        "prazos",
+        "transito",
+        "multa de transito",
+        "administrativo de transito",
+        ("auto de infracao", "placa", "renavam", "enquadramento", "data", "prazo", "orgao autuador"),
+    ),
+    RegraDocumento(
+        "suspensao_cnh",
+        ("suspensao do direito de dirigir", "cassacao da cnh", "pontuacao", "carteira nacional de habilitacao"),
+        ("defesa-multa-transito", "recurso-jari-cetran", "raio-x-processual"),
+        "prazos",
+        "transito",
+        "suspensao ou cassacao",
+        "administrativo de transito",
+        ("condutor", "processo administrativo", "pontuacao", "prazo de defesa"),
+    ),
+    RegraDocumento(
+        "contrato_bancario",
+        ("custo efetivo total", "taxa efetiva", "instituicao financeira", "cedula de credito", "saldo devedor", "credito consignado", "sistema de amortizacao"),
+        ("revisional-juros-bancarios", "consumidor-bancario", "revisor-contratos"),
+        "financeiro",
+        "bancario",
+        "contrato bancario",
+        "contratual ou consumerista",
+        ("valor liberado", "parcelas", "taxa mensal", "taxa anual", "cet", "tarifas", "seguros", "saldo devedor"),
+    ),
+    RegraDocumento(
+        "auto_infracao_ambiental",
+        ("auto de infracao ambiental", "embargo ambiental", "apreensao", "orgao ambiental", "reparacao do dano ambiental"),
+        ("defesa-auto-infracao-ambiental", "raio-x-processual", "desmistificador-laudos"),
+        "prazos",
+        "ambiental",
+        "infracao ambiental",
+        "administrativo ambiental",
+        ("orgao", "numero do auto", "conduta", "enquadramento", "multa", "prazo", "area afetada"),
+    ),
+    RegraDocumento(
+        "licitacao_contrato_administrativo",
+        ("edital de licitacao", "pregao eletronico", "ata de registro de precos", "contrato administrativo", "nota de empenho", "sancao administrativa"),
+        ("defesa-administrativa", "recurso-administrativo", "revisor-contratos"),
+        "documentos",
+        "administrativo",
+        "licitacoes e contratos",
+        "administrativo",
+        ("orgao", "edital", "processo", "objeto", "item", "prazo", "sancao", "contrato"),
+    ),
     RegraDocumento("contestacao", ("contestacao", "preliminarmente", "impugnacao especifica"), ("maquina-replica", "detector-contradicoes", "replica-estrategica"), "documentos"),
     RegraDocumento("peticao_inicial", ("peticao inicial", "dos fatos", "dos pedidos", "requer a citacao"), ("auditor-pedidos", "simulador-defesa-adversarial", "raio-x-processual"), "documentos"),
     RegraDocumento("decisao_judicial", ("sentenca", "acordao", "decisao interlocutoria", "julgo", "dispositivo"), ("embargos-declaracao", "maquina-recursos", "auditoria-recurso"), "documentos"),
@@ -166,9 +236,9 @@ _REGRAS_DOCUMENTO = (
     RegraDocumento("contrato", ("contrato", "contratante", "contratada", "clausula", "objeto do contrato"), ("revisor-contratos", "minuta-acordo", "simulador-defesa-adversarial"), "documentos"),
     RegraDocumento("laudo_pericial", ("laudo pericial", "perito", "quesitos", "conclusao pericial"), ("desmistificador-laudos", "detector-contradicoes", "incapacidade-quesitos"), "provas"),
     RegraDocumento("audiencia", ("ata de audiencia", "depoimento", "testemunha", "termo de audiencia"), ("detector-contradicoes", "roteirista-audiencia", "memoriais-alegacoes-finais"), "audiencias"),
-    RegraDocumento("inquerito", ("inquerito policial", "auto de prisao", "autoridade policial", "indiciado"), ("raio-x-inquerito", "contraponto-penal", "resposta-acusacao"), "provas"),
-    RegraDocumento("cnis", ("cnis", "cadastro nacional de informacoes sociais", "nit", "indicador previdenciario"), ("raio-x-cnis", "indeferimento-recurso-inss"), "provas"),
-    RegraDocumento("ppp", ("perfil profissiografico previdenciario", "ppp", "agente nocivo", "ltcat"), ("raio-x-ppp", "desmistificador-laudos"), "provas"),
+    RegraDocumento("inquerito", ("inquerito policial", "auto de prisao", "autoridade policial", "indiciado"), ("raio-x-inquerito", "contraponto-penal", "resposta-acusacao"), "provas", "penal"),
+    RegraDocumento("cnis", ("cnis", "cadastro nacional de informacoes sociais", "nit", "indicador previdenciario"), ("raio-x-cnis", "indeferimento-recurso-inss"), "provas", "previdenciario"),
+    RegraDocumento("ppp", ("perfil profissiografico previdenciario", "ppp", "agente nocivo", "ltcat"), ("raio-x-ppp", "desmistificador-laudos"), "provas", "previdenciario"),
 )
 
 
@@ -190,7 +260,11 @@ def classificar_documento(filename: str | None, texto: str | None) -> dict[str, 
             "sinais": ["nenhum marcador específico encontrado"],
             "surface_sugerida": "documentos",
             "skills_sugeridas": ["raio-x-processual", "sintese-processo", "scanner-anti-sabotagem"],
-            "metodo": "regras_locais_v1",
+            "area_sugerida": None,
+            "subarea_sugerida": None,
+            "rito_sugerido": None,
+            "campos_esperados": [],
+            "metodo": "regras_locais_v2",
         }
     pontos, regra, sinais = max(candidatos, key=lambda item: item[0])
     return {
@@ -199,7 +273,11 @@ def classificar_documento(filename: str | None, texto: str | None) -> dict[str, 
         "sinais": sinais,
         "surface_sugerida": regra.surface,
         "skills_sugeridas": list(regra.skills),
-        "metodo": "regras_locais_v1",
+        "area_sugerida": regra.area,
+        "subarea_sugerida": regra.subarea,
+        "rito_sugerido": regra.rito,
+        "campos_esperados": list(regra.campos_esperados),
+        "metodo": "regras_locais_v2",
     }
 
 
@@ -248,9 +326,7 @@ def ranquear_skills_contextuais(
             motivos.append(f"especializada em {area_key}")
         elif skill_area in {"juridico", "estrategia", "provas"}:
             score += 12
-        termos = _normalizar(
-            f"{_atributo(skill, 'display_name', '')} {_atributo(skill, 'description', '')}"
-        )
+        termos = _normalizar(f"{_atributo(skill, 'display_name', '')} {_atributo(skill, 'description', '')}")
         if fase and fase in termos:
             score += 10
             motivos.append("compatível com a fase")
@@ -260,13 +336,8 @@ def ranquear_skills_contextuais(
         if score <= 0:
             continue
         avaliadas.append({"skill": skill, "score": score, "reason": "; ".join(motivos[:2]) or "ação geral"})
-    avaliadas.sort(
-        key=lambda item: (
-            -item["score"],
-            str(_atributo(item["skill"], "display_name", "")),
-        )
-    )
-    return avaliadas[: max(1, min(limit, 8))]
+    avaliadas.sort(key=lambda item: (-item["score"], str(_atributo(item["skill"], "display_name", ""))))
+    return avaliadas[:limit]
 
 
 _NEXT_ACTIONS = {
@@ -282,6 +353,8 @@ _NEXT_ACTIONS = {
     "embargos-declaracao": ["auditoria-recurso", "validador-teses-precedentes"],
     "maquina-recursos": ["validador-teses-precedentes", "contrarrazoes-recursais"],
     "revisor-contratos": ["minuta-acordo", "simulador-defesa-adversarial"],
+    "revisional-juros-bancarios": ["revisor-contratos", "simulador-defesa-adversarial"],
+    "defesa-multa-transito": ["recurso-jari-cetran", "prescricao-decadencia"],
     "transcritor-midias-audiencia": ["detector-contradicoes", "memoriais-alegacoes-finais"],
 }
 
