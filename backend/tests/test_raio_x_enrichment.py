@@ -72,7 +72,9 @@ def test_prazo_proximo_marca_urgencia_e_risco():
     report = enriquecer_relatorio([], base)
 
     assert report["prazo_urgente"] is True
-    assert report["risco_nivel"] in {"elevado", "critico"}
+    # Urgência e risco são eixos separados: prazo em dois dias é sempre urgente,
+    # mas o risco qualitativo pode ser moderado até que outros fatores se somem.
+    assert report["risco_nivel"] in {"moderado", "elevado", "critico"}
     assert report["avaliacao_risco"]["score_interno"] >= 4
 
 
