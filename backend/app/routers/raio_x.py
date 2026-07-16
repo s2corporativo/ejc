@@ -265,13 +265,14 @@ async def analisar_documentos(
         .where(RaioXDocumento.analise_id == analise.id)
         .order_by(RaioXDocumento.created_at.asc())
     )
-    analise.relatorio = consolidar_relatorio(list(documentos_result.scalars().all()))
+    documentos_atuais = list(documentos_result.scalars().all())
+    analise.relatorio = consolidar_relatorio(documentos_atuais)
     ident = analise.relatorio.get("identificacao") or {}
     analise.numero_processo = analise.numero_processo or ident.get("numero_processo")
     analise.area = analise.area or ident.get("area")
     analise.fase = analise.fase or ident.get("fase")
     analise.tribunal = analise.tribunal or ident.get("tribunal")
-    analise.status = "aguardando_conferencia" if analise.documentos else "documentos_pendentes"
+    analise.status = "aguardando_conferencia" if documentos_atuais else "documentos_pendentes"
     analise.custo_ia = {**(analise.custo_ia or {}), "tokens_ultimo_lote": total_tokens, "arquivos_ultimo_lote": len(novos)}
     await criar_audit_log(
         db, user.id, _role(user), "AI_USE", "raio_x_analises", analise.id,
