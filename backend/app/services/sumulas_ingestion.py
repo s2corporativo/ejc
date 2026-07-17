@@ -30,6 +30,22 @@ logger = logging.getLogger("ejc.sumulas")
 # súmula cancelada/suspensa como direito vigente induziria a IA a erro.
 DATA_CONFERENCIA = "2026-07-15"
 
+# SEGUNDA LEVA (2026-07-17) — TENTADA E NÃO REALIZADA: a ampliação planejada
+# (SVs do STF; STJ consumidor/bancário/dano moral/proc. civil; TST de alto uso)
+# foi ABORTADA porque NENHUM portal oficial estava acessível no ambiente de
+# execução — o proxy de egress da organização negou CONNECT (403, policy
+# denial) para todos os hosts testados: tst.jus.br, www.tst.jus.br,
+# www3.tst.jus.br, jurisprudencia.tst.jus.br, stf.jus.br, portal.stf.jus.br,
+# www.stf.jus.br, jurisprudencia.stf.jus.br, stj.jus.br, www.stj.jus.br,
+# scon.stj.jus.br e sumulas.stj.jus.br.
+# REGRA DESTA CASA (não negociável): NENHUM texto de súmula entra escrito de
+# memória de modelo — somente verbatim de fonte oficial baixada no ato, com
+# fonte_url e situacao confirmadas. Sem fonte acessível, verbete não entra.
+# Todos os verbetes abaixo são da leva conferida em DATA_CONFERENCIA
+# (2026-07-15); nenhum verbete pertence à leva de 2026-07-17.
+# Para ampliar: rodar em ambiente com egress liberado para *.jus.br e repetir
+# o protocolo de conferência verbete a verbete.
+
 SUMULAS_SEED = [
     # ── TST — Trabalhista ──────────────────────────────────────────────────────
     {"tribunal":"TST","numero":"12",
