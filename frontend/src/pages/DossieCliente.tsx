@@ -31,12 +31,15 @@ import {
 import api from "../lib/api";
 import ClientServiceTimeline from "../components/ClientServiceTimeline";
 import { soDigitos } from "../utils/phone";
+import { toast } from "../components/Toast";
+import { areaLabel } from "../lib/areas";
 import {
   PageHeader,
   Spinner,
   StatusBadge,
   fmtMoney,
   ConfirmModal,
+  Modal,
 } from "../components/UI";
 
 interface DossieData {
@@ -89,16 +92,7 @@ interface DossieData {
   }>;
 }
 
-const AREA_LABEL: Record<string, string> = {
-  civel: "Cível",
-  trabalhista: "Trabalhista",
-  penal: "Penal",
-  empresarial: "Empresarial",
-  administrativo: "Administrativo",
-  bancario: "Bancário",
-  tributario: "Tributário",
-  ambiental: "Ambiental",
-};
+// Rótulos de área vêm da taxonomia canônica (lib/areas.ts — enum CaseArea).
 
 function StatCard({
   icon: Icon,
@@ -212,6 +206,7 @@ function PendingItemsPanel({ clientId }: { clientId: string | number }) {
       setItems(res.data || []);
     } catch {
       setItems([]);
+      toast.error("Não foi possível carregar as pendências do cliente");
     } finally {
       setLoading(false);
     }
@@ -223,18 +218,32 @@ function PendingItemsPanel({ clientId }: { clientId: string | number }) {
 
   async function create() {
     if (!form.title.trim()) return;
-    await api.post(`/v1/clients/${clientId}/pending-items`, {
-      ...form,
-      due_date: form.due_date || undefined,
-    });
-    setForm({ title: "", type: "documento", description: "", due_date: "" });
-    setShowAdd(false);
-    load();
+    try {
+      await api.post(`/v1/clients/${clientId}/pending-items`, {
+        ...form,
+        due_date: form.due_date || undefined,
+      });
+      setForm({ title: "", type: "documento", description: "", due_date: "" });
+      setShowAdd(false);
+      load();
+    } catch (e: any) {
+      toast.error(
+        e.response?.data?.detail || "Não foi possível criar a pendência",
+      );
+    }
   }
 
   async function updateStatus(id: string, status: string) {
-    await api.patch(`/v1/clients/${clientId}/pending-items/${id}`, { status });
-    load();
+    try {
+      await api.patch(`/v1/clients/${clientId}/pending-items/${id}`, {
+        status,
+      });
+      load();
+    } catch (e: any) {
+      toast.error(
+        e.response?.data?.detail || "Não foi possível atualizar a pendência",
+      );
+    }
   }
 
   function remove(id: string) {
@@ -243,11 +252,17 @@ function PendingItemsPanel({ clientId }: { clientId: string | number }) {
 
   async function confirmarExclusao() {
     if (!pendenteExcluir) return;
-    await api.delete(
-      `/v1/clients/${clientId}/pending-items/${pendenteExcluir}`,
-    );
-    setPendenteExcluir(null);
-    load();
+    try {
+      await api.delete(
+        `/v1/clients/${clientId}/pending-items/${pendenteExcluir}`,
+      );
+      setPendenteExcluir(null);
+      load();
+    } catch (e: any) {
+      toast.error(
+        e.response?.data?.detail || "Não foi possível excluir a pendência",
+      );
+    }
   }
 
   const active = items.filter((i) => i.status !== "concluido");
@@ -443,7 +458,11 @@ function ComunicacaoRapida({
         resumo: resumo.length >= 10 ? resumo : resumo + " — contato iniciado",
         contato_status: "iniciado",
       })
-      .catch(() => {});
+      .catch(() => {
+        toast.error(
+          "Não foi possível registrar o contato no histórico de atendimentos",
+        );
+      });
   };
   const phone = cliente.whatsapp || cliente.telefone;
   if (!phone && !cliente.email) return null;
@@ -539,15 +558,21 @@ function RelatorioFinanceiro({
       const r = await api.get(`/clients/${clientId}/relatorio-financeiro`);
       setRel(r.data);
       setOpen(true);
-    } catch {
-      /* ignore */
+    } catch (e: any) {
+      toast.error(
+        e.response?.data?.detail ||
+          "Não foi possível carregar o relatório financeiro",
+      );
     } finally {
       setLoading(false);
     }
   };
 
   const exportarCSV = () => {
-    if (!rel) return;
+    if (!rel) {
+      toast.error("Carregue o relatório antes de exportar");
+      return;
+    }
     const linhas: string[] = ["Data;Tipo;Categoria;Descrição;Caso;Valor"];
     for (const e of rel.extrato ?? []) {
       linhas.push(
@@ -721,7 +746,7 @@ export default function DossieCliente() {
     if (tab && validTabs.includes(tab)) setAbaAtiva(tab);
   }, [searchParams]);
 
-  useEffect(() => {
+  const carregarDossie = useCallback(() => {
     if (!clientId) return;
     api
       .get(`/clients/${clientId}/dossie`)
@@ -729,6 +754,79 @@ export default function DossieCliente() {
       .catch(() => setErro("Não foi possível carregar o dossiê."))
       .finally(() => setLoading(false));
   }, [clientId]);
+
+  useEffect(() => {
+    carregarDossie();
+  }, [carregarDossie]);
+
+  // Edição de perfil inline (PATCH /clients/{id}) — a rota /clientes/:id é a
+  // própria Ficha Mestra, então "Editar perfil" abre um modal aqui mesmo.
+  const [editOpen, setEditOpen] = useState(false);
+  const [editForm, setEditForm] = useState({
+    nome: "",
+    email: "",
+    telefone: "",
+    whatsapp: "",
+  });
+  const [salvandoEdit, setSalvandoEdit] = useState(false);
+
+  const abrirEdicao = () => {
+    const c: any = data?.cliente ?? {};
+    setEditForm({
+      nome: c.nome || "",
+      email: c.email || "",
+      telefone: c.telefone || "",
+      whatsapp: c.whatsapp || "",
+    });
+    setEditOpen(true);
+  };
+
+  const salvarEdicao = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!editForm.nome.trim()) {
+      toast.error("O nome do cliente é obrigatório");
+      return;
+    }
+    setSalvandoEdit(true);
+    try {
+      await api.patch(`/clients/${clientId}`, {
+        nome: editForm.nome.trim(),
+        email: editForm.email.trim() || null,
+        telefone: editForm.telefone.trim() || null,
+        whatsapp: editForm.whatsapp.trim() || null,
+      });
+      toast.success("Perfil do cliente atualizado");
+      setEditOpen(false);
+      carregarDossie();
+    } catch (err: any) {
+      const detail = err.response?.data?.detail;
+      toast.error(
+        typeof detail === "string"
+          ? detail
+          : "Não foi possível atualizar o perfil",
+      );
+    } finally {
+      setSalvandoEdit(false);
+    }
+  };
+
+  const baixarDocumento = async (docId: string | number, nome: string) => {
+    try {
+      const r = await api.get(`/documents/${docId}/download`, {
+        responseType: "blob",
+      });
+      const url = URL.createObjectURL(r.data as Blob);
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = nome || `documento-${docId}`;
+      a.click();
+      URL.revokeObjectURL(url);
+    } catch (e: any) {
+      toast.error(
+        e.response?.data?.detail || "Não foi possível baixar o documento",
+      );
+    }
+  };
 
   if (loading) return <Spinner />;
 
@@ -785,12 +883,9 @@ export default function DossieCliente() {
                 >
                   <ExternalLink className="w-3 h-3" /> Portal do Cliente
                 </a>
-                <Link
-                  to={`/clientes/${clientId}`}
-                  className="btn-outline text-xs"
-                >
+                <button onClick={abrirEdicao} className="btn-outline text-xs">
                   <User className="w-3 h-3" /> Editar perfil
-                </Link>
+                </button>
               </>
             }
           />
@@ -890,7 +985,7 @@ export default function DossieCliente() {
                     {c.titulo}
                   </p>
                   <p className="text-[11px] text-slate-400 mt-0.5">
-                    {c.numero_interno} · {AREA_LABEL[c.area] ?? c.area}
+                    {c.numero_interno} · {areaLabel(c.area) || c.area}
                   </p>
                 </div>
                 <StatusBadge value={c.status} />
@@ -934,21 +1029,26 @@ export default function DossieCliente() {
           </div>
           <div className="divide-y divide-bronze-pale/50">
             {documentos_recentes.map((doc) => (
-              <Link
+              <div
                 key={doc.id}
-                to={`/casos/${doc.case_id}`}
                 className="flex items-center gap-3 px-4 py-3 hover:bg-bronze-50/60 transition-colors group"
               >
-                <div className="flex-1 min-w-0">
+                <Link to={`/casos/${doc.case_id}`} className="flex-1 min-w-0">
                   <p className="text-sm text-navy-900 font-medium truncate">
                     {doc.nome}
                   </p>
                   <p className="text-[10px] text-slate-400 mt-0.5">
                     Caso #{doc.case_id} · {doc.tipo}
                   </p>
-                </div>
-                <Download className="w-4 h-4 text-slate-300 group-hover:text-bronze" />
-              </Link>
+                </Link>
+                <button
+                  onClick={() => baixarDocumento(doc.id, doc.nome)}
+                  title="Baixar documento"
+                  className="p-1"
+                >
+                  <Download className="w-4 h-4 text-slate-300 group-hover:text-bronze" />
+                </button>
+              </div>
             ))}
           </div>
         </div>
@@ -956,14 +1056,17 @@ export default function DossieCliente() {
 
       {abaAtiva === "ia_cliente" && (
         <div className="card p-8 text-center space-y-4 animate-fade-in">
-          <Bot className="w-12 h-12 mx-auto text-bronze-pale animate-pulse" />
+          <Bot className="w-12 h-12 mx-auto text-bronze-pale" />
           <h3 className="text-lg font-serif">IA do Cliente (Análise 360º)</h3>
           <p className="text-sm text-slate-500 max-w-md mx-auto">
-            O Cérebro do EJC está processando o histórico deste cliente para
-            identificar padrões de litígio, riscos financeiros e oportunidades
-            estratégicas.
+            A análise estratégica automática do histórico deste cliente
+            (padrões de litígio, riscos financeiros e oportunidades) ainda
+            está em desenvolvimento. Enquanto isso, use a Pesquisa e IA com o
+            caso do cliente selecionado.
           </p>
-          <button className="btn-primary">Iniciar Análise Estratégica</button>
+          <span className="inline-block text-xs font-medium text-slate-400 border border-bronze-pale rounded-full px-3 py-1">
+            Em breve
+          </span>
         </div>
       )}
 
@@ -981,13 +1084,82 @@ export default function DossieCliente() {
                   key={area}
                   className="badge badge-neutral px-3 py-1 text-xs"
                 >
-                  {AREA_LABEL[area] ?? area}{" "}
+                  {areaLabel(area) || area}{" "}
                   <span className="ml-1 font-semibold">{n}</span>
                 </div>
               ))}
           </div>
         </div>
       )}
+
+      {/* Modal — Editar perfil do cliente */}
+      <Modal
+        open={editOpen}
+        onClose={() => setEditOpen(false)}
+        title="Editar perfil do cliente"
+      >
+        <form onSubmit={salvarEdicao} className="space-y-4">
+          <div>
+            <label className="label">Nome *</label>
+            <input
+              className="input"
+              value={editForm.nome}
+              onChange={(e) =>
+                setEditForm((p) => ({ ...p, nome: e.target.value }))
+              }
+            />
+          </div>
+          <div>
+            <label className="label">E-mail</label>
+            <input
+              type="email"
+              className="input"
+              value={editForm.email}
+              onChange={(e) =>
+                setEditForm((p) => ({ ...p, email: e.target.value }))
+              }
+            />
+          </div>
+          <div className="grid grid-cols-2 gap-3">
+            <div>
+              <label className="label">Telefone</label>
+              <input
+                className="input"
+                value={editForm.telefone}
+                onChange={(e) =>
+                  setEditForm((p) => ({ ...p, telefone: e.target.value }))
+                }
+              />
+            </div>
+            <div>
+              <label className="label">WhatsApp</label>
+              <input
+                className="input"
+                value={editForm.whatsapp}
+                onChange={(e) =>
+                  setEditForm((p) => ({ ...p, whatsapp: e.target.value }))
+                }
+              />
+            </div>
+          </div>
+          <div className="flex gap-3 pt-2">
+            <button
+              type="button"
+              onClick={() => setEditOpen(false)}
+              className="btn-secondary flex-1"
+            >
+              Cancelar
+            </button>
+            <button
+              type="submit"
+              disabled={salvandoEdit}
+              className="btn-primary flex-1"
+            >
+              {salvandoEdit ? <Spinner /> : "Salvar"}
+            </button>
+          </div>
+        </form>
+      </Modal>
     </div>
   );
 }

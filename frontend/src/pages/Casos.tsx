@@ -18,6 +18,7 @@ import {
 } from "lucide-react";
 import api, { aplicarExtracao } from "../lib/api";
 import { asList } from "../lib/list";
+import { areaLabel, useAreas } from "../lib/areas";
 import type { AplicarExtracaoResult, ExtracaoPayload } from "../lib/api";
 import {
   carregarRascunho,
@@ -53,29 +54,8 @@ import {
 import Kanban from "./Kanban";
 import { List } from "lucide-react";
 
-// Enum CaseArea do backend (app/models/case.py). Valor = chave; rótulo em PT-BR.
-const AREAS = [
-  "civil",
-  "trabalhista",
-  "consumidor",
-  "familia",
-  "ambiental",
-  "criminal",
-  "previdenciario",
-  "empresarial",
-  "tributario",
-];
-const AREA_LABELS: Record<string, string> = {
-  civil: "Cível",
-  trabalhista: "Trabalhista",
-  consumidor: "Consumidor",
-  familia: "Família",
-  ambiental: "Ambiental",
-  criminal: "Criminal",
-  previdenciario: "Previdenciário",
-  empresarial: "Empresarial",
-  tributario: "Tributário",
-};
+// Taxonomia canônica de áreas: GET /areas via useAreas(), com fallback
+// completo do enum CaseArea (25 áreas) em lib/areas.ts.
 
 const CASE_TYPES = [
   { k: "judicial", l: "Judicial", icon: Gavel },
@@ -245,7 +225,7 @@ function montarResumoRevisao(
     { label: "Cliente", valor: clienteLabel || "—" },
     {
       label: "Área",
-      valor: AREA_LABELS[form?.area] || txtResumo(form?.area) || "—",
+      valor: areaLabel(form?.area) || txtResumo(form?.area) || "—",
     },
     { label: "Tipo", valor: CASE_TYPE_LABEL[form?.case_type] || "—" },
     { label: "Nº do processo", valor: txtResumo(form?.numero_processo) || "—" },
@@ -291,6 +271,7 @@ function montarResumoRevisao(
 }
 
 export default function Casos() {
+  const areas = useAreas();
   const [data, setData] = useState<Paged<Case> | null>(null);
   const [clientes, setClientes] = useState<Client[]>([]);
   const [advogados, setAdvogados] = useState<User[]>([]);
@@ -760,9 +741,9 @@ export default function Casos() {
               onChange={(e) => setAreaF(e.target.value)}
             >
               <option value="">Todas as áreas</option>
-              {AREAS.map((a) => (
-                <option key={a} value={a}>
-                  {AREA_LABELS[a] || a}
+              {areas.map((a) => (
+                <option key={a.slug} value={a.slug}>
+                  {a.nome}
                 </option>
               ))}
             </select>
@@ -906,7 +887,7 @@ export default function Casos() {
                         </Link>
                       </td>
                       <td className="px-4 py-3 text-sm text-slate-500 capitalize">
-                        {AREA_LABELS[(c as any).area] || c.area}
+                        {areaLabel((c as any).area) || c.area}
                       </td>
                       <td className="px-4 py-3">
                         <span
@@ -1121,9 +1102,9 @@ export default function Casos() {
               value={form.area}
               onChange={(e) => setForm({ ...form, area: e.target.value })}
             >
-              {AREAS.map((a) => (
-                <option key={a} value={a}>
-                  {AREA_LABELS[a] || a}
+              {areas.map((a) => (
+                <option key={a.slug} value={a.slug}>
+                  {a.nome}
                 </option>
               ))}
             </select>

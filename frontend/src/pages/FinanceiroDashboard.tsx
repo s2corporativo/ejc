@@ -16,6 +16,7 @@ import {
   PiggyBank,
 } from "lucide-react";
 import api from "../lib/api";
+import { toast } from "../components/Toast";
 import { Empty, PageHeader, Spinner } from "../components/UI";
 
 function fmtR$(v: number | undefined | null) {
@@ -132,8 +133,10 @@ export default function FinanceiroDashboard() {
       a.download = `despesas-${competencia}.csv`;
       a.click();
       URL.revokeObjectURL(url);
-    } catch {
-      // silencioso — o dashboard segue utilizável mesmo sem o export
+    } catch (e: any) {
+      toast.error(
+        e.response?.data?.detail || "Não foi possível exportar o CSV",
+      );
     }
   };
 
