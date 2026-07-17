@@ -49,7 +49,7 @@ async def simular_war_room(
     from app.services.sanitizer import sanitizar_pii
 
     peticao = payload.get("peticao")
-    if not peticao:
+    if not peticao or not isinstance(peticao, str):
         raise HTTPException(400, "Petição inicial é necessária para simulação.")
 
     case_id = payload.get("case_id")

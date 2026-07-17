@@ -103,7 +103,7 @@ async def dossie_pressao(
     }
 
 
-@router.post("/analisar-magistrado")
+@router.post("/analisar-magistrado", dependencies=[Depends(rate_limit("analisar-magistrado", 10))])
 async def analisar_magistrado(
     payload: dict,
     db: AsyncSession = Depends(get_db),
