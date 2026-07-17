@@ -244,6 +244,14 @@ async def buscar_contexto_rag(
     # Usa distância de cosseno (operador <=> do pgvector). Cai no textual se
     # indisponível ou em erro. Esta é a busca "por significado" — encontra
     # precedentes mesmo quando o vocabulário do caso novo difere do registrado.
+    # Reranking (Fase 1 — auditoria IA): recupera um POOL maior de candidatos e
+    # reordena com um cross-encoder antes de cortar em `limite`. Desligado ou
+    # indisponível → pool = limite e a ordem RRF é mantida (degradação graciosa;
+    # ver ai/reranker.py). rerank(...) sempre devolve no máximo `limite` itens.
+    from app.services.ai import reranker as _reranker
+    _rerank_on = _reranker.disponivel()
+    _n_pool = _reranker.tamanho_pool(limite) if _rerank_on else limite
+
     from app.services.embedding_service import disponivel as _emb_on, gerar_embeddings
     if not _emb_on():
         # Degradação AUDÍVEL: sem embeddings a busca vira ILIKE puro (recall
@@ -261,7 +269,7 @@ async def buscar_contexto_rag(
         vetores = await gerar_embeddings([consulta], modo="query")
         if vetores:
             vec = vetores[0]
-            params_v: dict = {"vec": str(vec), "lim": limite, "max_dist": _RAG_MAX_DIST,
+            params_v: dict = {"vec": str(vec), "lim": _n_pool, "max_dist": _RAG_MAX_DIST,
                               "restr_cats": _RESTRICTED_CATS, "scope_cli": scope_client_id or "",
                               "incl_hist": incluir_historico}
             filtro_cat_v = ""
@@ -303,16 +311,19 @@ async def buscar_contexto_rag(
                     for r in rows_v
                 ]
                 if resultados:
-                    return await _fundir_lexical(db, consulta, resultados, limite, categorias,
-                                                 scope_client_id, incluir_historico,
-                                                 incluir_ficticio)
+                    # Funde a perna lexical (RRF) sobre o POOL, depois reranqueia
+                    # e corta em `limite` (rerank off → devolve o RRF[:limite]).
+                    fundidos = await _fundir_lexical(db, consulta, resultados, _n_pool, categorias,
+                                                     scope_client_id, incluir_historico,
+                                                     incluir_ficticio)
+                    return await _reranker.rerank(consulta, fundidos, limite)
                 # Sem vetores gravados ainda → cai no textual abaixo
             except Exception as e:
                 logger.warning(f"Busca vetorial falhou, usando textual: {e}")
 
     # Tentativa 1: busca textual nos chunks (funciona sem embeddings)
     termos = [t for t in consulta.replace(",", " ").split() if len(t) >= 3][:8]
-    params: dict = {"lim": limite}
+    params: dict = {"lim": _n_pool}
     cond_termos = ""
     if termos:
         partes = []
@@ -348,7 +359,7 @@ async def buscar_contexto_rag(
     """)
     try:
         rows = await db.execute(sql, params)
-        return [
+        res_txt = [
             {
                 "chunk_id": r.id, "conteudo": r.conteudo,
                 "titulo": r.titulo, "categoria": r.categoria, "fonte": r.fonte,
@@ -356,6 +367,8 @@ async def buscar_contexto_rag(
             }
             for r in rows
         ]
+        # Reranqueia também o fallback textual (rerank off → res_txt[:limite]).
+        return await _reranker.rerank(consulta, res_txt, limite)
     except Exception as e:
         logger.warning(f"RAG search falhou: {e}")
         return []

@@ -340,6 +340,21 @@ class Settings(BaseSettings):
     EMBEDDINGS_API_URL: str = "http://embeddings:8010/embed"
     EMBEDDINGS_TIMEOUT: int = 120
 
+    # ── Reranking (cross-encoder) do RAG — Fase 1 auditoria IA 2026-07-17 ─
+    # Reordena os candidatos do retrieval híbrido (pgvector cosine + RRF pg_trgm)
+    # por relevância consulta↔trecho com um cross-encoder LOCAL (fastembed, sem
+    # torch; não sai do VPS). Recupera um POOL maior (RAG_RERANK_POOL_*) e devolve
+    # só os melhores após rerank — maior ganho de precisão de contexto do RAG.
+    # Fail-safe (ver reranker.py): fastembed/modelo ausente ou qualquer erro →
+    # mantém a ordem RRF, sem exceção. O modelo default é multilíngue; se a versão
+    # instalada do fastembed não o suportar, troque por um suportado (ex.:
+    # BAAI/bge-reranker-base, jinaai/jina-reranker-v2-base-multilingual) — a
+    # degradação é graciosa e o RAG segue funcionando.
+    RAG_RERANK_ENABLED: bool = True
+    RAG_RERANK_MODEL: str = "BAAI/bge-reranker-v2-m3"
+    RAG_RERANK_POOL_MULT: int = 5     # pool de candidatos = limite × MULT
+    RAG_RERANK_POOL_MIN: int = 20     # piso de candidatos antes do rerank
+
     # ── RAG de MODELOS na geração de peças (Bíblia de Conhecimento) ───────
     # Recupera os modelos de peça (categoria "modelo_documento_juridico") como
     # REFERÊNCIA de estrutura/tese na montagem final (Etapa 7). Gated e fail-safe:
