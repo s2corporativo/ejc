@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from "react";
-import { useNavigate } from "react-router-dom";
+import { useLocation, useNavigate } from "react-router-dom";
 import {
   X,
   Check,
@@ -95,6 +95,7 @@ export default function OnboardingTour() {
   const [view, setView] = useState<View | null>(null);
   const [feitas, setFeitas] = useState<string[]>([]);
   const navigate = useNavigate();
+  const location = useLocation();
   const panelRef = useRef<HTMLDivElement>(null);
 
   // Carrega progresso + estado do painel. Primeiro acesso abre após um
@@ -121,6 +122,16 @@ export default function OnboardingTour() {
   const minimizar = useCallback(() => setEstado("recolhido"), [setEstado]);
   const dispensar = useCallback(() => setEstado("dispensado"), [setEstado]);
   const abrir = useCallback(() => setEstado("aberto"), [setEstado]);
+
+  // Recolhe o painel ao trocar de rota — o card flutuante deixa de cobrir a
+  // coluna direita das telas seguintes; permanece só o launcher discreto.
+  useEffect(() => {
+    setView((atual) => {
+      if (atual !== "aberto") return atual;
+      localStorage.setItem(STATE_KEY, "recolhido");
+      return "recolhido";
+    });
+  }, [location.pathname]);
 
   // Marca/desmarca manualmente. Sem efeitos colaterais na base.
   const toggle = useCallback((id: string) => {
