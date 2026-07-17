@@ -6,7 +6,7 @@ description: >
 
 > Playbook de referência (montagem de pipeline). Diagnóstico de falha de CI: agente `ci-triage`. Consultado durante a tarefa — não roteia.
 
-# Arquiteto CI/CD — EJC e Sistema-S2
+# Arquiteto CI/CD — EJC
 
 ## Contexto
 
@@ -191,58 +191,10 @@ jobs:
 
 ---
 
-## 2. Pipeline Sistema-S2 (TypeScript)
+## 2. (Removido) Pipeline Sistema-S2
 
-```yaml
-# .github/workflows/sistema-s2.yml
-name: Sistema-S2 — CI/CD
-
-on:
-  push:
-    branches: [main, develop]
-  pull_request:
-    branches: [main]
-
-jobs:
-  test:
-    name: 🧪 Test TypeScript
-    runs-on: ubuntu-latest
-    services:
-      postgres:
-        image: postgres:15-alpine
-        env: {POSTGRES_USER: s2user, POSTGRES_PASSWORD: s2pass, POSTGRES_DB: s2_test}
-        ports: ["5432:5432"]
-        options: --health-cmd pg_isready --health-interval 5s --health-retries 10
-    steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
-        with: {node-version: "18", cache: "npm"}
-      - run: npm ci
-      - run: npm run typecheck  # tsc --noEmit
-      - run: npm run lint       # eslint
-      - run: npm test           # vitest ou jest
-        env:
-          DATABASE_URL: postgresql://s2user:s2pass@localhost:5432/s2_test
-
-  deploy:
-    name: 🚀 Deploy Sistema-S2
-    needs: test
-    if: github.ref == 'refs/heads/main'
-    runs-on: ubuntu-latest
-    steps:
-      - uses: appleboy/ssh-action@v1
-        with:
-          host: ${{ secrets.VPS_HOST }}
-          username: ${{ secrets.VPS_USER }}
-          key: ${{ secrets.VPS_SSH_KEY }}
-          script: |
-            cd /opt/sistema-s2
-            git pull origin main
-            npm ci --production
-            npx ts-node db/migrations/run_migrations.ts
-            pm2 restart sistema-s2
-            pm2 status
-```
+O exemplo de pipeline do **sistema-s2** foi removido: está fora do escopo deste
+repositório (EJC). Este playbook cobre apenas a CI/CD do EJC.
 
 ---
 
