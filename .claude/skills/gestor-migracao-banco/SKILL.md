@@ -1,8 +1,10 @@
 ---
 name: gestor-migracao-banco
 description: >
-  Gerencia migrações de banco de dados com Alembic (EJC/FastAPI) e scripts SQL versionados (sistema-s2/TypeScript). Use SEMPRE que precisar criar, executar, reverter ou auditar migrações de banco: criar nova migration Alembic, corrigir migration com erro, reverter schema, adicionar coluna sem perder dados, renomear tabela com segurança, migrar dados entre estruturas, gerar SQL de rollback. Cobre também: estratégias de migração segura em produção, backup antes de migrar, zero-downtime migrations, seed de dados iniciais. Acionado por: "criar migration", "alembic", "migração de banco", "adicionar coluna", "renomear tabela", "rollback migration", "banco divergente", "alembic upgrade", "alembic downgrade", "migration com erro", "schema mudou", "migrar dados", "seed banco", "banco produção migrar".
+  Playbook de referência de migrações Alembic do EJC/FastAPI (criar/reverter migration, adicionar coluna sem perda, renomear com segurança, zero-downtime, seed). Ponto de entrada canônico: agente `db-migrations` — este arquivo é o playbook que ele consulta, não um roteador concorrente. Consulte para: padrões de migração segura, downgrade funcional, evitar heads múltiplos, backup antes de migrar.
 ---
+
+> Playbook de referência. Ponto de entrada canônico: agente `db-migrations`. Consultado durante a tarefa — não roteia.
 
 # Gestor de Migrações de Banco — EJC (Alembic) + Sistema-S2 (SQL)
 

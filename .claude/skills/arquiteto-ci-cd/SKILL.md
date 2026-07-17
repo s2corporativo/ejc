@@ -1,8 +1,10 @@
 ---
 name: arquiteto-ci-cd
 description: >
-  Configura pipelines de CI/CD (Integração Contínua e Deploy Contínuo) para os sistemas EJC e sistema-s2 usando GitHub Actions. Use SEMPRE que precisar automatizar build, testes, e deploy: configurar pipeline GitHub Actions, automatizar deploy no VPS, integrar testes pytest/vitest no pipeline, notificar falhas no WhatsApp/email, configurar ambientes (dev/staging/produção), gerenciar secrets do GitHub. Diferença crítica: arquiteto-docker-deploy faz deploy manual; este skill AUTOMATIZA o processo via pipeline. Acionado por: "CI/CD", "GitHub Actions", "pipeline automático", "deploy automático", "automatizar deploy", "pipeline EJC", "pipeline sistema-s2", "testes automáticos no push", "workflow GitHub", "deploy na VPS automaticamente", "integração contínua".
+  Playbook de referência para MONTAR/evoluir pipelines de CI/CD do EJC no GitHub Actions (build/test/deploy, secrets, ambientes dev/staging/produção, deploy na VPS). Para DIAGNOSTICAR falha de CI o ponto de entrada canônico é o agente `ci-triage`; use este playbook ao construir ou alterar o pipeline. Não é roteador concorrente.
 ---
+
+> Playbook de referência (montagem de pipeline). Diagnóstico de falha de CI: agente `ci-triage`. Consultado durante a tarefa — não roteia.
 
 # Arquiteto CI/CD — EJC e Sistema-S2
 

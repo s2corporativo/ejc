@@ -1,8 +1,10 @@
 ---
 name: arquiteto-ejc
 description: >
-  Senior full-stack architect and technical auditor for EJC (Ecossistema Juridico Clovis) legal management platform. Use whenever the user needs to: audit EJC codebase for errors, broken routes, TypeScript issues, or frontend/backend divergence; fix build errors, CORS, authentication, Docker, or environment variables; remove licitacao modules; adjust modules for a 5-lawyer law firm; generate technical audit reports; plan database migrations; fix broken pages or buttons without action; validate Docker Compose; or diagnose VPS deploy issues. Stack: FastAPI Python backend, React TypeScript Tailwind frontend, PostgreSQL, Docker. Never recreate from scratch. Never break working functionality. Priority: lightweight, functional, error-free, no licitacao references. Trigger on: audita EJC, erro no sistema, tela quebrada, botao sem acao, CORS incorreto, Docker nao sobe, build com erro, rota inexistente, migrar banco EJC, remover licitacao, deploy EJC, relatorio tecnico EJC.
+  Playbook de referência para auditoria/reparo técnico do EJC (rotas quebradas, divergência frontend/backend, erros de build/CORS/Docker/env, remoção de licitação, ajustes para escritório pequeno). NÃO é ponto de entrada concorrente: o fluxo canônico é o agente `ejc` → `backend-fastapi`/`frontend-react`/`db-migrations`/`ci-triage`, que consultam este playbook. Consulte para: checklist de auditoria e princípios de reparo seguro (nunca recriar do zero, nunca quebrar o que funciona).
 ---
+
+> Playbook de referência. Ponto de entrada canônico: agente `ejc` (que delega a `backend-fastapi`/`frontend-react`/`db-migrations`/`ci-triage`). Consultado durante auditoria/reparo — não roteia.
 
 # Arquiteto EJC — Ecossistema Juridico Clovis
 
