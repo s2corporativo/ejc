@@ -97,9 +97,9 @@ mantenha em sincronia com os `OLLAMA_MODEL_*`). A porta 11434 **não** é
 publicada no host: só o backend alcança o Ollama pela rede interna.
 
 Verificação: `docker compose exec ollama ollama list` e, como admin,
-`POST /api/ai/gateway/health` (status de cada provedor). No deploy,
-`IA_LOCAL=1 ./scripts/atualizar-vps.sh` inclui a subida do profile (e ele
-re-sobe sozinho nas atualizações seguintes enquanto o container existir).
+`POST /api/ai/gateway/health` (status de cada provedor). Para subir o profile
+de IA local use `./scripts/subir-ia-local.sh` (ele re-sobe sozinho nas
+atualizações seguintes enquanto o container existir).
 
 A extração de PII de documentos roda **só em modelo local (Ollama)** por LGPD —
 se não houver Ollama, esse recurso específico falha fechado (o resto do sistema

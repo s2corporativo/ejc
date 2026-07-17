@@ -28,7 +28,7 @@ do repo, sem quebrar auth, ownership, auditoria ou o design system.
 
 **Onde:** módulo simples → `backend/app/routers/<modulo>.py`. Vertical coeso → pasta
 `backend/app/modules/<modulo>/` (`router.py`, `__init__.py`, `service.py`), como
-`app/modules/case_partes/`.
+`app/modules/indice_risco/`.
 
 1. **Model** (`app/models/<modulo>.py`): SQLAlchemy 2.0, herda `Base` de `app.core.database`;
    enums via `str, enum.Enum`; FKs para `cases`/`clients`/`users` quando aplicável.
