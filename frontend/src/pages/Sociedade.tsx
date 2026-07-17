@@ -14,7 +14,7 @@ import {
 } from "lucide-react";
 import api from "../lib/api";
 import ExtratoSocio from "../components/ExtratoSocio";
-import { Empty, PageHeader, Spinner } from "../components/UI";
+import { Empty, Spinner } from "../components/UI";
 import { asList } from "../lib/list";
 
 const fmtMoney = (v?: number | null) =>
@@ -250,18 +250,19 @@ export default function Sociedade() {
     );
 
   return (
-    <div className="p-6 max-w-6xl mx-auto space-y-6">
-      <PageHeader
-        title="Gestão Societária"
-        subtitle="Sócios, participação e distribuição de lucros"
-        actions={
-          <button onClick={load} className="btn-secondary p-2">
-            <RefreshCw
-              className={`w-4 h-4 text-slate-400 ${loading ? "animate-spin" : ""}`}
-            />
-          </button>
-        }
-      />
+    <div className="space-y-6">
+      {/* Cabeçalho fica no FinanceiroWorkspace; aqui apenas as ações da aba. */}
+      <div className="flex items-center justify-end">
+        <button
+          onClick={load}
+          className="btn-secondary p-2"
+          aria-label="Atualizar"
+        >
+          <RefreshCw
+            className={`w-4 h-4 text-slate-400 ${loading ? "animate-spin" : ""}`}
+          />
+        </button>
+      </div>
 
       <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
         <div className="card p-4 flex items-center gap-3">

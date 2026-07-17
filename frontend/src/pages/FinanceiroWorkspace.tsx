@@ -7,6 +7,7 @@ import {
   Building2,
   Repeat,
   Calculator,
+  Calendar,
 } from "lucide-react";
 import FinanceiroDashboard from "./FinanceiroDashboard";
 import Honorarios from "./Honorarios";
@@ -33,22 +34,56 @@ export type FinanceTab = (typeof TABS)[number]["k"];
 export const isFinanceTab = (value: string | null): value is FinanceTab =>
   TABS.some((tab) => tab.k === value);
 
+/** Competência no formato AAAA-MM (mesmo formato do <input type="month">). */
+export const isCompetencia = (value: string | null): value is string =>
+  !!value && /^\d{4}-(0[1-9]|1[0-2])$/.test(value);
+
+export function competenciaAtual(): string {
+  const now = new Date();
+  return `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}`;
+}
+
 export function nextFinanceParams(
   current: URLSearchParams,
   next: FinanceTab,
+  extra?: Record<string, string>,
 ): URLSearchParams {
   const params = new URLSearchParams(current);
   params.set("tab", next);
   if (next !== "societaria") params.delete("sub");
+  // Filtro de drill-down é específico da aba de destino: limpa ao trocar
+  // e só reaplica quando a navegação (ex.: clique num indicador) o define.
+  params.delete("status");
+  if (extra) {
+    for (const [k, v] of Object.entries(extra)) params.set(k, v);
+  }
   return params;
 }
+
+// Abas que reagem ao filtro de competência compartilhado (as demais ignoram).
+const TABS_COM_COMPETENCIA: ReadonlySet<FinanceTab> = new Set([
+  "visao",
+  "despesas",
+]);
 
 export default function FinanceiroWorkspace() {
   const [searchParams, setSearchParams] = useSearchParams();
   const raw = searchParams.get("tab");
   const tab: FinanceTab = isFinanceTab(raw) ? raw : "visao";
-  const setTab = (next: FinanceTab) =>
-    setSearchParams(nextFinanceParams(searchParams, next), { replace: true });
+  const rawComp = searchParams.get("comp");
+  const competencia = isCompetencia(rawComp) ? rawComp : competenciaAtual();
+
+  const setTab = (next: FinanceTab, extra?: Record<string, string>) =>
+    setSearchParams(nextFinanceParams(searchParams, next, extra), {
+      replace: true,
+    });
+
+  const setCompetencia = (value: string) => {
+    const params = new URLSearchParams(searchParams);
+    if (isCompetencia(value)) params.set("comp", value);
+    else params.delete("comp");
+    setSearchParams(params, { replace: true });
+  };
 
   return (
     <div className="executive-workspace space-y-5">
@@ -56,6 +91,25 @@ export default function FinanceiroWorkspace() {
         eyebrow="Gestão financeira"
         title="Financeiro"
         subtitle="Receitas, despesas, honorários, contratos e distribuição societária em uma visão operacional única."
+        actions={
+          <div
+            className="input flex w-auto items-center gap-2 py-1.5"
+            title={
+              TABS_COM_COMPETENCIA.has(tab)
+                ? "Competência aplicada a esta aba"
+                : "Competência (não se aplica a esta aba)"
+            }
+          >
+            <Calendar className="w-4 h-4 text-slate-400" />
+            <input
+              type="month"
+              aria-label="Competência"
+              className="text-sm text-slate-700 outline-none bg-transparent"
+              value={competencia}
+              onChange={(e) => setCompetencia(e.target.value)}
+            />
+          </div>
+        }
       />
       <div className="overflow-x-auto">
         <div className="flex w-fit gap-1 rounded-xl bg-slate-900/[0.05] p-1 dark:bg-white/[0.07]">
@@ -76,9 +130,16 @@ export default function FinanceiroWorkspace() {
       </div>
       <div className="min-w-0">
         <ErrorBoundary key={tab}>
-          {tab === "visao" && <FinanceiroDashboard />}
+          {tab === "visao" && (
+            <FinanceiroDashboard
+              competencia={competencia}
+              onDrillDown={(destino, status) =>
+                setTab(destino, status ? { status } : undefined)
+              }
+            />
+          )}
           {tab === "honorarios" && <Honorarios />}
-          {tab === "despesas" && <Despesas />}
+          {tab === "despesas" && <Despesas competencia={competencia} />}
           {tab === "recorrentes" && <DespesasRecorrentes />}
           {tab === "contratos" && <OfficeContracts />}
           {tab === "societaria" && <Sociedade />}
