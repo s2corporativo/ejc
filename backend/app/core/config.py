@@ -376,8 +376,9 @@ class Settings(BaseSettings):
     RAG_HYDE_ENABLED: bool = False
     # Perna lexical FULL-TEXT (tsvector 'portuguese', BM25-like) no híbrido RRF,
     # além do pg_trgm — melhor para termos raros/citações exatas (art./súmula/nº
-    # CNJ). Requer o índice GIN (migration 095) senão fica lento. Fail-safe:
-    # erro → só semântico+trigram. Default OFF até validar o índice em produção.
+    # CNJ). Usa o índice GIN pré-existente ix_knowledge_chunks_conteudo_fts
+    # (migration 001) — não requer migration nova. Fail-safe: erro → só
+    # semântico+trigram. Default OFF até validar em produção.
     RAG_FTS_ENABLED: bool = False
     # Grounding AO VIVO de citações (auditoria IA 2026-07-17, O-5): além do
     # citation_check contra a base interna, o validador de resposta confere as

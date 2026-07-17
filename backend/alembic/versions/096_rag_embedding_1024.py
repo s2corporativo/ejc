@@ -13,12 +13,12 @@ dimensão migrada; para reverter, use o downgrade (recria vector(768)) e reindex
 com o modelo antigo.
 
 Revision ID: 096_rag_embedding_1024
-Revises: 095_rag_fts_gin_index
+Revises: 094_case_area_taxonomia
 """
 from alembic import op
 
 revision = "096_rag_embedding_1024"
-down_revision = "095_rag_fts_gin_index"
+down_revision = "094_case_area_taxonomia"
 branch_labels = None
 depends_on = None
 

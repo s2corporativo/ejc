@@ -12,6 +12,8 @@ from uuid import uuid4
 import pytest
 from sqlalchemy import text
 
+from app.services.embedding_service import EMBED_DIM  # dim configurável (O-2): casa com a coluna
+
 pytestmark = pytest.mark.skipif(
     not os.getenv("RUN_DB_TESTS"),
     reason="requer Postgres+pgvector com migrations (defina RUN_DB_TESTS=1)",
@@ -31,7 +33,7 @@ async def _criar_doc(db, *, status="pendente", n_chunks_com_embedding=0, n_chunk
         "INSERT INTO knowledge_docs (id, titulo, categoria, status_indexacao) "
         "VALUES (:id, 'DOC_TESTE_RECONCILIA', 'legislacao', :s)"
     ), {"id": doc_id, "s": status})
-    vec = "[" + ",".join(["0.000000"] * 768) + "]"
+    vec = "[" + ",".join(["0.000000"] * EMBED_DIM) + "]"
     idx = 0
     for _ in range(n_chunks_com_embedding):
         await db.execute(text(
@@ -85,7 +87,7 @@ async def test_reembedar_conserta_doc_ja_marcado_indexado_com_chunk_orfao(monkey
     import scripts.reembedar_chunks_orfaos as reemb
 
     async def _vetores_ok(textos):
-        return [[0.0] * 768 for _ in textos]
+        return [[0.0] * EMBED_DIM for _ in textos]
 
     monkeypatch.setattr(reemb, "gerar_embeddings", _vetores_ok)
     monkeypatch.setattr(reemb, "emb_disponivel", lambda: True)

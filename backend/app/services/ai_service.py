@@ -218,7 +218,8 @@ async def _fundir_lexical(db, consulta, semanticos, limite, categorias, scope_cl
         return semanticos
     # A-3 (auditoria IA 2026-07-17): perna FULL-TEXT (tsvector 'portuguese',
     # BM25-like) — melhor para termos raros/citações exatas (art./súmula/nº CNJ).
-    # Aditiva ao RRF; OFF por default (requer o índice GIN da migration 095).
+    # Aditiva ao RRF; OFF por default. Usa o índice GIN pré-existente
+    # ix_knowledge_chunks_conteudo_fts (migration 001) — sem migration nova.
     # Falha isolada não afeta as pernas semântica/trigram.
     if getattr(settings, "RAG_FTS_ENABLED", False):
         try:
