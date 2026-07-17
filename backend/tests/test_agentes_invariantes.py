@@ -20,6 +20,9 @@ _AGENTES_NORMATIVOS = {
     "LaborLawAgent", "CriminalLawAgent", "FamilyLawAgent",
     "AdministrativeLawAgent", "SuccessionLawAgent", "RealEstateLawAgent",
     "ConstitutionalLawAgent", "SpecialCourtsAgent", "CivilLawAgent",
+    "TrafficLawAgent", "HealthLawAgent", "MedicalLawAgent", "AgrarianLawAgent",
+    "AgribusinessLawAgent", "ElectoralLawAgent", "InternationalLawAgent",
+    "ContractLawAgent",
     "RAGResearchAgent", "LegalWritingAgent", "JurimetryAgent",
 }
 
@@ -92,7 +95,9 @@ def test_prompt_key_das_novas_areas_carrega_barreira():
     for key in ("consumidor", "tributario", "previdenciario", "empresarial",
                 "trabalhista", "criminal", "familia",
                 "administrativo", "sucessoes", "imobiliario",
-                "constitucional", "juizados", "civel"):
+                "constitucional", "juizados", "civel",
+                "transito", "saude", "medico", "agrario",
+                "agronegocio", "eleitoral", "internacional", "contratual"):
         texto = SYSTEM_PROMPTS[key]
         assert "IDENTIDADE" in texto and "RASCUNHO" in texto.upper(), \
             f"prompt '{key}' sem barreira anti-alucinação/aviso de rascunho"
