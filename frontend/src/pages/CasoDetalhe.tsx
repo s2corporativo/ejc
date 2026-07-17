@@ -702,6 +702,24 @@ function TabResumo({ caso }: { caso: Case }) {
         >
           ⚔️ Sala de Guerra
         </button>
+        <button
+          onClick={() => navigate(`/casos/${caso.id}/jornada`)}
+          className="btn-secondary flex items-center gap-1"
+        >
+          🧭 Jornada do caso
+        </button>
+        <button
+          onClick={() => navigate(`/casos/${caso.id}/entrevista`)}
+          className="btn-secondary flex items-center gap-1"
+        >
+          🎤 Entrevista inteligente
+        </button>
+        <Link
+          to={`/pecas?caso=${caso.id}`}
+          className="btn-secondary flex items-center gap-1"
+        >
+          📝 Peças do caso
+        </Link>
         <ExtratoCaso caso={caso} />
         {(caso as any).case_type === "extrajudicial" &&
           !(caso as any).linked_judicial_case_id && (

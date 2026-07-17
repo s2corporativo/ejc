@@ -80,6 +80,38 @@ const PRIORITY_CHIP_TONE: Record<"red" | "amber" | "blue", string> = {
   blue: "bg-primary-50 text-primary-700 ring-primary-200 hover:bg-primary-100",
 };
 
+// Tons do destaque "Próxima ação recomendada" (wrap + selo + CTA + textos).
+const NEXT_ACTION_TONE: Record<
+  "red" | "amber",
+  {
+    wrap: string;
+    badge: string;
+    cta: string;
+    eyebrow: string;
+    title: string;
+    desc: string;
+  }
+> = {
+  red: {
+    wrap: "border-danger-200 bg-danger-50 dark:border-danger-500/25 dark:bg-danger-500/10",
+    badge:
+      "bg-danger-100 text-danger-700 ring-danger-200 dark:bg-danger-500/15 dark:text-danger-200 dark:ring-danger-500/30",
+    cta: "bg-danger-600 text-white hover:bg-danger-700",
+    eyebrow: "text-danger-700 dark:text-danger-300",
+    title: "text-danger-900 dark:text-danger-100",
+    desc: "text-danger-700 dark:text-danger-300/80",
+  },
+  amber: {
+    wrap: "border-warn-200 bg-warn-50 dark:border-warn-500/25 dark:bg-warn-500/10",
+    badge:
+      "bg-warn-100 text-warn-700 ring-warn-200 dark:bg-warn-500/15 dark:text-warn-200 dark:ring-warn-500/30",
+    cta: "bg-warn-600 text-white hover:bg-warn-700",
+    eyebrow: "text-warn-700 dark:text-warn-300",
+    title: "text-warn-900 dark:text-warn-100",
+    desc: "text-warn-700 dark:text-warn-300/80",
+  },
+};
+
 const AREA_TONES: Record<string, string> = {
   civil: "bg-primary-500",
   trabalhista: "bg-ai-500",
@@ -371,6 +403,68 @@ export default function DashboardModern() {
   ];
   const activePriorities = priorityItems.filter((item) => item.count > 0);
 
+  // "Próxima ação recomendada": UM único item, o mais urgente, derivado só de
+  // dados já carregados. Prioridade: prazo crítico/vencido → prazo de hoje →
+  // cliente aguardando resposta → nada (estado calmo). Sem fonte, retorna null.
+  type NextAction = {
+    tone: "red" | "amber";
+    icon: typeof AlertTriangle;
+    eyebrow: string;
+    title: string;
+    desc: string;
+    cta: string;
+    to: string;
+  };
+  const nextAction = useMemo<NextAction | null>(() => {
+    // 1) Prazo crítico/vencido (inclui "vence hoje"), o de menor folga.
+    const critical = [...prazos]
+      .filter((deadline) => (deadline.dias_restantes ?? 99) <= 3)
+      .sort(
+        (a, b) => (a.dias_restantes ?? 99) - (b.dias_restantes ?? 99),
+      )[0];
+    if (critical) {
+      const days = critical.dias_restantes ?? 0;
+      return {
+        tone: "red",
+        icon: AlertTriangle,
+        eyebrow:
+          days < 0
+            ? "Prazo vencido"
+            : days === 0
+              ? "Prazo vence hoje"
+              : `Prazo crítico · ${days} dia(s)`,
+        title: critical.titulo || "Prazo sem título",
+        desc: critical.case_title
+          ? `${critical.case_title} — vence ${fmtDate(critical.data_prazo)}. Confirme a ciência e registre a providência.`
+          : `Vence ${fmtDate(critical.data_prazo)}. Confirme a ciência e registre a providência.`,
+        cta: "Ver e confirmar",
+        to: "/prazos",
+      };
+    }
+    // 2) Cliente aguardando resposta (só quem enxerga o CRM).
+    if (canSeeCRM && Number(solicitacoes?.pendentes ?? 0) > 0) {
+      const pending = Number(solicitacoes?.pendentes ?? 0);
+      const late = Number(solicitacoes?.atrasadas ?? 0);
+      return {
+        tone: "amber",
+        icon: MessageSquare,
+        eyebrow: late > 0 ? `${late} atrasada(s)` : "Cliente aguardando",
+        title: `${pending} solicitação(ões) de cliente pendente(s)`,
+        desc:
+          late > 0
+            ? "Abra a linha do tempo prioritária, responda e registre o atendimento."
+            : "Responda e registre o atendimento na linha do tempo prioritária.",
+        cta: "Responder",
+        to: solicitacoes?.destaque?.client_id
+          ? `/clientes/${solicitacoes.destaque.client_id}?tab=atendimentos`
+          : "/atividades?tab=relacionamento",
+      };
+    }
+    // 3) Nada urgente → estado calmo (renderizado no JSX).
+    return null;
+  }, [prazos, canSeeCRM, solicitacoes]);
+  const NextActionIcon = nextAction?.icon;
+
   return (
     <div className="space-y-6">
       <PageHeader
@@ -479,52 +573,103 @@ export default function DashboardModern() {
           </span>
         </div>
 
-      {/* Faixa hero sépia→bronze com filete dourado no topo (sem borda) */}
-      <section className="relative overflow-hidden rounded-2xl bg-gradient-to-br from-[#211913] via-[#2E241A] to-[#5E4A0E] p-5 text-white shadow-lg before:absolute before:inset-x-0 before:top-0 before:h-0.5 before:bg-gradient-to-r before:from-ouro-claro before:via-ouro-claro/40 before:to-transparent dark:from-[#17110c] dark:via-[#241c14] dark:to-[#4a3a10] md:p-6">
-        <div className="flex flex-col gap-5 xl:flex-row xl:items-center xl:justify-between">
-          <div className="max-w-2xl">
-            <div className="mb-2 flex flex-wrap items-center gap-2">
-              {/* tone="ouro" (pill clara + texto ouro-profundo) — as classes
-                  extras bg-white/10 + text-primary-100 disputavam com o tone
-                  padrão slate e o badge ficava ilegível no fundo sépia. */}
-              <Badge tone="ouro">Operação segura</Badge>
-              <span className="inline-flex items-center gap-1.5 text-xs text-primary-100/80">
-                <ShieldCheck className="h-3.5 w-3.5" />
-                Auditoria e LGPD preservadas
+      {/* Próxima ação recomendada — UM item, o mais urgente, derivado dos
+          dados já carregados (prazo crítico/vencido → cliente aguardando).
+          Sem nada urgente, mostra o estado calmo com atalho para a agenda. */}
+      {!loading &&
+        (nextAction ? (
+          <Link
+            to={nextAction.to}
+            aria-label={`Próxima ação recomendada: ${nextAction.title}`}
+            className={cn(
+              "group flex flex-col gap-4 rounded-2xl border p-5 shadow-sm transition hover:-translate-y-0.5 hover:shadow-md sm:flex-row sm:items-center sm:justify-between",
+              NEXT_ACTION_TONE[nextAction.tone].wrap,
+            )}
+          >
+            <div className="flex items-start gap-4">
+              <span
+                className={cn(
+                  "shrink-0 rounded-2xl p-3 ring-1 ring-inset",
+                  NEXT_ACTION_TONE[nextAction.tone].badge,
+                )}
+              >
+                {NextActionIcon && <NextActionIcon className="h-6 w-6" />}
               </span>
-            </div>
-            {/* !text-white: o seletor global `.ejc-modern-scope h2` (index.css)
-                pinta headings de #111827 e vencia o utilitário text-white,
-                deixando o título ilegível sobre o gradiente sépia escuro. */}
-            <h2 className="text-xl font-semibold !text-white md:text-2xl">
-              Decida o que precisa de atenção agora
-            </h2>
-            <p className="mt-2 text-sm leading-6 text-primary-100/80">
-              O painel prioriza riscos, vencimentos e movimentações sem
-              substituir a validação profissional do advogado.
-            </p>
-          </div>
-          <div className="flex flex-wrap gap-2">
-            {quickActions.map(({ to, label, icon: Icon, primary }) => (
-              <Link key={label} to={to}>
-                <Button
-                  variant={primary ? "secondary" : "ghost"}
-                  icon={<Icon className="h-4 w-4" />}
-                  className={
-                    primary
-                      ? "bg-white text-ouro-profundo shadow-md hover:bg-ouro-palha dark:bg-white dark:text-ouro-profundo dark:hover:bg-ouro-palha"
-                      : "text-white hover:bg-white/10 dark:text-white dark:hover:bg-white/10"
-                  }
+              <div className="min-w-0">
+                <div className="flex flex-wrap items-center gap-2">
+                  <span
+                    className={cn(
+                      "text-[11px] font-semibold uppercase tracking-[0.16em]",
+                      NEXT_ACTION_TONE[nextAction.tone].eyebrow,
+                    )}
+                  >
+                    {nextAction.eyebrow}
+                  </span>
+                  <Badge tone="ouro">Próxima ação recomendada</Badge>
+                </div>
+                <h3
+                  className={cn(
+                    "mt-1 truncate text-lg font-semibold",
+                    NEXT_ACTION_TONE[nextAction.tone].title,
+                  )}
                 >
-                  {label}
-                </Button>
-              </Link>
-            ))}
-          </div>
-        </div>
-      </section>
+                  {nextAction.title}
+                </h3>
+                <p
+                  className={cn(
+                    "mt-1 text-sm leading-6",
+                    NEXT_ACTION_TONE[nextAction.tone].desc,
+                  )}
+                >
+                  {nextAction.desc}
+                </p>
+              </div>
+            </div>
+            <span
+              className={cn(
+                "inline-flex shrink-0 items-center justify-center gap-2 rounded-xl px-4 py-2 text-sm font-semibold shadow-sm transition",
+                NEXT_ACTION_TONE[nextAction.tone].cta,
+              )}
+            >
+              {nextAction.cta}
+              <ArrowRight className="h-4 w-4 transition group-hover:translate-x-1" />
+            </span>
+          </Link>
+        ) : (
+          <Link
+            to="/atividades"
+            aria-label="Nada urgente para agora — ver agenda"
+            className="group flex items-center justify-between gap-4 rounded-2xl border border-success-100 bg-success-50 p-5 shadow-sm transition hover:-translate-y-0.5 hover:shadow-md dark:border-success-500/20 dark:bg-success-500/10"
+          >
+            <div className="flex items-center gap-4">
+              <span className="shrink-0 rounded-2xl bg-success-100 p-3 text-success-700 ring-1 ring-inset ring-success-200 dark:bg-success-500/15 dark:text-success-300">
+                <CheckCircle2 className="h-6 w-6" />
+              </span>
+              <div className="min-w-0">
+                <div className="flex flex-wrap items-center gap-2">
+                  <span className="text-[11px] font-semibold uppercase tracking-[0.16em] text-success-700 dark:text-success-300">
+                    Tudo sob controle
+                  </span>
+                  <Badge tone="ouro">Próxima ação recomendada</Badge>
+                </div>
+                <h3 className="mt-1 text-lg font-semibold text-success-800 dark:text-success-200">
+                  Nada urgente para agora
+                </h3>
+                <p className="mt-1 text-sm leading-6 text-success-700 dark:text-success-300/80">
+                  Nenhum prazo crítico ou cliente aguardando. Aproveite para
+                  revisar a agenda com calma.
+                </p>
+              </div>
+            </div>
+            <span className="inline-flex shrink-0 items-center gap-2 text-sm font-semibold text-success-700 dark:text-success-300">
+              Ver agenda
+              <ArrowRight className="h-4 w-4 transition group-hover:translate-x-1" />
+            </span>
+          </Link>
+        ))}
 
-      {/* Faixa "Prioridades de hoje" — o que exige atenção agora, com atalho. */}
+      {/* Faixa "Prioridades de hoje" — o que exige atenção agora, com atalho.
+          Vem ANTES do painel de ações: "o que preciso resolver?" primeiro. */}
       <section
         aria-label="Prioridades de hoje"
         className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm dark:border-white/10 dark:bg-white/[0.03]"
@@ -570,12 +715,60 @@ export default function DashboardModern() {
         </div>
       </section>
 
+      {/* Painel de AÇÕES — vem DEPOIS das prioridades: resolvido o urgente,
+          "o que quero iniciar?". Mantém as 4 ações principais do Command
+          Center (documento IA · manual · Raio-X · atendimento). */}
+      <section className="relative overflow-hidden rounded-2xl border border-slate-200 bg-white p-5 shadow-sm before:absolute before:inset-x-0 before:top-0 before:h-0.5 before:bg-gradient-to-r before:from-ouro-claro before:via-ouro-claro/40 before:to-transparent dark:border-white/10 dark:bg-white/[0.03] md:p-6">
+        <div className="flex flex-col gap-5 xl:flex-row xl:items-center xl:justify-between">
+          <div className="max-w-2xl">
+            <div className="mb-2 flex flex-wrap items-center gap-2">
+              {/* tone="ouro" (pill clara + texto ouro-profundo) — as classes
+                  extras bg-white/10 + text-primary-100 disputavam com o tone
+                  padrão slate e o badge ficava ilegível no fundo sépia. */}
+              <Badge tone="ouro">Operação segura</Badge>
+              <span className="inline-flex items-center gap-1.5 text-xs text-slate-500">
+                <ShieldCheck className="h-3.5 w-3.5" />
+                Auditoria e LGPD preservadas
+              </span>
+            </div>
+            {/* !text-white: o seletor global `.ejc-modern-scope h2` (index.css)
+                pinta headings de #111827 e vencia o utilitário text-white,
+                deixando o título ilegível sobre o gradiente sépia escuro. */}
+            <h2 className="text-xl font-semibold text-slate-900 md:text-2xl dark:!text-slate-100">
+              Inicie uma nova frente de trabalho
+            </h2>
+            <p className="mt-2 text-sm leading-6 text-slate-500">
+              Resolvidas as prioridades acima, escolha a ação principal. Tudo
+              com trilha de auditoria e sem substituir a validação profissional
+              do advogado.
+            </p>
+          </div>
+          <div className="flex flex-wrap gap-2">
+            {quickActions.map(({ to, label, icon: Icon, primary }) => (
+              <Link key={label} to={to}>
+                <Button
+                  variant={primary ? "primary" : "ghost"}
+                  icon={<Icon className="h-4 w-4" />}
+                  className={
+                    primary
+                      ? "shadow-sm"
+                      : "text-slate-700 hover:bg-slate-100 dark:text-slate-200 dark:hover:bg-white/10"
+                  }
+                >
+                  {label}
+                </Button>
+              </Link>
+            ))}
+          </div>
+        </div>
+      </section>
+
       <Link
         to="/raio-x"
-        className="group flex flex-col gap-4 rounded-2xl bg-gradient-to-r from-primary-950 via-primary-900 to-ai-900 p-5 text-white shadow-lg transition hover:-translate-y-0.5 hover:shadow-xl sm:flex-row sm:items-center sm:justify-between"
+        className="group flex flex-col gap-4 rounded-2xl border border-slate-200 bg-white p-5 shadow-sm transition hover:-translate-y-0.5 hover:shadow-md sm:flex-row sm:items-center sm:justify-between dark:border-white/10 dark:bg-white/[0.03]"
       >
         <div className="flex items-start gap-4">
-          <span className="rounded-2xl bg-white/10 p-3 ring-1 ring-inset ring-white/15">
+          <span className="rounded-2xl bg-ouro/10 p-3 text-ouro-profundo ring-1 ring-inset ring-ouro/20 dark:text-ouro-claro">
             <ScanSearch className="h-6 w-6" />
           </span>
           <div>
@@ -585,14 +778,14 @@ export default function DashboardModern() {
               </h2>
               <Badge tone="blue">Raio-X preliminar</Badge>
             </div>
-            <p className="mt-1 max-w-3xl text-sm leading-6 text-primary-100/80">
+            <p className="mt-1 max-w-3xl text-sm leading-6 text-slate-500">
               Envie documentos externos, confira o diagnóstico e só transforme
               em caso após a decisão humana. A análise não altera a carteira nem
               os indicadores oficiais.
             </p>
           </div>
         </div>
-        <span className="inline-flex shrink-0 items-center gap-2 text-sm font-semibold text-ouro-claro">
+        <span className="inline-flex shrink-0 items-center gap-2 text-sm font-semibold text-ouro-profundo dark:text-ouro-claro">
           Abrir Raio-X
           <ArrowRight className="h-4 w-4 transition group-hover:translate-x-1" />
         </span>
@@ -691,7 +884,7 @@ export default function DashboardModern() {
                     : "/clientes"
                 }
                 className={cn(
-                  "block rounded-xl border p-4",
+                  "group block rounded-xl border p-4",
                   solicitacoes?.atrasadas
                     ? "border-danger-100 bg-danger-50 dark:border-danger-500/20 dark:bg-danger-500/10"
                     : "border-primary-100 bg-primary-50 dark:border-primary-500/20 dark:bg-primary-500/10",
@@ -730,13 +923,24 @@ export default function DashboardModern() {
                         ? `${solicitacoes.atrasadas} atrasada(s); abra a linha do tempo prioritária.`
                         : "Acompanhe prazo, responsável e confirmação de atendimento."}
                     </p>
+                    <span
+                      className={cn(
+                        "mt-2 inline-flex items-center gap-1 text-xs font-semibold",
+                        solicitacoes?.atrasadas
+                          ? "text-danger-700 dark:text-danger-300"
+                          : "text-primary-700 dark:text-primary-300",
+                      )}
+                    >
+                      Ver e responder
+                      <ArrowRight className="h-3.5 w-3.5 transition group-hover:translate-x-0.5" />
+                    </span>
                   </div>
                 </div>
               </Link>
             )}
             <Link
               to="/prazos"
-              className="block rounded-xl border border-danger-100 bg-danger-50 p-4 dark:border-danger-500/20 dark:bg-danger-500/10"
+              className="group block rounded-xl border border-danger-100 bg-danger-50 p-4 dark:border-danger-500/20 dark:bg-danger-500/10"
             >
               <div className="flex items-start gap-3">
                 <AlertTriangle className="mt-0.5 h-4 w-4 text-danger-600 dark:text-danger-300" />
@@ -748,12 +952,16 @@ export default function DashboardModern() {
                     Priorize vencimentos em até três dias e registre a
                     providência adotada.
                   </p>
+                  <span className="mt-2 inline-flex items-center gap-1 text-xs font-semibold text-danger-700 dark:text-danger-300">
+                    Ver e confirmar
+                    <ArrowRight className="h-3.5 w-3.5 transition group-hover:translate-x-0.5" />
+                  </span>
                 </div>
               </div>
             </Link>
             <Link
               to="/inteligencia"
-              className="block rounded-xl border border-ai-100 bg-ai-50 p-4 dark:border-ai-500/20 dark:bg-ai-500/10"
+              className="group block rounded-xl border border-ai-100 bg-ai-50 p-4 dark:border-ai-500/20 dark:bg-ai-500/10"
             >
               <div className="flex items-start gap-3">
                 <Bot className="mt-0.5 h-4 w-4 text-ai-700 dark:text-ai-300" />
@@ -765,6 +973,10 @@ export default function DashboardModern() {
                     Rascunhos e análises exigem conferência das fontes e revisão
                     humana antes do uso.
                   </p>
+                  <span className="mt-2 inline-flex items-center gap-1 text-xs font-semibold text-ai-800 dark:text-ai-300">
+                    Abrir IA jurídica
+                    <ArrowRight className="h-3.5 w-3.5 transition group-hover:translate-x-0.5" />
+                  </span>
                 </div>
               </div>
             </Link>
