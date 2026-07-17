@@ -9,6 +9,7 @@ import {
   Briefcase,
   CalendarClock,
   CheckSquare,
+  ClipboardPen,
   FileSignature,
   FileText,
   Filter,
@@ -87,6 +88,7 @@ export type LegacyRedirect = {
 
 const Dashboard = lazy(() => import("../pages/Dashboard"));
 const Clientes = lazy(() => import("../pages/Clientes"));
+const CadastroManual = lazy(() => import("../pages/CadastroManual"));
 const DossieCliente = lazy(() => import("../pages/DossieCliente"));
 const Casos = lazy(() => import("../pages/Casos"));
 const CasoDetalhe = lazy(() => import("../pages/CasoDetalhe"));
@@ -222,6 +224,29 @@ export const STAFF_ROUTES: ModuleRoute[] = [
     helpKey: "clientes",
     sensitive: true,
     backendPrefixes: ["/api/clients", "/api/clients/{client_id}/dossie"],
+  },
+  {
+    key: "cadastro-manual",
+    path: "/cadastro-manual",
+    label: "Cadastro Manual",
+    description:
+      "Cadastro de clientes e abertura de casos sem IA, com fila offline.",
+    group: "Gerir o escritório",
+    icon: ClipboardPen,
+    component: CadastroManual,
+    // Mesma matriz do backend /clients (_CLIENTES) — subconjunto seguro dos
+    // papéis aceitos por POST /cases (secretaria/advogado/socio/admin).
+    roles: ROLES.clientes,
+    // Fora do menu para respeitar o guard "menu enxuto ≤17 destinos"
+    // (moduleRegistry.test.ts): rota ativa via URL /cadastro-manual e
+    // Paleta de Comandos, no padrão das demais rotas podadas.
+    showInNav: false,
+    essential: false,
+    order: 15,
+    helpKey: "clientes",
+    sensitive: true,
+    usesAI: false,
+    backendPrefixes: ["/api/clients", "/api/cases"],
   },
   {
     key: "cliente-detalhe",
