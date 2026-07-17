@@ -114,6 +114,34 @@ class Settings(BaseSettings):
     # Qualquer max_tokens acima disto é rebaixado no provider.
     ANTHROPIC_MAX_TOKENS: int = 8000
 
+    # ── IA — Maritaca AI (Sabiá) — LLM BRASILEIRA (soberania de dados) ────
+    # Maritaca é empresa BRASILEIRA: o modelo Sabiá é treinado em português e
+    # corpora jurídicos brasileiros. Do ponto de vista LGPD é um provedor
+    # EXTERNO ao VPS (o conteúdo sai daqui e passa pela mesma barreira de
+    # sanitização/pseudonimização de PII que Anthropic/Groq — ver
+    # ai_gateway._PROVIDERS_EXTERNOS), MAS é PROCESSAMENTO NACIONAL: não há
+    # transferência internacional de dados (art. 33 LGPD), diferentemente de
+    # Anthropic/Groq (EUA). Por isso é a opção externa PREFERENCIAL para dados
+    # jurídicos sensíveis. API compatível com OpenAI. Vazio = indisponível e o
+    # gateway faz fallback para o próximo da cadeia.
+    MARITACA_API_KEY: str = ""
+    # Liga/desliga o provider sem remover a chave do .env.
+    MARITACA_ENABLED: bool = True
+    # Endpoint OpenAI-compatible (chat/completions é anexado no provider).
+    MARITACA_BASE_URL: str = "https://chat.maritaca.ai/api"
+    # Modelos (recomendados 2026): sabia-4 (qualidade) / sabiazinho-4 (rápido).
+    MARITACA_MODEL_COMPLEXO: str = "sabia-4"
+    MARITACA_MODEL_RAPIDO: str = "sabiazinho-4"
+    # Timeout do client Maritaca (segundos) — tarefas complexas podem demorar.
+    MARITACA_TIMEOUT: int = 120
+    # Teto DURO de tokens de saída por chamada (controle de custo).
+    MARITACA_MAX_TOKENS: int = 8000
+    # Custo estimado (R$ por 1.000.000 de tokens). Maritaca fatura em BRL nativo
+    # (sem conversão USD). Defaults = preços públicos de sabia-4; ajuste via .env
+    # conforme a fatura e o modelo configurado (sabiazinho-4 ≈ R$1/R$4).
+    MARITACA_PRECO_INPUT_BRL_POR_MILHAO:  float = 5.00
+    MARITACA_PRECO_OUTPUT_BRL_POR_MILHAO: float = 10.00
+
     # ── IA — Núcleo Único (policy central de provedores) ──────────────────
     # False = só Ollama local (soberania total): nenhum dado sai do VPS,
     # mesmo sanitizado. Anthropic/Groq ficam inelegíveis na cadeia.
@@ -146,7 +174,10 @@ class Settings(BaseSettings):
     DUAS_IAS_TASK_TYPES: str = "elaboracao_peca,auditoria_peca"
     # Ordem de preferência entre provedores ELEGÍVEIS (csv). A policy ainda
     # filtra por habilitação/chave e prioriza Anthropic em tarefas complexas.
-    AI_PROVIDER_PRIORITY: str = "ollama,anthropic,groq"
+    # "maritaca" (BR, sem transferência internacional) fica à frente do "groq"
+    # (EUA) como opção externa; só entra na cadeia quando MARITACA_API_KEY está
+    # configurada e MARITACA_ENABLED=true (dormant por padrão).
+    AI_PROVIDER_PRIORITY: str = "ollama,anthropic,maritaca,groq"
     # ── Níveis de sanitização de PII por tipo de tarefa (LGPD art. 33/46) ─────
     # JSON OPCIONAL (string) mapeando task_type → modo de sanitização, que
     # SOBREPÕE o default de app/services/ai/sanitization_policy.py. Modos:
@@ -468,10 +499,11 @@ class Settings(BaseSettings):
     OLLAMA_TIMEOUT: int = 180                         # modelos locais = mais lentos
 
     # ── AI Provider — seleção automática ──────────────────────────────────
-    # "auto"      = Ollama (se habilitado) → Anthropic (se houver chave) → Groq
+    # "auto"      = cadeia por AI_PROVIDER_PRIORITY, filtrada por elegibilidade
     # "groq"      = força Groq (nuvem, grátis)
     # "ollama"    = força Ollama (local) — falha se indisponível
     # "anthropic" = força Claude — sem chave, cai na cadeia automática
+    # "maritaca"  = força Maritaca (BR) — sem chave, cai na cadeia automática
     AI_PROVIDER: str = "auto"
 
     # ── Parâmetros jurídicos atualizáveis por decreto (via .env) ──────────

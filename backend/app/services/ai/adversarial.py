@@ -65,7 +65,7 @@ def neutralizar_marcador_ailog(texto: str | None) -> str | None:
         return texto
     return texto.replace(MARCADOR_AILOG, _MARCADOR_NEUTRALIZADO)
 
-_PROVIDERS_CONHECIDOS = ("ollama", "anthropic", "groq")
+_PROVIDERS_CONHECIDOS = ("ollama", "anthropic", "maritaca", "groq")
 
 SYSTEM_CRITICA = """
 Você é a IA CRÍTICA/ADVERSARIAL do escritório De Paula Teixeira Advogados.

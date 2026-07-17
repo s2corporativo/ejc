@@ -123,11 +123,13 @@ def _provider_do_tier(tier: str) -> str:
 
 
 def _model_do_provider(provider: str, tier: str) -> str | None:
-    """Modelo sugerido. Só Anthropic diferencia por tier (RAPIDO vs COMPLEXO);
-    ollama/groq resolvem o modelo default por tarefa no próprio gateway."""
+    """Modelo sugerido. Anthropic e Maritaca diferenciam por tier (RAPIDO vs
+    COMPLEXO); ollama/groq resolvem o modelo default por tarefa no gateway."""
     s = get_settings()
     if provider == "anthropic":
         return s.ANTHROPIC_MODEL_COMPLEXO if tier == "pesado" else s.ANTHROPIC_MODEL_RAPIDO
+    if provider == "maritaca":
+        return s.MARITACA_MODEL_COMPLEXO if tier == "pesado" else s.MARITACA_MODEL_RAPIDO
     return None
 
 

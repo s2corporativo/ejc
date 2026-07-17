@@ -91,17 +91,19 @@ def _aplicar_nivel(messages: list[dict], nivel_inteligencia: str | None) -> list
 # → Groq (grátis, último recurso). Tarefas simples (resumo/chat) pulam o
 # Anthropic — Groq grátis basta e mantém o custo baixo.
 TASK_ROUTING: dict[str, list[tuple[str, str | None]]] = {
-    # Tarefas COMPLEXAS incluem "anthropic" na cadeia (Núcleo Único): entra na
-    # ordem de AI_PROVIDER_PRIORITY quando elegível (chave + ENABLED +
-    # AI_EXTERNAL_PROVIDERS_ALLOWED) — ver _resolver_cadeia.
+    # Tarefas COMPLEXAS incluem "anthropic" e "maritaca" (BR) na cadeia (Núcleo
+    # Único): cada um entra na ordem de AI_PROVIDER_PRIORITY quando elegível
+    # (chave + ENABLED + AI_EXTERNAL_PROVIDERS_ALLOWED) — ver _resolver_cadeia.
     "analise_juridica": [
         ("ollama",    None),  # resolvido em runtime para OLLAMA_MODEL_ANALISE
         ("anthropic", None),  # ANTHROPIC_MODEL_COMPLEXO
+        ("maritaca",  None),  # MARITACA_MODEL_COMPLEXO (BR, jurídico pt-br)
         ("groq",      None),
     ],
     "elaboracao_peca": [
         ("ollama",    None),  # OLLAMA_MODEL_PETICAO
         ("anthropic", None),  # ANTHROPIC_MODEL_COMPLEXO
+        ("maritaca",  None),  # MARITACA_MODEL_COMPLEXO
         ("groq",      None),
     ],
     "resumo": [
@@ -115,36 +117,44 @@ TASK_ROUTING: dict[str, list[tuple[str, str | None]]] = {
     "analise_contrato": [
         ("ollama",    None),  # OLLAMA_MODEL_CONTRATO
         ("anthropic", None),
+        ("maritaca",  None),
         ("groq",      None),
     ],
     "estrategia": [
         ("ollama",    None),  # OLLAMA_MODEL_ANALISE (raciocínio profundo)
         ("anthropic", None),
+        ("maritaca",  None),
         ("groq",      None),
     ],
     "auditoria_peca": [
         ("ollama",    None),  # OLLAMA_MODEL_PETICAO
         ("anthropic", None),
+        ("maritaca",  None),
         ("groq",      None),
     ],
     "jurimetria": [
         ("ollama",    None),  # OLLAMA_MODEL_ANALISE
         ("anthropic", None),
+        ("maritaca",  None),
         ("groq",      None),
     ],
     # Fase 5 — Modo Duas IAs: crítica adversarial de peça (leitura como
     # advogado da parte contrária/magistrado). Tarefa COMPLEXA: inclui
-    # Anthropic. O chamador (services/ai/adversarial.py) ainda prefere
-    # provider DIFERENTE do que gerou a peça via provider_override.
+    # Anthropic e Maritaca. O chamador (services/ai/adversarial.py) ainda
+    # prefere provider DIFERENTE do que gerou a peça via provider_override.
     "critica_adversarial": [
         ("ollama",    None),  # OLLAMA_MODEL_ANALISE (raciocínio crítico)
         ("anthropic", None),
+        ("maritaca",  None),
         ("groq",      None),
     ],
 }
 
 # Provedores que processam dados FORA do VPS → barreira LGPD obrigatória.
-_PROVIDERS_EXTERNOS = {"anthropic", "groq"}
+# Maritaca é externo ao VPS (passa pela sanitização), porém é processamento
+# NACIONAL (sem transferência internacional, art. 33 LGPD) — diferente de
+# Anthropic/Groq (EUA). A barreira de PII vale para todos igualmente.
+_PROVIDERS_EXTERNOS = {"anthropic", "groq", "maritaca"}
 
 _OLLAMA_MODEL_BY_TASK = {
     "analise_juridica": lambda: settings.OLLAMA_MODEL_ANALISE,
@@ -169,6 +179,21 @@ _ANTHROPIC_MODEL_BY_TASK = {
     "auditoria_peca":   lambda: settings.ANTHROPIC_MODEL_COMPLEXO,
     "jurimetria":       lambda: settings.ANTHROPIC_MODEL_COMPLEXO,
     "critica_adversarial": lambda: settings.ANTHROPIC_MODEL_COMPLEXO,
+}
+
+# Modelo Maritaca por tarefa: complexas → sabia-4 (COMPLEXO); leves → sabiazinho-4
+# (RAPIDO). Só participa das tarefas complexas no TASK_ROUTING, mas o mapa cobre
+# as leves para o caso de o roteamento inteligente propor Maritaca num tier leve.
+_MARITACA_MODEL_BY_TASK = {
+    "analise_juridica": lambda: settings.MARITACA_MODEL_COMPLEXO,
+    "elaboracao_peca":  lambda: settings.MARITACA_MODEL_COMPLEXO,
+    "resumo":           lambda: settings.MARITACA_MODEL_RAPIDO,
+    "chat_rapido":      lambda: settings.MARITACA_MODEL_RAPIDO,
+    "analise_contrato": lambda: settings.MARITACA_MODEL_COMPLEXO,
+    "estrategia":       lambda: settings.MARITACA_MODEL_COMPLEXO,
+    "auditoria_peca":   lambda: settings.MARITACA_MODEL_COMPLEXO,
+    "jurimetria":       lambda: settings.MARITACA_MODEL_COMPLEXO,
+    "critica_adversarial": lambda: settings.MARITACA_MODEL_COMPLEXO,
 }
 
 
@@ -547,16 +572,20 @@ async def transcrever_audio(
 
 async def health() -> dict:
     """Retorna status de saúde de cada provedor."""
-    from app.services.providers import groq_provider, ollama_provider, anthropic_provider
+    from app.services.providers import (
+        groq_provider, ollama_provider, anthropic_provider, maritaca_provider,
+    )
     groq_ok   = await groq_provider.health()   if settings.GROQ_API_KEY else False
     ollama_ok = await ollama_provider.health() if settings.OLLAMA_ENABLED else False
     anthropic_ok = await anthropic_provider.health()
+    maritaca_ok = await maritaca_provider.health()
     modelos_ollama = await ollama_provider.modelos_disponiveis() if settings.OLLAMA_ENABLED else []
 
     return {
         "groq":      {"disponivel": groq_ok, "modelo": settings.GROQ_MODEL},
         "ollama":    {"disponivel": ollama_ok, "modelos": modelos_ollama},
         "anthropic": {"disponivel": anthropic_ok, "modelo": settings.ANTHROPIC_MODEL_RAPIDO},
+        "maritaca":  {"disponivel": maritaca_ok, "modelo": settings.MARITACA_MODEL_COMPLEXO},
         "provider_mode": settings.AI_PROVIDER,
     }
 
@@ -570,6 +599,11 @@ def _provider_elegivel(provider: str) -> bool:
     if provider == "anthropic":
         return bool(
             settings.ANTHROPIC_ENABLED and settings.ANTHROPIC_API_KEY
+            and settings.AI_EXTERNAL_PROVIDERS_ALLOWED
+        )
+    if provider == "maritaca":
+        return bool(
+            settings.MARITACA_ENABLED and settings.MARITACA_API_KEY
             and settings.AI_EXTERNAL_PROVIDERS_ALLOWED
         )
     if provider == "groq":
@@ -597,6 +631,10 @@ def _resolver_modelo(provider: str, task_type: str, model_override: str | None) 
     if provider == "anthropic":
         # Tarefas roteadas para Anthropic aqui são as complexas → modelo COMPLEXO.
         return settings.ANTHROPIC_MODEL_COMPLEXO or settings.ANTHROPIC_MODEL_RAPIDO
+    if provider == "maritaca":
+        return _MARITACA_MODEL_BY_TASK.get(
+            task_type, lambda: settings.MARITACA_MODEL_COMPLEXO
+        )() or settings.MARITACA_MODEL_RAPIDO
     return None  # groq: default do provedor
 
 
@@ -614,7 +652,7 @@ def _resolver_cadeia(
     provedor de PARTIDA: se elegível, vai à frente da cadeia; o resto do fallback
     é preservado. Inelegível → ignorado (cadeia normal). NUNCA sobrepõe um
     provider_force explícito nem a barreira de elegibilidade/PII."""
-    if provider_force in ("groq", "ollama", "anthropic"):
+    if provider_force in ("groq", "ollama", "anthropic", "maritaca"):
         if _provider_elegivel(provider_force):
             return [(provider_force, _resolver_modelo(provider_force, task_type, model_override))]
         # Provider forçado inelegível (sem chave/desabilitado/policy): não
@@ -632,7 +670,7 @@ def _resolver_cadeia(
     # Roteamento inteligente: promove o provider proposto à frente SE elegível e
     # SE participa da cadeia da tarefa (não inventa provedor fora do TASK_ROUTING).
     if (
-        provider_preferido in ("groq", "ollama", "anthropic")
+        provider_preferido in ("groq", "ollama", "anthropic", "maritaca")
         and provider_preferido in candidatos
         and _provider_elegivel(provider_preferido)
     ):
@@ -753,6 +791,9 @@ async def _chamar_provedor(
     elif provider == "anthropic":
         from app.services.providers import anthropic_provider
         return await anthropic_provider.chat(messages, model, temperature, max_tokens)
+    elif provider == "maritaca":
+        from app.services.providers import maritaca_provider
+        return await maritaca_provider.chat(messages, model, temperature, max_tokens)
     else:  # groq
         from app.services.providers import groq_provider
         return await groq_provider.chat(messages, model, temperature, max_tokens)

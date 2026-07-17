@@ -16,7 +16,9 @@ from app.core.config import get_settings
 from app.services.sanitizer import sanitizar_pii, validar_sem_pii
 
 # Provedores que processam dados FORA do VPS (LGPD: exigem sanitização).
-PROVIDERS_EXTERNOS = {"anthropic", "groq"}
+# Maritaca (BR) é externo ao VPS mas processa em território nacional (sem
+# transferência internacional, art. 33 LGPD) — a sanitização de PII vale igual.
+PROVIDERS_EXTERNOS = {"anthropic", "groq", "maritaca"}
 
 # Tarefas complexas (raciocínio jurídico profundo) → priorizam Anthropic
 # quando elegível. Aceita tanto nomes de TarefaIA quanto task_types do gateway.
@@ -53,6 +55,11 @@ class AIProviderPolicy:
                 s.ANTHROPIC_ENABLED and s.ANTHROPIC_API_KEY
                 and s.AI_EXTERNAL_PROVIDERS_ALLOWED
             )
+        if provider == "maritaca":
+            return bool(
+                s.MARITACA_ENABLED and s.MARITACA_API_KEY
+                and s.AI_EXTERNAL_PROVIDERS_ALLOWED
+            )
         if provider == "groq":
             return bool(s.GROQ_API_KEY and s.AI_EXTERNAL_PROVIDERS_ALLOWED)
         return False
@@ -65,7 +72,7 @@ class AIProviderPolicy:
             p = p.strip().lower()
             if p and p not in vistos:
                 vistos.append(p)
-        return vistos or ["ollama", "anthropic", "groq"]
+        return vistos or ["ollama", "anthropic", "maritaca", "groq"]
 
     def avaliar(
         self,
