@@ -24,12 +24,28 @@ import { useAuth } from "../stores/auth";
 
 const GESTORES: readonly string[] = ["superadmin", "admin", "socio"];
 
+// Abas organizadas por TAREFA do usuário (não por agente técnico).
+// As abas de gestão (Curadoria RAG e Saúde da IA) só aparecem para GESTORES.
 const TABS = [
-  { k: "agente", label: "Agente Pro", icon: Cpu },
-  { k: "assistente", label: "Assistente", icon: Bot },
-  { k: "ia", label: "Análise e Validação", icon: Sparkles },
-  { k: "ferramentas", label: "Ferramentas", icon: Wrench },
-  { k: "conteudo", label: "FAQ & Glossário", icon: Library },
+  {
+    k: "assistente",
+    label: "Assistente Jurídico",
+    icon: Bot,
+    subs: [
+      { k: "agente", label: "Agente Pro", icon: Cpu },
+      { k: "rapido", label: "Assistente rápido", icon: Bot },
+    ],
+  },
+  {
+    k: "producao",
+    label: "Analisar e Produzir",
+    icon: Sparkles,
+    subs: [
+      { k: "analise", label: "Análise e Validação", icon: Sparkles },
+      { k: "ferramentas", label: "Ferramentas", icon: Wrench },
+    ],
+  },
+  { k: "pesquisa", label: "Pesquisa e Validação", icon: Library },
   { k: "jurimetria", label: "Jurimetria", icon: Scale },
   {
     k: "conhecimento",
@@ -47,6 +63,15 @@ const TABS = [
 
 type Tab = (typeof TABS)[number]["k"];
 
+// Deep-links antigos (?tab=agente|assistente|ia|ferramentas|conteudo)
+// continuam resolvendo para a aba/sub-aba correspondente da nova estrutura.
+const LEGACY_TABS: Record<string, { tab: Tab; sub?: string }> = {
+  agente: { tab: "assistente", sub: "agente" },
+  ia: { tab: "producao", sub: "analise" },
+  ferramentas: { tab: "producao", sub: "ferramentas" },
+  conteudo: { tab: "pesquisa" },
+};
+
 export default function InteligenciaWorkspace() {
   const user = useAuth((state) => state.user);
   const [searchParams, setSearchParams] = useSearchParams();
@@ -61,14 +86,33 @@ export default function InteligenciaWorkspace() {
     [user?.role],
   );
 
-  const rawTab = searchParams.get("tab") as Tab | null;
-  const tab = availableTabs.some((item) => item.k === rawTab)
-    ? (rawTab as Tab)
+  const rawTab = searchParams.get("tab");
+  const legacy = rawTab ? LEGACY_TABS[rawTab] : undefined;
+  const resolvedTab = legacy?.tab ?? rawTab;
+  const tab = availableTabs.some((item) => item.k === resolvedTab)
+    ? (resolvedTab as Tab)
     : availableTabs[0].k;
+
+  const tabDef = TABS.find((item) => item.k === tab);
+  const subs = tabDef && "subs" in tabDef ? tabDef.subs : undefined;
+  const rawSub = legacy?.sub ?? searchParams.get("sub");
+  const sub = subs
+    ? subs.some((item) => item.k === rawSub)
+      ? (rawSub as string)
+      : subs[0].k
+    : null;
 
   const selectTab = (next: Tab) => {
     const params = new URLSearchParams(searchParams);
     params.set("tab", next);
+    params.delete("sub");
+    setSearchParams(params, { replace: true });
+  };
+
+  const selectSub = (next: string) => {
+    const params = new URLSearchParams(searchParams);
+    params.set("tab", tab);
+    params.set("sub", next);
     setSearchParams(params, { replace: true });
   };
 
@@ -77,7 +121,7 @@ export default function InteligenciaWorkspace() {
       <PageHeader
         eyebrow="Inteligência jurídica"
         title="Inteligência Jurídica"
-        subtitle="Agentes, análise, validação, jurimetria e conhecimento com revisão humana e rastreabilidade."
+        subtitle="Escolha a tarefa: assistente, análise e produção, pesquisa ou jurimetria — sempre com revisão humana e rastreabilidade."
       />
       <IANotice>
         Toda resposta de IA deve ser conferida quanto a fatos, documentos,
@@ -102,13 +146,32 @@ export default function InteligenciaWorkspace() {
           ))}
         </div>
       </div>
+      {subs && (
+        <div className="overflow-x-auto">
+          <div className="flex w-fit gap-1 rounded-lg border border-slate-200 bg-slate-50/80 p-1">
+            {subs.map(({ k, label, icon: Icon }) => (
+              <button
+                key={k}
+                onClick={() => selectSub(k)}
+                className={`flex h-8 items-center gap-1.5 whitespace-nowrap rounded-md px-3 text-xs font-medium transition-all ${
+                  sub === k
+                    ? "bg-white text-ai-700 shadow-sm"
+                    : "text-slate-500 hover:text-ai-700"
+                }`}
+              >
+                <Icon size={13} /> {label}
+              </button>
+            ))}
+          </div>
+        </div>
+      )}
       <div className="min-w-0">
-        <ErrorBoundary key={tab}>
-          {tab === "agente" && <AgenteIA />}
-          {tab === "assistente" && <AssistenteIA />}
-          {tab === "ia" && <IA />}
-          {tab === "ferramentas" && <FerramentasIA />}
-          {tab === "conteudo" && <ConteudoJuridico />}
+        <ErrorBoundary key={`${tab}-${sub ?? ""}`}>
+          {tab === "assistente" && sub === "agente" && <AgenteIA />}
+          {tab === "assistente" && sub === "rapido" && <AssistenteIA />}
+          {tab === "producao" && sub === "analise" && <IA />}
+          {tab === "producao" && sub === "ferramentas" && <FerramentasIA />}
+          {tab === "pesquisa" && <ConteudoJuridico />}
           {tab === "jurimetria" && <Jurimetria />}
           {tab === "conhecimento" && <Conhecimento />}
           {tab === "saude" && <DashboardIA />}
