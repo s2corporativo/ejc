@@ -222,18 +222,26 @@ export default function Pecas() {
   };
 
   const abrirDetalhe = async (id: string) => {
-    const { data } = await api.get(`/legal-docs/${id}`);
-    setView(data);
+    try {
+      const { data } = await api.get(`/legal-docs/${id}`);
+      setView(data);
+    } catch (e: any) {
+      toast.error(e?.response?.data?.detail || "Falha ao abrir a peça");
+    }
   };
 
   const registrarRevisao = async (aprovado: boolean) => {
     if (!revisao) return;
-    await api.post(`/legal-docs/${revisao.doc.id}/revisar`, {
-      aprovado,
-      notas: revisao.notas,
-    });
-    setRevisao(null);
-    load();
+    try {
+      await api.post(`/legal-docs/${revisao.doc.id}/revisar`, {
+        aprovado,
+        notas: revisao.notas,
+      });
+      setRevisao(null);
+      load();
+    } catch (e: any) {
+      toast.error(e?.response?.data?.detail || "Falha ao registrar a revisão");
+    }
   };
 
   // BUG-08 (HITL): aprovação humana obrigatória de peças geradas por IA.
@@ -266,15 +274,21 @@ export default function Pecas() {
   };
 
   const abrirTpl = async () => {
-    const [t, c] = await Promise.all([
-      api.get("/templates/"),
-      api.get("/cases/", { params: { page_size: 100 } }),
-    ]);
-    setTemplates(t.data.data);
-    setCasos(c.data.data);
-    // Modo Caso: pré-seleciona o caso filtrado ao gerar de template.
-    setCasoSel((prev) => prev || casoFiltro || "");
-    setTplModal(true);
+    try {
+      const [t, c] = await Promise.all([
+        api.get("/templates/"),
+        api.get("/cases/", { params: { page_size: 100 } }),
+      ]);
+      setTemplates(t.data.data);
+      setCasos(c.data.data);
+      // Modo Caso: pré-seleciona o caso filtrado ao gerar de template.
+      setCasoSel((prev) => prev || casoFiltro || "");
+      setTplModal(true);
+    } catch (e: any) {
+      toast.error(
+        e?.response?.data?.detail || "Falha ao carregar templates e casos",
+      );
+    }
   };
 
   const gerarDeTemplate = async () => {
@@ -282,9 +296,15 @@ export default function Pecas() {
       toast.error("Escolha template e caso");
       return;
     }
-    await api.post(`/templates/${tplSel}/gerar`, { case_id: casoSel });
-    setTplModal(false);
-    load();
+    try {
+      await api.post(`/templates/${tplSel}/gerar`, { case_id: casoSel });
+      setTplModal(false);
+      load();
+    } catch (e: any) {
+      toast.error(
+        e?.response?.data?.detail || "Falha ao gerar a peça do template",
+      );
+    }
   };
 
   const baixarPdf = async (doc: LegalDoc) => {

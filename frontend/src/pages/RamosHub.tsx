@@ -28,6 +28,7 @@ import {
   Vote,
 } from "lucide-react";
 import api from "../lib/api";
+import { RAMOS } from "./ramos/ramosConfig";
 import {
   Badge,
   Button,
@@ -278,6 +279,11 @@ export default function RamosHub() {
                     <Button size="sm" onClick={() => navigate(`/casos/novo?modo=documento&area=${encodeURIComponent(area.slug)}`)}>
                       <UploadCloud className="h-3.5 w-3.5" /> Importar
                     </Button>
+                    {RAMOS[area.slug] && (
+                      <Button variant="secondary" size="sm" className="col-span-2" onClick={() => navigate(`/ramos/${area.slug}`)}>
+                        <BookOpenCheck className="h-3.5 w-3.5" /> Abrir núcleo
+                      </Button>
+                    )}
                   </div>
                 </div>
               </Card>

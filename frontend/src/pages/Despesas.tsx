@@ -177,21 +177,31 @@ export default function Despesas() {
       competencia: form.competencia || undefined,
       recorrencia: form.recorrente ? form.recorrencia : undefined,
     };
-    if (editId) {
-      await api.patch(`/v1/despesas/${editId}`, payload);
-    } else {
-      await api.post("/v1/despesas", payload);
+    try {
+      if (editId) {
+        await api.patch(`/v1/despesas/${editId}`, payload);
+      } else {
+        await api.post("/v1/despesas", payload);
+      }
+      setShowForm(false);
+      load();
+    } catch (e: any) {
+      toast.error(e?.response?.data?.detail || "Falha ao salvar a despesa");
     }
-    setShowForm(false);
-    load();
   }
 
   async function marcarPago(id: string) {
-    await api.patch(`/v1/despesas/${id}`, {
-      status: "pago",
-      pago_em: new Date().toISOString().split("T")[0],
-    });
-    load();
+    try {
+      await api.patch(`/v1/despesas/${id}`, {
+        status: "pago",
+        pago_em: new Date().toISOString().split("T")[0],
+      });
+      load();
+    } catch (e: any) {
+      toast.error(
+        e?.response?.data?.detail || "Falha ao marcar a despesa como paga",
+      );
+    }
   }
 
   function remove(id: string) {
@@ -200,9 +210,14 @@ export default function Despesas() {
 
   async function confirmarExclusao() {
     if (!pendenteExcluir) return;
-    await api.delete(`/v1/despesas/${pendenteExcluir}`);
-    setPendenteExcluir(null);
-    load();
+    try {
+      await api.delete(`/v1/despesas/${pendenteExcluir}`);
+      load();
+    } catch (e: any) {
+      toast.error(e?.response?.data?.detail || "Falha ao excluir a despesa");
+    } finally {
+      setPendenteExcluir(null);
+    }
   }
 
   const totalPendente = items

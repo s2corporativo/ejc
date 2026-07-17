@@ -553,15 +553,21 @@ function TabResumo({ caso }: { caso: Case }) {
 
   const addMov = async () => {
     if (!novoMov.trim()) return;
-    await api.post(`/cases/${caso.id}/movimentos`, {
-      tipo: "nota",
-      descricao: novoMov,
-    });
-    setNovoMov("");
-    api
-      .get(`/cases/${caso.id}/movimentos`)
-      .then((r) => setMovs(asList(r.data)))
-      .catch(() => {});
+    try {
+      await api.post(`/cases/${caso.id}/movimentos`, {
+        tipo: "nota",
+        descricao: novoMov,
+      });
+      setNovoMov("");
+      api
+        .get(`/cases/${caso.id}/movimentos`)
+        .then((r) => setMovs(asList(r.data)))
+        .catch(() => {});
+    } catch (e: any) {
+      toast.error(
+        e?.response?.data?.detail || "Falha ao adicionar a movimentação",
+      );
+    }
   };
 
   const syncDataJud = async () => {
@@ -1196,12 +1202,18 @@ function TabTimeline({ caseId }: { caseId: string }) {
 
   const addTimesheet = async (e: React.FormEvent) => {
     e.preventDefault();
-    await api.post("/timesheet", { case_id: caseId, ...tsForm });
-    setShowTsForm(false);
-    api
-      .get(`/timesheet/casos/${caseId}`)
-      .then((r) => setTs(asList(r.data)))
-      .catch(() => setTs([]));
+    try {
+      await api.post("/timesheet", { case_id: caseId, ...tsForm });
+      setShowTsForm(false);
+      api
+        .get(`/timesheet/casos/${caseId}`)
+        .then((r) => setTs(asList(r.data)))
+        .catch(() => setTs([]));
+    } catch (err: any) {
+      toast.error(
+        err?.response?.data?.detail || "Falha ao registrar o lançamento",
+      );
+    }
   };
 
   const totalHoras = ts.reduce((a, t) => a + (t.minutos ?? 0) / 60, 0);
@@ -1821,12 +1833,16 @@ function TabPartes({ caseId }: { caseId: string }) {
 
   const salvar = async (e: React.FormEvent) => {
     e.preventDefault();
-    await api.post(`/cases/${caseId}/partes`, form);
-    setShowForm(false);
-    api
-      .get(`/cases/${caseId}/partes`)
-      .then((r) => setPartes(asList(r.data)))
-      .catch(() => {});
+    try {
+      await api.post(`/cases/${caseId}/partes`, form);
+      setShowForm(false);
+      api
+        .get(`/cases/${caseId}/partes`)
+        .then((r) => setPartes(asList(r.data)))
+        .catch(() => {});
+    } catch (err: any) {
+      toast.error(err?.response?.data?.detail || "Falha ao cadastrar a parte");
+    }
   };
 
   const remover = async (id: string) => {
@@ -2673,16 +2689,20 @@ function TabMemoria({ caseId }: { caseId: string }) {
 
   const salvar = async (e: React.FormEvent) => {
     e.preventDefault();
-    await api.post("/memoria-institucional", { ...form, case_id: caseId });
-    setShowForm(false);
-    setForm({
-      tipo: "tese_vencedora",
-      titulo: "",
-      conteudo: "",
-      resultado: "favoravel",
-      area_direito: "",
-    });
-    carregar();
+    try {
+      await api.post("/memoria-institucional", { ...form, case_id: caseId });
+      setShowForm(false);
+      setForm({
+        tipo: "tese_vencedora",
+        titulo: "",
+        conteudo: "",
+        resultado: "favoravel",
+        area_direito: "",
+      });
+      carregar();
+    } catch (err: any) {
+      toast.error(err?.response?.data?.detail || "Falha ao salvar o registro");
+    }
   };
   const remover = async (id: string) => {
     if (!confirm("Remover este registro de memória?")) return;

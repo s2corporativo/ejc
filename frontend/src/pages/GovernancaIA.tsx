@@ -114,6 +114,10 @@ export default function GovernancaIA() {
         rag_status,
       });
       await load();
+    } catch (e: any) {
+      toast.error(
+        e?.response?.data?.detail || "Falha ao atualizar a curadoria",
+      );
     } finally {
       setSalvando(null);
     }
@@ -166,6 +170,10 @@ export default function GovernancaIA() {
         tipo_fonte: "turma_recursal",
       });
       await load();
+    } catch (e: any) {
+      toast.error(
+        e?.response?.data?.detail || "Falha ao importar a jurisprudência",
+      );
     } finally {
       setSalvando(null);
     }
