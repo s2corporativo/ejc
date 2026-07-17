@@ -21,6 +21,7 @@ from app.models.user import User
 from app.services.ai.core.orchestrator import orchestrator
 from app.services.ai.core.agent_registry import AGENT_REGISTRY
 from app.services.ai.core.skill_registry import listar_skills
+from app.services.ai.core.ejc_skill_catalog import native_skill_coverage
 from app.core.rate_limit import rate_limit
 
 router = APIRouter(prefix="/ai/core", tags=["IA — Núcleo Único"])
@@ -36,6 +37,9 @@ def _staff_only(cu: User) -> None:
 
 class CoreChatRequest(BaseModel):
     mensagem: str = Field(..., min_length=3, max_length=12000)
+    domain: Optional[str] = Field(None, max_length=60)
+    module_key: Optional[str] = Field(None, max_length=60)
+    surface: Optional[str] = Field(None, max_length=80)
     case_id: Optional[str] = None
     nivel_inteligencia: str = Field("alto", description="padrao | alto | maximo")
 
@@ -48,6 +52,8 @@ class CoreTaskRequest(BaseModel):
     document_id: Optional[str] = None
     process_id: Optional[str] = None
     params: Optional[dict] = None
+    module_key: Optional[str] = Field(None, max_length=60)
+    surface: Optional[str] = Field(None, max_length=80)
     usar_rag: bool = True
     nivel_inteligencia: str = "alto"
 
@@ -59,6 +65,8 @@ class CoreAnalyzeRequest(BaseModel):
     document_id: Optional[str] = None
     process_id: Optional[str] = None
     params: Optional[dict] = None
+    module_key: Optional[str] = Field(None, max_length=60)
+    surface: Optional[str] = Field(None, max_length=80)
     usar_rag: bool = True
     nivel_inteligencia: str = "alto"
 
@@ -68,6 +76,8 @@ class CoreGenerateRequest(BaseModel):
     mensagem: str = Field(..., min_length=3, max_length=12000)
     case_id: Optional[str] = None
     params: Optional[dict] = None
+    module_key: Optional[str] = Field(None, max_length=60)
+    surface: Optional[str] = Field(None, max_length=80)
     nivel_inteligencia: str = "alto"
 
 
@@ -76,6 +86,21 @@ class CoreReportRequest(BaseModel):
     mensagem: Optional[str] = Field(None, max_length=12000)
     case_id: Optional[str] = None
     params: Optional[dict] = None
+    module_key: Optional[str] = Field(None, max_length=60)
+    surface: Optional[str] = Field(None, max_length=80)
+
+
+def _native_params(
+    params: Optional[dict],
+    module_key: Optional[str],
+    surface: Optional[str],
+) -> dict:
+    merged = dict(params or {})
+    if module_key:
+        merged["module_key"] = module_key
+    if surface:
+        merged["surface"] = surface
+    return merged
 
 
 # ── Endpoints ─────────────────────────────────────────────────────────────────
@@ -88,8 +113,10 @@ async def core_chat(
 ):
     _staff_only(cu)
     return await orchestrator.run(
-        db=db, user=cu, task_type="chat", mensagem=body.mensagem,
-        case_id=body.case_id, nivel_inteligencia=body.nivel_inteligencia,
+        db=db, user=cu, task_type="chat", domain=body.domain,
+        mensagem=body.mensagem, case_id=body.case_id,
+        params=_native_params(None, body.module_key, body.surface),
+        nivel_inteligencia=body.nivel_inteligencia,
     )
 
 
@@ -104,7 +131,8 @@ async def core_task(
         db=db, user=cu, task_type=body.task_type, domain=body.domain,
         mensagem=body.mensagem, case_id=body.case_id,
         document_id=body.document_id, process_id=body.process_id,
-        params=body.params, usar_rag=body.usar_rag,
+        params=_native_params(body.params, body.module_key, body.surface),
+        usar_rag=body.usar_rag,
         nivel_inteligencia=body.nivel_inteligencia,
     )
 
@@ -120,7 +148,8 @@ async def core_analyze(
         db=db, user=cu, task_type=f"{body.domain}_analysis", domain=body.domain,
         mensagem=body.mensagem, case_id=body.case_id,
         document_id=body.document_id, process_id=body.process_id,
-        params=body.params, usar_rag=body.usar_rag,
+        params=_native_params(body.params, body.module_key, body.surface),
+        usar_rag=body.usar_rag,
         nivel_inteligencia=body.nivel_inteligencia,
     )
 
@@ -135,7 +164,8 @@ async def core_generate(
     task = "legal_draft" if body.tipo in ("minuta", "peca") else body.tipo
     return await orchestrator.run(
         db=db, user=cu, task_type=task, mensagem=body.mensagem,
-        case_id=body.case_id, params=body.params,
+        case_id=body.case_id,
+        params=_native_params(body.params, body.module_key, body.surface),
         nivel_inteligencia=body.nivel_inteligencia,
     )
 
@@ -150,7 +180,8 @@ async def core_report(
     return await orchestrator.run(
         db=db, user=cu, task_type="report", domain=body.domain,
         mensagem=body.mensagem or f"Gere o relatório executivo do domínio {body.domain}.",
-        case_id=body.case_id, params=body.params,
+        case_id=body.case_id,
+        params=_native_params(body.params, body.module_key, body.surface),
     )
 
 
@@ -175,6 +206,12 @@ async def core_skills(cu: User = Depends(get_current_user)):
     return listar_skills()
 
 
+@router.get("/native-skills/coverage")
+async def core_native_skills_coverage(cu: User = Depends(get_current_user)):
+    _staff_only(cu)
+    return native_skill_coverage()
+
+
 @router.get("/status")
 async def core_status(cu: User = Depends(get_current_user)):
     """Estado do núcleo. Só booleans/nomes — NUNCA valores de chave."""
@@ -183,8 +220,10 @@ async def core_status(cu: User = Depends(get_current_user)):
     s = get_settings()
     return {
         "nucleo": "SingleAICoreOrchestrator",
+        "agente_coordenador": "EJCCoordinatorAgent",
         "agentes": len(AGENT_REGISTRY),
         "skills": len(listar_skills()),
+        "skills_nativas": native_skill_coverage(),
         "providers": {
             "ollama": bool(s.OLLAMA_ENABLED),
             "anthropic": bool(s.ANTHROPIC_ENABLED and s.ANTHROPIC_API_KEY),
