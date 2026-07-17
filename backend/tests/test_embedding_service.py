@@ -39,11 +39,12 @@ def _local_on(monkeypatch):
 
 
 def test_dimensao_do_modelo_casa_com_pgvector():
-    # Migration 013: knowledge_chunks.embedding é vector(768).
-    assert es.EMBED_DIM == 768
+    # Migration 096 (O-2): knowledge_chunks.embedding é vector(1024) (BGE-M3).
+    assert es.EMBED_DIM == 1024
 
 
-def test_modelo_mpnet_nao_usa_prefixo_e5():
+def test_modelo_default_nao_usa_prefixo_e5():
+    # bge-m3 (default) não é E5 → sem prefixo query:/passage: (só modelos E5 usam).
     assert "e5" not in es.MODEL_NAME.lower()
     assert es._prefixo("query") == ""
     assert es._prefixo("passage") == ""

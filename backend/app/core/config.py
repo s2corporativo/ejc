@@ -339,6 +339,15 @@ class Settings(BaseSettings):
     EMBEDDINGS_PROVIDER: str = "local"  # local | http
     EMBEDDINGS_API_URL: str = "http://embeddings:8010/embed"
     EMBEDDINGS_TIMEOUT: int = 120
+    # Modelo e dimensão do embedding (auditoria IA 2026-07-17, O-2). Default
+    # ATUALIZADO para BGE-M3 (1024d, multilíngue forte, denso) — recall superior
+    # ao mpnet (2021, 768d). A coluna knowledge_chunks.embedding é
+    # vector(EMBEDDINGS_DIM); TROCAR A DIMENSÃO exige a migration 096 + REINDEX
+    # (scripts.reembedar_chunks_orfaos). Revertível por env (voltar a
+    # sentence-transformers/paraphrase-multilingual-mpnet-base-v2 + 768 exige a
+    # migration de downgrade + reindex). ⚠️ EMBEDDINGS_DIM DEVE casar com a coluna.
+    EMBEDDINGS_MODEL: str = "BAAI/bge-m3"
+    EMBEDDINGS_DIM: int = 1024
 
     # ── Reranking (cross-encoder) do RAG — Fase 1 auditoria IA 2026-07-17 ─
     # Reordena os candidatos do retrieval híbrido (pgvector cosine + RRF pg_trgm)
