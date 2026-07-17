@@ -29,7 +29,9 @@ import re
 import xml.etree.ElementTree as ET
 
 from app.services.ingestion_service import fetch
-from app.services.juris_import.base import JulgadoNormalizado, texto_normalizado
+from app.services.juris_import.base import (
+    JulgadoNormalizado, no_ano, texto_normalizado,
+)
 
 logger = logging.getLogger("ejc.juris_import.lexml")
 
@@ -49,6 +51,7 @@ _URN_TRIBUNAL = {
 }
 
 # Siglas inferíveis do conteúdo da URN/autoridade (filtro client-side).
+# Fragmentos EXATOS de URN (autoridade estável na base LexML):
 _SIGLA_POR_FRAGMENTO = {
     "supremo.tribunal.federal": "STF",
     "superior.tribunal.justica": "STJ",
@@ -56,6 +59,31 @@ _SIGLA_POR_FRAGMENTO = {
     "tribunal.superior.eleitoral": "TSE",
     "superior.tribunal.militar": "STM",
 }
+
+
+def _sigla_composta(alvo: str) -> str | None:
+    """Sigla por fragmentos COMPOSTOS sobre URN + autoridade normalizadas
+    (pontos/;/- viram espaço). 100% client-side — NÃO assume padrão de URN
+    server-side; só reconhece o que de fato veio no registro.
+
+    Ordem importa: Turma Recursal/Juizado Especial classifica como JEC ANTES
+    do TJ do estado (Turmas Recursais pertencem ao sistema dos Juizados)."""
+    if "turma recursal" in alvo or "juizado especial" in alvo:
+        return "JEC"
+    if "tribunal regional" in alvo and "trabalho" in alvo:
+        m = re.search(r"\bregiao 0?(\d{1,2})\b|\b0?(\d{1,2})a? regiao\b", alvo)
+        n = next((g for g in (m.groups() if m else ()) if g), None)
+        return f"TRT-{int(n)}" if n else "TRT"
+    if "tribunal" in alvo and "justica" in alvo and "minas gerais" in alvo:
+        return "TJMG"
+    return None
+
+
+def _casa_tribunal(sigla_registro: str, trib: str) -> bool:
+    """Filtro client-side de tribunal: sigla exata ou família com sufixo
+    numérico (trib="TRT" casa "TRT-3"; trib="TRT-3" casa só "TRT-3")."""
+    s = (sigla_registro or "").upper()
+    return s == trib or s.startswith(trib + "-")
 
 
 def _cql(consulta: str, tribunal: str | None) -> str:
@@ -116,6 +144,13 @@ def _tribunal_do_registro(campos: dict) -> str:
     for frag, sigla in _SIGLA_POR_FRAGMENTO.items():
         if frag in urn:
             return sigla
+    # Fragmentos compostos sobre URN + autoridade textual, normalizadas
+    # (client-side — cobre TJMG, TRT-n e Turmas Recursais/Juizados → JEC).
+    alvo = re.sub(r"[^a-z0-9]+", " ", texto_normalizado(
+        f"{urn} {campos.get('autoridade') or ''}"))
+    sigla = _sigla_composta(alvo)
+    if sigla:
+        return sigla
     # fallback: autoridade textual do registro (ex.: "Tribunal de Justiça...").
     return (campos.get("autoridade") or "LexML")[:20]
 
@@ -158,12 +193,25 @@ def normalizar_registro(campos: dict) -> JulgadoNormalizado | None:
 
 async def buscar(
     consulta: str, tribunal: str | None = None, limite: int = 20,
+    ano: int | None = None,
 ) -> list[JulgadoNormalizado]:
     """Busca jurisprudência no LexML via SRU. Paginação limitada; sem rede
-    disponível/erro de fonte → exceção do fetch propaga (o runner registra)."""
+    disponível/erro de fonte → exceção do fetch propaga (o runner registra).
+
+    `tribunal`: para STF/STJ/TST a CQL é refinada server-side pela URN
+    (_URN_TRIBUNAL); para os DEMAIS (TJMG, TRT, TRT-3, JEC, ...) a consulta
+    vai SEM refinamento e o filtro é 100% client-side sobre a sigla inferida
+    da URN/autoridade — correto, porém menos eficiente: páginas com registros
+    de outros tribunais consomem o teto MAX_PAGINAS sem render resultados.
+
+    `ano`: filtro CLIENT-SIDE pela data do julgado (no_ano) — registro sem
+    data comprovada NÃO entra quando o ano é exigido. Mesma observação de
+    eficiência: o SRU não é refinado por data aqui (não inventamos sintaxe
+    server-side não testável); varremos até MAX_PAGINAS e filtramos local."""
     cql = _cql(consulta, tribunal)
     if not cql:
         return []
+    trib = (tribunal or "").strip().upper()
     resultados: list[JulgadoNormalizado] = []
     vistos: set[str] = set()
     start = 1
@@ -182,6 +230,10 @@ async def buscar(
             j = normalizar_registro(campos)
             if j is None:
                 continue
+            if trib and not _casa_tribunal(j.tribunal, trib):
+                continue                     # filtro client-side de tribunal
+            if not no_ano(j.data, ano):
+                continue                     # filtro client-side de ano
             chave = j.chave_dedup()
             if chave in vistos:
                 continue
