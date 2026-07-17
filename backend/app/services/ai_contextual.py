@@ -12,6 +12,11 @@ from pathlib import Path
 from typing import Any, Iterable
 
 from app.services.rito_engine import identificar_rito
+from app.services.ai.core.ejc_skill_catalog import (
+    LEGAL_AREA_SPECS,
+    MODULE_ALIASES,
+    MODULE_SKILL_SPECS,
+)
 
 
 def _normalizar(valor: str | None) -> str:
@@ -239,7 +244,19 @@ def ranquear_skills_contextuais(
     surface_key = _normalizar(surface).replace("-", "")
     group = _SURFACE_GROUP.get(surface_key, _SURFACE_GROUP.get(_normalizar(surface), "visao"))
     area_key = normalizar_area(area)
-    preferred = list(document_skills or []) + _SURFACE_SKILLS.get(group, []) + _AREA_SKILLS.get(area_key, [])
+    native_preferred: list[str] = []
+    if area_key in LEGAL_AREA_SPECS:
+        native_preferred.append(LEGAL_AREA_SPECS[area_key].name)
+    module_alias = _normalizar(surface).replace("-", "_")
+    module_key = MODULE_ALIASES.get(module_alias)
+    if module_key in MODULE_SKILL_SPECS:
+        native_preferred.append(MODULE_SKILL_SPECS[module_key].name)
+    preferred = (
+        native_preferred
+        + list(document_skills or [])
+        + _SURFACE_SKILLS.get(group, [])
+        + _AREA_SKILLS.get(area_key, [])
+    )
     preferred = list(dict.fromkeys(preferred))
     index = {name: position for position, name in enumerate(preferred)}
     phase_key, document_key = _normalizar(phase), _normalizar(document_type)
