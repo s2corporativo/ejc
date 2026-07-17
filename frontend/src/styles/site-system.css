@@ -117,20 +117,27 @@
 }
 
 .ejc-modern-scope :where(thead th) {
-  background: #f8fafc;
+  background: #faf8f2;
+  border-bottom: 1px solid rgba(212, 175, 55, 0.22);
   color: #64748b;
-  font-size: 0.72rem;
-  font-weight: 750;
-  letter-spacing: 0.06em;
+  font-size: 0.7rem;
+  font-weight: 600;
+  letter-spacing: 0.08em;
   text-transform: uppercase;
+  font-variant-numeric: tabular-nums;
 }
 
 .ejc-modern-scope :where(tbody tr) {
   transition: background-color 0.15s ease;
 }
 
+.ejc-modern-scope :where(tbody td) {
+  border-top: 1px solid rgba(166, 124, 82, 0.1);
+  font-variant-numeric: tabular-nums;
+}
+
 .ejc-modern-scope :where(tbody tr:hover) {
-  background: rgba(250, 247, 240, 0.75);
+  background: rgba(212, 175, 55, 0.06);
 }
 
 /* Dashboard premium: camada escopada sobre a estrutura atual do Dashboard.

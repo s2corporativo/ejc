@@ -615,21 +615,44 @@
   border-spacing: 0;
 }
 
+/* Cabeçalho de tabela premium: tinta dourada MUITO sutil, filete dourado
+   fino embaixo, rótulos em maiúsculas discretas (peso 600, slate-500). */
 .ejc-modern-scope thead th {
-  background: #f8fafc;
+  background: #faf8f2;
+  border-bottom: 1px solid rgba(212, 175, 55, 0.22);
   color: #64748b;
-  font-size: 0.72rem;
-  font-weight: 750;
-  letter-spacing: 0.06em;
+  font-size: 0.7rem;
+  font-weight: 600;
+  letter-spacing: 0.08em;
   text-transform: uppercase;
+  font-variant-numeric: tabular-nums;
 }
 
 .ejc-modern-scope tbody tr {
   transition: background-color 0.15s ease;
 }
 
+/* Linhas com hairline quente; números/valores/datas em tabular-nums. */
+.ejc-modern-scope tbody td {
+  border-top: 1px solid rgba(166, 124, 82, 0.1);
+  font-variant-numeric: tabular-nums;
+}
+
 .ejc-modern-scope tbody tr:hover {
-  background: rgba(250, 247, 240, 0.75);
+  background: rgba(212, 175, 55, 0.06);
+}
+
+/* Listas core (Casos, Clientes, Documentos e afins) usam `.card.overflow-x-auto`:
+   cabeçalho fixo ao rolar e linhas mais confortáveis, sem borda dura. */
+.ejc-modern-scope .card.overflow-x-auto thead th {
+  position: sticky;
+  top: 0;
+  z-index: 1;
+}
+
+.ejc-modern-scope .card.overflow-x-auto tbody td {
+  padding-top: 0.85rem;
+  padding-bottom: 0.85rem;
 }
 
 .ejc-modern-scope .btn,
