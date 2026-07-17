@@ -223,6 +223,27 @@ LEGAL_AREA_SPECS: dict[str, NativeSkillSpec] = {
 }
 
 _MODULE_BY_KEY = {str(item["module_key"]): item for item in MODULE_REGISTRY}
+
+# Aliases canônicos derivados do próprio registro de módulos. O frontend pode
+# informar a chave, o nome visível ou a rota; todos convergem para module_key.
+MODULE_ALIASES: dict[str, str] = {}
+for _module_key, _module in _MODULE_BY_KEY.items():
+    for _alias in (
+        _module_key,
+        str(_module.get("nome") or ""),
+        str(_module.get("frontend_route") or ""),
+    ):
+        if _normalize(_alias):
+            MODULE_ALIASES[_normalize(_alias)] = _module_key
+MODULE_ALIASES.update({
+    "processo": "casos",
+    "processos": "casos",
+    "caso": "casos",
+    "assistente_ia": "ia",
+    "ferramentas": "ferramentas-ia",
+    "modulos": "mapa-modulos",
+})
+
 MODULE_SKILL_SPECS: dict[str, NativeSkillSpec] = {
     key: NativeSkillSpec(
         name=f"modulo_{_normalize(key)}",
@@ -321,11 +342,9 @@ def resolve_native_skill_plan(
 
     module = None
     for value in (module_key, surface, domain, task_type):
-        normalized = _normalize(value)
-        if normalized in {_normalize(key) for key in MODULE_SKILL_SPECS}:
-            module = next(
-                key for key in MODULE_SKILL_SPECS if _normalize(key) == normalized
-            )
+        candidate = MODULE_ALIASES.get(_normalize(value))
+        if candidate in MODULE_SKILL_SPECS:
+            module = candidate
             break
     if module is None:
         module = _best_keyword_match(message, MODULE_KEYWORDS)
