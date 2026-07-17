@@ -367,7 +367,7 @@ class Settings(BaseSettings):
     RAG_HYDE_ENABLED: bool = False
     # Perna lexical FULL-TEXT (tsvector 'portuguese', BM25-like) no híbrido RRF,
     # além do pg_trgm — melhor para termos raros/citações exatas (art./súmula/nº
-    # CNJ). Requer o índice GIN (migration 900) senão fica lento. Fail-safe:
+    # CNJ). Requer o índice GIN (migration 095) senão fica lento. Fail-safe:
     # erro → só semântico+trigram. Default OFF até validar o índice em produção.
     RAG_FTS_ENABLED: bool = False
 
