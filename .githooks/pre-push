@@ -1,0 +1,22 @@
+#!/usr/bin/env bash
+# Hook de pre-push do EJC — roda o CI LOCAL (grátis, sem GitHub Actions) antes de
+# cada push, barrando código quebrado. OPT-IN: ative uma vez com
+#   git config core.hooksPath .githooks
+#
+# Por padrão roda o modo "fast" (backend sem banco, ~segundos) e assume que as
+# dependências já estão instaladas (CI_SKIP_PIP=1). Para o gate COMPLETO
+# (backend+banco+frontend) use EJC_PREPUSH_MODE=full.
+#
+# Pular pontualmente: git push --no-verify
+set -euo pipefail
+
+ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+MODE="${EJC_PREPUSH_MODE:-fast}"
+export CI_SKIP_PIP="${CI_SKIP_PIP:-1}"
+
+echo "[pre-push] rodando CI local (modo: $MODE) — pule com --no-verify se necessário"
+if ! "$ROOT/scripts/ci-local.sh" "$MODE"; then
+  echo "[pre-push] CI local FALHOU — push abortado. Corrija ou use 'git push --no-verify'." >&2
+  exit 1
+fi
+echo "[pre-push] CI local OK — seguindo com o push."

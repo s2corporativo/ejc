@@ -4,11 +4,14 @@ name: CI
 # Se QUALQUER teste ou build falhar, o GitHub bloqueia o merge/deploy.
 # Objetivo: nada quebrado chega na produção do escritório.
 
+# CI na nuvem DESLIGADA (2026-07-17): o GitHub Actions cobra minutos de runner em
+# repositório privado. A MESMA validação (backend+banco pgvector + frontend) roda
+# de GRAÇA no VPS/máquina via `scripts/ci-local.sh` (e no hook .githooks/pre-push).
+# Para reativar o CI na nuvem, restaure os gatilhos push/pull_request abaixo — e o
+# billing do Actions. (Gatilhos de push/PR são lidos do branch default, então a
+# desativação vale a partir do momento em que este arquivo estiver na `main`.)
 on:
-  push:
-    branches: [main]
-  pull_request:
-    branches: [main]
+  workflow_dispatch:   # só manual — não roda mais sozinho a cada push/PR
 
 permissions:
   contents: read
