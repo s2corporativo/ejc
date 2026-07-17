@@ -162,3 +162,5 @@ def main() -> None:
 
 if __name__ == "__main__":
     main()
+
+# Sondagem re-executada em 2026-07-17 (pré-go-live) — dispara o workflow probe-apis.
