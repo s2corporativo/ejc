@@ -253,9 +253,32 @@
   background:
     radial-gradient(circle at 10% 15%, rgba(212, 175, 55, 0.18), transparent 18rem),
     linear-gradient(135deg, #1b1506, #2a2108 58%, #55420d);
+  /* hairline dourado no lugar da borda slate-200 herdada do claro */
+  border-color: rgba(212, 175, 55, 0.2);
   box-shadow:
     0 1px 2px rgba(0, 0, 0, 0.28),
     0 28px 80px rgba(0, 0, 0, 0.46);
+}
+
+/* Textos e botão secundário do hero — no claro ficaram tinta escura
+   (h1 #0F172A, eyebrow #8A6D2F, p slate) e botão branco, incondicionais;
+   no grafite precisam de creme/ouro para legibilidade (AA). */
+.dark .ejc-modern-scope > div > .space-y-6 > .flex.flex-col.gap-4:first-child .eyebrow {
+  color: #e5ce7f;
+}
+.dark .ejc-modern-scope > div > .space-y-6 > .flex.flex-col.gap-4:first-child h1 {
+  color: #f6efe1;
+}
+.dark .ejc-modern-scope > div > .space-y-6 > .flex.flex-col.gap-4:first-child p {
+  color: rgba(232, 224, 211, 0.82);
+}
+.dark .ejc-modern-scope > div > .space-y-6 > .flex.flex-col.gap-4:first-child .btn-secondary {
+  border-color: rgba(255, 245, 230, 0.14);
+  background: rgba(255, 245, 230, 0.08);
+  color: #e8e0d3;
+}
+.dark .ejc-modern-scope > div > .space-y-6 > .flex.flex-col.gap-4:first-child .btn-secondary:hover {
+  background: rgba(255, 245, 230, 0.14);
 }
 
 .dark .ejc-modern-scope > div > .space-y-6 > .grid[class*="xl:grid-cols-4"] > .card,
