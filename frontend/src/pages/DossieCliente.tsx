@@ -1,4 +1,4 @@
-import { useEffect, useState, useCallback } from "react";
+import { useEffect, useState, useCallback, useMemo } from "react";
 import {
   useParams,
   useNavigate,
@@ -27,9 +27,14 @@ import {
   Receipt,
   Bot,
   ExternalLink,
+  KeyRound,
+  Zap,
+  AlertTriangle,
 } from "lucide-react";
 import api from "../lib/api";
-import ClientServiceTimeline from "../components/ClientServiceTimeline";
+import ClientServiceTimeline, {
+  type ClientTimelineExtraEvent,
+} from "../components/ClientServiceTimeline";
 import { soDigitos } from "../utils/phone";
 import { toast } from "../components/Toast";
 import { areaLabel } from "../lib/areas";
@@ -187,7 +192,17 @@ const PENDING_STATUS_LABEL: Record<string, string> = {
 };
 
 // ── PendingItemsPanel ───────────────────────────────────────────────────────
-function PendingItemsPanel({ clientId }: { clientId: string | number }) {
+function PendingItemsPanel({
+  clientId,
+  abrirNovaSignal = 0,
+  onItemsChange,
+}: {
+  clientId: string | number;
+  /** Incrementado pelo painel de ações rápidas para abrir o formulário de
+   *  solicitação de documento já pré-configurado. */
+  abrirNovaSignal?: number;
+  onItemsChange?: (items: PendingItem[]) => void;
+}) {
   const [items, setItems] = useState<PendingItem[]>([]);
   const [loading, setLoading] = useState(true);
   const [showAdd, setShowAdd] = useState(false);
@@ -204,17 +219,26 @@ function PendingItemsPanel({ clientId }: { clientId: string | number }) {
     try {
       const res = await api.get(`/v1/clients/${clientId}/pending-items`);
       setItems(res.data || []);
+      onItemsChange?.(res.data || []);
     } catch {
       setItems([]);
+      onItemsChange?.([]);
       toast.error("Não foi possível carregar as pendências do cliente");
     } finally {
       setLoading(false);
     }
-  }, [clientId]);
+  }, [clientId, onItemsChange]);
 
   useEffect(() => {
     load();
   }, [load]);
+
+  useEffect(() => {
+    if (abrirNovaSignal > 0) {
+      setShowAdd(true);
+      setForm((f) => ({ ...f, type: "documento" }));
+    }
+  }, [abrirNovaSignal]);
 
   async function create() {
     if (!form.title.trim()) return;
@@ -436,9 +460,35 @@ function PendingItemsPanel({ clientId }: { clientId: string | number }) {
   );
 }
 
+// Desfechos possíveis do contato rápido — mapeados para o vocabulário que o
+// backend aceita (PATCH /atendimentos/{id}: contato_status ∈ iniciado |
+// confirmado | nao_concluido; detalhe registrado em proximo_passo).
+const DESFECHOS_CONTATO: Array<{
+  label: string;
+  patch: { contato_status: string; proximo_passo?: string };
+}> = [
+  { label: "Contato concluído", patch: { contato_status: "confirmado" } },
+  { label: "Não respondeu", patch: { contato_status: "nao_concluido" } },
+  {
+    label: "Retorno agendado",
+    patch: {
+      contato_status: "confirmado",
+      proximo_passo: "Retorno agendado com o cliente.",
+    },
+  },
+  {
+    label: "Recado deixado",
+    patch: {
+      contato_status: "nao_concluido",
+      proximo_passo: "Recado deixado; aguardando retorno do cliente.",
+    },
+  },
+];
+
 // ── WhatsApp / Comunicação ──────────────────────────────────────────────────
 function ComunicacaoRapida({
   cliente,
+  onRegistrado,
 }: {
   cliente: {
     id?: string | number;
@@ -447,7 +497,14 @@ function ComunicacaoRapida({
     whatsapp?: string;
     email?: string;
   };
+  onRegistrado?: () => void;
 }) {
+  const [followUp, setFollowUp] = useState<{
+    id: string;
+    tipo: string;
+  } | null>(null);
+  const [salvandoDesfecho, setSalvandoDesfecho] = useState(false);
+
   const registrarAtendimento = (tipo: string, resumo: string) => {
     if (!cliente.id) return;
     api
@@ -458,12 +515,39 @@ function ComunicacaoRapida({
         resumo: resumo.length >= 10 ? resumo : resumo + " — contato iniciado",
         contato_status: "iniciado",
       })
+      .then((r) => {
+        // Ao voltar o foco para a aba, o mini-modal pede o desfecho do contato.
+        if (r.data?.id) setFollowUp({ id: String(r.data.id), tipo });
+        onRegistrado?.();
+      })
       .catch(() => {
         toast.error(
           "Não foi possível registrar o contato no histórico de atendimentos",
         );
       });
   };
+
+  const concluirContato = async (patch: {
+    contato_status: string;
+    proximo_passo?: string;
+  }) => {
+    if (!followUp) return;
+    setSalvandoDesfecho(true);
+    try {
+      await api.patch(`/atendimentos/${followUp.id}`, patch);
+      toast.success("Desfecho do contato registrado no histórico");
+      setFollowUp(null);
+      onRegistrado?.();
+    } catch (e: any) {
+      toast.error(
+        e.response?.data?.detail ||
+          "Não foi possível registrar o desfecho do contato",
+      );
+    } finally {
+      setSalvandoDesfecho(false);
+    }
+  };
+
   const phone = cliente.whatsapp || cliente.telefone;
   if (!phone && !cliente.email) return null;
   const digits = soDigitos(phone);
@@ -533,6 +617,40 @@ function ComunicacaoRapida({
           <Calendar className="w-3.5 h-3.5" /> Reunião
         </a>
       </div>
+
+      {/* Mini-modal de confirmação pós-contato */}
+      <Modal
+        open={followUp !== null}
+        onClose={() => setFollowUp(null)}
+        title="Como terminou o contato?"
+      >
+        <div className="space-y-3">
+          <p className="text-sm text-slate-500">
+            O contato foi registrado como <strong>iniciado</strong>. Informe o
+            desfecho para manter o histórico de atendimento fiel.
+          </p>
+          <div className="grid grid-cols-2 gap-2">
+            {DESFECHOS_CONTATO.map(({ label, patch }) => (
+              <button
+                key={label}
+                type="button"
+                disabled={salvandoDesfecho}
+                onClick={() => concluirContato(patch)}
+                className="btn-outline justify-center text-xs"
+              >
+                {label}
+              </button>
+            ))}
+          </div>
+          <button
+            type="button"
+            onClick={() => setFollowUp(null)}
+            className="btn-ghost w-full justify-center text-xs"
+          >
+            Decidir depois (confirme na linha do tempo)
+          </button>
+        </div>
+      </Modal>
     </div>
   );
 }
@@ -828,6 +946,120 @@ export default function DossieCliente() {
     }
   };
 
+  // ── Indicadores de relacionamento (topo) ─────────────────────────────────
+  const [ultimaInteracao, setUltimaInteracao] = useState<string | null>(null);
+  const [indicadoresProntos, setIndicadoresProntos] = useState(false);
+  const [pendingItems, setPendingItems] = useState<PendingItem[]>([]);
+  const [responsavelNome, setResponsavelNome] = useState<string | null>(null);
+
+  const carregarUltimaInteracao = useCallback(async () => {
+    if (!clientId) return;
+    try {
+      const r = await api.get("/atendimentos", {
+        params: { client_id: clientId, page: 1, per_page: 1 },
+      });
+      setUltimaInteracao(r.data?.items?.[0]?.data_atendimento ?? null);
+    } catch {
+      // Indicador opcional — a ficha continua funcional sem ele.
+    } finally {
+      setIndicadoresProntos(true);
+    }
+  }, [clientId]);
+
+  useEffect(() => {
+    carregarUltimaInteracao();
+  }, [carregarUltimaInteracao]);
+
+  useEffect(() => {
+    if (!clientId) return;
+    (async () => {
+      try {
+        const [cliRes, respRes] = await Promise.all([
+          api.get(`/clients/${clientId}`),
+          api.get("/atendimentos/responsaveis"),
+        ]);
+        const rid = cliRes.data?.responsavel_id;
+        if (!rid) return;
+        const lista = Array.isArray(respRes.data) ? respRes.data : [];
+        setResponsavelNome(lista.find((u: any) => u.id === rid)?.nome ?? null);
+      } catch {
+        // Responsável é opcional no cabeçalho.
+      }
+    })();
+  }, [clientId]);
+
+  const handlePendingItems = useCallback(
+    (items: PendingItem[]) => setPendingItems(items),
+    [],
+  );
+
+  // Carga inicial das pendências para os indicadores do topo — o painel da aba
+  // Resumo mantém a lista atualizada via onItemsChange quando montado.
+  useEffect(() => {
+    if (!clientId) return;
+    api
+      .get(`/v1/clients/${clientId}/pending-items`)
+      .then((r) => setPendingItems(r.data || []))
+      .catch(() => {
+        // Indicador opcional — o painel de pendências reporta o erro ao usuário.
+      });
+  }, [clientId]);
+
+  // ── Ações rápidas ────────────────────────────────────────────────────────
+  const [solicitarDocSignal, setSolicitarDocSignal] = useState(0);
+  const [acessoOpen, setAcessoOpen] = useState(false);
+  const [acessoForm, setAcessoForm] = useState({
+    email: "",
+    senha_inicial: "",
+  });
+  const [criandoAcesso, setCriandoAcesso] = useState(false);
+
+  const criarAcessoPortal = async () => {
+    if (!acessoForm.email.trim() || acessoForm.senha_inicial.length < 8) {
+      toast.error("Informe e-mail e senha inicial com no mínimo 8 caracteres");
+      return;
+    }
+    setCriandoAcesso(true);
+    try {
+      await api.post(`/clients/${clientId}/criar-acesso`, {
+        email: acessoForm.email.trim(),
+        senha_inicial: acessoForm.senha_inicial,
+      });
+      toast.success(
+        "Acesso criado — informe o e-mail e a senha inicial ao cliente",
+      );
+      setAcessoOpen(false);
+    } catch (e: any) {
+      toast.error(
+        e.response?.data?.detail || "Não foi possível criar o acesso ao portal",
+      );
+    } finally {
+      setCriandoAcesso(false);
+    }
+  };
+
+  // Fontes extras da linha do tempo (documentos e aberturas de caso) — dados
+  // que o dossiê já carregou; nenhuma chamada adicional.
+  const eventosExtras = useMemo<ClientTimelineExtraEvent[]>(() => {
+    if (!data) return [];
+    return [
+      ...data.documentos_recentes.map((d) => ({
+        id: `doc-${d.id}`,
+        label: "Documento",
+        titulo: d.nome,
+        data: d.created_at,
+        link: `/casos/${d.case_id}`,
+      })),
+      ...data.casos.map((c) => ({
+        id: `caso-${c.id}`,
+        label: "Caso aberto",
+        titulo: c.titulo,
+        data: c.created_at,
+        link: `/casos/${c.id}`,
+      })),
+    ];
+  }, [data]);
+
   if (loading) return <Spinner />;
 
   if (erro || !data)
@@ -838,6 +1070,25 @@ export default function DossieCliente() {
     );
 
   const { cliente, resumo, casos, prazos, documentos_recentes } = data;
+
+  // Indicadores de relacionamento derivados
+  const diasSemContato = ultimaInteracao
+    ? Math.max(
+        0,
+        Math.floor(
+          (Date.now() - new Date(ultimaInteracao).getTime()) / 86_400_000,
+        ),
+      )
+    : null;
+  const pendenciasAtivas = pendingItems.filter((i) => i.status !== "concluido");
+  const pendenciasVencidas = pendenciasAtivas.filter(
+    (i) => i.due_date && new Date(i.due_date + "T23:59:59") < new Date(),
+  ).length;
+  const proximaProvidencia =
+    pendenciasAtivas
+      .filter((i) => i.due_date)
+      .sort((a, b) => a.due_date!.localeCompare(b.due_date!))[0] ?? null;
+
   const taxaRecebimento =
     resumo.honorarios_total > 0
       ? Math.round((resumo.honorarios_recebido / resumo.honorarios_total) * 100)
@@ -890,6 +1141,70 @@ export default function DossieCliente() {
             }
           />
         </div>
+      </div>
+
+      {/* Indicadores de relacionamento */}
+      <div className="card divide-x divide-bronze-pale/50 grid grid-cols-2 lg:grid-cols-4 xl:flex">
+        <div className="px-4 py-3 xl:flex-1 min-w-0">
+          <p className="label-caps text-slate-400">Última interação</p>
+          <p className="text-sm font-medium text-navy-900 mt-0.5">
+            {ultimaInteracao
+              ? new Date(ultimaInteracao).toLocaleDateString("pt-BR")
+              : indicadoresProntos
+                ? "Sem registros"
+                : "…"}
+          </p>
+        </div>
+        <div className="px-4 py-3 xl:flex-1 min-w-0">
+          <p className="label-caps text-slate-400">Sem contato há</p>
+          <p
+            className={`text-sm font-medium mt-0.5 ${
+              diasSemContato !== null && diasSemContato > 30
+                ? "text-danger-600"
+                : "text-navy-900"
+            }`}
+          >
+            {diasSemContato === null
+              ? "—"
+              : diasSemContato === 0
+                ? "Hoje"
+                : `${diasSemContato} dia${diasSemContato > 1 ? "s" : ""}`}
+          </p>
+        </div>
+        <div className="px-4 py-3 xl:flex-1 min-w-0">
+          <p className="label-caps text-slate-400">Pendências vencidas</p>
+          <p
+            className={`text-sm font-medium mt-0.5 flex items-center gap-1 ${
+              pendenciasVencidas > 0 ? "text-danger-600" : "text-success-600"
+            }`}
+          >
+            {pendenciasVencidas > 0 && (
+              <AlertTriangle className="w-3.5 h-3.5" />
+            )}
+            {pendenciasVencidas}
+          </p>
+        </div>
+        <div className="px-4 py-3 xl:flex-1 min-w-0">
+          <p className="label-caps text-slate-400">Próxima providência</p>
+          <p
+            className="text-sm font-medium text-navy-900 mt-0.5 truncate"
+            title={proximaProvidencia?.title}
+          >
+            {proximaProvidencia
+              ? `${proximaProvidencia.title} · ${new Date(
+                  proximaProvidencia.due_date + "T12:00:00",
+                ).toLocaleDateString("pt-BR")}`
+              : "—"}
+          </p>
+        </div>
+        {responsavelNome && (
+          <div className="px-4 py-3 xl:flex-1 min-w-0 col-span-2 lg:col-span-4 xl:col-auto">
+            <p className="label-caps text-slate-400">Responsável</p>
+            <p className="text-sm font-medium text-navy-900 mt-0.5 truncate">
+              {responsavelNome}
+            </p>
+          </div>
+        )}
       </div>
 
       {/* Seletor de Abas (Ficha Mestra - Seção 2.113) */}
@@ -946,16 +1261,80 @@ export default function DossieCliente() {
               color="bronze"
             />
           </div>
+          {/* Painel de ações rápidas */}
+          <div className="card p-4">
+            <p className="eyebrow mb-3 flex items-center gap-2">
+              <Zap className="w-3 h-3" /> Ações rápidas
+            </p>
+            <div className="flex flex-wrap gap-2">
+              <button
+                onClick={() => {
+                  setAbaAtiva("atendimentos");
+                  setSearchParams(
+                    { tab: "atendimentos", novo: "1" },
+                    { replace: true },
+                  );
+                }}
+                className="btn-outline text-xs"
+              >
+                <MessageCircle className="w-3.5 h-3.5" /> Registrar atendimento
+              </button>
+              <button
+                onClick={() => setSolicitarDocSignal((s) => s + 1)}
+                className="btn-outline text-xs"
+              >
+                <FileText className="w-3.5 h-3.5" /> Solicitar documento
+              </button>
+              <Link
+                to={`/casos/novo?client_id=${clientId}`}
+                className="btn-outline text-xs"
+              >
+                <Briefcase className="w-3.5 h-3.5" /> Cadastrar caso
+              </Link>
+              <Link
+                to="/atividades"
+                title="Agendar na Central de Atividades"
+                className="btn-outline text-xs"
+              >
+                <Calendar className="w-3.5 h-3.5" /> Agendar reunião
+              </Link>
+              <button
+                onClick={() => {
+                  setAcessoForm({
+                    email: cliente.email || "",
+                    senha_inicial: "",
+                  });
+                  setAcessoOpen(true);
+                }}
+                className="btn-outline text-xs"
+              >
+                <KeyRound className="w-3.5 h-3.5" /> Acesso ao portal
+              </button>
+            </div>
+          </div>
+
           <div className="grid lg:grid-cols-2 gap-4">
-            <PendingItemsPanel clientId={clientId!} />
-            <ComunicacaoRapida cliente={cliente} />
+            <PendingItemsPanel
+              clientId={clientId!}
+              abrirNovaSignal={solicitarDocSignal}
+              onItemsChange={handlePendingItems}
+            />
+            <ComunicacaoRapida
+              cliente={cliente}
+              onRegistrado={carregarUltimaInteracao}
+            />
           </div>
         </div>
       )}
 
       {abaAtiva === "atendimentos" && (
         <div className="animate-fade-in">
-          <ClientServiceTimeline clientId={clientId!} cases={casos} />
+          <ClientServiceTimeline
+            clientId={clientId!}
+            cases={casos}
+            extraEvents={eventosExtras}
+            autoOpenForm={searchParams.get("novo") === "1"}
+          />
         </div>
       )}
 
@@ -1059,10 +1438,10 @@ export default function DossieCliente() {
           <Bot className="w-12 h-12 mx-auto text-bronze-pale" />
           <h3 className="text-lg font-serif">IA do Cliente (Análise 360º)</h3>
           <p className="text-sm text-slate-500 max-w-md mx-auto">
-            A análise estratégica automática do histórico deste cliente
-            (padrões de litígio, riscos financeiros e oportunidades) ainda
-            está em desenvolvimento. Enquanto isso, use a Pesquisa e IA com o
-            caso do cliente selecionado.
+            A análise estratégica automática do histórico deste cliente (padrões
+            de litígio, riscos financeiros e oportunidades) ainda está em
+            desenvolvimento. Enquanto isso, use a Pesquisa e IA com o caso do
+            cliente selecionado.
           </p>
           <span className="inline-block text-xs font-medium text-slate-400 border border-bronze-pale rounded-full px-3 py-1">
             Em breve
@@ -1091,6 +1470,58 @@ export default function DossieCliente() {
           </div>
         </div>
       )}
+
+      {/* Modal — Conceder acesso ao Portal do Cliente */}
+      <Modal
+        open={acessoOpen}
+        onClose={() => setAcessoOpen(false)}
+        title="Acesso ao Portal do Cliente"
+      >
+        <div className="space-y-4">
+          <p className="text-sm text-slate-500">
+            {cliente.nome} — o cliente trocará a senha no primeiro login.
+          </p>
+          <div>
+            <label className="label">E-mail de login *</label>
+            <input
+              type="email"
+              className="input"
+              value={acessoForm.email}
+              onChange={(e) =>
+                setAcessoForm((p) => ({ ...p, email: e.target.value }))
+              }
+            />
+          </div>
+          <div>
+            <label className="label">Senha inicial (mín. 8) *</label>
+            <input
+              type="text"
+              className="input"
+              value={acessoForm.senha_inicial}
+              onChange={(e) =>
+                setAcessoForm((p) => ({ ...p, senha_inicial: e.target.value }))
+              }
+            />
+          </div>
+          <div className="flex gap-3 pt-2">
+            <button
+              type="button"
+              onClick={() => setAcessoOpen(false)}
+              className="btn-secondary flex-1"
+            >
+              Cancelar
+            </button>
+            <button
+              type="button"
+              onClick={criarAcessoPortal}
+              disabled={criandoAcesso}
+              className="btn-primary flex-1"
+            >
+              {criandoAcesso ? "Criando..." : "Criar acesso"}
+            </button>
+          </div>
+        </div>
+      </Modal>
 
       {/* Modal — Editar perfil do cliente */}
       <Modal
