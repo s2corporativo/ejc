@@ -21,7 +21,7 @@ psycopg2-binary==2.9.9  # driver SYNC exigido por alembic/env.py — ausente cau
                          # falha de "alembic upgrade head" em instalação limpa (Etapa 6D)
 
 # Validation and settings
-pydantic==2.7.4
+pydantic==2.13.4
 pydantic-settings==2.3.1
 email-validator==2.3.0
 python-dotenv==1.0.1
