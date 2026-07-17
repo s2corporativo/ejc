@@ -67,3 +67,6 @@ frontend/.claude/
 
 # Segredos aplicados direto na VPS (OAuth Google Drive etc.) — nunca versionar
 secrets/
+
+# Override local de VPS (usar docker-compose.override.example.yml como base)
+docker-compose.override.yml
