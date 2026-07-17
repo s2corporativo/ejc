@@ -95,33 +95,68 @@ const TABS = [
 ] as const;
 type TabKey = (typeof TABS)[number]["key"];
 
-const GROUPS: { label: string; tabs: TabKey[] }[] = [
+// P1 (proposta de melhorias): as ~26 abas do workspace do caso são organizadas
+// em SEIS seções internas. Cada aba mantém a mesma key e o mesmo conteúdo —
+// só muda o agrupamento; deep-links (?tab=...) antigos continuam funcionando
+// porque a seção ativa é derivada da aba (GROUPS.find abaixo).
+// `links` são rotas irmãs do caso (páginas próprias) expostas na seção
+// pertinente para não parecerem sistemas separados.
+const GROUPS: {
+  label: string;
+  tabs: TabKey[];
+  links?: { label: string; to: (caseId: string) => string }[];
+}[] = [
   {
-    label: "Visão",
-    tabs: ["resumo", "processos", "score", "risco"],
+    // Informações principais, cliente e partes, etiquetas, pendências.
+    label: "Resumo",
+    tabs: ["resumo", "partes", "etiquetas"],
+    links: [
+      { label: "🧭 Jornada do caso", to: (id) => `/casos/${id}/jornada` },
+      {
+        label: "🎤 Entrevista inteligente",
+        to: (id) => `/casos/${id}/entrevista`,
+      },
+    ],
   },
   {
+    // Timeline, processos, mensagens, prazos, audiências, checklists.
     label: "Andamentos",
-    tabs: ["timeline", "mensagens", "partes", "etiquetas", "checklists"],
+    tabs: [
+      "timeline",
+      "processos",
+      "mensagens",
+      "prazos",
+      "audiencias",
+      "checklists",
+    ],
   },
   {
-    label: "Documentos",
+    label: "Documentos e provas",
     tabs: ["documentos", "provas", "contratos", "procuracoes"],
   },
-  { label: "Prazos & Agenda", tabs: ["prazos", "audiencias"] },
-  { label: "Financeiro", tabs: ["financeiro", "custos", "liquidez"] },
   {
-    label: "Inteligência",
+    // Teses, precedentes, jurisprudência, risco, score, dossiê, IA.
+    label: "Estratégia",
     tabs: [
       "teses",
       "teses-sugeridas",
       "jurisprudencia",
       "precedentes",
-      "memoria",
+      "risco",
+      "score",
       "dossie",
       "iaDefensiva",
       "ferramentas",
     ],
+    links: [
+      { label: "⚔️ Sala de Guerra", to: (id) => `/casos/${id}/sala-de-guerra` },
+    ],
+  },
+  { label: "Financeiro", tabs: ["financeiro", "custos", "liquidez"] },
+  {
+    // Memória do caso, resultado, lições aprendidas, pós-mortem.
+    label: "Histórico e encerramento",
+    tabs: ["memoria"],
   },
 ];
 
@@ -4226,28 +4261,40 @@ export default function CasoDetalhe() {
         {/* Sub-abas do grupo ativo */}
         {(() => {
           const grp = grupoAtivo;
-          if (grp.tabs.length <= 1) return null;
+          if (grp.tabs.length <= 1 && !grp.links?.length) return null;
           return (
             <div className="flex gap-2 overflow-x-auto border-t border-slate-100 bg-slate-50/70 px-3 py-2 scrollbar-thin">
               <span className="hidden text-[11px] font-semibold uppercase tracking-[0.16em] text-slate-400 sm:inline-flex sm:items-center">
                 {grp.label}
               </span>
-              {grp.tabs.map((k) => {
-                const t = TABS.find((x) => x.key === k)!;
-                return (
-                  <button
-                    key={k}
-                    onClick={() => setSearchParams({ tab: k })}
-                    className={`h-8 flex-shrink-0 rounded-full px-3 text-xs font-medium transition-colors ${
-                      activeTab === k
-                        ? "bg-slate-950 text-white"
-                        : "text-slate-600 hover:bg-white hover:text-slate-950"
-                    }`}
-                  >
-                    {t.label}
-                  </button>
-                );
-              })}
+              {grp.tabs.length > 1 &&
+                grp.tabs.map((k) => {
+                  const t = TABS.find((x) => x.key === k)!;
+                  return (
+                    <button
+                      key={k}
+                      onClick={() => setSearchParams({ tab: k })}
+                      className={`h-8 flex-shrink-0 rounded-full px-3 text-xs font-medium transition-colors ${
+                        activeTab === k
+                          ? "bg-slate-950 text-white"
+                          : "text-slate-600 hover:bg-white hover:text-slate-950"
+                      }`}
+                    >
+                      {t.label}
+                    </button>
+                  );
+                })}
+              {/* Rotas irmãs do caso vinculadas a esta seção (Sala de Guerra,
+                  Jornada, Entrevista) — páginas próprias, não abas. */}
+              {grp.links?.map((l) => (
+                <Link
+                  key={l.label}
+                  to={l.to(caso.id)}
+                  className="flex h-8 flex-shrink-0 items-center rounded-full border border-slate-200 bg-white px-3 text-xs font-medium text-primary-700 transition-colors hover:border-primary-300 hover:bg-primary-50"
+                >
+                  {l.label}
+                </Link>
+              ))}
             </div>
           );
         })()}
