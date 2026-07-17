@@ -141,12 +141,13 @@
   border-radius: 2rem;
   padding: 1.35rem;
   background:
-    radial-gradient(circle at 10% 15%, rgba(212, 175, 55, 0.22), transparent 18rem),
-    linear-gradient(135deg, rgba(59, 47, 11, 0.98), rgba(111, 87, 17, 0.94) 58%, rgba(143, 113, 23, 0.95));
-  color: #fff;
+    radial-gradient(circle at 10% 15%, rgba(212, 175, 55, 0.1), transparent 18rem),
+    #ffffff;
+  color: #0f172a;
+  border: 1px solid rgb(226 232 240);
   box-shadow:
-    0 1px 2px rgba(15, 23, 42, 0.08),
-    0 28px 80px rgba(59, 47, 11, 0.22);
+    0 1px 2px rgba(15, 23, 42, 0.04),
+    0 18px 45px rgba(15, 23, 42, 0.05);
 }
 
 .ejc-modern-scope > div > .space-y-6 > .flex.flex-col.gap-4:first-child::after {
@@ -162,17 +163,17 @@
 }
 
 .ejc-modern-scope > div > .space-y-6 > .flex.flex-col.gap-4:first-child .eyebrow {
-  color: rgba(229, 206, 127, 0.92);
+  color: #8a6d2f;
 }
 
 .ejc-modern-scope > div > .space-y-6 > .flex.flex-col.gap-4:first-child h1 {
-  color: #fff;
+  color: #0f172a;
   font-size: clamp(1.75rem, 3vw, 2.8rem);
   letter-spacing: -0.04em;
 }
 
 .ejc-modern-scope > div > .space-y-6 > .flex.flex-col.gap-4:first-child p {
-  color: rgba(255, 245, 230, 0.76);
+  color: rgb(100 116 139);
 }
 
 .ejc-modern-scope > div > .space-y-6 > .flex.flex-col.gap-4:first-child .btn-primary {
@@ -182,14 +183,13 @@
 }
 
 .ejc-modern-scope > div > .space-y-6 > .flex.flex-col.gap-4:first-child .btn-secondary {
-  border-color: rgba(255, 245, 230, 0.18);
-  background: rgba(255, 255, 255, 0.1);
-  color: #fff;
-  backdrop-filter: blur(12px);
+  border-color: rgb(226 232 240);
+  background: #ffffff;
+  color: rgb(51 65 85);
 }
 
 .ejc-modern-scope > div > .space-y-6 > .flex.flex-col.gap-4:first-child .btn-secondary:hover {
-  background: rgba(255, 255, 255, 0.16);
+  background: rgb(248 250 252);
 }
 
 .ejc-modern-scope > div > .space-y-6 > .grid[class*="xl:grid-cols-4"] > .card {

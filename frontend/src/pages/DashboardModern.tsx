@@ -508,11 +508,11 @@ export default function DashboardModern() {
             {quickActions.map(({ to, label, icon: Icon, primary }) => (
               <Link key={label} to={to}>
                 <Button
-                  variant={primary ? "secondary" : "ghost"}
+                  variant={primary ? "primary" : "ghost"}
                   icon={<Icon className="h-4 w-4" />}
                   className={
                     primary
-                      ? "bg-ouro-profundo text-white shadow-sm hover:bg-ouro dark:bg-ouro-profundo dark:text-white dark:hover:bg-ouro"
+                      ? "shadow-sm"
                       : "text-slate-700 hover:bg-slate-100 dark:text-slate-200 dark:hover:bg-white/10"
                   }
                 >
