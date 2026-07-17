@@ -52,18 +52,21 @@ class ModoSanitizacao(str, Enum):
 # receber qualquer um dos dois. Comparação é feita sobre o task_type ORIGINAL
 # (antes da normalização por aliases do gateway).
 _MODO_DEFAULT_POR_TASK: dict[str, ModoSanitizacao] = {
-    # `criminal` — MANTIDO em LOCAL_COMPLETO (nunca sai da VPS). Auditoria de
-    # segurança (2026-07-06) apontou risco CRÍTICO ao rebaixar para externo: a 2ª
-    # barreira só detecta PII ESTRUTURAL (CPF/CNPJ/RG/e-mail/tel/CEP), NÃO nomes
-    # próprios. Nomes de vítima/testemunha que aparecem só no documento/OCR/RAG
-    # (não cadastrados como parte no Case) iriam EM CLARO ao provedor externo
-    # (EUA) — inaceitável em matéria criminal. A IA criminal roda on-prem quando
-    # houver Ollama (scripts/subir-ia-local.sh). NÃO é rebaixável por config: o
-    # piso não-rebaixável de modo_para_task IGNORA qualquer override de
-    # AI_SANITIZATION_MODE_MAP para tarefa LOCAL_COMPLETO. Levar criminal a externo
-    # exige mudar ESTE default no código — e, antes, um NER local reforçando a
-    # barreira contra nomes (vítima/testemunha citados só no documento).
-    "criminal": ModoSanitizacao.LOCAL_COMPLETO,
+    # `criminal` — EXTERNO_PSEUDONIMIZADO (auditoria de IA 2026-07-17, achado A-1).
+    # O risco que antes mantinha esta tarefa em LOCAL_COMPLETO — nomes de vítima/
+    # testemunha/terceiro citados SÓ no documento/OCR/RAG (não cadastrados como
+    # parte no Case) indo EM CLARO ao provedor externo — JÁ FOI MITIGADO: o
+    # pseudonimizador tem uma 3ª passada de NER LOCAL (ai/ner_local.detectar_nomes
+    # → [PESSOA_n], issue #102) que pseudonimiza esses nomes ANTES do provider
+    # externo, e a 2ª barreira (validar_sem_pii_pseudonimizado →
+    # contem_nome_alta_confianca) BLOQUEIA o externo se um nome de ALTA confiança
+    # escapar (fail-closed). Só marcadores reversíveis deixam o VPS; a resposta é
+    # reidratada localmente. Manter LOCAL_COMPLETO com o Ollama DESLIGADO em
+    # produção deixava a IA criminal INDISPONÍVEL (cadeia local vazia → erro).
+    # Para sigilo MÁXIMO, o escritório pode REFORÇAR criminal de volta a
+    # LOCAL_COMPLETO via AI_SANITIZATION_MODE_MAP (reforço é sempre permitido) e
+    # subir o Ollama on-prem (scripts/subir-ia-local.sh).
+    "criminal": ModoSanitizacao.EXTERNO_PSEUDONIMIZADO,
     # Modo 2+3 — pseudonimização reversível + reidratação (análise/minuta).
     "analise_caso": ModoSanitizacao.EXTERNO_PSEUDONIMIZADO,
     "dossie": ModoSanitizacao.EXTERNO_PSEUDONIMIZADO,

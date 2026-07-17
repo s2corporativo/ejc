@@ -1,10 +1,12 @@
 # ── app/services/embedding_service.py ────────────────────────────────────────
-# Embeddings locais (soberania de dados) via fastembed (ONNX, sem torch):
-#   sentence-transformers/paraphrase-multilingual-mpnet-base-v2 (768d),
-#   multilíngue (~50 idiomas, PT-BR incluído) — casa com a coluna
-#   knowledge_chunks.embedding vector(768) do pgvector (migration 013).
-# Protocolo E5 (prefixos "query: "/"passage: ") só se aplica a modelos E5;
-# o mpnet não usa prefixo — mantemos o parâmetro `modo` pela API HTTP.
+# Embeddings locais (soberania de dados) via fastembed (ONNX, sem torch).
+# Modelo/dimensão CONFIGURÁVEIS (auditoria IA 2026-07-17, O-2):
+#   default BAAI/bge-m3 (1024d, multilíngue forte, denso) — casa com a coluna
+#   knowledge_chunks.embedding vector(1024) da migration 096. Trocar a dimensão
+#   exige migration + reindex (scripts.reembedar_chunks_orfaos). Revertível por
+#   env (EMBEDDINGS_MODEL/EMBEDDINGS_DIM).
+# Protocolo E5 (prefixos "query: "/"passage: ") só se aplica a modelos E5 (ex.:
+#   multilingual-e5-large); bge-m3/mpnet não usam prefixo (detectado por _prefixo).
 # Lazy-load + singleton: o modelo (~1GB no 1º download) só carrega no
 # primeiro uso, nunca no boot; encode roda em thread (asyncio.to_thread).
 # Provider local: fastembed no mesmo processo.
@@ -20,8 +22,10 @@ from app.core.config import get_settings
 logger = logging.getLogger("ejc.embeddings")
 settings = get_settings()
 
-MODEL_NAME = "sentence-transformers/paraphrase-multilingual-mpnet-base-v2"
-EMBED_DIM  = 768  # deve casar com vector(768) de knowledge_chunks.embedding
+# Configuráveis por env (O-2). Default BGE-M3 (1024d). DEVE casar com a coluna
+# knowledge_chunks.embedding vector(EMBED_DIM) — ver migration 096 e o runbook.
+MODEL_NAME = settings.EMBEDDINGS_MODEL or "BAAI/bge-m3"
+EMBED_DIM  = int(settings.EMBEDDINGS_DIM or 1024)
 
 _model = None
 _model_lock = threading.Lock()

@@ -1,12 +1,10 @@
 name: EJC Release Gate
 
+# Release gate na nuvem DESLIGADO (2026-07-17) — o GitHub Actions cobra minutos em
+# repo privado. Validação equivalente roda de graça via `scripts/ci-local.sh`.
+# Reative restaurando os gatilhos push/pull_request abaixo.
 on:
-  pull_request:
-    branches:
-      - main
-  push:
-    branches:
-      - main
+  workflow_dispatch:   # só manual
 
 permissions:
   contents: read

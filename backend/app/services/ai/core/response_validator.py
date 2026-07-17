@@ -18,6 +18,14 @@ _RE_PROMESSAS = [
     re.compile(r"\b(?:vamos|iremos|vai|irá|ira)\s+(?:certamente\s+)?ganhar\s+(?:a\s+causa|o\s+processo|a\s+ação|a\s+acao)", re.I),
     re.compile(r"100%\s*de\s*(?:chance|êxito|exito|certeza|sucesso)", re.I),
     re.compile(r"êxito\s+(?:é\s+)?garantido|exito\s+(?:é\s+)?garantido", re.I),
+    # Paráfrases de garantia (auditoria IA 2026-07-17, achado A-4): a vedação da
+    # OAB (art. 34, XX; Provimentos) alcança a PROMESSA de resultado, não só a
+    # palavra "garantia". Continua sendo ALERTA ao revisor, nunca reescrita.
+    re.compile(r"(?:[êe]xito|vit[óo]ria|sucesso|resultado|ganho)\s+(?:\w+\s+){0,2}(?:garantid[oa]s?|assegurad[oa]s?)", re.I),
+    re.compile(r"(?:imposs[íi]vel|n[ãa]o\s+h[áa]\s+como|n[ãa]o\s+tem\s+como)\s+(?:\w+\s+){0,2}perder", re.I),
+    re.compile(r"chances?\s+(?:\w+\s+){0,3}(?:100\s*%|alt[íi]ssim[ao]s?|elevad[íi]ssim[ao]s?)", re.I),
+    re.compile(r"risco\s+(?:zero|nulo|inexistente|nenhum)\s+de\s+(?:perda|perder|derrota|insucesso)", re.I),
+    re.compile(r"(?:com\s+certeza|certamente|sem\s+d[úu]vida)\s+(?:\w+\s+){0,2}(?:ganha\w*|vence\w*|ter\s+[êe]xito)", re.I),
 ]
 
 PREFIXO_SEM_BASE = (
@@ -87,6 +95,42 @@ async def validar(
                     "ou override justificado do revisor."
                 )
                 revisao_obrigatoria = True
+
+    # 1.5 Grounding de citações (auditoria IA 2026-07-17, O-5). Alem do
+    # citation_check contra a base interna, confere as citacoes com o verificador
+    # rigoroso: checagens LOCAIS (dígito verificador do nº CNJ, faixa de súmula,
+    # formato → citação suspeita/alucinada) LIGADAS por default; a confirmacao no
+    # DataJud (rede externa) é separada e opt-in. Aditivo e fail-safe.
+    if exige_fonte and db is not None:
+        from app.core.config import get_settings
+        _cfg = get_settings()
+        if getattr(_cfg, "AI_LIVE_GROUNDING_ENABLED", True):
+            try:
+                from app.services.verificador_jurisprudencia import verificar_jurisprudencia
+                vj = await verificar_jurisprudencia(
+                    db, conteudo,
+                    consultar_datajud=getattr(_cfg, "AI_GROUNDING_DATAJUD_ENABLED", False),
+                )
+                cont = (vj.get("contagem_status") or {}) if isinstance(vj, dict) else {}
+                suspeitas = int(cont.get("suspeita", 0) or 0)
+                score = vj.get("score") if isinstance(vj, dict) else None
+                if suspeitas:
+                    alertas.append(
+                        f"{suspeitas} citação(ões) com formato inválido/suspeito "
+                        "(grounding ao vivo) — possível alucinação; verificação manual obrigatória."
+                    )
+                    revisao_obrigatoria = True
+                if isinstance(score, (int, float)) and score < 50:
+                    alertas.append(
+                        f"Confiabilidade das citações (grounding ao vivo) baixa: {int(score)}/100 "
+                        "— confira a jurisprudência citada."
+                    )
+                    revisao_obrigatoria = True
+            except Exception:
+                alertas.append(
+                    "Grounding ao vivo de citações indisponível — confira manualmente "
+                    "a jurisprudência (nº de processo, tribunal, súmula)."
+                )
 
     # 2. Vedação de promessa de resultado — alerta, nunca reescrita.
     promessas = detectar_promessa_resultado(conteudo)

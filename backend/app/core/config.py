@@ -339,6 +339,64 @@ class Settings(BaseSettings):
     EMBEDDINGS_PROVIDER: str = "local"  # local | http
     EMBEDDINGS_API_URL: str = "http://embeddings:8010/embed"
     EMBEDDINGS_TIMEOUT: int = 120
+    # Modelo e dimensão do embedding (auditoria IA 2026-07-17, O-2). Default
+    # ATUALIZADO para BGE-M3 (1024d, multilíngue forte, denso) — recall superior
+    # ao mpnet (2021, 768d). A coluna knowledge_chunks.embedding é
+    # vector(EMBEDDINGS_DIM); TROCAR A DIMENSÃO exige a migration 096 + REINDEX
+    # (scripts.reembedar_chunks_orfaos). Revertível por env (voltar a
+    # sentence-transformers/paraphrase-multilingual-mpnet-base-v2 + 768 exige a
+    # migration de downgrade + reindex). ⚠️ EMBEDDINGS_DIM DEVE casar com a coluna.
+    EMBEDDINGS_MODEL: str = "BAAI/bge-m3"
+    EMBEDDINGS_DIM: int = 1024
+    # Auto-reindex do RAG (O-2): job periódico do scheduler reembeda chunks órfãos
+    # (embedding IS NULL) — assim a troca de modelo/dimensão (migration 096) se
+    # AUTO-CURA sem passo manual no deploy. No-op rápido quando não há órfãos.
+    # O script manual (scripts.reembedar_chunks_orfaos) segue como fallback.
+    RAG_AUTO_REEMBED_ENABLED: bool = True
+    RAG_AUTO_REEMBED_BATCH: int = 20
+
+    # ── Reranking (cross-encoder) do RAG — Fase 1 auditoria IA 2026-07-17 ─
+    # Reordena os candidatos do retrieval híbrido (pgvector cosine + RRF pg_trgm)
+    # por relevância consulta↔trecho com um cross-encoder LOCAL (fastembed, sem
+    # torch; não sai do VPS). Recupera um POOL maior (RAG_RERANK_POOL_*) e devolve
+    # só os melhores após rerank — maior ganho de precisão de contexto do RAG.
+    # Fail-safe (ver reranker.py): fastembed/modelo ausente ou qualquer erro →
+    # mantém a ordem RRF, sem exceção. O modelo default é multilíngue; se a versão
+    # instalada do fastembed não o suportar, troque por um suportado (ex.:
+    # BAAI/bge-reranker-base, jinaai/jina-reranker-v2-base-multilingual) — a
+    # degradação é graciosa e o RAG segue funcionando.
+    RAG_RERANK_ENABLED: bool = True
+    RAG_RERANK_MODEL: str = "BAAI/bge-reranker-v2-m3"
+    RAG_RERANK_POOL_MULT: int = 5     # pool de candidatos = limite × MULT
+    RAG_RERANK_POOL_MIN: int = 20     # piso de candidatos antes do rerank
+
+    # ── Ajuste fino do retrieval RAG (auditoria IA 2026-07-17) ───────────────
+    # Limiar de similaridade de cosseno da busca vetorial (pgvector): chunks com
+    # similaridade < RAG_MIN_SIM são descartados (dist > 1-RAG_MIN_SIM). Antes era
+    # hardcoded (0.55); agora é calibrável por um eval set sem tocar código.
+    RAG_MIN_SIM: float = 0.55
+    # HyDE (Hypothetical Document Embeddings): gera uma "resposta hipotética"
+    # curta e barata e a EMBUTE na busca vetorial — melhora o recall quando o
+    # vocabulário do caso novo difere do registrado. Fail-safe: erro/timeout →
+    # usa a consulta original. Default OFF (liga após medir; +1 chamada barata/busca).
+    RAG_HYDE_ENABLED: bool = False
+    # Perna lexical FULL-TEXT (tsvector 'portuguese', BM25-like) no híbrido RRF,
+    # além do pg_trgm — melhor para termos raros/citações exatas (art./súmula/nº
+    # CNJ). Usa o índice GIN pré-existente ix_knowledge_chunks_conteudo_fts
+    # (migration 001) — não requer migration nova. Fail-safe: erro → só
+    # semântico+trigram. Default OFF até validar em produção.
+    RAG_FTS_ENABLED: bool = False
+    # Grounding de citações (auditoria IA 2026-07-17, O-5): além do citation_check
+    # contra a base interna, o validador confere as citações com o verificador
+    # rigoroso. As checagens são LOCAIS (dígito verificador do nº CNJ, faixa de
+    # súmula, formato → detecta citação alucinada) e não fazem rede — por isso o
+    # grounding vem LIGADO por default (valor imediato, zero latência). Aditivo e
+    # fail-safe (erro → alerta, nunca derruba).
+    AI_LIVE_GROUNDING_ENABLED: bool = True
+    # Confirmação de nº CNJ no DataJud (CNJ) — a ÚNICA parte que faz REDE externa
+    # (latência/rate limit). Separada e OFF por default: ligue após validar a
+    # conectividade DataJud no ambiente. O grounding local acima independe disto.
+    AI_GROUNDING_DATAJUD_ENABLED: bool = False
 
     # ── RAG de MODELOS na geração de peças (Bíblia de Conhecimento) ───────
     # Recupera os modelos de peça (categoria "modelo_documento_juridico") como

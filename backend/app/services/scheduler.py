@@ -953,6 +953,25 @@ async def _purgar_logs_ia():
 
 # ── Start/Stop ────────────────────────────────────────────────────────────────
 
+async def _reembedar_rag_orfaos():
+    """Auto-reindex do RAG (auditoria IA 2026-07-17, O-2): reembeda chunks órfãos
+    (embedding IS NULL) para que a troca de modelo/dimensão do embedding
+    (migration 096) se AUTO-CURE, sem exigir o script manual no deploy. Gate
+    RAG_AUTO_REEMBED_ENABLED (default True). No-op rápido quando não há órfãos;
+    fail-safe (erro vira warning e é retentado na próxima execução)."""
+    if not getattr(settings, "RAG_AUTO_REEMBED_ENABLED", True):
+        return
+    try:
+        from app.services.embedding_service import disponivel as _emb_on
+        if not _emb_on():
+            logger.info("[Scheduler] auto-reembed pulado: embeddings indisponíveis")
+            return
+        from scripts.reembedar_chunks_orfaos import reembedar
+        await reembedar(batch_size=int(getattr(settings, "RAG_AUTO_REEMBED_BATCH", 20)))
+    except Exception as e:  # nunca derruba o scheduler
+        logger.warning("[Scheduler] auto-reembed falhou (será retentado): %s", str(e)[:200])
+
+
 def start_scheduler():
     """Inicia jobs APENAS se ENABLE_SCHEDULER=true (evita duplicação)."""
     if not settings.ENABLE_SCHEDULER:
@@ -983,6 +1002,11 @@ def start_scheduler():
     s.add_job(job_ingestao_planalto, CronTrigger(day_of_week="sun", hour=3), id="ing_planalto", replace_existing=True)
     s.add_job(job_ingestao_stj,      CronTrigger(day_of_week="sat", hour=3), id="ing_stj",      replace_existing=True)
     s.add_job(_purgar_logs_ia,    CronTrigger(day_of_week="sun", hour=2),  id="purga_ia",   replace_existing=True)
+    # Auto-reindex do RAG (O-2): reembeda chunks órfãos de hora em hora (:20).
+    # Self-heal da troca de embedding (migration 096) sem passo manual. No-op
+    # quando não há órfãos; max_instances=1 evita sobreposição na 1ª carga grande.
+    s.add_job(_reembedar_rag_orfaos, CronTrigger(minute=20), id="reembed_rag_orfaos",
+              replace_existing=True, max_instances=1, coalesce=True)
     s.add_job(_purgar_dados_lgpd, CronTrigger(day_of_week="sun", hour=2, minute=30), id="purga_lgpd", replace_existing=True)
     s.add_job(job_ingestao_camara,   CronTrigger(hour=4, minute=0),          id="ing_camara",   replace_existing=True)
     s.add_job(job_ingestao_senado,   CronTrigger(hour=4, minute=20),         id="ing_senado",   replace_existing=True)
