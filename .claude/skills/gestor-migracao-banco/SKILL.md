@@ -6,13 +6,12 @@ description: >
 
 > Playbook de referência. Ponto de entrada canônico: agente `db-migrations`. Consultado durante a tarefa — não roteia.
 
-# Gestor de Migrações de Banco — EJC (Alembic) + Sistema-S2 (SQL)
+# Gestor de Migrações de Banco — EJC (Alembic)
 
 ## Contexto
 
 ```
 EJC BACKEND: FastAPI + SQLAlchemy + Alembic + PostgreSQL
-SISTEMA-S2: TypeScript + node-postgres + scripts SQL versionados
 REGRA ABSOLUTA: nunca alterar banco de produção sem backup + teste em homologação
 ```
 
