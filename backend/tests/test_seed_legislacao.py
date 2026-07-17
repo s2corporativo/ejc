@@ -1,15 +1,18 @@
 # ── tests/test_seed_legislacao.py ────────────────────────────────────────────
-# Importador de legislação (lei seca) — scripts/seed_legislacao.py.
+# Ingestor UNIFICADO de legislação (lei seca) — app/services/ingestors/planalto.py
+# + wrapper CLI scripts/seed_legislacao.py.
 #
-# Quatro frentes (nenhuma depende de rede — download SEMPRE mockado):
+# Cinco frentes (nenhuma depende de rede — download SEMPRE mockado):
 #   1. parser em unidade com fixture HTML versionada (recorte adaptado do
 #      Planalto/CDC): texto limpo verbatim, boilerplate/riscado removidos,
 #      divisão por artigo e chunks no formato que _existe_artigo consome;
-#   2. integridade do catálogo versionado;
+#   2. integridade do catálogo unificado (9 códigos legados + 5 leis do seed);
 #   3. executar_seed_legislacao() com upsert monkeypatchado (governança:
-#      categoria/confiança/fonte/chave; isolamento de falha por lei);
+#      categoria/confiança/chave LEGADA planalto:<slug>; isolamento de falha);
 #   4. idempotência + versionamento + smoke do gate no Postgres real
-#      (RUN_DB_TESTS=1; mesmo padrão dos *_dblevel.py).
+#      (RUN_DB_TESTS=1; mesmo padrão dos *_dblevel.py);
+#   5. UNIFICAÇÃO no Postgres real: seed + job do scheduler na MESMA chave não
+#      duplicam; doc de produção com chunking antigo é re-chunkado UMA vez.
 from __future__ import annotations
 
 import os
@@ -18,13 +21,14 @@ from pathlib import Path
 import pytest
 from sqlalchemy import text as sql
 
+import app.services.ingestors.planalto as pl
 import scripts.seed_legislacao as sl
-from scripts.seed_legislacao import (
+from app.services.ingestors.planalto import (
     CATALOGO,
     dividir_artigos,
     extrair_texto_planalto,
     montar_chunks,
-    preparar_lei,
+    preparar_diploma,
 )
 
 FIXTURE = Path(__file__).parent / "fixtures" / "planalto_cdc_recorte.html"
@@ -168,17 +172,35 @@ def test_artigos_curtos_agrupados_enumeram_todos_no_header():
 
 
 # ══════════════════════════════════════════════════════════════════════════
-# 3. Catálogo versionado
+# 3. Catálogo unificado (códigos legados do job semanal + leis do seed)
 # ══════════════════════════════════════════════════════════════════════════
 
-def test_catalogo_completo_planalto_sem_duplicatas():
-    siglas = [l["sigla"] for l in CATALOGO]
-    assert len(siglas) == len(set(siglas))
-    assert {"cf88", "cc", "cpc", "clt", "cdc", "l9099", "lgpd", "ctn",
-            "cp", "cpp", "cflo", "lca", "pnma"} == set(siglas)
+def test_catalogo_unificado_planalto_sem_duplicatas():
+    slugs = [l["slug"] for l in CATALOGO]
+    assert len(slugs) == len(set(slugs))
+    # 9 códigos legados do ingestor (chaves de produção) + 5 leis novas do seed
+    assert {"cf88", "cc", "cpc", "clt", "cdc", "cp", "cpp", "eca", "ctn",
+            "l9099", "lgpd", "cflo", "lca", "pnma"} == set(slugs)
     for lei in CATALOGO:
-        assert lei["url"].startswith("https://www.planalto.gov.br/ccivil_03/"), lei["sigla"]
-        assert lei["nome"] and lei["area"], lei["sigla"]
+        assert lei["url"].startswith("https://www.planalto.gov.br/ccivil_03/"), lei["slug"]
+        assert lei["titulo"] and lei["area"], lei["slug"]
+    # o wrapper CLI reexporta o MESMO catálogo (escritor único, sem cópia)
+    assert sl.CATALOGO is pl.CATALOGO
+
+
+def test_urls_legadas_de_producao_preservadas():
+    # As URLs dos 9 códigos que já existiam no job semanal (produção) não
+    # podem mudar — são a `fonte` dos docs vigentes com chave planalto:<slug>.
+    urls = {l["slug"]: l["url"] for l in CATALOGO}
+    assert urls["cf88"].endswith("/constituicao/constituicaocompilado.htm")
+    assert urls["cc"].endswith("/leis/2002/l10406compilada.htm")
+    assert urls["cpc"].endswith("/_ato2015-2018/2015/lei/l13105.htm")
+    assert urls["clt"].endswith("/decreto-lei/del5452compilado.htm")
+    assert urls["cdc"].endswith("/leis/l8078compilado.htm")
+    assert urls["cp"].endswith("/decreto-lei/del2848compilado.htm")
+    assert urls["cpp"].endswith("/decreto-lei/del3689compilado.htm")
+    assert urls["eca"].endswith("/leis/l8069compilado.htm")
+    assert urls["ctn"].endswith("/leis/l5172compilado.htm")
 
 
 # ══════════════════════════════════════════════════════════════════════════
@@ -210,13 +232,17 @@ def pipeline_mockado(monkeypatch, html):
     async def fake_exec(db, slug, **kw):
         execucoes.append({"slug": slug, **kw})
 
-    async def fake_html(lei, cache_dir=None):
+    async def fake_html(diploma, cache_dir=None):
         return html
+
+    async def fake_rechunk(db, chave):
+        return False               # _FakeDB não tem execute(); DB real na frente 5
 
     monkeypatch.setattr(ing, "upsert_documento", fake_upsert)
     monkeypatch.setattr(ing, "registrar_fonte", fake_fonte)
     monkeypatch.setattr(ing, "marcar_execucao", fake_exec)
-    monkeypatch.setattr(sl, "obter_html", fake_html)
+    monkeypatch.setattr(pl, "obter_html", fake_html)
+    monkeypatch.setattr(pl, "_rechunk_pendente", fake_rechunk)
     return chamadas, execucoes
 
 
@@ -228,14 +254,16 @@ async def test_seed_governanca_categoria_confianca_chave(pipeline_mockado):
     for c in chamadas:
         assert c["categoria"] == "legislacao"       # o que _existe_artigo filtra
         assert c["confianca"] == "alta"             # fonte oficial (lei seca)
-        assert c["fonte"] == "planalto"
-        assert c["chave_origem"].startswith("legislacao:planalto:")
+        assert c["fonte"].startswith("https://www.planalto.gov.br/")
+        assert c["chave_origem"].startswith("planalto:")   # chave LEGADA de produção
         assert c["embutir_vetores"] is False        # default: auto-reembed depois
+        assert c["forcar_nova_versao"] is False     # sem doc antigo → sem força
         assert c["extra"]["fonte_url"].startswith("https://www.planalto.gov.br/")
         assert c["extra"]["divisao"] == "por_artigo"
+        assert c["extra"]["slug"] and c["extra"]["area"]
         assert c["chunks"] and all(isinstance(x, str) for x in c["chunks"])
     assert {c["chave_origem"] for c in chamadas} == \
-           {"legislacao:planalto:cdc", "legislacao:planalto:lgpd"}
+           {"planalto:cdc", "planalto:lgpd"}
     assert execucoes and execucoes[0]["status"] == "sucesso" \
            and execucoes[0]["novos"] == 2 and execucoes[0]["total"] == 2
 
@@ -243,30 +271,41 @@ async def test_seed_governanca_categoria_confianca_chave(pipeline_mockado):
 async def test_falha_de_uma_lei_nao_aborta_as_demais(pipeline_mockado, monkeypatch, html):
     chamadas, execucoes = pipeline_mockado
 
-    async def html_com_falha(lei, cache_dir=None):
-        if lei["sigla"] == "cdc":
+    async def html_com_falha(diploma, cache_dir=None):
+        if diploma["slug"] == "cdc":
             raise RuntimeError("simulação: Planalto fora do ar")
         return html
 
-    monkeypatch.setattr(sl, "obter_html", html_com_falha)
+    monkeypatch.setattr(pl, "obter_html", html_com_falha)
     rel = await sl.executar_seed_legislacao(_FakeDB(), apenas="cdc,l9099")
     assert set(rel["sucessos"]) == {"l9099"}
     assert "cdc" in rel["falhas"] and "Planalto fora do ar" in rel["falhas"]["cdc"]
     assert execucoes[0]["status"] == "parcial" and "cdc" in (execucoes[0]["erro"] or "")
 
 
-async def test_apenas_com_sigla_desconhecida_falha_cedo(pipeline_mockado):
+async def test_ingestor_scheduler_usa_mesmo_pipeline(pipeline_mockado, monkeypatch):
+    # planalto.ingerir (job semanal) passa pelos MESMOS ingerir_diploma/upsert
+    chamadas, _ = pipeline_mockado
+    monkeypatch.setattr(pl, "CATALOGO", [l for l in CATALOGO if l["slug"] == "cdc"])
+    novos, total = await pl.ingerir(_FakeDB())
+    assert (novos, total) == (1, 1)
+    assert chamadas[-1]["chave_origem"] == "planalto:cdc"
+    assert chamadas[-1]["extra"]["divisao"] == "por_artigo"
+    assert chamadas[-1]["embutir_vetores"] is True   # job embeda inline (legado)
+
+
+async def test_apenas_com_slug_desconhecido_falha_cedo(pipeline_mockado):
     with pytest.raises(SystemExit):
         await sl.executar_seed_legislacao(_FakeDB(), apenas="nao-existe")
 
 
-def test_preparar_lei_rejeita_pagina_errada():
+def test_preparar_diploma_rejeita_pagina_errada():
     with pytest.raises(ValueError):
-        preparar_lei(CATALOGO[0], "<html><body><p>404</p></body></html>")
+        preparar_diploma(CATALOGO[0], "<html><body><p>404</p></body></html>")
 
 
 # ══════════════════════════════════════════════════════════════════════════
-# 5. Idempotência + versionamento + gate (Postgres real, RUN_DB_TESTS=1)
+# 5. Idempotência + versionamento + gate + unificação (Postgres, RUN_DB_TESTS=1)
 # ══════════════════════════════════════════════════════════════════════════
 
 pytestmark_db = pytest.mark.skipif(
@@ -274,42 +313,69 @@ pytestmark_db = pytest.mark.skipif(
     reason="requer Postgres com migrations (defina RUN_DB_TESTS=1)",
 )
 
-_SIGLA_TESTE = "cdcteste"
-_CHAVE_TESTE = f"legislacao:planalto:{_SIGLA_TESTE}"
+
+@pytest.fixture()
+async def _engine_isolado():
+    """Isola o engine async do loop-por-função do pytest-asyncio (mesmo padrão
+    dos *_dblevel.py) — sem isso o pool asyncpg fica preso ao loop do teste
+    anterior ('attached to a different loop')."""
+    from app.core.database import engine
+    await engine.dispose()
+    yield
+    await engine.dispose()
+
+
+def _lei_teste(slug: str) -> dict:
+    return {"slug": slug, "area": "consumidor",
+            "titulo": "CDC RECORTE DE TESTE (seed_legislacao)",
+            "url": "https://www.planalto.gov.br/ccivil_03/leis/l8078compilado.htm"}
+
+
+async def _docs(db, chave: str):
+    return (await db.execute(sql(
+        "SELECT id, versao, vigente FROM knowledge_docs "
+        "WHERE chave_origem = :k ORDER BY versao"), {"k": chave})).all()
+
+
+async def _limpar(chave: str):
+    from app.core.database import AsyncSessionLocal
+    async with AsyncSessionLocal() as db:
+        await db.execute(sql(
+            "DELETE FROM knowledge_chunks WHERE doc_id IN "
+            "(SELECT id FROM knowledge_docs WHERE chave_origem = :k)"), {"k": chave})
+        await db.execute(sql(
+            "UPDATE knowledge_docs SET versao_anterior_id = NULL "
+            "WHERE chave_origem = :k"), {"k": chave})
+        await db.execute(sql(
+            "DELETE FROM knowledge_docs WHERE chave_origem = :k"), {"k": chave})
+        await db.commit()
 
 
 @pytestmark_db
-async def test_idempotencia_versionamento_e_gate_no_banco(monkeypatch, html):
+async def test_idempotencia_versionamento_e_gate_no_banco(monkeypatch, html, _engine_isolado):
     from app.core.database import AsyncSessionLocal
     from app.services.citation_check import _existe_artigo
 
-    lei_teste = {"sigla": _SIGLA_TESTE, "area": "consumidor",
-                 "nome": "CDC RECORTE DE TESTE (seed_legislacao)",
-                 "url": "https://www.planalto.gov.br/ccivil_03/leis/l8078compilado.htm"}
-    monkeypatch.setattr(sl, "CATALOGO", [lei_teste])
+    slug, chave = "cdcteste", "planalto:cdcteste"
+    monkeypatch.setattr(pl, "CATALOGO", [_lei_teste(slug)])
 
     paginas = {"v": html}
 
-    async def fake_html(lei, cache_dir=None):
+    async def fake_html(diploma, cache_dir=None):
         return paginas["v"]
 
-    monkeypatch.setattr(sl, "obter_html", fake_html)
-
-    async def _docs(db):
-        return (await db.execute(sql(
-            "SELECT id, versao, vigente FROM knowledge_docs "
-            "WHERE chave_origem = :k ORDER BY versao"), {"k": _CHAVE_TESTE})).all()
+    monkeypatch.setattr(pl, "obter_html", fake_html)
 
     try:
         # 1ª execução → novo
         async with AsyncSessionLocal() as db:
-            rel = await sl.executar_seed_legislacao(db, apenas=_SIGLA_TESTE)
+            rel = await sl.executar_seed_legislacao(db, apenas=slug)
             assert not rel["falhas"]
-            assert rel["sucessos"][_SIGLA_TESTE]["resultado"] == "novo"
-            n_chunks_1 = rel["sucessos"][_SIGLA_TESTE]["chunks"]
+            assert rel["sucessos"][slug]["resultado"] == "novo"
+            n_chunks_1 = rel["sucessos"][slug]["chunks"]
 
         async with AsyncSessionLocal() as db:
-            docs = await _docs(db)
+            docs = await _docs(db, chave)
             assert len(docs) == 1 and docs[0].versao == 1 and docs[0].vigente
             n_db = (await db.execute(sql(
                 "SELECT count(*) FROM knowledge_chunks WHERE doc_id = :d"),
@@ -321,10 +387,10 @@ async def test_idempotencia_versionamento_e_gate_no_banco(monkeypatch, html):
 
         # 2ª execução, mesmo HTML → inalterado (idempotente, nada duplicado)
         async with AsyncSessionLocal() as db:
-            rel2 = await sl.executar_seed_legislacao(db, apenas=_SIGLA_TESTE)
-            assert rel2["sucessos"][_SIGLA_TESTE]["resultado"] == "inalterado"
+            rel2 = await sl.executar_seed_legislacao(db, apenas=slug)
+            assert rel2["sucessos"][slug]["resultado"] == "inalterado"
         async with AsyncSessionLocal() as db:
-            assert len(await _docs(db)) == 1
+            assert len(await _docs(db, chave)) == 1
 
         # HTML mudou (alteração legislativa) → NOVA VERSÃO, antiga preservada
         paginas["v"] = html.replace(
@@ -332,23 +398,114 @@ async def test_idempotencia_versionamento_e_gate_no_banco(monkeypatch, html):
             "Art. 11. Parágrafo novo incluído por lei posterior.\n"
             "Brasília, 11 de setembro de 1990")
         async with AsyncSessionLocal() as db:
-            rel3 = await sl.executar_seed_legislacao(db, apenas=_SIGLA_TESTE)
-            assert rel3["sucessos"][_SIGLA_TESTE]["resultado"] == "atualizado"
+            rel3 = await sl.executar_seed_legislacao(db, apenas=slug)
+            assert rel3["sucessos"][slug]["resultado"] == "atualizado"
         async with AsyncSessionLocal() as db:
-            docs = await _docs(db)
+            docs = await _docs(db, chave)
             assert [d.versao for d in docs] == [1, 2]
             assert [d.vigente for d in docs] == [False, True]
             assert await _existe_artigo(db, "11") is not None
     finally:
+        await _limpar(chave)
+
+
+@pytestmark_db
+async def test_seed_e_job_semanal_mesma_chave_nao_duplicam(monkeypatch, html, _engine_isolado):
+    """UNIFICAÇÃO: rodar o seed CLI e depois o ingestor do scheduler (ou
+    vice-versa) escreve na MESMA chave planalto:<slug> → upsert, zero docs
+    duplicados."""
+    from app.core.database import AsyncSessionLocal
+
+    slug, chave = "cdcseed", "planalto:cdcseed"
+    monkeypatch.setattr(pl, "CATALOGO", [_lei_teste(slug)])
+
+    async def fake_html(diploma, cache_dir=None):
+        return html
+
+    monkeypatch.setattr(pl, "obter_html", fake_html)
+
+    try:
+        # seed CLI primeiro → novo
         async with AsyncSessionLocal() as db:
-            await db.execute(sql(
-                "DELETE FROM knowledge_chunks WHERE doc_id IN "
-                "(SELECT id FROM knowledge_docs WHERE chave_origem = :k)"),
-                {"k": _CHAVE_TESTE})
-            await db.execute(sql(
-                "UPDATE knowledge_docs SET versao_anterior_id = NULL "
-                "WHERE chave_origem = :k"), {"k": _CHAVE_TESTE})
-            await db.execute(sql(
-                "DELETE FROM knowledge_docs WHERE chave_origem = :k"),
-                {"k": _CHAVE_TESTE})
+            rel = await sl.executar_seed_legislacao(db, apenas=slug)
+            assert rel["sucessos"][slug]["resultado"] == "novo"
+
+        # job semanal em seguida, mesmo conteúdo → inalterado (não duplica)
+        async with AsyncSessionLocal() as db:
+            novos, total = await pl.ingerir(db)
+            assert (novos, total) == (0, 1)
+
+        async with AsyncSessionLocal() as db:
+            docs = await _docs(db, chave)
+            assert len(docs) == 1 and docs[0].vigente     # UM doc, uma versão
+            # e o seed de novo também segue inalterado
+            rel2 = await sl.executar_seed_legislacao(db, apenas=slug)
+            assert rel2["sucessos"][slug]["resultado"] == "inalterado"
+    finally:
+        await _limpar(chave)
+
+
+@pytestmark_db
+async def test_rechunk_unico_de_doc_producao_com_divisao_antiga(monkeypatch, html, _engine_isolado):
+    """Doc vigente de produção (chunking genérico antigo, extra sem
+    divisao='por_artigo') com o MESMO conteúdo → 1ª execução força NOVA VERSÃO
+    re-chunkada por artigo; 2ª execução volta a 'inalterado' (migração única)."""
+    from app.core.database import AsyncSessionLocal
+    from app.services.ingestion_service import upsert_documento
+
+    slug, chave = "cdcvelho", "planalto:cdcvelho"
+    lei = _lei_teste(slug)
+    monkeypatch.setattr(pl, "CATALOGO", [lei])
+
+    async def fake_html(diploma, cache_dir=None):
+        return html
+
+    monkeypatch.setattr(pl, "obter_html", fake_html)
+
+    texto = extrair_texto_planalto(html)     # mesmo conteúdo (mesmo hash!)
+
+    try:
+        # Simula o doc de produção do ingestor ANTIGO: chunking genérico por
+        # tamanho (chunks=None) e extra legado {"diploma", "origem"}.
+        async with AsyncSessionLocal() as db:
+            r = await upsert_documento(
+                db, titulo=lei["titulo"], categoria="legislacao",
+                conteudo=texto, chave_origem=chave, fonte=lei["url"],
+                extra={"diploma": slug, "origem": "planalto"},
+                confianca="alta", embutir_vetores=False,
+            )
+            assert r == "novo"
             await db.commit()
+
+        # 1ª execução unificada → 'atualizado' apesar do hash idêntico
+        async with AsyncSessionLocal() as db:
+            rel = await sl.executar_seed_legislacao(db, apenas=slug)
+            assert rel["sucessos"][slug]["resultado"] == "atualizado"
+
+        async with AsyncSessionLocal() as db:
+            docs = await _docs(db, chave)
+            assert [d.versao for d in docs] == [1, 2]
+            assert [d.vigente for d in docs] == [False, True]
+            # nova versão marcada e chunkada por artigo (headers do gate)
+            extra_div = (await db.execute(sql(
+                "SELECT extra->>'divisao' FROM knowledge_docs "
+                "WHERE id = :d"), {"d": docs[1].id})).scalar()
+            assert extra_div == "por_artigo"
+            primeiro = (await db.execute(sql(
+                "SELECT conteudo FROM knowledge_chunks WHERE doc_id = :d "
+                "ORDER BY chunk_index LIMIT 1"), {"d": docs[1].id})).scalar()
+            assert lei["titulo"] in primeiro.split("\n", 1)[0]
+            # histórico: chunks genéricos da v1 permanecem intactos
+            n_v1 = (await db.execute(sql(
+                "SELECT count(*) FROM knowledge_chunks WHERE doc_id = :d"),
+                {"d": docs[0].id})).scalar()
+            assert n_v1 > 0
+
+        # 2ª execução → 'inalterado' (não re-chunkar de novo; idempotente)
+        async with AsyncSessionLocal() as db:
+            rel2 = await sl.executar_seed_legislacao(db, apenas=slug)
+            assert rel2["sucessos"][slug]["resultado"] == "inalterado"
+        async with AsyncSessionLocal() as db:
+            assert len(await _docs(db, chave)) == 2
+    finally:
+        await _limpar(chave)
