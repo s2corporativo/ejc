@@ -357,6 +357,16 @@
     border-radius: 999px;
     background: #d4af37;
   }
+  /* Ícones do menu em dourado ouro — acento elegante sobre o fundo branco. */
+  .sidebar-nav-item svg {
+    color: #b08a50;
+  }
+  .sidebar-nav-item:hover svg {
+    color: #8a6d2f;
+  }
+  .sidebar-nav-item.is-active svg {
+    color: #8a6d2f;
+  }
   .sidebar-group-label {
     color: rgb(100 116 139); /* slate-500 */
   }
