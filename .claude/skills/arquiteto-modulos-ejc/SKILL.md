@@ -1,8 +1,10 @@
 ---
 name: arquiteto-modulos-ejc
 description: >
-  Gera novos módulos completos para o EJC (Ecossistema Jurídico Clovis) do zero — backend FastAPI + Pydantic + Alembic migration + React TypeScript + Tailwind. Use SEMPRE que precisar construir funcionalidade nova no EJC, não apenas corrigir: portal do cliente externo, módulo de filas Celery, OCR de documentos, integração com tribunais, notificações automáticas, relatórios gerenciais, ou qualquer nova tela/endpoint. Diferença crítica: arquiteto-ejc REPARA o que existe; este skill CONSTRÓI do zero. Stack obrigatória: FastAPI Python 3.11+, React TypeScript 18+, Tailwind CSS, PostgreSQL, Docker. Padrão arquitetural do EJC deve ser sempre preservado. Acionado por: "cria módulo", "adicionar funcionalidade no EJC", "novo endpoint EJC", "nova tela EJC", "implementar [feature] no EJC", "gerar código para EJC", "módulo portal cliente", "módulo OCR", "módulo Celery".
+  Playbook LEGADO de geração de módulos do EJC — SUPERSEDIDO pela skill `ejc-novo-modulo` (receita atual, alinhada ao padrão real do repo). Para construir um módulo vertical, use `ejc-novo-modulo` e delegue a implementação aos agentes `backend-fastapi`/`frontend-react`/`db-migrations`. Mantido apenas como referência histórica de conteúdo; NÃO é ponto de entrada.
 ---
+
+> ⚠️ **Playbook legado.** Superseído por `ejc-novo-modulo` (receita atual). Prefira aquela skill + os agentes `backend-fastapi`/`frontend-react`/`db-migrations`. Este arquivo permanece só como referência histórica.
 
 # Arquiteto de Módulos EJC — Geração de Features
 
