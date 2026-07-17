@@ -191,7 +191,7 @@ async def _fundir_lexical(db, consulta, semanticos, limite, categorias, scope_cl
             filtro = "AND kd.categoria = ANY(:cats)"
             params["cats"] = categorias
         sql = _text(f"""
-            SELECT kc.id, kc.conteudo, kd.titulo, kd.categoria, kd.fonte,
+            SELECT kc.id, kc.doc_id, kc.conteudo, kd.titulo, kd.categoria, kd.fonte,
                    {_SQL_CONFIANCA},
                    similarity(kc.conteudo, :q) AS sim
             FROM knowledge_chunks kc
@@ -210,7 +210,8 @@ async def _fundir_lexical(db, consulta, semanticos, limite, categorias, scope_cl
             cid = r.id
             fusion[cid] = fusion.get(cid, 0.0) + 1.0 / (K + rank + 1)
             if cid not in meta:
-                meta[cid] = {"chunk_id": r.id, "conteudo": r.conteudo, "titulo": r.titulo,
+                meta[cid] = {"chunk_id": r.id, "doc_id": r.doc_id, "conteudo": r.conteudo,
+                             "titulo": r.titulo,
                              "categoria": r.categoria, "fonte": r.fonte,
                              "confianca": r.confianca, "score": round(float(r.sim), 4)}
     except Exception as _e:
@@ -231,7 +232,7 @@ async def _fundir_lexical(db, consulta, semanticos, limite, categorias, scope_cl
                 filtro_f = "AND kd.categoria = ANY(:cats)"
                 params_f["cats"] = categorias
             sql_f = _text(f"""
-                SELECT kc.id, kc.conteudo, kd.titulo, kd.categoria, kd.fonte,
+                SELECT kc.id, kc.doc_id, kc.conteudo, kd.titulo, kd.categoria, kd.fonte,
                        {_SQL_CONFIANCA},
                        ts_rank_cd(to_tsvector('portuguese', kc.conteudo),
                                   plainto_tsquery('portuguese', :q)) AS rank
@@ -252,7 +253,8 @@ async def _fundir_lexical(db, consulta, semanticos, limite, categorias, scope_cl
                 cid = r.id
                 fusion[cid] = fusion.get(cid, 0.0) + 1.0 / (K + rank + 1)
                 if cid not in meta:
-                    meta[cid] = {"chunk_id": r.id, "conteudo": r.conteudo, "titulo": r.titulo,
+                    meta[cid] = {"chunk_id": r.id, "doc_id": r.doc_id, "conteudo": r.conteudo,
+                                 "titulo": r.titulo,
                                  "categoria": r.categoria, "fonte": r.fonte,
                                  "confianca": r.confianca, "score": round(float(r.rank), 4)}
         except Exception as _ef:
@@ -359,7 +361,7 @@ async def buscar_contexto_rag(
                 filtro_cat_v = "AND kd.categoria = ANY(:cats)"
                 params_v["cats"] = categorias
             sql_v = text(f"""
-                SELECT kc.id, kc.conteudo, kd.titulo, kd.categoria, kd.fonte,
+                SELECT kc.id, kc.doc_id, kc.conteudo, kd.titulo, kd.categoria, kd.fonte,
                        {_SQL_CONFIANCA},
                        (kc.embedding <=> :vec) AS dist
                 FROM knowledge_chunks kc
@@ -386,7 +388,8 @@ async def buscar_contexto_rag(
             try:
                 rows_v = await db.execute(sql_v, params_v)
                 resultados = [
-                    {"chunk_id": r.id, "conteudo": r.conteudo, "titulo": r.titulo,
+                    {"chunk_id": r.id, "doc_id": r.doc_id, "conteudo": r.conteudo,
+                     "titulo": r.titulo,
                      "categoria": r.categoria, "fonte": r.fonte,
                      "confianca": r.confianca,
                      "score": round(1 - r.dist, 4)}   # cosine similarity
@@ -427,7 +430,7 @@ async def buscar_contexto_rag(
     params["incl_hist"] = incluir_historico
 
     sql = text(f"""
-        SELECT kc.id, kc.conteudo, kd.titulo, kd.categoria, kd.fonte,
+        SELECT kc.id, kc.doc_id, kc.conteudo, kd.titulo, kd.categoria, kd.fonte,
                {_SQL_CONFIANCA}
         FROM knowledge_chunks kc
         JOIN knowledge_docs kd ON kd.id = kc.doc_id
@@ -443,7 +446,7 @@ async def buscar_contexto_rag(
         rows = await db.execute(sql, params)
         res_txt = [
             {
-                "chunk_id": r.id, "conteudo": r.conteudo,
+                "chunk_id": r.id, "doc_id": r.doc_id, "conteudo": r.conteudo,
                 "titulo": r.titulo, "categoria": r.categoria, "fonte": r.fonte,
                 "confianca": r.confianca,
             }
