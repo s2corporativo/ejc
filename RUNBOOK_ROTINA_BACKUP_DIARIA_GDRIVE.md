@@ -97,18 +97,34 @@ Se um módulo passar a gravar documentos **fora** de `/app/uploads`, esse caminh
 
 ---
 
-## 4. Verificação diária automática (recomendado)
+## 4. Aviso por e-mail quando o backup falhar (nativo — recomendado)
 
-Além do backup rodar sozinho, vale uma **rotina de verificação** que todo dia
-confere se o backup do dia realmente chegou ao Drive e alerta se falhar. Duas
-formas:
+**Já existe no EJC** (`backup_service._alertar_falha`): quando o backup diário
+roda e falha, o sistema notifica automaticamente o(s) **admin/superadmin** por
+**sino + e-mail** (assunto `[EJC] Backup automático FALHOU`). Roda no VPS junto
+com o backup — **não depende de conector externo nem de agente de IA**. Para
+ligar o canal de e-mail:
 
-- **No app**: `GET /admin/backup/status` já traz `ultimo_resultado` e
-  `proximo_agendamento` — ligue um alerta (ver skill `arquiteto-notificacoes`)
-  para avisar quando o último backup tiver > 25h.
-- **Como rotina agendada de IA** (Claude Code Routine / cron que dispara um
-  agente): use o prompt do Apêndice A como corpo da rotina, agendado para
-  ~06:30 UTC (depois do backup das 05:00).
+1. Configurar o envio no `.env` do VPS:
+   ```env
+   EMAIL_ENABLED=true
+   SMTP_HOST=smtp.gmail.com
+   SMTP_PORT=587
+   SMTP_USER=<conta de envio>
+   SMTP_PASSWORD=<senha de app>
+   ```
+2. Garantir um usuário **admin/superadmin ativo com e-mail** (ex.:
+   `adm@vetmg.com.br`) — é para ele que o alerta vai.
+
+Teste: em ambiente de teste, force uma falha controlada (ex.:
+`BACKUP_DRIVE_FOLDER_ID` inválido) e confirme o recebimento do e-mail; reverta.
+
+> **Cobre “o backup rodou e falhou”.** Não cobre “o backup nem chegou a rodar”
+> (backend caído). Para isso, adicione um monitor da idade do último backup:
+> consulte `GET /admin/backup/status` (`ultimo_resultado`) e alerte se passar de
+> 25h — ver skills `arquiteto-notificacoes` /
+> `arquiteto-monitoramento-observabilidade`. Uma camada extra opcional, que
+> confere direto na pasta do Drive, está no Apêndice A.
 
 ---
 
@@ -127,10 +143,14 @@ restaurado não é backup, é esperança.
 
 ---
 
-## Apêndice A — Prompt da rotina de verificação diária
+## Apêndice A — Prompt da rotina de verificação diária (opcional, camada extra)
 
-Cole como corpo de uma rotina agendada diária (~06:30 UTC). Ela **não** faz o
-backup (isso é o scheduler nativo) — ela **verifica** e escala falhas.
+Camada **opcional**, além do alerta nativo da seção 4. Confere direto na pasta
+do Drive se o backup do dia chegou. **Exige o conector Google Drive anexado à
+rotina** — crie-a pela **UI de rotinas do claude.ai** (que permite anexar o
+conector); rotinas criadas por outros meios podem rodar **sem** o conector e só
+reportarão “Drive indisponível”. Ela **não** faz o backup — apenas verifica e
+escala falhas.
 
 ```
 Você é o operador de backup do EJC. Tarefa diária: confirmar que existe um
