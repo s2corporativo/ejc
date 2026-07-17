@@ -103,8 +103,11 @@ export interface LegalDoc {
   area?: string | null;
   ai_generated: boolean;
   human_reviewed: boolean;
-  case_id?: string;
+  case_id?: string | null;
+  revisor_id?: string | null;
   conteudo?: string;
+  /** Só no detalhe (LegalDocDetail): observações da revisão humana. */
+  notas_revisao?: string | null;
   validacao_juridica?: {
     status: string;
     apto_fluxo: boolean;
