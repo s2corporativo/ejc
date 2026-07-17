@@ -25,6 +25,7 @@ from app.services.system_prompts import SYSTEM_PROMPTS, TarefaIA, get_configurac
 from app.services.ai.provider_policy import AIProviderPolicy
 from app.services.ai.core.intent_classifier import classify_intent
 from app.services.ai.core.agent_registry import AGENT_REGISTRY
+from app.services.ai.core.ejc_skill_catalog import resolve_native_skill_plan
 from app.services.ai.core import (
     audit_logger,
     context_builder,
@@ -91,6 +92,25 @@ class SingleAICoreOrchestrator:
         # 1) Intenção → agente interno ────────────────────────────────────────
         intent = classify_intent(task_type, domain, mensagem)
         agente = AGENT_REGISTRY[intent.agente]
+        coordenador = AGENT_REGISTRY["EJCCoordinatorAgent"]
+        native_plan = resolve_native_skill_plan(
+            task_type=task_type,
+            domain=domain,
+            message=mensagem,
+            module_key=str(params.get("module_key") or "") or None,
+            surface=str(params.get("surface") or "") or None,
+        )
+        skill_pipeline: list[str] = []
+        for skill_name in agente.skills:
+            if skill_name not in skill_pipeline:
+                skill_pipeline.append(skill_name)
+            if skill_name == "classify_intent":
+                for native_name in (
+                    "resolve_native_skills",
+                    *native_plan.skill_names,
+                ):
+                    if native_name not in skill_pipeline:
+                        skill_pipeline.append(native_name)
 
         # 2) Permissão (RBAC/ABAC) ────────────────────────────────────────────
         role = str(getattr(user, "role", "") or "")
@@ -140,6 +160,11 @@ class SingleAICoreOrchestrator:
         from app.services import ai_gateway
         cfg = get_configuracao(intent.tarefa)
         system_prompt = SYSTEM_PROMPTS.get(agente.prompt_key, SYSTEM_PROMPTS["default"])
+        if native_plan.prompt_blocks:
+            system_prompt += (
+                "\n\n## MÉTODOS NATIVOS ATIVOS DO EJC\n"
+                + "\n\n".join(native_plan.prompt_blocks)
+            )
         if agente.nome == "SystemHealthAgent" or agente.nome == "RepairAgent":
             # Contexto técnico (grafo de código) — nunca contém segredos.
             from app.services.ai.core.skill_registry import SKILL_REGISTRY
@@ -252,8 +277,14 @@ class SingleAICoreOrchestrator:
         # 10) Resposta padronizada + carimbo HITL ─────────────────────────────
         resultado = {
             "conteudo": validacao["conteudo"],
+            # Compatibilidade: "agente" continua sendo o especialista executor.
             "agente": agente.nome,
-            "skill_pipeline": list(agente.skills),
+            "agente_coordenador": coordenador.nome,
+            "agente_especialista": agente.nome,
+            "skill_pipeline": skill_pipeline,
+            "skills_nativas": list(native_plan.skill_names),
+            "ramo_juridico": native_plan.legal_area,
+            "modulo_ejc": native_plan.module_key,
             "task_type": task_type,
             "domain": domain,
             "tarefa": intent.tarefa.value,
