@@ -1,7 +1,7 @@
 import { useState, useEffect, useCallback } from "react";
 import { RefreshCw, Check, AlertCircle, Calendar, Repeat } from "lucide-react";
 import api from "../lib/api";
-import { PageHeader, Spinner, ErrorState } from "../components/UI";
+import { Spinner, ErrorState } from "../components/UI";
 
 interface Despesa {
   id: string;
@@ -98,12 +98,10 @@ export default function DespesasRecorrentes() {
   const total = recorrentes.reduce((s, d) => s + d.valor, 0);
 
   return (
-    <div className="p-6 max-w-4xl mx-auto space-y-5">
-      <PageHeader
-        eyebrow="Financeiro"
-        title="Despesas Recorrentes"
-        subtitle="Geração automática de lançamentos mensais"
-      />
+    <div className="space-y-5">
+      {/* Cabeçalho fica no FinanceiroWorkspace. A competência-alvo abaixo é
+          intencional e local: é o mês de DESTINO da geração de lançamentos
+          (padrão: próximo mês), não o filtro de visualização compartilhado. */}
 
       {/* Action card */}
       <div className="card p-5">

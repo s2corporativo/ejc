@@ -80,7 +80,6 @@ describe("moduleRegistry", () => {
       "/casos/novo",
       "/casos",
       "/atividades",
-      "/prazos",
       "/clientes",
     ]) {
       expect(advogado).toContain(path);
@@ -88,6 +87,8 @@ describe("moduleRegistry", () => {
     // Rotas podadas permanecem ativas (sem 404), apenas fora do menu.
     const canonical = new Set(STAFF_ROUTES.map((route) => route.path));
     for (const path of [
+      "/prazos",
+      "/intimacoes",
       "/tarefas",
       "/suspensoes",
       "/crm-leads",

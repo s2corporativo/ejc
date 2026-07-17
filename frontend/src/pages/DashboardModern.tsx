@@ -4,33 +4,24 @@ import {
   AlertTriangle,
   ArrowRight,
   BarChart3,
-  Bell,
   Bot,
   Briefcase,
   CalendarClock,
   CheckCircle2,
   ChevronDown,
   Clock,
-  DollarSign,
-  FileSignature,
   FileText,
   FileUp,
-  FolderOpen,
   Gavel,
-  GitBranch,
   Headset,
   ListChecks,
   MessageSquare,
-  Newspaper,
   PenLine,
   Scale,
   ScanSearch,
-  ScrollText,
-  ShieldAlert,
   ShieldCheck,
   Sparkles,
   Users,
-  Wallet,
   X,
 } from "lucide-react";
 import api from "../lib/api";
@@ -55,7 +46,6 @@ import {
   fmtMoney,
 } from "../components/UI";
 
-const FINANCE_ROLES = new Set(["superadmin", "admin", "socio", "financeiro"]);
 const MANAGER_ROLES = new Set(["superadmin", "admin", "socio"]);
 const CRM_ROLES = new Set([
   "superadmin",
@@ -179,9 +169,8 @@ export default function DashboardModern() {
   const [prazos, setPrazos] = useState<any[]>([]);
   const [movimentos, setMovimentos] = useState<any[]>([]);
   const [casos, setCasos] = useState<any[]>([]);
-  // Blocos incorporados dos antigos DashboardIA e FinanceiroDashboard.
+  // Bloco incorporado do antigo DashboardIA.
   const [iaSaude, setIaSaude] = useState<any>(null);
-  const [consolidado, setConsolidado] = useState<any>(null);
   const [solicitacoes, setSolicitacoes] = useState<any>(null);
   const [loading, setLoading] = useState(true);
   // Card "Comece aqui" (first-run): guiado por flag local, dismissível.
@@ -192,20 +181,17 @@ export default function DashboardModern() {
     localStorage.setItem("ejc_comece_aqui_done", "1");
     setComeceAqui(false);
   };
-  // "Gestão do escritório": widgets analíticos/gerenciais e financeiros,
-  // recolhidos por padrão para priorizar o operacional do dia do advogado.
+  // "Gestão do escritório": widgets analíticos/gerenciais, recolhidos por
+  // padrão para priorizar o operacional do dia do advogado.
   const [gestaoOpen, setGestaoOpen] = useState(false);
 
   const currentUser = user as any;
   const firstName = currentUser?.full_name?.split(" ")[0] || "Dr.";
-  const canSeeFinance = FINANCE_ROLES.has(currentUser?.role || "");
   const isManager = MANAGER_ROLES.has(currentUser?.role || "");
   const canSeeCRM = CRM_ROLES.has(currentUser?.role || "");
 
   useEffect(() => {
     setLoading(true);
-    const now = new Date();
-    const competencia = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}`;
     Promise.allSettled([
       api.get("/dashboard/"),
       // /jurimetria/overview é restrito a sócio+ (403 para advogado/financeiro/
@@ -221,24 +207,12 @@ export default function DashboardModern() {
       isManager
         ? api.get("/ia-saude/dashboard?dias=30")
         : Promise.reject(new Error("sem permissão de gestão")),
-      canSeeFinance
-        ? api.get(`/financeiro/consolidado?competencia=${competencia}`)
-        : Promise.reject(new Error("sem permissão financeira")),
       canSeeCRM
         ? api.get("/atendimentos/solicitacoes-resumo")
         : Promise.reject(new Error("sem permissão de CRM")),
     ])
       .then(
-        ([
-          dash,
-          juri,
-          deadlines,
-          movements,
-          cases,
-          ia,
-          fin,
-          solicitacoesReq,
-        ]) => {
+        ([dash, juri, deadlines, movements, cases, ia, solicitacoesReq]) => {
           if (dash.status === "fulfilled") setDashboard(dash.value.data);
           if (juri.status === "fulfilled") setJurimetria(juri.value.data);
           if (deadlines.status === "fulfilled")
@@ -247,13 +221,12 @@ export default function DashboardModern() {
             setMovimentos(asList(movements.value.data));
           if (cases.status === "fulfilled") setCasos(asList(cases.value.data));
           if (ia.status === "fulfilled") setIaSaude(ia.value.data);
-          if (fin.status === "fulfilled") setConsolidado(fin.value.data);
           if (solicitacoesReq.status === "fulfilled")
             setSolicitacoes(solicitacoesReq.value.data);
         },
       )
       .finally(() => setLoading(false));
-  }, [canSeeCRM, canSeeFinance, isManager]);
+  }, [canSeeCRM, isManager]);
 
   const criticalDeadlines = prazos.filter(
     (deadline) => (deadline.dias_restantes ?? 99) <= 3,
@@ -327,11 +300,6 @@ export default function DashboardModern() {
     jurimetria?.taxa_sucesso_geral != null
       ? Math.round(jurimetria.taxa_sucesso_geral * 100)
       : null;
-  const pendingFees =
-    dashboard?.financeiro?.pendente ??
-    dashboard?.financeiro?.honorarios_pendentes;
-  const monthlyRevenue =
-    dashboard?.financeiro?.honorarios_mes ?? dashboard?.financeiro?.receita_mes;
 
   // As 4 ações principais do Command Center (documento IA · manual · Raio-X ·
   // atendimento) vêm primeiro como `primary`; as demais seguem como atalhos.
@@ -1090,105 +1058,14 @@ export default function DashboardModern() {
         </SectionCard>
       </div>
 
-      <div className="grid gap-5 xl:grid-cols-[0.9fr_1.1fr]">
-        <SectionCard
-          title="Atalhos operacionais"
-          subtitle="Módulos consolidados fora do menu principal — tudo a um clique."
-        >
-          <div className="grid gap-3 sm:grid-cols-2">
-            {[
-              { to: "/pecas", label: "Produção jurídica", icon: FileText },
-              {
-                to: "/documentos",
-                label: "Gestão documental",
-                icon: FolderOpen,
-              },
-              { to: "/assinaturas", label: "Assinaturas", icon: FileSignature },
-              { to: "/checklists", label: "Checklists", icon: ListChecks },
-              { to: "/workflow", label: "Workflows", icon: GitBranch },
-              { to: "/crm-leads", label: "Funil de Leads", icon: Users },
-              { to: "/datajud", label: "Consulta DataJud", icon: Scale },
-              {
-                to: "/diario-oficial",
-                label: "Diário Oficial",
-                icon: ScrollText,
-              },
-              {
-                to: "/radar-regulatorio",
-                label: "Radar Regulatório",
-                icon: Bell,
-              },
-              {
-                to: "/compliance/radar",
-                label: "Radar de Compliance",
-                icon: ShieldAlert,
-              },
-              { to: "/noticias", label: "Notícias Jurídicas", icon: Newspaper },
-              {
-                to: "/inteligencia?tab=jurimetria",
-                label: "Jurimetria",
-                icon: Sparkles,
-              },
-            ].map(({ to, label, icon: Icon }) => (
-              <Link
-                key={to}
-                to={to}
-                className="group flex items-center gap-3 rounded-xl border border-black/[0.05] bg-white p-4 text-sm font-semibold text-slate-700 transition-all hover:border-primary-200 hover:bg-primary-50 dark:border-white/10 dark:bg-white/[0.03] dark:text-slate-200 dark:hover:bg-white/[0.06]"
-              >
-                <div className="rounded-lg bg-primary-50 p-2 text-primary-700 dark:bg-primary-400/10 dark:text-primary-300">
-                  <Icon className="h-5 w-5" />
-                </div>
-                <span className="min-w-0 flex-1">{label}</span>
-                <ArrowRight className="h-4 w-4 text-slate-400" />
-              </Link>
-            ))}
-          </div>
-          {isManager && (
-            <>
-              <div className="mt-4 mb-2 text-[10px] font-semibold uppercase tracking-wider text-slate-400">
-                Administração
-              </div>
-              <div className="grid gap-3 sm:grid-cols-2">
-                {[
-                  {
-                    to: "/produtividade",
-                    label: "Produtividade",
-                    icon: BarChart3,
-                  },
-                  {
-                    to: "/ia-governanca",
-                    label: "Governança da IA",
-                    icon: Sparkles,
-                  },
-                  { to: "/auditoria", label: "Auditoria", icon: ShieldCheck },
-                  {
-                    to: "/mapa-modulos",
-                    label: "Mapa de Módulos",
-                    icon: GitBranch,
-                  },
-                  { to: "/lixeira", label: "Lixeira", icon: FolderOpen },
-                ].map(({ to, label, icon: Icon }) => (
-                  <Link
-                    key={to}
-                    to={to}
-                    className="group flex items-center gap-3 rounded-xl border border-black/[0.05] bg-white p-3 text-sm font-medium text-slate-600 transition-all hover:border-primary-200 hover:bg-primary-50 dark:border-white/10 dark:bg-white/[0.03] dark:text-slate-300 dark:hover:bg-white/[0.06]"
-                  >
-                    <Icon className="h-4 w-4 text-slate-400" />
-                    <span className="min-w-0 flex-1">{label}</span>
-                    <ArrowRight className="h-3.5 w-3.5 text-slate-400" />
-                  </Link>
-                ))}
-              </div>
-            </>
-          )}
-        </SectionCard>
-        <NoticiasCard />
-      </div>
+      {/* A grade extensa de atalhos para módulos foi removida — "Mais
+          Ferramentas" no menu cumpre esse papel. */}
+      <NoticiasCard />
       </section>
 
       {/* ================= GESTÃO DO ESCRITÓRIO ================= */}
-      {/* Widgets analíticos/gerenciais e financeiros, recolhidos por padrão.
-          Blocos financeiros seguem restritos a canSeeFinance (RBAC intacto). */}
+      {/* Widgets analíticos/gerenciais, recolhidos por padrão. Dados
+          financeiros ficam concentrados no módulo Financeiro. */}
       <section
         aria-label="Gestão do escritório"
         className="rounded-2xl border border-slate-200 bg-white shadow-sm dark:border-white/10 dark:bg-white/[0.03]"
@@ -1208,7 +1085,7 @@ export default function DashboardModern() {
               Gestão do escritório
             </span>
             <span className="hidden text-sm text-slate-500 dark:text-slate-400 sm:inline">
-              Indicadores, gráficos, jurimetria, saúde da IA e financeiro
+              Indicadores, gráficos, jurimetria e saúde da IA
             </span>
           </span>
           <ChevronDown
@@ -1249,50 +1126,18 @@ export default function DashboardModern() {
           tone={criticalDeadlines.length ? "red" : "amber"}
           trend={criticalDeadlines.length ? "down" : undefined}
         />
-        {canSeeFinance ? (
-          <StatCard
-            label="Receita do mês"
-            value={
-              typeof monthlyRevenue === "number"
-                ? fmtMoney(monthlyRevenue)
-                : "—"
-            }
-            subtitle="Honorários recebidos"
-            icon={<DollarSign className="h-5 w-5" />}
-            tone="green"
-          />
-        ) : (
-          <StatCard
-            label="Movimentações"
-            value={movimentos.length}
-            subtitle="Atividades recentes"
-            icon={<Gavel className="h-5 w-5" />}
-            tone="green"
-          />
-        )}
         <StatCard
-          label={canSeeFinance ? "A receber" : "Taxa de êxito"}
-          value={
-            canSeeFinance
-              ? typeof pendingFees === "number"
-                ? fmtMoney(pendingFees)
-                : "—"
-              : successRate != null
-                ? `${successRate}%`
-                : "—"
-          }
-          subtitle={
-            canSeeFinance
-              ? "Honorários pendentes"
-              : "Base jurimétrica disponível"
-          }
-          icon={
-            canSeeFinance ? (
-              <Wallet className="h-5 w-5" />
-            ) : (
-              <BarChart3 className="h-5 w-5" />
-            )
-          }
+          label="Movimentações"
+          value={movimentos.length}
+          subtitle="Atividades recentes"
+          icon={<Gavel className="h-5 w-5" />}
+          tone="green"
+        />
+        <StatCard
+          label="Taxa de êxito"
+          value={successRate != null ? `${successRate}%` : "—"}
+          subtitle="Base jurimétrica disponível"
+          icon={<BarChart3 className="h-5 w-5" />}
           tone="amber"
         />
         {canSeeCRM && (
@@ -1376,12 +1221,7 @@ export default function DashboardModern() {
         </SectionCard>
       </div>
 
-      <div
-        className={cn(
-          "grid gap-5",
-          canSeeFinance ? "xl:grid-cols-3" : "xl:grid-cols-2",
-        )}
-      >
+      <div className="grid gap-5 xl:grid-cols-2">
         <SectionCard
           title="Casos ativos por fase"
           subtitle="Andamento da carteira em cada etapa."
@@ -1479,68 +1319,6 @@ export default function DashboardModern() {
           </SectionCard>
         )}
 
-        {canSeeFinance && (
-          <SectionCard
-            title="Recebíveis do mês"
-            subtitle="Situação dos honorários na competência atual."
-            actions={
-              <Link
-                to="/financeiro"
-                className="text-sm font-medium text-primary-600 hover:text-primary-700 dark:text-primary-300"
-              >
-                Abrir financeiro
-              </Link>
-            }
-          >
-            {consolidado ? (
-              <div className="space-y-3">
-                {[
-                  {
-                    label: "Recebido no mês",
-                    value: consolidado?.receitas?.recebido_mes,
-                    tone: "text-success-600 dark:text-success-300",
-                  },
-                  {
-                    label: "A receber (pendente)",
-                    value: consolidado?.receitas?.a_receber,
-                    tone: "text-warn-600 dark:text-warn-300",
-                  },
-                  {
-                    label: "Atrasado",
-                    value: consolidado?.receitas?.atrasado,
-                    tone: "text-danger-600 dark:text-danger-300",
-                  },
-                  {
-                    label: "Caixa do período",
-                    value: consolidado?.caixa_periodo,
-                    tone:
-                      (consolidado?.caixa_periodo ?? 0) >= 0
-                        ? "text-success-600 dark:text-success-300"
-                        : "text-danger-600 dark:text-danger-300",
-                  },
-                ].map(({ label, value, tone }) => (
-                  <div
-                    key={label}
-                    className="flex items-center justify-between border-b border-slate-100 py-2 text-sm last:border-0 dark:border-white/[0.07]"
-                  >
-                    <span className="text-slate-600 dark:text-slate-300">
-                      {label}
-                    </span>
-                    <span className={cn("font-semibold tabular-nums", tone)}>
-                      {fmtMoney(value ?? 0)}
-                    </span>
-                  </div>
-                ))}
-              </div>
-            ) : (
-              <EmptyState
-                title="Consolidado indisponível"
-                message="Abra o financeiro para conferir a competência."
-                icon={Wallet}
-              />
-            )}
-          </SectionCard>
-        )}
       </div>
 
           </div>

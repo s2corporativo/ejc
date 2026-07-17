@@ -394,8 +394,9 @@ export const STAFF_ROUTES: ModuleRoute[] = [
     group: "Trabalhar um caso",
     icon: AlarmClock,
     component: Prazos,
-    showInNav: true,
-    order: 40,
+    // CONSOLIDAÇÃO 2026-07: coberto pela Central "Agenda e Prazos"
+    // (filtro Tipo=Prazo); rota ativa para links diretos/favoritos.
+    status: "hidden",
     helpKey: "prazos",
     sensitive: true,
     backendPrefixes: ["/api/deadlines"],
@@ -422,8 +423,9 @@ export const STAFF_ROUTES: ModuleRoute[] = [
     group: "Trabalhar um caso",
     icon: Inbox,
     component: Intimacoes,
-    showInNav: true,
-    order: 50,
+    // CONSOLIDAÇÃO 2026-07: coberto pela Central "Agenda e Prazos"
+    // (filtro Tipo=Intimação); rota ativa para links diretos/favoritos.
+    status: "hidden",
     helpKey: "intimacoes",
     sensitive: true,
     usesAI: true,

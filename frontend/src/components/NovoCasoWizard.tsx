@@ -1,26 +1,15 @@
-import { useEffect, useState } from "react";
+import { useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { Briefcase, Link2, Search, UserPlus } from "lucide-react";
 import api from "../lib/api";
 import { asList } from "../lib/list";
+import { useAreas } from "../lib/areas";
 import { toast } from "./Toast";
 import { Badge, Button, Modal, Spinner } from "./UI";
 import type { Client } from "../types";
 
-// Taxonomia canônica de áreas vem de GET /areas (tabela `areas` do backend).
-// Fallback local apenas se a chamada falhar — mesmas chaves do enum CaseArea.
-type AreaDireito = { slug: string; nome: string; ordem?: number };
-const AREAS_FALLBACK: AreaDireito[] = [
-  { slug: "civil", nome: "Cível" },
-  { slug: "trabalhista", nome: "Trabalhista" },
-  { slug: "consumidor", nome: "Consumidor" },
-  { slug: "familia", nome: "Família" },
-  { slug: "ambiental", nome: "Ambiental" },
-  { slug: "criminal", nome: "Criminal" },
-  { slug: "previdenciario", nome: "Previdenciário" },
-  { slug: "empresarial", nome: "Empresarial" },
-  { slug: "tributario", nome: "Tributário" },
-];
+// Taxonomia canônica de áreas: GET /areas via useAreas() (lib/areas.ts),
+// com fallback completo do enum CaseArea (25 áreas).
 const CASE_TYPES: { k: string; l: string }[] = [
   { k: "judicial", l: "Judicial" },
   { k: "extrajudicial", l: "Extrajudicial" },
@@ -50,21 +39,7 @@ export default function NovoCasoWizard({
 }) {
   const nav = useNavigate();
   const [passo, setPasso] = useState<1 | 2>(1);
-  const [areas, setAreas] = useState<AreaDireito[]>(AREAS_FALLBACK);
-
-  // Carrega a taxonomia canônica de áreas quando o wizard abre (uma vez).
-  useEffect(() => {
-    if (!open) return;
-    api
-      .get("/areas")
-      .then((r) => {
-        const lista = (r.data?.areas ?? []) as AreaDireito[];
-        if (lista.length > 0) setAreas(lista);
-      })
-      .catch(() => {
-        // Fallback silencioso: mantém a lista local (mesmo enum do backend).
-      });
-  }, [open]);
+  const areas = useAreas();
 
   // ── Passo 1 — cliente ──
   const [doc, setDoc] = useState("");

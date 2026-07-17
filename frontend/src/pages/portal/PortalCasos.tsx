@@ -2,7 +2,7 @@ import { useCallback, useEffect, useState } from "react";
 import { Link } from "react-router-dom";
 import { ChevronRight, Scale, Search } from "lucide-react";
 import api from "../../lib/api";
-import { EmptyState, ErrorState, Spinner } from "../../components/UI";
+import { EmptyState, ErrorState, Spinner, fmtDate } from "../../components/UI";
 
 const STATUS_LABEL: Record<string, [string, string]> = {
   triagem: ["Em análise", "bg-warn-100 text-warn-700"],
@@ -99,6 +99,11 @@ export default function PortalCasos() {
           title={
             busca ? "Nenhum processo encontrado" : "Nenhum processo no momento"
           }
+          message={
+            busca
+              ? "Tente buscar por outro termo, número do processo ou título."
+              : "Quando o escritório cadastrar um processo para você, ele aparecerá aqui automaticamente."
+          }
         />
       ) : (
         <div className="space-y-2">
@@ -132,6 +137,11 @@ export default function PortalCasos() {
                     >
                       {label}
                     </span>
+                    {c.created_at && (
+                      <span className="ml-2 text-[10px] text-slate-400">
+                        No escritório desde {fmtDate(c.created_at)}
+                      </span>
+                    )}
                   </div>
                 </div>
                 <ChevronRight className="w-5 h-5 text-slate-300 flex-shrink-0" />
