@@ -10,6 +10,7 @@
 from __future__ import annotations
 
 import asyncio
+import contextlib
 import json
 import logging
 
@@ -18,7 +19,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sse_starlette.sse import EventSourceResponse
 
 from app.core.config import get_settings
-from app.core.database import get_db
+from app.core.database import AsyncSessionLocal, get_db
 from app.core.ownership import verificar_acesso_caso
 from app.core.rate_limit import rate_limit
 from app.core.security import get_current_user
@@ -38,11 +39,14 @@ async def agente_stream(
     db: AsyncSession = Depends(get_db),
     cu: User = Depends(get_current_user),
 ):
-    """Executa o agente (loop de tool-use) e streama os eventos via SSE.
+    """Executa (ou RETOMA) o agente (loop de tool-use) e streama os eventos via SSE.
 
     Eventos: `passo`, `ferramenta`, `resultado`, `confirmacao_requerida`,
-    `final`, `erro`. Escritas pausam com `confirmacao_requerida`; o cliente
-    re-invoca incluindo a ferramenta em `ferramentas_aprovadas` (HITL).
+    `degradacao`, `recusado`, `final`, `erro`. Escritas pausam com
+    `confirmacao_requerida` devolvendo `{token, args_hash, ferramenta, args}`; o
+    cliente retoma re-invocando com `retomar_token` + `decisao` (aprovar/recusar),
+    ou — se o Redis estiver indisponível (token=None) — reenviando `mensagem` com
+    o `aprovacoes_hash` do tool_call aprovado (HITL vinculado aos ARGS, achado H1).
     """
     settings = get_settings()
     if not settings.AI_AGENT_ENABLED:
@@ -64,16 +68,24 @@ async def agente_stream(
         await fila.put({"event": tipo, "data": dados})
 
     async def _executar() -> None:
+        # M4/S4: o agente roda numa AsyncSession PRÓPRIA (não a `db` da request).
+        # A tarefa é concorrente ao gerador; compartilhar a mesma AsyncSession
+        # (não thread-safe) causaria uso concorrente. A sessão dedicada é fechada
+        # aqui e o cancelamento é AGUARDADO no gerador (sem sessão órfã).
         try:
-            resultado = await rodar_agente(
-                db=db, user=cu, case_id=req.case_id, mensagem=req.mensagem,
-                ferramentas_aprovadas=set(req.ferramentas_aprovadas or []),
-                on_event=on_event,
-            )
+            async with AsyncSessionLocal() as agente_db:
+                resultado = await rodar_agente(
+                    db=agente_db, user=cu, case_id=req.case_id, mensagem=req.mensagem,
+                    aprovacoes_hash=set(req.aprovacoes_hash or []),
+                    retomar_token=req.retomar_token, decisao=req.decisao,
+                    on_event=on_event,
+                )
             # `final`/`erro` já são emitidos pelo loop; para status pendente ou
             # qualquer retorno sem evento terminal, garantimos um evento de fecho.
             if resultado.get("status") == "pendente_confirmacao":
                 await fila.put({"event": "confirmacao_requerida", "data": resultado})
+        except asyncio.CancelledError:
+            raise
         except Exception as e:  # nunca vaza detalhe cru
             logger.warning("rodar_agente falhou: %s", str(e)[:200])
             await fila.put({"event": "erro", "data": {"detalhe": type(e).__name__}})
@@ -92,7 +104,11 @@ async def agente_stream(
                     "data": json.dumps(item["data"], ensure_ascii=False, default=str),
                 }
         finally:
+            # Cliente desconectou no meio: cancela E AGUARDA a tarefa terminar,
+            # garantindo que a AsyncSession dedicada seja fechada antes de sair.
             if not tarefa.done():
                 tarefa.cancel()
+            with contextlib.suppress(asyncio.CancelledError):
+                await tarefa
 
     return EventSourceResponse(_gerar())

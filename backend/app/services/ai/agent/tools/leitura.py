@@ -63,9 +63,10 @@ async def buscar_precedentes(args: dict, ctx: AgentContext) -> dict:
 @registrar_tool(
     name="ler_dossie",
     description=(
-        "Obtém o dossiê estratégico do caso em contexto (fatos, financeiro, "
-        "andamentos, checklists pendentes e enriquecimento por IA). Use para uma "
-        "visão geral do caso antes de decidir a estratégia."
+        "Lê o dossiê estratégico JÁ EXISTENTE do caso em contexto (fatos, "
+        "financeiro, andamentos, checklists e enriquecimento por IA da última "
+        "versão salva). Use para uma visão geral antes de decidir a estratégia. "
+        "Se ainda não houver dossiê salvo, informa isso (não gera um novo)."
     ),
     input_schema={"type": "object", "properties": {}},
     requer_confirmacao=False,
@@ -74,19 +75,25 @@ async def ler_dossie(args: dict, ctx: AgentContext) -> dict:
     await verificar_acesso_caso(ctx.db, ctx.user, ctx.case_id)
     from app.services import dossie_service
 
-    # NOTA (scaffold): dossie_service.gerar_dossie PERSISTE um DossieEstrategico
-    # (status=rascunho) + AILog — logo esta tool tem um efeito colateral de
-    # GERAÇÃO, ainda que exposta como leitura (o produto trata "gerar dossiê"
-    # como ação de consulta do advogado, e o resultado é sempre rascunho/HITL).
-    # GANCHO fase 2: para leitura ESTRITAMENTE pura, trocar por um leitor da
-    # última versão persistida (sem regenerar) — ex.: case_context.montar_dossie.
-    dossie = await dossie_service.gerar_dossie(ctx.db, ctx.case_id, ctx.user.id)
+    # S3/M2: LEITURA PURA — lê a ÚLTIMA versão persistida SEM regenerar. Antes esta
+    # tool chamava gerar_dossie, que PERSISTE um DossieEstrategico + AILog (escrita
+    # sob rótulo de leitura). Agora nenhuma escrita/IA/AILog ocorre numa tool de
+    # leitura (efeito colateral zero, coerente com requer_confirmacao=False).
+    dossie = await dossie_service.ler_ultimo_dossie(ctx.db, ctx.case_id)
+    if dossie is None:
+        return {
+            "existe": False,
+            "conteudo": "",
+            "nota": "Nenhum dossiê estratégico salvo para este caso. "
+                    "Gere um dossiê pela tela do caso antes de consultá-lo aqui.",
+        }
     conteudo = (
         getattr(dossie, "conteudo_texto", None)
         or getattr(dossie, "conteudo_html", None)
         or ""
     )
     return {
+        "existe": True,
         "versao": getattr(dossie, "versao", None),
         "titulo": getattr(dossie, "titulo", None),
         "conteudo": conteudo[:8000],

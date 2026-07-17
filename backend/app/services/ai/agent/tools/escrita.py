@@ -17,6 +17,11 @@ from app.services.ai.agent.tools.registry import registrar_tool
 
 logger = logging.getLogger("ejc.ai.agent.escrita")
 
+# L9: as tools de ESCRITA (efeito colateral real / minuta) ficam restritas a
+# papéis SÊNIOR — antes o filtro por papel era no-op (roles=None). Papéis
+# operacionais/auxiliares não veem nem executam escrita do agente.
+_PAPEIS_ESCRITA = ("superadmin", "admin", "socio", "advogado")
+
 
 @registrar_tool(
     name="gerar_minuta_peca",
@@ -37,11 +42,13 @@ logger = logging.getLogger("ejc.ai.agent.escrita")
         "required": ["tipo", "instrucoes"],
     },
     requer_confirmacao=True,
+    roles=_PAPEIS_ESCRITA,
 )
 async def gerar_minuta_peca(args: dict, ctx: AgentContext) -> dict:
     await verificar_acesso_caso(ctx.db, ctx.user, ctx.case_id)
     from app.services.ai.entidades_caso import entidades_do_caso
     from app.services.ai_gateway import executar_tarefa_ia
+    from app.services.ai.sanitization_policy import modo_para_task
     from app.services.system_prompts.router import TarefaIA
 
     tipo = (args.get("tipo") or "peça").strip()
@@ -49,10 +56,14 @@ async def gerar_minuta_peca(args: dict, ctx: AgentContext) -> dict:
     mensagem = f"TIPO DE PEÇA: {tipo}\n\nINSTRUÇÕES/FATOS:\n{instrucoes}"
     # Entidades do caso → pseudonimização REVERSÍVEL consistente no gateway.
     entidades = await entidades_do_caso(ctx.db, ctx.case_id)
+    # S1: o roteamento por TarefaIA.MINUTAS não pode ignorar o SIGILO da ÁREA do
+    # caso. Passa o modo derivado da área; executar_tarefa_ia REFORÇA (nunca
+    # rebaixa) — caso LOCAL_COMPLETO nunca vai a provider externo.
+    modo_area = modo_para_task(ctx.area or "")
     resultado = await executar_tarefa_ia(
         TarefaIA.MINUTAS, mensagem, case_id=ctx.case_id,
         user_id=ctx.user.id, db=ctx.db, nivel_inteligencia="alto",
-        entidades=entidades,
+        entidades=entidades, modo_sanitizacao=modo_area,
     )
     return {
         "tipo": tipo,
@@ -80,6 +91,7 @@ async def gerar_minuta_peca(args: dict, ctx: AgentContext) -> dict:
         "required": ["descricao"],
     },
     requer_confirmacao=True,
+    roles=_PAPEIS_ESCRITA,
 )
 async def registrar_nota_caso(args: dict, ctx: AgentContext) -> dict:
     await verificar_acesso_caso(ctx.db, ctx.user, ctx.case_id)

@@ -206,8 +206,13 @@ async def chat_tools(messages: list[dict], model: str | None,
             }]
         if _is_modern(mdl):
             effort = (get_settings().ANTHROPIC_EFFORT or "high").lower()
-            teto = max(int(settings.ANTHROPIC_MAX_TOKENS), 8192)
-            kwargs["max_tokens"] = min(max(mt, 8192), teto)
+            # Achado M3: NÃO forçar o piso de 8192 no caminho de TOOL-USE. Ao
+            # contrário do chat() (resposta longa de prosa, onde o thinking
+            # adaptativo divide o budget com o texto e o piso evita truncar), os
+            # turnos do agente são CURTOS (uma decisão + uma tool_call). Forçar
+            # 8192 por turno estourava o teto acumulado do agente prematuramente.
+            # Respeitamos o max_tokens do chamador (loop), sempre sob o teto duro.
+            kwargs["max_tokens"] = mt
             kwargs["extra_body"] = {
                 "thinking": {"type": "adaptive"},
                 "output_config": {"effort": effort},

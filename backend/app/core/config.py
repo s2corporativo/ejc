@@ -194,8 +194,22 @@ class Settings(BaseSettings):
     AI_AGENT_ENABLED: bool = False
     # Teto de PASSOS do loop (nunca infinito).
     AI_AGENT_MAX_STEPS: int = 8
-    # Teto de TOKENS acumulados por execução do agente (controle de custo).
-    AI_AGENT_MAX_TOKENS: int = 16000
+    # Teto de TOKENS acumulados (input+output de TODOS os turnos) por execução do
+    # agente. O budget conta o input de CADA turno — que cresce a cada passo,
+    # pois o histórico inteiro é reenviado — somado ao output. Um teto baixo
+    # (16000 antigo) matava o agente no passo 2-3 antes de esgotar max_steps
+    # (achado M3). Elevado para comportar AI_AGENT_MAX_STEPS turnos com folga
+    # (piso real de saída por turno × passos + input acumulado). Ajuste fino via
+    # .env; o teto DURO por chamada continua em ANTHROPIC_MAX_TOKENS.
+    AI_AGENT_MAX_TOKENS: int = 120000
+    # Teto de CUSTO (R$) por execução do agente (Sugestão 2). Acumula o custo
+    # estimado de cada turno (ai_cost.estimar_custo_brl); ao exceder, o loop
+    # encerra com aviso (igual ao teto de tokens). Default conservador.
+    AI_AGENT_MAX_CUSTO_BRL: float = 2.00
+    # TTL (segundos) do estado retomável de HITL no Redis (achado H1). O estado
+    # contém a transcrição em ESPAÇO REAL (PII) — fica no VPS (Redis interno),
+    # com TTL curto e NUNCA é logado. Curto para minimizar a janela de retenção.
+    AI_AGENT_HITL_TTL_SEGUNDOS: int = 900
 
     # ── Fase 6 — Observabilidade de IA (Langfuse SELF-HOSTED) ─────────────
     # Langfuse é SELF-HOSTED (docker-compose, perfil "observability"): dados

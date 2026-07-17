@@ -776,7 +776,8 @@ async def executar_tarefa_ia(tarefa, mensagem: str, case_id: str | None = None,
                              contexto_rag: list[str] | None = None,
                              user_id: str | None = None, db=None,
                              nivel_inteligencia: str = "alto",
-                             entidades: dict[str, list[str]] | None = None) -> dict:
+                             entidades: dict[str, list[str]] | None = None,
+                             modo_sanitizacao=None) -> dict:
     """Entrada do MÓDULO IA por tarefa. Resultado SEMPRE rascunho (HITL/OAB).
 
     Auditoria 2026-07-04 (P1-1/P2-1): este caminho aplica as MESMAS regras do
@@ -790,10 +791,15 @@ async def executar_tarefa_ia(tarefa, mensagem: str, case_id: str | None = None,
     EXTERNO_PSEUDONIMIZADO/EXTRACAO_LOCAL pseudonimizam (reversível) e reidratam
     a resposta; MASCARAMENTO mantém o mascaramento irreversível legado. O `mapa`
     de reidratação vive só em memória; AILog/Langfuse recebem versão PSEUDONIMIZADA."""
-    from app.services.ai.sanitization_policy import ModoSanitizacao, modo_para_task
+    from app.services.ai.sanitization_policy import (
+        ModoSanitizacao, modo_para_task, reforcar_sigilo,
+    )
     from app.services.system_prompts import SYSTEM_PROMPTS, get_configuracao
     tarefa_label = str(getattr(tarefa, "value", tarefa))
-    modo_sanitizacao = modo_para_task(tarefa_label)
+    # S1: o modo da TAREFA é reforçado (nunca rebaixado) pelo sigilo da ÁREA do
+    # caso quando o chamador (ex.: tool de escrita do agente) o informa — assim o
+    # roteamento por TarefaIA não ignora um caso LOCAL_COMPLETO.
+    modo_sanitizacao = reforcar_sigilo(modo_para_task(tarefa_label), modo_sanitizacao)
     cfg = get_configuracao(tarefa)
     system_prompt = SYSTEM_PROMPTS.get(cfg.prompt_key, SYSTEM_PROMPTS["default"])
     if contexto_rag:
@@ -929,11 +935,49 @@ async def executar_tarefa_ia(tarefa, mensagem: str, case_id: str | None = None,
 # _chamar_com_barreira. NÃO cria barreira nova: reusa _preparar_mensagens_externo
 # e pseudonymizer.reidratar. O `mapa` (PII real) vive só nesta chamada.
 # ══════════════════════════════════════════════════════════════════════════════
+def _coletar_slots_recursivo(valor, slots: list[tuple]) -> None:
+    """Adiciona (container, chave) para CADA folha STRING de `valor`, descendo
+    RECURSIVAMENTE por dict/list aninhados (achado S2 — defense-in-depth: uma
+    tool com parâmetro object/array não pode escapar da barreira LGPD por ter a
+    PII num nível interno). `container[chave]` é sempre a string mutável."""
+    if isinstance(valor, dict):
+        for k, v in valor.items():
+            if isinstance(v, str):
+                slots.append((valor, k))
+            elif isinstance(v, (dict, list)):
+                _coletar_slots_recursivo(v, slots)
+    elif isinstance(valor, list):
+        for i, v in enumerate(valor):
+            if isinstance(v, str):
+                slots.append((valor, i))
+            elif isinstance(v, (dict, list)):
+                _coletar_slots_recursivo(v, slots)
+
+
+def _reidratar_recursivo(valor, mapa: dict) -> None:
+    """Reidrata IN-PLACE toda folha STRING de `valor` (dict/list aninhados),
+    espelhando _coletar_slots_recursivo (achado S2)."""
+    from app.services.ai.pseudonymizer import reidratar
+    if isinstance(valor, dict):
+        for k, v in valor.items():
+            if isinstance(v, str):
+                valor[k] = reidratar(v, mapa)
+            elif isinstance(v, (dict, list)):
+                _reidratar_recursivo(v, mapa)
+    elif isinstance(valor, list):
+        for i, v in enumerate(valor):
+            if isinstance(v, str):
+                valor[i] = reidratar(v, mapa)
+            elif isinstance(v, (dict, list)):
+                _reidratar_recursivo(v, mapa)
+
+
 def _slots_de_texto(messages: list[dict]) -> list[tuple]:
     """Referências mutáveis (container, chave) a CADA campo de texto das mensagens
     agênticas, em ordem determinística: content str; blocos text; valores STRING
-    de input de tool_use; e content de tool_result (str ou blocos text). Trabalha
-    sobre a lista passada (espera-se uma deep copy)."""
+    de input de tool_use (INCLUSIVE aninhados em object/array); e content de
+    tool_result (str ou blocos text). Trabalha sobre a lista passada (espera-se
+    uma deep copy)."""
     slots: list[tuple] = []
     for m in messages:
         content = m.get("content")
@@ -947,11 +991,9 @@ def _slots_de_texto(messages: list[dict]) -> list[tuple]:
                 if tipo == "text" and isinstance(bloco.get("text"), str):
                     slots.append((bloco, "text"))
                 elif tipo == "tool_use":
-                    inp = bloco.get("input")
-                    if isinstance(inp, dict):
-                        for k, v in inp.items():
-                            if isinstance(v, str):
-                                slots.append((inp, k))
+                    # S2: desce recursivamente pelo input (dict/list aninhados),
+                    # não só nas strings de 1º nível.
+                    _coletar_slots_recursivo(bloco.get("input"), slots)
                 elif tipo == "tool_result":
                     rc = bloco.get("content")
                     if isinstance(rc, str):
@@ -990,18 +1032,24 @@ async def chat_agentico(
     task_type: str = "estrategia",
     max_tokens: int = 4096,
     entidades: dict[str, list[str]] | None = None,
+    modo_sanitizacao=None,
 ) -> dict:
     """UM turno do loop agêntico (tool-use) com a MESMA barreira LGPD do chat().
 
     - Aplica legal_base.aplicar_base (identidade/base do escritório) no início.
-    - modo = modo_para_task(task_type); resolve a cadeia via _resolver_cadeia mas,
-      nesta fase, só provedores com tool-use (anthropic). LOCAL_COMPLETO sem
-      provider local → bloqueio SEGURO (RuntimeError claro).
+    - `modo_sanitizacao` (achado S1): quando fornecido, é o modo de sanitização a
+      aplicar na BARREIRA — derivado da ÁREA/sigilo REAL do caso pelo chamador
+      (loop.rodar_agente). `task_type` continua governando o roteamento de
+      MODELO. Sem ele, cai em modo_para_task(task_type) (retrocompatível).
+    - Resolve a cadeia via _resolver_cadeia mas, nesta fase, só provedores com
+      tool-use (anthropic). LOCAL_COMPLETO sem provider local → bloqueio SEGURO
+      (RuntimeError claro).
     - Pseudonimiza a LISTA INTEIRA (text/tool_use/tool_result) com as MESMAS
       primitivas da barreira (_pseudonimizar_agentico → _preparar_mensagens_externo);
       residual → _ProviderPulado (não chama o provider).
     - Chama anthropic_provider.chat_tools e REIDRATA localmente TANTO o `text`
-      QUANTO cada valor string de tool_calls[i].input (o `mapa` só em memória).
+      QUANTO cada valor string de tool_calls[i].input (RECURSIVO, S2; o `mapa` só
+      em memória).
 
     Retorna {"text","tool_calls","stop_reason","usage","provider","model",
              "text_para_log"}. `text_para_log` é PSEUDONIMIZADO (vai ao AILog;
@@ -1010,7 +1058,10 @@ async def chat_agentico(
 
     task_type_original = task_type
     task_type = _normalizar_task_type(task_type)
-    modo_sanitizacao = modo_para_task(task_type_original)
+    # S1: o modo vem do sigilo REAL do caso (área) quando o chamador o informa;
+    # senão, do task_type. Nunca deriva o sigilo só do rótulo de roteamento.
+    if modo_sanitizacao is None:
+        modo_sanitizacao = modo_para_task(task_type_original)
 
     # Identidade/base do escritório (BASE_PROMPT/16 regras) no system do agente.
     messages = legal_base.aplicar_base(messages, task_type)
@@ -1061,12 +1112,10 @@ async def chat_agentico(
     if mapa:
         from app.services.ai.pseudonymizer import reidratar
         text = reidratar(text, mapa)
+        # S2: reidrata RECURSIVAMENTE o input (dict/list aninhados), não só as
+        # strings de 1º nível — espelha _coletar_slots_recursivo da barreira.
         for tc in tool_calls:
-            inp = tc.get("input")
-            if isinstance(inp, dict):
-                for k, v in list(inp.items()):
-                    if isinstance(v, str):
-                        inp[k] = reidratar(v, mapa)
+            _reidratar_recursivo(tc.get("input"), mapa)
 
     usage = resp.get("usage", {}) or {}
     return {
