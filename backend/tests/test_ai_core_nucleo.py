@@ -705,6 +705,11 @@ class TestOrchestrator:
         assert r["is_rascunho"] is True
         assert r["aviso_hitl"]
         assert r["agente"] == "CaseAgent"
+        assert r["agente_coordenador"] == "EJCCoordinatorAgent"
+        assert r["agente_especialista"] == "CaseAgent"
+        assert r["ramo_juridico"] == "trabalhista"
+        assert "ramo_trabalhista" in r["skills_nativas"]
+        assert "resolve_native_skills" in r["skill_pipeline"]
         assert r["modelo"] == "ollama/modelo-fake"
         assert r["provider"] == "ollama"
         assert r["log_id"] == "log-fake"
