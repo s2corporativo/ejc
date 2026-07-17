@@ -734,6 +734,9 @@ AGENTES_CANONICOS = {
     "LaborLawAgent", "CriminalLawAgent", "FamilyLawAgent",
     "AdministrativeLawAgent", "SuccessionLawAgent", "RealEstateLawAgent",
     "ConstitutionalLawAgent", "SpecialCourtsAgent", "CivilLawAgent",
+    "TrafficLawAgent", "HealthLawAgent", "MedicalLawAgent", "AgrarianLawAgent",
+    "AgribusinessLawAgent", "ElectoralLawAgent", "InternationalLawAgent",
+    "ContractLawAgent",
     "ClientCommunicationAgent", "SystemHealthAgent",
     "RepairAgent", "UIUXAgent", "SecurityLGPDOABAgent",
 }
