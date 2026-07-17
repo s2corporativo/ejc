@@ -348,6 +348,12 @@ class Settings(BaseSettings):
     # migration de downgrade + reindex). ⚠️ EMBEDDINGS_DIM DEVE casar com a coluna.
     EMBEDDINGS_MODEL: str = "BAAI/bge-m3"
     EMBEDDINGS_DIM: int = 1024
+    # Auto-reindex do RAG (O-2): job periódico do scheduler reembeda chunks órfãos
+    # (embedding IS NULL) — assim a troca de modelo/dimensão (migration 096) se
+    # AUTO-CURA sem passo manual no deploy. No-op rápido quando não há órfãos.
+    # O script manual (scripts.reembedar_chunks_orfaos) segue como fallback.
+    RAG_AUTO_REEMBED_ENABLED: bool = True
+    RAG_AUTO_REEMBED_BATCH: int = 20
 
     # ── Reranking (cross-encoder) do RAG — Fase 1 auditoria IA 2026-07-17 ─
     # Reordena os candidatos do retrieval híbrido (pgvector cosine + RRF pg_trgm)

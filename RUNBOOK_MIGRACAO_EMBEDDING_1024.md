@@ -21,10 +21,14 @@ corpus reindexado.
    docker exec -it ejc_backend python -m alembic upgrade head
    ```
 4. **Reindex** (regenera todos os embeddings com o BGE-M3 — baixa o modelo ~2GB no 1º uso):
-   ```bash
-   docker exec -it ejc_backend python -m scripts.reembedar_chunks_orfaos --batch-size 20
-   ```
-   Rode até `status_indexacao` não ter mais órfãos (o script itera em lotes).
+   - **Automático (default):** com `ENABLE_SCHEDULER=true` e `RAG_AUTO_REEMBED_ENABLED=true`
+     (default), o job `reembed_rag_orfaos` roda de hora em hora (:20) e reembeda os
+     órfãos sozinho — **nenhum passo manual necessário**. A busca semântica volta
+     gradualmente conforme os lotes concluem.
+   - **Manual (mais rápido, opcional):** para forçar o reindex imediato:
+     ```bash
+     docker exec -it ejc_backend python -m scripts.reembedar_chunks_orfaos --batch-size 20
+     ```
 5. **Validar** com o harness de avaliação (comparar recall com o baseline):
    ```bash
    docker exec -it ejc_backend python -m app.eval.run_eval --gold app/eval/gold_set.jsonl --k 6
