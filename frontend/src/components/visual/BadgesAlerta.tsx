@@ -65,7 +65,7 @@ export default function BadgesAlerta({
   return (
     <div className={cn("flex flex-wrap items-center gap-1.5", className)}>
       <span
-        title={`Score de saúde do caso: ${data.score}/100 (${SCORE_LABEL[data.classificacao] ?? data.classificacao})`}
+        title={`Score de saúde do caso: ${data.score}/100 (${SCORE_LABEL[data.classificacao] ?? data.classificacao}). Cálculo por regras internas do sistema — não é gerado por IA generativa.`}
         className={cn(
           "inline-flex items-center gap-1 rounded-full px-2.5 py-0.5 text-[11px] font-semibold ring-1 ring-inset",
           scoreClasses,

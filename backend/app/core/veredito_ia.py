@@ -44,6 +44,17 @@ logger = logging.getLogger("ejc.veredito_ia")
 AVISO_HITL = ("Rascunho gerado por IA e estatística interna — NÃO é parecer. "
               "Revisão humana por advogado é obrigatória antes de qualquer uso (HITL/OAB).")
 
+# Honestidade epistêmica: `probabilidade_exito` NÃO é predição de LLM — é taxa
+# estatística determinística (jurimetria sobre casos ENCERRADOS reais).
+# Ver `metodo_probabilidade` no schema de resposta.
+_METODO_PROBABILIDADE = "estatistica_historica_deterministica"
+AVISO_METODO_PROBABILIDADE = (
+    "A probabilidade de êxito NÃO é uma predição de IA/LLM: é uma taxa "
+    "estatística determinística calculada sobre os casos ENCERRADOS reais do "
+    "escritório (jurimetria interna). Apenas as sugestões contextualizadas "
+    "abaixo são geradas por IA (rascunho sujeito a revisão — HITL/OAB)."
+)
+
 # Categorias PÚBLICAS de jurisprudência no RAG (mesmo conjunto do motor de teses).
 _CATS_JURISPRUDENCIA = ["jurisprudencia", "sumula_stf", "sumula_stj", "sumula_tst"]
 
@@ -118,7 +129,7 @@ class VereditoIA:
         user,
         case_id: Optional[str] = None,
     ) -> AnaliseTeseResponse:
-        avisos: List[str] = [AVISO_HITL]
+        avisos: List[str] = [AVISO_HITL, AVISO_METODO_PROBABILIDADE]
 
         # LGPD: sanitiza a tese ANTES de qualquer uso (aborta 422 se sobrar PII
         # estrutural — a mesma guarda dos demais endpoints de IA).
@@ -281,6 +292,7 @@ class VereditoIA:
         return AnaliseTeseResponse(
             probabilidade_exito=probabilidade,
             fonte_probabilidade=fonte_prob,
+            metodo_probabilidade=_METODO_PROBABILIDADE,
             n_amostra=n_amostra,
             teses_vitoriosas_similares=teses_similares,
             jurisprudencia_suporte=jurisprudencia,
