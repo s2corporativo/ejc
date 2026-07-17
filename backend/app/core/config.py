@@ -379,6 +379,13 @@ class Settings(BaseSettings):
     # CNJ). Requer o índice GIN (migration 095) senão fica lento. Fail-safe:
     # erro → só semântico+trigram. Default OFF até validar o índice em produção.
     RAG_FTS_ENABLED: bool = False
+    # Grounding AO VIVO de citações (auditoria IA 2026-07-17, O-5): além do
+    # citation_check contra a base interna, o validador de resposta confere as
+    # citações com o verificador rigoroso — inclusive CONFIRMAÇÃO de nº CNJ no
+    # DataJud (fonte pública do CNJ). Aditivo e fail-safe (erro → alerta, nunca
+    # derruba). Default OFF: faz chamada de rede externa (latência/rate limit) —
+    # ligue após validar a conectividade DataJud no ambiente.
+    AI_LIVE_GROUNDING_ENABLED: bool = False
 
     # ── RAG de MODELOS na geração de peças (Bíblia de Conhecimento) ───────
     # Recupera os modelos de peça (categoria "modelo_documento_juridico") como
