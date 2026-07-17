@@ -166,6 +166,9 @@ _KEYWORDS_PARA_AGENTE: list[tuple[tuple[str, ...], str]] = [
     (("inss", "aposentadoria", "auxílio-doença", "auxilio-doenca", "benefício previdenciário", "beneficio previdenciario", "cnis", "previdenciár"), "SocialSecurityAgent"),
     (("recuperação judicial", "recuperacao judicial", "falência", "falencia", "dissolução de sociedade", "dissolucao de sociedade", "apuração de haveres", "societár"), "CorporateLawAgent"),
     (("reclamatória trabalhista", "reclamatoria trabalhista", "verbas rescisórias", "verbas rescisorias", "horas extras", "vínculo empregatício", "vinculo empregaticio", "aviso prévio", "aviso previo", "fgts", "trabalhist", "clt"), "LaborLawAgent"),
+    # Mais específico que a keyword crua "penal" do CriminalLawAgent (abaixo):
+    # "cláusula penal" é instituto contratual (CC arts. 408-416), não penal.
+    (("cláusula penal", "clausula penal"), "ContractLawAgent"),
     (("criminal", "penal", "denúncia criminal", "denuncia criminal", "inquérito policial", "inquerito policial", "dosimetria", "flagrante", "habeas corpus", "prisão preventiva", "prisao preventiva", "anpp"), "CriminalLawAgent"),
     (("divórcio", "divorcio", "guarda dos filhos", "guarda compartilhada", "pensão alimentícia", "pensao alimenticia", "alimentos", "união estável", "uniao estavel", "partilha de bens", "alienação parental", "alienacao parental", "família", "familia"), "FamilyLawAgent"),
     (("inventário", "inventario", "arrolamento", "herança", "heranca", "herdeiro", "sucessão", "sucessao", "sucessões", "sucessoes", "espólio", "espolio", "testamento", "legítima", "legitima", "colação", "colacao", "partilha de herança", "partilha de heranca", "itcmd"), "SuccessionLawAgent"),
@@ -175,10 +178,10 @@ _KEYWORDS_PARA_AGENTE: list[tuple[tuple[str, ...], str]] = [
     (("improbidade", "processo administrativo", "auto de infração", "auto de infracao", "poder de polícia", "poder de policia", "responsabilidade civil do estado", "servidor público", "servidor publico", "sanção administrativa", "sancao administrativa", "administrativo"), "AdministrativeLawAgent"),
     (("mandado de segurança", "mandado de seguranca", "habeas data", "ação popular", "acao popular", "ação civil pública", "acao civil publica", "controle de constitucionalidade", "inconstitucional", "inconstitucionalidade", "adin", "adpf", "reserva de plenário", "reserva de plenario", "remédio constitucional", "remedio constitucional"), "ConstitutionalLawAgent"),
     (("juizado especial", "juizados especiais", "turma recursal", "recurso inominado", "lei 9.099", "lei 9099", "jefp", " jec", " jef"), "SpecialCourtsAgent"),
-    (("erro médico", "erro medico", "responsabilidade médica", "responsabilidade medica", "consentimento informado", "negligência médica", "negligencia medica", "imperícia médica", "impericia medica", "cfm", "iatrogenia"), "MedicalLawAgent"),
-    (("multa de trânsito", "multa de transito", "suspensão da cnh", "suspensao da cnh", "cassação da cnh", "cassacao da cnh", "crime de trânsito", "crime de transito", "embriaguez ao volante", "pontos na cnh", "recurso de multa", "jari", "transito"), "TrafficLawAgent"),
+    (("erro médico", "erro medico", "responsabilidade médica", "responsabilidade medica", "consentimento informado", "negligência médica", "negligencia medica", "imperícia médica", "impericia medica", " cfm ", "iatrogenia"), "MedicalLawAgent"),
+    (("multa de trânsito", "multa de transito", "suspensão da cnh", "suspensao da cnh", "cassação da cnh", "cassacao da cnh", "crime de trânsito", "crime de transito", "embriaguez ao volante", "pontos na cnh", "recurso de multa", "jari"), "TrafficLawAgent"),
     (("responsabilidade civil", "dano moral", "dano material", "danos morais", "reparação de danos", "reparacao de danos", "cumprimento de sentença", "cumprimento de sentenca", "tutela de urgência", "tutela de urgencia", "tutela provisória", "tutela provisoria", "prescrição civil", "prescricao civil", "ação de cobrança", "acao de cobranca"), "CivilLawAgent"),
-    (("prestação de contas eleitoral", "prestacao de contas eleitoral", "inelegibilidade", "ficha limpa", "propaganda eleitoral", "registro de candidatura", "aije", "aime", "impugnação de mandato", "impugnacao de mandato", "tse", "tribunal regional eleitoral", "abuso de poder econômico eleitoral"), "ElectoralLawAgent"),
+    (("prestação de contas eleitoral", "prestacao de contas eleitoral", "inelegibilidade", "ficha limpa", "propaganda eleitoral", "registro de candidatura", "aije", "aime", "impugnação de mandato", "impugnacao de mandato", " tse ", "tribunal regional eleitoral", "abuso de poder econômico eleitoral"), "ElectoralLawAgent"),
     (("sentença estrangeira", "sentenca estrangeira", "homologação de sentença estrangeira", "homologacao de sentenca estrangeira", "carta rogatória", "carta rogatoria", "contrato internacional", "direito internacional privado", "lindb", "cooperação jurídica internacional", "cooperacao juridica internacional", "exequatur"), "InternationalLawAgent"),
     (("ambiental", "auto de infração ambiental", "licenciamento", "compliance", "regulatório", "regulatorio"), "CaseAgent"),
     (("lgpd", "dado pessoal", "vazamento", "auditoria de acesso"), "SecurityLGPDOABAgent"),
@@ -188,7 +191,7 @@ _KEYWORDS_PARA_AGENTE: list[tuple[tuple[str, ...], str]] = [
     (("jurisprudência", "jurisprudencia", "súmula", "sumula", "precedente", "pesquis"), "RAGResearchAgent"),
     (("prazo", "intimação", "intimacao", "audiência", "audiencia", "andamento"), "ProcessAgent"),
     (("resumir", "resumo do documento", "documento anexo", "ocr"), "DocumentAgent"),
-    (("rescisão contratual", "rescisao contratual", "distrato", "inadimplemento contratual", "onerosidade excessiva", "vício redibitório", "vicio redibitorio", "revisão contratual", "revisao contratual", "cláusula penal", "clausula penal", "boa-fé objetiva", "exceção do contrato não cumprido"), "ContractLawAgent"),
+    (("rescisão contratual", "rescisao contratual", "distrato", "inadimplemento contratual", "onerosidade excessiva", "vício redibitório", "vicio redibitorio", "revisão contratual", "revisao contratual", "boa-fé objetiva", "exceção do contrato não cumprido"), "ContractLawAgent"),
     (("mensagem para o cliente", "comunicar o cliente", "informar o cliente"), "ClientCommunicationAgent"),
     (("diagnóstico do sistema", "diagnostico do sistema", "saúde do sistema", "saude do sistema"), "SystemHealthAgent"),
     # HealthLawAgent por último: fica APÓS SystemHealthAgent para nunca capturar
