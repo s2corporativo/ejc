@@ -226,7 +226,6 @@ async def emp_cade(valor_faturamento_br: float, valor_operacao: float,
     Lei 12.529/2011 art. 88: um dos grupos com fat. ≥ R$750M e outro ≥ R$75M no Brasil.
     """
     limiar_a = 750_000_000.00
-    limiar_b = 75_000_000.00
     obrigatorio = valor_faturamento_br >= limiar_a
     return {
         "faturamento_informado": valor_faturamento_br,
