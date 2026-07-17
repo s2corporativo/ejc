@@ -1,6 +1,6 @@
 # ── app/schemas/legal_doc.py ─────────────────────────────────────────────────
 from __future__ import annotations
-from pydantic import BaseModel
+from pydantic import BaseModel, ConfigDict
 from typing import Optional, Any
 from datetime import datetime
 
@@ -36,8 +36,7 @@ class LegalDocResponse(BaseModel):
     revisor_id: Optional[str] = None
     validacao_juridica: Optional[dict[str, Any]] = None
     created_at: datetime
-    class Config:
-        from_attributes = True
+    model_config = ConfigDict(from_attributes=True)
 
 class LegalDocDetail(LegalDocResponse):
     conteudo: str

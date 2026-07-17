@@ -78,7 +78,8 @@ def _embed_sync(textos: list[str], prefix: str) -> list[list[float]]:
 
 
 def _validar_dimensao(vetores: list[list[float]] | None) -> list[list[float]] | None:
-    """Garante que os vetores casam com a coluna pgvector vector(768)."""
+    """Garante que os vetores casam com a coluna pgvector vector(EMBEDDINGS_DIM)
+    (default 1024 — BGE-M3; a dimensão vem de settings.EMBEDDINGS_DIM)."""
     if not vetores:
         return None
     dim = len(vetores[0])

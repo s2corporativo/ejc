@@ -214,7 +214,12 @@ async def _fundir_lexical(db, consulta, semanticos, limite, categorias, scope_cl
                              "categoria": r.categoria, "fonte": r.fonte,
                              "confianca": r.confianca, "score": round(float(r.sim), 4)}
     except Exception as _e:
-        logger.warning(f"Fusao lexical (RRF) falhou, mantendo semantico: {_e}")
+        # Loga só tipo + mensagem truncada: exceções SQLAlchemy podem embutir
+        # statement+parâmetros (a consulta do usuário — PII potencial).
+        logger.warning(
+            "Fusao lexical (RRF) falhou, mantendo semantico: %s: %s",
+            type(_e).__name__, str(_e)[:200],
+        )
         return semanticos
     # A-3 (auditoria IA 2026-07-17): perna FULL-TEXT (tsvector 'portuguese',
     # BM25-like) — melhor para termos raros/citações exatas (art./súmula/nº CNJ).
@@ -256,7 +261,11 @@ async def _fundir_lexical(db, consulta, semanticos, limite, categorias, scope_cl
                                  "categoria": r.categoria, "fonte": r.fonte,
                                  "confianca": r.confianca, "score": round(float(r.rank), 4)}
         except Exception as _ef:
-            logger.warning(f"Fusao FTS (RRF) falhou, ignorando esta perna: {_ef}")
+            # Mesmo cuidado da perna trigram: nunca logar statement/params.
+            logger.warning(
+                "Fusao FTS (RRF) falhou, ignorando esta perna: %s: %s",
+                type(_ef).__name__, str(_ef)[:200],
+            )
     ordenados = sorted(fusion.items(), key=lambda kv: kv[1], reverse=True)
     saida = []
     for cid, _s in ordenados[:limite]:

@@ -91,7 +91,7 @@ class VictoryVault:
                 "data": tese.data_vitoria, "link": tese.link,
             })).first()
             await db.commit()
-            return TeseVitoriosa(id=row[0], **tese.dict())
+            return TeseVitoriosa(id=row[0], **tese.model_dump())
 
     async def get_teses_vitoriosas(self, area_juridica: Optional[str] = None,
                                    query: Optional[str] = None) -> List[TeseVitoriosa]:
@@ -122,7 +122,7 @@ class VictoryVault:
                 "conteudo": modelo.conteudo_template, "descricao": modelo.descricao,
             })).first()
             await db.commit()
-            return ModeloDocumento(id=row[0], **modelo.dict())
+            return ModeloDocumento(id=row[0], **modelo.model_dump())
 
     async def get_modelos_documentos(self, tipo_documento: Optional[str] = None,
                                      area_juridica: Optional[str] = None,

@@ -50,7 +50,7 @@ não confirmadas (AILog) e a **nota de robustez** das Duas IAs.
 
 1. **Baseline** com o pipeline atual.
 2. **Reranker** (O-1, já implementado) → ligue `RAG_RERANK_ENABLED` e compare.
-3. **BM25/FTS** (A-3) → migration 095 + `RAG_FTS_ENABLED=true` → compare.
+3. **BM25/FTS** (A-3) → índice FTS criado na migration 001 + `RAG_FTS_ENABLED=true` → compare.
 4. **Embedding** (O-2) → migration 096 + reindex + compare recall.
 5. **HyDE** (O-6) → `RAG_HYDE_ENABLED=true` → compare recall.
 6. **FIRAC / extended thinking** (O-3) → compare groundedness/alucinação.

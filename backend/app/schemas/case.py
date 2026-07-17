@@ -1,6 +1,6 @@
 # ── app/schemas/case.py ──────────────────────────────────────────────────────
 from __future__ import annotations
-from pydantic import BaseModel, Field, field_validator
+from pydantic import BaseModel, ConfigDict, Field, field_validator
 from typing import Optional, List
 from datetime import datetime, date
 from decimal import Decimal
@@ -73,8 +73,7 @@ class ProcessoPrincipalSchema(BaseModel):
     fase: Optional[str] = None
     valor_causa: Optional[Decimal] = None
     status: Optional[str] = None
-    class Config:
-        from_attributes = True
+    model_config = ConfigDict(from_attributes=True)
 
 class CaseResponse(BaseModel):
     id: str
@@ -107,8 +106,7 @@ class CaseResponse(BaseModel):
     sync_error: Optional[str] = None
     
     processo_principal: Optional[ProcessoPrincipalSchema] = None
-    class Config:
-        from_attributes = True
+    model_config = ConfigDict(from_attributes=True)
 
 class CaseDetail(CaseResponse):
     comarca: Optional[str] = None

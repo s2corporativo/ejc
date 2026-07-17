@@ -1,6 +1,6 @@
 # ── app/schemas/auth.py ──────────────────────────────────────────────────────
 from __future__ import annotations
-from pydantic import BaseModel, EmailStr
+from pydantic import BaseModel, ConfigDict, EmailStr
 from typing import Optional
 
 class LoginRequest(BaseModel):
@@ -48,8 +48,7 @@ class UserResponse(BaseModel):
     is_active: bool
     djen_oab_numero: Optional[str] = None
     djen_oab_uf: Optional[str] = None
-    class Config:
-        from_attributes = True
+    model_config = ConfigDict(from_attributes=True)
 
 class PasswordChange(BaseModel):
     senha_atual: str

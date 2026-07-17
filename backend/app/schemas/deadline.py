@@ -1,6 +1,6 @@
 # ── app/schemas/deadline.py ──────────────────────────────────────────────────
 from __future__ import annotations
-from pydantic import BaseModel
+from pydantic import BaseModel, ConfigDict
 from typing import Optional
 from datetime import date, datetime
 
@@ -43,8 +43,7 @@ class DeadlineResponse(BaseModel):
     origem: Optional[str] = None
     origem_documento_id: Optional[str] = None
     created_at: datetime
-    class Config:
-        from_attributes = True
+    model_config = ConfigDict(from_attributes=True)
 
 class CalcularPrazoRequest(BaseModel):
     data_inicio: date

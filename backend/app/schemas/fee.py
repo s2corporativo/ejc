@@ -1,6 +1,6 @@
 # ── app/schemas/fee.py ───────────────────────────────────────────────────────
 from __future__ import annotations
-from pydantic import BaseModel, condecimal
+from pydantic import BaseModel, ConfigDict, condecimal
 from typing import Optional
 from datetime import date, datetime
 from decimal import Decimal
@@ -43,5 +43,4 @@ class FeeResponse(BaseModel):
     client_id: str
     case_id: Optional[str] = None
     created_at: datetime
-    class Config:
-        from_attributes = True
+    model_config = ConfigDict(from_attributes=True)

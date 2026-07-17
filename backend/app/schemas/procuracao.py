@@ -1,6 +1,6 @@
 # ── app/schemas/procuracao.py ────────────────────────────────────────────────
 from __future__ import annotations
-from pydantic import BaseModel
+from pydantic import BaseModel, ConfigDict
 from typing import Optional
 from datetime import date, datetime
 
@@ -22,5 +22,4 @@ class ProcuracaoResponse(BaseModel):
     data_validade: Optional[date] = None
     revogada: bool
     created_at: datetime
-    class Config:
-        from_attributes = True
+    model_config = ConfigDict(from_attributes=True)
