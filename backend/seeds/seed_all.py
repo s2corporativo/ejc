@@ -81,12 +81,14 @@ async def main() -> None:
     from app.seeds.skills_workflows_seed import seed as seed_skills_workflows
     from app.seeds.skills_expansion_seed import seed as seed_skills_expansion
     from app.seeds.skills_contextual_areas_seed import seed as seed_skills_contextual_areas
+    from app.seeds.skills_native_ejc_seed import seed as seed_skills_native_ejc
 
     await _rodar_seed_sync("ejc_skills", seed_skills_sync)
     await _rodar_seed_sync("ejc_skills_ferramentas", seed_skills_ferramentas)
     await _rodar_seed_sync("ejc_skills_workflows", seed_skills_workflows)
     await _rodar_seed_sync("ejc_skills_expansion", seed_skills_expansion)
     await _rodar_seed_sync("ejc_skills_contextual_areas", seed_skills_contextual_areas)
+    await _rodar_seed_sync("ejc_skills_native_ejc", seed_skills_native_ejc)
     print("[seed] concluído.")
 
 
