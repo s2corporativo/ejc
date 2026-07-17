@@ -181,7 +181,9 @@ Auditorias especialistas de **backend** (duplicação entre routers `ia_*`, time
 
 ## 8. Status de implementação (2026-07-17)
 
-Todo o roteiro foi implementado neste PR — **cada mudança é aditiva e fail-safe** (com o flag desligado ou o recurso indisponível, o comportamento é idêntico ao atual, o padrão da casa). Como o ambiente de desenvolvimento não tem as dependências do backend e o CI está fora do ar (falha de infra/cota, não de código), a validação foi por `py_compile` + testes unitários novos; **a execução da suíte fica para quando o CI voltar**.
+Todo o roteiro foi implementado neste PR — **cada mudança é aditiva e fail-safe** (com o flag desligado ou o recurso indisponível, o comportamento é idêntico ao atual, o padrão da casa).
+
+**Validação real (não só `py_compile`):** como o CI do repositório está fora do ar (falha de infra/cota do Actions, não de código), montei o ambiente localmente — venv com as dependências + Postgres 16 com pgvector — e **rodei a suíte inteira, inclusive os testes de banco (`RUN_DB_TESTS=1`): 2157 passed, 2 skipped, 0 failed**, além de `alembic upgrade head` da cadeia completa. Rodar contra o banco real revelou **2 defeitos que a checagem de sintaxe não pegaria** e que foram corrigidos: a migration do índice FTS era **duplicada** (o índice já existia desde a migration 001) e o modelo ORM `KnowledgeChunk.embedding` ainda era `Vector(768)` enquanto a coluna migrou para 1024. Também atualizei os testes que codificavam o comportamento antigo (criminal local-only; threshold hardcoded).
 
 | Item | Status | Como |
 |---|---|---|
@@ -190,15 +192,17 @@ Todo o roteiro foi implementado neste PR — **cada mudança é aditiva e fail-s
 | **A-2** threshold | ✅ feito | `RAG_MIN_SIM` configurável |
 | **A-3** BM25/FTS | ✅ feito | 3ª perna RRF full-text + migration 095 (índice GIN); `RAG_FTS_ENABLED` (OFF) |
 | **A-4** promessa OAB | ✅ feito | regex tolerante a acento/paráfrase (alerta, nunca reescrita) |
-| **O-2** embedding | ✅ feito | BGE-M3 1024d configurável + migration 096 + reindex (runbook). **Requer migrate→reindex no deploy** |
+| **O-2** embedding | ✅ feito | BGE-M3 1024d configurável + migration 096. **Reindex AUTOMÁTICO** (job do scheduler) — sem passo manual; script manual como fallback |
 | **O-3** FIRAC | ✅ feito | prompt FIRAC nos níveis alto/máximo. **Extended thinking do Opus 4.8 já estava ligado** no provider |
 | **O-4** eval harness | ✅ feito | `app/eval/` (runner + gold set + README): hit@k/precision/recall/MRR, alucinação, groundedness |
-| **O-5** grounding ao vivo | ✅ feito | validador confere citações via `verificador_jurisprudencia` (DataJud); `AI_LIVE_GROUNDING_ENABLED` (OFF) |
+| **O-5** grounding | ✅ **ativado** | grounding LOCAL de citações (DV do nº CNJ, faixa de súmula, formato) LIGADO por default; confirmação DataJud (rede) opt-in |
 | **O-6** HyDE | ✅ feito | `_hyde_expandir` só na query densa; `RAG_HYDE_ENABLED` (OFF) |
 | **O-7** caching/tiering | ✅ já existia | prompt caching + adaptive thinking já no `anthropic_provider` |
 
 **Descobertas que reduziram o trabalho/risco:** o provider Anthropic **já** fazia prompt caching e extended thinking (O-7 + parte de O-3); o pseudonimizador **já** tinha NER local para nomes de vítima/testemunha (o pré-requisito de A-1); e o `verificador_jurisprudencia` **já** confirmava nº CNJ no DataJud (o núcleo de O-5). O sistema estava mais maduro do que o roteiro presumia.
 
-**Flags novas (todas default-safe):** `RAG_RERANK_ENABLED=true`, `RAG_MIN_SIM=0.55`, `RAG_HYDE_ENABLED=false`, `RAG_FTS_ENABLED=false`, `EMBEDDINGS_MODEL=BAAI/bge-m3`, `EMBEDDINGS_DIM=1024`, `AI_LIVE_GROUNDING_ENABLED=false`.
+**Flags novas:** `RAG_RERANK_ENABLED=true`, `RAG_MIN_SIM=0.55`, `RAG_HYDE_ENABLED=false`, `RAG_FTS_ENABLED=false`, `EMBEDDINGS_MODEL=BAAI/bge-m3`, `EMBEDDINGS_DIM=1024`, `RAG_AUTO_REEMBED_ENABLED=true`, `AI_LIVE_GROUNDING_ENABLED=true`, `AI_GROUNDING_DATAJUD_ENABLED=false`.
 
-**Ordem de ativação recomendada (eval-driven):** montar o gold set (O-4) e medir baseline → ligar reranker e comparar → migração/reindex do embedding (runbook) e comparar recall → ligar FTS/HyDE e comparar → ligar grounding ao vivo após validar DataJud. Uma variável por vez, sempre medindo.
+**Sem passos manuais dependentes do escritório:** o reindex do embedding (O-2) é automático (job do scheduler); o grounding de citações (O-5) já vem ligado (parte local, sem rede). Só restam como opt-in as flags que fazem rede externa ou precisam de índice/eval: `RAG_FTS_ENABLED` (índice já existe — pode ligar), `RAG_HYDE_ENABLED` (custa 1 chamada/busca) e `AI_GROUNDING_DATAJUD_ENABLED` (rede DataJud).
+
+**Ordem de ativação recomendada (eval-driven):** montar o gold set (O-4) e medir baseline → comparar com/sem reranker → ligar FTS/HyDE e comparar → ligar DataJud após validar conectividade. Uma variável por vez, sempre medindo.
