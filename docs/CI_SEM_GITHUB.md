@@ -76,8 +76,10 @@ on:
     branches: [main]
 ```
 
-### Alternativa: runner self-hosted (grátis, com a UI do GitHub)
-Se quiser manter os checks bonitos de PR no GitHub **sem pagar minutos**, dá para
-registrar um **self-hosted runner** no VPS (Settings → Actions → Runners) e trocar
-`runs-on: ubuntu-latest` por `runs-on: self-hosted` nos workflows — a computação
-passa a ser do seu VPS (Actions minutes = 0). Peça que eu preparo o passo a passo.
+### Alternativa: runner self-hosted (grátis, com a UI do GitHub) — JÁ ADOTADA
+Esta alternativa **já foi implementada**: `ci.yml` e `ejc-release-gate.yml` usam
+`runs-on: [self-hosted, ejc-vps]` (runner registrado na VPS; Actions minutes = 0).
+Setup e operação do runner: `scripts/setup-selfhosted-runner.sh` e
+`docs/RUNNER_SELFHOSTED.md`. Atenção de segurança: com runner na VPS de
+produção, mantenha os workflows **sem gatilho automático de `pull_request`**
+(disparo manual apenas) — workflow disparado executa código no host.

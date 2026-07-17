@@ -1,94 +1,8 @@
-# EJC — Escritório Jurídico Clovis
-## Sistema de Gestão Jurídica v3 — Painel Administrativo Local
+# EJC — Ecossistema Jurídico Clovis
+## Sistema de Gestão Jurídica — De Paula Teixeira Advogados
 
----
-
-## Acesso à VPS (Contabo)
-
-| Item | Valor |
-|------|-------|
-| IP | (definido em `vps-tools/.env` → `VPS_HOST` — não versionar) |
-| Domínio ativo | `https://ejc.depaulateixeira.adv.br` |
-| SSH User | (definido em `vps-tools/.env` → `VPS_USER`) |
-| Plano | Cloud VPS 20 SSD — US$ 7,20/mês |
-| Painel | Contabo (acessar via painel/credencial pessoal — instance-id não versionado) |
-
-**Credenciais EJC:**
-- Nunca registrar senhas reais neste README.
-- Gerenciar acessos pelo painel de usuarios do EJC ou por procedimento administrativo seguro.
-
----
-
-## Estrutura desta Pasta
-
-```
-C:\Users\User\EJC\
-├── README.md          ← este arquivo
-├── backend/app/       ← código Python (FastAPI) — cópia do VPS /opt/ejc/backend/app
-│   ├── main.py
-│   ├── routers/       ← 95 routers
-│   ├── services/      ← 49 serviços
-│   ├── models/
-│   ├── schemas/
-│   ├── core/
-│   └── modules/
-├── frontend/src/      ← código React/TS — cópia do VPS /opt/ejc/frontend/src
-│   ├── App.tsx
-│   ├── pages/         ← todas as telas
-│   └── components/
-├── scripts/           ← scripts de manutenção (backup, etc.)
-├── vps-tools/         ← ferramentas SSH/SFTP
-│   ├── run.js         ← executa comando na VPS
-│   └── upload.js      ← sobe arquivo local para VPS
-└── deploy/            ← artefatos de deploy (docker-compose, configs)
-```
-
----
-
-## Operações Comuns
-
-### Conectar na VPS e rodar comando
-```powershell
-cd C:\Users\User\EJC\vps-tools
-node run.js "" "docker ps"
-```
-
-### Ver logs do backend
-```powershell
-node run.js "" "docker logs ejc_backend --tail 50"
-```
-
-### Verificar saúde do sistema
-```powershell
-node run.js "" "curl -s http://localhost:8000/api/health"
-```
-
-### Editar e subir arquivo para VPS
-```powershell
-# 1. Editar o arquivo local em C:\Users\User\EJC\backend\app\routers\arquivo.py
-# 2. Subir para VPS:
-node upload.js /opt/ejc/backend/app/routers/arquivo.py C:\Users\User\EJC\backend\app\routers\arquivo.py
-# 3. Reiniciar backend:
-node run.js "" "docker restart ejc_backend"
-```
-
-### Deploy de novo arquivo frontend
-```powershell
-node upload.js /opt/ejc/frontend/src/pages/NovaPage.tsx C:\Users\User\EJC\frontend\src\pages\NovaPage.tsx
-node run.js "" "cd /opt/ejc && docker compose build frontend && docker compose up -d --no-deps frontend"
-```
-
-### Backup manual do banco
-```powershell
-node run.js "" "/opt/ejc/scripts/backup.sh"
-```
-
-### Reset de senha admin (se necessário)
-> Defina a nova senha em uma variável de ambiente local (`$NOVA_SENHA`) — **nunca** escreva a senha em texto puro neste README nem em scripts versionados.
-```powershell
-# $NOVA_SENHA = "<defina-localmente>"
-node run.js "" "HASH=`$(docker exec ejc_backend python3 -c \"import os; from passlib.context import CryptContext; c=CryptContext(schemes=['bcrypt']); print(c.hash(os.environ['NOVA_SENHA']))\") && docker exec ejc_postgres psql -U ejc_user -d ejc_db -c \"UPDATE usuarios SET senha_hash='`$HASH' WHERE email='admin@ejc.adv.br';\""
-```
+Sistema full-stack de gestão jurídica com IA governada (Núcleo Único, RAG com
+pgvector, barreira LGPD com pseudonimização reversível, trilha AILog obrigatória).
 
 ---
 
@@ -96,54 +10,80 @@ node run.js "" "HASH=`$(docker exec ejc_backend python3 -c \"import os; from pas
 
 | Camada | Tecnologia |
 |--------|-----------|
-| Backend | FastAPI (Python 3.11) |
-| Frontend | React + TypeScript + Tailwind CSS |
-| Banco | PostgreSQL 16 + pgvector |
-| IA | Groq (principal) + Anthropic (opcional) |
-| Embeddings | intfloat/multilingual-e5-large (local, pgvector) |
-| Storage | Google Drive (Service Account — e-mail e projeto definidos em `.env`, não versionados) |
-| E-mail | SMTP Gmail (contato@depaulateixeira.adv.br) |
+| Backend | FastAPI (Python 3.11) + SQLAlchemy async + Pydantic v2 |
+| Frontend | React 18 + TypeScript + Vite + Tailwind CSS + Zustand |
+| Banco | PostgreSQL 16 + pgvector (migrations Alembic — head `096`) |
+| IA | Anthropic (Claude, principal) + Groq (fallback) + Ollama (opcional, off em prod) |
+| Embeddings | BAAI/bge-m3 — 1024d, local via fastembed (coluna `vector(1024)`, migration 096) |
+| Reranker RAG | BAAI/bge-reranker-v2-m3 (cross-encoder local, fail-safe) |
+| Storage | Google Drive (Service Account — credenciais via `.env`, não versionadas) |
+| E-mail | SMTP (configurado via `.env`) |
 | Containers | Docker + Docker Compose |
 
 ---
 
-## Estado Atual (24/06/2026)
+## Acesso à VPS (Contabo)
 
-### Containers ativos na VPS
-- `ejc_backend` — porta 8000 (healthy)
-- `ejc_db` — porta 5432 (PostgreSQL, healthy)
-- `ejc_frontend` — porta 8080→80
-- `evolution_api` — porta 8080 (Evolution WhatsApp — não usada pelo EJC)
+| Item | Valor |
+|------|-------|
+| Domínio ativo | `https://ejc.depaulateixeira.adv.br` |
+| IP / SSH User | definidos em secrets do GitHub (`VPS_HOST`/`VPS_USER`) e `.env` locais — não versionar |
+| Caminho na VPS | `/opt/ejc` |
 
-### Funcionalidades ativas
-- 95 routers / 49 services / ~83 tabelas no banco
-- RAG com ~11k chunks (embeddings locais e5-768d)
-- Google Drive integrado (6 pastas por tipo de doc)
-- E-mail SMTP configurado e testado
-- Push notifications (VAPID configurado, backend pronto)
-- DataJud integrado (DATAJUD_ENABLED=true)
-- DJEN monitoramento (configurado, aguarda cadastro OAB no perfil)
-- Análise Bancária de Extratos (OFX/CSV/PDF)
-
-### Pendências (não fazer sem confirmação)
-- `vw_atividades` DROP (view órfã)
-- Fase 4 DROP de `cases.numero_processo/tribunal/comarca` — após soak, não antes de 2026-07-07
-- `linked_judicial_case_id` deprecação
-- Portal do Cliente (backend pronto, frontend pendente)
-- Push subscription (usuário precisa clicar "ativar push" no SecurityMenu)
-- DJEN alertas (usuário precisa cadastrar OAB no perfil)
-- WhatsApp: descartado. Se retomar: Evolution self-hosted
-
-### Migrations Alembic
-- Última: `069_api_keys` (alembic head)
-- Drift de `bank_analyses`, `bank_transactions`, `bank_abusive_charges` **resolvido**:
-  criadas por `053_reconcile_schema` (`CREATE TABLE IF NOT EXISTS`), na cadeia até o
-  head — um `alembic upgrade head` limpo já as cria. Sem pendência de schema.
+**Credenciais:** nunca registrar senhas reais neste README. Gerenciar acessos
+pelo painel de usuários do EJC ou por procedimento administrativo seguro.
 
 ---
 
+## Deploy (caminho canônico)
+
+O deploy é feito pelo workflow **`.github/workflows/deploy-vps.yml`**
+(disparo manual via `workflow_dispatch`; requer secrets `VPS_*`), que
+sincroniza o código por rsync (sem `--delete`; nunca toca `.env`, `uploads/`,
+`backups/`) e executa **`scripts/deploy_vps_safe.sh`** na VPS — com backup
+automático do banco **antes** de aplicar migrations.
+
+- Runbook de emergência/rollback do embedding: `RUNBOOK_MIGRACAO_EMBEDDING_1024.md`
+- CI: `.github/workflows/ci.yml` (manual, runner self-hosted na VPS) e
+  `scripts/ci-local.sh` (gate local via `.githooks/pre-push`) — ver `docs/CI_SEM_GITHUB.md`
+
+Não use fluxos manuais de upload de arquivo avulso (o antigo `vps-tools/` é
+legado de manutenção pontual, excluído do rsync do deploy).
+
+## Backup
+
+- **Rotina diária canônica:** `scripts/backup/backup_diario.sh` (pg_dump -Fc com
+  verificação de integridade + rotação) — cron na VPS, ver `RUNBOOK_BACKUP.md`
+  e `RUNBOOK_ROTINA_BACKUP_DIARIA_GDRIVE.md` (envio ao Google Drive).
+- **Restauração:** `scripts/backup/restaurar_backup.sh` (ou `scripts/restore.sh`).
+- `scripts/backup.sh` permanece apenas como snapshot pré-deploy usado pelo
+  `deploy_vps_safe.sh`.
+
+## Testes
+
+```bash
+# Backend (Postgres+pgvector reais):
+cd backend && RUN_DB_TESTS=1 python -m pytest -q
+
+# Frontend:
+cd frontend && npx tsc --noEmit && npx vitest run && npm run build
+```
+
+---
+
+## Documentação
+
+- `docs/` — documentação técnica viva (IA, design system, CI, runner, etc.)
+- `docs/historico/` — relatórios/laudos/planos de auditorias já concluídas (arquivo morto)
+- Runbooks operacionais vivos na raiz: `RUNBOOK_BACKUP.md`,
+  `RUNBOOK_MONITORAMENTO.md`, `RUNBOOK_ROTINA_BACKUP_DIARIA_GDRIVE.md`,
+  `RUNBOOK_MIGRACAO_EMBEDDING_1024.md`
+
 ## Alertas de Segurança
-- `NUNCA` subir .env para git
-- `NUNCA` fazer DROP sem backup prévio
-- Backup diário automático em `/opt/ejc/backups/` (retenção 30 dias)
-- Último backup manual: `pre_correcao_20260623.sql.gz` (41MB) e `pre_fase1_proc_20260623_1928.dump`
+
+- **NUNCA** subir `.env` para o git.
+- **NUNCA** fazer DROP sem backup prévio.
+- Não subir uvicorn com `--workers N` sem Redis (rate limit/anti-brute-force
+  são por processo — ver `entrypoint.sh`).
+- `docker-compose.override.yml` é local da VPS (não versionado) — use
+  `docker-compose.override.example.yml` como base.

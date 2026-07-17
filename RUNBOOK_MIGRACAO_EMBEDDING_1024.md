@@ -45,7 +45,7 @@ suportado da MESMA dimensão da coluna (ou 768 + downgrade da migration).
 
 ## Reverter
 ```bash
-docker exec -it ejc_backend python -m alembic downgrade 095_rag_fts_gin_index
+docker exec -it ejc_backend python -m alembic downgrade 094_case_area_taxonomia
 # defina EMBEDDINGS_MODEL=sentence-transformers/paraphrase-multilingual-mpnet-base-v2 e EMBEDDINGS_DIM=768
 docker exec -it ejc_backend python -m scripts.reembedar_chunks_orfaos --batch-size 20
 ```
