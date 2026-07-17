@@ -629,10 +629,33 @@ async def assistente_estrategico_caso(
     # LGPD: sanitiza PII (nomes de partes, nº do processo, CPF/CNPJ) antes de
     # enviar à IA — a análise estratégica não precisa dos dados reais.
     from app.services.sanitizer import sanitizar_pii
-    contexto, _ = sanitizar_pii(contexto, [p.nome for p in partes if p.nome])
-    demanda_limpa, _ = sanitizar_pii(demanda)
+    contexto, pii_ctx = sanitizar_pii(contexto, [p.nome for p in partes if p.nome])
+    demanda_limpa, pii_dem = sanitizar_pii(demanda)
 
-    return await ai_gateway.processar_demanda(demanda_limpa, contexto, tipo="juridico_profundo")
+    res = await ai_gateway.processar_demanda(demanda_limpa, contexto, tipo="juridico_profundo")
+
+    # Auditoria obrigatória (LGPD/OAB): TODA chamada de IA precisa de rastro em
+    # ai_logs. Este endpoint passa pelo shim legado (core.ai_brain →
+    # ai_gateway.chat), que antes NÃO gravava AILog (furo de compliance #4a). A
+    # gravação é ADITIVA: não altera a resposta nem o comportamento do modelo —
+    # só registra o que já foi enviado/recebido (prompt já sanitizado acima +
+    # modelo real devolvido pelo shim). Loga apenas em sucesso, mesma semântica
+    # dos endpoints de IA já auditados (ai.py::assistente_estrategico e
+    # diplomacia_v3::dossie_pressao só gravam quando a IA respondeu). Se a
+    # gravação falhar, o erro PROPAGA (registrar_ai_log) — rastro é obrigatório;
+    # não introduzimos try/except que engula a falha de auditoria.
+    if res.get("status") == "sucesso":
+        from app.services.ai_guard import registrar_ai_log
+        from app.models.ai_log import AITipoUso
+        await registrar_ai_log(
+            db, user_id=cu.id, tipo_uso=AITipoUso.analise_caso, case_id=case_id,
+            prompt_sanitizado=f"{contexto}\n\n[DEMANDA]\n{demanda_limpa}",
+            pii_removida=bool(pii_ctx or pii_dem),
+            resposta=res.get("resposta"),
+            modelo=res.get("modelo_utilizado"),
+        )
+
+    return res
 
 
 # ═══ DataJud: sincronização de movimentos oficiais ═══
