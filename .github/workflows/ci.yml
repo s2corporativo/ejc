@@ -10,10 +10,10 @@ name: CI
 # runner online os checks ficam "aguardando runner". Ver docs/RUNNER_SELFHOSTED.md.
 # (Para voltar à nuvem paga: runs-on: ubuntu-latest.)
 on:
-  push:
-    branches: [main]
-  pull_request:
-    branches: [main]
+  # MANUAL apenas (economia de minutos do GitHub Actions em repositório privado).
+  # Os gatilhos automáticos push/pull_request foram removidos: a CI NÃO roda mais
+  # sozinha em cada push/PR. Para validar, rode em Actions → "CI" → "Run workflow"
+  # (workflow_dispatch), ou via API/gh (`gh workflow run ci.yml --ref <branch>`).
   workflow_dispatch:
 
 permissions:
