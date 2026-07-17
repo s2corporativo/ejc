@@ -1,10 +1,16 @@
 name: EJC Release Gate
 
-# Release gate na nuvem DESLIGADO (2026-07-17) — o GitHub Actions cobra minutos em
-# repo privado. Validação equivalente roda de graça via `scripts/ci-local.sh`.
-# Reative restaurando os gatilhos push/pull_request abaixo.
+# Release gate no runner SELF-HOSTED (2026-07-17) — roda no VPS (Actions minutes
+# = 0). ⚠️ Requer o runner registrado antes (scripts/setup-selfhosted-runner.sh);
+# ver docs/RUNNER_SELFHOSTED.md. (Para voltar à nuvem paga: runs-on: ubuntu-latest.)
 on:
-  workflow_dispatch:   # só manual
+  push:
+    branches:
+      - main
+  pull_request:
+    branches:
+      - main
+  workflow_dispatch:
 
 permissions:
   contents: read
@@ -16,7 +22,7 @@ concurrency:
 jobs:
   p0-guard:
     name: P0 guard — conflitos e segredos
-    runs-on: ubuntu-latest
+    runs-on: [self-hosted, ejc-vps]
     timeout-minutes: 10
     steps:
       - name: Checkout

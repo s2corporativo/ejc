@@ -4,14 +4,17 @@ name: CI
 # Se QUALQUER teste ou build falhar, o GitHub bloqueia o merge/deploy.
 # Objetivo: nada quebrado chega na produção do escritório.
 
-# CI na nuvem DESLIGADA (2026-07-17): o GitHub Actions cobra minutos de runner em
-# repositório privado. A MESMA validação (backend+banco pgvector + frontend) roda
-# de GRAÇA no VPS/máquina via `scripts/ci-local.sh` (e no hook .githooks/pre-push).
-# Para reativar o CI na nuvem, restaure os gatilhos push/pull_request abaixo — e o
-# billing do Actions. (Gatilhos de push/PR são lidos do branch default, então a
-# desativação vale a partir do momento em que este arquivo estiver na `main`.)
+# CI no runner SELF-HOSTED (2026-07-17): roda no VPS do escritório em vez da nuvem
+# do GitHub → Actions minutes = 0 (custo zero), mantendo os checks de PR.
+# ⚠️ Requer o runner registrado ANTES (scripts/setup-selfhosted-runner.sh); sem
+# runner online os checks ficam "aguardando runner". Ver docs/RUNNER_SELFHOSTED.md.
+# (Para voltar à nuvem paga: runs-on: ubuntu-latest.)
 on:
-  workflow_dispatch:   # só manual — não roda mais sozinho a cada push/PR
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+  workflow_dispatch:
 
 permissions:
   contents: read
@@ -28,7 +31,7 @@ jobs:
   # Lint (ruff) e pip-audit migraram para cá.
   db-validation:
     name: Backend — suíte completa + schema/RAG (Postgres pgvector)
-    runs-on: ubuntu-latest
+    runs-on: [self-hosted, ejc-vps]
     timeout-minutes: 30
     defaults:
       run:
@@ -116,7 +119,7 @@ jobs:
 
   frontend-build:
     name: Frontend — typecheck + build (tsc + vite)
-    runs-on: ubuntu-latest
+    runs-on: [self-hosted, ejc-vps]
     timeout-minutes: 25
     defaults:
       run:
