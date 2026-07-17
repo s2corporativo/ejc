@@ -386,13 +386,17 @@ class Settings(BaseSettings):
     # (migration 001) — não requer migration nova. Fail-safe: erro → só
     # semântico+trigram. Default OFF até validar em produção.
     RAG_FTS_ENABLED: bool = False
-    # Grounding AO VIVO de citações (auditoria IA 2026-07-17, O-5): além do
-    # citation_check contra a base interna, o validador de resposta confere as
-    # citações com o verificador rigoroso — inclusive CONFIRMAÇÃO de nº CNJ no
-    # DataJud (fonte pública do CNJ). Aditivo e fail-safe (erro → alerta, nunca
-    # derruba). Default OFF: faz chamada de rede externa (latência/rate limit) —
-    # ligue após validar a conectividade DataJud no ambiente.
-    AI_LIVE_GROUNDING_ENABLED: bool = False
+    # Grounding de citações (auditoria IA 2026-07-17, O-5): além do citation_check
+    # contra a base interna, o validador confere as citações com o verificador
+    # rigoroso. As checagens são LOCAIS (dígito verificador do nº CNJ, faixa de
+    # súmula, formato → detecta citação alucinada) e não fazem rede — por isso o
+    # grounding vem LIGADO por default (valor imediato, zero latência). Aditivo e
+    # fail-safe (erro → alerta, nunca derruba).
+    AI_LIVE_GROUNDING_ENABLED: bool = True
+    # Confirmação de nº CNJ no DataJud (CNJ) — a ÚNICA parte que faz REDE externa
+    # (latência/rate limit). Separada e OFF por default: ligue após validar a
+    # conectividade DataJud no ambiente. O grounding local acima independe disto.
+    AI_GROUNDING_DATAJUD_ENABLED: bool = False
 
     # ── RAG de MODELOS na geração de peças (Bíblia de Conhecimento) ───────
     # Recupera os modelos de peça (categoria "modelo_documento_juridico") como

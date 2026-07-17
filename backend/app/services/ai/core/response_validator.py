@@ -96,16 +96,21 @@ async def validar(
                 )
                 revisao_obrigatoria = True
 
-    # 1.5 Grounding AO VIVO (auditoria IA 2026-07-17, O-5) — opt-in. Alem do
+    # 1.5 Grounding de citações (auditoria IA 2026-07-17, O-5). Alem do
     # citation_check contra a base interna, confere as citacoes com o verificador
-    # rigoroso, inclusive CONFIRMACAO de nº CNJ no DataJud (fonte publica do CNJ).
-    # Aditivo e fail-safe; OFF por default (AI_LIVE_GROUNDING_ENABLED).
+    # rigoroso: checagens LOCAIS (dígito verificador do nº CNJ, faixa de súmula,
+    # formato → citação suspeita/alucinada) LIGADAS por default; a confirmacao no
+    # DataJud (rede externa) é separada e opt-in. Aditivo e fail-safe.
     if exige_fonte and db is not None:
         from app.core.config import get_settings
-        if getattr(get_settings(), "AI_LIVE_GROUNDING_ENABLED", False):
+        _cfg = get_settings()
+        if getattr(_cfg, "AI_LIVE_GROUNDING_ENABLED", True):
             try:
                 from app.services.verificador_jurisprudencia import verificar_jurisprudencia
-                vj = await verificar_jurisprudencia(db, conteudo, consultar_datajud=True)
+                vj = await verificar_jurisprudencia(
+                    db, conteudo,
+                    consultar_datajud=getattr(_cfg, "AI_GROUNDING_DATAJUD_ENABLED", False),
+                )
                 cont = (vj.get("contagem_status") or {}) if isinstance(vj, dict) else {}
                 suspeitas = int(cont.get("suspeita", 0) or 0)
                 score = vj.get("score") if isinstance(vj, dict) else None
