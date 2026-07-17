@@ -40,6 +40,14 @@ def _skills(*extras: str) -> list[str]:
 
 
 AGENT_REGISTRY: dict[str, AgenteInterno] = {
+    "EJCCoordinatorAgent": AgenteInterno(
+        nome="EJCCoordinatorAgent",
+        descricao="Coordenador nativo do EJC: delega ao especialista e combina método do ramo com método do módulo.",
+        dominios=["ejc", "coordenacao", "modulo"],
+        tarefa_padrao=TarefaIA.ANALISE_CASO,
+        prompt_key="analise_caso",
+        skills=_skills("resolve_native_skills", "retrieve_rag_sources"),
+    ),
     "CaseAgent": AgenteInterno(
         nome="CaseAgent",
         descricao="Análise estratégica de casos: fatos, teses, riscos e providências.",
@@ -106,7 +114,34 @@ AGENT_REGISTRY: dict[str, AgenteInterno] = {
         dominios=["bancario", "extrato", "revisional"],
         tarefa_padrao=TarefaIA.ANALISE_CASO,
         prompt_key="bancario",
-        skills=_skills("build_case_context", "analyze_bank_statement"),
+        skills=_skills("ramo_bancario", "build_case_context", "analyze_bank_statement"),
+    ),
+    "EnvironmentalLawAgent": AgenteInterno(
+        nome="EnvironmentalLawAgent",
+        descricao="Direito ambiental: licenciamento, infrações, responsabilidade, reparação e regularização.",
+        dominios=["ambiental", "licenciamento_ambiental", "infracao_ambiental"],
+        tarefa_padrao=TarefaIA.AMBIENTAL,
+        prompt_key="ambiental",
+        exige_fonte=True,
+        skills=_skills("ramo_ambiental", "build_case_context", "retrieve_rag_sources", "validate_citations"),
+    ),
+    "DigitalLGPDAgent": AgenteInterno(
+        nome="DigitalLGPDAgent",
+        descricao="Direito digital e LGPD: bases legais, contratos digitais, incidentes e prova eletrônica.",
+        dominios=["digital_lgpd", "lgpd", "direito_digital"],
+        tarefa_padrao=TarefaIA.ANALISE_CASO,
+        prompt_key="seguranca_lgpd",
+        exige_fonte=True,
+        skills=_skills("ramo_digital_lgpd", "build_case_context", "retrieve_rag_sources", "validate_citations"),
+    ),
+    "TrafficLawAgent": AgenteInterno(
+        nome="TrafficLawAgent",
+        descricao="Direito de trânsito: autuações, penalidades, CNH e recursos administrativos.",
+        dominios=["transito", "cnh", "jari", "cetran"],
+        tarefa_padrao=TarefaIA.ADMINISTRATIVO,
+        prompt_key="administrativo",
+        exige_fonte=True,
+        skills=_skills("ramo_transito", "build_case_context", "retrieve_rag_sources", "validate_citations"),
     ),
     "ConsumerLawAgent": AgenteInterno(
         nome="ConsumerLawAgent",
@@ -115,7 +150,7 @@ AGENT_REGISTRY: dict[str, AgenteInterno] = {
         tarefa_padrao=TarefaIA.ANALISE_CASO,
         prompt_key="consumidor",
         exige_fonte=True,
-        skills=_skills("build_case_context", "retrieve_rag_sources", "validate_citations"),
+        skills=_skills("ramo_consumidor", "build_case_context", "retrieve_rag_sources", "validate_citations"),
     ),
     "TaxLawAgent": AgenteInterno(
         nome="TaxLawAgent",
@@ -124,7 +159,7 @@ AGENT_REGISTRY: dict[str, AgenteInterno] = {
         tarefa_padrao=TarefaIA.ANALISE_CASO,
         prompt_key="tributario",
         exige_fonte=True,
-        skills=_skills("build_case_context", "retrieve_rag_sources", "validate_citations"),
+        skills=_skills("ramo_tributario", "build_case_context", "retrieve_rag_sources", "validate_citations"),
     ),
     "SocialSecurityAgent": AgenteInterno(
         nome="SocialSecurityAgent",
@@ -133,7 +168,7 @@ AGENT_REGISTRY: dict[str, AgenteInterno] = {
         tarefa_padrao=TarefaIA.ANALISE_CASO,
         prompt_key="previdenciario",
         exige_fonte=True,
-        skills=_skills("build_case_context", "retrieve_rag_sources", "validate_citations"),
+        skills=_skills("ramo_previdenciario", "build_case_context", "retrieve_rag_sources", "validate_citations"),
     ),
     "CorporateLawAgent": AgenteInterno(
         nome="CorporateLawAgent",
@@ -142,7 +177,7 @@ AGENT_REGISTRY: dict[str, AgenteInterno] = {
         tarefa_padrao=TarefaIA.ANALISE_CASO,
         prompt_key="empresarial",
         exige_fonte=True,
-        skills=_skills("build_case_context", "retrieve_rag_sources", "validate_citations"),
+        skills=_skills("ramo_empresarial", "build_case_context", "retrieve_rag_sources", "validate_citations"),
     ),
     "LaborLawAgent": AgenteInterno(
         nome="LaborLawAgent",
@@ -151,7 +186,7 @@ AGENT_REGISTRY: dict[str, AgenteInterno] = {
         tarefa_padrao=TarefaIA.TRABALHISTA,
         prompt_key="trabalhista",
         exige_fonte=True,
-        skills=_skills("build_case_context", "retrieve_rag_sources", "validate_citations"),
+        skills=_skills("ramo_trabalhista", "build_case_context", "retrieve_rag_sources", "validate_citations"),
     ),
     "CriminalLawAgent": AgenteInterno(
         nome="CriminalLawAgent",
@@ -160,7 +195,7 @@ AGENT_REGISTRY: dict[str, AgenteInterno] = {
         tarefa_padrao=TarefaIA.CRIMINAL,
         prompt_key="criminal",
         exige_fonte=True,
-        skills=_skills("build_case_context", "retrieve_rag_sources", "validate_citations"),
+        skills=_skills("ramo_penal", "build_case_context", "retrieve_rag_sources", "validate_citations"),
     ),
     "FamilyLawAgent": AgenteInterno(
         nome="FamilyLawAgent",
@@ -169,7 +204,7 @@ AGENT_REGISTRY: dict[str, AgenteInterno] = {
         tarefa_padrao=TarefaIA.FAMILIA,
         prompt_key="familia",
         exige_fonte=True,
-        skills=_skills("build_case_context", "retrieve_rag_sources", "validate_citations"),
+        skills=_skills("ramo_familia", "build_case_context", "retrieve_rag_sources", "validate_citations"),
     ),
     "AdministrativeLawAgent": AgenteInterno(
         nome="AdministrativeLawAgent",
@@ -178,7 +213,7 @@ AGENT_REGISTRY: dict[str, AgenteInterno] = {
         tarefa_padrao=TarefaIA.ADMINISTRATIVO,
         prompt_key="administrativo",
         exige_fonte=True,
-        skills=_skills("build_case_context", "retrieve_rag_sources", "validate_citations"),
+        skills=_skills("ramo_administrativo", "build_case_context", "retrieve_rag_sources", "validate_citations"),
     ),
     "SuccessionLawAgent": AgenteInterno(
         nome="SuccessionLawAgent",
@@ -196,7 +231,7 @@ AGENT_REGISTRY: dict[str, AgenteInterno] = {
         tarefa_padrao=TarefaIA.IMOBILIARIO,
         prompt_key="imobiliario",
         exige_fonte=True,
-        skills=_skills("build_case_context", "retrieve_rag_sources", "validate_citations"),
+        skills=_skills("ramo_imobiliario", "build_case_context", "retrieve_rag_sources", "validate_citations"),
     ),
     "ConstitutionalLawAgent": AgenteInterno(
         nome="ConstitutionalLawAgent",
@@ -224,7 +259,7 @@ AGENT_REGISTRY: dict[str, AgenteInterno] = {
         tarefa_padrao=TarefaIA.CIVEL,
         prompt_key="civel",
         exige_fonte=True,
-        skills=_skills("build_case_context", "retrieve_rag_sources", "validate_citations"),
+        skills=_skills("ramo_civel", "build_case_context", "retrieve_rag_sources", "validate_citations"),
     ),
     "ClientCommunicationAgent": AgenteInterno(
         nome="ClientCommunicationAgent",
