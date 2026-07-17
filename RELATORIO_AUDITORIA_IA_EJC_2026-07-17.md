@@ -175,4 +175,30 @@ Princípio: **uma variável por vez, sempre medindo**. O gate de citações e o 
 ---
 
 ### Anexos em processamento
-Auditorias especialistas de **backend** (duplicação entre routers `ia_*`, timeouts/retries dos providers, contratos) e de **segurança/LGPD** (vazamento de PII em algum caminho, cross-tenant, `rag_public` sem auth, PII em log) foram disparadas em paralelo e seus achados serão anexados quando concluírem. O eixo de **escolha de modelos 2026** da pesquisa externa (Magis-Bench, Sabiá-4, tiering de custo, Sonnet 5, caching) já está incorporado nas seções 5 e 7.
+Auditorias especialistas de **backend** (duplicação entre routers `ia_*`, timeouts/retries dos providers, contratos) e de **segurança/LGPD** (vazamento de PII em algum caminho, cross-tenant, `rag_public` sem auth, PII em log) foram disparadas em paralelo. O eixo de **escolha de modelos 2026** da pesquisa externa (Magis-Bench, Sabiá-4, tiering de custo, Sonnet 5, caching) já está incorporado nas seções 5 e 7.
+
+---
+
+## 8. Status de implementação (2026-07-17)
+
+Todo o roteiro foi implementado neste PR — **cada mudança é aditiva e fail-safe** (com o flag desligado ou o recurso indisponível, o comportamento é idêntico ao atual, o padrão da casa). Como o ambiente de desenvolvimento não tem as dependências do backend e o CI está fora do ar (falha de infra/cota, não de código), a validação foi por `py_compile` + testes unitários novos; **a execução da suíte fica para quando o CI voltar**.
+
+| Item | Status | Como |
+|---|---|---|
+| **O-1** reranker | ✅ feito | `ai/reranker.py` (cross-encoder local, `RAG_RERANK_ENABLED`) + pool no retrieval |
+| **A-1** IA criminal | ✅ feito | `criminal → EXTERNO_PSEUDONIMIZADO`. O **reforço de NER já existia** (`pseudonymizer` 3ª passada + `ner_local`) — só faltava ligar |
+| **A-2** threshold | ✅ feito | `RAG_MIN_SIM` configurável |
+| **A-3** BM25/FTS | ✅ feito | 3ª perna RRF full-text + migration 095 (índice GIN); `RAG_FTS_ENABLED` (OFF) |
+| **A-4** promessa OAB | ✅ feito | regex tolerante a acento/paráfrase (alerta, nunca reescrita) |
+| **O-2** embedding | ✅ feito | BGE-M3 1024d configurável + migration 096 + reindex (runbook). **Requer migrate→reindex no deploy** |
+| **O-3** FIRAC | ✅ feito | prompt FIRAC nos níveis alto/máximo. **Extended thinking do Opus 4.8 já estava ligado** no provider |
+| **O-4** eval harness | ✅ feito | `app/eval/` (runner + gold set + README): hit@k/precision/recall/MRR, alucinação, groundedness |
+| **O-5** grounding ao vivo | ✅ feito | validador confere citações via `verificador_jurisprudencia` (DataJud); `AI_LIVE_GROUNDING_ENABLED` (OFF) |
+| **O-6** HyDE | ✅ feito | `_hyde_expandir` só na query densa; `RAG_HYDE_ENABLED` (OFF) |
+| **O-7** caching/tiering | ✅ já existia | prompt caching + adaptive thinking já no `anthropic_provider` |
+
+**Descobertas que reduziram o trabalho/risco:** o provider Anthropic **já** fazia prompt caching e extended thinking (O-7 + parte de O-3); o pseudonimizador **já** tinha NER local para nomes de vítima/testemunha (o pré-requisito de A-1); e o `verificador_jurisprudencia` **já** confirmava nº CNJ no DataJud (o núcleo de O-5). O sistema estava mais maduro do que o roteiro presumia.
+
+**Flags novas (todas default-safe):** `RAG_RERANK_ENABLED=true`, `RAG_MIN_SIM=0.55`, `RAG_HYDE_ENABLED=false`, `RAG_FTS_ENABLED=false`, `EMBEDDINGS_MODEL=BAAI/bge-m3`, `EMBEDDINGS_DIM=1024`, `AI_LIVE_GROUNDING_ENABLED=false`.
+
+**Ordem de ativação recomendada (eval-driven):** montar o gold set (O-4) e medir baseline → ligar reranker e comparar → migração/reindex do embedding (runbook) e comparar recall → ligar FTS/HyDE e comparar → ligar grounding ao vivo após validar DataJud. Uma variável por vez, sempre medindo.
