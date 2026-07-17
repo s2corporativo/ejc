@@ -14,8 +14,8 @@ pgvector, barreira LGPD com pseudonimização reversível, trilha AILog obrigat�
 | Frontend | React 18 + TypeScript + Vite + Tailwind CSS + Zustand |
 | Banco | PostgreSQL 16 + pgvector (migrations Alembic — head `096`) |
 | IA | Anthropic (Claude, principal) + Groq (fallback) + Ollama (opcional, off em prod) |
-| Embeddings | BAAI/bge-m3 — 1024d, local via fastembed (coluna `vector(1024)`, migration 096) |
-| Reranker RAG | BAAI/bge-reranker-v2-m3 (cross-encoder local, fail-safe) |
+| Embeddings | intfloat/multilingual-e5-large — 1024d, local via fastembed (coluna `vector(1024)`, migration 096) |
+| Reranker RAG | jinaai/jina-reranker-v2-base-multilingual (cross-encoder local, fail-safe) |
 | Storage | Google Drive (Service Account — credenciais via `.env`, não versionadas) |
 | E-mail | SMTP (configurado via `.env`) |
 | Containers | Docker + Docker Compose |

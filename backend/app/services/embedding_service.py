@@ -1,12 +1,14 @@
 # ── app/services/embedding_service.py ────────────────────────────────────────
 # Embeddings locais (soberania de dados) via fastembed (ONNX, sem torch).
 # Modelo/dimensão CONFIGURÁVEIS (auditoria IA 2026-07-17, O-2):
-#   default BAAI/bge-m3 (1024d, multilíngue forte, denso) — casa com a coluna
-#   knowledge_chunks.embedding vector(1024) da migration 096. Trocar a dimensão
-#   exige migration + reindex (scripts.reembedar_chunks_orfaos). Revertível por
-#   env (EMBEDDINGS_MODEL/EMBEDDINGS_DIM).
+#   default intfloat/multilingual-e5-large (1024d, multilíngue) — casa com a
+#   coluna knowledge_chunks.embedding vector(1024) da migration 096. O candidato
+#   original BAAI/bge-m3 NÃO é suportado pelo fastembed==0.8.0 pinado
+#   (verificação prática 2026-07-17). Trocar a dimensão exige migration +
+#   reindex (scripts.reembedar_chunks_orfaos). Revertível por env
+#   (EMBEDDINGS_MODEL/EMBEDDINGS_DIM).
 # Protocolo E5 (prefixos "query: "/"passage: ") só se aplica a modelos E5 (ex.:
-#   multilingual-e5-large); bge-m3/mpnet não usam prefixo (detectado por _prefixo).
+#   multilingual-e5-large, o default); bge/mpnet não usam (detectado por _prefixo).
 # Lazy-load + singleton: o modelo (~1GB no 1º download) só carrega no
 # primeiro uso, nunca no boot; encode roda em thread (asyncio.to_thread).
 # Provider local: fastembed no mesmo processo.
@@ -24,7 +26,7 @@ settings = get_settings()
 
 # Configuráveis por env (O-2). Default BGE-M3 (1024d). DEVE casar com a coluna
 # knowledge_chunks.embedding vector(EMBED_DIM) — ver migration 096 e o runbook.
-MODEL_NAME = settings.EMBEDDINGS_MODEL or "BAAI/bge-m3"
+MODEL_NAME = settings.EMBEDDINGS_MODEL or "intfloat/multilingual-e5-large"
 EMBED_DIM  = int(settings.EMBEDDINGS_DIM or 1024)
 
 _model = None

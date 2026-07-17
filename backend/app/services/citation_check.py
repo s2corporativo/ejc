@@ -20,23 +20,30 @@ from sqlalchemy import text
 
 async def _existe_sumula(db, num: str, orgao: str) -> str | None:
     """Lookup exato por chave_origem (ingestão nova) + fallback por título."""
-    keys = [f"sumula:{orgao}:{num}"] if orgao else \
-           [f"sumula:{t}:{num}" for t in ("STF", "STJ", "TST")]
+    # A ingestão grava o tribunal em MINÚSCULO na chave (sumula:tst:331 —
+    # ver sumulas_ingestion). Aceita ambos os casos para cobrir dados legados;
+    # sem isso o verbete seedado nunca atingia status "verificada".
+    orgaos = [orgao] if orgao else ["STF", "STJ", "TST"]
+    keys = [f"sumula:{t}:{num}" for o in orgaos for t in (o, o.lower())]
     row = (await db.execute(text(
         "SELECT titulo FROM knowledge_docs "
         "WHERE deleted_at IS NULL AND chave_origem = ANY(:k) LIMIT 1"
     ), {"k": keys})).first()
     if row:
         return row[0]
-    # Fallback p/ docs de formato antigo: título "Súmula N ..." (boundary via ' %')
-    params = {"t": f"Súmula {num} %"}
+    # Fallback por título: a ingestão atual grava "Súmula TST nº 331" (ou
+    # "Súmula Vinculante STF nº N") com fonte='sumula' e categoria=ÁREA
+    # (trabalhista/...); docs de formato antigo usam título "Súmula N ..."
+    # com categoria 'sumula%'. Cobre os dois formatos.
+    params = {"t1": f"Súmula {num} %", "t2": f"Súmula %nº {num}"}
     cond = ""
     if orgao:
         cond = " AND titulo ILIKE :org"
         params["org"] = f"%{orgao}%"
     row = (await db.execute(text(
         "SELECT titulo FROM knowledge_docs WHERE deleted_at IS NULL "
-        "AND categoria LIKE 'sumula%' AND titulo ILIKE :t" + cond + " LIMIT 1"
+        "AND (categoria LIKE 'sumula%' OR fonte = 'sumula') "
+        "AND (titulo ILIKE :t1 OR titulo ILIKE :t2)" + cond + " LIMIT 1"
     ), params)).first()
     return row[0] if row else None
 

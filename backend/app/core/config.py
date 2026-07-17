@@ -339,14 +339,18 @@ class Settings(BaseSettings):
     EMBEDDINGS_PROVIDER: str = "local"  # local | http
     EMBEDDINGS_API_URL: str = "http://embeddings:8010/embed"
     EMBEDDINGS_TIMEOUT: int = 120
-    # Modelo e dimensão do embedding (auditoria IA 2026-07-17, O-2). Default
-    # ATUALIZADO para BGE-M3 (1024d, multilíngue forte, denso) — recall superior
-    # ao mpnet (2021, 768d). A coluna knowledge_chunks.embedding é
-    # vector(EMBEDDINGS_DIM); TROCAR A DIMENSÃO exige a migration 096 + REINDEX
-    # (scripts.reembedar_chunks_orfaos). Revertível por env (voltar a
-    # sentence-transformers/paraphrase-multilingual-mpnet-base-v2 + 768 exige a
-    # migration de downgrade + reindex). ⚠️ EMBEDDINGS_DIM DEVE casar com a coluna.
-    EMBEDDINGS_MODEL: str = "BAAI/bge-m3"
+    # Modelo e dimensão do embedding (auditoria IA 2026-07-17, O-2; default
+    # CORRIGIDO na verificação prática do mesmo dia): multilingual-e5-large
+    # (1024d, multilíngue forte) — o candidato original BAAI/bge-m3 NÃO é
+    # suportado pelo fastembed==0.8.0 pinado (gerar_embeddings retornava None e
+    # o RAG degradava silenciosamente para busca textual). e5-large tem a MESMA
+    # dimensão 1024 (nenhuma migration necessária) e é suportado; o serviço já
+    # aplica os prefixos query:/passage: do protocolo E5. Se o fastembed for
+    # atualizado para versão com bge-m3 denso, basta trocar por env + reindex.
+    # A coluna knowledge_chunks.embedding é vector(EMBEDDINGS_DIM); TROCAR A
+    # DIMENSÃO exige migration + REINDEX (scripts.reembedar_chunks_orfaos).
+    # ⚠️ EMBEDDINGS_DIM DEVE casar com a coluna.
+    EMBEDDINGS_MODEL: str = "intfloat/multilingual-e5-large"
     EMBEDDINGS_DIM: int = 1024
     # Auto-reindex do RAG (O-2): job periódico do scheduler reembeda chunks órfãos
     # (embedding IS NULL) — assim a troca de modelo/dimensão (migration 096) se
@@ -361,12 +365,13 @@ class Settings(BaseSettings):
     # torch; não sai do VPS). Recupera um POOL maior (RAG_RERANK_POOL_*) e devolve
     # só os melhores após rerank — maior ganho de precisão de contexto do RAG.
     # Fail-safe (ver reranker.py): fastembed/modelo ausente ou qualquer erro →
-    # mantém a ordem RRF, sem exceção. O modelo default é multilíngue; se a versão
-    # instalada do fastembed não o suportar, troque por um suportado (ex.:
-    # BAAI/bge-reranker-base, jinaai/jina-reranker-v2-base-multilingual) — a
-    # degradação é graciosa e o RAG segue funcionando.
+    # mantém a ordem RRF, sem exceção. Default CORRIGIDO (verificação prática
+    # 2026-07-17): o candidato original BAAI/bge-reranker-v2-m3 NÃO é suportado
+    # pelo fastembed==0.8.0 pinado (o reranker degradava com warning em toda
+    # consulta). jina-reranker-v2-base-multilingual é multilíngue e suportado;
+    # alternativa menor: BAAI/bge-reranker-base.
     RAG_RERANK_ENABLED: bool = True
-    RAG_RERANK_MODEL: str = "BAAI/bge-reranker-v2-m3"
+    RAG_RERANK_MODEL: str = "jinaai/jina-reranker-v2-base-multilingual"
     RAG_RERANK_POOL_MULT: int = 5     # pool de candidatos = limite × MULT
     RAG_RERANK_POOL_MIN: int = 20     # piso de candidatos antes do rerank
 

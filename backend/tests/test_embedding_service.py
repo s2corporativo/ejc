@@ -39,15 +39,16 @@ def _local_on(monkeypatch):
 
 
 def test_dimensao_do_modelo_casa_com_pgvector():
-    # Migration 096 (O-2): knowledge_chunks.embedding é vector(1024) (BGE-M3).
+    # Migration 096 (O-2): knowledge_chunks.embedding é vector(1024).
     assert es.EMBED_DIM == 1024
 
 
-def test_modelo_default_nao_usa_prefixo_e5():
-    # bge-m3 (default) não é E5 → sem prefixo query:/passage: (só modelos E5 usam).
-    assert "e5" not in es.MODEL_NAME.lower()
-    assert es._prefixo("query") == ""
-    assert es._prefixo("passage") == ""
+def test_modelo_default_e5_usa_prefixos_do_protocolo():
+    # Default corrigido (verificação prática 2026-07-17): multilingual-e5-large
+    # — modelos E5 exigem os prefixos query:/passage: para retrieval correto.
+    assert "e5" in es.MODEL_NAME.lower()
+    assert es._prefixo("query") == "query: "
+    assert es._prefixo("passage") == "passage: "
 
 
 async def test_disabled_por_default_nao_gera(monkeypatch):
@@ -65,8 +66,8 @@ async def test_local_gera_vetor_dimensao_certa(_local_on):
     assert vetores is not None and len(vetores) == 2
     assert all(len(v) == es.EMBED_DIM for v in vetores)
     assert all(isinstance(v, list) for v in vetores)
-    # mpnet: texto vai cru, sem prefixo E5
-    assert fake.entradas == ["dano moral", "rescisão indireta"]
+    # e5-large (default): protocolo E5 exige prefixo "query: " no modo query.
+    assert fake.entradas == ["query: dano moral", "query: rescisão indireta"]
 
 
 async def test_erro_no_modelo_retorna_none_sem_excecao(_local_on, caplog):
