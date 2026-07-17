@@ -20,6 +20,10 @@ class IntentResultado:
 # task_type/domain (normalizado) → nome do agente. Cobre os aliases usados
 # pelos endpoints do núcleo (/chat, /task, /analyze, /generate, /report).
 TASK_TYPE_PARA_AGENTE: dict[str, str] = {
+    # Coordenação nativa do EJC
+    "ejc": "EJCCoordinatorAgent",
+    "coordenacao": "EJCCoordinatorAgent",
+    "modulo": "EJCCoordinatorAgent",
     # Casos / estratégia
     "chat": "CaseAgent",
     "case_analysis": "CaseAgent",
@@ -110,11 +114,19 @@ TASK_TYPE_PARA_AGENTE: dict[str, str] = {
     "civil": "CivilLawAgent",
     "responsabilidade_civil": "CivilLawAgent",
     "cumprimento_sentenca": "CivilLawAgent",
-    # Compliance / regulatório / ambiental (agente de caso genérico; a tarefa
-    # ambiental é refinada abaixo para usar o prompt/modelo ambiental).
+    "ambiental": "EnvironmentalLawAgent",
+    "licenciamento_ambiental": "EnvironmentalLawAgent",
+    "infracao_ambiental": "EnvironmentalLawAgent",
+    "digital_lgpd": "DigitalLGPDAgent",
+    "direito_digital": "DigitalLGPDAgent",
+    "lgpd": "DigitalLGPDAgent",
+    "transito": "TrafficLawAgent",
+    "cnh": "TrafficLawAgent",
+    "jari": "TrafficLawAgent",
+    "cetran": "TrafficLawAgent",
+    # Compliance / regulatório
     "compliance": "CaseAgent",
     "regulatorio": "CaseAgent",
-    "ambiental": "CaseAgent",
     # Comunicação com cliente
     "mensagem_cliente": "ClientCommunicationAgent",
     "portal": "ClientCommunicationAgent",
@@ -125,9 +137,8 @@ TASK_TYPE_PARA_AGENTE: dict[str, str] = {
     "patch": "RepairAgent",
     "design": "UIUXAgent",
     "uiux": "UIUXAgent",
-    # Segurança / LGPD
+    # Segurança técnica; mérito de LGPD é tratado pelo DigitalLGPDAgent.
     "seguranca": "SecurityLGPDOABAgent",
-    "lgpd": "SecurityLGPDOABAgent",
     "auditoria_acesso": "SecurityLGPDOABAgent",
     # Relatórios (domain refina; fallback CaseAgent)
     "report": "CaseAgent",
@@ -150,8 +161,11 @@ _KEYWORDS_PARA_AGENTE: list[tuple[tuple[str, ...], str]] = [
     (("mandado de segurança", "mandado de seguranca", "habeas data", "ação popular", "acao popular", "ação civil pública", "acao civil publica", "controle de constitucionalidade", "inconstitucional", "inconstitucionalidade", "adin", "adpf", "reserva de plenário", "reserva de plenario", "remédio constitucional", "remedio constitucional"), "ConstitutionalLawAgent"),
     (("juizado especial", "juizados especiais", "turma recursal", "recurso inominado", "lei 9.099", "lei 9099", "jefp", " jec", " jef"), "SpecialCourtsAgent"),
     (("responsabilidade civil", "dano moral", "dano material", "danos morais", "reparação de danos", "reparacao de danos", "cumprimento de sentença", "cumprimento de sentenca", "tutela de urgência", "tutela de urgencia", "tutela provisória", "tutela provisoria", "prescrição civil", "prescricao civil", "ação de cobrança", "acao de cobranca"), "CivilLawAgent"),
-    (("ambiental", "auto de infração ambiental", "licenciamento", "compliance", "regulatório", "regulatorio"), "CaseAgent"),
-    (("lgpd", "dado pessoal", "vazamento", "auditoria de acesso"), "SecurityLGPDOABAgent"),
+    (("multa de trânsito", "multa de transito", "cnh", "jari", "cetran", "auto de infração de trânsito", "auto de infracao de transito"), "TrafficLawAgent"),
+    (("ambiental", "auto de infração ambiental", "auto de infracao ambiental", "licenciamento ambiental", "embargo ambiental"), "EnvironmentalLawAgent"),
+    (("lgpd", "dado pessoal", "dados pessoais", "anpd", "direito digital", "contrato saas", "incidente de segurança", "incidente de seguranca"), "DigitalLGPDAgent"),
+    (("compliance", "regulatório", "regulatorio"), "CaseAgent"),
+    (("auditoria de acesso", "segurança do sistema", "seguranca do sistema"), "SecurityLGPDOABAgent"),
     (("jurimetria", "probabilidade", "predição", "predicao"), "JurimetryAgent"),
     (("honorário", "honorario", "contrato de honorários"), "FinanceAgent"),
     (("minuta", "petição", "peticao", "peça", "peca processual", "redigir", "redija"), "LegalWritingAgent"),
@@ -163,7 +177,14 @@ _KEYWORDS_PARA_AGENTE: list[tuple[tuple[str, ...], str]] = [
 ]
 
 # Agentes cujo trabalho normalmente depende de um caso concreto.
-_AGENTES_COM_CASO = {"CaseAgent", "ProcessAgent", "FinanceAgent", "BankForensicsAgent"}
+_AGENTES_COM_CASO = {
+    "CaseAgent", "ProcessAgent", "FinanceAgent", "BankForensicsAgent",
+    "ConsumerLawAgent", "TaxLawAgent", "SocialSecurityAgent", "CorporateLawAgent",
+    "LaborLawAgent", "CriminalLawAgent", "FamilyLawAgent",
+    "AdministrativeLawAgent", "SuccessionLawAgent", "RealEstateLawAgent",
+    "ConstitutionalLawAgent", "SpecialCourtsAgent", "CivilLawAgent",
+    "EnvironmentalLawAgent", "DigitalLGPDAgent", "TrafficLawAgent",
+}
 
 
 def _normalizar(valor: str | None) -> str:
@@ -196,8 +217,11 @@ def classify_intent(
     dom = _normalizar(domain)
 
     nome_agente = _agente_por_chave(task)
-    # "report" genérico: o domain decide o especialista (report jurídico ≠ técnico).
-    if task in ("report", "relatorio") and dom:
+    # Tarefas genéricas deixam o domínio selecionar o especialista delegado.
+    if task in (
+        "chat", "case_analysis", "analise_caso", "case", "estrategia",
+        "report", "relatorio",
+    ) and dom:
         nome_agente = _agente_por_chave(dom) or nome_agente
     if nome_agente is None:
         nome_agente = _agente_por_chave(dom)
