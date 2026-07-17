@@ -37,7 +37,7 @@ import {
   Textarea,
   Empty,
   EmptyState,
-  Spinner,
+  SkeletonTable,
   Button,
   fmtDate,
 } from "../components/UI";
@@ -840,7 +840,10 @@ export default function Casos() {
               }
             />
           ) : !data ? (
-            <Spinner />
+            <SkeletonTable
+              rows={6}
+              cols={arquivoF === "arquivados" || podeExcluir ? 8 : 7}
+            />
           ) : data.data.length === 0 ? (
             arquivoF === "arquivados" ? (
               <Empty

@@ -1093,6 +1093,60 @@ export function Spinner() {
   );
 }
 
+// Barra shimmer branco+ouro (grafite no `.dark`) — reutilizada pelas células
+// do SkeletonTable. Decorativa: `aria-hidden` (quem expõe o estado de
+// carregamento é o container com role="status"). A classe `.ejc-skeleton`
+// (index.css) traz o brilho dourado sutil.
+function SkeletonBar({ className }: { className?: string }) {
+  return <div aria-hidden="true" className={cn("ejc-skeleton", className)} />;
+}
+
+/**
+ * SkeletonTable — placeholder de carregamento no FORMATO de uma tabela,
+ * dentro do mesmo container `.card` das listas core (Casos, Clientes).
+ * Mostra `rows` linhas × `cols` células com shimmer branco+ouro (grafite no
+ * tema escuro) enquanto os dados chegam — evita o "salto" de layout do
+ * <Spinner />. Acessível: `role="status"` + `aria-busy` no container (com
+ * rótulo sr-only); células individuais `aria-hidden`.
+ */
+export function SkeletonTable({
+  rows = 6,
+  cols = 5,
+}: {
+  rows?: number;
+  cols?: number;
+}) {
+  return (
+    <div
+      className="card overflow-hidden"
+      role="status"
+      aria-busy="true"
+      aria-live="polite"
+    >
+      <span className="sr-only">Carregando…</span>
+      {/* Cabeçalho */}
+      <div className="flex gap-4 border-b border-bronze-pale/40 bg-bronze-50/50 px-4 py-3">
+        {Array.from({ length: cols }).map((_, i) => (
+          <SkeletonBar key={i} className="h-3 flex-1" />
+        ))}
+      </div>
+      {/* Linhas */}
+      <div className="divide-y divide-bronze-pale/40">
+        {Array.from({ length: rows }).map((_, r) => (
+          <div key={r} className="flex items-center gap-4 px-4 py-3.5">
+            {Array.from({ length: cols }).map((_, c) => (
+              <SkeletonBar
+                key={c}
+                className={cn("h-4 flex-1", c === 0 && "max-w-[7rem]")}
+              />
+            ))}
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+}
+
 export function IANotice({
   children = "Rascunho sujeito a revisao humana obrigatoria.",
 }: {

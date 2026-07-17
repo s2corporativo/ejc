@@ -522,6 +522,53 @@
   animation: pulse-soft 2s ease-in-out infinite;
 }
 
+/* ── Skeleton (placeholder de carregamento) ──────────────────
+   Alto padrão branco+ouro: bloco neutro quente no claro / grafite no
+   escuro (.dark), com um brilho dourado SUTIL varrendo a superfície.
+   Só apresentação — usado no lugar do <Spinner/> das listas core. */
+@keyframes ejc-shimmer {
+  100% {
+    transform: translateX(100%);
+  }
+}
+.ejc-skeleton {
+  position: relative;
+  overflow: hidden;
+  border-radius: 0.5rem;
+  background-color: #f1ece1; /* off-white quente (canvas/parchment) */
+}
+.ejc-skeleton::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  transform: translateX(-100%);
+  background: linear-gradient(
+    90deg,
+    rgba(255, 255, 255, 0) 0%,
+    rgba(255, 255, 255, 0.7) 45%,
+    rgba(201, 162, 39, 0.12) 55%,
+    rgba(255, 255, 255, 0) 100%
+  );
+  animation: ejc-shimmer 1.8s ease-in-out infinite;
+}
+.dark .ejc-skeleton {
+  background-color: #2a2e37; /* grafite */
+}
+.dark .ejc-skeleton::after {
+  background: linear-gradient(
+    90deg,
+    rgba(255, 255, 255, 0) 0%,
+    rgba(255, 255, 255, 0.06) 45%,
+    rgba(201, 162, 39, 0.08) 55%,
+    rgba(255, 255, 255, 0) 100%
+  );
+}
+@media (prefers-reduced-motion: reduce) {
+  .ejc-skeleton::after {
+    animation: none;
+  }
+}
+
 /* Modernizacao sistemica escopada: aplica acabamento premium nas telas antigas
    sem alterar componentes, handlers, endpoints ou regras de negocio. */
 .ejc-modern-scope {
