@@ -480,7 +480,7 @@ export default function DashboardModern() {
         </div>
 
       {/* Faixa hero sépia→bronze com filete dourado no topo (sem borda) */}
-      <section className="relative overflow-hidden rounded-2xl bg-gradient-to-br from-[#211913] via-[#2E241A] to-[#5E4A0E] p-5 text-white shadow-lg before:absolute before:inset-x-0 before:top-0 before:h-0.5 before:bg-gradient-to-r before:from-ouro-claro before:via-ouro-claro/40 before:to-transparent dark:from-[#17110c] dark:via-[#241c14] dark:to-[#4a3a10] md:p-6">
+      <section className="relative overflow-hidden rounded-2xl border border-slate-200 bg-white p-5 shadow-sm before:absolute before:inset-x-0 before:top-0 before:h-0.5 before:bg-gradient-to-r before:from-ouro-claro before:via-ouro-claro/40 before:to-transparent dark:border-white/10 dark:bg-white/[0.03] md:p-6">
         <div className="flex flex-col gap-5 xl:flex-row xl:items-center xl:justify-between">
           <div className="max-w-2xl">
             <div className="mb-2 flex flex-wrap items-center gap-2">
@@ -488,7 +488,7 @@ export default function DashboardModern() {
                   extras bg-white/10 + text-primary-100 disputavam com o tone
                   padrão slate e o badge ficava ilegível no fundo sépia. */}
               <Badge tone="ouro">Operação segura</Badge>
-              <span className="inline-flex items-center gap-1.5 text-xs text-primary-100/80">
+              <span className="inline-flex items-center gap-1.5 text-xs text-slate-500">
                 <ShieldCheck className="h-3.5 w-3.5" />
                 Auditoria e LGPD preservadas
               </span>
@@ -496,10 +496,10 @@ export default function DashboardModern() {
             {/* !text-white: o seletor global `.ejc-modern-scope h2` (index.css)
                 pinta headings de #111827 e vencia o utilitário text-white,
                 deixando o título ilegível sobre o gradiente sépia escuro. */}
-            <h2 className="text-xl font-semibold !text-white md:text-2xl">
+            <h2 className="text-xl font-semibold text-slate-900 md:text-2xl dark:!text-slate-100">
               Decida o que precisa de atenção agora
             </h2>
-            <p className="mt-2 text-sm leading-6 text-primary-100/80">
+            <p className="mt-2 text-sm leading-6 text-slate-500">
               O painel prioriza riscos, vencimentos e movimentações sem
               substituir a validação profissional do advogado.
             </p>
@@ -512,8 +512,8 @@ export default function DashboardModern() {
                   icon={<Icon className="h-4 w-4" />}
                   className={
                     primary
-                      ? "bg-white text-ouro-profundo shadow-md hover:bg-ouro-palha dark:bg-white dark:text-ouro-profundo dark:hover:bg-ouro-palha"
-                      : "text-white hover:bg-white/10 dark:text-white dark:hover:bg-white/10"
+                      ? "bg-ouro-profundo text-white shadow-sm hover:bg-ouro dark:bg-ouro-profundo dark:text-white dark:hover:bg-ouro"
+                      : "text-slate-700 hover:bg-slate-100 dark:text-slate-200 dark:hover:bg-white/10"
                   }
                 >
                   {label}
@@ -572,10 +572,10 @@ export default function DashboardModern() {
 
       <Link
         to="/raio-x"
-        className="group flex flex-col gap-4 rounded-2xl bg-gradient-to-r from-primary-950 via-primary-900 to-ai-900 p-5 text-white shadow-lg transition hover:-translate-y-0.5 hover:shadow-xl sm:flex-row sm:items-center sm:justify-between"
+        className="group flex flex-col gap-4 rounded-2xl border border-slate-200 bg-white p-5 shadow-sm transition hover:-translate-y-0.5 hover:shadow-md sm:flex-row sm:items-center sm:justify-between dark:border-white/10 dark:bg-white/[0.03]"
       >
         <div className="flex items-start gap-4">
-          <span className="rounded-2xl bg-white/10 p-3 ring-1 ring-inset ring-white/15">
+          <span className="rounded-2xl bg-ouro/10 p-3 text-ouro-profundo ring-1 ring-inset ring-ouro/20 dark:text-ouro-claro">
             <ScanSearch className="h-6 w-6" />
           </span>
           <div>
@@ -585,14 +585,14 @@ export default function DashboardModern() {
               </h2>
               <Badge tone="blue">Raio-X preliminar</Badge>
             </div>
-            <p className="mt-1 max-w-3xl text-sm leading-6 text-primary-100/80">
+            <p className="mt-1 max-w-3xl text-sm leading-6 text-slate-500">
               Envie documentos externos, confira o diagnóstico e só transforme
               em caso após a decisão humana. A análise não altera a carteira nem
               os indicadores oficiais.
             </p>
           </div>
         </div>
-        <span className="inline-flex shrink-0 items-center gap-2 text-sm font-semibold text-ouro-claro">
+        <span className="inline-flex shrink-0 items-center gap-2 text-sm font-semibold text-ouro-profundo dark:text-ouro-claro">
           Abrir Raio-X
           <ArrowRight className="h-4 w-4 transition group-hover:translate-x-1" />
         </span>
