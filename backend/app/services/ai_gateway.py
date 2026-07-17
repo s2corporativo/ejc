@@ -918,3 +918,163 @@ async def executar_tarefa_ia(tarefa, mensagem: str, case_id: str | None = None,
         "is_rascunho": True, "requer_revisao": True,
         "tokens_usados": inp + out, "custo_estimado_brl": custo,
     }
+
+
+# ══════════════════════════════════════════════════════════════════════════════
+# MÓDULO AGÊNTICO DE IA — turno de tool-use com a MESMA barreira LGPD (fonte
+# única). O histórico agêntico (loop.py) vive em ESPAÇO REAL (PII real); AQUI,
+# a CADA turno, pseudonimizamos a lista INTEIRA de mensagens (text/tool_use/
+# tool_result) com o MESMO conjunto `entidades` (marcadores CONSISTENTES) e
+# reidratamos a saída localmente — espelha o modelo por-chamada de
+# _chamar_com_barreira. NÃO cria barreira nova: reusa _preparar_mensagens_externo
+# e pseudonymizer.reidratar. O `mapa` (PII real) vive só nesta chamada.
+# ══════════════════════════════════════════════════════════════════════════════
+def _slots_de_texto(messages: list[dict]) -> list[tuple]:
+    """Referências mutáveis (container, chave) a CADA campo de texto das mensagens
+    agênticas, em ordem determinística: content str; blocos text; valores STRING
+    de input de tool_use; e content de tool_result (str ou blocos text). Trabalha
+    sobre a lista passada (espera-se uma deep copy)."""
+    slots: list[tuple] = []
+    for m in messages:
+        content = m.get("content")
+        if isinstance(content, str):
+            slots.append((m, "content"))
+        elif isinstance(content, list):
+            for bloco in content:
+                if not isinstance(bloco, dict):
+                    continue
+                tipo = bloco.get("type")
+                if tipo == "text" and isinstance(bloco.get("text"), str):
+                    slots.append((bloco, "text"))
+                elif tipo == "tool_use":
+                    inp = bloco.get("input")
+                    if isinstance(inp, dict):
+                        for k, v in inp.items():
+                            if isinstance(v, str):
+                                slots.append((inp, k))
+                elif tipo == "tool_result":
+                    rc = bloco.get("content")
+                    if isinstance(rc, str):
+                        slots.append((bloco, "content"))
+                    elif isinstance(rc, list):
+                        for sub in rc:
+                            if (isinstance(sub, dict) and sub.get("type") == "text"
+                                    and isinstance(sub.get("text"), str)):
+                                slots.append((sub, "text"))
+    return slots
+
+
+def _pseudonimizar_agentico(messages, modo, entidades=None):
+    """Barreira LGPD para o histórico AGÊNTICO (content estruturado). EXTRAI todos
+    os campos de texto num flat [{role:"user", content:<texto>}], chama a MESMA
+    primitiva da barreira (_preparar_mensagens_externo → (flat_limpos, residual,
+    mapa)) e REESCREVE os textos limpos numa cópia PROFUNDA das mensagens.
+
+    Retorna (messages_envio | None, residual, mapa). Se `residual` não-vazio o
+    provider externo NÃO deve ser chamado (messages_envio=None)."""
+    import copy
+    msgs = copy.deepcopy(messages)
+    slots = _slots_de_texto(msgs)
+    flat = [{"role": "user", "content": cont[chave]} for (cont, chave) in slots]
+    flat_limpos, residual, mapa = _preparar_mensagens_externo(flat, modo, entidades)
+    if residual:
+        return None, residual, mapa
+    for (cont, chave), limpo in zip(slots, flat_limpos):
+        cont[chave] = limpo.get("content", "")
+    return msgs, residual, mapa
+
+
+async def chat_agentico(
+    messages: list[dict],
+    tools: list[dict],
+    task_type: str = "estrategia",
+    max_tokens: int = 4096,
+    entidades: dict[str, list[str]] | None = None,
+) -> dict:
+    """UM turno do loop agêntico (tool-use) com a MESMA barreira LGPD do chat().
+
+    - Aplica legal_base.aplicar_base (identidade/base do escritório) no início.
+    - modo = modo_para_task(task_type); resolve a cadeia via _resolver_cadeia mas,
+      nesta fase, só provedores com tool-use (anthropic). LOCAL_COMPLETO sem
+      provider local → bloqueio SEGURO (RuntimeError claro).
+    - Pseudonimiza a LISTA INTEIRA (text/tool_use/tool_result) com as MESMAS
+      primitivas da barreira (_pseudonimizar_agentico → _preparar_mensagens_externo);
+      residual → _ProviderPulado (não chama o provider).
+    - Chama anthropic_provider.chat_tools e REIDRATA localmente TANTO o `text`
+      QUANTO cada valor string de tool_calls[i].input (o `mapa` só em memória).
+
+    Retorna {"text","tool_calls","stop_reason","usage","provider","model",
+             "text_para_log"}. `text_para_log` é PSEUDONIMIZADO (vai ao AILog;
+    nunca PII reidratada)."""
+    from app.services.ai.sanitization_policy import ModoSanitizacao, modo_para_task
+
+    task_type_original = task_type
+    task_type = _normalizar_task_type(task_type)
+    modo_sanitizacao = modo_para_task(task_type_original)
+
+    # Identidade/base do escritório (BASE_PROMPT/16 regras) no system do agente.
+    messages = legal_base.aplicar_base(messages, task_type)
+
+    # Cadeia: reusa a resolução/elegibilidade e FILTRA para providers com
+    # tool-use (só anthropic nesta fase).
+    provider_force = settings.AI_PROVIDER if settings.AI_PROVIDER != "auto" else None
+    cadeia = _resolver_cadeia(task_type, provider_force, None)
+    if modo_sanitizacao == ModoSanitizacao.LOCAL_COMPLETO:
+        # Sigilo reforçado: nunca sai do VPS. Não há provider LOCAL com tool-use
+        # nesta fase → bloqueio seguro (o conteúdo nunca é enviado).
+        cadeia = _restringir_cadeia_local_completo(cadeia, modo_sanitizacao, task_type_original)
+        if not cadeia:
+            raise RuntimeError(_MSG_BLOQUEIO_LOCAL_COMPLETO)
+    cadeia_tools = [(p, m) for (p, m) in cadeia if p == "anthropic"]
+    # Se AI_PROVIDER forçou um provider sem tool-use, mas o Anthropic está
+    # elegível, ainda o usamos (única opção agêntica) — desde que não seja
+    # LOCAL_COMPLETO (já tratado acima).
+    if (not cadeia_tools and modo_sanitizacao != ModoSanitizacao.LOCAL_COMPLETO
+            and _provider_elegivel("anthropic")):
+        cadeia_tools = [("anthropic", _resolver_modelo("anthropic", task_type, None))]
+    if not cadeia_tools or not _provider_elegivel("anthropic"):
+        raise RuntimeError(
+            "Módulo agêntico requer um provedor com suporte a tool-use (Anthropic) "
+            "elegível — verifique ANTHROPIC_ENABLED, ANTHROPIC_API_KEY e "
+            "AI_EXTERNAL_PROVIDERS_ALLOWED."
+        )
+    provider, model = cadeia_tools[0]
+
+    # ── Barreira LGPD (fonte única) — pseudonimiza tudo que vai ao externo ──
+    mapa = None
+    messages_envio = messages
+    if provider in _PROVIDERS_EXTERNOS and settings.AI_REQUIRE_SANITIZATION_FOR_EXTERNAL:
+        messages_envio, residual, mapa = _pseudonimizar_agentico(
+            messages, modo_sanitizacao, entidades
+        )
+        if residual:
+            # Espelha _chamar_com_barreira: PII residual → provider NÃO é chamado.
+            raise _ProviderPulado(residual)
+
+    from app.services.providers import anthropic_provider
+    resp = await anthropic_provider.chat_tools(messages_envio, model, max_tokens, tools)
+
+    # ── Reidratação LOCAL: text + cada valor string de tool_calls[i].input ──
+    text = resp.get("text", "") or ""
+    text_para_log = text  # versão PSEUDONIMIZADA (sem PII real) → AILog/observabilidade
+    tool_calls = resp.get("tool_calls", []) or []
+    if mapa:
+        from app.services.ai.pseudonymizer import reidratar
+        text = reidratar(text, mapa)
+        for tc in tool_calls:
+            inp = tc.get("input")
+            if isinstance(inp, dict):
+                for k, v in list(inp.items()):
+                    if isinstance(v, str):
+                        inp[k] = reidratar(v, mapa)
+
+    usage = resp.get("usage", {}) or {}
+    return {
+        "text": text,
+        "text_para_log": text_para_log,
+        "tool_calls": tool_calls,
+        "stop_reason": resp.get("stop_reason"),
+        "usage": usage,
+        "provider": provider,
+        "model": usage.get("model", model),
+    }

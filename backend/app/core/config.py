@@ -185,6 +185,18 @@ class Settings(BaseSettings):
     ROTEAMENTO_LIMIAR_MEDIO: int = 3
     ROTEAMENTO_LIMIAR_PESADO: int = 6
 
+    # ── MÓDULO AGÊNTICO DE IA (loop de tool-use, igual ao Claude Code) ────
+    # Default OFF (aditivo e fail-safe): com a flag desligada o endpoint
+    # /ia/agente/stream responde 404 e NADA muda no sistema. Ligado, a IA opera
+    # como agente (decide → chama ferramenta → lê resultado → decide), reusando
+    # o núcleo e TODOS os guardrails (barreira LGPD, RBAC, AILog, gate de
+    # citações, HITL). Nesta fase só provedores com tool-use (Anthropic).
+    AI_AGENT_ENABLED: bool = False
+    # Teto de PASSOS do loop (nunca infinito).
+    AI_AGENT_MAX_STEPS: int = 8
+    # Teto de TOKENS acumulados por execução do agente (controle de custo).
+    AI_AGENT_MAX_TOKENS: int = 16000
+
     # ── Fase 6 — Observabilidade de IA (Langfuse SELF-HOSTED) ─────────────
     # Langfuse é SELF-HOSTED (docker-compose, perfil "observability"): dados
     # jurídicos NÃO saem do ambiente. NUNCA apontar para cloud.langfuse.com.

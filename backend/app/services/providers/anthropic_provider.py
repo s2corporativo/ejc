@@ -161,3 +161,95 @@ async def chat(messages: list[dict], model: str | None,
         "cache_creation_input_tokens": getattr(u, "cache_creation_input_tokens", None),
     }
     return texto, usage
+
+
+async def chat_tools(messages: list[dict], model: str | None,
+                     max_tokens: int, tools: list[dict]) -> dict:
+    """Tool-use NATIVO para o loop agêntico (MÓDULO AGÊNTICO DE IA).
+
+    ADITIVO — não altera `chat()`. Mesma superfície de endurecimento do `chat()`
+    (client lazy, teto duro de max_tokens, extra_body/effort dos modelos modernos,
+    erro CURTO e seguro), porém:
+      • expõe as `tools` (schema Anthropic: [{"name","description","input_schema"}])
+        ao modelo via client.messages.create(tools=...);
+      • NÃO envia `temperature` (o loop não a usa e os modelos modernos a rejeitam);
+      • devolve os blocos ESTRUTURADOS para o loop decidir o próximo passo.
+
+    `messages` já vem no formato Anthropic — `content` pode ser str OU lista de
+    blocos (text/tool_use/tool_result). A pseudonimização LGPD roda ANTES, no
+    ai_gateway.chat_agentico (fonte única da barreira); aqui nada é sanitizado.
+
+    Retorna:
+      {"text": str,
+       "tool_calls": [{"id","name","input":dict}],
+       "stop_reason": str,
+       "usage": {...}}
+    """
+    settings = get_settings()
+    if not settings.ANTHROPIC_ENABLED:
+        raise RuntimeError("Provider Anthropic desabilitado (ANTHROPIC_ENABLED=false)")
+
+    system, conv = _split_system(messages)
+    mdl = model or _default_model()
+    # Teto duro de saída — mesmo controle de custo do chat().
+    mt = min(int(max_tokens or 1024), int(settings.ANTHROPIC_MAX_TOKENS))
+
+    def _call():
+        import anthropic  # import tardio (mesmo padrão do _get_client)
+        client = _get_client()
+        kwargs = dict(model=mdl, messages=conv, tools=tools)
+        if system:
+            kwargs["system"] = [{
+                "type": "text",
+                "text": system,
+                "cache_control": {"type": "ephemeral"},
+            }]
+        if _is_modern(mdl):
+            effort = (get_settings().ANTHROPIC_EFFORT or "high").lower()
+            teto = max(int(settings.ANTHROPIC_MAX_TOKENS), 8192)
+            kwargs["max_tokens"] = min(max(mt, 8192), teto)
+            kwargs["extra_body"] = {
+                "thinking": {"type": "adaptive"},
+                "output_config": {"effort": effort},
+            }
+        else:
+            # Modelos legados: sem temperature (o contrato agêntico não a expõe).
+            kwargs["max_tokens"] = mt
+        try:
+            return client.messages.create(**kwargs)
+        except anthropic.APIError as e:
+            status = getattr(e, "status_code", None)
+            raise RuntimeError(
+                f"Anthropic API falhou ({type(e).__name__}"
+                + (f", HTTP {status}" if status else "") + ")"
+            ) from None
+
+    resp = await asyncio.to_thread(_call)
+    # Parse dos blocos: text → `text`; tool_use → `tool_calls`. Nunca lê
+    # content[0] às cegas (pode vir bloco "thinking" antes).
+    texto_parts: list[str] = []
+    tool_calls: list[dict] = []
+    for b in (resp.content or []):
+        btype = getattr(b, "type", "")
+        if btype == "text":
+            texto_parts.append(getattr(b, "text", "") or "")
+        elif btype == "tool_use":
+            tool_calls.append({
+                "id": getattr(b, "id", "") or "",
+                "name": getattr(b, "name", "") or "",
+                "input": getattr(b, "input", None) or {},
+            })
+    u = getattr(resp, "usage", None)
+    usage = {
+        "model": mdl,
+        "input_tokens": getattr(u, "input_tokens", None),
+        "output_tokens": getattr(u, "output_tokens", None),
+        "cache_read_input_tokens": getattr(u, "cache_read_input_tokens", None),
+        "cache_creation_input_tokens": getattr(u, "cache_creation_input_tokens", None),
+    }
+    return {
+        "text": "".join(texto_parts),
+        "tool_calls": tool_calls,
+        "stop_reason": getattr(resp, "stop_reason", None),
+        "usage": usage,
+    }
