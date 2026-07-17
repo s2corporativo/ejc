@@ -4,12 +4,8 @@ name: EJC Release Gate
 # = 0). ⚠️ Requer o runner registrado antes (scripts/setup-selfhosted-runner.sh);
 # ver docs/RUNNER_SELFHOSTED.md. (Para voltar à nuvem paga: runs-on: ubuntu-latest.)
 on:
-  push:
-    branches:
-      - main
-  pull_request:
-    branches:
-      - main
+  # MANUAL apenas (economia de Actions) — não roda em push/PR automaticamente.
+  # Rode em Actions → "EJC Release Gate" → "Run workflow" quando necessário.
   workflow_dispatch:
 
 permissions:

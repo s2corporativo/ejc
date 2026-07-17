@@ -482,14 +482,15 @@ async def ia_analise_cliente(
 
     # Auditoria obrigatória (LGPD/OAB): rastro em ai_logs para toda chamada de IA.
     # Este endpoint passava pelo shim legado sem gravar AILog (furo #4a). ADITIVO:
-    # não altera a resposta. Análise é do CLIENTE, não de um caso → case_id=None
-    # (AILog.case_id é nullable). Loga só em sucesso; erro de gravação PROPAGA
-    # (registrar_ai_log), consistente com os endpoints de IA já auditados.
+    # não altera a resposta. Análise é de PERFIL DO CLIENTE, não de um caso →
+    # tipo_uso=outro (analise_caso é "sugestão de teses" no dashboard de
+    # governança) e case_id=None (AILog.case_id é nullable). Loga só em sucesso;
+    # erro de gravação PROPAGA (registrar_ai_log), consistente com os já auditados.
     if res.get("status") == "sucesso":
         from app.services.ai_guard import registrar_ai_log
         from app.models.ai_log import AITipoUso
         await registrar_ai_log(
-            db, user_id=cu.id, tipo_uso=AITipoUso.analise_caso, case_id=None,
+            db, user_id=cu.id, tipo_uso=AITipoUso.outro, case_id=None,
             prompt_sanitizado=f"{contexto}\n\n[DEMANDA]\n{demanda}",
             pii_removida=bool(pii_ctx),
             resposta=res.get("resposta"),

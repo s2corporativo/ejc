@@ -158,7 +158,59 @@ async def test_ia_analise_cliente_grava_ailog(monkeypatch):
     log = logs[0]
     assert log.user_id == "user-9"
     assert log.case_id is None  # análise de cliente, não de caso
-    assert log.tipo_uso == AITipoUso.analise_caso
+    # Perfil de CLIENTE → tipo_uso=outro (não "analise_caso"/sugestão de teses).
+    assert log.tipo_uso == AITipoUso.outro
     assert log.resposta == "Perfil de risco moderado."
     assert log.modelo == "ollama/modelo-x"
     assert db.commits >= 1
+
+
+# ── intelligence_v3.py :: analise_impacto ─────────────────────────────────────
+# Único endpoint que mudou de execução (generate → processar_demanda) e o único
+# que grava tipo_uso=outro sanitizando o prompt no próprio endpoint.
+
+async def test_analise_impacto_grava_ailog(monkeypatch):
+    from app.services import ai_gateway
+    from app.routers import intelligence_v3 as intel_router
+    monkeypatch.setattr(ai_gateway, "chat", _fake_chat(texto="Impacto: alta relevância tributária."))
+
+    db = _FakeDB([])  # endpoint não faz db.execute; só grava o AILog
+    cu = User(id="user-7", role=UserRole.socio)
+
+    r = await intel_router.analise_impacto(
+        {"texto": "Nova tese fixada pelo STF sobre PIS/COFINS."}, db=db, cu=cu,
+    )
+
+    # Resposta ao cliente preservada (mesmo shape do generate legado).
+    assert r == {"resumo_executivo": "Impacto: alta relevância tributária."}
+
+    logs = [o for o in db.added if isinstance(o, AILog)]
+    assert len(logs) == 1
+    log = logs[0]
+    assert log.user_id == "user-7"
+    assert log.case_id is None
+    assert log.tipo_uso == AITipoUso.outro
+    assert log.resposta == "Impacto: alta relevância tributária."
+    assert log.modelo == "ollama/modelo-x"  # modelo REAL exposto por processar_demanda
+    assert db.commits >= 1
+
+
+async def test_analise_impacto_falha_nao_grava_ailog(monkeypatch):
+    """IA falha → endpoint retorna {'resumo_executivo': _ERRO_SEGURO} sem levantar
+    e SEM gravar AILog (semântica de erro preservada)."""
+    from app.services import ai_gateway
+    from app.routers import intelligence_v3 as intel_router
+    from app.core.ai_brain import _ERRO_SEGURO
+
+    async def chat_falha(messages, task_type="", **kw):
+        raise RuntimeError("provider indisponível")
+
+    monkeypatch.setattr(ai_gateway, "chat", chat_falha)
+
+    db = _FakeDB([])
+    cu = User(id="u7", role=UserRole.socio)
+
+    r = await intel_router.analise_impacto({"texto": "qualquer fato"}, db=db, cu=cu)
+
+    assert r == {"resumo_executivo": _ERRO_SEGURO}  # shim converte exceção
+    assert [o for o in db.added if isinstance(o, AILog)] == []
