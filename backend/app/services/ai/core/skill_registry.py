@@ -11,6 +11,8 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import Callable
 
+from app.services.ai.core.ejc_skill_catalog import native_skill_specs
+
 _STAFF = "qualquer usuário interno (staff); cliente_externo bloqueado no núcleo"
 _TECNICO = "superadmin/admin/socio"
 
@@ -35,6 +37,11 @@ class Skill:
 def _h_classify_intent(**kw):
     from app.services.ai.core.intent_classifier import classify_intent
     return classify_intent(**kw)
+
+
+def _h_resolve_native_skills(**kw):
+    from app.services.ai.core.ejc_skill_catalog import resolve_native_skill_plan
+    return resolve_native_skill_plan(**kw)
 
 
 async def _h_build_case_context(db, case_id, **kw):
@@ -106,6 +113,13 @@ SKILL_REGISTRY: dict[str, Skill] = {s.nome: s for s in [
           riscos="baixo (determinístico, sem LLM)",
           pos_condicoes="sempre resolve um agente (default CaseAgent)",
           handler=_h_classify_intent),
+    Skill("resolve_native_skills",
+          "Selecionar deterministicamente uma skill de ramo e uma de módulo do EJC",
+          "task_type, domain, mensagem, module_key, surface",
+          "NativeSkillPlan(ramo, módulo, skills, métodos)",
+          riscos="baixo (determinístico, sem LLM)",
+          pos_condicoes="no máximo uma skill de ramo e uma de módulo, ambas canônicas",
+          handler=_h_resolve_native_skills),
     Skill("build_case_context", "Montar dossiê consolidado e sanitizado do caso",
           "db, case_id", "dict{texto, meta, nomes_proteger} | None",
           pre_condicoes="ownership do caso já validado (ABAC)",
@@ -203,6 +217,35 @@ SKILL_REGISTRY: dict[str, Skill] = {s.nome: s for s in [
           "domínio + dados do contexto", "relatório estruturado rascunho",
           handler=None),
 ]}
+
+# As 49 skills nativas são geradas a partir das fontes canônicas de ramos e
+# módulos. Elas são instruções de método incorporadas ao pipeline central; não
+# abrem gateway, provider, router ou agente executor paralelo.
+for _spec in native_skill_specs():
+    if _spec.name in SKILL_REGISTRY:
+        raise RuntimeError(f"Skill nativa duplicada: {_spec.name}")
+    _is_legal = _spec.kind == "legal_area"
+    SKILL_REGISTRY[_spec.name] = Skill(
+        nome=_spec.name,
+        finalidade=_spec.description,
+        entrada="intenção, contexto autorizado, documentos e parâmetros do módulo",
+        saida="método especializado aplicado ao rascunho auditável",
+        permissoes=(
+            "superadmin/admin/socio/advogado/advogado_auxiliar"
+            if _is_legal else _STAFF
+        ),
+        riscos=(
+            "alto — mérito jurídico; revisão humana obrigatória"
+            if _is_legal else "médio — operação sujeita a RBAC e confirmação"
+        ),
+        pre_condicoes="RBAC/ABAC, ownership e contexto validados pelo núcleo único",
+        pos_condicoes=(
+            "rascunho HITL; fontes e dados ausentes explicitados"
+            if _is_legal
+            else "nenhuma mutação ou envio sem ferramenta e confirmação humana"
+        ),
+        handler=None,
+    )
 
 
 def get_skill(nome: str) -> Skill:
