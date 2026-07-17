@@ -127,8 +127,20 @@ def _filtros_gate_rag(incluir_ficticio: bool = False) -> str:
 # RAG-04: limiar mínimo de similaridade na busca semântica — evita que matches
 # fracos/irrelevantes entrem como "fonte" e poluam o contexto da IA (risco de
 # alucinação). Similaridade = 1 - distância de cosseno. min_sim 0.55 → max_dist 0.45.
-_RAG_MIN_SIM = 0.55
-_RAG_MAX_DIST = 1.0 - _RAG_MIN_SIM
+# Limiar de similaridade da busca vetorial — agora CONFIGURÁVEL (RAG_MIN_SIM;
+# auditoria IA 2026-07-17, achado A-2); antes hardcoded em 0.55. Calibrável por
+# um eval set sem tocar código. Distância de cosseno = 1 - similaridade.
+_RAG_MIN_SIM_DEFAULT = 0.55
+
+
+def _rag_max_dist() -> float:
+    """Distância máxima de cosseno aceita na busca vetorial, derivada de
+    RAG_MIN_SIM (fallback 0.55). Clamp defensivo em [0, 2]."""
+    try:
+        sim = float(settings.RAG_MIN_SIM)
+    except Exception:
+        sim = _RAG_MIN_SIM_DEFAULT
+    return max(0.0, min(2.0, 1.0 - sim))
 
 # Confiança do documento (curadoria de governança — ia_governanca._conf):
 # vive em knowledge_docs.extra (JSONB), chave canônica "confidence_level"
@@ -269,7 +281,7 @@ async def buscar_contexto_rag(
         vetores = await gerar_embeddings([consulta], modo="query")
         if vetores:
             vec = vetores[0]
-            params_v: dict = {"vec": str(vec), "lim": _n_pool, "max_dist": _RAG_MAX_DIST,
+            params_v: dict = {"vec": str(vec), "lim": _n_pool, "max_dist": _rag_max_dist(),
                               "restr_cats": _RESTRICTED_CATS, "scope_cli": scope_client_id or "",
                               "incl_hist": incluir_historico}
             filtro_cat_v = ""

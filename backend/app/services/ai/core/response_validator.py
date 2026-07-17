@@ -18,6 +18,14 @@ _RE_PROMESSAS = [
     re.compile(r"\b(?:vamos|iremos|vai|irá|ira)\s+(?:certamente\s+)?ganhar\s+(?:a\s+causa|o\s+processo|a\s+ação|a\s+acao)", re.I),
     re.compile(r"100%\s*de\s*(?:chance|êxito|exito|certeza|sucesso)", re.I),
     re.compile(r"êxito\s+(?:é\s+)?garantido|exito\s+(?:é\s+)?garantido", re.I),
+    # Paráfrases de garantia (auditoria IA 2026-07-17, achado A-4): a vedação da
+    # OAB (art. 34, XX; Provimentos) alcança a PROMESSA de resultado, não só a
+    # palavra "garantia". Continua sendo ALERTA ao revisor, nunca reescrita.
+    re.compile(r"(?:êxito|exito|vit[óo]ria|sucesso|resultado|ganho)\s+(?:praticamente\s+|totalmente\s+|absolutamente\s+)?(?:garantid[oa]s?|assegurad[oa]s?|cert[oa]s?)", re.I),
+    re.compile(r"(?:imposs[íi]vel|n[ãa]o\s+h[áa]\s+como|n[ãa]o\s+tem\s+como)\s+perder", re.I),
+    re.compile(r"chances?\s+(?:s[ãa]o\s+)?(?:de\s+)?(?:100\s*%|quase\s+100\s*%|altíssim[ao]s?|elevadíssim[ao]s?)", re.I),
+    re.compile(r"risco\s+(?:zero|nulo|inexistente|nenhum)\s+de\s+(?:perda|perder|derrota|insucesso)", re.I),
+    re.compile(r"(?:com\s+certeza|certamente|sem\s+d[úu]vida\s+alguma)\s+(?:vamos|iremos|voc[êe]\s+vai|ir[áa])\s+(?:ganhar|vencer|ter\s+êxito)", re.I),
 ]
 
 PREFIXO_SEM_BASE = (

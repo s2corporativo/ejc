@@ -49,15 +49,27 @@ TASK_ALIASES = {
 
 NIVEL_INTELIGENCIA_PROMPTS = {
     "padrao": "Responda com objetividade, precisao e foco pratico.",
+    # Raciocinio estruturado pelo metodo FIRAC (auditoria IA 2026-07-17, O-3):
+    # forca a decomposicao juridica e amarra cada premissa a uma fonte verificavel
+    # (casa com o gate de citacoes anti-alucinacao).
     "alto": (
-        "Ative raciocinio juridico senior: decomponha o problema em fatos, direito, prova, "
-        "risco e estrategia; identifique lacunas, contradicoes, teses alternativas e providencias; "
-        "nao invente fontes."
+        "Ative raciocinio juridico senior e estruture pelo metodo FIRAC: "
+        "(1) FATOS relevantes, separando fato de inferencia e apontando lacunas; "
+        "(2) QUESTAO juridica central; "
+        "(3) REGRA aplicavel, citando o dispositivo/sumula/precedente que a sustenta "
+        "(NUNCA invente fonte; sem certeza, escreva 'verificar fonte'); "
+        "(4) APLICACAO da regra aos fatos, com teses alternativas e contra-argumentos; "
+        "(5) CONCLUSAO com nivel de confianca e providencias. "
+        "Identifique contradicoes e o que ainda depende de decisao humana."
     ),
     "maximo": (
-        "Ative modo de inteligencia maxima: faca leitura adversarial, teste hipoteses concorrentes, "
-        "analise preliminares, merito, prova, quantum, acordo e risco; entregue conclusoes verificaveis, "
-        "separando fato, inferencia, lacuna e decisao humana pendente. Nao revele cadeia de pensamento."
+        "Ative modo de inteligencia maxima: leitura adversarial e teste de hipoteses "
+        "concorrentes, estruturando pelo metodo FIRAC (fato / questao / regra-com-fonte / "
+        "aplicacao / conclusao). Analise preliminares, merito, prova, quantum, acordo e risco; "
+        "para CADA premissa juridica cite o dispositivo/sumula/precedente ou marque "
+        "'verificar fonte' (nunca invente). Separe explicitamente FATO, INFERENCIA, LACUNA e "
+        "DECISAO HUMANA PENDENTE, e entregue conclusoes verificaveis com nivel de confianca. "
+        "Nao revele a cadeia de pensamento — entregue apenas o resultado estruturado."
     ),
 }
 

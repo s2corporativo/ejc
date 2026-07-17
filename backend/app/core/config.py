@@ -355,6 +355,22 @@ class Settings(BaseSettings):
     RAG_RERANK_POOL_MULT: int = 5     # pool de candidatos = limite × MULT
     RAG_RERANK_POOL_MIN: int = 20     # piso de candidatos antes do rerank
 
+    # ── Ajuste fino do retrieval RAG (auditoria IA 2026-07-17) ───────────────
+    # Limiar de similaridade de cosseno da busca vetorial (pgvector): chunks com
+    # similaridade < RAG_MIN_SIM são descartados (dist > 1-RAG_MIN_SIM). Antes era
+    # hardcoded (0.55); agora é calibrável por um eval set sem tocar código.
+    RAG_MIN_SIM: float = 0.55
+    # HyDE (Hypothetical Document Embeddings): gera uma "resposta hipotética"
+    # curta e barata e a EMBUTE na busca vetorial — melhora o recall quando o
+    # vocabulário do caso novo difere do registrado. Fail-safe: erro/timeout →
+    # usa a consulta original. Default OFF (liga após medir; +1 chamada barata/busca).
+    RAG_HYDE_ENABLED: bool = False
+    # Perna lexical FULL-TEXT (tsvector 'portuguese', BM25-like) no híbrido RRF,
+    # além do pg_trgm — melhor para termos raros/citações exatas (art./súmula/nº
+    # CNJ). Requer o índice GIN (migration 900) senão fica lento. Fail-safe:
+    # erro → só semântico+trigram. Default OFF até validar o índice em produção.
+    RAG_FTS_ENABLED: bool = False
+
     # ── RAG de MODELOS na geração de peças (Bíblia de Conhecimento) ───────
     # Recupera os modelos de peça (categoria "modelo_documento_juridico") como
     # REFERÊNCIA de estrutura/tese na montagem final (Etapa 7). Gated e fail-safe:
