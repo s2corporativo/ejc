@@ -523,7 +523,8 @@ function ResultCard({ r }: { r: ResultadoUnificado }) {
                 <FolderOpen className="h-3.5 w-3.5" /> Abrir caso vinculado
               </Link>
             )}
-            {r.juris?.link_original && (
+            {r.juris?.link_original &&
+              /^https?:\/\//i.test(r.juris.link_original) && (
               <a
                 href={r.juris.link_original}
                 target="_blank"

@@ -1486,6 +1486,7 @@ export default function DossieCliente() {
             <input
               type="email"
               className="input"
+              autoComplete="off"
               value={acessoForm.email}
               onChange={(e) =>
                 setAcessoForm((p) => ({ ...p, email: e.target.value }))
@@ -1495,8 +1496,9 @@ export default function DossieCliente() {
           <div>
             <label className="label">Senha inicial (mín. 8) *</label>
             <input
-              type="text"
+              type="password"
               className="input"
+              autoComplete="new-password"
               value={acessoForm.senha_inicial}
               onChange={(e) =>
                 setAcessoForm((p) => ({ ...p, senha_inicial: e.target.value }))

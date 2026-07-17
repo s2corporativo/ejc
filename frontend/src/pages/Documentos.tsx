@@ -280,6 +280,8 @@ export default function Documentos() {
   const abrirPreview = async (d: any) => {
     const kind = EXTS_PREVIEW[extDe(d.filename || "")];
     if (!kind) return;
+    // Revoga a object URL de um preview anterior ainda aberto antes de trocar.
+    if (previewUrl) URL.revokeObjectURL(previewUrl);
     setPreview({ doc: d, kind });
     setPreviewUrl(null);
     setPreviewErro(null);
