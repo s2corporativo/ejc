@@ -20,7 +20,12 @@
     --ejc-bronze: #6f5711;
     --ejc-gold: #c9a227;
     --ejc-gold-soft: #f7f1dc;
-    --ejc-shadow-soft: 0 4px 18px rgba(24, 16, 8, 0.05);
+    /* Sombra em camadas (ambiente + luz suave) — profundidade "flutuante"
+       de alto padrão, quente, discreta. */
+    --ejc-shadow-soft:
+      0 1px 2px rgba(24, 16, 8, 0.04),
+      0 6px 16px -4px rgba(24, 16, 8, 0.05),
+      0 22px 44px -16px rgba(24, 16, 8, 0.07);
     /* Sidebar off-black quente sofisticado (ouro profundo da logomarca) */
     --ejc-sidebar-top: #201a0f;
     --ejc-sidebar-bottom: #2f260f;
@@ -46,7 +51,10 @@
     --ejc-border: rgba(255, 245, 230, 0.08);
     --ejc-legal: #d6cec2;
     --ejc-gold-soft: rgba(212, 175, 55, 0.12);
-    --ejc-shadow-soft: 0 8px 30px rgba(0, 0, 0, 0.45);
+    --ejc-shadow-soft:
+      0 1px 2px rgba(0, 0, 0, 0.3),
+      0 8px 22px -6px rgba(0, 0, 0, 0.42),
+      0 26px 50px -18px rgba(0, 0, 0, 0.55);
     --ejc-sidebar-top: #191509;
     --ejc-sidebar-bottom: #251d0c;
     /* No escuro o ouro near-black some sobre o card — troca com o creme */
@@ -129,7 +137,7 @@
   /* ── Card — branco flutuante, SEM borda dura: hairline quase invisível
         + sombra difusa (profundidade só por elevação) ── */
   .card {
-    @apply rounded-2xl border border-black/[0.05] bg-white;
+    @apply rounded-2xl border border-[rgba(166,124,82,0.14)] bg-white;
     box-shadow: var(--ejc-shadow-soft);
     transition:
       border-color 0.15s ease-out,
@@ -137,13 +145,15 @@
       transform 0.15s ease-out;
   }
   .card:hover {
+    border-color: rgba(166, 124, 82, 0.28);
     box-shadow:
-      0 2px 4px rgba(16, 24, 40, 0.04),
-      0 12px 36px rgba(16, 24, 40, 0.1);
+      0 2px 4px rgba(16, 24, 40, 0.05),
+      0 10px 24px -6px rgba(16, 24, 40, 0.08),
+      0 28px 52px -16px rgba(16, 24, 40, 0.11);
   }
 
   .section-card {
-    @apply rounded-2xl border border-black/[0.05] bg-white;
+    @apply rounded-2xl border border-[rgba(166,124,82,0.14)] bg-white;
     box-shadow: var(--ejc-shadow-soft);
   }
 
