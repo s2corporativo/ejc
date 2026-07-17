@@ -114,6 +114,7 @@ AGENT_REGISTRY: dict[str, AgenteInterno] = {
         dominios=["bancario", "extrato", "revisional"],
         tarefa_padrao=TarefaIA.ANALISE_CASO,
         prompt_key="bancario",
+        exige_fonte=True,
         skills=_skills("ramo_bancario", "build_case_context", "analyze_bank_statement"),
     ),
     "EnvironmentalLawAgent": AgenteInterno(
@@ -300,7 +301,7 @@ AGENT_REGISTRY: dict[str, AgenteInterno] = {
     "SecurityLGPDOABAgent": AgenteInterno(
         nome="SecurityLGPDOABAgent",
         descricao="Segurança, LGPD e ética OAB: riscos, bases legais e auditoria de acesso.",
-        dominios=["seguranca", "lgpd", "auditoria_acesso"],
+        dominios=["seguranca", "auditoria_acesso", "etica_oab"],
         tarefa_padrao=TarefaIA.ANALISE_CASO,
         prompt_key="seguranca_lgpd",
         skills=_skills("retrieve_rag_sources", "generate_report"),
