@@ -474,11 +474,27 @@ async def ia_analise_cliente(
     # LGPD: sanitiza PII (nome do cliente, CPF/CNPJ etc.) antes de enviar à IA —
     # mesmo padrão dos demais endpoints de IA (cases.py assistente-estrategico).
     from app.services.sanitizer import sanitizar_pii
-    contexto, _ = sanitizar_pii(contexto, [c.nome_exibicao] if c.nome_exibicao else None)
+    contexto, pii_ctx = sanitizar_pii(contexto, [c.nome_exibicao] if c.nome_exibicao else None)
 
     demanda = "Faça uma análise estratégica completa do perfil deste cliente, identificando riscos, oportunidades e padrão de litígios."
 
     res = await ai_gateway.processar_demanda(demanda, contexto, tipo="juridico_profundo")
+
+    # Auditoria obrigatória (LGPD/OAB): rastro em ai_logs para toda chamada de IA.
+    # Este endpoint passava pelo shim legado sem gravar AILog (furo #4a). ADITIVO:
+    # não altera a resposta. Análise é do CLIENTE, não de um caso → case_id=None
+    # (AILog.case_id é nullable). Loga só em sucesso; erro de gravação PROPAGA
+    # (registrar_ai_log), consistente com os endpoints de IA já auditados.
+    if res.get("status") == "sucesso":
+        from app.services.ai_guard import registrar_ai_log
+        from app.models.ai_log import AITipoUso
+        await registrar_ai_log(
+            db, user_id=cu.id, tipo_uso=AITipoUso.analise_caso, case_id=None,
+            prompt_sanitizado=f"{contexto}\n\n[DEMANDA]\n{demanda}",
+            pii_removida=bool(pii_ctx),
+            resposta=res.get("resposta"),
+            modelo=res.get("modelo_utilizado"),
+        )
     return res
 
 
