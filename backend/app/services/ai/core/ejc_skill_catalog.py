@@ -299,6 +299,14 @@ LEGAL_AREA_KEYWORDS: dict[str, tuple[str, ...]] = {
     "digital_lgpd": ("lgpd", "dados pessoais", "anpd", "incidente de seguranca", "contrato saas"),
     "transito": ("multa de transito", "cnh", "jari", "cetran", "auto de infracao de transito"),
 }
+LEGAL_AREA_KEYWORDS = {
+    key: tuple(dict.fromkeys((
+        key.replace("_", " "),
+        _normalize(_LEGAL_DATA[key][0]).replace("_", " "),
+        *terms,
+    )))
+    for key, terms in LEGAL_AREA_KEYWORDS.items()
+}
 
 MODULE_KEYWORDS: dict[str, tuple[str, ...]] = {
     key: (
