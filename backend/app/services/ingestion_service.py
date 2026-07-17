@@ -200,6 +200,7 @@ async def upsert_documento(
     case_id: str | None = None,
     confianca: str | None = None,
     embutir_vetores: bool = True,
+    chunks: list[str] | None = None,
 ) -> str:
     """Insere/atualiza um documento na base de conhecimento, com VERSIONAMENTO
     (migration 068) — nunca sobrescreve o conteúdo de uma versão anterior.
@@ -217,6 +218,11 @@ async def upsert_documento(
           re-vetorizados.
     - Documento novo → cria doc (versao=1, vigente=True) + chunks (+ embeddings
       se disponíveis).
+    - `chunks` (opcional): chunks PRÉ-COMPUTADOS pelo chamador quando a divisão
+      semântica importa (ex.: legislação dividida por artigo em
+      scripts/seed_legislacao.py). Default None → chunking genérico por tamanho
+      (chunk_texto). O dedup/hash continua sendo sobre `conteudo` normalizado,
+      então a idempotência não muda.
     """
     conteudo = normalizar(conteudo)
     if len(conteudo) < 50:
@@ -246,7 +252,12 @@ async def upsert_documento(
     if existente and existente.hash_conteudo == h:
         return "inalterado"
 
-    chunks = chunk_texto(conteudo)
+    if chunks is None:
+        chunks = chunk_texto(conteudo)
+    else:
+        chunks = [normalizar(c) for c in chunks if c and c.strip()]
+        if not chunks:
+            chunks = chunk_texto(conteudo)
     # `embutir_vetores=False` → vetorização adiada (fica "pendente"; o chamador
     # agenda a indexação em background — ex.: lote da API pública, que não pode
     # bloquear a resposta embedando até ~100 documentos inline).
