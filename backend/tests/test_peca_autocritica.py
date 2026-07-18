@@ -204,7 +204,7 @@ async def test_flag_off_nao_emite_step_de_autocritica(monkeypatch):
 async def test_flag_on_executa_rodada_de_revisao(monkeypatch):
     r = await _rodar(
         monkeypatch, flag=True, critica=_critica(),
-        respostas={7: "DOS FATOS\nTexto revisado após a crítica adversarial."},
+        respostas={7: "DOS FATOS\n" + "Texto revisado apos a critica adversarial. " * 12},
     )
     # 6 chamadas do pipeline + 1 da revisão.
     assert len(r.calls) == 7
@@ -246,7 +246,7 @@ async def test_flag_on_critica_entra_delimitada_como_dado(monkeypatch):
 async def test_flag_on_gate_de_citacoes_roda_na_versao_revisada(monkeypatch):
     r = await _rodar(
         monkeypatch, flag=True, critica=_critica(),
-        respostas={7: "DOS FATOS\nTexto revisado após a crítica adversarial."},
+        respostas={7: "DOS FATOS\n" + "Texto revisado apos a critica adversarial. " * 12},
     )
     # O gate (citation_check) rodou UMA vez, sobre a versão REVISADA.
     assert len(r.cit_calls) == 1
@@ -257,7 +257,7 @@ async def test_flag_on_gate_de_citacoes_roda_na_versao_revisada(monkeypatch):
 async def test_flag_on_ailog_marca_rodada_e_preserva_versao_original(monkeypatch):
     r = await _rodar(
         monkeypatch, flag=True, critica=_critica(),
-        respostas={7: "DOS FATOS\nTexto revisado após a crítica adversarial."},
+        respostas={7: "DOS FATOS\n" + "Texto revisado apos a critica adversarial. " * 12},
     )
     log, doc = _log_e_doc(r.db)
     # `resposta` (e o LegalDoc) contêm a versão revisada…
@@ -363,3 +363,18 @@ def test_montar_prompt_revisao_delimita_com_token_aleatorio():
 def test_montar_prompt_revisao_inclui_rag_quando_ha():
     p = _montar_prompt_revisao("Contestação", "PEÇA", "CRÍTICA", "[FONTES RAG] xyz")
     assert "[FONTES RAG] xyz" in p
+
+
+async def test_flag_on_revisao_curta_e_descartada_por_sanity(monkeypatch):
+    """Revisão vazia/truncada (< max(200, 50% da original)) NUNCA substitui a
+    minuta: a versão original prevalece e o motivo é registrado."""
+    r = await _rodar(
+        monkeypatch, flag=True, critica=_critica(),
+        respostas={7: "ok"},  # provider devolveu quase nada
+    )
+    assert len(r.calls) == 7  # a rodada de revisão FOI tentada
+    assert r.conclusao["autocritica"]["executada"] is True
+    assert r.conclusao["autocritica"]["revisao_aplicada"] is False
+    assert "sanity" in (r.conclusao["autocritica"].get("motivo") or "")
+    # Documento entregue continua sendo a minuta original da etapa 7.
+    assert "resposta simulada" in r.conclusao["documento"].lower()

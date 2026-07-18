@@ -220,11 +220,25 @@ async def gerar(
 
     case = await verificar_acesso_caso(db, cu, case_id)
     info = mps.CATALOGO_PECAS[req.peca_codigo]
-    prazo_info = mps.prazo_da_peca(req.peca_codigo, req.rito_codigo)
 
     # Texto-base + LGPD (sanitizar_pii ANTES de qualquer LLM)
     texto_bruto = await mps.texto_base_do_caso(db, case, req.descricao_fatos)
     texto_limpo, _ = sanitizar_pii(texto_bruto[:18000], [])
+
+    # Rito: NUNCA confiar só no eco do cliente. Sem rito_codigo no request, o
+    # servidor recomputa com os mesmos sinais do /analisar — senão overrides de
+    # prazo por rito (ex.: JEC/trabalhista, defesa em audiência) se perdem e o
+    # Deadline fatal sai errado.
+    rito_codigo = req.rito_codigo
+    if not rito_codigo:
+        from app.services.rito_engine import identificar_rito
+        rito_codigo = identificar_rito({
+            "area": req.area_direito or _enum_val(getattr(case, "area", None)),
+            "texto": texto_limpo[:8000],
+            "fase": _enum_val(getattr(case, "fase", None)),
+            "tribunal": case.tribunal,
+        })["codigo"]
+    prazo_info = mps.prazo_da_peca(req.peca_codigo, rito_codigo)
 
     # Gate 1 — checklist bloqueante (mesmo padrão 422 de conversao_caso.py)
     itens, pronto = await mps.montar_checklist(db, case, req.peca_codigo, texto_limpo)
@@ -258,6 +272,8 @@ async def gerar(
                 "mensagem": "Informe o termo inicial confirmado para calcular o prazo."})
         data_prazo = mps.prazo_dias_corridos(
             req.termo_inicial, prazo_info["prazo_dias"], tribunal=case.tribunal,
+            # Decadencial (ex.: MS, Lei 12.016 art. 23): vencimento não prorroga.
+            prorrogar_fim=not prazo_info.get("decadencial"),
         )
     else:
         if req.data_prazo_manual is None:
@@ -316,7 +332,7 @@ async def gerar(
                 IaDefensivaInput(
                     etapa="redigir_contestacao",
                     peticao_inicial=texto_limpo,
-                    rito=req.rito_codigo,
+                    rito=rito_codigo,
                     area=area,
                     dados_formais={"peca": info["nome"],
                                    "base_legal_prazo": prazo_info["base_legal"]},

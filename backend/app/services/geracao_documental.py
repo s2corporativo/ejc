@@ -28,7 +28,6 @@ from app.models.audit_log import criar_audit_log
 from app.models.case import Case
 from app.models.client import Client
 from app.models.legal_doc import LegalDoc, PecaStatus, PecaTipo
-from app.models.procuracao import Procuracao
 from app.models.redesign import TabelaOABHonorario
 from app.models.user import User
 from app.services.document_format import padronizar_documento_juridico
@@ -154,6 +153,10 @@ async def _itens_oab_vigentes(db, area: str, hoje: date, limite: int = 5):
             or_(*[TabelaOABHonorario.area_juridica.ilike(f"%{a}%") for a in aliases]),
             or_(TabelaOABHonorario.vigencia_fim.is_(None),
                 TabelaOABHonorario.vigencia_fim >= hoje),
+            # Vigência futura (tabela do ano seguinte cadastrada antecipadamente)
+            # NÃO é referência válida hoje.
+            or_(TabelaOABHonorario.vigencia_inicio.is_(None),
+                TabelaOABHonorario.vigencia_inicio <= hoje),
         )
         .order_by(TabelaOABHonorario.vigencia_inicio.desc().nullslast(),
                   TabelaOABHonorario.item_codigo)
@@ -232,17 +235,11 @@ async def gerar_kit_inicial(
     area = _area_str(case)
     papel = _role_str(cu)
 
-    # ── 1. Procuração (registro + minuta a partir do registro) ───────────────
-    proc = Procuracao(
-        id=str(uuid4()),
-        client_id=cli.id,
-        tipo_poderes=tipo_poderes,
-        poderes_especiais=poderes_especiais,
-        permite_substabelecimento=permite_substabelecimento,
-        data_outorga=hoje,
-        observacoes=f"Gerada pelo kit documental inicial do caso {case.id} — pendente de assinatura.",
-    )
-    db.add(proc)
+    # ── 1. Procuração — SÓ a minuta (LegalDoc rascunho). O registro formal
+    # `Procuracao` NÃO é criado aqui: ele satisfaria o item bloqueante
+    # "procuração vigente" dos checklists (motor_peca/conversão) sem qualquer
+    # ato de outorga do cliente. A emissão do registro continua exclusiva do
+    # fluxo próprio (routers/procuracoes.py), após a assinatura.
     minuta_procuracao = _procuracao(
         case, cli, adv,
         tipo_poderes=tipo_poderes,
@@ -299,15 +296,11 @@ async def gerar_kit_inicial(
 
     # ── Auditoria obrigatória ────────────────────────────────────────────────
     await criar_audit_log(
-        db, cu.id, papel, "CREATE", "procuracoes", proc.id,
-        detalhes=f"Kit documental inicial do caso {case.id} (tipo_poderes={tipo_poderes})",
-    )
-    await criar_audit_log(
         db, cu.id, papel, "KIT_DOCUMENTAL", "cases", case.id,
-        detalhes="Kit inicial gerado (rascunhos): " + ", ".join(d.id for d in criados),
+        detalhes=(f"Kit inicial gerado (rascunhos, tipo_poderes={tipo_poderes}): "
+                  + ", ".join(d.id for d in criados)),
         dados_depois={
             "legal_doc_ids": [d.id for d in criados],
-            "procuracao_id": proc.id,
             "oab_item_aplicado": valor_sugerido["sugerido"] is not None,
         },
     )
@@ -319,12 +312,13 @@ async def gerar_kit_inicial(
         "status": PecaStatus.rascunho.value,
         "aviso": AVISO_RASCUNHO,
         "procuracao": {
-            "procuracao_id": proc.id,
             "legal_doc_id": doc_proc.id,
             "titulo": doc_proc.titulo,
             "tipo_poderes": tipo_poderes,
             "permite_substabelecimento": permite_substabelecimento,
             "conteudo": doc_proc.conteudo,
+            "aviso": ("Minuta pendente de assinatura — o registro formal de "
+                      "procuração é emitido no módulo Procurações após a outorga."),
         },
         "contrato": {
             "legal_doc_id": doc_contrato.id,

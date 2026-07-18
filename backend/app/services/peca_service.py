@@ -1171,10 +1171,20 @@ async def gerar_peca_pipeline(
                     max_tokens=perfil["max_tokens"],
                     entidades=entidades,
                 )
-                documento_final = padronizar_documento_juridico(r_rev.texto)
-                autocritica_info["revisao_aplicada"] = True
                 tokens_autocritica_in += r_rev.input_tokens or 0
                 tokens_autocritica_out += r_rev.output_tokens or 0
+                texto_rev = padronizar_documento_juridico(r_rev.texto or "")
+                # Sanity: revisão vazia/truncada (ex.: max_tokens estourado)
+                # NUNCA substitui a minuta — a versão original prevalece.
+                if len(texto_rev) >= max(200, len(documento_original) // 2):
+                    documento_final = texto_rev
+                    autocritica_info["revisao_aplicada"] = True
+                else:
+                    r_rev = None
+                    autocritica_info["revisao_aplicada"] = False
+                    autocritica_info["motivo"] = (
+                        "revisão descartada (sanity: texto vazio/truncado)"
+                    )
             elif critica.disponivel:
                 autocritica_info["motivo"] = "sem apontamentos acionáveis"
             else:

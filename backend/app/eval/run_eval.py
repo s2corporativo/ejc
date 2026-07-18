@@ -228,6 +228,28 @@ async def _main(args) -> int:
 # (JSON inválido, campo obrigatório faltando, exemplo "fictício" com cara de
 # jurisprudência real) antes de o escritório investir na curadoria.
 
+def _erros_pii_caso(caso: dict) -> list[str]:
+    """Detector de PII para gold sets REAIS (não-example): reusa os padrões
+    estruturais do sanitizer da casa. Import tardio para o smoke continuar
+    utilizável mesmo fora do pacote app completo."""
+    try:
+        from app.services.sanitizer import validar_sem_pii
+    except Exception:
+        return []  # sanitizer indisponível neste ambiente — não bloqueia o smoke
+    erros: list[str] = []
+    for campo in ("fatos", "pedidos"):
+        texto = str(caso.get(campo) or "")
+        if not texto.strip():
+            continue
+        tipos = validar_sem_pii(texto)
+        if tipos:
+            erros.append(
+                f"PII detectada em '{campo}' ({', '.join(sorted(set(map(str, tipos))))}) "
+                "— gold set real deve ser PSEUDONIMIZADO antes do commit"
+            )
+    return erros
+
+
 def _validar_caso_smoke(caso: dict, arquivo: str) -> list[str]:
     """Erros de formato de UM caso, segundo a shape detectada pelos campos."""
     erros: list[str] = []
@@ -264,6 +286,11 @@ def _validar_caso_smoke(caso: dict, arquivo: str) -> list[str]:
                     erros.append(
                         f"jurisprudência de exemplo sem marcador FICTICIA: {j!r}"
                     )
+        else:
+            # Gold set REAL: LGPD — os casos devem estar PSEUDONIMIZADOS.
+            # Roda o detector estrutural de PII da casa sobre os campos de
+            # texto e FALHA se encontrar CPF/CNPJ/e-mail/telefone etc.
+            erros.extend(_erros_pii_caso(caso))
     elif "intencao" in caso:       # cenários de trajetória (agent_scenarios.jsonl)
         _req_str("intencao")       # validação profunda: app.eval.agent_trajectory
         _req_str("mensagem")

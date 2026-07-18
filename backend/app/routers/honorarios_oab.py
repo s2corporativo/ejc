@@ -14,7 +14,7 @@ from typing import Optional
 from uuid import uuid4
 
 from fastapi import APIRouter, Depends, HTTPException, Query
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, field_validator
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -170,8 +170,20 @@ class ItemOABIn(BaseModel):
     # Só preenchida quando INFORMADA pelo usuário (edição/vigência conhecida);
     # nunca deduzida pelo sistema.
     vigencia_inicio: Optional[date] = None
-    observacoes: Optional[str] = None
+    observacoes: Optional[str] = Field(None, max_length=2000)
     fonte: str = Field(min_length=5, max_length=300)  # documento/URL oficial OAB/MG
+
+    @field_validator("fonte")
+    @classmethod
+    def _fonte_identificavel(cls, v: str) -> str:
+        # Barreira mínima contra fonte nominal ("aaaaa"): precisa referenciar a
+        # OAB ou ser um endereço/documento identificável (URL).
+        v = v.strip()
+        if "oab" not in v.lower() and not v.lower().startswith(("http://", "https://")):
+            raise ValueError(
+                "fonte deve identificar o documento oficial (mencionar OAB ou ser URL)"
+            )
+        return v
 
 
 class EncerrarVigenciaIn(BaseModel):
@@ -209,13 +221,13 @@ async def criar_item(
 ):
     """Cadastra manualmente um item da tabela (fonte obrigatória, auditado).
 
-    Versionamento: se já existe item ATIVO com mesmo código/fonte e vigência
-    aberta, é preciso encerrar a vigência anterior antes — nunca sobrescrever.
+    Versionamento: se já existe item ATIVO com mesmo código e vigência aberta
+    (QUALQUER fonte), é preciso encerrar a vigência anterior antes — nunca
+    sobrescrever nem criar item paralelo que "sombreie" o vigente.
     """
     dup = (await db.execute(
         select(TabelaOABHonorario).where(
             TabelaOABHonorario.item_codigo == body.item_codigo,
-            TabelaOABHonorario.fonte == body.fonte,
             TabelaOABHonorario.ativo.is_(True),
             TabelaOABHonorario.vigencia_fim.is_(None),
         ).limit(1)
@@ -223,8 +235,9 @@ async def criar_item(
     if dup is not None:
         raise HTTPException(
             status_code=409,
-            detail=("Já existe item ativo com este código e fonte em vigência aberta. "
-                    "Encerre a vigência anterior antes de registrar a nova (versionamento)."),
+            detail=("Já existe item ativo com este código em vigência aberta "
+                    f"(fonte: {dup.fonte}). Encerre a vigência anterior antes de "
+                    "registrar a nova (versionamento)."),
         )
 
     item = TabelaOABHonorario(
@@ -234,7 +247,8 @@ async def criar_item(
         area_juridica=body.area_juridica,
         valor_minimo=body.valor_minimo,
         percentual=body.percentual,
-        unidade=body.unidade or "R$",
+        # VERBATIM da fonte: sem default — item só-percentual não ganha "R$".
+        unidade=body.unidade,
         vigencia_inicio=body.vigencia_inicio,
         vigencia_fim=None,
         fonte=body.fonte,

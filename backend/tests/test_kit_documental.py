@@ -140,9 +140,14 @@ async def test_kit_completo_gera_tres_rascunhos_procuracao_e_auditoria():
     assert all(d.case_id == "case1" for d in docs)
     assert {d.tipo_peca for d in docs} == {PecaTipo.procuracao, PecaTipo.contrato, PecaTipo.outro}
 
-    # Procuração cadastrada com defaults CONSERVADORES (sem art. 105)
+    # Procuração: SÓ a minuta (defaults conservadores, sem art. 105). O registro
+    # formal Procuracao NÃO nasce aqui — senão satisfaria o gate "procuração
+    # vigente" dos checklists sem qualquer outorga do cliente (achado Médio da
+    # auditoria de segurança).
     procs = [o for o in db.added if isinstance(o, Procuracao)]
-    assert len(procs) == 1 and procs[0].tipo_poderes == "ad_judicia"
+    assert procs == []
+    assert out["procuracao"]["tipo_poderes"] == "ad_judicia"
+    assert "pendente de assinatura" in out["procuracao"]["aviso"]
     assert "PROCURACAO AD JUDICIA" in out["procuracao"]["conteudo"]
     assert "renunciar" not in out["procuracao"]["conteudo"].lower()
 
@@ -161,7 +166,6 @@ async def test_kit_completo_gera_tres_rascunhos_procuracao_e_auditoria():
 
     # Auditoria obrigatória + transação única
     audits = [o for o in db.added if isinstance(o, AuditLog)]
-    assert any(a.acao == "CREATE" and a.entidade == "procuracoes" for a in audits)
     assert any(a.acao == "KIT_DOCUMENTAL" and a.entidade == "cases"
                and a.registro_id == "case1" for a in audits)
     assert db.commits == 1
@@ -195,9 +199,10 @@ async def test_poderes_especiais_art_105_so_quando_marcados():
     conteudo = out["procuracao"]["conteudo"].lower()
     assert "renunciar" in conteudo               # art. 105 marcado explicitamente
     assert "substabelecer" not in conteudo       # substab não autorizado
-    procs = [o for o in db.added if isinstance(o, Procuracao)]
-    assert procs[0].tipo_poderes == "ad_judicia_et_extra"
-    assert procs[0].permite_substabelecimento is False
+    # Nenhum registro formal Procuracao — só a minuta com os poderes marcados
+    assert [o for o in db.added if isinstance(o, Procuracao)] == []
+    assert out["procuracao"]["tipo_poderes"] == "ad_judicia_et_extra"
+    assert out["procuracao"]["permite_substabelecimento"] is False
 
 
 async def test_cliente_inexistente_404():
