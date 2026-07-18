@@ -10,7 +10,8 @@ from __future__ import annotations
 import enum
 
 from sqlalchemy import (
-    Column, String, DateTime, Text, Numeric, ForeignKey, UniqueConstraint, func,
+    Column, String, Date, DateTime, Text, Numeric, ForeignKey, UniqueConstraint,
+    func,
 )
 
 from app.core.database import Base
@@ -48,6 +49,14 @@ class NotaFiscalServico(Base):
     chave_acesso = Column(String(60),  nullable=True)
     valor        = Column(Numeric(14, 2), nullable=True)
     descricao    = Column(Text, nullable=True)
+
+    # Modo MANUAL (nota emitida fora do sistema, no Emissor Nacional gov.br):
+    # provider="manual", referencia="manual-<uuid hex 12>". Migration 105.
+    data_emissao = Column(Date, nullable=True)   # data da emissão no Emissor Nacional
+    competencia  = Column(Date, nullable=True)
+    motivo_cancelamento = Column(Text, nullable=True)   # cancelamento lógico da manual
+    pdf_path = Column(String(500), nullable=True)  # DANFSe local (relativo a UPLOAD_DIR)
+    xml_path = Column(String(500), nullable=True)  # XML local (relativo a UPLOAD_DIR)
 
     xml_url = Column(String(500), nullable=True)
     pdf_url = Column(String(500), nullable=True)
