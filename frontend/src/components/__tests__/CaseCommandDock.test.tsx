@@ -80,7 +80,7 @@ describe("CaseCommandDock", () => {
   });
 
   it("expõe somente formatos aceitos pelo backend documental", () => {
-    render(
+    const { container } = render(
       <MemoryRouter>
         <CaseCommandDock caseId="case-1" />
       </MemoryRouter>,
@@ -89,11 +89,14 @@ describe("CaseCommandDock", () => {
     fireEvent.click(screen.getByRole("button", { name: /Abrir ações simples/ }));
     fireEvent.click(screen.getByRole("button", { name: "Anexar documento" }));
 
-    const input = screen.getByLabelText("Arquivo") as HTMLInputElement;
-    expect(input.accept).toContain(".pdf");
-    expect(input.accept).toContain(".doc");
-    expect(input.accept).toContain(".txt");
-    expect(input.accept).toContain(".xml");
+    const input = container.querySelector(
+      'input[type="file"]',
+    ) as HTMLInputElement | null;
+    expect(input).toBeTruthy();
+    expect(input?.accept).toContain(".pdf");
+    expect(input?.accept).toContain(".doc");
+    expect(input?.accept).toContain(".txt");
+    expect(input?.accept).toContain(".xml");
     expect(screen.getByRole("option", { name: "Prova" })).toBeTruthy();
   });
 });
