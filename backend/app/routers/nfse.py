@@ -8,23 +8,35 @@
 # referencia = fee-<id> — não emite segunda nota para um honorário já em curso.
 #
 #   GET  /nfse/status          — advogado+  (booleans/ambiente p/ gate da UI — sem dados)
+#   GET  /nfse                 — perfil financeiro (listagem paginada; SEM gate NFSE_ENABLED)
 #   POST /nfse/emitir          — socio+     (rate limit; audit; idempotente)
+#   POST /nfse/manual          — perfil financeiro (registro de nota emitida FORA do
+#                                sistema, no Emissor Nacional gov.br; SEM gate NFSE_ENABLED)
+#   POST /nfse/manual/{id}/cancelar — perfil financeiro (cancelamento LÓGICO; sem gate)
 #   GET  /nfse/{id}            — perfil financeiro (socio+/financeiro — expõe honorários e CPF/CNPJ)
-#   GET  /nfse/{id}/pdf        — perfil financeiro (DANFSe)
-#   GET  /nfse/{id}/xml        — perfil financeiro
+#   GET  /nfse/{id}/pdf        — perfil financeiro (DANFSe; nota manual → arquivo local)
+#   GET  /nfse/{id}/xml        — perfil financeiro (nota manual → arquivo local)
 #   POST /nfse/{id}/cancelar   — socio+     (motivo; audit)
 from __future__ import annotations
 
 import logging
+import os
+from datetime import date
 from decimal import Decimal
+from pathlib import Path as FSPath
 from uuid import uuid4
 
-from fastapi import APIRouter, Depends, HTTPException, Response
+import aiofiles
+from fastapi import (
+    APIRouter, Depends, File, Form, HTTPException, Query, Response, UploadFile,
+)
+from fastapi.responses import FileResponse
 from pydantic import BaseModel, Field, model_validator
-from sqlalchemy import select
+from sqlalchemy import func as sqlfunc, select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.core.config import get_settings
 from app.core.database import get_db
 from app.core.rate_limit import rate_limit
 from app.core.security import get_current_user, require_roles
@@ -33,6 +45,8 @@ from app.models.client import Client
 from app.models.fee import Fee
 from app.models.nfse import NFSeStatus, NotaFiscalServico
 from app.models.user import User
+# Validação de upload por magic bytes — MESMO helper do GED (padrão do projeto).
+from app.routers.documents import _validar_conteudo
 from app.services import nfse as nfse_service
 from app.services.nfse import NFSePedidoEmissao, NFSeResultado, NFSeTomador
 
@@ -107,7 +121,7 @@ def _role(cu: User) -> str:
 
 
 def _nota_dict(n: NotaFiscalServico) -> dict:
-    """Projeção segura da nota (sem segredos)."""
+    """Projeção segura da nota (sem segredos; paths locais viram booleans)."""
     return {
         "id": n.id,
         "fee_id": n.fee_id,
@@ -124,6 +138,12 @@ def _nota_dict(n: NotaFiscalServico) -> dict:
         "pdf_url": n.pdf_url,
         "xml_url": n.xml_url,
         "mensagem_erro": n.mensagem_erro,
+        "data_emissao": n.data_emissao.isoformat() if n.data_emissao else None,
+        "competencia": n.competencia.isoformat() if n.competencia else None,
+        "motivo_cancelamento": n.motivo_cancelamento,
+        # pdf_path/xml_path são paths de SERVIDOR — nunca expostos; só booleans.
+        "tem_pdf": bool(n.pdf_path or n.pdf_url or n.provider_id),
+        "tem_xml": bool(n.xml_path or n.xml_url or n.provider_id),
     }
 
 
@@ -178,12 +198,243 @@ def _provider_ou_http():
         raise HTTPException(status_code=code, detail=detail)
 
 
+# ── Helpers do modo MANUAL (nota emitida no Emissor Nacional gov.br) ──────────
+# Arquivos anexados ficam no MESMO storage do GED (settings.UPLOAD_DIR), em
+# subpasta própria `nfse/`, com nome gerado (uuid) — NUNCA o filename do usuário.
+
+_MANUAL_SUBDIR = "nfse"
+_EXTENSOES_MANUAL = {".pdf", ".xml"}  # extensões controladas do modo manual
+
+
+def _parse_data(campo: str, valor: str) -> date:
+    try:
+        return date.fromisoformat(valor)
+    except ValueError:
+        raise HTTPException(
+            status_code=422, detail=f"{campo} inválida: use o formato YYYY-MM-DD.",
+        )
+
+
+async def _ler_e_validar_upload(upload: UploadFile, ext: str) -> bytes:
+    """Lê e valida um anexo da nota manual SEGUINDO O PADRÃO DO GED:
+    extensão controlada + limite MAX_UPLOAD_MB + magic bytes (_validar_conteudo).
+    """
+    assert ext in _EXTENSOES_MANUAL
+    nome = (upload.filename or "").lower()
+    if not nome.endswith(ext):
+        raise HTTPException(
+            status_code=415, detail=f"Arquivo deve ter extensão {ext}.",
+        )
+    conteudo = await upload.read()
+    if not conteudo:
+        raise HTTPException(status_code=422, detail=f"Arquivo {ext} vazio.")
+    max_mb = get_settings().MAX_UPLOAD_MB
+    if len(conteudo) > max_mb * 1024 * 1024:
+        raise HTTPException(status_code=413, detail=f"Arquivo excede {max_mb}MB")
+    _validar_conteudo(ext, conteudo)  # magic bytes (server-side), padrão GED
+    # Reforço defensivo além do libmagic:
+    if ext == ".pdf" and not conteudo.startswith(b"%PDF-"):
+        raise HTTPException(status_code=415, detail="PDF inválido (assinatura %PDF- ausente).")
+    if ext == ".xml":
+        inicio = conteudo.lstrip()
+        if not (inicio.startswith(b"<?xml") or inicio.startswith(b"<")):
+            raise HTTPException(status_code=415, detail="XML inválido (conteúdo não é XML).")
+    return conteudo
+
+
+async def _salvar_arquivo_manual(conteudo: bytes, ext: str) -> str:
+    """Grava em UPLOAD_DIR/nfse/<uuid><ext> e devolve o path RELATIVO salvo."""
+    base = get_settings().UPLOAD_DIR
+    os.makedirs(f"{base}/{_MANUAL_SUBDIR}", exist_ok=True)
+    rel = f"{_MANUAL_SUBDIR}/{uuid4().hex}{ext}"
+    async with aiofiles.open(f"{base}/{rel}", "wb") as f:
+        await f.write(conteudo)
+    return rel
+
+
+def _arquivo_manual_ou_404(rel_path: str | None, tipo: str) -> FSPath:
+    """Resolve o path salvo no banco DENTRO do diretório-base de upload.
+
+    Anti path-traversal: só serve arquivo cujo resolve() permaneça sob
+    UPLOAD_DIR (is_relative_to). 404 claro quando não há anexo.
+    """
+    if not rel_path:
+        raise HTTPException(
+            status_code=404,
+            detail=f"Nota manual sem arquivo {tipo.upper()} anexado.",
+        )
+    base = FSPath(get_settings().UPLOAD_DIR).resolve()
+    destino = (base / rel_path).resolve()
+    if not destino.is_relative_to(base):
+        raise HTTPException(status_code=404, detail="Arquivo da nota inválido.")
+    if not destino.is_file():
+        raise HTTPException(
+            status_code=404,
+            detail=f"Arquivo {tipo.upper()} da nota não encontrado no armazenamento.",
+        )
+    return destino
+
+
 # ── Endpoints ──────────────────────────────────────────────────────────────────
 
 @router.get("/status")
 async def status_nfse(cu: User = Depends(_ADVOGADO_MAIS)):
-    """Gate da UI — {enabled, configured, ambiente, provedor}, sem segredos."""
-    return nfse_service.status_atual()
+    """Gate da UI — {enabled, configured, ambiente, provedor}, sem segredos.
+
+    `manual_disponivel` é sempre True: o REGISTRO manual (nota emitida no
+    Emissor Nacional gov.br) funciona mesmo com NFSE_ENABLED=false.
+    """
+    payload = nfse_service.status_atual()
+    payload["manual_disponivel"] = True
+    payload["emissor_nacional_url"] = "https://www.nfse.gov.br/EmissorNacional"
+    return payload
+
+
+@router.get("")
+async def listar_nfse(
+    limit: int = Query(default=50, ge=1, le=200),
+    offset: int = Query(default=0, ge=0),
+    status: str | None = Query(default=None),
+    client_id: str | None = Query(default=None),
+    provider: str | None = Query(default=None),
+    db: AsyncSession = Depends(get_db),
+    cu: User = Depends(_req_financeiro_leitura),
+):
+    """Listagem paginada das notas (manuais e de provedor). Sem gate NFSE_ENABLED."""
+    filtros = []
+    if status:
+        filtros.append(NotaFiscalServico.status == status)
+    if client_id:
+        filtros.append(NotaFiscalServico.client_id == client_id)
+    if provider:
+        filtros.append(NotaFiscalServico.provider == provider)
+
+    total = await db.scalar(
+        select(sqlfunc.count()).select_from(NotaFiscalServico).where(*filtros)
+    )
+    rows = (
+        await db.execute(
+            select(NotaFiscalServico)
+            .where(*filtros)
+            .order_by(NotaFiscalServico.created_at.desc())
+            .limit(limit)
+            .offset(offset)
+        )
+    ).scalars().all()
+    return {"items": [_nota_dict(n) for n in rows], "total": int(total or 0)}
+
+
+@router.post("/manual", dependencies=[Depends(rate_limit("nfse_manual", 6))])
+async def registrar_nfse_manual(
+    numero: str = Form(...),
+    data_emissao: str = Form(..., description="YYYY-MM-DD"),
+    valor: Decimal = Form(...),
+    descricao: str = Form(...),
+    chave_acesso: str | None = Form(default=None),
+    competencia: str | None = Form(default=None, description="YYYY-MM-DD"),
+    client_id: str | None = Form(default=None),
+    fee_id: str | None = Form(default=None),
+    pdf: UploadFile | None = File(default=None),
+    xml: UploadFile | None = File(default=None),
+    db: AsyncSession = Depends(get_db),
+    cu: User = Depends(_req_financeiro_leitura),
+):
+    """Registra nota emitida FORA do sistema (Emissor Nacional gov.br).
+
+    Escrituração, não emissão fiscal — por isso perfil financeiro (allowlist
+    de fees.py) e SEM gate NFSE_ENABLED. Anexos opcionais (DANFSe PDF e XML)
+    validados por magic bytes como no GED.
+    """
+    numero = numero.strip()
+    descricao = descricao.strip()
+    if not numero:
+        raise HTTPException(status_code=422, detail="Informe o número da nota.")
+    if not descricao:
+        raise HTTPException(status_code=422, detail="Informe a descrição do serviço.")
+    if valor <= 0:
+        raise HTTPException(status_code=422, detail="Valor deve ser maior que zero.")
+    dt_emissao = _parse_data("data_emissao", data_emissao)
+    dt_competencia = _parse_data("competencia", competencia) if competencia else None
+
+    if fee_id:
+        fee = await db.get(Fee, fee_id)
+        if fee is None or getattr(fee, "deleted_at", None) is not None:
+            raise HTTPException(status_code=404, detail="Honorário não encontrado.")
+        if not client_id:
+            client_id = fee.client_id
+    if client_id:
+        cliente = await db.get(Client, client_id)
+        if cliente is None:
+            raise HTTPException(status_code=404, detail="Cliente não encontrado.")
+
+    # Valida os DOIS anexos antes de gravar qualquer um (sem órfão em falha).
+    conteudo_pdf = await _ler_e_validar_upload(pdf, ".pdf") if pdf is not None else None
+    conteudo_xml = await _ler_e_validar_upload(xml, ".xml") if xml is not None else None
+    pdf_path = await _salvar_arquivo_manual(conteudo_pdf, ".pdf") if conteudo_pdf else None
+    xml_path = await _salvar_arquivo_manual(conteudo_xml, ".xml") if conteudo_xml else None
+
+    nota = NotaFiscalServico(
+        id=str(uuid4()),
+        fee_id=fee_id, client_id=client_id,
+        provider="manual", referencia=f"manual-{uuid4().hex[:12]}",
+        ambiente="producao",  # nota REAL, emitida no Emissor Nacional
+        status=NFSeStatus.autorizada.value,
+        numero=numero, chave_acesso=(chave_acesso or "").strip() or None,
+        valor=Decimal(str(valor)), descricao=descricao,
+        data_emissao=dt_emissao, competencia=dt_competencia,
+        pdf_path=pdf_path, xml_path=xml_path,
+        created_by=cu.id,
+    )
+    db.add(nota)
+    await criar_audit_log(
+        db, cu.id, _role(cu), "NFSE_MANUAL_REGISTRADA", "nfse", nota.id,
+        detalhes=f"numero={numero} data_emissao={dt_emissao.isoformat()}",
+        dados_depois={
+            "numero": numero, "valor": str(valor), "descricao": descricao,
+            "data_emissao": dt_emissao.isoformat(),
+            "competencia": dt_competencia.isoformat() if dt_competencia else None,
+            "chave_acesso": nota.chave_acesso,
+            "fee_id": fee_id, "client_id": client_id,
+            "tem_pdf": bool(pdf_path), "tem_xml": bool(xml_path),
+        },
+    )
+    await db.commit()
+    return _nota_dict(nota)
+
+
+@router.post(
+    "/manual/{nota_id}/cancelar",
+    dependencies=[Depends(rate_limit("nfse_manual_cancelar", 6))],
+)
+async def cancelar_nfse_manual(
+    nota_id: str,
+    body: CancelarIn,
+    db: AsyncSession = Depends(get_db),
+    cu: User = Depends(_req_financeiro_leitura),
+):
+    """Cancelamento LÓGICO de nota manual (não toca provedor; sem gate NFSE_ENABLED)."""
+    nota = await db.get(NotaFiscalServico, nota_id)
+    if nota is None:
+        raise HTTPException(status_code=404, detail="NFS-e não encontrada.")
+    if nota.provider != "manual":
+        raise HTTPException(
+            status_code=409,
+            detail="Nota não é manual — use POST /nfse/{id}/cancelar (provedor).",
+        )
+    if nota.status == NFSeStatus.cancelada.value:
+        raise HTTPException(status_code=409, detail="Nota manual já cancelada.")
+
+    dados_antes = {"status": nota.status, "motivo_cancelamento": nota.motivo_cancelamento}
+    nota.status = NFSeStatus.cancelada.value
+    nota.motivo_cancelamento = body.motivo
+    await criar_audit_log(
+        db, cu.id, _role(cu), "NFSE_MANUAL_CANCELADA", "nfse", nota.id,
+        detalhes=f"motivo={body.motivo}",
+        dados_antes=dados_antes,
+        dados_depois={"status": nota.status, "motivo_cancelamento": body.motivo},
+    )
+    await db.commit()
+    return _nota_dict(nota)
 
 
 @router.post("/emitir", dependencies=[Depends(rate_limit("nfse_emitir", 6))])
@@ -326,10 +577,15 @@ async def obter_nfse(
     db: AsyncSession = Depends(get_db),
     cu: User = Depends(_req_financeiro_leitura),
 ):
-    """Consulta a nota; se `processando`, tenta atualizar do provedor."""
+    """Consulta a nota; se `processando`, tenta atualizar do provedor.
+
+    Nota MANUAL: apenas devolve o registro (não há provedor para consultar).
+    """
     nota = await db.get(NotaFiscalServico, nota_id)
     if nota is None:
         raise HTTPException(status_code=404, detail="NFS-e não encontrada.")
+    if nota.provider == "manual":
+        return _nota_dict(nota)
     if nota.status == NFSeStatus.processando.value and nota.provider_id:
         try:
             provider = nfse_service.get_provider()
@@ -348,10 +604,22 @@ async def baixar_pdf_nfse(
     db: AsyncSession = Depends(get_db),
     cu: User = Depends(_req_financeiro_leitura),
 ):
-    """Stream do DANFSe (PDF) da nota."""
+    """Stream do DANFSe (PDF) da nota. Nota MANUAL → arquivo local (sem gate)."""
     nota = await db.get(NotaFiscalServico, nota_id)
     if nota is None:
         raise HTTPException(status_code=404, detail="NFS-e não encontrada.")
+    if nota.provider == "manual":
+        caminho = _arquivo_manual_ou_404(nota.pdf_path, "pdf")
+        await criar_audit_log(
+            db, cu.id, _role(cu), "NFSE_ARQUIVO_BAIXADO", "nfse", nota.id,
+            detalhes="tipo=pdf",
+        )
+        await db.commit()
+        return FileResponse(
+            caminho, media_type="application/pdf",
+            headers={"Content-Disposition":
+                     f'inline; filename="nfse-{nota.numero or nota.id}.pdf"'},
+        )
     if not nota.provider_id:
         raise HTTPException(status_code=409, detail="Nota ainda não emitida no provedor.")
     provider = _provider_ou_http()
@@ -372,10 +640,22 @@ async def baixar_xml_nfse(
     db: AsyncSession = Depends(get_db),
     cu: User = Depends(_req_financeiro_leitura),
 ):
-    """XML autorizado da nota."""
+    """XML autorizado da nota. Nota MANUAL → arquivo local (sem gate)."""
     nota = await db.get(NotaFiscalServico, nota_id)
     if nota is None:
         raise HTTPException(status_code=404, detail="NFS-e não encontrada.")
+    if nota.provider == "manual":
+        caminho = _arquivo_manual_ou_404(nota.xml_path, "xml")
+        await criar_audit_log(
+            db, cu.id, _role(cu), "NFSE_ARQUIVO_BAIXADO", "nfse", nota.id,
+            detalhes="tipo=xml",
+        )
+        await db.commit()
+        return FileResponse(
+            caminho, media_type="application/xml",
+            headers={"Content-Disposition":
+                     f'attachment; filename="nfse-{nota.numero or nota.id}.xml"'},
+        )
     if not nota.provider_id:
         raise HTTPException(status_code=409, detail="Nota ainda não emitida no provedor.")
     provider = _provider_ou_http()
