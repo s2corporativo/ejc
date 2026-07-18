@@ -56,8 +56,9 @@ _SQL_DOCS_COM_ORFAO = text("""
     JOIN knowledge_chunks kc ON kc.doc_id = kd.id
     WHERE kd.deleted_at IS NULL AND kd.vigente = true
       AND kc.embedding IS NULL
+      AND kd.id > :after
     ORDER BY kd.id
-    LIMIT :limit OFFSET :offset
+    LIMIT :limit
 """)
 
 _SQL_CHUNKS_ORFAOS_DO_DOC = text("""
@@ -119,11 +120,15 @@ async def reembedar(batch_size: int = 20, dry_run: bool = False) -> None:
         return
 
     total_ok = total_erro = total_dry = 0
-    offset = 0
+    # Paginação por chave estável. OFFSET sobre um conjunto que encolhe a cada
+    # commit pulava documentos (os já resolvidos saíam da consulta e deslocavam
+    # os restantes). `after` visita cada id no máximo uma vez nesta execução;
+    # erros ficam órfãos para a próxima execução, sem loop infinito.
+    after = ""
     while True:
         async with AsyncSessionLocal() as db:
             lote = (await db.execute(
-                _SQL_DOCS_COM_ORFAO, {"limit": batch_size, "offset": offset}
+                _SQL_DOCS_COM_ORFAO, {"limit": batch_size, "after": after}
             )).all()
             if not lote:
                 break
@@ -147,16 +152,11 @@ async def reembedar(batch_size: int = 20, dry_run: bool = False) -> None:
 
             await db.commit()
             logger.info(
-                "[reembedar] lote (offset=%s) commitado — ok=%s erro=%s dry-run=%s",
-                offset, total_ok, total_erro, total_dry,
+                "[reembedar] lote (after=%s) commitado — ok=%s erro=%s dry-run=%s",
+                after or "<inicio>", total_ok, total_erro, total_dry,
             )
 
-        # Docs 'ok' saem do conjunto órfão (todos os chunks embedados). Docs
-        # 'erro' permanecem órfãos — avançamos o offset mesmo assim para não
-        # entrar em loop infinito reprocessando a mesma falha indefinidamente;
-        # rode o script de novo depois para tentar os que falharam por motivo
-        # transitório (timeout/rate limit do provider).
-        offset += batch_size
+        after = str(lote[-1][0])
 
     logger.info("[reembedar] concluído — ok=%s erros=%s dry-run=%s",
                 total_ok, total_erro, total_dry)

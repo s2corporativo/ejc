@@ -244,6 +244,22 @@ async def upsert_documento(
     # silêncio) e estourar o timeout do SSH. Após o 1º seed completo, os deploys
     # seguintes passam por aqui de imediato.
     if existente and existente.hash_conteudo == h:
+        # Conteúdo igual não cria versão, mas a curadoria/metadados podem ter
+        # evoluído (ex.: seed oficial corrige `conferido`/`rag_status`). Sem
+        # este merge, reexecutar um seed corrigido jamais tirava o registro
+        # legado da quarentena. Uma aprovação já concedida não é rebaixada para
+        # pendente só porque o mesmo arquivo foi reenviado manualmente.
+        if extra:
+            anterior = dict(existente.extra or {})
+            mesclado = {**anterior, **extra}
+            if anterior.get("rag_status") == "aprovado" and extra.get("rag_status") == "pendente":
+                mesclado["rag_status"] = "aprovado"
+            existente.extra = mesclado
+        existente.titulo = titulo
+        existente.categoria = categoria
+        existente.fonte = fonte
+        existente.tribunal = tribunal
+        existente.atualizado_em = agora
         return "inalterado"
 
     chunks = chunk_texto(conteudo)

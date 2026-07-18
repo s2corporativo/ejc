@@ -150,6 +150,8 @@ async def ingerir(db: AsyncSession) -> tuple[int, int]:
                         "area_juridica": it.get("area_juridica"),
                         "link": it.get("link_original"),
                         "tema_busca": tema,
+                        "rag_status": "aprovado",
+                        "tipo_fonte": "jurisprudencia_oficial",
                     },
                     confianca="alta",   # fonte oficial (portal do TJMG)
                 )

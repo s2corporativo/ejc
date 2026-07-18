@@ -46,8 +46,10 @@ async def _dispose_engine_apos_teste():
 async def _inserir_precedente(db, doc_id, client_id, titulo):
     await db.execute(
         text(
-            "INSERT INTO knowledge_docs (id, titulo, categoria, client_id, status_indexacao) "
-            "VALUES (:id, :tit, 'precedente_interno', :cli, 'indexado')"
+            "INSERT INTO knowledge_docs "
+            "(id, titulo, categoria, client_id, status_indexacao, extra) "
+            "VALUES (:id, :tit, 'precedente_interno', :cli, 'indexado', "
+            "'{\"rag_status\":\"aprovado\"}'::jsonb)"
         ),
         {"id": doc_id, "tit": titulo, "cli": client_id},
     )
@@ -124,8 +126,10 @@ async def test_conteudo_publico_sempre_visivel_rowlevel():
     async with AsyncSessionLocal() as db:
         await db.execute(
             text(
-                "INSERT INTO knowledge_docs (id, titulo, categoria, status_indexacao) "
-                "VALUES (:id, 'SUMULA_PUBLICA_TESTE', 'sumula_stj', 'indexado')"
+                "INSERT INTO knowledge_docs "
+                "(id, titulo, categoria, status_indexacao, extra) "
+                "VALUES (:id, 'SUMULA_PUBLICA_TESTE', 'sumula_stj', 'indexado', "
+                "'{\"rag_status\":\"aprovado\",\"conferido\":true}'::jsonb)"
             ),
             {"id": doc_pub},
         )

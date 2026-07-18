@@ -103,6 +103,7 @@ async def test_upsert_documento_persiste_confianca_no_extra():
         db, titulo="Lei X", categoria="legislacao",
         conteudo="Conteúdo jurídico de teste suficientemente longo para ingestão.",
         chave_origem="teste:lei-x", extra={"origem": "teste"}, confianca="alta",
+        embutir_vetores=False,
     )
     assert res == "novo"
     docs = [o for o in db.added if isinstance(o, KnowledgeDoc)]
@@ -120,7 +121,7 @@ async def test_upsert_documento_sem_confianca_nao_polui_extra():
     await upsert_documento(
         db, titulo="Lei Y", categoria="legislacao",
         conteudo="Outro conteúdo jurídico de teste suficientemente longo aqui.",
-        chave_origem="teste:lei-y",
+        chave_origem="teste:lei-y", embutir_vetores=False,
     )
     doc = [o for o in db.added if isinstance(o, KnowledgeDoc)][0]
     # default None → não grava chave; a busca assume "media" via COALESCE
@@ -157,9 +158,24 @@ def test_sql_confianca_usa_vocabulario_com_fallback():
     assert "'media'" in _SQL_CONFIANCA            # default
 
 
-def test_endpoint_buscar_semantico_expoe_confianca():
-    # O SQL do caminho semântico do /rag/buscar inclui a coluna confianca.
+def test_endpoint_buscar_delega_ao_pipeline_governado():
+    # A rota não pode manter SQL vetorial próprio: isso já criou bypass de
+    # aprovação, quarentena de súmulas e exclusão do corpus fictício.
     import inspect as _i
     from app.routers.rag import buscar
     src = _i.getsource(buscar)
-    assert "AS confianca" in src
+    assert "buscar_contexto_rag" in src
+    assert "<=>" not in src
+    assert '"pipeline": "hibrida_governada"' in src
+
+
+def test_chave_manual_e_estavel_por_origem_e_isolada_por_usuario():
+    from app.routers.rag import _chave_ingestao_manual
+    kw = {"titulo": "Lei de teste", "categoria": "legislacao",
+          "fonte": "https://example.test/lei", "tribunal": None}
+    k1 = _chave_ingestao_manual(actor_id="u1", **kw)
+    k2 = _chave_ingestao_manual(actor_id="u1", **kw)
+    k3 = _chave_ingestao_manual(actor_id="u2", **kw)
+    assert k1 == k2
+    assert k1 != k3
+    assert "example.test" not in k1

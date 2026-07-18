@@ -192,7 +192,7 @@ async def _fundir_lexical(db, consulta, semanticos, limite, categorias, scope_cl
             filtro = "AND kd.categoria = ANY(:cats)"
             params["cats"] = categorias
         sql = _text(f"""
-            SELECT kc.id, kc.doc_id, kc.conteudo, kd.titulo, kd.categoria, kd.fonte,
+            SELECT kc.id, kc.doc_id, kc.conteudo, kd.titulo, kd.categoria, kd.fonte, kd.versao,
                    {_SQL_CONFIANCA},
                    similarity(kc.conteudo, :q) AS sim
             FROM knowledge_chunks kc
@@ -214,7 +214,9 @@ async def _fundir_lexical(db, consulta, semanticos, limite, categorias, scope_cl
                 meta[cid] = {"chunk_id": r.id, "doc_id": r.doc_id, "conteudo": r.conteudo,
                              "titulo": r.titulo,
                              "categoria": r.categoria, "fonte": r.fonte,
-                             "confianca": r.confianca, "score": round(float(r.sim), 4)}
+                             "confianca": r.confianca,
+                             "versao": getattr(r, "versao", None),
+                             "score": round(float(r.sim), 4)}
     except Exception as _e:
         logger.warning(f"Fusao lexical (RRF) falhou, mantendo semantico: {_e}")
         return semanticos
@@ -233,7 +235,7 @@ async def _fundir_lexical(db, consulta, semanticos, limite, categorias, scope_cl
                 filtro_f = "AND kd.categoria = ANY(:cats)"
                 params_f["cats"] = categorias
             sql_f = _text(f"""
-                SELECT kc.id, kc.doc_id, kc.conteudo, kd.titulo, kd.categoria, kd.fonte,
+                SELECT kc.id, kc.doc_id, kc.conteudo, kd.titulo, kd.categoria, kd.fonte, kd.versao,
                        {_SQL_CONFIANCA},
                        ts_rank_cd(to_tsvector('portuguese', kc.conteudo),
                                   plainto_tsquery('portuguese', :q)) AS rank
@@ -257,7 +259,9 @@ async def _fundir_lexical(db, consulta, semanticos, limite, categorias, scope_cl
                     meta[cid] = {"chunk_id": r.id, "doc_id": r.doc_id, "conteudo": r.conteudo,
                                  "titulo": r.titulo,
                                  "categoria": r.categoria, "fonte": r.fonte,
-                                 "confianca": r.confianca, "score": round(float(r.rank), 4)}
+                                 "confianca": r.confianca,
+                                 "versao": getattr(r, "versao", None),
+                                 "score": round(float(r.rank), 4)}
         except Exception as _ef:
             logger.warning(f"Fusao FTS (RRF) falhou, ignorando esta perna: {_ef}")
     ordenados = sorted(fusion.items(), key=lambda kv: kv[1], reverse=True)
@@ -362,7 +366,7 @@ async def buscar_contexto_rag(
                 filtro_cat_v = "AND kd.categoria = ANY(:cats)"
                 params_v["cats"] = categorias
             sql_v = text(f"""
-                SELECT kc.id, kc.doc_id, kc.conteudo, kd.titulo, kd.categoria, kd.fonte,
+                SELECT kc.id, kc.doc_id, kc.conteudo, kd.titulo, kd.categoria, kd.fonte, kd.versao,
                        {_SQL_CONFIANCA},
                        (kc.embedding <=> :vec) AS dist
                 FROM knowledge_chunks kc
@@ -393,6 +397,7 @@ async def buscar_contexto_rag(
                      "titulo": r.titulo,
                      "categoria": r.categoria, "fonte": r.fonte,
                      "confianca": r.confianca,
+                     "versao": getattr(r, "versao", None),
                      "score": round(1 - r.dist, 4)}   # cosine similarity
                     for r in rows_v
                 ]
@@ -431,7 +436,7 @@ async def buscar_contexto_rag(
     params["incl_hist"] = incluir_historico
 
     sql = text(f"""
-        SELECT kc.id, kc.doc_id, kc.conteudo, kd.titulo, kd.categoria, kd.fonte,
+        SELECT kc.id, kc.doc_id, kc.conteudo, kd.titulo, kd.categoria, kd.fonte, kd.versao,
                {_SQL_CONFIANCA}
         FROM knowledge_chunks kc
         JOIN knowledge_docs kd ON kd.id = kc.doc_id
@@ -450,6 +455,7 @@ async def buscar_contexto_rag(
                 "chunk_id": r.id, "doc_id": r.doc_id, "conteudo": r.conteudo,
                 "titulo": r.titulo, "categoria": r.categoria, "fonte": r.fonte,
                 "confianca": r.confianca,
+                "versao": getattr(r, "versao", None),
             }
             for r in rows
         ]

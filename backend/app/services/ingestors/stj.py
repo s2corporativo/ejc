@@ -109,6 +109,8 @@ async def ingerir(db: AsyncSession) -> tuple[int, int]:
                         "relator": rec.get("ministroRelator"),
                         "classe": rec.get("siglaClasse"),
                         "data_decisao": rec.get("dataDecisao"),
+                        "rag_status": "aprovado",
+                        "tipo_fonte": "jurisprudencia_oficial",
                     },
                     confianca="alta",   # fonte oficial (STJ Dados Abertos)
                 )

@@ -302,7 +302,7 @@ async def test_buscar_contexto_rag_textual_expoe_doc_id(monkeypatch):
     linha = SimpleNamespace(
         id="chunk-1", doc_id="kdoc-1", conteudo="Art. 186 do CC...",
         titulo="Código Civil", categoria="legislacao_geral",
-        fonte="planalto", confianca="alta",
+        fonte="planalto", confianca="alta", versao=1,
     )
 
     class _DBTxt:
@@ -316,21 +316,19 @@ async def test_buscar_contexto_rag_textual_expoe_doc_id(monkeypatch):
 
 
 def test_rag_buscar_semantico_expoe_doc_id(monkeypatch):
-    """/rag/buscar (perna semântica do router): SELECT inclui doc_id e o shape
-    da resposta o repassa — contrato existente intacto (campo apenas ADICIONADO)."""
+    """/rag/buscar repassa o shape do pipeline RAG central governado."""
     monkeypatch.setattr(rag_router, "emb_disponivel", lambda: True)
-
-    async def _fake_emb(textos, modo=None):
-        return [[0.1, 0.2, 0.3]]
-
-    monkeypatch.setattr(rag_router, "gerar_embeddings", _fake_emb)
 
     row = {
         "chunk_id": "chunk-1", "doc_id": "kdoc-1", "conteudo": "Súmula 297 STJ",
         "titulo": "Súmula 297", "categoria": "sumula_stj",
         "confianca": "alta", "score": 0.91,
     }
-    db = _FakeDB(results=[_Res(mappings=[row])])
+    async def _fake_buscar(db, consulta, **kwargs):
+        return [row]
+
+    monkeypatch.setattr(rag_router, "buscar_contexto_rag", _fake_buscar)
+    db = _FakeDB()
     r = _montar(db).get("/rag/buscar", params={"q": "aplicação do CDC a bancos"})
     assert r.status_code == 200
     body = r.json()
@@ -339,8 +337,8 @@ def test_rag_buscar_semantico_expoe_doc_id(monkeypatch):
     # campos pré-existentes preservados (contrato não alterado)
     for campo in ("chunk_id", "conteudo", "titulo", "categoria", "confianca", "score"):
         assert campo in body["resultados"][0]
-    # e o SQL da perna semântica realmente seleciona o doc_id
-    assert "c.doc_id" in str(db.executed[0])
+    assert body["pipeline"] == "hibrida_governada"
+    assert db.executed == []  # rota não mantém um segundo SQL que burle os gates
 
 
 def test_sql_das_pernas_rag_seleciona_doc_id():

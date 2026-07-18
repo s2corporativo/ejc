@@ -51,16 +51,17 @@ async def _limpar(db, titulos=_TODOS_OS_TITULOS):
 
 def test_seed_tem_situacao_valida_em_todos_os_verbetes():
     for s in SUMULAS_SEED:
-        assert s.get("situacao") in ("ativa", "cancelada", "suspensa"), s
+        assert s.get("situacao") in (
+            "ativa", "cancelada", "suspensa", "superada", "revisao"
+        ), s
 
 
-def test_seed_sinaliza_as_sumulas_conhecidas_como_nao_vigentes():
-    """TST 256 (cancelada, substituída pela 331) e TST 277 (suspensa por
-    liminar do STF na ADPF 323) precisam estar sinalizadas — são os dois
-    casos de situação não-ativa identificados na reconstrução."""
+def test_seed_sinaliza_as_sumulas_conhecidas_como_nao_operacionais():
+    """Verbetes cancelados, superados ou incompletos ficam fora do RAG."""
     por_numero = {(s["tribunal"], s.get("numero")): s for s in SUMULAS_SEED}
     assert por_numero[("TST", "256")]["situacao"] == "cancelada"
-    assert por_numero[("TST", "277")]["situacao"] == "suspensa"
+    assert por_numero[("TST", "277")]["situacao"] == "superada"
+    assert por_numero[("TST", "331")]["situacao"] == "revisao"
 
 
 async def test_sumula_ativa_vira_tese_ativa_e_entra_no_rag(monkeypatch):
@@ -116,8 +117,8 @@ async def test_sumula_cancelada_vira_tese_arquivada_e_nao_entra_no_rag(monkeypat
             await _limpar(db)
 
 
-async def test_sumula_suspensa_vira_tese_arquivada_e_nao_entra_no_rag(monkeypatch):
-    """TST 277: aplicação suspensa por liminar do STF (ADPF 323)."""
+async def test_sumula_superada_vira_tese_arquivada_e_nao_entra_no_rag(monkeypatch):
+    """TST 277: superada pelo julgamento definitivo da ADPF 323."""
     from app.core.database import AsyncSessionLocal
 
     monkeypatch.setattr(get_settings(), "RAG_SUMULAS_SEED_ENABLED", True)
@@ -160,7 +161,7 @@ async def test_gate_quarentena_libera_conferido_e_bloqueia_nao_conferido(monkeyp
             "vigente, status_indexacao, extra) VALUES "
             "(:id,:t,'trabalhista','sumula',:k,true,'indexado',CAST(:e AS jsonb))"
         ), {"id": doc_id, "t": titulo, "k": chave,
-            "e": json.dumps({"conferido": conferido})})
+            "e": json.dumps({"conferido": conferido, "rag_status": "aprovado"})})
         await db.execute(text(
             "INSERT INTO knowledge_chunks (id, doc_id, chunk_index, conteudo) "
             "VALUES (:id,:d,0,:c)"

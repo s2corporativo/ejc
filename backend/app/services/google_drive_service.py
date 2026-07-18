@@ -650,6 +650,8 @@ async def _processar_arquivo(
     confianca_final = decisao.confianca if categorizar_automaticamente else confianca
     extra = _extra(file, mime_final, ext, decisao)
     extra["confidence_level"] = confianca_final
+    # Classificação automática de arquivo externo não é aprovação jurídica.
+    extra["rag_status"] = "pendente"
 
     resultado = await upsert_documento(
         db,
