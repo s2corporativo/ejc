@@ -135,7 +135,11 @@ async def reembedar(batch_size: int = 20, dry_run: bool = False) -> None:
 
             for (doc_id,) in lote:
                 try:
-                    resultado = await _reembedar_doc(db, doc_id, dry_run)
+                    # SAVEPOINT por documento: erro SQL (ex.: vetor inválido)
+                    # não deixa a transação inteira abortada nem impede os
+                    # documentos seguintes do lote.
+                    async with db.begin_nested():
+                        resultado = await _reembedar_doc(db, doc_id, dry_run)
                 except Exception as e:
                     logger.warning("[reembedar] doc %s falhou: %s", doc_id, str(e)[:200])
                     await db.execute(text(

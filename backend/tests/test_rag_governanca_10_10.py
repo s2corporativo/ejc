@@ -30,10 +30,12 @@ def test_migration_preserva_vetores_legados_para_rollback():
 
 def test_reindex_usa_paginacao_estavel_sem_offset():
     import scripts.reembedar_chunks_orfaos as reemb
+    import inspect
 
     sql = str(reemb._SQL_DOCS_COM_ORFAO).upper()
     assert "OFFSET" not in sql
     assert "KD.ID > :AFTER" in sql
+    assert "begin_nested" in inspect.getsource(reemb.reembedar)
 
 
 def test_sumulas_problematicas_ficam_fora_do_rag():

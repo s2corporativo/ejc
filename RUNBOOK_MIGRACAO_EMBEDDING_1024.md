@@ -13,7 +13,8 @@ corpus reindexado.
 
 ## Passos (produção)
 
-1. **Backup** do banco (pg_dump) — ver `RUNBOOK_BACKUP.md`.
+1. **Backup** do banco (pg_dump) — ver `RUNBOOK_BACKUP.md`. Confirme também
+   espaço para a coluna vetorial antiga + nova e ~2,3 GB do modelo ONNX.
 2. **Validar runtime antes da migration:**
    ```bash
    docker exec -it ejc_backend python -c "from app.services.embedding_service import validar_modelo_local; ok,msg=validar_modelo_local(); print(msg); raise SystemExit(0 if ok else 1)"

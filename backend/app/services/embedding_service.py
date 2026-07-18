@@ -8,7 +8,7 @@
 #   env (EMBEDDINGS_MODEL/EMBEDDINGS_DIM).
 # Protocolo E5 (prefixos "query: "/"passage: ") só se aplica a modelos E5 (ex.:
 #   multilingual-e5-large); outros modelos não usam prefixo (detectado por _prefixo).
-# Lazy-load + singleton: o modelo (~1GB no 1º download) só carrega no
+# Lazy-load + singleton: o modelo (~2,3 GB no 1º download) só carrega no
 # primeiro uso, nunca no boot; encode roda em thread (asyncio.to_thread).
 # Provider local: fastembed no mesmo processo.
 # Provider http: backend leve chama um serviço interno de embeddings.
@@ -80,7 +80,7 @@ def _get_model():
         with _model_lock:
             if _model is None:
                 from fastembed import TextEmbedding
-                logger.info(f"Carregando {MODEL_NAME} (primeira vez — download ~1GB)...")
+                logger.info(f"Carregando {MODEL_NAME} (primeira vez — download ~2,3 GB)...")
                 _model = TextEmbedding(model_name=MODEL_NAME)
                 logger.info(f"[Embeddings] {MODEL_NAME} carregado ({EMBED_DIM}d)")
     return _model
