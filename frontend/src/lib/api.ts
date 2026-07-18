@@ -166,6 +166,51 @@ export async function aplicarAcoesDocumento(
   return data;
 }
 
+// ── Raio-X · Análise "advogado sênior" (IA agêntica) ──────
+// Segunda camada, aditiva e cara, movida pelo módulo agêntico (SOMENTE leitura,
+// sem HITL). Atrás de AI_AGENT_ENABLED: flag OFF → status "indisponivel".
+// Ver backend/app/services/raio_x_advogado_service.py.
+export interface CriticaAdversarial {
+  disponivel: boolean;
+  nota_robustez?: number | null;
+  relatorio?: string | null;
+  alertas?: string[];
+  aviso?: string | null;
+}
+
+export interface AnaliseAdvogadoResult {
+  /** "ok" | "indisponivel" | "erro" | outros status propagados do agente. */
+  status: string;
+  analise?: string | null;
+  is_rascunho?: boolean;
+  critica_adversarial?: CriticaAdversarial | null;
+  custo_estimado_brl?: number | null;
+  alertas?: string[];
+  revisao_obrigatoria?: boolean;
+  detalhe?: string | null;
+}
+
+/** Análise do advogado (IA) do Raio-X CONTEXTUAL de um caso existente. */
+export async function analiseAdvogadoContextual(
+  caseId: string,
+): Promise<AnaliseAdvogadoResult> {
+  const { data } = await api.post<AnaliseAdvogadoResult>(
+    `/raio-x/contextual/${caseId}/analise-advogado`,
+  );
+  return data;
+}
+
+/** Análise do advogado (IA) de uma análise preliminar por documentos.
+ *  Exige caso vinculado no backend (senão HTTP 409). */
+export async function analiseAdvogadoPorAnalise(
+  analiseId: string,
+): Promise<AnaliseAdvogadoResult> {
+  const { data } = await api.post<AnaliseAdvogadoResult>(
+    `/raio-x/${analiseId}/analise-advogado`,
+  );
+  return data;
+}
+
 /**
  * Confirma um prazo sugerido pela IA (ou não-confirmado). O backend seta
  * `confirmado=true` e devolve o deadline atualizado. Ownership é checado.
