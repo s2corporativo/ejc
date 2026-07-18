@@ -102,14 +102,17 @@ TASK_ROUTING: dict[str, list[tuple[str, str | None]]] = {
     "elaboracao_peca": [
         ("ollama",    None),  # OLLAMA_MODEL_PETICAO
         ("anthropic", None),  # ANTHROPIC_MODEL_COMPLEXO
+        ("maritaca",  None),  # MARITACA_MODEL (só se ENABLED+chave; redação PT-BR)
         ("groq",      None),
     ],
     "resumo": [
         ("ollama", None),    # OLLAMA_MODEL_RESUMO
+        ("maritaca", None),  # MARITACA_MODEL_RAPIDO (só se ENABLED+chave)
         ("groq",   None),
     ],
     "chat_rapido": [
         ("ollama", None),    # OLLAMA_MODEL_CHAT
+        ("maritaca", None),  # MARITACA_MODEL_RAPIDO (só se ENABLED+chave)
         ("groq",   None),
     ],
     "analise_contrato": [
@@ -144,7 +147,7 @@ TASK_ROUTING: dict[str, list[tuple[str, str | None]]] = {
 }
 
 # Provedores que processam dados FORA do VPS → barreira LGPD obrigatória.
-_PROVIDERS_EXTERNOS = {"anthropic", "groq"}
+_PROVIDERS_EXTERNOS = {"anthropic", "groq", "maritaca"}
 
 _OLLAMA_MODEL_BY_TASK = {
     "analise_juridica": lambda: settings.OLLAMA_MODEL_ANALISE,
@@ -547,16 +550,18 @@ async def transcrever_audio(
 
 async def health() -> dict:
     """Retorna status de saúde de cada provedor."""
-    from app.services.providers import groq_provider, ollama_provider, anthropic_provider
+    from app.services.providers import groq_provider, ollama_provider, anthropic_provider, maritaca_provider
     groq_ok   = await groq_provider.health()   if settings.GROQ_API_KEY else False
     ollama_ok = await ollama_provider.health() if settings.OLLAMA_ENABLED else False
     anthropic_ok = await anthropic_provider.health()
+    maritaca_ok = await maritaca_provider.health() if settings.MARITACA_ENABLED else False
     modelos_ollama = await ollama_provider.modelos_disponiveis() if settings.OLLAMA_ENABLED else []
 
     return {
         "groq":      {"disponivel": groq_ok, "modelo": settings.GROQ_MODEL},
         "ollama":    {"disponivel": ollama_ok, "modelos": modelos_ollama},
         "anthropic": {"disponivel": anthropic_ok, "modelo": settings.ANTHROPIC_MODEL_RAPIDO},
+        "maritaca":  {"disponivel": maritaca_ok, "modelo": settings.MARITACA_MODEL},
         "provider_mode": settings.AI_PROVIDER,
     }
 
@@ -574,6 +579,11 @@ def _provider_elegivel(provider: str) -> bool:
         )
     if provider == "groq":
         return bool(settings.GROQ_API_KEY and settings.AI_EXTERNAL_PROVIDERS_ALLOWED)
+    if provider == "maritaca":
+        return bool(
+            settings.MARITACA_ENABLED and settings.MARITACA_API_KEY
+            and settings.AI_EXTERNAL_PROVIDERS_ALLOWED
+        )
     return False
 
 
@@ -597,6 +607,11 @@ def _resolver_modelo(provider: str, task_type: str, model_override: str | None) 
     if provider == "anthropic":
         # Tarefas roteadas para Anthropic aqui são as complexas → modelo COMPLEXO.
         return settings.ANTHROPIC_MODEL_COMPLEXO or settings.ANTHROPIC_MODEL_RAPIDO
+    if provider == "maritaca":
+        # Redação/volume por default; tarefas simples → modelo rápido/barato.
+        if task_type in ("resumo", "chat_rapido", "triagem"):
+            return settings.MARITACA_MODEL_RAPIDO or settings.MARITACA_MODEL
+        return settings.MARITACA_MODEL or settings.MARITACA_MODEL_RAPIDO
     return None  # groq: default do provedor
 
 
@@ -753,6 +768,9 @@ async def _chamar_provedor(
     elif provider == "anthropic":
         from app.services.providers import anthropic_provider
         return await anthropic_provider.chat(messages, model, temperature, max_tokens)
+    elif provider == "maritaca":
+        from app.services.providers import maritaca_provider
+        return await maritaca_provider.chat(messages, model, temperature, max_tokens)
     else:  # groq
         from app.services.providers import groq_provider
         return await groq_provider.chat(messages, model, temperature, max_tokens)

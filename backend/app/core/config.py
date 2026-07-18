@@ -114,6 +114,20 @@ class Settings(BaseSettings):
     # Qualquer max_tokens acima disto é rebaixado no provider.
     ANTHROPIC_MAX_TOKENS: int = 8000
 
+    # ── IA — Maritaca (Sabiá) — provider BRASILEIRO, OpenAI-compatible ─────
+    # PLUGÁVEL: nasce DESLIGADO (MARITACA_ENABLED=false) → sistema idêntico ao
+    # atual. Provider EXTERNO ao VPS → passa pela MESMA barreira LGPD
+    # (pseudonimização). Chave definida APENAS no .env (nunca aqui).
+    # Soberania de dados: os modelos "-br-sp" (ex.: "sabia-4-br-sp",
+    # "sabiazinho-4-br-sp") processam 100% em território nacional (+30% de
+    # custo) — caminho recomendado no jurídico, a ativar com DPA assinado.
+    MARITACA_ENABLED: bool = False
+    MARITACA_API_KEY: str = ""
+    MARITACA_BASE_URL: str = "https://chat.maritaca.ai/api"
+    MARITACA_MODEL: str = "sabia-4"            # qualidade/generalista (128k)
+    MARITACA_MODEL_RAPIDO: str = "sabiazinho-4"  # rápido/barato
+    MARITACA_TIMEOUT: int = 90
+
     # ── IA — Núcleo Único (policy central de provedores) ──────────────────
     # False = só Ollama local (soberania total): nenhum dado sai do VPS,
     # mesmo sanitizado. Anthropic/Groq ficam inelegíveis na cadeia.
