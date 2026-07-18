@@ -2,6 +2,7 @@
 # Centro de Custos por Processo — lucro real, receitas e despesas por caso.
 # Soft-delete arquitetural: lançamentos financeiros nunca são apagados
 # fisicamente (deleted_at + auditoria).
+from decimal import Decimal, ROUND_HALF_UP
 from uuid import uuid4
 from datetime import date as _date, datetime, timezone
 from typing import Optional
@@ -19,6 +20,14 @@ from app.models.centro_custo import CentroCusto, CentroCustoTipo, CentroCustoCat
 from app.models.audit_log import criar_audit_log
 
 router = APIRouter(prefix="/centro-custos", tags=["Centro de Custos"])
+
+_Q2 = Decimal("0.01")
+
+
+def _money(v) -> Decimal:
+    """Coage numérico (Decimal de coluna Numeric, int, float, str, None) para
+    Decimal com 2 casas (ROUND_HALF_UP). Lucro/totais ficam Decimal ponta a ponta."""
+    return Decimal(str(v or 0)).quantize(_Q2, ROUND_HALF_UP)
 
 
 # ── Schemas ───────────────────────────────────────────────────────────────────

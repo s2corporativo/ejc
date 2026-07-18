@@ -37,6 +37,14 @@ _EQUIPE = ["superadmin", "admin", "socio", "advogado", "advogado_auxiliar", "est
 _ADM    = ["superadmin", "admin", "socio"]
 _CENT   = Decimal("0.01")
 
+# ── Tetos do depósito recursal trabalhista (CLT art. 899 §§1º-4º) ─────────────
+# ATENÇÃO — ATUALIZAÇÃO ANUAL OBRIGATÓRIA: o TST reajusta estes tetos pelo IPCA-E
+# e publica novo Ato de GP (jan/ago de cada ano). Valores abaixo = 2026
+# (Ato TST GP 323/2025 — referência). Conferir a portaria vigente na data do
+# recurso antes de usar em produção; NÃO deixar defasar.
+TETO_DEPOSITO_RO = 12_127.64   # Recurso Ordinário
+TETO_DEPOSITO_RR = 24_255.28   # Recurso de Revista (dobro do RO)
+
 router = APIRouter(tags=["Áreas de Atuação"])
 
 
@@ -220,21 +228,41 @@ async def emp_prazos_rj(
 
 @router.get("/empresarial/ferramentas/verificar-cade")
 async def emp_cade(valor_faturamento_br: float, valor_operacao: float,
+                   valor_faturamento_outro_grupo: Optional[float] = None,
                    cu: User = Depends(require_roles(_EQUIPE))):
     """
-    Verifica obrigatoriedade de notificação ao CADE.
-    Lei 12.529/2011 art. 88: um dos grupos com fat. ≥ R$750M e outro ≥ R$75M no Brasil.
+    Verifica obrigatoriedade de notificação ao CADE (controle de concentrações).
+    Lei 12.529/2011 art. 88, I e II (patamares atualizados pela Portaria Interminis-
+    terial MJ/MF 994/2012): a notificação é OBRIGATÓRIA quando, cumulativamente,
+    um grupo econômico envolvido faturou ≥ R$ 750 mi E OUTRO grupo ≥ R$ 75 mi no
+    Brasil, no ano anterior. São dois limiares CUMULATIVOS — não basta um só grupo.
+    - valor_faturamento_br: faturamento do maior grupo (inciso I, ≥ R$ 750 mi).
+    - valor_faturamento_outro_grupo: faturamento do segundo grupo (inciso II, ≥ R$ 75 mi).
+      Retrocompatível: se não informado, não há como confirmar o inciso II e a
+      obrigatoriedade fica indeterminada (segundo_grupo_informado=False).
     """
-    limiar_a = 750_000_000.00
-    obrigatorio = valor_faturamento_br >= limiar_a
+    limiar_grupo_maior = 750_000_000.00   # art. 88, I (atualizado p/ R$ 750 mi)
+    limiar_grupo_menor = 75_000_000.00    # art. 88, II (atualizado p/ R$ 75 mi)
+    grupo_maior_atinge = valor_faturamento_br >= limiar_grupo_maior
+    segundo_informado = valor_faturamento_outro_grupo is not None
+    grupo_menor_atinge = segundo_informado and valor_faturamento_outro_grupo >= limiar_grupo_menor
+    # Ambos os limiares são cumulativos (art. 88, I E II).
+    obrigatorio = grupo_maior_atinge and grupo_menor_atinge
     return {
         "faturamento_informado": valor_faturamento_br,
+        "faturamento_outro_grupo": valor_faturamento_outro_grupo,
         "valor_operacao": valor_operacao,
+        "grupo_maior_atinge_750mi": grupo_maior_atinge,
+        "grupo_menor_atinge_75mi": grupo_menor_atinge,
+        "segundo_grupo_informado": segundo_informado,
         "notificacao_obrigatoria": obrigatorio,
         "prazo_notificacao": "30 dias (art. 88 §2º Lei 12.529/11)" if obrigatorio else None,
+        # Taxa (TFPP) hardcoded — conferir tabela CADE vigente; sujeita a reajuste.
         "taxa_cade_estimada": "R$ 85.000 (tabela CADE 2026)" if obrigatorio else "N/A",
-        "base": "Lei 12.529/2011 art. 88 caput e §2º",
-        "aviso": "MINUTA. Análise de enquadramento deve ser confirmada por especialista antitruste.",
+        "base": "Lei 12.529/2011 art. 88, I e II c/c Portaria Interm. MJ/MF 994/2012; §2º (prazo).",
+        "aviso": ("MINUTA. Análise de enquadramento deve ser confirmada por especialista antitruste."
+                  + ("" if segundo_informado else
+                     " Informe o faturamento do segundo grupo para confirmar o inciso II.")),
     }
 
 
@@ -536,7 +564,8 @@ async def pen_prescricao(
     elif pena_maxima_anos > 2:   prazo = 8
     elif pena_maxima_anos > 1:   prazo = 4
     else:                        prazo = 3
-    data_prescricao = date(data_fato.year + prazo, data_fato.month, data_fato.day)
+    # _add_anos_data trata 29/02 (ValueError em ano não bissexto → 28/02).
+    data_prescricao = _add_anos_data(data_fato, prazo)
     prescrito = date.today() > data_prescricao
     return {
         "pena_maxima_anos": pena_maxima_anos,
@@ -673,20 +702,23 @@ async def trab_deposito(
 ):
     """
     Calcula depósito recursal para Recurso Ordinário e Recurso de Revista.
-    Tabela TST publicada anualmente. Valores 2026 (Ato TST GP 323/2025 — referência).
+    Metodologia (CLT art. 899 §1º): o depósito recursal corresponde ao VALOR DA
+    CONDENAÇÃO, limitado ao teto legal do recurso — NÃO a um percentual dela.
+    Se a condenação < teto, recolhe-se o valor da condenação; se ≥ teto, recolhe-se
+    o teto. Tetos 2026 (Ato TST GP 323/2025 — referência, atualização anual).
     MINUTA — confirmar teto vigente na data do recurso.
     """
-    # Tetos vigentes 2026 (referência — confirmar portaria TST do ano)
-    teto_ro  = 12_127.64   # RO
-    teto_rr  = 24_255.28   # RR (dobro do RO)
-    dep_ro  = min(valor_condenacao * 0.50, teto_ro)   # 50% até o teto, prática usual
-    dep_rr  = min(valor_condenacao * 0.50, teto_rr)
+    # Depósito = condenação limitada ao teto do recurso (art. 899 §1º).
+    # Entre 1x e 2x o teto, recolher só metade tornaria o recurso DESERTO.
+    dep_ro  = min(valor_condenacao, TETO_DEPOSITO_RO)
+    dep_rr  = min(valor_condenacao, TETO_DEPOSITO_RR)
     return {
         "valor_condenacao": valor_condenacao,
         "deposito_ro": round(dep_ro, 2),
         "deposito_rr": round(dep_rr, 2),
-        "teto_ro_2026": teto_ro,
-        "teto_rr_2026": teto_rr,
+        "teto_ro_2026": TETO_DEPOSITO_RO,
+        "teto_rr_2026": TETO_DEPOSITO_RR,
+        "metodologia": "Recolhimento = valor da condenação, limitado ao teto do recurso (CLT art. 899 §1º). Não é percentual da condenação.",
         "base": "CLT art. 899 §§1º-4º + Ato TST GP (atualização anual IPCA-E)",
         "aviso": "MINUTA. Confirmar teto vigente na data do recurso. Empresas em recuperação judicial têm tratamento específico.",
     }

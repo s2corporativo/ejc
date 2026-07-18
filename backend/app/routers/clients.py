@@ -14,6 +14,7 @@ from pydantic import BaseModel  # noqa: E402 (module-level p/ _ResolverClienteRe
 from app.core.database import get_db
 from app.core.rate_limit import rate_limit
 from app.core.security import get_current_user, require_roles
+from app.core.ownership import is_gestao
 from app.models.user import User
 from app.models.client import Client, ClientStatus
 from app.models.case import Case
@@ -42,6 +43,47 @@ def _req_clientes_leitura(cu: User = Depends(get_current_user)) -> User:
     if cu.role.value not in _CLIENTES:
         raise HTTPException(status_code=403, detail="Sem permissão para consultar clientes")
     return cu
+
+
+# Papéis operacionais de atendimento/recepção que precisam da carteira INTEIRA
+# para triar leads e operar o funil do CRM — restringi-los quebraria o fluxo
+# legítimo. A segregação de sigilo (achado de auditoria: advogado via nome+CPF+
+# CNPJ da carteira de OUTROS advogados) incide sobre advogado/advogado_auxiliar.
+# financeiro/estagiario/advogado_auxiliar nem chegam aqui (fora de _CLIENTES).
+_CLIENTES_VISAO_TOTAL = {"secretaria"}
+
+
+def _filtro_visibilidade_cliente(q, cu: User):
+    """Segregação de titularidade de clientes (sigilo interno — LGPD/EOAB).
+
+    Espelha cases._filtro_visibilidade / ownership.is_gestao:
+      - Gestão (socio/admin/superadmin) e a recepção (secretaria) veem TODA a
+        base — necessidade operacional do CRM/funil.
+      - advogado/advogado_auxiliar veem apenas clientes vinculados a si:
+          • cujo responsavel_id é o próprio usuário; OU
+          • que possuem ao menos um caso NÃO excluído em que ele é advogado
+            responsável ou auxiliar.
+
+    NÃO deve ser aplicado ao endpoint /checar-conflito (nem a detectar_conflito),
+    que por dever ético (EOAB arts. 34-35) precisa cruzar a base inteira.
+    """
+    if is_gestao(cu) or cu.role.value in _CLIENTES_VISAO_TOTAL:
+        return q
+    casos_do_advogado = (
+        select(Case.client_id)
+        .where(
+            Case.client_id.is_not(None),
+            Case.deleted_at.is_(None),
+            or_(
+                Case.advogado_responsavel_id == cu.id,
+                Case.advogado_auxiliar_id == cu.id,
+            ),
+        )
+    )
+    return q.where(or_(
+        Client.responsavel_id == cu.id,
+        Client.id.in_(casos_do_advogado),
+    ))
 
 
 class _ResolverClienteReq(BaseModel):
@@ -318,6 +360,10 @@ async def listar(
     cu: User = Depends(_req_clientes_leitura),
 ):
     q = select(Client).where(Client.deleted_at.is_(None))
+    # Segregação de titularidade (sigilo interno): advogado/adv_auxiliar só veem
+    # a própria carteira. Aplicado ANTES da busca — assim o filtro por documento
+    # (CPF/CNPJ) também fica restrito e não permite descobrir cliente alheio.
+    q = _filtro_visibilidade_cliente(q, cu)
     if search:
         condicoes = [
             Client.nome.ilike(f"%{search}%"),

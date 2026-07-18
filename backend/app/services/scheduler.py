@@ -6,6 +6,7 @@
 # Jobs:
 #  06:55 — Briefing matinal por advogado (personalizado)
 #  07:00 — Morning Brief WhatsApp (consolidado do dia)
+#  07:10 — Marca prazos pendentes já vencidos (status='vencido') + alerta único
 #  07:15 — Alertas de prazos (7d/3d/1d)
 #  07:30 — SLA de etapas BPM (workflow) — vencidos + vésperas
 #  07:45 — SLA de solicitações registradas em atendimentos
@@ -127,6 +128,77 @@ async def _morning_brief():
         logger.info(f"[Brief] {prazos_3d} prazos 3d, {amb_criticas} amb críticas")
     except Exception as e:
         logger.error(f"[Scheduler] morning_brief: {e}")
+
+
+async def _marcar_prazos_vencidos():
+    """Marca prazos PENDENTES já vencidos (data_prazo < hoje) como
+    status='vencido' e dispara UMA notificação de "prazo vencido" ao
+    responsável. Roda 07:10, ANTES de `_alertar_prazos` (07:15).
+
+    Por que existia o bug: nada escrevia status='vencido', então a aba
+    "Vencidos" do frontend ficava sempre vazia e prazos já vencidos (ou criados
+    depois do horário do alerta) nunca eram alertados — `_alertar_prazos` só
+    cobre faixas com data_prazo >= hoje.
+
+    Idempotência SEM coluna nova: o SELECT só pega status='pendente' e o UPDATE
+    é condicional (WHERE status='pendente'), então a TRANSIÇÃO pendente→vencido
+    acontece uma única vez — na 2ª execução o prazo já é 'vencido' e sai do
+    filtro, logo o alerta NÃO se repete todo dia. Prazos concluídos/cancelados
+    ficam fora do filtro e nunca são tocados.
+
+    Isolamento por item (padrão de `_alertar_prazos`): commit por linha; a falha
+    de um destinatário é logada e não aborta o lote. Se a notificação falhar, o
+    rollback preserva status='pendente' e a transição/alerta é retentada amanhã.
+    """
+    from app.core.database import AsyncSessionLocal
+    from app.services.notification_service import notificar
+
+    try:
+        async with AsyncSessionLocal() as db:
+            hoje = date.today()
+            rows = await db.execute(text("""
+                SELECT d.id, d.titulo, d.data_prazo, d.responsavel_id, u.email, u.phone
+                FROM deadlines d
+                LEFT JOIN users u ON u.id = d.responsavel_id
+                WHERE d.status='pendente' AND d.deleted_at IS NULL
+                  AND d.data_prazo < :hoje
+            """), {"hoje": hoje})
+            for r in rows:
+                try:
+                    # Transição atômica pendente→vencido (WHERE status='pendente'
+                    # é a guarda de idempotência: 2ª passada não reencontra a linha).
+                    await db.execute(text("""
+                        UPDATE deadlines SET status='vencido', updated_at=now()
+                        WHERE id=:id AND status='pendente'
+                    """), {"id": r.id})
+                    if r.responsavel_id:
+                        venc = r.data_prazo.strftime('%d/%m/%Y')
+                        dias_atraso = (hoje - r.data_prazo).days
+                        # Dispatch unificado (prazo = mandatório): sino sempre,
+                        # canais externos conforme preferência/quiet hours.
+                        await notificar(
+                            db, r.responsavel_id,
+                            "🔴 Prazo VENCIDO",
+                            f"{r.titulo} venceu em {venc} (há {dias_atraso} dia(s))",
+                            tipo="prazo", link="/prazos",
+                            email=r.email or None,
+                            telefone=r.phone or None,
+                            email_assunto=f"[EJC] Prazo VENCIDO: {r.titulo}",
+                            email_corpo=(
+                                f"<p>O prazo <b>{r.titulo}</b> venceu em "
+                                f"<b>{venc}</b> (há {dias_atraso} dia(s)) e seguia "
+                                f"pendente.</p>"
+                                f"<p>Acesse o EJC para regularizar o quanto antes.</p>"
+                            ),
+                        )
+                    await db.commit()
+                except Exception as e:
+                    await db.rollback()
+                    logger.error(
+                        f"[Scheduler] marcar_prazos_vencidos falhou p/ deadline {r.id}: {e}"
+                    )
+    except Exception as e:
+        logger.error(f"[Scheduler] marcar_prazos_vencidos: {e}")
 
 
 async def _alertar_prazos():
@@ -982,6 +1054,7 @@ def start_scheduler():
         return
 
     s.add_job(_morning_brief,       CronTrigger(hour=7,  minute=0),  id="brief",       replace_existing=True)
+    s.add_job(_marcar_prazos_vencidos, CronTrigger(hour=7, minute=10), id="prazos_vencidos", replace_existing=True)
     s.add_job(_alertar_prazos,      CronTrigger(hour=7,  minute=15), id="prazos",      replace_existing=True)
     s.add_job(_verificar_sla_workflows, CronTrigger(hour=7, minute=30), id="workflow_sla", replace_existing=True)
     s.add_job(_alertar_solicitacoes_clientes, CronTrigger(hour=7, minute=45), id="solicitacoes_clientes", replace_existing=True)
