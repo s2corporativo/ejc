@@ -394,9 +394,11 @@ async def civ_alimentos(salario_devedor: float, percentual: float,
                         filhos: int = 1, cu: User = Depends(require_roles(_EQUIPE))):
     """
     Estimativa de alimentos proporcionais ao salário.
-    Padrão STJ: 1/3 do salário para 1 filho; valores variam per case.
-    Base: CC art. 1.694 §1º; Lei 5.478/68; Súm. STJ 277 (alimentos provisionais).
-    MINUTA — cálculo de apoio, o juiz fixa.
+    Não existe percentual jurisprudencial fixo: o valor depende das necessidades
+    do alimentando, dos recursos do alimentante e das circunstâncias provadas.
+    Base: CC art. 1.694 §1º e Lei 5.478/68. A Súmula 277/STJ trata apenas do
+    termo inicial na investigação de paternidade e não fundamenta percentual.
+    MINUTA — cálculo aritmético de apoio a partir do percentual informado.
     """
     valor = round(salario_devedor * (percentual / 100), 2)
     sm = _sm_vigente()
@@ -407,8 +409,9 @@ async def civ_alimentos(salario_devedor: float, percentual: float,
         "valor_mensal": valor,
         "em_sm": round(valor / sm, 2),
         "base": "CC art. 1.694 §1º + Lei 5.478/68",
-        "referencia": "Padrão STJ: 1/3 a 30% p/ 1 filho (varia p/ caso)",
-        "aviso": "MINUTA de estimativa. O magistrado fixa com base no binômio necessidade/possibilidade.",
+        "referencia": "Percentual informado pelo usuário; não há tabela ou padrão fixo do STJ.",
+        "aviso": ("MINUTA de estimativa. Validar necessidades, recursos e circunstâncias "
+                  "do caso; o magistrado fixa o valor a partir da prova."),
     }
 
 

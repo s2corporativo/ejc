@@ -63,7 +63,8 @@ async def ingerir(db: AsyncSession) -> tuple[int, int]:
                     conteudo=conteudo, chave_origem=f"senado:{cod}",
                     fonte=m.get("UrlDetalheMateria") or API,
                     extra={"sigla": sigla, "ano": ano, "casa": "senado",
-                           "numero": m.get("Numero")},
+                           "numero": m.get("Numero"), "rag_status": "aprovado",
+                           "tipo_fonte": "proposicao_oficial"},
                     confianca="alta",   # fonte oficial (Senado Federal)
                 )
                 if res in ("novo", "atualizado"):

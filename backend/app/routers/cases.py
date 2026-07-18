@@ -787,7 +787,13 @@ async def encerrar_caso(
             conteudo=corpo,
             chave_origem=f"caso:{case.id}",
             fonte=f"caso:{case.id}",
-            extra={"area": area_str, "resultado": payload.resultado},
+            extra={
+                "area": area_str,
+                "resultado": payload.resultado,
+                "rag_status": "aprovado",
+                "human_reviewed": True,
+                "approved_by": str(cu.id),
+            },
         )
 
     db.add(CaseMovimento(
