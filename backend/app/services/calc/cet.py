@@ -1,10 +1,11 @@
 # ── app/services/calc/cet.py ─────────────────────────────────────────────────
-# Calculadora determinística de CET — Custo Efetivo Total (Res. CMN 3.517/2007).
+# Calculadora determinística de CET — Custo Efetivo Total.
+# Base normativa vigente: Resolução CMN nº 4.881/2020 e IN BCB nº 83/2021.
 # Sem IA: TIR resolvida numericamente sobre o fluxo de caixa em Decimal, com
 # memória de cálculo auditável. HITL: o resultado é MINUTA de cálculo — o
 # advogado revisa antes de usar em peça ou parecer.
 #
-# Convenção (Res. CMN 3.517/2007, Anexo):
+# Convenção (Resolução CMN nº 4.881/2020 e IN BCB nº 83/2021):
 #   FC0 = Σ FCj / (1 + CET)^(dj/365)
 # onde FC0 é o valor LÍQUIDO entregue ao tomador na data da liberação
 # (valor liberado − tarifas − IOF cobrados na contratação), FCj cada
@@ -30,10 +31,14 @@ _DIAS_ANO = Decimal("365")
 _TOL_I = Decimal("1e-12")       # tolerância no passo da taxa
 _MAX_NEWTON = 100
 _MAX_BISSECAO = 300
-_LIMIAR_DIVERGENCIA_PP = Decimal("0.5")   # p.p. anuais (Res. 3.517 + CDC 46/52)
+_LIMIAR_DIVERGENCIA_PP = Decimal("0.5")   # p.p. anuais (Res. 4.881/2020 + CDC 46/52)
+
+NORMA_CET_VIGENTE = "Resolução CMN nº 4.881/2020"
+NORMA_OPERACIONAL_CET = "Instrução Normativa BCB nº 83/2021"
 
 BASE_LEGAL_CET = [
-    "Res. CMN 3.517/2007 (metodologia e divulgação obrigatória do CET)",
+    f"{NORMA_CET_VIGENTE} (cálculo e informação obrigatória do CET)",
+    f"{NORMA_OPERACIONAL_CET} (esclarecimentos operacionais e demonstrativo do CET)",
     "CDC art. 46 (conhecimento prévio do conteúdo do contrato)",
     "CDC art. 52 (informação de juros, acréscimos e total a pagar)",
 ]
@@ -214,7 +219,7 @@ def calcular_cet(
         f"= valor líquido entregue (FC0) R$ {_q(liquido)}.",
         f"2. Fluxo de pagamentos: {len(fluxos)} parcela(s), total R$ {_q(total_pago)}; "
         f"prazos de {fluxo_detalhe[0]['dias']} a {fluxo_detalhe[-1]['dias']} dias corridos.",
-        "3. Equação do CET (Res. CMN 3.517/2007, Anexo): "
+        f"3. Equação do CET ({NORMA_CET_VIGENTE}; {NORMA_OPERACIONAL_CET}): "
         "FC0 = Σ FCj / (1 + CET)^(dj/365).",
         f"4. Resolução numérica: método {sol['metodo']}, {sol['iteracoes']} iteração(ões), "
         f"resíduo |g| = {abs(sol['residuo']):.2E} (aritmética Decimal).",
@@ -242,7 +247,7 @@ def calcular_cet(
                 "observacao": (
                     "A divergência entre o CET informado e o efetivamente praticado "
                     "pode caracterizar violação ao dever de informação (CDC arts. 46 e "
-                    "52; Res. CMN 3.517/2007). Verificar se todos os encargos foram "
+                    f"52; {NORMA_CET_VIGENTE}). Verificar se todos os encargos foram "
                     "considerados antes de alegar em juízo."
                 ),
             }
