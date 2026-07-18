@@ -112,8 +112,9 @@ def test_schema_20_digitos_continua_exigindo_cnj_valido():
         _case_create("11111111111111111111")  # 20 dígitos, DV não confere
 
 
-def test_schema_texto_livre_limitado_a_60_chars():
-    assert _case_create("x" * 60).numero_processo == "x" * 60
+def test_schema_texto_livre_limitado_a_largura_da_coluna():
+    # 30 = String(30) de Case.numero_processo — acima disso estouraria no banco.
+    assert _case_create("x" * 30).numero_processo == "x" * 30
     with pytest.raises(ValidationError) as exc:
-        _case_create("x" * 61)
+        _case_create("x" * 31)
     assert "muito longo" in str(exc.value)

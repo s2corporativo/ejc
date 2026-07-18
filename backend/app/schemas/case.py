@@ -6,7 +6,9 @@ from datetime import datetime, date
 from decimal import Decimal
 
 
-_NUMERO_PROCESSO_MAX = 60
+# Deve casar com Case.numero_processo (String(30) em models/case.py) — um
+# limite maior aqui passaria na validação e estouraria no INSERT (500).
+_NUMERO_PROCESSO_MAX = 30
 
 
 def _validar_numero_processo_cnj(v: Optional[str]) -> Optional[str]:
@@ -17,8 +19,8 @@ def _validar_numero_processo_cnj(v: Optional[str]) -> Optional[str]:
     validators_service.validar_cnj) só se aplica quando o valor PARECE um
     número CNJ — 20 dígitos após remover a pontuação (com ou sem a máscara
     NNNNNNN-DD.AAAA.J.TR.OOOO). Processos ADMINISTRATIVOS (JARI/SEI/PAD etc.)
-    têm numeração própria e são aceitos como texto livre, limitado a
-    60 caracteres. Só roda em CaseCreate/CaseUpdate — a LEITURA
+    têm numeração própria e são aceitos como texto livre, limitado à largura
+    da coluna (30 caracteres). Só roda em CaseCreate/CaseUpdate — a LEITURA
     (CaseResponse/CaseDetail) não valida, para não quebrar casos legados já
     gravados com número fora do padrão.
     """

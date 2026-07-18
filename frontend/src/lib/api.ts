@@ -132,18 +132,36 @@ export interface AplicarExtracaoResult {
   aviso: string;
 }
 
+export interface VincularLoteResult {
+  ok: boolean;
+  batch_id: string;
+  case_id: string;
+  documentos_vinculados: number;
+  documentos_ja_vinculados: number;
+  duplicatas_tecnicas_removidas: number;
+  copias_isoladas: number;
+  /** Itens que NÃO puderam ser vinculados (ex.: arquivo ausente/externo). */
+  conflitos: { document_id: string; filename: string; motivo: string }[];
+  operacao_idempotente: boolean;
+  revisao_obrigatoria: boolean;
+}
+
 /**
  * Vincula TODOS os originais de um lote da Entrada Universal ao caso (e ao
  * cliente do caso) via POST /entrada-universal/{batch_id}/vincular-caso.
  * O backend é idempotente e remove duplicatas técnicas recentes (sha256).
+ * ATENÇÃO: 200 pode vir com `conflitos` não vazio — o chamador deve exibir
+ * esses itens ao usuário em vez de tratar como sucesso pleno.
  */
 export async function vincularLoteAoCaso(
   batchId: string,
   caseId: string,
-): Promise<void> {
-  await api.post(`/entrada-universal/${batchId}/vincular-caso`, {
-    case_id: caseId,
-  });
+): Promise<VincularLoteResult> {
+  const { data } = await api.post<VincularLoteResult>(
+    `/entrada-universal/${batchId}/vincular-caso`,
+    { case_id: caseId },
+  );
+  return data;
 }
 
 /**

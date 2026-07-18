@@ -19,7 +19,32 @@ import {
 import api, { aplicarExtracao, vincularLoteAoCaso } from "../lib/api";
 import { asList } from "../lib/list";
 import { areaLabel, useAreas } from "../lib/areas";
-import type { AplicarExtracaoResult, ExtracaoPayload } from "../lib/api";
+import type {
+  AplicarExtracaoResult,
+  ExtracaoPayload,
+  VincularLoteResult,
+} from "../lib/api";
+
+/**
+ * O vínculo de lote pode retornar 200 com `conflitos` (itens que apontam para
+ * documento de outro caso sem arquivo clonável — ex.: ausente/externo). Isso
+ * NÃO é sucesso pleno: avisa o usuário quais documentos ficaram de fora e onde
+ * resolvê-los, em vez de seguir em silêncio.
+ */
+function avisarConflitosDeVinculo(vinc: VincularLoteResult) {
+  const conflitos = vinc?.conflitos ?? [];
+  if (conflitos.length === 0) return;
+  const nomes = conflitos
+    .slice(0, 3)
+    .map((c) => c.filename)
+    .join(", ");
+  const extra = conflitos.length > 3 ? ` e mais ${conflitos.length - 3}` : "";
+  toast.error(
+    `${conflitos.length} documento(s) do lote não puderam ser vinculados ao caso ` +
+      `(${nomes}${extra}). Eles permanecem na Entrada Universal/GED de origem — ` +
+      `verifique e anexe manualmente pelo caso.`,
+  );
+}
 import {
   carregarRascunho,
   salvarRascunho,
@@ -536,7 +561,8 @@ export default function Casos() {
           if (batchId) {
             // Entrada Universal: vincula TODOS os arquivos do lote ao caso (e
             // ao cliente) de uma vez — sem re-upload nem duplicata do 1º arquivo.
-            await vincularLoteAoCaso(batchId, novo.id);
+            const vinc = await vincularLoteAoCaso(batchId, novo.id);
+            avisarConflitosDeVinculo(vinc);
           } else if (arquivoOriginal) {
             await anexarDocumento(
               novo.id,
@@ -614,7 +640,8 @@ export default function Casos() {
     try {
       if (pendencia.batchId) {
         // Vínculo em lote (idempotente): religa TODOS os arquivos ao caso.
-        await vincularLoteAoCaso(pendencia.batchId, pendencia.caseId);
+        const vinc = await vincularLoteAoCaso(pendencia.batchId, pendencia.caseId);
+        avisarConflitosDeVinculo(vinc);
       } else if (pendencia.arquivo) {
         await anexarDocumento(
           pendencia.caseId,
