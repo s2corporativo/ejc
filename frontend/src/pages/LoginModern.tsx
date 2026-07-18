@@ -315,13 +315,16 @@ export default function LoginModern() {
                     Voltar e alterar credenciais
                   </button>
                 ) : (
-                  <div className="text-center">
+                  <div className="space-y-2 text-center">
                     <Link
                       to="/recuperar-senha"
                       className="text-xs font-medium text-primary-600 transition-colors hover:text-primary-700"
                     >
                       Esqueci minha senha
                     </Link>
+                    <p className="text-xs text-slate-400">
+                      Não tem acesso? Solicite ao administrador do escritório.
+                    </p>
                   </div>
                 )}
               </div>

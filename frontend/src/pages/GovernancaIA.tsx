@@ -180,7 +180,7 @@ export default function GovernancaIA() {
 
   const tabs = [
     { k: "visao", label: "Visão geral", icon: BrainCircuit },
-    { k: "curadoria", label: "Curadoria RAG", icon: Database },
+    { k: "curadoria", label: "Curadoria da base de conhecimento", icon: Database },
     { k: "mgjec", label: "MG/JEC", icon: Gavel },
     { k: "prompts", label: "Prompts", icon: SlidersHorizontal },
     { k: "fontes", label: "Fontes", icon: FileCheck2 },
@@ -192,7 +192,7 @@ export default function GovernancaIA() {
       <PageHeader
         eyebrow="Governança"
         title="Governança da IA"
-        subtitle="Curadoria, prompts, HITL, fontes e controles de risco da inteligência jurídica"
+        subtitle="Curadoria, prompts, revisão do advogado, fontes e controles de risco da inteligência jurídica"
       />
 
       <div className="flex flex-wrap gap-2 mb-5">
@@ -216,7 +216,7 @@ export default function GovernancaIA() {
               hint="período 30 dias"
             />
             <Kpi
-              label="HITL peças revisadas"
+              label="Peças com revisão do advogado"
               value={
                 dash?.ia?.hitl_pecas_pct != null
                   ? `${dash.ia.hitl_pecas_pct}%`
@@ -305,7 +305,7 @@ export default function GovernancaIA() {
           </div>
           <div className="grid lg:grid-cols-3 gap-4">
             <Box title="RAG por confiança" data={dash?.rag?.por_confianca} />
-            <Box title="HITL por status" data={dash?.ia?.por_status} />
+            <Box title="Revisões por status" data={dash?.ia?.por_status} />
             <Box title="Fontes por status" data={dash?.fontes?.por_status} />
           </div>
           <div className="card p-4 border-l-4 border-l-warn-500">

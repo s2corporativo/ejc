@@ -549,7 +549,8 @@ export const STAFF_ROUTES: ModuleRoute[] = [
     key: "knowledge-hub",
     path: "/knowledge-hub",
     label: "Conhecimento Jurídico",
-    description: "Busca unificada em RAG, teses, jurisprudência e memória.",
+    description:
+      "Busca unificada na base de conhecimento, teses, jurisprudência e memória.",
     group: "Pesquisar & IA",
     icon: BookOpen,
     component: KnowledgeHub,
@@ -733,7 +734,7 @@ export const STAFF_ROUTES: ModuleRoute[] = [
     key: "governanca-ia",
     path: "/ia-governanca",
     label: "Governança da IA",
-    description: "Curadoria, fontes, prompts sistêmicos e guardrails.",
+    description: "Curadoria, fontes e regras de segurança da IA.",
     group: "Administrar",
     icon: Sparkles,
     component: GovernancaIA,
@@ -978,7 +979,7 @@ export const LEGACY_REDIRECTS: LegacyRedirect[] = [
     from: "/conhecimento",
     to: "/inteligencia?tab=conhecimento",
     reason:
-      "Curadoria RAG foi incorporada ao workspace de Inteligência Jurídica.",
+      "Curadoria da base de conhecimento foi incorporada ao workspace de Inteligência Jurídica.",
   },
 ];
 
@@ -1016,6 +1017,16 @@ export function getHelpModuleKey(pathname: string): string | null {
     return pathname === base || pathname.startsWith(`${base}/`);
   });
   return match?.helpKey ?? null;
+}
+
+/**
+ * Título humano do módulo a partir do helpKey (ex.: "inteligencia" →
+ * "Inteligência Jurídica"). Evita exibir o slug técnico em títulos de UI
+ * como o painel "Ajuda — {módulo}".
+ */
+export function getModuleTitleByHelpKey(helpKey: string): string | null {
+  const match = STAFF_ROUTES.find((module) => module.helpKey === helpKey);
+  return match?.label ?? null;
 }
 
 export function canRoleAccessPath(

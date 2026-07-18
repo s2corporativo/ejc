@@ -179,18 +179,26 @@ export default function Documentos() {
   const adicionarArquivos = (lista: FileList | File[] | null) => {
     if (!lista) return;
     const novos: PendenteUpload[] = [];
-    let ignorados = 0;
+    const ignorados: string[] = [];
     Array.from(lista).forEach((f) => {
       if (!EXTS_UPLOAD.includes(extDe(f.name))) {
-        ignorados += 1;
+        ignorados.push(f.name);
         return;
       }
       // Título automático: nome do arquivo sem a extensão (editável abaixo).
       novos.push({ file: f, titulo: semExtensao(f.name) });
     });
-    if (ignorados > 0) {
+    if (ignorados.length > 0) {
+      // Mensagem completa: QUAIS arquivos foram recusados e QUAIS formatos
+      // servem — a versão antiga ("extensão não permitida") não dizia nem
+      // o arquivo nem a solução (usabilidade §3.5).
+      const formatos = EXTS_UPLOAD.map((e) =>
+        e.replace(".", "").toUpperCase(),
+      ).join(", ");
       toast.error(
-        `${ignorados} arquivo(s) ignorado(s): extensão não permitida`,
+        ignorados.length === 1
+          ? `O arquivo "${ignorados[0]}" não foi aceito. Formatos permitidos: ${formatos}.`
+          : `Os arquivos ${ignorados.map((n) => `"${n}"`).join(", ")} não foram aceitos. Formatos permitidos: ${formatos}.`,
       );
     }
     if (novos.length > 0) setPendentes((p) => [...p, ...novos]);
