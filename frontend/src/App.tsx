@@ -9,6 +9,7 @@ import {
 import { ToastContainer } from "./components/Toast";
 import { Spinner } from "./components/UI";
 import ErrorBoundary from "./components/ErrorBoundary";
+import EntradaUniversalGlobal from "./components/EntradaUniversalGlobal";
 import Layout from "./components/Layout";
 import PortalLayout from "./components/PortalLayout";
 import {
@@ -101,7 +102,10 @@ export default function App() {
               element={
                 <Protected>
                   <StaffOnly>
-                    <Layout />
+                    <>
+                      <Layout />
+                      <EntradaUniversalGlobal />
+                    </>
                   </StaffOnly>
                 </Protected>
               }
