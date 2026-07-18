@@ -8,6 +8,7 @@ import {
   ChevronDown,
   ChevronUp,
   Copy,
+  Database,
   ExternalLink,
   FolderOpen,
   Quote,
@@ -41,11 +42,14 @@ const CATEGORIAS = [
 
 // ── Tipos: espelham os campos REAIS das respostas dos endpoints ──────────────
 // GET /rag/buscar → { query, modo, resultados: RagHit[] }
-//   (branch semântica: chunk_id, conteudo, titulo, categoria, confianca, score;
-//    branch textual/RRF acrescenta fonte e rrf. NÃO retorna doc_id — por isso
-//    não há como fazer download/preview do documento de origem.)
+//   (branch semântica: chunk_id, doc_id, conteudo, titulo, categoria,
+//    confianca, score; branch textual/RRF acrescenta fonte e rrf. doc_id
+//    aponta para knowledge_docs — habilita o atalho de curadoria abaixo.
+//    Pendência: "Ver documento" continua sem ação porque não existe endpoint
+//    de conteúdo/download por doc — GET /rag/docs é só listagem de metadados.)
 interface RagHit {
   chunk_id?: string;
+  doc_id?: string | null;
   conteudo?: string;
   titulo?: string;
   categoria?: string;
@@ -513,6 +517,19 @@ function ResultCard({ r }: { r: ResultadoUnificado }) {
                 className="btn-secondary text-xs inline-flex items-center gap-1"
               >
                 <FolderOpen className="h-3.5 w-3.5" /> {origem.label}
+              </Link>
+            )}
+            {/* doc_id (novo em /rag/buscar) → abre a Curadoria RAG já
+                focada no documento. Não chama PATCH /ia-governanca/
+                rag-curadoria/{doc_id} daqui: o endpoint exige o veredicto
+                (confidence_level/rag_status), decisão que pertence à tela
+                de curadoria (admin/sócio). */}
+            {r.rag?.doc_id && (
+              <Link
+                to={`/ia-governanca?tab=curadoria&doc_id=${r.rag.doc_id}`}
+                className="btn-secondary text-xs inline-flex items-center gap-1"
+              >
+                <Database className="h-3.5 w-3.5" /> Enviar para curadoria
               </Link>
             )}
             {r.memoria?.case_id && (

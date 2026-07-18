@@ -41,6 +41,7 @@ export default function PortalDashboard() {
   const [fees, setFees] = useState<any[]>([]);
   const [solicitacoes, setSolicitacoes] = useState<any[]>([]);
   const [assinaturas, setAssinaturas] = useState<any[]>([]);
+  const [mensagensNaoLidas, setMensagensNaoLidas] = useState(0);
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
@@ -51,12 +52,16 @@ export default function PortalDashboard() {
       api.get("/portal/financeiro"),
       api.get("/portal/solicitacoes-documentos"),
       api.get("/signatures/"),
+      // Contagem SEM efeito colateral (não marca como lida) — próprio p/ badge.
+      api.get("/portal/mensagens/nao-lidas"),
     ])
-      .then(([c, f, s, a]) => {
+      .then(([c, f, s, a, m]) => {
         if (c.status === "fulfilled") setCasos(asList(c.value.data));
         if (f.status === "fulfilled") setFees(asList(f.value.data));
         if (s.status === "fulfilled") setSolicitacoes(asList(s.value.data));
         if (a.status === "fulfilled") setAssinaturas(asList(a.value.data));
+        if (m.status === "fulfilled")
+          setMensagensNaoLidas(Number(m.value.data?.nao_lidas) || 0);
       })
       .finally(() => setLoading(false));
   }, []);
