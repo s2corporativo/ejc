@@ -58,20 +58,35 @@ const toneClasses: Record<Tone, string> = {
   ouro: "bg-ouro-palha text-ouro-profundo ring-ouro-claro/60",
 };
 
-// Botões SEM BORDA (regra global do DS "De Paula Teixeira"): primary em
-// gradiente ouro #8F7117 → ouro profundo #6F5711 (texto branco 4,6:1+ AA),
-// secundário TONAL (fundo levíssimo, sem outline), ghost terciário.
-// Profundidade só por sombra suave; foco com ring dourado acessível.
+// Borda SUPERIOR de 3px do KPI card (idioma Verdelimp) na cor do
+// indicador — mapeada nos tokens de cor EXISTENTES do EJC.
+const toneBarClasses: Record<Tone, string> = {
+  slate: "border-t-slate-400",
+  blue: "border-t-primary-400",
+  green: "border-t-success-500",
+  amber: "border-t-warn-500",
+  orange: "border-t-orange-500",
+  red: "border-t-danger-500",
+  purple: "border-t-ai-500",
+  violet: "border-t-violet-500",
+  teal: "border-t-teal-500",
+  ouro: "border-t-ouro-claro",
+};
+
+// Botões no idioma flat/compacto (padrão Verdelimp, cores EJC): primary
+// em ouro CHAPADO #8F7117 (texto branco 4,6:1+ AA, sem gradiente/sombra),
+// secundário NEUTRO (branco com borda 1px), ghost terciário.
+// Foco com ring dourado acessível.
 const buttonClasses: Record<ButtonVariant, string> = {
   primary:
-    "bg-gradient-to-b from-ouro to-ouro-profundo text-white shadow-gold hover:from-ouro-profundo hover:to-ouro-profundo hover:shadow-gold-hover focus:ring-ouro/40",
+    "bg-ouro text-white hover:bg-ouro-profundo active:bg-ouro-profundo focus:ring-ouro/40",
   secondary:
-    "bg-slate-900/[0.05] text-slate-700 hover:bg-slate-900/[0.09] active:bg-slate-900/[0.12] focus:ring-ouro/30 dark:bg-white/[0.07] dark:text-slate-200 dark:hover:bg-white/[0.12]",
+    "border border-gray-300 bg-white text-slate-700 hover:bg-slate-50 active:bg-slate-100 focus:ring-ouro/30 dark:border-white/[0.14] dark:bg-white/[0.07] dark:text-slate-200 dark:hover:bg-white/[0.12]",
   ghost:
     "bg-transparent text-slate-600 hover:bg-slate-900/[0.05] focus:ring-ouro/30 dark:text-slate-300 dark:hover:bg-white/[0.06]",
   danger:
-    "bg-danger-600 text-white hover:bg-danger-700 hover:shadow-md focus:ring-danger-500/40",
-  ai: "bg-ai-600 text-white shadow-sm hover:bg-ai-500 active:bg-ai-700 hover:shadow-md focus:ring-ai-500/40",
+    "bg-danger-600 text-white hover:bg-danger-700 focus:ring-danger-500/40",
+  ai: "bg-ai-600 text-white hover:bg-ai-500 active:bg-ai-700 focus:ring-ai-500/40",
 };
 
 export function cn(...classes: Array<string | false | null | undefined>) {
@@ -93,15 +108,15 @@ export function Button({
 }) {
   const sizeClass = {
     sm: "h-8 px-3 text-xs",
-    md: "h-10 px-4 text-sm",
-    lg: "h-11 px-5 text-sm",
-    icon: "h-10 w-10 p-0",
+    md: "h-9 px-4 text-[13px]",
+    lg: "h-10 px-5 text-sm",
+    icon: "h-9 w-9 p-0",
   }[size];
   return (
     <button
       {...props}
       className={cn(
-        "inline-flex items-center justify-center gap-2 rounded-xl font-medium transition-all duration-150 ease-out active:scale-[.98]",
+        "inline-flex items-center justify-center gap-2 rounded-lg font-bold transition-all duration-150 ease-out active:scale-[.98]",
         "focus:outline-none focus-visible:ring-2 disabled:cursor-not-allowed disabled:opacity-50",
         sizeClass,
         buttonClasses[variant],
@@ -384,14 +399,14 @@ export function PageHeader({
   return (
     <div className="mb-6 flex flex-col gap-4 sm:flex-row sm:items-end sm:justify-between">
       <div className="min-w-0">
-        {eyebrow && <div className="eyebrow mb-2">{eyebrow}</div>}
-        {/* Serifa institucional + filete ouro: identidade Visual Law, com moderação */}
-        <h1 className="font-serif text-2xl font-semibold tracking-tight text-slate-950 md:text-3xl">
+        {eyebrow && <div className="eyebrow mb-1.5">{eyebrow}</div>}
+        {/* Título denso (~20px/700) na cor escura da marca + filete ouro */}
+        <h1 className="text-xl font-bold tracking-tight text-primary-900">
           {title}
         </h1>
-        <div className="mt-2 h-0.5 w-10 rounded-full bg-ouro-claro" />
+        <div className="mt-1.5 h-0.5 w-10 rounded-full bg-ouro-claro" />
         {subtitle && (
-          <p className="mt-2 max-w-3xl text-sm text-slate-500">{subtitle}</p>
+          <p className="mt-1.5 max-w-3xl text-sm text-slate-500">{subtitle}</p>
         )}
       </div>
       {actions && (
@@ -419,11 +434,18 @@ export function StatCard({
   trend?: "up" | "down";
 }) {
   return (
-    <Card className="p-5">
+    <Card
+      className={cn(
+        "rounded-[10px] border-t-[3px] p-4",
+        toneBarClasses[tone],
+      )}
+    >
       <div className="flex items-start justify-between gap-3">
         <div>
-          <p className="text-xs font-medium text-slate-400">{label}</p>
-          <div className="mt-2 text-3xl font-semibold tracking-tight text-slate-950 tabular-nums">
+          <p className="text-[10px] font-semibold uppercase tracking-wide text-slate-500">
+            {label}
+          </p>
+          <div className="mt-1.5 text-xl font-bold tracking-tight text-slate-950 tabular-nums">
             {value}
           </div>
           {subtitle && (
@@ -433,7 +455,7 @@ export function StatCard({
         {icon && (
           <div
             className={cn(
-              "rounded-xl p-2.5 ring-1 ring-inset",
+              "rounded-lg p-2 ring-1 ring-inset",
               toneClasses[tone],
             )}
           >
