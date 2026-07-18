@@ -8,6 +8,7 @@ on:
 
 permissions:
   contents: read
+  statuses: write
 
 concurrency:
   group: recover-ejc-runner-once
@@ -68,3 +69,20 @@ jobs:
           $SUDO ./svc.sh start
           $SUDO ./svc.sh status
           REMOTE
+
+      - name: Registrar resultado no commit
+        if: always()
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const ok = '${{ job.status }}' === 'success';
+            await github.rest.repos.createCommitStatus({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              sha: context.sha,
+              state: ok ? 'success' : 'failure',
+              context: 'ops/runner-recovery',
+              description: ok
+                ? 'Runner ejc-vps reiniciado e validado'
+                : 'Falha ao recuperar o runner ejc-vps',
+            });
