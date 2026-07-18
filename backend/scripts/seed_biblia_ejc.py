@@ -77,7 +77,8 @@ async def executar_seed_biblia(db, *, embutir_vetores: bool = True) -> dict:
             conteudo=d["conteudo"],
             chave_origem=d["chave_origem"],
             fonte=FONTE_SLUG,
-            extra=d.get("extra"),
+            extra={**(d.get("extra") or {}), "rag_status": "aprovado",
+                   "uso_autorizado": "estrutura", "ficticio": True},
             confianca="media",   # material didático fictício → exige revisão humana
             embutir_vetores=embutir_vetores,
         )

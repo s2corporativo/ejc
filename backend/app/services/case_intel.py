@@ -413,6 +413,9 @@ async def indexar_peca_rag(legal_doc_id: str) -> None:
                 "human_reviewed": bool(getattr(d, "human_reviewed", False)),
                 "fonte_tipo": "producao_interna",
             }
+            meta["rag_status"] = (
+                "aprovado" if meta["human_reviewed"] else "pendente"
+            )
             # Módulo 6 — classificação automática (best effort).
             if settings.AI_ENABLED:
                 try:

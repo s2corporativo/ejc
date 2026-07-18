@@ -218,6 +218,7 @@ async def executar_seed_conhecimento(
             chave_origem=d["chave_origem"],
             fonte=FONTE_SEED,
             tribunal=d.get("tribunal"),
+            extra={"rag_status": "aprovado", "origem": "seed_interno_curado"},
             confianca="alta",   # material interno curado do escritório
             embutir_vetores=embutir_vetores,
         )
