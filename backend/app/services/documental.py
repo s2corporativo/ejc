@@ -3,6 +3,7 @@ from __future__ import annotations
 from datetime import datetime, timezone
 from uuid import uuid4
 
+from app.core.config import get_settings
 from app.core.database import AsyncSessionLocal
 from app.models.case import Case
 from app.models.client import Client
@@ -12,6 +13,7 @@ from app.services.document_format import aviso_minuta_automatica, padronizar_doc
 
 
 _MARCA = aviso_minuta_automatica() + "\n\n"
+_settings = get_settings()
 
 
 def _qualificacao(c: Client) -> str:
@@ -31,11 +33,15 @@ def _qualificacao(c: Client) -> str:
 
 
 def _procuracao(case: Case, cli: Client, adv: str) -> str:
+    # Dados FIXOS do escritório vêm das settings (fonte única). Quando ainda não
+    # preenchidos no .env, os helpers devolvem placeholder EXPLÍCITO e visível.
+    # A CIDADE de assinatura é a sede do escritório; a DATA depende do caso e
+    # permanece como placeholder de revisão.
     texto = _MARCA + (
         "PROCURACAO AD JUDICIA ET EXTRA\n\n"
         f"OUTORGANTE: {_qualificacao(cli)}.\n\n"
-        f"OUTORGADO(A): {adv}, advogado(a) inscrito(a) na OAB/MG sob o no [OAB/MG no ____], "
-        "integrante de De Paula Teixeira Advogados, com escritorio em [endereco do escritorio].\n\n"
+        f"OUTORGADO(A): {adv}, advogado(a) inscrito(a) na OAB/MG sob o no {_settings.escritorio_oab()}, "
+        f"integrante de {_settings.ESCRITORIO_NOME}, com escritorio em {_settings.escritorio_endereco()}.\n\n"
         "PODERES: Pelo presente instrumento, o(a) outorgante nomeia e constitui seu(sua) "
         "bastante procurador(a) o(a) advogado(a) acima, a quem confere os poderes da clausula "
         "ad judicia et extra, para o foro em geral, em qualquer Juizo, Instancia ou Tribunal, "
@@ -45,7 +51,7 @@ def _procuracao(case: Case, cli: Client, adv: str) -> str:
         "firmar compromisso e substabelecer, com ou sem reserva de poderes, "
         f"especialmente para atuar no caso {case.titulo}"
         f"{(' (processo no ' + case.numero_processo + ')') if case.numero_processo else ''}.\n\n"
-        "[Cidade]/MG, [data].\n\n"
+        f"{_settings.ESCRITORIO_CIDADE}/{_settings.ESCRITORIO_ESTADO}, [data].\n\n"
         "______________________________________\n"
         f"{cli.razao_social or cli.nome}"
     )
@@ -53,11 +59,14 @@ def _procuracao(case: Case, cli: Client, adv: str) -> str:
 
 
 def _contrato_honorarios(case: Case, cli: Client, adv: str, area: str) -> str:
+    # OAB e cidade de assinatura são dados FIXOS do escritório (settings). Valor
+    # dos honorários, percentual de êxito, forma de pagamento, comarca do foro e
+    # data dependem do CASO/CLIENTE e continuam como placeholder de revisão.
     texto = _MARCA + (
         "CONTRATO DE PRESTACAO DE SERVICOS ADVOCATICIOS E HONORARIOS\n\n"
         f"CONTRATANTE: {_qualificacao(cli)}.\n\n"
-        f"CONTRATADO: De Paula Teixeira Advogados, por seu(sua) advogado(a) {adv} "
-        "(OAB/MG no [____]).\n\n"
+        f"CONTRATADO: {_settings.ESCRITORIO_NOME}, por seu(sua) advogado(a) {adv} "
+        f"(OAB/MG no {_settings.escritorio_oab()}).\n\n"
         f"CLAUSULA 1 - OBJETO. Prestacao de servicos advocaticios no caso {case.titulo} "
         f"(area: {area}){(', processo no ' + case.numero_processo) if case.numero_processo else ''}.\n\n"
         "CLAUSULA 2 - HONORARIOS. As partes ajustam honorarios no valor de R$ [____], "
@@ -68,7 +77,7 @@ def _contrato_honorarios(case: Case, cli: Client, adv: str, area: str) -> str:
         "paragrafo 14, do CPC e do artigo 22 da Lei 8.906/94.\n\n"
         "CLAUSULA 5 - DESPESAS. Custas, taxas e despesas processuais correm por conta do contratante.\n\n"
         "CLAUSULA 6 - FORO. Comarca de [____]/MG.\n\n"
-        "[Cidade]/MG, [data].\n\n"
+        f"{_settings.ESCRITORIO_CIDADE}/{_settings.ESCRITORIO_ESTADO}, [data].\n\n"
         f"____________________________   ____________________________\n"
         f"{cli.razao_social or cli.nome} (contratante)        {adv} (contratado)"
     )

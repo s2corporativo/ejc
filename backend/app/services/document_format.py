@@ -138,3 +138,15 @@ def aviso_minuta_automatica() -> str:
         "O advogado responsavel deve conferir campos entre colchetes, fatos, documentos, "
         "valores, prazos e citacoes antes de assinatura, protocolo ou uso externo."
     )
+
+
+def marca_minuta_ia() -> str:
+    """Marca d'água de origem-IA EMBUTIDA no documento exportado (PDF/DOCX)
+    quando a peca e ai_generated e ainda NAO foi human_reviewed. Diferente de
+    aviso_rascunho_ia (campo à parte que nao viaja com o arquivo), esta marca
+    vai no corpo da 1ª pagina — a salvaguarda acompanha o rascunho baixado ou
+    copiado. Versao final revisada sai sem esta marca."""
+    return (
+        "MINUTA GERADA POR IA - REVISAO E ASSINATURA POR ADVOGADO HABILITADO (OAB) "
+        "OBRIGATORIAS. NAO PROTOCOLAR SEM REVISAO."
+    )

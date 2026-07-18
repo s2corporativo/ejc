@@ -663,6 +663,7 @@ async def exportar_pdf(
             titulo, conteudo, pronto_protocolo=True,
             codigo_peca=d.codigo_peca, versao=d.versao,
             status=d.status, revisado_em=d.revisado_em,
+            minuta_ia=bool(d.ai_generated and not d.human_reviewed),
         )
     except RuntimeError as e:
         raise HTTPException(status_code=503, detail=str(e))
@@ -743,6 +744,9 @@ async def documento_unico_impressao(
             titulo, conteudo, pronto_protocolo=True,
             codigo_peca=d.codigo_peca, versao=d.versao,
             status=d.status, revisado_em=d.revisado_em,
+            # Este endpoint exporta em QUALQUER status (rascunho incluso): a marca
+            # de origem-IA precisa viajar com o PDF de impressão do rascunho.
+            minuta_ia=bool(d.ai_generated and not d.human_reviewed),
         )
     except RuntimeError as e:
         raise HTTPException(status_code=503, detail=str(e))
@@ -849,6 +853,10 @@ async def exportar_docx(
         codigo_peca=d.codigo_peca, titulo=d.titulo, versao=d.versao,
         status=d.status, revisado_em=d.revisado_em,
     )
+    # Marca de origem-IA embutida na 1ª página SÓ para rascunho não-revisado
+    # (ai_generated e não human_reviewed). O advogado precisa baixar o DOCX para
+    # editar — nada de gate de bloqueio; a marca d'água na minuta é a salvaguarda.
+    meta["minuta_ia"] = bool(d.ai_generated and not d.human_reviewed)
 
     titulo = padronizar_documento_juridico(d.titulo)
     conteudo = padronizar_documento_juridico(d.conteudo)

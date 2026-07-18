@@ -612,11 +612,37 @@ class Settings(BaseSettings):
     LOG_LEVEL: str = "INFO"
 
     # ── Escritório (LGPD — identificação do controlador de dados) ─────────
+    # FONTE ÚNICA DE VERDADE dos dados FIXOS do escritório, consumida por todos
+    # os geradores de documento (documental.py, templates_documentos.py,
+    # pdf_service.py, docx_service.py). OAB/ENDERECO/CEP nascem VAZIOS de
+    # propósito: são preenchidos no .env do escritório. Quando vazios, os
+    # helpers abaixo devolvem um placeholder EXPLÍCITO e visível — o documento
+    # nunca sai com string vazia silenciosa nem com dado inventado.
     ESCRITORIO_NOME: str = "De Paula Teixeira Sociedade de Advogados"
     ESCRITORIO_CNPJ: str = "32.491.468/0001-12"
     ESCRITORIO_CIDADE: str = "Betim"
     ESCRITORIO_ESTADO: str = "MG"
     ESCRITORIO_EMAIL: str = "contato@depaulateixeira.adv.br"
+    ESCRITORIO_OAB: str = ""
+    ESCRITORIO_ENDERECO: str = ""
+    ESCRITORIO_CEP: str = ""
+
+    @staticmethod
+    def _ou_placeholder(valor: str, rotulo: str) -> str:
+        """Valor da setting, ou um placeholder EXPLÍCITO quando ainda não
+        preenchido no .env — visível no documento para sinalizar a pendência
+        (nunca string vazia, que passaria despercebida)."""
+        limpo = (valor or "").strip()
+        return limpo or f"[{rotulo} - preencher em .env]"
+
+    def escritorio_oab(self) -> str:
+        return self._ou_placeholder(self.ESCRITORIO_OAB, "OAB/MG nº ___")
+
+    def escritorio_endereco(self) -> str:
+        return self._ou_placeholder(self.ESCRITORIO_ENDERECO, "endereço do escritório")
+
+    def escritorio_cep(self) -> str:
+        return self._ou_placeholder(self.ESCRITORIO_CEP, "CEP")
 
     @model_validator(mode="after")
     def _validar_seguranca_producao(self):
