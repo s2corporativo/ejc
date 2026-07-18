@@ -26,8 +26,8 @@ describe("JornadaCaso — fonte única no Orquestrador", () => {
 
     expect(screen.getByText("ORQUESTRADOR_OFICIAL:case-1")).toBeTruthy();
     expect(screen.getByText("Jornada do Caso")).toBeTruthy();
-    expect(screen.getByRole("link", { name: /Abrir no caso/ })).toHaveAttribute(
-      "href",
+    const link = screen.getByRole("link", { name: /Abrir no caso/ });
+    expect(link.getAttribute("href")).toBe(
       "/casos/case-1?tab=orquestrador",
     );
   });
