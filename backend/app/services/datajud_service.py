@@ -34,9 +34,8 @@ from app.core.config import get_settings
 from app.models.case import Case, CaseMovimento
 
 logger = logging.getLogger("ejc.datajud")
-settings = get_settings()
 
-# Fallback histórico; a fonte de verdade é settings.DATAJUD_BASE_URL.
+# Fallback histórico; a fonte de verdade é get_settings().DATAJUD_BASE_URL.
 BASE = "https://api-publica.datajud.cnj.jus.br"
 
 
