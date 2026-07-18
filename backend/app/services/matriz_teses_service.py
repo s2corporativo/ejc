@@ -318,15 +318,6 @@ def calcular_forca(tese: ThesisCandidate | dict) -> int:
 
 # ── Montagem da matriz (orquestração) ────────────────────────────────────────
 
-def _ref_precedente(r: AuthorityRecord) -> dict:
-    return {
-        "authority_id": r.id, "tribunal": r.tribunal,
-        "processo_ref": r.processo_ref,
-        "status_verificacao": r.status_verificacao,
-        "favoravel": r.favoravel, "fonte_oficial": r.fonte_oficial,
-    }
-
-
 async def montar_matriz(
     db, user_id: str, case_id: str, area: str | None, fatos_sanitizados: str,
 ) -> dict:
@@ -347,20 +338,12 @@ async def montar_matriz(
     avisos: list[str] = list(dec.get("avisos") or [])
 
     records: list[AuthorityRecord] = []
-    refs_por_questao: dict[str, list[dict]] = {}
     for issue in issues:
         try:
-            recs = await pesquisar_por_questao(db, case_id, issue)
-            records.extend(recs)
-            refs_por_questao[issue.id] = [_ref_precedente(r) for r in recs]
+            records.extend(await pesquisar_por_questao(db, case_id, issue))
         except Exception as e:  # uma questão falhar não derruba a matriz
             logger.warning("[matriz_teses] pesquisa falhou (%s): %s",
                            issue.questao[:60], str(e)[:150])
-
-    def _refs_da_tese(issue_id: str | None) -> list[dict]:
-        """Precedentes SÓ da questão vinculada — sem vínculo, lista vazia
-        (nunca anexar o pool inteiro a todas as teses)."""
-        return list(refs_por_questao.get(issue_id) or []) if issue_id else []
 
     # Banco de Teses institucional — ativas da área (soft delete respeitado).
     q_teses = select(Tese).where(Tese.status == TeseStatus.ativa,
@@ -374,18 +357,24 @@ async def montar_matriz(
         select(Prova).where(Prova.case_id == case_id, Prova.deleted_at.is_(None))
     )).scalars().all())
 
+    provas_por_tese: dict[str, list[Prova]] = {}
+    for p in provas_caso:
+        if p.tese_id:
+            provas_por_tese.setdefault(p.tese_id, []).append(p)
+
     candidatas: list[ThesisCandidate] = []
     mapa_tese_banco: dict[str, ThesisCandidate] = {}
     for t in teses_banco:
-        provas_t = [p for p in provas_caso if p.tese_id == t.id]
+        provas_t = provas_por_tese.get(t.id, [])
         cand = ThesisCandidate(
             id=str(uuid4()), case_id=case_id, issue_id=None,
             tese=(t.descricao or t.titulo),
             fundamento=(t.fundamentacao or None),
             fatos_relacionados=[p.fato_probando for p in provas_t if p.fato_probando],
             provas=[p.id for p in provas_t],
-            # Tese do Banco sem questão vinculada → SEM precedentes (sem boost).
-            precedentes=_refs_da_tese(None),
+            # Tese do Banco sem questão vinculada → SEM precedentes (sem boost;
+            # nunca anexar o pool inteiro a todas as teses).
+            precedentes=[],
             vulnerabilidades=([t.contra_argumento] if t.contra_argumento else []),
             status="candidata", criado_por=user_id,
         )
@@ -399,7 +388,7 @@ async def montar_matriz(
             id=str(uuid4()), case_id=case_id, issue_id=None,
             tese=s["tese"], fundamento=s.get("fundamento"),
             fatos_relacionados=[], provas=[],
-            precedentes=_refs_da_tese(None), vulnerabilidades=[],
+            precedentes=[], vulnerabilidades=[],
             status="candidata", criado_por=user_id,
         )
         cand.forca = calcular_forca(cand)

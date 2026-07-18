@@ -24,6 +24,7 @@ from uuid import uuid4
 
 from sqlalchemy import or_, select
 
+from app.core.ownership import role_str as _role_str
 from app.models.audit_log import criar_audit_log
 from app.models.case import Case
 from app.models.client import Client
@@ -32,6 +33,7 @@ from app.models.redesign import TabelaOABHonorario
 from app.models.user import User
 from app.services.document_format import padronizar_documento_juridico
 from app.services.documental import _contrato_honorarios, _procuracao
+from app.utils.format import formatar_brl
 
 AVISO_RASCUNHO = (
     "Documentos gerados automaticamente por preenchimento de template "
@@ -182,7 +184,7 @@ def _referencia_oab_txt(item: TabelaOABHonorario) -> str:
     """Texto de referência VERBATIM do item da tabela (sugestão não vinculante)."""
     partes = []
     if item.valor_minimo is not None:
-        partes.append(f"minimo R$ {float(item.valor_minimo):,.2f}")
+        partes.append(f"minimo {formatar_brl(item.valor_minimo)}")
     if item.percentual is not None:
         partes.append(f"{float(item.percentual):g}%")
     valores = " + ".join(partes) if partes else "ver tabela"
@@ -204,11 +206,6 @@ def _checklist_txt(case: Case, cli: Client, area: str) -> str:
         "O advogado responsavel deve adequar os itens ao caso concreto."
     )
     return padronizar_documento_juridico(texto)
-
-
-def _role_str(cu: User) -> str:
-    r = getattr(cu, "role", None)
-    return r.value if hasattr(r, "value") else str(r)
 
 
 async def gerar_kit_inicial(
