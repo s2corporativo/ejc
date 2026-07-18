@@ -414,10 +414,15 @@ async def montar_matriz(
         select(Prova).where(Prova.case_id == case_id, Prova.deleted_at.is_(None))
     )).scalars().all())
 
+    provas_por_tese: dict[str, list[Prova]] = {}
+    for p in provas_caso:
+        if p.tese_id:
+            provas_por_tese.setdefault(p.tese_id, []).append(p)
+
     candidatas: list[ThesisCandidate] = []
     mapa_tese_banco: dict[str, ThesisCandidate] = {}
     for t in teses_banco:
-        provas_t = [p for p in provas_caso if p.tese_id == t.id]
+        provas_t = provas_por_tese.get(t.id, [])
         # Tese do Banco: vínculo lexical determinístico com a questão de origem;
         # sem questão vinculável → SEM precedentes (sem boost indevido).
         issue_id = _vincular_questao(

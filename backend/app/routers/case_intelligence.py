@@ -17,7 +17,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.core.database import get_db
 from app.core.ownership import verificar_acesso_caso
 from app.core.rate_limit import rate_limit
-from app.core.security import get_current_user, ROLE_LEVEL
+from app.core.security import get_current_user, requer_advogado
 from app.models.case_intelligence import CaseIntelligenceSnapshot
 from app.models.user import User
 from app.services import case_intelligence_service as cis
@@ -28,10 +28,7 @@ router = APIRouter(prefix="/cases/{case_id}/inteligencia",
                    tags=["Inteligência do Caso"])
 
 
-def _pode_aprovar(cu: User) -> bool:
-    """Mesmo limiar de intake/motor_peca: advogado+ (HITL é ato de advogado)."""
-    role = getattr(cu.role, "value", cu.role)
-    return ROLE_LEVEL.get(role, 0) >= ROLE_LEVEL["advogado"]
+# Gate advogado+ (HITL é ato de advogado): fonte única core.security.requer_advogado.
 
 
 def _iso(dt) -> str | None:
@@ -107,8 +104,7 @@ async def aprovar(
     409 se já congelado. Snapshot automático nunca nasce aprovado — este
     endpoint é o ÚNICO caminho de aprovação (ato humano, OAB Prov. 205/2021).
     """
-    if not _pode_aprovar(cu):
-        raise HTTPException(403, "Aprovação de snapshot restrita a advogados")
+    requer_advogado(cu, detail="Aprovação de snapshot restrita a advogados")
     await verificar_acesso_caso(db, cu, case_id)
     snap = await cis.aprovar_snapshot(db, snapshot_id, cu, case_id=case_id)
     return {"ok": True, "snapshot": _ser_resumido(snap)}

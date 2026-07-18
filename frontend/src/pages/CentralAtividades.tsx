@@ -39,6 +39,21 @@ type ItemType =
   | "compromisso"
   | "diligencia";
 
+const ITEM_TYPES: readonly ItemType[] = [
+  "prazo",
+  "tarefa",
+  "suspensao",
+  "intimacao",
+  "audiencia",
+  "reuniao",
+  "compromisso",
+  "diligencia",
+];
+
+export function isItemType(value: string | null): value is ItemType {
+  return ITEM_TYPES.includes(value as ItemType);
+}
+
 /** Fonte (router de backend) que serve o item — decide quais ações existem. */
 type Fonte = "prazo" | "tarefa" | "agenda" | "intimacao" | "suspensao";
 
@@ -749,6 +764,16 @@ export default function CentralAtividades() {
     params.set("view", next);
     setSearchParams(params, { replace: true });
   };
+  const rawTipo = searchParams.get("tipo");
+  const filterTipo: ItemType | "todos" = isItemType(rawTipo)
+    ? rawTipo
+    : "todos";
+  const setFilterTipo = (next: ItemType | "todos") => {
+    const params = new URLSearchParams(searchParams);
+    if (next === "todos") params.delete("tipo");
+    else params.set("tipo", next);
+    setSearchParams(params, { replace: true });
+  };
 
   const [items, setItems] = useState<Activity[]>([]);
   const [responsaveis, setResponsaveis] = useState<Responsavel[]>([]);
@@ -770,7 +795,6 @@ export default function CentralAtividades() {
   } | null>(null);
   // Conflito de horário devolvido ao criar/editar evento — aviso não silencioso.
   const [conflitos, setConflitos] = useState<ConflitoEvento[]>([]);
-  const [filterTipo, setFilterTipo] = useState<ItemType | "todos">("todos");
   const [filterUrgencia, setFilterUrgencia] = useState<string>("todos");
   const [filterSituacao, setFilterSituacao] = useState<SituacaoColuna | "todos">(
     "todos",
@@ -1101,8 +1125,8 @@ export default function CentralAtividades() {
   return (
     <div className="p-6 max-w-5xl mx-auto">
       <PageHeader
-        title="Central de Atividades"
-        subtitle="Prazos, tarefas, suspensões e intimações em uma única tela"
+        title="Agenda e Prazos"
+        subtitle="Prazos, tarefas, audiências, compromissos e intimações em uma única tela"
         actions={
           <>
             <button
@@ -1565,3 +1589,4 @@ export default function CentralAtividades() {
     </div>
   );
 }
+

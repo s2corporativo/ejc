@@ -16,6 +16,7 @@ from app.core.config import get_settings
 from app.services.sanitizer import sanitizar_pii, validar_sem_pii
 from app.services.case_context import montar_dossie
 from app.services.ai_gateway import chat as gw_chat, GatewayResponse
+from app.services.legal_base import BASE_ESTRUTURADA
 from app.models.ai_log import AILog, AITipoUso, AIStatusHITL
 
 logger = logging.getLogger(__name__)
@@ -80,15 +81,15 @@ _FILTRO_VIGENTE_RAG = "AND (kd.vigente = TRUE OR :incl_hist)"
 # Os campos de curadoria (confidence_level/rag_status) vivem em
 # knowledge_docs.extra (JSONB). Este gate FAIL-CLOSED é aplicado a TODAS as
 # consultas de recuperação: um documento explicitamente bloqueado/recusado/
-# reprovado/pendente NUNCA entra no prompt. NÃO exige aprovação por padrão
-# (não esvazia o acervo legado nunca curado) — ver RAG_EXIGIR_APROVADO.
+# reprovado/pendente NUNCA entra no prompt. Por padrão, exige aprovação
+# explícita; o acervo legado sem curadoria fica em quarentena.
 _FILTRO_GATE_RAG = (
     "AND NOT ("
     "COALESCE(kd.extra->>'confidence_level','') = 'bloqueado' "
     "OR COALESCE(kd.extra->>'rag_status','') IN "
     "('bloqueado','recusado','reprovado','pendente'))"
 )
-# Regime estrito opcional: quando RAG_EXIGIR_APROVADO=true, só documentos
+# Regime estrito (default): quando RAG_EXIGIR_APROVADO=true, só documentos
 # explicitamente aprovados entram na recuperação.
 _FILTRO_APROVADO_RAG = "AND COALESCE(kd.extra->>'rag_status','') = 'aprovado'"
 # Quarentena de súmulas: o seed foi reconstruído e cada verbete reconferido
@@ -191,7 +192,7 @@ async def _fundir_lexical(db, consulta, semanticos, limite, categorias, scope_cl
             filtro = "AND kd.categoria = ANY(:cats)"
             params["cats"] = categorias
         sql = _text(f"""
-            SELECT kc.id, kc.doc_id, kc.conteudo, kd.titulo, kd.categoria, kd.fonte,
+            SELECT kc.id, kc.doc_id, kc.conteudo, kd.titulo, kd.categoria, kd.fonte, kd.versao,
                    {_SQL_CONFIANCA},
                    similarity(kc.conteudo, :q) AS sim
             FROM knowledge_chunks kc
@@ -213,7 +214,9 @@ async def _fundir_lexical(db, consulta, semanticos, limite, categorias, scope_cl
                 meta[cid] = {"chunk_id": r.id, "doc_id": r.doc_id, "conteudo": r.conteudo,
                              "titulo": r.titulo,
                              "categoria": r.categoria, "fonte": r.fonte,
-                             "confianca": r.confianca, "score": round(float(r.sim), 4)}
+                             "confianca": r.confianca,
+                             "versao": getattr(r, "versao", None),
+                             "score": round(float(r.sim), 4)}
     except Exception as _e:
         logger.warning(f"Fusao lexical (RRF) falhou, mantendo semantico: {_e}")
         return semanticos
@@ -232,7 +235,7 @@ async def _fundir_lexical(db, consulta, semanticos, limite, categorias, scope_cl
                 filtro_f = "AND kd.categoria = ANY(:cats)"
                 params_f["cats"] = categorias
             sql_f = _text(f"""
-                SELECT kc.id, kc.doc_id, kc.conteudo, kd.titulo, kd.categoria, kd.fonte,
+                SELECT kc.id, kc.doc_id, kc.conteudo, kd.titulo, kd.categoria, kd.fonte, kd.versao,
                        {_SQL_CONFIANCA},
                        ts_rank_cd(to_tsvector('portuguese', kc.conteudo),
                                   plainto_tsquery('portuguese', :q)) AS rank
@@ -256,7 +259,9 @@ async def _fundir_lexical(db, consulta, semanticos, limite, categorias, scope_cl
                     meta[cid] = {"chunk_id": r.id, "doc_id": r.doc_id, "conteudo": r.conteudo,
                                  "titulo": r.titulo,
                                  "categoria": r.categoria, "fonte": r.fonte,
-                                 "confianca": r.confianca, "score": round(float(r.rank), 4)}
+                                 "confianca": r.confianca,
+                                 "versao": getattr(r, "versao", None),
+                                 "score": round(float(r.rank), 4)}
         except Exception as _ef:
             logger.warning(f"Fusao FTS (RRF) falhou, ignorando esta perna: {_ef}")
     ordenados = sorted(fusion.items(), key=lambda kv: kv[1], reverse=True)
@@ -361,7 +366,7 @@ async def buscar_contexto_rag(
                 filtro_cat_v = "AND kd.categoria = ANY(:cats)"
                 params_v["cats"] = categorias
             sql_v = text(f"""
-                SELECT kc.id, kc.doc_id, kc.conteudo, kd.titulo, kd.categoria, kd.fonte,
+                SELECT kc.id, kc.doc_id, kc.conteudo, kd.titulo, kd.categoria, kd.fonte, kd.versao,
                        {_SQL_CONFIANCA},
                        (kc.embedding <=> :vec) AS dist
                 FROM knowledge_chunks kc
@@ -392,6 +397,7 @@ async def buscar_contexto_rag(
                      "titulo": r.titulo,
                      "categoria": r.categoria, "fonte": r.fonte,
                      "confianca": r.confianca,
+                     "versao": getattr(r, "versao", None),
                      "score": round(1 - r.dist, 4)}   # cosine similarity
                     for r in rows_v
                 ]
@@ -430,7 +436,7 @@ async def buscar_contexto_rag(
     params["incl_hist"] = incluir_historico
 
     sql = text(f"""
-        SELECT kc.id, kc.doc_id, kc.conteudo, kd.titulo, kd.categoria, kd.fonte,
+        SELECT kc.id, kc.doc_id, kc.conteudo, kd.titulo, kd.categoria, kd.fonte, kd.versao,
                {_SQL_CONFIANCA}
         FROM knowledge_chunks kc
         JOIN knowledge_docs kd ON kd.id = kc.doc_id
@@ -449,6 +455,7 @@ async def buscar_contexto_rag(
                 "chunk_id": r.id, "doc_id": r.doc_id, "conteudo": r.conteudo,
                 "titulo": r.titulo, "categoria": r.categoria, "fonte": r.fonte,
                 "confianca": r.confianca,
+                "versao": getattr(r, "versao", None),
             }
             for r in rows
         ]
@@ -735,8 +742,11 @@ async def extrair_prazos_ia(
     texto_limpo, houve_pii = sanitizar_pii(texto[:12000])
 
     try:
+        # Fluxo JSON com task fora de _TASKS_COM_BASE ("resumo" — por design):
+        # PREPENDE BASE_ESTRUTURADA no system (padrão peca_service/ia_extra
+        # sugestao-honorarios) — barreira anti-alucinação sem quebrar o parse.
         resposta, resp = await _gateway_text(
-            SYSTEM_EXTRACAO_PRAZOS, texto_limpo,
+            BASE_ESTRUTURADA + "\n\n" + SYSTEM_EXTRACAO_PRAZOS, texto_limpo,
             task_type="resumo", temperature=0.0, max_tokens=1500, nivel="alto",
         )
     except Exception as e:

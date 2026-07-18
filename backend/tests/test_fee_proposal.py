@@ -444,8 +444,8 @@ def test_proposta_para_contrato_exige_aprovada():
     params = proposta_para_contrato(_proposta(status="aprovada"))
     assert params["valor"] == 15000.0                 # faixa "recomendado"
     assert params["exito_percentual"] == 30.0
-    assert "entrada de R$ 5,000.00" in params["forma_pagamento"]
-    assert "5 parcelas mensais de R$ 2,000.00" in params["forma_pagamento"]
+    assert "entrada de R$ 5.000,00" in params["forma_pagamento"]
+    assert "5 parcelas mensais de R$ 2.000,00" in params["forma_pagamento"]
 
 
 def test_proposta_para_contrato_fallback_minimo_e_sem_valor():
@@ -488,10 +488,10 @@ def test_contrato_com_proposta_aprovada_sai_completo():
     txt = _contrato(referencia_oab="item 11.5", proposta=params)
 
     s = get_settings()
-    assert "R$ 15,000.00" in txt                      # valor da proposta aprovada
+    assert "R$ 15.000,00" in txt                      # valor da proposta aprovada
     assert "R$ [____]" not in txt                     # sem placeholder de valor
     assert "30% sobre o proveito economico" in txt    # êxito da proposta
-    assert "entrada de R$ 5,000.00" in txt            # parcelamento
+    assert "entrada de R$ 5.000,00" in txt            # parcelamento
     assert "proposta de honorarios aprovada (versao 1)" in txt
     # Cláusulas fixas de template (determinísticas, sem LLM)
     for marcador in ("RESCISAO", "INADIMPLEMENTO", "REVOGACAO E RENUNCIA",
@@ -518,8 +518,9 @@ async def test_kit_usa_proposta_aprovada_vigente():
 
     aprovada = _proposta(status="aprovada", aprovado_por="u1",
                          aprovado_em=datetime.now(timezone.utc))
-    # execute #1: caso; #2: itens OAB; #3: proposta aprovada vigente
-    db = _FakeDB([_case(), [_item_oab()], aprovada],
+    # execute #1: caso; #2: dedup do kit ([] = não existe); #3: itens OAB;
+    # #4: proposta aprovada vigente
+    db = _FakeDB([_case(), [], [_item_oab()], aprovada],
                  gets={("Client", "cli1"): _cli()})
     out = await gerar_kit_documental(case_id="case1", payload=None,
                                      db=db, cu=_user(UserRole.advogado))
@@ -528,7 +529,7 @@ async def test_kit_usa_proposta_aprovada_vigente():
     assert contrato["proposta_aprovada"]["id"] == "prop1"
     assert contrato["proposta_aprovada"]["versao"] == 1
     assert contrato["proposta_aprovada"]["valor"] == 15000.0
-    assert "R$ 15,000.00" in contrato["conteudo"]
+    assert "R$ 15.000,00" in contrato["conteudo"]
     assert "R$ [____]" not in contrato["conteudo"]
     assert "LGPD" in contrato["conteudo"]
     # Referência OAB continua presente (sugestão não vinculante)
@@ -538,7 +539,7 @@ async def test_kit_usa_proposta_aprovada_vigente():
 async def test_kit_sem_proposta_mantem_comportamento_atual():
     from app.routers.kit_documental import gerar_kit_documental
 
-    db = _FakeDB([_case(), [_item_oab()], None],
+    db = _FakeDB([_case(), [], [_item_oab()], None],
                  gets={("Client", "cli1"): _cli()})
     out = await gerar_kit_documental(case_id="case1", payload=None,
                                      db=db, cu=_user(UserRole.advogado))

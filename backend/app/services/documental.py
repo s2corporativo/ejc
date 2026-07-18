@@ -10,6 +10,7 @@ from app.models.client import Client
 from app.models.legal_doc import LegalDoc, PecaStatus, PecaTipo
 from app.models.user import User
 from app.services.document_format import aviso_minuta_automatica, padronizar_documento_juridico
+from app.utils.format import formatar_brl
 
 
 _MARCA = aviso_minuta_automatica() + "\n\n"
@@ -201,7 +202,7 @@ def _contrato_honorarios(
         )
     else:
         valor = proposta.get("valor")
-        valor_txt = f"R$ {float(valor):,.2f}" if valor is not None else "R$ [____]"
+        valor_txt = formatar_brl(valor) if valor is not None else "R$ [____]"
         forma = proposta.get("forma_pagamento") or "[____]"
         versao = proposta.get("versao")
         origem = (f", conforme proposta de honorarios aprovada"

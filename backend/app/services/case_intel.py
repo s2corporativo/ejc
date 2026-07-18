@@ -27,6 +27,7 @@ from app.models.legal_doc import LegalDoc
 from app.models.ai_log import AILog, AITipoUso, AIStatusHITL
 from app.services.ai_gateway import chat as gw_chat, GatewayResponse
 from app.services.ingestion_service import upsert_documento
+from app.services.legal_base import BASE_ESTRUTURADA
 from app.services.sanitizer import sanitizar_pii
 
 logger = logging.getLogger("ejc.case_intel")
@@ -412,11 +413,18 @@ async def indexar_peca_rag(legal_doc_id: str) -> None:
                 "human_reviewed": bool(getattr(d, "human_reviewed", False)),
                 "fonte_tipo": "producao_interna",
             }
+            meta["rag_status"] = (
+                "aprovado" if meta["human_reviewed"] else "pendente"
+            )
             # Módulo 6 — classificação automática (best effort).
             if settings.AI_ENABLED:
                 try:
+                    # Fluxo JSON ("analise_juridica" fica fora da base por
+                    # design): PREPENDE BASE_ESTRUTURADA no system — padrão
+                    # peca_service/ia_extra sugestao-honorarios (MAPA Passo 3).
                     bruto, _resp = await _gateway_json(
-                        SYS_CLASSIFICAR, limpo[:6000], task_type="analise_juridica",
+                        BASE_ESTRUTURADA + "\n\n" + SYS_CLASSIFICAR,
+                        limpo[:6000], task_type="analise_juridica",
                         temperature=0.05, max_tokens=600, nivel="alto",
                     )
                     cls = _parse_json(bruto)

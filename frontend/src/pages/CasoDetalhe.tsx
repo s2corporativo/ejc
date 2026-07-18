@@ -25,6 +25,7 @@ import IntakeAnalise from "../components/IntakeAnalise";
 import ConversaoChecklist from "../components/ConversaoChecklist";
 import ProvasCaso from "../components/ProvasCaso";
 import DossieEstrategicoCaso from "../components/DossieEstrategicoCaso";
+import OrquestradorPanel from "../components/OrquestradorPanel";
 import CaseBreadcrumb from "../components/CaseBreadcrumb";
 import { ConsultaProfundaTJMG } from "../components/Infosimples";
 import type { Case } from "../types";
@@ -67,6 +68,7 @@ async function baixarDoc(docId: string, filename: string) {
 
 const TABS = [
   { key: "resumo", label: "Resumo" },
+  { key: "orquestrador", label: "Orquestrador" },
   { key: "processos", label: "Processos" },
   { key: "timeline", label: "Timeline" },
   { key: "mensagens", label: "Mensagens" },
@@ -111,7 +113,7 @@ const GROUPS: {
   {
     // Informações principais, cliente e partes, etiquetas, pendências.
     label: "Resumo",
-    tabs: ["resumo", "partes", "etiquetas"],
+    tabs: ["resumo", "orquestrador", "partes", "etiquetas"],
     links: [
       { label: "🧭 Jornada do caso", to: (id) => `/casos/${id}/jornada` },
       {
@@ -3901,6 +3903,8 @@ export default function CasoDetalhe() {
     switch (activeTab) {
       case "resumo":
         return <TabResumo caso={caso} />;
+      case "orquestrador":
+        return <OrquestradorPanel caseId={id} />;
       case "processos":
         return <TabProcessos caseId={id} />;
       case "timeline":

@@ -257,6 +257,108 @@ export async function confirmarPrazo(deadlineId: string): Promise<Deadline> {
   return data;
 }
 
+// ── Orquestrador Jurídico do Caso (§16) ───────────────────
+// Máquina de estados derivada dos ARTEFATOS reais do caso (backend:
+// app/services/legal_case_orchestrator.py). Tudo que a IA produz é rascunho
+// sujeito à revisão do advogado — atos jurídicos nunca são executados aqui.
+
+export interface OrquestradorAcao {
+  acao: string;
+  metodo: string;
+  endpoint: string;
+  /** Documentação dos campos esperados (strings descritivas do backend). */
+  payload_esperado: Record<string, unknown>;
+  /** false ⇒ ato de aprovação humana — o /avancar nunca executa. */
+  executavel_via_orquestrador: boolean;
+}
+
+export interface OrquestradorPendencia {
+  /** "base_fatica" | "aprovacao_humana" | "checklist" | "prazo" | "ato_externo" */
+  tipo: string;
+  detalhe: string;
+  endpoint?: string;
+  /** Itens pendentes quando tipo="checklist". */
+  itens?: Array<Record<string, unknown>>;
+}
+
+export interface OrquestradorProximoPasso {
+  estado: string;
+  estado_rotulo: string;
+  passo_recomendado: string;
+  acoes_disponiveis: OrquestradorAcao[];
+  pendencias_bloqueantes: OrquestradorPendencia[];
+}
+
+export type OrquestradorEtapaStatus =
+  | "concluida"
+  | "em_andamento"
+  | "pendente"
+  | "bloqueada";
+
+export interface OrquestradorEtapa {
+  etapa: string;
+  rotulo: string;
+  status: OrquestradorEtapaStatus;
+}
+
+export interface OrquestradorEvento {
+  versao: number;
+  origem: string;
+  estado?: string | null;
+  resumo?: string | null;
+  congelado: boolean;
+  criado_em?: string | null;
+}
+
+export interface OrquestradorVisao {
+  case_id: string;
+  estado: string;
+  estado_rotulo: string;
+  estados: string[];
+  proximo_passo: OrquestradorProximoPasso;
+  jornada: OrquestradorEtapa[];
+  linha_do_tempo: OrquestradorEvento[];
+}
+
+export interface OrquestradorAvancarResult {
+  executado: boolean;
+  acao: string;
+  /** true quando a ação é ato jurídico — nada foi executado. */
+  requer_aprovacao_humana?: boolean;
+  instrucao?: string;
+  endpoint_humano?: string;
+  estado_anterior?: string | null;
+  estado?: string | null;
+  resultado?: unknown;
+}
+
+/** Visão consolidada: estado + próximo passo + pendências + jornada + linha do tempo. */
+export async function visaoOrquestrador(
+  caseId: string,
+): Promise<OrquestradorVisao> {
+  const { data } = await api.get<OrquestradorVisao>(
+    `/cases/${caseId}/orquestrador`,
+  );
+  return data;
+}
+
+/**
+ * Executa UMA transição da máquina de estados (advogado+; rate limit 10/min).
+ * 422 devolve detail estruturado ({mensagem, acoes_validas?|erros?}); atos de
+ * aprovação humana voltam com requer_aprovacao_humana=true SEM executar nada.
+ */
+export async function avancarOrquestrador(
+  caseId: string,
+  acao: string,
+  params?: Record<string, unknown>,
+): Promise<OrquestradorAvancarResult> {
+  const { data } = await api.post<OrquestradorAvancarResult>(
+    `/cases/${caseId}/orquestrador/avancar`,
+    { acao, params: params ?? null },
+  );
+  return data;
+}
+
 // `redirectTo` permite chegar ao /login com contexto (ex.: ?motivo=senha-alterada
 // após a troca de senha obrigatória) — o redirect é hard, então toasts não
 // sobrevivem. Tipado como `unknown` porque logout também é usado direto como

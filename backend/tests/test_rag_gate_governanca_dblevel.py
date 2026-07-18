@@ -30,9 +30,11 @@ pytestmark = pytest.mark.skipif(
 
 
 @pytest.fixture(autouse=True)
-async def _dispose_engine_apos_teste():
+async def _dispose_engine_apos_teste(monkeypatch):
     """Descarta o pool do engine singleton no MESMO event loop que o usou —
     ver justificativa detalhada em test_rag_isolation_dblevel.py."""
+    from app.services import embedding_service
+    monkeypatch.setattr(embedding_service, "disponivel", lambda: False)
     yield
     from app.core.database import engine
     await engine.dispose()
@@ -104,7 +106,8 @@ async def test_sumulas_em_quarentena_nao_recuperadas():
         await _ins(db, titulo="SUMULA_CHAVE", categoria="trabalhista",
                    conteudo=f"outro verbete {termo}", chave_origem=f"sumula:{uuid4()}")
         await _ins(db, titulo="NAO_SUMULA", categoria="trabalhista",
-                   conteudo=f"jurisprudencia comum {termo}", chave_origem=f"j:{uuid4()}")
+                   conteudo=f"jurisprudencia comum {termo}", chave_origem=f"j:{uuid4()}",
+                   extra={"rag_status": "aprovado"})
         await db.commit()
         try:
             res = await buscar_contexto_rag(db, termo, limite=20, modo_or=True)
@@ -127,7 +130,7 @@ async def test_ficticio_excluido_por_padrao_incluido_sob_demanda():
     async with AsyncSessionLocal() as db:
         await _ins(db, titulo="FIC_MODELO", categoria="modelo_documento_juridico",
                    conteudo=f"modelo ficticio {termo}", chave_origem=f"f:{uuid4()}",
-                   extra={"ficticio": True})
+                   extra={"ficticio": True, "rag_status": "aprovado"})
         await db.commit()
         try:
             # busca ampla (fundamentação) → fictício NÃO aparece
@@ -145,6 +148,48 @@ async def test_ficticio_excluido_por_padrao_incluido_sob_demanda():
             await db.commit()
 
 
+async def test_regime_estrito_exclui_documento_legado_sem_aprovacao():
+    from app.core.database import AsyncSessionLocal
+    from app.services.ai_service import buscar_contexto_rag
+
+    termo = f"zzlegacy{uuid4().hex[:10]}"
+    async with AsyncSessionLocal() as db:
+        await _ins(db, titulo="LEGADO_SEM_CURADORIA", categoria="legislacao",
+                   conteudo=f"norma antiga {termo}", chave_origem=f"legacy:{uuid4()}")
+        await db.commit()
+        try:
+            res = await buscar_contexto_rag(db, termo, limite=20, modo_or=True)
+            assert "LEGADO_SEM_CURADORIA" not in {r["titulo"] for r in res}
+        finally:
+            await db.execute(text(
+                "DELETE FROM knowledge_docs WHERE titulo='LEGADO_SEM_CURADORIA'"))
+            await db.commit()
+
+
+async def test_verificador_citacao_usa_mesmos_gates_do_rag():
+    from app.core.database import AsyncSessionLocal
+    from app.services.citation_check import _existe_sumula
+
+    async with AsyncSessionLocal() as db:
+        await _ins(db, titulo="Súmula STJ nº 997", categoria="sumula_stj",
+                   conteudo="verbete oficial aprovado para teste de citação",
+                   chave_origem="sumula:stj:997",
+                   extra={"rag_status": "aprovado", "conferido": True})
+        await _ins(db, titulo="Súmula STJ nº 998", categoria="sumula_stj",
+                   conteudo="verbete ainda pendente para teste de citação",
+                   chave_origem="sumula:stj:998",
+                   extra={"rag_status": "pendente", "conferido": True})
+        await db.commit()
+        try:
+            assert await _existe_sumula(db, "997", "STJ") == "Súmula STJ nº 997"
+            assert await _existe_sumula(db, "998", "STJ") is None
+        finally:
+            await db.execute(text(
+                "DELETE FROM knowledge_docs WHERE chave_origem IN "
+                "('sumula:stj:997','sumula:stj:998')"))
+            await db.commit()
+
+
 async def test_reingestao_versiona_sem_colidir_indice_unico():
     """Bug P0: reingerir a MESMA chave_origem com conteúdo novo colidia com o
     índice único (não considerava `vigente`). Após a migration 092 + flush
@@ -159,12 +204,14 @@ async def test_reingestao_versiona_sem_colidir_indice_unico():
             "tambem com mais de cinquenta caracteres para valer a reingestao.")
     async with AsyncSessionLocal() as db:
         r1 = await upsert_documento(db, titulo="VER v1", categoria="legislacao",
-                                    conteudo=txt1, fonte="http://x", chave_origem=k)
+                                    conteudo=txt1, fonte="http://x", chave_origem=k,
+                                    embutir_vetores=False)
         await db.commit()
     async with AsyncSessionLocal() as db:
         # NÃO pode lançar IntegrityError (era o bug)
         r2 = await upsert_documento(db, titulo="VER v2", categoria="legislacao",
-                                    conteudo=txt2, fonte="http://x", chave_origem=k)
+                                    conteudo=txt2, fonte="http://x", chave_origem=k,
+                                    embutir_vetores=False)
         await db.commit()
     async with AsyncSessionLocal() as db:
         try:

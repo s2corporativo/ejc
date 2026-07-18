@@ -8,9 +8,11 @@ import {
   Repeat,
   Calculator,
   Calendar,
+  Receipt,
 } from "lucide-react";
 import FinanceiroDashboard from "./FinanceiroDashboard";
 import Honorarios from "./Honorarios";
+import NotasFiscais from "./NotasFiscais";
 import Despesas from "./Despesas";
 import DespesasRecorrentes from "./DespesasRecorrentes";
 import OfficeContracts from "./OfficeContracts";
@@ -22,6 +24,7 @@ import { PageHeader } from "../components/UI";
 const TABS = [
   { k: "visao", label: "Visão", icon: BarChart3 },
   { k: "honorarios", label: "Honorários", icon: Wallet },
+  { k: "nfse", label: "NFS-e", icon: Receipt },
   { k: "despesas", label: "Despesas", icon: TrendingDown },
   { k: "recorrentes", label: "Recorrentes", icon: Repeat },
   { k: "contratos", label: "Contratos", icon: FileText },
@@ -139,6 +142,7 @@ export default function FinanceiroWorkspace() {
             />
           )}
           {tab === "honorarios" && <Honorarios />}
+          {tab === "nfse" && <NotasFiscais />}
           {tab === "despesas" && <Despesas competencia={competencia} />}
           {tab === "recorrentes" && <DespesasRecorrentes />}
           {tab === "contratos" && <OfficeContracts />}

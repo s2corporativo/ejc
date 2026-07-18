@@ -626,6 +626,32 @@ def _enum_val(v) -> str | None:
     return getattr(v, "value", v) if v is not None else None
 
 
+def resolver_termo_evento(
+    evento: Optional[str],
+    data_evento: Optional[date],
+    meio: Optional[str],
+    termo_inicial: Optional[date],
+) -> tuple[Optional[dict], Optional[date], Optional[str]]:
+    """Regra ÚNICA evento→termo do Motor de Peça (router /analisar, tool
+    `calcular_prazo` do agente e confirmar_e_criar_prazo): resolve o evento
+    processual DETERMINISTICAMENTE (evento_processual, base legal citada) e só
+    deriva o termo quando não houve termo_inicial explícito — que SEMPRE tem
+    precedência — e a contagem é confirmável. Nada é presumido: evento incerto
+    devolve o termo_inicial inalterado (possivelmente None).
+
+    Devolve (evento_info, termo_inicial, termo_origem); origem é
+    "informado_pelo_advogado", "derivado_de_evento" ou None."""
+    termo_origem = "informado_pelo_advogado" if termo_inicial else None
+    evento_info = None
+    if evento and data_evento:
+        from app.services.evento_processual import resolver_termo_inicial
+        evento_info = resolver_termo_inicial(evento, data_evento, meio)
+        if termo_inicial is None and evento_info["contagem_confirmavel"]:
+            termo_inicial = evento_info["termo_inicial"]
+            termo_origem = "derivado_de_evento"
+    return evento_info, termo_inicial, termo_origem
+
+
 class GateBloqueado(Exception):
     """Gate de negócio do fluxo confirmar-e-criar-prazo.
 
@@ -686,19 +712,18 @@ async def confirmar_e_criar_prazo(
                 "mensagem": ("Evento processual informado sem data_evento — "
                              "informe a data do evento para derivar o termo inicial."),
             })
-        from app.services.evento_processual import resolver_termo_inicial
-        evento_info = resolver_termo_inicial(evento, data_evento, meio)
+        evento_info, termo_inicial, _ = resolver_termo_evento(
+            evento, data_evento, meio, termo_inicial)
         if termo_inicial is None:
-            if not evento_info["contagem_confirmavel"]:
-                raise GateBloqueado({
-                    "mensagem": ("Termo inicial não determinável com certeza a "
-                                 "partir deste evento — verifique nos autos e "
-                                 "informe termo_inicial manualmente."),
-                    "evento": evento,
-                    "base_legal": evento_info["base_legal"],
-                    "avisos": evento_info["avisos"],
-                })
-            termo_inicial = evento_info["termo_inicial"]
+            # Só ocorre quando a contagem não é confirmável — nada foi presumido.
+            raise GateBloqueado({
+                "mensagem": ("Termo inicial não determinável com certeza a "
+                             "partir deste evento — verifique nos autos e "
+                             "informe termo_inicial manualmente."),
+                "evento": evento,
+                "base_legal": evento_info["base_legal"],
+                "avisos": evento_info["avisos"],
+            })
 
     # Texto-base + LGPD (sanitizar_pii ANTES de qualquer LLM)
     texto_bruto = await texto_base_do_caso(db, case, texto)
@@ -776,10 +801,45 @@ async def confirmar_e_criar_prazo(
                          "caracteres) — anexe documentos ou descreva os fatos."),
         })
 
+    # ── Idempotência (follow-up PR #283): submissão repetida do MESMO prazo
+    # confirmado NÃO duplica o Deadline. Dedup DETERMINÍSTICO e leve (1 SELECT
+    # após TODOS os gates): mesmo caso + mesma peça (título/base_legal) + mesma
+    # data fatal, nascido dos gates (origem motor_peca/agente_juridico), ativo
+    # (não cancelado, não soft-deletado) → devolve o existente com
+    # ja_existia=True, sem persistir/auditar nada de novo.
+    titulo_prazo = f"Prazo — {info['nome']}"[:255]
+    base_legal_prazo = (prazo_info["base_legal"] or "")[:255] or None
+    filtros_dedup = [
+        Deadline.case_id == case.id,
+        Deadline.titulo == titulo_prazo,
+        Deadline.data_prazo == data_prazo,
+        Deadline.origem.in_(("motor_peca", "agente_juridico")),
+        Deadline.status != DeadlineStatus.cancelado,
+        Deadline.deleted_at.is_(None),
+        (Deadline.base_legal == base_legal_prazo
+         if base_legal_prazo is not None else Deadline.base_legal.is_(None)),
+    ]
+    existente = (await db.execute(
+        select(Deadline).where(*filtros_dedup)
+        .order_by(Deadline.created_at.desc()).limit(1)
+    )).scalars().first()
+    if existente is not None:
+        return {
+            "deadline": existente,
+            "ja_existia": True,
+            "data_prazo": data_prazo,
+            "evento_info": evento_info,
+            "termo_inicial": termo_inicial,
+            "prazo_info": prazo_info,
+            "rito_codigo": rito_codigo,
+            "texto_limpo": texto_limpo,
+            "fatos": fatos,
+        }
+
     # ── Deadline (padrão raio_x_service.converter_em_caso) — SÓ após confirmação
     deadline = Deadline(
         id=str(uuid4()),
-        titulo=f"Prazo — {info['nome']}"[:255],
+        titulo=titulo_prazo,
         descricao=("Criado pelo Motor de Peça após confirmação humana do termo "
                    "inicial. Conferir intimação/citação nos autos."),
         tipo=(DeadlineTipo.administrativo if info["tipo_deadline"] == "administrativo"
@@ -788,7 +848,7 @@ async def confirmar_e_criar_prazo(
         status=DeadlineStatus.pendente,
         data_prazo=data_prazo,
         data_intimacao=termo_inicial,
-        base_legal=(prazo_info["base_legal"] or "")[:255] or None,
+        base_legal=base_legal_prazo,
         case_id=case.id,
         responsavel_id=cu.id,
         origem=origem,
@@ -807,6 +867,7 @@ async def confirmar_e_criar_prazo(
 
     return {
         "deadline": deadline,
+        "ja_existia": False,
         "data_prazo": data_prazo,
         "evento_info": evento_info,
         "termo_inicial": termo_inicial,
