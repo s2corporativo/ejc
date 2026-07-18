@@ -10,6 +10,7 @@ import { ToastContainer } from "./components/Toast";
 import { Spinner } from "./components/UI";
 import ErrorBoundary from "./components/ErrorBoundary";
 import EntradaUniversalGlobal from "./components/EntradaUniversalGlobal";
+import FlowEnhancements from "./components/FlowEnhancements";
 import Layout from "./components/Layout";
 import PortalLayout from "./components/PortalLayout";
 import {
@@ -105,6 +106,7 @@ export default function App() {
                     <>
                       <Layout />
                       <EntradaUniversalGlobal />
+                      <FlowEnhancements />
                     </>
                   </StaffOnly>
                 </Protected>
