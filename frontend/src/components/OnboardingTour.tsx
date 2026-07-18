@@ -65,8 +65,8 @@ const TASKS: Task[] = [
     icon: CalendarClock,
     title: "Registre ou confirme um prazo",
     hint: "Cadastre um prazo e dê ciência para não perder nenhuma data processual.",
-    cta: "Ir para Prazos",
-    action: { kind: "rota", path: "/prazos" },
+    cta: "Ir para Agenda e Prazos",
+    action: { kind: "rota", path: "/atividades?tipo=prazo" },
   },
   {
     id: "documento-minuta",
@@ -345,3 +345,4 @@ export default function OnboardingTour() {
     </div>
   );
 }
+
