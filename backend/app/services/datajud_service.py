@@ -24,11 +24,14 @@ from datetime import datetime, timezone
 from uuid import uuid4
 
 import httpx
-from tenacity import (
-    retry, retry_if_exception, stop_after_attempt, wait_exponential,
-)
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
+from tenacity import (
+    retry,
+    retry_if_exception,
+    stop_after_attempt,
+    wait_exponential,
+)
 
 from app.core.config import get_settings
 from app.models.case import Case, CaseMovimento
