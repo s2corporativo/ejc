@@ -138,10 +138,19 @@ def _procuracao(
     return padronizar_documento_juridico(texto)
 
 
-def _contrato_honorarios(case: Case, cli: Client, adv: str, area: str) -> str:
+def _contrato_honorarios(
+    case: Case, cli: Client, adv: str, area: str,
+    referencia_oab: str | None = None,
+) -> str:
     # OAB e cidade de assinatura são dados FIXOS do escritório (settings). Valor
     # dos honorários, percentual de êxito, forma de pagamento, comarca do foro e
     # data dependem do CASO/CLIENTE e continuam como placeholder de revisão.
+    #
+    # `referencia_oab` (kit documental P0.3): texto de referencia extraido da
+    # tabela estruturada TabelaOABHonorario (ou o aviso explicito de "a definir"
+    # quando nao ha item aplicavel). NUNCA substitui o valor contratado — o
+    # R$ [____] permanece placeholder de revisao do advogado.
+    ref = f" ({referencia_oab})" if referencia_oab else ""
     texto = _MARCA + (
         "CONTRATO DE PRESTACAO DE SERVICOS ADVOCATICIOS E HONORARIOS\n\n"
         f"CONTRATANTE: {_qualificacao(cli)}.\n\n"
@@ -150,7 +159,7 @@ def _contrato_honorarios(case: Case, cli: Client, adv: str, area: str) -> str:
         f"CLAUSULA 1 - OBJETO. Prestacao de servicos advocaticios no caso {case.titulo} "
         f"(area: {area}){(', processo no ' + case.numero_processo) if case.numero_processo else ''}.\n\n"
         "CLAUSULA 2 - HONORARIOS. As partes ajustam honorarios no valor de R$ [____], "
-        "tendo como referencia a Tabela de Honorarios da OAB/MG, pagos da seguinte forma: [____].\n\n"
+        f"tendo como referencia a Tabela de Honorarios da OAB/MG{ref}, pagos da seguinte forma: [____].\n\n"
         "CLAUSULA 3 - HONORARIOS DE EXITO. Em caso de exito, fica ajustado o percentual de "
         "[__]% sobre o proveito economico obtido.\n\n"
         "CLAUSULA 4 - HONORARIOS SUCUMBENCIAIS. Pertencem ao contratado, na forma do artigo 85, "

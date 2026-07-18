@@ -111,6 +111,7 @@ from app.routers import triagem_entrevista
 from app.routers import ficha_triagem
 from app.routers import jurisprudencia_interna
 from app.routers import kanban
+from app.routers import kit_documental
 from app.routers import legal_docs
 from app.routers import memoria_institucional
 from app.routers import mensagens
@@ -342,6 +343,7 @@ app.include_router(juris_import.router, prefix=API)
 app.include_router(jurisprudencia_externa.router, prefix=API)
 app.include_router(jurisprudencia_interna.router, prefix=API)
 app.include_router(kanban.router, prefix=API)
+app.include_router(kit_documental.router, prefix=API)  # POST /api/cases/{id}/kit-documental (P0.3)
 app.include_router(legal_docs.router, prefix=API)
 app.include_router(memoria_institucional.router, prefix=API)
 app.include_router(honorarios_oab.router, prefix=API)  # frontend: /api/honorarios-oab/estimar (EstimadorHonorarios)
