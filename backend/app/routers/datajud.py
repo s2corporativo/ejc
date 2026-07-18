@@ -51,6 +51,10 @@ async def lookup_process(
     except (httpx.HTTPError, ValueError, KeyError, TypeError) as exc:
         log.warning("DataJud indisponível (tipo=%s)", type(exc).__name__)
         raise HTTPException(502, "DataJud indisponível. Tente novamente.")
+    except Exception as exc:
+        # Contrato defensivo do endpoint: sem corpo, número CNJ ou segredo no log.
+        log.error("Falha inesperada no DataJud (tipo=%s)", type(exc).__name__)
+        raise HTTPException(502, "DataJud indisponível. Tente novamente.")
 
 
 @router.post("/cases/{case_id}/sync")
@@ -88,6 +92,10 @@ async def sync_case(
     except (httpx.HTTPError, ValueError, KeyError, TypeError) as exc:
         await db.rollback()
         log.warning("Falha no sync DataJud (tipo=%s)", type(exc).__name__)
+        raise HTTPException(502, "Erro ao sincronizar com o DataJud")
+    except Exception as exc:
+        await db.rollback()
+        log.error("Falha inesperada no sync DataJud (tipo=%s)", type(exc).__name__)
         raise HTTPException(502, "Erro ao sincronizar com o DataJud")
 
 
