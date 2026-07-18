@@ -57,10 +57,16 @@ class _Registry:
         spec = self._tools.get(name)
         return bool(spec and spec.requer_confirmacao)
 
-    def schemas(self, role: str) -> list[dict]:
-        """Schemas Anthropic das tools VISÍVEIS para `role`."""
+    def schemas(self, role: str, apenas_leitura: bool = False) -> list[dict]:
+        """Schemas Anthropic das tools VISÍVEIS para `role`.
+
+        `apenas_leitura=True` → exclui as tools de ESCRITA (requer_confirmacao),
+        expondo ao modelo SOMENTE ferramentas de leitura. Usado por fluxos de
+        raciocínio puro (ex.: análise "advogado sênior" do Raio-X) que jamais
+        devem pausar em HITL; o default (False) preserva o comportamento atual."""
         return [s.schema_anthropic() for s in self._tools.values()
-                if self._pode_ver(s, role)]
+                if self._pode_ver(s, role)
+                and not (apenas_leitura and s.requer_confirmacao)]
 
     def nomes_visiveis(self, role: str) -> set[str]:
         return {s.name for s in self._tools.values() if self._pode_ver(s, role)}

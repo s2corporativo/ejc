@@ -141,17 +141,27 @@ def _redigir_tool_results(messages: list[dict]) -> int:
 
 
 async def _processar_tool_calls(tool_calls, *, ctx, messages, aprovacoes_hash,
-                                on_event) -> dict | None:
+                                on_event, apenas_leitura: bool = False) -> dict | None:
     """Executa `tool_calls` em ordem, anexando cada tool_result a `messages`.
       • LEITURA (requer_confirmacao=False) → executa sempre.
       • ESCRITA (requer_confirmacao=True) → só executa se o HASH de (nome+args)
         estiver em `aprovacoes_hash` (aprovação vinculada aos ARGS exatos, H1).
         Senão PAUSA: devolve {"pending": <write>, "restantes": <após o write>}.
+      • `apenas_leitura=True` (defense-in-depth): a write-tool nem foi exposta ao
+        modelo por `schemas(role, apenas_leitura=True)`; se ainda assim for pedida,
+        NÃO pausa em HITL — devolve erro como tool_result e SEGUE (fluxo de
+        raciocínio puro nunca aguarda confirmação humana).
     Retorna None quando processou tudo."""
     for i, tc in enumerate(tool_calls):
         nome = tc.get("name", "")
         args = tc.get("input", {}) or {}
         if REGISTRY.requer_confirmacao(nome):
+            if apenas_leitura:
+                await _emitir(on_event, "ferramenta_bloqueada", {"ferramenta": nome})
+                messages.append(_tool_result_turn(
+                    tc.get("id", ""),
+                    {"erro": "ferramenta_de_escrita_indisponivel_em_modo_leitura"}))
+                continue
             h = hitl_state.hash_tool_call(nome, args)
             if h not in aprovacoes_hash:
                 # HITL: write não aprovada (por args) PAUSA o loop.
@@ -213,6 +223,7 @@ async def rodar_agente(
     aprovacoes_hash: set[str] | None = None,
     retomar_token: str | None = None,
     decisao: str | None = None,
+    apenas_leitura: bool = False,
     on_event=None,
 ) -> dict:
     """Executa (ou RETOMA) o loop agêntico para `mensagem` no `case_id`.
@@ -225,6 +236,11 @@ async def rodar_agente(
     `aprovacoes_hash`: hashes de (nome+args) já aprovados — usado como FALLBACK
     quando o Redis está indisponível (o loop re-roda e só executa a write-tool se
     o tool_call recém-gerado casar o hash).
+
+    `apenas_leitura`: quando True, expõe ao modelo SOMENTE tools de leitura
+    (`schemas(role, apenas_leitura=True)`) e nunca pausa em HITL — para fluxos de
+    raciocínio puro (ex.: análise "advogado sênior" do Raio-X). Default False
+    preserva integralmente o caminho SSE com escrita/HITL.
 
     Retorna um dos:
       • {"status":"ok", "resposta", "is_rascunho":True, "passos":[...],
@@ -327,7 +343,8 @@ async def rodar_agente(
         if restantes:
             pausa = await _processar_tool_calls(
                 restantes, ctx=ctx, messages=messages,
-                aprovacoes_hash=aprovacoes_hash, on_event=on_event)
+                aprovacoes_hash=aprovacoes_hash, on_event=on_event,
+                apenas_leitura=apenas_leitura)
             if pausa is not None:
                 return await _persistir_e_pausar(
                     pending=pausa["pending"], restantes=pausa["restantes"],
@@ -347,7 +364,7 @@ async def rodar_agente(
     while not budget.deve_parar():
         try:
             resp = await chat_agentico(
-                messages, REGISTRY.schemas(role),
+                messages, REGISTRY.schemas(role, apenas_leitura=apenas_leitura),
                 task_type="estrategia", max_tokens=4096,
                 entidades=entidades, modo_sanitizacao=modo_sanitizacao,
             )
@@ -363,7 +380,7 @@ async def rodar_agente(
                 await _emitir(on_event, "degradacao", {"motivo": "pii_residual_redigida"})
                 try:
                     resp = await chat_agentico(
-                        messages, REGISTRY.schemas(role),
+                        messages, REGISTRY.schemas(role, apenas_leitura=apenas_leitura),
                         task_type="estrategia", max_tokens=4096,
                         entidades=entidades, modo_sanitizacao=modo_sanitizacao,
                     )
@@ -446,7 +463,8 @@ async def rodar_agente(
         messages.append(_assistant_turn(resp.get("text", "") or "", tool_calls))
         pausa = await _processar_tool_calls(
             tool_calls, ctx=ctx, messages=messages,
-            aprovacoes_hash=aprovacoes_hash, on_event=on_event)
+            aprovacoes_hash=aprovacoes_hash, on_event=on_event,
+            apenas_leitura=apenas_leitura)
         if pausa is not None:
             return await _persistir_e_pausar(
                 pending=pausa["pending"], restantes=pausa["restantes"],
