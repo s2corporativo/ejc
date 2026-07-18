@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import {
   isActivityView,
   mapAgendaTipo,
+  situacaoColunaDe,
   situacaoDe,
 } from "./CentralAtividades";
 import { isCentralTab } from "./Central";
@@ -32,12 +33,24 @@ describe("CentralAtividades deep links", () => {
 });
 
 describe("situacaoDe — kanban por situação usa só estados reais do backend", () => {
-  it.each(["concluido", "concluida", "tratada", "cancelado", "CONCLUIDO"])(
+  it.each(["concluido", "concluida", "tratada", "CONCLUIDO"])(
     "%s conta como concluído",
     (s) => {
       expect(situacaoDe(s)).toBe("concluido");
     },
   );
+
+  it("cancelado tem situação PRÓPRIA (badge neutra, não o selo verde)", () => {
+    expect(situacaoDe("cancelado")).toBe("cancelado");
+    expect(situacaoDe("CANCELADO")).toBe("cancelado");
+  });
+
+  it("cancelado agrupa na coluna Concluído do kanban (sem coluna própria)", () => {
+    expect(situacaoColunaDe("cancelado")).toBe("concluido");
+    expect(situacaoColunaDe("concluido")).toBe("concluido");
+    expect(situacaoColunaDe("fazendo")).toBe("em_execucao");
+    expect(situacaoColunaDe("pendente")).toBe("nao_tratado");
+  });
 
   it("fazendo (tarefas) é o único estado de execução", () => {
     expect(situacaoDe("fazendo")).toBe("em_execucao");

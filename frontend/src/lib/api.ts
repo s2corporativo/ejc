@@ -133,6 +133,20 @@ export interface AplicarExtracaoResult {
 }
 
 /**
+ * Vincula TODOS os originais de um lote da Entrada Universal ao caso (e ao
+ * cliente do caso) via POST /entrada-universal/{batch_id}/vincular-caso.
+ * O backend é idempotente e remove duplicatas técnicas recentes (sha256).
+ */
+export async function vincularLoteAoCaso(
+  batchId: string,
+  caseId: string,
+): Promise<void> {
+  await api.post(`/entrada-universal/${batchId}/vincular-caso`, {
+    case_id: caseId,
+  });
+}
+
+/**
  * Materializa no caso os dados extraídos por IA de um documento.
  * `dryRun: true` → preview (nada é persistido; devolve o que SERIA aplicado).
  * `dryRun: false` (padrão) → aplica e persiste.
@@ -147,9 +161,7 @@ export async function aplicarExtracao(
 ): Promise<AplicarExtracaoResult> {
   const batchId = extracao.batch_id;
   if (typeof batchId === "string" && batchId) {
-    await api.post(`/entrada-universal/${batchId}/vincular-caso`, {
-      case_id: caseId,
-    });
+    await vincularLoteAoCaso(batchId, caseId);
   }
   // O endpoint legado usa um modelo Pydantic fechado. Metadados ricos da
   // Entrada Universal ficam no lote e só os campos materializáveis seguem.

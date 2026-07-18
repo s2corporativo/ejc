@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import {
   Archive,
   Calculator,
@@ -68,21 +68,31 @@ export default function DefesasRevisoesComplementos({ modalidade, caseId, result
     limite_informado: "",
   });
 
+  // Guarda de corrida: identifica a requisição vigente. Trocar de aba (ou de
+  // modalidade/caso) invalida respostas em voo, para que uma operação da aba
+  // anterior não preencha a `saida` da aba nova.
+  const reqIdRef = useRef(0);
+
   useEffect(() => {
+    reqIdRef.current += 1; // descarta qualquer resposta em voo
     setSaida(null);
+    setLoading("");
   }, [aba, modalidade, caseId]);
 
   const executar = async (nome: string, acao: () => Promise<any>, sucesso: string) => {
+    const meuReqId = ++reqIdRef.current;
     setLoading(nome);
     setSaida(null);
     try {
       const data = await acao();
+      if (reqIdRef.current !== meuReqId) return; // resposta obsoleta
       setSaida(data);
       toast.success(sucesso);
     } catch (error: any) {
+      if (reqIdRef.current !== meuReqId) return; // erro obsoleto
       toast.error(error.response?.data?.detail || "Não foi possível concluir a operação.");
     } finally {
-      setLoading("");
+      if (reqIdRef.current === meuReqId) setLoading("");
     }
   };
 
