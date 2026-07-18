@@ -1,6 +1,7 @@
 """Vinculação posterior de um lote universal a um caso recém-criado."""
 from __future__ import annotations
 
+import asyncio
 import hashlib
 import os
 import shutil
@@ -128,7 +129,8 @@ async def vincular_lote_ao_caso(
     existentes = (await db.execute(existentes_stmt)).scalars().all()
     existentes_por_sha: dict[str, list[Document]] = {}
     for documento in existentes:
-        digest = _sha256_arquivo(documento.filepath)
+        # Leitura de disco em thread para não bloquear o event loop.
+        digest = await asyncio.to_thread(_sha256_arquivo, documento.filepath)
         if digest:
             existentes_por_sha.setdefault(digest, []).append(documento)
 

@@ -50,11 +50,13 @@ def test_pacote_com_ressalvas_ainda_libera_fluxo_com_alerta_humano():
     assert plano["liberar_motor_peca"] is True
 
 
-def test_rota_segura_tem_precedencia_sobre_implementacao_legada():
+def test_rota_pacote_existe_so_na_implementacao_segura():
+    """A rota legada foi REMOVIDA do router avançado — a versão segura é a
+    única (sem depender da ordem de include para sombrear rota insegura)."""
     rotas = [
         route for route in novos_modulos.router.routes
         if getattr(route, "path", None) == "/defesas-revisoes/avancado/pacote"
         and "POST" in getattr(route, "methods", set())
     ]
-    assert len(rotas) >= 2  # segura + legado mantido apenas por compatibilidade interna
+    assert len(rotas) == 1
     assert rotas[0].endpoint.__module__.endswith("defesas_revisoes_pacote_seguro")

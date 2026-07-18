@@ -289,6 +289,9 @@ export default function RaioXProcesso() {
   // Análise "advogado sênior" (IA agêntica) — operação cara, SOMENTE leitura.
   const [advResult, setAdvResult] = useState<AnaliseAdvogadoResult | null>(null);
   const [advLoading, setAdvLoading] = useState(false);
+  // Erro exibido DENTRO do card da análise (o banner global fica fora da
+  // viewport quando o botão está no fim da página).
+  const [advError, setAdvError] = useState<string | null>(null);
 
   const [conversion, setConversion] = useState<ConversionPreview | null>(null);
   const [showConversion, setShowConversion] = useState(false);
@@ -602,7 +605,7 @@ export default function RaioXProcesso() {
     if (!report || advLoading) return;
     setAdvLoading(true);
     setAdvResult(null);
-    setError(null);
+    setAdvError(null);
     try {
       const data = contextualCaseId
         ? await analiseAdvogadoContextual(contextualCaseId)
@@ -611,8 +614,9 @@ export default function RaioXProcesso() {
           : null;
       if (data) setAdvResult(data);
     } catch (err: any) {
-      // 409 (análise preliminar sem caso vinculado), 403 (perfil), 429 etc.
-      setError(
+      // 409 (análise preliminar sem caso vinculado), 403 (perfil), 429 etc. —
+      // exibido junto do botão, dentro do card da análise.
+      setAdvError(
         err?.response?.data?.detail ||
           "Não foi possível gerar a análise do advogado (IA).",
       );
@@ -952,7 +956,7 @@ export default function RaioXProcesso() {
                     </Button>
                   }
                 >
-                  {!advResult && !advLoading && (
+                  {!advResult && !advLoading && !advError && (
                     <p className="text-sm text-slate-500">
                       Gere um parecer do caso como faria um advogado sênior antes de definir a estratégia.
                     </p>
@@ -960,6 +964,12 @@ export default function RaioXProcesso() {
                   {advLoading && (
                     <div className="flex items-center gap-2 text-sm text-slate-500">
                       <Loader2 className="h-4 w-4 animate-spin" /> O agente está analisando o caso… pode levar alguns instantes.
+                    </div>
+                  )}
+                  {advError && !advLoading && (
+                    <div className="flex items-start gap-2 rounded-xl border border-red-200 bg-red-50 p-3 text-sm text-red-700">
+                      <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0" />
+                      {advError}
                     </div>
                   )}
                   {advResult && advResult.status === "indisponivel" && (

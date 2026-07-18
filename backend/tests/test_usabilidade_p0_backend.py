@@ -203,6 +203,7 @@ def test_alterar_senha_retorna_tokens_e_limpa_claim():
     user = types.SimpleNamespace(
         id="u-troca", role=types.SimpleNamespace(value="advogado"),
         full_name="Dr. Teste",
+        email="troca-p0@teste.com",
         hashed_password=get_password_hash("SenhaAtual@1"),
         must_change_password=True,
     )

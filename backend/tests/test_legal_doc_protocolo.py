@@ -9,7 +9,9 @@ sem depender de Postgres:
   - a migration 099 offline (revisão/head na cadeia, DDL idempotente + downgrade);
   - o endpoint PATCH /legal-docs/{id}/protocolo: grava número/tribunal/data (+
     comprovante opcional), rejeita número vazio (422), 404 p/ peça inexistente,
-    aplica o gate de ownership por caso e emite audit-log PROTOCOLO_REGISTRADO.
+    aplica o gate de ownership por caso e emite audit-log PROTOCOLO_REGISTRADO;
+  - os gates da máquina de estados: papel mínimo advogado (403) e peça em
+    status pós-aprovação — aprovada/final/protocolada (422 caso contrário).
 
 Fakes no padrão de test_correcoes_go_live.py. Dados 100% fictícios.
 """
@@ -139,12 +141,12 @@ def _peca(**over):
     return LegalDoc(**base)
 
 
-def _montar(db: _FakeDB):
+def _montar(db: _FakeDB, role: str = "advogado"):
     app = FastAPI()
     app.include_router(legal_docs_router.router)
     app.dependency_overrides[get_db] = lambda: db
     app.dependency_overrides[get_current_user] = lambda: SimpleNamespace(
-        id="u1", role=SimpleNamespace(value="advogado")
+        id="u1", role=SimpleNamespace(value=role)
     )
     return TestClient(app)
 
@@ -212,6 +214,44 @@ def test_protocolo_peca_inexistente_404():
     })
     assert r.status_code == 404
     assert not _audits(db) and db.committed == 0
+
+
+def test_protocolo_bloqueado_em_peca_nao_aprovada():
+    """M-B1: protocolo NÃO pode furar a máquina de estados — peça em rascunho,
+    em_revisao ou corrigida devolve 422 sem gravar nada."""
+    for status in (PecaStatus.rascunho, PecaStatus.em_revisao, PecaStatus.corrigida):
+        db = _FakeDB(results=[_Res(one=_peca(status=status))])
+        client = _montar(db)
+        r = client.patch("/legal-docs/peca-1/protocolo", json={
+            "numero_protocolo": "PROTO-1",
+        })
+        assert r.status_code == 422, (status, r.text)
+        assert "aprovada" in r.json()["detail"]
+        assert not _audits(db) and db.committed == 0
+
+
+def test_protocolo_aceito_em_status_pos_aprovacao():
+    """aprovada/final/protocolada (STATUS_EXIGE_REVISAO) passam pelo gate."""
+    for status in (PecaStatus.aprovada, PecaStatus.final, PecaStatus.protocolada):
+        db = _FakeDB(results=[_Res(one=_peca(status=status))])
+        client = _montar(db)
+        r = client.patch("/legal-docs/peca-1/protocolo", json={
+            "numero_protocolo": "PROTO-1",
+        })
+        assert r.status_code == 200, (status, r.text)
+
+
+def test_protocolo_exige_papel_advogado():
+    """M-B1: papel abaixo de advogado (estagiário/secretária) recebe 403 antes
+    de qualquer consulta; advogado_auxiliar (nível < advogado) também."""
+    for role in ("estagiario", "secretaria", "advogado_auxiliar", "cliente_externo"):
+        db = _FakeDB(results=[_Res(one=_peca())])
+        client = _montar(db, role=role)
+        r = client.patch("/legal-docs/peca-1/protocolo", json={
+            "numero_protocolo": "PROTO-1",
+        })
+        assert r.status_code == 403, (role, r.text)
+        assert not _audits(db) and db.committed == 0
 
 
 def test_protocolo_gate_ownership_por_caso():

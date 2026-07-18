@@ -10,7 +10,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import text
 from app.core.database import get_db
 from app.core.security import get_current_user
-from app.core.ownership import verificar_acesso_caso
+from app.core.ownership import is_gestao, verificar_acesso_caso
 from app.models.user import User
 
 router = APIRouter(prefix="/agenda-eventos", tags=["Agenda de Eventos"])
@@ -66,7 +66,7 @@ async def _buscar_conflitos(
           AND e.responsavel_id = :resp
           AND e.data_evento = :d
           AND e.hora IS NOT NULL AND btrim(e.hora) = :h
-          AND (:exc IS NULL OR e.id <> :exc)
+          AND (CAST(:exc AS text) IS NULL OR e.id <> CAST(:exc AS text))
         ORDER BY e.hora
     """), {"resp": responsavel_id, "d": data_evento,
            "h": hora.strip(), "exc": exclude_id})).mappings().all()
@@ -129,13 +129,17 @@ async def atualizar(
     cu: User = Depends(get_current_user),
 ):
     row = (await db.execute(text(
-        "SELECT case_id, responsavel_id, data_evento, hora, concluido "
+        "SELECT case_id, responsavel_id, data_evento, hora, concluido, created_by "
         "FROM agenda_eventos WHERE id = :eid AND deleted_at IS NULL"
     ), {"eid": evento_id})).mappings().first()
     if row is None:
         raise HTTPException(404, "Evento não encontrado")
     if row["case_id"]:
         await verificar_acesso_caso(db, cu, row["case_id"])
+    elif not (is_gestao(cu) or cu.id in (row["created_by"], row["responsavel_id"])):
+        # Evento pessoal (sem caso — M-S2): só o criador, o responsável ou a
+        # gestão podem editar; antes qualquer usuário autenticado alterava.
+        raise HTTPException(403, "Sem permissão para este evento")
     if body.tipo is not None and body.tipo not in TIPOS_VALIDOS:
         raise HTTPException(422, f"Tipo inválido. Use: {', '.join(sorted(TIPOS_VALIDOS))}")
     updates = {k: v for k, v in body.model_dump(exclude_unset=True).items() if v is not None}
@@ -153,8 +157,12 @@ async def atualizar(
     if not concluido_eff:
         data_eff = body.data_evento or row["data_evento"]
         hora_eff = body.hora if body.hora is not None else row["hora"]
+        # B1: usa o responsável EFETIVO pós-update — se o patch trocou o
+        # responsavel_id, checar contra o antigo apontava a agenda errada.
+        resp_eff = (body.responsavel_id if body.responsavel_id is not None
+                    else row["responsavel_id"])
         conflitos = await _buscar_conflitos(
-            db, responsavel_id=row["responsavel_id"],
+            db, responsavel_id=resp_eff,
             data_evento=data_eff, hora=hora_eff, exclude_id=evento_id,
         )
     return {"ok": True, "conflito_agenda": conflitos}
@@ -167,12 +175,16 @@ async def remover(
     cu: User = Depends(get_current_user),
 ):
     row = (await db.execute(text(
-        "SELECT case_id FROM agenda_eventos WHERE id = :eid AND deleted_at IS NULL"
-    ), {"eid": evento_id})).first()
+        "SELECT case_id, responsavel_id, created_by "
+        "FROM agenda_eventos WHERE id = :eid AND deleted_at IS NULL"
+    ), {"eid": evento_id})).mappings().first()
     if row is None:
         raise HTTPException(404, "Evento não encontrado")
-    if row[0]:
-        await verificar_acesso_caso(db, cu, row[0])
+    if row["case_id"]:
+        await verificar_acesso_caso(db, cu, row["case_id"])
+    elif not (is_gestao(cu) or cu.id in (row["created_by"], row["responsavel_id"])):
+        # Evento pessoal (sem caso — M-S2): mesma regra do PATCH.
+        raise HTTPException(403, "Sem permissão para este evento")
     await db.execute(text("UPDATE agenda_eventos SET deleted_at = now() WHERE id = :eid"), {"eid": evento_id})
     await db.commit()
     return {"ok": True}

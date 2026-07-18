@@ -70,7 +70,7 @@ openpyxl==3.1.5
 xlrd==2.0.2                    # extração de texto de .xls legado (ocr_service)
 qrcode[pil]==7.4.2
 Pillow==10.4.0
-pillow-heif==1.4.0             # HEIC/HEIF de iPhone na Entrada Universal
+pillow-heif==0.22.0            # HEIC/HEIF de iPhone na Entrada Universal (última série compatível com Pillow 10; 1.x exige pillow>=11.1)
 opencv-python-headless==4.11.0.86  # correção de perspectiva sem dependência GUI
 pdf2image==1.17.0
 pytesseract==0.3.13

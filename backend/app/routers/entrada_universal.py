@@ -1,6 +1,7 @@
 """API transversal da Entrada Universal de Documentos."""
 from __future__ import annotations
 
+import asyncio
 import json
 import logging
 import os
@@ -246,7 +247,10 @@ async def processar(
             else:
                 doc, item = await _salvar_original(db, batch=batch, virtual=virtual, ordem=ordem, conf=conf, cu=cu)
                 try:
-                    meta_extracao = extrair_paginas(virtual["conteudo"], virtual["extensao"], item.mimetype)
+                    # OCR em thread (não bloqueia o event loop) — mesmo padrão de documents.upload.
+                    meta_extracao = await asyncio.to_thread(
+                        extrair_paginas, virtual["conteudo"], virtual["extensao"], item.mimetype
+                    )
                     classificacao = classificar_documento(virtual["nome"], meta_extracao.get("texto", ""), modalidade)
                     item.extraction_status = "concluido" if meta_extracao.get("texto") else "sem_texto"
                     item.page_count = int(meta_extracao.get("page_count") or 0)
@@ -295,8 +299,10 @@ async def processar(
         await db.commit()
         return resultado
     except HTTPException:
+        await db.rollback()  # limpa transação pendente antes de reusar a sessão
         batch.status = "erro"; await db.commit(); raise
     except Exception as exc:
+        await db.rollback()  # limpa transação pendente antes de reusar a sessão
         batch.status = "erro"; await db.commit()
         logger.exception("Falha no lote universal %s", batch.id)
         raise HTTPException(500, f"Falha ao processar o lote: {str(exc)[:180]}")
