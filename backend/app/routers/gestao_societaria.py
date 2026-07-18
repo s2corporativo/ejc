@@ -3,6 +3,7 @@
 # Acesso restrito a sócios e administradores.
 from __future__ import annotations
 import json
+from decimal import Decimal, ROUND_HALF_UP
 from uuid import uuid4
 from datetime import datetime, timezone, date as _date
 from typing import Optional
@@ -148,23 +149,44 @@ async def calcular_distribuicao(
 
     total_participacao = sum(float(s.participacao_percentual) for s in socios)
     if round(total_participacao, 4) > 1.0001:
-        raise HTTPException(422, f"Participação total {total_participacao:.4f} excede 100%")
+        raise HTTPException(422, f"Participação total {total_participacao * 100:.2f}% excede 100%")
+    # Antes, uma soma < 100% distribuía silenciosamente o restante a ninguém
+    # (ex.: sócios somando 80% => 20% do lucro não era atribuído). Agora exige
+    # que o quadro societário some 100% antes de distribuir.
+    if round(total_participacao, 4) < 0.9999:
+        raise HTTPException(
+            422,
+            f"Participação total {total_participacao * 100:.2f}% difere de 100% — "
+            f"ajuste o quadro societário antes de distribuir os lucros",
+        )
 
+    # Cálculo em Decimal (dinheiro nunca em float) com correção do drift de
+    # centavos: a soma das cotas arredondadas fecha exatamente o valor total.
+    _CENTAVO = Decimal("0.01")
+    valor_total_dec = Decimal(str(req.valor_total)).quantize(_CENTAVO, rounding=ROUND_HALF_UP)
     socios_lista = []
+    soma_cotas = Decimal("0")
     for s in socios:
-        part = float(s.participacao_percentual)
-        valor = round(req.valor_total * part, 2)
+        part = Decimal(str(s.participacao_percentual))
+        valor = (valor_total_dec * part).quantize(_CENTAVO, rounding=ROUND_HALF_UP)
+        soma_cotas += valor
         socios_lista.append({
             "socio_id": s.id,
             "user_id":  s.user_id,
-            "participacao": part,
+            "participacao": float(part),
             "valor":    valor,
         })
+    drift = valor_total_dec - soma_cotas
+    if drift != Decimal("0") and socios_lista:
+        maior = max(socios_lista, key=lambda item: item["valor"])
+        maior["valor"] = (maior["valor"] + drift).quantize(_CENTAVO, rounding=ROUND_HALF_UP)
+    for item in socios_lista:
+        item["valor"] = float(item["valor"])
 
     dist = DistribuicaoLucro(
         id=str(uuid4()),
         mes_referencia=req.mes_referencia,
-        valor_total=req.valor_total,
+        valor_total=valor_total_dec,
         socios_json=json.dumps(socios_lista, ensure_ascii=False),
         observacoes=req.observacoes,
         created_by=cu.id,
