@@ -65,7 +65,7 @@ describe("moduleRegistry", () => {
     expect(map.get("/dashboard")).toBe("/");
   });
 
-  it("mantém o menu enxuto (~15 destinos visíveis por perfil)", () => {
+  it("mantém o menu enxuto e o modo essencial com 7 destinos", () => {
     for (const role of ["superadmin", "admin", "socio", "advogado"]) {
       expect(getNavigationModules(role).length).toBeLessThanOrEqual(17);
       // /ferramentas não tem restrição de papel: visível para toda a equipe.
@@ -73,17 +73,24 @@ describe("moduleRegistry", () => {
         getNavigationModules(role).some((m) => m.path === "/ferramentas"),
       ).toBe(true);
     }
-    // Telas-fim essenciais continuam visíveis para o advogado.
-    const advogado = getNavigationModules("advogado").map((m) => m.path);
-    for (const path of [
+    const navegacaoAdvogado = getNavigationModules("advogado");
+    const advogado = navegacaoAdvogado.map((m) => m.path);
+    const essenciais = navegacaoAdvogado
+      .filter((m) => m.essential)
+      .map((m) => m.path);
+    expect(essenciais).toEqual([
       "/",
-      "/casos/novo",
       "/casos",
       "/atividades",
       "/clientes",
-    ]) {
-      expect(advogado).toContain(path);
-    }
+      "/documentos",
+      "/pecas",
+      "/inteligencia",
+    ]);
+    // Novo caso continua registrado, mas só é lançado pelo cabeçalho,
+    // Dashboard e busca global — não duplica a navegação lateral.
+    expect(advogado).not.toContain("/casos/novo");
+    expect(STAFF_ROUTES.some((m) => m.path === "/casos/novo")).toBe(true);
     // Rotas podadas permanecem ativas (sem 404), apenas fora do menu.
     const canonical = new Set(STAFF_ROUTES.map((route) => route.path));
     for (const path of [

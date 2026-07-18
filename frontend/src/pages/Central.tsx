@@ -17,7 +17,7 @@ export function isCentralTab(value: string | null): value is CentralTab {
 }
 
 const TABS: { key: CentralTab; label: string; icon: typeof Users }[] = [
-  { key: "atividades", label: "Agenda e Atividades", icon: CalendarClock },
+  { key: "atividades", label: "Agenda e Prazos", icon: CalendarClock },
   { key: "relacionamento", label: "Relacionamento", icon: Users },
 ];
 
