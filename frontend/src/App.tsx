@@ -11,7 +11,6 @@ import { Spinner } from "./components/UI";
 import ErrorBoundary from "./components/ErrorBoundary";
 import EntradaUniversalGlobal from "./components/EntradaUniversalGlobal";
 import FlowEnhancements from "./components/FlowEnhancements";
-import LegacyActivityQueryAdapter from "./components/LegacyActivityQueryAdapter";
 import LegacyClientListAdapter from "./components/LegacyClientListAdapter";
 import Layout from "./components/Layout";
 import PortalLayout from "./components/PortalLayout";
@@ -116,19 +115,15 @@ export default function App() {
             >
               {STAFF_ROUTES.map((module) => {
                 const Component = module.component;
-                let content = <Component />;
-                if (module.key === "clientes") {
-                  content = (
-                    <LegacyClientListAdapter>{content}</LegacyClientListAdapter>
+                const moduleContent = <Component />;
+                const content =
+                  module.key === "clientes" ? (
+                    <LegacyClientListAdapter>
+                      {moduleContent}
+                    </LegacyClientListAdapter>
+                  ) : (
+                    moduleContent
                   );
-                }
-                if (module.key === "atividades") {
-                  content = (
-                    <LegacyActivityQueryAdapter>
-                      {content}
-                    </LegacyActivityQueryAdapter>
-                  );
-                }
                 return (
                   <Route
                     key={module.key}
