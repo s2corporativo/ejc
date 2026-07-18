@@ -29,7 +29,6 @@ from app.core.ownership import verificar_acesso_caso
 from app.core.security import get_current_user, ROLE_LEVEL
 from app.models.ai_log import AILog, AIStatusHITL, AITipoUso
 from app.models.case import Case, CaseArea
-from app.models.document import Document
 from app.models.redesign import AreaModuloMapping, TabelaOABHonorario
 from app.models.tese import Tese, TeseStatus
 from app.models.user import User
@@ -109,22 +108,11 @@ async def _log_ia(
 
 
 async def _texto_base(db: AsyncSession, case: Case, payload: AnaliseCompletaIn) -> str:
-    """Fonte do texto: payload.texto > ocr_text dos documentos > descricao_fatos."""
-    if payload.texto and payload.texto.strip():
-        return payload.texto.strip()
-
-    docs = (await db.execute(
-        select(Document.ocr_text).where(
-            Document.case_id == case.id,
-            Document.deleted_at.is_(None),
-            Document.ocr_text.isnot(None),
-        ).order_by(Document.created_at.desc()).limit(5)
-    )).scalars().all()
-    partes = [d.strip() for d in docs if d and d.strip()]
-    if partes:
-        return "\n\n---\n\n".join(partes)[:18000]
-
-    return (case.descricao_fatos or "").strip()
+    """Fonte do texto: payload.texto > ocr_text dos documentos > descricao_fatos.
+    Lógica extraída para motor_peca_service.texto_base_do_caso (P1 — Motor de
+    Peça reutiliza a mesma fonte única; este wrapper preserva a API interna)."""
+    from app.services.motor_peca_service import texto_base_do_caso
+    return await texto_base_do_caso(db, case, payload.texto)
 
 
 async def _identificar_area(
