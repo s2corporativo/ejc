@@ -26,6 +26,17 @@ _RE_PROMESSAS = [
     re.compile(r"chances?\s+(?:\w+\s+){0,3}(?:100\s*%|alt[íi]ssim[ao]s?|elevad[íi]ssim[ao]s?)", re.I),
     re.compile(r"risco\s+(?:zero|nulo|inexistente|nenhum)\s+de\s+(?:perda|perder|derrota|insucesso)", re.I),
     re.compile(r"(?:com\s+certeza|certamente|sem\s+d[úu]vida)\s+(?:\w+\s+){0,2}(?:ganha\w*|vence\w*|ter\s+[êe]xito)", re.I),
+    # Promessa NUMÉRICA de resultado (auditoria IA 2026-07-18): um percentual de
+    # êxito/ganho/vitória/procedência prometido ao cliente ("90% de êxito",
+    # "chance de 95% de ganhar") escapava dos padrões puramente textuais. A
+    # vedação OAB (art. 34; Prov. 205/2021) alcança a promessa de resultado,
+    # inclusive quantificada. Continua sendo ALERTA advisory ao revisor (HITL),
+    # nunca reescrita/bloqueio; os padrões exigem um número (\d%), então NÃO
+    # disparam em análise prudente sem percentual — falso-positivo em relato
+    # estatístico é tolerável, deixar passar promessa numérica não é.
+    re.compile(r"\d{1,3}\s*%\s*(?:\w+\s+){0,3}(?:[êe]xito|ganh\w*|vit[óo]ria|proced\w*|sucesso|provimento|venc\w*)", re.I),
+    re.compile(r"(?:[êe]xito|ganh\w*|vit[óo]ria|proced\w*|sucesso|provimento|venc\w*)\s+(?:\w+\s+){0,3}\d{1,3}\s*%", re.I),
+    re.compile(r"praticamente\s+(?:cert[oa]|garantid[oa]s?|assegurad[oa]s?|inevit[áa]ve(?:l|is)|ganh\w*|vencid[oa]s?)", re.I),
 ]
 
 PREFIXO_SEM_BASE = (
