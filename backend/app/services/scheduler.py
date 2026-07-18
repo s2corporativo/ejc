@@ -40,6 +40,22 @@ def get_scheduler() -> AsyncIOScheduler:
     return _scheduler
 
 
+# ── Heartbeat dos jobs (achado nº 1 da auditoria) ─────────────────────────────
+async def _bater_ponto(job_name: str, status: str, detail: str | None = None) -> None:
+    """Registra o heartbeat de um job crítico ao final da execução.
+
+    Abre uma sessão PRÓPRIA (a sessão do job pode ter sido fechada ou envenenada
+    por rollback ao falhar) e delega o UPSERT best-effort ao heartbeat_service —
+    que jamais propaga erro. Assim a Central de Diagnóstico e o status-captura
+    detectam quando um job parou de rodar (parada silenciosa do scheduler)."""
+    try:
+        from app.services.heartbeat_service import registrar_heartbeat
+        async with AsyncSessionLocal() as db:
+            await registrar_heartbeat(db, job_name, status, detail)
+    except Exception as e:  # nunca derruba o job
+        logger.warning("[Heartbeat] %s falhou: %s", job_name, e)
+
+
 # ── Jobs ──────────────────────────────────────────────────────────────────────
 
 async def _morning_brief():
@@ -152,7 +168,9 @@ async def _marcar_prazos_vencidos():
     """
     from app.core.database import AsyncSessionLocal
     from app.services.notification_service import notificar
+    from app.services.heartbeat_service import JOB_PRAZOS_VENCIDOS
 
+    _hb_status, _hb_detail = "ok", None
     try:
         async with AsyncSessionLocal() as db:
             hoje = date.today()
@@ -198,7 +216,9 @@ async def _marcar_prazos_vencidos():
                         f"[Scheduler] marcar_prazos_vencidos falhou p/ deadline {r.id}: {e}"
                     )
     except Exception as e:
+        _hb_status, _hb_detail = "erro", str(e)
         logger.error(f"[Scheduler] marcar_prazos_vencidos: {e}")
+    await _bater_ponto(JOB_PRAZOS_VENCIDOS, _hb_status, _hb_detail)
 
 
 async def _alertar_prazos():
@@ -207,7 +227,9 @@ async def _alertar_prazos():
     no .env (EMAIL_ENABLED / WHATSAPP_ENABLED) — caso contrário, no-op seguro."""
     from app.core.database import AsyncSessionLocal
     from app.services.notification_service import notificar
+    from app.services.heartbeat_service import JOB_PRAZOS_ALERTAS
 
+    _hb_status, _hb_detail = "ok", None
     try:
         async with AsyncSessionLocal() as db:
             hoje = date.today()
@@ -262,7 +284,9 @@ async def _alertar_prazos():
                             f"[Scheduler] alertar_prazos falhou p/ deadline {r.id}: {e}"
                         )
     except Exception as e:
+        _hb_status, _hb_detail = "erro", str(e)
         logger.error(f"[Scheduler] alertar_prazos: {e}")
+    await _bater_ponto(JOB_PRAZOS_ALERTAS, _hb_status, _hb_detail)
 
 
 async def _alertar_ambiental():
@@ -354,6 +378,9 @@ async def _alertar_audiencias_agenda():
     from app.core.database import AsyncSessionLocal
     from app.models.notification import Notification
     from app.services.notification_service import notificar
+    from app.services.heartbeat_service import JOB_AUDIENCIAS
+
+    _hb_status, _hb_detail = "ok", None
     try:
         async with AsyncSessionLocal() as db:
             hoje = date.today()
@@ -412,13 +439,18 @@ async def _alertar_audiencias_agenda():
                         )
                         continue
     except Exception as e:
+        _hb_status, _hb_detail = "erro", str(e)
         logger.error(f"[Scheduler] alertar_audiencias_agenda: {e}")
+    await _bater_ponto(JOB_AUDIENCIAS, _hb_status, _hb_detail)
 
 
 async def _alertar_prescricao():
     """Casos com prescrição ≤90 dias → alerta semanal ao responsável."""
     from app.core.database import AsyncSessionLocal
     from app.services.notification_service import notificar
+    from app.services.heartbeat_service import JOB_PRESCRICAO
+
+    _hb_status, _hb_detail = "ok", None
     try:
         async with AsyncSessionLocal() as db:
             limite = date.today() + timedelta(days=90)
@@ -445,7 +477,9 @@ async def _alertar_prescricao():
                     tipo="prescricao", link=f"/casos/{r.id}",
                 )
     except Exception as e:
+        _hb_status, _hb_detail = "erro", str(e)
         logger.error(f"[Scheduler] alertar_prescricao: {e}")
+    await _bater_ponto(JOB_PRESCRICAO, _hb_status, _hb_detail)
 
 
 async def _verificar_sla_workflows():
@@ -1368,13 +1402,17 @@ async def _sincronizar_feriados_brasilapi():
 
 async def _monitor_diario_oficial():
     """06h00 — captura publicações do DOU que casam com as keywords cadastradas."""
+    from app.services.heartbeat_service import JOB_DIARIO
+    _hb_status, _hb_detail = "ok", None
     try:
         from app.services.diario_oficial_service import processar_alertas_dou
         async with AsyncSessionLocal() as db:
             novos = await processar_alertas_dou(db)
             logger.info(f"[DOU] Monitor concluído — {novos} novo(s) alerta(s)")
     except Exception as e:
+        _hb_status, _hb_detail = "erro", str(e)
         logger.error(f"[DOU] Falha no monitor: {e}")
+    await _bater_ponto(JOB_DIARIO, _hb_status, _hb_detail)
 
 
 async def _alertar_contratos():
@@ -1600,39 +1638,53 @@ async def job_djen_intimacoes():
     """06h30 — captura intimações DJEN para cada advogado com OAB configurada."""
     from app.models.user import User as _U
     from app.services.djen_service import capturar_para_advogado
-    async with AsyncSessionLocal() as db:
-        advs = (await db.execute(select(_U).where(
-            _U.is_active == True, _U.deleted_at.is_(None),
-            _U.djen_oab_numero.isnot(None),
-        ))).scalars().all()
-        total = 0
-        for a in advs:
-            try:
-                total += await capturar_para_advogado(db, a)
-            except Exception as e:
-                logger.warning(f"DJEN {a.email}: {e}")
-        await db.commit()
-        logger.info(f"[DJEN] {total} intimação(ões) nova(s)")
+    from app.services.heartbeat_service import JOB_DJEN
+    _hb_status, _hb_detail = "ok", None
+    try:
+        async with AsyncSessionLocal() as db:
+            advs = (await db.execute(select(_U).where(
+                _U.is_active == True, _U.deleted_at.is_(None),
+                _U.djen_oab_numero.isnot(None),
+            ))).scalars().all()
+            total = 0
+            for a in advs:
+                try:
+                    total += await capturar_para_advogado(db, a)
+                except Exception as e:
+                    logger.warning(f"DJEN {a.email}: {e}")
+            await db.commit()
+            logger.info(f"[DJEN] {total} intimação(ões) nova(s)")
+    except Exception as e:
+        _hb_status, _hb_detail = "erro", str(e)
+        logger.error(f"[DJEN] falha na captura: {e}")
+    await _bater_ponto(JOB_DJEN, _hb_status, _hb_detail)
 
 
 async def job_datajud_sync():
     """08h45/16h45 — sincroniza movimentos oficiais dos casos ativos com nº CNJ."""
     from app.models.case import Case as _C
     from app.services.datajud_service import sincronizar_caso
-    async with AsyncSessionLocal() as db:
-        casos = (await db.execute(select(_C).where(
-            _C.deleted_at.is_(None),
-            _C.numero_processo.isnot(None),
-            _C.status.in_(["ativo", "suspenso"]),
-        ))).scalars().all()
-        total = 0
-        for c in casos[:80]:   # teto por execução (rate limit amigável)
-            try:
-                total += await sincronizar_caso(db, c)
-            except Exception as e:
-                logger.warning(f"DataJud {c.numero_interno}: {e}")
-        await db.commit()
-        logger.info(f"[DataJud] {total} movimento(s) novo(s)")
+    from app.services.heartbeat_service import JOB_DATAJUD
+    _hb_status, _hb_detail = "ok", None
+    try:
+        async with AsyncSessionLocal() as db:
+            casos = (await db.execute(select(_C).where(
+                _C.deleted_at.is_(None),
+                _C.numero_processo.isnot(None),
+                _C.status.in_(["ativo", "suspenso"]),
+            ))).scalars().all()
+            total = 0
+            for c in casos[:80]:   # teto por execução (rate limit amigável)
+                try:
+                    total += await sincronizar_caso(db, c)
+                except Exception as e:
+                    logger.warning(f"DataJud {c.numero_interno}: {e}")
+            await db.commit()
+            logger.info(f"[DataJud] {total} movimento(s) novo(s)")
+    except Exception as e:
+        _hb_status, _hb_detail = "erro", str(e)
+        logger.error(f"[DataJud] falha na sincronização: {e}")
+    await _bater_ponto(JOB_DATAJUD, _hb_status, _hb_detail)
 
 
 async def job_relatorio_mensal():

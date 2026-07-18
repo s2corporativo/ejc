@@ -79,3 +79,4 @@ from app.models import workflow            # noqa
 from app.models import redesign            # noqa  (module_help, area_modulos_mapping, document_types_master, tabela_oab_honorarios — migração 057)
 from app.models.system_module_setting import SystemModuleSetting  # noqa
 from app.models.nfse import NotaFiscalServico, NFSeStatus  # noqa  (NFS-e — emissão fiscal gated, migração 085)
+from app.models.scheduler_heartbeat import SchedulerHeartbeat  # noqa  (heartbeat dos jobs do scheduler — migração 100)
