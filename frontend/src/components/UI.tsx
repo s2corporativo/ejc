@@ -58,19 +58,24 @@ const toneClasses: Record<Tone, string> = {
   ouro: "bg-ouro-palha text-ouro-profundo ring-ouro-claro/60",
 };
 
-// Borda SUPERIOR de 3px do KPI card (idioma Verdelimp) na cor do
-// indicador — mapeada nos tokens de cor EXISTENTES do EJC.
+// Barra SUPERIOR de 3px do KPI card (idioma Verdelimp) na cor do
+// indicador — mapeada nos tokens de cor EXISTENTES do EJC. Desenhada via
+// ::before (mesmo padrão dos KPI cards do dashboard em site-system.css)
+// em vez de border-top: as regras globais de `.card` fora de @layer
+// (site-system.css `border: 1px solid`, `.ejc-modern-scope :where(.card)`
+// com border-color !important e `.dark .card` em index.css) vêm depois na
+// cascata e atropelariam utilities `border-t-*` nos dois temas.
 const toneBarClasses: Record<Tone, string> = {
-  slate: "border-t-slate-400",
-  blue: "border-t-primary-400",
-  green: "border-t-success-500",
-  amber: "border-t-warn-500",
-  orange: "border-t-orange-500",
-  red: "border-t-danger-500",
-  purple: "border-t-ai-500",
-  violet: "border-t-violet-500",
-  teal: "border-t-teal-500",
-  ouro: "border-t-ouro-claro",
+  slate: "before:bg-slate-400",
+  blue: "before:bg-primary-400",
+  green: "before:bg-success-500",
+  amber: "before:bg-warn-500",
+  orange: "before:bg-orange-500",
+  red: "before:bg-danger-500",
+  purple: "before:bg-ai-500",
+  violet: "before:bg-violet-500",
+  teal: "before:bg-teal-500",
+  ouro: "before:bg-ouro-claro",
 };
 
 // Botões no idioma flat/compacto (padrão Verdelimp, cores EJC): primary
@@ -436,7 +441,8 @@ export function StatCard({
   return (
     <Card
       className={cn(
-        "rounded-[10px] border-t-[3px] p-4",
+        "relative overflow-hidden rounded-[10px] p-4",
+        "before:absolute before:inset-x-0 before:top-0 before:h-[3px] before:content-['']",
         toneBarClasses[tone],
       )}
     >
