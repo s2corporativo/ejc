@@ -7,7 +7,8 @@
 # o provedor, para não se perder se a chamada externa falhar). Idempotência:
 # referencia = fee-<id> — não emite segunda nota para um honorário já em curso.
 #
-#   GET  /nfse/status          — advogado+  (booleans/ambiente p/ gate da UI — sem dados)
+#   GET  /nfse/status          — advogado+ OU perfil financeiro (booleans/ambiente
+#                                p/ gate da UI — sem dados)
 #   GET  /nfse                 — perfil financeiro (listagem paginada; SEM gate NFSE_ENABLED)
 #   POST /nfse/emitir          — socio+     (rate limit; audit; idempotente)
 #   POST /nfse/manual          — perfil financeiro (registro de nota emitida FORA do
@@ -19,8 +20,10 @@
 #   POST /nfse/{id}/cancelar   — socio+     (motivo; audit)
 from __future__ import annotations
 
+import contextlib
 import logging
 import os
+import re
 from datetime import date
 from decimal import Decimal
 from pathlib import Path as FSPath
@@ -28,7 +31,8 @@ from uuid import uuid4
 
 import aiofiles
 from fastapi import (
-    APIRouter, Depends, File, Form, HTTPException, Query, Response, UploadFile,
+    APIRouter, Depends, File, Form, HTTPException, Query, Request, Response,
+    UploadFile,
 )
 from fastapi.responses import FileResponse
 from pydantic import BaseModel, Field, model_validator
@@ -39,7 +43,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.core.config import get_settings
 from app.core.database import get_db
 from app.core.rate_limit import rate_limit
-from app.core.security import get_current_user, require_roles
+from app.core.security import ROLE_LEVEL, get_current_user, require_roles
 from app.models.audit_log import criar_audit_log
 from app.models.client import Client
 from app.models.fee import Fee
@@ -54,25 +58,44 @@ logger = logging.getLogger("ejc.nfse")
 
 router = APIRouter(prefix="/nfse", tags=["NFS-e (emissão fiscal)"])
 
-# socio+ = socio, admin, superadmin (hierarquia ROLE_LEVEL). advogado+ inclui advogado.
+# socio+ = socio, admin, superadmin (hierarquia ROLE_LEVEL).
 _SOCIO_MAIS = require_roles(["socio"])
-_ADVOGADO_MAIS = require_roles(["advogado"])
 
-# Item 5 (auditoria pré-produção): LEITURA de nota (consulta/PDF/XML) expõe
-# honorários e CPF/CNPJ do tomador — alinhado ao gate do módulo financeiro
-# (fees.py: _FINANCEIRO_TOTAL). `financeiro` tem nível hierárquico BAIXO (4),
-# então require_roles não serve aqui — é allowlist explícita de perfis.
+# Item 5 (auditoria pré-produção): acesso a nota (consulta/PDF/XML/registro
+# manual) expõe honorários e CPF/CNPJ do tomador — alinhado ao gate do módulo
+# financeiro (fees.py: _FINANCEIRO_TOTAL). `financeiro` tem nível hierárquico
+# BAIXO (4), então require_roles não serve aqui — é allowlist explícita de perfis.
 _PERFIS_FINANCEIROS = {"superadmin", "admin", "socio", "financeiro"}
 
 
 def _req_financeiro_leitura(cu: User = Depends(get_current_user)) -> User:
-    """Leitura de dados fiscais reservada aos perfis fiduciários (fees.py)."""
+    """Acesso a dados fiscais reservado aos perfis fiduciários (fees.py).
+
+    Usada em endpoints de LEITURA e também de ESCRITA do modo manual
+    (registro/cancelamento) — por isso a mensagem do 403 é neutra, sem
+    sugerir que só a consulta foi negada.
+    """
     if getattr(cu.role, "value", str(cu.role)) not in _PERFIS_FINANCEIROS:
         raise HTTPException(
             status_code=403,
-            detail="Sem permissão para consultar dados fiscais",
+            detail="Sem permissão para dados fiscais",
         )
     return cu
+
+
+def _req_status_nfse(cu: User = Depends(get_current_user)) -> User:
+    """GET /nfse/status: advogado+ (hierarquia) OU perfil da allowlist financeira.
+
+    O payload é só o gate da UI (booleans/ambiente, sem dados fiscais), mas o
+    papel `financeiro` tem nível hierárquico BAIXO (4 < advogado=6) e tomava
+    403 no require_roles(["advogado"]) — e é justamente quem opera a tela de
+    NFS-e. Dependência própria: hierarquia OU allowlist, sem enfraquecer os
+    demais gates.
+    """
+    role = getattr(cu.role, "value", str(cu.role))
+    if role in _PERFIS_FINANCEIROS or ROLE_LEVEL.get(role, 0) >= ROLE_LEVEL["advogado"]:
+        return cu
+    raise HTTPException(status_code=403, detail="Sem permissão para dados fiscais")
 
 # Status em que uma nota "ocupa" a referência (idempotência do fee).
 _STATUS_ATIVOS = (NFSeStatus.processando.value, NFSeStatus.autorizada.value)
@@ -111,7 +134,9 @@ class EmitirIn(BaseModel):
 
 
 class CancelarIn(BaseModel):
-    motivo: str = Field(min_length=3, description="Justificativa do cancelamento")
+    # max_length: 422 de validação em vez de estourar o limite da coluna no banco.
+    motivo: str = Field(min_length=3, max_length=500,
+                        description="Justificativa do cancelamento")
 
 
 # ── Helpers ────────────────────────────────────────────────────────────────────
@@ -122,6 +147,16 @@ def _role(cu: User) -> str:
 
 def _nota_dict(n: NotaFiscalServico) -> dict:
     """Projeção segura da nota (sem segredos; paths locais viram booleans)."""
+    if n.provider == "manual":
+        # Manual: os booleans refletem os ANEXOS locais realmente gravados.
+        tem_pdf = bool(n.pdf_path)
+        tem_xml = bool(n.xml_path)
+    else:
+        # Provedor: DANFSe/XML só existem depois da AUTORIZAÇÃO — antes disso
+        # o download falharia no provedor; não acenda o botão na UI.
+        autorizada = n.status == NFSeStatus.autorizada.value
+        tem_pdf = autorizada and bool(n.pdf_url or n.provider_id)
+        tem_xml = autorizada and bool(n.xml_url or n.provider_id)
     return {
         "id": n.id,
         "fee_id": n.fee_id,
@@ -142,8 +177,8 @@ def _nota_dict(n: NotaFiscalServico) -> dict:
         "competencia": n.competencia.isoformat() if n.competencia else None,
         "motivo_cancelamento": n.motivo_cancelamento,
         # pdf_path/xml_path são paths de SERVIDOR — nunca expostos; só booleans.
-        "tem_pdf": bool(n.pdf_path or n.pdf_url or n.provider_id),
-        "tem_xml": bool(n.xml_path or n.xml_url or n.provider_id),
+        "tem_pdf": tem_pdf,
+        "tem_xml": tem_xml,
     }
 
 
@@ -206,6 +241,17 @@ _MANUAL_SUBDIR = "nfse"
 _EXTENSOES_MANUAL = {".pdf", ".xml"}  # extensões controladas do modo manual
 
 
+def _filename_seguro(nota: NotaFiscalServico) -> str:
+    """Nome p/ Content-Disposition — só [A-Za-z0-9._-].
+
+    `numero` é entrada de usuário no modo manual (e dado externo no provedor):
+    nunca interpolar cru no header HTTP (CR/LF/aspas = header injection).
+    Vazio após sanitizar → cai para o id (uuid, sempre seguro).
+    """
+    seguro = re.sub(r"[^A-Za-z0-9._-]", "_", (nota.numero or "").strip())
+    return seguro or nota.id
+
+
 def _parse_data(campo: str, valor: str) -> date:
     try:
         return date.fromisoformat(valor)
@@ -225,12 +271,23 @@ async def _ler_e_validar_upload(upload: UploadFile, ext: str) -> bytes:
         raise HTTPException(
             status_code=415, detail=f"Arquivo deve ter extensão {ext}.",
         )
-    conteudo = await upload.read()
+    # Leitura em CHUNKS com teto: corta em teto+1 byte com 413 em vez de um
+    # .read() ilimitado que carregaria upload arbitrário inteiro em memória.
+    max_mb = get_settings().MAX_UPLOAD_MB
+    max_bytes = max_mb * 1024 * 1024
+    partes: list[bytes] = []
+    total = 0
+    while True:
+        chunk = await upload.read(1024 * 1024)
+        if not chunk:
+            break
+        total += len(chunk)
+        if total > max_bytes:
+            raise HTTPException(status_code=413, detail=f"Arquivo excede {max_mb}MB")
+        partes.append(chunk)
+    conteudo = b"".join(partes)
     if not conteudo:
         raise HTTPException(status_code=422, detail=f"Arquivo {ext} vazio.")
-    max_mb = get_settings().MAX_UPLOAD_MB
-    if len(conteudo) > max_mb * 1024 * 1024:
-        raise HTTPException(status_code=413, detail=f"Arquivo excede {max_mb}MB")
     _validar_conteudo(ext, conteudo)  # magic bytes (server-side), padrão GED
     # Reforço defensivo além do libmagic:
     if ext == ".pdf" and not conteudo.startswith(b"%PDF-"):
@@ -244,10 +301,10 @@ async def _ler_e_validar_upload(upload: UploadFile, ext: str) -> bytes:
 
 async def _salvar_arquivo_manual(conteudo: bytes, ext: str) -> str:
     """Grava em UPLOAD_DIR/nfse/<uuid><ext> e devolve o path RELATIVO salvo."""
-    base = get_settings().UPLOAD_DIR
-    os.makedirs(f"{base}/{_MANUAL_SUBDIR}", exist_ok=True)
+    base = FSPath(get_settings().UPLOAD_DIR)
+    (base / _MANUAL_SUBDIR).mkdir(parents=True, exist_ok=True)
     rel = f"{_MANUAL_SUBDIR}/{uuid4().hex}{ext}"
-    async with aiofiles.open(f"{base}/{rel}", "wb") as f:
+    async with aiofiles.open(base / rel, "wb") as f:
         await f.write(conteudo)
     return rel
 
@@ -263,6 +320,11 @@ def _arquivo_manual_ou_404(rel_path: str | None, tipo: str) -> FSPath:
             status_code=404,
             detail=f"Nota manual sem arquivo {tipo.upper()} anexado.",
         )
+    # Confinamento adicional ao resolve/is_relative_to: o modo manual só grava
+    # na subpasta nfse/ — path salvo fora dela (registro adulterado apontando
+    # p/ outro arquivo do UPLOAD_DIR, ex.: doc do GED) não é servido.
+    if not rel_path.startswith(f"{_MANUAL_SUBDIR}/"):
+        raise HTTPException(status_code=404, detail="Arquivo da nota inválido.")
     base = FSPath(get_settings().UPLOAD_DIR).resolve()
     destino = (base / rel_path).resolve()
     if not destino.is_relative_to(base):
@@ -278,7 +340,7 @@ def _arquivo_manual_ou_404(rel_path: str | None, tipo: str) -> FSPath:
 # ── Endpoints ──────────────────────────────────────────────────────────────────
 
 @router.get("/status")
-async def status_nfse(cu: User = Depends(_ADVOGADO_MAIS)):
+async def status_nfse(cu: User = Depends(_req_status_nfse)):
     """Gate da UI — {enabled, configured, ambiente, provedor}, sem segredos.
 
     `manual_disponivel` é sempre True: o REGISTRO manual (nota emitida no
@@ -326,11 +388,15 @@ async def listar_nfse(
 
 @router.post("/manual", dependencies=[Depends(rate_limit("nfse_manual", 6))])
 async def registrar_nfse_manual(
-    numero: str = Form(...),
+    # Request p/ rejeitar cedo corpo acima do teto via Content-Length (o default
+    # None só existe p/ chamadas diretas nos testes; no HTTP o FastAPI injeta).
+    request: Request = None,
+    # max_length nos Form: 422 de validação em vez de estourar coluna no banco.
+    numero: str = Form(..., max_length=30),
     data_emissao: str = Form(..., description="YYYY-MM-DD"),
     valor: Decimal = Form(...),
-    descricao: str = Form(...),
-    chave_acesso: str | None = Form(default=None),
+    descricao: str = Form(..., max_length=2000),
+    chave_acesso: str | None = Form(default=None, max_length=60),
     competencia: str | None = Form(default=None, description="YYYY-MM-DD"),
     client_id: str | None = Form(default=None),
     fee_id: str | None = Form(default=None),
@@ -345,6 +411,17 @@ async def registrar_nfse_manual(
     de fees.py) e SEM gate NFSE_ENABLED. Anexos opcionais (DANFSe PDF e XML)
     validados por magic bytes como no GED.
     """
+    # Rejeição CEDO por Content-Length (teto do GED): corpo declaradamente
+    # acima do limite toma 413 antes de qualquer leitura do stream multipart.
+    if request is not None:
+        max_mb = get_settings().MAX_UPLOAD_MB
+        content_length = (request.headers.get("content-length") or "").strip()
+        if content_length.isdigit() and int(content_length) > max_mb * 1024 * 1024:
+            raise HTTPException(
+                status_code=413,
+                detail=f"Requisição excede {max_mb}MB",
+            )
+
     numero = numero.strip()
     descricao = descricao.strip()
     if not numero:
@@ -355,6 +432,25 @@ async def registrar_nfse_manual(
         raise HTTPException(status_code=422, detail="Valor deve ser maior que zero.")
     dt_emissao = _parse_data("data_emissao", data_emissao)
     dt_competencia = _parse_data("competencia", competencia) if competencia else None
+
+    # Idempotência do registro manual: mesmo `numero` com nota manual ATIVA
+    # (não cancelada) já escriturada → 409, evitando duplicar em duplo-clique/
+    # retry (o Emissor Nacional não emite duas notas com o mesmo número).
+    ja_registrada = await db.scalar(
+        select(NotaFiscalServico.id).where(
+            NotaFiscalServico.provider == "manual",
+            NotaFiscalServico.numero == numero,
+            NotaFiscalServico.status != NFSeStatus.cancelada.value,
+        )
+    )
+    if ja_registrada:
+        raise HTTPException(
+            status_code=409,
+            detail=(
+                f"Já existe nota manual ativa com o número {numero} "
+                f"(nota {ja_registrada}). Cancele-a antes de registrar novamente."
+            ),
+        )
 
     if fee_id:
         fee = await db.get(Fee, fee_id)
@@ -370,35 +466,48 @@ async def registrar_nfse_manual(
     # Valida os DOIS anexos antes de gravar qualquer um (sem órfão em falha).
     conteudo_pdf = await _ler_e_validar_upload(pdf, ".pdf") if pdf is not None else None
     conteudo_xml = await _ler_e_validar_upload(xml, ".xml") if xml is not None else None
-    pdf_path = await _salvar_arquivo_manual(conteudo_pdf, ".pdf") if conteudo_pdf else None
-    xml_path = await _salvar_arquivo_manual(conteudo_xml, ".xml") if conteudo_xml else None
 
-    nota = NotaFiscalServico(
-        id=str(uuid4()),
-        fee_id=fee_id, client_id=client_id,
-        provider="manual", referencia=f"manual-{uuid4().hex[:12]}",
-        ambiente="producao",  # nota REAL, emitida no Emissor Nacional
-        status=NFSeStatus.autorizada.value,
-        numero=numero, chave_acesso=(chave_acesso or "").strip() or None,
-        valor=Decimal(str(valor)), descricao=descricao,
-        data_emissao=dt_emissao, competencia=dt_competencia,
-        pdf_path=pdf_path, xml_path=xml_path,
-        created_by=cu.id,
-    )
-    db.add(nota)
-    await criar_audit_log(
-        db, cu.id, _role(cu), "NFSE_MANUAL_REGISTRADA", "nfse", nota.id,
-        detalhes=f"numero={numero} data_emissao={dt_emissao.isoformat()}",
-        dados_depois={
-            "numero": numero, "valor": str(valor), "descricao": descricao,
-            "data_emissao": dt_emissao.isoformat(),
-            "competencia": dt_competencia.isoformat() if dt_competencia else None,
-            "chave_acesso": nota.chave_acesso,
-            "fee_id": fee_id, "client_id": client_id,
-            "tem_pdf": bool(pdf_path), "tem_xml": bool(xml_path),
-        },
-    )
-    await db.commit()
+    # Da gravação em disco ao commit em bloco único: se QUALQUER passo falhar
+    # (audit, commit, gravação do 2º arquivo), remove do storage o que já foi
+    # gravado — sem arquivo órfão sem registro no banco — e re-levanta o erro.
+    pdf_path = xml_path = None
+    try:
+        pdf_path = await _salvar_arquivo_manual(conteudo_pdf, ".pdf") if conteudo_pdf else None
+        xml_path = await _salvar_arquivo_manual(conteudo_xml, ".xml") if conteudo_xml else None
+
+        nota = NotaFiscalServico(
+            id=str(uuid4()),
+            fee_id=fee_id, client_id=client_id,
+            provider="manual", referencia=f"manual-{uuid4().hex[:12]}",
+            ambiente="producao",  # nota REAL, emitida no Emissor Nacional
+            status=NFSeStatus.autorizada.value,
+            numero=numero, chave_acesso=(chave_acesso or "").strip() or None,
+            valor=valor, descricao=descricao,  # valor já é Decimal (Form tipado)
+            data_emissao=dt_emissao, competencia=dt_competencia,
+            pdf_path=pdf_path, xml_path=xml_path,
+            created_by=cu.id,
+        )
+        db.add(nota)
+        await criar_audit_log(
+            db, cu.id, _role(cu), "NFSE_MANUAL_REGISTRADA", "nfse", nota.id,
+            detalhes=f"numero={numero} data_emissao={dt_emissao.isoformat()}",
+            dados_depois={
+                "numero": numero, "valor": str(valor), "descricao": descricao,
+                "data_emissao": dt_emissao.isoformat(),
+                "competencia": dt_competencia.isoformat() if dt_competencia else None,
+                "chave_acesso": nota.chave_acesso,
+                "fee_id": fee_id, "client_id": client_id,
+                "tem_pdf": bool(pdf_path), "tem_xml": bool(xml_path),
+            },
+        )
+        await db.commit()
+    except Exception:
+        base = get_settings().UPLOAD_DIR
+        for rel in (pdf_path, xml_path):
+            if rel:
+                with contextlib.suppress(OSError):
+                    os.remove(f"{base}/{rel}")
+        raise
     return _nota_dict(nota)
 
 
@@ -413,7 +522,14 @@ async def cancelar_nfse_manual(
     cu: User = Depends(_req_financeiro_leitura),
 ):
     """Cancelamento LÓGICO de nota manual (não toca provedor; sem gate NFSE_ENABLED)."""
-    nota = await db.get(NotaFiscalServico, nota_id)
+    # FOR UPDATE serializa cancelamentos concorrentes da mesma nota: o 2º clique
+    # espera o lock e, após o commit do 1º, cai no 409 "já cancelada" em vez de
+    # sobrescrever o motivo/auditar duas vezes.
+    nota = await db.scalar(
+        select(NotaFiscalServico)
+        .where(NotaFiscalServico.id == nota_id)
+        .with_for_update()
+    )
     if nota is None:
         raise HTTPException(status_code=404, detail="NFS-e não encontrada.")
     if nota.provider != "manual":
@@ -453,6 +569,25 @@ async def emitir_nfse(
         if fee is None or getattr(fee, "deleted_at", None) is not None:
             raise HTTPException(status_code=404, detail="Honorário não encontrado.")
         referencia = f"fee-{fee.id}"
+        # Idempotência cruzada com o modo MANUAL: se o honorário já tem nota
+        # manual ATIVA escriturada, emitir de novo no provedor duplicaria a
+        # nota fiscal do mesmo serviço → 409 orientando cancelar o registro
+        # manual antes.
+        manual_ativa = await db.scalar(
+            select(NotaFiscalServico.id).where(
+                NotaFiscalServico.provider == "manual",
+                NotaFiscalServico.fee_id == body.fee_id,
+                NotaFiscalServico.status != NFSeStatus.cancelada.value,
+            )
+        )
+        if manual_ativa:
+            raise HTTPException(
+                status_code=409,
+                detail=(
+                    f"Este honorário já tem nota manual ativa (nota {manual_ativa}). "
+                    "Cancele o registro manual antes de emitir pelo provedor."
+                ),
+            )
         cliente = await db.get(Client, fee.client_id) if fee.client_id else None
         valor = body.valor if body.valor is not None else fee.valor
         descricao = body.descricao or fee.descricao
@@ -618,7 +753,7 @@ async def baixar_pdf_nfse(
         return FileResponse(
             caminho, media_type="application/pdf",
             headers={"Content-Disposition":
-                     f'inline; filename="nfse-{nota.numero or nota.id}.pdf"'},
+                     f'inline; filename="nfse-{_filename_seguro(nota)}.pdf"'},
         )
     if not nota.provider_id:
         raise HTTPException(status_code=409, detail="Nota ainda não emitida no provedor.")
@@ -630,7 +765,7 @@ async def baixar_pdf_nfse(
         raise HTTPException(status_code=code, detail=detail)
     return Response(
         content=pdf, media_type="application/pdf",
-        headers={"Content-Disposition": f'inline; filename="nfse-{nota.numero or nota.id}.pdf"'},
+        headers={"Content-Disposition": f'inline; filename="nfse-{_filename_seguro(nota)}.pdf"'},
     )
 
 
@@ -654,7 +789,7 @@ async def baixar_xml_nfse(
         return FileResponse(
             caminho, media_type="application/xml",
             headers={"Content-Disposition":
-                     f'attachment; filename="nfse-{nota.numero or nota.id}.xml"'},
+                     f'attachment; filename="nfse-{_filename_seguro(nota)}.xml"'},
         )
     if not nota.provider_id:
         raise HTTPException(status_code=409, detail="Nota ainda não emitida no provedor.")
@@ -666,7 +801,7 @@ async def baixar_xml_nfse(
         raise HTTPException(status_code=code, detail=detail)
     return Response(
         content=xml, media_type="application/xml",
-        headers={"Content-Disposition": f'attachment; filename="nfse-{nota.numero or nota.id}.xml"'},
+        headers={"Content-Disposition": f'attachment; filename="nfse-{_filename_seguro(nota)}.xml"'},
     )
 
 
