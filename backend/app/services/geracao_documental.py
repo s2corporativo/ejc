@@ -47,6 +47,12 @@ AVISO_SEM_ITEM_OAB = (
     "consulte a tabela oficial OAB/MG ou cadastre o item (fonte obrigatoria)."
 )
 
+AVISO_KIT_EXISTENTE = (
+    "Kit documental ja existente para o caso — os rascunhos anteriores foram "
+    "reaproveitados (nenhuma duplicata criada). Para regenerar do zero, envie "
+    "forcar_novo=true."
+)
+
 # ── Checklist documental inicial por área ─────────────────────────────────────
 # Documentos usuais de instrução (template fixo — não são valores OAB).
 _CHECKLIST_BASE = [
@@ -217,6 +223,7 @@ async def gerar_kit_inicial(
     tipo_poderes: str = "ad_judicia",
     permite_substabelecimento: bool = True,
     poderes_especiais: str | None = None,
+    forcar_novo: bool = False,
 ) -> dict:
     """Gera o kit documental inicial (procuração + contrato + checklist).
 
@@ -226,11 +233,63 @@ async def gerar_kit_inicial(
     "ad_judicia_et_extra" (ou "especiais" com o texto dos poderes).
     Tudo nasce RASCUNHO (revisão humana obrigatória) e é auditado.
     O commit é feito aqui (transação única do kit).
+
+    IDEMPOTENTE (follow-up PR #283): se os 3 LegalDocs rascunho do kit (mesmos
+    títulos, não deletados) já existirem para o caso, devolve os EXISTENTES com
+    ja_existia=True — nada é criado/auditado. Regeneração explícita só com
+    forcar_novo=True.
     """
     hoje = date.today()
     adv = getattr(cu, "full_name", None) or "[advogado responsavel]"
     area = _area_str(case)
     papel = _role_str(cu)
+
+    titulos = {
+        "procuracao": padronizar_documento_juridico("Procuracao - " + case.titulo)[:200],
+        "contrato": padronizar_documento_juridico(
+            "Contrato de Honorarios - " + case.titulo)[:200],
+        "checklist": padronizar_documento_juridico(
+            "Checklist Documental Inicial - " + case.titulo)[:200],
+    }
+    if not forcar_novo:
+        existentes = (await db.execute(
+            select(LegalDoc).where(
+                LegalDoc.case_id == case.id,
+                LegalDoc.deleted_at.is_(None),
+                LegalDoc.status == PecaStatus.rascunho,
+                LegalDoc.titulo.in_(list(titulos.values())),
+            ).order_by(LegalDoc.created_at.desc())
+        )).scalars().all()
+        por_titulo: dict[str, LegalDoc] = {}
+        for d in existentes:
+            por_titulo.setdefault(d.titulo, d)   # fica o mais recente por título
+        if all(t in por_titulo for t in titulos.values()):
+            doc_proc = por_titulo[titulos["procuracao"]]
+            doc_contrato = por_titulo[titulos["contrato"]]
+            doc_check = por_titulo[titulos["checklist"]]
+            return {
+                "case_id": case.id,
+                "status": PecaStatus.rascunho.value,
+                "ja_existia": True,
+                "aviso": AVISO_KIT_EXISTENTE,
+                "procuracao": {
+                    "legal_doc_id": doc_proc.id,
+                    "titulo": doc_proc.titulo,
+                    "conteudo": doc_proc.conteudo,
+                    "aviso": ("Minuta pendente de assinatura — o registro formal de "
+                              "procuração é emitido no módulo Procurações após a outorga."),
+                },
+                "contrato": {
+                    "legal_doc_id": doc_contrato.id,
+                    "titulo": doc_contrato.titulo,
+                    "conteudo": doc_contrato.conteudo,
+                },
+                "checklist": {
+                    "legal_doc_id": doc_check.id,
+                    "titulo": doc_check.titulo,
+                    "conteudo": doc_check.conteudo,
+                },
+            }
 
     # ── 1. Procuração — SÓ a minuta (LegalDoc rascunho). O registro formal
     # `Procuracao` NÃO é criado aqui: ele satisfaria o item bloqueante
@@ -280,15 +339,15 @@ async def gerar_kit_inicial(
     # LegalDoc (nunca aprova sem human_reviewed=True) — geração é por template,
     # sem redação por LLM.
     docs = [
-        ("Procuracao - " + case.titulo, PecaTipo.procuracao, minuta_procuracao),
-        ("Contrato de Honorarios - " + case.titulo, PecaTipo.contrato, minuta_contrato),
-        ("Checklist Documental Inicial - " + case.titulo, PecaTipo.outro, texto_checklist),
+        (titulos["procuracao"], PecaTipo.procuracao, minuta_procuracao),
+        (titulos["contrato"], PecaTipo.contrato, minuta_contrato),
+        (titulos["checklist"], PecaTipo.outro, texto_checklist),
     ]
     criados: list[LegalDoc] = []
     for titulo, tipo, conteudo in docs:
         d = LegalDoc(
             id=str(uuid4()),
-            titulo=padronizar_documento_juridico(titulo)[:200],
+            titulo=titulo,
             tipo_peca=tipo,
             conteudo=conteudo,
             status=PecaStatus.rascunho,
@@ -318,6 +377,7 @@ async def gerar_kit_inicial(
     return {
         "case_id": case.id,
         "status": PecaStatus.rascunho.value,
+        "ja_existia": False,
         "aviso": AVISO_RASCUNHO,
         "procuracao": {
             "legal_doc_id": doc_proc.id,

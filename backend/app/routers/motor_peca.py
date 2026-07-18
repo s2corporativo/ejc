@@ -357,6 +357,9 @@ async def gerar(
             "tipo": _enum_val(deadline.tipo),
             "confirmado": True,
             "termo_inicial": termo_inicial.isoformat() if termo_inicial else None,
+            # Idempotência (follow-up PR #283): True quando a submissão repetiu
+            # um prazo já criado pelos gates — nada foi duplicado.
+            "ja_existia": confirmado.get("ja_existia", False),
         },
         "evento_processual": evento_info,
         "termo_inicial_confirmado": True,

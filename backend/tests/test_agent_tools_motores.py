@@ -39,12 +39,40 @@ TEXTO_CASO = (
 )
 
 
-class _FakeDB:
-    """DB mínimo: rastreia add/commit para provar (não-)persistência."""
+class _Res:
+    def __init__(self, val):
+        self._val = val
 
-    def __init__(self):
+    def scalars(self):
+        return self
+
+    def all(self):
+        if isinstance(self._val, list):
+            return self._val
+        return [] if self._val is None else [self._val]
+
+    def first(self):
+        vals = self.all()
+        return vals[0] if vals else None
+
+    def scalar_one_or_none(self):
+        return self._val
+
+    def scalar(self):
+        return self._val
+
+
+class _FakeDB:
+    """DB mínimo: rastreia add/commit para provar (não-)persistência.
+    `results` alimenta execute() na ordem (fila vazia → resultado None)."""
+
+    def __init__(self, results=None):
         self.added: list = []
         self.committed = 0
+        self.results: list = list(results or [])
+
+    async def execute(self, *a, **k):
+        return _Res(self.results.pop(0) if self.results else None)
 
     def add(self, obj):
         self.added.append(obj)
@@ -460,6 +488,25 @@ class TestConfirmarECriarPrazoService:
         # Data fatal determinística (15 dias úteis, recesso aplicado).
         assert r["data_prazo"] == prazo_dias_uteis(termo, 15, tribunal=None,
                                                    aplicar_recesso=True)
+        assert r["ja_existia"] is False
+
+    async def test_prazo_equivalente_existente_nao_duplica(
+            self, texto_fake, checklist_pronto, audit_fake):
+        """Idempotência (follow-up PR #283): Deadline ativo equivalente já
+        criado pelos gates → devolve o existente com ja_existia=True, sem
+        persistir nem commitar nada de novo."""
+        from datetime import date as _date
+
+        existente = SimpleNamespace(id="dl-1", data_prazo=_date(2026, 4, 1))
+        db = _FakeDB(results=[[existente]])   # 1ª consulta = dedup
+        r = await mps.confirmar_e_criar_prazo(
+            db, _ctx().user, _case(),
+            peca_codigo="contestacao", termo_inicial=date(2026, 3, 10),
+            termo_inicial_confirmado=True, origem="agente_juridico",
+        )
+        assert r["ja_existia"] is True
+        assert r["deadline"] is existente
+        assert db.added == [] and db.committed == 0
 
 
 # ══════════════════════════════════════════════════════════════════════════════

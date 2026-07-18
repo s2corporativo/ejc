@@ -125,11 +125,16 @@ def _deadline(confirmado=True, status=DeadlineStatus.pendente,
 
 
 def _db_artefatos(snaps=(), teses=(), propostas=(), docs=(), deadlines=(),
-                  n_ocr=0, extra=()):
+                  n_ocr=0, n_validacoes=0, extra=()):
     """Fila na ordem FIXA de coletar_artefatos (case passado pelo chamador):
-    snapshots → teses → propostas → legal_docs → deadlines → count OCR."""
-    return _FakeDB([list(snaps), list(teses), list(propostas), list(docs),
-                    list(deadlines), n_ocr, *extra])
+    snapshots → teses → propostas → legal_docs → deadlines → count OCR →
+    count validações de peça (esta última SÓ quando há peça de produção —
+    mesma condição do service, CR-15)."""
+    fila = [list(snaps), list(teses), list(propostas), list(docs),
+            list(deadlines), n_ocr]
+    if any(lco._eh_peca_producao(d) for d in docs):
+        fila.append(n_validacoes)
+    return _FakeDB(fila + list(extra))
 
 
 async def _estado(db) -> str:
@@ -455,10 +460,39 @@ async def test_jornada_caso_avancado_conclui_etapas():
         teses=[_tese("aprovada")],
         propostas=[_proposta("aprovada")],
         docs=_kit_docs() + [_doc(status=PecaStatus.protocolada, protocolo="1")],
-        deadlines=[_deadline()], n_ocr=3)
+        deadlines=[_deadline()], n_ocr=3, n_validacoes=1)
     art = await lco.coletar_artefatos(db, "case1", case=_case())
     jornada = lco.montar_jornada(art)
     assert all(j["status"] == "concluida" for j in jornada), jornada
+
+
+async def test_citacoes_verificadas_exige_validacao_registrada():
+    """CR-15: peça ai_generated SEM validação jurídica registrada NÃO conclui
+    'Citações verificadas' (antes o mero ai_generated concluía a etapa)."""
+    db = _db_artefatos(docs=[_doc()], n_validacoes=0)
+    art = await lco.coletar_artefatos(db, "case1", case=_case())
+    assert art["peca_ia"] is True and art["peca_validada"] is False
+    por_etapa = {j["etapa"]: j for j in lco.montar_jornada(art)}
+    assert por_etapa["citacoes_verificadas"]["status"] != "concluida"
+
+
+async def test_citacoes_verificadas_conclui_com_validacao_registrada():
+    """CR-15: com AILog de validação da peça (sinal de _ultima_validacao_peca)
+    a etapa conclui — mesmo para peça não-IA (validação humana registrada)."""
+    db = _db_artefatos(docs=[_doc(ai=False)], n_validacoes=2)
+    art = await lco.coletar_artefatos(db, "case1", case=_case())
+    assert art["peca_validada"] is True
+    por_etapa = {j["etapa"]: j for j in lco.montar_jornada(art)}
+    assert por_etapa["citacoes_verificadas"]["status"] == "concluida"
+
+
+async def test_sem_peca_de_producao_nao_consulta_validacoes():
+    """Sem peça de produção a consulta (7) NÃO roda (fila de 6 resultados) e
+    peca_validada é False — kit documental sozinho não conta."""
+    db = _db_artefatos(docs=_kit_docs())
+    art = await lco.coletar_artefatos(db, "case1", case=_case())
+    assert art["peca_validada"] is False
+    assert db._resultados == []   # fila consumida por inteiro (sem query 7)
 
 
 # ── Linha do tempo e visão consolidada ───────────────────────────────────────
