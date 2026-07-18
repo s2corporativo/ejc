@@ -26,7 +26,7 @@ from functools import lru_cache
 # Versão do calendário (ano.mês.revisão da curadoria). Incrementar a cada
 # mudança de DADOS (novo feriado local, suspensão etc.) — permite auditar
 # com qual calendário um prazo foi projetado.
-CALENDARIO_VERSAO = "2026.07.0"
+CALENDARIO_VERSAO = "2026.07.1"
 
 
 # ── Feriados nacionais OFICIAIS (leis federais) ──────────────────────────────
@@ -103,23 +103,140 @@ def em_recesso_art220(d: date) -> bool:
     return (d.month == 12 and d.day >= 20) or (d.month == 1 and d.day <= 20)
 
 
-# ── Feriados LOCAIS por tribunal (curadoria humana — VAZIO por padrão) ───────
+# ── Feriados LOCAIS por tribunal (curadoria humana) ──────────────────────────
 # Estrutura: {"TJMG": [{"data": date(...), "nome": ..., "fonte": ...,
 #                       "vigencia": ...}], ...}
 # `fonte` deve citar o ato oficial (lei estadual/municipal, portaria do
 # tribunal); `vigencia` o período de validade. NUNCA preencher sem fonte —
 # a validação de import derruba o módulo. Feriados municipais dinâmicos
 # continuam vindo da tabela `feriados` (deadline_calculator._FERIADOS_DB).
-FERIADOS_LOCAIS: dict[str, list[dict]] = {}
+#
+# CURADORIA 2026-07-18 (foro do escritório: Belo Horizonte/MG — TJMG e TRT-3).
+# Processo: cada registro abaixo foi confirmado em conteúdo de DOMÍNIO OFICIAL
+# (tjmg.jus.br, trt3.jus.br, cmbh.mg.gov.br, prefeitura.pbh.gov.br) acessado
+# nesta sessão via busca restrita por domínio (fetch direto bloqueado pelo
+# proxy do ambiente); a fonte de cada registro cita a norma (número/ano) e a
+# página oficial. Completar ANUALMENTE: as portarias/resoluções de calendário
+# (TJMG: Portaria Conjunta anual; TRT-3: Resolução Administrativa anual +
+# Portaria SEGP de feriados locais) valem só para o ano de referência.
+# Nada além do confirmado foi incluído (regra da casa: nunca inventar).
+#
+# NOTA: a data magna de MG (21/04, Constituição Estadual art. 256, red. EC
+# 22/1997) coincide com o feriado nacional de Tiradentes — não precisa de
+# registro local. Os feriados aqui referem-se ao MUNICÍPIO-SEDE Belo
+# Horizonte (comarca de BH / varas de BH); comarcas do interior têm feriados
+# próprios NÃO curados aqui.
+_FONTE_LEI_BH = (
+    "Lei municipal de Belo Horizonte 1.327, de 08/02/1967 (feriados "
+    "religiosos municipais: Sexta-feira da Paixão, Corpus Christi, Assunção "
+    "de Nossa Senhora 15/08 e Imaculada Conceição 08/12) — "
+    "cmbh.mg.gov.br/atividade-legislativa/pesquisar-legislacao/lei/1327/1967; "
+    "confirmada tb. em prefeitura.pbh.gov.br (notícias de funcionamento nos "
+    "feriados de Assunção e Imaculada Conceição)"
+)
+_FONTE_PC_TJMG_2026 = (
+    "TJMG, Portaria Conjunta 1798/PR/2026 (DJe 13/04/2026) — calendário de "
+    "feriados e suspensões de expediente forense de 2026 — "
+    "www8.tjmg.jus.br/institucional/at/pdf/pc17982026.pdf; portal: "
+    "tjmg.jus.br/portal-tjmg/informes/calendario-de-feriados-em-2026-"
+    "suspensoes-de-expediente.htm"
+)
+_FONTE_RA_TRT3_2026 = (
+    "TRT-3, Resolução Administrativa 109, de 12/08/2025 (Órgão Especial) — "
+    "calendário de feriados da JT/MG em 2026 — portal.trt3.jus.br/internet/"
+    "conheca-o-trt/comunicacao/noticias-institucionais/aprovado-calendario-"
+    "de-feriados-da-jt-minas-em-2026; Portaria TRT3/SEGP 991, de 03/11/2025 "
+    "(divulga os feriados locais de 2026, Anexo Único)"
+)
 
-# ── Suspensões de prazo por tribunal (curadoria humana — VAZIO por padrão) ───
+FERIADOS_LOCAIS: dict[str, list[dict]] = {
+    "TJMG": [
+        # Comarca de Belo Horizonte — feriados municipais por lei permanente.
+        {"data": date(2026, 8, 15), "nome": "Assunção de Nossa Senhora (BH)",
+         "fonte": _FONTE_LEI_BH + "; constante tb. da " + _FONTE_PC_TJMG_2026,
+         "vigencia": "desde 08/02/1967 (lei em vigor); data de 2026"},
+        {"data": date(2026, 12, 8), "nome": "Imaculada Conceição (BH)",
+         "fonte": _FONTE_LEI_BH,
+         "vigencia": "desde 08/02/1967 (lei em vigor); data de 2026"},
+        {"data": date(2027, 8, 15), "nome": "Assunção de Nossa Senhora (BH)",
+         "fonte": _FONTE_LEI_BH,
+         "vigencia": "desde 08/02/1967 (lei em vigor); data de 2027"},
+        {"data": date(2027, 12, 8), "nome": "Imaculada Conceição (BH)",
+         "fonte": _FONTE_LEI_BH,
+         "vigencia": "desde 08/02/1967 (lei em vigor); data de 2027"},
+    ],
+    "TRT3": [
+        # Varas de Belo Horizonte — feriados municipais (lei permanente) +
+        # calendário JT/MG 2026 (RA 109/2025; Portaria SEGP 991/2025).
+        {"data": date(2026, 8, 15), "nome": "Assunção de Nossa Senhora (BH)",
+         "fonte": _FONTE_LEI_BH + "; constante tb. da " + _FONTE_RA_TRT3_2026,
+         "vigencia": "desde 08/02/1967 (lei em vigor); data de 2026"},
+        {"data": date(2026, 12, 8),
+         "nome": "Dia da Justiça e Imaculada Conceição (BH)",
+         "fonte": _FONTE_RA_TRT3_2026 + "; " + _FONTE_LEI_BH,
+         "vigencia": "ano de 2026 (RA 109/2025); Imaculada Conceição em BH "
+                     "desde 08/02/1967 (lei em vigor)"},
+        {"data": date(2027, 8, 15), "nome": "Assunção de Nossa Senhora (BH)",
+         "fonte": _FONTE_LEI_BH,
+         "vigencia": "desde 08/02/1967 (lei em vigor); data de 2027"},
+        {"data": date(2027, 12, 8), "nome": "Imaculada Conceição (BH)",
+         "fonte": _FONTE_LEI_BH,
+         "vigencia": "desde 08/02/1967 (lei em vigor); data de 2027"},
+    ],
+}
+
+# ── Suspensões de prazo por tribunal (curadoria humana) ──────────────────────
 # Estrutura: {"TJMG": [{"data_inicio": date(...), "data_fim": date(...),
 #                       "nome": ..., "fonte": ..., "vigencia": ...}], ...}
 # `fonte` = portaria/resolução do tribunal que suspendeu os prazos.
 # Suspensões dinâmicas continuam vindo da tabela `suspensoes_tribunal`
 # (deadline_calculator._SUSPENSOES_TRIB) — este bloco é para curadoria
 # versionada em código.
-SUSPENSOES_TRIBUNAL: dict[str, list[dict]] = {}
+#
+# CURADORIA 2026-07-18 — mesmo processo e fontes da seção FERIADOS_LOCAIS
+# acima (conteúdo de domínio oficial acessado nesta sessão; completar
+# anualmente quando o tribunal publicar o calendário do ano seguinte).
+# Recesso 20/12–20/01 NÃO entra aqui: já coberto por RECESSO_ART_220
+# (CPC art. 220 / CLT art. 775-A) via aplicar_recesso.
+SUSPENSOES_TRIBUNAL: dict[str, list[dict]] = {
+    "TJMG": [
+        {"data_inicio": date(2026, 2, 18), "data_fim": date(2026, 2, 18),
+         "nome": "Quarta-feira de Cinzas (sem expediente forense)",
+         "fonte": "TJMG, Resolução 458/2004 (Carnaval: expediente suspenso "
+                  "de segunda a Quarta-feira de Cinzas, 16 a 18/02/2026); "
+                  + _FONTE_PC_TJMG_2026,
+         "vigencia": "datas de 2026 (16 e 17/02 já cobertos como feriados "
+                     "móveis de Carnaval)"},
+        {"data_inicio": date(2026, 4, 1), "data_fim": date(2026, 4, 2),
+         "nome": "Semana Santa — quarta e quinta-feira santas "
+                 "(sem expediente; sexta 03/04 já é feriado móvel)",
+         "fonte": _FONTE_PC_TJMG_2026,
+         "vigencia": "ano de 2026"},
+        {"data_inicio": date(2026, 4, 20), "data_fim": date(2026, 4, 20),
+         "nome": "Suspensão de expediente — segunda-feira anterior a "
+                 "Tiradentes (21/04)",
+         "fonte": _FONTE_PC_TJMG_2026,
+         "vigencia": "ano de 2026"},
+        {"data_inicio": date(2026, 10, 30), "data_fim": date(2026, 10, 30),
+         "nome": "Comemoração do Dia do Servidor Público "
+                 "(expediente forense suspenso)",
+         "fonte": _FONTE_PC_TJMG_2026,
+         "vigencia": "ano de 2026"},
+        {"data_inicio": date(2026, 12, 7), "data_fim": date(2026, 12, 7),
+         "nome": "Suspensão de expediente — segunda-feira anterior a "
+                 "08/12 (Imaculada Conceição em BH)",
+         "fonte": _FONTE_PC_TJMG_2026,
+         "vigencia": "ano de 2026"},
+    ],
+    "TRT3": [
+        {"data_inicio": date(2026, 4, 1), "data_fim": date(2026, 4, 2),
+         "nome": "Semana Santa — quarta e quinta-feira santas "
+                 "(calendário JT/MG: Semana Santa de 01 a 05/04/2026; "
+                 "sexta 03/04 já é feriado móvel)",
+         "fonte": _FONTE_RA_TRT3_2026,
+         "vigencia": "ano de 2026"},
+    ],
+}
 
 
 # ── Validação fail-fast: registro sem fonte/vigencia derruba o import ────────
