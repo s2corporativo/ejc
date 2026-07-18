@@ -32,25 +32,103 @@ def _qualificacao(c: Client) -> str:
     )
 
 
-def _procuracao(case: Case, cli: Client, adv: str) -> str:
+# Poderes especiais do art. 105 do CPC. NUNCA os outorgue por padrao: so entram
+# quando o cadastro (Procuracao.tipo_poderes) diz "ad_judicia_et_extra".
+_PODERES_ESPECIAIS_105 = (
+    "receber citacao, confessar, reconhecer a procedencia do pedido, "
+    "transigir, desistir, renunciar ao direito sobre que se funda a acao, "
+    "receber e dar quitacao, firmar compromisso"
+)
+# Clausula de substabelecimento (padrao do escritorio: com ou sem reserva). So
+# aparece quando o cadastro autoriza (Procuracao.permite_substabelecimento).
+_CLAUSULA_SUBSTAB = ", e substabelecer esta a outrem, com ou sem reserva de poderes"
+
+
+def _clausula_poderes(
+    tipo_poderes: str,
+    permite_substabelecimento: bool,
+    poderes_especiais: str | None,
+) -> tuple[str, str]:
+    """Monta (titulo, corpo dos poderes) a partir do cadastro da Procuracao.
+
+    Regra de ouro: nunca outorgar poderes que o cadastro nao concedeu. A
+    clausula de SUBSTABELECIMENTO so entra quando ``permite_substabelecimento``
+    for True; os PODERES ESPECIAIS do art. 105 do CPC (transigir, desistir,
+    RENUNCIAR, firmar compromisso, etc.) so entram em ``ad_judicia_et_extra`` ou,
+    de forma explicita e controlada, via texto em ``especiais``.
+    """
+    tipo = (tipo_poderes or "ad_judicia").strip().lower()
+    substab = _CLAUSULA_SUBSTAB if permite_substabelecimento else ""
+
+    if tipo == "ad_judicia_et_extra":
+        titulo = "PROCURACAO AD JUDICIA ET EXTRA"
+        corpo = (
+            "a quem confere os poderes da clausula ad judicia et extra, para o foro "
+            "em geral, em qualquer Juizo, Instancia ou Tribunal, podendo propor as "
+            "acoes competentes e defender o(a) outorgante nas contrarias, bem como os "
+            "poderes especiais para " + _PODERES_ESPECIAIS_105 + substab
+        )
+    elif tipo == "especiais":
+        titulo = "PROCURACAO COM PODERES ESPECIAIS"
+        especiais = (poderes_especiais or "").strip() or "[especificar os poderes especiais outorgados]"
+        corpo = (
+            "a quem confere os poderes da clausula ad judicia, para o foro em geral, "
+            "em qualquer Juizo, Instancia ou Tribunal, podendo propor as acoes "
+            "competentes e defender o(a) outorgante nas contrarias, alem dos seguintes "
+            "poderes especiais expressamente outorgados: " + especiais + substab
+        )
+    else:  # "ad_judicia" — default CONSERVADOR (so foro em geral, sem art. 105)
+        titulo = "PROCURACAO AD JUDICIA"
+        corpo = (
+            "a quem confere os poderes da clausula ad judicia, para o foro em geral, "
+            "em qualquer Juizo, Instancia ou Tribunal, podendo propor as acoes "
+            "competentes e defender o(a) outorgante nas contrarias" + substab
+        )
+    return titulo, corpo
+
+
+def _procuracao(
+    case: Case | None,
+    cli: Client,
+    adv: str,
+    *,
+    tipo_poderes: str = "ad_judicia_et_extra",
+    permite_substabelecimento: bool = True,
+    poderes_especiais: str | None = None,
+    foro_restrito: str | None = None,
+) -> str:
+    # PODERES: agora derivados do cadastro Procuracao (tipo_poderes /
+    # permite_substabelecimento / poderes_especiais). Os DEFAULTS abaixo sao
+    # RETROCOMPATIVEIS: sem argumentos (fluxo de gerar_documentos_iniciais)
+    # reproduzem o comportamento historico -> ad_judicia_et_extra COM
+    # substabelecimento. Ja o cadastro tem default conservador (ad_judicia sem
+    # substabelecimento), de modo que a minuta gerada a partir do registro nunca
+    # outorga substabelecimento/renuncia que o cliente nao concedeu.
+    #
     # Dados FIXOS do escritório vêm das settings (fonte única). Quando ainda não
     # preenchidos no .env, os helpers devolvem placeholder EXPLÍCITO e visível.
     # A CIDADE de assinatura é a sede do escritório; a DATA depende do caso e
     # permanece como placeholder de revisão.
+    titulo, corpo_poderes = _clausula_poderes(tipo_poderes, permite_substabelecimento, poderes_especiais)
+
+    if case is not None:
+        alvo = (
+            f", especialmente para atuar no caso {case.titulo}"
+            f"{(' (processo no ' + case.numero_processo + ')') if case.numero_processo else ''}"
+        )
+    elif foro_restrito:
+        alvo = f", com atuacao adstrita ao foro/comarca de {foro_restrito}"
+    else:
+        alvo = ""
+
     texto = _MARCA + (
-        "PROCURACAO AD JUDICIA ET EXTRA\n\n"
+        titulo + "\n\n"
         f"OUTORGANTE: {_qualificacao(cli)}.\n\n"
         f"OUTORGADO(A): {adv}, advogado(a) inscrito(a) na OAB/MG sob o no {_settings.escritorio_oab()}, "
         f"integrante de {_settings.ESCRITORIO_NOME}, com escritorio em {_settings.escritorio_endereco()}.\n\n"
         "PODERES: Pelo presente instrumento, o(a) outorgante nomeia e constitui seu(sua) "
-        "bastante procurador(a) o(a) advogado(a) acima, a quem confere os poderes da clausula "
-        "ad judicia et extra, para o foro em geral, em qualquer Juizo, Instancia ou Tribunal, "
-        "podendo propor as acoes competentes e defender o(a) outorgante nas contrarias, bem como "
-        "os poderes especiais para receber citacao, confessar, reconhecer a procedencia do pedido, "
-        "transigir, desistir, renunciar ao direito sobre que se funda a acao, receber e dar quitacao, "
-        "firmar compromisso e substabelecer, com ou sem reserva de poderes, "
-        f"especialmente para atuar no caso {case.titulo}"
-        f"{(' (processo no ' + case.numero_processo + ')') if case.numero_processo else ''}.\n\n"
+        "bastante procurador(a) o(a) advogado(a) acima, "
+        + corpo_poderes + alvo + ".\n\n"
         f"{_settings.ESCRITORIO_CIDADE}/{_settings.ESCRITORIO_ESTADO}, [data].\n\n"
         "______________________________________\n"
         f"{cli.razao_social or cli.nome}"
