@@ -17,6 +17,8 @@ import {
   Download,
   ChevronDown,
   ChevronUp,
+  ShieldAlert,
+  ShieldCheck,
 } from "lucide-react";
 
 // Catálogo de peças e áreas vem de GET /pecas/meta (fonte única no backend).
@@ -147,6 +149,208 @@ function etapasInit(): Etapa[] {
   return ETAPAS_DEF.map((e) => ({ ...e, status: "aguardando" }));
 }
 
+// ── Verificação de citações (anti-alucinação #46) ──────────────────────────
+// Shape emitido pelo backend no evento SSE `concluido` (verificacao_citacoes),
+// produzido por verificador_jurisprudencia. Cada citação vem com um `status`
+// e, quando aplicável, um `aviso` explicando o motivo.
+type CitacaoStatus = "verificada" | "identificada" | "suspeita" | "generica";
+
+interface CitacaoVerificada {
+  citacao?: string;
+  trecho?: string;
+  tipo?: string;
+  status: CitacaoStatus;
+  aviso?: string | null;
+  fonte_verificacao?: string | null;
+}
+
+interface VerificacaoCitacoes {
+  total?: number;
+  confirmadas?: number;
+  nao_encontradas?: number;
+  score?: number | null;
+  citacoes?: CitacaoVerificada[];
+  contagem_status?: Partial<Record<CitacaoStatus, number>>;
+  avisos?: string[];
+}
+
+const CIT_STATUS_CFG: Record<
+  CitacaoStatus,
+  { label: string; row: string; chip: string }
+> = {
+  suspeita: {
+    label: "Suspeita",
+    row: "bg-danger-50 border-danger-200",
+    chip: "bg-danger-100 text-danger-800",
+  },
+  generica: {
+    label: "Genérica",
+    row: "bg-warn-50 border-warn-200",
+    chip: "bg-warn-100 text-warn-800",
+  },
+  identificada: {
+    label: "Identificada",
+    row: "bg-slate-50 border-slate-200",
+    chip: "bg-slate-200 text-slate-700",
+  },
+  verificada: {
+    label: "Verificada",
+    row: "bg-green-50 border-green-200",
+    chip: "bg-green-100 text-green-700",
+  },
+};
+
+// Ordem de exibição: primeiro o que exige conferência (suspeita → genérica →
+// identificada → verificada). Suspeita e genérica precisam saltar aos olhos.
+const CIT_ORDEM: CitacaoStatus[] = [
+  "suspeita",
+  "generica",
+  "identificada",
+  "verificada",
+];
+
+function VerificacaoCitacoesPanel({
+  verificacao,
+}: {
+  verificacao: VerificacaoCitacoes | null;
+}) {
+  // Sinal indisponível → aviso NEUTRO (nunca um falso "tudo verificado").
+  if (!verificacao) {
+    return (
+      <div className="flex items-start gap-2 rounded-xl border border-slate-200 bg-slate-50 px-4 py-3 text-xs text-slate-500">
+        <ShieldAlert size={16} className="flex-shrink-0 text-slate-400" />
+        <span>
+          Verificação de citações indisponível para esta peça — confira súmulas,
+          artigos e processos manualmente antes de protocolar.
+        </span>
+      </div>
+    );
+  }
+
+  const citacoes = Array.isArray(verificacao.citacoes)
+    ? verificacao.citacoes
+    : [];
+  const total = verificacao.total ?? citacoes.length;
+
+  if (total === 0) {
+    return (
+      <div className="flex items-start gap-2 rounded-xl border border-slate-200 bg-slate-50 px-4 py-3 text-xs text-slate-500">
+        <ShieldAlert size={16} className="flex-shrink-0 text-slate-400" />
+        <span>
+          Nenhuma citação jurisprudencial detectada no texto — nada a verificar.
+        </span>
+      </div>
+    );
+  }
+
+  const cont: Partial<Record<CitacaoStatus, number>> =
+    verificacao.contagem_status ??
+    citacoes.reduce<Partial<Record<CitacaoStatus, number>>>((acc, c) => {
+      acc[c.status] = (acc[c.status] ?? 0) + 1;
+      return acc;
+    }, {});
+  const nSuspeita = cont.suspeita ?? 0;
+  const nGenerica = cont.generica ?? 0;
+  const nIdentificada = cont.identificada ?? 0;
+  const score = verificacao.score;
+
+  // Tom do cabeçalho: vermelho se há suspeita (bloqueia aprovação no backend),
+  // âmbar se há genérica/identificada não confirmada, verde se tudo verificado.
+  const alerta = nSuspeita > 0;
+  const atencao = !alerta && (nGenerica > 0 || nIdentificada > 0);
+  const headTone = alerta
+    ? "border-danger-200 bg-danger-50"
+    : atencao
+      ? "border-warn-200 bg-warn-50"
+      : "border-green-200 bg-green-50";
+  const scoreTone = alerta
+    ? "bg-danger-100 text-danger-800"
+    : atencao
+      ? "bg-warn-100 text-warn-800"
+      : "bg-green-100 text-green-700";
+
+  const ordenadas = [...citacoes].sort(
+    (a, b) => CIT_ORDEM.indexOf(a.status) - CIT_ORDEM.indexOf(b.status),
+  );
+
+  return (
+    <div className="rounded-xl border border-slate-200 overflow-hidden">
+      <div className={`flex items-center gap-2 px-4 py-3 border-b ${headTone}`}>
+        {alerta ? (
+          <ShieldAlert size={16} className="flex-shrink-0 text-danger-600" />
+        ) : atencao ? (
+          <AlertTriangle size={16} className="flex-shrink-0 text-warn-600" />
+        ) : (
+          <ShieldCheck size={16} className="flex-shrink-0 text-green-600" />
+        )}
+        <span className="text-sm font-medium text-slate-800">
+          Verificação de citações
+        </span>
+        {score != null && (
+          <span
+            className={`ml-auto rounded-full px-2.5 py-0.5 text-xs font-semibold ${scoreTone}`}
+          >
+            Score {score}/100
+          </span>
+        )}
+      </div>
+
+      <div className="px-4 py-3 space-y-3">
+        {/* Contadores por status (só os presentes) */}
+        <div className="flex flex-wrap gap-1.5">
+          {CIT_ORDEM.filter((s) => (cont[s] ?? 0) > 0).map((s) => (
+            <span
+              key={s}
+              className={`rounded-full px-2 py-0.5 text-[11px] font-medium ${CIT_STATUS_CFG[s].chip}`}
+            >
+              {cont[s]} {CIT_STATUS_CFG[s].label.toLowerCase()}
+            </span>
+          ))}
+        </div>
+
+        {nSuspeita > 0 && (
+          <div className="flex items-start gap-2 rounded-lg border border-danger-200 bg-danger-50 px-3 py-2 text-xs text-danger-700">
+            <AlertTriangle size={14} className="flex-shrink-0 mt-0.5" />
+            <span>
+              <strong>
+                {nSuspeita} citação(ões) suspeita(s) de alucinação.
+              </strong>{" "}
+              A política do sistema <strong>bloqueia a aprovação</strong>{" "}
+              enquanto houver citação suspeita — confira ou remova cada uma
+              antes de revisar e assinar.
+            </span>
+          </div>
+        )}
+
+        <ul className="space-y-1.5">
+          {ordenadas.map((c, i) => {
+            const cfg = CIT_STATUS_CFG[c.status] ?? CIT_STATUS_CFG.identificada;
+            return (
+              <li key={i} className={`rounded-lg border px-3 py-2 ${cfg.row}`}>
+                <div className="flex items-center gap-2">
+                  <span
+                    className={`rounded-full px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide ${cfg.chip}`}
+                  >
+                    {cfg.label}
+                  </span>
+                  <span className="text-xs font-medium text-slate-800 break-words">
+                    {c.citacao || c.trecho || "(citação)"}
+                  </span>
+                </div>
+                {c.aviso && (
+                  <p className="mt-1 text-[11px] leading-snug text-slate-500">
+                    {c.aviso}
+                  </p>
+                )}
+              </li>
+            );
+          })}
+        </ul>
+      </div>
+    </div>
+  );
+}
+
 interface Props {
   open: boolean;
   onClose: () => void;
@@ -177,6 +381,9 @@ export default function PecaGeneratorModal({
   const [erroMsg, setErroMsg] = useState("");
   const [copiado, setCopiado] = useState(false);
   const [expandidos, setExpandidos] = useState<Set<number>>(new Set());
+  const [verificacao, setVerificacao] = useState<VerificacaoCitacoes | null>(
+    null,
+  );
 
   const [tipoPeca, setTipoPeca] = useState("peticao_inicial");
   const [areaDireito, setAreaDireito] = useState("trabalhista");
@@ -239,6 +446,7 @@ export default function PecaGeneratorModal({
     setErroMsg("");
     setCopiado(false);
     setExpandidos(new Set());
+    setVerificacao(null);
   };
 
   const fechar = () => {
@@ -375,6 +583,10 @@ export default function PecaGeneratorModal({
             setDocumento(payload.documento ?? "");
             setAiLogId(payload.ai_log_id ?? "");
             setCodigoPeca(payload.codigo_peca ?? "");
+            // Relatório anti-alucinação do pipeline (súmulas/artigos/processos
+            // conferidos contra a base oficial) — pode vir null (fail-safe do
+            // backend), tratado como "verificação indisponível" no painel.
+            setVerificacao(payload.verificacao_citacoes ?? null);
             setFase("concluido");
             onConcluido?.(payload.ai_log_id, payload.documento);
           } else if (eventLine === "erro") {
@@ -722,6 +934,11 @@ export default function PecaGeneratorModal({
                   </div>
                 </div>
               </div>
+
+              {/* Painel anti-alucinação — score + citações destacadas por
+                  status (suspeita/genérica em vermelho/amarelo, verificadas em
+                  verde). Fica junto ao documento para a revisão HITL. */}
+              <VerificacaoCitacoesPanel verificacao={verificacao} />
 
               <div>
                 <div className="flex items-center justify-between mb-2">
