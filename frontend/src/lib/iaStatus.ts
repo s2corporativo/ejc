@@ -19,7 +19,7 @@ export const MENSAGEM_IA_NAO_ATIVADA =
 let cache: IaStatus | null = null;
 let inflight: Promise<IaStatus> | null = null;
 
-async function buscarStatus(): Promise<IaStatus> {
+async function buscarStatus(): Promise<IaStatus | null> {
   try {
     const { data } = await api.get<Partial<IaStatus>>("/ia/status");
     if (data && typeof data.disponivel === "boolean") {
@@ -28,15 +28,18 @@ async function buscarStatus(): Promise<IaStatus> {
   } catch {
     // fail-open — sem status confiável, não bloquear nada.
   }
-  return { disponivel: true, mensagem: null };
+  return null;
 }
 
 function obterStatus(): Promise<IaStatus> {
   if (cache) return Promise.resolve(cache);
+  // Só memoriza resposta REAL do backend; uma falha transitória (backend
+  // reiniciando, rede) devolve fail-open sem cachear, para retentar na
+  // próxima tela em vez de esconder o banner pela sessão inteira.
   inflight ??= buscarStatus()
     .then((status) => {
-      cache = status;
-      return status;
+      if (status) cache = status;
+      return status ?? { disponivel: true, mensagem: null };
     })
     .finally(() => {
       inflight = null;

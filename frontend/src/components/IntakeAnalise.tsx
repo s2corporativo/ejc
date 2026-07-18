@@ -154,9 +154,9 @@ export default function IntakeAnalise({ caseId }: { caseId: string }) {
     <ErrorBoundary
       fallback={
         <div className="card border border-warn-200 bg-warn-50 p-4 text-sm text-warn-800">
-          Não foi possível exibir a Análise Completa (IA) deste caso.
-          {" "}
-          {MENSAGEM_IA_NAO_ATIVADA}
+          Não foi possível exibir a Análise Completa (IA) deste caso. Tente
+          novamente em instantes; se o problema continuar, procure o
+          administrador do sistema.
         </div>
       }
     >

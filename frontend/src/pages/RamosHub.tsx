@@ -271,6 +271,7 @@ export default function RamosHub() {
               tone: "from-slate-500/10 to-slate-500/0 text-slate-700",
             };
             const Icon = visual.icon;
+            const hub = hubDoRamo(area.slug);
             return (
               <Card key={area.slug} className="group relative h-full overflow-hidden p-5 transition duration-200 hover:-translate-y-1 hover:shadow-[0_26px_70px_rgba(15,23,42,0.14)]">
                 <div className={`absolute inset-x-0 top-0 h-24 bg-gradient-to-b ${visual.tone}`} />
@@ -288,11 +289,11 @@ export default function RamosHub() {
                   <div className="mt-auto space-y-2 pt-2">
                     {/* Ação primária: abre o hub do ramo (calculadoras, guias
                         e súmulas) — antes só alcançável digitando a URL. */}
-                    {hubDoRamo(area.slug) && (
+                    {hub && (
                       <Button
                         size="sm"
                         className="w-full"
-                        onClick={() => navigate(hubDoRamo(area.slug)!)}
+                        onClick={() => navigate(hub)}
                       >
                         <Wrench className="h-3.5 w-3.5" /> Abrir ferramentas do ramo
                       </Button>

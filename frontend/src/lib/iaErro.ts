@@ -9,8 +9,7 @@ export const MENSAGEM_IA_INDISPONIVEL =
   "Tente novamente em instantes ou procure o administrador do sistema.";
 
 /** Rótulo curto para tooltips/botões desabilitados de IA. */
-export const ROTULO_IA_NAO_ATIVADA =
-  "IA não ativada — procure o administrador";
+export const ROTULO_IA_NAO_ATIVADA = "IA não ativada — procure o administrador";
 
 // Marcadores de dialeto de infraestrutura que denunciam mensagem técnica.
 const MARCADORES_TECNICOS =
@@ -25,9 +24,17 @@ export function mensagemErroIA(
   err: unknown,
   fallback: string = MENSAGEM_IA_INDISPONIVEL,
 ): string {
-  const resposta = (
-    err as { response?: { data?: { detail?: unknown } } } | undefined
-  )?.response?.data;
+  const resp = (
+    err as
+      | { response?: { status?: number; data?: { detail?: unknown } } }
+      | undefined
+  )?.response;
+  // 422 (validação Pydantic, detail em array) não é "IA indisponível":
+  // orientar a revisar os dados em vez de mandar procurar o administrador.
+  if (resp?.status === 422 && Array.isArray(resp?.data?.detail)) {
+    return "Verifique os dados informados e tente novamente.";
+  }
+  const resposta = resp?.data;
   let detail: unknown = resposta?.detail;
   if (
     detail &&
