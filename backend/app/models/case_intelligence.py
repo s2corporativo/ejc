@@ -38,6 +38,7 @@ from app.core.database import Base
 # exigir novo tipo enum do Postgres; mudanças futuras ficam aditivas).
 ORIGENS_SNAPSHOT: tuple[str, ...] = (
     "triagem", "intake", "raio_x", "motor_peca", "manual", "matriz_teses",
+    "orquestrador",  # FASE 5 — LegalCaseOrchestrator (linha do tempo de estados)
 )
 
 
