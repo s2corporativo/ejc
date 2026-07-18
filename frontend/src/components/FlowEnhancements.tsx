@@ -71,6 +71,19 @@ export function deveInjetarCaso(
   return casoContextualDaUrl(search);
 }
 
+export function destinoPrazoDoDashboard(
+  currentPathname: string,
+  href: string | null | undefined,
+): string | null {
+  if (currentPathname !== "/" || !href) return null;
+  try {
+    const url = new URL(href, window.location.origin);
+    return url.pathname === "/prazos" ? "/atividades?tipo=prazo" : null;
+  } catch {
+    return null;
+  }
+}
+
 function lerMarcador(): CreatedCaseMarker | null {
   try {
     const raw = sessionStorage.getItem(CREATED_CASE_KEY);
@@ -101,6 +114,7 @@ function salvarMarcador(id: string) {
  * - guarda o caso recém-criado e continua para a Jornada quando o fluxo legado
  *   voltar à lista;
  * - injeta `case_id` em prazo/tarefa/evento criados a partir de `?caso=`;
+ * - encaminha somente atalhos do Dashboard para a Central de prazos filtrada;
  * - mostra a central simples do caso na rota exata `/casos/:id`.
  *
  * Nenhuma autorização é decidida aqui: todos os endpoints continuam validando
@@ -138,6 +152,35 @@ export default function FlowEnhancements() {
       api.interceptors.response.eject(responseInterceptor);
     };
   }, []);
+
+  useEffect(() => {
+    if (location.pathname !== "/") return;
+
+    const onClick = (event: MouseEvent) => {
+      if (
+        event.defaultPrevented ||
+        event.button !== 0 ||
+        event.metaKey ||
+        event.ctrlKey ||
+        event.shiftKey ||
+        event.altKey
+      ) {
+        return;
+      }
+      const element = event.target instanceof Element ? event.target : null;
+      const anchor = element?.closest<HTMLAnchorElement>("a[href]");
+      const destino = destinoPrazoDoDashboard(
+        location.pathname,
+        anchor?.getAttribute("href"),
+      );
+      if (!destino) return;
+      event.preventDefault();
+      navigate(destino);
+    };
+
+    document.addEventListener("click", onClick, true);
+    return () => document.removeEventListener("click", onClick, true);
+  }, [location.pathname, navigate]);
 
   useEffect(() => {
     const marker = lerMarcador();
