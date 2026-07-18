@@ -7,7 +7,7 @@ import { PageHeader } from "../components/UI";
 
 const TABS = [
   { k: "docs", label: "Documentos", icon: FolderOpen },
-  { k: "dataroom", label: "Data Room", icon: Lock },
+  { k: "dataroom", label: "Compartilhamento seguro", icon: Lock },
 ] as const;
 
 type Tab = (typeof TABS)[number]["k"];
@@ -26,8 +26,8 @@ export default function GestaoDocumental() {
   return (
     <div>
       <PageHeader
-        title="Gestão Documental"
-        subtitle="Documentos internos e Data Room com segregação de acesso."
+        title="Documentos"
+        subtitle="Arquivo do escritório e compartilhamento seguro, com segregação de acesso e vínculo aos casos."
       />
       <div className="flex w-fit gap-1 rounded-xl bg-slate-100 p-1 mb-5">
         {TABS.map(({ k, label, icon: Icon }) => (
