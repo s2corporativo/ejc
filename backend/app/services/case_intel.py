@@ -18,6 +18,9 @@ from sqlalchemy import text
 
 from app.core.config import get_settings
 from app.core.database import AsyncSessionLocal
+from app.core.taxonomia import (
+    AREAS_TRIAGEM, SENTINELA_OUTRO, areas_para_prompt, normalizar_area,
+)
 from app.models.case import Case, CaseMovimento
 from app.models.client import Client
 from app.models.legal_doc import LegalDoc
@@ -33,8 +36,11 @@ SYS_TRIAGEM = (
     "Você é um advogado sênior fazendo a TRIAGEM inicial de um caso a partir dos "
     "fatos relatados. Responda APENAS um objeto JSON válido (sem texto fora do JSON, "
     "sem markdown), com exatamente estas chaves:\n"
-    '{"area": "<trabalhista|civel|empresarial|administrativo|tributario|'
-    'previdenciario|consumidor|familia|sucessoes|penal|ambiental|bancario|outro>",'
+    # Vocabulário de área DERIVADO da fonte única (taxonomia.AREAS_TRIAGEM,
+    # slugs canônicos de CaseArea) + sentinela "outro". As grafias antigas do
+    # prompt ("civel", "penal") seguem aceitas no parse via normalizar_area.
+    '{"area": "<' + areas_para_prompt(AREAS_TRIAGEM, separador="|")
+    + f'|{SENTINELA_OUTRO}>",'
     ' "assunto": "<tema jurídico em poucas palavras>",'
     ' "tese_principal": "<a tese central a sustentar, 1-3 frases>",'
     ' "teses_secundarias": ["<tese alternativa>", "..."],'
@@ -137,7 +143,10 @@ async def triagem_caso(case_id: str) -> None:
             chance = data.get("chance_exito")
             complex_ = (data.get("complexidade") or "").strip()
             assunto = (data.get("assunto") or "").strip()
-            area_sug = (data.get("area") or "").strip()
+            # Normaliza para o canônico (aceita valores legados "civel"/"penal");
+            # sem correspondência segura, preserva o texto bruto para o revisor.
+            area_bruta = (data.get("area") or "").strip()
+            area_sug = normalizar_area(area_bruta) or area_bruta
 
             marca = "  ⟦rascunho IA — revisar (OAB)⟧"
             if tese and not (case.tese_principal or "").strip():

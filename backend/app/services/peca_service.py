@@ -13,6 +13,7 @@ from uuid import uuid4
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.config import get_settings
+from app.core.taxonomia import AREAS_PECA as _AREAS_PECA
 from app.models.ai_log import AILog, AITipoUso, AIStatusHITL
 from app.models.legal_doc import LegalDoc, PecaTipo
 from app.services.ai_gateway import chat as gw_chat
@@ -360,13 +361,12 @@ ESTRUTURA_TIPO: dict[str, str] = {
     ),
 }
 
-AREAS_DIREITO = [
-    "trabalhista", "civil", "previdenciario", "tributario",
-    "criminal", "consumidor", "administrativo", "familia",
-    "empresarial", "ambiental", "bancario", "imobiliario",
-    "sucessoes", "constitucional", "juizados", "digital_lgpd",
-    "transito",
-]
+# Vocabulário do pipeline de peças — DERIVADO da fonte única de taxonomia
+# (app/core/taxonomia.AREAS_PECA). Ordem e conteúdo históricos preservados;
+# "juizados" é rito do pipeline (sem equivalente canônico em CaseArea). Para
+# converter uma área canônica neste vocabulário use
+# taxonomia.MAPA_CANONICO_PARA_PECA (nunca mapeie na mão).
+AREAS_DIREITO = list(_AREAS_PECA)
 
 # Área do pipeline → chave do prompt especializado em SYSTEM_PROMPTS.
 # None = ramo sem prompt dedicado (funciona com o prompt genérico + nome da área).

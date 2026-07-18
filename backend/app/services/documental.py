@@ -92,20 +92,21 @@ def _procuracao(
     cli: Client,
     adv: str,
     *,
-    tipo_poderes: str = "ad_judicia_et_extra",
+    tipo_poderes: str = "ad_judicia",
     permite_substabelecimento: bool = True,
     poderes_especiais: str | None = None,
     foro_restrito: str | None = None,
 ) -> str:
-    # PODERES: agora derivados do cadastro Procuracao (tipo_poderes /
-    # permite_substabelecimento / poderes_especiais). Os DEFAULTS abaixo sao
-    # RETROCOMPATIVEIS: sem argumentos (fluxo de gerar_documentos_iniciais)
-    # reproduzem o comportamento historico -> ad_judicia_et_extra COM
-    # substabelecimento. Ja o cadastro Procuracao usa tipo_poderes default
-    # "ad_judicia" (sem os poderes especiais do art. 105 CPC); o substabelecimento
-    # segue o campo permite_substabelecimento (default True no model). Assim, a
-    # minuta gerada a partir do registro reflete EXATAMENTE o que foi cadastrado,
-    # nunca outorgando poderes especiais/renuncia que o cliente nao concedeu.
+    # PODERES: derivados do cadastro Procuracao (tipo_poderes /
+    # permite_substabelecimento / poderes_especiais). DEFAULTS CONSERVADORES,
+    # alinhados ao kit documental (KitDocumentalIn) e ao model Procuracao:
+    # "ad_judicia" SEM os poderes especiais do art. 105 do CPC — renuncia,
+    # transacao, quitacao etc. SO entram com marcacao explicita
+    # ("ad_judicia_et_extra" ou "especiais"); o substabelecimento segue o flag
+    # permite_substabelecimento (padrao do escritorio, default True como no
+    # kit). O comportamento historico do fluxo legado (et extra + substab por
+    # omissao) foi DESCONTINUADO: quem precisar do escopo amplo deve pedir
+    # explicitamente (parametros do endpoint gerar-documentos / kit).
     #
     # Dados FIXOS do escritório vêm das settings (fonte única). Quando ainda não
     # preenchidos no .env, os helpers devolvem placeholder EXPLÍCITO e visível.
@@ -193,8 +194,21 @@ def _relatorio_inicial(case: Case, cli: Client, area: str) -> str:
     return padronizar_documento_juridico(texto)
 
 
-async def gerar_documentos_iniciais(case_id: str, user_id: str) -> list[dict]:
-    """Gera minutas iniciais do caso. Retorna lista de {id, titulo, tipo}."""
+async def gerar_documentos_iniciais(
+    case_id: str,
+    user_id: str,
+    *,
+    tipo_poderes: str = "ad_judicia",
+    permite_substabelecimento: bool = True,
+    poderes_especiais: str | None = None,
+) -> list[dict]:
+    """Gera minutas iniciais do caso. Retorna lista de {id, titulo, tipo}.
+
+    Procuração com DEFAULT CONSERVADOR (ad_judicia, mesmo contrato do kit
+    documental): os poderes especiais do art. 105 do CPC só entram quando o
+    chamador marca explicitamente ``tipo_poderes="ad_judicia_et_extra"`` (ou
+    ``"especiais"`` + ``poderes_especiais``).
+    """
     async with AsyncSessionLocal() as db:
         case = await db.get(Case, case_id)
         if not case:
@@ -207,7 +221,12 @@ async def gerar_documentos_iniciais(case_id: str, user_id: str) -> list[dict]:
         area = getattr(case.area, "value", None) or str(case.area or "")
 
         docs = [
-            ("Procuracao - " + case.titulo, PecaTipo.procuracao, _procuracao(case, cli, adv)),
+            ("Procuracao - " + case.titulo, PecaTipo.procuracao, _procuracao(
+                case, cli, adv,
+                tipo_poderes=tipo_poderes,
+                permite_substabelecimento=permite_substabelecimento,
+                poderes_especiais=poderes_especiais,
+            )),
             ("Contrato de Honorarios - " + case.titulo, PecaTipo.contrato, _contrato_honorarios(case, cli, adv, area)),
             ("Relatorio Juridico Inicial - " + case.titulo, PecaTipo.parecer, _relatorio_inicial(case, cli, area)),
         ]
