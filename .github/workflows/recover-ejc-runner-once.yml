@@ -1,0 +1,70 @@
+name: Recuperar runner EJC (execução única)
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - ".github/workflows/recover-ejc-runner-once.yml"
+
+permissions:
+  contents: read
+
+concurrency:
+  group: recover-ejc-runner-once
+  cancel-in-progress: false
+
+env:
+  SSHPASS: ${{ secrets.VPS_PASSWORD }}
+  VPS_HOST: ${{ secrets.VPS_HOST }}
+  VPS_USER: ${{ secrets.VPS_USER }}
+  VPS_PORT: ${{ secrets.VPS_PORT }}
+
+jobs:
+  recover:
+    if: github.event.head_commit.message == 'ops: recuperar runner self-hosted ejc-vps'
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Validar secrets
+        env:
+          VPS_SSH_KEY: ${{ secrets.VPS_SSH_KEY }}
+        run: |
+          test -n "$VPS_HOST" || { echo "::error::VPS_HOST ausente"; exit 1; }
+          test -n "$VPS_USER" || { echo "::error::VPS_USER ausente"; exit 1; }
+          if [ -z "$VPS_SSH_KEY" ] && [ -z "$SSHPASS" ]; then
+            echo "::error::VPS_SSH_KEY e VPS_PASSWORD ausentes"
+            exit 1
+          fi
+
+      - name: Preparar SSH
+        env:
+          VPS_SSH_KEY: ${{ secrets.VPS_SSH_KEY }}
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y -qq sshpass
+          PORT="${VPS_PORT:-22}"
+          mkdir -p ~/.ssh && chmod 700 ~/.ssh
+          KEEPALIVE="-o ServerAliveInterval=30 -o ServerAliveCountMax=10"
+          if [ -n "$VPS_SSH_KEY" ]; then
+            printf '%s\n' "$VPS_SSH_KEY" > ~/.ssh/deploy_key
+            chmod 600 ~/.ssh/deploy_key
+            echo "RSH=ssh -i $HOME/.ssh/deploy_key -o IdentitiesOnly=yes ${KEEPALIVE} -o StrictHostKeyChecking=accept-new -p ${PORT}" >> "$GITHUB_ENV"
+          else
+            echo "RSH=sshpass -e ssh -o PreferredAuthentications=password,keyboard-interactive ${KEEPALIVE} -o StrictHostKeyChecking=accept-new -p ${PORT}" >> "$GITHUB_ENV"
+          fi
+
+      - name: Reiniciar e validar o runner ejc-vps
+        run: |
+          ${RSH} "${VPS_USER}@${VPS_HOST}" 'bash -se' <<'REMOTE'
+          set -euo pipefail
+          test -d /opt/actions-runner || {
+            echo "Diretório /opt/actions-runner não encontrado" >&2
+            exit 1
+          }
+          cd /opt/actions-runner
+          if [ "$(id -u)" -eq 0 ]; then SUDO=""; else SUDO="sudo"; fi
+          $SUDO ./svc.sh status || true
+          $SUDO ./svc.sh stop || true
+          $SUDO ./svc.sh start
+          $SUDO ./svc.sh status
+          REMOTE
