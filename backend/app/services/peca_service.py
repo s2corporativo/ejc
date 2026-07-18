@@ -17,6 +17,7 @@ from app.models.legal_doc import LegalDoc, PecaTipo
 from app.services.ai_gateway import chat as gw_chat
 from app.services.ai_service import buscar_contexto_rag
 from app.services.document_format import aviso_rascunho_ia, padronizar_documento_juridico
+from app.services.legal_base import BASE_ESTRUTURADA
 from app.services.sanitizer import sanitizar_pii
 from app.services.system_prompts import AVISO_RASCUNHO, BASE_PROMPT, SYSTEM_PROMPTS
 from app.services.system_prompts.padrao_ouro import PADRAO_OURO_PECA
@@ -738,6 +739,9 @@ async def gerar_peca_pipeline(
     r1 = await gw_chat(
         messages=[
             {"role": "system", "content": (
+                # Blindagem anti-alucinação (P0.2): etapa intermediária alimenta a
+                # peça final — núcleo anti-invenção SEM interferir na saída JSON.
+                BASE_ESTRUTURADA + "\n\n"
                 "Você é especialista em direito processual. Analise os fatos e confirme "
                 "o tipo de peça mais adequado, identificando o rito processual, "
                 "competência e requisitos formais obrigatórios."
@@ -782,6 +786,8 @@ async def gerar_peca_pipeline(
     r2 = await gw_chat(
         messages=[
             {"role": "system", "content": (
+                # Blindagem anti-alucinação (P0.2) — aditiva, não altera o formato.
+                BASE_ESTRUTURADA + "\n\n"
                 "Você é especialista em direito " + area_direito + ". "
                 "Estruture o enquadramento jurídico completo: fundamentos legais, "
                 "elementos constitutivos, pressupostos processuais e condições da ação.\n"
@@ -861,6 +867,8 @@ async def gerar_peca_pipeline(
     r5 = await gw_chat(
         messages=[
             {"role": "system", "content": (
+                # Blindagem anti-alucinação (P0.2) — aditiva, não altera o formato.
+                BASE_ESTRUTURADA + "\n\n"
                 "Você é advogado sênior. Organize os argumentos jurídicos em ordem de força "
                 "e impacto: primários (mais sólidos), secundários (subsidiários) e "
                 "contingenciais (para casos de rejeição dos anteriores)."
@@ -888,6 +896,8 @@ async def gerar_peca_pipeline(
     r6 = await gw_chat(
         messages=[
             {"role": "system", "content": (
+                # Blindagem anti-alucinação (P0.2) — aditiva, não altera o formato.
+                BASE_ESTRUTURADA + "\n\n"
                 "Você é advogado crítico especializado em gestão de riscos processuais. "
                 "Identifique os riscos que o advogado deve conhecer antes de protocolar."
             )},
