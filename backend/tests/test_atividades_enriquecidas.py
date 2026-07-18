@@ -119,15 +119,23 @@ async def test_atividades_sql_seleciona_colunas_novas_da_view():
 
 # ── 2. PATCH /agenda-eventos/{id} — responsavel_id ────────────────────────────
 
+# Row do SELECT inicial do PATCH (via .mappings().first() → dict). Valores
+# None fazem _buscar_conflitos retornar [] sem tocar o banco.
+_ROW_EVENTO = {
+    "case_id": None, "responsavel_id": None, "data_evento": None,
+    "hora": None, "concluido": False,
+}
+
+
 async def test_patch_agenda_aceita_responsavel_id():
     from app.routers.agenda_eventos import EventoPatch, atualizar
 
-    # 1º execute: SELECT case_id (sem caso → sem gate de ownership);
+    # 1º execute: SELECT (sem caso → sem gate de ownership);
     # 2º execute: UPDATE.
-    db = _FakeDB([[(None,)], []])
+    db = _FakeDB([[_ROW_EVENTO], []])
     out = await atualizar("e1", EventoPatch(responsavel_id="u7"), db=db, cu=_gestor())
 
-    assert out == {"ok": True}
+    assert out == {"ok": True, "conflito_agenda": []}
     upd_sql, upd_params = db.executed[1]
     assert "responsavel_id = :responsavel_id" in upd_sql
     assert upd_params["responsavel_id"] == "u7"
@@ -137,10 +145,10 @@ async def test_patch_agenda_aceita_responsavel_id():
 async def test_patch_agenda_responsavel_id_e_opcional_exclude_unset():
     from app.routers.agenda_eventos import EventoPatch, atualizar
 
-    db = _FakeDB([[(None,)]])
+    db = _FakeDB([[_ROW_EVENTO], []])
     out = await atualizar("e1", EventoPatch(titulo="Novo título"), db=db, cu=_gestor())
 
-    assert out == {"ok": True}
+    assert out == {"ok": True, "conflito_agenda": []}
     upd_sql, upd_params = db.executed[1]
     assert "titulo = :titulo" in upd_sql
     # Campo não enviado NÃO entra no UPDATE (exclude_unset)
@@ -150,7 +158,7 @@ async def test_patch_agenda_responsavel_id_e_opcional_exclude_unset():
 async def test_patch_agenda_sem_campos_nao_atualiza():
     from app.routers.agenda_eventos import EventoPatch, atualizar
 
-    db = _FakeDB([[(None,)]])
+    db = _FakeDB([[_ROW_EVENTO]])
     out = await atualizar("e1", EventoPatch(), db=db, cu=_gestor())
     assert out == {"ok": True}
     assert len(db.executed) == 1  # só o SELECT — nenhum UPDATE
@@ -170,7 +178,7 @@ async def test_patch_agenda_evento_inexistente_404():
 async def test_patch_agenda_tipo_invalido_422():
     from app.routers.agenda_eventos import EventoPatch, atualizar
 
-    db = _FakeDB([[(None,)]])
+    db = _FakeDB([[_ROW_EVENTO]])
     with pytest.raises(HTTPException) as exc:
         await atualizar("e1", EventoPatch(tipo="festa"), db=db, cu=_gestor())
     assert exc.value.status_code == 422
@@ -184,10 +192,11 @@ def test_evento_patch_tem_responsavel_id_opcional():
     assert not campo.is_required()
 
 
-# ── 3. Sanidade da migration 097 (sem banco) ──────────────────────────────────
+# ── 3. Sanidade da migration 100 (sem banco) ──────────────────────────────────
+# (Renumerada de 097→100 no merge com a main, que já tinha 097-099.)
 
 _MIG = Path(__file__).resolve().parents[1] / "alembic" / "versions" / \
-    "097_vw_atividades_enriquecida.py"
+    "100_vw_atividades_enriquecida.py"
 
 
 def test_migration_097_upgrade_acrescenta_colunas_no_final():
@@ -205,7 +214,7 @@ def test_migration_097_upgrade_acrescenta_colunas_no_final():
 def test_migration_097_downgrade_restaura_versao_053():
     src = _MIG.read_text(encoding="utf-8")
     mig_053 = (_MIG.parent / "053_reconcile_schema.py").read_text(encoding="utf-8")
-    assert 'down_revision = "096_rag_embedding_1024"' in src
+    assert 'down_revision = "099_legal_doc_protocolo"' in src
     assert "DROP VIEW IF EXISTS vw_atividades" in src
     # Downgrade NÃO contém os campos novos na definição restaurada
     m = re.search(r"_VIEW_053 = \"\"\"(.*?)\"\"\"", src, re.S)

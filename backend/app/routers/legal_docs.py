@@ -27,7 +27,7 @@ from app.services.document_format import padronizar_documento_juridico
 from app.services.validador_juridico_service import ValidacaoInput, validar_rascunho_juridico
 from app.schemas.legal_doc import (
     LegalDocCreate, LegalDocUpdate, LegalDocRevisao, LegalDocAprovacao,
-    LegalDocResponse, LegalDocDetail,
+    LegalDocProtocolo, LegalDocResponse, LegalDocDetail,
 )
 from app.schemas.common import MsgResponse
 
@@ -568,6 +568,55 @@ async def aprovar(
     return d
 
 
+@router.patch("/{doc_id}/protocolo", response_model=LegalDocDetail)
+async def registrar_protocolo(
+    doc_id: str, payload: LegalDocProtocolo,
+    db: AsyncSession = Depends(get_db),
+    cu: User = Depends(get_current_user),
+):
+    """Registra o comprovante de protocolo (peticionamento manual) na peça.
+
+    O peticionamento é feito FORA do sistema (exporta PDF, protocola no PJe/eproc).
+    Sem gravar número/tribunal/data do protocolo, a PROVA DE TEMPESTIVIDADE fica
+    fora do EJC. Este endpoint fecha a lacuna gravando esses dados na própria peça,
+    com o MESMO gate de ownership das demais rotas e trilha de auditoria
+    (PROTOCOLO_REGISTRADO).
+
+    A transição de status para 'protocolada' continua pelo PATCH /legal-docs/{id}
+    (que aplica os gates de validação/HITL) — aqui só registramos o comprovante,
+    sem contornar aqueles controles.
+    """
+    d = (await db.execute(
+        select(LegalDoc).where(
+            LegalDoc.id == doc_id, LegalDoc.deleted_at.is_(None)
+        )
+    )).scalar_one_or_none()
+    if not d:
+        raise HTTPException(status_code=404, detail="Peça não encontrada")
+    if d.case_id:
+        await verificar_acesso_caso(db, cu, d.case_id)
+
+    numero = (payload.numero_protocolo or "").strip()
+    if not numero:
+        raise HTTPException(status_code=422, detail="Número de protocolo é obrigatório")
+
+    d.numero_protocolo = numero[:120]
+    tribunal = (payload.protocolo_tribunal or "").strip()
+    d.protocolo_tribunal = tribunal[:120] or None
+    # Sem data informada, assume o instante do registro (tz-aware).
+    d.protocolado_em = payload.protocolado_em or datetime.now(timezone.utc)
+    comprovante = (payload.protocolo_comprovante_doc_id or "").strip()
+    d.protocolo_comprovante_doc_id = comprovante or None
+
+    await criar_audit_log(
+        db, cu.id, cu.role.value, "PROTOCOLO_REGISTRADO", "legal_docs", doc_id,
+        detalhes=f"numero={numero} tribunal={d.protocolo_tribunal or '-'}",
+    )
+    await db.commit()
+    await db.refresh(d)
+    return d
+
+
 @router.delete("/{doc_id}", response_model=MsgResponse)
 async def remover(
     doc_id: str,
@@ -663,6 +712,7 @@ async def exportar_pdf(
             titulo, conteudo, pronto_protocolo=True,
             codigo_peca=d.codigo_peca, versao=d.versao,
             status=d.status, revisado_em=d.revisado_em,
+            minuta_ia=bool(d.ai_generated and not d.human_reviewed),
         )
     except RuntimeError as e:
         raise HTTPException(status_code=503, detail=str(e))
@@ -743,6 +793,9 @@ async def documento_unico_impressao(
             titulo, conteudo, pronto_protocolo=True,
             codigo_peca=d.codigo_peca, versao=d.versao,
             status=d.status, revisado_em=d.revisado_em,
+            # Este endpoint exporta em QUALQUER status (rascunho incluso): a marca
+            # de origem-IA precisa viajar com o PDF de impressão do rascunho.
+            minuta_ia=bool(d.ai_generated and not d.human_reviewed),
         )
     except RuntimeError as e:
         raise HTTPException(status_code=503, detail=str(e))
@@ -849,6 +902,10 @@ async def exportar_docx(
         codigo_peca=d.codigo_peca, titulo=d.titulo, versao=d.versao,
         status=d.status, revisado_em=d.revisado_em,
     )
+    # Marca de origem-IA embutida na 1ª página SÓ para rascunho não-revisado
+    # (ai_generated e não human_reviewed). O advogado precisa baixar o DOCX para
+    # editar — nada de gate de bloqueio; a marca d'água na minuta é a salvaguarda.
+    meta["minuta_ia"] = bool(d.ai_generated and not d.human_reviewed)
 
     titulo = padronizar_documento_juridico(d.titulo)
     conteudo = padronizar_documento_juridico(d.conteudo)

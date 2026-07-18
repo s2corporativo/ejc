@@ -22,6 +22,8 @@ import {
   User as UserIcon,
   MapPin,
   Plus,
+  AlertTriangle,
+  X,
 } from "lucide-react";
 import api from "../lib/api";
 import { asList } from "../lib/list";
@@ -39,6 +41,23 @@ type ItemType =
 
 /** Fonte (router de backend) que serve o item — decide quais ações existem. */
 type Fonte = "prazo" | "tarefa" | "agenda" | "intimacao" | "suspensao";
+
+/** Evento colidente devolvido por POST/PATCH /agenda-eventos/ no campo
+ *  `conflito_agenda` (double-booking: AVISA, não bloqueia). */
+interface ConflitoEvento {
+  id: string;
+  titulo: string;
+  tipo?: string | null;
+  data_evento?: string | null;
+  hora?: string | null;
+  local?: string | null;
+}
+
+/** Extrai a lista de conflitos da resposta do backend com segurança. */
+function extrairConflitos(data: unknown): ConflitoEvento[] {
+  const lista = (data as { conflito_agenda?: unknown } | null)?.conflito_agenda;
+  return Array.isArray(lista) ? (lista as ConflitoEvento[]) : [];
+}
 
 export type ActivityView = "lista" | "calendario" | "timeline" | "kanban";
 
@@ -724,6 +743,8 @@ export default function CentralAtividades() {
     item: Activity;
     responsavel_id: string;
   } | null>(null);
+  // Conflito de horário devolvido ao criar/editar evento — aviso não silencioso.
+  const [conflitos, setConflitos] = useState<ConflitoEvento[]>([]);
   const [filterTipo, setFilterTipo] = useState<ItemType | "todos">("todos");
   const [filterUrgencia, setFilterUrgencia] = useState<string>("todos");
   const [filterSituacao, setFilterSituacao] = useState<Situacao | "todos">(
@@ -855,6 +876,21 @@ export default function CentralAtividades() {
     }
   };
 
+  // Double-booking: o evento JÁ foi criado/editado (a política é AVISAR, não
+  // bloquear). O aviso não pode ser silencioso → toast + banner persistente.
+  const avisarConflitos = (lista: ConflitoEvento[]) => {
+    setConflitos(lista);
+    if (lista.length) {
+      const resumo = lista
+        .map((c) => `“${c.titulo}”${c.hora ? ` às ${c.hora}` : ""}`)
+        .join("; ");
+      toast.error(
+        `Evento salvo, mas há conflito de horário com ${lista.length} ` +
+          `evento(s): ${resumo}`,
+      );
+    }
+  };
+
   const salvarReagendamento = async () => {
     if (!reag) return;
     if (!reag.data) {
@@ -863,20 +899,23 @@ export default function CentralAtividades() {
     }
     const { item } = reag;
     try {
+      let conflitoResp: ConflitoEvento[] = [];
       if (item.fonte === "prazo")
         await api.patch(`/deadlines/${item.id}`, { data_prazo: reag.data });
       else if (item.fonte === "tarefa")
         await api.patch(`/tasks/${item.id}`, { data_limite: reag.data });
-      else if (item.fonte === "agenda")
-        await api.patch(`/agenda-eventos/${item.id}`, {
+      else if (item.fonte === "agenda") {
+        const { data } = await api.patch(`/agenda-eventos/${item.id}`, {
           data_evento: reag.data,
         });
-      else {
+        conflitoResp = extrairConflitos(data);
+      } else {
         toast.error("Este tipo de item não permite reagendamento");
         return;
       }
       toast.success("Data atualizada");
       setReag(null);
+      avisarConflitos(conflitoResp);
       load();
     } catch (e) {
       toast.error(apiErro(e, "Erro ao reagendar"));
@@ -994,7 +1033,7 @@ export default function CentralAtividades() {
           toast.error("Data do evento é obrigatória");
           return;
         }
-        await api.post("/agenda-eventos/", {
+        const { data } = await api.post("/agenda-eventos/", {
           titulo: form.titulo,
           tipo: form.tipo,
           data_evento: form.data,
@@ -1002,7 +1041,13 @@ export default function CentralAtividades() {
           local: form.local || undefined,
           descricao: form.descricao || undefined,
         });
-        toast.success("Evento criado");
+        const conf = extrairConflitos(data);
+        if (conf.length) {
+          avisarConflitos(conf);
+        } else {
+          setConflitos([]); // limpa aviso obsoleto de um salvamento anterior
+          toast.success("Evento criado");
+        }
       }
       setModal(false);
       load();
@@ -1111,6 +1156,52 @@ export default function CentralAtividades() {
           </>
         }
       />
+
+      {/* Aviso de double-booking — não silencioso. O evento já foi criado/
+          editado (política do backend: AVISA, não bloqueia). */}
+      {conflitos.length > 0 && (
+        <div
+          role="alert"
+          className="mb-5 rounded-xl border border-warn-200 bg-warn-50 px-4 py-3"
+        >
+          <div className="flex items-start gap-2">
+            <AlertTriangle className="w-4 h-4 mt-0.5 shrink-0 text-warn-600" />
+            <div className="flex-1 min-w-0">
+              <p className="text-sm font-semibold text-warn-800">
+                Conflito de horário na agenda
+              </p>
+              <p className="text-xs text-warn-700 mt-0.5">
+                O evento foi salvo, mas coincide com {conflitos.length}{" "}
+                compromisso(s) do mesmo responsável no mesmo horário:
+              </p>
+              <ul className="mt-2 space-y-1">
+                {conflitos.map((c) => (
+                  <li
+                    key={c.id}
+                    className="flex items-center gap-2 text-xs text-warn-800"
+                  >
+                    <Clock className="w-3.5 h-3.5 shrink-0 text-warn-600" />
+                    <span className="font-medium truncate">{c.titulo}</span>
+                    {c.hora && <span className="text-warn-700">· {c.hora}</span>}
+                    {c.local && (
+                      <span className="text-warn-600 truncate">
+                        · {c.local}
+                      </span>
+                    )}
+                  </li>
+                ))}
+              </ul>
+            </div>
+            <button
+              onClick={() => setConflitos([])}
+              aria-label="Dispensar aviso de conflito"
+              className="p-1 -m-1 text-warn-600 hover:text-warn-800 shrink-0"
+            >
+              <X className="w-4 h-4" />
+            </button>
+          </div>
+        </div>
+      )}
 
       <div className="grid grid-cols-4 gap-3 mb-5">
         {[

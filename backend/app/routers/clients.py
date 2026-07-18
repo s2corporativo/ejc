@@ -14,6 +14,7 @@ from pydantic import BaseModel  # noqa: E402 (module-level p/ _ResolverClienteRe
 from app.core.database import get_db
 from app.core.rate_limit import rate_limit
 from app.core.security import get_current_user, require_roles
+from app.core.ownership import is_gestao
 from app.models.user import User
 from app.models.client import Client, ClientStatus
 from app.models.case import Case
@@ -42,6 +43,78 @@ def _req_clientes_leitura(cu: User = Depends(get_current_user)) -> User:
     if cu.role.value not in _CLIENTES:
         raise HTTPException(status_code=403, detail="Sem permissão para consultar clientes")
     return cu
+
+
+# Papéis operacionais de atendimento/recepção que precisam da carteira INTEIRA
+# para triar leads e operar o funil do CRM — restringi-los quebraria o fluxo
+# legítimo. A segregação de sigilo (achado de auditoria: advogado via nome+CPF+
+# CNPJ da carteira de OUTROS advogados) incide sobre advogado/advogado_auxiliar.
+# financeiro/estagiario/advogado_auxiliar nem chegam aqui (fora de _CLIENTES).
+_CLIENTES_VISAO_TOTAL = {"secretaria"}
+
+
+def _filtro_visibilidade_cliente(q, cu: User):
+    """Segregação de titularidade de clientes (sigilo interno — LGPD/EOAB).
+
+    Espelha cases._filtro_visibilidade / ownership.is_gestao:
+      - Gestão (socio/admin/superadmin) e a recepção (secretaria) veem TODA a
+        base — necessidade operacional do CRM/funil.
+      - advogado/advogado_auxiliar veem apenas clientes vinculados a si:
+          • cujo responsavel_id é o próprio usuário; OU
+          • que possuem ao menos um caso NÃO excluído em que ele é advogado
+            responsável ou auxiliar.
+
+    NÃO deve ser aplicado ao endpoint /checar-conflito (nem a detectar_conflito),
+    que por dever ético (EOAB arts. 34-35) precisa cruzar a base inteira.
+    """
+    if is_gestao(cu) or cu.role.value in _CLIENTES_VISAO_TOTAL:
+        return q
+    casos_do_advogado = (
+        select(Case.client_id)
+        .where(
+            Case.client_id.is_not(None),
+            Case.deleted_at.is_(None),
+            or_(
+                Case.advogado_responsavel_id == cu.id,
+                Case.advogado_auxiliar_id == cu.id,
+            ),
+        )
+    )
+    return q.where(or_(
+        Client.responsavel_id == cu.id,
+        Client.id.in_(casos_do_advogado),
+    ))
+
+
+async def _pode_ver_cliente(cu: User, client: Client, db: AsyncSession) -> bool:
+    """Titularidade (sigilo interno) para UM cliente já carregado.
+
+    Versão row-level de _filtro_visibilidade_cliente — mesma regra, aplicada às
+    rotas de detalhe (GET /{id}, /ia-analise) e ao find-or-create (/resolver),
+    que operam sobre um único registro e não passam pelo filtro da query da
+    listagem. Gestão (socio/admin/superadmin) e a recepção (secretaria) veem
+    toda a base; advogado/advogado_auxiliar só veem o cliente quando:
+      • são o responsavel_id do próprio Client; OU
+      • há ao menos um caso NÃO excluído em que são advogado responsável/auxiliar.
+
+    NÃO deve ser usado nos endpoints de conflito de interesses, que por dever
+    ético (EOAB arts. 34-35) precisam cruzar a base inteira.
+    """
+    if is_gestao(cu) or cu.role.value in _CLIENTES_VISAO_TOTAL:
+        return True
+    if client.responsavel_id == cu.id:
+        return True
+    vinculo = (await db.execute(
+        select(Case.id).where(
+            Case.client_id == client.id,
+            Case.deleted_at.is_(None),
+            or_(
+                Case.advogado_responsavel_id == cu.id,
+                Case.advogado_auxiliar_id == cu.id,
+            ),
+        ).limit(1)
+    )).first()
+    return vinculo is not None
 
 
 class _ResolverClienteReq(BaseModel):
@@ -75,6 +148,13 @@ async def resolver_cliente(
             select(Client).where(Client.cnpj == cnpj, Client.deleted_at.is_(None))
         )).scalar_one_or_none()
     if existente:
+        # Sigilo interno (LGPD/EOAB): não vazar id/nome de cliente de OUTRA
+        # carteira. Sem esta checagem, um advogado reconstrói a base alheia
+        # enumerando CPF/CNPJ (CPF/CNPJ → id + nome). Responde como "não
+        # encontrado" (mesmo shape do 404 dos demais endpoints) e não cria
+        # duplicata. Não incide sobre conflito de interesses (endpoint próprio).
+        if not await _pode_ver_cliente(cu, existente, db):
+            raise HTTPException(status_code=404, detail="Cliente não encontrado")
         return {"id": existente.id, "nome": existente.nome_exibicao, "criado": False}
 
     if not (nome or cpf or cnpj):
@@ -318,6 +398,10 @@ async def listar(
     cu: User = Depends(_req_clientes_leitura),
 ):
     q = select(Client).where(Client.deleted_at.is_(None))
+    # Segregação de titularidade (sigilo interno): advogado/adv_auxiliar só veem
+    # a própria carteira. Aplicado ANTES da busca — assim o filtro por documento
+    # (CPF/CNPJ) também fica restrito e não permite descobrir cliente alheio.
+    q = _filtro_visibilidade_cliente(q, cu)
     if search:
         condicoes = [
             Client.nome.ilike(f"%{search}%"),
@@ -443,6 +527,11 @@ async def detalhe(
     )).scalar_one_or_none()
     if not c:
         raise HTTPException(status_code=404, detail="Cliente não encontrado")
+    # Sigilo interno (LGPD/EOAB): advogado/adv_auxiliar só acessa a própria
+    # carteira. 404 (não vaza existência) — espelha _filtro_visibilidade_cliente
+    # da listagem, evitando reconstrução da base alheia por id direto.
+    if not await _pode_ver_cliente(cu, c, db):
+        raise HTTPException(status_code=404, detail="Cliente não encontrado")
     return c
 
 @router.post("/{client_id}/ia-analise")
@@ -462,6 +551,10 @@ async def ia_analise_cliente(
         select(Client).where(Client.id == client_id, Client.deleted_at.is_(None))
     )).scalar_one_or_none()
     if not c:
+        raise HTTPException(status_code=404, detail="Cliente não encontrado")
+    # Sigilo interno (LGPD/EOAB): a IA agrega histórico completo (casos +
+    # financeiro) do cliente — só a própria carteira. 404 (não vaza existência).
+    if not await _pode_ver_cliente(cu, c, db):
         raise HTTPException(status_code=404, detail="Cliente não encontrado")
 
     casos = (await db.execute(select(Case).where(Case.client_id == client_id))).scalars().all()
@@ -577,6 +670,7 @@ async def remover(
 # ═══ Validação de documentos + Acesso ao Portal + Relatório LGPD ═══
 from pydantic import BaseModel as _BM, EmailStr as _Email, Field as _Field
 from app.core.security import get_password_hash
+from app.services.security_service import validar_forca_senha
 from app.models.user import User as _User, UserRole as _Role
 from fastapi.responses import Response as _Resp
 
@@ -604,6 +698,14 @@ async def criar_acesso_portal(
     ))).scalar_one_or_none()
     if existe:
         raise HTTPException(status_code=409, detail="E-mail já cadastrado no sistema")
+
+    # Política de senha forte também na criação de acesso ao Portal — este era o
+    # último ponto de definição de senha sem validação (Field(min_length=8) só
+    # garante comprimento). Mesmo padrão de users.criar: ValueError → 400.
+    try:
+        validar_forca_senha(payload.senha_inicial, payload.email)
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
 
     u = _User(
         id=str(uuid4()), email=payload.email.lower(),

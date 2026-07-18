@@ -27,6 +27,7 @@ from app.services.security_service import (
     esta_bloqueado, registrar_falha, limpar_falhas, obter_ip_real,
     verificar_novo_dispositivo,
     solicitar_reset, confirmar_reset,
+    validar_forca_senha,
 )
 
 router  = APIRouter(prefix="/auth", tags=["Autenticação"])
@@ -44,6 +45,15 @@ REFRESH_REUSE_GRACA_SEGUNDOS = 60
 # escritório causariam 429 geral. Contador separado por IP, teto maior, ainda
 # limita sondagem de senhas válidas.
 TOTP_PENDENTE_MAX_FALHAS = 20
+
+
+def _papel_exige_2fa(role_value: str | None) -> bool:
+    """True se o papel do usuário está na allowlist REQUIRE_2FA_ROLES (2FA
+    obrigatório por política organizacional). Default (setting vazia) ⇒ sempre
+    False → o comportamento atual (2FA opt-in) fica intacto."""
+    if not role_value:
+        return False
+    return role_value.strip().lower() in settings.require_2fa_roles_list
 
 
 # ─── Schemas ──────────────────────────────────────────────────────────────────
@@ -288,6 +298,13 @@ async def login(
     if user.must_change_password:
         resp["must_change_password"] = True
         resp["detail"] = "Troca de senha obrigatória antes de continuar."
+    # ── 6. 2FA obrigatório por papel (enforcement SEM lockout) ────────
+    # Se o papel exige 2FA (REQUIRE_2FA_ROLES) e o usuário ainda não tem TOTP
+    # ativo, sinaliza ao frontend que ele PRECISA configurar — sem bloquear o
+    # login (não há coluna/migration nova; ninguém é trancado). Default vazio
+    # ⇒ nunca dispara e a resposta fica idêntica à atual.
+    if _papel_exige_2fa(user.role.value) and not user.totp_enabled:
+        resp["precisa_configurar_2fa"] = True
     return resp
 
 
@@ -458,6 +475,13 @@ async def alterar_senha(
     if not verify_password(req.senha_atual, user.hashed_password):
         raise HTTPException(status_code=400, detail="Senha atual incorreta")
 
+    # Política de senha forte — só na DEFINIÇÃO da senha nova (não no login),
+    # para não trancar quem já tem senha curta legada.
+    try:
+        validar_forca_senha(req.nova_senha, user.email)
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+
     user.hashed_password      = get_password_hash(req.nova_senha)
     user.must_change_password = False
 
@@ -494,7 +518,12 @@ async def redefinir_senha(
     request: Request,
     db: AsyncSession = Depends(get_db),
 ):
-    ok = await confirmar_reset(db, req.token, req.nova_senha)
+    try:
+        ok = await confirmar_reset(db, req.token, req.nova_senha)
+    except ValueError as e:
+        # Token válido, porém senha nova fraca (política de senha forte):
+        # mensagem específica em vez do genérico "link inválido".
+        raise HTTPException(status_code=400, detail=str(e))
     if not ok:
         raise HTTPException(
             status_code=400,
@@ -604,6 +633,16 @@ async def totp_desativar(
         raise HTTPException(status_code=401, detail="Usuário não encontrado")
     if not user.totp_enabled:
         raise HTTPException(status_code=400, detail="TOTP não está ativo")
+    # Enforcement por papel (REQUIRE_2FA_ROLES): um usuário cujo papel é OBRIGADO
+    # a usar 2FA não pode se auto-desproteger. Recusa ANTES de qualquer
+    # verificação de código — nem com o código correto o 2FA é removido. Default
+    # (setting vazia) ⇒ nunca bloqueia; comportamento atual preservado.
+    if _papel_exige_2fa(user.role.value):
+        raise HTTPException(
+            status_code=403,
+            detail="Seu perfil exige autenticação de dois fatores. A desativação "
+                   "do 2FA não é permitida para este papel. Contate o administrador.",
+        )
     # Anti-brute-force com chave PRÓPRIA (não ip:/em: do login): um atacante
     # com access token roubado adivinhando códigos aqui NÃO pode trancar o
     # /login legítimo da vítima — e o bloqueio deste endpoint não depende do IP.

@@ -204,6 +204,120 @@ async def test_taxas_bacen_shape(monkeypatch):
 
 
 # ══════════════════════════════════════════════════════════════════════════
+# Trabalhista — depósito recursal (CLT art. 899 §1º): condenação limitada ao teto
+# ══════════════════════════════════════════════════════════════════════════
+async def test_deposito_recursal_condenacao_abaixo_do_teto_recolhe_condenacao():
+    # Condenação < teto RO → recolhe o valor da condenação (não 50%).
+    r = await ramos.trab_deposito(valor_condenacao=8_000.0, cu=None)
+    assert r["deposito_ro"] == 8_000.0
+    assert r["deposito_rr"] == 8_000.0
+    assert r["teto_ro_2026"] == ramos.TETO_DEPOSITO_RO
+    assert r["teto_rr_2026"] == ramos.TETO_DEPOSITO_RR
+
+
+async def test_deposito_recursal_condenacao_1_5x_teto_recolhe_o_teto():
+    # Condenação = 1,5× teto RO → depósito do RO é o TETO (não 50% = 0,75× teto,
+    # que geraria recurso deserto). RR ainda tem folga (1,5×teto_RO < teto_RR).
+    valor = round(ramos.TETO_DEPOSITO_RO * 1.5, 2)   # 18.191,46
+    r = await ramos.trab_deposito(valor_condenacao=valor, cu=None)
+    assert r["deposito_ro"] == ramos.TETO_DEPOSITO_RO           # limitado ao teto
+    assert r["deposito_rr"] == round(valor, 2)                  # abaixo do teto RR
+    # Regressão: com a lógica antiga (50%) daria metade do valor → deserto.
+    assert r["deposito_ro"] != round(valor * 0.50, 2)
+
+
+# ══════════════════════════════════════════════════════════════════════════
+# Penal — prescrição punitiva: fato em 29/02 não pode estourar ValueError
+# ══════════════════════════════════════════════════════════════════════════
+async def test_prescricao_punitiva_fato_29_02_nao_quebra():
+    # pena 0.5 → prazo 3 anos; 29/02/2020 + 3 = 2023 (NÃO bissexto). A rotina antiga
+    # fazia date(2023, 2, 29) e estourava ValueError; o helper corrige → 28/02/2023.
+    r = await ramos.pen_prescricao(
+        pena_maxima_anos=0.5, data_fato=date(2020, 2, 29), cu=None,
+    )
+    assert r["prazo_prescricional_anos"] == 3
+    assert r["data_prescricao_estimada"] == date(2023, 2, 28)
+
+
+async def test_prescricao_punitiva_29_02_para_ano_bissexto():
+    # pena 2.0 → prazo 4 anos (tabela: não é > 2, mas é > 1); 29/02/2020 + 4 = 2024
+    # (bissexto) → mantém 29/02/2024, sem estourar.
+    r = await ramos.pen_prescricao(
+        pena_maxima_anos=2.0, data_fato=date(2020, 2, 29), cu=None,
+    )
+    assert r["prazo_prescricional_anos"] == 4
+    assert r["data_prescricao_estimada"] == date(2024, 2, 29)
+
+
+# ══════════════════════════════════════════════════════════════════════════
+# Empresarial — CADE art. 88 I e II: exige DOIS grupos (750mi E 75mi)
+# ══════════════════════════════════════════════════════════════════════════
+async def test_cade_apenas_um_grupo_grande_pendente_dado():
+    # Grupo ≥ 750mi mas segundo grupo NÃO informado → pendente_dado, NÃO falso negativo.
+    r = await ramos.emp_cade(
+        valor_faturamento_br=800_000_000.0, valor_operacao=100_000_000.0, cu=None,
+    )
+    assert r["pendente_dado"] is True
+    assert r["notificacao_obrigatoria"] is None  # indeterminado, não False
+    assert r["grupo_maior_atinge_750mi"] is True
+    assert r["segundo_grupo_informado"] is False
+
+
+async def test_cade_segundo_grupo_abaixo_de_75mi_nao_obriga():
+    r = await ramos.emp_cade(
+        valor_faturamento_br=800_000_000.0, valor_operacao=100_000_000.0,
+        valor_faturamento_outro_grupo=50_000_000.0, cu=None,
+    )
+    assert r["grupo_menor_atinge_75mi"] is False
+    assert r["notificacao_obrigatoria"] is False
+    assert r["pendente_dado"] is False
+
+
+async def test_cade_dois_grupos_acima_dos_limiares_obriga():
+    r = await ramos.emp_cade(
+        valor_faturamento_br=800_000_000.0, valor_operacao=100_000_000.0,
+        valor_faturamento_outro_grupo=90_000_000.0, cu=None,
+    )
+    assert r["grupo_maior_atinge_750mi"] is True
+    assert r["grupo_menor_atinge_75mi"] is True
+    assert r["notificacao_obrigatoria"] is True
+    assert r["prazo_notificacao"] is not None
+
+
+async def test_cade_ordem_nao_importa_800mais100_obriga():
+    # 800mi (maior) + 100mi (menor) na ordem direta → obrigatória.
+    direta = await ramos.emp_cade(
+        valor_faturamento_br=800_000_000.0, valor_operacao=100_000_000.0,
+        valor_faturamento_outro_grupo=100_000_000.0, cu=None,
+    )
+    # Ordem invertida: o grupo de 800mi vem no 2º campo. Antes dava falso negativo.
+    invertida = await ramos.emp_cade(
+        valor_faturamento_br=100_000_000.0, valor_operacao=100_000_000.0,
+        valor_faturamento_outro_grupo=800_000_000.0, cu=None,
+    )
+    for r in (direta, invertida):
+        assert r["grupo_maior_atinge_750mi"] is True
+        assert r["grupo_menor_atinge_75mi"] is True
+        assert r["notificacao_obrigatoria"] is True
+        assert r["pendente_dado"] is False
+
+
+async def test_cade_ordem_nao_importa_800mais50_nao_obriga():
+    # 800mi + 50mi (< 75mi) em qualquer ordem → NÃO obrigatória (menor não atinge).
+    direta = await ramos.emp_cade(
+        valor_faturamento_br=800_000_000.0, valor_operacao=100_000_000.0,
+        valor_faturamento_outro_grupo=50_000_000.0, cu=None,
+    )
+    invertida = await ramos.emp_cade(
+        valor_faturamento_br=50_000_000.0, valor_operacao=100_000_000.0,
+        valor_faturamento_outro_grupo=800_000_000.0, cu=None,
+    )
+    for r in (direta, invertida):
+        assert r["grupo_menor_atinge_75mi"] is False
+        assert r["notificacao_obrigatoria"] is False
+
+
+# ══════════════════════════════════════════════════════════════════════════
 # CONTRATO config×rotas — todo `endpoint:` do ramosConfig.ts existe no app.
 # Impede regressão de "vitrine quebrada" (card renderizado → 404 no clique).
 # ══════════════════════════════════════════════════════════════════════════

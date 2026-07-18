@@ -8,7 +8,7 @@ verificada/identificada/suspeita/generica contra a base RAG oficial +
 validação estrutural CNJ/súmula). Este módulo NÃO re-extrai nada — apenas:
 
   1. Decide, conforme `settings.CITACOES_POLITICA` ("bloquear"|"marcar"|
-     "desligado", default "marcar"), se o output de IA pode ser APROVADO
+     "desligado", default "bloquear"), se o output de IA pode ser APROVADO
      no fluxo HITL (PATCH /ai/logs/{id}/hitl) sem override do revisor.
   2. Define o que é citação BLOQUEANTE (indício forte de alucinação):
        • status `suspeita`   — formato/faixa estruturalmente inválidos
@@ -62,11 +62,20 @@ MARCADOR_OVERRIDE = "[override_citacoes]"
 
 
 def politica_citacoes() -> str:
-    """Política vigente, normalizada; valor inválido cai no default 'marcar'."""
+    """Política vigente, normalizada.
+
+    Valor inválido/typo cai no modo SEGURO 'bloquear' (fail-secure): um erro de
+    configuração NÃO pode rebaixar silenciosamente o gate antialucinação para o
+    modo permissivo — é exatamente esse rebaixamento que deixaria passar citação
+    inventada (vetor pelo qual advogados foram punidos).
+    """
     val = (get_settings().CITACOES_POLITICA or "").strip().lower()
     if val not in _POLITICAS_VALIDAS:
-        logger.warning("CITACOES_POLITICA inválida (%r) — usando 'marcar'.", val)
-        return POLITICA_MARCAR
+        logger.warning(
+            "CITACOES_POLITICA inválida (%r) — usando 'bloquear' (fail-secure).",
+            val,
+        )
+        return POLITICA_BLOQUEAR
     return val
 
 

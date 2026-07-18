@@ -21,6 +21,20 @@ def test_detecta_parafrases_de_garantia():
         assert detectar_promessa_resultado(txt), f"nao detectou: {txt}"
 
 
+def test_detecta_promessa_numerica_de_resultado():
+    # Auditoria IA 2026-07-18: percentual de resultado prometido ao cliente
+    # tambem e vedado (OAB art. 34 / Prov. 205), em qualquer ordem.
+    for txt in [
+        "90% de exito garantido ao cliente.",
+        "Voce tem chance de 95% de ganhar essa acao.",
+        "A probabilidade de vitoria e de 92%.",
+        "Estimo 88% de procedencia do pedido.",
+        "O caso esta praticamente ganho.",
+        "E praticamente certo que venceremos.",
+    ]:
+        assert detectar_promessa_resultado(txt), f"nao detectou promessa numerica: {txt}"
+
+
 def test_nao_dispara_em_analise_neutra():
     # Linguagem juridica prudente NAO deve disparar (evita ruido de HITL).
     for txt in [

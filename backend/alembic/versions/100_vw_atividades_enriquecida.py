@@ -15,13 +15,13 @@ Sem mudança de tabela: agenda_eventos.responsavel_id já existe desde a 053.
 Downgrade restaura a definição exata da 053 (DROP + CREATE, pois OR REPLACE
 não remove colunas).
 
-Revision ID: 097_vw_atividades_enriquecida
+Revision ID: 100_vw_atividades_enriquecida
 Revises: 096_rag_embedding_1024
 """
 from alembic import op
 
-revision = "097_vw_atividades_enriquecida"
-down_revision = "096_rag_embedding_1024"
+revision = "100_vw_atividades_enriquecida"
+down_revision = "099_legal_doc_protocolo"
 branch_labels = None
 depends_on = None
 

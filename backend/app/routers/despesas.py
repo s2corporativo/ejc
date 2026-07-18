@@ -1,5 +1,6 @@
 import csv
 import io
+from decimal import Decimal
 from fastapi import APIRouter, Body, Depends, HTTPException, Query
 from fastapi.responses import Response
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -50,11 +51,16 @@ async def get_resumo(
     """))
     categorias = [dict(r) for r in por_cat.mappings().all()]
 
+    # Totais vêm de SUM(valor) como Decimal (Numeric no Postgres); preservamos
+    # Decimal em vez de float() para não reintroduzir erro de arredondamento em
+    # dinheiro — o jsonable_encoder do FastAPI serializa como número.
+    def _dec(v):
+        return Decimal(str(v)) if v is not None else Decimal("0")
     return {
-        "total_fixo": float(row["total_fixo"]),
-        "total_variavel": float(row["total_variavel"]),
-        "total_pago_mes": float(row["total_pago_mes"]),
-        "total_pendente_mes": float(row["total_pendente_mes"]),
+        "total_fixo": _dec(row["total_fixo"]),
+        "total_variavel": _dec(row["total_variavel"]),
+        "total_pago_mes": _dec(row["total_pago_mes"]),
+        "total_pendente_mes": _dec(row["total_pendente_mes"]),
         "por_categoria": categorias
     }
 

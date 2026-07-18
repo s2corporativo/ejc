@@ -91,6 +91,15 @@ def build_integration_status(settings: Settings) -> dict[str, Any]:
             mode=settings.GROQ_MODEL,
         ),
         _status(
+            key="maritaca",
+            label="Maritaca (Sabiá)",
+            group="Inteligência",
+            enabled=settings.AI_ENABLED and settings.MARITACA_ENABLED,
+            configured=bool(settings.MARITACA_API_KEY),
+            ready_detail="Provider brasileiro (OpenAI-compatible) habilitado e credencial presente.",
+            mode=settings.MARITACA_MODEL,
+        ),
+        _status(
             key="ollama",
             label="Ollama local",
             group="Inteligência",
