@@ -17,6 +17,7 @@ from uuid import uuid4
 
 from fastapi import HTTPException
 from sqlalchemy import func, select
+from sqlalchemy.exc import IntegrityError
 
 from app.models.audit_log import criar_audit_log
 from app.models.case_intelligence import CaseIntelligenceSnapshot, ORIGENS_SNAPSHOT
@@ -44,33 +45,42 @@ async def criar_snapshot(
 
     Snapshot nasce SEMPRE congelado=False (HITL — aprovação é ato humano).
     Commit aqui mesmo: o índice único (case_id, versao) garante que corrida no
-    max+1 vira IntegrityError (o wrapper fail-safe absorve nos fluxos automáticos).
+    max+1 vira IntegrityError — re-tentado UMA vez com a versão recalculada
+    (auditoria 8a); persistindo, propaga (o wrapper fail-safe absorve nos
+    fluxos automáticos).
     """
     if origem not in ORIGENS_SNAPSHOT:
         raise ValueError(f"origem inválida: {origem!r} (válidas: {ORIGENS_SNAPSHOT})")
     if not isinstance(payload, dict):
         raise ValueError("payload deve ser um dict (estrutura documentada no model)")
 
-    max_versao = (await db.execute(
-        select(func.max(CaseIntelligenceSnapshot.versao))
-        .where(CaseIntelligenceSnapshot.case_id == case_id)
-    )).scalar()
-    snap = CaseIntelligenceSnapshot(
-        id=str(uuid4()),
-        case_id=case_id,
-        versao=(max_versao or 0) + 1,
-        origem=origem,
-        payload=payload,
-        resumo=(resumo or None),
-        ai_log_ids=list(ai_log_ids or []),
-        criado_por=criado_por,
-        congelado=False,          # NUNCA nasce aprovado
-        aprovado_por=None,
-        aprovado_em=None,
-    )
-    db.add(snap)
-    await db.commit()
-    return snap
+    for tentativa in (1, 2):
+        max_versao = (await db.execute(
+            select(func.max(CaseIntelligenceSnapshot.versao))
+            .where(CaseIntelligenceSnapshot.case_id == case_id)
+        )).scalar()
+        snap = CaseIntelligenceSnapshot(
+            id=str(uuid4()),
+            case_id=case_id,
+            versao=(max_versao or 0) + 1,
+            origem=origem,
+            payload=payload,
+            resumo=(resumo or None),
+            ai_log_ids=list(ai_log_ids or []),
+            criado_por=criado_por,
+            congelado=False,          # NUNCA nasce aprovado
+            aprovado_por=None,
+            aprovado_em=None,
+        )
+        db.add(snap)
+        try:
+            await db.commit()
+            return snap
+        except IntegrityError:
+            await db.rollback()
+            if tentativa == 2:
+                raise
+    raise RuntimeError("criar_snapshot: corrida de versão não resolvida")
 
 
 async def gravar_snapshot_seguro(db, **kwargs) -> CaseIntelligenceSnapshot | None:
@@ -142,6 +152,11 @@ async def aprovar_snapshot(
     snap.congelado = True
     snap.aprovado_por = user.id
     snap.aprovado_em = datetime.now(timezone.utc)
+    # Corrida (auditoria 8c): check-then-set mantido. Limite documentado:
+    # aprovação dupla SIMULTÂNEA do mesmo snapshot não é detectável sem
+    # SELECT ... FOR UPDATE (re-select na mesma transação devolve o próprio
+    # objeto do identity map); o efeito é idempotente (congelado=True) e o
+    # 409 acima cobre o caso sequencial — AuditLog registra cada aprovação.
 
     role = getattr(user.role, "value", None) or str(getattr(user, "role", "") or "")
     await criar_audit_log(
@@ -192,4 +207,13 @@ def compactar_payload(
             return [_trunca(x) for x in v]
         return v
 
-    return _trunca(data)
+    data = _trunca(data)
+    # Transparência: a truncagem de strings também fica anotada em _compactado
+    # (auditoria 17) e o tamanho é RE-verificado — acima do teto mesmo após o
+    # último recurso, registra warning (payload segue, mas rastreável).
+    data["_compactado"] = [*removidas, "strings_truncadas"]
+    if _tam(data) > max_bytes:
+        logger.warning(
+            "[case_intelligence] payload ainda acima de %d bytes após "
+            "truncagem (%d bytes)", max_bytes, _tam(data))
+    return data

@@ -48,9 +48,11 @@ import logging
 from typing import Any, Awaitable, Callable
 
 from fastapi import HTTPException
+from pydantic import ValidationError
 from sqlalchemy import func, select
 
-from app.core.security import ROLE_LEVEL
+from app.core.rate_limit import consumir
+from app.core.security import requer_advogado
 from app.models.audit_log import criar_audit_log
 from app.models.case import Case
 from app.models.case_intelligence import CaseIntelligenceSnapshot
@@ -101,9 +103,7 @@ def _role_str(cu: User) -> str:
 
 def _req_advogado(cu: User) -> None:
     """Defesa em profundidade: avançar o caso é ato de advogado+."""
-    if ROLE_LEVEL.get(_role_str(cu), 0) < ROLE_LEVEL["advogado"]:
-        raise HTTPException(status_code=403,
-                            detail="Orquestrador restrito a advogados")
+    requer_advogado(cu, detail="Orquestrador restrito a advogados")
 
 
 def _eh_peca_producao(doc: LegalDoc) -> bool:
@@ -147,7 +147,8 @@ async def coletar_artefatos(db, case_id: str, case: Case | None = None) -> dict:
                                LegalDoc.deleted_at.is_(None))
     )).scalars().all())
     deadlines = list((await db.execute(
-        select(Deadline).where(Deadline.case_id == case_id)
+        select(Deadline).where(Deadline.case_id == case_id,
+                               Deadline.deleted_at.is_(None))
     )).scalars().all())
     n_docs_ocr = (await db.execute(
         select(func.count()).select_from(Document).where(
@@ -204,8 +205,15 @@ async def coletar_artefatos(db, case_id: str, case: Case | None = None) -> dict:
                                     for d in pecas)),
         "peca_ia": any(getattr(d, "ai_generated", False) for d in pecas),
         # prazos ------------------------------------------------------------
+        # Só Deadline nascido dos gates do próprio fluxo (motor_peca /
+        # agente_juridico) conta como "prazo confirmado" para a máquina de
+        # estados — prazo antigo/manual sem relação com a peça NÃO pode
+        # empurrar o caso a "protocolo". Cancelado/soft-deletado nunca conta
+        # (defesa em profundidade além do filtro SQL de deleted_at).
         "deadline_confirmado": any(
             bool(d.confirmado) and _enum_val(d.status) != "cancelado"
+            and getattr(d, "deleted_at", None) is None
+            and getattr(d, "origem", None) in ("motor_peca", "agente_juridico")
             for d in deadlines),
         # base fática -------------------------------------------------------
         "tem_base_fatica": bool(
@@ -305,14 +313,16 @@ async def _exec_analisar_peca(db, case, user, params: dict):
 
 
 async def _exec_montar_matriz(db, case, user, params: dict):
-    from app.routers.matriz_teses import montar
-    return await montar(case.id, params or None, db, user)
+    from app.routers.matriz_teses import MontarMatrizIn, montar
+    return await montar(case.id, MontarMatrizIn(**params) if params else None,
+                        db, user)
 
 
 async def _exec_sugerir_proposta(db, case, user, params: dict):
     from app.services.fee_proposal_service import sugerir_proposta
     area = params.get("area") or _enum_val(case.area) or ""
-    return await sugerir_proposta(db, case, area)
+    return await sugerir_proposta(db, case, area,
+                                  item_codigo=params.get("item_codigo"))
 
 
 async def _exec_criar_proposta(db, case, user, params: dict):
@@ -345,6 +355,19 @@ ACOES_EXECUTAVEIS: dict[str, Callable[..., Awaitable[Any]]] = {
 
 ACOES_VALIDAS: tuple[str, ...] = tuple(
     sorted(set(ACOES_EXECUTAVEIS) | set(ACOES_APROVACAO_HUMANA)))
+
+# Rate limit do FLUXO ORIGINAL consumido também quando a ação roda VIA
+# orquestrador (auditoria: o /avancar não pode ser bypass do limite da rota
+# própria). Nome e limite ESPELHAM as dependencies dos routers de origem.
+_RATE_LIMIT_ACAO: dict[str, tuple[str, int]] = {
+    "analisar_caso": ("intake-analise-completa", 10),
+    "analisar_peca": ("motor-peca-analisar", 10),
+    "montar_matriz": ("matriz-teses-montar", 5),
+    "sugerir_proposta": ("proposta-honorarios", 15),
+    "criar_proposta": ("proposta-honorarios", 15),
+    "gerar_kit": ("kit-documental", 5),
+    "gerar_peca": ("motor-peca-gerar", 3),
+}
 
 
 # ── Próximo passo (determinístico, sem LLM) ──────────────────────────────────
@@ -599,6 +622,12 @@ async def avancar(db, case_id: str, user: User, acao: str,
             "endpoint_humano": info["endpoint"],
         }
 
+    # Anti-bypass do rate limit: consome a cota do FLUXO ORIGINAL (mesma chave
+    # user:{id} das dependencies dos routers) — 429 propaga ao chamador.
+    rl = _RATE_LIMIT_ACAO.get(acao)
+    if rl is not None:
+        await consumir(rl[0], f"user:{user.id}", rl[1])
+
     if case is None:
         case = (await db.execute(
             select(Case).where(Case.id == case_id, Case.deleted_at.is_(None))
@@ -614,7 +643,17 @@ async def avancar(db, case_id: str, user: User, acao: str,
         logger.warning("[orquestrador] estado_antes indisponível (%s): %s",
                        case_id, str(e)[:150])
 
-    resultado = await ACOES_EXECUTAVEIS[acao](db, case, user, params)
+    try:
+        resultado = await ACOES_EXECUTAVEIS[acao](db, case, user, params)
+    except ValidationError as e:
+        # Params fora do schema do fluxo original NUNCA viram 500 — devolve
+        # 422 estruturado com campo/erro (contrato do endpoint /avancar).
+        raise HTTPException(status_code=422, detail={
+            "mensagem": f"Parâmetros inválidos para a ação '{acao}'",
+            "erros": [{"campo": ".".join(str(p) for p in err.get("loc", ())),
+                       "erro": err.get("msg", "inválido")}
+                      for err in e.errors()],
+        })
 
     # Estado DEPOIS (best-effort) + auditoria + linha do tempo (fail-safe).
     estado_depois = None

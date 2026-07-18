@@ -64,12 +64,18 @@ RAG_LIMITE_POR_QUESTAO = 5
 # Corte defensivo do trecho persistido no AuthorityRecord.
 _TRUNC_TRECHO = 2_000
 
+# Aviso obrigatório quando a decomposição responde mas o parse não extrai nada
+# (falha NUNCA é silenciosa — matriz possivelmente incompleta).
+AVISO_FALHA_PARSE = ("falha de parse da decomposição — matriz possivelmente "
+                     "incompleta; repetir a montagem")
+
 # ── Heurística determinística de favorabilidade (SEM LLM) ────────────────────
 # Ordem importa: marcadores CONTRÁRIOS têm precedência ("improcedente" contém
 # "procedente"; "desfavorável" contém "favorável"). Nenhum marcador ⇒ None.
 _MARCADORES_CONTRARIOS: tuple[str, ...] = (
-    "improceden", "nega provimento", "negado provimento", "negou provimento",
-    "nega-se provimento", "desprovido", "desprovimento", "indefer",
+    "improceden", "nego provimento", "nega provimento", "negado provimento",
+    "negou provimento", "nega-se provimento", "improvid",  # improvido/improvida
+    "desprovido", "desprovimento", "indefer",
     "rejeit", "desfavor", "nao acolh", "não acolh",
 )
 _MARCADORES_FAVORAVEIS: tuple[str, ...] = (
@@ -165,11 +171,14 @@ async def decompor_questoes(
     origem="ia" (commit aqui). IA desligada/indisponível ⇒ nenhum issue e
     nenhuma invenção — devolve listas vazias.
 
-    Retorna {"issues": [LegalIssue...], "teses_sugeridas": [...], "ai_log_id"}.
+    Retorna {"issues": [LegalIssue...], "teses_sugeridas": [...], "ai_log_id",
+    "avisos"} — `avisos` carrega AVISO_FALHA_PARSE quando a IA respondeu texto
+    não vazio e o parse não extraiu NADA (falha nunca é silenciosa).
     """
     settings = get_settings()
     if not settings.AI_ENABLED or len((fatos_sanitizados or "").strip()) < 20:
-        return {"issues": [], "teses_sugeridas": [], "ai_log_id": None}
+        return {"issues": [], "teses_sugeridas": [], "ai_log_id": None,
+                "avisos": []}
 
     user_msg = (f"ÁREA: {area or 'não informada'}\n\n"
                 f"FATOS (já sanitizados):\n{fatos_sanitizados[:6000]}")
@@ -193,6 +202,10 @@ async def decompor_questoes(
     ))
 
     data = _parse_questoes(bruto)
+    avisos: list[str] = []
+    if bruto.strip() and not data["questoes"] and not data["teses_sugeridas"]:
+        # Resposta não vazia da IA sem NADA extraível → aviso obrigatório.
+        avisos.append(AVISO_FALHA_PARSE)
     issues: list[LegalIssue] = []
     for q in data["questoes"]:
         issue = LegalIssue(
@@ -204,7 +217,7 @@ async def decompor_questoes(
         issues.append(issue)
     await db.commit()
     return {"issues": issues, "teses_sugeridas": data["teses_sugeridas"],
-            "ai_log_id": ai_log_id}
+            "ai_log_id": ai_log_id, "avisos": avisos}
 
 
 # ── Pesquisa por questão (RAG real → AuthorityRecord; nunca inventa) ─────────
@@ -321,21 +334,33 @@ async def montar_matriz(
 
     Teses candidatas vêm do Banco de Teses (models/tese.py — ativas da área) e
     das sugeridas pela MESMA chamada de IA da decomposição — TODAS nascem
-    status "candidata" (HITL). EvidenceLinks são derivados das Provas do caso
-    (fato_probando/tese_id — determinístico). Grava snapshot origem
-    "matriz_teses" via gravar_snapshot_seguro (fail-safe, nunca quebra o fluxo).
+    status "candidata" (HITL). Precedentes são associados POR QUESTÃO: cada
+    tese só recebe os AuthorityRecords da(s) questão(ões) a que se vincula
+    (issue_id) — tese sem questão vinculada fica com lista vazia (sem boost de
+    forca), para calcular_forca discriminar de verdade. EvidenceLinks são
+    derivados das Provas do caso (fato_probando/tese_id — determinístico).
+    Grava snapshot origem "matriz_teses" via gravar_snapshot_seguro (fail-safe,
+    nunca quebra o fluxo).
     """
     dec = await decompor_questoes(db, user_id, case_id, area, fatos_sanitizados)
     issues: list[LegalIssue] = dec["issues"]
+    avisos: list[str] = list(dec.get("avisos") or [])
 
     records: list[AuthorityRecord] = []
+    refs_por_questao: dict[str, list[dict]] = {}
     for issue in issues:
         try:
-            records.extend(await pesquisar_por_questao(db, case_id, issue))
+            recs = await pesquisar_por_questao(db, case_id, issue)
+            records.extend(recs)
+            refs_por_questao[issue.id] = [_ref_precedente(r) for r in recs]
         except Exception as e:  # uma questão falhar não derruba a matriz
             logger.warning("[matriz_teses] pesquisa falhou (%s): %s",
                            issue.questao[:60], str(e)[:150])
-    precedentes_refs = [_ref_precedente(r) for r in records]
+
+    def _refs_da_tese(issue_id: str | None) -> list[dict]:
+        """Precedentes SÓ da questão vinculada — sem vínculo, lista vazia
+        (nunca anexar o pool inteiro a todas as teses)."""
+        return list(refs_por_questao.get(issue_id) or []) if issue_id else []
 
     # Banco de Teses institucional — ativas da área (soft delete respeitado).
     q_teses = select(Tese).where(Tese.status == TeseStatus.ativa,
@@ -359,7 +384,8 @@ async def montar_matriz(
             fundamento=(t.fundamentacao or None),
             fatos_relacionados=[p.fato_probando for p in provas_t if p.fato_probando],
             provas=[p.id for p in provas_t],
-            precedentes=precedentes_refs,
+            # Tese do Banco sem questão vinculada → SEM precedentes (sem boost).
+            precedentes=_refs_da_tese(None),
             vulnerabilidades=([t.contra_argumento] if t.contra_argumento else []),
             status="candidata", criado_por=user_id,
         )
@@ -373,7 +399,7 @@ async def montar_matriz(
             id=str(uuid4()), case_id=case_id, issue_id=None,
             tese=s["tese"], fundamento=s.get("fundamento"),
             fatos_relacionados=[], provas=[],
-            precedentes=precedentes_refs, vulnerabilidades=[],
+            precedentes=_refs_da_tese(None), vulnerabilidades=[],
             status="candidata", criado_por=user_id,
         )
         cand.forca = calcular_forca(cand)
@@ -394,6 +420,7 @@ async def montar_matriz(
     await db.commit()
 
     matriz = _serializar_matriz(case_id, issues, candidatas, records, links)
+    matriz["avisos"] = avisos
 
     # FASE 1 — snapshot versionado (fail-safe: nunca quebra a montagem).
     from app.services.case_intelligence_service import compactar_payload, gravar_snapshot_seguro
@@ -402,6 +429,7 @@ async def montar_matriz(
         db, case_id=case_id, origem="matriz_teses",
         payload=compactar_payload({
             "area": area or None,
+            "avisos": avisos,
             "teses": {"candidatas": [{"id": c.id, "tese": c.tese[:300],
                                       "forca": c.forca} for c in candidatas]},
             "questoes": [{"id": i.id, "questao": i.questao[:300],
@@ -493,7 +521,11 @@ async def aprovar_tese(
     """
     if decisao not in ("aprovada", "descartada"):
         raise ValueError(f"decisão inválida: {decisao!r}")
-    assert set(("aprovada", "descartada")) <= set(STATUS_TESE)
+    if not set(("aprovada", "descartada")) <= set(STATUS_TESE):
+        # Invariante de vocabulário do model — exceção REAL (assert some com -O).
+        raise RuntimeError(
+            "STATUS_TESE não contém as decisões 'aprovada'/'descartada' — "
+            "vocabulário do model inconsistente com o service")
 
     q = select(ThesisCandidate).where(ThesisCandidate.id == tese_id)
     if case_id is not None:
@@ -508,6 +540,11 @@ async def aprovar_tese(
     cand.status = decisao
     cand.aprovado_por = user.id
     cand.aprovado_em = datetime.now(timezone.utc)
+    # Corrida (auditoria 8c): check-then-set mantido. Limite documentado:
+    # re-select na MESMA transação devolve o próprio objeto do identity map,
+    # então decisão dupla SIMULTÂNEA sobre a mesma tese não é detectável sem
+    # SELECT ... FOR UPDATE; a janela é mínima, o 409 acima cobre o caso
+    # sequencial e o AuditLog registra toda decisão (rastreável).
 
     role = getattr(user.role, "value", None) or str(getattr(user, "role", "") or "")
     await criar_audit_log(

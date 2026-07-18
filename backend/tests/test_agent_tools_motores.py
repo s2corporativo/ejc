@@ -511,3 +511,23 @@ class TestGerarKitDocumental:
     async def test_cliente_inexistente(self, acesso_ok):
         out = await motores.gerar_kit_documental({}, _ctx(_FakeDB()))
         assert out["erro"] == "cliente_do_caso_nao_encontrado"
+
+
+# ── _parse_date estrito (auditoria item 18) ──────────────────────────────────
+# Alimenta prazo FATAL: só `YYYY-MM-DD` exato é aceito — nada de truncar
+# silenciosamente "2026-01-05T00:00:00" nem aceitar ruído.
+
+def test_parse_date_estrito_aceita_somente_iso_exato():
+    assert motores._parse_date("2026-01-05", "termo_inicial") == date(2026, 1, 5)
+    assert motores._parse_date(None, "termo_inicial") is None
+    assert motores._parse_date("", "termo_inicial") is None
+    assert motores._parse_date(date(2026, 1, 5), "termo_inicial") == date(2026, 1, 5)
+
+
+def test_parse_date_estrito_rejeita_datetime_e_ruido():
+    for ruim in ("2026-01-05T00:00:00", "2026-01-05 10:00", "05/01/2026",
+                 "2026-1-5", "2026-01-05x", "hoje", "20260105"):
+        with pytest.raises(ValueError) as exc:
+            motores._parse_date(ruim, "data_evento")
+        assert "data_evento" in str(exc.value)
+        assert "YYYY-MM-DD" in str(exc.value)

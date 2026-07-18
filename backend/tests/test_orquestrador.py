@@ -115,9 +115,13 @@ def _kit_docs():
     ]
 
 
-def _deadline(confirmado=True, status=DeadlineStatus.pendente):
+def _deadline(confirmado=True, status=DeadlineStatus.pendente,
+              origem="motor_peca", deleted_at=None):
+    # origem default "motor_peca": só prazo nascido dos gates do motor/agente
+    # conta como confirmado para a máquina de estados (auditoria item 11).
     return Deadline(id="dl1", titulo="Prazo — Contestação", case_id="case1",
-                    confirmado=confirmado, status=status)
+                    confirmado=confirmado, status=status, origem=origem,
+                    deleted_at=deleted_at)
 
 
 def _db_artefatos(snaps=(), teses=(), propostas=(), docs=(), deadlines=(),
@@ -212,6 +216,32 @@ async def test_peca_aprovada_sem_deadline_confirmado_fica_em_revisao():
     db = _db_artefatos(docs=[_doc(status=PecaStatus.aprovada)],
                        deadlines=[_deadline(confirmado=False)])
     assert await _estado(db) == "revisao"
+
+
+async def test_deadline_origem_manual_nao_empurra_para_protocolo():
+    """Item 11: prazo antigo manual/datajud (sem relação com a peça) NÃO conta
+    como 'prazo confirmado' — o caso fica em revisão, não em protocolo."""
+    for origem in ("manual", "datajud", "importacao_ia", None):
+        db = _db_artefatos(docs=[_doc(status=PecaStatus.aprovada)],
+                           deadlines=[_deadline(origem=origem)])
+        assert await _estado(db) == "revisao", origem
+
+
+async def test_deadline_soft_deletado_ou_cancelado_nao_conta():
+    from datetime import datetime, timezone
+    db = _db_artefatos(docs=[_doc(status=PecaStatus.aprovada)],
+                       deadlines=[_deadline(
+                           deleted_at=datetime.now(timezone.utc))])
+    assert await _estado(db) == "revisao"
+    db = _db_artefatos(docs=[_doc(status=PecaStatus.aprovada)],
+                       deadlines=[_deadline(status=DeadlineStatus.cancelado)])
+    assert await _estado(db) == "revisao"
+
+
+async def test_deadline_origem_agente_juridico_conta():
+    db = _db_artefatos(docs=[_doc(status=PecaStatus.aprovada)],
+                       deadlines=[_deadline(origem="agente_juridico")])
+    assert await _estado(db) == "protocolo"
 
 
 # ── proximo_passo — pendências bloqueantes ───────────────────────────────────
@@ -311,6 +341,70 @@ async def test_avancar_executa_transicao_com_auditoria_e_snapshot(monkeypatch):
     assert snaps[0].payload["acao"] == "montar_matriz"
     assert snaps[0].payload["estado_orquestrador"] == "entrada"
     assert db.commits >= 2
+
+
+async def test_avancar_consome_rate_limit_do_fluxo_original(monkeypatch):
+    """Item 12: avançar via orquestrador consome a MESMA cota da rota original
+    (anti-bypass) — nome/limite espelham as dependencies dos routers."""
+    consumos: list[tuple] = []
+
+    async def _spy(nome, chave, limite):
+        consumos.append((nome, chave, limite))
+
+    monkeypatch.setattr(lco, "consumir", _spy)
+
+    async def _stub(db, case, user, params):
+        return {"ok": True}
+
+    monkeypatch.setitem(lco.ACOES_EXECUTAVEIS, "montar_matriz", _stub)
+    db = _FakeDB([[], [], [], [], [], 0,
+                  [], [], [], [], [], 0,
+                  0])
+    await lco.avancar(db, "case1", _user(), "montar_matriz", {}, case=_case())
+    assert consumos == [("matriz-teses-montar", "user:u1", 5)]
+    # Mapa completo espelha os limites das rotas originais.
+    assert lco._RATE_LIMIT_ACAO["gerar_peca"] == ("motor-peca-gerar", 3)
+    assert lco._RATE_LIMIT_ACAO["gerar_kit"] == ("kit-documental", 5)
+    assert lco._RATE_LIMIT_ACAO["criar_proposta"] == ("proposta-honorarios", 15)
+    assert set(lco._RATE_LIMIT_ACAO) == set(lco.ACOES_EXECUTAVEIS)
+
+
+async def test_avancar_429_propaga_sem_executar(monkeypatch):
+    async def _429(nome, chave, limite):
+        raise HTTPException(status_code=429, detail="limite excedido")
+
+    monkeypatch.setattr(lco, "consumir", _429)
+    executado = {"n": 0}
+
+    async def _stub(db, case, user, params):
+        executado["n"] += 1
+        return {}
+
+    monkeypatch.setitem(lco.ACOES_EXECUTAVEIS, "gerar_peca", _stub)
+    db = _FakeDB([])
+    with pytest.raises(HTTPException) as exc:
+        await lco.avancar(db, "case1", _user(), "gerar_peca", {}, case=_case())
+    assert exc.value.status_code == 429
+    assert executado["n"] == 0 and db.added == [] and db.commits == 0
+
+
+async def test_avancar_params_invalidos_viram_422_estruturado(monkeypatch):
+    """Item 13: ValidationError dos params do fluxo original vira 422 com a
+    lista campo/erro — nunca 500."""
+    async def _ok(nome, chave, limite):
+        return None
+
+    monkeypatch.setattr(lco, "consumir", _ok)
+    db = _FakeDB([[], [], [], [], [], 0])   # só o estado ANTES é coletado
+    with pytest.raises(HTTPException) as exc:
+        await lco.avancar(db, "case1", _user(), "criar_proposta",
+                          {"exito_percentual": 200}, case=_case())
+    assert exc.value.status_code == 422
+    detail = exc.value.detail
+    assert "criar_proposta" in detail["mensagem"]
+    assert detail["erros"] and any("exito_percentual" in e["campo"]
+                                   for e in detail["erros"])
+    assert db.commits == 0   # nada executado/auditado
 
 
 async def test_avancar_falha_do_service_nao_corrompe_estado(monkeypatch):

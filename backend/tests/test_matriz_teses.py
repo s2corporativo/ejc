@@ -179,8 +179,26 @@ async def test_decompor_sem_ia_nao_inventa(monkeypatch):
     monkeypatch.setattr(mts, "get_settings", lambda: cfg)
     db = _FakeDB([])
     out = await mts.decompor_questoes(db, "u1", "case1", None, "fatos longos o bastante")
-    assert out == {"issues": [], "teses_sugeridas": [], "ai_log_id": None}
+    assert out == {"issues": [], "teses_sugeridas": [], "ai_log_id": None,
+                   "avisos": []}
     assert db.added == [] and db.commits == 0
+
+
+async def test_decompor_parse_falho_nao_e_silencioso(monkeypatch):
+    """Item 10: resposta NÃO vazia sem nada extraível → aviso obrigatório."""
+    monkeypatch.setattr(mts, "get_settings", lambda: _Cfg())
+
+    async def _fake_chat(**kw):
+        return _Resp("Desculpe, não posso responder em JSON hoje.")
+    monkeypatch.setattr(mts, "gw_chat", _fake_chat)
+
+    db = _FakeDB([])
+    out = await mts.decompor_questoes(db, "u1", "case1", "trabalhista",
+                                      "Fatos sanitizados suficientes para análise.")
+    assert out["issues"] == [] and out["teses_sugeridas"] == []
+    assert out["avisos"] == [mts.AVISO_FALHA_PARSE]
+    # O AILog da chamada continua registrado (rastreabilidade).
+    assert [o for o in db.added if isinstance(o, AILog)]
 
 
 # ── Força: score determinístico (nunca LLM) ──────────────────────────────────
@@ -295,6 +313,17 @@ def test_favorabilidade_deterministica_contrario_tem_precedencia():
     assert mts._classificar_favorabilidade("texto neutro sem marcador") is None
 
 
+def test_favorabilidade_marcadores_contrarios_ampliados():
+    """Item 3: formas de negativa de provimento casam ANTES de 'provimento'."""
+    for txt in ("nego provimento ao recurso", "nega provimento ao apelo",
+                "recurso improvido", "apelação improvida",
+                "recurso a que se nega provimento", "recurso desprovido",
+                "voto pelo desprovimento do recurso"):
+        assert mts._classificar_favorabilidade(txt) is False, txt
+    # Favoráveis seguem funcionando (precedência não virou falso-negativo).
+    assert mts._classificar_favorabilidade("dá provimento ao recurso") is True
+
+
 # ── Montagem: teses do banco viram candidatas + snapshot matriz_teses ────────
 
 async def test_montar_matriz_candidatas_e_snapshot(monkeypatch):
@@ -341,10 +370,92 @@ async def test_montar_matriz_candidatas_e_snapshot(monkeypatch):
     assert matriz["status"] == "rascunho"
     assert len(matriz["teses"]) == 2 and len(matriz["questoes"]) == 1
     assert matriz["precedentes"] == []           # RAG vazio → nada inventado
+    assert matriz["avisos"] == []                # parse OK → sem avisos
 
     assert capturado["origem"] == "matriz_teses"
     assert capturado["case_id"] == "case1"
     assert capturado["payload"]["precedentes"]["total"] == 0
+    assert capturado["payload"]["avisos"] == []
+
+
+async def test_montar_matriz_precedentes_por_questao_sem_boost_indevido(monkeypatch):
+    """Item 2: o pool de AuthorityRecords NÃO é anexado a todas as teses —
+    tese sem questão vinculada (banco e sugerida) fica com precedentes=[] e
+    a forca não ganha boost de precedente."""
+    monkeypatch.setattr(mts, "get_settings", lambda: _Cfg())
+
+    async def _fake_chat(**kw):
+        return _Resp(json.dumps({
+            "questoes": [{"questao": "Prescrição?", "prioridade": 1}],
+            "teses_sugeridas": [{"tese": "Tese IA", "fundamento": "art. 7º CF"}],
+        }))
+    monkeypatch.setattr(mts, "gw_chat", _fake_chat)
+
+    async def _rag(*a, **k):
+        return [{"conteudo": "Recurso provido. Súmula 331 TST.",
+                 "titulo": "Julgado", "categoria": "jurisprudencia"}]
+    monkeypatch.setattr(mts, "buscar_contexto_rag", _rag)
+
+    async def _verificador(db, texto):
+        return {"citacoes": [{
+            "tipo": "sumula", "status": "verificada", "citacao": "Súmula 331 TST",
+            "numero": "331", "tribunal": "TST", "orgao": None, "data": None,
+            "fonte_verificacao": "base oficial interna/RAG",
+            "fonte": "base oficial interna/RAG",
+        }]}
+    monkeypatch.setattr(mts, "verificar_jurisprudencia", _verificador)
+
+    async def _fake_snapshot(db, **kw):
+        return None
+    from app.services import case_intelligence_service as cis
+    monkeypatch.setattr(cis, "gravar_snapshot_seguro", _fake_snapshot)
+
+    tese_banco = Tese(id="tb1", titulo="Tese banco", descricao="Descrição da tese",
+                      fundamentacao="Súmula 331 TST", contra_argumento=None,
+                      area_juridica="trabalhista", tipo=TeseTipo.escritorio,
+                      status=TeseStatus.ativa, vezes_usada=0, vezes_venceu=0,
+                      vezes_perdeu=0, deleted_at=None)
+    db = _FakeDB([[tese_banco], []])   # fila: select Tese → select Prova
+
+    matriz = await mts.montar_matriz(db, "u1", "case1", "trabalhista",
+                                     "Fatos sanitizados suficientes para análise.")
+    # O RAG produziu 1 AuthorityRecord verificado, mas NENHUMA tese sem vínculo
+    # de questão o recebe (sem boost indevido de +10/+10 na forca).
+    assert len(matriz["precedentes"]) == 1
+    assert all(t["precedentes"] == [] for t in matriz["teses"])
+    cands = [o for o in db.added if isinstance(o, ThesisCandidate)]
+    assert cands and all(c.precedentes == [] for c in cands)
+    # Só o fundamento pontua (15): sem boost de precedente verificado (+10)
+    # nem de saldo favorável (+10) — o score agora discrimina de verdade.
+    assert all(c.forca == 15 for c in cands)
+
+
+async def test_montar_matriz_parse_falho_carrega_aviso(monkeypatch):
+    """Item 10: falha de parse da decomposição aparece nos avisos da matriz e
+    do snapshot (nunca silenciosa)."""
+    monkeypatch.setattr(mts, "get_settings", lambda: _Cfg())
+
+    async def _fake_chat(**kw):
+        return _Resp("resposta sem json nenhum")
+    monkeypatch.setattr(mts, "gw_chat", _fake_chat)
+
+    async def _rag_vazio(*a, **k):
+        return []
+    monkeypatch.setattr(mts, "buscar_contexto_rag", _rag_vazio)
+
+    capturado = {}
+
+    async def _fake_snapshot(db, **kw):
+        capturado.update(kw)
+        return None
+    from app.services import case_intelligence_service as cis
+    monkeypatch.setattr(cis, "gravar_snapshot_seguro", _fake_snapshot)
+
+    db = _FakeDB([[], []])   # fila: select Tese → select Prova
+    matriz = await mts.montar_matriz(db, "u1", "case1", "trabalhista",
+                                     "Fatos sanitizados suficientes para análise.")
+    assert matriz["avisos"] == [mts.AVISO_FALHA_PARSE]
+    assert capturado["payload"]["avisos"] == [mts.AVISO_FALHA_PARSE]
 
 
 # ── Aprovação HITL + auditoria ───────────────────────────────────────────────
@@ -402,9 +513,68 @@ async def test_endpoint_aprovar_403_para_estagiario():
 async def test_endpoint_montar_403_para_estagiario():
     from app.routers.matriz_teses import montar
     with pytest.raises(HTTPException) as exc:
-        await montar(case_id="case1", body={}, db=_FakeDB([]),
+        await montar(case_id="case1", body=None, db=_FakeDB([]),
                      cu=_user(UserRole.estagiario))
     assert exc.value.status_code == 403
+
+
+# ── Endpoint /montar: schema Pydantic + área canônica (itens 6/16) ───────────
+
+def test_montar_matriz_in_limites_do_schema():
+    from pydantic import ValidationError
+    from app.routers.matriz_teses import MontarMatrizIn
+
+    MontarMatrizIn(area="trabalhista", fatos="x" * 30000)  # dentro dos limites
+    with pytest.raises(ValidationError):
+        MontarMatrizIn(area="x" * 61)
+    with pytest.raises(ValidationError):
+        MontarMatrizIn(fatos="x" * 30001)
+
+
+async def test_endpoint_montar_area_fora_do_canonico_422(monkeypatch):
+    from app.routers import matriz_teses as rt
+
+    async def _acesso(db, cu, case_id):
+        return type("C", (), {"area": None, "descricao_fatos": "x" * 40})()
+    monkeypatch.setattr(rt, "verificar_acesso_caso", _acesso)
+
+    with pytest.raises(HTTPException) as exc:
+        await rt.montar(case_id="case1",
+                        body=rt.MontarMatrizIn(area="banana jurídica"),
+                        db=_FakeDB([]), cu=_user(UserRole.advogado))
+    assert exc.value.status_code == 422
+    assert exc.value.detail["areas_validas"]   # lista das áreas canônicas
+
+
+async def test_endpoint_montar_area_normalizada_nunca_crua_no_prompt(monkeypatch):
+    from app.routers import matriz_teses as rt
+
+    async def _acesso(db, cu, case_id):
+        return type("C", (), {"area": None, "descricao_fatos": None})()
+    monkeypatch.setattr(rt, "verificar_acesso_caso", _acesso)
+
+    capturado = {}
+
+    async def _fake_montar(db, uid, cid, area, fatos):
+        capturado["area"] = area
+        return {"ok": True}
+    monkeypatch.setattr(rt.mts, "montar_matriz", _fake_montar)
+
+    await rt.montar(case_id="case1",
+                    body=rt.MontarMatrizIn(area="Direito do Trabalho",
+                                           fatos="Fatos suficientes para a matriz."),
+                    db=_FakeDB([]), cu=_user(UserRole.advogado))
+    assert capturado["area"] == "trabalhista"   # canônico, nunca o texto cru
+
+
+def test_endpoints_decidir_com_rate_limit():
+    """Item 16: aprovar/descartar têm rate limit próprio na rota."""
+    from app.main import app
+    rotas = {getattr(r, "path", ""): r for r in app.routes}
+    for sufixo in ("/aprovar", "/descartar"):
+        rota = next(r for p, r in rotas.items()
+                    if p.endswith(f"/matriz-teses/teses/{{tese_id}}{sufixo}"))
+        assert rota.dependencies   # Depends(rate_limit("matriz-teses-decidir", 15))
 
 
 # ── Flag OFF = pipeline de peças BYTE-IDÊNTICO ───────────────────────────────

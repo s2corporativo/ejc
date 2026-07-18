@@ -23,8 +23,9 @@ from uuid import uuid4
 
 from fastapi import HTTPException
 from sqlalchemy import func, select
+from sqlalchemy.exc import IntegrityError
 
-from app.core.security import ROLE_LEVEL
+from app.core.security import requer_advogado
 from app.models.audit_log import criar_audit_log
 from app.models.case import Case
 from app.models.fee_proposal import FeeProposal
@@ -73,18 +74,48 @@ def _faixa(valor: float | None, memoria: str) -> dict:
             "memoria_calculo": memoria}
 
 
-async def sugerir_proposta(db, case: Case, area: str) -> dict:
+async def sugerir_proposta(db, case: Case, area: str,
+                           item_codigo: str | None = None) -> dict:
     """Sugestão determinística de faixas de honorários (NÃO persiste nada).
 
     Sem item OAB vigente → mínimo None + aviso "sem base OAB — não preencher
     automaticamente"; recomendado/estratégico só existem quando há mínimo.
+
+    `item_codigo` (opcional): item VIGENTE da área escolhido pelo advogado —
+    valor fora dos vigentes → 422 com os códigos válidos. SEM item_codigo, o
+    item de referência é escolhido automaticamente (itens[0]) e a resposta +
+    memória de cálculo declaram isso explicitamente, listando os demais
+    candidatos ("CONFIRME o item aplicável").
     """
-    itens = await _itens_oab_vigentes(db, area, date.today())
-    item = itens[0] if itens else None
+    itens = await _itens_oab_vigentes(db, area, date.today(), limite=20)
+    selecao_item: dict | None = None
+    if item_codigo and str(item_codigo).strip():
+        cod = str(item_codigo).strip()
+        item = next((i for i in itens
+                     if (i.item_codigo or "").strip() == cod), None)
+        if item is None:
+            raise HTTPException(status_code=422, detail={
+                "mensagem": (f"item_codigo '{cod}' não está entre os itens "
+                             f"VIGENTES da Tabela OAB/MG para a área '{area}'"),
+                "itens_vigentes": [(i.item_codigo or "").strip() for i in itens],
+            })
+        selecao_item = {"automatica": False, "item_codigo": cod,
+                        "aviso": "item de referência informado pelo advogado"}
+    else:
+        item = itens[0] if itens else None
+        if item is not None:
+            selecao_item = {
+                "automatica": True,
+                "item_codigo": (item.item_codigo or "").strip() or None,
+                "aviso": (f"item de referência escolhido automaticamente dentre "
+                          f"{len(itens)} da área — CONFIRME o item aplicável"),
+                "candidatos": [_item_dict(i) for i in itens[1:]],
+            }
 
     if item is None:
         return {
             "origem_tabela": None,
+            "selecao_item": None,
             "faixas": {
                 "minimo_etico": _faixa(None, AVISO_SEM_BASE_OAB),
                 "recomendado": _faixa(None, AVISO_SEM_BASE_OAB),
@@ -98,6 +129,7 @@ async def sugerir_proposta(db, case: Case, area: str) -> dict:
         # Item existe, mas sem base monetária: NADA é calculado automaticamente.
         return {
             "origem_tabela": origem,
+            "selecao_item": selecao_item,
             "faixas": {
                 "minimo_etico": _faixa(None, AVISO_ITEM_SEM_VALOR),
                 "recomendado": _faixa(None, AVISO_ITEM_SEM_VALOR),
@@ -112,20 +144,27 @@ async def sugerir_proposta(db, case: Case, area: str) -> dict:
                    else "complexidade nao informada (fator 1.0)")
     mem_min = (f"Valor minimo VERBATIM do item {item.item_codigo} da Tabela "
                f"OAB/MG ({item.descricao}); fonte: {item.fonte}")
+    if selecao_item and selecao_item.get("automatica"):
+        # A memória de cálculo declara a escolha automática explicitamente.
+        mem_min += f" — {selecao_item['aviso']}"
     mem_rec = (f"minimo OAB R$ {minimo:,.2f} x fator recomendado "
                f"{_FATOR_RECOMENDADO:g} x fator {fator:g} ({complex_txt}) "
                f"= R$ {minimo * _FATOR_RECOMENDADO * fator:,.2f}")
     mem_est = (f"minimo OAB R$ {minimo:,.2f} x fator estrategico "
                f"{_FATOR_ESTRATEGICO:g} x fator {fator:g} ({complex_txt}) "
                f"= R$ {minimo * _FATOR_ESTRATEGICO * fator:,.2f}")
+    aviso = AVISO_SUGESTAO
+    if selecao_item and selecao_item.get("automatica"):
+        aviso = f"{AVISO_SUGESTAO} {selecao_item['aviso']}."
     return {
         "origem_tabela": origem,
+        "selecao_item": selecao_item,
         "faixas": {
             "minimo_etico": _faixa(minimo, mem_min),
             "recomendado": _faixa(minimo * _FATOR_RECOMENDADO * fator, mem_rec),
             "estrategico": _faixa(minimo * _FATOR_ESTRATEGICO * fator, mem_est),
         },
-        "aviso": AVISO_SUGESTAO,
+        "aviso": aviso,
     }
 
 
@@ -139,8 +178,7 @@ def _role_str(cu: User) -> str:
 def _req_advogado_service(cu: User) -> None:
     # Defesa em profundidade: aprovação/rejeição é ato jurídico de advogado+
     # mesmo se algum chamador futuro esquecer o gate do router.
-    if ROLE_LEVEL.get(_role_str(cu), 0) < ROLE_LEVEL["advogado"]:
-        raise HTTPException(status_code=403, detail="Acesso restrito a advogados")
+    requer_advogado(cu)
 
 
 def proposta_out(p: FeeProposal) -> dict:
@@ -176,33 +214,48 @@ async def criar_proposta(db, case_id: str, user: User, dados: dict) -> FeePropos
 
     `dados` já validado no router (faixas/origem_tabela/exito/parcelamento/
     despesas/justificativa). Auditoria + commit aqui.
+
+    Corrida no max+1 (auditoria 8a): o índice único (case_id, versao) faz a
+    criação concorrente virar IntegrityError — re-tenta UMA vez com a versão
+    recalculada; persistindo o conflito, devolve 409 amigável (nunca 500).
     """
     _req_advogado_service(user)
-    ultima = (await db.execute(
-        select(func.max(FeeProposal.versao)).where(FeeProposal.case_id == case_id)
-    )).scalar()
-    p = FeeProposal(
-        id=str(uuid4()),
-        case_id=case_id,
-        versao=int(ultima or 0) + 1,
-        status="rascunho",
-        origem_tabela=dados.get("origem_tabela"),
-        faixas=dados.get("faixas") or {},
-        exito_percentual=dados.get("exito_percentual"),
-        parcelamento=dados.get("parcelamento"),
-        despesas_criterio=dados.get("despesas_criterio"),
-        justificativa=dados.get("justificativa"),
-        criado_por=user.id,
-        criado_em=datetime.now(timezone.utc),
-    )
-    db.add(p)
-    await criar_audit_log(
-        db, user.id, _role_str(user), "CREATE", "fee_proposals", p.id,
-        detalhes=f"Proposta de honorarios v{p.versao} (rascunho) do caso {case_id}",
-        dados_depois=proposta_out(p),
-    )
-    await db.commit()
-    return p
+    for tentativa in (1, 2):
+        ultima = (await db.execute(
+            select(func.max(FeeProposal.versao)).where(FeeProposal.case_id == case_id)
+        )).scalar()
+        p = FeeProposal(
+            id=str(uuid4()),
+            case_id=case_id,
+            versao=int(ultima or 0) + 1,
+            status="rascunho",
+            origem_tabela=dados.get("origem_tabela"),
+            faixas=dados.get("faixas") or {},
+            exito_percentual=dados.get("exito_percentual"),
+            parcelamento=dados.get("parcelamento"),
+            despesas_criterio=dados.get("despesas_criterio"),
+            justificativa=dados.get("justificativa"),
+            criado_por=user.id,
+            criado_em=datetime.now(timezone.utc),
+        )
+        db.add(p)
+        await criar_audit_log(
+            db, user.id, _role_str(user), "CREATE", "fee_proposals", p.id,
+            detalhes=f"Proposta de honorarios v{p.versao} (rascunho) do caso {case_id}",
+            dados_depois=proposta_out(p),
+        )
+        try:
+            await db.commit()
+            return p
+        except IntegrityError:
+            await db.rollback()
+            if tentativa == 2:
+                raise HTTPException(
+                    status_code=409,
+                    detail=("Conflito de versão da proposta (criação "
+                            "concorrente) — tente novamente."),
+                )
+    raise HTTPException(status_code=409, detail="Conflito de versão da proposta")
 
 
 async def aprovar(db, proposta_id: str, user: User) -> FeeProposal:
@@ -235,6 +288,27 @@ async def aprovar(db, proposta_id: str, user: User) -> FeeProposal:
     p.status = "aprovada"
     p.aprovado_por = user.id
     p.aprovado_em = datetime.now(timezone.utc)
+
+    # Corrida (auditoria 8b): re-verifica DENTRO da mesma transação, após o
+    # flush, o invariante "no máximo UMA aprovada por caso" — se uma aprovação
+    # concorrente já commitada apareceu, rebaixa a(s) de menor versão para
+    # "substituida" antes do commit. Best-effort documentado: aprovação
+    # simultânea ainda NÃO commitada não é visível (READ COMMITTED); a janela
+    # residual é coberta por proposta_aprovada_vigente (maior versão vence).
+    flush = getattr(db, "flush", None)
+    if flush is not None:
+        await flush()
+    aprovadas = list((await db.execute(
+        select(FeeProposal)
+        .where(FeeProposal.case_id == p.case_id,
+               FeeProposal.status == "aprovada")
+        .order_by(FeeProposal.versao.desc())
+    )).scalars().all())
+    for extra in aprovadas[1:]:
+        extra.status = "substituida"
+        if extra.id not in {a.id for a in anteriores} and extra.id != p.id:
+            anteriores = [*anteriores, extra]
+
     await criar_audit_log(
         db, user.id, _role_str(user), "APROVAR", "fee_proposals", p.id,
         detalhes=(f"Proposta v{p.versao} do caso {p.case_id} aprovada (congelada)"

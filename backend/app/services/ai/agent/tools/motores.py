@@ -44,16 +44,23 @@ def _iso(v):
 
 
 def _parse_date(valor, campo: str) -> date | None:
-    """Converte string ISO (YYYY-MM-DD) em date. None/vazio → None.
-    Valor inválido levanta ValueError com o nome do campo (vira {"erro": ...})."""
+    """Converte string ISO em date — ESTRITO: aceita SOMENTE `YYYY-MM-DD` exato
+    (len==10 + fromisoformat). None/vazio → None. Alimenta prazo FATAL: valor
+    com hora/timezone/ruído levanta ValueError claro (vira {"erro": ...}) em
+    vez de ser truncado silenciosamente."""
     if valor in (None, ""):
         return None
     if isinstance(valor, date):
         return valor
+    s = str(valor).strip()
+    if len(s) != 10:
+        raise ValueError(
+            f"{campo} inválido — use EXATAMENTE o formato ISO YYYY-MM-DD")
     try:
-        return date.fromisoformat(str(valor).strip()[:10])
+        return date.fromisoformat(s)
     except ValueError:
-        raise ValueError(f"{campo} inválido — use o formato ISO YYYY-MM-DD")
+        raise ValueError(
+            f"{campo} inválido — use EXATAMENTE o formato ISO YYYY-MM-DD")
 
 
 def _evento_dict(info: dict | None) -> dict | None:

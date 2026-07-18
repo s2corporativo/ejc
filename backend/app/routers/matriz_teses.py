@@ -13,14 +13,17 @@
 from __future__ import annotations
 
 import logging
+from typing import Optional
 
-from fastapi import APIRouter, Body, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException
+from pydantic import BaseModel, Field
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.database import get_db
 from app.core.ownership import verificar_acesso_caso
 from app.core.rate_limit import rate_limit
 from app.core.security import get_current_user, ROLE_LEVEL
+from app.core.taxonomia import areas_validas, normalizar_area
 from app.models.user import User
 from app.services import matriz_teses_service as mts
 from app.services.sanitizer import sanitizar_pii
@@ -37,13 +40,19 @@ def _pode_decidir(cu: User) -> bool:
     return ROLE_LEVEL.get(role, 0) >= ROLE_LEVEL["advogado"]
 
 
+class MontarMatrizIn(BaseModel):
+    """Entrada validada da montagem — nada de dict cru no endpoint."""
+    area: Optional[str] = Field(None, max_length=60)
+    fatos: Optional[str] = Field(None, max_length=30000)
+
+
 @router.post(
     "/montar",
     dependencies=[Depends(rate_limit("matriz-teses-montar", 5))],
 )
 async def montar(
     case_id: str,
-    body: dict | None = Body(default=None),
+    body: Optional[MontarMatrizIn] = None,
     db: AsyncSession = Depends(get_db),
     cu: User = Depends(get_current_user),
 ):
@@ -57,10 +66,21 @@ async def montar(
         raise HTTPException(403, "Montagem da matriz restrita a advogados")
     case = await verificar_acesso_caso(db, cu, case_id)
 
-    body = body or {}
-    area = (body.get("area") or getattr(case.area, "value", None)
-            or str(case.area or "") or None)
-    fatos = (body.get("fatos") or case.descricao_fatos or "").strip()
+    body = body or MontarMatrizIn()
+    if body.area and body.area.strip():
+        # Área SEMPRE passa pela taxonomia canônica antes de qualquer prompt —
+        # texto livre nunca é interpolado cru; fora do canônico → 422.
+        area = normalizar_area(body.area)
+        if area is None:
+            raise HTTPException(422, detail={
+                "mensagem": (f"área {body.area.strip()!r} não reconhecida na "
+                             "taxonomia canônica"),
+                "areas_validas": areas_validas(),
+            })
+    else:
+        area = (getattr(case.area, "value", None)
+                or str(case.area or "") or None)
+    fatos = (body.fatos or case.descricao_fatos or "").strip()
     if len(fatos) < 20:
         raise HTTPException(422, "Caso sem fatos suficientes para montar a matriz")
 
@@ -91,7 +111,8 @@ async def _decidir(case_id: str, tese_id: str, decisao: str,
     return {"ok": True, "tese": mts._ser_tese(cand)}
 
 
-@router.post("/teses/{tese_id}/aprovar")
+@router.post("/teses/{tese_id}/aprovar",
+             dependencies=[Depends(rate_limit("matriz-teses-decidir", 15))])
 async def aprovar(
     case_id: str,
     tese_id: str,
@@ -102,7 +123,8 @@ async def aprovar(
     return await _decidir(case_id, tese_id, "aprovada", db, cu)
 
 
-@router.post("/teses/{tese_id}/descartar")
+@router.post("/teses/{tese_id}/descartar",
+             dependencies=[Depends(rate_limit("matriz-teses-decidir", 15))])
 async def descartar(
     case_id: str,
     tese_id: str,

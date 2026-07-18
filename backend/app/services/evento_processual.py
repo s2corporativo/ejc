@@ -99,7 +99,12 @@ def _saida(evento: str, data_evento: date, *, termo: Optional[date],
     if termo is not None:
         # 1º dia efetivamente contado = próximo dia útil APÓS o dies a quo
         # (CPC art. 224, caput e §3º) — informativo p/ o advogado conferir.
-        inicio_contagem = proximo_dia_util(termo + timedelta(days=1))
+        # aplicar_recesso=True: MESMA régua do motor de prazos processuais
+        # (motor_peca_service usa prazo_dias_uteis(..., aplicar_recesso=True));
+        # sem isso o campo de conferência divergiria em até ~14 dias quando o
+        # termo cai na janela do recesso do CPC art. 220 (20/12–20/01).
+        inicio_contagem = proximo_dia_util(termo + timedelta(days=1),
+                                           aplicar_recesso=True)
     return {
         "evento": evento,
         "nome": CATALOGO_EVENTOS.get(evento, {}).get("nome", evento),

@@ -615,6 +615,36 @@ class TestLoopHITL:
         assert r2["status"] == "ok"
         assert executadas == [("registrar_nota_caso", args)]
 
+    async def test_aprovacao_hash_e_one_shot_repeticao_pausa_de_novo(self, loop_env):
+        """Item 7 (auditoria): a aprovação por hash vale para UMA execução — o
+        hash é CONSUMIDO na primeira write executada; chamada repetida IDÊNTICA
+        pausa DE NOVO (nova aprovação humana), nunca executa em série."""
+        args = {"descricao": "nota aprovada"}
+        h = _hash("registrar_nota_caso", args)
+        turnos = iter([
+            _turno("Nota 1", [{"id": "n1", "name": "registrar_nota_caso",
+                               "input": args}], "tool_use"),
+            _turno("Nota 2 (idêntica)", [{"id": "n2", "name": "registrar_nota_caso",
+                                          "input": args}], "tool_use"),
+        ])
+        loop_env.monkeypatch.setattr(
+            loop_env.gw, "chat_agentico", lambda *a, **k: _async(next(turnos)))
+        executadas: list[tuple] = []
+
+        async def spy_exec(name, a, ctx):
+            executadas.append((name, a))
+            return {"registrado": True}
+
+        loop_env.monkeypatch.setattr(loop_env.registry, "executar", spy_exec)
+
+        r = await loop_env.loop.rodar_agente(
+            db=None, user=_user(), case_id="c1", mensagem="Registre duas vezes",
+            aprovacoes_hash={h})
+        # 1ª execução consumiu o hash; a repetição idêntica PAUSOU de novo.
+        assert executadas == [("registrar_nota_caso", args)]
+        assert r["status"] == "pendente_confirmacao"
+        assert r["args_hash"] == h
+
     async def test_fallback_hash_diverge_recusa(self, loop_env):
         """H1: se o modelo gerar ARGS diferentes dos aprovados, o hash não casa →
         NÃO executa (recusa segura), mesmo com um hash aprovado presente."""
@@ -734,30 +764,29 @@ class TestLoopStopReason:
 
 class TestLoopTetos:
     async def test_teto_de_passos_encerra_com_aviso(self, loop_env):
-        """L6/L7: modelo que SEMPRE pede tool (aprovada por hash) → encerra no teto
-        de passos com aviso, sem loop infinito."""
+        """L6/L7: modelo que SEMPRE pede tool (de leitura) → encerra no teto
+        de passos com aviso, sem loop infinito. (Tool de LEITURA: aprovação de
+        escrita agora é one-shot e pausaria na repetição — HITL, item 7.)"""
         loop_env.monkeypatch.setattr(get_settings(), "AI_AGENT_MAX_STEPS", 3)
-        args = {"descricao": "nota"}
-        h = _hash("registrar_nota_caso", args)
+        args = {"consulta": "dano moral"}
         contador = {"n": 0}
 
         def _chat(*a, **k):
             contador["n"] += 1
             return _async(_turno(
                 f"passo {contador['n']}",
-                [{"id": f"t{contador['n']}", "name": "registrar_nota_caso", "input": args}],
+                [{"id": f"t{contador['n']}", "name": "buscar_precedentes", "input": args}],
                 "tool_use"))
 
         loop_env.monkeypatch.setattr(loop_env.gw, "chat_agentico", _chat)
 
         async def spy_exec(name, a, ctx):
-            return {"registrado": True}
+            return {"total": 0}
 
         loop_env.monkeypatch.setattr(loop_env.registry, "executar", spy_exec)
 
         r = await loop_env.loop.rodar_agente(
-            db=None, user=_user(), case_id="c1", mensagem="loop",
-            aprovacoes_hash={h})
+            db=None, user=_user(), case_id="c1", mensagem="loop")
         assert r["status"] == "ok"
         assert len(r["passos"]) == 3            # respeitou o teto (não infinito)
         assert contador["n"] == 3               # chat_agentico chamado exatamente 3x

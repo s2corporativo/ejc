@@ -24,7 +24,7 @@ from app.services import event_bus
 from app.services.documental import gerar_documentos_iniciais
 # Mesmo vocabulário/contrato de poderes do kit documental (fonte única do
 # schema de procuração conservadora).
-from app.routers.kit_documental import KitDocumentalIn
+from app.routers.kit_documental import KitDocumentalIn, _req_advogado as _req_advogado_kit
 from app.models.case_parte import CaseParte
 from app.models.caso_area import CasoArea
 from app.models.deadline import Deadline, DeadlineTipo, DeadlineStatus
@@ -523,12 +523,17 @@ async def excluir(
 
 
 # ── ETAPA 5 — Geração documental automática ───────────────────────────────────
-@router.post("/{case_id}/gerar-documentos")
+# Paridade de gates com o kit documental (POST /cases/{id}/kit-documental):
+# procuração/contrato são ATO JURÍDICO → advogado+ (_req_advogado do kit) e
+# mesmo rate limit "kit-documental" (5/min) — sem isso qualquer autenticado
+# geraria procuração com poderes especiais por aqui.
+@router.post("/{case_id}/gerar-documentos",
+             dependencies=[Depends(rate_limit("kit-documental", 5))])
 async def gerar_documentos(
     case_id: str,
     payload: Optional[KitDocumentalIn] = None,
     db: AsyncSession = Depends(get_db),
-    cu: User = Depends(get_current_user),
+    cu: User = Depends(_req_advogado_kit),
 ):
     """Gera as minutas iniciais do caso (procuração, contrato de honorários,
     relatório inicial) preenchidas com os dados do cliente/caso. Rascunhos.

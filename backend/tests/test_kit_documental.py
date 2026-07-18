@@ -221,3 +221,25 @@ def test_alias_civil_cobre_grafia_civel_do_seed():
     from app.services.geracao_documental import _aliases_area
     assert _aliases_area("civil") == ["civil", "civel"]
     assert _aliases_area("familia") == ["familia"]
+
+
+# ── Paridade de gates do endpoint legado /cases/{id}/gerar-documentos ────────
+# (auditoria item 5): mesmo gate advogado+ e mesmo rate limit "kit-documental"
+# do kit — sem isso qualquer autenticado geraria procuração com poderes
+# especiais pela rota legada.
+
+def test_gerar_documentos_endpoint_reusa_gate_advogado_do_kit():
+    import inspect
+    from app.routers import cases as cases_router
+    from app.routers.kit_documental import _req_advogado
+
+    sig = inspect.signature(cases_router.gerar_documentos)
+    dep = sig.parameters["cu"].default
+    assert getattr(dep, "dependency", None) is _req_advogado
+
+
+def test_gerar_documentos_endpoint_tem_rate_limit_na_rota():
+    from app.main import app
+    rotas = [r for r in app.routes
+             if getattr(r, "path", "").endswith("/cases/{case_id}/gerar-documentos")]
+    assert rotas and rotas[0].dependencies   # Depends(rate_limit("kit-documental", 5))

@@ -144,9 +144,11 @@ async def triagem_caso(case_id: str) -> None:
             complex_ = (data.get("complexidade") or "").strip()
             assunto = (data.get("assunto") or "").strip()
             # Normaliza para o canônico (aceita valores legados "civel"/"penal");
-            # sem correspondência segura, preserva o texto bruto para o revisor.
+            # sem correspondência segura, preserva o texto bruto para o revisor
+            # (só em texto informativo — o payload do snapshot é SEMPRE canônico).
             area_bruta = (data.get("area") or "").strip()
-            area_sug = normalizar_area(area_bruta) or area_bruta
+            area_canonica = normalizar_area(area_bruta)
+            area_sug = area_canonica or area_bruta
 
             marca = "  ⟦rascunho IA — revisar (OAB)⟧"
             if tese and not (case.tese_principal or "").strip():
@@ -183,12 +185,27 @@ async def triagem_caso(case_id: str) -> None:
             # aqui vira warning e NUNCA quebra o fluxo original.
             try:
                 from app.services import case_intelligence_service as cis
+                # Contrato do model: payload["area"] é SEMPRE canônico — texto
+                # fora da taxonomia vira SENTINELA_OUTRO com o bruto preservado
+                # em payload["area_bruta"] para o revisor humano.
+                _area_payload = area_canonica
+                _area_payload_bruta = None
+                if _area_payload is None and area_bruta:
+                    _area_payload = SENTINELA_OUTRO
+                    _area_payload_bruta = area_bruta
+                elif _area_payload is None:
+                    _area_payload = normalizar_area(area_atual)
+                    if _area_payload is None and area_atual:
+                        _area_payload = SENTINELA_OUTRO
+                        _area_payload_bruta = area_atual
                 await cis.gravar_snapshot_seguro(
                     db,
                     case_id=case.id,
                     origem="triagem",
                     payload={
-                        "area": area_sug or area_atual or None,
+                        "area": _area_payload,
+                        **({"area_bruta": _area_payload_bruta}
+                           if _area_payload_bruta else {}),
                         "assunto": assunto or None,
                         "teses": {"principal": tese or None, "secundarias": sec},
                         "riscos": {

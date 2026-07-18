@@ -196,6 +196,47 @@ async def test_sugerir_item_so_percentual_sem_base_monetaria():
     assert "sem base OAB" in out["aviso"]
 
 
+async def test_sugerir_selecao_automatica_declarada_com_candidatos():
+    """Item 9: sem item_codigo, a escolha automática é DECLARADA (resposta e
+    memória de cálculo) e os demais candidatos são listados."""
+    from app.services.fee_proposal_service import sugerir_proposta
+
+    outro = _item_oab(id="t2", item_codigo="11.6", descricao="divórcio",
+                      valor_minimo=8000.0)
+    db = _FakeDB([[_item_oab(), outro]])
+    out = await sugerir_proposta(db, _case(), "familia")
+    sel = out["selecao_item"]
+    assert sel["automatica"] is True
+    assert "escolhido automaticamente dentre 2" in sel["aviso"]
+    assert "CONFIRME o item aplicável" in sel["aviso"]
+    assert [c["item_codigo"] for c in sel["candidatos"]] == ["11.6"]
+    assert "CONFIRME o item aplicável" in out["faixas"]["minimo_etico"]["memoria_calculo"]
+    assert "CONFIRME o item aplicável" in out["aviso"]
+
+
+async def test_sugerir_item_codigo_escolhido_pelo_advogado():
+    from app.services.fee_proposal_service import sugerir_proposta
+
+    outro = _item_oab(id="t2", item_codigo="11.6", descricao="divórcio",
+                      valor_minimo=8000.0)
+    db = _FakeDB([[_item_oab(), outro]])
+    out = await sugerir_proposta(db, _case(), "familia", item_codigo="11.6")
+    assert out["origem_tabela"]["item_codigo"] == "11.6"
+    assert out["faixas"]["minimo_etico"]["valor"] == 8000.0
+    assert out["selecao_item"]["automatica"] is False
+    assert "CONFIRME" not in out["faixas"]["minimo_etico"]["memoria_calculo"]
+
+
+async def test_sugerir_item_codigo_invalido_422_lista_vigentes():
+    from app.services.fee_proposal_service import sugerir_proposta
+
+    db = _FakeDB([[_item_oab()]])
+    with pytest.raises(HTTPException) as exc:
+        await sugerir_proposta(db, _case(), "familia", item_codigo="99.9")
+    assert exc.value.status_code == 422
+    assert exc.value.detail["itens_vigentes"] == ["11.5"]
+
+
 # ── Versionamento / criação de rascunho ──────────────────────────────────────
 
 async def test_criar_proposta_versao_incremental_e_auditoria():
@@ -222,6 +263,40 @@ async def test_criar_proposta_primeira_versao():
     assert p.versao == 1
 
 
+async def test_criar_proposta_retry_unico_em_integrity_error():
+    """Item 8a: corrida no max+1 → IntegrityError do índice único é re-tentado
+    UMA vez com a versão recalculada; persistindo, vira 409 amigável."""
+    from sqlalchemy.exc import IntegrityError
+    from app.services.fee_proposal_service import criar_proposta
+
+    class _DBConflito(_FakeDB):
+        def __init__(self, resultados, falhas: int):
+            super().__init__(resultados)
+            self.falhas = falhas
+            self.rollbacks = 0
+
+        async def commit(self):
+            if self.falhas > 0:
+                self.falhas -= 1
+                raise IntegrityError("insert", {}, Exception("uq_fee_proposals"))
+            await super().commit()
+
+        async def rollback(self):
+            self.rollbacks += 1
+
+    # 1 conflito → segunda tentativa recalcula max (2) e cria v3 com sucesso.
+    db = _DBConflito([1, 2], falhas=1)
+    p = await criar_proposta(db, "case1", _user(), {"faixas": {}})
+    assert p.versao == 3 and db.rollbacks == 1 and db.commits == 1
+
+    # Conflito persistente → 409 (nunca 500).
+    db2 = _DBConflito([1, 1], falhas=2)
+    with pytest.raises(HTTPException) as exc:
+        await criar_proposta(db2, "case1", _user(), {"faixas": {}})
+    assert exc.value.status_code == 409
+    assert db2.rollbacks == 2
+
+
 async def test_criar_proposta_barra_roles_baixas():
     from app.services.fee_proposal_service import criar_proposta
 
@@ -238,8 +313,9 @@ async def test_aprovar_congela_e_substitui_anteriores():
     nova = _proposta(id="prop2", versao=2)
     antiga = _proposta(id="prop1", versao=1, status="aprovada",
                        aprovado_por="u9", aprovado_em=datetime.now(timezone.utc))
-    # execute #1: proposta; execute #2: aprovadas anteriores do caso
-    db = _FakeDB([nova, [antiga]])
+    # execute #1: proposta; execute #2: aprovadas anteriores do caso;
+    # execute #3: re-select pós-flush do invariante (item 8b) — só a nova.
+    db = _FakeDB([nova, [antiga], [nova]])
     p = await aprovar(db, "prop2", _user())
 
     assert p.status == "aprovada"
@@ -249,6 +325,24 @@ async def test_aprovar_congela_e_substitui_anteriores():
     assert any(a.acao == "APROVAR" and a.entidade == "fee_proposals"
                and a.registro_id == "prop2" for a in audits)
     assert db.commits == 1
+
+
+async def test_aprovar_corrida_re_select_rebaixa_concorrente():
+    """Item 8b: se uma aprovação CONCORRENTE já commitada aparecer no re-select
+    pós-flush, a de menor versão vira 'substituida' — invariante: no máximo
+    UMA aprovada por caso."""
+    from app.services.fee_proposal_service import aprovar
+
+    p = _proposta(id="prop3", versao=3)
+    concorrente = _proposta(id="prop2", versao=2, status="aprovada",
+                            aprovado_por="u9",
+                            aprovado_em=datetime.now(timezone.utc))
+    # anteriores (execute #2) vazio — a concorrente só aparece no re-select
+    # (execute #3, ordenado por versão desc: [p, concorrente]).
+    db = _FakeDB([p, [], [p, concorrente]])
+    out = await aprovar(db, "prop3", _user())
+    assert out.status == "aprovada"
+    assert concorrente.status == "substituida"
 
 
 async def test_aprovada_e_imutavel_409():
@@ -284,6 +378,50 @@ async def test_rejeitar_rascunho_com_auditoria():
     assert any(a.acao == "REJEITAR" and "valores revisados" in (a.detalhes or "")
                for a in audits)
     assert db.commits == 1
+
+
+async def test_parcelamento_schema_valida_na_entrada_422():
+    """Item 15: parcelamento estruturado é validado no schema do endpoint —
+    erro vira 422 na entrada, nunca 500 tardio em _forma_pagamento."""
+    from pydantic import ValidationError
+    from app.routers.honorarios_oab import PropostaIn
+
+    with pytest.raises(ValidationError):
+        PropostaIn(parcelamento={"num_parcelas": 0})
+    with pytest.raises(ValidationError):
+        PropostaIn(parcelamento={"entrada": -1})
+    with pytest.raises(ValidationError):
+        PropostaIn(parcelamento={"valor_parcela": -0.5})
+    with pytest.raises(ValidationError):
+        PropostaIn(parcelamento={"descricao": "x" * 501})
+    ok = PropostaIn(parcelamento={"entrada": 1000.0, "num_parcelas": 3,
+                                  "valor_parcela": 500.0})
+    assert ok.model_dump()["parcelamento"]["num_parcelas"] == 3
+    # O contrato continua legível a partir do dump estruturado.
+    from app.services.fee_proposal_service import _forma_pagamento
+    assert "3 parcelas" in _forma_pagamento(ok.model_dump()["parcelamento"])
+
+
+async def test_criar_proposta_revalida_item_codigo_origem_tabela(monkeypatch):
+    """Item 14: origem_tabela.item_codigo fora dos vigentes → validada=False
+    com aviso (não bloqueia); código vigente → validada=True."""
+    from app.routers import honorarios_oab as rt
+
+    async def _acesso(db, cu, case_id):
+        return _case()
+    monkeypatch.setattr(rt, "verificar_acesso_caso", _acesso)
+
+    body = rt.PropostaIn(origem_tabela={"item_codigo": "99.9"})
+    # fila: itens vigentes (validação) → max(versao) (criar_proposta)
+    db = _FakeDB([[_item_oab()], None])
+    out = await rt.criar_proposta_honorarios("case1", body, db, _user())
+    assert out["origem_tabela"]["validada"] is False
+    assert "não corresponde" in out["origem_tabela"]["aviso_validacao"]
+
+    body2 = rt.PropostaIn(origem_tabela={"item_codigo": "11.5"})
+    db2 = _FakeDB([[_item_oab()], None])
+    out2 = await rt.criar_proposta_honorarios("case1", body2, db2, _user())
+    assert out2["origem_tabela"]["validada"] is True
 
 
 async def test_proposta_aprovada_vigente():

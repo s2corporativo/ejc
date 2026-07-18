@@ -16,7 +16,7 @@ import logging
 import re
 from typing import Optional
 
-from app.core.taxonomia import AREAS_ANALISE_DOCUMENTAL, normalizar_area
+from app.core.taxonomia import AREAS_ANALISE_DOCUMENTAL, SENTINELA_OUTRO, normalizar_area
 from app.schemas.document_intake import (
     CampoExtraido, CasoExtraido, ClienteExtraido, DocumentoIntakeResult,
     ParteExtraida, PedidoExtraido, PrazoExtraido, RiscoExtraido, TeseSugerida,
@@ -289,12 +289,15 @@ def _montar_intake_result(
         if valor_causa is None and llm.get("valor_causa_estimado") not in (None, ""):
             valor_causa = CampoExtraido(valor=llm.get("valor_causa_estimado"))
 
-        # Área: normaliza grafias/aliases para o canônico (taxonomia). Se a IA
-        # devolver algo fora do vocabulário, preserva o texto bruto para o
-        # revisor humano decidir (nunca chutar área juridicamente diversa).
+        # Área: normaliza grafias/aliases para o canônico (taxonomia). Contrato:
+        # `area` é SEMPRE canônica — texto da IA fora do vocabulário vira a
+        # sentinela "outro" e o bruto fica em `area_bruta` para o revisor
+        # humano decidir (nunca chutar área juridicamente diversa).
         area_bruta = _txt(classif.get("area"))
+        area_canonica = normalizar_area(area_bruta) if area_bruta else None
         caso = CasoExtraido(
-            area=(normalizar_area(area_bruta) or area_bruta) if area_bruta else None,
+            area=(area_canonica or (SENTINELA_OUTRO if area_bruta else None)),
+            area_bruta=(None if area_canonica else (area_bruta or None)),
             subramo=_txt(classif.get("subarea")),
             numero_cnj=numero_cnj,
             orgao=_txt(ident.get("comarca")),

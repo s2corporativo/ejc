@@ -319,6 +319,52 @@ async def test_triagem_grava_snapshot_no_caminho_feliz(monkeypatch):
     assert s.ai_log_ids and s.criado_por is None  # automático, rastreável
 
 
+async def test_triagem_area_fora_do_canonico_vira_outro_no_payload(monkeypatch):
+    """Item 6 (contrato do model): payload['area'] é SEMPRE canônico — texto da
+    IA fora da taxonomia vira 'outro' e o bruto fica em payload['area_bruta']."""
+    from app.services import case_intel
+
+    case = _case(descricao_fatos=(
+        "Cliente relata demissão sem justa causa e verbas rescisórias "
+        "não pagas pelo empregador."))
+    db = _FakeDB([None])  # única query: max(versao) do criar_snapshot
+
+    async def _get(model, pk):
+        return case
+    db.get = _get
+
+    class _Ctx:
+        async def __aenter__(self):
+            return db
+
+        async def __aexit__(self, *a):
+            return False
+
+    monkeypatch.setattr(case_intel, "AsyncSessionLocal", lambda: _Ctx())
+    monkeypatch.setattr(case_intel.settings, "AI_ENABLED", True)
+
+    async def _fake_gateway(*a, **k):
+        bruto = json.dumps({
+            "area": "direito da vizinhança espacial",   # fora do canônico
+            "assunto": "x", "tese_principal": "t", "teses_secundarias": [],
+            "pontos_fortes": "", "pontos_fracos": "", "provas_necessarias": [],
+            "oportunidades": "", "chance_exito": 50, "complexidade": "media"})
+        return bruto, type("R", (), {"modelo": "m", "provedor": "p"})()
+    monkeypatch.setattr(case_intel, "_gateway_json", _fake_gateway)
+
+    import app.services.ai.entidades_caso as ec
+
+    async def _ent(_db, _cid):
+        return {}
+    monkeypatch.setattr(ec, "entidades_do_caso", _ent)
+
+    await case_intel.triagem_caso("case1")
+    snaps = [o for o in db.added if isinstance(o, CaseIntelligenceSnapshot)]
+    assert len(snaps) == 1
+    assert snaps[0].payload["area"] == "outro"
+    assert snaps[0].payload["area_bruta"] == "direito da vizinhança espacial"
+
+
 # ── Compactação de payload (limite ~50KB do motor_peca) ──────────────────────
 
 def test_compactar_payload_intacto_quando_pequeno():
@@ -333,3 +379,18 @@ def test_compactar_payload_descarta_chaves_gigantes():
     assert out["_compactado"] == ["motivacao_ia"]
     assert out["peca_sugerida"] == "contestacao"
     assert len(json.dumps(out).encode()) <= cis.PAYLOAD_MAX_BYTES
+
+
+def test_compactar_payload_truncagem_anotada_em_compactado():
+    """Item 17: o último recurso (truncar strings) fica ANOTADO em _compactado
+    e o tamanho é re-verificado após a truncagem."""
+    p = {"granda": "x" * 80_000}
+    out = cis.compactar_payload(p)   # sem descartáveis → vai direto à truncagem
+    assert out["_compactado"] == ["strings_truncadas"]
+    assert out["granda"].endswith("[truncado]")
+    assert len(json.dumps(out, ensure_ascii=False).encode()) <= cis.PAYLOAD_MAX_BYTES
+
+    # Chave descartada + truncagem: ambas anotadas, na ordem.
+    p2 = {"motivacao_ia": "y" * 80_000, "resto": "z" * 80_000}
+    out2 = cis.compactar_payload(p2, descartaveis=("motivacao_ia",))
+    assert out2["_compactado"] == ["motivacao_ia", "strings_truncadas"]

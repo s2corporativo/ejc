@@ -44,9 +44,25 @@ def test_publicacao_dje_sexta_inicio_contagem_pula_fim_de_semana():
 
 def test_publicacao_dje_compatibilidade_com_prazo_dias_uteis():
     # Invariante crítico: o 1º dia contado por prazo_dias_uteis(termo, 1) é
-    # exatamente o inicio_contagem informado (sem off-by-one).
+    # exatamente o inicio_contagem informado (sem off-by-one) — na MESMA régua
+    # do motor (aplicar_recesso=True, como motor_peca_service).
     out = resolver_termo_inicial("publicacao_dje", date(2026, 6, 5))
-    assert prazo_dias_uteis(out["termo_inicial"], 1) == out["inicio_contagem"]
+    assert prazo_dias_uteis(out["termo_inicial"], 1,
+                            aplicar_recesso=True) == out["inicio_contagem"]
+
+
+def test_publicacao_no_recesso_inicio_contagem_apos_20_de_janeiro():
+    """Item 4 da auditoria: publicação em 18/12 (sexta) — o 1º dia útil contado
+    respeita o recesso INTEGRAL do CPC art. 220 (20/12–20/01), igual ao motor
+    (aplicar_recesso=True): inicio_contagem = 1º dia útil APÓS 20/01."""
+    out = resolver_termo_inicial("publicacao_dje", date(2026, 12, 18))  # sexta
+    assert out["termo_inicial"] == date(2026, 12, 18)
+    # 19-20/12 fim de semana; 21/12/2026–20/01/2027 recesso art. 220 →
+    # 1º dia útil contado = 21/01/2027 (quinta).
+    assert out["inicio_contagem"] == date(2027, 1, 21)
+    # Consistência exata com a contagem real do motor (sem off-by de 14 dias).
+    assert prazo_dias_uteis(out["termo_inicial"], 1,
+                            aplicar_recesso=True) == out["inicio_contagem"]
 
 
 def test_disponibilizacao_dje_publicacao_no_dia_util_seguinte():

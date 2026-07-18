@@ -157,6 +157,8 @@ async def _processar_tool_calls(tool_calls, *, ctx, messages, aprovacoes_hash,
       • LEITURA (requer_confirmacao=False) → executa sempre.
       • ESCRITA (requer_confirmacao=True) → só executa se o HASH de (nome+args)
         estiver em `aprovacoes_hash` (aprovação vinculada aos ARGS exatos, H1).
+        A aprovação é ONE-SHOT: o hash é CONSUMIDO na primeira execução —
+        chamada repetida idêntica pausa DE NOVO (nova aprovação humana).
         Senão PAUSA: devolve {"pending": <write>, "restantes": <após o write>}.
       • `apenas_leitura=True` (defense-in-depth): a write-tool nem foi exposta ao
         modelo por `schemas(role, apenas_leitura=True)`; se ainda assim for pedida,
@@ -177,6 +179,9 @@ async def _processar_tool_calls(tool_calls, *, ctx, messages, aprovacoes_hash,
             if h not in aprovacoes_hash:
                 # HITL: write não aprovada (por args) PAUSA o loop.
                 return {"pending": tc, "restantes": list(tool_calls[i + 1:])}
+            # ONE-SHOT: consome a aprovação — uma aprovação humana autoriza UMA
+            # execução; repetição idêntica volta a pausar (HITL).
+            aprovacoes_hash.discard(h)
         await _emitir(on_event, "ferramenta", {"ferramenta": nome, "args": args})
         try:
             resultado = await REGISTRY.executar(nome, args, ctx)
@@ -246,7 +251,8 @@ async def rodar_agente(
 
     `aprovacoes_hash`: hashes de (nome+args) já aprovados — usado como FALLBACK
     quando o Redis está indisponível (o loop re-roda e só executa a write-tool se
-    o tool_call recém-gerado casar o hash).
+    o tool_call recém-gerado casar o hash). Aprovação é ONE-SHOT: cada hash é
+    consumido na primeira execução; nova chamada idêntica pausa de novo.
 
     `apenas_leitura`: quando True, expõe ao modelo SOMENTE tools de leitura
     (`schemas(role, apenas_leitura=True)`) e nunca pausa em HITL — para fluxos de
