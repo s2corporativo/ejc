@@ -111,10 +111,12 @@ from app.routers import triagem_entrevista
 from app.routers import ficha_triagem
 from app.routers import jurisprudencia_interna
 from app.routers import kanban
+from app.routers import kit_documental
 from app.routers import legal_docs
 from app.routers import memoria_institucional
 from app.routers import mensagens
 from app.routers import module_help
+from app.routers import motor_peca
 from app.routers import movimentos
 from app.routers import noticias
 from app.routers import notifications
@@ -342,6 +344,7 @@ app.include_router(juris_import.router, prefix=API)
 app.include_router(jurisprudencia_externa.router, prefix=API)
 app.include_router(jurisprudencia_interna.router, prefix=API)
 app.include_router(kanban.router, prefix=API)
+app.include_router(kit_documental.router, prefix=API)  # POST /api/cases/{id}/kit-documental (P0.3)
 app.include_router(legal_docs.router, prefix=API)
 app.include_router(memoria_institucional.router, prefix=API)
 app.include_router(honorarios_oab.router, prefix=API)  # frontend: /api/honorarios-oab/estimar (EstimadorHonorarios)
@@ -350,6 +353,7 @@ app.include_router(triagem_entrevista.router, prefix=API)  # frontend: /api/tria
 app.include_router(ficha_triagem.router, prefix=API)  # frontend: /api/triagem/ficha (Ficha de Triagem pré-peça — gate de geração)
 app.include_router(mensagens.router, prefix=API)
 app.include_router(module_help.router, prefix=API)  # frontend: /api/module-help/* (HelpButton)
+app.include_router(motor_peca.router, prefix=API)  # P1: Motor de Peça — /api/cases/{id}/motor-peca/*
 app.include_router(movimentos.router, prefix=API)
 app.include_router(noticias.router, prefix=API)
 app.include_router(notifications.router, prefix=API)

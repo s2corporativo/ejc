@@ -1,5 +1,10 @@
 """Base anti-alucinação (IA-04) — injeção da identidade nas tarefas de prosa."""
-from app.services.legal_base import aplicar_base, garantir_identidade, _TASKS_COM_BASE
+from app.services.legal_base import (
+    BASE_ESTRUTURADA,
+    aplicar_base,
+    garantir_identidade,
+    _TASKS_COM_BASE,
+)
 
 
 def _msgs():
@@ -61,6 +66,40 @@ def test_garantir_identidade_lista_vazia():
     out = garantir_identidade([])
     assert out[0]["role"] == "system"
     assert "[IDENTIDADE]" in out[0]["content"]
+
+
+# ── BASE_ESTRUTURADA: núcleo anti-alucinação p/ saída ESTRUTURADA (P0.2) ─────
+
+def test_base_estruturada_carrega_nucleo_anti_alucinacao():
+    # Núcleo da regra OAB: nunca inventar fonte/dado, nunca prometer resultado,
+    # dizer explicitamente quando não souber.
+    for termo in (
+        "NUNCA invente lei",
+        "súmula",
+        "jurisprudência",
+        "número de processo",
+        "datas",
+        "NUNCA prometa resultado",
+        "verificar",
+        "não sabe",
+    ):
+        assert termo in BASE_ESTRUTURADA, termo
+
+
+def test_base_estruturada_compativel_com_saida_json():
+    # Não pode poluir/quebrar parsers de saída estruturada: sem chaves nem
+    # cercas de código que o modelo possa ecoar, e com instrução explícita de
+    # preservar o formato pedido pela tarefa.
+    assert "{" not in BASE_ESTRUTURADA
+    assert "}" not in BASE_ESTRUTURADA
+    assert "```" not in BASE_ESTRUTURADA
+    assert "formato" in BASE_ESTRUTURADA
+
+
+def test_base_estruturada_e_curta():
+    # Variante CURTA por contrato — entra em 4 etapas do pipeline de peças sem
+    # inflar o contexto.
+    assert len(BASE_ESTRUTURADA) < 600
 
 
 def test_pipeline_runtime_combinado_nao_duplica():

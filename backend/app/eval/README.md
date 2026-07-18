@@ -4,11 +4,13 @@ Ciclo **eval-driven**: meça o baseline **antes** de mudar qualquer coisa
 (reranker, embedding, prompt, threshold), depois itere medindo cada passo.
 Sem régua, toda melhoria é aposta.
 
-> Dois harnesses, mesma filosofia:
+> Três gold sets, mesma filosofia:
 > - **RAG** (`run_eval.py`, este documento): mede o *retrieval* e a resposta.
 > - **Trajetória do agente** (`agent_trajectory.py`, seção 6): mede as *decisões*
 >   do loop de tool-use (qual tool chamou, se fundamentou, se respeitou HITL/leitura
 >   e o orçamento). É OFFLINE — o LLM é mockado, sem rede/banco/Redis.
+> - **Peças** (`gold_set_pecas.jsonl`, seção 7): casos curados para avaliar o
+>   pipeline de geração de peças (incl. o laço de auto-crítica das Duas IAs).
 
 ## 1. Monte o gold set
 
@@ -113,3 +115,41 @@ Campos: `intencao`, `mensagem`, `ferramenta_esperada`, `espera_fonte`,
 `apenas_leitura`, `aprovar_escrita`, `orcamento_override`, `tool_result`, `turnos`.
 Cresça-o cobrindo as intenções reais do escritório. Teste offline determinístico:
 `tests/test_eval_agent_trajectory.py`.
+
+## 7. Gold set de PEÇAS (pipeline de geração + auto-crítica)
+
+Scaffold pronto para o escritório preencher:
+
+- **Template comentado**: `gold_set_pecas.template.json` — todos os campos de um
+  caso (`id`, `area`, `ficticio`, `fatos`, `pedidos`, `tipo_peca_esperado`,
+  `teses_esperadas`, `jurisprudencia_esperada`, `criterios`, `notes`).
+- **Exemplos FICTÍCIOS**: `gold_set_pecas.example.jsonl` — 3 casos 100% sintéticos
+  (`ficticio: true`), com jurisprudência **placeholder** (`SUMULA-FICTICIA-XXX`).
+  Servem só para demonstrar o formato — **nunca** copie os placeholders (nem
+  qualquer citação não conferida) para o gold set real.
+
+### Curadoria (quem produz é o escritório)
+
+1. Copie o formato dos exemplos para `gold_set_pecas.jsonl` (uma linha JSON por caso).
+2. **Pseudonimize tudo** (LGPD): troque nomes por `[CLIENTE_1]`/`[EMPRESA_1]`,
+   remova CPF/endereços/valores identificáveis ANTES de gravar.
+3. Em `jurisprudencia_esperada`, liste **apenas referências reais conferidas na
+   fonte oficial** (STF/STJ/TST/planalto). Jurisprudência inventada é proibida —
+   inclusive nos exemplos, onde só o placeholder explícito `SUMULA-FICTICIA-XXX` é aceito.
+4. Meta: **50–150 casos reais pseudonimizados** cobrindo as áreas de atuação;
+   comece pelos tipos de peça mais gerados (petição inicial, contestação, RO).
+5. Marque `ficticio: false` nos casos reais pseudonimizados.
+
+### Como rodar
+
+```bash
+# Smoke (offline, sem banco/LLM): valida o FORMATO de TODOS os gold sets *.jsonl
+python -m app.eval.run_eval --smoke
+
+# Retrieval sobre o gold set de RAG (precisa de DATABASE_URL)
+python -m app.eval.run_eval --gold app/eval/gold_set.jsonl --k 6
+```
+
+O CI (`.github/workflows/ci.yml`, job `eval-smoke`) roda `--smoke` +
+`agent_trajectory` em modo **não bloqueante** (`continue-on-error`) — vira gate
+bloqueante quando o gold set real existir e o baseline estiver estabelecido.

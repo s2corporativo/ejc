@@ -26,7 +26,9 @@ from __future__ import annotations
 
 import argparse
 import asyncio
+import glob
 import json
+import os
 import sys
 import unicodedata
 from dataclasses import dataclass, field
@@ -219,6 +221,115 @@ async def _main(args) -> int:
     return 0
 
 
+# ── Modo SMOKE (CI, offline) ─────────────────────────────────────────────────
+# Valida o FORMATO de todos os gold sets *.jsonl do pacote SEM banco e SEM
+# chamada de LLM (as métricas determinísticas offline rodam à parte em
+# `python -m app.eval.agent_trajectory`). Objetivo: o CI pega gold set quebrado
+# (JSON inválido, campo obrigatório faltando, exemplo "fictício" com cara de
+# jurisprudência real) antes de o escritório investir na curadoria.
+
+def _erros_pii_caso(caso: dict) -> list[str]:
+    """Detector de PII para gold sets REAIS (não-example): reusa os padrões
+    estruturais do sanitizer da casa. Import tardio para o smoke continuar
+    utilizável mesmo fora do pacote app completo."""
+    try:
+        from app.services.sanitizer import validar_sem_pii
+    except Exception:
+        return []  # sanitizer indisponível neste ambiente — não bloqueia o smoke
+    erros: list[str] = []
+    for campo in ("fatos", "pedidos"):
+        texto = str(caso.get(campo) or "")
+        if not texto.strip():
+            continue
+        tipos = validar_sem_pii(texto)
+        if tipos:
+            erros.append(
+                f"PII detectada em '{campo}' ({', '.join(sorted(set(map(str, tipos))))}) "
+                "— gold set real deve ser PSEUDONIMIZADO antes do commit"
+            )
+    return erros
+
+
+def _validar_caso_smoke(caso: dict, arquivo: str) -> list[str]:
+    """Erros de formato de UM caso, segundo a shape detectada pelos campos."""
+    erros: list[str] = []
+
+    def _req_str(campo: str):
+        if not str(caso.get(campo) or "").strip():
+            erros.append(f"campo obrigatório vazio/ausente: {campo}")
+
+    def _req_lista(campo: str):
+        v = caso.get(campo)
+        if not isinstance(v, list) or not v or not all(str(x).strip() for x in v):
+            erros.append(f"campo obrigatório deve ser lista não vazia: {campo}")
+
+    if "query" in caso:            # gold set de RAG (gold_set*.jsonl)
+        _req_str("id")
+        _req_str("query")
+        _req_lista("expected_titulos")
+    elif "fatos" in caso:          # gold set de PEÇAS (gold_set_pecas*.jsonl)
+        _req_str("id")
+        _req_str("area")
+        _req_str("fatos")
+        _req_str("tipo_peca_esperado")
+        _req_lista("teses_esperadas")
+        _req_lista("criterios")
+        if not isinstance(caso.get("ficticio"), bool):
+            erros.append("campo obrigatório deve ser bool: ficticio")
+        if ".example." in os.path.basename(arquivo):
+            # Guarda-corpo anti-invenção: exemplo embarcado é SEMPRE fictício e
+            # sua "jurisprudência" só pode ser placeholder explícito.
+            if caso.get("ficticio") is not True:
+                erros.append("exemplo embarcado deve ter ficticio=true")
+            for j in caso.get("jurisprudencia_esperada") or []:
+                if "FICTICIA" not in str(j).upper():
+                    erros.append(
+                        f"jurisprudência de exemplo sem marcador FICTICIA: {j!r}"
+                    )
+        else:
+            # Gold set REAL: LGPD — os casos devem estar PSEUDONIMIZADOS.
+            # Roda o detector estrutural de PII da casa sobre os campos de
+            # texto e FALHA se encontrar CPF/CNPJ/e-mail/telefone etc.
+            erros.extend(_erros_pii_caso(caso))
+    elif "intencao" in caso:       # cenários de trajetória (agent_scenarios.jsonl)
+        _req_str("intencao")       # validação profunda: app.eval.agent_trajectory
+        _req_str("mensagem")
+    else:
+        erros.append("formato desconhecido (esperado campo query, fatos ou intencao)")
+    return erros
+
+
+def _smoke() -> int:
+    base = os.path.dirname(os.path.abspath(__file__))
+    arquivos = sorted(glob.glob(os.path.join(base, "*.jsonl")))
+    if not arquivos:
+        print("SMOKE: nenhum gold set *.jsonl encontrado", file=sys.stderr)
+        return 2
+    falhas = 0
+    for arq in arquivos:
+        casos = _carregar_gold(arq)
+        ids_vistos: set[str] = set()
+        erros_arq: list[str] = []
+        for i, caso in enumerate(casos, 1):
+            for e in _validar_caso_smoke(caso, arq):
+                erros_arq.append(f"caso {i} ({caso.get('id', '?')}): {e}")
+            cid = str(caso.get("id") or "").strip()
+            if cid:
+                if cid in ids_vistos:
+                    erros_arq.append(f"caso {i}: id duplicado: {cid}")
+                ids_vistos.add(cid)
+        status = "OK " if not erros_arq else "ERRO"
+        print(f"[{status}] {os.path.basename(arq)}: {len(casos)} caso(s)")
+        for e in erros_arq:
+            print(f"       - {e}")
+        falhas += len(erros_arq)
+    if falhas:
+        print(f"\nSMOKE FALHOU: {falhas} erro(s) de formato.", file=sys.stderr)
+        return 1
+    print("\nSMOKE OK: todos os gold sets com formato válido.")
+    return 0
+
+
 def main() -> None:
     p = argparse.ArgumentParser(description="Avaliação do RAG/IA jurídica do EJC (O-4).")
     p.add_argument("--gold", default="app/eval/gold_set.example.jsonl", help="gold set JSONL")
@@ -227,7 +338,11 @@ def main() -> None:
     p.add_argument("--judge", action="store_true", help="groundedness via LLM-judge (requer --full)")
     p.add_argument("--out", default=None, help="grava métricas agregadas em JSON (baseline p/ diff)")
     p.add_argument("--min-recall", type=float, default=None, help="piso de recall@k p/ CI (falha abaixo)")
+    p.add_argument("--smoke", action="store_true",
+                   help="só valida o FORMATO dos gold sets *.jsonl (offline: sem banco/LLM; p/ CI)")
     args = p.parse_args()
+    if args.smoke:
+        raise SystemExit(_smoke())
     raise SystemExit(asyncio.run(_main(args)))
 
 
