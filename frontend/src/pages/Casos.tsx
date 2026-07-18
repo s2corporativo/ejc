@@ -19,6 +19,7 @@ import {
 import api, { aplicarExtracao } from "../lib/api";
 import { asList } from "../lib/list";
 import { areaLabel, useAreas } from "../lib/areas";
+import { caseJourneyPath } from "../lib/caseContext";
 import type { AplicarExtracaoResult, ExtracaoPayload } from "../lib/api";
 import {
   carregarRascunho,
@@ -299,10 +300,7 @@ export default function Casos() {
   // documento (IA + revisão) ou cadastro rápido manual (sem IA).
   const location = useLocation();
   const nav = useNavigate();
-  const novoCasoModo = resolverModoNovoCaso(
-    location.pathname,
-    location.search,
-  );
+  const novoCasoModo = resolverModoNovoCaso(location.pathname, location.search);
   const wizardAberto = novoCasoModo === "manual";
   const [form, setForm] = useState<any>({
     area: "civil",
@@ -321,7 +319,9 @@ export default function Casos() {
   // Rascunho recuperável do intake documental (localStorage): banner de retomada
   // ao reabrir, e recuperação SEM recriar quando o caso já foi criado mas o
   // anexo do documento falhou.
-  const [rascunhoSalvo, setRascunhoSalvo] = useState<IntakeRascunho | null>(null);
+  const [rascunhoSalvo, setRascunhoSalvo] = useState<IntakeRascunho | null>(
+    null,
+  );
   const [pendencia, setPendencia] = useState<{
     caseId: string;
     caseTitulo: string;
@@ -456,7 +456,9 @@ export default function Casos() {
     const cand = form._cliente_candidato;
     const temCandidato = !!(cand && (cand.nome || cand.cpf || cand.cnpj));
     if (!form.titulo || (!form.client_id && !temCandidato)) {
-      toast.error("Título e cliente são obrigatórios (ou importe um documento).");
+      toast.error(
+        "Título e cliente são obrigatórios (ou importe um documento).",
+      );
       return;
     }
     const selecionado = clientes.find((c) => c.id === form.client_id);
@@ -502,6 +504,7 @@ export default function Casos() {
       });
     }
     try {
+      let previewPreparado = false;
       let clientId = form.client_id;
       // Importação inteligente: cria/vincula cliente por CPF/CNPJ (dedup no backend)
       if (!clientId && temCandidato) {
@@ -565,6 +568,7 @@ export default function Casos() {
             extracao,
             result,
           });
+          previewPreparado = true;
         } catch (e: any) {
           toast.error(
             e.response?.data?.detail ||
@@ -573,12 +577,16 @@ export default function Casos() {
         }
       }
 
-      // Sucesso: o rascunho não é mais necessário; fecha e navega.
+      // Sucesso: segue direto para a jornada. Quando há preview de extração,
+      // mantém apenas o modal de confirmação e abre a jornada logo após a
+      // decisão do usuário (aplicar ou pular), sem abandonar o fluxo na lista.
       limparRascunho();
       setPendencia(null);
       setRascunhoSalvo(null);
       setModal(false);
-      nav("/casos", { replace: true });
+      if (previewPreparado) nav("/casos", { replace: true });
+      else if (novo?.id) nav(caseJourneyPath(novo.id), { replace: true });
+      else nav("/casos", { replace: true });
       setForm({ area: "civil", prioridade: "media", case_type: "judicial" });
       load();
     } catch (e: any) {
@@ -608,7 +616,7 @@ export default function Casos() {
       setPendencia(null);
       setRascunhoSalvo(null);
       setModal(false);
-      nav("/casos", { replace: true });
+      nav(caseJourneyPath(pendencia.caseId), { replace: true });
       setForm({ area: "civil", prioridade: "media", case_type: "judicial" });
       load();
     } catch (e: any) {
@@ -623,11 +631,13 @@ export default function Casos() {
 
   // Conclui deixando o caso sem o documento (escolha EXPLÍCITA do usuário).
   const concluirSemDocumento = () => {
+    const caseId = pendencia?.caseId;
     limparRascunho();
     setPendencia(null);
     setRascunhoSalvo(null);
     setModal(false);
-    nav("/casos", { replace: true });
+    if (caseId) nav(caseJourneyPath(caseId), { replace: true });
+    else nav("/casos", { replace: true });
     setForm({ area: "civil", prioridade: "media", case_type: "judicial" });
     load();
   };
@@ -658,7 +668,7 @@ export default function Casos() {
       );
       setPreview(null);
       load();
-      nav(`/casos/${caseId}/jornada`);
+      nav(caseJourneyPath(caseId));
     } catch (e: any) {
       toast.error(
         e.response?.data?.detail || "Erro ao aplicar os dados ao caso.",
@@ -672,7 +682,7 @@ export default function Casos() {
     if (!preview) return;
     const caseId = preview.caseId;
     setPreview(null);
-    nav(`/casos/${caseId}/jornada`);
+    nav(caseJourneyPath(caseId));
   };
 
   return (
@@ -962,7 +972,8 @@ export default function Casos() {
         <div className="mb-5 flex flex-col gap-3 rounded-xl border border-primary-200 bg-primary-50 px-4 py-3 sm:flex-row sm:items-center sm:justify-between">
           <div>
             <p className="text-sm font-semibold text-primary-800">
-              1. Analise o documento · 2. Revise os dados · 3. Confirme a jornada
+              1. Analise o documento · 2. Revise os dados · 3. Confirme a
+              jornada
             </p>
             <p className="mt-1 text-xs leading-5 text-primary-700">
               Nada é gravado silenciosamente: cliente, caso, partes, área e
@@ -984,13 +995,13 @@ export default function Casos() {
               <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0 text-warn-700" />
               <div className="min-w-0 flex-1">
                 <p className="text-sm font-semibold text-warn-800">
-                  O caso “{pendencia.caseTitulo}” foi criado, mas o documento não
-                  foi anexado.
+                  O caso “{pendencia.caseTitulo}” foi criado, mas o documento
+                  não foi anexado.
                 </p>
                 <p className="mt-1 text-xs leading-5 text-warn-700">
-                  Nada foi perdido: o caso está salvo (em triagem) e o documento “
-                  {pendencia.arquivo.name}” continua aqui. Tente anexar de novo — o
-                  caso não será duplicado.
+                  Nada foi perdido: o caso está salvo (em triagem) e o documento
+                  “{pendencia.arquivo.name}” continua aqui. Tente anexar de novo
+                  — o caso não será duplicado.
                 </p>
                 <div className="mt-3 flex flex-wrap gap-2">
                   <Button
@@ -1413,7 +1424,7 @@ export default function Casos() {
           O usuário vê o que SERÁ aplicado e confirma ou pula. */}
       <Modal
         open={!!preview}
-        onClose={() => setPreview(null)}
+        onClose={abrirJornadaSemAplicar}
         title="Aplicar dados extraídos ao caso"
         footer={
           <>

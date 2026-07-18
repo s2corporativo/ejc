@@ -19,6 +19,9 @@
 > Diário devolveu HTML no probe — reverificar contrato. TCU REST: endpoint
 > do probe errado (site oficial ok) — descobrir na implementação.
 > DJEN 403 para runner GitHub (WAF) — já integrado no EJC via VPS.
+>
+> Decisão arquitetural e critérios para PJe/eproc, IBAMA e DOU:
+> [ADR_INTEGRACOES_JURIDICAS_PUBLICAS_2026-07.md](ADR_INTEGRACOES_JURIDICAS_PUBLICAS_2026-07.md).
 
 ## 1. APIs públicas gratuitas — ativar primeiro
 
@@ -78,7 +81,7 @@ cadastro, due diligence básica) roda 100% com as gratuitas da seção 1.
 | Fonte | O que dá | Como contratar | Status real no código / Observação |
 |---|---|---|---|
 | **Infosimples** (PAGO, por consulta) | TJMG processo, Receita CPF/CNPJ, DETRAN-MG, IBAMA, CAR e centenas de consultas | Conta + créditos pré-pagos (api.infosimples.com/cadastro) | 🔑 Conector **já pronto** no EJC: `services/infosimples_service.py` com teto diário de custo (`INFOSIMPLES_MAX_CONSULTAS_DIA=50`), cache do dia e retenção LGPD. Default `INFOSIMPLES_ENABLED=False`; falta contratar e colar `INFOSIMPLES_TOKEN` |
-| **MNI eproc-TJMG** (credenciamento, sem custo por consulta) | Consulta processual + avisos direto na fonte | Ofício ao Presidente do TJMG + certificado ICP-Brasil (Portaria Conjunta 1720/PR/2025) [NV se admite escritório privado] | 📋 Não integrado. TJMG migra PJe→eproc até fim de 2026 — mirar eproc; iniciar o ofício já |
+| **MNI PJe/eproc** (credenciamento institucional) | Consulta e atos processuais conforme o convênio e o perfil autorizado | A Portaria Conjunta 1720/PR/2025 regulamenta o uso do eproc/TJMG, mas não comprova API pública para escritório privado; a integração MNI exige documentação e autorização do tribunal | 📋 Não integrado. Usar DataJud+DJEN para dados públicos e só criar adaptador PJe/eproc após autorização escrita, sem automação de login/2FA/certificado |
 | **Escavador API** (PAGO) | Monitoramento processual multi-tribunal + diários | Créditos pré-pagos, sem mensalidade mínima alta | 📋 Não integrado. Melhor custo/benefício p/ escritório de 5 advogados |
 | **Serasa/SPC/BoaVista** (PAGO — birôs de crédito) | Score, negativação, protestos | Contrato PJ (SPC via CDL Betim); justificativa LGPD obrigatória | 📋 Não integrado. Preço sob proposta |
 | **SERPRO/Dataprev comerciais** (PAGO) | CPF/CNPJ oficiais em tempo real | Contrato comercial | 📋 Não integrado. O Conecta gov.br é só para órgãos públicos |
