@@ -71,6 +71,12 @@ export function deveInjetarCaso(
   return casoContextualDaUrl(search);
 }
 
+export function destinoRotaConsolidada(pathname: string): string | null {
+  return pathname === "/knowledge-hub"
+    ? "/inteligencia?tab=pesquisa"
+    : null;
+}
+
 function lerMarcador(): CreatedCaseMarker | null {
   try {
     const raw = sessionStorage.getItem(CREATED_CASE_KEY);
@@ -101,6 +107,7 @@ function salvarMarcador(id: string) {
  * - guarda o caso recém-criado e continua para a Jornada quando o fluxo legado
  *   voltar à lista;
  * - injeta `case_id` em prazo/tarefa/evento criados a partir de `?caso=`;
+ * - redireciona rotas consolidadas para o workspace canônico;
  * - mostra a central simples do caso na rota exata `/casos/:id`.
  *
  * O filtro `?tipo=` e os atalhos do Dashboard são nativos desde o PR #292 e
@@ -138,6 +145,11 @@ export default function FlowEnhancements() {
       api.interceptors.response.eject(responseInterceptor);
     };
   }, []);
+
+  useEffect(() => {
+    const destino = destinoRotaConsolidada(location.pathname);
+    if (destino) navigate(destino, { replace: true });
+  }, [location.pathname, navigate]);
 
   useEffect(() => {
     const marker = lerMarcador();

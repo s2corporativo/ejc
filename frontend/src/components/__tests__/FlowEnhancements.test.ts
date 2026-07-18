@@ -3,6 +3,7 @@ import {
   caseIdCriadoDaResposta,
   caseIdSeguro,
   casoContextualDaUrl,
+  destinoRotaConsolidada,
   deveInjetarCaso,
 } from "../FlowEnhancements";
 
@@ -78,5 +79,13 @@ describe("FlowEnhancements — regras puras", () => {
         "?caso=case-1",
       ),
     ).toBeNull();
+  });
+
+  it("consolida a rota histórica de conhecimento na pesquisa jurídica", () => {
+    expect(destinoRotaConsolidada("/knowledge-hub")).toBe(
+      "/inteligencia?tab=pesquisa",
+    );
+    expect(destinoRotaConsolidada("/inteligencia")).toBeNull();
+    expect(destinoRotaConsolidada("/conhecimento")).toBeNull();
   });
 });

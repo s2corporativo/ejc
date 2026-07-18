@@ -7,6 +7,7 @@ import type { ModuleLifecycleOverride } from "../stores/moduleLifecycle";
 
 const modules = [
   { key: "ativo", path: "/ativo", status: "active" },
+  { key: "knowledge-hub", path: "/knowledge-hub", status: "active" },
   { key: "oculto", path: "/oculto", status: "active" },
   { key: "desabilitado", path: "/desabilitado", status: "active" },
 ];
@@ -28,10 +29,24 @@ const settings: Record<string, ModuleLifecycleOverride> = {
 };
 
 describe("moduleLifecycle", () => {
-  it("remove módulos ocultos e desabilitados da navegação", () => {
+  it("remove módulos ocultos, desabilitados e rotas já consolidadas", () => {
     expect(filterModulesByLifecycle(modules, settings).map((item) => item.key)).toEqual([
       "ativo",
     ]);
+  });
+
+  it("não reabre no menu uma rota consolidada por configuração administrativa", () => {
+    const override: Record<string, ModuleLifecycleOverride> = {
+      "knowledge-hub": {
+        module_key: "knowledge-hub",
+        enabled: true,
+        menu_visible: true,
+        status: "active",
+      },
+    };
+    expect(filterModulesByLifecycle(modules, override).map((item) => item.key)).not.toContain(
+      "knowledge-hub",
+    );
   });
 
   it("aceita apenas rotas internas diferentes da rota atual", () => {
