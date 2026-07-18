@@ -225,6 +225,9 @@ async def gerar_pacote_seguro(
             cu,
             tipo_poderes="ad_judicia",
             permite_substabelecimento=False,
+            # Idempotência (follow-up PR #283): reaproveita os rascunhos do kit
+            # já existentes (ja_existia=true); regeneração só sob pedido.
+            forcar_novo=bool(body.get("forcar_novo")),
         )
     else:
         kit = {

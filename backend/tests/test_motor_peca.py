@@ -425,6 +425,49 @@ def test_gerar_peca_nao_defensiva_usa_pipeline_existente(
     assert len(deadlines) == 1 and "1.003" in deadlines[0].base_legal
 
 
+def test_gerar_confirmado_marca_ja_existia_false(
+        acesso_ok, texto_fake, checklist_pronto, monkeypatch):
+    async def _fake_defensiva(payload, db, user_id):
+        return {"ai_log_id": "log-1"}
+
+    monkeypatch.setattr(mp_router, "executar_ia_defensiva", _fake_defensiva)
+    db = _FakeDB()
+    client = _montar(db)
+    r = client.post("/cases/case-1/motor-peca/gerar", json=_gerar_payload())
+    assert r.status_code == 201
+    assert r.json()["deadline"]["ja_existia"] is False
+
+
+def test_gerar_idempotente_reusa_deadline_existente(
+        acesso_ok, texto_fake, checklist_pronto, monkeypatch):
+    """Idempotência (follow-up PR #283): reenvio do MESMO prazo confirmado
+    (caso + peça/base legal + data fatal, origem dos gates) devolve o Deadline
+    existente com ja_existia=true — nada é duplicado nem re-auditado."""
+    async def _fake_defensiva(payload, db, user_id):
+        return {"ai_log_id": "log-1"}
+
+    monkeypatch.setattr(mp_router, "executar_ia_defensiva", _fake_defensiva)
+    existente = Deadline(
+        id="dl-existente", titulo="Prazo — Contestação (CPC)",
+        data_prazo=prazo_dias_uteis(date(2026, 7, 1), 15),
+        base_legal="CPC art. 335", tipo=DeadlineTipo.processual,
+        origem="motor_peca", confirmado=True,
+    )
+    # 1ª consulta do fluxo (dedup) encontra o Deadline ativo equivalente.
+    db = _FakeDB(results=[[existente]])
+    client = _montar(db)
+    r = client.post("/cases/case-1/motor-peca/gerar", json=_gerar_payload())
+    assert r.status_code == 201, r.text
+    body = r.json()
+    assert body["deadline"]["id"] == "dl-existente"
+    assert body["deadline"]["ja_existia"] is True
+    # NENHUM Deadline novo persistido; nada auditado/commitado no dedup
+    assert [o for o in db.added if isinstance(o, Deadline)] == []
+    assert db.added == [] and db.committed == 0
+    # Gates preservados: resposta continua rascunho HITL
+    assert body["status"] == "rascunho" and body["termo_inicial_confirmado"] is True
+
+
 def test_gerar_falha_de_ia_preserva_deadline(
         acesso_ok, texto_fake, checklist_pronto, monkeypatch):
     async def _quebra(payload, db, user_id):

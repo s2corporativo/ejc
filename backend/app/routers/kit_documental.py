@@ -36,6 +36,10 @@ class KitDocumentalIn(BaseModel):
     tipo_poderes: str = "ad_judicia"
     permite_substabelecimento: bool = True
     poderes_especiais: Optional[str] = Field(None, max_length=2000)
+    # Idempotência (follow-up PR #283): submissão repetida devolve os rascunhos
+    # já existentes do kit (ja_existia=true). Regeneração explícita só com
+    # forcar_novo=true.
+    forcar_novo: bool = False
 
     @field_validator("tipo_poderes")
     @classmethod
@@ -74,4 +78,5 @@ async def gerar_kit_documental(
         tipo_poderes=p.tipo_poderes,
         permite_substabelecimento=p.permite_substabelecimento,
         poderes_especiais=p.poderes_especiais,
+        forcar_novo=p.forcar_novo,
     )

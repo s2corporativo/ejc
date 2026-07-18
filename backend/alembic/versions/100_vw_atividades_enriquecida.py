@@ -1,4 +1,4 @@
-"""097 — vw_atividades enriquecida (prioridade + subtipo). Pendência do PR #274.
+"""100 — vw_atividades enriquecida (prioridade + subtipo). Pendência do PR #274.
 
 A Central de Atividades (frontend) fazia 3 chamadas extras (/tasks, /deadlines,
 /agenda-eventos) só para obter responsável/prioridade. A view já expunha
@@ -16,7 +16,7 @@ Downgrade restaura a definição exata da 053 (DROP + CREATE, pois OR REPLACE
 não remove colunas).
 
 Revision ID: 100_vw_atividades_enriquecida
-Revises: 096_rag_embedding_1024
+Revises: 099_legal_doc_protocolo
 """
 from alembic import op
 

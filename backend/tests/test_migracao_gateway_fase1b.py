@@ -167,6 +167,26 @@ async def test_analisar_contrato_migrado_para_task_de_prosa_coberto(svc, monkeyp
     assert _log_unico(db).modelo == "fake/fake-model"
 
 
+async def test_extrair_prazos_json_prepende_base_estruturada(svc, monkeypatch):
+    # MAPA Passo 3 (lacuna Fase 1b): fluxo JSON com task "resumo" (fora de
+    # _TASKS_COM_BASE por design) PREPENDE BASE_ESTRUTURADA no system — padrão
+    # do peca_service/ia_extra sugestao-honorarios. Parse fail-safe intacto.
+    calls: list = []
+    monkeypatch.setattr(svc, "gw_chat", _gw_recorder(calls))
+    db = _FakeDB()
+    out = await svc.extrair_prazos_ia(db, "u1", FATOS)
+    assert calls[0]["task_type"] == "resumo"
+    sys = calls[0]["messages"][0]
+    assert sys["role"] == "system"
+    assert BASE_ESTRUTURADA in sys["content"]
+    # Regras inline específicas do prompt preservadas (mudança aditiva).
+    assert "NUNCA invente prazo" in sys["content"]
+    assert "APENAS com JSON" in sys["content"]
+    # Resposta não-JSON → nenhum prazo materializado (fail-safe intacto).
+    assert out["prazos"] == [] and out["total"] == 0
+    assert _log_unico(db).modelo == "fake/fake-model"
+
+
 # ══════════════════════════════════════════════════════════════════════════════
 # ia_extra — 5 fluxos (handler direto, sem HTTP)
 # ══════════════════════════════════════════════════════════════════════════════
@@ -279,6 +299,20 @@ def test_case_intel_usa_gateway_com_task_coberto():
     assert 'task_type="estrategia"' in src_triagem
     assert 'task_type="estrategia"' in src_encerr
     assert "estrategia" in _TASKS_COM_BASE
+
+
+def test_sys_classificar_prepende_base_estruturada():
+    # MAPA Passo 3 (lacuna Fase 1b): a classificação de peça p/ RAG
+    # (SYS_CLASSIFICAR, fluxo JSON "analise_juridica" — fora da base por
+    # design) prepende BASE_ESTRUTURADA no system. Guard estático (o fluxo
+    # abre sessão própria via AsyncSessionLocal), mesmo padrão do teste acima.
+    import inspect
+    import app.services.case_intel as ci
+    src = inspect.getsource(ci.indexar_peca_rag)
+    assert "BASE_ESTRUTURADA" in src
+    assert 'BASE_ESTRUTURADA + "\\n\\n" + SYS_CLASSIFICAR' in src
+    # E a base importada no módulo é a canônica de legal_base.
+    assert ci.BASE_ESTRUTURADA is BASE_ESTRUTURADA
 
 
 # ══════════════════════════════════════════════════════════════════════════════

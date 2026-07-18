@@ -49,7 +49,7 @@ from typing import Any, Awaitable, Callable
 
 from fastapi import HTTPException
 from pydantic import ValidationError
-from sqlalchemy import func, select
+from sqlalchemy import func, or_, select
 
 from app.core.ownership import role_str as _role_str
 from app.core.rate_limit import consumir
@@ -117,7 +117,9 @@ async def coletar_artefatos(db, case_id: str, case: Case | None = None) -> dict:
     Ordem fixa das consultas (os testes _FakeDB dependem dela):
       (0) Case — apenas quando `case` não é passado pelo chamador;
       (1) snapshots (versão desc);  (2) teses candidatas;  (3) propostas;
-      (4) LegalDocs vivos;          (5) Deadlines;         (6) nº docs com OCR.
+      (4) LegalDocs vivos;          (5) Deadlines;         (6) nº docs com OCR;
+      (7) nº de AILogs de validação jurídica das peças de produção — SÓ roda
+          quando existe peça de produção (sem peça não há o que validar).
     """
     if case is None:
         case = (await db.execute(
@@ -151,6 +153,25 @@ async def coletar_artefatos(db, case_id: str, case: Case | None = None) -> dict:
         )
     )).scalar() or 0
 
+    pecas = [d for d in docs if _eh_peca_producao(d)]
+
+    # (7) CR-15: "Citações verificadas" deriva do MESMO sinal de
+    # routers/legal_docs._ultima_validacao_peca — AILog de validação jurídica
+    # citando o marcador LEGAL_DOC_ID da peça —, reduzido a um COUNT leve.
+    # Import tardio do router (padrão dos executores _exec_*) evita ciclo.
+    n_validacoes = 0
+    if pecas:
+        from app.models.ai_log import AILog
+        from app.routers.legal_docs import _VALIDACAO_TIPO_FILTRO
+        marcadores = or_(*[
+            AILog.prompt_sanitizado.ilike(f"%LEGAL_DOC_ID:{d.id}%")
+            for d in pecas
+        ])
+        n_validacoes = (await db.execute(
+            select(func.count()).select_from(AILog).where(
+                marcadores, _VALIDACAO_TIPO_FILTRO)
+        )).scalar() or 0
+
     snaps_conteudo = [s for s in snaps if s.origem in _ORIGENS_CONTEUDO]
     snaps_motor = [s for s in snaps_conteudo if s.origem == "motor_peca"]
     area_sugerida = next(
@@ -160,7 +181,6 @@ async def coletar_artefatos(db, case_id: str, case: Case | None = None) -> dict:
         (((s.payload or {}).get("checklist")) for s in snaps_motor
          if isinstance((s.payload or {}).get("checklist"), dict)), None)
 
-    pecas = [d for d in docs if _eh_peca_producao(d)]
     status_pecas = {_enum_val(d.status) for d in pecas}
     tipos_docs = {_enum_val(d.tipo_peca) for d in docs}
 
@@ -197,6 +217,10 @@ async def coletar_artefatos(db, case_id: str, case: Case | None = None) -> dict:
                              or any(getattr(d, "numero_protocolo", None)
                                     for d in pecas)),
         "peca_ia": any(getattr(d, "ai_generated", False) for d in pecas),
+        # CR-15: houve validação jurídica REGISTRADA de alguma peça de produção
+        # (gate de citações executado) — sinal de _ultima_validacao_peca, não
+        # o mero fato de a peça ser ai_generated.
+        "peca_validada": bool(n_validacoes),
         # prazos ------------------------------------------------------------
         # Só Deadline nascido dos gates do próprio fluxo (motor_peca /
         # agente_juridico) conta como "prazo confirmado" para a máquina de
@@ -530,7 +554,9 @@ def montar_jornada(art: dict) -> list[dict]:
         ("peca_redigida", "Peça redigida",
          art["peca_rascunho"] or art["peca_em_revisao"] or art["peca_aprovada"]
          or art["peca_protocolada"], False),
-        ("citacoes_verificadas", "Citações verificadas", art["peca_ia"], False),
+        # CR-15: concluída SÓ com validação jurídica registrada da peça (gate
+        # de citações executado) — antes bastava a peça ser ai_generated.
+        ("citacoes_verificadas", "Citações verificadas", art["peca_validada"], False),
         ("aprovacao_peca", "Aguardando aprovação do advogado",
          art["peca_aprovada"] or art["peca_protocolada"], True),
         ("peca_protocolada", "Peça protocolada", art["peca_protocolada"], False),
