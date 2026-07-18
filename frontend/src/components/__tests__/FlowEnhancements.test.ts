@@ -3,6 +3,7 @@ import {
   caseIdCriadoDaResposta,
   caseIdSeguro,
   casoContextualDaUrl,
+  destinoPrazoDoDashboard,
   deveInjetarCaso,
 } from "../FlowEnhancements";
 
@@ -78,5 +79,13 @@ describe("FlowEnhancements — regras puras", () => {
         "?caso=case-1",
       ),
     ).toBeNull();
+  });
+
+  it("redireciona somente links de prazo originados no Dashboard", () => {
+    expect(destinoPrazoDoDashboard("/", "/prazos")).toBe(
+      "/atividades?tipo=prazo",
+    );
+    expect(destinoPrazoDoDashboard("/casos/case-1", "/prazos")).toBeNull();
+    expect(destinoPrazoDoDashboard("/", "/pecas")).toBeNull();
   });
 });
