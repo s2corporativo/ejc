@@ -17,7 +17,7 @@
 | Segurança | Sem crítico, mas **2 brechas ALTAS de sigilo entre carteiras** (A1, A2) |
 | Funcional | **UI do agente de IA está morta** (C1) e OCR síncrono pode travar o servidor (A3) |
 
-**Correções prioritárias (nesta ordem):** C1, C2, A1+A2 (sigilo), A3, depois os médios.
+**Correções prioritárias (nesta ordem):** C1, C2, A1+A2 (sigilo), A3, A4, depois os médios.
 
 ---
 
@@ -54,6 +54,12 @@
 - `extrair_paginas` (render PyMuPDF 220dpi + OpenCV + PIL + pytesseract, CPU-bound) roda inline no handler async, num loop de até 60 arquivos — sem `asyncio.to_thread`, que é a convenção do próprio projeto (`documents.py:407-412`).
 - Efeito: um ZIP com 40 fotos de autos congela o worker por minutos — login, portal e SSE de TODOS os usuários travam/estouram timeout.
 - Correção: envolver as chamadas CPU-bound em `asyncio.to_thread` (ou fila).
+
+### A4 — "Novo caso por documento" multi-arquivo: original duplicado e documentos órfãos
+- `frontend/src/components/ImportarDocumento.tsx` (usa `EntradaUniversalDocumentos` sem `caseId`/`clientId`; `_arquivo_original = _arquivos_locais[0]`) + `frontend/src/pages/Casos.tsx:488-534`
+- O fluxo agora processa via `POST /entrada-universal/processar`, que persiste TODOS os arquivos no GED com `case_id=None`/`client_id=None`; depois `Casos.tsx` cria o caso e re-anexa via `POST /documents/upload` apenas o PRIMEIRO arquivo. O `_entrada_universal_batch_id` é passado mas nunca consumido (o endpoint de vínculo lote↔caso, `entrada_universal_vinculo.py`, existe e não é usado).
+- Efeito concreto: advogado importa 3 PDFs para abrir o caso → o 1º fica gravado em duplicidade no GED (uma cópia órfã + uma anexada; escopos de dedup diferentes, o sha256 não colide), o 2º e o 3º ficam órfãos sem vínculo com caso/cliente — silenciosamente. Antes do diff o componente era single-file e não persistia nada.
+- Correção: após criar o caso, chamar o vínculo do lote (`/entrada-universal/{id}/vincular-caso`) em vez de re-upload do primeiro arquivo.
 
 ---
 
@@ -107,8 +113,12 @@ O CI não pegou nada disso porque o runner self-hosted esteve offline durante os
 - `legal_docs.py` — LegalDoc sem `case_id` editável por qualquer interno (padrão preexistente).
 - `entrada_universal_service.py:121-127` — teto de 100 MB do ZIP usa `file_size` declarado (forjável); mitigado pelos tetos pós-descompressão.
 - `CentralAtividades.tsx:79` — prazo `cancelado` exibido como "Concluído" (selo verde) — enganoso para prazo processual.
+- `Documentos.tsx:~131,350-375` — object URL da pré-visualização não é revogado no unmount (vazamento de blob até reload).
+- `ImportarDocumento.tsx:~256` — `classificacao.area` da IA vai para o `POST /cases/` sem validar contra a taxonomia (antes havia guarda `areasPermitidas`); slug inválido gera 422 em vez de simplesmente não pré-preencher.
 - `CentralAtividades.tsx:640` — kanban só opera via drag-and-drop HTML5, sem alternativa de teclado (WCAG 2.1.1).
 - `stream.ts:96-99` — frame SSE final não terminado é descartado sem parse (compõe C1).
+- `RaioXProcesso.tsx:~615/760` — erro do 409/403/429 da "Análise do advogado" aparece no banner do topo, fora da viewport quando o botão está no fim da página ("parece que nada aconteceu").
+- `DefesasRevisoesComplementos.tsx:71-87` — race cosmética ao trocar de aba (resposta em voo da aba anterior pode preencher a saída da aba nova; sem guarda de cancelamento).
 - Alembic: docstring errada na `100`, dois arquivos com prefixo `101_` (IDs únicos, apenas confusão de leitura), `sa.JSON` em vez de `JSONB` na `101_entrada`, `data_julgamento` como `String(40)`, FK ausente em `created_by` do intake sem justificativa escrita.
 - Prettier: 84 arquivos fora do padrão (step não-bloqueante no CI).
 
@@ -124,4 +134,6 @@ O CI não pegou nada disso porque o runner self-hosted esteve offline durante os
 - **Frontend:** contratos de `api.ts` batem com os routers (entrada-universal, raio-x, aplicar-extracao, HITL, ações da Central, portal `nao-lidas`, `/ia/status`, `/areas`); CSS deletado era morto de verdade; registry `hidden` mantém rotas ativas; CommandPalette com ARIA correto.
 - **Segredos:** nada de credencial no diff; `CITACOES_POLITICA` endureceu para fail-secure.
 
-**Ressalva de cobertura:** as páginas grandes `Documentos.tsx`, `DossieCliente.tsx`, `KnowledgeHub.tsx`, `Pecas.tsx` e `portal/*` tiveram os contratos de API conferidos, mas não revisão linha a linha da lógica interna de UI.
+Passadas adicionais dedicadas cobriram em profundidade os blocos GED/Dossiê/Conhecimento (contratos de entrada universal, documentos, atendimentos, clients e KnowledgeHub — tudo confere; tema escuro sem regressão) e Peças/IA/Defesas (todos os contratos de defesas-revisões, motor-peça, análise bancária, Raio-X, `/ia/status`, ramos/CADE e verificação de citações conferem; a fila de Peças inclusive corrige bug pré-existente de status `versao_final` inexistente).
+
+**Ressalva de cobertura:** o bloco `portal/*` + Financeiro + navegação teve os contratos centrais de API conferidos, mas não revisão linha a linha da lógica interna de UI.
