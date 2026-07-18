@@ -29,13 +29,10 @@ from app.models.checklist import (
     ChecklistItemCategoria,
     ChecklistStatus,
 )
-from app.models.client import Client
 from app.models.dossie_estrategico import DossieEstrategico, DossieStatus
-from app.models.legal_doc import LegalDoc, PecaStatus, PecaTipo
 from app.models.task import Task, TaskStatus
 from app.models.user import User
 from app.services.ai.core.orchestrator import orchestrator
-from app.services.geracao_documental import gerar_kit_inicial
 from app.routers.defesas_revisoes import MODALIDADES, _parse_json, _texto_upload
 
 router = APIRouter(prefix="/defesas-revisoes/avancado", tags=["Defesas e Revisões — avançado"])
@@ -44,6 +41,10 @@ JURIDICO_ROLES = {
     "superadmin", "admin", "socio", "advogado", "advogado_auxiliar", "estagiario",
 }
 ADVOGADO_ROLES = {"superadmin", "admin", "socio", "advogado", "advogado_auxiliar"}
+# O perfil advogado_auxiliar permanece na análise e na preparação do dossiê,
+# mas não pode gerar pacote executivo nem encaminhar redação sem revisão do
+# responsável. Subconjunto PRÓPRIO do módulo — nunca mutar o compartilhado.
+ROLES_PACOTE = ADVOGADO_ROLES - {"advogado_auxiliar"}
 
 
 def _role(user: User) -> str:
@@ -57,7 +58,9 @@ def _exigir_juridico(user: User) -> None:
 
 
 def _exigir_advogado(user: User) -> None:
-    if _role(user) not in ADVOGADO_ROLES:
+    # Gate do pacote executivo (usado pelo pacote seguro): exclui
+    # advogado_auxiliar — ver comentário de ROLES_PACOTE.
+    if _role(user) not in ROLES_PACOTE:
         raise HTTPException(403, "Ação reservada a advogado ou gestor jurídico")
 
 
@@ -439,50 +442,10 @@ async def persistir_resultado(
     }
 
 
-@router.post("/pacote", dependencies=[Depends(rate_limit("defesas-pacote", 5))])
-async def gerar_pacote(
-    body: dict,
-    db: AsyncSession = Depends(get_db),
-    cu: User = Depends(get_current_user),
-):
-    _exigir_advogado(cu)
-    case_id = str(body.get("case_id") or "")
-    modalidade = str(body.get("modalidade") or "")
-    resultado = _dict(body.get("resultado"))
-    if not case_id or modalidade not in MODALIDADES or not resultado:
-        raise HTTPException(422, "Caso, modalidade e resultado são obrigatórios")
-    caso = await verificar_acesso_caso(db, cu, case_id)
-    cliente = await db.get(Client, caso.client_id)
-    if not cliente:
-        raise HTTPException(422, "Cliente do caso não localizado")
-    completude = _resultado_completude(resultado)
-    kit = await gerar_kit_inicial(
-        db, caso, cliente, cu,
-        tipo_poderes="ad_judicia", permite_substabelecimento=False,
-    )
-    conteudo = _markdown_resultado(modalidade, resultado)
-    docs = [
-        ("Relatório de Diagnóstico — " + caso.titulo, PecaTipo.parecer, conteudo),
-        ("Matriz de Teses — " + caso.titulo, PecaTipo.parecer, "# Matriz de Teses\n\n" + json.dumps(_matriz_teses(resultado), ensure_ascii=False, indent=2)),
-        ("Minuta de Notificação — " + caso.titulo, PecaTipo.notificacao_extrajudicial,
-         "# MINUTA DE NOTIFICAÇÃO EXTRAJUDICIAL\n\nObjeto, fatos, fundamentos, providência e prazo devem ser revisados pelo advogado.\n\n" + conteudo),
-    ]
-    criados = []
-    for titulo, tipo, texto in docs:
-        doc = LegalDoc(
-            id=str(uuid4()), titulo=titulo[:255], tipo_peca=tipo,
-            status=PecaStatus.rascunho, conteudo=texto[:60000], versao=1,
-            area=MODALIDADES[modalidade]["area"], ai_generated=True,
-            human_reviewed=False, case_id=case_id, created_by=cu.id,
-        )
-        db.add(doc)
-        criados.append({"id": doc.id, "titulo": doc.titulo, "tipo": tipo.value})
-    await db.commit()
-    return {
-        "kit_documental": kit, "documentos_estrategicos": criados,
-        "completude": completude, "peca_bloqueada": not completude["pode_gerar_peca"],
-        "aviso": "Todos os documentos são minutas. Honorários e poderes dependem de aprovação expressa.",
-    }
+# A rota POST /pacote vive EXCLUSIVAMENTE em defesas_revisoes_pacote_seguro.py
+# (bloqueia kit/motor quando há pendência impeditiva). A implementação legada,
+# que gerava procuração e honorários sem gate de completude, foi removida —
+# não dependa da ordem de include para "sombrear" rota insegura.
 
 
 @router.post("/analisar-decisao", dependencies=[Depends(rate_limit("defesas-decisao", 6))])

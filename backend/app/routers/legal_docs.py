@@ -14,7 +14,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.database import get_db
 from app.core.rate_limit import rate_limit
-from app.core.security import get_current_user, ROLE_LEVEL
+from app.core.security import get_current_user, requer_advogado, ROLE_LEVEL
 from app.core.ownership import verificar_acesso_caso, is_gestao
 from app.models.case import Case
 from app.models.user import User
@@ -585,7 +585,14 @@ async def registrar_protocolo(
     A transição de status para 'protocolada' continua pelo PATCH /legal-docs/{id}
     (que aplica os gates de validação/HITL) — aqui só registramos o comprovante,
     sem contornar aqueles controles.
+
+    Gates (máquina de estados): protocolo só pode ser registrado por papel
+    advogado+ e em peça já aprovada ('aprovada', 'final' ou 'protocolada') —
+    STATUS_EXIGE_REVISAO é a mesma fonte de verdade do fluxo de aprovação.
+    Assim, o orquestrador (peca_protocolada → 'acompanhamento') só deriva
+    estado de peça realmente revisada/aprovada.
     """
+    requer_advogado(cu, detail="Registro de protocolo é restrito a advogados")
     d = (await db.execute(
         select(LegalDoc).where(
             LegalDoc.id == doc_id, LegalDoc.deleted_at.is_(None)
@@ -595,6 +602,17 @@ async def registrar_protocolo(
         raise HTTPException(status_code=404, detail="Peça não encontrada")
     if d.case_id:
         await verificar_acesso_caso(db, cu, d.case_id)
+
+    status_atual = _status_value(d.status)
+    if status_atual not in STATUS_EXIGE_REVISAO:
+        raise HTTPException(
+            status_code=422,
+            detail=(
+                "Protocolo só pode ser registrado em peça aprovada. "
+                f"Status atual: '{status_atual}'. Aprove a peça "
+                "(POST /legal-docs/{id}/aprovar ou PATCH de status) antes de registrar o protocolo."
+            ),
+        )
 
     numero = (payload.numero_protocolo or "").strip()
     if not numero:

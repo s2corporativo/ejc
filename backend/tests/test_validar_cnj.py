@@ -80,3 +80,40 @@ def test_schema_update_valida_igual_ao_create():
     with pytest.raises(ValidationError):
         CaseUpdate(numero_processo=CNJ_DV_ERRADO)
     assert CaseUpdate(titulo="só muda o título").numero_processo is None
+
+
+# ── Processos ADMINISTRATIVOS (JARI/SEI/PAD): numeração própria aceita ────────
+
+def test_schema_aceita_numeracao_administrativa_como_texto_livre():
+    """A validação CNJ estrita só se aplica a valores que PARECEM CNJ (20
+    dígitos após remover pontuação). Numerações administrativas passam."""
+    for numero in (
+        "SEI 12345.678901/2026-01",        # SEI federal
+        "JARI-2026/0456",                  # recurso de multa de trânsito
+        "PAD 001/2026",                    # processo administrativo disciplinar
+        "AI T-123456 SEMAD/MG",            # auto de infração ambiental
+    ):
+        assert _case_create(numero).numero_processo == numero
+        assert CaseUpdate(numero_processo=numero).numero_processo == numero
+
+
+def test_schema_administrativo_com_espacos_faz_strip():
+    assert _case_create("  SEI 12345.678901/2026-01  ").numero_processo == \
+        "SEI 12345.678901/2026-01"
+
+
+def test_schema_20_digitos_continua_exigindo_cnj_valido():
+    # Qualquer valor com 20 dígitos "parece CNJ" e mantém a validação estrita
+    # (mensagem de erro preservada).
+    with pytest.raises(ValidationError) as exc:
+        _case_create(CNJ_DV_ERRADO)
+    assert "CNJ inválido" in str(exc.value)
+    with pytest.raises(ValidationError):
+        _case_create("11111111111111111111")  # 20 dígitos, DV não confere
+
+
+def test_schema_texto_livre_limitado_a_60_chars():
+    assert _case_create("x" * 60).numero_processo == "x" * 60
+    with pytest.raises(ValidationError) as exc:
+        _case_create("x" * 61)
+    assert "muito longo" in str(exc.value)

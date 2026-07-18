@@ -147,8 +147,12 @@ async def _marcar_prazos_vencidos():
     ficam fora do filtro e nunca são tocados.
 
     Isolamento por item (padrão de `_alertar_prazos`): commit por linha; a falha
-    de um destinatário é logada e não aborta o lote. Se a notificação falhar, o
-    rollback preserva status='pendente' e a transição/alerta é retentada amanhã.
+    de um destinatário é logada, sofre rollback e não aborta o lote. Limite
+    conhecido: `notificar()` COMMITA internamente ao gravar o sino
+    (criar_notificacao_interna), persistindo junto o UPDATE pendente→vencido;
+    se a falha ocorrer DEPOIS desse commit interno (ex.: canal externo), o
+    rollback não desfaz a transição e o alerta NÃO é retentado amanhã — só
+    falhas ANTES do primeiro commit preservam status='pendente' p/ retentativa.
     """
     from app.core.database import AsyncSessionLocal
     from app.services.notification_service import notificar
@@ -406,6 +410,10 @@ async def _alertar_audiencias_agenda():
                             ),
                         )
                     except Exception as e:
+                        # Rollback por item (padrão de _marcar_prazos_vencidos):
+                        # sem ele, a sessão fica em PendingRollbackError e os
+                        # eventos seguintes do lote falhariam em cascata.
+                        await db.rollback()
                         logger.error(
                             "[Scheduler] alertar_audiencias_agenda falhou p/ "
                             f"evento {getattr(r, 'id', '?')}: {e}"

@@ -1,6 +1,7 @@
 """Módulo unificado de Defesas e Revisões com Entrada Universal."""
 from __future__ import annotations
 
+import asyncio
 import json
 import re
 from typing import Any, Optional
@@ -25,6 +26,10 @@ JURIDICO_ROLES = {
     "superadmin", "admin", "socio", "advogado", "advogado_auxiliar", "estagiario",
 }
 ADVOGADO_ROLES = {"superadmin", "admin", "socio", "advogado", "advogado_auxiliar"}
+# O Motor de Peça usa o limiar advogado+: o advogado_auxiliar participa da
+# análise, mas não encaminha redação sem revisão do responsável. Subconjunto
+# PRÓPRIO do módulo — nunca mutar ADVOGADO_ROLES (compartilhado) no import.
+ROLES_MOTOR_PECA = ADVOGADO_ROLES - {"advogado_auxiliar"}
 
 MODALIDADES: dict[str, dict[str, Any]] = {
     "multa_transito": {
@@ -209,7 +214,10 @@ async def _texto_upload(file: UploadFile) -> str:
     itens = []
     for ordem, virtual in enumerate(virtuais, 1):
         try:
-            meta = extrair_paginas(virtual["conteudo"], virtual["extensao"], virtual["mimetype"])
+            # OCR em thread (não bloqueia o event loop) — mesmo padrão de documents.upload.
+            meta = await asyncio.to_thread(
+                extrair_paginas, virtual["conteudo"], virtual["extensao"], virtual["mimetype"]
+            )
         except ValueError as exc:
             raise HTTPException(422, str(exc)) from exc
         itens.append({"filename": virtual["nome"], "source_order": ordem, "extraction_meta": meta, "classification": {}})
@@ -239,7 +247,7 @@ async def meta(cu: User = Depends(get_current_user)):
             for codigo, cfg in MODALIDADES.items()
         ],
         "entrada_universal_obrigatoria": True,
-        "pode_usar_motor_peca": _role_value(cu) in ADVOGADO_ROLES,
+        "pode_usar_motor_peca": _role_value(cu) in ROLES_MOTOR_PECA,
         "aviso": "Toda análise é rascunho e depende de revisão do advogado responsável.",
     }
 
