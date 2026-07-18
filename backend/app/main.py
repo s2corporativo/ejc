@@ -46,6 +46,7 @@ from app.routers import backup_admin
 from app.routers import bank_analysis
 from app.routers import calculadoras
 from app.routers import calendar_feed
+from app.routers import case_intelligence
 from app.routers import case_partes
 from app.routers import cases
 from app.routers import caso_areas
@@ -284,6 +285,7 @@ app.include_router(backup_admin.router, prefix=API)
 app.include_router(bank_analysis.router, prefix=API)
 app.include_router(calculadoras.router, prefix=API)
 app.include_router(calendar_feed.router, prefix=API)
+app.include_router(case_intelligence.router, prefix=API)
 app.include_router(case_partes.router, prefix=API)
 app.include_router(cases.router, prefix=API)
 app.include_router(caso_areas.router, prefix=API)

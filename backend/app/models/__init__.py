@@ -58,6 +58,7 @@ from app.models.suspensao import SuspensaoTribunal  # noqa
 from app.models import ai_skill            # noqa
 from app.models import atendimento         # noqa
 from app.models import bank_analysis       # noqa
+from app.models import case_intelligence   # noqa  (snapshot versionado da inteligência do caso — migração 101)
 from app.models import case_parte          # noqa
 from app.models import caso_area           # noqa
 from app.models import centro_custo        # noqa

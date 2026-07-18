@@ -168,14 +168,46 @@ async def triagem_caso(case_id: str) -> None:
                 id=str(uuid4()), case_id=case.id, tipo="ia",
                 descricao=resumo_mov, created_by=None,
             ))
+            ai_log_id = str(uuid4())
             db.add(AILog(
-                id=str(uuid4()), user_id=case.advogado_responsavel_id, case_id=case.id,
+                id=ai_log_id, user_id=case.advogado_responsavel_id, case_id=case.id,
                 tipo_uso=AITipoUso.analise_caso, modelo=_modelo_log(resp),
                 prompt_sanitizado=texto_limpo[:8000], pii_removida=houve_pii,
                 resposta=bruto[:8000], status_hitl=AIStatusHITL.gerado,
             ))
             await db.commit()
             logger.info(f"[case_intel] Triagem concluída para caso {case_id}")
+
+            # ── FASE 1 (Orquestrador Jurídico) — snapshot versionado da triagem.
+            # ADITIVO e FAIL-SAFE: roda APÓS o commit da triagem; qualquer falha
+            # aqui vira warning e NUNCA quebra o fluxo original.
+            try:
+                from app.services import case_intelligence_service as cis
+                await cis.gravar_snapshot_seguro(
+                    db,
+                    case_id=case.id,
+                    origem="triagem",
+                    payload={
+                        "area": area_sug or area_atual or None,
+                        "assunto": assunto or None,
+                        "teses": {"principal": tese or None, "secundarias": sec},
+                        "riscos": {
+                            "pontos_fracos": fracos or None,
+                            "chance_exito": chance,
+                            "complexidade": complex_ or None,
+                        },
+                        "provas": provas,
+                        "pontos_fortes": fortes or None,
+                        "oportunidades": opp or None,
+                        "fontes": ["ia_triagem"],
+                    },
+                    resumo=resumo_mov[:500],
+                    ai_log_ids=[ai_log_id],
+                    criado_por=None,  # automático (HITL: nunca nasce aprovado)
+                )
+            except Exception as e:
+                logger.warning(
+                    f"[case_intel] Snapshot de triagem não gravado ({case_id}): {str(e)[:200]}")
     except Exception as e:
         logger.warning(f"[case_intel] Falha na triagem do caso {case_id}: {str(e)[:200]}")
 

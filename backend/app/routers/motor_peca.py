@@ -25,7 +25,6 @@ from __future__ import annotations
 import logging
 from datetime import date
 from typing import Literal, Optional
-from uuid import uuid4
 
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel, Field
@@ -35,13 +34,6 @@ from app.core.database import get_db
 from app.core.ownership import verificar_acesso_caso
 from app.core.rate_limit import rate_limit
 from app.core.security import get_current_user, ROLE_LEVEL
-from app.models.audit_log import criar_audit_log
-from app.models.deadline import (
-    Deadline,
-    DeadlinePrioridade,
-    DeadlineStatus,
-    DeadlineTipo,
-)
 from app.models.user import User
 from app.routers import intake as intake_router
 from app.services import motor_peca_service as mps
@@ -197,7 +189,7 @@ async def analisar(
     ai_logs = [x for x in (area_info.get("ai_log_id"),
                            (motivacao_ia or {}).get("ai_log_id")) if x]
 
-    return {
+    resposta = {
         "status": "rascunho",
         "aviso": mps.AVISO_HITL,
         "case_id": case.id,
@@ -222,6 +214,38 @@ async def analisar(
         "pii_removida": houve_pii,
         "ai_log_ids": ai_logs,
     }
+
+    # ── FASE 1 (Orquestrador Jurídico) — snapshot versionado do diagnóstico.
+    # ADITIVO e FAIL-SAFE: payload = resposta consolidada SEM textos gigantes
+    # (compactar_payload garante ~50KB, descartando motivacao_ia/checklist se
+    # preciso); falha do snapshot vira warning e NUNCA quebra a resposta.
+    try:
+        from app.services import case_intelligence_service as cis
+        await cis.gravar_snapshot_seguro(
+            db,
+            case_id=case.id,
+            origem="motor_peca",
+            payload=cis.compactar_payload({
+                "area": area,
+                "teses": teses,
+                "rito": rito,
+                "peca_sugerida": peca_principal,
+                "pecas_cabiveis": pecas,
+                "prazos_projetados": prazo_projetado,
+                "checklist": {"itens": checklist_itens, "pronto": checklist_pronto},
+                "motivacao_ia": motivacao_ia,
+                "fontes": ["motor_peca_analisar"],
+            }, descartaveis=("motivacao_ia", "checklist", "pecas_cabiveis")),
+            resumo=f"Motor de Peça — diagnóstico (área: {area or '—'}, "
+                   f"peça sugerida: {peca_principal or '—'})",
+            ai_log_ids=ai_logs,
+            criado_por=cu.id,
+        )
+    except Exception as e:
+        logger.warning(
+            f"[motor_peca] Snapshot não gravado ({case.id}): {str(e)[:200]}")
+
+    return resposta
 
 
 # ── POST /gerar ───────────────────────────────────────────────────────────────
@@ -251,135 +275,37 @@ async def gerar(
     case = await verificar_acesso_caso(db, cu, case_id)
     info = mps.CATALOGO_PECAS[req.peca_codigo]
 
-    # Evento processual (Fase 2): termo derivado DETERMINISTICAMENTE do
-    # catálogo de eventos (base legal citada). O termo_inicial explícito tem
-    # precedência; os gates de confirmação humana abaixo NÃO mudam.
-    evento_info = None
-    termo_inicial = req.termo_inicial
-    if req.evento:
-        if req.data_evento is None:
-            raise HTTPException(422, detail={
-                "mensagem": "Evento processual informado sem data_evento — "
-                            "informe a data do evento para derivar o termo inicial.",
-            })
-        from app.services.evento_processual import resolver_termo_inicial
-        evento_info = resolver_termo_inicial(req.evento, req.data_evento, req.meio)
-        if termo_inicial is None:
-            if not evento_info["contagem_confirmavel"]:
-                raise HTTPException(422, detail={
-                    "mensagem": ("Termo inicial não determinável com certeza a "
-                                 "partir deste evento — verifique nos autos e "
-                                 "informe termo_inicial manualmente."),
-                    "evento": req.evento,
-                    "base_legal": evento_info["base_legal"],
-                    "avisos": evento_info["avisos"],
-                })
-            termo_inicial = evento_info["termo_inicial"]
-
-    # Texto-base + LGPD (sanitizar_pii ANTES de qualquer LLM)
-    texto_bruto = await mps.texto_base_do_caso(db, case, req.descricao_fatos)
-    texto_limpo, _ = sanitizar_pii(texto_bruto[:18000], [])
-
-    # Rito: NUNCA confiar só no eco do cliente. Sem rito_codigo no request, o
-    # servidor recomputa com os mesmos sinais do /analisar — senão overrides de
-    # prazo por rito (ex.: JEC/trabalhista, defesa em audiência) se perdem e o
-    # Deadline fatal sai errado.
-    rito_codigo = req.rito_codigo
-    if not rito_codigo:
-        from app.services.rito_engine import identificar_rito
-        rito_codigo = identificar_rito({
-            "area": req.area_direito or _enum_val(getattr(case, "area", None)),
-            "texto": texto_limpo[:8000],
-            "fase": _enum_val(getattr(case, "fase", None)),
-            "tribunal": case.tribunal,
-        })["codigo"]
-    prazo_info = mps.prazo_da_peca(req.peca_codigo, rito_codigo)
-
-    # Gate 1 — checklist bloqueante (mesmo padrão 422 de conversao_caso.py)
-    itens, pronto = await mps.montar_checklist(db, case, req.peca_codigo, texto_limpo)
-    if not pronto:
-        pendentes = [i for i in itens if not i["ok"]]
-        raise HTTPException(status_code=422, detail={
-            "mensagem": "Geração bloqueada — checklist da peça com itens pendentes",
-            "pendentes": pendentes,
-        })
-
-    # Gate 2 — prazo fatal NUNCA sem confirmação humana do termo inicial
-    if not req.termo_inicial_confirmado:
-        raise HTTPException(status_code=422, detail={
-            "mensagem": ("Termo inicial não confirmado pelo advogado — o Motor "
-                         "de Peça nunca cria prazo fatal sem confirmação humana."),
-            "termo_inicial_confirmado": False,
-        })
-
-    # Data fatal: determinística (uteis/corridos) ou manual (contagem=verificar)
-    if prazo_info["contagem"] == "uteis" and prazo_info["prazo_dias"]:
-        if termo_inicial is None:
-            raise HTTPException(422, detail={
-                "mensagem": "Informe o termo inicial confirmado para calcular o prazo."})
-        data_prazo = mps.prazo_dias_uteis(
-            termo_inicial, prazo_info["prazo_dias"],
-            tribunal=case.tribunal, em_dobro=req.em_dobro,
-            # Prazo PROCESSUAL em dias úteis: suspensão integral do recesso
-            # 20/12–20/01 (CPC art. 220; CLT art. 775-A).
-            aplicar_recesso=True,
+    # Núcleo extraído para motor_peca_service.confirmar_e_criar_prazo (fonte
+    # única, reusada pela tool `criar_prazo_confirmado` do agente): evento→termo,
+    # gates INVIOLÁVEIS (checklist; termo confirmado por humano), cálculo da data
+    # fatal e criação do Deadline (auditoria + commit). Comportamento idêntico —
+    # GateBloqueado carrega o MESMO detail dos antigos HTTPException(422).
+    try:
+        confirmado = await mps.confirmar_e_criar_prazo(
+            db, cu, case,
+            peca_codigo=req.peca_codigo,
+            termo_inicial=req.termo_inicial,
+            evento=req.evento,
+            data_evento=req.data_evento,
+            meio=req.meio,
+            termo_inicial_confirmado=req.termo_inicial_confirmado,
+            data_prazo_manual=req.data_prazo_manual,
+            em_dobro=req.em_dobro,
+            rito_codigo=req.rito_codigo,
+            area_direito=req.area_direito,
+            texto=req.descricao_fatos,
         )
-    elif prazo_info["contagem"] == "corridos" and prazo_info["prazo_dias"]:
-        if termo_inicial is None:
-            raise HTTPException(422, detail={
-                "mensagem": "Informe o termo inicial confirmado para calcular o prazo."})
-        data_prazo = mps.prazo_dias_corridos(
-            termo_inicial, prazo_info["prazo_dias"], tribunal=case.tribunal,
-            # Decadencial (ex.: MS, Lei 12.016 art. 23): vencimento não prorroga.
-            # Corridos/decadenciais: recesso do art. 220 NÃO se aplica.
-            prorrogar_fim=not prazo_info.get("decadencial"),
-        )
-    else:
-        if req.data_prazo_manual is None:
-            raise HTTPException(422, detail={
-                "mensagem": ("Prazo desta peça/rito não é determinável automaticamente "
-                             f"({prazo_info['base_legal']}) — informe data_prazo_manual "
-                             "após verificar a norma aplicável."),
-                "contagem": prazo_info["contagem"],
-            })
-        data_prazo = req.data_prazo_manual
+    except mps.GateBloqueado as e:
+        raise HTTPException(status_code=422, detail=e.detail)
 
-    # Validação prévia da base fática p/ redação (antes de persistir o Deadline)
-    fatos = (req.descricao_fatos or texto_limpo).strip()
-    if len(fatos) < 50:
-        raise HTTPException(422, detail={
-            "mensagem": ("Base fática insuficiente para a redação (mín. 50 "
-                         "caracteres) — anexe documentos ou descreva os fatos."),
-        })
-
-    # ── Deadline (padrão raio_x_service.converter_em_caso) — SÓ após confirmação
-    deadline = Deadline(
-        id=str(uuid4()),
-        titulo=f"Prazo — {info['nome']}"[:255],
-        descricao=("Criado pelo Motor de Peça após confirmação humana do termo "
-                   "inicial. Conferir intimação/citação nos autos."),
-        tipo=(DeadlineTipo.administrativo if info["tipo_deadline"] == "administrativo"
-              else DeadlineTipo.processual),
-        prioridade=DeadlinePrioridade.alta,
-        status=DeadlineStatus.pendente,
-        data_prazo=data_prazo,
-        data_intimacao=termo_inicial,
-        base_legal=(prazo_info["base_legal"] or "")[:255] or None,
-        case_id=case.id,
-        responsavel_id=cu.id,
-        origem="motor_peca",
-        confirmado=True,  # termo inicial confirmado explicitamente pelo advogado
-    )
-    db.add(deadline)
-    await criar_audit_log(
-        db, cu.id, getattr(cu.role, "value", cu.role), "MOTOR_PECA_GERAR",
-        "deadlines", deadline.id,
-        detalhes=(f"Motor de Peça: peça={req.peca_codigo} caso={case.id} "
-                  f"termo_inicial_confirmado=True base_legal={prazo_info['base_legal']}"),
-    )
-    # Commit ANTES da redação: o prazo fatal confirmado nunca pode se perder
-    # por indisponibilidade de IA.
-    await db.commit()
+    deadline = confirmado["deadline"]
+    data_prazo = confirmado["data_prazo"]
+    evento_info = confirmado["evento_info"]
+    termo_inicial = confirmado["termo_inicial"]
+    prazo_info = confirmado["prazo_info"]
+    rito_codigo = confirmado["rito_codigo"]
+    texto_limpo = confirmado["texto_limpo"]
+    fatos = confirmado["fatos"]
 
     # ── Redação via fluxo EXISTENTE (HITL + gate de citações preservados) ────
     area = req.area_direito or _enum_val(case.area) or "civil"
