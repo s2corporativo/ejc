@@ -17,6 +17,7 @@ from app.core.rate_limit import rate_limit
 from app.core.security import get_current_user, requer_advogado, ROLE_LEVEL
 from app.core.ownership import verificar_acesso_caso, is_gestao
 from app.models.case import Case
+from app.models.document import Document
 from app.models.user import User
 from app.models.legal_doc import LegalDoc, PecaStatus
 from app.models.ai_log import AILog
@@ -624,6 +625,25 @@ async def registrar_protocolo(
     # Sem data informada, assume o instante do registro (tz-aware).
     d.protocolado_em = payload.protocolado_em or datetime.now(timezone.utc)
     comprovante = (payload.protocolo_comprovante_doc_id or "").strip()
+    if comprovante:
+        # N3: o comprovante referenciado deve EXISTIR, não estar excluído e
+        # pertencer ao MESMO caso da peça — antes qualquer string era aceita
+        # (id órfão ou documento de caso alheio virava "prova" de protocolo).
+        doc = (await db.execute(
+            select(Document).where(
+                Document.id == comprovante, Document.deleted_at.is_(None)
+            )
+        )).scalar_one_or_none()
+        if doc is None:
+            raise HTTPException(
+                status_code=422,
+                detail="Comprovante inválido: documento não encontrado ou excluído",
+            )
+        if doc.case_id != d.case_id:
+            raise HTTPException(
+                status_code=422,
+                detail="Comprovante inválido: o documento não pertence ao caso desta peça",
+            )
     d.protocolo_comprovante_doc_id = comprovante or None
 
     await criar_audit_log(
