@@ -304,7 +304,9 @@ async def test_importar_deduplica_por_tribunal_numero(monkeypatch):
     assert doc["chave_origem"] == "julgado:STJ:8888888"
     assert doc["fonte"].startswith("https://")           # URL oficial
     assert doc["extra"]["fonte_validada"] is True
-    assert doc["extra"]["rag_status"] == "disponivel"
+    # Fontes oficiais validadas entram pré-aprovadas no gate de governança
+    # (9fd2214 — endurecimento da alimentação do RAG).
+    assert doc["extra"]["rag_status"] == "aprovado"
     assert doc["extra"]["numero_processo"] == "8888888"
     assert doc["extra"]["data_julgamento"] == "2026-01-01"
     assert doc["confianca"] == "alta"
