@@ -250,11 +250,7 @@ export const STAFF_ROUTES: ModuleRoute[] = [
     helpKey: "inteligencia",
     usesAI: true,
     sensitive: true,
-    backendPrefixes: [
-      "/api/raio-x",
-      "/api/documentos-ia",
-      "/api/ai/skills",
-    ],
+    backendPrefixes: ["/api/raio-x", "/api/documentos-ia", "/api/ai/skills"],
   },
   {
     key: "casos",
@@ -692,7 +688,7 @@ export const STAFF_ROUTES: ModuleRoute[] = [
     key: "financeiro",
     path: "/financeiro",
     label: "Financeiro e Sociedade",
-    description: "Honorários, despesas, contratos e gestão societária.",
+    description: "Honorários, despesas, NFS-e, contratos e gestão societária.",
     group: "Gerir o escritório",
     icon: Wallet,
     component: FinanceiroWorkspace,
@@ -701,7 +697,12 @@ export const STAFF_ROUTES: ModuleRoute[] = [
     order: 10,
     helpKey: "financeiro",
     sensitive: true,
-    backendPrefixes: ["/api/financeiro", "/api/fees", "/api/v1/despesas"],
+    backendPrefixes: [
+      "/api/financeiro",
+      "/api/fees",
+      "/api/v1/despesas",
+      "/api/nfse",
+    ],
   },
   {
     key: "produtividade",
@@ -870,6 +871,11 @@ export const LEGACY_REDIRECTS: LegacyRedirect[] = [
     from: "/honorarios",
     to: "/financeiro?tab=honorarios",
     reason: "Honorários foi incorporado ao workspace financeiro.",
+  },
+  {
+    from: "/nfse",
+    to: "/financeiro?tab=nfse",
+    reason: "NFS-e vive como aba do workspace financeiro.",
   },
   {
     from: "/sociedade",
