@@ -338,6 +338,16 @@ async def refresh(req: RefreshRequest, request: Request, response: Response,
                     status_code=401,
                     detail="Sessão atualizada em outra aba — tente novamente",
                 )
+        # Token revogado SEM replaced_by_jti nunca foi rotacionado: foi encerrado
+        # por logout ou troca de senha. O replay vem de um dispositivo antigo
+        # legítimo, não é o sinal de furto do BCP §4.14.2 — 401 simples, sem
+        # cascata de revogação e sem marcar REFRESH_REUSE na auditoria.
+        if record is not None and not record.replaced_by_jti:
+            _clear_refresh_cookie(response)
+            raise HTTPException(
+                status_code=401,
+                detail="Sessão encerrada. Faça login novamente.",
+            )
         ip = obter_ip_real(request)
         if user_id:
             await db.execute(
@@ -462,11 +472,13 @@ async def alterar_senha(
     user.hashed_password      = get_password_hash(req.nova_senha)
     user.must_change_password = False
 
-    # Revogar TODAS as outras sessões (segurança pós-troca)
+    # Revogar TODAS as outras sessões (segurança pós-troca). revoked_at marca
+    # o instante para a trilha forense; replaced_by_jti fica nulo de propósito —
+    # é o que distingue revogação administrativa de rotação no /refresh.
     await db.execute(
         update(RefreshToken)
         .where(RefreshToken.user_id == user.id, RefreshToken.revoked == False)
-        .values(revoked=True)
+        .values(revoked=True, revoked_at=datetime.now(timezone.utc))
     )
 
     # P0 usabilidade (2026-07-18, §2.3): manter a sessão ATUAL após a troca —
