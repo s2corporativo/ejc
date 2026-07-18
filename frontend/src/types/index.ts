@@ -178,7 +178,8 @@ export interface NotaFiscal {
   status: NfseStatus;
   numero?: string | null;
   chave_acesso?: string | null;
-  valor?: number | null;
+  /** Backend serializa Decimal como string (ou null). */
+  valor?: string | null;
   descricao?: string | null;
   pdf_url?: string | null;
   xml_url?: string | null;

@@ -101,6 +101,12 @@ export default function NotasFiscais() {
       const r = await api.get<NotaFiscalListResponse>("/nfse", {
         params: { limit: LIMIT, offset, status: statusF || undefined },
       });
+      if (r.data.items.length === 0 && offset > 0) {
+        // Página presa no vazio (após filtro/cancelamento): volta à primeira
+        // página; o useEffect refaz o fetch com offset 0.
+        setOffset(0);
+        return;
+      }
       setData(r.data);
     } catch {
       setError(true);
@@ -126,8 +132,13 @@ export default function NotasFiscais() {
       .catch(() => setFees([]));
   }, []);
 
-  const emissorUrl =
-    statusInfo?.emissor_nacional_url || EMISSOR_NACIONAL_FALLBACK;
+  // Só aceita URL do domínio oficial do Emissor Nacional; qualquer outro
+  // valor vindo da API cai no fallback local.
+  const emissorUrl = statusInfo?.emissor_nacional_url?.startsWith(
+    "https://www.nfse.gov.br",
+  )
+    ? statusInfo.emissor_nacional_url
+    : EMISSOR_NACIONAL_FALLBACK;
 
   const clienteNome = (id?: string | null) => {
     if (!id) return "—";
@@ -272,10 +283,17 @@ export default function NotasFiscais() {
       ) : !data ? (
         <Spinner />
       ) : data.items.length === 0 ? (
-        <Empty
-          titulo="Nenhuma nota registrada"
-          descricao="Emita a NFS-e no Emissor Nacional (gov.br) e registre-a aqui para manter o controle fiscal do escritório."
-        />
+        statusF ? (
+          <Empty
+            titulo="Nenhuma nota para o filtro atual"
+            descricao={`Não há notas com status "${statusF}". Selecione "Todas" para ver as demais notas.`}
+          />
+        ) : (
+          <Empty
+            titulo="Nenhuma nota registrada"
+            descricao="Emita a NFS-e no Emissor Nacional (gov.br) e registre-a aqui para manter o controle fiscal do escritório."
+          />
+        )
       ) : (
         <div className="card overflow-x-auto">
           <table className="w-full text-sm">
@@ -315,7 +333,7 @@ export default function NotasFiscais() {
                   </td>
                   <td className="px-4 py-3">{clienteNome(n.client_id)}</td>
                   <td className="px-4 py-3 font-semibold">
-                    {fmtMoney(n.valor)}
+                    {n.valor == null ? "—" : fmtMoney(Number(n.valor))}
                   </td>
                   <td
                     className="px-4 py-3"
