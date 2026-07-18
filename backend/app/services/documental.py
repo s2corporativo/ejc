@@ -139,9 +139,38 @@ def _procuracao(
     return padronizar_documento_juridico(texto)
 
 
+# ── Cláusulas FIXAS de template do contrato COMPLETO (FASE 4) ────────────────
+# Texto padrão do escritório, 100% determinístico (SEM LLM). Só entram quando
+# há proposta de honorários APROVADA (fee_proposal_service) — sem proposta, o
+# contrato mantém EXATAMENTE o comportamento histórico (placeholders de revisão).
+_CLAUSULAS_FIXAS_CONTRATO = (
+    "RESCISAO. O presente contrato podera ser rescindido por qualquer das partes, "
+    "mediante comunicacao escrita, sendo devidos ao contratado os honorarios "
+    "proporcionais ao trabalho ja realizado ate a data da rescisao, na forma do "
+    "artigo 22 da Lei 8.906/94.",
+    "INADIMPLEMENTO. O atraso no pagamento de qualquer parcela sujeitara o "
+    "contratante a multa de 2% (dois por cento), juros de mora de 1% (um por "
+    "cento) ao mes e correcao monetaria, autorizada a suspensao dos servicos "
+    "nao urgentes apos notificacao, ressalvados os deveres legais do advogado.",
+    "REVOGACAO E RENUNCIA. A revogacao do mandato pelo contratante nao o exime "
+    "do pagamento dos honorarios proporcionais ao trabalho realizado. Em caso "
+    "de renuncia, o contratado observara o artigo 112 do CPC, permanecendo "
+    "responsavel pelos atos urgentes pelo prazo legal.",
+    "PROTECAO DE DADOS (LGPD). Os dados pessoais do contratante serao tratados "
+    "exclusivamente para a execucao deste contrato e o cumprimento de "
+    "obrigacoes legais e regulatorias, nos termos da Lei 13.709/2018 (LGPD), "
+    "observado o sigilo profissional do advogado (Lei 8.906/94).",
+    "COMUNICACAO ELETRONICA. As partes reconhecem como validas as comunicacoes "
+    "realizadas pelos e-mails e telefones informados no cadastro, inclusive "
+    "por aplicativos de mensagens, cabendo a cada parte manter seus dados de "
+    "contato atualizados.",
+)
+
+
 def _contrato_honorarios(
     case: Case, cli: Client, adv: str, area: str,
     referencia_oab: str | None = None,
+    proposta: dict | None = None,
 ) -> str:
     # OAB e cidade de assinatura são dados FIXOS do escritório (settings). Valor
     # dos honorários, percentual de êxito, forma de pagamento, comarca do foro e
@@ -151,7 +180,62 @@ def _contrato_honorarios(
     # tabela estruturada TabelaOABHonorario (ou o aviso explicito de "a definir"
     # quando nao ha item aplicavel). NUNCA substitui o valor contratado — o
     # R$ [____] permanece placeholder de revisao do advogado.
+    #
+    # `proposta` (FASE 4): parâmetros derivados de proposta de honorários
+    # APROVADA (fee_proposal_service.proposta_para_contrato). Quando presente,
+    # o contrato sai COMPLETO: valor/forma/êxito/despesas preenchidos +
+    # cláusulas fixas de template (_CLAUSULAS_FIXAS_CONTRATO) + foro na comarca
+    # do escritório. Sem proposta → comportamento atual EXATO (placeholders).
     ref = f" ({referencia_oab})" if referencia_oab else ""
+
+    if proposta is None:
+        clausulas = (
+            "CLAUSULA 2 - HONORARIOS. As partes ajustam honorarios no valor de R$ [____], "
+            f"tendo como referencia a Tabela de Honorarios da OAB/MG{ref}, pagos da seguinte forma: [____].\n\n"
+            "CLAUSULA 3 - HONORARIOS DE EXITO. Em caso de exito, fica ajustado o percentual de "
+            "[__]% sobre o proveito economico obtido.\n\n"
+            "CLAUSULA 4 - HONORARIOS SUCUMBENCIAIS. Pertencem ao contratado, na forma do artigo 85, "
+            "paragrafo 14, do CPC e do artigo 22 da Lei 8.906/94.\n\n"
+            "CLAUSULA 5 - DESPESAS. Custas, taxas e despesas processuais correm por conta do contratante.\n\n"
+            "CLAUSULA 6 - FORO. Comarca de [____]/MG.\n\n"
+        )
+    else:
+        valor = proposta.get("valor")
+        valor_txt = f"R$ {float(valor):,.2f}" if valor is not None else "R$ [____]"
+        forma = proposta.get("forma_pagamento") or "[____]"
+        versao = proposta.get("versao")
+        origem = (f", conforme proposta de honorarios aprovada"
+                  f"{(' (versao ' + str(versao) + ')') if versao else ''}")
+        exito = proposta.get("exito_percentual")
+        exito_txt = (
+            "CLAUSULA 3 - HONORARIOS DE EXITO. Em caso de exito, fica ajustado o percentual de "
+            f"{float(exito):g}% sobre o proveito economico obtido.\n\n"
+            if exito is not None else
+            "CLAUSULA 3 - HONORARIOS DE EXITO. Nao foram ajustados honorarios de exito "
+            "entre as partes.\n\n"
+        )
+        despesas = proposta.get("despesas_criterio") or (
+            "Custas, taxas e despesas processuais correm por conta do contratante."
+        )
+        clausulas_fixas = "".join(
+            f"CLAUSULA {n} - {texto}\n\n"
+            for n, texto in enumerate(_CLAUSULAS_FIXAS_CONTRATO, start=6)
+        )
+        clausulas = (
+            f"CLAUSULA 2 - HONORARIOS. As partes ajustam honorarios no valor de {valor_txt}, "
+            f"tendo como referencia a Tabela de Honorarios da OAB/MG{ref}{origem}, "
+            f"pagos da seguinte forma: {forma}.\n\n"
+            + exito_txt +
+            "CLAUSULA 4 - HONORARIOS SUCUMBENCIAIS. Pertencem ao contratado, na forma do artigo 85, "
+            "paragrafo 14, do CPC e do artigo 22 da Lei 8.906/94.\n\n"
+            f"CLAUSULA 5 - DESPESAS. {despesas}\n\n"
+            + clausulas_fixas +
+            f"CLAUSULA {6 + len(_CLAUSULAS_FIXAS_CONTRATO)} - FORO. Fica eleito o foro da "
+            f"Comarca de {_settings.ESCRITORIO_CIDADE}/{_settings.ESCRITORIO_ESTADO}, "
+            "sede do escritorio contratado, para dirimir quaisquer controversias "
+            "oriundas deste contrato.\n\n"
+        )
+
     texto = _MARCA + (
         "CONTRATO DE PRESTACAO DE SERVICOS ADVOCATICIOS E HONORARIOS\n\n"
         f"CONTRATANTE: {_qualificacao(cli)}.\n\n"
@@ -159,14 +243,7 @@ def _contrato_honorarios(
         f"(OAB/MG no {_settings.escritorio_oab()}).\n\n"
         f"CLAUSULA 1 - OBJETO. Prestacao de servicos advocaticios no caso {case.titulo} "
         f"(area: {area}){(', processo no ' + case.numero_processo) if case.numero_processo else ''}.\n\n"
-        "CLAUSULA 2 - HONORARIOS. As partes ajustam honorarios no valor de R$ [____], "
-        f"tendo como referencia a Tabela de Honorarios da OAB/MG{ref}, pagos da seguinte forma: [____].\n\n"
-        "CLAUSULA 3 - HONORARIOS DE EXITO. Em caso de exito, fica ajustado o percentual de "
-        "[__]% sobre o proveito economico obtido.\n\n"
-        "CLAUSULA 4 - HONORARIOS SUCUMBENCIAIS. Pertencem ao contratado, na forma do artigo 85, "
-        "paragrafo 14, do CPC e do artigo 22 da Lei 8.906/94.\n\n"
-        "CLAUSULA 5 - DESPESAS. Custas, taxas e despesas processuais correm por conta do contratante.\n\n"
-        "CLAUSULA 6 - FORO. Comarca de [____]/MG.\n\n"
+        + clausulas +
         f"{_settings.ESCRITORIO_CIDADE}/{_settings.ESCRITORIO_ESTADO}, [data].\n\n"
         f"____________________________   ____________________________\n"
         f"{cli.razao_social or cli.nome} (contratante)        {adv} (contratado)"

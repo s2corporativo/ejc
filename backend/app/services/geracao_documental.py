@@ -262,7 +262,18 @@ async def gerar_kit_inicial(
                       "Tabela OAB/MG vigente para a area do caso")
         valor_sugerido = {"origem": None, "sugerido": None,
                           "itens_referencia": [], "aviso": AVISO_SEM_ITEM_OAB}
-    minuta_contrato = _contrato_honorarios(case, cli, adv, area, referencia_oab=referencia)
+
+    # FASE 4: se o caso tem proposta de honorários APROVADA vigente, o contrato
+    # sai COMPLETO (valor/êxito/parcelamento/despesas + cláusulas fixas de
+    # template). Sem proposta aprovada → comportamento atual EXATO ("A DEFINIR"
+    # / placeholders de revisão). Import lazy: fee_proposal_service reusa
+    # _itens_oab_vigentes deste módulo (evita import circular).
+    from app.services import fee_proposal_service as _fps
+    proposta = await _fps.proposta_aprovada_vigente(db, case.id)
+    params_proposta = _fps.proposta_para_contrato(proposta) if proposta else None
+    minuta_contrato = _contrato_honorarios(
+        case, cli, adv, area, referencia_oab=referencia, proposta=params_proposta,
+    )
 
     # ── 3. Checklist documental inicial por área ─────────────────────────────
     texto_checklist = _checklist_txt(case, cli, area)
@@ -324,6 +335,11 @@ async def gerar_kit_inicial(
             "legal_doc_id": doc_contrato.id,
             "titulo": doc_contrato.titulo,
             "valor_sugerido": valor_sugerido,
+            # FASE 4: proposta aprovada aplicada ao contrato (None = placeholders)
+            "proposta_aprovada": (
+                {"id": proposta.id, "versao": proposta.versao, **(params_proposta or {})}
+                if proposta else None
+            ),
             "conteudo": doc_contrato.conteudo,
         },
         "checklist": {
