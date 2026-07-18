@@ -225,12 +225,12 @@ class Settings(BaseSettings):
     ROTEAMENTO_LIMIAR_PESADO: int = 6
 
     # ── MÓDULO AGÊNTICO DE IA (loop de tool-use, igual ao Claude Code) ────
-    # Default OFF (aditivo e fail-safe): com a flag desligada o endpoint
-    # /ia/agente/stream responde 404 e NADA muda no sistema. Ligado, a IA opera
-    # como agente (decide → chama ferramenta → lê resultado → decide), reusando
-    # o núcleo e TODOS os guardrails (barreira LGPD, RBAC, AILog, gate de
+    # ATIVADO por default (decisão do titular, 2026-07-18): a IA opera como
+    # agente (decide → chama ferramenta → lê resultado → decide), reusando o
+    # núcleo e TODOS os guardrails (barreira LGPD, RBAC, AILog, gate de
     # citações, HITL). Nesta fase só provedores com tool-use (Anthropic).
-    AI_AGENT_ENABLED: bool = False
+    # Desligar num ambiente específico: AI_AGENT_ENABLED=false no .env.
+    AI_AGENT_ENABLED: bool = True
     # Teto de PASSOS do loop (nunca infinito).
     AI_AGENT_MAX_STEPS: int = 8
     # Teto de TOKENS acumulados (input+output de TODOS os turnos) por execução do
