@@ -115,7 +115,7 @@ export default function PortalDashboard() {
     pendencias.push({
       to: "/portal/mensagens",
       icon: MessageCircle,
-      texto: `${mensagensNaoLidas} mensagem${mensagensNaoLidas > 1 ? "ns" : ""} nova${mensagensNaoLidas > 1 ? "s" : ""} do escritório`,
+      texto: `${mensagensNaoLidas} ${mensagensNaoLidas > 1 ? "mensagens novas" : "mensagem nova"} do escritório`,
       cta: "Ler",
     });
   if (pagamentosAbertos > 0)

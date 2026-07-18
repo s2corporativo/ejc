@@ -17,17 +17,20 @@ export function isCentralTab(value: string | null): value is CentralTab {
 }
 
 const TABS: { key: CentralTab; label: string; icon: typeof Users }[] = [
-  { key: "atividades", label: "Agenda e Prazos", icon: CalendarClock },
-  { key: "relacionamento", label: "Relacionamento", icon: Users },
+  { key: "atividades", label: "Agenda, Prazos e Tarefas", icon: CalendarClock },
+  { key: "relacionamento", label: "Atendimentos de Clientes", icon: Users },
 ];
 
 export default function Central() {
   const [searchParams, setSearchParams] = useSearchParams();
   const user = useAuth((state) => state.user) as { role?: string } | null;
-  // A antiga rota /central-relacionamento era restrita a gestores; o gate
-  // de UI é preservado aqui (o backend segue como fonte de verdade do RBAC).
+
+  // Espelha a matriz _ATENDIMENTO_ROLES do backend/routers/atendimentos.py:
+  // superadmin, admin, socio, advogado e secretaria. O backend permanece a
+  // fonte de verdade e restringe edição por autoria/responsabilidade quando
+  // o perfil não é gestor.
   const canSeeRelacionamento = Boolean(
-    user?.role && (ROLES.gestores as readonly string[]).includes(user.role),
+    user?.role && (ROLES.clientes as readonly string[]).includes(user.role),
   );
 
   const rawTab = searchParams.get("tab");
