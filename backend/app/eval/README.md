@@ -4,6 +4,12 @@ Ciclo **eval-driven**: meça o baseline **antes** de mudar qualquer coisa
 (reranker, embedding, prompt, threshold), depois itere medindo cada passo.
 Sem régua, toda melhoria é aposta.
 
+> Dois harnesses, mesma filosofia:
+> - **RAG** (`run_eval.py`, este documento): mede o *retrieval* e a resposta.
+> - **Trajetória do agente** (`agent_trajectory.py`, seção 6): mede as *decisões*
+>   do loop de tool-use (qual tool chamou, se fundamentou, se respeitou HITL/leitura
+>   e o orçamento). É OFFLINE — o LLM é mockado, sem rede/banco/Redis.
+
 ## 1. Monte o gold set
 
 Copie `gold_set.example.jsonl` para `gold_set.jsonl` e cresça para **50–150 casos
@@ -69,3 +75,41 @@ python -m app.eval.run_eval --gold app/eval/gold_set.jsonl --k 6 --min-recall 0.
 > context precision/recall), **promptfoo** (comparar prompts/modelos), e os
 > benchmarks PT-BR **OAB-Bench** / **Magis-Bench** / **LegalBench-BR** para
 > calibrar o teto de qualidade.
+
+## 6. Eval de TRAJETÓRIA do agente (loop de tool-use)
+
+O módulo agêntico (`app/services/ai/agent/loop.py`) **decide → chama ferramenta →
+lê o resultado → decide de novo**. O que importa não é só a resposta final, mas a
+**trajetória**. Este harness roda o agente REAL com o **LLM mockado** (roteiro de
+tool-use por cenário — sem rede, LLM, banco ou Redis) e mede 4 coisas:
+
+| Métrica | O que mede | De onde vem |
+|---|---|---|
+| escolha de ferramenta | chamou a tool certa para a intenção? | `passos[].ferramentas` vs `ferramenta_esperada` |
+| fundamentação/fonte | a resposta que afirma tese cita fonte? | detector local `_tem_fonte` (o gate real de citações roda no loop) |
+| HITL / modo leitura | write-tool pausa (não executa sem aprovação); em `apenas_leitura` é bloqueada | `status`/`REGISTRY.executar`/evento `ferramenta_bloqueada` |
+| orçamento | respeita `max_steps`/tokens/custo; encerra no teto com aviso | `passos` vs `max_steps` + alertas |
+
+Como o LLM é mockado (espelha o `loop_env` de `tests/test_agente_ia.py`): cada
+cenário do gold set traz `turnos`, o roteiro de respostas de tool-use que
+substitui `ai_gateway.chat_agentico`; as demais bordas do loop (ownership,
+entidades, AILog, gate de citações, store HITL, `REGISTRY.executar`) são fakes em
+memória. O loop `rodar_agente` é exercitado ponta a ponta.
+
+```bash
+# Roda o gold set embarcado (offline — NÃO precisa de DATABASE_URL)
+python -m app.eval.agent_trajectory
+
+# Gate de regressão para CI (falha se cair a escolha de tool ou surgir violação HITL)
+python -m app.eval.agent_trajectory --min-tool 1.0 --max-violacoes-hitl 0
+
+# Baseline para diff
+python -m app.eval.agent_trajectory --out traj.json
+```
+
+Gold set: `agent_scenarios.jsonl` (uma linha = um cenário FICTÍCIO, sem PII).
+Campos: `intencao`, `mensagem`, `ferramenta_esperada`, `espera_fonte`,
+`hitl` (`nenhum|pausa|escrita_aprovada|bloqueia_leitura`), `orcamento` (`ok|estoura`),
+`apenas_leitura`, `aprovar_escrita`, `orcamento_override`, `tool_result`, `turnos`.
+Cresça-o cobrindo as intenções reais do escritório. Teste offline determinístico:
+`tests/test_eval_agent_trajectory.py`.
