@@ -37,7 +37,7 @@ from app.core.database import Base
 # Origens válidas do snapshot (validadas no service — String no banco para não
 # exigir novo tipo enum do Postgres; mudanças futuras ficam aditivas).
 ORIGENS_SNAPSHOT: tuple[str, ...] = (
-    "triagem", "intake", "raio_x", "motor_peca", "manual",
+    "triagem", "intake", "raio_x", "motor_peca", "manual", "matriz_teses",
 )
 
 
