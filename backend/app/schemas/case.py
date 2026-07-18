@@ -5,6 +5,31 @@ from typing import Optional, List
 from datetime import datetime, date
 from decimal import Decimal
 
+
+def _validar_numero_processo_cnj(v: Optional[str]) -> Optional[str]:
+    """Valida `numero_processo` na ENTRADA (create/update).
+
+    Regra: o caso pode ainda NÃO ter número → vazio/None PASSA (retorna None).
+    Havendo valor, exige um CNJ válido (formato + dígito verificador módulo 97),
+    tolerante à máscara. A checagem fica em validators_service.validar_cnj
+    (que reutiliza o cálculo de DV do verificador de jurisprudência). Só roda em
+    CaseCreate/CaseUpdate — a LEITURA (CaseResponse/CaseDetail) não valida, para
+    não quebrar casos legados já gravados com número fora do padrão.
+    """
+    if v is None:
+        return None
+    v = v.strip()
+    if not v:
+        return None
+    from app.services.validators_service import validar_cnj
+    if not validar_cnj(v):
+        raise ValueError(
+            "Número CNJ inválido: dígito verificador não confere ou formato "
+            "fora do padrão NNNNNNN-DD.AAAA.J.TR.OOOO"
+        )
+    return v
+
+
 class CaseCreate(BaseModel):
     titulo: str
     area: str
@@ -37,6 +62,11 @@ class CaseCreate(BaseModel):
             )
         return v
 
+    @field_validator("numero_processo")
+    @classmethod
+    def _numero_processo_valido(cls, v: Optional[str]) -> Optional[str]:
+        return _validar_numero_processo_cnj(v)
+
 class CaseUpdate(BaseModel):
     titulo: Optional[str] = None
     status: Optional[str] = None
@@ -60,6 +90,11 @@ class CaseUpdate(BaseModel):
     has_judicial_process: Optional[bool] = None
     kanban_column: Optional[str] = None
     kanban_position: Optional[int] = None
+
+    @field_validator("numero_processo")
+    @classmethod
+    def _numero_processo_valido(cls, v: Optional[str]) -> Optional[str]:
+        return _validar_numero_processo_cnj(v)
 
 class ProcessoPrincipalSchema(BaseModel):
     """Snapshot do processo principal (is_principal=True) — fonte canonica."""
