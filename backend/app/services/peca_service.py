@@ -13,6 +13,7 @@ from uuid import uuid4
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.config import get_settings
+from app.core.taxonomia import AREAS_PECA as _AREAS_PECA
 from app.models.ai_log import AILog, AITipoUso, AIStatusHITL
 from app.models.legal_doc import LegalDoc, PecaTipo
 from app.services.ai_gateway import chat as gw_chat
@@ -360,13 +361,12 @@ ESTRUTURA_TIPO: dict[str, str] = {
     ),
 }
 
-AREAS_DIREITO = [
-    "trabalhista", "civil", "previdenciario", "tributario",
-    "criminal", "consumidor", "administrativo", "familia",
-    "empresarial", "ambiental", "bancario", "imobiliario",
-    "sucessoes", "constitucional", "juizados", "digital_lgpd",
-    "transito",
-]
+# Vocabulário do pipeline de peças — DERIVADO da fonte única de taxonomia
+# (app/core/taxonomia.AREAS_PECA). Ordem e conteúdo históricos preservados;
+# "juizados" é rito do pipeline (sem equivalente canônico em CaseArea). Para
+# converter uma área canônica neste vocabulário use
+# taxonomia.MAPA_CANONICO_PARA_PECA (nunca mapeie na mão).
+AREAS_DIREITO = list(_AREAS_PECA)
 
 # Área do pipeline → chave do prompt especializado em SYSTEM_PROMPTS.
 # None = ramo sem prompt dedicado (funciona com o prompt genérico + nome da área).
@@ -669,6 +669,25 @@ def _formatar_bloco_modelos(modelos: list[dict]) -> str:
     return "\n".join(linhas).strip()
 
 
+async def _bloco_questoes_estruturado(db, case_id: str | None) -> str:
+    """FASE 3 (Matriz de Teses) — pesquisa decomposta na etapa de jurisprudência.
+
+    Flag-gated (PECAS_PESQUISA_QUESTOES_ENABLED, default False) e fail-safe:
+    flag OFF, sem db/case_id, caso sem matriz montada ou QUALQUER erro → ""
+    (string vazia), mantendo o user-content da Etapa 4 BYTE-IDÊNTICO ao atual.
+    Com flag ON + matriz montada, devolve o bloco estruturado por questão com
+    precedentes VERIFICADOS favoráveis/contrários (matriz_teses_service)."""
+    if not bool(getattr(get_settings(), "PECAS_PESQUISA_QUESTOES_ENABLED", False)):
+        return ""
+    if db is None or not case_id:
+        return ""
+    try:
+        from app.services.matriz_teses_service import bloco_pesquisa_estruturada
+        return await bloco_pesquisa_estruturada(db, case_id)
+    except Exception:
+        return ""  # fail-safe: pesquisa estruturada nunca quebra o pipeline
+
+
 async def _emit(event: str, data: dict) -> str:
     """Formata um evento SSE."""
     return f"event: {event}\ndata: {json.dumps(data, ensure_ascii=False)}\n\n"
@@ -917,6 +936,10 @@ async def gerar_peca_pipeline(
     # ── ETAPA 4: Analisar jurisprudência ──────────────────────────────────
     yield await _emit("step", {"etapa": 4, "titulo": "Analisando jurisprudência", "status": "em_andamento"})
 
+    # FASE 3 (flag-gated): bloco estruturado por questão da Matriz de Teses.
+    # Flag OFF / sem matriz / erro → "" — user-content BYTE-IDÊNTICO ao atual.
+    bloco_questoes = await _bloco_questoes_estruturado(db, case_id)
+
     r4 = await gw_chat(
         messages=[
             {"role": "system", "content": (
@@ -926,7 +949,7 @@ async def gerar_peca_pipeline(
             )},
             {"role": "user", "content": (
                 f"Fatos: {fatos_limpos[:1000]}\nPedidos: {pedidos_limpos[:300]}\n"
-                f"{rag_txt[:4500] if rag_txt else 'Sem fontes RAG disponíveis.'}\n\n"
+                f"{rag_txt[:4500] if rag_txt else 'Sem fontes RAG disponíveis.'}{bloco_questoes}\n\n"
                 "Identifique jurisprudência e doutrina aplicáveis apenas das fontes acima. "
                 "Formato: tribunal, número/ementa, aplicabilidade ao caso."
             )},

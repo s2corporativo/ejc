@@ -483,6 +483,15 @@ class Settings(BaseSettings):
     # atual; qualquer falha na crítica/revisão entrega a versão original.
     PECAS_AUTOCRITICA_ENABLED: bool = False
 
+    # ── Pesquisa jurisprudencial DECOMPOSTA no pipeline de peças (FASE 3) ─
+    # True = quando o caso tem Matriz de Teses montada (migração 102), a etapa
+    # de jurisprudência do peca_service recebe ADICIONALMENTE o bloco
+    # estruturado por questão (precedentes VERIFICADOS favoráveis/contrários,
+    # ver matriz_teses_service.bloco_pesquisa_estruturada) em vez de só o blob
+    # único do RAG. Aditivo e fail-safe: default False = pipeline BYTE-IDÊNTICO
+    # ao atual; qualquer falha/matriz ausente degrada para o comportamento atual.
+    PECAS_PESQUISA_QUESTOES_ENABLED: bool = False
+
     # ── Governança/curadoria na RECUPERAÇÃO RAG (gate fail-closed) ───────
     # Auditoria RAG: os campos de curadoria (confidence_level/rag_status) vivem
     # em knowledge_docs.extra (JSONB) mas NÃO eram usados no WHERE das buscas.

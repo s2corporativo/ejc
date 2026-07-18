@@ -22,6 +22,9 @@ from app.services.case_intel import triagem_caso, aprendizado_encerramento
 from app.services.case_automacao import automacao_caso
 from app.services import event_bus
 from app.services.documental import gerar_documentos_iniciais
+# Mesmo vocabulário/contrato de poderes do kit documental (fonte única do
+# schema de procuração conservadora).
+from app.routers.kit_documental import KitDocumentalIn, _req_advogado as _req_advogado_kit
 from app.models.case_parte import CaseParte
 from app.models.caso_area import CasoArea
 from app.models.deadline import Deadline, DeadlineTipo, DeadlineStatus
@@ -520,20 +523,38 @@ async def excluir(
 
 
 # ── ETAPA 5 — Geração documental automática ───────────────────────────────────
-@router.post("/{case_id}/gerar-documentos")
+# Paridade de gates com o kit documental (POST /cases/{id}/kit-documental):
+# procuração/contrato são ATO JURÍDICO → advogado+ (_req_advogado do kit) e
+# mesmo rate limit "kit-documental" (5/min) — sem isso qualquer autenticado
+# geraria procuração com poderes especiais por aqui.
+@router.post("/{case_id}/gerar-documentos",
+             dependencies=[Depends(rate_limit("kit-documental", 5))])
 async def gerar_documentos(
     case_id: str,
+    payload: Optional[KitDocumentalIn] = None,
     db: AsyncSession = Depends(get_db),
-    cu: User = Depends(get_current_user),
+    cu: User = Depends(_req_advogado_kit),
 ):
     """Gera as minutas iniciais do caso (procuração, contrato de honorários,
-    relatório inicial) preenchidas com os dados do cliente/caso. Rascunhos."""
+    relatório inicial) preenchidas com os dados do cliente/caso. Rascunhos.
+
+    Procuração com DEFAULT CONSERVADOR (ad_judicia), mesmo contrato/vocabulário
+    do kit documental (POST /cases/{id}/kit-documental): poderes do art. 105 do
+    CPC só com ``tipo_poderes="ad_judicia_et_extra"`` (ou ``"especiais"``)
+    marcado explicitamente no corpo da requisição.
+    """
     q = select(Case).where(Case.id == case_id, Case.deleted_at.is_(None))
     q = _filtro_visibilidade(q, cu)
     c = (await db.execute(q)).scalar_one_or_none()
     if not c:
         raise HTTPException(status_code=404, detail="Caso não encontrado")
-    docs = await gerar_documentos_iniciais(case_id, cu.id)
+    p = payload or KitDocumentalIn()
+    docs = await gerar_documentos_iniciais(
+        case_id, cu.id,
+        tipo_poderes=p.tipo_poderes,
+        permite_substabelecimento=p.permite_substabelecimento,
+        poderes_especiais=p.poderes_especiais,
+    )
     await criar_audit_log(db, cu.id, cu.role.value, "GERAR_DOCS", "cases", case_id)
     await db.commit()
     return {

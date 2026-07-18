@@ -46,6 +46,7 @@ from app.routers import backup_admin
 from app.routers import bank_analysis
 from app.routers import calculadoras
 from app.routers import calendar_feed
+from app.routers import case_intelligence
 from app.routers import case_partes
 from app.routers import cases
 from app.routers import caso_areas
@@ -113,6 +114,7 @@ from app.routers import jurisprudencia_interna
 from app.routers import kanban
 from app.routers import kit_documental
 from app.routers import legal_docs
+from app.routers import matriz_teses
 from app.routers import memoria_institucional
 from app.routers import mensagens
 from app.routers import module_help
@@ -121,6 +123,7 @@ from app.routers import movimentos
 from app.routers import noticias
 from app.routers import notifications
 from app.routers import novos_modulos
+from app.routers import orquestrador
 from app.routers import observabilidade
 from app.routers import office_contracts
 from app.routers import partner_withdrawals
@@ -284,6 +287,7 @@ app.include_router(backup_admin.router, prefix=API)
 app.include_router(bank_analysis.router, prefix=API)
 app.include_router(calculadoras.router, prefix=API)
 app.include_router(calendar_feed.router, prefix=API)
+app.include_router(case_intelligence.router, prefix=API)
 app.include_router(case_partes.router, prefix=API)
 app.include_router(cases.router, prefix=API)
 app.include_router(caso_areas.router, prefix=API)
@@ -347,6 +351,8 @@ app.include_router(jurisprudencia_interna.router, prefix=API)
 app.include_router(kanban.router, prefix=API)
 app.include_router(kit_documental.router, prefix=API)  # POST /api/cases/{id}/kit-documental (P0.3)
 app.include_router(legal_docs.router, prefix=API)
+app.include_router(matriz_teses.router, prefix=API)  # FASE 3 Orquestrador — Matriz de Teses (migração 102)
+app.include_router(orquestrador.router, prefix=API)  # FASE 5 Orquestrador — máquina de estados do caso
 app.include_router(memoria_institucional.router, prefix=API)
 app.include_router(honorarios_oab.router, prefix=API)  # frontend: /api/honorarios-oab/estimar (EstimadorHonorarios)
 app.include_router(intake.router, prefix=API)  # frontend: /api/intake/casos/{id}/analise-completa (IntakeAnalise)

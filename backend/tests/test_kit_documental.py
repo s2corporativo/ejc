@@ -126,8 +126,10 @@ def test_tipo_poderes_invalido_rejeitado():
 async def test_kit_completo_gera_tres_rascunhos_procuracao_e_auditoria():
     from app.routers.kit_documental import gerar_kit_documental
 
-    # execute #1: caso (verificar_acesso_caso); execute #2: itens OAB vigentes
-    db = _FakeDB([_case(), [_item_oab()]], gets={("Client", "cli1"): _cli()})
+    # execute #1: caso (verificar_acesso_caso); execute #2: itens OAB vigentes;
+    # execute #3: proposta de honorários aprovada vigente (FASE 4 — None = sem
+    # proposta, contrato mantém placeholders)
+    db = _FakeDB([_case(), [_item_oab()], None], gets={("Client", "cli1"): _cli()})
     out = await gerar_kit_documental(case_id="case1", payload=None,
                                      db=db, cu=_user(UserRole.advogado))
 
@@ -174,7 +176,7 @@ async def test_kit_completo_gera_tres_rascunhos_procuracao_e_auditoria():
 async def test_kit_sem_item_oab_aplicavel_fica_a_definir():
     from app.routers.kit_documental import gerar_kit_documental
 
-    db = _FakeDB([_case(area="transito"), []], gets={("Client", "cli1"): _cli()})
+    db = _FakeDB([_case(area="transito"), [], None], gets={("Client", "cli1"): _cli()})
     out = await gerar_kit_documental(case_id="case1", payload=None,
                                      db=db, cu=_user(UserRole.socio))
 
@@ -189,7 +191,7 @@ async def test_kit_sem_item_oab_aplicavel_fica_a_definir():
 async def test_poderes_especiais_art_105_so_quando_marcados():
     from app.routers.kit_documental import KitDocumentalIn, gerar_kit_documental
 
-    db = _FakeDB([_case(), []], gets={("Client", "cli1"): _cli()})
+    db = _FakeDB([_case(), [], None], gets={("Client", "cli1"): _cli()})
     out = await gerar_kit_documental(
         case_id="case1",
         payload=KitDocumentalIn(tipo_poderes="ad_judicia_et_extra",
@@ -219,3 +221,25 @@ def test_alias_civil_cobre_grafia_civel_do_seed():
     from app.services.geracao_documental import _aliases_area
     assert _aliases_area("civil") == ["civil", "civel"]
     assert _aliases_area("familia") == ["familia"]
+
+
+# ── Paridade de gates do endpoint legado /cases/{id}/gerar-documentos ────────
+# (auditoria item 5): mesmo gate advogado+ e mesmo rate limit "kit-documental"
+# do kit — sem isso qualquer autenticado geraria procuração com poderes
+# especiais pela rota legada.
+
+def test_gerar_documentos_endpoint_reusa_gate_advogado_do_kit():
+    import inspect
+    from app.routers import cases as cases_router
+    from app.routers.kit_documental import _req_advogado
+
+    sig = inspect.signature(cases_router.gerar_documentos)
+    dep = sig.parameters["cu"].default
+    assert getattr(dep, "dependency", None) is _req_advogado
+
+
+def test_gerar_documentos_endpoint_tem_rate_limit_na_rota():
+    from app.main import app
+    rotas = [r for r in app.routes
+             if getattr(r, "path", "").endswith("/cases/{case_id}/gerar-documentos")]
+    assert rotas and rotas[0].dependencies   # Depends(rate_limit("kit-documental", 5))

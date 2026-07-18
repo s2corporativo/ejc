@@ -676,9 +676,14 @@ async def resumir_documento(
     texto_limpo, houve_pii = sanitizar_pii(texto_documento[:12000])
 
     try:
+        # FASE 1b (MAPA §5 Passo 2): task de PROSA coberto pela base central
+        # ("resumo" NÃO recebe aplicar_base — legal_base._TASKS_COM_BASE).
+        # "chat_rapido" mantém o tier leve (ollama chat → maritaca rápido →
+        # groq) e garante a barreira anti-alucinação central. A regra inline
+        # de SYSTEM_RESUMO_DOC é preservada (mudança aditiva).
         resposta, resp = await _gateway_text(
             SYSTEM_RESUMO_DOC, texto_limpo,
-            task_type="resumo", temperature=0.1, max_tokens=1200, nivel="alto",
+            task_type="chat_rapido", temperature=0.1, max_tokens=1200, nivel="alto",
         )
     except Exception as e:
         return {"erro": f"Falha na IA: {str(e)[:200]}"}
@@ -687,7 +692,9 @@ async def resumir_documento(
         id=str(uuid4()), user_id=user_id, case_id=case_id,
         tipo_uso=AITipoUso.resumo_documento, modelo=_modelo_log(resp),
         prompt_sanitizado=texto_limpo[:8000], pii_removida=houve_pii,
-        resposta=resposta, status_hitl=AIStatusHITL.gerado,
+        resposta=resposta,
+        tokens_input=_tokens_input(resp), tokens_output=_tokens_output(resp),
+        status_hitl=AIStatusHITL.gerado,
     )
     db.add(log)
     await db.commit()
@@ -1063,9 +1070,18 @@ async def analisar_contrato(
         )
     system = SYSTEM_COMPARACAO_CONTRATOS if comparacao else SYSTEM_ANALISE_CONTRATO
     try:
+        # FASE 1b (MAPA §5 Passo 2): "analise_contrato" está no TASK_ROUTING mas
+        # FORA de legal_base._TASKS_COM_BASE (sem base central). A saída aqui é
+        # PROSA (relatório de auditoria de minuta contratual) → task coberto
+        # "auditoria_peca" (mesma cadeia anthropic/groq; ollama muda de
+        # OLLAMA_MODEL_CONTRATO p/ OLLAMA_MODEL_PETICAO — revisão textual).
+        # Não ampliamos _TASKS_COM_BASE com "analise_contrato" porque o
+        # BankForensicsAgent (ai/core/orchestrator.py) usa esse task para saída
+        # ESTRUTURADA — injetar a base de prosa lá arriscaria o parse.
+        # As REGRAS INVIOLÁVEIS inline dos prompts são preservadas (aditivo).
         conteudo, resp = await _gateway_text(
             system, user_msg,
-            task_type="analise_contrato", temperature=0.15,
+            task_type="auditoria_peca", temperature=0.15,
             max_tokens=3200 if comparacao else 2800, nivel="alto",
         )
         await _log_ai(db, user_id, "outro", user_msg[:4000], conteudo,

@@ -417,7 +417,7 @@ async def analise_completa(
 
     # 5) Envelope — tudo rascunho (caminho feliz: formato preservado; o campo
     # ia_disponivel é ADITIVO — o frontend usa-o para distinguir do degradado)
-    return {
+    resposta = {
         "ia_disponivel": True,
         "status": "rascunho",
         "aviso": AVISO_RASCUNHO,
@@ -434,3 +434,31 @@ async def analise_completa(
         "pii_removida": houve_pii,
         "ai_log_ids": ai_logs,
     }
+
+    # ── FASE 1 (Orquestrador Jurídico) — snapshot versionado do intake.
+    # ADITIVO e FAIL-SAFE: os AILogs já foram commitados em _log_ia; falha do
+    # snapshot vira warning e NUNCA quebra a resposta original.
+    try:
+        from app.services import case_intelligence_service as cis
+        await cis.gravar_snapshot_seguro(
+            db,
+            case_id=case.id,
+            origem="intake",
+            payload=cis.compactar_payload({
+                "area": area,
+                "teses": teses,
+                "estrategia": estrategia,
+                "honorarios": honorarios,
+                "modulos_sugeridos": modulos,
+                "fontes": ["intake_analise_completa"],
+            }, descartaveis=("estrategia", "honorarios")),
+            resumo=f"Intake — análise completa (área provável: {area or '—'}, "
+                   f"origem da área: {area_info['origem']})",
+            ai_log_ids=ai_logs,
+            criado_por=cu.id,
+        )
+    except Exception as e:
+        logger.warning(
+            f"[intake] Snapshot de intake não gravado ({case.id}): {str(e)[:200]}")
+
+    return resposta

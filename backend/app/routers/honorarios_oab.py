@@ -19,11 +19,13 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.database import get_db
-from app.core.security import ROLE_LEVEL, get_current_user
+from app.core.ownership import verificar_acesso_caso
+from app.core.security import ROLE_LEVEL, get_current_user, requer_advogado
 from app.models.audit_log import criar_audit_log
+from app.models.fee_proposal import FeeProposal
 from app.models.redesign import TabelaOABHonorario
 from app.models.user import User
-from app.services import ai_gateway
+from app.services import ai_gateway, fee_proposal_service
 from app.services.ai_service import buscar_contexto_rag
 from app.core.rate_limit import rate_limit
 
@@ -299,3 +301,164 @@ async def encerrar_vigencia(
     )
     await db.commit()
     return _item_out(item)
+
+
+# ── FASE 4: Proposta de Honorários imutável com aprovação (HITL) ─────────────
+# Motor DETERMINÍSTICO (fee_proposal_service): sugestão ancorada no item OAB
+# vigente (verbatim; sem item → nada preenchido automaticamente); proposta
+# APROVADA é imutável (mudança = nova versão); contrato completo só a partir
+# de proposta aprovada. Restrito a advogado+ com ownership do caso e rate limit.
+
+def _req_advogado(cu: User = Depends(get_current_user)) -> User:
+    # Proposta/aprovação de honorários é ato jurídico: advogado+ (nível >= 6).
+    requer_advogado(cu)
+    return cu
+
+
+def _area_caso(case) -> str:
+    a = getattr(case, "area", None)
+    return getattr(a, "value", None) or str(a or "")
+
+
+class FaixaIn(BaseModel):
+    valor: Optional[float] = Field(None, ge=0)
+    memoria_calculo: Optional[str] = Field(None, max_length=2000)
+
+
+class FaixasIn(BaseModel):
+    minimo_etico: FaixaIn = FaixaIn()
+    recomendado: FaixaIn = FaixaIn()
+    estrategico: FaixaIn = FaixaIn()
+
+
+class ParcelamentoIn(BaseModel):
+    """Parcelamento estruturado — validado na ENTRADA (422), nunca 500 tardio
+    quando _forma_pagamento monta o texto do contrato."""
+    entrada: Optional[float] = Field(None, ge=0)
+    num_parcelas: Optional[int] = Field(None, ge=1)
+    valor_parcela: Optional[float] = Field(None, ge=0)
+    descricao: Optional[str] = Field(None, max_length=500)
+
+
+class PropostaIn(BaseModel):
+    """Rascunho de proposta — valores definidos/confirmados pelo ADVOGADO
+    (a sugestão determinística do endpoint /sugerir é apenas referência)."""
+    faixas: FaixasIn = FaixasIn()
+    origem_tabela: Optional[dict] = None      # item OAB verbatim (da sugestão)
+    exito_percentual: Optional[float] = Field(None, ge=0, le=100)
+    parcelamento: Optional[ParcelamentoIn] = None
+    despesas_criterio: Optional[str] = Field(None, max_length=2000)
+    justificativa: Optional[str] = Field(None, max_length=4000)
+
+
+class SugerirPropostaIn(BaseModel):
+    """Entrada opcional da sugestão: item OAB escolhido pelo advogado."""
+    item_codigo: Optional[str] = Field(None, max_length=30)
+
+
+class RejeitarPropostaIn(BaseModel):
+    motivo: Optional[str] = Field(None, max_length=500)
+
+
+@router.post("/casos/{case_id}/proposta/sugerir",
+             dependencies=[Depends(rate_limit("proposta-honorarios", 15))])
+async def sugerir_proposta_honorarios(
+    case_id: str,
+    body: Optional[SugerirPropostaIn] = None,
+    db: AsyncSession = Depends(get_db),
+    cu: User = Depends(_req_advogado),
+):
+    """Sugestão DETERMINÍSTICA de faixas (não persiste nada; nunca inventa
+    valor — sem item OAB vigente, o mínimo fica None com aviso explícito).
+    `item_codigo` opcional escolhe o item OAB (validado contra os vigentes);
+    sem ele, a resposta declara a escolha automática e lista os candidatos."""
+    case = await verificar_acesso_caso(db, cu, case_id)
+    return await fee_proposal_service.sugerir_proposta(
+        db, case, _area_caso(case),
+        item_codigo=(body.item_codigo if body else None))
+
+
+@router.post("/casos/{case_id}/proposta", status_code=201,
+             dependencies=[Depends(rate_limit("proposta-honorarios", 15))])
+async def criar_proposta_honorarios(
+    case_id: str,
+    body: PropostaIn,
+    db: AsyncSession = Depends(get_db),
+    cu: User = Depends(_req_advogado),
+):
+    """Cria RASCUNHO de proposta (versao = max+1 do caso; auditado).
+
+    `origem_tabela.item_codigo` (quando presente) é REvalidado contra os itens
+    vigentes da área: sem correspondência, grava `validada=False` com aviso —
+    transparência sem bloquear (o advogado define o valor final).
+    """
+    case = await verificar_acesso_caso(db, cu, case_id)
+    dados = body.model_dump()
+    origem = dados.get("origem_tabela")
+    if isinstance(origem, dict) and str(origem.get("item_codigo") or "").strip():
+        from app.services.geracao_documental import _itens_oab_vigentes
+        cod = str(origem["item_codigo"]).strip()
+        itens = await _itens_oab_vigentes(db, _area_caso(case), date.today(),
+                                          limite=20)
+        if cod in {(i.item_codigo or "").strip() for i in itens}:
+            origem["validada"] = True
+        else:
+            origem["validada"] = False
+            origem["aviso_validacao"] = (
+                "item_codigo não corresponde a item VIGENTE da Tabela OAB/MG "
+                "para a área do caso — confira a fonte (não bloqueante).")
+    p = await fee_proposal_service.criar_proposta(db, case.id, cu, dados)
+    return fee_proposal_service.proposta_out(p)
+
+
+@router.get("/casos/{case_id}/proposta")
+async def obter_propostas_honorarios(
+    case_id: str,
+    db: AsyncSession = Depends(get_db),
+    cu: User = Depends(get_current_user),
+):
+    """Proposta aprovada VIGENTE + histórico completo de versões do caso."""
+    case = await verificar_acesso_caso(db, cu, case_id)
+    vigente = await fee_proposal_service.proposta_aprovada_vigente(db, case.id)
+    historico = (await db.execute(
+        select(FeeProposal).where(FeeProposal.case_id == case.id)
+        .order_by(FeeProposal.versao.desc())
+    )).scalars().all()
+    return {
+        "case_id": case.id,
+        "vigente": fee_proposal_service.proposta_out(vigente) if vigente else None,
+        "historico": [fee_proposal_service.proposta_out(p) for p in historico],
+        "total": len(historico),
+    }
+
+
+@router.post("/propostas/{proposta_id}/aprovar",
+             dependencies=[Depends(rate_limit("proposta-honorarios", 15))])
+async def aprovar_proposta_honorarios(
+    proposta_id: str,
+    db: AsyncSession = Depends(get_db),
+    cu: User = Depends(_req_advogado),
+):
+    """Aprova e CONGELA a proposta (imutável); aprovadas anteriores do caso
+    viram 'substituida'. Ownership via caso da proposta; auditado."""
+    p = await fee_proposal_service.obter_proposta(db, proposta_id)
+    await verificar_acesso_caso(db, cu, p.case_id)
+    p = await fee_proposal_service.aprovar(db, proposta_id, cu)
+    return fee_proposal_service.proposta_out(p)
+
+
+@router.post("/propostas/{proposta_id}/rejeitar",
+             dependencies=[Depends(rate_limit("proposta-honorarios", 15))])
+async def rejeitar_proposta_honorarios(
+    proposta_id: str,
+    body: Optional[RejeitarPropostaIn] = None,
+    db: AsyncSession = Depends(get_db),
+    cu: User = Depends(_req_advogado),
+):
+    """Rejeita um RASCUNHO de proposta (auditado)."""
+    p = await fee_proposal_service.obter_proposta(db, proposta_id)
+    await verificar_acesso_caso(db, cu, p.case_id)
+    p = await fee_proposal_service.rejeitar(
+        db, proposta_id, cu, motivo=(body.motivo if body else None),
+    )
+    return fee_proposal_service.proposta_out(p)

@@ -1,7 +1,14 @@
 # ── app/routers/ia_extra.py ───────────────────────────────────────────────────
 # Onda 2 — IA jurídica: tradução de andamento p/ cliente, geração de minuta com
 # RAG e pesquisa jurídica. Mesma pipeline segura do ai_service: sanitiza PII
-# (LGPD) → Groq → registra AILog → devolve como RASCUNHO (revisão OAB).
+# (LGPD) → AI Gateway central (barreira anti-alucinação + pseudonimização +
+# fallback de providers) → registra AILog → devolve como RASCUNHO (revisão OAB).
+#
+# FASE 1b (MAPA_PROMPTS_IA03 §5 Passo 2): todos os fluxos usam task_type coberto
+# pela base central (legal_base._TASKS_COM_BASE) quando a saída é PROSA; fluxo de
+# saída JSON (sugestao_honorarios) mantém o task e PREPENDE BASE_ESTRUTURADA no
+# system (mesmo padrão das etapas intermediárias do peca_service). As regras
+# inline de cada prompt são PRESERVADAS — a base central é aditiva.
 from __future__ import annotations
 import json
 import logging
@@ -16,8 +23,11 @@ from app.core.config import get_settings
 from app.core.security import get_current_user
 from app.models.user import User
 from app.models.ai_log import AILog, AITipoUso, AIStatusHITL
-from app.services.ai_service import buscar_contexto_rag
-from app.services.ai_gateway import chat as gw_chat
+from app.services.ai_service import (
+    buscar_contexto_rag, _modelo_log, _tokens_input, _tokens_output,
+)
+from app.services.ai_gateway import chat as gw_chat, GatewayResponse
+from app.services.legal_base import BASE_ESTRUTURADA
 from app.services.sanitizer import sanitizar_pii
 from app.services.ai_guard import sanitizar_ou_abortar
 from app.core.rate_limit import rate_limit
@@ -27,7 +37,7 @@ logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/ai", tags=["IA — Assistente"])
 
 
-async def _ia(system: str, user: str, task_type: str = "analise_juridica", temperature: float = 0.2, max_tokens: int = 1200, nivel: str = "alto") -> str:
+async def _ia(system: str, user: str, task_type: str = "analise_juridica", temperature: float = 0.2, max_tokens: int = 1200, nivel: str = "alto") -> tuple[str, GatewayResponse]:
     resp = await gw_chat(
         messages=[{"role": "system", "content": system}, {"role": "user", "content": user}],
         task_type=task_type,
@@ -35,14 +45,22 @@ async def _ia(system: str, user: str, task_type: str = "analise_juridica", tempe
         max_tokens=max_tokens,
         nivel_inteligencia=nivel,
     )
-    return resp.texto
+    return resp.texto, resp
 
 
-async def _log(db, user_id, tipo, case_id, prompt, pii, resposta):
+async def _log(db, user_id, tipo, case_id, prompt, pii, resposta, resp=None):
+    # FASE 1b: o AILog registra o provedor/modelo REAL devolvido pelo gateway
+    # (antes: settings.GROQ_MODEL hardcoded) e os tokens reais — mesma
+    # rastreabilidade HITL do ai_service (_modelo_log/_tokens_*). Fallback
+    # conservador: sem `resp`, mantém o comportamento anterior.
     log = AILog(
         id=str(uuid4()), user_id=user_id, case_id=case_id, tipo_uso=tipo,
-        modelo=settings.GROQ_MODEL, prompt_sanitizado=prompt[:8000],
-        pii_removida=pii, resposta=resposta, status_hitl=AIStatusHITL.gerado,
+        modelo=_modelo_log(resp) if resp is not None else settings.GROQ_MODEL,
+        prompt_sanitizado=prompt[:8000],
+        pii_removida=pii, resposta=resposta,
+        tokens_input=_tokens_input(resp) if resp is not None else None,
+        tokens_output=_tokens_output(resp) if resp is not None else None,
+        status_hitl=AIStatusHITL.gerado,
     )
     db.add(log); await db.commit()
     return log.id
@@ -70,11 +88,13 @@ async def traduzir_andamento(body: TraduzirIn, db: AsyncSession = Depends(get_db
         await verificar_acesso_caso(db, cu, body.case_id)  # não polui AILog de caso alheio
     limpo, pii = sanitizar_ou_abortar(body.texto)
     try:
-        resposta = await _ia(SYS_TRADUZIR, limpo, task_type="resumo", temperature=0.25, max_tokens=900, nivel="alto")
+        # Prosa p/ o cliente → task coberto pela base ("resumo" fica FORA de
+        # _TASKS_COM_BASE); "chat_rapido" preserva o tier leve.
+        resposta, resp = await _ia(SYS_TRADUZIR, limpo, task_type="chat_rapido", temperature=0.25, max_tokens=900, nivel="alto")
     except Exception:
         logger.exception("Falha na chamada de IA")
         raise HTTPException(502, "Falha ao processar a solicitação de IA")
-    log_id = await _log(db, cu.id, AITipoUso.outro, body.case_id, limpo, pii, resposta)
+    log_id = await _log(db, cu.id, AITipoUso.outro, body.case_id, limpo, pii, resposta, resp)
     return {"ai_log_id": log_id, "resposta": resposta,
             "aviso": "⚠️ Texto gerado por IA — revise antes de enviar ao cliente."}
 
@@ -100,11 +120,13 @@ async def resumir_texto(body: ResumirIn, db: AsyncSession = Depends(get_db),
         await verificar_acesso_caso(db, cu, body.case_id)  # não polui AILog de caso alheio
     limpo, pii = sanitizar_ou_abortar(body.texto)
     try:
-        resposta = await _ia(SYS_RESUMIR, limpo, task_type="resumo", temperature=0.1, max_tokens=1400, nivel="alto")
+        # MAPA: resumo de texto jurídico é PROSA → task coberto pela base
+        # ("resumo" não recebe aplicar_base); "chat_rapido" mantém o tier leve.
+        resposta, resp = await _ia(SYS_RESUMIR, limpo, task_type="chat_rapido", temperature=0.1, max_tokens=1400, nivel="alto")
     except Exception:
         logger.exception("Falha na chamada de IA")
         raise HTTPException(502, "Falha ao processar a solicitação de IA")
-    log_id = await _log(db, cu.id, AITipoUso.resumo_documento, body.case_id, limpo, pii, resposta)
+    log_id = await _log(db, cu.id, AITipoUso.resumo_documento, body.case_id, limpo, pii, resposta, resp)
     return {"ai_log_id": log_id, "resposta": resposta,
             "aviso": "⚠️ Resumo gerado por IA — confira com o original."}
 
@@ -149,11 +171,12 @@ async def gerar_minuta(body: MinutaIn, db: AsyncSession = Depends(get_db),
     system = SYS_MINUTA.format(tipo=body.tipo_peca, area=body.area or "geral")
     user = f"TEMA: {body.tema}\n\nFATOS: {fatos_limpo}\n\nCONTEXTO (base do escritório):\n{ctx_txt}"
     try:
-        resposta = await _ia(system, user, task_type="elaboracao_peca", temperature=0.18, max_tokens=3200, nivel="alto")
+        # "elaboracao_peca" ∈ _TASKS_COM_BASE — redação de minuta já coberta.
+        resposta, resp = await _ia(system, user, task_type="elaboracao_peca", temperature=0.18, max_tokens=3200, nivel="alto")
     except Exception:
         logger.exception("Falha na chamada de IA")
         raise HTTPException(502, "Falha ao processar a solicitação de IA")
-    log_id = await _log(db, cu.id, AITipoUso.redacao_peca, body.case_id, user, pii, resposta)
+    log_id = await _log(db, cu.id, AITipoUso.redacao_peca, body.case_id, user, pii, resposta, resp)
     return {"ai_log_id": log_id, "resposta": resposta,
             "fontes": [{"titulo": c.get("titulo"), "categoria": c.get("categoria")} for c in contexto],
             "aviso": "⚠️ RASCUNHO gerado por IA — revisão humana obrigatória (OAB)."}
@@ -183,11 +206,15 @@ async def pesquisar(body: PesquisaIn, db: AsyncSession = Depends(get_db),
     )
     user = f"PERGUNTA: {pergunta_limpa}\n\nCONTEXTO:\n{ctx_txt}"
     try:
-        resposta = await _ia(SYS_PESQUISA, user, task_type="analise_juridica", temperature=0.12, max_tokens=2200, nivel="alto")
+        # Pesquisa jurídica é PROSA grounded no RAG → "estrategia" (∈
+        # _TASKS_COM_BASE); a cadeia de modelos é IDÊNTICA à de
+        # "analise_juridica" (ollama ANALISE → anthropic COMPLEXO → groq),
+        # então o roteamento não muda — só ganha a base anti-alucinação.
+        resposta, resp = await _ia(SYS_PESQUISA, user, task_type="estrategia", temperature=0.12, max_tokens=2200, nivel="alto")
     except Exception:
         logger.exception("Falha na chamada de IA")
         raise HTTPException(502, "Falha ao processar a solicitação de IA")
-    log_id = await _log(db, cu.id, AITipoUso.consulta_rag, None, user, pii, resposta)
+    log_id = await _log(db, cu.id, AITipoUso.consulta_rag, None, user, pii, resposta, resp)
     return {"ai_log_id": log_id, "resposta": resposta,
             "fontes": [{"titulo": c.get("titulo"), "categoria": c.get("categoria")} for c in contexto],
             "aviso": "⚠️ Resposta gerada por IA — confira as fontes antes de usar em peça ou orientar o cliente."}
@@ -237,11 +264,15 @@ async def sugestao_honorarios(body: HonorariosIn, db: AsyncSession = Depends(get
     user = (f"ÁREA: {body.area}\nSERVIÇO/ATO: {descricao_limpa}{vc}\n\n"
             f"TRECHOS DA TABELA DE HONORÁRIOS OAB/MG:\n{ctx_txt}")
     try:
-        bruto = await _ia(SYS_HONORARIOS, user, task_type="analise_juridica", temperature=0.05, max_tokens=1000, nivel="alto")
+        # Saída JSON parseada (_pj) → mantém "analise_juridica" (fora da base
+        # por design) e PREPENDE BASE_ESTRUTURADA no system — padrão das etapas
+        # intermediárias do peca_service (barreira anti-alucinação compatível
+        # com JSON, sem poluir o parse).
+        bruto, resp = await _ia(BASE_ESTRUTURADA + "\n\n" + SYS_HONORARIOS, user, task_type="analise_juridica", temperature=0.05, max_tokens=1000, nivel="alto")
     except Exception:
         logger.exception("Falha na chamada de IA")
         raise HTTPException(502, "Falha ao processar a solicitação de IA")
-    log_id = await _log(db, cu.id, AITipoUso.outro, None, user, pii, bruto)
+    log_id = await _log(db, cu.id, AITipoUso.outro, None, user, pii, bruto, resp)
     return {
         "ai_log_id": log_id,
         "sugestao": _pj(bruto) or {"texto": bruto},
