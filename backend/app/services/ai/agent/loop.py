@@ -33,6 +33,7 @@ from app.services.ai.agent.tools.registry import REGISTRY
 # Import dos módulos de tools REGISTRA as ferramentas no REGISTRY (decoradores).
 from app.services.ai.agent.tools import escrita as _escrita  # noqa: F401
 from app.services.ai.agent.tools import leitura as _leitura  # noqa: F401
+from app.services.ai.agent.tools import motores as _motores  # noqa: F401
 
 logger = logging.getLogger("ejc.ai.agent.loop")
 
@@ -47,9 +48,19 @@ _SYSTEM_AGENTE = (
     "Você decide, chama ferramentas, lê os resultados e decide de novo, em passos, "
     "até concluir a tarefa do advogado.\n\n"
     "FERRAMENTAS: use `buscar_precedentes` e `ler_dossie` para se informar antes de "
-    "concluir; use `gerar_minuta_peca` para produzir rascunhos de peça e "
-    "`registrar_nota_caso` para gravar notas — estas DUAS últimas são de ESCRITA e "
-    "só rodam após CONFIRMAÇÃO HUMANA (o sistema pausa e pede aprovação).\n\n"
+    "concluir. Os MOTORES DETERMINÍSTICOS do escritório estão disponíveis como "
+    "ferramentas de leitura: `montar_cronologia` (linha do tempo real do caso), "
+    "`identificar_rito_e_fase`, `detectar_providencias` (peças cabíveis com base "
+    "legal e prazo do catálogo), `calcular_prazo` (projeção de prazo — NUNCA cria "
+    "prazo; termo inicial sempre pendente de confirmação humana), "
+    "`consultar_tabela_oab`, `ler_checklist_peca` e `classificar_area`. Repita "
+    "bases legais, prazos e valores VERBATIM como as ferramentas devolverem — é "
+    "PROIBIDO reformulá-los ou recalculá-los.\n"
+    "ESCRITA (o sistema PAUSA e exige CONFIRMAÇÃO HUMANA antes de executar): "
+    "`gerar_minuta_peca` (rascunho de peça), `registrar_nota_caso` (nota na "
+    "timeline), `criar_prazo_confirmado` (cria o prazo fatal SÓ após a aprovação "
+    "do advogado, que é a confirmação do termo inicial) e `gerar_kit_documental` "
+    "(procuração + contrato + checklist, rascunhos).\n\n"
     "REGRAS INEGOCIÁVEIS:\n"
     "- Todo texto que você produz é RASCUNHO sujeito a revisão humana (HITL/OAB).\n"
     "- NUNCA invente fonte (súmula/artigo/precedente/jurisprudência): cite apenas o "

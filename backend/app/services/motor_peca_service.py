@@ -28,11 +28,19 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.config import get_settings
 from app.models.ai_log import AILog, AIStatusHITL, AITipoUso
+from app.models.audit_log import criar_audit_log
 from app.models.case import Case
 from app.models.client import Client
+from app.models.deadline import (
+    Deadline,
+    DeadlinePrioridade,
+    DeadlineStatus,
+    DeadlineTipo,
+)
 from app.models.document import Document
 from app.models.procuracao import Procuracao
 from app.services.deadline_calculator import prazo_dias_corridos, prazo_dias_uteis
+from app.services.sanitizer import sanitizar_pii
 
 logger = logging.getLogger("ejc.motor_peca")
 
@@ -610,3 +618,200 @@ async def executar_pipeline_peca(
     if final is None:
         raise RuntimeError("Pipeline de peça não retornou o documento final")
     return final
+
+
+# ── Confirmação humana → Deadline (fonte única: router /gerar + agente) ──────
+
+def _enum_val(v) -> str | None:
+    return getattr(v, "value", v) if v is not None else None
+
+
+class GateBloqueado(Exception):
+    """Gate de negócio do fluxo confirmar-e-criar-prazo.
+
+    `detail` carrega o payload EXATO que POST /motor-peca/gerar devolve em
+    HTTPException(422); a tool `criar_prazo_confirmado` do agente devolve o
+    mesmo payload como dado estruturado. Nada é persistido quando levantada."""
+
+    def __init__(self, detail: dict):
+        super().__init__(str(detail.get("mensagem") or "gate bloqueado"))
+        self.detail = detail
+
+
+async def confirmar_e_criar_prazo(
+    db: AsyncSession,
+    cu,
+    case: Case,
+    *,
+    peca_codigo: str,
+    termo_inicial: Optional[date] = None,
+    evento: Optional[str] = None,
+    data_evento: Optional[date] = None,
+    meio: Optional[str] = None,
+    termo_inicial_confirmado: bool = False,
+    data_prazo_manual: Optional[date] = None,
+    em_dobro: bool = False,
+    rito_codigo: Optional[str] = None,
+    area_direito: Optional[str] = None,
+    texto: Optional[str] = None,
+    exigir_base_fatica: bool = True,
+    origem: str = "motor_peca",
+) -> dict:
+    """Núcleo EXTRAÍDO (mínimo, sem mudança de comportamento) do POST
+    /motor-peca/gerar: resolve evento→termo (evento_processual), aplica os
+    GATES INVIOLÁVEIS (checklist bloqueante; termo inicial confirmado por
+    humano) e SÓ então cria o Deadline (auditoria + commit — o prazo fatal
+    confirmado nunca se perde por falha posterior de IA).
+
+    Levanta GateBloqueado quando qualquer gate falha (o router converte em 422;
+    a tool do agente devolve o detail estruturado). Chamadores: o router
+    /motor-peca/gerar e a tool `criar_prazo_confirmado` (que só executa após
+    aprovação humana na pausa HITL — a aprovação dos ARGS exatos é a
+    confirmação do termo inicial).
+    """
+    if peca_codigo not in CATALOGO_PECAS:
+        raise GateBloqueado({
+            "mensagem": "Peça desconhecida pelo mapa determinístico do Motor de Peça",
+            "pecas_validas": sorted(CATALOGO_PECAS.keys()),
+        })
+    info = CATALOGO_PECAS[peca_codigo]
+
+    # Evento processual (Fase 2): termo derivado DETERMINISTICAMENTE do
+    # catálogo de eventos (base legal citada). O termo_inicial explícito tem
+    # precedência; os gates de confirmação humana abaixo NÃO mudam.
+    evento_info = None
+    if evento:
+        if data_evento is None:
+            raise GateBloqueado({
+                "mensagem": ("Evento processual informado sem data_evento — "
+                             "informe a data do evento para derivar o termo inicial."),
+            })
+        from app.services.evento_processual import resolver_termo_inicial
+        evento_info = resolver_termo_inicial(evento, data_evento, meio)
+        if termo_inicial is None:
+            if not evento_info["contagem_confirmavel"]:
+                raise GateBloqueado({
+                    "mensagem": ("Termo inicial não determinável com certeza a "
+                                 "partir deste evento — verifique nos autos e "
+                                 "informe termo_inicial manualmente."),
+                    "evento": evento,
+                    "base_legal": evento_info["base_legal"],
+                    "avisos": evento_info["avisos"],
+                })
+            termo_inicial = evento_info["termo_inicial"]
+
+    # Texto-base + LGPD (sanitizar_pii ANTES de qualquer LLM)
+    texto_bruto = await texto_base_do_caso(db, case, texto)
+    texto_limpo, _ = sanitizar_pii(texto_bruto[:18000], [])
+
+    # Rito: NUNCA confiar só no eco do cliente. Sem rito_codigo, recomputa com
+    # os mesmos sinais do /analisar — senão overrides de prazo por rito (ex.:
+    # JEC/trabalhista, defesa em audiência) se perdem e o Deadline sai errado.
+    if not rito_codigo:
+        from app.services.rito_engine import identificar_rito
+        rito_codigo = identificar_rito({
+            "area": area_direito or _enum_val(getattr(case, "area", None)),
+            "texto": texto_limpo[:8000],
+            "fase": _enum_val(getattr(case, "fase", None)),
+            "tribunal": case.tribunal,
+        })["codigo"]
+    prazo_info = prazo_da_peca(peca_codigo, rito_codigo)
+
+    # Gate 1 — checklist bloqueante (mesmo padrão 422 de conversao_caso.py)
+    itens, pronto = await montar_checklist(db, case, peca_codigo, texto_limpo)
+    if not pronto:
+        pendentes = [i for i in itens if not i["ok"]]
+        raise GateBloqueado({
+            "mensagem": "Geração bloqueada — checklist da peça com itens pendentes",
+            "pendentes": pendentes,
+        })
+
+    # Gate 2 — prazo fatal NUNCA sem confirmação humana do termo inicial
+    if not termo_inicial_confirmado:
+        raise GateBloqueado({
+            "mensagem": ("Termo inicial não confirmado pelo advogado — o Motor "
+                         "de Peça nunca cria prazo fatal sem confirmação humana."),
+            "termo_inicial_confirmado": False,
+        })
+
+    # Data fatal: determinística (uteis/corridos) ou manual (contagem=verificar)
+    if prazo_info["contagem"] == "uteis" and prazo_info["prazo_dias"]:
+        if termo_inicial is None:
+            raise GateBloqueado({
+                "mensagem": "Informe o termo inicial confirmado para calcular o prazo."})
+        data_prazo = prazo_dias_uteis(
+            termo_inicial, prazo_info["prazo_dias"],
+            tribunal=case.tribunal, em_dobro=em_dobro,
+            # Prazo PROCESSUAL em dias úteis: suspensão integral do recesso
+            # 20/12–20/01 (CPC art. 220; CLT art. 775-A).
+            aplicar_recesso=True,
+        )
+    elif prazo_info["contagem"] == "corridos" and prazo_info["prazo_dias"]:
+        if termo_inicial is None:
+            raise GateBloqueado({
+                "mensagem": "Informe o termo inicial confirmado para calcular o prazo."})
+        data_prazo = prazo_dias_corridos(
+            termo_inicial, prazo_info["prazo_dias"], tribunal=case.tribunal,
+            # Decadencial (ex.: MS, Lei 12.016 art. 23): vencimento não prorroga.
+            # Corridos/decadenciais: recesso do art. 220 NÃO se aplica.
+            prorrogar_fim=not prazo_info.get("decadencial"),
+        )
+    else:
+        if data_prazo_manual is None:
+            raise GateBloqueado({
+                "mensagem": ("Prazo desta peça/rito não é determinável automaticamente "
+                             f"({prazo_info['base_legal']}) — informe data_prazo_manual "
+                             "após verificar a norma aplicável."),
+                "contagem": prazo_info["contagem"],
+            })
+        data_prazo = data_prazo_manual
+
+    # Validação prévia da base fática p/ redação (antes de persistir o Deadline).
+    # `exigir_base_fatica=False` quando o chamador NÃO vai redigir (tool do
+    # agente cria só o prazo) — nada muda para o router (default True).
+    fatos = (texto or texto_limpo).strip()
+    if exigir_base_fatica and len(fatos) < 50:
+        raise GateBloqueado({
+            "mensagem": ("Base fática insuficiente para a redação (mín. 50 "
+                         "caracteres) — anexe documentos ou descreva os fatos."),
+        })
+
+    # ── Deadline (padrão raio_x_service.converter_em_caso) — SÓ após confirmação
+    deadline = Deadline(
+        id=str(uuid4()),
+        titulo=f"Prazo — {info['nome']}"[:255],
+        descricao=("Criado pelo Motor de Peça após confirmação humana do termo "
+                   "inicial. Conferir intimação/citação nos autos."),
+        tipo=(DeadlineTipo.administrativo if info["tipo_deadline"] == "administrativo"
+              else DeadlineTipo.processual),
+        prioridade=DeadlinePrioridade.alta,
+        status=DeadlineStatus.pendente,
+        data_prazo=data_prazo,
+        data_intimacao=termo_inicial,
+        base_legal=(prazo_info["base_legal"] or "")[:255] or None,
+        case_id=case.id,
+        responsavel_id=cu.id,
+        origem=origem,
+        confirmado=True,  # termo inicial confirmado explicitamente pelo advogado
+    )
+    db.add(deadline)
+    await criar_audit_log(
+        db, cu.id, getattr(cu.role, "value", cu.role), "MOTOR_PECA_GERAR",
+        "deadlines", deadline.id,
+        detalhes=(f"Motor de Peça: peça={peca_codigo} caso={case.id} "
+                  f"termo_inicial_confirmado=True base_legal={prazo_info['base_legal']}"),
+    )
+    # Commit ANTES da redação: o prazo fatal confirmado nunca pode se perder
+    # por indisponibilidade de IA.
+    await db.commit()
+
+    return {
+        "deadline": deadline,
+        "data_prazo": data_prazo,
+        "evento_info": evento_info,
+        "termo_inicial": termo_inicial,
+        "prazo_info": prazo_info,
+        "rito_codigo": rito_codigo,
+        "texto_limpo": texto_limpo,
+        "fatos": fatos,
+    }

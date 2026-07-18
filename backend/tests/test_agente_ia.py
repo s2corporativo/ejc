@@ -11,8 +11,9 @@ Cobre (atualizado para os achados S1/H1/S2/S3/M3/M5/L6/L7/L9 + Sugestões 2 e 3)
      consistentes; resposta reidratada (recursiva); text_para_log pseudonimizado.
   2. anthropic_provider.chat_tools: parse text+tool_use, ignora thinking; modelo
      moderno sem temperature e SEM piso 8192 no caminho de tool-use (M3).
-  3. Registry/permissions: 4 tools; leitura sem confirmação, escrita com HITL;
-     roles nas escritas (L9); schemas(role) filtra por papel.
+  3. Registry/permissions: 13 tools (4 originais + 9 dos motores, FASE 6);
+     leitura sem confirmação, escrita com HITL; roles nas escritas (L9);
+     schemas(role) filtra por papel.
   4. Loop rodar_agente: HITL vinculado aos ARGS com retomada por token (H1) e
      fallback por hash; teto de passos/custo (L6/Sug.2); stop_reason max_tokens/
      pause_turn (L7); área sigilosa fail-closed (S1); degradação de PII residual
@@ -271,30 +272,40 @@ class TestChatTools:
 
 
 # ══════════════════════════════════════════════════════════════════════════════
-# 3. Registry / permissions — 4 tools; HITL nas escritas; filtro por papel + L9.
+# 3. Registry / permissions — 13 tools (4 originais + 9 dos motores, FASE 6);
+#    HITL nas escritas; filtro por papel + L9.
 # ══════════════════════════════════════════════════════════════════════════════
 
-_TOOLS_ESPERADAS = {
-    "buscar_precedentes", "ler_dossie", "gerar_minuta_peca", "registrar_nota_caso",
+_TOOLS_LEITURA = {
+    "buscar_precedentes", "ler_dossie",
+    # FASE 6 — motores determinísticos (leitura, sem HITL).
+    "montar_cronologia", "identificar_rito_e_fase", "detectar_providencias",
+    "calcular_prazo", "consultar_tabela_oab", "ler_checklist_peca",
+    "classificar_area",
 }
-_TOOLS_LEITURA = {"buscar_precedentes", "ler_dossie"}
+_TOOLS_ESCRITA = {
+    "gerar_minuta_peca", "registrar_nota_caso",
+    # FASE 6 — escritas dos motores (HITL obrigatório).
+    "criar_prazo_confirmado", "gerar_kit_documental",
+}
+_TOOLS_ESPERADAS = _TOOLS_LEITURA | _TOOLS_ESCRITA
 
 
 class TestRegistryGlobal:
-    def test_quatro_tools_registradas_e_visiveis(self):
+    def test_tools_registradas_e_visiveis(self):
         # Import REGISTRA as tools via decoradores (idempotente).
-        from app.services.ai.agent.tools import leitura, escrita  # noqa: F401
+        from app.services.ai.agent.tools import leitura, escrita, motores  # noqa: F401
         from app.services.ai.agent.tools.registry import REGISTRY
         assert REGISTRY.nomes_visiveis("advogado") == _TOOLS_ESPERADAS
         schemas = REGISTRY.schemas("advogado")
-        assert len(schemas) == 4
+        assert len(schemas) == len(_TOOLS_ESPERADAS)
         for sch in schemas:
             assert set(sch) == {"name", "description", "input_schema"}
 
     def test_l9_escrita_restrita_a_papeis_senior(self):
         """L9: as tools de ESCRITA só são visíveis a papéis sênior; papéis
         operacionais (ex.: auxiliar) veem SÓ as de leitura."""
-        from app.services.ai.agent.tools import leitura, escrita  # noqa: F401
+        from app.services.ai.agent.tools import leitura, escrita, motores  # noqa: F401
         from app.services.ai.agent.tools.registry import REGISTRY
         for papel in ("superadmin", "admin", "socio", "advogado"):
             assert REGISTRY.nomes_visiveis(papel) == _TOOLS_ESPERADAS
@@ -303,14 +314,14 @@ class TestRegistryGlobal:
         assert REGISTRY.nomes_visiveis("estagiario") == _TOOLS_LEITURA
 
     def test_leitura_sem_confirmacao_escrita_com_hitl(self):
-        from app.services.ai.agent.tools import leitura, escrita  # noqa: F401
+        from app.services.ai.agent.tools import leitura, escrita, motores  # noqa: F401
         from app.services.ai.agent.permissions import requer_confirmacao, pode_ver_tool
         # LEITURA → automática.
-        assert requer_confirmacao("buscar_precedentes") is False
-        assert requer_confirmacao("ler_dossie") is False
+        for nome in _TOOLS_LEITURA:
+            assert requer_confirmacao(nome) is False, nome
         # ESCRITA → HITL (confirmação humana).
-        assert requer_confirmacao("gerar_minuta_peca") is True
-        assert requer_confirmacao("registrar_nota_caso") is True
+        for nome in _TOOLS_ESCRITA:
+            assert requer_confirmacao(nome) is True, nome
         # Facade de visibilidade.
         assert pode_ver_tool("buscar_precedentes", "advogado") is True
         # Tool inexistente nunca requer confirmação (fail-safe).
