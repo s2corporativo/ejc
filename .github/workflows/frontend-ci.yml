@@ -1,33 +1,21 @@
 name: Frontend CI
 
-# Fallback temporário e limitado para as frentes de correção do fluxo modular.
-# O CI principal continua no runner self-hosted `ejc-vps`; este job usa a nuvem
-# apenas para validar frontend enquanto o runner do escritório estiver offline.
-# O `if` impede consumo de minutos por outros PRs e o workflow pode ser removido
-# após a conclusão dos PRs #290, #296 e #299.
+# Gatilho de PR removido: o job frontend-build do ci.yml roda o MESMO
+# typecheck+build+vitest em todo PR — este workflow duplicava ~5 min de
+# runner por push com frontend (cota de Actions em repositório privado).
+# Mantido só o disparo manual para depuração isolada do frontend.
 on:
-  pull_request:
-    branches:
-      - main
-      - codex/fluxo-modulos-p0-p1
-      - codex/fluxo-modulos-fase2
-    paths:
-      - "frontend/**"
-      - ".github/workflows/frontend-ci.yml"
   workflow_dispatch:
 
 permissions:
   contents: read
 
 concurrency:
-  group: frontend-ci-${{ github.workflow }}-${{ github.ref }}
+  group: frontend-ci-${{ github.ref }}
   cancel-in-progress: true
 
 jobs:
   validate:
-    if: >-
-      github.event_name == 'workflow_dispatch' ||
-      startsWith(github.head_ref, 'codex/fluxo-modulos-')
     name: Typecheck, build and tests
     runs-on: ubuntu-latest
     timeout-minutes: 15
@@ -42,15 +30,15 @@ jobs:
       - name: Setup Node.js
         uses: actions/setup-node@v4
         with:
-          node-version: 20
+          node-version: 22
           cache: npm
           cache-dependency-path: frontend/package-lock.json
 
       - name: Install dependencies
         run: npm ci
 
-      - name: Unit tests
-        run: npm run test --if-present
-
       - name: Typecheck and build
         run: npm run build
+
+      - name: Unit tests
+        run: npm test
