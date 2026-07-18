@@ -127,10 +127,15 @@ class Settings(BaseSettings):
     # Gate anti-alucinação de citações (Fase 4 — citation_gate.py):
     #   "bloquear"  → saída de IA com citação bloqueante (suspeita de alucinação,
     #                 menção genérica ou julgado sem tribunal+data) NÃO pode ser
-    #                 aprovada no HITL sem override justificado do revisor;
-    #   "marcar"    → relatório de citações anexado/exposto ao revisor (default);
+    #                 aprovada no HITL sem override JUSTIFICADO e AUDITADO do
+    #                 revisor (default — advogados já foram punidos por citar
+    #                 acórdão falso; apenas SINALIZAR não basta, tem de barrar);
+    #   "marcar"    → relatório de citações apenas anexado/exposto ao revisor,
+    #                 SEM impedir a aprovação (modo permissivo/legado);
     #   "desligado" → verificação de citações não roda nos fluxos de IA.
-    CITACOES_POLITICA: str = "marcar"
+    # Valor inválido/typo cai no modo SEGURO "bloquear" (ver politica_citacoes()):
+    # um erro de config não pode rebaixar silenciosamente o gate antialucinação.
+    CITACOES_POLITICA: str = "bloquear"
     # ── Modo Duas IAs (Fase 5 — validação adversarial) ────────────────────
     # True = peças de alta complexidade geradas pelo Núcleo de IA recebem uma
     # SEGUNDA passada por uma IA Crítica/Adversarial (advogado da parte

@@ -116,11 +116,14 @@ async def test_texto_sem_citacoes_nunca_bloqueia():
     assert r.total == 0 and r.bloqueia_aprovacao is False
 
 
-def test_politica_invalida_cai_no_default_marcar(monkeypatch):
+def test_politica_invalida_cai_no_modo_seguro_bloquear(monkeypatch):
+    # Fail-secure: um valor inválido/typo NÃO pode rebaixar o gate para o modo
+    # permissivo "marcar" (deixaria passar citação inventada) — cai em "bloquear",
+    # coerente com o novo default seguro de CITACOES_POLITICA.
     from app.core.config import get_settings
     from app.services.citation_gate import politica_citacoes
     monkeypatch.setattr(get_settings(), "CITACOES_POLITICA", "banana")
-    assert politica_citacoes() == "marcar"
+    assert politica_citacoes() == "bloquear"
 
 
 def test_avaliar_bloqueantes_ignora_verificadas_e_identificadas_completas():
