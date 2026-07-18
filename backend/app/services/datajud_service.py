@@ -25,7 +25,7 @@ from uuid import uuid4
 
 import httpx
 from tenacity import (
-    retry, stop_after_attempt, wait_exponential, retry_if_exception_type,
+    retry, retry_if_exception, stop_after_attempt, wait_exponential,
 )
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -48,21 +48,35 @@ class TribunalNaoMapeadoError(ValueError):
     """Número CNJ válido, mas o tribunal (segmento J.TR) não tem alias mapeado."""
 
 
-# Chamada de rede com retry exponencial (2 retries) para erros transitórios.
-# Mensagens de erro do httpx contêm URL/status, nunca headers — a API key
-# (enviada só no header Authorization) não vaza em log nem em exceção.
+def _erro_datajud_transitorio(exc: BaseException) -> bool:
+    """Retry apenas quando repetir pode resolver: transporte, 429 ou 5xx.
+
+    Erros 4xx de contrato/autenticação não são repetidos: isso evita multiplicar
+    carga e esconder configuração inválida atrás de três tentativas inúteis.
+    """
+    if isinstance(exc, httpx.TransportError):
+        return True
+    if isinstance(exc, httpx.HTTPStatusError) and exc.response is not None:
+        status = exc.response.status_code
+        return status == 429 or status >= 500
+    return False
+
+
 @retry(
     stop=stop_after_attempt(3),
     wait=wait_exponential(multiplier=0.5, min=0.5, max=4),
-    retry=retry_if_exception_type((httpx.TransportError, httpx.HTTPStatusError)),
+    retry=retry_if_exception(_erro_datajud_transitorio),
     reraise=True,
 )
 async def _datajud_search(alias: str, payload: dict, headers: dict) -> dict:
-    base = (get_settings().DATAJUD_BASE_URL or BASE).rstrip("/")
-    async with httpx.AsyncClient(timeout=20) as c:
-        r = await c.post(f"{base}/{alias}/_search", json=payload, headers=headers)
-        r.raise_for_status()
-        return r.json()
+    s = get_settings()
+    base = (s.DATAJUD_BASE_URL or BASE).rstrip("/")
+    async with httpx.AsyncClient(timeout=s.DATAJUD_TIMEOUT_SECONDS) as client:
+        response = await client.post(
+            f"{base}/{alias}/_search", json=payload, headers=headers
+        )
+        response.raise_for_status()
+        return response.json()
 
 
 # Segmento J.TR do número CNJ (NNNNNNN-DD.AAAA.J.TR.OOOO) → alias do endpoint.
@@ -170,18 +184,27 @@ def _hash_mov(data: str, descricao: str) -> str:
 
 
 async def consultar_processo(numero_cnj: str) -> dict | None:
-    """Consulta o DataJud. Retorna dict com movimentos ou None."""
-    if not settings.DATAJUD_ENABLED or not settings.DATAJUD_API_KEY:
-        return None
+    """Consulta o DataJud; ausência é None e falha de integração propaga.
+
+    Não confunde flag/chave ausente, 401/403, rate limit ou indisponibilidade
+    com "processo não encontrado". O router traduz cada classe para 503/502.
+    """
+    s = get_settings()
+    if not s.DATAJUD_ENABLED or not s.DATAJUD_API_KEY:
+        raise DataJudDesabilitadoError(
+            "Integração DataJud desativada ou sem chave configurada "
+            "(DATAJUD_ENABLED/DATAJUD_API_KEY)."
+        )
     alias = _alias_do_numero(numero_cnj)
     if not alias:
-        logger.info(f"Tribunal não mapeado p/ {numero_cnj}")
-        return None
+        raise TribunalNaoMapeadoError(
+            "Tribunal não mapeado para consulta ao DataJud."
+        )
 
     n = re.sub(r"\D", "", numero_cnj)
     payload = {"query": {"match": {"numeroProcesso": n}}, "size": 1}
     headers = {
-        "Authorization": f"APIKey {settings.DATAJUD_API_KEY}",
+        "Authorization": f"APIKey {s.DATAJUD_API_KEY}",
         "Content-Type": "application/json",
     }
     try:
@@ -201,9 +224,19 @@ async def consultar_processo(numero_cnj: str) -> dict | None:
             "orgao": (src.get("orgaoJulgador") or {}).get("nome"),
             "movimentos": movs,
         }
-    except Exception as e:
-        logger.warning(f"DataJud falhou p/ {numero_cnj} (após retries): {e}")
-        return None
+    except (httpx.HTTPError, ValueError, KeyError, TypeError) as exc:
+        # Nunca registrar número do processo, payload, corpo ou header.
+        status = (
+            exc.response.status_code
+            if isinstance(exc, httpx.HTTPStatusError)
+            and exc.response is not None
+            else None
+        )
+        logger.warning(
+            "DataJud falhou após retries (tipo=%s status=%s)",
+            type(exc).__name__, status,
+        )
+        raise
 
 
 # ── Etapa 13 — consulta normalizada de andamentos (router /andamentos) ───────
@@ -232,8 +265,7 @@ async def consultar_movimentos(
     if not alias:
         raise TribunalNaoMapeadoError(
             "Tribunal não mapeado para consulta ao DataJud (segmento J.TR do "
-            "número CNJ fora do mapa suportado: TJMG/TJSP/TJRJ, TRF1-6, "
-            "TRT3, TST, STJ)."
+            "número CNJ fora do mapa atualmente suportado)."
         )
 
     n = re.sub(r"\D", "", numero_cnj or "")
