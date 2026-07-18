@@ -1,4 +1,4 @@
-"""105 — bytes em BIGINT na Entrada Universal (M-D1).
+"""106 — bytes em BIGINT na Entrada Universal (M-D1).
 
 ``document_intake_batches.total_bytes`` e ``document_intake_items.size_bytes``
 nasceram como ``Integer`` (int32) na 101_entrada_universal_documentos e
@@ -9,14 +9,14 @@ nullability nem de server_default.
 Downgrade reverte para ``Integer`` (com perda de capacidade; falhará se já
 houver valores acima de int32, o que é o comportamento correto).
 
-Revision ID: 105_bytes_bigint
-Revises: 104_merge_entrada_orquestrador
+Revision ID: 106_bytes_bigint
+Revises: 105_nfse_manual
 """
 from alembic import op
 import sqlalchemy as sa
 
-revision = "105_bytes_bigint"
-down_revision = "104_merge_entrada_orquestrador"
+revision = "106_bytes_bigint"
+down_revision = "105_nfse_manual"
 branch_labels = None
 depends_on = None
 
