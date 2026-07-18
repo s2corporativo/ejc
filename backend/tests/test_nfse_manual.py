@@ -9,6 +9,7 @@ vínculos fee/client (404, herança de client_id); e validações de campos.
 """
 from __future__ import annotations
 
+import operator
 import os
 from decimal import Decimal
 
@@ -29,9 +30,15 @@ XML_MINIMO = b'<?xml version="1.0" encoding="UTF-8"?>\n<NFSe><infNFSe/></NFSe>\n
 # ── Fakes (padrão test_nfse) ────────────────────────────────────────────────────
 
 class _FakeDB:
+    """Fake que AVALIA o WHERE dos selects do router contra as notas em `objs`:
+    duplicidade de número manual, nota manual ativa do fee (/emitir) e o
+    select(...).with_for_update() do cancelamento manual. Assim cada teste
+    exercita a condição REAL da query (ex.: status != cancelada libera o
+    número), e não um retorno fixo independente da consulta feita."""
+
     def __init__(self, objs=None, scalar_result=None, rows=None):
         self.objs = objs or {}          # (ModelName, id) -> obj
-        self.scalar_result = scalar_result
+        self.scalar_result = scalar_result  # selects SEM where (count da listagem)
         self.rows = rows or []
         self.added: list = []
         self.commits = 0
@@ -39,8 +46,29 @@ class _FakeDB:
     async def get(self, model, ident):
         return self.objs.get((model.__name__, ident))
 
+    @staticmethod
+    def _satisfaz(nota, crits) -> bool:
+        for c in crits:
+            campo = getattr(getattr(c, "left", None), "key", None)
+            alvo = getattr(getattr(c, "right", None), "value", None)
+            atual = getattr(nota, campo, None)
+            if c.operator is operator.eq and atual != alvo:
+                return False
+            if c.operator is operator.ne and atual == alvo:
+                return False
+        return True
+
     async def scalar(self, stmt):
-        return self.scalar_result
+        crits = list(getattr(stmt, "_where_criteria", ()))
+        if not crits:
+            return self.scalar_result
+        for nota in (o for o in self.objs.values()
+                     if isinstance(o, NotaFiscalServico)):
+            if self._satisfaz(nota, crits):
+                # select(Model) → entidade; select(Model.id) → só a coluna.
+                nome = stmt.column_descriptions[0]["name"]
+                return nota if nome == "NotaFiscalServico" else getattr(nota, nome)
+        return None
 
     async def execute(self, stmt):
         rows = self.rows
@@ -62,14 +90,30 @@ class _FakeDB:
 
 
 class _FakeUpload:
-    """UploadFile mínimo: só filename + read(), como o router usa."""
+    """UploadFile mínimo: filename + read(size) — o router lê em CHUNKS."""
 
     def __init__(self, filename: str, conteudo: bytes):
         self.filename = filename
         self._conteudo = conteudo
+        self.reads = 0      # nº de chamadas a read() (prova a leitura em chunks)
 
-    async def read(self) -> bytes:
-        return self._conteudo
+    async def read(self, size: int = -1) -> bytes:
+        self.reads += 1
+        if size is None or size < 0:
+            chunk, self._conteudo = self._conteudo, b""
+        else:
+            chunk, self._conteudo = self._conteudo[:size], self._conteudo[size:]
+        return chunk
+
+
+class _FakeRequest:
+    """Request mínimo: só headers, como o teto por Content-Length usa."""
+
+    def __init__(self, content_length=None):
+        self.headers = (
+            {"content-length": str(content_length)}
+            if content_length is not None else {}
+        )
 
 
 def _fee():
@@ -110,14 +154,15 @@ def _arquivos_manual(upload_dir) -> list[str]:
     return sorted(os.listdir(sub)) if sub.is_dir() else []
 
 
-async def _registrar(db, cu, *, pdf=None, xml=None, **kw):
+async def _registrar(db, cu, *, pdf=None, xml=None, request=None, **kw):
     from app.routers.nfse import registrar_nfse_manual
 
     base = dict(numero="101", data_emissao="2026-07-10", valor=Decimal("500.00"),
                 descricao="Serviços advocatícios", chave_acesso=None,
                 competencia=None, client_id=None, fee_id=None)
     base.update(kw)
-    return await registrar_nfse_manual(pdf=pdf, xml=xml, db=db, cu=cu, **base)
+    return await registrar_nfse_manual(request=request, pdf=pdf, xml=xml,
+                                       db=db, cu=cu, **base)
 
 
 # ── Rotas do modo manual montadas em main ───────────────────────────────────────
@@ -210,6 +255,77 @@ async def test_registrar_manual_socio_ok(upload_dir, monkeypatch):
     assert resp["provider"] == "manual" and resp["status"] == "autorizada"
 
 
+# ── Idempotência do registro: número manual duplicado ───────────────────────────
+
+async def test_registrar_numero_manual_duplicado_409(upload_dir):
+    """Nota manual ATIVA com o mesmo número já escriturada → 409, nada persiste."""
+    existente = _nota_manual(numero="101")   # status autorizada (ativa)
+    db = _FakeDB(objs={("NotaFiscalServico", "nm1"): existente})
+    with pytest.raises(HTTPException) as exc:
+        await _registrar(db, _financeiro(), numero="101")
+    assert exc.value.status_code == 409
+    assert "nm1" in exc.value.detail        # aponta a nota conflitante
+    assert db.commits == 0
+    assert not any(isinstance(o, NotaFiscalServico) for o in db.added)
+
+
+async def test_registrar_numero_de_nota_cancelada_ok(upload_dir):
+    """Nota anterior com o mesmo número mas CANCELADA não bloqueia o registro."""
+    cancelada = _nota_manual(numero="101", status=NFSeStatus.cancelada.value)
+    db = _FakeDB(objs={("NotaFiscalServico", "nm1"): cancelada})
+    resp = await _registrar(db, _financeiro(), numero="101")
+    assert resp["status"] == NFSeStatus.autorizada.value
+    assert db.commits == 1
+
+
+async def test_registrar_numero_diferente_nao_conflita(upload_dir):
+    existente = _nota_manual(numero="101")
+    db = _FakeDB(objs={("NotaFiscalServico", "nm1"): existente})
+    resp = await _registrar(db, _financeiro(), numero="102")
+    assert resp["numero"] == "102" and db.commits == 1
+
+
+# ── /emitir (provedor) × nota manual ativa vinculada ao fee ─────────────────────
+
+async def test_emitir_provedor_409_com_nota_manual_ativa_do_fee(monkeypatch):
+    """Fee com nota manual ATIVA → 409 ANTES de reservar referência/tocar provedor."""
+    from app.routers.nfse import EmitirIn, emitir_nfse
+
+    s = get_settings()
+    monkeypatch.setattr(s, "NFSE_ENABLED", True)
+    monkeypatch.setattr(s, "NFSE_PROVEDOR", "nuvemfiscal")
+    manual = _nota_manual(fee_id="f1")
+    db = _FakeDB(objs={("Fee", "f1"): _fee(),
+                       ("NotaFiscalServico", "nm1"): manual})
+    with pytest.raises(HTTPException) as exc:
+        await emitir_nfse(EmitirIn(fee_id="f1"), db=db, cu=_socio())
+    assert exc.value.status_code == 409
+    assert "manual" in exc.value.detail
+    assert db.commits == 0      # nem chegou a reservar a referência
+    assert not any(isinstance(o, NotaFiscalServico) for o in db.added)
+
+
+async def test_emitir_provedor_ignora_nota_manual_cancelada_do_fee(monkeypatch):
+    """Nota manual CANCELADA do fee não bloqueia — segue ao fluxo do provedor."""
+    from app.routers.nfse import EmitirIn, emitir_nfse
+    from app.services.nfse import NFSeResultado
+
+    s = get_settings()
+    monkeypatch.setattr(s, "NFSE_ENABLED", True)
+    monkeypatch.setattr(s, "NFSE_PROVEDOR", "nuvemfiscal")
+
+    class _Prov:
+        async def emitir(self, pedido):
+            return NFSeResultado(status="processando", provider_id="nf_ok")
+
+    monkeypatch.setattr("app.services.nfse.get_provider", lambda: _Prov())
+    cancelada = _nota_manual(fee_id="f1", status=NFSeStatus.cancelada.value)
+    db = _FakeDB(objs={("Fee", "f1"): _fee(), ("Client", "c1"): _cliente(),
+                       ("NotaFiscalServico", "nm1"): cancelada})
+    resp = await emitir_nfse(EmitirIn(fee_id="f1"), db=db, cu=_socio())
+    assert resp["status"] == "processando" and resp["provider_id"] == "nf_ok"
+
+
 # ── Uploads inválidos: 4xx SEM criar arquivo ────────────────────────────────────
 
 async def test_pdf_sem_magic_bytes_415_sem_arquivo(upload_dir):
@@ -253,6 +369,39 @@ async def test_arquivo_excede_limite_413(upload_dir, monkeypatch):
                          pdf=_FakeUpload("nota.pdf", grande))
     assert exc.value.status_code == 413
     assert _arquivos_manual(upload_dir) == []
+
+
+async def test_content_length_acima_do_teto_413_cedo(upload_dir, monkeypatch):
+    """Header Content-Length acima do teto → 413 ANTES de ler qualquer upload."""
+    monkeypatch.setattr(get_settings(), "MAX_UPLOAD_MB", 1)
+    pdf = _FakeUpload("nota.pdf", PDF_MINIMO)   # pequeno — nem deve ser lido
+    with pytest.raises(HTTPException) as exc:
+        await _registrar(_FakeDB(), _financeiro(), pdf=pdf,
+                         request=_FakeRequest(content_length=2 * 1024 * 1024))
+    assert exc.value.status_code == 413
+    assert pdf.reads == 0                       # rejeição cedo, sem ler o stream
+    assert _arquivos_manual(upload_dir) == []
+
+
+async def test_content_length_mentiroso_stream_grande_413(upload_dir, monkeypatch):
+    """Content-Length pequeno (mentira) mas stream acima do teto → 413 na
+    leitura em CHUNKS (o teto não depende do header)."""
+    monkeypatch.setattr(get_settings(), "MAX_UPLOAD_MB", 1)
+    grande = PDF_MINIMO + b"0" * (1024 * 1024 + 10)
+    pdf = _FakeUpload("nota.pdf", grande)
+    with pytest.raises(HTTPException) as exc:
+        await _registrar(_FakeDB(), _financeiro(), pdf=pdf,
+                         request=_FakeRequest(content_length=1024))
+    assert exc.value.status_code == 413
+    assert pdf.reads >= 2                       # leitura foi mesmo em chunks
+    assert _arquivos_manual(upload_dir) == []
+
+
+async def test_content_length_dentro_do_teto_nao_bloqueia(upload_dir, monkeypatch):
+    monkeypatch.setattr(get_settings(), "MAX_UPLOAD_MB", 1)
+    resp = await _registrar(_FakeDB(), _financeiro(),
+                            request=_FakeRequest(content_length=512))
+    assert resp["status"] == NFSeStatus.autorizada.value
 
 
 async def test_pdf_valido_xml_invalido_nao_deixa_orfao(upload_dir):
@@ -339,6 +488,22 @@ async def test_download_pdf_manual_path_traversal_404(upload_dir):
     with pytest.raises(HTTPException) as exc:
         await baixar_pdf_nfse("nm1", db=db, cu=_financeiro())
     assert exc.value.status_code == 404
+
+
+async def test_download_pdf_fora_da_subpasta_nfse_404(upload_dir):
+    """rel_path DENTRO do UPLOAD_DIR mas fora de nfse/ (ex.: doc do GED
+    apontado por registro adulterado) → 404, mesmo com o arquivo existindo."""
+    from app.routers.nfse import baixar_pdf_nfse
+
+    (upload_dir / "ged").mkdir()
+    (upload_dir / "ged" / "doc.pdf").write_bytes(PDF_MINIMO)
+    nota = _nota_manual(pdf_path="ged/doc.pdf")
+    db = _FakeDB(objs={("NotaFiscalServico", "nm1"): nota})
+    with pytest.raises(HTTPException) as exc:
+        await baixar_pdf_nfse("nm1", db=db, cu=_financeiro())
+    assert exc.value.status_code == 404
+    # Sem audit de download quando nada foi servido.
+    assert not [o for o in db.added if o.__class__.__name__ == "AuditLog"]
 
 
 # ── Cancelamento lógico ─────────────────────────────────────────────────────────
@@ -468,3 +633,98 @@ async def test_descricao_em_branco_422(upload_dir):
     with pytest.raises(HTTPException) as exc:
         await _registrar(_FakeDB(), _financeiro(), descricao="   ")
     assert exc.value.status_code == 422
+
+
+def test_cancelar_motivo_acima_de_500_chars_rejeitado():
+    from pydantic import ValidationError
+
+    from app.routers.nfse import CancelarIn
+
+    with pytest.raises(ValidationError):
+        CancelarIn(motivo="x" * 501)    # max_length=500
+    assert CancelarIn(motivo="x" * 500).motivo == "x" * 500   # limite passa
+
+
+# ── GET /nfse/status: advogado+ OU allowlist financeira ─────────────────────────
+
+def test_status_usa_gate_proprio():
+    import inspect
+
+    from app.routers.nfse import _req_status_nfse, status_nfse
+
+    dep = inspect.signature(status_nfse).parameters["cu"].default.dependency
+    assert dep is _req_status_nfse
+
+
+def test_gate_status_permite_financeiro_e_advogado():
+    from app.routers.nfse import _req_status_nfse
+
+    for role in (UserRole.financeiro, UserRole.advogado, UserRole.socio,
+                 UserRole.admin, UserRole.superadmin):
+        cu = User(id="u1", role=role)
+        assert _req_status_nfse(cu) is cu, role
+
+
+def test_gate_status_403_perfis_baixos():
+    from app.routers.nfse import _req_status_nfse
+
+    for role in (UserRole.advogado_auxiliar, UserRole.estagiario,
+                 UserRole.secretaria, UserRole.cliente_externo):
+        with pytest.raises(HTTPException) as exc:
+            _req_status_nfse(User(id="u1", role=role))
+        assert exc.value.status_code == 403, role
+
+
+# ── HTTP real (TestClient): validações que acontecem ANTES do endpoint ──────────
+# max_length dos Form é aplicado pelo FastAPI na entrada — chamada direta ao
+# handler não a exercita. Mini-app só com o router (padrão de
+# test_bloco6_lixeira_restore): o AuthMiddleware do app principal 401aria
+# antes do dependency_overrides.
+
+@pytest.fixture()
+def client_http(upload_dir):
+    from fastapi import FastAPI
+    from fastapi.testclient import TestClient
+
+    from app.core.database import get_db
+    from app.core.rate_limit import _limpar_janelas
+    from app.core.security import get_current_user
+    from app.routers import nfse as nfse_router
+
+    _limpar_janelas()
+    app = FastAPI()
+    app.include_router(nfse_router.router)
+    db = _FakeDB()
+    app.dependency_overrides[get_db] = lambda: db
+    app.dependency_overrides[get_current_user] = _financeiro
+    try:
+        yield TestClient(app)
+    finally:
+        _limpar_janelas()
+
+
+_FORM_OK = {"numero": "101", "data_emissao": "2026-07-10",
+            "valor": "500.00", "descricao": "Serviços advocatícios"}
+
+
+def test_form_max_length_estourado_422(client_http):
+    for campo, valor in (("numero", "9" * 31),          # max_length=30
+                         ("chave_acesso", "A" * 61),    # max_length=60
+                         ("descricao", "x" * 2001)):    # max_length=2000
+        dados = dict(_FORM_OK, **{campo: valor})
+        r = client_http.post("/nfse/manual", data=dados)
+        assert r.status_code == 422, (campo, r.status_code, r.text[:200])
+
+
+def test_form_no_limite_maximo_passa(client_http):
+    dados = dict(_FORM_OK, numero="9" * 30, chave_acesso="A" * 60)
+    r = client_http.post("/nfse/manual", data=dados)
+    assert r.status_code == 200, r.text[:300]
+    assert r.json()["numero"] == "9" * 30
+
+
+def test_status_http_financeiro_200(client_http):
+    """Papel financeiro consegue o gate da UI (antes tomava 403 na hierarquia)."""
+    r = client_http.get("/nfse/status")
+    assert r.status_code == 200
+    assert r.json()["manual_disponivel"] is True
