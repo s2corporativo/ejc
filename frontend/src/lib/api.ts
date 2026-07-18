@@ -89,6 +89,11 @@ export interface ExtracaoPayload {
   identificacao_processual?: Record<string, unknown> | null;
   partes?: Record<string, unknown> | null;
   classificacao?: Record<string, unknown> | null;
+  prazos?: Array<Record<string, unknown>> | null;
+  origem_documento_id?: string | null;
+  /** Lote persistido pela Entrada Universal; nunca é enviado ao schema legado. */
+  batch_id?: string | null;
+  [key: string]: unknown;
 }
 
 export interface DocumentoIntakeResultPayload {
@@ -131,15 +136,33 @@ export interface AplicarExtracaoResult {
  * Materializa no caso os dados extraídos por IA de um documento.
  * `dryRun: true` → preview (nada é persistido; devolve o que SERIA aplicado).
  * `dryRun: false` (padrão) → aplica e persiste.
+ *
+ * Quando a extração nasceu na Entrada Universal, vincula antes todos os
+ * originais do lote ao caso. A operação de vínculo é idempotente.
  */
 export async function aplicarExtracao(
   caseId: string,
   extracao: ExtracaoPayload,
   { dryRun = false }: { dryRun?: boolean } = {},
 ): Promise<AplicarExtracaoResult> {
+  const batchId = extracao.batch_id;
+  if (typeof batchId === "string" && batchId) {
+    await api.post(`/entrada-universal/${batchId}/vincular-caso`, {
+      case_id: caseId,
+    });
+  }
+  // O endpoint legado usa um modelo Pydantic fechado. Metadados ricos da
+  // Entrada Universal ficam no lote e só os campos materializáveis seguem.
+  const payloadLegado = {
+    identificacao_processual: extracao.identificacao_processual ?? null,
+    partes: extracao.partes ?? null,
+    classificacao: extracao.classificacao ?? null,
+    prazos: extracao.prazos ?? null,
+    origem_documento_id: extracao.origem_documento_id ?? null,
+  };
   const { data } = await api.post<AplicarExtracaoResult>(
     `/cases/${caseId}/aplicar-extracao`,
-    extracao,
+    payloadLegado,
     { params: { dry_run: dryRun } },
   );
   return data;

@@ -10,6 +10,8 @@ import {
   PageHeader,
   PageTitle,
 } from "../components/ui";
+import DefesasRevisoesPanel from "../components/DefesasRevisoesPanel";
+import RevisaoBancariaDeterministica from "../components/RevisaoBancariaDeterministica";
 import {
   canRoleAccessPath,
   STAFF_ROUTES,
@@ -72,6 +74,15 @@ export default function Ferramentas() {
     [modulesByKey, user?.role],
   );
 
+  const podeUsarDefesas = [
+    "superadmin",
+    "admin",
+    "socio",
+    "advogado",
+    "advogado_auxiliar",
+    "estagiario",
+  ].includes(user?.role || "");
+
   return (
     <Page className="surface-soft min-h-full px-6 py-8">
       <div className="mx-auto max-w-7xl space-y-8">
@@ -88,6 +99,13 @@ export default function Ferramentas() {
             </PageDescription>
           </div>
         </PageHeader>
+
+        {podeUsarDefesas && (
+          <>
+            <DefesasRevisoesPanel />
+            <RevisaoBancariaDeterministica />
+          </>
+        )}
 
         {groups.map((group) => (
           <section key={group.title} className="space-y-3">
@@ -131,7 +149,7 @@ export default function Ferramentas() {
           </section>
         ))}
 
-        {groups.length === 0 && (
+        {groups.length === 0 && !podeUsarDefesas && (
           <Card className="flex flex-col items-center gap-3 p-10 text-center text-slate-500">
             <LayoutGrid className="h-8 w-8" />
             <p>Nenhuma ferramenta adicional disponível para o seu perfil.</p>
