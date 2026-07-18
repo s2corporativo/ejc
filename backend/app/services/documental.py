@@ -101,9 +101,11 @@ def _procuracao(
     # permite_substabelecimento / poderes_especiais). Os DEFAULTS abaixo sao
     # RETROCOMPATIVEIS: sem argumentos (fluxo de gerar_documentos_iniciais)
     # reproduzem o comportamento historico -> ad_judicia_et_extra COM
-    # substabelecimento. Ja o cadastro tem default conservador (ad_judicia sem
-    # substabelecimento), de modo que a minuta gerada a partir do registro nunca
-    # outorga substabelecimento/renuncia que o cliente nao concedeu.
+    # substabelecimento. Ja o cadastro Procuracao usa tipo_poderes default
+    # "ad_judicia" (sem os poderes especiais do art. 105 CPC); o substabelecimento
+    # segue o campo permite_substabelecimento (default True no model). Assim, a
+    # minuta gerada a partir do registro reflete EXATAMENTE o que foi cadastrado,
+    # nunca outorgando poderes especiais/renuncia que o cliente nao concedeu.
     #
     # Dados FIXOS do escritório vêm das settings (fonte única). Quando ainda não
     # preenchidos no .env, os helpers devolvem placeholder EXPLÍCITO e visível.
