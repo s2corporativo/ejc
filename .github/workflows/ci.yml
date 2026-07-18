@@ -10,10 +10,16 @@ name: CI
 # runner online os checks ficam "aguardando runner". Ver docs/RUNNER_SELFHOSTED.md.
 # (Para voltar à nuvem paga: runs-on: ubuntu-latest.)
 on:
-  # MANUAL apenas (economia de minutos do GitHub Actions em repositório privado).
-  # Os gatilhos automáticos push/pull_request foram removidos: a CI NÃO roda mais
-  # sozinha em cada push/PR. Para validar, rode em Actions → "CI" → "Run workflow"
-  # (workflow_dispatch), ou via API/gh (`gh workflow run ci.yml --ref <branch>`).
+  # CI automática REATIVADA (2026-07-18): o runner é SELF-HOSTED no VPS
+  # (ejc-vps), então rodar em cada PR e no push da main custa 0 minutos de
+  # Actions — o motivo original de deixar manual (economia de minutos) não se
+  # aplica mais, e o próprio header deste arquivo já visa "manter os checks de PR".
+  # ⚠️ REQUER o runner self-hosted 'ejc-vps' registrado e ONLINE
+  # (docs/RUNNER_SELFHOSTED.md / scripts/setup-selfhosted-runner.sh); sem runner,
+  # os checks ficam "aguardando runner". workflow_dispatch segue disponível.
+  pull_request:
+  push:
+    branches: [main]
   workflow_dispatch:
 
 permissions:
