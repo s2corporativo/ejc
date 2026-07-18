@@ -472,6 +472,17 @@ class Settings(BaseSettings):
     PECAS_RAG_MODELOS_ENABLED: bool = True
     PECAS_RAG_MODELOS_TOPK: int = 3
 
+    # ── Laço de AUTO-CRÍTICA na geração de peças (P2 — auditoria IA) ──────
+    # True = após a redação final do pipeline de peças (Etapa 7), a IA
+    # Crítica/Adversarial (Modo Duas IAs) avalia a minuta e, havendo
+    # apontamentos ACIONÁVEIS, UMA rodada extra de revisão devolve a crítica
+    # ao modelo redator (task_type="elaboracao_peca", base anti-alucinação;
+    # a crítica entra DELIMITADA como DADO — nunca instrução de sistema).
+    # A versão revisada também passa pelo gate de citações e permanece
+    # rascunho HITL. Opt-in e fail-safe: default False = pipeline IDÊNTICO ao
+    # atual; qualquer falha na crítica/revisão entrega a versão original.
+    PECAS_AUTOCRITICA_ENABLED: bool = False
+
     # ── Governança/curadoria na RECUPERAÇÃO RAG (gate fail-closed) ───────
     # Auditoria RAG: os campos de curadoria (confidence_level/rag_status) vivem
     # em knowledge_docs.extra (JSONB) mas NÃO eram usados no WHERE das buscas.
