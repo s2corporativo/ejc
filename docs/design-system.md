@@ -111,7 +111,7 @@ Neutros do dia a dia: escala `slate` nativa do Tailwind (texto `slate-950/900/60
 | `text-2xs` | 0.65rem / 1rem | Micro-labels (badges, eyebrow) |
 | `font-mono` | — | **Mono** — nº CNJ, CPF/CNPJ, valores, texto a digitar em confirmações |
 
-Pesos disponíveis: `light 300`, `normal 400`, `medium 500`, `semibold 600` (não usar `bold` 700+, não carregado). Tracking: `tightest`→`widest` (eyebrow usa `tracking-[0.22em]` via classe `.eyebrow`).
+Pesos disponíveis: `light 300`, `normal 400`, `medium 500`, `semibold 600`, `bold 700` — a Inter variável carregada em `fonts.css` cobre 300–700, e 700 é o peso padrão de botões e títulos no idioma atual (acima de 700, ex.: `extrabold`, não carregado). Tracking: `tightest`→`widest` (eyebrow usa `tracking-[0.22em]` via classe `.eyebrow`).
 
 ---
 
