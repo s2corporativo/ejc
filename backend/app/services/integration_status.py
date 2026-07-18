@@ -127,6 +127,7 @@ def build_integration_status(settings: Settings) -> dict[str, Any]:
             enabled=settings.DATAJUD_ENABLED,
             configured=bool(settings.DATAJUD_API_KEY),
             ready_detail="Consulta processual habilitada e chave presente no ambiente.",
+            mode="APIKey pública rotativa (CNJ)",
         ),
         _status(
             key="djen",
@@ -160,6 +161,7 @@ def build_integration_status(settings: Settings) -> dict[str, Any]:
             enabled=settings.PNCP_ENABLED,
             configured=True,
             ready_detail="Consulta pública habilitada; API sem chave/segredo.",
+            mode="consulta anônima; manutenção não implementada",
         ),
         _status(
             key="indices_bcb",
@@ -176,6 +178,19 @@ def build_integration_status(settings: Settings) -> dict[str, Any]:
             enabled=settings.FERIADOS_BRASILAPI_ENABLED,
             configured=True,
             ready_detail="Sync de feriados nacionais habilitado; API pública sem chave.",
+            mode="consulta anônima",
+        ),
+        _status(
+            key="cadastros_publicos",
+            label="CEP/CNPJ públicos",
+            group="Jurídico",
+            enabled=True,
+            configured=True,
+            ready_detail=(
+                "Fallback autenticado no EJC: BrasilAPI/ViaCEP para CEP e "
+                "OpenCNPJ/BrasilAPI/ReceitaWS pública para CNPJ."
+            ),
+            mode="consulta anônima com rate limit; sem Conecta gov.br",
         ),
         _status(
             key="infosimples",
