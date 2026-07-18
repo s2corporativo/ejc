@@ -81,15 +81,15 @@ _FILTRO_VIGENTE_RAG = "AND (kd.vigente = TRUE OR :incl_hist)"
 # Os campos de curadoria (confidence_level/rag_status) vivem em
 # knowledge_docs.extra (JSONB). Este gate FAIL-CLOSED é aplicado a TODAS as
 # consultas de recuperação: um documento explicitamente bloqueado/recusado/
-# reprovado/pendente NUNCA entra no prompt. NÃO exige aprovação por padrão
-# (não esvazia o acervo legado nunca curado) — ver RAG_EXIGIR_APROVADO.
+# reprovado/pendente NUNCA entra no prompt. Por padrão, exige aprovação
+# explícita; o acervo legado sem curadoria fica em quarentena.
 _FILTRO_GATE_RAG = (
     "AND NOT ("
     "COALESCE(kd.extra->>'confidence_level','') = 'bloqueado' "
     "OR COALESCE(kd.extra->>'rag_status','') IN "
     "('bloqueado','recusado','reprovado','pendente'))"
 )
-# Regime estrito opcional: quando RAG_EXIGIR_APROVADO=true, só documentos
+# Regime estrito (default): quando RAG_EXIGIR_APROVADO=true, só documentos
 # explicitamente aprovados entram na recuperação.
 _FILTRO_APROVADO_RAG = "AND COALESCE(kd.extra->>'rag_status','') = 'aprovado'"
 # Quarentena de súmulas: o seed foi reconstruído e cada verbete reconferido
