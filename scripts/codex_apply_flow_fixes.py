@@ -9,6 +9,7 @@ from __future__ import annotations
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
+# Revisão 2: novo push intencional para acionar o workflow já registrado.
 
 
 def replace_once(path: str, old: str, new: str) -> bool:
