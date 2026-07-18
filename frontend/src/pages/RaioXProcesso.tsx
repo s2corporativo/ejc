@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { Link, useSearchParams } from "react-router-dom";
 import {
+  AlertTriangle,
   Archive,
   ArrowRight,
   CheckCircle2,
@@ -13,13 +14,19 @@ import {
   Plus,
   RefreshCw,
   ScanSearch,
+  Scale,
   ShieldCheck,
   Sparkles,
   Trash2,
   UploadCloud,
   X,
 } from "lucide-react";
-import api from "../lib/api";
+import api, {
+  analiseAdvogadoContextual,
+  analiseAdvogadoPorAnalise,
+  type AnaliseAdvogadoResult,
+} from "../lib/api";
+import Markdown from "../components/Markdown";
 import { useAuth } from "../stores/auth";
 import {
   AIFactualityLegend,
@@ -279,6 +286,10 @@ export default function RaioXProcesso() {
   const [actionResult, setActionResult] = useState("");
   const [runningAction, setRunningAction] = useState<string | null>(null);
 
+  // Análise "advogado sênior" (IA agêntica) — operação cara, SOMENTE leitura.
+  const [advResult, setAdvResult] = useState<AnaliseAdvogadoResult | null>(null);
+  const [advLoading, setAdvLoading] = useState(false);
+
   const [conversion, setConversion] = useState<ConversionPreview | null>(null);
   const [showConversion, setShowConversion] = useState(false);
   const [existingClientId, setExistingClientId] = useState("");
@@ -341,6 +352,7 @@ export default function RaioXProcesso() {
   }, [contextualCaseId, loadList]);
 
   useEffect(() => {
+    setAdvResult(null);
     const identification = selected?.relatorio?.identificacao || {};
     setReview({
       numero_processo: String(selected?.numero_processo || identification.numero_processo || ""),
@@ -581,6 +593,31 @@ export default function RaioXProcesso() {
       setError(err?.response?.data?.detail || "A ação com IA não pôde ser executada.");
     } finally {
       setRunningAction(null);
+    }
+  };
+
+  // Análise do advogado (IA): contextual (caso) ou por documentos (analise_id).
+  // Roles idênticos a canConvert (backend _permitido_ia_advogado exclui estagiário).
+  const runAdvogadoIA = async () => {
+    if (!report || advLoading) return;
+    setAdvLoading(true);
+    setAdvResult(null);
+    setError(null);
+    try {
+      const data = contextualCaseId
+        ? await analiseAdvogadoContextual(contextualCaseId)
+        : selected
+          ? await analiseAdvogadoPorAnalise(selected.id)
+          : null;
+      if (data) setAdvResult(data);
+    } catch (err: any) {
+      // 409 (análise preliminar sem caso vinculado), 403 (perfil), 429 etc.
+      setError(
+        err?.response?.data?.detail ||
+          "Não foi possível gerar a análise do advogado (IA).",
+      );
+    } finally {
+      setAdvLoading(false);
     }
   };
 
@@ -903,6 +940,80 @@ export default function RaioXProcesso() {
                   </div>
                 )}
               </SectionCard>
+
+              {canConvert && (
+                <SectionCard
+                  title="Análise do advogado sênior (IA)"
+                  subtitle="Parecer estratégico FIRAC movido pelo agente (dossiê + precedentes). Somente leitura; nada é alterado no caso. Operação cara — rascunho sujeito a revisão humana (OAB)."
+                  actions={
+                    <Button variant="ai" onClick={() => void runAdvogadoIA()} disabled={advLoading}>
+                      {advLoading ? <Loader2 className="h-4 w-4 animate-spin" /> : <Scale className="h-4 w-4" />}
+                      Análise do advogado (IA)
+                    </Button>
+                  }
+                >
+                  {!advResult && !advLoading && (
+                    <p className="text-sm text-slate-500">
+                      Gere um parecer do caso como faria um advogado sênior antes de definir a estratégia.
+                    </p>
+                  )}
+                  {advLoading && (
+                    <div className="flex items-center gap-2 text-sm text-slate-500">
+                      <Loader2 className="h-4 w-4 animate-spin" /> O agente está analisando o caso… pode levar alguns instantes.
+                    </div>
+                  )}
+                  {advResult && advResult.status === "indisponivel" && (
+                    <div className="flex items-start gap-2 rounded-xl border border-amber-200 bg-amber-50 p-3 text-sm text-amber-800">
+                      <ShieldCheck className="mt-0.5 h-4 w-4 shrink-0" />
+                      Recurso de IA do agente desativado no servidor (AI_AGENT_ENABLED). Solicite a ativação à administração.
+                    </div>
+                  )}
+                  {advResult && advResult.status !== "ok" && advResult.status !== "indisponivel" && (
+                    <div className="flex items-start gap-2 rounded-xl border border-red-200 bg-red-50 p-3 text-sm text-red-700">
+                      <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0" />
+                      Não foi possível concluir a análise{advResult.detalhe ? ` (${advResult.detalhe})` : ""}.
+                    </div>
+                  )}
+                  {advResult && advResult.status === "ok" && advResult.analise && (
+                    <div className="space-y-3">
+                      <div className="flex flex-wrap items-center gap-2">
+                        <Badge tone="amber">RASCUNHO</Badge>
+                        {advResult.revisao_obrigatoria && <Badge tone="orange">Revisão humana obrigatória</Badge>}
+                        {typeof advResult.custo_estimado_brl === "number" && advResult.custo_estimado_brl > 0 && (
+                          <Badge tone="slate">R$ {advResult.custo_estimado_brl.toFixed(4)}</Badge>
+                        )}
+                        {advResult.critica_adversarial?.disponivel &&
+                          typeof advResult.critica_adversarial.nota_robustez === "number" && (
+                            <Badge tone="blue">Robustez (2ª IA): {advResult.critica_adversarial.nota_robustez}</Badge>
+                          )}
+                      </div>
+                      <Markdown
+                        source={advResult.analise}
+                        className="max-h-[32rem] overflow-auto rounded-xl bg-slate-50 p-4 text-sm leading-7 text-slate-800 dark:bg-white/[0.04] dark:text-slate-200"
+                      />
+                      {!!advResult.alertas?.length && (
+                        <ul className="space-y-1 text-xs text-warn-700">
+                          {advResult.alertas.map((a, index) => (
+                            <li key={index} className="flex items-start gap-1.5">
+                              <AlertTriangle className="mt-0.5 h-3 w-3 shrink-0" /> {a}
+                            </li>
+                          ))}
+                        </ul>
+                      )}
+                      {advResult.critica_adversarial?.disponivel && advResult.critica_adversarial.relatorio && (
+                        <details className="rounded-xl border border-slate-200 p-3 dark:border-white/10">
+                          <summary className="cursor-pointer text-sm font-medium text-slate-700 dark:text-slate-200">
+                            Crítica adversarial (2ª IA)
+                          </summary>
+                          <p className="mt-2 whitespace-pre-wrap text-xs leading-6 text-slate-600 dark:text-slate-300">
+                            {advResult.critica_adversarial.relatorio}
+                          </p>
+                        </details>
+                      )}
+                    </div>
+                  )}
+                </SectionCard>
+              )}
             </div>
 
             <div className="space-y-5">
