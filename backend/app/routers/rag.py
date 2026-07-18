@@ -312,7 +312,7 @@ async def buscar(
             from sqlalchemy import text as sqltext
             vec = "[" + ",".join(f"{x:.6f}" for x in vetores[0]) + "]"
             sql = """
-                SELECT c.id AS chunk_id, c.conteudo, d.titulo, d.categoria,
+                SELECT c.id AS chunk_id, c.doc_id AS doc_id, c.conteudo, d.titulo, d.categoria,
                        COALESCE(d.extra->>'confidence_level', d.extra->>'confianca', 'media') AS confianca,
                        1 - (c.embedding <=> CAST(:v AS vector)) AS score
                 FROM knowledge_chunks c

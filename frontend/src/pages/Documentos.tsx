@@ -4,7 +4,9 @@ import {
   Upload,
   Download,
   Search,
+  Link2,
   Lock,
+  Pencil,
   Sparkles,
   Eye,
   Trash2,
@@ -48,6 +50,28 @@ const CONF_LABEL: Record<string, string> = {
   media: "Confiança média",
   baixa: "Baixa confiança",
 };
+
+// Espelho de DocConfidencialidade do backend (mesmos valores do upload).
+const CONF_OPCOES: { k: string; l: string }[] = [
+  { k: "normal", l: "Normal" },
+  { k: "interno", l: "Interno" },
+  { k: "restrito", l: "Restrito (cofre — sócios)" },
+  { k: "confidencial", l: "Confidencial (cofre)" },
+  { k: "segredo_justica", l: "Segredo de justiça (cofre)" },
+];
+
+// Espelho de TIPOS_LEGADOS do backend: aceitos no PATCH além do master.
+const TIPOS_LEGADOS = [
+  "procuracao",
+  "contrato",
+  "decisao",
+  "peticao",
+  "prova",
+  "outro",
+];
+
+/** Item de GET /documents/tipos (master de tipos ativos). */
+type TipoDoc = { tipo_key: string; nome: string };
 
 // Espelho de EXTENSOES_PERMITIDAS do backend (documents.py).
 const EXTS_UPLOAD = [
@@ -108,6 +132,26 @@ export default function Documentos() {
   const [clientes, setClientes] = useState<any[]>([]);
   const [clienteFiltro, setClienteFiltro] = useState("");
 
+  // Filtros novos do GET /documents/ (tipo, confidencialidade, datas,
+  // classificação pendente) — todos aditivos no backend.
+  const [tipos, setTipos] = useState<TipoDoc[]>([]);
+  const [tipoFiltro, setTipoFiltro] = useState("");
+  const [confFiltro, setConfFiltro] = useState("");
+  const [dataInicio, setDataInicio] = useState("");
+  const [dataFim, setDataFim] = useState("");
+  const [soPendentes, setSoPendentes] = useState(false);
+
+  // Edição de metadados por linha (PATCH /documents/{id}).
+  const [editDoc, setEditDoc] = useState<any | null>(null);
+  const [editForm, setEditForm] = useState<any>({});
+  const [salvandoEdit, setSalvandoEdit] = useState(false);
+
+  // Ações em lote via PATCH (mesmo padrão sequencial do baixar/excluir).
+  const [loteConfModal, setLoteConfModal] = useState(false);
+  const [loteConf, setLoteConf] = useState("normal");
+  const [loteCasoModal, setLoteCasoModal] = useState(false);
+  const [loteCaso, setLoteCaso] = useState("");
+
   // Pré-visualização sem download (blob de GET /{id}/download).
   const [preview, setPreview] = useState<{ doc: any; kind: "pdf" | "img" } | null>(
     null,
@@ -117,7 +161,9 @@ export default function Documentos() {
 
   // Seleção múltipla para ações em lote (baixar / excluir em sequência).
   const [sel, setSel] = useState<Set<string>>(new Set());
-  const [loteBusy, setLoteBusy] = useState<"download" | "delete" | null>(null);
+  const [loteBusy, setLoteBusy] = useState<
+    "download" | "delete" | "conf" | "vincular" | null
+  >(null);
 
   // Classificação de tipo por IA (sugerir → aplicar), confirmação humana obrigatória.
   const [classDoc, setClassDoc] = useState<any | null>(null);
@@ -143,6 +189,12 @@ export default function Documentos() {
           search: search || undefined,
           case_id: casoFiltro,
           client_id: clienteFiltro || undefined,
+          tipo: tipoFiltro || undefined,
+          confidencialidade: confFiltro || undefined,
+          data_inicio: dataInicio || undefined,
+          data_fim: dataFim || undefined,
+          // Só envia quando marcado — false filtraria "somente classificados".
+          classificacao_pendente: soPendentes || undefined,
           page_size: 50,
         },
       })
@@ -169,11 +221,47 @@ export default function Documentos() {
       .get("/clients/", { params: { page_size: 200 } })
       .then((r) => setClientes(asList(r.data)))
       .catch(() => {});
+    // Tipos do master (mesma fonte da validação do PATCH) + legados, para o
+    // filtro por tipo e para o modal de edição.
+    api
+      .get("/documents/tipos")
+      .then((r) => {
+        const master: TipoDoc[] = Array.isArray(r.data?.data)
+          ? r.data.data
+          : [];
+        const chaves = new Set(master.map((t) => t.tipo_key));
+        setTipos([
+          ...master,
+          ...TIPOS_LEGADOS.filter((k) => !chaves.has(k)).map((k) => ({
+            tipo_key: k,
+            nome: k.replace(/_/g, " "),
+          })),
+        ]);
+      })
+      .catch(() => {
+        // Fallback aos legados: filtro/edição continuam utilizáveis.
+        setTipos(
+          TIPOS_LEGADOS.map((k) => ({
+            tipo_key: k,
+            nome: k.replace(/_/g, " "),
+          })),
+        );
+        toast.error("Falha ao carregar os tipos de documento");
+      });
   }, []);
   useEffect(() => {
     const t = setTimeout(load, 350);
     return () => clearTimeout(t);
-  }, [search, casoFiltro, clienteFiltro]);
+  }, [
+    search,
+    casoFiltro,
+    clienteFiltro,
+    tipoFiltro,
+    confFiltro,
+    dataInicio,
+    dataFim,
+    soPendentes,
+  ]);
 
   // ── Upload múltiplo ────────────────────────────────────────────────────────
   const adicionarArquivos = (lista: FileList | File[] | null) => {
@@ -397,6 +485,120 @@ export default function Documentos() {
     }
   };
 
+  // ── Edição de metadados (PATCH /documents/{id}) ───────────────────────────
+  const patchErroMsg = (e: any) => {
+    const st = e.response?.status;
+    return (
+      e.response?.data?.detail ||
+      (st === 403
+        ? "Sem permissão: mover para o cofre (restrito+) é restrito a sócios."
+        : st === 400
+          ? "Vínculo negado: o caso pertence a outro cliente."
+          : "Falha ao atualizar o documento")
+    );
+  };
+
+  const abrirEdicao = (d: any) => {
+    setEditDoc(d);
+    setEditForm({
+      titulo: d.titulo || "",
+      tipo: d.tipo || "",
+      confidencialidade: d.confidencialidade,
+      case_id: d.case_id || "",
+    });
+  };
+
+  // Aplica na linha da lista os metadados retornados pelo PATCH.
+  const aplicarPatchNaLista = (docId: string, r: any) =>
+    setData((prev: any) =>
+      prev
+        ? {
+            ...prev,
+            data: (Array.isArray(prev.data) ? prev.data : []).map((x: any) =>
+              x.id === docId
+                ? {
+                    ...x,
+                    titulo: r.titulo,
+                    tipo: r.tipo,
+                    confidencialidade: r.confidencialidade,
+                    case_id: r.case_id,
+                  }
+                : x,
+            ),
+          }
+        : prev,
+    );
+
+  const salvarEdicao = async () => {
+    if (!editDoc) return;
+    if (!String(editForm.titulo || "").trim()) {
+      toast.error("Título não pode ser vazio");
+      return;
+    }
+    // Envia apenas o que mudou (PATCH parcial).
+    const payload: Record<string, unknown> = {};
+    if (editForm.titulo.trim() !== editDoc.titulo)
+      payload.titulo = editForm.titulo.trim();
+    if ((editForm.tipo || null) !== (editDoc.tipo || null))
+      payload.tipo = editForm.tipo || null;
+    if (editForm.confidencialidade !== editDoc.confidencialidade)
+      payload.confidencialidade = editForm.confidencialidade;
+    if ((editForm.case_id || null) !== (editDoc.case_id || null))
+      payload.case_id = editForm.case_id || null;
+    if (Object.keys(payload).length === 0) {
+      toast.info("Nenhuma alteração para salvar");
+      setEditDoc(null);
+      return;
+    }
+    setSalvandoEdit(true);
+    try {
+      const r = await api.patch(`/documents/${editDoc.id}`, payload);
+      aplicarPatchNaLista(editDoc.id, r.data);
+      toast.success("Metadados atualizados");
+      setEditDoc(null);
+    } catch (e: any) {
+      toast.error(patchErroMsg(e));
+    } finally {
+      setSalvandoEdit(false);
+    }
+  };
+
+  // ── Lote via PATCH: alterar confidencialidade / vincular ao caso ──────────
+  // Mesmo padrão do baixar/excluir em lote: sequencial, resumo de falhas por
+  // título. Erros individuais não interrompem os demais itens.
+  const patchLote = async (
+    payload: Record<string, unknown>,
+    acao: "conf" | "vincular",
+  ) => {
+    if (selDocs.length === 0) return;
+    setLoteBusy(acao);
+    let ok = 0;
+    const falhas: string[] = [];
+    let ultimoErro = "";
+    for (const d of selDocs) {
+      try {
+        await api.patch(`/documents/${d.id}`, payload);
+        ok += 1;
+      } catch (e: any) {
+        falhas.push(d.titulo);
+        ultimoErro = patchErroMsg(e);
+      }
+    }
+    setLoteBusy(null);
+    setLoteConfModal(false);
+    setLoteCasoModal(false);
+    load();
+    if (falhas.length === 0) {
+      toast.success(`${ok} documento(s) atualizado(s)`);
+    } else {
+      toast.error(
+        `${ok} atualizado(s), ${falhas.length} falhou(aram): ${falhas
+          .slice(0, 3)
+          .join(", ")}${falhas.length > 3 ? "…" : ""} — ${ultimoErro}`,
+      );
+    }
+  };
+
   // ── Classificação IA (HITL — inalterado) ──────────────────────────────────
   // Abre o modal e busca a SUGESTÃO de tipo (aplicar=false — nunca grava aqui).
   const classificar = async (doc: any) => {
@@ -510,6 +712,60 @@ export default function Documentos() {
             ))}
           </select>
         )}
+        <select
+          className="input w-auto max-w-[200px] text-sm"
+          value={tipoFiltro}
+          onChange={(e) => setTipoFiltro(e.target.value)}
+          title="Filtrar por tipo"
+        >
+          <option value="">Todos os tipos</option>
+          {tipos.map((t) => (
+            <option key={t.tipo_key} value={t.tipo_key}>
+              {t.nome}
+            </option>
+          ))}
+        </select>
+        <select
+          className="input w-auto max-w-[220px] text-sm"
+          value={confFiltro}
+          onChange={(e) => setConfFiltro(e.target.value)}
+          title="Filtrar por confidencialidade"
+        >
+          <option value="">Qualquer confidencialidade</option>
+          {CONF_OPCOES.map((c) => (
+            <option key={c.k} value={c.k}>
+              {c.l}
+            </option>
+          ))}
+        </select>
+        <div
+          className="flex items-center gap-1 text-xs text-slate-500"
+          title="Filtrar por período de envio"
+        >
+          <input
+            type="date"
+            className="input w-auto py-1.5 text-sm"
+            value={dataInicio}
+            aria-label="Enviado a partir de"
+            onChange={(e) => setDataInicio(e.target.value)}
+          />
+          <span>até</span>
+          <input
+            type="date"
+            className="input w-auto py-1.5 text-sm"
+            value={dataFim}
+            aria-label="Enviado até"
+            onChange={(e) => setDataFim(e.target.value)}
+          />
+        </div>
+        <label className="flex cursor-pointer items-center gap-1.5 text-sm text-slate-600">
+          <input
+            type="checkbox"
+            checked={soPendentes}
+            onChange={(e) => setSoPendentes(e.target.checked)}
+          />
+          Só classificação pendente
+        </label>
         {casoFiltro && (
           <CaseFilterChip nome={casoFiltroNome} onRemove={removerFiltro} />
         )}
@@ -527,6 +783,28 @@ export default function Documentos() {
           >
             <Download size={14} />
             {loteBusy === "download" ? "Baixando…" : "Baixar"}
+          </button>
+          <button
+            className="btn-ghost px-2 py-1"
+            disabled={loteBusy !== null}
+            onClick={() => {
+              setLoteConf("normal");
+              setLoteConfModal(true);
+            }}
+          >
+            <Lock size={14} />
+            {loteBusy === "conf" ? "Alterando…" : "Alterar confidencialidade"}
+          </button>
+          <button
+            className="btn-ghost px-2 py-1"
+            disabled={loteBusy !== null}
+            onClick={() => {
+              setLoteCaso("");
+              setLoteCasoModal(true);
+            }}
+          >
+            <Link2 size={14} />
+            {loteBusy === "vincular" ? "Vinculando…" : "Vincular ao caso"}
           </button>
           <button
             className="btn-ghost px-2 py-1 text-danger-500"
@@ -633,6 +911,13 @@ export default function Documentos() {
                           <Eye size={15} />
                         </button>
                       )}
+                      <button
+                        className="btn-ghost px-2 py-1"
+                        title="Editar metadados"
+                        onClick={() => abrirEdicao(d)}
+                      >
+                        <Pencil size={15} />
+                      </button>
                       <button
                         className="btn-ghost px-2 py-1"
                         title="Classificar tipo (IA)"
@@ -826,6 +1111,204 @@ export default function Documentos() {
                 ? `Enviar ${pendentes.length} arquivos`
                 : "Enviar"}
           </button>
+        </div>
+      </Modal>
+
+      {/* Edição de metadados por linha — PATCH /documents/{id} */}
+      <Modal
+        open={!!editDoc}
+        onClose={() => {
+          if (!salvandoEdit) setEditDoc(null);
+        }}
+        title="Editar documento"
+        footer={
+          <>
+            <button
+              className="btn-ghost"
+              disabled={salvandoEdit}
+              onClick={() => setEditDoc(null)}
+            >
+              Cancelar
+            </button>
+            <button
+              className="btn-primary"
+              disabled={salvandoEdit}
+              onClick={salvarEdicao}
+            >
+              {salvandoEdit ? "Salvando..." : "Salvar"}
+            </button>
+          </>
+        }
+      >
+        {editDoc && (
+          <div className="space-y-4">
+            <div>
+              <label className="label">Título *</label>
+              <input
+                className="input"
+                value={editForm.titulo || ""}
+                onChange={(e) =>
+                  setEditForm({ ...editForm, titulo: e.target.value })
+                }
+              />
+            </div>
+            <div>
+              <label className="label">Tipo</label>
+              <select
+                className="input"
+                value={editForm.tipo || ""}
+                onChange={(e) =>
+                  setEditForm({ ...editForm, tipo: e.target.value })
+                }
+              >
+                <option value="">— Sem tipo (classificação pendente) —</option>
+                {tipos.map((t) => (
+                  <option key={t.tipo_key} value={t.tipo_key}>
+                    {t.nome}
+                  </option>
+                ))}
+              </select>
+            </div>
+            <div>
+              <label className="label">Confidencialidade</label>
+              <select
+                className="input"
+                value={editForm.confidencialidade || "normal"}
+                onChange={(e) =>
+                  setEditForm({ ...editForm, confidencialidade: e.target.value })
+                }
+              >
+                {CONF_OPCOES.map((c) => (
+                  <option key={c.k} value={c.k}>
+                    {c.l}
+                  </option>
+                ))}
+              </select>
+              <p className="mt-1 text-xs text-slate-400">
+                Mover para restrito+ (cofre) exige perfil de sócio.
+              </p>
+            </div>
+            <div>
+              <label className="label">Caso vinculado</label>
+              <select
+                className="input"
+                value={editForm.case_id || ""}
+                onChange={(e) =>
+                  setEditForm({ ...editForm, case_id: e.target.value })
+                }
+              >
+                <option value="">— Sem vínculo —</option>
+                {casos.map((c) => (
+                  <option key={c.id} value={c.id}>
+                    {(c.numero_interno ? c.numero_interno + " — " : "") +
+                      (c.titulo || "Caso")}
+                  </option>
+                ))}
+              </select>
+              <p className="mt-1 text-xs text-slate-400">
+                Documento de um cliente só pode apontar para caso do mesmo
+                cliente.
+              </p>
+            </div>
+          </div>
+        )}
+      </Modal>
+
+      {/* Lote: alterar confidencialidade */}
+      <Modal
+        open={loteConfModal}
+        onClose={() => {
+          if (loteBusy === null) setLoteConfModal(false);
+        }}
+        title={`Alterar confidencialidade — ${selDocs.length} documento(s)`}
+        footer={
+          <>
+            <button
+              className="btn-ghost"
+              disabled={loteBusy !== null}
+              onClick={() => setLoteConfModal(false)}
+            >
+              Cancelar
+            </button>
+            <button
+              className="btn-primary"
+              disabled={loteBusy !== null}
+              onClick={() => patchLote({ confidencialidade: loteConf }, "conf")}
+            >
+              {loteBusy === "conf" ? "Aplicando..." : "Aplicar a todos"}
+            </button>
+          </>
+        }
+      >
+        <div className="space-y-3">
+          <div>
+            <label className="label">Novo nível</label>
+            <select
+              className="input"
+              value={loteConf}
+              onChange={(e) => setLoteConf(e.target.value)}
+            >
+              {CONF_OPCOES.map((c) => (
+                <option key={c.k} value={c.k}>
+                  {c.l}
+                </option>
+              ))}
+            </select>
+          </div>
+          <p className="text-xs text-slate-400">
+            Aplicado item a item — mover para restrito+ (cofre) exige perfil de
+            sócio; falhas individuais aparecem no resumo.
+          </p>
+        </div>
+      </Modal>
+
+      {/* Lote: vincular ao caso */}
+      <Modal
+        open={loteCasoModal}
+        onClose={() => {
+          if (loteBusy === null) setLoteCasoModal(false);
+        }}
+        title={`Vincular ao caso — ${selDocs.length} documento(s)`}
+        footer={
+          <>
+            <button
+              className="btn-ghost"
+              disabled={loteBusy !== null}
+              onClick={() => setLoteCasoModal(false)}
+            >
+              Cancelar
+            </button>
+            <button
+              className="btn-primary"
+              disabled={loteBusy !== null || !loteCaso}
+              onClick={() => patchLote({ case_id: loteCaso }, "vincular")}
+            >
+              {loteBusy === "vincular" ? "Vinculando..." : "Vincular todos"}
+            </button>
+          </>
+        }
+      >
+        <div className="space-y-3">
+          <div>
+            <label className="label">Caso de destino</label>
+            <select
+              className="input"
+              value={loteCaso}
+              onChange={(e) => setLoteCaso(e.target.value)}
+            >
+              <option value="">Selecione...</option>
+              {casos.map((c) => (
+                <option key={c.id} value={c.id}>
+                  {(c.numero_interno ? c.numero_interno + " — " : "") +
+                    (c.titulo || "Caso")}
+                </option>
+              ))}
+            </select>
+          </div>
+          <p className="text-xs text-slate-400">
+            Documento de um cliente só pode apontar para caso do mesmo cliente
+            (itens de outros clientes falham no resumo, sem afetar os demais).
+          </p>
         </div>
       </Modal>
 

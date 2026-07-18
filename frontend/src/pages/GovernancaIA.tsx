@@ -1,4 +1,5 @@
 import { useEffect, useState } from "react";
+import { useSearchParams } from "react-router-dom";
 import { toast } from "../components/Toast";
 import {
   BrainCircuit,
@@ -41,8 +42,24 @@ function Kpi({
   );
 }
 
+const TABS_VALIDAS: Tab[] = [
+  "visao",
+  "curadoria",
+  "mgjec",
+  "prompts",
+  "fontes",
+  "guardrails",
+];
+
 export default function GovernancaIA() {
-  const [tab, setTab] = useState<Tab>("visao");
+  // Deep link (ex.: Knowledge Hub → "Enviar para curadoria"):
+  // ?tab=curadoria abre direto a aba e ?doc_id= destaca o documento na lista.
+  const [searchParams] = useSearchParams();
+  const tabParam = searchParams.get("tab");
+  const docDestaque = searchParams.get("doc_id");
+  const [tab, setTab] = useState<Tab>(
+    TABS_VALIDAS.includes(tabParam as Tab) ? (tabParam as Tab) : "visao",
+  );
   const [dash, setDash] = useState<any>(null);
   const [docs, setDocs] = useState<any[]>([]);
   const [prompts, setPrompts] = useState<any[]>([]);
@@ -322,6 +339,12 @@ export default function GovernancaIA() {
 
       {tab === "curadoria" && (
         <div className="card overflow-x-auto">
+          {docDestaque && !docs.some((d) => d.id === docDestaque) && (
+            <p className="px-4 py-3 text-xs text-amber-700 bg-amber-50 border-b border-amber-100">
+              O documento aberto a partir do Knowledge Hub não está na primeira
+              página da curadoria — use os filtros/páginas para localizá-lo.
+            </p>
+          )}
           <table className="w-full text-sm">
             <thead className="bg-slate-50 text-left text-xs uppercase text-slate-400">
               <tr>
@@ -335,7 +358,14 @@ export default function GovernancaIA() {
             </thead>
             <tbody className="divide-y divide-slate-100">
               {docs.map((d) => (
-                <tr key={d.id}>
+                <tr
+                  key={d.id}
+                  className={
+                    d.id === docDestaque
+                      ? "bg-primary-50/70 dark:bg-primary-900/20"
+                      : undefined
+                  }
+                >
                   <td className="px-4 py-3">
                     <div className="font-medium text-navy">{d.titulo}</div>
                     <div className="text-xs text-slate-400 truncate max-w-md">

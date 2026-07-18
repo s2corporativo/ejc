@@ -2,6 +2,7 @@
 # Honorários, custas/despesas e pagamentos parciais.
 from __future__ import annotations
 
+import re
 from datetime import date, datetime, timezone
 from decimal import Decimal
 from typing import Optional
@@ -23,6 +24,9 @@ from app.schemas.common import MsgResponse
 from app.schemas.fee import FeeCreate, FeePaymentCreate, FeeResponse, FeeUpdate
 
 _FINANCEIRO_TOTAL = {"superadmin", "admin", "socio", "financeiro"}
+
+# Competência AAAA-MM (mês 01–12).
+_RE_COMPETENCIA = re.compile(r"^\d{4}-(0[1-9]|1[0-2])$")
 
 
 def _ve_financeiro_total(user: User) -> bool:
@@ -72,6 +76,9 @@ async def listar(
     status_f: Optional[str] = Query(None, alias="status"),
     client_id: Optional[str] = None,
     case_id: Optional[str] = None,
+    competencia: Optional[str] = Query(
+        None, description="Filtra pelo mês de vencimento (formato AAAA-MM)"
+    ),
     db: AsyncSession = Depends(get_db),
     cu: User = Depends(get_current_user),
 ):
@@ -83,6 +90,18 @@ async def listar(
         q = q.where(Fee.client_id == client_id)
     if case_id:
         q = q.where(Fee.case_id == case_id)
+    if competencia:
+        # Validação explícita (422) para compor com os demais filtros.
+        if not _RE_COMPETENCIA.fullmatch(competencia):
+            raise HTTPException(
+                status_code=422,
+                detail="competencia inválida: use o formato AAAA-MM",
+            )
+        ano, mes = competencia.split("-")
+        q = q.where(
+            sqlfunc.extract("year", Fee.data_vencimento) == int(ano),
+            sqlfunc.extract("month", Fee.data_vencimento) == int(mes),
+        )
     q = q.order_by(Fee.data_vencimento.asc().nullslast())
 
     total = (

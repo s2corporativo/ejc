@@ -37,6 +37,7 @@ class EventoPatch(BaseModel):
     local: Optional[str] = None
     descricao: Optional[str] = None
     concluido: Optional[bool] = None
+    responsavel_id: Optional[str] = None
 
 
 async def _buscar_conflitos(
@@ -135,7 +136,9 @@ async def atualizar(
         raise HTTPException(404, "Evento não encontrado")
     if row["case_id"]:
         await verificar_acesso_caso(db, cu, row["case_id"])
-    updates = {k: v for k, v in body.model_dump().items() if v is not None}
+    if body.tipo is not None and body.tipo not in TIPOS_VALIDOS:
+        raise HTTPException(422, f"Tipo inválido. Use: {', '.join(sorted(TIPOS_VALIDOS))}")
+    updates = {k: v for k, v in body.model_dump(exclude_unset=True).items() if v is not None}
     if not updates:
         return {"ok": True}
     set_clause = ", ".join(f"{k} = :{k}" for k in updates)
