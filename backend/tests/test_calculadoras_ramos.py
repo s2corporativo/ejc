@@ -252,12 +252,13 @@ async def test_prescricao_punitiva_29_02_para_ano_bissexto():
 # ══════════════════════════════════════════════════════════════════════════
 # Empresarial — CADE art. 88 I e II: exige DOIS grupos (750mi E 75mi)
 # ══════════════════════════════════════════════════════════════════════════
-async def test_cade_apenas_um_grupo_grande_nao_obriga():
-    # Grupo maior ≥ 750mi mas segundo grupo NÃO informado → indeterminado/não obriga.
+async def test_cade_apenas_um_grupo_grande_pendente_dado():
+    # Grupo ≥ 750mi mas segundo grupo NÃO informado → pendente_dado, NÃO falso negativo.
     r = await ramos.emp_cade(
         valor_faturamento_br=800_000_000.0, valor_operacao=100_000_000.0, cu=None,
     )
-    assert r["notificacao_obrigatoria"] is False
+    assert r["pendente_dado"] is True
+    assert r["notificacao_obrigatoria"] is None  # indeterminado, não False
     assert r["grupo_maior_atinge_750mi"] is True
     assert r["segundo_grupo_informado"] is False
 
@@ -269,6 +270,7 @@ async def test_cade_segundo_grupo_abaixo_de_75mi_nao_obriga():
     )
     assert r["grupo_menor_atinge_75mi"] is False
     assert r["notificacao_obrigatoria"] is False
+    assert r["pendente_dado"] is False
 
 
 async def test_cade_dois_grupos_acima_dos_limiares_obriga():
@@ -280,6 +282,39 @@ async def test_cade_dois_grupos_acima_dos_limiares_obriga():
     assert r["grupo_menor_atinge_75mi"] is True
     assert r["notificacao_obrigatoria"] is True
     assert r["prazo_notificacao"] is not None
+
+
+async def test_cade_ordem_nao_importa_800mais100_obriga():
+    # 800mi (maior) + 100mi (menor) na ordem direta → obrigatória.
+    direta = await ramos.emp_cade(
+        valor_faturamento_br=800_000_000.0, valor_operacao=100_000_000.0,
+        valor_faturamento_outro_grupo=100_000_000.0, cu=None,
+    )
+    # Ordem invertida: o grupo de 800mi vem no 2º campo. Antes dava falso negativo.
+    invertida = await ramos.emp_cade(
+        valor_faturamento_br=100_000_000.0, valor_operacao=100_000_000.0,
+        valor_faturamento_outro_grupo=800_000_000.0, cu=None,
+    )
+    for r in (direta, invertida):
+        assert r["grupo_maior_atinge_750mi"] is True
+        assert r["grupo_menor_atinge_75mi"] is True
+        assert r["notificacao_obrigatoria"] is True
+        assert r["pendente_dado"] is False
+
+
+async def test_cade_ordem_nao_importa_800mais50_nao_obriga():
+    # 800mi + 50mi (< 75mi) em qualquer ordem → NÃO obrigatória (menor não atinge).
+    direta = await ramos.emp_cade(
+        valor_faturamento_br=800_000_000.0, valor_operacao=100_000_000.0,
+        valor_faturamento_outro_grupo=50_000_000.0, cu=None,
+    )
+    invertida = await ramos.emp_cade(
+        valor_faturamento_br=50_000_000.0, valor_operacao=100_000_000.0,
+        valor_faturamento_outro_grupo=800_000_000.0, cu=None,
+    )
+    for r in (direta, invertida):
+        assert r["grupo_menor_atinge_75mi"] is False
+        assert r["notificacao_obrigatoria"] is False
 
 
 # ══════════════════════════════════════════════════════════════════════════

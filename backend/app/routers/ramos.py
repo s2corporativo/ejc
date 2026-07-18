@@ -236,17 +236,45 @@ async def emp_cade(valor_faturamento_br: float, valor_operacao: float,
     terial MJ/MF 994/2012): a notificação é OBRIGATÓRIA quando, cumulativamente,
     um grupo econômico envolvido faturou ≥ R$ 750 mi E OUTRO grupo ≥ R$ 75 mi no
     Brasil, no ano anterior. São dois limiares CUMULATIVOS — não basta um só grupo.
-    - valor_faturamento_br: faturamento do maior grupo (inciso I, ≥ R$ 750 mi).
-    - valor_faturamento_outro_grupo: faturamento do segundo grupo (inciso II, ≥ R$ 75 mi).
-      Retrocompatível: se não informado, não há como confirmar o inciso II e a
-      obrigatoriedade fica indeterminada (segundo_grupo_informado=False).
+    Os limiares NÃO são posicionais: basta UM dos grupos atingir R$ 750 mi e o
+    OUTRO atingir R$ 75 mi, independentemente de qual valor foi informado em qual
+    campo (avaliação por max/min dos dois faturamentos).
+    - valor_faturamento_br: faturamento de um dos grupos envolvidos.
+    - valor_faturamento_outro_grupo: faturamento do segundo grupo envolvido.
+      Retrocompatível: se não informado, não há como confirmar o inciso II. Nesse
+      caso NÃO devolvemos um falso "não obrigatória" — sinalizamos pendência de
+      dado (pendente_dado=True, notificacao_obrigatoria=None).
     """
     limiar_grupo_maior = 750_000_000.00   # art. 88, I (atualizado p/ R$ 750 mi)
     limiar_grupo_menor = 75_000_000.00    # art. 88, II (atualizado p/ R$ 75 mi)
-    grupo_maior_atinge = valor_faturamento_br >= limiar_grupo_maior
     segundo_informado = valor_faturamento_outro_grupo is not None
-    grupo_menor_atinge = segundo_informado and valor_faturamento_outro_grupo >= limiar_grupo_menor
-    # Ambos os limiares são cumulativos (art. 88, I E II).
+
+    if not segundo_informado:
+        # Sem o faturamento do 2º grupo é impossível confirmar o inciso II. Em vez
+        # de um falso negativo, devolvemos estado pendente (retrocompat. c/ API).
+        return {
+            "faturamento_informado": valor_faturamento_br,
+            "faturamento_outro_grupo": None,
+            "valor_operacao": valor_operacao,
+            "grupo_maior_atinge_750mi": valor_faturamento_br >= limiar_grupo_maior,
+            "grupo_menor_atinge_75mi": None,
+            "segundo_grupo_informado": False,
+            "pendente_dado": True,
+            "notificacao_obrigatoria": None,
+            "prazo_notificacao": None,
+            "taxa_cade_estimada": "N/A",
+            "base": "Lei 12.529/2011 art. 88, I e II c/c Portaria Interm. MJ/MF 994/2012; §2º (prazo).",
+            "aviso": ("MINUTA. Informe o faturamento do 2º grupo envolvido para avaliar o "
+                      "art. 88 (limiar de R$ 75 mi do inciso II). Análise de enquadramento "
+                      "deve ser confirmada por especialista antitruste."),
+        }
+
+    # Cumulativos mas NÃO posicionais: um grupo ≥ 750 mi E outro ≥ 75 mi (art. 88,
+    # I e II), avaliando por max/min dos dois faturamentos informados.
+    maior = max(valor_faturamento_br, valor_faturamento_outro_grupo)
+    menor = min(valor_faturamento_br, valor_faturamento_outro_grupo)
+    grupo_maior_atinge = maior >= limiar_grupo_maior
+    grupo_menor_atinge = menor >= limiar_grupo_menor
     obrigatorio = grupo_maior_atinge and grupo_menor_atinge
     return {
         "faturamento_informado": valor_faturamento_br,
@@ -254,15 +282,14 @@ async def emp_cade(valor_faturamento_br: float, valor_operacao: float,
         "valor_operacao": valor_operacao,
         "grupo_maior_atinge_750mi": grupo_maior_atinge,
         "grupo_menor_atinge_75mi": grupo_menor_atinge,
-        "segundo_grupo_informado": segundo_informado,
+        "segundo_grupo_informado": True,
+        "pendente_dado": False,
         "notificacao_obrigatoria": obrigatorio,
         "prazo_notificacao": "30 dias (art. 88 §2º Lei 12.529/11)" if obrigatorio else None,
         # Taxa (TFPP) hardcoded — conferir tabela CADE vigente; sujeita a reajuste.
         "taxa_cade_estimada": "R$ 85.000 (tabela CADE 2026)" if obrigatorio else "N/A",
         "base": "Lei 12.529/2011 art. 88, I e II c/c Portaria Interm. MJ/MF 994/2012; §2º (prazo).",
-        "aviso": ("MINUTA. Análise de enquadramento deve ser confirmada por especialista antitruste."
-                  + ("" if segundo_informado else
-                     " Informe o faturamento do segundo grupo para confirmar o inciso II.")),
+        "aviso": "MINUTA. Análise de enquadramento deve ser confirmada por especialista antitruste.",
     }
 
 
