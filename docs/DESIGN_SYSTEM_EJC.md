@@ -10,9 +10,9 @@ Esta fundação adiciona componentes React oficiais em `frontend/src/components/
 
 ## Direção visual
 
-O EJC deve parecer um sistema SaaS jurídico premium, próximo de um site moderno: superfícies limpas, respiro, sombras suaves, pouca borda aparente e hierarquia clara.
+O EJC segue um idioma **flat e compacto** (padrão Verdelimp, mantendo a paleta dourada da casa): cards brancos com borda de 1px visível e raio 10–12px, sombras mínimas (sem elevação no hover), tipografia densa (títulos de página ~20px/700, labels 11px/600, inputs compactos com raio 8px e fonte 13px) e hierarquia clara.
 
-Evitar cards com borda forte, excesso de cores sólidas e blocos internos amadores. A preferência visual é por profundidade, sombra, transparência sutil, ícones bem posicionados e textos curtos.
+Evitar gradientes decorativos, véus/blobs, glassmorphism e sombras chamativas. Destaques por cor chapada da paleta: botão primário ouro chapado, KPI cards com borda superior de 3px na cor do indicador, cabeçalho de tabela em faixa clara da marca (ouro palha) com texto escuro da marca.
 
 ## Aplicação global
 
@@ -23,7 +23,7 @@ Isso evita que apenas uma tela fique moderna enquanto o restante do sistema mant
 ## Componentes iniciais
 
 - `Button`: ações primárias, secundárias, outline e ghost.
-- `Card`: contêiner padrão para blocos de conteúdo, agora com sombra e sem borda pesada.
+- `Card`: contêiner padrão para blocos de conteúdo — branco, borda 1px visível, raio 12px e sombra mínima.
 - `Badge`: status visuais padronizados.
 - `Input`, `Select` e `Textarea`: campos oficiais com label, hint, erro e suporte a ícones.
 - `Page`: estrutura de página, cabeçalho, descrição, ações e grid.

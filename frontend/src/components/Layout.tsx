@@ -195,8 +195,8 @@ export default function Layout() {
         title={collapsed ? undefined : description}
         className={({ isActive }) =>
           cn(
-            "sidebar-nav-item group flex items-center gap-3 rounded-xl px-3 text-sm font-medium transition-all duration-150",
-            collapsed ? "h-10 justify-center px-0" : "py-2",
+            "sidebar-nav-item group flex items-center gap-2.5 rounded-lg px-3 text-[13px] font-medium transition-all duration-150",
+            collapsed ? "h-9 justify-center px-0" : "py-1.5",
             isActive && "is-active",
           )
         }
