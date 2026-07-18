@@ -28,6 +28,7 @@ from typing import Any
 from uuid import uuid4
 
 import httpx
+from tenacity import retry, retry_if_exception, stop_after_attempt, wait_exponential
 from sqlalchemy import text as sqltext
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -37,7 +38,6 @@ logger = logging.getLogger("ejc.pncp")
 
 # Dados públicos (sem PII): retenção generosa — o cache é só performance.
 _RETENCAO_DIAS = 30
-_TIMEOUT_S = 25.0
 # TODO(verificar-vps): confirmar o código IBGE de Betim/MG (3106705) e se a API
 # usa `codigoMunicipioIbge` como nome de parâmetro.
 MUNICIPIO_BETIM_IBGE = "3106705"
@@ -166,11 +166,30 @@ async def _registrar_cache(db: AsyncSession, dia: date, chave: str, resultado: d
 
 # ── Chamada HTTP (isolada para mock nos testes) ───────────────────────────────
 
+def _erro_pncp_transitorio(exc: BaseException) -> bool:
+    """Retry somente em transporte, rate limit e falha 5xx do PNCP."""
+    if isinstance(exc, httpx.TransportError):
+        return True
+    if isinstance(exc, httpx.HTTPStatusError) and exc.response is not None:
+        status = exc.response.status_code
+        return status == 429 or status >= 500
+    return False
+
+
+@retry(
+    stop=stop_after_attempt(3),
+    wait=wait_exponential(multiplier=0.5, min=0.5, max=4),
+    retry=retry_if_exception(_erro_pncp_transitorio),
+    reraise=True,
+)
 async def _get_json(url: str, params: dict, timeout_s: float):
-    async with httpx.AsyncClient(timeout=timeout_s) as c:
-        r = await c.get(url, params=params)
-        r.raise_for_status()
-        return r.json()
+    async with httpx.AsyncClient(timeout=timeout_s) as client:
+        response = await client.get(url, params=params)
+        # 204 é uma resposta válida sem corpo; não tente decodificar JSON.
+        if response.status_code == 204:
+            return {}
+        response.raise_for_status()
+        return response.json()
 
 
 # ── API principal ─────────────────────────────────────────────────────────────
@@ -207,17 +226,25 @@ async def listar_contratacoes(
     df = _fmt_data(data_final)
     if df < di:
         raise ValueError("dataFinal deve ser igual ou posterior à dataInicial.")
+    uf_normalizada = (uf or "").strip().upper()
+    if uf_normalizada and (
+        len(uf_normalizada) != 2 or not uf_normalizada.isalpha()
+    ):
+        raise ValueError("UF inválida: informe uma sigla com duas letras.")
+    municipio_normalizado = (municipio_ibge or "").strip() or None
+    if municipio_normalizado and (
+        len(municipio_normalizado) != 7 or not municipio_normalizado.isdigit()
+    ):
+        raise ValueError("Código IBGE inválido: informe 7 dígitos.")
     pagina = max(1, int(pagina))
 
     filtros = {
-        # TODO(verificar-vps): confirmar nomes exatos dos parâmetros do PNCP
-        # (`codigoModalidadeContratacao`, `codigoMunicipioIbge`) e o default de
-        # modalidade (6 = pregão eletrônico) na versão publicada da API.
+        # Contrato da API PNCP Consulta v1, documentado no Swagger oficial.
         "dataInicial": di,
         "dataFinal": df,
         "codigoModalidadeContratacao": int(modalidade),
-        "uf": (uf or "").upper() or None,
-        "codigoMunicipioIbge": municipio_ibge or None,
+        "uf": uf_normalizada or None,
+        "codigoMunicipioIbge": municipio_normalizado,
         "pagina": pagina,
         "tamanhoPagina": 50,
     }
@@ -235,7 +262,7 @@ async def listar_contratacoes(
 
     url = f"{(s.PNCP_BASE_URL or '').rstrip('/')}/contratacoes/publicacao"
     try:
-        resp = await _get_json(url, query, _TIMEOUT_S)
+        resp = await _get_json(url, query, s.PNCP_TIMEOUT_SECONDS)
     except httpx.HTTPStatusError as e:
         # 204/404 do PNCP significam "sem resultados" para o filtro — não é erro.
         if e.response is not None and e.response.status_code in (204, 404):
