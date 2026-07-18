@@ -133,8 +133,11 @@ async def consultar_cep(cep: str) -> dict | None:
             if data:
                 return data
         except Exception as exc:
-            logger.warning("consultar_cep: fonte %s falhou (%s) — tentando a "
-                           "próxima", fonte.__name__, exc)
+            # Não registrar URL/CEP nem a mensagem do cliente HTTP.
+            logger.warning(
+                "consultar_cep: fonte %s falhou (tipo=%s) — tentando a próxima",
+                fonte.__name__, type(exc).__name__,
+            )
     return None
 
 
@@ -215,6 +218,9 @@ async def consultar_cnpj(cnpj: str) -> dict | None:
             if data:
                 return data
         except Exception as exc:
-            logger.warning("consultar_cnpj: fonte %s falhou (%s) — tentando a "
-                           "próxima", fonte.__name__, exc)
+            # Exceções httpx incluem a URL; a URL contém o CNPJ consultado.
+            logger.warning(
+                "consultar_cnpj: fonte %s falhou (tipo=%s) — tentando a próxima",
+                fonte.__name__, type(exc).__name__,
+            )
     return None
