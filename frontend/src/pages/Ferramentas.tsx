@@ -13,14 +13,14 @@ import {
   Badge,
   Button,
   Card,
-  EmptyState,
   Page,
   PageDescription,
   PageGrid,
   PageHeader,
   PageTitle,
-  cn,
 } from "../components/ui";
+import { EmptyState } from "../components/UI";
+import { cn } from "../lib/cn";
 import DefesasRevisoesPanel from "../components/DefesasRevisoesPanel";
 import RevisaoBancariaDeterministica from "../components/RevisaoBancariaDeterministica";
 import {
@@ -65,7 +65,11 @@ const FAVORITOS_KEY = "ejc_ferramentas_favoritas";
 function carregarFavoritos(): Set<string> {
   try {
     const valor = JSON.parse(localStorage.getItem(FAVORITOS_KEY) || "[]");
-    return new Set(Array.isArray(valor) ? valor.filter((item) => typeof item === "string") : []);
+    return new Set(
+      Array.isArray(valor)
+        ? valor.filter((item) => typeof item === "string")
+        : [],
+    );
   } catch {
     return new Set();
   }
@@ -99,7 +103,10 @@ export default function Ferramentas() {
                 .toLowerCase()
                 .includes(termo),
           )
-          .sort((a, b) => Number(favoritos.has(b.key)) - Number(favoritos.has(a.key))),
+          .sort(
+            (a, b) =>
+              Number(favoritos.has(b.key)) - Number(favoritos.has(a.key)),
+          ),
       })).filter((category) => category.modules.length > 0),
     [favoritos, modulesByKey, termo, user?.role],
   );
@@ -133,8 +140,8 @@ export default function Ferramentas() {
             </Badge>
             <PageTitle>Mais Ferramentas</PageTitle>
             <PageDescription>
-              Recursos complementares organizados por finalidade. A rotina principal
-              continua dentro do caso e da Jornada.
+              Recursos complementares organizados por finalidade. A rotina
+              principal continua dentro do caso e da Jornada.
             </PageDescription>
           </div>
         </PageHeader>
@@ -150,45 +157,52 @@ export default function Ferramentas() {
           />
         </div>
 
-        {podeUsarDefesas && (!termo || "defesas revisões multas contratos bancária".includes(termo)) && (
-          <section className="space-y-4">
-            <button
-              type="button"
-              onClick={() => setDefesasOpen((aberto) => !aberto)}
-              className="group w-full text-left"
-              aria-expanded={defesasOpen}
-            >
-              <Card className="flex items-start gap-4 p-5 transition duration-200 group-hover:-translate-y-0.5 group-hover:shadow-[0_20px_55px_rgba(15,23,42,0.12)]">
-                <span className="grid h-12 w-12 shrink-0 place-items-center rounded-2xl bg-primary-50 text-primary-700 ring-1 ring-black/5 dark:bg-white/10 dark:text-primary-200">
-                  <ShieldCheck className="h-6 w-6" />
-                </span>
-                <div className="min-w-0 flex-1">
-                  <div className="flex flex-wrap items-center justify-between gap-2">
-                    <div>
-                      <h2 className="font-semibold text-slate-950 dark:text-slate-50">
-                        Defesas e Revisões
-                      </h2>
-                      <p className="mt-1 text-sm leading-6 text-slate-500 dark:text-slate-300">
-                        Multas de trânsito, ambientais e administrativas, revisão de
-                        contratos e análise bancária com cálculos rastreáveis.
-                      </p>
+        {podeUsarDefesas &&
+          (!termo ||
+            "defesas revisões multas contratos bancária".includes(termo)) && (
+            <section className="space-y-4">
+              <button
+                type="button"
+                onClick={() => setDefesasOpen((aberto) => !aberto)}
+                className="group w-full text-left"
+                aria-expanded={defesasOpen}
+              >
+                <Card className="flex items-start gap-4 p-5 transition duration-200 group-hover:-translate-y-0.5 group-hover:shadow-[0_20px_55px_rgba(15,23,42,0.12)]">
+                  <span className="grid h-12 w-12 shrink-0 place-items-center rounded-2xl bg-primary-50 text-primary-700 ring-1 ring-black/5 dark:bg-white/10 dark:text-primary-200">
+                    <ShieldCheck className="h-6 w-6" />
+                  </span>
+                  <div className="min-w-0 flex-1">
+                    <div className="flex flex-wrap items-center justify-between gap-2">
+                      <div>
+                        <h2 className="font-semibold text-slate-950 dark:text-slate-50">
+                          Defesas e Revisões
+                        </h2>
+                        <p className="mt-1 text-sm leading-6 text-slate-500 dark:text-slate-300">
+                          Multas de trânsito, ambientais e administrativas,
+                          revisão de contratos e análise bancária com cálculos
+                          rastreáveis.
+                        </p>
+                      </div>
+                      <span className="rounded-lg p-2 text-slate-400">
+                        {defesasOpen ? (
+                          <ChevronUp className="h-5 w-5" />
+                        ) : (
+                          <ChevronDown className="h-5 w-5" />
+                        )}
+                      </span>
                     </div>
-                    <span className="rounded-lg p-2 text-slate-400">
-                      {defesasOpen ? <ChevronUp className="h-5 w-5" /> : <ChevronDown className="h-5 w-5" />}
-                    </span>
                   </div>
-                </div>
-              </Card>
-            </button>
+                </Card>
+              </button>
 
-            {defesasOpen && (
-              <div className="space-y-6 rounded-2xl border border-slate-200 bg-white/60 p-4 dark:border-white/10 dark:bg-white/[0.02]">
-                <DefesasRevisoesPanel />
-                <RevisaoBancariaDeterministica />
-              </div>
-            )}
-          </section>
-        )}
+              {defesasOpen && (
+                <div className="space-y-6 rounded-2xl border border-slate-200 bg-white/60 p-4 dark:border-white/10 dark:bg-white/[0.02]">
+                  <DefesasRevisoesPanel />
+                  <RevisaoBancariaDeterministica />
+                </div>
+              )}
+            </section>
+          )}
 
         {groups.map((group) => (
           <section key={group.title} className="space-y-3">
@@ -230,13 +244,23 @@ export default function Ferramentas() {
                       size="sm"
                       onClick={() => alternarFavorito(module.key)}
                       className="absolute right-3 top-3 h-8 w-8 p-0"
-                      aria-label={favorito ? `Remover ${module.label} dos favoritos` : `Favoritar ${module.label}`}
-                      title={favorito ? "Remover dos favoritos" : "Adicionar aos favoritos"}
+                      aria-label={
+                        favorito
+                          ? `Remover ${module.label} dos favoritos`
+                          : `Favoritar ${module.label}`
+                      }
+                      title={
+                        favorito
+                          ? "Remover dos favoritos"
+                          : "Adicionar aos favoritos"
+                      }
                     >
                       <Star
                         className={cn(
                           "h-4 w-4",
-                          favorito ? "fill-warn-400 text-warn-500" : "text-slate-400",
+                          favorito
+                            ? "fill-warn-400 text-warn-500"
+                            : "text-slate-400",
                         )}
                       />
                     </Button>
