@@ -168,6 +168,7 @@ async def test_buscar_contexto_rag_encaminha_pelo_reranker(monkeypatch):
             self.id, self.conteudo, self.titulo = i, f"c{i}", f"t{i}"
             self.categoria, self.fonte, self.confianca = "cat", None, "media"
             self.doc_id = f"d{i}"  # SELECT inclui kc.doc_id (PR #274 — doc_id no shape)
+            self.versao = 1
 
     class _DB:
         async def execute(self, sql, params=None):

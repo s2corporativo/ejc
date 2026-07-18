@@ -249,9 +249,15 @@ async def test_consultar_mapeia_autorizada(nfse_ligado, monkeypatch):
 # ══ Camada de rotas (fakes de DB, sem rede) ═════════════════════════════════════
 
 class _FakeDB:
-    def __init__(self, objs=None, scalar_result=None):
+    def __init__(self, objs=None, scalar_result=None, manual_ativa=None):
         self.objs = objs or {}          # (ModelName, id) -> obj
-        self.scalar_result = scalar_result
+        # /emitir faz DOIS selects distintos: 1º a query NOVA de "nota manual
+        # ativa do fee" (WHERE provider == "manual") e 2º a reserva de
+        # referência (WHERE provider == "nuvemfiscal", with_for_update).
+        # Distinguimos pelo bind do critério `provider` — devolver o MESMO
+        # valor para as duas faria o 409 disparar pelo caminho errado.
+        self.scalar_result = scalar_result   # reserva de referência
+        self.manual_ativa = manual_ativa     # query nova (id de nota manual)
         self.added: list = []
         self.commits = 0
 
@@ -259,6 +265,10 @@ class _FakeDB:
         return self.objs.get((model.__name__, ident))
 
     async def scalar(self, stmt):
+        for crit in getattr(stmt, "_where_criteria", ()):
+            if (getattr(getattr(crit, "left", None), "key", None) == "provider"
+                    and getattr(getattr(crit, "right", None), "value", None) == "manual"):
+                return self.manual_ativa
         return self.scalar_result
 
     def add(self, obj):

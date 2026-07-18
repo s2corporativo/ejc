@@ -168,6 +168,8 @@ async def ingerir(db: AsyncSession) -> dict:
                         "termo_busca": termo,
                         "id_ato": ato["id_ato"],
                         "titulo_original": ato["titulo"][:300],
+                        "rag_status": "aprovado",
+                        "tipo_fonte": "norma_oficial",
                     },
                 )
                 await db.commit()               # durável antes do próximo item

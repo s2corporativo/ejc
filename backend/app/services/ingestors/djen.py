@@ -243,6 +243,8 @@ async def ingerir(db: AsyncSession) -> tuple[int, int]:
                 doc["case_id"] = case.id
                 doc["client_id"] = case.client_id
                 doc["extra"]["oab_monitorada"] = f"{numero}/{uf}"
+                doc["extra"]["rag_status"] = "aprovado"
+                doc["extra"]["tipo_fonte"] = "comunicacao_processual_oficial"
                 total += 1
                 res = await upsert_documento(db, **doc)
                 if res in ("novo", "atualizado"):
