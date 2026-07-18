@@ -85,6 +85,15 @@ async def test_chat_tools_normaliza_para_contrato_anthropic(monkeypatch, habilit
     monkeypatch.setattr(maritaca_provider, "_post", lambda payload: _async_ret(_FAKE_OK))
     out2 = await maritaca_provider.chat_tools([{"role": "user", "content": "x"}], None, 256, [])
     assert out2["stop_reason"] == "end_turn"
+    # finish_reason "length" (truncado) → max_tokens, nao mascarado como end_turn
+    resp_len = {
+        "model": "sabia-4",
+        "choices": [{"message": {"content": "..."}, "finish_reason": "length"}],
+        "usage": {"prompt_tokens": 1, "completion_tokens": 1},
+    }
+    monkeypatch.setattr(maritaca_provider, "_post", lambda payload: _async_ret(resp_len))
+    out3 = await maritaca_provider.chat_tools([{"role": "user", "content": "x"}], None, 8, [])
+    assert out3["stop_reason"] == "max_tokens"
 
 
 async def _async_ret(v):

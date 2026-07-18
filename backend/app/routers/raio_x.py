@@ -54,6 +54,12 @@ def _permitido(user: User) -> bool:
     return _role(user) in {"superadmin", "admin", "socio", "advogado", "advogado_auxiliar", "estagiario"}
 
 
+# Análise "advogado" (IA agêntica) é operação CARA (até 8 passos, ~R$2/exec):
+# estagiário fica de fora (hardening de custo/governança — auditoria Fase D).
+def _permitido_ia_advogado(user: User) -> bool:
+    return _role(user) in {"superadmin", "admin", "socio", "advogado", "advogado_auxiliar"}
+
+
 async def _obter(db: AsyncSession, analise_id: str, user: User) -> RaioXAnalise:
     analise = (
         await db.execute(
@@ -301,15 +307,16 @@ async def contextual_analise_advogado(
     permanece idêntico, sem IA). Atrás de AI_AGENT_ENABLED: com a flag OFF o
     serviço devolve status "indisponivel" e nada muda no sistema.
     """
-    if not _permitido(user):
-        raise HTTPException(403, "Perfil sem acesso ao Raio-X")
+    if not _permitido_ia_advogado(user):
+        raise HTTPException(403, "Perfil sem acesso à análise do advogado (IA)")
     resultado = await analise_advogado_caso(db, user, case_id)
-    if resultado.get("status") == "ok":
-        await criar_audit_log(
-            db, user.id, _role(user), "AI_USE", "raio_x_contextual", case_id,
-            detalhes="Análise do advogado (IA) — Raio-X contextual",
-        )
-        await db.commit()
+    # Audita TODO desfecho (ok/indisponivel/erro) — operação de IA cara não passa
+    # sem trilha (rate-limit/custo consumidos mesmo em falha).
+    await criar_audit_log(
+        db, user.id, _role(user), "AI_USE", "raio_x_contextual", case_id,
+        detalhes=f"Análise do advogado (IA) — Raio-X contextual [{resultado.get('status')}]",
+    )
+    await db.commit()
     return resultado
 
 
@@ -581,6 +588,8 @@ async def analise_advogado_por_documentos(
     precisa de um caso para RBAC/ownership e para o modo de sanitização LGPD
     derivado da área. Sem caso vinculado → 409 orientando a conversão.
     """
+    if not _permitido_ia_advogado(user):
+        raise HTTPException(403, "Perfil sem acesso à análise do advogado (IA)")
     analise = await _obter(db, analise_id, user)
     case_id = analise.convertido_case_id or analise.origem_contextual_case_id
     if not case_id:
@@ -593,12 +602,12 @@ async def analise_advogado_por_documentos(
     resultado = await analise_advogado_caso(
         db, user, case_id, base_relatorio=base_relatorio,
     )
-    if resultado.get("status") == "ok":
-        await criar_audit_log(
-            db, user.id, _role(user), "AI_USE", "raio_x_analises", analise_id,
-            detalhes="Análise do advogado (IA) — Raio-X por documentos",
-        )
-        await db.commit()
+    # Audita TODO desfecho (ok/indisponivel/erro) — ver endpoint contextual.
+    await criar_audit_log(
+        db, user.id, _role(user), "AI_USE", "raio_x_analises", analise_id,
+        detalhes=f"Análise do advogado (IA) — Raio-X por documentos [{resultado.get('status')}]",
+    )
+    await db.commit()
     return resultado
 
 

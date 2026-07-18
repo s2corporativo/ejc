@@ -136,7 +136,12 @@ async def chat_tools(messages: list[dict], model: str | None,
             "name": fn.get("name") or "",
             "input": args or {},
         })
-    stop_reason = "tool_use" if (tool_calls or finish == "tool_calls") else "end_turn"
+    if tool_calls:
+        stop_reason = "tool_use"
+    elif finish == "length":
+        stop_reason = "max_tokens"  # truncado por max_tokens — nao esconder o corte
+    else:
+        stop_reason = "end_turn"
     return {
         "text": msg.get("content") or "",
         "tool_calls": tool_calls,
