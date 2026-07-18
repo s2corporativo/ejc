@@ -27,7 +27,7 @@ from app.services.document_format import padronizar_documento_juridico
 from app.services.validador_juridico_service import ValidacaoInput, validar_rascunho_juridico
 from app.schemas.legal_doc import (
     LegalDocCreate, LegalDocUpdate, LegalDocRevisao, LegalDocAprovacao,
-    LegalDocResponse, LegalDocDetail,
+    LegalDocProtocolo, LegalDocResponse, LegalDocDetail,
 )
 from app.schemas.common import MsgResponse
 
@@ -565,6 +565,55 @@ async def aprovar(
     background.add_task(indexar_peca_rag, doc_id)
     if status_antigo not in _STATUS_PRE_PROTOCOLO and d.case_id:
         background.add_task(_bg_checklist_protocolo, d.case_id, cu.id)
+    return d
+
+
+@router.patch("/{doc_id}/protocolo", response_model=LegalDocDetail)
+async def registrar_protocolo(
+    doc_id: str, payload: LegalDocProtocolo,
+    db: AsyncSession = Depends(get_db),
+    cu: User = Depends(get_current_user),
+):
+    """Registra o comprovante de protocolo (peticionamento manual) na peça.
+
+    O peticionamento é feito FORA do sistema (exporta PDF, protocola no PJe/eproc).
+    Sem gravar número/tribunal/data do protocolo, a PROVA DE TEMPESTIVIDADE fica
+    fora do EJC. Este endpoint fecha a lacuna gravando esses dados na própria peça,
+    com o MESMO gate de ownership das demais rotas e trilha de auditoria
+    (PROTOCOLO_REGISTRADO).
+
+    A transição de status para 'protocolada' continua pelo PATCH /legal-docs/{id}
+    (que aplica os gates de validação/HITL) — aqui só registramos o comprovante,
+    sem contornar aqueles controles.
+    """
+    d = (await db.execute(
+        select(LegalDoc).where(
+            LegalDoc.id == doc_id, LegalDoc.deleted_at.is_(None)
+        )
+    )).scalar_one_or_none()
+    if not d:
+        raise HTTPException(status_code=404, detail="Peça não encontrada")
+    if d.case_id:
+        await verificar_acesso_caso(db, cu, d.case_id)
+
+    numero = (payload.numero_protocolo or "").strip()
+    if not numero:
+        raise HTTPException(status_code=422, detail="Número de protocolo é obrigatório")
+
+    d.numero_protocolo = numero[:120]
+    tribunal = (payload.protocolo_tribunal or "").strip()
+    d.protocolo_tribunal = tribunal[:120] or None
+    # Sem data informada, assume o instante do registro (tz-aware).
+    d.protocolado_em = payload.protocolado_em or datetime.now(timezone.utc)
+    comprovante = (payload.protocolo_comprovante_doc_id or "").strip()
+    d.protocolo_comprovante_doc_id = comprovante or None
+
+    await criar_audit_log(
+        db, cu.id, cu.role.value, "PROTOCOLO_REGISTRADO", "legal_docs", doc_id,
+        detalhes=f"numero={numero} tribunal={d.protocolo_tribunal or '-'}",
+    )
+    await db.commit()
+    await db.refresh(d)
     return d
 
 
