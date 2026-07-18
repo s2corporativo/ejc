@@ -114,6 +114,20 @@ class Settings(BaseSettings):
     # Qualquer max_tokens acima disto é rebaixado no provider.
     ANTHROPIC_MAX_TOKENS: int = 8000
 
+    # ── IA — Maritaca (Sabiá) — provider BRASILEIRO, OpenAI-compatible ─────
+    # PLUGÁVEL: nasce DESLIGADO (MARITACA_ENABLED=false) → sistema idêntico ao
+    # atual. Provider EXTERNO ao VPS → passa pela MESMA barreira LGPD
+    # (pseudonimização). Chave definida APENAS no .env (nunca aqui).
+    # Soberania de dados: os modelos "-br-sp" (ex.: "sabia-4-br-sp",
+    # "sabiazinho-4-br-sp") processam 100% em território nacional (+30% de
+    # custo) — caminho recomendado no jurídico, a ativar com DPA assinado.
+    MARITACA_ENABLED: bool = False
+    MARITACA_API_KEY: str = ""
+    MARITACA_BASE_URL: str = "https://chat.maritaca.ai/api"
+    MARITACA_MODEL: str = "sabia-4"            # qualidade/generalista (128k)
+    MARITACA_MODEL_RAPIDO: str = "sabiazinho-4"  # rápido/barato
+    MARITACA_TIMEOUT: int = 90
+
     # ── IA — Núcleo Único (policy central de provedores) ──────────────────
     # False = só Ollama local (soberania total): nenhum dado sai do VPS,
     # mesmo sanitizado. Anthropic/Groq ficam inelegíveis na cadeia.
@@ -184,6 +198,32 @@ class Settings(BaseSettings):
     # Limiares (score inteiro) que separam os tiers leve|medio|pesado.
     ROTEAMENTO_LIMIAR_MEDIO: int = 3
     ROTEAMENTO_LIMIAR_PESADO: int = 6
+
+    # ── MÓDULO AGÊNTICO DE IA (loop de tool-use, igual ao Claude Code) ────
+    # Default OFF (aditivo e fail-safe): com a flag desligada o endpoint
+    # /ia/agente/stream responde 404 e NADA muda no sistema. Ligado, a IA opera
+    # como agente (decide → chama ferramenta → lê resultado → decide), reusando
+    # o núcleo e TODOS os guardrails (barreira LGPD, RBAC, AILog, gate de
+    # citações, HITL). Nesta fase só provedores com tool-use (Anthropic).
+    AI_AGENT_ENABLED: bool = False
+    # Teto de PASSOS do loop (nunca infinito).
+    AI_AGENT_MAX_STEPS: int = 8
+    # Teto de TOKENS acumulados (input+output de TODOS os turnos) por execução do
+    # agente. O budget conta o input de CADA turno — que cresce a cada passo,
+    # pois o histórico inteiro é reenviado — somado ao output. Um teto baixo
+    # (16000 antigo) matava o agente no passo 2-3 antes de esgotar max_steps
+    # (achado M3). Elevado para comportar AI_AGENT_MAX_STEPS turnos com folga
+    # (piso real de saída por turno × passos + input acumulado). Ajuste fino via
+    # .env; o teto DURO por chamada continua em ANTHROPIC_MAX_TOKENS.
+    AI_AGENT_MAX_TOKENS: int = 120000
+    # Teto de CUSTO (R$) por execução do agente (Sugestão 2). Acumula o custo
+    # estimado de cada turno (ai_cost.estimar_custo_brl); ao exceder, o loop
+    # encerra com aviso (igual ao teto de tokens). Default conservador.
+    AI_AGENT_MAX_CUSTO_BRL: float = 2.00
+    # TTL (segundos) do estado retomável de HITL no Redis (achado H1). O estado
+    # contém a transcrição em ESPAÇO REAL (PII) — fica no VPS (Redis interno),
+    # com TTL curto e NUNCA é logado. Curto para minimizar a janela de retenção.
+    AI_AGENT_HITL_TTL_SEGUNDOS: int = 900
 
     # ── Fase 6 — Observabilidade de IA (Langfuse SELF-HOSTED) ─────────────
     # Langfuse é SELF-HOSTED (docker-compose, perfil "observability"): dados

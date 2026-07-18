@@ -30,6 +30,7 @@ from app.models.task import Task
 from app.models.user import User
 from app.schemas.raio_x import RaioXCreate, RaioXConverterRequest, RaioXUpdate
 from app.services import documento_service
+from app.services.raio_x_advogado_service import analise_advogado_caso
 from app.services.raio_x_export_service import gerar_docx, gerar_pdf
 from app.services.raio_x_service import (
     consolidar_relatorio,
@@ -51,6 +52,12 @@ def _role(user: User) -> str:
 
 def _permitido(user: User) -> bool:
     return _role(user) in {"superadmin", "admin", "socio", "advogado", "advogado_auxiliar", "estagiario"}
+
+
+# Análise "advogado" (IA agêntica) é operação CARA (até 8 passos, ~R$2/exec):
+# estagiário fica de fora (hardening de custo/governança — auditoria Fase D).
+def _permitido_ia_advogado(user: User) -> bool:
+    return _role(user) in {"superadmin", "admin", "socio", "advogado", "advogado_auxiliar"}
 
 
 async def _obter(db: AsyncSession, analise_id: str, user: User) -> RaioXAnalise:
@@ -283,6 +290,34 @@ async def contextual(
     )
     await db.commit()
     return report
+
+
+@router.post(
+    "/contextual/{case_id}/analise-advogado",
+    dependencies=[Depends(rate_limit("raio-x-analise-advogado", 5))],
+)
+async def contextual_analise_advogado(
+    case_id: str,
+    db: AsyncSession = Depends(get_db),
+    user: User = Depends(get_current_user),
+):
+    """Análise "advogado sênior" (IA agêntica) do Raio-X contextual de um caso.
+
+    Operação de IA deliberada e cara — POST separado do GET contextual (que
+    permanece idêntico, sem IA). Atrás de AI_AGENT_ENABLED: com a flag OFF o
+    serviço devolve status "indisponivel" e nada muda no sistema.
+    """
+    if not _permitido_ia_advogado(user):
+        raise HTTPException(403, "Perfil sem acesso à análise do advogado (IA)")
+    resultado = await analise_advogado_caso(db, user, case_id)
+    # Audita TODO desfecho (ok/indisponivel/erro) — operação de IA cara não passa
+    # sem trilha (rate-limit/custo consumidos mesmo em falha).
+    await criar_audit_log(
+        db, user.id, _role(user), "AI_USE", "raio_x_contextual", case_id,
+        detalhes=f"Análise do advogado (IA) — Raio-X contextual [{resultado.get('status')}]",
+    )
+    await db.commit()
+    return resultado
 
 
 @router.get("/{analise_id}")
@@ -535,6 +570,45 @@ async def reanalisar(
     )
     await db.commit()
     return {"analise": serializar_analise(analise), "erros": errors, "reprocessado": reprocessar}
+
+
+@router.post(
+    "/{analise_id}/analise-advogado",
+    dependencies=[Depends(rate_limit("raio-x-analise-advogado", 5))],
+)
+async def analise_advogado_por_documentos(
+    analise_id: str,
+    db: AsyncSession = Depends(get_db),
+    user: User = Depends(get_current_user),
+):
+    """Análise "advogado sênior" (IA agêntica) sobre uma análise preliminar por
+    documentos: injeta o relatório consolidado do Raio-X como contexto.
+
+    Exige caso vinculado (a análise preliminar é isolada de casos): o agente
+    precisa de um caso para RBAC/ownership e para o modo de sanitização LGPD
+    derivado da área. Sem caso vinculado → 409 orientando a conversão.
+    """
+    if not _permitido_ia_advogado(user):
+        raise HTTPException(403, "Perfil sem acesso à análise do advogado (IA)")
+    analise = await _obter(db, analise_id, user)
+    case_id = analise.convertido_case_id or analise.origem_contextual_case_id
+    if not case_id:
+        raise HTTPException(
+            409,
+            "Análise preliminar sem caso vinculado. Converta em caso (ou use o "
+            "Raio-X contextual de um caso) para a análise do advogado (IA).",
+        )
+    base_relatorio = analise.relatorio or None
+    resultado = await analise_advogado_caso(
+        db, user, case_id, base_relatorio=base_relatorio,
+    )
+    # Audita TODO desfecho (ok/indisponivel/erro) — ver endpoint contextual.
+    await criar_audit_log(
+        db, user.id, _role(user), "AI_USE", "raio_x_analises", analise_id,
+        detalhes=f"Análise do advogado (IA) — Raio-X por documentos [{resultado.get('status')}]",
+    )
+    await db.commit()
+    return resultado
 
 
 @router.get("/{analise_id}/documentos/{documento_id}/download")

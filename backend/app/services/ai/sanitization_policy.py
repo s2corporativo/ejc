@@ -142,6 +142,19 @@ def _overrides() -> dict[str, ModoSanitizacao]:
     return resultado
 
 
+def reforcar_sigilo(base: ModoSanitizacao,
+                    area: ModoSanitizacao | None) -> ModoSanitizacao:
+    """Combina o modo da TAREFA (`base`) com o modo derivado da ÁREA do caso
+    (`area`), aplicando o PISO de sigilo não-rebaixável: se a área exige
+    LOCAL_COMPLETO (sigilo reforçado), o resultado é LOCAL_COMPLETO — o dado nunca
+    pode sair do VPS mesmo que a tarefa aceitasse externo (achado S1). Caso
+    contrário mantém o modo da tarefa (a área nunca ENFRAQUECE o modo da tarefa).
+    """
+    if area == ModoSanitizacao.LOCAL_COMPLETO:
+        return ModoSanitizacao.LOCAL_COMPLETO
+    return base
+
+
 def modo_para_task(task_type: str) -> ModoSanitizacao:
     """Retorna o ModoSanitizacao para `task_type` (default + override de config).
 
