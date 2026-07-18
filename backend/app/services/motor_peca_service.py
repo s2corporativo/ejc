@@ -363,8 +363,20 @@ def calcular_prazo_projetado(
         )
         return out
     if info["contagem"] == "uteis":
+        # Prazo PROCESSUAL em dias úteis: aplica a suspensão integral do
+        # recesso do CPC art. 220 (20/12–20/01; CLT art. 775-A). NÃO se aplica
+        # a decadenciais/corridos administrativos (ramo "corridos" abaixo).
         data = prazo_dias_uteis(termo_inicial, info["prazo_dias"],
-                                tribunal=tribunal, em_dobro=em_dobro)
+                                tribunal=tribunal, em_dobro=em_dobro,
+                                aplicar_recesso=True)
+        sem_recesso = prazo_dias_uteis(termo_inicial, info["prazo_dias"],
+                                       tribunal=tribunal, em_dobro=em_dobro)
+        if data != sem_recesso:
+            out["aviso_recesso"] = (
+                "Projeção considera a suspensão do recesso forense de 20/12 a "
+                "20/01 (CPC art. 220; CLT art. 775-A). Confirme eventual "
+                "portaria específica do tribunal."
+            )
     else:
         # Prazo decadencial NUNCA prorroga o vencimento para o dia útil seguinte.
         data = prazo_dias_corridos(termo_inicial, info["prazo_dias"], tribunal=tribunal,

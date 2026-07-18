@@ -73,6 +73,13 @@ class AnalisarIn(BaseModel):
     # Termo inicial INFORMADO pelo advogado (nunca presumido). Mesmo informado,
     # o prazo permanece PROJETADO até a confirmação explícita no /gerar.
     termo_inicial: Optional[date] = None
+    # Evento processual (Fase 2): quando informado com data_evento, o termo
+    # inicial é DERIVADO deterministicamente (evento_processual.resolver_termo_
+    # inicial, base legal citada). A IA nunca calcula; eventos incertos saem
+    # como "verificar". termo_inicial explícito tem precedência sobre o evento.
+    evento: Optional[str] = Field(None, max_length=64)
+    data_evento: Optional[date] = None
+    meio: Optional[str] = Field(None, max_length=32)
     peca_codigo: Optional[str] = Field(None, max_length=64)
     em_dobro: bool = Field(False, description="Prazo em dobro (CPC arts. 180/183/186)")
     incluir_motivacao_ia: bool = True
@@ -83,6 +90,12 @@ class GerarIn(BaseModel):
     peca_codigo: str = Field(..., max_length=64)
     rito_codigo: Optional[str] = Field(None, max_length=64)
     termo_inicial: Optional[date] = None
+    # Evento processual (Fase 2) — alternativa determinística ao termo_inicial
+    # explícito. O gate termo_inicial_confirmado NÃO muda: mesmo derivado do
+    # evento, o termo só vira Deadline com confirmação humana explícita.
+    evento: Optional[str] = Field(None, max_length=64)
+    data_evento: Optional[date] = None
+    meio: Optional[str] = Field(None, max_length=32)
     termo_inicial_confirmado: bool = False
     # Obrigatória quando o prazo da peça é contagem="verificar".
     data_prazo_manual: Optional[date] = None
@@ -150,12 +163,28 @@ async def analisar(
         )
 
     # 3) Prazo PROJETADO — nunca presumir termo inicial; nunca criar Deadline.
+    #    Evento processual (Fase 2): deriva o termo DETERMINISTICAMENTE (base
+    #    legal citada); eventos incertos saem "verificar" e nada é presumido.
+    evento_info = None
+    termo_inicial = payload.termo_inicial
+    termo_origem = "informado_pelo_advogado" if termo_inicial else None
+    if payload.evento and payload.data_evento:
+        from app.services.evento_processual import resolver_termo_inicial
+        evento_info = resolver_termo_inicial(
+            payload.evento, payload.data_evento, payload.meio)
+        if termo_inicial is None and evento_info["contagem_confirmavel"]:
+            termo_inicial = evento_info["termo_inicial"]
+            termo_origem = "derivado_de_evento"
+
     prazo_projetado = None
     if peca_principal:
         prazo_projetado = mps.calcular_prazo_projetado(
-            peca_principal, rito["codigo"], payload.termo_inicial,
+            peca_principal, rito["codigo"], termo_inicial,
             tribunal=case.tribunal, em_dobro=payload.em_dobro,
         )
+        prazo_projetado["termo_inicial_origem"] = termo_origem
+        if evento_info:
+            prazo_projetado["evento_base_legal"] = evento_info["base_legal"]
 
     # 4) Checklist bloqueante da peça proposta
     checklist_itens: list[dict] = []
@@ -186,6 +215,7 @@ async def analisar(
                         "Nenhuma peça mapeada deterministicamente para este "
                         "rito/etapa — selecione a peça manualmente."),
         "peca_principal": peca_principal,
+        "evento_processual": evento_info,
         "prazo_projetado": prazo_projetado,
         "checklist": {"itens": checklist_itens, "pronto": checklist_pronto},
         "motivacao_ia": motivacao_ia,
@@ -220,6 +250,31 @@ async def gerar(
 
     case = await verificar_acesso_caso(db, cu, case_id)
     info = mps.CATALOGO_PECAS[req.peca_codigo]
+
+    # Evento processual (Fase 2): termo derivado DETERMINISTICAMENTE do
+    # catálogo de eventos (base legal citada). O termo_inicial explícito tem
+    # precedência; os gates de confirmação humana abaixo NÃO mudam.
+    evento_info = None
+    termo_inicial = req.termo_inicial
+    if req.evento:
+        if req.data_evento is None:
+            raise HTTPException(422, detail={
+                "mensagem": "Evento processual informado sem data_evento — "
+                            "informe a data do evento para derivar o termo inicial.",
+            })
+        from app.services.evento_processual import resolver_termo_inicial
+        evento_info = resolver_termo_inicial(req.evento, req.data_evento, req.meio)
+        if termo_inicial is None:
+            if not evento_info["contagem_confirmavel"]:
+                raise HTTPException(422, detail={
+                    "mensagem": ("Termo inicial não determinável com certeza a "
+                                 "partir deste evento — verifique nos autos e "
+                                 "informe termo_inicial manualmente."),
+                    "evento": req.evento,
+                    "base_legal": evento_info["base_legal"],
+                    "avisos": evento_info["avisos"],
+                })
+            termo_inicial = evento_info["termo_inicial"]
 
     # Texto-base + LGPD (sanitizar_pii ANTES de qualquer LLM)
     texto_bruto = await mps.texto_base_do_caso(db, case, req.descricao_fatos)
@@ -259,20 +314,24 @@ async def gerar(
 
     # Data fatal: determinística (uteis/corridos) ou manual (contagem=verificar)
     if prazo_info["contagem"] == "uteis" and prazo_info["prazo_dias"]:
-        if req.termo_inicial is None:
+        if termo_inicial is None:
             raise HTTPException(422, detail={
                 "mensagem": "Informe o termo inicial confirmado para calcular o prazo."})
         data_prazo = mps.prazo_dias_uteis(
-            req.termo_inicial, prazo_info["prazo_dias"],
+            termo_inicial, prazo_info["prazo_dias"],
             tribunal=case.tribunal, em_dobro=req.em_dobro,
+            # Prazo PROCESSUAL em dias úteis: suspensão integral do recesso
+            # 20/12–20/01 (CPC art. 220; CLT art. 775-A).
+            aplicar_recesso=True,
         )
     elif prazo_info["contagem"] == "corridos" and prazo_info["prazo_dias"]:
-        if req.termo_inicial is None:
+        if termo_inicial is None:
             raise HTTPException(422, detail={
                 "mensagem": "Informe o termo inicial confirmado para calcular o prazo."})
         data_prazo = mps.prazo_dias_corridos(
-            req.termo_inicial, prazo_info["prazo_dias"], tribunal=case.tribunal,
+            termo_inicial, prazo_info["prazo_dias"], tribunal=case.tribunal,
             # Decadencial (ex.: MS, Lei 12.016 art. 23): vencimento não prorroga.
+            # Corridos/decadenciais: recesso do art. 220 NÃO se aplica.
             prorrogar_fim=not prazo_info.get("decadencial"),
         )
     else:
@@ -304,7 +363,7 @@ async def gerar(
         prioridade=DeadlinePrioridade.alta,
         status=DeadlineStatus.pendente,
         data_prazo=data_prazo,
-        data_intimacao=req.termo_inicial,
+        data_intimacao=termo_inicial,
         base_legal=(prazo_info["base_legal"] or "")[:255] or None,
         case_id=case.id,
         responsavel_id=cu.id,
@@ -382,8 +441,9 @@ async def gerar(
             "base_legal": deadline.base_legal,
             "tipo": _enum_val(deadline.tipo),
             "confirmado": True,
-            "termo_inicial": req.termo_inicial.isoformat() if req.termo_inicial else None,
+            "termo_inicial": termo_inicial.isoformat() if termo_inicial else None,
         },
+        "evento_processual": evento_info,
         "termo_inicial_confirmado": True,
         "fluxo_geracao": info["fluxo_geracao"],
         "redacao": redacao,
