@@ -2,7 +2,7 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 import { render, screen, waitFor } from "@testing-library/react";
 import { MemoryRouter, Route, Routes } from "react-router-dom";
 
-const get = vi.fn();
+const { get } = vi.hoisted(() => ({ get: vi.fn() }));
 
 vi.mock("../../lib/api", () => ({
   default: { get },
