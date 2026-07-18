@@ -37,6 +37,7 @@ from app.core.security import get_current_user, ROLE_LEVEL
 from app.models.user import User
 from app.routers import intake as intake_router
 from app.services import motor_peca_service as mps
+from app.services.motor_peca_service import _enum_val
 from app.services.ia_defensiva_service import IaDefensivaInput, executar_ia_defensiva
 from app.services.sanitizer import sanitizar_pii
 
@@ -49,10 +50,6 @@ def _pode_usar(cu: User) -> bool:
     """Mesmo limiar de intake.py: advogado+."""
     role = getattr(cu.role, "value", cu.role)
     return ROLE_LEVEL.get(role, 0) >= ROLE_LEVEL["advogado"]
-
-
-def _enum_val(v) -> str | None:
-    return getattr(v, "value", v) if v is not None else None
 
 
 # ── Schemas ───────────────────────────────────────────────────────────────────
@@ -157,16 +154,8 @@ async def analisar(
     # 3) Prazo PROJETADO — nunca presumir termo inicial; nunca criar Deadline.
     #    Evento processual (Fase 2): deriva o termo DETERMINISTICAMENTE (base
     #    legal citada); eventos incertos saem "verificar" e nada é presumido.
-    evento_info = None
-    termo_inicial = payload.termo_inicial
-    termo_origem = "informado_pelo_advogado" if termo_inicial else None
-    if payload.evento and payload.data_evento:
-        from app.services.evento_processual import resolver_termo_inicial
-        evento_info = resolver_termo_inicial(
-            payload.evento, payload.data_evento, payload.meio)
-        if termo_inicial is None and evento_info["contagem_confirmavel"]:
-            termo_inicial = evento_info["termo_inicial"]
-            termo_origem = "derivado_de_evento"
+    evento_info, termo_inicial, termo_origem = mps.resolver_termo_evento(
+        payload.evento, payload.data_evento, payload.meio, payload.termo_inicial)
 
     prazo_projetado = None
     if peca_principal:

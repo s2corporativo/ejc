@@ -626,6 +626,32 @@ def _enum_val(v) -> str | None:
     return getattr(v, "value", v) if v is not None else None
 
 
+def resolver_termo_evento(
+    evento: Optional[str],
+    data_evento: Optional[date],
+    meio: Optional[str],
+    termo_inicial: Optional[date],
+) -> tuple[Optional[dict], Optional[date], Optional[str]]:
+    """Regra ÚNICA evento→termo do Motor de Peça (router /analisar, tool
+    `calcular_prazo` do agente e confirmar_e_criar_prazo): resolve o evento
+    processual DETERMINISTICAMENTE (evento_processual, base legal citada) e só
+    deriva o termo quando não houve termo_inicial explícito — que SEMPRE tem
+    precedência — e a contagem é confirmável. Nada é presumido: evento incerto
+    devolve o termo_inicial inalterado (possivelmente None).
+
+    Devolve (evento_info, termo_inicial, termo_origem); origem é
+    "informado_pelo_advogado", "derivado_de_evento" ou None."""
+    termo_origem = "informado_pelo_advogado" if termo_inicial else None
+    evento_info = None
+    if evento and data_evento:
+        from app.services.evento_processual import resolver_termo_inicial
+        evento_info = resolver_termo_inicial(evento, data_evento, meio)
+        if termo_inicial is None and evento_info["contagem_confirmavel"]:
+            termo_inicial = evento_info["termo_inicial"]
+            termo_origem = "derivado_de_evento"
+    return evento_info, termo_inicial, termo_origem
+
+
 class GateBloqueado(Exception):
     """Gate de negócio do fluxo confirmar-e-criar-prazo.
 
@@ -686,19 +712,18 @@ async def confirmar_e_criar_prazo(
                 "mensagem": ("Evento processual informado sem data_evento — "
                              "informe a data do evento para derivar o termo inicial."),
             })
-        from app.services.evento_processual import resolver_termo_inicial
-        evento_info = resolver_termo_inicial(evento, data_evento, meio)
+        evento_info, termo_inicial, _ = resolver_termo_evento(
+            evento, data_evento, meio, termo_inicial)
         if termo_inicial is None:
-            if not evento_info["contagem_confirmavel"]:
-                raise GateBloqueado({
-                    "mensagem": ("Termo inicial não determinável com certeza a "
-                                 "partir deste evento — verifique nos autos e "
-                                 "informe termo_inicial manualmente."),
-                    "evento": evento,
-                    "base_legal": evento_info["base_legal"],
-                    "avisos": evento_info["avisos"],
-                })
-            termo_inicial = evento_info["termo_inicial"]
+            # Só ocorre quando a contagem não é confirmável — nada foi presumido.
+            raise GateBloqueado({
+                "mensagem": ("Termo inicial não determinável com certeza a "
+                             "partir deste evento — verifique nos autos e "
+                             "informe termo_inicial manualmente."),
+                "evento": evento,
+                "base_legal": evento_info["base_legal"],
+                "avisos": evento_info["avisos"],
+            })
 
     # Texto-base + LGPD (sanitizar_pii ANTES de qualquer LLM)
     texto_bruto = await texto_base_do_caso(db, case, texto)

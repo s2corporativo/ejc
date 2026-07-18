@@ -27,6 +27,7 @@ from app.models.redesign import TabelaOABHonorario
 from app.models.user import User
 from app.services import ai_gateway, fee_proposal_service
 from app.services.ai_service import buscar_contexto_rag
+from app.services.geracao_documental import _area_str, _item_dict
 from app.core.rate_limit import rate_limit
 
 router = APIRouter(prefix="/honorarios-oab", tags=["Honorários OAB"])
@@ -145,17 +146,13 @@ def _req_socio(cu: User = Depends(get_current_user)) -> User:
 
 
 def _item_out(i: TabelaOABHonorario) -> dict:
+    """Shape de GESTÃO (CRUD sócio+) = shape de consulta VERBATIM
+    (geracao_documental._item_dict, fonte única dos campos comuns) + campos
+    administrativos (id/área/observações/ativo)."""
     return {
+        **_item_dict(i),
         "id": i.id,
-        "item_codigo": i.item_codigo,
-        "descricao": i.descricao,
         "area_juridica": i.area_juridica,
-        "valor_minimo": float(i.valor_minimo) if i.valor_minimo is not None else None,
-        "percentual": float(i.percentual) if i.percentual is not None else None,
-        "unidade": i.unidade,
-        "vigencia_inicio": i.vigencia_inicio.isoformat() if i.vigencia_inicio else None,
-        "vigencia_fim": i.vigencia_fim.isoformat() if i.vigencia_fim else None,
-        "fonte": i.fonte,
         "observacoes": i.observacoes,
         "ativo": bool(i.ativo),
     }
@@ -315,11 +312,6 @@ def _req_advogado(cu: User = Depends(get_current_user)) -> User:
     return cu
 
 
-def _area_caso(case) -> str:
-    a = getattr(case, "area", None)
-    return getattr(a, "value", None) or str(a or "")
-
-
 class FaixaIn(BaseModel):
     valor: Optional[float] = Field(None, ge=0)
     memoria_calculo: Optional[str] = Field(None, max_length=2000)
@@ -374,7 +366,7 @@ async def sugerir_proposta_honorarios(
     sem ele, a resposta declara a escolha automática e lista os candidatos."""
     case = await verificar_acesso_caso(db, cu, case_id)
     return await fee_proposal_service.sugerir_proposta(
-        db, case, _area_caso(case),
+        db, case, _area_str(case),
         item_codigo=(body.item_codigo if body else None))
 
 
@@ -398,7 +390,7 @@ async def criar_proposta_honorarios(
     if isinstance(origem, dict) and str(origem.get("item_codigo") or "").strip():
         from app.services.geracao_documental import _itens_oab_vigentes
         cod = str(origem["item_codigo"]).strip()
-        itens = await _itens_oab_vigentes(db, _area_caso(case), date.today(),
+        itens = await _itens_oab_vigentes(db, _area_str(case), date.today(),
                                           limite=20)
         if cod in {(i.item_codigo or "").strip() for i in itens}:
             origem["validada"] = True

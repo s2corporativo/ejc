@@ -25,12 +25,14 @@ from fastapi import HTTPException
 from sqlalchemy import func, select
 from sqlalchemy.exc import IntegrityError
 
+from app.core.ownership import role_str as _role_str
 from app.core.security import requer_advogado
 from app.models.audit_log import criar_audit_log
 from app.models.case import Case
 from app.models.fee_proposal import FeeProposal
 from app.models.user import User
 from app.services.geracao_documental import _item_dict, _itens_oab_vigentes
+from app.utils.format import formatar_brl
 
 # ── Multiplicadores FIXOS e documentados (determinísticos — nunca LLM) ────────
 # recomendado  = mínimo OAB × 1.5 × fator de complexidade
@@ -147,12 +149,12 @@ async def sugerir_proposta(db, case: Case, area: str,
     if selecao_item and selecao_item.get("automatica"):
         # A memória de cálculo declara a escolha automática explicitamente.
         mem_min += f" — {selecao_item['aviso']}"
-    mem_rec = (f"minimo OAB R$ {minimo:,.2f} x fator recomendado "
+    mem_rec = (f"minimo OAB {formatar_brl(minimo)} x fator recomendado "
                f"{_FATOR_RECOMENDADO:g} x fator {fator:g} ({complex_txt}) "
-               f"= R$ {minimo * _FATOR_RECOMENDADO * fator:,.2f}")
-    mem_est = (f"minimo OAB R$ {minimo:,.2f} x fator estrategico "
+               f"= {formatar_brl(minimo * _FATOR_RECOMENDADO * fator)}")
+    mem_est = (f"minimo OAB {formatar_brl(minimo)} x fator estrategico "
                f"{_FATOR_ESTRATEGICO:g} x fator {fator:g} ({complex_txt}) "
-               f"= R$ {minimo * _FATOR_ESTRATEGICO * fator:,.2f}")
+               f"= {formatar_brl(minimo * _FATOR_ESTRATEGICO * fator)}")
     aviso = AVISO_SUGESTAO
     if selecao_item and selecao_item.get("automatica"):
         aviso = f"{AVISO_SUGESTAO} {selecao_item['aviso']}."
@@ -169,11 +171,6 @@ async def sugerir_proposta(db, case: Case, area: str,
 
 
 # ── CRUD/ciclo de vida ───────────────────────────────────────────────────────
-
-def _role_str(cu: User) -> str:
-    r = getattr(cu, "role", None)
-    return r.value if hasattr(r, "value") else str(r)
-
 
 def _req_advogado_service(cu: User) -> None:
     # Defesa em profundidade: aprovação/rejeição é ato jurídico de advogado+
@@ -363,11 +360,11 @@ def _forma_pagamento(parcelamento: dict | None) -> str:
         return str(parcelamento["descricao"])
     partes = []
     if parcelamento.get("entrada") is not None:
-        partes.append(f"entrada de R$ {float(parcelamento['entrada']):,.2f}")
+        partes.append(f"entrada de {formatar_brl(parcelamento['entrada'])}")
     n = parcelamento.get("num_parcelas")
     vp = parcelamento.get("valor_parcela")
     if n and vp is not None:
-        partes.append(f"{int(n)} parcelas mensais de R$ {float(vp):,.2f}")
+        partes.append(f"{int(n)} parcelas mensais de {formatar_brl(vp)}")
     elif n:
         partes.append(f"{int(n)} parcelas mensais")
     return " + ".join(partes) if partes else "a vista, na assinatura deste contrato"

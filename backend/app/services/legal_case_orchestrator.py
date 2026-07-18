@@ -51,8 +51,10 @@ from fastapi import HTTPException
 from pydantic import ValidationError
 from sqlalchemy import func, select
 
+from app.core.ownership import role_str as _role_str
 from app.core.rate_limit import consumir
 from app.core.security import requer_advogado
+from app.services.motor_peca_service import _enum_val
 from app.models.audit_log import criar_audit_log
 from app.models.case import Case
 from app.models.case_intelligence import CaseIntelligenceSnapshot
@@ -90,15 +92,6 @@ _ORIGENS_CONTEUDO = ("triagem", "intake", "raio_x", "motor_peca", "manual",
                      "matriz_teses")
 
 _TIPOS_KIT = ("procuracao", "contrato")
-
-
-def _enum_val(v) -> str | None:
-    return getattr(v, "value", v) if v is not None else None
-
-
-def _role_str(cu: User) -> str:
-    r = getattr(cu, "role", None)
-    return r.value if hasattr(r, "value") else str(r)
 
 
 def _req_advogado(cu: User) -> None:

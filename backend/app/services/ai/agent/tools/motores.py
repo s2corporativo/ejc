@@ -234,18 +234,12 @@ async def calcular_prazo(args: dict, ctx: AgentContext) -> dict:
         return {"erro": str(e)}
 
     # Evento processual → termo DERIVADO deterministicamente (base legal citada);
-    # termo_inicial explícito tem precedência (mesma regra do Motor de Peça).
-    evento_info = None
-    termo_origem = "informado_pelo_advogado" if termo_inicial else None
+    # termo_inicial explícito tem precedência (regra ÚNICA do Motor de Peça).
     evento = (args.get("evento") or "").strip()
-    if evento and data_evento:
-        from app.services.evento_processual import resolver_termo_inicial
-        evento_info = resolver_termo_inicial(evento, data_evento, args.get("meio"))
-        if termo_inicial is None and evento_info["contagem_confirmavel"]:
-            termo_inicial = evento_info["termo_inicial"]
-            termo_origem = "derivado_de_evento"
-    elif evento and not data_evento:
+    if evento and not data_evento:
         return {"erro": "evento informado sem data_evento (ISO YYYY-MM-DD)"}
+    evento_info, termo_inicial, termo_origem = mps.resolver_termo_evento(
+        evento, data_evento, args.get("meio"), termo_inicial)
 
     # Rito recomputado do caso (overrides por rito — ex.: JEC/trabalhista).
     rito = await _rito_do_caso(ctx, case)

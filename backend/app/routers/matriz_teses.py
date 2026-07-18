@@ -22,7 +22,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.core.database import get_db
 from app.core.ownership import verificar_acesso_caso
 from app.core.rate_limit import rate_limit
-from app.core.security import get_current_user, ROLE_LEVEL
+from app.core.security import get_current_user, requer_advogado
 from app.core.taxonomia import areas_validas, normalizar_area
 from app.models.user import User
 from app.services import matriz_teses_service as mts
@@ -34,10 +34,7 @@ router = APIRouter(prefix="/cases/{case_id}/matriz-teses",
                    tags=["Matriz de Teses"])
 
 
-def _pode_decidir(cu: User) -> bool:
-    """Mesmo limiar de case_intelligence: advogado+ (HITL é ato de advogado)."""
-    role = getattr(cu.role, "value", cu.role)
-    return ROLE_LEVEL.get(role, 0) >= ROLE_LEVEL["advogado"]
+# Gate advogado+ (HITL é ato de advogado): fonte única core.security.requer_advogado.
 
 
 class MontarMatrizIn(BaseModel):
@@ -62,8 +59,7 @@ async def montar(
     retorno real, nunca inventados) e monta teses candidatas do Banco de Teses
     + sugeridas pela IA, com score determinístico. Advogado+.
     """
-    if not _pode_decidir(cu):
-        raise HTTPException(403, "Montagem da matriz restrita a advogados")
+    requer_advogado(cu, detail="Montagem da matriz restrita a advogados")
     case = await verificar_acesso_caso(db, cu, case_id)
 
     body = body or MontarMatrizIn()
@@ -103,8 +99,7 @@ async def obter(
 
 async def _decidir(case_id: str, tese_id: str, decisao: str,
                    db: AsyncSession, cu: User) -> dict:
-    if not _pode_decidir(cu):
-        raise HTTPException(403, "Decisão sobre tese restrita a advogados")
+    requer_advogado(cu, detail="Decisão sobre tese restrita a advogados")
     await verificar_acesso_caso(db, cu, case_id)
     cand = await mts.aprovar_tese(db, tese_id, cu, decisao=decisao,
                                   case_id=case_id)
