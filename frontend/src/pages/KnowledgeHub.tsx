@@ -15,6 +15,7 @@ import {
 } from "lucide-react";
 import api from "../lib/api";
 import { PageHeader, Spinner, fmtDate } from "../components/UI";
+import { useAuth } from "../stores/auth";
 import { toast } from "../components/Toast";
 import { ConhecimentoStats } from "../components/Dashboards";
 import { asList } from "../lib/list";
@@ -353,8 +354,13 @@ function Meta({ label, value }: { label: string; value?: unknown }) {
   );
 }
 
+// Mesmos perfis de ROLES.gestores (moduleRegistry) — donos da Curadoria RAG.
+const ROLES_CURADORIA = ["superadmin", "admin", "socio"];
+
 function ResultCard({ r }: { r: ResultadoUnificado }) {
   const [aberto, setAberto] = useState(false);
+  const role = useAuth((s) => s.user?.role ?? "");
+  const podeCurar = ROLES_CURADORIA.includes(role);
   const fontes: Fonte[] = [r.fonte, ...r.fontesExtras];
 
   // "Abrir origem": rotas existentes no app. Não há rota dedicada de
@@ -523,8 +529,10 @@ function ResultCard({ r }: { r: ResultadoUnificado }) {
                 focada no documento. Não chama PATCH /ia-governanca/
                 rag-curadoria/{doc_id} daqui: o endpoint exige o veredicto
                 (confidence_level/rag_status), decisão que pertence à tela
-                de curadoria (admin/sócio). */}
-            {r.rag?.doc_id && (
+                de curadoria (admin/sócio). Só gestores veem o atalho —
+                /ia-governanca é ROLES.gestores no moduleRegistry e o
+                RouteGuard redirecionaria os demais perfis. */}
+            {r.rag?.doc_id && podeCurar && (
               <Link
                 to={`/ia-governanca?tab=curadoria&doc_id=${r.rag.doc_id}`}
                 className="btn-secondary text-xs inline-flex items-center gap-1"

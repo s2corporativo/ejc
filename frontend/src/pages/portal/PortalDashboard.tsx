@@ -10,6 +10,7 @@ import {
   AlertCircle,
   FileUp,
   PenLine,
+  MessageCircle,
 } from "lucide-react";
 import api from "../../lib/api";
 import { useAuth } from "../../stores/auth";
@@ -77,9 +78,9 @@ export default function PortalDashboard() {
     .reduce((s, f) => s + (f.valor ?? 0), 0);
 
   // ── Pendências do cliente, em ordem de prioridade:
-  // 1) documento solicitado  2) assinatura pendente  3) pagamento em aberto.
-  // (Mensagens não lidas: o backend ainda não expõe contagem sem marcá-las
-  // como lidas, então não entram no banner.)
+  // 1) documento solicitado  2) assinatura pendente  3) mensagem nova
+  // 4) pagamento em aberto. (Contagem de mensagens via
+  // /portal/mensagens/nao-lidas — sem efeito colateral.)
   const docsPendentes = solicitacoes.reduce(
     (n, s) =>
       n +
@@ -110,6 +111,13 @@ export default function PortalDashboard() {
       texto: `${assinaturasPendentes} documento${assinaturasPendentes > 1 ? "s" : ""} aguardando sua assinatura`,
       cta: "Assinar",
     });
+  if (mensagensNaoLidas > 0)
+    pendencias.push({
+      to: "/portal/mensagens",
+      icon: MessageCircle,
+      texto: `${mensagensNaoLidas} mensagem${mensagensNaoLidas > 1 ? "ns" : ""} nova${mensagensNaoLidas > 1 ? "s" : ""} do escritório`,
+      cta: "Ler",
+    });
   if (pagamentosAbertos > 0)
     pendencias.push({
       to: "/portal/financeiro",
@@ -118,7 +126,7 @@ export default function PortalDashboard() {
       cta: "Ver",
     });
   const totalPendencias =
-    docsPendentes + assinaturasPendentes + pagamentosAbertos;
+    docsPendentes + assinaturasPendentes + mensagensNaoLidas + pagamentosAbertos;
 
   return (
     <div className="space-y-6">
