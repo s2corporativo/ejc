@@ -182,12 +182,15 @@ export default function FlowEnhancements() {
     if (!caseId) setUploadOpen(false);
   }, [caseId]);
 
-  const fecharUpload = () => {
-    if (enviando) return;
+  const limparUpload = () => {
     setUploadOpen(false);
     setArquivo(null);
     setTitulo("");
     setTipo("outro");
+  };
+
+  const fecharUpload = () => {
+    if (!enviando) limparUpload();
   };
 
   const enviarDocumento = async () => {
@@ -206,7 +209,7 @@ export default function FlowEnhancements() {
         headers: { "Content-Type": "multipart/form-data" },
       });
       toast.success("Documento anexado ao caso.");
-      fecharUpload();
+      limparUpload();
     } catch (error) {
       toast.error(detalheErro(error));
     } finally {
@@ -240,7 +243,7 @@ export default function FlowEnhancements() {
             </label>
             <input
               type="file"
-              accept=".pdf,.docx,.jpg,.jpeg,.png,.xlsx,.xml"
+              accept=".pdf,.docx,.doc,.jpg,.jpeg,.png,.xlsx,.xls,.txt,.xml"
               className="input w-full"
               onChange={(event) => {
                 const next = event.target.files?.[0] ?? null;
@@ -249,7 +252,8 @@ export default function FlowEnhancements() {
               }}
             />
             <p className="mt-1 text-xs text-slate-500">
-              Formatos aceitos: PDF, DOCX, JPG, PNG, XLSX e XML.
+              Formatos aceitos: PDF, DOCX, DOC, JPG, PNG, XLSX, XLS, TXT e XML.
+              Arquivos DOC e XLS são armazenados, mas não são indexados para busca.
             </p>
           </div>
 
@@ -280,8 +284,7 @@ export default function FlowEnhancements() {
               <option value="decisao">Decisão</option>
               <option value="contrato">Contrato</option>
               <option value="procuracao">Procuração</option>
-              <option value="documento_pessoal">Documento pessoal</option>
-              <option value="comprovante">Comprovante</option>
+              <option value="prova">Prova</option>
             </select>
           </div>
 
@@ -298,10 +301,9 @@ export default function FlowEnhancements() {
               variant="primary"
               onClick={() => void enviarDocumento()}
               disabled={!arquivo || enviando}
-              loading={enviando}
               icon={<FileUp className="h-4 w-4" />}
             >
-              Anexar documento
+              {enviando ? "Anexando..." : "Anexar documento"}
             </Button>
           </div>
         </div>
