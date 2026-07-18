@@ -24,6 +24,14 @@ class LegalDocAprovacao(BaseModel):
     # BUG-08: aprovação HITL. Para peça ai_generated, observacoes é obrigatório.
     observacoes: Optional[str] = None
 
+class LegalDocProtocolo(BaseModel):
+    # Registro do comprovante de protocolo (peticionamento manual). numero_protocolo
+    # é obrigatório (a rota rejeita vazio); os demais são opcionais.
+    numero_protocolo: str
+    protocolo_tribunal: Optional[str] = None
+    protocolado_em: Optional[datetime] = None
+    protocolo_comprovante_doc_id: Optional[str] = None
+
 class LegalDocResponse(BaseModel):
     id: str
     titulo: str
@@ -42,3 +50,7 @@ class LegalDocResponse(BaseModel):
 class LegalDocDetail(LegalDocResponse):
     conteudo: str
     notas_revisao: Optional[str] = None
+    numero_protocolo: Optional[str] = None
+    protocolado_em: Optional[datetime] = None
+    protocolo_tribunal: Optional[str] = None
+    protocolo_comprovante_doc_id: Optional[str] = None

@@ -24,18 +24,28 @@ import re
 from typing import Any
 
 from app.core.config import get_settings
+from app.services.document_format import marca_minuta_ia
 from app.services.visual_law_theme import OURO
 
 logger = logging.getLogger("ejc.docx")
 
 settings = get_settings()
 
-# Identidade institucional — mesma fonte usada pelo PDF (settings ESCRITORIO_*).
+# Identidade institucional — mesma FONTE ÚNICA usada pelo PDF (settings
+# ESCRITORIO_*). OAB e endereço agora integram o timbre (cabeçalho) e o rodapé;
+# vazios no .env viram placeholder explícito, nunca dado inventado.
 ESCRITORIO_NOME = settings.ESCRITORIO_NOME
+# Sub-linha do timbre (cabeçalho): OAB + endereço — dados FIXOS do escritório.
+ESCRITORIO_TIMBRE_SUB = (
+    f"OAB/MG {settings.escritorio_oab()}  |  "
+    f"{settings.escritorio_endereco()} - {settings.ESCRITORIO_CIDADE}/{settings.ESCRITORIO_ESTADO}  |  "
+    f"CEP {settings.escritorio_cep()}"
+)
+# Rodapé: contato completo (CNPJ + OAB + endereço + e-mail).
 ESCRITORIO_CONTATO = (
-    f"CNPJ {settings.ESCRITORIO_CNPJ}  |  "
-    f"{settings.ESCRITORIO_CIDADE}/{settings.ESCRITORIO_ESTADO}  |  "
-    f"{settings.ESCRITORIO_EMAIL}"
+    f"CNPJ {settings.ESCRITORIO_CNPJ}  |  OAB/MG {settings.escritorio_oab()}  |  "
+    f"{settings.escritorio_endereco()} - {settings.ESCRITORIO_CIDADE}/{settings.ESCRITORIO_ESTADO}  |  "
+    f"CEP {settings.escritorio_cep()}  |  {settings.ESCRITORIO_EMAIL}"
 )
 
 # ── Parser de markdown (linha a linha) ───────────────────────────────────────
@@ -181,7 +191,7 @@ def gerar_docx(titulo: str, conteudo_md: str, meta: dict | None = None) -> bytes
     normal.element.get_or_add_rPr().get_or_add_rFonts().set(qn("w:eastAsia"), fonte)
     normal.paragraph_format.line_spacing = 1.5
 
-    # ── Cabeçalho: escritório + nº do processo (se houver) ─────────────
+    # ── Cabeçalho: escritório (nome + OAB/endereço) + nº do processo ────
     header = section.header
     ph = header.paragraphs[0]
     ph.alignment = WD_ALIGN_PARAGRAPH.CENTER
@@ -189,6 +199,13 @@ def gerar_docx(titulo: str, conteudo_md: str, meta: dict | None = None) -> bytes
     run.bold = True
     run.font.name = fonte
     run.font.size = Pt(10)
+
+    # Sub-linha do timbre: OAB + endereço (dados FIXOS das settings).
+    psub = header.add_paragraph()
+    psub.alignment = WD_ALIGN_PARAGRAPH.CENTER
+    rsub = psub.add_run(ESCRITORIO_TIMBRE_SUB)
+    rsub.font.name = fonte
+    rsub.font.size = Pt(8)
 
     numero_processo = meta.get("numero_processo") or meta.get("processo")
     if numero_processo:
@@ -228,6 +245,20 @@ def gerar_docx(titulo: str, conteudo_md: str, meta: dict | None = None) -> bytes
         rc.font.name = fonte
         rc.font.size = Pt(7.5)
         rc.font.color.rgb = RGBColor(75, 85, 99)
+
+    # ── Marca de minuta IA (só rascunho não-revisado) ───────────────────
+    # Embute a origem-IA no CORPO da 1ª página quando a peça é ai_generated e
+    # ainda NÃO foi human_reviewed — a salvaguarda VIAJA com o .docx baixado.
+    # Versão final revisada (meta sem minuta_ia) sai LIMPA.
+    if meta.get("minuta_ia"):
+        pmin = doc.add_paragraph()
+        pmin.alignment = WD_ALIGN_PARAGRAPH.CENTER
+        pmin.paragraph_format.space_after = Pt(10)
+        rmin = pmin.add_run(marca_minuta_ia())
+        rmin.bold = True
+        rmin.font.name = fonte
+        rmin.font.size = Pt(11)
+        rmin.font.color.rgb = RGBColor(0xB9, 0x1C, 0x1C)  # vermelho de alerta
 
     # ── Título do documento ─────────────────────────────────────────────
     pt = doc.add_paragraph()

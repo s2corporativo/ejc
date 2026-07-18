@@ -12,9 +12,12 @@ from app.core.database import get_db
 from app.core.security import get_current_user
 from app.models.user import User
 from app.models.procuracao import Procuracao
+from app.models.client import Client
+from app.models.case import Case
 from app.models.audit_log import criar_audit_log
 from app.schemas.procuracao import ProcuracaoCreate, ProcuracaoResponse
 from app.schemas.common import MsgResponse
+from app.services.documental import _procuracao
 
 router = APIRouter(prefix="/procuracoes", tags=["Procurações"])
 
@@ -73,6 +76,58 @@ async def criar(
     await db.commit()
     await db.refresh(p)
     return p
+
+
+@router.post("/{proc_id}/minuta")
+async def gerar_minuta(
+    proc_id: str,
+    case_id: Optional[str] = Query(None),
+    db: AsyncSession = Depends(get_db),
+    cu: User = Depends(_req_adv),
+):
+    # Gera a MINUTA da procuracao a partir do registro cadastrado, garantindo que
+    # o texto reflita EXATAMENTE os poderes concedidos (tipo_poderes /
+    # permite_substabelecimento / poderes_especiais). Nunca outorga
+    # substabelecimento/renuncia que o cadastro nao autorizou.
+    p = (await db.execute(
+        select(Procuracao).where(
+            Procuracao.id == proc_id, Procuracao.deleted_at.is_(None)
+        )
+    )).scalar_one_or_none()
+    if not p:
+        raise HTTPException(status_code=404, detail="Procuração não encontrada")
+
+    cli = await db.get(Client, p.client_id)
+    if not cli:
+        raise HTTPException(status_code=404, detail="Cliente da procuração não encontrado")
+
+    case = None
+    if case_id:
+        case = await db.get(Case, case_id)
+        if not case:
+            raise HTTPException(status_code=404, detail="Caso não encontrado")
+        # Coerência: a procuração emitida deve ser do próprio outorgante do caso.
+        if getattr(case, "client_id", None) and case.client_id != p.client_id:
+            raise HTTPException(
+                status_code=400, detail="Caso não pertence ao cliente da procuração"
+            )
+
+    adv = getattr(cu, "full_name", None) or "[advogado responsavel]"
+    minuta = _procuracao(
+        case, cli, adv,
+        tipo_poderes=p.tipo_poderes,
+        permite_substabelecimento=bool(p.permite_substabelecimento),
+        poderes_especiais=p.poderes_especiais,
+        foro_restrito=p.foro_restrito,
+    )
+    await criar_audit_log(db, cu.id, cu.role.value, "MINUTA", "procuracoes", p.id)
+    await db.commit()
+    return {
+        "procuracao_id": p.id,
+        "tipo_poderes": p.tipo_poderes,
+        "permite_substabelecimento": bool(p.permite_substabelecimento),
+        "minuta": minuta,
+    }
 
 
 @router.post("/{proc_id}/revogar", response_model=MsgResponse)

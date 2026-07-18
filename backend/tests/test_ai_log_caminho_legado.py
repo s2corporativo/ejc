@@ -141,8 +141,11 @@ async def test_ia_analise_cliente_grava_ailog(monkeypatch):
     from app.services import ai_gateway
     monkeypatch.setattr(ai_gateway, "chat", _fake_chat(texto="Perfil de risco moderado."))
 
+    # responsavel_id == caller: satisfaz o gate de titularidade (sigilo interno)
+    # sem tocar no _FakeDB — advogado só analisa o perfil da própria carteira.
     cliente = SimpleNamespace(
         id="cli-1", nome_exibicao="Empresa ACME", tipo="pj", deleted_at=None,
+        responsavel_id="user-9",
     )
     casos = [SimpleNamespace(id="c1", client_id="cli-1")]
     fees = [SimpleNamespace(id="f1", client_id="cli-1")]

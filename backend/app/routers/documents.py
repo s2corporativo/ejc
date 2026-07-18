@@ -778,17 +778,26 @@ async def link_documento(
     current_user: User = Depends(get_current_user),
 ):
     """Retorna link de visualização e download de um documento no Drive."""
-    await _gate_drive_doc(db, current_user, file_id)
+    row = await _gate_drive_doc(db, current_user, file_id)
     try:
         info = gd.get_file_link(file_id)
-        return {
-            "view": info.get("webViewLink"),
-            "download": info.get("webContentLink"),
-            "nome": info.get("name"),
-        }
     except Exception:
         logger.warning("Falha ao obter link do arquivo %s no Drive", file_id, exc_info=True)
         raise HTTPException(404, "Arquivo não encontrado no Drive")
+    # Auditoria (LGPD): a via LOCAL de download já logava (ver /{doc_id}/download);
+    # a via principal — documento no Drive — não. Mesmo padrão: IP capturado
+    # automaticamente pelo ClientIPMiddleware dentro de criar_audit_log.
+    await criar_audit_log(
+        db, current_user.id, current_user.role.value,
+        "VIEW_DOCUMENTO", "documents", row.get("id"),
+        detalhes=f"link Drive: {info.get('name') or file_id}",
+    )
+    await db.commit()
+    return {
+        "view": info.get("webViewLink"),
+        "download": info.get("webContentLink"),
+        "nome": info.get("name"),
+    }
 
 
 @router.get("/drive/{file_id}/download")
@@ -798,35 +807,43 @@ async def download_documento(
     current_user: User = Depends(get_current_user),
 ):
     """Proxy de download — baixa do Drive e retorna ao cliente."""
-    await _gate_drive_doc(db, current_user, file_id)
+    row = await _gate_drive_doc(db, current_user, file_id)
     from urllib.parse import quote
     from fastapi.responses import Response
     from app.services.document_format import ascii_seguro
     try:
         content, mime = gd.download_file(file_id)
         info = gd.get_file_link(file_id)
-        # Item 8: filename vem do Drive sem sanitização — aspas/;/CR-LF manglam
-        # (ou injetam) o header. ascii_seguro() remove controles e acentos;
-        # aspas/;/barras saem também. filename* (RFC 5987) preserva o nome real.
-        nome = (info.get("name") or "documento").strip()
-        nome_ascii = ascii_seguro(nome)
-        for ch in ('"', ";", "\\", "/"):
-            nome_ascii = nome_ascii.replace(ch, "")
-        # Colapsa QUALQUER whitespace (inclusive \n, que ascii_seguro preserva)
-        # — CR/LF em header = response splitting.
-        nome_ascii = " ".join(nome_ascii.split()) or "documento"
-        return Response(
-            content=content,
-            media_type=mime,
-            headers={"Content-Disposition":
-                     f'attachment; filename="{nome_ascii}"; '
-                     f"filename*=UTF-8''{quote(nome, safe='')}"},
-        )
     except gd.DriveIndisponivelError:
         raise HTTPException(503, "Google Drive não configurado/indisponível")
     except Exception:
         logger.warning("Falha ao baixar arquivo %s do Drive", file_id, exc_info=True)
         raise HTTPException(404, "Erro ao baixar o arquivo")
+    # Item 8: filename vem do Drive sem sanitização — aspas/;/CR-LF manglam
+    # (ou injetam) o header. ascii_seguro() remove controles e acentos;
+    # aspas/;/barras saem também. filename* (RFC 5987) preserva o nome real.
+    nome = (info.get("name") or "documento").strip()
+    nome_ascii = ascii_seguro(nome)
+    for ch in ('"', ";", "\\", "/"):
+        nome_ascii = nome_ascii.replace(ch, "")
+    # Colapsa QUALQUER whitespace (inclusive \n, que ascii_seguro preserva)
+    # — CR/LF em header = response splitting.
+    nome_ascii = " ".join(nome_ascii.split()) or "documento"
+    # Auditoria de download (LGPD) — mesma trilha do /{doc_id}/download local,
+    # que na via Drive faltava. IP capturado pelo ClientIPMiddleware.
+    await criar_audit_log(
+        db, current_user.id, current_user.role.value,
+        "DOWNLOAD", "documents", row.get("id"),
+        detalhes=nome,
+    )
+    await db.commit()
+    return Response(
+        content=content,
+        media_type=mime,
+        headers={"Content-Disposition":
+                 f'attachment; filename="{nome_ascii}"; '
+                 f"filename*=UTF-8''{quote(nome, safe='')}"},
+    )
 
 
 @router.delete("/drive/{file_id}")
