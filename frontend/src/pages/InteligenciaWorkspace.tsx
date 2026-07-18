@@ -49,7 +49,7 @@ const TABS = [
   { k: "jurimetria", label: "Jurimetria", icon: Scale },
   {
     k: "conhecimento",
-    label: "Curadoria RAG",
+    label: "Curadoria da base de conhecimento",
     icon: BookOpen,
     roles: GESTORES,
   },

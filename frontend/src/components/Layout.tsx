@@ -27,6 +27,9 @@ import {
 import CaseContextBar from "./CaseContextBar";
 import CommandPalette from "./CommandPalette";
 import HelpButton from "./HelpButton";
+import IaStatusBanner from "./IaStatusBanner";
+import { useIaStatus } from "../lib/iaStatus";
+import { ROTULO_IA_NAO_ATIVADA } from "../lib/iaErro";
 import OnboardingTour from "./OnboardingTour";
 import ModuleLifecycleGate from "./ModuleLifecycleGate";
 import { useModuleLifecycleStore } from "../stores/moduleLifecycle";
@@ -54,6 +57,7 @@ const BRAND_LOGO = "/brand/logo-hd.png";
 
 export default function Layout() {
   const { theme, cycleTheme } = useThemeStore();
+  const { disponivel: iaDisponivel } = useIaStatus();
   const user = useAuth((state) => state.user);
   const lifecycleSettings = useModuleLifecycleStore(
     (state) => state.settings,
@@ -597,6 +601,8 @@ export default function Layout() {
           contentMargin,
         )}
       >
+        {/* Aviso global: IA não ativada nesta instalação (dispensável). */}
+        <IaStatusBanner />
         {/* Modo Caso: faixa fina de contexto do caso ativo (discreta). */}
         <CaseContextBar />
         <main className="ejc-modern-scope flex-1 px-4 py-5 md:px-7 md:py-7">
@@ -609,13 +615,25 @@ export default function Layout() {
       </div>
 
       <OnboardingTour />
-      <Link
-        to="/inteligencia?tab=assistente"
-        className="fixed bottom-5 right-5 z-30 hidden h-12 w-12 items-center justify-center rounded-2xl bg-ai-600 text-white shadow-lg shadow-ai-600/25 hover:bg-ai-700 md:flex"
-        aria-label="Assistente IA"
-      >
-        <Bot className="h-5 w-5" />
-      </Link>
+      {iaDisponivel ? (
+        <Link
+          to="/inteligencia?tab=assistente"
+          className="fixed bottom-5 right-5 z-30 hidden h-12 w-12 items-center justify-center rounded-2xl bg-ai-600 text-white shadow-lg shadow-ai-600/25 hover:bg-ai-700 md:flex"
+          aria-label="Assistente IA"
+        >
+          <Bot className="h-5 w-5" />
+        </Link>
+      ) : (
+        <button
+          type="button"
+          disabled
+          title={ROTULO_IA_NAO_ATIVADA}
+          aria-label={`Assistente IA — ${ROTULO_IA_NAO_ATIVADA}`}
+          className="fixed bottom-5 right-5 z-30 hidden h-12 w-12 cursor-not-allowed items-center justify-center rounded-2xl bg-slate-300 text-white shadow-lg md:flex dark:bg-slate-700"
+        >
+          <Bot className="h-5 w-5" />
+        </button>
+      )}
     </div>
   );
 }

@@ -26,8 +26,10 @@ import {
   UploadCloud,
   Users,
   Vote,
+  Wrench,
 } from "lucide-react";
 import api from "../lib/api";
+import { RAMOS } from "./ramos/ramosConfig";
 import {
   Badge,
   Button,
@@ -39,6 +41,16 @@ import {
   PageHeader,
   PageTitle,
 } from "../components/ui";
+
+// Área (taxonomia de casos) → slug do hub de ferramentas em /ramos/<slug>.
+// A maioria coincide; "civil" e "criminal" têm hubs com nome próprio.
+const AREA_PARA_HUB: Record<string, string> = { civil: "civel", criminal: "penal" };
+
+/** Caminho do hub do ramo para uma área, ou null quando não há hub. */
+function hubDoRamo(areaSlug: string): string | null {
+  const slug = AREA_PARA_HUB[areaSlug] ?? areaSlug;
+  return RAMOS[slug] ? `/ramos/${slug}` : null;
+}
 
 type Area = {
   slug: string;
@@ -259,6 +271,7 @@ export default function RamosHub() {
               tone: "from-slate-500/10 to-slate-500/0 text-slate-700",
             };
             const Icon = visual.icon;
+            const hub = hubDoRamo(area.slug);
             return (
               <Card key={area.slug} className="group relative h-full overflow-hidden p-5 transition duration-200 hover:-translate-y-1 hover:shadow-[0_26px_70px_rgba(15,23,42,0.14)]">
                 <div className={`absolute inset-x-0 top-0 h-24 bg-gradient-to-b ${visual.tone}`} />
@@ -273,11 +286,24 @@ export default function RamosHub() {
                     <h2 className="text-base font-semibold text-slate-950 dark:text-slate-50">{area.nome}</h2>
                     <p className="text-sm leading-6 text-slate-500 dark:text-slate-300">{visual.description}</p>
                   </div>
-                  <div className="mt-auto grid grid-cols-2 gap-2 pt-2">
-                    <Button variant="secondary" size="sm" onClick={() => navigate(`/casos?area=${encodeURIComponent(area.slug)}`)}>Ver casos</Button>
-                    <Button size="sm" onClick={() => navigate(`/casos/novo?modo=documento&area=${encodeURIComponent(area.slug)}`)}>
-                      <UploadCloud className="h-3.5 w-3.5" /> Importar
-                    </Button>
+                  <div className="mt-auto space-y-2 pt-2">
+                    {/* Ação primária: abre o hub do ramo (calculadoras, guias
+                        e súmulas) — antes só alcançável digitando a URL. */}
+                    {hub && (
+                      <Button
+                        size="sm"
+                        className="w-full"
+                        onClick={() => navigate(hub)}
+                      >
+                        <Wrench className="h-3.5 w-3.5" /> Abrir ferramentas do ramo
+                      </Button>
+                    )}
+                    <div className="grid grid-cols-2 gap-2">
+                      <Button variant="secondary" size="sm" onClick={() => navigate(`/casos?area=${encodeURIComponent(area.slug)}`)}>Ver casos</Button>
+                      <Button variant="secondary" size="sm" onClick={() => navigate(`/casos/novo?modo=documento&area=${encodeURIComponent(area.slug)}`)}>
+                        <UploadCloud className="h-3.5 w-3.5" /> Importar
+                      </Button>
+                    </div>
                   </div>
                 </div>
               </Card>

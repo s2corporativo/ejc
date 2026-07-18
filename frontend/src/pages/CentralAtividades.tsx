@@ -1403,12 +1403,13 @@ export default function CentralAtividades() {
             <input
               type="date"
               className="input text-sm"
+              title="Formato: dd/mm/aaaa"
               aria-label={
                 form.categoria === "prazo"
-                  ? "Data do prazo"
+                  ? "Data do prazo (dd/mm/aaaa)"
                   : form.categoria === "tarefa"
-                    ? "Data limite"
-                    : "Data do evento"
+                    ? "Data limite (dd/mm/aaaa)"
+                    : "Data do evento (dd/mm/aaaa)"
               }
               value={form.data ?? ""}
               onChange={(e) => setForm({ ...form, data: e.target.value })}
@@ -1482,7 +1483,8 @@ export default function CentralAtividades() {
             <input
               type="date"
               className="input w-full text-sm"
-              aria-label="Nova data"
+              title="Formato: dd/mm/aaaa"
+              aria-label="Nova data (dd/mm/aaaa)"
               value={reag.data}
               onChange={(e) => setReag({ ...reag, data: e.target.value })}
             />

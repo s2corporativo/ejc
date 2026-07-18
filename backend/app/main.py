@@ -328,6 +328,7 @@ app.include_router(ia_especializada.router, prefix=API)
 app.include_router(ia_extra.router, prefix=API)  # Bloco 1 (Etapa 4): router antes não montado → 8 chamadas frontend em 404
 app.include_router(ia_governanca.router, prefix=API)
 app.include_router(ia_saude.router, prefix=API)
+app.include_router(ia_saude.router_status, prefix=API)  # GET /api/ia/status
 app.include_router(indice_risco.router, prefix=API)
 app.include_router(indices.router, prefix=API)  # Índices oficiais BCB (SGS + Olinda) — Bloco 1 das APIs públicas
 app.include_router(infosimples_receita.router, prefix=API)

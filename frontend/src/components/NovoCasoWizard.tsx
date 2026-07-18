@@ -64,6 +64,8 @@ export default function NovoCasoWizard({
     descricao_fatos: "",
   });
   const [criandoCaso, setCriandoCaso] = useState(false);
+  // Erro inline do campo título (validação junto ao campo, além do toast).
+  const [tituloErro, setTituloErro] = useState<string | null>(null);
   // Busca por nome pode trazer homônimos que NÃO são o cliente: sem esta
   // saída, o usuário ficava preso (o form de criação só abria com 0 achados).
   const [cadastrarNovo, setCadastrarNovo] = useState(false);
@@ -82,6 +84,7 @@ export default function NovoCasoWizard({
     setCliente(null);
     setCadastrarNovo(false);
     setNovoCliente({ nome: "", email: "", telefone: "" });
+    setTituloErro(null);
     setCaso({
       titulo: "",
       area: "civil",
@@ -172,6 +175,9 @@ export default function NovoCasoWizard({
   const criarCaso = async () => {
     if (!cliente) return;
     if (!caso.titulo.trim()) {
+      // Validação junto ao campo (borda vermelha + mensagem) além do toast —
+      // o toast sozinho aparecia longe do formulário (usabilidade §3.8).
+      setTituloErro("Informe o título do caso.");
       toast.error("Informe o título do caso.");
       return;
     }
@@ -416,10 +422,27 @@ export default function NovoCasoWizard({
             <div className="sm:col-span-2">
               <label className="label">Título do caso *</label>
               <input
-                className="input"
+                className={`input ${
+                  tituloErro
+                    ? "border-danger-500 focus:border-danger-500 focus:ring-danger-200"
+                    : ""
+                }`}
                 value={caso.titulo}
-                onChange={(e) => setCaso({ ...caso, titulo: e.target.value })}
+                aria-invalid={!!tituloErro}
+                aria-describedby={tituloErro ? "titulo-caso-erro" : undefined}
+                onChange={(e) => {
+                  setCaso({ ...caso, titulo: e.target.value });
+                  if (e.target.value.trim()) setTituloErro(null);
+                }}
               />
+              {tituloErro && (
+                <p
+                  id="titulo-caso-erro"
+                  className="mt-1 text-xs text-danger-600"
+                >
+                  {tituloErro}
+                </p>
+              )}
             </div>
             <div>
               <label className="label">Área</label>

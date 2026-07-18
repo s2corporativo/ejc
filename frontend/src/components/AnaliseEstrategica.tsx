@@ -17,6 +17,8 @@ import {
   BarChart3,
 } from "lucide-react";
 import api from "../lib/api";
+import { mensagemErroIA, ROTULO_IA_NAO_ATIVADA } from "../lib/iaErro";
+import { useIaStatus } from "../lib/iaStatus";
 import { Button } from "./UI";
 
 interface Parte {
@@ -162,6 +164,7 @@ export default function AnaliseEstrategica({
   const [loading, setLoading] = useState(false);
   const [textDoc, setTextDoc] = useState("");
   const [mostrarInput, setMostrarInput] = useState(false);
+  const { disponivel: iaDisponivel } = useIaStatus();
 
   async function executarAnalise() {
     setLoading(true);
@@ -172,9 +175,10 @@ export default function AnaliseEstrategica({
       setAnalise(res.data);
     } catch (e: any) {
       setAnalise({
-        erro:
-          e?.response?.data?.detail ||
-          "Erro ao analisar caso. Verifique os dados cadastrados.",
+        erro: mensagemErroIA(
+          e,
+          "Não foi possível analisar o caso. Verifique os dados cadastrados ou procure o administrador.",
+        ),
       });
     } finally {
       setLoading(false);
@@ -236,24 +240,31 @@ export default function AnaliseEstrategica({
               className="input h-28 resize-none"
             />
           )}
-          <Button
-            variant="ai"
-            onClick={executarAnalise}
-            disabled={loading}
-            className="w-full py-3 rounded-xl shadow-md"
+          <span
+            className="block"
+            title={iaDisponivel ? undefined : ROTULO_IA_NAO_ATIVADA}
           >
-            {loading ? (
-              <>
-                <div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin" />
-                Analisando caso...
-              </>
-            ) : (
-              <>
-                <Zap className="w-4 h-4" />
-                Executar Análise Estratégica
-              </>
-            )}
-          </Button>
+            <Button
+              variant="ai"
+              onClick={executarAnalise}
+              disabled={loading || !iaDisponivel}
+              className="w-full py-3 rounded-xl shadow-md"
+            >
+              {!iaDisponivel ? (
+                "IA não ativada — procure o administrador"
+              ) : loading ? (
+                <>
+                  <div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin" />
+                  Analisando caso...
+                </>
+              ) : (
+                <>
+                  <Zap className="w-4 h-4" />
+                  Executar Análise Estratégica
+                </>
+              )}
+            </Button>
+          </span>
           <p className="text-xs text-slate-400 text-center">
             A IA analisará todos os dados do caso e produzirá um parecer
             estratégico completo

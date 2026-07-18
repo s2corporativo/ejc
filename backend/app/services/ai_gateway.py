@@ -566,6 +566,22 @@ async def health() -> dict:
     }
 
 
+# ── Disponibilidade por CONFIGURAÇÃO (leve — sem chamada de rede) ─────────────
+# Usado por GET /api/ia/status e pelos payloads degradados: responde "existe ao
+# menos um provedor configurado/habilitado?" olhando apenas settings, ao
+# contrário de health(), que bate em cada provedor.
+
+def provedores_configurados() -> list[str]:
+    """Provedores elegíveis pela configuração atual (mesmas regras da cadeia)."""
+    return [p for p in ("ollama", "anthropic", "groq", "maritaca")
+            if _provider_elegivel(p)]
+
+
+def ia_disponivel() -> bool:
+    """True se a IA está habilitada E há ao menos um provedor configurado."""
+    return bool(settings.AI_ENABLED) and bool(provedores_configurados())
+
+
 # ── Helpers internos ──────────────────────────────────────────────────────────
 
 def _provider_elegivel(provider: str) -> bool:

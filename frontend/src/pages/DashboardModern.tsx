@@ -174,8 +174,14 @@ export default function DashboardModern() {
   const [solicitacoes, setSolicitacoes] = useState<any>(null);
   const [loading, setLoading] = useState(true);
   // Card "Comece aqui" (first-run): guiado por flag local, dismissível.
+  // Onboarding ÚNICO: enquanto o tour "Primeiros passos" (OnboardingTour)
+  // estiver ativo, o card fica oculto — os dois guias abertos ao mesmo tempo
+  // confundiam o usuário (auditoria de usabilidade §2.4). O card só aparece
+  // depois que o tour foi dispensado.
   const [comeceAqui, setComeceAqui] = useState(
-    () => !localStorage.getItem("ejc_comece_aqui_done"),
+    () =>
+      !localStorage.getItem("ejc_comece_aqui_done") &&
+      localStorage.getItem("ejc_onboarding_v1") === "dispensado",
   );
   const dispensarComeceAqui = () => {
     localStorage.setItem("ejc_comece_aqui_done", "1");
