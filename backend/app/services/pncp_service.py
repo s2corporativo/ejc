@@ -28,9 +28,14 @@ from typing import Any
 from uuid import uuid4
 
 import httpx
-from tenacity import retry, retry_if_exception, stop_after_attempt, wait_exponential
 from sqlalchemy import text as sqltext
 from sqlalchemy.ext.asyncio import AsyncSession
+from tenacity import (
+    retry,
+    retry_if_exception,
+    stop_after_attempt,
+    wait_exponential,
+)
 
 from app.core.config import get_settings
 
@@ -38,8 +43,7 @@ logger = logging.getLogger("ejc.pncp")
 
 # Dados públicos (sem PII): retenção generosa — o cache é só performance.
 _RETENCAO_DIAS = 30
-# TODO(verificar-vps): confirmar o código IBGE de Betim/MG (3106705) e se a API
-# usa `codigoMunicipioIbge` como nome de parâmetro.
+# Código IBGE de Betim/MG; usado como atalho, nunca como credencial.
 MUNICIPIO_BETIM_IBGE = "3106705"
 
 
