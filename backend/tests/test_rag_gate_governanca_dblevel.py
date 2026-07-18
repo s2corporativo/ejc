@@ -30,9 +30,11 @@ pytestmark = pytest.mark.skipif(
 
 
 @pytest.fixture(autouse=True)
-async def _dispose_engine_apos_teste():
+async def _dispose_engine_apos_teste(monkeypatch):
     """Descarta o pool do engine singleton no MESMO event loop que o usou —
     ver justificativa detalhada em test_rag_isolation_dblevel.py."""
+    from app.services import embedding_service
+    monkeypatch.setattr(embedding_service, "disponivel", lambda: False)
     yield
     from app.core.database import engine
     await engine.dispose()

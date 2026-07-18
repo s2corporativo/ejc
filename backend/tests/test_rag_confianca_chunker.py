@@ -141,8 +141,10 @@ class _CaptureDB:
         return []
 
 
-async def test_busca_textual_seleciona_confianca():
+async def test_busca_textual_seleciona_confianca(monkeypatch):
+    from app.services import embedding_service
     from app.services.ai_service import buscar_contexto_rag
+    monkeypatch.setattr(embedding_service, "disponivel", lambda: False)
     db = _CaptureDB()
     await buscar_contexto_rag(db, "consulta qualquer de teste", limite=3)
     assert "confidence_level" in db.sql

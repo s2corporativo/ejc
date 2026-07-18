@@ -32,7 +32,9 @@ _TODOS_OS_TITULOS = [_titulo(s) for s in SUMULAS_SEED]
 
 
 @pytest.fixture(autouse=True)
-async def _dispose_engine_apos_teste():
+async def _dispose_engine_apos_teste(monkeypatch):
+    from app.services import embedding_service
+    monkeypatch.setattr(embedding_service, "disponivel", lambda: False)
     yield
     from app.core.database import engine
     await engine.dispose()
