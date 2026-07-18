@@ -16,6 +16,7 @@ from app.core.config import get_settings
 from app.services.sanitizer import sanitizar_pii, validar_sem_pii
 from app.services.case_context import montar_dossie
 from app.services.ai_gateway import chat as gw_chat, GatewayResponse
+from app.services.legal_base import BASE_ESTRUTURADA
 from app.models.ai_log import AILog, AITipoUso, AIStatusHITL
 
 logger = logging.getLogger(__name__)
@@ -735,8 +736,11 @@ async def extrair_prazos_ia(
     texto_limpo, houve_pii = sanitizar_pii(texto[:12000])
 
     try:
+        # Fluxo JSON com task fora de _TASKS_COM_BASE ("resumo" — por design):
+        # PREPENDE BASE_ESTRUTURADA no system (padrão peca_service/ia_extra
+        # sugestao-honorarios) — barreira anti-alucinação sem quebrar o parse.
         resposta, resp = await _gateway_text(
-            SYSTEM_EXTRACAO_PRAZOS, texto_limpo,
+            BASE_ESTRUTURADA + "\n\n" + SYSTEM_EXTRACAO_PRAZOS, texto_limpo,
             task_type="resumo", temperature=0.0, max_tokens=1500, nivel="alto",
         )
     except Exception as e:

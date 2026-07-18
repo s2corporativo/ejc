@@ -43,6 +43,10 @@ class _Res:
     def scalars(self):
         return self
 
+    def first(self):
+        vals = self.all()
+        return vals[0] if vals else None
+
     def all(self):
         if isinstance(self.value, list):
             return self.value

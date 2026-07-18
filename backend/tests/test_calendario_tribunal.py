@@ -29,12 +29,72 @@ def test_todos_registros_tem_fonte_e_vigencia():
     assert cal.RECESSO_ART_220["vigencia"]
 
 
-def test_tribunais_especificos_sao_estrutura_vazia_documentada():
-    # Curadoria futura: nada inventado — estruturas nascem vazias.
-    assert cal.FERIADOS_LOCAIS == {}
-    assert cal.SUSPENSOES_TRIBUNAL == {}
-    assert cal.datas_feriados_locais("TJMG") == frozenset()
-    assert cal.datas_suspensoes_tribunal("TRT3") == frozenset()
+def test_registros_locais_curados_tem_fonte_e_vigencia():
+    # Curadoria 2026-07-18 (MG/BH): todo registro local exige fonte + vigência
+    # (a validação fail-fast do módulo já derrubaria o import sem isso).
+    assert set(cal.FERIADOS_LOCAIS) == {"TJMG", "TRT3"}
+    assert set(cal.SUSPENSOES_TRIBUNAL) == {"TJMG", "TRT3"}
+    for regs in list(cal.FERIADOS_LOCAIS.values()) + list(cal.SUSPENSOES_TRIBUNAL.values()):
+        assert regs  # curadoria populada
+        for reg in regs:
+            assert reg.get("fonte"), reg
+            assert reg.get("vigencia"), reg
+            # Fonte precisa citar norma com número/ano ou página oficial.
+            assert any(tok in reg["fonte"] for tok in
+                       ("/1967", "/2004", "/PR/2026", "109, de 12/08/2025",
+                        "991, de 03/11/2025")), reg
+    # Tribunal sem curadoria continua vazio (nada inventado).
+    assert cal.datas_feriados_locais("TJSP") == frozenset()
+    assert cal.datas_suspensoes_tribunal("TRT2") == frozenset()
+
+
+def test_feriados_locais_bh_curados():
+    # Lei municipal de BH 1.327/1967: Assunção (15/08) e Imaculada (08/12).
+    tjmg = cal.datas_feriados_locais("TJMG")
+    trt3 = cal.datas_feriados_locais("TRT3")
+    for datas in (tjmg, trt3):
+        assert date(2026, 8, 15) in datas
+        assert date(2026, 12, 8) in datas
+        assert date(2027, 12, 8) in datas
+
+
+def test_suspensoes_tjmg_2026_curadas():
+    # Portaria Conjunta 1798/PR/2026 + Resolução 458/2004 (Carnaval).
+    dias = cal.datas_suspensoes_tribunal("TJMG")
+    assert date(2026, 2, 18) in dias   # Quarta-feira de Cinzas
+    assert date(2026, 4, 1) in dias    # Semana Santa (quarta)
+    assert date(2026, 4, 2) in dias    # Semana Santa (quinta)
+    assert date(2026, 4, 20) in dias   # ponte antes de Tiradentes
+    assert date(2026, 10, 30) in dias  # Dia do Servidor Público
+    assert date(2026, 12, 7) in dias   # ponte antes de 08/12 (BH)
+    # TRT3 — RA 109/2025: Semana Santa 01–05/04/2026.
+    assert date(2026, 4, 1) in cal.datas_suspensoes_tribunal("TRT3")
+    assert date(2026, 4, 2) in cal.datas_suspensoes_tribunal("TRT3")
+
+
+def test_feriado_local_afeta_somente_com_tribunal():
+    # 08/12/2026 (terça): feriado municipal de BH (Lei 1.327/1967) — não útil
+    # para o TJMG; SEM tribunal informado, comportamento nacional inalterado.
+    d = date(2026, 12, 8)
+    assert eh_dia_util(d) is True
+    assert eh_dia_util(d, tribunal="TJMG") is False
+    assert eh_dia_util(d, tribunal="TRT3") is False
+    # Suspensão curada (20/04/2026, segunda) — idem.
+    s = date(2026, 4, 20)
+    assert eh_dia_util(s) is True
+    assert eh_dia_util(s, tribunal="TJMG") is False
+    assert eh_dia_util(s, tribunal="TRT3") is True  # não curada p/ TRT3
+    # Tribunal sem curadoria ⇒ nada muda.
+    assert eh_dia_util(d, tribunal="TJSP") is True
+
+
+def test_prazo_dias_uteis_considera_curadoria_tjmg():
+    # 5 dias úteis a partir de qui 03/12/2026: sem tribunal ⇒ 4,7,8,9,10/12
+    # (vence 10/12); com TJMG, 07/12 (suspensão PC 1798) e 08/12 (Imaculada
+    # BH) não contam ⇒ vence 14/12/2026 (segunda).
+    inicio = date(2026, 12, 3)
+    assert prazo_dias_uteis(inicio, 5) == date(2026, 12, 10)
+    assert prazo_dias_uteis(inicio, 5, tribunal="TJMG") == date(2026, 12, 14)
 
 
 def test_versao_calendario_metadados():
