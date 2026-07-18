@@ -1,10 +1,8 @@
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useMemo, useRef } from "react";
 import { useLocation, useNavigate } from "react-router-dom";
-import { FileUp, X } from "lucide-react";
 import type { AxiosResponse, InternalAxiosRequestConfig } from "axios";
 import api from "../lib/api";
-import { toast } from "./Toast";
-import { Button, Modal } from "./UI";
+import CaseCommandDock from "./CaseCommandDock";
 
 const CREATED_CASE_KEY = "ejc_created_case_journey";
 const CREATED_CASE_TTL_MS = 60_000;
@@ -98,27 +96,12 @@ function salvarMarcador(id: string) {
   );
 }
 
-function detalheErro(error: unknown): string {
-  const detail = (
-    error as { response?: { data?: { detail?: unknown } } }
-  )?.response?.data?.detail;
-  if (typeof detail === "string" && detail) return detail;
-  if (
-    detail &&
-    typeof detail === "object" &&
-    typeof (detail as { mensagem?: unknown }).mensagem === "string"
-  ) {
-    return (detail as { mensagem: string }).mensagem;
-  }
-  return "Não foi possível anexar o documento ao caso.";
-}
-
 /**
- * Extensões de fluxo aplicadas em um único ponto do app:
+ * Extensões transversais de baixo acoplamento:
  * - guarda o caso recém-criado e continua para a Jornada quando o fluxo legado
  *   voltar à lista;
  * - injeta `case_id` em prazo/tarefa/evento criados a partir de `?caso=`;
- * - oferece upload contextual na tela exata do caso.
+ * - mostra a central simples do caso na rota exata `/casos/:id`.
  *
  * Nenhuma autorização é decidida aqui: todos os endpoints continuam validando
  * RBAC e ownership no backend.
@@ -127,11 +110,6 @@ export default function FlowEnhancements() {
   const location = useLocation();
   const navigate = useNavigate();
   const searchRef = useRef(location.search);
-  const [uploadOpen, setUploadOpen] = useState(false);
-  const [arquivo, setArquivo] = useState<File | null>(null);
-  const [titulo, setTitulo] = useState("");
-  const [tipo, setTipo] = useState("outro");
-  const [enviando, setEnviando] = useState(false);
 
   useEffect(() => {
     searchRef.current = location.search;
@@ -141,7 +119,10 @@ export default function FlowEnhancements() {
     const requestInterceptor = api.interceptors.request.use((config) => {
       const caseId = deveInjetarCaso(config, searchRef.current);
       if (caseId) {
-        config.data = { ...(config.data as Record<string, unknown>), case_id: caseId };
+        config.data = {
+          ...(config.data as Record<string, unknown>),
+          case_id: caseId,
+        };
       }
       return config;
     });
@@ -178,136 +159,5 @@ export default function FlowEnhancements() {
     return caseIdSeguro(match?.[1]);
   }, [location.pathname]);
 
-  useEffect(() => {
-    if (!caseId) setUploadOpen(false);
-  }, [caseId]);
-
-  const limparUpload = () => {
-    setUploadOpen(false);
-    setArquivo(null);
-    setTitulo("");
-    setTipo("outro");
-  };
-
-  const fecharUpload = () => {
-    if (!enviando) limparUpload();
-  };
-
-  const enviarDocumento = async () => {
-    if (!caseId || !arquivo) {
-      toast.error("Selecione um documento para anexar ao caso.");
-      return;
-    }
-    setEnviando(true);
-    try {
-      const body = new FormData();
-      body.append("file", arquivo);
-      body.append("titulo", titulo.trim() || arquivo.name);
-      body.append("tipo", tipo);
-      body.append("case_id", caseId);
-      await api.post("/documents/upload", body, {
-        headers: { "Content-Type": "multipart/form-data" },
-      });
-      toast.success("Documento anexado ao caso.");
-      limparUpload();
-    } catch (error) {
-      toast.error(detalheErro(error));
-    } finally {
-      setEnviando(false);
-    }
-  };
-
-  if (!caseId) return null;
-
-  return (
-    <>
-      <button
-        type="button"
-        onClick={() => setUploadOpen(true)}
-        className="fixed bottom-6 right-6 z-30 inline-flex items-center gap-2 rounded-xl bg-primary-700 px-4 py-3 text-sm font-semibold text-white shadow-lg transition hover:-translate-y-0.5 hover:bg-primary-800 focus:outline-none focus:ring-2 focus:ring-primary-400 focus:ring-offset-2"
-        aria-label="Anexar documento ao caso atual"
-      >
-        <FileUp className="h-4 w-4" />
-        Anexar ao caso
-      </button>
-
-      <Modal
-        open={uploadOpen}
-        onClose={fecharUpload}
-        title="Anexar documento ao caso"
-      >
-        <div className="space-y-4">
-          <div>
-            <label className="mb-1 block text-sm font-medium text-slate-700">
-              Arquivo
-            </label>
-            <input
-              type="file"
-              accept=".pdf,.docx,.doc,.jpg,.jpeg,.png,.xlsx,.xls,.txt,.xml"
-              className="input w-full"
-              onChange={(event) => {
-                const next = event.target.files?.[0] ?? null;
-                setArquivo(next);
-                if (next && !titulo) setTitulo(next.name);
-              }}
-            />
-            <p className="mt-1 text-xs text-slate-500">
-              Formatos aceitos: PDF, DOCX, DOC, JPG, PNG, XLSX, XLS, TXT e XML.
-              Arquivos DOC e XLS são armazenados, mas não são indexados para busca.
-            </p>
-          </div>
-
-          <div>
-            <label className="mb-1 block text-sm font-medium text-slate-700">
-              Título
-            </label>
-            <input
-              className="input w-full"
-              value={titulo}
-              maxLength={255}
-              onChange={(event) => setTitulo(event.target.value)}
-              placeholder="Identificação do documento"
-            />
-          </div>
-
-          <div>
-            <label className="mb-1 block text-sm font-medium text-slate-700">
-              Tipo
-            </label>
-            <select
-              className="input w-full"
-              value={tipo}
-              onChange={(event) => setTipo(event.target.value)}
-            >
-              <option value="outro">Outro</option>
-              <option value="peticao">Petição</option>
-              <option value="decisao">Decisão</option>
-              <option value="contrato">Contrato</option>
-              <option value="procuracao">Procuração</option>
-              <option value="prova">Prova</option>
-            </select>
-          </div>
-
-          <div className="flex justify-end gap-2 pt-2">
-            <Button
-              variant="secondary"
-              onClick={fecharUpload}
-              disabled={enviando}
-              icon={<X className="h-4 w-4" />}
-            >
-              Cancelar
-            </Button>
-            <Button
-              variant="primary"
-              onClick={() => void enviarDocumento()}
-              disabled={!arquivo || enviando}
-              icon={<FileUp className="h-4 w-4" />}
-            >
-              {enviando ? "Anexando..." : "Anexar documento"}
-            </Button>
-          </div>
-        </div>
-      </Modal>
-    </>
-  );
+  return caseId ? <CaseCommandDock caseId={caseId} /> : null;
 }
