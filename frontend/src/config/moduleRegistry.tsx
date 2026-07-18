@@ -155,7 +155,7 @@ export const STAFF_ROUTES: ModuleRoute[] = [
     key: "dashboard",
     path: "/",
     label: "Início",
-    description: "Visão executiva da operação jurídica.",
+    description: "Prioridades, agenda e casos recentes do seu dia.",
     group: "Trabalhar um caso",
     icon: LayoutDashboard,
     component: Dashboard,
@@ -181,10 +181,10 @@ export const STAFF_ROUTES: ModuleRoute[] = [
     // Abertura de caso cria/seleciona cliente (POST /clients → matriz
     // _CLIENTES) e busca /users; perfis fora dessa matriz recebem 403.
     roles: ROLES.clientes,
-    showInNav: true,
-    // Fora do Modo Essencial: o atalho "Novo caso" vive no cabeçalho.
-    // Mantém showInNav (aparece em "Mais / Avançado") porque
-    // moduleRegistry.test.ts exige /casos/novo na navegação do advogado.
+    // A rota continua ativa, protegida e acessível pelo cabeçalho, Dashboard
+    // e busca global. Não aparece no menu para evitar três entradas visuais
+    // para a mesma tarefa.
+    showInNav: false,
     essential: false,
     order: 10,
     helpKey: "casos",
@@ -211,14 +211,16 @@ export const STAFF_ROUTES: ModuleRoute[] = [
     path: "/clientes",
     label: "Clientes",
     description: "Cadastro central de clientes e responsáveis.",
-    group: "Gerir o escritório",
+    // Cliente integra a entrada e o acompanhamento do caso; no Modo
+    // Essencial deve vir antes de Documentos e Peças.
+    group: "Trabalhar um caso",
     icon: Briefcase,
     component: Clientes,
     // Backend /clients (matriz _CLIENTES) nega financeiro/estagiario/auxiliar.
     roles: ROLES.clientes,
     showInNav: true,
     essential: true,
-    order: 10,
+    order: 40,
     helpKey: "clientes",
     sensitive: true,
     backendPrefixes: ["/api/clients", "/api/clients/{client_id}/dossie"],
@@ -250,11 +252,7 @@ export const STAFF_ROUTES: ModuleRoute[] = [
     helpKey: "inteligencia",
     usesAI: true,
     sensitive: true,
-    backendPrefixes: [
-      "/api/raio-x",
-      "/api/documentos-ia",
-      "/api/ai/skills",
-    ],
+    backendPrefixes: ["/api/raio-x", "/api/documentos-ia", "/api/ai/skills"],
   },
   {
     key: "casos",
@@ -692,7 +690,7 @@ export const STAFF_ROUTES: ModuleRoute[] = [
     key: "financeiro",
     path: "/financeiro",
     label: "Financeiro e Sociedade",
-    description: "Honorários, despesas, contratos e gestão societária.",
+    description: "Honorários, despesas, NFS-e, contratos e gestão societária.",
     group: "Gerir o escritório",
     icon: Wallet,
     component: FinanceiroWorkspace,
@@ -701,7 +699,12 @@ export const STAFF_ROUTES: ModuleRoute[] = [
     order: 10,
     helpKey: "financeiro",
     sensitive: true,
-    backendPrefixes: ["/api/financeiro", "/api/fees", "/api/v1/despesas"],
+    backendPrefixes: [
+      "/api/financeiro",
+      "/api/fees",
+      "/api/v1/despesas",
+      "/api/nfse",
+    ],
   },
   {
     key: "produtividade",
@@ -870,6 +873,11 @@ export const LEGACY_REDIRECTS: LegacyRedirect[] = [
     from: "/honorarios",
     to: "/financeiro?tab=honorarios",
     reason: "Honorários foi incorporado ao workspace financeiro.",
+  },
+  {
+    from: "/nfse",
+    to: "/financeiro?tab=nfse",
+    reason: "NFS-e vive como aba do workspace financeiro.",
   },
   {
     from: "/sociedade",

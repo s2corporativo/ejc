@@ -42,6 +42,7 @@ import { THEME_LABELS, useThemeStore } from "../stores/theme";
 import { useAuth } from "../stores/auth";
 import { usePreferencesStore } from "../stores/preferences";
 import {
+  ROLES,
   getHelpModuleKey,
   getNavigationModules,
   type ModuleRoute,
@@ -59,6 +60,9 @@ export default function Layout() {
   const { theme, cycleTheme } = useThemeStore();
   const { disponivel: iaDisponivel } = useIaStatus();
   const user = useAuth((state) => state.user);
+  const canCreateCase = Boolean(
+    user?.role && (ROLES.clientes as readonly string[]).includes(user.role),
+  );
   const lifecycleSettings = useModuleLifecycleStore(
     (state) => state.settings,
   );
@@ -271,7 +275,8 @@ export default function Layout() {
               (/casos/novo) com dois modos de entrada (analisar documento |
               cadastro manual), selecionados por query param `modo` — sem
               criar rota nova. */}
-          <div ref={novoCasoRef} className="relative hidden lg:inline-flex">
+          {canCreateCase && (
+          <div ref={novoCasoRef} className="relative inline-flex">
             <Button
               type="button"
               size="md"
@@ -279,9 +284,10 @@ export default function Layout() {
               onClick={() => setNovoCasoOpen((value) => !value)}
               aria-haspopup="menu"
               aria-expanded={novoCasoOpen}
+              aria-label="Novo caso"
             >
-              Novo caso
-              <ChevronDown className="h-4 w-4" />
+              <span className="hidden lg:inline">Novo caso</span>
+              <ChevronDown className="hidden h-4 w-4 lg:block" />
             </Button>
             {novoCasoOpen && (
               <div
@@ -324,6 +330,7 @@ export default function Layout() {
               </div>
             )}
           </div>
+          )}
 
           <HelpButton moduleKey={moduleKey} />
 
@@ -562,7 +569,9 @@ export default function Layout() {
               </div>
             </div>
           )}
-          <div
+          <Link
+            to="/configuracoes"
+            title="Abrir preferências"
             className={cn(
               "flex items-center gap-3 rounded-xl bg-slate-50 p-2",
               collapsed && "justify-center",
@@ -579,7 +588,7 @@ export default function Layout() {
                 </div>
               </div>
             )}
-          </div>
+          </Link>
           <button
             type="button"
             onClick={logout}
@@ -637,3 +646,4 @@ export default function Layout() {
     </div>
   );
 }
+

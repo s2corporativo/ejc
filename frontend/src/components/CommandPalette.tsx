@@ -1,9 +1,23 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useNavigate } from "react-router-dom";
-import { Search as SearchIcon, Users, Briefcase, FileText } from "lucide-react";
+import {
+  Search as SearchIcon,
+  Users,
+  Briefcase,
+  CalendarClock,
+  FileText,
+  FileUp,
+  Headset,
+  PenLine,
+  ScanSearch,
+} from "lucide-react";
 import api from "../lib/api";
 import { useAuth } from "../stores/auth";
-import { getNavigationModules } from "../config/moduleRegistry";
+import { getNavigationModules, ROLES } from "../config/moduleRegistry";
+import {
+  NOVO_CASO_DOCUMENTO_PATH,
+  NOVO_CASO_MANUAL_PATH,
+} from "../lib/novoCaso";
 
 const ICON: Record<string, typeof Users> = {
   cliente: Users,
@@ -24,6 +38,13 @@ interface ResultadoBusca {
   titulo: string;
   subtitulo?: string | null;
   link: string;
+}
+
+interface QuickAction {
+  path: string;
+  label: string;
+  description: string;
+  icon: typeof Users;
 }
 
 const TIPOS: { value: TipoBusca; label: string }[] = [
@@ -53,23 +74,93 @@ export default function CommandPalette() {
   const [activeIndex, setActiveIndex] = useState(0);
   const inputRef = useRef<HTMLInputElement>(null);
   const listRef = useRef<HTMLDivElement>(null);
+  const role = user?.role ?? "";
+  const canCreateCase = (ROLES.clientes as readonly string[]).includes(role);
+  const canUseLegalAI = (ROLES.juridico as readonly string[]).includes(role);
+  const quickActions = useMemo<QuickAction[]>(
+    () => [
+      ...(canCreateCase
+        ? [
+            {
+              path: NOVO_CASO_DOCUMENTO_PATH,
+              label: "Novo caso por documento",
+              description: "Enviar arquivos, revisar os dados e criar o caso",
+              icon: FileUp,
+            },
+            {
+              path: NOVO_CASO_MANUAL_PATH,
+              label: "Novo caso manual",
+              description: "Preencher um cadastro passo a passo",
+              icon: PenLine,
+            },
+          ]
+        : []),
+      ...(canUseLegalAI
+        ? [
+            {
+              path: "/raio-x",
+              label: "Analisar processo externo",
+              description: "Fazer uma análise preliminar sem criar caso",
+              icon: ScanSearch,
+            },
+          ]
+        : []),
+      ...(canCreateCase
+        ? [
+            {
+              path: "/atividades?tab=relacionamento",
+              label: "Registrar atendimento",
+              description: "Abrir a linha do tempo do cliente",
+              icon: Headset,
+            },
+          ]
+        : []),
+      {
+        path: "/atividades",
+        label: "Abrir Agenda e Prazos",
+        description: "Ver compromissos, tarefas e vencimentos",
+        icon: CalendarClock,
+      },
+    ],
+    [canCreateCase, canUseLegalAI],
+  );
   const shortcuts = useMemo(
-    () => getNavigationModules(user?.role).slice(0, 10),
+    () => getNavigationModules(user?.role).filter((item) => item.essential),
     [user?.role],
   );
+  const matchingQuickActions = useMemo(() => {
+    const query = q.trim().toLocaleLowerCase("pt-BR");
+    if (query.length < 2) return quickActions;
+    return quickActions.filter((action) =>
+      `${action.label} ${action.description}`
+        .toLocaleLowerCase("pt-BR")
+        .includes(query),
+    );
+  }, [q, quickActions]);
 
-  // Lista plana navegável por teclado: resultados quando há busca (>= 2
-  // caracteres) ou os atalhos do sistema caso contrário. Só um dos dois
-  // conjuntos é renderizado por vez, então um único activeIndex os cobre.
+  // Lista plana navegável por teclado: ações seguras para o perfil aparecem
+  // antes dos resultados e dos sete destinos essenciais.
   const navItems = useMemo<{ key: string; link: string }[]>(() => {
     if (q.trim().length >= 2) {
-      return res.map((result, index) => ({
-        key: `${result.tipo}-${result.id}-${index}`,
-        link: result.link,
-      }));
+      return [
+        ...matchingQuickActions.map((action) => ({
+          key: `action-${action.path}`,
+          link: action.path,
+        })),
+        ...res.map((result, index) => ({
+          key: `${result.tipo}-${result.id}-${index}`,
+          link: result.link,
+        })),
+      ];
     }
-    return shortcuts.map((item) => ({ key: item.path, link: item.path }));
-  }, [q, res, shortcuts]);
+    return [
+      ...quickActions.map((action) => ({
+        key: `action-${action.path}`,
+        link: action.path,
+      })),
+      ...shortcuts.map((item) => ({ key: item.path, link: item.path })),
+    ];
+  }, [matchingQuickActions, q, quickActions, res, shortcuts]);
 
   useEffect(() => {
     const onKey = (event: KeyboardEvent) => {
@@ -168,6 +259,8 @@ export default function CommandPalette() {
   };
 
   const hasNav = navItems.length > 0;
+  const displayedQuickActions =
+    q.trim().length >= 2 ? matchingQuickActions : quickActions;
 
   return (
     <div
@@ -235,22 +328,67 @@ export default function CommandPalette() {
               Buscando…
             </div>
           )}
-          {!loading && q.trim().length >= 2 && res.length === 0 && (
-            <div className="p-6 text-center text-sm text-slate-400">
-              Nenhum resultado para “{q}”.
+          {!loading &&
+            q.trim().length >= 2 &&
+            res.length === 0 &&
+            displayedQuickActions.length === 0 && (
+              <div className="p-6 text-center text-sm text-slate-400">
+                Nenhum resultado para “{q}”.
+              </div>
+            )}
+          {displayedQuickActions.length > 0 && (
+            <div className="p-3 pb-1">
+              <div className="px-2 pb-2 text-[10px] font-semibold uppercase tracking-wider text-slate-400">
+                Ações rápidas
+              </div>
+              <div className="grid gap-1 sm:grid-cols-2">
+                {displayedQuickActions.map(
+                  ({ path, label, description, icon: Icon }, index) => {
+                    const isActive = index === activeIndex;
+                    return (
+                      <button
+                        key={path}
+                        id={OPTION_ID(index)}
+                        data-index={index}
+                        role="option"
+                        aria-selected={isActive}
+                        type="button"
+                        onMouseEnter={() => setActiveIndex(index)}
+                        onClick={() => go(path)}
+                        className={`flex items-start gap-2 rounded-lg px-3 py-2 text-left transition-colors ${
+                          isActive
+                            ? "bg-primary-50 text-slate-900"
+                            : "text-slate-600 hover:bg-primary-50/60 hover:text-slate-900"
+                        }`}
+                      >
+                        <Icon className="mt-0.5 h-4 w-4 shrink-0 text-primary-600" />
+                        <span className="min-w-0">
+                          <span className="block truncate text-sm font-medium">
+                            {label}
+                          </span>
+                          <span className="block line-clamp-2 text-xs text-slate-400">
+                            {description}
+                          </span>
+                        </span>
+                      </button>
+                    );
+                  },
+                )}
+              </div>
             </div>
           )}
           {res.map((result, index) => {
             const Icon = ICON[result.tipo] || FileText;
-            const isActive = index === activeIndex;
+            const itemIndex = displayedQuickActions.length + index;
+            const isActive = itemIndex === activeIndex;
             return (
               <button
                 key={`${result.tipo}-${result.id}-${index}`}
-                id={OPTION_ID(index)}
-                data-index={index}
+                id={OPTION_ID(itemIndex)}
+                data-index={itemIndex}
                 role="option"
                 aria-selected={isActive}
-                onMouseEnter={() => setActiveIndex(index)}
+                onMouseEnter={() => setActiveIndex(itemIndex)}
                 onClick={() => go(result.link)}
                 className={`w-full flex items-center gap-3 px-4 py-2.5 text-left transition-colors ${
                   isActive ? "bg-primary-50" : "hover:bg-primary-50/60"
@@ -278,16 +416,17 @@ export default function CommandPalette() {
               </div>
               <div className="grid gap-1 sm:grid-cols-2">
                 {shortcuts.map(({ path, label, icon: Icon }, index) => {
-                  const isActive = index === activeIndex;
+                  const itemIndex = quickActions.length + index;
+                  const isActive = itemIndex === activeIndex;
                   return (
                     <button
                       key={path}
-                      id={OPTION_ID(index)}
-                      data-index={index}
+                      id={OPTION_ID(itemIndex)}
+                      data-index={itemIndex}
                       role="option"
                       aria-selected={isActive}
                       type="button"
-                      onMouseEnter={() => setActiveIndex(index)}
+                      onMouseEnter={() => setActiveIndex(itemIndex)}
                       onClick={() => go(path)}
                       className={`flex items-center gap-2 rounded-lg px-3 py-2 text-left text-sm transition-colors ${
                         isActive
@@ -302,7 +441,7 @@ export default function CommandPalette() {
                 })}
               </div>
               <div className="mt-2 text-center text-xs text-slate-400">
-                Digite ao menos 2 caracteres para buscar dados. Atalho: {" "}
+                Digite ao menos 2 caracteres para buscar dados. Atalho:{" "}
                 <kbd className="border border-slate-200 rounded px-1">
                   Ctrl/⌘ K
                 </kbd>
