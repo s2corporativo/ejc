@@ -1,4 +1,4 @@
-name: Sync Tailwind PostCSS Lockfile
+name: Sync Main into EJC 10/10 Branch
 
 on:
   push:
@@ -9,49 +9,52 @@ permissions:
   contents: write
 
 concurrency:
-  group: sync-tailwind-lock-${{ github.ref }}
+  group: sync-main-10-10-${{ github.ref }}
   cancel-in-progress: true
 
 jobs:
   sync:
-    if: ${{ !contains(github.event.head_commit.message, '[tailwind-lock-synced]') }}
+    if: ${{ !contains(github.event.head_commit.message, '[main-synced]') }}
     runs-on: ubuntu-latest
     timeout-minutes: 10
     steps:
       - uses: actions/checkout@v7
         with:
           ref: chore/ejc-10-10-release-governance
+          fetch-depth: 0
 
-      - uses: actions/setup-node@v6
-        with:
-          node-version: "20"
-          cache: npm
-          cache-dependency-path: frontend/package-lock.json
-
-      - name: Instalar plugin oficial do Tailwind 4 para PostCSS
-        working-directory: frontend
-        run: >-
-          npm install --save-dev --save-exact
-          @tailwindcss/postcss@4.3.2 --ignore-scripts
-
-      - name: Atualizar configuração PostCSS
+      - name: Incorporar a main e resolver apenas conflitos conhecidos
+        shell: bash
         run: |
-          cat > frontend/postcss.config.js <<'EOF'
-          export default {
-            plugins: {
-              "@tailwindcss/postcss": {},
-              autoprefixer: {},
-            },
-          };
-          EOF
-
-      - name: Publicar lockfile reproduzível
-        run: |
+          set -euo pipefail
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git add frontend/package.json frontend/package-lock.json frontend/postcss.config.js
-          if git diff --cached --quiet; then
+          git fetch origin main
+
+          if git merge --no-ff origin/main -m "chore: sincronizar main na governança 10/10 [main-synced]"; then
+            git push origin HEAD:chore/ejc-10-10-release-governance
             exit 0
           fi
-          git commit -m "fix(frontend): configurar PostCSS do Tailwind 4 [tailwind-lock-synced]"
+
+          mapfile -t conflicts < <(git diff --name-only --diff-filter=U)
+          for path in "${conflicts[@]}"; do
+            case "$path" in
+              frontend/src/lib/api.ts|frontend/src/config/routeIntegrity.test.ts)
+                git checkout --theirs -- "$path"
+                git add "$path"
+                ;;
+              *)
+                echo "Conflito não autorizado: $path" >&2
+                git merge --abort
+                exit 1
+                ;;
+            esac
+          done
+
+          if git diff --name-only --diff-filter=U | grep -q .; then
+            echo "Ainda existem conflitos não resolvidos" >&2
+            exit 1
+          fi
+
+          git commit -m "chore: sincronizar main na governança 10/10 [main-synced]"
           git push origin HEAD:chore/ejc-10-10-release-governance
