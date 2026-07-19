@@ -150,8 +150,10 @@ export default function App() {
                 );
               })}
 
+              {/* Subrota contextual da Governança da IA: deliberadamente não é
+                  um novo módulo/menu; permanece protegida pelos mesmos papéis. */}
               <Route
-                path="/governanca-ia/provedores"
+                path="/ia-governanca/provedores"
                 element={
                   <RoleOnly roles={["superadmin", "admin", "socio"]}>
                     <PainelProvedoresIA />
