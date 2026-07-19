@@ -15,8 +15,13 @@ export default function TrocarSenha() {
 
   const trocar = async () => {
     setErro("");
-    if (nova.length < 8) {
-      setErro("Mínimo 8 caracteres");
+    const senhaForte =
+      nova.length >= 10 &&
+      /[A-Za-z]/.test(nova) &&
+      /\d/.test(nova) &&
+      /[^A-Za-z0-9]/.test(nova);
+    if (!senhaForte) {
+      setErro("Use no mínimo 10 caracteres, com letra, número e símbolo.");
       return;
     }
     if (nova !== conf) {
@@ -81,7 +86,7 @@ export default function TrocarSenha() {
           <input
             className="input"
             type="password"
-            placeholder="Nova senha (mín. 8)"
+            placeholder="Nova senha (mín. 10, com letra, número e símbolo)"
             value={nova}
             onChange={(e) => setNova(e.target.value)}
           />
