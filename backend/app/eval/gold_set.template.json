@@ -1,0 +1,10 @@
+{
+  "id": "trab-001",
+  "area": "trabalhista",
+  "query": "pergunta jurídica pseudonimizada, sem PII",
+  "expected_titulos": ["documento que o retrieval deveria trazer"],
+  "expected_categorias": ["legislacao"],
+  "expected_citacoes": ["referência real conferida em fonte oficial"],
+  "categorias": [],
+  "notes": "observação opcional do curador"
+}
