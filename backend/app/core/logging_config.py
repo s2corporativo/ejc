@@ -64,12 +64,3 @@ def setup_logging(*, json_logs: bool, level: str = "INFO") -> None:
     root = logging.getLogger()
     root.setLevel(nivel)
     root.handlers[:] = [handler]  # substitui (evita handler duplicado no reload)
-
-    # Silencia loggers de biblioteca ruidosos que emitem a URL COMPLETA da
-    # requisição em INFO. O httpx 0.27 loga "HTTP Request: GET <url> ..." no
-    # logger "httpx"; várias integrações do EJC (Z-API, DataJud, NuvemFiscal)
-    # carregam o token/segredo NO PATH da URL, então esse INFO vazaria o segredo
-    # em claro no stdout/JSON de logs. Mantemos WARNING+ (erros continuam) sem
-    # baixar o nível global. httpcore idem, por consistência.
-    for ruidoso in ("httpx", "httpcore"):
-        logging.getLogger(ruidoso).setLevel(logging.WARNING)

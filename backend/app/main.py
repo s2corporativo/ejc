@@ -179,7 +179,6 @@ from app.routers import veredito_ia_router
 from app.routers import verse
 from app.routers import victory_vault_router
 from app.routers import visual_law
-from app.routers import webhooks
 from app.routers import whatsapp
 from app.routers import wiki
 from app.routers import workflow
@@ -440,7 +439,6 @@ app.include_router(veredito_ia_router.router, prefix=API)
 app.include_router(verse.router, prefix=API)
 app.include_router(victory_vault_router.router, prefix=API)
 app.include_router(visual_law.router, prefix=API)
-app.include_router(webhooks.router, prefix=API)
 app.include_router(whatsapp.router, prefix=API)
 app.include_router(wiki.router, prefix=API)
 app.include_router(workflow.router, prefix=API)

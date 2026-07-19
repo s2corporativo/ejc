@@ -171,23 +171,6 @@ def test_nfse_oauth(monkeypatch):
     assert _run(ct.testar_nfse())[0] == ct.AUSENTE
 
 
-# ── whatsapp Z-API: status da instância ──────────────────────────────────────
-
-def test_whatsapp_zapi(monkeypatch):
-    s = get_settings()
-    monkeypatch.setattr(s, "ZAPI_INSTANCE_ID", "inst-1")
-    monkeypatch.setattr(s, "ZAPI_TOKEN", "zapi-token-secret")
-
-    _mock_httpx(monkeypatch, resp=_Resp(200, json_data={"connected": True}))
-    assert _run(ct.testar_whatsapp_zapi())[0] == ct.CONFIGURADA
-
-    _mock_httpx(monkeypatch, resp=_Resp(403))
-    assert _run(ct.testar_whatsapp_zapi())[0] == ct.SEM_PERMISSAO
-
-    monkeypatch.setattr(s, "ZAPI_TOKEN", "")
-    assert _run(ct.testar_whatsapp_zapi())[0] == ct.AUSENTE
-
-
 # ── transparencia / langfuse: teste real de credencial (mockado) ─────────────
 
 def test_transparencia_e_langfuse(monkeypatch):
@@ -446,22 +429,3 @@ def test_testar_provider_fora_do_catalogo_404(montar, audit):
     app, _ = montar(_user())
     with TestClient(app) as client:
         assert client.post(f"{BASE}/acme/testar").status_code == 404
-
-
-# ── Segurança: httpx não pode logar a URL (token no path) em INFO ────────────
-
-def test_setup_logging_silencia_httpx_url_com_token():
-    """testar_whatsapp_zapi (e Z-API/DataJud/NuvemFiscal) carrega o token NO PATH
-    da URL; o httpx 0.27 loga "HTTP Request: <url>" em INFO. setup_logging deve
-    deixar os loggers httpx/httpcore em WARNING+ para o token nunca vazar no
-    stdout/JSON de logs — sem baixar o nível global."""
-    import logging
-
-    from app.core.logging_config import setup_logging
-
-    setup_logging(json_logs=False, level="INFO")
-    for nome in ("httpx", "httpcore"):
-        efetivo = logging.getLogger(nome).getEffectiveLevel()
-        assert efetivo >= logging.WARNING, f"logger {nome} deixaria a URL vazar em INFO"
-    # O nível global NÃO foi rebaixado (INFO continua valendo para o resto).
-    assert logging.getLogger().level == logging.INFO

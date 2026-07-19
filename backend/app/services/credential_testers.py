@@ -25,11 +25,10 @@
 #     `indisponivel` (o teste nunca derruba a requisição do chamador).
 #
 # Reuso: as URLs/headers espelham os conectores existentes — datajud_service
-# (_datajud_search / APIKey), notification_service (Z-API status), nfse/
-# nuvem_fiscal (_obter_token / client_credentials), infosimples_service
-# (account) e as healths de groq/anthropic/maritaca (ai_gateway.health) — mas
-# aqui a classificação é granular (401 vs 403 vs timeout vs expirado), o que o
-# health() booleano não distingue.
+# (_datajud_search / APIKey), nfse/nuvem_fiscal (_obter_token /
+# client_credentials), infosimples_service (account) e as healths de groq/
+# anthropic/maritaca (ai_gateway.health) — mas aqui a classificação é granular
+# (401 vs 403 vs timeout vs expirado), o que o health() booleano não distingue.
 from __future__ import annotations
 
 import asyncio
@@ -288,22 +287,6 @@ async def testar_smtp() -> TesteResultado:
     return (CONFIGURADA, "Autenticação SMTP validada (sem envio de e-mail).")
 
 
-async def testar_whatsapp_zapi() -> TesteResultado:
-    """Status da instância na Z-API. Espelha a URL do notification_service; o
-    Client-Token (quando presente) vai só no header, nunca em log."""
-    s = get_settings()
-    if _vazio(s.ZAPI_INSTANCE_ID, s.ZAPI_TOKEN):
-        return (AUSENTE, "ZAPI_INSTANCE_ID/ZAPI_TOKEN não configurados.")
-    url = (
-        f"https://api.z-api.io/instances/{s.ZAPI_INSTANCE_ID}"
-        f"/token/{s.ZAPI_TOKEN}/status"
-    )
-    headers: dict[str, str] = {}
-    if (s.ZAPI_CLIENT_TOKEN or "").strip():
-        headers["Client-Token"] = s.ZAPI_CLIENT_TOKEN
-    return await _probe("GET", url, headers=headers)
-
-
 async def testar_nfse() -> TesteResultado:
     """OAuth2 client_credentials no auth_url da NuvemFiscal; o token é DESCARTADO
     (só valida as credenciais). Espelha nuvem_fiscal._obter_token."""
@@ -373,7 +356,6 @@ TESTERS: dict[str, Callable[[], Awaitable[TesteResultado]]] = {
     "maritaca": testar_maritaca,
     "infosimples": testar_infosimples,
     "smtp": testar_smtp,
-    "whatsapp_zapi": testar_whatsapp_zapi,
     "nfse": testar_nfse,
     "transparencia": testar_transparencia,
     "langfuse": testar_langfuse,

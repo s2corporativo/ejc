@@ -1,7 +1,7 @@
 """Recebe webhooks da Evolution API (WhatsApp) e processa mensagens.
 
-Rota PÚBLICA (Evolution chama de fora) — protegida por secret.
-Mesmo padrão do webhook Z-API: valida um token e recusa se não configurado.
+Rota PÚBLICA (Evolution chama de fora) — protegida por secret: valida um
+token e recusa se não configurado.
 O secret é enviado pela Evolution como header `apikey`/`X-Webhook-Token`
 ou via query `?token=` na URL do webhook configurada no painel.
 """

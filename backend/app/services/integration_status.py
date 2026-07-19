@@ -35,7 +35,6 @@ _ITEM_PROVIDER = {
     "transparencia": "transparencia",
     "infosimples": "infosimples",
     "email": "smtp",
-    "whatsapp": "whatsapp_zapi",
     "push": "push_vapid",
     "langfuse": "langfuse",
 }
@@ -284,12 +283,12 @@ def build_integration_status(
             label="WhatsApp",
             group="Comunicação",
             enabled=settings.WHATSAPP_ENABLED,
-            configured=bool(
-                settings.ZAPI_INSTANCE_ID
-                and settings.ZAPI_TOKEN
-                and settings.ZAPI_CLIENT_TOKEN
-            ),
+            # Vendor Z-API removido: não há mais remetente automático de WhatsApp,
+            # então o canal nunca fica "configurado" aqui (efetivamente off). A
+            # Evolution API é apenas webhook de ENTRADA (routers/evolution_webhook).
+            configured=False,
             ready_detail="Canal habilitado com configuração completa no ambiente.",
+            missing_detail="Envio automático de WhatsApp indisponível (vendor Z-API removido).",
         ),
         _status(
             key="push",

@@ -283,9 +283,10 @@ class Settings(BaseSettings):
     LANGFUSE_CAPTURE_CONTENT: bool = False
 
     # ── Notificações ──────────────────────────────────────────────────────
-    ZAPI_INSTANCE_ID: str = ""
-    ZAPI_TOKEN: str = ""
-    ZAPI_CLIENT_TOKEN: str = ""
+    # WhatsApp: o vendor Z-API foi REMOVIDO. Não há mais remetente automático de
+    # WhatsApp (o canal fica efetivamente off — ver notification_service.
+    # enviar_whatsapp). A Evolution API (webhook de ENTRADA) permanece em
+    # routers/evolution_webhook.py, controlada por EVOLUTION_* próprias.
     WHATSAPP_ENABLED: bool = False
 
     SMTP_HOST: str = "smtp.gmail.com"

@@ -2,7 +2,7 @@
 # Cofre de Credenciais — PR-3: API /cofre-credenciais (superadmin + step-up).
 #
 # NÃO confundir com routers/api_keys.py: o COFRE guarda segredos QUE O EJC USA
-# para falar com serviços externos (DataJud, Groq, SMTP, Z-API…); api_keys.py
+# para falar com serviços externos (DataJud, Groq, SMTP, NuvemFiscal…); api_keys.py
 # emite chaves QUE O EJC FORNECE a integradores externos consumirem nossa API.
 #
 # Controles (decisões 5–7 do plano, docs/PLANO_COFRE_CREDENCIAIS.md):

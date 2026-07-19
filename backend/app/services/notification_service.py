@@ -1,13 +1,13 @@
 # ── app/services/notification_service.py ─────────────────────────────────────
-# Notificações: interna (sino) + WhatsApp (Z-API) + email (SMTP).
-# WhatsApp/email só disparam se habilitados no .env.
+# Notificações: interna (sino) + email (SMTP) + push (VAPID). O envio automático
+# de WhatsApp (antes via Z-API) foi REMOVIDO — enviar_whatsapp degrada
+# graciosamente (ver a função). Email/push só disparam se habilitados no .env.
 from __future__ import annotations
 import asyncio
 import logging
 from datetime import datetime
 from uuid import uuid4
 from zoneinfo import ZoneInfo
-import httpx
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.config import get_settings
@@ -39,36 +39,19 @@ async def criar_notificacao_interna(
 
 
 async def enviar_whatsapp(telefone: str, mensagem: str) -> bool:
-    """
-    Envia WhatsApp via Z-API. Telefone formato: 5531999999999.
-    Retorna True se enviado. Falha silenciosa (loga, não quebra fluxo).
-    """
-    if not settings.WHATSAPP_ENABLED:
-        logger.debug("WhatsApp desabilitado — mensagem não enviada")
-        return False
-    if not all([settings.ZAPI_INSTANCE_ID, settings.ZAPI_TOKEN]):
-        logger.warning("Z-API não configurada (.env)")
-        return False
+    """Remetente automático de WhatsApp — DESATIVADO.
 
-    url = (
-        f"https://api.z-api.io/instances/{settings.ZAPI_INSTANCE_ID}"
-        f"/token/{settings.ZAPI_TOKEN}/send-text"
+    O vendor Z-API foi removido do EJC e não há backend de envio no lugar
+    (a Evolution API cobre apenas o webhook de ENTRADA). A assinatura é
+    preservada de propósito para não quebrar os callers (notificar/dispatch);
+    a função degrada graciosamente retornando False, e `notificar` já gateia o
+    canal por channel_availability().whatsapp (hoje sempre False). Plugar um novo
+    provedor de envio é trabalho futuro (fora do escopo desta remoção)."""
+    logger.info(
+        "Canal WhatsApp automático indisponível (vendor Z-API removido) — "
+        "mensagem não enviada."
     )
-    headers = {}
-    if settings.ZAPI_CLIENT_TOKEN:
-        headers["Client-Token"] = settings.ZAPI_CLIENT_TOKEN
-
-    try:
-        async with httpx.AsyncClient(timeout=15) as client:
-            r = await client.post(
-                url, headers=headers,
-                json={"phone": telefone, "message": mensagem},
-            )
-            r.raise_for_status()
-            return True
-    except Exception as e:
-        logger.error(f"Z-API falhou: {e}")
-        return False
+    return False
 
 
 async def enviar_email(destinatario: str, assunto: str, corpo: str) -> bool:

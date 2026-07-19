@@ -43,12 +43,6 @@ REGISTRY: dict[str, tuple[CampoCredencial, ...]] = {
     "infosimples": (
         CampoCredencial("INFOSIMPLES_TOKEN", "token", "Token da Infosimples"),
     ),
-    "whatsapp_zapi": (
-        CampoCredencial("ZAPI_INSTANCE_ID", "login", "Instance ID da Z-API"),
-        CampoCredencial("ZAPI_TOKEN", "token", "Token da instância Z-API"),
-        CampoCredencial("ZAPI_CLIENT_TOKEN", "token",
-                        "Client-Token da conta Z-API", obrigatorio=False),
-    ),
     "smtp": (
         CampoCredencial("SMTP_USER", "login", "Usuário SMTP"),
         CampoCredencial("SMTP_PASSWORD", "senha", "Senha SMTP"),

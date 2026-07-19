@@ -36,14 +36,13 @@ def test_channel_availability_exige_flag_e_configuracao_completa():
         SMTP_USER="user@example.com",
         SMTP_PASSWORD="secret",
         WHATSAPP_ENABLED=True,
-        ZAPI_INSTANCE_ID="instance",
-        ZAPI_TOKEN="token",
-        ZAPI_CLIENT_TOKEN="client-token",
     )
     availability = channel_availability(settings)
     assert availability.push is True
     assert availability.email is True
-    assert availability.whatsapp is True
+    # Vendor Z-API removido: o canal WhatsApp automático fica sempre indisponível,
+    # mesmo com WHATSAPP_ENABLED=True (não há mais remetente).
+    assert availability.whatsapp is False
 
 
 def test_categoria_opcional_respeita_preferencia():
