@@ -29,6 +29,7 @@ from app.integrations.djen_comunica_client import (
     DjenComunicaClient,
     DjenComunicaError,
 )
+from app.core.database import get_db
 from app.core.security import get_current_user
 
 
@@ -37,8 +38,11 @@ def _mock_async_client(monkeypatch, modulo, handler):
     real = httpx.AsyncClient
 
     def factory(**kwargs):
-        kwargs.pop("transport", None)
-        return real(transport=httpx.MockTransport(handler), **kwargs)
+        # httpx é módulo global: o patch atinge também o client ASGI dos
+        # testes de router — quem já passa transport (ASGITransport) mantém.
+        if "transport" not in kwargs:
+            kwargs["transport"] = httpx.MockTransport(handler)
+        return real(**kwargs)
 
     monkeypatch.setattr(modulo.httpx, "AsyncClient", factory)
 
@@ -63,6 +67,15 @@ async def test_datajud_limpa_mascara_envia_apikey_e_retorna_json(monkeypatch):
     assert visto["url"].endswith("/api_publica_tjmg/_search")
     assert visto["auth"] == "APIKey chave-teste"
     assert visto["body"]["query"]["match"]["numeroProcesso"] == "00000010220248130024"
+
+
+def test_datajud_env_vazia_cai_no_fallback_publico(monkeypatch):
+    """Regressão (review): .env/docker-compose exporta DATAJUD_API_KEY= vazia;
+    string vazia deve cair no fallback público do CNJ, não virar 'APIKey '."""
+    monkeypatch.setenv("DATAJUD_API_KEY", "")
+    assert DataJudClient().api_key == datajud_mod.DATAJUD_API_KEY_DEFAULT
+    monkeypatch.setenv("DATAJUD_API_KEY", "chave-do-env")
+    assert DataJudClient().api_key == "chave-do-env"
 
 
 async def test_datajud_nao_200_vira_datajuderror(monkeypatch):
@@ -129,12 +142,32 @@ async def test_conecta_sem_credenciais_erro_claro(monkeypatch):
 
 # ── Routers /api/integracoes/* ────────────────────────────────────────────────
 
-def _mini_app() -> FastAPI:
+class _FakeUser:
+    id = "user-teste"
+    role = "advogado"
+
+
+class _FakeDB:
+    """Mínimo para criar_audit_log: add() síncrono + commit() awaitable."""
+
+    def __init__(self):
+        self.adds: list = []
+        self.commits = 0
+
+    def add(self, obj):
+        self.adds.append(obj)
+
+    async def commit(self):
+        self.commits += 1
+
+
+def _mini_app(db: _FakeDB | None = None) -> FastAPI:
     mini = FastAPI()
     mini.include_router(integ_routers.datajud_router, prefix="/api")
     mini.include_router(integ_routers.djen_router, prefix="/api")
     mini.include_router(integ_routers.brasilapi_router, prefix="/api")
-    mini.dependency_overrides[get_current_user] = lambda: {"id": "t", "role": "adv"}
+    mini.dependency_overrides[get_current_user] = lambda: _FakeUser()
+    mini.dependency_overrides[get_db] = lambda: db or _FakeDB()
     return mini
 
 
@@ -155,19 +188,74 @@ async def test_router_datajud_erro_de_integracao_vira_502(monkeypatch):
 
     monkeypatch.setattr(integ_routers._datajud, "consultar_processo", _boom)
     resp = await _get(
-        _mini_app(), "/api/integracoes/datajud/processos/TJMG/0000001"
+        _mini_app(),
+        "/api/integracoes/datajud/processos/TJMG/0000001-02.2024.8.13.0024",
     )
     assert resp.status_code == 502
+    # Detail genérico — corpo do upstream NUNCA ecoado ao cliente (auditoria A4).
+    assert "falhou" not in resp.text
+
+
+async def test_router_datajud_numero_curto_400():
+    resp = await _get(_mini_app(), "/api/integracoes/datajud/processos/TJMG/123")
+    assert resp.status_code == 400
+
+
+async def test_router_registra_trilha_de_auditoria(monkeypatch):
+    async def _ok(numero_oab, uf_oab, **kwargs):
+        return {"items": []}
+
+    monkeypatch.setattr(integ_routers._djen, "consultar_por_oab", _ok)
+    db = _FakeDB()
+    resp = await _get(_mini_app(db), "/api/integracoes/djen/oab/mg/104080")
+    assert resp.status_code == 200
+    assert db.commits == 1 and len(db.adds) == 1
+    log = db.adds[0]
+    assert log.acao == "CONSULTA_EXTERNA"
+    assert log.entidade == "integracoes_djen"
+    assert log.registro_id == "OAB 104080/MG"
 
 
 async def test_router_djen_ok_passa_resultado(monkeypatch):
-    async def _ok(numero_oab, uf_oab):
+    async def _ok(numero_oab, uf_oab, **kwargs):
         return {"status": "success", "count": 0, "items": []}
 
     monkeypatch.setattr(integ_routers._djen, "consultar_por_oab", _ok)
     resp = await _get(_mini_app(), "/api/integracoes/djen/oab/MG/104080")
     assert resp.status_code == 200
     assert resp.json()["status"] == "success"
+
+
+async def test_router_djen_repassa_paginacao_e_datas(monkeypatch):
+    visto = {}
+
+    async def _ok(numero_oab, uf_oab, data_inicio=None, data_fim=None, pagina=1):
+        visto.update(
+            oab=numero_oab, uf=uf_oab,
+            data_inicio=data_inicio, data_fim=data_fim, pagina=pagina,
+        )
+        return {"items": []}
+
+    monkeypatch.setattr(integ_routers._djen, "consultar_por_oab", _ok)
+    resp = await _get(
+        _mini_app(),
+        "/api/integracoes/djen/oab/MG/104080"
+        "?pagina=3&data_inicio=2026-07-01&data_fim=2026-07-18",
+    )
+    assert resp.status_code == 200
+    assert visto["pagina"] == 3
+    assert str(visto["data_inicio"]) == "2026-07-01"
+    assert str(visto["data_fim"]) == "2026-07-18"
+
+
+async def test_router_200_com_corpo_nao_json_vira_502(monkeypatch):
+    """200 do upstream com HTML (WAF/manutenção) não pode virar 500 genérico."""
+    def handler(request: httpx.Request) -> httpx.Response:
+        return httpx.Response(200, text="<html>manutencao</html>")
+
+    _mock_async_client(monkeypatch, brasilapi_mod, handler)
+    resp = await _get(_mini_app(), "/api/integracoes/brasilapi/cep/30130010")
+    assert resp.status_code == 502
 
 
 async def test_router_brasilapi_ok(monkeypatch):

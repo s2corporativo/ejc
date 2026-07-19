@@ -56,7 +56,9 @@ class DataJudClient:
         api_key: Optional[str] = None,
         timeout_s: float = 15.0,
     ) -> None:
-        self.api_key = api_key or os.getenv("DATAJUD_API_KEY", DATAJUD_API_KEY_DEFAULT)
+        # "or" (e não default do getenv): o .env/docker-compose exporta
+        # DATAJUD_API_KEY= VAZIA — string vazia também deve cair no fallback.
+        self.api_key = api_key or os.getenv("DATAJUD_API_KEY") or DATAJUD_API_KEY_DEFAULT
         self._timeout = httpx.Timeout(timeout_s)
 
     def _headers(self) -> dict[str, str]:
