@@ -10,7 +10,10 @@ P1 (2026-07-05):
 - POST /dossie-pressao materializa gerar_dossie_pressao (antes string fixa):
   gateway central de IA + AILog (registrar_ai_log) + saída rascunho (HITL).
 """
+from typing import Annotated, Optional
+
 from fastapi import APIRouter, Depends, HTTPException
+from pydantic import BaseModel, Field, StringConstraints
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.database import get_db
@@ -103,9 +106,22 @@ async def dossie_pressao(
     }
 
 
+class AnalisarMagistradoRequest(BaseModel):
+    """Payload VALIDADO (Pydantic → 422 em entrada malformada, nunca 500).
+
+    Tetos defensivos: 50 decisões × 4.000 chars ≈ 200k chars — acima disso é
+    abuso de tokens no gateway de IA, não uso legítimo (o prompt do shim usa
+    um recorte das decisões)."""
+
+    decisoes: list[Annotated[str, StringConstraints(max_length=4000)]] = Field(
+        default_factory=list, max_length=50,
+    )
+    case_id: Optional[str] = Field(None, max_length=64)
+
+
 @router.post("/analisar-magistrado", dependencies=[Depends(rate_limit("analisar-magistrado", 10))])
 async def analisar_magistrado(
-    payload: dict,
+    req: AnalisarMagistradoRequest,
     db: AsyncSession = Depends(get_db),
     cu: User = Depends(get_current_user),
 ):
@@ -116,9 +132,9 @@ async def analisar_magistrado(
     from app.models.ai_log import AITipoUso
     from app.services.sanitizer import sanitizar_pii
 
-    decisoes = payload.get("decisoes", [])
+    decisoes = req.decisoes
 
-    case_id = payload.get("case_id")
+    case_id = req.case_id
     if case_id:
         await verificar_acesso_caso(db, cu, case_id)
 

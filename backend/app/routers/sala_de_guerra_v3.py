@@ -35,6 +35,11 @@ async def auditoria_sentinela(db: AsyncSession = Depends(get_db), cu: User = Dep
     return await sentinela.gerar_alertas_estrategicos()
 
 
+# Teto do texto aceito na simulação (espelha os 50×4.000 chars do payload
+# validado de diplomacia_v3::analisar_magistrado).
+_MAX_PETICAO_CHARS = 200_000
+
+
 @router.post("/war-room/simular", dependencies=[Depends(rate_limit("war-room-simular", 10))])
 async def simular_war_room(
     payload: dict,
@@ -51,6 +56,12 @@ async def simular_war_room(
     peticao = payload.get("peticao")
     if not peticao or not isinstance(peticao, str):
         raise HTTPException(400, "Petição inicial é necessária para simulação.")
+    # Teto equivalente ao de diplomacia_v3.AnalisarMagistradoRequest (~200k
+    # chars): acima disso é abuso de tokens no gateway de IA, não uso legítimo.
+    if len(peticao) > _MAX_PETICAO_CHARS:
+        raise HTTPException(
+            422, f"Petição excede o limite de {_MAX_PETICAO_CHARS} caracteres."
+        )
 
     case_id = payload.get("case_id")
     if case_id:
