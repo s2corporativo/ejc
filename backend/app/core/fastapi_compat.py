@@ -1,10 +1,10 @@
-"""Compatibilidade controlada entre o EJC e o registro lazy de routers do FastAPI.
+"""Compatibilidade controlada com o registro lazy de routers do FastAPI.
 
-FastAPI 0.139+ preserva routers incluídos como objetos ``_IncludedRouter`` e
-resolve as rotas efetivas sob demanda. O runtime HTTP e o OpenAPI continuam
-funcionando, porém auditorias históricas do EJC consultam ``app.routes`` para
-validar contratos, rate limits e colisões. Esta classe fornece uma visão plana
-somente para introspecção, sem reverter as correções de segurança do framework.
+FastAPI 0.139+ preserva routers incluídos como objetos internos e resolve as
+rotas efetivas sob demanda. O runtime HTTP continua correto, mas auditorias
+históricas do EJC consultam ``app.routes`` para validar contratos, rate limits
+e colisões. Este módulo expõe uma visão plana somente para introspecção e
+mantém a árvore nativa para a geração do OpenAPI.
 """
 from __future__ import annotations
 
@@ -13,13 +13,11 @@ from typing import Any, Iterable
 from fastapi import FastAPI
 from fastapi.openapi.utils import get_openapi
 
+_INSTALL_FLAG = "_ejc_route_introspection_installed"
+
 
 def flatten_routes(routes: Iterable[Any]) -> list[Any]:
-    """Retorna rotas efetivas, expandindo wrappers lazy quando disponíveis.
-
-    Compatível também com versões anteriores do FastAPI/Starlette: rotas que
-    não implementam ``effective_route_contexts`` são preservadas sem alteração.
-    """
+    """Expande wrappers lazy e preserva rotas tradicionais."""
     flattened: list[Any] = []
     for route in routes:
         effective_contexts = getattr(route, "effective_route_contexts", None)
@@ -30,41 +28,53 @@ def flatten_routes(routes: Iterable[Any]) -> list[Any]:
     return flattened
 
 
+def _flat_routes(app: FastAPI) -> list[Any]:
+    return flatten_routes(app.router.routes)
+
+
+def _openapi_with_native_tree(app: FastAPI) -> dict[str, Any]:
+    """Gera o schema com a árvore lazy nativa do framework."""
+    get_version = getattr(app.router, "_get_routes_version", None)
+    routes_version = get_version() if callable(get_version) else len(app.router.routes)
+    cached_version = getattr(app, "_openapi_routes_version", None)
+
+    if not app.openapi_schema or cached_version != routes_version:
+        app.openapi_schema = get_openapi(
+            title=app.title,
+            version=app.version,
+            openapi_version=app.openapi_version,
+            summary=app.summary,
+            description=app.description,
+            terms_of_service=app.terms_of_service,
+            contact=app.contact,
+            license_info=app.license_info,
+            routes=app.router.routes,
+            webhooks=app.webhooks.routes,
+            tags=app.openapi_tags,
+            servers=app.servers,
+            separate_input_output_schemas=app.separate_input_output_schemas,
+            external_docs=app.openapi_external_docs,
+        )
+        app._openapi_routes_version = routes_version
+    return app.openapi_schema
+
+
+def install_fastapi_route_introspection() -> None:
+    """Instala o adaptador uma única vez no processo do EJC.
+
+    A alteração é restrita à propriedade de introspecção e ao gerador OpenAPI;
+    o despacho ASGI continua usando ``app.router`` diretamente.
+    """
+    if getattr(FastAPI, _INSTALL_FLAG, False):
+        return
+
+    FastAPI.routes = property(_flat_routes)  # type: ignore[assignment]
+    FastAPI.openapi = _openapi_with_native_tree  # type: ignore[method-assign]
+    setattr(FastAPI, _INSTALL_FLAG, True)
+
+
 class EJCFastAPI(FastAPI):
-    """FastAPI com visão plana auditável das rotas e OpenAPI nativo preservado."""
+    """Variante explícita para testes e novas aplicações internas."""
 
-    @property
-    def routes(self) -> list[Any]:
-        # O despacho HTTP continua usando ``self.router`` diretamente. Esta
-        # propriedade é consumida por testes, manifests e verificadores do EJC.
-        return flatten_routes(self.router.routes)
-
-    def openapi(self) -> dict[str, Any]:
-        """Gera schema com a árvore nativa, que entende ``_IncludedRouter``.
-
-        O ``get_openapi`` atual precisa receber ``self.router.routes``; passar a
-        visão plana faria os contextos efetivos serem ignorados pelo gerador.
-        """
-        get_version = getattr(self.router, "_get_routes_version", None)
-        routes_version = get_version() if callable(get_version) else len(self.router.routes)
-        cached_version = getattr(self, "_openapi_routes_version", None)
-
-        if not self.openapi_schema or cached_version != routes_version:
-            self.openapi_schema = get_openapi(
-                title=self.title,
-                version=self.version,
-                openapi_version=self.openapi_version,
-                summary=self.summary,
-                description=self.description,
-                terms_of_service=self.terms_of_service,
-                contact=self.contact,
-                license_info=self.license_info,
-                routes=self.router.routes,
-                webhooks=self.webhooks.routes,
-                tags=self.openapi_tags,
-                servers=self.servers,
-                separate_input_output_schemas=self.separate_input_output_schemas,
-                external_docs=self.openapi_external_docs,
-            )
-            self._openapi_routes_version = routes_version
-        return self.openapi_schema
+    routes = property(_flat_routes)
+    openapi = _openapi_with_native_tree
