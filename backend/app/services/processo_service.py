@@ -39,6 +39,18 @@ def _as_dict(process: Process, *, ok: bool | None = None) -> dict[str, Any]:
     return data
 
 
+def _legacy_text(value: str | None, max_length: int) -> str | None:
+    """Adapta somente o espelho legado, sem truncar o dado canônico.
+
+    `processes` usa larguras maiores que `cases` para tribunal/comarca/vara.
+    O write-through não pode transformar um dado válido no domínio canônico em
+    erro de banco por estouro de varchar na tabela legada.
+    """
+    if value is None:
+        return None
+    return value[:max_length]
+
+
 async def obter_processo(db: AsyncSession, process_id: str) -> Process:
     process = await process_repository.get(db, process_id)
     if process is None:
@@ -78,6 +90,8 @@ async def _sync_case_legacy(db: AsyncSession, process: Process) -> None:
 
     A fonte de verdade é `processes`; esta função será removida somente quando o
     inventário confirmar ausência de leitores dos campos processuais legados.
+    As larguras menores do legado são respeitadas sem modificar o valor integral
+    armazenado em `processes`.
     """
     if not process.is_principal:
         return
@@ -85,12 +99,28 @@ async def _sync_case_legacy(db: AsyncSession, process: Process) -> None:
         update(Case)
         .where(Case.id == process.case_id, Case.deleted_at.is_(None))
         .values(
-            numero_processo=process.numero_cnj,
-            tribunal=process.tribunal,
-            comarca=process.comarca,
-            vara=process.vara,
+            numero_processo=_legacy_text(process.numero_cnj, 30),
+            tribunal=_legacy_text(process.tribunal, 20),
+            comarca=_legacy_text(process.comarca, 100),
+            vara=_legacy_text(process.vara, 100),
             valor_causa=process.valor_causa,
             has_judicial_process=(process.tipo in _JUDICIAL_TYPES),
+        )
+    )
+
+
+async def _clear_case_legacy(db: AsyncSession, case_id: str) -> None:
+    """Limpa o espelho quando o caso deixa de possuir processo principal."""
+    await db.execute(
+        update(Case)
+        .where(Case.id == case_id, Case.deleted_at.is_(None))
+        .values(
+            numero_processo=None,
+            tribunal=None,
+            comarca=None,
+            vara=None,
+            valor_causa=None,
+            has_judicial_process=False,
         )
     )
 
@@ -109,6 +139,7 @@ async def criar_processo(
     payload: ProcessCreate,
     db: AsyncSession,
 ) -> dict[str, Any]:
+    await process_repository.lock_case(db, case_id)
     parent = await _validate_parent(db, case_id, payload.processo_principal_id)
     if payload.status == "arquivado" and payload.is_principal:
         raise ProcessConflict("Processo criado como arquivado não pode ser principal")
@@ -132,6 +163,8 @@ async def criar_processo(
         **payload.model_dump(exclude={"is_principal"}),
         is_principal=False,
     )
+    if payload.status == "arquivado":
+        process.archived_at = datetime.now(timezone.utc)
     db.add(process)
     await db.flush()
     if should_be_principal:
@@ -147,6 +180,7 @@ async def atualizar_processo(
     db: AsyncSession,
 ) -> dict[str, Any]:
     process = await obter_processo(db, process_id)
+    await process_repository.lock_case(db, process.case_id)
     changes = payload.model_dump(exclude_unset=True)
     requested_principal = changes.pop("is_principal", None)
 
@@ -156,6 +190,7 @@ async def atualizar_processo(
     if process.status == "arquivado" and requested_status not in {None, "arquivado"}:
         raise ProcessConflict("Use a ação específica de desarquivamento")
 
+    parent_requested = "processo_principal_id" in changes
     parent = await _validate_parent(
         db,
         process.case_id,
@@ -164,6 +199,10 @@ async def atualizar_processo(
     )
     if requested_principal is True and parent is not None:
         raise ProcessConflict("Processo acessório não pode ser marcado como principal")
+    if process.is_principal and parent_requested and parent is not None and requested_principal is not False:
+        raise ProcessConflict(
+            "Para vincular o processo principal como acessório, informe is_principal=false"
+        )
 
     for field, value in changes.items():
         setattr(process, field, value)
@@ -189,6 +228,7 @@ async def atualizar_processo(
 
 async def promover_principal(process_id: str, db: AsyncSession) -> dict[str, Any]:
     process = await obter_processo(db, process_id)
+    await process_repository.lock_case(db, process.case_id)
     await _set_principal(db, process)
     await _sync_case_legacy(db, process)
     await db.flush()
@@ -201,6 +241,7 @@ async def arquivar_processo(
     db: AsyncSession,
 ) -> dict[str, Any]:
     process = await obter_processo(db, process_id)
+    await process_repository.lock_case(db, process.case_id)
     if process.status == "arquivado":
         raise ProcessConflict("Processo já arquivado")
 
@@ -219,6 +260,8 @@ async def arquivar_processo(
         if replacement is not None:
             await _set_principal(db, replacement)
             await _sync_case_legacy(db, replacement)
+        else:
+            await _clear_case_legacy(db, process.case_id)
 
     await db.flush()
     return _as_dict(process, ok=True)
@@ -226,6 +269,7 @@ async def arquivar_processo(
 
 async def desarquivar_processo(process_id: str, db: AsyncSession) -> dict[str, Any]:
     process = await obter_processo(db, process_id)
+    await process_repository.lock_case(db, process.case_id)
     if process.status != "arquivado":
         raise ProcessConflict("Processo não está arquivado")
 
@@ -242,6 +286,7 @@ async def desarquivar_processo(process_id: str, db: AsyncSession) -> dict[str, A
 
 async def remover_processo(process_id: str, db: AsyncSession) -> dict[str, Any]:
     process = await obter_processo(db, process_id)
+    await process_repository.lock_case(db, process.case_id)
     was_principal = process.is_principal
     process.deleted_at = datetime.now(timezone.utc)
     process.is_principal = False
@@ -255,6 +300,8 @@ async def remover_processo(process_id: str, db: AsyncSession) -> dict[str, Any]:
         if replacement is not None:
             await _set_principal(db, replacement)
             await _sync_case_legacy(db, replacement)
+        else:
+            await _clear_case_legacy(db, process.case_id)
 
     await db.flush()
     return {"ok": True, "case_id": process.case_id}
