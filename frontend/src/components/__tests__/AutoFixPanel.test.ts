@@ -1,7 +1,10 @@
 import { describe, expect, it } from "vitest";
 import { ordenarAchados } from "../AutoFixPanel";
 
-const finding = (severidade: "P0" | "P1" | "P2" | "P3" | "INFO", titulo: string) => ({
+const finding = (
+  severidade: "P0" | "P1" | "P2" | "P3" | "INFO",
+  titulo: string,
+) => ({
   tipo: "teste",
   severidade,
   titulo,
