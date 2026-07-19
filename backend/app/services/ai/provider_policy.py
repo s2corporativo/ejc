@@ -70,7 +70,10 @@ class AIProviderPolicy:
             p = p.strip().lower()
             if p and p not in vistos:
                 vistos.append(p)
-        return vistos or ["ollama", "anthropic", "groq"]
+        # Default sem AI_PROVIDER_PRIORITY: maritaca antes do groq — para tarefa
+        # jurídica PT-BR, Sabiá rankeia acima de um modelo generalista; elegível
+        # só com MARITACA_ENABLED+chave (default OFF → ordem efetiva idêntica).
+        return vistos or ["ollama", "anthropic", "maritaca", "groq"]
 
     def avaliar(
         self,
@@ -118,6 +121,16 @@ class AIProviderPolicy:
         if task in TAREFAS_COMPLEXAS and "anthropic" in elegiveis:
             elegiveis = ["anthropic"] + [p for p in elegiveis if p != "anthropic"]
             motivos.append("tarefa complexa — Anthropic priorizado")
+        elif task in TAREFAS_COMPLEXAS and "maritaca" in elegiveis:
+            # Sem Anthropic elegível, o melhor raciocínio jurídico PT-BR
+            # EXTERNO é o Sabiá (Maritaca) — priorizado à frente do groq, mas
+            # NUNCA à frente de provider LOCAL elegível (minimização LGPD: o
+            # dado só sai do VPS quando não há opção local).
+            locais = [p for p in elegiveis if p not in PROVIDERS_EXTERNOS]
+            externos = [p for p in elegiveis
+                        if p in PROVIDERS_EXTERNOS and p != "maritaca"]
+            elegiveis = locais + ["maritaca"] + externos
+            motivos.append("tarefa complexa — Maritaca (Sabiá) priorizada entre externos")
         elif task in TAREFAS_ECONOMICAS:
             econ = [p for p in elegiveis if p in ("ollama", "groq")]
             elegiveis = econ + [p for p in elegiveis if p not in econ]

@@ -120,6 +120,72 @@ def test_habilitado_com_chave_fica_elegivel(habilitado):
     assert ai_gateway._provider_elegivel("maritaca") is True
 
 
+# ── Reorganização IA jurídica (2026-07-19): Maritaca no caminho jurídico ─────
+
+def test_habilitada_entra_nas_cadeias_juridicas_antes_do_groq(monkeypatch, habilitado):
+    monkeypatch.setattr(habilitado, "AI_PROVIDER_PRIORITY", "ollama,anthropic,maritaca,groq")
+    monkeypatch.setattr(habilitado, "GROQ_API_KEY", "groq-key", raising=False)
+    for task in ("analise_juridica", "estrategia", "analise_contrato",
+                 "auditoria_peca", "jurimetria", "critica_adversarial",
+                 "elaboracao_peca"):
+        provedores = [p for p, _ in ai_gateway._resolver_cadeia(task, None, None)]
+        assert "maritaca" in provedores, task
+        assert provedores.index("maritaca") < provedores.index("groq"), task
+
+
+def test_provider_force_maritaca_honrado(habilitado):
+    cadeia = ai_gateway._resolver_cadeia("analise_juridica", "maritaca", None)
+    assert cadeia == [("maritaca", "sabia-4")]
+
+
+def test_provider_force_maritaca_inelegivel_cai_na_cadeia_automatica(monkeypatch):
+    st = get_settings()
+    monkeypatch.setattr(st, "MARITACA_ENABLED", False, raising=False)
+    monkeypatch.setattr(st, "MARITACA_API_KEY", "", raising=False)
+    cadeia = ai_gateway._resolver_cadeia("analise_juridica", "maritaca", None)
+    assert all(p != "maritaca" for p, _ in cadeia)  # não falha duro; roteia normal
+
+
+def test_roteamento_inteligente_promove_maritaca(monkeypatch, habilitado):
+    monkeypatch.setattr(habilitado, "AI_PROVIDER_PRIORITY", "ollama,anthropic,maritaca,groq")
+    cadeia = ai_gateway._resolver_cadeia(
+        "elaboracao_peca", None, None,
+        provider_preferido="maritaca", model_preferido="sabia-4",
+    )
+    assert cadeia[0] == ("maritaca", "sabia-4")
+
+
+def test_model_router_diferencia_tier_maritaca(habilitado):
+    from app.services.ai.model_router import _model_do_provider
+    assert _model_do_provider("maritaca", "pesado") == "sabia-4"
+    assert _model_do_provider("maritaca", "medio") == "sabiazinho-4"
+    assert _model_do_provider("maritaca", "leve") == "sabiazinho-4"
+
+
+def test_adversarial_escolhe_maritaca_como_provider_diverso(monkeypatch, habilitado):
+    # Só a Maritaca elegível e diferente da origem → diversidade real de
+    # laboratório na crítica (Duas IAs), mesmo fora de AI_PROVIDER_PRIORITY.
+    from app.services.ai.adversarial import escolher_provider_diverso
+    monkeypatch.setattr(habilitado, "AI_PROVIDER_PRIORITY", "ollama,anthropic,groq")
+    monkeypatch.setattr(habilitado, "OLLAMA_ENABLED", False, raising=False)
+    monkeypatch.setattr(habilitado, "ANTHROPIC_ENABLED", False, raising=False)
+    monkeypatch.setattr(habilitado, "GROQ_API_KEY", "", raising=False)
+    assert escolher_provider_diverso("anthropic") == "maritaca"
+
+
+def test_policy_prioriza_maritaca_em_tarefa_complexa_sem_anthropic(monkeypatch, habilitado):
+    monkeypatch.setattr(habilitado, "AI_PROVIDER_PRIORITY", "ollama,anthropic,maritaca,groq")
+    monkeypatch.setattr(habilitado, "OLLAMA_ENABLED", False, raising=False)
+    monkeypatch.setattr(habilitado, "ANTHROPIC_ENABLED", False, raising=False)
+    monkeypatch.setattr(habilitado, "GROQ_API_KEY", "groq-key", raising=False)
+    decisao = provider_policy.AIProviderPolicy().avaliar(
+        "qual a tese aplicavel ao caso?", "analise_juridica"
+    )
+    assert decisao.permitido is True
+    assert decisao.provider_chain[0][0] == "maritaca"
+    assert "Maritaca" in decisao.motivo
+
+
 def test_preco_em_brl_positivo_e_correto():
     # sabia-4: 5 (in) + 20 (out) por 1M = R$ 25 para 1M+1M.
     assert ai_cost.estimar_custo_brl("maritaca", 1_000_000, 1_000_000, "sabia-4") == Decimal("25.000000")

@@ -222,8 +222,10 @@ class SingleAICoreOrchestrator:
         )
 
         # 8-9) Custo + AILog (erro de log PROPAGA — sem trilha, sem resposta) ─
-        custo = ai_gateway._custo_brl(resp.modelo, resp.input_tokens or 0, resp.output_tokens or 0) \
-            if resp.provedor == "anthropic" else 0.0
+        # Custo do PRÓPRIO gateway (ai_cost, ciente do provedor): cobre também
+        # Maritaca — provider pago que, com o antigo "só anthropic", entraria
+        # como R$ 0 na trilha de auditoria (sub-relato de gasto).
+        custo = float(resp.custo_estimado_brl or 0.0)
         modelo_canonico = f"{resp.provedor}/{resp.modelo}"
         log_id = await audit_logger.registrar(
             db,
