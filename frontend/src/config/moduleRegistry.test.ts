@@ -17,7 +17,7 @@ describe("moduleRegistry", () => {
   it("expõe o módulo jurídico como Áreas de Atuação", () => {
     const areas = STAFF_ROUTES.find((route) => route.key === "ramos");
     expect(areas?.label).toBe("Áreas de Atuação");
-    expect(areas?.path).toBe("/ramos");
+    expect(areas?.path).toBe("/areas-de-atuacao");
   });
 
   it("não possui aliases duplicados nem aliases sobre rotas canônicas", () => {
@@ -58,7 +58,17 @@ describe("moduleRegistry", () => {
     expect(map.get("/agenda")).toBe("/atividades?view=calendario");
     expect(map.get("/kanban")).toBe("/atividades?view=kanban");
     expect(map.get("/assistente-ia")).toContain("/inteligencia");
-    expect(map.get("/victory-vault")).toBe("/knowledge-hub");
+    expect(map.get("/victory-vault")).toBe(
+      "/inteligencia?tab=conhecimento",
+    );
+    expect(map.get("/knowledge-hub")).toBe(
+      "/inteligencia?tab=conhecimento",
+    );
+    expect(map.get("/prazos")).toBe("/atividades?tipo=prazo");
+    expect(map.get("/tarefas")).toBe("/atividades?tipo=tarefa");
+    expect(map.get("/intimacoes")).toBe("/atividades?tipo=intimacao");
+    expect(map.get("/suspensoes")).toBe("/atividades?tipo=suspensao");
+    expect(map.get("/ramos")).toBe("/areas-de-atuacao");
     expect(map.get("/central-relacionamento")).toBe(
       "/atividades?tab=relacionamento",
     );
@@ -68,7 +78,6 @@ describe("moduleRegistry", () => {
   it("mantém o menu enxuto e o modo essencial com 7 destinos", () => {
     for (const role of ["superadmin", "admin", "socio", "advogado"]) {
       expect(getNavigationModules(role).length).toBeLessThanOrEqual(17);
-      // /ferramentas não tem restrição de papel: visível para toda a equipe.
       expect(
         getNavigationModules(role).some((m) => m.path === "/ferramentas"),
       ).toBe(true);
@@ -87,17 +96,18 @@ describe("moduleRegistry", () => {
       "/pecas",
       "/inteligencia",
     ]);
-    // Novo caso continua registrado, mas só é lançado pelo cabeçalho,
-    // Dashboard e busca global — não duplica a navegação lateral.
     expect(advogado).not.toContain("/casos/novo");
     expect(STAFF_ROUTES.some((m) => m.path === "/casos/novo")).toBe(true);
-    // Rotas podadas permanecem ativas (sem 404), apenas fora do menu.
+
+    // As implementações consolidadas continuam disponíveis para rollback e QA,
+    // mas apenas em caminhos internos; as URLs públicas são aliases canônicos.
     const canonical = new Set(STAFF_ROUTES.map((route) => route.path));
     for (const path of [
-      "/prazos",
-      "/intimacoes",
-      "/tarefas",
-      "/suspensoes",
+      "/legado/prazos",
+      "/legado/intimacoes",
+      "/legado/tarefas",
+      "/legado/suspensoes",
+      "/legado/knowledge-hub",
       "/crm-leads",
       "/assinaturas",
       "/workflow",
