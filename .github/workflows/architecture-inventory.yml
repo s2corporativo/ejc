@@ -28,44 +28,13 @@ on:
       - ".github/workflows/architecture-inventory.yml"
 
 permissions:
-  contents: write
+  contents: read
 
 concurrency:
   group: architecture-inventory-${{ github.ref }}
   cancel-in-progress: true
 
 jobs:
-  apply-case-workspace-cleanup:
-    if: github.event_name == 'pull_request' && github.head_ref == 'fix/fluxo-modular-pendencias'
-    name: Apply controlled case workspace cleanup
-    runs-on: [self-hosted, ejc-vps]
-    timeout-minutes: 10
-    steps:
-      - name: Checkout branch
-        uses: actions/checkout@v7
-        with:
-          ref: ${{ github.head_ref }}
-          fetch-depth: 0
-      - name: Aplicar patches validados
-        run: |
-          python3 scripts/cleanup_case_archive_duplicate.py
-          python3 scripts/separate_case_admin_actions.py
-          python3 scripts/cleanup_clients_ui.py
-          grep -q 'Encerramento e administração' frontend/src/pages/CasoDetalhe.tsx
-          ! grep -q 'archiveModal' frontend/src/pages/CasoDetalhe.tsx
-          grep -q 'toast.success' frontend/src/pages/Clientes.tsx
-      - name: Publicar alteração
-        run: |
-          if git diff --quiet; then
-            echo "Nenhuma alteração necessária"
-            exit 0
-          fi
-          git config user.name "ejc-ci-bot"
-          git config user.email "ejc-ci-bot@users.noreply.github.com"
-          git add frontend/src/pages/CasoDetalhe.tsx frontend/src/pages/Clientes.tsx
-          git commit -m "fix(frontend): consolidar fluxo modular e feedback de clientes"
-          git push origin HEAD:${{ github.head_ref }}
-
   inventory:
     name: Generate complete architecture inventory
     runs-on: [self-hosted, ejc-vps]
