@@ -148,8 +148,12 @@ TASK_ROUTING: dict[str, list[tuple[str, str | None]]] = {
     ],
 }
 
-# Provedores que processam dados FORA do VPS → barreira LGPD obrigatória.
-_PROVIDERS_EXTERNOS = {"anthropic", "groq", "maritaca"}
+# Registro único (provider_registry): externos → barreira LGPD obrigatória.
+from app.services.ai.provider_registry import (  # noqa: E402
+    PROVIDERS_EXTERNOS as _PROVIDERS_EXTERNOS,
+    PROVIDERS_SUPORTADOS as _PROVIDERS_SUPORTADOS,
+    provider_elegivel as _registry_provider_elegivel,
+)
 
 _OLLAMA_MODEL_BY_TASK = {
     "analise_juridica": lambda: settings.OLLAMA_MODEL_ANALISE,
@@ -575,8 +579,7 @@ async def health() -> dict:
 
 def provedores_configurados() -> list[str]:
     """Provedores elegíveis pela configuração atual (mesmas regras da cadeia)."""
-    return [p for p in ("ollama", "anthropic", "groq", "maritaca")
-            if _provider_elegivel(p)]
+    return [p for p in _PROVIDERS_SUPORTADOS if _provider_elegivel(p)]
 
 
 def ia_disponivel() -> bool:
@@ -587,22 +590,8 @@ def ia_disponivel() -> bool:
 # ── Helpers internos ──────────────────────────────────────────────────────────
 
 def _provider_elegivel(provider: str) -> bool:
-    """Elegibilidade por provedor (mesmas regras da AIProviderPolicy)."""
-    if provider == "ollama":
-        return bool(settings.OLLAMA_ENABLED)
-    if provider == "anthropic":
-        return bool(
-            settings.ANTHROPIC_ENABLED and settings.ANTHROPIC_API_KEY
-            and settings.AI_EXTERNAL_PROVIDERS_ALLOWED
-        )
-    if provider == "groq":
-        return bool(settings.GROQ_API_KEY and settings.AI_EXTERNAL_PROVIDERS_ALLOWED)
-    if provider == "maritaca":
-        return bool(
-            settings.MARITACA_ENABLED and settings.MARITACA_API_KEY
-            and settings.AI_EXTERNAL_PROVIDERS_ALLOWED
-        )
-    return False
+    """Elegibilidade por provedor — regra única no provider_registry."""
+    return _registry_provider_elegivel(provider)
 
 
 def _ordenar_por_prioridade(providers: list[str]) -> list[str]:
@@ -647,7 +636,7 @@ def _resolver_cadeia(
     provedor de PARTIDA: se elegível, vai à frente da cadeia; o resto do fallback
     é preservado. Inelegível → ignorado (cadeia normal). NUNCA sobrepõe um
     provider_force explícito nem a barreira de elegibilidade/PII."""
-    if provider_force in ("groq", "ollama", "anthropic", "maritaca"):
+    if provider_force in _PROVIDERS_SUPORTADOS:
         if _provider_elegivel(provider_force):
             return [(provider_force, _resolver_modelo(provider_force, task_type, model_override))]
         # Provider forçado inelegível (sem chave/desabilitado/policy): não
@@ -665,7 +654,7 @@ def _resolver_cadeia(
     # Roteamento inteligente: promove o provider proposto à frente SE elegível e
     # SE participa da cadeia da tarefa (não inventa provedor fora do TASK_ROUTING).
     if (
-        provider_preferido in ("groq", "ollama", "anthropic", "maritaca")
+        provider_preferido in _PROVIDERS_SUPORTADOS
         and provider_preferido in candidatos
         and _provider_elegivel(provider_preferido)
     ):

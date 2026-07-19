@@ -13,10 +13,12 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 
 from app.core.config import get_settings
+from app.services.ai.provider_registry import (
+    PROVIDERS_EXTERNOS,
+    PROVIDERS_SUPORTADOS,
+    provider_elegivel,
+)
 from app.services.sanitizer import sanitizar_pii, validar_sem_pii
-
-# Provedores que processam dados FORA do VPS (LGPD: exigem sanitização).
-PROVIDERS_EXTERNOS = {"anthropic", "groq", "maritaca"}
 
 # Tarefas complexas (raciocínio jurídico profundo) → priorizam Anthropic
 # quando elegível. Aceita tanto nomes de TarefaIA quanto task_types do gateway.
@@ -45,22 +47,8 @@ class AIProviderPolicy:
 
     @staticmethod
     def _elegivel(provider: str) -> bool:
-        s = get_settings()
-        if provider == "ollama":
-            return bool(s.OLLAMA_ENABLED)
-        if provider == "anthropic":
-            return bool(
-                s.ANTHROPIC_ENABLED and s.ANTHROPIC_API_KEY
-                and s.AI_EXTERNAL_PROVIDERS_ALLOWED
-            )
-        if provider == "groq":
-            return bool(s.GROQ_API_KEY and s.AI_EXTERNAL_PROVIDERS_ALLOWED)
-        if provider == "maritaca":
-            return bool(
-                s.MARITACA_ENABLED and s.MARITACA_API_KEY
-                and s.AI_EXTERNAL_PROVIDERS_ALLOWED
-            )
-        return False
+        # Regra única no provider_registry (compartilhada com o ai_gateway).
+        return provider_elegivel(provider)
 
     @staticmethod
     def _ordem_prioridade() -> list[str]:
@@ -70,10 +58,11 @@ class AIProviderPolicy:
             p = p.strip().lower()
             if p and p not in vistos:
                 vistos.append(p)
-        # Default sem AI_PROVIDER_PRIORITY: maritaca antes do groq — para tarefa
-        # jurídica PT-BR, Sabiá rankeia acima de um modelo generalista; elegível
-        # só com MARITACA_ENABLED+chave (default OFF → ordem efetiva idêntica).
-        return vistos or ["ollama", "anthropic", "maritaca", "groq"]
+        # Default sem AI_PROVIDER_PRIORITY: ordem canônica do registro único
+        # (ollama, anthropic, maritaca, groq) — maritaca antes do groq porque,
+        # para tarefa jurídica PT-BR, o Sabiá rankeia acima de um generalista;
+        # elegível só com MARITACA_ENABLED+chave (default OFF → ordem idêntica).
+        return vistos or list(PROVIDERS_SUPORTADOS)
 
     def avaliar(
         self,

@@ -20,8 +20,10 @@ from app.services.legal_base import garantir_identidade
 logger = logging.getLogger("ejc.ai.skills")
 settings = get_settings()
 
-_ENGINE_PROVIDER = {"anthropic": "anthropic", "groq": "groq", "ollama": "ollama",
-                    "maritaca": "maritaca"}
+# Engine da skill → provedor. Derivado do registro único: identidade sobre os
+# provedores suportados (skill com engine desconhecido cai no default do .get).
+from app.services.ai.provider_registry import PROVIDERS_SUPORTADOS as _PROV_SUP  # noqa: E402
+_ENGINE_PROVIDER = {p: p for p in _PROV_SUP}
 
 _AREA_TASK = {
     "juridico": "elaboracao_peca",

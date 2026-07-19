@@ -65,9 +65,10 @@ def neutralizar_marcador_ailog(texto: str | None) -> str | None:
         return texto
     return texto.replace(MARCADOR_AILOG, _MARCADOR_NEUTRALIZADO)
 
-# Maritaca incluída: laboratório/treinamento distintos do gerador reduzem erro
-# correlacionado — exatamente o objetivo da diversidade no Modo Duas IAs.
-_PROVIDERS_CONHECIDOS = ("ollama", "anthropic", "groq", "maritaca")
+# Registro único: todos os provedores suportados são candidatos a crítico
+# diverso (laboratório/treinamento distintos do gerador reduzem erro
+# correlacionado — objetivo da diversidade no Modo Duas IAs).
+from app.services.ai.provider_registry import PROVIDERS_SUPORTADOS as _PROVIDERS_CONHECIDOS  # noqa: E402
 
 SYSTEM_CRITICA = """
 Você é a IA CRÍTICA/ADVERSARIAL do escritório De Paula Teixeira Advogados.
