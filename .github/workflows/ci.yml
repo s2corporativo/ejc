@@ -10,13 +10,6 @@ name: CI
 # runner online os checks ficam "aguardando runner". Ver docs/RUNNER_SELFHOSTED.md.
 # (Para voltar à nuvem paga: runs-on: ubuntu-latest.)
 on:
-  # CI automática REATIVADA (2026-07-18): o runner é SELF-HOSTED no VPS
-  # (ejc-vps), então rodar em cada PR e no push da main custa 0 minutos de
-  # Actions — o motivo original de deixar manual (economia de minutos) não se
-  # aplica mais, e o próprio header deste arquivo já visa "manter os checks de PR".
-  # ⚠️ REQUER o runner self-hosted 'ejc-vps' registrado e ONLINE
-  # (docs/RUNNER_SELFHOSTED.md / scripts/setup-selfhosted-runner.sh); sem runner,
-  # os checks ficam "aguardando runner". workflow_dispatch segue disponível.
   pull_request:
   push:
     branches: [main]
@@ -30,11 +23,6 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
-  # O antigo job backend-tests (pytest SEM banco) foi consolidado aqui: o
-  # db-validation roda a MESMA suíte completa (RUN_DB_TESTS=1 só ADICIONA os
-  # testes row-level), então manter os dois pagava a suíte inteira duas vezes
-  # (~8 min de runner por push — cota de Actions em repositório privado).
-  # Lint (ruff) e pip-audit migraram para cá.
   db-validation:
     name: Backend — suíte completa + schema/RAG (Postgres pgvector)
     runs-on: [self-hosted, ejc-vps]
@@ -57,7 +45,6 @@ jobs:
           --health-timeout 5s
           --health-retries 15
     env:
-      # Async (app/asyncpg) e sync (alembic/psycopg2) apontam para o serviço.
       DATABASE_URL: postgresql+asyncpg://ejc_user:ejc_pass@localhost:5432/ejc_db
       DATABASE_URL_SYNC: postgresql://ejc_user:ejc_pass@localhost:5432/ejc_db
       SCHEMA_CHECK_DATABASE_URL: postgresql://ejc_user:ejc_pass@localhost:5432/ejc_db
@@ -103,15 +90,10 @@ jobs:
             -c "CREATE EXTENSION IF NOT EXISTS pg_trgm;" \
             -c "CREATE EXTENSION IF NOT EXISTS pgcrypto;"
 
-      # Gate de lint/format — ruff já está no requirements.txt. Non-blocking
-      # por ora (continue-on-error); quando o código estiver limpo, REMOVA o
-      # continue-on-error para tornar o lint BLOQUEANTE.
       - name: Lint (ruff)
         continue-on-error: true
         run: python -m ruff check app
 
-      # Scan de vulnerabilidades das dependências Python. Non-blocking para
-      # não travar o CI com achados legados de dependências transitivas.
       - name: Scan de vulnerabilidades (pip-audit)
         continue-on-error: true
         run: |
@@ -121,17 +103,31 @@ jobs:
       - name: Aplicar migrations (alembic upgrade head)
         run: python -m alembic upgrade head
 
-      - name: Testes com banco real (schema, RAG row-level, LGPD row-level)
-        # Suíte COMPLETA com RUN_DB_TESTS=1 — não listar arquivos um a um:
-        # a lista explícita anterior fez os testes row-level de LGPD (Bloco 6)
-        # nunca rodarem no CI apesar do job verde (verde enganoso). Com a
-        # suíte inteira, qualquer *_dblevel.py novo roda automaticamente.
-        run: python -m pytest tests -v
+      - name: Testes com banco real (saída concisa e rastreável)
+        run: |
+          set -o pipefail
+          python -m pytest tests -q --tb=short --maxfail=25 2>&1 | tee ../backend-test-summary.log
 
-  # Eval SMOKE (auditoria IA — P2): valida o formato dos gold sets e roda as
-  # métricas determinísticas 100% OFFLINE (sem banco e sem chamada de LLM
-  # externa). O smoke é BLOQUEANTE: formato inválido ou violação HITL não pode
-  # chegar à main. Pisos de qualidade do gold set real seguem no roadmap.
+      - name: Publicar resumo backend
+        if: always()
+        run: |
+          {
+            echo "## Backend — resumo dos testes"
+            echo
+            echo '```text'
+            tail -n 250 ../backend-test-summary.log 2>/dev/null || true
+            echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Anexar log backend
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: backend-test-summary
+          path: backend-test-summary.log
+          if-no-files-found: warn
+          retention-days: 7
+
   eval-smoke:
     name: Eval — smoke dos gold sets (offline, bloqueante)
     runs-on: [self-hosted, ejc-vps]
@@ -180,23 +176,35 @@ jobs:
       - name: Instalar dependências
         run: npm ci
 
-      # Gate de format — script "format:check" (prettier) já existe no
-      # package.json. Non-blocking por ora; remova o continue-on-error para
-      # torná-lo BLOQUEANTE quando o código estiver formatado.
       - name: Checar formatação (prettier)
         continue-on-error: true
         run: npm run format:check
 
-      # Testes de unidade do frontend (vitest). --if-present evita quebrar o CI
-      # caso o script "test" ainda não tenha entrado no package.json; assim que
-      # entrar, roda automaticamente. Quando o vitest estiver consolidado,
-      # prefira o step direto `npm run test`.
-      - name: Testes (vitest)
-        run: npm run test --if-present
+      - name: Testes (Vitest com resumo compacto)
+        run: |
+          set -o pipefail
+          npm run test -- --reporter=dot 2>&1 | tee ../frontend-test-summary.log
 
-      # Scan de vulnerabilidades das dependências npm (severidade >= high).
-      # Non-blocking por ora (continue-on-error) para triagem de achados
-      # legados; remova para tornar bloqueante em severidade alta.
+      - name: Publicar resumo frontend
+        if: always()
+        run: |
+          {
+            echo "## Frontend — resumo dos testes"
+            echo
+            echo '```text'
+            tail -n 250 ../frontend-test-summary.log 2>/dev/null || true
+            echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Anexar log frontend
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: frontend-test-summary
+          path: frontend-test-summary.log
+          if-no-files-found: warn
+          retention-days: 7
+
       - name: Scan de vulnerabilidades (npm audit)
         continue-on-error: true
         run: npm audit --audit-level=high
