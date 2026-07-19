@@ -20,7 +20,8 @@ from app.services.legal_base import garantir_identidade
 logger = logging.getLogger("ejc.ai.skills")
 settings = get_settings()
 
-_ENGINE_PROVIDER = {"anthropic": "anthropic", "groq": "groq", "ollama": "ollama"}
+_ENGINE_PROVIDER = {"anthropic": "anthropic", "groq": "groq", "ollama": "ollama",
+                    "maritaca": "maritaca"}
 
 _AREA_TASK = {
     "juridico": "elaboracao_peca",

@@ -431,7 +431,7 @@ async def audiencia(
 
 @router.post("/gateway/health")
 async def gateway_health(cu: User = Depends(get_current_user)):
-    """Status dos provedores de IA disponíveis (Ollama + Groq)."""
+    """Status dos provedores de IA disponíveis (Ollama, Anthropic, Maritaca, Groq)."""
     if ROLE_LEVEL.get(cu.role.value, 0) < ROLE_LEVEL["admin"]:
         raise HTTPException(403, "Apenas administradores")
     from app.services.ai_gateway import health as gw_health

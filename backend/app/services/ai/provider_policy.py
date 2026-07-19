@@ -123,9 +123,14 @@ class AIProviderPolicy:
             motivos.append("tarefa complexa — Anthropic priorizado")
         elif task in TAREFAS_COMPLEXAS and "maritaca" in elegiveis:
             # Sem Anthropic elegível, o melhor raciocínio jurídico PT-BR
-            # disponível é o Sabiá (Maritaca) — à frente de groq/ollama.
-            elegiveis = ["maritaca"] + [p for p in elegiveis if p != "maritaca"]
-            motivos.append("tarefa complexa — Maritaca (Sabiá) priorizada sem Anthropic")
+            # EXTERNO é o Sabiá (Maritaca) — priorizado à frente do groq, mas
+            # NUNCA à frente de provider LOCAL elegível (minimização LGPD: o
+            # dado só sai do VPS quando não há opção local).
+            locais = [p for p in elegiveis if p not in PROVIDERS_EXTERNOS]
+            externos = [p for p in elegiveis
+                        if p in PROVIDERS_EXTERNOS and p != "maritaca"]
+            elegiveis = locais + ["maritaca"] + externos
+            motivos.append("tarefa complexa — Maritaca (Sabiá) priorizada entre externos")
         elif task in TAREFAS_ECONOMICAS:
             econ = [p for p in elegiveis if p in ("ollama", "groq")]
             elegiveis = econ + [p for p in elegiveis if p not in econ]

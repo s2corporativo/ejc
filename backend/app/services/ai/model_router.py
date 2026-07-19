@@ -129,7 +129,11 @@ def _model_do_provider(provider: str, tier: str) -> str | None:
     if provider == "anthropic":
         return s.ANTHROPIC_MODEL_COMPLEXO if tier == "pesado" else s.ANTHROPIC_MODEL_RAPIDO
     if provider == "maritaca":
-        return s.MARITACA_MODEL if tier == "pesado" else s.MARITACA_MODEL_RAPIDO
+        # Fallback cruzado (espelha _resolver_modelo do gateway): um dos dois
+        # settings vazio não propõe modelo "" no preview/roteamento.
+        if tier == "pesado":
+            return s.MARITACA_MODEL or s.MARITACA_MODEL_RAPIDO
+        return s.MARITACA_MODEL_RAPIDO or s.MARITACA_MODEL
     return None
 
 
