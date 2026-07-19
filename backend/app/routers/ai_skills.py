@@ -74,7 +74,11 @@ def _http_error(exc: Exception) -> HTTPException:
     if isinstance(exc, PermissionError):
         return HTTPException(status.HTTP_403_FORBIDDEN, str(exc))
     if isinstance(exc, RuntimeError):
-        return HTTPException(status.HTTP_503_SERVICE_UNAVAILABLE, str(exc))
+        # Camada de borda (P0 §3.2): RuntimeError do gateway carrega detalhe
+        # técnico (provider/chave/task=) — vai ao log; o usuário recebe leigo.
+        from app.core.ai_errors import http_erro_ia
+        return http_erro_ia(exc, status.HTTP_503_SERVICE_UNAVAILABLE,
+                            contexto="ai_skills")
     if isinstance(exc, ValueError):
         code = (
             status.HTTP_404_NOT_FOUND

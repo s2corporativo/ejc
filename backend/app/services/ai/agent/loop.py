@@ -33,6 +33,7 @@ from app.services.ai.agent.tools.registry import REGISTRY
 # Import dos módulos de tools REGISTRA as ferramentas no REGISTRY (decoradores).
 from app.services.ai.agent.tools import escrita as _escrita  # noqa: F401
 from app.services.ai.agent.tools import leitura as _leitura  # noqa: F401
+from app.services.ai.agent.tools import motores as _motores  # noqa: F401
 
 logger = logging.getLogger("ejc.ai.agent.loop")
 
@@ -47,9 +48,19 @@ _SYSTEM_AGENTE = (
     "Você decide, chama ferramentas, lê os resultados e decide de novo, em passos, "
     "até concluir a tarefa do advogado.\n\n"
     "FERRAMENTAS: use `buscar_precedentes` e `ler_dossie` para se informar antes de "
-    "concluir; use `gerar_minuta_peca` para produzir rascunhos de peça e "
-    "`registrar_nota_caso` para gravar notas — estas DUAS últimas são de ESCRITA e "
-    "só rodam após CONFIRMAÇÃO HUMANA (o sistema pausa e pede aprovação).\n\n"
+    "concluir. Os MOTORES DETERMINÍSTICOS do escritório estão disponíveis como "
+    "ferramentas de leitura: `montar_cronologia` (linha do tempo real do caso), "
+    "`identificar_rito_e_fase`, `detectar_providencias` (peças cabíveis com base "
+    "legal e prazo do catálogo), `calcular_prazo` (projeção de prazo — NUNCA cria "
+    "prazo; termo inicial sempre pendente de confirmação humana), "
+    "`consultar_tabela_oab`, `ler_checklist_peca` e `classificar_area`. Repita "
+    "bases legais, prazos e valores VERBATIM como as ferramentas devolverem — é "
+    "PROIBIDO reformulá-los ou recalculá-los.\n"
+    "ESCRITA (o sistema PAUSA e exige CONFIRMAÇÃO HUMANA antes de executar): "
+    "`gerar_minuta_peca` (rascunho de peça), `registrar_nota_caso` (nota na "
+    "timeline), `criar_prazo_confirmado` (cria o prazo fatal SÓ após a aprovação "
+    "do advogado, que é a confirmação do termo inicial) e `gerar_kit_documental` "
+    "(procuração + contrato + checklist, rascunhos).\n\n"
     "REGRAS INEGOCIÁVEIS:\n"
     "- Todo texto que você produz é RASCUNHO sujeito a revisão humana (HITL/OAB).\n"
     "- NUNCA invente fonte (súmula/artigo/precedente/jurisprudência): cite apenas o "
@@ -146,6 +157,8 @@ async def _processar_tool_calls(tool_calls, *, ctx, messages, aprovacoes_hash,
       • LEITURA (requer_confirmacao=False) → executa sempre.
       • ESCRITA (requer_confirmacao=True) → só executa se o HASH de (nome+args)
         estiver em `aprovacoes_hash` (aprovação vinculada aos ARGS exatos, H1).
+        A aprovação é ONE-SHOT: o hash é CONSUMIDO na primeira execução —
+        chamada repetida idêntica pausa DE NOVO (nova aprovação humana).
         Senão PAUSA: devolve {"pending": <write>, "restantes": <após o write>}.
       • `apenas_leitura=True` (defense-in-depth): a write-tool nem foi exposta ao
         modelo por `schemas(role, apenas_leitura=True)`; se ainda assim for pedida,
@@ -166,6 +179,9 @@ async def _processar_tool_calls(tool_calls, *, ctx, messages, aprovacoes_hash,
             if h not in aprovacoes_hash:
                 # HITL: write não aprovada (por args) PAUSA o loop.
                 return {"pending": tc, "restantes": list(tool_calls[i + 1:])}
+            # ONE-SHOT: consome a aprovação — uma aprovação humana autoriza UMA
+            # execução; repetição idêntica volta a pausar (HITL).
+            aprovacoes_hash.discard(h)
         await _emitir(on_event, "ferramenta", {"ferramenta": nome, "args": args})
         try:
             resultado = await REGISTRY.executar(nome, args, ctx)
@@ -235,7 +251,8 @@ async def rodar_agente(
 
     `aprovacoes_hash`: hashes de (nome+args) já aprovados — usado como FALLBACK
     quando o Redis está indisponível (o loop re-roda e só executa a write-tool se
-    o tool_call recém-gerado casar o hash).
+    o tool_call recém-gerado casar o hash). Aprovação é ONE-SHOT: cada hash é
+    consumido na primeira execução; nova chamada idêntica pausa de novo.
 
     `apenas_leitura`: quando True, expõe ao modelo SOMENTE tools de leitura
     (`schemas(role, apenas_leitura=True)`) e nunca pausa em HITL — para fluxos de

@@ -355,6 +355,28 @@ async def refresh(req: RefreshRequest, request: Request, response: Response,
                     status_code=401,
                     detail="Sessão atualizada em outra aba — tente novamente",
                 )
+        # Token revogado SEM replaced_by_jti nunca foi rotacionado: foi encerrado
+        # por logout ou troca de senha. O replay vem de um dispositivo antigo
+        # legítimo, não é o sinal de furto do BCP §4.14.2 — 401 simples, sem
+        # cascata de revogação e sem marcar REFRESH_REUSE na auditoria.
+        if record is not None and not record.replaced_by_jti:
+            # M-S3: mesmo sem cascata, o replay pós-logout precisa de trilha —
+            # um dispositivo reapresentando token encerrado é sinal fraco de
+            # comprometimento que a forense cruza com IP/frequência. Padrão
+            # leve do REFRESH_REUSE abaixo, sem revogação em massa.
+            await criar_audit_log(
+                db, user_id, None, "REFRESH_REPLAY_POS_LOGOUT", "users", user_id,
+                detalhes=f"Refresh revogado sem rotação reapresentado (jti={jti}) "
+                         "— sessão encerrada por logout/troca de senha; negado "
+                         "sem cascata de revogação.",
+                ip=obter_ip_real(request),
+            )
+            await db.commit()
+            _clear_refresh_cookie(response)
+            raise HTTPException(
+                status_code=401,
+                detail="Sessão encerrada. Faça login novamente.",
+            )
         ip = obter_ip_real(request)
         if user_id:
             await db.execute(
@@ -451,6 +473,7 @@ async def logout(req: RefreshRequest, request: Request, response: Response,
 async def alterar_senha(
     req: AlterarSenhaRequest,
     request: Request,
+    response: Response,
     db: AsyncSession = Depends(get_db),
 ):
     # Recria o fluxo manualmente para aceitar token must_change
@@ -485,18 +508,48 @@ async def alterar_senha(
     user.hashed_password      = get_password_hash(req.nova_senha)
     user.must_change_password = False
 
-    # Revogar TODAS as outras sessões (segurança pós-troca)
+    # Revogar TODAS as outras sessões (segurança pós-troca). revoked_at marca
+    # o instante para a trilha forense; replaced_by_jti fica nulo de propósito —
+    # é o que distingue revogação administrativa de rotação no /refresh.
     await db.execute(
         update(RefreshToken)
         .where(RefreshToken.user_id == user.id, RefreshToken.revoked == False)
-        .values(revoked=True)
+        .values(revoked=True, revoked_at=datetime.now(timezone.utc))
     )
+
+    # P0 usabilidade (2026-07-18, §2.3): manter a sessão ATUAL após a troca —
+    # emite novos tokens (mesmo formato do /login) com o claim must_change_password
+    # já limpo, para o frontend continuar logado sem voltar ao /login. As demais
+    # sessões seguem revogadas acima; o refresh novo nasce DEPOIS da revogação.
+    access = create_access_token(user.id, user.role.value,
+                                 must_change_password=False)
+    refresh_tok, jti = create_refresh_token(user.id)
+    db.add(RefreshToken(
+        id=str(uuid4()), user_id=user.id, jti=jti,
+        expires_at=datetime.now(timezone.utc) + timedelta(
+            days=settings.REFRESH_TOKEN_EXPIRE_DAYS),
+    ))
+
     await criar_audit_log(
         db, user.id, user.role.value, "TROCA_SENHA", "users", user.id,
         ip=obter_ip_real(request),
     )
     await db.commit()
-    return {"detail": "Senha alterada. Faça login novamente."}
+
+    # Rotaciona o cookie httpOnly com o refresh da sessão que permanece viva.
+    _set_refresh_cookie(response, refresh_tok)
+    return {
+        # Compat: o campo `detail` continua existindo (texto atualizado — a
+        # sessão não é mais derrubada).
+        "detail": "Senha alterada com sucesso.",
+        "access_token": access,
+        "refresh_token": refresh_tok,
+        "token_type": "bearer",
+        "user_id": user.id,
+        "full_name": user.full_name,
+        "role": user.role.value,
+        "must_change_password": False,
+    }
 
 
 # ─── Recuperação de senha (público) ──────────────────────────────────────────
@@ -507,6 +560,23 @@ async def recuperar_senha(
     db: AsyncSession = Depends(get_db),
 ):
     ip = obter_ip_real(request)
+
+    # P0 usabilidade (2026-07-18, §2.2): com SMTP desligado (instalação padrão)
+    # a resposta neutra vira beco sem saída — o e-mail nunca chega. Mesma
+    # detecção do security_service.enviar_email (EMAIL_ENABLED + SMTP_USER).
+    # A mensagem é IGUAL para qualquer e-mail (não vaza existência de conta).
+    if not settings.EMAIL_ENABLED or not settings.SMTP_USER:
+        logger.warning(
+            "Recuperação de senha solicitada com envio de e-mail desligado "
+            "(EMAIL_ENABLED/SMTP_USER) — orientado a procurar o administrador."
+        )
+        return {
+            "detail": (
+                "O envio de e-mail não está configurado nesta instalação. "
+                "Procure o administrador do escritório para redefinir sua senha."
+            )
+        }
+
     await solicitar_reset(db, req.email, ip)
     return {"detail": "Se o e-mail existir, enviaremos as instruções em breve."}
 

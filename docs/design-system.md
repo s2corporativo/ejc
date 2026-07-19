@@ -111,14 +111,14 @@ Neutros do dia a dia: escala `slate` nativa do Tailwind (texto `slate-950/900/60
 | `text-2xs` | 0.65rem / 1rem | Micro-labels (badges, eyebrow) |
 | `font-mono` | — | **Mono** — nº CNJ, CPF/CNPJ, valores, texto a digitar em confirmações |
 
-Pesos disponíveis: `light 300`, `normal 400`, `medium 500`, `semibold 600` (não usar `bold` 700+, não carregado). Tracking: `tightest`→`widest` (eyebrow usa `tracking-[0.22em]` via classe `.eyebrow`).
+Pesos disponíveis: `light 300`, `normal 400`, `medium 500`, `semibold 600`, `bold 700` — a Inter variável carregada em `fonts.css` cobre 300–700, e 700 é o peso padrão de botões e títulos no idioma atual (acima de 700, ex.: `extrabold`, não carregado). Tracking: `tightest`→`widest` (eyebrow usa `tracking-[0.22em]` via classe `.eyebrow`).
 
 ---
 
 ## 3. Espaçamento, sombras e animações
 
-- **Espaçamento**: escala padrão do Tailwind. Padrões da casa: padding de card `p-4`/`p-5`, gap entre blocos de página `space-y-5`, raio `rounded-xl` (cards) e `rounded-lg` (botões/inputs), modais `rounded-2xl`.
-- **Sombras** (tailwind.config.js): `shadow-card`, `shadow-card-hover`, `shadow-float` (modais/popovers), `shadow-logo`, `shadow-sm`, `shadow-md`.
+- **Espaçamento**: escala padrão do Tailwind. Padrões da casa (idioma flat/compacto): padding de card `p-4`/`p-5`, gap entre blocos de página `space-y-5`, raio `rounded-xl` = 12px (cards; KPI cards 10px com borda superior de 3px na cor do indicador) e `rounded-lg` = 8px (botões/inputs), modais `rounded-2xl`.
+- **Sombras** (tailwind.config.js): uso mínimo — cards e superfícies usam borda 1px + `0 1px 2px` sutil; `shadow-float` fica reservada a modais/popovers. Sem elevação/`translateY` no hover.
 - **Animações**: `animate-fade-in` (0.25s, overlays), `animate-rise` (0.3s, entrada de página — `<div className="space-y-5 animate-rise">`), `animate-pop` (0.18s, painéis de modal), `animate-slide-in-right` (0.25s, Drawer), `animate-pulse` (Skeleton).
 - **Classes utilitárias do index.css**: `.card`, `.section-card`, `.btn-primary|-gold|-ghost|-secondary|-outline|-danger`, `.input`, `.label`, `.badge-*`, `.table`, `.modal-backdrop`, `.eyebrow`, `.hero-blue`.
 

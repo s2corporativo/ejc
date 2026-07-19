@@ -23,12 +23,12 @@ logger = logging.getLogger("ejc.sumulas")
 # por item. `situacao` distingue:
 #   ativa    — jurisprudência vigente, indexável no RAG como fundamentação.
 #   cancelada — superada por outra súmula; mantida só como referência histórica.
-#   suspensa  — aplicação suspensa por decisão liminar (ex.: ADPF no STF);
-#               mantida como referência histórica, NÃO indexada no RAG.
+#   suspensa/superada/revisao — mantida como referência histórica e NÃO
+#               indexada no RAG.
 # Súmulas cancelada/suspensa viram registro em `teses` (status='arquivada',
 # consultável na governança) mas NUNCA entram no RAG buscável — citar uma
 # súmula cancelada/suspensa como direito vigente induziria a IA a erro.
-DATA_CONFERENCIA = "2026-07-15"
+DATA_CONFERENCIA = "2026-07-18"
 
 SUMULAS_SEED = [
     # ── TST — Trabalhista ──────────────────────────────────────────────────────
@@ -93,12 +93,11 @@ SUMULAS_SEED = [
               "individuais de trabalho e somente poderão ser modificadas ou suprimidas mediante negociação "
               "coletiva de trabalho."),
      "area":"trabalhista","tema":"ultratividade norma coletiva",
-     "situacao":"suspensa",
-     "situacao_obs":("Redação de 2012 (Res. 185/2012), oposta à anterior. Aplicação SUSPENSA por decisão "
-                      "liminar do STF na ADPF 323/DF — não citar como direito vigente sem checar o status "
-                      "atual do processo."),
-     "data_publicacao":"Res. 185/2012, alterada da redação original de 2003",
-     "fonte_url":"https://www.tst.jus.br/sumulas"},
+     "situacao":"superada",
+     "situacao_obs":("Redação de 2012 incompatível com o julgamento definitivo da ADPF 323/DF, "
+                      "concluído pelo STF em 27.05.2022. Não usar como direito vigente."),
+     "data_publicacao":"Res. 185/2012; superação reconhecida no julgamento da ADPF 323/DF em 2022",
+     "fonte_url":"https://portal.stf.jus.br/noticias/verNoticiaDetalhe.asp?idConteudo=487974&ori=1"},
     {"tribunal":"TST","numero":"331",
      "texto":("Contrato de Prestação de Serviços. Legalidade. "
               "I - A contratação de trabalhadores por empresa interposta é ilegal, formando-se o vínculo "
@@ -115,8 +114,10 @@ SUMULAS_SEED = [
               "IV - O inadimplemento das obrigações trabalhistas, por parte do empregador, implica a "
               "responsabilidade subsidiária do tomador de serviços."),
      "area":"trabalhista","tema":"terceirização responsabilidade subsidiária",
-     "situacao":"ativa",
-     "situacao_obs":"Item I cancelado por perda de eficácia (Lei 13.467/2017 — Reforma Trabalhista); itens II a VI vigentes.",
+     "situacao":"revisao",
+     "situacao_obs":("Registro estático incompleto (não contém integralmente os itens V e VI) e com "
+                      "trechos afetados pela evolução legislativa/jurisprudencial. Quarentenado até "
+                      "reingestão integral da fonte oficial."),
      "data_publicacao":"revisada — ver tst.jus.br/sumulas para redação completa (itens V e VI)",
      "fonte_url":"https://www.tst.jus.br/sumulas"},
     {"tribunal":"TST","numero":"347",
@@ -256,6 +257,7 @@ async def ingerir_sumulas_seed(db: AsyncSession) -> dict:
 
     inseridas = 0
     ignoradas  = 0
+    atualizadas = 0
     indexadas_rag = 0
 
     for s in SUMULAS_SEED:
@@ -268,13 +270,11 @@ async def ingerir_sumulas_seed(db: AsyncSession) -> dict:
         situacao_obs = s.get("situacao_obs", "")
         titulo = _titulo(s)
 
-        # Idempotência
+        # Reconciliação idempotente: o seed anterior apenas ignorava a linha
+        # existente, perpetuando verbete/status errados e impedindo o novo RAG.
         existe = (await db.execute(text(
             "SELECT id FROM teses WHERE titulo = :t AND tribunal = :tr AND deleted_at IS NULL"
         ), {"t": titulo, "tr": tribunal})).scalar()
-        if existe:
-            ignoradas += 1
-            continue
 
         # status da tabela `teses` é um Enum restrito (rascunho|ativa|arquivada) —
         # cancelada/suspensa mapeiam para 'arquivada' (não é "vigente" para uso).
@@ -286,20 +286,7 @@ async def ingerir_sumulas_seed(db: AsyncSession) -> dict:
             obs_partes.append(situacao_obs)
         obs_partes.append(f"Conferido em {DATA_CONFERENCIA} contra fonte oficial: {s.get('fonte_url', '')}")
 
-        tese_id = str(uuid4())
-        await db.execute(text("""
-            INSERT INTO teses (
-                id, titulo, descricao, fundamentacao, area_juridica, area_direito,
-                tribunal, tags, observacoes, tipo, status,
-                vezes_usada, vezes_venceu, vezes_perdeu,
-                created_at, updated_at
-            ) VALUES (
-                :id, :titulo, :descricao, :fundamentacao, :area, :area,
-                :tribunal, :tags, :obs, 'jurisprudencia', :status,
-                0, 0, 0, NOW(), NOW()
-            )
-        """), {
-            "id":          tese_id,
+        valores = {
             "titulo":      titulo,
             "descricao":   texto,
             "fundamentacao": f"Área: {area} | Tema: {tema} | Data: {s.get('data_publicacao', '')}",
@@ -308,7 +295,36 @@ async def ingerir_sumulas_seed(db: AsyncSession) -> dict:
             "tags":        tema,
             "status":      status_tese,
             "obs":         " | ".join(obs_partes),
-        })
+        }
+        if existe:
+            tese_id = str(existe)
+            valores["id"] = tese_id
+            await db.execute(text("""
+                UPDATE teses SET
+                    titulo=:titulo, descricao=:descricao,
+                    fundamentacao=:fundamentacao, area_juridica=:area,
+                    area_direito=:area, tribunal=:tribunal, tags=:tags,
+                    observacoes=:obs, tipo='jurisprudencia', status=:status,
+                    updated_at=NOW()
+                WHERE id=:id
+            """), valores)
+            atualizadas += 1
+        else:
+            tese_id = str(uuid4())
+            valores["id"] = tese_id
+            await db.execute(text("""
+                INSERT INTO teses (
+                    id, titulo, descricao, fundamentacao, area_juridica, area_direito,
+                    tribunal, tags, observacoes, tipo, status,
+                    vezes_usada, vezes_venceu, vezes_perdeu,
+                    created_at, updated_at
+                ) VALUES (
+                    :id, :titulo, :descricao, :fundamentacao, :area, :area,
+                    :tribunal, :tags, :obs, 'jurisprudencia', :status,
+                    0, 0, 0, NOW(), NOW()
+                )
+            """), valores)
+            inseridas += 1
 
         # Indexar no RAG (knowledge_chunks) SOMENTE quando situacao='ativa' —
         # súmula cancelada/suspensa nunca deve virar fundamentação citável pela
@@ -320,8 +336,8 @@ async def ingerir_sumulas_seed(db: AsyncSession) -> dict:
                     db=db,
                     titulo=titulo,
                     conteudo=f"{titulo}\n\nTribunal: {tribunal} | Área: {area} | Tema: {tema}\n\n{texto}",
-                    categoria=area,
-                    fonte="sumula",
+                    categoria=f"sumula_{tribunal.lower()}",
+                    fonte=s.get("fonte_url", ""),
                     tribunal=tribunal,
                     # Chave determinística (auditoria RAG) — antes era
                     # f"sumula:{uuid4()}" (aleatória, sem dedup real por verbete).
@@ -333,23 +349,45 @@ async def ingerir_sumulas_seed(db: AsyncSession) -> dict:
                         "data_conferencia": DATA_CONFERENCIA,
                         "fonte_url": s.get("fonte_url", ""),
                         "data_publicacao": s.get("data_publicacao", ""),
+                        "rag_status": "aprovado",
+                        "tipo_fonte": "jurisprudencia_oficial",
+                        "autoridade": "tribunal_superior",
                     },
                     # confianca="media" (não "alta"): verbete conferido por busca
                     # textual nesta sessão, não por confronto de hash com PDF
                     # oficial primário — curadoria humana pode elevar para "alta".
                     confianca="media",
+                    # Seed não baixa ~2,2 GB de pesos dentro da transação/CI.
+                    # O scheduler/script de reindexação preenche os vetores.
+                    embutir_vetores=False,
                 )
                 indexadas_rag += 1
             except Exception as exc:
                 logger.error("Falha ao indexar súmula no RAG (%s): %s", titulo, exc)
-
-        inseridas += 1
+        else:
+            # Revoga tanto a chave determinística nova quanto eventuais docs
+            # antigos com chave aleatória. Itens cancelados/superados/em revisão
+            # não podem permanecer recuperáveis em nenhuma versão.
+            await db.execute(text("""
+                UPDATE knowledge_docs
+                SET vigente=false, deleted_at=COALESCE(deleted_at, NOW())
+                WHERE deleted_at IS NULL AND vigente=true AND (
+                    chave_origem=:chave OR
+                    (tribunal=:tribunal AND titulo=:titulo AND
+                     (fonte='sumula' OR chave_origem LIKE 'sumula:%'))
+                )
+            """), {
+                "chave": f"sumula:{tribunal.lower()}:{numero}",
+                "tribunal": tribunal,
+                "titulo": titulo,
+            })
 
     await db.commit()
-    logger.info("Súmulas: %d inseridas (%d indexadas no RAG), %d já existiam.",
-               inseridas, indexadas_rag, ignoradas)
+    logger.info("Súmulas: %d inseridas, %d reconciliadas (%d indexadas no RAG).",
+               inseridas, atualizadas, indexadas_rag)
     return {
         "inseridas": inseridas,
+        "atualizadas": atualizadas,
         "indexadas_rag": indexadas_rag,
         "ignoradas":  ignoradas,
         "total_seed": len(SUMULAS_SEED),

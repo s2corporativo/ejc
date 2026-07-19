@@ -486,8 +486,11 @@ class TestIsolamentoCriticaDoGateEIngestao:
 
         capturado = {}
 
-        async def fake_upsert(db, *, titulo, categoria, conteudo, chave_origem, fonte):
+        async def fake_upsert(
+            db, *, titulo, categoria, conteudo, chave_origem, fonte, **kw
+        ):
             capturado["conteudo"] = conteudo
+            capturado["extra"] = kw.get("extra")
             return "novo"
 
         monkeypatch.setattr(ingestion_service, "upsert_documento", fake_upsert)

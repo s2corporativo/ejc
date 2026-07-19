@@ -10,7 +10,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import text
 from app.core.database import get_db
 from app.core.security import get_current_user
-from app.core.ownership import verificar_acesso_caso
+from app.core.ownership import is_gestao, verificar_acesso_caso
 from app.models.user import User
 
 router = APIRouter(prefix="/agenda-eventos", tags=["Agenda de Eventos"])
@@ -37,6 +37,7 @@ class EventoPatch(BaseModel):
     local: Optional[str] = None
     descricao: Optional[str] = None
     concluido: Optional[bool] = None
+    responsavel_id: Optional[str] = None
 
 
 async def _buscar_conflitos(
@@ -65,11 +66,24 @@ async def _buscar_conflitos(
           AND e.responsavel_id = :resp
           AND e.data_evento = :d
           AND e.hora IS NOT NULL AND btrim(e.hora) = :h
-          AND (:exc IS NULL OR e.id <> :exc)
+          AND (CAST(:exc AS text) IS NULL OR e.id <> CAST(:exc AS text))
         ORDER BY e.hora
     """), {"resp": responsavel_id, "d": data_evento,
            "h": hora.strip(), "exc": exclude_id})).mappings().all()
     return [dict(r) for r in rows]
+
+
+def _censurar_conflitos(
+    conflitos: list[dict], cu: User, responsavel_id: Optional[str],
+) -> list[dict]:
+    """N2: o aviso de conflito não pode virar ORÁCULO da agenda alheia — quando
+    o responsável dos eventos colidentes NÃO é o chamador (e ele não é gestão),
+    mantém as chaves do contrato (`ConflitoEvento` no frontend) mas censura
+    titulo/local: só a existência e o horário do compromisso são revelados."""
+    if not conflitos or responsavel_id == cu.id or is_gestao(cu):
+        return conflitos
+    return [dict(c, titulo="Compromisso de outro usuário", local=None)
+            for c in conflitos]
 
 
 @router.get("/")
@@ -78,16 +92,25 @@ async def listar(
     db: AsyncSession = Depends(get_db),
     cu: User = Depends(get_current_user),
 ):
-    rows = (await db.execute(text("""
+    # N1 (leitura): espelha o gate de escrita do PATCH/DELETE (M-S2) — evento
+    # COM caso é agenda de trabalho compartilhada (visível a todo interno);
+    # evento SEM caso é PESSOAL e só aparece p/ criador, responsável ou gestão.
+    filtro_pessoal = ""
+    params: dict = {"ps": page_size}
+    if not is_gestao(cu):
+        filtro_pessoal = (" AND (e.case_id IS NOT NULL"
+                          " OR e.created_by = :uid OR e.responsavel_id = :uid)")
+        params["uid"] = cu.id
+    rows = (await db.execute(text(f"""
         SELECT e.id, e.titulo, e.tipo, e.data_evento, e.hora, e.local, e.descricao,
                e.case_id, e.responsavel_id, e.concluido,
                c.titulo AS caso_titulo
         FROM agenda_eventos e
         LEFT JOIN cases c ON c.id = e.case_id
-        WHERE e.deleted_at IS NULL
+        WHERE e.deleted_at IS NULL{filtro_pessoal}
         ORDER BY e.data_evento ASC, e.hora ASC NULLS LAST
         LIMIT :ps
-    """), {"ps": page_size})).mappings().all()
+    """), params)).mappings().all()
     return {"data": [dict(r) for r in rows]}
 
 
@@ -102,6 +125,10 @@ async def criar(
     if body.case_id:
         await verificar_acesso_caso(db, cu, body.case_id)
     resp = body.responsavel_id or cu.id
+    # N2a: criar evento na agenda de OUTRO usuário é ato de gestão — sem esse
+    # gate, qualquer interno populava (e sondava, via conflito) agenda alheia.
+    if resp != cu.id and not is_gestao(cu):
+        raise HTTPException(403, "Só a gestão pode criar evento para outro responsável")
     # Double-booking: AVISA, não bloqueia (decisão: o padrão menos disruptivo é
     # criar e devolver `conflito_agenda` no corpo — nunca silencia, nunca perde
     # o evento). A checagem é feita ANTES do INSERT para o novo evento não
@@ -117,7 +144,8 @@ async def criar(
            "h": body.hora, "l": body.local, "desc": body.descricao,
            "cid": body.case_id, "resp": resp, "cb": cu.id})
     await db.commit()
-    return {"id": eid, "ok": True, "conflito_agenda": conflitos}
+    return {"id": eid, "ok": True,
+            "conflito_agenda": _censurar_conflitos(conflitos, cu, resp)}
 
 
 @router.patch("/{evento_id}")
@@ -128,14 +156,26 @@ async def atualizar(
     cu: User = Depends(get_current_user),
 ):
     row = (await db.execute(text(
-        "SELECT case_id, responsavel_id, data_evento, hora, concluido "
+        "SELECT case_id, responsavel_id, data_evento, hora, concluido, created_by "
         "FROM agenda_eventos WHERE id = :eid AND deleted_at IS NULL"
     ), {"eid": evento_id})).mappings().first()
     if row is None:
         raise HTTPException(404, "Evento não encontrado")
     if row["case_id"]:
         await verificar_acesso_caso(db, cu, row["case_id"])
-    updates = {k: v for k, v in body.model_dump().items() if v is not None}
+    elif not (is_gestao(cu) or cu.id in (row["created_by"], row["responsavel_id"])):
+        # Evento pessoal (sem caso — M-S2): só o criador, o responsável ou a
+        # gestão podem editar; antes qualquer usuário autenticado alterava.
+        raise HTTPException(403, "Sem permissão para este evento")
+    if body.tipo is not None and body.tipo not in TIPOS_VALIDOS:
+        raise HTTPException(422, f"Tipo inválido. Use: {', '.join(sorted(TIPOS_VALIDOS))}")
+    # N2a: TRANSFERIR o evento p/ um terceiro é ato de gestão (mesma regra do
+    # criar). Manter o responsável atual (no-op) ou assumir p/ si continua livre.
+    if (body.responsavel_id is not None
+            and body.responsavel_id not in (cu.id, row["responsavel_id"])
+            and not is_gestao(cu)):
+        raise HTTPException(403, "Só a gestão pode transferir o evento para outro responsável")
+    updates = {k: v for k, v in body.model_dump(exclude_unset=True).items() if v is not None}
     if not updates:
         return {"ok": True}
     set_clause = ", ".join(f"{k} = :{k}" for k in updates)
@@ -150,10 +190,14 @@ async def atualizar(
     if not concluido_eff:
         data_eff = body.data_evento or row["data_evento"]
         hora_eff = body.hora if body.hora is not None else row["hora"]
-        conflitos = await _buscar_conflitos(
-            db, responsavel_id=row["responsavel_id"],
+        # B1: usa o responsável EFETIVO pós-update — se o patch trocou o
+        # responsavel_id, checar contra o antigo apontava a agenda errada.
+        resp_eff = (body.responsavel_id if body.responsavel_id is not None
+                    else row["responsavel_id"])
+        conflitos = _censurar_conflitos(await _buscar_conflitos(
+            db, responsavel_id=resp_eff,
             data_evento=data_eff, hora=hora_eff, exclude_id=evento_id,
-        )
+        ), cu, resp_eff)
     return {"ok": True, "conflito_agenda": conflitos}
 
 
@@ -164,12 +208,16 @@ async def remover(
     cu: User = Depends(get_current_user),
 ):
     row = (await db.execute(text(
-        "SELECT case_id FROM agenda_eventos WHERE id = :eid AND deleted_at IS NULL"
-    ), {"eid": evento_id})).first()
+        "SELECT case_id, responsavel_id, created_by "
+        "FROM agenda_eventos WHERE id = :eid AND deleted_at IS NULL"
+    ), {"eid": evento_id})).mappings().first()
     if row is None:
         raise HTTPException(404, "Evento não encontrado")
-    if row[0]:
-        await verificar_acesso_caso(db, cu, row[0])
+    if row["case_id"]:
+        await verificar_acesso_caso(db, cu, row["case_id"])
+    elif not (is_gestao(cu) or cu.id in (row["created_by"], row["responsavel_id"])):
+        # Evento pessoal (sem caso — M-S2): mesma regra do PATCH.
+        raise HTTPException(403, "Sem permissão para este evento")
     await db.execute(text("UPDATE agenda_eventos SET deleted_at = now() WHERE id = :eid"), {"eid": evento_id})
     await db.commit()
     return {"ok": True}

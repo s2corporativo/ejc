@@ -1,6 +1,6 @@
 # ── app/models/rag.py ────────────────────────────────────────────────────────
 # Base de conhecimento RAG: documentos + chunks vetorizados (pgvector).
-# Dimensão do embedding = EMBEDDINGS_DIM (O-2, default 1024 = BGE-M3); casa com a
+# Dimensão do embedding = EMBEDDINGS_DIM (default 1024 = multilingual-e5-large); casa com a
 # coluna vector(EMBEDDINGS_DIM) da migration 096. Configurável por env.
 from __future__ import annotations
 from sqlalchemy import Column, String, DateTime, func, Text, Integer, ForeignKey, Boolean

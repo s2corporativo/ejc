@@ -84,13 +84,50 @@ def test_minuta_et_extra_permite_false_remove_substabelecimento():
     assert "substabelecer" not in texto.lower()
 
 
-def test_minuta_default_retrocompat_et_extra_com_substabelecimento():
+def test_minuta_default_conservador_ad_judicia_sem_art_105():
     # Chamada SEM parâmetros de poderes (fluxo de gerar_documentos_iniciais):
-    # comportamento histórico = ad_judicia_et_extra COM substabelecimento.
+    # DEFAULT CONSERVADOR alinhado ao kit documental — ad_judicia, SEM os
+    # poderes especiais do art. 105 do CPC (renúncia/transação/quitação).
+    # Substabelecimento segue o padrão do escritório (default True, como no
+    # KitDocumentalIn). O comportamento histórico (et extra por omissão) foi
+    # descontinuado.
     texto = _procuracao(_case(), _cli(), "Dra. Fulana")
+    assert "PROCURACAO AD JUDICIA" in texto
+    assert "ET EXTRA" not in texto
+    assert "renunciar" not in texto.lower()
+    assert "transigir" not in texto.lower()
+    assert "substabelecer" in texto.lower()
+
+
+def test_caminho_amplo_explicito_continua_disponivel():
+    # O escopo amplo (art. 105 + substabelecimento) segue disponível, mas SÓ
+    # com marcação explícita — mesmo vocabulário do kit documental.
+    texto = _procuracao(
+        _case(), _cli(), "Dra. Fulana",
+        tipo_poderes="ad_judicia_et_extra", permite_substabelecimento=True,
+    )
     assert "AD JUDICIA ET EXTRA" in texto
     assert "renunciar" in texto.lower()
     assert "substabelecer" in texto.lower()
+
+
+def test_defaults_do_fluxo_legado_iguais_ao_kit_documental():
+    # Paridade de contrato: o fluxo legado (gerar_documentos_iniciais /
+    # POST /cases/{id}/gerar-documentos) usa EXATAMENTE os defaults
+    # conservadores do kit documental (KitDocumentalIn).
+    import inspect
+
+    from app.routers.kit_documental import KitDocumentalIn
+    from app.services.documental import gerar_documentos_iniciais
+
+    kit = KitDocumentalIn()
+    sig = inspect.signature(gerar_documentos_iniciais)
+    assert sig.parameters["tipo_poderes"].default == kit.tipo_poderes == "ad_judicia"
+    assert sig.parameters["permite_substabelecimento"].default is kit.permite_substabelecimento
+    assert sig.parameters["poderes_especiais"].default is kit.poderes_especiais is None
+
+    sig_proc = inspect.signature(_procuracao)
+    assert sig_proc.parameters["tipo_poderes"].default == "ad_judicia"
 
 
 def test_minuta_sem_caso_usa_foro_restrito():

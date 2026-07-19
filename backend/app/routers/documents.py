@@ -3,7 +3,7 @@
 # Acesso a docs restritos: audit log obrigatório (LGPD art. 37).
 import logging
 import os
-from datetime import datetime, timezone
+from datetime import date, datetime, time as dtime, timedelta, timezone
 from uuid import uuid4
 from typing import Optional
 
@@ -454,9 +454,31 @@ async def listar(
     case_id: Optional[str] = None,
     client_id: Optional[str] = None,
     search: Optional[str] = None,
+    tipo: Optional[str] = Query(None, description="Filtra por tipo exato (tipo_key)"),
+    confidencialidade: Optional[str] = Query(
+        None, description="Filtra por nível exato (normal|interno|restrito|confidencial|segredo_justica)"
+    ),
+    data_inicio: Optional[date] = Query(None, description="created_at >= data (UTC)"),
+    data_fim: Optional[date] = Query(None, description="created_at <= data (UTC, inclusivo)"),
+    classificacao_pendente: Optional[bool] = Query(
+        None, description="true → somente documentos sem tipo (tipo IS NULL)"
+    ),
     db: AsyncSession = Depends(get_db),
     cu: User = Depends(get_current_user),
 ):
+    # #29 (mesmo padrão do upload): validar confidencialidade contra o enum e
+    # responder 422 — string livre cairia no SAEnum como comparação sempre-falsa.
+    conf_filtro: Optional[DocConfidencialidade] = None
+    if confidencialidade:
+        try:
+            conf_filtro = DocConfidencialidade(confidencialidade)
+        except ValueError:
+            _validos = ", ".join(c.value for c in DocConfidencialidade)
+            raise HTTPException(
+                status_code=422,
+                detail=f"Confidencialidade inválida: {confidencialidade}. Use: {_validos}",
+            )
+
     q = select(Document).where(Document.deleted_at.is_(None))
     # Cofre + ownership: documento sem case_id não é público para a equipe.
     if ROLE_LEVEL.get(cu.role.value, 0) < ROLE_LEVEL["socio"]:
@@ -503,6 +525,25 @@ async def listar(
         q = q.where(Document.case_id == case_id)
     if client_id:
         q = q.where(Document.client_id == client_id)
+    # Filtros novos (GED — pendências PR #274). Todos ADITIVOS (AND) sobre o
+    # escopo de visibilidade acima — nunca afrouxam cofre/ownership.
+    if tipo:
+        q = q.where(Document.tipo == tipo)
+    if conf_filtro is not None:
+        q = q.where(Document.confidencialidade == conf_filtro)
+    if classificacao_pendente is True:
+        q = q.where(Document.tipo.is_(None))
+    elif classificacao_pendente is False:
+        q = q.where(Document.tipo.is_not(None))
+    # Datas sobre created_at (timestamptz): meia-noite UTC inclusiva nas duas
+    # pontas — data_fim entra até 23:59:59 (limite exclusivo no dia seguinte),
+    # preservando o uso de índice (sem CAST na coluna).
+    if data_inicio:
+        q = q.where(Document.created_at >= datetime.combine(
+            data_inicio, dtime.min, tzinfo=timezone.utc))
+    if data_fim:
+        q = q.where(Document.created_at < datetime.combine(
+            data_fim + timedelta(days=1), dtime.min, tzinfo=timezone.utc))
     if search:
         q = q.where(
             (Document.titulo.ilike(f"%{search}%"))
@@ -587,6 +628,137 @@ async def remover(
     await criar_audit_log(db, cu.id, cu.role.value, "DELETE", "documents", doc_id)
     await db.commit()
     return MsgResponse(detail="Documento removido")
+
+
+class DocumentPatchRequest(BaseModel):
+    """Metadados editáveis do GED. filepath/filename/hash NÃO são expostos aqui
+    (campos extras no payload são ignorados pelo Pydantic — nunca aplicados)."""
+    titulo: Optional[str] = None
+    tipo: Optional[str] = None
+    confidencialidade: Optional[str] = None
+    case_id: Optional[str] = None
+
+
+@router.patch("/{doc_id}")
+async def atualizar_metadados(
+    doc_id: str,
+    req: DocumentPatchRequest,
+    db: AsyncSession = Depends(get_db),
+    cu: User = Depends(get_current_user),
+):
+    """Atualiza metadados do documento (titulo/tipo/confidencialidade/case_id).
+
+    Mesmos gates do delete/download: ownership (_verificar_acesso_documento) +
+    cofre (_pode_acessar_confidencial). Nunca altera arquivo físico
+    (filepath/filename/mimetype) — apenas metadados. Audit log UPDATE.
+    """
+    d = (await db.execute(
+        select(Document).where(
+            Document.id == doc_id, Document.deleted_at.is_(None)
+        )
+    )).scalar_one_or_none()
+    if not d:
+        raise HTTPException(status_code=404, detail="Documento não encontrado")
+
+    # Ownership (IDOR) + cofre — como no delete/download.
+    await _verificar_acesso_documento(db, cu, d)
+    if not _pode_acessar_confidencial(cu, d.confidencialidade.value):
+        raise HTTPException(status_code=403, detail="Documento restrito — acesso negado")
+
+    campos = req.model_dump(exclude_unset=True)
+    if not campos:
+        raise HTTPException(status_code=422, detail="Nenhum campo para atualizar")
+
+    alteracoes: list[str] = []
+
+    if "titulo" in campos:
+        novo_titulo = (campos["titulo"] or "").strip()
+        if not novo_titulo:
+            raise HTTPException(status_code=422, detail="Título não pode ser vazio")
+        if novo_titulo != d.titulo:
+            alteracoes.append(f"titulo: {d.titulo!r} → {novo_titulo!r}")
+            d.titulo = novo_titulo
+
+    if "confidencialidade" in campos:
+        try:
+            conf_enum = DocConfidencialidade(campos["confidencialidade"])
+        except (ValueError, TypeError):
+            _validos = ", ".join(c.value for c in DocConfidencialidade)
+            raise HTTPException(
+                status_code=422,
+                detail=f"Confidencialidade inválida: {campos['confidencialidade']}. Use: {_validos}",
+            )
+        # Cofre na ESCRITA: mover para restrito+ exige o mesmo perfil (socio+)
+        # que teria acesso ao documento depois — senão o autor se trancaria fora.
+        if not _pode_acessar_confidencial(cu, conf_enum.value):
+            raise HTTPException(
+                status_code=403,
+                detail="Somente sócio+ pode mover documento para o cofre (restrito+)",
+            )
+        if conf_enum != d.confidencialidade:
+            alteracoes.append(
+                f"confidencialidade: {d.confidencialidade.value} → {conf_enum.value}"
+            )
+            d.confidencialidade = conf_enum
+
+    if "tipo" in campos:
+        novo_tipo = campos["tipo"]
+        if novo_tipo:
+            # Mesma validação do upload: master (R3) + legados.
+            tipos_validos = set(TIPOS_LEGADOS)
+            try:
+                tipos_validos |= {t.tipo_key for t in await _tipos_master_ativos(db)}
+            except Exception as e:
+                logger.warning(
+                    "document_types_master indisponível na validação de tipo: %s", e
+                )
+            if novo_tipo not in tipos_validos:
+                raise HTTPException(
+                    status_code=422,
+                    detail=f"Tipo de documento inválido: {novo_tipo}. Use GET /documents/tipos.",
+                )
+        if novo_tipo != d.tipo:
+            alteracoes.append(f"tipo: {d.tipo} → {novo_tipo}")
+            d.tipo = novo_tipo
+
+    if "case_id" in campos and campos["case_id"] != d.case_id:
+        novo_case_id = campos["case_id"]
+        if novo_case_id:
+            # 404 se inexistente/deletado + gate de escrita no caso destino
+            # (mesmo fecho de IDOR do /upload).
+            caso = await verificar_acesso_caso(db, cu, novo_case_id)
+            # Espelha signatures.criar_solicitacao: documento com cliente só
+            # pode apontar para caso do MESMO cliente (anti cross-tenant).
+            if d.client_id and caso.client_id and caso.client_id != d.client_id:
+                raise HTTPException(
+                    status_code=400,
+                    detail="Caso pertence a outro cliente — vínculo negado",
+                )
+            alteracoes.append(f"case_id: {d.case_id} → {novo_case_id}")
+            d.case_id = novo_case_id
+            # #8 do upload: cliente derivado do caso quando o doc não tem um.
+            if not d.client_id and caso.client_id:
+                d.client_id = caso.client_id
+        else:
+            alteracoes.append(f"case_id: {d.case_id} → None (desvinculado)")
+            d.case_id = None
+
+    if alteracoes:
+        await criar_audit_log(
+            db, cu.id, cu.role.value, "UPDATE", "documents", doc_id,
+            detalhes="; ".join(alteracoes)[:500],
+        )
+        await db.commit()
+
+    return {
+        "id": d.id,
+        "titulo": d.titulo,
+        "tipo": d.tipo,
+        "confidencialidade": d.confidencialidade.value,
+        "case_id": d.case_id,
+        "client_id": d.client_id,
+        "detail": "Metadados atualizados" if alteracoes else "Nada a alterar",
+    }
 
 
 @router.post("/{doc_id}/classificar",

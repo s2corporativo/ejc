@@ -22,7 +22,6 @@ import {
   ShieldCheck,
   Sparkles,
   Users,
-  X,
 } from "lucide-react";
 import api from "../lib/api";
 import { asList } from "../lib/list";
@@ -47,6 +46,21 @@ import {
 } from "../components/UI";
 
 const MANAGER_ROLES = new Set(["superadmin", "admin", "socio"]);
+const CASE_CREATOR_ROLES = new Set([
+  "superadmin",
+  "admin",
+  "socio",
+  "advogado",
+  "secretaria",
+]);
+const LEGAL_ROLES = new Set([
+  "superadmin",
+  "admin",
+  "socio",
+  "advogado",
+  "advogado_auxiliar",
+  "estagiario",
+]);
 const CRM_ROLES = new Set([
   "superadmin",
   "admin",
@@ -146,8 +160,8 @@ function DeadlineBars({
               className={cn(
                 "w-full rounded-lg transition-all duration-300",
                 index === 0 && point.value > 0
-                  ? "bg-gradient-to-t from-danger-600 to-danger-400"
-                  : "bg-gradient-to-t from-primary-800 via-primary-600 to-primary-400",
+                  ? "bg-danger-500"
+                  : "bg-primary-600",
               )}
               style={{ height: `${Math.max(8, (point.value / max) * 100)}%` }}
               aria-label={`${point.label}: ${point.value} prazo(s)`}
@@ -173,22 +187,17 @@ export default function DashboardModern() {
   const [iaSaude, setIaSaude] = useState<any>(null);
   const [solicitacoes, setSolicitacoes] = useState<any>(null);
   const [loading, setLoading] = useState(true);
-  // Card "Comece aqui" (first-run): guiado por flag local, dismissível.
-  const [comeceAqui, setComeceAqui] = useState(
-    () => !localStorage.getItem("ejc_comece_aqui_done"),
-  );
-  const dispensarComeceAqui = () => {
-    localStorage.setItem("ejc_comece_aqui_done", "1");
-    setComeceAqui(false);
-  };
   // "Gestão do escritório": widgets analíticos/gerenciais, recolhidos por
   // padrão para priorizar o operacional do dia do advogado.
   const [gestaoOpen, setGestaoOpen] = useState(false);
+  const [moreActionsOpen, setMoreActionsOpen] = useState(false);
 
   const currentUser = user as any;
   const firstName = currentUser?.full_name?.split(" ")[0] || "Dr.";
   const isManager = MANAGER_ROLES.has(currentUser?.role || "");
   const canSeeCRM = CRM_ROLES.has(currentUser?.role || "");
+  const canCreateCase = CASE_CREATOR_ROLES.has(currentUser?.role || "");
+  const canUseLegalAI = LEGAL_ROLES.has(currentUser?.role || "");
 
   useEffect(() => {
     setLoading(true);
@@ -301,33 +310,66 @@ export default function DashboardModern() {
       ? Math.round(jurimetria.taxa_sucesso_geral * 100)
       : null;
 
-  // As 4 ações principais do Command Center (documento IA · manual · Raio-X ·
-  // atendimento) vêm primeiro como `primary`; as demais seguem como atalhos.
-  const quickActions = [
-    {
-      to: NOVO_CASO_DOCUMENTO_PATH,
-      label: "Novo caso por documento",
-      icon: FileUp,
-      primary: true,
-    },
-    {
-      to: NOVO_CASO_MANUAL_PATH,
-      label: "Novo caso manual",
-      icon: PenLine,
-      primary: true,
-    },
-    { to: "/raio-x", label: "Analisar processo externo", icon: ScanSearch, primary: true },
-    {
-      to: "/atividades?tab=relacionamento",
-      label: "Registrar atendimento",
-      icon: Headset,
-      primary: true,
-    },
-    { to: "/clientes", label: "Novo cliente", icon: Users },
-    { to: "/pecas", label: "Gerar peça", icon: FileText },
-    { to: "/inteligencia", label: "Analisar com IA", icon: Sparkles },
-    { to: "/ramos", label: "Áreas de Atuação", icon: Scale },
+  // No máximo quatro ações primárias por perfil. Atalhos secundários ficam
+  // recolhidos em "Mais ações" para reduzir escolhas simultâneas e impedir
+  // navegação para recursos que o perfil não pode executar.
+  const primaryActions = [
+    ...(canCreateCase
+      ? [
+          {
+            to: NOVO_CASO_DOCUMENTO_PATH,
+            label: "Novo caso por documento",
+            icon: FileUp,
+          },
+          {
+            to: NOVO_CASO_MANUAL_PATH,
+            label: "Novo caso manual",
+            icon: PenLine,
+          },
+        ]
+      : []),
+    ...(canUseLegalAI
+      ? [
+          {
+            to: "/raio-x",
+            label: "Analisar processo externo",
+            icon: ScanSearch,
+          },
+        ]
+      : []),
+    ...(canSeeCRM
+      ? [
+          {
+            to: "/atividades?tab=relacionamento",
+            label: "Registrar atendimento",
+            icon: Headset,
+          },
+        ]
+      : []),
+  ].slice(0, 4);
+
+  const secondaryActions = [
+    ...(canCreateCase
+      ? [{ to: "/clientes", label: "Novo cliente", icon: Users }]
+      : []),
+    ...(canUseLegalAI
+      ? [
+          { to: "/pecas", label: "Gerar peça", icon: FileText },
+          { to: "/inteligencia", label: "Analisar com IA", icon: Sparkles },
+          { to: "/ramos", label: "Áreas de Atuação", icon: Scale },
+        ]
+      : []),
   ];
+
+  const visiblePrimaryActions = primaryActions.length
+    ? primaryActions
+    : [
+        {
+          to: "/atividades",
+          label: "Abrir agenda e prazos",
+          icon: CalendarClock,
+        },
+      ];
 
   // Faixa "Prioridades de hoje": o que exige atenção AGORA, como atalhos.
   // Usa dados já carregados; só mostra o que tem contagem > 0. `clientes
@@ -344,7 +386,7 @@ export default function DashboardModern() {
       key: "prazos",
       count: criticalDeadlines.length,
       label: "prazos críticos",
-      to: "/prazos",
+      to: "/atividades?tipo=prazo",
       tone: "red",
       icon: AlertTriangle,
     },
@@ -406,7 +448,7 @@ export default function DashboardModern() {
           ? `${critical.case_title} — vence ${fmtDate(critical.data_prazo)}. Confirme a ciência e registre a providência.`
           : `Vence ${fmtDate(critical.data_prazo)}. Confirme a ciência e registre a providência.`,
         cta: "Ver e confirmar",
-        to: "/prazos",
+        to: "/atividades?tipo=prazo",
       };
     }
     // 2) Cliente aguardando resposta (só quem enxerga o CRM).
@@ -434,101 +476,18 @@ export default function DashboardModern() {
   const NextActionIcon = nextAction?.icon;
 
   return (
-    <div className="space-y-6">
+    <div className="space-y-4">
       <PageHeader
-        eyebrow="Painel executivo"
+        eyebrow="Meu dia"
         title={`Bom trabalho, ${firstName}`}
-        subtitle="Visão consolidada da operação jurídica, com foco em prazos, carteira, produtividade e segurança decisória."
+        subtitle="Prioridades, agenda e casos recentes para trabalhar com tranquilidade."
         actions={<ThemeSelector className="w-full sm:min-w-[330px]" />}
       />
-
-      {/* Card "Comece aqui" — first-run guiado (3 passos), dismissível. */}
-      {comeceAqui && (
-        <section
-          aria-label="Comece por aqui"
-          className="relative overflow-hidden rounded-2xl border border-ouro/30 bg-gradient-to-br from-ouro-palha/70 via-white to-white p-5 shadow-sm dark:border-ouro/20 dark:from-white/[0.05] dark:via-white/[0.02] dark:to-transparent"
-        >
-          <button
-            type="button"
-            onClick={dispensarComeceAqui}
-            aria-label="Dispensar guia de primeiros passos"
-            className="absolute right-3 top-3 rounded-lg p-1.5 text-slate-400 transition-colors hover:bg-slate-900/[0.05] hover:text-slate-600 dark:hover:bg-white/10"
-          >
-            <X className="h-4 w-4" />
-          </button>
-
-          <div className="mb-1 flex flex-wrap items-center gap-2">
-            <Sparkles className="h-4 w-4 text-ouro" />
-            <h2 className="text-sm font-semibold text-slate-900 dark:text-slate-100">
-              Comece por aqui
-            </h2>
-            <Badge tone="ouro">Primeiros passos</Badge>
-          </div>
-          <p className="mb-4 max-w-2xl text-sm text-slate-600 dark:text-slate-300">
-            Três passos para se ambientar no EJC. Você pode dispensar quando
-            quiser.
-          </p>
-
-          <div className="grid gap-3 sm:grid-cols-3">
-            {[
-              {
-                n: 1,
-                to: "/casos/novo",
-                label: "Criar seu primeiro caso",
-                desc: "Cadastro guiado: cliente e dados básicos do caso.",
-                icon: Gavel,
-              },
-              {
-                n: 2,
-                to: "/prazos",
-                label: "Cadastrar um prazo",
-                desc: "Acompanhe vencimentos e confirmações de ciência.",
-                icon: CalendarClock,
-              },
-              {
-                n: 3,
-                to: "/pecas",
-                label: "Gerar uma peça",
-                desc: "Produza documentos com apoio da IA e revisão humana.",
-                icon: FileText,
-              },
-            ].map(({ n, to, label, desc, icon: Icon }) => (
-              <Link
-                key={to}
-                to={to}
-                className="group flex flex-col gap-2 rounded-xl border border-black/[0.05] bg-white p-4 transition-all hover:border-ouro/40 hover:shadow-sm dark:border-white/10 dark:bg-white/[0.03]"
-              >
-                <div className="flex items-center gap-2">
-                  <span className="flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-ouro/15 text-xs font-semibold text-ouro-profundo dark:text-ouro-claro">
-                    {n}
-                  </span>
-                  <Icon className="h-4 w-4 text-ouro" />
-                </div>
-                <div>
-                  <div className="flex items-center gap-1 text-sm font-semibold text-slate-900 dark:text-slate-100">
-                    {label}
-                    <ArrowRight className="h-3.5 w-3.5 text-slate-400 transition group-hover:translate-x-0.5" />
-                  </div>
-                  <p className="mt-0.5 text-xs text-slate-500 dark:text-slate-400">
-                    {desc}
-                  </p>
-                </div>
-              </Link>
-            ))}
-          </div>
-
-          <div className="mt-4">
-            <Button variant="ghost" size="sm" onClick={dispensarComeceAqui}>
-              Dispensar
-            </Button>
-          </div>
-        </section>
-      )}
 
       {/* ===================== MEU DIA ===================== */}
       {/* Prioridade operacional do advogado: ações, pendências, agenda e
           casos recentes. KPIs/indicadores gerenciais saem do topo. */}
-      <section aria-label="Meu dia" className="space-y-6">
+      <section aria-label="Meu dia" className="space-y-4">
         <div className="flex flex-wrap items-center gap-2">
           <span className="flex h-7 w-7 items-center justify-center rounded-lg bg-ouro/15 text-ouro">
             <CalendarClock className="h-4 w-4" />
@@ -550,14 +509,14 @@ export default function DashboardModern() {
             to={nextAction.to}
             aria-label={`Próxima ação recomendada: ${nextAction.title}`}
             className={cn(
-              "group flex flex-col gap-4 rounded-2xl border p-5 shadow-sm transition hover:-translate-y-0.5 hover:shadow-md sm:flex-row sm:items-center sm:justify-between",
+              "group flex flex-col gap-4 rounded-xl border p-4 transition sm:flex-row sm:items-center sm:justify-between",
               NEXT_ACTION_TONE[nextAction.tone].wrap,
             )}
           >
             <div className="flex items-start gap-4">
               <span
                 className={cn(
-                  "shrink-0 rounded-2xl p-3 ring-1 ring-inset",
+                  "shrink-0 rounded-xl p-3 ring-1 ring-inset",
                   NEXT_ACTION_TONE[nextAction.tone].badge,
                 )}
               >
@@ -595,7 +554,7 @@ export default function DashboardModern() {
             </div>
             <span
               className={cn(
-                "inline-flex shrink-0 items-center justify-center gap-2 rounded-xl px-4 py-2 text-sm font-semibold shadow-sm transition",
+                "inline-flex shrink-0 items-center justify-center gap-2 rounded-lg px-4 py-2 text-[13px] font-bold transition",
                 NEXT_ACTION_TONE[nextAction.tone].cta,
               )}
             >
@@ -607,10 +566,10 @@ export default function DashboardModern() {
           <Link
             to="/atividades"
             aria-label="Nada urgente para agora — ver agenda"
-            className="group flex items-center justify-between gap-4 rounded-2xl border border-success-100 bg-success-50 p-5 shadow-sm transition hover:-translate-y-0.5 hover:shadow-md dark:border-success-500/20 dark:bg-success-500/10"
+            className="group flex items-center justify-between gap-4 rounded-xl border border-success-100 bg-success-50 p-4 transition dark:border-success-500/20 dark:bg-success-500/10"
           >
             <div className="flex items-center gap-4">
-              <span className="shrink-0 rounded-2xl bg-success-100 p-3 text-success-700 ring-1 ring-inset ring-success-200 dark:bg-success-500/15 dark:text-success-300">
+              <span className="shrink-0 rounded-xl bg-success-100 p-3 text-success-700 ring-1 ring-inset ring-success-200 dark:bg-success-500/15 dark:text-success-300">
                 <CheckCircle2 className="h-6 w-6" />
               </span>
               <div className="min-w-0">
@@ -640,7 +599,7 @@ export default function DashboardModern() {
           Vem ANTES do painel de ações: "o que preciso resolver?" primeiro. */}
       <section
         aria-label="Prioridades de hoje"
-        className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm dark:border-white/10 dark:bg-white/[0.03]"
+        className="rounded-xl border border-slate-200 bg-white p-4 dark:border-white/10 dark:bg-white/[0.03]"
       >
         <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
           <div className="flex shrink-0 items-center gap-2 text-[11px] font-semibold uppercase tracking-[0.16em] text-slate-500">
@@ -686,7 +645,7 @@ export default function DashboardModern() {
       {/* Painel de AÇÕES — vem DEPOIS das prioridades: resolvido o urgente,
           "o que quero iniciar?". Mantém as 4 ações principais do Command
           Center (documento IA · manual · Raio-X · atendimento). */}
-      <section className="relative overflow-hidden rounded-2xl border border-slate-200 bg-white p-5 shadow-sm before:absolute before:inset-x-0 before:top-0 before:h-0.5 before:bg-gradient-to-r before:from-ouro-claro before:via-ouro-claro/40 before:to-transparent dark:border-white/10 dark:bg-white/[0.03] md:p-6">
+      <section className="relative overflow-hidden rounded-xl border border-slate-200 bg-white p-4 before:absolute before:inset-x-0 before:top-0 before:h-[3px] before:bg-ouro-claro dark:border-white/10 dark:bg-white/[0.03] md:p-5">
         <div className="flex flex-col gap-5 xl:flex-row xl:items-center xl:justify-between">
           <div className="max-w-2xl">
             <div className="mb-2 flex flex-wrap items-center gap-2">
@@ -702,7 +661,7 @@ export default function DashboardModern() {
             {/* !text-white: o seletor global `.ejc-modern-scope h2` (index.css)
                 pinta headings de #111827 e vencia o utilitário text-white,
                 deixando o título ilegível sobre o gradiente sépia escuro. */}
-            <h2 className="text-xl font-semibold text-slate-900 md:text-2xl dark:!text-slate-100">
+            <h2 className="text-lg font-bold text-slate-900 dark:!text-slate-100">
               Inicie uma nova frente de trabalho
             </h2>
             <p className="mt-2 text-sm leading-6 text-slate-500">
@@ -711,53 +670,93 @@ export default function DashboardModern() {
               do advogado.
             </p>
           </div>
-          <div className="flex flex-wrap gap-2">
-            {quickActions.map(({ to, label, icon: Icon, primary }) => (
-              <Link key={label} to={to}>
+          <div className="flex flex-col items-start gap-2 xl:items-end">
+            <div className="flex flex-wrap gap-2 xl:justify-end">
+              {visiblePrimaryActions.map(({ to, label, icon: Icon }) => (
+                <Link key={label} to={to}>
+                  <Button
+                    variant="primary"
+                    icon={<Icon className="h-4 w-4" />}
+                    className="shadow-sm"
+                  >
+                    {label}
+                  </Button>
+                </Link>
+              ))}
+            </div>
+            {secondaryActions.length > 0 && (
+              <div className="flex flex-wrap items-center gap-2 xl:justify-end">
                 <Button
-                  variant={primary ? "primary" : "ghost"}
-                  icon={<Icon className="h-4 w-4" />}
-                  className={
-                    primary
-                      ? "shadow-sm"
-                      : "text-slate-700 hover:bg-slate-100 dark:text-slate-200 dark:hover:bg-white/10"
-                  }
+                  variant="ghost"
+                  size="sm"
+                  onClick={() => setMoreActionsOpen((open) => !open)}
+                  aria-expanded={moreActionsOpen}
+                  aria-controls="acoes-secundarias-dashboard"
+                  className="text-slate-700 hover:bg-slate-100 dark:text-slate-200 dark:hover:bg-white/10"
                 >
-                  {label}
+                  Mais ações
+                  <ChevronDown
+                    className={cn(
+                      "ml-1 h-4 w-4 transition-transform",
+                      moreActionsOpen && "rotate-180",
+                    )}
+                    aria-hidden="true"
+                  />
                 </Button>
-              </Link>
-            ))}
+                {moreActionsOpen && (
+                  <div
+                    id="acoes-secundarias-dashboard"
+                    className="flex flex-wrap gap-2"
+                  >
+                    {secondaryActions.map(({ to, label, icon: Icon }) => (
+                      <Link key={label} to={to}>
+                        <Button
+                          variant="ghost"
+                          size="sm"
+                          icon={<Icon className="h-4 w-4" />}
+                          className="text-slate-700 hover:bg-slate-100 dark:text-slate-200 dark:hover:bg-white/10"
+                        >
+                          {label}
+                        </Button>
+                      </Link>
+                    ))}
+                  </div>
+                )}
+              </div>
+            )}
           </div>
         </div>
       </section>
 
-      <Link
-        to="/raio-x"
-        className="group flex flex-col gap-4 rounded-2xl border border-slate-200 bg-white p-5 shadow-sm transition hover:-translate-y-0.5 hover:shadow-md sm:flex-row sm:items-center sm:justify-between dark:border-white/10 dark:bg-white/[0.03]"
-      >
-        <div className="flex items-start gap-4">
-          <span className="rounded-2xl bg-ouro/10 p-3 text-ouro-profundo ring-1 ring-inset ring-ouro/20 dark:text-ouro-claro">
-            <ScanSearch className="h-6 w-6" />
-          </span>
-          <div>
-            <div className="flex flex-wrap items-center gap-2">
-              <h2 className="font-serif text-xl font-semibold">
-                Analisar antes de cadastrar
-              </h2>
-              <Badge tone="blue">Raio-X preliminar</Badge>
+      {canUseLegalAI && (
+        <Link
+          to="/raio-x"
+          className="group flex flex-col gap-4 rounded-xl border border-slate-200 bg-white p-4 transition sm:flex-row sm:items-center sm:justify-between dark:border-white/10 dark:bg-white/[0.03]"
+        >
+          <div className="flex items-start gap-4">
+            <span className="rounded-xl bg-ouro/10 p-3 text-ouro-profundo ring-1 ring-inset ring-ouro/20 dark:text-ouro-claro">
+              <ScanSearch className="h-6 w-6" />
+            </span>
+            <div>
+              <div className="flex flex-wrap items-center gap-2">
+                <h2 className="text-[15px] font-bold">
+                  Analisar antes de cadastrar
+                </h2>
+                <Badge tone="blue">Raio-X preliminar</Badge>
+              </div>
+              <p className="mt-1 max-w-3xl text-sm leading-6 text-slate-500">
+                Envie documentos externos, confira o diagnóstico e só transforme
+                em caso após a decisão humana. A análise não altera a carteira nem
+                os indicadores oficiais.
+              </p>
             </div>
-            <p className="mt-1 max-w-3xl text-sm leading-6 text-slate-500">
-              Envie documentos externos, confira o diagnóstico e só transforme
-              em caso após a decisão humana. A análise não altera a carteira nem
-              os indicadores oficiais.
-            </p>
           </div>
-        </div>
-        <span className="inline-flex shrink-0 items-center gap-2 text-sm font-semibold text-ouro-profundo dark:text-ouro-claro">
-          Abrir Raio-X
-          <ArrowRight className="h-4 w-4 transition group-hover:translate-x-1" />
-        </span>
-      </Link>
+          <span className="inline-flex shrink-0 items-center gap-2 text-sm font-semibold text-ouro-profundo dark:text-ouro-claro">
+            Abrir Raio-X
+            <ArrowRight className="h-4 w-4 transition group-hover:translate-x-1" />
+          </span>
+        </Link>
+      )}
 
       <div className="grid gap-5 xl:grid-cols-[1.25fr_0.75fr]">
         <SectionCard
@@ -907,7 +906,7 @@ export default function DashboardModern() {
               </Link>
             )}
             <Link
-              to="/prazos"
+              to="/atividades?tipo=prazo"
               className="group block rounded-xl border border-danger-100 bg-danger-50 p-4 dark:border-danger-500/20 dark:bg-danger-500/10"
             >
               <div className="flex items-start gap-3">
@@ -1066,16 +1065,17 @@ export default function DashboardModern() {
       {/* ================= GESTÃO DO ESCRITÓRIO ================= */}
       {/* Widgets analíticos/gerenciais, recolhidos por padrão. Dados
           financeiros ficam concentrados no módulo Financeiro. */}
+      {isManager && (
       <section
         aria-label="Gestão do escritório"
-        className="rounded-2xl border border-slate-200 bg-white shadow-sm dark:border-white/10 dark:bg-white/[0.03]"
+        className="rounded-xl border border-slate-200 bg-white dark:border-white/10 dark:bg-white/[0.03]"
       >
         <button
           type="button"
           onClick={() => setGestaoOpen((open) => !open)}
           aria-expanded={gestaoOpen}
           aria-controls="gestao-escritorio-conteudo"
-          className="flex w-full items-center justify-between gap-3 rounded-2xl px-4 py-4 text-left transition-colors hover:bg-slate-50 dark:hover:bg-white/[0.04]"
+          className="flex w-full items-center justify-between gap-3 rounded-xl px-4 py-3 text-left transition-colors hover:bg-slate-50 dark:hover:bg-white/[0.04]"
         >
           <span className="flex min-w-0 items-center gap-2">
             <span className="flex h-7 w-7 shrink-0 items-center justify-center rounded-lg bg-primary-50 text-primary-700 dark:bg-primary-400/10 dark:text-primary-300">
@@ -1161,7 +1161,7 @@ export default function DashboardModern() {
           subtitle="Distribuição temporal dos compromissos pendentes."
           actions={
             <Link
-              to="/prazos"
+              to="/atividades?tipo=prazo"
               className="text-sm font-medium text-primary-600 hover:text-primary-700 dark:text-primary-300"
             >
               Ver prazos
@@ -1324,7 +1324,9 @@ export default function DashboardModern() {
           </div>
         )}
       </section>
+      )}
 
     </div>
   );
 }
+

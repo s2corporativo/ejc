@@ -14,7 +14,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.core.database import get_db
 from app.core.ownership import verificar_acesso_caso
 from app.core.rate_limit import rate_limit
-from app.core.security import ROLE_LEVEL, get_current_user
+from app.core.security import get_current_user, requer_advogado
 from app.models.client import Client
 from app.models.user import User
 from app.services.geracao_documental import gerar_kit_inicial
@@ -26,9 +26,7 @@ _PODERES_VALIDOS = {"ad_judicia", "ad_judicia_et_extra", "especiais"}
 
 def _req_advogado(cu: User = Depends(get_current_user)) -> User:
     # Emissão de procuração/contrato é ato jurídico: advogado+ (nível >= 6).
-    role = cu.role.value if hasattr(cu.role, "value") else str(cu.role)
-    if ROLE_LEVEL.get(role, 0) < ROLE_LEVEL["advogado"]:
-        raise HTTPException(status_code=403, detail="Acesso restrito a advogados")
+    requer_advogado(cu)
     return cu
 
 
@@ -38,6 +36,10 @@ class KitDocumentalIn(BaseModel):
     tipo_poderes: str = "ad_judicia"
     permite_substabelecimento: bool = True
     poderes_especiais: Optional[str] = Field(None, max_length=2000)
+    # Idempotência (follow-up PR #283): submissão repetida devolve os rascunhos
+    # já existentes do kit (ja_existia=true). Regeneração explícita só com
+    # forcar_novo=true.
+    forcar_novo: bool = False
 
     @field_validator("tipo_poderes")
     @classmethod
@@ -76,4 +78,5 @@ async def gerar_kit_documental(
         tipo_poderes=p.tipo_poderes,
         permite_substabelecimento=p.permite_substabelecimento,
         poderes_especiais=p.poderes_especiais,
+        forcar_novo=p.forcar_novo,
     )
