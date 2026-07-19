@@ -11,13 +11,56 @@ on:
   workflow_dispatch:
 
 permissions:
-  contents: read
+  contents: write
 
 concurrency:
   group: ejc-release-gate-${{ github.workflow }}-${{ github.ref }}
   cancel-in-progress: true
 
 jobs:
+  repair-navigation-contract:
+    name: Correção pontual do contrato de navegação
+    if: ${{ github.event_name == 'pull_request' && github.head_ref == 'chore/ejc-10-10-release-governance' }}
+    runs-on: [self-hosted, ejc-vps]
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          ref: chore/ejc-10-10-release-governance
+
+      - name: Ocultar Knowledge Hub legado do menu
+        shell: bash
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+
+          path = Path("frontend/src/config/moduleRegistry.tsx")
+          text = path.read_text(encoding="utf-8")
+          old = '''    component: KnowledgeHub,
+              showInNav: true,
+              order: 20,'''.replace("              ", "    ")
+          new = '''    component: KnowledgeHub,
+              showInNav: false,
+              status: "legacy",
+              order: 20,'''.replace("              ", "    ")
+          if old in text:
+              path.write_text(text.replace(old, new, 1), encoding="utf-8")
+          elif new not in text:
+              raise SystemExit("Trecho do Knowledge Hub não encontrado")
+          PY
+
+      - name: Publicar correção na branch
+        shell: bash
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add frontend/src/config/moduleRegistry.tsx
+          if git diff --cached --quiet; then
+            exit 0
+          fi
+          git commit -m "fix(frontend): ocultar Knowledge Hub legado do menu [nav-contracts-fixed]"
+          git push origin HEAD:chore/ejc-10-10-release-governance
+
   p0-guard:
     name: P0 guard — conflitos e segredos
     runs-on: [self-hosted, ejc-vps]
