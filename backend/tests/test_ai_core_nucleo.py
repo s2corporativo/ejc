@@ -469,12 +469,16 @@ class TestResolverCadeia:
         modelo_anthropic = dict(cadeia)["anthropic"]
         assert modelo_anthropic == (s.ANTHROPIC_MODEL_COMPLEXO or s.ANTHROPIC_MODEL_RAPIDO)
 
-    def test_sem_externos_e_sem_ollama_cai_no_last_resort_groq(self, s, monkeypatch):
+    def test_sem_externos_e_sem_ollama_cadeia_vazia_fail_closed(self, s, monkeypatch):
+        # Revisão 2026-07-19 (ponto 1): sem provedor elegível a cadeia fica
+        # VAZIA — não sintetizar Groq de último recurso, que furaria o
+        # kill-switch AI_EXTERNAL_PROVIDERS_ALLOWED=false (chamada externa
+        # proibida). chat() levanta erro claro sem tocar a rede.
         from app.services.ai_gateway import _resolver_cadeia
         monkeypatch.setattr(s, "AI_EXTERNAL_PROVIDERS_ALLOWED", False)
         monkeypatch.setattr(s, "OLLAMA_ENABLED", False)
         cadeia = _resolver_cadeia("analise_juridica", None, None)
-        assert cadeia == [("groq", None)]
+        assert cadeia == []
 
 
 # ══════════════════════════════════════════════════════════════════════════════

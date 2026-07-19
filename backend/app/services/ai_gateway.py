@@ -671,8 +671,18 @@ def _resolver_cadeia(
     ]
 
     if not cadeia:
-        # Último recurso: Groq sem checar chave (vai falhar com erro claro)
-        cadeia = [("groq", model_override)]
+        # FAIL-CLOSED (revisão 2026-07-19; coordenado com o PR #322): sem
+        # provedor ELEGÍVEL, a cadeia fica VAZIA — chat() levanta erro claro
+        # SEM tocar a rede. NÃO sintetizar um Groq de último recurso: com
+        # AI_EXTERNAL_PROVIDERS_ALLOWED=false (kill-switch de soberania) ou sem
+        # chave, isso tentaria uma chamada externa proibida. Se o Groq fosse
+        # elegível, já teria entrado na cadeia acima.
+        logger.warning(
+            "[Gateway] nenhum provedor elegível para task=%s "
+            "(kill-switch de soberania/chave/habilitação) — cadeia vazia "
+            "(fail-closed, sem chamada externa).",
+            task_type,
+        )
     return cadeia
 
 

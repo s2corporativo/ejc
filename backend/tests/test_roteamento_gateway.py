@@ -36,6 +36,37 @@ def _prep(monkeypatch, **kw):
         monkeypatch.setattr(g.settings, k, v)
 
 
+# ── Fail-closed: sem provedor elegível, nenhuma chamada externa ───────────────
+
+def test_resolver_cadeia_vazia_sem_provedor_elegivel(monkeypatch):
+    # Kill-switch de soberania desligado + Ollama off + sem chaves → nada
+    # elegível. A cadeia deve ficar VAZIA (não sintetizar Groq de último recurso).
+    _prep(monkeypatch, AI_EXTERNAL_PROVIDERS_ALLOWED=False, OLLAMA_ENABLED=False,
+          ANTHROPIC_ENABLED=False, ANTHROPIC_API_KEY="", GROQ_API_KEY="")
+    cadeia = g._resolver_cadeia("analise_juridica", None, None)
+    assert cadeia == []
+
+
+@pytest.mark.asyncio
+async def test_chat_fail_closed_nao_chama_rede_com_externos_bloqueados(monkeypatch):
+    # Revisão 2026-07-19 (ponto 1): com todos os externos bloqueados
+    # (AI_EXTERNAL_PROVIDERS_ALLOWED=false, sem chaves) e Ollama desligado,
+    # chat() deve FALHAR sem NENHUMA chamada de provider (zero rede).
+    _prep(monkeypatch, AI_EXTERNAL_PROVIDERS_ALLOWED=False, OLLAMA_ENABLED=False,
+          ANTHROPIC_ENABLED=False, ANTHROPIC_API_KEY="", GROQ_API_KEY="")
+    chamadas = {"n": 0}
+
+    async def _nunca(*a, **k):
+        chamadas["n"] += 1
+        return ("nao devia ser chamado", {"model": "x"})
+
+    monkeypatch.setattr(g, "_chamar_provedor", _nunca)
+    with pytest.raises(RuntimeError):
+        await g.chat([{"role": "user", "content": "tese aplicável?"}],
+                     task_type="analise_juridica")
+    assert chamadas["n"] == 0  # fail-closed: provider externo nunca tocado
+
+
 # ── _resolver_cadeia com provider_preferido ───────────────────────────────────
 
 def test_cadeia_promove_preferido_elegivel(monkeypatch):
