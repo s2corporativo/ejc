@@ -1,0 +1,35 @@
+{
+  "total": 5493,
+  "by_kind": {
+    "class": 492,
+    "component": 90,
+    "endpoint": 810,
+    "frontend_function": 1221,
+    "frontend_route": 58,
+    "function": 2098,
+    "model_file": 58,
+    "page": 85,
+    "python_module": 87,
+    "router": 163,
+    "service": 233,
+    "table": 98
+  },
+  "by_classification": {
+    "consolidar": 180,
+    "corrigir": 208,
+    "desativar": 0,
+    "excluir após migração": 22,
+    "manter": 5053,
+    "redirecionar": 5,
+    "renomear": 25
+  },
+  "needs_review": 4858,
+  "mounted_routers": 162,
+  "unmounted_routers": 1,
+  "source_fingerprint": "151548336fdf253a08998b0c8fd60de840ccf8b40c70cc4d304ac2994db2cf94",
+  "refined": true,
+  "gate": {
+    "all_items_classified": true,
+    "invalid_item_ids": []
+  }
+}
