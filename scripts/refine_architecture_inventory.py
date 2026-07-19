@@ -25,7 +25,12 @@ from typing import Any, Iterable
 
 
 def load_generator(root: Path):
-    script = root / "scripts/generate_architecture_inventory.py"
+    # Carrega o gerador ao lado DESTE arquivo (mesmo pacote scripts/), não do
+    # `root` analisado: `root` é o repositório sob inspeção — no uso real é o
+    # próprio EJC (onde os dois coincidem por acaso), mas em testes que
+    # analisam uma árvore sintética num tmpdir não há cópia dos scripts ali,
+    # o que quebrava com FileNotFoundError.
+    script = Path(__file__).resolve().with_name("generate_architecture_inventory.py")
     spec = importlib.util.spec_from_file_location("architecture_inventory_generator", script)
     if not spec or not spec.loader:
         raise RuntimeError(f"Não foi possível carregar {script}")

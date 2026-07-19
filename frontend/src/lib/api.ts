@@ -35,7 +35,12 @@ let refreshing: Promise<string> | null = null;
  */
 export function refreshAccessToken(): Promise<string> {
   refreshing ??= axios
-    .post<AuthTokens>("/api/v1/auth/refresh", {}, { withCredentials: true })
+    // Path REAL do backend (prefix "/api" + router "/auth", SEM "/v1" — o
+    // "v1" só existe no baseURL do cliente `api`, cujo interceptor de request
+    // o remove antes de sair; aqui usamos axios cru de propósito (evita
+    // recursão com o interceptor de response que trata 401 refazendo refresh)
+    // então o path precisa ser o REAL, não o convencionado do cliente.
+    .post<AuthTokens>("/api/auth/refresh", {}, { withCredentials: true })
     .then((res) => {
       const token = res.data.access_token;
       localStorage.setItem("ejc_access", token);

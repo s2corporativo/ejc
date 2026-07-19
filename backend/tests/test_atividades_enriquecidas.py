@@ -26,6 +26,19 @@ from fastapi import HTTPException
 from app.models.user import User, UserRole
 
 
+@pytest.fixture(autouse=True)
+async def _dispose_engine_apos_teste():
+    """Mesmo padrão dos *_dblevel.py: descarta o pool do engine global após
+    o teste 4 (Postgres real, RUN_DB_TESTS) — sem isso, o próximo teste de
+    OUTRO módulo (event loop novo, padrão pytest-asyncio) pode herdar
+    conexões presas ao loop já encerrado ('Future attached to a different
+    loop'). No-op/barato para os testes 1-3 (sessão fake, engine nunca
+    conecta)."""
+    yield
+    from app.core.database import engine
+    await engine.dispose()
+
+
 # ── Fakes (sem banco) ─────────────────────────────────────────────────────────
 
 class _Rows:

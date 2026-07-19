@@ -35,6 +35,19 @@ FIXTURE = Path(__file__).parent / "fixtures" / "planalto_cdc_recorte.html"
 NOME = "Código de Defesa do Consumidor (Lei 8.078/1990)"
 
 
+@pytest.fixture(autouse=True)
+async def _dispose_engine_apos_teste():
+    """Mesmo padrão dos *_dblevel.py: descarta o pool do engine global após
+    as frentes 4-5 (Postgres real, RUN_DB_TESTS) — sem isso, o próximo
+    teste de OUTRO módulo (event loop novo por teste, padrão pytest-asyncio)
+    pode herdar conexões presas ao loop já encerrado ('Future attached to a
+    different loop'). No-op/barato nas frentes 1-3 (upsert mockado, sem
+    engine real)."""
+    yield
+    from app.core.database import engine
+    await engine.dispose()
+
+
 @pytest.fixture(scope="module")
 def html() -> str:
     return FIXTURE.read_text(encoding="utf-8")
