@@ -7,10 +7,12 @@
 # serialização) é engolida e a chamada segue normalmente (mesmo espírito do
 # dispatcher/embeddings/langfuse). Só respostas bem-sucedidas são gravadas.
 #
-# Nota LGPD: o Redis é interno (mesmo do rate_limit/Celery). A chave é um hash
-# (não expõe o prompt); o valor guarda o texto da resposta e metadados. Como o
-# conteúdo já trafega para provedores externos hoje, o cache interno não cria
-# nova superfície de exposição. Só é ativado com AI_RESPONSE_CACHE_ENABLED=true.
+# Regra LGPD crítica:
+#   respostas de tarefas com pseudonimização REVERSÍVEL não podem ser cacheadas.
+#   O gateway reidrata a resposta com PII real antes de devolvê-la ao chamador,
+#   mas o mapa de reidratação vive somente na request. Um cache hit posterior não
+#   possui esse mapa e, pior, persistiria PII real no Redis. Portanto, tais chaves
+#   recebem prefixo NO-CACHE e obter/gravar tornam-se NO-OP.
 from __future__ import annotations
 
 import hashlib
@@ -22,6 +24,7 @@ from app.core.config import get_settings
 logger = logging.getLogger("ejc.ai.cache")
 
 _PREFIXO = "ai:resp:"
+_PREFIXO_NAO_CACHEAVEL = "ai:nocache:"
 
 
 def habilitado() -> bool:
@@ -29,15 +32,45 @@ def habilitado() -> bool:
     return bool(getattr(s, "AI_RESPONSE_CACHE_ENABLED", False))
 
 
+def _tarefa_cacheavel(task_type: str) -> bool:
+    """False quando a resposta pode ser reidratada com dado pessoal real.
+
+    A política é consultada pela mesma fonte usada pelo gateway. O fallback da
+    política é EXTERNO_PSEUDONIMIZADO; assim, tarefa desconhecida também fica
+    protegida. LOCAL_COMPLETO e MASCARAMENTO são tecnicamente cacheáveis, pois
+    não há reidratação reversível, mas o override organizacional é respeitado.
+    """
+    try:
+        from app.services.ai.sanitization_policy import ModoSanitizacao, modo_para_task
+        modo = modo_para_task(task_type)
+        return modo not in (
+            ModoSanitizacao.EXTERNO_PSEUDONIMIZADO,
+            ModoSanitizacao.EXTRACAO_LOCAL,
+        )
+    except Exception:
+        # Fail-closed: falha ao determinar a política nunca autoriza persistir
+        # uma resposta potencialmente reidratada.
+        return False
+
+
 def chave(task_type: str, messages: list[dict], **params) -> str:
-    """Hash estável da requisição. Ordena params para independer da ordem."""
+    """Hash estável da requisição. Ordena params para independer da ordem.
+
+    Chaves não-cacheáveis continuam determinísticas para observabilidade/testes,
+    mas usam prefixo próprio reconhecido por obter/gravar.
+    """
     payload = {
         "task_type": task_type,
         "messages": messages,
         "params": {k: params[k] for k in sorted(params)},
     }
     bruto = json.dumps(payload, ensure_ascii=False, sort_keys=True, default=str)
-    return _PREFIXO + hashlib.sha256(bruto.encode("utf-8")).hexdigest()
+    prefixo = _PREFIXO if _tarefa_cacheavel(task_type) else _PREFIXO_NAO_CACHEAVEL
+    return prefixo + hashlib.sha256(bruto.encode("utf-8")).hexdigest()
+
+
+def _nao_cacheavel(chave_req: str) -> bool:
+    return (chave_req or "").startswith(_PREFIXO_NAO_CACHEAVEL)
 
 
 async def _cliente():
@@ -55,7 +88,7 @@ async def _cliente():
 
 async def obter(chave_req: str) -> dict | None:
     """Retorna o dict da resposta cacheada, ou None (miss/erro/desligado)."""
-    if not habilitado():
+    if _nao_cacheavel(chave_req) or not habilitado():
         return None
     cli = await _cliente()
     if cli is None:
@@ -75,7 +108,7 @@ async def obter(chave_req: str) -> dict | None:
 
 async def gravar(chave_req: str, valor: dict) -> None:
     """Grava a resposta com TTL curto. Silencioso em qualquer falha."""
-    if not habilitado():
+    if _nao_cacheavel(chave_req) or not habilitado():
         return
     cli = await _cliente()
     if cli is None:
