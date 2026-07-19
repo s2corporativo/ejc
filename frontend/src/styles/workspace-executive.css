@@ -57,7 +57,8 @@
 }
 
 .executive-workspace thead {
-  background: linear-gradient(90deg, rgba(250, 247, 240, 0.98), rgba(255, 255, 255, 0.86));
+  /* Faixa clara chapada no thead (idioma Verdelimp) */
+  background: rgba(250, 247, 240, 0.95);
 }
 
 .executive-workspace thead th {
@@ -104,7 +105,7 @@
 }
 
 .dark .executive-workspace thead {
-  background: linear-gradient(90deg, rgba(255, 245, 230, 0.05), rgba(255, 245, 230, 0.01));
+  background: rgba(255, 245, 230, 0.04);
 }
 
 .dark .executive-workspace tbody tr:hover {

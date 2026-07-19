@@ -245,9 +245,9 @@
 
   /* ── Modal ────────────────────────────────────────────────── */
   .modal-backdrop {
+    /* Véu escurecido simples (idioma Verdelimp) — sem blur decorativo */
     @apply fixed inset-0 z-50 flex items-center justify-center p-4;
-    background: rgba(15, 23, 42, 0.55);
-    backdrop-filter: blur(4px);
+    background: rgba(15, 23, 42, 0.45);
   }
 
   /* O conteúdo das páginas vive num wrapper `relative z-10` (Layout), então
@@ -729,10 +729,9 @@
 
 .ejc-modern-scope .bg-slate-100.p-1.rounded-xl,
 .ejc-modern-scope .bg-gray-100.p-1.rounded-xl {
+  /* Superfície chapada (idioma Verdelimp) — sem glass/blur */
   border: 1px solid #e5e7eb;
-  background: rgba(255, 255, 255, 0.78) !important;
-  box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.55);
-  backdrop-filter: blur(12px);
+  background: #ffffff !important;
 }
 
 .ejc-modern-scope .bg-slate-100.p-1.rounded-xl button,
@@ -805,14 +804,10 @@
   }
 
   .ai-surface-header {
+    /* Faixa chapada (idioma flat — sem gradiente decorativo) */
     @apply flex flex-wrap items-center justify-between gap-3 border-b px-5 py-4;
     border-color: rgba(247, 146, 86, 0.2);
-    background: linear-gradient(
-      90deg,
-      rgba(247, 146, 86, 0.1),
-      rgba(201, 162, 39, 0.06),
-      transparent
-    );
+    background: rgba(247, 146, 86, 0.08);
   }
 
   .status-dot {
@@ -996,14 +991,9 @@
   }
 
   .brand-accent-line {
-    background: linear-gradient(
-      90deg,
-      var(--ejc-gold),
-      rgba(216, 185, 78, 0.35),
-      transparent
-    );
+    /* Hairline dourado chapado (sem fade decorativo) */
+    background: rgba(216, 185, 78, 0.45);
   }
-
   .card:hover,
   .section-card:hover,
   .legal-surface:hover {
@@ -1262,12 +1252,7 @@
 }
 .dark .ai-surface-header {
   border-color: rgba(247, 146, 86, 0.2);
-  background: linear-gradient(
-    90deg,
-    rgba(247, 146, 86, 0.12),
-    rgba(212, 175, 55, 0.06),
-    transparent
-  );
+  background: rgba(247, 146, 86, 0.09);
 }
 .dark .visual-law-document {
   background: var(--ejc-card);

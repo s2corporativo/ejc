@@ -1179,7 +1179,7 @@ export default function CentralAtividades() {
                   />
                   <div
                     role="menu"
-                    className="absolute right-0 mt-1 z-20 w-44 bg-white border border-slate-200 rounded-xl shadow-lg py-1 dark:bg-slate-800 dark:border-slate-700"
+                    className="absolute right-0 mt-1 z-20 w-44 bg-white border border-slate-200 rounded-xl shadow-md py-1 dark:bg-slate-800 dark:border-slate-700"
                   >
                     {NOVO_OPCOES.map((op) => (
                       <button

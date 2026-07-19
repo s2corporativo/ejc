@@ -321,7 +321,7 @@ export default function ContextualAIAssistant({
   }, [result]);
 
   return (
-    <section className="rounded-xl border border-ai-200 bg-gradient-to-r from-ai-50/80 to-white shadow-sm">
+    <section className="rounded-xl border border-ai-200 bg-ai-50/60 shadow-sm">
       <button
         type="button"
         onClick={() => setExpanded((value) => !value)}
