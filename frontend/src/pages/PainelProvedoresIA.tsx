@@ -225,7 +225,7 @@ export default function PainelProvedoresIA() {
         subtitle="Operação, desempenho, custo, consumo e fallback de Anthropic, Maritaca, Groq e Ollama"
         actions={
           <div className="flex flex-wrap items-center gap-2">
-            <button className="btn-secondary" onClick={() => navigate("/governanca-ia")}>
+            <button className="btn-secondary" onClick={() => navigate("/ia-governanca")}>
               <ArrowLeft className="h-4 w-4" /> Voltar
             </button>
             <select
