@@ -47,6 +47,31 @@ def _patch_advogado_estilo_router() -> None:
         logger.warning("Router de aprendizado de estilo indisponível: %s", exc)
 
 
+def _patch_rag_governance_router() -> None:
+    """Acopla a governança ao router RAG sem criar nova rota/menu paralelo.
+
+    ``rag_governance`` já possui prefixo absoluto ``/rag/governanca``. Estender a
+    lista de rotas evita que ``APIRouter.include_router`` some novamente o
+    prefixo ``/rag`` do router pai e produza ``/rag/rag/governanca``.
+    """
+    try:
+        from app.routers import rag
+        from app.routers import rag_governance
+
+        existing = {(getattr(route, "path", None), tuple(sorted(getattr(route, "methods", []) or [])))
+                    for route in rag.router.routes}
+        added = 0
+        for route in rag_governance.router.routes:
+            key = (getattr(route, "path", None), tuple(sorted(getattr(route, "methods", []) or [])))
+            if key not in existing:
+                rag.router.routes.append(route)
+                existing.add(key)
+                added += 1
+        logger.info("Governança da Base de Conhecimento registrada (%d rota(s))", added)
+    except Exception as exc:  # pragma: no cover
+        logger.warning("Router de governança RAG indisponível: %s", exc)
+
+
 def _patch_documents_background_analysis() -> None:
     """Substitui o hook legado de análise documental por versão sem corte."""
     try:
@@ -120,6 +145,7 @@ def _install_ai_core_hardening() -> None:
 
 _patch_precedentes_router()
 _patch_advogado_estilo_router()
+_patch_rag_governance_router()
 _patch_documents_background_analysis()
 _install_ai_core_hardening()
 
