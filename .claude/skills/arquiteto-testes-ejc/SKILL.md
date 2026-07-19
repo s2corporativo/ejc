@@ -1,8 +1,10 @@
 ---
 name: arquiteto-testes-ejc
 description: >
-  Gera suítes de testes automatizados para o EJC (backend pytest + frontend vitest) e configura pipeline CI/CD básico. Use SEMPRE que precisar escrever, organizar ou corrigir testes no EJC: testes unitários de endpoints FastAPI, testes de integração com banco de dados, testes de componentes React, configurar cobertura de código, corrigir testes falhando. A skill auditor-typescript-s2 EXIGE cobertura >70% mas nenhuma skill gera os testes — este skill preenche essa lacuna. Também cobre fixtures pytest, factories de dados de teste, mocking de dependências externas, relatórios de cobertura. Acionado por: "testes EJC", "pytest EJC", "vitest EJC", "cobertura de código", "escreve testes", "testes falhando", "CI testes", "unit test EJC", "integration test", "test suite", "coverage EJC".
+  Playbook de referência de testes do EJC (backend pytest, frontend vitest + @testing-library, fixtures, factories, mocking, cobertura). Ponto de entrada canônico: agente `qa-tests` — este arquivo é o playbook que ele consulta, não um roteador concorrente. Consulte para: estrutura de testes por endpoint/componente, fixtures do conftest e relatórios de cobertura.
 ---
+
+> Playbook de referência. Ponto de entrada canônico: agente `qa-tests`. Consultado durante a tarefa — não roteia.
 
 # Arquiteto de Testes — EJC Backend + Frontend
 

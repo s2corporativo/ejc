@@ -259,9 +259,12 @@ async def analisar_url(
         out["analise"] = analise
         out["analise_aviso"] = "Análise gerada como rascunho. Revise antes de usar no caso."
     except Exception as exc:
-        logger.warning("Análise de URL falhou: %s", type(exc).__name__)
+        # Detalhe técnico completo no log; ao usuário só mensagem leiga (P0 §3.2).
+        logger.error("Análise de URL falhou: %s: %s",
+                     type(exc).__name__, str(exc)[:300])
+        from app.core.ai_errors import mensagem_ia_para_usuario
         out["analise"] = None
-        out["analise_aviso"] = f"Falha ao executar análise estratégica: {str(exc)[:180]}"
+        out["analise_aviso"] = mensagem_ia_para_usuario(exc)
 
     return out
 

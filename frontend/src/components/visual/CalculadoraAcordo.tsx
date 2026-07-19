@@ -604,7 +604,7 @@ function CorrecaoMonetariaOficial() {
                 <Landmark className="h-4 w-4" />
                 Valor atualizado
               </div>
-              <p className="mt-2 text-3xl font-bold tabular-nums text-emerald-800">
+              <p className="mt-2 text-xl font-bold tabular-nums text-emerald-800">
                 {fmtMoney(resultado.valor_final)}
               </p>
               <p className="mt-1 text-xs text-slate-500">
@@ -829,7 +829,7 @@ export default function CalculadoraAcordo({
                   <Scale className="h-4 w-4" />
                   VPL do litígio
                 </div>
-                <p className="mt-2 text-3xl font-bold tabular-nums text-primary-800">
+                <p className="mt-2 text-xl font-bold tabular-nums text-primary-800">
                   {fmtMoney(resultado.vpl_litigio)}
                 </p>
                 <p className="mt-1 text-xs text-slate-500">
@@ -848,7 +848,7 @@ export default function CalculadoraAcordo({
                   <Calculator className="h-4 w-4" />
                   Sugestão de acordo
                 </div>
-                <p className="mt-2 text-3xl font-bold tabular-nums text-emerald-800">
+                <p className="mt-2 text-xl font-bold tabular-nums text-emerald-800">
                   {fmtMoney(resultado.sugestao_acordo)}
                 </p>
                 <p className="mt-1 text-xs text-slate-500">

@@ -55,6 +55,19 @@ class LegalDoc(Base):
     revisado_em    = Column(DateTime(timezone=True), nullable=True)
     notas_revisao  = Column(Text, nullable=True)
 
+    # ── Protocolo — comprovante de peticionamento (prova de tempestividade) ──
+    # O peticionamento é MANUAL (exporta PDF e protocola no PJe/eproc). Sem
+    # registrar o comprovante, a prova de tempestividade fica FORA do sistema.
+    # Estes campos gravam, na própria peça, o número/tribunal/data do protocolo.
+    # `protocolo_comprovante_doc_id` referencia um Document já anexado com o
+    # comprovante; é String(36) SEM FK — mesmo padrão audit-actor de
+    # `deadlines.concluido_por`/`created_by`: não impõe RESTRICT na exclusão do
+    # documento nem acopla a prova ao ciclo de vida do anexo.
+    numero_protocolo             = Column(String(120), nullable=True)
+    protocolado_em               = Column(DateTime(timezone=True), nullable=True)
+    protocolo_tribunal           = Column(String(120), nullable=True)
+    protocolo_comprovante_doc_id = Column(String(36), nullable=True)
+
     case_id    = Column(String(36), ForeignKey("cases.id"), nullable=True, index=True)
     created_by = Column(String(36), nullable=True)
 

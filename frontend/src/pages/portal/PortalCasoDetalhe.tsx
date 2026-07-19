@@ -1,6 +1,11 @@
 import { useCallback, useEffect, useState } from "react";
 import { useParams, Link } from "react-router-dom";
-import { ArrowLeft, CalendarClock, MessageSquare } from "lucide-react";
+import {
+  ArrowLeft,
+  CalendarClock,
+  History,
+  MessageSquare,
+} from "lucide-react";
 import api from "../../lib/api";
 import { toast } from "../../components/Toast";
 import { ErrorState, Spinner } from "../../components/UI";
@@ -117,6 +122,10 @@ export default function PortalCasoDetalhe() {
     );
   if (!data) return <Spinner />;
   const { caso, andamentos, proximas_datas } = data;
+  // O backend ordena os andamentos do mais recente para o mais antigo — o
+  // primeiro é a última movimentação do processo.
+  const ultimo =
+    Array.isArray(andamentos) && andamentos.length > 0 ? andamentos[0] : null;
 
   return (
     <div>
@@ -134,6 +143,22 @@ export default function PortalCasoDetalhe() {
           {caso.vara && ` · ${caso.vara}`}
         </div>
       </div>
+
+      {ultimo && (
+        <div className="card p-5 mb-4 border-primary-100 bg-primary-50/40">
+          <h2 className="font-medium text-navy mb-1 flex items-center gap-2">
+            <History size={16} /> Última atualização
+          </h2>
+          <p className="text-xs text-slate-500 mb-1.5">
+            {ultimo.data
+              ? `Atualizado em ${new Date(ultimo.data).toLocaleDateString("pt-BR")}`
+              : "Data não informada"}
+          </p>
+          <p className="text-sm text-slate-700 leading-relaxed">
+            {ultimo.descricao}
+          </p>
+        </div>
+      )}
 
       {Array.isArray(proximas_datas) && proximas_datas.length > 0 && (
         <div className="card p-5 mb-4">

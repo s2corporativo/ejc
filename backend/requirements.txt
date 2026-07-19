@@ -21,9 +21,9 @@ psycopg2-binary==2.9.9  # driver SYNC exigido por alembic/env.py — ausente cau
                          # falha de "alembic upgrade head" em instalação limpa (Etapa 6D)
 
 # Validation and settings
-pydantic==2.7.4
+pydantic==2.13.4
 pydantic-settings==2.3.1
-email-validator==2.1.1
+email-validator==2.3.0
 python-dotenv==1.0.1
 validators==0.28.3
 python-dateutil==2.9.0
@@ -66,10 +66,12 @@ pypdf==4.2.0
 pdfplumber==0.11.1
 python-docx==1.2.0
 fpdf2==2.7.9  # LEGADO: visual_law_pdf.py migrou para weasyprint (tema central); sem consumidores em app/ — remover em limpeza futura
-openpyxl==3.1.4
+openpyxl==3.1.5
 xlrd==2.0.2                    # extração de texto de .xls legado (ocr_service)
 qrcode[pil]==7.4.2
 Pillow==10.4.0
+pillow-heif==0.22.0            # HEIC/HEIF de iPhone na Entrada Universal (última série compatível com Pillow 10; 1.x exige pillow>=11.1)
+opencv-python-headless==4.11.0.86  # correção de perspectiva sem dependência GUI
 pdf2image==1.17.0
 pytesseract==0.3.13
 defusedxml==0.7.1  # parse SEGURO de XML de terceiros (NF-e) — mitiga XXE/billion laughs (ocr_service.py, services/fiscal/nfe_parser.py)

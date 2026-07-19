@@ -1,7 +1,7 @@
 """Busca semântica RAG — provider local de embeddings (fastembed, mockado).
 
 Garante, SEM baixar modelo no CI:
-- dimensão do vetor casa com a coluna pgvector vector(768);
+- dimensão do vetor casa com a coluna pgvector vector(1024);
 - caminho local gera vetores via singleton mockado (asyncio.to_thread);
 - fallback gracioso: erro ou dimensão errada → None (busca cai p/ textual);
 - EMBEDDINGS_ENABLED=false mantém tudo desligado (default de código).
@@ -39,14 +39,14 @@ def _local_on(monkeypatch):
 
 
 def test_dimensao_do_modelo_casa_com_pgvector():
-    # Migration 013: knowledge_chunks.embedding é vector(768).
-    assert es.EMBED_DIM == 768
+    # Migration 096 (O-2): knowledge_chunks.embedding é vector(1024) (BGE-M3).
+    assert es.EMBED_DIM == 1024
 
 
-def test_modelo_mpnet_nao_usa_prefixo_e5():
-    assert "e5" not in es.MODEL_NAME.lower()
-    assert es._prefixo("query") == ""
-    assert es._prefixo("passage") == ""
+def test_modelo_default_usa_protocolo_e5():
+    assert "e5" in es.MODEL_NAME.lower()
+    assert es._prefixo("query") == "query: "
+    assert es._prefixo("passage") == "passage: "
 
 
 async def test_disabled_por_default_nao_gera(monkeypatch):
@@ -64,8 +64,7 @@ async def test_local_gera_vetor_dimensao_certa(_local_on):
     assert vetores is not None and len(vetores) == 2
     assert all(len(v) == es.EMBED_DIM for v in vetores)
     assert all(isinstance(v, list) for v in vetores)
-    # mpnet: texto vai cru, sem prefixo E5
-    assert fake.entradas == ["dano moral", "rescisão indireta"]
+    assert fake.entradas == ["query: dano moral", "query: rescisão indireta"]
 
 
 async def test_erro_no_modelo_retorna_none_sem_excecao(_local_on, caplog):

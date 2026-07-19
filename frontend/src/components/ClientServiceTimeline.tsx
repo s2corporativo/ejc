@@ -41,6 +41,16 @@ export interface ClientTimelineCase {
   titulo: string;
 }
 
+/** Evento de outra fonte (documento, abertura de caso…) já carregado pela
+ *  página — mesclado cronologicamente na linha do tempo, sem novas chamadas. */
+export interface ClientTimelineExtraEvent {
+  id: string;
+  label: string;
+  titulo: string;
+  data: string;
+  link?: string;
+}
+
 interface Responsavel {
   id: string;
   nome: string;
@@ -89,6 +99,9 @@ interface TimelineResponse {
 interface Props {
   clientId: string | number;
   cases?: ClientTimelineCase[];
+  extraEvents?: ClientTimelineExtraEvent[];
+  /** Abre o formulário de novo atendimento já na montagem (ação rápida). */
+  autoOpenForm?: boolean;
 }
 
 const TIPO_LABEL: Record<AtendimentoTipo, string> = {
@@ -169,7 +182,12 @@ function emptyForm() {
   };
 }
 
-export default function ClientServiceTimeline({ clientId, cases = [] }: Props) {
+export default function ClientServiceTimeline({
+  clientId,
+  cases = [],
+  extraEvents = [],
+  autoOpenForm = false,
+}: Props) {
   const [items, setItems] = useState<ClientServiceEntry[]>([]);
   const [responsaveis, setResponsaveis] = useState<Responsavel[]>([]);
   const [total, setTotal] = useState(0);
@@ -183,7 +201,7 @@ export default function ClientServiceTimeline({ clientId, cases = [] }: Props) {
   const [loadingMore, setLoadingMore] = useState(false);
   const [saving, setSaving] = useState(false);
   const [updatingId, setUpdatingId] = useState<string | null>(null);
-  const [showForm, setShowForm] = useState(false);
+  const [showForm, setShowForm] = useState(autoOpenForm);
   const [filter, setFilter] = useState<TimelineFilter>("todos");
   const [form, setForm] = useState(emptyForm);
   const [expandedAuditId, setExpandedAuditId] = useState<string | null>(null);
@@ -287,6 +305,39 @@ export default function ClientServiceTimeline({ clientId, cases = [] }: Props) {
     }
     return items;
   }, [filter, items]);
+
+  // Linha do tempo unificada: mescla eventos extras (documentos, casos) já
+  // carregados pela página, em ordem cronológica decrescente. Enquanto houver
+  // páginas de atendimentos não carregadas, só entram extras mais recentes que
+  // o atendimento mais antigo em tela, para não furar a cronologia.
+  type TimelineRow =
+    | { kind: "atendimento"; date: number; item: ClientServiceEntry }
+    | { kind: "extra"; date: number; extra: ClientTimelineExtraEvent };
+
+  const rows = useMemo<TimelineRow[]>(() => {
+    const base: TimelineRow[] = filteredItems.map((item) => ({
+      kind: "atendimento",
+      date: new Date(item.data_atendimento).getTime(),
+      item,
+    }));
+    if (filter !== "todos" || extraEvents.length === 0) {
+      return base.sort((a, b) => b.date - a.date);
+    }
+    const oldestLoaded =
+      items.length < total && items.length > 0
+        ? Math.min(
+            ...items.map((item) => new Date(item.data_atendimento).getTime()),
+          )
+        : Number.NEGATIVE_INFINITY;
+    const extras: TimelineRow[] = extraEvents
+      .map((extra) => ({
+        kind: "extra" as const,
+        date: new Date(extra.data).getTime(),
+        extra,
+      }))
+      .filter((row) => Number.isFinite(row.date) && row.date >= oldestLoaded);
+    return [...base, ...extras].sort((a, b) => b.date - a.date);
+  }, [filteredItems, filter, extraEvents, items, total]);
 
   async function createEntry() {
     const resumo = form.resumo.trim();
@@ -704,7 +755,7 @@ export default function ClientServiceTimeline({ clientId, cases = [] }: Props) {
 
       {loading && <Spinner />}
 
-      {!loading && filteredItems.length === 0 && (
+      {!loading && rows.length === 0 && (
         <div className="card p-8 text-center">
           <MessageSquare className="mx-auto h-8 w-8 text-slate-300" />
           <p className="mt-2 text-sm font-medium text-slate-600">
@@ -716,10 +767,45 @@ export default function ClientServiceTimeline({ clientId, cases = [] }: Props) {
         </div>
       )}
 
-      {!loading && filteredItems.length > 0 && (
+      {!loading && rows.length > 0 && (
         <div className="card p-4">
           <ol className="relative ml-3 border-l border-bronze-pale">
-            {filteredItems.map((item) => {
+            {rows.map((row) => {
+              if (row.kind === "extra") {
+                const { extra } = row;
+                const dateTime = formatDateTime(extra.data);
+                return (
+                  <li
+                    key={`extra-${extra.id}`}
+                    className="relative pb-6 pl-6 last:pb-0"
+                  >
+                    <span
+                      className="absolute -left-2 top-1 flex h-4 w-4 items-center justify-center rounded-full border-2 border-white bg-slate-300"
+                      aria-hidden="true"
+                    />
+                    <div className="rounded-xl border border-dashed border-slate-200 bg-slate-50/60 px-4 py-2.5">
+                      <p className="text-xs capitalize text-slate-400">
+                        {dateTime.dia}
+                      </p>
+                      <p className="mt-1 flex flex-wrap items-center gap-2 text-sm text-slate-600">
+                        <span className="badge badge-neutral text-[10px]">
+                          {extra.label}
+                        </span>
+                        <span className="min-w-0 truncate">{extra.titulo}</span>
+                        {extra.link && (
+                          <Link
+                            to={extra.link}
+                            className="text-xs font-medium text-bronze hover:text-bronze-dark"
+                          >
+                            Abrir
+                          </Link>
+                        )}
+                      </p>
+                    </div>
+                  </li>
+                );
+              }
+              const { item } = row;
               const dateTime = formatDateTime(item.data_atendimento);
               const hasRequest = Boolean(item.solicitacao?.trim());
               const prioridade = item.solicitacao_prioridade ?? "normal";

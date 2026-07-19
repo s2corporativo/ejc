@@ -15,6 +15,9 @@ class FeeTipo(str, enum.Enum):
     misto       = "misto"
     por_hora    = "por_hora"
     custas_despesas = "custas_despesas"  # reembolso de despesas
+    # Adicionado ao FINAL para casar com a ordem do tipo nativo `feetipo` no
+    # Postgres, onde `ALTER TYPE ... ADD VALUE` (migration 097) anexa ao fim.
+    sucumbencia = "sucumbencia"     # honorários de sucumbência (CPC art. 85)
 
 
 class FeeStatus(str, enum.Enum):

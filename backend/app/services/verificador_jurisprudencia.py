@@ -303,7 +303,6 @@ def analisar_texto(texto: str) -> list[dict]:
     # 2. Recursos superiores (REsp 1.737.428/SP etc.).
     for m in _RE_RECURSO.finditer(texto):
         classe = m.group(1)
-        classe_norm = classe.upper().replace("ARESP", "AREsp")
         num = re.sub(r"\D", "", m.group(2))
         ctx = _extrair_contexto(_contexto(texto, m.start(), m.end()))
         cu = classe.upper()

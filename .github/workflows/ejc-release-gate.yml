@@ -1,12 +1,12 @@
 name: EJC Release Gate
 
+# Release gate no runner SELF-HOSTED (2026-07-17) — roda no VPS (Actions minutes
+# = 0). ⚠️ Requer o runner registrado antes (scripts/setup-selfhosted-runner.sh);
+# ver docs/RUNNER_SELFHOSTED.md. (Para voltar à nuvem paga: runs-on: ubuntu-latest.)
 on:
-  pull_request:
-    branches:
-      - main
-  push:
-    branches:
-      - main
+  # MANUAL apenas (economia de Actions) — não roda em push/PR automaticamente.
+  # Rode em Actions → "EJC Release Gate" → "Run workflow" quando necessário.
+  workflow_dispatch:
 
 permissions:
   contents: read
@@ -18,7 +18,7 @@ concurrency:
 jobs:
   p0-guard:
     name: P0 guard — conflitos e segredos
-    runs-on: ubuntu-latest
+    runs-on: [self-hosted, ejc-vps]
     timeout-minutes: 10
     steps:
       - name: Checkout

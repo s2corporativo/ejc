@@ -7,11 +7,16 @@ type ModuleLike = {
   status?: string;
 };
 
+// Rotas mantidas somente por compatibilidade. A tarefa correspondente já existe
+// em outro workspace canônico e não deve aparecer novamente na navegação.
+const CONSOLIDATED_NAV_KEYS = new Set(["knowledge-hub"]);
+
 export function filterModulesByLifecycle<T extends ModuleLike>(
   modules: T[],
   settings: Record<string, ModuleLifecycleOverride>,
 ): T[] {
   return modules.filter((module) => {
+    if (CONSOLIDATED_NAV_KEYS.has(module.key)) return false;
     const override = settings[module.key];
     if (!override) return module.status !== "hidden";
     if (!override.enabled || override.status === "disabled") return false;

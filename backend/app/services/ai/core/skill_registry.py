@@ -54,6 +54,13 @@ async def _h_retrieve_rag(db, consulta, **kw):
     return await buscar_contexto_rag(db, consulta, **kw)
 
 
+def _h_extract_structured_data(texto: str) -> dict:
+    """Extração DETERMINÍSTICA (regex + DV, sem IA) de entidades do texto:
+    CNJ, CPF/CNPJ validados, datas, valores, e-mails, telefones."""
+    from app.services.extracao_estruturada import extrair_estruturas
+    return extrair_estruturas(texto)
+
+
 def _h_sanitize(texto, nomes_proteger=None):
     from app.services.ai_guard import sanitizar_ou_abortar
     return sanitizar_ou_abortar(texto, nomes_proteger)
@@ -173,7 +180,10 @@ SKILL_REGISTRY: dict[str, Skill] = {s.nome: s for s in [
     Skill("summarize_document", "Resumir documento (OCR) de forma estruturada",
           "texto do documento", "resumo técnico", handler=None),
     Skill("extract_structured_data", "Extrair campos estruturados de documento",
-          "texto, schema desejado", "dict campos", handler=None),
+          "texto", "dict{processos_cnj, cpfs, cnpjs, datas, valores, emails, telefones, total}",
+          riscos="baixo (determinístico, sem LLM; CPF/CNPJ validados por DV)",
+          pos_condicoes="ocorrências trazem posição (inicio/fim) para realce/auditoria",
+          handler=_h_extract_structured_data),
     Skill("analyze_deadline", "Analisar prazos processuais e datas fatais",
           "contexto processual", "prazos + base legal",
           riscos="alto — prazo fatal; dupla conferência humana", handler=None),

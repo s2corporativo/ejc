@@ -1,5 +1,6 @@
-"""Vertical bancário determinístico — CET (Res. CMN 3.517/2007) e motor de
-abusividade de juros (REsp 1.061.530/RS, Tema 27/STJ).
+"""Vertical bancário determinístico — CET (Resolução CMN nº 4.881/2020 e
+IN BCB nº 83/2021) e motor de abusividade de juros
+(REsp 1.061.530/RS, Tema 27/STJ).
 
 Cobertura:
   • CET de caso conferível à mão (1 parcela em 365 dias → taxa exata);
@@ -36,7 +37,9 @@ def test_cet_uma_parcela_365_dias_exato():
     assert r["cet_mensal_pct"] == pytest.approx(0.7974, abs=1e-3)
     assert r["valor_liberado_liquido"] == 10_000.0
     assert r["memoria_calculo"] and r["convergencia"]["iteracoes"] >= 1
-    assert any("3.517" in b for b in r["base_legal"])
+    assert any("4.881/2020" in b for b in r["base_legal"])
+    assert any("83/2021" in b for b in r["base_legal"])
+    assert not any("3.517/2007" in b for b in r["base_legal"])
 
 
 def test_cet_12x_1000_sobre_10000():
@@ -77,6 +80,7 @@ def test_cet_divergencia_detectada_acima_de_meio_pp():
     assert d["achado"] == "CET informado diverge do calculado"
     assert d["diferenca_pp"] == pytest.approx(2.0, abs=1e-4)
     assert any("CDC" in b for b in d["base_legal"])
+    assert any("4.881/2020" in b for b in d["base_legal"])
     # dentro do limiar (0,3 p.p.) → sem achado
     assert calcular_cet(**kw, cet_informado_aa_pct=10.3)["divergencia"] is None
 
@@ -113,6 +117,7 @@ async def test_endpoint_cet_shape():
     for k in ("cet_mensal_pct", "cet_anual_pct", "memoria_calculo", "divergencia",
               "base_legal", "fluxo", "convergencia", "avisos"):
         assert k in r
+    assert any("4.881/2020" in b for b in r["base_legal"])
     with pytest.raises(Exception):  # pydantic: nenhum modo de fluxo informado
         analise_bancaria.CETIn(valor_liberado=10_000, data_liberacao=date(2026, 1, 10))
 

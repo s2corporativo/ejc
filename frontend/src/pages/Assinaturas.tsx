@@ -8,8 +8,7 @@ import type { Client } from "../types";
 import {
   FileSignature,
   Plus,
-  X,
-  UserPlus,
+  Info,
   CheckCircle,
   Circle,
 } from "lucide-react";
@@ -41,10 +40,12 @@ interface DocumentoOption {
   titulo: string;
 }
 
+// Contrato real de POST /signatures/: apenas document_id + client_id. Os
+// signatários são derivados no backend (usuários ativos do Portal do Cliente
+// vinculados ao cliente) — a tela não coleta signatários adicionais.
 interface NovaAssinaturaForm {
   client_id: string;
   document_id: string;
-  signatarios: { nome: string; email: string; papel: string }[];
 }
 
 const STATUS_CONFIG: Record<string, { label: string; className: string }> = {
@@ -61,7 +62,6 @@ const STATUS_FALLBACK = { label: "—", className: "bg-gray-100 text-gray-600" }
 const FORM_VAZIO: NovaAssinaturaForm = {
   client_id: "",
   document_id: "",
-  signatarios: [{ nome: "", email: "", papel: "" }],
 };
 
 export default function Assinaturas() {
@@ -133,32 +133,6 @@ export default function Assinaturas() {
       .finally(() => setCarregandoDocs(false));
   };
 
-  const atualizarSignatario = (
-    idx: number,
-    campo: keyof (typeof form.signatarios)[0],
-    valor: string,
-  ) => {
-    setForm((prev) => {
-      const sigs = [...prev.signatarios];
-      sigs[idx] = { ...sigs[idx], [campo]: valor };
-      return { ...prev, signatarios: sigs };
-    });
-  };
-
-  const adicionarSignatario = () => {
-    setForm((prev) => ({
-      ...prev,
-      signatarios: [...prev.signatarios, { nome: "", email: "", papel: "" }],
-    }));
-  };
-
-  const removerSignatario = (idx: number) => {
-    setForm((prev) => ({
-      ...prev,
-      signatarios: prev.signatarios.filter((_, i) => i !== idx),
-    }));
-  };
-
   const criarSolicitacao = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!form.client_id || !form.document_id) {
@@ -167,15 +141,11 @@ export default function Assinaturas() {
     }
     setSalvando(true);
     try {
-      // Contrato de POST /signatures/: document_id + client_id (UUIDs).
-      // signatarios extras são ignorados pelo backend atual, mas seguem no
-      // payload para compatibilidade com a evolução do endpoint.
       // Barra final obrigatória (mesmo motivo do GET acima): evita 307 que
       // derruba o Authorization no redirect.
       await api.post("/signatures/", {
         document_id: form.document_id,
         client_id: form.client_id,
-        signatarios: form.signatarios.filter((s) => s.email && s.nome),
       });
       toast.success("Solicitação de assinatura criada");
       fecharModal();
@@ -382,68 +352,14 @@ export default function Assinaturas() {
             )}
           </div>
 
-          <div>
-            <div className="flex items-center justify-between mb-2">
-              <label className="block text-sm font-medium text-gray-700">
-                Signatários{" "}
-                <span className="text-xs font-normal text-gray-400">
-                  (opcional — o cliente é notificado pelo Portal)
-                </span>
-              </label>
-              <button
-                type="button"
-                onClick={adicionarSignatario}
-                className="inline-flex items-center gap-1 text-xs text-primary-600 hover:text-primary-800 font-medium"
-              >
-                <UserPlus className="w-3.5 h-3.5" />
-                Adicionar
-              </button>
-            </div>
-
-            <div className="space-y-3">
-              {form.signatarios.map((sig, idx) => (
-                <div key={idx} className="flex gap-2 items-start">
-                  <div className="flex-1 grid grid-cols-3 gap-2">
-                    <input
-                      type="text"
-                      value={sig.nome}
-                      onChange={(e) =>
-                        atualizarSignatario(idx, "nome", e.target.value)
-                      }
-                      placeholder="Nome"
-                      className="input px-2 py-1.5"
-                    />
-                    <input
-                      type="email"
-                      value={sig.email}
-                      onChange={(e) =>
-                        atualizarSignatario(idx, "email", e.target.value)
-                      }
-                      placeholder="E-mail"
-                      className="input px-2 py-1.5"
-                    />
-                    <input
-                      type="text"
-                      value={sig.papel}
-                      onChange={(e) =>
-                        atualizarSignatario(idx, "papel", e.target.value)
-                      }
-                      placeholder="Papel"
-                      className="input px-2 py-1.5"
-                    />
-                  </div>
-                  {form.signatarios.length > 1 && (
-                    <button
-                      type="button"
-                      onClick={() => removerSignatario(idx)}
-                      className="mt-1 text-gray-300 hover:text-danger-500 transition-colors"
-                    >
-                      <X className="w-4 h-4" />
-                    </button>
-                  )}
-                </div>
-              ))}
-            </div>
+          <div className="flex items-start gap-2 rounded-lg bg-blue-50 border border-blue-100 px-3 py-2.5 text-sm text-blue-800">
+            <Info className="w-4 h-4 mt-0.5 flex-shrink-0" />
+            <p>
+              O documento será enviado para assinatura a todos os usuários
+              ativos do <strong>Portal do Cliente</strong> vinculados ao
+              cliente selecionado. Se o cliente ainda não tem acesso ao
+              Portal, conceda o acesso antes de criar a solicitação.
+            </p>
           </div>
 
           <div className="flex gap-3 pt-2">

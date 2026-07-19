@@ -34,14 +34,29 @@ def _tipo_uso(tarefa: TarefaIA) -> AITipoUso:
 
 
 def _fontes_str(fontes: list[dict] | None) -> str | None:
-    """Serializa títulos/origens dos chunks RAG para rastreabilidade (sem conteúdo)."""
+    """Serializa a trilha mínima reproduzível dos chunks, sem o conteúdo.
+
+    IDs e ordem permitem reconstruir o contexto no banco; score e versão
+    distinguem mudanças de retrieval/documento. Nenhum trecho ou PII é gravado.
+    """
     if not fontes:
         return None
     linhas = []
-    for f in fontes[:20]:
+    for rank, f in enumerate(fontes[:20], start=1):
         titulo = (f.get("titulo") or "?")[:150]
         categoria = f.get("categoria") or ""
-        linhas.append(f"{titulo} ({categoria})" if categoria else titulo)
+        partes = [f"rank={rank}", f"chunk={f.get('chunk_id') or '?'}",
+                  f"doc={f.get('doc_id') or '?'}"]
+        if f.get("versao") is not None:
+            partes.append(f"versao={f['versao']}")
+        if f.get("score") is not None:
+            partes.append(f"score={f['score']}")
+        if f.get("rerank_score") is not None:
+            partes.append(f"rerank={f['rerank_score']}")
+        partes.append(f"titulo={titulo}")
+        if categoria:
+            partes.append(f"categoria={categoria}")
+        linhas.append("|".join(str(p) for p in partes))
     return "; ".join(linhas)[:2000]
 
 

@@ -12,6 +12,8 @@ import {
 } from "lucide-react";
 import api from "../lib/api";
 import { asList } from "../lib/list";
+import { mensagemErroIA, ROTULO_IA_NAO_ATIVADA } from "../lib/iaErro";
+import { useIaStatus } from "../lib/iaStatus";
 import MotorTeses from "../components/MotorTeses";
 import LinhaDoTempoProcessual from "../components/visual/LinhaDoTempoProcessual";
 import MatrizRisco from "../components/visual/MatrizRisco";
@@ -23,6 +25,7 @@ import IntakeAnalise from "../components/IntakeAnalise";
 import ConversaoChecklist from "../components/ConversaoChecklist";
 import ProvasCaso from "../components/ProvasCaso";
 import DossieEstrategicoCaso from "../components/DossieEstrategicoCaso";
+import OrquestradorPanel from "../components/OrquestradorPanel";
 import CaseBreadcrumb from "../components/CaseBreadcrumb";
 import { ConsultaProfundaTJMG } from "../components/Infosimples";
 import type { Case } from "../types";
@@ -65,6 +68,7 @@ async function baixarDoc(docId: string, filename: string) {
 
 const TABS = [
   { key: "resumo", label: "Resumo" },
+  { key: "orquestrador", label: "Orquestrador" },
   { key: "processos", label: "Processos" },
   { key: "timeline", label: "Timeline" },
   { key: "mensagens", label: "Mensagens" },
@@ -95,33 +99,68 @@ const TABS = [
 ] as const;
 type TabKey = (typeof TABS)[number]["key"];
 
-const GROUPS: { label: string; tabs: TabKey[] }[] = [
+// P1 (proposta de melhorias): as ~26 abas do workspace do caso são organizadas
+// em SEIS seções internas. Cada aba mantém a mesma key e o mesmo conteúdo —
+// só muda o agrupamento; deep-links (?tab=...) antigos continuam funcionando
+// porque a seção ativa é derivada da aba (GROUPS.find abaixo).
+// `links` são rotas irmãs do caso (páginas próprias) expostas na seção
+// pertinente para não parecerem sistemas separados.
+const GROUPS: {
+  label: string;
+  tabs: TabKey[];
+  links?: { label: string; to: (caseId: string) => string }[];
+}[] = [
   {
-    label: "Visão",
-    tabs: ["resumo", "processos", "score", "risco"],
+    // Informações principais, cliente e partes, etiquetas, pendências.
+    label: "Resumo",
+    tabs: ["resumo", "orquestrador", "partes", "etiquetas"],
+    links: [
+      { label: "🧭 Jornada do caso", to: (id) => `/casos/${id}/jornada` },
+      {
+        label: "🎤 Entrevista inteligente",
+        to: (id) => `/casos/${id}/entrevista`,
+      },
+    ],
   },
   {
+    // Timeline, processos, mensagens, prazos, audiências, checklists.
     label: "Andamentos",
-    tabs: ["timeline", "mensagens", "partes", "etiquetas", "checklists"],
+    tabs: [
+      "timeline",
+      "processos",
+      "mensagens",
+      "prazos",
+      "audiencias",
+      "checklists",
+    ],
   },
   {
-    label: "Documentos",
+    label: "Documentos e provas",
     tabs: ["documentos", "provas", "contratos", "procuracoes"],
   },
-  { label: "Prazos & Agenda", tabs: ["prazos", "audiencias"] },
-  { label: "Financeiro", tabs: ["financeiro", "custos", "liquidez"] },
   {
-    label: "Inteligência",
+    // Teses, precedentes, jurisprudência, risco, score, dossiê, IA.
+    label: "Estratégia",
     tabs: [
       "teses",
       "teses-sugeridas",
       "jurisprudencia",
       "precedentes",
-      "memoria",
+      "risco",
+      "score",
       "dossie",
       "iaDefensiva",
       "ferramentas",
     ],
+    links: [
+      { label: "⚔️ Sala de Guerra", to: (id) => `/casos/${id}/sala-de-guerra` },
+    ],
+  },
+  { label: "Financeiro", tabs: ["financeiro", "custos", "liquidez"] },
+  {
+    // Memória do caso, resultado, lições aprendidas, pós-mortem.
+    label: "Histórico e encerramento",
+    tabs: ["memoria"],
   },
 ];
 
@@ -352,6 +391,7 @@ function AreasCaso({ caso }: { caso: Case }) {
 }
 
 function TabResumo({ caso }: { caso: Case }) {
+  const { disponivel: iaDisponivel } = useIaStatus();
   const navigate = useNavigate();
   const { user } = useAuth();
   const [iaModal, setIaModal] = useState(false);
@@ -526,7 +566,9 @@ function TabResumo({ caso }: { caso: Case }) {
       });
       setHonResp(data);
     } catch (e: any) {
-      setHonResp({ erro: e.response?.data?.detail || "Falha na sugestão" });
+      setHonResp({
+        erro: mensagemErroIA(e, "Não foi possível sugerir honorários."),
+      });
     } finally {
       setHonLoading(false);
     }
@@ -545,7 +587,7 @@ function TabResumo({ caso }: { caso: Case }) {
       });
       setIaResp(data);
     } catch (e: any) {
-      setIaResp({ erro: e.response?.data?.detail || "Falha na análise" });
+      setIaResp({ erro: mensagemErroIA(e, "Não foi possível gerar a análise.") });
     } finally {
       setIaLoading(false);
     }
@@ -625,9 +667,12 @@ function TabResumo({ caso }: { caso: Case }) {
       <div className="flex gap-2 flex-wrap">
         <button
           onClick={analisarIA}
-          className="btn-primary flex items-center gap-1"
+          disabled={!iaDisponivel}
+          title={iaDisponivel ? undefined : ROTULO_IA_NAO_ATIVADA}
+          className="btn-primary flex items-center gap-1 disabled:cursor-not-allowed disabled:opacity-50"
         >
-          <Sparkles size={14} /> Análise IA
+          <Sparkles size={14} />{" "}
+          {iaDisponivel ? "Análise IA" : "IA não ativada"}
         </button>
         <button
           onClick={syncDataJud}
@@ -2056,7 +2101,7 @@ function TabScore({ caseId }: { caseId: string }) {
           <div className="card p-5">
             <div className="flex items-start gap-6 mb-4">
               <div className="text-center min-w-[80px]">
-                <div className="text-5xl font-black text-gray-900">
+                <div className="text-2xl font-bold text-gray-900">
                   {top.total}
                 </div>
                 <div className="text-sm text-gray-400">/100</div>
@@ -3858,6 +3903,8 @@ export default function CasoDetalhe() {
     switch (activeTab) {
       case "resumo":
         return <TabResumo caso={caso} />;
+      case "orquestrador":
+        return <OrquestradorPanel caseId={id} />;
       case "processos":
         return <TabProcessos caseId={id} />;
       case "timeline":
@@ -4131,7 +4178,7 @@ export default function CasoDetalhe() {
         tela={activeTabLabel}
       />
       {/* Sticky header + tabs */}
-      <div className="sticky top-[4.25rem] z-20 card bg-white/95 backdrop-blur-xl">
+      <div className="sticky top-[4.25rem] z-20 card bg-white">
         <div className="flex flex-col gap-4 px-4 py-4 lg:flex-row lg:items-start lg:justify-between">
           <button
             onClick={() => navigate("/casos")}
@@ -4226,28 +4273,40 @@ export default function CasoDetalhe() {
         {/* Sub-abas do grupo ativo */}
         {(() => {
           const grp = grupoAtivo;
-          if (grp.tabs.length <= 1) return null;
+          if (grp.tabs.length <= 1 && !grp.links?.length) return null;
           return (
             <div className="flex gap-2 overflow-x-auto border-t border-slate-100 bg-slate-50/70 px-3 py-2 scrollbar-thin">
               <span className="hidden text-[11px] font-semibold uppercase tracking-[0.16em] text-slate-400 sm:inline-flex sm:items-center">
                 {grp.label}
               </span>
-              {grp.tabs.map((k) => {
-                const t = TABS.find((x) => x.key === k)!;
-                return (
-                  <button
-                    key={k}
-                    onClick={() => setSearchParams({ tab: k })}
-                    className={`h-8 flex-shrink-0 rounded-full px-3 text-xs font-medium transition-colors ${
-                      activeTab === k
-                        ? "bg-slate-950 text-white"
-                        : "text-slate-600 hover:bg-white hover:text-slate-950"
-                    }`}
-                  >
-                    {t.label}
-                  </button>
-                );
-              })}
+              {grp.tabs.length > 1 &&
+                grp.tabs.map((k) => {
+                  const t = TABS.find((x) => x.key === k)!;
+                  return (
+                    <button
+                      key={k}
+                      onClick={() => setSearchParams({ tab: k })}
+                      className={`h-8 flex-shrink-0 rounded-full px-3 text-xs font-medium transition-colors ${
+                        activeTab === k
+                          ? "bg-slate-950 text-white"
+                          : "text-slate-600 hover:bg-white hover:text-slate-950"
+                      }`}
+                    >
+                      {t.label}
+                    </button>
+                  );
+                })}
+              {/* Rotas irmãs do caso vinculadas a esta seção (Sala de Guerra,
+                  Jornada, Entrevista) — páginas próprias, não abas. */}
+              {grp.links?.map((l) => (
+                <Link
+                  key={l.label}
+                  to={l.to(caso.id)}
+                  className="flex h-8 flex-shrink-0 items-center rounded-full border border-slate-200 bg-white px-3 text-xs font-medium text-primary-700 transition-colors hover:border-primary-300 hover:bg-primary-50"
+                >
+                  {l.label}
+                </Link>
+              ))}
             </div>
           );
         })()}

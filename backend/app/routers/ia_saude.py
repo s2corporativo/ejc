@@ -18,6 +18,24 @@ from app.models.ai_log import AILog
 
 router = APIRouter(prefix="/ia-saude", tags=["IA — Saúde (Admin)"])
 
+# ── GET /ia/status — qualquer usuário logado (P0 usabilidade 2026-07-18) ──────
+# Contrato com o frontend: {"disponivel": bool, "mensagem": str|null}.
+# Leve e rápido: só configuração (ai_gateway.ia_disponivel), sem chamar
+# provedores externos. Router separado porque o prefixo difere (/ia).
+router_status = APIRouter(prefix="/ia", tags=["IA — Status"])
+
+
+@router_status.get("/status")
+async def ia_status(cu: User = Depends(get_current_user)):
+    """Estado leigo da IA para a UI decidir banners/botões desabilitados."""
+    from app.core.ai_errors import MSG_IA_NAO_ATIVADA
+    from app.services.ai_gateway import ia_disponivel
+    disponivel = ia_disponivel()
+    return {
+        "disponivel": disponivel,
+        "mensagem": None if disponivel else MSG_IA_NAO_ATIVADA,
+    }
+
 
 def _v(x):
     return x.value if hasattr(x, "value") else x

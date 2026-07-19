@@ -14,7 +14,6 @@ import {
   EmptyState,
   ErrorState,
   Modal,
-  PageHeader,
   Spinner,
   fmtDate,
   ConfirmModal,
@@ -190,17 +189,13 @@ export default function OfficeContracts() {
   }
 
   return (
-    <div className="p-6 max-w-6xl mx-auto">
-      <PageHeader
-        eyebrow="Financeiro"
-        title="Contratos do Escritório"
-        subtitle="Gestão de contratos operacionais e parcerias"
-        actions={
-          <button onClick={openNew} className="btn-primary">
-            <Plus className="w-4 h-4" /> Novo Contrato
-          </button>
-        }
-      />
+    <div>
+      {/* Cabeçalho fica no FinanceiroWorkspace; aqui apenas as ações da aba. */}
+      <div className="flex items-center justify-end mb-4">
+        <button onClick={openNew} className="btn-primary">
+          <Plus className="w-4 h-4" /> Novo Contrato
+        </button>
+      </div>
 
       {expiring.length > 0 && (
         <div className="mb-4 p-3 bg-yellow-50 border border-yellow-200 rounded-lg flex items-start gap-2">

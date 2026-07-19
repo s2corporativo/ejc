@@ -21,6 +21,8 @@ from uuid import uuid4
 import pytest
 from sqlalchemy import text
 
+from app.services.embedding_service import EMBED_DIM  # dim configurável (O-2): casa com a coluna
+
 pytestmark = pytest.mark.skipif(
     not os.getenv("RUN_DB_TESTS"),
     reason="requer Postgres+pgvector com migrations (defina RUN_DB_TESTS=1)",
@@ -59,7 +61,7 @@ async def test_contagem_divergente_nao_aplica_embedding_parcial(monkeypatch):
     async def _vetores_curtos(textos):
         # gerar_embeddings de verdade já rejeitaria isso (contagem não bate),
         # mas testamos a defesa de _indexar_doc_bg mesmo se algo escapasse.
-        return [[0.0] * 768]  # 1 vetor para N chunks
+        return [[0.0] * EMBED_DIM]  # 1 vetor para N chunks
 
     monkeypatch.setattr(rag_router, "gerar_embeddings", _vetores_curtos)
 
@@ -94,7 +96,7 @@ async def test_contagem_certa_aplica_e_marca_indexado(monkeypatch):
     monkeypatch.setattr(rag_router, "emb_disponivel", lambda: True)
 
     async def _vetores_certos(textos):
-        return [[0.0] * 768 for _ in textos]
+        return [[0.0] * EMBED_DIM for _ in textos]
 
     monkeypatch.setattr(rag_router, "gerar_embeddings", _vetores_certos)
 

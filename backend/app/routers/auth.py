@@ -27,6 +27,7 @@ from app.services.security_service import (
     esta_bloqueado, registrar_falha, limpar_falhas, obter_ip_real,
     verificar_novo_dispositivo,
     solicitar_reset, confirmar_reset,
+    validar_forca_senha,
 )
 
 router  = APIRouter(prefix="/auth", tags=["Autenticação"])
@@ -44,6 +45,15 @@ REFRESH_REUSE_GRACA_SEGUNDOS = 60
 # escritório causariam 429 geral. Contador separado por IP, teto maior, ainda
 # limita sondagem de senhas válidas.
 TOTP_PENDENTE_MAX_FALHAS = 20
+
+
+def _papel_exige_2fa(role_value: str | None) -> bool:
+    """True se o papel do usuário está na allowlist REQUIRE_2FA_ROLES (2FA
+    obrigatório por política organizacional). Default (setting vazia) ⇒ sempre
+    False → o comportamento atual (2FA opt-in) fica intacto."""
+    if not role_value:
+        return False
+    return role_value.strip().lower() in settings.require_2fa_roles_list
 
 
 # ─── Schemas ──────────────────────────────────────────────────────────────────
@@ -288,6 +298,13 @@ async def login(
     if user.must_change_password:
         resp["must_change_password"] = True
         resp["detail"] = "Troca de senha obrigatória antes de continuar."
+    # ── 6. 2FA obrigatório por papel (enforcement SEM lockout) ────────
+    # Se o papel exige 2FA (REQUIRE_2FA_ROLES) e o usuário ainda não tem TOTP
+    # ativo, sinaliza ao frontend que ele PRECISA configurar — sem bloquear o
+    # login (não há coluna/migration nova; ninguém é trancado). Default vazio
+    # ⇒ nunca dispara e a resposta fica idêntica à atual.
+    if _papel_exige_2fa(user.role.value) and not user.totp_enabled:
+        resp["precisa_configurar_2fa"] = True
     return resp
 
 
@@ -338,6 +355,28 @@ async def refresh(req: RefreshRequest, request: Request, response: Response,
                     status_code=401,
                     detail="Sessão atualizada em outra aba — tente novamente",
                 )
+        # Token revogado SEM replaced_by_jti nunca foi rotacionado: foi encerrado
+        # por logout ou troca de senha. O replay vem de um dispositivo antigo
+        # legítimo, não é o sinal de furto do BCP §4.14.2 — 401 simples, sem
+        # cascata de revogação e sem marcar REFRESH_REUSE na auditoria.
+        if record is not None and not record.replaced_by_jti:
+            # M-S3: mesmo sem cascata, o replay pós-logout precisa de trilha —
+            # um dispositivo reapresentando token encerrado é sinal fraco de
+            # comprometimento que a forense cruza com IP/frequência. Padrão
+            # leve do REFRESH_REUSE abaixo, sem revogação em massa.
+            await criar_audit_log(
+                db, user_id, None, "REFRESH_REPLAY_POS_LOGOUT", "users", user_id,
+                detalhes=f"Refresh revogado sem rotação reapresentado (jti={jti}) "
+                         "— sessão encerrada por logout/troca de senha; negado "
+                         "sem cascata de revogação.",
+                ip=obter_ip_real(request),
+            )
+            await db.commit()
+            _clear_refresh_cookie(response)
+            raise HTTPException(
+                status_code=401,
+                detail="Sessão encerrada. Faça login novamente.",
+            )
         ip = obter_ip_real(request)
         if user_id:
             await db.execute(
@@ -434,6 +473,7 @@ async def logout(req: RefreshRequest, request: Request, response: Response,
 async def alterar_senha(
     req: AlterarSenhaRequest,
     request: Request,
+    response: Response,
     db: AsyncSession = Depends(get_db),
 ):
     # Recria o fluxo manualmente para aceitar token must_change
@@ -458,21 +498,58 @@ async def alterar_senha(
     if not verify_password(req.senha_atual, user.hashed_password):
         raise HTTPException(status_code=400, detail="Senha atual incorreta")
 
+    # Política de senha forte — só na DEFINIÇÃO da senha nova (não no login),
+    # para não trancar quem já tem senha curta legada.
+    try:
+        validar_forca_senha(req.nova_senha, user.email)
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+
     user.hashed_password      = get_password_hash(req.nova_senha)
     user.must_change_password = False
 
-    # Revogar TODAS as outras sessões (segurança pós-troca)
+    # Revogar TODAS as outras sessões (segurança pós-troca). revoked_at marca
+    # o instante para a trilha forense; replaced_by_jti fica nulo de propósito —
+    # é o que distingue revogação administrativa de rotação no /refresh.
     await db.execute(
         update(RefreshToken)
         .where(RefreshToken.user_id == user.id, RefreshToken.revoked == False)
-        .values(revoked=True)
+        .values(revoked=True, revoked_at=datetime.now(timezone.utc))
     )
+
+    # P0 usabilidade (2026-07-18, §2.3): manter a sessão ATUAL após a troca —
+    # emite novos tokens (mesmo formato do /login) com o claim must_change_password
+    # já limpo, para o frontend continuar logado sem voltar ao /login. As demais
+    # sessões seguem revogadas acima; o refresh novo nasce DEPOIS da revogação.
+    access = create_access_token(user.id, user.role.value,
+                                 must_change_password=False)
+    refresh_tok, jti = create_refresh_token(user.id)
+    db.add(RefreshToken(
+        id=str(uuid4()), user_id=user.id, jti=jti,
+        expires_at=datetime.now(timezone.utc) + timedelta(
+            days=settings.REFRESH_TOKEN_EXPIRE_DAYS),
+    ))
+
     await criar_audit_log(
         db, user.id, user.role.value, "TROCA_SENHA", "users", user.id,
         ip=obter_ip_real(request),
     )
     await db.commit()
-    return {"detail": "Senha alterada. Faça login novamente."}
+
+    # Rotaciona o cookie httpOnly com o refresh da sessão que permanece viva.
+    _set_refresh_cookie(response, refresh_tok)
+    return {
+        # Compat: o campo `detail` continua existindo (texto atualizado — a
+        # sessão não é mais derrubada).
+        "detail": "Senha alterada com sucesso.",
+        "access_token": access,
+        "refresh_token": refresh_tok,
+        "token_type": "bearer",
+        "user_id": user.id,
+        "full_name": user.full_name,
+        "role": user.role.value,
+        "must_change_password": False,
+    }
 
 
 # ─── Recuperação de senha (público) ──────────────────────────────────────────
@@ -483,6 +560,23 @@ async def recuperar_senha(
     db: AsyncSession = Depends(get_db),
 ):
     ip = obter_ip_real(request)
+
+    # P0 usabilidade (2026-07-18, §2.2): com SMTP desligado (instalação padrão)
+    # a resposta neutra vira beco sem saída — o e-mail nunca chega. Mesma
+    # detecção do security_service.enviar_email (EMAIL_ENABLED + SMTP_USER).
+    # A mensagem é IGUAL para qualquer e-mail (não vaza existência de conta).
+    if not settings.EMAIL_ENABLED or not settings.SMTP_USER:
+        logger.warning(
+            "Recuperação de senha solicitada com envio de e-mail desligado "
+            "(EMAIL_ENABLED/SMTP_USER) — orientado a procurar o administrador."
+        )
+        return {
+            "detail": (
+                "O envio de e-mail não está configurado nesta instalação. "
+                "Procure o administrador do escritório para redefinir sua senha."
+            )
+        }
+
     await solicitar_reset(db, req.email, ip)
     return {"detail": "Se o e-mail existir, enviaremos as instruções em breve."}
 
@@ -494,7 +588,12 @@ async def redefinir_senha(
     request: Request,
     db: AsyncSession = Depends(get_db),
 ):
-    ok = await confirmar_reset(db, req.token, req.nova_senha)
+    try:
+        ok = await confirmar_reset(db, req.token, req.nova_senha)
+    except ValueError as e:
+        # Token válido, porém senha nova fraca (política de senha forte):
+        # mensagem específica em vez do genérico "link inválido".
+        raise HTTPException(status_code=400, detail=str(e))
     if not ok:
         raise HTTPException(
             status_code=400,
@@ -604,6 +703,16 @@ async def totp_desativar(
         raise HTTPException(status_code=401, detail="Usuário não encontrado")
     if not user.totp_enabled:
         raise HTTPException(status_code=400, detail="TOTP não está ativo")
+    # Enforcement por papel (REQUIRE_2FA_ROLES): um usuário cujo papel é OBRIGADO
+    # a usar 2FA não pode se auto-desproteger. Recusa ANTES de qualquer
+    # verificação de código — nem com o código correto o 2FA é removido. Default
+    # (setting vazia) ⇒ nunca bloqueia; comportamento atual preservado.
+    if _papel_exige_2fa(user.role.value):
+        raise HTTPException(
+            status_code=403,
+            detail="Seu perfil exige autenticação de dois fatores. A desativação "
+                   "do 2FA não é permitida para este papel. Contate o administrador.",
+        )
     # Anti-brute-force com chave PRÓPRIA (não ip:/em: do login): um atacante
     # com access token roubado adivinhando códigos aqui NÃO pode trancar o
     # /login legítimo da vítima — e o bloqueio deste endpoint não depende do IP.

@@ -1,5 +1,4 @@
 import asyncio
-from app.services.rag_juridico import RAGJuridico
 
 # Lista de teses coletadas (Exemplos baseados na pesquisa)
 TESES_RENOMADAS = [
@@ -34,10 +33,8 @@ TESES_RENOMADAS = [
 ]
 
 async def seed():
-    rag = RAGJuridico()
     print(f"Iniciando inserção de {len(TESES_RENOMADAS)} teses de elite...")
     for tese in TESES_RENOMADAS:
-        texto_completo = f"Título: {tese['titulo']}\nAutor: {tese['autor']}\nRamo: {tese['ramo']}\nConteúdo: {tese['conteudo']}\nPrecedentes: {', '.join(tese['precedentes'])}"
         # Simulando vetorização e inserção
         print(f"Vetorizando: {tese['titulo']}")
         # await rag.indexar_documento(texto_completo, metadata={"fonte": "renomados", "ramo": tese['ramo']})

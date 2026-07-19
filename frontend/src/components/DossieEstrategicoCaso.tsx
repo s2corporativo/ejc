@@ -17,6 +17,8 @@ import {
 } from "lucide-react";
 import api from "../lib/api";
 import { asList } from "../lib/list";
+import { mensagemErroIA, ROTULO_IA_NAO_ATIVADA } from "../lib/iaErro";
+import { useIaStatus } from "../lib/iaStatus";
 import { toast } from "./Toast";
 import { Badge, Button, Empty, Spinner, fmtDate } from "./UI";
 
@@ -175,6 +177,7 @@ function detalheErro(err: any, fallback: string): string {
 // ── Componente ────────────────────────────────────────────────────────────────
 
 export default function DossieEstrategicoCaso({ caseId }: { caseId: string }) {
+  const { disponivel: iaDisponivel } = useIaStatus();
   const [modulos, setModulos] = useState<Modulos | null>(null);
   const [loadingModulos, setLoadingModulos] = useState(true);
   const [dossie, setDossie] = useState<Dossie | null>(null);
@@ -198,9 +201,7 @@ export default function DossieEstrategicoCaso({ caseId }: { caseId: string }) {
       setFaltantes(asList<ProvaFaltante>(data));
       setAvisoFaltantes(data?.aviso ?? null);
     } catch (e: any) {
-      toast.error(
-        e.response?.data?.detail || "Falha ao sugerir provas faltantes.",
-      );
+      toast.error(mensagemErroIA(e, "Falha ao sugerir provas faltantes."));
     } finally {
       setSugerindo(false);
     }
@@ -251,7 +252,7 @@ export default function DossieEstrategicoCaso({ caseId }: { caseId: string }) {
       carregarHistorico();
       toast.success(`Dossiê v${r.data?.versao ?? ""} gerado como rascunho.`);
     } catch (err: any) {
-      toast.error(detalheErro(err, "Não foi possível gerar o dossiê."));
+      toast.error(mensagemErroIA(err, "Não foi possível gerar o dossiê."));
     } finally {
       setGerando(false);
     }
@@ -331,14 +332,20 @@ export default function DossieEstrategicoCaso({ caseId }: { caseId: string }) {
               {baixandoPdf ? "Baixando…" : "PDF"}
             </Button>
           )}
-          <Button
-            size="sm"
-            icon={<Sparkles size={14} />}
-            onClick={gerar}
-            disabled={gerando}
-          >
-            {gerando ? "Gerando…" : "Gerar análise (IA)"}
-          </Button>
+          <span title={iaDisponivel ? undefined : ROTULO_IA_NAO_ATIVADA}>
+            <Button
+              size="sm"
+              icon={<Sparkles size={14} />}
+              onClick={gerar}
+              disabled={gerando || !iaDisponivel}
+            >
+              {!iaDisponivel
+                ? "IA não ativada"
+                : gerando
+                  ? "Gerando…"
+                  : "Gerar análise (IA)"}
+            </Button>
+          </span>
         </div>
       </div>
 
@@ -611,14 +618,20 @@ export default function DossieEstrategicoCaso({ caseId }: { caseId: string }) {
                   Provas faltantes
                 </h3>
               </div>
-              <Button
-                size="sm"
-                variant="ghost"
-                onClick={sugerirFaltantes}
-                disabled={sugerindo}
-              >
-                {sugerindo ? "Analisando..." : "Sugerir com IA"}
-              </Button>
+              <span title={iaDisponivel ? undefined : ROTULO_IA_NAO_ATIVADA}>
+                <Button
+                  size="sm"
+                  variant="ghost"
+                  onClick={sugerirFaltantes}
+                  disabled={sugerindo || !iaDisponivel}
+                >
+                  {!iaDisponivel
+                    ? "IA não ativada"
+                    : sugerindo
+                      ? "Analisando..."
+                      : "Sugerir com IA"}
+                </Button>
+              </span>
             </div>
             {faltantes === null && !sugerindo && (
               <p className="text-xs text-slate-400">

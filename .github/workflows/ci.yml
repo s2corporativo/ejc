@@ -4,11 +4,23 @@ name: CI
 # Se QUALQUER teste ou build falhar, o GitHub bloqueia o merge/deploy.
 # Objetivo: nada quebrado chega na produção do escritório.
 
+# CI no runner SELF-HOSTED (2026-07-17): roda no VPS do escritório em vez da nuvem
+# do GitHub → Actions minutes = 0 (custo zero), mantendo os checks de PR.
+# ⚠️ Requer o runner registrado ANTES (scripts/setup-selfhosted-runner.sh); sem
+# runner online os checks ficam "aguardando runner". Ver docs/RUNNER_SELFHOSTED.md.
+# (Para voltar à nuvem paga: runs-on: ubuntu-latest.)
 on:
+  # CI automática REATIVADA (2026-07-18): o runner é SELF-HOSTED no VPS
+  # (ejc-vps), então rodar em cada PR e no push da main custa 0 minutos de
+  # Actions — o motivo original de deixar manual (economia de minutos) não se
+  # aplica mais, e o próprio header deste arquivo já visa "manter os checks de PR".
+  # ⚠️ REQUER o runner self-hosted 'ejc-vps' registrado e ONLINE
+  # (docs/RUNNER_SELFHOSTED.md / scripts/setup-selfhosted-runner.sh); sem runner,
+  # os checks ficam "aguardando runner". workflow_dispatch segue disponível.
+  pull_request:
   push:
     branches: [main]
-  pull_request:
-    branches: [main]
+  workflow_dispatch:
 
 permissions:
   contents: read
@@ -25,7 +37,7 @@ jobs:
   # Lint (ruff) e pip-audit migraram para cá.
   db-validation:
     name: Backend — suíte completa + schema/RAG (Postgres pgvector)
-    runs-on: ubuntu-latest
+    runs-on: [self-hosted, ejc-vps]
     timeout-minutes: 30
     defaults:
       run:
@@ -79,6 +91,11 @@ jobs:
           python -m pip install --upgrade pip
           python -m pip install -r requirements.txt
 
+      - name: Gate de compatibilidade dos modelos RAG (sem download de pesos)
+        run: |
+          python -c "from app.services.embedding_service import validar_modelo_local; ok,msg=validar_modelo_local(); print(msg); raise SystemExit(0 if ok else 1)"
+          python -c "from app.core.config import get_settings; from fastembed.rerank.cross_encoder import TextCrossEncoder; s=get_settings(); nomes={m['model'] for m in TextCrossEncoder.list_supported_models()}; assert s.RAG_RERANK_MODEL in nomes, s.RAG_RERANK_MODEL; print(s.RAG_RERANK_MODEL)"
+
       - name: Criar extensões (vector, pg_trgm, pgcrypto)
         run: |
           PGPASSWORD=ejc_pass psql -h localhost -U ejc_user -d ejc_db \
@@ -111,9 +128,41 @@ jobs:
         # suíte inteira, qualquer *_dblevel.py novo roda automaticamente.
         run: python -m pytest tests -v
 
+  # Eval SMOKE (auditoria IA — P2): valida o formato dos gold sets e roda as
+  # métricas determinísticas 100% OFFLINE (sem banco e sem chamada de LLM
+  # externa). O smoke é BLOQUEANTE: formato inválido ou violação HITL não pode
+  # chegar à main. Pisos de qualidade do gold set real seguem no roadmap.
+  eval-smoke:
+    name: Eval — smoke dos gold sets (offline, bloqueante)
+    runs-on: [self-hosted, ejc-vps]
+    timeout-minutes: 15
+    defaults:
+      run:
+        working-directory: backend
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Instalar Python 3.11
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+          cache: pip
+          cache-dependency-path: backend/requirements.txt
+
+      - name: Instalar dependências Python
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install -r requirements.txt
+
+      - name: Validar formato dos gold sets (smoke — sem banco/LLM)
+        run: python -m app.eval.run_eval --smoke
+
+      - name: Eval de trajetória do agente (offline, LLM mockado)
+        run: python -m app.eval.agent_trajectory --min-tool 1.0 --max-violacoes-hitl 0
+
   frontend-build:
     name: Frontend — typecheck + build (tsc + vite)
-    runs-on: ubuntu-latest
+    runs-on: [self-hosted, ejc-vps]
     timeout-minutes: 25
     defaults:
       run:
