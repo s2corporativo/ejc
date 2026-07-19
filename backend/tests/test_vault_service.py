@@ -124,6 +124,18 @@ async def test_cadastrar_rejeita_fora_do_catalogo_e_formato(db):
     assert await _rows(db, "DATAJUD_API_KEY") == []  # nada gravado
 
 
+async def test_cadastrar_valor_curto_nao_expoe_last4(db, audit):
+    """Valor com < 8 chars: last4 revelaria metade (ou mais) do segredo —
+    fica \"\" no metadado, na auditoria e no retorno (achado da auditoria)."""
+    meta = await svc.cadastrar(db, "smtp", "SMTP_PASSWORD", "abc",
+                               "senha", USER)
+    assert meta["last4"] == ""
+    (linha,) = await _rows(db, "SMTP_PASSWORD")
+    assert linha.last4 == ""
+    assert vault_crypto.decifrar(linha.valor_encrypted) == "abc"
+    assert "abc" not in (audit[-1]["detalhes"] or "")
+
+
 # ── revogar ──────────────────────────────────────────────────────────────────
 
 async def test_revogar_desativa_zera_e_marca(db):
@@ -186,6 +198,29 @@ async def test_overlay_muta_o_singleton_visto_por_modulo_antigo(db, monkeypatch)
 
     assert vault_crypto.settings.DATAJUD_API_KEY == SEGREDO
     assert vault_crypto.settings is get_settings()    # mesmo objeto, sempre
+
+
+async def test_overlay_linha_corrompida_nao_derruba_e_zera_o_campo(db, monkeypatch):
+    """Linha ativa indecifrável (token corrompido / chave fora do CSV): o
+    overlay dos DEMAIS campos segue, e o campo afetado é tratado como
+    revogado (\"\") — fail-closed por campo, sem fallback ao .env."""
+    settings = get_settings()
+    monkeypatch.setattr(settings, "DATAJUD_API_KEY", "valor-do-env")
+    monkeypatch.setattr(settings, "SMTP_PASSWORD", "senha-do-env")
+
+    await svc.cadastrar(db, "datajud", "DATAJUD_API_KEY", SEGREDO,
+                        "api_key", USER)
+    await svc.cadastrar(db, "smtp", "SMTP_PASSWORD", "senha-smtp",
+                        "senha", USER)
+    # Corrompe o token da linha ativa do datajud direto no banco.
+    (linha,) = [l for l in await _rows(db, "DATAJUD_API_KEY") if l.ativo]
+    linha.valor_encrypted = "nao-e-um-token-fernet"
+    await db.commit()
+
+    aplicados = await svc.aplicar_overlay(db)   # não levanta exceção
+    assert settings.SMTP_PASSWORD == "senha-smtp"     # demais campos seguem
+    assert settings.DATAJUD_API_KEY == ""             # fail-closed, não o .env
+    assert set(aplicados) == {"DATAJUD_API_KEY", "SMTP_PASSWORD"}
 
 
 async def test_resolver_overlay_so_ativas_decifradas(db):

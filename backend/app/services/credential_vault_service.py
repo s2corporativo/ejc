@@ -30,6 +30,7 @@ from uuid import uuid4
 from sqlalchemy import func, select
 
 from app.core.config import get_settings
+from app.core.log_sanitizer import safe_exception_log
 from app.models.audit_log import criar_audit_log
 from app.models.integration_credential import IntegrationCredential
 from app.services import credential_registry, vault_crypto
@@ -84,14 +85,25 @@ def _campo_do_catalogo(provider_key: str, field_key: str):
 
 
 async def _linha_ativa(db, provider_key: str, field_key: str) -> IntegrationCredential | None:
+    # with_for_update: tranca a linha vigente até o commit — evita corrida
+    # cadastrar × revogar (revogação silenciosamente ineficaz sobre a linha
+    # errada). No SQLite da suíte o dialeto ignora o FOR UPDATE (no-op).
     res = await db.execute(
-        select(IntegrationCredential).where(
+        select(IntegrationCredential)
+        .where(
             IntegrationCredential.provider_key == provider_key,
             IntegrationCredential.field_key == field_key,
             IntegrationCredential.ativo.is_(True),
         )
+        .with_for_update()
     )
     return res.scalars().first()
+
+
+def _last4(valor: str) -> str:
+    """Sufixo exibível: só para valores com ≥ 8 chars — abaixo disso os 4
+    últimos revelariam metade (ou mais) do segredo (achado da auditoria)."""
+    return valor[-4:] if len(valor) >= 8 else ""
 
 
 def _meta(c: IntegrationCredential) -> dict[str, Any]:
@@ -160,7 +172,7 @@ async def cadastrar(
         field_key=field_key,
         tipo=tipo,
         valor_encrypted=vault_crypto.cifrar(v),
-        last4=v[-4:],                        # máx. 4 chars — nunca o valor
+        last4=_last4(v),                     # "" para valores curtos (<8 chars)
         versao=versao,
         ativo=True,
         origem=origem,
@@ -259,7 +271,19 @@ async def resolver_overlay(db) -> dict[str, str]:
             logger.warning("[cofre] linha ativa fora do catálogo ignorada: %s/%s",
                            c.provider_key, c.field_key)
             continue
-        overlay[c.field_key] = vault_crypto.decifrar(c.valor_encrypted)
+        try:
+            overlay[c.field_key] = vault_crypto.decifrar(c.valor_encrypted)
+        except ValueError as e:
+            # Linha indecifrável (token corrompido / chave fora do CSV) não
+            # pode derrubar o overlay dos DEMAIS campos. O campo fica FORA do
+            # dict de ativos e, como tem linha no histórico, aplicar_overlay o
+            # zera ("") — fail-closed por campo, nunca fallback ao .env de uma
+            # credencial que deveria estar vigente.
+            logger.error(
+                "[cofre] falha ao decifrar credencial ativa %s/%s — campo "
+                "será tratado como revogado (\"\")",
+                c.provider_key, c.field_key, extra=safe_exception_log(e),
+            )
     return overlay
 
 

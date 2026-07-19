@@ -59,5 +59,6 @@ def sincronizar_cofre(**_kwargs) -> None:
     try:
         asyncio.run(_verificar_e_aplicar())
     except Exception as e:  # noqa: BLE001 — sync nunca derruba a task do usuário
+        from app.core.log_sanitizer import safe_exception_log
         logger.warning("[cofre] sync do worker falhou (seguindo com valores "
-                       "atuais): %s", e)
+                       "atuais)", extra=safe_exception_log(e))
