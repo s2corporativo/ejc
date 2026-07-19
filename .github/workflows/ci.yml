@@ -238,4 +238,15 @@ jobs:
         run: npm audit --audit-level=high
 
       - name: Typecheck + build
-        run: npm run build
+        run: |
+          set -o pipefail
+          npm run build 2>&1 | tee ../frontend-build-report.log
+
+      - name: Anexar diagnóstico TypeScript/Vite
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: frontend-build-report
+          path: frontend-build-report.log
+          if-no-files-found: warn
+          retention-days: 7
