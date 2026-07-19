@@ -35,3 +35,9 @@ novos_modulos.router.include_router(defesas_revisoes_avancado.router)
 from app.routers import sala_de_guerra, sala_de_guerra_facade  # noqa: E402
 
 sala_de_guerra.router.include_router(sala_de_guerra_facade.router)
+
+# Linha do tempo e saúde operacional são sub-recursos da entidade Caso. A
+# inclusão aqui preserva uma única montagem de `/cases` no main.py.
+from app.routers import cases, case_timeline  # noqa: E402
+
+cases.router.include_router(case_timeline.router)
