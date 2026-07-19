@@ -6,7 +6,6 @@ import {
   FileText,
   RefreshCw,
   ShieldCheck,
-  Wrench,
 } from "lucide-react";
 import api from "../lib/api";
 import { toast } from "./Toast";
@@ -27,19 +26,13 @@ type Finding = {
 };
 
 type AutoFixReport = {
-  modo: "diagnostico";
-  dry_run: boolean;
-  aplicou_correcoes: boolean;
-  requer_revisao_humana: boolean;
   resumo: string;
   metricas: {
     modulos_esperados: number;
-    topicos_help_ativos: number;
     rotas_api_detectadas: number;
     modulos_com_backend: number;
     colisoes_metodo_rota: number;
     achados: number;
-    por_severidade: Partial<Record<Severity, number>>;
   };
   achados: Finding[];
   proximos_passos: string[];
@@ -83,7 +76,6 @@ export default function AutoFixPanel() {
   const [loading, setLoading] = useState(false);
   const [seeding, setSeeding] = useState(false);
   const [report, setReport] = useState<AutoFixReport | null>(null);
-
   const findings = useMemo(
     () => ordenarAchados(report?.achados || []),
     [report],
@@ -119,14 +111,15 @@ export default function AutoFixPanel() {
 
   const exportar = () => {
     if (!report) return;
-    const blob = new Blob([JSON.stringify(report, null, 2)], {
-      type: "application/json;charset=utf-8",
-    });
-    const url = URL.createObjectURL(blob);
-    const anchor = document.createElement("a");
-    anchor.href = url;
-    anchor.download = `ejc-autofix-${new Date().toISOString().slice(0, 10)}.json`;
-    anchor.click();
+    const url = URL.createObjectURL(
+      new Blob([JSON.stringify(report, null, 2)], {
+        type: "application/json;charset=utf-8",
+      }),
+    );
+    const link = document.createElement("a");
+    link.href = url;
+    link.download = `ejc-autofix-${new Date().toISOString().slice(0, 10)}.json`;
+    link.click();
     URL.revokeObjectURL(url);
   };
 
@@ -139,8 +132,7 @@ export default function AutoFixPanel() {
       <button
         type="button"
         onClick={() => setOpen(true)}
-        className="fixed bottom-6 right-6 z-30 inline-flex items-center gap-2 rounded-xl border border-slate-200 bg-white px-4 py-3 text-sm font-semibold text-slate-800 shadow-md transition hover:bg-slate-50 focus:outline-none focus:ring-2 focus:ring-primary-400 focus:ring-offset-2"
-        aria-label="Abrir AutoFix em modo diagnóstico"
+        className="fixed bottom-6 right-6 z-30 inline-flex items-center gap-2 rounded-xl border border-slate-200 bg-white px-4 py-3 text-sm font-semibold text-slate-800 shadow-md hover:bg-slate-50 focus:outline-none focus:ring-2 focus:ring-primary-400"
       >
         <Bot className="h-4 w-4 text-primary-700" />
         AutoFix
@@ -160,7 +152,7 @@ export default function AutoFixPanel() {
           <EmptyState
             icon={AlertTriangle}
             title="Diagnóstico indisponível"
-            message="Nenhuma alteração foi aplicada. Execute novamente para obter o relatório."
+            message="Nenhuma alteração foi aplicada. Execute novamente."
             action={
               <Button
                 variant="secondary"
@@ -175,26 +167,23 @@ export default function AutoFixPanel() {
           <div className="space-y-6">
             <section className="rounded-xl border border-slate-200 bg-slate-50 p-4">
               <div className="flex flex-wrap items-start justify-between gap-4">
-                <div>
-                  <div className="flex items-center gap-2">
+                <div className="max-w-2xl">
+                  <div className="flex items-center gap-2 font-semibold text-slate-950">
                     <ShieldCheck className="h-5 w-5 text-primary-700" />
-                    <h3 className="font-semibold text-slate-950">
-                      Modo somente leitura
-                    </h3>
+                    Modo somente leitura
                   </div>
-                  <p className="mt-1 max-w-2xl text-sm text-slate-600">
-                    {report.resumo} Patches, migrations e deploy exigem branch,
-                    revisão humana e CI verde.
+                  <p className="mt-1 text-sm text-slate-600">
+                    {report.resumo} Correções exigem branch, revisão humana e CI verde.
                   </p>
                 </div>
-                <div className="flex flex-wrap gap-2">
+                <div className="flex gap-2">
                   <Button
                     variant="ghost"
                     size="sm"
                     onClick={exportar}
                     icon={<Download className="h-4 w-4" />}
                   >
-                    Exportar JSON
+                    Exportar
                   </Button>
                   <Button
                     variant="secondary"
@@ -211,92 +200,71 @@ export default function AutoFixPanel() {
             <section className="grid gap-3 sm:grid-cols-2 lg:grid-cols-5">
               <Metric label="Rotas" value={report.metricas.rotas_api_detectadas} />
               <Metric label="Módulos" value={report.metricas.modulos_esperados} />
-              <Metric
-                label="Cobertos"
-                value={report.metricas.modulos_com_backend}
-              />
+              <Metric label="Cobertos" value={report.metricas.modulos_com_backend} />
               <Metric label="Achados" value={report.metricas.achados} />
-              <Metric
-                label="Colisões"
-                value={report.metricas.colisoes_metodo_rota}
-              />
+              <Metric label="Colisões" value={report.metricas.colisoes_metodo_rota} />
             </section>
 
             <section>
               <div className="flex flex-wrap items-center justify-between gap-3">
                 <div>
-                  <h3 className="font-semibold text-slate-950">
-                    Achados priorizados
-                  </h3>
+                  <h3 className="font-semibold text-slate-950">Achados priorizados</h3>
                   <p className="mt-1 text-sm text-slate-500">
-                    P0 e P1 devem bloquear release até correção ou aceite formal de risco.
+                    P0 e P1 bloqueiam release até correção ou aceite formal de risco.
                   </p>
                 </div>
                 <Button
                   variant="secondary"
                   size="sm"
-                  loading={seeding}
+                  disabled={seeding}
                   onClick={() => void preencherManuais()}
-                  icon={<FileText className="h-4 w-4" />}
+                  icon={
+                    seeding ? (
+                      <RefreshCw className="h-4 w-4 animate-spin" />
+                    ) : (
+                      <FileText className="h-4 w-4" />
+                    )
+                  }
                 >
                   Preencher manuais mínimos
                 </Button>
               </div>
 
-              {!findings.length ? (
-                <div className="mt-3 rounded-xl border border-slate-200 bg-slate-50 p-5 text-sm text-slate-600">
-                  Nenhuma lacuna foi identificada pelos scanners atuais.
-                </div>
-              ) : (
-                <div className="mt-3 space-y-3">
-                  {findings.map((finding, index) => (
-                    <article
-                      key={`${finding.tipo}-${finding.alvo || index}`}
-                      className="rounded-xl border border-slate-200 p-4"
-                    >
-                      <div className="flex flex-wrap items-center gap-2">
-                        <Badge tone={TONE[finding.severidade]}>
-                          {finding.severidade}
-                        </Badge>
-                        <span className="text-xs text-slate-500">
-                          {finding.tipo}
-                        </span>
-                      </div>
-                      <h4 className="mt-2 font-semibold text-slate-950">
-                        {finding.titulo}
-                      </h4>
-                      <p className="mt-1 text-sm text-slate-600">
-                        {finding.detalhe}
-                      </p>
-                      <div className="mt-3 rounded-lg bg-slate-50 p-3 text-sm text-slate-700">
-                        <span className="font-semibold">Correção recomendada: </span>
-                        {finding.sugestao}
-                      </div>
-                      {!!finding.evidencias?.length && (
-                        <ul className="mt-3 space-y-1 font-mono text-xs text-slate-500">
-                          {finding.evidencias.slice(0, 8).map((evidence) => (
-                            <li key={evidence}>• {evidence}</li>
-                          ))}
-                        </ul>
-                      )}
-                    </article>
-                  ))}
-                </div>
-              )}
-            </section>
-
-            <section className="rounded-xl border border-slate-200 p-4">
-              <div className="flex items-center gap-2">
-                <Wrench className="h-4 w-4 text-slate-600" />
-                <h3 className="font-semibold text-slate-950">Próximos passos</h3>
-              </div>
-              <ol className="mt-3 space-y-2 text-sm text-slate-600">
-                {report.proximos_passos.map((step, index) => (
-                  <li key={step}>
-                    {index + 1}. {step}
-                  </li>
+              <div className="mt-3 space-y-3">
+                {findings.map((finding, index) => (
+                  <article
+                    key={`${finding.tipo}-${finding.alvo || index}`}
+                    className="rounded-xl border border-slate-200 p-4"
+                  >
+                    <div className="flex items-center gap-2">
+                      <Badge tone={TONE[finding.severidade]}>
+                        {finding.severidade}
+                      </Badge>
+                      <span className="text-xs text-slate-500">{finding.tipo}</span>
+                    </div>
+                    <h4 className="mt-2 font-semibold text-slate-950">
+                      {finding.titulo}
+                    </h4>
+                    <p className="mt-1 text-sm text-slate-600">{finding.detalhe}</p>
+                    <p className="mt-3 rounded-lg bg-slate-50 p-3 text-sm text-slate-700">
+                      <span className="font-semibold">Correção recomendada: </span>
+                      {finding.sugestao}
+                    </p>
+                    {!!finding.evidencias.length && (
+                      <ul className="mt-3 space-y-1 font-mono text-xs text-slate-500">
+                        {finding.evidencias.slice(0, 8).map((evidence) => (
+                          <li key={evidence}>• {evidence}</li>
+                        ))}
+                      </ul>
+                    )}
+                  </article>
                 ))}
-              </ol>
+                {!findings.length && (
+                  <p className="rounded-xl border border-slate-200 bg-slate-50 p-5 text-sm text-slate-600">
+                    Nenhuma lacuna foi identificada pelos scanners atuais.
+                  </p>
+                )}
+              </div>
             </section>
           </div>
         )}
