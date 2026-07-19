@@ -31,7 +31,7 @@ concurrency:
 jobs:
   inventory:
     name: Generate complete architecture inventory
-    runs-on: ubuntu-latest
+    runs-on: [self-hosted, ejc-vps]
     timeout-minutes: 10
 
     steps:
@@ -40,14 +40,13 @@ jobs:
         with:
           fetch-depth: 1
 
-      - name: Setup Python
-        uses: actions/setup-python@v6
-        with:
-          python-version: "3.12"
+      - name: Validate Python runtime
+        run: |
+          python3 --version
 
       - name: Generate inventory and enforce classification gate
         run: |
-          python scripts/generate_architecture_inventory.py \
+          python3 scripts/generate_architecture_inventory.py \
             --output "$RUNNER_TEMP/ejc-architecture-inventory" \
             --check
 
