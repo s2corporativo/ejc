@@ -143,11 +143,21 @@ def _install_ai_core_hardening() -> None:
         raise RuntimeError("Hardening crítico do núcleo de IA/RAG indisponível") from exc
 
 
+def _install_datajud_cognitive_feed() -> None:
+    """Ativa DataJud → RAG nativo sem tornar o conector requisito de boot."""
+    try:
+        from app.services.datajud_cognitive_patch import instalar
+        instalar()
+    except Exception as exc:
+        logger.error("Feed cognitivo DataJud indisponível: %s", exc, exc_info=True)
+
+
 _patch_precedentes_router()
 _patch_advogado_estilo_router()
 _patch_rag_governance_router()
 _patch_documents_background_analysis()
 _install_ai_core_hardening()
+_install_datajud_cognitive_feed()
 
 
 @on("movimento.criado")

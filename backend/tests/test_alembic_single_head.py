@@ -5,7 +5,7 @@ from alembic.script import ScriptDirectory
 
 
 BACKEND_DIR = Path(__file__).resolve().parents[1]
-HEAD_REVISION = "109_rag_scope_cliente"
+HEAD_REVISION = "110_datajud_cognitive_feed"
 MERGE_REVISION = "104_merge_entrada_orquestrador"
 EXPECTED_PARENTS = {
     "101_entrada_universal_documentos",
@@ -28,3 +28,8 @@ def test_revisao_de_merge_reconcilia_os_dois_ramos_concorrentes():
     revision = _script_directory().get_revision(MERGE_REVISION)
     assert revision is not None
     assert set(revision.down_revision) == EXPECTED_PARENTS
+
+
+def test_datajud_encadeia_apos_escopo_rag():
+    revision = _script_directory().get_revision(HEAD_REVISION)
+    assert revision.down_revision == "109_rag_scope_cliente"
