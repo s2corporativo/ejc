@@ -66,15 +66,19 @@ async def _persistir(**dados) -> None:
         )
 
 
+def _novo_contexto(task_type: str) -> _TraceContext:
+    return _TraceContext(
+        request_id=str(uuid4()),
+        task_type=(task_type or "nao_informado")[:80],
+    )
+
+
 def _contexto_para_tentativa(provider: str) -> _TraceContext:
     ctx = _TRACE.get()
     # Uma cadeia normal não repete provider. Se ele reapareceu, trata-se de nova
     # execução feita no mesmo asyncio Task após uma cadeia anterior sem sucesso.
     if ctx is None or provider in ctx.providers_attempted:
-        ctx = _TraceContext(
-            request_id=str(uuid4()),
-            task_type="tarefa_profissional",
-        )
+        ctx = _novo_contexto("tarefa_profissional")
         _TRACE.set(ctx)
     ctx.attempt_number += 1
     ctx.providers_attempted.add(provider)
@@ -90,12 +94,7 @@ def _instalar_instrumentacao(ai_gateway) -> None:
     @functools.wraps(resolver_original)
     def resolver_instrumentado(*args, **kwargs):
         task_type = str(args[0] if args else kwargs.get("task_type") or "nao_informado")
-        _TRACE.set(
-            _TraceContext(
-                request_id=str(uuid4()),
-                task_type=task_type[:80],
-            )
-        )
+        _TRACE.set(_novo_contexto(task_type))
         return resolver_original(*args, **kwargs)
 
     chamar_original = ai_gateway._chamar_com_barreira
@@ -167,6 +166,8 @@ def _instalar_instrumentacao(ai_gateway) -> None:
                 input_tokens=None,
                 output_tokens=None,
                 estimated_cost_brl=0.0,
+                # Uma falha é justamente o evento que aciona a tentativa seguinte;
+                # o painel distingue isso de um sucesso obtido via fallback.
                 fallback_triggered=True,
                 fallback_reason=motivo[:2000],
                 error_type=type(exc).__name__[:100],
@@ -174,8 +175,24 @@ def _instalar_instrumentacao(ai_gateway) -> None:
             )
             raise
 
+    # O caminho profissional não chama `_resolver_cadeia`; delimitamos sua
+    # execução para atribuir o tipo jurídico correto e impedir que um contexto de
+    # uma cadeia totalmente falha contamine a requisição seguinte no mesmo Task.
+    tarefa_original = ai_gateway.executar_tarefa_ia
+
+    @functools.wraps(tarefa_original)
+    async def tarefa_instrumentada(*args, **kwargs):
+        tarefa = args[0] if args else kwargs.get("tarefa")
+        tarefa_label = str(getattr(tarefa, "value", tarefa) or "tarefa_profissional")
+        token = _TRACE.set(_novo_contexto(tarefa_label))
+        try:
+            return await tarefa_original(*args, **kwargs)
+        finally:
+            _TRACE.reset(token)
+
     ai_gateway._resolver_cadeia = resolver_instrumentado
     ai_gateway._chamar_com_barreira = chamar_instrumentado
+    ai_gateway.executar_tarefa_ia = tarefa_instrumentada
     ai_gateway._ejc_provider_metrics_installed = True
     logger.info("Telemetria técnica dos provedores conectada ao AI Gateway")
 
