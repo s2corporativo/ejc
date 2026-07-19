@@ -4,6 +4,7 @@ import type { AxiosResponse, InternalAxiosRequestConfig } from "axios";
 import api from "../lib/api";
 import CaseCommandDock from "./CaseCommandDock";
 import CaseHealthWidget from "./CaseHealthWidget";
+import PortfolioHealthWidget from "./PortfolioHealthWidget";
 
 const CREATED_CASE_KEY = "ejc_created_case_journey";
 const CREATED_CASE_TTL_MS = 60_000;
@@ -103,13 +104,7 @@ function salvarMarcador(id: string) {
   );
 }
 
-/**
- * Extensões transversais do fluxo do caso:
- * - continua a jornada após criação;
- * - injeta `case_id` em atividades contextuais;
- * - redireciona aliases consolidados;
- * - mostra ações rápidas e saúde operacional na rota exata `/casos/:id`.
- */
+/** Extensões transversais da jornada e dos painéis operacionais. */
 export default function FlowEnhancements() {
   const location = useLocation();
   const navigate = useNavigate();
@@ -168,6 +163,7 @@ export default function FlowEnhancements() {
     return caseIdSeguro(match?.[1]);
   }, [location.pathname]);
 
+  if (location.pathname === "/") return <PortfolioHealthWidget />;
   if (!caseId) return null;
   return (
     <>
