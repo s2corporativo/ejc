@@ -577,7 +577,7 @@ export default function Clientes() {
               <input
                 className="input"
                 type="text"
-                placeholder="Senha inicial (mín. 8)"
+                placeholder="Senha inicial (mín. 10, com letra, número e símbolo)"
                 value={acessoForm.senha_inicial}
                 onChange={(e) =>
                   setAcessoForm({
@@ -594,7 +594,7 @@ export default function Clientes() {
                       `/clients/${acessoModal.id}/criar-acesso`,
                       acessoForm,
                     );
-                    toast.error(
+                    toast.success(
                       "Acesso criado! Informe o e-mail e a senha inicial ao cliente.",
                     );
                     setAcessoModal(null);
