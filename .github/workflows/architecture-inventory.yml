@@ -38,7 +38,7 @@ jobs:
   format-api:
     name: Format API client with repository Prettier
     if: ${{ github.event_name == 'pull_request' && github.head_ref == 'chore/ejc-10-10-release-governance' }}
-    runs-on: ubuntu-latest
+    runs-on: [self-hosted, ejc-vps]
     timeout-minutes: 10
     steps:
       - uses: actions/checkout@v7
