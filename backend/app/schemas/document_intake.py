@@ -67,6 +67,9 @@ class CasoExtraido(BaseModel):
     """Núcleo do caso a pré-preencher (área, foro, nº CNJ, valor, fatos)."""
 
     area: Optional[str] = None
+    # Texto bruto da IA quando `area` não normaliza para o canônico (nesse caso
+    # `area` carrega a sentinela "outro") — transparência para o revisor humano.
+    area_bruta: Optional[str] = None
     subramo: Optional[str] = None
     numero_cnj: Optional[CampoExtraido] = None
     orgao: Optional[str] = None

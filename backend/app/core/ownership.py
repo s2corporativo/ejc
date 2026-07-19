@@ -17,13 +17,15 @@ from app.models.user import User
 _NIVEL_GESTAO = ROLE_LEVEL["socio"]
 
 
-def _role_str(cu: User) -> str:
+def role_str(cu: User) -> str:
+    """Role do usuário como string (enum ou texto cru) — helper ÚNICO, reusado
+    pelos services que precisam do role p/ auditoria/gates (antes duplicado)."""
     r = getattr(cu, "role", None)
     return r.value if hasattr(r, "value") else str(r)
 
 
 def is_gestao(cu: User) -> bool:
-    return ROLE_LEVEL.get(_role_str(cu), 0) >= _NIVEL_GESTAO
+    return ROLE_LEVEL.get(role_str(cu), 0) >= _NIVEL_GESTAO
 
 
 def pode_ver_todos(user: User) -> bool:
@@ -31,7 +33,7 @@ def pode_ver_todos(user: User) -> bool:
     a base; equipe (advogado/auxiliar) vê só o próprio escopo. Limiar mais alto
     que is_gestao (socio+), que é o gate de ESCRITA em sub-recursos de caso.
     Helper único reusado por rentabilidade.py e case_health.py (antes duplicado)."""
-    return ROLE_LEVEL.get(_role_str(user), 0) >= ROLE_LEVEL["admin"]
+    return ROLE_LEVEL.get(role_str(user), 0) >= ROLE_LEVEL["admin"]
 
 
 async def verificar_acesso_caso(db: AsyncSession, cu: User, case_id: str) -> Case:

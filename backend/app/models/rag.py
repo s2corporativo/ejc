@@ -1,12 +1,14 @@
 # ── app/models/rag.py ────────────────────────────────────────────────────────
 # Base de conhecimento RAG: documentos + chunks vetorizados (pgvector).
-# Dimensão 768 = nomic-embed-text / multilingual-mpnet (compatível Groq pipeline)
+# Dimensão do embedding = EMBEDDINGS_DIM (default 1024 = multilingual-e5-large); casa com a
+# coluna vector(EMBEDDINGS_DIM) da migration 096. Configurável por env.
 from __future__ import annotations
 from sqlalchemy import Column, String, DateTime, func, Text, Integer, ForeignKey, Boolean
 from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.orm import relationship
 from pgvector.sqlalchemy import Vector
 from app.core.database import Base
+from app.core.config import get_settings
 
 
 class KnowledgeDoc(Base):
@@ -65,7 +67,7 @@ class KnowledgeChunk(Base):
                          nullable=False, index=True)
     chunk_index = Column(Integer, nullable=False)
     conteudo    = Column(Text, nullable=False)
-    embedding   = Column(Vector(768), nullable=True)  # 768d = intfloat/multilingual-e5-base (migration 013)
+    embedding   = Column(Vector(get_settings().EMBEDDINGS_DIM), nullable=True)  # dim configurável (O-2); casa com migration 096 (default 1024)
 
     created_at = Column(DateTime(timezone=True), server_default=func.now())
 

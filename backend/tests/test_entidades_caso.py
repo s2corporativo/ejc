@@ -7,7 +7,6 @@ fake de sessão. Todos os dados são FICTÍCIOS.
 """
 from __future__ import annotations
 
-import pytest
 
 from app.models.case import Case
 from app.models.case_parte import CaseParte

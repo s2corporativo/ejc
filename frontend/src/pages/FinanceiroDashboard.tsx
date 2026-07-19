@@ -10,13 +10,13 @@ import {
   CheckCircle,
   BarChart3,
   RefreshCw,
-  Calendar,
   Download,
   FileText,
   PiggyBank,
 } from "lucide-react";
 import api from "../lib/api";
-import { PageHeader } from "../components/UI";
+import { toast } from "../components/Toast";
+import { Empty, Spinner } from "../components/UI";
 
 function fmtR$(v: number | undefined | null) {
   if (v == null) return "R$ 0,00";
@@ -41,12 +41,14 @@ function StatCard({
   icon: Icon,
   color = "blue",
   sub,
+  onClick,
 }: {
   label: string;
   value: string;
   icon: React.ElementType;
   color?: "blue" | "green" | "red" | "yellow" | "purple" | "slate" | "bronze";
   sub?: string;
+  onClick?: () => void;
 }) {
   const colors: Record<string, string> = {
     blue: "bg-primary-50 text-primary-600",
@@ -57,8 +59,8 @@ function StatCard({
     slate: "bg-slate-100 text-slate-600",
     bronze: "bg-orange-50 text-orange-600",
   };
-  return (
-    <div className="bg-white rounded-xl border border-slate-200 p-4 flex items-center gap-3">
+  const inner = (
+    <>
       <div className={`p-2.5 rounded-lg ${colors[color]}`}>
         <Icon className="w-5 h-5" />
       </div>
@@ -69,19 +71,41 @@ function StatCard({
         <p className="text-lg font-bold text-slate-800 mt-0.5">{value}</p>
         {sub && <p className="text-[11px] text-slate-400 mt-0.5">{sub}</p>}
       </div>
-    </div>
+    </>
   );
+  if (onClick) {
+    return (
+      <button
+        type="button"
+        onClick={onClick}
+        className="card p-4 flex items-center gap-3 text-left w-full cursor-pointer transition-shadow hover:shadow-md hover:ring-1 hover:ring-primary-200"
+        title={`Ver detalhes de ${label}`}
+      >
+        {inner}
+      </button>
+    );
+  }
+  return <div className="card p-4 flex items-center gap-3">{inner}</div>;
 }
 
-export default function FinanceiroDashboard() {
+function competenciaAtual() {
+  const now = new Date();
+  return `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}`;
+}
+
+export default function FinanceiroDashboard({
+  competencia = competenciaAtual(),
+  onDrillDown,
+}: {
+  /** Competência (AAAA-MM) — controlada pelo FinanceiroWorkspace. */
+  competencia?: string;
+  /** Navega para outra aba do workspace (drill-down dos indicadores). */
+  onDrillDown?: (tab: "honorarios" | "despesas", status?: string) => void;
+}) {
   const [d, setD] = useState<any>(null);
   const [relatorio, setRelatorio] = useState<any>(null);
   const [loading, setLoading] = useState(true);
   const [erro, setErro] = useState<string | null>(null);
-  const [competencia, setCompetencia] = useState(() => {
-    const now = new Date();
-    return `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}`;
-  });
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -110,7 +134,13 @@ export default function FinanceiroDashboard() {
     try {
       const r = await api.get(`/relatorio/mensal?mes=${competencia}`);
       setRelatorio(r.data);
-    } catch {}
+    } catch (e: any) {
+      setRelatorio(null);
+      setErro(
+        e?.response?.data?.detail ||
+          "Não foi possível carregar o relatório mensal. Tente atualizar.",
+      );
+    }
   };
 
   const exportarCSV = async () => {
@@ -126,8 +156,10 @@ export default function FinanceiroDashboard() {
       a.download = `despesas-${competencia}.csv`;
       a.click();
       URL.revokeObjectURL(url);
-    } catch {
-      // silencioso — o dashboard segue utilizável mesmo sem o export
+    } catch (e: any) {
+      toast.error(
+        e.response?.data?.detail || "Não foi possível exportar o CSV",
+      );
     }
   };
 
@@ -137,42 +169,27 @@ export default function FinanceiroDashboard() {
   const totalGeralDesp = (desp.fixo ?? 0) + (desp.variavel ?? 0);
 
   return (
-    <div className="p-6 max-w-6xl mx-auto space-y-6">
-      <PageHeader
-        title="Financeiro"
-        subtitle="Controle integrado do escritório"
-        actions={
-          <div className="flex items-center gap-2 flex-wrap">
-            <div className="flex items-center gap-2 border border-slate-200 rounded-lg px-3 py-1.5">
-              <Calendar className="w-4 h-4 text-slate-400" />
-              <input
-                type="month"
-                className="text-sm text-slate-700 outline-none bg-transparent"
-                value={competencia}
-                onChange={(e) => setCompetencia(e.target.value)}
-              />
-            </div>
-            <button onClick={carregarRelatorio} className="btn-secondary">
-              <FileText className="w-4 h-4" /> Relatório
-            </button>
-            <button onClick={exportarCSV} className="btn-secondary">
-              <Download className="w-4 h-4" /> CSV
-            </button>
-            <button
-              onClick={load}
-              className="p-2 rounded-lg border border-slate-200 hover:bg-slate-50 text-slate-500"
-              aria-label="Atualizar"
-            >
-              <RefreshCw
-                className={`w-4 h-4 ${loading ? "animate-spin" : ""}`}
-              />
-            </button>
-          </div>
-        }
-      />
+    <div className="space-y-6">
+      {/* Cabeçalho fica no FinanceiroWorkspace (título + competência única);
+          aqui apenas as ações específicas da visão consolidada. */}
+      <div className="flex items-center justify-end gap-2 flex-wrap">
+        <button onClick={carregarRelatorio} className="btn-secondary">
+          <FileText className="w-4 h-4" /> Relatório
+        </button>
+        <button onClick={exportarCSV} className="btn-secondary">
+          <Download className="w-4 h-4" /> CSV
+        </button>
+        <button
+          onClick={load}
+          className="btn-secondary p-2"
+          aria-label="Atualizar"
+        >
+          <RefreshCw className={`w-4 h-4 ${loading ? "animate-spin" : ""}`} />
+        </button>
+      </div>
 
       {loading ? (
-        <div className="text-center py-16 text-slate-400">Carregando...</div>
+        <Spinner />
       ) : erro ? (
         <div className="rounded-xl border border-danger-200 bg-danger-50 p-4 text-sm text-danger-700">
           {erro}
@@ -194,6 +211,11 @@ export default function FinanceiroDashboard() {
               icon={DollarSign}
               color="yellow"
               sub={`Atrasado: ${fmtR$(rec.atrasado)}`}
+              onClick={
+                onDrillDown
+                  ? () => onDrillDown("honorarios", "pendente")
+                  : undefined
+              }
             />
             <StatCard
               label="A Pagar"
@@ -201,6 +223,11 @@ export default function FinanceiroDashboard() {
               icon={TrendingDown}
               color="red"
               sub={`Pagas: ${fmtR$(desp.pagas)}`}
+              onClick={
+                onDrillDown
+                  ? () => onDrillDown("despesas", "pendente")
+                  : undefined
+              }
             />
             <StatCard
               label="Resultado do mês"
@@ -223,6 +250,10 @@ export default function FinanceiroDashboard() {
                 color="blue"
                 sub="Pro labore / partido"
               />
+              {/* REGRA FIXA: rateio 50/50 hardcoded no backend
+                  (backend/app/routers/exito_rateio.py). Não existe endpoint de
+                  configuração societária para esse percentual — se um dia
+                  existir, carregar daqui em vez do texto fixo. */}
               <StatCard
                 label="Êxito (Ad Exitum)"
                 value={fmtR$(rec.exito)}
@@ -285,7 +316,7 @@ export default function FinanceiroDashboard() {
           {/* Duas colunas: receita detalhe + despesas */}
           <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
             {/* Honorários (status) */}
-            <div className="bg-white rounded-xl border border-slate-200 p-5">
+            <div className="card p-5">
               <h2 className="font-semibold text-slate-800 mb-4 flex items-center gap-2">
                 <Wallet className="w-4 h-4 text-primary-500" /> Honorários —
                 situação
@@ -322,15 +353,13 @@ export default function FinanceiroDashboard() {
             </div>
 
             {/* Despesas por categoria + fixo/variável */}
-            <div className="bg-white rounded-xl border border-slate-200 p-5">
+            <div className="card p-5">
               <h2 className="font-semibold text-slate-800 mb-4 flex items-center gap-2">
                 <BarChart3 className="w-4 h-4 text-danger-500" /> Despesas por
                 categoria
               </h2>
               {!desp.por_categoria?.length ? (
-                <p className="text-sm text-slate-400 text-center py-6">
-                  Sem despesas no mês
-                </p>
+                <Empty message="Sem despesas no mês" />
               ) : (
                 <div className="space-y-2.5">
                   {desp.por_categoria.map(({ categoria, total }: any) => {
@@ -376,7 +405,7 @@ export default function FinanceiroDashboard() {
 
           {/* Relatório gerencial */}
           {relatorio && (
-            <div className="bg-white rounded-xl border border-slate-200 p-5">
+            <div className="card p-5">
               <div className="flex items-center justify-between mb-4">
                 <h2 className="font-semibold text-slate-800 flex items-center gap-2">
                   <FileText className="w-4 h-4 text-ai-500" /> Relatório

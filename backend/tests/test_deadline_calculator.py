@@ -1,7 +1,6 @@
 """Cálculo de prazos processuais/administrativos (Fase 5) — funções puras."""
 from datetime import date
 
-from app.services.calc import constantes_legais  # noqa: F401 (garante import do pacote)
 from app.services.deadline_calculator import (
     calcular_pascoa,
     feriados_moveis,

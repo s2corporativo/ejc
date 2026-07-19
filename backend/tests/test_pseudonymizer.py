@@ -14,7 +14,6 @@ toca rede. Contrato:
 """
 from __future__ import annotations
 
-import pytest
 
 from app.core.config import get_settings
 from app.services.ai.pseudonymizer import (
@@ -124,17 +123,18 @@ def test_pseudonimizar_mensagens_estado_compartilhado():
 # ── modo_para_task ────────────────────────────────────────────────────────────
 
 def test_modo_default_por_tarefa():
-    # Auditoria de segurança (2026-07-06): `criminal` MANTIDO em LOCAL_COMPLETO —
-    # nomes de vítima/testemunha (não estruturais) jamais podem sair da VPS; sem
-    # Ollama, a análise criminal BLOQUEIA em vez de ir a provider externo.
-    assert modo_para_task("criminal") == ModoSanitizacao.LOCAL_COMPLETO
+    # Auditoria de IA (2026-07-17, A-1): `criminal` passou a EXTERNO_PSEUDONIMIZADO —
+    # o NER local do pseudonimizador (vítima/testemunha → [PESSOA_n]) já cobre o
+    # risco de nome não estrutural, então a IA criminal funciona na nuvem apenas
+    # PSEUDONIMIZADA (reforçável de volta a LOCAL_COMPLETO por override).
+    assert modo_para_task("criminal") == ModoSanitizacao.EXTERNO_PSEUDONIMIZADO
     assert modo_para_task("analise_caso") == ModoSanitizacao.EXTERNO_PSEUDONIMIZADO
     # Tarefas simples migradas de MASCARAMENTO irreversível → pseudonimização.
     assert modo_para_task("resumo") == ModoSanitizacao.EXTERNO_PSEUDONIMIZADO
     assert modo_para_task("triagem") == ModoSanitizacao.EXTERNO_PSEUDONIMIZADO
     # Tarefa desconhecida → fallback reversível e seguro (nunca "sem sanitização").
     assert modo_para_task("tarefa_inexistente") == ModoSanitizacao.EXTERNO_PSEUDONIMIZADO
-    assert modo_para_task("CRIMINAL") == ModoSanitizacao.LOCAL_COMPLETO  # case-insensitive
+    assert modo_para_task("CRIMINAL") == ModoSanitizacao.EXTERNO_PSEUDONIMIZADO  # case-insensitive
     # Extração local segue local (PII extraída no ponto de importação).
     assert modo_para_task("intake") == ModoSanitizacao.EXTRACAO_LOCAL
 
@@ -147,8 +147,8 @@ def test_modo_override_por_config(monkeypatch):
     )
     assert modo_para_task("familia") == ModoSanitizacao.LOCAL_COMPLETO      # reforço opt-in
     assert modo_para_task("analise_caso") == ModoSanitizacao.MASCARAMENTO   # sobrepõe default
-    # criminal sem override → default LOCAL_COMPLETO (piso de segurança preservado).
-    assert modo_para_task("criminal") == ModoSanitizacao.LOCAL_COMPLETO
+    # criminal sem override → novo default EXTERNO_PSEUDONIMIZADO (A-1, 2026-07-17).
+    assert modo_para_task("criminal") == ModoSanitizacao.EXTERNO_PSEUDONIMIZADO
 
 
 def test_modo_override_invalido_cai_no_default(monkeypatch):

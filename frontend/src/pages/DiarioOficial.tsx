@@ -3,7 +3,13 @@ import { Link } from "react-router-dom";
 import api from "../lib/api";
 import { asList } from "../lib/list";
 import { toast } from "../components/Toast";
-import { PageHeader, Spinner, Badge } from "../components/UI";
+import {
+  EmptyState,
+  ErrorState,
+  PageHeader,
+  Spinner,
+  Badge,
+} from "../components/UI";
 import type {
   DiarioOficialKeyword as Keyword,
   DiarioOficialAlerta as Alerta,
@@ -15,7 +21,6 @@ import {
   ExternalLink,
   CheckCheck,
   Link2,
-  Newspaper,
 } from "lucide-react";
 
 /** Vinculação feita automaticamente pelo backend (marcada na observação/texto). */
@@ -35,6 +40,8 @@ export default function DiarioOficial() {
   const [novaKeyword, setNovaKeyword] = useState("");
   const [loadingAlertas, setLoadingAlertas] = useState(true);
   const [loadingKeywords, setLoadingKeywords] = useState(true);
+  const [errorAlertas, setErrorAlertas] = useState(false);
+  const [errorKeywords, setErrorKeywords] = useState(false);
   const [addingKeyword, setAddingKeyword] = useState(false);
   const [marcandoLido, setMarcandoLido] = useState<string | null>(null);
 
@@ -42,11 +49,22 @@ export default function DiarioOficial() {
     try {
       const res = await api.get("/diario-oficial/alertas/nao-lidos/count");
       setNaoLidosCount(res.data?.nao_lidos ?? 0);
-    } catch {}
+    } catch (e: any) {
+      // 403 (perfil sem acesso) é degradação esperada: zera sem alarme.
+      if (e?.response?.status === 403) {
+        setNaoLidosCount(0);
+      } else {
+        toast.error(
+          e?.response?.data?.detail ||
+            "Não foi possível atualizar a contagem de alertas não lidos.",
+        );
+      }
+    }
   }, []);
 
   const fetchAlertas = useCallback(async () => {
     setLoadingAlertas(true);
+    setErrorAlertas(false);
     try {
       const params: Record<string, string | number> = { limite: 50 };
       if (filtro === "nao-lidos") params.lido = "false";
@@ -54,6 +72,7 @@ export default function DiarioOficial() {
       setAlertas(asList<Alerta>(res.data));
     } catch {
       setAlertas([]);
+      setErrorAlertas(true);
     } finally {
       setLoadingAlertas(false);
     }
@@ -61,11 +80,13 @@ export default function DiarioOficial() {
 
   const fetchKeywords = useCallback(async () => {
     setLoadingKeywords(true);
+    setErrorKeywords(false);
     try {
       const res = await api.get("/diario-oficial/keywords");
       setKeywords(asList<Keyword>(res.data));
     } catch {
       setKeywords([]);
+      setErrorKeywords(true);
     } finally {
       setLoadingKeywords(false);
     }
@@ -145,7 +166,7 @@ export default function DiarioOficial() {
             <Bell className="w-4 h-4 text-primary-600" />
             Alertas
           </h2>
-          <div className="flex gap-1 rounded-lg border border-gray-200 p-1 bg-gray-50">
+          <div className="flex gap-1 rounded-lg bg-slate-900/[0.05] p-1 dark:bg-white/[0.07]">
             {(["nao-lidos", "todos"] as FiltroAlerta[]).map((f) => (
               <button
                 key={f}
@@ -166,18 +187,21 @@ export default function DiarioOficial() {
           <div className="flex justify-center py-12">
             <Spinner />
           </div>
+        ) : errorAlertas ? (
+          <ErrorState
+            message="Não foi possível carregar os alertas do Diário Oficial. Tente novamente."
+            onRetry={fetchAlertas}
+          />
         ) : alertas.length === 0 ? (
-          <div className="text-center py-16 bg-gray-50 rounded-xl border border-dashed border-gray-200">
-            <Bell className="w-10 h-10 text-gray-300 mx-auto mb-3" />
-            <p className="text-gray-500 font-medium">
-              Nenhum alerta encontrado
-            </p>
-            <p className="text-gray-400 text-sm mt-1">
-              {filtro === "nao-lidos"
+          <EmptyState
+            title="Nenhum alerta encontrado"
+            icon={Bell}
+            message={
+              filtro === "nao-lidos"
                 ? "Todos os alertas foram lidos."
-                : "Configure palavras-chave para monitorar o Diário Oficial."}
-            </p>
-          </div>
+                : "Configure palavras-chave para monitorar o Diário Oficial."
+            }
+          />
         ) : (
           <ul className="space-y-3">
             {alertas.map((alerta) => (
@@ -271,7 +295,7 @@ export default function DiarioOficial() {
             value={novaKeyword}
             onChange={(e) => setNovaKeyword(e.target.value)}
             placeholder="Ex: S2 Estratégia, CNPJ 32.491.468..."
-            className="flex-1 rounded-lg border border-gray-300 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary-500"
+            className="input flex-1"
           />
           <button
             type="submit"
@@ -287,6 +311,11 @@ export default function DiarioOficial() {
           <div className="flex justify-center py-6">
             <Spinner />
           </div>
+        ) : errorKeywords ? (
+          <ErrorState
+            message="Não foi possível carregar as palavras-chave monitoradas. Tente novamente."
+            onRetry={fetchKeywords}
+          />
         ) : keywords.length === 0 ? (
           <p className="text-gray-400 text-sm text-center py-6">
             Nenhuma palavra-chave cadastrada.

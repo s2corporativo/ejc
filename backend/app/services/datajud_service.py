@@ -1,7 +1,21 @@
 # ── app/services/datajud_service.py ──────────────────────────────────────────
 # Consulta de movimentações processuais via API Pública do DataJud/CNJ.
-# Docs: https://datajud-wiki.cnj.jus.br/api-publica/
-# A chave pública é divulgada pelo próprio CNJ (configurável via .env).
+#
+# CONTRATO DA API (verificado em 2026-07 contra a documentação oficial):
+#   • Host: https://api-publica.datajud.cnj.jus.br
+#   • Endpoint por tribunal: POST /{alias}/_search (ex.: /api_publica_tjmg/_search)
+#   • Auth: header "Authorization: APIKey <chave pública divulgada pelo CNJ>"
+#     — a chave é PÚBLICA e de uso geral, publicada pelo DPJ/CNJ na wiki.
+#   • Corpo: query Elasticsearch DSL, ex.:
+#       {"query": {"match": {"numeroProcesso": "<20 dígitos, sem máscara>"}}}
+#   • Resposta: formato Elasticsearch — hits.hits[]._source com numeroProcesso,
+#     tribunal, grau, classe{codigo,nome}, orgaoJulgador{nome} e
+#     movimentos[]{codigo, nome, dataHora} (Tabelas Processuais Unificadas).
+# Fontes: https://datajud-wiki.cnj.jus.br/api-publica/ (Acesso e Exemplos),
+#         https://www.cnj.jus.br/sistemas/datajud/api-publica/ e o tutorial
+#         oficial (cnj.jus.br/wp-content/uploads/2023/05/tutorial-api-publica-
+#         datajud-beta.pdf). Dados do DataJud são metadados PÚBLICOS; ainda
+#         assim, NUNCA logar corpo de resposta nem a API key (LGPD/higiene).
 from __future__ import annotations
 import hashlib
 import logging
@@ -13,20 +27,6 @@ import httpx
 from tenacity import (
     retry, stop_after_attempt, wait_exponential, retry_if_exception_type,
 )
-
-
-# Chamada de rede com retry exponencial (3 tentativas) para erros transitórios.
-@retry(
-    stop=stop_after_attempt(3),
-    wait=wait_exponential(multiplier=0.5, min=0.5, max=4),
-    retry=retry_if_exception_type((httpx.TransportError, httpx.HTTPStatusError)),
-    reraise=True,
-)
-async def _datajud_search(alias: str, payload: dict, headers: dict) -> dict:
-    async with httpx.AsyncClient(timeout=20) as c:
-        r = await c.post(f"{BASE}/{alias}/_search", json=payload, headers=headers)
-        r.raise_for_status()
-        return r.json()
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -36,26 +36,133 @@ from app.models.case import Case, CaseMovimento
 logger = logging.getLogger("ejc.datajud")
 settings = get_settings()
 
+# Fallback histórico; a fonte de verdade é settings.DATAJUD_BASE_URL.
 BASE = "https://api-publica.datajud.cnj.jus.br"
 
-# Segmento J (posição 14 do número CNJ NNNNNNN-DD.AAAA.J.TR.OOOO) → alias
+
+class DataJudDesabilitadoError(RuntimeError):
+    """Integração desligada (DATAJUD_ENABLED=false) ou sem chave configurada."""
+
+
+class TribunalNaoMapeadoError(ValueError):
+    """Número CNJ válido, mas o tribunal (segmento J.TR) não tem alias mapeado."""
+
+
+# Chamada de rede com retry exponencial (2 retries) para erros transitórios.
+# Mensagens de erro do httpx contêm URL/status, nunca headers — a API key
+# (enviada só no header Authorization) não vaza em log nem em exceção.
+@retry(
+    stop=stop_after_attempt(3),
+    wait=wait_exponential(multiplier=0.5, min=0.5, max=4),
+    retry=retry_if_exception_type((httpx.TransportError, httpx.HTTPStatusError)),
+    reraise=True,
+)
+async def _datajud_search(alias: str, payload: dict, headers: dict) -> dict:
+    base = (get_settings().DATAJUD_BASE_URL or BASE).rstrip("/")
+    async with httpx.AsyncClient(timeout=20) as c:
+        r = await c.post(f"{base}/{alias}/_search", json=payload, headers=headers)
+        r.raise_for_status()
+        return r.json()
+
+
+# Segmento J.TR do número CNJ (NNNNNNN-DD.AAAA.J.TR.OOOO) → alias do endpoint.
+# Tabela de códigos J/TR: Resolução CNJ nº 65/2008 (numeração única) — cruzada
+# e confirmada contra as entradas já existentes (TJMG=8.13, TJSP=8.26,
+# TJRJ=8.19 batem exatamente com a tabela oficial). Cobertura ampliada
+# (auditoria RAG) para TODOS os TJs e TRTs — antes só 3 TJs e 1 TRT tinham
+# alias mapeado, o que limitava a consulta de andamentos (DataJud) a uma
+# fração pequena da Justiça Estadual/Trabalhista.
+#   J=8 Justiça Estadual/DF | J=5 Justiça do Trabalho | J=4 Justiça Federal
+#   J=3 STJ | J=1 STF (numeração própria, não mapeada aqui — ver nota abaixo)
 _SEG_TR_ALIAS = {
+    # ── Justiça Estadual (J=8) — todos os 26 estados + DF ──────────────────
+    ("8", "01"): "api_publica_tjac",
+    ("8", "02"): "api_publica_tjal",
+    ("8", "03"): "api_publica_tjap",
+    ("8", "04"): "api_publica_tjam",
+    ("8", "05"): "api_publica_tjba",
+    ("8", "06"): "api_publica_tjce",
+    ("8", "07"): "api_publica_tjdft",  # Distrito Federal e Territórios
+    ("8", "08"): "api_publica_tjes",
+    ("8", "09"): "api_publica_tjgo",
+    ("8", "10"): "api_publica_tjma",
+    ("8", "11"): "api_publica_tjmt",
+    ("8", "12"): "api_publica_tjms",
     ("8", "13"): "api_publica_tjmg",   # Justiça Estadual MG
-    ("8", "26"): "api_publica_tjsp",
-    ("8", "19"): "api_publica_tjrj",
+    ("8", "14"): "api_publica_tjpa",
+    ("8", "15"): "api_publica_tjpb",
+    ("8", "16"): "api_publica_tjpr",
+    ("8", "17"): "api_publica_tjpe",
+    ("8", "18"): "api_publica_tjpi",
+    ("8", "19"): "api_publica_tjrj",   # Justiça Estadual RJ
+    ("8", "20"): "api_publica_tjrn",
+    ("8", "21"): "api_publica_tjrs",
+    ("8", "22"): "api_publica_tjro",
+    ("8", "23"): "api_publica_tjrr",
+    ("8", "24"): "api_publica_tjsc",
+    ("8", "25"): "api_publica_tjse",
+    ("8", "26"): "api_publica_tjsp",   # Justiça Estadual SP
+    ("8", "27"): "api_publica_tjto",
+    # ── Justiça do Trabalho (J=5) — TST + todas as 24 regiões ──────────────
+    ("5", "00"): "api_publica_tst",    # TST (TR=00 no segmento trabalhista)
+    ("5", "01"): "api_publica_trt1",
+    ("5", "02"): "api_publica_trt2",
     ("5", "03"): "api_publica_trt3",   # Justiça do Trabalho 3ª Região (MG)
+    ("5", "04"): "api_publica_trt4",
+    ("5", "05"): "api_publica_trt5",
+    ("5", "06"): "api_publica_trt6",
+    ("5", "07"): "api_publica_trt7",
+    ("5", "08"): "api_publica_trt8",
+    ("5", "09"): "api_publica_trt9",
+    ("5", "10"): "api_publica_trt10",
+    ("5", "11"): "api_publica_trt11",
+    ("5", "12"): "api_publica_trt12",
+    ("5", "13"): "api_publica_trt13",
+    ("5", "14"): "api_publica_trt14",
+    ("5", "15"): "api_publica_trt15",
+    ("5", "16"): "api_publica_trt16",
+    ("5", "17"): "api_publica_trt17",
+    ("5", "18"): "api_publica_trt18",
+    ("5", "19"): "api_publica_trt19",
+    ("5", "20"): "api_publica_trt20",
+    ("5", "21"): "api_publica_trt21",
+    ("5", "22"): "api_publica_trt22",
+    ("5", "23"): "api_publica_trt23",
+    ("5", "24"): "api_publica_trt24",
+    # ── Justiça Federal (J=4) — todos os 6 TRFs ─────────────────────────────
     ("4", "01"): "api_publica_trf1",   # Justiça Federal 1ª Região
+    ("4", "02"): "api_publica_trf2",
+    ("4", "03"): "api_publica_trf3",
+    ("4", "04"): "api_publica_trf4",
+    ("4", "05"): "api_publica_trf5",
     ("4", "06"): "api_publica_trf6",   # TRF6 (MG, criado em 2022)
+    # ── STJ (J=3) ────────────────────────────────────────────────────────────
+    ("3", "00"): "api_publica_stj",    # STJ
 }
+# NOTA: STF (J=1) não foi incluído — sua numeração de processos não segue o
+# mesmo padrão J.TR de tribunal regional/regional (é o topo da hierarquia,
+# sem "regiões"), e o DataJud também não fornece texto integral de acórdãos
+# (só metadados de movimentação) — não resolve o gap de INGESTÃO DE
+# JURISPRUDÊNCIA (STF/TCU/CARF) apontado na auditoria, apenas o de consulta
+# de andamento processual. Ver auditoria RAG para o roadmap de conectores de
+# jurisprudência propriamente ditos (texto integral/ementas).
 
 
-def _alias_do_numero(numero_cnj: str) -> str | None:
-    """Extrai J e TR do número CNJ e mapeia para o endpoint do tribunal."""
+def alias_do_numero(numero_cnj: str) -> str | None:
+    """Extrai J e TR do número CNJ e mapeia para o alias do tribunal.
+
+    Fallback claro: retorna None quando o número não tem 20 dígitos ou o
+    tribunal não está no mapa (o chamador decide entre erro 422 e log).
+    """
     n = re.sub(r"\D", "", numero_cnj or "")
     if len(n) != 20:
         return None
     j, tr = n[13], n[14:16]
     return _SEG_TR_ALIAS.get((j, tr))
+
+
+# Compat: nome antigo usado internamente antes da função virar pública.
+_alias_do_numero = alias_do_numero
 
 
 def _hash_mov(data: str, descricao: str) -> str:
@@ -98,6 +205,112 @@ async def consultar_processo(numero_cnj: str) -> dict | None:
         logger.warning(f"DataJud falhou p/ {numero_cnj} (após retries): {e}")
         return None
 
+
+# ── Etapa 13 — consulta normalizada de andamentos (router /andamentos) ───────
+async def consultar_movimentos(
+    numero_cnj: str, tribunal_alias: str | None = None,
+) -> list[dict]:
+    """Consulta a API Pública do DataJud e devolve os movimentos normalizados.
+
+    Retorna lista ordenada (mais antigo → mais recente) de dicts
+    {"data": ISO-8601, "codigo": int|None, "descricao": str} a partir de
+    hits.hits[]._source.movimentos[] (codigo/nome/dataHora — ver contrato no
+    topo do módulo). Processo não localizado → lista vazia.
+
+    Levanta:
+      • DataJudDesabilitadoError — flag desligada ou chave ausente;
+      • TribunalNaoMapeadoError — segmento J.TR sem alias no mapa;
+      • httpx.* — falha de rede/HTTP após os retries (mensagens sem a chave).
+    """
+    s = get_settings()
+    if not s.DATAJUD_ENABLED or not s.DATAJUD_API_KEY:
+        raise DataJudDesabilitadoError(
+            "Integração DataJud desativada ou sem chave configurada "
+            "(DATAJUD_ENABLED/DATAJUD_API_KEY)."
+        )
+    alias = (tribunal_alias or "").strip() or alias_do_numero(numero_cnj)
+    if not alias:
+        raise TribunalNaoMapeadoError(
+            "Tribunal não mapeado para consulta ao DataJud (segmento J.TR do "
+            "número CNJ fora do mapa suportado: TJMG/TJSP/TJRJ, TRF1-6, "
+            "TRT3, TST, STJ)."
+        )
+
+    n = re.sub(r"\D", "", numero_cnj or "")
+    payload = {"query": {"match": {"numeroProcesso": n}}, "size": 1}
+    headers = {
+        "Authorization": f"APIKey {s.DATAJUD_API_KEY}",
+        "Content-Type": "application/json",
+    }
+    data = await _datajud_search(alias, payload, headers)
+    hits = (data.get("hits") or {}).get("hits") or []
+    if not hits:
+        return []
+    src = hits[0].get("_source") or {}
+    movimentos = []
+    for m in src.get("movimentos") or []:
+        nome = (m.get("nome") or "").strip()
+        if not nome:
+            continue
+        movimentos.append({
+            "data": m.get("dataHora") or "",
+            "codigo": m.get("codigo"),
+            "descricao": nome,
+        })
+    movimentos.sort(key=lambda mv: mv["data"])
+    return movimentos
+
+
+async def upsert_movimentos_no_caso(
+    db: AsyncSession, case: Case, movimentos: list[dict],
+) -> tuple[int, int]:
+    """Upsert idempotente dos movimentos do DataJud em case_movimentos.
+
+    Dedup pela MESMA chave de sincronizar_caso — hash(data[:10]|descricao)
+    embutido na descrição como sufixo "[dj:<hash16>]" — para que reexecutar a
+    sincronização (por qualquer um dos endpoints) nunca duplique um movimento
+    já importado. Retorna (novos, total_recebidos). Commit é do chamador.
+    """
+    existentes = (await db.execute(
+        select(CaseMovimento.descricao).where(CaseMovimento.case_id == case.id)
+    )).scalars().all()
+    hashes_exist = {
+        m.group(1)
+        for d in existentes
+        if (m := re.search(r"\[dj:([0-9a-f]{16})\]", d or ""))
+    }
+
+    novos = 0
+    for mov in movimentos:
+        h = _hash_mov((mov.get("data") or "")[:10], mov.get("descricao") or "")
+        if h in hashes_exist:
+            continue
+        hashes_exist.add(h)  # dedup também dentro do próprio lote
+        data_ev = None
+        if mov.get("data"):
+            try:
+                data_ev = datetime.fromisoformat(mov["data"][:10])
+            except ValueError:
+                data_ev = None
+            if data_ev is not None and data_ev.tzinfo is None:
+                data_ev = data_ev.replace(tzinfo=timezone.utc)
+        db.add(CaseMovimento(
+            id=str(uuid4()), case_id=case.id, tipo="andamento_oficial",
+            descricao=f"{mov['descricao']} [dj:{h}]",
+            data_evento=data_ev,
+            created_by=None,
+        ))
+        novos += 1
+        # MESMO gatilho de prazos do sincronizar_caso: como os dois caminhos
+        # compartilham a chave de dedup, um movimento importado aqui nunca é
+        # reprocessado pelo job noturno — sem esta chamada, o deadline
+        # automático desse movimento jamais seria criado (prazo perdido).
+        prazos = _detectar_prazos_criticos(mov.get("descricao") or "", data_ev)
+        for p in prazos:
+            await _criar_deadline_automatico(db, case, p, mov.get("descricao") or "")
+    # Telemetria de sync avança também por este caminho (paridade com o legado).
+    case.last_synced_at = datetime.now(timezone.utc)
+    return novos, len(movimentos)
 
 
 # ── Parser de movimentos → deadlines automáticos ─────────────────────────────

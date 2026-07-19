@@ -1,7 +1,7 @@
 # ── app/routers/rag.py ───────────────────────────────────────────────────────
 # Base de conhecimento RAG: ingestão de docs + consulta.
+import logging
 from datetime import datetime, timezone
-from uuid import uuid4
 from typing import Optional, List
 
 from fastapi import APIRouter, Depends, HTTPException, Query, BackgroundTasks, UploadFile, File, Form
@@ -10,6 +10,7 @@ from sqlalchemy import select, update, func as sqlfunc
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.database import get_db, AsyncSessionLocal
+from app.core.rate_limit import rate_limit
 from app.core.security import get_current_user, require_roles
 from app.models.user import User
 from app.models.rag import KnowledgeDoc, KnowledgeChunk, FonteIngestao
@@ -25,8 +26,8 @@ from app.routers.ia_governanca import Confianca
 # senão BackgroundTasks (comportamento idêntico ao anterior com CELERY_ENABLED=False).
 from app.tasks.dispatcher import agendar_indexacao
 from app.schemas.common import MsgResponse
-from app.core.ai_brain import ai_brain
-from app.core.public_apis import api_client
+
+logger = logging.getLogger("ejc.rag")
 
 router = APIRouter(prefix="/rag", tags=["Base de Conhecimento"])
 
@@ -90,38 +91,73 @@ class IngestRequest(BaseModel):
 
 
 import re as _re
+import hashlib as _hashlib
+
+
+def _chave_ingestao_manual(*, actor_id: str, titulo: str, categoria: str,
+                           fonte: str | None, tribunal: str | None) -> str:
+    """Identidade estável por origem lógica, sem incluir o conteúdo."""
+    identidade = "\x1f".join(
+        (actor_id, categoria.strip().lower(), (tribunal or "").strip().lower(),
+         titulo.strip().lower(), (fonte or "manual").strip())
+    )
+    return f"manual:{actor_id}:{_hashlib.sha256(identidade.encode()).hexdigest()[:40]}"
 
 
 async def _ingerir_texto(db, background_tasks, titulo, categoria, conteudo,
                          fonte=None, tribunal=None, confianca: str = "media",
-                         extra_doc: Optional[dict] = None):
+                         extra_doc: Optional[dict] = None,
+                         actor_id: str = ""):
     """Núcleo de ingestão reutilizado por /ingest, /ingest-pdf e /ingest-url.
 
     `extra_doc`: chaves adicionais mescladas no JSONB `extra` do documento
     (ex.: extração estruturada do OCR em extra["extracao"])."""
     if len(conteudo.strip()) < 50:
         raise HTTPException(status_code=422, detail="Conteúdo extraído muito curto (< 50 caracteres)")
-    status_inicial = "pendente" if emb_disponivel() else "sem_embeddings"
-    extra = {"confidence_level": confianca}
+    if categoria in _RESTRICTED_CATS:
+        raise HTTPException(
+            status_code=422,
+            detail=("Conteúdo de cliente/caso exige o fluxo dedicado com escopo e "
+                    "autorização; a ingestão manual geral aceita apenas fontes públicas."),
+        )
+    extra = {}
     if extra_doc:
         extra.update(extra_doc)
-    doc = KnowledgeDoc(
-        id=str(uuid4()), titulo=titulo, categoria=categoria,
-        fonte=fonte, tribunal=tribunal, status_indexacao=status_inicial,
-        extra=extra,
+    extra.update({
+        "confidence_level": confianca,
+        "rag_status": "pendente",
+        "ingestao_manual": True,
+        "ingerido_por": actor_id,
+    })
+    chave = _chave_ingestao_manual(
+        actor_id=actor_id, titulo=titulo, categoria=categoria,
+        fonte=fonte, tribunal=tribunal,
     )
-    db.add(doc)
-    await db.flush()
-    chunks = chunk_texto(conteudo)
-    for i, ch in enumerate(chunks):
-        db.add(KnowledgeChunk(id=str(uuid4()), doc_id=doc.id, chunk_index=i, conteudo=ch, embedding=None))
+    from app.services.ingestion_service import upsert_documento
+    resultado = await upsert_documento(
+        db, titulo=titulo, categoria=categoria, conteudo=conteudo,
+        chave_origem=chave, fonte=fonte, tribunal=tribunal, extra=extra,
+        confianca=confianca, embutir_vetores=False,
+    )
+    doc = (await db.execute(select(KnowledgeDoc).where(
+        KnowledgeDoc.chave_origem == chave,
+        KnowledgeDoc.deleted_at.is_(None),
+        KnowledgeDoc.vigente.is_(True),
+    ))).scalar_one()
     await db.commit()
-    if emb_disponivel():
+    if emb_disponivel() and doc.status_indexacao != "indexado":
         await agendar_indexacao(doc.id, background_tasks)
+    chunks = chunk_texto(conteudo)
+    rag_status = (doc.extra or {}).get("rag_status", "pendente")
+    detalhe = (f"Documento ingerido ({len(chunks)} trechos). " +
+               ("A aprovação anterior foi preservada."
+                if rag_status == "aprovado" else
+                "Colocado em revisão; ainda não fundamenta respostas da IA."))
     return {"id": doc.id, "chunks": len(chunks), "status_indexacao": doc.status_indexacao,
+            "resultado_upsert": resultado, "rag_status": rag_status,
             "confianca": confianca,
             "embeddings_pendentes": emb_disponivel(),
-            "detail": f"Documento ingerido ({len(chunks)} trechos)"}
+            "detail": detalhe}
 
 
 @router.post("/ingest-pdf", status_code=201)
@@ -161,6 +197,7 @@ async def ingerir_pdf(
             "ocr": {"paginas": res["paginas"], "paginas_ocr": res["paginas_ocr"],
                     "ocr_disponivel": res["ocr_disponivel"]},
         },
+        actor_id=str(cu.id),
     )
 
 
@@ -214,7 +251,8 @@ async def ingerir_url(
     texto = _re.sub(r"&[a-zA-Z#0-9]+;", " ", texto)
     texto = _re.sub(r"\s+", " ", texto).strip()
     return await _ingerir_texto(db, background_tasks, titulo, categoria, texto,
-                                fonte=url, tribunal=tribunal, confianca=confianca)
+                                fonte=url, tribunal=tribunal, confianca=confianca,
+                                actor_id=str(cu.id))
 
 
 async def _indexar_doc_bg(doc_id: str) -> None:
@@ -241,11 +279,22 @@ async def _indexar_doc_bg(doc_id: str) -> None:
             await db.commit()
             return
         vetores = await gerar_embeddings([c.conteudo for c in chunks])
-        if vetores:
+        # gerar_embeddings já garante len(vetores) == len(chunks) quando não é
+        # None (auditoria RAG: contagem divergente vinha sendo aceita aqui via
+        # zip(), que trunca silenciosamente e deixava chunks finais sem
+        # embedding com o doc já marcado "indexado"). Ainda assim, checagem
+        # defensiva aqui: só aplica e marca "indexado" se bater 1:1.
+        if vetores and len(vetores) == len(chunks):
             for ch, v in zip(chunks, vetores):
                 ch.embedding = v
             novo_status = "indexado"
         else:
+            if vetores:
+                logger.warning(
+                    "_indexar_doc_bg %s: %d vetores para %d chunks — "
+                    "descartado, doc permanece sem embeddings", doc_id,
+                    len(vetores), len(chunks),
+                )
             novo_status = "sem_embeddings"
         await db.execute(
             update(KnowledgeDoc)
@@ -264,7 +313,8 @@ async def ingerir(
 ):
     """
     Ingere documento na base de conhecimento.
-    O texto fica disponível imediatamente para busca TEXTUAL.
+    O texto entra como `rag_status=pendente` e só fica disponível à IA depois
+    de aprovação no fluxo de governança.
     Os embeddings (busca semântica) são gerados em segundo plano via
     BackgroundTasks — sem Celery/Redis (tudo local). O campo
     `status_indexacao` reflete o progresso (pendente → indexado).
@@ -274,6 +324,7 @@ async def ingerir(
     return await _ingerir_texto(
         db, background_tasks, req.titulo, req.categoria, req.conteudo,
         fonte=req.fonte, tribunal=req.tribunal, confianca=req.confianca,
+        actor_id=str(cu.id),
     )
 
 
@@ -288,48 +339,26 @@ async def buscar(
     db: AsyncSession = Depends(get_db),
     cu: User = Depends(get_current_user),
 ):
-    """Consulta a base de conhecimento (textual; semântica na fase 2)."""
+    """Consulta a base pelo único pipeline governado de recuperação.
+
+    ``buscar_contexto_rag`` aplica escopo, vigência, aprovação, quarentena de
+    súmulas e exclusão do corpus fictício tanto no caminho vetorial quanto nos
+    fallbacks lexicais. Manter SQL próprio nesta rota criou um bypass desses
+    controles; por isso a rota não executa mais retrieval paralelo.
+    """
     cats = categorias if categorias else None
-    modo = "textual"
-
-    # Busca SEMÂNTICA (pgvector cosine) quando embeddings ativos
-    if emb_disponivel():
-        vetores = await gerar_embeddings([q], modo="query")  # E5: prefixo "query:" na consulta
-        if vetores:
-            from sqlalchemy import text as sqltext
-            vec = "[" + ",".join(f"{x:.6f}" for x in vetores[0]) + "]"
-            sql = """
-                SELECT c.id AS chunk_id, c.conteudo, d.titulo, d.categoria,
-                       COALESCE(d.extra->>'confidence_level', d.extra->>'confianca', 'media') AS confianca,
-                       1 - (c.embedding <=> CAST(:v AS vector)) AS score
-                FROM knowledge_chunks c
-                JOIN knowledge_docs d ON d.id = c.doc_id
-                WHERE d.deleted_at IS NULL AND c.embedding IS NOT NULL
-                AND 1 - (c.embedding <=> CAST(:v AS vector)) >= 0.60
-                AND (d.categoria <> ALL(:restr_cats) OR d.client_id = :scope_cli)
-                AND (d.vigente = TRUE OR :incl_hist)
-            """
-            if cats:
-                sql += " AND d.categoria = ANY(:cats)"
-            sql += " ORDER BY c.embedding <=> CAST(:v AS vector) LIMIT :lim"
-            # Endpoint geral de busca → fail-closed: sem escopo de cliente,
-            # conteúdo restrito (peças/precedentes internos) é excluído (LGPD/EOAB).
-            params = {"v": vec, "lim": limite, "restr_cats": _RESTRICTED_CATS, "scope_cli": "",
-                      "incl_hist": incluir_historico}
-            if cats:
-                params["cats"] = cats
-            rows = (await db.execute(sqltext(sql), params)).mappings().all()
-            if rows:
-                modo = "semantica"
-                return {
-                    "query": q, "modo": modo,
-                    "resultados": [dict(r) for r in rows],
-                }
-
     resultados = await buscar_contexto_rag(
         db, q, limite=limite, categorias=cats, incluir_historico=incluir_historico
     )
-    return {"query": q, "modo": modo, "resultados": resultados}
+    # Preserva o contrato legado consumido pelo frontend e expõe o pipeline
+    # governado separadamente para observabilidade.
+    modo = "semantica" if emb_disponivel() else "textual"
+    return {
+        "query": q,
+        "modo": modo,
+        "pipeline": "hibrida_governada",
+        "resultados": resultados,
+    }
 
 
 @router.post("/match-casos")
@@ -448,6 +477,97 @@ async def monitor_legislativo(
     }
 
 
+# ── Seed da Base de Conhecimento (admin, idempotente) ────────────────────────
+@router.post("/seed", summary="Popula a base com o conhecimento inicial do escritório (idempotente)",
+             dependencies=[Depends(rate_limit("rag_seed", 3))])
+async def seed_base_conhecimento(
+    background_tasks: BackgroundTasks,
+    incluir_jurisprudencia: bool = Query(
+        False,
+        description="Agenda também a importação inicial de jurisprudência REAL "
+                    "(LexML/STJ) para temas comuns, em background — gracioso se "
+                    "as fontes estiverem desabilitadas/indisponíveis.",
+    ),
+    db: AsyncSession = Depends(get_db),
+    cu: User = Depends(require_roles(["superadmin", "admin", "socio"])),
+):
+    """Seed idempotente: README de uso, checklist de curadoria, padrão-ouro de
+    peças, diretrizes internas por área e modelos de estrutura de documento.
+    Reexecutar não duplica (dedup por chave_origem `ejc_seed:*`); conteúdo
+    alterado gera nova versão preservando o histórico. Jurisprudência real
+    entra somente pelo importador oficial (opt-in via query param)."""
+    from app.models.audit_log import criar_audit_log
+    from app.services.seed_conhecimento import (
+        agendar_jurisprudencia_inicial, executar_seed_conhecimento,
+    )
+    resumo = await executar_seed_conhecimento(db)
+    role = getattr(cu.role, "value", str(cu.role))
+    await criar_audit_log(
+        db, user_id=cu.id, user_role=role, acao="CREATE",
+        entidade="rag_seed_conhecimento",
+        detalhes=(f"Seed da base de conhecimento: {resumo['novos']} novos, "
+                  f"{resumo['atualizados']} atualizados, "
+                  f"{resumo['inalterados']} inalterados"
+                  f"{'; jurisprudência inicial agendada' if incluir_jurisprudencia else ''}"),
+    )
+    await db.commit()
+    jobs = []
+    if incluir_jurisprudencia:
+        jobs = agendar_jurisprudencia_inicial(background_tasks, cu.id, role)
+    return {
+        **resumo,
+        "jurisprudencia_agendada": jobs,
+        "detail": (
+            f"Seed aplicado: {resumo['novos']} novos, {resumo['atualizados']} "
+            f"atualizados, {resumo['inalterados']} inalterados de "
+            f"{resumo['total']} documentos."
+            + (f" {len(jobs)} importações de jurisprudência agendadas." if jobs else "")
+        ),
+    }
+
+
+# ── Ingestão de fontes oficiais de conhecimento (Bloco 3) ────────────────────
+@router.post(
+    "/ingest-fontes-oficiais", status_code=202,
+    summary="Dispara a ingestão das fontes oficiais de conhecimento (ANPD + Normas RFB)",
+    dependencies=[Depends(rate_limit("rag_fontes", 3))],
+)
+async def ingest_fontes_oficiais(
+    background_tasks: BackgroundTasks,
+    db: AsyncSession = Depends(get_db),
+    cu: User = Depends(require_roles(["superadmin", "admin", "socio"])),
+):
+    """Disparo MANUAL do mesmo pipeline do job semanal (domingo 03h00 UTC):
+    ANPD (regulamentações + guias orientativos) e Normas RFB (sijut2consulta).
+
+    Roda em background (202) — o resultado durável fica no painel de fontes
+    (tabela fontes_ingestao, slugs `anpd` e `normas_rfb`). Idempotente: o
+    dedup/versionamento por chave_origem do upsert garante que reexecutar não
+    duplica documentos. Auditado em audit_logs (INGESTAO_FONTES_OFICIAIS).
+    """
+    from app.models.audit_log import criar_audit_log
+    from app.services.conhecimento_ingest import (
+        FONTES_SLUGS, executar_ingest_conhecimento,
+    )
+    role = getattr(cu.role, "value", str(cu.role))
+    await criar_audit_log(
+        db, user_id=cu.id, user_role=role,
+        acao="INGESTAO_FONTES_OFICIAIS", entidade="knowledge_docs",
+        detalhes=("Disparo manual da ingestão de fontes oficiais de "
+                  f"conhecimento: {', '.join(FONTES_SLUGS)}"),
+    )
+    await db.commit()
+    # executar_ingest_conhecimento nunca levanta (try/except por fonte) e abre
+    # as próprias sessões — seguro como BackgroundTask pós-resposta.
+    background_tasks.add_task(executar_ingest_conhecimento)
+    return {
+        "detail": "Ingestão de fontes oficiais agendada em background.",
+        "fontes": FONTES_SLUGS,
+        "acompanhamento": ("Painel de fontes de ingestão (fontes_ingestao): "
+                           "última execução, status e contagens por fonte."),
+    }
+
+
 # ── Destilação RAG com gate humano (#15) ─────────────────────────────────────
 class IngerirAILogRequest(BaseModel):
     categoria: str = "conhecimento_ia"
@@ -493,6 +613,13 @@ async def ingerir_ai_log_aprovado(
         conteudo=log.resposta,
         chave_origem=chave,
         fonte=fonte,
+        extra={
+            "rag_status": "aprovado",
+            "origem": "ai_log_hitl",
+            "status_hitl": log.status_hitl.value,
+            "aprovado_por": str(cu.id),
+        },
+        confianca="media",
     )
     await db.commit()
 

@@ -9,13 +9,19 @@
  * É exatamente a classe de teste que teria pego o bug antes de produção.
  */
 import { describe, it, expect, vi, beforeEach } from "vitest";
-import { render, waitFor } from "@testing-library/react";
+import { render, screen } from "@testing-library/react";
 import { MemoryRouter } from "react-router-dom";
 
 // vi.hoisted: o factory de vi.mock é içado ao topo — precisa acessar `get` assim.
 const { get } = vi.hoisted(() => ({ get: vi.fn() }));
 vi.mock("../../lib/api", () => ({
-  default: { get, post: vi.fn(), put: vi.fn(), patch: vi.fn(), delete: vi.fn() },
+  default: {
+    get,
+    post: vi.fn(),
+    put: vi.fn(),
+    patch: vi.fn(),
+    delete: vi.fn(),
+  },
 }));
 vi.mock("../../components/Toast", () => ({
   toast: { success: vi.fn(), error: vi.fn(), info: vi.fn() },
@@ -37,18 +43,26 @@ describe("Sociedade — resposta não-array não quebra o render", () => {
     // Todas as chamadas devolvem um ENVELOPE (não um array cru): distribuicao
     // via .items, socios via .socios — exatamente a forma que causava o crash.
     get.mockResolvedValue({
-      data: { items: [], socios: [], total_participacao: 0, total: 0, data: [] },
+      data: {
+        items: [],
+        socios: [],
+        total_participacao: 0,
+        total: 0,
+        data: [],
+      },
     });
     renderPage();
-    await waitFor(() => expect(get).toHaveBeenCalled());
-    // Não houve tela branca: há conteúdo renderizado.
-    expect(document.body.textContent?.length ?? 0).toBeGreaterThan(0);
+    // Não houve tela branca: aguarda o conteúdo REAL da página (o card
+    // "Sócios ativos", renderizado só depois de sair do estado de loading —
+    // o título agora vive no FinanceiroWorkspace, não mais nesta página).
+    // Ancorar em conteúdo pós-loading evita a race em que a asserção rodava
+    // enquanto o Spinner (sem texto) ainda estava na tela.
+    expect(await screen.findByText(/Sócios ativos/)).toBeTruthy();
   });
 
   it("API devolvendo objeto de erro (não-array) → ainda não quebra", async () => {
     get.mockResolvedValue({ data: { detail: "erro qualquer" } });
     renderPage();
-    await waitFor(() => expect(get).toHaveBeenCalled());
-    expect(document.body.textContent?.length ?? 0).toBeGreaterThan(0);
+    expect(await screen.findByText(/Sócios ativos/)).toBeTruthy();
   });
 });

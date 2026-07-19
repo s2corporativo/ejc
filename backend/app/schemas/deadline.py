@@ -1,7 +1,7 @@
 # ── app/schemas/deadline.py ──────────────────────────────────────────────────
 from __future__ import annotations
 from pydantic import BaseModel
-from typing import Optional, List
+from typing import Optional
 from datetime import date, datetime
 
 class DeadlineCreate(BaseModel):

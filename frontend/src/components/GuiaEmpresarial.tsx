@@ -37,7 +37,7 @@ function Sec({
 }) {
   const [isOpen, setIsOpen] = useState(open);
   return (
-    <div className="border border-slate-200 rounded-lg overflow-hidden">
+    <div className="border border-bronze-pale rounded-lg overflow-hidden">
       <button
         onClick={() => setIsOpen(!isOpen)}
         className="w-full flex items-center justify-between gap-2 p-4 bg-white hover:bg-slate-50 text-left"
@@ -93,7 +93,7 @@ function Servico({
   ferramentas?: React.ReactNode;
 }) {
   return (
-    <div className="bg-white border border-slate-200 rounded-lg p-3">
+    <div className="card p-3">
       <div className="flex items-center gap-2 mb-1">
         <span className="text-gold-600">{icon}</span>
         <span className="font-semibold text-navy text-sm">{titulo}</span>
@@ -218,7 +218,7 @@ export default function GuiaEmpresarial() {
               <a href="#analise-documento" className={linkCls}>
                 Análise IA de contrato empresarial ↑
               </a>
-              <Link to="/office-contracts" className={linkCls}>
+              <Link to="/financeiro?tab=contratos" className={linkCls}>
                 Contratos com alertas de vencimento →
               </Link>
             </>

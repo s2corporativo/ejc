@@ -1,26 +1,15 @@
-import { useEffect, useState } from "react";
+import { useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { Briefcase, Link2, Search, UserPlus } from "lucide-react";
 import api from "../lib/api";
 import { asList } from "../lib/list";
+import { useAreas } from "../lib/areas";
 import { toast } from "./Toast";
 import { Badge, Button, Modal, Spinner } from "./UI";
 import type { Client } from "../types";
 
-// Taxonomia canônica de áreas vem de GET /areas (tabela `areas` do backend).
-// Fallback local apenas se a chamada falhar — mesmas chaves do enum CaseArea.
-type AreaDireito = { slug: string; nome: string; ordem?: number };
-const AREAS_FALLBACK: AreaDireito[] = [
-  { slug: "civil", nome: "Cível" },
-  { slug: "trabalhista", nome: "Trabalhista" },
-  { slug: "consumidor", nome: "Consumidor" },
-  { slug: "familia", nome: "Família" },
-  { slug: "ambiental", nome: "Ambiental" },
-  { slug: "criminal", nome: "Criminal" },
-  { slug: "previdenciario", nome: "Previdenciário" },
-  { slug: "empresarial", nome: "Empresarial" },
-  { slug: "tributario", nome: "Tributário" },
-];
+// Taxonomia canônica de áreas: GET /areas via useAreas() (lib/areas.ts),
+// com fallback completo do enum CaseArea (25 áreas).
 const CASE_TYPES: { k: string; l: string }[] = [
   { k: "judicial", l: "Judicial" },
   { k: "extrajudicial", l: "Extrajudicial" },
@@ -36,8 +25,8 @@ const soDigitos = (v: string) => v.replace(/\D/g, "");
  *
  * DECISÃO: reusa somente endpoints existentes — GET /clients/ (param search
  * cobre nome/razão social/CPF/CNPJ), POST /clients/ e POST /cases/. O caminho
- * antigo de criação (modal completo com importação inteligente) continua
- * disponível em Casos.tsx via onCadastroCompleto.
+ * documental com IA permanece separado em Casos.tsx via
+ * onCadastroCompleto. Este wizard não envia documentos nem chama IA.
  */
 export default function NovoCasoWizard({
   open,
@@ -50,21 +39,7 @@ export default function NovoCasoWizard({
 }) {
   const nav = useNavigate();
   const [passo, setPasso] = useState<1 | 2>(1);
-  const [areas, setAreas] = useState<AreaDireito[]>(AREAS_FALLBACK);
-
-  // Carrega a taxonomia canônica de áreas quando o wizard abre (uma vez).
-  useEffect(() => {
-    if (!open) return;
-    api
-      .get("/areas")
-      .then((r) => {
-        const lista = (r.data?.areas ?? []) as AreaDireito[];
-        if (lista.length > 0) setAreas(lista);
-      })
-      .catch(() => {
-        // Fallback silencioso: mantém a lista local (mesmo enum do backend).
-      });
-  }, [open]);
+  const areas = useAreas();
 
   // ── Passo 1 — cliente ──
   const [doc, setDoc] = useState("");
@@ -89,6 +64,8 @@ export default function NovoCasoWizard({
     descricao_fatos: "",
   });
   const [criandoCaso, setCriandoCaso] = useState(false);
+  // Erro inline do campo título (validação junto ao campo, além do toast).
+  const [tituloErro, setTituloErro] = useState<string | null>(null);
   // Busca por nome pode trazer homônimos que NÃO são o cliente: sem esta
   // saída, o usuário ficava preso (o form de criação só abria com 0 achados).
   const [cadastrarNovo, setCadastrarNovo] = useState(false);
@@ -107,6 +84,7 @@ export default function NovoCasoWizard({
     setCliente(null);
     setCadastrarNovo(false);
     setNovoCliente({ nome: "", email: "", telefone: "" });
+    setTituloErro(null);
     setCaso({
       titulo: "",
       area: "civil",
@@ -197,6 +175,9 @@ export default function NovoCasoWizard({
   const criarCaso = async () => {
     if (!cliente) return;
     if (!caso.titulo.trim()) {
+      // Validação junto ao campo (borda vermelha + mensagem) além do toast —
+      // o toast sozinho aparecia longe do formulário (usabilidade §3.8).
+      setTituloErro("Informe o título do caso.");
       toast.error("Informe o título do caso.");
       return;
     }
@@ -221,7 +202,22 @@ export default function NovoCasoWizard({
   const nomeCliente = (c: Client) => c.nome || c.razao_social || "Sem nome";
 
   return (
-    <Modal open={open} onClose={fechar} title="Novo caso" wide>
+    <Modal
+      open={open}
+      onClose={fechar}
+      title="Novo caso manual — sem IA"
+      wide
+    >
+      <div className="mb-5 rounded-xl border border-success-200 bg-success-50 px-4 py-3">
+        <p className="text-sm font-semibold text-success-800">
+          Cadastro rápido e totalmente manual
+        </p>
+        <p className="mt-1 text-xs leading-5 text-success-700">
+          Nenhum documento é enviado para análise. Você informa apenas os dados
+          necessários do cliente e do caso e pode completar a jornada depois.
+        </p>
+      </div>
+
       {/* Indicador dos passos */}
       <div className="mb-5 flex items-center gap-2 text-xs font-medium">
         {[
@@ -290,7 +286,7 @@ export default function NovoCasoWizard({
               {resultados.map((c) => (
                 <div
                   key={c.id}
-                  className="flex items-center justify-between gap-3 rounded-xl border border-slate-200 bg-white px-4 py-3"
+                  className="card flex items-center justify-between gap-3 px-4 py-3"
                 >
                   <div className="min-w-0">
                     <div className="truncate text-sm font-medium text-slate-900">
@@ -323,7 +319,7 @@ export default function NovoCasoWizard({
           )}
 
           {!buscando && resultados && (resultados.length === 0 || cadastrarNovo) && (
-            <div className="mt-4 rounded-xl border border-slate-200 bg-slate-50 p-4">
+            <div className="card mt-4 bg-slate-50 p-4">
               <p className="mb-3 flex items-center gap-2 text-sm text-slate-600">
                 <UserPlus className="h-4 w-4 text-slate-400" />
                 {resultados && resultados.length > 0
@@ -395,7 +391,7 @@ export default function NovoCasoWizard({
                   onCadastroCompleto();
                 }}
               >
-                Prefere o cadastro completo (com importação de documento)?
+                Usar um documento e preencher o caso com IA
               </button>
             </div>
           )}
@@ -426,10 +422,27 @@ export default function NovoCasoWizard({
             <div className="sm:col-span-2">
               <label className="label">Título do caso *</label>
               <input
-                className="input"
+                className={`input ${
+                  tituloErro
+                    ? "border-danger-500 focus:border-danger-500 focus:ring-danger-200"
+                    : ""
+                }`}
                 value={caso.titulo}
-                onChange={(e) => setCaso({ ...caso, titulo: e.target.value })}
+                aria-invalid={!!tituloErro}
+                aria-describedby={tituloErro ? "titulo-caso-erro" : undefined}
+                onChange={(e) => {
+                  setCaso({ ...caso, titulo: e.target.value });
+                  if (e.target.value.trim()) setTituloErro(null);
+                }}
               />
+              {tituloErro && (
+                <p
+                  id="titulo-caso-erro"
+                  className="mt-1 text-xs text-danger-600"
+                >
+                  {tituloErro}
+                </p>
+              )}
             </div>
             <div>
               <label className="label">Área</label>

@@ -13,7 +13,6 @@ import inspect
 
 import pytest
 
-from app.core.config import get_settings
 from app.services import ai_gateway as g
 
 

@@ -25,7 +25,7 @@ import {
 } from "lucide-react";
 import api from "../lib/api";
 import { toast } from "./Toast";
-import { Modal, Spinner, Empty } from "./UI";
+import { Modal, Spinner, Empty, ErrorState, ConfirmModal } from "./UI";
 import type { Client } from "../types";
 import { asList } from "../lib/list";
 
@@ -149,6 +149,7 @@ export default function SociedadesCliente() {
   const [page, setPage] = useState(1);
   const [total, setTotal] = useState(0);
   const [lista, setLista] = useState<Sociedade[] | null>(null);
+  const [erroLista, setErroLista] = useState(false);
 
   // Detalhe
   const [selId, setSelId] = useState<string | null>(null);
@@ -163,6 +164,7 @@ export default function SociedadesCliente() {
   const [salvandoSocio, setSalvandoSocio] = useState(false);
   const [formEvento, setFormEvento] = useState({ ...FORM_EVENTO_VAZIO });
   const [salvandoEvento, setSalvandoEvento] = useState(false);
+  const [pendenteExcluir, setPendenteExcluir] = useState<string | null>(null);
 
   useEffect(() => {
     api
@@ -172,6 +174,7 @@ export default function SociedadesCliente() {
   }, []);
 
   const loadLista = () => {
+    setErroLista(false);
     api
       .get("/empresarial/sociedades", {
         params: { client_id: filtroCliente || undefined, page },
@@ -181,6 +184,7 @@ export default function SociedadesCliente() {
         setTotal(r.data?.total ?? 0);
       })
       .catch(() => {
+        setErroLista(true);
         setLista([]);
         setTotal(0);
       });
@@ -280,11 +284,16 @@ export default function SociedadesCliente() {
     }
   };
 
-  const removerSocio = async (socioId: string) => {
-    if (!window.confirm("Remover este sócio do quadro societário?")) return;
+  const removerSocio = (socioId: string) => {
+    setPendenteExcluir(socioId);
+  };
+
+  const confirmarExclusao = async () => {
+    if (!pendenteExcluir) return;
     try {
-      await api.delete(`/empresarial/sociedades/socios/${socioId}`);
+      await api.delete(`/empresarial/sociedades/socios/${pendenteExcluir}`);
       toast.success("Sócio removido.");
+      setPendenteExcluir(null);
       recarregar();
     } catch (e: any) {
       toast.error(e.response?.data?.detail || "Erro ao remover sócio.");
@@ -372,7 +381,12 @@ export default function SociedadesCliente() {
       </div>
 
       {/* Listagem */}
-      {lista === null ? (
+      {erroLista ? (
+        <ErrorState
+          message="Não foi possível carregar as sociedades. Tente novamente."
+          onRetry={loadLista}
+        />
+      ) : lista === null ? (
         <Spinner />
       ) : lista.length === 0 ? (
         <Empty message="Nenhuma sociedade registrada" />
@@ -396,7 +410,7 @@ export default function SociedadesCliente() {
                   {s.client_nome} · {s.cnpj || "CNPJ não informado"}
                 </div>
               </div>
-              <span className="text-[10px] font-semibold uppercase px-2 py-0.5 rounded-full bg-slate-100 text-slate-600 border border-slate-200">
+              <span className="text-[10px] font-semibold uppercase px-2 py-0.5 rounded-full bg-slate-900/[0.05] text-slate-600 dark:bg-white/[0.07] dark:text-slate-300">
                 {rotulo(s.tipo_societario)}
               </span>
               <div className="text-right">
@@ -469,7 +483,7 @@ export default function SociedadesCliente() {
                       return (
                         <div
                           key={s.id}
-                          className="p-2 rounded-lg border border-slate-200"
+                          className="card p-2"
                         >
                           <div className="flex flex-wrap items-center gap-2">
                             <span className="text-sm font-medium text-navy">
@@ -778,6 +792,16 @@ export default function SociedadesCliente() {
           </button>
         </div>
       </Modal>
+
+      <ConfirmModal
+        open={pendenteExcluir !== null}
+        onClose={() => setPendenteExcluir(null)}
+        onConfirm={confirmarExclusao}
+        title="Remover sócio"
+        message="Remover este sócio do quadro societário?"
+        confirmLabel="Remover"
+        variant="danger"
+      />
     </div>
   );
 }

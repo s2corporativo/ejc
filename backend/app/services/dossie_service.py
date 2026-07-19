@@ -7,7 +7,6 @@
 from __future__ import annotations
 import json
 import logging
-from datetime import datetime, timezone
 from uuid import uuid4
 from typing import Optional
 
@@ -201,6 +200,22 @@ def _montar_prompt(dados: dict, rag: list[dict]) -> str:
         "IMPORTANTE: Este é um RASCUNHO para revisão humana obrigatória antes de uso (Provimento OAB 205/2021).",
     ]
     return "\n".join(linhas)
+
+
+async def ler_ultimo_dossie(
+    db:      AsyncSession,
+    case_id: str,
+) -> Optional[DossieEstrategico]:
+    """LEITOR PURO (achado S3/M2) — retorna a ÚLTIMA versão persistida do dossiê
+    do caso, SEM regenerar nada: nenhuma chamada de IA, nenhuma escrita, nenhum
+    AILog. É o que uma tool de LEITURA do agente deve usar (efeito colateral
+    zero). Retorna None se o caso ainda não tem dossiê."""
+    return (await db.execute(
+        select(DossieEstrategico)
+        .where(DossieEstrategico.case_id == case_id)
+        .order_by(DossieEstrategico.versao.desc())
+        .limit(1)
+    )).scalar_one_or_none()
 
 
 async def gerar_dossie(

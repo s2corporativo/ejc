@@ -16,7 +16,7 @@ from app.core.config import get_settings
 from app.services.sanitizer import sanitizar_pii, validar_sem_pii
 
 # Provedores que processam dados FORA do VPS (LGPD: exigem sanitização).
-PROVIDERS_EXTERNOS = {"anthropic", "groq"}
+PROVIDERS_EXTERNOS = {"anthropic", "groq", "maritaca"}
 
 # Tarefas complexas (raciocínio jurídico profundo) → priorizam Anthropic
 # quando elegível. Aceita tanto nomes de TarefaIA quanto task_types do gateway.
@@ -55,6 +55,11 @@ class AIProviderPolicy:
             )
         if provider == "groq":
             return bool(s.GROQ_API_KEY and s.AI_EXTERNAL_PROVIDERS_ALLOWED)
+        if provider == "maritaca":
+            return bool(
+                s.MARITACA_ENABLED and s.MARITACA_API_KEY
+                and s.AI_EXTERNAL_PROVIDERS_ALLOWED
+            )
         return False
 
     @staticmethod

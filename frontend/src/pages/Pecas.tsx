@@ -1,4 +1,5 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState, useCallback } from "react";
+import { Link } from "react-router-dom";
 import { toast } from "../components/Toast";
 import Markdown from "../components/Markdown";
 import {
@@ -10,6 +11,8 @@ import {
   LayoutTemplate,
   Printer,
   SearchCheck,
+  ClipboardCheck,
+  FolderOpen,
 } from "lucide-react";
 import api from "../lib/api";
 import type { LegalDoc, Paged } from "../types";
@@ -21,9 +24,45 @@ import {
   EmptyState,
   Spinner,
   Button,
+  Badge,
   fmtDate,
+  fmtMoney,
 } from "../components/UI";
 import PecaGeneratorModal from "../components/PecaGeneratorModal";
+import CaseFilterChip from "../components/CaseFilterChip";
+import { ROTULO_IA_NAO_ATIVADA } from "../lib/iaErro";
+import { useIaStatus } from "../lib/iaStatus";
+import { useCasoFiltro } from "../contexts/useCasoFiltro";
+import FichaTriagem, {
+  type FichaTriagemCampos,
+  type FichaStatus,
+} from "../components/FichaTriagem";
+
+// responseType blob: erros 4xx/5xx chegam como Blob JSON — extrai o `detail`
+// legível para o toast (senão a falha seria silenciosa ou ilegível).
+async function blobErrorDetail(e: any): Promise<string | undefined> {
+  let detail = e.response?.data?.detail;
+  if (!detail && e.response?.data instanceof Blob) {
+    try {
+      detail = JSON.parse(await e.response.data.text())?.detail;
+    } catch {
+      /* corpo não-JSON — usa mensagem padrão do chamador */
+    }
+  }
+  return typeof detail === "object" && detail !== null
+    ? (detail.mensagem ?? JSON.stringify(detail).slice(0, 200))
+    : detail;
+}
+
+// `detail` pode chegar como string OU objeto ({mensagem, ...}) — normaliza
+// para o toast nunca renderizar "[object Object]" nem falhar em silêncio.
+function errDetail(e: any, fallback: string): string {
+  const d = e?.response?.data?.detail;
+  if (typeof d === "string" && d) return d;
+  if (d && typeof d === "object")
+    return d.mensagem ?? JSON.stringify(d).slice(0, 200);
+  return fallback;
+}
 
 const TIPOS = [
   "peticao_inicial",
@@ -38,7 +77,32 @@ const TIPOS = [
   "outro",
 ];
 
+// ── Fila de produção ─────────────────────────────────────────────────────────
+// Etapas REAIS do backend (PecaStatus em app/models/legal_doc.py):
+// rascunho → em_revisao → corrigida → aprovada → final → protocolada.
+// NÃO inventar status aqui — o backend rejeita valores fora do enum.
+const FILA: { key: string; label: string; desc: string }[] = [
+  { key: "rascunho", label: "Rascunho", desc: "Em elaboração" },
+  {
+    key: "em_revisao",
+    label: "Em revisão",
+    desc: "Aguardando (ou reprovada na) revisão humana",
+  },
+  {
+    key: "corrigida",
+    label: "Corrigida",
+    desc: "Revisão registrada — pronta para aprovação",
+  },
+  { key: "aprovada", label: "Aprovada", desc: "Aprovação humana registrada" },
+  { key: "final", label: "Versão final", desc: "Pronta para protocolo" },
+  { key: "protocolada", label: "Protocolada", desc: "Entregue ao juízo" },
+];
+// Status em que a peça já passou da aprovação (não reexibir "Revisar e Aprovar").
+// Espelha STATUS_EXIGE_REVISAO do backend (legal_docs.py).
+const STATUS_POS_APROVACAO = new Set(["aprovada", "final", "protocolada"]);
+
 export default function Pecas() {
+  const { disponivel: iaDisponivel } = useIaStatus();
   const [data, setData] = useState<Paged<LegalDoc> | null>(null);
   const [modalIA, setModalIA] = useState(false);
   const [modal, setModal] = useState(false);
@@ -87,7 +151,7 @@ export default function Pecas() {
       };
     if (v.status === "pendente_revisao")
       return {
-        label: `Validar HITL ${v.score ?? ""}/100`,
+        label: `Revisão pendente ${v.score ?? ""}/100`,
         cls: "bg-warn-100 text-warn-700",
       };
     if (v.status === "score_baixo")
@@ -108,7 +172,7 @@ export default function Pecas() {
       );
       load();
     } catch (e: any) {
-      toast.error(e.response?.data?.detail || "Falha na validação jurídica");
+      toast.error(errDetail(e, "Falha na validação jurídica"));
     } finally {
       setAuditando(false);
     }
@@ -116,10 +180,58 @@ export default function Pecas() {
 
   const [erro, setErro] = useState(false);
 
+  // Modo Caso: `?caso=` na URL vence; sem query, o caso ativo preenche.
+  // GET /legal-docs/ já aceita case_id (fecha o GAP do link_modulo da jornada).
+  const { casoFiltro, casoFiltroNome, removerFiltro } = useCasoFiltro();
+
+  // ── Gate da Ficha de Triagem (só quando há caso vinculado) ──────────
+  // Sem caso (geração avulsa) a ficha NÃO é exigida. Com caso, a peça só é
+  // liberada após a ficha estar "confirmada". O 409 do backend é o fallback.
+  const [fichaStatus, setFichaStatus] = useState<FichaStatus>("rascunho");
+  const [fichaCampos, setFichaCampos] = useState<FichaTriagemCampos | null>(
+    null,
+  );
+  const [refreshFicha, setRefreshFicha] = useState(0);
+  const fichaRef = useRef<HTMLDivElement>(null);
+  const fichaConfirmada = fichaStatus === "confirmada";
+
+  const onFichaStatus = useCallback(
+    (status: FichaStatus, campos: FichaTriagemCampos) => {
+      setFichaStatus(status);
+      setFichaCampos(campos);
+    },
+    [],
+  );
+
+  const irParaFicha = useCallback(() => {
+    toast.error("Confirme a ficha de triagem antes de gerar a peça");
+    fichaRef.current?.scrollIntoView({ behavior: "smooth", block: "start" });
+  }, []);
+
+  // Abre o gerador de IA respeitando o gate: com caso e sem ficha confirmada,
+  // leva o usuário à ficha em vez de abrir o modal.
+  const abrirGeradorIA = () => {
+    if (casoFiltro && !fichaConfirmada) {
+      irParaFicha();
+      return;
+    }
+    setModalIA(true);
+  };
+
+  // Fallback: backend barrou a geração (409 need_ficha_triagem).
+  const onNeedFicha = useCallback(() => {
+    setModalIA(false);
+    setFichaStatus("rascunho");
+    setRefreshFicha((n) => n + 1);
+    setTimeout(irParaFicha, 60);
+  }, [irParaFicha]);
+
   const load = () => {
     setErro(false);
     return api
-      .get("/legal-docs/", { params: { page_size: 50 } })
+      .get("/legal-docs/", {
+        params: { page_size: 50, case_id: casoFiltro },
+      })
       .then((r) => setData(r.data))
       .catch(() => {
         setErro(true);
@@ -128,7 +240,7 @@ export default function Pecas() {
   };
   useEffect(() => {
     load();
-  }, []);
+  }, [casoFiltro]);
 
   const salvar = async () => {
     if (!form.titulo || !form.conteudo) {
@@ -137,30 +249,48 @@ export default function Pecas() {
     }
     setSalvando(true);
     try {
-      await api.post("/legal-docs/", form);
+      // Modo Caso: peça manual criada com o filtro ativo nasce vinculada ao caso.
+      await api.post("/legal-docs/", {
+        ...form,
+        case_id: form.case_id ?? casoFiltro ?? null,
+      });
       setModal(false);
       setForm({ tipo_peca: "peticao_inicial", ai_generated: false });
+      toast.success("Peça criada como rascunho");
       load();
     } catch (e: any) {
-      toast.error(e.response?.data?.detail || "Erro");
+      toast.error(errDetail(e, "Erro ao salvar a peça"));
     } finally {
       setSalvando(false);
     }
   };
 
   const abrirDetalhe = async (id: string) => {
-    const { data } = await api.get(`/legal-docs/${id}`);
-    setView(data);
+    try {
+      const { data } = await api.get(`/legal-docs/${id}`);
+      setView(data);
+    } catch (e: any) {
+      toast.error(errDetail(e, "Falha ao carregar a peça"));
+    }
   };
 
   const registrarRevisao = async (aprovado: boolean) => {
     if (!revisao) return;
-    await api.post(`/legal-docs/${revisao.doc.id}/revisar`, {
-      aprovado,
-      notas: revisao.notas,
-    });
-    setRevisao(null);
-    load();
+    try {
+      await api.post(`/legal-docs/${revisao.doc.id}/revisar`, {
+        aprovado,
+        notas: revisao.notas,
+      });
+      toast.success(
+        aprovado
+          ? "Revisão registrada — peça marcada como corrigida"
+          : "Revisão reprovada — peça devolvida para revisão",
+      );
+      setRevisao(null);
+      load();
+    } catch (e: any) {
+      toast.error(errDetail(e, "Falha ao registrar a revisão"));
+    }
   };
 
   // BUG-08 (HITL): aprovação humana obrigatória de peças geradas por IA.
@@ -175,9 +305,10 @@ export default function Pecas() {
         observacoes,
       });
       setAprovacao(null);
+      toast.success("Peça aprovada com revisão humana registrada");
       load();
     } catch (e: any) {
-      toast.error(e.response?.data?.detail || "Falha ao aprovar peça");
+      toast.error(errDetail(e, "Falha ao aprovar peça"));
     } finally {
       setAprovando(false);
     }
@@ -186,20 +317,28 @@ export default function Pecas() {
   const avancarStatus = async (doc: LegalDoc, status: string) => {
     try {
       await api.patch(`/legal-docs/${doc.id}`, { status });
+      const etapa = FILA.find((s) => s.key === status);
+      toast.success(`Peça movida para "${etapa?.label ?? status}"`);
       load();
     } catch (e: any) {
-      toast.error(e.response?.data?.detail || "Erro");
+      toast.error(errDetail(e, "Falha ao mudar o status da peça"));
     }
   };
 
   const abrirTpl = async () => {
-    const [t, c] = await Promise.all([
-      api.get("/templates/"),
-      api.get("/cases/", { params: { page_size: 100 } }),
-    ]);
-    setTemplates(t.data.data);
-    setCasos(c.data.data);
-    setTplModal(true);
+    try {
+      const [t, c] = await Promise.all([
+        api.get("/templates/"),
+        api.get("/cases/", { params: { page_size: 100 } }),
+      ]);
+      setTemplates(t.data.data);
+      setCasos(c.data.data);
+      // Modo Caso: pré-seleciona o caso filtrado ao gerar de template.
+      setCasoSel((prev) => prev || casoFiltro || "");
+      setTplModal(true);
+    } catch (e: any) {
+      toast.error(errDetail(e, "Falha ao carregar templates e casos"));
+    }
   };
 
   const gerarDeTemplate = async () => {
@@ -207,20 +346,30 @@ export default function Pecas() {
       toast.error("Escolha template e caso");
       return;
     }
-    await api.post(`/templates/${tplSel}/gerar`, { case_id: casoSel });
-    setTplModal(false);
-    load();
+    try {
+      await api.post(`/templates/${tplSel}/gerar`, { case_id: casoSel });
+      setTplModal(false);
+      toast.success("Rascunho gerado a partir do template");
+      load();
+    } catch (e: any) {
+      toast.error(errDetail(e, "Falha ao gerar a peça do template"));
+    }
   };
 
   const baixarPdf = async (doc: LegalDoc) => {
-    const r = await api.get(`/legal-docs/${doc.id}/pdf`, {
-      responseType: "blob",
-    });
-    const url = URL.createObjectURL(r.data);
-    const a = document.createElement("a");
-    a.href = url;
-    a.download = `${doc.titulo}.pdf`;
-    a.click();
+    try {
+      const r = await api.get(`/legal-docs/${doc.id}/pdf`, {
+        responseType: "blob",
+      });
+      const url = URL.createObjectURL(r.data);
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = `${doc.titulo}.pdf`;
+      a.click();
+      URL.revokeObjectURL(url);
+    } catch (e: any) {
+      toast.error((await blobErrorDetail(e)) || "Falha ao gerar o PDF.");
+    }
   };
 
   const baixarDocx = async (doc: LegalDoc) => {
@@ -260,20 +409,10 @@ export default function Pecas() {
       a.click();
       URL.revokeObjectURL(url);
     } catch (e: any) {
-      let detail = e.response?.data?.detail;
-      // responseType blob: erros 422/503 chegam como Blob JSON — extrai o detail
-      if (!detail && e.response?.data instanceof Blob) {
-        try {
-          detail = JSON.parse(await e.response.data.text())?.detail;
-        } catch {
-          /* corpo não-JSON — usa mensagem padrão */
-        }
-      }
-      const msg =
-        typeof detail === "object" && detail !== null
-          ? (detail.mensagem ?? JSON.stringify(detail).slice(0, 200))
-          : detail;
-      toast.error(msg || "Falha ao gerar o documento único de impressão.");
+      toast.error(
+        (await blobErrorDetail(e)) ||
+          "Falha ao gerar o documento único de impressão.",
+      );
     } finally {
       setGerandoVL(null);
     }
@@ -308,11 +447,7 @@ export default function Pecas() {
         `CHECK DE JURISPRUDENCIA\nStatus: ${data.apto ? "APTA" : "BLOQUEADA"}\n\nProblemas:\n${problemas}\n\nValidadas:\n${validadas}\n\nRegra: ${data.regra}`,
       );
     } catch (e: any) {
-      toast.error(
-        e.response?.data?.detail?.mensagem ||
-          e.response?.data?.detail ||
-          "Falha na checagem de jurisprudencia",
-      );
+      toast.error(errDetail(e, "Falha na checagem de jurisprudencia"));
     } finally {
       setAuditando(false);
     }
@@ -332,11 +467,60 @@ export default function Pecas() {
         (data.resposta ?? data.conteudo) + (aviso ? "\n\n" + aviso : ""),
       );
     } catch (e: any) {
-      toast.error(e.response?.data?.detail || "IA indisponível");
+      toast.error(errDetail(e, "IA indisponível"));
     } finally {
       setAuditando(false);
     }
   };
+
+  // ── Fila de produção: agrupa pelas etapas reais do backend ────────────────
+  const docs = data && Array.isArray(data.data) ? data.data : [];
+  const grupos = FILA.map((s) => ({
+    ...s,
+    itens: docs.filter((p) => p.status === s.key),
+  }));
+  // Defensivo: status fora do enum conhecido (nunca some da tela).
+  const foraFila = docs.filter(
+    (p) => !FILA.some((s) => s.key === p.status),
+  );
+
+  // Origem manual/IA + estado da revisão humana (HITL) — badge compartilhada.
+  const origemBadge = (p: LegalDoc) =>
+    p.ai_generated ? (
+      p.human_reviewed ? (
+        <span className="badge bg-success-100 text-success-700 gap-1">
+          <ShieldCheck size={12} /> IA revisada
+        </span>
+      ) : (
+        <span className="badge bg-warn-100 text-warn-700 gap-1">
+          <Sparkles size={12} /> IA — aguarda revisão
+        </span>
+      )
+    ) : (
+      <span className="text-xs text-slate-400">manual</span>
+    );
+
+  // Link para o caso vinculado (a listagem só expõe case_id, sem título).
+  const casoLink = (p: LegalDoc) =>
+    p.case_id ? (
+      <Link
+        to={`/casos/${p.case_id}`}
+        className="inline-flex items-center gap-1 text-xs text-primary-700 hover:underline"
+        title="Abrir o caso vinculado"
+      >
+        <FolderOpen size={13} /> Ver caso
+      </Link>
+    ) : (
+      <span className="text-xs text-slate-400">sem caso</span>
+    );
+
+  const podeRevisarAprovar = (p: LegalDoc) =>
+    p.ai_generated && !STATUS_POS_APROVACAO.has(p.status);
+
+  const podeAprovarDireto = (p: LegalDoc) =>
+    (p.human_reviewed || !p.ai_generated) &&
+    p.status === "corrigida" &&
+    p.validacao_juridica?.apto_fluxo;
 
   return (
     <div>
@@ -349,11 +533,13 @@ export default function Pecas() {
               <LayoutTemplate size={16} /> De template
             </button>
             <button
-              onClick={() => setModalIA(true)}
-              className="btn btn-primary flex items-center gap-2"
+              onClick={abrirGeradorIA}
+              disabled={!iaDisponivel}
+              title={iaDisponivel ? undefined : ROTULO_IA_NAO_ATIVADA}
+              className="btn btn-primary flex items-center gap-2 disabled:cursor-not-allowed disabled:opacity-50"
             >
               <Sparkles size={15} />
-              Gerar com IA
+              {iaDisponivel ? "Gerar com IA" : "IA não ativada"}
             </button>
             <button className="btn-gold" onClick={() => setModal(true)}>
               <Plus size={16} /> Nova peça
@@ -361,6 +547,59 @@ export default function Pecas() {
           </div>
         }
       />
+
+      {casoFiltro && (
+        <div className="mb-4">
+          <CaseFilterChip nome={casoFiltroNome} onRemove={removerFiltro} />
+        </div>
+      )}
+
+      {/* Ficha de triagem: gate obrigatório antes de gerar peça com caso. */}
+      {casoFiltro && (
+        <div className="mb-6 space-y-4">
+          {fichaConfirmada && fichaCampos && (
+            <div className="card flex flex-wrap items-center gap-x-6 gap-y-2 border-l-4 border-l-success-400 p-4">
+              <div className="flex items-center gap-2 text-sm font-medium text-success-700">
+                <ShieldCheck size={16} /> Triagem confirmada
+              </div>
+              <ResumoItem label="Competência" valor={fichaCampos.competencia} />
+              <ResumoItem label="Rito" valor={fichaCampos.rito} />
+              <ResumoItem
+                label="Valor"
+                valor={
+                  fichaCampos.valor_causa
+                    ? fmtValorCausa(fichaCampos.valor_causa)
+                    : "—"
+                }
+              />
+              <div className="flex items-center gap-1.5">
+                <span className="text-xs uppercase tracking-wide text-slate-400">
+                  Risco
+                </span>
+                <Badge tone={RISCO_TONE[fichaCampos.risco_processual]}>
+                  {fichaCampos.risco_processual}
+                </Badge>
+              </div>
+            </div>
+          )}
+          {!fichaConfirmada && (
+            <div className="flex items-start gap-2 rounded-lg border border-warn-200 bg-warn-50 px-4 py-3 text-xs text-warn-800">
+              <ClipboardCheck size={15} className="mt-0.5 shrink-0" />
+              <span>
+                Este caso ainda não tem ficha de triagem confirmada. Preencha e
+                confirme a ficha abaixo para liberar a geração de peças.
+              </span>
+            </div>
+          )}
+          <div ref={fichaRef}>
+            <FichaTriagem
+              caseId={casoFiltro}
+              onStatusChange={onFichaStatus}
+              refreshSignal={refreshFicha}
+            />
+          </div>
+        </div>
+      )}
 
       {erro && !data ? (
         <EmptyState
@@ -374,156 +613,292 @@ export default function Pecas() {
         />
       ) : !data ? (
         <Spinner />
-      ) : data.data.length === 0 ? (
-        <Empty message="Nenhuma peça cadastrada" />
+      ) : docs.length === 0 ? (
+        casoFiltro ? (
+          // Filtro de caso ativo: peças sem vínculo (ex.: demonstrativos das
+          // calculadoras) ficam ocultas — oferecer a visão completa evita o
+          // "salvei e sumiu" relatado na auditoria de usabilidade.
+          <EmptyState
+            title="Nenhuma peça neste caso"
+            message="Você está vendo apenas as peças do caso filtrado. Peças sem vínculo (como demonstrativos de calculadoras) aparecem na lista completa."
+            action={
+              <Button variant="secondary" onClick={removerFiltro}>
+                Ver todas as peças
+              </Button>
+            }
+          />
+        ) : (
+          <Empty message="Nenhuma peça cadastrada" />
+        )
       ) : (
-        <div className="card overflow-x-auto">
-          <table className="w-full text-sm">
-            <thead className="bg-slate-50 text-left text-xs uppercase text-slate-400">
-              <tr>
-                <th className="px-4 py-3">Título</th>
-                <th className="px-4 py-3">Tipo</th>
-                <th className="px-4 py-3">Status</th>
-                <th className="px-4 py-3">Origem</th>
-                <th className="px-4 py-3">Validação</th>
-                <th className="px-4 py-3">v</th>
-                <th className="px-4 py-3">Criada</th>
-                <th className="px-4 py-3"></th>
-              </tr>
-            </thead>
-            <tbody className="divide-y divide-slate-100">
-              {(Array.isArray(data.data) ? data.data : []).map((p) => (
-                <tr key={p.id} className="hover:bg-slate-50">
-                  <td className="px-4 py-3 font-medium text-navy">
-                    {p.titulo}
-                  </td>
-                  <td className="px-4 py-3 text-xs capitalize">
-                    {p.tipo_peca.replace(/_/g, " ")}
-                  </td>
-                  <td className="px-4 py-3">
-                    <StatusBadge value={p.status} />
-                  </td>
-                  <td className="px-4 py-3">
-                    {p.ai_generated ? (
-                      p.human_reviewed ? (
-                        <span className="badge bg-success-100 text-success-700 gap-1">
-                          <ShieldCheck size={12} /> IA revisada
-                        </span>
-                      ) : (
-                        <span className="badge bg-warn-100 text-warn-700 gap-1">
-                          <Sparkles size={12} /> IA — aguarda revisão
-                        </span>
-                      )
-                    ) : (
-                      <span className="text-xs text-slate-400">manual</span>
-                    )}
-                  </td>
-                  <td className="px-4 py-3">
-                    {(() => {
-                      const v = validacaoLabel(p);
-                      return (
-                        <span className={`badge ${v.cls}`}>{v.label}</span>
-                      );
-                    })()}
-                  </td>
-                  <td className="px-4 py-3 text-slate-400">v{p.versao}</td>
-                  <td className="px-4 py-3 text-slate-400">
-                    {fmtDate(p.created_at)}
-                  </td>
-                  <td className="px-4 py-3 flex gap-1">
-                    <button
-                      className="btn-ghost px-2 py-1"
-                      onClick={() => abrirDetalhe(p.id)}
-                    >
-                      <Eye size={15} />
-                    </button>
-                    <button
-                      className="btn-ghost px-2 py-1"
-                      title="Baixar PDF timbrado"
-                      onClick={() => baixarPdf(p)}
-                    >
-                      <FileDown size={15} />
-                    </button>
-                    <button
-                      className="btn-ghost px-2 py-1 text-xs"
-                      title="Exportar DOCX"
-                      onClick={() => baixarDocx(p)}
-                    >
-                      <FileDown size={15} /> DOCX
-                    </button>
-                    <button
-                      className="btn-ghost px-2 py-1 text-xs"
-                      title="Documento único de impressão (peça + anexos com capas Visual Law)"
-                      onClick={() => baixarDocumentoUnico(p)}
-                      disabled={gerandoVL !== null}
-                    >
-                      <FileDown size={15} /> {gerandoVL === p.id ? "Gerando..." : "VL"}
-                    </button>
-                    <button
-                      className="btn-ghost px-2 py-1"
-                      title="Imprimir peça"
-                      onClick={() => imprimirPeca(p)}
-                    >
-                      <Printer size={15} />
-                    </button>
-                    <button
-                      className="btn-ghost px-2 py-1"
-                      title="Checar jurisprudencia validada"
-                      onClick={() => checarJurisprudencia(p)}
-                    >
-                      <ShieldCheck size={15} />
-                    </button>
-                    <button
-                      className="btn-ghost px-2 py-1"
-                      title="Auditar com IA"
-                      onClick={() => auditarIA(p)}
-                    >
-                      <SearchCheck size={15} />
-                    </button>
-                    <button
-                      className="btn-ghost px-2 py-1 text-primary-700"
-                      title="Validar juridicamente antes de finalizar"
-                      onClick={() => validarPeca(p)}
-                    >
-                      <ShieldCheck size={15} />
-                    </button>
-                    {p.ai_generated && !p.human_reviewed && (
+        <>
+          {/* Contadores da fila de produção — todas as etapas do enum, mesmo
+            vazias, para o fluxo completo ficar visível de relance. */}
+          <div className="mb-4 flex flex-wrap items-center gap-2">
+            {grupos.map((g) => (
+              <span
+                key={g.key}
+                className={`badge ${
+                  g.itens.length
+                    ? "bg-primary-100 text-primary-700"
+                    : "bg-slate-100 text-slate-400"
+                }`}
+                title={g.desc}
+              >
+                {g.label}: {g.itens.length}
+              </span>
+            ))}
+            {foraFila.length > 0 && (
+              <span className="badge bg-slate-100 text-slate-500">
+                Outros: {foraFila.length}
+              </span>
+            )}
+          </div>
+
+          {[
+            ...grupos.filter((g) => g.itens.length > 0),
+            ...(foraFila.length > 0
+              ? [
+                  {
+                    key: "outros",
+                    label: "Outros status",
+                    desc: "Status fora da fila padrão de produção",
+                    itens: foraFila,
+                  },
+                ]
+              : []),
+          ].map((g) => (
+            <section key={g.key} className="mb-6">
+              <div className="mb-2 flex items-baseline gap-2">
+                <h2 className="text-sm font-semibold uppercase tracking-wide text-navy">
+                  {g.label}
+                </h2>
+                <span className="text-xs text-slate-400">
+                  {g.itens.length} · {g.desc}
+                </span>
+              </div>
+
+              {/* Mobile (<md): cards empilhados com os fluxos essenciais —
+                visualizar, baixar e revisar/aprovar (HITL) usáveis em 390px. */}
+              <div className="space-y-2 md:hidden">
+                {g.itens.map((p) => (
+                  <div key={p.id} className="card p-4">
+                    <div className="flex items-start justify-between gap-2">
+                      <div className="min-w-0">
+                        <div className="font-medium text-navy break-words">
+                          {p.titulo}
+                        </div>
+                        {p.codigo_peca && (
+                          <div className="mt-1">
+                            <Badge tone="slate" className="font-mono">
+                              {p.codigo_peca}
+                            </Badge>
+                          </div>
+                        )}
+                        <div className="mt-0.5 text-xs capitalize text-slate-400">
+                          {p.tipo_peca.replace(/_/g, " ")} · v{p.versao}.0 ·{" "}
+                          {fmtDate(p.created_at)}
+                        </div>
+                      </div>
+                      <StatusBadge value={p.status} />
+                    </div>
+                    <div className="mt-2 flex flex-wrap items-center gap-1.5">
+                      {origemBadge(p)}
+                      {(() => {
+                        const v = validacaoLabel(p);
+                        return (
+                          <span className={`badge ${v.cls}`}>{v.label}</span>
+                        );
+                      })()}
+                      {casoLink(p)}
+                    </div>
+                    <div className="mt-3 flex flex-wrap gap-2">
                       <button
-                        className="btn-ghost px-2 py-1 text-warn-700 text-xs"
-                        onClick={() => setRevisao({ doc: p, notas: "" })}
+                        className="btn-ghost px-2.5 py-1.5 text-xs"
+                        onClick={() => abrirDetalhe(p.id)}
                       >
-                        Revisar
+                        <Eye size={14} /> Ver
                       </button>
-                    )}
-                    {p.ai_generated &&
-                      p.status !== "aprovada" &&
-                      p.status !== "versao_final" && (
+                      <button
+                        className="btn-ghost px-2.5 py-1.5 text-xs"
+                        onClick={() => baixarPdf(p)}
+                      >
+                        <FileDown size={14} /> PDF
+                      </button>
+                      {p.ai_generated && !p.human_reviewed && (
                         <button
-                          className="btn-ghost px-2 py-1 text-emerald-700 text-xs"
-                          title="Revisão humana obrigatória (HITL) para aprovar peça de IA"
+                          className="btn-ghost px-2.5 py-1.5 text-xs text-warn-700"
+                          onClick={() => setRevisao({ doc: p, notas: "" })}
+                        >
+                          Revisar
+                        </button>
+                      )}
+                      {podeRevisarAprovar(p) && (
+                        <button
+                          className="btn-primary px-2.5 py-1.5 text-xs"
                           onClick={() =>
                             setAprovacao({ doc: p, observacoes: "" })
                           }
                         >
-                          Revisar e Aprovar
+                          <ShieldCheck size={14} /> Revisar e Aprovar
                         </button>
                       )}
-                    {(p.human_reviewed || !p.ai_generated) &&
-                      p.status === "corrigida" &&
-                      p.validacao_juridica?.apto_fluxo && (
+                      {podeAprovarDireto(p) && (
                         <button
-                          className="btn-ghost px-2 py-1 text-success-700 text-xs"
+                          className="btn-ghost px-2.5 py-1.5 text-xs text-success-700"
                           onClick={() => avancarStatus(p, "aprovada")}
                         >
                           Aprovar
                         </button>
                       )}
-                  </td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
+                    </div>
+                  </div>
+                ))}
+              </div>
+
+              <div className="card hidden overflow-x-auto md:block">
+                <table className="w-full text-sm">
+                  <thead className="bg-slate-50 text-left text-xs uppercase text-slate-400">
+                    <tr>
+                      <th className="px-4 py-3">Título</th>
+                      <th className="px-4 py-3">Tipo</th>
+                      <th className="px-4 py-3">Caso</th>
+                      <th className="px-4 py-3">Origem</th>
+                      <th className="px-4 py-3">Validação</th>
+                      <th className="px-4 py-3">v</th>
+                      <th className="px-4 py-3">Criada</th>
+                      <th className="px-4 py-3"></th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-slate-100">
+                    {g.itens.map((p) => (
+                      <tr key={p.id} className="hover:bg-slate-50">
+                        <td className="px-4 py-3 font-medium text-navy">
+                          <div>{p.titulo}</div>
+                          {p.codigo_peca && (
+                            <Badge
+                              tone="slate"
+                              className="mt-1 font-mono font-normal"
+                            >
+                              {p.codigo_peca}
+                            </Badge>
+                          )}
+                        </td>
+                        <td className="px-4 py-3 text-xs capitalize">
+                          {p.tipo_peca.replace(/_/g, " ")}
+                        </td>
+                        <td className="px-4 py-3">{casoLink(p)}</td>
+                        <td className="px-4 py-3">{origemBadge(p)}</td>
+                        <td className="px-4 py-3">
+                          {(() => {
+                            const v = validacaoLabel(p);
+                            return (
+                              <span className={`badge ${v.cls}`}>
+                                {v.label}
+                              </span>
+                            );
+                          })()}
+                        </td>
+                        <td className="px-4 py-3 text-slate-400">
+                          v{p.versao}.0
+                        </td>
+                        <td className="px-4 py-3 text-slate-400">
+                          {fmtDate(p.created_at)}
+                        </td>
+                        <td className="px-4 py-3 flex gap-1">
+                          <button
+                            className="btn-ghost px-2 py-1"
+                            onClick={() => abrirDetalhe(p.id)}
+                          >
+                            <Eye size={15} />
+                          </button>
+                          <button
+                            className="btn-ghost px-2 py-1"
+                            title="Baixar PDF timbrado"
+                            onClick={() => baixarPdf(p)}
+                          >
+                            <FileDown size={15} />
+                          </button>
+                          <button
+                            className="btn-ghost px-2 py-1 text-xs"
+                            title="Exportar DOCX"
+                            onClick={() => baixarDocx(p)}
+                          >
+                            <FileDown size={15} /> DOCX
+                          </button>
+                          <button
+                            className="btn-ghost px-2 py-1 text-xs"
+                            title="Documento único de impressão (peça + anexos com capas Visual Law)"
+                            onClick={() => baixarDocumentoUnico(p)}
+                            disabled={gerandoVL !== null}
+                          >
+                            <FileDown size={15} />{" "}
+                            {gerandoVL === p.id ? "Gerando..." : "VL"}
+                          </button>
+                          <button
+                            className="btn-ghost px-2 py-1"
+                            title="Imprimir peça"
+                            onClick={() => imprimirPeca(p)}
+                          >
+                            <Printer size={15} />
+                          </button>
+                          <button
+                            className="btn-ghost px-2 py-1"
+                            title="Checar jurisprudencia validada"
+                            onClick={() => checarJurisprudencia(p)}
+                          >
+                            <ShieldCheck size={15} />
+                          </button>
+                          <button
+                            className="btn-ghost px-2 py-1"
+                            title="Auditar com IA"
+                            onClick={() => auditarIA(p)}
+                          >
+                            <SearchCheck size={15} />
+                          </button>
+                          <button
+                            className="btn-ghost px-2 py-1 text-primary-700"
+                            title="Validar juridicamente antes de finalizar"
+                            onClick={() => validarPeca(p)}
+                          >
+                            <ShieldCheck size={15} />
+                          </button>
+                          {p.ai_generated && !p.human_reviewed && (
+                            <button
+                              className="btn-ghost px-2 py-1 text-warn-700 text-xs"
+                              onClick={() => setRevisao({ doc: p, notas: "" })}
+                            >
+                              Revisar
+                            </button>
+                          )}
+                          {podeRevisarAprovar(p) && (
+                            <button
+                              className="btn-ghost px-2 py-1 text-emerald-700 text-xs"
+                              title="Revisão do advogado obrigatória para aprovar peça de IA"
+                              onClick={() =>
+                                setAprovacao({ doc: p, observacoes: "" })
+                              }
+                            >
+                              Revisar e Aprovar
+                            </button>
+                          )}
+                          {podeAprovarDireto(p) && (
+                            <button
+                              className="btn-ghost px-2 py-1 text-success-700 text-xs"
+                              onClick={() => avancarStatus(p, "aprovada")}
+                            >
+                              Aprovar
+                            </button>
+                          )}
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            </section>
+          ))}
+        </>
       )}
 
       {/* Nova peça */}
@@ -578,6 +953,13 @@ export default function Pecas() {
             />
             Conteúdo gerado/assistido por IA (exigirá revisão antes de aprovar)
           </label>
+          {casoFiltro && (
+            <p className="text-xs text-slate-500">
+              A peça será vinculada ao caso filtrado
+              {casoFiltroNome ? ` (${casoFiltroNome})` : ""} e nascerá como
+              rascunho na fila de produção.
+            </p>
+          )}
           <div className="flex justify-end">
             <button
               className="btn-primary"
@@ -604,14 +986,35 @@ export default function Pecas() {
           </div>
         )}
         {view?.validacao_juridica && (
-          <div className="mb-3 p-3 rounded-lg bg-slate-50 border border-slate-200 text-xs text-slate-700">
+          <div className="mb-3 p-3 rounded-lg bg-slate-50 border border-black/[0.05] text-xs text-slate-700">
             <strong>Validação jurídica:</strong>{" "}
             {view.validacao_juridica.status} · Score{" "}
             {view.validacao_juridica.score ?? "—"}/
-            {view.validacao_juridica.score_minimo ?? 75} · HITL{" "}
+            {view.validacao_juridica.score_minimo ?? 75} · Revisão do advogado:{" "}
             {view.validacao_juridica.hitl ?? "pendente"}
+            {view.validacao_juridica.veredito && (
+              <>
+                {" "}
+                · Veredito: {view.validacao_juridica.veredito}
+              </>
+            )}
             <br />
             {view.validacao_juridica.motivo}
+          </div>
+        )}
+        {view?.notas_revisao && (
+          <div className="mb-3 p-3 rounded-lg bg-success-50 border border-black/[0.05] text-xs text-slate-700">
+            <strong>Notas da revisão humana:</strong> {view.notas_revisao}
+          </div>
+        )}
+        {view?.case_id && (
+          <div className="mb-3 text-xs">
+            <Link
+              to={`/casos/${view.case_id}`}
+              className="inline-flex items-center gap-1 text-primary-700 hover:underline"
+            >
+              <FolderOpen size={13} /> Abrir o caso vinculado
+            </Link>
           </div>
         )}
         <Markdown source={view?.conteudo} className="text-sm text-slate-700" />
@@ -750,6 +1153,8 @@ export default function Pecas() {
       <PecaGeneratorModal
         open={modalIA}
         onClose={() => setModalIA(false)}
+        caseId={casoFiltro}
+        onNeedFicha={onNeedFicha}
         onConcluido={(_logId, _doc) => {
           setModalIA(false);
           load();
@@ -767,6 +1172,30 @@ export default function Pecas() {
           <Markdown source={printDoc.conteudo} />
         </div>
       )}
+    </div>
+  );
+}
+
+// Semáforo de risco reaproveitando os tons do DS (Badge).
+const RISCO_TONE: Record<FichaTriagemCampos["risco_processual"], "green" | "amber" | "red"> = {
+  baixo: "green",
+  medio: "amber",
+  alto: "red",
+};
+
+// valor_causa é string livre; formata como moeda quando for numérico.
+function fmtValorCausa(v: string): string {
+  const n = Number(String(v).replace(/[^\d.,-]/g, "").replace(/\.(?=\d{3})/g, "").replace(",", "."));
+  return Number.isFinite(n) && v.trim() !== "" ? fmtMoney(n) : v;
+}
+
+function ResumoItem({ label, valor }: { label: string; valor?: string }) {
+  return (
+    <div className="flex items-center gap-1.5">
+      <span className="text-xs uppercase tracking-wide text-slate-400">
+        {label}
+      </span>
+      <span className="text-sm font-medium text-navy">{valor || "—"}</span>
     </div>
   );
 }

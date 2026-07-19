@@ -216,7 +216,7 @@ export default function MatrizRisco({ caseId }: { caseId: string }) {
         </div>
 
         {/* Cartão lateral */}
-        <div className="w-full shrink-0 space-y-4 rounded-xl border border-slate-200 bg-slate-50/70 p-4 lg:w-72">
+        <div className="card w-full shrink-0 space-y-4 bg-slate-50/70 p-4 lg:w-72">
           <div>
             <p className="text-[11px] font-semibold uppercase tracking-wide text-slate-400">
               Classificação

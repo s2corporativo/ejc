@@ -7,10 +7,20 @@
 # que permaneceu 'pendente' em ~4.886 docs mesmo com os embeddings presentes.
 # A vetorização (embeddings) NÃO é refeita — isto apenas corrige o rótulo.
 #
-# Regra: status_indexacao := 'indexado' onde ainda está 'pendente'
-#        E existe pelo menos um chunk com embedding não-nulo.
+# CORREÇÃO (auditoria RAG): a versão original desta query usava EXISTS (pelo
+# menos UM chunk com embedding) para marcar o DOC INTEIRO como 'indexado'. Isso
+# é falso para documentos multi-chunk parcialmente vetorizados — um doc com 60
+# chunks e só 1 embedado virava "indexado" igual a um doc 100% vetorizado, e
+# ficava permanentemente invisível para scripts/vetorizar_documentos.py (que só
+# reprocessa docs SEM nenhum chunk embedado). Resultado real encontrado em
+# produção: 26.107 chunks órfãos em docs já marcados 'indexado'.
 #
-# Idempotente e barato (um único UPDATE). NÃO cria nem duplica chunks.
+# Regra corrigida: status_indexacao := 'indexado' apenas quando o doc tem PELO
+# MENOS UM chunk E TODOS os seus chunks têm embedding não-nulo.
+#
+# Idempotente e barato (um único UPDATE). NÃO cria nem duplica chunks. NÃO
+# desfaz o dano já causado por execuções anteriores da versão antiga desta
+# query — para isso, ver scripts/reembedar_chunks_orfaos.py.
 #
 # Execução (dentro do container ejc_backend, na VPS):
 #     docker exec -it ejc_backend python -m scripts.reconciliar_status_rag
@@ -41,8 +51,11 @@ async def reconciliar() -> None:
             WHERE kd.deleted_at IS NULL
               AND kd.status_indexacao <> 'indexado'
               AND EXISTS (
+                  SELECT 1 FROM knowledge_chunks kc WHERE kc.doc_id = kd.id
+              )
+              AND NOT EXISTS (
                   SELECT 1 FROM knowledge_chunks kc
-                  WHERE kc.doc_id = kd.id AND kc.embedding IS NOT NULL
+                  WHERE kc.doc_id = kd.id AND kc.embedding IS NULL
               )
         """))
         await db.commit()

@@ -69,14 +69,11 @@ export default function EstimadorHonorarios() {
   };
 
   return (
-    <div className="p-6 max-w-4xl mx-auto">
-      <div className="flex items-center gap-2 mb-1">
-        <Calculator size={18} className="text-bronze" />
-        <h1 className="text-xl font-semibold text-navy-900">
-          Estimador de Honorários (OAB/MG)
-        </h1>
-      </div>
-      <p className="text-sm text-slate-500 mb-5">
+    <div className="max-w-4xl">
+      {/* Título fica no FinanceiroWorkspace (aba "Estimador OAB");
+          aqui apenas a descrição da ferramenta. */}
+      <p className="text-sm text-slate-500 mb-5 flex items-start gap-2">
+        <Calculator size={16} className="text-bronze mt-0.5 shrink-0" />
         Calcula três cenários ancorados na tabela OAB/MG, ponderando
         complexidade, tempo e atos. Referência — o advogado define o valor
         final.

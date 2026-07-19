@@ -195,13 +195,60 @@ async def status_captura(
     db: AsyncSession = Depends(get_db),
     cu: User = Depends(get_current_user),
 ):
-    """BUG-17: estado da última captura de intimações (job DJEN).
+    """Estado da última captura de intimações (job DJEN do scheduler).
 
-    Derivado de `djen_comunicacoes` (sem tabela nova): a última execução é a
-    maior `created_at`; `intimacoes_encontradas` = comunicações gravadas nessa
-    janela de execução; `sucesso` = houve captura recente.
+    Achado nº 1 da auditoria: antes a saúde era derivada de `max(created_at)` das
+    intimações INSERIDAS — ficava verde para sempre mesmo com o scheduler morto.
+    Agora a fonte da verdade é o HEARTBEAT REAL do job (`scheduler_heartbeat`):
+    reporta `defasado`/`sucesso=False` quando a última EXECUÇÃO excede a cadência
+    esperada (ou falhou). O shape consumido pelo frontend é preservado
+    (`executado_em`/`sucesso`/`intimacoes_encontradas`/`erro`); campos novos
+    (`defasado`/`ultima_execucao`) são apenas aditivos.
     """
     from sqlalchemy import text as _t
+    from app.models.scheduler_heartbeat import SchedulerHeartbeat
+    from app.services import heartbeat_service as hb
+
+    # Heartbeat REAL do job DJEN (última EXECUÇÃO, não última intimação inserida).
+    heartbeat = (await db.execute(select(SchedulerHeartbeat).where(
+        SchedulerHeartbeat.job_name == hb.JOB_DJEN
+    ))).scalar_one_or_none()
+
+    if heartbeat is not None:
+        cfg = hb.JOBS_MONITORADOS[hb.JOB_DJEN]
+        aval = hb.avaliar_job(
+            heartbeat.last_run_at, heartbeat.last_status,
+            max_age_horas=cfg["max_age_horas"],
+        )
+        ultima_exec = heartbeat.last_run_at
+        defasado = aval["status"] in ("defasado", "nunca_executou")
+        falhou = aval["status"] == "erro"
+        sucesso = aval["status"] == "ok"
+        # Intimações capturadas perto da última execução real (informativo).
+        encontradas = (await db.execute(_t(
+            "SELECT count(*) FROM djen_comunicacoes WHERE created_at >= :inicio"
+        ), {"inicio": ultima_exec - timedelta(minutes=5)})).scalar() or 0
+        erro = None
+        if falhou:
+            erro = (heartbeat.detail or "Última execução do job DJEN falhou.")[:300]
+        elif defasado:
+            idade = aval["idade_horas"] or 0
+            erro = (
+                f"Captura possivelmente parada: última execução do job DJEN há "
+                f"{idade:.0f}h (limite {cfg['max_age_horas']}h). Verifique o "
+                f"scheduler."
+            )
+        return {
+            "executado_em": ultima_exec,
+            "sucesso": sucesso,
+            "intimacoes_encontradas": encontradas,
+            "erro": erro,
+            "defasado": defasado,
+            "ultima_execucao": ultima_exec,
+        }
+
+    # Fallback (heartbeat ainda ausente — job nunca rodou / pré-migration):
+    # comportamento legado derivado da última intimação inserida.
     ultimo = (await db.execute(_t(
         "SELECT max(created_at) FROM djen_comunicacoes"
     ))).scalar()
@@ -211,6 +258,8 @@ async def status_captura(
             "sucesso": False,
             "intimacoes_encontradas": 0,
             "erro": "Nenhuma captura de intimações registrada até o momento.",
+            "defasado": False,
+            "ultima_execucao": None,
         }
     # Comunicações gravadas na mesma execução (janela de 5 min a partir do topo).
     encontradas = (await db.execute(_t(
@@ -222,6 +271,8 @@ async def status_captura(
         "sucesso": True,
         "intimacoes_encontradas": encontradas,
         "erro": None,
+        "defasado": False,
+        "ultima_execucao": None,
     }
 
 

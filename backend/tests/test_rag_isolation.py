@@ -14,6 +14,12 @@ from app.services.ai_service import (
 )
 
 
+@pytest.fixture(autouse=True)
+def _busca_textual_sem_download(monkeypatch):
+    from app.services import embedding_service
+    monkeypatch.setattr(embedding_service, "disponivel", lambda: False)
+
+
 def test_categorias_restritas():
     for c in ("peca_interna", "peca_escritorio", "precedente_interno"):
         assert c in _RESTRICTED_CATS
@@ -30,9 +36,14 @@ def test_assinatura_tem_escopo():
 
 def test_limiar_de_similaridade_rag04():
     # RAG-04: a busca semântica tem um teto de distância (= 1 - similaridade mínima).
-    from app.services.ai_service import _RAG_MAX_DIST, _RAG_MIN_SIM
-    assert 0.0 < _RAG_MAX_DIST < 1.0
-    assert _RAG_MAX_DIST == pytest.approx(1.0 - _RAG_MIN_SIM, abs=1e-9)
+    # A-2 (2026-07-17): o limiar virou CONFIGURÁVEL (RAG_MIN_SIM) via _rag_max_dist().
+    from app.services.ai_service import _rag_max_dist, _RAG_MIN_SIM_DEFAULT
+    from app.core.config import get_settings
+    d = _rag_max_dist()
+    assert 0.0 < d < 1.0
+    sim = float(get_settings().RAG_MIN_SIM)
+    assert d == pytest.approx(1.0 - sim, abs=1e-9)
+    assert _RAG_MIN_SIM_DEFAULT == pytest.approx(0.55, abs=1e-9)  # default de fábrica
 
 
 class _CaptureDB:

@@ -120,12 +120,9 @@ export default function Jurimetria() {
     ])
       .then(([a, b, c, d]) => {
         if (a.status === "fulfilled") setOv(a.value.data);
-        if (b.status === "fulfilled")
-          setArea(asList(b.value.data));
-        if (c.status === "fulfilled")
-          setTrib(asList(c.value.data));
-        if (d.status === "fulfilled")
-          setTese(asList(d.value.data));
+        if (b.status === "fulfilled") setArea(asList(b.value.data));
+        if (c.status === "fulfilled") setTrib(asList(c.value.data));
+        if (d.status === "fulfilled") setTese(asList(d.value.data));
       })
       .finally(() => setLoading(false));
 
@@ -441,11 +438,13 @@ export default function Jurimetria() {
             </div>
             <div className="text-center p-3 bg-danger-50 rounded-lg border border-danger-100">
               <p className="text-2xl font-bold text-danger-700">
-                {Math.round((100 - predicao.probabilidade_provimento) * 10) / 10}%
+                {Math.round((100 - predicao.probabilidade_provimento) * 10) /
+                  10}
+                %
               </p>
               <p className="text-xs text-danger-600">Taxa hist. desfavorável</p>
             </div>
-            <div className="text-center p-3 bg-gray-50 rounded-lg border border-gray-200">
+            <div className="text-center p-3 bg-gray-50 rounded-lg border border-black/[0.05]">
               <p className="text-2xl font-bold capitalize text-gray-700">
                 {predicao.confianca}
               </p>

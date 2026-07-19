@@ -40,12 +40,33 @@ class LegalDoc(Base):
     conteudo  = Column(Text, nullable=False)          # markdown
     versao    = Column(Integer, default=1)
 
+    # ── Controle/versionamento (Fase D) ──────────────────────────────────
+    # `area`: ramo do direito da geração (chave de AREAS_DIREITO).
+    # `codigo_peca`: identificador estável por ramo EJC-<SIGLA>-<NNN>,
+    # reservado atomicamente em app.services.peca_numeracao. Nullable p/ peças
+    # antigas geradas antes do versionamento.
+    area        = Column(String(40), nullable=True)
+    codigo_peca = Column(String(30), nullable=True, index=True)
+
     # ── HITL — Human-in-the-Loop (obrigatório p/ IA) ────────────────────
     ai_generated   = Column(Boolean, default=False, nullable=False)
     human_reviewed = Column(Boolean, default=False, nullable=False)
     revisor_id     = Column(String(36), ForeignKey("users.id"), nullable=True)
     revisado_em    = Column(DateTime(timezone=True), nullable=True)
     notas_revisao  = Column(Text, nullable=True)
+
+    # ── Protocolo — comprovante de peticionamento (prova de tempestividade) ──
+    # O peticionamento é MANUAL (exporta PDF e protocola no PJe/eproc). Sem
+    # registrar o comprovante, a prova de tempestividade fica FORA do sistema.
+    # Estes campos gravam, na própria peça, o número/tribunal/data do protocolo.
+    # `protocolo_comprovante_doc_id` referencia um Document já anexado com o
+    # comprovante; é String(36) SEM FK — mesmo padrão audit-actor de
+    # `deadlines.concluido_por`/`created_by`: não impõe RESTRICT na exclusão do
+    # documento nem acopla a prova ao ciclo de vida do anexo.
+    numero_protocolo             = Column(String(120), nullable=True)
+    protocolado_em               = Column(DateTime(timezone=True), nullable=True)
+    protocolo_tribunal           = Column(String(120), nullable=True)
+    protocolo_comprovante_doc_id = Column(String(36), nullable=True)
 
     case_id    = Column(String(36), ForeignKey("cases.id"), nullable=True, index=True)
     created_by = Column(String(36), nullable=True)

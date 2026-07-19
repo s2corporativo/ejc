@@ -5,7 +5,7 @@
  * se voltar a quebrar.
  */
 import { describe, it, expect, vi, beforeEach } from "vitest";
-import { render, waitFor } from "@testing-library/react";
+import { render, screen } from "@testing-library/react";
 import { MemoryRouter } from "react-router-dom";
 
 // vi.hoisted: o factory de vi.mock é içado ao topo — precisa acessar `get` assim.
@@ -36,14 +36,16 @@ describe("DiarioOficial — resposta não-array não quebra o render", () => {
       return Promise.resolve({ data: { total: 0, items: [], nao_lidos: 0 } });
     });
     renderPage();
-    await waitFor(() => expect(get).toHaveBeenCalled());
-    expect(document.body.textContent?.length ?? 0).toBeGreaterThan(0);
+    // Âncora estável: espera o heading do PageHeader aparecer (findBy* faz retry
+    // até o re-render pós-loading) em vez de checar document.body.textContent logo
+    // após a chamada da API — essa checagem pegava o Spinner (sem texto) e falhava
+    // de forma intermitente ("expected 0 to be greater than 0").
+    expect(await screen.findByRole("heading", { name: /Diário Oficial/ })).toBeTruthy();
   });
 
   it("API devolvendo objeto de erro (não-array) → ainda não quebra", async () => {
     get.mockResolvedValue({ data: { detail: "erro qualquer" } });
     renderPage();
-    await waitFor(() => expect(get).toHaveBeenCalled());
-    expect(document.body.textContent?.length ?? 0).toBeGreaterThan(0);
+    expect(await screen.findByRole("heading", { name: /Diário Oficial/ })).toBeTruthy();
   });
 });

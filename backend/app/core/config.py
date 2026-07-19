@@ -22,8 +22,35 @@ class Settings(BaseSettings):
     # abaixo); em desenvolvimento, uma chave efêmera é gerada automaticamente.
     SECRET_KEY: str = ""
     ALGORITHM: str = "HS256"
-    ACCESS_TOKEN_EXPIRE_HOURS: int = 8
+    # 2h (era 8h — hardening pós-auditoria de 2026-07-12): janela de exposição
+    # menor para um access token vazado/pós-revogação. Não incomoda o usuário:
+    # o frontend renova automaticamente via interceptor 401 + POST /auth/refresh
+    # (rotação de refresh token, sessão de até REFRESH_TOKEN_EXPIRE_DAYS). O
+    # Portal do Cliente usa o MESMO fluxo (get_current_user + refresh) — nenhum
+    # fluxo longo depende do access token sobreviver além de 2h. Override por
+    # env var ACCESS_TOKEN_EXPIRE_HOURS (ver .env.example).
+    ACCESS_TOKEN_EXPIRE_HOURS: int = 2
     REFRESH_TOKEN_EXPIRE_DAYS: int = 7
+
+    # ── 2FA (TOTP) — enforcement organizacional por papel ─────────────────
+    # CSV de papéis (UserRole: superadmin, admin, socio, advogado,
+    # advogado_auxiliar, financeiro, estagiario, secretaria, cliente_externo)
+    # que DEVEM usar 2FA (TOTP). Default VAZIO = ninguém obrigado → o
+    # comportamento atual (2FA opt-in) é 100% preservado.
+    # Quando um papel está listado (comparação case-insensitive):
+    #   (a) /auth/login sinaliza `precisa_configurar_2fa=true` no payload
+    #       enquanto o usuário desse papel ainda não tiver TOTP ativo — para o
+    #       frontend orientar a configuração. NÃO bloqueia o login (enforcement
+    #       SEM lockout: não há coluna/migration nova e não se tranca ninguém);
+    #   (b) POST /auth/totp/desativar RECUSA (403) desativar o 2FA de um usuário
+    #       cujo papel é obrigado — ele não pode se auto-desproteger.
+    # Ex. em produção (definir no .env, NÃO versionado):
+    #   REQUIRE_2FA_ROLES=superadmin,admin,socio
+    REQUIRE_2FA_ROLES: str = ""
+
+    @property
+    def require_2fa_roles_list(self) -> List[str]:
+        return [r.strip().lower() for r in self.REQUIRE_2FA_ROLES.split(",") if r.strip()]
 
     # ── Criptografia de PII em repouso (LGPD, achado C6 / Bloco 6a) ────────
     # Chave Fernet (32 bytes url-safe base64) para cpf/cnpj cifrados. Default
@@ -58,7 +85,30 @@ class Settings(BaseSettings):
     GROQ_API_KEY: str = ""
     GROQ_MODEL: str = "llama-3.3-70b-versatile"   # 128k (llama3-70b-8192 descomissionado pelo Groq)
     GROQ_TIMEOUT: int = 60               # segundos
+    # Transcrição de áudio/vídeo é uma operação EXTERNA distinta do chat:
+    # nasce desligada, exige confirmação por requisição e respeita o
+    # kill-switch AI_EXTERNAL_PROVIDERS_ALLOWED.
+    AUDIO_TRANSCRIPTION_ENABLED: bool = False
+    AUDIO_TRANSCRIPTION_MAX_MB: int = 25
+    AUDIO_TRANSCRIPTION_TIMEOUT: int = 180
+    # Gates organizacionais: só marcar True após habilitar Zero Data Retention
+    # na conta Groq e documentar DPA/transferência internacional com o DPO.
+    GROQ_ZDR_VERIFIED: bool = False
+    AUDIO_TRANSCRIPTION_DPA_APPROVED: bool = False
+    GROQ_TRANSCRIPTION_MODEL: str = "whisper-large-v3"
     AI_ENABLED: bool = True
+
+    # Documento grande: leitura em blocos + síntese, sem truncamento silencioso.
+    # O teto é propositalmente explícito para respeitar TPM/contexto do provedor.
+    AI_LONG_DOCUMENT_MAX_CHARS: int = 120_000
+    AI_LONG_DOCUMENT_CHUNK_CHARS: int = 16_000
+    AI_LONG_DOCUMENT_MAX_CHUNKS: int = 12
+
+    # ── Ficha de Triagem pré-peça (gate de qualidade) ────────────────────
+    # True = POST /pecas/gerar com case_id EXIGE ficha de triagem CONFIRMADA
+    # para o caso (evita "bom modelo no caso errado"). Geração AVULSA (sem
+    # case_id) nunca é gateada. Desligar só com aval do responsável do fluxo.
+    FICHA_TRIAGEM_OBRIGATORIA: bool = True
 
     # ── IA — Anthropic (Claude) — módulo IA profissional por tarefa ───────
     # Chave OBRIGATÓRIA para usar Claude (router.py/anthropic_provider.py).
@@ -84,6 +134,20 @@ class Settings(BaseSettings):
     # Qualquer max_tokens acima disto é rebaixado no provider.
     ANTHROPIC_MAX_TOKENS: int = 8000
 
+    # ── IA — Maritaca (Sabiá) — provider BRASILEIRO, OpenAI-compatible ─────
+    # PLUGÁVEL: nasce DESLIGADO (MARITACA_ENABLED=false) → sistema idêntico ao
+    # atual. Provider EXTERNO ao VPS → passa pela MESMA barreira LGPD
+    # (pseudonimização). Chave definida APENAS no .env (nunca aqui).
+    # Soberania de dados: os modelos "-br-sp" (ex.: "sabia-4-br-sp",
+    # "sabiazinho-4-br-sp") processam 100% em território nacional (+30% de
+    # custo) — caminho recomendado no jurídico, a ativar com DPA assinado.
+    MARITACA_ENABLED: bool = False
+    MARITACA_API_KEY: str = ""
+    MARITACA_BASE_URL: str = "https://chat.maritaca.ai/api"
+    MARITACA_MODEL: str = "sabia-4"            # qualidade/generalista (128k)
+    MARITACA_MODEL_RAPIDO: str = "sabiazinho-4"  # rápido/barato
+    MARITACA_TIMEOUT: int = 90
+
     # ── IA — Núcleo Único (policy central de provedores) ──────────────────
     # False = só Ollama local (soberania total): nenhum dado sai do VPS,
     # mesmo sanitizado. Anthropic/Groq ficam inelegíveis na cadeia.
@@ -97,10 +161,15 @@ class Settings(BaseSettings):
     # Gate anti-alucinação de citações (Fase 4 — citation_gate.py):
     #   "bloquear"  → saída de IA com citação bloqueante (suspeita de alucinação,
     #                 menção genérica ou julgado sem tribunal+data) NÃO pode ser
-    #                 aprovada no HITL sem override justificado do revisor;
-    #   "marcar"    → relatório de citações anexado/exposto ao revisor (default);
+    #                 aprovada no HITL sem override JUSTIFICADO e AUDITADO do
+    #                 revisor (default — advogados já foram punidos por citar
+    #                 acórdão falso; apenas SINALIZAR não basta, tem de barrar);
+    #   "marcar"    → relatório de citações apenas anexado/exposto ao revisor,
+    #                 SEM impedir a aprovação (modo permissivo/legado);
     #   "desligado" → verificação de citações não roda nos fluxos de IA.
-    CITACOES_POLITICA: str = "marcar"
+    # Valor inválido/typo cai no modo SEGURO "bloquear" (ver politica_citacoes()):
+    # um erro de config não pode rebaixar silenciosamente o gate antialucinação.
+    CITACOES_POLITICA: str = "bloquear"
     # ── Modo Duas IAs (Fase 5 — validação adversarial) ────────────────────
     # True = peças de alta complexidade geradas pelo Núcleo de IA recebem uma
     # SEGUNDA passada por uma IA Crítica/Adversarial (advogado da parte
@@ -155,6 +224,32 @@ class Settings(BaseSettings):
     ROTEAMENTO_LIMIAR_MEDIO: int = 3
     ROTEAMENTO_LIMIAR_PESADO: int = 6
 
+    # ── MÓDULO AGÊNTICO DE IA (loop de tool-use, igual ao Claude Code) ────
+    # ATIVADO por default (decisão do titular, 2026-07-18): a IA opera como
+    # agente (decide → chama ferramenta → lê resultado → decide), reusando o
+    # núcleo e TODOS os guardrails (barreira LGPD, RBAC, AILog, gate de
+    # citações, HITL). Nesta fase só provedores com tool-use (Anthropic).
+    # Desligar num ambiente específico: AI_AGENT_ENABLED=false no .env.
+    AI_AGENT_ENABLED: bool = True
+    # Teto de PASSOS do loop (nunca infinito).
+    AI_AGENT_MAX_STEPS: int = 8
+    # Teto de TOKENS acumulados (input+output de TODOS os turnos) por execução do
+    # agente. O budget conta o input de CADA turno — que cresce a cada passo,
+    # pois o histórico inteiro é reenviado — somado ao output. Um teto baixo
+    # (16000 antigo) matava o agente no passo 2-3 antes de esgotar max_steps
+    # (achado M3). Elevado para comportar AI_AGENT_MAX_STEPS turnos com folga
+    # (piso real de saída por turno × passos + input acumulado). Ajuste fino via
+    # .env; o teto DURO por chamada continua em ANTHROPIC_MAX_TOKENS.
+    AI_AGENT_MAX_TOKENS: int = 120000
+    # Teto de CUSTO (R$) por execução do agente (Sugestão 2). Acumula o custo
+    # estimado de cada turno (ai_cost.estimar_custo_brl); ao exceder, o loop
+    # encerra com aviso (igual ao teto de tokens). Default conservador.
+    AI_AGENT_MAX_CUSTO_BRL: float = 2.00
+    # TTL (segundos) do estado retomável de HITL no Redis (achado H1). O estado
+    # contém a transcrição em ESPAÇO REAL (PII) — fica no VPS (Redis interno),
+    # com TTL curto e NUNCA é logado. Curto para minimizar a janela de retenção.
+    AI_AGENT_HITL_TTL_SEGUNDOS: int = 900
+
     # ── Fase 6 — Observabilidade de IA (Langfuse SELF-HOSTED) ─────────────
     # Langfuse é SELF-HOSTED (docker-compose, perfil "observability"): dados
     # jurídicos NÃO saem do ambiente. NUNCA apontar para cloud.langfuse.com.
@@ -186,10 +281,73 @@ class Settings(BaseSettings):
     # URL pública do frontend — usada nos links dos e-mails
     FRONTEND_URL: str = "https://SEU_DOMINIO"
 
-    # ── DataJud/CNJ (consulta processual) ────────────────────────────────
-    # Chave pública divulgada pelo CNJ — pode ser sobrescrita via .env
-    DATAJUD_ENABLED: bool = True
-    DATAJUD_API_KEY: str = ""  # Configurar via .env
+    # ── DataJud/CNJ (consulta processual — API Pública) ──────────────────
+    # Integração EXTERNA é opt-in: desligada por padrão (ligar no .env).
+    DATAJUD_ENABLED: bool = False
+    # O CNJ divulga uma chave PÚBLICA de uso geral na wiki oficial
+    # (https://datajud-wiki.cnj.jus.br/api-publica/acesso/) — copie-a para o
+    # .env. Nunca commitar a chave nem registrá-la em logs/erros.
+    DATAJUD_API_KEY: str = ""
+    # Host oficial da API Pública (POST /{alias_tribunal}/_search).
+    DATAJUD_BASE_URL: str = "https://api-publica.datajud.cnj.jus.br"
+
+    # ── Infosimples — consultas PAGAS a sites públicos (TJMG, Receita…) ──
+    # Agregador comercial (https://infosimples.com/consultas/): cada consulta
+    # EXECUTADA é cobrada. Integração opt-in, desligada por padrão, com teto
+    # diário de custo e cache do mesmo dia (ver services/infosimples_service).
+    INFOSIMPLES_ENABLED: bool = False
+    # Token da conta contratada — vai só no corpo da requisição; NUNCA em
+    # logs, mensagens de erro ou payloads de resposta.
+    INFOSIMPLES_TOKEN: str = ""
+    # Timeout repassado à Infosimples (segundos) — as consultas raspam sites
+    # públicos e podem demorar; o cliente HTTP usa este valor + margem.
+    INFOSIMPLES_TIMEOUT: int = 300
+    # TETO DE CUSTO: máximo de consultas EXECUTADAS (cobradas) por dia UTC.
+    # Atingido o teto, o serviço recusa novas consultas (429) até o dia virar.
+    INFOSIMPLES_MAX_CONSULTAS_DIA: int = 50
+    # Base oficial (POST {base}/{caminho} form-urlencoded). Só mude p/ testes.
+    INFOSIMPLES_BASE_URL: str = "https://api.infosimples.com/api/v2/consultas"
+
+    # ── CGU Portal da Transparência — sanções (CEIS/CNEP/CEPIM) — GATED ──
+    # API pública de dados do governo federal (chave GRÁTIS, cadastro no portal).
+    # Só CONSULTA (GET); cache diário por (base, cnpj) com purga LGPD. Opt-in,
+    # desligada por padrão. Ver services/transparencia_service.
+    TRANSPARENCIA_ENABLED: bool = False
+    # Chave de acesso (header `chave-api-dados`) — NUNCA em logs/erros/retornos.
+    TRANSPARENCIA_API_KEY: str = ""
+    # Host oficial (default fixo anti-SSRF; a URL nunca vem de input do usuário).
+    TRANSPARENCIA_BASE_URL: str = "https://api.portaldatransparencia.gov.br/api-de-dados"
+
+    # ── PNCP — contratações públicas (consulta pública, sem chave) — GATED ──
+    # Portal Nacional de Contratações Públicas (Lei 14.133/2021). API pública,
+    # sem chave/segredo. Opt-in, desligada por padrão. Ver services/pncp_service.
+    PNCP_ENABLED: bool = False
+    # Host oficial (default fixo anti-SSRF; a URL nunca vem de input do usuário).
+    PNCP_BASE_URL: str = "https://pncp.gov.br/api/consulta/v1"
+
+    # ── NFS-e — emissão fiscal via provedor (Nuvem Fiscal) — GATED ──────
+    # Nasce DESLIGADO e em HOMOLOGAÇÃO: nunca emite nota real sem ativação
+    # explícita do dono. A emissão REAL ainda exige (fora do EJC): certificado
+    # digital A1 no painel do provedor + confirmação das definições fiscais
+    # (alíquota ISS de advocacia em Betim, item LC116, cTribNac) com o contador.
+    # Ver docs/NFSE_VIABILIDADE.md.
+    NFSE_ENABLED: bool = False
+    NFSE_MODO: str = "homologacao"       # homologacao | producao
+    NFSE_PROVEDOR: str = "nuvemfiscal"   # só "nuvemfiscal" por ora
+    NFSE_NUVEMFISCAL_BASE_URL: str = "https://api.nuvemfiscal.com.br"
+    NFSE_NUVEMFISCAL_AUTH_URL: str = "https://auth.nuvemfiscal.com.br"
+    # Credenciais OAuth2 do provedor — só no .env da VPS; nunca em log/resposta.
+    NFSE_NUVEMFISCAL_CLIENT_ID: str = ""
+    NFSE_NUVEMFISCAL_CLIENT_SECRET: str = ""
+    # CNPJ do escritório emitente (com ou sem máscara).
+    NFSE_EMITENTE_CNPJ: str = ""
+    # Município do emitente (código IBGE, 7 díg). Betim/MG = 3106200.
+    NFSE_EMITENTE_MUN_IBGE: str = "3106200"
+    # Definições fiscais — CONFIRMAR COM O CONTADOR antes de produção.
+    NFSE_ISS_ALIQUOTA: float = 0.0       # alíquota ISS advocacia em Betim (%). A confirmar.
+    NFSE_ITEM_LC116: str = "17.14"       # item da lista LC 116/03 (advocacia)
+    NFSE_CTRIB_NAC: str = ""             # cTribNac (GET /nfse/cidades/3106200). A confirmar.
+    NFSE_TIMEOUT: int = 60               # timeout (s) das chamadas ao provedor
 
     # ── DJEN / API Comunica CNJ (Res. CNJ 569/2024) — ingestão RAG ───────
     # Ingestor diário de comunicações processuais (intimações/publicações)
@@ -223,6 +381,19 @@ class Settings(BaseSettings):
     # portal do TJMG — evita varredura abusiva).
     TJMG_INGEST_MAX_POR_TEMA: int = 50
 
+    # ── Ingestão contínua de conhecimento (ANPD + Normas RFB → RAG) ──────
+    # Job SEMANAL (domingo 03h00 UTC) que raspa fontes oficiais e alimenta a
+    # base de conhecimento: regulamentações/guias da ANPD (LGPD) e atos
+    # tributários do sijut2consulta da RFB. Idempotente por chave_origem
+    # (anpd:<slug> / rfb:<tipo>:<numero>:<ano>) — reexecução não duplica.
+    # Default True (ligado — autorização do dono; fontes públicas sem custo).
+    # Disparo manual: POST /rag/ingest-fontes-oficiais (socio+).
+    CONHECIMENTO_INGEST_ENABLED: bool = True
+    # CSV de termos de busca do sijut2consulta (Normas RFB). Vazio = lista
+    # padrão do ramo tributário (services/conhecimento_ingest/normas_rfb.py::
+    # TERMOS_PADRAO — Solução de Consulta ISS, IRPF, Simples Nacional...).
+    NORMAS_RFB_TERMOS: str = ""
+
     # ── Embeddings locais/remotos (busca semântica RAG) ─────────────────
     # local = fastembed (ONNX, sem torch) no mesmo processo; http = serviço interno separado.
     # Default True: fastembed é dependência pinada (requirements.txt) e o
@@ -233,6 +404,121 @@ class Settings(BaseSettings):
     EMBEDDINGS_PROVIDER: str = "local"  # local | http
     EMBEDDINGS_API_URL: str = "http://embeddings:8010/embed"
     EMBEDDINGS_TIMEOUT: int = 120
+    # Modelo e dimensão do embedding. O default precisa constar em
+    # TextEmbedding.list_supported_models() da versão PINADA do fastembed;
+    # caso contrário a migration de dimensão deixa o RAG sem vetores e sem
+    # possibilidade de reconstrução. multilingual-e5-large é 1024d,
+    # multilíngue e suportado nativamente pelo fastembed 0.8.0.
+    # A coluna knowledge_chunks.embedding é
+    # vector(EMBEDDINGS_DIM); TROCAR A DIMENSÃO exige a migration 096 + REINDEX
+    # (scripts.reembedar_chunks_orfaos). Revertível por env (voltar a
+    # sentence-transformers/paraphrase-multilingual-mpnet-base-v2 + 768 exige a
+    # migration de downgrade + reindex). ⚠️ EMBEDDINGS_DIM DEVE casar com a coluna.
+    EMBEDDINGS_MODEL: str = "intfloat/multilingual-e5-large"
+    EMBEDDINGS_DIM: int = 1024
+    # Auto-reindex do RAG (O-2): job periódico do scheduler reembeda chunks órfãos
+    # (embedding IS NULL) — assim a troca de modelo/dimensão (migration 096) se
+    # AUTO-CURA sem passo manual no deploy. No-op rápido quando não há órfãos.
+    # O script manual (scripts.reembedar_chunks_orfaos) segue como fallback.
+    RAG_AUTO_REEMBED_ENABLED: bool = True
+    RAG_AUTO_REEMBED_BATCH: int = 20
+
+    # ── Reranking (cross-encoder) do RAG — Fase 1 auditoria IA 2026-07-17 ─
+    # Reordena os candidatos do retrieval híbrido (pgvector cosine + RRF pg_trgm)
+    # por relevância consulta↔trecho com um cross-encoder LOCAL (fastembed, sem
+    # torch; não sai do VPS). Recupera um POOL maior (RAG_RERANK_POOL_*) e devolve
+    # só os melhores após rerank — maior ganho de precisão de contexto do RAG.
+    # Fail-safe (ver reranker.py): fastembed/modelo ausente ou qualquer erro →
+    # mantém a ordem RRF, sem exceção. O único cross-encoder multilíngue listado
+    # pelo fastembed pinado tem licença CC-BY-NC-4.0, incompatível com uso
+    # empresarial. Por isso o rerank fica DESLIGADO por padrão até existir um
+    # modelo multilíngue com licença comercialmente compatível e eval em pt-BR.
+    # BAAI/bge-reranker-base permanece como opção técnica suportada (MIT), mas
+    # não deve ser ativado sem medir qualidade no corpus jurídico em português.
+    RAG_RERANK_ENABLED: bool = False
+    RAG_RERANK_MODEL: str = "BAAI/bge-reranker-base"
+    RAG_RERANK_POOL_MULT: int = 5     # pool de candidatos = limite × MULT
+    RAG_RERANK_POOL_MIN: int = 20     # piso de candidatos antes do rerank
+
+    # ── Ajuste fino do retrieval RAG (auditoria IA 2026-07-17) ───────────────
+    # Limiar de similaridade de cosseno da busca vetorial (pgvector): chunks com
+    # similaridade < RAG_MIN_SIM são descartados (dist > 1-RAG_MIN_SIM). Antes era
+    # hardcoded (0.55); agora é calibrável por um eval set sem tocar código.
+    RAG_MIN_SIM: float = 0.55
+    # HyDE (Hypothetical Document Embeddings): gera uma "resposta hipotética"
+    # curta e barata e a EMBUTE na busca vetorial — melhora o recall quando o
+    # vocabulário do caso novo difere do registrado. Fail-safe: erro/timeout →
+    # usa a consulta original. Default OFF (liga após medir; +1 chamada barata/busca).
+    RAG_HYDE_ENABLED: bool = False
+    # Perna lexical FULL-TEXT (tsvector 'portuguese', BM25-like) no híbrido RRF,
+    # além do pg_trgm — melhor para termos raros/citações exatas (art./súmula/nº
+    # CNJ). Usa o índice GIN pré-existente ix_knowledge_chunks_conteudo_fts
+    # (migration 001) — não requer migration nova. Fail-safe: erro → só
+    # semântico+trigram. Default OFF até validar em produção.
+    RAG_FTS_ENABLED: bool = False
+    # Grounding de citações (auditoria IA 2026-07-17, O-5): além do citation_check
+    # contra a base interna, o validador confere as citações com o verificador
+    # rigoroso. As checagens são LOCAIS (dígito verificador do nº CNJ, faixa de
+    # súmula, formato → detecta citação alucinada) e não fazem rede — por isso o
+    # grounding vem LIGADO por default (valor imediato, zero latência). Aditivo e
+    # fail-safe (erro → alerta, nunca derruba).
+    AI_LIVE_GROUNDING_ENABLED: bool = True
+    # Confirmação de nº CNJ no DataJud (CNJ) — a ÚNICA parte que faz REDE externa
+    # (latência/rate limit). Separada e OFF por default: ligue após validar a
+    # conectividade DataJud no ambiente. O grounding local acima independe disto.
+    AI_GROUNDING_DATAJUD_ENABLED: bool = False
+
+    # ── RAG de MODELOS na geração de peças (Bíblia de Conhecimento) ───────
+    # Recupera os modelos de peça (categoria "modelo_documento_juridico") como
+    # REFERÊNCIA de estrutura/tese na montagem final (Etapa 7). Gated e fail-safe:
+    # OFF ou qualquer falha/vazio degrada para o comportamento atual (peça gerada
+    # sem modelos), NUNCA propaga erro. Query dedicada com filtro por categoria
+    # para os modelos não serem afogados por legislação/jurisprudência no top-k.
+    PECAS_RAG_MODELOS_ENABLED: bool = True
+    PECAS_RAG_MODELOS_TOPK: int = 3
+
+    # ── Laço de AUTO-CRÍTICA na geração de peças (P2 — auditoria IA) ──────
+    # True = após a redação final do pipeline de peças (Etapa 7), a IA
+    # Crítica/Adversarial (Modo Duas IAs) avalia a minuta e, havendo
+    # apontamentos ACIONÁVEIS, UMA rodada extra de revisão devolve a crítica
+    # ao modelo redator (task_type="elaboracao_peca", base anti-alucinação;
+    # a crítica entra DELIMITADA como DADO — nunca instrução de sistema).
+    # A versão revisada também passa pelo gate de citações e permanece
+    # rascunho HITL. Opt-in e fail-safe: default False = pipeline IDÊNTICO ao
+    # atual; qualquer falha na crítica/revisão entrega a versão original.
+    PECAS_AUTOCRITICA_ENABLED: bool = False
+
+    # ── Pesquisa jurisprudencial DECOMPOSTA no pipeline de peças (FASE 3) ─
+    # True = quando o caso tem Matriz de Teses montada (migração 102), a etapa
+    # de jurisprudência do peca_service recebe ADICIONALMENTE o bloco
+    # estruturado por questão (precedentes VERIFICADOS favoráveis/contrários,
+    # ver matriz_teses_service.bloco_pesquisa_estruturada) em vez de só o blob
+    # único do RAG. Aditivo e fail-safe: default False = pipeline BYTE-IDÊNTICO
+    # ao atual; qualquer falha/matriz ausente degrada para o comportamento atual.
+    PECAS_PESQUISA_QUESTOES_ENABLED: bool = False
+
+    # ── Governança/curadoria na RECUPERAÇÃO RAG (gate fail-closed) ───────
+    # Auditoria RAG: os campos de curadoria (confidence_level/rag_status) vivem
+    # em knowledge_docs.extra (JSONB) mas NÃO eram usados no WHERE das buscas.
+    # O gate exclui SEMPRE docs explicitamente bloqueados/recusados/pendentes
+    # e, por padrão seguro, exige rag_status='aprovado' em TODA recuperação.
+    # Acervo legado sem decisão de curadoria fica em quarentena até reconciliação;
+    # disponibilidade nunca prevalece sobre fundamentação jurídica não validada.
+    RAG_EXIGIR_APROVADO: bool = True
+    # Quarentena das súmulas: mesmo após a reconstrução do seed (cada verbete
+    # reconferido individualmente contra fonte oficial — ver DATA_CONFERENCIA
+    # em sumulas_ingestion.py), este filtro continua ligado por padrão como
+    # rede de segurança: só deixa passar doc de súmula com extra.conferido=true
+    # (gravado pelo próprio seed corrigido). Protege contra reintrodução de
+    # conteúdo não conferido por outra via (ingestão manual futura, por ex.).
+    RAG_SUMULAS_QUARENTENA: bool = True
+    # Ingestão do seed de súmulas (sumulas_ingestion.py) — RECONSTRUÍDO na
+    # auditoria RAG: os 27 verbetes foram reconferidos individualmente contra
+    # fonte oficial (STF/STJ/TST). Súmulas cancelada/suspensa são marcadas e
+    # NÃO entram no RAG buscável (só ficam em `teses` como histórico). Padrão
+    # True — desligue (False) só se precisar suspender a ingestão rapidamente
+    # sem reverter código (o endpoint responde 423 quando False).
+    RAG_SUMULAS_SEED_ENABLED: bool = True
 
     # ── Web Push (alertas no celular via PWA) ────────────────────────────
     # Gerar chaves: python scripts/gen_vapid.py (uma vez no deploy)
@@ -286,19 +572,95 @@ class Settings(BaseSettings):
 
     # ── Sentry — rastreamento de erros em produção ────────────────────────
     SENTRY_DSN: str = ""            # deixar vazio para desabilitar
+    SENTRY_ENVIRONMENT: str = "production"   # tag de ambiente nos eventos
+    SENTRY_TRACES_SAMPLE_RATE: float = 0.0   # 0.0 = performance tracing off
 
     # ── Governança de custo de IA ─────────────────────────────────────────
     # Alerta de gasto no painel de Governança da IA: se o custo estimado de IA
     # no período exceder este valor (R$), o painel sinaliza. 0 = sem alerta.
     AI_BUDGET_ALERTA_BRL: float = 0.0
 
-    # ── Backup offsite (pg_dump via rclone no HOST) ───────────────────────
+    # ── Backup ────────────────────────────────────────────────────────────
+    # (a) Legado: pg_dump local + rclone (scheduler._backup_banco, 02h00).
     BACKUP_REMOTE: str = ""         # ex: "b2:ejc-backups" (rclone remote)
     BACKUP_DIR: str = "/app/backups"  # diretório local de dumps dentro do container postgres
     BACKUP_RETENTION_DAYS: int = 7  # dumps locais mais antigos que isto são apagados na rotação
+    # (b) Backup diário cifrado → Google Drive (services/backup_service.py).
+    # Reusa as credenciais Google da curadoria de conhecimento (GOOGLE_DRIVE_*)
+    # — nenhum fluxo novo de auth. Opt-in: default False mantém tudo desligado.
+    BACKUP_ENABLED: bool = False
+    # Chave Fernet EXCLUSIVA do backup (não reusar PII_ENCRYPTION_KEY — a
+    # rotação de uma não pode invalidar a outra). Default vazio de propósito:
+    # com BACKUP_ENABLED=true em produção a chave é OBRIGATÓRIA (validada
+    # abaixo). AVISO: perder esta chave = perder TODOS os backups cifrados.
+    BACKUP_ENCRYPTION_KEY: str = ""
+    # ID da pasta do Google Drive que recebe os artefatos (a rotação só apaga
+    # arquivos com prefixo ejc_backup_ dentro dela).
+    BACKUP_DRIVE_FOLDER_ID: str = ""
+    # Horário DIÁRIO do job, em UTC ("HH:MM"). 05:00 UTC = 02:00 BRT.
+    BACKUP_HORA_UTC: str = "05:00"
+    # Retenção no Drive: mantém N dias de backups diários; mais antigos são
+    # apagados na rotação (somente arquivos com o prefixo do EJC).
+    BACKUP_RETENCAO_DIAS: int = 14
+    # Teto do tar.gz de uploads (a criptografia Fernet é em memória): acima
+    # disto o backup segue SÓ com o banco e marca status "parcial".
+    BACKUP_UPLOADS_MAX_MB: int = 512
+    # Teto do dump do banco (mesma razão: Fernet cifra em memória): acima
+    # disto o backup FALHA com erro claro (alerta dispara) sem ler o arquivo.
+    BACKUP_DB_MAX_MB: int = 2048
+    # Timeout (segundos) do pg_dump — bancos maiores podem precisar de mais.
+    BACKUP_PG_DUMP_TIMEOUT: int = 600
+
+    # ── Automações voltadas ao CLIENTE (jobs opt-in — default False) ──────
+    # Sync diário DataJud + notificação de andamentos novos ao cliente
+    # (services/datajud_sync_service.py). Exige DATAJUD_ENABLED + API key.
+    DATAJUD_SYNC_ENABLED: bool = False
+    # Horário DIÁRIO do sync, em UTC ("HH:MM") — mesmo padrão de BACKUP_HORA_UTC.
+    # 09:30 UTC = 06:30 BRT (antes do expediente; DataJud atualiza de madrugada).
+    DATAJUD_SYNC_HORA_UTC: str = "09:30"
+    # Relatório semanal do dono (segunda-feira, e-mail aos sócios/admins) —
+    # services/relatorio_dono_service.py.
+    RELATORIO_DONO_ENABLED: bool = False
+    # Régua de cobrança de honorários voltada ao CLIENTE (d-3/d+1/d+7/d+15 +
+    # escalada interna) — services/cobranca_cliente_service.py. NÃO confundir
+    # com a régua interna do advogado (scheduler._regua_cobranca).
+    COBRANCA_ENABLED: bool = False
+
+    # ── Índices oficiais BCB (SGS + Olinda) — services/indices_service.py ─
+    # API pública do Banco Central, gratuita e sem chave: correção monetária,
+    # Taxa Legal (Lei 14.905/2024), Selic EC 113, taxas de juros por
+    # instituição (revisional) e PTAX. LIGADO por padrão (autorizado pelo
+    # dono — não há custo). Cache persistente em indices_bcb_cache.
+    INDICES_BCB_ENABLED: bool = True
+    # Timeout (segundos) das chamadas ao BCB (SGS e Olinda).
+    INDICES_BCB_TIMEOUT: int = 20
+
+    # ── Feriados nacionais via BrasilAPI — services/feriados_service.py ───
+    # Sync automático (job semanal) dos feriados nacionais do ano corrente e
+    # do próximo para a tabela `feriados` (merge aditivo: municipais/
+    # estaduais cadastrados à mão nunca são alterados). Gratuito, sem chave —
+    # ligado por padrão.
+    FERIADOS_BRASILAPI_ENABLED: bool = True
+
+    # ── Radar Legislativo (Câmara + Senado + ALMG) ────────────────────────
+    # Job diário (07h00 UTC) que monitora proposições por termos derivados
+    # dos ramos ativos do escritório e alimenta o Radar Regulatório
+    # (services/radar_legislativo.py). APIs públicas gratuitas, sem chave —
+    # LIGADO por padrão (autorizado pelo dono). Dedup persistente na tabela
+    # radar_legislativo_visto (criada automaticamente — sem migration).
+    RADAR_LEGISLATIVO_ENABLED: bool = True
+    # Termos customizados por ramo (JSON): {"ramo": ["termo", ...]} —
+    # SOBREPÕE os termos default do ramo; ramos extras são aditivos.
+    # Ex.: {"tributario": ["CBS IBS", "split payment"], "agrario": ["MP solo"]}
+    RADAR_LEGISLATIVO_TERMOS: str = ""
 
     # ── Scheduler ────────────────────────────────────────────────────────
     ENABLE_SCHEDULER: bool = True   # desligar em workers extras (uvicorn --workers)
+
+    # ── Central Eletrônica de Diagnóstico (routers/diagnostico.py) ────────
+    # Endpoint SOCIO+ que agrega a saúde de todos os subsistemas. Somente
+    # leitura; sem integração externa nova. False → GET /diagnostico/central 503.
+    DIAGNOSTICO_ENABLED: bool = True
 
     # ── Fila assíncrona (Celery + Redis — Fase 3A) ────────────────────────
     # CELERY_ENABLED=False (default) preserva o comportamento atual: tarefas
@@ -335,11 +697,37 @@ class Settings(BaseSettings):
     LOG_LEVEL: str = "INFO"
 
     # ── Escritório (LGPD — identificação do controlador de dados) ─────────
+    # FONTE ÚNICA DE VERDADE dos dados FIXOS do escritório, consumida por todos
+    # os geradores de documento (documental.py, templates_documentos.py,
+    # pdf_service.py, docx_service.py). OAB/ENDERECO/CEP nascem VAZIOS de
+    # propósito: são preenchidos no .env do escritório. Quando vazios, os
+    # helpers abaixo devolvem um placeholder EXPLÍCITO e visível — o documento
+    # nunca sai com string vazia silenciosa nem com dado inventado.
     ESCRITORIO_NOME: str = "De Paula Teixeira Sociedade de Advogados"
     ESCRITORIO_CNPJ: str = "32.491.468/0001-12"
     ESCRITORIO_CIDADE: str = "Betim"
     ESCRITORIO_ESTADO: str = "MG"
     ESCRITORIO_EMAIL: str = "contato@depaulateixeira.adv.br"
+    ESCRITORIO_OAB: str = ""
+    ESCRITORIO_ENDERECO: str = ""
+    ESCRITORIO_CEP: str = ""
+
+    @staticmethod
+    def _ou_placeholder(valor: str, rotulo: str) -> str:
+        """Valor da setting, ou um placeholder EXPLÍCITO quando ainda não
+        preenchido no .env — visível no documento para sinalizar a pendência
+        (nunca string vazia, que passaria despercebida)."""
+        limpo = (valor or "").strip()
+        return limpo or f"[{rotulo} - preencher em .env]"
+
+    def escritorio_oab(self) -> str:
+        return self._ou_placeholder(self.ESCRITORIO_OAB, "OAB/MG nº ___")
+
+    def escritorio_endereco(self) -> str:
+        return self._ou_placeholder(self.ESCRITORIO_ENDERECO, "endereço do escritório")
+
+    def escritorio_cep(self) -> str:
+        return self._ou_placeholder(self.ESCRITORIO_CEP, "CEP")
 
     @model_validator(mode="after")
     def _validar_seguranca_producao(self):
@@ -361,6 +749,17 @@ class Settings(BaseSettings):
                     "SECRET_KEY ausente ou placeholder em produção. "
                     "Gere uma chave: python3 -c \"import secrets; "
                     "print(secrets.token_urlsafe(64))\" e defina no .env."
+                )
+            # Item 3 (auditoria pré-produção): chave curta = espaço de busca
+            # brute-forçável para forjar JWTs (HS256). 32 chars é o piso.
+            if len(self.SECRET_KEY) < 32:
+                raise ValueError(
+                    f"SECRET_KEY muito curta para produção "
+                    f"({len(self.SECRET_KEY)} caracteres; mínimo 32). Uma chave "
+                    "curta permite forjar tokens JWT por força bruta. Gere uma "
+                    "nova: python3 -c \"import secrets; "
+                    "print(secrets.token_urlsafe(64))\" e defina no .env "
+                    "(atenção: trocar a chave desloga todos os usuários)."
                 )
             if "SEU_DOMINIO" in getattr(self, 'FRONTEND_URL', ''):
                 raise ValueError("FRONTEND_URL não configurada para produção.")
@@ -415,6 +814,27 @@ class Settings(BaseSettings):
                     "cryptography.fernet import Fernet; print(Fernet.generate_key()"
                     ".decode())'\"."
                 ) from e
+            # Backup → Google Drive: com o backup LIGADO em produção, a chave
+            # de criptografia é OBRIGATÓRIA e validada no BOOT (mesma promessa
+            # do SECRET_KEY/PII: falha no deploy, não na primeira execução às
+            # 05h UTC). O dump carrega PII — jamais sobe ao Drive em claro.
+            if self.BACKUP_ENABLED:
+                if not self.BACKUP_ENCRYPTION_KEY or self.BACKUP_ENCRYPTION_KEY.startswith("TROCAR"):
+                    raise ValueError(
+                        "BACKUP_ENABLED=true exige BACKUP_ENCRYPTION_KEY em "
+                        "produção (o backup nunca sai do VPS sem cifrar). Gere "
+                        "com \"python3 -c 'from cryptography.fernet import "
+                        "Fernet; print(Fernet.generate_key().decode())'\" e "
+                        "guarde uma cópia FORA do servidor — perder a chave = "
+                        "perder os backups."
+                    )
+                try:
+                    Fernet(self.BACKUP_ENCRYPTION_KEY.encode())
+                except Exception as e:
+                    raise ValueError(
+                        "BACKUP_ENCRYPTION_KEY inválida: precisa ser uma chave "
+                        "Fernet (32 bytes url-safe base64)."
+                    ) from e
         elif not self.SECRET_KEY:
             # Desenvolvimento: gera chave efêmera para não travar o ambiente local.
             self.SECRET_KEY = secrets.token_urlsafe(64)

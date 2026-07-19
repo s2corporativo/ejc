@@ -13,8 +13,10 @@
 #   VPS_PORT      — opcional (default 22)
 #
 # Segurança: o rsync NUNCA toca .env, uploads/, backups/ do servidor e não usa
-# --delete. Migrations NÃO rodam por padrão (input run_migrations) — inclusive
-# no disparo automático, que nunca roda migrations.
+# --delete. Migrations: o deploy AUTOMÁTICO (workflow_run pós-CI) SEMPRE aplica
+# (alembic upgrade head) — com backup antes e rollback se o health-check falhar;
+# evita subir código na frente do schema. O disparo manual respeita o input
+# run_migrations.
 name: Deploy VPS
 
 on:
@@ -22,6 +24,10 @@ on:
     inputs:
       run_migrations:
         description: "Rodar migrations Alembic (apenas com migração revisada)"
+        type: boolean
+        default: false
+      run_seeds:
+        description: "Rodar seed do corpus RAG da Bíblia (situações + modelos + Volume III)"
         type: boolean
         default: false
   workflow_run:
@@ -77,13 +83,19 @@ jobs:
         run: |
           PORT="${VPS_PORT:-22}"
           mkdir -p ~/.ssh && chmod 700 ~/.ssh
+          # ServerAliveInterval/CountMax: mantêm a sessão viva durante operações
+          # longas e SILENCIOSAS no VPS (o seed do RAG vetoriza ~400 docs na CPU
+          # e fica minutos sem produzir output) — sem isto o SSH caía com
+          # "Broken pipe" e o deploy inteiro falhava no meio do seed. 30s x 20 =
+          # tolera ~10 min de silêncio.
+          KEEPALIVE="-o ServerAliveInterval=30 -o ServerAliveCountMax=20"
           if [ -n "$VPS_SSH_KEY" ]; then
             printf '%s\n' "$VPS_SSH_KEY" > ~/.ssh/deploy_key
             chmod 600 ~/.ssh/deploy_key
-            echo "RSH=ssh -i $HOME/.ssh/deploy_key -o IdentitiesOnly=yes -o StrictHostKeyChecking=accept-new -p ${PORT}" >> "$GITHUB_ENV"
+            echo "RSH=ssh -i $HOME/.ssh/deploy_key -o IdentitiesOnly=yes ${KEEPALIVE} -o StrictHostKeyChecking=accept-new -p ${PORT}" >> "$GITHUB_ENV"
             echo "Autenticação: chave SSH"
           else
-            echo "RSH=sshpass -e ssh -o PreferredAuthentications=password,keyboard-interactive -o StrictHostKeyChecking=accept-new -p ${PORT}" >> "$GITHUB_ENV"
+            echo "RSH=sshpass -e ssh -o PreferredAuthentications=password,keyboard-interactive ${KEEPALIVE} -o StrictHostKeyChecking=accept-new -p ${PORT}" >> "$GITHUB_ENV"
             echo "Autenticação: senha (sshpass)"
           fi
 
@@ -107,10 +119,21 @@ jobs:
 
       - name: Deploy seguro (backup → build → health-check → rollback em falha)
         env:
-          RUN_MIGRATIONS: ${{ inputs.run_migrations && '1' || '0' }}
+          # Deploy automático (workflow_run pós-CI) SEMPRE aplica as migrations —
+          # senão o código sobe na frente do schema e quebra em produção (ex.:
+          # peça grava colunas/tabela que a migration ainda não criou). É seguro:
+          # deploy_vps_safe.sh faz backup ANTES e rollback se o health-check
+          # falhar, e as migrations do EJC são aditivas/idempotentes. O disparo
+          # manual (workflow_dispatch) continua respeitando o input run_migrations.
+          RUN_MIGRATIONS: ${{ (github.event_name == 'workflow_run' || inputs.run_migrations) && '1' || '0' }}
+          # Seed do corpus RAG da Bíblia (idempotente e NÃO-FATAL no script): o
+          # deploy automático pós-CI SEMPRE reingere (dedup por chave_origem —
+          # reexecutar não duplica; novas edições do corpus, como o Volume III,
+          # entram como versões). O disparo manual respeita o input run_seeds.
+          RUN_SEEDS: ${{ (github.event_name == 'workflow_run' || inputs.run_seeds) && '1' || '0' }}
         run: |
           ${RSH} "${VPS_USER}@${VPS_HOST}" \
-            "cd /opt/ejc && RUN_MIGRATIONS=${RUN_MIGRATIONS} bash scripts/deploy_vps_safe.sh"
+            "cd /opt/ejc && RUN_MIGRATIONS=${RUN_MIGRATIONS} RUN_SEEDS=${RUN_SEEDS} bash scripts/deploy_vps_safe.sh"
 
       - name: Verificação pública pós-deploy
         run: |

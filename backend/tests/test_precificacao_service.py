@@ -9,7 +9,6 @@ mantém estes testes rodando no sandbox sem Postgres.
 """
 from __future__ import annotations
 
-import pytest
 
 from app.services.precificacao_service import calcular_honorario
 

@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useState } from "react";
 import api from "../lib/api";
+import { PageHeader, Spinner } from "../components/UI";
 import { getModuleCatalog } from "../config/moduleRegistry";
 
 type Modulo = {
@@ -78,13 +79,11 @@ export default function MapaModulos() {
           backendModule?.backend_prefixes ?? module.backendPrefixes ?? [],
         status: statusMap[module.status ?? "active"],
         perfis: backendModule?.perfis ?? [...(module.roles ?? [])],
-        dependencias:
-          backendModule?.dependencias ?? module.dependencies ?? [],
+        dependencias: backendModule?.dependencias ?? module.dependencies ?? [],
         usa_ia: module.usesAI ?? backendModule?.usa_ia ?? false,
         dados_sensiveis:
           module.sensitive ?? backendModule?.dados_sensiveis ?? true,
-        qtd_endpoints_detectados:
-          backendModule?.qtd_endpoints_detectados ?? 0,
+        qtd_endpoints_detectados: backendModule?.qtd_endpoints_detectados ?? 0,
         precisa_revisao:
           Boolean(backendModule?.precisa_revisao) || !backendModule,
         origem: backendModule ? "ambos" : "frontend",
@@ -113,7 +112,8 @@ export default function MapaModulos() {
     const termo = q.trim().toLowerCase();
     return modulos.filter((module) => {
       const bateGrupo = grupo === "todos" || module.grupo === grupo;
-      const texto = `${module.nome} ${module.module_key} ${module.frontend_route} ${module.backend_prefixes.join(" ")}`.toLowerCase();
+      const texto =
+        `${module.nome} ${module.module_key} ${module.frontend_route} ${module.backend_prefixes.join(" ")}`.toLowerCase();
       return bateGrupo && (!termo || texto.includes(termo));
     });
   }, [modulos, q, grupo]);
@@ -129,12 +129,7 @@ export default function MapaModulos() {
     [modulos],
   );
 
-  if (loading)
-    return (
-      <div className="p-6 text-sm text-slate-500">
-        Carregando mapa de módulos...
-      </div>
-    );
+  if (loading) return <Spinner />;
   if (erro)
     return (
       <div className="p-6 text-sm text-red-700">
@@ -144,26 +139,15 @@ export default function MapaModulos() {
 
   return (
     <div className="space-y-6">
-      <div>
-        <p className="text-xs font-semibold uppercase tracking-wide text-primary-600">
-          Administração
-        </p>
-        <h1 className="mt-1 text-2xl font-bold text-slate-950">
-          Mapa de Módulos
-        </h1>
-        <p className="mt-2 max-w-3xl text-sm text-slate-500">
-          Cruzamento entre o manifesto de rotas do frontend e o registro de
-          dependências e endpoints do backend. Divergências são marcadas para
-          revisão.
-        </p>
-      </div>
+      <PageHeader
+        eyebrow="Administração"
+        title="Mapa de Módulos"
+        subtitle="Cruzamento entre o manifesto de rotas do frontend e o registro de dependências e endpoints do backend. Divergências são marcadas para revisão."
+      />
 
       <div className="grid gap-3 md:grid-cols-5">
         {Object.entries(resumo).map(([key, value]) => (
-          <div
-            key={key}
-            className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm"
-          >
+          <div key={key} className="card p-4">
             <div className="text-xs uppercase tracking-wide text-slate-400">
               {key.split("_").join(" ")}
             </div>
@@ -174,17 +158,17 @@ export default function MapaModulos() {
         ))}
       </div>
 
-      <div className="flex flex-col gap-3 rounded-2xl border border-slate-200 bg-white p-4 md:flex-row md:items-center">
+      <div className="card flex flex-col gap-3 p-4 md:flex-row md:items-center">
         <input
           value={q}
           onChange={(event) => setQ(event.target.value)}
           placeholder="Buscar por módulo, rota ou backend..."
-          className="h-10 flex-1 rounded-xl border border-slate-200 px-3 text-sm outline-none focus:border-primary-400"
+          className="input h-10 flex-1"
         />
         <select
           value={grupo}
           onChange={(event) => setGrupo(event.target.value)}
-          className="h-10 rounded-xl border border-slate-200 px-3 text-sm outline-none focus:border-primary-400"
+          className="input h-10 w-auto"
         >
           {grupos.map((item) => (
             <option key={item}>{item}</option>
@@ -192,7 +176,7 @@ export default function MapaModulos() {
         </select>
       </div>
 
-      <div className="overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm">
+      <div className="card overflow-hidden">
         <div className="overflow-x-auto">
           <table className="min-w-full text-left text-sm">
             <thead className="bg-slate-50 text-xs uppercase tracking-wide text-slate-500">
@@ -217,9 +201,7 @@ export default function MapaModulos() {
                       {module.module_key} · {module.origem}
                     </div>
                   </td>
-                  <td className="px-4 py-3 text-slate-600">
-                    {module.grupo}
-                  </td>
+                  <td className="px-4 py-3 text-slate-600">{module.grupo}</td>
                   <td className="px-4 py-3">
                     <span
                       className={`rounded-full border px-2 py-1 text-xs font-semibold ${statusClass[module.status] || statusClass.legado}`}

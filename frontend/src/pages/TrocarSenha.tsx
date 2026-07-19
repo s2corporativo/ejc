@@ -1,14 +1,17 @@
 import { useState } from "react";
-import { toast } from "../components/Toast";
 import { useNavigate } from "react-router-dom";
 import api, { logout } from "../lib/api";
+import { toast } from "../components/Toast";
+import { useAuth } from "../stores/auth";
 
 export default function TrocarSenha() {
-  const nav = useNavigate();
   const [atual, setAtual] = useState("");
   const [nova, setNova] = useState("");
   const [conf, setConf] = useState("");
   const [erro, setErro] = useState("");
+  const [salvando, setSalvando] = useState(false);
+  const nav = useNavigate();
+  const bootstrap = useAuth((state) => state.bootstrap);
 
   const trocar = async () => {
     setErro("");
@@ -20,15 +23,30 @@ export default function TrocarSenha() {
       setErro("Senhas não conferem");
       return;
     }
+    setSalvando(true);
     try {
-      await api.post("/auth/alterar-senha", {
+      const { data } = await api.post("/auth/alterar-senha", {
         senha_atual: atual,
         nova_senha: nova,
       });
-      toast.success("Senha alterada! Entre novamente.");
-      logout();
+      if (data?.access_token) {
+        // Backend devolve tokens novos (mesmo formato do login): mantém a
+        // sessão em vez de derrubar o usuário de volta ao /login logo após
+        // ele criar a senha. O refresh novo vem no cookie httpOnly.
+        localStorage.setItem("ejc_access", data.access_token);
+        await bootstrap();
+        toast.success("Senha alterada com sucesso — você continua conectado.");
+        nav("/", { replace: true });
+        return;
+      }
+      // Fallback (backend antigo, sem tokens na resposta): logout() faz
+      // redirect HARD para /login — o aviso de sucesso é exibido pela tela
+      // de login via query string.
+      logout("/login?motivo=senha-alterada");
     } catch (e: any) {
       setErro(e.response?.data?.detail || "Erro ao trocar a senha");
+    } finally {
+      setSalvando(false);
     }
   };
 
@@ -71,9 +89,10 @@ export default function TrocarSenha() {
           />
           <button
             className="btn-primary w-full justify-center"
+            disabled={salvando}
             onClick={trocar}
           >
-            Definir nova senha
+            {salvando ? "Salvando..." : "Definir nova senha"}
           </button>
         </div>
       </div>

@@ -1,6 +1,8 @@
 # ── app/routers/score_juridico.py ────────────────────────────────────────────
 from __future__ import annotations
-import json, re
+import json
+import logging
+import re
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -9,6 +11,9 @@ from app.core.security import get_current_user
 from app.core.ownership import verificar_acesso_caso
 from app.models.user import User
 from app.models.audit_log import criar_audit_log
+from app.services import ai_gateway
+
+logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/cases/{case_id}/score-juridico", tags=["Score Jurídico"])
 
@@ -71,22 +76,35 @@ async def calcular_score(
         from fastapi import HTTPException
         raise HTTPException(404, "Caso não encontrado")
 
-    # Chamar LLM
+    # Chamar LLM — via AI Gateway (barreira única de PII/LGPD + logs HITL).
     try:
-        from app.services.ai_service import gerar_resposta_ia
-        prompt = (
-            f"Caso: {case_data['titulo']} | Área: {case_data['area']} | "
-            f"Status: {case_data['status']} | Docs: {case_data['docs']} | "
-            f"Prazos: {case_data['prazos']}\n\n"
-            "Avalie em JSON com as 7 dimensões jurídicas e pontuações:\n"
+        system_prompt = (
+            "Você é um avaliador jurídico do escritório. Avalie o caso e responda "
+            "SOMENTE em JSON com as 7 dimensões e pontuações:\n"
             '{"pedido":<0-15>,"causa_de_pedir":<0-15>,"fundamentacao":<0-20>,'
             '"provas":<0-20>,"jurisprudencia":<0-15>,"documentos_obrigatorios":<0-10>,'
             '"conformidade_formal":<0-5>,"detalhes":{},"recomendacoes":[]}'
         )
-        resp = await gerar_resposta_ia(prompt, case_id=case_id, user_id=cu.id)
-        match = re.search(r'\{.*\}', resp, re.DOTALL)
+        user_prompt = (
+            f"Caso: {case_data['titulo']} | Área: {case_data['area']} | "
+            f"Status: {case_data['status']} | Docs: {case_data['docs']} | "
+            f"Prazos: {case_data['prazos']}"
+        )
+        resp = await ai_gateway.chat(
+            messages=[
+                {"role": "system", "content": system_prompt},
+                {"role": "user", "content": user_prompt},
+            ],
+            task_type="analise_juridica",
+            temperature=0.15,
+            max_tokens=1024,
+        )
+        match = re.search(r"\{.*\}", resp.texto, re.DOTALL)
         scores = json.loads(match.group()) if match else {}
     except Exception:
+        # Fail-safe: nunca 500 e nunca inventa nota — mas registra para não
+        # mascarar a falha (antes o except amplo escondia até import quebrado).
+        logger.warning("Score jurídico por IA indisponível; usando fallback zerado", exc_info=True)
         scores = {k: 0 for k in DIMS}
         scores.update({"detalhes": {}, "recomendacoes": ["Score calculado manualmente"]})
 

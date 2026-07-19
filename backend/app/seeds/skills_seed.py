@@ -10,7 +10,6 @@ Dependências:
     - Variável DATABASE_URL configurada no .env
 """
 
-import asyncio
 import os
 import sys
 from datetime import datetime
@@ -744,7 +743,7 @@ def seed_skills_sync():
         session.commit()
 
     print(f"\n{'─'*50}")
-    print(f"SKILLS SEED CONCLUÍDO")
+    print("SKILLS SEED CONCLUÍDO")
     print(f"  Inseridas : {inserted}")
     print(f"  Atualizadas: {updated}")
     print(f"  Ignoradas : {skipped}")
@@ -758,7 +757,7 @@ def seed_skills_sync():
 
 if __name__ == "__main__":
     print(f"\n{'═'*50}")
-    print(f"EJC — Skills Seed")
+    print("EJC — Skills Seed")
     print(f"{'═'*50}")
     print(f"Skills a processar: {len(SKILLS)}")
     print()

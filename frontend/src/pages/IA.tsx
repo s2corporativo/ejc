@@ -1,9 +1,18 @@
-import { useEffect, useState } from "react";
+import { useEffect, useState, useCallback } from "react";
 import Markdown from "../components/Markdown";
 import { Sparkles, FileText, History, Eye, ShieldCheck } from "lucide-react";
 import api from "../lib/api";
-import { PageHeader, Spinner, fmtDate, StatusBadge } from "../components/UI";
+import {
+  EmptyState,
+  ErrorState,
+  PageHeader,
+  Spinner,
+  fmtDate,
+  StatusBadge,
+} from "../components/UI";
 import { asList } from "../lib/list";
+import { mensagemErroIA, ROTULO_IA_NAO_ATIVADA } from "../lib/iaErro";
+import { MENSAGEM_IA_NAO_ATIVADA, useIaStatus } from "../lib/iaStatus";
 
 const AREAS = [
   "civil",
@@ -20,6 +29,7 @@ const AREAS = [
 type Tab = "analise" | "resumo" | "validacao" | "logs";
 
 export default function IA() {
+  const { disponivel: iaDisponivel, mensagem: iaMensagem } = useIaStatus();
   const [tab, setTab] = useState<Tab>("analise");
   const [fatos, setFatos] = useState("");
   const [area, setArea] = useState("civil");
@@ -34,17 +44,29 @@ export default function IA() {
   const [resp, setResp] = useState<any>(null);
   const [loading, setLoading] = useState(false);
   const [logs, setLogs] = useState<any[]>([]);
+  const [loadingLogs, setLoadingLogs] = useState(false);
+  const [logsError, setLogsError] = useState(false);
   const [caseId, setCaseId] = useState("");
   const [casos, setCasos] = useState<any[]>([]);
   const [dossie, setDossie] = useState<string | null>(null);
   const [loadingDossie, setLoadingDossie] = useState(false);
 
+  const carregarLogs = useCallback(async () => {
+    setLoadingLogs(true);
+    setLogsError(false);
+    try {
+      const r = await api.get("/ai/logs", { params: { page_size: 30 } });
+      setLogs(asList(r.data));
+    } catch {
+      setLogsError(true);
+    } finally {
+      setLoadingLogs(false);
+    }
+  }, []);
+
   useEffect(() => {
-    if (tab === "logs")
-      api
-        .get("/ai/logs", { params: { page_size: 30 } })
-        .then((r) => setLogs(asList(r.data)));
-  }, [tab]);
+    if (tab === "logs") carregarLogs();
+  }, [tab, carregarLogs]);
 
   useEffect(() => {
     api
@@ -84,7 +106,7 @@ export default function IA() {
       });
       setResp(data);
     } catch (e: any) {
-      setResp({ erro: e.response?.data?.detail || "Falha" });
+      setResp({ erro: mensagemErroIA(e) });
     } finally {
       setLoading(false);
     }
@@ -100,7 +122,7 @@ export default function IA() {
       });
       setResp(data);
     } catch (e: any) {
-      setResp({ erro: e.response?.data?.detail || "Falha" });
+      setResp({ erro: mensagemErroIA(e) });
     } finally {
       setLoading(false);
     }
@@ -125,7 +147,7 @@ export default function IA() {
       });
       setResp(data);
     } catch (e: any) {
-      setResp({ erro: e.response?.data?.detail || "Falha" });
+      setResp({ erro: mensagemErroIA(e) });
     } finally {
       setLoading(false);
     }
@@ -142,15 +164,21 @@ export default function IA() {
     { k: "analise", label: "Análise de caso", icon: Sparkles },
     { k: "resumo", label: "Resumo", icon: FileText },
     { k: "validacao", label: "Validação jurídica", icon: ShieldCheck },
-    { k: "logs", label: "Histórico / HITL", icon: History },
+    { k: "logs", label: "Histórico / Revisões", icon: History },
   ] as const;
 
   return (
     <div>
       <PageHeader
         title="IA Jurídica"
-        subtitle="RAG semântico · dados sanitizados · rascunhos com revisão humana obrigatória"
+        subtitle="Busca na base de conhecimento · dados sanitizados · rascunhos com revisão humana obrigatória"
       />
+
+      {!iaDisponivel && (
+        <div className="mb-4 rounded-lg border border-warn-200 bg-warn-50 px-4 py-3 text-sm text-warn-800">
+          {iaMensagem || MENSAGEM_IA_NAO_ATIVADA}
+        </div>
+      )}
 
       <div className="flex flex-wrap gap-2 mb-5">
         {tabs.map(({ k, label, icon: Icon }) => (
@@ -160,7 +188,7 @@ export default function IA() {
               setTab(k);
               setResp(null);
             }}
-            className={`btn ${tab === k ? "bg-navy text-white" : "bg-white border border-slate-200 text-slate-600"}`}
+            className={`btn ${tab === k ? "bg-navy text-white" : "bg-slate-900/[0.05] text-slate-600 hover:bg-slate-900/[0.09] dark:bg-white/[0.07] dark:text-slate-300"}`}
           >
             <Icon size={15} /> {label}
           </button>
@@ -187,7 +215,7 @@ export default function IA() {
               ))}
             </select>
             <button
-              className="btn bg-white border border-gold-300 text-gold-700"
+              className="btn-secondary text-gold-700"
               disabled={!caseId || loadingDossie}
               onClick={verDossie}
             >
@@ -201,7 +229,7 @@ export default function IA() {
               </summary>
               <Markdown
                 source={dossie}
-                className="mt-2 text-xs bg-white border border-slate-200 rounded p-3 max-h-72 overflow-y-auto"
+                className="mt-2 text-xs card p-3 max-h-72 overflow-y-auto"
               />
             </details>
           )}
@@ -244,10 +272,16 @@ export default function IA() {
           </div>
           <button
             className="btn-gold"
-            disabled={loading || fatos.length < 30}
+            disabled={loading || fatos.length < 30 || !iaDisponivel}
+            title={iaDisponivel ? undefined : ROTULO_IA_NAO_ATIVADA}
             onClick={analisar}
           >
-            <Sparkles size={15} /> {loading ? "Analisando..." : "Sugerir teses"}
+            <Sparkles size={15} />{" "}
+            {!iaDisponivel
+              ? "IA não ativada"
+              : loading
+                ? "Analisando..."
+                : "Sugerir teses"}
           </button>
         </div>
       )}
@@ -264,10 +298,16 @@ export default function IA() {
           </div>
           <button
             className="btn-gold"
-            disabled={loading || docTexto.length < 50}
+            disabled={loading || docTexto.length < 50 || !iaDisponivel}
+            title={iaDisponivel ? undefined : ROTULO_IA_NAO_ATIVADA}
             onClick={resumir}
           >
-            <FileText size={15} /> {loading ? "Resumindo..." : "Resumir"}
+            <FileText size={15} />{" "}
+            {!iaDisponivel
+              ? "IA não ativada"
+              : loading
+                ? "Resumindo..."
+                : "Resumir"}
           </button>
         </div>
       )}
@@ -354,17 +394,30 @@ export default function IA() {
           </div>
           <button
             className="btn-gold"
-            disabled={loading || rascunhoValidacao.length < 100}
+            disabled={loading || rascunhoValidacao.length < 100 || !iaDisponivel}
+            title={iaDisponivel ? undefined : ROTULO_IA_NAO_ATIVADA}
             onClick={validarRascunho}
           >
             <ShieldCheck size={15} />{" "}
-            {loading ? "Validando..." : "Validar antes de finalizar"}
+            {!iaDisponivel
+              ? "IA não ativada"
+              : loading
+                ? "Validando..."
+                : "Validar antes de finalizar"}
           </button>
         </div>
       )}
 
-      {tab === "logs" && (
-        <div className="space-y-2">
+      {tab === "logs" &&
+        (loadingLogs ? (
+          <Spinner />
+        ) : logsError ? (
+          <ErrorState
+            message="Não foi possível carregar o histórico de uso da IA."
+            onRetry={carregarLogs}
+          />
+        ) : (
+          <div className="space-y-2">
           {logs.map((l) => (
             <div key={l.id} className="card p-4">
               <div className="flex flex-wrap items-center gap-3 mb-2">
@@ -414,12 +467,10 @@ export default function IA() {
             </div>
           ))}
           {logs.length === 0 && (
-            <div className="card p-8 text-center text-sm text-slate-400">
-              Nenhum uso de IA registrado
-            </div>
+            <EmptyState title="Nenhum uso de IA registrado" />
           )}
-        </div>
-      )}
+          </div>
+        ))}
 
       {loading && <Spinner />}
       {resp?.erro && (
@@ -441,17 +492,17 @@ export default function IA() {
           </div>
           {resp.metricas && (
             <div className="grid sm:grid-cols-3 gap-3 mb-4 text-xs">
-              <div className="rounded border border-slate-200 p-3">
+              <div className="card p-3">
                 <b>Artigos</b>
                 <br />
                 {resp.metricas.artigos_detectados?.length || 0}
               </div>
-              <div className="rounded border border-slate-200 p-3">
+              <div className="card p-3">
                 <b>Jurisprudência pendente</b>
                 <br />
                 {resp.metricas.jurisprudencia_pendente_verificacao?.length || 0}
               </div>
-              <div className="rounded border border-slate-200 p-3">
+              <div className="card p-3">
                 <b>Provas indicadas</b>
                 <br />
                 {resp.metricas.indicadores_prova?.length || 0}

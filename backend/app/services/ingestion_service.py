@@ -25,7 +25,7 @@ from datetime import datetime, timezone
 from uuid import uuid4
 
 import httpx
-from sqlalchemy import select, text as sqltext
+from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models.rag import KnowledgeDoc, KnowledgeChunk, FonteIngestao
@@ -48,6 +48,36 @@ CHUNK_OVERLAP = 150    # sobreposição entre chunks (preserva contexto nas bord
 # Cliente HTTP compartilhado (retry + backoff exponencial)
 # ══════════════════════════════════════════════════════════════════════════
 
+_MAX_REDIRECTS_SSRF = 5
+
+
+def _validar_sem_ssrf(u: str) -> None:
+    """Bloqueia URL que aponte para IP privado/loopback/link-local (ex.:
+    169.254.169.254, 127.0.0.1, 10.*). Reusa o validador anti-SSRF do callback
+    público (rag_public.validar_callback_url). Import LAZY para evitar ciclo
+    (rag_public importa este módulo). Levanta ValueError se bloqueada."""
+    if not u.startswith(("http://", "https://")):
+        raise ValueError(f"URL não-http(s) bloqueada (SSRF): {u[:80]}")
+    from app.routers.rag_public import validar_callback_url
+    validar_callback_url(u, exigir_https=False)
+
+
+async def _request_validado(c: httpx.AsyncClient, method: str, url: str,
+                            params, json, hdrs) -> httpx.Response:
+    """Faz a request seguindo redirects MANUALMENTE e revalidando cada salto
+    contra SSRF (o cliente é criado com follow_redirects=False)."""
+    _validar_sem_ssrf(url)
+    r = await c.request(method, url, params=params, json=json, headers=hdrs)
+    saltos = 0
+    while r.is_redirect and saltos < _MAX_REDIRECTS_SSRF:
+        destino = (str(r.next_request.url)
+                   if r.next_request else r.headers.get("location", ""))
+        _validar_sem_ssrf(destino)   # revalida cada salto (anti-rebind por redirect)
+        r = await c.get(destino, headers=hdrs)
+        saltos += 1
+    return r
+
+
 async def fetch(
     url: str,
     *,
@@ -58,19 +88,32 @@ async def fetch(
     timeout: float = 30.0,
     tentativas: int = 3,
     espera_base: float = 1.5,
+    validar_ssrf: bool = False,
 ) -> httpx.Response:
     """GET/POST com retry e backoff exponencial. Levanta na última falha.
 
     Repete em erros de rede e HTTP 429/5xx (transientes). Não repete em 4xx
     determinísticos (exceto 429), que indicam erro de requisição.
+
+    validar_ssrf=True (opt-in): desabilita o follow_redirects automático e
+    revalida a URL inicial e CADA salto de redirect contra IP interno
+    (169.254.169.254/127.0.0.1/10.*...), reusando o validador do callback
+    público. Usado no caminho de ingestão AUTOMÁTICA (anpd/normas_rfb), cujas
+    URLs seguidas vêm de HTML raspado. Chamadas a APIs de host fixo (SGS,
+    LexML...) seguem com validar_ssrf=False para não onerar o caminho legítimo.
     """
     hdrs = {**_HEADERS_PADRAO, **(headers or {})}
     ultimo_erro: Exception | None = None
 
-    async with httpx.AsyncClient(timeout=timeout, follow_redirects=True) as c:
+    async with httpx.AsyncClient(
+        timeout=timeout, follow_redirects=not validar_ssrf
+    ) as c:
         for n in range(tentativas):
             try:
-                r = await c.request(method, url, params=params, json=json, headers=hdrs)
+                if validar_ssrf:
+                    r = await _request_validado(c, method, url, params, json, hdrs)
+                else:
+                    r = await c.request(method, url, params=params, json=json, headers=hdrs)
                 if r.status_code in (429, 500, 502, 503, 504):
                     raise httpx.HTTPStatusError(
                         f"HTTP {r.status_code}", request=r.request, response=r
@@ -194,6 +237,31 @@ async def upsert_documento(
         )
     )).scalar_one_or_none()
 
+    # Atalho ANTES de vetorizar: documento vigente com conteúdo idêntico (mesmo
+    # hash) → "inalterado", sem tocar nos vetores. `gerar_embeddings` é caro
+    # (segundos por doc na CPU); embedar aqui e só depois descartar fazia o
+    # re-seed a cada deploy re-vetorizar TODO o corpus (~400 docs, minutos em
+    # silêncio) e estourar o timeout do SSH. Após o 1º seed completo, os deploys
+    # seguintes passam por aqui de imediato.
+    if existente and existente.hash_conteudo == h:
+        # Conteúdo igual não cria versão, mas a curadoria/metadados podem ter
+        # evoluído (ex.: seed oficial corrige `conferido`/`rag_status`). Sem
+        # este merge, reexecutar um seed corrigido jamais tirava o registro
+        # legado da quarentena. Uma aprovação já concedida não é rebaixada para
+        # pendente só porque o mesmo arquivo foi reenviado manualmente.
+        if extra:
+            anterior = dict(existente.extra or {})
+            mesclado = {**anterior, **extra}
+            if anterior.get("rag_status") == "aprovado" and extra.get("rag_status") == "pendente":
+                mesclado["rag_status"] = "aprovado"
+            existente.extra = mesclado
+        existente.titulo = titulo
+        existente.categoria = categoria
+        existente.fonte = fonte
+        existente.tribunal = tribunal
+        existente.atualizado_em = agora
+        return "inalterado"
+
     chunks = chunk_texto(conteudo)
     # `embutir_vetores=False` → vetorização adiada (fica "pendente"; o chamador
     # agenda a indexação em background — ex.: lote da API pública, que não pode
@@ -210,6 +278,10 @@ async def upsert_documento(
         # Conteúdo mudou → NOVA VERSÃO. A versão antiga vira histórico
         # (vigente=False), seus chunks NÃO são tocados.
         existente.vigente = False
+        # flush do UPDATE antes do INSERT: índice único parcial exige que a
+        # versão anterior saia de vigente=true primeiro (senão o INSERT da nova
+        # versão vigente colide com a antiga na mesma chave_origem).
+        await db.flush()
         doc_id = str(uuid4())
         db.add(KnowledgeDoc(
             id=doc_id, titulo=titulo, categoria=categoria,

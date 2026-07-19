@@ -1,7 +1,7 @@
 """Busca semântica RAG — provider local de embeddings (fastembed, mockado).
 
 Garante, SEM baixar modelo no CI:
-- dimensão do vetor casa com a coluna pgvector vector(768);
+- dimensão do vetor casa com a coluna pgvector vector(1024);
 - caminho local gera vetores via singleton mockado (asyncio.to_thread);
 - fallback gracioso: erro ou dimensão errada → None (busca cai p/ textual);
 - EMBEDDINGS_ENABLED=false mantém tudo desligado (default de código).
@@ -39,14 +39,14 @@ def _local_on(monkeypatch):
 
 
 def test_dimensao_do_modelo_casa_com_pgvector():
-    # Migration 013: knowledge_chunks.embedding é vector(768).
-    assert es.EMBED_DIM == 768
+    # Migration 096 (O-2): knowledge_chunks.embedding é vector(1024) (BGE-M3).
+    assert es.EMBED_DIM == 1024
 
 
-def test_modelo_mpnet_nao_usa_prefixo_e5():
-    assert "e5" not in es.MODEL_NAME.lower()
-    assert es._prefixo("query") == ""
-    assert es._prefixo("passage") == ""
+def test_modelo_default_usa_protocolo_e5():
+    assert "e5" in es.MODEL_NAME.lower()
+    assert es._prefixo("query") == "query: "
+    assert es._prefixo("passage") == "passage: "
 
 
 async def test_disabled_por_default_nao_gera(monkeypatch):
@@ -64,8 +64,7 @@ async def test_local_gera_vetor_dimensao_certa(_local_on):
     assert vetores is not None and len(vetores) == 2
     assert all(len(v) == es.EMBED_DIM for v in vetores)
     assert all(isinstance(v, list) for v in vetores)
-    # mpnet: texto vai cru, sem prefixo E5
-    assert fake.entradas == ["dano moral", "rescisão indireta"]
+    assert fake.entradas == ["query: dano moral", "query: rescisão indireta"]
 
 
 async def test_erro_no_modelo_retorna_none_sem_excecao(_local_on, caplog):
@@ -83,6 +82,42 @@ async def test_dimensao_divergente_descartada(_local_on, caplog):
 
 async def test_lista_vazia_retorna_none(_local_on):
     assert await es.gerar_embeddings([]) is None
+
+
+async def test_contagem_divergente_do_provider_http_e_descartada(monkeypatch, caplog):
+    """Auditoria RAG: um provider HTTP que devolve MENOS vetores do que textos
+    pedidos não pode ser aceito — senão o chamador casaria vetor com chunk por
+    posição (zip/index) e deixaria os chunks finais sem embedding, mesmo o doc
+    sendo marcado 'indexado' (causa real de 26k chunks órfãos em produção)."""
+    monkeypatch.setattr(es.settings, "EMBEDDINGS_ENABLED", True)
+    monkeypatch.setattr(es.settings, "EMBEDDINGS_PROVIDER", "http")
+    monkeypatch.setattr(es.settings, "EMBEDDINGS_API_URL", "http://fake/embed")
+
+    async def _http_curto(textos, modo):
+        # devolve só 2 vetores para 3 textos pedidos — dimensão certa, contagem errada
+        return [[0.0] * es.EMBED_DIM, [0.0] * es.EMBED_DIM]
+
+    monkeypatch.setattr(es, "_embed_http", _http_curto)
+
+    with caplog.at_level("WARNING", logger="ejc.embeddings"):
+        vetores = await es.gerar_embeddings(["um", "dois", "tres"], modo="passage")
+
+    assert vetores is None
+    assert any("contagem não bate" in r.message for r in caplog.records)
+
+
+async def test_contagem_certa_do_provider_http_e_aceita(monkeypatch):
+    monkeypatch.setattr(es.settings, "EMBEDDINGS_ENABLED", True)
+    monkeypatch.setattr(es.settings, "EMBEDDINGS_PROVIDER", "http")
+    monkeypatch.setattr(es.settings, "EMBEDDINGS_API_URL", "http://fake/embed")
+
+    async def _http_certo(textos, modo):
+        return [[0.0] * es.EMBED_DIM for _ in textos]
+
+    monkeypatch.setattr(es, "_embed_http", _http_certo)
+
+    vetores = await es.gerar_embeddings(["um", "dois", "tres"], modo="passage")
+    assert vetores is not None and len(vetores) == 3
 
 
 def test_singleton_lazy_nao_carrega_no_import():

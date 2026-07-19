@@ -1,10 +1,9 @@
 import { useMemo } from "react";
-import { Link, useLocation, useSearchParams } from "react-router-dom";
+import { Link, useSearchParams } from "react-router-dom";
 import {
   Bell,
   Check,
   ChevronRight,
-  Database,
   Gauge,
   LayoutDashboard,
   Menu,
@@ -24,10 +23,7 @@ import ModuleLifecycleSettings from "../components/ModuleLifecycleSettings";
 import NotificationPreferences from "../components/NotificationPreferences";
 import { PageHeader, SectionCard, cn } from "../components/UI";
 import { THEME_LABELS, useThemeStore, type ThemeMode } from "../stores/theme";
-import {
-  usePreferencesStore,
-  type HomeRoute,
-} from "../stores/preferences";
+import { usePreferencesStore, type HomeRoute } from "../stores/preferences";
 import { useAuth } from "../stores/auth";
 import { canRoleAccessPath } from "../config/moduleRegistry";
 
@@ -76,14 +72,12 @@ type SettingsTab =
   | "administracao";
 
 export default function Configuracoes() {
-  const location = useLocation();
   const [searchParams, setSearchParams] = useSearchParams();
   const { theme, setTheme } = useThemeStore();
   const { homeRoute, setHomeRoute, sidebarCollapsed, setSidebarCollapsed } =
     usePreferencesStore();
   const user = useAuth((state) => state.user);
   const isAdmin = user?.role === "superadmin" || user?.role === "admin";
-  const isAdministrationPath = location.pathname.startsWith("/administracao/");
 
   const tabs = useMemo(
     () => [
@@ -111,12 +105,10 @@ export default function Configuracoes() {
   );
 
   const requested = searchParams.get("tab") as SettingsTab | null;
-  const defaultTab: SettingsTab = isAdministrationPath
-    ? "administracao"
-    : "pessoal";
   const tab = tabs.some((item) => item.key === requested)
     ? (requested as SettingsTab)
-    : defaultTab;
+    : "pessoal";
+  const isAdministrationPath = tab === "administracao";
 
   const selectTab = (next: SettingsTab) => {
     const params = new URLSearchParams(searchParams);
@@ -141,7 +133,7 @@ export default function Configuracoes() {
       />
 
       <div className="overflow-x-auto">
-        <div className="flex w-fit gap-1 rounded-xl border border-slate-200 bg-white/80 p-1 shadow-sm">
+        <div className="flex w-fit gap-1 rounded-xl bg-slate-900/[0.05] p-1 dark:bg-white/[0.07]">
           {tabs.map(({ key, label, icon: Icon }) => (
             <button
               key={key}
@@ -179,7 +171,7 @@ export default function Configuracoes() {
                       "flex items-center gap-3 rounded-xl border px-4 py-3 text-left transition-all",
                       active
                         ? "border-primary-500 bg-primary-50 ring-1 ring-inset ring-primary-200"
-                        : "border-slate-200 bg-white hover:border-slate-300 hover:bg-slate-50",
+                        : "border-transparent bg-slate-900/[0.05] hover:bg-slate-900/[0.09] dark:bg-white/[0.07]",
                     )}
                   >
                     <span
@@ -207,19 +199,19 @@ export default function Configuracoes() {
             subtitle="Dados atuais da sessão validados pelo backend."
           >
             <div className="grid gap-3 sm:grid-cols-3">
-              <div className="rounded-xl border border-slate-200 bg-white p-4">
+              <div className="card p-4">
                 <div className="text-xs text-slate-400">Usuário</div>
                 <div className="mt-1 text-sm font-semibold text-slate-800">
                   {user?.full_name || "—"}
                 </div>
               </div>
-              <div className="rounded-xl border border-slate-200 bg-white p-4">
+              <div className="card p-4">
                 <div className="text-xs text-slate-400">E-mail</div>
                 <div className="mt-1 truncate text-sm font-semibold text-slate-800">
                   {user?.email || "—"}
                 </div>
               </div>
-              <div className="rounded-xl border border-slate-200 bg-white p-4">
+              <div className="card p-4">
                 <div className="text-xs text-slate-400">Perfil</div>
                 <div className="mt-1 text-sm font-semibold capitalize text-slate-800">
                   {user?.role || "—"}
@@ -248,7 +240,7 @@ export default function Configuracoes() {
                       "flex items-center gap-3 rounded-xl border p-4 text-left",
                       active
                         ? "border-primary-500 bg-primary-50"
-                        : "border-slate-200 bg-white hover:bg-slate-50",
+                        : "border-transparent bg-slate-900/[0.05] hover:bg-slate-900/[0.09] dark:bg-white/[0.07]",
                     )}
                   >
                     <LayoutDashboard className="h-5 w-5 text-primary-600" />
@@ -274,15 +266,17 @@ export default function Configuracoes() {
             <button
               type="button"
               onClick={() => setSidebarCollapsed(!sidebarCollapsed)}
-              className="flex w-full items-center gap-3 rounded-xl border border-slate-200 bg-white p-4 text-left hover:bg-slate-50"
+              className="flex w-full items-center gap-3 rounded-xl bg-slate-900/[0.05] p-4 text-left hover:bg-slate-900/[0.09] dark:bg-white/[0.07]"
             >
               <Menu className="h-5 w-5 text-primary-600" />
               <div className="min-w-0 flex-1">
                 <div className="text-sm font-semibold text-slate-800">
-                  Iniciar com menu {sidebarCollapsed ? "recolhido" : "expandido"}
+                  Iniciar com menu{" "}
+                  {sidebarCollapsed ? "recolhido" : "expandido"}
                 </div>
                 <div className="text-xs text-slate-500">
-                  O menu pode ser alterado a qualquer momento pelo botão lateral.
+                  O menu pode ser alterado a qualquer momento pelo botão
+                  lateral.
                 </div>
               </div>
               <span className="badge badge-neutral">
@@ -339,9 +333,7 @@ export default function Configuracoes() {
               </span>
               <div className="min-w-0 flex-1">
                 <div className="font-semibold text-slate-800">{title}</div>
-                <div className="mt-1 text-sm text-slate-500">
-                  {description}
-                </div>
+                <div className="mt-1 text-sm text-slate-500">{description}</div>
               </div>
               <ChevronRight className="h-4 w-4 text-slate-400" />
             </Link>

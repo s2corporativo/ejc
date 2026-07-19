@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import {
   Link,
   NavLink,
@@ -16,14 +16,20 @@ import {
   Menu,
   Monitor,
   Moon,
+  Pencil,
   Plus,
+  ScanSearch,
   Search,
   ShieldCheck,
   Sun,
   X,
 } from "lucide-react";
+import CaseContextBar from "./CaseContextBar";
 import CommandPalette from "./CommandPalette";
 import HelpButton from "./HelpButton";
+import IaStatusBanner from "./IaStatusBanner";
+import { useIaStatus } from "../lib/iaStatus";
+import { ROTULO_IA_NAO_ATIVADA } from "../lib/iaErro";
 import OnboardingTour from "./OnboardingTour";
 import ModuleLifecycleGate from "./ModuleLifecycleGate";
 import { useModuleLifecycleStore } from "../stores/moduleLifecycle";
@@ -36,17 +42,27 @@ import { THEME_LABELS, useThemeStore } from "../stores/theme";
 import { useAuth } from "../stores/auth";
 import { usePreferencesStore } from "../stores/preferences";
 import {
+  ROLES,
   getHelpModuleKey,
   getNavigationModules,
   type ModuleRoute,
 } from "../config/moduleRegistry";
+import {
+  NOVO_CASO_DOCUMENTO_PATH,
+  NOVO_CASO_MANUAL_PATH,
+} from "../lib/novoCaso";
 import api, { logout } from "../lib/api";
 
-const BRAND_LOGO = "/brand/de-paula-teixeira-logo.jpg";
+// Logomarca HD com fundo transparente (nunca a versão JPG com fundo)
+const BRAND_LOGO = "/brand/logo-hd.png";
 
 export default function Layout() {
   const { theme, cycleTheme } = useThemeStore();
+  const { disponivel: iaDisponivel } = useIaStatus();
   const user = useAuth((state) => state.user);
+  const canCreateCase = Boolean(
+    user?.role && (ROLES.clientes as readonly string[]).includes(user.role),
+  );
   const lifecycleSettings = useModuleLifecycleStore(
     (state) => state.settings,
   );
@@ -64,6 +80,10 @@ export default function Layout() {
   const [notifOpen, setNotifOpen] = useState(false);
   const [notifs, setNotifs] = useState<any[]>([]);
   const [menuOpen, setMenuOpen] = useState(false);
+  // Atalho "Novo caso" do cabeçalho: menu com os dois modos de abertura
+  // (analisar documento | cadastro manual), ambos na rota /casos/novo.
+  const [novoCasoOpen, setNovoCasoOpen] = useState(false);
+  const novoCasoRef = useRef<HTMLDivElement>(null);
   const [openGroups, setOpenGroups] = useState<Record<string, boolean>>(() => {
     try {
       return JSON.parse(localStorage.getItem("ejc_menu_groups") || "{}");
@@ -72,14 +92,29 @@ export default function Layout() {
     }
   });
 
+  const persistGroups = (next: Record<string, boolean>) => {
+    try {
+      localStorage.setItem("ejc_menu_groups", JSON.stringify(next));
+    } catch {
+      // Preferência de interface não deve interromper a navegação.
+    }
+  };
+
   const toggleGroup = (group: string) =>
     setOpenGroups((previous) => {
       const next = { ...previous, [group]: previous[group] === false };
-      try {
-        localStorage.setItem("ejc_menu_groups", JSON.stringify(next));
-      } catch {
-        // Preferência de interface não deve interromper a navegação.
-      }
+      persistGroups(next);
+      return next;
+    });
+
+  // Modo Essencial: os módulos avançados moram sob uma única seção "Mais /
+  // Avançado" RECOLHIDA por padrão (default fechado → só abre com `=== true`).
+  const MAIS_KEY = "__mais__";
+  const maisOpen = openGroups[MAIS_KEY] === true;
+  const toggleMais = () =>
+    setOpenGroups((previous) => {
+      const next = { ...previous, [MAIS_KEY]: previous[MAIS_KEY] !== true };
+      persistGroups(next);
       return next;
     });
 
@@ -97,6 +132,25 @@ export default function Layout() {
     return () => clearInterval(timer);
   }, []);
 
+  // Fecha o menu "Novo caso" ao clicar fora ou pressionar Esc.
+  useEffect(() => {
+    if (!novoCasoOpen) return;
+    const onPointerDown = (event: PointerEvent) => {
+      if (!novoCasoRef.current?.contains(event.target as Node)) {
+        setNovoCasoOpen(false);
+      }
+    };
+    const onKeyDown = (event: KeyboardEvent) => {
+      if (event.key === "Escape") setNovoCasoOpen(false);
+    };
+    document.addEventListener("pointerdown", onPointerDown);
+    document.addEventListener("keydown", onKeyDown);
+    return () => {
+      document.removeEventListener("pointerdown", onPointerDown);
+      document.removeEventListener("keydown", onKeyDown);
+    };
+  }, [novoCasoOpen]);
+
   const visible = useMemo(
     () =>
       filterModulesByLifecycle(
@@ -106,13 +160,68 @@ export default function Layout() {
     [user?.role, lifecycleSettings],
   );
 
+  // FRENTE 1 (Modo Essencial): `visible` já vem ordenado por grupo/order.
+  // Particiona em essenciais (lista plana no topo, sempre visível) e resto
+  // (agrupado dentro de "Mais / Avançado"). Ordem preservada da fonte.
+  const essentials = useMemo(
+    () => visible.filter((item) => item.essential),
+    [visible],
+  );
+  const resto = useMemo(
+    () => visible.filter((item) => !item.essential),
+    [visible],
+  );
+
   const groups = useMemo(() => {
     const map = new Map<string, ModuleRoute[]>();
-    for (const item of visible) {
+    for (const item of resto) {
       map.set(item.group, [...(map.get(item.group) || []), item]);
     }
     return Array.from(map.entries());
-  }, [visible]);
+  }, [resto]);
+
+  // Item de navegação reutilizado por essenciais e pela seção "Mais": quando
+  // expandido mostra `label` + `description` (subtítulo discreto, line-clamp-1)
+  // e `title` nativo; quando recolhido, só o ícone com Tooltip (comportamento
+  // atual do rail estreito).
+  const renderNavItem = (item: ModuleRoute) => {
+    const { path, label, description, icon: Icon, end } = item;
+    const content = (
+      <NavLink
+        key={path}
+        to={path}
+        end={end}
+        onClick={() => setMenuOpen(false)}
+        title={collapsed ? undefined : description}
+        className={({ isActive }) =>
+          cn(
+            "sidebar-nav-item group flex items-center gap-2.5 rounded-lg px-3 text-[13px] font-medium transition-all duration-150",
+            collapsed ? "h-9 justify-center px-0" : "py-1.5",
+            isActive && "is-active",
+          )
+        }
+      >
+        <Icon className="h-4 w-4 shrink-0" />
+        {!collapsed && (
+          <span className="min-w-0 flex-1">
+            <span className="block truncate leading-tight">{label}</span>
+            {description && (
+              <span className="mt-0.5 block line-clamp-1 text-[11px] font-normal leading-tight text-slate-400">
+                {description}
+              </span>
+            )}
+          </span>
+        )}
+      </NavLink>
+    );
+    return collapsed ? (
+      <Tooltip key={path} label={label}>
+        {content}
+      </Tooltip>
+    ) : (
+      content
+    );
+  };
 
   const sidebarWidth = collapsed ? "md:w-[5.25rem]" : "md:w-72";
   const contentMargin = collapsed ? "md:ml-[5.25rem]" : "md:ml-72";
@@ -122,7 +231,7 @@ export default function Layout() {
       <div className="brand-watermark" aria-hidden="true" />
       <CommandPalette />
 
-      <header className="fixed inset-x-0 top-0 z-50 border-b border-slate-200/60 bg-white/90 backdrop-blur-xl">
+      <header className="fixed inset-x-0 top-0 z-50 border-b border-slate-200 bg-white">
         <div className="flex h-16 items-center gap-3 px-3 md:px-6">
           <button
             type="button"
@@ -135,13 +244,13 @@ export default function Layout() {
 
           <Link
             to="/"
-            className="brand-logo-tile flex shrink-0 items-center rounded-xl px-1.5 py-1"
+            className="flex shrink-0 items-center px-1"
             aria-label="De Paula Teixeira - EJC"
           >
             <img
               src={BRAND_LOGO}
               alt="De Paula Teixeira Sociedade de Advogados"
-              className="brand-logo-img h-11 w-auto max-w-[200px] rounded-lg md:h-[3.25rem] md:max-w-[260px]"
+              className="brand-logo-img h-12 w-auto max-w-[240px] md:h-14 md:max-w-[300px]"
             />
           </Link>
 
@@ -149,26 +258,79 @@ export default function Layout() {
             <button
               type="button"
               onClick={() => window.dispatchEvent(new Event("ejc-open-search"))}
-              className="flex h-10 w-full max-w-xl items-center gap-3 rounded-full border border-slate-200 bg-slate-50 px-4 text-left text-sm text-slate-500 transition-all duration-150 hover:border-primary-300/60 hover:bg-primary-50/50"
+              className="flex h-10 w-full max-w-xl items-center gap-3 rounded-full bg-slate-900/[0.04] px-4 text-left text-sm text-slate-500 transition-all duration-150 hover:bg-ouro-palha/70 dark:bg-white/[0.06] dark:text-slate-400 dark:hover:bg-white/[0.09]"
             >
               <Search className="h-4 w-4 shrink-0" />
               <span className="hidden truncate sm:inline">
                 Buscar processos por parte, CPF ou número…
               </span>
               <span className="truncate sm:hidden">Buscar…</span>
-              <kbd className="ml-auto hidden rounded-md border border-slate-200 bg-white px-1.5 py-0.5 text-[10px] font-medium text-slate-400 sm:block">
+              <kbd className="ml-auto hidden rounded-md bg-white px-1.5 py-0.5 text-[10px] font-medium text-slate-400 shadow-sm sm:block">
                 Ctrl K
               </kbd>
             </button>
           </div>
 
           {/* DECISÃO: o atalho do header abre o wizard guiado de Novo Caso
-              (/casos/novo), não mais a listagem de casos. */}
-          <Link to="/casos/novo" className="hidden lg:inline-flex">
-            <Button size="md" icon={<Plus className="h-4 w-4" />}>
-              Novo caso
+              (/casos/novo) com dois modos de entrada (analisar documento |
+              cadastro manual), selecionados por query param `modo` — sem
+              criar rota nova. */}
+          {canCreateCase && (
+          <div ref={novoCasoRef} className="relative inline-flex">
+            <Button
+              type="button"
+              size="md"
+              icon={<Plus className="h-4 w-4" />}
+              onClick={() => setNovoCasoOpen((value) => !value)}
+              aria-haspopup="menu"
+              aria-expanded={novoCasoOpen}
+              aria-label="Novo caso"
+            >
+              <span className="hidden lg:inline">Novo caso</span>
+              <ChevronDown className="hidden h-4 w-4 lg:block" />
             </Button>
-          </Link>
+            {novoCasoOpen && (
+              <div
+                role="menu"
+                aria-label="Como abrir o novo caso"
+                className="card absolute right-0 top-full z-50 mt-2 w-72 py-1"
+              >
+                <Link
+                  to={NOVO_CASO_DOCUMENTO_PATH}
+                  role="menuitem"
+                  onClick={() => setNovoCasoOpen(false)}
+                  className="menu-item items-start"
+                >
+                  <ScanSearch className="mt-0.5 h-4 w-4 shrink-0" />
+                  <span className="min-w-0">
+                    <span className="block font-medium">
+                      Analisar documento e preencher
+                    </span>
+                    <span className="block text-[11px] text-slate-400">
+                      Recomendado — a IA extrai os dados do arquivo
+                    </span>
+                  </span>
+                </Link>
+                <Link
+                  to={NOVO_CASO_MANUAL_PATH}
+                  role="menuitem"
+                  onClick={() => setNovoCasoOpen(false)}
+                  className="menu-item items-start"
+                >
+                  <Pencil className="mt-0.5 h-4 w-4 shrink-0" />
+                  <span className="min-w-0">
+                    <span className="block font-medium">
+                      Cadastrar manualmente
+                    </span>
+                    <span className="block text-[11px] text-slate-400">
+                      Preencho os campos do caso por conta própria
+                    </span>
+                  </span>
+                </Link>
+              </div>
+            )}
+          </div>
+          )}
 
           <HelpButton moduleKey={moduleKey} />
 
@@ -176,7 +338,7 @@ export default function Layout() {
             type="button"
             onClick={cycleTheme}
             title={`Tema: ${THEME_LABELS[theme]} — clique para alternar`}
-            className="hidden h-10 w-10 items-center justify-center rounded-xl border border-slate-200 bg-white text-slate-500 hover:bg-slate-50 sm:flex"
+            className="icon-btn hidden sm:flex"
             aria-label={`Alternar tema (atual: ${THEME_LABELS[theme]})`}
           >
             {theme === "light" ? (
@@ -192,19 +354,19 @@ export default function Layout() {
             <button
               type="button"
               onClick={() => setNotifOpen((value) => !value)}
-              className="relative flex h-10 w-10 items-center justify-center rounded-xl border border-slate-200 bg-white text-slate-500 hover:bg-slate-50"
+              className="icon-btn relative"
               aria-label="Notificações"
             >
               <Bell className="h-4 w-4" />
               {notifCount > 0 && (
-                <span className="absolute -right-1 -top-1 flex h-5 min-w-5 items-center justify-center rounded-full bg-primary-600 px-1 text-[10px] font-semibold text-white ring-2 ring-white">
+                <span className="absolute -right-1 -top-1 flex h-5 min-w-5 items-center justify-center rounded-full bg-ouro px-1 text-[10px] font-semibold text-white ring-2 ring-white">
                   {notifCount}
                 </span>
               )}
             </button>
 
             {notifOpen && (
-              <div className="absolute right-0 mt-2 w-80 overflow-hidden rounded-xl border border-slate-200 bg-white shadow-xl">
+              <div className="absolute right-0 mt-2 w-80 overflow-hidden rounded-xl border border-slate-200 bg-white shadow-md">
                 <div className="flex items-center justify-between border-b border-slate-100 px-4 py-3">
                   <div className="text-sm font-semibold text-slate-950">
                     Notificações
@@ -261,7 +423,7 @@ export default function Layout() {
       {menuOpen && (
         <button
           type="button"
-          className="fixed inset-0 z-30 bg-slate-950/45 backdrop-blur-sm md:hidden"
+          className="fixed inset-0 z-30 bg-slate-950/45 md:hidden"
           aria-label="Fechar menu"
           onClick={() => setMenuOpen(false)}
         />
@@ -282,17 +444,17 @@ export default function Layout() {
         >
           {!collapsed && (
             <div className="min-w-0 flex-1">
-              <div className="truncate text-[11px] font-semibold uppercase tracking-[0.18em] text-[#E5CE7F]">
+              <div className="truncate text-[11px] font-semibold uppercase tracking-[0.18em] text-[#8a6d2f]">
                 De Paula Teixeira
               </div>
-              <div className="mt-0.5 truncate text-[10px] text-[rgba(255,245,230,0.5)]">
+              <div className="mt-0.5 truncate text-[10px] text-slate-400">
                 Sociedade de Advogados
               </div>
             </div>
           )}
           <button
             type="button"
-            className="hidden rounded-lg p-1.5 text-[rgba(255,245,230,0.55)] hover:bg-[rgba(166,124,82,0.2)] hover:text-[#F5EDD2] md:block"
+            className="hidden rounded-lg p-1.5 text-slate-400 hover:bg-slate-100 hover:text-slate-700 md:block"
             onClick={() => setSidebarCollapsed(!collapsed)}
             aria-label={collapsed ? "Expandir menu" : "Recolher menu"}
           >
@@ -304,7 +466,7 @@ export default function Layout() {
           </button>
           <button
             type="button"
-            className="rounded-lg p-1.5 text-[rgba(255,245,230,0.55)] hover:bg-[rgba(166,124,82,0.2)] hover:text-[#F5EDD2] md:hidden"
+            className="rounded-lg p-1.5 text-slate-400 hover:bg-slate-100 hover:text-slate-700 md:hidden"
             onClick={() => setMenuOpen(false)}
             aria-label="Fechar menu"
           >
@@ -314,106 +476,124 @@ export default function Layout() {
         <div className="brand-accent-line mx-4 h-px" aria-hidden="true" />
 
         <nav className="flex-1 overflow-y-auto px-3 py-4 scrollbar-thin">
-          {groups.map(([group, items]) => {
-            const isOpen = openGroups[group] !== false;
-            return (
-              <div key={group} className="mb-4">
-                {!collapsed && (
-                  <button
-                    type="button"
-                    onClick={() => toggleGroup(group)}
-                    className="sidebar-group-label mb-2 flex w-full items-center justify-between px-2 text-2xs font-semibold uppercase tracking-[0.2em] transition-colors"
-                    aria-expanded={isOpen}
-                  >
-                    <span>{group}</span>
-                    <ChevronDown
-                      className={cn(
-                        "h-3 w-3 transition-transform",
-                        !isOpen && "-rotate-90",
-                      )}
-                    />
-                  </button>
+          {/* Essenciais — dia a dia do advogado, sempre visíveis no topo. */}
+          {essentials.length > 0 && (
+            <div className="mb-4">
+              {!collapsed && (
+                <div className="sidebar-group-label mb-2 px-2 text-2xs font-semibold uppercase tracking-[0.2em]">
+                  Essencial
+                </div>
+              )}
+              <div
+                className={cn(
+                  "space-y-1",
+                  !collapsed && "sidebar-tree ml-3 border-l pl-2",
                 )}
-                {(collapsed || isOpen) && (
-                  <div
+              >
+                {essentials.map((item) => renderNavItem(item))}
+              </div>
+            </div>
+          )}
+
+          {/* Mais / Avançado — todo o restante dos módulos.
+              Rail estreito (collapsed): lista plana de ícones+tooltip, sempre
+              visível (mantém o comportamento atual). Expandido: uma única
+              seção colapsável, RECOLHIDA por padrão, com os grupos dentro. */}
+          {resto.length > 0 &&
+            (collapsed ? (
+              <div className="space-y-1">
+                {resto.map((item) => renderNavItem(item))}
+              </div>
+            ) : (
+              <div className="mb-2">
+                <button
+                  type="button"
+                  onClick={toggleMais}
+                  className="sidebar-group-label mb-2 flex w-full items-center justify-between px-2 text-2xs font-semibold uppercase tracking-[0.2em] transition-colors"
+                  aria-expanded={maisOpen}
+                  aria-controls="sidebar-mais"
+                >
+                  <span>Mais / Avançado</span>
+                  <ChevronDown
                     className={cn(
-                      "space-y-1",
-                      !collapsed && "sidebar-tree ml-3 border-l pl-2",
+                      "h-3 w-3 transition-transform",
+                      !maisOpen && "-rotate-90",
                     )}
-                  >
-                    {items.map(({ path, label, icon: Icon, end }) => {
-                      const content = (
-                        <NavLink
-                          key={path}
-                          to={path}
-                          end={end}
-                          onClick={() => setMenuOpen(false)}
-                          className={({ isActive }) =>
-                            cn(
-                              "sidebar-nav-item group flex h-10 items-center gap-3 rounded-xl px-3 text-sm font-medium transition-all duration-150",
-                              collapsed && "justify-center px-0",
-                              isActive && "is-active",
-                            )
-                          }
-                        >
-                          <Icon className="h-4 w-4 shrink-0" />
-                          {!collapsed && (
-                            <span className="truncate">{label}</span>
+                  />
+                </button>
+                {maisOpen && (
+                  <div id="sidebar-mais" className="space-y-4">
+                    {groups.map(([group, items]) => {
+                      const isOpen = openGroups[group] !== false;
+                      return (
+                        <div key={group}>
+                          <button
+                            type="button"
+                            onClick={() => toggleGroup(group)}
+                            className="sidebar-group-label mb-2 flex w-full items-center justify-between px-2 text-2xs font-semibold uppercase tracking-[0.2em] transition-colors"
+                            aria-expanded={isOpen}
+                          >
+                            <span>{group}</span>
+                            <ChevronDown
+                              className={cn(
+                                "h-3 w-3 transition-transform",
+                                !isOpen && "-rotate-90",
+                              )}
+                            />
+                          </button>
+                          {isOpen && (
+                            <div className="space-y-1 sidebar-tree ml-3 border-l pl-2">
+                              {items.map((item) => renderNavItem(item))}
+                            </div>
                           )}
-                        </NavLink>
-                      );
-                      return collapsed ? (
-                        <Tooltip key={path} label={label}>
-                          {content}
-                        </Tooltip>
-                      ) : (
-                        content
+                        </div>
                       );
                     })}
                   </div>
                 )}
               </div>
-            );
-          })}
+            ))}
         </nav>
 
-        <div className="border-t border-[rgba(255,245,230,0.12)] p-3">
+        <div className="border-t border-slate-200 p-3">
           {!collapsed && (
-            <div className="mb-2 flex items-center gap-2.5 rounded-xl bg-[rgba(255,245,230,0.06)] px-3 py-2.5 ring-1 ring-inset ring-[rgba(255,245,230,0.1)]">
+            <div className="mb-2 flex items-center gap-2.5 rounded-xl bg-slate-50 px-3 py-2.5 ring-1 ring-inset ring-slate-200">
               <ShieldCheck className="h-4 w-4 shrink-0 text-[#D4AF37]" />
               <div className="min-w-0">
-                <div className="truncate text-[11px] font-semibold text-[#F5EDD2]">
+                <div className="truncate text-[11px] font-semibold text-slate-700">
                   Seguro &amp; Conforme
                 </div>
-                <div className="truncate text-[10px] text-[rgba(255,245,230,0.55)]">
+                <div className="truncate text-[10px] text-slate-400">
                   Dados protegidos — LGPD
                 </div>
               </div>
             </div>
           )}
-          <div
+          <Link
+            to="/configuracoes"
+            title="Abrir preferências"
             className={cn(
-              "flex items-center gap-3 rounded-xl bg-[rgba(255,245,230,0.06)] p-2",
+              "flex items-center gap-3 rounded-xl bg-slate-50 p-2",
               collapsed && "justify-center",
             )}
           >
             <UserAvatar user={user} size="md" />
             {!collapsed && (
               <div className="min-w-0 flex-1">
-                <div className="truncate text-xs font-semibold text-[#F5EDD2]">
+                <div className="truncate text-xs font-semibold text-slate-700">
                   {user?.full_name || "Usuário"}
                 </div>
-                <div className="truncate text-[11px] capitalize text-[rgba(255,245,230,0.55)]">
+                <div className="truncate text-[11px] capitalize text-slate-400">
                   {user?.role || ""}
                 </div>
               </div>
             )}
-          </div>
+          </Link>
           <button
             type="button"
             onClick={logout}
             className={cn(
-              "mt-2 flex h-10 w-full items-center gap-3 rounded-xl px-3 text-sm font-medium text-[rgba(255,245,230,0.65)] transition-colors hover:bg-danger-600/25 hover:text-[#F8B9BC]",
+              "mt-2 flex h-10 w-full items-center gap-3 rounded-xl px-3 text-sm font-medium text-slate-500 transition-colors hover:bg-danger-600/10 hover:text-danger-600",
               collapsed && "justify-center px-0",
             )}
             aria-label="Sair"
@@ -430,6 +610,10 @@ export default function Layout() {
           contentMargin,
         )}
       >
+        {/* Aviso global: IA não ativada nesta instalação (dispensável). */}
+        <IaStatusBanner />
+        {/* Modo Caso: faixa fina de contexto do caso ativo (discreta). */}
+        <CaseContextBar />
         <main className="ejc-modern-scope flex-1 px-4 py-5 md:px-7 md:py-7">
           <div className="mx-auto w-full max-w-[1440px] animate-rise">
             <ErrorBoundary key={location.pathname}>
@@ -440,13 +624,26 @@ export default function Layout() {
       </div>
 
       <OnboardingTour />
-      <Link
-        to="/inteligencia?tab=assistente"
-        className="fixed bottom-5 right-5 z-30 hidden h-12 w-12 items-center justify-center rounded-2xl bg-ai-600 text-white shadow-lg shadow-ai-600/25 hover:bg-ai-700 md:flex"
-        aria-label="Assistente IA"
-      >
-        <Bot className="h-5 w-5" />
-      </Link>
+      {iaDisponivel ? (
+        <Link
+          to="/inteligencia?tab=assistente"
+          className="fixed bottom-5 right-5 z-30 hidden h-12 w-12 items-center justify-center rounded-xl bg-ai-600 text-white shadow-md hover:bg-ai-700 md:flex"
+          aria-label="Assistente IA"
+        >
+          <Bot className="h-5 w-5" />
+        </Link>
+      ) : (
+        <button
+          type="button"
+          disabled
+          title={ROTULO_IA_NAO_ATIVADA}
+          aria-label={`Assistente IA — ${ROTULO_IA_NAO_ATIVADA}`}
+          className="fixed bottom-5 right-5 z-30 hidden h-12 w-12 cursor-not-allowed items-center justify-center rounded-xl bg-slate-300 text-white shadow-md md:flex dark:bg-slate-700"
+        >
+          <Bot className="h-5 w-5" />
+        </button>
+      )}
     </div>
   );
 }
+

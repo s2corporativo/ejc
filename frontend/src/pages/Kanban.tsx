@@ -3,7 +3,7 @@ import { useNavigate } from "react-router-dom";
 import { ChevronDown } from "lucide-react";
 import api from "../lib/api";
 import { asList } from "../lib/list";
-import { Spinner, PageHeader } from "../components/UI";
+import { Spinner, PageHeader, ErrorState } from "../components/UI";
 
 interface KanbanCol {
   id: string;
@@ -60,6 +60,7 @@ export default function Kanban() {
   const [cols, setCols] = useState<KanbanCol[]>([]);
   const [casos, setCasos] = useState<Caso[]>([]);
   const [loading, setLoading] = useState(true);
+  const [error, setError] = useState(false);
   const [dragId, setDragId] = useState<string | null>(null);
   const [overCol, setOverCol] = useState<string | null>(null);
   const nav = useNavigate();
@@ -74,10 +75,17 @@ export default function Kanban() {
     setCasos(asList<Caso>(res.data));
   }, []);
 
-  useEffect(() => {
+  const load = useCallback(() => {
     setLoading(true);
-    Promise.all([loadCols(area), loadCasos()]).finally(() => setLoading(false));
+    setError(false);
+    return Promise.all([loadCols(area), loadCasos()])
+      .catch(() => setError(true))
+      .finally(() => setLoading(false));
   }, [area, loadCols, loadCasos]);
+
+  useEffect(() => {
+    load();
+  }, [load]);
 
   const getColKey = (c: Caso, colName: string, flowList?: Caso[]) => {
     // Casos já posicionados: respeitam o kanban_column SE pertencer a este fluxo
@@ -112,6 +120,16 @@ export default function Kanban() {
     return (
       <div className="flex justify-center py-20">
         <Spinner />
+      </div>
+    );
+
+  if (error)
+    return (
+      <div className="p-6">
+        <ErrorState
+          message="Não foi possível carregar o quadro Kanban. Tente novamente."
+          onRetry={load}
+        />
       </div>
     );
 
@@ -167,7 +185,7 @@ export default function Kanban() {
                   setOverCol((v) => (v === col.name ? null : v))
                 }
                 onDrop={() => dragId && moverParaColuna(dragId, col.name)}
-                className={`flex flex-col rounded-xl border-t-2 ${topColor} bg-slate-50 border border-slate-200 w-52 flex-shrink-0 transition-all ${
+                className={`flex flex-col rounded-xl border-t-2 ${topColor} bg-slate-50 border border-black/[0.05] w-52 flex-shrink-0 transition-all ${
                   overCol === col.name
                     ? "ring-2 ring-primary-300 bg-primary-50"
                     : ""
@@ -178,7 +196,7 @@ export default function Kanban() {
                   <span className="text-xs font-semibold text-slate-700 truncate">
                     {col.name}
                   </span>
-                  <span className="text-[11px] font-semibold text-slate-400 bg-white border border-slate-200 rounded-full px-1.5 py-0.5 flex-shrink-0">
+                  <span className="text-[11px] font-semibold text-slate-400 bg-slate-900/[0.05] dark:bg-white/[0.07] dark:text-slate-300 rounded-full px-1.5 py-0.5 flex-shrink-0">
                     {lista.length}
                   </span>
                 </div>
@@ -190,7 +208,7 @@ export default function Kanban() {
                       draggable
                       onDragStart={() => setDragId(c.id)}
                       onDragEnd={() => setDragId(null)}
-                      className={`bg-white rounded-lg border border-slate-200 p-2.5 cursor-grab active:cursor-grabbing shadow-sm hover:shadow-md transition-shadow group ${
+                      className={`card rounded-lg p-2.5 cursor-grab active:cursor-grabbing group ${
                         dragId === c.id ? "opacity-50" : ""
                       }`}
                     >
@@ -220,7 +238,7 @@ export default function Kanban() {
                       <div className="mt-1.5 opacity-0 group-hover:opacity-100 transition-opacity">
                         <div className="relative">
                           <select
-                            className="w-full text-[10px] border border-slate-200 rounded px-1.5 py-0.5 bg-white appearance-none pr-4 text-slate-500"
+                            className="input rounded text-[10px] px-1.5 py-0.5 pr-4 appearance-none text-slate-500"
                             value={c.kanban_column ?? ""}
                             onChange={(e) =>
                               moverParaColuna(c.id, e.target.value)

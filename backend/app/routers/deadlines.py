@@ -10,7 +10,7 @@ from typing import Optional
 
 from fastapi import APIRouter, Depends, HTTPException, Query
 from fastapi.responses import Response
-from sqlalchemy import select, or_, func as sqlfunc
+from sqlalchemy import select, func as sqlfunc
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.database import get_db
@@ -209,6 +209,9 @@ async def atualizar(
         await verificar_acesso_caso(db, cu, d.case_id)
 
     mudancas = payload.model_dump(exclude_unset=True)
+    # Status ANTES de aplicar mudanças (o loop abaixo sobrescreve d.status):
+    # usado para gravar a baixa só na TRANSIÇÃO para concluído (idempotente).
+    status_antes = getattr(d.status, "value", d.status)
     # Alteração de data_prazo é sensível: audit detalhado
     if "data_prazo" in mudancas and mudancas["data_prazo"] != d.data_prazo:
         await criar_audit_log(
@@ -218,8 +221,22 @@ async def atualizar(
         )
     for k, v in mudancas.items():
         setattr(d, k, v)
-    if mudancas.get("status") == "concluido":
+    # Baixa (conclusão): além de carimbar data_conclusao, registra QUEM concluiu
+    # e deixa trilha PRAZO_CONCLUIDO. Guarda `status_antes != concluido` evita
+    # regravar audit/autor quando o prazo já estava concluído (idempotente,
+    # mesmo padrão de `confirmar`).
+    if mudancas.get("status") == "concluido" and status_antes != "concluido":
         d.data_conclusao = datetime.now(timezone.utc)
+        d.concluido_por = cu.id
+        await criar_audit_log(
+            db, cu.id, cu.role.value, "PRAZO_CONCLUIDO", "deadlines", deadline_id,
+            dados_antes={"status": status_antes},
+            dados_depois={
+                "status": "concluido",
+                "concluido_por": cu.id,
+                "data_conclusao": d.data_conclusao.isoformat(),
+            },
+        )
     await db.commit()
     await db.refresh(d)
     return DeadlineResponse.model_validate(d)
