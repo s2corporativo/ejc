@@ -111,6 +111,20 @@ class CaseUpdate(BaseModel):
     def _numero_processo_valido(cls, v: Optional[str]) -> Optional[str]:
         return _validar_numero_processo_cnj(v)
 
+    @field_validator("fase")
+    @classmethod
+    def _fase_valida(cls, v: Optional[str]) -> Optional[str]:
+        # Case.fase é SAEnum(CaseFase): valor fora do enum estourava no UPDATE
+        # (asyncpg InvalidTextRepresentationError → 500 não tratado; achado do
+        # smoke E2E). Validar na ENTRADA devolve 422 claro. Vazio/None PASSA.
+        if v is None or str(v).strip() == "":
+            return v
+        from app.models.case import CaseFase
+        validos = {m.value for m in CaseFase}
+        if v not in validos:
+            raise ValueError(f"fase inválida: use um de {sorted(validos)}")
+        return v
+
 class ProcessoPrincipalSchema(BaseModel):
     """Snapshot do processo principal (is_principal=True) — fonte canonica."""
     id: str

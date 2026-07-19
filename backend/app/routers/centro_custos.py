@@ -9,13 +9,14 @@ from typing import Optional
 
 from fastapi import APIRouter, Depends, HTTPException, Query
 from pydantic import BaseModel, Field
-from sqlalchemy import select, func, case as sa_case
+from sqlalchemy import select, func, or_, case as sa_case
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.database import get_db
 from app.core.security import get_current_user, ROLE_LEVEL
-from app.core.ownership import verificar_acesso_caso
+from app.core.ownership import verificar_acesso_caso, is_gestao
 from app.models.user import User
+from app.models.case import Case
 from app.models.centro_custo import CentroCusto, CentroCustoTipo, CentroCustoCategoria
 from app.models.audit_log import criar_audit_log
 
@@ -59,6 +60,21 @@ class CentroCustoPatch(BaseModel):
 def _pode_editar(u: User) -> bool:
     return ROLE_LEVEL.get(u.role.value, 0) >= ROLE_LEVEL["advogado"]
 
+def _ids_casos_visiveis(user: User):
+    """IDs dos casos em que o usuário atua como responsável/auxiliar (espelha
+    fees._ids_casos_do_usuario) — usado para escopar a listagem sem case_id."""
+    return (
+        select(Case.id)
+        .where(
+            Case.deleted_at.is_(None),
+            or_(
+                Case.advogado_responsavel_id == user.id,
+                Case.advogado_auxiliar_id == user.id,
+            ),
+        )
+        .scalar_subquery()
+    )
+
 def _out(c: CentroCusto) -> dict:
     return {
         "id": c.id, "case_id": c.case_id,
@@ -94,6 +110,11 @@ async def listar_lancamentos(
     q = select(CentroCusto).where(CentroCusto.deleted_at.is_(None))
     if case_id:
         q = q.where(CentroCusto.case_id == case_id)
+    elif not is_gestao(cu):
+        # Sem case_id: equipe não-gestão (advogado) vê só custos dos próprios
+        # casos — antes listava lançamentos de TODOS os casos (IDOR de leitura).
+        # Espelha _filtro_fees_lista. Gestão (socio+) segue vendo tudo.
+        q = q.where(CentroCusto.case_id.in_(_ids_casos_visiveis(cu)))
     if tipo:
         q = q.where(CentroCusto.tipo == tipo)
     if categoria:

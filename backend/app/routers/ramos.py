@@ -286,8 +286,9 @@ async def emp_cade(valor_faturamento_br: float, valor_operacao: float,
         "pendente_dado": False,
         "notificacao_obrigatoria": obrigatorio,
         "prazo_notificacao": "30 dias (art. 88 §2º Lei 12.529/11)" if obrigatorio else None,
-        # Taxa (TFPP) hardcoded — conferir tabela CADE vigente; sujeita a reajuste.
-        "taxa_cade_estimada": "R$ 85.000 (tabela CADE 2026)" if obrigatorio else "N/A",
+        # Taxa (TFPP) de referência — NÃO é leitura da tabela CADE vigente; valor
+        # fixo de orientação, sujeito a reajuste. Confirmar na tabela CADE atual.
+        "taxa_cade_estimada": "~R$ 85.000 (estimativa de referência — confirmar tabela CADE vigente)" if obrigatorio else "N/A",
         "base": "Lei 12.529/2011 art. 88, I e II c/c Portaria Interm. MJ/MF 994/2012; §2º (prazo).",
         "aviso": "MINUTA. Análise de enquadramento deve ser confirmada por especialista antitruste.",
     }

@@ -603,6 +603,12 @@ async def atualizar(
     )).scalar_one_or_none()
     if not c:
         raise HTTPException(status_code=404, detail="Cliente não encontrado")
+    # Sigilo interno (LGPD/EOAB): a ESCRITA precisa do mesmo gate de carteira que
+    # a leitura (detalhe/ia_analise) — sem ele, advogado/adv_auxiliar editaria
+    # (inclusive regravaria CPF/CNPJ cifrado) cliente que sequer pode LER. 404
+    # (não vaza existência). Fecha write-IDOR residual do commit 1c7285d.
+    if not await _pode_ver_cliente(cu, c, db):
+        raise HTTPException(status_code=404, detail="Cliente não encontrado")
 
     mudancas = payload.model_dump(exclude_unset=True)
 

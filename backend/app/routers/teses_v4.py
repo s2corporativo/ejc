@@ -91,7 +91,8 @@ async def sugerir_teses_ia(
 
     contexto_limpo, pii = sanitizar_ou_abortar(contexto)
 
-    # Busca teses similares no banco via RAG (simulado aqui)
+    # Lista as teses reais do banco (listar_teses) e usa as 5 primeiras como
+    # contexto para a IA. NÃO é busca vetorial/RAG — é listagem direta no DB.
     teses_existentes = await listar_teses(db=db)
     contexto_teses = "\n".join([f"- {t.titulo}: {t.descricao}" for t in teses_existentes[:5]])
 
