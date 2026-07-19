@@ -129,9 +129,19 @@ def _patch_documents_background_analysis() -> None:
     logger.info("Hook de análise documental ajustado para OCR completo")
 
 
+def _install_datajud_cognitive_feed() -> None:
+    """Ativa DataJud → RAG nativo sem criar sistema, banco ou IA paralelos."""
+    try:
+        from app.services.datajud_cognitive_patch import instalar
+        instalar()
+    except Exception as exc:  # integração não pode impedir o boot do EJC
+        logger.error("Feed cognitivo DataJud indisponível: %s", exc, exc_info=True)
+
+
 _patch_precedentes_router()
 _patch_advogado_estilo_router()
 _patch_documents_background_analysis()
+_install_datajud_cognitive_feed()
 
 
 @on("movimento.criado")
