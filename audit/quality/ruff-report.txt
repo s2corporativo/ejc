@@ -1,0 +1,191 @@
+app/core/security.py:153:1: E402 Module level import not at top of file
+app/core/security.py:185:13: E712 Avoid equality comparisons to `True`; use `if User.is_active:` for truth checks
+app/main.py:196:1: E402 Module level import not at top of file
+app/main.py:204:1: E402 Module level import not at top of file
+app/main.py:276:1: E402 Module level import not at top of file
+app/models/__init__.py:15:5: F401 `app.models.especializado.EmpresarialCase` imported but unused; consider removing, adding to `__all__`, or using a redundant alias
+app/models/__init__.py:15:22: F401 `app.models.especializado.EmpresarialTipo` imported but unused; consider removing, adding to `__all__`, or using a redundant alias
+app/models/__init__.py:15:39: F401 `app.models.especializado.EmpresarialStatus` imported but unused; consider removing, adding to `__all__`, or using a redundant alias
+app/models/__init__.py:16:5: F401 `app.models.especializado.CivelCase` imported but unused; consider removing, adding to `__all__`, or using a redundant alias
+app/models/__init__.py:16:16: F401 `app.models.especializado.CivelTipo` imported but unused; consider removing, adding to `__all__`, or using a redundant alias
+app/models/__init__.py:16:27: F401 `app.models.especializado.CivelStatus` imported but unused; consider removing, adding to `__all__`, or using a redundant alias
+app/models/__init__.py:17:5: F401 `app.models.especializado.PenalCase` imported but unused; consider removing, adding to `__all__`, or using a redundant alias
+app/models/__init__.py:17:16: F401 `app.models.especializado.PenalTipo` imported but unused; consider removing, adding to `__all__`, or using a redundant alias
+app/models/__init__.py:17:27: F401 `app.models.especializado.PenalFase` imported but unused; consider removing, adding to `__all__`, or using a redundant alias
+app/models/__init__.py:18:5: F401 `app.models.especializado.TrabalhistaCase` imported but unused; consider removing, adding to `__all__`, or using a redundant alias
+app/models/__init__.py:18:22: F401 `app.models.especializado.TrabalhistaTipo` imported but unused; consider removing, adding to `__all__`, or using a redundant alias
+app/models/__init__.py:18:39: F401 `app.models.especializado.TrabalhistaFase` imported but unused; consider removing, adding to `__all__`, or using a redundant alias
+app/models/__init__.py:19:5: F401 `app.models.especializado.AdminCase` imported but unused; consider removing, adding to `__all__`, or using a redundant alias
+app/models/__init__.py:19:16: F401 `app.models.especializado.AdminTipo` imported but unused; consider removing, adding to `__all__`, or using a redundant alias
+app/models/__init__.py:19:27: F401 `app.models.especializado.AdminStatus` imported but unused; consider removing, adding to `__all__`, or using a redundant alias
+app/models/__init__.py:20:5: F401 `app.models.especializado.BancarioCase` imported but unused; consider removing, adding to `__all__`, or using a redundant alias
+app/models/__init__.py:20:19: F401 `app.models.especializado.BancarioTipo` imported but unused; consider removing, adding to `__all__`, or using a redundant alias
+app/models/__init__.py:20:33: F401 `app.models.especializado.BancarioStatus` imported but unused; consider removing, adding to `__all__`, or using a redundant alias
+app/models/raio_x.py:4:87: F401 [*] `sqlalchemy.Text` imported but unused
+app/routers/ai.py:150:17: E741 Ambiguous variable name: `l`
+app/routers/ai.py:230:1: E402 Module level import not at top of file
+app/routers/ai.py:231:1: E402 Module level import not at top of file
+app/routers/ai.py:310:1: E402 Module level import not at top of file
+app/routers/ai.py:311:1: E402 Module level import not at top of file
+app/routers/ai.py:312:1: E402 Module level import not at top of file
+app/routers/ambiental_estrategia.py:39:1: E402 Module level import not at top of file
+app/routers/audit.py:60:18: E741 Ambiguous variable name: `l`
+app/routers/auth.py:200:13: E712 Avoid equality comparisons to `True`; use `if User.is_active:` for truth checks
+app/routers/auth.py:385:24: E712 Avoid equality comparisons to `False`; use `if not RefreshToken.revoked:` for false checks
+app/routers/auth.py:421:13: E712 Avoid equality comparisons to `True`; use `if User.is_active:` for truth checks
+app/routers/auth.py:491:13: E712 Avoid equality comparisons to `True`; use `if User.is_active:` for truth checks
+app/routers/auth.py:516:49: E712 Avoid equality comparisons to `False`; use `if not RefreshToken.revoked:` for false checks
+app/routers/auth.py:622:13: E712 Avoid equality comparisons to `True`; use `if User.is_active:` for truth checks
+app/routers/auth.py:657:13: E712 Avoid equality comparisons to `True`; use `if User.is_active:` for truth checks
+app/routers/auth.py:698:13: E712 Avoid equality comparisons to `True`; use `if User.is_active:` for truth checks
+app/routers/calendar_feed.py:66:33: E712 Avoid equality comparisons to `True`; use `if User.is_active:` for truth checks
+app/routers/cases.py:683:1: E402 Module level import not at top of file
+app/routers/cases.py:713:1: E402 Module level import not at top of file
+app/routers/clients.py:677:1: E402 Module level import not at top of file
+app/routers/clients.py:678:1: E402 Module level import not at top of file
+app/routers/clients.py:679:1: E402 Module level import not at top of file
+app/routers/clients.py:680:1: E402 Module level import not at top of file
+app/routers/clients.py:681:1: E402 Module level import not at top of file
+app/routers/dashboard.py:182:1: E402 Module level import not at top of file
+app/routers/dashboard.py:183:1: E402 Module level import not at top of file
+app/routers/dashboard.py:184:1: E402 Module level import not at top of file
+app/routers/dashboard.py:185:1: E402 Module level import not at top of file
+app/routers/dashboard.py:186:1: E402 Module level import not at top of file
+app/routers/dashboard.py:191:1: E402 Module level import not at top of file
+app/routers/defesas_revisoes_avancado.py:11:8: F401 [*] `math` imported but unused
+app/routers/defesas_revisoes_avancado.py:12:22: F401 [*] `datetime.date` imported but unused
+app/routers/defesas_revisoes_avancado.py:134:9: F541 [*] f-string without any placeholders
+app/routers/documents.py:855:1: E402 Module level import not at top of file
+app/routers/documents.py:856:1: E402 Module level import not at top of file
+app/routers/entrada_universal.py:140:26: E702 Multiple statements on one line (semicolon)
+app/routers/entrada_universal.py:216:18: E702 Multiple statements on one line (semicolon)
+app/routers/entrada_universal.py:246:29: E702 Multiple statements on one line (semicolon)
+app/routers/entrada_universal.py:303:30: E702 Multiple statements on one line (semicolon)
+app/routers/entrada_universal.py:303:49: E702 Multiple statements on one line (semicolon)
+app/routers/entrada_universal.py:306:30: E702 Multiple statements on one line (semicolon)
+app/routers/entrada_universal.py:334:26: E702 Multiple statements on one line (semicolon)
+app/routers/entrada_universal_vinculo.py:22:40: F401 [*] `app.models.document_intake.DocumentIntakeBatch` imported but unused
+app/routers/ia_defensiva.py:137:17: E741 Ambiguous variable name: `l`
+app/routers/ia_extra.py:65:16: E702 Multiple statements on one line (semicolon)
+app/routers/indice_risco.py:17:20: E701 Multiple statements on one line (colon)
+app/routers/indice_risco.py:18:20: E701 Multiple statements on one line (colon)
+app/routers/indice_risco.py:19:20: E701 Multiple statements on one line (colon)
+app/routers/intake.py:27:1: E402 Module level import not at top of file
+app/routers/intake.py:28:1: E402 Module level import not at top of file
+app/routers/intake.py:29:1: E402 Module level import not at top of file
+app/routers/intake.py:30:1: E402 Module level import not at top of file
+app/routers/intake.py:31:1: E402 Module level import not at top of file
+app/routers/intake.py:32:1: E402 Module level import not at top of file
+app/routers/intake.py:33:1: E402 Module level import not at top of file
+app/routers/intake.py:34:1: E402 Module level import not at top of file
+app/routers/intake.py:35:1: E402 Module level import not at top of file
+app/routers/intimacoes.py:173:21: E712 Avoid equality comparisons to `False`; use `if not DjenComunicacao.processada:` for false checks
+app/routers/jurimetria_extra.py:46:41: E702 Multiple statements on one line (semicolon)
+app/routers/jurimetria_extra.py:71:43: E741 Ambiguous variable name: `l`
+app/routers/legal_docs.py:698:1: E402 Module level import not at top of file
+app/routers/legal_docs.py:699:1: E402 Module level import not at top of file
+app/routers/legal_docs.py:701:1: E402 Module level import not at top of file
+app/routers/legal_docs.py:702:1: E402 Module level import not at top of file
+app/routers/legal_docs.py:703:1: E402 Module level import not at top of file
+app/routers/lgpd_registros.py:58:1: E402 Module level import not at top of file
+app/routers/memoria_institucional.py:73:42: E702 Multiple statements on one line (semicolon)
+app/routers/memoria_institucional.py:75:36: E702 Multiple statements on one line (semicolon)
+app/routers/memoria_institucional.py:77:48: E702 Multiple statements on one line (semicolon)
+app/routers/memoria_institucional.py:79:62: E702 Multiple statements on one line (semicolon)
+app/routers/memoria_institucional.py:153:47: E702 Multiple statements on one line (semicolon)
+app/routers/memoria_institucional.py:155:51: E702 Multiple statements on one line (semicolon)
+app/routers/peca_geracao.py:263:17: E741 Ambiguous variable name: `l`
+app/routers/peca_geracao.py:337:60: E741 Ambiguous variable name: `l`
+app/routers/previdenciario_beneficio.py:39:1: E402 Module level import not at top of file
+app/routers/procuracoes.py:48:42: E712 Avoid equality comparisons to `False`; use `if not Procuracao.revogada:` for false checks
+app/routers/produtividade.py:46:30: E702 Multiple statements on one line (semicolon)
+app/routers/provas.py:63:1: E402 Module level import not at top of file
+app/routers/rag.py:93:1: E402 Module level import not at top of file
+app/routers/rag.py:94:1: E402 Module level import not at top of file
+app/routers/rag_public.py:312:40: E741 Ambiguous variable name: `l`
+app/routers/ramos.py:592:29: E701 Multiple statements on one line (colon)
+app/routers/ramos.py:593:30: E701 Multiple statements on one line (colon)
+app/routers/ramos.py:594:30: E701 Multiple statements on one line (colon)
+app/routers/ramos.py:595:30: E701 Multiple statements on one line (colon)
+app/routers/ramos.py:596:30: E701 Multiple statements on one line (colon)
+app/routers/ramos.py:597:9: E701 Multiple statements on one line (colon)
+app/routers/ramos.py:1172:14: E701 Multiple statements on one line (colon)
+app/routers/ramos.py:1173:15: E701 Multiple statements on one line (colon)
+app/routers/ramos.py:1174:15: E701 Multiple statements on one line (colon)
+app/routers/ramos.py:1175:15: E701 Multiple statements on one line (colon)
+app/routers/ramos.py:1176:16: E701 Multiple statements on one line (colon)
+app/routers/ramos.py:1177:9: E701 Multiple statements on one line (colon)
+app/routers/signatures.py:89:9: E712 Avoid equality comparisons to `True`; use `if User.is_active:` for truth checks
+app/routers/templates.py:74:43: E712 Avoid equality comparisons to `True`; use `if DocTemplate.ativo:` for truth checks
+app/routers/teses.py:461:1: E402 Module level import not at top of file
+app/routers/teses_v4.py:79:21: E712 Avoid equality comparisons to `True`; use `if TeseJuridica.vencedora:` for truth checks
+app/routers/timesheet.py:111:13: E712 Avoid equality comparisons to `True`; use `if TimeEntry.faturavel:` for truth checks
+app/routers/trabalhista_liquidacao.py:43:1: E402 Module level import not at top of file
+app/routers/tributario_fiscal.py:189:1: E402 Module level import not at top of file
+app/routers/users.py:412:1: E402 Module level import not at top of file
+app/routers/users.py:413:1: E402 Module level import not at top of file
+app/seeds/checklists_seed.py:117:56: E702 Multiple statements on one line (semicolon)
+app/seeds/checklists_seed.py:128:55: E702 Multiple statements on one line (semicolon)
+app/seeds/checklists_seed.py:128:66: E702 Multiple statements on one line (semicolon)
+app/seeds/checklists_seed.py:148:39: E702 Multiple statements on one line (semicolon)
+app/seeds/clausulas_seed.py:80:56: E702 Multiple statements on one line (semicolon)
+app/seeds/clausulas_seed.py:91:52: E702 Multiple statements on one line (semicolon)
+app/seeds/clausulas_seed.py:91:63: E702 Multiple statements on one line (semicolon)
+app/seeds/clausulas_seed.py:107:39: E702 Multiple statements on one line (semicolon)
+app/seeds/redesign_seed.py:331:56: E702 Multiple statements on one line (semicolon)
+app/seeds/redesign_seed.py:343:26: E702 Multiple statements on one line (semicolon)
+app/seeds/redesign_seed.py:369:26: E702 Multiple statements on one line (semicolon)
+app/seeds/redesign_seed.py:391:26: E702 Multiple statements on one line (semicolon)
+app/seeds/redesign_seed.py:411:39: E702 Multiple statements on one line (semicolon)
+app/seeds/skills_ferramentas_seed.py:464:56: E702 Multiple statements on one line (semicolon)
+app/seeds/skills_ferramentas_seed.py:473:56: E702 Multiple statements on one line (semicolon)
+app/seeds/skills_ferramentas_seed.py:473:67: E702 Multiple statements on one line (semicolon)
+app/seeds/skills_ferramentas_seed.py:493:39: E702 Multiple statements on one line (semicolon)
+app/services/ai_service.py:270:31: E702 Multiple statements on one line (semicolon)
+app/services/ai_service.py:270:59: E702 Multiple statements on one line (semicolon)
+app/services/ai_skill_service.py:51:32: E712 Avoid equality comparisons to `True`; use `if EjcSkill.active:` for truth checks
+app/services/ai_skill_service.py:69:61: E712 Avoid equality comparisons to `True`; use `if EjcSkill.active:` for truth checks
+app/services/ai_skill_service.py:182:61: E712 Avoid equality comparisons to `True`; use `if EjcSkill.active:` for truth checks
+app/services/bank_report.py:26:29: E702 Multiple statements on one line (semicolon)
+app/services/bank_report.py:26:47: E702 Multiple statements on one line (semicolon)
+app/services/bank_report.py:32:19: E702 Multiple statements on one line (semicolon)
+app/services/bank_report.py:34:54: E702 Multiple statements on one line (semicolon)
+app/services/bank_report.py:34:69: E702 Multiple statements on one line (semicolon)
+app/services/bank_report.py:34:120: E702 Multiple statements on one line (semicolon)
+app/services/bank_report.py:49:40: E702 Multiple statements on one line (semicolon)
+app/services/bank_report.py:50:38: E702 Multiple statements on one line (semicolon)
+app/services/bank_report.py:51:45: E702 Multiple statements on one line (semicolon)
+app/services/bank_report.py:55:18: E702 Multiple statements on one line (semicolon)
+app/services/bank_report.py:57:29: E702 Multiple statements on one line (semicolon)
+app/services/bank_report.py:57:49: E702 Multiple statements on one line (semicolon)
+app/services/bank_report.py:58:41: E702 Multiple statements on one line (semicolon)
+app/services/bank_report.py:58:79: E702 Multiple statements on one line (semicolon)
+app/services/bank_report.py:81:26: E702 Multiple statements on one line (semicolon)
+app/services/bank_report.py:84:23: E702 Multiple statements on one line (semicolon)
+app/services/bank_report.py:84:37: E702 Multiple statements on one line (semicolon)
+app/services/deadline_calculator.py:130:5: E741 Ambiguous variable name: `l`
+app/services/deep_research_service.py:98:51: E741 Ambiguous variable name: `l`
+app/services/deep_research_service.py:99:25: E741 Ambiguous variable name: `l`
+app/services/djen_service.py:34:1: E402 Module level import not at top of file
+app/services/djen_service.py:35:1: E402 Module level import not at top of file
+app/services/djen_service.py:37:1: E402 Module level import not at top of file
+app/services/djen_service.py:38:1: E402 Module level import not at top of file
+app/services/djen_service.py:39:1: E402 Module level import not at top of file
+app/services/embedding_service.py:130:1: E402 Module level import not at top of file
+app/services/ocr_service.py:150:31: E741 Ambiguous variable name: `l`
+app/services/raio_x_enrichment.py:12:28: F401 [*] `datetime.datetime` imported but unused
+app/services/rito_engine.py:12:25: F401 [*] `typing.Iterable` imported but unused
+app/services/scheduler.py:1654:17: E712 Avoid equality comparisons to `True`; use `if _U.is_active:` for truth checks
+app/services/scheduler.py:1725:13: E712 Avoid equality comparisons to `True`; use `if _U.is_active:` for truth checks
+app/services/security_service.py:183:21: E702 Multiple statements on one line (semicolon)
+app/services/security_service.py:183:35: E702 Multiple statements on one line (semicolon)
+app/services/security_service.py:204:28: E712 Avoid equality comparisons to `True`; use `if User.is_active:` for truth checks
+app/services/security_service.py:240:13: E712 Avoid equality comparisons to `False`; use `if not PasswordResetToken.used:` for false checks
+app/services/security_service.py:269:49: E712 Avoid equality comparisons to `False`; use `if not RefreshToken.revoked:` for false checks
+app/services/system_prompts/__init__.py:2:48: F401 `.base.IDENTIDADE` imported but unused; consider removing, adding to `__all__`, or using a redundant alias
+app/services/system_prompts/__init__.py:2:60: F401 `.base.RESTRICOES` imported but unused; consider removing, adding to `__all__`, or using a redundant alias
+app/services/system_prompts/__init__.py:2:72: F401 `.base.COMPORTAMENTO` imported but unused; consider removing, adding to `__all__`, or using a redundant alias
+Found 187 errors.
+[*] 7 fixable with the `--fix` option (24 hidden fixes can be enabled with the `--unsafe-fixes` option).
+
+exit_code=1
