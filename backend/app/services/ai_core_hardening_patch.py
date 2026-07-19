@@ -2,13 +2,16 @@
 """Hardening aditivo do núcleo de IA/RAG carregado no startup.
 
 Correções transitórias de compatibilidade:
-1. resolução de provedores fail-closed para aliases legados de `chat`;
-2. resolução server-side do escopo de precedentes com chave `caso:<id>`;
-3. listagem de KnowledgeDoc escopada, evitando exposição de títulos/fontes de
+1. conexão do ProviderRegistry único ao runtime;
+2. resolução de provedores fail-closed para todos os aliases legados de `chat`;
+3. resolução server-side do escopo de precedentes de encerramento cuja chave
+   canônica é `caso:<id>`, fluxo legado que não passava client_id ao RAG;
+4. listagem de KnowledgeDoc escopada, evitando exposição de títulos/fontes de
    peças internas a usuários sem acesso ao caso ou cliente correspondente.
 
-As correções operam em primitivas/rotas já existentes. A convergência definitiva
-deve incorporá-las diretamente ao gateway, ao contrato de ingestão e ao router.
+As correções operam em primitivas consultadas em runtime, alcançando call sites
+que importaram funções antes do startup. A convergência definitiva deve eliminar
+os adapters ao centralizar contratos de provider, ingestão e ownership.
 """
 from __future__ import annotations
 
@@ -16,6 +19,12 @@ import logging
 
 logger = logging.getLogger("ejc.ai.core.hardening")
 _INSTALADO = False
+
+
+def _instalar_provider_registry() -> None:
+    """Conecta a fonte única de providers antes de instalar o fail-closed."""
+    from app.services.ai.provider_registry_runtime import instalar
+    instalar()
 
 
 def _instalar_resolver_provedores() -> None:
@@ -58,7 +67,13 @@ def _instalar_resolver_provedores() -> None:
 
 
 def _instalar_resolucao_escopo_rag() -> None:
-    """Compatibiliza o encerramento legado sem aceitar escopo do frontend."""
+    """Compatibiliza o encerramento legado sem aceitar escopo do cliente.
+
+    `cases.encerrar_caso` usa chave `caso:<uuid>` e import local da função; a
+    identidade do caso é, portanto, verificável no servidor. Somente esse padrão
+    canônico pode ser auto-resolvido. Qualquer outra categoria/chave sem client_id
+    continua bloqueada pelo write gate de `ingestion_service`.
+    """
     from app.services import ingestion_service
 
     if getattr(ingestion_service, "_ejc_scope_resolver_installed", False):
@@ -182,6 +197,7 @@ def instalar() -> None:
     global _INSTALADO
     if _INSTALADO:
         return
+    _instalar_provider_registry()
     _instalar_resolver_provedores()
     _instalar_resolucao_escopo_rag()
     _instalar_listagem_rag_escopada()

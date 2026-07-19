@@ -14,6 +14,9 @@ Sem régua, toda melhoria é aposta.
 
 ## 1. Monte o gold set
 
+Consulte também [`GUIA_CURADORIA_GOLD_SET.md`](GUIA_CURADORIA_GOLD_SET.md) e
+[`gold_set.template.json`](gold_set.template.json).
+
 Copie `gold_set.example.jsonl` para `gold_set.jsonl` e cresça para **50–150 casos
 reais** (pseudonimizados), cobrindo as áreas de atuação. Cada linha é um JSON:
 
@@ -41,7 +44,17 @@ python -m app.eval.run_eval --gold app/eval/gold_set.jsonl --k 6 --full --judge
 
 # Baseline para diff entre execuções
 python -m app.eval.run_eval --gold app/eval/gold_set.jsonl --out baseline.json
+
+# Comparação controlada de providers sobre a MESMA query e o MESMO contexto RAG
+python -m app.eval.compare_providers \
+  --gold app/eval/gold_set.jsonl \
+  --providers anthropic,maritaca \
+  --k 6 --judge --out comparacao.json
 ```
+
+No comparador, fallbacks são registrados separadamente e **não entram nas
+métricas do provider solicitado**. O comando não habilita providers nem altera o
+roteamento de produção.
 
 ## 3. Métricas
 
@@ -50,6 +63,7 @@ python -m app.eval.run_eval --gold app/eval/gold_set.jsonl --out baseline.json
 | `hit@k`, `precision@k`, `recall@k`, `MRR` | o retrieval trouxe as fontes certas? | `buscar_contexto_rag` vs `expected_titulos` |
 | taxa de citações não confirmadas | alucinação de jurisprudência | gate `citation_check` (`--full`) |
 | groundedness | a resposta se apoia no contexto? | LLM-as-judge Haiku (`--judge`) |
+| custo e latência por provider | eficiência comparativa | `compare_providers.py` |
 
 Métricas de baseline **imediato** que já existem sem gold set: a taxa de citações
 não confirmadas (AILog) e a **nota de robustez** das Duas IAs.
@@ -58,7 +72,8 @@ não confirmadas (AILog) e a **nota de robustez** das Duas IAs.
 
 1. **Baseline** com o pipeline atual.
 2. **Reranker** (O-1, já implementado) → ligue `RAG_RERANK_ENABLED` e compare.
-3. **BM25/FTS** (A-3) → migration 095 + `RAG_FTS_ENABLED=true` → compare.
+3. **BM25/FTS** (A-3) → mantenha `RAG_FTS_ENABLED=false` até existir baseline
+   jurídico real; depois ative de forma controlada e compare.
 4. **Embedding** (O-2) → migration 096 + reindex + compare recall.
 5. **HyDE** (O-6) → `RAG_HYDE_ENABLED=true` → compare recall.
 6. **FIRAC / extended thinking** (O-3) → compare groundedness/alucinação.
@@ -102,7 +117,7 @@ memória. O loop `rodar_agente` é exercitado ponta a ponta.
 # Roda o gold set embarcado (offline — NÃO precisa de DATABASE_URL)
 python -m app.eval.agent_trajectory
 
-# Gate de regressão para CI (falha se cair a escolha de tool ou surgir violação HITL)
+# Gate de regressão para CI
 python -m app.eval.agent_trajectory --min-tool 1.0 --max-violacoes-hitl 0
 
 # Baseline para diff
@@ -125,31 +140,23 @@ Scaffold pronto para o escritório preencher:
   `teses_esperadas`, `jurisprudencia_esperada`, `criterios`, `notes`).
 - **Exemplos FICTÍCIOS**: `gold_set_pecas.example.jsonl` — 3 casos 100% sintéticos
   (`ficticio: true`), com jurisprudência **placeholder** (`SUMULA-FICTICIA-XXX`).
-  Servem só para demonstrar o formato — **nunca** copie os placeholders (nem
-  qualquer citação não conferida) para o gold set real.
+  Servem só para demonstrar o formato — **nunca** copie os placeholders.
 
-### Curadoria (quem produz é o escritório)
+### Curadoria
 
-1. Copie o formato dos exemplos para `gold_set_pecas.jsonl` (uma linha JSON por caso).
-2. **Pseudonimize tudo** (LGPD): troque nomes por `[CLIENTE_1]`/`[EMPRESA_1]`,
-   remova CPF/endereços/valores identificáveis ANTES de gravar.
-3. Em `jurisprudencia_esperada`, liste **apenas referências reais conferidas na
-   fonte oficial** (STF/STJ/TST/planalto). Jurisprudência inventada é proibida —
-   inclusive nos exemplos, onde só o placeholder explícito `SUMULA-FICTICIA-XXX` é aceito.
-4. Meta: **50–150 casos reais pseudonimizados** cobrindo as áreas de atuação;
-   comece pelos tipos de peça mais gerados (petição inicial, contestação, RO).
-5. Marque `ficticio: false` nos casos reais pseudonimizados.
+1. Copie o formato dos exemplos para `gold_set_pecas.jsonl`.
+2. Pseudonimize nomes, documentos, endereços e valores identificáveis.
+3. Liste apenas jurisprudência real conferida na fonte oficial.
+4. Cresça para 50–150 casos pseudonimizados.
+5. Marque `ficticio: false` nos casos reais.
 
 ### Como rodar
 
 ```bash
-# Smoke (offline, sem banco/LLM): valida o FORMATO de TODOS os gold sets *.jsonl
 python -m app.eval.run_eval --smoke
-
-# Retrieval sobre o gold set de RAG (precisa de DATABASE_URL)
 python -m app.eval.run_eval --gold app/eval/gold_set.jsonl --k 6
 ```
 
 O CI (`.github/workflows/ci.yml`, job `eval-smoke`) roda `--smoke` +
-`agent_trajectory` em modo **não bloqueante** (`continue-on-error`) — vira gate
-bloqueante quando o gold set real existir e o baseline estiver estabelecido.
+`agent_trajectory` em modo não bloqueante; torna-se gate bloqueante quando o gold
+set real existir e o baseline estiver estabelecido.
