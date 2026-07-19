@@ -469,12 +469,22 @@ class TestResolverCadeia:
         modelo_anthropic = dict(cadeia)["anthropic"]
         assert modelo_anthropic == (s.ANTHROPIC_MODEL_COMPLEXO or s.ANTHROPIC_MODEL_RAPIDO)
 
-    def test_sem_externos_e_sem_ollama_cai_no_last_resort_groq(self, s, monkeypatch):
+    def test_sem_externos_e_sem_ollama_cadeia_vazia_fail_closed(self, s, monkeypatch):
+        # Hardening (PR #322 — ai_core_hardening_patch.resolver_fail_closed): sem
+        # provedores externos permitidos E sem Ollama, NENHUM provider é elegível
+        # (groq é EXTERNO, barrado por _provider_elegivel) → cadeia VAZIA
+        # (fail-closed), em vez do antigo fallback INSEGURO para groq. Coerente com
+        # test_ai_knowledge_core_hardening (gateway fail-closed não contorna gate).
+        # Em produção o resolver fail-closed é instalado no boot (event_subscribers
+        # → instalar()); garantimos o mesmo aqui (idempotente) para o teste ser
+        # determinístico rodado isolado ou na suíte completa.
+        from app.services.ai_core_hardening_patch import _instalar_resolver_provedores
+        _instalar_resolver_provedores()
         from app.services.ai_gateway import _resolver_cadeia
         monkeypatch.setattr(s, "AI_EXTERNAL_PROVIDERS_ALLOWED", False)
         monkeypatch.setattr(s, "OLLAMA_ENABLED", False)
         cadeia = _resolver_cadeia("analise_juridica", None, None)
-        assert cadeia == [("groq", None)]
+        assert cadeia == []
 
 
 # ══════════════════════════════════════════════════════════════════════════════

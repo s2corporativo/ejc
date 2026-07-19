@@ -1,6 +1,6 @@
 # ── app/schemas/deadline.py ──────────────────────────────────────────────────
 from __future__ import annotations
-from pydantic import BaseModel
+from pydantic import BaseModel, field_validator
 from typing import Optional
 from datetime import date, datetime
 
@@ -19,6 +19,28 @@ class DeadlineCreate(BaseModel):
     case_id: Optional[str] = None
     responsavel_id: Optional[str] = None
 
+    @field_validator("tipo")
+    @classmethod
+    def _tipo_valido(cls, v: str) -> str:
+        # Deadline.tipo é SAEnum(DeadlineTipo): valor fora do enum estoura no
+        # INSERT (asyncpg InvalidTextRepresentationError → 500). Validar na
+        # ENTRADA devolve 422 claro. Import lazy p/ evitar ciclo model↔schema.
+        from app.models.deadline import DeadlineTipo
+        validos = {m.value for m in DeadlineTipo}
+        if v not in validos:
+            raise ValueError(f"tipo inválido: use um de {sorted(validos)}")
+        return v
+
+    @field_validator("prioridade")
+    @classmethod
+    def _prioridade_valida(cls, v: str) -> str:
+        # Deadline.prioridade é SAEnum(DeadlinePrioridade) — mesma classe de 500.
+        from app.models.deadline import DeadlinePrioridade
+        validos = {m.value for m in DeadlinePrioridade}
+        if v not in validos:
+            raise ValueError(f"prioridade inválida: use uma de {sorted(validos)}")
+        return v
+
 class DeadlineUpdate(BaseModel):
     titulo: Optional[str] = None
     status: Optional[str] = None
@@ -26,6 +48,31 @@ class DeadlineUpdate(BaseModel):
     data_prazo: Optional[date] = None
     responsavel_id: Optional[str] = None
     observacoes: Optional[str] = None
+
+    @field_validator("status")
+    @classmethod
+    def _status_valido(cls, v: Optional[str]) -> Optional[str]:
+        # Deadline.status é SAEnum(DeadlineStatus): valor fora do enum estourava
+        # no UPDATE (500). Vazio/None PASSA (update parcial).
+        if v is None or str(v).strip() == "":
+            return v
+        from app.models.deadline import DeadlineStatus
+        validos = {m.value for m in DeadlineStatus}
+        if v not in validos:
+            raise ValueError(f"status inválido: use um de {sorted(validos)}")
+        return v
+
+    @field_validator("prioridade")
+    @classmethod
+    def _prioridade_valida(cls, v: Optional[str]) -> Optional[str]:
+        # Deadline.prioridade é SAEnum(DeadlinePrioridade) — mesma classe de 500.
+        if v is None or str(v).strip() == "":
+            return v
+        from app.models.deadline import DeadlinePrioridade
+        validos = {m.value for m in DeadlinePrioridade}
+        if v not in validos:
+            raise ValueError(f"prioridade inválida: use uma de {sorted(validos)}")
+        return v
 
 class DeadlineResponse(BaseModel):
     id: str

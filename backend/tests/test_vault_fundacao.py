@@ -225,7 +225,12 @@ def test_migration_108_encadeada_e_idempotente():
 
     revision = script.get_revision("108_credential_vault")
     assert revision.down_revision == "107_scheduler_heartbeat"
-    assert script.get_heads() == ["108_credential_vault"]
+    # Migrations posteriores (ex.: 109+) estendem legitimamente a cadeia — 108
+    # deixa de ser o head. Verifica-se então head ÚNICO (sem forks) e 108 presente
+    # na ancestralidade (cadeia linear e íntegra até 108), sem fixar o tipo.
+    heads = script.get_heads()
+    assert len(heads) == 1, f"esperado head único (sem múltiplos heads), veio {heads}"
+    assert "108_credential_vault" in {sc.revision for sc in script.walk_revisions()}
 
     modulo = revision.module
     fonte_upgrade = inspect.getsource(modulo.upgrade)

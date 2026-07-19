@@ -11,10 +11,35 @@ class LegalDocCreate(BaseModel):
     case_id: Optional[str] = None
     ai_generated: bool = False
 
+    @field_validator("tipo_peca")
+    @classmethod
+    def _tipo_peca_valido(cls, v: str) -> str:
+        # LegalDoc.tipo_peca é SAEnum(PecaTipo): valor fora do enum estoura no
+        # INSERT (asyncpg InvalidTextRepresentationError → 500). Validar na
+        # ENTRADA devolve 422. Import lazy p/ evitar ciclo model↔schema.
+        from app.models.legal_doc import PecaTipo
+        validos = {m.value for m in PecaTipo}
+        if v not in validos:
+            raise ValueError(f"tipo_peca inválido: use um de {sorted(validos)}")
+        return v
+
 class LegalDocUpdate(BaseModel):
     titulo: Optional[str] = None
     conteudo: Optional[str] = None
     status: Optional[str] = None
+
+    @field_validator("status")
+    @classmethod
+    def _status_valido(cls, v: Optional[str]) -> Optional[str]:
+        # LegalDoc.status é SAEnum(PecaStatus) — valor fora do enum estourava no
+        # UPDATE (500). Vazio/None PASSA (update parcial).
+        if v is None or str(v).strip() == "":
+            return v
+        from app.models.legal_doc import PecaStatus
+        validos = {m.value for m in PecaStatus}
+        if v not in validos:
+            raise ValueError(f"status inválido: use um de {sorted(validos)}")
+        return v
 
 class LegalDocRevisao(BaseModel):
     aprovado: bool

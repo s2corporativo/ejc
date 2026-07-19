@@ -4,11 +4,16 @@ from pydantic import BaseModel, field_validator
 from typing import Optional
 from datetime import datetime, date
 
-from app.models.client import ClientStatus
+from app.models.client import ClientStatus, ClientTipo, ClientOrigem
 
 # Etapas do funil de leads (CRM) — mesmas colunas do board CRMLeads.tsx.
 ETAPAS_FUNIL = {"lead", "contato", "reuniao", "proposta", "convertido", "perdido"}
 _STATUS_VALIDOS = {s.value for s in ClientStatus}
+# `tipo`/`origem` são colunas SAEnum (ClientTipo/ClientOrigem). O router mitiga
+# valor inválido com except DataError→422, mas validar no schema devolve 422 de
+# campo (mais claro) e alinha ao padrão de `status`/`etapa_funil` deste arquivo.
+_TIPOS_VALIDOS = {t.value for t in ClientTipo}
+_ORIGENS_VALIDAS = {o.value for o in ClientOrigem}
 
 class ClientBase(BaseModel):
     tipo: str = "PF"
@@ -68,6 +73,25 @@ class ClientCreate(ClientBase):
     def _valida_etapa(cls, v: Optional[str]) -> Optional[str]:
         if v is not None and v not in ETAPAS_FUNIL:
             raise ValueError(f"etapa_funil inválida; use uma de: {sorted(ETAPAS_FUNIL)}")
+        return v
+
+    @field_validator("tipo")
+    @classmethod
+    def _valida_tipo(cls, v: str) -> str:
+        # Coluna SAEnum(ClientTipo) — string fora do enum → 422 (não depende do
+        # rollback DataError do router).
+        if v not in _TIPOS_VALIDOS:
+            raise ValueError(f"tipo inválido; use um de: {sorted(_TIPOS_VALIDOS)}")
+        return v
+
+    @field_validator("origem")
+    @classmethod
+    def _valida_origem(cls, v: Optional[str]) -> Optional[str]:
+        # Coluna SAEnum(ClientOrigem), nullable — vazio/None viram None (não "").
+        if v is None or str(v).strip() == "":
+            return None
+        if v not in _ORIGENS_VALIDAS:
+            raise ValueError(f"origem inválida; use uma de: {sorted(_ORIGENS_VALIDAS)}")
         return v
 
 class ClientUpdate(BaseModel):
