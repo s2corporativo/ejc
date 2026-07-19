@@ -106,8 +106,18 @@ jobs:
 
       - name: Auditoria bloqueante de dependências Python (pip-audit)
         run: |
+          set -o pipefail
           python -m pip install pip-audit
-          pip-audit -r requirements.txt --desc
+          pip-audit -r requirements.txt --desc 2>&1 | tee ../pip-audit-report.txt
+
+      - name: Anexar diagnóstico pip-audit
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: pip-audit-report
+          path: pip-audit-report.txt
+          if-no-files-found: warn
+          retention-days: 7
 
       - name: Aplicar migrations (alembic upgrade head)
         run: python -m alembic upgrade head
