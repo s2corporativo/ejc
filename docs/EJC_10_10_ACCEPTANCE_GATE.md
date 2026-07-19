@@ -26,6 +26,10 @@ A classificação 10/10 não decorre da quantidade de módulos. Ela exige, cumul
 - Onda 1 da refatoração arquitetural: API canônica `/api/v1`, aliases de compatibilidade, contratos de domínio, normalização de rotas e inventário arquitetural.
 - Hardening do núcleo de IA/RAG, incluindo resolução fail-closed, escopo de conhecimento e proteção de marcadores estruturais do AILog.
 - Feed cognitivo DataJud e governança da base de conhecimento.
+- Segregação de agenda pessoal e de casos, restrição de atribuição a terceiros e censura do oráculo de conflito, com testes em PostgreSQL real.
+- Validação do comprovante de protocolo: documento existente, não excluído e pertencente ao mesmo caso da peça, com testes específicos e trilha de auditoria.
+- Titularidade das procurações: listagem, emissão, minuta e revogação segregadas por carteira, com testes negativos em PostgreSQL real.
+- Auditoria de replay de refresh token após logout ou troca de senha.
 
 ### Não integrado
 
@@ -38,14 +42,13 @@ As seguintes ondas foram encerradas sem merge e precisam ser reaplicadas sobre a
 - Onda 6 — painel contextual de saúde/timeline no frontend;
 - Onda 7 — saúde operacional da carteira no Dashboard.
 
-### Riscos residuais já identificados
+### Pendências confirmadas
 
-- escopo e titularidade de eventos pessoais da agenda;
-- possibilidade de atribuição de evento a terceiro e exposição indevida no oráculo de conflito;
-- validação de pertencimento do comprovante de protocolo ao caso;
-- ausência de testes completos de titularidade de procurações e IDOR de agenda;
-- 2FA obrigatório por papel ainda sem enforcement duro;
-- necessidade de comprovar a `main` consolidada em CI verde após merges sucessivos.
+- 2FA obrigatório por papel ainda sem enforcement duro: o login emite sessão completa e apenas sinaliza ao frontend que o usuário deve configurar TOTP;
+- branch `main` ainda precisa de proteção administrativa com checks obrigatórios e bloqueio de push direto;
+- dívida de Ruff e Prettier detectada ao transformar controles antes informativos em bloqueantes;
+- necessidade de comprovar a árvore consolidada no commit exato da release, com CI e Release Gate verdes;
+- homologação E2E, backup, restauração, rollback e desempenho ainda não documentados como aprovados.
 
 ## 3. Gates obrigatórios
 
@@ -170,9 +173,10 @@ O EJC será certificado 10/10 somente quando:
 ## 5. Ordem de execução
 
 1. endurecer governança de merge e checks obrigatórios;
-2. fechar riscos residuais de segurança e titularidade;
-3. reaplicar as Ondas 2 a 7 sobre a `main` atual, uma por vez;
-4. executar testes completos, migrations e auditoria de segurança;
-5. homologar os fluxos jurídicos ponta a ponta;
-6. testar backup, restauração, deploy e rollback;
-7. emitir a certificação interna da release.
+2. sanear Ruff, Prettier e vulnerabilidades bloqueantes;
+3. implementar enforcement seguro de 2FA sem impedir o fluxo de cadastro do autenticador;
+4. reaplicar as Ondas 2 a 7 sobre a `main` atual, uma por vez;
+5. executar testes completos, migrations e auditoria de segurança;
+6. homologar os fluxos jurídicos ponta a ponta;
+7. testar backup, restauração, deploy e rollback;
+8. emitir a certificação interna da release.
