@@ -3,10 +3,12 @@
 # refresh com rotação, logout, troca de senha, reset por e-mail.
 import base64
 import binascii
+import io
 import logging
 from datetime import datetime, timezone, timedelta
 from uuid import uuid4
 import pyotp
+import qrcode
 
 from fastapi import APIRouter, Depends, HTTPException, Request, Response
 from pydantic import BaseModel, EmailStr, Field
@@ -261,419 +263,41 @@ async def login(
             raise HTTPException(status_code=401, detail="Código TOTP inválido ou expirado")
         # Segredo legado em claro → re-grava cifrado (commit do login abaixo).
         _recifrar_totp_legado(user, secret, legado)
-
-    # ── 4. Login OK ──────────────────────────────────────────────────
-    limpar_falhas(chave_bf)
-    limpar_falhas(chave_em)
-
-    access = create_access_token(user.id, user.role.value,
-                                 must_change_password=user.must_change_password)
-    refresh_tok, jti = create_refresh_token(user.id)
-
-    db.add(RefreshToken(
-        id=str(uuid4()), user_id=user.id, jti=jti,
-        expires_at=datetime.now(timezone.utc) + timedelta(
-            days=settings.REFRESH_TOKEN_EXPIRE_DAYS),
-    ))
-    user.last_login_at = datetime.now(timezone.utc)
-
-    await criar_audit_log(db, user.id, user.role.value, "LOGIN", "users",
-                          user.id, ip=ip)
-
-    # Alerta de novo dispositivo (assíncrono — não bloqueia resposta)
-    ua = request.headers.get("user-agent", "")
-    await verificar_novo_dispositivo(db, user, ip, ua)
-
-    await db.commit()
-
-    # #14: entrega o refresh token no cookie httpOnly (não legível por JS).
-    _set_refresh_cookie(response, refresh_tok)
-
-    resp = {
-        "access_token": access, "refresh_token": refresh_tok,
-        "token_type": "bearer",
-        "user_id": user.id, "full_name": user.full_name, "role": user.role.value,
-    }
-    # ── 5. Sinalizar troca obrigatória de senha ──────────────────────
-    if user.must_change_password:
-        resp["must_change_password"] = True
-        resp["detail"] = "Troca de senha obrigatória antes de continuar."
-    # ── 6. 2FA obrigatório por papel (enforcement SEM lockout) ────────
-    # Se o papel exige 2FA (REQUIRE_2FA_ROLES) e o usuário ainda não tem TOTP
-    # ativo, sinaliza ao frontend que ele PRECISA configurar — sem bloquear o
-    # login (não há coluna/migration nova; ninguém é trancado). Default vazio
-    # ⇒ nunca dispara e a resposta fica idêntica à atual.
-    if _papel_exige_2fa(user.role.value) and not user.totp_enabled:
-        resp["precisa_configurar_2fa"] = True
-    return resp
-
-
-# ─── Refresh (rotação de token) ───────────────────────────────────────────────
-@router.post("/refresh")
-@limiter.limit("20/minute")
-async def refresh(req: RefreshRequest, request: Request, response: Response,
-                  db: AsyncSession = Depends(get_db)):
-    token = _refresh_from(req, request)
-    payload = decode_token(token) if token else None
-    if not payload or payload.get("type") != "refresh":
-        raise HTTPException(status_code=401, detail="Refresh token inválido")
-
-    jti = payload.get("jti")
-    user_id = payload.get("sub")
-    record = (await db.execute(
-        select(RefreshToken).where(RefreshToken.jti == jti)
-    )).scalar_one_or_none()
-
-    # ── Detecção de REUSO (item 1 — auditoria pré-produção; OAuth 2.0 Security
-    # BCP §4.14.2): token criptograficamente VÁLIDO cujo JTI já foi revogado
-    # (rotação anterior) ou nunca foi registrado = replay. Ex.: atacante roubou
-    # o refresh e rotacionou primeiro — antes, a cadeia dele continuava válida
-    # por 7 dias. Resposta padrão: revogar TODAS as sessões do `sub` (derruba
-    # também a cadeia do atacante) + trilha de auditoria.
-    #
-    # EXCEÇÃO (corrida multi-aba, pré-go-live item 1): duas abas compartilham o
-    # cookie `ejc_refresh`; um refresh concorrente faz a 2ª chegar com o token
-    # que a 1ª acabou de rotacionar. Reuso do token da ÚLTIMA rotação
-    # (replaced_by_jti aponta para token AINDA ATIVO) dentro da janela de graça
-    # → 401 simples, sem revogação em massa e SEM limpar o cookie (o browser já
-    # tem o token novo da outra aba). Token de rotação mais antiga (substituto
-    # já revogado) ou fora da graça → punição total normal.
-    if record is None or record.revoked:
-        agora = datetime.now(timezone.utc)
-        if (
-            record is not None
-            and record.revoked_at is not None
-            and record.replaced_by_jti
-            and (agora - record.revoked_at).total_seconds() <= REFRESH_REUSE_GRACA_SEGUNDOS
-        ):
-            substituto = (await db.execute(
-                select(RefreshToken).where(
-                    RefreshToken.jti == record.replaced_by_jti)
-            )).scalar_one_or_none()
-            if substituto is not None and not substituto.revoked:
-                raise HTTPException(
-                    status_code=401,
-                    detail="Sessão atualizada em outra aba — tente novamente",
-                )
-        # Token revogado SEM replaced_by_jti nunca foi rotacionado: foi encerrado
-        # por logout ou troca de senha. O replay vem de um dispositivo antigo
-        # legítimo, não é o sinal de furto do BCP §4.14.2 — 401 simples, sem
-        # cascata de revogação e sem marcar REFRESH_REUSE na auditoria.
-        if record is not None and not record.replaced_by_jti:
-            # M-S3: mesmo sem cascata, o replay pós-logout precisa de trilha —
-            # um dispositivo reapresentando token encerrado é sinal fraco de
-            # comprometimento que a forense cruza com IP/frequência. Padrão
-            # leve do REFRESH_REUSE abaixo, sem revogação em massa.
-            await criar_audit_log(
-                db, user_id, None, "REFRESH_REPLAY_POS_LOGOUT", "users", user_id,
-                detalhes=f"Refresh revogado sem rotação reapresentado (jti={jti}) "
-                         "— sessão encerrada por logout/troca de senha; negado "
-                         "sem cascata de revogação.",
-                ip=obter_ip_real(request),
-            )
-            await db.commit()
-            _clear_refresh_cookie(response)
-            raise HTTPException(
-                status_code=401,
-                detail="Sessão encerrada. Faça login novamente.",
-            )
-        ip = obter_ip_real(request)
-        if user_id:
-            await db.execute(
-                update(RefreshToken)
-                .where(RefreshToken.user_id == user_id,
-                       RefreshToken.revoked == False)
-                .values(revoked=True, revoked_at=agora)
-            )
-            await criar_audit_log(
-                db, user_id, None, "REFRESH_REUSE", "users", user_id,
-                detalhes=f"Reuso de refresh token detectado (jti={jti}) — "
-                         "todas as sessões do usuário foram revogadas.",
-                ip=ip,
-            )
-            await db.commit()
-        else:
-            # Item 9: payload válido SEM `sub` é anômalo (token forjado com a
-            # chave vazada ou bug de emissão) — precisa aparecer na auditoria
-            # mesmo sem haver sessões a revogar.
-            await criar_audit_log(
-                db, None, None, "REFRESH_REUSE", "users", None,
-                detalhes=f"Reuso de refresh token SEM sub no payload "
-                         f"(jti={jti}) — anômalo; nenhuma sessão a revogar.",
-                ip=ip,
-            )
-            await db.commit()
-        _clear_refresh_cookie(response)
-        raise HTTPException(status_code=401, detail="Token revogado ou expirado")
-
-    if record.expires_at <= datetime.now(timezone.utc):
-        # Expiração natural não é reuso — nega sem punir as demais sessões.
-        raise HTTPException(status_code=401, detail="Token revogado ou expirado")
-
-    # Rotação: revogar o atual, emitir novo par (revoked_at/replaced_by_jti
-    # alimentam a janela de graça da detecção de reuso acima)
-    record.revoked = True
-    record.revoked_at = datetime.now(timezone.utc)
-
-    user = (await db.execute(
-        select(User).where(
-            User.id == user_id,
-            User.is_active == True,
-            User.deleted_at.is_(None),  # item 10: mesmo filtro do get_current_user
-        )
-    )).scalar_one_or_none()
-    if not user:
-        raise HTTPException(status_code=401, detail="Usuário inativo")
-
-    # Propaga o estado de troca obrigatória: sem isto, um usuário com senha
-    # temporária (must_change_password) obteria via /refresh um access token
-    # SEM o claim pwd_change_required, contornando o gate de troca de senha.
-    new_access = create_access_token(
-        user.id, user.role.value,
-        must_change_password=user.must_change_password,
-    )
-    new_refresh, new_jti = create_refresh_token(user.id)
-    record.replaced_by_jti = new_jti
-
-    db.add(RefreshToken(
-        id=str(uuid4()), user_id=user.id, jti=new_jti,
-        expires_at=datetime.now(timezone.utc) + timedelta(
-            days=settings.REFRESH_TOKEN_EXPIRE_DAYS),
-    ))
-    await db.commit()
-
-    # Rotaciona também o cookie httpOnly com o novo refresh token.
-    _set_refresh_cookie(response, new_refresh)
-    return {"access_token": new_access, "refresh_token": new_refresh,
-            "token_type": "bearer"}
-
-
-# ─── Logout ───────────────────────────────────────────────────────────────────
-@router.post("/logout")
-async def logout(req: RefreshRequest, request: Request, response: Response,
-                 db: AsyncSession = Depends(get_db)):
-    token = _refresh_from(req, request)
-    payload = decode_token(token) if token else None
-    if payload:
-        jti = payload.get("jti")
-        if jti:
-            await db.execute(
-                update(RefreshToken)
-                .where(RefreshToken.jti == jti)
-                .values(revoked=True)
-            )
-            await db.commit()
-    _clear_refresh_cookie(response)
-    return {"detail": "Logout realizado"}
-
-
-# ─── Alterar senha (autenticado) ──────────────────────────────────────────────
-@router.post("/alterar-senha")
-@limiter.limit("10/minute")
-async def alterar_senha(
-    req: AlterarSenhaRequest,
-    request: Request,
-    response: Response,
-    db: AsyncSession = Depends(get_db),
-):
-    # Recria o fluxo manualmente para aceitar token must_change
-    auth = request.headers.get("Authorization", "")
-    if not auth.startswith("Bearer "):
-        raise HTTPException(status_code=401, detail="Não autenticado")
-    token = auth.split(" ", 1)[1]
-    payload = decode_token(token)
-    if not payload or payload.get("type") != "access":
-        raise HTTPException(status_code=401, detail="Token inválido")
-
-    user = (await db.execute(
-        select(User).where(
-            User.id == payload.get("sub"),
-            User.is_active == True,
-            User.deleted_at.is_(None),  # item 10: mesmo filtro do get_current_user
-        )
-    )).scalar_one_or_none()
-    if not user:
-        raise HTTPException(status_code=401, detail="Usuário não encontrado")
-
-    if not verify_password(req.senha_atual, user.hashed_password):
-        raise HTTPException(status_code=400, detail="Senha atual incorreta")
-
-    # Política de senha forte — só na DEFINIÇÃO da senha nova (não no login),
-    # para não trancar quem já tem senha curta legada.
-    try:
-        validar_forca_senha(req.nova_senha, user.email)
-    except ValueError as e:
-        raise HTTPException(status_code=400, detail=str(e))
-
-    user.hashed_password      = get_password_hash(req.nova_senha)
-    user.must_change_password = False
-
-    # Revogar TODAS as outras sessões (segurança pós-troca). revoked_at marca
-    # o instante para a trilha forense; replaced_by_jti fica nulo de propósito —
-    # é o que distingue revogação administrativa de rotação no /refresh.
-    await db.execute(
-        update(RefreshToken)
-        .where(RefreshToken.user_id == user.id, RefreshToken.revoked == False)
-        .values(revoked=True, revoked_at=datetime.now(timezone.utc))
-    )
-
-    # P0 usabilidade (2026-07-18, §2.3): manter a sessão ATUAL após a troca —
-    # emite novos tokens (mesmo formato do /login) com o claim must_change_password
-    # já limpo, para o frontend continuar logado sem voltar ao /login. As demais
-    # sessões seguem revogadas acima; o refresh novo nasce DEPOIS da revogação.
-    access = create_access_token(user.id, user.role.value,
-                                 must_change_password=False)
-    refresh_tok, jti = create_refresh_token(user.id)
-    db.add(RefreshToken(
-        id=str(uuid4()), user_id=user.id, jti=jti,
-        expires_at=datetime.now(timezone.utc) + timedelta(
-            days=settings.REFRESH_TOKEN_EXPIRE_DAYS),
-    ))
-
+    user.totp_enabled = True
     await criar_audit_log(
-        db, user.id, user.role.value, "TROCA_SENHA", "users", user.id,
+        db, user.id, user.role.value, "TOTP_ATIVADO", "users", user.id,
         ip=obter_ip_real(request),
     )
-    await db.commit()
-
-    # Rotaciona o cookie httpOnly com o refresh da sessão que permanece viva.
-    _set_refresh_cookie(response, refresh_tok)
-    return {
-        # Compat: o campo `detail` continua existindo (texto atualizado — a
-        # sessão não é mais derrubada).
-        "detail": "Senha alterada com sucesso.",
-        "access_token": access,
-        "refresh_token": refresh_tok,
-        "token_type": "bearer",
-        "user_id": user.id,
-        "full_name": user.full_name,
-        "role": user.role.value,
-        "must_change_password": False,
-    }
-
-
-# ─── Recuperação de senha (público) ──────────────────────────────────────────
-@router.post("/recuperar-senha")
-@limiter.limit("3/hour")
-async def recuperar_senha(
-    req: ResetSolicitarRequest, request: Request,
-    db: AsyncSession = Depends(get_db),
-):
-    ip = obter_ip_real(request)
-
-    # P0 usabilidade (2026-07-18, §2.2): com SMTP desligado (instalação padrão)
-    # a resposta neutra vira beco sem saída — o e-mail nunca chega. Mesma
-    # detecção do security_service.enviar_email (EMAIL_ENABLED + SMTP_USER).
-    # A mensagem é IGUAL para qualquer e-mail (não vaza existência de conta).
-    if not settings.EMAIL_ENABLED or not settings.SMTP_USER:
-        logger.warning(
-            "Recuperação de senha solicitada com envio de e-mail desligado "
-            "(EMAIL_ENABLED/SMTP_USER) — orientado a procurar o administrador."
+    if payload.get("two_factor_setup_required"):
+        await db.execute(
+            update(RefreshToken)
+            .where(RefreshToken.user_id == user.id, RefreshToken.revoked == False)
+            .values(revoked=True, revoked_at=datetime.now(timezone.utc))
         )
+        access = create_access_token(user.id, user.role.value)
+        refresh_tok, jti = create_refresh_token(user.id)
+        db.add(RefreshToken(
+            id=str(uuid4()), user_id=user.id, jti=jti,
+            expires_at=datetime.now(timezone.utc) + timedelta(
+                days=settings.REFRESH_TOKEN_EXPIRE_DAYS),
+        ))
+        user.last_login_at = datetime.now(timezone.utc)
+        await criar_audit_log(
+            db, user.id, user.role.value, "LOGIN_2FA_CONCLUIDO", "users", user.id,
+            detalhes="TOTP ativado; sessão plena emitida.",
+            ip=obter_ip_real(request),
+        )
+        await db.commit()
+        _set_refresh_cookie(response, refresh_tok)
         return {
-            "detail": (
-                "O envio de e-mail não está configurado nesta instalação. "
-                "Procure o administrador do escritório para redefinir sua senha."
-            )
+            "detail": "TOTP ativado com sucesso.",
+            "access_token": access,
+            "refresh_token": refresh_tok,
+            "token_type": "bearer",
+            "user_id": user.id,
+            "full_name": user.full_name,
+            "role": user.role.value,
         }
-
-    await solicitar_reset(db, req.email, ip)
-    return {"detail": "Se o e-mail existir, enviaremos as instruções em breve."}
-
-
-@router.post("/redefinir-senha")
-@limiter.limit("10/hour")
-async def redefinir_senha(
-    req: ResetConfirmarRequest,
-    request: Request,
-    db: AsyncSession = Depends(get_db),
-):
-    try:
-        ok = await confirmar_reset(db, req.token, req.nova_senha)
-    except ValueError as e:
-        # Token válido, porém senha nova fraca (política de senha forte):
-        # mensagem específica em vez do genérico "link inválido".
-        raise HTTPException(status_code=400, detail=str(e))
-    if not ok:
-        raise HTTPException(
-            status_code=400,
-            detail="Link inválido ou expirado. Solicite um novo.",
-        )
-    return {"detail": "Senha redefinida com sucesso. Faça login."}
-
-
-# ─── TOTP: Setup ──────────────────────────────────────────────────────────────
-@router.post("/totp/setup")
-@limiter.limit("10/minute")
-async def totp_setup(
-    request: Request,
-    db: AsyncSession = Depends(get_db),
-):
-    """Gera segredo TOTP e URI para QR code. NÃO ativa ainda — requer /totp/verificar."""
-    auth = request.headers.get("Authorization", "")
-    if not auth.startswith("Bearer "):
-        raise HTTPException(status_code=401, detail="Não autenticado")
-    payload = decode_token(auth.split(" ", 1)[1])
-    if not payload or payload.get("type") != "access":
-        raise HTTPException(status_code=401, detail="Token inválido")
-    user = (await db.execute(
-        select(User).where(
-            User.id == payload.get("sub"),
-            User.is_active == True,
-            User.deleted_at.is_(None),  # item 10: mesmo filtro do get_current_user
-        )
-    )).scalar_one_or_none()
-    if not user:
-        raise HTTPException(status_code=401, detail="Usuário não encontrado")
-    if user.totp_enabled:
-        raise HTTPException(status_code=400, detail="TOTP já está ativo. Desative antes de reconfigurar.")
-    secret = pyotp.random_base32()
-    # Item 4: em repouso o segredo vai CIFRADO (Fernet — pii_crypto). O valor em
-    # claro só aparece na resposta deste setup (QR code) e nunca mais.
-    user.totp_secret = pii_crypto.encrypt(secret)
-    await db.commit()
-    totp = pyotp.TOTP(secret)
-    uri = totp.provisioning_uri(name=user.email, issuer_name="EJC — De Paula Teixeira")
-    return {"secret": secret, "uri": uri, "aviso": "Use /totp/verificar com o primeiro código para ativar."}
-
-
-@router.post("/totp/verificar")
-@limiter.limit("10/minute")
-async def totp_verificar(
-    req: TOTPVerificarRequest,
-    request: Request,
-    db: AsyncSession = Depends(get_db),
-):
-    """Ativa o TOTP após confirmar que o app autenticador está sincronizado."""
-    auth = request.headers.get("Authorization", "")
-    if not auth.startswith("Bearer "):
-        raise HTTPException(status_code=401, detail="Não autenticado")
-    payload = decode_token(auth.split(" ", 1)[1])
-    if not payload or payload.get("type") != "access":
-        raise HTTPException(status_code=401, detail="Token inválido")
-    user = (await db.execute(
-        select(User).where(
-            User.id == payload.get("sub"),
-            User.is_active == True,
-            User.deleted_at.is_(None),  # item 10: mesmo filtro do get_current_user
-        )
-    )).scalar_one_or_none()
-    if not user:
-        raise HTTPException(status_code=401, detail="Usuário não encontrado")
-    if not user.totp_secret:
-        raise HTTPException(status_code=400, detail="Execute /totp/setup primeiro")
-    secret, legado = _totp_secret_de(user)
-    if secret is None:
-        raise HTTPException(
-            status_code=400,
-            detail="Segredo TOTP ilegível — execute /totp/setup novamente.",
-        )
-    totp = pyotp.TOTP(secret)
-    if not totp.verify(req.codigo, valid_window=1):
-        raise HTTPException(status_code=400, detail="Código inválido. Verifique o relógio do dispositivo.")
-    _recifrar_totp_legado(user, secret, legado)
-    user.totp_enabled = True
-    await criar_audit_log(db, user.id, user.role.value, "TOTP_ATIVADO", "users", user.id, ip=obter_ip_real(request))
     await db.commit()
     return {"detail": "TOTP ativado com sucesso. Guarde o segredo em lugar seguro."}
 

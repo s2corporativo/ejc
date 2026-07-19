@@ -46,7 +46,8 @@ class Settings(BaseSettings):
     #       cujo papel é obrigado — ele não pode se auto-desproteger.
     # Ex. em produção (definir no .env, NÃO versionado):
     #   REQUIRE_2FA_ROLES=superadmin,admin,socio
-    REQUIRE_2FA_ROLES: str = ""
+    REQUIRE_2FA_ROLES: str = "superadmin,admin,socio"
+    TWO_FACTOR_SETUP_TOKEN_EXPIRE_MINUTES: int = 15
 
     @property
     def require_2fa_roles_list(self) -> List[str]:

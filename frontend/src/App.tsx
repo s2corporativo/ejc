@@ -27,6 +27,7 @@ import Login from "./pages/LoginModern";
 const RecuperarSenha = lazy(() => import("./pages/RecuperarSenha"));
 const RedefinirSenha = lazy(() => import("./pages/RedefinirSenha"));
 const TrocarSenha = lazy(() => import("./pages/TrocarSenha"));
+const Configurar2FA = lazy(() => import("./pages/Configurar2FA"));
 const PortalDashboard = lazy(() => import("./pages/portal/PortalDashboard"));
 const PortalCasos = lazy(() => import("./pages/portal/PortalCasos"));
 const PortalCasoDetalhe = lazy(
@@ -82,6 +83,15 @@ export default function App() {
               element={
                 <Protected>
                   <TrocarSenha />
+                </Protected>
+              }
+            />
+
+            <Route
+              path="/configurar-2fa"
+              element={
+                <Protected>
+                  <Configurar2FA />
                 </Protected>
               }
             />

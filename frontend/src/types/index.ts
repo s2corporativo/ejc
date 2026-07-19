@@ -146,6 +146,7 @@ export interface EnvCase {
 // ── Autenticação ─────────────────────────────────────────
 export interface AuthTokens {
   access_token: string;
+  refresh_token?: string;
   token_type?: string;
 }
 export interface LoginResponse extends AuthTokens {
@@ -153,6 +154,7 @@ export interface LoginResponse extends AuthTokens {
   full_name: string;
   role: string;
   must_change_password?: boolean;
+  precisa_configurar_2fa?: boolean;
 }
 
 // ── NFS-e (notas fiscais de serviço) ─────────────────────

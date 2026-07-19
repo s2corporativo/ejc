@@ -91,6 +91,18 @@ export const useAuth = create<AuthState>((set, get) => ({
         return;
       }
 
+      const needsTwoFactorSetup =
+        error?.response?.data?.precisa_configurar_2fa ||
+        error?.response?.data?.detail?.precisa_configurar_2fa;
+      if (responseStatus === 403 && needsTwoFactorSetup) {
+        const cachedUser = get().user ?? readStoredUser();
+        set({
+          user: cachedUser,
+          status: cachedUser ? "authenticated" : "unauthenticated",
+        });
+        return;
+      }
+
       if (responseStatus === 401 || responseStatus === 403) {
         localStorage.removeItem("ejc_access");
         localStorage.removeItem(RASCUNHO_KEY);

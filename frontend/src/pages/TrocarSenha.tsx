@@ -34,6 +34,11 @@ export default function TrocarSenha() {
         // sessão em vez de derrubar o usuário de volta ao /login logo após
         // ele criar a senha. O refresh novo vem no cookie httpOnly.
         localStorage.setItem("ejc_access", data.access_token);
+        if (data.precisa_configurar_2fa) {
+          toast.success("Senha alterada. Agora proteja a conta com o 2FA.");
+          nav("/configurar-2fa", { replace: true });
+          return;
+        }
         await bootstrap();
         toast.success("Senha alterada com sucesso — você continua conectado.");
         nav("/", { replace: true });
