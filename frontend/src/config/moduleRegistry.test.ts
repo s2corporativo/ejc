@@ -39,9 +39,9 @@ describe("moduleRegistry", () => {
     expect(
       advogado.some((module) => module.path.includes("sala-de-guerra")),
     ).toBe(false);
-    expect(
-      advogado.some((module) => module.key === "knowledge-hub"),
-    ).toBe(false);
+    expect(advogado.some((module) => module.key === "knowledge-hub")).toBe(
+      false,
+    );
   });
 
   it("mantém financeiro restrito aos perfis autorizados", () => {
@@ -67,9 +67,7 @@ describe("moduleRegistry", () => {
     expect(map.get("/kanban")).toBe("/atividades?view=kanban");
     expect(map.get("/assistente-ia")).toContain("/inteligencia");
     expect(map.get("/victory-vault")).toBe("/inteligencia?tab=conhecimento");
-    expect(map.get("/knowledge-hub")).toBe(
-      "/inteligencia?tab=conhecimento",
-    );
+    expect(map.get("/knowledge-hub")).toBe("/inteligencia?tab=conhecimento");
     expect(map.get("/prazos")).toBe("/atividades?tipo=prazo");
     expect(map.get("/tarefas")).toBe("/atividades?tipo=tarefa");
     expect(map.get("/intimacoes")).toBe("/atividades?tipo=intimacao");
