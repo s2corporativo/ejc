@@ -1,11 +1,13 @@
 name: EJC Release Gate
 
-# Release gate no runner SELF-HOSTED (2026-07-17) — roda no VPS (Actions minutes
-# = 0). ⚠️ Requer o runner registrado antes (scripts/setup-selfhosted-runner.sh);
-# ver docs/RUNNER_SELFHOSTED.md. (Para voltar à nuvem paga: runs-on: ubuntu-latest.)
+# Gate P0 no runner SELF-HOSTED: executa automaticamente em todo PR e em cada
+# atualização da main, além de permitir execução manual. O objetivo é impedir
+# que conflitos, segredos, CORS inseguro ou resíduos críticos avancem sem
+# evidência auditável.
 on:
-  # MANUAL apenas (economia de Actions) — não roda em push/PR automaticamente.
-  # Rode em Actions → "EJC Release Gate" → "Run workflow" quando necessário.
+  pull_request:
+  push:
+    branches: [main]
   workflow_dispatch:
 
 permissions:
@@ -67,7 +69,6 @@ jobs:
           path: ci_guard.log
           retention-days: 7
 
-  # Jobs P1 (backend deps+compile e frontend build) removidos: eram 100%
-  # redundantes com o ci.yml — o pytest do ci.yml já instala e importa o app
-  # inteiro, e o frontend-build do ci.yml faz npm ci + build. Economia de
-  # ~8-10 min de runner por push (cota de Actions em repositório privado).
+  # Os gates P1 permanecem no ci.yml para evitar duplicidade de tempo de runner:
+  # backend completo com PostgreSQL/pgvector, evals offline, frontend, lint,
+  # auditorias de dependências, typecheck, testes e build.
