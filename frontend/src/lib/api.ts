@@ -73,6 +73,18 @@ api.interceptors.response.use(
       return Promise.reject(error);
     }
 
+    const needsTwoFactorSetup =
+      error.response?.data?.precisa_configurar_2fa ||
+      error.response?.data?.detail?.precisa_configurar_2fa;
+    if (
+      error.response?.status === 403 &&
+      needsTwoFactorSetup &&
+      window.location.pathname !== "/configurar-2fa"
+    ) {
+      window.location.href = "/configurar-2fa";
+      return Promise.reject(error);
+    }
+
     // Só tenta refresh quando a requisição realmente partiu de uma sessão com
     // access token. Erros 401 de login (senha incorreta ou desafio TOTP) devem
     // chegar à tela de autenticação, sem logout ou redirecionamento automático.
