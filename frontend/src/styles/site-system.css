@@ -558,6 +558,15 @@
 
 /* O aviso vive no <body> (fora da subárvore com filter) — um ::after dentro
    do elemento borrado herdaria o blur do ancestral, sem como desfazê-lo. */
+/* Impressão com o modo ativo: mantém o blur (falha na direção segura — nada
+   legível sai no papel), mas remove o selo fixo, que se repetiria estampado
+   em todas as páginas. */
+@media print {
+  .ejc-privacy-mode body::after {
+    content: none;
+  }
+}
+
 .ejc-privacy-mode body::after {
   content: "Conteúdo ocultado pelo modo privacidade";
   position: fixed;

@@ -89,6 +89,10 @@ export default function Layout() {
   useEffect(() => {
     document.documentElement.classList.toggle("ejc-privacy-mode", privacyMode);
     localStorage.setItem("ejc_privacy_mode", String(privacyMode));
+    // O dropdown de notificações e o palette (Ctrl+K) vivem FORA do <main>
+    // borrado e exibem títulos de casos/prazos — com o modo ativo, fecha o
+    // dropdown e suprime a abertura do palette para não vazar conteúdo.
+    if (privacyMode) setNotifOpen(false);
     return () => {
       document.documentElement.classList.remove("ejc-privacy-mode");
     };
@@ -244,7 +248,9 @@ export default function Layout() {
   return (
     <div className="min-h-screen bg-canvas text-slate-900">
       <div className="brand-watermark" aria-hidden="true" />
-      <CommandPalette />
+      {/* Palette desmontado sob privacidade: a busca global lista partes/
+          CPF/processos e renderiza fora da área borrada. */}
+      {!privacyMode && <CommandPalette />}
 
       <header className="fixed inset-x-0 top-0 z-50 border-b border-slate-200 bg-white">
         <div className="flex h-16 items-center gap-3 px-3 md:px-6">
@@ -392,7 +398,7 @@ export default function Layout() {
           <div className="relative">
             <button
               type="button"
-              onClick={() => setNotifOpen((value) => !value)}
+              onClick={() => !privacyMode && setNotifOpen((value) => !value)}
               className="icon-btn relative"
               aria-label="Notificações"
             >
