@@ -152,10 +152,7 @@ export default function FichaTriagem({
       .then((r) => {
         if (cancelado) return;
         // Contrato: { ficha: <objeto>|null }. ficha null = inexistente.
-        const ficha = (r.data?.ficha ?? null) as Record<
-          string,
-          unknown
-        > | null;
+        const ficha = (r.data?.ficha ?? null) as Record<string, unknown> | null;
         if (ficha) {
           aplicar(ficha, (ficha.confianca as Confianca) ?? undefined);
         } else {
@@ -314,11 +311,7 @@ export default function FichaTriagem({
       </div>
 
       <div className="mt-5 grid gap-4 sm:grid-cols-2">
-        <Campo
-          campo="competencia"
-          label="Competência"
-          confianca={confianca}
-        >
+        <Campo campo="competencia" label="Competência" confianca={confianca}>
           <input
             id="competencia"
             className="input"
@@ -410,10 +403,7 @@ export default function FichaTriagem({
             {campos.tutela_urgencia && (
               <div className="mt-3">
                 <div className="mb-1 flex items-center justify-between">
-                  <label
-                    htmlFor="tutela_fundamento"
-                    className="label !mb-0"
-                  >
+                  <label htmlFor="tutela_fundamento" className="label !mb-0">
                     Fundamento da tutela
                   </label>
                   <SeloConfianca valor={confianca.tutela_fundamento} />

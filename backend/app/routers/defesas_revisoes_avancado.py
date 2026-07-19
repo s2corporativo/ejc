@@ -8,8 +8,7 @@ de decisões e memória institucional. Toda saída permanece rascunho sob HITL.
 from __future__ import annotations
 
 import json
-import math
-from datetime import date, datetime, timezone
+from datetime import datetime, timezone
 from decimal import Decimal, InvalidOperation
 from typing import Any, Optional
 from uuid import uuid4
@@ -131,7 +130,7 @@ def _markdown_resultado(modalidade: str, resultado: dict) -> str:
     linhas = [
         f"# Defesas e Revisões — {cfg.get('titulo', modalidade)}",
         "",
-        f"**Status:** rascunho para revisão humana",
+        "**Status:** rascunho para revisão humana",
         f"**Peça recomendada:** {peca.get('nome') or peca.get('codigo') or 'a confirmar'}",
         f"**Completude:** {_resultado_completude(resultado)['nivel']}",
         "",

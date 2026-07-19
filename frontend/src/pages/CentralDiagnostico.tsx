@@ -169,9 +169,10 @@ function fmtDataHora(iso: string | null | undefined): string {
 export default function CentralDiagnostico() {
   const [data, setData] = useState<DiagnosticoPayload | null>(null);
   const [loading, setLoading] = useState(true);
-  const [erro, setErro] = useState<{ tipo: "acesso" | "geral"; msg: string } | null>(
-    null,
-  );
+  const [erro, setErro] = useState<{
+    tipo: "acesso" | "geral";
+    msg: string;
+  } | null>(null);
   const [autoRefresh, setAutoRefresh] = useState(false);
   const timerRef = useRef<number | null>(null);
 
@@ -214,8 +215,12 @@ export default function CentralDiagnostico() {
     };
   }, [autoRefresh, load]);
 
-  const geralMeta = data ? STATUS_META[data.status_geral] : STATUS_META.desligado;
-  const geralTexto = data ? GERAL_META[data.status_geral] : GERAL_META.desligado;
+  const geralMeta = data
+    ? STATUS_META[data.status_geral]
+    : STATUS_META.desligado;
+  const geralTexto = data
+    ? GERAL_META[data.status_geral]
+    : GERAL_META.desligado;
 
   const contagens = useMemo(
     () =>
@@ -251,7 +256,9 @@ export default function CentralDiagnostico() {
               disabled={loading}
               onClick={() => void load()}
             >
-              <RefreshCw className={`h-4 w-4 ${loading ? "animate-spin" : ""}`} />
+              <RefreshCw
+                className={`h-4 w-4 ${loading ? "animate-spin" : ""}`}
+              />
               Verificar agora
             </button>
           </>
@@ -270,7 +277,11 @@ export default function CentralDiagnostico() {
           titulo="Não foi possível carregar o diagnóstico"
           descricao={erro.msg}
           acao={
-            <button type="button" className="btn-secondary" onClick={() => void load()}>
+            <button
+              type="button"
+              className="btn-secondary"
+              onClick={() => void load()}
+            >
               <RefreshCw className="h-4 w-4" />
               Tentar novamente
             </button>
@@ -352,7 +363,9 @@ function SubsistemaCard({ sub }: { sub: Subsistema }) {
     <section className="card flex flex-col gap-3 p-5">
       <div className="flex items-start justify-between gap-3">
         <div className="flex min-w-0 items-center gap-3">
-          <span className={`grid h-10 w-10 shrink-0 place-items-center rounded-xl ring-1 ${meta.ring} ${meta.text}`}>
+          <span
+            className={`grid h-10 w-10 shrink-0 place-items-center rounded-xl ring-1 ${meta.ring} ${meta.text}`}
+          >
             <Icone className="h-5 w-5" />
           </span>
           <div className="min-w-0">
@@ -439,7 +452,9 @@ function SubsistemaExtras({ sub }: { sub: Subsistema }) {
   if (sub.provider || sub.busca) {
     blocos.push(
       <div key="rag" className="flex flex-wrap gap-2">
-        {sub.provider && <Chip tone="slate" label={`provider: ${sub.provider}`} />}
+        {sub.provider && (
+          <Chip tone="slate" label={`provider: ${sub.provider}`} />
+        )}
         {sub.busca && (
           <Chip
             tone={sub.busca === "semantica" ? "green" : "amber"}
@@ -453,7 +468,8 @@ function SubsistemaExtras({ sub }: { sub: Subsistema }) {
   // Disco — barra de % livre
   if (sub.percentual_livre != null) {
     const pct = sub.percentual_livre;
-    const barra = pct < 10 ? "bg-danger-500" : pct < 25 ? "bg-warn-500" : "bg-success-500";
+    const barra =
+      pct < 10 ? "bg-danger-500" : pct < 25 ? "bg-warn-500" : "bg-success-500";
     blocos.push(
       <div key="disco" className="space-y-1">
         <div className="flex items-center justify-between text-xs text-slate-500">
@@ -542,14 +558,18 @@ function SubsistemaExtras({ sub }: { sub: Subsistema }) {
       <div key="erros" className="flex flex-wrap gap-2">
         <Chip
           tone={sub.coletor ? "green" : "slate"}
-          label={sub.coletor ? `coletor: ${sub.coletor}` : "sem coletor externo"}
+          label={
+            sub.coletor ? `coletor: ${sub.coletor}` : "sem coletor externo"
+          }
         />
       </div>,
     );
   }
 
   if (!blocos.length) return null;
-  return <div className="space-y-2 border-t border-slate-100 pt-3">{blocos}</div>;
+  return (
+    <div className="space-y-2 border-t border-slate-100 pt-3">{blocos}</div>
+  );
 }
 
 function LinhaExtra({ termo, valor }: { termo: string; valor: string }) {

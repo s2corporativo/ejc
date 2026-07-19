@@ -94,7 +94,8 @@ export function isActivityView(value: string | null): value is ActivityView {
  *  - intimações (DJEN): pendente | tratada
  *  - suspensões: sem status (informativas)
  */
-export type Situacao = "nao_tratado" | "em_execucao" | "concluido" | "cancelado";
+export type Situacao =
+  "nao_tratado" | "em_execucao" | "concluido" | "cancelado";
 
 /** Colunas do kanban / filtro de situação: cancelado NÃO tem coluna própria —
  *  agrupa com concluído, mas mantém rótulo/estilo distintos (badge neutra). */
@@ -810,9 +811,9 @@ export default function CentralAtividades() {
   // Conflito de horário devolvido ao criar/editar evento — aviso não silencioso.
   const [conflitos, setConflitos] = useState<ConflitoEvento[]>([]);
   const [filterUrgencia, setFilterUrgencia] = useState<string>("todos");
-  const [filterSituacao, setFilterSituacao] = useState<SituacaoColuna | "todos">(
-    "todos",
-  );
+  const [filterSituacao, setFilterSituacao] = useState<
+    SituacaoColuna | "todos"
+  >("todos");
 
   const load = useCallback(async () => {
     setLoading(true);

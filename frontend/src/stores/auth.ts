@@ -12,7 +12,9 @@ type SecurityState = {
 
 function readStoredUser(): User | null {
   try {
-    return JSON.parse(localStorage.getItem("ejc_user") || "null") as User | null;
+    return JSON.parse(
+      localStorage.getItem("ejc_user") || "null",
+    ) as User | null;
   } catch {
     localStorage.removeItem("ejc_user");
     return null;

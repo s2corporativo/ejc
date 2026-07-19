@@ -225,7 +225,10 @@ export default function Ferramentas() {
                       onClick={() => navigate(module.path)}
                       className="h-full w-full text-left outline-none"
                     >
-                      <Card padded={false} className="flex h-full items-start gap-3 p-4">
+                      <Card
+                        padded={false}
+                        className="flex h-full items-start gap-3 p-4"
+                      >
                         <div className="grid h-10 w-10 shrink-0 place-items-center rounded-lg border border-primary-100 bg-primary-50 text-primary-700 dark:border-white/10 dark:bg-white/10 dark:text-primary-200">
                           <Icon className="h-5 w-5" />
                         </div>

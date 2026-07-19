@@ -19,7 +19,13 @@ import {
   Download,
 } from "lucide-react";
 import api from "../lib/api";
-import { PageHeader, Empty, ErrorState, Spinner, fmtDate } from "../components/UI";
+import {
+  PageHeader,
+  Empty,
+  ErrorState,
+  Spinner,
+  fmtDate,
+} from "../components/UI";
 import { asList } from "../lib/list";
 
 // ── Categorias ────────────────────────────────────────────────────────────────
@@ -187,10 +193,7 @@ function ModalIngestao({
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
-      <div
-        className="absolute inset-0 bg-black/45"
-        onClick={onClose}
-      />
+      <div className="absolute inset-0 bg-black/45" onClick={onClose} />
       <div className="relative bg-white border border-slate-200 rounded-2xl shadow-float w-full max-w-3xl max-h-[92vh] flex flex-col">
         {/* Header */}
         <div className="flex items-center justify-between px-6 py-4 border-b border-bronze-50">
@@ -637,7 +640,8 @@ function SecaoImportarJuris({ onImportado }: { onImportado: () => void }) {
       }
     } catch (e: any) {
       setErro(
-        e.response?.data?.detail?.toString?.() || "Erro ao iniciar a importação",
+        e.response?.data?.detail?.toString?.() ||
+          "Erro ao iniciar a importação",
       );
     } finally {
       if (vivoRef.current) setImportando(false);

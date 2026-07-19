@@ -187,7 +187,10 @@ export default function AgenteIA() {
       return;
     }
     mensagemRunRef.current = mensagem.trim();
-    void run({ case_id: caseId.trim(), mensagem: mensagemRunRef.current }, true);
+    void run(
+      { case_id: caseId.trim(), mensagem: mensagemRunRef.current },
+      true,
+    );
   };
 
   const decidir = (decisao: "aprovar" | "recusar") => {

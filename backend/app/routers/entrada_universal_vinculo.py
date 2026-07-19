@@ -19,7 +19,7 @@ from app.core.ownership import verificar_acesso_caso
 from app.core.security import get_current_user
 from app.models.case import CaseMovimento
 from app.models.document import Document
-from app.models.document_intake import DocumentIntakeBatch, DocumentIntakeItem
+from app.models.document_intake import DocumentIntakeItem
 from app.models.user import User
 from app.routers.entrada_universal import _acesso_batch
 

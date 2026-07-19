@@ -22,7 +22,8 @@
 .input,
 .select,
 .textarea,
-.ejc-modern-scope input:not([type="checkbox"]):not([type="radio"]):not([type="range"]),
+.ejc-modern-scope
+  input:not([type="checkbox"]):not([type="radio"]):not([type="range"]),
 .ejc-modern-scope select,
 .ejc-modern-scope textarea {
   border: 0;
@@ -35,7 +36,8 @@
 .input:hover,
 .select:hover,
 .textarea:hover,
-.ejc-modern-scope input:not([type="checkbox"]):not([type="radio"]):not([type="range"]):hover,
+.ejc-modern-scope
+  input:not([type="checkbox"]):not([type="radio"]):not([type="range"]):hover,
 .ejc-modern-scope select:hover,
 .ejc-modern-scope textarea:hover {
   box-shadow:
@@ -46,7 +48,8 @@
 .input:focus,
 .select:focus,
 .textarea:focus,
-.ejc-modern-scope input:not([type="checkbox"]):not([type="radio"]):not([type="range"]):focus,
+.ejc-modern-scope
+  input:not([type="checkbox"]):not([type="radio"]):not([type="range"]):focus,
 .ejc-modern-scope select:focus,
 .ejc-modern-scope textarea:focus {
   border-color: transparent;
@@ -59,7 +62,9 @@
 .dark .input,
 .dark .select,
 .dark .textarea,
-.dark .ejc-modern-scope input:not([type="checkbox"]):not([type="radio"]):not([type="range"]),
+.dark
+  .ejc-modern-scope
+  input:not([type="checkbox"]):not([type="radio"]):not([type="range"]),
 .dark .ejc-modern-scope select,
 .dark .ejc-modern-scope textarea {
   background: var(--ejc-elev);
@@ -80,13 +85,29 @@
   background: transparent;
 }
 
-.ejc-modern-scope :where(.bg-white.border, .bg-white.shadow, .bg-white.shadow-sm, .bg-white.shadow-md, .bg-white.rounded-xl, .bg-white.rounded-2xl):not(input):not(select):not(textarea):not(button),
+.ejc-modern-scope
+  :where(
+    .bg-white.border,
+    .bg-white.shadow,
+    .bg-white.shadow-sm,
+    .bg-white.shadow-md,
+    .bg-white.rounded-xl,
+    .bg-white.rounded-2xl
+  ):not(input):not(select):not(textarea):not(button),
 .ejc-modern-scope :where(.card, .section-card) {
   border-color: var(--ejc-border) !important;
   box-shadow: 0 1px 2px rgba(15, 23, 42, 0.04) !important;
 }
 
-.ejc-modern-scope :where(.bg-white.border, .bg-white.shadow, .bg-white.shadow-sm, .bg-white.shadow-md, .bg-white.rounded-xl, .bg-white.rounded-2xl):not(input):not(select):not(textarea):not(button):hover,
+.ejc-modern-scope
+  :where(
+    .bg-white.border,
+    .bg-white.shadow,
+    .bg-white.shadow-sm,
+    .bg-white.shadow-md,
+    .bg-white.rounded-xl,
+    .bg-white.rounded-2xl
+  ):not(input):not(select):not(textarea):not(button):hover,
 .ejc-modern-scope :where(.card, .section-card):hover {
   box-shadow: 0 1px 2px rgba(15, 23, 42, 0.04) !important;
 }
@@ -142,7 +163,11 @@
   box-shadow: 0 1px 2px rgba(15, 23, 42, 0.04);
 }
 
-.ejc-modern-scope > div > .space-y-6 > .flex.flex-col.gap-4:first-child .eyebrow {
+.ejc-modern-scope
+  > div
+  > .space-y-6
+  > .flex.flex-col.gap-4:first-child
+  .eyebrow {
   color: #8a6d2f;
 }
 
@@ -158,19 +183,31 @@
   color: rgb(100 116 139);
 }
 
-.ejc-modern-scope > div > .space-y-6 > .flex.flex-col.gap-4:first-child .btn-primary {
+.ejc-modern-scope
+  > div
+  > .space-y-6
+  > .flex.flex-col.gap-4:first-child
+  .btn-primary {
   background: #d4af37;
   color: #3b2f0b;
   box-shadow: none;
 }
 
-.ejc-modern-scope > div > .space-y-6 > .flex.flex-col.gap-4:first-child .btn-secondary {
+.ejc-modern-scope
+  > div
+  > .space-y-6
+  > .flex.flex-col.gap-4:first-child
+  .btn-secondary {
   border-color: rgb(226 232 240);
   background: #ffffff;
   color: rgb(51 65 85);
 }
 
-.ejc-modern-scope > div > .space-y-6 > .flex.flex-col.gap-4:first-child .btn-secondary:hover {
+.ejc-modern-scope
+  > div
+  > .space-y-6
+  > .flex.flex-col.gap-4:first-child
+  .btn-secondary:hover {
   background: rgb(248 250 252);
 }
 
@@ -186,7 +223,11 @@
   box-shadow: 0 1px 2px rgba(15, 23, 42, 0.04);
 }
 
-.ejc-modern-scope > div > .space-y-6 > .grid[class*="xl:grid-cols-4"] > .card::before {
+.ejc-modern-scope
+  > div
+  > .space-y-6
+  > .grid[class*="xl:grid-cols-4"]
+  > .card::before {
   content: "";
   position: absolute;
   inset: 0 0 auto 0;
@@ -194,12 +235,21 @@
   background: #d4af37;
 }
 
-.ejc-modern-scope > div > .space-y-6 > .grid[class*="xl:grid-cols-4"] > .card:hover {
+.ejc-modern-scope
+  > div
+  > .space-y-6
+  > .grid[class*="xl:grid-cols-4"]
+  > .card:hover {
   transform: none;
   box-shadow: 0 1px 2px rgba(15, 23, 42, 0.04);
 }
 
-.ejc-modern-scope > div > .space-y-6 > .grid[class*="xl:grid-cols-4"] > .card p:first-child {
+.ejc-modern-scope
+  > div
+  > .space-y-6
+  > .grid[class*="xl:grid-cols-4"]
+  > .card
+  p:first-child {
   text-transform: uppercase;
   letter-spacing: 0.1em;
   font-weight: 800;
@@ -230,25 +280,55 @@
 /* Textos e botão secundário do hero — no claro ficaram tinta escura
    (h1 #0F172A, eyebrow #8A6D2F, p slate) e botão branco, incondicionais;
    no grafite precisam de creme/ouro para legibilidade (AA). */
-.dark .ejc-modern-scope > div > .space-y-6 > .flex.flex-col.gap-4:first-child .eyebrow {
+.dark
+  .ejc-modern-scope
+  > div
+  > .space-y-6
+  > .flex.flex-col.gap-4:first-child
+  .eyebrow {
   color: #e5ce7f;
 }
-.dark .ejc-modern-scope > div > .space-y-6 > .flex.flex-col.gap-4:first-child h1 {
+.dark
+  .ejc-modern-scope
+  > div
+  > .space-y-6
+  > .flex.flex-col.gap-4:first-child
+  h1 {
   color: #f6efe1;
 }
-.dark .ejc-modern-scope > div > .space-y-6 > .flex.flex-col.gap-4:first-child p {
+.dark
+  .ejc-modern-scope
+  > div
+  > .space-y-6
+  > .flex.flex-col.gap-4:first-child
+  p {
   color: rgba(232, 224, 211, 0.82);
 }
-.dark .ejc-modern-scope > div > .space-y-6 > .flex.flex-col.gap-4:first-child .btn-secondary {
+.dark
+  .ejc-modern-scope
+  > div
+  > .space-y-6
+  > .flex.flex-col.gap-4:first-child
+  .btn-secondary {
   border-color: rgba(255, 245, 230, 0.14);
   background: rgba(255, 245, 230, 0.08);
   color: #e8e0d3;
 }
-.dark .ejc-modern-scope > div > .space-y-6 > .flex.flex-col.gap-4:first-child .btn-secondary:hover {
+.dark
+  .ejc-modern-scope
+  > div
+  > .space-y-6
+  > .flex.flex-col.gap-4:first-child
+  .btn-secondary:hover {
   background: rgba(255, 245, 230, 0.14);
 }
 
-.dark .ejc-modern-scope > div > .space-y-6 > .grid[class*="xl:grid-cols-4"] > .card,
+.dark
+  .ejc-modern-scope
+  > div
+  > .space-y-6
+  > .grid[class*="xl:grid-cols-4"]
+  > .card,
 .dark .ejc-modern-scope > div > .space-y-6 .section-card {
   background: rgba(28, 24, 14, 0.92);
 }
@@ -271,8 +351,7 @@
   position: relative;
   overflow: hidden;
   border-radius: 1.6rem;
-  background:
-    linear-gradient(180deg, #ffffff 0%, #fffaf0 100%);
+  background: linear-gradient(180deg, #ffffff 0%, #fffaf0 100%);
   padding: 2rem;
   color: #3b2f0b;
   font-size: 0.96rem;
@@ -282,12 +361,19 @@
     0 22px 70px rgba(15, 23, 42, 0.1);
 }
 
-.modal-backdrop [role="dialog"].max-w-4xl > .p-5 > .text-sm.text-slate-700::before {
+.modal-backdrop
+  [role="dialog"].max-w-4xl
+  > .p-5
+  > .text-sm.text-slate-700::before {
   display: block;
   margin: -2rem -2rem 1.5rem;
   padding: 1.55rem 2rem;
   background:
-    radial-gradient(circle at 12% 22%, rgba(212, 175, 55, 0.22), transparent 18rem),
+    radial-gradient(
+      circle at 12% 22%,
+      rgba(212, 175, 55, 0.22),
+      transparent 18rem
+    ),
     linear-gradient(135deg, #3b2f0b 0%, #6f5711 62%, #8f7117 100%);
   color: rgba(255, 245, 230, 0.86);
   content: "VISUAL LAW EJC · PRÉ-VISUALIZAÇÃO DA PEÇA";
@@ -297,8 +383,16 @@
   text-transform: uppercase;
 }
 
-.modal-backdrop [role="dialog"].max-w-4xl > .p-5 > .text-sm.text-slate-700 > div[class*="font-bold"],
-.modal-backdrop [role="dialog"].max-w-4xl > .p-5 > .text-sm.text-slate-700 > div[class*="font-semibold"] {
+.modal-backdrop
+  [role="dialog"].max-w-4xl
+  > .p-5
+  > .text-sm.text-slate-700
+  > div[class*="font-bold"],
+.modal-backdrop
+  [role="dialog"].max-w-4xl
+  > .p-5
+  > .text-sm.text-slate-700
+  > div[class*="font-semibold"] {
   margin-top: 1.4rem;
   border-left: 4px solid #d4af37;
   padding-left: 0.85rem;
@@ -311,7 +405,11 @@
   text-align: justify;
 }
 
-.modal-backdrop [role="dialog"].max-w-4xl > .p-5 > .text-sm.text-slate-700 blockquote {
+.modal-backdrop
+  [role="dialog"].max-w-4xl
+  > .p-5
+  > .text-sm.text-slate-700
+  blockquote {
   border-left: 4px solid #d4af37;
   border-radius: 1rem;
   background: #fbf8ee;
@@ -326,17 +424,34 @@
   padding: 1rem 1.25rem 1rem 2rem;
 }
 
-.dark .modal-backdrop [role="dialog"].max-w-4xl > .p-5 > .text-sm.text-slate-700 {
-  background:
-    linear-gradient(180deg, rgba(28, 24, 14, 0.98), rgba(42, 33, 8, 0.92));
+.dark
+  .modal-backdrop
+  [role="dialog"].max-w-4xl
+  > .p-5
+  > .text-sm.text-slate-700 {
+  background: linear-gradient(
+    180deg,
+    rgba(28, 24, 14, 0.98),
+    rgba(42, 33, 8, 0.92)
+  );
   color: rgba(255, 245, 230, 0.88);
   box-shadow:
     inset 0 0 0 1px rgba(212, 175, 55, 0.16),
     0 22px 70px rgba(0, 0, 0, 0.36);
 }
 
-.dark .modal-backdrop [role="dialog"].max-w-4xl > .p-5 > .text-sm.text-slate-700 > div[class*="font-bold"],
-.dark .modal-backdrop [role="dialog"].max-w-4xl > .p-5 > .text-sm.text-slate-700 > div[class*="font-semibold"] {
+.dark
+  .modal-backdrop
+  [role="dialog"].max-w-4xl
+  > .p-5
+  > .text-sm.text-slate-700
+  > div[class*="font-bold"],
+.dark
+  .modal-backdrop
+  [role="dialog"].max-w-4xl
+  > .p-5
+  > .text-sm.text-slate-700
+  > div[class*="font-semibold"] {
   color: #fff5e6;
 }
 
@@ -354,7 +469,11 @@
   position: relative;
   padding: 2rem;
   background:
-    radial-gradient(circle at 15% 20%, rgba(212, 175, 55, 0.22), transparent 18rem),
+    radial-gradient(
+      circle at 15% 20%,
+      rgba(212, 175, 55, 0.22),
+      transparent 18rem
+    ),
     linear-gradient(135deg, #3b2f0b 0%, #6f5711 58%, #8f7117 100%);
   color: white;
 }
@@ -482,7 +601,11 @@
   margin: 0;
   padding: 2rem 2rem 0.75rem;
   background:
-    radial-gradient(circle at 15% 20%, rgba(212, 175, 55, 0.22), transparent 18rem),
+    radial-gradient(
+      circle at 15% 20%,
+      rgba(212, 175, 55, 0.22),
+      transparent 18rem
+    ),
     linear-gradient(135deg, #3b2f0b 0%, #6f5711 58%, #8f7117 100%);
   color: #ffffff;
   font-size: 1.85rem;

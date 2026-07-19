@@ -14,12 +14,7 @@ import api from "../lib/api";
 import { PageHeader, Spinner, fmtDate } from "../components/UI";
 
 type Tab =
-  | "visao"
-  | "curadoria"
-  | "mgjec"
-  | "prompts"
-  | "fontes"
-  | "guardrails";
+  "visao" | "curadoria" | "mgjec" | "prompts" | "fontes" | "guardrails";
 
 const brl = (v?: number | null) =>
   (v ?? 0).toLocaleString("pt-BR", { style: "currency", currency: "BRL" });
@@ -197,7 +192,11 @@ export default function GovernancaIA() {
 
   const tabs = [
     { k: "visao", label: "Visão geral", icon: BrainCircuit },
-    { k: "curadoria", label: "Curadoria da base de conhecimento", icon: Database },
+    {
+      k: "curadoria",
+      label: "Curadoria da base de conhecimento",
+      icon: Database,
+    },
     { k: "mgjec", label: "MG/JEC", icon: Gavel },
     { k: "prompts", label: "Prompts", icon: SlidersHorizontal },
     { k: "fontes", label: "Fontes", icon: FileCheck2 },

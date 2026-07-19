@@ -1,0 +1,29 @@
+target-version = "py311"
+line-length = 120
+
+[lint]
+# O gate prioriza erros de sintaxe/importação e problemas objetivos. Regras
+# puramente estilísticas permanecem a cargo do formatter e da refatoração
+# progressiva, sem alterar automaticamente código jurídico em produção.
+select = ["E4", "E7", "E9", "F"]
+ignore = [
+  # Imports tardios são usados intencionalmente em routers/startup para evitar
+  # ciclos e carregar adapters após a criação do app.
+  "E402",
+  # Em expressões SQLAlchemy, `coluna == True/False` gera SQL; substituir por
+  # truthiness Python pode mudar a semântica ou falhar.
+  "E712",
+  # Dívida de layout legada; não representa erro funcional e será tratada pelo
+  # formatter/refatoração dos arquivos, sem unsafe-fix global.
+  "E701",
+  "E702",
+  # Nomes curtos legados permanecem até refatoração semântica, pois renomeação
+  # automática ampla pode afetar compreensão/escopo.
+  "E741",
+]
+
+[lint.per-file-ignores]
+# Estes __init__ funcionam como catálogos públicos/registro de models e prompts;
+# os imports são exports e/ou garantem registro ORM, mesmo sem uso local.
+"app/models/__init__.py" = ["F401"]
+"app/services/system_prompts/__init__.py" = ["F401"]

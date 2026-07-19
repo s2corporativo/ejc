@@ -11,7 +11,13 @@ import {
 import api from "../lib/api";
 import { toast } from "../components/Toast";
 import { soDigitos } from "../utils/phone";
-import { Modal, Button, PageHeader, Spinner, ErrorState } from "../components/UI";
+import {
+  Modal,
+  Button,
+  PageHeader,
+  Spinner,
+  ErrorState,
+} from "../components/UI";
 import { asList } from "../lib/list";
 
 interface Lead {

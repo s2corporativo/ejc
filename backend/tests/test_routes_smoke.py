@@ -17,10 +17,10 @@ import os
 import re
 
 import pytest
-from fastapi.routing import APIRoute
 from fastapi.testclient import TestClient
 
 from app.core.auth_middleware import _is_publica
+from app.core.fastapi_compat import is_api_route
 from app.main import app
 
 RUN_DB = bool(os.getenv("RUN_DB_TESTS"))
@@ -38,14 +38,15 @@ def _rotas_get() -> list:
     """Uma amostra concreta por rota GET do app ({param} → '1')."""
     vistos: set[str] = set()
     params = []
-    for r in app.routes:
-        if not isinstance(r, APIRoute) or "GET" not in r.methods:
+    for route in app.routes:
+        if not is_api_route(route) or "GET" not in getattr(route, "methods", set()):
             continue
-        if r.path in vistos:
+        path = getattr(route, "path", "")
+        if not path or path in vistos:
             continue
-        vistos.add(r.path)
-        sample = re.sub(r"\{[^}]+\}", "1", r.path)
-        params.append(pytest.param(r.path, sample, id=f"GET {r.path}"))
+        vistos.add(path)
+        sample = re.sub(r"\{[^}]+\}", "1", path)
+        params.append(pytest.param(path, sample, id=f"GET {path}"))
     return params
 
 

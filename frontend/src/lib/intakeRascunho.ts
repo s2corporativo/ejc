@@ -51,7 +51,9 @@ function storage(): Storage | null {
  * (que carregam File/objetos de extração) e qualquer valor não-serializável.
  * Função pura — não toca em storage.
  */
-export function snapshotForm(form: Record<string, unknown>): Record<string, unknown> {
+export function snapshotForm(
+  form: Record<string, unknown>,
+): Record<string, unknown> {
   const out: Record<string, unknown> = {};
   for (const [k, v] of Object.entries(form || {})) {
     if (k.startsWith("_")) continue;
@@ -68,7 +70,9 @@ export function snapshotForm(form: Record<string, unknown>): Record<string, unkn
  * passa apenas o conteúdo. Falha de storage é silenciosa (o fluxo em memória
  * continua válido; apenas a recuperação pós-reload fica indisponível).
  */
-export function salvarRascunho(rascunho: Omit<IntakeRascunho, "salvoEm">): void {
+export function salvarRascunho(
+  rascunho: Omit<IntakeRascunho, "salvoEm">,
+): void {
   const s = storage();
   if (!s) return;
   try {
@@ -111,7 +115,9 @@ export function carregarRascunho(): IntakeRascunho | null {
  * Se não houver rascunho, nada é feito e retorna null. Usado para avançar o
  * estado passo a passo (ex.: gravar `caseId` após criar o caso).
  */
-export function atualizarRascunho(patch: Partial<IntakeRascunho>): IntakeRascunho | null {
+export function atualizarRascunho(
+  patch: Partial<IntakeRascunho>,
+): IntakeRascunho | null {
   const atual = carregarRascunho();
   if (!atual) return null;
   const { salvoEm: _ignorado, ...conteudoAtual } = atual;

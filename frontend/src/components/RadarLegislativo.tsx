@@ -47,7 +47,9 @@ export default function RadarLegislativo() {
           disabled={loading}
           className="flex items-center gap-1 text-xs text-primary-600 hover:text-primary-800 disabled:opacity-50"
         >
-          <RefreshCw className={`h-3.5 w-3.5 ${loading ? "animate-spin" : ""}`} />
+          <RefreshCw
+            className={`h-3.5 w-3.5 ${loading ? "animate-spin" : ""}`}
+          />
           Atualizar
         </button>
       </div>

@@ -245,23 +245,24 @@ function validarClienteLocal(f: {
   cnpj?: string;
 }): string | null {
   if (f.tipo === "PF" && !f.nome?.trim()) return "PF requer nome.";
-  if (f.tipo === "PJ" && !f.razao_social?.trim()) return "PJ requer razão social.";
-  if (f.cpf?.trim() && !validarCpf(f.cpf)) return "CPF inválido (dígito verificador).";
-  if (f.cnpj?.trim() && !validarCnpj(f.cnpj)) return "CNPJ inválido (dígito verificador).";
+  if (f.tipo === "PJ" && !f.razao_social?.trim())
+    return "PJ requer razão social.";
+  if (f.cpf?.trim() && !validarCpf(f.cpf))
+    return "CPF inválido (dígito verificador).";
+  if (f.cnpj?.trim() && !validarCnpj(f.cnpj))
+    return "CNPJ inválido (dígito verificador).";
   return null;
 }
 
 const MSG_FILA =
   "Sem conexão — cadastro salvo na fila, será enviado automaticamente quando a conexão voltar.";
 
-const STATUS_FILA: Record<
-  ItemFila["status"],
-  { label: string; cls: string }
-> = {
-  pendente: { label: "Pendente", cls: "bg-slate-100 text-slate-600" },
-  enviando: { label: "Enviando…", cls: "bg-primary-100 text-primary-700" },
-  erro: { label: "Erro", cls: "bg-danger-50 text-danger-700" },
-};
+const STATUS_FILA: Record<ItemFila["status"], { label: string; cls: string }> =
+  {
+    pendente: { label: "Pendente", cls: "bg-slate-100 text-slate-600" },
+    enviando: { label: "Enviando…", cls: "bg-primary-100 text-primary-700" },
+    erro: { label: "Erro", cls: "bg-danger-50 text-danger-700" },
+  };
 
 export default function CadastroManual() {
   const {
@@ -462,7 +463,9 @@ export default function CadastroManual() {
         return;
       }
     } else if (!formCaso.client_id) {
-      setErroCaso("Selecione o cliente do caso (ou crie um cliente novo junto).");
+      setErroCaso(
+        "Selecione o cliente do caso (ou crie um cliente novo junto).",
+      );
       return;
     }
 
@@ -572,10 +575,10 @@ export default function CadastroManual() {
         O modo offline funciona apenas com o app já carregado e autenticado
         neste navegador. Recarregar a página sem rede não abre o sistema, e a
         sessão expira em cerca de 8 horas — as pendências da fila são enviadas
-        automaticamente quando houver conexão e sessão válida. Rascunhos e
-        itens da fila (incluindo dados do cliente) ficam armazenados neste
-        navegador até o envio: use um dispositivo pessoal e descarte pendências
-        que não serão enviadas.
+        automaticamente quando houver conexão e sessão válida. Rascunhos e itens
+        da fila (incluindo dados do cliente) ficam armazenados neste navegador
+        até o envio: use um dispositivo pessoal e descarte pendências que não
+        serão enviadas.
       </Alert>
 
       <div className="mb-4 flex gap-2">
@@ -1008,9 +1011,7 @@ export default function CadastroManual() {
               <input
                 className="input"
                 value={formCaso.numero_processo}
-                onChange={(e) =>
-                  mudarCaso({ numero_processo: e.target.value })
-                }
+                onChange={(e) => mudarCaso({ numero_processo: e.target.value })}
               />
             </div>
             <div>
@@ -1042,9 +1043,7 @@ export default function CadastroManual() {
               <input
                 className="input"
                 value={formCaso.parte_contraria}
-                onChange={(e) =>
-                  mudarCaso({ parte_contraria: e.target.value })
-                }
+                onChange={(e) => mudarCaso({ parte_contraria: e.target.value })}
               />
             </div>
             <div>
@@ -1062,9 +1061,7 @@ export default function CadastroManual() {
               <textarea
                 className="input min-h-24 resize-y"
                 value={formCaso.descricao_fatos}
-                onChange={(e) =>
-                  mudarCaso({ descricao_fatos: e.target.value })
-                }
+                onChange={(e) => mudarCaso({ descricao_fatos: e.target.value })}
               />
             </div>
           </div>

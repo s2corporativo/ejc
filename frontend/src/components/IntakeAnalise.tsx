@@ -79,7 +79,8 @@ interface HonorariosInfo {
 // (AreaModuloMapping.ferramentas no backend — ver models/redesign.py). Nunca
 // renderizar o objeto direto: era a causa do crash "Objects are not valid as
 // a React child (found: object with keys {nome, endpoint})".
-type FerramentaSugerida = string | { nome?: string | null; endpoint?: string | null };
+type FerramentaSugerida =
+  string | { nome?: string | null; endpoint?: string | null };
 
 interface ModuloSugerido {
   module_key: string;
@@ -402,10 +403,7 @@ function IntakeAnaliseInner({ caseId }: { caseId: string }) {
             {dados.honorarios?.itens && dados.honorarios.itens.length > 0 ? (
               <div className="space-y-2">
                 {dados.honorarios.itens.map((h, i) => (
-                  <div
-                    key={h.item_codigo || i}
-                    className="card p-3 text-sm"
-                  >
+                  <div key={h.item_codigo || i} className="card p-3 text-sm">
                     <div className="flex flex-wrap items-center justify-between gap-2">
                       <span className="font-medium text-slate-800">
                         {h.item_codigo ? `${h.item_codigo} — ` : ""}

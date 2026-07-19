@@ -28,9 +28,7 @@ type View = "aberto" | "recolhido" | "dispensado";
 
 // Ação de cada tarefa: abrir a busca global do header ou navegar para uma
 // rota já registrada no moduleRegistry (a guarda internalLinks exige isso).
-type TaskAction =
-  | { kind: "busca" }
-  | { kind: "rota"; path: string };
+type TaskAction = { kind: "busca" } | { kind: "rota"; path: string };
 
 type Task = {
   id: string;
@@ -356,4 +354,3 @@ export default function OnboardingTour() {
     </div>
   );
 }
-

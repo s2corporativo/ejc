@@ -44,5 +44,7 @@ export const FINANCIAL_LIFECYCLE_STATUS = [
 
 export type CaseLifecycleStatus = (typeof CASE_LIFECYCLE_STATUS)[number];
 export type TaskLifecycleStatus = (typeof TASK_LIFECYCLE_STATUS)[number];
-export type DocumentLifecycleStatus = (typeof DOCUMENT_LIFECYCLE_STATUS)[number];
-export type FinancialLifecycleStatus = (typeof FINANCIAL_LIFECYCLE_STATUS)[number];
+export type DocumentLifecycleStatus =
+  (typeof DOCUMENT_LIFECYCLE_STATUS)[number];
+export type FinancialLifecycleStatus =
+  (typeof FINANCIAL_LIFECYCLE_STATUS)[number];

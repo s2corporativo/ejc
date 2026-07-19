@@ -138,9 +138,13 @@ const TONE_ETAPA: Record<
 };
 
 // Extrai mensagem + detalhes estruturados dos erros 422/429/403 do /avancar.
-function extrairErroAvancar(e: unknown): { titulo: string; detalhes: string[] } {
-  const resp = (e as { response?: { status?: number; data?: { detail?: unknown } } })
-    ?.response;
+function extrairErroAvancar(e: unknown): {
+  titulo: string;
+  detalhes: string[];
+} {
+  const resp = (
+    e as { response?: { status?: number; data?: { detail?: unknown } } }
+  )?.response;
   const detail = resp?.data?.detail;
   if (resp?.status === 429) {
     return {
@@ -180,7 +184,9 @@ function PendenciaItem({ p }: { p: OrquestradorPendencia }) {
   return (
     <Alert
       variant="warning"
-      title={p.tipo === "aprovacao_humana" ? "Aprovação do advogado" : undefined}
+      title={
+        p.tipo === "aprovacao_humana" ? "Aprovação do advogado" : undefined
+      }
     >
       <p>{p.detalhe}</p>
       {itens.length > 0 && (
@@ -434,7 +440,8 @@ export default function OrquestradorPanel({ caseId }: { caseId: string }) {
         >
           <ol className="space-y-0">
             {visao.jornada.map((etapa, i) => {
-              const estilo = ESTILO_ETAPA[etapa.status] ?? ESTILO_ETAPA.pendente;
+              const estilo =
+                ESTILO_ETAPA[etapa.status] ?? ESTILO_ETAPA.pendente;
               const ultima = i === visao.jornada.length - 1;
               return (
                 <li key={etapa.etapa} className="flex gap-3">
@@ -532,7 +539,8 @@ export default function OrquestradorPanel({ caseId }: { caseId: string }) {
                   {Object.entries(confirmando.payload_esperado).map(
                     ([campo, desc]) => (
                       <li key={campo}>
-                        <span className="font-mono">{campo}</span>: {String(desc)}
+                        <span className="font-mono">{campo}</span>:{" "}
+                        {String(desc)}
                       </li>
                     ),
                   )}

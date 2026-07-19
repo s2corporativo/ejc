@@ -33,12 +33,7 @@ import {
 
 // ── Contrato da API ───────────────────────────────────────────────────────────
 export type ProvaTipo =
-  | "documental"
-  | "pericial"
-  | "testemunhal"
-  | "material"
-  | "digital"
-  | "outro";
+  "documental" | "pericial" | "testemunhal" | "material" | "digital" | "outro";
 
 export interface Prova {
   id: number;
@@ -128,10 +123,7 @@ function normalizar(s: string): string {
 // Heurística leve: a prova recomendada PROVAVELMENTE já está no acervo quando
 // alguma prova cadastrada contém o texto recomendado, ou cobre a maioria de
 // suas palavras significativas (≥4 letras). Só um indício visual — não afirma.
-function provavelmentePresente(
-  recomendada: string,
-  corpus: string[],
-): boolean {
+function provavelmentePresente(recomendada: string, corpus: string[]): boolean {
   const rec = normalizar(recomendada);
   if (!rec) return false;
   const palavras = rec.split(" ").filter((w) => w.length >= 4);
@@ -464,9 +456,7 @@ export default function ProvasCaso({ caseId }: { caseId: string | number }) {
   // Corpus normalizado do acervo já cadastrado (título + descrição + fato),
   // usado só para o indício visual "provável no acervo" na matriz.
   const corpusProvas = provas.map((p) =>
-    normalizar(
-      [p.titulo, p.descricao ?? "", p.fato_probando ?? ""].join(" "),
-    ),
+    normalizar([p.titulo, p.descricao ?? "", p.fato_probando ?? ""].join(" ")),
   );
 
   return (
@@ -530,10 +520,7 @@ export default function ProvasCaso({ caseId }: { caseId: string | number }) {
       ) : (
         <div className="space-y-3">
           {provas.map((p, i) => (
-            <div
-              key={p.id}
-              className="card p-4"
-            >
+            <div key={p.id} className="card p-4">
               <div className="flex items-start justify-between gap-3">
                 <div className="flex min-w-0 flex-1 items-start gap-3">
                   <div className="flex flex-col items-center gap-1 pt-0.5">
@@ -636,9 +623,10 @@ export default function ProvasCaso({ caseId }: { caseId: string | number }) {
               Prova mínima recomendada (matriz tese×prova)
             </h3>
             <p className="text-xs text-slate-500">
-              Referência determinística das provas mínimas típicas por tese/pedido
-              {matrizArea ? ` · área: ${matrizArea}` : ""}. O indício “provável no
-              acervo” é apenas orientativo.
+              Referência determinística das provas mínimas típicas por
+              tese/pedido
+              {matrizArea ? ` · área: ${matrizArea}` : ""}. O indício “provável
+              no acervo” é apenas orientativo.
             </p>
           </div>
         </div>
@@ -726,8 +714,8 @@ export default function ProvasCaso({ caseId }: { caseId: string | number }) {
 
         <p className="mt-2 text-[11px] text-slate-500">
           Sugestões geradas por IA são <strong>rascunho de apoio</strong> — não
-          criam nada automaticamente. A avaliação e o cadastro de cada prova
-          são do advogado (revisão humana obrigatória).
+          criam nada automaticamente. A avaliação e o cadastro de cada prova são
+          do advogado (revisão humana obrigatória).
         </p>
 
         {avisoIa && (

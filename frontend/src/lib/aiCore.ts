@@ -129,7 +129,9 @@ export async function aiSkills(): Promise<Record<string, unknown>> {
   return data;
 }
 
-export async function aiNativeSkillCoverage(): Promise<Record<string, unknown>> {
+export async function aiNativeSkillCoverage(): Promise<
+  Record<string, unknown>
+> {
   const { data } = await api.get("/ai/core/native-skills/coverage");
   return data;
 }

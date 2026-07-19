@@ -9,7 +9,13 @@ import {
 } from "lucide-react";
 import api from "../../lib/api";
 import { asList } from "../../lib/list";
-import { ErrorState, Modal, Spinner, fmtDate, fmtMoney } from "../../components/UI";
+import {
+  ErrorState,
+  Modal,
+  Spinner,
+  fmtDate,
+  fmtMoney,
+} from "../../components/UI";
 
 const ST: Record<string, [string, string, string]> = {
   pago: ["Pago", "text-success-600", "bg-success-50"],

@@ -184,7 +184,8 @@ const humanize = (value: string) =>
 
 const stringify = (value: unknown): string => {
   if (value == null) return "—";
-  if (typeof value === "string" || typeof value === "number") return String(value);
+  if (typeof value === "string" || typeof value === "number")
+    return String(value);
   if (typeof value === "boolean") return value ? "Sim" : "Não";
   if (typeof value === "object") {
     const record = value as Record<string, unknown>;
@@ -203,7 +204,9 @@ const stringify = (value: unknown): string => {
         .filter(Boolean)
         .map(String)
         .join(" · ");
-      return complements ? `${stringify(preferred)} · ${complements}` : stringify(preferred);
+      return complements
+        ? `${stringify(preferred)} · ${complements}`
+        : stringify(preferred);
     }
   }
   return JSON.stringify(value);
@@ -212,13 +215,20 @@ const stringify = (value: unknown): string => {
 function ReportList({ title, items }: { title: string; items?: unknown[] }) {
   return (
     <div className="rounded-xl border border-slate-200 bg-white p-4 dark:border-white/10 dark:bg-white/[0.03]">
-      <h3 className="text-sm font-semibold text-slate-950 dark:text-white">{title}</h3>
+      <h3 className="text-sm font-semibold text-slate-950 dark:text-white">
+        {title}
+      </h3>
       {!items?.length ? (
-        <p className="mt-2 text-sm text-slate-500">Nenhum item identificado com segurança.</p>
+        <p className="mt-2 text-sm text-slate-500">
+          Nenhum item identificado com segurança.
+        </p>
       ) : (
         <ul className="mt-3 space-y-2 text-sm text-slate-700 dark:text-slate-200">
           {items.map((item, index) => (
-            <li key={index} className="rounded-lg bg-slate-50 px-3 py-2 dark:bg-white/[0.04]">
+            <li
+              key={index}
+              className="rounded-lg bg-slate-50 px-3 py-2 dark:bg-white/[0.04]"
+            >
               {stringify(item)}
             </li>
           ))}
@@ -228,9 +238,22 @@ function ReportList({ title, items }: { title: string; items?: unknown[] }) {
   );
 }
 
-function RiskBadge({ value, urgent }: { value?: string | null; urgent?: boolean }) {
+function RiskBadge({
+  value,
+  urgent,
+}: {
+  value?: string | null;
+  urgent?: boolean;
+}) {
   const normalized = String(value || "não classificado");
-  const tone = normalized === "critico" ? "red" : normalized === "elevado" ? "amber" : normalized === "baixo" ? "green" : "blue";
+  const tone =
+    normalized === "critico"
+      ? "red"
+      : normalized === "elevado"
+        ? "amber"
+        : normalized === "baixo"
+          ? "green"
+          : "blue";
   return (
     <div className="flex flex-wrap gap-2">
       <Badge tone={tone}>{humanize(normalized)}</Badge>
@@ -287,7 +310,9 @@ export default function RaioXProcesso() {
   const [runningAction, setRunningAction] = useState<string | null>(null);
 
   // Análise "advogado sênior" (IA agêntica) — operação cara, SOMENTE leitura.
-  const [advResult, setAdvResult] = useState<AnaliseAdvogadoResult | null>(null);
+  const [advResult, setAdvResult] = useState<AnaliseAdvogadoResult | null>(
+    null,
+  );
   const [advLoading, setAdvLoading] = useState(false);
   // Erro exibido DENTRO do card da análise (o banner global fica fora da
   // viewport quando o botão está no fim da página).
@@ -338,13 +363,19 @@ export default function RaioXProcesso() {
       setError(null);
       try {
         if (contextualCaseId) {
-          const { data } = await api.get(`/raio-x/contextual/${contextualCaseId}`);
+          const { data } = await api.get(
+            `/raio-x/contextual/${contextualCaseId}`,
+          );
           if (active) setContextual(data);
         } else {
           await loadList();
         }
       } catch (err: any) {
-        if (active) setError(err?.response?.data?.detail || "Não foi possível carregar o Raio-X.");
+        if (active)
+          setError(
+            err?.response?.data?.detail ||
+              "Não foi possível carregar o Raio-X.",
+          );
       } finally {
         if (active) setLoading(false);
       }
@@ -358,15 +389,24 @@ export default function RaioXProcesso() {
     setAdvResult(null);
     const identification = selected?.relatorio?.identificacao || {};
     setReview({
-      numero_processo: String(selected?.numero_processo || identification.numero_processo || ""),
+      numero_processo: String(
+        selected?.numero_processo || identification.numero_processo || "",
+      ),
       area: String(selected?.area || identification.area || "civil"),
       subarea: String(selected?.subarea || identification.subarea || ""),
       rito: String(selected?.rito || identification.rito || ""),
-      fase: String(selected?.fase || identification.fase || identification.etapa_atual || ""),
+      fase: String(
+        selected?.fase ||
+          identification.fase ||
+          identification.etapa_atual ||
+          "",
+      ),
       tribunal: String(selected?.tribunal || identification.tribunal || ""),
       orgao: String(selected?.orgao || identification.orgao || ""),
       unidade: String(selected?.unidade || identification.unidade || ""),
-      posicao_cliente: String(selected?.posicao_cliente || identification.posicao_cliente || ""),
+      posicao_cliente: String(
+        selected?.posicao_cliente || identification.posicao_cliente || "",
+      ),
       sintese: String(
         selected?.revisao_humana?.sintese_revisada ||
           selected?.relatorio?.sintese_executiva_revisada ||
@@ -382,7 +422,10 @@ export default function RaioXProcesso() {
 
   const report = contextual || selected?.relatorio;
   const identification = report?.identificacao || {};
-  const sourceCount = useMemo(() => selected?.documentos?.length || 0, [selected]);
+  const sourceCount = useMemo(
+    () => selected?.documentos?.length || 0,
+    [selected],
+  );
 
   useEffect(() => {
     if (!report) {
@@ -395,15 +438,24 @@ export default function RaioXProcesso() {
         params: {
           surface: "processos",
           case_id: contextualCaseId || undefined,
-          area: String(identification.area || selected?.area || "") || undefined,
-          phase: String(identification.etapa_atual || selected?.fase || "") || undefined,
+          area:
+            String(identification.area || selected?.area || "") || undefined,
+          phase:
+            String(identification.etapa_atual || selected?.fase || "") ||
+            undefined,
           document_type: documentType,
           limit: 6,
         },
       })
       .then(({ data }) => setActions(data.actions || []))
       .catch(() => setActions([]));
-  }, [report, selected, contextualCaseId, identification.area, identification.etapa_atual]);
+  }, [
+    report,
+    selected,
+    contextualCaseId,
+    identification.area,
+    identification.etapa_atual,
+  ]);
 
   const detail = async (id: string) => {
     setBusy(true);
@@ -448,16 +500,24 @@ export default function RaioXProcesso() {
     const body = new FormData();
     files.forEach((file) => body.append("files", file));
     try {
-      const { data } = await api.post(`/raio-x/${selected.id}/documentos/analisar`, body, {
-        headers: { "Content-Type": "multipart/form-data" },
-      });
+      const { data } = await api.post(
+        `/raio-x/${selected.id}/documentos/analisar`,
+        body,
+        {
+          headers: { "Content-Type": "multipart/form-data" },
+        },
+      );
       setSelected(data.analise);
       setFiles([]);
       const notes = [
-        data.duplicados?.length ? `${data.duplicados.length} duplicado(s) ignorado(s)` : "",
+        data.duplicados?.length
+          ? `${data.duplicados.length} duplicado(s) ignorado(s)`
+          : "",
         data.erros?.length ? `${data.erros.length} arquivo(s) com erro` : "",
       ].filter(Boolean);
-      setMessage(`Análise concluída.${notes.length ? ` ${notes.join("; ")}.` : ""}`);
+      setMessage(
+        `Análise concluída.${notes.length ? ` ${notes.join("; ")}.` : ""}`,
+      );
       await loadList();
     } catch (err: any) {
       setError(err?.response?.data?.detail || "Falha ao analisar documentos.");
@@ -470,9 +530,12 @@ export default function RaioXProcesso() {
     if (!selected) return;
     setBusy(true);
     try {
-      const response = await api.get(`/raio-x/${selected.id}/documentos/${documento.id}/download`, {
-        responseType: "blob",
-      });
+      const response = await api.get(
+        `/raio-x/${selected.id}/documentos/${documento.id}/download`,
+        {
+          responseType: "blob",
+        },
+      );
       const href = URL.createObjectURL(response.data);
       const anchor = document.createElement("a");
       anchor.href = href;
@@ -480,7 +543,9 @@ export default function RaioXProcesso() {
       anchor.click();
       URL.revokeObjectURL(href);
     } catch (err: any) {
-      setError(err?.response?.data?.detail || "Não foi possível baixar o documento.");
+      setError(
+        err?.response?.data?.detail || "Não foi possível baixar o documento.",
+      );
     } finally {
       setBusy(false);
     }
@@ -502,7 +567,10 @@ export default function RaioXProcesso() {
       anchor.click();
       URL.revokeObjectURL(href);
     } catch (err: any) {
-      setError(err?.response?.data?.detail || `Falha ao exportar ${format.toUpperCase()}.`);
+      setError(
+        err?.response?.data?.detail ||
+          `Falha ao exportar ${format.toUpperCase()}.`,
+      );
     } finally {
       setBusy(false);
     }
@@ -542,7 +610,9 @@ export default function RaioXProcesso() {
         },
       });
       setSelected(data);
-      setMessage("Conferência humana salva. O relatório está pronto para decisão.");
+      setMessage(
+        "Conferência humana salva. O relatório está pronto para decisão.",
+      );
       await loadList();
     } catch (err: any) {
       setError(err?.response?.data?.detail || "Falha ao salvar conferência.");
@@ -556,9 +626,13 @@ export default function RaioXProcesso() {
     setBusy(true);
     setError(null);
     try {
-      const { data } = await api.post(`/raio-x/${selected.id}/reanalisar`, null, {
-        params: { reprocessar: reprocess },
-      });
+      const { data } = await api.post(
+        `/raio-x/${selected.id}/reanalisar`,
+        null,
+        {
+          params: { reprocessar: reprocess },
+        },
+      );
       setSelected(data.analise || data);
       setMessage(
         reprocess
@@ -567,7 +641,9 @@ export default function RaioXProcesso() {
       );
       await loadList();
     } catch (err: any) {
-      setError(err?.response?.data?.detail || "Falha ao reprocessar a análise.");
+      setError(
+        err?.response?.data?.detail || "Falha ao reprocessar a análise.",
+      );
     } finally {
       setBusy(false);
     }
@@ -589,11 +665,14 @@ export default function RaioXProcesso() {
         usar_rag: Boolean(contextualCaseId),
         surface: "processos",
         area: String(identification.area || selected?.area || "") || null,
-        phase: String(identification.etapa_atual || selected?.fase || "") || null,
+        phase:
+          String(identification.etapa_atual || selected?.fase || "") || null,
       });
       setActionResult(data.conteudo || "Resultado sem conteúdo.");
     } catch (err: any) {
-      setError(err?.response?.data?.detail || "A ação com IA não pôde ser executada.");
+      setError(
+        err?.response?.data?.detail || "A ação com IA não pôde ser executada.",
+      );
     } finally {
       setRunningAction(null);
     }
@@ -636,14 +715,20 @@ export default function RaioXProcesso() {
           ...selected.revisao_humana,
           analises_ia: [
             ...previous,
-            { conteudo: actionResult, salvo_em: new Date().toISOString(), revisao_obrigatoria: true },
+            {
+              conteudo: actionResult,
+              salvo_em: new Date().toISOString(),
+              revisao_obrigatoria: true,
+            },
           ],
         },
       });
       setSelected(data);
       setMessage("Resultado salvo na revisão interna do Raio-X.");
     } catch (err: any) {
-      setError(err?.response?.data?.detail || "Falha ao salvar resultado da IA.");
+      setError(
+        err?.response?.data?.detail || "Falha ao salvar resultado da IA.",
+      );
     }
   };
 
@@ -652,7 +737,9 @@ export default function RaioXProcesso() {
     setBusy(true);
     setError(null);
     try {
-      const { data } = await api.get<ConversionPreview>(`/raio-x/${selected.id}/conversao/preview`);
+      const { data } = await api.get<ConversionPreview>(
+        `/raio-x/${selected.id}/conversao/preview`,
+      );
       setConversion(data);
       setSelectedDocumentIds(data.documentos_disponiveis.map((doc) => doc.id));
       setConfirmDuplicate(false);
@@ -667,8 +754,12 @@ export default function RaioXProcesso() {
     }
   };
 
-  const requiresDuplicateConfirmation = Boolean(conversion?.casos_possivelmente_duplicados.length);
-  const requiresConflictConfirmation = Boolean(conversion?.alertas_conflito.length);
+  const requiresDuplicateConfirmation = Boolean(
+    conversion?.casos_possivelmente_duplicados.length,
+  );
+  const requiresConflictConfirmation = Boolean(
+    conversion?.alertas_conflito.length,
+  );
   const conversionConfirmed =
     confirmText === "TRANSFORMAR EM CASO DO ESCRITÓRIO" &&
     (!requiresDuplicateConfirmation || confirmDuplicate) &&
@@ -688,7 +779,8 @@ export default function RaioXProcesso() {
           area: review.area,
           numero_processo: review.numero_processo || null,
           tribunal: review.tribunal || null,
-          descricao_fatos: review.sintese || selected.relatorio?.sintese_executiva,
+          descricao_fatos:
+            review.sintese || selected.relatorio?.sintese_executiva,
           prioridade: selected.prazo_urgente ? "critica" : "media",
         },
         documento_ids: selectedDocumentIds,
@@ -699,7 +791,9 @@ export default function RaioXProcesso() {
         confirmacao: confirmText,
       });
       setShowConversion(false);
-      setMessage("Caso oficial criado com trilha de auditoria. Redirecionando…");
+      setMessage(
+        "Caso oficial criado com trilha de auditoria. Redirecionando…",
+      );
       window.location.assign(`/casos/${data.case_id}`);
     } catch (err: any) {
       setError(err?.response?.data?.detail || "Falha ao converter em caso.");
@@ -714,10 +808,14 @@ export default function RaioXProcesso() {
     try {
       await api.post(`/raio-x/${selected.id}/${mode}`);
       setSelected(null);
-      setMessage(mode === "arquivar" ? "Análise arquivada." : "Análise descartada.");
+      setMessage(
+        mode === "arquivar" ? "Análise arquivada." : "Análise descartada.",
+      );
       await loadList();
     } catch (err: any) {
-      setError(err?.response?.data?.detail || "A operação não pôde ser concluída.");
+      setError(
+        err?.response?.data?.detail || "A operação não pôde ser concluída.",
+      );
     } finally {
       setBusy(false);
     }
@@ -734,8 +832,16 @@ export default function RaioXProcesso() {
   return (
     <div className="space-y-6">
       <PageHeader
-        eyebrow={contextualCaseId ? "Inteligência contextual" : "Análise preliminar isolada"}
-        title={contextualCaseId ? `Raio-X · ${String(identification.titulo || "Caso")}` : "Raio-X do Processo"}
+        eyebrow={
+          contextualCaseId
+            ? "Inteligência contextual"
+            : "Análise preliminar isolada"
+        }
+        title={
+          contextualCaseId
+            ? `Raio-X · ${String(identification.titulo || "Caso")}`
+            : "Raio-X do Processo"
+        }
         subtitle={
           contextualCaseId
             ? "Leitura estratégica do caso existente, sem criar ou converter cadastros."
@@ -757,24 +863,60 @@ export default function RaioXProcesso() {
       <div className="flex items-start gap-3 rounded-xl border border-amber-200 bg-amber-50 p-4 text-sm text-amber-900 dark:border-amber-400/20 dark:bg-amber-400/10 dark:text-amber-100">
         <ShieldCheck className="mt-0.5 h-5 w-5 shrink-0" />
         <div>
-          <strong>Ambiente preliminar:</strong> nenhum prazo, rito, conflito ou conclusão altera o caso oficial antes da revisão humana.
+          <strong>Ambiente preliminar:</strong> nenhum prazo, rito, conflito ou
+          conclusão altera o caso oficial antes da revisão humana.
         </div>
       </div>
 
-      {error && <div className="rounded-xl border border-red-200 bg-red-50 p-3 text-sm text-red-700">{error}</div>}
-      {message && <div className="rounded-xl border border-emerald-200 bg-emerald-50 p-3 text-sm text-emerald-700">{message}</div>}
+      {error && (
+        <div className="rounded-xl border border-red-200 bg-red-50 p-3 text-sm text-red-700">
+          {error}
+        </div>
+      )}
+      {message && (
+        <div className="rounded-xl border border-emerald-200 bg-emerald-50 p-3 text-sm text-emerald-700">
+          {message}
+        </div>
+      )}
 
       {!contextualCaseId && !selected && (
         <>
           <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-5">
-            <StatCard label="Análises" value={stats.total} icon={<ScanSearch className="h-5 w-5" />} />
-            <StatCard label="Aguardando conferência" value={stats.pendentes_conferencia} icon={<FileSearch className="h-5 w-5" />} tone="amber" />
-            <StatCard label="Urgentes" value={stats.urgentes || 0} icon={<ShieldCheck className="h-5 w-5" />} tone="amber" />
-            <StatCard label="Risco elevado/crítico" value={stats.risco_elevado_ou_critico || 0} icon={<Filter className="h-5 w-5" />} tone="amber" />
-            <StatCard label="Convertidas" value={stats.convertidos} icon={<FolderInput className="h-5 w-5" />} tone="green" />
+            <StatCard
+              label="Análises"
+              value={stats.total}
+              icon={<ScanSearch className="h-5 w-5" />}
+            />
+            <StatCard
+              label="Aguardando conferência"
+              value={stats.pendentes_conferencia}
+              icon={<FileSearch className="h-5 w-5" />}
+              tone="amber"
+            />
+            <StatCard
+              label="Urgentes"
+              value={stats.urgentes || 0}
+              icon={<ShieldCheck className="h-5 w-5" />}
+              tone="amber"
+            />
+            <StatCard
+              label="Risco elevado/crítico"
+              value={stats.risco_elevado_ou_critico || 0}
+              icon={<Filter className="h-5 w-5" />}
+              tone="amber"
+            />
+            <StatCard
+              label="Convertidas"
+              value={stats.convertidos}
+              icon={<FolderInput className="h-5 w-5" />}
+              tone="green"
+            />
           </div>
 
-          <SectionCard title="Análises preliminares" subtitle="Registros separados da carteira oficial do escritório.">
+          <SectionCard
+            title="Análises preliminares"
+            subtitle="Registros separados da carteira oficial do escritório."
+          >
             <div className="mb-4 grid gap-3 md:grid-cols-[1fr_180px_auto]">
               <input
                 value={search}
@@ -795,28 +937,50 @@ export default function RaioXProcesso() {
                 <option value="critico">Crítico</option>
               </select>
               <div className="flex gap-2">
-                <Button variant={urgentFilter ? "primary" : "secondary"} onClick={() => setUrgentFilter((value) => !value)}>
+                <Button
+                  variant={urgentFilter ? "primary" : "secondary"}
+                  onClick={() => setUrgentFilter((value) => !value)}
+                >
                   Somente urgentes
                 </Button>
-                <Button variant="secondary" onClick={() => void loadList()}>Filtrar</Button>
+                <Button variant="secondary" onClick={() => void loadList()}>
+                  Filtrar
+                </Button>
               </div>
             </div>
             {!items.length ? (
-              <EmptyState title="Nenhuma análise preliminar" message="Crie um Raio-X e envie um ou mais documentos." icon={ScanSearch} />
+              <EmptyState
+                title="Nenhuma análise preliminar"
+                message="Crie um Raio-X e envie um ou mais documentos."
+                icon={ScanSearch}
+              />
             ) : (
               <div className="divide-y divide-slate-100 dark:divide-white/10">
                 {items.map((item) => (
-                  <button key={item.id} onClick={() => void detail(item.id)} className="flex w-full items-center gap-3 px-2 py-4 text-left hover:bg-slate-50 dark:hover:bg-white/[0.03]">
+                  <button
+                    key={item.id}
+                    onClick={() => void detail(item.id)}
+                    className="flex w-full items-center gap-3 px-2 py-4 text-left hover:bg-slate-50 dark:hover:bg-white/[0.03]"
+                  >
                     <div className="rounded-xl bg-primary-50 p-2.5 text-primary-600 dark:bg-primary-400/10">
                       <ScanSearch className="h-5 w-5" />
                     </div>
                     <div className="min-w-0 flex-1">
-                      <div className="truncate font-semibold text-slate-950 dark:text-white">{item.titulo}</div>
+                      <div className="truncate font-semibold text-slate-950 dark:text-white">
+                        {item.titulo}
+                      </div>
                       <div className="mt-1 flex flex-wrap items-center gap-2 text-xs text-slate-500">
-                        {item.potencial_cliente && <span>{item.potencial_cliente}</span>}
-                        {item.numero_processo && <span>• {item.numero_processo}</span>}
+                        {item.potencial_cliente && (
+                          <span>{item.potencial_cliente}</span>
+                        )}
+                        {item.numero_processo && (
+                          <span>• {item.numero_processo}</span>
+                        )}
                         {item.area && <Badge tone="blue">{item.area}</Badge>}
-                        <RiskBadge value={item.risco_nivel} urgent={item.prazo_urgente} />
+                        <RiskBadge
+                          value={item.risco_nivel}
+                          urgent={item.prazo_urgente}
+                        />
                       </div>
                     </div>
                     <StatusBadge value={item.status} />
@@ -834,18 +998,39 @@ export default function RaioXProcesso() {
           <div className="w-full max-w-lg rounded-2xl border border-slate-200 bg-white p-6 shadow-float dark:border-white/10 dark:bg-slate-900">
             <div className="flex items-center justify-between">
               <h2 className="text-lg font-semibold">Nova análise preliminar</h2>
-              <button onClick={() => setCreating(false)} aria-label="Fechar"><X /></button>
+              <button onClick={() => setCreating(false)} aria-label="Fechar">
+                <X />
+              </button>
             </div>
             <div className="mt-5 space-y-4">
-              <label className="block text-sm font-medium">Título
-                <input value={newTitle} onChange={(event) => setNewTitle(event.target.value)} className="mt-1 w-full rounded-xl border border-slate-200 px-3 py-2 dark:border-white/10 dark:bg-white/[0.04]" placeholder="Ex.: Processo recebido para avaliação" />
+              <label className="block text-sm font-medium">
+                Título
+                <input
+                  value={newTitle}
+                  onChange={(event) => setNewTitle(event.target.value)}
+                  className="mt-1 w-full rounded-xl border border-slate-200 px-3 py-2 dark:border-white/10 dark:bg-white/[0.04]"
+                  placeholder="Ex.: Processo recebido para avaliação"
+                />
               </label>
-              <label className="block text-sm font-medium">Potencial cliente
-                <input value={newClient} onChange={(event) => setNewClient(event.target.value)} className="mt-1 w-full rounded-xl border border-slate-200 px-3 py-2 dark:border-white/10 dark:bg-white/[0.04]" placeholder="Opcional" />
+              <label className="block text-sm font-medium">
+                Potencial cliente
+                <input
+                  value={newClient}
+                  onChange={(event) => setNewClient(event.target.value)}
+                  className="mt-1 w-full rounded-xl border border-slate-200 px-3 py-2 dark:border-white/10 dark:bg-white/[0.04]"
+                  placeholder="Opcional"
+                />
               </label>
               <div className="flex justify-end gap-2">
-                <Button variant="secondary" onClick={() => setCreating(false)}>Cancelar</Button>
-                <Button onClick={() => void create()} disabled={busy || newTitle.trim().length < 3}>{busy && <Loader2 className="h-4 w-4 animate-spin" />} Criar</Button>
+                <Button variant="secondary" onClick={() => setCreating(false)}>
+                  Cancelar
+                </Button>
+                <Button
+                  onClick={() => void create()}
+                  disabled={busy || newTitle.trim().length < 3}
+                >
+                  {busy && <Loader2 className="h-4 w-4 animate-spin" />} Criar
+                </Button>
               </div>
             </div>
           </div>
@@ -858,27 +1043,66 @@ export default function RaioXProcesso() {
             <SectionCard
               title={selected.titulo}
               subtitle={`${sourceCount} documento(s) · ${humanize(selected.status)}`}
-              actions={<Button variant="ghost" onClick={() => setSelected(null)}><X className="h-4 w-4" /> Fechar</Button>}
+              actions={
+                <Button variant="ghost" onClick={() => setSelected(null)}>
+                  <X className="h-4 w-4" /> Fechar
+                </Button>
+              }
             >
               {selected.convertido_case_id ? (
                 <div className="flex items-center justify-between rounded-xl bg-emerald-50 p-4 text-emerald-800">
-                  <span className="flex items-center gap-2"><CheckCircle2 className="h-5 w-5" /> Convertido e preservado para auditoria.</span>
-                  <Link to={`/casos/${selected.convertido_case_id}`} className="font-semibold">Abrir caso</Link>
+                  <span className="flex items-center gap-2">
+                    <CheckCircle2 className="h-5 w-5" /> Convertido e preservado
+                    para auditoria.
+                  </span>
+                  <Link
+                    to={`/casos/${selected.convertido_case_id}`}
+                    className="font-semibold"
+                  >
+                    Abrir caso
+                  </Link>
                 </div>
               ) : (
                 <div className="grid gap-4 lg:grid-cols-[1fr_auto]">
                   <label className="flex cursor-pointer items-center gap-3 rounded-xl border-2 border-dashed border-primary-200 bg-primary-50/40 p-4 text-sm text-primary-800 dark:border-primary-400/30 dark:bg-primary-400/10 dark:text-primary-100">
                     <UploadCloud className="h-6 w-6" />
-                    <span className="flex-1">{files.length ? `${files.length} arquivo(s) selecionado(s)` : "Selecione PDF, DOCX, TXT ou imagens"}</span>
-                    <input type="file" multiple className="hidden" accept=".pdf,.docx,.txt,.png,.jpg,.jpeg,.tiff,.webp" onChange={(event) => setFiles(Array.from(event.target.files || []))} />
+                    <span className="flex-1">
+                      {files.length
+                        ? `${files.length} arquivo(s) selecionado(s)`
+                        : "Selecione PDF, DOCX, TXT ou imagens"}
+                    </span>
+                    <input
+                      type="file"
+                      multiple
+                      className="hidden"
+                      accept=".pdf,.docx,.txt,.png,.jpg,.jpeg,.tiff,.webp"
+                      onChange={(event) =>
+                        setFiles(Array.from(event.target.files || []))
+                      }
+                    />
                   </label>
-                  <Button onClick={() => void upload()} disabled={!files.length || busy}>{busy ? <Loader2 className="h-4 w-4 animate-spin" /> : <Sparkles className="h-4 w-4" />} Analisar lote</Button>
+                  <Button
+                    onClick={() => void upload()}
+                    disabled={!files.length || busy}
+                  >
+                    {busy ? (
+                      <Loader2 className="h-4 w-4 animate-spin" />
+                    ) : (
+                      <Sparkles className="h-4 w-4" />
+                    )}{" "}
+                    Analisar lote
+                  </Button>
                 </div>
               )}
               {!!selected.documentos.length && (
                 <div className="mt-4 flex flex-wrap gap-2">
                   {selected.documentos.map((doc) => (
-                    <button key={doc.id} type="button" onClick={() => void downloadDocument(doc)} className="inline-flex items-center gap-1 rounded-full bg-slate-100 px-3 py-1.5 text-xs text-slate-700 hover:bg-slate-200 dark:bg-white/10 dark:text-slate-200">
+                    <button
+                      key={doc.id}
+                      type="button"
+                      onClick={() => void downloadDocument(doc)}
+                      className="inline-flex items-center gap-1 rounded-full bg-slate-100 px-3 py-1.5 text-xs text-slate-700 hover:bg-slate-200 dark:bg-white/10 dark:text-slate-200"
+                    >
                       <FileText className="h-3.5 w-3.5" /> {doc.nome_original}
                     </button>
                   ))}
@@ -891,15 +1115,43 @@ export default function RaioXProcesso() {
 
           <div className="grid gap-5 xl:grid-cols-[1.4fr_0.6fr]">
             <div className="space-y-5">
-              <SectionCard title="Síntese executiva" subtitle={report.aviso || "Conteúdo sujeito à conferência humana."}>
-                <p className="whitespace-pre-wrap text-sm leading-7 text-slate-700 dark:text-slate-200">{String(report.sintese_executiva_revisada || report.sintese_executiva || "Síntese não disponível.")}</p>
+              <SectionCard
+                title="Síntese executiva"
+                subtitle={
+                  report.aviso || "Conteúdo sujeito à conferência humana."
+                }
+              >
+                <p className="whitespace-pre-wrap text-sm leading-7 text-slate-700 dark:text-slate-200">
+                  {String(
+                    report.sintese_executiva_revisada ||
+                      report.sintese_executiva ||
+                      "Síntese não disponível.",
+                  )}
+                </p>
               </SectionCard>
 
               <SectionCard title="Risco e jornada processual">
-                <RiskBadge value={String(report.risco_nivel || selected?.risco_nivel || "")} urgent={Boolean(report.prazo_urgente || selected?.prazo_urgente)} />
+                <RiskBadge
+                  value={String(
+                    report.risco_nivel || selected?.risco_nivel || "",
+                  )}
+                  urgent={Boolean(
+                    report.prazo_urgente || selected?.prazo_urgente,
+                  )}
+                />
                 <div className="mt-4 grid gap-4 md:grid-cols-2">
-                  <ReportList title="Avaliação de risco" items={report.avaliacao_risco ? [report.avaliacao_risco] : report.riscos} />
-                  <ReportList title="Rito e próximas etapas" items={report.rito_jornada ? [report.rito_jornada] : []} />
+                  <ReportList
+                    title="Avaliação de risco"
+                    items={
+                      report.avaliacao_risco
+                        ? [report.avaliacao_risco]
+                        : report.riscos
+                    }
+                  />
+                  <ReportList
+                    title="Rito e próximas etapas"
+                    items={report.rito_jornada ? [report.rito_jornada] : []}
+                  />
                 </div>
               </SectionCard>
 
@@ -907,40 +1159,88 @@ export default function RaioXProcesso() {
                 <ReportList title="Partes" items={report.partes} />
                 <ReportList title="Pedidos" items={report.pedidos} />
                 <ReportList title="Provas" items={report.provas} />
-                <ReportList title="Prazos potenciais" items={report.prazos_potenciais || (report as any).prazos} />
-                <ReportList title="Decisões e determinações" items={report.decisoes} />
+                <ReportList
+                  title="Prazos potenciais"
+                  items={report.prazos_potenciais || (report as any).prazos}
+                />
+                <ReportList
+                  title="Decisões e determinações"
+                  items={report.decisoes}
+                />
                 <ReportList title="Contradições" items={report.contradicoes} />
-                <ReportList title="Pontos fortes" items={report.pontos_fortes} />
-                <ReportList title="Pontos frágeis" items={report.pontos_fracos} />
-                <ReportList title="Próximos passos" items={report.proximos_passos} />
-                <ReportList title="Documentos pendentes" items={report.documentos_pendentes} />
+                <ReportList
+                  title="Pontos fortes"
+                  items={report.pontos_fortes}
+                />
+                <ReportList
+                  title="Pontos frágeis"
+                  items={report.pontos_fracos}
+                />
+                <ReportList
+                  title="Próximos passos"
+                  items={report.proximos_passos}
+                />
+                <ReportList
+                  title="Documentos pendentes"
+                  items={report.documentos_pendentes}
+                />
               </div>
 
               <SectionCard title="Cronologia e matriz fato × prova">
                 <div className="grid gap-4 md:grid-cols-2">
                   <ReportList title="Cronologia" items={report.cronologia} />
-                  <ReportList title="Fato × prova" items={report.fatos_provas} />
+                  <ReportList
+                    title="Fato × prova"
+                    items={report.fatos_provas}
+                  />
                 </div>
               </SectionCard>
 
-              <SectionCard title="Ações com IA" subtitle="Somente ações compatíveis com a área, fase e documento reconhecido.">
+              <SectionCard
+                title="Ações com IA"
+                subtitle="Somente ações compatíveis com a área, fase e documento reconhecido."
+              >
                 {!actions.length ? (
-                  <p className="text-sm text-slate-500">Nenhuma ação contextual disponível com os dados atuais.</p>
+                  <p className="text-sm text-slate-500">
+                    Nenhuma ação contextual disponível com os dados atuais.
+                  </p>
                 ) : (
                   <div className="grid gap-2 sm:grid-cols-2">
                     {actions.map((action) => (
-                      <button key={action.id} onClick={() => void executeAction(action)} disabled={Boolean(runningAction)} className="rounded-xl border border-slate-200 p-3 text-left hover:border-primary-400 disabled:opacity-50 dark:border-white/10">
-                        <div className="flex items-center gap-2 font-medium"><Sparkles className="h-4 w-4 text-primary-600" /> {action.display_name}</div>
-                        <p className="mt-1 text-xs text-slate-500">{action.reason}</p>
-                        {runningAction === action.name && <Loader2 className="mt-2 h-4 w-4 animate-spin" />}
+                      <button
+                        key={action.id}
+                        onClick={() => void executeAction(action)}
+                        disabled={Boolean(runningAction)}
+                        className="rounded-xl border border-slate-200 p-3 text-left hover:border-primary-400 disabled:opacity-50 dark:border-white/10"
+                      >
+                        <div className="flex items-center gap-2 font-medium">
+                          <Sparkles className="h-4 w-4 text-primary-600" />{" "}
+                          {action.display_name}
+                        </div>
+                        <p className="mt-1 text-xs text-slate-500">
+                          {action.reason}
+                        </p>
+                        {runningAction === action.name && (
+                          <Loader2 className="mt-2 h-4 w-4 animate-spin" />
+                        )}
                       </button>
                     ))}
                   </div>
                 )}
                 {actionResult && (
                   <div className="mt-4 rounded-xl border border-primary-200 bg-primary-50/40 p-4 dark:border-primary-400/20 dark:bg-primary-400/10">
-                    <p className="whitespace-pre-wrap text-sm leading-7">{actionResult}</p>
-                    {!contextualCaseId && selected && <Button className="mt-3" variant="secondary" onClick={() => void saveActionResult()}>Salvar na revisão interna</Button>}
+                    <p className="whitespace-pre-wrap text-sm leading-7">
+                      {actionResult}
+                    </p>
+                    {!contextualCaseId && selected && (
+                      <Button
+                        className="mt-3"
+                        variant="secondary"
+                        onClick={() => void saveActionResult()}
+                      >
+                        Salvar na revisão interna
+                      </Button>
+                    )}
                   </div>
                 )}
               </SectionCard>
@@ -950,20 +1250,30 @@ export default function RaioXProcesso() {
                   title="Análise do advogado sênior (IA)"
                   subtitle="Parecer estratégico FIRAC movido pelo agente (dossiê + precedentes). Somente leitura; nada é alterado no caso. Operação cara — rascunho sujeito a revisão humana (OAB)."
                   actions={
-                    <Button variant="ai" onClick={() => void runAdvogadoIA()} disabled={advLoading}>
-                      {advLoading ? <Loader2 className="h-4 w-4 animate-spin" /> : <Scale className="h-4 w-4" />}
+                    <Button
+                      variant="ai"
+                      onClick={() => void runAdvogadoIA()}
+                      disabled={advLoading}
+                    >
+                      {advLoading ? (
+                        <Loader2 className="h-4 w-4 animate-spin" />
+                      ) : (
+                        <Scale className="h-4 w-4" />
+                      )}
                       Análise do advogado (IA)
                     </Button>
                   }
                 >
                   {!advResult && !advLoading && !advError && (
                     <p className="text-sm text-slate-500">
-                      Gere um parecer do caso como faria um advogado sênior antes de definir a estratégia.
+                      Gere um parecer do caso como faria um advogado sênior
+                      antes de definir a estratégia.
                     </p>
                   )}
                   {advLoading && (
                     <div className="flex items-center gap-2 text-sm text-slate-500">
-                      <Loader2 className="h-4 w-4 animate-spin" /> O agente está analisando o caso… pode levar alguns instantes.
+                      <Loader2 className="h-4 w-4 animate-spin" /> O agente está
+                      analisando o caso… pode levar alguns instantes.
                     </div>
                   )}
                   {advError && !advLoading && (
@@ -975,53 +1285,75 @@ export default function RaioXProcesso() {
                   {advResult && advResult.status === "indisponivel" && (
                     <div className="flex items-start gap-2 rounded-xl border border-amber-200 bg-amber-50 p-3 text-sm text-amber-800">
                       <ShieldCheck className="mt-0.5 h-4 w-4 shrink-0" />
-                      Recurso de IA do agente desativado no servidor (AI_AGENT_ENABLED). Solicite a ativação à administração.
+                      Recurso de IA do agente desativado no servidor
+                      (AI_AGENT_ENABLED). Solicite a ativação à administração.
                     </div>
                   )}
-                  {advResult && advResult.status !== "ok" && advResult.status !== "indisponivel" && (
-                    <div className="flex items-start gap-2 rounded-xl border border-red-200 bg-red-50 p-3 text-sm text-red-700">
-                      <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0" />
-                      Não foi possível concluir a análise{advResult.detalhe ? ` (${advResult.detalhe})` : ""}.
-                    </div>
-                  )}
-                  {advResult && advResult.status === "ok" && advResult.analise && (
-                    <div className="space-y-3">
-                      <div className="flex flex-wrap items-center gap-2">
-                        <Badge tone="amber">RASCUNHO</Badge>
-                        {advResult.revisao_obrigatoria && <Badge tone="orange">Revisão humana obrigatória</Badge>}
-                        {typeof advResult.custo_estimado_brl === "number" && advResult.custo_estimado_brl > 0 && (
-                          <Badge tone="slate">R$ {advResult.custo_estimado_brl.toFixed(4)}</Badge>
+                  {advResult &&
+                    advResult.status !== "ok" &&
+                    advResult.status !== "indisponivel" && (
+                      <div className="flex items-start gap-2 rounded-xl border border-red-200 bg-red-50 p-3 text-sm text-red-700">
+                        <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0" />
+                        Não foi possível concluir a análise
+                        {advResult.detalhe ? ` (${advResult.detalhe})` : ""}.
+                      </div>
+                    )}
+                  {advResult &&
+                    advResult.status === "ok" &&
+                    advResult.analise && (
+                      <div className="space-y-3">
+                        <div className="flex flex-wrap items-center gap-2">
+                          <Badge tone="amber">RASCUNHO</Badge>
+                          {advResult.revisao_obrigatoria && (
+                            <Badge tone="orange">
+                              Revisão humana obrigatória
+                            </Badge>
+                          )}
+                          {typeof advResult.custo_estimado_brl === "number" &&
+                            advResult.custo_estimado_brl > 0 && (
+                              <Badge tone="slate">
+                                R$ {advResult.custo_estimado_brl.toFixed(4)}
+                              </Badge>
+                            )}
+                          {advResult.critica_adversarial?.disponivel &&
+                            typeof advResult.critica_adversarial
+                              .nota_robustez === "number" && (
+                              <Badge tone="blue">
+                                Robustez (2ª IA):{" "}
+                                {advResult.critica_adversarial.nota_robustez}
+                              </Badge>
+                            )}
+                        </div>
+                        <Markdown
+                          source={advResult.analise}
+                          className="max-h-[32rem] overflow-auto rounded-xl bg-slate-50 p-4 text-sm leading-7 text-slate-800 dark:bg-white/[0.04] dark:text-slate-200"
+                        />
+                        {!!advResult.alertas?.length && (
+                          <ul className="space-y-1 text-xs text-warn-700">
+                            {advResult.alertas.map((a, index) => (
+                              <li
+                                key={index}
+                                className="flex items-start gap-1.5"
+                              >
+                                <AlertTriangle className="mt-0.5 h-3 w-3 shrink-0" />{" "}
+                                {a}
+                              </li>
+                            ))}
+                          </ul>
                         )}
                         {advResult.critica_adversarial?.disponivel &&
-                          typeof advResult.critica_adversarial.nota_robustez === "number" && (
-                            <Badge tone="blue">Robustez (2ª IA): {advResult.critica_adversarial.nota_robustez}</Badge>
+                          advResult.critica_adversarial.relatorio && (
+                            <details className="rounded-xl border border-slate-200 p-3 dark:border-white/10">
+                              <summary className="cursor-pointer text-sm font-medium text-slate-700 dark:text-slate-200">
+                                Crítica adversarial (2ª IA)
+                              </summary>
+                              <p className="mt-2 whitespace-pre-wrap text-xs leading-6 text-slate-600 dark:text-slate-300">
+                                {advResult.critica_adversarial.relatorio}
+                              </p>
+                            </details>
                           )}
                       </div>
-                      <Markdown
-                        source={advResult.analise}
-                        className="max-h-[32rem] overflow-auto rounded-xl bg-slate-50 p-4 text-sm leading-7 text-slate-800 dark:bg-white/[0.04] dark:text-slate-200"
-                      />
-                      {!!advResult.alertas?.length && (
-                        <ul className="space-y-1 text-xs text-warn-700">
-                          {advResult.alertas.map((a, index) => (
-                            <li key={index} className="flex items-start gap-1.5">
-                              <AlertTriangle className="mt-0.5 h-3 w-3 shrink-0" /> {a}
-                            </li>
-                          ))}
-                        </ul>
-                      )}
-                      {advResult.critica_adversarial?.disponivel && advResult.critica_adversarial.relatorio && (
-                        <details className="rounded-xl border border-slate-200 p-3 dark:border-white/10">
-                          <summary className="cursor-pointer text-sm font-medium text-slate-700 dark:text-slate-200">
-                            Crítica adversarial (2ª IA)
-                          </summary>
-                          <p className="mt-2 whitespace-pre-wrap text-xs leading-6 text-slate-600 dark:text-slate-300">
-                            {advResult.critica_adversarial.relatorio}
-                          </p>
-                        </details>
-                      )}
-                    </div>
-                  )}
+                    )}
                 </SectionCard>
               )}
             </div>
@@ -1030,42 +1362,103 @@ export default function RaioXProcesso() {
               <SectionCard title="Identificação">
                 <dl className="space-y-3 text-sm">
                   {Object.entries(identification).map(([key, value]) => (
-                    <div key={key} className="flex justify-between gap-3 border-b border-slate-100 pb-2 dark:border-white/10">
+                    <div
+                      key={key}
+                      className="flex justify-between gap-3 border-b border-slate-100 pb-2 dark:border-white/10"
+                    >
                       <dt className="text-slate-500">{humanize(key)}</dt>
-                      <dd className="text-right font-medium text-slate-900 dark:text-white">{stringify(value)}</dd>
+                      <dd className="text-right font-medium text-slate-900 dark:text-white">
+                        {stringify(value)}
+                      </dd>
                     </div>
                   ))}
                 </dl>
               </SectionCard>
 
               {!contextual && selected && !selected.convertido_case_id && (
-                <SectionCard title="Conferência humana" subtitle="Corrija área, rito, fase e dados essenciais antes da conversão.">
+                <SectionCard
+                  title="Conferência humana"
+                  subtitle="Corrija área, rito, fase e dados essenciais antes da conversão."
+                >
                   <div className="space-y-3">
-                    <label className="block text-sm font-medium">Número do processo
-                      <input value={review.numero_processo} onChange={(event) => setReview((value) => ({ ...value, numero_processo: event.target.value }))} className="mt-1 w-full rounded-xl border border-slate-200 px-3 py-2 dark:border-white/10 dark:bg-white/[0.04]" />
+                    <label className="block text-sm font-medium">
+                      Número do processo
+                      <input
+                        value={review.numero_processo}
+                        onChange={(event) =>
+                          setReview((value) => ({
+                            ...value,
+                            numero_processo: event.target.value,
+                          }))
+                        }
+                        className="mt-1 w-full rounded-xl border border-slate-200 px-3 py-2 dark:border-white/10 dark:bg-white/[0.04]"
+                      />
                     </label>
-                    <label className="block text-sm font-medium">Área
-                      <select value={review.area} onChange={(event) => setReview((value) => ({ ...value, area: event.target.value }))} className="mt-1 w-full rounded-xl border border-slate-200 px-3 py-2 dark:border-white/10 dark:bg-slate-900">
-                        {areas.map((area) => <option key={area.slug} value={area.slug}>{area.nome}</option>)}
+                    <label className="block text-sm font-medium">
+                      Área
+                      <select
+                        value={review.area}
+                        onChange={(event) =>
+                          setReview((value) => ({
+                            ...value,
+                            area: event.target.value,
+                          }))
+                        }
+                        className="mt-1 w-full rounded-xl border border-slate-200 px-3 py-2 dark:border-white/10 dark:bg-slate-900"
+                      >
+                        {areas.map((area) => (
+                          <option key={area.slug} value={area.slug}>
+                            {area.nome}
+                          </option>
+                        ))}
                       </select>
                     </label>
-                    {([
-                      ["subarea", "Subárea"],
-                      ["rito", "Rito"],
-                      ["fase", "Fase ou etapa"],
-                      ["tribunal", "Tribunal"],
-                      ["orgao", "Órgão"],
-                      ["unidade", "Unidade"],
-                      ["posicao_cliente", "Posição do potencial cliente"],
-                    ] as const).map(([field, label]) => (
-                      <label key={field} className="block text-sm font-medium">{label}
-                        <input value={review[field]} onChange={(event) => setReview((value) => ({ ...value, [field]: event.target.value }))} className="mt-1 w-full rounded-xl border border-slate-200 px-3 py-2 dark:border-white/10 dark:bg-white/[0.04]" />
+                    {(
+                      [
+                        ["subarea", "Subárea"],
+                        ["rito", "Rito"],
+                        ["fase", "Fase ou etapa"],
+                        ["tribunal", "Tribunal"],
+                        ["orgao", "Órgão"],
+                        ["unidade", "Unidade"],
+                        ["posicao_cliente", "Posição do potencial cliente"],
+                      ] as const
+                    ).map(([field, label]) => (
+                      <label key={field} className="block text-sm font-medium">
+                        {label}
+                        <input
+                          value={review[field]}
+                          onChange={(event) =>
+                            setReview((value) => ({
+                              ...value,
+                              [field]: event.target.value,
+                            }))
+                          }
+                          className="mt-1 w-full rounded-xl border border-slate-200 px-3 py-2 dark:border-white/10 dark:bg-white/[0.04]"
+                        />
                       </label>
                     ))}
-                    <label className="block text-sm font-medium">Síntese revisada
-                      <textarea rows={8} value={review.sintese} onChange={(event) => setReview((value) => ({ ...value, sintese: event.target.value }))} className="mt-1 w-full rounded-xl border border-slate-200 px-3 py-2 text-sm dark:border-white/10 dark:bg-white/[0.04]" />
+                    <label className="block text-sm font-medium">
+                      Síntese revisada
+                      <textarea
+                        rows={8}
+                        value={review.sintese}
+                        onChange={(event) =>
+                          setReview((value) => ({
+                            ...value,
+                            sintese: event.target.value,
+                          }))
+                        }
+                        className="mt-1 w-full rounded-xl border border-slate-200 px-3 py-2 text-sm dark:border-white/10 dark:bg-white/[0.04]"
+                      />
                     </label>
-                    <Button className="w-full" onClick={() => void saveReview()} disabled={busy}><CheckCircle2 className="h-4 w-4" /> Salvar conferência</Button>
+                    <Button
+                      className="w-full"
+                      onClick={() => void saveReview()}
+                      disabled={busy}
+                    >
+                      <CheckCircle2 className="h-4 w-4" /> Salvar conferência
+                    </Button>
                   </div>
                 </SectionCard>
               )}
@@ -1075,25 +1468,70 @@ export default function RaioXProcesso() {
                   {!contextual && selected && (
                     <>
                       <div className="grid grid-cols-2 gap-2">
-                        <Button variant="secondary" onClick={() => void exportReport("pdf")}><Download className="h-4 w-4" /> PDF</Button>
-                        <Button variant="secondary" onClick={() => void exportReport("docx")}><Download className="h-4 w-4" /> Word</Button>
+                        <Button
+                          variant="secondary"
+                          onClick={() => void exportReport("pdf")}
+                        >
+                          <Download className="h-4 w-4" /> PDF
+                        </Button>
+                        <Button
+                          variant="secondary"
+                          onClick={() => void exportReport("docx")}
+                        >
+                          <Download className="h-4 w-4" /> Word
+                        </Button>
                       </div>
                       <div className="grid grid-cols-2 gap-2">
-                        <Button variant="ghost" onClick={() => void reconsolidate(false)}><RefreshCw className="h-4 w-4" /> Reconsolidar</Button>
-                        <Button variant="ghost" onClick={() => void reconsolidate(true)}><RefreshCw className="h-4 w-4" /> Reprocessar</Button>
+                        <Button
+                          variant="ghost"
+                          onClick={() => void reconsolidate(false)}
+                        >
+                          <RefreshCw className="h-4 w-4" /> Reconsolidar
+                        </Button>
+                        <Button
+                          variant="ghost"
+                          onClick={() => void reconsolidate(true)}
+                        >
+                          <RefreshCw className="h-4 w-4" /> Reprocessar
+                        </Button>
                       </div>
                     </>
                   )}
-                  {!contextual && selected && !selected.convertido_case_id && canConvert && (
-                    <Button className="w-full" onClick={() => void openConversion()} disabled={selected.status !== "analise_concluida"}><FolderInput className="h-4 w-4" /> Transformar em caso</Button>
-                  )}
-                  {!contextual && selected && !selected.convertido_case_id && !canConvert && (
-                    <p className="rounded-lg bg-slate-50 p-3 text-xs text-slate-600 dark:bg-white/[0.04] dark:text-slate-300">Seu perfil pode revisar o Raio-X, mas a conversão deve ser feita por advogado autorizado ou pela gestão.</p>
-                  )}
+                  {!contextual &&
+                    selected &&
+                    !selected.convertido_case_id &&
+                    canConvert && (
+                      <Button
+                        className="w-full"
+                        onClick={() => void openConversion()}
+                        disabled={selected.status !== "analise_concluida"}
+                      >
+                        <FolderInput className="h-4 w-4" /> Transformar em caso
+                      </Button>
+                    )}
+                  {!contextual &&
+                    selected &&
+                    !selected.convertido_case_id &&
+                    !canConvert && (
+                      <p className="rounded-lg bg-slate-50 p-3 text-xs text-slate-600 dark:bg-white/[0.04] dark:text-slate-300">
+                        Seu perfil pode revisar o Raio-X, mas a conversão deve
+                        ser feita por advogado autorizado ou pela gestão.
+                      </p>
+                    )}
                   {!contextual && selected && !selected.convertido_case_id && (
                     <div className="grid grid-cols-2 gap-2">
-                      <Button variant="ghost" onClick={() => void archive("arquivar")}><Archive className="h-4 w-4" /> Arquivar</Button>
-                      <Button variant="danger" onClick={() => void archive("descartar")}><Trash2 className="h-4 w-4" /> Descartar</Button>
+                      <Button
+                        variant="ghost"
+                        onClick={() => void archive("arquivar")}
+                      >
+                        <Archive className="h-4 w-4" /> Arquivar
+                      </Button>
+                      <Button
+                        variant="danger"
+                        onClick={() => void archive("descartar")}
+                      >
+                        <Trash2 className="h-4 w-4" /> Descartar
+                      </Button>
                     </div>
                   )}
                 </div>
@@ -1108,72 +1546,200 @@ export default function RaioXProcesso() {
           <div className="max-h-[92vh] w-full max-w-3xl overflow-y-auto rounded-2xl border border-slate-200 bg-white p-6 shadow-float dark:border-white/10 dark:bg-slate-900">
             <div className="flex items-start justify-between">
               <div>
-                <h2 className="text-xl font-semibold">Transformar em caso do escritório</h2>
-                <p className="mt-1 text-sm text-slate-500">Revise duplicidades, conflito, cliente, documentos e itens a transferir.</p>
+                <h2 className="text-xl font-semibold">
+                  Transformar em caso do escritório
+                </h2>
+                <p className="mt-1 text-sm text-slate-500">
+                  Revise duplicidades, conflito, cliente, documentos e itens a
+                  transferir.
+                </p>
               </div>
-              <button onClick={() => setShowConversion(false)} aria-label="Fechar"><X /></button>
+              <button
+                onClick={() => setShowConversion(false)}
+                aria-label="Fechar"
+              >
+                <X />
+              </button>
             </div>
 
-            {conversion.bloqueia && <div className="mt-4 rounded-xl border border-amber-200 bg-amber-50 p-3 text-sm text-amber-800">Existem alertas de duplicidade ou conflito. A confirmação é obrigatória e ficará registrada.</div>}
-            <div className="mt-4"><RiskBadge value={conversion.risco_nivel} urgent={conversion.prazo_urgente} /></div>
+            {conversion.bloqueia && (
+              <div className="mt-4 rounded-xl border border-amber-200 bg-amber-50 p-3 text-sm text-amber-800">
+                Existem alertas de duplicidade ou conflito. A confirmação é
+                obrigatória e ficará registrada.
+              </div>
+            )}
+            <div className="mt-4">
+              <RiskBadge
+                value={conversion.risco_nivel}
+                urgent={conversion.prazo_urgente}
+              />
+            </div>
 
             <div className="mt-5 grid gap-4 md:grid-cols-2">
-              <label className="block text-sm font-medium">Cliente existente
-                <input value={existingClientId} onChange={(event) => setExistingClientId(event.target.value)} className="mt-1 w-full rounded-xl border px-3 py-2 dark:bg-white/[0.04]" placeholder="Selecione abaixo ou informe o ID" />
+              <label className="block text-sm font-medium">
+                Cliente existente
+                <input
+                  value={existingClientId}
+                  onChange={(event) => setExistingClientId(event.target.value)}
+                  className="mt-1 w-full rounded-xl border px-3 py-2 dark:bg-white/[0.04]"
+                  placeholder="Selecione abaixo ou informe o ID"
+                />
               </label>
-              <label className="block text-sm font-medium">Nome do novo cliente
-                <input value={newClientName} onChange={(event) => setNewClientName(event.target.value)} disabled={Boolean(existingClientId)} className="mt-1 w-full rounded-xl border px-3 py-2 disabled:opacity-50 dark:bg-white/[0.04]" />
+              <label className="block text-sm font-medium">
+                Nome do novo cliente
+                <input
+                  value={newClientName}
+                  onChange={(event) => setNewClientName(event.target.value)}
+                  disabled={Boolean(existingClientId)}
+                  className="mt-1 w-full rounded-xl border px-3 py-2 disabled:opacity-50 dark:bg-white/[0.04]"
+                />
               </label>
-              <label className="block text-sm font-medium">CPF do novo cliente
-                <input value={newClientCpf} onChange={(event) => setNewClientCpf(event.target.value)} disabled={Boolean(existingClientId)} className="mt-1 w-full rounded-xl border px-3 py-2 disabled:opacity-50 dark:bg-white/[0.04]" />
+              <label className="block text-sm font-medium">
+                CPF do novo cliente
+                <input
+                  value={newClientCpf}
+                  onChange={(event) => setNewClientCpf(event.target.value)}
+                  disabled={Boolean(existingClientId)}
+                  className="mt-1 w-full rounded-xl border px-3 py-2 disabled:opacity-50 dark:bg-white/[0.04]"
+                />
               </label>
-              <label className="block text-sm font-medium">Título do caso
-                <input value={caseTitle} onChange={(event) => setCaseTitle(event.target.value)} className="mt-1 w-full rounded-xl border px-3 py-2 dark:bg-white/[0.04]" />
+              <label className="block text-sm font-medium">
+                Título do caso
+                <input
+                  value={caseTitle}
+                  onChange={(event) => setCaseTitle(event.target.value)}
+                  className="mt-1 w-full rounded-xl border px-3 py-2 dark:bg-white/[0.04]"
+                />
               </label>
             </div>
 
             {!!conversion.clientes_possivelmente_duplicados.length && (
               <div className="mt-4 rounded-xl border border-slate-200 p-4 dark:border-white/10">
-                <h3 className="text-sm font-semibold">Clientes semelhantes encontrados</h3>
+                <h3 className="text-sm font-semibold">
+                  Clientes semelhantes encontrados
+                </h3>
                 <div className="mt-3 flex flex-wrap gap-2">
-                  {conversion.clientes_possivelmente_duplicados.map((client, index) => (
-                    <button type="button" key={String(client.id || index)} onClick={() => setExistingClientId(String(client.id || ""))} className="rounded-lg border border-slate-200 px-3 py-2 text-left text-xs hover:border-primary-400 dark:border-white/10">
-                      <strong>{String(client.nome || "Cliente")}</strong><span className="ml-2 text-slate-500">{String(client.id || "")}</span>
-                    </button>
-                  ))}
+                  {conversion.clientes_possivelmente_duplicados.map(
+                    (client, index) => (
+                      <button
+                        type="button"
+                        key={String(client.id || index)}
+                        onClick={() =>
+                          setExistingClientId(String(client.id || ""))
+                        }
+                        className="rounded-lg border border-slate-200 px-3 py-2 text-left text-xs hover:border-primary-400 dark:border-white/10"
+                      >
+                        <strong>{String(client.nome || "Cliente")}</strong>
+                        <span className="ml-2 text-slate-500">
+                          {String(client.id || "")}
+                        </span>
+                      </button>
+                    ),
+                  )}
                 </div>
               </div>
             )}
 
-            {!!conversion.alertas_conflito.length && <ReportList title="Alertas de conflito a revisar" items={conversion.alertas_conflito} />}
+            {!!conversion.alertas_conflito.length && (
+              <ReportList
+                title="Alertas de conflito a revisar"
+                items={conversion.alertas_conflito}
+              />
+            )}
 
             <div className="mt-5 rounded-xl bg-slate-50 p-4 text-sm dark:bg-white/[0.04]">
               <h3 className="font-semibold">Documentos a incorporar ao GED</h3>
               <div className="mt-3 space-y-2">
                 {conversion.documentos_disponiveis.map((doc) => (
                   <label key={doc.id} className="flex items-center gap-2">
-                    <input type="checkbox" checked={selectedDocumentIds.includes(doc.id)} onChange={() => setSelectedDocumentIds((current) => current.includes(doc.id) ? current.filter((item) => item !== doc.id) : [...current, doc.id])} />
-                    <span>{doc.nome}</span>{doc.tipo && <Badge tone="blue">{doc.tipo}</Badge>}
+                    <input
+                      type="checkbox"
+                      checked={selectedDocumentIds.includes(doc.id)}
+                      onChange={() =>
+                        setSelectedDocumentIds((current) =>
+                          current.includes(doc.id)
+                            ? current.filter((item) => item !== doc.id)
+                            : [...current, doc.id],
+                        )
+                      }
+                    />
+                    <span>{doc.nome}</span>
+                    {doc.tipo && <Badge tone="blue">{doc.tipo}</Badge>}
                   </label>
                 ))}
               </div>
             </div>
 
             <div className="mt-4 space-y-3 rounded-xl bg-slate-50 p-4 text-sm dark:bg-white/[0.04]">
-              <label className="flex items-center gap-2"><input type="checkbox" checked={transferDeadlines} onChange={(event) => setTransferDeadlines(event.target.checked)} /> Transferir prazos como rascunho não confirmado</label>
-              <label className="flex items-center gap-2"><input type="checkbox" checked={transferTasks} onChange={(event) => setTransferTasks(event.target.checked)} /> Transferir próximos passos como tarefas</label>
+              <label className="flex items-center gap-2">
+                <input
+                  type="checkbox"
+                  checked={transferDeadlines}
+                  onChange={(event) =>
+                    setTransferDeadlines(event.target.checked)
+                  }
+                />{" "}
+                Transferir prazos como rascunho não confirmado
+              </label>
+              <label className="flex items-center gap-2">
+                <input
+                  type="checkbox"
+                  checked={transferTasks}
+                  onChange={(event) => setTransferTasks(event.target.checked)}
+                />{" "}
+                Transferir próximos passos como tarefas
+              </label>
             </div>
 
-            {requiresDuplicateConfirmation && <label className="mt-4 flex items-start gap-2 rounded-xl border border-amber-200 bg-amber-50 p-3 text-sm text-amber-900"><input className="mt-1" type="checkbox" checked={confirmDuplicate} onChange={(event) => setConfirmDuplicate(event.target.checked)} /> Revisei a possível duplicidade e autorizo a continuidade.</label>}
-            {requiresConflictConfirmation && <label className="mt-3 flex items-start gap-2 rounded-xl border border-red-200 bg-red-50 p-3 text-sm text-red-900"><input className="mt-1" type="checkbox" checked={confirmConflict} onChange={(event) => setConfirmConflict(event.target.checked)} /> Realizei a análise humana de conflito e autorizo a continuidade.</label>}
+            {requiresDuplicateConfirmation && (
+              <label className="mt-4 flex items-start gap-2 rounded-xl border border-amber-200 bg-amber-50 p-3 text-sm text-amber-900">
+                <input
+                  className="mt-1"
+                  type="checkbox"
+                  checked={confirmDuplicate}
+                  onChange={(event) =>
+                    setConfirmDuplicate(event.target.checked)
+                  }
+                />{" "}
+                Revisei a possível duplicidade e autorizo a continuidade.
+              </label>
+            )}
+            {requiresConflictConfirmation && (
+              <label className="mt-3 flex items-start gap-2 rounded-xl border border-red-200 bg-red-50 p-3 text-sm text-red-900">
+                <input
+                  className="mt-1"
+                  type="checkbox"
+                  checked={confirmConflict}
+                  onChange={(event) => setConfirmConflict(event.target.checked)}
+                />{" "}
+                Realizei a análise humana de conflito e autorizo a continuidade.
+              </label>
+            )}
 
-            <label className="mt-4 block text-sm font-medium">Confirmação textual
-              <input value={confirmText} onChange={(event) => setConfirmText(event.target.value)} className="mt-1 w-full rounded-xl border px-3 py-2 dark:bg-white/[0.04]" placeholder="TRANSFORMAR EM CASO DO ESCRITÓRIO" />
+            <label className="mt-4 block text-sm font-medium">
+              Confirmação textual
+              <input
+                value={confirmText}
+                onChange={(event) => setConfirmText(event.target.value)}
+                className="mt-1 w-full rounded-xl border px-3 py-2 dark:bg-white/[0.04]"
+                placeholder="TRANSFORMAR EM CASO DO ESCRITÓRIO"
+              />
             </label>
 
             <div className="mt-6 flex justify-end gap-2">
-              <Button variant="secondary" onClick={() => setShowConversion(false)}>Cancelar</Button>
-              <Button onClick={() => void convert()} disabled={!conversionConfirmed || busy}>{busy && <Loader2 className="h-4 w-4 animate-spin" />} Confirmar conversão</Button>
+              <Button
+                variant="secondary"
+                onClick={() => setShowConversion(false)}
+              >
+                Cancelar
+              </Button>
+              <Button
+                onClick={() => void convert()}
+                disabled={!conversionConfirmed || busy}
+              >
+                {busy && <Loader2 className="h-4 w-4 animate-spin" />} Confirmar
+                conversão
+              </Button>
             </div>
           </div>
         </div>

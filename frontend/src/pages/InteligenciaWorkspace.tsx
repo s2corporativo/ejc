@@ -83,7 +83,9 @@ export default function InteligenciaWorkspace() {
       TABS.filter(
         (tab) =>
           !("roles" in tab) ||
-          Boolean(user?.role && (tab.roles as readonly string[]).includes(user.role)),
+          Boolean(
+            user?.role && (tab.roles as readonly string[]).includes(user.role),
+          ),
       ),
     [user?.role],
   );
@@ -132,8 +134,8 @@ export default function InteligenciaWorkspace() {
           <div>
             <p className="font-semibold">Inteligência artificial não ativada</p>
             <p className="mt-1 text-sm">
-              {iaMensagem || MENSAGEM_IA_NAO_ATIVADA} As calculadoras e validações
-              determinísticas continuam disponíveis.
+              {iaMensagem || MENSAGEM_IA_NAO_ATIVADA} As calculadoras e
+              validações determinísticas continuam disponíveis.
             </p>
           </div>
         </div>

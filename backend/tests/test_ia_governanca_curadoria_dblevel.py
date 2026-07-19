@@ -26,8 +26,10 @@ pytestmark = pytest.mark.skipif(
 async def _criar_user(db, role: str = "socio") -> str:
     uid = str(uuid4())
     await db.execute(
-        text("INSERT INTO users (id, email, hashed_password, full_name, role, is_active) "
-             "VALUES (:id, :email, 'x', 'Curadoria Teste', :role, true)"),
+        text(
+            "INSERT INTO users (id, email, hashed_password, full_name, role, is_active) "
+            "VALUES (:id, :email, 'x', 'Curadoria Teste', :role, true)"
+        ),
         {"id": uid, "email": f"cur-{uid[:8]}@teste.local", "role": role},
     )
     return uid
@@ -35,24 +37,34 @@ async def _criar_user(db, role: str = "socio") -> str:
 
 async def _carregar_user(db, uid: str):
     from app.models.user import User
+
     return (await db.execute(select(User).where(User.id == uid))).scalar_one()
 
 
 async def _criar_doc(db, categoria: str, confianca: str) -> str:
     from app.models.rag import KnowledgeDoc
+
     did = str(uuid4())
-    db.add(KnowledgeDoc(
-        id=did, titulo=f"Doc {did[:8]}", categoria=categoria,
-        status_indexacao="indexado", extra={"confidence_level": confianca},
-    ))
+    db.add(
+        KnowledgeDoc(
+            id=did,
+            titulo=f"Doc {did[:8]}",
+            categoria=categoria,
+            status_indexacao="indexado",
+            extra={"confidence_level": confianca},
+        )
+    )
     return did
 
 
 @pytest.fixture(autouse=True)
-async def _dispose_engine_apos_teste():
-    yield
+async def _isolar_pool_por_event_loop():
+    """Descarta conexões asyncpg herdadas de loops encerrados por outros testes."""
     from app.core.database import engine
-    await engine.dispose()
+
+    await engine.dispose(close=False)
+    yield
+    await engine.dispose(close=False)
 
 
 async def test_filtro_confianca_no_sql_corrige_total_e_paginas():
@@ -69,15 +81,25 @@ async def test_filtro_confianca_no_sql_corrige_total_e_paginas():
         try:
             # Sem filtro: 5 docs na categoria.
             todos = await listar_curadoria(
-                page=1, page_size=2, categoria=cat, confianca=None,
-                busca=None, db=db, cu=cu,
+                page=1,
+                page_size=2,
+                categoria=cat,
+                confianca=None,
+                busca=None,
+                db=db,
+                cu=cu,
             )
             assert todos["total"] == 5
 
             # Com filtro: total reflete SÓ os "alta" (3), mesmo com page_size < total.
             page1 = await listar_curadoria(
-                page=1, page_size=2, categoria=cat, confianca="alta",
-                busca=None, db=db, cu=cu,
+                page=1,
+                page_size=2,
+                categoria=cat,
+                confianca="alta",
+                busca=None,
+                db=db,
+                cu=cu,
             )
             assert page1["total"] == 3
             assert len(page1["data"]) == 2
@@ -85,13 +107,20 @@ async def test_filtro_confianca_no_sql_corrige_total_e_paginas():
 
             # Página 2 traz o 3º "alta" (paginação correta pós-filtro).
             page2 = await listar_curadoria(
-                page=2, page_size=2, categoria=cat, confianca="alta",
-                busca=None, db=db, cu=cu,
+                page=2,
+                page_size=2,
+                categoria=cat,
+                confianca="alta",
+                busca=None,
+                db=db,
+                cu=cu,
             )
             assert len(page2["data"]) == 1
             assert page2["data"][0]["confidence_level"] == "alta"
         finally:
             for did in alta_ids + baixa_ids:
-                await db.execute(text("DELETE FROM knowledge_docs WHERE id = :id"), {"id": did})
+                await db.execute(
+                    text("DELETE FROM knowledge_docs WHERE id = :id"), {"id": did}
+                )
             await db.execute(text("DELETE FROM users WHERE id = :id"), {"id": uid})
             await db.commit()

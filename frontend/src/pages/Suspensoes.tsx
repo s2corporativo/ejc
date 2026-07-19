@@ -45,7 +45,9 @@ export default function Suspensoes() {
     carregar();
     api
       .get("/suspensoes/tribunais")
-      .then((r) => setTribunais(Array.isArray(r.data?.tribunais) ? r.data.tribunais : []))
+      .then((r) =>
+        setTribunais(Array.isArray(r.data?.tribunais) ? r.data.tribunais : []),
+      )
       .catch(() => {});
   }, []);
 

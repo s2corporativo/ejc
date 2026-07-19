@@ -153,9 +153,10 @@ export default function Documentos() {
   const [loteCaso, setLoteCaso] = useState("");
 
   // Pré-visualização sem download (blob de GET /{id}/download).
-  const [preview, setPreview] = useState<{ doc: any; kind: "pdf" | "img" } | null>(
-    null,
-  );
+  const [preview, setPreview] = useState<{
+    doc: any;
+    kind: "pdf" | "img";
+  } | null>(null);
   const [previewUrl, setPreviewUrl] = useState<string | null>(null);
   const [previewErro, setPreviewErro] = useState<string | null>(null);
   // Espelho da object URL ativa p/ revogá-la no unmount (evita vazamento de blob
@@ -454,9 +455,7 @@ export default function Documentos() {
   const excluirSelecionados = async () => {
     if (selDocs.length === 0) return;
     if (
-      !window.confirm(
-        `Excluir ${selDocs.length} documento(s) selecionado(s)?`,
-      )
+      !window.confirm(`Excluir ${selDocs.length} documento(s) selecionado(s)?`)
     )
       return;
     setLoteBusy("delete");
@@ -976,7 +975,8 @@ export default function Documentos() {
               tabIndex={0}
               onClick={() => fileRef.current?.click()}
               onKeyDown={(e) => {
-                if (e.key === "Enter" || e.key === " ") fileRef.current?.click();
+                if (e.key === "Enter" || e.key === " ")
+                  fileRef.current?.click();
               }}
               onDragOver={(e) => {
                 e.preventDefault();
@@ -1185,7 +1185,10 @@ export default function Documentos() {
                 className="input"
                 value={editForm.confidencialidade || "normal"}
                 onChange={(e) =>
-                  setEditForm({ ...editForm, confidencialidade: e.target.value })
+                  setEditForm({
+                    ...editForm,
+                    confidencialidade: e.target.value,
+                  })
                 }
               >
                 {CONF_OPCOES.map((c) => (

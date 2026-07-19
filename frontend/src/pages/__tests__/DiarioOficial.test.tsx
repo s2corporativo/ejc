@@ -11,7 +11,13 @@ import { MemoryRouter } from "react-router-dom";
 // vi.hoisted: o factory de vi.mock é içado ao topo — precisa acessar `get` assim.
 const { get } = vi.hoisted(() => ({ get: vi.fn() }));
 vi.mock("../../lib/api", () => ({
-  default: { get, post: vi.fn(), put: vi.fn(), patch: vi.fn(), delete: vi.fn() },
+  default: {
+    get,
+    post: vi.fn(),
+    put: vi.fn(),
+    patch: vi.fn(),
+    delete: vi.fn(),
+  },
 }));
 vi.mock("../../components/Toast", () => ({
   toast: { success: vi.fn(), error: vi.fn(), info: vi.fn() },
@@ -40,12 +46,16 @@ describe("DiarioOficial — resposta não-array não quebra o render", () => {
     // até o re-render pós-loading) em vez de checar document.body.textContent logo
     // após a chamada da API — essa checagem pegava o Spinner (sem texto) e falhava
     // de forma intermitente ("expected 0 to be greater than 0").
-    expect(await screen.findByRole("heading", { name: /Diário Oficial/ })).toBeTruthy();
+    expect(
+      await screen.findByRole("heading", { name: /Diário Oficial/ }),
+    ).toBeTruthy();
   });
 
   it("API devolvendo objeto de erro (não-array) → ainda não quebra", async () => {
     get.mockResolvedValue({ data: { detail: "erro qualquer" } });
     renderPage();
-    expect(await screen.findByRole("heading", { name: /Diário Oficial/ })).toBeTruthy();
+    expect(
+      await screen.findByRole("heading", { name: /Diário Oficial/ }),
+    ).toBeTruthy();
   });
 });

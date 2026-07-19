@@ -17,7 +17,10 @@ const sizeClass: Record<ButtonSize, string> = {
   lg: "px-5 py-2.5 text-sm rounded-lg",
 };
 
-export interface ButtonProps extends Omit<ButtonHTMLAttributes<HTMLButtonElement>, "size"> {
+export interface ButtonProps extends Omit<
+  ButtonHTMLAttributes<HTMLButtonElement>,
+  "size"
+> {
   variant?: ButtonVariant;
   size?: ButtonSize;
   leftIcon?: ReactNode;

@@ -1,6 +1,12 @@
 // @vitest-environment jsdom
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
+import {
+  cleanup,
+  fireEvent,
+  render,
+  screen,
+  waitFor,
+} from "@testing-library/react";
 import { MemoryRouter } from "react-router-dom";
 import type { OrquestradorVisao } from "../lib/api";
 
@@ -67,7 +73,11 @@ const visao: OrquestradorVisao = {
     ],
   },
   jornada: [
-    { etapa: "documentos_lidos", rotulo: "Documentos lidos", status: "concluida" },
+    {
+      etapa: "documentos_lidos",
+      rotulo: "Documentos lidos",
+      status: "concluida",
+    },
     {
       etapa: "area_confirmada",
       rotulo: "Área confirmada pelo advogado",
@@ -130,7 +140,9 @@ describe("OrquestradorPanel", () => {
   it("ato de aprovação humana não é executável direto e aponta o fluxo próprio", async () => {
     renderPanel();
 
-    expect(await screen.findByText("Aprovar snapshot de inteligência")).toBeTruthy();
+    expect(
+      await screen.findByText("Aprovar snapshot de inteligência"),
+    ).toBeTruthy();
     const desabilitado = screen.getByRole("button", {
       name: "Execução direta indisponível",
     }) as HTMLButtonElement;

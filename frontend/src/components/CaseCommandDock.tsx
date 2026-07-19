@@ -28,9 +28,8 @@ type CaseAreaLink = {
 };
 
 function detalheErro(error: unknown, fallback: string): string {
-  const detail = (
-    error as { response?: { data?: { detail?: unknown } } }
-  )?.response?.data?.detail;
+  const detail = (error as { response?: { data?: { detail?: unknown } } })
+    ?.response?.data?.detail;
   if (typeof detail === "string" && detail) return detail;
   if (
     detail &&
@@ -74,7 +73,9 @@ export default function CaseCommandDock({ caseId }: { caseId: string }) {
       const { data } = await api.get(`/cases/${caseId}/areas`);
       setAreas(Array.isArray(data?.areas) ? data.areas : []);
     } catch (error) {
-      toast.error(detalheErro(error, "Não foi possível carregar as áreas do caso."));
+      toast.error(
+        detalheErro(error, "Não foi possível carregar as áreas do caso."),
+      );
       setAreas([]);
     } finally {
       setAreasLoading(false);
@@ -110,7 +111,9 @@ export default function CaseCommandDock({ caseId }: { caseId: string }) {
       toast.error("A área principal não pode ser removida por esta ação.");
       return;
     }
-    if (!window.confirm(`Remover a área ${labels.get(area.area) || area.area}?`)) {
+    if (
+      !window.confirm(`Remover a área ${labels.get(area.area) || area.area}?`)
+    ) {
       return;
     }
     try {
@@ -147,7 +150,9 @@ export default function CaseCommandDock({ caseId }: { caseId: string }) {
       limparUpload();
       setView(null);
     } catch (error) {
-      toast.error(detalheErro(error, "Não foi possível anexar o documento ao caso."));
+      toast.error(
+        detalheErro(error, "Não foi possível anexar o documento ao caso."),
+      );
     } finally {
       setEnviando(false);
     }
@@ -225,7 +230,8 @@ export default function CaseCommandDock({ caseId }: { caseId: string }) {
                 <LayoutGrid className="h-4 w-4" /> Modo simples
               </div>
               <p className="mt-1 text-primary-700">
-                Escolha a tarefa. O workspace completo continua disponível na tela do caso.
+                Escolha a tarefa. O workspace completo continua disponível na
+                tela do caso.
               </p>
             </div>
 
@@ -275,18 +281,26 @@ export default function CaseCommandDock({ caseId }: { caseId: string }) {
           <div className="space-y-4">
             <div className="flex items-center justify-between gap-3">
               <div>
-                <h3 className="font-semibold text-slate-900">Áreas de atuação do caso</h3>
+                <h3 className="font-semibold text-slate-900">
+                  Áreas de atuação do caso
+                </h3>
                 <p className="mt-1 text-sm text-slate-500">
                   Taxonomia canônica do EJC, alimentada por GET /areas.
                 </p>
               </div>
-              <Button variant="ghost" size="icon" onClick={() => setView("menu")}>
+              <Button
+                variant="ghost"
+                size="icon"
+                onClick={() => setView("menu")}
+              >
                 <X className="h-4 w-4" />
               </Button>
             </div>
 
             {areasLoading ? (
-              <p className="py-6 text-center text-sm text-slate-500">Carregando áreas…</p>
+              <p className="py-6 text-center text-sm text-slate-500">
+                Carregando áreas…
+              </p>
             ) : areas.length === 0 ? (
               <EmptyState
                 icon={Scale}
@@ -345,12 +359,19 @@ export default function CaseCommandDock({ caseId }: { caseId: string }) {
           <div className="space-y-4">
             <div className="flex items-center justify-between gap-3">
               <div>
-                <h3 className="font-semibold text-slate-900">Anexar documento ao caso</h3>
+                <h3 className="font-semibold text-slate-900">
+                  Anexar documento ao caso
+                </h3>
                 <p className="mt-1 text-sm text-slate-500">
-                  O backend valida extensão, conteúdo, permissão e vínculo ao caso.
+                  O backend valida extensão, conteúdo, permissão e vínculo ao
+                  caso.
                 </p>
               </div>
-              <Button variant="ghost" size="icon" onClick={() => setView("menu")}>
+              <Button
+                variant="ghost"
+                size="icon"
+                onClick={() => setView("menu")}
+              >
                 <X className="h-4 w-4" />
               </Button>
             </div>
@@ -407,7 +428,11 @@ export default function CaseCommandDock({ caseId }: { caseId: string }) {
             </div>
 
             <div className="flex justify-end gap-2 pt-2">
-              <Button variant="secondary" onClick={() => setView("menu")} disabled={enviando}>
+              <Button
+                variant="secondary"
+                onClick={() => setView("menu")}
+                disabled={enviando}
+              >
                 Voltar
               </Button>
               <Button

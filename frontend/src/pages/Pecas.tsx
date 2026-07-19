@@ -480,9 +480,7 @@ export default function Pecas() {
     itens: docs.filter((p) => p.status === s.key),
   }));
   // Defensivo: status fora do enum conhecido (nunca some da tela).
-  const foraFila = docs.filter(
-    (p) => !FILA.some((s) => s.key === p.status),
-  );
+  const foraFila = docs.filter((p) => !FILA.some((s) => s.key === p.status));
 
   // Origem manual/IA + estado da revisão humana (HITL) — badge compartilhada.
   const origemBadge = (p: LegalDoc) =>
@@ -993,10 +991,7 @@ export default function Pecas() {
             {view.validacao_juridica.score_minimo ?? 75} · Revisão do advogado:{" "}
             {view.validacao_juridica.hitl ?? "pendente"}
             {view.validacao_juridica.veredito && (
-              <>
-                {" "}
-                · Veredito: {view.validacao_juridica.veredito}
-              </>
+              <> · Veredito: {view.validacao_juridica.veredito}</>
             )}
             <br />
             {view.validacao_juridica.motivo}
@@ -1177,7 +1172,10 @@ export default function Pecas() {
 }
 
 // Semáforo de risco reaproveitando os tons do DS (Badge).
-const RISCO_TONE: Record<FichaTriagemCampos["risco_processual"], "green" | "amber" | "red"> = {
+const RISCO_TONE: Record<
+  FichaTriagemCampos["risco_processual"],
+  "green" | "amber" | "red"
+> = {
   baixo: "green",
   medio: "amber",
   alto: "red",
@@ -1185,7 +1183,12 @@ const RISCO_TONE: Record<FichaTriagemCampos["risco_processual"], "green" | "ambe
 
 // valor_causa é string livre; formata como moeda quando for numérico.
 function fmtValorCausa(v: string): string {
-  const n = Number(String(v).replace(/[^\d.,-]/g, "").replace(/\.(?=\d{3})/g, "").replace(",", "."));
+  const n = Number(
+    String(v)
+      .replace(/[^\d.,-]/g, "")
+      .replace(/\.(?=\d{3})/g, "")
+      .replace(",", "."),
+  );
   return Number.isFinite(n) && v.trim() !== "" ? fmtMoney(n) : v;
 }
 
