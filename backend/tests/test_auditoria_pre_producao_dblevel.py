@@ -2,8 +2,8 @@
 
 1. /auth/refresh nega usuário soft-deletado (item 10 — filtro deleted_at nos
    fluxos manuais de auth, mesmo padrão do get_current_user).
-2. Webhook Z-API: lookup de telefone filtrado no SQL (item 8) — cliente com
-   telefone formatado NÃO vira lead duplicado; número desconhecido vira lead.
+
+(O teste do webhook Z-API foi removido junto com o vendor Z-API.)
 
 Mesmo padrão dos demais *_dblevel.py (SQL cru + AsyncSessionLocal).
 """
@@ -76,87 +76,4 @@ async def test_refresh_usuario_soft_deletado_401():
             await db.commit()
 
 
-# ── 2. Webhook Z-API — lookup por telefone no SQL ─────────────────────────────
-
-class _FakeWebhookRequest:
-    def __init__(self, body: dict):
-        self._body = body
-
-    async def json(self):
-        return self._body
-
-
-async def _leads_com_whatsapp(db, telefone: str) -> int:
-    return (await db.execute(
-        text("SELECT count(*) FROM clients WHERE whatsapp = :tel "
-             "AND origem = 'whatsapp'"), {"tel": telefone},
-    )).scalar_one()
-
-
-async def _limpar_webhook(db, telefone: str, client_id: str | None = None):
-    await db.execute(
-        text("DELETE FROM notifications WHERE mensagem LIKE :tel"),
-        {"tel": f"%{telefone}%"},
-    )
-    await db.execute(
-        text("DELETE FROM clients WHERE whatsapp = :tel AND origem = 'whatsapp'"),
-        {"tel": telefone},
-    )
-    if client_id:
-        await db.execute(text("DELETE FROM clients WHERE id = :id"), {"id": client_id})
-    await db.commit()
-
-
-async def test_webhook_telefone_cadastrado_formatado_nao_cria_lead(monkeypatch):
-    """O match por sufixo de 8 dígitos ignora a máscara salva no cadastro."""
-    from app.core.config import get_settings
-    from app.core.database import AsyncSessionLocal
-    from app.routers.webhooks import zapi_inbound
-
-    monkeypatch.setattr(get_settings(), "ZAPI_CLIENT_TOKEN", "tok-teste")
-    sufixo = uuid4().int % 10**8
-    telefone = f"5531{sufixo:08d}"
-    cid = str(uuid4())
-    async with AsyncSessionLocal() as db:
-        await db.execute(
-            text("INSERT INTO clients (id, tipo, nome, email, status, whatsapp) "
-                 "VALUES (:id, 'PF', 'Cliente Webhook', :email, 'ativo', :wa)"),
-            {"id": cid, "email": f"{cid[:8]}@teste.local",
-             "wa": f"(31) {sufixo // 10000:04d}-{sufixo % 10000:04d}"},
-        )
-        await db.commit()
-    try:
-        resp = await zapi_inbound(
-            _FakeWebhookRequest({"phone": telefone,
-                                 "text": {"message": "olá"},
-                                 "senderName": "Já Cliente"}),
-            client_token="tok-teste",
-        )
-        assert resp == {"ok": True}
-        async with AsyncSessionLocal() as db:
-            assert await _leads_com_whatsapp(db, telefone) == 0
-    finally:
-        async with AsyncSessionLocal() as db:
-            await _limpar_webhook(db, telefone, cid)
-
-
-async def test_webhook_telefone_desconhecido_cria_lead(monkeypatch):
-    from app.core.config import get_settings
-    from app.core.database import AsyncSessionLocal
-    from app.routers.webhooks import zapi_inbound
-
-    monkeypatch.setattr(get_settings(), "ZAPI_CLIENT_TOKEN", "tok-teste")
-    telefone = f"5531{uuid4().int % 10**8:08d}"
-    try:
-        resp = await zapi_inbound(
-            _FakeWebhookRequest({"phone": telefone,
-                                 "text": {"message": "quero um orçamento"},
-                                 "senderName": "Lead Novo"}),
-            client_token="tok-teste",
-        )
-        assert resp == {"ok": True}
-        async with AsyncSessionLocal() as db:
-            assert await _leads_com_whatsapp(db, telefone) == 1
-    finally:
-        async with AsyncSessionLocal() as db:
-            await _limpar_webhook(db, telefone)
+# ── 2. Webhook Z-API — REMOVIDO (vendor Z-API descontinuado) ──────────────────

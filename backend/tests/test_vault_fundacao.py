@@ -169,8 +169,7 @@ def test_todo_field_key_do_catalogo_existe_em_settings():
 def test_catalogo_cobre_as_integracoes_planejadas():
     assert set(credential_registry.REGISTRY) == {
         "datajud", "groq", "anthropic", "maritaca", "infosimples",
-        "whatsapp_zapi", "smtp", "nfse", "transparencia", "langfuse",
-        "push_vapid",
+        "smtp", "nfse", "transparencia", "langfuse", "push_vapid",
     }
 
 

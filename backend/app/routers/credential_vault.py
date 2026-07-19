@@ -2,7 +2,7 @@
 # Cofre de Credenciais — PR-3: API /cofre-credenciais (superadmin + step-up).
 #
 # NÃO confundir com routers/api_keys.py: o COFRE guarda segredos QUE O EJC USA
-# para falar com serviços externos (DataJud, Groq, SMTP, Z-API…); api_keys.py
+# para falar com serviços externos (DataJud, Groq, SMTP, NuvemFiscal…); api_keys.py
 # emite chaves QUE O EJC FORNECE a integradores externos consumirem nossa API.
 #
 # Controles (decisões 5–7 do plano, docs/PLANO_COFRE_CREDENCIAIS.md):
@@ -42,7 +42,11 @@ from app.core.rate_limit import rate_limit
 from app.core.security import require_roles, verify_password
 from app.models.audit_log import criar_audit_log
 from app.routers.auth import _recifrar_totp_legado, _totp_secret_de
-from app.services import credential_registry, credential_vault_service
+from app.services import (
+    credential_registry,
+    credential_testers,
+    credential_vault_service,
+)
 from app.services.security_service import obter_ip_real
 
 logger = logging.getLogger("ejc.cofre")
@@ -126,6 +130,15 @@ class ImportResumo(BaseModel):
     total: int
     importados: list[ImportItem]
     overlay_aplicado: bool = True  # ver CredencialMeta.overlay_aplicado
+
+
+class TesteResultado(BaseModel):
+    """Resultado do teste de conexão — SEM valor (só o estado + metadados)."""
+    provider_key: str
+    estado: str  # configurada | ausente | invalida | expirada | sem_permissao | indisponivel
+    detalhe: str
+    last_test_at: datetime | None = None
+    campos_atualizados: int = 0
 
 
 # ── Step-up (reautenticação por operação) ────────────────────────────────────
@@ -296,6 +309,33 @@ async def importar_env(
         db, cu, request, "importar-env")
     return {"total": len(importados), "importados": importados,
             "overlay_aplicado": overlay_ok}
+
+
+@router.post("/{provider_key}/testar", response_model=TesteResultado,
+             dependencies=[Depends(rate_limit("cofre-credenciais-teste", 10))],
+             summary="Testa a conexão da integração e persiste o resultado")
+async def testar_credencial(
+    provider_key: str, request: Request,
+    db: AsyncSession = Depends(get_db),
+    cu=Depends(_SUPERADMIN),
+):
+    """Roda o testador de conexão do provider e persiste last_test_* nas linhas
+    ativas (credential_vault_service.registrar_teste). Devolve APENAS o estado
+    (configurada/ausente/invalida/expirada/sem_permissao/indisponivel) + o
+    detalhe SEM segredo — o valor da credencial nunca aparece.
+
+    NB: rota declarada ANTES de POST /{provider_key}/{field_key} para que
+    /{provider_key}/testar não seja capturado como field_key='testar'. Não exige
+    step-up: não expõe nem altera o segredo, só grava metadados do teste."""
+    if not credential_registry.campos_do_provider(provider_key):
+        raise HTTPException(
+            status_code=404,
+            detail=f"Provider '{provider_key}' não existe no catálogo de credenciais.",
+        )
+    estado, detalhe = await credential_testers.testar_provider(provider_key)
+    return await credential_vault_service.registrar_teste(
+        db, provider_key, estado, detalhe, user_id=cu.id,
+    )
 
 
 @router.post("/{provider_key}/{field_key}", response_model=CredencialMeta,

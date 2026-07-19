@@ -30,7 +30,7 @@ PREFIXOS_PUBLICOS = (
     "/api/openapi.json",
     # P1-1: /api/victory_vault/ REMOVIDO da lista pública — expunha as teses
     # vitoriosas do escritório sem login. Agora exige JWT (Depends no router).
-    "/api/webhooks/",       # Z-API inbound (valida Client-Token internamente)
+    "/api/webhooks/",       # Evolution API inbound (valida secret internamente)
     "/api/calendar/",       # feed ICS (HMAC na URL)
     # Data Room — acesso externo por LINK com token (48 bytes urlsafe) na URL:
     # o token É a credencial (valida expiração + max_acessos + log). Sem isto o
