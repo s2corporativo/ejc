@@ -1,7 +1,9 @@
-"""Rotas de governança jurídica da Base de Conhecimento.
+"""Rotas administrativas de governança jurídica da Base de Conhecimento.
 
-Não substituem o router RAG existente. Elas consolidam observabilidade, qualidade,
-autoridade da fonte, vigência normativa, cobertura por área e testes do retrieval.
+As rotas não substituem o router RAG existente. Elas consolidam observabilidade,
+qualidade, autoridade da fonte, vigência normativa, cobertura por área e testes
+do retrieval. Todo o conjunto é restrito aos mesmos perfis gestores que enxergam
+a aba administrativa no frontend, evitando acesso por ID a documentos internos.
 """
 from __future__ import annotations
 
@@ -14,7 +16,7 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.database import get_db
-from app.core.security import get_current_user, require_roles
+from app.core.security import require_roles
 from app.models.rag import KnowledgeDoc
 from app.models.user import User
 from app.services.knowledge_governance import (
@@ -30,6 +32,7 @@ from app.services.knowledge_governance import (
 )
 
 router = APIRouter(prefix="/rag/governanca", tags=["Base de Conhecimento — Governança"])
+GOVERNANCE_ROLES = ["superadmin", "admin", "socio"]
 
 
 AuthorityLevel = Literal[
@@ -77,7 +80,7 @@ class GovernanceMetadataPatch(BaseModel):
 @router.get("/saude")
 async def saude_base_conhecimento(
     db: AsyncSession = Depends(get_db),
-    _cu: User = Depends(get_current_user),
+    _cu: User = Depends(require_roles(GOVERNANCE_ROLES)),
 ):
     """Visão real de documentos utilizáveis, vetores, OCR, duplicidade e frescor."""
     return await health_snapshot(db)
@@ -86,7 +89,7 @@ async def saude_base_conhecimento(
 @router.get("/cobertura")
 async def cobertura_juridica(
     db: AsyncSession = Depends(get_db),
-    _cu: User = Depends(get_current_user),
+    _cu: User = Depends(require_roles(GOVERNANCE_ROLES)),
 ):
     """Matriz de cobertura por área e tipo de conhecimento jurídico."""
     return await coverage_matrix(db)
@@ -96,7 +99,7 @@ async def cobertura_juridica(
 async def detalhar_governanca_documento(
     doc_id: str,
     db: AsyncSession = Depends(get_db),
-    _cu: User = Depends(get_current_user),
+    _cu: User = Depends(require_roles(GOVERNANCE_ROLES)),
 ):
     details = await document_details(db, doc_id)
     if not details:
@@ -109,7 +112,7 @@ async def atualizar_governanca_documento(
     doc_id: str,
     payload: GovernanceMetadataPatch,
     db: AsyncSession = Depends(get_db),
-    cu: User = Depends(require_roles(["superadmin", "admin", "socio", "advogado"])),
+    cu: User = Depends(require_roles(GOVERNANCE_ROLES)),
 ):
     doc = (
         await db.execute(
@@ -142,9 +145,8 @@ async def atualizar_governanca_documento(
         extra["verified_by"] = str(cu.id)
     extra["governance_updated_at"] = datetime.now(timezone.utc).isoformat()
     extra["governance_updated_by"] = str(cu.id)
-    # A política ORM preserva rag_status=aprovado e confiança válida no flush.
+    # O listener ORM preserva rag_status=aprovado e confiança válida no flush.
     doc.extra = extra
-    await db.commit()
 
     from app.models.audit_log import criar_audit_log
 
@@ -172,7 +174,7 @@ async def testar_conhecimento_documento(
     doc_id: str,
     payload: DocumentTestRequest,
     db: AsyncSession = Depends(get_db),
-    _cu: User = Depends(get_current_user),
+    _cu: User = Depends(require_roles(GOVERNANCE_ROLES)),
 ):
     result = await test_document_retrieval(
         db,
@@ -190,7 +192,7 @@ async def comparar_versoes_documento(
     doc_id: str,
     previous_id: str | None = Query(default=None),
     db: AsyncSession = Depends(get_db),
-    _cu: User = Depends(get_current_user),
+    _cu: User = Depends(require_roles(GOVERNANCE_ROLES)),
 ):
     result = await compare_versions(db, doc_id, previous_id=previous_id)
     if result is None:
@@ -201,7 +203,7 @@ async def comparar_versoes_documento(
 @router.post("/testes-juridicos")
 async def executar_testes_juridicos(
     db: AsyncSession = Depends(get_db),
-    _cu: User = Depends(require_roles(["superadmin", "admin", "socio", "advogado"])),
+    _cu: User = Depends(require_roles(GOVERNANCE_ROLES)),
 ):
     """Executa o conjunto permanente de smoke tests do retrieval jurídico."""
     return await run_legal_smoke_tests(db)
