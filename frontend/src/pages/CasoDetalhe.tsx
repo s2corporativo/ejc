@@ -396,9 +396,6 @@ function TabResumo({ caso }: { caso: Case }) {
   const [novoMov, setNovoMov] = useState("");
   const [encModal, setEncModal] = useState(false);
   const [encLoading, setEncLoading] = useState(false);
-  const [archiveModal, setArchiveModal] = useState(false);
-  const [archiveLoading, setArchiveLoading] = useState(false);
-  const [archiveReason, setArchiveReason] = useState("");
   const [reabrindo, setReabrindo] = useState(false);
   const [enc, setEnc] = useState({
     resultado: "exito_total",
@@ -491,8 +488,8 @@ function TabResumo({ caso }: { caso: Case }) {
     try {
       await api.post(`/cases/${caso.id}/encerrar`, enc);
       setEncModal(false);
-      toast.error(
-        "Caso encerrado. Conhecimento registrado na base institucional (precedente RAG + memória + tese).",
+      toast.success(
+        "Caso encerrado. Conhecimento registrado na base institucional (precedente + memória + tese).",
       );
       window.location.reload();
     } catch (e: any) {
@@ -520,27 +517,11 @@ function TabResumo({ caso }: { caso: Case }) {
     }
   };
 
-  const arquivarCaso = async () => {
-    setArchiveLoading(true);
-    try {
-      await api.post(`/cases/${caso.id}/arquivar`, {
-        motivo: archiveReason || undefined,
-      });
-      setArchiveModal(false);
-      toast.success("Caso arquivado com histórico preservado.");
-      window.location.reload();
-    } catch (e: any) {
-      toast.error(e.response?.data?.detail || "Falha ao arquivar caso");
-    } finally {
-      setArchiveLoading(false);
-    }
-  };
-
   const gerarDocs = async () => {
     setGerando(true);
     try {
       const { data } = await api.post(`/cases/${caso.id}/gerar-documentos`);
-      toast.error(
+      toast.success(
         `${data.gerados?.length || 0} minuta(s) gerada(s): Procuração, Contrato de Honorários e Relatório Inicial. Veja na aba Documentos do caso.`,
       );
     } catch (e: any) {
@@ -695,42 +676,6 @@ function TabResumo({ caso }: { caso: Case }) {
         >
           💰 Honorários (OAB)
         </button>
-        {caso.status !== "encerrado" && caso.status !== "arquivado" && (
-          <button
-            onClick={() => setEncModal(true)}
-            className="btn-secondary flex items-center gap-1"
-          >
-            ✓ Encerrar caso
-          </button>
-        )}
-        {caso.status !== "arquivado" ? (
-          <button
-            onClick={() => setArqModal(true)}
-            className="btn-secondary flex items-center gap-1"
-          >
-            🗄️ Arquivar
-          </button>
-        ) : (
-          <button
-            onClick={desarquivar}
-            disabled={arqLoading}
-            className="btn-secondary flex items-center gap-1"
-          >
-            🗄️ {arqLoading ? "Desarquivando..." : "Desarquivar"}
-          </button>
-        )}
-        {podeExcluir && (
-          <button
-            onClick={() => {
-              setDelMotivo("");
-              setPendencias(null);
-              setDelModal(true);
-            }}
-            className="btn-secondary flex items-center gap-1 text-danger-600 border-danger-200 hover:bg-danger-50"
-          >
-            🗑️ Excluir
-          </button>
-        )}
         <Link
           to={`/raio-x?case_id=${caso.id}`}
           className="btn-secondary flex items-center gap-1 text-primary-700"
@@ -781,44 +726,53 @@ function TabResumo({ caso }: { caso: Case }) {
             🔗 Ver caso vinculado
           </button>
         )}
-      </div>
-
-      <Modal
-        open={archiveModal}
-        onClose={() => setArchiveModal(false)}
-        title="Arquivar caso"
-      >
-        <div className="space-y-4">
-          <p className="text-sm text-slate-600">
-            O caso sairá da lista de ativos, mas o histórico, documentos,
-            prazos, financeiro e registros de IA continuam preservados.
-          </p>
-          <div>
-            <label className="label">Motivo do arquivamento</label>
-            <textarea
-              className="input min-h-[96px]"
-              value={archiveReason}
-              onChange={(e) => setArchiveReason(e.target.value)}
-              placeholder="Opcional"
-            />
+        <div
+          className="basis-full mt-2 rounded-xl border border-slate-200 bg-slate-50 p-3"
+          aria-label="Encerramento e administração do caso"
+        >
+          <div className="mb-2 text-xs font-semibold uppercase tracking-wide text-slate-500">
+            Encerramento e administração
           </div>
-          <div className="flex justify-end gap-2">
-            <button
-              className="btn-secondary"
-              onClick={() => setArchiveModal(false)}
-            >
-              Cancelar
-            </button>
-            <button
-              className="btn-primary"
-              disabled={archiveLoading}
-              onClick={arquivarCaso}
-            >
-              {archiveLoading ? "Arquivando..." : "Arquivar caso"}
-            </button>
+          <div className="flex flex-wrap gap-2">
+            {caso.status !== "encerrado" && caso.status !== "arquivado" && (
+              <button
+                onClick={() => setEncModal(true)}
+                className="btn-secondary flex items-center gap-1"
+              >
+                ✓ Encerrar caso
+              </button>
+            )}
+            {caso.status !== "arquivado" ? (
+              <button
+                onClick={() => setArqModal(true)}
+                className="btn-secondary flex items-center gap-1"
+              >
+                🗄️ Arquivar
+              </button>
+            ) : (
+              <button
+                onClick={desarquivar}
+                disabled={arqLoading}
+                className="btn-secondary flex items-center gap-1"
+              >
+                🗄️ {arqLoading ? "Desarquivando..." : "Desarquivar"}
+              </button>
+            )}
+            {podeExcluir && (
+              <button
+                onClick={() => {
+                  setDelMotivo("");
+                  setPendencias(null);
+                  setDelModal(true);
+                }}
+                className="btn-secondary flex items-center gap-1 text-danger-600 border-danger-200 hover:bg-danger-50"
+              >
+                🗑️ Excluir
+              </button>
+            )}
           </div>
         </div>
-      </Modal>
+      </div>
 
       <AreasCaso caso={caso} />
 
@@ -1006,8 +960,9 @@ function TabResumo({ caso }: { caso: Case }) {
           <div className="space-y-3">
             <p className="text-xs text-slate-500">
               Ao encerrar, o conhecimento do caso vira ativo institucional:{" "}
-              <b>precedente na RAG</b> + <b>memória institucional</b> +{" "}
-              <b>tese no banco</b>. Tudo como rascunho revisável (OAB).
+              <b>precedente na base de conhecimento</b> +{" "}
+              <b>memória institucional</b> + <b>tese no banco</b>. Tudo como
+              rascunho revisável (OAB).
             </p>
             <div>
               <label className="label">Resultado</label>
@@ -1063,7 +1018,7 @@ function TabResumo({ caso }: { caso: Case }) {
                   setEnc({ ...enc, alimentar_rag: e.target.checked })
                 }
               />
-              Alimentar a base de conhecimento (RAG)
+              Alimentar a base de conhecimento
             </label>
             <button
               onClick={encerrar}
