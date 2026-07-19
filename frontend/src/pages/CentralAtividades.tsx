@@ -1,6 +1,12 @@
 import { useState, useEffect, useCallback, useMemo } from "react";
 import { useSearchParams, Link } from "react-router-dom";
-import { PageHeader, Spinner, Empty, EmptyState, ErrorState } from "../components/UI";
+import {
+  PageHeader,
+  Spinner,
+  Empty,
+  EmptyState,
+  ErrorState,
+} from "../components/UI";
 import { toast } from "../components/Toast";
 import {
   Calendar,
@@ -27,6 +33,7 @@ import {
 } from "lucide-react";
 import api from "../lib/api";
 import { asList } from "../lib/list";
+import { addCaseContext, readCaseContext } from "../lib/caseContext";
 import { Modal } from "../components/UI";
 
 type ItemType =
@@ -739,7 +746,12 @@ const NOVO_OPCOES: {
 }[] = [
   { key: "prazo", label: "Novo prazo", categoria: "prazo" },
   { key: "tarefa", label: "Nova tarefa", categoria: "tarefa" },
-  { key: "audiencia", label: "Audiência", categoria: "agenda", tipo: "audiencia" },
+  {
+    key: "audiencia",
+    label: "Audiência",
+    categoria: "agenda",
+    tipo: "audiencia",
+  },
   { key: "reuniao", label: "Reunião", categoria: "agenda", tipo: "reuniao" },
   {
     key: "compromisso",
@@ -757,6 +769,7 @@ const NOVO_OPCOES: {
 
 export default function CentralAtividades() {
   const [searchParams, setSearchParams] = useSearchParams();
+  const contextCaseId = readCaseContext(searchParams);
   const rawView = searchParams.get("view");
   const view: ActivityView = isActivityView(rawView) ? rawView : "lista";
   const setView = (next: ActivityView) => {
@@ -785,6 +798,7 @@ export default function CentralAtividades() {
     categoria: "agenda",
     tipo: "reuniao",
     data: "",
+    case_id: contextCaseId,
   });
   const [reag, setReag] = useState<{ item: Activity; data: string } | null>(
     null,
@@ -824,8 +838,7 @@ export default function CentralAtividades() {
 
       const all: Activity[] = asList(ativ.value.data).map((a: any) => {
         const bruto: string = a.tipo;
-        const fonte: Fonte =
-          bruto === "agenda" ? "agenda" : (bruto as Fonte);
+        const fonte: Fonte = bruto === "agenda" ? "agenda" : (bruto as Fonte);
         const evento = fonte === "agenda" ? agendaMap[a.id] : undefined;
         const origem =
           fonte === "prazo"
@@ -1031,6 +1044,7 @@ export default function CentralAtividades() {
       tipo: opcao.tipo ?? "reuniao",
       prioridade: "media",
       data: "",
+      case_id: contextCaseId,
     });
     setModal(true);
   };
@@ -1046,36 +1060,54 @@ export default function CentralAtividades() {
           toast.error("Data do prazo é obrigatória");
           return;
         }
-        await api.post("/deadlines/", {
-          titulo: form.titulo,
-          data_prazo: form.data,
-          prioridade: form.prioridade || "media",
-          descricao: form.descricao || undefined,
-          responsavel_id: form.responsavel_id || undefined,
-        });
+        await api.post(
+          "/deadlines/",
+          addCaseContext(
+            {
+              titulo: form.titulo,
+              data_prazo: form.data,
+              prioridade: form.prioridade || "media",
+              descricao: form.descricao || undefined,
+              responsavel_id: form.responsavel_id || undefined,
+            },
+            form.case_id,
+          ),
+        );
         toast.success("Prazo criado");
       } else if (form.categoria === "tarefa") {
-        await api.post("/tasks/", {
-          titulo: form.titulo,
-          prioridade: form.prioridade || "media",
-          data_limite: form.data || undefined,
-          descricao: form.descricao || undefined,
-          responsavel_id: form.responsavel_id || undefined,
-        });
+        await api.post(
+          "/tasks/",
+          addCaseContext(
+            {
+              titulo: form.titulo,
+              prioridade: form.prioridade || "media",
+              data_limite: form.data || undefined,
+              descricao: form.descricao || undefined,
+              responsavel_id: form.responsavel_id || undefined,
+            },
+            form.case_id,
+          ),
+        );
         toast.success("Tarefa criada");
       } else {
         if (!form.data) {
           toast.error("Data do evento é obrigatória");
           return;
         }
-        const { data } = await api.post("/agenda-eventos/", {
-          titulo: form.titulo,
-          tipo: form.tipo,
-          data_evento: form.data,
-          hora: form.hora || undefined,
-          local: form.local || undefined,
-          descricao: form.descricao || undefined,
-        });
+        const { data } = await api.post(
+          "/agenda-eventos/",
+          addCaseContext(
+            {
+              titulo: form.titulo,
+              tipo: form.tipo,
+              data_evento: form.data,
+              hora: form.hora || undefined,
+              local: form.local || undefined,
+              descricao: form.descricao || undefined,
+            },
+            form.case_id,
+          ),
+        );
         const conf = extrairConflitos(data);
         if (conf.length) {
           avisarConflitos(conf);
@@ -1092,6 +1124,7 @@ export default function CentralAtividades() {
   };
 
   const filtered = items.filter((item) => {
+    if (contextCaseId && item.case_id !== contextCaseId) return false;
     if (filterTipo !== "todos" && item.tipo !== filterTipo) return false;
     if (filterUrgencia !== "todos" && item.urgencia !== filterUrgencia)
       return false;
@@ -1105,9 +1138,12 @@ export default function CentralAtividades() {
   });
 
   // Cancelado também não conta como pendente nas estatísticas de urgência.
-  const pendentes = items.filter(
-    (i) => situacaoColunaDe(i.status) !== "concluido",
-  );
+  // Com contexto de caso ativo, as estatísticas refletem só o caso — mas NÃO
+  // aplicam os filtros de tipo/urgência/situação da UI: os cards de urgência
+  // são os próprios botões de filtro e não podem se auto-zerar.
+  const pendentes = (
+    contextCaseId ? items.filter((i) => i.case_id === contextCaseId) : items
+  ).filter((i) => situacaoColunaDe(i.status) !== "concluido");
   const stats = {
     vencido: pendentes.filter((i) => i.urgencia === "vencido").length,
     critico: pendentes.filter((i) => i.urgencia === "critico").length,
@@ -1126,7 +1162,11 @@ export default function CentralAtividades() {
     <div className="p-6 max-w-5xl mx-auto">
       <PageHeader
         title="Agenda e Prazos"
-        subtitle="Prazos, tarefas, audiências, compromissos e intimações em uma única tela"
+        subtitle={
+          contextCaseId
+            ? "Atividades vinculadas ao caso selecionado"
+            : "Prazos, tarefas, audiências, compromissos e intimações em uma única tela"
+        }
         actions={
           <>
             <button
@@ -1224,7 +1264,9 @@ export default function CentralAtividades() {
                   >
                     <Clock className="w-3.5 h-3.5 shrink-0 text-warn-600" />
                     <span className="font-medium truncate">{c.titulo}</span>
-                    {c.hora && <span className="text-warn-700">· {c.hora}</span>}
+                    {c.hora && (
+                      <span className="text-warn-700">· {c.hora}</span>
+                    )}
                     {c.local && (
                       <span className="text-warn-600 truncate">
                         · {c.local}
@@ -1359,7 +1401,10 @@ export default function CentralAtividades() {
                     setReag({ item: it, data: it.date?.slice(0, 10) ?? "" })
                   }
                   onAtribuir={(it) =>
-                    setAtrib({ item: it, responsavel_id: it.responsavel_id ?? "" })
+                    setAtrib({
+                      item: it,
+                      responsavel_id: it.responsavel_id ?? "",
+                    })
                   }
                   podeAtribuir={responsaveis.length > 0}
                 />
@@ -1398,7 +1443,10 @@ export default function CentralAtividades() {
                   setReag({ item: it, data: it.date?.slice(0, 10) ?? "" })
                 }
                 onAtribuir={(it) =>
-                  setAtrib({ item: it, responsavel_id: it.responsavel_id ?? "" })
+                  setAtrib({
+                    item: it,
+                    responsavel_id: it.responsavel_id ?? "",
+                  })
                 }
                 podeAtribuir={responsaveis.length > 0}
               />
@@ -1410,6 +1458,11 @@ export default function CentralAtividades() {
       {/* ── Novo prazo / tarefa / evento (formulário adaptado ao tipo) ── */}
       <Modal open={modal} onClose={() => setModal(false)} title={tituloModal}>
         <div className="space-y-3">
+          {form.case_id && (
+            <div className="rounded-lg border border-primary-200 bg-primary-50 px-3 py-2 text-xs text-primary-700">
+              Este item será vinculado ao caso aberto.
+            </div>
+          )}
           <input
             className="input w-full text-sm"
             placeholder="Título *"
@@ -1589,4 +1642,3 @@ export default function CentralAtividades() {
     </div>
   );
 }
-

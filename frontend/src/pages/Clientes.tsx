@@ -195,6 +195,7 @@ export default function Clientes() {
                 <th className="px-4 py-3">Nome / Razão</th>
                 <th className="px-4 py-3">Tipo</th>
                 <th className="px-4 py-3">CPF / CNPJ</th>
+                <th className="px-4 py-3 text-right">Ações</th>
                 <th className="px-4 py-3">Contato</th>
                 <th className="px-4 py-3">Status</th>
                 <th className="px-4 py-3">Desde</th>

@@ -1,7 +1,12 @@
 import { toast } from "../components/Toast";
 import Markdown from "../components/Markdown";
 import React, { useEffect, useState } from "react";
-import { Link, useParams, useSearchParams, useNavigate } from "react-router-dom";
+import {
+  Link,
+  useParams,
+  useSearchParams,
+  useNavigate,
+} from "react-router-dom";
 import {
   Sparkles,
   ChevronLeft,
@@ -12,6 +17,7 @@ import {
 } from "lucide-react";
 import api from "../lib/api";
 import { asList } from "../lib/list";
+import { areaLabel, useAreas } from "../lib/areas";
 import { mensagemErroIA, ROTULO_IA_NAO_ATIVADA } from "../lib/iaErro";
 import { useIaStatus } from "../lib/iaStatus";
 import MotorTeses from "../components/MotorTeses";
@@ -297,21 +303,7 @@ function ExtratoCaso({ caso }: { caso: Case }) {
 }
 
 function AreasCaso({ caso }: { caso: Case }) {
-  const TODAS = [
-    "civil",
-    "trabalhista",
-    "consumidor",
-    "familia",
-    "ambiental",
-    "criminal",
-    "previdenciario",
-    "empresarial",
-    "tributario",
-    "administrativo",
-    "bancario",
-    "imobiliario",
-    "digital_lgpd",
-  ];
+  const catalogoAreas = useAreas();
   const [areas, setAreas] = useState<any[]>([]);
   const [add, setAdd] = useState("");
   const load = () =>
@@ -337,7 +329,9 @@ function AreasCaso({ caso }: { caso: Case }) {
       toast.error(e.response?.data?.detail || "Erro ao remover área");
     }
   };
-  const disponiveis = TODAS.filter((t) => !areas.some((a) => a.area === t));
+  const disponiveis = catalogoAreas.filter(
+    (item) => !areas.some((a) => a.area === item.slug),
+  );
   return (
     <div className="card p-4">
       <h3 className="font-semibold mb-2 text-sm text-slate-500 uppercase tracking-wide">
@@ -350,7 +344,7 @@ function AreasCaso({ caso }: { caso: Case }) {
             className={`inline-flex items-center gap-1 text-xs px-2.5 py-1 rounded-full ${a.principal ? "bg-navy text-white" : "bg-slate-100 text-slate-600"}`}
           >
             {a.principal && "★ "}
-            {a.area.replace(/_/g, " ")}
+            {areaLabel(a.area)}
             {!a.principal && (
               <button
                 onClick={() => remover(a.area)}
@@ -369,9 +363,9 @@ function AreasCaso({ caso }: { caso: Case }) {
               className="input text-xs px-2 py-1"
             >
               <option value="">+ área relacionada</option>
-              {disponiveis.map((t) => (
-                <option key={t} value={t}>
-                  {t.replace(/_/g, " ")}
+              {disponiveis.map((item) => (
+                <option key={item.slug} value={item.slug}>
+                  {item.nome}
                 </option>
               ))}
             </select>
@@ -587,7 +581,9 @@ function TabResumo({ caso }: { caso: Case }) {
       });
       setIaResp(data);
     } catch (e: any) {
-      setIaResp({ erro: mensagemErroIA(e, "Não foi possível gerar a análise.") });
+      setIaResp({
+        erro: mensagemErroIA(e, "Não foi possível gerar a análise."),
+      });
     } finally {
       setIaLoading(false);
     }
@@ -3929,31 +3925,34 @@ export default function CasoDetalhe() {
             {/* CTA de anexar: o upload vive no módulo global de Documentos,
                 que pré-seleciona o caso via ?caso= (achado M2 do E2E). */}
             <div className="flex justify-end">
-              <Link to={`/documentos?caso=${id}`} className="btn-secondary text-xs">
+              <Link
+                to={`/documentos?caso=${id}`}
+                className="btn-secondary text-xs"
+              >
                 Anexar documento ao caso
               </Link>
             </div>
-          <TabLista
-            titulo="Documentos"
-            endpoint={`/documents/?case_id=${id}`}
-            empty="Nenhum documento vinculado a este caso"
-            renderItem={(d) => (
-              <div
-                className="card p-3 flex justify-between items-center text-sm cursor-pointer hover:bg-slate-50"
-                onClick={() =>
-                  baixarDoc(d.id, d.filename || d.nome_arquivo || d.titulo)
-                }
-                title="Clique para baixar"
-              >
-                <span className="text-gray-800">
-                  {d.titulo || d.filename || d.nome_arquivo}
-                </span>
-                <span className="text-gray-400 text-xs">
-                  {d.tipo_peca || d.tipo}
-                </span>
-              </div>
-            )}
-          />
+            <TabLista
+              titulo="Documentos"
+              endpoint={`/documents/?case_id=${id}`}
+              empty="Nenhum documento vinculado a este caso"
+              renderItem={(d) => (
+                <div
+                  className="card p-3 flex justify-between items-center text-sm cursor-pointer hover:bg-slate-50"
+                  onClick={() =>
+                    baixarDoc(d.id, d.filename || d.nome_arquivo || d.titulo)
+                  }
+                  title="Clique para baixar"
+                >
+                  <span className="text-gray-800">
+                    {d.titulo || d.filename || d.nome_arquivo}
+                  </span>
+                  <span className="text-gray-400 text-xs">
+                    {d.tipo_peca || d.tipo}
+                  </span>
+                </div>
+              )}
+            />
           </div>
         );
       case "provas":
@@ -3996,27 +3995,37 @@ export default function CasoDetalhe() {
         );
       case "prazos":
         return (
-          <TabLista
-            titulo="Prazos"
-            endpoint={`/deadlines/?case_id=${id}&status=`}
-            empty="Nenhum prazo cadastrado"
-            renderItem={(d) => (
-              <div className="card p-3 flex justify-between items-center text-sm">
-                <span className="text-gray-800">{d.titulo}</span>
-                <span
-                  className={`font-medium text-xs ${
-                    (d.dias_restantes ?? 1) <= 0
-                      ? "text-danger-600"
-                      : (d.dias_restantes ?? 99) <= 7
-                        ? "text-orange-600"
-                        : "text-gray-500"
-                  }`}
-                >
-                  {fmtDate(d.data_prazo)}
-                </span>
-              </div>
-            )}
-          />
+          <div className="space-y-3">
+            <div className="flex justify-end">
+              <Link
+                to={`/atividades?caso=${id}&tipo=prazo`}
+                className="btn-secondary text-xs"
+              >
+                Novo prazo ou atividade
+              </Link>
+            </div>
+            <TabLista
+              titulo="Prazos"
+              endpoint={`/deadlines/?case_id=${id}&status=`}
+              empty="Nenhum prazo cadastrado"
+              renderItem={(d) => (
+                <div className="card p-3 flex justify-between items-center text-sm">
+                  <span className="text-gray-800">{d.titulo}</span>
+                  <span
+                    className={`font-medium text-xs ${
+                      (d.dias_restantes ?? 1) <= 0
+                        ? "text-danger-600"
+                        : (d.dias_restantes ?? 99) <= 7
+                          ? "text-orange-600"
+                          : "text-gray-500"
+                    }`}
+                  >
+                    {fmtDate(d.data_prazo)}
+                  </span>
+                </div>
+              )}
+            />
+          </div>
         );
       case "audiencias":
         return (
