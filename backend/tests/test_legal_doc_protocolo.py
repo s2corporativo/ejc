@@ -11,7 +11,9 @@ sem depender de Postgres:
     comprovante opcional), rejeita número vazio (422), 404 p/ peça inexistente,
     aplica o gate de ownership por caso e emite audit-log PROTOCOLO_REGISTRADO;
   - os gates da máquina de estados: papel mínimo advogado (403) e peça em
-    status pós-aprovação — aprovada/final/protocolada (422 caso contrário).
+    status pós-aprovação — aprovada/final/protocolada (422 caso contrário);
+  - a validação do comprovante (N3): protocolo_comprovante_doc_id deve apontar
+    p/ Document existente, não excluído e do MESMO caso da peça (422 senão).
 
 Fakes no padrão de test_correcoes_go_live.py. Dados 100% fictícios.
 """
@@ -158,7 +160,12 @@ def _audits(db: _FakeDB):
 # ── 3. Endpoint PATCH /legal-docs/{id}/protocolo ──────────────────────────────
 
 def test_protocolo_registra_e_audita():
-    db = _FakeDB(results=[_Res(one=_peca())])
+    # 2ª consulta: validação N3 do comprovante — Document vivo do MESMO caso
+    # (peça sem caso ⇔ documento sem caso).
+    db = _FakeDB(results=[
+        _Res(one=_peca()),
+        _Res(one=SimpleNamespace(id="doc-99", case_id=None, deleted_at=None)),
+    ])
     client = _montar(db)
     r = client.patch("/legal-docs/peca-1/protocolo", json={
         "numero_protocolo": "  0801234-56.2026.8.13.0024  ",
@@ -252,6 +259,68 @@ def test_protocolo_exige_papel_advogado():
         })
         assert r.status_code == 403, (role, r.text)
         assert not _audits(db) and db.committed == 0
+
+
+def test_protocolo_comprovante_inexistente_422():
+    """N3: comprovante que não existe (ou soft-deleted) → 422 sem gravar nada.
+    Antes qualquer string era aceita como protocolo_comprovante_doc_id."""
+    db = _FakeDB(results=[_Res(one=_peca()), _Res(one=None)])
+    client = _montar(db)
+    r = client.patch("/legal-docs/peca-1/protocolo", json={
+        "numero_protocolo": "PROTO-1",
+        "protocolo_comprovante_doc_id": "doc-fantasma",
+    })
+    assert r.status_code == 422
+    assert "Comprovante" in r.json()["detail"]
+    assert not _audits(db) and db.committed == 0
+
+
+def test_protocolo_comprovante_de_caso_alheio_422():
+    """N3: Document existente mas de OUTRO caso → 422 (não vira 'prova' de
+    tempestividade de peça alheia). Ownership do caso é liberado no fake."""
+    async def _permite(*a, **k):
+        return None
+
+    db = _FakeDB(results=[
+        _Res(one=_peca(case_id="caso-1")),
+        _Res(one=SimpleNamespace(id="doc-2", case_id="caso-2", deleted_at=None)),
+    ])
+    orig = legal_docs_router.verificar_acesso_caso
+    legal_docs_router.verificar_acesso_caso = _permite
+    try:
+        client = _montar(db)
+        r = client.patch("/legal-docs/peca-1/protocolo", json={
+            "numero_protocolo": "PROTO-1",
+            "protocolo_comprovante_doc_id": "doc-2",
+        })
+    finally:
+        legal_docs_router.verificar_acesso_caso = orig
+    assert r.status_code == 422
+    assert "não pertence ao caso" in r.json()["detail"]
+    assert not _audits(db) and db.committed == 0
+
+
+def test_protocolo_comprovante_do_mesmo_caso_aceito():
+    """N3: Document vivo do MESMO caso da peça passa e é gravado."""
+    async def _permite(*a, **k):
+        return None
+
+    db = _FakeDB(results=[
+        _Res(one=_peca(case_id="caso-1")),
+        _Res(one=SimpleNamespace(id="doc-1", case_id="caso-1", deleted_at=None)),
+    ])
+    orig = legal_docs_router.verificar_acesso_caso
+    legal_docs_router.verificar_acesso_caso = _permite
+    try:
+        client = _montar(db)
+        r = client.patch("/legal-docs/peca-1/protocolo", json={
+            "numero_protocolo": "PROTO-1",
+            "protocolo_comprovante_doc_id": "doc-1",
+        })
+    finally:
+        legal_docs_router.verificar_acesso_caso = orig
+    assert r.status_code == 200, r.text
+    assert r.json()["protocolo_comprovante_doc_id"] == "doc-1"
 
 
 def test_protocolo_gate_ownership_por_caso():
