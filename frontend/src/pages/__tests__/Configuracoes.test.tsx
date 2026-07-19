@@ -24,6 +24,13 @@ vi.mock("../../stores/theme", () => ({
   THEME_LABELS: { light: "Claro", dark: "Escuro", system: "Sistema" },
 }));
 
+// O painel do cofre faz fetch ao montar; aqui só cobrimos o GATE de acesso à
+// aba (superadmin), não o conteúdo do painel — este é coberto em
+// components/__tests__/CredentialVaultPanel.test.tsx. Stub evita rede real.
+vi.mock("../../components/CredentialVaultPanel", () => ({
+  default: () => <div>Cofre de credenciais</div>,
+}));
+
 import Configuracoes from "../Configuracoes";
 import { useAuth } from "../../stores/auth";
 import type { User } from "../../types";
@@ -93,5 +100,38 @@ describe("Configuracoes — gate de administração preservado após a fusão de
       await screen.findByRole("heading", { name: /Administração do EJC/ }),
     ).toBeTruthy();
     expect(screen.getByRole("button", { name: /Administração/ })).toBeTruthy();
+  });
+});
+
+describe("Configuracoes — aba Credenciais (Cofre) restrita a superadmin", () => {
+  beforeEach(() => {
+    useAuth.setState({ user: null, status: "unauthenticated" });
+    localStorage.clear();
+  });
+
+  it("admin (não-superadmin) NÃO vê a aba Credenciais e ?tab=credenciais cai para Pessoal", async () => {
+    setUser("admin");
+    renderPage("?tab=credenciais");
+
+    expect(
+      await screen.findByRole("heading", { name: /Configurações/ }),
+    ).toBeTruthy();
+
+    // Aba ausente e o painel do cofre não renderiza (fallback para Pessoal).
+    expect(screen.queryByRole("button", { name: /Credenciais/ })).toBeNull();
+    expect(screen.queryByText(/Cofre de credenciais/)).toBeNull();
+    expect(screen.getByText("Aparência")).toBeTruthy();
+  });
+
+  it("superadmin vê a aba Credenciais e o painel do cofre renderiza", async () => {
+    setUser("superadmin");
+    renderPage("?tab=credenciais");
+
+    // O botão da aba existe...
+    expect(
+      await screen.findByRole("button", { name: /Credenciais/ }),
+    ).toBeTruthy();
+    // ...e o cabeçalho do painel do cofre (distinto de API Keys) aparece.
+    expect(screen.getByText(/Cofre de credenciais/)).toBeTruthy();
   });
 });
