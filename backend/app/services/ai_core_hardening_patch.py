@@ -1,14 +1,14 @@
 # ── app/services/ai_core_hardening_patch.py ──────────────────────────────────
 """Hardening aditivo do núcleo de IA/RAG carregado no startup.
 
-Duas correções transitórias de compatibilidade:
-1. resolução de provedores fail-closed para todos os aliases legados de `chat`;
-2. resolução server-side do escopo de precedentes de encerramento cuja chave
-   canônica é `caso:<id>`, fluxo legado que não passava client_id ao RAG.
+Correções transitórias de compatibilidade:
+1. resolução de provedores fail-closed para aliases legados de `chat`;
+2. resolução server-side do escopo de precedentes com chave `caso:<id>`;
+3. listagem de KnowledgeDoc escopada, evitando exposição de títulos/fontes de
+   peças internas a usuários sem acesso ao caso ou cliente correspondente.
 
-As duas correções operam em primitivas consultadas em runtime, alcançando call
-sites que importaram funções antes do startup. A convergência definitiva deve
-eliminar os patches ao centralizar provider registry e contratos de ingestão.
+As correções operam em primitivas/rotas já existentes. A convergência definitiva
+deve incorporá-las diretamente ao gateway, ao contrato de ingestão e ao router.
 """
 from __future__ import annotations
 
@@ -58,13 +58,7 @@ def _instalar_resolver_provedores() -> None:
 
 
 def _instalar_resolucao_escopo_rag() -> None:
-    """Compatibiliza o encerramento legado sem aceitar escopo do cliente.
-
-    `cases.encerrar_caso` usa chave `caso:<uuid>` e import local da função; a
-    identidade do caso é, portanto, verificável no servidor. Somente esse padrão
-    canônico pode ser auto-resolvido. Qualquer outra categoria/chave sem client_id
-    continua bloqueada pelo write gate de `ingestion_service`.
-    """
+    """Compatibiliza o encerramento legado sem aceitar escopo do frontend."""
     from app.services import ingestion_service
 
     if getattr(ingestion_service, "_ejc_scope_resolver_installed", False):
@@ -94,11 +88,102 @@ def _instalar_resolucao_escopo_rag() -> None:
     ingestion_service._ejc_scope_resolver_installed = True
 
 
+async def _listar_docs_escopado(
+    page: int = 1,
+    page_size: int = 20,
+    categoria: str | None = None,
+    db=None,
+    cu=None,
+):
+    """Contrato seguro de GET /rag/docs.
+
+    Gestão (sócio+) mantém visão integral para curadoria. Demais usuários veem:
+    conteúdo público; conteúdo do próprio cliente externo; e documentos ligados
+    a casos nos quais são responsável/auxiliar ou que permanecem sem atribuição,
+    exatamente conforme a salvaguarda do ownership canônico.
+    """
+    from sqlalchemy import and_, func as sqlfunc, or_, select
+    from app.core.ownership import is_gestao
+    from app.models.case import Case
+    from app.models.rag import KnowledgeDoc
+
+    q = select(KnowledgeDoc).where(KnowledgeDoc.deleted_at.is_(None))
+    if not is_gestao(cu):
+        visibilidade = [KnowledgeDoc.client_id.is_(None)]
+        client_id = getattr(cu, "client_id", None)
+        if client_id:
+            visibilidade.append(KnowledgeDoc.client_id == client_id)
+
+        casos_permitidos = select(Case.id).where(
+            Case.deleted_at.is_(None),
+            or_(
+                Case.advogado_responsavel_id == getattr(cu, "id", None),
+                Case.advogado_auxiliar_id == getattr(cu, "id", None),
+                and_(
+                    Case.advogado_responsavel_id.is_(None),
+                    Case.advogado_auxiliar_id.is_(None),
+                ),
+            ),
+        )
+        visibilidade.append(KnowledgeDoc.case_id.in_(casos_permitidos))
+        q = q.where(or_(*visibilidade))
+
+    if categoria:
+        q = q.where(KnowledgeDoc.categoria == categoria)
+    q = q.order_by(KnowledgeDoc.created_at.desc())
+
+    total = (await db.execute(
+        select(sqlfunc.count()).select_from(q.subquery())
+    )).scalar() or 0
+    rows = (await db.execute(
+        q.offset((page - 1) * page_size).limit(page_size)
+    )).scalars().all()
+    return {
+        "data": [
+            {
+                "id": d.id,
+                "titulo": d.titulo,
+                "categoria": d.categoria,
+                "fonte": d.fonte,
+                "tribunal": d.tribunal,
+                "status_indexacao": d.status_indexacao,
+                "created_at": d.created_at,
+            }
+            for d in rows
+        ],
+        "total": total,
+        "page": page,
+        "page_size": page_size,
+    }
+
+
+def _instalar_listagem_rag_escopada() -> None:
+    """Substitui o callable da rota antes de o router ser incluído no FastAPI."""
+    from app.routers import rag
+
+    if getattr(rag.router, "_ejc_docs_scope_installed", False):
+        return
+
+    encontrada = False
+    for route in rag.router.routes:
+        if getattr(route, "name", "") == "listar_docs":
+            route.endpoint = _listar_docs_escopado
+            route.dependant.call = _listar_docs_escopado
+            encontrada = True
+            break
+    if not encontrada:
+        raise RuntimeError("Rota listar_docs do RAG não localizada para hardening")
+
+    setattr(rag.router, "_ejc_docs_scope_installed", True)
+    logger.info("Listagem de KnowledgeDoc protegida por escopo de acesso")
+
+
 def instalar() -> None:
     global _INSTALADO
     if _INSTALADO:
         return
     _instalar_resolver_provedores()
     _instalar_resolucao_escopo_rag()
+    _instalar_listagem_rag_escopada()
     _INSTALADO = True
     logger.info("Hardening do núcleo de IA/RAG instalado")
