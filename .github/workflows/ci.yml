@@ -64,7 +64,7 @@ jobs:
       APP_ENV: development
       RUN_DB_TESTS: "1"
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
       - name: Instalar Python 3.11
         uses: actions/setup-python@v6
@@ -140,7 +140,7 @@ jobs:
       run:
         working-directory: backend
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
       - name: Instalar Python 3.11
         uses: actions/setup-python@v6
@@ -168,7 +168,7 @@ jobs:
       run:
         working-directory: frontend
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
       - name: Instalar Node 20
         uses: actions/setup-node@v6
