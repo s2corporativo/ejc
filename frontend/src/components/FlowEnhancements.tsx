@@ -73,7 +73,7 @@ export function deveInjetarCaso(
 
 export function destinoRotaConsolidada(pathname: string): string | null {
   return pathname === "/knowledge-hub"
-    ? "/inteligencia?tab=pesquisa"
+    ? "/inteligencia?tab=conhecimento"
     : null;
 }
 
