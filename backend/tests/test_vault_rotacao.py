@@ -170,6 +170,28 @@ async def test_dry_run_conta_sem_gravar(db, monkeypatch, audit, so_chave_antiga)
     assert [r for r in audit if r["acao"] == "COFRE_ROTATE_MASTER"] == []
 
 
+# ── guarda de chave única (service — rede de segurança real) ─────────────────
+
+async def test_rotacionar_todas_uma_chave_levanta(db, monkeypatch, so_chave_antiga):
+    """Caller programático com uma única chave no CSV e dry_run=False: recifra
+    seria no-op → levanta ANTES de tocar em qualquer linha."""
+    await svc.cadastrar(db, "datajud", "DATAJUD_API_KEY", SEGREDO, "api_key", USER)
+    antes = {c.field_key: c.valor_encrypted for c in await _rows_com_cipher(db)}
+
+    with pytest.raises((RuntimeError, ValueError)):
+        await svc.rotacionar_todas(db, user_id=USER)   # CSV com 1 chave só
+
+    depois = {c.field_key: c.valor_encrypted for c in await _rows_com_cipher(db)}
+    assert depois == antes                             # nenhuma linha tocada
+
+
+async def test_rotacionar_todas_uma_chave_dry_run_ok(db, monkeypatch, so_chave_antiga):
+    """dry_run só CONTA — não exige a segunda chave (não vai recifrar nada)."""
+    await svc.cadastrar(db, "datajud", "DATAJUD_API_KEY", SEGREDO, "api_key", USER)
+    rotacionadas, total = await svc.rotacionar_todas(db, dry_run=True, user_id=USER)
+    assert (rotacionadas, total) == (0, 1)
+
+
 # ── guarda de chave única (script) ───────────────────────────────────────────
 
 def test_script_aborta_com_chave_unica(monkeypatch):

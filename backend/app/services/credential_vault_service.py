@@ -451,6 +451,18 @@ async def rotacionar_todas(
     if dry_run:
         return (0, total)
 
+    # Rede de segurança real (o script tem o guard didático, mas um caller
+    # programático não pode escapar): recifrar com uma única chave é no-op —
+    # não há chave nova para onde rotacionar. Falha ANTES de tocar em qualquer
+    # linha.
+    if len(get_settings().vault_master_keys_list) < 2:
+        raise RuntimeError(
+            "Rotação de chave-mestra exige ao menos DUAS chaves em "
+            "VAULT_MASTER_KEYS (nova na frente, antiga em seguida). Com uma só "
+            "a recifra seria no-op — adicione a chave nova ao CSV antes de "
+            "rotacionar (ver docs/RUNBOOK_COFRE_CREDENCIAIS.md)."
+        )
+
     rotacionadas = 0
     for c in linhas:
         # rotacionar() falha ALTO (ValueError) se nenhuma chave do CSV decifra

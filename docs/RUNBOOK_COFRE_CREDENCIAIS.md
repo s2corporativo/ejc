@@ -139,8 +139,24 @@ com `valor_encrypted` não-nulo — ativas e históricas — usando
 recifra com a primária = NOVA). É idempotente (rodar de novo não corrompe: o
 valor decifrado é sempre o mesmo), loga só contagem/progresso (nunca valores) e
 registra auditoria `COFRE_ROTATE_MASTER`. Se o CSV tiver **menos de duas
-chaves**, o script aborta e ensina o procedimento (não há o que rotacionar com
-segurança).
+chaves**, tanto o script quanto o próprio `rotacionar_todas` abortam (rede de
+segurança em duas camadas) e ensinam o procedimento — não há o que rotacionar
+com segurança.
+
+> **Se o script abortar com `ValueError` de decifra**, NÃO é bug: é o
+> comportamento "falha alto" do cofre protegendo a integridade. Significa que
+> existe uma linha (frequentemente **histórica**) cifrada com uma chave que
+> **já saiu do CSV** — nenhuma chave configurada a decifra. Saneie essa linha
+> órfã antes de repetir a rotação: identifique-a (o log indica o
+> provider/field afetado), revogue/zere o `valor_encrypted` dela (uma
+> revogação já zera o ciphertext) e rode o script de novo. Nunca remova uma
+> chave do CSV enquanto houver token dependente dela — foi o que gerou a
+> órfã.
+
+> **Registre quem operou a rotação.** A auditoria `COFRE_ROTATE_MASTER` fica
+> sem `user_id` quando disparada pelo script CLI (não há sessão HTTP). Anote no
+> registro de mudança (change log operacional) o operador, a data e o motivo
+> da rotação, para rastreabilidade equivalente às operações feitas pela UI.
 
 **(c) Remover a chave antiga.** Só depois de `--yes` concluir sem erro:
 
