@@ -24,7 +24,7 @@ function normalizarEndpoint(url?: string): string {
   if (!url) return "";
   try {
     const parsed = new URL(url, window.location.origin);
-    return parsed.pathname.replace(/^\/api/, "");
+    return parsed.pathname.replace(/^\/api(?:\/v1)?/, "");
   } catch {
     return url.split("?")[0] || "";
   }
@@ -73,7 +73,7 @@ export function deveInjetarCaso(
 
 export function destinoRotaConsolidada(pathname: string): string | null {
   return pathname === "/knowledge-hub"
-    ? "/inteligencia?tab=pesquisa"
+    ? "/inteligencia?tab=conhecimento"
     : null;
 }
 

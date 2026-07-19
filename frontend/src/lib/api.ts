@@ -5,7 +5,8 @@
 import axios from "axios";
 import type { AuthTokens, Deadline } from "../types";
 
-const api = axios.create({ baseURL: "/api", withCredentials: true });
+export const API_BASE_URL = "/api/v1";
+const api = axios.create({ baseURL: API_BASE_URL, withCredentials: true });
 
 /** Access token curto atualmente em localStorage (ou null). */
 export function getAccessToken(): string | null {
@@ -13,6 +14,13 @@ export function getAccessToken(): string | null {
 }
 
 api.interceptors.request.use((config) => {
+  // Compatibilidade transitória: chamadas antigas que ainda informam /api ou
+  // /v1 não podem duplicar o prefixo agora que o cliente usa /api/v1.
+  const url = String(config.url || "");
+  if (url.startsWith("/api/v1/")) config.url = url.slice("/api/v1".length);
+  else if (url.startsWith("/api/")) config.url = url.slice("/api".length);
+  else if (url.startsWith("/v1/")) config.url = url.slice("/v1".length);
+
   const token = getAccessToken();
   if (token) config.headers.Authorization = `Bearer ${token}`;
   return config;
@@ -27,7 +35,7 @@ let refreshing: Promise<string> | null = null;
  */
 export function refreshAccessToken(): Promise<string> {
   refreshing ??= axios
-    .post<AuthTokens>("/api/auth/refresh", {}, { withCredentials: true })
+    .post<AuthTokens>("/api/v1/auth/refresh", {}, { withCredentials: true })
     .then((res) => {
       const token = res.data.access_token;
       localStorage.setItem("ejc_access", token);

@@ -35,6 +35,7 @@ import {
   Wallet,
   type LucideIcon,
 } from "lucide-react";
+import { LEGACY_CANONICAL_REDIRECTS } from "./canonicalRoutes";
 
 export const ROLES = {
   gestores: ["superadmin", "admin", "socio"],
@@ -358,7 +359,7 @@ export const STAFF_ROUTES: ModuleRoute[] = [
   },
   {
     key: "ramos",
-    path: "/ramos",
+    path: "/areas-de-atuacao",
     label: "Áreas de Atuação",
     description: "Áreas jurídicas e ferramentas especializadas do escritório.",
     group: "Pesquisar & IA",
@@ -375,7 +376,7 @@ export const STAFF_ROUTES: ModuleRoute[] = [
   },
   {
     key: "ramo-detalhe",
-    path: "/ramos/:slug",
+    path: "/areas-de-atuacao/:slug",
     label: "Núcleo Jurídico",
     description: "Ferramentas especializadas do ramo selecionado.",
     group: "Pesquisar & IA",
@@ -412,7 +413,7 @@ export const STAFF_ROUTES: ModuleRoute[] = [
   },
   {
     key: "prazos",
-    path: "/prazos",
+    path: "/legado/prazos",
     label: "Prazos",
     description: "Controle jurídico de prazos e confirmações.",
     group: "Trabalhar um caso",
@@ -427,7 +428,7 @@ export const STAFF_ROUTES: ModuleRoute[] = [
   },
   {
     key: "tarefas",
-    path: "/tarefas",
+    path: "/legado/tarefas",
     label: "Tarefas",
     description: "Execução operacional atribuída à equipe.",
     group: "Trabalhar um caso",
@@ -441,7 +442,7 @@ export const STAFF_ROUTES: ModuleRoute[] = [
   },
   {
     key: "intimacoes",
-    path: "/intimacoes",
+    path: "/legado/intimacoes",
     label: "Intimações",
     description: "Comunicações processuais e conferência jurídica.",
     group: "Trabalhar um caso",
@@ -457,7 +458,7 @@ export const STAFF_ROUTES: ModuleRoute[] = [
   },
   {
     key: "suspensoes",
-    path: "/suspensoes",
+    path: "/legado/suspensoes",
     label: "Suspensões",
     description: "Suspensões processuais e reflexos em prazos.",
     group: "Trabalhar um caso",
@@ -571,7 +572,7 @@ export const STAFF_ROUTES: ModuleRoute[] = [
   },
   {
     key: "knowledge-hub",
-    path: "/knowledge-hub",
+    path: "/legado/knowledge-hub",
     label: "Conhecimento Jurídico",
     description:
       "Busca unificada na base de conhecimento, teses, jurisprudência e memória.",
@@ -885,6 +886,7 @@ export const STAFF_ROUTES: ModuleRoute[] = [
 ];
 
 export const LEGACY_REDIRECTS: LegacyRedirect[] = [
+  ...LEGACY_CANONICAL_REDIRECTS,
   {
     from: "/central-relacionamento",
     to: "/atividades?tab=relacionamento",
@@ -981,7 +983,7 @@ export const LEGACY_REDIRECTS: LegacyRedirect[] = [
   },
   {
     from: "/victory-vault",
-    to: "/knowledge-hub",
+    to: "/inteligencia?tab=conhecimento",
     reason: "Victory Vault foi absorvido pelo Conhecimento Jurídico.",
   },
   {
@@ -991,8 +993,8 @@ export const LEGACY_REDIRECTS: LegacyRedirect[] = [
   },
   {
     from: "/ambiental",
-    to: "/ramos/ambiental",
-    reason: "O núcleo ambiental foi incorporado aos Ramos do Direito.",
+    to: "/areas-de-atuacao/ambiental",
+    reason: "O núcleo ambiental foi incorporado às Áreas de Atuação.",
   },
   {
     from: "/dashboard-executivo",
