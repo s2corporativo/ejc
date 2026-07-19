@@ -8,7 +8,17 @@ from typing import Optional
 from pydantic import BaseModel, ConfigDict, Field, field_validator
 
 _PROCESS_STATUS = {"ativo", "suspenso", "encerrado", "arquivado"}
-_PROCESS_TYPES = {"judicial", "administrativo", "arbitral", "outro"}
+# Contrato aditivo: inclui todos os tipos já expostos no formulário do caso.
+_PROCESS_TYPES = {
+    "judicial",
+    "recurso",
+    "cautelar",
+    "execucao",
+    "administrativo",
+    "extrajudicial",
+    "arbitral",
+    "outro",
+}
 
 
 def _validate_process_number(value: Optional[str]) -> Optional[str]:
