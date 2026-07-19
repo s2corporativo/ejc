@@ -79,7 +79,13 @@ async def test_lista_vazia_e_unitaria_nao_chamam_modelo(_rerank_on):
     _rerank_on.setattr(rr, "_try_get_model", _boom)
     assert await rr.rerank("q", [], limite=6) == []
     um = _cands(1)
-    assert await rr.rerank("q", um, limite=6) == um
+    out = await rr.rerank("q", um, limite=6)
+    # O invariante deste teste é NÃO CHAMAR o modelo (o atalho de 1 candidato
+    # não precisa dele) — não a igualdade EXATA do dict. A governança
+    # jurídica (autoridade/citação/situação) é anexada mesmo neste atalho
+    # (auditoria de base de conhecimento): out ganha campos, não perde dados.
+    assert [c["chunk_id"] for c in out] == [0]
+    assert out[0]["conteudo"] == "trecho 0"
     assert chamado["n"] == 0
 
 

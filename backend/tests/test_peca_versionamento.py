@@ -26,6 +26,19 @@ from app.services.peca_numeracao import (
 )
 
 
+@pytest.fixture(autouse=True)
+async def _dispose_engine_apos_teste():
+    """Mesmo padrão dos *_dblevel.py (26 arquivos): descarta o pool do engine
+    global após QUALQUER teste que toque `AsyncSessionLocal` — sem isso, o
+    próximo teste (event loop novo, padrão pytest-asyncio) herda conexões
+    presas ao loop já encerrado ('Future attached to a different loop').
+    Este arquivo tem só 1 teste DB-gated (RUN_DB_TESTS), mas o fixture
+    autouse é barato/no-op nos demais (engine nunca chega a conectar)."""
+    yield
+    from app.core.database import engine
+    await engine.dispose()
+
+
 # ── 1. Sigla por ramo + fallback ─────────────────────────────────────────────
 
 def test_sigla_cobre_ramos_conhecidos():
