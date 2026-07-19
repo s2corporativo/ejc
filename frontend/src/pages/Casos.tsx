@@ -16,10 +16,35 @@ import {
   AlertTriangle,
   RotateCw,
 } from "lucide-react";
-import api, { aplicarExtracao } from "../lib/api";
+import api, { aplicarExtracao, vincularLoteAoCaso } from "../lib/api";
 import { asList } from "../lib/list";
 import { areaLabel, useAreas } from "../lib/areas";
-import type { AplicarExtracaoResult, ExtracaoPayload } from "../lib/api";
+import type {
+  AplicarExtracaoResult,
+  ExtracaoPayload,
+  VincularLoteResult,
+} from "../lib/api";
+
+/**
+ * O vínculo de lote pode retornar 200 com `conflitos` (itens que apontam para
+ * documento de outro caso sem arquivo clonável — ex.: ausente/externo). Isso
+ * NÃO é sucesso pleno: avisa o usuário quais documentos ficaram de fora e onde
+ * resolvê-los, em vez de seguir em silêncio.
+ */
+function avisarConflitosDeVinculo(vinc: VincularLoteResult) {
+  const conflitos = vinc?.conflitos ?? [];
+  if (conflitos.length === 0) return;
+  const nomes = conflitos
+    .slice(0, 3)
+    .map((c) => c.filename)
+    .join(", ");
+  const extra = conflitos.length > 3 ? ` e mais ${conflitos.length - 3}` : "";
+  toast.error(
+    `${conflitos.length} documento(s) do lote não puderam ser vinculados ao caso ` +
+      `(${nomes}${extra}). Eles permanecem na Entrada Universal/GED de origem — ` +
+      `verifique e anexe manualmente pelo caso.`,
+  );
+}
 import {
   carregarRascunho,
   salvarRascunho,
@@ -325,10 +350,13 @@ export default function Casos() {
   const [pendencia, setPendencia] = useState<{
     caseId: string;
     caseTitulo: string;
-    arquivo: File;
+    /** Ausente quando o vínculo é por lote (os arquivos já estão no servidor). */
+    arquivo?: File;
     tituloDoc: string;
     tipoDoc?: string;
     clientId?: string;
+    /** Lote da Entrada Universal a vincular (substitui o re-upload do arquivo). */
+    batchId?: string;
   } | null>(null);
   const [reanexando, setReanexando] = useState(false);
   // Passo de revisão (client-side) antes de confirmar a criação do caso.
@@ -488,6 +516,11 @@ export default function Casos() {
     const extracao = form._extracao as ExtracaoPayload | undefined;
     const arquivoOriginal = form._arquivo_original as File | undefined;
     const tipoDoc = form._tipo_documento as string | undefined;
+    // Lote da Entrada Universal: quando presente, TODOS os arquivos já estão no
+    // GED (órfãos) e o vínculo em lote substitui o re-upload do 1º arquivo.
+    const batchId =
+      (form._entrada_universal_batch_id as string | undefined) ||
+      (typeof extracao?.batch_id === "string" ? extracao.batch_id : undefined);
     // Rascunho recuperável: persistido ANTES de criar. Se qualquer passo falhar
     // (ou a aba fechar), o trabalho analisado não se perde. Limpo só no sucesso.
     if (arquivoOriginal) {
@@ -521,21 +554,28 @@ export default function Casos() {
       if (arquivoOriginal)
         atualizarRascunho({ caseId: novo?.id ?? null, clientId });
 
-      // ANEXA o documento ANTES de navegar: uma falha de anexo não deixa mais o
-      // usuário numa lista com um caso órfão do seu documento de origem.
-      if (arquivoOriginal && novo?.id) {
+      // VINCULA/ANEXA os documentos ANTES de navegar: uma falha não deixa mais
+      // o usuário numa lista com um caso órfão dos seus documentos de origem.
+      if ((batchId || arquivoOriginal) && novo?.id) {
         try {
-          await anexarDocumento(
-            novo.id,
-            clientId,
-            arquivoOriginal,
-            tituloDoc,
-            tipoDoc,
-          );
+          if (batchId) {
+            // Entrada Universal: vincula TODOS os arquivos do lote ao caso (e
+            // ao cliente) de uma vez — sem re-upload nem duplicata do 1º arquivo.
+            const vinc = await vincularLoteAoCaso(batchId, novo.id);
+            avisarConflitosDeVinculo(vinc);
+          } else if (arquivoOriginal) {
+            await anexarDocumento(
+              novo.id,
+              clientId,
+              arquivoOriginal,
+              tituloDoc,
+              tipoDoc,
+            );
+          }
           atualizarRascunho({ uploadFeito: true });
         } catch (e: any) {
-          // Caso criado, anexo falhou: NÃO navega. Mantém o arquivo em memória e
-          // oferece retomada (retry) sem recriar o caso (ele permanece em triagem).
+          // Caso criado, vínculo/anexo falhou: NÃO navega nem silencia. Oferece
+          // retomada (retry) sem recriar o caso (ele permanece em triagem).
           setPendencia({
             caseId: novo.id,
             caseTitulo: novo.titulo || tituloDoc,
@@ -543,10 +583,13 @@ export default function Casos() {
             tituloDoc,
             tipoDoc,
             clientId,
+            batchId,
           });
           toast.error(
             e.response?.data?.detail ||
-              "O caso foi criado, mas o documento não foi anexado. Tente novamente abaixo — o caso não será duplicado.",
+              (batchId
+                ? "O caso foi criado, mas os documentos importados não foram vinculados. Tente novamente abaixo — o caso não será duplicado."
+                : "O caso foi criado, mas o documento não foi anexado. Tente novamente abaixo — o caso não será duplicado."),
           );
           return;
         }
@@ -590,21 +633,36 @@ export default function Casos() {
     }
   };
 
-  // Retry do anexo quando o caso JÁ existe (pendência) — nunca recria o caso.
+  // Retry do vínculo/anexo quando o caso JÁ existe (pendência) — nunca recria o caso.
   const reanexarDocumento = async () => {
     if (!pendencia) return;
     setReanexando(true);
     try {
-      await anexarDocumento(
-        pendencia.caseId,
-        pendencia.clientId,
-        pendencia.arquivo,
-        pendencia.tituloDoc,
-        pendencia.tipoDoc,
-      );
+      if (pendencia.batchId) {
+        // Vínculo em lote (idempotente): religa TODOS os arquivos ao caso.
+        const vinc = await vincularLoteAoCaso(pendencia.batchId, pendencia.caseId);
+        avisarConflitosDeVinculo(vinc);
+      } else if (pendencia.arquivo) {
+        await anexarDocumento(
+          pendencia.caseId,
+          pendencia.clientId,
+          pendencia.arquivo,
+          pendencia.tituloDoc,
+          pendencia.tipoDoc,
+        );
+      } else {
+        toast.error(
+          "O arquivo original não está mais disponível nesta sessão. Anexe-o pelo caso na GED.",
+        );
+        return;
+      }
       atualizarRascunho({ uploadFeito: true });
       limparRascunho();
-      toast.success("Documento anexado ao caso.");
+      toast.success(
+        pendencia.batchId
+          ? "Documentos importados vinculados ao caso."
+          : "Documento anexado ao caso.",
+      );
       setPendencia(null);
       setRascunhoSalvo(null);
       setModal(false);
@@ -984,13 +1042,16 @@ export default function Casos() {
               <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0 text-warn-700" />
               <div className="min-w-0 flex-1">
                 <p className="text-sm font-semibold text-warn-800">
-                  O caso “{pendencia.caseTitulo}” foi criado, mas o documento não
-                  foi anexado.
+                  O caso “{pendencia.caseTitulo}” foi criado, mas{" "}
+                  {pendencia.batchId
+                    ? "os documentos importados não foram vinculados."
+                    : "o documento não foi anexado."}
                 </p>
                 <p className="mt-1 text-xs leading-5 text-warn-700">
-                  Nada foi perdido: o caso está salvo (em triagem) e o documento “
-                  {pendencia.arquivo.name}” continua aqui. Tente anexar de novo — o
-                  caso não será duplicado.
+                  Nada foi perdido: o caso está salvo (em triagem)
+                  {pendencia.batchId
+                    ? " e os arquivos do lote importado continuam no servidor. Tente vincular de novo — nenhum arquivo será duplicado."
+                    : ` e o documento “${pendencia.arquivo?.name ?? pendencia.tituloDoc}” continua aqui. Tente anexar de novo — o caso não será duplicado.`}
                 </p>
                 <div className="mt-3 flex flex-wrap gap-2">
                   <Button
@@ -1000,7 +1061,13 @@ export default function Casos() {
                     onClick={reanexarDocumento}
                     disabled={reanexando}
                   >
-                    {reanexando ? "Anexando..." : "Tentar anexar novamente"}
+                    {reanexando
+                      ? pendencia.batchId
+                        ? "Vinculando..."
+                        : "Anexando..."
+                      : pendencia.batchId
+                        ? "Tentar vincular novamente"
+                        : "Tentar anexar novamente"}
                   </Button>
                   <Button
                     size="sm"

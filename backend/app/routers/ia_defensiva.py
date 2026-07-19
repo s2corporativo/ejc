@@ -199,4 +199,7 @@ async def analisar_ia_defensiva(
     except ValueError as exc:
         raise HTTPException(status.HTTP_422_UNPROCESSABLE_ENTITY, str(exc))
     except RuntimeError as exc:
-        raise HTTPException(status.HTTP_503_SERVICE_UNAVAILABLE, str(exc))
+        # Camada de borda (P0 §3.2): detalhe técnico → log; usuário → leigo.
+        from app.core.ai_errors import http_erro_ia
+        raise http_erro_ia(exc, status.HTTP_503_SERVICE_UNAVAILABLE,
+                           contexto="ia_defensiva")

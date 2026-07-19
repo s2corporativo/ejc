@@ -84,19 +84,25 @@ def _audits(db: _FakeDB) -> list[AuditLog]:
     return [o for o in db.added if isinstance(o, AuditLog)]
 
 
-def _record(revoked: bool = False, expirado: bool = False) -> RefreshToken:
+def _record(revoked: bool = False, expirado: bool = False,
+            replaced_by_jti: str | None = None,
+            revoked_at: datetime | None = None) -> RefreshToken:
     delta = timedelta(days=-1 if expirado else 7)
     return RefreshToken(
         id="rt1", user_id="u1", jti="j-old", revoked=revoked,
         expires_at=datetime.now(timezone.utc) + delta,
+        revoked_at=revoked_at, replaced_by_jti=replaced_by_jti,
     )
 
 
 # ── 1. Refresh — detecção de reuso ────────────────────────────────────────────
 
-def test_refresh_jti_revogado_revoga_todas_sessoes_e_audita():
+def test_refresh_reuso_de_token_rotacionado_revoga_todas_sessoes_e_audita():
+    """Replay de token já ROTACIONADO (replaced_by_jti) fora da graça = furto."""
     token, _ = create_refresh_token("u1")
-    db = _FakeDB(results=[_record(revoked=True)])
+    fora_da_graca = datetime.now(timezone.utc) - timedelta(hours=1)
+    db = _FakeDB(results=[_record(
+        revoked=True, replaced_by_jti="j-novo", revoked_at=fora_da_graca)])
     client = TestClient(_montar(db))
     r = client.post("/auth/refresh", json={"refresh_token": token},
                     headers=_hdr("10.30.0.1"))
@@ -107,6 +113,26 @@ def test_refresh_jti_revogado_revoga_todas_sessoes_e_audita():
     logs = _audits(db)
     assert len(logs) == 1 and logs[0].acao == "REFRESH_REUSE"
     assert logs[0].user_id == "u1"
+
+
+def test_refresh_revogado_por_logout_ou_troca_de_senha_nao_pune():
+    """Token revogado SEM replaced_by_jti (logout/troca de senha) vindo de um
+    dispositivo antigo legítimo: 401 simples, sem cascata e sem REFRESH_REUSE —
+    não derruba a sessão nova emitida pelo alterar-senha. M-S3: o replay ainda
+    deixa trilha leve REFRESH_REPLAY_POS_LOGOUT (forense), sem punição."""
+    token, _ = create_refresh_token("u1")
+    db = _FakeDB(results=[_record(
+        revoked=True, revoked_at=datetime.now(timezone.utc))])
+    client = TestClient(_montar(db))
+    r = client.post("/auth/refresh", json={"refresh_token": token},
+                    headers=_hdr("10.30.0.9"))
+    assert r.status_code == 401
+    assert "Sessão encerrada" in r.json()["detail"]
+    assert len(db.executed) == 1          # só o SELECT do JTI — sem revoga-tudo
+    logs = _audits(db)
+    assert len(logs) == 1 and logs[0].acao == "REFRESH_REPLAY_POS_LOGOUT"
+    assert logs[0].user_id == "u1"
+    assert db.committed == 1              # trilha persistida antes do 401
 
 
 def test_refresh_jti_desconhecido_tambem_e_reuso():

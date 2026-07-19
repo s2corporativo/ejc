@@ -65,8 +65,8 @@ const TASKS: Task[] = [
     icon: CalendarClock,
     title: "Registre ou confirme um prazo",
     hint: "Cadastre um prazo e dê ciência para não perder nenhuma data processual.",
-    cta: "Ir para Prazos",
-    action: { kind: "rota", path: "/prazos" },
+    cta: "Ir para Agenda e Prazos",
+    action: { kind: "rota", path: "/atividades?tipo=prazo" },
   },
   {
     id: "documento-minuta",
@@ -97,13 +97,21 @@ export default function OnboardingTour() {
   const navigate = useNavigate();
   const panelRef = useRef<HTMLDivElement>(null);
 
-  // Carrega progresso + estado do painel. Primeiro acesso abre após um
-  // breve atraso; caso contrário, retoma exatamente onde o usuário parou.
+  // Carrega progresso + estado do painel. O painel expandido só abre
+  // AUTOMATICAMENTE na primeira visita; em qualquer montagem seguinte, um
+  // estado salvo "aberto" vira a pílula recolhida "Primeiros passos N/4" —
+  // o usuário expande por clique. Isso impede o popover de reabrir a cada
+  // navegação e de cobrir botões de ação (auditoria de usabilidade §2.4/2.5).
   useEffect(() => {
     setFeitas(lerConcluidas());
     const saved = localStorage.getItem(STATE_KEY);
-    if (saved === "recolhido" || saved === "dispensado" || saved === "aberto") {
+    if (saved === "recolhido" || saved === "dispensado") {
       setView(saved);
+      return;
+    }
+    if (saved === "aberto") {
+      localStorage.setItem(STATE_KEY, "recolhido");
+      setView("recolhido");
       return;
     }
     const timer = setTimeout(() => {
@@ -183,7 +191,7 @@ export default function OnboardingTour() {
         type="button"
         onClick={abrir}
         aria-label={`Primeiros passos: ${concluidas} de ${total} concluídos. Reabrir.`}
-        className="fixed bottom-4 right-4 z-50 flex items-center gap-2 rounded-full bg-white px-4 py-2.5 text-sm font-medium text-zinc-700 shadow-lg ring-1 ring-black/5 transition-shadow hover:shadow-xl"
+        className="fixed bottom-5 right-20 z-40 flex items-center gap-2 rounded-full border border-slate-200 bg-white px-4 py-2.5 text-sm font-medium text-zinc-700 shadow-md"
       >
         <Sparkles className="h-4 w-4 text-[#B08A50]" />
         Primeiros passos
@@ -195,7 +203,9 @@ export default function OnboardingTour() {
   }
 
   return (
-    <div className="onboarding-tour fixed inset-x-4 bottom-4 z-50 flex justify-center sm:inset-x-auto sm:right-4 sm:justify-end">
+    // pointer-events-none no wrapper: a faixa flex NÃO pode bloquear cliques
+    // fora do card (só o painel em si recebe eventos).
+    <div className="onboarding-tour pointer-events-none fixed inset-x-4 bottom-4 z-50 flex justify-center sm:inset-x-auto sm:right-4 sm:justify-end">
       <div
         ref={panelRef}
         tabIndex={-1}
@@ -203,7 +213,7 @@ export default function OnboardingTour() {
         aria-modal="false"
         aria-labelledby="onboarding-title"
         aria-describedby="onboarding-sub"
-        className="card w-full max-w-sm overflow-hidden focus:outline-none"
+        className="card pointer-events-auto w-full max-w-sm overflow-hidden focus:outline-none"
       >
         <div className="h-1 bg-zinc-100">
           <div
@@ -335,3 +345,4 @@ export default function OnboardingTour() {
     </div>
   );
 }
+

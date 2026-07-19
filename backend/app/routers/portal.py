@@ -8,7 +8,7 @@
 from __future__ import annotations
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel, Field
-from sqlalchemy import select, text
+from sqlalchemy import func, select, text
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.database import get_db
@@ -41,13 +41,38 @@ async def meus_casos(
             Case.client_id == client_id, Case.deleted_at.is_(None)
         ).order_by(Case.created_at.desc())
     )).scalars().all()
+
+    # Última movimentação por caso em UMA query (window function — evita N+1).
+    # LGPD: mesmo dado já exposto em GET /portal/casos/{id} (data + descricao
+    # sem o sufixo técnico " [dj:..."), nada além.
+    ultimas: dict[str, dict] = {}
+    case_ids = [c.id for c in rows]
+    if case_ids:
+        rn = func.row_number().over(
+            partition_by=CaseMovimento.case_id,
+            order_by=CaseMovimento.data_evento.desc(),
+        ).label("rn")
+        sub = select(
+            CaseMovimento.case_id, CaseMovimento.data_evento,
+            CaseMovimento.descricao, rn,
+        ).where(CaseMovimento.case_id.in_(case_ids)).subquery()
+        movs = (await db.execute(
+            select(sub.c.case_id, sub.c.data_evento, sub.c.descricao)
+            .where(sub.c.rn == 1)
+        )).all()
+        ultimas = {
+            cid: {"data": data, "descricao": descricao.split(" [dj:")[0]}
+            for cid, data, descricao in movs
+        }
+
     # Visão do cliente: status e dados públicos — SEM estratégia interna
     return {"data": [
         {"id": c.id, "numero_interno": c.numero_interno, "titulo": c.titulo,
          "area": c.area.value if hasattr(c.area, "value") else str(c.area),
          "status": c.status.value if hasattr(c.status, "value") else str(c.status),
          "numero_processo": c.numero_processo, "comarca": c.comarca,
-         "created_at": c.created_at}
+         "created_at": c.created_at,
+         "ultima_movimentacao": ultimas.get(c.id)}
         for c in rows
     ]}
 
@@ -131,6 +156,7 @@ async def financeiro(
         {"descricao": f.descricao,
          "valor": float(f.valor) if f.valor else None,
          "vencimento": f.data_vencimento,
+         "pago_em": f.data_pagamento,
          "status": f.status.value if hasattr(f.status, "value") else str(f.status)}
         for f in rows
     ]}
@@ -153,6 +179,30 @@ async def _caso_do_cliente(case_id: str, client_id: str, db: AsyncSession) -> No
     )
     if not r.first():
         raise HTTPException(status_code=404, detail="Caso não encontrado")
+
+
+@router.get("/mensagens/nao-lidas")
+async def mensagens_nao_lidas(
+    db: AsyncSession = Depends(get_db),
+    cu: User = Depends(get_current_user),
+):
+    """Contagem de mensagens do escritório ainda não lidas pelo cliente.
+
+    SEM efeito colateral: diferente do GET de mensagens do caso, NÃO marca
+    nada como lido — permite ao Dashboard do Portal exibir o badge de
+    "mensagem nova" sem consumir a notificação.
+    """
+    client_id = _exigir_cliente(cu)
+    res = await db.execute(
+        text("""
+            SELECT COUNT(*) FROM portal_mensagens pm
+            JOIN cases c ON c.id = pm.case_id
+            WHERE c.client_id = :clid AND c.deleted_at IS NULL
+              AND pm.autor_tipo <> 'cliente' AND pm.lida = false
+        """),
+        {"clid": client_id},
+    )
+    return {"nao_lidas": int(res.scalar() or 0)}
 
 
 @router.get("/casos/{case_id}/mensagens")

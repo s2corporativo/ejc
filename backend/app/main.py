@@ -46,6 +46,7 @@ from app.routers import backup_admin
 from app.routers import bank_analysis
 from app.routers import calculadoras
 from app.routers import calendar_feed
+from app.routers import case_intelligence
 from app.routers import case_partes
 from app.routers import cases
 from app.routers import caso_areas
@@ -111,14 +112,18 @@ from app.routers import triagem_entrevista
 from app.routers import ficha_triagem
 from app.routers import jurisprudencia_interna
 from app.routers import kanban
+from app.routers import kit_documental
 from app.routers import legal_docs
+from app.routers import matriz_teses
 from app.routers import memoria_institucional
 from app.routers import mensagens
 from app.routers import module_help
+from app.routers import motor_peca
 from app.routers import movimentos
 from app.routers import noticias
 from app.routers import notifications
 from app.routers import novos_modulos
+from app.routers import orquestrador
 from app.routers import observabilidade
 from app.routers import office_contracts
 from app.routers import partner_withdrawals
@@ -177,6 +182,7 @@ from app.routers import webhooks
 from app.routers import whatsapp
 from app.routers import wiki
 from app.routers import workflow
+from app.integrations import routers as integracoes
 
 
 # Ativa a arquitetura orientada a eventos (P1): importar registra os @on subscribers.
@@ -282,6 +288,7 @@ app.include_router(backup_admin.router, prefix=API)
 app.include_router(bank_analysis.router, prefix=API)
 app.include_router(calculadoras.router, prefix=API)
 app.include_router(calendar_feed.router, prefix=API)
+app.include_router(case_intelligence.router, prefix=API)
 app.include_router(case_partes.router, prefix=API)
 app.include_router(cases.router, prefix=API)
 app.include_router(caso_areas.router, prefix=API)
@@ -326,6 +333,7 @@ app.include_router(ia_especializada.router, prefix=API)
 app.include_router(ia_extra.router, prefix=API)  # Bloco 1 (Etapa 4): router antes não montado → 8 chamadas frontend em 404
 app.include_router(ia_governanca.router, prefix=API)
 app.include_router(ia_saude.router, prefix=API)
+app.include_router(ia_saude.router_status, prefix=API)  # GET /api/ia/status
 app.include_router(indice_risco.router, prefix=API)
 app.include_router(indices.router, prefix=API)  # Índices oficiais BCB (SGS + Olinda) — Bloco 1 das APIs públicas
 app.include_router(infosimples_receita.router, prefix=API)
@@ -342,7 +350,10 @@ app.include_router(juris_import.router, prefix=API)
 app.include_router(jurisprudencia_externa.router, prefix=API)
 app.include_router(jurisprudencia_interna.router, prefix=API)
 app.include_router(kanban.router, prefix=API)
+app.include_router(kit_documental.router, prefix=API)  # POST /api/cases/{id}/kit-documental (P0.3)
 app.include_router(legal_docs.router, prefix=API)
+app.include_router(matriz_teses.router, prefix=API)  # FASE 3 Orquestrador — Matriz de Teses (migração 102)
+app.include_router(orquestrador.router, prefix=API)  # FASE 5 Orquestrador — máquina de estados do caso
 app.include_router(memoria_institucional.router, prefix=API)
 app.include_router(honorarios_oab.router, prefix=API)  # frontend: /api/honorarios-oab/estimar (EstimadorHonorarios)
 app.include_router(intake.router, prefix=API)  # frontend: /api/intake/casos/{id}/analise-completa (IntakeAnalise)
@@ -350,6 +361,7 @@ app.include_router(triagem_entrevista.router, prefix=API)  # frontend: /api/tria
 app.include_router(ficha_triagem.router, prefix=API)  # frontend: /api/triagem/ficha (Ficha de Triagem pré-peça — gate de geração)
 app.include_router(mensagens.router, prefix=API)
 app.include_router(module_help.router, prefix=API)  # frontend: /api/module-help/* (HelpButton)
+app.include_router(motor_peca.router, prefix=API)  # P1: Motor de Peça — /api/cases/{id}/motor-peca/*
 app.include_router(movimentos.router, prefix=API)
 app.include_router(noticias.router, prefix=API)
 app.include_router(notifications.router, prefix=API)
@@ -413,6 +425,11 @@ app.include_router(webhooks.router, prefix=API)
 app.include_router(whatsapp.router, prefix=API)
 app.include_router(wiki.router, prefix=API)
 app.include_router(workflow.router, prefix=API)
+# Integrações externas públicas (app/integrations/) — Conecta gov.br fica de
+# fora até existirem credenciais reais (credenciamento institucional pendente).
+app.include_router(integracoes.datajud_router, prefix=API)
+app.include_router(integracoes.djen_router, prefix=API)
+app.include_router(integracoes.brasilapi_router, prefix=API)
 
 
 

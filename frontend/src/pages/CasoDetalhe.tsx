@@ -12,6 +12,8 @@ import {
 } from "lucide-react";
 import api from "../lib/api";
 import { asList } from "../lib/list";
+import { mensagemErroIA, ROTULO_IA_NAO_ATIVADA } from "../lib/iaErro";
+import { useIaStatus } from "../lib/iaStatus";
 import MotorTeses from "../components/MotorTeses";
 import LinhaDoTempoProcessual from "../components/visual/LinhaDoTempoProcessual";
 import MatrizRisco from "../components/visual/MatrizRisco";
@@ -23,6 +25,7 @@ import IntakeAnalise from "../components/IntakeAnalise";
 import ConversaoChecklist from "../components/ConversaoChecklist";
 import ProvasCaso from "../components/ProvasCaso";
 import DossieEstrategicoCaso from "../components/DossieEstrategicoCaso";
+import OrquestradorPanel from "../components/OrquestradorPanel";
 import CaseBreadcrumb from "../components/CaseBreadcrumb";
 import { ConsultaProfundaTJMG } from "../components/Infosimples";
 import type { Case } from "../types";
@@ -65,6 +68,7 @@ async function baixarDoc(docId: string, filename: string) {
 
 const TABS = [
   { key: "resumo", label: "Resumo" },
+  { key: "orquestrador", label: "Orquestrador" },
   { key: "processos", label: "Processos" },
   { key: "timeline", label: "Timeline" },
   { key: "mensagens", label: "Mensagens" },
@@ -109,7 +113,7 @@ const GROUPS: {
   {
     // Informações principais, cliente e partes, etiquetas, pendências.
     label: "Resumo",
-    tabs: ["resumo", "partes", "etiquetas"],
+    tabs: ["resumo", "orquestrador", "partes", "etiquetas"],
     links: [
       { label: "🧭 Jornada do caso", to: (id) => `/casos/${id}/jornada` },
       {
@@ -387,6 +391,7 @@ function AreasCaso({ caso }: { caso: Case }) {
 }
 
 function TabResumo({ caso }: { caso: Case }) {
+  const { disponivel: iaDisponivel } = useIaStatus();
   const navigate = useNavigate();
   const { user } = useAuth();
   const [iaModal, setIaModal] = useState(false);
@@ -561,7 +566,9 @@ function TabResumo({ caso }: { caso: Case }) {
       });
       setHonResp(data);
     } catch (e: any) {
-      setHonResp({ erro: e.response?.data?.detail || "Falha na sugestão" });
+      setHonResp({
+        erro: mensagemErroIA(e, "Não foi possível sugerir honorários."),
+      });
     } finally {
       setHonLoading(false);
     }
@@ -580,7 +587,7 @@ function TabResumo({ caso }: { caso: Case }) {
       });
       setIaResp(data);
     } catch (e: any) {
-      setIaResp({ erro: e.response?.data?.detail || "Falha na análise" });
+      setIaResp({ erro: mensagemErroIA(e, "Não foi possível gerar a análise.") });
     } finally {
       setIaLoading(false);
     }
@@ -660,9 +667,12 @@ function TabResumo({ caso }: { caso: Case }) {
       <div className="flex gap-2 flex-wrap">
         <button
           onClick={analisarIA}
-          className="btn-primary flex items-center gap-1"
+          disabled={!iaDisponivel}
+          title={iaDisponivel ? undefined : ROTULO_IA_NAO_ATIVADA}
+          className="btn-primary flex items-center gap-1 disabled:cursor-not-allowed disabled:opacity-50"
         >
-          <Sparkles size={14} /> Análise IA
+          <Sparkles size={14} />{" "}
+          {iaDisponivel ? "Análise IA" : "IA não ativada"}
         </button>
         <button
           onClick={syncDataJud}
@@ -2091,7 +2101,7 @@ function TabScore({ caseId }: { caseId: string }) {
           <div className="card p-5">
             <div className="flex items-start gap-6 mb-4">
               <div className="text-center min-w-[80px]">
-                <div className="text-5xl font-black text-gray-900">
+                <div className="text-2xl font-bold text-gray-900">
                   {top.total}
                 </div>
                 <div className="text-sm text-gray-400">/100</div>
@@ -3893,6 +3903,8 @@ export default function CasoDetalhe() {
     switch (activeTab) {
       case "resumo":
         return <TabResumo caso={caso} />;
+      case "orquestrador":
+        return <OrquestradorPanel caseId={id} />;
       case "processos":
         return <TabProcessos caseId={id} />;
       case "timeline":
@@ -4166,7 +4178,7 @@ export default function CasoDetalhe() {
         tela={activeTabLabel}
       />
       {/* Sticky header + tabs */}
-      <div className="sticky top-[4.25rem] z-20 card bg-white/95 backdrop-blur-xl">
+      <div className="sticky top-[4.25rem] z-20 card bg-white">
         <div className="flex flex-col gap-4 px-4 py-4 lg:flex-row lg:items-start lg:justify-between">
           <button
             onClick={() => navigate("/casos")}

@@ -225,12 +225,12 @@ class Settings(BaseSettings):
     ROTEAMENTO_LIMIAR_PESADO: int = 6
 
     # ── MÓDULO AGÊNTICO DE IA (loop de tool-use, igual ao Claude Code) ────
-    # Default OFF (aditivo e fail-safe): com a flag desligada o endpoint
-    # /ia/agente/stream responde 404 e NADA muda no sistema. Ligado, a IA opera
-    # como agente (decide → chama ferramenta → lê resultado → decide), reusando
-    # o núcleo e TODOS os guardrails (barreira LGPD, RBAC, AILog, gate de
+    # ATIVADO por default (decisão do titular, 2026-07-18): a IA opera como
+    # agente (decide → chama ferramenta → lê resultado → decide), reusando o
+    # núcleo e TODOS os guardrails (barreira LGPD, RBAC, AILog, gate de
     # citações, HITL). Nesta fase só provedores com tool-use (Anthropic).
-    AI_AGENT_ENABLED: bool = False
+    # Desligar num ambiente específico: AI_AGENT_ENABLED=false no .env.
+    AI_AGENT_ENABLED: bool = True
     # Teto de PASSOS do loop (nunca infinito).
     AI_AGENT_MAX_STEPS: int = 8
     # Teto de TOKENS acumulados (input+output de TODOS os turnos) por execução do
@@ -404,14 +404,17 @@ class Settings(BaseSettings):
     EMBEDDINGS_PROVIDER: str = "local"  # local | http
     EMBEDDINGS_API_URL: str = "http://embeddings:8010/embed"
     EMBEDDINGS_TIMEOUT: int = 120
-    # Modelo e dimensão do embedding (auditoria IA 2026-07-17, O-2). Default
-    # ATUALIZADO para BGE-M3 (1024d, multilíngue forte, denso) — recall superior
-    # ao mpnet (2021, 768d). A coluna knowledge_chunks.embedding é
+    # Modelo e dimensão do embedding. O default precisa constar em
+    # TextEmbedding.list_supported_models() da versão PINADA do fastembed;
+    # caso contrário a migration de dimensão deixa o RAG sem vetores e sem
+    # possibilidade de reconstrução. multilingual-e5-large é 1024d,
+    # multilíngue e suportado nativamente pelo fastembed 0.8.0.
+    # A coluna knowledge_chunks.embedding é
     # vector(EMBEDDINGS_DIM); TROCAR A DIMENSÃO exige a migration 096 + REINDEX
     # (scripts.reembedar_chunks_orfaos). Revertível por env (voltar a
     # sentence-transformers/paraphrase-multilingual-mpnet-base-v2 + 768 exige a
     # migration de downgrade + reindex). ⚠️ EMBEDDINGS_DIM DEVE casar com a coluna.
-    EMBEDDINGS_MODEL: str = "BAAI/bge-m3"
+    EMBEDDINGS_MODEL: str = "intfloat/multilingual-e5-large"
     EMBEDDINGS_DIM: int = 1024
     # Auto-reindex do RAG (O-2): job periódico do scheduler reembeda chunks órfãos
     # (embedding IS NULL) — assim a troca de modelo/dimensão (migration 096) se
@@ -426,12 +429,14 @@ class Settings(BaseSettings):
     # torch; não sai do VPS). Recupera um POOL maior (RAG_RERANK_POOL_*) e devolve
     # só os melhores após rerank — maior ganho de precisão de contexto do RAG.
     # Fail-safe (ver reranker.py): fastembed/modelo ausente ou qualquer erro →
-    # mantém a ordem RRF, sem exceção. O modelo default é multilíngue; se a versão
-    # instalada do fastembed não o suportar, troque por um suportado (ex.:
-    # BAAI/bge-reranker-base, jinaai/jina-reranker-v2-base-multilingual) — a
-    # degradação é graciosa e o RAG segue funcionando.
-    RAG_RERANK_ENABLED: bool = True
-    RAG_RERANK_MODEL: str = "BAAI/bge-reranker-v2-m3"
+    # mantém a ordem RRF, sem exceção. O único cross-encoder multilíngue listado
+    # pelo fastembed pinado tem licença CC-BY-NC-4.0, incompatível com uso
+    # empresarial. Por isso o rerank fica DESLIGADO por padrão até existir um
+    # modelo multilíngue com licença comercialmente compatível e eval em pt-BR.
+    # BAAI/bge-reranker-base permanece como opção técnica suportada (MIT), mas
+    # não deve ser ativado sem medir qualidade no corpus jurídico em português.
+    RAG_RERANK_ENABLED: bool = False
+    RAG_RERANK_MODEL: str = "BAAI/bge-reranker-base"
     RAG_RERANK_POOL_MULT: int = 5     # pool de candidatos = limite × MULT
     RAG_RERANK_POOL_MIN: int = 20     # piso de candidatos antes do rerank
 
@@ -472,14 +477,34 @@ class Settings(BaseSettings):
     PECAS_RAG_MODELOS_ENABLED: bool = True
     PECAS_RAG_MODELOS_TOPK: int = 3
 
+    # ── Laço de AUTO-CRÍTICA na geração de peças (P2 — auditoria IA) ──────
+    # True = após a redação final do pipeline de peças (Etapa 7), a IA
+    # Crítica/Adversarial (Modo Duas IAs) avalia a minuta e, havendo
+    # apontamentos ACIONÁVEIS, UMA rodada extra de revisão devolve a crítica
+    # ao modelo redator (task_type="elaboracao_peca", base anti-alucinação;
+    # a crítica entra DELIMITADA como DADO — nunca instrução de sistema).
+    # A versão revisada também passa pelo gate de citações e permanece
+    # rascunho HITL. Opt-in e fail-safe: default False = pipeline IDÊNTICO ao
+    # atual; qualquer falha na crítica/revisão entrega a versão original.
+    PECAS_AUTOCRITICA_ENABLED: bool = False
+
+    # ── Pesquisa jurisprudencial DECOMPOSTA no pipeline de peças (FASE 3) ─
+    # True = quando o caso tem Matriz de Teses montada (migração 102), a etapa
+    # de jurisprudência do peca_service recebe ADICIONALMENTE o bloco
+    # estruturado por questão (precedentes VERIFICADOS favoráveis/contrários,
+    # ver matriz_teses_service.bloco_pesquisa_estruturada) em vez de só o blob
+    # único do RAG. Aditivo e fail-safe: default False = pipeline BYTE-IDÊNTICO
+    # ao atual; qualquer falha/matriz ausente degrada para o comportamento atual.
+    PECAS_PESQUISA_QUESTOES_ENABLED: bool = False
+
     # ── Governança/curadoria na RECUPERAÇÃO RAG (gate fail-closed) ───────
     # Auditoria RAG: os campos de curadoria (confidence_level/rag_status) vivem
     # em knowledge_docs.extra (JSONB) mas NÃO eram usados no WHERE das buscas.
     # O gate exclui SEMPRE docs explicitamente bloqueados/recusados/pendentes
-    # (ver ai_service._FILTRO_GATE_RAG). Não exige aprovação por padrão (não
-    # quebra o acervo legado nunca curado). Ligue RAG_EXIGIR_APROVADO=true para
-    # exigir rag_status='aprovado' em TODA recuperação (regime estrito).
-    RAG_EXIGIR_APROVADO: bool = False
+    # e, por padrão seguro, exige rag_status='aprovado' em TODA recuperação.
+    # Acervo legado sem decisão de curadoria fica em quarentena até reconciliação;
+    # disponibilidade nunca prevalece sobre fundamentação jurídica não validada.
+    RAG_EXIGIR_APROVADO: bool = True
     # Quarentena das súmulas: mesmo após a reconstrução do seed (cada verbete
     # reconferido individualmente contra fonte oficial — ver DATA_CONFERENCIA
     # em sumulas_ingestion.py), este filtro continua ligado por padrão como

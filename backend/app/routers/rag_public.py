@@ -326,7 +326,11 @@ async def ingerir_lote(
                     db,
                     titulo=item.titulo, categoria=item.categoria,
                     conteudo=item.conteudo, chave_origem=item.chave_origem,
-                    fonte=item.fonte, tribunal=item.tribunal, extra=item.extra,
+                    fonte=item.fonte, tribunal=item.tribunal,
+                    # API externa nunca autoaprova conteúdo, mesmo que o
+                    # payload tente enviar rag_status=aprovado.
+                    extra={**(item.extra or {}), "rag_status": "pendente",
+                           "ingestao_api": True},
                     client_id=client_id, case_id=item.case_id,
                     confianca=item.confianca,
                     embutir_vetores=False,   # vetorização adiada p/ background

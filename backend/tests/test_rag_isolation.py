@@ -14,6 +14,12 @@ from app.services.ai_service import (
 )
 
 
+@pytest.fixture(autouse=True)
+def _busca_textual_sem_download(monkeypatch):
+    from app.services import embedding_service
+    monkeypatch.setattr(embedding_service, "disponivel", lambda: False)
+
+
 def test_categorias_restritas():
     for c in ("peca_interna", "peca_escritorio", "precedente_interno"):
         assert c in _RESTRICTED_CATS

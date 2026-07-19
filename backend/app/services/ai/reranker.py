@@ -53,8 +53,14 @@ def disponivel() -> bool:
         return False
     if _IMPORTAVEL is None:
         try:
-            from fastembed.rerank.cross_encoder import TextCrossEncoder  # noqa: F401
-            _IMPORTAVEL = True
+            from fastembed.rerank.cross_encoder import TextCrossEncoder
+            suportados = {m["model"] for m in TextCrossEncoder.list_supported_models()}
+            _IMPORTAVEL = settings.RAG_RERANK_MODEL in suportados
+            if not _IMPORTAVEL:
+                logger.error(
+                    "Reranker '%s' não é suportado pelo fastembed pinado",
+                    settings.RAG_RERANK_MODEL,
+                )
         except Exception:
             _IMPORTAVEL = False
             logger.info(
@@ -93,8 +99,7 @@ def _try_get_model():
                 logger.warning(
                     "[Reranker] modelo '%s' indisponível (%s) — RAG mantém a "
                     "ordem RRF. Ajuste RAG_RERANK_MODEL para um suportado pela "
-                    "versão do fastembed (ex.: BAAI/bge-reranker-base, "
-                    "jinaai/jina-reranker-v2-base-multilingual).",
+                    "versão do fastembed (ex.: BAAI/bge-reranker-base).",
                     getattr(settings, "RAG_RERANK_MODEL", "?"), str(e)[:200],
                 )
                 return None

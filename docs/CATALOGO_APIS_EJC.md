@@ -1,13 +1,11 @@
 # Catálogo de APIs e Fontes de Dados — EJC
 
 > Levantamento consolidado em 11/07/2026 (pesquisa multi-fonte com verificação
-> documental). Itens marcados **[NV]** não puderam ser verificados ao vivo
-> (o ambiente de pesquisa bloqueava alguns domínios oficiais) — confirmar com
-> uma chamada real a partir da VPS antes de integrar.
->
-> Já integrados no EJC: DataJud/CNJ, LexML SRU, STJ Dados Abertos, DJEN/Comunica
-> CNJ, Infosimples (TJMG processo + Receita CPF/CNPJ), Google Drive, BCB (a
-> integrar), Anthropic/Groq.
+> documental); reorganizado em 18/07/2026 com **status real verificado no
+> código** (backend/app/services/ e backend/app/core/config.py). Itens
+> marcados **[NV]** não puderam ser verificados ao vivo (o ambiente de
+> pesquisa bloqueava alguns domínios oficiais) — confirmar com uma chamada
+> real a partir da VPS antes de integrar.
 >
 > **Sondagem AO VIVO (11/07/2026, workflow probe-apis)**: BCB SGS 14/14 séries OK
 > (incl. Taxa Legal 29543 = 0,706607 em 07/2026; CDI 4391 e IPCA-E 10764
@@ -22,24 +20,45 @@
 > do probe errado (site oficial ok) — descobrir na implementação.
 > DJEN 403 para runner GitHub (WAF) — já integrado no EJC via VPS.
 
-## Prioridade P0 — integrar já (alto valor, gratuito, acesso fácil)
+## 1. APIs públicas gratuitas — ativar primeiro
+
+Todas GRATUITAS. Várias **já estão integradas no código** — para essas, "ativar"
+significa no máximo ligar uma flag e/ou colar uma credencial gratuita no `.env`.
+Legenda de status: ✅ integrado e ligado por default · 🔑 integrado, falta só
+credencial/flag · 🔧 integrado, desligado por flag (sem credencial necessária) ·
+📋 não integrado — sugestão futura.
+
+### 1.1 Já integradas no EJC (service pronto no backend)
+
+| Fonte | O que resolve no fluxo jurídico | Custo | Status real no código | O que falta para ativar |
+|---|---|---|---|---|
+| **BCB — SGS + Olinda** (SELIC, IPCA, INPC, IGP-M, TR, poupança, CDI, **Taxa Legal 29543**, taxaJuros, PTAX) | Correção monetária e juros oficiais nos **cálculos judiciais** (Lei 14.905/2024, EC 113/2021); revisional bancária (contrato vs. média do banco); painel de taxas do ramo Bancário | Grátis, sem chave | ✅ `services/indices_service.py` (SGS+Olinda, cache 2 camadas, `INDICES_BCB_ENABLED=True` por default) e `services/bcb_service.py` (painel de taxas) | Nada — já ativo |
+| **BrasilAPI — feriados nacionais** | Feriados no **cálculo de prazos processuais** (deadline_calculator); sync automático de anos futuros (Carnaval, Corpus Christi) | Grátis, sem chave | ✅ `services/feriados_service.py` (merge aditivo na tabela `feriados`, `FERIADOS_BRASILAPI_ENABLED=True` por default, job no scheduler) | Nada — já ativo |
+| **CEP** (BrasilAPI v2 → ViaCEP) e **CNPJ** (OpenCNPJ → BrasilAPI → ReceitaWS) | Cadastro instantâneo de cliente PF/PJ (endereço por CEP; razão social/QSA/CNAE por CNPJ) + validação de dígitos CPF/CNPJ offline | Grátis, sem chave | ✅ `services/validators_service.py` (cadeia de fallback multi-fonte) + endpoints `/utils/cep/{cep}` e `/utils/cnpj/{cnpj}` em `routers/utils.py` — sem flag, sempre ativo | Nada — já ativo |
+| **DataJud / CNJ** (API Pública) | Consulta de movimentações processuais por número CNJ em qualquer tribunal; sync automático dos casos dos clientes; base dos andamentos | Grátis — chave **pública** divulgada pelo CNJ na wiki do DataJud | 🔑 `services/datajud_service.py` + `services/datajud_sync_service.py` (retry, alias por tribunal). Default `DATAJUD_ENABLED=False`, `DATAJUD_API_KEY=""` | Colar a chave pública em `DATAJUD_API_KEY` e ligar `DATAJUD_ENABLED=true` (e opcionalmente `DATAJUD_SYNC_ENABLED=true`) |
+| **Portal da Transparência (CGU)** — CEIS/CNEP/CEPIM | **Due diligence da parte contrária**: sanções por CNPJ (inidoneidade, Lei Anticorrupção, impedimento de convênio) | Grátis — token emitido por cadastro de e-mail no portal | 🔑 `services/transparencia_service.py` (3 bases, cache diário, retenção LGPD 7 dias). Default `TRANSPARENCIA_ENABLED=False`, `TRANSPARENCIA_API_KEY=""`. Probe ao vivo: 401 estruturado — **falta só o token** | Pedir o token gratuito por e-mail, colar em `TRANSPARENCIA_API_KEY` e ligar `TRANSPARENCIA_ENABLED=true` |
+| **DJEN / Comunica CNJ** | Captura de intimações/publicações por OAB; vincula ao caso, cria movimento e alerta (o advogado define o prazo — decisão HITL) | Grátis, sem auth | 🔧 `services/djen_service.py`. Default `DJEN_INGEST_ENABLED=False`; exige `DJEN_OABS_MONITORADAS`. WAF bloqueia runner GitHub — rodar da VPS | Ligar `DJEN_INGEST_ENABLED=true` e cadastrar as OABs monitoradas |
+| **PNCP — Contratações Públicas** (Lei 14.133/2021) | Consulta pública de contratações por data/UF/município/modalidade (contexto de direito administrativo) | Grátis, sem chave | 🔧 `services/pncp_service.py` (cache por dia+filtros). Default `PNCP_ENABLED=False` | Ligar `PNCP_ENABLED=true` |
+| **Jurisprudência TJMG** (crawler) | Precedentes do tribunal da casa na base de conhecimento | Grátis (portal público, sem API — crawler) | 🔧 `TJMG_INGEST_ENABLED=False` por default; mudanças no portal podem exigir manutenção | Ligar `TJMG_INGEST_ENABLED=true` |
+
+Obs.: `core/public_apis.py` mantém um cliente experimental extra (SELIC último
+valor, ReceitaWS CNPJ, STF) usado por `services/rag_juridico.py` — a fonte
+canônica de índices é `indices_service.py` e a de CNPJ é `validators_service.py`.
+
+### 1.2 Públicas gratuitas ainda NÃO integradas (📋 sugestão futura — ordem de valor)
 
 | Fonte | O que dá | Acesso | Módulo EJC |
 |---|---|---|---|
-| **BCB — API SGS** | SELIC (11 diária, 432 meta, 4390 acum. mês), IPCA (433), INPC (188), IGP-M (189), IPCA-15 (7478), IPCA-E (10764 [NV periodicidade]), TR (226), poupança (25/195) e **Taxa Legal Lei 14.905/2024 (29543)** já calculada | REST JSON sem auth; janela máx. 10 anos por consulta; cachear | **Cálculos judiciais** (correção monetária + juros oficiais) |
-| **BCB — Olinda taxaJuros** | Taxa de juros por **instituição e modalidade** (diária/mensal) | OData JSON sem auth | **Revisional bancária** (comparar contrato vs. média do próprio banco) |
+| **IBGE Agregados/SIDRA** | IPCA/INPC/IPCA-15 na fonte primária | REST JSON sem auth (probe OK) | Cálculos (dupla checagem dos índices BCB) |
 | **BCB — Ranking de reclamações** | Índice de reclamações por banco, trimestral | OData/CSV sem auth | Bancário (fundamentar falha sistêmica) |
-| **BrasilAPI** | CEP (com fallback multi-fonte), **feriados nacionais**, CNPJ, taxas, bancos | REST sem auth | **Prazos** (feriados!), cadastro |
-| **OpenCNPJ / minha-receita** | CNPJ completo (QSA, CNAEs, Simples) | OpenCNPJ: 50 req/s sem auth; minha-receita: self-host possível | Cadastro de clientes PJ |
-| **TCU — Webservices** | API REST de acórdãos + bulk de 5 bases de jurisprudência | REST JSON sem auth | Base de conhecimento (adm. público) |
-| **Portal da Transparência (CGU)** | Sanções CEIS/CNEP/CEPIM, contratos, convênios | REST com token gratuito (cadastro e-mail) | Due diligence de parte contrária |
+| **TCU — Webservices** | API REST de acórdãos + bulk de 5 bases de jurisprudência | REST JSON sem auth (endpoint do probe errado — descobrir na implementação) | Base de conhecimento (adm. público) |
 | **Câmara dos Deputados v2** | PLs, tramitações, votações por tema/keyword | REST JSON sem auth | Radar Regulatório |
 | **Senado — Dados Abertos** | Matérias, movimentações, LegislacaoService | REST XML/JSON sem auth (modernizado 05/2025 — abstrair client) | Radar Regulatório |
-| **ALMG — /api/v2** | PLs **estaduais MG**, legislação mineira | REST JSON/XML sem auth [NV limites] | Radar Regulatório (MG) |
+| **ALMG — /api/v2** | PLs **estaduais MG**, legislação mineira | REST JSON/XML sem auth [NV limites]; timeout alto + degradação | Radar Regulatório (MG) |
 | **CNJ — TPU/SGT** | Tabelas processuais unificadas (classes/assuntos/movimentos) | SOAP público sem auth + download Excel/SQL | Normalização de dados processuais |
-| **STJ Dados Abertos** | Inteiro teor de decisões (CKAN) | Bulk sem auth | Base de conhecimento (já parcialmente usado) |
+| **STJ Dados Abertos** | Inteiro teor de decisões (CKAN) | Bulk sem auth | Base de conhecimento (já parcialmente usado na ingestão) |
 | **INLABS (Imprensa Nacional)** | DOU completo em XML diário | Cadastro gratuito + ZIPs por seção; scripts oficiais Python | Radar de normas novas (D+0) |
-| **Querido Diário** | Diários oficiais municipais (busca textual) | REST JSON sem auth (~60 req/min); BH coberto; **Betim [NV]** | Radar municipal |
+| **Querido Diário** | Diários oficiais municipais (busca textual) | REST JSON sem auth (~60 req/min); BH coberto; **Betim [NV]**; probe devolveu HTML — reverificar contrato | Radar municipal |
 | **ANPD (scraping leve)** | Regulamentos, guias e sanções LGPD | HTML/PDF gov.br (estável) | Base de conhecimento (LGPD) |
 | **Normas RFB (sijut2consulta)** | IN, ADI, Soluções de Consulta COSIT consolidadas | Querystring parametrizável (sem API oficial) | Base de conhecimento (tributário) |
 | **PGFN Dívida Ativa** | Inscritos em dívida ativa da União/FGTS | CSV bulk trimestral sem auth | Due diligence |
@@ -49,18 +68,20 @@
 | **INSS/Dataprev Dados Abertos** | Benefícios concedidos/cessados por espécie/UF | CSV bulk mensal | Previdenciário (analytics) |
 | **CAGED/RAIS (PDET)** | Microdados de vínculos e salários | FTP anônimo (.7z) | Trabalhista (fundamentar cálculos) |
 | **STF Corte Aberta** | Estatísticas e decisões (CSV; espelho BigQuery na Base dos Dados) | CSV/BigQuery | Constitucional (RAG/analytics) |
-| **IBGE Agregados/SIDRA** | IPCA/INPC/IPCA-15 na fonte primária | REST JSON sem auth | Cálculos (dupla checagem) |
-| **PTAX (Olinda)** | Câmbio oficial diário | OData sem auth | Cálculos com moeda estrangeira |
+| **minha-receita (self-host)** | CNPJ completo self-hosted (complementa a cadeia já integrada em `validators_service.py`) | Self-host possível | Cadastro de clientes PJ |
 
-## Prioridade P1 — próxima leva (alto valor, exige contratação/credenciamento)
+## 2. Pagas / credenciamento — opcionais
 
-| Fonte | O que dá | Como contratar | Observação |
+Nenhuma é pré-requisito do fluxo: o núcleo (processos, prazos, cálculos,
+cadastro, due diligence básica) roda 100% com as gratuitas da seção 1.
+
+| Fonte | O que dá | Como contratar | Status real no código / Observação |
 |---|---|---|---|
-| **Infosimples** (em integração) | TJMG processo, Receita CPF/CNPJ, DETRAN-MG, IBAMA, CAR e centenas de consultas | Conta + créditos pré-pagos (api.infosimples.com/cadastro) | Conector pronto no EJC com teto de custo e cache |
-| **MNI eproc-TJMG** | Consulta processual + avisos direto na fonte, sem custo por consulta | Ofício ao Presidente do TJMG + certificado ICP-Brasil (Portaria Conjunta 1720/PR/2025) [NV se admite escritório privado] | TJMG migra PJe→eproc até fim de 2026 — mirar eproc |
-| **Escavador API** | Monitoramento processual multi-tribunal + diários | Créditos pré-pagos, sem mensalidade mínima alta | Melhor custo/benefício p/ escritório de 5 advogados |
-| **Serasa/SPC/BoaVista** | Score, negativação, protestos | Contrato PJ (SPC via CDL Betim); justificativa LGPD obrigatória | Preço sob proposta |
-| **SERPRO/Dataprev comerciais** | CPF/CNPJ oficiais em tempo real | Contrato comercial | O Conecta gov.br é só para órgãos públicos |
+| **Infosimples** (PAGO, por consulta) | TJMG processo, Receita CPF/CNPJ, DETRAN-MG, IBAMA, CAR e centenas de consultas | Conta + créditos pré-pagos (api.infosimples.com/cadastro) | 🔑 Conector **já pronto** no EJC: `services/infosimples_service.py` com teto diário de custo (`INFOSIMPLES_MAX_CONSULTAS_DIA=50`), cache do dia e retenção LGPD. Default `INFOSIMPLES_ENABLED=False`; falta contratar e colar `INFOSIMPLES_TOKEN` |
+| **MNI eproc-TJMG** (credenciamento, sem custo por consulta) | Consulta processual + avisos direto na fonte | Ofício ao Presidente do TJMG + certificado ICP-Brasil (Portaria Conjunta 1720/PR/2025) [NV se admite escritório privado] | 📋 Não integrado. TJMG migra PJe→eproc até fim de 2026 — mirar eproc; iniciar o ofício já |
+| **Escavador API** (PAGO) | Monitoramento processual multi-tribunal + diários | Créditos pré-pagos, sem mensalidade mínima alta | 📋 Não integrado. Melhor custo/benefício p/ escritório de 5 advogados |
+| **Serasa/SPC/BoaVista** (PAGO — birôs de crédito) | Score, negativação, protestos | Contrato PJ (SPC via CDL Betim); justificativa LGPD obrigatória | 📋 Não integrado. Preço sob proposta |
+| **SERPRO/Dataprev comerciais** (PAGO) | CPF/CNPJ oficiais em tempo real | Contrato comercial | 📋 Não integrado. O Conecta gov.br é só para órgãos públicos |
 
 ## Prioridade P2 — monitorar
 
@@ -82,19 +103,20 @@ Cartórios (CENSEC, e-Notariado, CRC), **ONR/Registro de Imóveis** (advogado us
 
 ## Complementos MG (indicados pelo dono)
 
-- **ALMG Swagger v2**: `dadosabertos.almg.gov.br/api/ajuda/swagger/view/lastest` — confirma a API estadual (P0 acima).
+- **ALMG Swagger v2**: `dadosabertos.almg.gov.br/api/ajuda/swagger/view/lastest` — confirma a API estadual (seção 1.2 acima).
 - **dados.mg.gov.br**: portal CKAN de dados abertos do Estado de MG — tem **API de catálogo padrão CKAN** (listar/baixar datasets programaticamente); vasculhar datasets de segurança, saúde e fazenda conforme demanda de caso [NV inventário completo].
 - **Prodemge transparência** (`prodemge.gov.br/transparencia`): institucional da empresa de TI do Estado — não é fonte de dados de caso; útil só como referência de quem opera os sistemas estaduais.
 - **Conecta — API dos Serviços Estaduais** (`gov.br/conecta/catalogo/apis/api-dos-servicos-estaduais`): catálogo de serviços públicos estaduais; como as demais do Conecta, **adesão restrita a órgãos públicos** — sem acesso privado direto [NV].
-- **Portal da Transparência (federal)**: já em P0 — token gratuito por e-mail, sanções CEIS/CNEP para due diligence.
+- **Portal da Transparência (federal)**: já integrado (seção 1.1) — token gratuito por e-mail, sanções CEIS/CNEP para due diligence.
 
-## Top 5 recomendado (ordem de implementação)
+## Plano de ativação recomendado (ordem)
 
-1. **BCB SGS + Olinda** — motor de atualização monetária/juros com número oficial (inclui Taxa Legal pós-Lei 14.905/2024). Maior impacto imediato nas calculadoras.
-2. **BrasilAPI feriados + CEP + OpenCNPJ** — feriados no cálculo de prazos e cadastro instantâneo de cliente. Esforço baixíssimo.
-3. **Câmara v2 + Senado + ALMG** — Radar Regulatório de verdade (federal + estadual MG) por tema.
-4. **TCU + STJ + ANPD + Normas RFB** — ingestão contínua na base de conhecimento (a IA passa a citar fontes oficiais atualizadas).
-5. **MNI eproc-TJMG (credenciamento)** — consulta processual do tribunal da casa direto na fonte, sem custo por consulta; iniciar o ofício da Portaria 1720/2025 já.
+1. **Já ativos por default** — BCB SGS/Olinda (`indices_service.py`), feriados BrasilAPI (`feriados_service.py`), CEP/CNPJ (`validators_service.py`): nada a fazer.
+2. **DataJud/CNJ** — colar a chave pública gratuita no `.env` e ligar as flags: consulta processual + sync de andamentos imediato, custo zero.
+3. **Portal da Transparência** — pedir o token gratuito por e-mail e ligar: due diligence de sanções por CNPJ.
+4. **DJEN + PNCP + TJMG** — só ligar as flags (sem credencial): intimações por OAB, contratações públicas e precedentes do TJMG.
+5. **Novas integrações gratuitas** (seção 1.2) — começar por IBGE (dupla checagem de índices), Câmara/Senado/ALMG (Radar Regulatório) e TCU/STJ/ANPD/Normas RFB (base de conhecimento).
+6. **Pagas/credenciamento** (seção 2) — apenas quando houver demanda: Infosimples (conector pronto, falta token pago) e ofício do MNI eproc-TJMG (Portaria 1720/2025, sem custo por consulta após credenciado).
 
 ## Regras jurídicas de cálculo (referência para o módulo)
 

@@ -155,6 +155,46 @@ export interface LoginResponse extends AuthTokens {
   must_change_password?: boolean;
 }
 
+// ── NFS-e (notas fiscais de serviço) ─────────────────────
+export type NfseStatus =
+  "rascunho" | "processando" | "autorizada" | "rejeitada" | "cancelada";
+export interface NfseStatusInfo {
+  enabled: boolean;
+  configured: boolean;
+  ambiente?: string | null;
+  provedor?: string | null;
+  manual_disponivel: boolean;
+  emissor_nacional_url?: string | null;
+}
+export interface NotaFiscal {
+  id: string;
+  fee_id?: string | null;
+  client_id?: string | null;
+  /** "manual" = nota emitida fora do sistema e registrada aqui. */
+  provider: string;
+  provider_id?: string | null;
+  referencia?: string | null;
+  ambiente?: string | null;
+  status: NfseStatus;
+  numero?: string | null;
+  chave_acesso?: string | null;
+  /** Backend serializa Decimal como string (ou null). */
+  valor?: string | null;
+  descricao?: string | null;
+  pdf_url?: string | null;
+  xml_url?: string | null;
+  mensagem_erro?: string | null;
+  data_emissao?: string | null;
+  competencia?: string | null;
+  motivo_cancelamento?: string | null;
+  tem_pdf: boolean;
+  tem_xml: boolean;
+}
+export interface NotaFiscalListResponse {
+  items: NotaFiscal[];
+  total: number;
+}
+
 // ── Diário Oficial (IDs UUID string, alinhados ao modelo canônico) ──
 export interface DiarioOficialKeyword {
   id: string;

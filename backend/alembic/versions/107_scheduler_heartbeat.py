@@ -1,4 +1,4 @@
-"""100 — scheduler_heartbeat: heartbeat honesto dos jobs do APScheduler
+"""107 — scheduler_heartbeat: heartbeat honesto dos jobs do APScheduler
 
 Contexto (achado nº 1 da auditoria):
     Os jobs do scheduler (captura DJEN, sync DataJud, monitor Diário Oficial,
@@ -17,14 +17,14 @@ Contexto (achado nº 1 da auditoria):
 ADITIVO PURO e IDEMPOTENTE: CREATE TABLE IF NOT EXISTS; nenhuma tabela existente
 é tocada (mesmo padrão raw-SQL de 089_fichas_triagem).
 
-Revision ID: 100_scheduler_heartbeat
-Revises: 099_legal_doc_protocolo
+Revision ID: 107_scheduler_heartbeat
+Revises: 106_bytes_bigint
 Create Date: 2026-07-18
 """
 from alembic import op
 
-revision = "100_scheduler_heartbeat"
-down_revision = "099_legal_doc_protocolo"
+revision = "107_scheduler_heartbeat"
+down_revision = "106_bytes_bigint"
 branch_labels = None
 depends_on = None
 
