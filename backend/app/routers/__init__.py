@@ -41,3 +41,8 @@ sala_de_guerra.router.include_router(sala_de_guerra_facade.router)
 from app.routers import cases, case_timeline  # noqa: E402
 
 cases.router.include_router(case_timeline.router)
+
+# Saúde da carteira é sub-recurso do Dashboard, sem novo mount em main.py.
+from app.routers import dashboard, dashboard_operational  # noqa: E402
+
+dashboard.router.include_router(dashboard_operational.router)
