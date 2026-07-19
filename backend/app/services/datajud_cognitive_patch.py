@@ -150,6 +150,21 @@ def _instalar_wrappers_datajud() -> None:
     dj.upsert_movimentos_no_caso = upsert_com_feed
     dj.sincronizar_caso = sync_com_feed
 
+    # Módulos importados ANTES deste instalador podem ter guardado a referência
+    # antiga com ``from ... import função``. Atualizamos essas referências para
+    # que o botão existente no caso e o job de clientes usem o mesmo núcleo.
+    try:
+        from app.routers import cases as cases_router
+        cases_router._dj_sync = sync_com_feed
+    except Exception as exc:  # pragma: no cover - defesa de startup
+        logger.warning("Não foi possível atualizar cases._dj_sync: %s", exc)
+    try:
+        from app.services import datajud_sync_service as sync_clientes
+        sync_clientes.consultar_movimentos = _consultar_movimentos_exatos
+        sync_clientes.upsert_movimentos_no_caso = upsert_com_feed
+    except Exception as exc:  # pragma: no cover - defesa de startup
+        logger.warning("Não foi possível atualizar o sync DataJud de clientes: %s", exc)
+
     # DataJud não é fonte de termo inicial. Mantemos a heurística apenas para
     # classificar o documento cognitivo; a criação de Deadline é desativada.
     dj._detectar_prazos_criticos = detectar_sem_criar_prazo
