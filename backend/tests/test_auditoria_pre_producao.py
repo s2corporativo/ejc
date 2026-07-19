@@ -377,6 +377,9 @@ def _prod_kwargs(**over):
         SECRET_KEY="s" * 64,
         PII_ENCRYPTION_KEY=Fernet.generate_key().decode(),
         PII_HASH_KEY="h" * 32,
+        # Cofre de Credenciais (migration 108): obrigatória em produção,
+        # mesmo padrão do PII_ENCRYPTION_KEY.
+        VAULT_MASTER_KEYS=Fernet.generate_key().decode(),
         FRONTEND_URL="https://app.exemplo.adv.br",
         CORS_ORIGINS="https://app.exemplo.adv.br",
     )

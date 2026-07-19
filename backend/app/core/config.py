@@ -65,6 +65,23 @@ class Settings(BaseSettings):
     # higiene de chaves (rotacionar uma não invalida a outra).
     PII_HASH_KEY: str = ""
 
+    # ── Cofre de Credenciais (integration_credentials, migration 108) ──────
+    # CSV de chaves Fernet mestras do cofre — a PRIMEIRA cifra (primária),
+    # TODAS decifram (MultiFernet). Rotação de mestra = prepend da chave nova
+    # na frente + re-encrypt em background (services/vault_crypto.rotacionar).
+    # EXCLUSIVA do cofre: não reusar PII_ENCRYPTION_KEY/BACKUP_ENCRYPTION_KEY
+    # (rotacionar uma não pode invalidar a outra) e JAMAIS derivar de
+    # SECRET_KEY (trocar o SECRET_KEY desloga usuários; não pode, além disso,
+    # inutilizar credenciais cifradas). Default vazio de propósito — mesmo
+    # padrão do PII_ENCRYPTION_KEY: obrigatória em produção (validada
+    # abaixo), efêmera em desenvolvimento.
+    VAULT_MASTER_KEYS: str = ""
+
+    @property
+    def vault_master_keys_list(self) -> List[str]:
+        """Chaves do cofre na ordem do CSV (primeira = primária)."""
+        return [k.strip() for k in self.VAULT_MASTER_KEYS.split(",") if k.strip()]
+
     # ── Banco de dados (asyncpg) ──────────────────────────────────────────
     DATABASE_URL: str = "postgresql+asyncpg://ejc_user:ejc_pass@db:5432/ejc_db"
     # Versão sync para Alembic (mesmo host, driver diferente)
@@ -839,6 +856,30 @@ class Settings(BaseSettings):
                         "BACKUP_ENCRYPTION_KEY inválida: precisa ser uma chave "
                         "Fernet (32 bytes url-safe base64)."
                     ) from e
+            # Cofre de Credenciais: mesma promessa do PII/BACKUP — falha no
+            # DEPLOY, não no primeiro uso. Sem chave estável, credenciais
+            # cifradas viram lixo a cada restart (jamais autogerar em
+            # produção). Valida o FORMATO de TODAS as chaves do CSV: uma
+            # secundária malformada só estouraria meses depois, na primeira
+            # decifragem de um registro antigo durante uma rotação.
+            if not self.VAULT_MASTER_KEYS or self.VAULT_MASTER_KEYS.startswith("TROCAR"):
+                raise ValueError(
+                    "VAULT_MASTER_KEYS ausente ou placeholder em produção. "
+                    "Gere com \"python3 -c 'from cryptography.fernet import "
+                    "Fernet; print(Fernet.generate_key().decode())'\" e defina "
+                    "no .env (CSV; a primeira chave cifra, todas decifram). "
+                    "NUNCA derive do SECRET_KEY e nunca descarte uma chave que "
+                    "ainda decifra credenciais existentes."
+                )
+            for chave in self.vault_master_keys_list:
+                try:
+                    Fernet(chave.encode())
+                except Exception as e:
+                    raise ValueError(
+                        "VAULT_MASTER_KEYS contém chave inválida: cada item do "
+                        "CSV precisa ser uma chave Fernet (32 bytes url-safe "
+                        "base64)."
+                    ) from e
         elif not self.SECRET_KEY:
             # Desenvolvimento: gera chave efêmera para não travar o ambiente local.
             self.SECRET_KEY = secrets.token_urlsafe(64)
@@ -849,6 +890,20 @@ class Settings(BaseSettings):
                 self.PII_ENCRYPTION_KEY = Fernet.generate_key().decode()
             if not self.PII_HASH_KEY:
                 self.PII_HASH_KEY = secrets.token_urlsafe(32)
+        if self.APP_ENV != "production" and not self.VAULT_MASTER_KEYS:
+            # Só em desenvolvimento: chave efêmera do cofre para não travar o
+            # ambiente local — com AVISO, porque credenciais cifradas com ela
+            # se perdem no próximo restart (comportamento aceitável em dev).
+            from cryptography.fernet import Fernet
+            import warnings
+            self.VAULT_MASTER_KEYS = Fernet.generate_key().decode()
+            warnings.warn(
+                "VAULT_MASTER_KEYS ausente — gerada chave Fernet EFÊMERA de "
+                "desenvolvimento para o Cofre de Credenciais. Credenciais "
+                "cifradas com ela serão perdidas no próximo restart; defina "
+                "uma chave estável no .env para persistir.",
+                stacklevel=2,
+            )
         return self
 
     model_config = SettingsConfigDict(
