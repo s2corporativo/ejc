@@ -74,10 +74,13 @@ def main() -> None:
               f"https://api.bcb.gov.br/dados/serie/bcdata.sgs.{cod}/dados/ultimos/2?formato=json",
               v_json_lista_valor)
 
+    # Olinda exige que o ALIAS do parâmetro OData tenha o MESMO nome do
+    # parâmetro declarado (aliases curtos @i/@f → HTTP 400 "has no function
+    # with parameter"). Mesma sintaxe já usada em indices_service.OLINDA_PTAX.
     check("BCB Olinda PTAX (dólar)",
           "https://olinda.bcb.gov.br/olinda/servico/PTAX/versao/v1/odata/"
-          "CotacaoDolarPeriodo(dataInicialCotacao=@i,dataFinalCotacao=@f)?"
-          "@i='07-07-2026'&@f='07-10-2026'&$top=2&$format=json",
+          "CotacaoDolarPeriodo(dataInicialCotacao=@dataInicialCotacao,dataFinalCotacao=@dataFinalCotacao)?"
+          "@dataInicialCotacao='07-07-2026'&@dataFinalCotacao='07-10-2026'&$top=2&$format=json",
           lambda b: v_json(b := b, texto=f"itens={len(json.loads(b).get('value', []))}"))
     check("BCB Olinda taxaJuros (por instituição)",
           "https://olinda.bcb.gov.br/olinda/servico/taxaJuros/versao/v2/odata/"
@@ -162,3 +165,5 @@ def main() -> None:
 
 if __name__ == "__main__":
     main()
+
+# Sondagem re-executada em 2026-07-17 (pré-go-live) — dispara o workflow probe-apis.

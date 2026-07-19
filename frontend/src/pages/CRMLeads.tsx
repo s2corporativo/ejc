@@ -9,6 +9,7 @@ import {
   User,
 } from "lucide-react";
 import api from "../lib/api";
+import { toast } from "../components/Toast";
 import { soDigitos } from "../utils/phone";
 import { Modal, Button, PageHeader, Spinner, ErrorState } from "../components/UI";
 import { asList } from "../lib/list";
@@ -117,19 +118,23 @@ export default function CRMLeads() {
   }, [load]);
 
   async function save() {
-    await api.post("/clients/", {
-      nome: form.nome,
-      telefone: form.telefone || undefined,
-      email: form.email || undefined,
-      area_interesse: form.area_interesse || undefined,
-      origem_lead: form.origem_lead || undefined,
-      observacoes: form.observacoes || undefined,
-      status: "lead",
-      etapa_funil: "lead",
-    });
-    setShowForm(false);
-    setForm({ ...EMPTY_FORM });
-    load();
+    try {
+      await api.post("/clients/", {
+        nome: form.nome,
+        telefone: form.telefone || undefined,
+        email: form.email || undefined,
+        area_interesse: form.area_interesse || undefined,
+        origem_lead: form.origem_lead || undefined,
+        observacoes: form.observacoes || undefined,
+        status: "lead",
+        etapa_funil: "lead",
+      });
+      setShowForm(false);
+      setForm({ ...EMPTY_FORM });
+      load();
+    } catch (e: any) {
+      toast.error(e?.response?.data?.detail || "Falha ao salvar o lead");
+    }
   }
 
   async function mover(leadId: string, novaEtapa: string) {
@@ -145,7 +150,11 @@ export default function CRMLeads() {
         ...extraPayload,
       });
       if (novaEtapa === "convertido") load(); // reload to remove from leads list
-    } catch {
+    } catch (e: any) {
+      toast.error(
+        e?.response?.data?.detail ||
+          "Falha ao mover o lead. A etapa anterior foi restaurada.",
+      );
       load();
     }
   }
