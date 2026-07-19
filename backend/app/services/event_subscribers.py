@@ -129,9 +129,19 @@ def _patch_documents_background_analysis() -> None:
     logger.info("Hook de análise documental ajustado para OCR completo")
 
 
+def _install_ai_core_hardening() -> None:
+    """Ativa o gate fail-closed comum aos call sites legados do gateway."""
+    try:
+        from app.services.ai_core_hardening_patch import instalar
+        instalar()
+    except Exception as exc:  # segurança não deve passar despercebida no boot
+        logger.error("Hardening do núcleo de IA indisponível: %s", exc, exc_info=True)
+
+
 _patch_precedentes_router()
 _patch_advogado_estilo_router()
 _patch_documents_background_analysis()
+_install_ai_core_hardening()
 
 
 @on("movimento.criado")
