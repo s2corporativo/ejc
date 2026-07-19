@@ -104,14 +104,22 @@ def get_password_hash(password: str) -> str:
 
 
 # ── JWT tokens ────────────────────────────────────────────────────────────────
-def create_access_token(user_id: str, role: str,
-                        must_change_password: bool = False) -> str:
-    expire = datetime.now(timezone.utc) + timedelta(
-        hours=settings.ACCESS_TOKEN_EXPIRE_HOURS
+def create_access_token(
+    user_id: str,
+    role: str,
+    must_change_password: bool = False,
+    two_factor_setup_required: bool = False,
+    expires_minutes: int | None = None,
+) -> str:
+    expire = datetime.now(timezone.utc) + (
+        timedelta(minutes=expires_minutes)
+        if expires_minutes is not None
+        else timedelta(hours=settings.ACCESS_TOKEN_EXPIRE_HOURS)
     )
     payload = {
         "sub": user_id,
         **({"pwd_change_required": True} if must_change_password else {}),
+        **({"two_factor_setup_required": True} if two_factor_setup_required else {}),
         "role": role,
         "type": "access",
         "exp": expire,

@@ -99,12 +99,16 @@ export default function LoginModern() {
         role: data.role,
       };
       setSession(user);
-      await bootstrap();
 
       if (data.must_change_password) {
         nav("/trocar-senha", { replace: true });
         return;
       }
+      if (data.precisa_configurar_2fa) {
+        nav("/configurar-2fa", { replace: true });
+        return;
+      }
+      await bootstrap();
       if (data.role === "cliente_externo") {
         const portalDestination = requestedPath?.startsWith("/portal")
           ? requestedPath

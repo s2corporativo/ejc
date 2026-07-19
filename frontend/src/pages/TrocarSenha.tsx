@@ -15,8 +15,13 @@ export default function TrocarSenha() {
 
   const trocar = async () => {
     setErro("");
-    if (nova.length < 8) {
-      setErro("Mínimo 8 caracteres");
+    const senhaForte =
+      nova.length >= 10 &&
+      /[A-Za-z]/.test(nova) &&
+      /\d/.test(nova) &&
+      /[^A-Za-z0-9]/.test(nova);
+    if (!senhaForte) {
+      setErro("Use no mínimo 10 caracteres, com letra, número e símbolo.");
       return;
     }
     if (nova !== conf) {
@@ -34,6 +39,11 @@ export default function TrocarSenha() {
         // sessão em vez de derrubar o usuário de volta ao /login logo após
         // ele criar a senha. O refresh novo vem no cookie httpOnly.
         localStorage.setItem("ejc_access", data.access_token);
+        if (data.precisa_configurar_2fa) {
+          toast.success("Senha alterada. Agora proteja a conta com o 2FA.");
+          nav("/configurar-2fa", { replace: true });
+          return;
+        }
         await bootstrap();
         toast.success("Senha alterada com sucesso — você continua conectado.");
         nav("/", { replace: true });
@@ -76,7 +86,7 @@ export default function TrocarSenha() {
           <input
             className="input"
             type="password"
-            placeholder="Nova senha (mín. 8)"
+            placeholder="Nova senha (mín. 10, com letra, número e símbolo)"
             value={nova}
             onChange={(e) => setNova(e.target.value)}
           />
