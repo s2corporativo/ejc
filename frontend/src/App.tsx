@@ -13,6 +13,7 @@ import EntradaUniversalGlobal from "./components/EntradaUniversalGlobal";
 import FlowEnhancements from "./components/FlowEnhancements";
 import Layout from "./components/Layout";
 import PortalLayout from "./components/PortalLayout";
+import ProviderPanelShortcut from "./components/ProviderPanelShortcut";
 import {
   PortalOnly,
   Protected,
@@ -38,6 +39,9 @@ const PortalAssinaturas = lazy(
 );
 const PortalMensagens = lazy(() => import("./pages/portal/PortalMensagens"));
 const PortalDocumentos = lazy(() => import("./pages/portal/PortalDocumentos"));
+const PainelProvedoresIA = lazy(
+  () => import("./pages/PainelProvedoresIA"),
+);
 const NotFound = lazy(() => import("./pages/NotFound"));
 
 // Alias antigo /clientes/:clientId/dossie removido de STAFF_ROUTES; como
@@ -122,6 +126,7 @@ export default function App() {
                       <Layout />
                       <EntradaUniversalGlobal />
                       <FlowEnhancements />
+                      <ProviderPanelShortcut />
                     </>
                   </StaffOnly>
                 </Protected>
@@ -144,6 +149,15 @@ export default function App() {
                   />
                 );
               })}
+
+              <Route
+                path="/governanca-ia/provedores"
+                element={
+                  <RoleOnly roles={["superadmin", "admin", "socio"]}>
+                    <PainelProvedoresIA />
+                  </RoleOnly>
+                }
+              />
 
               {LEGACY_REDIRECTS.map((redirect) => (
                 <Route
