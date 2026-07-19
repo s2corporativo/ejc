@@ -19,7 +19,7 @@ import re
 from datetime import datetime, timezone
 from typing import Any
 
-from sqlalchemy import func, select
+from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models.case import Case, CaseMovimento
@@ -210,6 +210,12 @@ async def alimentar_caso(
     O commit permanece sob responsabilidade do chamador para que timeline,
     auditoria e RAG sejam atômicos na mesma transação.
     """
+    if not case.client_id:
+        raise ValueError(
+            "Caso sem client_id: o feed DataJud não pode ser indexado sem escopo "
+            "de isolamento por cliente."
+        )
+
     await registrar_fonte(
         db,
         FONTE_SLUG,
@@ -300,7 +306,6 @@ async def alimentar_caso(
 
 async def status_caso(db: AsyncSession, case: Case) -> dict[str, Any]:
     """Estado auditável do feed cognitivo do caso, sem expor conteúdo sensível."""
-    prefixo = f"datajud:%:{case.id}:%"
     docs = (await db.execute(
         select(KnowledgeDoc).where(
             KnowledgeDoc.case_id == case.id,
@@ -335,12 +340,12 @@ async def alimentar_lote(
     embutir_vetores: bool = False,
 ) -> dict[str, Any]:
     """Backfill idempotente dos casos ativos; falha de um caso não aborta o lote."""
-    casos = (await db.execute(
-        select(Case).where(
+    referencias = (await db.execute(
+        select(Case.id, Case.numero_interno).where(
             Case.deleted_at.is_(None),
             Case.numero_processo.isnot(None),
         ).order_by(Case.last_synced_at.desc().nullslast()).limit(max(1, min(limite, 500)))
-    )).scalars().all()
+    )).all()
 
     resumo = {
         "casos": 0,
@@ -352,9 +357,15 @@ async def alimentar_lote(
         "erros": 0,
     }
     erro_final: str | None = None
-    for case in casos:
+    for case_id, numero_interno in referencias:
         resumo["casos"] += 1
+        case_ref = numero_interno or str(case_id)
         try:
+            # Recarrega em cada iteração: um commit/rollback anterior não deixa
+            # objeto expirado ou sessão envenenada contaminar o próximo caso.
+            case = await db.get(Case, case_id)
+            if case is None or case.deleted_at is not None:
+                continue
             resultado = await alimentar_caso(
                 db, case, embutir_vetores=embutir_vetores
             )
@@ -371,7 +382,7 @@ async def alimentar_lote(
             erro_final = f"{type(exc).__name__}: {str(exc)[:180]}"
             logger.warning(
                 "Feed DataJud falhou para caso %s: %s",
-                case.numero_interno or case.id,
+                case_ref,
                 erro_final,
             )
 
