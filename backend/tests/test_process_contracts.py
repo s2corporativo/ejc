@@ -1,0 +1,75 @@
+from __future__ import annotations
+
+from pathlib import Path
+
+import pytest
+from pydantic import ValidationError
+
+from app.schemas.process import ProcessCreate, ProcessUpdate
+
+
+def test_process_schema_accepts_administrative_identifier():
+    payload = ProcessCreate(numero_cnj="SEI-12345/2026", tipo="administrativo")
+    assert payload.numero_cnj == "SEI-12345/2026"
+
+
+@pytest.mark.parametrize(
+    "tipo",
+    [
+        "judicial",
+        "recurso",
+        "cautelar",
+        "execucao",
+        "administrativo",
+        "extrajudicial",
+        "arbitral",
+        "outro",
+    ],
+)
+def test_process_schema_preserves_existing_operational_types(tipo: str):
+    assert ProcessCreate(tipo=tipo).tipo == tipo
+
+
+def test_process_schema_rejects_invalid_cnj_check_digit():
+    with pytest.raises(ValidationError):
+        ProcessCreate(numero_cnj="0000000-00.0000.0.00.0000")
+
+
+def test_process_update_preserves_unset_fields():
+    payload = ProcessUpdate(status="suspenso")
+    assert payload.model_dump(exclude_unset=True) == {"status": "suspenso"}
+
+
+def test_router_does_not_embed_sql_rules():
+    source = (
+        Path(__file__).parents[1] / "app/routers/processes.py"
+    ).read_text(encoding="utf-8")
+    assert "sqlalchemy import text" not in source
+    assert "INSERT INTO processes" not in source
+    assert '@router.get("/cases/{case_id}/processes")' in source
+    assert '@router.patch("/processes/{pid}")' in source
+    assert '@router.post("/processes/{pid}/principal")' in source
+    assert '@router.post("/processes/{pid}/arquivar")' in source
+    assert '@router.post("/processes/{pid}/desarquivar")' in source
+    assert '@router.delete("/processes/{pid}")' in source
+
+
+def test_service_preserves_legacy_accessors_and_write_through():
+    source = (
+        Path(__file__).parents[1] / "app/services/processo_service.py"
+    ).read_text(encoding="utf-8")
+    assert "async def processo_principal" in source
+    assert "async def numero_processo_efetivo" in source
+    assert "async def obter_processo" in source
+    assert "_sync_case_legacy" in source
+    assert "Use a ação específica de arquivamento" in source
+
+
+def test_repository_is_the_only_process_persistence_layer_in_wave2():
+    repository = (
+        Path(__file__).parents[1] / "app/repositories/process_repository.py"
+    ).read_text(encoding="utf-8")
+    assert "class ProcessRepository" in repository
+    assert "async def list_for_case" in repository
+    assert "async def principal" in repository
+    assert "async def clear_principal" in repository
