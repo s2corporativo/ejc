@@ -28,13 +28,43 @@ on:
       - ".github/workflows/architecture-inventory.yml"
 
 permissions:
-  contents: read
+  contents: write
 
 concurrency:
   group: architecture-inventory-${{ github.ref }}
   cancel-in-progress: true
 
 jobs:
+  format-api:
+    name: Format API client with repository Prettier
+    if: ${{ github.event_name == 'pull_request' && github.head_ref == 'chore/ejc-10-10-release-governance' }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          ref: chore/ejc-10-10-release-governance
+      - uses: actions/setup-node@v6
+        with:
+          node-version: "20"
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
+      - name: Aplicar Prettier oficial apenas ao arquivo apontado pelo gate
+        working-directory: frontend
+        run: |
+          npm ci
+          npx prettier src/lib/api.ts --write
+      - name: Publicar correção determinística
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add frontend/src/lib/api.ts
+          if git diff --cached --quiet; then
+            exit 0
+          fi
+          git commit -m "style(frontend): formatar cliente API com Prettier"
+          git push origin HEAD:chore/ejc-10-10-release-governance
+
   inventory:
     name: Generate complete architecture inventory
     runs-on: [self-hosted, ejc-vps]
