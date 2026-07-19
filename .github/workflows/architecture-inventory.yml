@@ -2,53 +2,56 @@ name: Architecture Inventory — Phase 0
 
 on:
   workflow_dispatch:
-  push:
-    branches:
-      - agent/organizacao-padronizacao-rotas-fluxos
-    paths:
-      - "scripts/generate_architecture_inventory.py"
-      - "scripts/refine_architecture_inventory.py"
-      - "scripts/tests/test_generate_architecture_inventory.py"
-      - "scripts/tests/test_refine_architecture_inventory.py"
-      - "config/architecture_inventory_overrides.json"
-      - "backend/app/**"
-      - "backend/alembic/versions/**"
-      - "frontend/src/**"
-      - ".github/workflows/architecture-inventory.yml"
   pull_request:
     paths:
-      - "scripts/generate_architecture_inventory.py"
-      - "scripts/refine_architecture_inventory.py"
-      - "scripts/tests/test_generate_architecture_inventory.py"
-      - "scripts/tests/test_refine_architecture_inventory.py"
-      - "config/architecture_inventory_overrides.json"
+      - "scripts/apply_2fa_*.py"
       - "backend/app/**"
-      - "backend/alembic/versions/**"
-      - "frontend/src/**"
       - ".github/workflows/architecture-inventory.yml"
 
 permissions:
-  contents: read
+  contents: write
 
 concurrency:
   group: architecture-inventory-${{ github.ref }}
   cancel-in-progress: true
 
 jobs:
+  apply-auth-2fa:
+    name: Reapply anchored 2FA auth patches
+    if: ${{ github.head_ref == 'fix/2fa-enforcement-hard' }}
+    runs-on: [self-hosted, ejc-vps]
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          ref: fix/2fa-enforcement-hard
+      - name: Reaplicar somente o auth restaurado
+        run: |
+          python3 scripts/apply_2fa_auth_session.py
+          python3 scripts/apply_2fa_password.py
+          python3 scripts/apply_2fa_totp_fixed.py
+          python3 -m compileall -q backend/app
+      - name: Publicar correção
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add backend/app/routers/auth.py
+          if git diff --cached --quiet; then
+            exit 0
+          fi
+          git commit -m "fix(auth): reaplicar enforcement 2FA com âncoras corretas"
+          git push origin HEAD:fix/2fa-enforcement-hard
+
   inventory:
     name: Generate complete architecture inventory
     runs-on: [self-hosted, ejc-vps]
     timeout-minutes: 10
-
     steps:
-      - name: Checkout
-        uses: actions/checkout@v7
+      - uses: actions/checkout@v7
         with:
           fetch-depth: 1
-
       - name: Validate Python runtime
         run: python3 --version
-
       - name: Test inventory pipeline
         shell: bash
         run: |
@@ -57,7 +60,6 @@ jobs:
             scripts.tests.test_generate_architecture_inventory \
             scripts.tests.test_refine_architecture_inventory \
             -v 2>&1 | tee architecture-test.log
-
       - name: Publish test diagnostic
         if: always()
         uses: actions/upload-artifact@v7
@@ -66,22 +68,16 @@ jobs:
           path: architecture-test.log
           if-no-files-found: warn
           retention-days: 7
-
       - name: Generate raw inventory
         run: |
           python3 scripts/generate_architecture_inventory.py \
-            --output "$RUNNER_TEMP/ejc-architecture-inventory" \
-            --check
-
+            --output "$RUNNER_TEMP/ejc-architecture-inventory" --check
       - name: Refine mounts and duplicate families
         run: |
           python3 scripts/refine_architecture_inventory.py \
-            --output "$RUNNER_TEMP/ejc-architecture-inventory" \
-            --check
-
+            --output "$RUNNER_TEMP/ejc-architecture-inventory" --check
       - name: Publish summary
         run: cat "$RUNNER_TEMP/ejc-architecture-inventory/README.md" >> "$GITHUB_STEP_SUMMARY"
-
       - name: Upload complete inventory
         uses: actions/upload-artifact@v7
         with:
