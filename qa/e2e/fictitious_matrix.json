@@ -23,7 +23,7 @@
       "titulo": "E2E-FICTICIO Reclamação contra concessionária de água",
       "area": "consumidor",
       "prioridade": "alta",
-      "numero_processo": "5000000-00.2026.8.13.0027",
+      "numero_processo": "5000000-83.2026.8.13.0027",
       "tribunal": "TJMG",
       "comarca": "Betim",
       "vara": "Juizado Especial Cível",
@@ -43,7 +43,7 @@
     },
     "atualizacao_caso": {
       "status": "ativo",
-      "fase": "instrucao",
+      "fase": "conhecimento",
       "risco": "medio",
       "observacoes": "E2E-FICTICIO Atualização automática de homologação."
     }

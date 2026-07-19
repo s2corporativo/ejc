@@ -9,7 +9,7 @@ from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.database import get_db
-from app.core.security import get_current_user
+from app.core.security import require_roles
 from app.models.user import User
 
 logger = logging.getLogger(__name__)
@@ -37,7 +37,11 @@ def _cache_set(chave: str, valor: dict) -> None:
 @router.get("/")
 async def dashboard(
     db: AsyncSession = Depends(get_db),
-    cu: User = Depends(get_current_user),
+    # Piso de staff: agregações globais do escritório não devem ser expostas fora
+    # da equipe. Piso em `secretaria` (nível 2 = todo o staff) — a recepção tem
+    # `dashboard_atendimento` e usa o painel; cliente_externo já é barrado pelo
+    # AuthMiddleware. O escopo financeiro por uid abaixo permanece.
+    cu: User = Depends(require_roles(["secretaria"])),
 ):
     from app.core.security import ROLE_LEVEL as _RL
 

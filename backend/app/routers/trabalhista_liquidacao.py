@@ -24,13 +24,18 @@ from pydantic import BaseModel, Field
 
 from app.core.config import get_settings
 from app.core.rate_limit import rate_limit
-from app.core.security import get_current_user
+from app.core.security import require_roles
 from app.models.user import User
 from app.services.calc.liquidacao_trabalhista import calcular_liquidacao
 
 logger = logging.getLogger(__name__)
 settings = get_settings()
 router = APIRouter(prefix="/trabalhista/liquidacao", tags=["Trabalhista / Liquidação"])
+
+# Ferramenta de ramo trabalhista: restrita à equipe jurídica (estagiário+),
+# mesmo padrão de previdenciario_beneficio._EQUIPE. cliente_externo já é
+# barrado pelo AuthMiddleware — este gate é defesa em profundidade staff-vs-staff.
+_EQUIPE = ["superadmin", "admin", "socio", "advogado", "advogado_auxiliar", "estagiario"]
 
 # Retenção dos PDFs (contêm valores e dados de terceiros — LGPD): varredura
 # best-effort remove os mais antigos que este TTL a cada geração.
@@ -133,7 +138,7 @@ class LiquidacaoOut(BaseModel):
 
 @router.post("/calcular", response_model=LiquidacaoOut,
              dependencies=[Depends(rate_limit("trabalhista-liquidacao-calcular", 20))])
-async def calcular(req: LiquidacaoIn, cu: User = Depends(get_current_user)):
+async def calcular(req: LiquidacaoIn, cu: User = Depends(require_roles(_EQUIPE))):
     """Calcula a planilha de liquidação de sentença trabalhista (ADC 58 — Selic
     real do BCB). Determinístico, sem IA e sem persistência. A resposta é
     MINUTA para conferência do contador/advogado (HITL)."""
@@ -306,7 +311,7 @@ def _html_planilha(c: LiquidacaoOut) -> str:
 @router.post("/planilha-pdf",
              dependencies=[Depends(rate_limit("trabalhista-liquidacao-pdf", 10))])
 async def planilha_pdf(consolidacao: LiquidacaoOut,
-                       cu: User = Depends(get_current_user)):
+                       cu: User = Depends(require_roles(_EQUIPE))):
     """Gera o PDF Visual Law da planilha a partir da consolidação devolvida pelo
     frontend e retorna a URL de download (padrão sala_de_guerra_v3)."""
     try:
@@ -330,7 +335,7 @@ async def planilha_pdf(consolidacao: LiquidacaoOut,
 @router.get("/planilha/{arquivo_id}/download",
             dependencies=[Depends(rate_limit("trabalhista-liquidacao-download", 30))])
 async def download_planilha(arquivo_id: str,
-                            cu: User = Depends(get_current_user)):
+                            cu: User = Depends(require_roles(_EQUIPE))):
     """Download do PDF gerado pelo POST acima. `arquivo_id` é validado como UUID
     (nunca interpolado livre no path — sem traversal)."""
     # #27: validação anti-traversal (UUID) centralizada.

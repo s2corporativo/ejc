@@ -10,13 +10,14 @@ from typing import Optional
 
 from fastapi import APIRouter, Depends, HTTPException, Query
 from fastapi.responses import Response
-from sqlalchemy import select, func as sqlfunc
+from sqlalchemy import select, func as sqlfunc, or_
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.database import get_db
-from app.core.security import get_current_user, ROLE_LEVEL
-from app.core.ownership import verificar_acesso_caso
+from app.core.security import get_current_user, requer_advogado
+from app.core.ownership import verificar_acesso_caso, is_gestao
 from app.models.user import User
+from app.models.case import Case
 from app.models.deadline import Deadline
 from app.models.audit_log import criar_audit_log
 from app.services.deadline_calculator import (
@@ -31,6 +32,38 @@ router = APIRouter(prefix="/deadlines", tags=["Prazos"])
 logger = logging.getLogger("ejc.deadlines")
 
 _MAX_EXPORT = 5000  # teto de linhas do CSV (painel de prazos é sempre pequeno)
+
+
+def _ids_casos_do_usuario(user: User):
+    """IDs dos casos onde o usuário é responsável ou auxiliar (espelha
+    fees._ids_casos_do_usuario / verificar_acesso_caso)."""
+    return (
+        select(Case.id)
+        .where(
+            Case.deleted_at.is_(None),
+            or_(
+                Case.advogado_responsavel_id == user.id,
+                Case.advogado_auxiliar_id == user.id,
+            ),
+        )
+        .scalar_subquery()
+    )
+
+
+def _filtro_escopo_prazos(q, cu: User):
+    """[A3] Escopo de ownership por DEFAULT para não-gestão: só prazos de casos
+    próprios (responsável/auxiliar), prazos onde é o responsável direto, ou
+    prazos sem caso (avulsos/internos). Gestão (socio+) enxerga tudo.
+    Espelha fees._filtro_fees_lista."""
+    if is_gestao(cu):
+        return q
+    return q.where(
+        or_(
+            Deadline.case_id.in_(_ids_casos_do_usuario(cu)),
+            Deadline.responsavel_id == cu.id,
+            Deadline.case_id.is_(None),
+        )
+    )
 
 
 @router.post("/calcular")
@@ -70,11 +103,12 @@ async def listar(
         q = q.where(Deadline.case_id == case_id)
     if tipo:
         q = q.where(Deadline.tipo == tipo)
-    if apenas_meus or ROLE_LEVEL.get(cu.role.value, 0) < ROLE_LEVEL["socio"]:
-        # Painel de prazos é compartilhado por padrão (requisito do escritório),
-        # mas advogado pode filtrar só os seus
-        if apenas_meus:
-            q = q.where(Deadline.responsavel_id == cu.id)
+    # [A3] Escopo de ownership por DEFAULT (não-gestão só vê prazos dos próprios
+    # casos / avulsos); gestão vê tudo. `apenas_meus` continua estreitando p/
+    # os prazos onde o usuário é o responsável direto.
+    q = _filtro_escopo_prazos(q, cu)
+    if apenas_meus:
+        q = q.where(Deadline.responsavel_id == cu.id)
     q = q.order_by(Deadline.data_prazo.asc())
 
     total = (await db.execute(
@@ -118,6 +152,9 @@ async def exportar_csv(
         q = q.where(Deadline.case_id == case_id)
     if tipo:
         q = q.where(Deadline.tipo == tipo)
+    # [A3] Mesmo escopo de ownership do GET /deadlines: não-gestão só exporta os
+    # prazos que já enxerga; gestão exporta tudo.
+    q = _filtro_escopo_prazos(q, cu)
     q = q.order_by(Deadline.data_prazo.asc()).limit(_MAX_EXPORT + 1)
     rows = (await db.execute(q)).scalars().all()
     truncado = len(rows) > _MAX_EXPORT
@@ -307,8 +344,10 @@ async def cancelar(
     db: AsyncSession = Depends(get_db),
     cu: User = Depends(get_current_user),
 ):
-    if cu.role.value not in ("admin", "socio", "advogado"):
-        raise HTTPException(status_code=403, detail="Sem permissão para cancelar prazos")
+    # [B1] Piso por NÍVEL (advogado+), não por tupla literal — a lista antiga
+    # ("admin","socio","advogado") excluía superadmin(9) e causava lockout do
+    # superadmin. requer_advogado garante advogado(6)+ e nunca barra superadmin.
+    requer_advogado(cu, detail="Sem permissão para cancelar prazos")
     d = (await db.execute(
         select(Deadline).where(
             Deadline.id == deadline_id, Deadline.deleted_at.is_(None)

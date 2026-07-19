@@ -5,7 +5,7 @@ from fastapi import APIRouter, Depends
 from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncSession
 from app.core.database import get_db
-from app.core.security import get_current_user
+from app.core.security import get_current_user, requer_advogado
 from app.core.ownership import verificar_acesso_caso
 from app.models.user import User
 from app.models.audit_log import criar_audit_log
@@ -51,6 +51,7 @@ async def recalcular(
     db: AsyncSession = Depends(get_db),
     cu: User = Depends(get_current_user),
 ):
+    requer_advogado(cu)  # [B2] escrita: piso advogado+ (irmãos score_juridico/sala)
     await verificar_acesso_caso(db, cu, case_id)  # IDOR (auditoria 2026-06-30)
     # Calcular baseado em dados objetivos
     r = await db.execute(

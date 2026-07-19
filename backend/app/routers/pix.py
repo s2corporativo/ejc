@@ -10,6 +10,18 @@ from app.models.user import User
 
 router = APIRouter(prefix="/pix", tags=["Cobrança PIX"])
 
+# [B3] Gerar cobrança PIX é ato financeiro do escritório → reservado a perfis
+# fiduciários, espelhando fees._req_financeiro_mutacao (mesma tupla). Antes
+# qualquer interno gerava BR Code; em módulo financeiro, prefira o piso mais
+# estrito (financeiro+gestão), não advogado genérico.
+_FINANCEIRO_TOTAL = {"superadmin", "admin", "socio", "financeiro"}
+
+
+def _req_financeiro(cu: User = Depends(get_current_user)) -> User:
+    if cu.role.value not in _FINANCEIRO_TOTAL:
+        raise HTTPException(403, "Sem permissão para gerar cobrança PIX")
+    return cu
+
 
 def _ascii(s: str) -> str:
     s = unicodedata.normalize("NFKD", s or "").encode("ascii", "ignore").decode("ascii")
@@ -47,7 +59,7 @@ def gerar_brcode(chave: str, nome: str, cidade: str, valor: Optional[float] = No
 
 
 @router.post("/cobranca")
-async def cobranca(body: dict = Body(...), cu: User = Depends(get_current_user)):
+async def cobranca(body: dict = Body(...), cu: User = Depends(_req_financeiro)):
     chave = (body.get("chave") or "").strip()
     nome = (body.get("nome") or "").strip()
     cidade = (body.get("cidade") or "").strip()

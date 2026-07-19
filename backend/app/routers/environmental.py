@@ -8,12 +8,12 @@ from uuid import uuid4
 from typing import Optional
 
 from fastapi import APIRouter, Depends, HTTPException, Query
-from sqlalchemy import select, func as sqlfunc
+from sqlalchemy import select, func as sqlfunc, or_
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.database import get_db
-from app.core.security import get_current_user
-from app.core.ownership import verificar_acesso_caso
+from app.core.security import get_current_user, requer_advogado
+from app.core.ownership import verificar_acesso_caso, is_gestao
 from app.models.user import User
 from app.models.case import Case
 from app.models.deadline import Deadline, DeadlineTipo, DeadlinePrioridade
@@ -24,6 +24,23 @@ from app.schemas.environmental import EnvCaseCreate, EnvCaseUpdate, EnvCaseRespo
 from app.schemas.common import MsgResponse
 
 router = APIRouter(prefix="/environmental", tags=["Ambiental"])
+
+
+def _filtro_escopo_env(q, cu: User):
+    """[A8] Escopo de ownership da listagem (espelha diario_oficial._filtrar_por_
+    ownership): gestão (socio+) vê tudo; equipe vê só autos de casos em que é
+    responsável/auxiliar. EnvironmentalCase.case_id é NOT NULL (sem itens
+    office-wide)."""
+    if is_gestao(cu):
+        return q
+    casos_visiveis = select(Case.id).where(
+        Case.deleted_at.is_(None),
+        or_(
+            Case.advogado_responsavel_id == cu.id,
+            Case.advogado_auxiliar_id == cu.id,
+        ),
+    )
+    return q.where(EnvironmentalCase.case_id.in_(casos_visiveis))
 
 
 async def _criar_deadline_defesa(
@@ -61,7 +78,9 @@ async def listar(
     db: AsyncSession = Depends(get_db),
     cu: User = Depends(get_current_user),
 ):
+    requer_advogado(cu)  # [A8] piso advogado+ (irmãos de escrita já usam ownership)
     q = select(EnvironmentalCase).where(EnvironmentalCase.deleted_at.is_(None))
+    q = _filtro_escopo_env(q, cu)  # [A8] ownership por caso
     if status_f:
         q = q.where(EnvironmentalCase.status_defesa == status_f)
     q = q.order_by(EnvironmentalCase.data_prazo_defesa.asc().nullslast())

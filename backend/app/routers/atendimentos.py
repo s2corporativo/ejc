@@ -10,14 +10,15 @@ from zoneinfo import ZoneInfo
 
 from fastapi import APIRouter, Depends, HTTPException, Query
 from pydantic import BaseModel, Field
-from sqlalchemy import func, select
+from sqlalchemy import func, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.database import get_db
-from app.core.ownership import verificar_acesso_caso
+from app.core.ownership import is_gestao, verificar_acesso_caso
 from app.core.security import ROLE_LEVEL, get_current_user
 from app.models.atendimento import Atendimento, AtendimentoTipo
 from app.models.audit_log import AuditLog
+from app.models.case import Case
 from app.models.client import Client
 from app.models.task import Task, TaskStatus
 from app.models.user import User
@@ -94,6 +95,77 @@ def _is_staff(user: User) -> bool:
 
 def _pode_ver_privado(user: User) -> bool:
     return ROLE_LEVEL.get(_role_str(user), 0) >= ROLE_LEVEL["advogado"]
+
+
+# Papéis de recepção/atendimento que precisam da carteira INTEIRA (triagem de
+# leads/funil). Espelha clients._CLIENTES_VISAO_TOTAL — a segregação de sigilo
+# (advogado lendo atendimentos de clientes de OUTRAS carteiras) incide só sobre
+# advogado/advogado_auxiliar; gestão e recepção veem tudo por necessidade
+# operacional. estagiario/financeiro nem chegam aqui (fora de _ATENDIMENTO_ROLES).
+_ATENDIMENTO_VISAO_TOTAL = {"secretaria"}
+
+
+def _filtro_visibilidade_atendimento(q, cu: User):
+    """Segregação de titularidade (sigilo interno — LGPD/EOAB) na LISTAGEM.
+    Espelha clients._filtro_visibilidade_cliente: gestão e recepção veem tudo;
+    advogado/advogado_auxiliar só veem atendimentos de clientes da própria
+    carteira — cujo cliente é responsavel_id do usuário OU tem caso NÃO excluído
+    em que ele é advogado responsável/auxiliar."""
+    if is_gestao(cu) or _role_str(cu) in _ATENDIMENTO_VISAO_TOTAL:
+        return q
+    clientes_do_advogado = (
+        select(Client.id).where(
+            or_(
+                Client.responsavel_id == cu.id,
+                Client.id.in_(
+                    select(Case.client_id).where(
+                        Case.client_id.is_not(None),
+                        Case.deleted_at.is_(None),
+                        or_(
+                            Case.advogado_responsavel_id == cu.id,
+                            Case.advogado_auxiliar_id == cu.id,
+                        ),
+                    )
+                ),
+            )
+        )
+    )
+    # Inclui atendimentos SEM cliente vinculado (avulsos) — coerente com o gate
+    # row-level _pode_ver_atendimento, que libera registro sem client_id.
+    return q.where(
+        or_(
+            Atendimento.client_id.is_(None),
+            Atendimento.client_id.in_(clientes_do_advogado),
+        )
+    )
+
+
+async def _pode_ver_atendimento(db: AsyncSession, cu: User, a: Atendimento) -> bool:
+    """Versão row-level de _filtro_visibilidade_atendimento (detalhe/histórico).
+    Gestão/recepção veem tudo; demais só o próprio registro (criador/responsável)
+    ou atendimentos de clientes da própria carteira."""
+    if is_gestao(cu) or _role_str(cu) in _ATENDIMENTO_VISAO_TOTAL:
+        return True
+    if cu.id in {a.created_by, a.advogado_responsavel_id, a.solicitacao_responsavel_id}:
+        return True
+    if not a.client_id:
+        return True  # atendimento sem cliente vinculado não pertence a carteira alheia
+    cli = (await db.execute(
+        select(Client).where(Client.id == a.client_id)
+    )).scalar_one_or_none()
+    if cli is not None and cli.responsavel_id == cu.id:
+        return True
+    vinculo = (await db.execute(
+        select(Case.id).where(
+            Case.client_id == a.client_id,
+            Case.deleted_at.is_(None),
+            or_(
+                Case.advogado_responsavel_id == cu.id,
+                Case.advogado_auxiliar_id == cu.id,
+            ),
+        ).limit(1)
+    )).first()
+    return vinculo is not None
 
 
 def _pode_editar_atendimento(a: Atendimento, user: User) -> bool:
@@ -341,6 +413,9 @@ async def listar_atendimentos(
         await _validar_cliente(db, client_id)
 
     q = select(Atendimento)
+    # Sigilo interno (LGPD/EOAB): advogado/advogado_auxiliar só enxergam
+    # atendimentos da própria carteira; gestão e recepção veem tudo.
+    q = _filtro_visibilidade_atendimento(q, cu)
     if client_id:
         q = q.where(Atendimento.client_id == client_id)
     if case_id:
@@ -805,7 +880,10 @@ async def historico_atendimento(
 ):
     if not _is_staff(cu):
         raise HTTPException(status_code=403, detail="Sem permissão para atendimentos")
-    await _obter_atendimento(atendimento_id, db)
+    atendimento = await _obter_atendimento(atendimento_id, db)
+    if not await _pode_ver_atendimento(db, cu, atendimento):
+        # 404 (não 403) para não confirmar existência de registro de outra carteira.
+        raise HTTPException(status_code=404, detail="Atendimento não encontrado")
 
     rows = (
         await db.execute(
@@ -841,6 +919,9 @@ async def obter_atendimento(
     if not _is_staff(cu):
         raise HTTPException(status_code=403, detail="Sem permissão para atendimentos")
     atendimento = await _obter_atendimento(atendimento_id, db)
+    if not await _pode_ver_atendimento(db, cu, atendimento):
+        # 404 (não 403) para não confirmar existência de registro de outra carteira.
+        raise HTTPException(status_code=404, detail="Atendimento não encontrado")
     return _out(atendimento, cu, com_privado=_pode_ver_privado(cu))
 
 

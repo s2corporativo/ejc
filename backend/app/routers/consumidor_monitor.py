@@ -1,21 +1,23 @@
 """
 app/routers/consumidor_monitor.py — AcioneJus Monitor integrado ao EJC.
 
-Dados públicos do Consumidor.gov.br (SENACON/MJ) para:
-  • Painel de reclamações por empresa (jurimetria CDC)
+Base de REFERÊNCIA INTERNA (estimativas curadas pelo escritório) para triagem CDC/JEC:
+  • Padrões típicos de reclamação por empresa (frequência/resolução estimadas)
   • Teses pré-configuradas para JEC
-  • Base de valores típicos de indenização por tipo de caso
+  • Faixas típicas de indenização por tipo de caso
 
-ATENÇÃO LGPD: usa exclusivamente dados PÚBLICOS AGREGADOS (sem dados pessoais).
-Fonte: API pública dados.mj.gov.br / consumidor.gov.br/dados-publicos
-Conformidade: LGPD art. 7º, I — dado publicamente disponível.
+HONESTIDADE DE PROVENIÊNCIA (auditoria 2026-07-19): os números abaixo são
+ESTIMATIVAS INTERNAS de referência — NÃO são leitura ao vivo da API pública do
+Consumidor.gov.br/SENACON. Antes o módulo se rotulava como "dados públicos
+SENACON" e importava httpx sem nunca chamar a API (mock enganoso). Os rótulos
+foram corrigidos para não afirmar origem oficial; toda resposta traz aviso HITL.
+Links para as bases públicas reais continuam em `links_uteis` para conferência.
 """
 from __future__ import annotations
 
 import logging
 from typing import Optional
 
-import httpx
 from fastapi import APIRouter, Depends, HTTPException, Query
 
 from app.core.security import get_current_user, ROLE_LEVEL
@@ -24,11 +26,9 @@ from app.models.user import User
 logger = logging.getLogger("ejc.consumidor_monitor")
 router = APIRouter(prefix="/consumidor-monitor", tags=["Monitor Consumidor.gov.br"])
 
-TIMEOUT = httpx.Timeout(20.0, connect=8.0)
-HEADERS = {"User-Agent": "EJC-LegalAI/2.0 (adm@vetmg.com.br; dados públicos)"}
-
-# ── Base de dados de referência (pesquisa SENACON 2023-2025) ─────────────────
-# Não são dados individuais — são padrões agregados para uso jurídico.
+# ── Base de estimativas internas de referência (curadoria do escritório) ─────
+# Não são dados individuais nem leitura oficial SENACON — são padrões estimados
+# para triagem, sempre sob revisão HITL do advogado.
 
 _BASE_EMPRESAS: dict[str, dict] = {
     "serasa": {
@@ -158,7 +158,7 @@ async def listar_empresas(cu: User = Depends(get_current_user)):
             {"id": k, "nome": v["nome"], "categorias": len(v["categorias"])}
             for k, v in _BASE_EMPRESAS.items()
         ],
-        "aviso": "Dados de referência SENACON/Consumidor.gov.br — não são casos individuais",
+        "aviso": "Estimativas internas de referência (não são dados oficiais SENACON nem casos individuais)",
     }
 
 
@@ -191,7 +191,7 @@ async def dados_empresa(
         "empresa": dados["nome"],
         "total_categorias": len(dados["categorias"]),
         "categorias": dados["categorias"],
-        "fonte": "Padrões Consumidor.gov.br 2023-2025 (dados públicos SENACON)",
+        "fonte": "Estimativas internas de referência (curadoria do escritório) — não são dados oficiais SENACON",
         "aviso": "⚠️ Estimativas de referência — resultado depende do caso concreto. Revisão obrigatória pelo advogado.",
         "links_uteis": {
             "consumidor_gov": "https://www.consumidor.gov.br",
@@ -304,10 +304,10 @@ async def painel_reclamacoes(
 
     return {
         "criterio": "Alta frequência de reclamação + baixa resolução amigável = maior potencial JEC",
-        "periodo_referencia": "2023-2025 (dados públicos SENACON)",
+        "periodo_referencia": "Estimativas internas de referência (não são dados oficiais SENACON)",
         "salario_minimo_referencia": 1518.00,
         "ranking": ranking[:top],
-        "aviso": "⚠️ Dados de referência SENACON — não são dados individuais. Conferir com cliente antes de ajuizar.",
+        "aviso": "⚠️ Estimativas internas de referência — não são dados individuais nem oficiais. Conferir com cliente antes de ajuizar.",
         "links": {
             "consumidor_gov": "https://www.consumidor.gov.br/pages/dadosabertos/externo/",
             "dados_mj": "https://dados.mj.gov.br",

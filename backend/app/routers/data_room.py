@@ -14,8 +14,9 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.core.database import get_db
 from app.core.rate_limit import consumir
 from app.core.security import get_current_user, ROLE_LEVEL
-from app.core.ownership import verificar_acesso_caso
+from app.core.ownership import verificar_acesso_caso, is_gestao
 from app.models.user import User
+from app.models.client import Client
 from app.models.document import Document
 from app.models.data_room import DataRoom, DataRoomArquivo, DataRoomLink, DataRoomAcessoLog
 from app.services.security_service import obter_ip_real
@@ -47,6 +48,38 @@ class GerarLinkReq(BaseModel):
 
 def _pode_editar(u: User) -> bool:
     return ROLE_LEVEL.get(u.role.value, 0) >= ROLE_LEVEL["advogado"]
+
+async def _gate_room(db: AsyncSession, cu: User, room: DataRoom) -> DataRoom:
+    """[A4] Gate de ownership da SALA (não só do conteúdo). Sem isto, qualquer
+    advogado operava salas de casos/clientes alheios só pelo room_id (IDOR).
+
+    - Gestão (socio+) sempre passa.
+    - Sala vinculada a um CASO → exige acesso ao caso (verificar_acesso_caso).
+    - Sala vinculada só a um CLIENTE → exige titularidade do cliente
+      (_pode_ver_cliente, mesma regra do CRM/procuracoes).
+    - Sala sem caso NEM cliente (legado/triagem) → liberada a quem já passou no
+      piso de edição (advogado+), espelhando a salvaguarda anti-lockout de
+      verificar_acesso_caso.
+    404 quando não visível — não vaza a existência da sala."""
+    if is_gestao(cu):
+        return room
+    if room.case_id:
+        try:
+            await verificar_acesso_caso(db, cu, room.case_id)
+            return room
+        except HTTPException:
+            raise HTTPException(404)
+    if room.client_id:
+        from app.routers.clients import _pode_ver_cliente
+        cli = (await db.execute(
+            select(Client).where(
+                Client.id == room.client_id, Client.deleted_at.is_(None)
+            )
+        )).scalar_one_or_none()
+        if cli is not None and await _pode_ver_cliente(cu, cli, db):
+            return room
+        raise HTTPException(404)
+    return room
 
 async def _usuario_ve_documento(db: AsyncSession, cu: User, doc: Document) -> bool:
     """Reaplica o gate do GED — cofre (confidencialidade) + ownership do caso —
@@ -149,6 +182,7 @@ async def obter_data_room(
     )).scalar_one_or_none()
     if not room:
         raise HTTPException(404)
+    await _gate_room(db, cu, room)  # [A4] ownership da sala (404 se alheia)
 
     arquivos = (await db.execute(
         select(DataRoomArquivo).where(DataRoomArquivo.data_room_id == room_id)
@@ -201,6 +235,7 @@ async def adicionar_arquivo(
     )).scalar_one_or_none()
     if not room:
         raise HTTPException(404)
+    await _gate_room(db, cu, room)  # [A4] ownership da sala (404 se alheia)
     # Vincular um documento à sala não pode furar o cofre nem o ownership do
     # caso do documento — senão a sala (e o link externo) vazam metadados
     # (título/nome) de documentos de casos alheios. Valida ANTES de gravar.
@@ -232,6 +267,12 @@ async def remover_arquivo(
 ):
     if not _pode_editar(cu):
         raise HTTPException(403)
+    room = (await db.execute(
+        select(DataRoom).where(DataRoom.id == room_id, DataRoom.deleted_at.is_(None))
+    )).scalar_one_or_none()
+    if not room:
+        raise HTTPException(404)
+    await _gate_room(db, cu, room)  # [A4] ownership da sala (404 se alheia)
     arq = (await db.execute(
         select(DataRoomArquivo).where(
             DataRoomArquivo.id == arquivo_id,
@@ -259,6 +300,7 @@ async def gerar_link(
     )).scalar_one_or_none()
     if not room:
         raise HTTPException(404)
+    await _gate_room(db, cu, room)  # [A4] ownership da sala (404 se alheia)
 
     token = secrets.token_urlsafe(48)
     expira = datetime.now(timezone.utc) + timedelta(hours=req.expira_horas)
@@ -283,6 +325,12 @@ async def revogar_link(
     """Desativa (revoga) um link de acesso antes da expiração."""
     if not _pode_editar(cu):
         raise HTTPException(403)
+    room = (await db.execute(
+        select(DataRoom).where(DataRoom.id == room_id, DataRoom.deleted_at.is_(None))
+    )).scalar_one_or_none()
+    if not room:
+        raise HTTPException(404)
+    await _gate_room(db, cu, room)  # [A4] ownership da sala (404 se alheia)
     lk = (await db.execute(
         select(DataRoomLink).where(DataRoomLink.id == link_id,
                                    DataRoomLink.data_room_id == room_id)

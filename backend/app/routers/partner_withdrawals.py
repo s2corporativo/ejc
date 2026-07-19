@@ -100,12 +100,17 @@ async def approve_withdrawal(
     if current_user.role not in PRIVILEGED:
         raise HTTPException(403, "Only partners or admins can approve withdrawals")
 
-    result = await db.execute(text("SELECT status FROM partner_withdrawals WHERE id=:id AND deleted_at IS NULL"), {"id": withdrawal_id})
+    result = await db.execute(text("SELECT partner_id, status FROM partner_withdrawals WHERE id=:id AND deleted_at IS NULL"), {"id": withdrawal_id})
     row = result.fetchone()
     if not row:
         raise HTTPException(404, "Withdrawal not found")
-    if row[0] != "pendente":
-        raise HTTPException(400, f"Cannot approve withdrawal in status '{row[0]}'")
+    # [A6] Segregação de funções (SoD): quem cria não pode aprovar a PRÓPRIA
+    # retirada — vale inclusive para superadmin (auto-dealing é do indivíduo,
+    # não do papel). Sem exceção de role: em caso de dúvida, 403.
+    if str(row[0]) == str(current_user.id):
+        raise HTTPException(403, "Aprovação da própria retirada não é permitida — segregação de funções")
+    if row[1] != "pendente":
+        raise HTTPException(400, f"Cannot approve withdrawal in status '{row[1]}'")
 
     await db.execute(
         text("UPDATE partner_withdrawals SET status='aprovado', approved_by=:uid, approved_at=NOW(), updated_at=NOW() WHERE id=:id"),
@@ -148,12 +153,16 @@ async def pay_withdrawal(
     if current_user.role not in PRIVILEGED:
         raise HTTPException(403, "Only partners or admins can mark withdrawals as paid")
 
-    result = await db.execute(text("SELECT status FROM partner_withdrawals WHERE id=:id AND deleted_at IS NULL"), {"id": withdrawal_id})
+    result = await db.execute(text("SELECT partner_id, status FROM partner_withdrawals WHERE id=:id AND deleted_at IS NULL"), {"id": withdrawal_id})
     row = result.fetchone()
     if not row:
         raise HTTPException(404, "Withdrawal not found")
-    if row[0] != "aprovado":
-        raise HTTPException(400, f"Withdrawal must be approved before marking as paid (current: '{row[0]}')")
+    # [A6] Segregação de funções (SoD): ninguém paga a PRÓPRIA retirada, nem
+    # superadmin — mantém o segundo par de olhos entre solicitação e pagamento.
+    if str(row[0]) == str(current_user.id):
+        raise HTTPException(403, "Pagamento da própria retirada não é permitido — segregação de funções")
+    if row[1] != "aprovado":
+        raise HTTPException(400, f"Withdrawal must be approved before marking as paid (current: '{row[1]}')")
 
     await db.execute(
         text("UPDATE partner_withdrawals SET status='pago', paid_at=NOW(), updated_at=NOW() WHERE id=:id"),
