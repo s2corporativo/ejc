@@ -2,9 +2,11 @@
 // injetado como mock — nenhuma rede/axios real é usada.
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import {
+  CADASTRO_MANUAL_KEY,
   MSG_AMBIGUO,
   classificarErro,
   descreverItem,
+  limparCadastroManual,
   useCadastroManualStore,
   type PostFn,
 } from "./cadastroManual";
@@ -17,6 +19,7 @@ function resetStore() {
     rascunhoCaso: {},
     fila: [],
     clientesCache: [],
+    usuarioId: null,
     sincronizando: false,
   });
 }
@@ -234,5 +237,93 @@ describe("cadastroManual — fila offline", () => {
     expect(caso.status).toBe("erro");
     expect(caso.erro).toContain("descartado");
     expect(post).not.toHaveBeenCalled();
+  });
+
+  it("cliente corrigido e reenviado destrava o caso dependente na MESMA rodada", async () => {
+    const { idCliente } = enfileirarClienteECaso();
+    const post: PostFn = vi
+      .fn<PostFn>()
+      .mockRejectedValueOnce(erroHttp(422, "PF requer CPF"))
+      .mockResolvedValueOnce({ id: "cli-real" })
+      .mockResolvedValueOnce({ id: "caso-real" });
+
+    // 1ª rodada: cliente 422 → ambos em erro (dependência).
+    await store.getState().sincronizar(post);
+    expect(store.getState().fila.every((f) => f.status === "erro")).toBe(true);
+
+    // Correção + reativação do cliente; o caso NÃO precisa de ação manual.
+    store.getState().reativarItem(idCliente);
+    const r = await store.getState().sincronizar(post);
+
+    expect(r.enviados.map((i) => i.tipo)).toEqual(["cliente", "caso"]);
+    expect(store.getState().fila).toHaveLength(0);
+    const corpoCaso = (post as ReturnType<typeof vi.fn>).mock.calls[2][1] as {
+      client_id?: string;
+    };
+    expect(corpoCaso.client_id).toBe("cli-real");
+  });
+});
+
+describe("cadastroManual — dono da fila (multiusuário na mesma estação)", () => {
+  it("enfileirar carimba o item com o usuarioId vinculado", () => {
+    store.getState().vincularUsuario("user-a");
+    store.getState().enfileirar("cliente", { tipo: "PF", nome: "Maria" });
+    expect(store.getState().fila[0].usuarioId).toBe("user-a");
+  });
+
+  it("vincularUsuario com OUTRO usuário descarta fila, rascunhos e cache", () => {
+    store.getState().vincularUsuario("user-a");
+    store.getState().setRascunhoCliente({ nome: "PII de A" });
+    store.getState().setClientesCache([{ id: "c1", nome: "Cliente de A" }]);
+    enfileirarClienteECaso();
+    expect(store.getState().fila).toHaveLength(2);
+
+    const descartados = store.getState().vincularUsuario("user-b");
+
+    expect(descartados).toBe(2);
+    const s = store.getState();
+    expect(s.usuarioId).toBe("user-b");
+    expect(s.fila).toHaveLength(0);
+    expect(s.rascunhoCliente).toEqual({});
+    expect(s.rascunhoCaso).toEqual({});
+    expect(s.clientesCache).toEqual([]);
+  });
+
+  it("vincularUsuario com o MESMO usuário preserva a fila", () => {
+    store.getState().vincularUsuario("user-a");
+    enfileirarClienteECaso();
+    const descartados = store.getState().vincularUsuario("user-a");
+    expect(descartados).toBe(0);
+    expect(store.getState().fila).toHaveLength(2);
+  });
+
+  it("sincronizar NUNCA envia item carimbado com outro usuarioId", async () => {
+    // Estado adverso (defesa em profundidade): item de A sobrevivente com a
+    // sessão de B ativa — o sync deve ignorá-lo, jamais enviá-lo.
+    store.getState().vincularUsuario("user-a");
+    store.getState().enfileirar("cliente", { tipo: "PF", nome: "PII de A" });
+    store.setState({ usuarioId: "user-b" });
+    const post: PostFn = vi.fn(async () => ({ id: "x" }));
+
+    const r = await store.getState().sincronizar(post);
+
+    expect(post).not.toHaveBeenCalled();
+    expect(r.enviados).toHaveLength(0);
+    expect(store.getState().fila).toHaveLength(1); // intocado (vincular descarta)
+  });
+
+  it("limparCadastroManual (logout) zera o estado e remove a chave persistida", () => {
+    store.getState().vincularUsuario("user-a");
+    store.getState().setRascunhoCliente({ nome: "PII" });
+    enfileirarClienteECaso();
+    localStorage.setItem(CADASTRO_MANUAL_KEY, '{"qualquer":"coisa"}');
+
+    limparCadastroManual();
+
+    const s = store.getState();
+    expect(s.fila).toHaveLength(0);
+    expect(s.rascunhoCliente).toEqual({});
+    expect(s.usuarioId).toBeNull();
+    expect(localStorage.getItem(CADASTRO_MANUAL_KEY)).toBeNull();
   });
 });

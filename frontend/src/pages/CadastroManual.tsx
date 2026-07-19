@@ -9,6 +9,7 @@ import { CloudOff, RotateCw, Trash2, Wifi, WifiOff } from "lucide-react";
 import api from "../lib/api";
 import { asList } from "../lib/list";
 import { toast } from "../components/Toast";
+import { useAuth } from "../stores/auth";
 import type { Client } from "../types";
 import {
   Alert,
@@ -277,7 +278,22 @@ export default function CadastroManual() {
     descartarItem,
     reativarItem,
     sincronizar,
+    vincularUsuario,
   } = useCadastroManualStore();
+  const usuarioId = useAuth((s) => s.user?.id);
+
+  // Vincula o estado persistido ao usuário logado ANTES de qualquer envio:
+  // fila/rascunhos de OUTRO usuário na mesma estação são descartados (nunca
+  // enviados com o token da sessão atual) — aviso claro quando isso ocorre.
+  useEffect(() => {
+    if (!usuarioId) return;
+    const descartados = vincularUsuario(usuarioId);
+    if (descartados > 0) {
+      toast.error(
+        `${descartados} cadastro(s) pendente(s) de outro usuário foram descartados da fila offline desta estação.`,
+      );
+    }
+  }, [usuarioId, vincularUsuario]);
 
   const [aba, setAba] = useState<"cliente" | "caso">("cliente");
   const [online, setOnline] = useState<boolean>(navigator.onLine);
@@ -303,8 +319,12 @@ export default function CadastroManual() {
   const sincronizandoRef = useRef(false);
   const rodarSync = useCallback(async () => {
     if (!navigator.onLine || sincronizandoRef.current) return;
+    if (!usuarioId) return; // sem sessão resolvida, nada é enviado
     sincronizandoRef.current = true;
     try {
+      // Garantia final antes do envio (o effect acima já rodou no mount, mas
+      // o evento `online` pode disparar após troca de conta em outra aba).
+      vincularUsuario(usuarioId);
       const r = await sincronizar(post);
       for (const item of r.enviados) {
         toast.success(
@@ -314,7 +334,7 @@ export default function CadastroManual() {
     } finally {
       sincronizandoRef.current = false;
     }
-  }, [sincronizar, post]);
+  }, [sincronizar, post, usuarioId, vincularUsuario]);
 
   // Lista de clientes: online atualiza o cache persistido; offline usa o cache.
   const atualizarCacheClientes = useCallback(() => {

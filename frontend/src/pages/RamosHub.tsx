@@ -30,6 +30,8 @@ import {
   Wrench,
 } from "lucide-react";
 import api from "../lib/api";
+import { ROLES } from "../config/moduleRegistry";
+import { useAuth } from "../stores/auth";
 import { RAMOS } from "./ramos/ramosConfig";
 import {
   Badge,
@@ -225,6 +227,12 @@ const FALLBACK_AREAS: Area[] = [
 export default function RamosHub() {
   const navigate = useNavigate();
   const [areas, setAreas] = useState<Area[]>(FALLBACK_AREAS);
+  // O RamosHub é visível para ROLES.juridico (inclui estagiário/auxiliar),
+  // mas /cadastro-manual exige ROLES.clientes — só mostra o atalho para quem
+  // de fato passa no guard da rota (evita botão que leva a "acesso negado").
+  const role = useAuth((s) => s.user?.role);
+  const podeCadastroManual =
+    !!role && (ROLES.clientes as readonly string[]).includes(role);
 
   useEffect(() => {
     api
@@ -259,9 +267,11 @@ export default function RamosHub() {
           <PageActions>
             {/* Fluxo 100% manual (sem IA, com fila offline) — a rota é podada
                 do menu lateral; este é o ponto de acesso visível. */}
-            <Button variant="secondary" onClick={() => navigate("/cadastro-manual")}>
-              <ClipboardPen className="h-4 w-4" /> Cadastro manual
-            </Button>
+            {podeCadastroManual && (
+              <Button variant="secondary" onClick={() => navigate("/cadastro-manual")}>
+                <ClipboardPen className="h-4 w-4" /> Cadastro manual
+              </Button>
+            )}
             <Button variant="secondary" onClick={() => navigate("/casos")}>Todos os casos</Button>
             <Button onClick={() => navigate("/casos/novo?modo=documento")}>
               <UploadCloud className="h-4 w-4" /> Importar documento

@@ -10,6 +10,9 @@
 import { create } from "zustand";
 import { persist } from "zustand/middleware";
 
+/** Chave do localStorage — exportada para a limpeza no logout (stores/auth.ts). */
+export const CADASTRO_MANUAL_KEY = "ejc_cadastro_manual";
+
 export type TipoItem = "cliente" | "caso";
 export type StatusItem = "pendente" | "enviando" | "erro";
 
@@ -21,6 +24,14 @@ export type ItemFila = {
   criado_em: string; // ISO
   status: StatusItem;
   erro?: string;
+  /**
+   * Dono do item (User.id no momento do enfileiramento). A fila persiste no
+   * localStorage: sem o carimbo, a fila criada pelo usuário A seria enviada
+   * com o token do usuário B na mesma estação. `vincularUsuario` descarta o
+   * que não pertence ao usuário logado e `sincronizar` nunca envia item de
+   * outro dono.
+   */
+  usuarioId?: string;
   /**
    * Quando um caso foi criado offline junto com um cliente novo, aponta para
    * o id LOCAL do item cliente ainda na fila. Ao sincronizar o cliente com
@@ -126,9 +137,19 @@ interface CadastroManualState {
   rascunhoCaso: Record<string, unknown>;
   fila: ItemFila[];
   clientesCache: ClienteCacheEntry[];
+  /** Dono do estado persistido (User.id) — ver vincularUsuario. */
+  usuarioId: string | null;
   /** trava de reentrância do sync (não persistida). */
   sincronizando: boolean;
 
+  /**
+   * Vincula o estado persistido ao usuário logado. Se o estado pertencia a
+   * OUTRO usuário (troca de conta na mesma estação), descarta fila, rascunhos
+   * e cache — nada criado por A pode ser enviado com o token de B, e os
+   * rascunhos carregam PII de A. Retorna quantos itens da fila foram
+   * descartados (a página avisa com toast quando > 0).
+   */
+  vincularUsuario: (usuarioId: string) => number;
   setRascunhoCliente: (r: Record<string, unknown>) => void;
   setRascunhoCaso: (r: Record<string, unknown>) => void;
   limparRascunhoCliente: () => void;
@@ -159,7 +180,37 @@ export const useCadastroManualStore = create<CadastroManualState>()(
       rascunhoCaso: {},
       fila: [],
       clientesCache: [],
+      usuarioId: null,
       sincronizando: false,
+
+      vincularUsuario: (usuarioId) => {
+        const s = get();
+        // Estado de OUTRO usuário (troca de conta na mesma estação, ou logout
+        // que não limpou): descarta tudo — fila/rascunhos/cache têm PII do
+        // dono anterior e a fila seria enviada com o token errado.
+        if (s.usuarioId && s.usuarioId !== usuarioId) {
+          const descartados = s.fila.length;
+          set({
+            usuarioId,
+            fila: [],
+            rascunhoCliente: {},
+            rascunhoCaso: {},
+            clientesCache: [],
+          });
+          return descartados;
+        }
+        // Defesa em profundidade: mesmo com o dono do estado correto, um item
+        // carimbado com outro usuarioId nunca sobrevive.
+        const proprios = s.fila.filter(
+          (f) => !f.usuarioId || f.usuarioId === usuarioId,
+        );
+        const descartados = s.fila.length - proprios.length;
+        set({
+          usuarioId,
+          ...(descartados > 0 ? { fila: proprios } : {}),
+        });
+        return descartados;
+      },
 
       setRascunhoCliente: (rascunhoCliente) => set({ rascunhoCliente }),
       setRascunhoCaso: (rascunhoCaso) => set({ rascunhoCaso }),
@@ -169,12 +220,14 @@ export const useCadastroManualStore = create<CadastroManualState>()(
 
       enfileirar: (tipo, payload, clientePendenteId) => {
         const id = novoId();
+        const dono = get().usuarioId;
         const item: ItemFila = {
           id,
           tipo,
           payload,
           criado_em: new Date().toISOString(),
           status: "pendente",
+          ...(dono ? { usuarioId: dono } : {}),
           ...(clientePendenteId ? { clientePendenteId } : {}),
         };
         set((s) => ({ fila: [...s.fila, item] }));
@@ -217,6 +270,10 @@ export const useCadastroManualStore = create<CadastroManualState>()(
             const item = get().fila.find((f) => f.id === snapshot.id);
             // Já removido (2xx em chamada anterior) ou em envio: não reenviar.
             if (!item || item.status !== "pendente") continue;
+
+            // NUNCA envia item de outro dono com o token da sessão atual
+            // (vincularUsuario já descarta; aqui é a garantia final).
+            if (item.usuarioId && item.usuarioId !== get().usuarioId) continue;
 
             // Caso dependente de cliente ainda na fila.
             if (item.tipo === "caso" && item.clientePendenteId) {
@@ -263,6 +320,11 @@ export const useCadastroManualStore = create<CadastroManualState>()(
                             ...f,
                             clientePendenteId: undefined,
                             payload: { ...f.payload, client_id: realId },
+                            // O único erro possível aqui era o de dependência
+                            // ("aguardando correção do cliente") — resolvido
+                            // agora; volta a 'pendente' e segue nesta rodada.
+                            status: "pendente" as const,
+                            erro: undefined,
                           }
                         : {
                             ...f,
@@ -295,8 +357,18 @@ export const useCadastroManualStore = create<CadastroManualState>()(
       },
     }),
     {
-      name: "ejc_cadastro_manual",
-      version: 1,
+      name: CADASTRO_MANUAL_KEY,
+      version: 2,
+      // v1 não carimbava o dono (usuarioId) — impossível provar a quem a
+      // fila/rascunhos pertencem numa estação compartilhada. Descarta o
+      // estado antigo em vez de arriscar enviar dados de A com o token de B.
+      migrate: () => ({
+        rascunhoCliente: {},
+        rascunhoCaso: {},
+        fila: [],
+        clientesCache: [],
+        usuarioId: null,
+      }),
       partialize: (state) => ({
         rascunhoCliente: state.rascunhoCliente,
         rascunhoCaso: state.rascunhoCaso,
@@ -306,7 +378,30 @@ export const useCadastroManualStore = create<CadastroManualState>()(
           f.status === "enviando" ? { ...f, status: "pendente" as const } : f,
         ),
         clientesCache: state.clientesCache,
+        usuarioId: state.usuarioId,
       }),
     },
   ),
 );
+
+/**
+ * Limpa TODO o estado do cadastro manual — memória e localStorage. Chamada no
+ * LOGOUT (stores/auth.ts), como já acontece com o RASCUNHO_KEY do intake:
+ * fila e rascunhos carregam PII e não podem sobreviver ao fim da sessão em
+ * estação compartilhada (LGPD).
+ */
+export function limparCadastroManual(): void {
+  useCadastroManualStore.setState({
+    rascunhoCliente: {},
+    rascunhoCaso: {},
+    fila: [],
+    clientesCache: [],
+    usuarioId: null,
+    sincronizando: false,
+  });
+  try {
+    useCadastroManualStore.persist.clearStorage();
+  } catch {
+    // Storage indisponível não pode derrubar o logout.
+  }
+}
