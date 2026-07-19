@@ -34,6 +34,10 @@ export const PORTAL_APP_ROUTES = [
   "/portal/mensagens",
   "/portal/documentos",
 ] as const;
+// Subrotas contextuais de módulos existentes: não viram módulo/menu independente.
+export const CONTEXTUAL_STAFF_APP_ROUTES = [
+  "/ia-governanca/provedores", // painel técnico dentro da Governança da IA
+] as const;
 // Aliases legados com segmento dinâmico: LEGACY_REDIRECTS só suporta `to`
 // estático (Navigate não interpola :params), então precisam de uma <Route>
 // dedicada no App montando um pequeno redirect component em vez de entrar
@@ -80,6 +84,7 @@ describe("integridade App.tsx ↔ moduleRegistry", () => {
       ...PUBLIC_APP_ROUTES,
       "/portal",
       ...PORTAL_CHILD_LITERALS,
+      ...CONTEXTUAL_STAFF_APP_ROUTES,
       ...DYNAMIC_LEGACY_APP_ROUTES,
       "*", // catch-all → NotFound
     ]);
@@ -106,6 +111,7 @@ describe("integridade App.tsx ↔ moduleRegistry", () => {
     const literaisAbsolutos = new Set<string>([
       ...PUBLIC_APP_ROUTES,
       ...PORTAL_APP_ROUTES,
+      ...CONTEXTUAL_STAFF_APP_ROUTES,
     ]);
     for (const module of STAFF_ROUTES) {
       expect(
