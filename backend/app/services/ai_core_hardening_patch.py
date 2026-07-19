@@ -2,13 +2,10 @@
 """Hardening aditivo do núcleo de IA/RAG carregado no startup.
 
 Correções transitórias de compatibilidade:
-1. resolução de provedores fail-closed para aliases legados de `chat`;
-2. resolução server-side do escopo de precedentes com chave `caso:<id>`;
-3. listagem de KnowledgeDoc escopada, evitando exposição de títulos/fontes de
-   peças internas a usuários sem acesso ao caso ou cliente correspondente.
-
-As correções operam em primitivas/rotas já existentes. A convergência definitiva
-deve incorporá-las diretamente ao gateway, ao contrato de ingestão e ao router.
+1. ProviderRegistry único conectado ao runtime;
+2. resolução de provedores fail-closed para aliases legados de `chat`;
+3. resolução server-side do escopo de precedentes com chave `caso:<id>`;
+4. listagem de KnowledgeDoc escopada.
 """
 from __future__ import annotations
 
@@ -16,6 +13,11 @@ import logging
 
 logger = logging.getLogger("ejc.ai.core.hardening")
 _INSTALADO = False
+
+
+def _instalar_provider_registry() -> None:
+    from app.services.ai.provider_registry_runtime import instalar
+    instalar()
 
 
 def _instalar_resolver_provedores() -> None:
@@ -95,13 +97,7 @@ async def _listar_docs_escopado(
     db=None,
     cu=None,
 ):
-    """Contrato seguro de GET /rag/docs.
-
-    Gestão (sócio+) mantém visão integral para curadoria. Demais usuários veem:
-    conteúdo público; conteúdo do próprio cliente externo; e documentos ligados
-    a casos nos quais são responsável/auxiliar ou que permanecem sem atribuição,
-    exatamente conforme a salvaguarda do ownership canônico.
-    """
+    """Contrato seguro de GET /rag/docs."""
     from sqlalchemy import and_, func as sqlfunc, or_, select
     from app.core.ownership import is_gestao
     from app.models.case import Case
@@ -182,6 +178,7 @@ def instalar() -> None:
     global _INSTALADO
     if _INSTALADO:
         return
+    _instalar_provider_registry()
     _instalar_resolver_provedores()
     _instalar_resolucao_escopo_rag()
     _instalar_listagem_rag_escopada()
