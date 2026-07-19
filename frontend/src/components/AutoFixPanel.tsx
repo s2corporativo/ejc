@@ -63,9 +63,8 @@ export function ordenarAchados(items: Finding[]): Finding[] {
 }
 
 function detalheErro(error: unknown): string {
-  const detail = (
-    error as { response?: { data?: { detail?: unknown } } }
-  )?.response?.data?.detail;
+  const detail = (error as { response?: { data?: { detail?: unknown } } })
+    ?.response?.data?.detail;
   return typeof detail === "string" && detail
     ? detail
     : "Não foi possível executar o diagnóstico AutoFix.";
@@ -173,7 +172,8 @@ export default function AutoFixPanel() {
                     Modo somente leitura
                   </div>
                   <p className="mt-1 text-sm text-slate-600">
-                    {report.resumo} Correções exigem branch, revisão humana e CI verde.
+                    {report.resumo} Correções exigem branch, revisão humana e CI
+                    verde.
                   </p>
                 </div>
                 <div className="flex gap-2">
@@ -198,19 +198,34 @@ export default function AutoFixPanel() {
             </section>
 
             <section className="grid gap-3 sm:grid-cols-2 lg:grid-cols-5">
-              <Metric label="Rotas" value={report.metricas.rotas_api_detectadas} />
-              <Metric label="Módulos" value={report.metricas.modulos_esperados} />
-              <Metric label="Cobertos" value={report.metricas.modulos_com_backend} />
+              <Metric
+                label="Rotas"
+                value={report.metricas.rotas_api_detectadas}
+              />
+              <Metric
+                label="Módulos"
+                value={report.metricas.modulos_esperados}
+              />
+              <Metric
+                label="Cobertos"
+                value={report.metricas.modulos_com_backend}
+              />
               <Metric label="Achados" value={report.metricas.achados} />
-              <Metric label="Colisões" value={report.metricas.colisoes_metodo_rota} />
+              <Metric
+                label="Colisões"
+                value={report.metricas.colisoes_metodo_rota}
+              />
             </section>
 
             <section>
               <div className="flex flex-wrap items-center justify-between gap-3">
                 <div>
-                  <h3 className="font-semibold text-slate-950">Achados priorizados</h3>
+                  <h3 className="font-semibold text-slate-950">
+                    Achados priorizados
+                  </h3>
                   <p className="mt-1 text-sm text-slate-500">
-                    P0 e P1 bloqueiam release até correção ou aceite formal de risco.
+                    P0 e P1 bloqueiam release até correção ou aceite formal de
+                    risco.
                   </p>
                 </div>
                 <Button
@@ -240,14 +255,20 @@ export default function AutoFixPanel() {
                       <Badge tone={TONE[finding.severidade]}>
                         {finding.severidade}
                       </Badge>
-                      <span className="text-xs text-slate-500">{finding.tipo}</span>
+                      <span className="text-xs text-slate-500">
+                        {finding.tipo}
+                      </span>
                     </div>
                     <h4 className="mt-2 font-semibold text-slate-950">
                       {finding.titulo}
                     </h4>
-                    <p className="mt-1 text-sm text-slate-600">{finding.detalhe}</p>
+                    <p className="mt-1 text-sm text-slate-600">
+                      {finding.detalhe}
+                    </p>
                     <p className="mt-3 rounded-lg bg-slate-50 p-3 text-sm text-slate-700">
-                      <span className="font-semibold">Correção recomendada: </span>
+                      <span className="font-semibold">
+                        Correção recomendada:{" "}
+                      </span>
                       {finding.sugestao}
                     </p>
                     {!!finding.evidencias.length && (
@@ -276,7 +297,9 @@ export default function AutoFixPanel() {
 function Metric({ label, value }: { label: string; value: number }) {
   return (
     <div className="rounded-xl border border-slate-200 p-4 text-center">
-      <div className="text-2xl font-bold tabular-nums text-slate-950">{value}</div>
+      <div className="text-2xl font-bold tabular-nums text-slate-950">
+        {value}
+      </div>
       <div className="mt-1 text-xs font-medium uppercase tracking-wide text-slate-500">
         {label}
       </div>
