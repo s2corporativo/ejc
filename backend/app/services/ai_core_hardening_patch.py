@@ -12,6 +12,7 @@ deve incorporá-las diretamente ao gateway, ao contrato de ingestão e ao router
 """
 from __future__ import annotations
 
+import functools
 import logging
 
 logger = logging.getLogger("ejc.ai.core.hardening")
@@ -66,6 +67,10 @@ def _instalar_resolucao_escopo_rag() -> None:
 
     original = ingestion_service.upsert_documento
 
+    # functools.wraps preserva a assinatura ORIGINAL para inspect.signature
+    # (via __wrapped__) — o wrapper usa **kwargs mas repassa tudo (inclusive
+    # `confianca`) ao original; sem isso a introspecção da assinatura some.
+    @functools.wraps(original)
     async def upsert_com_escopo_canonico(db, **kwargs):
         categoria = kwargs.get("categoria")
         client_id = kwargs.get("client_id")
