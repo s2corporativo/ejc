@@ -28,6 +28,20 @@ describe("FlowEnhancements — regras puras", () => {
 
     expect(
       caseIdCriadoDaResposta({
+        config: { method: "post", url: "/api/v1/cases/" } as never,
+        data: { id: "case-v1" },
+      }),
+    ).toBe("case-v1");
+
+    expect(
+      caseIdCriadoDaResposta({
+        config: { method: "post", url: "/api/cases/" } as never,
+        data: { id: "case-legacy" },
+      }),
+    ).toBe("case-legacy");
+
+    expect(
+      caseIdCriadoDaResposta({
         config: { method: "get", url: "/cases/" } as never,
         data: { id: "case-1" },
       }),
@@ -59,6 +73,17 @@ describe("FlowEnhancements — regras puras", () => {
       deveInjetarCaso(
         {
           method: "post",
+          url: "/api/v1/tasks/",
+          data: { titulo: "Tarefa" },
+        } as never,
+        "?caso=case-1",
+      ),
+    ).toBe("case-1");
+
+    expect(
+      deveInjetarCaso(
+        {
+          method: "post",
           url: "/tasks/",
           data: { titulo: "Tarefa", case_id: "case-2" },
         } as never,
@@ -81,9 +106,9 @@ describe("FlowEnhancements — regras puras", () => {
     ).toBeNull();
   });
 
-  it("consolida a rota histórica de conhecimento na pesquisa jurídica", () => {
+  it("consolida a rota histórica de conhecimento na aba canônica", () => {
     expect(destinoRotaConsolidada("/knowledge-hub")).toBe(
-      "/inteligencia?tab=pesquisa",
+      "/inteligencia?tab=conhecimento",
     );
     expect(destinoRotaConsolidada("/inteligencia")).toBeNull();
     expect(destinoRotaConsolidada("/conhecimento")).toBeNull();
