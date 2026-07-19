@@ -1,0 +1,64 @@
+name: Architecture Inventory — Phase 0
+
+on:
+  workflow_dispatch:
+  push:
+    branches:
+      - agent/organizacao-padronizacao-rotas-fluxos
+    paths:
+      - "scripts/generate_architecture_inventory.py"
+      - "config/architecture_inventory_overrides.json"
+      - "backend/app/**"
+      - "backend/alembic/versions/**"
+      - "frontend/src/**"
+      - ".github/workflows/architecture-inventory.yml"
+  pull_request:
+    paths:
+      - "scripts/generate_architecture_inventory.py"
+      - "config/architecture_inventory_overrides.json"
+      - "backend/app/**"
+      - "backend/alembic/versions/**"
+      - "frontend/src/**"
+      - ".github/workflows/architecture-inventory.yml"
+
+permissions:
+  contents: read
+
+concurrency:
+  group: architecture-inventory-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  inventory:
+    name: Generate complete architecture inventory
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7
+        with:
+          fetch-depth: 1
+
+      - name: Setup Python
+        uses: actions/setup-python@v6
+        with:
+          python-version: "3.12"
+
+      - name: Generate inventory and enforce classification gate
+        run: |
+          python scripts/generate_architecture_inventory.py \
+            --output "$RUNNER_TEMP/ejc-architecture-inventory" \
+            --check
+
+      - name: Publish summary
+        run: |
+          cat "$RUNNER_TEMP/ejc-architecture-inventory/README.md" >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Upload complete inventory
+        uses: actions/upload-artifact@v7
+        with:
+          name: ejc-architecture-inventory
+          path: ${{ runner.temp }}/ejc-architecture-inventory
+          if-no-files-found: error
+          retention-days: 30
