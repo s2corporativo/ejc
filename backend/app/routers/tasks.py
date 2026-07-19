@@ -91,6 +91,19 @@ async def criar(
 ):
     if payload.case_id:
         await verificar_acesso_caso(db, cu, payload.case_id)
+    # responsavel_id deve apontar p/ usuário REAL — espelha
+    # agenda_eventos._validar_responsavel (evita tarefa/Notification órfã).
+    if payload.responsavel_id:
+        existe = (await db.execute(
+            select(User.id).where(
+                User.id == payload.responsavel_id, User.deleted_at.is_(None)
+            )
+        )).scalar_one_or_none()
+        if existe is None:
+            raise HTTPException(
+                status_code=422,
+                detail="responsavel_id inválido: usuário não encontrado",
+            )
     t = Task(id=str(uuid4()), criado_por=cu.id, **payload.model_dump())
     db.add(t)
     # Notificar o responsável (se não for o próprio criador)

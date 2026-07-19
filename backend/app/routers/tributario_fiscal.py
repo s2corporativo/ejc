@@ -23,13 +23,18 @@ from pydantic import BaseModel, Field
 
 from app.core.config import get_settings
 from app.core.rate_limit import rate_limit
-from app.core.security import get_current_user
+from app.core.security import require_roles
 from app.models.user import User
 from app.services.fiscal.nfe_parser import parse_lote
 from app.services.fiscal.recuperacao_creditos import analisar_recuperacao
 
 settings = get_settings()
 router = APIRouter(prefix="/tributario/fiscal", tags=["Tributário / Fiscal"])
+
+# Ferramenta de ramo tributário: restrita à equipe jurídica (estagiário+),
+# mesmo padrão de previdenciario_beneficio._EQUIPE. cliente_externo já é
+# barrado pelo AuthMiddleware — este gate é defesa em profundidade staff-vs-staff.
+_EQUIPE = ["superadmin", "admin", "socio", "advogado", "advogado_auxiliar", "estagiario"]
 
 MAX_ARQUIVOS = 50
 # Mesmo conjunto aceito para .xml em routers/documents.py (libmagic varia).
@@ -103,7 +108,7 @@ class ConsolidacaoOut(BaseModel):
 async def analisar_xml(
     arquivos: list[UploadFile] = File(..., description="XMLs de NF-e de saída"),
     regime: Regime = Form(...),
-    cu: User = Depends(get_current_user),
+    cu: User = Depends(require_roles(_EQUIPE)),
 ):
     """
     Diagnóstico de recuperação de créditos a partir dos XMLs de SAÍDA do
@@ -298,7 +303,7 @@ def _html_relatorio(c: ConsolidacaoOut) -> str:
              dependencies=[Depends(rate_limit("tributario-fiscal-pdf", 10))])
 async def relatorio_pdf(
     consolidacao: ConsolidacaoOut,
-    cu: User = Depends(get_current_user),
+    cu: User = Depends(require_roles(_EQUIPE)),
 ):
     """Gera o PDF Visual Law do diagnóstico a partir da consolidação devolvida
     pelo frontend e retorna a URL de download (padrão sala_de_guerra_v3)."""
@@ -324,7 +329,7 @@ async def relatorio_pdf(
             dependencies=[Depends(rate_limit("tributario-fiscal-download", 30))])
 async def download_relatorio(
     arquivo_id: str,
-    cu: User = Depends(get_current_user),
+    cu: User = Depends(require_roles(_EQUIPE)),
 ):
     """Download do PDF gerado pelo POST acima. `arquivo_id` é validado como
     UUID (nunca interpolado livre no path — sem traversal)."""

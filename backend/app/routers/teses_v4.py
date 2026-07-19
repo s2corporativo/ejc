@@ -11,9 +11,14 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from pydantic import BaseModel
 
 from app.core.database import Base, get_db
-from app.core.security import get_current_user, require_roles
+from app.core.security import get_current_user, require_roles, ROLE_LEVEL
 from app.models.user import User
 from app.core.rate_limit import rate_limit
+
+
+def _is_staff(user: User) -> bool:
+    role = user.role.value if hasattr(user.role, "value") else str(user.role)
+    return ROLE_LEVEL.get(role, 0) >= ROLE_LEVEL["estagiario"]
 
 # Model ORM
 class TeseJuridica(Base):
@@ -64,6 +69,9 @@ async def listar_teses(
     db: AsyncSession = Depends(get_db),
     cu: User = Depends(get_current_user),
 ):
+    # Banco de teses do escritório: leitura restrita a staff (estagiário+).
+    if not _is_staff(cu):
+        raise HTTPException(403, "Acesso restrito")
     q = select(TeseJuridica)
     if area:
         q = q.where(TeseJuridica.area_juridica == area)
@@ -89,11 +97,15 @@ async def sugerir_teses_ia(
     from app.services.ai_guard import sanitizar_ou_abortar, registrar_ai_log
     from app.models.ai_log import AITipoUso
 
+    # Dispara IA sobre o banco de teses: restrito a staff (estagiário+).
+    if not _is_staff(cu):
+        raise HTTPException(403, "Acesso restrito")
+
     contexto_limpo, pii = sanitizar_ou_abortar(contexto)
 
     # Lista as teses reais do banco (listar_teses) e usa as 5 primeiras como
     # contexto para a IA. NÃO é busca vetorial/RAG — é listagem direta no DB.
-    teses_existentes = await listar_teses(db=db)
+    teses_existentes = await listar_teses(db=db, cu=cu)
     contexto_teses = "\n".join([f"- {t.titulo}: {t.descricao}" for t in teses_existentes[:5]])
 
     prompt = (

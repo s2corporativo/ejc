@@ -524,6 +524,11 @@ async def obter_avatar(
 ):
     if user_id == "me":
         user_id = cu.id
+    # Avatar próprio sempre acessível (inclui portal); avatar de OUTROS só para
+    # staff (estagiário+). cliente_externo não enumera avatares alheios. 404
+    # (não 403) para não confirmar existência do usuário.
+    if user_id != cu.id and _nivel(cu.role) < ROLE_LEVEL["estagiario"]:
+        raise HTTPException(status_code=404, detail="Usuário sem avatar")
     user = (
         await db.execute(
             select(User).where(User.id == user_id, User.deleted_at.is_(None))

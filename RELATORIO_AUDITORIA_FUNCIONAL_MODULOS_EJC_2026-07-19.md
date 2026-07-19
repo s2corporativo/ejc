@@ -158,8 +158,27 @@ Stack mínima **de pé de verdade**: Postgres 16 + pgvector local (Docker Hub bl
 ### 7.3 Bug funcional (achado do smoke dinâmico)
 - `schemas/case.py::CaseUpdate.fase` — `field_validator` valida contra `CaseFase`, transformando o **500** (asyncpg) em **422** claro. Dados de teste da matriz fictícia corrigidos (CNJ válido + `fase` válida).
 
-### 7.4 Hardening RBAC/IDOR adicional (commit seguinte deste PR)
-Em aplicação/revisão neste mesmo PR (commit subsequente), sobre `deadlines` (escopo de leitura A3 + lockout de superadmin B1), `data_room` (ownership de sala A4), `contratos_societarios` (escopo A5), `partner_withdrawals` (segregação de funções A6), `whatsapp` (piso de perfil A7), `environmental` (piso+ownership A8), `indice_risco` (piso B2), `pix` (piso B3) e `datajud` (rate-limit+piso B4). Os itens não aplicados ficam registrados em §8 como backlog.
+### 7.4 Hardening RBAC/IDOR — lote 1 (commit `hardening RBAC/IDOR (lote 1)`)
+- **A3** `deadlines.py` — `GET /deadlines` e `/export.csv` escopam por casos do usuário (não-gestão) por default; `_filtro_escopo_prazos` (gestão vê tudo).
+- **B1** `deadlines.py` — `DELETE /deadlines/{id}` usa `requer_advogado`, eliminando o lockout de superadmin.
+- **A4** `data_room.py` — `_gate_room` (case_id→`verificar_acesso_caso`, client_id→`_pode_ver_cliente`) em obter/adicionar_arquivo/gerar_link/revogar_link/remover_arquivo.
+- **A5** `contratos_societarios.py` — escopo por titularidade na listagem + gates row-level em obter/atualizar/transição; `criar` valida titularidade de case_id/client_id.
+- **A6** `partner_withdrawals.py` — approve/pay recusam auto-aprovação (`partner_id == cu.id`).
+- **A7** `whatsapp.py` — `/qrcode` exige gestão; `/status,/chats,/messages` exigem o conjunto do `/send`.
+- **A8** `environmental.py` — `listar` com piso advogado + filtro de ownership.
+- **B2** `indice_risco.py` — `POST /recalcular` exige advogado.
+- **B3** `pix.py` — `POST /cobranca` restrito a `_FINANCEIRO_TOTAL`.
+- **B4** `datajud.py` — `GET /process/{cnj}` com rate-limit + piso advogado.
+- Testes (lote 1): **179 passed, 16 skipped, 0 failed**.
+
+### 7.5 Hardening RBAC/escopo — lote 2 (commit `hardening RBAC/IDOR (lote 2)`)
+- **B5** `wiki.py` (leitura staff / escrita gestão) e `teses_v4.py` (GET e sugestao-ia com piso staff).
+- **B6** `trabalhista_liquidacao.py` e `tributario_fiscal.py` — piso de equipe jurídica.
+- **B7** `dashboard.py` — piso de staff (estagiário+), preservando o escopo financeiro por uid.
+- **D9a** `qualidade.py` (piso staff nos endpoints de IA), `novos_modulos.py` (due-diligence: leitura staff / escrita socio+), `atendimentos.py` (segregação de carteira na listagem + gate row-level em obter/histórico, espelhando `clients._filtro_visibilidade_cliente`).
+- **D1** `users.py` — `GET /users/{id}/avatar` de terceiros restrito a staff (self sempre; 404 para os demais).
+- **D4** `tasks.py` — `criar` valida existência de `responsavel_id`.
+- Extensão da validação de enum em `schemas/case.py`: `status` e `prioridade` (além de `fase`) → 422 em vez de 500.
 
 ---
 

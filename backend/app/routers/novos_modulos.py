@@ -259,6 +259,9 @@ async def listar_templates(
     db: AsyncSession = Depends(get_db),
     cu: User = Depends(get_current_user),
 ):
+    # Leitura restrita a staff (estagiário+) — alinhado aos irmãos do arquivo.
+    if ROLE_LEVEL.get(cu.role.value, 0) < ROLE_LEVEL["estagiario"]:
+        raise HTTPException(403, "Acesso restrito")
     filters = ["is_active = TRUE"]
     params: dict = {}
     if dd_type:
@@ -284,6 +287,9 @@ async def criar_template(
     db: AsyncSession = Depends(get_db),
     cu: User = Depends(get_current_user),
 ):
+    # Escrita restrita a sócios+ — mesmo gate de criar_regra (precificacao).
+    if cu.role not in ("admin", "superadmin", "socio"):
+        raise HTTPException(403, "Acesso restrito a sócios e administradores")
     import json
     r = await db.execute(text("""
         INSERT INTO due_diligence_templates (id, name, dd_type, items, created_by)

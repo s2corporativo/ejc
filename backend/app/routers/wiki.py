@@ -14,11 +14,29 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.database import get_db
-from app.core.security import get_current_user
+from app.core.security import get_current_user, ROLE_LEVEL
 from app.models.user import User
 from app.models.wiki import WikiPagina
 
 router = APIRouter(prefix="/wiki", tags=["Wiki Interna"])
+
+
+def _role_level(user: User) -> int:
+    role = user.role.value if hasattr(user.role, "value") else str(user.role)
+    return ROLE_LEVEL.get(role, 0)
+
+
+def _exigir_staff(user: User) -> None:
+    # Wiki interna do escritório: leitura restrita a staff (estagiário+).
+    # cliente_externo já é barrado pelo AuthMiddleware — defesa em profundidade.
+    if _role_level(user) < ROLE_LEVEL["estagiario"]:
+        raise HTTPException(403, "Acesso restrito")
+
+
+def _exigir_editor(user: User) -> None:
+    # Escrita (criar/editar) exige advogado+; exclusão permanece socio+.
+    if _role_level(user) < ROLE_LEVEL["advogado"]:
+        raise HTTPException(403, "Acesso restrito")
 
 
 def _slug(titulo: str) -> str:
@@ -36,6 +54,7 @@ class WikiIn(BaseModel):
 @router.get("")
 async def listar(categoria: str | None = None, db: AsyncSession = Depends(get_db),
                  cu: User = Depends(get_current_user)):
+    _exigir_staff(cu)
     q = select(WikiPagina).where(WikiPagina.deleted_at.is_(None))
     if categoria:
         q = q.where(WikiPagina.categoria == categoria)
@@ -47,6 +66,7 @@ async def listar(categoria: str | None = None, db: AsyncSession = Depends(get_db
 @router.get("/{pid}")
 async def obter(pid: str, db: AsyncSession = Depends(get_db),
                 cu: User = Depends(get_current_user)):
+    _exigir_staff(cu)
     w = (await db.execute(select(WikiPagina).where(
         WikiPagina.id == pid, WikiPagina.deleted_at.is_(None)))).scalar_one_or_none()
     if not w:
@@ -58,6 +78,7 @@ async def obter(pid: str, db: AsyncSession = Depends(get_db),
 @router.post("", status_code=201)
 async def criar(body: WikiIn, db: AsyncSession = Depends(get_db),
                 cu: User = Depends(get_current_user)):
+    _exigir_editor(cu)
     w = WikiPagina(id=str(uuid4()), titulo=body.titulo, slug=_slug(body.titulo),
                    categoria=body.categoria, conteudo=body.conteudo, atualizado_por=cu.id)
     db.add(w)
@@ -68,6 +89,7 @@ async def criar(body: WikiIn, db: AsyncSession = Depends(get_db),
 @router.patch("/{pid}")
 async def editar(pid: str, body: WikiIn, db: AsyncSession = Depends(get_db),
                  cu: User = Depends(get_current_user)):
+    _exigir_editor(cu)
     w = (await db.execute(select(WikiPagina).where(
         WikiPagina.id == pid, WikiPagina.deleted_at.is_(None)))).scalar_one_or_none()
     if not w:
