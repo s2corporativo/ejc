@@ -17,7 +17,7 @@ import AssistenteIA from "./AssistenteIA";
 import FerramentasIA from "./FerramentasIA";
 import ConteudoJuridico from "./ConteudoJuridico";
 import Jurimetria from "./Jurimetria";
-import Conhecimento from "./Conhecimento";
+import ConhecimentoGovernado from "./ConhecimentoGovernado";
 import DashboardIA from "./DashboardIA";
 import ErrorBoundary from "../components/ErrorBoundary";
 import { AIFactualityLegend, IANotice, PageHeader } from "../components/UI";
@@ -191,7 +191,7 @@ export default function InteligenciaWorkspace() {
           {tab === "producao" && sub === "ferramentas" && <FerramentasIA />}
           {tab === "pesquisa" && <ConteudoJuridico />}
           {tab === "jurimetria" && <Jurimetria />}
-          {tab === "conhecimento" && <Conhecimento />}
+          {tab === "conhecimento" && <ConhecimentoGovernado />}
           {tab === "saude" && <DashboardIA />}
         </ErrorBoundary>
       </div>

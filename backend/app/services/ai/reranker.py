@@ -1,59 +1,73 @@
 # ── app/services/ai/reranker.py ──────────────────────────────────────────────
 # RERANKING (cross-encoder) do RAG — Fase 1 da auditoria de IA (2026-07-17).
 #
-# O retrieval atual (ai_service.buscar_contexto_rag) recupera candidatos por
-# pgvector cosine e funde com a perna lexical (pg_trgm) via RRF. Falta o passo
-# que mais melhora a PRECISÃO do contexto em RAG jurídico: reordenar os
-# candidatos com um cross-encoder que lê a CONSULTA e o TRECHO juntos e pontua a
-# relevância real (não a mera proximidade de embeddings independentes).
+# O retrieval recupera candidatos por pgvector e os funde com a perna lexical
+# via RRF. Esta camada reordena os candidatos por relevância conjunta consulta ×
+# trecho e aplica governança jurídica como sinal secundário e auditável.
 #
-# Estratégia: recuperar um POOL amplo (limite × MULT) e, após o rerank, entregar
-# ao modelo só os `limite` melhores. Assim menos "contexto irrelevante" chega ao
-# LLM — principal causa de raciocínio fraco e de alucinação por distração.
-#
-# Soberania de dados: usa fastembed (ONNX, sem torch), modelo LOCAL — o texto
-# NUNCA sai do VPS (mesmo princípio do embedding_service).
-#
-# Fail-safe (idêntico ao embedding_service): fastembed ausente, modelo não
-# suportado pela versão instalada, ou QUALQUER erro → retorna a ordem RRF
-# recebida (candidatos[:limite]), sem exceção ao chamador. O reranking é um
-# refinamento opt-in; nunca uma dependência dura do RAG.
+# Regras essenciais:
+#   • relevância semântica continua sendo o sinal principal;
+#   • autoridade oficial serve como desempate controlado;
+#   • norma marcada como revogada não fundamenta resposta atual;
+#   • fonte com vigência não verificada continua pesquisável, mas recebe aviso;
+#   • pesquisa histórica preserva versões não vigentes e explicita o contexto;
+#   • qualquer falha degrada para a ordem RRF, sem derrubar o RAG.
 from __future__ import annotations
 
 import asyncio
 import logging
 import threading
+from typing import Any
+
+from sqlalchemy import select
 
 from app.core.config import get_settings
+from app.core.database import AsyncSessionLocal
+from app.models.rag import KnowledgeDoc
+from app.services.knowledge_governance import inferir_autoridade
 
 logger = logging.getLogger("ejc.ai.reranker")
 settings = get_settings()
 
-# Cross-encoders têm janela curta; truncar cada trecho evita input excessivo
-# (e mantém o rerank barato). O trecho completo segue no candidato original —
-# aqui só pontuamos relevância.
 _MAX_CHARS = 2000
-
 _model = None
 _model_lock = threading.Lock()
 _IMPORTAVEL: bool | None = None
 
+_LEGAL_PENALTIES = {
+    "vigente": 0.0,
+    "nao_aplicavel": 0.0,
+    "vigencia_nao_verificada": -0.02,
+    "parcialmente_revogada": -0.03,
+    "suspensa": -0.04,
+    "historica": -0.05,
+    "revogada": -0.08,
+}
+
+_LEGAL_LABELS = {
+    "vigente": "Vigente",
+    "nao_aplicavel": "Não aplicável",
+    "vigencia_nao_verificada": "Vigência não verificada",
+    "parcialmente_revogada": "Parcialmente revogada",
+    "suspensa": "Suspensa",
+    "historica": "Versão histórica",
+    "revogada": "Revogada",
+}
+
 
 def habilitado() -> bool:
-    """RAG_RERANK_ENABLED (config). Desligado → busca mantém ordem RRF atual."""
     return bool(getattr(settings, "RAG_RERANK_ENABLED", False))
 
 
 def disponivel() -> bool:
-    """True se o rerank está habilitado E o cross-encoder do fastembed é
-    importável. Checagem barata e cacheada (não baixa o modelo — isso só
-    acontece no 1º rerank real, em _try_get_model)."""
+    """True quando o cross-encoder local está habilitado e importável."""
     global _IMPORTAVEL
     if not habilitado():
         return False
     if _IMPORTAVEL is None:
         try:
             from fastembed.rerank.cross_encoder import TextCrossEncoder
+
             suportados = {m["model"] for m in TextCrossEncoder.list_supported_models()}
             _IMPORTAVEL = settings.RAG_RERANK_MODEL in suportados
             if not _IMPORTAVEL:
@@ -64,25 +78,18 @@ def disponivel() -> bool:
         except Exception:
             _IMPORTAVEL = False
             logger.info(
-                "fastembed cross-encoder ausente — reranking desligado "
-                "(RAG usa a ordem RRF do retrieval híbrido)"
+                "fastembed cross-encoder ausente — RAG mantém a ordem híbrida RRF"
             )
     return _IMPORTAVEL
 
 
 def tamanho_pool(limite: int) -> int:
-    """Nº de candidatos a recuperar ANTES do rerank (deve exceder o `limite`
-    final para o cross-encoder ter o que reordenar)."""
     mult = max(1, int(getattr(settings, "RAG_RERANK_POOL_MULT", 5)))
     minimo = max(int(limite), int(getattr(settings, "RAG_RERANK_POOL_MIN", 20)))
     return max(int(limite) * mult, minimo)
 
 
 def _try_get_model():
-    """Singleton thread-safe. 1ª chamada baixa o modelo (runtime). Se o modelo
-    não for suportado pela versão instalada do fastembed (ou falhar), marca o
-    reranker como indisponível NESTE processo (não retenta a cada consulta) e
-    devolve None → o chamador mantém a ordem RRF."""
     global _model, _IMPORTAVEL
     if _model is not None:
         return _model
@@ -90,17 +97,17 @@ def _try_get_model():
         if _model is None:
             try:
                 from fastembed.rerank.cross_encoder import TextCrossEncoder
+
                 nome = settings.RAG_RERANK_MODEL
-                logger.info("Carregando reranker %s (1ª vez — download em runtime)...", nome)
+                logger.info("Carregando reranker %s...", nome)
                 _model = TextCrossEncoder(model_name=nome)
                 logger.info("[Reranker] %s carregado", nome)
-            except Exception as e:
-                _IMPORTAVEL = False  # não tenta de novo neste processo
+            except Exception as exc:
+                _IMPORTAVEL = False
                 logger.warning(
-                    "[Reranker] modelo '%s' indisponível (%s) — RAG mantém a "
-                    "ordem RRF. Ajuste RAG_RERANK_MODEL para um suportado pela "
-                    "versão do fastembed (ex.: BAAI/bge-reranker-base).",
-                    getattr(settings, "RAG_RERANK_MODEL", "?"), str(e)[:200],
+                    "[Reranker] modelo '%s' indisponível (%s) — mantendo RRF",
+                    getattr(settings, "RAG_RERANK_MODEL", "?"),
+                    str(exc)[:200],
                 )
                 return None
     return _model
@@ -110,7 +117,144 @@ def _rerank_sync(consulta: str, textos: list[str]) -> list[float]:
     model = _try_get_model()
     if model is None:
         return []
-    return [float(s) for s in model.rerank(consulta, textos)]
+    return [float(score) for score in model.rerank(consulta, textos)]
+
+
+def _normalizar_status_legal(extra: dict[str, Any], vigente_no_ejc: bool) -> str:
+    raw = str(
+        extra.get("legal_status")
+        or extra.get("situacao_normativa")
+        or extra.get("vigencia_status")
+        or ""
+    ).strip().lower()
+    aliases = {
+        "parcialmente revogada": "parcialmente_revogada",
+        "não aplicável": "nao_aplicavel",
+        "nao aplicavel": "nao_aplicavel",
+        "não verificada": "vigencia_nao_verificada",
+        "nao verificada": "vigencia_nao_verificada",
+    }
+    status = aliases.get(raw, raw)
+    if not vigente_no_ejc:
+        return "historica"
+    if status in _LEGAL_LABELS:
+        return status
+    return "vigencia_nao_verificada" if extra.get("authority_level") == "oficial_normativa" else "nao_aplicavel"
+
+
+async def _hidratar_governanca(candidatos: list[dict]) -> list[dict]:
+    """Carrega metadados dos documentos em uma única consulta.
+
+    O SQL de retrieval permanece enxuto; a governança é anexada após a seleção do
+    pool. Em caso de indisponibilidade do banco, devolve os candidatos originais.
+    """
+    ids = {str(item.get("doc_id")) for item in candidatos if item.get("doc_id")}
+    if not ids:
+        return candidatos
+    try:
+        async with AsyncSessionLocal() as db:
+            rows = (
+                await db.execute(
+                    select(KnowledgeDoc.id, KnowledgeDoc.extra, KnowledgeDoc.vigente).where(
+                        KnowledgeDoc.id.in_(ids),
+                        KnowledgeDoc.deleted_at.is_(None),
+                    )
+                )
+            ).all()
+        metadata = {
+            str(doc_id): (dict(extra or {}), bool(vigente))
+            for doc_id, extra, vigente in rows
+        }
+        hydrated: list[dict] = []
+        for candidate in candidatos:
+            item = dict(candidate)
+            extra, vigente = metadata.get(
+                str(item.get("doc_id")),
+                (dict(item.get("extra") or {}), True),
+            )
+            status = _normalizar_status_legal(extra, vigente)
+            item["extra"] = extra
+            item["vigente_no_ejc"] = vigente
+            item["situacao_juridica"] = {
+                "code": status,
+                "label": _LEGAL_LABELS[status],
+                "warning": status
+                in {
+                    "vigencia_nao_verificada",
+                    "parcialmente_revogada",
+                    "suspensa",
+                    "historica",
+                    "revogada",
+                },
+            }
+            # Uma norma REVOGADA cadastrada como versão atual não pode chegar ao
+            # modelo. Uma versão histórica permanece disponível quando o chamador
+            # pediu explicitamente incluir_historico (vigente_no_ejc=False).
+            if status == "revogada" and vigente:
+                logger.info(
+                    "RAG excluiu norma revogada da fundamentação atual: doc_id=%s",
+                    item.get("doc_id"),
+                )
+                continue
+            hydrated.append(item)
+        return hydrated
+    except Exception as exc:
+        logger.warning(
+            "Governança documental indisponível no reranking (%s) — mantendo candidatos",
+            str(exc)[:180],
+        )
+        return candidatos
+
+
+def _confidence_bonus(candidate: dict) -> float:
+    confidence = str(candidate.get("confianca") or "media").strip().lower()
+    return {"alta": 0.015, "media": 0.0, "baixa": -0.015}.get(confidence, 0.0)
+
+
+def _enrich(candidate: dict) -> tuple[dict, float]:
+    """Anexa autoridade, vigência e citação; devolve ajuste pequeno de ranking."""
+    item = dict(candidate)
+    extra = item.get("extra") if isinstance(item.get("extra"), dict) else {}
+    authority = inferir_autoridade(item.get("categoria"), item.get("fonte"), extra)
+    legal = item.get("situacao_juridica") if isinstance(item.get("situacao_juridica"), dict) else None
+    status = str((legal or {}).get("code") or "nao_aplicavel")
+
+    bonus = max(0.0, (float(authority["weight"]) - 40.0) / 1000.0)
+    bonus += _confidence_bonus(item)
+    bonus += _LEGAL_PENALTIES.get(status, -0.01)
+
+    item["autoridade"] = authority
+    item["situacao_juridica"] = legal or {
+        "code": status,
+        "label": _LEGAL_LABELS.get(status, "Não classificada"),
+        "warning": status not in {"vigente", "nao_aplicavel"},
+    }
+    item["citacao"] = {
+        "documento_id": item.get("doc_id"),
+        "chunk_id": item.get("chunk_id"),
+        "titulo": item.get("titulo"),
+        "categoria": item.get("categoria"),
+        "fonte": item.get("fonte"),
+        "versao": item.get("versao"),
+        "autoridade": authority,
+        "situacao_juridica": item["situacao_juridica"],
+    }
+    item["governance_bonus"] = round(bonus, 5)
+    return item, bonus
+
+
+def _prioritize_existing_order(candidates: list[dict], limit: int) -> list[dict]:
+    if not candidates:
+        return candidates
+    size = max(1, len(candidates))
+    enriched = []
+    for index, candidate in enumerate(candidates):
+        item, bonus = _enrich(candidate)
+        base = 1.0 - (index / size)
+        item["governance_score"] = round(base + bonus, 5)
+        enriched.append((item, base + bonus, index))
+    enriched.sort(key=lambda row: (row[1], -row[2]), reverse=True)
+    return [row[0] for row in enriched[:limit]]
 
 
 async def rerank(
@@ -119,39 +263,39 @@ async def rerank(
     limite: int,
     campo: str = "conteudo",
 ) -> list[dict]:
-    """Reordena `candidatos` por relevância à `consulta` (cross-encoder) e
-    devolve os `limite` melhores, anexando `rerank_score` a cada item.
-
-    Degradação graciosa — qualquer uma destas condições devolve
-    `candidatos[:limite]` na ORDEM RECEBIDA (RRF), sem exceção:
-      • rerank desligado/indisponível;
-      • ≤1 candidato (nada a reordenar);
-      • modelo não carrega / erro no encode;
-      • contagem de scores ≠ candidatos.
-    """
+    """Reordena por relevância, autoridade e vigência com degradação segura."""
     if not candidatos:
         return candidatos
+
+    candidatos = await _hidratar_governanca(candidatos)
+    if not candidatos:
+        return []
+
     if not disponivel() or len(candidatos) <= 1:
-        return candidatos[:limite]
+        return _prioritize_existing_order(candidatos, limite)
     try:
-        textos = [((c.get(campo) or "")[:_MAX_CHARS]) for c in candidatos]
+        textos = [((candidate.get(campo) or "")[:_MAX_CHARS]) for candidate in candidatos]
         scores = await asyncio.to_thread(_rerank_sync, consulta, textos)
         if not scores or len(scores) != len(candidatos):
             if scores:
                 logger.warning(
-                    "[Reranker] %d scores para %d candidatos — mantendo ordem RRF",
-                    len(scores), len(candidatos),
+                    "[Reranker] %d scores para %d candidatos — mantendo RRF",
+                    len(scores),
+                    len(candidatos),
                 )
-            return candidatos[:limite]
-        ordenados = sorted(
-            zip(candidatos, scores), key=lambda cs: cs[1], reverse=True
-        )
-        saida: list[dict] = []
-        for cand, score in ordenados[:limite]:
-            item = dict(cand)
+            return _prioritize_existing_order(candidatos, limite)
+
+        ordered = []
+        for index, (candidate, score) in enumerate(zip(candidatos, scores)):
+            item, bonus = _enrich(candidate)
             item["rerank_score"] = round(float(score), 5)
-            saida.append(item)
-        return saida
-    except Exception as e:  # fail-safe: rerank nunca derruba o RAG
-        logger.warning("[Reranker] falha no rerank (%s) — mantendo ordem RRF", str(e)[:200])
-        return candidatos[:limite]
+            item["governance_score"] = round(float(score) + bonus, 5)
+            ordered.append((item, float(score) + bonus, index))
+        ordered.sort(key=lambda row: (row[1], -row[2]), reverse=True)
+        return [row[0] for row in ordered[:limite]]
+    except Exception as exc:
+        logger.warning(
+            "[Reranker] falha (%s) — mantendo ordem híbrida RRF",
+            str(exc)[:200],
+        )
+        return _prioritize_existing_order(candidatos, limite)

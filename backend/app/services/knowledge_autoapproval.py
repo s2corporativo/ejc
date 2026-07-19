@@ -18,6 +18,7 @@ from typing import Any
 from sqlalchemy import event
 
 from app.models.rag import KnowledgeDoc
+from app.services.knowledge_governance import inferir_autoridade
 
 POLITICA = "knowledge_module_always_approved"
 _CONFIANCAS_VALIDAS = {"alta", "media", "baixa"}
@@ -28,11 +29,15 @@ def _texto(valor: Any) -> str:
 
 
 def aplicar_aprovacao_automatica(documento: KnowledgeDoc) -> dict:
-    """Aplica a política ao documento e devolve o novo ``extra``.
+    """Aplica aprovação e metadados mínimos de governança ao documento.
 
     ``confidence_level=bloqueado`` também impediria a recuperação mesmo com
     ``rag_status=aprovado``; por isso é normalizado para ``media``. Confianças
     válidas já definidas (alta/media/baixa) são preservadas.
+
+    A autoridade é inferida de categoria/fonte, sem elevar material não oficial.
+    Para legislação sem declaração expressa, a vigência jurídica permanece como
+    ``vigencia_nao_verificada`` — versão atual no EJC não equivale a lei vigente.
     """
     extra = dict(documento.extra or {})
     status_anterior = _texto(extra.get("rag_status")) or None
@@ -52,6 +57,12 @@ def aplicar_aprovacao_automatica(documento: KnowledgeDoc) -> dict:
     auditoria.setdefault("previous_rag_status", status_anterior)
     auditoria.setdefault("previous_confidence_level", confianca_anterior)
     auditoria["policy"] = POLITICA
+
+    authority = inferir_autoridade(documento.categoria, documento.fonte, extra)
+    extra.setdefault("authority_level", authority["code"])
+    extra.setdefault("source_official", authority["official"])
+    if "legisl" in _texto(documento.categoria):
+        extra.setdefault("legal_status", "vigencia_nao_verificada")
 
     extra["rag_status"] = "aprovado"
     extra["confidence_level"] = confianca
