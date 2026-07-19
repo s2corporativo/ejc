@@ -34,6 +34,10 @@ class IntegrationCredential(Base):
             "provider_key", "field_key",
             unique=True,
             postgresql_where=text("ativo"),
+            # Mesmo índice parcial no SQLite (suíte de testes/aiosqlite) —
+            # sem isto o SQLite criaria um UNIQUE cheio e proibiria o
+            # histórico de versões desativadas.
+            sqlite_where=text("ativo"),
         ),
     )
 
