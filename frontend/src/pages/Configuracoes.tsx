@@ -5,6 +5,7 @@ import {
   Check,
   ChevronRight,
   Gauge,
+  KeyRound,
   LayoutDashboard,
   Menu,
   Monitor,
@@ -18,6 +19,7 @@ import {
   Users,
 } from "lucide-react";
 import AccountSecurity from "../components/AccountSecurity";
+import CredentialVaultPanel from "../components/CredentialVaultPanel";
 import IntegrationHealthPanel from "../components/IntegrationHealthPanel";
 import ModuleLifecycleSettings from "../components/ModuleLifecycleSettings";
 import NotificationPreferences from "../components/NotificationPreferences";
@@ -69,6 +71,7 @@ type SettingsTab =
   | "seguranca"
   | "modulos"
   | "integracoes"
+  | "credenciais"
   | "administracao";
 
 export default function Configuracoes() {
@@ -77,7 +80,8 @@ export default function Configuracoes() {
   const { homeRoute, setHomeRoute, sidebarCollapsed, setSidebarCollapsed } =
     usePreferencesStore();
   const user = useAuth((state) => state.user);
-  const isAdmin = user?.role === "superadmin" || user?.role === "admin";
+  const isSuperadmin = user?.role === "superadmin";
+  const isAdmin = isSuperadmin || user?.role === "admin";
 
   const tabs = useMemo(
     () => [
@@ -93,6 +97,20 @@ export default function Configuracoes() {
               label: "Integrações",
               icon: Network,
             },
+          ]
+        : []),
+      // Cofre de Credenciais: SÓ superadmin (piso do backend é nível 9).
+      ...(isSuperadmin
+        ? [
+            {
+              key: "credenciais" as const,
+              label: "Credenciais",
+              icon: KeyRound,
+            },
+          ]
+        : []),
+      ...(isAdmin
+        ? [
             {
               key: "administracao" as const,
               label: "Administração",
@@ -101,7 +119,7 @@ export default function Configuracoes() {
           ]
         : []),
     ],
-    [isAdmin],
+    [isAdmin, isSuperadmin],
   );
 
   const requested = searchParams.get("tab") as SettingsTab | null;
@@ -294,6 +312,8 @@ export default function Configuracoes() {
       {tab === "modulos" && isAdmin && <ModuleLifecycleSettings />}
 
       {tab === "integracoes" && isAdmin && <IntegrationHealthPanel />}
+
+      {tab === "credenciais" && isSuperadmin && <CredentialVaultPanel />}
 
       {tab === "administracao" && isAdmin && (
         <div className="grid gap-4 md:grid-cols-2">
