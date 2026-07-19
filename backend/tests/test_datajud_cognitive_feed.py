@@ -27,7 +27,7 @@ def caso() -> Case:
         numero_interno="EJC-2026-001",
         numero_processo="0000001-02.2020.8.13.0000",
         tribunal="TJMG",
-        area="civel",
+        area="civil",
     )
 
 
