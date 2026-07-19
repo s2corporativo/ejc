@@ -15,9 +15,11 @@ def test_data_room_v4_is_compatibility_adapter_only():
     assert "deprecated=True" in source
     assert 'rel="successor-version"' in source
     assert "DataRoom(" in source
-    assert "DataRoomSala(" not in source
-    assert "select(DataRoom)" in source
+    # A classe legada permanece apenas para metadata/rollback; não pode ser
+    # instanciada, consultada nem adicionada à sessão por endpoint.
+    assert "db.add(DataRoomSala" not in source
     assert "select(DataRoomSala)" not in source
+    assert "select(DataRoom)" in source
 
 
 def test_teses_v4_is_compatibility_adapter_only():
@@ -25,9 +27,9 @@ def test_teses_v4_is_compatibility_adapter_only():
     assert "deprecated=True" in source
     assert 'rel="successor-version"' in source
     assert "Tese(" in source
-    assert "TeseJuridica(" not in source
-    assert "select(Tese)" in source
+    assert "db.add(TeseJuridica" not in source
     assert "select(TeseJuridica)" not in source
+    assert "select(Tese)" in source
 
 
 def test_migration_preserves_sources_and_legacy_metadata():
