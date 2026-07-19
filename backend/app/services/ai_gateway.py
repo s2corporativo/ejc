@@ -6,15 +6,11 @@
 # Fluxo:
 #   Frontend → Backend Router → AI Gateway → Provedor adequado (Ollama/Groq)
 #
-# Roteamento por tipo de tarefa:
-#   analise_juridica   → DeepSeek R1 (profundidade) → Qwen 2.5 → Groq llama3
-#   elaboracao_peca    → Qwen 2.5 (qualidade textual) → Groq
-#   resumo             → Gemma 3 (rápido) → Groq
-#   chat_rapido        → Gemma 3 → Llama 3.2 → Groq
-#   analise_contrato   → DeepSeek R1 → Qwen → Groq
-#   estrategia         → DeepSeek R1 (raciocínio) → Groq
-#   auditoria_peca     → Qwen 2.5 → Groq
-#   jurimetria         → DeepSeek R1 → Groq
+# Roteamento por tipo de tarefa (ver TASK_ROUTING): cada tarefa lista os
+# provedores candidatos; a ordem final vem de AI_PROVIDER_PRIORITY filtrada
+# por elegibilidade (chave + ENABLED + soberania). Provedores atuais:
+#   ollama (local, custo zero) · anthropic (Claude — raciocínio profundo)
+#   maritaca (Sabiá — PT-BR jurídico, IA brasileira) · groq (último recurso)
 #
 # Fallback automático: se o modelo primário falhar, tenta o próximo da cadeia.
 # Quando AI_PROVIDER="auto" → Ollama (local) tem prioridade; Groq como fallback.
@@ -97,6 +93,7 @@ TASK_ROUTING: dict[str, list[tuple[str, str | None]]] = {
     "analise_juridica": [
         ("ollama",    None),  # resolvido em runtime para OLLAMA_MODEL_ANALISE
         ("anthropic", None),  # ANTHROPIC_MODEL_COMPLEXO
+        ("maritaca",  None),  # MARITACA_MODEL (só se ENABLED+chave; PT-BR jurídico)
         ("groq",      None),
     ],
     "elaboracao_peca": [
@@ -118,21 +115,25 @@ TASK_ROUTING: dict[str, list[tuple[str, str | None]]] = {
     "analise_contrato": [
         ("ollama",    None),  # OLLAMA_MODEL_CONTRATO
         ("anthropic", None),
+        ("maritaca",  None),  # PT-BR jurídico (só se ENABLED+chave)
         ("groq",      None),
     ],
     "estrategia": [
         ("ollama",    None),  # OLLAMA_MODEL_ANALISE (raciocínio profundo)
         ("anthropic", None),
+        ("maritaca",  None),  # PT-BR jurídico (só se ENABLED+chave)
         ("groq",      None),
     ],
     "auditoria_peca": [
         ("ollama",    None),  # OLLAMA_MODEL_PETICAO
         ("anthropic", None),
+        ("maritaca",  None),  # PT-BR jurídico (só se ENABLED+chave)
         ("groq",      None),
     ],
     "jurimetria": [
         ("ollama",    None),  # OLLAMA_MODEL_ANALISE
         ("anthropic", None),
+        ("maritaca",  None),  # PT-BR jurídico (só se ENABLED+chave)
         ("groq",      None),
     ],
     # Fase 5 — Modo Duas IAs: crítica adversarial de peça (leitura como
@@ -142,6 +143,7 @@ TASK_ROUTING: dict[str, list[tuple[str, str | None]]] = {
     "critica_adversarial": [
         ("ollama",    None),  # OLLAMA_MODEL_ANALISE (raciocínio crítico)
         ("anthropic", None),
+        ("maritaca",  None),  # diversidade real de laboratório na crítica (Duas IAs)
         ("groq",      None),
     ],
 }
@@ -645,7 +647,7 @@ def _resolver_cadeia(
     provedor de PARTIDA: se elegível, vai à frente da cadeia; o resto do fallback
     é preservado. Inelegível → ignorado (cadeia normal). NUNCA sobrepõe um
     provider_force explícito nem a barreira de elegibilidade/PII."""
-    if provider_force in ("groq", "ollama", "anthropic"):
+    if provider_force in ("groq", "ollama", "anthropic", "maritaca"):
         if _provider_elegivel(provider_force):
             return [(provider_force, _resolver_modelo(provider_force, task_type, model_override))]
         # Provider forçado inelegível (sem chave/desabilitado/policy): não
@@ -663,7 +665,7 @@ def _resolver_cadeia(
     # Roteamento inteligente: promove o provider proposto à frente SE elegível e
     # SE participa da cadeia da tarefa (não inventa provedor fora do TASK_ROUTING).
     if (
-        provider_preferido in ("groq", "ollama", "anthropic")
+        provider_preferido in ("groq", "ollama", "anthropic", "maritaca")
         and provider_preferido in candidatos
         and _provider_elegivel(provider_preferido)
     ):

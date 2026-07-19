@@ -202,7 +202,9 @@ class Settings(BaseSettings):
     DUAS_IAS_TASK_TYPES: str = "elaboracao_peca,auditoria_peca"
     # Ordem de preferência entre provedores ELEGÍVEIS (csv). A policy ainda
     # filtra por habilitação/chave e prioriza Anthropic em tarefas complexas.
-    AI_PROVIDER_PRIORITY: str = "ollama,anthropic,groq"
+    # Maritaca antes do groq: para tarefa jurídica PT-BR o Sabiá rankeia acima
+    # de um generalista; só entra na cadeia se elegível (ENABLED + chave).
+    AI_PROVIDER_PRIORITY: str = "ollama,anthropic,maritaca,groq"
     # ── Níveis de sanitização de PII por tipo de tarefa (LGPD art. 33/46) ─────
     # JSON OPCIONAL (string) mapeando task_type → modo de sanitização, que
     # SOBREPÕE o default de app/services/ai/sanitization_policy.py. Modos:
