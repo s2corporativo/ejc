@@ -64,8 +64,7 @@ export type SyncResultado = {
 
 // ── Classificação de erro (duck-typing do erro axios; sem importar axios) ────
 type ErroClassificado =
-  | { acao: "erro"; mensagem: string }
-  | { acao: "pendente" };
+  { acao: "erro"; mensagem: string } | { acao: "pendente" };
 
 export const MSG_AMBIGUO =
   "Resposta ambígua do servidor (timeout ou erro interno). Verifique manualmente no sistema se o registro foi criado antes de tentar de novo — evita duplicidade.";
@@ -99,7 +98,8 @@ export function classificarErro(err: unknown): ErroClassificado {
       return {
         acao: "erro",
         mensagem:
-          extrairDetail(e.response?.data) ?? `Rejeitado pelo servidor (HTTP ${status}).`,
+          extrairDetail(e.response?.data) ??
+          `Rejeitado pelo servidor (HTTP ${status}).`,
       };
     }
     // 5xx: chegou ao servidor mas o resultado é incerto — não re-enviar
@@ -125,7 +125,11 @@ function novoId(): string {
 }
 
 export function descreverItem(item: ItemFila): string {
-  const p = item.payload as { nome?: string; razao_social?: string; titulo?: string };
+  const p = item.payload as {
+    nome?: string;
+    razao_social?: string;
+    titulo?: string;
+  };
   if (item.tipo === "cliente") {
     return p.nome || p.razao_social || "Cliente sem nome";
   }

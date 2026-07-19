@@ -60,12 +60,21 @@ interface Resumo {
 const BASES_LEGAIS: { valor: string; label: string }[] = [
   { valor: "consentimento", label: "Consentimento (art. 7º I / 11 I)" },
   { valor: "contrato", label: "Execução de contrato (art. 7º V)" },
-  { valor: "obrigacao_legal", label: "Obrigação legal/regulatória (art. 7º II)" },
+  {
+    valor: "obrigacao_legal",
+    label: "Obrigação legal/regulatória (art. 7º II)",
+  },
   { valor: "legitimo_interesse", label: "Legítimo interesse (art. 7º IX)" },
-  { valor: "exercicio_direitos", label: "Exercício de direitos em processo (art. 7º VI)" },
+  {
+    valor: "exercicio_direitos",
+    label: "Exercício de direitos em processo (art. 7º VI)",
+  },
   { valor: "protecao_vida", label: "Proteção da vida (art. 7º VII)" },
   { valor: "tutela_saude", label: "Tutela da saúde (art. 7º VIII / 11 II f)" },
-  { valor: "politica_publica", label: "Execução de política pública (art. 7º III)" },
+  {
+    valor: "politica_publica",
+    label: "Execução de política pública (art. 7º III)",
+  },
   { valor: "pesquisa", label: "Estudos por órgão de pesquisa (art. 7º IV)" },
   { valor: "credito", label: "Proteção ao crédito (art. 7º X)" },
 ];
@@ -209,11 +218,15 @@ export default function LgpdRegistros() {
       return;
     }
     if (!form.finalidade.trim()) {
-      setErroForm("Descreva a finalidade do tratamento (art. 6º I — finalidade).");
+      setErroForm(
+        "Descreva a finalidade do tratamento (art. 6º I — finalidade).",
+      );
       return;
     }
     if (form.transferencia_internacional && !form.paises_transferencia.trim()) {
-      setErroForm("Informe os países de transferência internacional (art. 33).");
+      setErroForm(
+        "Informe os países de transferência internacional (art. 33).",
+      );
       return;
     }
     setSalvando(true);
@@ -311,7 +324,9 @@ export default function LgpdRegistros() {
         <div className="ml-auto flex items-center gap-2">
           <button
             className="btn-secondary text-sm flex items-center gap-1"
-            disabled={gerandoRipd || !clientId || !(resumo?.total_operacoes ?? 0)}
+            disabled={
+              gerandoRipd || !clientId || !(resumo?.total_operacoes ?? 0)
+            }
             onClick={gerarRipd}
             title="Relatório de Impacto à Proteção de Dados (art. 38)"
           >
@@ -342,9 +357,9 @@ export default function LgpdRegistros() {
       <div className="mb-4 p-2.5 rounded-lg bg-primary-50 border border-primary-100 flex items-start gap-2 text-xs text-primary-800">
         <AlertTriangle size={14} className="shrink-0 mt-0.5 text-primary-600" />
         <span>
-          Este registro guarda apenas <b>metadados</b> da operação (categorias de
-          dados e de titulares, finalidade, base legal). <b>Nunca</b> insira aqui
-          dados pessoais de titulares reais — nomes, CPFs ou documentos.
+          Este registro guarda apenas <b>metadados</b> da operação (categorias
+          de dados e de titulares, finalidade, base legal). <b>Nunca</b> insira
+          aqui dados pessoais de titulares reais — nomes, CPFs ou documentos.
         </span>
       </div>
 
@@ -443,10 +458,7 @@ export default function LgpdRegistros() {
               {lista.map((r) => {
                 const aberto = expandido === r.id;
                 return (
-                  <div
-                    key={r.id}
-                    className="card overflow-hidden"
-                  >
+                  <div key={r.id} className="card overflow-hidden">
                     <div className="flex flex-wrap items-center gap-3 p-3">
                       <button
                         className="flex-1 min-w-[200px] text-left flex items-start gap-2"
@@ -594,7 +606,8 @@ export default function LgpdRegistros() {
               ))}
             </select>
             <p className="text-xs text-slate-400 mt-1">
-              Hipótese autorizativa — art. 7º (dados comuns) / art. 11 (sensíveis).
+              Hipótese autorizativa — art. 7º (dados comuns) / art. 11
+              (sensíveis).
             </p>
           </div>
           <div>
@@ -743,13 +756,7 @@ export default function LgpdRegistros() {
   );
 }
 
-function Campo({
-  label,
-  children,
-}: {
-  label: string;
-  children: ReactNode;
-}) {
+function Campo({ label, children }: { label: string; children: ReactNode }) {
   return (
     <div>
       <div className="text-[10px] uppercase tracking-wide text-slate-500">

@@ -185,7 +185,9 @@ describe("cadastroManual — fila offline", () => {
   });
 
   it("(f) descartar remove o item da fila", () => {
-    const id = store.getState().enfileirar("cliente", { tipo: "PF", nome: "X" });
+    const id = store
+      .getState()
+      .enfileirar("cliente", { tipo: "PF", nome: "X" });
     expect(store.getState().fila).toHaveLength(1);
     store.getState().descartarItem(id);
     expect(store.getState().fila).toHaveLength(0);
@@ -209,7 +211,9 @@ describe("cadastroManual — fila offline", () => {
   });
 
   it("reativarItem volta 'erro' para 'pendente' e permite novo envio", async () => {
-    const id = store.getState().enfileirar("cliente", { tipo: "PF", nome: "M" });
+    const id = store
+      .getState()
+      .enfileirar("cliente", { tipo: "PF", nome: "M" });
     const post: PostFn = vi
       .fn<PostFn>()
       .mockRejectedValueOnce(erroHttp(422, "CPF inválido"))

@@ -94,7 +94,9 @@ export default function FinanceiroWorkspace() {
           mostraCompetencia ? (
             <label className="input flex w-auto items-center gap-2 py-1.5">
               <Calendar className="w-4 h-4 text-slate-400" />
-              <span className="text-xs font-medium text-slate-500">Competência</span>
+              <span className="text-xs font-medium text-slate-500">
+                Competência
+              </span>
               <input
                 type="month"
                 aria-label="Competência financeira"

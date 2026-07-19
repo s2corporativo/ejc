@@ -9,7 +9,7 @@ from __future__ import annotations
 import re
 import unicodedata
 from collections import defaultdict
-from datetime import date, datetime
+from datetime import date
 from typing import Any, Iterable
 
 from app.services.rito_engine import identificar_rito

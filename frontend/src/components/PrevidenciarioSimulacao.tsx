@@ -51,11 +51,7 @@ function apiDetail(e: any, fallback: string): string {
 
 // ── Tipos (contrato SimulacaoPrevidOut) ──────────────────────────────────────
 type RegraId =
-  | "pontos"
-  | "idade_progressiva"
-  | "pedagio_50"
-  | "pedagio_100"
-  | "idade";
+  "pontos" | "idade_progressiva" | "pedagio_50" | "pedagio_100" | "idade";
 
 interface RegraTransicao {
   regra_id: RegraId | string;
@@ -192,7 +188,10 @@ function CardRegra({
               key={i}
               className="text-[11px] text-warn-800 flex items-start gap-1.5"
             >
-              <AlertTriangle size={11} className="text-warn-600 shrink-0 mt-0.5" />
+              <AlertTriangle
+                size={11}
+                className="text-warn-600 shrink-0 mt-0.5"
+              />
               <span>{o}</span>
             </li>
           ))}
@@ -258,10 +257,7 @@ export default function PrevidenciarioSimulacao() {
     if (!res) return;
     setGerandoPdf(true);
     try {
-      const r = await api.post(
-        "/previdenciario/ferramentas/parecer-pdf",
-        res,
-      );
+      const r = await api.post("/previdenciario/ferramentas/parecer-pdf", res);
       const downloadUrl: string | undefined = r.data?.download_url;
       if (!downloadUrl) throw new Error("download_url ausente na resposta");
       // baseURL do client é /api — remove o prefixo se o backend devolver a URL completa
@@ -307,7 +303,10 @@ export default function PrevidenciarioSimulacao() {
 
       {/* Banner HITL fixo (âmbar) */}
       <div className="mb-4 rounded-lg bg-warn-50 border border-warn-200 px-3 py-2 flex items-start gap-2">
-        <AlertTriangle size={15} className="text-warn-600 flex-shrink-0 mt-0.5" />
+        <AlertTriangle
+          size={15}
+          className="text-warn-600 flex-shrink-0 mt-0.5"
+        />
         <p className="text-[11px] text-warn-800">
           {res?.aviso_hitl || AVISO_HITL_FALLBACK}
         </p>
@@ -337,7 +336,9 @@ export default function PrevidenciarioSimulacao() {
           />
         </div>
         <div>
-          <label className="label text-xs">Tempo de contribuição (anos) *</label>
+          <label className="label text-xs">
+            Tempo de contribuição (anos) *
+          </label>
           <input
             className="input text-sm"
             inputMode="decimal"
@@ -365,9 +366,7 @@ export default function PrevidenciarioSimulacao() {
             inputMode="decimal"
             placeholder="opcional"
             value={form.media_salarios_contribuicao}
-            onChange={(e) =>
-              set("media_salarios_contribuicao")(e.target.value)
-            }
+            onChange={(e) => set("media_salarios_contribuicao")(e.target.value)}
           />
           <p className="text-[10px] text-slate-400 mt-0.5">
             Do CNIS — se não informar, mostramos só o coeficiente e a

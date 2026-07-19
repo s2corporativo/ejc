@@ -394,7 +394,9 @@ export default function IA() {
           </div>
           <button
             className="btn-gold"
-            disabled={loading || rascunhoValidacao.length < 100 || !iaDisponivel}
+            disabled={
+              loading || rascunhoValidacao.length < 100 || !iaDisponivel
+            }
             title={iaDisponivel ? undefined : ROTULO_IA_NAO_ATIVADA}
             onClick={validarRascunho}
           >
@@ -418,57 +420,57 @@ export default function IA() {
           />
         ) : (
           <div className="space-y-2">
-          {logs.map((l) => (
-            <div key={l.id} className="card p-4">
-              <div className="flex flex-wrap items-center gap-3 mb-2">
-                <span className="text-xs font-semibold text-navy uppercase">
-                  {l.tipo_uso.replace(/_/g, " ")}
-                </span>
-                <StatusBadge value={l.status_hitl} />
-                {l.pii_removida && (
-                  <span className="badge bg-success-100 text-success-700">
-                    PII removida
+            {logs.map((l) => (
+              <div key={l.id} className="card p-4">
+                <div className="flex flex-wrap items-center gap-3 mb-2">
+                  <span className="text-xs font-semibold text-navy uppercase">
+                    {l.tipo_uso.replace(/_/g, " ")}
                   </span>
-                )}
-                <span className="text-xs text-slate-400 ml-auto">
-                  {fmtDate(l.created_at)}
-                </span>
-              </div>
-              {l.resposta && (
-                <details className="text-sm text-slate-600">
-                  <summary className="cursor-pointer text-navy text-xs font-medium">
-                    Ver resposta
-                  </summary>
-                  <Markdown source={l.resposta} className="mt-2 text-xs" />
-                </details>
-              )}
-              {l.status_hitl === "gerado" && (
-                <div className="flex gap-2 mt-2">
-                  <button
-                    className="btn-ghost text-xs px-2 py-1"
-                    onClick={() => marcarHitl(l.id, "revisado")}
-                  >
-                    Marcar revisado
-                  </button>
-                  <button
-                    className="btn-ghost text-xs px-2 py-1 text-success-700"
-                    onClick={() => marcarHitl(l.id, "aplicado")}
-                  >
-                    Aplicado
-                  </button>
-                  <button
-                    className="btn-ghost text-xs px-2 py-1 text-danger-600"
-                    onClick={() => marcarHitl(l.id, "descartado")}
-                  >
-                    Descartar
-                  </button>
+                  <StatusBadge value={l.status_hitl} />
+                  {l.pii_removida && (
+                    <span className="badge bg-success-100 text-success-700">
+                      PII removida
+                    </span>
+                  )}
+                  <span className="text-xs text-slate-400 ml-auto">
+                    {fmtDate(l.created_at)}
+                  </span>
                 </div>
-              )}
-            </div>
-          ))}
-          {logs.length === 0 && (
-            <EmptyState title="Nenhum uso de IA registrado" />
-          )}
+                {l.resposta && (
+                  <details className="text-sm text-slate-600">
+                    <summary className="cursor-pointer text-navy text-xs font-medium">
+                      Ver resposta
+                    </summary>
+                    <Markdown source={l.resposta} className="mt-2 text-xs" />
+                  </details>
+                )}
+                {l.status_hitl === "gerado" && (
+                  <div className="flex gap-2 mt-2">
+                    <button
+                      className="btn-ghost text-xs px-2 py-1"
+                      onClick={() => marcarHitl(l.id, "revisado")}
+                    >
+                      Marcar revisado
+                    </button>
+                    <button
+                      className="btn-ghost text-xs px-2 py-1 text-success-700"
+                      onClick={() => marcarHitl(l.id, "aplicado")}
+                    >
+                      Aplicado
+                    </button>
+                    <button
+                      className="btn-ghost text-xs px-2 py-1 text-danger-600"
+                      onClick={() => marcarHitl(l.id, "descartado")}
+                    >
+                      Descartar
+                    </button>
+                  </div>
+                )}
+              </div>
+            ))}
+            {logs.length === 0 && (
+              <EmptyState title="Nenhum uso de IA registrado" />
+            )}
           </div>
         ))}
 

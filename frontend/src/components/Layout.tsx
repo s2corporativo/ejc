@@ -65,13 +65,9 @@ export default function Layout() {
   const canCreateCase = Boolean(
     user?.role && (ROLES.clientes as readonly string[]).includes(user.role),
   );
-  const lifecycleSettings = useModuleLifecycleStore(
-    (state) => state.settings,
-  );
-  const {
-    sidebarCollapsed: collapsed,
-    setSidebarCollapsed,
-  } = usePreferencesStore();
+  const lifecycleSettings = useModuleLifecycleStore((state) => state.settings);
+  const { sidebarCollapsed: collapsed, setSidebarCollapsed } =
+    usePreferencesStore();
   const nav = useNavigate();
   const location = useLocation();
   const moduleKey = useMemo(
@@ -297,60 +293,60 @@ export default function Layout() {
               cadastro manual), selecionados por query param `modo` — sem
               criar rota nova. */}
           {canCreateCase && (
-          <div ref={novoCasoRef} className="relative inline-flex">
-            <Button
-              type="button"
-              size="md"
-              icon={<Plus className="h-4 w-4" />}
-              onClick={() => setNovoCasoOpen((value) => !value)}
-              aria-haspopup="menu"
-              aria-expanded={novoCasoOpen}
-              aria-label="Novo caso"
-            >
-              <span className="hidden lg:inline">Novo caso</span>
-              <ChevronDown className="hidden h-4 w-4 lg:block" />
-            </Button>
-            {novoCasoOpen && (
-              <div
-                role="menu"
-                aria-label="Como abrir o novo caso"
-                className="card absolute right-0 top-full z-50 mt-2 w-72 py-1"
+            <div ref={novoCasoRef} className="relative inline-flex">
+              <Button
+                type="button"
+                size="md"
+                icon={<Plus className="h-4 w-4" />}
+                onClick={() => setNovoCasoOpen((value) => !value)}
+                aria-haspopup="menu"
+                aria-expanded={novoCasoOpen}
+                aria-label="Novo caso"
               >
-                <Link
-                  to={NOVO_CASO_DOCUMENTO_PATH}
-                  role="menuitem"
-                  onClick={() => setNovoCasoOpen(false)}
-                  className="menu-item items-start"
+                <span className="hidden lg:inline">Novo caso</span>
+                <ChevronDown className="hidden h-4 w-4 lg:block" />
+              </Button>
+              {novoCasoOpen && (
+                <div
+                  role="menu"
+                  aria-label="Como abrir o novo caso"
+                  className="card absolute right-0 top-full z-50 mt-2 w-72 py-1"
                 >
-                  <ScanSearch className="mt-0.5 h-4 w-4 shrink-0" />
-                  <span className="min-w-0">
-                    <span className="block font-medium">
-                      Analisar documento e preencher
+                  <Link
+                    to={NOVO_CASO_DOCUMENTO_PATH}
+                    role="menuitem"
+                    onClick={() => setNovoCasoOpen(false)}
+                    className="menu-item items-start"
+                  >
+                    <ScanSearch className="mt-0.5 h-4 w-4 shrink-0" />
+                    <span className="min-w-0">
+                      <span className="block font-medium">
+                        Analisar documento e preencher
+                      </span>
+                      <span className="block text-[11px] text-slate-400">
+                        Recomendado — a IA extrai os dados do arquivo
+                      </span>
                     </span>
-                    <span className="block text-[11px] text-slate-400">
-                      Recomendado — a IA extrai os dados do arquivo
+                  </Link>
+                  <Link
+                    to={NOVO_CASO_MANUAL_PATH}
+                    role="menuitem"
+                    onClick={() => setNovoCasoOpen(false)}
+                    className="menu-item items-start"
+                  >
+                    <Pencil className="mt-0.5 h-4 w-4 shrink-0" />
+                    <span className="min-w-0">
+                      <span className="block font-medium">
+                        Cadastrar manualmente
+                      </span>
+                      <span className="block text-[11px] text-slate-400">
+                        Preencho os campos do caso por conta própria
+                      </span>
                     </span>
-                  </span>
-                </Link>
-                <Link
-                  to={NOVO_CASO_MANUAL_PATH}
-                  role="menuitem"
-                  onClick={() => setNovoCasoOpen(false)}
-                  className="menu-item items-start"
-                >
-                  <Pencil className="mt-0.5 h-4 w-4 shrink-0" />
-                  <span className="min-w-0">
-                    <span className="block font-medium">
-                      Cadastrar manualmente
-                    </span>
-                    <span className="block text-[11px] text-slate-400">
-                      Preencho os campos do caso por conta própria
-                    </span>
-                  </span>
-                </Link>
-              </div>
-            )}
-          </div>
+                  </Link>
+                </div>
+              )}
+            </div>
           )}
 
           <HelpButton moduleKey={moduleKey} />
@@ -369,7 +365,9 @@ export default function Layout() {
             )}
             aria-pressed={privacyMode}
             aria-label={
-              privacyMode ? "Desativar modo privacidade" : "Ativar modo privacidade"
+              privacyMode
+                ? "Desativar modo privacidade"
+                : "Ativar modo privacidade"
             }
           >
             {privacyMode ? (
@@ -662,7 +660,9 @@ export default function Layout() {
         <main className="ejc-modern-scope flex-1 px-4 py-5 md:px-7 md:py-7">
           <div className="mx-auto w-full max-w-[1440px] animate-rise">
             <ErrorBoundary key={location.pathname}>
-              <ModuleLifecycleGate><Outlet /></ModuleLifecycleGate>
+              <ModuleLifecycleGate>
+                <Outlet />
+              </ModuleLifecycleGate>
             </ErrorBoundary>
           </div>
         </main>
@@ -691,4 +691,3 @@ export default function Layout() {
     </div>
   );
 }
-

@@ -284,7 +284,9 @@ export default function Prazos() {
       >
         <div className="space-y-4">
           <div>
-            <label className="label">Data da intimação/ciência (dd/mm/aaaa)</label>
+            <label className="label">
+              Data da intimação/ciência (dd/mm/aaaa)
+            </label>
             <input
               type="date"
               className="input"

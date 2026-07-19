@@ -129,20 +129,48 @@ export default function GuiaLgpd() {
         <Tab
           headers={["Base legal", "Quando se aplica", "Fundamento"]}
           rows={[
-            ["Consentimento", "Manifestação livre, informada e inequívoca", "art. 7º I"],
-            ["Obrigação legal/regulatória", "Cumprimento de dever legal do controlador", "art. 7º II"],
-            ["Execução de contrato", "Necessário para contrato com o titular", "art. 7º V"],
-            ["Exercício de direitos", "Processo judicial, administrativo ou arbitral", "art. 7º VI"],
-            ["Legítimo interesse", "Interesse do controlador + teste de proporcionalidade", "art. 7º IX / art. 10"],
-            ["Proteção do crédito", "Análise e proteção ao crédito", "art. 7º X"],
-            ["Dados sensíveis", "Hipóteses próprias e mais restritas", "art. 11"],
+            [
+              "Consentimento",
+              "Manifestação livre, informada e inequívoca",
+              "art. 7º I",
+            ],
+            [
+              "Obrigação legal/regulatória",
+              "Cumprimento de dever legal do controlador",
+              "art. 7º II",
+            ],
+            [
+              "Execução de contrato",
+              "Necessário para contrato com o titular",
+              "art. 7º V",
+            ],
+            [
+              "Exercício de direitos",
+              "Processo judicial, administrativo ou arbitral",
+              "art. 7º VI",
+            ],
+            [
+              "Legítimo interesse",
+              "Interesse do controlador + teste de proporcionalidade",
+              "art. 7º IX / art. 10",
+            ],
+            [
+              "Proteção do crédito",
+              "Análise e proteção ao crédito",
+              "art. 7º X",
+            ],
+            [
+              "Dados sensíveis",
+              "Hipóteses próprias e mais restritas",
+              "art. 11",
+            ],
           ]}
         />
         <p className="text-sm text-slate-600 mt-2">
           <strong>Dados sensíveis</strong> (origem racial/étnica, convicção
           religiosa, opinião política, saúde, vida sexual, genético ou
-          biométrico) só podem ser tratados nas hipóteses do <strong>art. 11</strong>,
-          mais estritas que as do art. 7º.
+          biométrico) só podem ser tratados nas hipóteses do{" "}
+          <strong>art. 11</strong>, mais estritas que as do art. 7º.
         </p>
       </Sec>
 
@@ -150,11 +178,31 @@ export default function GuiaLgpd() {
         <Tab
           headers={["Obrigação", "Prazo", "Fundamento"]}
           rows={[
-            ["Resposta ao titular (confirmação/acesso — forma simplificada)", "Imediata", "art. 19 I"],
-            ["Resposta ao titular (declaração completa)", "15 dias", "art. 19 II"],
-            ["Comunicação de incidente à ANPD e ao titular", "Prazo razoável — 3 dias úteis (Reg. ANPD)", "art. 48 §1º"],
-            ["Eliminação após término do tratamento", "Ao fim da finalidade, salvo guarda legal", "art. 15 / art. 16"],
-            ["Revogação do consentimento", "A qualquer tempo, mediante pedido", "art. 8º §5º"],
+            [
+              "Resposta ao titular (confirmação/acesso — forma simplificada)",
+              "Imediata",
+              "art. 19 I",
+            ],
+            [
+              "Resposta ao titular (declaração completa)",
+              "15 dias",
+              "art. 19 II",
+            ],
+            [
+              "Comunicação de incidente à ANPD e ao titular",
+              "Prazo razoável — 3 dias úteis (Reg. ANPD)",
+              "art. 48 §1º",
+            ],
+            [
+              "Eliminação após término do tratamento",
+              "Ao fim da finalidade, salvo guarda legal",
+              "art. 15 / art. 16",
+            ],
+            [
+              "Revogação do consentimento",
+              "A qualquer tempo, mediante pedido",
+              "art. 8º §5º",
+            ],
           ]}
         />
         <p className="text-sm text-slate-600 mt-2">
@@ -189,18 +237,38 @@ REVISÃO DE DECISÕES AUTOMATIZADAS (art. 20):
         <Tab
           headers={["Instrumento", "O que é", "Fundamento"]}
           rows={[
-            ["ROPA", "Registro das operações de tratamento de dados", "art. 37"],
-            ["RIPD", "Relatório de impacto à proteção de dados pessoais", "art. 5º XVII / art. 38"],
-            ["Encarregado (DPO)", "Canal entre controlador, titulares e ANPD", "art. 41"],
-            ["Operador", "Trata dados em nome do controlador (por contrato)", "art. 39"],
-            ["Segurança", "Medidas técnicas e administrativas de proteção", "art. 46"],
+            [
+              "ROPA",
+              "Registro das operações de tratamento de dados",
+              "art. 37",
+            ],
+            [
+              "RIPD",
+              "Relatório de impacto à proteção de dados pessoais",
+              "art. 5º XVII / art. 38",
+            ],
+            [
+              "Encarregado (DPO)",
+              "Canal entre controlador, titulares e ANPD",
+              "art. 41",
+            ],
+            [
+              "Operador",
+              "Trata dados em nome do controlador (por contrato)",
+              "art. 39",
+            ],
+            [
+              "Segurança",
+              "Medidas técnicas e administrativas de proteção",
+              "art. 46",
+            ],
           ]}
         />
         <p className="text-sm text-slate-600 mt-2">
-          A ANPD pode <strong>determinar</strong> a elaboração do RIPD (art. 38),
-          mas ele é boa prática sempre que o tratamento for de <strong>alto
-          risco</strong> — dados sensíveis em escala, transferência internacional
-          ou decisões automatizadas relevantes.
+          A ANPD pode <strong>determinar</strong> a elaboração do RIPD (art.
+          38), mas ele é boa prática sempre que o tratamento for de{" "}
+          <strong>alto risco</strong> — dados sensíveis em escala, transferência
+          internacional ou decisões automatizadas relevantes.
         </p>
       </Sec>
 

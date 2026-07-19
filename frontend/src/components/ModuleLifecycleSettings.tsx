@@ -26,9 +26,21 @@ const STATUS_OPTIONS: Array<{
 }> = [
   { value: "active", label: "Ativo", description: "Disponível normalmente" },
   { value: "beta", label: "Beta", description: "Disponível em validação" },
-  { value: "hidden", label: "Oculto", description: "Sem menu, acesso direto permitido" },
-  { value: "legacy", label: "Legado", description: "Disponível durante transição" },
-  { value: "disabled", label: "Desabilitado", description: "Rota bloqueada ou redirecionada" },
+  {
+    value: "hidden",
+    label: "Oculto",
+    description: "Sem menu, acesso direto permitido",
+  },
+  {
+    value: "legacy",
+    label: "Legado",
+    description: "Disponível durante transição",
+  },
+  {
+    value: "disabled",
+    label: "Desabilitado",
+    description: "Rota bloqueada ou redirecionada",
+  },
 ];
 
 type Draft = {
@@ -40,7 +52,9 @@ type Draft = {
   reason: string;
 };
 
-function defaultDraft(module: ReturnType<typeof getModuleCatalog>[number]): Draft {
+function defaultDraft(
+  module: ReturnType<typeof getModuleCatalog>[number],
+): Draft {
   const status = (module.status ?? "active") as ModuleLifecycleStatus;
   return {
     enabled: status !== "disabled",
@@ -95,7 +109,10 @@ export default function ModuleLifecycleSettings() {
 
   const modules = getModuleCatalog();
   const groups = useMemo(
-    () => ["todos", ...Array.from(new Set(modules.map((module) => module.group)))],
+    () => [
+      "todos",
+      ...Array.from(new Set(modules.map((module) => module.group))),
+    ],
     [modules],
   );
   const filtered = useMemo(() => {
@@ -110,7 +127,7 @@ export default function ModuleLifecycleSettings() {
   }, [modules, query, group]);
 
   const selected = selectedKey
-    ? modules.find((module) => module.key === selectedKey) ?? null
+    ? (modules.find((module) => module.key === selectedKey) ?? null)
     : null;
   const selectedOverride = selectedKey ? settings[selectedKey] : undefined;
   const selectedProtected = Boolean(
@@ -146,8 +163,7 @@ export default function ModuleLifecycleSettings() {
       toast.success("Lifecycle do módulo atualizado.");
     } catch (error: any) {
       toast.error(
-        error?.response?.data?.detail ||
-          "Não foi possível atualizar o módulo.",
+        error?.response?.data?.detail || "Não foi possível atualizar o módulo.",
       );
     } finally {
       setSaving(false);

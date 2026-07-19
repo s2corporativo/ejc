@@ -139,7 +139,9 @@ export default function AccountSecurity() {
       toast.success("Autenticação em duas etapas desativada.");
       await load();
     } catch (error: any) {
-      toast.error(error?.response?.data?.detail || "Não foi possível desativar o 2FA.");
+      toast.error(
+        error?.response?.data?.detail || "Não foi possível desativar o 2FA.",
+      );
     } finally {
       setBusy(null);
     }
@@ -152,7 +154,9 @@ export default function AccountSecurity() {
       toast.success("Sessão remota revogada.");
       await load();
     } catch (error: any) {
-      toast.error(error?.response?.data?.detail || "Falha ao revogar a sessão.");
+      toast.error(
+        error?.response?.data?.detail || "Falha ao revogar a sessão.",
+      );
     } finally {
       setBusy(null);
     }
@@ -211,8 +215,8 @@ export default function AccountSecurity() {
               </span>
             </div>
             <p className="mt-1 text-sm text-slate-500">
-              O segredo nunca é retornado após a ativação e o QR Code usa resposta
-              sem cache.
+              O segredo nunca é retornado após a ativação e o QR Code usa
+              resposta sem cache.
             </p>
           </div>
           {!status?.totp_enabled && !setup && (
@@ -444,7 +448,8 @@ export default function AccountSecurity() {
             <div className="mt-1 text-xs text-slate-500">
               {status?.permissions.includes("*")
                 ? "Perfil superadministrador."
-                : status?.permissions.join(" · ") || "Nenhuma permissão retornada."}
+                : status?.permissions.join(" · ") ||
+                  "Nenhuma permissão retornada."}
             </div>
           </div>
         </div>

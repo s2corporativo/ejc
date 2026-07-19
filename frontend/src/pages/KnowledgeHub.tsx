@@ -458,7 +458,10 @@ function ResultCard({ r }: { r: ResultadoUnificado }) {
                   : undefined
               }
             />
-            <Meta label="Resultado" value={r.juris?.resultado ?? r.memoria?.resultado} />
+            <Meta
+              label="Resultado"
+              value={r.juris?.resultado ?? r.memoria?.resultado}
+            />
             <Meta label="Tipo" value={r.tese?.tipo ?? r.memoria?.tipo} />
             <Meta label="Status" value={r.tese?.status} />
             <Meta label="Vezes usada" value={r.tese?.vezes_usada} />
@@ -474,9 +477,7 @@ function ResultCard({ r }: { r: ResultadoUnificado }) {
           </div>
 
           {/* Conteúdo completo disponível na resposta */}
-          {(r.trecho ||
-            r.tese?.fundamentacao ||
-            r.juris?.fundamentacao) && (
+          {(r.trecho || r.tese?.fundamentacao || r.juris?.fundamentacao) && (
             <div className="text-xs text-gray-700 whitespace-pre-wrap bg-gray-50 rounded p-2 max-h-64 overflow-y-auto">
               {r.trecho}
               {r.tese?.fundamentacao && (
@@ -502,9 +503,7 @@ function ResultCard({ r }: { r: ResultadoUnificado }) {
             <button
               type="button"
               className="btn-secondary text-xs inline-flex items-center gap-1"
-              onClick={() =>
-                copiar(citacaoDe(r), "Citação copiada")
-              }
+              onClick={() => copiar(citacaoDe(r), "Citação copiada")}
             >
               <Quote className="h-3.5 w-3.5" /> Copiar citação
             </button>
@@ -550,15 +549,15 @@ function ResultCard({ r }: { r: ResultadoUnificado }) {
             )}
             {r.juris?.link_original &&
               /^https?:\/\//i.test(r.juris.link_original) && (
-              <a
-                href={r.juris.link_original}
-                target="_blank"
-                rel="noopener noreferrer"
-                className="btn-secondary text-xs inline-flex items-center gap-1"
-              >
-                <ExternalLink className="h-3.5 w-3.5" /> Fonte original
-              </a>
-            )}
+                <a
+                  href={r.juris.link_original}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="btn-secondary text-xs inline-flex items-center gap-1"
+                >
+                  <ExternalLink className="h-3.5 w-3.5" /> Fonte original
+                </a>
+              )}
           </div>
         </div>
       )}
@@ -661,7 +660,9 @@ export default function KnowledgeHub() {
       <ConhecimentoStats />
 
       <div className="mb-6">
-        <h2 className="text-sm font-semibold text-slate-700 mb-3">Categorias</h2>
+        <h2 className="text-sm font-semibold text-slate-700 mb-3">
+          Categorias
+        </h2>
         <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
           {CATEGORIAS.map(({ to, label, desc, icon: Icon }) => (
             <Link

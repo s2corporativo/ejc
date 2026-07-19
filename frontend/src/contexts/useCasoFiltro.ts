@@ -23,8 +23,7 @@ export function useCasoFiltro(): {
   const casoAtivo = useCaseContext((state) => state.caso);
   const [ignorarContexto, setIgnorarContexto] = useState(false);
 
-  const casoFiltro =
-    casoUrl ?? (ignorarContexto ? undefined : casoAtivo?.id);
+  const casoFiltro = casoUrl ?? (ignorarContexto ? undefined : casoAtivo?.id);
 
   // Nome do caso quando o filtro veio da URL e não é o caso ativo — busca
   // pontual só para rotular o chip (falha silenciosa: chip mostra fallback).

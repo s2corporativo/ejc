@@ -219,12 +219,23 @@ function normalizeStatus(value: string): string {
 // Vocabulário canônico de status do EJC Command Center (cor + ÍCONE + texto —
 // nunca só cor, cumprindo WCAG 2.2). Sinônimos legados apontam para a mesma
 // entrada para não quebrar as telas que já emitem esses valores.
-const STATUS_REGISTRY: Record<string, { tone: Tone; icon: StatusIcon; label: string }> = {
+const STATUS_REGISTRY: Record<
+  string,
+  { tone: Tone; icon: StatusIcon; label: string }
+> = {
   novo: { tone: "blue", icon: PlusCircle, label: "Novo" },
   "em analise": { tone: "purple", icon: ScanSearch, label: "Em análise" },
   triagem: { tone: "purple", icon: ScanSearch, label: "Em análise" },
-  "aguardando cliente": { tone: "amber", icon: Clock, label: "Aguardando cliente" },
-  "aguardando documento": { tone: "orange", icon: FileClock, label: "Aguardando documento" },
+  "aguardando cliente": {
+    tone: "amber",
+    icon: Clock,
+    label: "Aguardando cliente",
+  },
+  "aguardando documento": {
+    tone: "orange",
+    icon: FileClock,
+    label: "Aguardando documento",
+  },
   "em producao": { tone: "blue", icon: PenLine, label: "Em produção" },
   "em revisao": { tone: "violet", icon: Eye, label: "Em revisão" },
   protocolado: { tone: "teal", icon: Send, label: "Protocolado" },
@@ -272,7 +283,10 @@ export function StatusBadge({ value }: { value?: string | null }) {
 }
 
 // Grau de risco do caso (baixo/médio/alto/crítico) com cor + ícone + texto.
-const RISK_REGISTRY: Record<string, { tone: Tone; icon: StatusIcon; label: string }> = {
+const RISK_REGISTRY: Record<
+  string,
+  { tone: Tone; icon: StatusIcon; label: string }
+> = {
   baixo: { tone: "green", icon: ShieldCheck, label: "Risco baixo" },
   medio: { tone: "amber", icon: ShieldAlert, label: "Risco médio" },
   alto: { tone: "orange", icon: ShieldAlert, label: "Risco alto" },
@@ -1244,7 +1258,10 @@ export function ConfidenceBadge({ value }: { value?: number | null }) {
 // Ciclo de validação humana de uma saída de IA. Torna EXPLÍCITO o grau de
 // confiança editorial — nenhuma conclusão de IA deve parecer um fato já
 // confirmado (requisito central do diagnóstico do Command Center).
-const VALIDATION_REGISTRY: Record<string, { tone: Tone; icon: StatusIcon; label: string }> = {
+const VALIDATION_REGISTRY: Record<
+  string,
+  { tone: Tone; icon: StatusIcon; label: string }
+> = {
   "nao revisado": { tone: "slate", icon: Clock, label: "Não revisado" },
   "em revisao": { tone: "amber", icon: Eye, label: "Em revisão" },
   validado: { tone: "green", icon: CheckCircle2, label: "Validado" },
@@ -1286,7 +1303,9 @@ export function SourceCitation({
       <FileText className="h-3.5 w-3.5 shrink-0 text-slate-400" />
       {tipo && <span className="font-medium text-slate-500">{tipo}:</span>}
       <span className="truncate">{titulo}</span>
-      {referencia && <span className="shrink-0 text-slate-400">· {referencia}</span>}
+      {referencia && (
+        <span className="shrink-0 text-slate-400">· {referencia}</span>
+      )}
     </span>
   );
   return href ? (

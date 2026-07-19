@@ -109,10 +109,7 @@ export default function IntegrationHealthPanel() {
               ["Atenção", data?.summary.attention ?? "—"],
               ["Desabilitadas", data?.summary.disabled ?? "—"],
             ].map(([label, value]) => (
-              <div
-                key={label}
-                className="card p-3"
-              >
+              <div key={label} className="card p-3">
                 <div className="text-xs text-slate-400">{label}</div>
                 <div className="mt-1 text-xl font-semibold text-slate-800">
                   {value}
@@ -126,9 +123,7 @@ export default function IntegrationHealthPanel() {
             disabled={loading}
             onClick={load}
           >
-            <RefreshCw
-              className={`h-4 w-4 ${loading ? "animate-spin" : ""}`}
-            />
+            <RefreshCw className={`h-4 w-4 ${loading ? "animate-spin" : ""}`} />
             Atualizar
           </button>
         </div>
@@ -141,7 +136,8 @@ export default function IntegrationHealthPanel() {
                 "Este painel não revela chaves, senhas, tokens ou conteúdo do ambiente."}
               {data?.checked_at && (
                 <div className="mt-1 text-xs text-slate-400">
-                  Verificado em {new Date(data.checked_at).toLocaleString("pt-BR")}
+                  Verificado em{" "}
+                  {new Date(data.checked_at).toLocaleString("pt-BR")}
                 </div>
               )}
             </div>

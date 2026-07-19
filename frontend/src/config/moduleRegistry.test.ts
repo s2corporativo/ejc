@@ -58,12 +58,8 @@ describe("moduleRegistry", () => {
     expect(map.get("/agenda")).toBe("/atividades?view=calendario");
     expect(map.get("/kanban")).toBe("/atividades?view=kanban");
     expect(map.get("/assistente-ia")).toContain("/inteligencia");
-    expect(map.get("/victory-vault")).toBe(
-      "/inteligencia?tab=conhecimento",
-    );
-    expect(map.get("/knowledge-hub")).toBe(
-      "/inteligencia?tab=conhecimento",
-    );
+    expect(map.get("/victory-vault")).toBe("/inteligencia?tab=conhecimento");
+    expect(map.get("/knowledge-hub")).toBe("/inteligencia?tab=conhecimento");
     expect(map.get("/prazos")).toBe("/atividades?tipo=prazo");
     expect(map.get("/tarefas")).toBe("/atividades?tipo=tarefa");
     expect(map.get("/intimacoes")).toBe("/atividades?tipo=intimacao");

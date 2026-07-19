@@ -648,7 +648,10 @@ export default function Casos() {
     try {
       if (pendencia.batchId) {
         // Vínculo em lote (idempotente): religa TODOS os arquivos ao caso.
-        const vinc = await vincularLoteAoCaso(pendencia.batchId, pendencia.caseId);
+        const vinc = await vincularLoteAoCaso(
+          pendencia.batchId,
+          pendencia.caseId,
+        );
         avisarConflitosDeVinculo(vinc);
       } else if (pendencia.arquivo) {
         await anexarDocumento(

@@ -3,7 +3,13 @@ import { toast } from "../components/Toast";
 import { Plus, UserX } from "lucide-react";
 import api from "../lib/api";
 import type { User } from "../types";
-import { PageHeader, Modal, Empty, Spinner, ErrorState } from "../components/UI";
+import {
+  PageHeader,
+  Modal,
+  Empty,
+  Spinner,
+  ErrorState,
+} from "../components/UI";
 
 const ROLES = [
   "admin",

@@ -45,7 +45,9 @@ describe("CaseCommandDock", () => {
       </MemoryRouter>,
     );
 
-    fireEvent.click(screen.getByRole("button", { name: /Abrir ações simples/ }));
+    fireEvent.click(
+      screen.getByRole("button", { name: /Abrir ações simples/ }),
+    );
 
     expect(screen.getByText("Modo simples")).toBeTruthy();
     expect(screen.getByText("Jornada e próxima ação")).toBeTruthy();
@@ -61,7 +63,9 @@ describe("CaseCommandDock", () => {
       </MemoryRouter>,
     );
 
-    fireEvent.click(screen.getByRole("button", { name: /Abrir ações simples/ }));
+    fireEvent.click(
+      screen.getByRole("button", { name: /Abrir ações simples/ }),
+    );
     fireEvent.click(screen.getByRole("button", { name: "Áreas do caso" }));
 
     expect(await screen.findByText("Cível")).toBeTruthy();
@@ -86,7 +90,9 @@ describe("CaseCommandDock", () => {
       </MemoryRouter>,
     );
 
-    fireEvent.click(screen.getByRole("button", { name: /Abrir ações simples/ }));
+    fireEvent.click(
+      screen.getByRole("button", { name: /Abrir ações simples/ }),
+    );
     fireEvent.click(screen.getByRole("button", { name: "Anexar documento" }));
 
     const input = container.querySelector(

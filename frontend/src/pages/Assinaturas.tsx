@@ -5,13 +5,7 @@ import { useAuth } from "../stores/auth";
 import { EmptyState, PageHeader, Spinner, Modal } from "../components/UI";
 import { toast } from "../components/Toast";
 import type { Client } from "../types";
-import {
-  FileSignature,
-  Plus,
-  Info,
-  CheckCircle,
-  Circle,
-} from "lucide-react";
+import { FileSignature, Plus, Info, CheckCircle, Circle } from "lucide-react";
 
 interface Signatario {
   nome?: string;
@@ -356,9 +350,9 @@ export default function Assinaturas() {
             <Info className="w-4 h-4 mt-0.5 flex-shrink-0" />
             <p>
               O documento será enviado para assinatura a todos os usuários
-              ativos do <strong>Portal do Cliente</strong> vinculados ao
-              cliente selecionado. Se o cliente ainda não tem acesso ao
-              Portal, conceda o acesso antes de criar a solicitação.
+              ativos do <strong>Portal do Cliente</strong> vinculados ao cliente
+              selecionado. Se o cliente ainda não tem acesso ao Portal, conceda
+              o acesso antes de criar a solicitação.
             </p>
           </div>
 

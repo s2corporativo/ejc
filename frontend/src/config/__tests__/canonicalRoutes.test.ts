@@ -1,6 +1,8 @@
 import { describe, expect, it } from "vitest";
-import { CANONICAL_ROUTES, LEGACY_CANONICAL_REDIRECTS } from "../canonicalRoutes";
-
+import {
+  CANONICAL_ROUTES,
+  LEGACY_CANONICAL_REDIRECTS,
+} from "../canonicalRoutes";
 
 describe("canonical routes", () => {
   it("uses semantic area-of-practice naming", () => {

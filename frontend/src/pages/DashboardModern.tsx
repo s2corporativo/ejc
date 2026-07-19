@@ -429,9 +429,7 @@ export default function DashboardModern() {
     // 1) Prazo crítico/vencido (inclui "vence hoje"), o de menor folga.
     const critical = [...prazos]
       .filter((deadline) => (deadline.dias_restantes ?? 99) <= 3)
-      .sort(
-        (a, b) => (a.dias_restantes ?? 99) - (b.dias_restantes ?? 99),
-      )[0];
+      .sort((a, b) => (a.dias_restantes ?? 99) - (b.dias_restantes ?? 99))[0];
     if (critical) {
       const days = critical.dias_restantes ?? 0;
       return {
@@ -500,833 +498,849 @@ export default function DashboardModern() {
           </span>
         </div>
 
-      {/* Próxima ação recomendada — UM item, o mais urgente, derivado dos
+        {/* Próxima ação recomendada — UM item, o mais urgente, derivado dos
           dados já carregados (prazo crítico/vencido → cliente aguardando).
           Sem nada urgente, mostra o estado calmo com atalho para a agenda. */}
-      {!loading &&
-        (nextAction ? (
-          <Link
-            to={nextAction.to}
-            aria-label={`Próxima ação recomendada: ${nextAction.title}`}
-            className={cn(
-              "group flex flex-col gap-4 rounded-xl border p-4 transition sm:flex-row sm:items-center sm:justify-between",
-              NEXT_ACTION_TONE[nextAction.tone].wrap,
-            )}
-          >
-            <div className="flex items-start gap-4">
-              <span
-                className={cn(
-                  "shrink-0 rounded-xl p-3 ring-1 ring-inset",
-                  NEXT_ACTION_TONE[nextAction.tone].badge,
-                )}
-              >
-                {NextActionIcon && <NextActionIcon className="h-6 w-6" />}
-              </span>
-              <div className="min-w-0">
-                <div className="flex flex-wrap items-center gap-2">
-                  <span
-                    className={cn(
-                      "text-[11px] font-semibold uppercase tracking-[0.16em]",
-                      NEXT_ACTION_TONE[nextAction.tone].eyebrow,
-                    )}
-                  >
-                    {nextAction.eyebrow}
-                  </span>
-                  <Badge tone="ouro">Próxima ação recomendada</Badge>
-                </div>
-                <h3
-                  className={cn(
-                    "mt-1 truncate text-lg font-semibold",
-                    NEXT_ACTION_TONE[nextAction.tone].title,
-                  )}
-                >
-                  {nextAction.title}
-                </h3>
-                <p
-                  className={cn(
-                    "mt-1 text-sm leading-6",
-                    NEXT_ACTION_TONE[nextAction.tone].desc,
-                  )}
-                >
-                  {nextAction.desc}
-                </p>
-              </div>
-            </div>
-            <span
+        {!loading &&
+          (nextAction ? (
+            <Link
+              to={nextAction.to}
+              aria-label={`Próxima ação recomendada: ${nextAction.title}`}
               className={cn(
-                "inline-flex shrink-0 items-center justify-center gap-2 rounded-lg px-4 py-2 text-[13px] font-bold transition",
-                NEXT_ACTION_TONE[nextAction.tone].cta,
+                "group flex flex-col gap-4 rounded-xl border p-4 transition sm:flex-row sm:items-center sm:justify-between",
+                NEXT_ACTION_TONE[nextAction.tone].wrap,
               )}
             >
-              {nextAction.cta}
-              <ArrowRight className="h-4 w-4 transition group-hover:translate-x-1" />
-            </span>
-          </Link>
-        ) : (
-          <Link
-            to="/atividades"
-            aria-label="Nada urgente para agora — ver agenda"
-            className="group flex items-center justify-between gap-4 rounded-xl border border-success-100 bg-success-50 p-4 transition dark:border-success-500/20 dark:bg-success-500/10"
-          >
-            <div className="flex items-center gap-4">
-              <span className="shrink-0 rounded-xl bg-success-100 p-3 text-success-700 ring-1 ring-inset ring-success-200 dark:bg-success-500/15 dark:text-success-300">
-                <CheckCircle2 className="h-6 w-6" />
-              </span>
-              <div className="min-w-0">
-                <div className="flex flex-wrap items-center gap-2">
-                  <span className="text-[11px] font-semibold uppercase tracking-[0.16em] text-success-700 dark:text-success-300">
-                    Tudo sob controle
-                  </span>
-                  <Badge tone="ouro">Próxima ação recomendada</Badge>
+              <div className="flex items-start gap-4">
+                <span
+                  className={cn(
+                    "shrink-0 rounded-xl p-3 ring-1 ring-inset",
+                    NEXT_ACTION_TONE[nextAction.tone].badge,
+                  )}
+                >
+                  {NextActionIcon && <NextActionIcon className="h-6 w-6" />}
+                </span>
+                <div className="min-w-0">
+                  <div className="flex flex-wrap items-center gap-2">
+                    <span
+                      className={cn(
+                        "text-[11px] font-semibold uppercase tracking-[0.16em]",
+                        NEXT_ACTION_TONE[nextAction.tone].eyebrow,
+                      )}
+                    >
+                      {nextAction.eyebrow}
+                    </span>
+                    <Badge tone="ouro">Próxima ação recomendada</Badge>
+                  </div>
+                  <h3
+                    className={cn(
+                      "mt-1 truncate text-lg font-semibold",
+                      NEXT_ACTION_TONE[nextAction.tone].title,
+                    )}
+                  >
+                    {nextAction.title}
+                  </h3>
+                  <p
+                    className={cn(
+                      "mt-1 text-sm leading-6",
+                      NEXT_ACTION_TONE[nextAction.tone].desc,
+                    )}
+                  >
+                    {nextAction.desc}
+                  </p>
                 </div>
-                <h3 className="mt-1 text-lg font-semibold text-success-800 dark:text-success-200">
-                  Nada urgente para agora
-                </h3>
-                <p className="mt-1 text-sm leading-6 text-success-700 dark:text-success-300/80">
-                  Nenhum prazo crítico ou cliente aguardando. Aproveite para
-                  revisar a agenda com calma.
+              </div>
+              <span
+                className={cn(
+                  "inline-flex shrink-0 items-center justify-center gap-2 rounded-lg px-4 py-2 text-[13px] font-bold transition",
+                  NEXT_ACTION_TONE[nextAction.tone].cta,
+                )}
+              >
+                {nextAction.cta}
+                <ArrowRight className="h-4 w-4 transition group-hover:translate-x-1" />
+              </span>
+            </Link>
+          ) : (
+            <Link
+              to="/atividades"
+              aria-label="Nada urgente para agora — ver agenda"
+              className="group flex items-center justify-between gap-4 rounded-xl border border-success-100 bg-success-50 p-4 transition dark:border-success-500/20 dark:bg-success-500/10"
+            >
+              <div className="flex items-center gap-4">
+                <span className="shrink-0 rounded-xl bg-success-100 p-3 text-success-700 ring-1 ring-inset ring-success-200 dark:bg-success-500/15 dark:text-success-300">
+                  <CheckCircle2 className="h-6 w-6" />
+                </span>
+                <div className="min-w-0">
+                  <div className="flex flex-wrap items-center gap-2">
+                    <span className="text-[11px] font-semibold uppercase tracking-[0.16em] text-success-700 dark:text-success-300">
+                      Tudo sob controle
+                    </span>
+                    <Badge tone="ouro">Próxima ação recomendada</Badge>
+                  </div>
+                  <h3 className="mt-1 text-lg font-semibold text-success-800 dark:text-success-200">
+                    Nada urgente para agora
+                  </h3>
+                  <p className="mt-1 text-sm leading-6 text-success-700 dark:text-success-300/80">
+                    Nenhum prazo crítico ou cliente aguardando. Aproveite para
+                    revisar a agenda com calma.
+                  </p>
+                </div>
+              </div>
+              <span className="inline-flex shrink-0 items-center gap-2 text-sm font-semibold text-success-700 dark:text-success-300">
+                Ver agenda
+                <ArrowRight className="h-4 w-4 transition group-hover:translate-x-1" />
+              </span>
+            </Link>
+          ))}
+
+        {/* Faixa "Prioridades de hoje" — o que exige atenção agora, com atalho.
+          Vem ANTES do painel de ações: "o que preciso resolver?" primeiro. */}
+        <section
+          aria-label="Prioridades de hoje"
+          className="rounded-xl border border-slate-200 bg-white p-4 dark:border-white/10 dark:bg-white/[0.03]"
+        >
+          <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+            <div className="flex shrink-0 items-center gap-2 text-[11px] font-semibold uppercase tracking-[0.16em] text-slate-500">
+              <ListChecks className="h-4 w-4 text-ouro" />
+              Prioridades de hoje
+            </div>
+            <div className="flex flex-wrap items-center gap-2">
+              {loading ? (
+                <span className="text-sm text-slate-400">
+                  Carregando prioridades…
+                </span>
+              ) : activePriorities.length ? (
+                activePriorities.map((item) => {
+                  const Icon = item.icon;
+                  return (
+                    <Link
+                      key={item.key}
+                      to={item.to}
+                      className={cn(
+                        "group inline-flex items-center gap-2 rounded-xl px-3 py-1.5 text-sm font-medium ring-1 ring-inset transition",
+                        PRIORITY_CHIP_TONE[item.tone],
+                      )}
+                    >
+                      <Icon className="h-4 w-4 shrink-0" aria-hidden="true" />
+                      <span className="text-base font-semibold tabular-nums">
+                        {item.count}
+                      </span>
+                      <span>{item.label}</span>
+                      <ArrowRight className="h-3.5 w-3.5 shrink-0 opacity-0 transition group-hover:translate-x-0.5 group-hover:opacity-100" />
+                    </Link>
+                  );
+                })
+              ) : (
+                <span className="inline-flex items-center gap-2 rounded-xl bg-success-50 px-3 py-1.5 text-sm font-medium text-success-700 ring-1 ring-inset ring-success-200">
+                  <CheckCircle2
+                    className="h-4 w-4 shrink-0"
+                    aria-hidden="true"
+                  />
+                  Sem pendências críticas para hoje
+                </span>
+              )}
+            </div>
+          </div>
+        </section>
+
+        {/* Painel de AÇÕES — vem DEPOIS das prioridades: resolvido o urgente,
+          "o que quero iniciar?". Mantém as 4 ações principais do Command
+          Center (documento IA · manual · Raio-X · atendimento). */}
+        <section className="relative overflow-hidden rounded-xl border border-slate-200 bg-white p-4 before:absolute before:inset-x-0 before:top-0 before:h-[3px] before:bg-ouro-claro dark:border-white/10 dark:bg-white/[0.03] md:p-5">
+          <div className="flex flex-col gap-5 xl:flex-row xl:items-center xl:justify-between">
+            <div className="max-w-2xl">
+              <div className="mb-2 flex flex-wrap items-center gap-2">
+                {/* tone="ouro" (pill clara + texto ouro-profundo) — as classes
+                  extras bg-white/10 + text-primary-100 disputavam com o tone
+                  padrão slate e o badge ficava ilegível no fundo sépia. */}
+                <Badge tone="ouro">Operação segura</Badge>
+                <span className="inline-flex items-center gap-1.5 text-xs text-slate-500">
+                  <ShieldCheck className="h-3.5 w-3.5" />
+                  Auditoria e LGPD preservadas
+                </span>
+              </div>
+              {/* !text-white: o seletor global `.ejc-modern-scope h2` (index.css)
+                pinta headings de #111827 e vencia o utilitário text-white,
+                deixando o título ilegível sobre o gradiente sépia escuro. */}
+              <h2 className="text-lg font-bold text-slate-900 dark:!text-slate-100">
+                Inicie uma nova frente de trabalho
+              </h2>
+              <p className="mt-2 text-sm leading-6 text-slate-500">
+                Resolvidas as prioridades acima, escolha a ação principal. Tudo
+                com trilha de auditoria e sem substituir a validação
+                profissional do advogado.
+              </p>
+            </div>
+            <div className="flex flex-col items-start gap-2 xl:items-end">
+              <div className="flex flex-wrap gap-2 xl:justify-end">
+                {visiblePrimaryActions.map(({ to, label, icon: Icon }) => (
+                  <Link key={label} to={to}>
+                    <Button
+                      variant="primary"
+                      icon={<Icon className="h-4 w-4" />}
+                      className="shadow-sm"
+                    >
+                      {label}
+                    </Button>
+                  </Link>
+                ))}
+              </div>
+              {secondaryActions.length > 0 && (
+                <div className="flex flex-wrap items-center gap-2 xl:justify-end">
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    onClick={() => setMoreActionsOpen((open) => !open)}
+                    aria-expanded={moreActionsOpen}
+                    aria-controls="acoes-secundarias-dashboard"
+                    className="text-slate-700 hover:bg-slate-100 dark:text-slate-200 dark:hover:bg-white/10"
+                  >
+                    Mais ações
+                    <ChevronDown
+                      className={cn(
+                        "ml-1 h-4 w-4 transition-transform",
+                        moreActionsOpen && "rotate-180",
+                      )}
+                      aria-hidden="true"
+                    />
+                  </Button>
+                  {moreActionsOpen && (
+                    <div
+                      id="acoes-secundarias-dashboard"
+                      className="flex flex-wrap gap-2"
+                    >
+                      {secondaryActions.map(({ to, label, icon: Icon }) => (
+                        <Link key={label} to={to}>
+                          <Button
+                            variant="ghost"
+                            size="sm"
+                            icon={<Icon className="h-4 w-4" />}
+                            className="text-slate-700 hover:bg-slate-100 dark:text-slate-200 dark:hover:bg-white/10"
+                          >
+                            {label}
+                          </Button>
+                        </Link>
+                      ))}
+                    </div>
+                  )}
+                </div>
+              )}
+            </div>
+          </div>
+        </section>
+
+        {canUseLegalAI && (
+          <Link
+            to="/raio-x"
+            className="group flex flex-col gap-4 rounded-xl border border-slate-200 bg-white p-4 transition sm:flex-row sm:items-center sm:justify-between dark:border-white/10 dark:bg-white/[0.03]"
+          >
+            <div className="flex items-start gap-4">
+              <span className="rounded-xl bg-ouro/10 p-3 text-ouro-profundo ring-1 ring-inset ring-ouro/20 dark:text-ouro-claro">
+                <ScanSearch className="h-6 w-6" />
+              </span>
+              <div>
+                <div className="flex flex-wrap items-center gap-2">
+                  <h2 className="text-[15px] font-bold">
+                    Analisar antes de cadastrar
+                  </h2>
+                  <Badge tone="blue">Raio-X preliminar</Badge>
+                </div>
+                <p className="mt-1 max-w-3xl text-sm leading-6 text-slate-500">
+                  Envie documentos externos, confira o diagnóstico e só
+                  transforme em caso após a decisão humana. A análise não altera
+                  a carteira nem os indicadores oficiais.
                 </p>
               </div>
             </div>
-            <span className="inline-flex shrink-0 items-center gap-2 text-sm font-semibold text-success-700 dark:text-success-300">
-              Ver agenda
+            <span className="inline-flex shrink-0 items-center gap-2 text-sm font-semibold text-ouro-profundo dark:text-ouro-claro">
+              Abrir Raio-X
               <ArrowRight className="h-4 w-4 transition group-hover:translate-x-1" />
             </span>
           </Link>
-        ))}
+        )}
 
-      {/* Faixa "Prioridades de hoje" — o que exige atenção agora, com atalho.
-          Vem ANTES do painel de ações: "o que preciso resolver?" primeiro. */}
-      <section
-        aria-label="Prioridades de hoje"
-        className="rounded-xl border border-slate-200 bg-white p-4 dark:border-white/10 dark:bg-white/[0.03]"
-      >
-        <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-          <div className="flex shrink-0 items-center gap-2 text-[11px] font-semibold uppercase tracking-[0.16em] text-slate-500">
-            <ListChecks className="h-4 w-4 text-ouro" />
-            Prioridades de hoje
-          </div>
-          <div className="flex flex-wrap items-center gap-2">
-            {loading ? (
-              <span className="text-sm text-slate-400">
-                Carregando prioridades…
-              </span>
-            ) : activePriorities.length ? (
-              activePriorities.map((item) => {
-                const Icon = item.icon;
-                return (
-                  <Link
-                    key={item.key}
-                    to={item.to}
-                    className={cn(
-                      "group inline-flex items-center gap-2 rounded-xl px-3 py-1.5 text-sm font-medium ring-1 ring-inset transition",
-                      PRIORITY_CHIP_TONE[item.tone],
-                    )}
-                  >
-                    <Icon className="h-4 w-4 shrink-0" aria-hidden="true" />
-                    <span className="text-base font-semibold tabular-nums">
-                      {item.count}
-                    </span>
-                    <span>{item.label}</span>
-                    <ArrowRight className="h-3.5 w-3.5 shrink-0 opacity-0 transition group-hover:translate-x-0.5 group-hover:opacity-100" />
-                  </Link>
-                );
-              })
-            ) : (
-              <span className="inline-flex items-center gap-2 rounded-xl bg-success-50 px-3 py-1.5 text-sm font-medium text-success-700 ring-1 ring-inset ring-success-200">
-                <CheckCircle2 className="h-4 w-4 shrink-0" aria-hidden="true" />
-                Sem pendências críticas para hoje
-              </span>
-            )}
-          </div>
-        </div>
-      </section>
-
-      {/* Painel de AÇÕES — vem DEPOIS das prioridades: resolvido o urgente,
-          "o que quero iniciar?". Mantém as 4 ações principais do Command
-          Center (documento IA · manual · Raio-X · atendimento). */}
-      <section className="relative overflow-hidden rounded-xl border border-slate-200 bg-white p-4 before:absolute before:inset-x-0 before:top-0 before:h-[3px] before:bg-ouro-claro dark:border-white/10 dark:bg-white/[0.03] md:p-5">
-        <div className="flex flex-col gap-5 xl:flex-row xl:items-center xl:justify-between">
-          <div className="max-w-2xl">
-            <div className="mb-2 flex flex-wrap items-center gap-2">
-              {/* tone="ouro" (pill clara + texto ouro-profundo) — as classes
-                  extras bg-white/10 + text-primary-100 disputavam com o tone
-                  padrão slate e o badge ficava ilegível no fundo sépia. */}
-              <Badge tone="ouro">Operação segura</Badge>
-              <span className="inline-flex items-center gap-1.5 text-xs text-slate-500">
-                <ShieldCheck className="h-3.5 w-3.5" />
-                Auditoria e LGPD preservadas
-              </span>
-            </div>
-            {/* !text-white: o seletor global `.ejc-modern-scope h2` (index.css)
-                pinta headings de #111827 e vencia o utilitário text-white,
-                deixando o título ilegível sobre o gradiente sépia escuro. */}
-            <h2 className="text-lg font-bold text-slate-900 dark:!text-slate-100">
-              Inicie uma nova frente de trabalho
-            </h2>
-            <p className="mt-2 text-sm leading-6 text-slate-500">
-              Resolvidas as prioridades acima, escolha a ação principal. Tudo
-              com trilha de auditoria e sem substituir a validação profissional
-              do advogado.
-            </p>
-          </div>
-          <div className="flex flex-col items-start gap-2 xl:items-end">
-            <div className="flex flex-wrap gap-2 xl:justify-end">
-              {visiblePrimaryActions.map(({ to, label, icon: Icon }) => (
-                <Link key={label} to={to}>
-                  <Button
-                    variant="primary"
-                    icon={<Icon className="h-4 w-4" />}
-                    className="shadow-sm"
-                  >
-                    {label}
-                  </Button>
-                </Link>
-              ))}
-            </div>
-            {secondaryActions.length > 0 && (
-              <div className="flex flex-wrap items-center gap-2 xl:justify-end">
-                <Button
-                  variant="ghost"
-                  size="sm"
-                  onClick={() => setMoreActionsOpen((open) => !open)}
-                  aria-expanded={moreActionsOpen}
-                  aria-controls="acoes-secundarias-dashboard"
-                  className="text-slate-700 hover:bg-slate-100 dark:text-slate-200 dark:hover:bg-white/10"
-                >
-                  Mais ações
-                  <ChevronDown
-                    className={cn(
-                      "ml-1 h-4 w-4 transition-transform",
-                      moreActionsOpen && "rotate-180",
-                    )}
-                    aria-hidden="true"
-                  />
-                </Button>
-                {moreActionsOpen && (
-                  <div
-                    id="acoes-secundarias-dashboard"
-                    className="flex flex-wrap gap-2"
-                  >
-                    {secondaryActions.map(({ to, label, icon: Icon }) => (
-                      <Link key={label} to={to}>
-                        <Button
-                          variant="ghost"
-                          size="sm"
-                          icon={<Icon className="h-4 w-4" />}
-                          className="text-slate-700 hover:bg-slate-100 dark:text-slate-200 dark:hover:bg-white/10"
-                        >
-                          {label}
-                        </Button>
-                      </Link>
-                    ))}
-                  </div>
-                )}
-              </div>
-            )}
-          </div>
-        </div>
-      </section>
-
-      {canUseLegalAI && (
-        <Link
-          to="/raio-x"
-          className="group flex flex-col gap-4 rounded-xl border border-slate-200 bg-white p-4 transition sm:flex-row sm:items-center sm:justify-between dark:border-white/10 dark:bg-white/[0.03]"
-        >
-          <div className="flex items-start gap-4">
-            <span className="rounded-xl bg-ouro/10 p-3 text-ouro-profundo ring-1 ring-inset ring-ouro/20 dark:text-ouro-claro">
-              <ScanSearch className="h-6 w-6" />
-            </span>
-            <div>
-              <div className="flex flex-wrap items-center gap-2">
-                <h2 className="text-[15px] font-bold">
-                  Analisar antes de cadastrar
-                </h2>
-                <Badge tone="blue">Raio-X preliminar</Badge>
-              </div>
-              <p className="mt-1 max-w-3xl text-sm leading-6 text-slate-500">
-                Envie documentos externos, confira o diagnóstico e só transforme
-                em caso após a decisão humana. A análise não altera a carteira nem
-                os indicadores oficiais.
-              </p>
-            </div>
-          </div>
-          <span className="inline-flex shrink-0 items-center gap-2 text-sm font-semibold text-ouro-profundo dark:text-ouro-claro">
-            Abrir Raio-X
-            <ArrowRight className="h-4 w-4 transition group-hover:translate-x-1" />
-          </span>
-        </Link>
-      )}
-
-      <div className="grid gap-5 xl:grid-cols-[1.25fr_0.75fr]">
-        <SectionCard
-          title="Agenda e prazos próximos"
-          subtitle="Itens ordenados por data para tratamento imediato."
-          actions={
-            <Link
-              to="/atividades"
-              className="text-sm font-medium text-primary-600 hover:text-primary-700 dark:text-primary-300"
-            >
-              Abrir central
-            </Link>
-          }
-        >
-          {loading ? (
-            <div className="space-y-3">
-              {[1, 2, 3].map((item) => (
-                <div
-                  key={item}
-                  className="h-16 animate-pulse rounded-xl bg-slate-100 dark:bg-white/[0.05]"
-                />
-              ))}
-            </div>
-          ) : orderedDeadlines.length === 0 ? (
-            <EmptyState
-              title="Nenhum prazo pendente"
-              message="A agenda operacional está limpa para os filtros atuais."
-              icon={CalendarClock}
-            />
-          ) : (
-            <div className="divide-y divide-slate-100 dark:divide-white/[0.07]">
-              {orderedDeadlines.map((deadline, index) => {
-                const days = deadline.dias_restantes ?? 99;
-                const tone = days <= 0 ? "red" : days <= 3 ? "amber" : "slate";
-                return (
-                  <Link
-                    key={deadline.id ?? index}
-                    to="/atividades"
-                    className="flex items-center gap-4 rounded-xl px-2 py-3 transition-colors hover:bg-slate-50 dark:hover:bg-white/[0.04]"
-                  >
-                    <div className="flex h-12 w-12 shrink-0 flex-col items-center justify-center rounded-xl border border-black/[0.05] bg-white dark:border-white/10 dark:bg-white/[0.04]">
-                      <span className="text-sm font-semibold text-slate-950 dark:text-slate-100">
-                        {deadline.data_prazo
-                          ? new Date(deadline.data_prazo).getDate()
-                          : "--"}
-                      </span>
-                      <span className="text-[10px] uppercase text-slate-400">
-                        dia
-                      </span>
-                    </div>
-                    <div className="min-w-0 flex-1">
-                      <div className="truncate text-sm font-semibold text-slate-950 dark:text-slate-100">
-                        {deadline.titulo || "Prazo sem título"}
-                      </div>
-                      <div className="mt-1 flex flex-wrap items-center gap-2 text-xs text-slate-500 dark:text-slate-400">
-                        <Clock className="h-3.5 w-3.5" />
-                        {fmtDate(deadline.data_prazo)}
-                        {deadline.case_title && (
-                          <span className="truncate">
-                            • {deadline.case_title}
-                          </span>
-                        )}
-                      </div>
-                    </div>
-                    <Badge tone={tone}>
-                      {days < 0
-                        ? "Vencido"
-                        : days === 0
-                          ? "Hoje"
-                          : `${days} dias`}
-                    </Badge>
-                  </Link>
-                );
-              })}
-            </div>
-          )}
-        </SectionCard>
-
-        <SectionCard
-          title="Alertas inteligentes"
-          subtitle="Sinais para priorização, não decisões automatizadas."
-          actions={
-            <Sparkles className="h-4 w-4 text-ai-600 dark:text-ai-300" />
-          }
-        >
-          <div className="space-y-3">
-            {canSeeCRM && (
+        <div className="grid gap-5 xl:grid-cols-[1.25fr_0.75fr]">
+          <SectionCard
+            title="Agenda e prazos próximos"
+            subtitle="Itens ordenados por data para tratamento imediato."
+            actions={
               <Link
-                to={
-                  solicitacoes?.destaque?.client_id
-                    ? `/clientes/${solicitacoes.destaque.client_id}?tab=atendimentos`
-                    : "/clientes"
-                }
-                className={cn(
-                  "group block rounded-xl border p-4",
-                  solicitacoes?.atrasadas
-                    ? "border-danger-100 bg-danger-50 dark:border-danger-500/20 dark:bg-danger-500/10"
-                    : "border-primary-100 bg-primary-50 dark:border-primary-500/20 dark:bg-primary-500/10",
-                )}
+                to="/atividades"
+                className="text-sm font-medium text-primary-600 hover:text-primary-700 dark:text-primary-300"
               >
-                <div className="flex items-start gap-3">
-                  <MessageSquare
-                    className={cn(
-                      "mt-0.5 h-4 w-4",
-                      solicitacoes?.atrasadas
-                        ? "text-danger-600 dark:text-danger-300"
-                        : "text-primary-700 dark:text-primary-300",
-                    )}
+                Abrir central
+              </Link>
+            }
+          >
+            {loading ? (
+              <div className="space-y-3">
+                {[1, 2, 3].map((item) => (
+                  <div
+                    key={item}
+                    className="h-16 animate-pulse rounded-xl bg-slate-100 dark:bg-white/[0.05]"
                   />
-                  <div>
-                    <div
-                      className={cn(
-                        "text-sm font-semibold",
-                        solicitacoes?.atrasadas
-                          ? "text-danger-800 dark:text-danger-200"
-                          : "text-primary-900 dark:text-primary-200",
-                      )}
+                ))}
+              </div>
+            ) : orderedDeadlines.length === 0 ? (
+              <EmptyState
+                title="Nenhum prazo pendente"
+                message="A agenda operacional está limpa para os filtros atuais."
+                icon={CalendarClock}
+              />
+            ) : (
+              <div className="divide-y divide-slate-100 dark:divide-white/[0.07]">
+                {orderedDeadlines.map((deadline, index) => {
+                  const days = deadline.dias_restantes ?? 99;
+                  const tone =
+                    days <= 0 ? "red" : days <= 3 ? "amber" : "slate";
+                  return (
+                    <Link
+                      key={deadline.id ?? index}
+                      to="/atividades"
+                      className="flex items-center gap-4 rounded-xl px-2 py-3 transition-colors hover:bg-slate-50 dark:hover:bg-white/[0.04]"
                     >
-                      {solicitacoes?.pendentes ?? 0} solicitação(ões) de cliente
-                      pendente(s)
-                    </div>
-                    <p
+                      <div className="flex h-12 w-12 shrink-0 flex-col items-center justify-center rounded-xl border border-black/[0.05] bg-white dark:border-white/10 dark:bg-white/[0.04]">
+                        <span className="text-sm font-semibold text-slate-950 dark:text-slate-100">
+                          {deadline.data_prazo
+                            ? new Date(deadline.data_prazo).getDate()
+                            : "--"}
+                        </span>
+                        <span className="text-[10px] uppercase text-slate-400">
+                          dia
+                        </span>
+                      </div>
+                      <div className="min-w-0 flex-1">
+                        <div className="truncate text-sm font-semibold text-slate-950 dark:text-slate-100">
+                          {deadline.titulo || "Prazo sem título"}
+                        </div>
+                        <div className="mt-1 flex flex-wrap items-center gap-2 text-xs text-slate-500 dark:text-slate-400">
+                          <Clock className="h-3.5 w-3.5" />
+                          {fmtDate(deadline.data_prazo)}
+                          {deadline.case_title && (
+                            <span className="truncate">
+                              • {deadline.case_title}
+                            </span>
+                          )}
+                        </div>
+                      </div>
+                      <Badge tone={tone}>
+                        {days < 0
+                          ? "Vencido"
+                          : days === 0
+                            ? "Hoje"
+                            : `${days} dias`}
+                      </Badge>
+                    </Link>
+                  );
+                })}
+              </div>
+            )}
+          </SectionCard>
+
+          <SectionCard
+            title="Alertas inteligentes"
+            subtitle="Sinais para priorização, não decisões automatizadas."
+            actions={
+              <Sparkles className="h-4 w-4 text-ai-600 dark:text-ai-300" />
+            }
+          >
+            <div className="space-y-3">
+              {canSeeCRM && (
+                <Link
+                  to={
+                    solicitacoes?.destaque?.client_id
+                      ? `/clientes/${solicitacoes.destaque.client_id}?tab=atendimentos`
+                      : "/clientes"
+                  }
+                  className={cn(
+                    "group block rounded-xl border p-4",
+                    solicitacoes?.atrasadas
+                      ? "border-danger-100 bg-danger-50 dark:border-danger-500/20 dark:bg-danger-500/10"
+                      : "border-primary-100 bg-primary-50 dark:border-primary-500/20 dark:bg-primary-500/10",
+                  )}
+                >
+                  <div className="flex items-start gap-3">
+                    <MessageSquare
                       className={cn(
-                        "mt-1 text-xs",
+                        "mt-0.5 h-4 w-4",
                         solicitacoes?.atrasadas
-                          ? "text-danger-700 dark:text-danger-300/80"
-                          : "text-primary-700 dark:text-primary-300/80",
-                      )}
-                    >
-                      {solicitacoes?.atrasadas
-                        ? `${solicitacoes.atrasadas} atrasada(s); abra a linha do tempo prioritária.`
-                        : "Acompanhe prazo, responsável e confirmação de atendimento."}
-                    </p>
-                    <span
-                      className={cn(
-                        "mt-2 inline-flex items-center gap-1 text-xs font-semibold",
-                        solicitacoes?.atrasadas
-                          ? "text-danger-700 dark:text-danger-300"
+                          ? "text-danger-600 dark:text-danger-300"
                           : "text-primary-700 dark:text-primary-300",
                       )}
-                    >
-                      Ver e responder
+                    />
+                    <div>
+                      <div
+                        className={cn(
+                          "text-sm font-semibold",
+                          solicitacoes?.atrasadas
+                            ? "text-danger-800 dark:text-danger-200"
+                            : "text-primary-900 dark:text-primary-200",
+                        )}
+                      >
+                        {solicitacoes?.pendentes ?? 0} solicitação(ões) de
+                        cliente pendente(s)
+                      </div>
+                      <p
+                        className={cn(
+                          "mt-1 text-xs",
+                          solicitacoes?.atrasadas
+                            ? "text-danger-700 dark:text-danger-300/80"
+                            : "text-primary-700 dark:text-primary-300/80",
+                        )}
+                      >
+                        {solicitacoes?.atrasadas
+                          ? `${solicitacoes.atrasadas} atrasada(s); abra a linha do tempo prioritária.`
+                          : "Acompanhe prazo, responsável e confirmação de atendimento."}
+                      </p>
+                      <span
+                        className={cn(
+                          "mt-2 inline-flex items-center gap-1 text-xs font-semibold",
+                          solicitacoes?.atrasadas
+                            ? "text-danger-700 dark:text-danger-300"
+                            : "text-primary-700 dark:text-primary-300",
+                        )}
+                      >
+                        Ver e responder
+                        <ArrowRight className="h-3.5 w-3.5 transition group-hover:translate-x-0.5" />
+                      </span>
+                    </div>
+                  </div>
+                </Link>
+              )}
+              <Link
+                to="/atividades?tipo=prazo"
+                className="group block rounded-xl border border-danger-100 bg-danger-50 p-4 dark:border-danger-500/20 dark:bg-danger-500/10"
+              >
+                <div className="flex items-start gap-3">
+                  <AlertTriangle className="mt-0.5 h-4 w-4 text-danger-600 dark:text-danger-300" />
+                  <div>
+                    <div className="text-sm font-semibold text-danger-800 dark:text-danger-200">
+                      {criticalDeadlines.length} prazo(s) crítico(s)
+                    </div>
+                    <p className="mt-1 text-xs text-danger-700 dark:text-danger-300/80">
+                      Priorize vencimentos em até três dias e registre a
+                      providência adotada.
+                    </p>
+                    <span className="mt-2 inline-flex items-center gap-1 text-xs font-semibold text-danger-700 dark:text-danger-300">
+                      Ver e confirmar
                       <ArrowRight className="h-3.5 w-3.5 transition group-hover:translate-x-0.5" />
                     </span>
                   </div>
                 </div>
               </Link>
-            )}
-            <Link
-              to="/atividades?tipo=prazo"
-              className="group block rounded-xl border border-danger-100 bg-danger-50 p-4 dark:border-danger-500/20 dark:bg-danger-500/10"
-            >
-              <div className="flex items-start gap-3">
-                <AlertTriangle className="mt-0.5 h-4 w-4 text-danger-600 dark:text-danger-300" />
-                <div>
-                  <div className="text-sm font-semibold text-danger-800 dark:text-danger-200">
-                    {criticalDeadlines.length} prazo(s) crítico(s)
+              <Link
+                to="/inteligencia"
+                className="group block rounded-xl border border-ai-100 bg-ai-50 p-4 dark:border-ai-500/20 dark:bg-ai-500/10"
+              >
+                <div className="flex items-start gap-3">
+                  <Bot className="mt-0.5 h-4 w-4 text-ai-700 dark:text-ai-300" />
+                  <div>
+                    <div className="text-sm font-semibold text-ai-900 dark:text-ai-200">
+                      IA jurídica assistiva
+                    </div>
+                    <p className="mt-1 text-xs text-ai-800 dark:text-ai-300/80">
+                      Rascunhos e análises exigem conferência das fontes e
+                      revisão humana antes do uso.
+                    </p>
+                    <span className="mt-2 inline-flex items-center gap-1 text-xs font-semibold text-ai-800 dark:text-ai-300">
+                      Abrir IA jurídica
+                      <ArrowRight className="h-3.5 w-3.5 transition group-hover:translate-x-0.5" />
+                    </span>
                   </div>
-                  <p className="mt-1 text-xs text-danger-700 dark:text-danger-300/80">
-                    Priorize vencimentos em até três dias e registre a
-                    providência adotada.
-                  </p>
-                  <span className="mt-2 inline-flex items-center gap-1 text-xs font-semibold text-danger-700 dark:text-danger-300">
-                    Ver e confirmar
-                    <ArrowRight className="h-3.5 w-3.5 transition group-hover:translate-x-0.5" />
-                  </span>
                 </div>
-              </div>
-            </Link>
-            <Link
-              to="/inteligencia"
-              className="group block rounded-xl border border-ai-100 bg-ai-50 p-4 dark:border-ai-500/20 dark:bg-ai-500/10"
-            >
-              <div className="flex items-start gap-3">
-                <Bot className="mt-0.5 h-4 w-4 text-ai-700 dark:text-ai-300" />
-                <div>
-                  <div className="text-sm font-semibold text-ai-900 dark:text-ai-200">
-                    IA jurídica assistiva
+              </Link>
+              <div className="rounded-xl border border-success-100 bg-success-50 p-4 dark:border-success-500/20 dark:bg-success-500/10">
+                <div className="flex items-start gap-3">
+                  <ShieldCheck className="mt-0.5 h-4 w-4 text-success-700 dark:text-success-300" />
+                  <div>
+                    <div className="text-sm font-semibold text-success-800 dark:text-success-200">
+                      Segurança por desenho
+                    </div>
+                    <p className="mt-1 text-xs text-success-700 dark:text-success-300/80">
+                      A interface não amplia permissões; o backend continua
+                      sendo a fonte de verdade do RBAC.
+                    </p>
                   </div>
-                  <p className="mt-1 text-xs text-ai-800 dark:text-ai-300/80">
-                    Rascunhos e análises exigem conferência das fontes e revisão
-                    humana antes do uso.
-                  </p>
-                  <span className="mt-2 inline-flex items-center gap-1 text-xs font-semibold text-ai-800 dark:text-ai-300">
-                    Abrir IA jurídica
-                    <ArrowRight className="h-3.5 w-3.5 transition group-hover:translate-x-0.5" />
-                  </span>
-                </div>
-              </div>
-            </Link>
-            <div className="rounded-xl border border-success-100 bg-success-50 p-4 dark:border-success-500/20 dark:bg-success-500/10">
-              <div className="flex items-start gap-3">
-                <ShieldCheck className="mt-0.5 h-4 w-4 text-success-700 dark:text-success-300" />
-                <div>
-                  <div className="text-sm font-semibold text-success-800 dark:text-success-200">
-                    Segurança por desenho
-                  </div>
-                  <p className="mt-1 text-xs text-success-700 dark:text-success-300/80">
-                    A interface não amplia permissões; o backend continua sendo
-                    a fonte de verdade do RBAC.
-                  </p>
                 </div>
               </div>
             </div>
-          </div>
-        </SectionCard>
-      </div>
+          </SectionCard>
+        </div>
 
-      <div className="grid gap-5 xl:grid-cols-2">
-        <SectionCard
-          title="Casos recentes"
-          subtitle="Acesso rápido à carteira ativa."
-          actions={
-            <Link
-              to="/casos"
-              className="text-sm font-medium text-primary-600 hover:text-primary-700 dark:text-primary-300"
-            >
-              Ver casos
-            </Link>
-          }
-        >
-          {casos.length === 0 ? (
-            <EmptyState title="Sem casos recentes" icon={Briefcase} />
-          ) : (
-            <div className="space-y-2.5">
-              {casos.slice(0, 6).map((item) => (
-                <Link
-                  key={item.id}
-                  to={`/casos/${item.id}`}
-                  className="flex items-center gap-3 rounded-xl border border-black/[0.05] bg-white p-3 transition-colors hover:border-primary-200 hover:bg-primary-50/40 dark:border-white/10 dark:bg-white/[0.03] dark:hover:bg-white/[0.06]"
-                >
-                  <div
-                    className={cn(
-                      "flex h-10 w-10 shrink-0 items-center justify-center rounded-xl text-xs font-semibold text-white",
-                      AREA_TONES[String(item.area || "").toLowerCase()] ||
-                        "bg-slate-700",
-                    )}
+        <div className="grid gap-5 xl:grid-cols-2">
+          <SectionCard
+            title="Casos recentes"
+            subtitle="Acesso rápido à carteira ativa."
+            actions={
+              <Link
+                to="/casos"
+                className="text-sm font-medium text-primary-600 hover:text-primary-700 dark:text-primary-300"
+              >
+                Ver casos
+              </Link>
+            }
+          >
+            {casos.length === 0 ? (
+              <EmptyState title="Sem casos recentes" icon={Briefcase} />
+            ) : (
+              <div className="space-y-2.5">
+                {casos.slice(0, 6).map((item) => (
+                  <Link
+                    key={item.id}
+                    to={`/casos/${item.id}`}
+                    className="flex items-center gap-3 rounded-xl border border-black/[0.05] bg-white p-3 transition-colors hover:border-primary-200 hover:bg-primary-50/40 dark:border-white/10 dark:bg-white/[0.03] dark:hover:bg-white/[0.06]"
                   >
-                    {initials(item.titulo || item.numero_interno)}
-                  </div>
-                  <div className="min-w-0 flex-1">
-                    <div className="truncate text-sm font-semibold text-slate-950 dark:text-slate-100">
-                      {item.titulo || item.numero_interno || "Caso sem título"}
+                    <div
+                      className={cn(
+                        "flex h-10 w-10 shrink-0 items-center justify-center rounded-xl text-xs font-semibold text-white",
+                        AREA_TONES[String(item.area || "").toLowerCase()] ||
+                          "bg-slate-700",
+                      )}
+                    >
+                      {initials(item.titulo || item.numero_interno)}
                     </div>
-                    <div className="mt-1 flex flex-wrap items-center gap-2">
-                      {item.area && <Badge tone="blue">{item.area}</Badge>}
-                      <StatusBadge value={item.status} />
+                    <div className="min-w-0 flex-1">
+                      <div className="truncate text-sm font-semibold text-slate-950 dark:text-slate-100">
+                        {item.titulo ||
+                          item.numero_interno ||
+                          "Caso sem título"}
+                      </div>
+                      <div className="mt-1 flex flex-wrap items-center gap-2">
+                        {item.area && <Badge tone="blue">{item.area}</Badge>}
+                        <StatusBadge value={item.status} />
+                      </div>
                     </div>
-                  </div>
-                  <ArrowRight className="h-4 w-4 text-slate-400" />
-                </Link>
-              ))}
-            </div>
-          )}
-        </SectionCard>
+                    <ArrowRight className="h-4 w-4 text-slate-400" />
+                  </Link>
+                ))}
+              </div>
+            )}
+          </SectionCard>
 
-        <SectionCard
-          title="Atividade recente"
-          subtitle="Movimentações registradas na operação jurídica."
-          actions={
-            <Link
-              to="/atividades"
-              className="text-sm font-medium text-primary-600 hover:text-primary-700 dark:text-primary-300"
-            >
-              Ver atividades
-            </Link>
-          }
-        >
-          {movimentos.length === 0 ? (
-            <EmptyState title="Sem movimentações recentes" icon={Gavel} />
-          ) : (
-            <div className="space-y-2.5">
-              {movimentos.slice(0, 6).map((movement, index) => (
-                <Link
-                  key={movement.id ?? index}
-                  to={
-                    movement.case_id
-                      ? `/casos/${movement.case_id}`
-                      : "/atividades"
-                  }
-                  className="flex items-start gap-3 rounded-xl border border-black/[0.04] bg-white p-3 transition-colors hover:bg-slate-50 dark:border-white/[0.07] dark:bg-white/[0.03] dark:hover:bg-white/[0.06]"
-                >
-                  <div className="mt-0.5 rounded-lg bg-primary-50 p-2 text-primary-700 dark:bg-primary-400/10 dark:text-primary-300">
-                    <Gavel className="h-4 w-4" />
-                  </div>
-                  <div className="min-w-0 flex-1">
-                    <div className="line-clamp-2 text-sm text-slate-700 dark:text-slate-200">
-                      {movement.descricao || "Movimentação registrada"}
+          <SectionCard
+            title="Atividade recente"
+            subtitle="Movimentações registradas na operação jurídica."
+            actions={
+              <Link
+                to="/atividades"
+                className="text-sm font-medium text-primary-600 hover:text-primary-700 dark:text-primary-300"
+              >
+                Ver atividades
+              </Link>
+            }
+          >
+            {movimentos.length === 0 ? (
+              <EmptyState title="Sem movimentações recentes" icon={Gavel} />
+            ) : (
+              <div className="space-y-2.5">
+                {movimentos.slice(0, 6).map((movement, index) => (
+                  <Link
+                    key={movement.id ?? index}
+                    to={
+                      movement.case_id
+                        ? `/casos/${movement.case_id}`
+                        : "/atividades"
+                    }
+                    className="flex items-start gap-3 rounded-xl border border-black/[0.04] bg-white p-3 transition-colors hover:bg-slate-50 dark:border-white/[0.07] dark:bg-white/[0.03] dark:hover:bg-white/[0.06]"
+                  >
+                    <div className="mt-0.5 rounded-lg bg-primary-50 p-2 text-primary-700 dark:bg-primary-400/10 dark:text-primary-300">
+                      <Gavel className="h-4 w-4" />
                     </div>
-                    <div className="mt-1 text-xs text-slate-400">
-                      {fmtDate(movement.quando || movement.created_at)}
+                    <div className="min-w-0 flex-1">
+                      <div className="line-clamp-2 text-sm text-slate-700 dark:text-slate-200">
+                        {movement.descricao || "Movimentação registrada"}
+                      </div>
+                      <div className="mt-1 text-xs text-slate-400">
+                        {fmtDate(movement.quando || movement.created_at)}
+                      </div>
                     </div>
-                  </div>
-                </Link>
-              ))}
-            </div>
-          )}
-        </SectionCard>
-      </div>
+                  </Link>
+                ))}
+              </div>
+            )}
+          </SectionCard>
+        </div>
 
-      {/* A grade extensa de atalhos para módulos foi removida — "Mais
+        {/* A grade extensa de atalhos para módulos foi removida — "Mais
           Ferramentas" no menu cumpre esse papel. */}
-      <NoticiasCard />
+        <NoticiasCard />
       </section>
 
       {/* ================= GESTÃO DO ESCRITÓRIO ================= */}
       {/* Widgets analíticos/gerenciais, recolhidos por padrão. Dados
           financeiros ficam concentrados no módulo Financeiro. */}
       {isManager && (
-      <section
-        aria-label="Gestão do escritório"
-        className="rounded-xl border border-slate-200 bg-white dark:border-white/10 dark:bg-white/[0.03]"
-      >
-        <button
-          type="button"
-          onClick={() => setGestaoOpen((open) => !open)}
-          aria-expanded={gestaoOpen}
-          aria-controls="gestao-escritorio-conteudo"
-          className="flex w-full items-center justify-between gap-3 rounded-xl px-4 py-3 text-left transition-colors hover:bg-slate-50 dark:hover:bg-white/[0.04]"
+        <section
+          aria-label="Gestão do escritório"
+          className="rounded-xl border border-slate-200 bg-white dark:border-white/10 dark:bg-white/[0.03]"
         >
-          <span className="flex min-w-0 items-center gap-2">
-            <span className="flex h-7 w-7 shrink-0 items-center justify-center rounded-lg bg-primary-50 text-primary-700 dark:bg-primary-400/10 dark:text-primary-300">
-              <BarChart3 className="h-4 w-4" />
-            </span>
-            <span className="text-base font-semibold text-slate-900 dark:text-slate-100">
-              Gestão do escritório
-            </span>
-            <span className="hidden text-sm text-slate-500 dark:text-slate-400 sm:inline">
-              Indicadores, gráficos, jurimetria e saúde da IA
-            </span>
-          </span>
-          <ChevronDown
-            className={cn(
-              "h-5 w-5 shrink-0 text-slate-400 transition-transform",
-              gestaoOpen && "rotate-180",
-            )}
-            aria-hidden="true"
-          />
-        </button>
-        {gestaoOpen && (
-          <div
-            id="gestao-escritorio-conteudo"
-            className="space-y-5 border-t border-slate-100 p-4 dark:border-white/[0.07]"
+          <button
+            type="button"
+            onClick={() => setGestaoOpen((open) => !open)}
+            aria-expanded={gestaoOpen}
+            aria-controls="gestao-escritorio-conteudo"
+            className="flex w-full items-center justify-between gap-3 rounded-xl px-4 py-3 text-left transition-colors hover:bg-slate-50 dark:hover:bg-white/[0.04]"
           >
-      <div
-        className={cn(
-          "grid gap-5 sm:grid-cols-2",
-          canSeeCRM ? "xl:grid-cols-5" : "xl:grid-cols-4",
-        )}
-      >
-        <StatCard
-          label="Casos ativos"
-          value={dashboard?.casos?.ativos ?? "—"}
-          subtitle={
-            dashboard?.casos?.total
-              ? `${dashboard.casos.total} casos cadastrados`
-              : "Carteira atual"
-          }
-          icon={<Briefcase className="h-5 w-5" />}
-          tone="blue"
-        />
-        <StatCard
-          label="Prazos críticos"
-          value={criticalDeadlines.length}
-          subtitle={`${deadlinesToday} vencendo hoje`}
-          icon={<AlertTriangle className="h-5 w-5" />}
-          tone={criticalDeadlines.length ? "red" : "amber"}
-          trend={criticalDeadlines.length ? "down" : undefined}
-        />
-        <StatCard
-          label="Movimentações"
-          value={movimentos.length}
-          subtitle="Atividades recentes"
-          icon={<Gavel className="h-5 w-5" />}
-          tone="green"
-        />
-        <StatCard
-          label="Taxa de êxito"
-          value={successRate != null ? `${successRate}%` : "—"}
-          subtitle="Base jurimétrica disponível"
-          icon={<BarChart3 className="h-5 w-5" />}
-          tone="amber"
-        />
-        {canSeeCRM && (
-          <StatCard
-            label="Solicitações de clientes"
-            value={solicitacoes?.pendentes ?? "—"}
-            subtitle={
-              solicitacoes
-                ? `${solicitacoes.atrasadas} atrasada(s) · ${solicitacoes.proximas_24h} em 24h`
-                : "Linha do tempo de atendimento"
-            }
-            icon={<MessageSquare className="h-5 w-5" />}
-            tone={solicitacoes?.atrasadas ? "red" : "blue"}
-          />
-        )}
-      </div>
-
-      <div className="grid gap-5 xl:grid-cols-[1.35fr_0.65fr]">
-        <SectionCard
-          title="Prazos das próximas semanas"
-          subtitle="Distribuição temporal dos compromissos pendentes."
-          actions={
-            <Link
-              to="/atividades?tipo=prazo"
-              className="text-sm font-medium text-primary-600 hover:text-primary-700 dark:text-primary-300"
+            <span className="flex min-w-0 items-center gap-2">
+              <span className="flex h-7 w-7 shrink-0 items-center justify-center rounded-lg bg-primary-50 text-primary-700 dark:bg-primary-400/10 dark:text-primary-300">
+                <BarChart3 className="h-4 w-4" />
+              </span>
+              <span className="text-base font-semibold text-slate-900 dark:text-slate-100">
+                Gestão do escritório
+              </span>
+              <span className="hidden text-sm text-slate-500 dark:text-slate-400 sm:inline">
+                Indicadores, gráficos, jurimetria e saúde da IA
+              </span>
+            </span>
+            <ChevronDown
+              className={cn(
+                "h-5 w-5 shrink-0 text-slate-400 transition-transform",
+                gestaoOpen && "rotate-180",
+              )}
+              aria-hidden="true"
+            />
+          </button>
+          {gestaoOpen && (
+            <div
+              id="gestao-escritorio-conteudo"
+              className="space-y-5 border-t border-slate-100 p-4 dark:border-white/[0.07]"
             >
-              Ver prazos
-            </Link>
-          }
-        >
-          {loading ? (
-            <div className="h-52 animate-pulse rounded-xl bg-slate-100 dark:bg-white/[0.05]" />
-          ) : (
-            <DeadlineBars points={weeklySeries} />
-          )}
-        </SectionCard>
-
-        <SectionCard
-          title="Carteira por área"
-          subtitle="Concentração dos casos cadastrados."
-        >
-          {areas.length === 0 ? (
-            <EmptyState title="Sem casos na carteira" icon={Briefcase} />
-          ) : (
-            <div className="space-y-3">
-              {areas.map((area, index) => {
-                const max = Math.max(1, ...areas.map((item) => item.value));
-                return (
-                  <div key={area.label}>
-                    <div className="mb-1.5 flex items-center justify-between gap-3 text-xs">
-                      <span className="truncate font-medium capitalize text-slate-600 dark:text-slate-300">
-                        {area.label}
-                      </span>
-                      <span className="font-semibold tabular-nums text-slate-900 dark:text-slate-100">
-                        {area.value}
-                      </span>
-                    </div>
-                    <div className="h-2 overflow-hidden rounded-full bg-slate-100 dark:bg-white/[0.06]">
-                      <div
-                        className={cn(
-                          "h-full rounded-full",
-                          [
-                            "bg-primary-700",
-                            "bg-primary-500",
-                            "bg-primary-300",
-                            "bg-ai-500",
-                            "bg-success-500",
-                            "bg-warn-500",
-                          ][index],
-                        )}
-                        style={{
-                          width: `${Math.max(8, (area.value / max) * 100)}%`,
-                        }}
-                      />
-                    </div>
-                  </div>
-                );
-              })}
-            </div>
-          )}
-        </SectionCard>
-      </div>
-
-      <div className="grid gap-5 xl:grid-cols-2">
-        <SectionCard
-          title="Casos ativos por fase"
-          subtitle="Andamento da carteira em cada etapa."
-          actions={
-            <Link
-              to="/casos"
-              className="text-sm font-medium text-primary-600 hover:text-primary-700 dark:text-primary-300"
-            >
-              Ver casos
-            </Link>
-          }
-        >
-          {fases.length === 0 ? (
-            <EmptyState title="Sem casos ativos" icon={Briefcase} />
-          ) : (
-            <div className="space-y-3">
-              {fases.map((fase) => {
-                const max = Math.max(1, ...fases.map((item) => item.value));
-                return (
-                  <div key={fase.label}>
-                    <div className="mb-1.5 flex items-center justify-between gap-3 text-xs">
-                      <span className="truncate font-medium capitalize text-slate-600 dark:text-slate-300">
-                        {fase.label.replace(/_/g, " ")}
-                      </span>
-                      <span className="font-semibold tabular-nums text-slate-900 dark:text-slate-100">
-                        {fase.value}
-                      </span>
-                    </div>
-                    <div className="h-2 overflow-hidden rounded-full bg-slate-100 dark:bg-white/[0.06]">
-                      <div
-                        className="h-full rounded-full bg-primary-600"
-                        style={{
-                          width: `${Math.max(8, (fase.value / max) * 100)}%`,
-                        }}
-                      />
-                    </div>
-                  </div>
-                );
-              })}
-            </div>
-          )}
-        </SectionCard>
-
-        {isManager && (
-          <SectionCard
-            title="Saúde da IA"
-            subtitle="Uso e aproveitamento nos últimos 30 dias."
-            actions={
-              <Link
-                to="/inteligencia?tab=saude"
-                className="text-sm font-medium text-primary-600 hover:text-primary-700 dark:text-primary-300"
+              <div
+                className={cn(
+                  "grid gap-5 sm:grid-cols-2",
+                  canSeeCRM ? "xl:grid-cols-5" : "xl:grid-cols-4",
+                )}
               >
-                Detalhes
-              </Link>
-            }
-          >
-            {iaSaude ? (
-              <div className="grid grid-cols-2 gap-3">
-                {[
-                  { label: "Chamadas", value: iaSaude.total_chamadas ?? 0 },
-                  {
-                    label: "Custo (R$)",
-                    value: fmtMoney(iaSaude.custo_total_brl),
-                  },
-                  {
-                    label: "Aproveitamento",
-                    value:
-                      iaSaude.taxa_aproveitamento_pct != null
-                        ? `${iaSaude.taxa_aproveitamento_pct}%`
-                        : "—",
-                  },
-                  {
-                    label: "PII removida",
-                    value: iaSaude.chamadas_com_pii_removida ?? 0,
-                  },
-                ].map(({ label, value }) => (
-                  <div
-                    key={label}
-                    className="rounded-xl border border-black/[0.05] bg-white p-3 dark:border-white/10 dark:bg-white/[0.03]"
-                  >
-                    <div className="text-xs text-slate-400">{label}</div>
-                    <div className="mt-1 text-lg font-semibold text-slate-900 dark:text-slate-100">
-                      {value}
-                    </div>
-                  </div>
-                ))}
+                <StatCard
+                  label="Casos ativos"
+                  value={dashboard?.casos?.ativos ?? "—"}
+                  subtitle={
+                    dashboard?.casos?.total
+                      ? `${dashboard.casos.total} casos cadastrados`
+                      : "Carteira atual"
+                  }
+                  icon={<Briefcase className="h-5 w-5" />}
+                  tone="blue"
+                />
+                <StatCard
+                  label="Prazos críticos"
+                  value={criticalDeadlines.length}
+                  subtitle={`${deadlinesToday} vencendo hoje`}
+                  icon={<AlertTriangle className="h-5 w-5" />}
+                  tone={criticalDeadlines.length ? "red" : "amber"}
+                  trend={criticalDeadlines.length ? "down" : undefined}
+                />
+                <StatCard
+                  label="Movimentações"
+                  value={movimentos.length}
+                  subtitle="Atividades recentes"
+                  icon={<Gavel className="h-5 w-5" />}
+                  tone="green"
+                />
+                <StatCard
+                  label="Taxa de êxito"
+                  value={successRate != null ? `${successRate}%` : "—"}
+                  subtitle="Base jurimétrica disponível"
+                  icon={<BarChart3 className="h-5 w-5" />}
+                  tone="amber"
+                />
+                {canSeeCRM && (
+                  <StatCard
+                    label="Solicitações de clientes"
+                    value={solicitacoes?.pendentes ?? "—"}
+                    subtitle={
+                      solicitacoes
+                        ? `${solicitacoes.atrasadas} atrasada(s) · ${solicitacoes.proximas_24h} em 24h`
+                        : "Linha do tempo de atendimento"
+                    }
+                    icon={<MessageSquare className="h-5 w-5" />}
+                    tone={solicitacoes?.atrasadas ? "red" : "blue"}
+                  />
+                )}
               </div>
-            ) : (
-              <EmptyState
-                title="Sem dados de uso da IA"
-                message="As métricas aparecem após as primeiras chamadas assistidas."
-                icon={Bot}
-              />
-            )}
-          </SectionCard>
-        )}
 
-      </div>
+              <div className="grid gap-5 xl:grid-cols-[1.35fr_0.65fr]">
+                <SectionCard
+                  title="Prazos das próximas semanas"
+                  subtitle="Distribuição temporal dos compromissos pendentes."
+                  actions={
+                    <Link
+                      to="/atividades?tipo=prazo"
+                      className="text-sm font-medium text-primary-600 hover:text-primary-700 dark:text-primary-300"
+                    >
+                      Ver prazos
+                    </Link>
+                  }
+                >
+                  {loading ? (
+                    <div className="h-52 animate-pulse rounded-xl bg-slate-100 dark:bg-white/[0.05]" />
+                  ) : (
+                    <DeadlineBars points={weeklySeries} />
+                  )}
+                </SectionCard>
 
-          </div>
-        )}
-      </section>
+                <SectionCard
+                  title="Carteira por área"
+                  subtitle="Concentração dos casos cadastrados."
+                >
+                  {areas.length === 0 ? (
+                    <EmptyState
+                      title="Sem casos na carteira"
+                      icon={Briefcase}
+                    />
+                  ) : (
+                    <div className="space-y-3">
+                      {areas.map((area, index) => {
+                        const max = Math.max(
+                          1,
+                          ...areas.map((item) => item.value),
+                        );
+                        return (
+                          <div key={area.label}>
+                            <div className="mb-1.5 flex items-center justify-between gap-3 text-xs">
+                              <span className="truncate font-medium capitalize text-slate-600 dark:text-slate-300">
+                                {area.label}
+                              </span>
+                              <span className="font-semibold tabular-nums text-slate-900 dark:text-slate-100">
+                                {area.value}
+                              </span>
+                            </div>
+                            <div className="h-2 overflow-hidden rounded-full bg-slate-100 dark:bg-white/[0.06]">
+                              <div
+                                className={cn(
+                                  "h-full rounded-full",
+                                  [
+                                    "bg-primary-700",
+                                    "bg-primary-500",
+                                    "bg-primary-300",
+                                    "bg-ai-500",
+                                    "bg-success-500",
+                                    "bg-warn-500",
+                                  ][index],
+                                )}
+                                style={{
+                                  width: `${Math.max(8, (area.value / max) * 100)}%`,
+                                }}
+                              />
+                            </div>
+                          </div>
+                        );
+                      })}
+                    </div>
+                  )}
+                </SectionCard>
+              </div>
+
+              <div className="grid gap-5 xl:grid-cols-2">
+                <SectionCard
+                  title="Casos ativos por fase"
+                  subtitle="Andamento da carteira em cada etapa."
+                  actions={
+                    <Link
+                      to="/casos"
+                      className="text-sm font-medium text-primary-600 hover:text-primary-700 dark:text-primary-300"
+                    >
+                      Ver casos
+                    </Link>
+                  }
+                >
+                  {fases.length === 0 ? (
+                    <EmptyState title="Sem casos ativos" icon={Briefcase} />
+                  ) : (
+                    <div className="space-y-3">
+                      {fases.map((fase) => {
+                        const max = Math.max(
+                          1,
+                          ...fases.map((item) => item.value),
+                        );
+                        return (
+                          <div key={fase.label}>
+                            <div className="mb-1.5 flex items-center justify-between gap-3 text-xs">
+                              <span className="truncate font-medium capitalize text-slate-600 dark:text-slate-300">
+                                {fase.label.replace(/_/g, " ")}
+                              </span>
+                              <span className="font-semibold tabular-nums text-slate-900 dark:text-slate-100">
+                                {fase.value}
+                              </span>
+                            </div>
+                            <div className="h-2 overflow-hidden rounded-full bg-slate-100 dark:bg-white/[0.06]">
+                              <div
+                                className="h-full rounded-full bg-primary-600"
+                                style={{
+                                  width: `${Math.max(8, (fase.value / max) * 100)}%`,
+                                }}
+                              />
+                            </div>
+                          </div>
+                        );
+                      })}
+                    </div>
+                  )}
+                </SectionCard>
+
+                {isManager && (
+                  <SectionCard
+                    title="Saúde da IA"
+                    subtitle="Uso e aproveitamento nos últimos 30 dias."
+                    actions={
+                      <Link
+                        to="/inteligencia?tab=saude"
+                        className="text-sm font-medium text-primary-600 hover:text-primary-700 dark:text-primary-300"
+                      >
+                        Detalhes
+                      </Link>
+                    }
+                  >
+                    {iaSaude ? (
+                      <div className="grid grid-cols-2 gap-3">
+                        {[
+                          {
+                            label: "Chamadas",
+                            value: iaSaude.total_chamadas ?? 0,
+                          },
+                          {
+                            label: "Custo (R$)",
+                            value: fmtMoney(iaSaude.custo_total_brl),
+                          },
+                          {
+                            label: "Aproveitamento",
+                            value:
+                              iaSaude.taxa_aproveitamento_pct != null
+                                ? `${iaSaude.taxa_aproveitamento_pct}%`
+                                : "—",
+                          },
+                          {
+                            label: "PII removida",
+                            value: iaSaude.chamadas_com_pii_removida ?? 0,
+                          },
+                        ].map(({ label, value }) => (
+                          <div
+                            key={label}
+                            className="rounded-xl border border-black/[0.05] bg-white p-3 dark:border-white/10 dark:bg-white/[0.03]"
+                          >
+                            <div className="text-xs text-slate-400">
+                              {label}
+                            </div>
+                            <div className="mt-1 text-lg font-semibold text-slate-900 dark:text-slate-100">
+                              {value}
+                            </div>
+                          </div>
+                        ))}
+                      </div>
+                    ) : (
+                      <EmptyState
+                        title="Sem dados de uso da IA"
+                        message="As métricas aparecem após as primeiras chamadas assistidas."
+                        icon={Bot}
+                      />
+                    )}
+                  </SectionCard>
+                )}
+              </div>
+            </div>
+          )}
+        </section>
       )}
-
     </div>
   );
 }
-

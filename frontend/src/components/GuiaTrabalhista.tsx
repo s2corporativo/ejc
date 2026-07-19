@@ -114,9 +114,10 @@ export default function GuiaTrabalhista() {
           No sistema
         </span>
         <span className="text-slate-600 flex-1 min-w-[200px]">
-          <b className="text-navy">Liquidação de Sentença Trabalhista</b> — monte
-          as verbas deferidas e obtenha a planilha consolidada (FGTS + multa de
-          40%, correção ADC 58/59 com Selic real do BCB e honorários CLT 791-A).
+          <b className="text-navy">Liquidação de Sentença Trabalhista</b> —
+          monte as verbas deferidas e obtenha a planilha consolidada (FGTS +
+          multa de 40%, correção ADC 58/59 com Selic real do BCB e honorários
+          CLT 791-A).
         </span>
         <a
           href="#liquidacao-trabalhista"

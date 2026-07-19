@@ -23,8 +23,7 @@
     /* Sombra em camadas (ambiente + luz suave) — profundidade "flutuante"
        de alto padrão, quente, discreta. */
     --ejc-shadow-soft:
-      0 1px 2px rgba(24, 16, 8, 0.04),
-      0 6px 16px -4px rgba(24, 16, 8, 0.05),
+      0 1px 2px rgba(24, 16, 8, 0.04), 0 6px 16px -4px rgba(24, 16, 8, 0.05),
       0 22px 44px -16px rgba(24, 16, 8, 0.07);
     /* Sidebar off-black quente sofisticado (ouro profundo da logomarca) */
     --ejc-sidebar-top: #201a0f;
@@ -52,8 +51,7 @@
     --ejc-legal: #d6cec2;
     --ejc-gold-soft: rgba(212, 175, 55, 0.12);
     --ejc-shadow-soft:
-      0 1px 2px rgba(0, 0, 0, 0.3),
-      0 8px 22px -6px rgba(0, 0, 0, 0.42),
+      0 1px 2px rgba(0, 0, 0, 0.3), 0 8px 22px -6px rgba(0, 0, 0, 0.42),
       0 26px 50px -18px rgba(0, 0, 0, 0.55);
     --ejc-sidebar-top: #191509;
     --ejc-sidebar-bottom: #251d0c;
@@ -298,7 +296,13 @@
         rgba(201, 162, 39, 0.28),
         transparent 26rem
       ),
-      linear-gradient(150deg, #fdfbf3 0%, #f7f1dc 45%, #efe3b4 80%, #e5ce7f 110%);
+      linear-gradient(
+        150deg,
+        #fdfbf3 0%,
+        #f7f1dc 45%,
+        #efe3b4 80%,
+        #e5ce7f 110%
+      );
   }
   /* "Shine" sutil — faixa diagonal branca translúcida; estática por
      padrão, com varredura MUITO lenta apenas sem reduced-motion. */

@@ -2,11 +2,7 @@ import { create } from "zustand";
 import api from "../lib/api";
 
 export type ModuleLifecycleStatus =
-  | "active"
-  | "beta"
-  | "hidden"
-  | "legacy"
-  | "disabled";
+  "active" | "beta" | "hidden" | "legacy" | "disabled";
 
 export type ModuleLifecycleOverride = {
   module_key: string;

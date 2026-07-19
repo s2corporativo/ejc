@@ -184,7 +184,9 @@ export default function TributarioFiscal() {
       return;
     }
     if (excedeu) {
-      setErro(`Máximo de ${MAX_ARQUIVOS} XMLs por análise — remova o excedente.`);
+      setErro(
+        `Máximo de ${MAX_ARQUIVOS} XMLs por análise — remova o excedente.`,
+      );
       return;
     }
     if (!regime) {
@@ -413,7 +415,10 @@ export default function TributarioFiscal() {
 
           {/* Aviso HITL — sempre visível */}
           <div className="rounded-xl border-2 border-warn-200 bg-warn-50 p-3 flex items-start gap-2">
-            <AlertTriangle size={15} className="text-warn-700 shrink-0 mt-0.5" />
+            <AlertTriangle
+              size={15}
+              className="text-warn-700 shrink-0 mt-0.5"
+            />
             <p className="text-xs text-warn-700 leading-relaxed">
               {res.aviso_hitl}
             </p>

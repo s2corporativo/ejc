@@ -478,52 +478,51 @@ export default function SociedadesCliente() {
                   <Empty message="Nenhum sócio cadastrado" />
                 ) : (
                   <div className="space-y-2">
-                    {(Array.isArray(detalhe?.socios) ? detalhe.socios : []).map((s) => {
-                      const pct = Number(s.percentual) || 0;
-                      return (
-                        <div
-                          key={s.id}
-                          className="card p-2"
-                        >
-                          <div className="flex flex-wrap items-center gap-2">
-                            <span className="text-sm font-medium text-navy">
-                              {s.nome}
-                            </span>
-                            {s.administrador && (
-                              <span className="inline-flex items-center gap-1 text-[10px] font-semibold px-1.5 py-0.5 rounded-full bg-gold-100 text-gold-700">
-                                <Crown size={10} /> Administrador
+                    {(Array.isArray(detalhe?.socios) ? detalhe.socios : []).map(
+                      (s) => {
+                        const pct = Number(s.percentual) || 0;
+                        return (
+                          <div key={s.id} className="card p-2">
+                            <div className="flex flex-wrap items-center gap-2">
+                              <span className="text-sm font-medium text-navy">
+                                {s.nome}
                               </span>
-                            )}
-                            <span className="ml-auto text-xs font-semibold text-navy">
-                              {pct.toFixed(2)}%
-                            </span>
-                            <button
-                              className="text-slate-300 hover:text-danger-600"
-                              title="Remover sócio"
-                              onClick={() => removerSocio(s.id)}
-                            >
-                              <Trash2 size={13} />
-                            </button>
+                              {s.administrador && (
+                                <span className="inline-flex items-center gap-1 text-[10px] font-semibold px-1.5 py-0.5 rounded-full bg-gold-100 text-gold-700">
+                                  <Crown size={10} /> Administrador
+                                </span>
+                              )}
+                              <span className="ml-auto text-xs font-semibold text-navy">
+                                {pct.toFixed(2)}%
+                              </span>
+                              <button
+                                className="text-slate-300 hover:text-danger-600"
+                                title="Remover sócio"
+                                onClick={() => removerSocio(s.id)}
+                              >
+                                <Trash2 size={13} />
+                              </button>
+                            </div>
+                            <div className="h-2 rounded-full bg-slate-100 overflow-hidden mt-1.5">
+                              <div
+                                className="h-full bg-gold-600 rounded-full"
+                                style={{
+                                  width: `${Math.min(100, Math.max(0, pct))}%`,
+                                }}
+                              />
+                            </div>
+                            <div className="text-[10px] text-slate-400 mt-1">
+                              {s.quotas} quota(s)
+                              {s.documento_mascarado &&
+                                ` · doc. ${s.documento_mascarado}`}
+                              {s.pro_labore != null &&
+                                s.pro_labore !== "" &&
+                                ` · pró-labore ${fmtBRL(s.pro_labore)}`}
+                            </div>
                           </div>
-                          <div className="h-2 rounded-full bg-slate-100 overflow-hidden mt-1.5">
-                            <div
-                              className="h-full bg-gold-600 rounded-full"
-                              style={{
-                                width: `${Math.min(100, Math.max(0, pct))}%`,
-                              }}
-                            />
-                          </div>
-                          <div className="text-[10px] text-slate-400 mt-1">
-                            {s.quotas} quota(s)
-                            {s.documento_mascarado &&
-                              ` · doc. ${s.documento_mascarado}`}
-                            {s.pro_labore != null &&
-                              s.pro_labore !== "" &&
-                              ` · pró-labore ${fmtBRL(s.pro_labore)}`}
-                          </div>
-                        </div>
-                      );
-                    })}
+                        );
+                      },
+                    )}
                   </div>
                 )}
 

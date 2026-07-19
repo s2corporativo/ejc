@@ -316,10 +316,7 @@ export interface OrquestradorProximoPasso {
 }
 
 export type OrquestradorEtapaStatus =
-  | "concluida"
-  | "em_andamento"
-  | "pendente"
-  | "bloqueada";
+  "concluida" | "em_andamento" | "pendente" | "bloqueada";
 
 export interface OrquestradorEtapa {
   etapa: string;

@@ -99,7 +99,11 @@ describe("intakeRascunho", () => {
     });
 
     it("marca uploadFeito para que o retry pule o anexo já concluído", () => {
-      salvarRascunho({ form: { titulo: "Z" }, caseId: "c1", uploadFeito: false });
+      salvarRascunho({
+        form: { titulo: "Z" },
+        caseId: "c1",
+        uploadFeito: false,
+      });
       atualizarRascunho({ uploadFeito: true });
       expect(carregarRascunho()!.uploadFeito).toBe(true);
     });

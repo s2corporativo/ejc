@@ -151,9 +151,9 @@ export default function PortalAssinaturas() {
               </div>
             </div>
             <p className="text-xs text-slate-400">
-              Assinatura eletrônica nos termos da MP 2.200-2/2001, art. 10,
-              §2º. A trilha completa (identificação, IP e hash) fica registrada
-              no escritório.
+              Assinatura eletrônica nos termos da MP 2.200-2/2001, art. 10, §2º.
+              A trilha completa (identificação, IP e hash) fica registrada no
+              escritório.
             </p>
           </div>
         )}

@@ -126,7 +126,10 @@ export default function PortalDashboard() {
       cta: "Ver",
     });
   const totalPendencias =
-    docsPendentes + assinaturasPendentes + mensagensNaoLidas + pagamentosAbertos;
+    docsPendentes +
+    assinaturasPendentes +
+    mensagensNaoLidas +
+    pagamentosAbertos;
 
   return (
     <div className="space-y-6">

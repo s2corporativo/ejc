@@ -64,7 +64,11 @@ describe("FlowEnhancements — regras puras", () => {
   it("injeta caso apenas em criações contextuais e nunca sobrescreve vínculo explícito", () => {
     expect(
       deveInjetarCaso(
-        { method: "post", url: "/deadlines/", data: { titulo: "Prazo" } } as never,
+        {
+          method: "post",
+          url: "/deadlines/",
+          data: { titulo: "Prazo" },
+        } as never,
         "?caso=case-1",
       ),
     ).toBe("case-1");
@@ -93,7 +97,11 @@ describe("FlowEnhancements — regras puras", () => {
 
     expect(
       deveInjetarCaso(
-        { method: "patch", url: "/deadlines/", data: { titulo: "Prazo" } } as never,
+        {
+          method: "patch",
+          url: "/deadlines/",
+          data: { titulo: "Prazo" },
+        } as never,
         "?caso=case-1",
       ),
     ).toBeNull();

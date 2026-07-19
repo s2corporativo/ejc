@@ -31,11 +31,14 @@ export default function LegacyClientListAdapter({
 
         const headers = Array.from(headerRow.querySelectorAll("th"));
         const cells = Array.from(firstBodyRow.querySelectorAll("td"));
-        const labels = headers.map((header) => header.textContent?.trim() || "");
+        const labels = headers.map(
+          (header) => header.textContent?.trim() || "",
+        );
         const tabelaDeClientes =
           labels.includes("Nome / Razão") && labels.includes("CPF / CNPJ");
         if (!tabelaDeClientes) continue;
-        if (headerRow.querySelector('[data-ejc-client-actions="true"]')) continue;
+        if (headerRow.querySelector('[data-ejc-client-actions="true"]'))
+          continue;
         if (cells.length !== headers.length + 1 || headers.length < 4) continue;
 
         const actions = document.createElement("th");
