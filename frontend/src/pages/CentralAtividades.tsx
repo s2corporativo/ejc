@@ -94,14 +94,24 @@ export function isActivityView(value: string | null): value is ActivityView {
  *  - intimações (DJEN): pendente | tratada
  *  - suspensões: sem status (informativas)
  */
-export type Situacao = "nao_tratado" | "em_execucao" | "concluido";
+export type Situacao = "nao_tratado" | "em_execucao" | "concluido" | "cancelado";
+
+/** Colunas do kanban / filtro de situação: cancelado NÃO tem coluna própria —
+ *  agrupa com concluído, mas mantém rótulo/estilo distintos (badge neutra). */
+export type SituacaoColuna = Exclude<Situacao, "cancelado">;
 
 export function situacaoDe(status?: string | null): Situacao {
   const s = (status ?? "").toLowerCase();
-  if (["concluido", "concluida", "tratada", "cancelado"].includes(s))
-    return "concluido";
+  if (s === "cancelado") return "cancelado"; // NÃO é concluído — rótulo próprio
+  if (["concluido", "concluida", "tratada"].includes(s)) return "concluido";
   if (s === "fazendo") return "em_execucao";
   return "nao_tratado"; // pendente, a_fazer, vencido, sem status
+}
+
+/** Agrupamento para coluna do kanban e filtro (cancelado → junto de concluído). */
+export function situacaoColunaDe(status?: string | null): SituacaoColuna {
+  const s = situacaoDe(status);
+  return s === "cancelado" ? "concluido" : s;
 }
 
 /** A view vw_atividades devolve tipo 'agenda' para eventos; o subtipo real
@@ -191,7 +201,7 @@ const TIPO_CONFIG: Record<
   diligencia: { label: "Diligência", icon: MapPin, color: "text-success-600" },
 };
 
-const SITUACAO_CONFIG: { key: Situacao; label: string; cor: string }[] = [
+const SITUACAO_CONFIG: { key: SituacaoColuna; label: string; cor: string }[] = [
   { key: "nao_tratado", label: "Não tratado", cor: "bg-slate-400" },
   { key: "em_execucao", label: "Em execução", cor: "bg-primary-500" },
   { key: "concluido", label: "Concluído", cor: "bg-success-500" },
@@ -274,16 +284,19 @@ function ActivityRow({
   const cfg = tipoCfg(item.tipo);
   const Icon = cfg.icon;
   const urg = item.urgencia ?? "normal";
-  const concluido = situacaoDe(item.status) === "concluido";
+  const situ = situacaoDe(item.status);
+  // Cancelado também é estado final: sem destaque de urgência nem ação de
+  // concluir — mas com badge própria (neutra), não o selo verde "Concluído".
+  const finalizado = situ === "concluido" || situ === "cancelado";
   const podeConcluir =
-    !concluido &&
+    !finalizado &&
     ["prazo", "tarefa", "agenda", "intimacao"].includes(item.fonte);
   const podeReagendar = ["prazo", "tarefa", "agenda"].includes(item.fonte);
   const btn =
     "p-1.5 rounded-lg text-slate-400 hover:text-slate-700 hover:bg-slate-100 transition-colors";
   return (
     <div
-      className={`flex items-start gap-3 px-4 py-3 border-b border-slate-100 hover:bg-slate-50/60 transition-colors last:border-0 ${urg === "vencido" && !concluido ? "bg-danger-50/30" : urg === "critico" && !concluido ? "bg-orange-50/20" : ""}`}
+      className={`flex items-start gap-3 px-4 py-3 border-b border-slate-100 hover:bg-slate-50/60 transition-colors last:border-0 ${urg === "vencido" && !finalizado ? "bg-danger-50/30" : urg === "critico" && !finalizado ? "bg-orange-50/20" : ""}`}
     >
       <div className={`mt-0.5 flex-shrink-0 ${cfg.color}`}>
         <Icon className="w-4 h-4" />
@@ -291,14 +304,18 @@ function ActivityRow({
       <div className="flex-1 min-w-0">
         <div className="flex items-start justify-between gap-2">
           <p
-            className={`text-sm font-medium leading-snug ${concluido ? "text-slate-400 line-through" : "text-slate-800"}`}
+            className={`text-sm font-medium leading-snug ${finalizado ? "text-slate-400 line-through" : "text-slate-800"}`}
           >
             {item.titulo}
           </p>
           <div className="flex items-center gap-2 flex-shrink-0">
-            {concluido ? (
+            {situ === "concluido" ? (
               <span className="text-[11px] font-semibold px-2 py-0.5 rounded-full border text-success-700 bg-success-50 border-success-200">
                 Concluído
+              </span>
+            ) : situ === "cancelado" ? (
+              <span className="text-[11px] font-semibold px-2 py-0.5 rounded-full border text-slate-500 bg-slate-50 border-slate-200">
+                Cancelado
               </span>
             ) : (
               <span
@@ -631,7 +648,8 @@ function KanbanAtividades({
   return (
     <div className="flex gap-3 overflow-x-auto pb-3">
       {SITUACAO_CONFIG.map(({ key, label, cor }) => {
-        const itens = items.filter((i) => situacaoDe(i.status) === key);
+        // Cancelado divide a coluna "Concluído", mas com badge própria no cartão.
+        const itens = items.filter((i) => situacaoColunaDe(i.status) === key);
         return (
           <div
             key={key}
@@ -640,7 +658,8 @@ function KanbanAtividades({
             onDrop={() => {
               const item = items.find((i) => `${i.fonte}-${i.id}` === drag);
               setDrag(null);
-              if (item && situacaoDe(item.status) !== key) onMove(item, key);
+              if (item && situacaoColunaDe(item.status) !== key)
+                onMove(item, key);
             }}
           >
             <div className="px-3 py-2.5 flex items-center gap-2 border-b border-slate-200">
@@ -669,6 +688,11 @@ function KanbanAtividades({
                       <span className="text-[10px] text-slate-400 uppercase font-medium">
                         {cfg.label}
                       </span>
+                      {situacaoDe(it.status) === "cancelado" && (
+                        <span className="text-[10px] font-semibold px-1.5 py-0.5 rounded border border-slate-200 bg-slate-50 text-slate-500">
+                          Cancelado
+                        </span>
+                      )}
                       {it.prioridade && (
                         <span
                           className={`ml-auto text-[10px] font-semibold px-1.5 py-0.5 rounded ${PRIO_COLOR[it.prioridade] ?? PRIO_COLOR.baixa}`}
@@ -786,7 +810,7 @@ export default function CentralAtividades() {
   // Conflito de horário devolvido ao criar/editar evento — aviso não silencioso.
   const [conflitos, setConflitos] = useState<ConflitoEvento[]>([]);
   const [filterUrgencia, setFilterUrgencia] = useState<string>("todos");
-  const [filterSituacao, setFilterSituacao] = useState<Situacao | "todos">(
+  const [filterSituacao, setFilterSituacao] = useState<SituacaoColuna | "todos">(
     "todos",
   );
 
@@ -794,27 +818,20 @@ export default function CentralAtividades() {
     setLoading(true);
     setError(false);
     try {
-      // Feed principal + enriquecimento (prioridade/responsável/subtipo de
-      // agenda) a partir dos endpoints que já existem. Enriquecimento é
+      // Fonte primária: GET /atividades (vw_atividades) — já entrega
+      // responsavel_id, prioridade e subtipo por item, para TODOS os itens
+      // visíveis (sem o corte de responsável do /deadlines/ nem o limite de
+      // página do /agenda-eventos/). Único enriquecimento restante:
+      // hora/local dos eventos de agenda, que a view não expõe. É
       // best-effort: se falhar, a central continua funcionando com o feed.
-      const [ativ, tasksR, deadlinesR, agendaR] = await Promise.allSettled([
+      const [ativ, agendaR] = await Promise.allSettled([
         api.get("/atividades", { params: { apenas_pendentes: false } }),
-        api.get("/tasks/"),
-        api.get("/deadlines/", { params: { status: "", page_size: 200 } }),
         api.get("/agenda-eventos/", { params: { page_size: 500 } }),
       ]);
       if (ativ.status !== "fulfilled") {
         setError(true);
         return;
       }
-      const taskMap: Record<string, any> = {};
-      if (tasksR.status === "fulfilled")
-        asList(tasksR.value.data).forEach((t: any) => (taskMap[t.id] = t));
-      const deadlineMap: Record<string, any> = {};
-      if (deadlinesR.status === "fulfilled")
-        asList(deadlinesR.value.data).forEach(
-          (d: any) => (deadlineMap[d.id] = d),
-        );
       const agendaMap: Record<string, any> = {};
       if (agendaR.status === "fulfilled")
         asList(agendaR.value.data).forEach((a: any) => (agendaMap[a.id] = a));
@@ -823,12 +840,6 @@ export default function CentralAtividades() {
         const bruto: string = a.tipo;
         const fonte: Fonte = bruto === "agenda" ? "agenda" : (bruto as Fonte);
         const evento = fonte === "agenda" ? agendaMap[a.id] : undefined;
-        const extra =
-          fonte === "tarefa"
-            ? taskMap[a.id]
-            : fonte === "prazo"
-              ? deadlineMap[a.id]
-              : undefined;
         const origem =
           fonte === "prazo"
             ? "Prazos"
@@ -843,7 +854,7 @@ export default function CentralAtividades() {
           id: a.id,
           tipo:
             fonte === "agenda"
-              ? mapAgendaTipo(evento?.tipo)
+              ? mapAgendaTipo(a.subtipo ?? evento?.tipo)
               : (bruto as ItemType),
           fonte,
           titulo: a.titulo,
@@ -854,9 +865,8 @@ export default function CentralAtividades() {
           status: a.status,
           case_id: a.case_id,
           caso_titulo: a.caso_titulo,
-          responsavel_id:
-            extra?.responsavel_id ?? evento?.responsavel_id ?? undefined,
-          prioridade: extra?.prioridade ?? undefined,
+          responsavel_id: a.responsavel_id ?? undefined,
+          prioridade: a.prioridade ?? undefined,
           hora: evento?.hora ?? undefined,
           local: evento?.local ?? undefined,
           origem,
@@ -1118,17 +1128,22 @@ export default function CentralAtividades() {
     if (filterTipo !== "todos" && item.tipo !== filterTipo) return false;
     if (filterUrgencia !== "todos" && item.urgencia !== filterUrgencia)
       return false;
+    // Filtro agrupa cancelado com concluído (badge distingue na listagem).
     if (
       filterSituacao !== "todos" &&
-      situacaoDe(item.status) !== filterSituacao
+      situacaoColunaDe(item.status) !== filterSituacao
     )
       return false;
     return true;
   });
 
-  const pendentes = filtered.filter(
-    (i) => situacaoDe(i.status) !== "concluido",
-  );
+  // Cancelado também não conta como pendente nas estatísticas de urgência.
+  // Com contexto de caso ativo, as estatísticas refletem só o caso — mas NÃO
+  // aplicam os filtros de tipo/urgência/situação da UI: os cards de urgência
+  // são os próprios botões de filtro e não podem se auto-zerar.
+  const pendentes = (
+    contextCaseId ? items.filter((i) => i.case_id === contextCaseId) : items
+  ).filter((i) => situacaoColunaDe(i.status) !== "concluido");
   const stats = {
     vencido: pendentes.filter((i) => i.urgencia === "vencido").length,
     critico: pendentes.filter((i) => i.urgencia === "critico").length,
@@ -1204,7 +1219,7 @@ export default function CentralAtividades() {
                   />
                   <div
                     role="menu"
-                    className="absolute right-0 mt-1 z-20 w-44 bg-white border border-slate-200 rounded-xl shadow-lg py-1 dark:bg-slate-800 dark:border-slate-700"
+                    className="absolute right-0 mt-1 z-20 w-44 bg-white border border-slate-200 rounded-xl shadow-md py-1 dark:bg-slate-800 dark:border-slate-700"
                   >
                     {NOVO_OPCOES.map((op) => (
                       <button
@@ -1345,7 +1360,7 @@ export default function CentralAtividades() {
           [
             { key: "todos", label: "Todas" },
             ...SITUACAO_CONFIG.map(({ key, label }) => ({ key, label })),
-          ] as { key: Situacao | "todos"; label: string }[]
+          ] as { key: SituacaoColuna | "todos"; label: string }[]
         ).map(({ key, label }) => (
           <button
             key={key}

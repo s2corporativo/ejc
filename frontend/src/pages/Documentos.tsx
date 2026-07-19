@@ -158,6 +158,16 @@ export default function Documentos() {
   );
   const [previewUrl, setPreviewUrl] = useState<string | null>(null);
   const [previewErro, setPreviewErro] = useState<string | null>(null);
+  // Espelho da object URL ativa p/ revogá-la no unmount (evita vazamento de blob
+  // quando o usuário navega com o preview aberto, sem passar por fecharPreview).
+  const previewUrlRef = useRef<string | null>(null);
+  previewUrlRef.current = previewUrl;
+  useEffect(
+    () => () => {
+      if (previewUrlRef.current) URL.revokeObjectURL(previewUrlRef.current);
+    },
+    [],
+  );
 
   // Seleção múltipla para ações em lote (baixar / excluir em sequência).
   const [sel, setSel] = useState<Set<string>>(new Set());

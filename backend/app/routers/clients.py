@@ -692,6 +692,11 @@ async def criar_acesso_portal(
     ))).scalar_one_or_none()
     if not c:
         raise HTTPException(status_code=404, detail="Cliente não encontrado")
+    # Sigilo interno (A2): criar acesso ao Portal concede visão externa dos dados
+    # do cliente — advogado só pode fazê-lo para a PRÓPRIA carteira (gestão passa
+    # dentro do helper). 404 não vaza existência, espelhando detalhe/ia-analise.
+    if not await _pode_ver_cliente(cu, c, db):
+        raise HTTPException(status_code=404, detail="Cliente não encontrado")
 
     existe = (await db.execute(select(_User).where(
         _User.email == payload.email.lower()
@@ -717,9 +722,12 @@ async def criar_acesso_portal(
         is_active=True,
     )
     db.add(u)
+    # Ação destacada (A2): criação de credencial EXTERNA é evento de segurança —
+    # não pode se diluir nos "CREATE" genéricos da trilha.
     await criar_audit_log(
-        db, cu.id, cu.role.value, "CREATE", "users", u.id,
-        detalhes=f"Acesso portal p/ cliente {client_id}",
+        db, cu.id, cu.role.value, "PORTAL_ACESSO_CRIADO", "users", u.id,
+        detalhes=f"Acesso ao Portal criado p/ cliente {client_id} "
+                 f"(email {payload.email.lower()})",
     )
     await db.commit()
     return {

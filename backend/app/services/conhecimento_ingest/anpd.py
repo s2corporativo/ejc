@@ -181,6 +181,8 @@ async def ingerir(db: AsyncSession) -> dict:
                         "secao": rotulo,
                         "url": link["url"],
                         "titulo_original": link["titulo"][:300],
+                        "rag_status": "aprovado",
+                        "tipo_fonte": "norma_oficial",
                     },
                 )
                 await db.commit()               # durável antes do próximo item

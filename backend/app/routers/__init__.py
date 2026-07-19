@@ -17,16 +17,15 @@ from app.routers import (  # noqa: E402
     novos_modulos,
 )
 
-# O Motor de Peça usa o limiar advogado+ (ROLE_LEVEL >= advogado). O perfil
-# advogado_auxiliar permanece na análise e na preparação do dossiê, mas não
-# pode gerar pacote executivo nem encaminhar redação sem revisão do responsável.
-defesas_revisoes.ADVOGADO_ROLES.discard("advogado_auxiliar")
-defesas_revisoes_avancado.ADVOGADO_ROLES.discard("advogado_auxiliar")
+# A restrição do advogado_auxiliar (não gera pacote executivo nem encaminha
+# redação sem revisão) vive nos próprios módulos: ROLES_MOTOR_PECA em
+# defesas_revisoes.py e ROLES_PACOTE em defesas_revisoes_avancado.py — sem
+# mutação de conjuntos compartilhados no import.
 
 novos_modulos.router.include_router(entrada_universal.router)
 novos_modulos.router.include_router(entrada_universal_vinculo.router)
 novos_modulos.router.include_router(defesas_revisoes.router)
-# O pacote seguro vem antes do router avançado e substitui, em tempo de
-# execução, a rota antiga de mesmo método/caminho que não bloqueava a peça.
+# POST /defesas-revisoes/avancado/pacote existe SÓ no pacote seguro (a
+# implementação legada foi removida do router avançado — sem sombreamento).
 novos_modulos.router.include_router(defesas_revisoes_pacote_seguro.router)
 novos_modulos.router.include_router(defesas_revisoes_avancado.router)

@@ -5,7 +5,7 @@
 #
 # Idempotente — pode ser reexecutado para atualizar.
 set -euo pipefail
-DOMAIN="ecjdepaulateixeira.adv.br"
+DOMAIN="ejc.depaulateixeira.adv.br"
 APP_DIR="/opt/ejc"
 
 echo "═══════════════════════════════════════════════"
@@ -104,7 +104,7 @@ if [ ! -f "/etc/letsencrypt/live/$DOMAIN/fullchain.pem" ]; then
     cat > /etc/nginx/sites-available/ejc.conf << 'NGINX_HTTP'
 server {
     listen 80;
-    server_name ecjdepaulateixeira.adv.br;
+    server_name ejc.depaulateixeira.adv.br;
     location / {
         proxy_pass http://127.0.0.1:8080;
         proxy_set_header Host $host;

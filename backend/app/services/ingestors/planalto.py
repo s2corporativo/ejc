@@ -87,7 +87,8 @@ async def ingerir(db: AsyncSession) -> tuple[int, int]:
                 conteudo=texto,
                 chave_origem=f"planalto:{cod['slug']}",
                 fonte=cod["url"],
-                extra={"diploma": cod["slug"], "origem": "planalto"},
+                extra={"diploma": cod["slug"], "origem": "planalto",
+                       "rag_status": "aprovado", "tipo_fonte": "legislacao_oficial"},
                 confianca="alta",   # fonte oficial (Planalto — texto de lei)
             )
             if res in ("novo", "atualizado"):

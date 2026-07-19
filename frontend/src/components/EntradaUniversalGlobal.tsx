@@ -43,7 +43,7 @@ export default function EntradaUniversalGlobal() {
       <button
         type="button"
         onClick={() => setOpen(true)}
-        className="fixed bottom-20 right-4 z-30 flex h-12 items-center gap-2 rounded-2xl bg-slate-950 px-3 text-sm font-semibold text-white shadow-xl shadow-slate-950/20 transition hover:-translate-y-0.5 hover:bg-slate-800 md:right-5 md:px-4"
+        className="fixed bottom-20 right-4 z-30 flex h-12 items-center gap-2 rounded-xl bg-slate-950 px-3 text-sm font-semibold text-white shadow-md transition hover:bg-slate-800 md:right-5 md:px-4"
         aria-label="Abrir Entrada Universal de Documentos"
         title="Importar PDF, Word, fotos, planilhas ou ZIP"
       >
@@ -52,8 +52,8 @@ export default function EntradaUniversalGlobal() {
       </button>
 
       {open && (
-        <div className="fixed inset-0 z-[80] flex items-start justify-center overflow-y-auto bg-slate-950/55 p-3 pt-16 backdrop-blur-sm md:p-6 md:pt-20">
-          <div className="w-full max-w-6xl rounded-[2rem] border border-white/20 bg-canvas shadow-2xl">
+        <div className="fixed inset-0 z-[80] flex items-start justify-center overflow-y-auto bg-slate-950/45 p-3 pt-16 md:p-6 md:pt-20">
+          <div className="w-full max-w-6xl rounded-xl border border-slate-200 bg-canvas shadow-float dark:border-white/10">
             <header className="flex items-start justify-between gap-4 border-b border-slate-200 px-4 py-4 dark:border-white/10 md:px-5">
               <div>
                 <div className="flex items-center gap-2 text-xs font-semibold uppercase tracking-[0.16em] text-primary-700">

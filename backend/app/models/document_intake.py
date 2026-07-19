@@ -1,7 +1,7 @@
 """Persistência da Entrada Universal de Documentos."""
 from __future__ import annotations
 
-from sqlalchemy import Column, DateTime, ForeignKey, Integer, JSON, String, func
+from sqlalchemy import BigInteger, Column, DateTime, ForeignKey, Integer, JSON, String, func
 from sqlalchemy.orm import relationship
 
 from app.core.database import Base
@@ -17,7 +17,7 @@ class DocumentIntakeBatch(Base):
     status = Column(String(24), nullable=False, default="processando", index=True)
     nivel_prontidao = Column(String(32), nullable=True, index=True)
     document_count = Column(Integer, nullable=False, default=0)
-    total_bytes = Column(Integer, nullable=False, default=0)
+    total_bytes = Column(BigInteger, nullable=False, default=0)
     resultado = Column(JSON, nullable=True)
     created_by = Column(String(36), nullable=False, index=True)
     created_at = Column(DateTime(timezone=True), server_default=func.now(), nullable=False)
@@ -47,7 +47,7 @@ class DocumentIntakeItem(Base):
     original_filename = Column(String(500), nullable=False)
     extension = Column(String(16), nullable=False)
     mimetype = Column(String(100), nullable=True)
-    size_bytes = Column(Integer, nullable=False, default=0)
+    size_bytes = Column(BigInteger, nullable=False, default=0)
     sha256 = Column(String(64), nullable=False, index=True)
     source_order = Column(Integer, nullable=False, default=0)
     duplicate_of_document_id = Column(String(36), nullable=True, index=True)

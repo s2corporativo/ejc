@@ -360,6 +360,18 @@ async def refresh(req: RefreshRequest, request: Request, response: Response,
         # legítimo, não é o sinal de furto do BCP §4.14.2 — 401 simples, sem
         # cascata de revogação e sem marcar REFRESH_REUSE na auditoria.
         if record is not None and not record.replaced_by_jti:
+            # M-S3: mesmo sem cascata, o replay pós-logout precisa de trilha —
+            # um dispositivo reapresentando token encerrado é sinal fraco de
+            # comprometimento que a forense cruza com IP/frequência. Padrão
+            # leve do REFRESH_REUSE abaixo, sem revogação em massa.
+            await criar_audit_log(
+                db, user_id, None, "REFRESH_REPLAY_POS_LOGOUT", "users", user_id,
+                detalhes=f"Refresh revogado sem rotação reapresentado (jti={jti}) "
+                         "— sessão encerrada por logout/troca de senha; negado "
+                         "sem cascata de revogação.",
+                ip=obter_ip_real(request),
+            )
+            await db.commit()
             _clear_refresh_cookie(response)
             raise HTTPException(
                 status_code=401,

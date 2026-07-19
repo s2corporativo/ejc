@@ -10,7 +10,8 @@ export function PageHeader({ className, ...props }: HTMLAttributes<HTMLElement>)
 }
 
 export function PageTitle({ className, ...props }: HTMLAttributes<HTMLHeadingElement>) {
-  return <h1 className={cn("text-2xl font-semibold tracking-tight text-slate-950", className)} {...props} />;
+  // Título de página denso (~20px/700) na cor escura da marca
+  return <h1 className={cn("text-xl font-bold tracking-tight text-primary-900", className)} {...props} />;
 }
 
 export function PageDescription({ className, ...props }: HTMLAttributes<HTMLParagraphElement>) {

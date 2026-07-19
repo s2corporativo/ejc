@@ -13,8 +13,8 @@ const variantClass: Record<ButtonVariant, string> = {
 
 const sizeClass: Record<ButtonSize, string> = {
   sm: "px-3 py-1.5 text-xs rounded-lg",
-  md: "px-4 py-2 text-sm rounded-xl",
-  lg: "px-5 py-2.5 text-base rounded-xl",
+  md: "px-4 py-2 text-[13px] rounded-lg",
+  lg: "px-5 py-2.5 text-sm rounded-lg",
 };
 
 export interface ButtonProps extends Omit<ButtonHTMLAttributes<HTMLButtonElement>, "size"> {

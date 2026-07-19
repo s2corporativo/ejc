@@ -93,25 +93,45 @@ export async function streamSSE(
   const decoder = new TextDecoder();
   let buf = "";
 
+  // Separador de frames: os streams legados (peça/bancário) emitem `\n\n`
+  // manualmente, mas o EventSourceResponse do sse-starlette (agente) termina
+  // cada linha em `\r\n` → frames fecham com `\r\n\r\n`. Aceitamos os dois.
+  const FRAME_SEP = /\r?\n\r?\n/;
+
+  const parseFrame = (part: string) => {
+    let event: string | undefined;
+    const dataLines: string[] = [];
+    for (const raw of part.split(/\r?\n/)) {
+      // Tolera `\r` residual no fim da linha (framing CRLF).
+      const line = raw.endsWith("\r") ? raw.slice(0, -1) : raw;
+      if (line.startsWith("event:")) event = line.slice(6).trim();
+      else if (line.startsWith("data:"))
+        dataLines.push(line.slice(5).replace(/^\s+/, ""));
+      // Comentários (`: keep-alive`) e linhas desconhecidas são ignorados.
+    }
+    if (!event || dataLines.length === 0) return; // pings caem aqui
+    let data: Record<string, any>;
+    try {
+      data = JSON.parse(dataLines.join("\n"));
+    } catch {
+      return;
+    }
+    onEvent({ event, data });
+  };
+
   while (true) {
     const { done, value } = await reader.read();
-    if (done) break;
+    if (done) {
+      // Frame final sem terminador: processa o resíduo do buffer em vez de
+      // descartá-lo (mesmo parse dos frames completos).
+      buf += decoder.decode();
+      for (const part of buf.split(FRAME_SEP)) parseFrame(part);
+      break;
+    }
     buf += decoder.decode(value, { stream: true });
 
-    const parts = buf.split("\n\n");
+    const parts = buf.split(FRAME_SEP);
     buf = parts.pop() ?? "";
-
-    for (const part of parts) {
-      const event = part.match(/^event:\s*(.+)$/m)?.[1]?.trim();
-      const dataLine = part.match(/^data:\s*(.+)$/ms)?.[1]?.trim();
-      if (!event || !dataLine) continue; // pings (`: keep-alive`) caem aqui
-      let data: Record<string, any> = {};
-      try {
-        data = JSON.parse(dataLine);
-      } catch {
-        continue;
-      }
-      onEvent({ event, data });
-    }
+    for (const part of parts) parseFrame(part);
   }
 }

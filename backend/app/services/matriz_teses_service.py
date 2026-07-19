@@ -104,7 +104,9 @@ SYS_QUESTOES = (
     '{"questoes": [{"questao": "<questão jurídica objetiva, 1 frase>", '
     '"prioridade": <inteiro 1-5, 1=mais crítica>}, ...],'
     ' "teses_sugeridas": [{"tese": "<tese defensável, 1-2 frases>", '
-    '"fundamento": "<dispositivos/princípios aplicáveis>"}, ...]}\n'
+    '"fundamento": "<dispositivos/princípios aplicáveis>", '
+    '"questao_ref": <índice 1-based da questão de origem na lista "questoes", '
+    "ou null se nenhuma>}, ...]}\n"
     "Baseie-se SÓ nos fatos. NÃO invente jurisprudência, súmula nem número de "
     "processo. Máximo de " + str(MAX_QUESTOES) + " questões."
 )
@@ -115,7 +117,9 @@ def _parse_questoes(txt: str) -> dict:
 
     Aceita cercas markdown, ruído em volta, lista crua de strings ou de dicts.
     Sempre devolve {"questoes": [{"questao","prioridade"}...],
-    "teses_sugeridas": [{"tese","fundamento"}...]} (listas possivelmente vazias).
+    "teses_sugeridas": [{"tese","fundamento","questao_ref"}...]} (listas
+    possivelmente vazias). `questao_ref` é o índice 1-based da questão de
+    origem — inválido/fora do intervalo vira None (nunca chuta vínculo).
     """
     out: dict = {"questoes": [], "teses_sugeridas": []}
     if not txt:
@@ -152,11 +156,19 @@ def _parse_questoes(txt: str) -> dict:
             })
     for t in (data.get("teses_sugeridas") or []):
         if isinstance(t, str) and t.strip():
-            out["teses_sugeridas"].append({"tese": t.strip(), "fundamento": None})
+            out["teses_sugeridas"].append({"tese": t.strip(), "fundamento": None,
+                                           "questao_ref": None})
         elif isinstance(t, dict) and str(t.get("tese") or "").strip():
+            try:
+                ref = int(t.get("questao_ref"))
+            except (TypeError, ValueError):
+                ref = None
+            if ref is not None and not (1 <= ref <= len(out["questoes"])):
+                ref = None      # fora do intervalo das questões parseadas
             out["teses_sugeridas"].append({
                 "tese": str(t["tese"]).strip(),
                 "fundamento": (str(t.get("fundamento") or "").strip() or None),
+                "questao_ref": ref,
             })
     return out
 
@@ -318,6 +330,40 @@ def calcular_forca(tese: ThesisCandidate | dict) -> int:
 
 # ── Montagem da matriz (orquestração) ────────────────────────────────────────
 
+def _ref_precedente(r: AuthorityRecord) -> dict:
+    return {
+        "authority_id": r.id, "tribunal": r.tribunal,
+        "processo_ref": r.processo_ref,
+        "status_verificacao": r.status_verificacao,
+        "favoravel": r.favoravel, "fonte_oficial": r.fonte_oficial,
+    }
+
+
+def _tokens_relevantes(texto: str) -> set[str]:
+    """Tokens normalizados (minúsculos, sem acento, ≥5 chars) p/ vínculo lexical."""
+    import re
+    import unicodedata
+    norm = unicodedata.normalize("NFKD", (texto or "").lower())
+    norm = norm.encode("ascii", "ignore").decode()
+    return set(re.findall(r"[a-z0-9]{5,}", norm))
+
+
+def _vincular_questao(texto: str, issues: list[LegalIssue]) -> str | None:
+    """Vínculo DETERMINÍSTICO tese↔questão por sobreposição lexical.
+
+    Escolhe a questão com mais tokens relevantes em comum com o texto da tese
+    (título + descrição + fundamento). Sem NENHUM token em comum ⇒ None — a
+    tese fica sem precedentes (nunca chuta vínculo nem anexa o pool inteiro).
+    """
+    toks = _tokens_relevantes(texto)
+    melhor_id, melhor_score = None, 0
+    for issue in issues:
+        score = len(toks & _tokens_relevantes(issue.questao))
+        if score > melhor_score:
+            melhor_id, melhor_score = issue.id, score
+    return melhor_id
+
+
 async def montar_matriz(
     db, user_id: str, case_id: str, area: str | None, fatos_sanitizados: str,
 ) -> dict:
@@ -326,9 +372,12 @@ async def montar_matriz(
     Teses candidatas vêm do Banco de Teses (models/tese.py — ativas da área) e
     das sugeridas pela MESMA chamada de IA da decomposição — TODAS nascem
     status "candidata" (HITL). Precedentes são associados POR QUESTÃO: cada
-    tese só recebe os AuthorityRecords da(s) questão(ões) a que se vincula
-    (issue_id) — tese sem questão vinculada fica com lista vazia (sem boost de
-    forca), para calcular_forca discriminar de verdade. EvidenceLinks são
+    tese recebe SÓ os AuthorityRecords da questão a que se vincula (issue_id).
+    O vínculo é: `questao_ref` devolvido pela própria decomposição (tese
+    sugerida) e, na falta dele (inclusive teses do Banco), sobreposição
+    lexical determinística (_vincular_questao). Tese sem questão vinculável
+    fica com lista vazia (sem boost de forca), para calcular_forca
+    discriminar de verdade. EvidenceLinks são
     derivados das Provas do caso (fato_probando/tese_id — determinístico).
     Grava snapshot origem "matriz_teses" via gravar_snapshot_seguro (fail-safe,
     nunca quebra o fluxo).
@@ -338,12 +387,20 @@ async def montar_matriz(
     avisos: list[str] = list(dec.get("avisos") or [])
 
     records: list[AuthorityRecord] = []
+    refs_por_questao: dict[str, list[dict]] = {}
     for issue in issues:
         try:
-            records.extend(await pesquisar_por_questao(db, case_id, issue))
+            recs = await pesquisar_por_questao(db, case_id, issue)
+            records.extend(recs)
+            refs_por_questao[issue.id] = [_ref_precedente(r) for r in recs]
         except Exception as e:  # uma questão falhar não derruba a matriz
             logger.warning("[matriz_teses] pesquisa falhou (%s): %s",
                            issue.questao[:60], str(e)[:150])
+
+    def _refs_da_tese(issue_id: str | None) -> list[dict]:
+        """Precedentes SÓ da questão vinculada — sem vínculo, lista vazia
+        (nunca anexar o pool inteiro a todas as teses)."""
+        return list(refs_por_questao.get(issue_id) or []) if issue_id else []
 
     # Banco de Teses institucional — ativas da área (soft delete respeitado).
     q_teses = select(Tese).where(Tese.status == TeseStatus.ativa,
@@ -366,15 +423,18 @@ async def montar_matriz(
     mapa_tese_banco: dict[str, ThesisCandidate] = {}
     for t in teses_banco:
         provas_t = provas_por_tese.get(t.id, [])
+        # Tese do Banco: vínculo lexical determinístico com a questão de origem;
+        # sem questão vinculável → SEM precedentes (sem boost indevido).
+        issue_id = _vincular_questao(
+            " ".join(x for x in (t.titulo, t.descricao, t.fundamentacao) if x),
+            issues)
         cand = ThesisCandidate(
-            id=str(uuid4()), case_id=case_id, issue_id=None,
+            id=str(uuid4()), case_id=case_id, issue_id=issue_id,
             tese=(t.descricao or t.titulo),
             fundamento=(t.fundamentacao or None),
             fatos_relacionados=[p.fato_probando for p in provas_t if p.fato_probando],
             provas=[p.id for p in provas_t],
-            # Tese do Banco sem questão vinculada → SEM precedentes (sem boost;
-            # nunca anexar o pool inteiro a todas as teses).
-            precedentes=[],
+            precedentes=_refs_da_tese(issue_id),
             vulnerabilidades=([t.contra_argumento] if t.contra_argumento else []),
             status="candidata", criado_por=user_id,
         )
@@ -384,11 +444,19 @@ async def montar_matriz(
         mapa_tese_banco[t.id] = cand
 
     for s in dec["teses_sugeridas"]:
+        # Tese sugerida: a própria decomposição indica a questão de origem
+        # (questao_ref 1-based, já validado no parse); fallback lexical.
+        ref = s.get("questao_ref")
+        issue_id = (issues[ref - 1].id
+                    if isinstance(ref, int) and 1 <= ref <= len(issues) else None)
+        if issue_id is None:
+            issue_id = _vincular_questao(
+                " ".join(x for x in (s["tese"], s.get("fundamento")) if x), issues)
         cand = ThesisCandidate(
-            id=str(uuid4()), case_id=case_id, issue_id=None,
+            id=str(uuid4()), case_id=case_id, issue_id=issue_id,
             tese=s["tese"], fundamento=s.get("fundamento"),
             fatos_relacionados=[], provas=[],
-            precedentes=[], vulnerabilidades=[],
+            precedentes=_refs_da_tese(issue_id), vulnerabilidades=[],
             status="candidata", criado_por=user_id,
         )
         cand.forca = calcular_forca(cand)
