@@ -182,6 +182,7 @@ from app.routers import webhooks
 from app.routers import whatsapp
 from app.routers import wiki
 from app.routers import workflow
+from app.integrations import routers as integracoes
 
 
 # Ativa a arquitetura orientada a eventos (P1): importar registra os @on subscribers.
@@ -424,6 +425,11 @@ app.include_router(webhooks.router, prefix=API)
 app.include_router(whatsapp.router, prefix=API)
 app.include_router(wiki.router, prefix=API)
 app.include_router(workflow.router, prefix=API)
+# Integrações externas públicas (app/integrations/) — Conecta gov.br fica de
+# fora até existirem credenciais reais (credenciamento institucional pendente).
+app.include_router(integracoes.datajud_router, prefix=API)
+app.include_router(integracoes.djen_router, prefix=API)
+app.include_router(integracoes.brasilapi_router, prefix=API)
 
 
 
