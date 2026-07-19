@@ -545,3 +545,31 @@
     -webkit-print-color-adjust: exact;
   }
 }
+
+/* ── Modo privacidade (reuniões/compartilhamento de tela) ────────────────────
+   Ativado pelo botão de olho no header (Layout.tsx), que aplica a classe
+   `ejc-privacy-mode` no <html>. Borra apenas o conteúdo principal — header e
+   sidebar continuam utilizáveis para desligar o modo. */
+.ejc-privacy-mode main.ejc-modern-scope {
+  filter: blur(10px);
+  pointer-events: none;
+  user-select: none;
+}
+
+/* O aviso vive no <body> (fora da subárvore com filter) — um ::after dentro
+   do elemento borrado herdaria o blur do ancestral, sem como desfazê-lo. */
+.ejc-privacy-mode body::after {
+  content: "Conteúdo ocultado pelo modo privacidade";
+  position: fixed;
+  inset: 50% auto auto 50%;
+  z-index: 80;
+  transform: translate(-50%, -50%);
+  padding: 0.9rem 1.1rem;
+  border: 1px solid rgba(184, 137, 39, 0.35);
+  border-radius: 14px;
+  color: #111827;
+  background: rgba(255, 255, 255, 0.96);
+  box-shadow: 0 16px 40px rgba(15, 23, 42, 0.18);
+  font-size: 0.82rem;
+  font-weight: 700;
+}

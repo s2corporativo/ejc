@@ -12,6 +12,8 @@ import {
   ChevronDown,
   ChevronLeft,
   ChevronRight,
+  Eye,
+  EyeOff,
   LogOut,
   Menu,
   Monitor,
@@ -78,6 +80,19 @@ export default function Layout() {
   );
   const [notifCount, setNotifCount] = useState(0);
   const [notifOpen, setNotifOpen] = useState(false);
+  // Modo privacidade (reuniões/compartilhamento de tela): borra o conteúdo
+  // principal sem sair da sessão. Persistido para sobreviver a refresh, mas
+  // NUNCA nasce ligado sem escolha explícita do usuário.
+  const [privacyMode, setPrivacyMode] = useState(
+    () => localStorage.getItem("ejc_privacy_mode") === "true",
+  );
+  useEffect(() => {
+    document.documentElement.classList.toggle("ejc-privacy-mode", privacyMode);
+    localStorage.setItem("ejc_privacy_mode", String(privacyMode));
+    return () => {
+      document.documentElement.classList.remove("ejc-privacy-mode");
+    };
+  }, [privacyMode]);
   const [notifs, setNotifs] = useState<any[]>([]);
   const [menuOpen, setMenuOpen] = useState(false);
   // Atalho "Novo caso" do cabeçalho: menu com os dois modos de abertura
@@ -333,6 +348,30 @@ export default function Layout() {
           )}
 
           <HelpButton moduleKey={moduleKey} />
+
+          <button
+            type="button"
+            onClick={() => setPrivacyMode((value) => !value)}
+            title={
+              privacyMode
+                ? "Modo privacidade ativo — clique para exibir o conteúdo"
+                : "Ativar modo privacidade (borra o conteúdo para reuniões/compartilhamento de tela)"
+            }
+            className={cn(
+              "icon-btn hidden sm:flex",
+              privacyMode && "bg-ouro-palha/70 text-ouro-profundo",
+            )}
+            aria-pressed={privacyMode}
+            aria-label={
+              privacyMode ? "Desativar modo privacidade" : "Ativar modo privacidade"
+            }
+          >
+            {privacyMode ? (
+              <EyeOff className="h-4 w-4" />
+            ) : (
+              <Eye className="h-4 w-4" />
+            )}
+          </button>
 
           <button
             type="button"
