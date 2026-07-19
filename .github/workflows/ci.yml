@@ -91,6 +91,11 @@ jobs:
           python -m pip install --upgrade pip
           python -m pip install -r requirements.txt
 
+      - name: Gate de compatibilidade dos modelos RAG (sem download de pesos)
+        run: |
+          python -c "from app.services.embedding_service import validar_modelo_local; ok,msg=validar_modelo_local(); print(msg); raise SystemExit(0 if ok else 1)"
+          python -c "from app.core.config import get_settings; from fastembed.rerank.cross_encoder import TextCrossEncoder; s=get_settings(); nomes={m['model'] for m in TextCrossEncoder.list_supported_models()}; assert s.RAG_RERANK_MODEL in nomes, s.RAG_RERANK_MODEL; print(s.RAG_RERANK_MODEL)"
+
       - name: Criar extensões (vector, pg_trgm, pgcrypto)
         run: |
           PGPASSWORD=ejc_pass psql -h localhost -U ejc_user -d ejc_db \
@@ -125,14 +130,12 @@ jobs:
 
   # Eval SMOKE (auditoria IA — P2): valida o formato dos gold sets e roda as
   # métricas determinísticas 100% OFFLINE (sem banco e sem chamada de LLM
-  # externa). NÃO BLOQUEANTE (continue-on-error no job) enquanto o gold set
-  # real (50-150 casos curados pelo escritório) não existir — quando existir,
-  # remova o continue-on-error e adicione pisos (--min-recall etc.).
+  # externa). O smoke é BLOQUEANTE: formato inválido ou violação HITL não pode
+  # chegar à main. Pisos de qualidade do gold set real seguem no roadmap.
   eval-smoke:
-    name: Eval — smoke dos gold sets (offline, não bloqueante)
+    name: Eval — smoke dos gold sets (offline, bloqueante)
     runs-on: [self-hosted, ejc-vps]
     timeout-minutes: 15
-    continue-on-error: true
     defaults:
       run:
         working-directory: backend

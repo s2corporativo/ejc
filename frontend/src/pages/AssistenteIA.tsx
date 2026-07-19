@@ -2,6 +2,8 @@ import { useState } from "react";
 import Markdown from "../components/Markdown";
 import api from "../lib/api";
 import { PageHeader, Spinner } from "../components/UI";
+import { mensagemErroIA, ROTULO_IA_NAO_ATIVADA } from "../lib/iaErro";
+import { MENSAGEM_IA_NAO_ATIVADA, useIaStatus } from "../lib/iaStatus";
 
 type Tool = "pesquisa" | "resumir" | "traduzir" | "minuta" | "especialista";
 const TOOLS: { key: Tool; label: string; icon: string; desc: string }[] = [
@@ -45,6 +47,7 @@ const PERFIS = [
 ];
 
 export default function AssistenteIA() {
+  const { disponivel: iaDisponivel, mensagem: iaMensagem } = useIaStatus();
   const [tool, setTool] = useState<Tool>("pesquisa");
   const [perfil, setPerfil] = useState("juridica");
   const [texto, setTexto] = useState("");
@@ -87,10 +90,7 @@ export default function AssistenteIA() {
         }));
       setRes(data);
     } catch (e: any) {
-      setErro(
-        e.response?.data?.detail ||
-          "Falha na IA. A IA pode estar desabilitada (.env).",
-      );
+      setErro(mensagemErroIA(e));
     } finally {
       setLoading(false);
     }
@@ -108,6 +108,12 @@ export default function AssistenteIA() {
         title="Assistente IA"
         subtitle="Pesquisa, resumo, tradução e minutas — sempre como rascunho (revisão humana / OAB)"
       />
+
+      {!iaDisponivel && (
+        <div className="mb-4 rounded-lg border border-warn-200 bg-warn-50 px-4 py-3 text-sm text-warn-800">
+          {iaMensagem || MENSAGEM_IA_NAO_ATIVADA}
+        </div>
+      )}
 
       <div className="flex flex-wrap gap-2 mb-5">
         {TOOLS.map((x) => (
@@ -198,10 +204,15 @@ export default function AssistenteIA() {
           )}
           <button
             onClick={executar}
-            disabled={loading || !podeEnviar}
+            disabled={loading || !podeEnviar || !iaDisponivel}
+            title={iaDisponivel ? undefined : ROTULO_IA_NAO_ATIVADA}
             className="btn-primary mt-3"
           >
-            {loading ? "Processando…" : `${t.icon} Executar`}
+            {!iaDisponivel
+              ? "IA não ativada"
+              : loading
+                ? "Processando…"
+                : `${t.icon} Executar`}
           </button>
         </div>
 

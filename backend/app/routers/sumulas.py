@@ -63,7 +63,10 @@ async def buscar_sumulas(
     cu: User         = Depends(get_current_user),
 ):
     """Busca súmulas/jurisprudência no banco de teses por texto, área ou tribunal."""
-    conditions = ["tipo = 'jurisprudencia'", "deleted_at IS NULL"]
+    # Busca operacional retorna apenas verbetes ativos. Canceladas, superadas
+    # ou em revisão permanecem consultáveis na governança, não neste endpoint
+    # usado para fundamentação/pesquisa corrente.
+    conditions = ["tipo = 'jurisprudencia'", "status = 'ativa'", "deleted_at IS NULL"]
     params: dict = {"limit": limit}
 
     if q:

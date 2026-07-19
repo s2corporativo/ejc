@@ -10,7 +10,7 @@ RUN_DB_TESTS=1 (setado no job de CI `db-validation`); caso contrário, pula — 
 tenta conectar em ambiente sem banco (nem em produção).
 
 Determinístico: usa o caminho TEXTUAL (ILIKE) do buscar_contexto_rag — com
-embeddings desligados (padrão) — então dois docs com o mesmo termo mas client_id
+embeddings desligados pela fixture — então dois docs com o mesmo termo mas client_id
 diferentes são diferenciados APENAS pelo filtro de escopo. Sem tuning de
 similaridade semântica.
 """
@@ -31,13 +31,15 @@ _TERMO = "usucapiaoextraordinariavintenaria"  # termo distintivo, casa ILIKE nos
 
 
 @pytest.fixture(autouse=True)
-async def _dispose_engine_apos_teste():
+async def _dispose_engine_apos_teste(monkeypatch):
     """pytest-asyncio (asyncio_mode=auto) cria um event loop novo POR FUNÇÃO de
     teste, mas app.core.database.engine é um singleton global cujo pool guarda
     conexões asyncpg presas ao loop em que foram abertas. Sem dispose explícito
     NESTE loop, o teste seguinte roda noutro loop e o garbage collector tenta
     fechar as conexões do teste anterior no loop errado — "Event loop is closed".
     Descartar o pool aqui, ainda dentro do loop que o usou, evita o problema."""
+    from app.services import embedding_service
+    monkeypatch.setattr(embedding_service, "disponivel", lambda: False)
     yield
     from app.core.database import engine
     await engine.dispose()
@@ -46,8 +48,10 @@ async def _dispose_engine_apos_teste():
 async def _inserir_precedente(db, doc_id, client_id, titulo):
     await db.execute(
         text(
-            "INSERT INTO knowledge_docs (id, titulo, categoria, client_id, status_indexacao) "
-            "VALUES (:id, :tit, 'precedente_interno', :cli, 'indexado')"
+            "INSERT INTO knowledge_docs "
+            "(id, titulo, categoria, client_id, status_indexacao, extra) "
+            "VALUES (:id, :tit, 'precedente_interno', :cli, 'indexado', "
+            "'{\"rag_status\":\"aprovado\"}'::jsonb)"
         ),
         {"id": doc_id, "tit": titulo, "cli": client_id},
     )
@@ -124,8 +128,12 @@ async def test_conteudo_publico_sempre_visivel_rowlevel():
     async with AsyncSessionLocal() as db:
         await db.execute(
             text(
-                "INSERT INTO knowledge_docs (id, titulo, categoria, status_indexacao) "
-                "VALUES (:id, 'SUMULA_PUBLICA_TESTE', 'sumula_stj', 'indexado')"
+                "INSERT INTO knowledge_docs "
+                "(id, titulo, categoria, status_indexacao, extra) "
+                "VALUES (:id, 'SUMULA_PUBLICA_TESTE', 'sumula_stj', 'indexado', "
+                # `\:` — escapa o ":" para o text() do SQLAlchemy não ler
+                # ":true" como bind param dentro do literal JSON.
+                "'{\"rag_status\":\"aprovado\",\"conferido\"\\:true}'::jsonb)"
             ),
             {"id": doc_pub},
         )

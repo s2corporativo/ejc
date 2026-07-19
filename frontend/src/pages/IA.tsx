@@ -11,6 +11,8 @@ import {
   StatusBadge,
 } from "../components/UI";
 import { asList } from "../lib/list";
+import { mensagemErroIA, ROTULO_IA_NAO_ATIVADA } from "../lib/iaErro";
+import { MENSAGEM_IA_NAO_ATIVADA, useIaStatus } from "../lib/iaStatus";
 
 const AREAS = [
   "civil",
@@ -27,6 +29,7 @@ const AREAS = [
 type Tab = "analise" | "resumo" | "validacao" | "logs";
 
 export default function IA() {
+  const { disponivel: iaDisponivel, mensagem: iaMensagem } = useIaStatus();
   const [tab, setTab] = useState<Tab>("analise");
   const [fatos, setFatos] = useState("");
   const [area, setArea] = useState("civil");
@@ -103,7 +106,7 @@ export default function IA() {
       });
       setResp(data);
     } catch (e: any) {
-      setResp({ erro: e.response?.data?.detail || "Falha" });
+      setResp({ erro: mensagemErroIA(e) });
     } finally {
       setLoading(false);
     }
@@ -119,7 +122,7 @@ export default function IA() {
       });
       setResp(data);
     } catch (e: any) {
-      setResp({ erro: e.response?.data?.detail || "Falha" });
+      setResp({ erro: mensagemErroIA(e) });
     } finally {
       setLoading(false);
     }
@@ -144,7 +147,7 @@ export default function IA() {
       });
       setResp(data);
     } catch (e: any) {
-      setResp({ erro: e.response?.data?.detail || "Falha" });
+      setResp({ erro: mensagemErroIA(e) });
     } finally {
       setLoading(false);
     }
@@ -161,15 +164,21 @@ export default function IA() {
     { k: "analise", label: "Análise de caso", icon: Sparkles },
     { k: "resumo", label: "Resumo", icon: FileText },
     { k: "validacao", label: "Validação jurídica", icon: ShieldCheck },
-    { k: "logs", label: "Histórico / HITL", icon: History },
+    { k: "logs", label: "Histórico / Revisões", icon: History },
   ] as const;
 
   return (
     <div>
       <PageHeader
         title="IA Jurídica"
-        subtitle="RAG semântico · dados sanitizados · rascunhos com revisão humana obrigatória"
+        subtitle="Busca na base de conhecimento · dados sanitizados · rascunhos com revisão humana obrigatória"
       />
+
+      {!iaDisponivel && (
+        <div className="mb-4 rounded-lg border border-warn-200 bg-warn-50 px-4 py-3 text-sm text-warn-800">
+          {iaMensagem || MENSAGEM_IA_NAO_ATIVADA}
+        </div>
+      )}
 
       <div className="flex flex-wrap gap-2 mb-5">
         {tabs.map(({ k, label, icon: Icon }) => (
@@ -263,10 +272,16 @@ export default function IA() {
           </div>
           <button
             className="btn-gold"
-            disabled={loading || fatos.length < 30}
+            disabled={loading || fatos.length < 30 || !iaDisponivel}
+            title={iaDisponivel ? undefined : ROTULO_IA_NAO_ATIVADA}
             onClick={analisar}
           >
-            <Sparkles size={15} /> {loading ? "Analisando..." : "Sugerir teses"}
+            <Sparkles size={15} />{" "}
+            {!iaDisponivel
+              ? "IA não ativada"
+              : loading
+                ? "Analisando..."
+                : "Sugerir teses"}
           </button>
         </div>
       )}
@@ -283,10 +298,16 @@ export default function IA() {
           </div>
           <button
             className="btn-gold"
-            disabled={loading || docTexto.length < 50}
+            disabled={loading || docTexto.length < 50 || !iaDisponivel}
+            title={iaDisponivel ? undefined : ROTULO_IA_NAO_ATIVADA}
             onClick={resumir}
           >
-            <FileText size={15} /> {loading ? "Resumindo..." : "Resumir"}
+            <FileText size={15} />{" "}
+            {!iaDisponivel
+              ? "IA não ativada"
+              : loading
+                ? "Resumindo..."
+                : "Resumir"}
           </button>
         </div>
       )}
@@ -373,11 +394,16 @@ export default function IA() {
           </div>
           <button
             className="btn-gold"
-            disabled={loading || rascunhoValidacao.length < 100}
+            disabled={loading || rascunhoValidacao.length < 100 || !iaDisponivel}
+            title={iaDisponivel ? undefined : ROTULO_IA_NAO_ATIVADA}
             onClick={validarRascunho}
           >
             <ShieldCheck size={15} />{" "}
-            {loading ? "Validando..." : "Validar antes de finalizar"}
+            {!iaDisponivel
+              ? "IA não ativada"
+              : loading
+                ? "Validando..."
+                : "Validar antes de finalizar"}
           </button>
         </div>
       )}

@@ -76,13 +76,22 @@ async def _carregar_user(db, uid: str):
 
 
 async def _limpar(db, *, case_ids=(), user_ids=(), client_ids=()):
+    # audit_logs referencia users (FK audit_logs_user_id_fkey) — endpoints como
+    # checar_conflito/criar-acesso gravam auditoria; limpar ANTES dos users,
+    # senão o DELETE viola a FK, aborta a transação e nada é limpo (órfãos que
+    # contaminam outros testes, ex.: test_search_dblevel).
     for cid in case_ids:
         await db.execute(text("DELETE FROM cases WHERE id = :id"), {"id": cid})
     for cid in client_ids:
         await db.execute(text("DELETE FROM cases WHERE client_id = :id"), {"id": cid})
+        await db.execute(
+            text("DELETE FROM audit_logs WHERE user_id IN "
+                 "(SELECT id FROM users WHERE client_id = :id)"),
+            {"id": cid})
         await db.execute(text("DELETE FROM users WHERE client_id = :id"), {"id": cid})
         await db.execute(text("DELETE FROM clients WHERE id = :id"), {"id": cid})
     for uid in user_ids:
+        await db.execute(text("DELETE FROM audit_logs WHERE user_id = :id"), {"id": uid})
         await db.execute(text("DELETE FROM users WHERE id = :id"), {"id": uid})
     await db.commit()
 
@@ -199,7 +208,9 @@ async def test_conflito_ainda_cruza_base_de_outra_carteira():
     from app.schemas.client import ConflitoCheckRequest
 
     tok = f"Cnf{uuid4().hex[:6]}"
-    cpf = "39053344705"
+    # CPF válido e ÚNICO no repo (não compartilhar com test_search_dblevel, que
+    # usa 39053344705 — um cliente órfão aqui contaminaria a busca de lá).
+    cpf = "11144477735"
     async with AsyncSessionLocal() as db:
         dono = await _criar_user(db, "advogado")
         outro = await _criar_user(db, "advogado")
@@ -232,8 +243,10 @@ async def test_criar_acesso_portal_rejeita_senha_fraca():
         try:
             u_socio = await _carregar_user(db, socio)
             # >= 8 (passa no Field), mas fraca p/ validar_forca_senha → 400.
+            # .local é TLD reservado — EmailStr (email-validator>=2.3) rejeita;
+            # usar domínio de documentação (.example).
             payload = CriarAcessoReq(
-                email=f"portal-{tok}@teste.local", senha_inicial="fraca123")
+                email=f"portal-{tok}@teste.example", senha_inicial="fraca123")
             with pytest.raises(HTTPException) as exc:
                 await criar_acesso_portal(cli, payload, db, u_socio)
             assert exc.value.status_code == 400
@@ -255,7 +268,7 @@ async def test_criar_acesso_portal_aceita_senha_forte():
         try:
             u_socio = await _carregar_user(db, socio)
             payload = CriarAcessoReq(
-                email=f"portal-{tok}@teste.local", senha_inicial="F0rte!Portal2026")
+                email=f"portal-{tok}@teste.example", senha_inicial="F0rte!Portal2026")
             r = await criar_acesso_portal(cli, payload, db, u_socio)
             novo_user_id = r["user_id"]
             criado = (await db.execute(
@@ -265,6 +278,8 @@ async def test_criar_acesso_portal_aceita_senha_forte():
             assert criado.client_id == cli
         finally:
             if novo_user_id:
+                await db.execute(text("DELETE FROM audit_logs WHERE user_id = :id"),
+                                 {"id": novo_user_id})
                 await db.execute(text("DELETE FROM users WHERE id = :id"),
                                  {"id": novo_user_id})
                 await db.commit()

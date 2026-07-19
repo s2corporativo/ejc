@@ -9,6 +9,9 @@ import {
 import { ToastContainer } from "./components/Toast";
 import { Spinner } from "./components/UI";
 import ErrorBoundary from "./components/ErrorBoundary";
+import EntradaUniversalGlobal from "./components/EntradaUniversalGlobal";
+import FlowEnhancements from "./components/FlowEnhancements";
+import LegacyClientListAdapter from "./components/LegacyClientListAdapter";
 import Layout from "./components/Layout";
 import PortalLayout from "./components/PortalLayout";
 import {
@@ -101,14 +104,26 @@ export default function App() {
               element={
                 <Protected>
                   <StaffOnly>
-                    <Layout />
+                    <>
+                      <Layout />
+                      <EntradaUniversalGlobal />
+                      <FlowEnhancements />
+                    </>
                   </StaffOnly>
                 </Protected>
               }
             >
               {STAFF_ROUTES.map((module) => {
                 const Component = module.component;
-                const content = <Component />;
+                const moduleContent = <Component />;
+                const content =
+                  module.key === "clientes" ? (
+                    <LegacyClientListAdapter>
+                      {moduleContent}
+                    </LegacyClientListAdapter>
+                  ) : (
+                    moduleContent
+                  );
                 return (
                   <Route
                     key={module.key}

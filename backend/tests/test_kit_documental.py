@@ -126,8 +126,11 @@ def test_tipo_poderes_invalido_rejeitado():
 async def test_kit_completo_gera_tres_rascunhos_procuracao_e_auditoria():
     from app.routers.kit_documental import gerar_kit_documental
 
-    # execute #1: caso (verificar_acesso_caso); execute #2: itens OAB vigentes
-    db = _FakeDB([_case(), [_item_oab()]], gets={("Client", "cli1"): _cli()})
+    # execute #1: caso (verificar_acesso_caso); execute #2: kit já existente
+    # (dedup idempotente — [] = não existe); execute #3: itens OAB vigentes;
+    # execute #4: proposta de honorários aprovada vigente (FASE 4 — None = sem
+    # proposta, contrato mantém placeholders)
+    db = _FakeDB([_case(), [], [_item_oab()], None], gets={("Client", "cli1"): _cli()})
     out = await gerar_kit_documental(case_id="case1", payload=None,
                                      db=db, cu=_user(UserRole.advogado))
 
@@ -174,7 +177,8 @@ async def test_kit_completo_gera_tres_rascunhos_procuracao_e_auditoria():
 async def test_kit_sem_item_oab_aplicavel_fica_a_definir():
     from app.routers.kit_documental import gerar_kit_documental
 
-    db = _FakeDB([_case(area="transito"), []], gets={("Client", "cli1"): _cli()})
+    db = _FakeDB([_case(area="transito"), [], [], None],
+                 gets={("Client", "cli1"): _cli()})
     out = await gerar_kit_documental(case_id="case1", payload=None,
                                      db=db, cu=_user(UserRole.socio))
 
@@ -189,7 +193,7 @@ async def test_kit_sem_item_oab_aplicavel_fica_a_definir():
 async def test_poderes_especiais_art_105_so_quando_marcados():
     from app.routers.kit_documental import KitDocumentalIn, gerar_kit_documental
 
-    db = _FakeDB([_case(), []], gets={("Client", "cli1"): _cli()})
+    db = _FakeDB([_case(), [], [], None], gets={("Client", "cli1"): _cli()})
     out = await gerar_kit_documental(
         case_id="case1",
         payload=KitDocumentalIn(tipo_poderes="ad_judicia_et_extra",
@@ -203,6 +207,75 @@ async def test_poderes_especiais_art_105_so_quando_marcados():
     assert [o for o in db.added if isinstance(o, Procuracao)] == []
     assert out["procuracao"]["tipo_poderes"] == "ad_judicia_et_extra"
     assert out["procuracao"]["permite_substabelecimento"] is False
+
+
+# ── Idempotência (follow-up PR #283) ─────────────────────────────────────────
+
+def _kit_existente(case) -> list[LegalDoc]:
+    """Os 3 rascunhos do kit com os MESMOS títulos que o service gera."""
+    from app.services.document_format import padronizar_documento_juridico as pdj
+
+    def _d(did, prefixo, tipo):
+        return LegalDoc(id=did, titulo=pdj(prefixo + case.titulo)[:200],
+                        tipo_peca=tipo, status=PecaStatus.rascunho,
+                        conteudo=f"conteudo {did}", case_id=case.id,
+                        created_by="u0", human_reviewed=False, deleted_at=None)
+
+    return [
+        _d("d-proc", "Procuracao - ", PecaTipo.procuracao),
+        _d("d-cont", "Contrato de Honorarios - ", PecaTipo.contrato),
+        _d("d-chk", "Checklist Documental Inicial - ", PecaTipo.outro),
+    ]
+
+
+async def test_kit_ja_existente_nao_duplica_e_devolve_ja_existia():
+    from app.routers.kit_documental import gerar_kit_documental
+
+    case = _case()
+    # execute #1: caso; execute #2: dedup encontra os 3 rascunhos do kit
+    db = _FakeDB([case, _kit_existente(case)], gets={("Client", "cli1"): _cli()})
+    out = await gerar_kit_documental(case_id="case1", payload=None,
+                                     db=db, cu=_user(UserRole.advogado))
+
+    assert out["ja_existia"] is True
+    assert out["status"] == "rascunho"
+    assert out["procuracao"]["legal_doc_id"] == "d-proc"
+    assert out["contrato"]["legal_doc_id"] == "d-cont"
+    assert out["checklist"]["legal_doc_id"] == "d-chk"
+    assert "forcar_novo" in out["aviso"]
+    # NADA criado, auditado ou commitado — dedup é somente leitura
+    assert db.added == [] and db.commits == 0
+
+
+async def test_kit_parcial_nao_conta_como_existente():
+    from app.routers.kit_documental import gerar_kit_documental
+
+    case = _case()
+    # Só 2 dos 3 rascunhos existem → gera kit novo (fluxo normal completo)
+    db = _FakeDB([case, _kit_existente(case)[:2], [_item_oab()], None],
+                 gets={("Client", "cli1"): _cli()})
+    out = await gerar_kit_documental(case_id="case1", payload=None,
+                                     db=db, cu=_user(UserRole.advogado))
+    assert out["ja_existia"] is False
+    assert len([o for o in db.added if isinstance(o, LegalDoc)]) == 3
+    assert db.commits == 1
+
+
+async def test_forcar_novo_regenera_sem_consultar_dedup():
+    from app.routers.kit_documental import KitDocumentalIn, gerar_kit_documental
+
+    # Com forcar_novo=True a consulta de dedup NEM roda: fila volta a ser
+    # caso → itens OAB → proposta (contrato de resposta do fluxo normal).
+    db = _FakeDB([_case(), [_item_oab()], None], gets={("Client", "cli1"): _cli()})
+    out = await gerar_kit_documental(
+        case_id="case1", payload=KitDocumentalIn(forcar_novo=True),
+        db=db, cu=_user(UserRole.advogado))
+    assert out["ja_existia"] is False
+    docs = [o for o in db.added if isinstance(o, LegalDoc)]
+    assert len(docs) == 3
+    assert all(d.human_reviewed is False for d in docs)   # HITL intacto
+    audits = [o for o in db.added if isinstance(o, AuditLog)]
+    assert any(a.acao == "KIT_DOCUMENTAL" for a in audits)  # auditoria intacta
 
 
 async def test_cliente_inexistente_404():
@@ -219,3 +292,25 @@ def test_alias_civil_cobre_grafia_civel_do_seed():
     from app.services.geracao_documental import _aliases_area
     assert _aliases_area("civil") == ["civil", "civel"]
     assert _aliases_area("familia") == ["familia"]
+
+
+# ── Paridade de gates do endpoint legado /cases/{id}/gerar-documentos ────────
+# (auditoria item 5): mesmo gate advogado+ e mesmo rate limit "kit-documental"
+# do kit — sem isso qualquer autenticado geraria procuração com poderes
+# especiais pela rota legada.
+
+def test_gerar_documentos_endpoint_reusa_gate_advogado_do_kit():
+    import inspect
+    from app.routers import cases as cases_router
+    from app.routers.kit_documental import _req_advogado
+
+    sig = inspect.signature(cases_router.gerar_documentos)
+    dep = sig.parameters["cu"].default
+    assert getattr(dep, "dependency", None) is _req_advogado
+
+
+def test_gerar_documentos_endpoint_tem_rate_limit_na_rota():
+    from app.main import app
+    rotas = [r for r in app.routes
+             if getattr(r, "path", "").endswith("/cases/{case_id}/gerar-documentos")]
+    assert rotas and rotas[0].dependencies   # Depends(rate_limit("kit-documental", 5))

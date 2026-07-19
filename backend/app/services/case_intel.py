@@ -18,12 +18,16 @@ from sqlalchemy import text
 
 from app.core.config import get_settings
 from app.core.database import AsyncSessionLocal
+from app.core.taxonomia import (
+    AREAS_TRIAGEM, SENTINELA_OUTRO, areas_para_prompt, normalizar_area,
+)
 from app.models.case import Case, CaseMovimento
 from app.models.client import Client
 from app.models.legal_doc import LegalDoc
 from app.models.ai_log import AILog, AITipoUso, AIStatusHITL
 from app.services.ai_gateway import chat as gw_chat, GatewayResponse
 from app.services.ingestion_service import upsert_documento
+from app.services.legal_base import BASE_ESTRUTURADA
 from app.services.sanitizer import sanitizar_pii
 
 logger = logging.getLogger("ejc.case_intel")
@@ -33,8 +37,11 @@ SYS_TRIAGEM = (
     "Você é um advogado sênior fazendo a TRIAGEM inicial de um caso a partir dos "
     "fatos relatados. Responda APENAS um objeto JSON válido (sem texto fora do JSON, "
     "sem markdown), com exatamente estas chaves:\n"
-    '{"area": "<trabalhista|civel|empresarial|administrativo|tributario|'
-    'previdenciario|consumidor|familia|sucessoes|penal|ambiental|bancario|outro>",'
+    # Vocabulário de área DERIVADO da fonte única (taxonomia.AREAS_TRIAGEM,
+    # slugs canônicos de CaseArea) + sentinela "outro". As grafias antigas do
+    # prompt ("civel", "penal") seguem aceitas no parse via normalizar_area.
+    '{"area": "<' + areas_para_prompt(AREAS_TRIAGEM, separador="|")
+    + f'|{SENTINELA_OUTRO}>",'
     ' "assunto": "<tema jurídico em poucas palavras>",'
     ' "tese_principal": "<a tese central a sustentar, 1-3 frases>",'
     ' "teses_secundarias": ["<tese alternativa>", "..."],'
@@ -137,7 +144,12 @@ async def triagem_caso(case_id: str) -> None:
             chance = data.get("chance_exito")
             complex_ = (data.get("complexidade") or "").strip()
             assunto = (data.get("assunto") or "").strip()
-            area_sug = (data.get("area") or "").strip()
+            # Normaliza para o canônico (aceita valores legados "civel"/"penal");
+            # sem correspondência segura, preserva o texto bruto para o revisor
+            # (só em texto informativo — o payload do snapshot é SEMPRE canônico).
+            area_bruta = (data.get("area") or "").strip()
+            area_canonica = normalizar_area(area_bruta)
+            area_sug = area_canonica or area_bruta
 
             marca = "  ⟦rascunho IA — revisar (OAB)⟧"
             if tese and not (case.tese_principal or "").strip():
@@ -159,14 +171,61 @@ async def triagem_caso(case_id: str) -> None:
                 id=str(uuid4()), case_id=case.id, tipo="ia",
                 descricao=resumo_mov, created_by=None,
             ))
+            ai_log_id = str(uuid4())
             db.add(AILog(
-                id=str(uuid4()), user_id=case.advogado_responsavel_id, case_id=case.id,
+                id=ai_log_id, user_id=case.advogado_responsavel_id, case_id=case.id,
                 tipo_uso=AITipoUso.analise_caso, modelo=_modelo_log(resp),
                 prompt_sanitizado=texto_limpo[:8000], pii_removida=houve_pii,
                 resposta=bruto[:8000], status_hitl=AIStatusHITL.gerado,
             ))
             await db.commit()
             logger.info(f"[case_intel] Triagem concluída para caso {case_id}")
+
+            # ── FASE 1 (Orquestrador Jurídico) — snapshot versionado da triagem.
+            # ADITIVO e FAIL-SAFE: roda APÓS o commit da triagem; qualquer falha
+            # aqui vira warning e NUNCA quebra o fluxo original.
+            try:
+                from app.services import case_intelligence_service as cis
+                # Contrato do model: payload["area"] é SEMPRE canônico — texto
+                # fora da taxonomia vira SENTINELA_OUTRO com o bruto preservado
+                # em payload["area_bruta"] para o revisor humano.
+                _area_payload = area_canonica
+                _area_payload_bruta = None
+                if _area_payload is None and area_bruta:
+                    _area_payload = SENTINELA_OUTRO
+                    _area_payload_bruta = area_bruta
+                elif _area_payload is None:
+                    _area_payload = normalizar_area(area_atual)
+                    if _area_payload is None and area_atual:
+                        _area_payload = SENTINELA_OUTRO
+                        _area_payload_bruta = area_atual
+                await cis.gravar_snapshot_seguro(
+                    db,
+                    case_id=case.id,
+                    origem="triagem",
+                    payload={
+                        "area": _area_payload,
+                        **({"area_bruta": _area_payload_bruta}
+                           if _area_payload_bruta else {}),
+                        "assunto": assunto or None,
+                        "teses": {"principal": tese or None, "secundarias": sec},
+                        "riscos": {
+                            "pontos_fracos": fracos or None,
+                            "chance_exito": chance,
+                            "complexidade": complex_ or None,
+                        },
+                        "provas": provas,
+                        "pontos_fortes": fortes or None,
+                        "oportunidades": opp or None,
+                        "fontes": ["ia_triagem"],
+                    },
+                    resumo=resumo_mov[:500],
+                    ai_log_ids=[ai_log_id],
+                    criado_por=None,  # automático (HITL: nunca nasce aprovado)
+                )
+            except Exception as e:
+                logger.warning(
+                    f"[case_intel] Snapshot de triagem não gravado ({case_id}): {str(e)[:200]}")
     except Exception as e:
         logger.warning(f"[case_intel] Falha na triagem do caso {case_id}: {str(e)[:200]}")
 
@@ -354,11 +413,18 @@ async def indexar_peca_rag(legal_doc_id: str) -> None:
                 "human_reviewed": bool(getattr(d, "human_reviewed", False)),
                 "fonte_tipo": "producao_interna",
             }
+            meta["rag_status"] = (
+                "aprovado" if meta["human_reviewed"] else "pendente"
+            )
             # Módulo 6 — classificação automática (best effort).
             if settings.AI_ENABLED:
                 try:
+                    # Fluxo JSON ("analise_juridica" fica fora da base por
+                    # design): PREPENDE BASE_ESTRUTURADA no system — padrão
+                    # peca_service/ia_extra sugestao-honorarios (MAPA Passo 3).
                     bruto, _resp = await _gateway_json(
-                        SYS_CLASSIFICAR, limpo[:6000], task_type="analise_juridica",
+                        BASE_ESTRUTURADA + "\n\n" + SYS_CLASSIFICAR,
+                        limpo[:6000], task_type="analise_juridica",
                         temperature=0.05, max_tokens=600, nivel="alto",
                     )
                     cls = _parse_json(bruto)

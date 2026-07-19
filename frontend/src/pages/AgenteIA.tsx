@@ -43,6 +43,13 @@ interface ConfirmacaoEvent {
   args: Record<string, unknown>;
   tool_use_id?: string;
 }
+/** Confirmação pendente + a mensagem CONGELADA da execução que pausou: o
+ *  textarea é reabilitado no `finally` do stream, então o fallback sem Redis
+ *  (reenvio de `mensagem` + `aprovacoes_hash`) não pode ler o estado atual —
+ *  usa o valor capturado no momento da pausa. */
+interface PendingConfirmacao extends ConfirmacaoEvent {
+  mensagemOriginal: string;
+}
 interface FinalEvent {
   status: string;
   resposta: string;
@@ -73,12 +80,14 @@ export default function AgenteIA() {
   const [mensagem, setMensagem] = useState("");
   const [running, setRunning] = useState(false);
   const [timeline, setTimeline] = useState<TimelineItem[]>([]);
-  const [pending, setPending] = useState<ConfirmacaoEvent | null>(null);
+  const [pending, setPending] = useState<PendingConfirmacao | null>(null);
   const [final, setFinal] = useState<FinalEvent | null>(null);
   const [erro, setErro] = useState<string | null>(null);
 
   const abortRef = useRef<AbortController | null>(null);
   const seqRef = useRef(0);
+  // Mensagem enviada na execução em curso — congelada para a retomada HITL.
+  const mensagemRunRef = useRef("");
 
   const push = <T extends Omit<TimelineItem, "id">>(item: T) =>
     setTimeline((prev) => [
@@ -110,7 +119,10 @@ export default function AgenteIA() {
         });
         break;
       case "confirmacao_requerida":
-        setPending(evt.data as ConfirmacaoEvent);
+        setPending({
+          ...(evt.data as ConfirmacaoEvent),
+          mensagemOriginal: mensagemRunRef.current,
+        });
         break;
       case "final":
         setFinal(evt.data as FinalEvent);
@@ -174,7 +186,8 @@ export default function AgenteIA() {
       toast.error("Descreva a solicitação ao agente (mín. 5 caracteres).");
       return;
     }
-    void run({ case_id: caseId.trim(), mensagem: mensagem.trim() }, true);
+    mensagemRunRef.current = mensagem.trim();
+    void run({ case_id: caseId.trim(), mensagem: mensagemRunRef.current }, true);
   };
 
   const decidir = (decisao: "aprovar" | "recusar") => {
@@ -195,11 +208,13 @@ export default function AgenteIA() {
         false,
       );
     } else if (decisao === "aprovar") {
-      // Fallback sem Redis (token=null): reexecuta aprovando pelo hash dos args.
+      // Fallback sem Redis (token=null): reexecuta aprovando pelo hash dos
+      // args. Usa a mensagem CONGELADA da execução que pausou — o textarea
+      // pode ter sido editado para a PRÓXIMA solicitação.
       void run(
         {
           case_id: caseId.trim(),
-          mensagem: mensagem.trim(),
+          mensagem: p.mensagemOriginal,
           aprovacoes_hash: [p.args_hash],
         },
         false,

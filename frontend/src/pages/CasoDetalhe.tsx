@@ -1,7 +1,12 @@
 import { toast } from "../components/Toast";
 import Markdown from "../components/Markdown";
 import React, { useEffect, useState } from "react";
-import { Link, useParams, useSearchParams, useNavigate } from "react-router-dom";
+import {
+  Link,
+  useParams,
+  useSearchParams,
+  useNavigate,
+} from "react-router-dom";
 import {
   Sparkles,
   ChevronLeft,
@@ -12,6 +17,9 @@ import {
 } from "lucide-react";
 import api from "../lib/api";
 import { asList } from "../lib/list";
+import { areaLabel, useAreas } from "../lib/areas";
+import { mensagemErroIA, ROTULO_IA_NAO_ATIVADA } from "../lib/iaErro";
+import { useIaStatus } from "../lib/iaStatus";
 import MotorTeses from "../components/MotorTeses";
 import LinhaDoTempoProcessual from "../components/visual/LinhaDoTempoProcessual";
 import MatrizRisco from "../components/visual/MatrizRisco";
@@ -23,6 +31,7 @@ import IntakeAnalise from "../components/IntakeAnalise";
 import ConversaoChecklist from "../components/ConversaoChecklist";
 import ProvasCaso from "../components/ProvasCaso";
 import DossieEstrategicoCaso from "../components/DossieEstrategicoCaso";
+import OrquestradorPanel from "../components/OrquestradorPanel";
 import CaseBreadcrumb from "../components/CaseBreadcrumb";
 import { ConsultaProfundaTJMG } from "../components/Infosimples";
 import type { Case } from "../types";
@@ -65,6 +74,7 @@ async function baixarDoc(docId: string, filename: string) {
 
 const TABS = [
   { key: "resumo", label: "Resumo" },
+  { key: "orquestrador", label: "Orquestrador" },
   { key: "processos", label: "Processos" },
   { key: "timeline", label: "Timeline" },
   { key: "mensagens", label: "Mensagens" },
@@ -109,7 +119,7 @@ const GROUPS: {
   {
     // Informações principais, cliente e partes, etiquetas, pendências.
     label: "Resumo",
-    tabs: ["resumo", "partes", "etiquetas"],
+    tabs: ["resumo", "orquestrador", "partes", "etiquetas"],
     links: [
       { label: "🧭 Jornada do caso", to: (id) => `/casos/${id}/jornada` },
       {
@@ -293,21 +303,7 @@ function ExtratoCaso({ caso }: { caso: Case }) {
 }
 
 function AreasCaso({ caso }: { caso: Case }) {
-  const TODAS = [
-    "civil",
-    "trabalhista",
-    "consumidor",
-    "familia",
-    "ambiental",
-    "criminal",
-    "previdenciario",
-    "empresarial",
-    "tributario",
-    "administrativo",
-    "bancario",
-    "imobiliario",
-    "digital_lgpd",
-  ];
+  const catalogoAreas = useAreas();
   const [areas, setAreas] = useState<any[]>([]);
   const [add, setAdd] = useState("");
   const load = () =>
@@ -333,7 +329,9 @@ function AreasCaso({ caso }: { caso: Case }) {
       toast.error(e.response?.data?.detail || "Erro ao remover área");
     }
   };
-  const disponiveis = TODAS.filter((t) => !areas.some((a) => a.area === t));
+  const disponiveis = catalogoAreas.filter(
+    (item) => !areas.some((a) => a.area === item.slug),
+  );
   return (
     <div className="card p-4">
       <h3 className="font-semibold mb-2 text-sm text-slate-500 uppercase tracking-wide">
@@ -346,7 +344,7 @@ function AreasCaso({ caso }: { caso: Case }) {
             className={`inline-flex items-center gap-1 text-xs px-2.5 py-1 rounded-full ${a.principal ? "bg-navy text-white" : "bg-slate-100 text-slate-600"}`}
           >
             {a.principal && "★ "}
-            {a.area.replace(/_/g, " ")}
+            {areaLabel(a.area)}
             {!a.principal && (
               <button
                 onClick={() => remover(a.area)}
@@ -365,9 +363,9 @@ function AreasCaso({ caso }: { caso: Case }) {
               className="input text-xs px-2 py-1"
             >
               <option value="">+ área relacionada</option>
-              {disponiveis.map((t) => (
-                <option key={t} value={t}>
-                  {t.replace(/_/g, " ")}
+              {disponiveis.map((item) => (
+                <option key={item.slug} value={item.slug}>
+                  {item.nome}
                 </option>
               ))}
             </select>
@@ -387,6 +385,7 @@ function AreasCaso({ caso }: { caso: Case }) {
 }
 
 function TabResumo({ caso }: { caso: Case }) {
+  const { disponivel: iaDisponivel } = useIaStatus();
   const navigate = useNavigate();
   const { user } = useAuth();
   const [iaModal, setIaModal] = useState(false);
@@ -561,7 +560,9 @@ function TabResumo({ caso }: { caso: Case }) {
       });
       setHonResp(data);
     } catch (e: any) {
-      setHonResp({ erro: e.response?.data?.detail || "Falha na sugestão" });
+      setHonResp({
+        erro: mensagemErroIA(e, "Não foi possível sugerir honorários."),
+      });
     } finally {
       setHonLoading(false);
     }
@@ -580,7 +581,9 @@ function TabResumo({ caso }: { caso: Case }) {
       });
       setIaResp(data);
     } catch (e: any) {
-      setIaResp({ erro: e.response?.data?.detail || "Falha na análise" });
+      setIaResp({
+        erro: mensagemErroIA(e, "Não foi possível gerar a análise."),
+      });
     } finally {
       setIaLoading(false);
     }
@@ -660,9 +663,12 @@ function TabResumo({ caso }: { caso: Case }) {
       <div className="flex gap-2 flex-wrap">
         <button
           onClick={analisarIA}
-          className="btn-primary flex items-center gap-1"
+          disabled={!iaDisponivel}
+          title={iaDisponivel ? undefined : ROTULO_IA_NAO_ATIVADA}
+          className="btn-primary flex items-center gap-1 disabled:cursor-not-allowed disabled:opacity-50"
         >
-          <Sparkles size={14} /> Análise IA
+          <Sparkles size={14} />{" "}
+          {iaDisponivel ? "Análise IA" : "IA não ativada"}
         </button>
         <button
           onClick={syncDataJud}
@@ -2091,7 +2097,7 @@ function TabScore({ caseId }: { caseId: string }) {
           <div className="card p-5">
             <div className="flex items-start gap-6 mb-4">
               <div className="text-center min-w-[80px]">
-                <div className="text-5xl font-black text-gray-900">
+                <div className="text-2xl font-bold text-gray-900">
                   {top.total}
                 </div>
                 <div className="text-sm text-gray-400">/100</div>
@@ -3893,6 +3899,8 @@ export default function CasoDetalhe() {
     switch (activeTab) {
       case "resumo":
         return <TabResumo caso={caso} />;
+      case "orquestrador":
+        return <OrquestradorPanel caseId={id} />;
       case "processos":
         return <TabProcessos caseId={id} />;
       case "timeline":
@@ -3917,31 +3925,34 @@ export default function CasoDetalhe() {
             {/* CTA de anexar: o upload vive no módulo global de Documentos,
                 que pré-seleciona o caso via ?caso= (achado M2 do E2E). */}
             <div className="flex justify-end">
-              <Link to={`/documentos?caso=${id}`} className="btn-secondary text-xs">
+              <Link
+                to={`/documentos?caso=${id}`}
+                className="btn-secondary text-xs"
+              >
                 Anexar documento ao caso
               </Link>
             </div>
-          <TabLista
-            titulo="Documentos"
-            endpoint={`/documents/?case_id=${id}`}
-            empty="Nenhum documento vinculado a este caso"
-            renderItem={(d) => (
-              <div
-                className="card p-3 flex justify-between items-center text-sm cursor-pointer hover:bg-slate-50"
-                onClick={() =>
-                  baixarDoc(d.id, d.filename || d.nome_arquivo || d.titulo)
-                }
-                title="Clique para baixar"
-              >
-                <span className="text-gray-800">
-                  {d.titulo || d.filename || d.nome_arquivo}
-                </span>
-                <span className="text-gray-400 text-xs">
-                  {d.tipo_peca || d.tipo}
-                </span>
-              </div>
-            )}
-          />
+            <TabLista
+              titulo="Documentos"
+              endpoint={`/documents/?case_id=${id}`}
+              empty="Nenhum documento vinculado a este caso"
+              renderItem={(d) => (
+                <div
+                  className="card p-3 flex justify-between items-center text-sm cursor-pointer hover:bg-slate-50"
+                  onClick={() =>
+                    baixarDoc(d.id, d.filename || d.nome_arquivo || d.titulo)
+                  }
+                  title="Clique para baixar"
+                >
+                  <span className="text-gray-800">
+                    {d.titulo || d.filename || d.nome_arquivo}
+                  </span>
+                  <span className="text-gray-400 text-xs">
+                    {d.tipo_peca || d.tipo}
+                  </span>
+                </div>
+              )}
+            />
           </div>
         );
       case "provas":
@@ -3984,27 +3995,37 @@ export default function CasoDetalhe() {
         );
       case "prazos":
         return (
-          <TabLista
-            titulo="Prazos"
-            endpoint={`/deadlines/?case_id=${id}&status=`}
-            empty="Nenhum prazo cadastrado"
-            renderItem={(d) => (
-              <div className="card p-3 flex justify-between items-center text-sm">
-                <span className="text-gray-800">{d.titulo}</span>
-                <span
-                  className={`font-medium text-xs ${
-                    (d.dias_restantes ?? 1) <= 0
-                      ? "text-danger-600"
-                      : (d.dias_restantes ?? 99) <= 7
-                        ? "text-orange-600"
-                        : "text-gray-500"
-                  }`}
-                >
-                  {fmtDate(d.data_prazo)}
-                </span>
-              </div>
-            )}
-          />
+          <div className="space-y-3">
+            <div className="flex justify-end">
+              <Link
+                to={`/atividades?caso=${id}&tipo=prazo`}
+                className="btn-secondary text-xs"
+              >
+                Novo prazo ou atividade
+              </Link>
+            </div>
+            <TabLista
+              titulo="Prazos"
+              endpoint={`/deadlines/?case_id=${id}&status=`}
+              empty="Nenhum prazo cadastrado"
+              renderItem={(d) => (
+                <div className="card p-3 flex justify-between items-center text-sm">
+                  <span className="text-gray-800">{d.titulo}</span>
+                  <span
+                    className={`font-medium text-xs ${
+                      (d.dias_restantes ?? 1) <= 0
+                        ? "text-danger-600"
+                        : (d.dias_restantes ?? 99) <= 7
+                          ? "text-orange-600"
+                          : "text-gray-500"
+                    }`}
+                  >
+                    {fmtDate(d.data_prazo)}
+                  </span>
+                </div>
+              )}
+            />
+          </div>
         );
       case "audiencias":
         return (
@@ -4166,7 +4187,7 @@ export default function CasoDetalhe() {
         tela={activeTabLabel}
       />
       {/* Sticky header + tabs */}
-      <div className="sticky top-[4.25rem] z-20 card bg-white/95 backdrop-blur-xl">
+      <div className="sticky top-[4.25rem] z-20 card bg-white">
         <div className="flex flex-col gap-4 px-4 py-4 lg:flex-row lg:items-start lg:justify-between">
           <button
             onClick={() => navigate("/casos")}

@@ -116,5 +116,8 @@ async def executar_ia(
     except ValueError as e:
         raise HTTPException(status.HTTP_400_BAD_REQUEST, str(e))
     except RuntimeError as e:
-        raise HTTPException(status.HTTP_503_SERVICE_UNAVAILABLE, str(e))
+        # Camada de borda (P0 §3.2): detalhe técnico → log; usuário → leigo.
+        from app.core.ai_errors import http_erro_ia
+        raise http_erro_ia(e, status.HTTP_503_SERVICE_UNAVAILABLE,
+                           contexto="executar_tarefa_ia")
     return AiResponse(**resultado)

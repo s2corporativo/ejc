@@ -14,9 +14,10 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.database import get_db
 from app.core.rate_limit import rate_limit
-from app.core.security import get_current_user, ROLE_LEVEL
+from app.core.security import get_current_user, requer_advogado, ROLE_LEVEL
 from app.core.ownership import verificar_acesso_caso, is_gestao
 from app.models.case import Case
+from app.models.document import Document
 from app.models.user import User
 from app.models.legal_doc import LegalDoc, PecaStatus
 from app.models.ai_log import AILog
@@ -585,7 +586,14 @@ async def registrar_protocolo(
     A transição de status para 'protocolada' continua pelo PATCH /legal-docs/{id}
     (que aplica os gates de validação/HITL) — aqui só registramos o comprovante,
     sem contornar aqueles controles.
+
+    Gates (máquina de estados): protocolo só pode ser registrado por papel
+    advogado+ e em peça já aprovada ('aprovada', 'final' ou 'protocolada') —
+    STATUS_EXIGE_REVISAO é a mesma fonte de verdade do fluxo de aprovação.
+    Assim, o orquestrador (peca_protocolada → 'acompanhamento') só deriva
+    estado de peça realmente revisada/aprovada.
     """
+    requer_advogado(cu, detail="Registro de protocolo é restrito a advogados")
     d = (await db.execute(
         select(LegalDoc).where(
             LegalDoc.id == doc_id, LegalDoc.deleted_at.is_(None)
@@ -595,6 +603,17 @@ async def registrar_protocolo(
         raise HTTPException(status_code=404, detail="Peça não encontrada")
     if d.case_id:
         await verificar_acesso_caso(db, cu, d.case_id)
+
+    status_atual = _status_value(d.status)
+    if status_atual not in STATUS_EXIGE_REVISAO:
+        raise HTTPException(
+            status_code=422,
+            detail=(
+                "Protocolo só pode ser registrado em peça aprovada. "
+                f"Status atual: '{status_atual}'. Aprove a peça "
+                "(POST /legal-docs/{id}/aprovar ou PATCH de status) antes de registrar o protocolo."
+            ),
+        )
 
     numero = (payload.numero_protocolo or "").strip()
     if not numero:
@@ -606,6 +625,25 @@ async def registrar_protocolo(
     # Sem data informada, assume o instante do registro (tz-aware).
     d.protocolado_em = payload.protocolado_em or datetime.now(timezone.utc)
     comprovante = (payload.protocolo_comprovante_doc_id or "").strip()
+    if comprovante:
+        # N3: o comprovante referenciado deve EXISTIR, não estar excluído e
+        # pertencer ao MESMO caso da peça — antes qualquer string era aceita
+        # (id órfão ou documento de caso alheio virava "prova" de protocolo).
+        doc = (await db.execute(
+            select(Document).where(
+                Document.id == comprovante, Document.deleted_at.is_(None)
+            )
+        )).scalar_one_or_none()
+        if doc is None:
+            raise HTTPException(
+                status_code=422,
+                detail="Comprovante inválido: documento não encontrado ou excluído",
+            )
+        if doc.case_id != d.case_id:
+            raise HTTPException(
+                status_code=422,
+                detail="Comprovante inválido: o documento não pertence ao caso desta peça",
+            )
     d.protocolo_comprovante_doc_id = comprovante or None
 
     await criar_audit_log(

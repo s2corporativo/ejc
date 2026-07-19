@@ -2,7 +2,6 @@
 # Base de conhecimento RAG: ingestão de docs + consulta.
 import logging
 from datetime import datetime, timezone
-from uuid import uuid4
 from typing import Optional, List
 
 from fastapi import APIRouter, Depends, HTTPException, Query, BackgroundTasks, UploadFile, File, Form
@@ -92,38 +91,73 @@ class IngestRequest(BaseModel):
 
 
 import re as _re
+import hashlib as _hashlib
+
+
+def _chave_ingestao_manual(*, actor_id: str, titulo: str, categoria: str,
+                           fonte: str | None, tribunal: str | None) -> str:
+    """Identidade estável por origem lógica, sem incluir o conteúdo."""
+    identidade = "\x1f".join(
+        (actor_id, categoria.strip().lower(), (tribunal or "").strip().lower(),
+         titulo.strip().lower(), (fonte or "manual").strip())
+    )
+    return f"manual:{actor_id}:{_hashlib.sha256(identidade.encode()).hexdigest()[:40]}"
 
 
 async def _ingerir_texto(db, background_tasks, titulo, categoria, conteudo,
                          fonte=None, tribunal=None, confianca: str = "media",
-                         extra_doc: Optional[dict] = None):
+                         extra_doc: Optional[dict] = None,
+                         actor_id: str = ""):
     """Núcleo de ingestão reutilizado por /ingest, /ingest-pdf e /ingest-url.
 
     `extra_doc`: chaves adicionais mescladas no JSONB `extra` do documento
     (ex.: extração estruturada do OCR em extra["extracao"])."""
     if len(conteudo.strip()) < 50:
         raise HTTPException(status_code=422, detail="Conteúdo extraído muito curto (< 50 caracteres)")
-    status_inicial = "pendente" if emb_disponivel() else "sem_embeddings"
-    extra = {"confidence_level": confianca}
+    if categoria in _RESTRICTED_CATS:
+        raise HTTPException(
+            status_code=422,
+            detail=("Conteúdo de cliente/caso exige o fluxo dedicado com escopo e "
+                    "autorização; a ingestão manual geral aceita apenas fontes públicas."),
+        )
+    extra = {}
     if extra_doc:
         extra.update(extra_doc)
-    doc = KnowledgeDoc(
-        id=str(uuid4()), titulo=titulo, categoria=categoria,
-        fonte=fonte, tribunal=tribunal, status_indexacao=status_inicial,
-        extra=extra,
+    extra.update({
+        "confidence_level": confianca,
+        "rag_status": "pendente",
+        "ingestao_manual": True,
+        "ingerido_por": actor_id,
+    })
+    chave = _chave_ingestao_manual(
+        actor_id=actor_id, titulo=titulo, categoria=categoria,
+        fonte=fonte, tribunal=tribunal,
     )
-    db.add(doc)
-    await db.flush()
-    chunks = chunk_texto(conteudo)
-    for i, ch in enumerate(chunks):
-        db.add(KnowledgeChunk(id=str(uuid4()), doc_id=doc.id, chunk_index=i, conteudo=ch, embedding=None))
+    from app.services.ingestion_service import upsert_documento
+    resultado = await upsert_documento(
+        db, titulo=titulo, categoria=categoria, conteudo=conteudo,
+        chave_origem=chave, fonte=fonte, tribunal=tribunal, extra=extra,
+        confianca=confianca, embutir_vetores=False,
+    )
+    doc = (await db.execute(select(KnowledgeDoc).where(
+        KnowledgeDoc.chave_origem == chave,
+        KnowledgeDoc.deleted_at.is_(None),
+        KnowledgeDoc.vigente.is_(True),
+    ))).scalar_one()
     await db.commit()
-    if emb_disponivel():
+    if emb_disponivel() and doc.status_indexacao != "indexado":
         await agendar_indexacao(doc.id, background_tasks)
+    chunks = chunk_texto(conteudo)
+    rag_status = (doc.extra or {}).get("rag_status", "pendente")
+    detalhe = (f"Documento ingerido ({len(chunks)} trechos). " +
+               ("A aprovação anterior foi preservada."
+                if rag_status == "aprovado" else
+                "Colocado em revisão; ainda não fundamenta respostas da IA."))
     return {"id": doc.id, "chunks": len(chunks), "status_indexacao": doc.status_indexacao,
+            "resultado_upsert": resultado, "rag_status": rag_status,
             "confianca": confianca,
             "embeddings_pendentes": emb_disponivel(),
-            "detail": f"Documento ingerido ({len(chunks)} trechos)"}
+            "detail": detalhe}
 
 
 @router.post("/ingest-pdf", status_code=201)
@@ -163,6 +197,7 @@ async def ingerir_pdf(
             "ocr": {"paginas": res["paginas"], "paginas_ocr": res["paginas_ocr"],
                     "ocr_disponivel": res["ocr_disponivel"]},
         },
+        actor_id=str(cu.id),
     )
 
 
@@ -216,7 +251,8 @@ async def ingerir_url(
     texto = _re.sub(r"&[a-zA-Z#0-9]+;", " ", texto)
     texto = _re.sub(r"\s+", " ", texto).strip()
     return await _ingerir_texto(db, background_tasks, titulo, categoria, texto,
-                                fonte=url, tribunal=tribunal, confianca=confianca)
+                                fonte=url, tribunal=tribunal, confianca=confianca,
+                                actor_id=str(cu.id))
 
 
 async def _indexar_doc_bg(doc_id: str) -> None:
@@ -277,7 +313,8 @@ async def ingerir(
 ):
     """
     Ingere documento na base de conhecimento.
-    O texto fica disponível imediatamente para busca TEXTUAL.
+    O texto entra como `rag_status=pendente` e só fica disponível à IA depois
+    de aprovação no fluxo de governança.
     Os embeddings (busca semântica) são gerados em segundo plano via
     BackgroundTasks — sem Celery/Redis (tudo local). O campo
     `status_indexacao` reflete o progresso (pendente → indexado).
@@ -287,6 +324,7 @@ async def ingerir(
     return await _ingerir_texto(
         db, background_tasks, req.titulo, req.categoria, req.conteudo,
         fonte=req.fonte, tribunal=req.tribunal, confianca=req.confianca,
+        actor_id=str(cu.id),
     )
 
 
@@ -301,48 +339,26 @@ async def buscar(
     db: AsyncSession = Depends(get_db),
     cu: User = Depends(get_current_user),
 ):
-    """Consulta a base de conhecimento (textual; semântica na fase 2)."""
+    """Consulta a base pelo único pipeline governado de recuperação.
+
+    ``buscar_contexto_rag`` aplica escopo, vigência, aprovação, quarentena de
+    súmulas e exclusão do corpus fictício tanto no caminho vetorial quanto nos
+    fallbacks lexicais. Manter SQL próprio nesta rota criou um bypass desses
+    controles; por isso a rota não executa mais retrieval paralelo.
+    """
     cats = categorias if categorias else None
-    modo = "textual"
-
-    # Busca SEMÂNTICA (pgvector cosine) quando embeddings ativos
-    if emb_disponivel():
-        vetores = await gerar_embeddings([q], modo="query")  # E5: prefixo "query:" na consulta
-        if vetores:
-            from sqlalchemy import text as sqltext
-            vec = "[" + ",".join(f"{x:.6f}" for x in vetores[0]) + "]"
-            sql = """
-                SELECT c.id AS chunk_id, c.conteudo, d.titulo, d.categoria,
-                       COALESCE(d.extra->>'confidence_level', d.extra->>'confianca', 'media') AS confianca,
-                       1 - (c.embedding <=> CAST(:v AS vector)) AS score
-                FROM knowledge_chunks c
-                JOIN knowledge_docs d ON d.id = c.doc_id
-                WHERE d.deleted_at IS NULL AND c.embedding IS NOT NULL
-                AND 1 - (c.embedding <=> CAST(:v AS vector)) >= 0.60
-                AND (d.categoria <> ALL(:restr_cats) OR d.client_id = :scope_cli)
-                AND (d.vigente = TRUE OR :incl_hist)
-            """
-            if cats:
-                sql += " AND d.categoria = ANY(:cats)"
-            sql += " ORDER BY c.embedding <=> CAST(:v AS vector) LIMIT :lim"
-            # Endpoint geral de busca → fail-closed: sem escopo de cliente,
-            # conteúdo restrito (peças/precedentes internos) é excluído (LGPD/EOAB).
-            params = {"v": vec, "lim": limite, "restr_cats": _RESTRICTED_CATS, "scope_cli": "",
-                      "incl_hist": incluir_historico}
-            if cats:
-                params["cats"] = cats
-            rows = (await db.execute(sqltext(sql), params)).mappings().all()
-            if rows:
-                modo = "semantica"
-                return {
-                    "query": q, "modo": modo,
-                    "resultados": [dict(r) for r in rows],
-                }
-
     resultados = await buscar_contexto_rag(
         db, q, limite=limite, categorias=cats, incluir_historico=incluir_historico
     )
-    return {"query": q, "modo": modo, "resultados": resultados}
+    # Preserva o contrato legado consumido pelo frontend e expõe o pipeline
+    # governado separadamente para observabilidade.
+    modo = "semantica" if emb_disponivel() else "textual"
+    return {
+        "query": q,
+        "modo": modo,
+        "pipeline": "hibrida_governada",
+        "resultados": resultados,
+    }
 
 
 @router.post("/match-casos")
@@ -597,6 +613,13 @@ async def ingerir_ai_log_aprovado(
         conteudo=log.resposta,
         chave_origem=chave,
         fonte=fonte,
+        extra={
+            "rag_status": "aprovado",
+            "origem": "ai_log_hitl",
+            "status_hitl": log.status_hitl.value,
+            "aprovado_por": str(cu.id),
+        },
+        confianca="media",
     )
     await db.commit()
 

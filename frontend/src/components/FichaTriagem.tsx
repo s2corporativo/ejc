@@ -13,6 +13,8 @@ import {
 } from "lucide-react";
 import api from "../lib/api";
 import { toast } from "./Toast";
+import { mensagemErroIA, ROTULO_IA_NAO_ATIVADA } from "../lib/iaErro";
+import { useIaStatus } from "../lib/iaStatus";
 import { Badge, Spinner } from "./UI";
 
 export type RiscoNivel = "baixo" | "medio" | "alto";
@@ -122,6 +124,7 @@ export default function FichaTriagem({
   const [status, setStatus] = useState<FichaStatus>("rascunho");
   const [carregando, setCarregando] = useState(true);
   const [preenchendo, setPreenchendo] = useState(false);
+  const { disponivel: iaDisponivel } = useIaStatus();
   const [salvando, setSalvando] = useState(false);
 
   // Ref estável para o callback: evita re-disparar o efeito de carga.
@@ -204,7 +207,7 @@ export default function FichaTriagem({
       toast.success("Ficha pré-preenchida pela IA. Revise antes de confirmar.");
     } catch (e: any) {
       toast.error(
-        e.response?.data?.detail || "Falha ao pré-preencher com IA",
+        mensagemErroIA(e, "Não foi possível pré-preencher a ficha com IA."),
       );
     } finally {
       setPreenchendo(false);
@@ -289,16 +292,21 @@ export default function FichaTriagem({
       <div className="mt-4 flex flex-wrap items-center gap-2">
         <button
           type="button"
-          className="btn-secondary text-sm"
+          className="btn-secondary text-sm disabled:cursor-not-allowed disabled:opacity-50"
           onClick={preencherComIA}
-          disabled={ocupado}
+          disabled={ocupado || !iaDisponivel}
+          title={iaDisponivel ? undefined : ROTULO_IA_NAO_ATIVADA}
         >
           {preenchendo ? (
             <Loader2 size={15} className="animate-spin" />
           ) : (
             <Sparkles size={15} />
           )}
-          {preenchendo ? "Analisando o caso..." : "Pré-preencher com IA"}
+          {!iaDisponivel
+            ? "IA não ativada"
+            : preenchendo
+              ? "Analisando o caso..."
+              : "Pré-preencher com IA"}
         </button>
         <span className="text-xs text-slate-400">
           O selo colorido indica a confiança da IA por campo — revise sempre.

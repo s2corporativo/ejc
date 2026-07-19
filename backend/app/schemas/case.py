@@ -6,26 +6,41 @@ from datetime import datetime, date
 from decimal import Decimal
 
 
+# Deve casar com Case.numero_processo (String(30) em models/case.py) — um
+# limite maior aqui passaria na validação e estouraria no INSERT (500).
+_NUMERO_PROCESSO_MAX = 30
+
+
 def _validar_numero_processo_cnj(v: Optional[str]) -> Optional[str]:
     """Valida `numero_processo` na ENTRADA (create/update).
 
     Regra: o caso pode ainda NÃO ter número → vazio/None PASSA (retorna None).
-    Havendo valor, exige um CNJ válido (formato + dígito verificador módulo 97),
-    tolerante à máscara. A checagem fica em validators_service.validar_cnj
-    (que reutiliza o cálculo de DV do verificador de jurisprudência). Só roda em
-    CaseCreate/CaseUpdate — a LEITURA (CaseResponse/CaseDetail) não valida, para
-    não quebrar casos legados já gravados com número fora do padrão.
+    A validação estrita (formato + dígito verificador módulo 97, via
+    validators_service.validar_cnj) só se aplica quando o valor PARECE um
+    número CNJ — 20 dígitos após remover a pontuação (com ou sem a máscara
+    NNNNNNN-DD.AAAA.J.TR.OOOO). Processos ADMINISTRATIVOS (JARI/SEI/PAD etc.)
+    têm numeração própria e são aceitos como texto livre, limitado à largura
+    da coluna (30 caracteres). Só roda em CaseCreate/CaseUpdate — a LEITURA
+    (CaseResponse/CaseDetail) não valida, para não quebrar casos legados já
+    gravados com número fora do padrão.
     """
     if v is None:
         return None
     v = v.strip()
     if not v:
         return None
-    from app.services.validators_service import validar_cnj
-    if not validar_cnj(v):
+    from app.services.validators_service import normalizar_cnj, validar_cnj
+    parece_cnj = len(normalizar_cnj(v)) == 20
+    if parece_cnj:
+        if not validar_cnj(v):
+            raise ValueError(
+                "Número CNJ inválido: dígito verificador não confere ou formato "
+                "fora do padrão NNNNNNN-DD.AAAA.J.TR.OOOO"
+            )
+        return v
+    if len(v) > _NUMERO_PROCESSO_MAX:
         raise ValueError(
-            "Número CNJ inválido: dígito verificador não confere ou formato "
-            "fora do padrão NNNNNNN-DD.AAAA.J.TR.OOOO"
+            f"Número de processo muito longo (máximo {_NUMERO_PROCESSO_MAX} caracteres)"
         )
     return v
 

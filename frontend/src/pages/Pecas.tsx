@@ -30,6 +30,8 @@ import {
 } from "../components/UI";
 import PecaGeneratorModal from "../components/PecaGeneratorModal";
 import CaseFilterChip from "../components/CaseFilterChip";
+import { ROTULO_IA_NAO_ATIVADA } from "../lib/iaErro";
+import { useIaStatus } from "../lib/iaStatus";
 import { useCasoFiltro } from "../contexts/useCasoFiltro";
 import FichaTriagem, {
   type FichaTriagemCampos,
@@ -100,6 +102,7 @@ const FILA: { key: string; label: string; desc: string }[] = [
 const STATUS_POS_APROVACAO = new Set(["aprovada", "final", "protocolada"]);
 
 export default function Pecas() {
+  const { disponivel: iaDisponivel } = useIaStatus();
   const [data, setData] = useState<Paged<LegalDoc> | null>(null);
   const [modalIA, setModalIA] = useState(false);
   const [modal, setModal] = useState(false);
@@ -148,7 +151,7 @@ export default function Pecas() {
       };
     if (v.status === "pendente_revisao")
       return {
-        label: `Validar HITL ${v.score ?? ""}/100`,
+        label: `Revisão pendente ${v.score ?? ""}/100`,
         cls: "bg-warn-100 text-warn-700",
       };
     if (v.status === "score_baixo")
@@ -531,10 +534,12 @@ export default function Pecas() {
             </button>
             <button
               onClick={abrirGeradorIA}
-              className="btn btn-primary flex items-center gap-2"
+              disabled={!iaDisponivel}
+              title={iaDisponivel ? undefined : ROTULO_IA_NAO_ATIVADA}
+              className="btn btn-primary flex items-center gap-2 disabled:cursor-not-allowed disabled:opacity-50"
             >
               <Sparkles size={15} />
-              Gerar com IA
+              {iaDisponivel ? "Gerar com IA" : "IA não ativada"}
             </button>
             <button className="btn-gold" onClick={() => setModal(true)}>
               <Plus size={16} /> Nova peça
@@ -609,7 +614,22 @@ export default function Pecas() {
       ) : !data ? (
         <Spinner />
       ) : docs.length === 0 ? (
-        <Empty message="Nenhuma peça cadastrada" />
+        casoFiltro ? (
+          // Filtro de caso ativo: peças sem vínculo (ex.: demonstrativos das
+          // calculadoras) ficam ocultas — oferecer a visão completa evita o
+          // "salvei e sumiu" relatado na auditoria de usabilidade.
+          <EmptyState
+            title="Nenhuma peça neste caso"
+            message="Você está vendo apenas as peças do caso filtrado. Peças sem vínculo (como demonstrativos de calculadoras) aparecem na lista completa."
+            action={
+              <Button variant="secondary" onClick={removerFiltro}>
+                Ver todas as peças
+              </Button>
+            }
+          />
+        ) : (
+          <Empty message="Nenhuma peça cadastrada" />
+        )
       ) : (
         <>
           {/* Contadores da fila de produção — todas as etapas do enum, mesmo
@@ -854,7 +874,7 @@ export default function Pecas() {
                           {podeRevisarAprovar(p) && (
                             <button
                               className="btn-ghost px-2 py-1 text-emerald-700 text-xs"
-                              title="Revisão humana obrigatória (HITL) para aprovar peça de IA"
+                              title="Revisão do advogado obrigatória para aprovar peça de IA"
                               onClick={() =>
                                 setAprovacao({ doc: p, observacoes: "" })
                               }
@@ -970,7 +990,7 @@ export default function Pecas() {
             <strong>Validação jurídica:</strong>{" "}
             {view.validacao_juridica.status} · Score{" "}
             {view.validacao_juridica.score ?? "—"}/
-            {view.validacao_juridica.score_minimo ?? 75} · HITL{" "}
+            {view.validacao_juridica.score_minimo ?? 75} · Revisão do advogado:{" "}
             {view.validacao_juridica.hitl ?? "pendente"}
             {view.validacao_juridica.veredito && (
               <>

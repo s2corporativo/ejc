@@ -433,6 +433,137 @@ async def _probe_scheduler(
     )
 
 
+# ── Probe: Jobs monitorados (heartbeat) ───────────────────────────────────────
+async def _probe_heartbeat_jobs(session, settings: Settings) -> dict[str, Any]:
+    """Detecta parada SILENCIOSA dos jobs críticos do scheduler (achado nº 1 da
+    auditoria): lê `scheduler_heartbeat` (última EXECUÇÃO real de cada job) e
+    classifica cada job em ok / defasado / nunca_executou / erro conforme a
+    cadência esperada — em vez de derivar saúde da última linha de DADOS."""
+    inicio = time.perf_counter()
+    from app.services import heartbeat_service as hb
+
+    if not settings.ENABLE_SCHEDULER:
+        return _sub(
+            "Jobs monitorados (heartbeat)",
+            "desligado",
+            "Scheduler desabilitado (ENABLE_SCHEDULER=false) — nenhum heartbeat "
+            "de job é esperado.",
+            "Em produção com --workers 1, mantenha ENABLE_SCHEDULER=true.",
+            _ms(inicio),
+            jobs=[],
+        )
+
+    from app.models.scheduler_heartbeat import SchedulerHeartbeat
+
+    heartbeats: dict[str, dict[str, Any]] = {}
+    try:
+        r = await session.execute(select(SchedulerHeartbeat))
+        for h in r.scalars().all():
+            heartbeats[h.job_name] = {
+                "last_run_at": h.last_run_at,
+                "last_status": h.last_status,
+                "detail": h.detail,
+            }
+    except Exception:
+        return _sub(
+            "Jobs monitorados (heartbeat)",
+            "alerta",
+            "Tabela scheduler_heartbeat ausente — heartbeat dos jobs indisponível "
+            "(migration pendente?).",
+            "Rode `alembic upgrade head` para criar a tabela de heartbeat.",
+            _ms(inicio),
+            jobs=[],
+        )
+
+    jobs = hb.avaliar_jobs(heartbeats)
+    for j in jobs:
+        j["last_run_at"] = _iso(j["last_run_at"])  # serializa datetime p/ JSON
+
+    n_erro = sum(j["status"] == "erro" for j in jobs)
+    n_defasado = sum(j["status"] == "defasado" for j in jobs)
+    n_nunca = sum(j["status"] == "nunca_executou" for j in jobs)
+    problemas = [
+        j["label"] for j in jobs
+        if j["status"] in ("erro", "defasado", "nunca_executou")
+    ]
+    resumo = {
+        "total": len(jobs),
+        "ok": sum(j["status"] == "ok" for j in jobs),
+        "defasado": n_defasado,
+        "nunca_executou": n_nunca,
+        "erro": n_erro,
+    }
+
+    if n_erro:
+        return _sub(
+            "Jobs monitorados (heartbeat)",
+            "erro",
+            f"{n_erro} job(s) falharam na última execução: {', '.join(problemas)}.",
+            "Investigue os logs do backend dos jobs sinalizados.",
+            _ms(inicio),
+            jobs=jobs, resumo=resumo,
+        )
+    if n_defasado or n_nunca:
+        return _sub(
+            "Jobs monitorados (heartbeat)",
+            "alerta",
+            f"{n_defasado} job(s) defasado(s) e {n_nunca} sem execução registrada "
+            f"(possível parada silenciosa do scheduler): {', '.join(problemas)}.",
+            "Confirme que o scheduler está de pé e que os jobs rodam "
+            "(lifespan/start_scheduler e logs).",
+            _ms(inicio),
+            jobs=jobs, resumo=resumo,
+        )
+    return _sub(
+        "Jobs monitorados (heartbeat)",
+        "ok",
+        f"Todos os {len(jobs)} jobs monitorados executaram dentro da cadência esperada.",
+        "Nenhuma ação necessária.",
+        _ms(inicio),
+        jobs=jobs, resumo=resumo,
+    )
+
+
+# ── Probe: Backup offsite ─────────────────────────────────────────────────────
+async def _probe_backup(settings: Settings) -> dict[str, Any]:
+    """Sinaliza produção rodando SEM backup offsite (achado da auditoria): o
+    backup cifrado é o único mitigante do ponto único de falha do banco. Só
+    leitura de config — NÃO liga o backup."""
+    inicio = time.perf_counter()
+    producao = (settings.APP_ENV or "").strip().lower() == "production"
+    habilitado = bool(settings.BACKUP_ENABLED)
+
+    if producao and not habilitado:
+        return _sub(
+            "Backup offsite",
+            "alerta",
+            "Ambiente de PRODUÇÃO com BACKUP_ENABLED=false — o backup cifrado "
+            "offsite (único mitigante do ponto único de falha do banco) está "
+            "DESLIGADO.",
+            "Defina BACKUP_ENABLED=true (e BACKUP_ENCRYPTION_KEY) para proteger "
+            "os dados contra perda total.",
+            _ms(inicio),
+            app_env=settings.APP_ENV, backup_enabled=habilitado,
+        )
+    if habilitado:
+        return _sub(
+            "Backup offsite",
+            "ok",
+            "Backup cifrado offsite habilitado (BACKUP_ENABLED=true).",
+            "Nenhuma ação necessária.",
+            _ms(inicio),
+            app_env=settings.APP_ENV, backup_enabled=True,
+        )
+    return _sub(
+        "Backup offsite",
+        "desligado",
+        "Backup offsite desabilitado (BACKUP_ENABLED=false) fora de produção.",
+        "Em produção, habilite BACKUP_ENABLED=true para proteção contra perda total.",
+        _ms(inicio),
+        app_env=settings.APP_ENV, backup_enabled=False,
+    )
+
+
 # ── Probe: Disco / uploads ────────────────────────────────────────────────────
 def _path_existente(p: str) -> str:
     cand = Path(p)
@@ -588,6 +719,8 @@ async def diagnostico_completo(db=None) -> dict[str, Any]:
         _rodar("Integrações externas", _probe_integracoes(settings)),
         _rodar("Embeddings / RAG", _probe_rag(settings)),
         _rodar("Scheduler / jobs", _com_sessao(_probe_scheduler, settings)),
+        _rodar("Jobs monitorados (heartbeat)", _com_sessao(_probe_heartbeat_jobs, settings)),
+        _rodar("Backup offsite", _probe_backup(settings)),
         _rodar("Disco / uploads", _probe_disco(settings)),
         _rodar("Erros recentes", _probe_erros(settings)),
     ]
