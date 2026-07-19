@@ -2,6 +2,7 @@ import { useEffect, useMemo, useRef } from "react";
 import { useLocation, useNavigate } from "react-router-dom";
 import type { AxiosResponse, InternalAxiosRequestConfig } from "axios";
 import api from "../lib/api";
+import AutoFixPanel from "./AutoFixPanel";
 import CaseCommandDock from "./CaseCommandDock";
 import CaseHealthWidget from "./CaseHealthWidget";
 import PortfolioHealthWidget from "./PortfolioHealthWidget";
@@ -164,6 +165,7 @@ export default function FlowEnhancements() {
   }, [location.pathname]);
 
   if (location.pathname === "/") return <PortfolioHealthWidget />;
+  if (location.pathname === "/diagnostico") return <AutoFixPanel />;
   if (!caseId) return null;
   return (
     <>
