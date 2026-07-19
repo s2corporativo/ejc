@@ -1,11 +1,16 @@
 import EntradaUniversalDocumentos, { EntradaUniversalResultado } from "./EntradaUniversalDocumentos";
+import { useAreas } from "../lib/areas";
 
 type Patch = Record<string, any>;
 const first = (value: unknown) => Array.isArray(value) ? value[0] : value;
 
 /** Entrada inicial obrigatória do Novo Caso, sem remover o cadastro manual. */
 export default function ImportarDocumento({ onPrefill }: { onPrefill: (patch: Patch) => void }) {
+  const areas = useAreas();
   const aplicar = (resultado: EntradaUniversalResultado) => {
+    // Só pré-preenche a área se a classificação da IA existir na taxonomia
+    // canônica (GET /areas, com fallback estático) — evita slug inválido no caso.
+    const areasPermitidas = new Set(areas.map((a) => a.slug));
     const classificacao = resultado.classificacao || {};
     const identificacao = resultado.identificacao_processual || {};
     const partes = resultado.partes || {};
@@ -30,7 +35,7 @@ export default function ImportarDocumento({ onPrefill }: { onPrefill: (patch: Pa
     const titulo = resumo.providencia_principal || resumo.situacao || principal?.classification?.nome || principal?.filename || "Novo caso importado";
     const patch: Patch = {
       titulo: String(titulo).slice(0, 255),
-      area: classificacao.area || undefined,
+      area: areasPermitidas.has(area) ? area : undefined,
       numero_processo: identificacao.numero_processo || undefined,
       tribunal: identificacao.tribunal || undefined,
       comarca: identificacao.comarca || undefined,

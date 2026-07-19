@@ -191,7 +191,7 @@ export default function OnboardingTour() {
         type="button"
         onClick={abrir}
         aria-label={`Primeiros passos: ${concluidas} de ${total} concluídos. Reabrir.`}
-        className="fixed bottom-5 right-20 z-40 flex items-center gap-2 rounded-full bg-white px-4 py-2.5 text-sm font-medium text-zinc-700 shadow-lg ring-1 ring-black/5 transition-shadow hover:shadow-xl"
+        className="fixed bottom-5 right-20 z-40 flex items-center gap-2 rounded-full border border-slate-200 bg-white px-4 py-2.5 text-sm font-medium text-zinc-700 shadow-md"
       >
         <Sparkles className="h-4 w-4 text-[#B08A50]" />
         Primeiros passos

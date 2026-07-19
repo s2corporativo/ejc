@@ -142,6 +142,7 @@ def test_senhas_fortes_passam(senha):
 def _user_troca(email="troca@teste.com"):
     return types.SimpleNamespace(
         id="u1", email=email,
+        full_name="Usuário Troca",
         role=types.SimpleNamespace(value="advogado"),
         hashed_password=get_password_hash("Atual@Senha123"),
         must_change_password=False,

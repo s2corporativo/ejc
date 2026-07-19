@@ -8,11 +8,9 @@ import {
   Repeat,
   Calculator,
   Calendar,
-  Receipt,
 } from "lucide-react";
 import FinanceiroDashboard from "./FinanceiroDashboard";
 import Honorarios from "./Honorarios";
-import NotasFiscais from "./NotasFiscais";
 import Despesas from "./Despesas";
 import DespesasRecorrentes from "./DespesasRecorrentes";
 import OfficeContracts from "./OfficeContracts";
@@ -22,13 +20,12 @@ import ErrorBoundary from "../components/ErrorBoundary";
 import { PageHeader } from "../components/UI";
 
 const TABS = [
-  { k: "visao", label: "Visão", icon: BarChart3 },
-  { k: "honorarios", label: "Honorários", icon: Wallet },
-  { k: "nfse", label: "NFS-e", icon: Receipt },
+  { k: "visao", label: "Visão geral", icon: BarChart3 },
+  { k: "honorarios", label: "Honorários e cobranças", icon: Wallet },
   { k: "despesas", label: "Despesas", icon: TrendingDown },
-  { k: "recorrentes", label: "Recorrentes", icon: Repeat },
-  { k: "contratos", label: "Contratos", icon: FileText },
-  { k: "societaria", label: "Societária", icon: Building2 },
+  { k: "recorrentes", label: "Despesas recorrentes", icon: Repeat },
+  { k: "contratos", label: "Contratos do escritório", icon: FileText },
+  { k: "societaria", label: "Sociedade", icon: Building2 },
   { k: "estimador", label: "Estimador OAB", icon: Calculator },
 ] as const;
 
@@ -54,8 +51,6 @@ export function nextFinanceParams(
   const params = new URLSearchParams(current);
   params.set("tab", next);
   if (next !== "societaria") params.delete("sub");
-  // Filtro de drill-down é específico da aba de destino: limpa ao trocar
-  // e só reaplica quando a navegação (ex.: clique num indicador) o define.
   params.delete("status");
   if (extra) {
     for (const [k, v] of Object.entries(extra)) params.set(k, v);
@@ -63,7 +58,7 @@ export function nextFinanceParams(
   return params;
 }
 
-// Abas que reagem ao filtro de competência compartilhado (as demais ignoram).
+// Só as telas que efetivamente consultam lançamentos por mês exibem o filtro.
 const TABS_COM_COMPETENCIA: ReadonlySet<FinanceTab> = new Set([
   "visao",
   "despesas",
@@ -75,6 +70,7 @@ export default function FinanceiroWorkspace() {
   const tab: FinanceTab = isFinanceTab(raw) ? raw : "visao";
   const rawComp = searchParams.get("comp");
   const competencia = isCompetencia(rawComp) ? rawComp : competenciaAtual();
+  const mostraCompetencia = TABS_COM_COMPETENCIA.has(tab);
 
   const setTab = (next: FinanceTab, extra?: Record<string, string>) =>
     setSearchParams(nextFinanceParams(searchParams, next, extra), {
@@ -93,25 +89,21 @@ export default function FinanceiroWorkspace() {
       <PageHeader
         eyebrow="Gestão financeira"
         title="Financeiro"
-        subtitle="Receitas, despesas, honorários, contratos e distribuição societária em uma visão operacional única."
+        subtitle="Honorários, cobranças, despesas, contratos e administração da sociedade em uma visão operacional única."
         actions={
-          <div
-            className="input flex w-auto items-center gap-2 py-1.5"
-            title={
-              TABS_COM_COMPETENCIA.has(tab)
-                ? "Competência aplicada a esta aba"
-                : "Competência (não se aplica a esta aba)"
-            }
-          >
-            <Calendar className="w-4 h-4 text-slate-400" />
-            <input
-              type="month"
-              aria-label="Competência"
-              className="text-sm text-slate-700 outline-none bg-transparent"
-              value={competencia}
-              onChange={(e) => setCompetencia(e.target.value)}
-            />
-          </div>
+          mostraCompetencia ? (
+            <label className="input flex w-auto items-center gap-2 py-1.5">
+              <Calendar className="w-4 h-4 text-slate-400" />
+              <span className="text-xs font-medium text-slate-500">Competência</span>
+              <input
+                type="month"
+                aria-label="Competência financeira"
+                className="text-sm text-slate-700 outline-none bg-transparent"
+                value={competencia}
+                onChange={(e) => setCompetencia(e.target.value)}
+              />
+            </label>
+          ) : undefined
         }
       />
       <div className="overflow-x-auto">
@@ -142,7 +134,6 @@ export default function FinanceiroWorkspace() {
             />
           )}
           {tab === "honorarios" && <Honorarios />}
-          {tab === "nfse" && <NotasFiscais />}
           {tab === "despesas" && <Despesas competencia={competencia} />}
           {tab === "recorrentes" && <DespesasRecorrentes />}
           {tab === "contratos" && <OfficeContracts />}

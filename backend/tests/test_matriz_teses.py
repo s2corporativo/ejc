@@ -430,6 +430,93 @@ async def test_montar_matriz_precedentes_por_questao_sem_boost_indevido(monkeypa
     assert all(c.forca == 15 for c in cands)
 
 
+async def test_montar_matriz_vincula_tese_a_questao_e_precedentes_pontuam(monkeypatch):
+    """M-B3: tese vinculada à questão de origem (questao_ref da decomposição ou
+    vínculo lexical determinístico) recebe os AuthorityRecords daquela questão
+    via refs_por_questao — e os pesos PESO_FUNDAMENTO_VERIFICADO/
+    PESO_POR_SALDO_PRECEDENTE passam a ser alcançáveis."""
+    monkeypatch.setattr(mts, "get_settings", lambda: _Cfg())
+
+    async def _fake_chat(**kw):
+        return _Resp(json.dumps({
+            "questoes": [{"questao": "Prescrição quinquenal?", "prioridade": 1}],
+            "teses_sugeridas": [
+                # Vínculo explícito da própria decomposição (questao_ref).
+                {"tese": "Tese IA", "fundamento": "art. 7º CF", "questao_ref": 1},
+            ],
+        }))
+    monkeypatch.setattr(mts, "gw_chat", _fake_chat)
+
+    async def _rag(*a, **k):
+        return [{"conteudo": "Recurso provido quanto à prescrição. Súmula 331 TST.",
+                 "titulo": "Julgado", "categoria": "jurisprudencia"}]
+    monkeypatch.setattr(mts, "buscar_contexto_rag", _rag)
+
+    async def _verificador(db, texto):
+        return {"citacoes": [{
+            "tipo": "sumula", "status": "verificada", "citacao": "Súmula 331 TST",
+            "numero": "331", "tribunal": "TST", "orgao": None, "data": None,
+            "fonte_verificacao": "base oficial interna/RAG",
+            "fonte": "base oficial interna/RAG",
+        }]}
+    monkeypatch.setattr(mts, "verificar_jurisprudencia", _verificador)
+
+    async def _fake_snapshot(db, **kw):
+        return None
+    from app.services import case_intelligence_service as cis
+    monkeypatch.setattr(cis, "gravar_snapshot_seguro", _fake_snapshot)
+
+    # Tese do Banco cujo texto compartilha token relevante com a questão →
+    # vínculo LEXICAL determinístico.
+    tese_banco = Tese(id="tb1", titulo="Prescrição quinquenal trabalhista",
+                      descricao="Aplica-se a prescrição quinquenal",
+                      fundamentacao="art. 7º XXIX CF", contra_argumento=None,
+                      area_juridica="trabalhista", tipo=TeseTipo.escritorio,
+                      status=TeseStatus.ativa, vezes_usada=0, vezes_venceu=0,
+                      vezes_perdeu=0, deleted_at=None)
+    db = _FakeDB([[tese_banco], []])   # fila: select Tese → select Prova
+
+    matriz = await mts.montar_matriz(db, "u1", "case1", "trabalhista",
+                                     "Fatos sanitizados suficientes para análise.")
+    cands = [o for o in db.added if isinstance(o, ThesisCandidate)]
+    assert len(cands) == 2
+    issue_id = matriz["questoes"][0]["id"]
+    # AMBAS as teses vinculadas à questão de origem, com o precedente dela.
+    for c in cands:
+        assert c.issue_id == issue_id, c.tese
+        assert len(c.precedentes) == 1
+        assert c.precedentes[0]["status_verificacao"] == "verificada"
+        assert c.precedentes[0]["favoravel"] is True
+        # 15 (fundamento) + 10 (verificado) + 10 (saldo +1) = 35
+        assert c.forca == 35, c.tese
+    assert all(t["issue_id"] == issue_id for t in matriz["teses"])
+
+
+def test_parse_questoes_extrai_questao_ref_e_descarta_fora_do_intervalo():
+    out = mts._parse_questoes(json.dumps({
+        "questoes": [{"questao": "Prescrição?", "prioridade": 1}],
+        "teses_sugeridas": [
+            {"tese": "Com ref válida", "fundamento": "art. 1º", "questao_ref": 1},
+            {"tese": "Ref fora do intervalo", "questao_ref": 9},
+            {"tese": "Ref inválida", "questao_ref": "banana"},
+            {"tese": "Sem ref"},
+        ],
+    }))
+    refs = [t["questao_ref"] for t in out["teses_sugeridas"]]
+    assert refs == [1, None, None, None]
+
+
+def test_vincular_questao_lexical_deterministico():
+    i1 = _issue(id="i1", questao="Há prescrição quinquenal?")
+    i2 = _issue(id="i2", questao="Nulidade da citação editalícia?")
+    # Sobreposição relevante → melhor questão; sem sobreposição → None.
+    assert mts._vincular_questao("prescrição do crédito", [i1, i2]) == "i1"
+    assert mts._vincular_questao("vício na citação por edital",
+                                 [i1, i2]) == "i2"
+    assert mts._vincular_questao("tese sem relação alguma", [i1, i2]) is None
+    assert mts._vincular_questao("", [i1, i2]) is None
+
+
 async def test_montar_matriz_parse_falho_carrega_aviso(monkeypatch):
     """Item 10: falha de parse da decomposição aparece nos avisos da matriz e
     do snapshot (nunca silenciosa)."""

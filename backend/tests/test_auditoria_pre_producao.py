@@ -118,7 +118,8 @@ def test_refresh_reuso_de_token_rotacionado_revoga_todas_sessoes_e_audita():
 def test_refresh_revogado_por_logout_ou_troca_de_senha_nao_pune():
     """Token revogado SEM replaced_by_jti (logout/troca de senha) vindo de um
     dispositivo antigo legítimo: 401 simples, sem cascata e sem REFRESH_REUSE —
-    não derruba a sessão nova emitida pelo alterar-senha."""
+    não derruba a sessão nova emitida pelo alterar-senha. M-S3: o replay ainda
+    deixa trilha leve REFRESH_REPLAY_POS_LOGOUT (forense), sem punição."""
     token, _ = create_refresh_token("u1")
     db = _FakeDB(results=[_record(
         revoked=True, revoked_at=datetime.now(timezone.utc))])
@@ -128,7 +129,10 @@ def test_refresh_revogado_por_logout_ou_troca_de_senha_nao_pune():
     assert r.status_code == 401
     assert "Sessão encerrada" in r.json()["detail"]
     assert len(db.executed) == 1          # só o SELECT do JTI — sem revoga-tudo
-    assert _audits(db) == []
+    logs = _audits(db)
+    assert len(logs) == 1 and logs[0].acao == "REFRESH_REPLAY_POS_LOGOUT"
+    assert logs[0].user_id == "u1"
+    assert db.committed == 1              # trilha persistida antes do 401
 
 
 def test_refresh_jti_desconhecido_tambem_e_reuso():

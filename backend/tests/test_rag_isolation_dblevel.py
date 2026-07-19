@@ -131,7 +131,9 @@ async def test_conteudo_publico_sempre_visivel_rowlevel():
                 "INSERT INTO knowledge_docs "
                 "(id, titulo, categoria, status_indexacao, extra) "
                 "VALUES (:id, 'SUMULA_PUBLICA_TESTE', 'sumula_stj', 'indexado', "
-                "'{\"rag_status\":\"aprovado\",\"conferido\":true}'::jsonb)"
+                # `\:` — escapa o ":" para o text() do SQLAlchemy não ler
+                # ":true" como bind param dentro do literal JSON.
+                "'{\"rag_status\":\"aprovado\",\"conferido\"\\:true}'::jsonb)"
             ),
             {"id": doc_pub},
         )

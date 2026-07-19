@@ -2,6 +2,7 @@ from app.routers.defesas_revisoes import (
     ADVOGADO_ROLES,
     JURIDICO_ROLES,
     MODALIDADES,
+    ROLES_MOTOR_PECA,
     _normalizar_resultado,
     _parse_json,
 )
@@ -108,9 +109,17 @@ def test_matriz_teses_separa_formal_e_merito_e_vincula_provas():
 
 
 def test_roles_sao_allowlists_explicitas_sem_financeiro_e_sem_geracao_auxiliar():
+    from app.routers.defesas_revisoes_avancado import ROLES_PACOTE
+
     assert "financeiro" not in JURIDICO_ROLES
     assert "financeiro" not in ADVOGADO_ROLES
     assert "estagiario" in JURIDICO_ROLES
     assert "estagiario" not in ADVOGADO_ROLES
     assert "advogado_auxiliar" in JURIDICO_ROLES
-    assert "advogado_auxiliar" not in ADVOGADO_ROLES
+    # advogado_auxiliar participa da análise (ADVOGADO_ROLES compartilhado,
+    # SEM mutação no import), mas não usa Motor de Peça nem gera pacote
+    # executivo — subconjuntos próprios de cada módulo.
+    assert "advogado_auxiliar" in ADVOGADO_ROLES
+    assert "advogado_auxiliar" not in ROLES_MOTOR_PECA
+    assert "advogado_auxiliar" not in ROLES_PACOTE
+    assert ROLES_MOTOR_PECA <= ADVOGADO_ROLES and ROLES_PACOTE <= ADVOGADO_ROLES

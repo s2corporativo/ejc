@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import {
   Archive,
   Calculator,
@@ -68,21 +68,31 @@ export default function DefesasRevisoesComplementos({ modalidade, caseId, result
     limite_informado: "",
   });
 
+  // Guarda de corrida: identifica a requisição vigente. Trocar de aba (ou de
+  // modalidade/caso) invalida respostas em voo, para que uma operação da aba
+  // anterior não preencha a `saida` da aba nova.
+  const reqIdRef = useRef(0);
+
   useEffect(() => {
+    reqIdRef.current += 1; // descarta qualquer resposta em voo
     setSaida(null);
+    setLoading("");
   }, [aba, modalidade, caseId]);
 
   const executar = async (nome: string, acao: () => Promise<any>, sucesso: string) => {
+    const meuReqId = ++reqIdRef.current;
     setLoading(nome);
     setSaida(null);
     try {
       const data = await acao();
+      if (reqIdRef.current !== meuReqId) return; // resposta obsoleta
       setSaida(data);
       toast.success(sucesso);
     } catch (error: any) {
+      if (reqIdRef.current !== meuReqId) return; // erro obsoleto
       toast.error(error.response?.data?.detail || "Não foi possível concluir a operação.");
     } finally {
-      setLoading("");
+      if (reqIdRef.current === meuReqId) setLoading("");
     }
   };
 
@@ -220,7 +230,7 @@ export default function DefesasRevisoesComplementos({ modalidade, caseId, result
   };
 
   return (
-    <section className="space-y-4 rounded-[2rem] border border-slate-200 bg-white p-5 dark:border-white/10 dark:bg-white/[0.03]">
+    <section className="space-y-4 rounded-xl border border-slate-200 bg-white p-4 dark:border-white/10 dark:bg-white/[0.03]">
       <div>
         <div className="flex items-center gap-2 text-xs font-semibold uppercase tracking-[0.16em] text-primary-700">
           <ShieldAlert className="h-4 w-4" /> Jornada avançada
