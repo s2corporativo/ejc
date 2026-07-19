@@ -85,10 +85,14 @@ services:
       # suba um serviço `ollama` e volte para "true".
       OLLAMA_ENABLED: "false"
       # Anthropic primeiro (melhor qualidade jurídica); Maritaca (Sabiá,
-      # legal-tuned PT-BR) como 2º externo QUANDO habilitada (MARITACA_ENABLED
-      # + chave no .env do VPS — inelegível fica fora da cadeia); Groq depois.
+      # legal-tuned PT-BR) como 2º externo; Groq depois.
       # Requer ANTHROPIC_API_KEY no .env do VPS (segredo — nunca versionado).
       AI_PROVIDER_PRIORITY: "anthropic,maritaca,groq,ollama"
+      # Decisão de produto (2026-07-19): Maritaca LIGADA neste stack — a chave
+      # MARITACA_API_KEY vive só no .env do VPS; sem chave o provider continua
+      # inelegível (fail-safe, fora da cadeia). O .env pode sobrepor para
+      # desligar (MARITACA_ENABLED=false) sem tocar neste arquivo.
+      MARITACA_ENABLED: "${MARITACA_ENABLED:-true}"
     volumes:
       - uploads_data:/app/uploads
       - backups_data:/app/backups
@@ -132,6 +136,8 @@ services:
       # sem Ollama local neste stack; IA externa com mascaramento de PII.
       OLLAMA_ENABLED: "false"
       AI_PROVIDER_PRIORITY: "anthropic,maritaca,groq,ollama"
+      # Mesma decisão de produto da API: Maritaca ligada; .env pode sobrepor.
+      MARITACA_ENABLED: "${MARITACA_ENABLED:-true}"
     volumes:
       - uploads_data:/app/uploads
     depends_on:
