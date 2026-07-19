@@ -8,17 +8,21 @@ on:
 permissions:
   contents: write
 
+concurrency:
+  group: fix-navigation-contracts-${{ github.ref }}
+  cancel-in-progress: true
+
 jobs:
   fix:
     if: ${{ !contains(github.event.head_commit.message, '[nav-contracts-fixed]') }}
     runs-on: [self-hosted, ejc-vps]
-    timeout-minutes: 10
+    timeout-minutes: 5
     steps:
       - uses: actions/checkout@v7
         with:
           ref: chore/ejc-10-10-release-governance
 
-      - name: Corrigir contratos de navegação
+      - name: Aplicar correções pontuais
         shell: bash
         run: |
           python - <<'PY'
@@ -28,49 +32,32 @@ jobs:
           text = registry.read_text(encoding="utf-8")
           old = '''    component: KnowledgeHub,
               showInNav: true,
-              order: 20,'''
-          # Compatibilidade com indentação normal do arquivo após Prettier.
-          if old not in text:
-              old = '''    component: KnowledgeHub,
-              showInNav: true,
               order: 20,'''.replace("              ", "    ")
           new = '''    component: KnowledgeHub,
               showInNav: false,
               status: "legacy",
-              order: 20,'''
+              order: 20,'''.replace("              ", "    ")
           if old not in text:
               raise SystemExit("Trecho do Knowledge Hub não encontrado")
-          text = text.replace(old, new.replace("              ", "    "), 1)
-          registry.write_text(text, encoding="utf-8")
+          registry.write_text(text.replace(old, new, 1), encoding="utf-8")
 
-          test = Path("frontend/src/config/routeIntegrity.test.ts")
-          text = test.read_text(encoding="utf-8")
-          marker = '''  "/clientes/:clientId/dossie", // alias removido de STAFF_ROUTES; redireciona para /clientes/:clientId
-          ] as const;'''
-          if marker not in text:
-              marker = marker.replace("          ]", "]")
-          replacement = '''  "/clientes/:clientId/dossie", // alias removido de STAFF_ROUTES; redireciona para /clientes/:clientId
+          integrity = Path("frontend/src/config/routeIntegrity.test.ts")
+          text = integrity.read_text(encoding="utf-8")
+          old = '''  "/clientes/:clientId/dossie", // alias removido de STAFF_ROUTES; redireciona para /clientes/:clientId
+          ] as const;'''.replace("          ]", "]")
+          new = '''  "/clientes/:clientId/dossie", // alias removido de STAFF_ROUTES; redireciona para /clientes/:clientId
             "/ramos/:slug", // alias dinâmico legado; redireciona para /areas-de-atuacao/:slug
-          ] as const;'''
-          if marker not in text:
-              raise SystemExit("Bloco DYNAMIC_LEGACY_APP_ROUTES não encontrado")
-          text = text.replace(marker, replacement.replace("          ]", "]").replace("    \"/ramos", "  \"/ramos"), 1)
-          test.write_text(text, encoding="utf-8")
+          ] as const;'''.replace("    \"/ramos", "  \"/ramos").replace("          ]", "]")
+          if old not in text:
+              raise SystemExit("Bloco de redirects dinâmicos não encontrado")
+          integrity.write_text(text.replace(old, new, 1), encoding="utf-8")
           PY
 
-          cd frontend
-          npm ci --silent
-          npm run format
-          npm run test -- --reporter=dot
-
-      - name: Publicar correção
+      - name: Publicar correção para validação pelo CI oficial
         shell: bash
         run: |
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
           git add frontend/src/config/moduleRegistry.tsx frontend/src/config/routeIntegrity.test.ts
-          if git diff --cached --quiet; then
-            exit 0
-          fi
           git commit -m "fix(frontend): alinhar rotas legadas ao contrato de navegação [nav-contracts-fixed]"
           git push origin HEAD:chore/ejc-10-10-release-governance
