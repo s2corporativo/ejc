@@ -37,15 +37,12 @@ def normalizar_modelo_ia(modelo: str | None) -> str | None:
 
 
 def _proteger_cnj_jurisprudencial(texto: str) -> tuple[str, dict[str, str]]:
-    """Protege temporariamente apenas CNJ com contexto inequívoco de citação.
+    """Protege temporariamente somente referência jurisprudencial completa.
 
-    O AILog alimenta o gate de citações no momento da aprovação HITL. Mascarar
-    todo número CNJ tornaria esse gate inoperante. Por outro lado, preservar o
-    número do processo do próprio cliente seria exposição desnecessária.
-
-    Um CNJ só é preservado quando a janela próxima contém tribunal reconhecível
-    E marcador jurídico de precedente ou data. Demais números de processo seguem
-    pseudonimizados normalmente.
+    O CNJ permanece no AILog apenas quando a janela próxima contém, de forma
+    cumulativa, tribunal reconhecível, marcador de precedente/acórdão e data.
+    Essa combinação é necessária ao gate de citações e reduz drasticamente a
+    chance de preservar o número do processo do próprio cliente.
     """
     from app.services.sanitizer import _PATTERNS
 
@@ -56,7 +53,11 @@ def _proteger_cnj_jurisprudencial(texto: str) -> tuple[str, dict[str, str]]:
         ini = max(0, match.start() - 220)
         fim = min(len(texto), match.end() + 220)
         janela = texto[ini:fim]
-        if _TRIBUNAL_REF.search(janela) and (_TERMO_REF.search(janela) or _DATA_REF.search(janela)):
+        if (
+            _TRIBUNAL_REF.search(janela)
+            and _TERMO_REF.search(janela)
+            and _DATA_REF.search(janela)
+        ):
             token = f"[[REF_JULGADO_{len(refs) + 1:03d}]]"
             refs[token] = match.group(0)
             return token
@@ -66,7 +67,7 @@ def _proteger_cnj_jurisprudencial(texto: str) -> tuple[str, dict[str, str]]:
 
 
 def pseudonimizar_texto_auditoria(valor: str | None) -> str | None:
-    """Pseudonimiza PII persistida sem destruir referências para citation gate."""
+    """Pseudonimiza PII persistida sem destruir citação jurídica verificável."""
     if valor is None:
         return None
     texto = str(valor)
