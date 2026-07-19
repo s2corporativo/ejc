@@ -184,4 +184,12 @@ Stack mínima **de pé de verdade**: Postgres 16 + pgvector local (Docker Hub bl
 
 ## 8. Recomendações não implementadas (backlog priorizado)
 
-Itens marcados como recomendação neste relatório e não corrigidos no PR corrente ficam registrados como backlog, por ordem de severidade (§4). Nenhum é bloqueador de produção isolado; A1–A9 devem ser priorizados na próxima janela.
+Itens que exigem mais que um *point-fix* (migração de banco, coordenação com integração externa ou feature de frontend) ficam registrados aqui, com o motivo. Nenhum é bloqueador isolado.
+
+- **B8 — `calendar_feed` token permanente não-revogável.** Correção adequada = coluna `users.calendar_token_version` (migração Alembic) incluída no HMAC + botão "regenerar link" no frontend. É uma feature, não um point-fix; fora do escopo desta PR de segurança para não introduzir migração destrutiva/coordenada. Mitigado hoje por token de 128 bits, tempo-constante e escopo por `user_id`.
+- **B9 — `evolution_webhook` aceita segredo via query string (`?token=`).** Migrar para header-only pode quebrar a config atual da Evolution API em produção; exige coordenação operacional. Recomendado: garantir que o segredo não seja logado (nginx/uvicorn) e migrar para header em janela combinada.
+- **D8 — `infosimples/receita/cpf` sem vínculo a caso/finalidade no audit.** Minimização LGPD: registrar finalidade/caso na trilha. Melhoria de auditoria (não é gate de acesso).
+- **D2 — Dossiê do Cliente (divergência frontend/backend).** `moduleRegistry` roteia `/clientes/:clientId` sob `ROLES.clientes` (inclui advogado/secretaria), mas o backend exige `is_gestao`. Backend mais restrito (seguro); ajuste é de UX (alinhar a rota a socio+ no registry).
+- **Similar-risk enum 500 fora de `cases`.** Outros routers podem ter o mesmo padrão de string-solta → coluna SAEnum. Varredura recomendada como higiene (não confirmado nesta auditoria fora de `cases`).
+
+Os achados A1–A9 e B1–B7 da §4 foram **corrigidos** nesta PR (§7). O restante acima é backlog priorizado.
