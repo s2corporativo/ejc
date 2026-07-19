@@ -7,6 +7,7 @@ import {
   KeyRound,
   Loader2,
   Pencil,
+  Plug,
   RefreshCw,
   ShieldCheck,
   Trash2,
@@ -18,12 +19,14 @@ import {
   importarEnv,
   listarCofre,
   revogarCredencial,
+  testarProvider,
   type CampoStatus,
   type CredencialMeta,
   type CredentialState,
   type ImportResumo,
   type ProviderStatus,
   type Reauth,
+  type TesteResultado,
 } from "../lib/cofre";
 import { toast } from "./Toast";
 import { Button, Input, Modal, SectionCard, Spinner } from "./UI";
@@ -100,14 +103,20 @@ const TEST_STATE: Record<string, CredentialState> = {
   indisponivel: "indisponivel",
 };
 
-/** Estado efetivo de um campo: ausente > resultado de teste > configurada. */
-export function resolveCredentialState(campo: CampoStatus): CredentialState {
+/**
+ * Estado efetivo de um campo: ausente > resultado de teste > configurada.
+ * `testStatusOverride` vem de um teste recém-disparado nesta sessão (ainda não
+ * refletido em campo.last_test_status), tendo precedência sobre o persistido.
+ */
+export function resolveCredentialState(
+  campo: CampoStatus,
+  testStatusOverride?: string | null,
+): CredentialState {
   if (campo.estado === "ausente") {
     return "ausente";
   }
-  const test = campo.last_test_status
-    ? TEST_STATE[campo.last_test_status]
-    : undefined;
+  const status = testStatusOverride ?? campo.last_test_status;
+  const test = status ? TEST_STATE[status] : undefined;
   return test ?? "configurada";
 }
 
@@ -601,17 +610,20 @@ function ImportarEnvModal({
 function CampoRow({
   provider,
   campo,
+  teste,
   onCadastrar,
   onRevogar,
   onHistorico,
 }: {
   provider: string;
   campo: CampoStatus;
+  /** Resultado de um teste recém-disparado nesta sessão (override do badge). */
+  teste?: TesteResultado;
   onCadastrar: () => void;
   onRevogar: () => void;
   onHistorico: () => void;
 }) {
-  const state = resolveCredentialState(campo);
+  const state = resolveCredentialState(campo, teste?.estado);
   const meta = STATE_META[state];
   const configurada = campo.estado === "configurada";
 
@@ -674,9 +686,12 @@ function CampoRow({
           {campo.origem && (
             <span>· {ORIGEM_LABEL[campo.origem] ?? campo.origem}</span>
           )}
-          {campo.last_test_status && (
+          {(teste || campo.last_test_status) && (
             <span>
-              · último teste: {campo.last_test_detail || campo.last_test_status}
+              · último teste:{" "}
+              {teste
+                ? teste.detalhe
+                : campo.last_test_detail || campo.last_test_status}
             </span>
           )}
         </div>
@@ -700,6 +715,27 @@ export default function CredentialVaultPanel() {
   const [totpEnabled, setTotpEnabled] = useState(false);
   const [target, setTarget] = useState<ModalTarget | null>(null);
   const [importando, setImportando] = useState(false);
+  // Provider em teste no momento + últimos resultados desta sessão (por provider).
+  const [testando, setTestando] = useState<string | null>(null);
+  const [testes, setTestes] = useState<Record<string, TesteResultado>>({});
+
+  const testar = useCallback(async (providerKey: string) => {
+    setTestando(providerKey);
+    try {
+      const resultado = await testarProvider(providerKey);
+      setTestes((prev) => ({ ...prev, [providerKey]: resultado }));
+      const label = providerLabel(providerKey);
+      if (resultado.estado === "configurada") {
+        toast.success(`${label}: conexão OK.`);
+      } else {
+        toast.error(`${label}: ${resultado.detalhe}`);
+      }
+    } catch (error) {
+      toast.error(apiError(error, "Não foi possível testar a conexão."));
+    } finally {
+      setTestando(null);
+    }
+  }, []);
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -712,6 +748,8 @@ export default function CredentialVaultPanel() {
           .catch(() => null),
       ]);
       setProviders(cofre);
+      // Recarga traz o last_test_* já persistido — descarta os overrides de sessão.
+      setTestes({});
       if (security) setTotpEnabled(Boolean(security.totp_enabled));
     } catch (error) {
       toast.error(apiError(error, "Não foi possível carregar o cofre."));
@@ -789,8 +827,25 @@ export default function CredentialVaultPanel() {
             <div className="space-y-4">
               {lista.map((provider) => (
                 <div key={provider.provider_key}>
-                  <div className="mb-2 flex items-center gap-2 text-xs font-semibold uppercase tracking-wide text-slate-400">
-                    {providerLabel(provider.provider_key)}
+                  <div className="mb-2 flex items-center justify-between gap-2">
+                    <span className="text-xs font-semibold uppercase tracking-wide text-slate-400">
+                      {providerLabel(provider.provider_key)}
+                    </span>
+                    <Button
+                      size="sm"
+                      variant="ghost"
+                      onClick={() => testar(provider.provider_key)}
+                      disabled={testando === provider.provider_key}
+                      icon={
+                        testando === provider.provider_key ? (
+                          <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                        ) : (
+                          <Plug className="h-3.5 w-3.5" />
+                        )
+                      }
+                    >
+                      Testar
+                    </Button>
                   </div>
                   {provider.campos.length === 0 ? (
                     <p className="text-xs text-slate-400">
@@ -803,6 +858,7 @@ export default function CredentialVaultPanel() {
                           key={campo.field_key}
                           provider={provider.provider_key}
                           campo={campo}
+                          teste={testes[provider.provider_key]}
                           onCadastrar={() =>
                             setTarget({
                               kind: "cadastrar",

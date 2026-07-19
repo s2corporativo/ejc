@@ -20,12 +20,25 @@ const cadastrarCredencial = vi.fn();
 const revogarCredencial = vi.fn();
 const historicoCampo = vi.fn();
 const importarEnv = vi.fn();
+const testarProvider = vi.fn();
 vi.mock("../../lib/cofre", () => ({
   listarCofre: (...a: unknown[]) => listarCofre(...a),
   cadastrarCredencial: (...a: unknown[]) => cadastrarCredencial(...a),
   revogarCredencial: (...a: unknown[]) => revogarCredencial(...a),
   historicoCampo: (...a: unknown[]) => historicoCampo(...a),
   importarEnv: (...a: unknown[]) => importarEnv(...a),
+  testarProvider: (...a: unknown[]) => testarProvider(...a),
+}));
+
+// Toast mockado para verificar os avisos (o Toaster não é montado nos testes).
+const toastError = vi.fn();
+const toastSuccess = vi.fn();
+vi.mock("../Toast", () => ({
+  toast: {
+    error: (...a: unknown[]) => toastError(...a),
+    success: (...a: unknown[]) => toastSuccess(...a),
+    info: vi.fn(),
+  },
 }));
 
 import CredentialVaultPanel, {
@@ -175,5 +188,57 @@ describe("CredentialVaultPanel — modal de cadastro exige senha e não vaza o s
     await waitFor(() => expect(screen.queryByRole("dialog")).toBeNull());
     // ...e o segredo digitado não aparece em NENHUM ponto renderizado.
     expect(document.body.textContent).not.toContain(SEGREDO);
+  });
+});
+
+describe("CredentialVaultPanel — botão Testar", () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+  });
+
+  async function headerDo(providerLabel: string) {
+    mountPanel();
+    const header = (await screen.findByText(providerLabel)).closest("div");
+    return within(header as HTMLElement);
+  }
+
+  it("sucesso atualiza o badge do provider com o estado retornado (sem valor no DOM)", async () => {
+    // SMTP começa "Inválida" (last_test_status); o teste ao vivo devolve OK.
+    testarProvider.mockResolvedValue({
+      provider_key: "smtp",
+      estado: "configurada",
+      detalhe: "Conexão SMTP estabelecida (login aceito).",
+      last_test_at: "2026-07-19T12:00:00Z",
+      campos_atualizados: 1,
+    });
+
+    const header = await headerDo("E-mail (SMTP)");
+    expect(screen.getByText("Inválida")).toBeTruthy();
+
+    fireEvent.click(header.getByRole("button", { name: /Testar/ }));
+
+    await waitFor(() => expect(testarProvider).toHaveBeenCalledWith("smtp"));
+    // Badge migra de Inválida → Configurada com o veredito do teste.
+    expect(await screen.findByText("Configurada")).toBeTruthy();
+    expect(screen.queryByText("Inválida")).toBeNull();
+    expect(toastSuccess).toHaveBeenCalled();
+    // A resposta do teste não carrega segredo — nada sensível vaza.
+    expect(document.body.textContent).not.toContain("SMTP_PASSWORD_VALUE");
+  });
+
+  it("falha no teste mostra toast de erro e não derruba o painel", async () => {
+    testarProvider.mockRejectedValue({
+      response: { data: { detail: "Timeout ao conectar." } },
+    });
+
+    const header = await headerDo("Groq");
+    fireEvent.click(header.getByRole("button", { name: /Testar/ }));
+
+    await waitFor(() => expect(testarProvider).toHaveBeenCalledWith("groq"));
+    await waitFor(() =>
+      expect(toastError).toHaveBeenCalledWith("Timeout ao conectar."),
+    );
+    // Painel segue de pé (o rótulo do provider continua renderizado).
+    expect(screen.getByText("Groq")).toBeTruthy();
   });
 });

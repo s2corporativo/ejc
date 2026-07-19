@@ -80,6 +80,19 @@ export interface ImportResumo {
   overlay_aplicado: boolean;
 }
 
+/**
+ * Resultado do teste de conexão de um provider (POST /{provider}/testar).
+ * Nunca contém o valor — só o veredito da conexão + metadados. O backend
+ * persiste last_test_* nas linhas ativas do provider.
+ */
+export interface TesteResultado {
+  provider_key: string;
+  estado: CredentialState;
+  detalhe: string;
+  last_test_at?: string | null;
+  campos_atualizados: number;
+}
+
 /** Step-up de reautenticação enviado em toda operação mutadora. */
 export interface Reauth {
   senha_atual: string;
@@ -147,6 +160,19 @@ export async function importarEnv(reauth: Reauth): Promise<ImportResumo> {
   const { data } = await api.post<ImportResumo>(
     "/cofre-credenciais/importar-env",
     reauthBody(reauth),
+  );
+  return data;
+}
+
+/**
+ * Testa a conexão da integração (superadmin). Não exige step-up — o teste não
+ * expõe nem altera o segredo, só grava o resultado (last_test_*) no cofre.
+ */
+export async function testarProvider(
+  providerKey: string,
+): Promise<TesteResultado> {
+  const { data } = await api.post<TesteResultado>(
+    `/cofre-credenciais/${providerKey}/testar`,
   );
   return data;
 }
