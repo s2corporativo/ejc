@@ -1,20 +1,20 @@
 name: Sync Main into EJC 10/10 Branch
 
 on:
-  push:
-    branches:
-      - chore/ejc-10-10-release-governance
+  pull_request:
+    branches: [main]
+    types: [opened, synchronize, reopened]
 
 permissions:
   contents: write
 
 concurrency:
-  group: sync-main-10-10-${{ github.ref }}
+  group: sync-main-10-10-${{ github.event.pull_request.number }}
   cancel-in-progress: true
 
 jobs:
   sync:
-    if: ${{ !contains(github.event.head_commit.message, '[main-synced]') }}
+    if: ${{ github.head_ref == 'chore/ejc-10-10-release-governance' }}
     runs-on: ubuntu-latest
     timeout-minutes: 10
     steps:
@@ -30,6 +30,11 @@ jobs:
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
           git fetch origin main
+
+          if git merge-base --is-ancestor origin/main HEAD; then
+            echo "Branch já contém a main atual."
+            exit 0
+          fi
 
           if git merge --no-ff origin/main -m "chore: sincronizar main na governança 10/10 [main-synced]"; then
             git push origin HEAD:chore/ejc-10-10-release-governance
