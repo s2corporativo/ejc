@@ -5,7 +5,7 @@ from typing import Optional
 from datetime import date, datetime
 from decimal import Decimal
 
-from app.models.fee import FeeTipo
+from app.models.fee import FeeTipo, FeeStatus
 
 # Valores monetários nunca negativos (auditoria 2026-06-30, M5).
 ValorNaoNegativo = condecimal(ge=0)
@@ -17,6 +17,9 @@ PercentualNaoNegativo = condecimal(ge=0, le=100)
 # que aceita a string — logo a validação não muda o fluxo de dados, apenas
 # rejeita valores fora do domínio (evita 500/erro de enum no banco).
 _TIPOS_FEE_VALIDOS = frozenset(t.value for t in FeeTipo)
+# Idem para `status` na ATUALIZAÇÃO: coluna SAEnum(FeeStatus), setattr direto no
+# UPDATE → string fora do domínio estourava no asyncpg (500) em vez de 422.
+_STATUS_FEE_VALIDOS = frozenset(s.value for s in FeeStatus)
 
 class FeeCreate(BaseModel):
     tipo: str = "fixo"
@@ -44,6 +47,19 @@ class FeeUpdate(BaseModel):
     status: Optional[str] = None
     data_vencimento: Optional[date] = None
     observacoes: Optional[str] = None
+
+    @field_validator("status")
+    @classmethod
+    def _validar_status(cls, v: Optional[str]) -> Optional[str]:
+        # Vazio/None PASSA (update parcial); valor fora do enum → 422, não 500.
+        if v is None or str(v).strip() == "":
+            return v
+        if v not in _STATUS_FEE_VALIDOS:
+            raise ValueError(
+                "status de honorário inválido: "
+                f"{v!r}. Valores permitidos: {sorted(_STATUS_FEE_VALIDOS)}"
+            )
+        return v
 
 class FeePaymentCreate(BaseModel):
     valor: Decimal

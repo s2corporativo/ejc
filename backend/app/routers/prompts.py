@@ -7,10 +7,10 @@ from typing import List, Optional
 from fastapi import APIRouter, Depends, HTTPException, Body
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
-from pydantic import BaseModel
+from pydantic import BaseModel, field_validator
 
 from app.core.database import get_db
-from app.models.prompt_juridico import PromptJuridico
+from app.models.prompt_juridico import PromptJuridico, PromptCategoria
 from app.core.security import get_current_user
 from app.models.user import User
 
@@ -22,6 +22,16 @@ class PromptCreate(BaseModel):
     titulo: str
     categoria: str
     conteudo: str
+
+    @field_validator("categoria")
+    @classmethod
+    def _categoria_valida(cls, v: str) -> str:
+        # PromptJuridico.categoria é SAEnum(PromptCategoria): valor fora do enum
+        # estoura no INSERT (asyncpg → 500). Validar na ENTRADA devolve 422.
+        validos = {c.value for c in PromptCategoria}
+        if v not in validos:
+            raise ValueError(f"categoria inválida: use uma de {sorted(validos)}")
+        return v
 
 class PromptResponse(PromptCreate):
     id: str
