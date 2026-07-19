@@ -24,7 +24,7 @@ function normalizarEndpoint(url?: string): string {
   if (!url) return "";
   try {
     const parsed = new URL(url, window.location.origin);
-    return parsed.pathname.replace(/^\/api/, "");
+    return parsed.pathname.replace(/^\/api(?:\/v1)?/, "");
   } catch {
     return url.split("?")[0] || "";
   }
