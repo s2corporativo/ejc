@@ -1,8 +1,5 @@
 import { describe, expect, it } from "vitest";
-import {
-  ordenarCarteira,
-  principalMotivo,
-} from "../PortfolioHealthWidget";
+import { ordenarCarteira, principalMotivo } from "../PortfolioHealthWidget";
 
 const base = {
   id: "case-1",
