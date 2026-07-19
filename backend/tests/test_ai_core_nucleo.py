@@ -565,7 +565,7 @@ class TestIntentClassifier:
         from app.services.ai.core.intent_classifier import classify_intent
         from app.services.system_prompts import TarefaIA
         r = classify_intent("task_desconhecida", domain="ambiental")
-        assert r.agente == "CaseAgent"
+        assert r.agente == "EnvironmentalLawAgent"
         assert r.tarefa == TarefaIA.AMBIENTAL
 
     def test_keywords_na_mensagem_redigir_peticao(self):
@@ -710,6 +710,11 @@ class TestOrchestrator:
         assert r["is_rascunho"] is True
         assert r["aviso_hitl"]
         assert r["agente"] == "CaseAgent"
+        assert r["agente_coordenador"] == "EJCCoordinatorAgent"
+        assert r["agente_especialista"] == "CaseAgent"
+        assert r["ramo_juridico"] == "trabalhista"
+        assert "ramo_trabalhista" in r["skills_nativas"]
+        assert "resolve_native_skills" in r["skill_pipeline"]
         assert r["modelo"] == "ollama/modelo-fake"
         assert r["provider"] == "ollama"
         assert r["log_id"] == "log-fake"
@@ -733,7 +738,7 @@ class TestOrchestrator:
 # ══════════════════════════════════════════════════════════════════════════════
 
 AGENTES_CANONICOS = {
-    "CaseAgent", "ProcessAgent", "DocumentAgent", "LegalWritingAgent",
+    "EJCCoordinatorAgent", "CaseAgent", "ProcessAgent", "DocumentAgent", "LegalWritingAgent",
     "RAGResearchAgent", "JurimetryAgent", "FinanceAgent", "BankForensicsAgent",
     "ConsumerLawAgent", "TaxLawAgent", "SocialSecurityAgent", "CorporateLawAgent",
     "LaborLawAgent", "CriminalLawAgent", "FamilyLawAgent",
@@ -744,6 +749,7 @@ AGENTES_CANONICOS = {
     "ContractLawAgent",
     "ClientCommunicationAgent", "SystemHealthAgent",
     "RepairAgent", "UIUXAgent", "SecurityLGPDOABAgent",
+    "EnvironmentalLawAgent", "DigitalLGPDAgent", "TrafficLawAgent",
 }
 
 
@@ -755,9 +761,10 @@ class TestRegistries:
         for nome, ag in AGENT_REGISTRY.items():
             assert ag.nome == nome  # chave == nome canônico
 
-    def test_27_skills_registradas(self):
+    def test_skills_base_e_nativas_registradas(self):
+        from app.services.ai.core.ejc_skill_catalog import native_skill_specs
         from app.services.ai.core.skill_registry import SKILL_REGISTRY
-        assert len(SKILL_REGISTRY) == 27
+        assert len(SKILL_REGISTRY) == 28 + len(native_skill_specs())
 
     def test_skills_de_patch_nunca_automaticas(self):
         from app.services.ai.core.skill_registry import SKILL_REGISTRY
@@ -767,7 +774,7 @@ class TestRegistries:
     def test_listar_skills_nao_expoe_handlers(self):
         from app.services.ai.core.skill_registry import SKILL_REGISTRY, listar_skills
         skills = listar_skills()
-        assert len(skills) == 27
+        assert len(skills) == len(SKILL_REGISTRY)
         for item in skills:
             assert "handler" not in item
             assert not any(callable(v) for v in item.values())
@@ -790,6 +797,7 @@ class TestRouterAICore:
         esperadas = {
             "/ai/core/chat", "/ai/core/task", "/ai/core/analyze",
             "/ai/core/generate", "/ai/core/report", "/ai/core/agents",
-            "/ai/core/skills", "/ai/core/status",
+            "/ai/core/skills", "/ai/core/native-skills/coverage",
+            "/ai/core/status",
         }
         assert esperadas <= paths
