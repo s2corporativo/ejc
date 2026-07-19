@@ -3,6 +3,7 @@ import { useLocation, useNavigate } from "react-router-dom";
 import type { AxiosResponse, InternalAxiosRequestConfig } from "axios";
 import api from "../lib/api";
 import CaseCommandDock from "./CaseCommandDock";
+import CaseHealthWidget from "./CaseHealthWidget";
 
 const CREATED_CASE_KEY = "ejc_created_case_journey";
 const CREATED_CASE_TTL_MS = 60_000;
@@ -24,7 +25,7 @@ function normalizarEndpoint(url?: string): string {
   if (!url) return "";
   try {
     const parsed = new URL(url, window.location.origin);
-    return parsed.pathname.replace(/^\/api/, "");
+    return parsed.pathname.replace(/^\/api(?:\/v1)?/, "");
   } catch {
     return url.split("?")[0] || "";
   }
@@ -73,7 +74,7 @@ export function deveInjetarCaso(
 
 export function destinoRotaConsolidada(pathname: string): string | null {
   return pathname === "/knowledge-hub"
-    ? "/inteligencia?tab=pesquisa"
+    ? "/inteligencia?tab=conhecimento"
     : null;
 }
 
@@ -103,15 +104,11 @@ function salvarMarcador(id: string) {
 }
 
 /**
- * Extensões transversais ainda não existentes na implementação nativa:
- * - guarda o caso recém-criado e continua para a Jornada quando o fluxo legado
- *   voltar à lista;
- * - injeta `case_id` em prazo/tarefa/evento criados a partir de `?caso=`;
- * - redireciona rotas consolidadas para o workspace canônico;
- * - mostra a central simples do caso na rota exata `/casos/:id`.
- *
- * O filtro `?tipo=` e os atalhos do Dashboard são nativos desde o PR #292 e
- * não são interceptados aqui.
+ * Extensões transversais do fluxo do caso:
+ * - continua a jornada após criação;
+ * - injeta `case_id` em atividades contextuais;
+ * - redireciona aliases consolidados;
+ * - mostra ações rápidas e saúde operacional na rota exata `/casos/:id`.
  */
 export default function FlowEnhancements() {
   const location = useLocation();
@@ -171,5 +168,11 @@ export default function FlowEnhancements() {
     return caseIdSeguro(match?.[1]);
   }, [location.pathname]);
 
-  return caseId ? <CaseCommandDock caseId={caseId} /> : null;
+  if (!caseId) return null;
+  return (
+    <>
+      <CaseHealthWidget caseId={caseId} />
+      <CaseCommandDock caseId={caseId} />
+    </>
+  );
 }
