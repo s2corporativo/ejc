@@ -115,7 +115,7 @@ export default function RevisaoBancariaDeterministica() {
   const expurgo = abusividade?.expurgo ?? abusividade?.cenario_expurgo;
 
   return (
-    <section className="space-y-5 rounded-[2rem] border border-slate-200 bg-white p-5 shadow-[0_18px_60px_rgba(15,23,42,0.08)] dark:border-white/10 dark:bg-white/[0.03]">
+    <section className="space-y-4 rounded-xl border border-slate-200 bg-white p-4 dark:border-white/10 dark:bg-white/[0.03]">
       <div>
         <div className="mb-2 flex items-center gap-2 text-xs font-semibold uppercase tracking-[0.18em] text-primary-700 dark:text-primary-200"><Banknote className="h-4 w-4" /> Revisão bancária determinística</div>
         <h2 className="text-xl font-semibold text-slate-950 dark:text-white">Juros, taxa média e Custo Efetivo Total</h2>

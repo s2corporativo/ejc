@@ -330,7 +330,7 @@ export default function CRMLeads() {
           onClick={() => setSelectedLead(null)}
         >
           <div
-            className="bg-white h-full w-96 shadow-2xl overflow-y-auto"
+            className="bg-white h-full w-96 border-l border-slate-200 shadow-float overflow-y-auto"
             onClick={(e) => e.stopPropagation()}
           >
             <div className="p-5 border-b border-slate-100 flex items-center justify-between">

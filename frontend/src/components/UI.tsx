@@ -642,7 +642,7 @@ export function Dropdown({
         {label}
         <ChevronDown className="h-4 w-4 text-slate-400" />
       </summary>
-      <div className="absolute right-0 z-40 mt-2 min-w-48 rounded-xl border border-slate-200 bg-white p-2 shadow-lg">
+      <div className="absolute right-0 z-40 mt-2 min-w-48 rounded-xl border border-slate-200 bg-white p-2 shadow-md">
         {children}
       </div>
     </details>
@@ -659,7 +659,7 @@ export function Tooltip({
   return (
     <span className="group relative inline-flex">
       {children}
-      <span className="pointer-events-none absolute bottom-full left-1/2 z-50 mb-2 hidden -translate-x-1/2 whitespace-nowrap rounded-md bg-slate-950 px-2 py-1 text-xs text-white shadow-lg group-hover:block">
+      <span className="pointer-events-none absolute bottom-full left-1/2 z-50 mb-2 hidden -translate-x-1/2 whitespace-nowrap rounded-md bg-slate-950 px-2 py-1 text-xs text-white shadow-md group-hover:block">
         {label}
       </span>
     </span>
@@ -723,12 +723,12 @@ export function Modal({
         role="dialog"
         aria-modal="true"
         className={cn(
-          "w-full max-h-[90vh] overflow-auto rounded-2xl border border-slate-200 bg-white shadow-2xl animate-pop",
+          "w-full max-h-[90vh] overflow-auto rounded-2xl border border-slate-200 bg-white shadow-float animate-pop",
           sizeClass,
         )}
         onClick={(e) => e.stopPropagation()}
       >
-        <div className="sticky top-0 z-10 flex items-center justify-between border-b border-slate-100 bg-white/95 px-5 py-4 backdrop-blur">
+        <div className="sticky top-0 z-10 flex items-center justify-between border-b border-slate-100 bg-white px-5 py-4">
           <h2 className="text-base font-semibold text-slate-950">{title}</h2>
           <Button
             type="button"
@@ -741,7 +741,7 @@ export function Modal({
         </div>
         <div className="p-5">{children}</div>
         {footer && (
-          <div className="sticky bottom-0 z-10 flex items-center justify-end gap-2 border-t border-slate-100 bg-white/95 px-5 py-4 backdrop-blur">
+          <div className="sticky bottom-0 z-10 flex items-center justify-end gap-2 border-t border-slate-100 bg-white px-5 py-4">
             {footer}
           </div>
         )}
@@ -897,14 +897,14 @@ export function Drawer({
   if (!open) return null;
   return (
     <div
-      className="fixed inset-0 z-50 animate-fade-in bg-slate-950/55 backdrop-blur-sm"
+      className="fixed inset-0 z-50 animate-fade-in bg-slate-950/45"
       onClick={onClose}
     >
       <aside
         role="dialog"
         aria-modal="true"
         className={cn(
-          "absolute inset-y-0 right-0 flex w-full flex-col border-l border-slate-200 bg-white shadow-2xl animate-slide-in-right",
+          "absolute inset-y-0 right-0 flex w-full flex-col border-l border-slate-200 bg-white shadow-float animate-slide-in-right",
           drawerWidthClasses[width],
         )}
         onClick={(e) => e.stopPropagation()}

@@ -231,7 +231,7 @@ export default function Layout() {
       <div className="brand-watermark" aria-hidden="true" />
       <CommandPalette />
 
-      <header className="fixed inset-x-0 top-0 z-50 border-b border-slate-200/60 bg-white/90 backdrop-blur-xl">
+      <header className="fixed inset-x-0 top-0 z-50 border-b border-slate-200 bg-white">
         <div className="flex h-16 items-center gap-3 px-3 md:px-6">
           <button
             type="button"
@@ -366,7 +366,7 @@ export default function Layout() {
             </button>
 
             {notifOpen && (
-              <div className="absolute right-0 mt-2 w-80 overflow-hidden rounded-xl border border-black/[0.05] bg-white shadow-xl">
+              <div className="absolute right-0 mt-2 w-80 overflow-hidden rounded-xl border border-slate-200 bg-white shadow-md">
                 <div className="flex items-center justify-between border-b border-slate-100 px-4 py-3">
                   <div className="text-sm font-semibold text-slate-950">
                     Notificações
@@ -423,7 +423,7 @@ export default function Layout() {
       {menuOpen && (
         <button
           type="button"
-          className="fixed inset-0 z-30 bg-slate-950/45 backdrop-blur-sm md:hidden"
+          className="fixed inset-0 z-30 bg-slate-950/45 md:hidden"
           aria-label="Fechar menu"
           onClick={() => setMenuOpen(false)}
         />
@@ -627,7 +627,7 @@ export default function Layout() {
       {iaDisponivel ? (
         <Link
           to="/inteligencia?tab=assistente"
-          className="fixed bottom-5 right-5 z-30 hidden h-12 w-12 items-center justify-center rounded-2xl bg-ai-600 text-white shadow-lg shadow-ai-600/25 hover:bg-ai-700 md:flex"
+          className="fixed bottom-5 right-5 z-30 hidden h-12 w-12 items-center justify-center rounded-xl bg-ai-600 text-white shadow-md hover:bg-ai-700 md:flex"
           aria-label="Assistente IA"
         >
           <Bot className="h-5 w-5" />
@@ -638,7 +638,7 @@ export default function Layout() {
           disabled
           title={ROTULO_IA_NAO_ATIVADA}
           aria-label={`Assistente IA — ${ROTULO_IA_NAO_ATIVADA}`}
-          className="fixed bottom-5 right-5 z-30 hidden h-12 w-12 cursor-not-allowed items-center justify-center rounded-2xl bg-slate-300 text-white shadow-lg md:flex dark:bg-slate-700"
+          className="fixed bottom-5 right-5 z-30 hidden h-12 w-12 cursor-not-allowed items-center justify-center rounded-xl bg-slate-300 text-white shadow-md md:flex dark:bg-slate-700"
         >
           <Bot className="h-5 w-5" />
         </button>

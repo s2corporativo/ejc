@@ -160,8 +160,8 @@ function DeadlineBars({
               className={cn(
                 "w-full rounded-lg transition-all duration-300",
                 index === 0 && point.value > 0
-                  ? "bg-gradient-to-t from-danger-600 to-danger-400"
-                  : "bg-gradient-to-t from-primary-800 via-primary-600 to-primary-400",
+                  ? "bg-danger-500"
+                  : "bg-primary-600",
               )}
               style={{ height: `${Math.max(8, (point.value / max) * 100)}%` }}
               aria-label={`${point.label}: ${point.value} prazo(s)`}
@@ -476,7 +476,7 @@ export default function DashboardModern() {
   const NextActionIcon = nextAction?.icon;
 
   return (
-    <div className="space-y-6">
+    <div className="space-y-4">
       <PageHeader
         eyebrow="Meu dia"
         title={`Bom trabalho, ${firstName}`}
@@ -487,7 +487,7 @@ export default function DashboardModern() {
       {/* ===================== MEU DIA ===================== */}
       {/* Prioridade operacional do advogado: ações, pendências, agenda e
           casos recentes. KPIs/indicadores gerenciais saem do topo. */}
-      <section aria-label="Meu dia" className="space-y-6">
+      <section aria-label="Meu dia" className="space-y-4">
         <div className="flex flex-wrap items-center gap-2">
           <span className="flex h-7 w-7 items-center justify-center rounded-lg bg-ouro/15 text-ouro">
             <CalendarClock className="h-4 w-4" />
@@ -509,14 +509,14 @@ export default function DashboardModern() {
             to={nextAction.to}
             aria-label={`Próxima ação recomendada: ${nextAction.title}`}
             className={cn(
-              "group flex flex-col gap-4 rounded-2xl border p-5 shadow-sm transition hover:-translate-y-0.5 hover:shadow-md sm:flex-row sm:items-center sm:justify-between",
+              "group flex flex-col gap-4 rounded-xl border p-4 transition sm:flex-row sm:items-center sm:justify-between",
               NEXT_ACTION_TONE[nextAction.tone].wrap,
             )}
           >
             <div className="flex items-start gap-4">
               <span
                 className={cn(
-                  "shrink-0 rounded-2xl p-3 ring-1 ring-inset",
+                  "shrink-0 rounded-xl p-3 ring-1 ring-inset",
                   NEXT_ACTION_TONE[nextAction.tone].badge,
                 )}
               >
@@ -554,7 +554,7 @@ export default function DashboardModern() {
             </div>
             <span
               className={cn(
-                "inline-flex shrink-0 items-center justify-center gap-2 rounded-xl px-4 py-2 text-sm font-semibold shadow-sm transition",
+                "inline-flex shrink-0 items-center justify-center gap-2 rounded-lg px-4 py-2 text-[13px] font-bold transition",
                 NEXT_ACTION_TONE[nextAction.tone].cta,
               )}
             >
@@ -566,10 +566,10 @@ export default function DashboardModern() {
           <Link
             to="/atividades"
             aria-label="Nada urgente para agora — ver agenda"
-            className="group flex items-center justify-between gap-4 rounded-2xl border border-success-100 bg-success-50 p-5 shadow-sm transition hover:-translate-y-0.5 hover:shadow-md dark:border-success-500/20 dark:bg-success-500/10"
+            className="group flex items-center justify-between gap-4 rounded-xl border border-success-100 bg-success-50 p-4 transition dark:border-success-500/20 dark:bg-success-500/10"
           >
             <div className="flex items-center gap-4">
-              <span className="shrink-0 rounded-2xl bg-success-100 p-3 text-success-700 ring-1 ring-inset ring-success-200 dark:bg-success-500/15 dark:text-success-300">
+              <span className="shrink-0 rounded-xl bg-success-100 p-3 text-success-700 ring-1 ring-inset ring-success-200 dark:bg-success-500/15 dark:text-success-300">
                 <CheckCircle2 className="h-6 w-6" />
               </span>
               <div className="min-w-0">
@@ -599,7 +599,7 @@ export default function DashboardModern() {
           Vem ANTES do painel de ações: "o que preciso resolver?" primeiro. */}
       <section
         aria-label="Prioridades de hoje"
-        className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm dark:border-white/10 dark:bg-white/[0.03]"
+        className="rounded-xl border border-slate-200 bg-white p-4 dark:border-white/10 dark:bg-white/[0.03]"
       >
         <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
           <div className="flex shrink-0 items-center gap-2 text-[11px] font-semibold uppercase tracking-[0.16em] text-slate-500">
@@ -645,7 +645,7 @@ export default function DashboardModern() {
       {/* Painel de AÇÕES — vem DEPOIS das prioridades: resolvido o urgente,
           "o que quero iniciar?". Mantém as 4 ações principais do Command
           Center (documento IA · manual · Raio-X · atendimento). */}
-      <section className="relative overflow-hidden rounded-2xl border border-slate-200 bg-white p-5 shadow-sm before:absolute before:inset-x-0 before:top-0 before:h-0.5 before:bg-gradient-to-r before:from-ouro-claro before:via-ouro-claro/40 before:to-transparent dark:border-white/10 dark:bg-white/[0.03] md:p-6">
+      <section className="relative overflow-hidden rounded-xl border border-slate-200 bg-white p-4 before:absolute before:inset-x-0 before:top-0 before:h-[3px] before:bg-ouro-claro dark:border-white/10 dark:bg-white/[0.03] md:p-5">
         <div className="flex flex-col gap-5 xl:flex-row xl:items-center xl:justify-between">
           <div className="max-w-2xl">
             <div className="mb-2 flex flex-wrap items-center gap-2">
@@ -661,7 +661,7 @@ export default function DashboardModern() {
             {/* !text-white: o seletor global `.ejc-modern-scope h2` (index.css)
                 pinta headings de #111827 e vencia o utilitário text-white,
                 deixando o título ilegível sobre o gradiente sépia escuro. */}
-            <h2 className="text-xl font-semibold text-slate-900 md:text-2xl dark:!text-slate-100">
+            <h2 className="text-lg font-bold text-slate-900 dark:!text-slate-100">
               Inicie uma nova frente de trabalho
             </h2>
             <p className="mt-2 text-sm leading-6 text-slate-500">
@@ -731,15 +731,15 @@ export default function DashboardModern() {
       {canUseLegalAI && (
         <Link
           to="/raio-x"
-          className="group flex flex-col gap-4 rounded-2xl border border-slate-200 bg-white p-5 shadow-sm transition hover:-translate-y-0.5 hover:shadow-md sm:flex-row sm:items-center sm:justify-between dark:border-white/10 dark:bg-white/[0.03]"
+          className="group flex flex-col gap-4 rounded-xl border border-slate-200 bg-white p-4 transition sm:flex-row sm:items-center sm:justify-between dark:border-white/10 dark:bg-white/[0.03]"
         >
           <div className="flex items-start gap-4">
-            <span className="rounded-2xl bg-ouro/10 p-3 text-ouro-profundo ring-1 ring-inset ring-ouro/20 dark:text-ouro-claro">
+            <span className="rounded-xl bg-ouro/10 p-3 text-ouro-profundo ring-1 ring-inset ring-ouro/20 dark:text-ouro-claro">
               <ScanSearch className="h-6 w-6" />
             </span>
             <div>
               <div className="flex flex-wrap items-center gap-2">
-                <h2 className="font-serif text-xl font-semibold">
+                <h2 className="text-[15px] font-bold">
                   Analisar antes de cadastrar
                 </h2>
                 <Badge tone="blue">Raio-X preliminar</Badge>
@@ -1068,14 +1068,14 @@ export default function DashboardModern() {
       {isManager && (
       <section
         aria-label="Gestão do escritório"
-        className="rounded-2xl border border-slate-200 bg-white shadow-sm dark:border-white/10 dark:bg-white/[0.03]"
+        className="rounded-xl border border-slate-200 bg-white dark:border-white/10 dark:bg-white/[0.03]"
       >
         <button
           type="button"
           onClick={() => setGestaoOpen((open) => !open)}
           aria-expanded={gestaoOpen}
           aria-controls="gestao-escritorio-conteudo"
-          className="flex w-full items-center justify-between gap-3 rounded-2xl px-4 py-4 text-left transition-colors hover:bg-slate-50 dark:hover:bg-white/[0.04]"
+          className="flex w-full items-center justify-between gap-3 rounded-xl px-4 py-3 text-left transition-colors hover:bg-slate-50 dark:hover:bg-white/[0.04]"
         >
           <span className="flex min-w-0 items-center gap-2">
             <span className="flex h-7 w-7 shrink-0 items-center justify-center rounded-lg bg-primary-50 text-primary-700 dark:bg-primary-400/10 dark:text-primary-300">

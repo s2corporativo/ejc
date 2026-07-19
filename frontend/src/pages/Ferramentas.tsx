@@ -131,11 +131,11 @@ export default function Ferramentas() {
   };
 
   return (
-    <Page className="surface-soft min-h-full px-6 py-8">
-      <div className="mx-auto max-w-7xl space-y-8">
-        <PageHeader className="rounded-[2rem] bg-white/70 p-6 shadow-[0_18px_60px_rgba(15,23,42,0.08)] backdrop-blur dark:bg-white/[0.03]">
+    <Page className="min-h-full px-6 py-6">
+      <div className="mx-auto max-w-7xl space-y-4">
+        <PageHeader className="rounded-xl border border-slate-200 bg-white p-4 dark:border-white/10 dark:bg-white/[0.03]">
           <div>
-            <Badge variant="gold" className="mb-3 gap-1">
+            <Badge variant="gold" className="mb-2 gap-1">
               <Sparkles className="h-3 w-3" /> Catálogo de ferramentas
             </Badge>
             <PageTitle>Mais Ferramentas</PageTitle>
@@ -167,8 +167,8 @@ export default function Ferramentas() {
                 className="group w-full text-left"
                 aria-expanded={defesasOpen}
               >
-                <Card className="flex items-start gap-4 p-5 transition duration-200 group-hover:-translate-y-0.5 group-hover:shadow-[0_20px_55px_rgba(15,23,42,0.12)]">
-                  <span className="grid h-12 w-12 shrink-0 place-items-center rounded-2xl bg-primary-50 text-primary-700 ring-1 ring-black/5 dark:bg-white/10 dark:text-primary-200">
+                <Card padded={false} className="flex items-start gap-4 p-4">
+                  <span className="grid h-11 w-11 shrink-0 place-items-center rounded-lg border border-primary-100 bg-primary-50 text-primary-700 dark:border-white/10 dark:bg-white/10 dark:text-primary-200">
                     <ShieldCheck className="h-6 w-6" />
                   </span>
                   <div className="min-w-0 flex-1">
@@ -196,7 +196,7 @@ export default function Ferramentas() {
               </button>
 
               {defesasOpen && (
-                <div className="space-y-6 rounded-2xl border border-slate-200 bg-white/60 p-4 dark:border-white/10 dark:bg-white/[0.02]">
+                <div className="space-y-4 rounded-xl border border-slate-200 bg-white p-4 dark:border-white/10 dark:bg-white/[0.02]">
                   <DefesasRevisoesPanel />
                   <RevisaoBancariaDeterministica />
                 </div>
@@ -225,8 +225,8 @@ export default function Ferramentas() {
                       onClick={() => navigate(module.path)}
                       className="h-full w-full text-left outline-none"
                     >
-                      <Card className="flex h-full items-start gap-3 p-5 transition duration-200 group-hover:-translate-y-1 group-hover:shadow-[0_26px_70px_rgba(15,23,42,0.14)]">
-                        <div className="grid h-11 w-11 shrink-0 place-items-center rounded-2xl bg-primary-50 text-primary-700 ring-1 ring-black/5 dark:bg-white/10 dark:text-primary-200">
+                      <Card padded={false} className="flex h-full items-start gap-3 p-4">
+                        <div className="grid h-10 w-10 shrink-0 place-items-center rounded-lg border border-primary-100 bg-primary-50 text-primary-700 dark:border-white/10 dark:bg-white/10 dark:text-primary-200">
                           <Icon className="h-5 w-5" />
                         </div>
                         <div className="min-w-0 flex-1 pr-7">

@@ -230,7 +230,7 @@ export default function DefesasRevisoesComplementos({ modalidade, caseId, result
   };
 
   return (
-    <section className="space-y-4 rounded-[2rem] border border-slate-200 bg-white p-5 dark:border-white/10 dark:bg-white/[0.03]">
+    <section className="space-y-4 rounded-xl border border-slate-200 bg-white p-4 dark:border-white/10 dark:bg-white/[0.03]">
       <div>
         <div className="flex items-center gap-2 text-xs font-semibold uppercase tracking-[0.16em] text-primary-700">
           <ShieldAlert className="h-4 w-4" /> Jornada avançada

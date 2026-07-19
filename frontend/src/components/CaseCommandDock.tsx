@@ -210,7 +210,7 @@ export default function CaseCommandDock({ caseId }: { caseId: string }) {
       <button
         type="button"
         onClick={() => setView("menu")}
-        className="fixed bottom-6 right-6 z-30 inline-flex items-center gap-2 rounded-xl bg-primary-700 px-4 py-3 text-sm font-semibold text-white shadow-lg transition hover:-translate-y-0.5 hover:bg-primary-800 focus:outline-none focus:ring-2 focus:ring-primary-400 focus:ring-offset-2"
+        className="fixed bottom-6 right-6 z-30 inline-flex items-center gap-2 rounded-xl bg-primary-700 px-4 py-3 text-sm font-semibold text-white shadow-md transition hover:bg-primary-800 focus:outline-none focus:ring-2 focus:ring-primary-400 focus:ring-offset-2"
         aria-label="Abrir ações simples do caso"
       >
         <Gavel className="h-4 w-4" />

@@ -2101,7 +2101,7 @@ function TabScore({ caseId }: { caseId: string }) {
           <div className="card p-5">
             <div className="flex items-start gap-6 mb-4">
               <div className="text-center min-w-[80px]">
-                <div className="text-5xl font-black text-gray-900">
+                <div className="text-2xl font-bold text-gray-900">
                   {top.total}
                 </div>
                 <div className="text-sm text-gray-400">/100</div>
@@ -4178,7 +4178,7 @@ export default function CasoDetalhe() {
         tela={activeTabLabel}
       />
       {/* Sticky header + tabs */}
-      <div className="sticky top-[4.25rem] z-20 card bg-white/95 backdrop-blur-xl">
+      <div className="sticky top-[4.25rem] z-20 card bg-white">
         <div className="flex flex-col gap-4 px-4 py-4 lg:flex-row lg:items-start lg:justify-between">
           <button
             onClick={() => navigate("/casos")}
