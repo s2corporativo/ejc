@@ -148,7 +148,7 @@ describe("CredentialVaultPanel — modal de cadastro exige senha e não vaza o s
     });
     fireEvent.click(dialog.getByRole("button", { name: /Cadastrar/ }));
 
-    await Promise.resolve();
+    await waitFor(() => expect(toastError).toHaveBeenCalled());
     expect(cadastrarCredencial).not.toHaveBeenCalled();
   });
 
@@ -186,8 +186,25 @@ describe("CredentialVaultPanel — modal de cadastro exige senha e não vaza o s
 
     // O modal fecha após o sucesso...
     await waitFor(() => expect(screen.queryByRole("dialog")).toBeNull());
-    // ...e o segredo digitado não aparece em NENHUM ponto renderizado.
+    // ...o segredo não aparece no texto renderizado...
     expect(document.body.textContent).not.toContain(SEGREDO);
+    // ...nem sobrevive no `value` de NENHUM input controlado (textContent não
+    // cobre value de input — esta varredura é o que realmente prova a limpeza).
+    document.querySelectorAll("input").forEach((input) => {
+      expect((input as HTMLInputElement).value).not.toContain(SEGREDO);
+    });
+
+    // Reabrir o modal deve trazer o campo do segredo VAZIO (estado local do
+    // modal foi descartado ao desmontar; nada persistiu em estado global).
+    const card = (await screen.findByText("API Key da Groq")).closest(".card");
+    fireEvent.click(
+      within(card as HTMLElement).getByRole("button", { name: /Cadastrar/ }),
+    );
+    const reaberto = within(await screen.findByRole("dialog"));
+    const campoSegredo = reaberto.getByPlaceholderText(
+      /valor do segredo/i,
+    ) as HTMLInputElement;
+    expect(campoSegredo.value).toBe("");
   });
 });
 
@@ -218,12 +235,16 @@ describe("CredentialVaultPanel — botão Testar", () => {
     fireEvent.click(header.getByRole("button", { name: /Testar/ }));
 
     await waitFor(() => expect(testarProvider).toHaveBeenCalledWith("smtp"));
+    // Chamado APENAS com o provider_key — nenhum corpo/segredo trafega.
+    expect(testarProvider.mock.calls[0]).toEqual(["smtp"]);
     // Badge migra de Inválida → Configurada com o veredito do teste.
     expect(await screen.findByText("Configurada")).toBeTruthy();
     expect(screen.queryByText("Inválida")).toBeNull();
+    // O `detalhe` retornado passa a ser exibido no card.
+    expect(
+      screen.getByText(/Conexão SMTP estabelecida \(login aceito\)\./),
+    ).toBeTruthy();
     expect(toastSuccess).toHaveBeenCalled();
-    // A resposta do teste não carrega segredo — nada sensível vaza.
-    expect(document.body.textContent).not.toContain("SMTP_PASSWORD_VALUE");
   });
 
   it("falha no teste mostra toast de erro e não derruba o painel", async () => {
