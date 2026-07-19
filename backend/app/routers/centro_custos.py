@@ -111,9 +111,11 @@ async def listar_lancamentos(
     if case_id:
         q = q.where(CentroCusto.case_id == case_id)
     elif not is_gestao(cu):
-        # Sem case_id: equipe não-gestão (advogado) vê só custos dos próprios
-        # casos — antes listava lançamentos de TODOS os casos (IDOR de leitura).
-        # Espelha _filtro_fees_lista. Gestão (socio+) segue vendo tudo.
+        # Sem case_id: equipe não-gestão (advogado — financeiro/estagiario já
+        # barrados por _pode_editar) vê só custos dos próprios casos; antes
+        # listava lançamentos de TODOS os casos (IDOR de leitura). Mesmo padrão
+        # de subquery de casos-do-usuário de fees._ids_casos_do_usuario; aqui o
+        # limiar de visão total é gestão (socio+). Gestão segue vendo tudo.
         q = q.where(CentroCusto.case_id.in_(_ids_casos_visiveis(cu)))
     if tipo:
         q = q.where(CentroCusto.tipo == tipo)

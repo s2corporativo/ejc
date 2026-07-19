@@ -130,7 +130,14 @@ def _filtro_visibilidade_atendimento(q, cu: User):
             )
         )
     )
-    return q.where(Atendimento.client_id.in_(clientes_do_advogado))
+    # Inclui atendimentos SEM cliente vinculado (avulsos) — coerente com o gate
+    # row-level _pode_ver_atendimento, que libera registro sem client_id.
+    return q.where(
+        or_(
+            Atendimento.client_id.is_(None),
+            Atendimento.client_id.in_(clientes_do_advogado),
+        )
+    )
 
 
 async def _pode_ver_atendimento(db: AsyncSession, cu: User, a: Atendimento) -> bool:
