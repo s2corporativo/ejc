@@ -21,7 +21,6 @@ from app.routers import (  # noqa: E402
 # redação sem revisão) vive nos próprios módulos: ROLES_MOTOR_PECA em
 # defesas_revisoes.py e ROLES_PACOTE em defesas_revisoes_avancado.py — sem
 # mutação de conjuntos compartilhados no import.
-
 novos_modulos.router.include_router(entrada_universal.router)
 novos_modulos.router.include_router(entrada_universal_vinculo.router)
 novos_modulos.router.include_router(defesas_revisoes.router)
@@ -29,3 +28,10 @@ novos_modulos.router.include_router(defesas_revisoes.router)
 # implementação legada foi removida do router avançado — sem sombreamento).
 novos_modulos.router.include_router(defesas_revisoes_pacote_seguro.router)
 novos_modulos.router.include_router(defesas_revisoes_avancado.router)
+
+# Consolidação da Sala de Guerra: Sentinela global permanece no router v3, mas
+# simulação adversarial e Visual Law passam a existir também dentro do workspace
+# canônico do caso, sem duplicar implementação ou persistência.
+from app.routers import sala_de_guerra, sala_de_guerra_facade  # noqa: E402
+
+sala_de_guerra.router.include_router(sala_de_guerra_facade.router)
