@@ -1,22 +1,32 @@
+"""Compatibilidade do antigo Data Room v4.
+
+A URL `/data-room-v4` permanece durante a migração, porém novas leituras e
+escritas usam exclusivamente `data_rooms`. `dataroom_salas` fica somente como
+origem histórica até o expurgo posterior à telemetria.
 """
-Módulo de Data Room Jurídico Corporativo - EJC v4.0 (Seção 14.359).
-Salas documentais seguras, controle granular de acesso e auditoria.
-"""
-from uuid import uuid4
+from __future__ import annotations
+
 from datetime import datetime, timedelta, timezone
-from typing import List, Optional
-from fastapi import APIRouter, Depends, HTTPException
-from sqlalchemy import Column, String, Text, DateTime, func, select, Boolean
+from typing import Optional
+from uuid import uuid4
+
+from fastapi import APIRouter, Depends, HTTPException, Response
+from pydantic import BaseModel, ConfigDict, Field
+from sqlalchemy import Boolean, Column, DateTime, String, Text, func, select
 from sqlalchemy.ext.asyncio import AsyncSession
-from pydantic import BaseModel, ConfigDict
 
 from app.core.database import Base, get_db
-from app.core.security import require_roles, get_current_user, ROLE_LEVEL
+from app.core.security import ROLE_LEVEL, get_current_user, require_roles
+from app.models.client import Client
+from app.models.data_room import DataRoom
 from app.models.user import User
 
-# Model ORM
+
+# Mantido no metadata até a etapa final de exclusão física da tabela legada.
+# Nenhum endpoint abaixo cria, atualiza ou remove registros nesta classe.
 class DataRoomSala(Base):
     __tablename__ = "dataroom_salas"
+
     id = Column(String(36), primary_key=True)
     nome = Column(String(255), nullable=False)
     descricao = Column(Text, nullable=True)
@@ -25,12 +35,13 @@ class DataRoomSala(Base):
     publica = Column(Boolean, default=False)
     created_at = Column(DateTime(timezone=True), server_default=func.now())
 
-# Schemas
+
 class SalaCreate(BaseModel):
-    nome: str
+    nome: str = Field(min_length=1, max_length=255)
     descricao: Optional[str] = None
     client_id: Optional[str] = None
-    expira_dias: Optional[int] = 30
+    expira_dias: Optional[int] = Field(default=30, ge=1, le=3650)
+
 
 class SalaResponse(BaseModel):
     model_config = ConfigDict(from_attributes=True)
@@ -39,33 +50,85 @@ class SalaResponse(BaseModel):
     nome: str
     expira_em: Optional[datetime]
 
-router = APIRouter(prefix="/data-room-v4", tags=["Data Room Jurídico"])
 
-@router.post("/", response_model=SalaResponse, dependencies=[Depends(require_roles(["admin", "socio", "advogado"]))])
-async def criar_sala(payload: SalaCreate, db: AsyncSession = Depends(get_db)):
-    expira = datetime.now(timezone.utc) + timedelta(days=payload.expira_dias) if payload.expira_dias else None
-    s = DataRoomSala(
+router = APIRouter(
+    prefix="/data-room-v4",
+    tags=["Data Room Jurídico — compatibilidade"],
+    deprecated=True,
+)
+
+
+def _headers(response: Response) -> None:
+    response.headers["Deprecation"] = "true"
+    response.headers["Link"] = '</api/v1/data-rooms>; rel="successor-version"'
+
+
+def _compat(room: DataRoom) -> dict:
+    return {
+        "id": room.id,
+        "nome": room.nome,
+        "expira_em": room.legacy_expira_em,
+    }
+
+
+@router.post("/", response_model=SalaResponse, status_code=201, deprecated=True)
+async def criar_sala(
+    payload: SalaCreate,
+    response: Response,
+    db: AsyncSession = Depends(get_db),
+    cu: User = Depends(require_roles(["admin", "socio", "advogado"])),
+):
+    # A tabela canônica possui FK; converter uma referência inexistente em 500
+    # seria pior que o legado. Recusa de forma explícita e auditável pelo HTTP.
+    if payload.client_id:
+        client_exists = (
+            await db.execute(
+                select(Client.id).where(
+                    Client.id == payload.client_id,
+                    Client.deleted_at.is_(None),
+                )
+            )
+        ).scalar_one_or_none()
+        if client_exists is None:
+            raise HTTPException(422, "Cliente informado não existe ou está excluído")
+
+    expira_em = (
+        datetime.now(timezone.utc) + timedelta(days=payload.expira_dias)
+        if payload.expira_dias
+        else None
+    )
+    room = DataRoom(
         id=str(uuid4()),
         nome=payload.nome,
         descricao=payload.descricao,
         client_id=payload.client_id,
-        expira_em=expira
+        created_by=cu.id,
+        legacy_expira_em=expira_em,
+        # O v4 não expunha este campo na criação; nunca abra acesso implícito.
+        legacy_publica=False,
     )
-    db.add(s)
+    db.add(room)
     await db.commit()
-    await db.refresh(s)
-    return s
+    await db.refresh(room)
+    _headers(response)
+    return _compat(room)
 
-@router.get("/", response_model=List[SalaResponse])
-async def listar_salas(db: AsyncSession = Depends(get_db), cu: User = Depends(get_current_user)):
-    q = select(DataRoomSala)
+
+@router.get("/", response_model=list[SalaResponse], deprecated=True)
+async def listar_salas(
+    response: Response,
+    db: AsyncSession = Depends(get_db),
+    cu: User = Depends(get_current_user),
+):
     role = cu.role.value
+    query = select(DataRoom).where(DataRoom.deleted_at.is_(None))
     if role == "cliente_externo":
-        # cliente externo: apenas as próprias salas
-        q = q.where(DataRoomSala.client_id == cu.client_id)
+        query = query.where(DataRoom.client_id == cu.client_id)
     elif ROLE_LEVEL.get(role, 0) < ROLE_LEVEL["advogado"]:
-        # IDOR (auditoria 2026-06-30): estagiário/secretaria/financeiro não
-        # listam todas as salas documentais do escritório.
         raise HTTPException(403, "Sem permissão para listar data rooms")
-    res = await db.execute(q)
-    return res.scalars().all()
+
+    rooms = (
+        await db.execute(query.order_by(DataRoom.created_at.desc()))
+    ).scalars().all()
+    _headers(response)
+    return [_compat(room) for room in rooms]
