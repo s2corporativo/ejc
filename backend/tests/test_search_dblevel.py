@@ -404,3 +404,25 @@ async def test_tudo_mantem_shape_antigo_e_ganha_campo_tipo():
             assert resp["total"] == 2
         finally:
             await _limpar(db, case_ids=[caso], user_ids=[uid], client_ids=[cli])
+
+
+async def test_tudo_estagiario_nao_recebe_clientes():
+    """P0-3 (auditoria #110): papel fora da matriz do CRM (estagiario) não
+    recebe itens de cliente em tipo=tudo — mesma restrição já aplicada em
+    tipo=cpf (test_cpf_estagiario_nao_recebe_clientes). O caso (próprio,
+    via responsavel) continua aparecendo."""
+    from app.core.database import AsyncSessionLocal
+
+    tok = f"Zzu{uuid4().hex[:6]}"
+    async with AsyncSessionLocal() as db:
+        estagiario = await _criar_user(db, "estagiario")
+        cli = await _criar_cliente(db, f"{tok} Cliente Tudo")
+        caso = await _criar_caso(db, cli, f"{tok} Caso Tudo", resp_id=estagiario)
+        await db.commit()
+        try:
+            resp = await _buscar(db, await _carregar_user(db, estagiario), tok, "tudo")
+            # Nenhum item "cliente"; o caso próprio continua visível.
+            assert "cliente" not in {i["tipo"] for i in resp["resultados"]}
+            assert [(i["tipo"], i["id"]) for i in resp["resultados"]] == [("caso", caso)]
+        finally:
+            await _limpar(db, case_ids=[caso], user_ids=[estagiario], client_ids=[cli])
