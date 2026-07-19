@@ -7,6 +7,7 @@ import {
   BriefcaseBusiness,
   Building2,
   Car,
+  ClipboardPen,
   Database,
   FileCheck2,
   FileSignature,
@@ -256,6 +257,11 @@ export default function RamosHub() {
             </PageDescription>
           </div>
           <PageActions>
+            {/* Fluxo 100% manual (sem IA, com fila offline) — a rota é podada
+                do menu lateral; este é o ponto de acesso visível. */}
+            <Button variant="secondary" onClick={() => navigate("/cadastro-manual")}>
+              <ClipboardPen className="h-4 w-4" /> Cadastro manual
+            </Button>
             <Button variant="secondary" onClick={() => navigate("/casos")}>Todos os casos</Button>
             <Button onClick={() => navigate("/casos/novo?modo=documento")}>
               <UploadCloud className="h-4 w-4" /> Importar documento
