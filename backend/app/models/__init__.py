@@ -83,3 +83,4 @@ from app.models import workflow            # noqa
 from app.models import redesign            # noqa
 from app.models.system_module_setting import SystemModuleSetting  # noqa
 from app.models.nfse import NotaFiscalServico, NFSeStatus  # noqa
+from app.models.scheduler_heartbeat import SchedulerHeartbeat  # noqa
