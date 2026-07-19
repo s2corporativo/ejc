@@ -155,7 +155,7 @@ async def atualizar_governanca_documento(
         user_role=role,
         acao="UPDATE",
         entidade="knowledge_governance",
-        entidade_id=doc.id,
+        registro_id=doc.id,
         detalhes=(
             f"Metadados jurídicos atualizados: {', '.join(sorted(values.keys())) or 'confirmação da fonte'}; "
             f"autoridade efetiva={inferir_autoridade_documento(doc)['code']}"
