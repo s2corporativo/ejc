@@ -108,6 +108,26 @@ class AuthMiddleware(BaseHTTPMiddleware):
                     },
                 )
 
+        if payload.get("two_factor_setup_required") and not payload.get(
+            "pwd_change_required"
+        ):
+            liberados_2fa = (
+                "/api/auth/totp/setup",
+                "/api/auth/totp/verificar",
+                "/api/auth/logout",
+            )
+            if not any(
+                _path_casa_prefixo_publico(path, prefixo)
+                for prefixo in liberados_2fa
+            ):
+                return JSONResponse(
+                    status_code=403,
+                    content={
+                        "detail": "Configure a autenticação de dois fatores para continuar.",
+                        "precisa_configurar_2fa": True,
+                    },
+                )
+
         if request.state.role == "cliente_externo":
             permitidos = (
                 "/api/portal/",

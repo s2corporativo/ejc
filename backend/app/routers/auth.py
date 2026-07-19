@@ -3,10 +3,12 @@
 # refresh com rotação, logout, troca de senha, reset por e-mail.
 import base64
 import binascii
+import io
 import logging
 from datetime import datetime, timezone, timedelta
 from uuid import uuid4
 import pyotp
+import qrcode
 
 from fastapi import APIRouter, Depends, HTTPException, Request, Response
 from pydantic import BaseModel, EmailStr, Field
@@ -262,49 +264,78 @@ async def login(
         # Segredo legado em claro → re-grava cifrado (commit do login abaixo).
         _recifrar_totp_legado(user, secret, legado)
 
-    # ── 4. Login OK ──────────────────────────────────────────────────
+    # ── 4. Login OK / gate obrigatório de 2FA ───────────────────
     limpar_falhas(chave_bf)
     limpar_falhas(chave_em)
 
-    access = create_access_token(user.id, user.role.value,
-                                 must_change_password=user.must_change_password)
+    exige_setup_2fa = _papel_exige_2fa(user.role.value) and not user.totp_enabled
+    if exige_setup_2fa:
+        access = create_access_token(
+            user.id,
+            user.role.value,
+            must_change_password=user.must_change_password,
+            two_factor_setup_required=True,
+            expires_minutes=settings.TWO_FACTOR_SETUP_TOKEN_EXPIRE_MINUTES,
+        )
+        await criar_audit_log(
+            db,
+            user.id,
+            user.role.value,
+            "LOGIN_2FA_SETUP_REQUIRED",
+            "users",
+            user.id,
+            detalhes="Sessão plena negada até ativação TOTP.",
+            ip=ip,
+        )
+        await db.commit()
+        _clear_refresh_cookie(response)
+        resp = {
+            "access_token": access,
+            "token_type": "bearer",
+            "user_id": user.id,
+            "full_name": user.full_name,
+            "role": user.role.value,
+            "precisa_configurar_2fa": True,
+        }
+        if user.must_change_password:
+            resp["must_change_password"] = True
+            resp["detail"] = "Troque a senha antes de configurar o 2FA."
+        return resp
+
+    access = create_access_token(
+        user.id,
+        user.role.value,
+        must_change_password=user.must_change_password,
+    )
     refresh_tok, jti = create_refresh_token(user.id)
-
-    db.add(RefreshToken(
-        id=str(uuid4()), user_id=user.id, jti=jti,
-        expires_at=datetime.now(timezone.utc) + timedelta(
-            days=settings.REFRESH_TOKEN_EXPIRE_DAYS),
-    ))
+    db.add(
+        RefreshToken(
+            id=str(uuid4()),
+            user_id=user.id,
+            jti=jti,
+            expires_at=datetime.now(timezone.utc)
+            + timedelta(days=settings.REFRESH_TOKEN_EXPIRE_DAYS),
+        )
+    )
     user.last_login_at = datetime.now(timezone.utc)
-
-    await criar_audit_log(db, user.id, user.role.value, "LOGIN", "users",
-                          user.id, ip=ip)
-
-    # Alerta de novo dispositivo (assíncrono — não bloqueia resposta)
+    await criar_audit_log(
+        db, user.id, user.role.value, "LOGIN", "users", user.id, ip=ip
+    )
     ua = request.headers.get("user-agent", "")
     await verificar_novo_dispositivo(db, user, ip, ua)
-
     await db.commit()
-
-    # #14: entrega o refresh token no cookie httpOnly (não legível por JS).
     _set_refresh_cookie(response, refresh_tok)
-
     resp = {
-        "access_token": access, "refresh_token": refresh_tok,
+        "access_token": access,
+        "refresh_token": refresh_tok,
         "token_type": "bearer",
-        "user_id": user.id, "full_name": user.full_name, "role": user.role.value,
+        "user_id": user.id,
+        "full_name": user.full_name,
+        "role": user.role.value,
     }
-    # ── 5. Sinalizar troca obrigatória de senha ──────────────────────
     if user.must_change_password:
         resp["must_change_password"] = True
         resp["detail"] = "Troca de senha obrigatória antes de continuar."
-    # ── 6. 2FA obrigatório por papel (enforcement SEM lockout) ────────
-    # Se o papel exige 2FA (REQUIRE_2FA_ROLES) e o usuário ainda não tem TOTP
-    # ativo, sinaliza ao frontend que ele PRECISA configurar — sem bloquear o
-    # login (não há coluna/migration nova; ninguém é trancado). Default vazio
-    # ⇒ nunca dispara e a resposta fica idêntica à atual.
-    if _papel_exige_2fa(user.role.value) and not user.totp_enabled:
-        resp["precisa_configurar_2fa"] = True
     return resp
 
 
@@ -425,6 +456,36 @@ async def refresh(req: RefreshRequest, request: Request, response: Response,
     if not user:
         raise HTTPException(status_code=401, detail="Usuário inativo")
 
+    if _papel_exige_2fa(user.role.value) and not user.totp_enabled:
+        agora = datetime.now(timezone.utc)
+        await db.execute(
+            update(RefreshToken)
+            .where(
+                RefreshToken.user_id == user.id,
+                RefreshToken.revoked == False,
+            )
+            .values(revoked=True, revoked_at=agora)
+        )
+        await criar_audit_log(
+            db,
+            user.id,
+            user.role.value,
+            "REFRESH_2FA_SETUP_REQUIRED",
+            "users",
+            user.id,
+            detalhes="Refresh revogado: papel exige 2FA sem TOTP ativo.",
+            ip=obter_ip_real(request),
+        )
+        await db.commit()
+        _clear_refresh_cookie(response)
+        raise HTTPException(
+            status_code=403,
+            detail={
+                "message": "Configure a autenticação de dois fatores para continuar.",
+                "precisa_configurar_2fa": True,
+            },
+        )
+
     # Propaga o estado de troca obrigatória: sem isto, um usuário com senha
     # temporária (must_change_password) obteria via /refresh um access token
     # SEM o claim pwd_change_required, contornando o gate de troca de senha.
@@ -508,39 +569,53 @@ async def alterar_senha(
     user.hashed_password      = get_password_hash(req.nova_senha)
     user.must_change_password = False
 
-    # Revogar TODAS as outras sessões (segurança pós-troca). revoked_at marca
-    # o instante para a trilha forense; replaced_by_jti fica nulo de propósito —
-    # é o que distingue revogação administrativa de rotação no /refresh.
+    # Revogar TODAS as outras sessões após a troca.
     await db.execute(
         update(RefreshToken)
         .where(RefreshToken.user_id == user.id, RefreshToken.revoked == False)
         .values(revoked=True, revoked_at=datetime.now(timezone.utc))
     )
 
-    # P0 usabilidade (2026-07-18, §2.3): manter a sessão ATUAL após a troca —
-    # emite novos tokens (mesmo formato do /login) com o claim must_change_password
-    # já limpo, para o frontend continuar logado sem voltar ao /login. As demais
-    # sessões seguem revogadas acima; o refresh novo nasce DEPOIS da revogação.
-    access = create_access_token(user.id, user.role.value,
-                                 must_change_password=False)
+    exige_setup_2fa = _papel_exige_2fa(user.role.value) and not user.totp_enabled
+    if exige_setup_2fa:
+        access = create_access_token(
+            user.id,
+            user.role.value,
+            two_factor_setup_required=True,
+            expires_minutes=settings.TWO_FACTOR_SETUP_TOKEN_EXPIRE_MINUTES,
+        )
+        await criar_audit_log(
+            db, user.id, user.role.value, "TROCA_SENHA", "users", user.id,
+            detalhes="Senha alterada; sessão plena retida até ativação 2FA.",
+            ip=obter_ip_real(request),
+        )
+        await db.commit()
+        _clear_refresh_cookie(response)
+        return {
+            "detail": "Senha alterada. Agora configure o 2FA.",
+            "access_token": access,
+            "token_type": "bearer",
+            "user_id": user.id,
+            "full_name": user.full_name,
+            "role": user.role.value,
+            "must_change_password": False,
+            "precisa_configurar_2fa": True,
+        }
+
+    access = create_access_token(user.id, user.role.value)
     refresh_tok, jti = create_refresh_token(user.id)
     db.add(RefreshToken(
         id=str(uuid4()), user_id=user.id, jti=jti,
         expires_at=datetime.now(timezone.utc) + timedelta(
             days=settings.REFRESH_TOKEN_EXPIRE_DAYS),
     ))
-
     await criar_audit_log(
         db, user.id, user.role.value, "TROCA_SENHA", "users", user.id,
         ip=obter_ip_real(request),
     )
     await db.commit()
-
-    # Rotaciona o cookie httpOnly com o refresh da sessão que permanece viva.
     _set_refresh_cookie(response, refresh_tok)
     return {
-        # Compat: o campo `detail` continua existindo (texto atualizado — a
-        # sessão não é mais derrubada).
         "detail": "Senha alterada com sucesso.",
         "access_token": access,
         "refresh_token": refresh_tok,
@@ -633,8 +708,20 @@ async def totp_setup(
     user.totp_secret = pii_crypto.encrypt(secret)
     await db.commit()
     totp = pyotp.TOTP(secret)
-    uri = totp.provisioning_uri(name=user.email, issuer_name="EJC — De Paula Teixeira")
-    return {"secret": secret, "uri": uri, "aviso": "Use /totp/verificar com o primeiro código para ativar."}
+    uri = totp.provisioning_uri(
+        name=user.email, issuer_name="EJC — De Paula Teixeira"
+    )
+    qr_buffer = io.BytesIO()
+    qrcode.make(uri).save(qr_buffer, format="PNG")
+    qr_data_url = "data:image/png;base64," + base64.b64encode(
+        qr_buffer.getvalue()
+    ).decode("ascii")
+    return {
+        "secret": secret,
+        "uri": uri,
+        "qr_data_url": qr_data_url,
+        "aviso": "Use /totp/verificar com o primeiro código para ativar.",
+    }
 
 
 @router.post("/totp/verificar")
@@ -642,6 +729,7 @@ async def totp_setup(
 async def totp_verificar(
     req: TOTPVerificarRequest,
     request: Request,
+    response: Response,
     db: AsyncSession = Depends(get_db),
 ):
     """Ativa o TOTP após confirmar que o app autenticador está sincronizado."""
@@ -673,7 +761,40 @@ async def totp_verificar(
         raise HTTPException(status_code=400, detail="Código inválido. Verifique o relógio do dispositivo.")
     _recifrar_totp_legado(user, secret, legado)
     user.totp_enabled = True
-    await criar_audit_log(db, user.id, user.role.value, "TOTP_ATIVADO", "users", user.id, ip=obter_ip_real(request))
+    await criar_audit_log(
+        db, user.id, user.role.value, "TOTP_ATIVADO", "users", user.id,
+        ip=obter_ip_real(request),
+    )
+    if payload.get("two_factor_setup_required"):
+        await db.execute(
+            update(RefreshToken)
+            .where(RefreshToken.user_id == user.id, RefreshToken.revoked == False)
+            .values(revoked=True, revoked_at=datetime.now(timezone.utc))
+        )
+        access = create_access_token(user.id, user.role.value)
+        refresh_tok, jti = create_refresh_token(user.id)
+        db.add(RefreshToken(
+            id=str(uuid4()), user_id=user.id, jti=jti,
+            expires_at=datetime.now(timezone.utc) + timedelta(
+                days=settings.REFRESH_TOKEN_EXPIRE_DAYS),
+        ))
+        user.last_login_at = datetime.now(timezone.utc)
+        await criar_audit_log(
+            db, user.id, user.role.value, "LOGIN_2FA_CONCLUIDO", "users", user.id,
+            detalhes="TOTP ativado; sessão plena emitida.",
+            ip=obter_ip_real(request),
+        )
+        await db.commit()
+        _set_refresh_cookie(response, refresh_tok)
+        return {
+            "detail": "TOTP ativado com sucesso.",
+            "access_token": access,
+            "refresh_token": refresh_tok,
+            "token_type": "bearer",
+            "user_id": user.id,
+            "full_name": user.full_name,
+            "role": user.role.value,
+        }
     await db.commit()
     return {"detail": "TOTP ativado com sucesso. Guarde o segredo em lugar seguro."}
 
