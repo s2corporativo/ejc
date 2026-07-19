@@ -58,6 +58,21 @@ def _is_publica(path: str) -> bool:
     return any(_path_casa_prefixo_publico(path, p) for p in PREFIXOS_PUBLICOS)
 
 
+def _papeis_2fa_obrigatorio() -> set[str]:
+    """Política efetiva de 2FA.
+
+    Em produção, uma configuração vazia não pode desligar silenciosamente a
+    proteção dos perfis de maior privilégio. Para desativação deliberada, deve-se
+    informar explicitamente um CSV sem esses papéis em ambiente não produtivo.
+    """
+    configured = set(settings.require_2fa_roles_list)
+    if configured:
+        return configured
+    if settings.APP_ENV == "production":
+        return {"superadmin", "admin", "socio"}
+    return set()
+
+
 async def _precisa_configurar_2fa(payload: dict) -> bool:
     """Consulta o estado real do usuário e aplica a política por papel.
 
@@ -66,7 +81,7 @@ async def _precisa_configurar_2fa(payload: dict) -> bool:
     para papéis obrigados, preservando apenas as rotas de configuração/logout.
     """
     role = str(payload.get("role") or "").strip().lower()
-    if role not in settings.require_2fa_roles_list:
+    if role not in _papeis_2fa_obrigatorio():
         return False
     user_id = payload.get("sub")
     if not user_id:
