@@ -1,10 +1,15 @@
 import { describe, expect, it } from "vitest";
+import { filterModulesByLifecycle } from "../lib/moduleLifecycle";
 import {
   LEGACY_REDIRECTS,
   STAFF_ROUTES,
   canRoleAccessPath,
   getNavigationModules,
 } from "./moduleRegistry";
+
+function getProductionNavigation(role: string) {
+  return filterModulesByLifecycle(getNavigationModules(role), {});
+}
 
 describe("moduleRegistry", () => {
   it("não possui chaves ou rotas duplicadas", () => {
@@ -27,12 +32,15 @@ describe("moduleRegistry", () => {
     for (const alias of aliases) expect(canonical.has(alias)).toBe(false);
   });
 
-  it("oculta módulos internos, legados e não autorizados do menu", () => {
-    const advogado = getNavigationModules("advogado");
+  it("oculta módulos internos, legados e não autorizados do menu efetivo", () => {
+    const advogado = getProductionNavigation("advogado");
     expect(advogado.some((module) => module.path === "/usuarios")).toBe(false);
     expect(advogado.some((module) => module.path === "/whatsapp")).toBe(false);
     expect(
       advogado.some((module) => module.path.includes("sala-de-guerra")),
+    ).toBe(false);
+    expect(
+      advogado.some((module) => module.key === "knowledge-hub"),
     ).toBe(false);
   });
 
@@ -59,7 +67,9 @@ describe("moduleRegistry", () => {
     expect(map.get("/kanban")).toBe("/atividades?view=kanban");
     expect(map.get("/assistente-ia")).toContain("/inteligencia");
     expect(map.get("/victory-vault")).toBe("/inteligencia?tab=conhecimento");
-    expect(map.get("/knowledge-hub")).toBe("/inteligencia?tab=conhecimento");
+    expect(map.get("/knowledge-hub")).toBe(
+      "/inteligencia?tab=conhecimento",
+    );
     expect(map.get("/prazos")).toBe("/atividades?tipo=prazo");
     expect(map.get("/tarefas")).toBe("/atividades?tipo=tarefa");
     expect(map.get("/intimacoes")).toBe("/atividades?tipo=intimacao");
@@ -73,12 +83,12 @@ describe("moduleRegistry", () => {
 
   it("mantém o menu enxuto e o modo essencial com 7 destinos", () => {
     for (const role of ["superadmin", "admin", "socio", "advogado"]) {
-      expect(getNavigationModules(role).length).toBeLessThanOrEqual(17);
+      expect(getProductionNavigation(role).length).toBeLessThanOrEqual(17);
       expect(
-        getNavigationModules(role).some((m) => m.path === "/ferramentas"),
+        getProductionNavigation(role).some((m) => m.path === "/ferramentas"),
       ).toBe(true);
     }
-    const navegacaoAdvogado = getNavigationModules("advogado");
+    const navegacaoAdvogado = getProductionNavigation("advogado");
     const advogado = navegacaoAdvogado.map((m) => m.path);
     const essenciais = navegacaoAdvogado
       .filter((m) => m.essential)
