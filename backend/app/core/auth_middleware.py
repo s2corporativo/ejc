@@ -16,8 +16,6 @@ from app.core.config import get_settings
 logger = logging.getLogger(__name__)
 settings = get_settings()
 
-# Prefixos públicos no contrato interno /api. O helper `_api_path_interno`
-# normaliza /api/v1 antes de consultar esta lista.
 PREFIXOS_PUBLICOS = (
     "/api/auth/login",
     "/api/auth/refresh",
@@ -35,12 +33,7 @@ PREFIXOS_PUBLICOS = (
 
 
 def _api_path_interno(path: str) -> str:
-    """Normaliza segmentos e converte o prefixo canônico /api/v1 em /api.
-
-    A autenticação não pode depender da posição relativa do middleware de
-    versionamento. O restante do path permanece intacto para não ampliar a
-    superfície pública por correspondência textual parcial.
-    """
+    """Normaliza segmentos e converte o prefixo canônico /api/v1 em /api."""
     normalized = posixpath.normpath(path)
     if normalized == "/api/v1":
         return "/api"
@@ -65,7 +58,7 @@ def _is_publica(path: str) -> bool:
 
 
 class AuthMiddleware(BaseHTTPMiddleware):
-    """Valida JWT globalmente e aplica isolamento adicional do portal."""
+    """Valida JWT e aplica gates de senha, 2FA e isolamento do portal."""
 
     async def dispatch(self, request: Request, call_next) -> Response:
         path = _api_path_interno(request.url.path)
@@ -97,6 +90,8 @@ class AuthMiddleware(BaseHTTPMiddleware):
                 content={"detail": "Token inválido ou expirado"},
             )
 
+        # A troca de senha tem precedência sobre a configuração de 2FA. Ao
+        # concluir a troca, o endpoint emite novo token ainda restrito ao 2FA.
         if payload.get("pwd_change_required"):
             liberados = ("/api/auth/alterar-senha", "/api/auth/logout")
             if not any(_path_casa_prefixo_publico(path, p) for p in liberados):
@@ -105,6 +100,26 @@ class AuthMiddleware(BaseHTTPMiddleware):
                     content={
                         "detail": "Troca de senha obrigatória. Use /api/auth/alterar-senha.",
                         "must_change_password": True,
+                    },
+                )
+
+        # Sessão restrita para papel que exige 2FA e ainda não confirmou TOTP.
+        # Permite somente configurar/verificar o autenticador e encerrar sessão.
+        if payload.get("two_factor_setup_required"):
+            liberados_2fa = (
+                "/api/auth/totp/setup",
+                "/api/auth/totp/verificar",
+                "/api/auth/logout",
+            )
+            if not any(_path_casa_prefixo_publico(path, p) for p in liberados_2fa):
+                return JSONResponse(
+                    status_code=403,
+                    content={
+                        "detail": (
+                            "Seu perfil exige autenticação de dois fatores. "
+                            "Configure e confirme o autenticador antes de continuar."
+                        ),
+                        "precisa_configurar_2fa": True,
                     },
                 )
 
