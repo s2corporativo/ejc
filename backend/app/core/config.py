@@ -290,6 +290,8 @@ class Settings(BaseSettings):
     DATAJUD_API_KEY: str = ""
     # Host oficial da API Pública (POST /{alias_tribunal}/_search).
     DATAJUD_BASE_URL: str = "https://api-publica.datajud.cnj.jus.br"
+    # Timeout por requisição. O CNJ pode responder lentamente em horários de pico.
+    DATAJUD_TIMEOUT_SECONDS: float = 25.0
 
     # ── Infosimples — consultas PAGAS a sites públicos (TJMG, Receita…) ──
     # Agregador comercial (https://infosimples.com/consultas/): cada consulta
@@ -319,11 +321,13 @@ class Settings(BaseSettings):
     TRANSPARENCIA_BASE_URL: str = "https://api.portaldatransparencia.gov.br/api-de-dados"
 
     # ── PNCP — contratações públicas (consulta pública, sem chave) — GATED ──
-    # Portal Nacional de Contratações Públicas (Lei 14.133/2021). API pública,
-    # sem chave/segredo. Opt-in, desligada por padrão. Ver services/pncp_service.
-    PNCP_ENABLED: bool = False
+    # Portal Nacional de Contratações Públicas (Lei 14.133/2021). A API de
+    # CONSULTA é pública e sem chave; por isso fica ligada por padrão. O EJC não
+    # implementa as APIs de manutenção, que exigem credenciamento de órgão.
+    PNCP_ENABLED: bool = True
     # Host oficial (default fixo anti-SSRF; a URL nunca vem de input do usuário).
     PNCP_BASE_URL: str = "https://pncp.gov.br/api/consulta/v1"
+    PNCP_TIMEOUT_SECONDS: float = 25.0
 
     # ── NFS-e — emissão fiscal via provedor (Nuvem Fiscal) — GATED ──────
     # Nasce DESLIGADO e em HOMOLOGAÇÃO: nunca emite nota real sem ativação
