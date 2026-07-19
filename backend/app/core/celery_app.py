@@ -21,7 +21,9 @@ celery_app = Celery(
     "ejc",
     broker=settings.REDIS_URL,
     backend=settings.REDIS_URL,
-    include=["app.tasks.rag_tasks"],
+    # vault_sync não tem tasks: o include só garante o import no worker,
+    # registrando o handler de task_prerun (ressincronização do cofre, PR-2).
+    include=["app.tasks.rag_tasks", "app.tasks.vault_sync"],
 )
 
 celery_app.conf.update(
