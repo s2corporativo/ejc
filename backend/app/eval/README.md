@@ -41,7 +41,20 @@ python -m app.eval.run_eval --gold app/eval/gold_set.jsonl --k 6 --full --judge
 
 # Baseline para diff entre execuções
 python -m app.eval.run_eval --gold app/eval/gold_set.jsonl --out baseline.json
+
+# COMPARAÇÃO entre provedores (ex.: Claude × Sabiá) — mesma query e MESMO
+# contexto RAG; uma resposta por provedor; alucinação/groundedness/custo/
+# latência lado a lado. No VPS: docker compose exec backend python -m ...
+python -m app.eval.run_eval --gold app/eval/gold_set.jsonl --k 6 \
+    --full --judge --providers anthropic,maritaca --out comparacao.json
 ```
+
+No modo `--providers`, o juiz de groundedness roda na cadeia default (independe
+do provedor avaliado) e um fallback do gateway (provedor pedido inelegível/fora)
+é **registrado**, não escondido — `fallbacks>0` na saída significa que a
+resposta veio de outro provedor e a comparação deve ser lida com cautela.
+Use este modo ANTES de dar mais peso a um provedor novo na cadeia (decisão
+guiada por número, não por intuição — roteiro da auditoria 2026-07-17).
 
 ## 3. Métricas
 
@@ -50,6 +63,7 @@ python -m app.eval.run_eval --gold app/eval/gold_set.jsonl --out baseline.json
 | `hit@k`, `precision@k`, `recall@k`, `MRR` | o retrieval trouxe as fontes certas? | `buscar_contexto_rag` vs `expected_titulos` |
 | taxa de citações não confirmadas | alucinação de jurisprudência | gate `citation_check` (`--full`) |
 | groundedness | a resposta se apoia no contexto? | LLM-as-judge Haiku (`--judge`) |
+| comparação por provedor | qual provedor alucina menos / custa menos? | `--providers` (uma resposta por provedor, mesmo contexto) |
 
 Métricas de baseline **imediato** que já existem sem gold set: a taxa de citações
 não confirmadas (AILog) e a **nota de robustez** das Duas IAs.

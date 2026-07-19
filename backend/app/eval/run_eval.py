@@ -18,6 +18,10 @@
 #   python -m app.eval.run_eval --gold app/eval/gold_set.jsonl --k 6
 #   python -m app.eval.run_eval --gold app/eval/gold_set.jsonl --k 6 --full --judge
 #   python -m app.eval.run_eval --gold ... --out resultados.json     # baseline p/ diff
+#   python -m app.eval.run_eval --gold ... --full --judge \
+#       --providers anthropic,maritaca   # COMPARA provedores lado a lado:
+#       mesma query e MESMO contexto RAG, uma resposta por provedor, métricas
+#       (alucinação de citações, groundedness, custo, latência) por provedor.
 #
 # O gold set é o ATIVO mais valioso e só o escritório produz — comece com
 # gold_set.example.jsonl e cresça para 50–150 casos reais (pseudonimizados)
@@ -58,6 +62,23 @@ class CasoMetrica:
     citacoes_total: int = 0
     citacoes_nao_confirmadas: int = 0
     groundedness: float | None = None
+    erro: str | None = None
+    # Modo --providers: uma entrada por provedor comparado (vars(MetricaProvider)).
+    providers: list[dict] = field(default_factory=list)
+
+
+@dataclass
+class MetricaProvider:
+    """Métricas de UMA resposta gerada por UM provedor no modo comparação."""
+    provider_pedido: str
+    provider_real: str = ""
+    modelo: str = ""
+    fallback: bool = False        # cadeia caiu em outro provedor que não o pedido
+    citacoes_total: int = 0
+    citacoes_nao_confirmadas: int = 0
+    groundedness: float | None = None
+    custo_brl: float = 0.0
+    duracao_ms: int = 0
     erro: str | None = None
 
 
@@ -113,7 +134,53 @@ async def _groundedness_judge(query: str, resposta: str, contexto: str) -> float
         return None
 
 
-async def _avaliar_caso(db, caso: dict, k: int, full: bool, judge: bool) -> CasoMetrica:
+async def _avaliar_provider(db, caso: dict, chunks: list[dict], provider: str,
+                            judge: bool) -> MetricaProvider:
+    """Gera UMA resposta com `provider` (mesma query, MESMO contexto RAG) e mede
+    citações não confirmadas, groundedness (juiz na cadeia default — independente
+    do provedor avaliado), custo e latência. Fallback do gateway é registrado,
+    não escondido: se a cadeia caiu em outro provedor, a comparação fica honesta."""
+    from app.services import ai_gateway
+    mp = MetricaProvider(provider_pedido=provider)
+    contexto = "\n\n---\n\n".join(
+        f"Trecho {i + 1}:\n{c.get('conteudo') or ''}" for i, c in enumerate(chunks)
+    )
+    try:
+        resp = await ai_gateway.chat(
+            [{"role": "system", "content": (
+                "Voce e um analista juridico senior. Responda com base no "
+                "CONHECIMENTO RECUPERADO abaixo; cite dispositivos/sumulas apenas "
+                "com fonte verificavel.\n\n## CONHECIMENTO RECUPERADO (BASE "
+                f"INTERNA):\n{contexto}")},
+             {"role": "user", "content": caso.get("query") or ""}],
+            task_type="analise_juridica",
+            provider_override=provider,
+            nivel_inteligencia="alto",
+        )
+        mp.provider_real = resp.provedor
+        mp.modelo = resp.modelo
+        mp.fallback = resp.provedor != provider
+        mp.custo_brl = round(float(resp.custo_estimado_brl or 0.0), 6)
+        mp.duracao_ms = int(resp.duracao_ms or 0)
+        try:
+            from app.services.citation_check import verificar_citacoes
+            cit = await verificar_citacoes(db, resp.texto or "")
+            if isinstance(cit, dict):
+                mp.citacoes_total = int(cit.get("total") or 0)
+                mp.citacoes_nao_confirmadas = int(cit.get("nao_encontradas") or 0)
+        except Exception as e:
+            print(f"[{provider}] citation_check indisponível: {e}", file=sys.stderr)
+        if judge:
+            mp.groundedness = await _groundedness_judge(
+                caso.get("query") or "", resp.texto or "", contexto
+            )
+    except Exception as e:
+        mp.erro = str(e)[:300]
+    return mp
+
+
+async def _avaliar_caso(db, caso: dict, k: int, full: bool, judge: bool,
+                        providers: list[str] | None = None) -> CasoMetrica:
     from app.services import ai_service
     cid = str(caso.get("id") or "?")
     m = CasoMetrica(id=cid, area=str(caso.get("area") or ""))
@@ -126,6 +193,13 @@ async def _avaliar_caso(db, caso: dict, k: int, full: bool, judge: bool) -> Caso
         m.hit, m.precision, m.recall, m.rr = _metrica_retrieval(
             caso.get("expected_titulos") or [], titulos
         )
+
+        if providers:
+            # Modo comparação: uma resposta por provedor sobre o MESMO contexto.
+            for p in providers:
+                mp = await _avaliar_provider(db, caso, chunks, p, judge)
+                m.providers.append(vars(mp))
+            return m
 
         if full:
             # Roda a IA real e passa a resposta pelo gate de citações.
@@ -168,6 +242,42 @@ class Agregado:
     por_caso: list[dict] = field(default_factory=list)
 
 
+def _agregar_providers(metricas: list[CasoMetrica]) -> dict[str, dict]:
+    """Agrega o modo comparação POR PROVEDOR PEDIDO (chave da comparação)."""
+    por_provider: dict[str, list[dict]] = {}
+    for m in metricas:
+        for mp in m.providers:
+            por_provider.setdefault(str(mp.get("provider_pedido")), []).append(mp)
+    resumo: dict[str, dict] = {}
+    for prov, lista in por_provider.items():
+        ok = [x for x in lista if not x.get("erro")]
+        n = len(ok) or 1
+        tot_cit = sum(int(x.get("citacoes_total") or 0) for x in ok)
+        nao_conf = sum(int(x.get("citacoes_nao_confirmadas") or 0) for x in ok)
+        grs = [x["groundedness"] for x in ok if x.get("groundedness") is not None]
+        resumo[prov] = {
+            "n": len(ok),
+            "erros": len(lista) - len(ok),
+            "fallbacks": sum(1 for x in ok if x.get("fallback")),
+            "taxa_alucinacao": round(nao_conf / tot_cit, 4) if tot_cit else None,
+            "groundedness": round(sum(grs) / len(grs), 4) if grs else None,
+            "custo_total_brl": round(sum(float(x.get("custo_brl") or 0) for x in ok), 6),
+            "duracao_media_ms": int(sum(int(x.get("duracao_ms") or 0) for x in ok) / n),
+        }
+    return resumo
+
+
+def _imprimir_comparacao(resumo: dict[str, dict]) -> None:
+    print("\n== COMPARAÇÃO POR PROVEDOR ==")
+    for prov, r in resumo.items():
+        print(f"  {prov:10} n={r['n']:3}  alucinação={r['taxa_alucinacao']}  "
+              f"groundedness={r['groundedness']}  custo=R${r['custo_total_brl']}  "
+              f"latência_média={r['duracao_media_ms']}ms"
+              + (f"  fallbacks={r['fallbacks']}" if r["fallbacks"] else "")
+              + (f"  ERROS={r['erros']}" if r["erros"] else ""))
+    print("  (fallbacks>0 = a cadeia respondeu com OUTRO provedor — compare com cautela)")
+
+
 def _agregar(metricas: list[CasoMetrica]) -> Agregado:
     validos = [m for m in metricas if m.erro is None]
     n = len(validos) or 1
@@ -192,15 +302,22 @@ async def _main(args) -> int:
     if not casos:
         print(f"Nenhum caso em {args.gold}", file=sys.stderr)
         return 2
+    providers = [p.strip().lower() for p in (args.providers or "").split(",") if p.strip()]
     metricas: list[CasoMetrica] = []
     async with AsyncSessionLocal() as db:
         for caso in casos:
-            m = await _avaliar_caso(db, caso, args.k, args.full, args.judge)
+            m = await _avaliar_caso(db, caso, args.k, args.full, args.judge, providers or None)
             flag = "ERRO" if m.erro else ("HIT" if m.hit else "miss")
             print(f"  [{flag:4}] {m.id:12} p@{args.k}={m.precision} r@{args.k}={m.recall} rr={m.rr}"
-                  + (f" alucin={m.citacoes_nao_confirmadas}/{m.citacoes_total}" if args.full else "")
+                  + (f" alucin={m.citacoes_nao_confirmadas}/{m.citacoes_total}" if args.full and not providers else "")
                   + (f" ground={m.groundedness}" if m.groundedness is not None else "")
                   + (f"  ({m.erro})" if m.erro else ""))
+            for mp in m.providers:
+                print(f"         · {mp['provider_pedido']:10} alucin={mp['citacoes_nao_confirmadas']}"
+                      f"/{mp['citacoes_total']} ground={mp['groundedness']} "
+                      f"custo=R${mp['custo_brl']} {mp['duracao_ms']}ms"
+                      + (" [FALLBACK→" + mp["provider_real"] + "]" if mp["fallback"] else "")
+                      + (f" ({mp['erro']})" if mp["erro"] else ""))
             metricas.append(m)
     ag = _agregar(metricas)
     print("\n== AGREGADO ==")
@@ -210,9 +327,13 @@ async def _main(args) -> int:
         print(f"taxa de citações NÃO confirmadas (alucinação)={ag.taxa_alucinacao}")
     if ag.groundedness is not None:
         print(f"groundedness média (LLM-judge)={ag.groundedness}")
+    comparacao = _agregar_providers(metricas) if providers else None
+    if comparacao:
+        _imprimir_comparacao(comparacao)
     if args.out:
+        saida = vars(ag) | ({"comparacao_providers": comparacao} if comparacao else {})
         with open(args.out, "w", encoding="utf-8") as fh:
-            json.dump(vars(ag), fh, ensure_ascii=False, indent=2)
+            json.dump(saida, fh, ensure_ascii=False, indent=2)
         print(f"\nresultados → {args.out}")
     # Gate de regressão opcional (para CI): falha se recall cair abaixo do piso.
     if args.min_recall is not None and ag.recall < args.min_recall:
@@ -337,6 +458,11 @@ def main() -> None:
     p.add_argument("--full", action="store_true", help="roda a IA e mede citações (mais lento/caro)")
     p.add_argument("--judge", action="store_true", help="groundedness via LLM-judge (requer --full)")
     p.add_argument("--out", default=None, help="grava métricas agregadas em JSON (baseline p/ diff)")
+    p.add_argument("--providers", default=None,
+                   help="CSV de provedores para COMPARAR lado a lado (ex.: "
+                        "anthropic,maritaca) — mesma query e mesmo contexto RAG; "
+                        "gera uma resposta por provedor e mede alucinação/"
+                        "groundedness/custo/latência por provedor")
     p.add_argument("--min-recall", type=float, default=None, help="piso de recall@k p/ CI (falha abaixo)")
     p.add_argument("--smoke", action="store_true",
                    help="só valida o FORMATO dos gold sets *.jsonl (offline: sem banco/LLM; p/ CI)")
