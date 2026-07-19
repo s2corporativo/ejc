@@ -44,7 +44,7 @@ cryptography==44.0.1
 # HTTP and integrations
 httpx==0.27.0
 requests==2.34.2
-groq==0.9.0
+groq==1.5.0
 boto3==1.34.144
 botocore==1.34.144
 tenacity==8.2.3  # datajud_service.py, djen_service.py (retry)
