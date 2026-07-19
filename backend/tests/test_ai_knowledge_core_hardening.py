@@ -139,3 +139,48 @@ async def test_categoria_restrita_sem_cliente_e_bloqueada():
             client_id=None,
             embutir_vetores=False,
         )
+
+
+class _ResultadoVazio:
+    def scalar(self):
+        return 0
+
+    def scalars(self):
+        return self
+
+    def all(self):
+        return []
+
+
+class _DBCaptura:
+    def __init__(self):
+        self.statements: list[str] = []
+
+    async def execute(self, statement):
+        self.statements.append(str(statement))
+        return _ResultadoVazio()
+
+
+@pytest.mark.asyncio
+async def test_listagem_rag_nao_gestao_recebe_filtro_de_ownership():
+    from app.services.ai_core_hardening_patch import _listar_docs_escopado
+
+    db = _DBCaptura()
+    cu = SimpleNamespace(id="adv-1", role="advogado", client_id=None)
+    resposta = await _listar_docs_escopado(db=db, cu=cu)
+    sql = "\n".join(db.statements).lower()
+
+    assert resposta["data"] == [] and resposta["total"] == 0
+    assert "knowledge_docs.client_id is null" in sql
+    assert "cases.advogado_responsavel_id" in sql
+    assert "cases.advogado_auxiliar_id" in sql
+
+
+def test_rota_listar_docs_usa_callable_escopado_apos_startup():
+    from app.main import app  # noqa: F401
+    from app.routers import rag
+    from app.services.ai_core_hardening_patch import _listar_docs_escopado
+
+    rota = next(r for r in rag.router.routes if getattr(r, "name", "") == "listar_docs")
+    assert rota.endpoint is _listar_docs_escopado
+    assert rota.dependant.call is _listar_docs_escopado
