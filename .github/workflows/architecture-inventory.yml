@@ -7,7 +7,9 @@ on:
       - agent/organizacao-padronizacao-rotas-fluxos
     paths:
       - "scripts/generate_architecture_inventory.py"
+      - "scripts/refine_architecture_inventory.py"
       - "scripts/tests/test_generate_architecture_inventory.py"
+      - "scripts/tests/test_refine_architecture_inventory.py"
       - "config/architecture_inventory_overrides.json"
       - "backend/app/**"
       - "backend/alembic/versions/**"
@@ -16,7 +18,9 @@ on:
   pull_request:
     paths:
       - "scripts/generate_architecture_inventory.py"
+      - "scripts/refine_architecture_inventory.py"
       - "scripts/tests/test_generate_architecture_inventory.py"
+      - "scripts/tests/test_refine_architecture_inventory.py"
       - "config/architecture_inventory_overrides.json"
       - "backend/app/**"
       - "backend/alembic/versions/**"
@@ -46,13 +50,22 @@ jobs:
         run: |
           python3 --version
 
-      - name: Test inventory generator
+      - name: Test inventory pipeline
         run: |
-          python3 -m unittest scripts.tests.test_generate_architecture_inventory -v
+          python3 -m unittest \
+            scripts.tests.test_generate_architecture_inventory \
+            scripts.tests.test_refine_architecture_inventory \
+            -v
 
-      - name: Generate inventory and enforce classification gate
+      - name: Generate raw inventory
         run: |
           python3 scripts/generate_architecture_inventory.py \
+            --output "$RUNNER_TEMP/ejc-architecture-inventory" \
+            --check
+
+      - name: Refine mounts and duplicate families
+        run: |
+          python3 scripts/refine_architecture_inventory.py \
             --output "$RUNNER_TEMP/ejc-architecture-inventory" \
             --check
 
