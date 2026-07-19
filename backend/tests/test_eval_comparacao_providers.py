@@ -136,12 +136,18 @@ def test_agregar_providers_por_provedor_pedido():
          "erro": "timeout"},
     ])
     r = _agregar_providers([m1, m2])
-    assert r["anthropic"]["n"] == 2
+    # anthropic: 2 execuções válidas (sem erro, sem fallback) → compõem métricas.
+    assert r["anthropic"]["n_validos"] == 2
     assert r["anthropic"]["taxa_alucinacao"] == 0.1          # 1/10
     assert r["anthropic"]["groundedness"] == 0.95
     assert r["anthropic"]["custo_total_brl"] == 3.0
     assert r["anthropic"]["fallbacks"] == 0
-    assert r["maritaca"]["n"] == 1                            # caso com erro fica fora
+    # maritaca: 1 fallback (m1) + 1 erro (m2) → NENHUMA execução válida.
+    # A resposta de fallback (que veio do groq) NÃO entra nas métricas da
+    # maritaca — senão a comparação atribuiria a ela o que outro provedor fez.
+    assert r["maritaca"]["n_validos"] == 0
     assert r["maritaca"]["erros"] == 1
     assert r["maritaca"]["fallbacks"] == 1
-    assert r["maritaca"]["taxa_alucinacao"] == 1.0            # 2/2
+    assert r["maritaca"]["taxa_alucinacao"] is None          # sem execução válida
+    assert r["maritaca"]["groundedness"] is None
+    assert r["maritaca"]["custo_total_brl"] == 0.0

@@ -250,32 +250,40 @@ def _agregar_providers(metricas: list[CasoMetrica]) -> dict[str, dict]:
             por_provider.setdefault(str(mp.get("provider_pedido")), []).append(mp)
     resumo: dict[str, dict] = {}
     for prov, lista in por_provider.items():
-        ok = [x for x in lista if not x.get("erro")]
-        n = len(ok) or 1
-        tot_cit = sum(int(x.get("citacoes_total") or 0) for x in ok)
-        nao_conf = sum(int(x.get("citacoes_nao_confirmadas") or 0) for x in ok)
-        grs = [x["groundedness"] for x in ok if x.get("groundedness") is not None]
+        erros = [x for x in lista if x.get("erro")]
+        fallbacks = [x for x in lista if not x.get("erro") and x.get("fallback")]
+        # Só execuções VÁLIDAS do provider PEDIDO compõem as métricas: sem erro
+        # E sem fallback. Uma resposta que a cadeia gerou com OUTRO provedor não
+        # mede o provedor pedido — contá-la falsearia a comparação (achado da
+        # revisão 2026-07-19). Fallbacks/erros ficam em contadores separados.
+        validos = [x for x in lista if not x.get("erro") and not x.get("fallback")]
+        n = len(validos) or 1
+        tot_cit = sum(int(x.get("citacoes_total") or 0) for x in validos)
+        nao_conf = sum(int(x.get("citacoes_nao_confirmadas") or 0) for x in validos)
+        grs = [x["groundedness"] for x in validos if x.get("groundedness") is not None]
         resumo[prov] = {
-            "n": len(ok),
-            "erros": len(lista) - len(ok),
-            "fallbacks": sum(1 for x in ok if x.get("fallback")),
+            "n_validos": len(validos),
+            "erros": len(erros),
+            # excluídos das métricas (a resposta veio de outro provedor):
+            "fallbacks": len(fallbacks),
             "taxa_alucinacao": round(nao_conf / tot_cit, 4) if tot_cit else None,
             "groundedness": round(sum(grs) / len(grs), 4) if grs else None,
-            "custo_total_brl": round(sum(float(x.get("custo_brl") or 0) for x in ok), 6),
-            "duracao_media_ms": int(sum(int(x.get("duracao_ms") or 0) for x in ok) / n),
+            "custo_total_brl": round(sum(float(x.get("custo_brl") or 0) for x in validos), 6),
+            "duracao_media_ms": int(sum(int(x.get("duracao_ms") or 0) for x in validos) / n),
         }
     return resumo
 
 
 def _imprimir_comparacao(resumo: dict[str, dict]) -> None:
-    print("\n== COMPARAÇÃO POR PROVEDOR ==")
+    print("\n== COMPARAÇÃO POR PROVEDOR (só execuções válidas do provedor pedido) ==")
     for prov, r in resumo.items():
-        print(f"  {prov:10} n={r['n']:3}  alucinação={r['taxa_alucinacao']}  "
+        print(f"  {prov:10} n={r['n_validos']:3}  alucinação={r['taxa_alucinacao']}  "
               f"groundedness={r['groundedness']}  custo=R${r['custo_total_brl']}  "
               f"latência_média={r['duracao_media_ms']}ms"
-              + (f"  fallbacks={r['fallbacks']}" if r["fallbacks"] else "")
+              + (f"  fallbacks_excluídos={r['fallbacks']}" if r["fallbacks"] else "")
               + (f"  ERROS={r['erros']}" if r["erros"] else ""))
-    print("  (fallbacks>0 = a cadeia respondeu com OUTRO provedor — compare com cautela)")
+    print("  (fallbacks NÃO entram nas métricas — a resposta veio de outro provedor; "
+          "n_validos baixo com fallbacks>0 = provedor pedido raramente respondeu de fato)")
 
 
 def _agregar(metricas: list[CasoMetrica]) -> Agregado:
