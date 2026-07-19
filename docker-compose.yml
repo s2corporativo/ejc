@@ -93,6 +93,15 @@ services:
       # inelegível (fail-safe, fora da cadeia). O .env pode sobrepor para
       # desligar (MARITACA_ENABLED=false) sem tocar neste arquivo.
       MARITACA_ENABLED: "${MARITACA_ENABLED:-true}"
+      # RAG: 3ª perna full-text (tsvector 'portuguese', BM25-like) na fusão RRF
+      # — melhora casamento de citações exatas (art./súmula/nº CNJ). Aditiva,
+      # usa índice GIN pré-existente (sem migration), falha isolada não derruba
+      # o retrieval. .env pode desligar com RAG_FTS_ENABLED=false.
+      RAG_FTS_ENABLED: "${RAG_FTS_ENABLED:-true}"
+      # Alerta de orçamento de IA (R$): com dois provedores pagos na cadeia
+      # (Anthropic + Maritaca), o painel de governança avisa ao ultrapassar
+      # este teto no período. 0 = só exibe, sem alerta. Ajuste no .env do VPS.
+      AI_BUDGET_ALERTA_BRL: "${AI_BUDGET_ALERTA_BRL:-0}"
     volumes:
       - uploads_data:/app/uploads
       - backups_data:/app/backups
@@ -136,8 +145,10 @@ services:
       # sem Ollama local neste stack; IA externa com mascaramento de PII.
       OLLAMA_ENABLED: "false"
       AI_PROVIDER_PRIORITY: "anthropic,maritaca,groq,ollama"
-      # Mesma decisão de produto da API: Maritaca ligada; .env pode sobrepor.
+      # Mesma decisão de produto da API: Maritaca + FTS ligados; .env sobrepõe.
       MARITACA_ENABLED: "${MARITACA_ENABLED:-true}"
+      RAG_FTS_ENABLED: "${RAG_FTS_ENABLED:-true}"
+      AI_BUDGET_ALERTA_BRL: "${AI_BUDGET_ALERTA_BRL:-0}"
     volumes:
       - uploads_data:/app/uploads
     depends_on:
