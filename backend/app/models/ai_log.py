@@ -2,12 +2,23 @@
 from __future__ import annotations
 
 import enum
+import re
 from uuid import uuid4
 
 from sqlalchemy import Column, String, DateTime, Enum as SAEnum, func, Text, Boolean, Integer, Numeric, ForeignKey
 from sqlalchemy.orm import relationship, validates
 
 from app.core.database import Base
+
+_TRIBUNAL_REF = re.compile(
+    r"\b(STF|STJ|TST|TSE|STM|CNJ|TJ[A-Z]{2}|TRF[1-6]|TRT\d{1,2}|TRE[-/]?[A-Z]{2})\b",
+    re.I,
+)
+_DATA_REF = re.compile(r"\b(?:\d{1,2}[/.-]\d{1,2}[/.-]\d{4}|\d{4}-\d{2}-\d{2})\b")
+_TERMO_REF = re.compile(
+    r"\b(ac[oó]rd[aã]o|julgad[oa]|precedente|REsp|AREsp|AgInt|AgRg|RHC|HC|MS|ADI|ADPF|tema)\b",
+    re.I,
+)
 
 
 def normalizar_modelo_ia(modelo: str | None) -> str | None:
@@ -25,20 +36,52 @@ def normalizar_modelo_ia(modelo: str | None) -> str | None:
     return m
 
 
+def _proteger_cnj_jurisprudencial(texto: str) -> tuple[str, dict[str, str]]:
+    """Protege temporariamente apenas CNJ com contexto inequívoco de citação.
+
+    O AILog alimenta o gate de citações no momento da aprovação HITL. Mascarar
+    todo número CNJ tornaria esse gate inoperante. Por outro lado, preservar o
+    número do processo do próprio cliente seria exposição desnecessária.
+
+    Um CNJ só é preservado quando a janela próxima contém tribunal reconhecível
+    E marcador jurídico de precedente ou data. Demais números de processo seguem
+    pseudonimizados normalmente.
+    """
+    from app.services.sanitizer import _PATTERNS
+
+    processo_re = next(pattern for pattern, placeholder in _PATTERNS if placeholder == "[PROCESSO]")
+    refs: dict[str, str] = {}
+
+    def repl(match: re.Match) -> str:
+        ini = max(0, match.start() - 220)
+        fim = min(len(texto), match.end() + 220)
+        janela = texto[ini:fim]
+        if _TRIBUNAL_REF.search(janela) and (_TERMO_REF.search(janela) or _DATA_REF.search(janela)):
+            token = f"[[REF_JULGADO_{len(refs) + 1:03d}]]"
+            refs[token] = match.group(0)
+            return token
+        return match.group(0)
+
+    return processo_re.sub(repl, texto), refs
+
+
 def pseudonimizar_texto_auditoria(valor: str | None) -> str | None:
+    """Pseudonimiza PII persistida sem destruir referências para citation gate."""
     if valor is None:
         return None
     texto = str(valor)
     if not texto:
         return texto
+    protegido, refs = _proteger_cnj_jurisprudencial(texto)
     try:
         from app.services.ai.pseudonymizer import pseudonimizar
-        limpo, _ = pseudonimizar(texto)
-        return limpo
+        limpo, _ = pseudonimizar(protegido)
     except Exception:
         from app.services.sanitizer import sanitizar_pii
-        limpo, _ = sanitizar_pii(texto)
-        return limpo
+        limpo, _ = sanitizar_pii(protegido)
+    for token, cnj in refs.items():
+        limpo = limpo.replace(token, cnj)
+    return limpo
 
 
 class AIStatusHITL(str, enum.Enum):
