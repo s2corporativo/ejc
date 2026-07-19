@@ -1,101 +1,345 @@
 # ── app/services/ingestors/planalto.py ───────────────────────────────────────
-# Ingestor dos códigos-núcleo da legislação federal (texto integral).
-# Fonte: Planalto (HTML estático, latin-1). Não há API — scraping estruturado
-# de um conjunto FECHADO e estável de URLs. Reprocessa diário, mas o UPSERT
-# idempotente só re-embeda se o texto mudou (alteração legislativa).
+# Ingestor ÚNICO de legislação federal (lei seca) do Planalto — escritor único
+# do corpus categoria='legislacao' com chaves `planalto:<slug>` (as MESMAS já
+# existentes em produção; mudar a chave duplicaria o corpus).
 #
-# Estratégia de extração: BeautifulSoup → texto limpo → remoção de ruído de
-# "texto compilado" (riscado/anotações), preservando a sequência dos artigos.
+# Consolida os dois importadores antigos (este módulo + scripts/seed_legislacao):
+#   • catálogo ampliado (códigos-núcleo + juizados/LGPD + bloco ambiental);
+#   • extração VERBATIM (lei não se resume): remove <script>/<style>, texto
+#     RISCADO do compilado (preservando a anotação "(Revogado ...)") e linhas
+#     de navegação conhecidas;
+#   • chunking POR ARTIGO: cada chunk abre com o cabeçalho
+#     "Art. N [· Art. M ...] — <lei>", compatível com o lookup ILIKE de
+#     citation_check._existe_artigo (inclusive grafia oficial "Art. 10.");
+#   • upsert idempotente pelo pipeline oficial (dedup por chave_origem, hash
+#     sobre `conteudo`, versionamento migration 068, chunks pré-computados).
+#
+# Migração de chunking (deploy único): docs vigentes gravados pelo formato
+# antigo (extra sem divisao='por_artigo') têm o MESMO conteúdo (mesmo hash),
+# então o atalho "inalterado" do upsert os deixaria para sempre com chunks
+# genéricos. `_rechunk_pendente` detecta esse caso e passa
+# `forcar_nova_versao=True` ao upsert → UMA nova versão re-chunkada por
+# artigo; a partir daí extra.divisao == 'por_artigo' e as execuções seguintes
+# voltam a "inalterado" (idempotente).
+#
+# Consumidores: scheduler (job semanal `ing_planalto`, dom 3h) chama
+# `ingerir(db)`; scripts/seed_legislacao.py é um wrapper CLI fino sobre
+# `ingerir_diploma` (--apenas/--dry-run/--cache-dir/--com-embeddings).
 from __future__ import annotations
 
 import logging
 import re
+from pathlib import Path
 
 from bs4 import BeautifulSoup
+from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
-
-from app.services.ingestion_service import fetch, upsert_documento, normalizar
 
 logger = logging.getLogger("ejc.ingestao.planalto")
 
-# Conjunto-núcleo: os diplomas mais citados na rotina do escritório.
-# (slug curto p/ chave_origem · título canônico · URL compilada do Planalto)
-CODIGOS: list[dict] = [
-    {"slug": "cf88",  "titulo": "Constituição Federal de 1988",
+CATEGORIA = "legislacao"          # a categoria que citation_check._existe_artigo consome
+PREFIXO_CHAVE = "planalto:"       # chave legada de produção — NÃO mudar
+
+MIN_TEXTO = 2000                  # página menor que isso não é um diploma — erro de download
+MIN_ARTIGOS = 5                   # parser precisa achar artigos, senão a extração falhou
+
+# ══════════════════════════════════════════════════════════════════════════
+# Catálogo versionado — texto COMPILADO no Planalto (www.planalto.gov.br)
+# (slug curto p/ chave_origem · título canônico · área · URL compilada)
+# ══════════════════════════════════════════════════════════════════════════
+CATALOGO: list[dict] = [
+    {"slug": "cf88", "titulo": "Constituição Federal de 1988", "area": "constitucional",
      "url": "https://www.planalto.gov.br/ccivil_03/constituicao/constituicaocompilado.htm"},
-    {"slug": "cc",    "titulo": "Código Civil (Lei 10.406/2002)",
+    {"slug": "cc", "titulo": "Código Civil (Lei 10.406/2002)", "area": "civil",
      "url": "https://www.planalto.gov.br/ccivil_03/leis/2002/l10406compilada.htm"},
-    {"slug": "cpc",   "titulo": "Código de Processo Civil (Lei 13.105/2015)",
+    {"slug": "cpc", "titulo": "Código de Processo Civil (Lei 13.105/2015)", "area": "processual_civil",
      "url": "https://www.planalto.gov.br/ccivil_03/_ato2015-2018/2015/lei/l13105.htm"},
-    {"slug": "clt",   "titulo": "Consolidação das Leis do Trabalho (DL 5.452/1943)",
+    {"slug": "clt", "titulo": "Consolidação das Leis do Trabalho (DL 5.452/1943)", "area": "trabalhista",
      "url": "https://www.planalto.gov.br/ccivil_03/decreto-lei/del5452compilado.htm"},
-    {"slug": "cdc",   "titulo": "Código de Defesa do Consumidor (Lei 8.078/1990)",
+    {"slug": "cdc", "titulo": "Código de Defesa do Consumidor (Lei 8.078/1990)", "area": "consumidor",
      "url": "https://www.planalto.gov.br/ccivil_03/leis/l8078compilado.htm"},
-    {"slug": "cp",    "titulo": "Código Penal (DL 2.848/1940)",
+    {"slug": "cp", "titulo": "Código Penal (DL 2.848/1940)", "area": "penal",
      "url": "https://www.planalto.gov.br/ccivil_03/decreto-lei/del2848compilado.htm"},
-    {"slug": "cpp",   "titulo": "Código de Processo Penal (DL 3.689/1941)",
+    {"slug": "cpp", "titulo": "Código de Processo Penal (DL 3.689/1941)", "area": "processual_penal",
      "url": "https://www.planalto.gov.br/ccivil_03/decreto-lei/del3689compilado.htm"},
-    {"slug": "eca",   "titulo": "Estatuto da Criança e do Adolescente (Lei 8.069/1990)",
+    {"slug": "eca", "titulo": "Estatuto da Criança e do Adolescente (Lei 8.069/1990)", "area": "infancia_juventude",
      "url": "https://www.planalto.gov.br/ccivil_03/leis/l8069compilado.htm"},
-    {"slug": "ctn",   "titulo": "Código Tributário Nacional (Lei 5.172/1966)",
+    {"slug": "ctn", "titulo": "Código Tributário Nacional (Lei 5.172/1966)", "area": "tributario",
      "url": "https://www.planalto.gov.br/ccivil_03/leis/l5172compilado.htm"},
+    {"slug": "l9099", "titulo": "Lei dos Juizados Especiais (Lei 9.099/1995)", "area": "processual_civil",
+     "url": "https://www.planalto.gov.br/ccivil_03/leis/l9099.htm"},
+    {"slug": "lgpd", "titulo": "Lei Geral de Proteção de Dados Pessoais (Lei 13.709/2018)", "area": "digital",
+     "url": "https://www.planalto.gov.br/ccivil_03/_ato2015-2018/2018/lei/l13709.htm"},
+    # Bloco ambiental (skill agente-advocacia-ambiental / prática do escritório)
+    {"slug": "cflo", "titulo": "Código Florestal (Lei 12.651/2012)", "area": "ambiental",
+     "url": "https://www.planalto.gov.br/ccivil_03/_ato2011-2014/2012/lei/l12651.htm"},
+    {"slug": "lca", "titulo": "Lei de Crimes Ambientais (Lei 9.605/1998)", "area": "ambiental",
+     "url": "https://www.planalto.gov.br/ccivil_03/leis/l9605.htm"},
+    {"slug": "pnma", "titulo": "Política Nacional do Meio Ambiente (Lei 6.938/1981)", "area": "ambiental",
+     "url": "https://www.planalto.gov.br/ccivil_03/leis/l6938.htm"},
 ]
 
 
-def extrair_texto(html: str) -> str:
-    """Extrai texto legível do HTML do Planalto, preservando a ordem dos artigos.
+# ══════════════════════════════════════════════════════════════════════════
+# Parser (funções puras — testáveis sem rede/DB)
+# ══════════════════════════════════════════════════════════════════════════
+
+# Anotação oficial de revogação dentro de trecho riscado — é a única parte do
+# riscado que sobrevive (o teor revogado sai; a marcação "(Revogado ...)" fica).
+_RE_REVOGADO = re.compile(r"\(\s*Revogad[oa][^)]*\)", re.IGNORECASE)
+
+# Linhas de navegação/boilerplate do topo das páginas do Planalto (comparação
+# por linha inteira, minúscula). Conservador: só o que é certamente navegação.
+_BOILERPLATE = {
+    "presidência da república",
+    "casa civil",
+    "secretaria-geral",
+    "subchefia para assuntos jurídicos",
+    "subchefia de assuntos jurídicos",
+    "texto compilado",
+    "texto compilado(vigência)",
+    "(vigência)",
+    "vigência",
+    "mensagem de veto",
+    "índice",
+    "voltar ao início",
+}
+_RE_NAO_SUBSTITUI = re.compile(r"^este texto não substitui o publicado", re.IGNORECASE)
+
+# Início de artigo em começo de linha: "Art. 1º", "Art. 5º-A", "Art. 10.",
+# "Art. 1.022." (milhar com ponto). Grupos: número como grafado, ordinal, sufixo.
+_RE_ART = re.compile(
+    r"^Art\.\s*(\d{1,3}(?:\.\d{3})+|\d{1,4})\s*([ºo°])?\s*(-[A-Za-z]{1,3})?\s*[.\sº°]"
+)
+
+
+def extrair_texto_planalto(html: str) -> str:
+    """HTML do Planalto → texto limpo VERBATIM, na ordem dos artigos.
 
     - Remove <script>/<style>.
-    - Usa get_text com separador de linha.
-    - Limpa entidades, espaços de tabulação visual e linhas vazias excessivas.
-    Função pura (sem rede/DB) → testável isoladamente.
+    - Remove texto RISCADO (<strike>/<s>/<del> — teor revogado/alterado no
+      compilado), preservando a anotação "(Revogado ...)" quando presente
+      dentro do próprio riscado.
+    - Remove linhas de navegação conhecidas; NÃO reescreve o texto legal.
     """
+    from app.services.ingestion_service import normalizar
+
     soup = BeautifulSoup(html, "lxml")
     for tag in soup(["script", "style"]):
         tag.decompose()
-    txt = soup.get_text("\n")
-    # Normaliza NBSP e espaços de indentação visual do Planalto
-    txt = txt.replace("\xa0", " ")
-    # Junta linhas quebradas no meio de frase: "...consumidor,\n e" → "...consumidor, e"
+    for tag in soup.find_all(["strike", "s", "del"]):
+        m = _RE_REVOGADO.search(tag.get_text(" ", strip=True))
+        if m:
+            tag.replace_with(m.group(0))
+        else:
+            tag.decompose()
+
+    txt = soup.get_text("\n").replace("\xa0", " ")
     txt = re.sub(r"[ \t]+\n", "\n", txt)
     txt = re.sub(r"\n[ \t]+", "\n", txt)
-    return normalizar(txt)
+
+    linhas = []
+    for ln in txt.split("\n"):
+        chave = ln.strip().lower()
+        if chave in _BOILERPLATE or _RE_NAO_SUBSTITUI.match(chave):
+            continue
+        linhas.append(ln)
+    return normalizar("\n".join(linhas))
 
 
-async def baixar_codigo(codigo: dict) -> str:
-    """Baixa e extrai o texto de um diploma (rede, sem DB)."""
-    r = await fetch(codigo["url"], timeout=40)
-    # Planalto serve ISO-8859-1; força fallback (httpx não tem apparent_encoding)
+def _rotulo(m: re.Match) -> str:
+    """Rótulo canônico do artigo ("Art. 6", "Art. 19-A", "Art. 1.022") —
+    SEM ordinal, para casar com o ILIKE '%Art. N %' de _existe_artigo."""
+    return f"Art. {m.group(1)}{(m.group(3) or '').upper()}"
+
+
+def dividir_artigos(texto: str) -> list[tuple[str | None, str]]:
+    """Divide o texto em blocos [(rotulo, bloco)] — rotulo=None para o
+    preâmbulo/ementa (antes do Art. 1º) e trechos finais sem artigo.
+
+    Cada bloco de artigo contém caput + parágrafos + incisos, verbatim, até o
+    próximo artigo. Heurística anti-falso-positivo: um novo artigo só é aceito
+    se o número progride (n > último), recomeça em 1 (ex.: ADCT na CF/88) ou é
+    variante com sufixo do último (ex.: Art. 19-A após Art. 19).
+    """
+    blocos: list[tuple[str | None, str]] = []
+    atual: list[str] = []
+    rotulo: str | None = None
+    ultimo = 0
+
+    def fechar():
+        corpo = "\n".join(atual).strip()
+        if corpo:
+            blocos.append((rotulo, corpo))
+
+    for ln in texto.split("\n"):
+        m = _RE_ART.match(ln.strip())
+        if m:
+            n = int(m.group(1).replace(".", ""))
+            sufixo = bool(m.group(3))
+            if n > ultimo or (n == ultimo and sufixo) or (n == 1 and ultimo > 1):
+                fechar()
+                atual = [ln]
+                rotulo = _rotulo(m)
+                ultimo = n
+                continue
+        atual.append(ln)
+    fechar()
+    return blocos
+
+
+def montar_chunks(nome_lei: str, blocos: list[tuple[str | None, str]],
+                  tamanho: int | None = None) -> list[str]:
+    """Blocos por artigo → chunks do RAG, respeitando o limite do pipeline.
+
+    - Agrupa artigos CONSECUTIVOS curtos até `tamanho` (CHUNK_TAMANHO).
+    - Artigo maior que o limite é dividido (chunk_texto), cada parte reabrindo
+      com o rótulo ("(continuação)" nas partes seguintes).
+    - Todo chunk ABRE com o cabeçalho "Art. N [· Art. M ...] — <lei>", que
+      enumera cada artigo contido — é isso que _existe_artigo encontra via
+      ILIKE '%Art. N %', inclusive para "Art. 10." (grafia oficial com ponto).
+    - O corpo permanece verbatim.
+    """
+    from app.services.ingestion_service import CHUNK_TAMANHO, chunk_texto
+
+    tamanho = tamanho or CHUNK_TAMANHO
+    chunks: list[str] = []
+    grupo: list[tuple[str | None, str]] = []
+
+    def flush():
+        if not grupo:
+            return
+        rotulos = [r for r, _ in grupo if r]
+        header = f"{' · '.join(rotulos)} — {nome_lei}" if rotulos else nome_lei
+        corpo = "\n\n".join(t for _, t in grupo)
+        chunks.append(f"{header}\n{corpo}")
+        grupo.clear()
+
+    for rot, corpo in blocos:
+        if len(corpo) > tamanho:
+            flush()
+            partes = chunk_texto(corpo, tamanho=tamanho)
+            for i, parte in enumerate(partes):
+                pref = rot or nome_lei
+                header = (f"{pref} — {nome_lei}" if i == 0 and rot
+                          else f"{pref} (continuação) — {nome_lei}" if rot
+                          else nome_lei)
+                chunks.append(f"{header}\n{parte}")
+            continue
+        if grupo and sum(len(t) for _, t in grupo) + len(corpo) > tamanho:
+            flush()
+        grupo.append((rot, corpo))
+    flush()
+    return chunks
+
+
+def preparar_diploma(diploma: dict, html: str) -> dict:
+    """Parseia um diploma (puro). Retorna {texto, blocos, chunks, artigos}."""
+    texto = extrair_texto_planalto(html)
+    if len(texto) < MIN_TEXTO:
+        raise ValueError(f"texto suspeito ({len(texto)} chars) — página errada/truncada?")
+    blocos = dividir_artigos(texto)
+    artigos = sum(1 for r, _ in blocos if r)
+    if artigos < MIN_ARTIGOS:
+        raise ValueError(f"apenas {artigos} artigos encontrados — parser não reconheceu a página")
+    chunks = montar_chunks(diploma["titulo"], blocos)
+    return {"texto": texto, "blocos": blocos, "chunks": chunks, "artigos": artigos}
+
+
+# ══════════════════════════════════════════════════════════════════════════
+# Download + ingestão
+# ══════════════════════════════════════════════════════════════════════════
+
+async def obter_html(diploma: dict, cache_dir: Path | None = None) -> str:
+    """HTML do diploma — do cache local (<slug>.html) se existir, senão da rede."""
+    if cache_dir:
+        arq = Path(cache_dir) / f"{diploma['slug']}.html"
+        if arq.exists():
+            raw = arq.read_bytes()
+            try:
+                return raw.decode("utf-8")
+            except UnicodeDecodeError:
+                return raw.decode("latin-1")
+    from app.services.ingestion_service import fetch
+    r = await fetch(diploma["url"], timeout=60)
+    # Planalto serve ISO-8859-1; httpx não tem apparent_encoding
     r.encoding = r.charset_encoding or "latin-1"
-    return extrair_texto(r.text)
+    return r.text
 
 
-async def ingerir(db: AsyncSession) -> tuple[int, int]:
-    """Ingere/atualiza todos os códigos-núcleo no RAG. Retorna (novos, total)."""
+async def _rechunk_pendente(db: AsyncSession, chave_origem: str) -> bool:
+    """True se a versão VIGENTE da chave foi gravada com o chunking antigo
+    (genérico por tamanho — extra sem divisao='por_artigo'). Nesse caso o
+    conteúdo pode ser idêntico (mesmo hash) e o atalho "inalterado" do upsert
+    nunca re-chunkaria; forçamos UMA nova versão por-artigo (migração única)."""
+    from app.models.rag import KnowledgeDoc
+
+    doc = (await db.execute(
+        select(KnowledgeDoc.extra).where(
+            KnowledgeDoc.chave_origem == chave_origem,
+            KnowledgeDoc.deleted_at.is_(None),
+            KnowledgeDoc.vigente.is_(True),
+        )
+    )).scalar_one_or_none()
+    if doc is None:                    # sem doc vigente → upsert normal ("novo")
+        return False
+    return (doc or {}).get("divisao") != "por_artigo"
+
+
+async def ingerir_diploma(
+    db: AsyncSession, diploma: dict, *,
+    embutir_vetores: bool = True, cache_dir: Path | None = None,
+) -> dict:
+    """Baixa, parseia e ingere UM diploma pelo pipeline oficial (upsert).
+
+    Chave `planalto:<slug>` (a mesma de produção) — seed CLI e job semanal
+    escrevem no MESMO documento; rodar ambos nunca duplica.
+    """
+    from app.services.ingestion_service import upsert_documento
+
+    html = await obter_html(diploma, cache_dir)
+    prep = preparar_diploma(diploma, html)
+    chave = f"{PREFIXO_CHAVE}{diploma['slug']}"
+    resultado = await upsert_documento(
+        db,
+        titulo=diploma["titulo"],
+        categoria=CATEGORIA,
+        conteudo=prep["texto"],
+        chunks=prep["chunks"],
+        chave_origem=chave,
+        fonte=diploma["url"],
+        extra={
+            "slug": diploma["slug"], "area": diploma["area"],
+            "fonte_url": diploma["url"], "origem": "planalto",
+            "artigos": prep["artigos"], "divisao": "por_artigo",
+            # Curadoria (governança RAG da main): fonte oficial nasce aprovada
+            # e tipada — nunca entra em quarentena.
+            "rag_status": "aprovado", "tipo_fonte": "legislacao_oficial",
+        },
+        confianca="alta",              # fonte oficial — texto de lei compilado
+        embutir_vetores=embutir_vetores,
+        forcar_nova_versao=await _rechunk_pendente(db, chave),
+    )
+    return {"resultado": resultado, "artigos": prep["artigos"],
+            "chunks": len(prep["chunks"]), "chars": len(prep["texto"])}
+
+
+async def ingerir(db: AsyncSession, cache_dir: Path | None = None) -> tuple[int, int]:
+    """Ingere/atualiza todo o catálogo no RAG. Retorna (novos, total).
+
+    Entrypoint do scheduler (job semanal `ing_planalto`). Falha de um diploma
+    não aborta os demais; commit incremental por diploma.
+    """
     novos = total = 0
-    for cod in CODIGOS:
+    for diploma in CATALOGO:
         total += 1
         try:
-            texto = await baixar_codigo(cod)
-            if len(texto) < 2000:
-                logger.warning(f"{cod['slug']}: texto suspeito ({len(texto)} chars) — pulado")
-                continue
-            res = await upsert_documento(
-                db,
-                titulo=cod["titulo"],
-                categoria="legislacao",
-                conteudo=texto,
-                chave_origem=f"planalto:{cod['slug']}",
-                fonte=cod["url"],
-                extra={"diploma": cod["slug"], "origem": "planalto",
-                       "rag_status": "aprovado", "tipo_fonte": "legislacao_oficial"},
-                confianca="alta",   # fonte oficial (Planalto — texto de lei)
-            )
-            if res in ("novo", "atualizado"):
+            r = await ingerir_diploma(db, diploma, cache_dir=cache_dir)
+            if r["resultado"] in ("novo", "atualizado"):
                 novos += 1
             # commit incremental: um diploma grande não bloqueia os demais
             await db.commit()
         except Exception as e:
             await db.rollback()
-            logger.warning(f"Planalto {cod['slug']}: {type(e).__name__}: {e}")
+            logger.warning(f"Planalto {diploma['slug']}: {type(e).__name__}: {e}")
     return novos, total
