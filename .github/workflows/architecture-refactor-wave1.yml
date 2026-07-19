@@ -1,5 +1,6 @@
 name: Architecture Refactor — Wave 1
 
+# Executor bootstrapado na main; este push dispara a aplicação auditável.
 on:
   push:
     branches:
