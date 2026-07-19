@@ -66,14 +66,35 @@ def _proteger_cnj_jurisprudencial(texto: str) -> tuple[str, dict[str, str]]:
     return processo_re.sub(repl, texto), refs
 
 
+# Linhas de MARCADOR estrutural (ex.: cabeçalho da crítica adversarial,
+# separadores "═══ … ═══"). São boilerplate fixo — nunca contêm PII — mas o NER
+# do pseudonimizador casava trechos capitalizados ("Modo Duas IAs") como nome
+# próprio e corrompia o marcador. Protegidas antes da pseudonimização e
+# restauradas depois, no mesmo padrão de `_proteger_cnj_jurisprudencial`.
+_MARCADOR_ESTRUTURAL_RE = re.compile(r"═══[^\n]*═══")
+
+
+def _proteger_marcadores_estruturais(texto: str) -> tuple[str, dict[str, str]]:
+    marcadores: dict[str, str] = {}
+
+    def repl(match: re.Match) -> str:
+        token = f"[[MARCADOR_{len(marcadores) + 1:03d}]]"
+        marcadores[token] = match.group(0)
+        return token
+
+    return _MARCADOR_ESTRUTURAL_RE.sub(repl, texto), marcadores
+
+
 def pseudonimizar_texto_auditoria(valor: str | None) -> str | None:
-    """Pseudonimiza PII persistida sem destruir citação jurídica verificável."""
+    """Pseudonimiza PII persistida sem destruir citação jurídica verificável
+    nem os marcadores estruturais do relatório (cabeçalho da crítica etc.)."""
     if valor is None:
         return None
     texto = str(valor)
     if not texto:
         return texto
     protegido, refs = _proteger_cnj_jurisprudencial(texto)
+    protegido, marcadores = _proteger_marcadores_estruturais(protegido)
     try:
         from app.services.ai.pseudonymizer import pseudonimizar
         limpo, _ = pseudonimizar(protegido)
@@ -82,6 +103,8 @@ def pseudonimizar_texto_auditoria(valor: str | None) -> str | None:
         limpo, _ = sanitizar_pii(protegido)
     for token, cnj in refs.items():
         limpo = limpo.replace(token, cnj)
+    for token, marcador in marcadores.items():
+        limpo = limpo.replace(token, marcador)
     return limpo
 
 

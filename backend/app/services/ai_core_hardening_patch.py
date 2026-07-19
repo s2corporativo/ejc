@@ -79,8 +79,15 @@ def _instalar_resolucao_escopo_rag() -> None:
     if getattr(ingestion_service, "_ejc_scope_resolver_installed", False):
         return
 
+    import functools
+
     original = ingestion_service.upsert_documento
 
+    # functools.wraps preserva __wrapped__ → inspect.signature(upsert_documento)
+    # continua expondo os parâmetros nomeados reais (ex.: `confianca`), em vez de
+    # colapsar para (db, **kwargs). Call sites e testes que introspectam a
+    # assinatura seguem funcionando após o wrap de escopo.
+    @functools.wraps(original)
     async def upsert_com_escopo_canonico(db, **kwargs):
         categoria = kwargs.get("categoria")
         client_id = kwargs.get("client_id")

@@ -225,7 +225,9 @@ def test_migration_108_encadeada_e_idempotente():
 
     revision = script.get_revision("108_credential_vault")
     assert revision.down_revision == "107_scheduler_heartbeat"
-    assert script.get_heads() == ["108_credential_vault"]
+    # Head único preservado: o hardening acrescentou 109_rag_scope_cliente
+    # ENCADEADO sobre a 108 (sem ramificar) — a cadeia segue linear.
+    assert script.get_heads() == ["109_rag_scope_cliente"]
 
     modulo = revision.module
     fonte_upgrade = inspect.getsource(modulo.upgrade)
