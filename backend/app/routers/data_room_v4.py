@@ -1,21 +1,28 @@
+"""Compatibilidade do antigo Data Room v4.
+
+A URL `/data-room-v4` permanece durante a migração, porém novas leituras e
+escritas usam a tabela canônica `data_rooms`. A tabela `dataroom_salas` fica
+somente como origem histórica até expurgo posterior à telemetria.
 """
-Módulo de Data Room Jurídico Corporativo - EJC v4.0 (Seção 14.359).
-Salas documentais seguras, controle granular de acesso e auditoria.
-"""
-from uuid import uuid4
-from datetime import datetime, timedelta, timezone
-from typing import List, Optional
-from fastapi import APIRouter, Depends, HTTPException
-from sqlalchemy import Column, String, Text, DateTime, func, select, Boolean
-from sqlalchemy.ext.asyncio import AsyncSession
+from __future__ import annotations
+
+from datetime import datetime
+from typing import Optional
+
+from fastapi import APIRouter, Depends, Response
 from pydantic import BaseModel, ConfigDict
+from sqlalchemy import Boolean, Column, DateTime, String, Text, func, select
+from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.database import Base, get_db
-from app.core.security import require_roles, get_current_user, ROLE_LEVEL
+from app.core.security import get_current_user
+from app.models.data_room import DataRoom
 from app.models.user import User
 
-# Model ORM
+
 class DataRoomSala(Base):
+    """Modelo legado somente para metadata/backfill; não recebe novas escritas."""
+
     __tablename__ = "dataroom_salas"
     id = Column(String(36), primary_key=True)
     nome = Column(String(255), nullable=False)
@@ -25,12 +32,13 @@ class DataRoomSala(Base):
     publica = Column(Boolean, default=False)
     created_at = Column(DateTime(timezone=True), server_default=func.now())
 
-# Schemas
+
 class SalaCreate(BaseModel):
     nome: str
     descricao: Optional[str] = None
     client_id: Optional[str] = None
     expira_dias: Optional[int] = 30
+
 
 class SalaResponse(BaseModel):
     model_config = ConfigDict(from_attributes=True)
@@ -39,33 +47,84 @@ class SalaResponse(BaseModel):
     nome: str
     expira_em: Optional[datetime]
 
-router = APIRouter(prefix="/data-room-v4", tags=["Data Room Jurídico"])
 
-@router.post("/", response_model=SalaResponse, dependencies=[Depends(require_roles(["admin", "socio", "advogado"]))])
-async def criar_sala(payload: SalaCreate, db: AsyncSession = Depends(get_db)):
-    expira = datetime.now(timezone.utc) + timedelta(days=payload.expira_dias) if payload.expira_dias else None
-    s = DataRoomSala(
-        id=str(uuid4()),
-        nome=payload.nome,
-        descricao=payload.descricao,
-        client_id=payload.client_id,
-        expira_em=expira
+router = APIRouter(
+    prefix="/data-room-v4",
+    tags=["Data Room Jurídico — compatibilidade"],
+    deprecated=True,
+)
+
+
+def _headers(response: Response) -> None:
+    response.headers["Deprecation"] = "true"
+    response.headers["Link"] = '</api/v1/data-rooms>; rel="successor-version"'
+
+
+def _compat(room: dict | DataRoom) -> dict:
+    if isinstance(room, dict):
+        return {"id": room["id"], "nome": room["nome"], "expira_em": None}
+    return {"id": room.id, "nome": room.nome, "expira_em": None}
+
+
+@router.post("/", response_model=SalaResponse, status_code=201, deprecated=True)
+async def criar_sala(
+    payload: SalaCreate,
+    response: Response,
+    db: AsyncSession = Depends(get_db),
+    cu: User = Depends(get_current_user),
+):
+    from app.routers.data_room import DataRoomIn, criar_data_room
+
+    descricao = payload.descricao
+    if payload.expira_dias:
+        aviso = (
+            f"Prazo solicitado na API v4: {payload.expira_dias} dia(s). "
+            "Para acesso externo, gere um link canônico com expiração."
+        )
+        descricao = f"{descricao}\n{aviso}" if descricao else aviso
+    room = await criar_data_room(
+        DataRoomIn(
+            nome=payload.nome,
+            descricao=descricao,
+            client_id=payload.client_id,
+        ),
+        db=db,
+        cu=cu,
     )
-    db.add(s)
-    await db.commit()
-    await db.refresh(s)
-    return s
+    _headers(response)
+    return _compat(room)
 
-@router.get("/", response_model=List[SalaResponse])
-async def listar_salas(db: AsyncSession = Depends(get_db), cu: User = Depends(get_current_user)):
-    q = select(DataRoomSala)
+
+@router.get("/", response_model=list[SalaResponse], deprecated=True)
+async def listar_salas(
+    response: Response,
+    db: AsyncSession = Depends(get_db),
+    cu: User = Depends(get_current_user),
+):
     role = cu.role.value
     if role == "cliente_externo":
-        # cliente externo: apenas as próprias salas
-        q = q.where(DataRoomSala.client_id == cu.client_id)
-    elif ROLE_LEVEL.get(role, 0) < ROLE_LEVEL["advogado"]:
-        # IDOR (auditoria 2026-06-30): estagiário/secretaria/financeiro não
-        # listam todas as salas documentais do escritório.
-        raise HTTPException(403, "Sem permissão para listar data rooms")
-    res = await db.execute(q)
-    return res.scalars().all()
+        rows = (
+            await db.execute(
+                select(DataRoom)
+                .where(
+                    DataRoom.client_id == cu.client_id,
+                    DataRoom.deleted_at.is_(None),
+                )
+                .order_by(DataRoom.created_at.desc())
+            )
+        ).scalars().all()
+        result = [_compat(room) for room in rows]
+    else:
+        from app.routers.data_room import listar_data_rooms
+
+        page = await listar_data_rooms(
+            case_id=None,
+            client_id=None,
+            page=1,
+            per_page=50,
+            db=db,
+            cu=cu,
+        )
+        result = [_compat(room) for room in page["items"]]
+    _headers(response)
+    return result
