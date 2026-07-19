@@ -1,8 +1,8 @@
 # ── app/schemas/legal_doc.py ─────────────────────────────────────────────────
 from __future__ import annotations
-from pydantic import BaseModel
+from pydantic import BaseModel, field_validator
 from typing import Optional, Any
-from datetime import datetime
+from datetime import datetime, timezone
 
 class LegalDocCreate(BaseModel):
     titulo: str
@@ -31,6 +31,19 @@ class LegalDocProtocolo(BaseModel):
     protocolo_tribunal: Optional[str] = None
     protocolado_em: Optional[datetime] = None
     protocolo_comprovante_doc_id: Optional[str] = None
+
+    @field_validator("protocolado_em")
+    @classmethod
+    def _protocolado_em_nao_futuro(cls, v: Optional[datetime]) -> Optional[datetime]:
+        # B3: protocolo no FUTURO não existe — data futura falsificaria a prova
+        # de tempestividade. Naive é interpretado como UTC (mesmo referencial
+        # do default datetime.now(timezone.utc) usado na rota).
+        if v is None:
+            return v
+        ref = v if v.tzinfo else v.replace(tzinfo=timezone.utc)
+        if ref > datetime.now(timezone.utc):
+            raise ValueError("protocolado_em não pode estar no futuro")
+        return v
 
 class LegalDocResponse(BaseModel):
     id: str

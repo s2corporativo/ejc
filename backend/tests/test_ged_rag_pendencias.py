@@ -213,8 +213,9 @@ def test_patch_case_de_outro_cliente_400():
         id="caso-2", client_id="cli-2",
         advogado_responsavel_id=None, advogado_auxiliar_id=None,
     )
-    # fila: SELECT doc → SELECT case (verificar_acesso_caso)
-    db = _FakeDB(results=[_Res(one=doc), _Res(one=caso)])
+    # fila: SELECT doc → checagem M2 (não é comprovante de protocolo) →
+    # SELECT case (verificar_acesso_caso)
+    db = _FakeDB(results=[_Res(one=doc), _Res(one=None), _Res(one=caso)])
     r = _montar(db).patch("/documents/doc-1", json={"case_id": "caso-2"})
     assert r.status_code == 400
     assert "outro cliente" in r.json()["detail"]
@@ -228,11 +229,71 @@ def test_patch_vincula_caso_do_mesmo_cliente_e_deriva_client():
         id="caso-1", client_id="cli-1",
         advogado_responsavel_id=None, advogado_auxiliar_id=None,
     )
-    db = _FakeDB(results=[_Res(one=doc), _Res(one=caso)])
+    db = _FakeDB(results=[_Res(one=doc), _Res(one=None), _Res(one=caso)])
     r = _montar(db).patch("/documents/doc-1", json={"case_id": "caso-1"})
     assert r.status_code == 200
     assert doc.case_id == "caso-1"
     assert doc.client_id == "cli-1"       # regra #8 do upload: derivado do caso
+    assert db.committed == 1
+
+
+def test_patch_nao_move_comprovante_de_protocolo_409():
+    """M2 (TOCTOU): documento referenciado em legal_docs.protocolo_comprovante_
+    doc_id é prova de tempestividade — mover de caso quebraria a validação N3
+    feita no registro do protocolo. 409 com a peça que referencia."""
+    doc = _doc(case_id="caso-1")
+    peca = SimpleNamespace(id="peca-7", titulo="Contestação X")
+    # fila: SELECT doc → SELECT case (ownership do doc.case_id atual) →
+    # checagem M2 encontra a peça que referencia
+    db = _FakeDB(results=[
+        _Res(one=doc), _Res(one=SimpleNamespace(id="caso-1")), _Res(one=peca),
+    ])
+    r = _montar(db).patch("/documents/doc-1", json={"case_id": "caso-2"})
+    assert r.status_code == 409
+    assert "Contestação X" in r.json()["detail"]
+    assert "peca-7" in r.json()["detail"]
+    assert doc.case_id == "caso-1"        # nada aplicado
+    assert db.committed == 0 and not _audits(db)
+
+
+def test_patch_nao_desvincula_comprovante_de_protocolo_409():
+    """M2: desvincular (case_id=None) também quebra a prova — mesmo 409."""
+    doc = _doc(case_id="caso-1")
+    peca = SimpleNamespace(id="peca-7", titulo="Contestação X")
+    db = _FakeDB(results=[
+        _Res(one=doc), _Res(one=SimpleNamespace(id="caso-1")), _Res(one=peca),
+    ])
+    r = _montar(db).patch("/documents/doc-1", json={"case_id": None})
+    assert r.status_code == 409
+    assert doc.case_id == "caso-1"
+    assert db.committed == 0
+
+
+def test_delete_nao_exclui_comprovante_de_protocolo_409():
+    """M2: soft-delete de comprovante referenciado em peça → 409; documento
+    permanece vivo e nada é auditado/commitado."""
+    doc = _doc(case_id="caso-1")
+    peca = SimpleNamespace(id="peca-7", titulo="Contestação X")
+    # fila: SELECT doc → SELECT case (ownership) → checagem M2 acha a peça
+    db = _FakeDB(results=[
+        _Res(one=doc), _Res(one=SimpleNamespace(id="caso-1")), _Res(one=peca),
+    ])
+    r = _montar(db).delete("/documents/doc-1")
+    assert r.status_code == 409
+    assert "comprovante de protocolo" in r.json()["detail"]
+    assert doc.deleted_at is None
+    assert db.committed == 0 and not _audits(db)
+
+
+def test_delete_documento_sem_referencia_segue_funcionando():
+    """M2 não regride o delete normal: sem peça referenciando, soft-delete ok."""
+    doc = _doc()
+    db = _FakeDB(results=[_Res(one=doc), _Res(one=None)])
+    r = _montar(db).delete("/documents/doc-1")
+    assert r.status_code == 200
+    assert doc.deleted_at is not None
+    logs = _audits(db)
+    assert len(logs) == 1 and logs[0].acao == "DELETE"
     assert db.committed == 1
 
 
