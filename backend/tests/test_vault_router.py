@@ -157,11 +157,15 @@ def test_reauth_senha_errada_403_sem_efeito(montar, audit, monkeypatch):
                         json={"senha_atual": "senha-errada", "valor": SEGREDO})
         assert r.status_code == 403
         assert SEGREDO not in r.text
+        # Mensagem genérica (anti-oráculo): a resposta não revela QUE foi a senha.
+        assert r.json()["detail"] == "Reautenticação falhou."
 
-        # Auditoria da falha, sem detalhes sensíveis (nem senha, nem valor).
+        # Auditoria da falha, sem detalhes sensíveis (nem senha, nem valor) —
+        # mas COM o motivo granular (só no audit, nunca no corpo HTTP).
         falhas = [a for a in audit if a["acao"] == "COFRE_REAUTH_FALHA"]
         assert len(falhas) == 1
         assert falhas[0]["entidade"] == "integration_credentials"
+        assert "motivo=senha" in (falhas[0]["detalhes"] or "")
         assert "senha-errada" not in (falhas[0]["detalhes"] or "")
         assert SEGREDO not in (falhas[0]["detalhes"] or "")
 
@@ -194,6 +198,58 @@ def test_totp_exigido_quando_ativo(montar, monkeypatch):
                         json=_reauth(valor=SEGREDO, codigo_totp=valido))
         assert r.status_code == 201
     assert settings.DATAJUD_API_KEY == SEGREDO
+
+
+def test_reauth_mensagem_generica_nao_distingue_fator(montar, audit):
+    """Anti-oráculo: senha errada e TOTP ausente devem devolver EXATAMENTE a
+    mesma mensagem 403 (não revela se a senha estava certa e só faltou o TOTP);
+    o motivo granular fica SÓ no audit."""
+    app, estado = montar(_user())          # sem TOTP → falha por senha
+    with TestClient(app) as client:
+        r_senha = client.post(
+            URL_DATAJUD, json={"senha_atual": "errada", "valor": SEGREDO})
+
+        estado["user"] = _user(totp=True)  # com TOTP → falha por TOTP ausente
+        r_totp = client.post(URL_DATAJUD, json=_reauth(valor=SEGREDO))
+
+    assert r_senha.status_code == r_totp.status_code == 403
+    assert r_senha.json()["detail"] == r_totp.json()["detail"] == \
+        "Reautenticação falhou."
+    # O motivo distinto existe, mas apenas na trilha de auditoria.
+    motivos = {a["detalhes"].split("motivo=")[-1]
+               for a in audit if a["acao"] == "COFRE_REAUTH_FALHA"}
+    assert motivos == {"senha", "totp_ausente"}
+
+
+def test_overlay_falho_apos_cadastro_sinaliza_sem_silencio(montar, audit,
+                                                           monkeypatch):
+    """Inconsistência gravado-mas-não-aplicado: a linha commita, mas o overlay
+    estoura DEPOIS. A operação NÃO é revertida (201), a resposta traz
+    overlay_aplicado=False e um audit COFRE_OVERLAY_FALHA (sem segredo) é
+    gravado — nunca uma falha silenciosa."""
+    async def _boom(_db):
+        raise RuntimeError("overlay explodiu (ex.: settings inacessível)")
+
+    monkeypatch.setattr(cv.credential_vault_service, "aplicar_overlay", _boom)
+
+    app, _ = montar(_user())
+    with TestClient(app) as client:
+        r = client.post(URL_DATAJUD, json=_reauth(valor=SEGREDO))
+        assert r.status_code == 201                  # NÃO reverte a escrita
+        assert r.json()["overlay_aplicado"] is False
+        assert SEGREDO not in r.text
+
+        # A linha ficou gravada (estado eventualmente consistente).
+        campos = {c["field_key"]: c for p in client.get(BASE).json()
+                  for c in p["campos"]}
+        assert campos["DATAJUD_API_KEY"]["estado"] == "configurada"
+
+    # Sinalização para reconciliação: audit COFRE_OVERLAY_FALHA sem segredo.
+    overlay_falhas = [a for a in audit if a["acao"] == "COFRE_OVERLAY_FALHA"]
+    assert len(overlay_falhas) == 1
+    assert overlay_falhas[0]["entidade"] == "integration_credentials"
+    assert SEGREDO not in (overlay_falhas[0]["detalhes"] or "")
+    assert "overlay explodiu" not in (overlay_falhas[0]["detalhes"] or "")
 
 
 # ── Cadastro: overlay na MESMA request + resposta só com metadados ───────────

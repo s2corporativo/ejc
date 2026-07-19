@@ -11,15 +11,22 @@
 #   * step-up POR OPERAÇÃO mutadora: senha_atual (verify_password) + código
 #     TOTP quando o usuário tem 2FA ativo — mesmo fluxo do alterar_senha e do
 #     login em routers/auth.py (reusa _totp_secret_de/_recifrar_totp_legado);
-#     falha → 403 + audit COFRE_REAUTH_FALHA (sem detalhes sensíveis);
+#     falha → 403 com mensagem SEMPRE genérica ("Reautenticação falhou.", sem
+#     revelar QUAL fator) + audit COFRE_REAUTH_FALHA com o motivo granular;
 #   * o VALOR nunca volta pela API: response models só com last4 + metadados;
 #   * aplicar_overlay roda NA MESMA requisição de escrita — o Settings
-#     singleton reflete o cofre antes da resposta (requisito da auditoria);
+#     singleton reflete o cofre antes da resposta (requisito da auditoria).
+#     Se o overlay falhar APÓS o commit, NÃO revertemos (estado eventualmente
+#     consistente — o worker de sync reconcilia via versao_atual): sinalizamos
+#     com audit COFRE_OVERLAY_FALHA + log alto e `overlay_aplicado=False` no
+#     corpo (200/201), nunca uma inconsistência gravado-mas-não-aplicado
+#     silenciosa (ver _aplicar_overlay_sinalizando);
 #   * rate limit dirigido (app/core/rate_limit.py) nas rotas mutadoras;
 #   * corrida de escrita concorrente (índice único parcial WHERE ativo)
 #     → IntegrityError → 409; validação de formato/tipo → 422.
 from __future__ import annotations
 
+import logging
 from datetime import datetime
 
 from fastapi import APIRouter, Depends, HTTPException, Request
@@ -30,12 +37,15 @@ from sqlalchemy.ext.asyncio import AsyncSession
 import pyotp
 
 from app.core.database import get_db
+from app.core.log_sanitizer import safe_exception_log
 from app.core.rate_limit import rate_limit
 from app.core.security import require_roles, verify_password
 from app.models.audit_log import criar_audit_log
 from app.routers.auth import _recifrar_totp_legado, _totp_secret_de
 from app.services import credential_registry, credential_vault_service
 from app.services.security_service import obter_ip_real
+
+logger = logging.getLogger("ejc.cofre")
 
 router = APIRouter(prefix="/cofre-credenciais", tags=["Cofre de Credenciais"])
 
@@ -76,6 +86,11 @@ class CredencialMeta(BaseModel):
     created_at: datetime | None = None
     updated_at: datetime | None = None
     revoked_at: datetime | None = None
+    # False = a linha foi gravada/commitada, mas o overlay no Settings singleton
+    # falhou DEPOIS do commit (ver _aplicar_overlay_sinalizando). A operação NÃO
+    # é revertida (estado eventualmente consistente); o worker de sync recompõe
+    # via versao_atual. O cliente pode alertar/forçar reload ao ver False.
+    overlay_aplicado: bool = True
 
 
 class CampoStatus(BaseModel):
@@ -110,6 +125,7 @@ class ImportItem(BaseModel):
 class ImportResumo(BaseModel):
     total: int
     importados: list[ImportItem]
+    overlay_aplicado: bool = True  # ver CredencialMeta.overlay_aplicado
 
 
 # ── Step-up (reautenticação por operação) ────────────────────────────────────
@@ -122,36 +138,37 @@ async def _reautenticar(
 
     Mesmo fluxo do alterar_senha/login (routers/auth.py): verify_password na
     senha atual e, se o usuário tem TOTP ativo, código de 6 dígitos validado
-    com valid_window=1. Qualquer falha → audit COFRE_REAUTH_FALHA (motivo
-    genérico, sem segredo/código nos detalhes) + 403.
+    com valid_window=1.
+
+    Anti-oráculo (achado da auditoria): a resposta HTTP é SEMPRE a MESMA
+    mensagem genérica ("Reautenticação falhou.") para senha errada, TOTP
+    ausente, TOTP ilegível ou TOTP inválido — a resposta não pode revelar QUAL
+    fator falhou (nem se a senha estava certa e só o TOTP faltou). O `motivo`
+    granular (senha/totp_ausente/totp_ilegivel/totp) fica SÓ no audit
+    COFRE_REAUTH_FALHA, nunca no corpo — sempre 403.
     """
-    async def _falha(motivo: str, detail: str) -> None:
+    _DETALHE_GENERICO = "Reautenticação falhou."
+
+    async def _falha(motivo: str) -> None:
         await criar_audit_log(
             db, cu.id, cu.role.value, "COFRE_REAUTH_FALHA", ENTIDADE_AUDIT,
             None, detalhes=f"{contexto} motivo={motivo}",
             ip=obter_ip_real(request),
         )
         await db.commit()
-        raise HTTPException(status_code=403, detail=detail)
+        raise HTTPException(status_code=403, detail=_DETALHE_GENERICO)
 
     if not verify_password(senha_atual, cu.hashed_password):
-        await _falha("senha", "Reautenticação falhou: senha atual incorreta.")
+        await _falha("senha")
 
     if getattr(cu, "totp_enabled", False):
         if not codigo_totp:
-            await _falha(
-                "totp_ausente",
-                "Reautenticação falhou: código TOTP obrigatório para esta operação.",
-            )
+            await _falha("totp_ausente")
         secret, legado = _totp_secret_de(cu)
         if secret is None:
-            await _falha(
-                "totp_ilegivel",
-                "Reautenticação indisponível: segredo TOTP ilegível. "
-                "Contate o administrador.",
-            )
+            await _falha("totp_ilegivel")
         if not pyotp.TOTP(secret).verify(codigo_totp, valid_window=1):
-            await _falha("totp", "Reautenticação falhou: código TOTP inválido.")
+            await _falha("totp")
         # Segredo legado em claro → re-cifra oportunisticamente (commit da
         # própria operação do cofre, mesmo padrão do login).
         _recifrar_totp_legado(cu, secret, legado)
@@ -166,6 +183,41 @@ def _campo_ou_404(provider_key: str, field_key: str):
                    "de credenciais.",
         )
     return campo
+
+
+async def _aplicar_overlay_sinalizando(
+    db: AsyncSession, cu, request: Request, contexto: str,
+) -> bool:
+    """Aplica o overlay no Settings singleton APÓS o commit da escrita.
+
+    A escrita (cadastrar/revogar/importar_do_env) já commitou a linha; o
+    overlay é o passo de propagação para o processo em memória. Se ELE falhar
+    NÃO revertemos a operação — o estado é eventualmente consistente e o worker
+    de sync recompõe via versao_atual. Só SINALIZAMOS: audit COFRE_OVERLAY_FALHA
+    (sem segredo) + log alto com safe_exception_log, e devolvemos False para o
+    handler marcar overlay_aplicado=False na resposta (nunca uma inconsistência
+    silenciosa gravada-mas-não-aplicada). Retorna True em caso normal.
+    """
+    try:
+        await credential_vault_service.aplicar_overlay(db)
+        return True
+    except Exception as e:  # noqa: BLE001 — overlay não pode derrubar a operação já commitada
+        logger.error(
+            "[cofre] overlay FALHOU após commit (%s) — linha gravada mas não "
+            "propagada ao Settings; worker de sync deve reconciliar via "
+            "versao_atual", contexto, extra=safe_exception_log(e),
+        )
+        try:
+            await criar_audit_log(
+                db, cu.id, cu.role.value, "COFRE_OVERLAY_FALHA", ENTIDADE_AUDIT,
+                None, detalhes=f"{contexto} — overlay não aplicado; reconciliar",
+                ip=obter_ip_real(request),
+            )
+            await db.commit()
+        except Exception:  # noqa: BLE001 — auditoria best-effort; o log alto acima já sinaliza
+            logger.error("[cofre] falha ao auditar COFRE_OVERLAY_FALHA (%s)",
+                         contexto, exc_info=True)
+        return False
 
 
 # ── Rotas ────────────────────────────────────────────────────────────────────
@@ -232,12 +284,18 @@ async def importar_env(
     cu=Depends(_SUPERADMIN),
 ):
     """Import assistido (idempotente): campos do catálogo com valor no .env e
-    sem linha ativa viram registros origem=env_import. Resumo sem valores."""
+    sem linha ativa viram registros origem=env_import. Resumo sem valores.
+
+    Se o overlay pós-import falhar, `overlay_aplicado=False` sinaliza a
+    inconsistência gravado-mas-não-aplicado (a operação NÃO é revertida — ver
+    _aplicar_overlay_sinalizando)."""
     await _reautenticar(db, cu, request, req.senha_atual, req.codigo_totp,
                         "importar-env")
     importados = await credential_vault_service.importar_do_env(db, cu.id)
-    await credential_vault_service.aplicar_overlay(db)
-    return {"total": len(importados), "importados": importados}
+    overlay_ok = await _aplicar_overlay_sinalizando(
+        db, cu, request, "importar-env")
+    return {"total": len(importados), "importados": importados,
+            "overlay_aplicado": overlay_ok}
 
 
 @router.post("/{provider_key}/{field_key}", response_model=CredencialMeta,
@@ -251,7 +309,12 @@ async def cadastrar_credencial(
     cu=Depends(_SUPERADMIN),
 ):
     """Grava a credencial (cifrada) e aplica o overlay NA MESMA requisição —
-    a resposta traz APENAS os metadados da nova versão (nunca o valor)."""
+    a resposta traz APENAS os metadados da nova versão (nunca o valor).
+
+    Se o overlay pós-commit falhar, a resposta segue 201 com
+    `overlay_aplicado=False` (a linha JÁ está gravada; não revertemos — o
+    worker de sync reconcilia via versao_atual). Ver
+    _aplicar_overlay_sinalizando."""
     campo = _campo_ou_404(provider_key, field_key)
     await _reautenticar(db, cu, request, req.senha_atual, req.codigo_totp,
                         f"cadastrar {provider_key}/{field_key}")
@@ -271,7 +334,8 @@ async def cadastrar_credencial(
     except ValueError as e:
         # Validação de formato/tipo do service — a mensagem nunca ecoa o valor.
         raise HTTPException(status_code=422, detail=str(e))
-    await credential_vault_service.aplicar_overlay(db)
+    meta["overlay_aplicado"] = await _aplicar_overlay_sinalizando(
+        db, cu, request, f"cadastrar {provider_key}/{field_key}")
     return meta
 
 
@@ -285,7 +349,12 @@ async def revogar_credencial(
     cu=Depends(_SUPERADMIN),
 ):
     """Revoga (zera o ciphertext) e aplica o overlay na mesma requisição: o
-    atributo em Settings vira \"\" — sem fallback ao .env."""
+    atributo em Settings vira \"\" — sem fallback ao .env.
+
+    Se o overlay pós-commit falhar, a resposta segue 200 com
+    `overlay_aplicado=False` (a revogação JÁ está gravada; não revertemos — o
+    worker de sync reconcilia via versao_atual). Ver
+    _aplicar_overlay_sinalizando."""
     _campo_ou_404(provider_key, field_key)
     await _reautenticar(db, cu, request, req.senha_atual, req.codigo_totp,
                         f"revogar {provider_key}/{field_key}")
@@ -298,5 +367,6 @@ async def revogar_credencial(
             status_code=404,
             detail=f"Não há credencial ativa para '{provider_key}/{field_key}'.",
         )
-    await credential_vault_service.aplicar_overlay(db)
+    meta["overlay_aplicado"] = await _aplicar_overlay_sinalizando(
+        db, cu, request, f"revogar {provider_key}/{field_key}")
     return meta
