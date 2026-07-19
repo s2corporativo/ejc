@@ -91,7 +91,18 @@ jobs:
             -c "CREATE EXTENSION IF NOT EXISTS pgcrypto;"
 
       - name: Lint bloqueante (ruff)
-        run: python -m ruff check app
+        run: |
+          set -o pipefail
+          python -m ruff check app --output-format=concise 2>&1 | tee ../ruff-report.txt
+
+      - name: Anexar diagnóstico Ruff
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: ruff-report
+          path: ruff-report.txt
+          if-no-files-found: warn
+          retention-days: 7
 
       - name: Auditoria bloqueante de dependências Python (pip-audit)
         run: |
@@ -175,7 +186,18 @@ jobs:
         run: npm ci
 
       - name: Formatação bloqueante (prettier)
-        run: npm run format:check
+        run: |
+          set -o pipefail
+          npm run format:check 2>&1 | tee ../prettier-report.txt
+
+      - name: Anexar diagnóstico Prettier
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: prettier-report
+          path: prettier-report.txt
+          if-no-files-found: warn
+          retention-days: 7
 
       - name: Testes (Vitest com resumo compacto)
         run: |
