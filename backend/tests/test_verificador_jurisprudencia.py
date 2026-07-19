@@ -1,6 +1,5 @@
 """Verificador RIGOROSO de jurisprudência — parser CNJ (DV mód. 97), súmulas em
 faixa, recursos superiores, menções vagas, score e DataJud opt-in (mockado)."""
-import pytest
 
 from app.services.verificador_jurisprudencia import (
     MAX_CONSULTAS_DATAJUD,

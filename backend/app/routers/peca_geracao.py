@@ -3,6 +3,8 @@ Router: Geração de peças jurídicas com pipeline 7 etapas + SSE streaming.
 """
 from __future__ import annotations
 
+import logging
+
 from fastapi import APIRouter, Depends, HTTPException, Query
 from fastapi.responses import StreamingResponse
 from pydantic import BaseModel, Field
@@ -10,6 +12,7 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 from typing import Optional
 
+from app.core.config import get_settings
 from app.core.database import get_db
 from app.core.security import get_current_user, ROLE_LEVEL
 from app.core.ownership import verificar_acesso_caso
@@ -17,13 +20,26 @@ from app.core.rate_limit import rate_limit
 from app.models.user import User
 from app.models.ai_log import AILog
 from app.models.legal_doc import LegalDoc, PecaTipo, PecaStatus
-from app.services.peca_service import gerar_peca_pipeline, TIPOS_PECA, AREAS_DIREITO
+from app.services.peca_service import (
+    gerar_peca_pipeline,
+    TIPOS_PECA,
+    TIPOS_PECA_VALIDOS,
+    TIPOS_PECA_GRUPO,
+    AREAS_DIREITO,
+    AREAS_DIREITO_LABEL,
+    NIVEIS_COMPLEXIDADE,
+)
+from app.services.system_prompts.blocos_condicionais import (
+    FLAGS_VALIDAS,
+    montar_instrucao_blocos,
+)
 from app.services.advogado_style_service import montar_instrucoes_estilo_para_prompt
 from app.services.deep_research_service import DeepResearchInput, executar_deep_research
 from datetime import date
 from uuid import uuid4
 
 router = APIRouter(prefix="/pecas", tags=["Geração de Peças"])
+logger = logging.getLogger(__name__)
 
 
 class GerarPecaRequest(BaseModel):
@@ -34,6 +50,45 @@ class GerarPecaRequest(BaseModel):
     nomes_proteger: list[str] = Field(default=[], description="Nomes para anonimizar (LGPD)")
     case_id: Optional[str] = None
     instrucoes_adicionais: Optional[str] = Field(None, max_length=1000)
+    # Fase B (#3): grau de complexidade da peça — validado contra NIVEIS_COMPLEXIDADE
+    # no handler (422 se inválido). Default "comum" (procedimento comum padrão).
+    nivel_complexidade: str = Field(
+        default="comum",
+        description=f"Complexidade: {', '.join(NIVEIS_COMPLEXIDADE)}",
+    )
+    # Fase B (#2): flags de teses selecionadas MANUALMENTE pelo advogado (override/
+    # adição às determinísticas). Flags desconhecidas são ignoradas silenciosamente.
+    flags_teses: list[str] = Field(
+        default=[],
+        description=f"Teses condicionais: {', '.join(sorted(FLAGS_VALIDAS))}",
+    )
+
+
+@router.get("/meta")
+async def meta_pecas(
+    cu: User = Depends(get_current_user),
+):
+    """Catálogo (fonte única) para o formulário de geração de peças: tipos
+    agrupados, áreas do direito e níveis de complexidade. Elimina o espelhamento
+    manual desses metadados no frontend. Piso de role igual ao /gerar."""
+    if ROLE_LEVEL.get(cu.role.value, 0) < ROLE_LEVEL["estagiario"]:
+        raise HTTPException(403, "Acesso negado")
+
+    return {
+        "tipos": [
+            {
+                "value": value,
+                "label": TIPOS_PECA[value],
+                "grupo": TIPOS_PECA_GRUPO[value],
+            }
+            for value in TIPOS_PECA_VALIDOS
+        ],
+        "areas": [
+            {"value": area, "label": AREAS_DIREITO_LABEL.get(area, area)}
+            for area in AREAS_DIREITO
+        ],
+        "niveis_complexidade": list(NIVEIS_COMPLEXIDADE),
+    }
 
 
 @router.post("/gerar")
@@ -55,21 +110,75 @@ async def gerar_peca(
     if req.area_direito not in AREAS_DIREITO:
         raise HTTPException(422, f"Área inválida. Use: {', '.join(AREAS_DIREITO)}")
 
+    if req.nivel_complexidade not in NIVEIS_COMPLEXIDADE:
+        raise HTTPException(
+            422, f"Nível inválido. Use: {', '.join(NIVEIS_COMPLEXIDADE)}"
+        )
+
     escopo_cli = None
+    ficha_resumo = ""
+    ficha = None
     if req.case_id:
         await verificar_acesso_caso(db, cu, req.case_id)
         from app.services.ai_service import _escopo_cliente_do_caso
         escopo_cli = await _escopo_cliente_do_caso(db, req.case_id)
 
+        # Ficha de triagem CONFIRMADA do caso: fonte dos sinais determinísticos das
+        # teses (#2) E âncora da peça. Carregada sempre que houver caso — o gate
+        # abaixo só é fatal quando FICHA_TRIAGEM_OBRIGATORIA.
+        from app.services import ficha_triagem_service as fts
+        ficha = await fts.ficha_confirmada(db, req.case_id)
+
+        # GATE de qualidade: a peça só nasce ancorada numa ficha de triagem
+        # CONFIRMADA (evita "bom modelo no caso errado"). Geração AVULSA (sem
+        # case_id) NUNCA é gateada. 409 ANTES de abrir o stream.
+        if get_settings().FICHA_TRIAGEM_OBRIGATORIA and ficha is None:
+            raise HTTPException(409, detail={
+                "detail": "Confirme a Ficha de Triagem do caso antes de gerar "
+                          "a peça (gate de qualidade).",
+                "need_ficha_triagem": True,
+                "case_id": req.case_id,
+            })
+        if ficha is not None:
+            ficha_resumo = fts.resumo_para_prompt(ficha)
+
+    # Fase B (#2) — flags de teses condicionais. DETERMINÍSTICAS a partir de sinais
+    # confiáveis (área + ficha CONFIRMADA) + adição/override MANUAL do advogado.
+    # União validada contra FLAGS_VALIDAS (desconhecidas ignoradas). Geração avulsa
+    # (sem case_id → sem ficha) usa só área + flags manuais.
+    flags_teses: set[str] = set()
+    if req.area_direito == "consumidor":
+        flags_teses.add("relacao_consumo")
+    if ficha is not None:
+        if ficha.tutela_urgencia:
+            flags_teses.add("pedido_tutela")
+        if (ficha.provas_disponiveis or "").strip():
+            flags_teses.add("prova_documental_suficiente")
+    flags_teses.update(req.flags_teses or [])
+    flags_teses &= FLAGS_VALIDAS
+    bloco_teses = montar_instrucao_blocos(flags_teses)
+
     async def stream():
         try:
             instrucoes = req.instrucoes_adicionais or ""
+            if ficha_resumo:
+                # Ancora a peça na triagem confirmada (respeitando o limite).
+                bloco = f"[FICHA DE TRIAGEM CONFIRMADA]\n{ficha_resumo}"[:2000]
+                instrucoes = (f"{instrucoes}\n\n{bloco}" if instrucoes else bloco)
             estilo = await montar_instrucoes_estilo_para_prompt(db, cu.id)
             if estilo:
                 instrucoes = (
                     f"{instrucoes}\n\n[ESTILO DO ADVOGADO]\n{estilo}"
                     if instrucoes else f"[ESTILO DO ADVOGADO]\n{estilo}"
                 )[:2500]
+            # Teses condicionais (#2) — bloco próprio, DEPOIS do cap do estilo para
+            # não ser truncado; auto-limitado (poucas teses + regra curta).
+            if bloco_teses:
+                bloco_teses_cap = bloco_teses[:2000]
+                instrucoes = (
+                    f"{instrucoes}\n\n{bloco_teses_cap}" if instrucoes
+                    else bloco_teses_cap
+                )
 
             async for chunk in gerar_peca_pipeline(
                 db=db,
@@ -82,11 +191,23 @@ async def gerar_peca(
                 nomes_proteger=req.nomes_proteger,
                 case_id=req.case_id,
                 instrucoes_adicionais=instrucoes,
+                nivel_complexidade=req.nivel_complexidade,
             ):
                 yield chunk
         except Exception as e:
             import json
-            yield f"event: erro\ndata: {json.dumps({'detail': str(e)[:300]}, ensure_ascii=False)}\n\n"
+            # Detalhe técnico só no log — a UI não deve expor infra interna
+            # (nomes de env vars/provedores) ao advogado.
+            logger.error("[PecaGeracao] pipeline falhou: %s", e)
+            yield (
+                "event: erro\ndata: "
+                + json.dumps(
+                    {"detail": "IA indisponível no momento. Tente novamente "
+                               "em instantes ou contate o administrador."},
+                    ensure_ascii=False,
+                )
+                + "\n\n"
+            )
 
     return StreamingResponse(
         stream(),

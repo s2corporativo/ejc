@@ -30,10 +30,24 @@ async def ingerir_seed(
     db: AsyncSession = Depends(get_db),
     cu: User = Depends(get_current_user),
 ):
-    """Ingere dataset de súmulas STF/STJ/TST na tabela teses. Apenas admin/superadmin."""
+    """Ingere dataset de súmulas STF/STJ/TST na tabela teses. Apenas admin/superadmin.
+
+    Seed reconstruído (auditoria RAG): cada verbete foi reconferido individualmente
+    contra fonte oficial (situação ativa/cancelada/suspensa sinalizada — ver
+    sumulas_ingestion.py). Ativo por padrão (RAG_SUMULAS_SEED_ENABLED=True).
+    Desligue a flag para suspender a ingestão rapidamente (responde 423) sem
+    precisar reverter código, caso um novo erro seja encontrado.
+    """
+    from fastapi import HTTPException
     if ROLE_LEVEL.get(cu.role.value, 0) < ROLE_LEVEL["admin"]:
-        from fastapi import HTTPException
         raise HTTPException(status_code=403, detail="Apenas admin pode ingerir súmulas.")
+    from app.core.config import get_settings
+    if not get_settings().RAG_SUMULAS_SEED_ENABLED:
+        raise HTTPException(
+            status_code=423,
+            detail=("Seed de súmulas desativado (RAG_SUMULAS_SEED_ENABLED=false). "
+                    "Ingestão suspensa manualmente."),
+        )
     from app.services.sumulas_ingestion import ingerir_sumulas_seed
     return await ingerir_sumulas_seed(db)
 
@@ -49,7 +63,10 @@ async def buscar_sumulas(
     cu: User         = Depends(get_current_user),
 ):
     """Busca súmulas/jurisprudência no banco de teses por texto, área ou tribunal."""
-    conditions = ["tipo = 'jurisprudencia'", "deleted_at IS NULL"]
+    # Busca operacional retorna apenas verbetes ativos. Canceladas, superadas
+    # ou em revisão permanecem consultáveis na governança, não neste endpoint
+    # usado para fundamentação/pesquisa corrente.
+    conditions = ["tipo = 'jurisprudencia'", "status = 'ativa'", "deleted_at IS NULL"]
     params: dict = {"limit": limit}
 
     if q:

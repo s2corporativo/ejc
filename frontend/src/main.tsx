@@ -2,12 +2,13 @@ import React from "react";
 import ReactDOM from "react-dom/client";
 import App from "./App";
 import { initTheme } from "./stores/theme";
+import "./styles/fonts.css";
 import "./index.css";
+import "./styles/site-system.css";
+// Polimento específico da página Financeiro (escopo .executive-workspace).
+// Não duplica o site-system e mantém o padrão branco+ouro (aba ativa escura é exceção permitida).
+import "./styles/workspace-executive.css";
 
-// Aplica o tema salvo (claro/escuro/sistema) ANTES do primeiro render.
-// A CSP (script-src 'self', sem inline) é aplicada pelo Nginx do container
-// (frontend/nginx.conf) e pelo Nginx do HOST — não pelo index.html. Por isso
-// a inicialização síncrona vive aqui (módulo 'self'), evitando flash de tema.
 initTheme();
 
 ReactDOM.createRoot(document.getElementById("root")!).render(

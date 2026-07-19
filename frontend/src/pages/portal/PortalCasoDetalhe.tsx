@@ -1,8 +1,14 @@
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import { useParams, Link } from "react-router-dom";
-import { ArrowLeft, CalendarClock, MessageSquare } from "lucide-react";
+import {
+  ArrowLeft,
+  CalendarClock,
+  History,
+  MessageSquare,
+} from "lucide-react";
 import api from "../../lib/api";
 import { toast } from "../../components/Toast";
+import { ErrorState, Spinner } from "../../components/UI";
 import { asList } from "../../lib/list";
 
 function MensagensCliente({ caseId }: { caseId: string }) {
@@ -92,13 +98,34 @@ function MensagensCliente({ caseId }: { caseId: string }) {
 export default function PortalCasoDetalhe() {
   const { id } = useParams();
   const [data, setData] = useState<any>(null);
+  const [error, setError] = useState(false);
 
-  useEffect(() => {
-    api.get(`/portal/casos/${id}`).then((r) => setData(r.data));
+  const load = useCallback(() => {
+    setError(false);
+    setData(null);
+    api
+      .get(`/portal/casos/${id}`)
+      .then((r) => setData(r.data))
+      .catch(() => setError(true));
   }, [id]);
 
-  if (!data) return <div className="text-slate-400">Carregando…</div>;
+  useEffect(() => {
+    load();
+  }, [load]);
+
+  if (error)
+    return (
+      <ErrorState
+        message="Não foi possível carregar este processo."
+        onRetry={load}
+      />
+    );
+  if (!data) return <Spinner />;
   const { caso, andamentos, proximas_datas } = data;
+  // O backend ordena os andamentos do mais recente para o mais antigo — o
+  // primeiro é a última movimentação do processo.
+  const ultimo =
+    Array.isArray(andamentos) && andamentos.length > 0 ? andamentos[0] : null;
 
   return (
     <div>
@@ -117,22 +144,40 @@ export default function PortalCasoDetalhe() {
         </div>
       </div>
 
+      {ultimo && (
+        <div className="card p-5 mb-4 border-primary-100 bg-primary-50/40">
+          <h2 className="font-medium text-navy mb-1 flex items-center gap-2">
+            <History size={16} /> Última atualização
+          </h2>
+          <p className="text-xs text-slate-500 mb-1.5">
+            {ultimo.data
+              ? `Atualizado em ${new Date(ultimo.data).toLocaleDateString("pt-BR")}`
+              : "Data não informada"}
+          </p>
+          <p className="text-sm text-slate-700 leading-relaxed">
+            {ultimo.descricao}
+          </p>
+        </div>
+      )}
+
       {Array.isArray(proximas_datas) && proximas_datas.length > 0 && (
         <div className="card p-5 mb-4">
           <h2 className="font-medium text-navy mb-3 flex items-center gap-2">
             <CalendarClock size={16} /> Próximas datas
           </h2>
-          {(Array.isArray(proximas_datas) ? proximas_datas : []).map((d: any, i: number) => (
-            <div
-              key={i}
-              className="flex justify-between py-2 border-b border-slate-100 last:border-0 text-sm"
-            >
-              <span>{d.titulo}</span>
-              <span className="font-medium">
-                {new Date(d.data + "T12:00").toLocaleDateString("pt-BR")}
-              </span>
-            </div>
-          ))}
+          {(Array.isArray(proximas_datas) ? proximas_datas : []).map(
+            (d: any, i: number) => (
+              <div
+                key={i}
+                className="flex justify-between py-2 border-b border-slate-100 last:border-0 text-sm"
+              >
+                <span>{d.titulo}</span>
+                <span className="font-medium">
+                  {new Date(d.data + "T12:00").toLocaleDateString("pt-BR")}
+                </span>
+              </div>
+            ),
+          )}
         </div>
       )}
 
@@ -142,17 +187,19 @@ export default function PortalCasoDetalhe() {
           {(!Array.isArray(andamentos) || andamentos.length === 0) && (
             <p className="text-sm text-slate-400">Sem andamentos registrados</p>
           )}
-          {(Array.isArray(andamentos) ? andamentos : []).map((m: any, i: number) => (
-            <div key={i} className="flex gap-3 text-sm">
-              <div className="w-2 h-2 rounded-full bg-gold mt-1.5 shrink-0" />
-              <div>
-                <div className="text-xs text-slate-400">
-                  {m.data && new Date(m.data).toLocaleDateString("pt-BR")}
+          {(Array.isArray(andamentos) ? andamentos : []).map(
+            (m: any, i: number) => (
+              <div key={i} className="flex gap-3 text-sm">
+                <div className="w-2 h-2 rounded-full bg-gold mt-1.5 shrink-0" />
+                <div>
+                  <div className="text-xs text-slate-400">
+                    {m.data && new Date(m.data).toLocaleDateString("pt-BR")}
+                  </div>
+                  <div>{m.descricao}</div>
                 </div>
-                <div>{m.descricao}</div>
               </div>
-            </div>
-          ))}
+            ),
+          )}
         </div>
       </div>
 

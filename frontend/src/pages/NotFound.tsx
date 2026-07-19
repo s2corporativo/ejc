@@ -21,10 +21,7 @@ export default function NotFound() {
           <Link to="/" className="btn bg-navy text-white">
             Voltar ao início
           </Link>
-          <Link
-            to="/login"
-            className="btn bg-white border border-slate-200 text-slate-600"
-          >
+          <Link to="/login" className="btn-secondary">
             Ir para o login
           </Link>
         </div>

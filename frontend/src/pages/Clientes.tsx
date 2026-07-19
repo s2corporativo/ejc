@@ -1,5 +1,5 @@
 import { toast } from "../components/Toast";
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { Link } from "react-router-dom";
 import { Plus, Search, ShieldAlert, KeyRound } from "lucide-react";
 import api from "../lib/api";
@@ -10,13 +10,15 @@ import {
   StatusBadge,
   Modal,
   Empty,
-  Spinner,
+  EmptyState,
+  SkeletonTable,
   fmtDate,
   Alert,
   Badge,
   Button,
 } from "../components/UI";
 import { ClientesStats } from "../components/Dashboards";
+import { VerificarReceita } from "../components/Infosimples";
 
 // Resposta de POST /clients/checar-conflito (nome/documento completos —
 // o advogado precisa saber com quem é o conflito; endpoint restrito ao CRM).
@@ -60,13 +62,27 @@ export default function Clientes() {
     estado: "MG",
   });
   const [salvando, setSalvando] = useState(false);
+  const [erro, setErro] = useState(false);
+  // Guarda de sequência: só a resposta do load mais recente aplica setData,
+  // evitando que uma resposta antiga (busca com debounce) sobrescreva a nova.
+  const seq = useRef(0);
 
-  const load = () =>
-    api
+  const load = () => {
+    const my = ++seq.current;
+    setErro(false);
+    return api
       .get("/clients/", {
         params: { search: search || undefined, page_size: 50 },
       })
-      .then((r) => setData(r.data));
+      .then((r) => {
+        if (my === seq.current) setData(r.data);
+      })
+      .catch(() => {
+        if (my !== seq.current) return;
+        setErro(true);
+        toast.error("Falha ao carregar clientes");
+      });
+  };
 
   useEffect(() => {
     load();
@@ -145,10 +161,32 @@ export default function Clientes() {
         />
       </div>
 
-      {!data ? (
-        <Spinner />
+      {erro && !data ? (
+        <EmptyState
+          title="Falha ao carregar clientes"
+          message="Não foi possível carregar a lista. Verifique sua conexão e tente novamente."
+          action={
+            <Button variant="primary" onClick={load}>
+              Tentar novamente
+            </Button>
+          }
+        />
+      ) : !data ? (
+        <SkeletonTable rows={6} cols={6} />
       ) : data.data.length === 0 ? (
-        <Empty message="Nenhum cliente encontrado" />
+        <Empty
+          titulo="Nenhum cliente cadastrado"
+          descricao="O cadastro de clientes centraliza contatos, documentos e casos de cada pessoa ou empresa. Cadastre o primeiro para vinculá-lo aos casos."
+          acao={
+            <Button
+              variant="primary"
+              icon={<Plus size={16} />}
+              onClick={() => setModal(true)}
+            >
+              Cadastrar um cliente
+            </Button>
+          }
+        />
       ) : (
         <div className="card overflow-x-auto">
           <table className="w-full text-sm">
@@ -157,6 +195,7 @@ export default function Clientes() {
                 <th className="px-4 py-3">Nome / Razão</th>
                 <th className="px-4 py-3">Tipo</th>
                 <th className="px-4 py-3">CPF / CNPJ</th>
+                <th className="px-4 py-3 text-right">Ações</th>
                 <th className="px-4 py-3">Contato</th>
                 <th className="px-4 py-3">Status</th>
                 <th className="px-4 py-3">Desde</th>
@@ -183,7 +222,7 @@ export default function Clientes() {
                       className="text-bronze hover:text-bronze-dark px-1.5 font-medium text-xs"
                       onClick={(e) => {
                         e.stopPropagation();
-                        window.location.href = `/clientes/${c.id}/dossie`;
+                        window.location.href = `/clientes/${c.id}`;
                       }}
                     >
                       📋
@@ -291,12 +330,19 @@ export default function Clientes() {
               </div>
               <div>
                 <label className="label">CPF</label>
-                <input
-                  className="input"
-                  value={form.cpf || ""}
-                  onChange={(e) => setForm({ ...form, cpf: e.target.value })}
-                  onBlur={checarConflito}
-                />
+                <div className="flex gap-2">
+                  <input
+                    className="input flex-1"
+                    value={form.cpf || ""}
+                    onChange={(e) => setForm({ ...form, cpf: e.target.value })}
+                    onBlur={checarConflito}
+                  />
+                  <VerificarReceita
+                    tipo="cpf"
+                    documento={form.cpf || ""}
+                    onUsarNome={(nome) => setForm((f: any) => ({ ...f, nome }))}
+                  />
+                </div>
               </div>
             </>
           ) : (
@@ -348,6 +394,13 @@ export default function Clientes() {
                   >
                     🔍 Receita
                   </button>
+                  <VerificarReceita
+                    tipo="cnpj"
+                    documento={form.cnpj || ""}
+                    onUsarNome={(razao_social) =>
+                      setForm((f: any) => ({ ...f, razao_social }))
+                    }
+                  />
                 </div>
               </div>
             </>

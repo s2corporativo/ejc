@@ -10,7 +10,14 @@ import {
   X,
 } from "lucide-react";
 import api from "../lib/api";
-import { Modal, PageHeader, fmtDate } from "../components/UI";
+import {
+  EmptyState,
+  ErrorState,
+  Modal,
+  Spinner,
+  fmtDate,
+  ConfirmModal,
+} from "../components/UI";
 import { toast } from "../components/Toast";
 
 interface Contract {
@@ -76,13 +83,17 @@ export default function OfficeContracts() {
   const [contracts, setContracts] = useState<Contract[]>([]);
   const [expiring, setExpiring] = useState<Contract[]>([]);
   const [loading, setLoading] = useState(true);
+  const [error, setError] = useState(false);
   const [showForm, setShowForm] = useState(false);
   const [editing, setEditing] = useState<Contract | null>(null);
   const [form, setForm] = useState({ ...EMPTY_FORM });
   const [filterStatus, setFilterStatus] = useState("");
+  const [salvando, setSalvando] = useState(false);
+  const [pendenteExcluir, setPendenteExcluir] = useState<string | null>(null);
 
   const load = useCallback(async () => {
     setLoading(true);
+    setError(false);
     try {
       const [all, exp] = await Promise.all([
         api.get("/v1/office-contracts", {
@@ -92,6 +103,8 @@ export default function OfficeContracts() {
       ]);
       setContracts(all.data.data || []);
       setExpiring(exp.data || []);
+    } catch {
+      setError(true);
     } finally {
       setLoading(false);
     }
@@ -123,25 +136,52 @@ export default function OfficeContracts() {
   }
 
   async function save() {
+    // Guarda de NaN: alerta em dias e valor precisam ser numéricos válidos —
+    // caso contrário o lançamento chegaria corrompido ao backend financeiro.
+    const alertDays = parseInt(form.alert_days_before, 10);
+    if (!Number.isFinite(alertDays)) {
+      toast.error("Alerta (dias antes) inválido");
+      return;
+    }
+    let value: number | undefined;
+    if (form.value) {
+      value = parseFloat(form.value);
+      if (!Number.isFinite(value)) {
+        toast.error("Valor inválido");
+        return;
+      }
+    }
     const payload = {
       ...form,
-      value: form.value ? parseFloat(form.value) : undefined,
-      alert_days_before: parseInt(form.alert_days_before),
+      value,
+      alert_days_before: alertDays,
       end_date: form.end_date || undefined,
     };
-    if (editing) {
-      await api.patch(`/v1/office-contracts/${editing.id}`, payload);
-    } else {
-      await api.post("/v1/office-contracts", payload);
+    setSalvando(true);
+    try {
+      if (editing) {
+        await api.patch(`/v1/office-contracts/${editing.id}`, payload);
+      } else {
+        await api.post("/v1/office-contracts", payload);
+      }
+      setShowForm(false);
+      load();
+    } catch (e: any) {
+      toast.error(e?.response?.data?.detail || "Erro ao salvar contrato");
+    } finally {
+      setSalvando(false);
     }
-    setShowForm(false);
-    load();
   }
 
-  async function remove(id: string) {
-    if (!window.confirm("Excluir contrato?")) return;
+  function remove(id: string) {
+    setPendenteExcluir(id);
+  }
+
+  async function confirmarExclusao() {
+    if (!pendenteExcluir) return;
     try {
-      await api.delete(`/v1/office-contracts/${id}`);
+      await api.delete(`/v1/office-contracts/${pendenteExcluir}`);
+      setPendenteExcluir(null);
       load();
     } catch (e: any) {
       toast.error(e.response?.data?.detail || "Erro ao excluir contrato");
@@ -149,17 +189,13 @@ export default function OfficeContracts() {
   }
 
   return (
-    <div className="p-6 max-w-6xl mx-auto">
-      <PageHeader
-        eyebrow="Financeiro"
-        title="Contratos do Escritório"
-        subtitle="Gestão de contratos operacionais e parcerias"
-        actions={
-          <button onClick={openNew} className="btn-primary">
-            <Plus className="w-4 h-4" /> Novo Contrato
-          </button>
-        }
-      />
+    <div>
+      {/* Cabeçalho fica no FinanceiroWorkspace; aqui apenas as ações da aba. */}
+      <div className="flex items-center justify-end mb-4">
+        <button onClick={openNew} className="btn-primary">
+          <Plus className="w-4 h-4" /> Novo Contrato
+        </button>
+      </div>
 
       {expiring.length > 0 && (
         <div className="mb-4 p-3 bg-yellow-50 border border-yellow-200 rounded-lg flex items-start gap-2">
@@ -179,7 +215,7 @@ export default function OfficeContracts() {
           <button
             key={s}
             onClick={() => setFilterStatus(s)}
-            className={`px-3 py-1.5 rounded-lg text-xs font-medium border transition-colors ${filterStatus === s ? "bg-primary-600 text-white border-primary-600" : "bg-white text-slate-600 border-slate-200 hover:border-primary-300"}`}
+            className={`px-3 py-1.5 rounded-lg text-xs font-medium transition-colors ${filterStatus === s ? "bg-primary-600 text-white" : "bg-slate-900/[0.05] text-slate-600 hover:bg-slate-900/[0.09] dark:bg-white/[0.07] dark:text-slate-300"}`}
           >
             {s === "" ? "Todos" : STATUS_LABEL[s]}
           </button>
@@ -187,14 +223,16 @@ export default function OfficeContracts() {
       </div>
 
       {loading ? (
-        <div className="text-center py-12 text-slate-400">Carregando...</div>
+        <Spinner />
+      ) : error ? (
+        <ErrorState
+          message="Não foi possível carregar os contratos do escritório. Tente novamente."
+          onRetry={load}
+        />
       ) : contracts.length === 0 ? (
-        <div className="text-center py-12 text-slate-400">
-          <FileText className="w-10 h-10 mx-auto mb-2 opacity-30" />
-          <p>Nenhum contrato encontrado</p>
-        </div>
+        <EmptyState title="Nenhum contrato encontrado" icon={FileText} />
       ) : (
-        <div className="bg-white rounded-xl border border-slate-200 overflow-hidden">
+        <div className="card overflow-hidden">
           <table className="w-full text-sm">
             <thead className="bg-slate-50 text-slate-600 text-xs uppercase tracking-wider">
               <tr>
@@ -295,7 +333,7 @@ export default function OfficeContracts() {
               </label>
               <input
                 type={type}
-                className="w-full border border-slate-200 rounded-lg px-3 py-2 text-sm focus:ring-2 focus:ring-primary-500 outline-none"
+                className="input"
                 value={(form as any)[key]}
                 onChange={(e) => setForm({ ...form, [key]: e.target.value })}
               />
@@ -307,7 +345,7 @@ export default function OfficeContracts() {
                 Tipo
               </label>
               <select
-                className="w-full border border-slate-200 rounded-lg px-3 py-2 text-sm"
+                className="input"
                 value={form.contract_type}
                 onChange={(e) =>
                   setForm({ ...form, contract_type: e.target.value })
@@ -325,7 +363,7 @@ export default function OfficeContracts() {
                 Status
               </label>
               <select
-                className="w-full border border-slate-200 rounded-lg px-3 py-2 text-sm"
+                className="input"
                 value={form.status}
                 onChange={(e) => setForm({ ...form, status: e.target.value })}
               >
@@ -344,7 +382,7 @@ export default function OfficeContracts() {
               </label>
               <input
                 type="date"
-                className="w-full border border-slate-200 rounded-lg px-3 py-2 text-sm"
+                className="input"
                 value={form.start_date}
                 onChange={(e) =>
                   setForm({ ...form, start_date: e.target.value })
@@ -357,7 +395,7 @@ export default function OfficeContracts() {
               </label>
               <input
                 type="date"
-                className="w-full border border-slate-200 rounded-lg px-3 py-2 text-sm"
+                className="input"
                 value={form.end_date}
                 onChange={(e) => setForm({ ...form, end_date: e.target.value })}
               />
@@ -370,7 +408,7 @@ export default function OfficeContracts() {
               </label>
               <input
                 type="number"
-                className="w-full border border-slate-200 rounded-lg px-3 py-2 text-sm"
+                className="input"
                 value={form.value}
                 onChange={(e) => setForm({ ...form, value: e.target.value })}
               />
@@ -381,7 +419,7 @@ export default function OfficeContracts() {
               </label>
               <input
                 type="number"
-                className="w-full border border-slate-200 rounded-lg px-3 py-2 text-sm"
+                className="input"
                 value={form.alert_days_before}
                 onChange={(e) =>
                   setForm({ ...form, alert_days_before: e.target.value })
@@ -395,7 +433,7 @@ export default function OfficeContracts() {
             </label>
             <textarea
               rows={3}
-              className="w-full border border-slate-200 rounded-lg px-3 py-2 text-sm resize-none"
+              className="input resize-none"
               value={form.description}
               onChange={(e) =>
                 setForm({ ...form, description: e.target.value })
@@ -407,11 +445,21 @@ export default function OfficeContracts() {
           <button onClick={() => setShowForm(false)} className="btn-ghost">
             Cancelar
           </button>
-          <button onClick={save} className="btn-primary">
-            Salvar
+          <button onClick={save} disabled={salvando} className="btn-primary">
+            {salvando ? "Salvando..." : "Salvar"}
           </button>
         </div>
       </Modal>
+
+      <ConfirmModal
+        open={pendenteExcluir !== null}
+        onClose={() => setPendenteExcluir(null)}
+        onConfirm={confirmarExclusao}
+        title="Excluir"
+        message="Excluir este contrato do escritório?"
+        confirmLabel="Excluir"
+        variant="danger"
+      />
     </div>
   );
 }

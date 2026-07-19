@@ -33,7 +33,7 @@ export default function DashboardIA() {
   const blocos: [string, any][] = [
     ["Por modelo", d?.por_modelo],
     ["Por tipo de uso", d?.por_tipo_uso],
-    ["Por status (HITL)", d?.por_status_hitl],
+    ["Por status de revisão", d?.por_status_hitl],
   ];
 
   return (
@@ -41,7 +41,7 @@ export default function DashboardIA() {
       <PageHeader
         eyebrow="Inteligência"
         title="Saúde da IA"
-        subtitle="Uso, custo e aproveitamento (HITL) das chamadas de IA — LGPD/OAB"
+        subtitle="Uso, custo e aproveitamento (revisão do advogado) das chamadas de IA — LGPD/OAB"
         actions={
           <select
             className="input text-sm"

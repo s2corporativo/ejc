@@ -124,7 +124,7 @@ function CardRegra({
                 <CheckCircle2 size={11} /> Elegível
               </span>
             ) : (
-              <span className="text-[10px] font-bold uppercase tracking-wide text-slate-400 bg-slate-100 border border-slate-200 px-1.5 py-0.5 rounded-full">
+              <span className="text-[10px] font-bold uppercase tracking-wide text-slate-500 bg-slate-900/[0.05] dark:bg-white/[0.07] dark:text-slate-300 px-1.5 py-0.5 rounded-full">
                 Ainda não
               </span>
             )}

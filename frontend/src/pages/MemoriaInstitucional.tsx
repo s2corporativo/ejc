@@ -15,7 +15,6 @@ import {
   XCircle,
   MinusCircle,
   Clock,
-  Filter,
   Tag,
   Calendar,
   Edit3,
@@ -23,7 +22,7 @@ import {
 } from "lucide-react";
 import api from "../lib/api";
 import { toast } from "../components/Toast";
-import { PageHeader, Spinner, fmtDate } from "../components/UI";
+import { PageHeader, Spinner, ErrorState, fmtDate } from "../components/UI";
 import { Markdown } from "../components/Markdown";
 
 // ─── Tipos ────────────────────────────────────────────────────────────────────
@@ -424,6 +423,7 @@ function ModalForm({
 export default function MemoriaInstitucional() {
   const [memorias, setMemorias] = useState<Memoria[]>([]);
   const [loading, setLoading] = useState(true);
+  const [erro, setErro] = useState(false);
   const [modalAberto, setModalAberto] = useState(false);
   const [editando, setEditando] = useState<Memoria | null>(null);
   const [q, setQ] = useState("");
@@ -434,6 +434,7 @@ export default function MemoriaInstitucional() {
 
   const carregar = useCallback(async () => {
     setLoading(true);
+    setErro(false);
     try {
       const params: Record<string, string> = { limit: "50" };
       if (q) params.q = q;
@@ -443,6 +444,8 @@ export default function MemoriaInstitucional() {
       let lista = Array.isArray(data) ? (data as Memoria[]) : [];
       if (resultado) lista = lista.filter((m) => m.resultado === resultado);
       setMemorias(lista);
+    } catch {
+      setErro(true);
     } finally {
       setLoading(false);
     }
@@ -588,6 +591,11 @@ export default function MemoriaInstitucional() {
       {/* Lista */}
       {loading ? (
         <Spinner />
+      ) : erro ? (
+        <ErrorState
+          message="Não foi possível carregar a memória institucional. Tente novamente."
+          onRetry={carregar}
+        />
       ) : memorias.length === 0 ? (
         <div className="card p-10 text-center">
           <BookMarked className="w-10 h-10 text-slate-200 mx-auto mb-3" />

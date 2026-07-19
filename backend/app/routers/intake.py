@@ -29,7 +29,6 @@ from app.core.ownership import verificar_acesso_caso
 from app.core.security import get_current_user, ROLE_LEVEL
 from app.models.ai_log import AILog, AIStatusHITL, AITipoUso
 from app.models.case import Case, CaseArea
-from app.models.document import Document
 from app.models.redesign import AreaModuloMapping, TabelaOABHonorario
 from app.models.tese import Tese, TeseStatus
 from app.models.user import User
@@ -109,22 +108,11 @@ async def _log_ia(
 
 
 async def _texto_base(db: AsyncSession, case: Case, payload: AnaliseCompletaIn) -> str:
-    """Fonte do texto: payload.texto > ocr_text dos documentos > descricao_fatos."""
-    if payload.texto and payload.texto.strip():
-        return payload.texto.strip()
-
-    docs = (await db.execute(
-        select(Document.ocr_text).where(
-            Document.case_id == case.id,
-            Document.deleted_at.is_(None),
-            Document.ocr_text.isnot(None),
-        ).order_by(Document.created_at.desc()).limit(5)
-    )).scalars().all()
-    partes = [d.strip() for d in docs if d and d.strip()]
-    if partes:
-        return "\n\n---\n\n".join(partes)[:18000]
-
-    return (case.descricao_fatos or "").strip()
+    """Fonte do texto: payload.texto > ocr_text dos documentos > descricao_fatos.
+    Lógica extraída para motor_peca_service.texto_base_do_caso (P1 — Motor de
+    Peça reutiliza a mesma fonte única; este wrapper preserva a API interna)."""
+    from app.services.motor_peca_service import texto_base_do_caso
+    return await texto_base_do_caso(db, case, payload.texto)
 
 
 async def _identificar_area(
@@ -248,8 +236,11 @@ async def _estrategia_recomendada(
             task_type="estrategia", temperature=0.2, max_tokens=900,
         )
     except Exception as e:
+        # Detalhe técnico → log; ao usuário só mensagem leiga (P0 §3.2).
+        logger.error(f"Estratégia via IA falhou (caso={case.id}): {str(e)[:300]}")
+        from app.core.ai_errors import mensagem_ia_para_usuario
         return {"recomendada": None,
-                "justificativa": f"IA indisponível: {str(e)[:200]}", "ai_log_id": None}
+                "justificativa": mensagem_ia_para_usuario(e), "ai_log_id": None}
 
     log_id = await _log_ia(
         db, cu.id, case.id, AITipoUso.analise_caso, resp,
@@ -386,6 +377,18 @@ async def analise_completa(
     case = await verificar_acesso_caso(db, cu, case_id)
     payload = payload or AnaliseCompletaIn()
 
+    # P0 usabilidade (2026-07-18, §3.1): sem IA disponível, NÃO devolver payload
+    # semi-preenchido (estrategia null + modulos com objetos {nome, endpoint}
+    # que quebravam o render). Resposta degradada explícita e estável:
+    from app.services.ai_gateway import ia_disponivel
+    if not ia_disponivel():
+        from app.core.ai_errors import MSG_IA_NAO_ATIVADA_CURTA
+        return {
+            "ia_disponivel": False,
+            "case_id": case.id,
+            "mensagem": MSG_IA_NAO_ATIVADA_CURTA,
+        }
+
     # Fonte de texto + sanitização LGPD (obrigatória antes de QUALQUER IA/log)
     from app.services.sanitizer import sanitizar_pii
     texto_bruto = await _texto_base(db, case, payload)
@@ -412,8 +415,10 @@ async def analise_completa(
                            estrategia.get("ai_log_id"),
                            (honorarios or {}).get("ai_log_id")) if x]
 
-    # 5) Envelope — tudo rascunho
-    return {
+    # 5) Envelope — tudo rascunho (caminho feliz: formato preservado; o campo
+    # ia_disponivel é ADITIVO — o frontend usa-o para distinguir do degradado)
+    resposta = {
+        "ia_disponivel": True,
         "status": "rascunho",
         "aviso": AVISO_RASCUNHO,
         "case_id": case.id,
@@ -429,3 +434,31 @@ async def analise_completa(
         "pii_removida": houve_pii,
         "ai_log_ids": ai_logs,
     }
+
+    # ── FASE 1 (Orquestrador Jurídico) — snapshot versionado do intake.
+    # ADITIVO e FAIL-SAFE: os AILogs já foram commitados em _log_ia; falha do
+    # snapshot vira warning e NUNCA quebra a resposta original.
+    try:
+        from app.services import case_intelligence_service as cis
+        await cis.gravar_snapshot_seguro(
+            db,
+            case_id=case.id,
+            origem="intake",
+            payload=cis.compactar_payload({
+                "area": area,
+                "teses": teses,
+                "estrategia": estrategia,
+                "honorarios": honorarios,
+                "modulos_sugeridos": modulos,
+                "fontes": ["intake_analise_completa"],
+            }, descartaveis=("estrategia", "honorarios")),
+            resumo=f"Intake — análise completa (área provável: {area or '—'}, "
+                   f"origem da área: {area_info['origem']})",
+            ai_log_ids=ai_logs,
+            criado_por=cu.id,
+        )
+    except Exception as e:
+        logger.warning(
+            f"[intake] Snapshot de intake não gravado ({case.id}): {str(e)[:200]}")
+
+    return resposta

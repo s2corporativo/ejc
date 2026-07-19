@@ -6,21 +6,24 @@
 # Jobs:
 #  06:55 — Briefing matinal por advogado (personalizado)
 #  07:00 — Morning Brief WhatsApp (consolidado do dia)
+#  07:10 — Marca prazos pendentes já vencidos (status='vencido') + alerta único
 #  07:15 — Alertas de prazos (7d/3d/1d)
 #  07:30 — SLA de etapas BPM (workflow) — vencidos + vésperas
+#  07:45 — SLA de solicitações registradas em atendimentos
 #  08:00 — Honorários vencidos
 #  08:15 — Régua de cobrança escalonada (inadimplência)
 #  08:30 — Defesas ambientais ≤ 5 dias (crítico)
 #  09:00 seg — Procurações vencendo em 30 dias
 #  09:15 — Alertas de vencimento societário
 from __future__ import annotations
+import asyncio
 import logging
 from uuid import uuid4
 from datetime import date, timedelta
 
 from apscheduler.schedulers.asyncio import AsyncIOScheduler
 from apscheduler.triggers.cron import CronTrigger
-from sqlalchemy import text, select
+from sqlalchemy import func, text, select
 
 from app.core.config import get_settings
 from app.core.database import AsyncSessionLocal
@@ -37,12 +40,27 @@ def get_scheduler() -> AsyncIOScheduler:
     return _scheduler
 
 
+# ── Heartbeat dos jobs (achado nº 1 da auditoria) ─────────────────────────────
+async def _bater_ponto(job_name: str, status: str, detail: str | None = None) -> None:
+    """Registra o heartbeat de um job crítico ao final da execução.
+
+    Abre uma sessão PRÓPRIA (a sessão do job pode ter sido fechada ou envenenada
+    por rollback ao falhar) e delega o UPSERT best-effort ao heartbeat_service —
+    que jamais propaga erro. Assim a Central de Diagnóstico e o status-captura
+    detectam quando um job parou de rodar (parada silenciosa do scheduler)."""
+    try:
+        from app.services.heartbeat_service import registrar_heartbeat
+        async with AsyncSessionLocal() as db:
+            await registrar_heartbeat(db, job_name, status, detail)
+    except Exception as e:  # nunca derruba o job
+        logger.warning("[Heartbeat] %s falhou: %s", job_name, e)
+
+
 # ── Jobs ──────────────────────────────────────────────────────────────────────
 
 async def _morning_brief():
     """Briefing diário 07h00 — WhatsApp para o admin."""
     from app.core.database import AsyncSessionLocal
-    from app.services.notification_service import enviar_whatsapp
 
     try:
         async with AsyncSessionLocal() as db:
@@ -108,25 +126,19 @@ async def _morning_brief():
             f"</ul><p><a href='https://ejc.depaulateixeira.adv.br'>Acessar EJC</a></p>"
         )
         async with AsyncSessionLocal() as db2:
-            from app.services.notification_service import enviar_email, enviar_push, criar_notificacao_interna
+            from app.services.notification_service import notificar
             if admin_row:
-                # E-mail
+                # Dispatch unificado: sino (sistema, mandatório) + e-mail,
+                # respeitando preferências/quiet hours do admin.
                 try:
-                    await enviar_email(
-                        admin_row.email,
-                        f"[EJC] Morning Brief {hoje.strftime('%d/%m')}",
-                        msg_html,
-                    )
-                except Exception as _e:
-                    logger.warning(f"[Brief] email falhou: {_e}")
-                # Push interno
-                try:
-                    await criar_notificacao_interna(
+                    await notificar(
                         db2, admin_row.id,
                         f"Morning Brief {hoje.strftime('%d/%m/%Y')}",
                         msg_txt, tipo="sistema", link="/",
+                        email=admin_row.email or None,
+                        email_assunto=f"[EJC] Morning Brief {hoje.strftime('%d/%m')}",
+                        email_corpo=msg_html,
                     )
-                    await db2.commit()
                 except Exception as _e:
                     logger.warning(f"[Brief] notif falhou: {_e}")
         logger.info(f"[Brief] {prazos_3d} prazos 3d, {amb_criticas} amb críticas")
@@ -134,15 +146,94 @@ async def _morning_brief():
         logger.error(f"[Scheduler] morning_brief: {e}")
 
 
+async def _marcar_prazos_vencidos():
+    """Marca prazos PENDENTES já vencidos (data_prazo < hoje) como
+    status='vencido' e dispara UMA notificação de "prazo vencido" ao
+    responsável. Roda 07:10, ANTES de `_alertar_prazos` (07:15).
+
+    Por que existia o bug: nada escrevia status='vencido', então a aba
+    "Vencidos" do frontend ficava sempre vazia e prazos já vencidos (ou criados
+    depois do horário do alerta) nunca eram alertados — `_alertar_prazos` só
+    cobre faixas com data_prazo >= hoje.
+
+    Idempotência SEM coluna nova: o SELECT só pega status='pendente' e o UPDATE
+    é condicional (WHERE status='pendente'), então a TRANSIÇÃO pendente→vencido
+    acontece uma única vez — na 2ª execução o prazo já é 'vencido' e sai do
+    filtro, logo o alerta NÃO se repete todo dia. Prazos concluídos/cancelados
+    ficam fora do filtro e nunca são tocados.
+
+    Isolamento por item (padrão de `_alertar_prazos`): commit por linha; a falha
+    de um destinatário é logada, sofre rollback e não aborta o lote. Limite
+    conhecido: `notificar()` COMMITA internamente ao gravar o sino
+    (criar_notificacao_interna), persistindo junto o UPDATE pendente→vencido;
+    se a falha ocorrer DEPOIS desse commit interno (ex.: canal externo), o
+    rollback não desfaz a transição e o alerta NÃO é retentado amanhã — só
+    falhas ANTES do primeiro commit preservam status='pendente' p/ retentativa.
+    """
+    from app.core.database import AsyncSessionLocal
+    from app.services.notification_service import notificar
+    from app.services.heartbeat_service import JOB_PRAZOS_VENCIDOS
+
+    _hb_status, _hb_detail = "ok", None
+    try:
+        async with AsyncSessionLocal() as db:
+            hoje = date.today()
+            rows = await db.execute(text("""
+                SELECT d.id, d.titulo, d.data_prazo, d.responsavel_id, u.email, u.phone
+                FROM deadlines d
+                LEFT JOIN users u ON u.id = d.responsavel_id
+                WHERE d.status='pendente' AND d.deleted_at IS NULL
+                  AND d.data_prazo < :hoje
+            """), {"hoje": hoje})
+            for r in rows:
+                try:
+                    # Transição atômica pendente→vencido (WHERE status='pendente'
+                    # é a guarda de idempotência: 2ª passada não reencontra a linha).
+                    await db.execute(text("""
+                        UPDATE deadlines SET status='vencido', updated_at=now()
+                        WHERE id=:id AND status='pendente'
+                    """), {"id": r.id})
+                    if r.responsavel_id:
+                        venc = r.data_prazo.strftime('%d/%m/%Y')
+                        dias_atraso = (hoje - r.data_prazo).days
+                        # Dispatch unificado (prazo = mandatório): sino sempre,
+                        # canais externos conforme preferência/quiet hours.
+                        await notificar(
+                            db, r.responsavel_id,
+                            "🔴 Prazo VENCIDO",
+                            f"{r.titulo} venceu em {venc} (há {dias_atraso} dia(s))",
+                            tipo="prazo", link="/prazos",
+                            email=r.email or None,
+                            telefone=r.phone or None,
+                            email_assunto=f"[EJC] Prazo VENCIDO: {r.titulo}",
+                            email_corpo=(
+                                f"<p>O prazo <b>{r.titulo}</b> venceu em "
+                                f"<b>{venc}</b> (há {dias_atraso} dia(s)) e seguia "
+                                f"pendente.</p>"
+                                f"<p>Acesse o EJC para regularizar o quanto antes.</p>"
+                            ),
+                        )
+                    await db.commit()
+                except Exception as e:
+                    await db.rollback()
+                    logger.error(
+                        f"[Scheduler] marcar_prazos_vencidos falhou p/ deadline {r.id}: {e}"
+                    )
+    except Exception as e:
+        _hb_status, _hb_detail = "erro", str(e)
+        logger.error(f"[Scheduler] marcar_prazos_vencidos: {e}")
+    await _bater_ponto(JOB_PRAZOS_VENCIDOS, _hb_status, _hb_detail)
+
+
 async def _alertar_prazos():
     """Alerta prazos 7/3/1 dias por TRÊS canais: notificação interna (sino),
     e-mail e WhatsApp ao responsável. E-mail/WhatsApp só disparam se habilitados
     no .env (EMAIL_ENABLED / WHATSAPP_ENABLED) — caso contrário, no-op seguro."""
     from app.core.database import AsyncSessionLocal
-    from app.services.notification_service import (
-        criar_notificacao_interna, enviar_email, enviar_whatsapp, enviar_push,
-    )
+    from app.services.notification_service import notificar
+    from app.services.heartbeat_service import JOB_PRAZOS_ALERTAS
 
+    _hb_status, _hb_detail = "ok", None
     try:
         async with AsyncSessionLocal() as db:
             hoje = date.today()
@@ -171,32 +262,22 @@ async def _alertar_prazos():
                     try:
                         venc = r.data_prazo.strftime('%d/%m/%Y')
                         dias_reais = (r.data_prazo - hoje).days
-                        await criar_notificacao_interna(
+                        # Dispatch unificado (prazo = mandatório): sino sempre,
+                        # canais externos conforme preferência/quiet hours.
+                        await notificar(
                             db, r.responsavel_id,
                             f"⏰ Prazo em {dias_reais} dia(s)",
                             f"{r.titulo} vence em {venc}",
-                            tipo="prazo", link=f"/prazos",
-                        )
-                        await enviar_push(
-                            db, r.responsavel_id,
-                            f"⏰ Prazo em {dias_reais} dia(s)",
-                            f"{r.titulo} vence em {venc}",
-                            link="/prazos",
-                        )
-                        if r.email:
-                            await enviar_email(
-                                r.email,
-                                f"[EJC] Prazo em {dias_reais} dia(s): {r.titulo}",
+                            tipo="prazo", link="/prazos",
+                            email=r.email or None,
+                            telefone=r.phone or None,
+                            email_assunto=f"[EJC] Prazo em {dias_reais} dia(s): {r.titulo}",
+                            email_corpo=(
                                 f"<p>O prazo <b>{r.titulo}</b> vence em "
                                 f"<b>{venc}</b> ({dias_reais} dia(s)).</p>"
-                                f"<p>Acesse o EJC para os detalhes do caso.</p>",
-                            )
-                        if r.phone:
-                            await enviar_whatsapp(
-                                r.phone,
-                                f"⏰ *EJC* — o prazo \"{r.titulo}\" vence em "
-                                f"{venc} ({dias_reais} dia(s)).",
-                            )
+                                f"<p>Acesse o EJC para os detalhes do caso.</p>"
+                            ),
+                        )
                         await db.execute(text(
                             f"UPDATE deadlines SET {flag}=true WHERE id=:id"
                         ), {"id": r.id})
@@ -207,15 +288,25 @@ async def _alertar_prazos():
                             f"[Scheduler] alertar_prazos falhou p/ deadline {r.id}: {e}"
                         )
     except Exception as e:
+        _hb_status, _hb_detail = "erro", str(e)
         logger.error(f"[Scheduler] alertar_prazos: {e}")
+    await _bater_ponto(JOB_PRAZOS_ALERTAS, _hb_status, _hb_detail)
 
 
 async def _alertar_ambiental():
-    """Defesas ambientais ≤5 dias → notificação crítica + WhatsApp."""
+    """Defesas ambientais ≤5 dias → notificação crítica + WhatsApp.
+
+    Isolamento por item (padrão de `_alertar_prazos`): uma falha num caso é
+    logada e o lote continua. Dedup SEM migration: reutiliza o próprio modelo
+    `Notification` — se já existe um alerta idêntico (mesmo destinatário/tipo/
+    link/mensagem) criado nas últimas ~20h, não reenvia (evita spam diário no
+    WhatsApp em caso de restart do container / múltiplos disparos no mesmo dia;
+    a janela < 24h preserva o lembrete diário legítimo do prazo urgente).
+    """
+    from datetime import datetime, timezone
     from app.core.database import AsyncSessionLocal
-    from app.services.notification_service import (
-        criar_notificacao_interna, enviar_whatsapp,
-    )
+    from app.models.notification import Notification
+    from app.services.notification_service import notificar
     try:
         async with AsyncSessionLocal() as db:
             limite = date.today() + timedelta(days=5)
@@ -229,29 +320,145 @@ async def _alertar_ambiental():
                   AND ec.deleted_at IS NULL
                   AND ec.data_prazo_defesa <= :lim
             """), {"lim": limite})
+            corte = datetime.now(timezone.utc) - timedelta(hours=20)
             for r in rows:
-                if r.advogado_responsavel_id:
-                    await criar_notificacao_interna(
+                try:
+                    # r.phone vem do LEFT JOIN em advogado_responsavel_id: só
+                    # existe quando há responsável, então o dispatch unificado
+                    # cobre ambos.
+                    if not r.advogado_responsavel_id:
+                        continue
+                    mensagem = (
+                        f"Auto {r.numero_auto} — prazo: "
+                        f"{r.data_prazo_defesa.strftime('%d/%m/%Y')}"
+                    )
+                    ja_notificado = await db.scalar(
+                        select(Notification.id).where(
+                            Notification.user_id == r.advogado_responsavel_id,
+                            Notification.tipo == "ambiental",
+                            Notification.link == "/ambiental",
+                            Notification.mensagem == mensagem,
+                            Notification.created_at >= corte,
+                        ).limit(1)
+                    )
+                    if ja_notificado:
+                        continue
+                    await notificar(
                         db, r.advogado_responsavel_id,
                         "🌿 DEFESA AMBIENTAL URGENTE",
-                        f"Auto {r.numero_auto} — prazo: "
-                        f"{r.data_prazo_defesa.strftime('%d/%m/%Y')}",
+                        mensagem,
                         tipo="ambiental", link="/ambiental",
+                        telefone=r.phone or None,
                     )
-                if r.phone:
-                    await enviar_whatsapp(
-                        r.phone,
-                        f"🌿 *URGENTE EJC*: Defesa IBAMA auto {r.numero_auto} "
-                        f"vence {r.data_prazo_defesa.strftime('%d/%m')}!",
+                except Exception as e:
+                    logger.error(
+                        f"[Scheduler] alertar_ambiental falhou p/ auto "
+                        f"{getattr(r, 'numero_auto', '?')}: {e}"
                     )
+                    continue
     except Exception as e:
         logger.error(f"[Scheduler] alertar_ambiental: {e}")
+
+
+async def _alertar_audiencias_agenda():
+    """Lembrete de AUDIÊNCIAS lançadas na agenda (`agenda_eventos`, tipo='audiencia').
+
+    Gap coberto (auditoria): `_alertar_prazos` só varre `deadlines`; audiências
+    postas na agenda nunca disparavam lembrete. Alerta o responsável quando
+    faltam exatamente 3, 1 ou 0 dias para a audiência (sino sempre — 'audiencia'
+    é tipo mandatório; e-mail/WhatsApp conforme preferência/quiet hours).
+
+    Dedup SEM migration (não há coluna de flag em agenda_eventos e o gate proíbe
+    criar migration):
+      1. Gatilho por dias EXATOS {3,1,0}: como o job roda 1x/dia, cada audiência
+         cruza cada limiar num único run — no máximo um alerta por limiar.
+      2. Reforço via modelo `Notification` (padrão de `_alertar_ambiental`): se já
+         existe alerta idêntico (mesmo destinatário/tipo/link/mensagem) nas
+         últimas ~20h, não reenvia — protege contra restart do container ou
+         múltiplos disparos no mesmo dia.
+    Isolamento por item: a falha num evento é logada e o lote continua.
+    """
+    from datetime import datetime, timezone
+    from app.core.database import AsyncSessionLocal
+    from app.models.notification import Notification
+    from app.services.notification_service import notificar
+    from app.services.heartbeat_service import JOB_AUDIENCIAS
+
+    _hb_status, _hb_detail = "ok", None
+    try:
+        async with AsyncSessionLocal() as db:
+            hoje = date.today()
+            corte = datetime.now(timezone.utc) - timedelta(hours=20)
+            for dias in (3, 1, 0):
+                alvo = hoje + timedelta(days=dias)
+                rows = await db.execute(text("""
+                    SELECT e.id, e.titulo, e.data_evento, e.hora, e.local,
+                           e.responsavel_id, u.email, u.phone
+                    FROM agenda_eventos e
+                    LEFT JOIN users u ON u.id = e.responsavel_id
+                    WHERE e.tipo = 'audiencia' AND e.concluido = false
+                      AND e.deleted_at IS NULL
+                      AND e.data_evento = :alvo
+                      AND e.responsavel_id IS NOT NULL
+                """), {"alvo": alvo})
+                for r in rows:
+                    try:
+                        quando = "hoje" if dias == 0 else f"em {dias} dia(s)"
+                        hora_txt = f" às {r.hora}" if r.hora else ""
+                        local_txt = f" — {r.local}" if r.local else ""
+                        data_fmt = r.data_evento.strftime('%d/%m/%Y')
+                        mensagem = (
+                            f"Audiência {quando}: {r.titulo} "
+                            f"({data_fmt}{hora_txt}){local_txt}"
+                        )
+                        ja_notificado = await db.scalar(
+                            select(Notification.id).where(
+                                Notification.user_id == r.responsavel_id,
+                                Notification.tipo == "audiencia",
+                                Notification.link == "/atividades",
+                                Notification.mensagem == mensagem,
+                                Notification.created_at >= corte,
+                            ).limit(1)
+                        )
+                        if ja_notificado:
+                            continue
+                        await notificar(
+                            db, r.responsavel_id,
+                            f"⚖️ Audiência {quando}",
+                            mensagem,
+                            tipo="audiencia", link="/atividades",
+                            email=r.email or None,
+                            telefone=r.phone or None,
+                            email_assunto=f"[EJC] Audiência {quando}: {r.titulo}",
+                            email_corpo=(
+                                f"<p>Audiência <b>{r.titulo}</b> {quando} "
+                                f"(<b>{data_fmt}</b>{hora_txt}).{local_txt}</p>"
+                                f"<p>Acesse a Central de Atividades no EJC.</p>"
+                            ),
+                        )
+                    except Exception as e:
+                        # Rollback por item (padrão de _marcar_prazos_vencidos):
+                        # sem ele, a sessão fica em PendingRollbackError e os
+                        # eventos seguintes do lote falhariam em cascata.
+                        await db.rollback()
+                        logger.error(
+                            "[Scheduler] alertar_audiencias_agenda falhou p/ "
+                            f"evento {getattr(r, 'id', '?')}: {e}"
+                        )
+                        continue
+    except Exception as e:
+        _hb_status, _hb_detail = "erro", str(e)
+        logger.error(f"[Scheduler] alertar_audiencias_agenda: {e}")
+    await _bater_ponto(JOB_AUDIENCIAS, _hb_status, _hb_detail)
 
 
 async def _alertar_prescricao():
     """Casos com prescrição ≤90 dias → alerta semanal ao responsável."""
     from app.core.database import AsyncSessionLocal
-    from app.services.notification_service import criar_notificacao_interna
+    from app.services.notification_service import notificar
+    from app.services.heartbeat_service import JOB_PRESCRICAO
+
+    _hb_status, _hb_detail = "ok", None
     try:
         async with AsyncSessionLocal() as db:
             limite = date.today() + timedelta(days=90)
@@ -269,7 +476,7 @@ async def _alertar_prescricao():
                 if not r.advogado_responsavel_id:
                     continue
                 dias = (r.data_prescricao.date() - date.today()).days
-                await criar_notificacao_interna(
+                await notificar(
                     db, r.advogado_responsavel_id,
                     "\u23f3 PRESCRIÇÃO SE APROXIMANDO",
                     f"Caso \"{r.titulo}\" — prescrição em {dias} dia(s) "
@@ -278,7 +485,9 @@ async def _alertar_prescricao():
                     tipo="prescricao", link=f"/casos/{r.id}",
                 )
     except Exception as e:
+        _hb_status, _hb_detail = "erro", str(e)
         logger.error(f"[Scheduler] alertar_prescricao: {e}")
+    await _bater_ponto(JOB_PRESCRICAO, _hb_status, _hb_detail)
 
 
 async def _verificar_sla_workflows():
@@ -306,20 +515,20 @@ async def _verificar_sla_workflows():
     )
     from app.modules.auditoria.middleware import registrar_acao
     from app.services.deadline_calculator import dia_util_anterior, prazo_dias_uteis
-    from app.services.notification_service import criar_notificacao_interna, enviar_email
+    from app.services.notification_service import notificar
 
     async def _notificar_responsavel(db, resp_id, case_id, titulo, msg):
         if not resp_id:
             return
-        await criar_notificacao_interna(
-            db, resp_id, titulo, msg, tipo="workflow", link=f"/casos/{case_id}",
-        )
         email = (await db.execute(
             text("SELECT email FROM users WHERE id=:i AND is_active=true"),
             {"i": resp_id},
         )).scalar()
-        if email:
-            await enviar_email(email, f"[EJC] {titulo}", f"<p>{msg}</p>")
+        # Dispatch unificado: sino (workflow) + e-mail conforme preferências.
+        await notificar(
+            db, resp_id, titulo, msg, tipo="workflow",
+            link=f"/casos/{case_id}", email=email or None,
+        )
 
     try:
         async with AsyncSessionLocal() as db:
@@ -429,6 +638,96 @@ async def _verificar_sla_workflows():
         logger.error(f"[Scheduler] workflow_sla: {e}", exc_info=True)
 
 
+async def _alertar_solicitacoes_clientes():
+    """07h45 — alerta o responsável quando uma solicitação vence em até 24h
+    ou já está atrasada.
+
+    A coluna `solicitacao_alerta_nivel` funciona como marcador idempotente:
+    cada solicitação recebe no máximo um alerta de proximidade e um de atraso.
+    Mudanças de prazo e reaberturas limpam o marcador na API.
+    """
+    from datetime import datetime, timezone
+
+    from app.models.atendimento import Atendimento
+    from app.services.notification_service import notificar
+
+    try:
+        async with AsyncSessionLocal() as db:
+            agora = datetime.now(timezone.utc)
+            limite = agora + timedelta(hours=24)
+            solicitacoes = (
+                await db.execute(
+                    select(Atendimento).where(
+                        Atendimento.solicitacao.is_not(None),
+                        func.length(func.trim(Atendimento.solicitacao)) > 0,
+                        Atendimento.solicitacao_atendida.is_(False),
+                        Atendimento.solicitacao_prazo.is_not(None),
+                        Atendimento.solicitacao_prazo <= limite,
+                    )
+                )
+            ).scalars().all()
+
+            notificados = 0
+            for atendimento in solicitacoes:
+                prazo = atendimento.solicitacao_prazo
+                if prazo.tzinfo is None:
+                    prazo = prazo.replace(tzinfo=timezone.utc)
+                else:
+                    prazo = prazo.astimezone(timezone.utc)
+
+                nivel = "atrasado" if prazo < agora else "proximo"
+                if atendimento.solicitacao_alerta_nivel == nivel:
+                    continue
+
+                responsavel_id = (
+                    atendimento.solicitacao_responsavel_id
+                    or atendimento.advogado_responsavel_id
+                )
+                if not responsavel_id:
+                    continue
+
+                titulo = (
+                    "Solicitação de cliente atrasada"
+                    if nivel == "atrasado"
+                    else "Solicitação de cliente vence em até 24h"
+                )
+                mensagem = (
+                    f"Prioridade {atendimento.solicitacao_prioridade or 'normal'}. "
+                    "Abra a linha do tempo do cliente para tratar a pendência."
+                )
+                try:
+                    await notificar(
+                        db,
+                        responsavel_id,
+                        titulo,
+                        mensagem,
+                        tipo="tarefa",
+                        link=(
+                            f"/clientes/{atendimento.client_id}"
+                            "?tab=atendimentos"
+                        ),
+                        forcar_sino=True,
+                    )
+                    atendimento.solicitacao_alerta_nivel = nivel
+                    await db.commit()
+                    notificados += 1
+                except Exception as exc:
+                    await db.rollback()
+                    logger.error(
+                        "[Solicitações] alerta falhou para atendimento %s: %s",
+                        atendimento.id,
+                        exc,
+                    )
+
+            logger.info(
+                "[Solicitações] verificadas=%s notificadas=%s",
+                len(solicitacoes),
+                notificados,
+            )
+    except Exception as exc:
+        logger.error("[Scheduler] solicitacoes_clientes: %s", exc, exc_info=True)
+
+
 async def _alertar_honorarios():
     """Marca como 'atrasado' honorários vencidos."""
     from app.core.database import AsyncSessionLocal
@@ -462,9 +761,7 @@ async def _regua_cobranca():
     """
     from app.core.database import AsyncSessionLocal
     from app.services.inadimplencia_service import varrer_inadimplencia
-    from app.services.notification_service import (
-        criar_notificacao_interna, enviar_email, enviar_whatsapp, enviar_push,
-    )
+    from app.services.notification_service import notificar
     try:
         async with AsyncSessionLocal() as db:
             # 1) Recalcula níveis e sincroniza a tabela de alertas (não reimplementar).
@@ -508,32 +805,40 @@ async def _regua_cobranca():
                         f"{dias} dia(s). Nível de cobrança: {r.alert_level}."
                     )
 
-                    # Sino interno — sempre (todos os níveis)
-                    await criar_notificacao_interna(
+                    # Escalonamento por nível (regra de negócio) define QUAIS
+                    # canais externos ficam elegíveis; o dispatch unificado
+                    # ainda respeita preferências/quiet hours do advogado.
+                    #   - e-mail: a partir de 'medio'
+                    #   - whatsapp: apenas 'critico'/'cobranca_formal'
+                    adv_email = (
+                        r.adv_email
+                        if r.alert_level in ("medio", "critico", "cobranca_formal")
+                        else None
+                    )
+                    adv_phone = (
+                        r.adv_phone
+                        if r.alert_level in ("critico", "cobranca_formal")
+                        else None
+                    )
+                    await notificar(
                         db, r.adv_id, titulo, corpo,
                         tipo="financeiro", link="/financeiro",
-                    )
-                    await enviar_push(
-                        db, r.adv_id, titulo, corpo, link="/financeiro",
-                    )
-                    # E-mail — a partir de 'medio'
-                    if r.alert_level in ("medio", "critico", "cobranca_formal") and r.adv_email:
-                        await enviar_email(
-                            r.adv_email,
-                            f"[EJC] Cobrança {r.alert_level}: {nome} ({dias}d)",
+                        email=adv_email,
+                        telefone=adv_phone,
+                        # Item de trabalho operacional: o sino da cobrança é
+                        # sempre registrado (como antes), senão marcaríamos o
+                        # nível como notificado sem nada ter sido entregue,
+                        # suprimindo a cobrança de forma permanente. A categoria
+                        # `financeiro` segue gateando apenas os canais externos.
+                        forcar_sino=True,
+                        email_assunto=f"[EJC] Cobrança {r.alert_level}: {nome} ({dias}d)",
+                        email_corpo=(
                             f"<p>O honorário de <b>{nome}</b> (caso {caso}) está "
                             f"<b>{dias} dia(s)</b> em atraso — R$ {valor:,.2f}.</p>"
                             f"<p>Nível de cobrança: <b>{r.alert_level}</b>. "
-                            f"Acione a régua de cobrança no EJC.</p>",
-                        )
-                    # WhatsApp — apenas níveis mais graves
-                    if r.alert_level in ("critico", "cobranca_formal") and r.adv_phone:
-                        await enviar_whatsapp(
-                            r.adv_phone,
-                            f"💰 *EJC* — Honorário de {nome} (caso {caso}) "
-                            f"{dias}d em atraso (R$ {valor:,.2f}). "
-                            f"Nível: {r.alert_level}.",
-                        )
+                            f"Acione a régua de cobrança no EJC.</p>"
+                        ),
+                    )
 
                     # Marca o nível notificado (sem coluna nova)
                     await db.execute(text(
@@ -569,7 +874,7 @@ async def _alertar_vencimento_societario():
         gatilho e mes_referencia como rótulo.
     """
     from app.core.database import AsyncSessionLocal
-    from app.services.notification_service import criar_notificacao_interna
+    from app.services.notification_service import notificar
     try:
         async with AsyncSessionLocal() as db:
             hoje = date.today()
@@ -595,7 +900,7 @@ async def _alertar_vencimento_societario():
                     continue
                 sufixo = (" · renovação automática" if c.renovacao_automatica
                           else " · SEM renovação automática")
-                await criar_notificacao_interna(
+                await notificar(
                     db, c.created_by,
                     "📄 Contrato societário vencendo",
                     f"\"{c.titulo[:80]}\" encerra em {dias} dia(s) "
@@ -620,7 +925,7 @@ async def _alertar_vencimento_societario():
                 if not destino:
                     continue
                 valor = float(d.valor_total or 0)
-                await criar_notificacao_interna(
+                await notificar(
                     db, destino,
                     "💵 Distribuição de lucros agendada",
                     f"Distribuição {d.mes_referencia} aprovada — "
@@ -651,9 +956,7 @@ async def _briefing_matinal_advogado():
     Só notifica quem tiver algum item — evita briefing vazio.
     """
     from app.core.database import AsyncSessionLocal
-    from app.services.notification_service import (
-        criar_notificacao_interna, enviar_email,
-    )
+    from app.services.notification_service import notificar
     try:
         async with AsyncSessionLocal() as db:
             hoje = date.today()
@@ -710,15 +1013,13 @@ async def _briefing_matinal_advogado():
                     f"Tarefas em aberto: {pendentes} (atrasadas: {atrasadas}) | "
                     f"Casos de risco alto: {risco_alto}"
                 )
-                await criar_notificacao_interna(
+                await notificar(
                     db, adv.id,
                     f"☀️ Seu briefing — {hoje.strftime('%d/%m/%Y')}",
                     resumo_txt, tipo="sistema", link="/",
-                )
-                if adv.email:
-                    await enviar_email(
-                        adv.email,
-                        f"[EJC] Seu briefing de {hoje.strftime('%d/%m')}",
+                    email=adv.email or None,
+                    email_assunto=f"[EJC] Seu briefing de {hoje.strftime('%d/%m')}",
+                    email_corpo=(
                         f"<h3>Bom dia, {nome}!</h3>"
                         f"<ul>"
                         f"<li><b>Prazos próximos (7 dias):</b> {prazos}</li>"
@@ -726,33 +1027,15 @@ async def _briefing_matinal_advogado():
                         f"(atrasadas: {atrasadas})</li>"
                         f"<li><b>Casos de risco alto:</b> {risco_alto}</li>"
                         f"</ul>"
-                        f"<p><a href='https://ejc.depaulateixeira.adv.br'>Acessar EJC</a></p>",
-                    )
+                        f"<p><a href='https://ejc.depaulateixeira.adv.br'>Acessar EJC</a></p>"
+                    ),
+                )
                 enviados += 1
 
             await db.commit()
             logger.info(f"[Briefing/advogado] {enviados} briefing(s) personalizado(s)")
     except Exception as e:
         logger.error(f"[Scheduler] briefing_matinal_advogado: {e}", exc_info=True)
-
-
-async def _backup_diario():
-    """Backup automatizado do banco de dados (pg_dump) — Auditoria Item 80."""
-    import os
-    import subprocess
-    from datetime import datetime
-    try:
-        hoje = datetime.now().strftime("%Y-%m-%d")
-        # P1-3: usa BACKUP_DIR do config (antes /home/ubuntu/backups, inexistente
-        # no container → backup silenciosamente perdido). pg_dump exige URL SÍNCRONA
-        # (DATABASE_URL é +asyncpg e quebra o pg_dump).
-        os.makedirs(settings.BACKUP_DIR, exist_ok=True)
-        path = f"{settings.BACKUP_DIR}/ejc_db_{hoje}.sql"
-        cmd = f"pg_dump {settings.DATABASE_URL_SYNC} > {path}"
-        subprocess.run(cmd, shell=True, check=True)
-        logger.info(f"[Backup] Diário concluído com sucesso: {path}")
-    except Exception as e:
-        logger.error(f"[Backup] Falha no backup diário: {e}")
 
 
 async def _verificar_sincronia_datajud():
@@ -867,6 +1150,25 @@ async def _purgar_logs_ia():
 
 # ── Start/Stop ────────────────────────────────────────────────────────────────
 
+async def _reembedar_rag_orfaos():
+    """Auto-reindex do RAG (auditoria IA 2026-07-17, O-2): reembeda chunks órfãos
+    (embedding IS NULL) para que a troca de modelo/dimensão do embedding
+    (migration 096) se AUTO-CURE, sem exigir o script manual no deploy. Gate
+    RAG_AUTO_REEMBED_ENABLED (default True). No-op rápido quando não há órfãos;
+    fail-safe (erro vira warning e é retentado na próxima execução)."""
+    if not getattr(settings, "RAG_AUTO_REEMBED_ENABLED", True):
+        return
+    try:
+        from app.services.embedding_service import disponivel as _emb_on
+        if not _emb_on():
+            logger.info("[Scheduler] auto-reembed pulado: embeddings indisponíveis")
+            return
+        from scripts.reembedar_chunks_orfaos import reembedar
+        await reembedar(batch_size=int(getattr(settings, "RAG_AUTO_REEMBED_BATCH", 20)))
+    except Exception as e:  # nunca derruba o scheduler
+        logger.warning("[Scheduler] auto-reembed falhou (será retentado): %s", str(e)[:200])
+
+
 def start_scheduler():
     """Inicia jobs APENAS se ENABLE_SCHEDULER=true (evita duplicação)."""
     if not settings.ENABLE_SCHEDULER:
@@ -877,8 +1179,11 @@ def start_scheduler():
         return
 
     s.add_job(_morning_brief,       CronTrigger(hour=7,  minute=0),  id="brief",       replace_existing=True)
+    s.add_job(_marcar_prazos_vencidos, CronTrigger(hour=7, minute=10), id="prazos_vencidos", replace_existing=True)
     s.add_job(_alertar_prazos,      CronTrigger(hour=7,  minute=15), id="prazos",      replace_existing=True)
+    s.add_job(_alertar_audiencias_agenda, CronTrigger(hour=7, minute=20), id="audiencias_agenda", replace_existing=True)
     s.add_job(_verificar_sla_workflows, CronTrigger(hour=7, minute=30), id="workflow_sla", replace_existing=True)
+    s.add_job(_alertar_solicitacoes_clientes, CronTrigger(hour=7, minute=45), id="solicitacoes_clientes", replace_existing=True)
     s.add_job(_briefing_matinal_advogado, CronTrigger(hour=6, minute=55), id="briefing_adv", replace_existing=True)
     s.add_job(_alertar_honorarios,  CronTrigger(hour=8,  minute=0),  id="honorarios",  replace_existing=True)
     s.add_job(_regua_cobranca,      CronTrigger(hour=8,  minute=15), id="regua_cobranca", replace_existing=True)
@@ -896,23 +1201,93 @@ def start_scheduler():
     s.add_job(job_ingestao_planalto, CronTrigger(day_of_week="sun", hour=3), id="ing_planalto", replace_existing=True)
     s.add_job(job_ingestao_stj,      CronTrigger(day_of_week="sat", hour=3), id="ing_stj",      replace_existing=True)
     s.add_job(_purgar_logs_ia,    CronTrigger(day_of_week="sun", hour=2),  id="purga_ia",   replace_existing=True)
+    # Auto-reindex do RAG (O-2): reembeda chunks órfãos de hora em hora (:20).
+    # Self-heal da troca de embedding (migration 096) sem passo manual. No-op
+    # quando não há órfãos; max_instances=1 evita sobreposição na 1ª carga grande.
+    s.add_job(_reembedar_rag_orfaos, CronTrigger(minute=20), id="reembed_rag_orfaos",
+              replace_existing=True, max_instances=1, coalesce=True)
     s.add_job(_purgar_dados_lgpd, CronTrigger(day_of_week="sun", hour=2, minute=30), id="purga_lgpd", replace_existing=True)
     s.add_job(job_ingestao_camara,   CronTrigger(hour=4, minute=0),          id="ing_camara",   replace_existing=True)
     s.add_job(job_ingestao_senado,   CronTrigger(hour=4, minute=20),         id="ing_senado",   replace_existing=True)
     # DJEN → RAG: gate interno DJEN_INGEST_ENABLED (default False)
     s.add_job(job_ingestao_djen,     CronTrigger(hour=5, minute=0),          id="ing_djen",     replace_existing=True)
+    # TJMG → RAG: gate interno TJMG_INGEST_ENABLED (default False). Semanal
+    # (sáb 04h30) — crawler de jurisprudência estadual MG por temas curados.
+    s.add_job(job_ingestao_tjmg,     CronTrigger(day_of_week="sat", hour=4, minute=30), id="ing_tjmg", replace_existing=True)
+    # Conhecimento oficial (ANPD + Normas RFB) → RAG: gate interno
+    # CONHECIMENTO_INGEST_ENABLED (default True). Semanal, DOMINGO 03h00 UTC
+    # (trigger declara a própria timezone — o scheduler roda em America/Sao_Paulo).
+    s.add_job(job_ingestao_conhecimento,
+              CronTrigger(day_of_week="sun", hour=3, minute=0, timezone="UTC"),
+              id="ing_conhecimento", replace_existing=True)
 
     # Recarrega feriados municipais/estaduais (00h05) — pega novas inserções
     # na tabela `feriados` sem precisar reiniciar o backend.
     s.add_job(_recarregar_feriados,   CronTrigger(hour=0, minute=5),  id="feriados",  replace_existing=True)
+    # Sync semanal dos feriados NACIONAIS via BrasilAPI (seg 00h15) — gate
+    # interno FERIADOS_BRASILAPI_ENABLED (default True). Merge aditivo: nunca
+    # altera feriados municipais/estaduais cadastrados à mão.
+    s.add_job(_sincronizar_feriados_brasilapi,
+              CronTrigger(day_of_week="mon", hour=0, minute=15),
+              id="feriados_brasilapi", replace_existing=True)
     s.add_job(_backup_banco,          CronTrigger(hour=2, minute=0),  id="backup",    replace_existing=True)
     s.add_job(_auditoria_processos,   CronTrigger(day_of_week="mon", hour=8, minute=15),  id="auditoria",  replace_existing=True)
     s.add_job(_monitor_diario_oficial, CronTrigger(hour=6, minute=0),                      id="dou_monitor", replace_existing=True)
     s.add_job(_alertar_contratos,     CronTrigger(day_of_week="mon", hour=9, minute=30),  id="contratos",  replace_existing=True)
     # (removido job duplicado id="retencao_ia" — _purgar_logs_ia já agendado em id="purga_ia")
 
+    # Backup diário cifrado → Google Drive (services/backup_service.py).
+    # Gate interno BACKUP_ENABLED (default False — opt-in). O scheduler roda em
+    # America/Sao_Paulo; BACKUP_HORA_UTC é UTC, então o trigger declara a
+    # própria timezone. Convive com o job legado id="backup" (dump local 02h).
+    from app.services.backup_service import hora_backup_utc, job_backup_drive
+    _bk_hora, _bk_min = hora_backup_utc()
+    s.add_job(
+        job_backup_drive,
+        CronTrigger(hour=_bk_hora, minute=_bk_min, timezone="UTC"),
+        id="backup_drive", replace_existing=True,
+    )
+
+    # ── Automações voltadas ao CLIENTE (migration 084) — gates internos
+    # default False (opt-in no .env); canais: e-mail + sino APENAS. ──────────
+    # Sync diário DataJud + notificação de andamentos ao cliente
+    # (DATAJUD_SYNC_ENABLED; horário UTC — mesmo padrão do backup_drive).
+    from app.services.datajud_sync_service import (
+        hora_sync_clientes_utc, job_datajud_sync_clientes,
+    )
+    _dj_hora, _dj_min = hora_sync_clientes_utc()
+    s.add_job(
+        job_datajud_sync_clientes,
+        CronTrigger(hour=_dj_hora, minute=_dj_min, timezone="UTC"),
+        id="datajud_sync_clientes", replace_existing=True,
+    )
+    # Radar Legislativo (Câmara + Senado + ALMG) — diário 07h00 UTC. Gate
+    # interno RADAR_LEGISLATIVO_ENABLED (default True — APIs públicas sem
+    # custo). Falha de uma fonte (ALMG instável) nunca derruba o job.
+    from app.services.radar_legislativo import job_radar_legislativo
+    s.add_job(
+        job_radar_legislativo,
+        CronTrigger(hour=7, minute=0, timezone="UTC"),
+        id="radar_legislativo", replace_existing=True,
+    )
+    # Relatório semanal do dono — segunda 07h20 (RELATORIO_DONO_ENABLED).
+    from app.services.relatorio_dono_service import job_relatorio_dono
+    s.add_job(
+        job_relatorio_dono,
+        CronTrigger(day_of_week="mon", hour=7, minute=20),
+        id="relatorio_dono", replace_existing=True,
+    )
+    # Régua de cobrança ao CLIENTE — diária 08h30 (COBRANCA_ENABLED). NÃO
+    # confundir com _regua_cobranca (08h15), que notifica o ADVOGADO.
+    from app.services.cobranca_cliente_service import job_regua_cobranca_cliente
+    s.add_job(
+        job_regua_cobranca_cliente,
+        CronTrigger(hour=8, minute=30),
+        id="regua_cobranca_cliente", replace_existing=True,
+    )
+
     s.start()
-    logger.info("[Scheduler] Iniciado — 24 jobs (+ briefing por advogado, régua de cobrança e alertas societários)")
+    logger.info("[Scheduler] Iniciado — %d jobs agendados", len(s.get_jobs()))
 
 
 async def _backup_banco():
@@ -922,7 +1297,8 @@ async def _backup_banco():
     Aqui, registramos o evento no log e verificamos se o dump do dia já existe.
     O backup efetivo é executado pelo script scripts/backup.sh no HOST via cron.
     """
-    import os, glob as _glob
+    import os
+    import glob as _glob
     from datetime import date as _date
 
     backup_dir = settings.BACKUP_DIR
@@ -935,7 +1311,8 @@ async def _backup_banco():
         return
 
     # Backup do dia não encontrado — tentar pg_dump diretamente se disponível
-    import subprocess, shutil
+    import subprocess
+    import shutil
     pg_dump = shutil.which("pg_dump")
     if not pg_dump:
         logger.warning(
@@ -955,7 +1332,12 @@ async def _backup_banco():
             "-U", url.username, "-d", url.path.lstrip("/"), "-Fc",
         ]
         with open(destino, "wb") as f:
-            r = subprocess.run(cmd_dump, stdout=f, env=env, timeout=300)
+            # subprocess.run é bloqueante: rodando dentro de coroutine do
+            # AsyncIOScheduler travaria o event loop de toda a API por dezenas
+            # de segundos. to_thread joga a chamada num worker thread.
+            r = await asyncio.to_thread(
+                subprocess.run, cmd_dump, stdout=f, env=env, timeout=300
+            )
         if r.returncode == 0:
             tamanho_mb = os.path.getsize(destino) / (1024 * 1024)
             logger.info(f"[Backup] Dump criado: {destino} ({tamanho_mb:.1f} MB)")
@@ -967,7 +1349,8 @@ async def _backup_banco():
         if settings.BACKUP_REMOTE:
             rclone = shutil.which("rclone")
             if rclone:
-                r2 = subprocess.run(
+                r2 = await asyncio.to_thread(
+                    subprocess.run,
                     [rclone, "copy", destino, settings.BACKUP_REMOTE],
                     timeout=120,
                 )
@@ -1014,15 +1397,30 @@ async def _recarregar_feriados():
     logger.info(f"[Scheduler] Feriados recarregados: {n} | Suspensões: {ns} dia(s)")
 
 
+async def _sincronizar_feriados_brasilapi():
+    """Segunda 00h15 — sync dos feriados NACIONAIS (ano corrente + próximo)
+    via BrasilAPI para a tabela `feriados` (merge aditivo, fail-safe)."""
+    try:
+        from app.services.feriados_service import sincronizar_feriados_nacionais
+        resumo = await sincronizar_feriados_nacionais()
+        logger.info(f"[Scheduler] Feriados BrasilAPI: {resumo}")
+    except Exception as e:
+        logger.error(f"[Scheduler] Feriados BrasilAPI falhou: {e}")
+
+
 async def _monitor_diario_oficial():
     """06h00 — captura publicações do DOU que casam com as keywords cadastradas."""
+    from app.services.heartbeat_service import JOB_DIARIO
+    _hb_status, _hb_detail = "ok", None
     try:
         from app.services.diario_oficial_service import processar_alertas_dou
         async with AsyncSessionLocal() as db:
             novos = await processar_alertas_dou(db)
             logger.info(f"[DOU] Monitor concluído — {novos} novo(s) alerta(s)")
     except Exception as e:
+        _hb_status, _hb_detail = "erro", str(e)
         logger.error(f"[DOU] Falha no monitor: {e}")
+    await _bater_ponto(JOB_DIARIO, _hb_status, _hb_detail)
 
 
 async def _alertar_contratos():
@@ -1030,7 +1428,6 @@ async def _alertar_contratos():
     from app.services.notification_service import criar_notificacao_interna
     try:
         async with AsyncSessionLocal() as db:
-            hoje = date.today()
             rows = (await db.execute(text("""
                 SELECT c.id, c.titulo, c.data_fim,
                        COALESCE(c.created_by, cs.advogado_responsavel_id) AS responsavel_id
@@ -1118,7 +1515,6 @@ async def _auditoria_processos():
             hoje = date.today()
             limite_30 = hoje - timedelta(days=30)
             limite_60 = hoje - timedelta(days=60)
-            limite_90 = hoje - timedelta(days=90)
 
             # 1. Casos sem movimentação DataJud há 30+ dias
             rows_mov = (await db.execute(text("""
@@ -1223,7 +1619,11 @@ async def _auditoria_processos():
                         except Exception as e:
                             logger.warning(f"[Auditoria] notif clientes {resp_id} falhou: {e}")
             except Exception:
-                pass  # tabela atendimentos pode não existir ainda (migration pendente)
+                logger.warning(
+                    "[Auditoria] Falha no bloco de clientes sem contato (fail-soft): "
+                    "o restante da auditoria segue.",
+                    exc_info=True,
+                )
 
             total_alertas = len(rows_mov) + len(rows_prazos)
             logger.info(f"[Auditoria] Concluída — {total_alertas} alerta(s) emitido(s)")
@@ -1246,39 +1646,53 @@ async def job_djen_intimacoes():
     """06h30 — captura intimações DJEN para cada advogado com OAB configurada."""
     from app.models.user import User as _U
     from app.services.djen_service import capturar_para_advogado
-    async with AsyncSessionLocal() as db:
-        advs = (await db.execute(select(_U).where(
-            _U.is_active == True, _U.deleted_at.is_(None),
-            _U.djen_oab_numero.isnot(None),
-        ))).scalars().all()
-        total = 0
-        for a in advs:
-            try:
-                total += await capturar_para_advogado(db, a)
-            except Exception as e:
-                logger.warning(f"DJEN {a.email}: {e}")
-        await db.commit()
-        logger.info(f"[DJEN] {total} intimação(ões) nova(s)")
+    from app.services.heartbeat_service import JOB_DJEN
+    _hb_status, _hb_detail = "ok", None
+    try:
+        async with AsyncSessionLocal() as db:
+            advs = (await db.execute(select(_U).where(
+                _U.is_active == True, _U.deleted_at.is_(None),
+                _U.djen_oab_numero.isnot(None),
+            ))).scalars().all()
+            total = 0
+            for a in advs:
+                try:
+                    total += await capturar_para_advogado(db, a)
+                except Exception as e:
+                    logger.warning(f"DJEN {a.email}: {e}")
+            await db.commit()
+            logger.info(f"[DJEN] {total} intimação(ões) nova(s)")
+    except Exception as e:
+        _hb_status, _hb_detail = "erro", str(e)
+        logger.error(f"[DJEN] falha na captura: {e}")
+    await _bater_ponto(JOB_DJEN, _hb_status, _hb_detail)
 
 
 async def job_datajud_sync():
     """08h45/16h45 — sincroniza movimentos oficiais dos casos ativos com nº CNJ."""
     from app.models.case import Case as _C
     from app.services.datajud_service import sincronizar_caso
-    async with AsyncSessionLocal() as db:
-        casos = (await db.execute(select(_C).where(
-            _C.deleted_at.is_(None),
-            _C.numero_processo.isnot(None),
-            _C.status.in_(["ativo", "suspenso"]),
-        ))).scalars().all()
-        total = 0
-        for c in casos[:80]:   # teto por execução (rate limit amigável)
-            try:
-                total += await sincronizar_caso(db, c)
-            except Exception as e:
-                logger.warning(f"DataJud {c.numero_interno}: {e}")
-        await db.commit()
-        logger.info(f"[DataJud] {total} movimento(s) novo(s)")
+    from app.services.heartbeat_service import JOB_DATAJUD
+    _hb_status, _hb_detail = "ok", None
+    try:
+        async with AsyncSessionLocal() as db:
+            casos = (await db.execute(select(_C).where(
+                _C.deleted_at.is_(None),
+                _C.numero_processo.isnot(None),
+                _C.status.in_(["ativo", "suspenso"]),
+            ))).scalars().all()
+            total = 0
+            for c in casos[:80]:   # teto por execução (rate limit amigável)
+                try:
+                    total += await sincronizar_caso(db, c)
+                except Exception as e:
+                    logger.warning(f"DataJud {c.numero_interno}: {e}")
+            await db.commit()
+            logger.info(f"[DataJud] {total} movimento(s) novo(s)")
+    except Exception as e:
+        _hb_status, _hb_detail = "erro", str(e)
+        logger.error(f"[DataJud] falha na sincronização: {e}")
+    await _bater_ponto(JOB_DATAJUD, _hb_status, _hb_detail)
 
 
 async def job_relatorio_mensal():
@@ -1386,3 +1800,44 @@ async def job_ingestao_djen():
         "djen", "Comunicações processuais (DJEN — API Comunica/CNJ)",
         "comunicacao_processual", djen.ingerir,
     )
+
+
+async def job_ingestao_tjmg():
+    """Sábado 04h30 — crawler da jurisprudência do TJMG (base de acórdãos) →
+    RAG, por temas curados e janela de datas.
+
+    Gate: TJMG_INGEST_ENABLED (default False — opt-in no .env; validar contra
+    o site real antes de ativar em produção). O TJMG não tem API aberta, então
+    a coleta depende de scraping: se o HTML mudar ou o portal bloquear, a fonte
+    'tjmg' é marcada 'erro'/'parcial' no painel, sem derrubar o scheduler.
+    """
+    from app.core.config import get_settings as _gs
+    if not _gs().TJMG_INGEST_ENABLED:
+        logger.info("[Ingestao:tjmg] desabilitado (TJMG_INGEST_ENABLED=false)")
+        return
+    from app.services.ingestion_service import executar_ingestao
+    from app.services.ingestors import tjmg
+    await executar_ingestao(
+        "tjmg", "Jurisprudência TJMG (crawler — base de acórdãos)",
+        "jurisprudencia", tjmg.ingerir,
+    )
+
+
+async def job_ingestao_conhecimento():
+    """Domingo 03h00 UTC — ingestão contínua de conhecimento oficial → RAG
+    (Bloco 3): ANPD (regulamentações + guias, LGPD) e Normas RFB
+    (sijut2consulta, tributário).
+
+    Gate: CONHECIMENTO_INGEST_ENABLED (default True — fontes públicas sem
+    custo, autorizado pelo dono). O orquestrador isola falhas POR FONTE e
+    registra métricas em fontes_ingestao — nunca levanta para o scheduler.
+    O dedup é o próprio chave_origem do upsert (idempotente/versionado).
+    """
+    from app.core.config import get_settings as _gs
+    if not _gs().CONHECIMENTO_INGEST_ENABLED:
+        logger.info("[Ingestao:conhecimento] desabilitado "
+                    "(CONHECIMENTO_INGEST_ENABLED=false)")
+        return
+    from app.services.conhecimento_ingest import executar_ingest_conhecimento
+    resumo = await executar_ingest_conhecimento()
+    logger.info(f"[Ingestao:conhecimento] resumo: {resumo}")

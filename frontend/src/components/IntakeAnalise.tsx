@@ -14,6 +14,9 @@ import {
 import api from "../lib/api";
 import { toast } from "./Toast";
 import Markdown from "./Markdown";
+import ErrorBoundary from "./ErrorBoundary";
+import { mensagemErroIA, ROTULO_IA_NAO_ATIVADA } from "../lib/iaErro";
+import { MENSAGEM_IA_NAO_ATIVADA, useIaStatus } from "../lib/iaStatus";
 import {
   AISurface,
   Alert,
@@ -72,25 +75,41 @@ interface HonorariosInfo {
   itens?: HonorarioItem[];
 }
 
+// `ferramentas` pode vir como lista de strings OU de objetos {nome, endpoint}
+// (AreaModuloMapping.ferramentas no backend — ver models/redesign.py). Nunca
+// renderizar o objeto direto: era a causa do crash "Objects are not valid as
+// a React child (found: object with keys {nome, endpoint})".
+type FerramentaSugerida = string | { nome?: string | null; endpoint?: string | null };
+
 interface ModuloSugerido {
   module_key: string;
   ordem?: number | null;
-  ferramentas?: string[];
+  ferramentas?: FerramentaSugerida[];
 }
 
 interface AnaliseCompleta {
   status: string;
   aviso: string;
   case_id: string;
-  area: { valor: string; origem: string };
-  teses: TeseSugerida[];
+  area?: { valor?: string | null; origem?: string | null } | null;
+  teses?: TeseSugerida[] | null;
   teses_aviso?: string | null;
-  estrategia: EstrategiaInfo;
-  honorarios: HonorariosInfo | null;
-  honorarios_aviso: string;
-  modulos_sugeridos: ModuloSugerido[];
+  estrategia?: EstrategiaInfo | null;
+  honorarios?: HonorariosInfo | null;
+  honorarios_aviso?: string | null;
+  modulos_sugeridos?: ModuloSugerido[] | null;
   pii_removida?: boolean;
   ai_log_ids?: string[];
+  /** Contrato novo do backend: false quando nenhum provedor de IA responde. */
+  ia_disponivel?: boolean;
+  mensagem?: string | null;
+}
+
+/** Rótulo seguro de uma ferramenta sugerida (string ou objeto {nome}). */
+function rotuloFerramenta(f: FerramentaSugerida): string {
+  if (typeof f === "string") return f;
+  if (f && typeof f === "object" && typeof f.nome === "string") return f.nome;
+  return "";
 }
 
 const ORIGEM_AREA_LABEL: Record<string, string> = {
@@ -113,20 +132,6 @@ function fmtPct(v?: number | null): string {
   return `${Math.round(v <= 1 ? v * 100 : v)}%`;
 }
 
-function msgErro(e: unknown, fallback: string): string {
-  const detail = (e as { response?: { data?: { detail?: unknown } } })?.response
-    ?.data?.detail;
-  if (typeof detail === "string") return detail;
-  if (
-    detail &&
-    typeof detail === "object" &&
-    typeof (detail as { mensagem?: unknown }).mensagem === "string"
-  ) {
-    return (detail as { mensagem: string }).mensagem;
-  }
-  return fallback;
-}
-
 function CardTitulo({
   icon,
   children,
@@ -142,11 +147,30 @@ function CardTitulo({
   );
 }
 
+// Boundary local: qualquer payload inesperado vira mensagem amigável em
+// português em vez de derrubar a tela do caso com erro React cru.
 export default function IntakeAnalise({ caseId }: { caseId: string }) {
+  return (
+    <ErrorBoundary
+      fallback={
+        <div className="card border border-warn-200 bg-warn-50 p-4 text-sm text-warn-800">
+          Não foi possível exibir a Análise Completa (IA) deste caso. Tente
+          novamente em instantes; se o problema continuar, procure o
+          administrador do sistema.
+        </div>
+      }
+    >
+      <IntakeAnaliseInner caseId={caseId} />
+    </ErrorBoundary>
+  );
+}
+
+function IntakeAnaliseInner({ caseId }: { caseId: string }) {
   const [dados, setDados] = useState<AnaliseCompleta | null>(null);
   const [loading, setLoading] = useState(false);
   const [texto, setTexto] = useState("");
   const [mostrarTexto, setMostrarTexto] = useState(false);
+  const { disponivel: iaDisponivel } = useIaStatus();
 
   const gerar = async () => {
     setLoading(true);
@@ -158,32 +182,43 @@ export default function IntakeAnalise({ caseId }: { caseId: string }) {
       );
       setDados(data);
     } catch (e) {
-      toast.error(msgErro(e, "Falha ao gerar a análise completa do caso."));
+      toast.error(
+        mensagemErroIA(e, "Falha ao gerar a análise completa do caso."),
+      );
     } finally {
       setLoading(false);
     }
   };
 
   const estrategia = dados?.estrategia;
+  // Payload degradado: IA indisponível ou envelope vazio → estado amigável.
+  const iaIndisponivelNaResposta =
+    !!dados &&
+    (dados.ia_disponivel === false ||
+      (!dados.area?.valor && !dados.estrategia && !dados.teses?.length));
 
   return (
     <AISurface
       title="Análise Completa (IA)"
       subtitle="Área provável, teses do banco, estratégia, honorários OAB/MG e módulos — rascunho sujeito a revisão humana."
       actions={
-        <Button
-          variant="ai"
-          size="sm"
-          onClick={gerar}
-          disabled={loading}
-          icon={<Sparkles className="h-4 w-4" />}
-        >
-          {loading
-            ? "Analisando..."
-            : dados
-              ? "Refazer análise"
-              : "Gerar análise completa"}
-        </Button>
+        <span title={iaDisponivel ? undefined : ROTULO_IA_NAO_ATIVADA}>
+          <Button
+            variant="ai"
+            size="sm"
+            onClick={gerar}
+            disabled={loading || !iaDisponivel}
+            icon={<Sparkles className="h-4 w-4" />}
+          >
+            {!iaDisponivel
+              ? "IA não ativada"
+              : loading
+                ? "Analisando..."
+                : dados
+                  ? "Refazer análise"
+                  : "Gerar análise completa"}
+          </Button>
+        </span>
       }
     >
       {/* Texto adicional opcional (enviado no body do POST) */}
@@ -228,7 +263,14 @@ export default function IntakeAnalise({ caseId }: { caseId: string }) {
         </div>
       )}
 
-      {dados && !loading && (
+      {/* IA indisponível na resposta: estado amigável, nunca exceção React. */}
+      {dados && !loading && iaIndisponivelNaResposta && (
+        <Alert variant="warning" title="Inteligência artificial não ativada">
+          {dados.mensagem || MENSAGEM_IA_NAO_ATIVADA}
+        </Alert>
+      )}
+
+      {dados && !loading && !iaIndisponivelNaResposta && (
         <div className="space-y-4">
           {/* Banner: rascunho OAB 205/2021 */}
           <Alert
@@ -245,16 +287,20 @@ export default function IntakeAnalise({ caseId }: { caseId: string }) {
             </CardTitulo>
             <div className="flex flex-wrap items-center gap-2">
               <span className="text-sm font-semibold capitalize text-slate-800">
-                {dados.area.valor.replace(/_/g, " ")}
+                {(dados.area?.valor || "não identificada").replace(/_/g, " ")}
               </span>
-              <Badge
-                tone={
-                  dados.area.origem === "classificacao_ia" ? "purple" : "slate"
-                }
-              >
-                {ORIGEM_AREA_LABEL[dados.area.origem] ||
-                  dados.area.origem.replace(/_/g, " ")}
-              </Badge>
+              {dados.area?.origem && (
+                <Badge
+                  tone={
+                    dados.area.origem === "classificacao_ia"
+                      ? "purple"
+                      : "slate"
+                  }
+                >
+                  {ORIGEM_AREA_LABEL[dados.area.origem] ||
+                    dados.area.origem.replace(/_/g, " ")}
+                </Badge>
+              )}
               {dados.pii_removida && (
                 <Badge tone="green">PII removida (LGPD)</Badge>
               )}
@@ -266,7 +312,7 @@ export default function IntakeAnalise({ caseId }: { caseId: string }) {
             <CardTitulo icon={<BookOpen className="h-4 w-4 text-ai-500" />}>
               Teses pertinentes
             </CardTitulo>
-            {dados.teses.length === 0 ? (
+            {(dados.teses ?? []).length === 0 ? (
               <Alert variant="info">
                 {dados.teses_aviso ||
                   "Nenhuma tese cadastrada no banco para esta área."}
@@ -282,7 +328,7 @@ export default function IntakeAnalise({ caseId }: { caseId: string }) {
                   </TR>
                 </THead>
                 <tbody>
-                  {dados.teses.map((t) => (
+                  {(dados.teses ?? []).map((t) => (
                     <TR key={t.id}>
                       <TD className="font-medium text-slate-800">{t.titulo}</TD>
                       <TD className="font-mono">{fmtPct(t.taxa_sucesso)}</TD>
@@ -358,7 +404,7 @@ export default function IntakeAnalise({ caseId }: { caseId: string }) {
                 {dados.honorarios.itens.map((h, i) => (
                   <div
                     key={h.item_codigo || i}
-                    className="rounded-lg border border-slate-200 bg-white p-3 text-sm"
+                    className="card p-3 text-sm"
                   >
                     <div className="flex flex-wrap items-center justify-between gap-2">
                       <span className="font-medium text-slate-800">
@@ -401,27 +447,30 @@ export default function IntakeAnalise({ caseId }: { caseId: string }) {
             <CardTitulo icon={<LayoutGrid className="h-4 w-4 text-ai-500" />}>
               Módulos sugeridos
             </CardTitulo>
-            {dados.modulos_sugeridos.length === 0 ? (
+            {(dados.modulos_sugeridos ?? []).length === 0 ? (
               <p className="text-sm text-slate-400">
                 Nenhum módulo mapeado para esta área.
               </p>
             ) : (
               <div className="space-y-2">
-                {dados.modulos_sugeridos.map((m) => (
+                {(dados.modulos_sugeridos ?? []).map((m) => (
                   <div
                     key={m.module_key}
                     className="flex flex-wrap items-center gap-2 rounded-lg border border-ai-200 bg-ai-50 px-3 py-2"
                   >
                     <Badge tone="purple">{m.module_key}</Badge>
-                    {(m.ferramentas || []).map((f) => (
-                      <span
-                        key={f}
-                        className="inline-flex items-center gap-1 rounded-full bg-white px-2 py-0.5 text-caption text-ai-800 ring-1 ring-inset ring-ai-200"
-                      >
-                        <Wrench className="h-3 w-3" />
-                        {f}
-                      </span>
-                    ))}
+                    {(m.ferramentas || [])
+                      .map(rotuloFerramenta)
+                      .filter(Boolean)
+                      .map((nome, i) => (
+                        <span
+                          key={`${nome}-${i}`}
+                          className="inline-flex items-center gap-1 rounded-full bg-white px-2 py-0.5 text-caption text-ai-800 ring-1 ring-inset ring-ai-200"
+                        >
+                          <Wrench className="h-3 w-3" />
+                          {nome}
+                        </span>
+                      ))}
                   </div>
                 ))}
               </div>

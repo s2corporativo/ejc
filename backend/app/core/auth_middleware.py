@@ -32,11 +32,30 @@ PREFIXOS_PUBLICOS = (
     # vitoriosas do escritório sem login. Agora exige JWT (Depends no router).
     "/api/webhooks/",       # Z-API inbound (valida Client-Token internamente)
     "/api/calendar/",       # feed ICS (HMAC na URL)
+    # Data Room — acesso externo por LINK com token (48 bytes urlsafe) na URL:
+    # o token É a credencial (valida expiração + max_acessos + log). Sem isto o
+    # middleware bloqueava o cliente externo (sem JWT) com 401 e o
+    # compartilhamento externo não funcionava. Só o subpath /acesso/ é público;
+    # a gestão do Data Room (/api/data-rooms/...) segue exigindo JWT.
+    "/api/data-rooms/acesso/",
     # API pública de abastecimento da base de conhecimento (Fase 2 IA/RAG):
     # NÃO usa JWT — exige API key de serviço (X-API-Key) validada pelo
     # require_api_key no router (401/403 lá; nada fica realmente aberto).
     "/api/rag/knowledge-base/",
 )
+
+
+def _path_casa_prefixo_publico(path: str, prefixo: str) -> bool:
+    """Casa uma rota pública sem liberar prefixos textuais falsos.
+
+    Prefixos terminados em "/" continuam funcionando como subárvore pública
+    deliberada. Rotas sem "/" final aceitam somente a rota exata ou subrota
+    real separada por barra. Ex.: "/api/health/ready" é público, mas
+    "/api/auth/login-extra" não herda a liberação de "/api/auth/login".
+    """
+    if prefixo.endswith("/"):
+        return path.startswith(prefixo)
+    return path == prefixo or path.startswith(prefixo + "/")
 
 
 def _is_publica(path: str) -> bool:
@@ -45,11 +64,14 @@ def _is_publica(path: str) -> bool:
     Auditoria B-1: normaliza o path (posixpath.normpath) ANTES do startswith —
     sem isso, "/api/rag/knowledge-base/../qualquer-coisa" casaria um prefixo
     público via segmentos "..", pulando o middleware para uma rota protegida.
+
+    Auditoria P0: evita falso positivo por prefixo textual parcial. Ex.:
+    "/api/auth/login-extra" não pode ser tratado como público.
     """
     path = posixpath.normpath(path)
     if not path.startswith("/api/"):
         return True  # arquivos estáticos, etc.
-    return any(path.startswith(p) for p in PREFIXOS_PUBLICOS)
+    return any(_path_casa_prefixo_publico(path, p) for p in PREFIXOS_PUBLICOS)
 
 
 class AuthMiddleware(BaseHTTPMiddleware):
@@ -60,7 +82,8 @@ class AuthMiddleware(BaseHTTPMiddleware):
     """
 
     async def dispatch(self, request: Request, call_next) -> Response:
-        if _is_publica(request.url.path):
+        path = posixpath.normpath(request.url.path)
+        if _is_publica(path):
             return await call_next(request)
 
         # Extrai token do header Authorization: Bearer <token>
@@ -81,7 +104,6 @@ class AuthMiddleware(BaseHTTPMiddleware):
             # Injeta no state para logging/auditoria
             request.state.user_id = payload.get("sub")
             request.state.role    = payload.get("role", "")
-            path = request.url.path
         except JWTError as e:
             logger.warning(f"JWT inválido em {request.url.path}: {e}")
             return JSONResponse(
@@ -92,7 +114,7 @@ class AuthMiddleware(BaseHTTPMiddleware):
         # ── Troca de senha OBRIGATÓRIA: bloqueia tudo até trocar ─────────
         if payload.get("pwd_change_required"):   # must_change_password (claim no access token)
             liberados = ("/api/auth/alterar-senha", "/api/auth/logout")
-            if not any(path.startswith(p) for p in liberados):
+            if not any(_path_casa_prefixo_publico(path, p) for p in liberados):
                 return JSONResponse(
                     status_code=403,
                     content={"detail": "Troca de senha obrigatória. "
@@ -104,9 +126,22 @@ class AuthMiddleware(BaseHTTPMiddleware):
         # Isolamento LGPD: dados internos do escritório ficam inacessíveis
         # mesmo com token válido. Guarda central — vale p/ TODAS as rotas.
         if request.state.role == "cliente_externo":
-            permitidos = ("/api/portal/", "/api/auth", "/api/health",
-                          "/api/notifications", "/api/signatures")
-            if not any(path.startswith(p) for p in permitidos):
+            # /api/users/me incluído: o bootstrap do frontend exige o perfil
+            # próprio para QUALQUER usuário — sem ele o portal fica inacessível
+            # pela UI (achado A2 do E2E). Prefixo sem "/" final = rota exata
+            # ou subrota real (/users/me/security); NÃO libera /users/{id}.
+            # /api/signatures liberado ao cliente_externo é SEGURO: o router
+            # de signatures aplica ownership por client_id em toda leitura e
+            # escrita acessível ao portal — GET /signatures filtra
+            # `client_id == cu.client_id` (só as próprias) e
+            # POST /signatures/{id}/assinar exige role cliente_externo E filtra
+            # pelo `client_id` do solicitante (não vê nem assina de terceiros).
+            # POST /signatures/ (criar) exige role de staff (require_roles),
+            # inacessível ao cliente_externo. Ver app/routers/signatures.py.
+            permitidos = ("/api/portal/", "/api/auth/", "/api/health",
+                          "/api/notifications", "/api/signatures",
+                          "/api/users/me")
+            if not any(_path_casa_prefixo_publico(path, p) for p in permitidos):
                 return JSONResponse(
                     status_code=403,
                     content={"detail": "Acesso restrito ao Portal do Cliente"},

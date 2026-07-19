@@ -126,7 +126,7 @@ export const AssistedWritingMode: React.FC = () => {
                   className={`w-full rounded-lg border p-3 text-left transition-colors ${
                     selectedTemplate === t.id
                       ? "border-primary-300 bg-primary-50"
-                      : "border-slate-200 bg-white hover:border-slate-300"
+                      : "border-transparent bg-slate-900/[0.03] hover:bg-slate-900/[0.06] dark:bg-white/[0.05] dark:hover:bg-white/[0.08]"
                   }`}
                 >
                   <p className="text-sm font-medium text-slate-900">

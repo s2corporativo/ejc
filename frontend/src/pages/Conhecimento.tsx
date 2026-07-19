@@ -16,12 +16,10 @@ import {
   AlertCircle,
   Filter,
   X,
-  ChevronDown,
-  Upload,
-  Link2,
+  Download,
 } from "lucide-react";
 import api from "../lib/api";
-import { PageHeader, Empty, Spinner, fmtDate } from "../components/UI";
+import { PageHeader, Empty, ErrorState, Spinner, fmtDate } from "../components/UI";
 import { asList } from "../lib/list";
 
 // ── Categorias ────────────────────────────────────────────────────────────────
@@ -190,10 +188,10 @@ function ModalIngestao({
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
       <div
-        className="absolute inset-0 bg-black/40 backdrop-blur-sm"
+        className="absolute inset-0 bg-black/45"
         onClick={onClose}
       />
-      <div className="relative bg-white rounded-2xl shadow-2xl w-full max-w-3xl max-h-[92vh] flex flex-col">
+      <div className="relative bg-white border border-slate-200 rounded-2xl shadow-float w-full max-w-3xl max-h-[92vh] flex flex-col">
         {/* Header */}
         <div className="flex items-center justify-between px-6 py-4 border-b border-bronze-50">
           <div>
@@ -529,8 +527,257 @@ function ModalIngestPdf({
   );
 }
 
+// ── Importar jurisprudência (APIs oficiais) ──────────────────────────────────
+type FonteImportacao = {
+  slug: string;
+  nome: string;
+  descricao: string;
+  tribunais: string;
+  enabled: boolean;
+  ultima_execucao?: string | null;
+  ultimo_status?: string | null;
+  registros_novos?: number;
+};
+
+type ResumoImportacao = {
+  importados: number;
+  duplicados: number;
+  erros: number;
+};
+
+function SecaoImportarJuris({ onImportado }: { onImportado: () => void }) {
+  const [fontes, setFontes] = useState<FonteImportacao[]>([]);
+  const [fonte, setFonte] = useState("");
+  const [consulta, setConsulta] = useState("");
+  const [tribunal, setTribunal] = useState("");
+  const [limite, setLimite] = useState(20);
+  const [importando, setImportando] = useState(false);
+  const [resultado, setResultado] = useState<
+    (ResumoImportacao & { encontrados?: number }) | null
+  >(null);
+  const [erro, setErro] = useState("");
+  const vivoRef = useRef(true);
+
+  useEffect(() => {
+    vivoRef.current = true;
+    api
+      .get("/conhecimento/importar-jurisprudencia/fontes")
+      .then((r) => {
+        if (!vivoRef.current) return;
+        const fs: FonteImportacao[] = asList(r.data.fontes ?? r.data);
+        setFontes(fs);
+        const ativa = fs.find((f) => f.enabled);
+        if (ativa) setFonte(ativa.slug);
+      })
+      .catch(() => setFontes([]));
+    return () => {
+      vivoRef.current = false;
+    };
+  }, []);
+
+  const aguardarJob = async (jobId: string) => {
+    // Polling do status consultável do job (máx. ~3 min).
+    for (let i = 0; i < 72; i++) {
+      await new Promise((r) => setTimeout(r, 2500));
+      if (!vivoRef.current) return null;
+      try {
+        const { data } = await api.get(
+          `/conhecimento/importar-jurisprudencia/status/${jobId}`,
+        );
+        if (data.status !== "executando") return data;
+      } catch (e: any) {
+        // 404 = job não encontrado neste processo (backend reiniciado ou id
+        // expirado) — parar o polling em vez de esperar o timeout de 3 min.
+        if (e?.response?.status === 404) {
+          return {
+            status: "erro",
+            erro: "Job não encontrado neste processo (backend reiniciado ou registro expirado). O resultado durável fica em fontes_ingestao/auditoria.",
+          };
+        }
+        /* transiente — tenta de novo */
+      }
+    }
+    return { status: "erro", erro: "Tempo limite de acompanhamento excedido" };
+  };
+
+  const importar = async () => {
+    if (!fonte) {
+      setErro("Selecione a fonte oficial");
+      return;
+    }
+    if (consulta.trim().length < 3) {
+      setErro("Informe a consulta/tema (mín. 3 caracteres)");
+      return;
+    }
+    setErro("");
+    setResultado(null);
+    setImportando(true);
+    try {
+      const { data } = await api.post("/conhecimento/importar-jurisprudencia", {
+        fonte,
+        consulta: consulta.trim(),
+        ...(tribunal.trim() ? { tribunal: tribunal.trim().toUpperCase() } : {}),
+        limite,
+      });
+      const fim = await aguardarJob(data.job_id);
+      if (!fim || !vivoRef.current) return;
+      if (fim.status === "concluido") {
+        const resumo: ResumoImportacao = fim.resumo ?? {
+          importados: 0,
+          duplicados: 0,
+          erros: 0,
+        };
+        setResultado({ ...resumo, encontrados: fim.encontrados });
+        toast.success(
+          `Importação concluída: ${resumo.importados} novo(s), ${resumo.duplicados} duplicado(s)`,
+        );
+        if (resumo.importados > 0) onImportado();
+      } else {
+        setErro(fim.erro || "Falha na importação — tente novamente");
+      }
+    } catch (e: any) {
+      setErro(
+        e.response?.data?.detail?.toString?.() || "Erro ao iniciar a importação",
+      );
+    } finally {
+      if (vivoRef.current) setImportando(false);
+    }
+  };
+
+  const fonteSel = fontes.find((f) => f.slug === fonte);
+
+  return (
+    <div className="card p-5">
+      <div className="flex items-center justify-between gap-2 mb-1">
+        <p className="text-xs font-semibold text-slate-400 uppercase tracking-wide">
+          Importar jurisprudência (APIs oficiais)
+        </p>
+        <span className="inline-flex items-center gap-1 text-[10px] font-semibold text-success-700 bg-success-50 px-2 py-0.5 rounded-full">
+          <CheckCircle2 size={10} />
+          Fontes oficiais — citações validadas
+        </span>
+      </div>
+      <p className="text-[11px] text-slate-400 mb-3">
+        Busca julgados reais em fontes públicas oficiais e alimenta a base de
+        conhecimento e a base de citações verificáveis (dedup por
+        tribunal+número).
+      </p>
+      <div className="grid grid-cols-1 md:grid-cols-12 gap-3">
+        <div className="md:col-span-3">
+          <label className="label">Fonte oficial</label>
+          <select
+            className="input"
+            value={fonte}
+            onChange={(e) => setFonte(e.target.value)}
+            disabled={importando}
+          >
+            {fontes.length === 0 && <option value="">Carregando…</option>}
+            {fontes.map((f) => (
+              <option key={f.slug} value={f.slug} disabled={!f.enabled}>
+                {f.nome}
+                {!f.enabled ? " (desativada)" : ""}
+              </option>
+            ))}
+          </select>
+        </div>
+        <div className="md:col-span-4">
+          <label className="label">Consulta / tema *</label>
+          <input
+            className="input"
+            placeholder="Ex: negativa de cobertura plano de saúde"
+            value={consulta}
+            onChange={(e) => setConsulta(e.target.value)}
+            onKeyDown={(e) => e.key === "Enter" && !importando && importar()}
+            disabled={importando}
+          />
+        </div>
+        <div className="md:col-span-2">
+          <label className="label">Tribunal</label>
+          <input
+            className="input"
+            placeholder="Ex: STJ"
+            value={tribunal}
+            onChange={(e) => setTribunal(e.target.value)}
+            disabled={importando}
+          />
+        </div>
+        <div className="md:col-span-1">
+          <label className="label">Limite</label>
+          <input
+            className="input"
+            type="number"
+            min={1}
+            max={100}
+            value={limite}
+            onChange={(e) =>
+              setLimite(
+                Math.max(1, Math.min(100, parseInt(e.target.value, 10) || 1)),
+              )
+            }
+            disabled={importando}
+          />
+        </div>
+        <div className="md:col-span-2 flex items-end">
+          <button
+            className="btn btn-primary w-full gap-2"
+            onClick={importar}
+            disabled={importando || !fonte}
+          >
+            {importando ? (
+              <>
+                <Spinner /> Importando…
+              </>
+            ) : (
+              <>
+                <Download size={15} />
+                Importar
+              </>
+            )}
+          </button>
+        </div>
+      </div>
+      {fonteSel && (
+        <p className="text-[11px] text-slate-400 mt-2">
+          {fonteSel.descricao} · Cobertura: {fonteSel.tribunais}
+          {fonteSel.ultima_execucao &&
+            ` · Última importação: ${fmtDate(fonteSel.ultima_execucao)}`}
+        </p>
+      )}
+      {erro && (
+        <p className="text-sm text-danger-600 bg-danger-50 p-3 rounded-lg mt-3">
+          {erro}
+        </p>
+      )}
+      {resultado && (
+        <div className="flex flex-wrap items-center gap-2 mt-3">
+          <span className="inline-flex items-center gap-1 text-xs font-semibold text-success-700 bg-success-50 px-2.5 py-1 rounded-full">
+            <CheckCircle2 size={12} />
+            {resultado.importados} importado(s)
+          </span>
+          <span className="inline-flex items-center gap-1 text-xs font-semibold text-warn-700 bg-warn-50 px-2.5 py-1 rounded-full">
+            <Clock size={12} />
+            {resultado.duplicados} duplicado(s)
+          </span>
+          {resultado.erros > 0 && (
+            <span className="inline-flex items-center gap-1 text-xs font-semibold text-danger-600 bg-danger-50 px-2.5 py-1 rounded-full">
+              <AlertCircle size={12} />
+              {resultado.erros} erro(s)
+            </span>
+          )}
+          {resultado.encontrados != null && (
+            <span className="text-[11px] text-slate-400">
+              {resultado.encontrados} julgado(s) localizados na fonte
+            </span>
+          )}
+        </div>
+      )}
+    </div>
+  );
+}
+
 export default function Conhecimento() {
   const [docs, setDocs] = useState<any>(null);
+  const [erroDocs, setErroDocs] = useState(false);
   const [total, setTotal] = useState(0);
   const [pagina, setPagina] = useState(1);
   const [catFiltro, setCatFiltro] = useState("");
@@ -543,8 +790,9 @@ export default function Conhecimento() {
 
   const PER_PAGE = 30;
 
-  const load = (pag = pagina, cat = catFiltro) =>
-    api
+  const load = (pag = pagina, cat = catFiltro) => {
+    setErroDocs(false);
+    return api
       .get("/rag/docs", {
         params: {
           page: pag,
@@ -556,7 +804,8 @@ export default function Conhecimento() {
         setDocs(asList(r.data));
         setTotal(r.data.total ?? 0);
       })
-      .catch(() => setDocs([]));
+      .catch(() => setErroDocs(true));
+  };
 
   useEffect(() => {
     load(pagina, catFiltro);
@@ -683,6 +932,9 @@ export default function Conhecimento() {
         )}
       </div>
 
+      {/* Importar jurisprudência (APIs oficiais) */}
+      <SecaoImportarJuris onImportado={() => load(1, catFiltro)} />
+
       {/* Filtros + lista */}
       <div className="space-y-4">
         <div className="flex items-center justify-between gap-4 flex-wrap">
@@ -716,7 +968,12 @@ export default function Conhecimento() {
           </div>
         </div>
 
-        {!docs ? (
+        {erroDocs ? (
+          <ErrorState
+            message="Não foi possível carregar a base de conhecimento. Tente novamente."
+            onRetry={() => load()}
+          />
+        ) : !docs ? (
           <div className="flex justify-center py-10">
             <Spinner />
           </div>

@@ -10,7 +10,7 @@ from uuid import uuid4
 import jwt
 from jwt.exceptions import InvalidTokenError as JWTError
 import bcrypt
-from fastapi import Depends, HTTPException, status, Request
+from fastapi import Depends, HTTPException, status
 from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select
@@ -35,6 +35,18 @@ ROLE_LEVEL: dict[str, int] = {
     "secretaria":    2,
     "cliente_externo": 1,
 }
+
+
+def requer_advogado(cu, detail: str = "Acesso restrito a advogados") -> None:
+    """Gate compartilhado (fonte única): atos jurídicos exigem advogado+.
+
+    Aceita User ORM ou objeto com .role (enum ou string). Levanta 403 quando o
+    nível do papel é inferior a ROLE_LEVEL["advogado"]. Reusado pelos gates de
+    kit documental, honorários, matriz de teses e orquestrador (defesa em
+    profundidade — nunca enfraquecer)."""
+    role = getattr(getattr(cu, "role", None), "value", None) or str(getattr(cu, "role", "") or "")
+    if ROLE_LEVEL.get(role, 0) < ROLE_LEVEL["advogado"]:
+        raise HTTPException(status_code=403, detail=detail)
 
 # ── Permissões explícitas por perfil (SEM duplicação — bug v2 corrigido) ──────
 ROLES_PERMISSOES: dict[str, list[str]] = {

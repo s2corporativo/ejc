@@ -37,24 +37,22 @@ export default function SecurityMenu({ user }: { user: any }) {
   const [open, setOpen] = useState(false);
   const [modal, setModal] = useState<"oab" | null>(null);
 
-  // Foto de perfil — POST /users/me/avatar (multipart `file`)
   const trocarFoto = async (file: File) => {
     const form = new FormData();
     form.append("file", file);
     try {
       const { data } = await api.post("/users/me/avatar", form);
-      // cache-buster: força o UserAvatar a rebuscar o blob
       const url = data?.avatar_url
         ? `${data.avatar_url}?v=${Date.now()}`
         : null;
       updateUser({ avatar_url: url });
       toast.success("Foto de perfil atualizada!");
     } catch (e: any) {
-      const st = e?.response?.status;
+      const status = e?.response?.status;
       toast.error(
-        st === 413
+        status === 413
           ? "Imagem grande demais (máx. 2MB)"
-          : st === 415
+          : status === 415
             ? "Formato inválido — use JPG, PNG ou WebP"
             : "Falha ao enviar a foto",
       );
@@ -71,7 +69,6 @@ export default function SecurityMenu({ user }: { user: any }) {
     }
   };
 
-  // OAB DJEN
   const [oabNum, setOabNum] = useState("");
   const [oabUf, setOabUf] = useState("MG");
 
@@ -79,23 +76,23 @@ export default function SecurityMenu({ user }: { user: any }) {
     try {
       const { data } = await api.get("/notifications/push/vapid-key");
       if (!data.enabled) {
-        toast.error("Push não configurado no servidor (.env VAPID)");
+        toast.error("Push não configurado no servidor");
         return;
       }
-      const perm = await Notification.requestPermission();
-      if (perm !== "granted") return;
-      const reg = await navigator.serviceWorker.ready;
-      const sub = await reg.pushManager.subscribe({
+      const permission = await Notification.requestPermission();
+      if (permission !== "granted") return;
+      const registration = await navigator.serviceWorker.ready;
+      const subscription = await registration.pushManager.subscribe({
         userVisibleOnly: true,
         applicationServerKey: data.public_key,
       });
-      const j = sub.toJSON() as any;
+      const serialized = subscription.toJSON() as any;
       await api.post("/notifications/push/subscribe", {
-        endpoint: j.endpoint,
-        p256dh: j.keys.p256dh,
-        auth: j.keys.auth,
+        endpoint: serialized.endpoint,
+        p256dh: serialized.keys.p256dh,
+        auth: serialized.keys.auth,
       });
-      toast.success("📱 Alertas no celular ativados!");
+      toast.success("Alertas no celular ativados!");
     } catch {
       toast.error("Falha ao ativar push");
     }
@@ -113,16 +110,19 @@ export default function SecurityMenu({ user }: { user: any }) {
   };
 
   const copiarIcs = async () => {
-    const { data } = await api
-      .get("/users/me/calendar-url")
-      .catch(() => ({ data: null }));
-    const url =
-      data?.url ||
-      `${window.location.origin}/api/calendar/${user.id}/TOKEN.ics`;
-    navigator.clipboard.writeText(url);
-    toast.success(
-      "URL do calendário copiada!\nGoogle Agenda → Adicionar agenda → Por URL.",
-    );
+    try {
+      const { data } = await api.get("/users/me/calendar-url");
+      if (!data?.url) {
+        toast.error("Feed de calendário indisponível para esta conta.");
+        return;
+      }
+      await navigator.clipboard.writeText(data.url);
+      toast.success(
+        "URL do calendário copiada. Adicione-a por URL no Google Agenda, Outlook ou Apple Calendar.",
+      );
+    } catch {
+      toast.error("Não foi possível gerar o link do calendário.");
+    }
   };
 
   return (
@@ -143,15 +143,21 @@ export default function SecurityMenu({ user }: { user: any }) {
         <ChevronDown size={14} className="text-slate-400" />
       </button>
 
+      {/* Input oculto acionado apenas pelo item "Trocar foto de perfil".
+          aria-hidden + tabIndex=-1 tiram-no do fluxo de foco/acessibilidade:
+          por ser o primeiro input do DOM, automação e leitores de tela
+          podiam atingi-lo por engano (achado A11y da auditoria). */}
       <input
         ref={fileRef}
         type="file"
         accept="image/jpeg,image/png,image/webp"
+        aria-hidden="true"
+        tabIndex={-1}
         className="hidden"
-        onChange={(e) => {
-          const f = e.target.files?.[0];
-          if (f) trocarFoto(f);
-          e.target.value = "";
+        onChange={(event) => {
+          const file = event.target.files?.[0];
+          if (file) trocarFoto(file);
+          event.target.value = "";
         }}
       />
 
@@ -199,7 +205,7 @@ export default function SecurityMenu({ user }: { user: any }) {
           <button
             className="menu-item"
             onClick={() => {
-              copiarIcs();
+              void copiarIcs();
               setOpen(false);
             }}
           >
@@ -215,7 +221,6 @@ export default function SecurityMenu({ user }: { user: any }) {
             <KeyRound size={15} /> Trocar senha
           </button>
           <div className="my-1 border-t border-slate-100" />
-          {/* Tema — claro / escuro / sistema */}
           <div className="px-3 py-2">
             <div className="mb-1.5 text-[10px] font-bold uppercase tracking-wider text-slate-400">
               Tema
@@ -252,15 +257,14 @@ export default function SecurityMenu({ user }: { user: any }) {
         </div>
       )}
 
-      {/* Modal OAB */}
       {modal === "oab" && (
         <div className="modal-backdrop" onClick={() => setModal(null)}>
           <div
             className="card p-6 w-full max-w-sm"
-            onClick={(e) => e.stopPropagation()}
+            onClick={(event) => event.stopPropagation()}
           >
             <h3 className="font-semibold text-navy mb-1">
-              ⚖️ Captura de intimações
+              Captura de intimações
             </h3>
             <p className="text-xs text-slate-500 mb-4">
               O sistema consulta o DJEN diariamente (06h30) pela sua OAB.
@@ -270,12 +274,14 @@ export default function SecurityMenu({ user }: { user: any }) {
                 className="input flex-1"
                 placeholder="Número (só dígitos)"
                 value={oabNum}
-                onChange={(e) => setOabNum(e.target.value.replace(/\D/g, ""))}
+                onChange={(event) =>
+                  setOabNum(event.target.value.replace(/\D/g, ""))
+                }
               />
               <select
                 className="input w-20"
                 value={oabUf}
-                onChange={(e) => setOabUf(e.target.value)}
+                onChange={(event) => setOabUf(event.target.value)}
               >
                 {[
                   "MG",
@@ -288,8 +294,8 @@ export default function SecurityMenu({ user }: { user: any }) {
                   "PR",
                   "RS",
                   "SC",
-                ].map((u) => (
-                  <option key={u}>{u}</option>
+                ].map((uf) => (
+                  <option key={uf}>{uf}</option>
                 ))}
               </select>
             </div>

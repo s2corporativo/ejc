@@ -25,6 +25,8 @@ import {
   Car,
 } from "lucide-react";
 import api from "../../lib/api";
+import { mensagemErroIA } from "../../lib/iaErro";
+import { useCaseContext } from "../../stores/caseContext";
 import type { Case } from "../../types";
 import {
   PageHeader,
@@ -89,7 +91,6 @@ function rotulo(v: string) {
   return v.replace(/_/g, " ").replace(/\b\w/g, (c) => c.toUpperCase());
 }
 
-
 // ── Bloco de uma ferramenta/calculadora ──────────────────────────────────────
 function Ferramenta({ f }: { f: FerramentaConfig }) {
   const [vals, setVals] = useState<Record<string, any>>(() => {
@@ -104,12 +105,18 @@ function Ferramenta({ f }: { f: FerramentaConfig }) {
   const [erro, setErro] = useState<string | null>(null);
   const [gerandoDoc, setGerandoDoc] = useState(false);
   const [docMsg, setDocMsg] = useState<string | null>(null);
+  // Link "Ver em Peças" após salvar — diz ONDE a peça foi parar (a listagem
+  // de /pecas filtra pelo caso ativo; sem o vínculo, o rascunho ficava
+  // invisível e o usuário concluía que "sumiu").
+  const [docLink, setDocLink] = useState<string | null>(null);
+  const casoAtivo = useCaseContext((state) => state.caso);
 
   // Converte o resultado da calculadora em um Demonstrativo (LegalDoc rascunho).
   const gerarDemonstrativo = async () => {
     if (!res) return;
     setGerandoDoc(true);
     setDocMsg(null);
+    setDocLink(null);
     const RODAPE = ["aviso", "base", "observacao", "descricao"];
     const linhas = Object.entries(res)
       .filter(
@@ -118,15 +125,25 @@ function Ferramenta({ f }: { f: FerramentaConfig }) {
       .map(([k, v]) => ({ label: k.replace(/_/g, " "), valor: String(v) }));
     const rodape = [res.observacao, res.descricao].filter(Boolean).join("\n");
     try {
+      // Modo Caso: vincula o demonstrativo ao caso ativo para ele aparecer
+      // na listagem de Peças (que filtra pelo caso ativo por padrão).
       await api.post("/pecas/demonstrativo", {
         titulo: f.titulo,
         base_legal: f.baseLegal,
         linhas,
         rodape: rodape || undefined,
+        case_id: casoAtivo?.id || undefined,
       });
-      setDocMsg("✓ Salvo em Peças (rascunho).");
+      setDocMsg(
+        casoAtivo
+          ? `✓ Salvo em Peças > Rascunhos, vinculado ao caso "${casoAtivo.titulo}".`
+          : "✓ Salvo em Peças > Rascunhos (sem vínculo a caso).",
+      );
+      setDocLink(casoAtivo ? `/pecas?caso=${casoAtivo.id}` : "/pecas");
     } catch (e: any) {
-      setDocMsg(e.response?.data?.detail || "Falha ao gerar");
+      setDocMsg(
+        e.response?.data?.detail || "Falha ao salvar o demonstrativo em Peças.",
+      );
     } finally {
       setGerandoDoc(false);
     }
@@ -263,7 +280,17 @@ function Ferramenta({ f }: { f: FerramentaConfig }) {
                 {gerandoDoc ? "Gerando..." : "📄 Gerar demonstrativo"}
               </button>
               {docMsg && (
-                <span className="text-xs text-green-700">{docMsg}</span>
+                <span className="text-xs text-green-700">
+                  {docMsg}{" "}
+                  {docLink && (
+                    <Link
+                      to={docLink}
+                      className="font-medium underline underline-offset-2 hover:text-green-800"
+                    >
+                      Abrir Peças
+                    </Link>
+                  )}
+                </span>
               )}
             </div>
           )}
@@ -433,6 +460,22 @@ const _ANALISE_TITULO: Record<string, string> = {
   ambiental: "🌿 Análise de Auto Ambiental",
   digital_lgpd: "💻 Análise de Contrato Digital/LGPD",
 };
+
+// Placeholder do textarea POR RAMO — o texto genérico "contrato bancário"
+// estava reciclado em todos os ramos (auditoria de usabilidade §4).
+const _ANALISE_PLACEHOLDER: Record<string, string> = {
+  bancario: "…ou cole aqui o texto do contrato bancário",
+  consumidor:
+    "…ou cole aqui o texto do contrato ou documento de consumo (fatura, cobrança, termo de adesão)",
+  trabalhista:
+    "…ou cole aqui o texto do documento trabalhista (contrato, rescisão, holerite)",
+  empresarial: "…ou cole aqui o texto do contrato empresarial",
+  tributario:
+    "…ou cole aqui o texto do auto de infração ou documento tributário",
+  ambiental: "…ou cole aqui o texto do auto de infração ambiental",
+  digital_lgpd:
+    "…ou cole aqui o texto do contrato digital ou documento de dados (LGPD)",
+};
 function ComparadorBacen() {
   const [mods, setMods] = useState<any[]>([]);
   const [periodo, setPeriodo] = useState("");
@@ -593,10 +636,7 @@ function AnaliseBancaria({ area, casos }: { area: string; casos: Case[] }) {
       });
       setRes(r.data);
     } catch (e: any) {
-      setErro(
-        e.response?.data?.detail ||
-          "Falha na análise (a IA pode estar indisponível).",
-      );
+      setErro(mensagemErroIA(e, "Não foi possível analisar o documento."));
     } finally {
       setLoading(false);
     }
@@ -652,7 +692,7 @@ function AnaliseBancaria({ area, casos }: { area: string; casos: Case[] }) {
       );
       setAcao("");
     } catch (e: any) {
-      setAcao(e.response?.data?.detail || "Falha ao gerar minuta.");
+      setAcao(mensagemErroIA(e, "Não foi possível gerar a minuta."));
     }
   };
 
@@ -697,7 +737,9 @@ function AnaliseBancaria({ area, casos }: { area: string; casos: Case[] }) {
       <textarea
         className="input w-full text-xs font-mono"
         rows={4}
-        placeholder="…ou cole aqui o texto do contrato bancário"
+        placeholder={
+          _ANALISE_PLACEHOLDER[area] || "…ou cole aqui o texto do documento"
+        }
         value={texto}
         onChange={(e) => setTexto(e.target.value)}
       />
@@ -951,7 +993,7 @@ export default function RamoBase() {
             {cfg.subareas.map((sa) => (
               <span
                 key={sa}
-                className="text-xs px-2.5 py-1 rounded-full bg-slate-100 text-slate-600 border border-slate-200"
+                className="text-xs px-2.5 py-1 rounded-full bg-slate-900/[0.05] text-slate-600 dark:bg-white/[0.07] dark:text-slate-300"
               >
                 {sa}
               </span>
@@ -973,7 +1015,7 @@ export default function RamoBase() {
                 href={fe.url}
                 target="_blank"
                 rel="noopener noreferrer"
-                className="flex items-start gap-2 p-2.5 rounded-lg border border-slate-200 hover:border-gold-400 hover:bg-gold-50/30 transition-colors group"
+                className="flex items-start gap-2 p-2.5 rounded-lg border border-black/[0.05] hover:border-gold-400 hover:bg-gold-50/30 transition-colors group"
               >
                 <div className="min-w-0">
                   <p className="text-sm font-medium text-navy group-hover:text-gold-700">

@@ -15,7 +15,7 @@ import type {
 const SEVERIDADE_CLASSES: Record<SeveridadeBadge, string> = {
   critica: "bg-red-100 text-red-800 ring-red-200",
   atencao: "bg-amber-100 text-amber-800 ring-amber-200",
-  info: "bg-sky-50 text-sky-700 ring-sky-200",
+  info: "bg-info-50 text-info-700 ring-info-200",
 };
 
 const SCORE_CLASSES: Record<ClassificacaoSaude, string> = {
@@ -40,24 +40,41 @@ export default function BadgesAlerta({
   className?: string;
 }) {
   const [data, setData] = useState<AlertasResponse | null>(null);
+  const [erro, setErro] = useState(false);
 
   useEffect(() => {
     let ativo = true;
     setData(null);
+    setErro(false);
     api
       .get<AlertasResponse>(`/visual-law/casos/${caseId}/alertas`)
       .then((r) => {
         if (ativo) setData(r.data);
       })
       .catch(() => {
-        /* falha silenciosa — não quebrar a página do caso */
+        // Não quebra a página do caso; sinaliza de forma discreta que os
+        // alertas de saúde não puderam ser carregados (antes: falha 100% muda).
+        if (ativo) setErro(true);
       });
     return () => {
       ativo = false;
     };
   }, [caseId]);
 
-  if (!data) return null;
+  if (!data) {
+    if (!erro) return null; // ainda carregando — mantém silencioso
+    return (
+      <div className={cn("flex items-center", className)}>
+        <span
+          title="Não foi possível carregar os alertas de saúde do caso. Recarregue a página para tentar de novo."
+          className="inline-flex items-center gap-1 rounded-full px-2.5 py-0.5 text-[11px] font-medium text-gray-500 ring-1 ring-inset ring-gray-200"
+        >
+          <Activity className="h-3 w-3" />
+          Alertas indisponíveis
+        </span>
+      </div>
+    );
+  }
 
   const scoreClasses =
     SCORE_CLASSES[data.classificacao] ?? SCORE_CLASSES.atencao;
@@ -65,7 +82,7 @@ export default function BadgesAlerta({
   return (
     <div className={cn("flex flex-wrap items-center gap-1.5", className)}>
       <span
-        title={`Score de saúde do caso: ${data.score}/100 (${SCORE_LABEL[data.classificacao] ?? data.classificacao})`}
+        title={`Score de saúde do caso: ${data.score}/100 (${SCORE_LABEL[data.classificacao] ?? data.classificacao}). Cálculo por regras internas do sistema — não é gerado por IA generativa.`}
         className={cn(
           "inline-flex items-center gap-1 rounded-full px-2.5 py-0.5 text-[11px] font-semibold ring-1 ring-inset",
           scoreClasses,

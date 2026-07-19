@@ -7,12 +7,13 @@ from typing import Optional
 
 from fastapi import APIRouter, Depends, HTTPException, Query
 from pydantic import BaseModel, Field
-from sqlalchemy import select, func
+from sqlalchemy import select, func, or_
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.database import get_db
 from app.core.security import get_current_user, ROLE_LEVEL
 from app.models.user import User
+from app.models.case import Case
 from app.models.diario_oficial import DiarioOficialKeyword, DiarioOficialAlerta
 
 router = APIRouter(prefix="/diario-oficial", tags=["Diário Oficial"])
@@ -28,6 +29,21 @@ def _pode_editar(u: User) -> bool:
     return ROLE_LEVEL.get(u.role.value, 0) >= ROLE_LEVEL["advogado"]
 
 
+def _filtrar_por_ownership(q, coluna_case_id, user: User):
+    """#10(b): antes as listagens do Diário retornavam TODOS os itens sem filtro.
+    Mesmo limiar de cases._filtro_visibilidade: gestão (socio+) vê tudo; a equipe
+    vê os itens SEM caso (office-wide — keyword/alerta geral do escritório) OU os
+    atrelados a casos em que é responsável/auxiliar. Preserva a visibilidade
+    compartilhada dos itens office-wide e a total para a gestão."""
+    if ROLE_LEVEL.get(user.role.value, 0) >= ROLE_LEVEL["socio"]:
+        return q
+    casos_visiveis = select(Case.id).where(or_(
+        Case.advogado_responsavel_id == user.id,
+        Case.advogado_auxiliar_id == user.id,
+    ))
+    return q.where(or_(coluna_case_id.is_(None), coluna_case_id.in_(casos_visiveis)))
+
+
 # ── Keywords ──────────────────────────────────────────────────────────────────
 
 @router.get("/keywords")
@@ -37,9 +53,10 @@ async def listar_keywords(
 ):
     if not _pode_editar(cu):
         raise HTTPException(403)
-    kws = (await db.execute(
-        select(DiarioOficialKeyword).order_by(DiarioOficialKeyword.keyword)
-    )).scalars().all()
+    q = _filtrar_por_ownership(
+        select(DiarioOficialKeyword), DiarioOficialKeyword.case_id, cu
+    ).order_by(DiarioOficialKeyword.keyword)
+    kws = (await db.execute(q)).scalars().all()
     return [{"id": k.id, "keyword": k.keyword, "fonte": k.fonte,
              "ativo": k.ativo, "case_id": k.case_id} for k in kws]
 
@@ -89,7 +106,7 @@ async def listar_alertas(
 ):
     if not _pode_editar(cu):
         raise HTTPException(403)
-    q = select(DiarioOficialAlerta)
+    q = _filtrar_por_ownership(select(DiarioOficialAlerta), DiarioOficialAlerta.case_id, cu)
     if lido is not None:
         q = q.where(DiarioOficialAlerta.lido.is_(lido))
     if fonte:
@@ -139,9 +156,8 @@ async def contar_nao_lidos(
 ):
     if not _pode_editar(cu):
         raise HTTPException(403)
-    total = (await db.execute(
-        select(func.count(DiarioOficialAlerta.id)).where(
-            DiarioOficialAlerta.lido.is_(False)
-        )
-    )).scalar() or 0
+    q = _filtrar_por_ownership(
+        select(func.count(DiarioOficialAlerta.id)), DiarioOficialAlerta.case_id, cu
+    ).where(DiarioOficialAlerta.lido.is_(False))
+    total = (await db.execute(q)).scalar() or 0
     return {"nao_lidos": total}

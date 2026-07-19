@@ -1,4 +1,5 @@
 import { useEffect, useState, useCallback } from "react";
+import { useSearchParams } from "react-router-dom";
 import { toast } from "../components/Toast";
 import {
   Building2,
@@ -13,7 +14,7 @@ import {
 } from "lucide-react";
 import api from "../lib/api";
 import ExtratoSocio from "../components/ExtratoSocio";
-import { PageHeader } from "../components/UI";
+import { Empty, Spinner } from "../components/UI";
 import { asList } from "../lib/list";
 
 const fmtMoney = (v?: number | null) =>
@@ -24,6 +25,12 @@ const fmtMoney = (v?: number | null) =>
 
 const fmtPct = (v?: number | null) =>
   Number.isFinite(v) ? `${((v as number) * 100).toFixed(1)}%` : "—";
+
+export type SocietyTab = "socios" | "distribuicao" | "saques";
+
+export function isSocietyTab(value: string | null): value is SocietyTab {
+  return ["socios", "distribuicao", "saques"].includes(value ?? "");
+}
 
 interface Socio {
   id: string;
@@ -58,7 +65,6 @@ interface Withdrawal {
   created_at: string;
 }
 
-// Status reais gravados pelo backend (pt-BR): pendente/aprovado/pago/rejeitado
 const STATUS_COLOR: Record<string, string> = {
   pendente: "bg-warn-50 text-warn-700",
   aprovado: "bg-success-50 text-success-700",
@@ -73,6 +79,15 @@ const STATUS_LABEL: Record<string, string> = {
 };
 
 export default function Sociedade() {
+  const [searchParams, setSearchParams] = useSearchParams();
+  const rawTab = searchParams.get("sub");
+  const tab: SocietyTab = isSocietyTab(rawTab) ? rawTab : "socios";
+  const setTab = (next: SocietyTab) => {
+    const params = new URLSearchParams(searchParams);
+    params.set("sub", next);
+    setSearchParams(params, { replace: true });
+  };
+
   const [socios, setSocios] = useState<Socio[]>([]);
   const [totalPart, setTotalPart] = useState(0);
   const [distrib, setDistrib] = useState<Distribuicao[]>([]);
@@ -80,9 +95,6 @@ export default function Sociedade() {
   const [users, setUsers] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
   const [erro, setErro] = useState("");
-  const [tab, setTab] = useState<"socios" | "distribuicao" | "saques">(
-    "socios",
-  );
   const [showFormSocio, setShowFormSocio] = useState(false);
   const [showFormDist, setShowFormDist] = useState(false);
   const [showFormSaque, setShowFormSaque] = useState(false);
@@ -118,9 +130,9 @@ export default function Sociedade() {
       } else setErro("Acesso restrito a sócios.");
       if (d.status === "fulfilled")
         setDistrib(asList<Distribuicao>(d.value.data));
-      if (u.status === "fulfilled")
-        setUsers(asList(u.value.data));
-      if (w.status === "fulfilled") setWithdrawals(asList<Withdrawal>(w.value.data));
+      if (u.status === "fulfilled") setUsers(asList(u.value.data));
+      if (w.status === "fulfilled")
+        setWithdrawals(asList<Withdrawal>(w.value.data));
     } finally {
       setLoading(false);
     }
@@ -220,7 +232,6 @@ export default function Sociedade() {
     }
   };
 
-  // KPIs
   const totalDistrib = distrib.reduce((a, d) => a + (d.valor_total ?? 0), 0);
   const totalSaquesPagos = withdrawals
     .filter((w) => w.status === "pago")
@@ -229,12 +240,7 @@ export default function Sociedade() {
     .filter((w) => w.status === "pendente")
     .reduce((a, w) => a + (w.gross_value ?? 0), 0);
 
-  if (loading)
-    return (
-      <div className="flex justify-center items-center py-20 text-slate-400 text-sm">
-        Carregando...
-      </div>
-    );
+  if (loading) return <Spinner />;
   if (erro)
     return (
       <div className="p-6 max-w-xl mx-auto text-center">
@@ -244,22 +250,22 @@ export default function Sociedade() {
     );
 
   return (
-    <div className="p-6 max-w-6xl mx-auto space-y-6">
-      <PageHeader
-        title="Gestão Societária"
-        subtitle="Sócios, participação e distribuição de lucros"
-        actions={
-          <button onClick={load} className="btn-secondary p-2">
-            <RefreshCw
-              className={`w-4 h-4 text-slate-400 ${loading ? "animate-spin" : ""}`}
-            />
-          </button>
-        }
-      />
+    <div className="space-y-6">
+      {/* Cabeçalho fica no FinanceiroWorkspace; aqui apenas as ações da aba. */}
+      <div className="flex items-center justify-end">
+        <button
+          onClick={load}
+          className="btn-secondary p-2"
+          aria-label="Atualizar"
+        >
+          <RefreshCw
+            className={`w-4 h-4 text-slate-400 ${loading ? "animate-spin" : ""}`}
+          />
+        </button>
+      </div>
 
-      {/* KPI cards */}
       <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
-        <div className="bg-white rounded-xl border border-slate-200 p-4 flex items-center gap-3">
+        <div className="card p-4 flex items-center gap-3">
           <div className="p-2.5 bg-primary-50 rounded-lg">
             <Users className="w-5 h-5 text-primary-600" />
           </div>
@@ -272,7 +278,7 @@ export default function Sociedade() {
             </p>
           </div>
         </div>
-        <div className="bg-white rounded-xl border border-slate-200 p-4 flex items-center gap-3">
+        <div className="card p-4 flex items-center gap-3">
           <div className="p-2.5 bg-success-50 rounded-lg">
             <TrendingUp className="w-5 h-5 text-success-600" />
           </div>
@@ -285,7 +291,7 @@ export default function Sociedade() {
             </p>
           </div>
         </div>
-        <div className="bg-white rounded-xl border border-slate-200 p-4 flex items-center gap-3">
+        <div className="card p-4 flex items-center gap-3">
           <div className="p-2.5 bg-slate-100 rounded-lg">
             <Receipt className="w-5 h-5 text-slate-500" />
           </div>
@@ -298,7 +304,7 @@ export default function Sociedade() {
             </p>
           </div>
         </div>
-        <div className="bg-white rounded-xl border border-slate-200 p-4 flex items-center gap-3">
+        <div className="card p-4 flex items-center gap-3">
           <div className="p-2.5 bg-warn-50 rounded-lg">
             <Clock className="w-5 h-5 text-warn-600" />
           </div>
@@ -313,7 +319,6 @@ export default function Sociedade() {
         </div>
       </div>
 
-      {/* Tabs */}
       <div className="flex gap-1 border-b border-slate-200">
         {(["socios", "distribuicao", "saques"] as const).map((t) => (
           <button
@@ -334,9 +339,8 @@ export default function Sociedade() {
         ))}
       </div>
 
-      {/* Tab: Sócios */}
       {tab === "socios" && (
-        <div className="bg-white rounded-xl border border-slate-200 p-5">
+        <div className="card p-5">
           <div className="flex items-center justify-between mb-4">
             <div>
               <h2 className="font-semibold text-slate-800">
@@ -373,7 +377,7 @@ export default function Sociedade() {
                   Usuário
                 </label>
                 <select
-                  className="w-full border border-slate-200 rounded-lg px-3 py-2 text-sm"
+                  className="input"
                   value={novoSocio.user_id}
                   onChange={(e) =>
                     setNovoSocio({ ...novoSocio, user_id: e.target.value })
@@ -396,7 +400,7 @@ export default function Sociedade() {
                   min="0.01"
                   max="100"
                   step="0.01"
-                  className="w-full border border-slate-200 rounded-lg px-3 py-2 text-sm"
+                  className="input"
                   value={novoSocio.pct}
                   onChange={(e) =>
                     setNovoSocio({ ...novoSocio, pct: e.target.value })
@@ -409,7 +413,7 @@ export default function Sociedade() {
                 </label>
                 <input
                   type="date"
-                  className="w-full border border-slate-200 rounded-lg px-3 py-2 text-sm"
+                  className="input"
                   value={novoSocio.data_entrada}
                   onChange={(e) =>
                     setNovoSocio({ ...novoSocio, data_entrada: e.target.value })
@@ -436,9 +440,7 @@ export default function Sociedade() {
 
           <div className="space-y-2">
             {socios.length === 0 ? (
-              <p className="text-sm text-slate-400 py-6 text-center">
-                Nenhum sócio cadastrado.
-              </p>
+              <Empty message="Nenhum sócio cadastrado." />
             ) : (
               socios.map((s) => (
                 <div
@@ -489,9 +491,8 @@ export default function Sociedade() {
         </div>
       )}
 
-      {/* Tab: Distribuição */}
       {tab === "distribuicao" && (
-        <div className="bg-white rounded-xl border border-slate-200 p-5">
+        <div className="card p-5">
           <div className="flex items-center justify-between mb-4">
             <h2 className="font-semibold text-slate-800">
               Distribuição de Lucros
@@ -515,7 +516,7 @@ export default function Sociedade() {
                 </label>
                 <input
                   type="month"
-                  className="border border-slate-200 rounded-lg px-3 py-2 text-sm"
+                  className="input w-auto"
                   value={novaDist.mes_referencia}
                   onChange={(e) =>
                     setNovaDist({ ...novaDist, mes_referencia: e.target.value })
@@ -531,7 +532,7 @@ export default function Sociedade() {
                   min="1"
                   step="0.01"
                   placeholder="0,00"
-                  className="border border-slate-200 rounded-lg px-3 py-2 text-sm w-44"
+                  className="input w-44"
                   value={novaDist.valor_total}
                   onChange={(e) =>
                     setNovaDist({ ...novaDist, valor_total: e.target.value })
@@ -558,11 +559,9 @@ export default function Sociedade() {
 
           <div className="space-y-3">
             {distrib.length === 0 ? (
-              <p className="text-sm text-slate-400 py-6 text-center">
-                Nenhuma distribuição registrada.
-              </p>
+              <Empty message="Nenhuma distribuição registrada." />
             ) : (
-              distrib.map((d, i) => {
+              distrib.map((d) => {
                 const quota = socios
                   .filter((s) => s.ativo)
                   .map((s) => ({
@@ -612,9 +611,8 @@ export default function Sociedade() {
         </div>
       )}
 
-      {/* Tab: Saques */}
       {tab === "saques" && (
-        <div className="bg-white rounded-xl border border-slate-200 p-5">
+        <div className="card p-5">
           <div className="flex items-center justify-between mb-4">
             <h2 className="font-semibold text-slate-800">Saques de Sócios</h2>
             <button
@@ -639,7 +637,7 @@ export default function Sociedade() {
                   min="1"
                   step="0.01"
                   placeholder="0,00"
-                  className="w-full border border-slate-200 rounded-lg px-3 py-2 text-sm"
+                  className="input"
                   value={novoSaque.gross_value}
                   onChange={(e) =>
                     setNovoSaque({ ...novoSaque, gross_value: e.target.value })
@@ -655,7 +653,7 @@ export default function Sociedade() {
                   min="0"
                   step="0.01"
                   placeholder="0,00"
-                  className="w-full border border-slate-200 rounded-lg px-3 py-2 text-sm"
+                  className="input"
                   value={novoSaque.case_expenses}
                   onChange={(e) =>
                     setNovoSaque({
@@ -671,7 +669,7 @@ export default function Sociedade() {
                 </label>
                 <input
                   type="month"
-                  className="w-full border border-slate-200 rounded-lg px-3 py-2 text-sm"
+                  className="input"
                   value={novoSaque.period_reference}
                   onChange={(e) =>
                     setNovoSaque({
@@ -688,7 +686,7 @@ export default function Sociedade() {
                 <input
                   type="text"
                   placeholder="Honorários Proc. X"
-                  className="w-full border border-slate-200 rounded-lg px-3 py-2 text-sm"
+                  className="input"
                   value={novoSaque.description}
                   onChange={(e) =>
                     setNovoSaque({ ...novoSaque, description: e.target.value })
@@ -716,9 +714,7 @@ export default function Sociedade() {
 
           <div className="space-y-2">
             {withdrawals.length === 0 ? (
-              <p className="text-sm text-slate-400 py-6 text-center">
-                Nenhum saque registrado.
-              </p>
+              <Empty message="Nenhum saque registrado." />
             ) : (
               withdrawals.map((w) => (
                 <div

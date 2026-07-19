@@ -1,22 +1,24 @@
-import { useEffect, useState, useCallback } from "react";
-import { useParams, useNavigate, Link } from "react-router-dom";
+import { useEffect, useState, useCallback, useMemo } from "react";
+import {
+  useParams,
+  useNavigate,
+  useSearchParams,
+  Link,
+} from "react-router-dom";
 import {
   User,
   Briefcase,
   Clock,
   FileText,
   DollarSign,
-  AlertTriangle,
   ChevronRight,
   ArrowLeft,
   TrendingUp,
   CheckCircle,
-  XCircle,
   Calendar,
   Scale,
   ClipboardList,
   Plus,
-  Send,
   MessageCircle,
   Mail,
   Phone,
@@ -25,10 +27,25 @@ import {
   Receipt,
   Bot,
   ExternalLink,
+  KeyRound,
+  Zap,
+  AlertTriangle,
 } from "lucide-react";
 import api from "../lib/api";
+import ClientServiceTimeline, {
+  type ClientTimelineExtraEvent,
+} from "../components/ClientServiceTimeline";
 import { soDigitos } from "../utils/phone";
-import { StatusBadge, fmtMoney } from "../components/UI";
+import { toast } from "../components/Toast";
+import { areaLabel } from "../lib/areas";
+import {
+  PageHeader,
+  Spinner,
+  StatusBadge,
+  fmtMoney,
+  ConfirmModal,
+  Modal,
+} from "../components/UI";
 
 interface DossieData {
   cliente: {
@@ -80,25 +97,7 @@ interface DossieData {
   }>;
 }
 
-const STATUS_LABEL: Record<string, string> = {
-  em_andamento: "Em andamento",
-  ativo: "Ativo",
-  encerrado: "Encerrado",
-  arquivado: "Arquivado",
-  suspenso: "Suspenso",
-  aguardando: "Aguardando",
-};
-
-const AREA_LABEL: Record<string, string> = {
-  civel: "Cível",
-  trabalhista: "Trabalhista",
-  penal: "Penal",
-  empresarial: "Empresarial",
-  administrativo: "Administrativo",
-  bancario: "Bancário",
-  tributario: "Tributário",
-  ambiental: "Ambiental",
-};
+// Rótulos de área vêm da taxonomia canônica (lib/areas.ts — enum CaseArea).
 
 function StatCard({
   icon: Icon,
@@ -193,10 +192,21 @@ const PENDING_STATUS_LABEL: Record<string, string> = {
 };
 
 // ── PendingItemsPanel ───────────────────────────────────────────────────────
-function PendingItemsPanel({ clientId }: { clientId: string | number }) {
+function PendingItemsPanel({
+  clientId,
+  abrirNovaSignal = 0,
+  onItemsChange,
+}: {
+  clientId: string | number;
+  /** Incrementado pelo painel de ações rápidas para abrir o formulário de
+   *  solicitação de documento já pré-configurado. */
+  abrirNovaSignal?: number;
+  onItemsChange?: (items: PendingItem[]) => void;
+}) {
   const [items, setItems] = useState<PendingItem[]>([]);
   const [loading, setLoading] = useState(true);
   const [showAdd, setShowAdd] = useState(false);
+  const [pendenteExcluir, setPendenteExcluir] = useState<string | null>(null);
   const [form, setForm] = useState({
     title: "",
     type: "documento",
@@ -209,37 +219,74 @@ function PendingItemsPanel({ clientId }: { clientId: string | number }) {
     try {
       const res = await api.get(`/v1/clients/${clientId}/pending-items`);
       setItems(res.data || []);
+      onItemsChange?.(res.data || []);
     } catch {
       setItems([]);
+      onItemsChange?.([]);
+      toast.error("Não foi possível carregar as pendências do cliente");
     } finally {
       setLoading(false);
     }
-  }, [clientId]);
+  }, [clientId, onItemsChange]);
 
   useEffect(() => {
     load();
   }, [load]);
 
+  useEffect(() => {
+    if (abrirNovaSignal > 0) {
+      setShowAdd(true);
+      setForm((f) => ({ ...f, type: "documento" }));
+    }
+  }, [abrirNovaSignal]);
+
   async function create() {
     if (!form.title.trim()) return;
-    await api.post(`/v1/clients/${clientId}/pending-items`, {
-      ...form,
-      due_date: form.due_date || undefined,
-    });
-    setForm({ title: "", type: "documento", description: "", due_date: "" });
-    setShowAdd(false);
-    load();
+    try {
+      await api.post(`/v1/clients/${clientId}/pending-items`, {
+        ...form,
+        due_date: form.due_date || undefined,
+      });
+      setForm({ title: "", type: "documento", description: "", due_date: "" });
+      setShowAdd(false);
+      load();
+    } catch (e: any) {
+      toast.error(
+        e.response?.data?.detail || "Não foi possível criar a pendência",
+      );
+    }
   }
 
   async function updateStatus(id: string, status: string) {
-    await api.patch(`/v1/clients/${clientId}/pending-items/${id}`, { status });
-    load();
+    try {
+      await api.patch(`/v1/clients/${clientId}/pending-items/${id}`, {
+        status,
+      });
+      load();
+    } catch (e: any) {
+      toast.error(
+        e.response?.data?.detail || "Não foi possível atualizar a pendência",
+      );
+    }
   }
 
-  async function remove(id: string) {
-    if (!window.confirm("Remover pendência?")) return;
-    await api.delete(`/v1/clients/${clientId}/pending-items/${id}`);
-    load();
+  function remove(id: string) {
+    setPendenteExcluir(id);
+  }
+
+  async function confirmarExclusao() {
+    if (!pendenteExcluir) return;
+    try {
+      await api.delete(
+        `/v1/clients/${clientId}/pending-items/${pendenteExcluir}`,
+      );
+      setPendenteExcluir(null);
+      load();
+    } catch (e: any) {
+      toast.error(
+        e.response?.data?.detail || "Não foi possível excluir a pendência",
+      );
+    }
   }
 
   const active = items.filter((i) => i.status !== "concluido");
@@ -269,7 +316,7 @@ function PendingItemsPanel({ clientId }: { clientId: string | number }) {
         <div className="p-3 bg-slate-50 border-b border-bronze-pale/50 space-y-2">
           <div className="grid grid-cols-2 gap-2">
             <select
-              className="text-xs border border-slate-200 rounded px-2 py-1.5"
+              className="input py-1.5 text-xs"
               value={form.type}
               onChange={(e) => setForm({ ...form, type: e.target.value })}
             >
@@ -283,7 +330,7 @@ function PendingItemsPanel({ clientId }: { clientId: string | number }) {
             </select>
             <input
               type="date"
-              className="text-xs border border-slate-200 rounded px-2 py-1.5"
+              className="input py-1.5 text-xs"
               value={form.due_date}
               onChange={(e) => setForm({ ...form, due_date: e.target.value })}
               placeholder="Prazo"
@@ -292,28 +339,25 @@ function PendingItemsPanel({ clientId }: { clientId: string | number }) {
           <input
             type="text"
             placeholder="Título da pendência *"
-            className="w-full text-xs border border-slate-200 rounded px-2 py-1.5"
+            className="input py-1.5 text-xs"
             value={form.title}
             onChange={(e) => setForm({ ...form, title: e.target.value })}
           />
           <input
             type="text"
             placeholder="Descrição (opcional)"
-            className="w-full text-xs border border-slate-200 rounded px-2 py-1.5"
+            className="input py-1.5 text-xs"
             value={form.description}
             onChange={(e) => setForm({ ...form, description: e.target.value })}
           />
           <div className="flex gap-2 justify-end">
             <button
               onClick={() => setShowAdd(false)}
-              className="text-xs text-slate-500 px-3 py-1 hover:bg-slate-100 rounded"
+              className="btn-ghost px-3 py-1 text-xs"
             >
               Cancelar
             </button>
-            <button
-              onClick={create}
-              className="text-xs bg-bronze text-white px-3 py-1 rounded hover:bg-bronze-dark transition-colors"
-            >
+            <button onClick={create} className="btn-primary px-3 py-1 text-xs">
               Salvar
             </button>
           </div>
@@ -321,11 +365,7 @@ function PendingItemsPanel({ clientId }: { clientId: string | number }) {
       )}
 
       <div className="divide-y divide-bronze-pale/50">
-        {loading && (
-          <p className="px-4 py-4 text-xs text-slate-400 text-center">
-            Carregando...
-          </p>
-        )}
+        {loading && <Spinner />}
         {!loading && active.length === 0 && done.length === 0 && (
           <div className="px-4 py-5 flex items-center gap-2 text-sm text-success-600">
             <CheckCircle className="w-4 h-4" /> Sem pendências em aberto
@@ -367,7 +407,7 @@ function PendingItemsPanel({ clientId }: { clientId: string | number }) {
             <div className="flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity flex-shrink-0">
               {item.status !== "concluido" && (
                 <select
-                  className="text-[10px] border border-slate-200 rounded px-1 py-0.5 bg-white"
+                  className="input w-auto px-1 py-0.5 text-[10px]"
                   value={item.status}
                   onChange={(e) => updateStatus(item.id, e.target.value)}
                 >
@@ -406,13 +446,49 @@ function PendingItemsPanel({ clientId }: { clientId: string | number }) {
           </details>
         )}
       </div>
+
+      <ConfirmModal
+        open={pendenteExcluir !== null}
+        onClose={() => setPendenteExcluir(null)}
+        onConfirm={confirmarExclusao}
+        title="Remover pendência"
+        message="Remover esta pendência?"
+        confirmLabel="Remover"
+        variant="danger"
+      />
     </div>
   );
 }
 
+// Desfechos possíveis do contato rápido — mapeados para o vocabulário que o
+// backend aceita (PATCH /atendimentos/{id}: contato_status ∈ iniciado |
+// confirmado | nao_concluido; detalhe registrado em proximo_passo).
+const DESFECHOS_CONTATO: Array<{
+  label: string;
+  patch: { contato_status: string; proximo_passo?: string };
+}> = [
+  { label: "Contato concluído", patch: { contato_status: "confirmado" } },
+  { label: "Não respondeu", patch: { contato_status: "nao_concluido" } },
+  {
+    label: "Retorno agendado",
+    patch: {
+      contato_status: "confirmado",
+      proximo_passo: "Retorno agendado com o cliente.",
+    },
+  },
+  {
+    label: "Recado deixado",
+    patch: {
+      contato_status: "nao_concluido",
+      proximo_passo: "Recado deixado; aguardando retorno do cliente.",
+    },
+  },
+];
+
 // ── WhatsApp / Comunicação ──────────────────────────────────────────────────
 function ComunicacaoRapida({
   cliente,
+  onRegistrado,
 }: {
   cliente: {
     id?: string | number;
@@ -421,7 +497,14 @@ function ComunicacaoRapida({
     whatsapp?: string;
     email?: string;
   };
+  onRegistrado?: () => void;
 }) {
+  const [followUp, setFollowUp] = useState<{
+    id: string;
+    tipo: string;
+  } | null>(null);
+  const [salvandoDesfecho, setSalvandoDesfecho] = useState(false);
+
   const registrarAtendimento = (tipo: string, resumo: string) => {
     if (!cliente.id) return;
     api
@@ -429,10 +512,42 @@ function ComunicacaoRapida({
         client_id: String(cliente.id),
         tipo,
         data_atendimento: new Date().toISOString(),
-        resumo: resumo.length >= 10 ? resumo : resumo + " — contato registrado",
+        resumo: resumo.length >= 10 ? resumo : resumo + " — contato iniciado",
+        contato_status: "iniciado",
       })
-      .catch(() => {});
+      .then((r) => {
+        // Ao voltar o foco para a aba, o mini-modal pede o desfecho do contato.
+        if (r.data?.id) setFollowUp({ id: String(r.data.id), tipo });
+        onRegistrado?.();
+      })
+      .catch(() => {
+        toast.error(
+          "Não foi possível registrar o contato no histórico de atendimentos",
+        );
+      });
   };
+
+  const concluirContato = async (patch: {
+    contato_status: string;
+    proximo_passo?: string;
+  }) => {
+    if (!followUp) return;
+    setSalvandoDesfecho(true);
+    try {
+      await api.patch(`/atendimentos/${followUp.id}`, patch);
+      toast.success("Desfecho do contato registrado no histórico");
+      setFollowUp(null);
+      onRegistrado?.();
+    } catch (e: any) {
+      toast.error(
+        e.response?.data?.detail ||
+          "Não foi possível registrar o desfecho do contato",
+      );
+    } finally {
+      setSalvandoDesfecho(false);
+    }
+  };
+
   const phone = cliente.whatsapp || cliente.telefone;
   if (!phone && !cliente.email) return null;
   const digits = soDigitos(phone);
@@ -451,7 +566,7 @@ function ComunicacaoRapida({
             onClick={() =>
               registrarAtendimento(
                 "whatsapp",
-                "Contato via WhatsApp com " + cliente.nome,
+                "Contato iniciado via WhatsApp com " + cliente.nome,
               )
             }
             className="flex items-center gap-1 px-2.5 py-1.5 bg-green-500 text-white rounded-lg hover:bg-green-600 transition-colors text-xs font-medium"
@@ -463,7 +578,10 @@ function ComunicacaoRapida({
           <a
             href={`tel:${phone}`}
             onClick={() =>
-              registrarAtendimento("ligacao", "Ligação para " + cliente.nome)
+              registrarAtendimento(
+                "ligacao",
+                "Tentativa de ligação iniciada para " + cliente.nome,
+              )
             }
             className="flex items-center gap-1 px-2.5 py-1.5 bg-primary-500 text-white rounded-lg hover:bg-primary-600 transition-colors text-xs font-medium"
           >
@@ -476,7 +594,7 @@ function ComunicacaoRapida({
             onClick={() =>
               registrarAtendimento(
                 "email",
-                "E-mail enviado para " + cliente.nome,
+                "Contato por e-mail iniciado para " + cliente.nome,
               )
             }
             className="flex items-center gap-1 px-2.5 py-1.5 bg-slate-600 text-white rounded-lg hover:bg-slate-700 transition-colors text-xs font-medium"
@@ -491,7 +609,7 @@ function ComunicacaoRapida({
           onClick={() =>
             registrarAtendimento(
               "reuniao_virtual",
-              "Reunião agendada com " + cliente.nome,
+              "Agendamento de reunião iniciado com " + cliente.nome,
             )
           }
           className="flex items-center gap-1 px-2.5 py-1.5 bg-ai-600 text-white rounded-lg hover:bg-ai-700 transition-colors text-xs font-medium"
@@ -499,6 +617,40 @@ function ComunicacaoRapida({
           <Calendar className="w-3.5 h-3.5" /> Reunião
         </a>
       </div>
+
+      {/* Mini-modal de confirmação pós-contato */}
+      <Modal
+        open={followUp !== null}
+        onClose={() => setFollowUp(null)}
+        title="Como terminou o contato?"
+      >
+        <div className="space-y-3">
+          <p className="text-sm text-slate-500">
+            O contato foi registrado como <strong>iniciado</strong>. Informe o
+            desfecho para manter o histórico de atendimento fiel.
+          </p>
+          <div className="grid grid-cols-2 gap-2">
+            {DESFECHOS_CONTATO.map(({ label, patch }) => (
+              <button
+                key={label}
+                type="button"
+                disabled={salvandoDesfecho}
+                onClick={() => concluirContato(patch)}
+                className="btn-outline justify-center text-xs"
+              >
+                {label}
+              </button>
+            ))}
+          </div>
+          <button
+            type="button"
+            onClick={() => setFollowUp(null)}
+            className="btn-ghost w-full justify-center text-xs"
+          >
+            Decidir depois (confirme na linha do tempo)
+          </button>
+        </div>
+      </Modal>
     </div>
   );
 }
@@ -524,15 +676,21 @@ function RelatorioFinanceiro({
       const r = await api.get(`/clients/${clientId}/relatorio-financeiro`);
       setRel(r.data);
       setOpen(true);
-    } catch {
-      /* ignore */
+    } catch (e: any) {
+      toast.error(
+        e.response?.data?.detail ||
+          "Não foi possível carregar o relatório financeiro",
+      );
     } finally {
       setLoading(false);
     }
   };
 
   const exportarCSV = () => {
-    if (!rel) return;
+    if (!rel) {
+      toast.error("Carregue o relatório antes de exportar");
+      return;
+    }
     const linhas: string[] = ["Data;Tipo;Categoria;Descrição;Caso;Valor"];
     for (const e of rel.extrato ?? []) {
       linhas.push(
@@ -683,12 +841,30 @@ function RelatorioFinanceiro({
 export default function DossieCliente() {
   const { clientId } = useParams<{ clientId: string }>();
   const navigate = useNavigate();
+  const [searchParams, setSearchParams] = useSearchParams();
+  const requestedTab = searchParams.get("tab");
+  const validTabs = [
+    "resumo",
+    "atendimentos",
+    "casos",
+    "prazos",
+    "financeiro",
+    "documentos",
+    "ia_cliente",
+  ];
   const [data, setData] = useState<DossieData | null>(null);
   const [loading, setLoading] = useState(true);
   const [erro, setErro] = useState("");
-  const [abaAtiva, setAbaAtiva] = useState("resumo");
+  const [abaAtiva, setAbaAtiva] = useState(
+    requestedTab && validTabs.includes(requestedTab) ? requestedTab : "resumo",
+  );
 
   useEffect(() => {
+    const tab = searchParams.get("tab");
+    if (tab && validTabs.includes(tab)) setAbaAtiva(tab);
+  }, [searchParams]);
+
+  const carregarDossie = useCallback(() => {
     if (!clientId) return;
     api
       .get(`/clients/${clientId}/dossie`)
@@ -697,15 +873,194 @@ export default function DossieCliente() {
       .finally(() => setLoading(false));
   }, [clientId]);
 
-  if (loading)
-    return (
-      <div className="flex items-center justify-center h-64 text-slate-400">
-        <div className="text-center">
-          <Scale className="w-8 h-8 mx-auto mb-3 animate-pulse text-bronze-pale" />
-          <p className="text-sm">Carregando dossiê…</p>
-        </div>
-      </div>
-    );
+  useEffect(() => {
+    carregarDossie();
+  }, [carregarDossie]);
+
+  // Edição de perfil inline (PATCH /clients/{id}) — a rota /clientes/:id é a
+  // própria Ficha Mestra, então "Editar perfil" abre um modal aqui mesmo.
+  const [editOpen, setEditOpen] = useState(false);
+  const [editForm, setEditForm] = useState({
+    nome: "",
+    email: "",
+    telefone: "",
+    whatsapp: "",
+  });
+  const [salvandoEdit, setSalvandoEdit] = useState(false);
+
+  const abrirEdicao = () => {
+    const c: any = data?.cliente ?? {};
+    setEditForm({
+      nome: c.nome || "",
+      email: c.email || "",
+      telefone: c.telefone || "",
+      whatsapp: c.whatsapp || "",
+    });
+    setEditOpen(true);
+  };
+
+  const salvarEdicao = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!editForm.nome.trim()) {
+      toast.error("O nome do cliente é obrigatório");
+      return;
+    }
+    setSalvandoEdit(true);
+    try {
+      await api.patch(`/clients/${clientId}`, {
+        nome: editForm.nome.trim(),
+        email: editForm.email.trim() || null,
+        telefone: editForm.telefone.trim() || null,
+        whatsapp: editForm.whatsapp.trim() || null,
+      });
+      toast.success("Perfil do cliente atualizado");
+      setEditOpen(false);
+      carregarDossie();
+    } catch (err: any) {
+      const detail = err.response?.data?.detail;
+      toast.error(
+        typeof detail === "string"
+          ? detail
+          : "Não foi possível atualizar o perfil",
+      );
+    } finally {
+      setSalvandoEdit(false);
+    }
+  };
+
+  const baixarDocumento = async (docId: string | number, nome: string) => {
+    try {
+      const r = await api.get(`/documents/${docId}/download`, {
+        responseType: "blob",
+      });
+      const url = URL.createObjectURL(r.data as Blob);
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = nome || `documento-${docId}`;
+      a.click();
+      URL.revokeObjectURL(url);
+    } catch (e: any) {
+      toast.error(
+        e.response?.data?.detail || "Não foi possível baixar o documento",
+      );
+    }
+  };
+
+  // ── Indicadores de relacionamento (topo) ─────────────────────────────────
+  const [ultimaInteracao, setUltimaInteracao] = useState<string | null>(null);
+  const [indicadoresProntos, setIndicadoresProntos] = useState(false);
+  const [pendingItems, setPendingItems] = useState<PendingItem[]>([]);
+  const [responsavelNome, setResponsavelNome] = useState<string | null>(null);
+
+  const carregarUltimaInteracao = useCallback(async () => {
+    if (!clientId) return;
+    try {
+      const r = await api.get("/atendimentos", {
+        params: { client_id: clientId, page: 1, per_page: 1 },
+      });
+      setUltimaInteracao(r.data?.items?.[0]?.data_atendimento ?? null);
+    } catch {
+      // Indicador opcional — a ficha continua funcional sem ele.
+    } finally {
+      setIndicadoresProntos(true);
+    }
+  }, [clientId]);
+
+  useEffect(() => {
+    carregarUltimaInteracao();
+  }, [carregarUltimaInteracao]);
+
+  useEffect(() => {
+    if (!clientId) return;
+    (async () => {
+      try {
+        const [cliRes, respRes] = await Promise.all([
+          api.get(`/clients/${clientId}`),
+          api.get("/atendimentos/responsaveis"),
+        ]);
+        const rid = cliRes.data?.responsavel_id;
+        if (!rid) return;
+        const lista = Array.isArray(respRes.data) ? respRes.data : [];
+        setResponsavelNome(lista.find((u: any) => u.id === rid)?.nome ?? null);
+      } catch {
+        // Responsável é opcional no cabeçalho.
+      }
+    })();
+  }, [clientId]);
+
+  const handlePendingItems = useCallback(
+    (items: PendingItem[]) => setPendingItems(items),
+    [],
+  );
+
+  // Carga inicial das pendências para os indicadores do topo — o painel da aba
+  // Resumo mantém a lista atualizada via onItemsChange quando montado.
+  useEffect(() => {
+    if (!clientId) return;
+    api
+      .get(`/v1/clients/${clientId}/pending-items`)
+      .then((r) => setPendingItems(r.data || []))
+      .catch(() => {
+        // Indicador opcional — o painel de pendências reporta o erro ao usuário.
+      });
+  }, [clientId]);
+
+  // ── Ações rápidas ────────────────────────────────────────────────────────
+  const [solicitarDocSignal, setSolicitarDocSignal] = useState(0);
+  const [acessoOpen, setAcessoOpen] = useState(false);
+  const [acessoForm, setAcessoForm] = useState({
+    email: "",
+    senha_inicial: "",
+  });
+  const [criandoAcesso, setCriandoAcesso] = useState(false);
+
+  const criarAcessoPortal = async () => {
+    if (!acessoForm.email.trim() || acessoForm.senha_inicial.length < 8) {
+      toast.error("Informe e-mail e senha inicial com no mínimo 8 caracteres");
+      return;
+    }
+    setCriandoAcesso(true);
+    try {
+      await api.post(`/clients/${clientId}/criar-acesso`, {
+        email: acessoForm.email.trim(),
+        senha_inicial: acessoForm.senha_inicial,
+      });
+      toast.success(
+        "Acesso criado — informe o e-mail e a senha inicial ao cliente",
+      );
+      setAcessoOpen(false);
+    } catch (e: any) {
+      toast.error(
+        e.response?.data?.detail || "Não foi possível criar o acesso ao portal",
+      );
+    } finally {
+      setCriandoAcesso(false);
+    }
+  };
+
+  // Fontes extras da linha do tempo (documentos e aberturas de caso) — dados
+  // que o dossiê já carregou; nenhuma chamada adicional.
+  const eventosExtras = useMemo<ClientTimelineExtraEvent[]>(() => {
+    if (!data) return [];
+    return [
+      ...data.documentos_recentes.map((d) => ({
+        id: `doc-${d.id}`,
+        label: "Documento",
+        titulo: d.nome,
+        data: d.created_at,
+        link: `/casos/${d.case_id}`,
+      })),
+      ...data.casos.map((c) => ({
+        id: `caso-${c.id}`,
+        label: "Caso aberto",
+        titulo: c.titulo,
+        data: c.created_at,
+        link: `/casos/${c.id}`,
+      })),
+    ];
+  }, [data]);
+
+  if (loading) return <Spinner />;
 
   if (erro || !data)
     return (
@@ -715,6 +1070,25 @@ export default function DossieCliente() {
     );
 
   const { cliente, resumo, casos, prazos, documentos_recentes } = data;
+
+  // Indicadores de relacionamento derivados
+  const diasSemContato = ultimaInteracao
+    ? Math.max(
+        0,
+        Math.floor(
+          (Date.now() - new Date(ultimaInteracao).getTime()) / 86_400_000,
+        ),
+      )
+    : null;
+  const pendenciasAtivas = pendingItems.filter((i) => i.status !== "concluido");
+  const pendenciasVencidas = pendenciasAtivas.filter(
+    (i) => i.due_date && new Date(i.due_date + "T23:59:59") < new Date(),
+  ).length;
+  const proximaProvidencia =
+    pendenciasAtivas
+      .filter((i) => i.due_date)
+      .sort((a, b) => a.due_date!.localeCompare(b.due_date!))[0] ?? null;
+
   const taxaRecebimento =
     resumo.honorarios_total > 0
       ? Math.round((resumo.honorarios_recebido / resumo.honorarios_total) * 100)
@@ -722,6 +1096,7 @@ export default function DossieCliente() {
 
   const abas = [
     { id: "resumo", label: "Resumo", icon: TrendingUp },
+    { id: "atendimentos", label: "Atendimentos", icon: MessageCircle },
     { id: "casos", label: "Casos", icon: Briefcase },
     { id: "prazos", label: "Prazos", icon: Calendar },
     { id: "financeiro", label: "Financeiro", icon: DollarSign },
@@ -732,36 +1107,104 @@ export default function DossieCliente() {
   return (
     <div className="max-w-6xl mx-auto px-4 py-6 space-y-6 animate-rise">
       {/* Header */}
-      <div className="flex items-center gap-3">
+      <div className="flex items-start gap-3">
         <button
           onClick={() => navigate(-1)}
-          className="btn-ghost p-2 rounded-lg"
+          className="btn-ghost p-2 rounded-lg mt-1"
         >
           <ArrowLeft className="w-4 h-4" />
         </button>
         <div className="flex-1 min-w-0">
-          <p className="eyebrow">Ficha Mestra do Cliente</p>
-          <h1 className="text-2xl">{cliente.nome}</h1>
-          <p className="text-sm text-slate-400 mt-0.5">
-            {cliente.cpf_cnpj && (
-              <span className="mr-3">{cliente.cpf_cnpj}</span>
-            )}
-            {cliente.email && <span className="mr-3">{cliente.email}</span>}
-            {cliente.telefone && <span>{cliente.telefone}</span>}
+          <PageHeader
+            eyebrow="Ficha Mestra do Cliente"
+            title={cliente.nome}
+            subtitle={
+              [cliente.cpf_cnpj, cliente.email, cliente.telefone]
+                .filter(Boolean)
+                .join(" · ") || undefined
+            }
+            actions={
+              <>
+                <a
+                  href="/portal"
+                  target="_blank"
+                  rel="noreferrer"
+                  className="btn-ghost text-xs"
+                  title="Abrir o Portal do Cliente em uma nova aba"
+                >
+                  <ExternalLink className="w-3 h-3" /> Portal do Cliente
+                </a>
+                <button onClick={abrirEdicao} className="btn-outline text-xs">
+                  <User className="w-3 h-3" /> Editar perfil
+                </button>
+              </>
+            }
+          />
+        </div>
+      </div>
+
+      {/* Indicadores de relacionamento */}
+      <div className="card divide-x divide-bronze-pale/50 grid grid-cols-2 lg:grid-cols-4 xl:flex">
+        <div className="px-4 py-3 xl:flex-1 min-w-0">
+          <p className="label-caps text-slate-400">Última interação</p>
+          <p className="text-sm font-medium text-navy-900 mt-0.5">
+            {ultimaInteracao
+              ? new Date(ultimaInteracao).toLocaleDateString("pt-BR")
+              : indicadoresProntos
+                ? "Sem registros"
+                : "…"}
           </p>
         </div>
-        <a
-          href="/portal"
-          target="_blank"
-          rel="noreferrer"
-          className="btn-ghost text-xs"
-          title="Abrir o Portal do Cliente em uma nova aba"
-        >
-          <ExternalLink className="w-3 h-3" /> Portal do Cliente
-        </a>
-        <Link to={`/clientes/${clientId}`} className="btn-outline text-xs">
-          <User className="w-3 h-3" /> Editar perfil
-        </Link>
+        <div className="px-4 py-3 xl:flex-1 min-w-0">
+          <p className="label-caps text-slate-400">Sem contato há</p>
+          <p
+            className={`text-sm font-medium mt-0.5 ${
+              diasSemContato !== null && diasSemContato > 30
+                ? "text-danger-600"
+                : "text-navy-900"
+            }`}
+          >
+            {diasSemContato === null
+              ? "—"
+              : diasSemContato === 0
+                ? "Hoje"
+                : `${diasSemContato} dia${diasSemContato > 1 ? "s" : ""}`}
+          </p>
+        </div>
+        <div className="px-4 py-3 xl:flex-1 min-w-0">
+          <p className="label-caps text-slate-400">Pendências vencidas</p>
+          <p
+            className={`text-sm font-medium mt-0.5 flex items-center gap-1 ${
+              pendenciasVencidas > 0 ? "text-danger-600" : "text-success-600"
+            }`}
+          >
+            {pendenciasVencidas > 0 && (
+              <AlertTriangle className="w-3.5 h-3.5" />
+            )}
+            {pendenciasVencidas}
+          </p>
+        </div>
+        <div className="px-4 py-3 xl:flex-1 min-w-0">
+          <p className="label-caps text-slate-400">Próxima providência</p>
+          <p
+            className="text-sm font-medium text-navy-900 mt-0.5 truncate"
+            title={proximaProvidencia?.title}
+          >
+            {proximaProvidencia
+              ? `${proximaProvidencia.title} · ${new Date(
+                  proximaProvidencia.due_date + "T12:00:00",
+                ).toLocaleDateString("pt-BR")}`
+              : "—"}
+          </p>
+        </div>
+        {responsavelNome && (
+          <div className="px-4 py-3 xl:flex-1 min-w-0 col-span-2 lg:col-span-4 xl:col-auto">
+            <p className="label-caps text-slate-400">Responsável</p>
+            <p className="text-sm font-medium text-navy-900 mt-0.5 truncate">
+              {responsavelNome}
+            </p>
+          </div>
+        )}
       </div>
 
       {/* Seletor de Abas (Ficha Mestra - Seção 2.113) */}
@@ -769,7 +1212,10 @@ export default function DossieCliente() {
         {abas.map((aba) => (
           <button
             key={aba.id}
-            onClick={() => setAbaAtiva(aba.id)}
+            onClick={() => {
+              setAbaAtiva(aba.id);
+              setSearchParams({ tab: aba.id }, { replace: true });
+            }}
             className={`flex items-center gap-2 px-6 py-3 text-sm font-medium transition-all border-b-2 whitespace-nowrap ${
               abaAtiva === aba.id
                 ? "border-bronze text-bronze"
@@ -815,10 +1261,80 @@ export default function DossieCliente() {
               color="bronze"
             />
           </div>
-          <div className="grid lg:grid-cols-2 gap-4">
-            <PendingItemsPanel clientId={clientId!} />
-            <ComunicacaoRapida cliente={cliente} />
+          {/* Painel de ações rápidas */}
+          <div className="card p-4">
+            <p className="eyebrow mb-3 flex items-center gap-2">
+              <Zap className="w-3 h-3" /> Ações rápidas
+            </p>
+            <div className="flex flex-wrap gap-2">
+              <button
+                onClick={() => {
+                  setAbaAtiva("atendimentos");
+                  setSearchParams(
+                    { tab: "atendimentos", novo: "1" },
+                    { replace: true },
+                  );
+                }}
+                className="btn-outline text-xs"
+              >
+                <MessageCircle className="w-3.5 h-3.5" /> Registrar atendimento
+              </button>
+              <button
+                onClick={() => setSolicitarDocSignal((s) => s + 1)}
+                className="btn-outline text-xs"
+              >
+                <FileText className="w-3.5 h-3.5" /> Solicitar documento
+              </button>
+              <Link
+                to={`/casos/novo?client_id=${clientId}`}
+                className="btn-outline text-xs"
+              >
+                <Briefcase className="w-3.5 h-3.5" /> Cadastrar caso
+              </Link>
+              <Link
+                to="/atividades"
+                title="Agendar na Central de Atividades"
+                className="btn-outline text-xs"
+              >
+                <Calendar className="w-3.5 h-3.5" /> Agendar reunião
+              </Link>
+              <button
+                onClick={() => {
+                  setAcessoForm({
+                    email: cliente.email || "",
+                    senha_inicial: "",
+                  });
+                  setAcessoOpen(true);
+                }}
+                className="btn-outline text-xs"
+              >
+                <KeyRound className="w-3.5 h-3.5" /> Acesso ao portal
+              </button>
+            </div>
           </div>
+
+          <div className="grid lg:grid-cols-2 gap-4">
+            <PendingItemsPanel
+              clientId={clientId!}
+              abrirNovaSignal={solicitarDocSignal}
+              onItemsChange={handlePendingItems}
+            />
+            <ComunicacaoRapida
+              cliente={cliente}
+              onRegistrado={carregarUltimaInteracao}
+            />
+          </div>
+        </div>
+      )}
+
+      {abaAtiva === "atendimentos" && (
+        <div className="animate-fade-in">
+          <ClientServiceTimeline
+            clientId={clientId!}
+            cases={casos}
+            extraEvents={eventosExtras}
+            autoOpenForm={searchParams.get("novo") === "1"}
+          />
         </div>
       )}
 
@@ -848,7 +1364,7 @@ export default function DossieCliente() {
                     {c.titulo}
                   </p>
                   <p className="text-[11px] text-slate-400 mt-0.5">
-                    {c.numero_interno} · {AREA_LABEL[c.area] ?? c.area}
+                    {c.numero_interno} · {areaLabel(c.area) || c.area}
                   </p>
                 </div>
                 <StatusBadge value={c.status} />
@@ -892,21 +1408,26 @@ export default function DossieCliente() {
           </div>
           <div className="divide-y divide-bronze-pale/50">
             {documentos_recentes.map((doc) => (
-              <Link
+              <div
                 key={doc.id}
-                to={`/casos/${doc.case_id}`}
                 className="flex items-center gap-3 px-4 py-3 hover:bg-bronze-50/60 transition-colors group"
               >
-                <div className="flex-1 min-w-0">
+                <Link to={`/casos/${doc.case_id}`} className="flex-1 min-w-0">
                   <p className="text-sm text-navy-900 font-medium truncate">
                     {doc.nome}
                   </p>
                   <p className="text-[10px] text-slate-400 mt-0.5">
                     Caso #{doc.case_id} · {doc.tipo}
                   </p>
-                </div>
-                <Download className="w-4 h-4 text-slate-300 group-hover:text-bronze" />
-              </Link>
+                </Link>
+                <button
+                  onClick={() => baixarDocumento(doc.id, doc.nome)}
+                  title="Baixar documento"
+                  className="p-1"
+                >
+                  <Download className="w-4 h-4 text-slate-300 group-hover:text-bronze" />
+                </button>
+              </div>
             ))}
           </div>
         </div>
@@ -914,14 +1435,17 @@ export default function DossieCliente() {
 
       {abaAtiva === "ia_cliente" && (
         <div className="card p-8 text-center space-y-4 animate-fade-in">
-          <Bot className="w-12 h-12 mx-auto text-bronze-pale animate-pulse" />
+          <Bot className="w-12 h-12 mx-auto text-bronze-pale" />
           <h3 className="text-lg font-serif">IA do Cliente (Análise 360º)</h3>
           <p className="text-sm text-slate-500 max-w-md mx-auto">
-            O Cérebro do EJC está processando o histórico deste cliente para
-            identificar padrões de litígio, riscos financeiros e oportunidades
-            estratégicas.
+            A análise estratégica automática do histórico deste cliente (padrões
+            de litígio, riscos financeiros e oportunidades) ainda está em
+            desenvolvimento. Enquanto isso, use a Pesquisa e IA com o caso do
+            cliente selecionado.
           </p>
-          <button className="btn-primary">Iniciar Análise Estratégica</button>
+          <span className="inline-block text-xs font-medium text-slate-400 border border-bronze-pale rounded-full px-3 py-1">
+            Em breve
+          </span>
         </div>
       )}
 
@@ -939,13 +1463,136 @@ export default function DossieCliente() {
                   key={area}
                   className="badge badge-neutral px-3 py-1 text-xs"
                 >
-                  {AREA_LABEL[area] ?? area}{" "}
+                  {areaLabel(area) || area}{" "}
                   <span className="ml-1 font-semibold">{n}</span>
                 </div>
               ))}
           </div>
         </div>
       )}
+
+      {/* Modal — Conceder acesso ao Portal do Cliente */}
+      <Modal
+        open={acessoOpen}
+        onClose={() => setAcessoOpen(false)}
+        title="Acesso ao Portal do Cliente"
+      >
+        <div className="space-y-4">
+          <p className="text-sm text-slate-500">
+            {cliente.nome} — o cliente trocará a senha no primeiro login.
+          </p>
+          <div>
+            <label className="label">E-mail de login *</label>
+            <input
+              type="email"
+              className="input"
+              autoComplete="off"
+              value={acessoForm.email}
+              onChange={(e) =>
+                setAcessoForm((p) => ({ ...p, email: e.target.value }))
+              }
+            />
+          </div>
+          <div>
+            <label className="label">Senha inicial (mín. 8) *</label>
+            <input
+              type="password"
+              className="input"
+              autoComplete="new-password"
+              value={acessoForm.senha_inicial}
+              onChange={(e) =>
+                setAcessoForm((p) => ({ ...p, senha_inicial: e.target.value }))
+              }
+            />
+          </div>
+          <div className="flex gap-3 pt-2">
+            <button
+              type="button"
+              onClick={() => setAcessoOpen(false)}
+              className="btn-secondary flex-1"
+            >
+              Cancelar
+            </button>
+            <button
+              type="button"
+              onClick={criarAcessoPortal}
+              disabled={criandoAcesso}
+              className="btn-primary flex-1"
+            >
+              {criandoAcesso ? "Criando..." : "Criar acesso"}
+            </button>
+          </div>
+        </div>
+      </Modal>
+
+      {/* Modal — Editar perfil do cliente */}
+      <Modal
+        open={editOpen}
+        onClose={() => setEditOpen(false)}
+        title="Editar perfil do cliente"
+      >
+        <form onSubmit={salvarEdicao} className="space-y-4">
+          <div>
+            <label className="label">Nome *</label>
+            <input
+              className="input"
+              value={editForm.nome}
+              onChange={(e) =>
+                setEditForm((p) => ({ ...p, nome: e.target.value }))
+              }
+            />
+          </div>
+          <div>
+            <label className="label">E-mail</label>
+            <input
+              type="email"
+              className="input"
+              value={editForm.email}
+              onChange={(e) =>
+                setEditForm((p) => ({ ...p, email: e.target.value }))
+              }
+            />
+          </div>
+          <div className="grid grid-cols-2 gap-3">
+            <div>
+              <label className="label">Telefone</label>
+              <input
+                className="input"
+                value={editForm.telefone}
+                onChange={(e) =>
+                  setEditForm((p) => ({ ...p, telefone: e.target.value }))
+                }
+              />
+            </div>
+            <div>
+              <label className="label">WhatsApp</label>
+              <input
+                className="input"
+                value={editForm.whatsapp}
+                onChange={(e) =>
+                  setEditForm((p) => ({ ...p, whatsapp: e.target.value }))
+                }
+              />
+            </div>
+          </div>
+          <div className="flex gap-3 pt-2">
+            <button
+              type="button"
+              onClick={() => setEditOpen(false)}
+              className="btn-secondary flex-1"
+            >
+              Cancelar
+            </button>
+            <button
+              type="submit"
+              disabled={salvandoEdit}
+              className="btn-primary flex-1"
+            >
+              {salvandoEdit ? <Spinner /> : "Salvar"}
+            </button>
+          </div>
+        </form>
+      </Modal>
     </div>
   );
 }

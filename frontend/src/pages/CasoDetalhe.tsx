@@ -1,31 +1,44 @@
 import { toast } from "../components/Toast";
 import Markdown from "../components/Markdown";
-import React, { useEffect, useRef, useState } from "react";
-import { useParams, useSearchParams, useNavigate } from "react-router-dom";
+import React, { useEffect, useState } from "react";
+import {
+  Link,
+  useParams,
+  useSearchParams,
+  useNavigate,
+} from "react-router-dom";
 import {
   Sparkles,
   ChevronLeft,
   RefreshCw,
   ShieldCheck,
   Copy,
-  Archive,
   ArchiveRestore,
 } from "lucide-react";
 import api from "../lib/api";
 import { asList } from "../lib/list";
+import { areaLabel, useAreas } from "../lib/areas";
+import { mensagemErroIA, ROTULO_IA_NAO_ATIVADA } from "../lib/iaErro";
+import { useIaStatus } from "../lib/iaStatus";
 import MotorTeses from "../components/MotorTeses";
 import LinhaDoTempoProcessual from "../components/visual/LinhaDoTempoProcessual";
 import MatrizRisco from "../components/visual/MatrizRisco";
 import BadgesAlerta from "../components/visual/BadgesAlerta";
 import CalculadoraAcordo from "../components/visual/CalculadoraAcordo";
 import AnaliseEstrategica from "../components/AnaliseEstrategica";
+import ContextualAIAssistant from "../components/ContextualAIAssistant";
 import IntakeAnalise from "../components/IntakeAnalise";
 import ConversaoChecklist from "../components/ConversaoChecklist";
 import ProvasCaso from "../components/ProvasCaso";
+import DossieEstrategicoCaso from "../components/DossieEstrategicoCaso";
+import OrquestradorPanel from "../components/OrquestradorPanel";
+import CaseBreadcrumb from "../components/CaseBreadcrumb";
+import { ConsultaProfundaTJMG } from "../components/Infosimples";
 import type { Case } from "../types";
 import {
-  PageHeader,
   StatusBadge,
+  PriorityBadge,
+  RiskBadge,
   Spinner,
   fmtDate,
   fmtMoney,
@@ -61,6 +74,7 @@ async function baixarDoc(docId: string, filename: string) {
 
 const TABS = [
   { key: "resumo", label: "Resumo" },
+  { key: "orquestrador", label: "Orquestrador" },
   { key: "processos", label: "Processos" },
   { key: "timeline", label: "Timeline" },
   { key: "mensagens", label: "Mensagens" },
@@ -83,40 +97,76 @@ const TABS = [
   { key: "score", label: "Score Jurídico" },
   { key: "risco", label: "Índice de Risco" },
   { key: "memoria", label: "Memória" },
-  { key: "jurimetria", label: "Jurimetria" },
+  // Aba "Jurimetria" por caso removida do menu: era um stub "em implementação".
+  // A jurimetria é agregada e vive no menu Jurimetria (/inteligencia).
   { key: "dossie", label: "Dossiê Estratégico" },
   { key: "iaDefensiva", label: "IA Defensiva" },
   { key: "ferramentas", label: "⚡ Ferramentas" },
 ] as const;
 type TabKey = (typeof TABS)[number]["key"];
 
-const GROUPS: { label: string; tabs: TabKey[] }[] = [
+// P1 (proposta de melhorias): as ~26 abas do workspace do caso são organizadas
+// em SEIS seções internas. Cada aba mantém a mesma key e o mesmo conteúdo —
+// só muda o agrupamento; deep-links (?tab=...) antigos continuam funcionando
+// porque a seção ativa é derivada da aba (GROUPS.find abaixo).
+// `links` são rotas irmãs do caso (páginas próprias) expostas na seção
+// pertinente para não parecerem sistemas separados.
+const GROUPS: {
+  label: string;
+  tabs: TabKey[];
+  links?: { label: string; to: (caseId: string) => string }[];
+}[] = [
   {
-    label: "Visão",
-    tabs: ["resumo", "processos", "score", "risco", "jurimetria"],
+    // Informações principais, cliente e partes, etiquetas, pendências.
+    label: "Resumo",
+    tabs: ["resumo", "orquestrador", "partes", "etiquetas"],
+    links: [
+      { label: "🧭 Jornada do caso", to: (id) => `/casos/${id}/jornada` },
+      {
+        label: "🎤 Entrevista inteligente",
+        to: (id) => `/casos/${id}/entrevista`,
+      },
+    ],
   },
   {
+    // Timeline, processos, mensagens, prazos, audiências, checklists.
     label: "Andamentos",
-    tabs: ["timeline", "mensagens", "partes", "etiquetas", "checklists"],
+    tabs: [
+      "timeline",
+      "processos",
+      "mensagens",
+      "prazos",
+      "audiencias",
+      "checklists",
+    ],
   },
   {
-    label: "Documentos",
+    label: "Documentos e provas",
     tabs: ["documentos", "provas", "contratos", "procuracoes"],
   },
-  { label: "Prazos & Agenda", tabs: ["prazos", "audiencias"] },
-  { label: "Financeiro", tabs: ["financeiro", "custos", "liquidez"] },
   {
-    label: "Inteligência",
+    // Teses, precedentes, jurisprudência, risco, score, dossiê, IA.
+    label: "Estratégia",
     tabs: [
       "teses",
       "teses-sugeridas",
       "jurisprudencia",
       "precedentes",
-      "memoria",
+      "risco",
+      "score",
       "dossie",
       "iaDefensiva",
       "ferramentas",
     ],
+    links: [
+      { label: "⚔️ Sala de Guerra", to: (id) => `/casos/${id}/sala-de-guerra` },
+    ],
+  },
+  { label: "Financeiro", tabs: ["financeiro", "custos", "liquidez"] },
+  {
+    // Memória do caso, resultado, lições aprendidas, pós-mortem.
+    label: "Histórico e encerramento",
+    tabs: ["memoria"],
   },
 ];
 
@@ -201,9 +251,7 @@ function ExtratoCaso({ caso }: { caso: Case }) {
         {erro ? (
           <div className="py-8 text-center text-danger-600 text-sm">{erro}</div>
         ) : !data ? (
-          <div className="py-8 text-center text-slate-400 text-sm">
-            Carregando…
-          </div>
+          <Spinner />
         ) : (
           <div className="space-y-4">
             <div className="grid grid-cols-2 gap-3">
@@ -255,21 +303,7 @@ function ExtratoCaso({ caso }: { caso: Case }) {
 }
 
 function AreasCaso({ caso }: { caso: Case }) {
-  const TODAS = [
-    "civil",
-    "trabalhista",
-    "consumidor",
-    "familia",
-    "ambiental",
-    "criminal",
-    "previdenciario",
-    "empresarial",
-    "tributario",
-    "administrativo",
-    "bancario",
-    "imobiliario",
-    "digital_lgpd",
-  ];
+  const catalogoAreas = useAreas();
   const [areas, setAreas] = useState<any[]>([]);
   const [add, setAdd] = useState("");
   const load = () =>
@@ -295,7 +329,9 @@ function AreasCaso({ caso }: { caso: Case }) {
       toast.error(e.response?.data?.detail || "Erro ao remover área");
     }
   };
-  const disponiveis = TODAS.filter((t) => !areas.some((a) => a.area === t));
+  const disponiveis = catalogoAreas.filter(
+    (item) => !areas.some((a) => a.area === item.slug),
+  );
   return (
     <div className="card p-4">
       <h3 className="font-semibold mb-2 text-sm text-slate-500 uppercase tracking-wide">
@@ -308,7 +344,7 @@ function AreasCaso({ caso }: { caso: Case }) {
             className={`inline-flex items-center gap-1 text-xs px-2.5 py-1 rounded-full ${a.principal ? "bg-navy text-white" : "bg-slate-100 text-slate-600"}`}
           >
             {a.principal && "★ "}
-            {a.area.replace(/_/g, " ")}
+            {areaLabel(a.area)}
             {!a.principal && (
               <button
                 onClick={() => remover(a.area)}
@@ -324,12 +360,12 @@ function AreasCaso({ caso }: { caso: Case }) {
             <select
               value={add}
               onChange={(e) => setAdd(e.target.value)}
-              className="text-xs border border-slate-200 rounded-lg px-2 py-1 bg-white"
+              className="input text-xs px-2 py-1"
             >
               <option value="">+ área relacionada</option>
-              {disponiveis.map((t) => (
-                <option key={t} value={t}>
-                  {t.replace(/_/g, " ")}
+              {disponiveis.map((item) => (
+                <option key={item.slug} value={item.slug}>
+                  {item.nome}
                 </option>
               ))}
             </select>
@@ -349,6 +385,7 @@ function AreasCaso({ caso }: { caso: Case }) {
 }
 
 function TabResumo({ caso }: { caso: Case }) {
+  const { disponivel: iaDisponivel } = useIaStatus();
   const navigate = useNavigate();
   const { user } = useAuth();
   const [iaModal, setIaModal] = useState(false);
@@ -523,7 +560,9 @@ function TabResumo({ caso }: { caso: Case }) {
       });
       setHonResp(data);
     } catch (e: any) {
-      setHonResp({ erro: e.response?.data?.detail || "Falha na sugestão" });
+      setHonResp({
+        erro: mensagemErroIA(e, "Não foi possível sugerir honorários."),
+      });
     } finally {
       setHonLoading(false);
     }
@@ -542,7 +581,9 @@ function TabResumo({ caso }: { caso: Case }) {
       });
       setIaResp(data);
     } catch (e: any) {
-      setIaResp({ erro: e.response?.data?.detail || "Falha na análise" });
+      setIaResp({
+        erro: mensagemErroIA(e, "Não foi possível gerar a análise."),
+      });
     } finally {
       setIaLoading(false);
     }
@@ -622,9 +663,12 @@ function TabResumo({ caso }: { caso: Case }) {
       <div className="flex gap-2 flex-wrap">
         <button
           onClick={analisarIA}
-          className="btn-primary flex items-center gap-1"
+          disabled={!iaDisponivel}
+          title={iaDisponivel ? undefined : ROTULO_IA_NAO_ATIVADA}
+          className="btn-primary flex items-center gap-1 disabled:cursor-not-allowed disabled:opacity-50"
         >
-          <Sparkles size={14} /> Análise IA
+          <Sparkles size={14} />{" "}
+          {iaDisponivel ? "Análise IA" : "IA não ativada"}
         </button>
         <button
           onClick={syncDataJud}
@@ -687,12 +731,36 @@ function TabResumo({ caso }: { caso: Case }) {
             🗑️ Excluir
           </button>
         )}
+        <Link
+          to={`/raio-x?case_id=${caso.id}`}
+          className="btn-secondary flex items-center gap-1 text-primary-700"
+        >
+          🔎 Raio-X do processo
+        </Link>
         <button
           onClick={() => navigate(`/casos/${caso.id}/sala-de-guerra`)}
           className="btn-secondary flex items-center gap-1"
         >
           ⚔️ Sala de Guerra
         </button>
+        <button
+          onClick={() => navigate(`/casos/${caso.id}/jornada`)}
+          className="btn-secondary flex items-center gap-1"
+        >
+          🧭 Jornada do caso
+        </button>
+        <button
+          onClick={() => navigate(`/casos/${caso.id}/entrevista`)}
+          className="btn-secondary flex items-center gap-1"
+        >
+          🎤 Entrevista inteligente
+        </button>
+        <Link
+          to={`/pecas?caso=${caso.id}`}
+          className="btn-secondary flex items-center gap-1"
+        >
+          📝 Peças do caso
+        </Link>
         <ExtratoCaso caso={caso} />
         {(caso as any).case_type === "extrajudicial" &&
           !(caso as any).linked_judicial_case_id && (
@@ -774,10 +842,16 @@ function TabResumo({ caso }: { caso: Case }) {
                 {caso.fase?.replace(/_/g, " ")}
               </span>
             </div>
-            <div>
+            <div className="flex items-center gap-1.5">
               <span className="text-slate-400">Prioridade:</span>{" "}
-              <span className="capitalize ml-1">{caso.prioridade}</span>
+              <PriorityBadge value={caso.prioridade} />
             </div>
+            {(caso.risco_nivel || caso.risco) && (
+              <div className="flex items-center gap-1.5">
+                <span className="text-slate-400">Risco:</span>{" "}
+                <RiskBadge value={caso.risco_nivel || caso.risco} />
+              </div>
+            )}
             <div>
               <span className="text-slate-400">Parte contrária:</span>{" "}
               <span className="ml-1">{caso.parte_contraria || "—"}</span>
@@ -1239,9 +1313,11 @@ function TabTimeline({ caseId }: { caseId: string }) {
           {ts.map((t, i) => (
             <div
               key={t.id ?? i}
-              className="card p-3 flex justify-between items-center text-sm"
+              className="card p-3 flex flex-wrap justify-between items-center gap-2 text-sm"
             >
-              <span className="text-gray-700">{t.descricao}</span>
+              <span className="min-w-0 flex-1 break-words text-gray-700">
+                {t.descricao}
+              </span>
               <div className="flex items-center gap-3 shrink-0">
                 <span className="text-gray-400 text-xs">{fmtDate(t.data)}</span>
                 <span className="font-mono font-semibold text-primary-600">
@@ -1251,9 +1327,7 @@ function TabTimeline({ caseId }: { caseId: string }) {
             </div>
           ))}
           {ts.length === 0 && !showTsForm && (
-            <p className="text-center py-4 text-gray-400 text-sm">
-              Nenhuma hora lançada
-            </p>
+            <Empty message="Nenhuma hora lançada" />
           )}
         </div>
       </div>
@@ -1342,9 +1416,7 @@ function TabChecklists({ caseId }: { caseId: string }) {
       </div>
 
       {cks.length === 0 && (
-        <p className="text-center py-8 text-gray-400 text-sm">
-          Nenhum checklist neste caso. Gere um por legislação acima.
-        </p>
+        <Empty message="Nenhum checklist neste caso. Gere um por legislação acima." />
       )}
 
       {cks.map((ck) => (
@@ -1407,6 +1479,10 @@ function TabProcessos({ caseId }: { caseId: string }) {
   const [arquivo, setArquivo] = useState<"ativos" | "arquivados" | "todos">(
     "ativos",
   );
+  // Modal de arquivamento (substitui o prompt() nativo por UI do projeto).
+  const [arqPid, setArqPid] = useState<string | null>(null);
+  const [arqMotivo, setArqMotivo] = useState("");
+  const [arqSaving, setArqSaving] = useState(false);
   const vazio = {
     tipo: "judicial",
     numero_cnj: "",
@@ -1469,16 +1545,25 @@ function TabProcessos({ caseId }: { caseId: string }) {
       toast.error(err.response?.data?.detail || "Falha ao remover");
     }
   };
-  const arquivar = async (pid: string) => {
-    const motivo = prompt("Motivo do arquivamento (opcional)") || "";
+  const arquivar = (pid: string) => {
+    setArqMotivo("");
+    setArqPid(pid);
+  };
+  const confirmarArquivamento = async () => {
+    if (!arqPid) return;
+    setArqSaving(true);
     try {
-      await api.post(`/processes/${pid}/arquivar`, {
-        motivo: motivo || undefined,
+      await api.post(`/processes/${arqPid}/arquivar`, {
+        motivo: arqMotivo.trim() || undefined,
       });
       toast.success("Processo arquivado.");
+      setArqPid(null);
+      setArqMotivo("");
       carregar();
     } catch (err: any) {
       toast.error(err.response?.data?.detail || "Falha ao arquivar");
+    } finally {
+      setArqSaving(false);
     }
   };
   const desarquivar = async (pid: string) => {
@@ -1502,7 +1587,7 @@ function TabProcessos({ caseId }: { caseId: string }) {
           </p>
         </div>
         <div className="flex flex-wrap justify-end gap-2">
-          <div className="flex rounded-lg border border-slate-200 overflow-hidden bg-white">
+          <div className="flex rounded-lg overflow-hidden bg-slate-900/[0.05] dark:bg-white/[0.07]">
             {[
               ["ativos", "Ativos"],
               ["arquivados", "Arquivados"],
@@ -1511,12 +1596,13 @@ function TabProcessos({ caseId }: { caseId: string }) {
               <button
                 key={k}
                 onClick={() => setArquivo(k as typeof arquivo)}
-                className={`px-3 py-1.5 text-xs font-medium ${arquivo === k ? "bg-navy text-white" : "text-slate-600 hover:bg-slate-50"}`}
+                className={`px-3 py-1.5 text-xs font-medium ${arquivo === k ? "bg-navy text-white" : "text-slate-600 hover:bg-slate-900/[0.09] dark:text-slate-300 dark:hover:bg-white/[0.12]"}`}
               >
                 {label}
               </button>
             ))}
           </div>
+          <ConsultaProfundaTJMG caseId={caseId} />
           <button
             onClick={() => setShowForm(!showForm)}
             className="btn-primary text-sm"
@@ -1677,7 +1763,7 @@ function TabProcessos({ caseId }: { caseId: string }) {
                 {p.status === "arquivado" ? (
                   <button
                     onClick={() => desarquivar(p.id)}
-                    className="text-blue-600 hover:text-blue-800 text-xs"
+                    className="text-primary-600 hover:text-primary-800 text-xs"
                   >
                     Desarquivar
                   </button>
@@ -1700,11 +1786,45 @@ function TabProcessos({ caseId }: { caseId: string }) {
           </div>
         ))}
         {procs.length === 0 && !showForm && (
-          <p className="text-center py-8 text-gray-400 text-sm">
-            Nenhum processo cadastrado neste caso ainda.
-          </p>
+          <Empty message="Nenhum processo cadastrado neste caso ainda." />
         )}
       </div>
+
+      <Modal
+        open={arqPid !== null}
+        onClose={() => setArqPid(null)}
+        title="Arquivar processo"
+      >
+        <div className="space-y-4">
+          <p className="text-sm text-gray-500">
+            Informe o motivo do arquivamento (opcional). O processo pode ser
+            desarquivado depois.
+          </p>
+          <textarea
+            className="input min-h-[90px]"
+            value={arqMotivo}
+            onChange={(e) => setArqMotivo(e.target.value)}
+            placeholder="Motivo do arquivamento (opcional)"
+          />
+          <div className="flex gap-3 justify-end">
+            <button
+              type="button"
+              className="btn-secondary"
+              onClick={() => setArqPid(null)}
+            >
+              Cancelar
+            </button>
+            <button
+              type="button"
+              className="btn-primary"
+              disabled={arqSaving}
+              onClick={confirmarArquivamento}
+            >
+              {arqSaving ? "Arquivando..." : "Arquivar"}
+            </button>
+          </div>
+        </div>
+      </Modal>
     </div>
   );
 }
@@ -1892,9 +2012,7 @@ function TabPartes({ caseId }: { caseId: string }) {
           </div>
         ))}
         {partes.length === 0 && !showForm && (
-          <p className="text-center py-8 text-gray-400 text-sm">
-            Nenhuma parte cadastrada
-          </p>
+          <Empty message="Nenhuma parte cadastrada" />
         )}
       </div>
     </div>
@@ -1979,7 +2097,7 @@ function TabScore({ caseId }: { caseId: string }) {
           <div className="card p-5">
             <div className="flex items-start gap-6 mb-4">
               <div className="text-center min-w-[80px]">
-                <div className="text-5xl font-black text-gray-900">
+                <div className="text-2xl font-bold text-gray-900">
                   {top.total}
                 </div>
                 <div className="text-sm text-gray-400">/100</div>
@@ -2297,9 +2415,7 @@ function TabJurisprudencia({ caseId, caso }: { caseId: string; caso: Case }) {
           </div>
         ))}
         {searched && results.length === 0 && !loading && (
-          <p className="text-center py-8 text-gray-400 text-sm">
-            Nenhum resultado encontrado para esta busca
-          </p>
+          <Empty message="Nenhum resultado encontrado para esta busca" />
         )}
         {!searched && (
           <p className="text-center py-8 text-gray-400 text-sm">
@@ -2320,16 +2436,14 @@ function TabLista({
 }: {
   titulo: string;
   endpoint: string;
-  renderItem: (item: any) => JSX.Element;
+  renderItem: (item: any) => React.JSX.Element;
   empty: string;
 }) {
   const [items, setItems] = useState<any[]>([]);
   useEffect(() => {
     api
       .get(endpoint)
-      .then((r) =>
-        setItems(asList(r.data)),
-      )
+      .then((r) => setItems(asList(r.data)))
       .catch(() => {});
   }, [endpoint]);
   return (
@@ -2391,7 +2505,7 @@ function TabMensagens({ caseId }: { caseId: string }) {
             className={`flex ${m.autor_tipo === "escritorio" ? "justify-end" : "justify-start"}`}
           >
             <div
-              className={`max-w-[75%] rounded-lg px-3 py-2 text-sm ${m.autor_tipo === "escritorio" ? "bg-primary-600 text-white" : "bg-white border border-gray-200"}`}
+              className={`max-w-[75%] rounded-lg px-3 py-2 text-sm ${m.autor_tipo === "escritorio" ? "bg-primary-600 text-white" : "bg-slate-900/[0.05] text-slate-800 dark:bg-white/[0.08] dark:text-slate-200"}`}
             >
               <Markdown source={m.mensagem} />
               <p
@@ -2404,11 +2518,7 @@ function TabMensagens({ caseId }: { caseId: string }) {
             </div>
           </div>
         ))}
-        {msgs.length === 0 && (
-          <p className="text-center text-gray-400 text-sm py-10">
-            Nenhuma mensagem ainda
-          </p>
-        )}
+        {msgs.length === 0 && <Empty message="Nenhuma mensagem ainda" />}
       </div>
       <div className="flex gap-2">
         <input
@@ -2759,9 +2869,7 @@ function TabMemoria({ caseId }: { caseId: string }) {
           </div>
         ))}
         {itens.length === 0 && !showForm && (
-          <p className="text-center py-8 text-gray-400 text-sm">
-            Nenhum registro de memória para este caso
-          </p>
+          <Empty message="Nenhum registro de memória para este caso" />
         )}
       </div>
     </div>
@@ -2769,27 +2877,6 @@ function TabMemoria({ caseId }: { caseId: string }) {
 }
 
 // ── Tab placeholder (módulo ainda não disponível) ────────────────────────────
-function TabEmBreve({
-  titulo,
-  descricao,
-}: {
-  titulo: string;
-  descricao: string;
-}) {
-  return (
-    <div className="space-y-4">
-      <h2 className="font-semibold">{titulo}</h2>
-      <div className="card p-8 text-center text-gray-400 border border-dashed">
-        <p className="text-3xl mb-2">🚧</p>
-        <p className="font-medium text-gray-500">
-          Módulo em implementação (FASE 8)
-        </p>
-        <p className="text-xs mt-1">{descricao}</p>
-      </div>
-    </div>
-  );
-}
-
 // ── Componente principal ──────────────────────────────────────────────────────
 
 // ── Mapa área do caso → slugs de ramo ────────────────────────────────────────
@@ -2840,7 +2927,7 @@ function MiniFerramentaCalc({ f }: { f: FerramentaConfig }) {
   }, [f.id]); // eslint-disable-line
 
   return (
-    <div className="border border-gray-200 rounded-lg p-3 bg-white">
+    <div className="card p-3">
       <div className="flex items-center gap-1.5 mb-1">
         <span className="text-xs font-semibold text-navy">{f.titulo}</span>
         {f.autoLoad && res && (
@@ -3004,7 +3091,7 @@ function AnaliseContratoIA({ caseId }: { caseId: string }) {
   ];
 
   return (
-    <div className="border border-gray-200 rounded-xl p-4 bg-white">
+    <div className="card p-4">
       <div className="flex items-center gap-2 mb-3">
         <Sparkles size={16} className="text-gold-600" />
         <h3 className="font-serif font-semibold text-navy text-sm">
@@ -3326,7 +3413,7 @@ function IaDefensivaCaso({ caso }: { caso: Case }) {
       </div>
 
       <div className="grid gap-4 lg:grid-cols-[minmax(0,0.92fr)_minmax(0,1.08fr)]">
-        <div className="space-y-3 rounded-xl border border-slate-200 bg-white p-4 shadow-sm">
+        <div className="space-y-3 card p-4">
           <div className="grid gap-3 md:grid-cols-4">
             <div>
               <label className="mb-1 block text-xs font-medium text-slate-600">
@@ -3461,7 +3548,7 @@ function IaDefensivaCaso({ caso }: { caso: Case }) {
           </button>
         </div>
 
-        <div className="rounded-xl border border-slate-200 bg-white p-4 shadow-sm">
+        <div className="card p-4">
           <div className="mb-3 flex items-center justify-between gap-2">
             <div>
               <h3 className="text-sm font-semibold text-slate-950">
@@ -3509,7 +3596,7 @@ function IaDefensivaCaso({ caso }: { caso: Case }) {
         </div>
       </div>
 
-      <div className="rounded-xl border border-slate-200 bg-white p-4 shadow-sm">
+      <div className="card p-4">
         <div className="mb-3 flex flex-col gap-2 md:flex-row md:items-center md:justify-between">
           <div>
             <h3 className="text-sm font-semibold text-slate-950">
@@ -3529,9 +3616,7 @@ function IaDefensivaCaso({ caso }: { caso: Case }) {
           </button>
         </div>
         {historico.length === 0 ? (
-          <div className="rounded-lg border border-dashed border-slate-200 bg-slate-50 p-5 text-center text-sm text-slate-400">
-            Nenhuma analise defensiva registrada para este caso.
-          </div>
+          <Empty message="Nenhuma analise defensiva registrada para este caso." />
         ) : (
           <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-3">
             {historico.map((item) => (
@@ -3573,7 +3658,7 @@ function IaDefensivaCaso({ caso }: { caso: Case }) {
                     Aplicado
                   </button>
                   <button
-                    className="rounded-md border border-slate-200 px-2 py-1 text-slate-500 hover:bg-slate-50"
+                    className="btn-ghost rounded-md px-2 py-1 text-xs text-slate-500"
                     onClick={() => atualizarStatus(item.id, "descartado")}
                   >
                     Descartar
@@ -3814,6 +3899,8 @@ export default function CasoDetalhe() {
     switch (activeTab) {
       case "resumo":
         return <TabResumo caso={caso} />;
+      case "orquestrador":
+        return <OrquestradorPanel caseId={id} />;
       case "processos":
         return <TabProcessos caseId={id} />;
       case "timeline":
@@ -3834,27 +3921,39 @@ export default function CasoDetalhe() {
         return <TabJurisprudencia caseId={id} caso={caso} />;
       case "documentos":
         return (
-          <TabLista
-            titulo="Documentos"
-            endpoint={`/documents/?case_id=${id}`}
-            empty="Nenhum documento vinculado a este caso"
-            renderItem={(d) => (
-              <div
-                className="card p-3 flex justify-between items-center text-sm cursor-pointer hover:bg-slate-50"
-                onClick={() =>
-                  baixarDoc(d.id, d.filename || d.nome_arquivo || d.titulo)
-                }
-                title="Clique para baixar"
+          <div className="space-y-3">
+            {/* CTA de anexar: o upload vive no módulo global de Documentos,
+                que pré-seleciona o caso via ?caso= (achado M2 do E2E). */}
+            <div className="flex justify-end">
+              <Link
+                to={`/documentos?caso=${id}`}
+                className="btn-secondary text-xs"
               >
-                <span className="text-gray-800">
-                  {d.titulo || d.filename || d.nome_arquivo}
-                </span>
-                <span className="text-gray-400 text-xs">
-                  {d.tipo_peca || d.tipo}
-                </span>
-              </div>
-            )}
-          />
+                Anexar documento ao caso
+              </Link>
+            </div>
+            <TabLista
+              titulo="Documentos"
+              endpoint={`/documents/?case_id=${id}`}
+              empty="Nenhum documento vinculado a este caso"
+              renderItem={(d) => (
+                <div
+                  className="card p-3 flex justify-between items-center text-sm cursor-pointer hover:bg-slate-50"
+                  onClick={() =>
+                    baixarDoc(d.id, d.filename || d.nome_arquivo || d.titulo)
+                  }
+                  title="Clique para baixar"
+                >
+                  <span className="text-gray-800">
+                    {d.titulo || d.filename || d.nome_arquivo}
+                  </span>
+                  <span className="text-gray-400 text-xs">
+                    {d.tipo_peca || d.tipo}
+                  </span>
+                </div>
+              )}
+            />
+          </div>
         );
       case "provas":
         return <ProvasCaso caseId={id} />;
@@ -3896,27 +3995,37 @@ export default function CasoDetalhe() {
         );
       case "prazos":
         return (
-          <TabLista
-            titulo="Prazos"
-            endpoint={`/deadlines/?case_id=${id}&status=`}
-            empty="Nenhum prazo cadastrado"
-            renderItem={(d) => (
-              <div className="card p-3 flex justify-between items-center text-sm">
-                <span className="text-gray-800">{d.titulo}</span>
-                <span
-                  className={`font-medium text-xs ${
-                    (d.dias_restantes ?? 1) <= 0
-                      ? "text-danger-600"
-                      : (d.dias_restantes ?? 99) <= 7
-                        ? "text-orange-600"
-                        : "text-gray-500"
-                  }`}
-                >
-                  {fmtDate(d.data_prazo)}
-                </span>
-              </div>
-            )}
-          />
+          <div className="space-y-3">
+            <div className="flex justify-end">
+              <Link
+                to={`/atividades?caso=${id}&tipo=prazo`}
+                className="btn-secondary text-xs"
+              >
+                Novo prazo ou atividade
+              </Link>
+            </div>
+            <TabLista
+              titulo="Prazos"
+              endpoint={`/deadlines/?case_id=${id}&status=`}
+              empty="Nenhum prazo cadastrado"
+              renderItem={(d) => (
+                <div className="card p-3 flex justify-between items-center text-sm">
+                  <span className="text-gray-800">{d.titulo}</span>
+                  <span
+                    className={`font-medium text-xs ${
+                      (d.dias_restantes ?? 1) <= 0
+                        ? "text-danger-600"
+                        : (d.dias_restantes ?? 99) <= 7
+                          ? "text-orange-600"
+                          : "text-gray-500"
+                    }`}
+                  >
+                    {fmtDate(d.data_prazo)}
+                  </span>
+                </div>
+              )}
+            />
+          </div>
         );
       case "audiencias":
         return (
@@ -4047,34 +4156,8 @@ export default function CasoDetalhe() {
         );
       case "memoria":
         return <TabMemoria caseId={id} />;
-      case "jurimetria":
-        return (
-          <TabEmBreve
-            titulo="Jurimetria"
-            descricao="A jurimetria é agregada (por área/tribunal/magistrado) e fica no menu Jurimetria — não há recorte por caso individual."
-          />
-        );
       case "dossie":
-        return (
-          <TabLista
-            titulo="Dossiê Estratégico"
-            endpoint={`/dossie/${id}/historico`}
-            empty="Nenhum dossiê estratégico gerado"
-            renderItem={(d) => (
-              <div className="card p-3 text-sm flex justify-between items-center">
-                <span className="font-medium text-gray-800">
-                  {d.titulo ||
-                    `Versão ${d.versao ?? ""}`.trim() ||
-                    "Snapshot Estratégico"}
-                </span>
-                <span className="text-gray-400 text-xs">
-                  {d.aprovado ? "✓ aprovado" : "rascunho"} ·{" "}
-                  {fmtDate(d.created_at)}
-                </span>
-              </div>
-            )}
-          />
-        );
+        return <DossieEstrategicoCaso caseId={id} />;
       case "iaDefensiva":
         return <IaDefensivaCaso caso={caso} />;
       case "ferramentas":
@@ -4098,12 +4181,17 @@ export default function CasoDetalhe() {
 
   return (
     <div className="space-y-5">
+      <CaseBreadcrumb
+        caseId={caso.id}
+        titulo={caso.titulo}
+        tela={activeTabLabel}
+      />
       {/* Sticky header + tabs */}
-      <div className="sticky top-[4.25rem] z-20 rounded-2xl border border-slate-200 bg-white/95 shadow-sm backdrop-blur-xl">
+      <div className="sticky top-[4.25rem] z-20 card bg-white">
         <div className="flex flex-col gap-4 px-4 py-4 lg:flex-row lg:items-start lg:justify-between">
           <button
             onClick={() => navigate("/casos")}
-            className="mt-1 flex h-9 w-9 shrink-0 items-center justify-center rounded-xl border border-slate-200 bg-white text-slate-500 transition-colors hover:bg-slate-50 hover:text-slate-800"
+            className="icon-btn mt-1 h-9 w-9 shrink-0"
           >
             <ChevronLeft size={18} />
           </button>
@@ -4194,28 +4282,40 @@ export default function CasoDetalhe() {
         {/* Sub-abas do grupo ativo */}
         {(() => {
           const grp = grupoAtivo;
-          if (grp.tabs.length <= 1) return null;
+          if (grp.tabs.length <= 1 && !grp.links?.length) return null;
           return (
             <div className="flex gap-2 overflow-x-auto border-t border-slate-100 bg-slate-50/70 px-3 py-2 scrollbar-thin">
               <span className="hidden text-[11px] font-semibold uppercase tracking-[0.16em] text-slate-400 sm:inline-flex sm:items-center">
                 {grp.label}
               </span>
-              {grp.tabs.map((k) => {
-                const t = TABS.find((x) => x.key === k)!;
-                return (
-                  <button
-                    key={k}
-                    onClick={() => setSearchParams({ tab: k })}
-                    className={`h-8 flex-shrink-0 rounded-full px-3 text-xs font-medium transition-colors ${
-                      activeTab === k
-                        ? "bg-slate-950 text-white"
-                        : "text-slate-600 hover:bg-white hover:text-slate-950"
-                    }`}
-                  >
-                    {t.label}
-                  </button>
-                );
-              })}
+              {grp.tabs.length > 1 &&
+                grp.tabs.map((k) => {
+                  const t = TABS.find((x) => x.key === k)!;
+                  return (
+                    <button
+                      key={k}
+                      onClick={() => setSearchParams({ tab: k })}
+                      className={`h-8 flex-shrink-0 rounded-full px-3 text-xs font-medium transition-colors ${
+                        activeTab === k
+                          ? "bg-slate-950 text-white"
+                          : "text-slate-600 hover:bg-white hover:text-slate-950"
+                      }`}
+                    >
+                      {t.label}
+                    </button>
+                  );
+                })}
+              {/* Rotas irmãs do caso vinculadas a esta seção (Sala de Guerra,
+                  Jornada, Entrevista) — páginas próprias, não abas. */}
+              {grp.links?.map((l) => (
+                <Link
+                  key={l.label}
+                  to={l.to(caso.id)}
+                  className="flex h-8 flex-shrink-0 items-center rounded-full border border-slate-200 bg-white px-3 text-xs font-medium text-primary-700 transition-colors hover:border-primary-300 hover:bg-primary-50"
+                >
+                  {l.label}
+                </Link>
+              ))}
             </div>
           );
         })()}
@@ -4229,6 +4329,8 @@ export default function CasoDetalhe() {
           </h2>
         </div>
       </div>
+
+      <ContextualAIAssistant caso={caso} surface={activeTab} />
 
       <div>{renderTab()}</div>
     </div>

@@ -1,14 +1,15 @@
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import {
   DollarSign,
   Clock,
   CheckCircle,
   AlertCircle,
+  Receipt,
   TrendingUp,
 } from "lucide-react";
 import api from "../../lib/api";
 import { asList } from "../../lib/list";
-import { fmtMoney } from "../../components/UI";
+import { ErrorState, Modal, Spinner, fmtDate, fmtMoney } from "../../components/UI";
 
 const ST: Record<string, [string, string, string]> = {
   pago: ["Pago", "text-success-600", "bg-success-50"],
@@ -20,13 +21,22 @@ const ST: Record<string, [string, string, string]> = {
 export default function PortalFinanceiro() {
   const [rows, setRows] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
+  const [error, setError] = useState(false);
+  const [recibo, setRecibo] = useState<any>(null);
 
-  useEffect(() => {
+  const load = useCallback(() => {
+    setLoading(true);
+    setError(false);
     api
       .get("/portal/financeiro")
       .then((r) => setRows(asList(r.data)))
+      .catch(() => setError(true))
       .finally(() => setLoading(false));
   }, []);
+
+  useEffect(() => {
+    load();
+  }, [load]);
 
   const total = rows.reduce((s, r) => s + (r.valor ?? 0), 0);
   const pago = rows
@@ -82,10 +92,7 @@ export default function PortalFinanceiro() {
       {/* KPIs */}
       <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
         {kpis.map((k) => (
-          <div
-            key={k.label}
-            className="bg-white rounded-xl border border-slate-200 p-4"
-          >
+          <div key={k.label} className="card p-4">
             <div
               className={`w-8 h-8 rounded-lg ${k.bg} flex items-center justify-center mb-2`}
             >
@@ -116,19 +123,22 @@ export default function PortalFinanceiro() {
       )}
 
       {/* Table */}
-      <div className="bg-white rounded-xl border border-slate-200 overflow-hidden">
+      <div className="card overflow-hidden">
         <div className="px-5 py-4 border-b border-slate-100">
           <h2 className="font-semibold text-slate-700 flex items-center gap-2">
             <DollarSign className="w-4 h-4 text-slate-400" /> Lançamentos
           </h2>
         </div>
         {loading ? (
-          <div className="p-10 text-center text-slate-400 text-sm">
-            Carregando...
-          </div>
+          <Spinner />
+        ) : error ? (
+          <ErrorState
+            message="Não foi possível carregar seus lançamentos financeiros."
+            onRetry={load}
+          />
         ) : rows.length === 0 ? (
           <div className="p-10 text-center text-slate-400 text-sm">
-            Nenhum lançamento
+            Nenhum lançamento — você está em dia com o escritório.
           </div>
         ) : (
           <div className="divide-y divide-slate-100">
@@ -170,6 +180,14 @@ export default function PortalFinanceiro() {
                     >
                       {label}
                     </span>
+                    {f.status === "pago" && (
+                      <button
+                        onClick={() => setRecibo(f)}
+                        className="block ml-auto mt-1 text-xs text-success-600 hover:underline inline-flex items-center gap-1"
+                      >
+                        <Receipt className="w-3 h-3" /> Ver confirmação
+                      </button>
+                    )}
                   </div>
                 </div>
               );
@@ -177,6 +195,45 @@ export default function PortalFinanceiro() {
           </div>
         )}
       </div>
+
+      {/* Confirmação de pagamento — apenas os dados que o escritório registrou */}
+      <Modal
+        open={recibo !== null}
+        onClose={() => setRecibo(null)}
+        title="Confirmação de pagamento"
+        size="sm"
+      >
+        {recibo && (
+          <div className="space-y-3">
+            <div className="flex items-center gap-2 text-success-600">
+              <CheckCircle className="w-5 h-5 flex-shrink-0" />
+              <p className="text-sm font-semibold">Pagamento registrado</p>
+            </div>
+            <div className="text-sm space-y-2">
+              <div>
+                <p className="text-xs text-slate-400">Descrição</p>
+                <p className="text-slate-800 font-medium">{recibo.descricao}</p>
+              </div>
+              <div>
+                <p className="text-xs text-slate-400">Valor</p>
+                <p className="text-slate-800 font-bold">
+                  {fmtMoney(recibo.valor ?? 0)}
+                </p>
+              </div>
+              {recibo.vencimento && (
+                <div>
+                  <p className="text-xs text-slate-400">Vencimento</p>
+                  <p className="text-slate-800">{fmtDate(recibo.vencimento)}</p>
+                </div>
+              )}
+            </div>
+            <p className="text-xs text-slate-400">
+              Confirmação emitida pelo Portal do Cliente com base nos registros
+              do escritório. Para um recibo formal, solicite pelas Mensagens.
+            </p>
+          </div>
+        )}
+      </Modal>
     </div>
   );
 }

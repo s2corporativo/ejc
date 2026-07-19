@@ -1,46 +1,67 @@
 import { useState, useEffect, useCallback } from "react";
 import api from "../lib/api";
-import { PageHeader, Spinner, Modal } from "../components/UI";
+import { asList } from "../lib/list";
+import { useAuth } from "../stores/auth";
+import { EmptyState, PageHeader, Spinner, Modal } from "../components/UI";
+import { toast } from "../components/Toast";
+import type { Client } from "../types";
 import {
   FileSignature,
   Plus,
-  X,
-  UserPlus,
+  Info,
   CheckCircle,
   Circle,
 } from "lucide-react";
 
 interface Signatario {
-  nome: string;
-  email: string;
-  papel: string;
+  nome?: string;
+  email?: string;
+  papel?: string;
   assinado?: boolean;
   assinado_em?: string;
 }
 
+// Contrato real de GET /signatures/ (backend/app/routers/signatures.py):
+// id é UUID (string), status ∈ pendente|assinado|cancelado, o título vem em
+// `documento` e `signatarios` pode estar ausente em versões antigas do backend.
 interface SolicitacaoAssinatura {
-  id: number;
-  documento_nome: string;
-  status: "aguardando" | "parcial" | "concluido";
-  signatarios: Signatario[];
-  case_id?: number;
-  created_at: string;
+  id: string;
+  document_id?: string;
+  documento?: string;
+  status: string;
+  hash?: string;
+  assinado_em?: string | null;
+  created_at?: string;
+  signatarios?: Signatario[];
 }
 
+interface DocumentoOption {
+  id: string;
+  titulo: string;
+}
+
+// Contrato real de POST /signatures/: apenas document_id + client_id. Os
+// signatários são derivados no backend (usuários ativos do Portal do Cliente
+// vinculados ao cliente) — a tela não coleta signatários adicionais.
 interface NovaAssinaturaForm {
-  documento_nome: string;
-  case_id: string;
+  client_id: string;
   document_id: string;
-  signatarios: { nome: string; email: string; papel: string }[];
 }
 
-const STATUS_CONFIG = {
-  aguardando: {
+const STATUS_CONFIG: Record<string, { label: string; className: string }> = {
+  pendente: {
     label: "Aguardando",
     className: "bg-yellow-100 text-yellow-800",
   },
-  parcial: { label: "Parcial", className: "bg-primary-100 text-primary-800" },
-  concluido: { label: "Concluído", className: "bg-green-100 text-green-800" },
+  assinado: { label: "Assinado", className: "bg-green-100 text-green-800" },
+  cancelado: { label: "Cancelado", className: "bg-gray-100 text-gray-600" },
+};
+
+const STATUS_FALLBACK = { label: "—", className: "bg-gray-100 text-gray-600" };
+
+const FORM_VAZIO: NovaAssinaturaForm = {
+  client_id: "",
+  document_id: "",
 };
 
 export default function Assinaturas() {
@@ -48,23 +69,30 @@ export default function Assinaturas() {
   const [loading, setLoading] = useState(true);
   const [modalAberto, setModalAberto] = useState(false);
   const [salvando, setSalvando] = useState(false);
-  const [assinando, setAssinando] = useState<number | null>(null);
-  const [userEmail, setUserEmail] = useState<string>("");
+  const [assinando, setAssinando] = useState<string | null>(null);
+  const [clientes, setClientes] = useState<Client[]>([]);
+  const [documentos, setDocumentos] = useState<DocumentoOption[]>([]);
+  const [carregandoDocs, setCarregandoDocs] = useState(false);
+  // E-mail do usuário logado vem da sessão já carregada no bootstrap —
+  // evita uma chamada redundante (e ruidosa) a /users/me nesta página.
+  const userEmail = useAuth((s) => s.user?.email ?? "");
 
-  const [form, setForm] = useState<NovaAssinaturaForm>({
-    documento_nome: "",
-    case_id: "",
-    document_id: "",
-    signatarios: [{ nome: "", email: "", papel: "" }],
-  });
+  const [form, setForm] = useState<NovaAssinaturaForm>(FORM_VAZIO);
 
   const fetchSolicitacoes = useCallback(async () => {
     setLoading(true);
     try {
-      const res = await api.get("/signatures");
-      setSolicitacoes(res.data);
-    } catch {
+      // Barra final obrigatória: sem ela o FastAPI responde 307 com Location
+      // absoluto e o browser perde o Authorization no redirect (achado M1).
+      const res = await api.get("/signatures/");
+      // O backend responde envelope { data: [...] } — asList() normaliza
+      // (array cru | { items } | { data }) e nunca quebra o .map da lista.
+      setSolicitacoes(asList<SolicitacaoAssinatura>(res.data));
+    } catch (e: any) {
       setSolicitacoes([]);
+      toast.error(
+        e.response?.data?.detail || "Falha ao carregar as solicitações",
+      );
     } finally {
       setLoading(false);
     }
@@ -72,95 +100,101 @@ export default function Assinaturas() {
 
   useEffect(() => {
     fetchSolicitacoes();
-    // Tenta pegar email do usuário logado via token/storage
-    api
-      .get("/users/me")
-      .then((r: any) => setUserEmail(r.data?.email || ""))
-      .catch(() => {});
   }, [fetchSolicitacoes]);
 
   const abrirModal = () => {
-    setForm({
-      documento_nome: "",
-      case_id: "",
-      document_id: "",
-      signatarios: [{ nome: "", email: "", papel: "" }],
-    });
+    setForm(FORM_VAZIO);
+    setDocumentos([]);
     setModalAberto(true);
+    // Clientes só são necessários dentro do modal — carrega sob demanda.
+    api
+      .get("/clients/", { params: { page_size: 100 } })
+      .then((r) => setClientes(asList<Client>(r.data)))
+      .catch((e: any) =>
+        toast.error(e.response?.data?.detail || "Falha ao carregar clientes"),
+      );
   };
 
   const fecharModal = () => setModalAberto(false);
 
-  const atualizarSignatario = (
-    idx: number,
-    campo: keyof (typeof form.signatarios)[0],
-    valor: string,
-  ) => {
-    setForm((prev) => {
-      const sigs = [...prev.signatarios];
-      sigs[idx] = { ...sigs[idx], [campo]: valor };
-      return { ...prev, signatarios: sigs };
-    });
-  };
-
-  const adicionarSignatario = () => {
-    setForm((prev) => ({
-      ...prev,
-      signatarios: [...prev.signatarios, { nome: "", email: "", papel: "" }],
-    }));
-  };
-
-  const removerSignatario = (idx: number) => {
-    setForm((prev) => ({
-      ...prev,
-      signatarios: prev.signatarios.filter((_, i) => i !== idx),
-    }));
+  const selecionarCliente = (clientId: string) => {
+    setForm((prev) => ({ ...prev, client_id: clientId, document_id: "" }));
+    setDocumentos([]);
+    if (!clientId) return;
+    setCarregandoDocs(true);
+    // A API de documentos aceita filtro por client_id — só documentos do
+    // cliente selecionado são elegíveis (o backend valida doc ↔ cliente).
+    api
+      .get("/documents/", { params: { client_id: clientId, page_size: 100 } })
+      .then((r) => setDocumentos(asList<DocumentoOption>(r.data)))
+      .catch((e: any) =>
+        toast.error(e.response?.data?.detail || "Falha ao carregar documentos"),
+      )
+      .finally(() => setCarregandoDocs(false));
   };
 
   const criarSolicitacao = async (e: React.FormEvent) => {
     e.preventDefault();
+    if (!form.client_id || !form.document_id) {
+      toast.error("Selecione o cliente e o documento");
+      return;
+    }
     setSalvando(true);
     try {
-      const payload: Record<string, unknown> = {
-        documento_nome: form.documento_nome,
-        signatarios: form.signatarios.filter((s) => s.email && s.nome),
-      };
-      if (form.case_id) payload.case_id = Number(form.case_id);
-      if (form.document_id) payload.document_id = Number(form.document_id);
-      await api.post("/signatures", payload);
+      // Barra final obrigatória (mesmo motivo do GET acima): evita 307 que
+      // derruba o Authorization no redirect.
+      await api.post("/signatures/", {
+        document_id: form.document_id,
+        client_id: form.client_id,
+      });
+      toast.success("Solicitação de assinatura criada");
       fecharModal();
       await fetchSolicitacoes();
+    } catch (err: any) {
+      const detail = err.response?.data?.detail;
+      toast.error(
+        typeof detail === "string"
+          ? detail
+          : "Falha ao criar a solicitação de assinatura",
+      );
     } finally {
       setSalvando(false);
     }
   };
 
-  const assinar = async (id: number, signatarioEmail: string) => {
+  const assinar = async (id: string, signatarioEmail: string) => {
     setAssinando(id);
     try {
       await api.post(`/signatures/${id}/assinar`, {
         signatario_email: signatarioEmail,
       });
+      toast.success("Documento assinado");
       await fetchSolicitacoes();
+    } catch (e: any) {
+      toast.error(e.response?.data?.detail || "Falha ao assinar o documento");
     } finally {
       setAssinando(null);
     }
   };
 
+  // signatarios pode faltar na resposta (backends antigos) — guard obrigatório.
   const isSignatario = (sol: SolicitacaoAssinatura) =>
     userEmail
-      ? sol.signatarios.some(
+      ? (sol.signatarios ?? []).some(
           (s) =>
-            s.email.toLowerCase() === userEmail.toLowerCase() && !s.assinado,
+            (s.email ?? "").toLowerCase() === userEmail.toLowerCase() &&
+            !s.assinado,
         )
       : false;
 
-  const formatDate = (iso: string) =>
-    new Date(iso).toLocaleDateString("pt-BR", {
-      day: "2-digit",
-      month: "2-digit",
-      year: "numeric",
-    });
+  const formatDate = (iso?: string | null) =>
+    iso
+      ? new Date(iso).toLocaleDateString("pt-BR", {
+          day: "2-digit",
+          month: "2-digit",
+          year: "numeric",
+        })
+      : "—";
 
   return (
     <div className="max-w-4xl mx-auto px-4 py-6 space-y-6">
@@ -177,30 +211,24 @@ export default function Assinaturas() {
           <Spinner />
         </div>
       ) : solicitacoes.length === 0 ? (
-        <div className="text-center py-16 bg-gray-50 rounded-xl border border-dashed border-gray-200">
-          <FileSignature className="w-10 h-10 text-gray-300 mx-auto mb-3" />
-          <p className="text-gray-500 font-medium">
-            Nenhuma solicitação de assinatura
-          </p>
-          <p className="text-gray-400 text-sm mt-1">
-            Clique em "Nova Assinatura" para criar uma solicitação.
-          </p>
-        </div>
+        <EmptyState
+          title="Nenhuma solicitação de assinatura"
+          message={'Clique em "Nova Assinatura" para criar uma solicitação.'}
+          icon={FileSignature}
+        />
       ) : (
         <ul className="space-y-3">
           {solicitacoes.map((sol) => {
-            const cfg = STATUS_CONFIG[sol.status];
+            const cfg = STATUS_CONFIG[sol.status] ?? STATUS_FALLBACK;
+            const signatarios = sol.signatarios ?? [];
             const podeAssinar = isSignatario(sol);
             return (
-              <li
-                key={sol.id}
-                className="rounded-xl border border-gray-100 bg-white p-4 shadow-sm"
-              >
+              <li key={sol.id} className="card p-4">
                 <div className="flex items-start justify-between gap-4">
                   <div className="flex-1 min-w-0">
                     <div className="flex flex-wrap items-center gap-2 mb-2">
                       <span className="font-semibold text-gray-800 truncate">
-                        {sol.documento_nome}
+                        {sol.documento || "—"}
                       </span>
                       <span
                         className={`inline-flex items-center rounded-full text-xs font-semibold px-2 py-0.5 ${cfg.className}`}
@@ -210,38 +238,40 @@ export default function Assinaturas() {
                     </div>
                     <p className="text-xs text-gray-400 mb-3">
                       Criado em {formatDate(sol.created_at)}
-                      {sol.case_id && (
+                      {sol.assinado_em && (
                         <span className="ml-2 text-gray-400">
-                          · Caso #{sol.case_id}
+                          · Assinado em {formatDate(sol.assinado_em)}
                         </span>
                       )}
                     </p>
-                    <div className="flex flex-wrap gap-3">
-                      {sol.signatarios.map((sig, idx) => (
-                        <div
-                          key={idx}
-                          className="flex items-center gap-1.5 text-sm text-gray-600"
-                        >
-                          {sig.assinado ? (
-                            <CheckCircle className="w-4 h-4 text-green-500 flex-shrink-0" />
-                          ) : (
-                            <Circle className="w-4 h-4 text-gray-300 flex-shrink-0" />
-                          )}
-                          <span
-                            className={sig.assinado ? "text-green-700" : ""}
+                    {signatarios.length > 0 && (
+                      <div className="flex flex-wrap gap-3">
+                        {signatarios.map((sig, idx) => (
+                          <div
+                            key={idx}
+                            className="flex items-center gap-1.5 text-sm text-gray-600"
                           >
-                            {sig.nome}
-                          </span>
-                          {sig.papel && (
-                            <span className="text-xs text-gray-400">
-                              ({sig.papel})
+                            {sig.assinado ? (
+                              <CheckCircle className="w-4 h-4 text-green-500 flex-shrink-0" />
+                            ) : (
+                              <Circle className="w-4 h-4 text-gray-300 flex-shrink-0" />
+                            )}
+                            <span
+                              className={sig.assinado ? "text-green-700" : ""}
+                            >
+                              {sig.nome || sig.email || "—"}
                             </span>
-                          )}
-                        </div>
-                      ))}
-                    </div>
+                            {sig.papel && (
+                              <span className="text-xs text-gray-400">
+                                ({sig.papel})
+                              </span>
+                            )}
+                          </div>
+                        ))}
+                      </div>
+                    )}
                   </div>
-                  {podeAssinar && sol.status !== "concluido" && (
+                  {podeAssinar && sol.status === "pendente" && (
                     <button
                       onClick={() => assinar(sol.id, userEmail)}
                       disabled={assinando === sol.id}
@@ -271,112 +301,65 @@ export default function Assinaturas() {
         <form onSubmit={criarSolicitacao} className="space-y-5">
           <div>
             <label className="block text-sm font-medium text-gray-700 mb-1">
-              Nome do Documento <span className="text-danger-500">*</span>
+              Cliente <span className="text-danger-500">*</span>
             </label>
-            <input
-              type="text"
-              required
-              value={form.documento_nome}
-              onChange={(e) =>
-                setForm((p) => ({ ...p, documento_nome: e.target.value }))
-              }
-              placeholder="Ex: Contrato de Prestação de Serviços"
-              className="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary-500"
-            />
-          </div>
-
-          <div className="grid grid-cols-2 gap-3">
-            <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">
-                ID do Caso
-              </label>
-              <input
-                type="number"
-                value={form.case_id}
-                onChange={(e) =>
-                  setForm((p) => ({ ...p, case_id: e.target.value }))
-                }
-                placeholder="Opcional"
-                className="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary-500"
-              />
-            </div>
-            <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">
-                ID do Documento
-              </label>
-              <input
-                type="number"
-                value={form.document_id}
-                onChange={(e) =>
-                  setForm((p) => ({ ...p, document_id: e.target.value }))
-                }
-                placeholder="Opcional"
-                className="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary-500"
-              />
-            </div>
+            <select
+              value={form.client_id}
+              onChange={(e) => selecionarCliente(e.target.value)}
+              className="input"
+            >
+              <option value="">Selecione o cliente...</option>
+              {clientes.map((c) => (
+                <option key={c.id} value={c.id}>
+                  {c.nome || c.razao_social || c.email || c.id}
+                </option>
+              ))}
+            </select>
           </div>
 
           <div>
-            <div className="flex items-center justify-between mb-2">
-              <label className="block text-sm font-medium text-gray-700">
-                Signatários <span className="text-danger-500">*</span>
-              </label>
-              <button
-                type="button"
-                onClick={adicionarSignatario}
-                className="inline-flex items-center gap-1 text-xs text-primary-600 hover:text-primary-800 font-medium"
-              >
-                <UserPlus className="w-3.5 h-3.5" />
-                Adicionar
-              </button>
-            </div>
-
-            <div className="space-y-3">
-              {form.signatarios.map((sig, idx) => (
-                <div key={idx} className="flex gap-2 items-start">
-                  <div className="flex-1 grid grid-cols-3 gap-2">
-                    <input
-                      type="text"
-                      required
-                      value={sig.nome}
-                      onChange={(e) =>
-                        atualizarSignatario(idx, "nome", e.target.value)
-                      }
-                      placeholder="Nome"
-                      className="rounded-lg border border-gray-300 px-2 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-primary-500"
-                    />
-                    <input
-                      type="email"
-                      required
-                      value={sig.email}
-                      onChange={(e) =>
-                        atualizarSignatario(idx, "email", e.target.value)
-                      }
-                      placeholder="E-mail"
-                      className="rounded-lg border border-gray-300 px-2 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-primary-500"
-                    />
-                    <input
-                      type="text"
-                      value={sig.papel}
-                      onChange={(e) =>
-                        atualizarSignatario(idx, "papel", e.target.value)
-                      }
-                      placeholder="Papel"
-                      className="rounded-lg border border-gray-300 px-2 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-primary-500"
-                    />
-                  </div>
-                  {form.signatarios.length > 1 && (
-                    <button
-                      type="button"
-                      onClick={() => removerSignatario(idx)}
-                      className="mt-1 text-gray-300 hover:text-danger-500 transition-colors"
-                    >
-                      <X className="w-4 h-4" />
-                    </button>
-                  )}
-                </div>
+            <label className="block text-sm font-medium text-gray-700 mb-1">
+              Documento <span className="text-danger-500">*</span>
+            </label>
+            <select
+              value={form.document_id}
+              disabled={!form.client_id || carregandoDocs}
+              onChange={(e) =>
+                setForm((p) => ({ ...p, document_id: e.target.value }))
+              }
+              className="input disabled:opacity-60"
+            >
+              <option value="">
+                {!form.client_id
+                  ? "Selecione um cliente primeiro..."
+                  : carregandoDocs
+                    ? "Carregando documentos..."
+                    : documentos.length === 0
+                      ? "Nenhum documento deste cliente"
+                      : "Selecione o documento..."}
+              </option>
+              {documentos.map((d) => (
+                <option key={d.id} value={d.id}>
+                  {d.titulo}
+                </option>
               ))}
-            </div>
+            </select>
+            {form.client_id && !carregandoDocs && documentos.length === 0 && (
+              <p className="mt-1 text-xs text-gray-400">
+                Envie o arquivo em Documentos (vinculado ao cliente) antes de
+                solicitar a assinatura.
+              </p>
+            )}
+          </div>
+
+          <div className="flex items-start gap-2 rounded-lg bg-blue-50 border border-blue-100 px-3 py-2.5 text-sm text-blue-800">
+            <Info className="w-4 h-4 mt-0.5 flex-shrink-0" />
+            <p>
+              O documento será enviado para assinatura a todos os usuários
+              ativos do <strong>Portal do Cliente</strong> vinculados ao
+              cliente selecionado. Se o cliente ainda não tem acesso ao
+              Portal, conceda o acesso antes de criar a solicitação.
+            </p>
           </div>
 
           <div className="flex gap-3 pt-2">

@@ -14,11 +14,15 @@ import {
   PageHeader,
   StatusBadge,
   Badge,
+  Button,
   Modal,
   Empty,
+  ErrorState,
   Spinner,
   fmtDate,
 } from "../components/UI";
+import CaseFilterChip from "../components/CaseFilterChip";
+import { useCasoFiltro } from "../contexts/useCasoFiltro";
 
 export default function Prazos() {
   const [data, setData] = useState<Paged<Deadline> | null>(null);
@@ -33,16 +37,28 @@ export default function Prazos() {
   const [calc, setCalc] = useState<any>({ dias: 15, dias_uteis: true });
   const [calcResp, setCalcResp] = useState<any>(null);
   const [salvando, setSalvando] = useState(false);
+  const [error, setError] = useState(false);
 
-  const load = () =>
-    api
+  // Modo Caso: `?caso=` na URL vence; sem query, o caso ativo preenche.
+  // GET /deadlines/ já aceita case_id (link /prazos?caso= da jornada).
+  const { casoFiltro, casoFiltroNome, removerFiltro } = useCasoFiltro();
+
+  const load = () => {
+    setError(false);
+    return api
       .get("/deadlines/", {
-        params: { status: statusF || undefined, page_size: 100 },
+        params: {
+          status: statusF || undefined,
+          case_id: casoFiltro,
+          page_size: 100,
+        },
       })
-      .then((r) => setData(r.data));
+      .then((r) => setData(r.data))
+      .catch(() => setError(true));
+  };
   useEffect(() => {
     load();
-  }, [statusF]);
+  }, [statusF, casoFiltro]);
 
   const calcular = async () => {
     if (!calc.data_inicio) return;
@@ -54,7 +70,7 @@ export default function Prazos() {
     try {
       // Via api client (injeta o JWT); baixa como blob e dispara o download.
       const r = await api.get("/deadlines/export.csv", {
-        params: { status: statusF || undefined },
+        params: { status: statusF || undefined, case_id: casoFiltro },
         responseType: "blob",
       });
       const url = URL.createObjectURL(r.data as Blob);
@@ -76,7 +92,9 @@ export default function Prazos() {
     setSalvando(true);
     try {
       // toast.prazo
-      await api.post("/deadlines/", form);
+      // Modo Caso: novo prazo nasce vinculado ao caso filtrado (visível no
+      // aviso do modal); sem filtro ativo, comportamento inalterado.
+      await api.post("/deadlines/", { ...form, case_id: casoFiltro });
       setModal(false);
       setForm({ tipo: "processual", prioridade: "media", dias_uteis: true });
       load();
@@ -142,30 +160,50 @@ export default function Prazos() {
         }
       />
 
-      <div className="flex gap-2 mb-4">
+      <div className="flex flex-wrap items-center gap-2 mb-4">
         {["pendente", "concluido", "vencido", ""].map((s) => (
           <button
             key={s}
             onClick={() => setStatusF(s)}
-            className={`px-3 py-1.5 rounded-lg text-sm font-medium ${statusF === s ? "bg-navy text-white" : "bg-white border border-slate-200 text-slate-600"}`}
+            className={`px-3 py-1.5 rounded-lg text-sm font-medium ${statusF === s ? "bg-navy text-white" : "bg-slate-900/[0.05] text-slate-600 hover:bg-slate-900/[0.09] dark:bg-white/[0.07] dark:text-slate-300"}`}
           >
             {s || "Todos"}
           </button>
         ))}
+        {casoFiltro && (
+          <CaseFilterChip nome={casoFiltroNome} onRemove={removerFiltro} />
+        )}
       </div>
 
-      {!data ? (
+      {error ? (
+        <ErrorState
+          message="Não foi possível carregar os prazos. Tente novamente."
+          onRetry={load}
+        />
+      ) : !data ? (
         <Spinner />
-      ) : (!Array.isArray(data.data) || data.data.length === 0) ? (
-        <Empty message="Nenhum prazo nesta categoria" />
+      ) : !Array.isArray(data.data) || data.data.length === 0 ? (
+        <Empty
+          titulo="Nenhum prazo nesta categoria"
+          descricao="Prazos processuais e compromissos com data aparecem aqui. Cadastre um prazo para acompanhar vencimentos e confirmações de ciência."
+          acao={
+            <Button
+              variant="primary"
+              icon={<Plus size={16} />}
+              onClick={() => setModal(true)}
+            >
+              Cadastrar um prazo
+            </Button>
+          }
+        />
       ) : (
         <div className="space-y-2">
           {(Array.isArray(data.data) ? data.data : []).map((d: any) => (
             <div
               key={d.id}
-              className={`card p-4 flex flex-wrap items-center gap-4 ${urgClass[d.urgencia] || ""}`}
+              className={`card p-4 flex flex-wrap items-center gap-3 sm:gap-4 ${urgClass[d.urgencia] || ""}`}
             >
-              <div className="flex-1 min-w-[200px]">
+              <div className="flex-1 min-w-[180px]">
                 <div className="font-medium text-navy flex items-center gap-2 flex-wrap">
                   {d.titulo}
                   {d.ciencia_confirmada && (
@@ -246,7 +284,7 @@ export default function Prazos() {
       >
         <div className="space-y-4">
           <div>
-            <label className="label">Data da intimação/ciência</label>
+            <label className="label">Data da intimação/ciência (dd/mm/aaaa)</label>
             <input
               type="date"
               className="input"
@@ -273,7 +311,11 @@ export default function Prazos() {
                 value={calc.dias_uteis ? "u" : "c"}
                 onChange={(e) => {
                   const u = e.target.value === "u";
-                  setCalc({ ...calc, dias_uteis: u, dobro: u ? calc.dobro : false });
+                  setCalc({
+                    ...calc,
+                    dias_uteis: u,
+                    dobro: u ? calc.dobro : false,
+                  });
                 }}
               >
                 <option value="u">Dias úteis (CPC)</option>
@@ -328,7 +370,7 @@ export default function Prazos() {
             />
           </div>
           <div>
-            <label className="label">Data da intimação</label>
+            <label className="label">Data da intimação (dd/mm/aaaa)</label>
             <input
               type="date"
               className="input"
@@ -363,7 +405,7 @@ export default function Prazos() {
             </select>
           </div>
           <div>
-            <label className="label">OU data fatal direta</label>
+            <label className="label">OU data fatal direta (dd/mm/aaaa)</label>
             <input
               type="date"
               className="input"
@@ -394,7 +436,12 @@ export default function Prazos() {
             />
           </div>
         </div>
-        <div className="flex justify-end mt-5">
+        <div className="flex flex-wrap items-center justify-between gap-3 mt-5">
+          <span className="text-xs text-slate-400">
+            {casoFiltro
+              ? `Será vinculado ao caso: ${casoFiltroNome || "caso filtrado"}`
+              : ""}
+          </span>
           <button className="btn-primary" disabled={salvando} onClick={salvar}>
             {salvando ? "Salvando..." : "Criar prazo"}
           </button>

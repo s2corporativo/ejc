@@ -11,6 +11,7 @@ Retorno padronizado: lista de JuriExternaItem compatível com JurisprudenciaInte
 from __future__ import annotations
 
 import asyncio
+import html as _html
 import logging
 import re
 import xml.etree.ElementTree as ET
@@ -40,6 +41,8 @@ def _item(
     fonte: str = "",
     link: str = "",
     area_juridica: str = "",
+    orgao_julgador: str = "",
+    classe: str = "",
 ) -> dict:
     return {
         "titulo": titulo[:300],
@@ -51,6 +54,10 @@ def _item(
         "fonte": fonte,
         "link_original": link,
         "area_juridica": area_juridica,
+        # Metadados jurídicos adicionais (usados pelo ingestor RAG do TJMG;
+        # os consumidores de busca ao vivo simplesmente ignoram chaves extras).
+        "orgao_julgador": orgao_julgador,
+        "classe": classe,
     }
 
 
@@ -158,10 +165,19 @@ async def buscar_tjmg(
     palavras: str,
     pagina: int = 1,
     por_pagina: int = 10,
+    *,
+    data_inicial: str = "",
+    data_final: str = "",
+    classe: str = "",
+    orgao: str = "",
 ) -> list[dict]:
     """
     Busca na jurisprudência pública do TJMG via formulário web.
     Retorna lista de acórdãos parseados do HTML de resultados.
+
+    Filtros opcionais (usados pelo ingestor RAG agendado; a busca ao vivo do
+    usuário chama sem eles): `data_inicial`/`data_final` (dd/mm/aaaa),
+    `classe` (ex.: para mirar IRDR/IAC) e `orgao` (código do órgão julgador).
     """
     # TJMG espera POST com params de formulário
     payload = {
@@ -170,11 +186,11 @@ async def buscar_tjmg(
         "numeroProcesso": "",
         "numeroRegistro": "",
         "palavras": palavras,
-        "codigoOrgaoJulgador": "",
+        "codigoOrgaoJulgador": orgao or "",
         "codigoCompostoRelator": "",
-        "classe": "",
-        "dataJulgamentoInicial": "",
-        "dataJulgamentoFinal": "",
+        "classe": classe or "",
+        "dataJulgamentoInicial": data_inicial or "",
+        "dataJulgamentoFinal": data_final or "",
         "siglaLegislativa": "",
         "referenciaLegislativa": "",
         "indexPagina": str(pagina - 1),
@@ -192,27 +208,58 @@ async def buscar_tjmg(
 
 
 def _parse_tjmg_html(html: str) -> list[dict]:
-    """Parse simples do HTML de resultados do TJMG."""
+    """Parse tolerante do HTML de resultados do TJMG.
+
+    Baseado em regex (não há bs4/lxml nas dependências) e deliberadamente
+    defensivo: campos ausentes viram string vazia e blocos sem ementa mínima
+    são descartados — NUNCA levanta exceção. Se o HTML do TJMG mudar, o
+    resultado degrada para lista vazia (e o job de ingestão marca a fonte como
+    'parcial'/'erro' no painel, sem quebrar o scheduler).
+    """
     resultados = []
+
+    # Teto defensivo de tamanho: bound o custo do parse regex sobre HTML de
+    # terceiros (uma resposta anômala não vira gasto de CPU desproporcional).
+    # Páginas de resultado do TJMG são muito menores que isto.
+    html = html[:2_000_000]
+
+    # Decodifica entidades ANTES da extração de campos: os rótulos ("Acórdão",
+    # "Órgão Julgador", "Ementa"...) casam mesmo que o TJMG os sirva
+    # entity-encoded (&oacute; etc.). As tags (<tr>, <br>, </td>) permanecem
+    # intactas — unescape não reintroduz marcação — então o split por classe e
+    # os stops de campo por tag continuam válidos.
+    html = _html.unescape(html)
 
     # Blocos de acórdão estão em divs com class="resultados" ou tabelas
     # Extração via regex dos campos principais
-    # Padrão TJMG: Número | Relator | Data | Ementa
+    # Padrão TJMG: Número | Relator | Órgão | Classe | Data | Ementa
     blocos = re.split(r'(?i)<(?:tr|div)[^>]*class="[^"]*(?:resultad|accordao|acordao|linha)[^"]*"', html)
 
     for bloco in blocos[1:]:
         # Número do acórdão
         num = re.search(r'Acórdão[:\s]*(\d[\d\./\-]+)', bloco, re.I)
         if not num:
-            num = re.search(r'Processo[:\s]*([\d\.\-\/]+)', bloco, re.I)
+            num = re.search(r'(?:N[ºo°]?\s*d[oe]\s*)?Processo[:\s]*([\d\.\-\/]+)', bloco, re.I)
         numero = num.group(1).strip() if num else ""
 
         # Relator
-        rel = re.search(r'Relator[:\s]*([A-ZÀ-Ü][A-Za-zÀ-ü \.]+?)(?:<|,|\n|&)', bloco, re.I)
-        relator = rel.group(1).strip() if rel else ""
+        rel = re.search(r'Relator[^:]*[:\s]*([A-ZÀ-Ü][A-Za-zÀ-ü \.]+?)(?:<|,|\n|&)', bloco, re.I)
+        relator = _limpar_html(rel.group(1)) if rel else ""
 
-        # Data
-        data = re.search(r'Data[^:]*:[^\d]*(\d{2}/\d{2}/\d{4})', bloco, re.I)
+        # Órgão julgador — exige o rótulo; sem ele, aceita apenas uma designação
+        # NUMERADA de câmara/turma (ex.: "5ª Câmara Cível"). Não casa "Câmara"
+        # solta no meio da ementa (evita gravar metadado errado no `extra`).
+        org = re.search(r'Órg[ãa]o\s*Julgador[^:]*[:\s]*([^<\n]+?)(?:<|\n)', bloco, re.I)
+        if not org:
+            org = re.search(r'(\d{1,2}[ªº]\s*(?:C[âa]mara|Turma)[^<\n]{0,40})', bloco, re.I)
+        orgao = _limpar_html(org.group(1)) if org else ""
+
+        # Classe processual (permite identificar IRDR/IAC etc.)
+        cls = re.search(r'Classe[^:]*[:\s]*([^<\n]+?)(?:<|\n)', bloco, re.I)
+        classe = _limpar_html(cls.group(1)) if cls else ""
+
+        # Data de julgamento
+        data = re.search(r'(?:Data[^:]*|Julgamento)[:\s]*[^\d]*(\d{2}/\d{2}/\d{4})', bloco, re.I)
         data_str = None
         if data:
             try:
@@ -220,7 +267,9 @@ def _parse_tjmg_html(html: str) -> list[dict]:
             except ValueError:
                 pass
 
-        # Ementa — texto limpo
+        # Ementa — texto limpo. NÃO usar "Súmula" como parada: ementas citam
+        # súmulas inline com frequência ("aplica-se a Súmula 83 do STJ") e isso
+        # truncaria o conteúdo citável central do RAG.
         ementa_raw = re.search(r'(?:Ementa|EMENTA)[:\s]*(.*?)(?:Relator|RELATOR|<hr|</div|</td)', bloco, re.S | re.I)
         ementa = _limpar_html(ementa_raw.group(1)) if ementa_raw else _limpar_html(bloco[:800])
 
@@ -239,14 +288,19 @@ def _parse_tjmg_html(html: str) -> list[dict]:
             fonte="TJMG",
             link=f"{TJMG_BASE}/jurisprudencia/formEspelhoAcordao.do?numeroRegistro={numero}" if numero else "",
             area_juridica=_inferir_area(ementa),
+            orgao_julgador=orgao,
+            classe=classe,
         ))
 
-    return resultados[:20]
+    # Teto defensivo de memória: o chamador controla o volume real via
+    # `tamanhoPagina` (TJMG_INGEST_MAX_POR_TEMA). 500 fica bem acima do volume
+    # realista por página; acima disso, elevar este teto junto.
+    return resultados[:500]
 
 
 def _limpar_html(s: str) -> str:
     s = re.sub(r'<[^>]+>', ' ', s)
-    s = re.sub(r'&[a-z]+;', ' ', s)
+    s = _html.unescape(s)          # &amp; &ccedil; &#233; → caracteres reais
     s = re.sub(r'\s+', ' ', s)
     return s.strip()
 

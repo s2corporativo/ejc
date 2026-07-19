@@ -49,10 +49,14 @@ def test_admin_nao_gerencia_superadmin():
     assert exc.value.status_code == 403
 
 
-def test_admin_gerencia_pares_e_inferiores():
+def test_admin_nao_gerencia_pares_mas_gerencia_inferiores():
+    # P4 (anti-lockout / escalada horizontal): admin NÃO gerencia outro admin de
+    # MESMO nível (>=), evitando que um par trave/rebaixe o outro. Inferiores ok.
     admin = _u("admin")
-    _validar_alvo(admin, _u("admin"))
-    _validar_alvo(admin, _u("advogado"))
+    with pytest.raises(HTTPException) as exc:
+        _validar_alvo(admin, _u("admin"))
+    assert exc.value.status_code == 403
+    _validar_alvo(admin, _u("advogado"))  # inferior — não levanta
 
 
 def test_niveis_conhecidos():

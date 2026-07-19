@@ -1,13 +1,22 @@
 # ── app/schemas/fee.py ───────────────────────────────────────────────────────
 from __future__ import annotations
-from pydantic import BaseModel, condecimal
+from pydantic import BaseModel, condecimal, field_validator
 from typing import Optional
 from datetime import date, datetime
 from decimal import Decimal
 
+from app.models.fee import FeeTipo
+
 # Valores monetários nunca negativos (auditoria 2026-06-30, M5).
 ValorNaoNegativo = condecimal(ge=0)
 PercentualNaoNegativo = condecimal(ge=0, le=100)
+
+# Fonte única de verdade: os valores aceitos em `tipo` na CRIAÇÃO são os da enum
+# FeeTipo (inclui 'sucumbencia' desde a migration 097). Mantemos o campo como
+# `str` — o router faz Fee(**payload.model_dump()) e a coluna é SAEnum(FeeTipo),
+# que aceita a string — logo a validação não muda o fluxo de dados, apenas
+# rejeita valores fora do domínio (evita 500/erro de enum no banco).
+_TIPOS_FEE_VALIDOS = frozenset(t.value for t in FeeTipo)
 
 class FeeCreate(BaseModel):
     tipo: str = "fixo"
@@ -18,6 +27,16 @@ class FeeCreate(BaseModel):
     client_id: str
     case_id: Optional[str] = None
     observacoes: Optional[str] = None
+
+    @field_validator("tipo")
+    @classmethod
+    def _validar_tipo(cls, v: str) -> str:
+        if v not in _TIPOS_FEE_VALIDOS:
+            raise ValueError(
+                "tipo de honorário inválido: "
+                f"{v!r}. Valores permitidos: {sorted(_TIPOS_FEE_VALIDOS)}"
+            )
+        return v
 
 class FeeUpdate(BaseModel):
     descricao: Optional[str] = None

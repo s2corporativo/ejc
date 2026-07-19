@@ -1,0 +1,15 @@
+# Copie este arquivo na VPS como docker-compose.override.yml
+# Ele monta a pasta local ./secrets dentro do backend/worker em modo somente leitura.
+# Não coloque arquivos de credencial no GitHub.
+
+services:
+  backend:
+    volumes:
+      - uploads_data:/app/uploads
+      - backups_data:/app/backups
+      - ./secrets:/app/secrets:ro
+
+  worker:
+    volumes:
+      - uploads_data:/app/uploads
+      - ./secrets:/app/secrets:ro

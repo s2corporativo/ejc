@@ -39,10 +39,10 @@ async def dashboard(
     db: AsyncSession = Depends(get_db),
     cu: User = Depends(get_current_user),
 ):
-    from app.core.security import ROLE_LEVEL as _RLk
-    ve_total_k = _RLk.get(cu.role.value, 0) >= _RLk["admin"]
-    # Escopo financeiro determina a chave de cache (sem vazar entre perfis).
-    cache_key = "escritorio" if ve_total_k else f"meus_casos:{cu.id}"
+    from app.core.security import ROLE_LEVEL as _RL
+
+    ve_total = _RL.get(cu.role.value, 0) >= _RL["admin"]
+    cache_key = "escritorio" if ve_total else f"meus_casos:{cu.id}"
     _cached = _cache_get(cache_key)
     if _cached is not None:
         return _cached
@@ -50,106 +50,121 @@ async def dashboard(
     hoje = date.today()
     d3, d7 = hoje + timedelta(days=3), hoje + timedelta(days=7)
 
-    # Casos por status
-    r = await db.execute(text("""
-        SELECT status, COUNT(*) FROM cases
-        WHERE deleted_at IS NULL GROUP BY status
-    """))
-    casos_status = {row[0]: row[1] for row in r}
+    casos_status: dict[str, int] = {}
+    casos_area: list[dict] = []
+    pv = pc = p7 = 0
+    fin_pend = fin_atras = fin_mes = 0
+    fin_escopo = "escritorio" if ve_total else "meus_casos"
+    amb_criticas = 0
+    clientes_ativos = 0
+    pecas_hitl = 0
 
-    # Casos por área (BUG-06/BUG-10): MESMO conjunto das demais contagens —
-    # todos os casos não-deletados, sem excluir status. Antes excluía
-    # 'encerrado'/'arquivado', o que fazia áreas (ex.: trabalhista) sumirem do
-    # gráfico e divergir do total do header. deleted_at IS NULL é o único filtro.
-    r = await db.execute(text("""
-        SELECT area, COUNT(*) FROM cases
-        WHERE deleted_at IS NULL
-        GROUP BY area ORDER BY COUNT(*) DESC
-    """))
-    casos_area = [{"area": row[0], "total": row[1]} for row in r]
-
-    # Prazos
-    r = await db.execute(text("""
-        SELECT
-          COUNT(*) FILTER (WHERE data_prazo < :hoje) AS vencidos,
-          COUNT(*) FILTER (WHERE data_prazo BETWEEN :hoje AND :d3) AS criticos,
-          COUNT(*) FILTER (WHERE data_prazo BETWEEN :hoje AND :d7) AS proximos7
-        FROM deadlines
-        WHERE status='pendente' AND deleted_at IS NULL
-    """), {"hoje": hoje, "d3": d3, "d7": d7})
-    pv, pc, p7 = r.one()
-
-    # Financeiro — consolidado do escritório é EXCLUSIVO do admin.
-    # Sócio/advogado/auxiliar recebem apenas o financeiro dos próprios casos.
-    from app.core.security import ROLE_LEVEL as _RL
-    ve_total = _RL.get(cu.role.value, 0) >= _RL["admin"]
-    if ve_total:
+    try:
         r = await db.execute(text("""
-            SELECT
-              COALESCE(SUM(valor) FILTER (WHERE status='pendente'),0),
-              COALESCE(SUM(valor) FILTER (WHERE status='atrasado'),0),
-              COALESCE(SUM(valor) FILTER (WHERE status='pago'
-                AND EXTRACT(MONTH FROM data_pagamento)=EXTRACT(MONTH FROM CURRENT_DATE)
-                AND EXTRACT(YEAR FROM data_pagamento)=EXTRACT(YEAR FROM CURRENT_DATE)),0)
-            FROM fees WHERE deleted_at IS NULL
+            SELECT status, COUNT(*) FROM cases
+            WHERE deleted_at IS NULL GROUP BY status
         """))
-        fin_escopo = "escritorio"
-    else:
-        # Escopo: honorários vinculados a casos onde o usuário é responsável/auxiliar
+        casos_status = {row[0]: row[1] for row in r}
+    except Exception:
+        logger.warning("Dashboard: falha ao carregar casos por status", exc_info=True)
+
+    try:
+        r = await db.execute(text("""
+            SELECT area, COUNT(*) FROM cases
+            WHERE deleted_at IS NULL
+            GROUP BY area ORDER BY COUNT(*) DESC
+        """))
+        casos_area = [{"area": row[0], "total": row[1]} for row in r]
+    except Exception:
+        logger.warning("Dashboard: falha ao carregar casos por área", exc_info=True)
+
+    try:
         r = await db.execute(text("""
             SELECT
-              COALESCE(SUM(f.valor) FILTER (WHERE f.status='pendente'),0),
-              COALESCE(SUM(f.valor) FILTER (WHERE f.status='atrasado'),0),
-              COALESCE(SUM(f.valor) FILTER (WHERE f.status='pago'
-                AND EXTRACT(MONTH FROM f.data_pagamento)=EXTRACT(MONTH FROM CURRENT_DATE)
-                AND EXTRACT(YEAR FROM f.data_pagamento)=EXTRACT(YEAR FROM CURRENT_DATE)),0)
-            FROM fees f
-            JOIN cases c ON c.id = f.case_id
-            WHERE f.deleted_at IS NULL AND c.deleted_at IS NULL
-              AND (c.advogado_responsavel_id = :uid OR c.advogado_auxiliar_id = :uid)
-        """), {"uid": cu.id})
-        fin_escopo = "meus_casos"
-    fin_pend, fin_atras, fin_mes = r.one()
+              COUNT(*) FILTER (WHERE data_prazo < :hoje) AS vencidos,
+              COUNT(*) FILTER (WHERE data_prazo BETWEEN :hoje AND :d3) AS criticos,
+              COUNT(*) FILTER (WHERE data_prazo BETWEEN :hoje AND :d7) AS proximos7
+            FROM deadlines
+            WHERE status='pendente' AND deleted_at IS NULL
+        """), {"hoje": hoje, "d3": d3, "d7": d7})
+        pv, pc, p7 = r.one()
+    except Exception:
+        logger.warning("Dashboard: falha ao carregar prazos", exc_info=True)
 
-    # Ambiental crítico
-    r = await db.execute(text("""
-        SELECT COUNT(*) FROM environmental_cases
-        WHERE deleted_at IS NULL
-          AND status_defesa IN ('prazo_correndo','elaborando')
-          AND data_prazo_defesa <= :d7
-    """), {"d7": d7})
-    amb_criticas = r.scalar() or 0
+    try:
+        if ve_total:
+            r = await db.execute(text("""
+                SELECT
+                  COALESCE(SUM(valor) FILTER (WHERE status='pendente'),0),
+                  COALESCE(SUM(valor) FILTER (WHERE status='atrasado'),0),
+                  COALESCE(SUM(valor) FILTER (WHERE status='pago'
+                    AND EXTRACT(MONTH FROM data_pagamento)=EXTRACT(MONTH FROM CURRENT_DATE)
+                    AND EXTRACT(YEAR FROM data_pagamento)=EXTRACT(YEAR FROM CURRENT_DATE)),0)
+                FROM fees WHERE deleted_at IS NULL
+            """))
+            fin_escopo = "escritorio"
+        else:
+            r = await db.execute(text("""
+                SELECT
+                  COALESCE(SUM(f.valor) FILTER (WHERE f.status='pendente'),0),
+                  COALESCE(SUM(f.valor) FILTER (WHERE f.status='atrasado'),0),
+                  COALESCE(SUM(f.valor) FILTER (WHERE f.status='pago'
+                    AND EXTRACT(MONTH FROM f.data_pagamento)=EXTRACT(MONTH FROM CURRENT_DATE)
+                    AND EXTRACT(YEAR FROM f.data_pagamento)=EXTRACT(YEAR FROM CURRENT_DATE)),0)
+                FROM fees f
+                JOIN cases c ON c.id = f.case_id
+                WHERE f.deleted_at IS NULL AND c.deleted_at IS NULL
+                  AND (c.advogado_responsavel_id = :uid OR c.advogado_auxiliar_id = :uid)
+            """), {"uid": cu.id})
+            fin_escopo = "meus_casos"
+        fin_pend, fin_atras, fin_mes = r.one()
+    except Exception:
+        logger.warning("Dashboard: falha ao carregar financeiro", exc_info=True)
 
-    # Clientes ativos
-    r = await db.execute(text("""
-        SELECT COUNT(*) FROM clients
-        WHERE deleted_at IS NULL AND status='ativo'
-    """))
-    clientes_ativos = r.scalar() or 0
+    try:
+        r = await db.execute(text("""
+            SELECT COUNT(*) FROM environmental_cases
+            WHERE deleted_at IS NULL
+              AND status_defesa IN ('prazo_correndo','elaborando')
+              AND data_prazo_defesa <= :d7
+        """), {"d7": d7})
+        amb_criticas = r.scalar() or 0
+    except Exception:
+        logger.warning("Dashboard: falha ao carregar ambiental crítico", exc_info=True)
 
-    # Peças aguardando revisão HITL
-    r = await db.execute(text("""
-        SELECT COUNT(*) FROM legal_docs
-        WHERE deleted_at IS NULL AND ai_generated=true
-          AND human_reviewed=false AND status NOT IN ('rascunho')
-    """))
-    pecas_hitl = r.scalar() or 0
+    try:
+        r = await db.execute(text("""
+            SELECT COUNT(*) FROM clients
+            WHERE deleted_at IS NULL AND status='ativo'
+        """))
+        clientes_ativos = r.scalar() or 0
+    except Exception:
+        logger.warning("Dashboard: falha ao carregar clientes ativos", exc_info=True)
+
+    try:
+        r = await db.execute(text("""
+            SELECT COUNT(*) FROM legal_docs
+            WHERE deleted_at IS NULL AND ai_generated=true
+              AND human_reviewed=false AND status NOT IN ('rascunho')
+        """))
+        pecas_hitl = r.scalar() or 0
+    except Exception:
+        logger.warning("Dashboard: falha ao carregar peças HITL", exc_info=True)
 
     resposta = {
         "casos": {
             "por_status": casos_status,
             "por_area": casos_area,
-            # BUG-06/BUG-10: definição canônica única (== GET /cases/stats):
-            # total não-deletado, ativos = tudo que não é 'encerrado'.
             "total": sum(casos_status.values()),
             "encerrados": casos_status.get("encerrado", 0),
             "ativos": sum(casos_status.values()) - casos_status.get("encerrado", 0),
         },
         "prazos": {"vencidos": pv, "criticos_3d": pc, "proximos_7d": p7},
         "financeiro": {
-            "pendente": float(fin_pend), "atrasado": float(fin_atras),
-            "recebido_mes": float(fin_mes),
-            "escopo": fin_escopo,   # 'escritorio' (admin) | 'meus_casos' (demais)
+            "pendente": float(fin_pend or 0),
+            "atrasado": float(fin_atras or 0),
+            "recebido_mes": float(fin_mes or 0),
+            "escopo": fin_escopo,
         },
         "ambiental_criticas": amb_criticas,
         "clientes_ativos": clientes_ativos,

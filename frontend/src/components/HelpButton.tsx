@@ -3,6 +3,7 @@ import { Link } from "react-router-dom";
 import { ExternalLink, HelpCircle } from "lucide-react";
 import api from "../lib/api";
 import Markdown from "./Markdown";
+import { getModuleTitleByHelpKey } from "../config/moduleRegistry";
 import { Drawer, EmptyState, SearchBar, Skeleton, cn } from "./UI";
 
 // ── Ajuda contextual (R1) ────────────────────────────────────────────────────
@@ -17,6 +18,9 @@ interface HelpTopic {
   conteudo_md?: string | null;
 }
 
+// Título humano do módulo: primeiro o registro oficial (moduleRegistry, ex.:
+// "inteligencia" → "Inteligência Jurídica"); este mapa cobre apenas apelidos
+// que não têm entrada 1:1 no registry. NUNCA exibir o slug técnico cru.
 const MODULE_TITLES: Record<string, string> = {
   casos: "Casos",
   prazos: "Prazos",
@@ -26,6 +30,17 @@ const MODULE_TITLES: Record<string, string> = {
   workflow: "Workflows",
   checklists: "Checklists",
 };
+
+function tituloHumano(moduleKey: string): string {
+  return (
+    MODULE_TITLES[moduleKey] ??
+    getModuleTitleByHelpKey(moduleKey) ??
+    // Último recurso: slug legível ("gestao_documental" → "Gestao documental")
+    moduleKey
+      .replace(/[-_]/g, " ")
+      .replace(/^\w/, (c) => c.toUpperCase())
+  );
+}
 
 // Aceita tanto lista pura quanto envelope { data: [...] } — defensivo.
 function normalizarTopicos(payload: unknown): HelpTopic[] {
@@ -114,10 +129,7 @@ export default function HelpButton({
     setResultados(null);
   };
 
-  const btnClass = cn(
-    "flex h-10 w-10 items-center justify-center rounded-xl border border-slate-200 bg-white text-slate-400 transition-colors hover:bg-slate-50 hover:text-slate-700",
-    className,
-  );
+  const btnClass = cn("icon-btn", className);
 
   // Sem módulo mapeado: o "?" leva direto à Central de Ajuda
   if (!moduleKey) {
@@ -133,7 +145,7 @@ export default function HelpButton({
     );
   }
 
-  const tituloModulo = MODULE_TITLES[moduleKey] ?? moduleKey;
+  const tituloModulo = tituloHumano(moduleKey);
   const exibidos = resultados ?? topicos;
   const carregando = loading || buscando;
   const emBusca = resultados !== null;
@@ -170,7 +182,7 @@ export default function HelpButton({
             {[0, 1, 2].map((i) => (
               <div
                 key={i}
-                className="rounded-xl border border-slate-200 bg-white p-4"
+                className="card p-4"
               >
                 <Skeleton className="h-4 w-1/2" />
                 <Skeleton className="mt-3 h-3 w-full" />
@@ -206,7 +218,7 @@ export default function HelpButton({
             {exibidos.map((t, i) => (
               <section
                 key={t.id ?? `${t.titulo}-${i}`}
-                className="rounded-xl border border-slate-200 bg-white p-4"
+                className="card p-4"
               >
                 <h3 className="mb-2 text-sm font-semibold text-slate-900">
                   {t.titulo}

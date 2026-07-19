@@ -58,6 +58,38 @@ async def chat(
     return texto, usage
 
 
+async def transcrever(
+    file_bytes: bytes,
+    filename: str,
+    *,
+    language: str = "pt",
+    model: str | None = None,
+    timeout: int | None = None,
+) -> tuple[str, dict]:
+    """Transcreve mídia pelo endpoint oficial de Speech-to-Text do Groq.
+
+    O binário vive apenas na memória desta requisição. Consentimento, tamanho,
+    extensão e kill-switch de provedor externo são validados no AI Gateway —
+    esta camada limita-se ao adaptador do SDK.
+    """
+    if not file_bytes:
+        raise ValueError("Mídia vazia.")
+    model = model or settings.GROQ_TRANSCRIPTION_MODEL
+    client = get_client()
+    resp = await client.audio.transcriptions.create(
+        file=(filename, file_bytes),
+        model=model,
+        language=language,
+        response_format="json",
+        temperature=0.0,
+        timeout=timeout or settings.AUDIO_TRANSCRIPTION_TIMEOUT,
+    )
+    texto = (getattr(resp, "text", None) or "").strip()
+    if not texto:
+        raise RuntimeError("Groq retornou transcrição vazia")
+    return texto, {"model": model, "provider": "groq", "language": language}
+
+
 async def health() -> bool:
     """Verifica se a API Groq está acessível e a chave é válida."""
     try:

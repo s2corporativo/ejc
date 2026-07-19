@@ -1,4 +1,4 @@
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, Depends, status
 from typing import List
 from app.schemas.victory_vault_schema import TeseVitoriosaCreate, TeseVitoriosa, ModeloDocumentoCreate, ModeloDocumento
 from app.core.victory_vault import VictoryVault

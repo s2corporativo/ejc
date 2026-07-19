@@ -302,7 +302,13 @@ async def _anexo_para_pdf(ctx: ContextoAnexos, item: ItemAnexo) -> bytes | None:
     return None
 
 
-def _mesclar(partes: list[bytes]) -> bytes:
+def mesclar_pdfs(partes: list[bytes]) -> bytes:
+    """Mescla PDFs (bytes) em um único documento, tolerando partes corrompidas.
+
+    Pública de propósito: é a MESMA primitiva usada pelo Documento Único de
+    Anexos e pelo "Documento Único de Impressão" (routers/legal_docs.py) —
+    peça + anexos saem sempre pelo mesmo caminho de mesclagem (pypdf).
+    """
     from pypdf import PdfWriter, PdfReader
 
     writer = PdfWriter()
@@ -318,6 +324,10 @@ def _mesclar(partes: list[bytes]) -> bytes:
     return saida.getvalue()
 
 
+# Alias privado preservado — chamadas internas/testes antigos continuam válidos.
+_mesclar = mesclar_pdfs
+
+
 async def montar_documento_unico(ctx: ContextoAnexos, itens: list[ItemAnexo]) -> bytes:
     """
     Renderiza capa + índice, e para cada item a folha de separação seguida do
@@ -330,6 +340,31 @@ async def montar_documento_unico(ctx: ContextoAnexos, itens: list[ItemAnexo]) ->
         if anexo:
             partes.append(anexo)
     return await asyncio.get_event_loop().run_in_executor(None, _mesclar, partes)
+
+
+# ── Conversão do acervo probatório (Prova) em itens do documento único ────────
+
+def itens_de_provas(provas_docs: list[tuple]) -> list[ItemAnexo]:
+    """Converte pares (Prova, Document | None) — já ordenados por (ordem,
+    created_at) e restritos ao caso pelo chamador — nos ItemAnexo do documento
+    único, com ordem sequencial 1..N.
+
+    Sem IA de propósito: título e fato_probando/descrição já foram curados pelo
+    advogado no cadastro da prova (HITL na origem); a legenda apenas reaproveita
+    esse texto, truncado no mesmo limite dos separadores.
+    """
+    itens: list[ItemAnexo] = []
+    for i, (prova, doc) in enumerate(provas_docs, start=1):
+        titulo = (prova.titulo or (doc.titulo if doc is not None else None) or f"Documento {i}").strip()
+        legenda = (prova.fato_probando or prova.descricao or "").strip()
+        if len(legenda) > _LEGENDA_MAX:
+            legenda = legenda[: _LEGENDA_MAX - 1].rstrip() + "…"
+        item = ItemAnexo(ordem=i, titulo=titulo, legenda=legenda, document_id=prova.document_id)
+        if doc is not None:
+            item._filepath = doc.filepath
+            item._mimetype = doc.mimetype
+        itens.append(item)
+    return itens
 
 
 # ── Resolução dos itens a partir do GED ───────────────────────────────────────

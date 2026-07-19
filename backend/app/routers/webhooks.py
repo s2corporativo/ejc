@@ -8,21 +8,35 @@ import logging
 import re
 from uuid import uuid4
 
-from fastapi import APIRouter, Request, Header, HTTPException
-from sqlalchemy import select
+from fastapi import APIRouter, Depends, Request, Header, HTTPException
+from sqlalchemy import func, or_, select
 
 from app.core.config import get_settings
 from app.core.database import AsyncSessionLocal
+from app.core.rate_limit import consumir
 from app.models.client import Client, ClientStatus, ClientOrigem, ClientTipo
 from app.models.notification import Notification
 from app.models.user import User, UserRole
+from app.services.security_service import obter_ip_real
 
 router = APIRouter(prefix="/webhooks", tags=["Webhooks"])
 settings = get_settings()
 logger = logging.getLogger("ejc.webhooks")
 
 
-@router.post("/zapi")
+async def _rl_zapi(request: Request) -> None:
+    """Rate limit do webhook público antes de parsear o payload.
+
+    A rota não usa JWT por necessidade operacional: quem chama é a Z-API.
+    O `Client-Token` continua sendo a autenticação efetiva, mas o limite por IP
+    reduz brute force de token e DoS por chamadas/payloads repetidos. Usa o
+    mesmo resolvedor de IP real do restante do EJC, respeitando X-Forwarded-For
+    quando a aplicação está atrás do Nginx confiável.
+    """
+    await consumir("webhook_zapi", f"ip:{obter_ip_real(request)}", 120)
+
+
+@router.post("/zapi", dependencies=[Depends(_rl_zapi)])
 async def zapi_inbound(
     request: Request,
     client_token: str | None = Header(None, alias="Client-Token"),
@@ -58,15 +72,28 @@ async def zapi_inbound(
 
     async with AsyncSessionLocal() as db:
         # Telefone já cadastrado? (whatsapp ou telefone)
-        existente = (await db.execute(
-            select(Client).where(
+        # Item 8 (auditoria pré-produção): antes carregava TODOS os clientes
+        # (linhas inteiras, com PII) e casava o telefone em Python — O(n) de
+        # memória/PII trafegada por mensagem recebida. telefone/whatsapp são
+        # colunas em CLARO (diferente de CPF/CNPJ, que têm índice cego via
+        # pii_crypto.hash_documento), então dá para filtrar direto no SQL:
+        # normaliza os dígitos com regexp_replace (PG) e compara o sufixo de 8
+        # dígitos — mesma semântica do match antigo, campo a campo. Se um dia
+        # os telefones forem cifrados, migrar para o padrão de hash cego.
+        sufixo = telefone[-8:]
+        ja_existe = (await db.execute(
+            select(Client.id).where(
                 Client.deleted_at.is_(None),
-            )
-        )).scalars().all()
-        ja_existe = any(
-            re.sub(r"\D", "", (c.whatsapp or "") + (c.telefone or "")).find(telefone[-8:]) >= 0
-            for c in existente if (c.whatsapp or c.telefone)
-        )
+                or_(
+                    func.regexp_replace(
+                        func.coalesce(Client.whatsapp, ""), r"\D", "", "g"
+                    ).contains(sufixo),
+                    func.regexp_replace(
+                        func.coalesce(Client.telefone, ""), r"\D", "", "g"
+                    ).contains(sufixo),
+                ),
+            ).limit(1)
+        )).scalar_one_or_none() is not None
 
         if not ja_existe:
             lead = Client(

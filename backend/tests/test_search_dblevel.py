@@ -17,7 +17,7 @@ import os
 from uuid import uuid4
 
 import pytest
-from fastapi import Request
+from fastapi import HTTPException, Request
 from sqlalchemy import select, text
 
 pytestmark = pytest.mark.skipif(
@@ -96,12 +96,13 @@ async def _carregar_user(db, uid: str):
 
 
 async def _limpar(db, *, case_ids=(), user_ids=(), client_ids=()):
-    # Ordem por FK: processos/partes → casos → usuários → clientes.
+    # Ordem por FK: processos/partes → casos → auditoria → usuários → clientes.
     for cid in case_ids:
         await db.execute(text("DELETE FROM processes WHERE case_id = :id"), {"id": cid})
         await db.execute(text("DELETE FROM case_partes WHERE case_id = :id"), {"id": cid})
         await db.execute(text("DELETE FROM cases WHERE id = :id"), {"id": cid})
     for uid in user_ids:
+        await db.execute(text("DELETE FROM audit_logs WHERE user_id = :id"), {"id": uid})
         await db.execute(text("DELETE FROM users WHERE id = :id"), {"id": uid})
     for cid in client_ids:
         await db.execute(text("DELETE FROM clients WHERE id = :id"), {"id": cid})
@@ -116,9 +117,18 @@ async def _buscar(db, cu, q: str, tipo: str, limit: int = 6) -> dict:
 
 @pytest.fixture(autouse=True)
 async def _dispose_engine_apos_teste():
-    """Evita 'Event loop is closed' entre testes async (loop por função)."""
-    yield
+    """Isola o engine async do loop-por-função do pytest-asyncio.
+
+    Descarta ANTES e DEPOIS: o pool asyncpg do engine global se prende ao
+    primeiro loop que o usa; se um teste de OUTRO arquivo rodar antes e deixar
+    o pool preso a um loop já fechado, o PRIMEIRO teste deste arquivo herdaria
+    o pool contaminado e falharia com 'got Future attached to a different loop'
+    (flaky, dependente de ordem — visto no CI). Descartar antes força um pool
+    novo, ligado ao loop deste teste.
+    """
     from app.core.database import engine
+    await engine.dispose()
+    yield
     await engine.dispose()
 
 
@@ -199,24 +209,24 @@ async def test_cpf_acha_cliente_e_parte_com_mascara_no_banco():
             resp = await _buscar(db, cu, "52998224725", "cpf")
             assert resp["tipo"] == "cpf"
             assert [(i["tipo"], i["id"]) for i in resp["resultados"]] == [("cliente", cli)]
-            # Documento sai COMPLETO, como armazenado (mesma exposição de
-            # /clients e tipo=tudo — decisão de produto, não há blindagem aqui).
-            assert resp["resultados"][0]["subtitulo"] == cpf_cli
+            # A busca exata encontra o registro, mas a resposta minimiza PII.
+            assert resp["resultados"][0]["subtitulo"] == "***.982.247-**"
 
             # Digitado COM máscara → normalizar_documento também resolve.
             resp2 = await _buscar(db, cu, "529.982.247-25", "cpf")
             assert [i["id"] for i in resp2["resultados"]] == [cli]
 
-            # CPF da parte processual → devolve o CASO dono da parte, com o
-            # documento completo no subtítulo (como armazenado).
+            # CPF da parte processual → devolve o caso com documento mascarado.
             resp3 = await _buscar(db, cu, "15350946056", "cpf")
             assert [(i["tipo"], i["id"]) for i in resp3["resultados"]] == [("caso", caso)]
             sub3 = resp3["resultados"][0]["subtitulo"]
-            assert cpf_parte in sub3
+            assert "***.509.460-**" in sub3
+            assert cpf_parte not in sub3
 
-            # Busca sem nenhum dígito → vazio (não explode).
-            resp4 = await _buscar(db, cu, "abc", "cpf")
-            assert resp4 == {"q": "abc", "tipo": "cpf", "total": 0, "resultados": []}
+            # CPF/CNPJ incompleto ou não numérico é rejeitado para impedir enumeração.
+            with pytest.raises(HTTPException) as exc:
+                await _buscar(db, cu, "abc", "cpf")
+            assert exc.value.status_code == 422
         finally:
             await _limpar(db, case_ids=[caso], user_ids=[uid], client_ids=[cli])
 
@@ -244,9 +254,10 @@ async def test_cpf_hash_exato_encontra_cliente_sem_plaintext():
             # Sem plaintext, o subtítulo é vazio (nada a exibir).
             assert resp["resultados"][0]["subtitulo"] == ""
 
-            # Fragmento (≠ 11/14 dígitos) não bate no hash nem no plaintext.
-            resp2 = await _buscar(db, cu, "0533447", "cpf")
-            assert cli not in [i["id"] for i in resp2["resultados"]]
+            # Fragmento é rejeitado antes da consulta para impedir enumeração.
+            with pytest.raises(HTTPException) as exc:
+                await _buscar(db, cu, "0533447", "cpf")
+            assert exc.value.status_code == 422
         finally:
             await _limpar(db, user_ids=[uid], client_ids=[cli])
 

@@ -18,6 +18,22 @@ BASE_IDENTIDADE = (
     "'verificar'). NUNCA prometa resultado."
 )
 
+# Variante CURTA para tarefas de SAÍDA ESTRUTURADA (JSON/listas parseadas):
+# carrega o núcleo anti-alucinação SEM interferir no formato de saída. Pensada
+# para prepend direto no system prompt de etapas intermediárias de pipeline
+# (ex.: peca_service etapas 1, 2, 5 e 6), cujos textos alimentam a peça final.
+# NÃO contém chaves, cercas de código nem instrução de formato própria — apenas
+# reforça que o formato pedido pelo prompt da etapa deve ser respeitado, para
+# não poluir/quebrar parsers (_parse_json/_parse_itens/_tipo_identificado).
+BASE_ESTRUTURADA = (
+    "[REGRAS-ESTRUTURADAS] Regras invioláveis (OAB): NUNCA invente lei, súmula, "
+    "jurisprudência, número de processo, datas, prazos ou fatos — se a informação "
+    "não constar dos dados fornecidos ou houver incerteza, diga explicitamente "
+    "que não sabe (escreva 'verificar'). NUNCA prometa resultado. Estas regras "
+    "NÃO alteram o formato de saída: responda EXATAMENTE no formato solicitado "
+    "pela tarefa, sem texto fora do formato pedido."
+)
+
 # Apenas tarefas de PROSA recebem a base — exclui JSON (analise_juridica) e resumo.
 _TASKS_COM_BASE = {
     "estrategia",

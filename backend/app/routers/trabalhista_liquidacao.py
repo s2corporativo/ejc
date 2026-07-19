@@ -12,9 +12,8 @@
 # (services/visual_law_theme.py).
 from __future__ import annotations
 
+import logging
 import os
-import re
-import time
 from datetime import date, datetime, timezone
 from typing import Literal, Optional
 from uuid import uuid4
@@ -29,12 +28,14 @@ from app.core.security import get_current_user
 from app.models.user import User
 from app.services.calc.liquidacao_trabalhista import calcular_liquidacao
 
+logger = logging.getLogger(__name__)
 settings = get_settings()
 router = APIRouter(prefix="/trabalhista/liquidacao", tags=["Trabalhista / Liquidação"])
 
 # Retenção dos PDFs (contêm valores e dados de terceiros — LGPD): varredura
 # best-effort remove os mais antigos que este TTL a cada geração.
 PDF_TTL_SEGUNDOS = 3600  # 1h
+from app.services import visual_law_files as _vlf  # #27: arnês único
 MAX_VERBAS = 100
 
 # Limites de tamanho no payload de /planilha-pdf (renderizado pelo WeasyPrint —
@@ -60,6 +61,12 @@ class LiquidacaoIn(BaseModel):
     data_calculo: date
     percentual_honorarios: float = Field(0, ge=0, le=100)
     fator_ipcae_pre_ajuizamento: Optional[float] = Field(None, gt=0)
+    # Fator IPCA-E pré-ajuizamento OFICIAL (BCB SGS via indices_service):
+    # com usar_indice_oficial=true e fator manual ausente, o fator é calculado
+    # de data_inicio_correcao → data_ajuizamento. O campo manual acima segue
+    # valendo e tem PRECEDÊNCIA quando informado (nunca removido).
+    usar_indice_oficial: bool = False
+    data_inicio_correcao: Optional[date] = None
 
 
 class VerbaOut(BaseModel):
@@ -130,13 +137,30 @@ async def calcular(req: LiquidacaoIn, cu: User = Depends(get_current_user)):
     """Calcula a planilha de liquidação de sentença trabalhista (ADC 58 — Selic
     real do BCB). Determinístico, sem IA e sem persistência. A resposta é
     MINUTA para conferência do contador/advogado (HITL)."""
+    fator_ipcae = req.fator_ipcae_pre_ajuizamento
+    # Caminho oficial (opt-in): busca o fator IPCA-E no BCB quando não veio
+    # fator manual. Fail-soft: BCB fora → segue sem fator (o serviço de
+    # liquidação já emite o alerta de IPCA-E não aplicado — nunca estima).
+    if fator_ipcae is None and req.usar_indice_oficial and req.data_inicio_correcao:
+        if req.data_inicio_correcao >= req.data_ajuizamento:
+            raise HTTPException(
+                422, "data_inicio_correcao deve ser anterior à data_ajuizamento")
+        if settings.INDICES_BCB_ENABLED:
+            from app.services import indices_service
+            try:
+                fc = await indices_service.fator_correcao(
+                    "ipca_e", req.data_inicio_correcao, req.data_ajuizamento)
+                fator_ipcae = fc["fator"]
+            except Exception:
+                logger.warning("Liquidação: fator IPCA-E oficial indisponível "
+                               "(BCB fora) — seguindo sem correção pré-ajuizamento")
     try:
         resultado = await calcular_liquidacao(
             verbas=[v.model_dump() for v in req.verbas],
             data_ajuizamento=req.data_ajuizamento,
             data_calculo=req.data_calculo,
             percentual_honorarios=req.percentual_honorarios,
-            fator_ipcae_pre_ajuizamento=req.fator_ipcae_pre_ajuizamento,
+            fator_ipcae_pre_ajuizamento=fator_ipcae,
         )
     except ValueError as e:
         raise HTTPException(422, str(e))
@@ -155,19 +179,8 @@ def _limpar_pdfs_antigos(out_dir: str) -> None:
     """Retenção LGPD: os PDFs carregam valores e dados de terceiros. Varredura
     best-effort remove os mais antigos que o TTL a cada geração — sem estado
     externo, tolerante a falhas (nunca quebra a resposta)."""
-    try:
-        agora = time.time()
-        for nome in os.listdir(out_dir):
-            if not nome.endswith(".pdf"):
-                continue
-            caminho = os.path.join(out_dir, nome)
-            try:
-                if agora - os.path.getmtime(caminho) > PDF_TTL_SEGUNDOS:
-                    os.remove(caminho)
-            except OSError:
-                continue
-    except OSError:
-        pass
+    # #27: purga TTL centralizada em services/visual_law_files (retenção LGPD).
+    _vlf.purgar_antigos(out_dir, PDF_TTL_SEGUNDOS)
 
 
 def _moeda(v: float) -> str:
@@ -320,9 +333,8 @@ async def download_planilha(arquivo_id: str,
                             cu: User = Depends(get_current_user)):
     """Download do PDF gerado pelo POST acima. `arquivo_id` é validado como UUID
     (nunca interpolado livre no path — sem traversal)."""
-    if not re.fullmatch(r"[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}",
-                        arquivo_id):
-        raise HTTPException(422, "Identificador de planilha inválido.")
+    # #27: validação anti-traversal (UUID) centralizada.
+    _vlf.validar_uuid(arquivo_id)
     path = os.path.join(_pdf_dir(), f"liquidacao_{arquivo_id}.pdf")
     if not os.path.isfile(path):
         raise HTTPException(404, "Planilha não encontrada — gere via POST "

@@ -3,17 +3,17 @@
 
 def test_app_monta_com_rotas():
     from app.main import app
+
     paths = {getattr(r, "path", "") for r in app.routes}
     assert len(app.routes) > 300
-    # Fase 1 — prefixos corrigidos existem de fato no backend.
     assert any(p.endswith("/auth/refresh") for p in paths)
     assert any(p.endswith("/auth/logout") for p in paths)
     assert any(p.endswith("/pecas/gerar") for p in paths)
-    # Bloco 1 (Etapa 4): ia_extra passou a ser montado — as 5 rotas que o
-    # frontend chama (AssistenteIA, ExplicarMov, NoticiasCard…) não podem
-    # voltar a ficar 404 por o router deixar de ser incluído em main.py.
     assert any(p.endswith("/ai/traduzir-andamento") for p in paths)
     assert any(p.endswith("/ai/gerar-minuta") for p in paths)
+    assert "/api/system-modules/settings" in paths
+    assert "/api/notifications/preferences" in paths
+    assert "/api/notifications/push/subscriptions" in paths
 
 
 def test_alembic_cadeia_integra():
@@ -21,10 +21,11 @@ def test_alembic_cadeia_integra():
     from alembic.script import ScriptDirectory
 
     script = ScriptDirectory.from_config(Config("alembic.ini"))
-    # Head único da cadeia atual (migration 079 — #12: ux_clients_*_hash exclui
-    # soft-deleted, habilitando recadastro de CPF/CNPJ após soft-delete).
-    assert script.get_heads() == ["079_client_hash_partial_deleted"]
-    # walk_revisions percorre head→base; lança se houver down_revision ausente.
+    # Integridade = UMA head (sem bifurcação) e cadeia completa até a raiz.
+    # A head não é mais hardcoded: com agentes/PRs paralelos criando migrations
+    # que encadeiam entre si, fixar o nome do topo gerava falso-negativo a cada
+    # merge (o teste quebrava sem nenhuma bifurcação real).
+    assert len(script.get_heads()) == 1, f"cadeia bifurcada: {script.get_heads()}"
     revs = [r.revision for r in script.walk_revisions()]
     assert revs[-1] == "001_inicial"
     assert "048_processes" in revs
@@ -49,3 +50,8 @@ def test_alembic_cadeia_integra():
     assert "076_fk_hot_path_indexes" in revs
     assert "077_deadline_confirmado_doc" in revs
     assert "078_seed_kanban_columns" in revs
+    assert "079_client_hash_partial_deleted" in revs
+    assert "081_system_module_settings" in revs
+    assert "082_notification_preferences" in revs
+    assert "085_nfse" in revs
+    assert "086_totp_secret_cifrado" in revs

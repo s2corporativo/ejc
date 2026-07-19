@@ -15,6 +15,7 @@ from app.core.ownership import verificar_acesso_caso
 from app.models.user import User
 from app.models.dossie_estrategico import DossieEstrategico, DossieStatus
 from app.services.dossie_service import gerar_dossie
+from app.services import dossie_modulos as dm
 from app.modules.auditoria.middleware import registrar_acao
 
 router = APIRouter(prefix="/dossie", tags=["Dossiê Estratégico"])
@@ -76,9 +77,12 @@ async def gerar(
     # Bloco 5 (continuação): só existência era checada — advogado+ de qualquer
     # caso podia gerar o dossiê ESTRATÉGICO (conteúdo sensível: teses, pontos
     # fracos) de caso alheio. verificar_acesso_caso cobre existência + ownership.
-    await verificar_acesso_caso(db, cu, case_id)
+    case = await verificar_acesso_caso(db, cu, case_id)
     dossie = await gerar_dossie(db, case_id, cu.id, req.titulo)
-    return _out(dossie)
+    payload = _out(dossie)
+    # Módulos determinísticos (timeline, provas, riscos, teses) — sem custo IA.
+    payload["modulos"] = await dm.consolidar_modulos(db, case)
+    return payload
 
 
 @router.get("/{case_id}")
@@ -87,7 +91,8 @@ async def obter_atual(
     db:      AsyncSession = Depends(get_db),
     cu:      User = Depends(get_current_user),
 ):
-    """Retorna o dossiê aprovado mais recente; se não houver, retorna o último rascunho."""
+    """Retorna o dossiê aprovado mais recente; se não houver, retorna o último rascunho.
+    Sempre acompanha `modulos` (timeline, provas, riscos, teses) determinísticos."""
     if not _pode_ver(cu):
         raise HTTPException(403)
     # IDOR: conteúdo estratégico sensível — restringe a quem atua no caso (ou gestão).
@@ -112,7 +117,29 @@ async def obter_atual(
 
     if not dossie:
         raise HTTPException(404, "Nenhum dossiê encontrado para este caso.")
+    # Sem `modulos` aqui de propósito: a tela carrega GET /{id}/modulos em
+    # paralelo — embutir também neste GET rodava a consolidação (timeline +
+    # score + 3 queries) DUAS vezes por carga da página.
     return _out(dossie)
+
+
+@router.get("/{case_id}/modulos")
+async def modulos_deterministicos(
+    case_id: str,
+    db:      AsyncSession = Depends(get_db),
+    cu:      User = Depends(get_current_user),
+):
+    """
+    Módulos DETERMINÍSTICOS do dossiê (sem IA, custo zero): linha do tempo,
+    mapa probatório, riscos (case_health) e teses estruturadas. Disponível
+    MESMO sem nenhuma versão de dossiê gerada — é a base para o advogado
+    PENSAR antes de produzir a análise estratégica.
+    """
+    if not _pode_ver(cu):
+        raise HTTPException(403)
+    # IDOR: mesmo gate dos demais endpoints do dossiê (conteúdo sensível).
+    case = await verificar_acesso_caso(db, cu, case_id)
+    return {"case_id": case_id, **await dm.consolidar_modulos(db, case)}
 
 
 @router.get("/{case_id}/historico")
@@ -193,7 +220,7 @@ async def exportar_pdf(
     if not _pode_ver(cu):
         raise HTTPException(403)
     # IDOR: conteúdo estratégico sensível — restringe a quem atua no caso (ou gestão).
-    await verificar_acesso_caso(db, cu, case_id)
+    case = await verificar_acesso_caso(db, cu, case_id)
 
     dossie = (await db.execute(
         select(DossieEstrategico)
@@ -221,6 +248,14 @@ async def exportar_pdf(
             dossie.conteudo_texto or "",
             extensions=["tables", "nl2br"],
         )
+        # Seções determinísticas (timeline, provas, riscos, teses) — dados
+        # reais do caso no tema Visual Law, ANTES da análise IA.
+        modulos_html = dm.modulos_para_html(await dm.consolidar_modulos(db, case))
+        analise_titulo = (
+            f"<h2 style='color:{vlt.OURO};border-bottom:2px solid "
+            f"{vlt.OURO_CLARO};padding-bottom:4px;margin-top:22px;'>"
+            "ANÁLISE ESTRATÉGICA (IA — revisão humana obrigatória)</h2>"
+        )
         # Padrão Visual Law central: banner dourado + logo + rodapé repetido.
         banner = vlt.render_banner(
             "DOSSIÊ ESTRATÉGICO",
@@ -237,7 +272,8 @@ async def exportar_pdf(
             f"IA: {dossie.provedor_ia}/{dossie.modelo_ia} | Versão {dossie.versao}</div>"
         )
         html_full = vlt.html_doc(
-            banner + aviso_hitl + corpo_html + footer_html,
+            banner + aviso_hitl + modulos_html + analise_titulo + corpo_html
+            + footer_html,
             css=vlt.css_fluxo(rodape_pdf),
         )
         pdf_bytes = WP_HTML(string=html_full).write_pdf()

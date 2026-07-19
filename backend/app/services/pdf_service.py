@@ -11,10 +11,17 @@ import logging
 import re
 from datetime import date
 from typing import Any
-from app.services.document_format import padronizar_documento_juridico, sem_caracteres_problematicos
+from app.core.config import get_settings
+from app.services.document_format import (
+    marca_minuta_ia,
+    padronizar_documento_juridico,
+    sem_caracteres_problematicos,
+)
 from app.services import visual_law_theme as vlt
 
 logger = logging.getLogger("ejc.pdf")
+
+_settings = get_settings()
 
 # Logo institucional embutida via tema central (base64, lazy + cache).
 _logo_data_uri = vlt.logo_data_uri
@@ -64,6 +71,7 @@ _HTML_BASE = """<!DOCTYPE html>
   .doc-section {{ border-top: 1px solid #eef2f7; padding-top: 8px; margin-top: 10px; }}
   .callout, .aviso {{ background: #fffbeb; border: 1px solid #f5d08a; border-left: 4px solid #d97706; padding: 9px 11px; border-radius: 7px; font-size: 9.3pt; color: #78350f; margin: 12px 0; page-break-inside: avoid; }}
   .review-stamp {{ border: 1px solid #e8d9a0; border-left: 4px solid §OURO_CLARO§; background: §OURO_PALHA§; color: §OURO_PROFUNDO§; padding: 9px 11px; border-radius: 7px; font-size: 9pt; margin-top: 16px; page-break-inside: avoid; }}
+  .ia-minuta {{ border: 2px solid #dc2626; background: #fef2f2; color: #7f1d1d; padding: 10px 12px; border-radius: 7px; font-size: 9.6pt; font-weight: 800; text-align: center; letter-spacing: .2px; margin-bottom: 14px; page-break-inside: avoid; }}
   .footer-doc {{ margin-top: 24px; font-size: 8.3pt; color: #6b7280; border-top: 1px solid #e5e7eb; padding-top: 8px; }}
 </style>
 </head>
@@ -71,14 +79,36 @@ _HTML_BASE = """<!DOCTYPE html>
 <div class="letterhead">
   <div class="letterhead-logo"><img class="brand-logo" src="{logo_data_uri}" alt="De Paula Teixeira" /></div>
   <div class="letterhead-text">
-    <div class="letterhead-nome">De Paula Teixeira Advogados Associados</div>
-    <div class="letterhead-sub">CNPJ 32.491.468/0001-12 &nbsp;|&nbsp; Betim, MG &nbsp;|&nbsp; contato@depaulateixeira.adv.br</div>
+    <div class="letterhead-nome">§ESC_NOME§</div>
+    <div class="letterhead-sub">§ESC_SUB1§</div>
+    <div class="letterhead-sub">§ESC_SUB2§</div>
   </div>
 </div>
 {corpo}
 <div class="footer-doc">Documento gerado automaticamente pelo sistema EJC em {gerado_em}. Uso profissional - confidencial. Responsabilidade tecnica condicionada a revisao e assinatura do advogado responsavel.</div>
 </body>
 </html>"""
+
+# Timbre institucional — dados FIXOS do escritório vindos da FONTE ÚNICA
+# (settings ESCRITORIO_*). OAB e endereço agora fazem parte do letterhead; CNPJ
+# não é mais hardcoded. Valores injetados via §tokens (nunca pelo .format()) e
+# HTML-escapados, mesmo sendo config confiável.
+def _esc_html(valor: str) -> str:
+    import html as _html
+    return _html.escape(str(valor or ""))
+
+
+_ESC_NOME = _esc_html(_settings.ESCRITORIO_NOME)
+_ESC_SUB1 = (
+    f"CNPJ {_esc_html(_settings.ESCRITORIO_CNPJ)} &nbsp;|&nbsp; "
+    f"OAB/MG {_esc_html(_settings.escritorio_oab())} &nbsp;|&nbsp; "
+    f"{_esc_html(_settings.ESCRITORIO_EMAIL)}"
+)
+_ESC_SUB2 = (
+    f"{_esc_html(_settings.escritorio_endereco())} - "
+    f"{_esc_html(_settings.ESCRITORIO_CIDADE)}/{_esc_html(_settings.ESCRITORIO_ESTADO)} &nbsp;|&nbsp; "
+    f"CEP {_esc_html(_settings.escritorio_cep())}"
+)
 
 # Paleta dourada vinda do tema central (fonte única de verdade) — os tokens
 # §...§ evitam conflito com as chaves duplicadas do .format() no CSS.
@@ -88,10 +118,16 @@ _HTML_BASE = (
     .replace("§OURO_CLARO§", vlt.OURO_CLARO)
     .replace("§OURO_PALHA§", vlt.OURO_PALHA)
     .replace("§OURO§", vlt.OURO)
+    .replace("§ESC_NOME§", _ESC_NOME)
+    .replace("§ESC_SUB1§", _ESC_SUB1)
+    .replace("§ESC_SUB2§", _ESC_SUB2)
 )
 
-_HEADING_RE = re.compile(r"^(?:[IVXLCDM]+\.|[0-9]+\.|[A-Z][A-Z0-9 ,:/().-]{7,})\s*$")
-_ALERT_WORDS = ("ATENCAO", "REVISAO HUMANA", "NAO PROTOCOLAR", "RISCO", "ALERTA")
+# Aceita maiúsculas acentuadas ("PETIÇÃO INICIAL", "AÇÃO DE COBRANÇA") — o
+# conteúdo armazenado agora preserva acentuação (document_format).
+_HEADING_RE = re.compile(r"^(?:[IVXLCDM]+\.|[0-9]+\.|[A-ZÁÂÃÀÄÇÉÊËÍÎÏÓÔÕÖÚÛÜ][A-ZÁÂÃÀÄÇÉÊËÍÎÏÓÔÕÖÚÛÜ0-9ºª§ ,:/().-]{7,})\s*$")
+_ALERT_WORDS = ("ATENCAO", "ATENÇÃO", "REVISAO HUMANA", "REVISÃO HUMANA",
+                "NAO PROTOCOLAR", "NÃO PROTOCOLAR", "RISCO", "ALERTA")
 
 
 def _linha_e_titulo(linha: str) -> bool:
@@ -106,11 +142,87 @@ def _linha_e_alerta(linha: str) -> bool:
     return any(palavra in alta for palavra in _ALERT_WORDS)
 
 
-def _texto_peca_para_html(titulo: str, conteudo: str, pronto_protocolo: bool = False) -> str:
+def _art_peca_html(
+    titulo: str,
+    corpo_html: str,
+    *,
+    pronto_protocolo: bool,
+    codigo_peca: str | None = None,
+    versao: int | None = None,
+    status: Any = None,
+    revisado_em: Any = None,
+    minuta_ia: bool = False,
+) -> str:
+    """Monta o <article> Visual Law da peça: capa + meta-grid + corpo + rodapé.
+
+    Fonte única para os dois caminhos de render (texto puro e HTML pré-montado).
+    O meta-grid exibe Controle (código), Versão e Status; o rodapé recebe a
+    linha de controle EJC-... — ambos INJETADOS SÓ NO RENDER, nunca no texto da
+    IA. Degrada sem quebrar quando falta código (peças antigas).
+
+    minuta_ia=True (peça ai_generated e ainda não human_reviewed) embute a marca
+    "MINUTA GERADA POR IA" no topo da 1ª página — a salvaguarda VIAJA com o PDF
+    exportado. Peça já revisada sai LIMPA (minuta_ia=False).
+    """
+    import html as html_lib
+    from app.services.peca_numeracao import linha_controle, status_label
+
+    banner_ia = (
+        f'<div class="ia-minuta">{html_lib.escape(marca_minuta_ia())}</div>\n'
+        if minuta_ia else ""
+    )
+    titulo_esc = html_lib.escape(titulo or "Documento juridico")
+    controle_val = html_lib.escape(
+        codigo_peca or ("Pronto para protocolo" if pronto_protocolo else "Minuta revisavel")
+    )
+    versao_val = html_lib.escape(f"v{int(versao or 1)}.0")
+    status_val = html_lib.escape(
+        status_label(status) if status is not None
+        else ("Peca final validada" if pronto_protocolo else "Rascunho controlado")
+    )
+    aviso = (
+        "Documento aprovado e validado para protocolo. Conferir dados variaveis, anexos e assinatura antes do envio ao tribunal."
+        if pronto_protocolo
+        else "ATENCAO: Rascunho sujeito a revisao humana obrigatoria por advogado responsavel antes de protocolo, envio ou assinatura."
+    )
+    rodape = ""
+    if codigo_peca:
+        linha = html_lib.escape(linha_controle(
+            codigo_peca=codigo_peca, titulo=titulo, versao=versao,
+            status=status, revisado_em=revisado_em,
+        ))
+        rodape = f'\n  <div class="footer-doc">{linha}</div>'
+    return f"""
+<article class=\"visual-law legal-doc\">
+  {banner_ia}<div class=\"doc-cover\">
+    <div class=\"doc-kicker\">Peca juridica | Padrao Visual Law EJC</div>
+    <h1>{titulo_esc}</h1>
+    <table class=\"meta-grid\"><tr>
+      <td><span class=\"meta-label\">Controle</span><span class=\"meta-value\">{controle_val}</span></td>
+      <td><span class=\"meta-label\">Versao</span><span class=\"meta-value\">{versao_val}</span></td>
+      <td><span class=\"meta-label\">Status</span><span class=\"meta-value\">{status_val}</span></td>
+    </tr></table>
+  </div>
+  <div class=\"review-stamp\">{aviso}</div>
+  <div class=\"doc-body\">{corpo_html}</div>{rodape}
+</article>
+"""
+
+
+def _texto_peca_para_html(
+    titulo: str,
+    conteudo: str,
+    pronto_protocolo: bool = False,
+    *,
+    codigo_peca: str | None = None,
+    versao: int | None = None,
+    status: Any = None,
+    revisado_em: Any = None,
+    minuta_ia: bool = False,
+) -> str:
     """Converte texto juridico puro em HTML Visual Law sem mudar o teor."""
     import html as html_lib
 
-    titulo_esc = html_lib.escape(titulo or "Documento juridico")
     linhas = [linha.rstrip() for linha in (conteudo or "").splitlines()]
     blocos: list[str] = []
     itens_lista: list[str] = []
@@ -142,28 +254,12 @@ def _texto_peca_para_html(titulo: str, conteudo: str, pronto_protocolo: bool = F
 
     fecha_lista()
     corpo = "\n".join(blocos)
-    controle = "Pronto para protocolo" if pronto_protocolo else "Minuta revisavel"
-    status_final = "Peca final validada" if pronto_protocolo else "Rascunho controlado"
-    aviso = (
-        "Documento aprovado e validado para protocolo. Conferir dados variaveis, anexos e assinatura antes do envio ao tribunal."
-        if pronto_protocolo
-        else "ATENCAO: Rascunho sujeito a revisao humana obrigatoria por advogado responsavel antes de protocolo, envio ou assinatura."
+    return _art_peca_html(
+        titulo, corpo,
+        pronto_protocolo=pronto_protocolo,
+        codigo_peca=codigo_peca, versao=versao, status=status, revisado_em=revisado_em,
+        minuta_ia=minuta_ia,
     )
-    return f"""
-<article class=\"visual-law legal-doc\">
-  <div class=\"doc-cover\">
-    <div class=\"doc-kicker\">Peca juridica | Padrao Visual Law EJC</div>
-    <h1>{titulo_esc}</h1>
-    <table class=\"meta-grid\"><tr>
-      <td><span class=\"meta-label\">Origem</span><span class=\"meta-value\">Sistema EJC</span></td>
-      <td><span class=\"meta-label\">Controle</span><span class=\"meta-value\">{controle}</span></td>
-      <td><span class=\"meta-label\">Status</span><span class=\"meta-value\">{status_final}</span></td>
-    </tr></table>
-  </div>
-  <div class=\"review-stamp\">{aviso}</div>
-  <div class=\"doc-body\">{corpo}</div>
-</article>
-"""
 
 
 def _html_para_pdf(html: str) -> bytes:
@@ -344,44 +440,47 @@ async def gerar_caso_pdf(db, case_id: str, user_id: str) -> bytes:
     return _html_para_pdf(html)
 
 
-async def peca_para_pdf_async(titulo: str, conteudo: str, *, pronto_protocolo: bool = False) -> bytes:
+async def peca_para_pdf_async(
+    titulo: str,
+    conteudo: str,
+    *,
+    pronto_protocolo: bool = False,
+    codigo_peca: str | None = None,
+    versao: int | None = None,
+    status: Any = None,
+    revisado_em: Any = None,
+    minuta_ia: bool = False,
+) -> bytes:
     """Converte uma peca juridica em PDF Visual Law.
 
     Quando pronto_protocolo=True, o PDF sai como versao final para protocolo.
     Caso contrario, permanece marcado como rascunho controlado.
+
+    codigo_peca/versao/status/revisado_em (do LegalDoc) alimentam o meta-grid e
+    a linha de controle do rodape — INJETADOS SO NO RENDER, nunca no texto da
+    IA. Ausentes (pecas antigas), o render degrada sem quebrar.
+
+    minuta_ia=True (ai_generated e ainda nao human_reviewed) embute a marca
+    "MINUTA GERADA POR IA" no topo — a salvaguarda VIAJA com o PDF baixado.
     """
     import asyncio
-    import html as html_lib
     from datetime import date
 
     titulo = padronizar_documento_juridico(titulo) or "Documento juridico"
     conteudo = padronizar_documento_juridico(conteudo)
-    controle = "Pronto para protocolo" if pronto_protocolo else "Minuta revisavel"
-    status_final = "Peca final validada" if pronto_protocolo else "Rascunho controlado"
-    aviso = (
-        "Documento aprovado e validado para protocolo. Conferir dados variaveis, anexos e assinatura antes do envio ao tribunal."
-        if pronto_protocolo
-        else "ATENCAO: Rascunho sujeito a revisao humana obrigatoria por advogado responsavel antes de protocolo, envio ou assinatura."
-    )
     if conteudo.strip().startswith("<"):
-        titulo_esc = html_lib.escape(titulo)
-        corpo = f"""
-<article class=\"visual-law legal-doc\">
-  <div class=\"doc-cover\">
-    <div class=\"doc-kicker\">Peca juridica | Padrao Visual Law EJC</div>
-    <h1>{titulo_esc}</h1>
-    <table class=\"meta-grid\"><tr>
-      <td><span class=\"meta-label\">Origem</span><span class=\"meta-value\">Sistema EJC</span></td>
-      <td><span class=\"meta-label\">Controle</span><span class=\"meta-value\">{controle}</span></td>
-      <td><span class=\"meta-label\">Status</span><span class=\"meta-value\">{status_final}</span></td>
-    </tr></table>
-  </div>
-  <div class=\"review-stamp\">{aviso}</div>
-  <div class=\"doc-body\">{conteudo}</div>
-</article>
-"""
+        corpo = _art_peca_html(
+            titulo, conteudo,
+            pronto_protocolo=pronto_protocolo,
+            codigo_peca=codigo_peca, versao=versao, status=status, revisado_em=revisado_em,
+            minuta_ia=minuta_ia,
+        )
     else:
-        corpo = _texto_peca_para_html(titulo, conteudo, pronto_protocolo=pronto_protocolo)
+        corpo = _texto_peca_para_html(
+            titulo, conteudo, pronto_protocolo=pronto_protocolo,
+            codigo_peca=codigo_peca, versao=versao, status=status, revisado_em=revisado_em,
+            minuta_ia=minuta_ia,
+        )
 
     html_doc = _HTML_BASE.format(
         corpo=corpo,

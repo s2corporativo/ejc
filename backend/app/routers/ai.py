@@ -10,13 +10,14 @@ from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy import select, func as sqlfunc
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.core.ai_errors import http_erro_ia
 from app.core.database import get_db
 from app.core.rate_limit import rate_limit
 from app.core.security import get_current_user, ROLE_LEVEL
 from app.models.user import User
 from app.models.case import Case
 from app.models.ai_log import AILog, AIStatusHITL
-from app.services.ai_service import analisar_caso, resumir_documento
+from app.services.ai_service import analisar_caso, extrair_prazos_ia, resumir_documento
 from app.services.case_context import montar_dossie
 from app.schemas.ai import (
     AnalisarCasoRequest, ResumirDocRequest, HITLRevisaoRequest,
@@ -70,7 +71,7 @@ async def analisar(
         nomes_proteger=req.nomes_proteger, case_id=req.case_id,
     )
     if "erro" in resultado:
-        raise HTTPException(status_code=502, detail=resultado["erro"])
+        raise http_erro_ia(resultado["erro"], 502)
     return resultado
 
 
@@ -112,7 +113,7 @@ async def resumir(
         raise HTTPException(status_code=422, detail="Texto muito curto")
     resultado = await resumir_documento(db, cu.id, req.texto, case_id=req.case_id)
     if "erro" in resultado:
-        raise HTTPException(status_code=502, detail=resultado["erro"])
+        raise http_erro_ia(resultado["erro"], 502)
     return resultado
 
 
@@ -364,7 +365,7 @@ async def teses_ocultas(
         scope_client_id=escopo_cli,
     )
     if "erro" in r:
-        raise HTTPException(status_code=502, detail=r["erro"])
+        raise http_erro_ia(r["erro"], 502)
     return r
 
 
@@ -406,7 +407,7 @@ async def auditar(
         raise HTTPException(status_code=422, detail="Peça muito curta para auditar")
     r = await auditar_peca(db, cu.id, conteudo, req.tipo_peca, case_id)
     if "erro" in r:
-        raise HTTPException(status_code=502, detail=r["erro"])
+        raise http_erro_ia(r["erro"], 502)
     return r
 
 
@@ -424,7 +425,7 @@ async def audiencia(
         req.nomes_proteger, req.case_id,
     )
     if "erro" in r:
-        raise HTTPException(status_code=502, detail=r["erro"])
+        raise http_erro_ia(r["erro"], 502)
     return r
 
 
@@ -590,7 +591,7 @@ async def assistente_estrategico(
             max_tokens=3000,
         )
     except Exception as e:
-        raise HTTPException(502, f"IA indisponível: {str(e)[:200]}")
+        raise http_erro_ia(e, 502)
 
     # AI Log (HITL rastreável)
     log = AILog(
@@ -681,7 +682,7 @@ async def dual_ia(
             model_override=req.model1,
         )
     except Exception as e:
-        raise HTTPException(502, f"IA-1 indisponível: {str(e)[:200]}")
+        raise http_erro_ia(e, 502, contexto="dual-ia-1")
 
     system2 = (
         "Você é a IA Crítica (revisora independente). Receberá o dossiê do caso e a análise "
@@ -709,7 +710,7 @@ async def dual_ia(
             model_override=req.model2,
         )
     except Exception as e:
-        raise HTTPException(502, f"IA-2 indisponível: {str(e)[:200]}")
+        raise http_erro_ia(e, 502, contexto="dual-ia-2")
 
     # Registra ambas no AI Log
     for modelo_usado, resposta_txt, sufixo in [
@@ -779,7 +780,7 @@ async def visual_law(
     try:
         resultado = await gerar_diagrama(dossie_txt, tipo=tipo_valido)
     except Exception as e:
-        raise HTTPException(502, f"Geração de diagrama falhou: {str(e)[:200]}")
+        raise http_erro_ia(e, 502, contexto="gerar-diagrama")
 
     return resultado
 
@@ -874,7 +875,7 @@ REGRAS:
             max_tokens=3500,
         )
     except Exception as e:
-        raise HTTPException(502, f"IA indisponível: {str(e)[:200]}")
+        raise http_erro_ia(e, 502)
 
     log = AILog(
         id=str(uuid4()), user_id=cu.id, case_id=case_id,
@@ -922,7 +923,7 @@ async def analisar_contrato_endpoint(
         texto_contrato_2=req.texto_contrato_2, modo=req.modo,
     )
     if "erro" in r:
-        raise HTTPException(status_code=502, detail=r["erro"])
+        raise http_erro_ia(r["erro"], 502)
     return r
 
 @router.post("/detectar-prazos")
@@ -931,5 +932,20 @@ async def detectar_prazos(
     db: AsyncSession = Depends(get_db),
     cu: User = Depends(get_current_user),
 ):
-    """Extração de prazos por IA a partir de texto ou documento."""
-    return await extrair_prazos_ia(db, cu.id, req.texto, req.case_id)
+    """Extração de prazos por IA a partir de texto ou documento.
+
+    Retorna prazos estruturados (fail-safe: sem data fatal clara → descartado)
+    + AILog HITL, no mesmo padrão dos endpoints vizinhos.
+    """
+    if len(req.texto.strip()) < 50:
+        raise HTTPException(status_code=422, detail="Texto muito curto")
+    if req.case_id:
+        # Valida ANTES da chamada de IA: case_id inexistente estourava a FK do
+        # AILog (500) DEPOIS de já ter pago o custo do gateway; e sem o gate de
+        # ownership qualquer usuário anexava logs a casos alheios.
+        from app.core.ownership import verificar_acesso_caso
+        await verificar_acesso_caso(db, cu, req.case_id)   # 404/403 controlados
+    resultado = await extrair_prazos_ia(db, cu.id, req.texto, req.case_id)
+    if "erro" in resultado:
+        raise http_erro_ia(resultado["erro"], 502)
+    return resultado

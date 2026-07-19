@@ -16,7 +16,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.core.database import get_db
 from app.core.rate_limit import rate_limit
 from app.core.security import get_current_user
-from app.core.ownership import is_gestao
+from app.core.ownership import is_gestao, verificar_acesso_caso
 from app.core.config import get_settings
 from app.models.user import User
 from app.services.ia_sentinela import IASentinela
@@ -35,12 +35,50 @@ async def auditoria_sentinela(db: AsyncSession = Depends(get_db), cu: User = Dep
     return await sentinela.gerar_alertas_estrategicos()
 
 
+# Teto do texto aceito na simulação (espelha os 50×4.000 chars do payload
+# validado de diplomacia_v3::analisar_magistrado).
+_MAX_PETICAO_CHARS = 200_000
+
+
 @router.post("/war-room/simular", dependencies=[Depends(rate_limit("war-room-simular", 10))])
-async def simular_war_room(payload: dict, cu: User = Depends(get_current_user)):
+async def simular_war_room(
+    payload: dict,
+    db: AsyncSession = Depends(get_db),
+    cu: User = Depends(get_current_user),
+):
+    """Simula o advogado da parte contrária (War Room) via shim ai_brain.
+    Auditoria: rastro obrigatório em ai_logs (HITL/LGPD) — mesmo padrão de
+    diplomacia_v3.py::dossie_pressao. Contrato de resposta inalterado (str)."""
+    from app.services.ai_guard import registrar_ai_log
+    from app.models.ai_log import AITipoUso
+    from app.services.sanitizer import sanitizar_pii
+
     peticao = payload.get("peticao")
-    if not peticao:
+    if not peticao or not isinstance(peticao, str):
         raise HTTPException(400, "Petição inicial é necessária para simulação.")
-    return await war_room.simular_contestacao(peticao)
+    # Teto equivalente ao de diplomacia_v3.AnalisarMagistradoRequest (~200k
+    # chars): acima disso é abuso de tokens no gateway de IA, não uso legítimo.
+    if len(peticao) > _MAX_PETICAO_CHARS:
+        raise HTTPException(
+            422, f"Petição excede o limite de {_MAX_PETICAO_CHARS} caracteres."
+        )
+
+    case_id = payload.get("case_id")
+    if case_id:
+        await verificar_acesso_caso(db, cu, case_id)
+
+    resultado = await war_room.simular_contestacao(peticao)
+
+    # Prompt logado já sanitizado (o shim ai_brain aplica a mesma sanitização
+    # antes do envio ao gateway central) — nunca grava PII bruta no AILog.
+    prompt_limpo, houve_pii = sanitizar_pii(peticao)
+    await registrar_ai_log(
+        db, user_id=cu.id, tipo_uso=AITipoUso.analise_caso,
+        case_id=case_id,
+        prompt_sanitizado=prompt_limpo, pii_removida=houve_pii,
+        resposta=resultado,
+    )
+    return resultado
 
 
 # ── Visual Law PDF (cronologia por caso) ──────────────────────────────────────

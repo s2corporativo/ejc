@@ -109,9 +109,8 @@ async def criar(
     db.add(env)
 
     # Se já veio com data_ciencia: calcula prazo + cria deadline crítica
-    info_prazo = None
     if env.data_ciencia:
-        info_prazo = await _criar_deadline_defesa(db, env, case, cu)
+        await _criar_deadline_defesa(db, env, case, cu)
 
     await criar_audit_log(
         db, cu.id, cu.role.value, "CREATE", "environmental_cases", env.id,

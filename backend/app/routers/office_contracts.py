@@ -107,6 +107,17 @@ async def update_contract(
     db: AsyncSession = Depends(get_db),
     current_user=Depends(get_current_user),
 ):
+    # Floor de role já é imposto pela dependency de router (_req_fin = _FIN),
+    # aplicada a TODOS os endpoints deste módulo (contratos são office-wide por
+    # design). Falta a checagem de EXISTÊNCIA: sem ela, um UPDATE por id
+    # inexistente/soft-deleted retornava 200 silencioso (padrão pending_items).
+    existe = await db.execute(
+        text("SELECT id FROM office_contracts WHERE id=:id AND deleted_at IS NULL"),
+        {"id": contract_id},
+    )
+    if not existe.fetchone():
+        raise HTTPException(404, "Contract not found")
+
     sets = []
     params = {"id": contract_id}
     for field in ["title","counterparty","contract_type","status","start_date","end_date","value","description","file_url","alert_days_before"]:

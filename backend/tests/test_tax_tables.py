@@ -1,5 +1,4 @@
 """Tabelas tributárias INSS/IRRF 2026 — base do cálculo de rescisão (Fase 5)."""
-import pytest
 
 from app.services.calc.tax_tables import inss, irrf
 

@@ -1,0 +1,584 @@
+/* Camada visual flat/compacta: cards brancos com borda 1px visível,
+   sombra mínima e sem elevação no hover (idioma Verdelimp, cores EJC). */
+.card,
+.section-card {
+  border: 1px solid var(--ejc-border);
+  background: #ffffff;
+  box-shadow: 0 1px 2px rgba(15, 23, 42, 0.04);
+}
+
+.card:hover {
+  box-shadow: 0 1px 2px rgba(15, 23, 42, 0.04);
+  transform: none;
+}
+
+.dark .card,
+.dark .section-card {
+  background: var(--ejc-card);
+  border-color: var(--ejc-border);
+  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.28);
+}
+
+.input,
+.select,
+.textarea,
+.ejc-modern-scope input:not([type="checkbox"]):not([type="radio"]):not([type="range"]),
+.ejc-modern-scope select,
+.ejc-modern-scope textarea {
+  border: 0;
+  background: #fff;
+  box-shadow:
+    inset 0 0 0 1px rgba(148, 163, 184, 0.22),
+    0 1px 2px rgba(15, 23, 42, 0.03);
+}
+
+.input:hover,
+.select:hover,
+.textarea:hover,
+.ejc-modern-scope input:not([type="checkbox"]):not([type="radio"]):not([type="range"]):hover,
+.ejc-modern-scope select:hover,
+.ejc-modern-scope textarea:hover {
+  box-shadow:
+    inset 0 0 0 1px rgba(201, 162, 39, 0.45),
+    0 4px 14px rgba(15, 23, 42, 0.05);
+}
+
+.input:focus,
+.select:focus,
+.textarea:focus,
+.ejc-modern-scope input:not([type="checkbox"]):not([type="radio"]):not([type="range"]):focus,
+.ejc-modern-scope select:focus,
+.ejc-modern-scope textarea:focus {
+  border-color: transparent;
+  outline: none;
+  box-shadow:
+    inset 0 0 0 1px rgba(212, 175, 55, 0.72),
+    0 0 0 3px rgba(212, 175, 55, 0.16);
+}
+
+.dark .input,
+.dark .select,
+.dark .textarea,
+.dark .ejc-modern-scope input:not([type="checkbox"]):not([type="radio"]):not([type="range"]),
+.dark .ejc-modern-scope select,
+.dark .ejc-modern-scope textarea {
+  background: var(--ejc-elev);
+  box-shadow:
+    inset 0 0 0 1px rgba(255, 245, 230, 0.1),
+    0 1px 2px rgba(0, 0, 0, 0.22);
+}
+
+/* Canvas flat: sem véus/radiais decorativos — o fundo é o próprio
+   canvas (var(--ejc-bg)), idioma compacto Verdelimp. */
+.surface-soft,
+.ejc-modern-scope {
+  background: transparent;
+}
+
+.dark .surface-soft,
+.dark .ejc-modern-scope {
+  background: transparent;
+}
+
+.ejc-modern-scope :where(.bg-white.border, .bg-white.shadow, .bg-white.shadow-sm, .bg-white.shadow-md, .bg-white.rounded-xl, .bg-white.rounded-2xl):not(input):not(select):not(textarea):not(button),
+.ejc-modern-scope :where(.card, .section-card) {
+  border-color: var(--ejc-border) !important;
+  box-shadow: 0 1px 2px rgba(15, 23, 42, 0.04) !important;
+}
+
+.ejc-modern-scope :where(.bg-white.border, .bg-white.shadow, .bg-white.shadow-sm, .bg-white.shadow-md, .bg-white.rounded-xl, .bg-white.rounded-2xl):not(input):not(select):not(textarea):not(button):hover,
+.ejc-modern-scope :where(.card, .section-card):hover {
+  box-shadow: 0 1px 2px rgba(15, 23, 42, 0.04) !important;
+}
+
+.ejc-modern-scope :where(h1, h2, h3) {
+  letter-spacing: -0.02em;
+}
+
+.ejc-modern-scope :where(p, li, .text-slate-500, .text-gray-500) {
+  line-height: 1.58;
+}
+
+.ejc-modern-scope :where(table) {
+  border-collapse: separate;
+  border-spacing: 0;
+}
+
+/* Faixa clara da marca no thead (ouro palha) + texto escuro da marca */
+.ejc-modern-scope :where(thead th) {
+  background: #f7f1dc;
+  border-bottom: 1px solid rgba(212, 175, 55, 0.22);
+  color: #3b2f0b;
+  font-size: 0.7rem;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  font-variant-numeric: tabular-nums;
+}
+
+.ejc-modern-scope :where(tbody tr) {
+  transition: background-color 0.15s ease;
+}
+
+.ejc-modern-scope :where(tbody td) {
+  border-top: 1px solid rgba(166, 124, 82, 0.1);
+  font-variant-numeric: tabular-nums;
+}
+
+.ejc-modern-scope :where(tbody tr:hover) {
+  background: rgba(212, 175, 55, 0.06);
+}
+
+/* Dashboard premium: camada escopada sobre a estrutura atual do Dashboard.
+   Não altera dados, endpoints, permissões nem regras de negócio. */
+.ejc-modern-scope > div > .space-y-6 > .flex.flex-col.gap-4:first-child {
+  position: relative;
+  overflow: hidden;
+  border-radius: 0.75rem;
+  padding: 1.1rem 1.25rem;
+  background: #ffffff;
+  color: #0f172a;
+  border: 1px solid rgb(226 232 240);
+  box-shadow: 0 1px 2px rgba(15, 23, 42, 0.04);
+}
+
+.ejc-modern-scope > div > .space-y-6 > .flex.flex-col.gap-4:first-child .eyebrow {
+  color: #8a6d2f;
+}
+
+.ejc-modern-scope > div > .space-y-6 > .flex.flex-col.gap-4:first-child h1 {
+  /* Título denso na cor escura da marca (idioma compacto) */
+  color: #3b2f0b;
+  font-size: 1.35rem;
+  font-weight: 700;
+  letter-spacing: -0.02em;
+}
+
+.ejc-modern-scope > div > .space-y-6 > .flex.flex-col.gap-4:first-child p {
+  color: rgb(100 116 139);
+}
+
+.ejc-modern-scope > div > .space-y-6 > .flex.flex-col.gap-4:first-child .btn-primary {
+  background: #d4af37;
+  color: #3b2f0b;
+  box-shadow: none;
+}
+
+.ejc-modern-scope > div > .space-y-6 > .flex.flex-col.gap-4:first-child .btn-secondary {
+  border-color: rgb(226 232 240);
+  background: #ffffff;
+  color: rgb(51 65 85);
+}
+
+.ejc-modern-scope > div > .space-y-6 > .flex.flex-col.gap-4:first-child .btn-secondary:hover {
+  background: rgb(248 250 252);
+}
+
+/* KPI cards no idioma Verdelimp: branco flat, borda 1px, raio 10px e
+   borda SUPERIOR de 3px na cor do indicador (dourado da marca). */
+.ejc-modern-scope > div > .space-y-6 > .grid[class*="xl:grid-cols-4"] > .card {
+  position: relative;
+  overflow: hidden;
+  min-height: 7.5rem;
+  border: 1px solid var(--ejc-border);
+  border-radius: 10px;
+  background: #ffffff;
+  box-shadow: 0 1px 2px rgba(15, 23, 42, 0.04);
+}
+
+.ejc-modern-scope > div > .space-y-6 > .grid[class*="xl:grid-cols-4"] > .card::before {
+  content: "";
+  position: absolute;
+  inset: 0 0 auto 0;
+  height: 3px;
+  background: #d4af37;
+}
+
+.ejc-modern-scope > div > .space-y-6 > .grid[class*="xl:grid-cols-4"] > .card:hover {
+  transform: none;
+  box-shadow: 0 1px 2px rgba(15, 23, 42, 0.04);
+}
+
+.ejc-modern-scope > div > .space-y-6 > .grid[class*="xl:grid-cols-4"] > .card p:first-child {
+  text-transform: uppercase;
+  letter-spacing: 0.1em;
+  font-weight: 800;
+}
+
+.ejc-modern-scope > div > .space-y-6 .section-card {
+  border: 1px solid var(--ejc-border);
+  background: #ffffff;
+}
+
+.ejc-modern-scope > div > .space-y-6 .section-card > div:first-child {
+  border-bottom-color: rgba(212, 175, 55, 0.12);
+  background: rgba(250, 247, 240, 0.8);
+}
+
+.ejc-modern-scope > div > .space-y-6 .section-card h2 {
+  font-size: 0.92rem;
+  letter-spacing: -0.01em;
+}
+
+.dark .ejc-modern-scope > div > .space-y-6 > .flex.flex-col.gap-4:first-child {
+  /* Cartão flat no escuro (sem gradiente/blob), hairline dourado */
+  background: var(--ejc-card);
+  border-color: rgba(212, 175, 55, 0.2);
+  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.28);
+}
+
+/* Textos e botão secundário do hero — no claro ficaram tinta escura
+   (h1 #0F172A, eyebrow #8A6D2F, p slate) e botão branco, incondicionais;
+   no grafite precisam de creme/ouro para legibilidade (AA). */
+.dark .ejc-modern-scope > div > .space-y-6 > .flex.flex-col.gap-4:first-child .eyebrow {
+  color: #e5ce7f;
+}
+.dark .ejc-modern-scope > div > .space-y-6 > .flex.flex-col.gap-4:first-child h1 {
+  color: #f6efe1;
+}
+.dark .ejc-modern-scope > div > .space-y-6 > .flex.flex-col.gap-4:first-child p {
+  color: rgba(232, 224, 211, 0.82);
+}
+.dark .ejc-modern-scope > div > .space-y-6 > .flex.flex-col.gap-4:first-child .btn-secondary {
+  border-color: rgba(255, 245, 230, 0.14);
+  background: rgba(255, 245, 230, 0.08);
+  color: #e8e0d3;
+}
+.dark .ejc-modern-scope > div > .space-y-6 > .flex.flex-col.gap-4:first-child .btn-secondary:hover {
+  background: rgba(255, 245, 230, 0.14);
+}
+
+.dark .ejc-modern-scope > div > .space-y-6 > .grid[class*="xl:grid-cols-4"] > .card,
+.dark .ejc-modern-scope > div > .space-y-6 .section-card {
+  background: rgba(28, 24, 14, 0.92);
+}
+
+.dark .ejc-modern-scope > div > .space-y-6 .section-card > div:first-child {
+  border-bottom-color: rgba(255, 245, 230, 0.08);
+  background: rgba(255, 245, 230, 0.04);
+}
+
+/* Pré-visualização de peças jurídicas em Visual Law.
+   Escopada ao modal largo usado na tela de Peças, sem alterar conteúdo ou fluxo. */
+.modal-backdrop [role="dialog"].max-w-4xl > .p-5 > .mb-3.p-3.rounded-lg {
+  border: 0;
+  border-left: 4px solid #d4af37;
+  border-radius: 1rem;
+  box-shadow: 0 10px 28px rgba(15, 23, 42, 0.06);
+}
+
+.modal-backdrop [role="dialog"].max-w-4xl > .p-5 > .text-sm.text-slate-700 {
+  position: relative;
+  overflow: hidden;
+  border-radius: 1.6rem;
+  background:
+    linear-gradient(180deg, #ffffff 0%, #fffaf0 100%);
+  padding: 2rem;
+  color: #3b2f0b;
+  font-size: 0.96rem;
+  line-height: 1.85;
+  box-shadow:
+    inset 0 0 0 1px rgba(212, 175, 55, 0.14),
+    0 22px 70px rgba(15, 23, 42, 0.1);
+}
+
+.modal-backdrop [role="dialog"].max-w-4xl > .p-5 > .text-sm.text-slate-700::before {
+  display: block;
+  margin: -2rem -2rem 1.5rem;
+  padding: 1.55rem 2rem;
+  background:
+    radial-gradient(circle at 12% 22%, rgba(212, 175, 55, 0.22), transparent 18rem),
+    linear-gradient(135deg, #3b2f0b 0%, #6f5711 62%, #8f7117 100%);
+  color: rgba(255, 245, 230, 0.86);
+  content: "VISUAL LAW EJC · PRÉ-VISUALIZAÇÃO DA PEÇA";
+  font-size: 0.72rem;
+  font-weight: 850;
+  letter-spacing: 0.16em;
+  text-transform: uppercase;
+}
+
+.modal-backdrop [role="dialog"].max-w-4xl > .p-5 > .text-sm.text-slate-700 > div[class*="font-bold"],
+.modal-backdrop [role="dialog"].max-w-4xl > .p-5 > .text-sm.text-slate-700 > div[class*="font-semibold"] {
+  margin-top: 1.4rem;
+  border-left: 4px solid #d4af37;
+  padding-left: 0.85rem;
+  color: #3b2f0b;
+  font-size: 1rem;
+}
+
+.modal-backdrop [role="dialog"].max-w-4xl > .p-5 > .text-sm.text-slate-700 p {
+  margin-bottom: 0.8rem;
+  text-align: justify;
+}
+
+.modal-backdrop [role="dialog"].max-w-4xl > .p-5 > .text-sm.text-slate-700 blockquote {
+  border-left: 4px solid #d4af37;
+  border-radius: 1rem;
+  background: #fbf8ee;
+  padding: 1rem;
+  color: #55420d;
+}
+
+.modal-backdrop [role="dialog"].max-w-4xl > .p-5 > .text-sm.text-slate-700 ul,
+.modal-backdrop [role="dialog"].max-w-4xl > .p-5 > .text-sm.text-slate-700 ol {
+  border-radius: 1rem;
+  background: rgba(250, 247, 240, 0.74);
+  padding: 1rem 1.25rem 1rem 2rem;
+}
+
+.dark .modal-backdrop [role="dialog"].max-w-4xl > .p-5 > .text-sm.text-slate-700 {
+  background:
+    linear-gradient(180deg, rgba(28, 24, 14, 0.98), rgba(42, 33, 8, 0.92));
+  color: rgba(255, 245, 230, 0.88);
+  box-shadow:
+    inset 0 0 0 1px rgba(212, 175, 55, 0.16),
+    0 22px 70px rgba(0, 0, 0, 0.36);
+}
+
+.dark .modal-backdrop [role="dialog"].max-w-4xl > .p-5 > .text-sm.text-slate-700 > div[class*="font-bold"],
+.dark .modal-backdrop [role="dialog"].max-w-4xl > .p-5 > .text-sm.text-slate-700 > div[class*="font-semibold"] {
+  color: #fff5e6;
+}
+
+.visual-law-doc {
+  overflow: hidden;
+  border-radius: 1.75rem;
+  background: #ffffff;
+  color: #111827;
+  box-shadow:
+    0 1px 2px rgba(15, 23, 42, 0.04),
+    0 22px 70px rgba(15, 23, 42, 0.12);
+}
+
+.visual-law-cover {
+  position: relative;
+  padding: 2rem;
+  background:
+    radial-gradient(circle at 15% 20%, rgba(212, 175, 55, 0.22), transparent 18rem),
+    linear-gradient(135deg, #3b2f0b 0%, #6f5711 58%, #8f7117 100%);
+  color: white;
+}
+
+.visual-law-kicker {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.4rem;
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.12);
+  padding: 0.4rem 0.75rem;
+  font-size: 0.7rem;
+  font-weight: 800;
+  letter-spacing: 0.16em;
+  text-transform: uppercase;
+}
+
+.visual-law-cover h1 {
+  margin-top: 1rem;
+  max-width: 48rem;
+  color: white;
+  font-size: clamp(1.6rem, 3vw, 2.55rem);
+  line-height: 1.05;
+}
+
+.visual-law-cover p {
+  margin-top: 0.75rem;
+  max-width: 42rem;
+  color: rgba(255, 255, 255, 0.78);
+  font-size: 0.95rem;
+  line-height: 1.7;
+}
+
+.visual-law-meta-grid {
+  margin-top: 1.5rem;
+  display: grid;
+  gap: 0.75rem;
+  grid-template-columns: repeat(auto-fit, minmax(9rem, 1fr));
+}
+
+.visual-law-meta-grid > div {
+  border-radius: 1rem;
+  background: rgba(255, 255, 255, 0.12);
+  padding: 0.75rem 0.85rem;
+  backdrop-filter: blur(10px);
+}
+
+.visual-law-meta-grid span {
+  display: block;
+  font-size: 0.62rem;
+  font-weight: 800;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: rgba(255, 255, 255, 0.56);
+}
+
+.visual-law-meta-grid strong {
+  margin-top: 0.2rem;
+  display: block;
+  font-size: 0.86rem;
+  color: #ffffff;
+}
+
+.visual-law-review-box {
+  margin: 1.5rem 2rem 0;
+  display: flex;
+  gap: 0.75rem;
+  border-radius: 1rem;
+  background: #f7f1dc;
+  padding: 1rem;
+  color: #6f5711;
+}
+
+.visual-law-review-box p {
+  margin-top: 0.25rem;
+  font-size: 0.82rem;
+  line-height: 1.6;
+  color: #8f7117;
+}
+
+.visual-law-body {
+  padding: 2rem;
+  font-size: 0.95rem;
+  line-height: 1.85;
+}
+
+.visual-law-body h1,
+.visual-law-body h2,
+.visual-law-body h3 {
+  color: #3b2f0b;
+}
+
+.visual-law-body h2 {
+  margin-top: 1.8rem;
+  border-left: 4px solid #d4af37;
+  padding-left: 0.85rem;
+}
+
+.visual-law-body blockquote,
+.visual-law-body .callout {
+  border-left: 4px solid #d4af37;
+  border-radius: 1rem;
+  background: #fbf8ee;
+  padding: 1rem;
+  color: #55420d;
+}
+
+.visual-law-footer {
+  display: flex;
+  align-items: center;
+  gap: 0.45rem;
+  border-top: 1px solid rgba(148, 163, 184, 0.18);
+  padding: 1rem 2rem 1.25rem;
+  color: #64748b;
+  font-size: 0.78rem;
+}
+
+.print-view {
+  background: #ffffff;
+  color: #111827;
+  font-family: "Inter", "Segoe UI", Arial, sans-serif;
+}
+
+.print-view-title {
+  margin: 0;
+  padding: 2rem 2rem 0.75rem;
+  background:
+    radial-gradient(circle at 15% 20%, rgba(212, 175, 55, 0.22), transparent 18rem),
+    linear-gradient(135deg, #3b2f0b 0%, #6f5711 58%, #8f7117 100%);
+  color: #ffffff;
+  font-size: 1.85rem;
+  line-height: 1.1;
+}
+
+.print-view-title::before {
+  display: block;
+  margin-bottom: 0.55rem;
+  color: rgba(255, 255, 255, 0.68);
+  content: "VISUAL LAW EJC";
+  font-size: 0.68rem;
+  font-weight: 800;
+  letter-spacing: 0.16em;
+}
+
+.print-view-meta {
+  margin: 0 0 1.5rem;
+  padding: 0 2rem 1.5rem;
+  background: linear-gradient(135deg, #3b2f0b 0%, #6f5711 58%, #8f7117 100%);
+  color: rgba(255, 255, 255, 0.76);
+  font-size: 0.82rem;
+}
+
+.print-view > :not(.print-view-title):not(.print-view-meta) {
+  padding-left: 2rem;
+  padding-right: 2rem;
+}
+
+.print-view h2 {
+  margin-top: 1.5rem;
+  border-left: 4px solid #d4af37;
+  padding-left: 0.75rem;
+  color: #3b2f0b;
+}
+
+.print-view blockquote {
+  border-left: 4px solid #d4af37;
+  border-radius: 0.75rem;
+  background: #fbf8ee;
+  padding: 0.9rem 1rem;
+  color: #55420d;
+}
+
+.print-view .visual-law-doc {
+  box-shadow: none;
+  border-radius: 0;
+}
+
+@media print {
+  .visual-law-doc {
+    box-shadow: none !important;
+    border-radius: 0 !important;
+  }
+
+  .visual-law-cover,
+  .print-view-title,
+  .print-view-meta {
+    print-color-adjust: exact;
+    -webkit-print-color-adjust: exact;
+  }
+}
+
+/* ── Modo privacidade (reuniões/compartilhamento de tela) ────────────────────
+   Ativado pelo botão de olho no header (Layout.tsx), que aplica a classe
+   `ejc-privacy-mode` no <html>. Borra apenas o conteúdo principal — header e
+   sidebar continuam utilizáveis para desligar o modo. */
+.ejc-privacy-mode main.ejc-modern-scope {
+  filter: blur(10px);
+  pointer-events: none;
+  user-select: none;
+}
+
+/* O aviso vive no <body> (fora da subárvore com filter) — um ::after dentro
+   do elemento borrado herdaria o blur do ancestral, sem como desfazê-lo. */
+/* Impressão com o modo ativo: mantém o blur (falha na direção segura — nada
+   legível sai no papel), mas remove o selo fixo, que se repetiria estampado
+   em todas as páginas. */
+@media print {
+  .ejc-privacy-mode body::after {
+    content: none;
+  }
+}
+
+.ejc-privacy-mode body::after {
+  content: "Conteúdo ocultado pelo modo privacidade";
+  position: fixed;
+  inset: 50% auto auto 50%;
+  z-index: 80;
+  transform: translate(-50%, -50%);
+  padding: 0.9rem 1.1rem;
+  border: 1px solid rgba(184, 137, 39, 0.35);
+  border-radius: 14px;
+  color: #111827;
+  background: rgba(255, 255, 255, 0.96);
+  box-shadow: 0 16px 40px rgba(15, 23, 42, 0.18);
+  font-size: 0.82rem;
+  font-weight: 700;
+}

@@ -11,7 +11,8 @@ vigencia_inicio fica NULL (a edição não consta no PDF; ver fonte).
 Rodar:  python -m app.seeds.oab_honorarios_seed
 Idempotente por (item_codigo, fonte).
 """
-import asyncio, uuid
+import asyncio
+import uuid
 from sqlalchemy import select
 from app.core.database import AsyncSessionLocal
 from app.models.redesign import TabelaOABHonorario

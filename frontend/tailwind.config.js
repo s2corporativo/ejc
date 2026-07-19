@@ -6,46 +6,50 @@ export default {
     extend: {
       colors: {
         /*
-         * Design System "De Paula Teixeira" — luxo jurídico (mockup Opção 1).
+         * Design System "De Paula Teixeira" — luxo jurídico DOURADO.
+         * O papel do marrom/bronze foi transferido para a família OURO
+         * (mesma família dos PDFs Visual Law — token `ouro` abaixo).
          * Tokens oficiais (fonte única — documentados aqui):
-         *   Marrom Profundo #2D1B14 — topo da sidebar em gradiente e botões
-         *     sólidos primários (texto branco = 16,4:1, AAA).
-         *   Bronze Metálico #A67C52 — hover/ativo da sidebar, ícones e
-         *     bordas de destaque (3,7:1 — só componente de UI, nunca texto
-         *     pequeno sobre branco; para texto use #7A5A3A = 6,3:1 AA).
-         *   Dourado #D4AF37 — destaques GRÁFICOS (linhas de gráfico,
-         *     indicadores, filetes, ícones de KPI). Não é texto sobre
-         *     branco (2,1:1); no modo ESCURO vira texto-acento (#E5CE7F
-         *     = 11,4:1 sobre #1C1712).
-         *   Canvas Off-White #F8F9FA + cards branco puro; raio 12–16px
+         *   Ouro Near-Black #3B2F0B — texto de destaque e início dos
+         *     gradientes escuros (13,2:1 sobre branco, AAA).
+         *   Ouro #8F7117 — ação/texto-acento (4,6:1 sobre branco = AA;
+         *     texto branco sobre ele = 4,6:1 AA).
+         *   Ouro Profundo #6F5711 — texto-acento forte (6,9:1 AA/AAA).
+         *   Ouro Claro #C9A227 / Dourado #D4AF37 — destaques GRÁFICOS
+         *     (filetes, ícones de KPI, fim de gradiente metálico). Não é
+         *     texto sobre branco (2,1–2,4:1); no modo ESCURO o acento de
+         *     texto é #E5CE7F (11,4:1 sobre #1C180E).
+         *   Canvas Off-White quente + cards branco puro; raio 12–16px
          *     (rounded-xl/2xl); sombras muito suaves.
          * Nomes de tokens preservados (fan-in alto nas 64 páginas);
-         * apenas os VALORES foram repintados.
+         * apenas os VALORES foram repintados (marrom → ouro).
          */
 
-        // Sidebar — gradiente marrom→bronze (ver .sidebar-bronze no CSS)
+        // Sidebar — gradiente ouro-escuro (ver .sidebar-bronze no CSS)
         sidebar: {
-          DEFAULT: "#2D1B14",
-          light: "#4A3427",
-          hover: "rgba(166,124,82,0.18)",
-          active: "rgba(166,124,82,0.20)",
+          DEFAULT: "#3B2F0B",
+          light: "#55420D",
+          hover: "rgba(201,162,39,0.16)",
+          active: "rgba(201,162,39,0.20)",
         },
-        // Primária — marrom/bronze/dourado (ação/marca)
+        // Primária — escala OURO (ação/marca)
         primary: {
-          DEFAULT: "#A67C52",
-          50: "#FAF7F0",
-          100: "#F2E9D8",
-          200: "#E9DCB8",
+          DEFAULT: "#A6842A",
+          50: "#FBF8EC",
+          100: "#F7F1DC",
+          200: "#EFE3B4",
           300: "#E5CE7F",
           400: "#D4AF37",
-          500: "#A67C52",
-          // 600 calibrado p/ WCAG AA: 6,3:1 sobre branco (texto-acento
-          // bronze; #A67C52 puro = 3,7:1 falharia em texto pequeno)
-          600: "#7A5A3A",
-          700: "#5E4429",
-          800: "#44301D",
-          900: "#2D1B14",
-          950: "#1C110C",
+          // 500 calibrado: 3,5:1 sobre branco — só UI/ícone, nunca
+          // texto pequeno sobre branco (para texto use 600+)
+          500: "#A6842A",
+          // 600 calibrado p/ WCAG AA: 4,6:1 sobre branco (texto-acento
+          // ouro; #C9A227 puro = 2,4:1 falharia em texto pequeno)
+          600: "#8F7117",
+          700: "#6F5711",
+          800: "#55420D",
+          900: "#3B2F0B",
+          950: "#251D06",
         },
         // IA — laranja quente (superfícies de inteligência / acento)
         ai: {
@@ -93,14 +97,32 @@ export default {
           600: "#A6842A",
           50: "#FAF5E3",
         },
+        /*
+         * Ouro institucional "De Paula Teixeira" — paleta oficial dos PDFs
+         * Visual Law (backend/app/services/visual_law_theme.py). Uso com
+         * PARCIMÔNIA: cor de AÇÃO/DESTAQUE (botão primário, tab ativa,
+         * badge de destaque, filetes de título) — nunca fundo dominante.
+         * Contraste sobre branco: profundo #6F5711 = 6,9:1 (AA texto);
+         * DEFAULT #8F7117 = 4,6:1 (AA com texto branco em botões);
+         * claro #C9A227 = só filete/realce gráfico, nunca texto;
+         * palha #F7F1DC = fundo suave (badges, quadros).
+         */
+        ouro: {
+          profundo: "#6F5711",
+          DEFAULT: "#8F7117",
+          claro: "#C9A227",
+          palha: "#F7F1DC",
+        },
         ink: {
           DEFAULT: "#111827",
           light: "#374151",
         },
-        canvas: "#F8F9FA",
-        parchment: "#F1F5F9",
+        // Canvas branco/off-white QUENTE (pedido do dono: base branca,
+        // nada de cinza pesado) + hairline quente quase invisível.
+        canvas: "#FAF9F6",
+        parchment: "#F5F3EE",
         muted: "#8A94A6",
-        border: "#E5E9F0",
+        border: "#ECE8E0",
         // Status — success=mint (#0CA678), danger/error=soft-red (#E03131),
         // warn/warning=amarelo quente (#FFD166), info=sky (inalterado)
         success: {
@@ -189,7 +211,15 @@ export default {
         },
       },
       fontFamily: {
-        sans: ['"Inter"', "system-ui", "-apple-system", "sans-serif"],
+        sans: [
+          '"Inter"',
+          "ui-sans-serif",
+          "system-ui",
+          "-apple-system",
+          '"Segoe UI"',
+          "Roboto",
+          "sans-serif",
+        ],
         serif: ["Georgia", "Cambria", '"Times New Roman"', "serif"],
         // Mono de sistema — dados processuais (nº CNJ, CPF/CNPJ, valores).
         // Sem fonte externa: usa o que já existe no SO.
@@ -243,6 +273,9 @@ export default {
           "0 2px 4px rgba(24,16,8,0.04), 0 8px 26px rgba(24,16,8,0.08)",
         float: "0 4px 12px rgba(24,16,8,0.07), 0 18px 40px rgba(24,16,8,0.12)",
         logo: "0 2px 8px rgba(24,16,8,0.10)",
+        // Sombra do botão primário ouro (profundidade sem borda)
+        gold: "0 6px 16px rgba(111,87,17,0.22)",
+        "gold-hover": "0 8px 22px rgba(111,87,17,0.3)",
         sm: "0 1px 2px rgba(24,16,8,0.05)",
         md: "0 2px 4px rgba(24,16,8,0.04), 0 6px 22px rgba(24,16,8,0.06)",
       },

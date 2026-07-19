@@ -1,0 +1,113 @@
+/* Workspace executivo — somente apresentação visual. */
+
+.executive-workspace > .overflow-x-auto {
+  border-radius: 0.75rem;
+  background: #ffffff;
+  border: 1px solid var(--ejc-border);
+  padding: 0.5rem;
+  box-shadow: 0 1px 2px rgba(15, 23, 42, 0.04);
+}
+
+.executive-workspace > .overflow-x-auto > div {
+  border: 0;
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.82);
+  box-shadow: inset 0 0 0 1px rgba(212, 175, 55, 0.14);
+}
+
+.executive-workspace > .overflow-x-auto button {
+  border-radius: 999px;
+}
+
+.executive-workspace > .overflow-x-auto button.bg-primary-600 {
+  /* Aba ativa em cor chapada da marca (flat, sem gradiente) */
+  background: #8f7117;
+  box-shadow: none;
+}
+
+.executive-workspace .max-w-6xl {
+  max-width: 86rem;
+}
+
+.executive-workspace .bg-white.rounded-xl.border,
+.executive-workspace .section-card,
+.executive-workspace .card {
+  border: 1px solid var(--ejc-border);
+  background: #ffffff;
+  box-shadow: 0 1px 2px rgba(15, 23, 42, 0.04);
+}
+
+.executive-workspace h2 {
+  color: #3b2f0b;
+  letter-spacing: -0.02em;
+}
+
+.executive-workspace h2.text-sm.uppercase {
+  display: inline-flex;
+  border-radius: 999px;
+  background: rgba(250, 247, 240, 0.92);
+  padding: 0.45rem 0.75rem;
+  color: #6f5711;
+  box-shadow: inset 0 0 0 1px rgba(212, 175, 55, 0.14);
+}
+
+.executive-workspace table {
+  border-collapse: separate;
+  border-spacing: 0;
+}
+
+.executive-workspace thead {
+  /* Faixa clara chapada no thead (idioma Verdelimp) */
+  background: rgba(250, 247, 240, 0.95);
+}
+
+.executive-workspace thead th {
+  border-bottom: 1px solid rgba(212, 175, 55, 0.16);
+  color: #6f5711;
+  font-size: 0.68rem;
+  font-weight: 850;
+  letter-spacing: 0.1em;
+}
+
+.executive-workspace tbody tr:hover {
+  background: rgba(250, 247, 240, 0.82);
+  box-shadow: inset 4px 0 0 rgba(212, 175, 55, 0.54);
+}
+
+.executive-workspace .btn-secondary,
+.executive-workspace button.border {
+  border: 0;
+  background: #ffffff;
+  box-shadow: inset 0 0 0 1px rgba(148, 163, 184, 0.35);
+}
+
+.executive-workspace input[type="month"] {
+  color: #3b2f0b;
+  font-weight: 650;
+}
+
+.dark .executive-workspace > .overflow-x-auto,
+.dark .executive-workspace > .overflow-x-auto > div,
+.dark .executive-workspace .bg-white.rounded-xl.border,
+.dark .executive-workspace .section-card,
+.dark .executive-workspace .card {
+  background: rgba(28, 23, 18, 0.88);
+}
+
+.dark .executive-workspace h2,
+.dark .executive-workspace input[type="month"] {
+  color: #fff5e6;
+}
+
+.dark .executive-workspace h2.text-sm.uppercase {
+  background: rgba(255, 245, 230, 0.05);
+  color: #e5ce7f;
+}
+
+.dark .executive-workspace thead {
+  background: rgba(255, 245, 230, 0.04);
+}
+
+.dark .executive-workspace tbody tr:hover {
+  background: rgba(255, 245, 230, 0.05);
+}

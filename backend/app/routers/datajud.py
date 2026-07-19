@@ -1,9 +1,10 @@
 """DataJud CNJ public API endpoints"""
 import logging
-from fastapi import APIRouter, Depends, HTTPException, Query
+
+import httpx
+from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy import text, select
-from typing import Optional
+from sqlalchemy import select
 from app.core.database import get_db
 from app.core.security import get_current_user
 from app.core.ownership import verificar_acesso_caso
@@ -25,13 +26,35 @@ async def lookup_process(
     try:
         result = await datajud_service.consultar_processo(numero_cnj)
         if result is None:
-            raise HTTPException(404, "Process not found in DataJud")
+            raise HTTPException(404, "Processo não localizado no DataJud")
         return result
     except HTTPException:
         raise
-    except Exception:
-        log.exception("Erro ao consultar processo no DataJud")
-        raise HTTPException(502, "Erro ao consultar o DataJud")
+    except datajud_service.DataJudDesabilitadoError as exc:
+        raise HTTPException(503, str(exc))
+    except datajud_service.TribunalNaoMapeadoError as exc:
+        raise HTTPException(422, str(exc))
+    except httpx.HTTPStatusError as exc:
+        status = exc.response.status_code if exc.response is not None else None
+        log.warning(
+            "DataJud recusou consulta (tipo=%s status=%s)",
+            type(exc).__name__, status,
+        )
+        if status in (401, 403):
+            raise HTTPException(
+                503,
+                "Chave pública do DataJud ausente, inválida ou rotacionada pelo CNJ.",
+            )
+        if status == 429:
+            raise HTTPException(503, "DataJud temporariamente limitado. Tente novamente.")
+        raise HTTPException(502, "DataJud indisponível. Tente novamente.")
+    except (httpx.HTTPError, ValueError, KeyError, TypeError) as exc:
+        log.warning("DataJud indisponível (tipo=%s)", type(exc).__name__)
+        raise HTTPException(502, "DataJud indisponível. Tente novamente.")
+    except Exception as exc:
+        # Contrato defensivo do endpoint: sem corpo, número CNJ ou segredo no log.
+        log.error("Falha inesperada no DataJud (tipo=%s)", type(exc).__name__)
+        raise HTTPException(502, "DataJud indisponível. Tente novamente.")
 
 
 @router.post("/cases/{case_id}/sync")
@@ -60,8 +83,19 @@ async def sync_case(
             "numero_processo": case.numero_processo,
             "prazos": prazos,
         }
-    except Exception:
-        log.exception("Erro ao sincronizar caso com o DataJud")
+    except datajud_service.DataJudDesabilitadoError as exc:
+        await db.rollback()
+        raise HTTPException(503, str(exc))
+    except datajud_service.TribunalNaoMapeadoError as exc:
+        await db.rollback()
+        raise HTTPException(422, str(exc))
+    except (httpx.HTTPError, ValueError, KeyError, TypeError) as exc:
+        await db.rollback()
+        log.warning("Falha no sync DataJud (tipo=%s)", type(exc).__name__)
+        raise HTTPException(502, "Erro ao sincronizar com o DataJud")
+    except Exception as exc:
+        await db.rollback()
+        log.error("Falha inesperada no sync DataJud (tipo=%s)", type(exc).__name__)
         raise HTTPException(502, "Erro ao sincronizar com o DataJud")
 
 

@@ -7,6 +7,7 @@ import enum
 
 
 class CaseArea(str, enum.Enum):
+    # Valores originais (migration 001)
     civil         = "civil"
     trabalhista   = "trabalhista"
     consumidor    = "consumidor"
@@ -16,6 +17,26 @@ class CaseArea(str, enum.Enum):
     previdenciario = "previdenciario"
     empresarial   = "empresarial"
     tributario    = "tributario"
+    # Ramos adicionais alinhados ao frontend e à tabela canônica `areas`
+    # (migration 083).
+    administrativo = "administrativo"
+    bancario      = "bancario"
+    imobiliario   = "imobiliario"
+    sucessoes     = "sucessoes"
+    constitucional = "constitucional"
+    digital_lgpd  = "digital_lgpd"
+    transito      = "transito"
+    # Expansão canônica para áreas já utilizadas pelos fluxos do EJC
+    # (migration 094).
+    saude         = "saude"
+    medico        = "medico"
+    agrario       = "agrario"
+    agronegocio   = "agronegocio"
+    eleitoral     = "eleitoral"
+    internacional = "internacional"
+    contratual    = "contratual"
+    societario    = "societario"
+    licitacoes    = "licitacoes"
 
 
 class CaseStatus(str, enum.Enum):
@@ -69,11 +90,14 @@ class Case(Base):
     drive_folder_id = Column(String(128), nullable=True)  # subpasta do caso no Google Drive
     parte_contraria = Column(String(255), nullable=True)
     valor_causa = Column(Numeric(14, 2), nullable=True)
-    
+
     # Auditoria e Sincronização (DataJud/PJe)
     last_synced_at = Column(DateTime(timezone=True), nullable=True)
     sync_pending   = Column(Boolean, default=False)
     sync_error     = Column(Text, nullable=True)
+    # Marcador explícito do último andamento oficial visto pelo sync diário
+    # com notificação ao cliente (migration 084 / datajud_sync_service).
+    datajud_ultimo_andamento_em = Column(DateTime(timezone=True), nullable=True)
 
     # Tipo de caso (núcleo Casos&Processos)
     case_type           = Column(String(50), nullable=True, default="judicial")

@@ -38,6 +38,10 @@ COPY app ./app
 COPY alembic ./alembic
 COPY alembic.ini ./alembic.ini
 COPY seeds ./seeds
+# scripts/ precisa entrar na imagem: o deploy roda `python scripts/seed_biblia_ejc.py`
+# (seed idempotente do corpus RAG da Bíblia). Sem esta linha o container não tem o
+# script (/app/scripts/...) e o seed falha com "No such file or directory".
+COPY scripts ./scripts
 COPY entrypoint.sh ./entrypoint.sh
 RUN chmod +x ./entrypoint.sh
 

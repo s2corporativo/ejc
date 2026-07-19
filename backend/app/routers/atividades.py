@@ -1,7 +1,6 @@
 """Fonte única de atividades — lê a VIEW vw_atividades (prazos+tarefas+suspensões+agenda+intimações).
    Substitui a agregação no frontend por uma chamada só.
 """
-from typing import Optional
 from fastapi import APIRouter, Depends, Query
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import text
@@ -36,7 +35,7 @@ async def listar_atividades(
     # coluna for TIMESTAMP (senão vem interval → int() estoura 500).
     rows = (await db.execute(text(f"""
         SELECT v.id, v.tipo, v.titulo, v.descricao, v.data, v.status,
-               v.case_id, v.responsavel_id,
+               v.case_id, v.responsavel_id, v.prioridade, v.subtipo,
                c.titulo AS caso_titulo,
                (v.data::date - CURRENT_DATE) AS dias_restantes
         FROM vw_atividades v
@@ -71,6 +70,8 @@ async def listar_atividades(
             "id": r["id"], "tipo": r["tipo"], "titulo": r["titulo"],
             "descricao": r["descricao"], "date": str(r["data"]) if r["data"] else None,
             "status": r["status"], "case_id": r["case_id"], "caso_titulo": r["caso_titulo"],
+            "responsavel_id": r["responsavel_id"], "prioridade": r["prioridade"],
+            "subtipo": r["subtipo"],
             "dias_restantes": di, "urgencia": urg(di),
         })
     return {"data": data}

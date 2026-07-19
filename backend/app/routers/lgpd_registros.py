@@ -22,15 +22,13 @@
 from __future__ import annotations
 
 import os
-import re
-import time
 from datetime import datetime, timezone
 from typing import Optional
 from uuid import uuid4
 
 from fastapi import APIRouter, Depends, HTTPException, Query
 from fastapi.responses import FileResponse
-from sqlalchemy import select, func as sqlfunc
+from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.config import get_settings
@@ -57,6 +55,7 @@ _ESCRITA = {"superadmin", "admin", "socio", "advogado", "secretaria"}
 # Retenção do PDF do RIPD (consolida o ROPA do cliente): varredura best-effort
 # remove os mais antigos que o TTL a cada geração (LGPD).
 PDF_TTL_SEGUNDOS = 3600  # 1h
+from app.services import visual_law_files as _vlf  # #27: arnês único
 
 # Rótulos legíveis das hipóteses legais (RIPD e tela).
 _BASE_LEGAL_LABEL = {
@@ -269,19 +268,8 @@ def _ripd_dir() -> str:
 def _limpar_pdfs_antigos(out_dir: str) -> None:
     """Retenção LGPD: o RIPD consolida o ROPA do cliente. Varredura best-effort
     remove os mais antigos que o TTL a cada geração — tolerante a falhas."""
-    try:
-        agora = time.time()
-        for nome in os.listdir(out_dir):
-            if not nome.endswith(".pdf"):
-                continue
-            caminho = os.path.join(out_dir, nome)
-            try:
-                if agora - os.path.getmtime(caminho) > PDF_TTL_SEGUNDOS:
-                    os.remove(caminho)
-            except OSError:
-                continue
-    except OSError:
-        pass
+    # #27: purga TTL centralizada em services/visual_law_files (retenção LGPD).
+    _vlf.purgar_antigos(out_dir, PDF_TTL_SEGUNDOS)
 
 
 def _html_ripd(nome_cliente: str, registros: list, resumo_stats: dict) -> str:
@@ -432,9 +420,8 @@ async def gerar_ripd(
 async def download_ripd(arquivo_id: str, cu: User = Depends(_req_leitura)):
     """Download do RIPD gerado. `arquivo_id` validado como UUID (nunca
     interpolado livre no path — sem traversal)."""
-    if not re.fullmatch(r"[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}",
-                        arquivo_id):
-        raise HTTPException(422, "Identificador de RIPD inválido.")
+    # #27: validação anti-traversal (UUID) centralizada.
+    _vlf.validar_uuid(arquivo_id)
     path = os.path.join(_ripd_dir(), f"ripd_{arquivo_id}.pdf")
     if not os.path.isfile(path):
         raise HTTPException(404, "RIPD não encontrado — gere via POST "

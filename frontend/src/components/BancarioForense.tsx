@@ -462,7 +462,7 @@ function CalculadoraCET() {
             </div>
           )}
 
-          <details className="rounded-lg border border-slate-200 bg-slate-50/60 px-3 py-2">
+          <details className="card bg-slate-50/60 px-3 py-2">
             <summary className="text-xs font-medium text-slate-600 cursor-pointer select-none">
               Memória de cálculo{" "}
               {res.convergencia?.metodo
@@ -523,6 +523,10 @@ function MinutaRevisionalModal({
   const [erro, setErro] = useState("");
   const [copiado, setCopiado] = useState(false);
   const abort = useRef<AbortController | null>(null);
+
+  // Aborta o stream SSE em voo ao desmontar — evita setState após unmount e
+  // vazamento da conexão quando o componente sai durante a geração.
+  useEffect(() => () => abort.current?.abort(), []);
 
   useEffect(() => {
     if (!open) return;
@@ -768,7 +772,7 @@ function MinutaRevisionalModal({
                 readOnly
                 value={doc}
                 rows={14}
-                className="w-full border border-slate-200 rounded-xl px-4 py-3 text-sm text-slate-800 bg-slate-50 font-mono resize-none focus:outline-none focus:ring-2 focus:ring-bronze"
+                className="input bg-slate-50 font-mono resize-none"
               />
             </div>
             <div className="bg-warn-50 border border-warn-200 rounded-lg px-4 py-3 text-xs text-warn-800">
@@ -998,7 +1002,7 @@ function VerificadorAbusividade() {
           </div>
 
           {/* Fundamentação + base legal */}
-          <div className="rounded-lg border border-slate-200 bg-slate-50/60 p-3 space-y-2">
+          <div className="card bg-slate-50/60 p-3 space-y-2">
             <p className="text-xs text-slate-600 leading-relaxed">
               {res.fundamentacao}
             </p>
@@ -1088,12 +1092,197 @@ function VerificadorAbusividade() {
   );
 }
 
+// ── Taxa média de mercado (BCB / Olinda) ──────────────────────────────────────
+// GET /indices/taxa-juros?modalidade=&instituicao= — permite ao advogado
+// comparar a taxa do contrato do cliente com a média praticada por
+// instituição/modalidade no mês de referência mais recente do BCB.
+interface TaxaLinha {
+  InstituicaoFinanceira?: string;
+  Modalidade?: string;
+  Posicao?: number;
+  TaxaJurosAoMes?: number;
+  TaxaJurosAoAno?: number;
+}
+interface TaxaJurosRes {
+  mes_referencia: string;
+  modalidade: string | null;
+  instituicao: string | null;
+  total: number;
+  taxas: TaxaLinha[];
+  fonte?: string;
+}
+
+function TaxaMediaMercado() {
+  const [modalidade, setModalidade] = useState("");
+  const [instituicao, setInstituicao] = useState("");
+  const [res, setRes] = useState<TaxaJurosRes | null>(null);
+  const [loading, setLoading] = useState(false);
+  const [erro, setErro] = useState("");
+
+  const buscar = async () => {
+    setLoading(true);
+    setErro("");
+    setRes(null);
+    try {
+      const { data } = await api.get<TaxaJurosRes>("/indices/taxa-juros", {
+        params: {
+          modalidade: modalidade.trim() || undefined,
+          instituicao: instituicao.trim() || undefined,
+        },
+      });
+      setRes(data);
+    } catch (e: any) {
+      const status = e?.response?.status;
+      if (status === 503) {
+        setErro(
+          "Integração de índices do BCB desabilitada no servidor (INDICES_BCB_ENABLED=false).",
+        );
+      } else if (status === 502) {
+        setErro(
+          "O serviço do BCB (Olinda) está indisponível no momento — tente novamente em instantes.",
+        );
+      } else {
+        setErro(apiDetail(e, "Falha ao consultar as taxas médias do BCB."));
+      }
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  return (
+    <div>
+      <p className="text-xs text-slate-500 mb-3">
+        Compare a taxa do contrato do cliente com a{" "}
+        <b>média de mercado praticada por instituição/modalidade</b>, no mês de
+        referência mais recente ·{" "}
+        <span className="text-gold-700">Banco Central — Olinda taxaJuros</span>
+      </p>
+      <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+        <div>
+          <label className="label text-xs">Modalidade (contém)</label>
+          <input
+            className="input text-sm"
+            placeholder="ex: crédito pessoal não consignado"
+            value={modalidade}
+            onChange={(e) => setModalidade(e.target.value)}
+            onKeyDown={(e) => e.key === "Enter" && buscar()}
+          />
+        </div>
+        <div>
+          <label className="label text-xs">
+            Instituição financeira (contém)
+          </label>
+          <input
+            className="input text-sm"
+            placeholder="ex: Nubank, Itaú, Bradesco…"
+            value={instituicao}
+            onChange={(e) => setInstituicao(e.target.value)}
+            onKeyDown={(e) => e.key === "Enter" && buscar()}
+          />
+        </div>
+      </div>
+      <button
+        className="btn-gold text-sm mt-3"
+        disabled={loading}
+        onClick={buscar}
+      >
+        <Scale size={14} />{" "}
+        {loading ? "Consultando BCB…" : "Consultar taxas médias"}
+      </button>
+      <p className="text-[11px] text-slate-400 mt-2">
+        Deixe os dois campos em branco para trazer o ranking completo do mês. Os
+        filtros combinam por substring (sem distinção de maiúsculas/acentos).
+      </p>
+      {erro && <p className="text-xs text-danger-600 mt-2">{erro}</p>}
+
+      {loading && (
+        <div className="mt-4 flex items-center gap-2 text-sm text-slate-500">
+          <Spinner /> Buscando taxas no Banco Central…
+        </div>
+      )}
+
+      {res && !loading && (
+        <div className="mt-4 space-y-3">
+          <div className="flex flex-wrap items-center gap-2 text-xs">
+            <span className="px-2 py-0.5 rounded-full bg-navy/5 text-navy font-medium dark:bg-white/[0.07] dark:text-slate-300">
+              Mês de referência: <b>{res.mes_referencia}</b>
+            </span>
+            <span className="text-slate-500">
+              {res.total} instituição(ões) encontrada(s)
+            </span>
+          </div>
+
+          {res.taxas.length === 0 ? (
+            <div className="bg-warn-50 border border-warn-200 rounded-lg px-4 py-3 text-sm text-warn-800">
+              Nenhuma instituição/modalidade correspondeu aos filtros no mês{" "}
+              {res.mes_referencia}. Ajuste os termos (ex.: use parte do nome) e
+              tente de novo.
+            </div>
+          ) : (
+            <div className="overflow-x-auto rounded-xl border border-slate-100">
+              <table className="w-full min-w-[520px] text-xs">
+                <thead className="bg-slate-50/70">
+                  <tr className="text-left text-slate-500">
+                    <th className="py-2 px-3 font-medium">#</th>
+                    <th className="py-2 px-3 font-medium">Instituição</th>
+                    {!res.modalidade && (
+                      <th className="py-2 px-3 font-medium">Modalidade</th>
+                    )}
+                    <th className="py-2 px-3 text-right font-medium">% a.m.</th>
+                    <th className="py-2 px-3 text-right font-medium">% a.a.</th>
+                  </tr>
+                </thead>
+                <tbody className="tabular-nums text-slate-600">
+                  {res.taxas.map((t, i) => (
+                    <tr key={i} className="border-t border-slate-100">
+                      <td className="py-1.5 px-3 text-slate-400">
+                        {t.Posicao ?? i + 1}
+                      </td>
+                      <td className="py-1.5 px-3 font-medium text-navy">
+                        {t.InstituicaoFinanceira || "—"}
+                      </td>
+                      {!res.modalidade && (
+                        <td className="py-1.5 px-3 text-slate-500">
+                          {t.Modalidade || "—"}
+                        </td>
+                      )}
+                      <td className="py-1.5 px-3 text-right">
+                        {t.TaxaJurosAoMes != null
+                          ? `${fmtNum(t.TaxaJurosAoMes)}%`
+                          : "—"}
+                      </td>
+                      <td className="py-1.5 px-3 text-right font-medium text-navy">
+                        {t.TaxaJurosAoAno != null
+                          ? `${fmtNum(t.TaxaJurosAoAno)}%`
+                          : "—"}
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          )}
+
+          {res.fonte && (
+            <p className="text-[10px] text-slate-400">Fonte: {res.fonte}</p>
+          )}
+          <p className="text-[11px] text-warn-700 pt-2 border-t border-warn-100">
+            ⚠ Média de mercado divulgada pelo BCB — apoio comparativo; a
+            caracterização de abusividade exige análise do advogado (HITL).
+          </p>
+        </div>
+      )}
+    </div>
+  );
+}
+
 // ── Card principal (sub-abas) ─────────────────────────────────────────────────
 export default function BancarioForense() {
-  const [aba, setAba] = useState<"abusividade" | "cet">("abusividade");
+  const [aba, setAba] = useState<"abusividade" | "cet" | "taxa">("abusividade");
   const abas = [
     { id: "abusividade" as const, rotulo: "Verificador de Abusividade" },
     { id: "cet" as const, rotulo: "Calculadora de CET" },
+    { id: "taxa" as const, rotulo: "Taxa média de mercado (BCB)" },
   ];
   return (
     <div className="card p-4 mb-4 border-l-4 border-bronze">
@@ -1123,7 +1312,9 @@ export default function BancarioForense() {
           </button>
         ))}
       </div>
-      {aba === "abusividade" ? <VerificadorAbusividade /> : <CalculadoraCET />}
+      {aba === "abusividade" && <VerificadorAbusividade />}
+      {aba === "cet" && <CalculadoraCET />}
+      {aba === "taxa" && <TaxaMediaMercado />}
     </div>
   );
 }

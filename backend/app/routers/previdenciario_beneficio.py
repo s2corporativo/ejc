@@ -13,10 +13,8 @@
 from __future__ import annotations
 
 import os
-import re
-import time
 from datetime import datetime, timezone
-from decimal import Decimal, InvalidOperation
+from decimal import Decimal
 from typing import Optional
 from uuid import uuid4
 
@@ -38,6 +36,7 @@ _EQUIPE = ["superadmin", "admin", "socio", "advogado", "advogado_auxiliar", "est
 
 # Retenção LGPD dos PDFs (contêm dados previdenciários do titular).
 PDF_TTL_SEGUNDOS = 3600  # 1h
+from app.services import visual_law_files as _vlf  # #27: arnês único
 
 # Limites de tamanho no payload de /parecer-pdf (renderizado pelo WeasyPrint —
 # caro/síncrono): evitam DoS por strings/listas gigantes.
@@ -115,19 +114,8 @@ def _parecer_dir() -> str:
 def _limpar_pdfs_antigos(out_dir: str) -> None:
     """Retenção LGPD: varredura best-effort remove PDFs mais antigos que o TTL a
     cada geração — sem estado externo, tolerante a falhas."""
-    try:
-        agora = time.time()
-        for nome in os.listdir(out_dir):
-            if not nome.endswith(".pdf"):
-                continue
-            caminho = os.path.join(out_dir, nome)
-            try:
-                if agora - os.path.getmtime(caminho) > PDF_TTL_SEGUNDOS:
-                    os.remove(caminho)
-            except OSError:
-                continue
-    except OSError:
-        pass
+    # #27: purga TTL centralizada em services/visual_law_files (retenção LGPD).
+    _vlf.purgar_antigos(out_dir, PDF_TTL_SEGUNDOS)
 
 
 def _html_parecer(c: SimulacaoPrevidOut) -> str:
@@ -247,9 +235,8 @@ async def download_parecer(
 ):
     """Download do PDF gerado pelo POST acima. `arquivo_id` é validado como UUID
     (nunca interpolado livre no path — sem traversal)."""
-    if not re.fullmatch(r"[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}",
-                        arquivo_id):
-        raise HTTPException(422, "Identificador de parecer inválido.")
+    # #27: validação anti-traversal (UUID) centralizada.
+    _vlf.validar_uuid(arquivo_id)
     path = os.path.join(_parecer_dir(), f"parecer_{arquivo_id}.pdf")
     if not os.path.isfile(path):
         raise HTTPException(404, "Parecer não encontrado — gere via POST "

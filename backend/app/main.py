@@ -19,6 +19,7 @@ from fastapi.middleware.gzip import GZipMiddleware
 from fastapi.responses import JSONResponse
 
 from app.core.config import get_settings
+from app.core.log_sanitizer import safe_exception_log, sanitize_log_value
 from app.core.database import check_db
 from app.core.auth_middleware import AuthMiddleware
 from app.services.scheduler import start_scheduler, stop_scheduler
@@ -35,14 +36,17 @@ from app.routers import ai_skills
 from app.routers import ai_tools
 from app.routers import analise_bancaria
 from app.routers import analytics
+from app.routers import andamentos
 from app.routers import areas
 from app.routers import atendimentos
 from app.routers import atividades
 from app.routers import audit
 from app.routers import auth
+from app.routers import backup_admin
 from app.routers import bank_analysis
 from app.routers import calculadoras
 from app.routers import calendar_feed
+from app.routers import case_intelligence
 from app.routers import case_partes
 from app.routers import cases
 from app.routers import caso_areas
@@ -62,9 +66,11 @@ from app.routers import data_room_v4
 from app.routers import datajud
 from app.routers import deadlines
 from app.routers import despesas
+from app.routers import diagnostico
 from app.routers import diario_oficial
 from app.routers import diplomacia_v3
 from app.routers import documento_ia
+from app.routers import raio_x
 from app.routers import documents
 from app.routers import dossie_cliente
 from app.routers import dossie_estrategico
@@ -79,6 +85,7 @@ from app.routers import financeiro_consolidado
 from app.routers import gestao_societaria
 from app.routers import honorarios_calc
 from app.routers import ia_adversarial
+from app.routers import ia_agente
 from app.routers import ia_citacoes
 from app.routers import ia_defensiva
 from app.routers import ia_especializada
@@ -86,23 +93,38 @@ from app.routers import ia_extra
 from app.routers import ia_governanca
 from app.routers import ia_saude
 from app.routers import indice_risco
+from app.routers import indices
+from app.routers import infosimples_receita
+from app.routers import infosimples_tjmg
+from app.routers import car  # CAR/SICAR via conector Infosimples (reuso)
+from app.routers import transparencia  # CGU Portal da Transparência (sanções) — GATED
+from app.routers import pncp  # PNCP contratações públicas — GATED
+from app.routers import nfse
 from app.routers import intelligence_v3
 from app.routers import intimacoes
 from app.routers import jurimetria
 from app.routers import jurimetria_extra
+from app.routers import juris_import
 from app.routers import jurisprudencia_externa
 from app.routers import honorarios_oab
 from app.routers import intake
+from app.routers import triagem_entrevista
+from app.routers import ficha_triagem
 from app.routers import jurisprudencia_interna
 from app.routers import kanban
+from app.routers import kit_documental
 from app.routers import legal_docs
+from app.routers import matriz_teses
 from app.routers import memoria_institucional
 from app.routers import mensagens
 from app.routers import module_help
+from app.routers import motor_peca
 from app.routers import movimentos
 from app.routers import noticias
 from app.routers import notifications
 from app.routers import novos_modulos
+from app.routers import orquestrador
+from app.routers import observabilidade
 from app.routers import office_contracts
 from app.routers import partner_withdrawals
 from app.routers import peca_geracao
@@ -110,6 +132,8 @@ from app.routers import peca_geracao_router
 from app.routers import pending_items
 from app.routers import pix
 from app.routers import portal
+from app.routers import portal_documentos
+from app.routers import solicitacoes_documentos
 from app.routers import processes
 from app.routers import procuracoes
 from app.routers import produtividade
@@ -120,6 +144,7 @@ from app.routers import rag
 from app.routers import rag_public
 from app.routers import api_keys as api_keys_router
 from app.routers import regulatorio
+from app.routers import radar_legislativo
 from app.routers import ramos
 from app.routers import previdenciario_beneficio
 from app.routers import relatorio
@@ -132,9 +157,11 @@ from app.routers import search
 from app.routers import signatures
 from app.routers import sociedades_cliente
 from app.routers import provas
+from app.routers import jornada_caso
 from app.routers import sumulas
 from app.routers import suspensoes
 from app.routers import system_modules
+from app.routers import module_settings
 from app.routers import tributario_fiscal
 from app.routers import trabalhista_liquidacao
 from app.routers import ambiental_estrategia
@@ -155,6 +182,7 @@ from app.routers import webhooks
 from app.routers import whatsapp
 from app.routers import wiki
 from app.routers import workflow
+from app.integrations import routers as integracoes
 
 
 # Ativa a arquitetura orientada a eventos (P1): importar registra os @on subscribers.
@@ -167,20 +195,12 @@ from app.core.logging_config import setup_logging
 setup_logging(json_logs=settings.LOG_JSON, level=settings.LOG_LEVEL)
 logger = logging.getLogger("ejc")
 
-# ── Sentry (desabilitado se SENTRY_DSN vazio) ─────────────────────────────────
-if settings.SENTRY_DSN:
-    import sentry_sdk
-    from sentry_sdk.integrations.fastapi import FastApiIntegration
-    from sentry_sdk.integrations.sqlalchemy import SqlalchemyIntegration
-    sentry_sdk.init(
-        dsn=settings.SENTRY_DSN,
-        environment=settings.APP_ENV,
-        traces_sample_rate=0.1,       # 10% das transações para performance
-        profiles_sample_rate=0.05,
-        integrations=[FastApiIntegration(), SqlalchemyIntegration()],
-        send_default_pii=False,       # LGPD: sem PII nos eventos Sentry
-    )
-    logger.info("[EJC] Sentry inicializado")
+# ── Observabilidade: Sentry gated (no-op sem SENTRY_DSN) ──────────────────────
+# init_sentry() é defensivo: sem SENTRY_DSN é no-op e nunca levanta exceção,
+# então o boot fica idêntico ao de hoje. Com DSN, aplica scrub LGPD (before_send)
+# e send_default_pii=False. Ver app/core/observability.py.
+from app.core.observability import app_version, init_sentry, uptime_seconds
+init_sentry()
 
 
 @asynccontextmanager
@@ -194,14 +214,14 @@ async def lifespan(app: FastAPI):
     try:
         n_fer = await carregar_feriados_db()
     except Exception as e:
-        logger.warning(f"[EJC] Feriados não carregados: {e}")
+        logger.warning("[EJC] Feriados não carregados", extra=safe_exception_log(e))
         n_fer = 0
     logger.info(f"[EJC] Feriados municipais/estaduais carregados: {n_fer}")
     from app.services.deadline_calculator import carregar_suspensoes_db
     try:
         n_susp = await carregar_suspensoes_db()
     except Exception as e:
-        logger.warning(f"[EJC] Suspensões não carregadas: {e}")
+        logger.warning("[EJC] Suspensões não carregadas", extra=safe_exception_log(e))
         n_susp = 0
     logger.info(f"[EJC] Suspensões de tribunal carregadas: {n_susp} dia(s)")
     if settings.ENABLE_SCHEDULER:
@@ -258,14 +278,17 @@ app.include_router(ai_skills.router, prefix=API)
 app.include_router(ai_tools.router, prefix=API)
 app.include_router(analise_bancaria.router, prefix=API)
 app.include_router(analytics.router, prefix=API)
+app.include_router(andamentos.router, prefix=API)
 app.include_router(areas.router, prefix=API)
 app.include_router(atendimentos.router, prefix=API)
 app.include_router(atividades.router, prefix=API)
 app.include_router(audit.router, prefix=API)
 app.include_router(auth.router, prefix=API)
+app.include_router(backup_admin.router, prefix=API)
 app.include_router(bank_analysis.router, prefix=API)
 app.include_router(calculadoras.router, prefix=API)
 app.include_router(calendar_feed.router, prefix=API)
+app.include_router(case_intelligence.router, prefix=API)
 app.include_router(case_partes.router, prefix=API)
 app.include_router(cases.router, prefix=API)
 app.include_router(caso_areas.router, prefix=API)
@@ -288,6 +311,7 @@ app.include_router(despesas.router, prefix=API)
 app.include_router(diario_oficial.router, prefix=API)
 app.include_router(diplomacia_v3.router, prefix=API)
 app.include_router(documento_ia.router, prefix=API)
+app.include_router(raio_x.router, prefix=API)
 app.include_router(documents.router, prefix=API)
 app.include_router(dossie_cliente.router, prefix=API)
 app.include_router(dossie_estrategico.router, prefix=API)
@@ -302,30 +326,47 @@ app.include_router(financeiro_consolidado.router, prefix=API)
 app.include_router(gestao_societaria.router, prefix=API)
 app.include_router(honorarios_calc.router, prefix=API)
 app.include_router(ia_adversarial.router, prefix=API)
+app.include_router(ia_agente.router, prefix=API)
 app.include_router(ia_citacoes.router, prefix=API)
 app.include_router(ia_defensiva.router, prefix=API)
 app.include_router(ia_especializada.router, prefix=API)
 app.include_router(ia_extra.router, prefix=API)  # Bloco 1 (Etapa 4): router antes não montado → 8 chamadas frontend em 404
 app.include_router(ia_governanca.router, prefix=API)
 app.include_router(ia_saude.router, prefix=API)
+app.include_router(ia_saude.router_status, prefix=API)  # GET /api/ia/status
 app.include_router(indice_risco.router, prefix=API)
+app.include_router(indices.router, prefix=API)  # Índices oficiais BCB (SGS + Olinda) — Bloco 1 das APIs públicas
+app.include_router(infosimples_receita.router, prefix=API)
+app.include_router(infosimples_tjmg.router, prefix=API)
+app.include_router(car.router, prefix=API)  # CAR/SICAR via Infosimples (consulta paga, reuso do conector)
+app.include_router(transparencia.router, prefix=API)  # CGU sanções CEIS/CNEP/CEPIM — GATED (default off)
+app.include_router(pncp.router, prefix=API)  # PNCP contratações públicas — GATED (default off)
+app.include_router(nfse.router, prefix=API)  # NFS-e (emissão fiscal GATED, homologação) — migração 085
 app.include_router(intelligence_v3.router, prefix=API)
 app.include_router(intimacoes.router, prefix=API)
 app.include_router(jurimetria.router, prefix=API)
 app.include_router(jurimetria_extra.router, prefix=API)  # A5: router antes órfão (404 silencioso)
+app.include_router(juris_import.router, prefix=API)
 app.include_router(jurisprudencia_externa.router, prefix=API)
 app.include_router(jurisprudencia_interna.router, prefix=API)
 app.include_router(kanban.router, prefix=API)
+app.include_router(kit_documental.router, prefix=API)  # POST /api/cases/{id}/kit-documental (P0.3)
 app.include_router(legal_docs.router, prefix=API)
+app.include_router(matriz_teses.router, prefix=API)  # FASE 3 Orquestrador — Matriz de Teses (migração 102)
+app.include_router(orquestrador.router, prefix=API)  # FASE 5 Orquestrador — máquina de estados do caso
 app.include_router(memoria_institucional.router, prefix=API)
 app.include_router(honorarios_oab.router, prefix=API)  # frontend: /api/honorarios-oab/estimar (EstimadorHonorarios)
 app.include_router(intake.router, prefix=API)  # frontend: /api/intake/casos/{id}/analise-completa (IntakeAnalise)
+app.include_router(triagem_entrevista.router, prefix=API)  # frontend: /api/triagem/entrevista (EntrevistaInteligente — Jornada etapa 2)
+app.include_router(ficha_triagem.router, prefix=API)  # frontend: /api/triagem/ficha (Ficha de Triagem pré-peça — gate de geração)
 app.include_router(mensagens.router, prefix=API)
 app.include_router(module_help.router, prefix=API)  # frontend: /api/module-help/* (HelpButton)
+app.include_router(motor_peca.router, prefix=API)  # P1: Motor de Peça — /api/cases/{id}/motor-peca/*
 app.include_router(movimentos.router, prefix=API)
 app.include_router(noticias.router, prefix=API)
 app.include_router(notifications.router, prefix=API)
 app.include_router(novos_modulos.router, prefix=API)
+app.include_router(observabilidade.router, prefix=API)
 app.include_router(office_contracts.router, prefix=API)
 app.include_router(partner_withdrawals.router, prefix=API)
 app.include_router(peca_geracao.router, prefix=API)
@@ -333,6 +374,8 @@ app.include_router(peca_geracao_router.router, prefix=API)
 app.include_router(pending_items.router, prefix=API)
 app.include_router(pix.router, prefix=API)
 app.include_router(portal.router, prefix=API)
+app.include_router(portal_documentos.router, prefix=API)  # Portal: solicitações de documentos + upload (migration 084)
+app.include_router(solicitacoes_documentos.router, prefix=API)  # advogado: solicitação de documentos ao cliente (migration 084)
 app.include_router(processes.router, prefix=API)
 app.include_router(procuracoes.router, prefix=API)
 app.include_router(produtividade.router, prefix=API)
@@ -343,6 +386,7 @@ app.include_router(rag.router, prefix=API)
 app.include_router(rag_public.router, prefix=API)      # API pública (X-API-Key)
 app.include_router(api_keys_router.router, prefix=API) # admin de chaves (JWT admin)
 app.include_router(regulatorio.router, prefix=API)
+app.include_router(radar_legislativo.router, prefix=API)  # Câmara+Senado+ALMG
 app.include_router(ramos.router, prefix=API)
 app.include_router(previdenciario_beneficio.router, prefix=API)  # vertical Previdenciário — regras de transição EC 103/2019 + RMI
 app.include_router(relatorio.router, prefix=API)
@@ -354,10 +398,13 @@ app.include_router(search.router, prefix=API)
 app.include_router(signatures.router, prefix=API)
 app.include_router(sociedades_cliente.router, prefix=API)  # gestão societária de CLIENTES (vertical Empresarial)
 app.include_router(provas.router, prefix=API)  # Gestão de Provas por caso + Documento Único de Anexos (Visual Law)
+app.include_router(jornada_caso.router, prefix=API)  # Jornada do Caso — estado determinístico das 9 etapas (sem IA)
 app.include_router(lgpd_registros.router, prefix=API)  # vertical LGPD — ROPA (art. 37) por cliente + RIPD (art. 38)
 app.include_router(sumulas.router, prefix=API)
 app.include_router(suspensoes.router, prefix=API)
 app.include_router(system_modules.router, prefix=API)  # Mapa de Módulos — governança modular
+app.include_router(diagnostico.router, prefix=API)  # Central Eletrônica de Diagnóstico
+app.include_router(module_settings.router, prefix=API)  # Lifecycle auditável dos módulos
 app.include_router(tributario_fiscal.router, prefix=API)  # vertical Tributário — XML fiscal + recuperação de créditos
 app.include_router(trabalhista_liquidacao.router, prefix=API)  # vertical Trabalhista — liquidação de sentença (ADC 58 / Selic real BCB)
 app.include_router(ambiental_estrategia.router, prefix=API)  # vertical Ambiental — simulador de estratégia do auto de infração
@@ -378,17 +425,25 @@ app.include_router(webhooks.router, prefix=API)
 app.include_router(whatsapp.router, prefix=API)
 app.include_router(wiki.router, prefix=API)
 app.include_router(workflow.router, prefix=API)
+# Integrações externas públicas (app/integrations/) — Conecta gov.br fica de
+# fora até existirem credenciais reais (credenciamento institucional pendente).
+app.include_router(integracoes.datajud_router, prefix=API)
+app.include_router(integracoes.djen_router, prefix=API)
+app.include_router(integracoes.brasilapi_router, prefix=API)
 
 
 
-# ── Health check (público — usado pelo Docker healthcheck) ────────────────────
+# ── Health check / LIVENESS (público — Docker healthcheck + UptimeRobot) ──────
+# Contrato: SEMPRE HTTP 200 enquanto o processo respira (não depende de I/O
+# externo). scripts/post_deploy_check.sh e o monitor externo dependem disso.
+# Dependências (DB, migrations) são checadas em /api/health/ready.
 @app.get("/api/health")
 async def health():
-    db_ok = await check_db()
     return {
-        "status": "ok" if db_ok else "degraded",
-        "version": "3.0.0",
-        "database": db_ok,
+        "status": "ok",
+        "version": app_version(),
+        "uptime_seconds": uptime_seconds(),
+        "environment": settings.APP_ENV,
     }
 
 
@@ -399,8 +454,20 @@ async def health():
 # passava despercebido). Redis/embeddings são informativos (não derrubam o 200).
 @app.get("/api/health/ready")
 async def readiness():
+    import asyncio
+
     settings = get_settings()
-    db_ok = await check_db()
+
+    # DB com timeout curto: nunca prende o monitor; o context manager de
+    # check_db() fecha a conexão mesmo em timeout (não vaza conexão).
+    try:
+        db_ok = await asyncio.wait_for(check_db(), timeout=3.0)
+    except Exception:
+        db_ok = False
+
+    # Migrations: True/False se determinável, None = indeterminado (informativo).
+    from app.core.observability import check_migrations_head
+    migrations_ok = await check_migrations_head()
 
     # Redis só é checado quando alguma feature depende dele; senão, "não usado".
     redis_ok = None
@@ -410,11 +477,13 @@ async def readiness():
 
     from app.services.embedding_service import disponivel as _emb_disponivel
     checks = {
-        "database": db_ok,          # crítico
+        "database": db_ok,          # crítico (bloqueia readiness)
+        "migrations": migrations_ok,  # crítico se determinável (None = ignora)
         "redis": redis_ok,          # informativo (None = não utilizado)
         "embeddings": _emb_disponivel(),  # informativo
     }
-    pronto = db_ok                  # só o DB é bloqueante para "ready"
+    # Bloqueantes: DB e (migrations quando puder ser confirmada como desatualizada).
+    pronto = db_ok and (migrations_ok is not False)
     return JSONResponse(
         status_code=200 if pronto else 503,
         content={"status": "ready" if pronto else "not_ready", "checks": checks},
@@ -424,7 +493,16 @@ async def readiness():
 # ── Exception handler global (nunca vazar stack trace) ────────────────────────
 @app.exception_handler(Exception)
 async def global_exception_handler(request: Request, exc: Exception):
-    logger.error(f"Erro não tratado em {request.url.path}: {exc}", exc_info=True)
+    logger.error(
+        "Erro não tratado em rota",
+        extra={
+            "path": sanitize_log_value(request.url.path, max_len=240),
+            **safe_exception_log(exc),
+        },
+        # Em produção, não registrar stack trace em logs de container/agregador.
+        # Em dev/staging, mantém stack para diagnóstico técnico.
+        exc_info=settings.APP_ENV != "production",
+    )
     return JSONResponse(
         status_code=500,
         content={"detail": "Erro interno. A equipe foi notificada."},

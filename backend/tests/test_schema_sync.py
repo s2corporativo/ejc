@@ -107,6 +107,11 @@ _SEM_MODEL_INTENCIONAL = {
     "modelos_documentos", "office_contracts", "office_expenses",
     "partner_withdrawals", "portal_mensagens", "pricing_rules",
     "score_juridico", "teses_vitoriosas",
+    # Contador atômico de numeração de peças (migration 090): tabela-utilitária
+    # de 2 colunas (area PK, ultimo) acessada só via UPSERT ... RETURNING em
+    # app.services.peca_numeracao — um model ORM não agregaria (nunca é lido via
+    # SQLAlchemy). Mesmo trade-off das demais tabelas raw-SQL desta allowlist.
+    "peca_codigo_contador",
     # Bookkeeping do próprio Alembic (criada por `alembic upgrade`, nunca por
     # uma migration nossa) — não é dívida técnica, é infraestrutura da
     # ferramenta. Só apareceu agora porque esta é a 1ª vez que a Camada 2

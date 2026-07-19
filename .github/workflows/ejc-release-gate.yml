@@ -1,0 +1,73 @@
+name: EJC Release Gate
+
+# Release gate no runner SELF-HOSTED (2026-07-17) — roda no VPS (Actions minutes
+# = 0). ⚠️ Requer o runner registrado antes (scripts/setup-selfhosted-runner.sh);
+# ver docs/RUNNER_SELFHOSTED.md. (Para voltar à nuvem paga: runs-on: ubuntu-latest.)
+on:
+  # MANUAL apenas (economia de Actions) — não roda em push/PR automaticamente.
+  # Rode em Actions → "EJC Release Gate" → "Run workflow" quando necessário.
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ejc-release-gate-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  p0-guard:
+    name: P0 guard — conflitos e segredos
+    runs-on: [self-hosted, ejc-vps]
+    timeout-minutes: 10
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 1
+
+      - name: Executar gate P0 com diagnóstico
+        shell: bash
+        run: |
+          set +e
+          : > ci_guard.log
+
+          {
+            echo "[EJC CI] Iniciando diagnóstico P0"
+            echo "repository=${GITHUB_REPOSITORY}"
+            echo "event=${GITHUB_EVENT_NAME}"
+            echo "github_sha=${GITHUB_SHA}"
+            echo "github_ref=${GITHUB_REF}"
+            echo "github_ref_name=${GITHUB_REF_NAME}"
+            echo
+            echo "[EJC CI] Executando scripts/ci_guard.sh"
+            bash scripts/ci_guard.sh
+          } > ci_guard.log 2>&1
+
+          status=$?
+          cat ci_guard.log
+
+          {
+            echo "## EJC Release Gate — P0"
+            echo
+            echo "Exit code: ${status}"
+            echo
+            echo '```text'
+            tail -n 180 ci_guard.log
+            echo '```'
+          } >> "${GITHUB_STEP_SUMMARY}"
+
+          exit "${status}"
+
+      - name: Publicar diagnóstico P0
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: p0-guard-log
+          path: ci_guard.log
+          retention-days: 7
+
+  # Jobs P1 (backend deps+compile e frontend build) removidos: eram 100%
+  # redundantes com o ci.yml — o pytest do ci.yml já instala e importa o app
+  # inteiro, e o frontend-build do ci.yml faz npm ci + build. Economia de
+  # ~8-10 min de runner por push (cota de Actions em repositório privado).

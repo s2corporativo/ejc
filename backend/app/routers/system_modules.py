@@ -4,8 +4,10 @@ from typing import Any
 
 from fastapi import APIRouter, Depends, Request
 
-from app.core.security import require_roles
+from app.core.config import get_settings
+from app.core.security import require_admin, require_roles
 from app.models.user import User
+from app.services.integration_status import build_integration_status
 from app.services.module_registry import gerar_mapa_modulos, resumir_mapa_modulos
 
 router = APIRouter(prefix="/system-modules", tags=["Mapa de Modulos"])
@@ -22,11 +24,18 @@ def _coletar_rotas_api(app: Any | None) -> list[dict[str, Any]]:
         if not path.startswith("/api"):
             continue
         methods = sorted(
-            m for m in (getattr(route, "methods", set()) or set())
-            if m not in {"HEAD", "OPTIONS"}
+            method
+            for method in (getattr(route, "methods", set()) or set())
+            if method not in {"HEAD", "OPTIONS"}
         )
-        rotas.append({"path": path, "methods": methods, "name": getattr(route, "name", None)})
-    return sorted(rotas, key=lambda r: r["path"])
+        rotas.append(
+            {
+                "path": path,
+                "methods": methods,
+                "name": getattr(route, "name", None),
+            }
+        )
+    return sorted(rotas, key=lambda route: route["path"])
 
 
 @router.get("/mapa")
@@ -39,3 +48,9 @@ async def mapa_modulos(request: Request, cu: User = Depends(_gestores)):
         "rotas_api_detectadas": len(rotas_api),
         "modo": "somente_leitura",
     }
+
+
+@router.get("/integrations")
+async def status_integracoes(cu: User = Depends(require_admin)):
+    """Inventário de configuração sem chaves, tokens, senhas ou valores do ambiente."""
+    return build_integration_status(get_settings())

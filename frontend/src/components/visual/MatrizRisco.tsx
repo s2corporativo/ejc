@@ -61,7 +61,7 @@ const TRATAMENTO: Record<
 
 const FONTE_PROB: Record<string, string> = {
   risco_cadastrado: "Risco cadastrado manualmente no caso",
-  score_saude: "Derivada do score de saúde do caso",
+  score_saude: "Regra interna sobre o score de saúde do caso",
 };
 
 const EIXO_X = ["Remoto", "Possível", "Provável"];
@@ -216,7 +216,7 @@ export default function MatrizRisco({ caseId }: { caseId: string }) {
         </div>
 
         {/* Cartão lateral */}
-        <div className="w-full shrink-0 space-y-4 rounded-xl border border-slate-200 bg-slate-50/70 p-4 lg:w-72">
+        <div className="card w-full shrink-0 space-y-4 bg-slate-50/70 p-4 lg:w-72">
           <div>
             <p className="text-[11px] font-semibold uppercase tracking-wide text-slate-400">
               Classificação
@@ -246,6 +246,10 @@ export default function MatrizRisco({ caseId }: { caseId: string }) {
               <span className="capitalize text-slate-400">
                 ({data.probabilidade.nivel})
               </span>
+            </p>
+            <p className="mt-1 text-xs italic text-slate-400">
+              Estimativa por regras internas do sistema — não é uma predição
+              gerada por IA generativa.
             </p>
           </div>
           <div>

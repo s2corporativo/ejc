@@ -170,7 +170,7 @@ async def taxa_media(modalidade: str, segmento: Optional[str] = None, periodo: O
         raise HTTPException(404, "Modalidade sem dados no BACEN")
 
 
-# ── CET determinístico (Res. CMN 3.517/2007) ─────────────────────────────────
+# ── CET determinístico (Resolução CMN nº 4.881/2020; IN BCB nº 83/2021) ──────
 class ParcelaIn(BaseModel):
     valor: float = Field(..., gt=0)
     vencimento: date
@@ -201,8 +201,8 @@ class CETIn(BaseModel):
 async def calcular_cet_endpoint(req: CETIn, cu: User = Depends(get_current_user)):
     """CET determinístico (mensal e anual) via TIR do fluxo de caixa em Decimal,
     com memória de cálculo e verificação de divergência com o CET informado.
-    Res. CMN 3.517/2007 · CDC arts. 46 e 52. Sem IA e sem rate limit
-    (cálculo local). MINUTA — HITL."""
+    Resolução CMN nº 4.881/2020 · IN BCB nº 83/2021 · CDC arts. 46 e 52.
+    Sem IA e sem rate limit (cálculo local). MINUTA — HITL."""
     try:
         return cet_calc.calcular_cet(
             valor_liberado=req.valor_liberado,

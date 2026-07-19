@@ -62,12 +62,16 @@ def registrar_falha(chave: str) -> None:
     _falhas[chave] = [t for t in _falhas[chave] if t > corte]
 
 
-def esta_bloqueado(chave: str) -> tuple[bool, int]:
-    """Retorna (bloqueado, segundos_restantes)."""
+def esta_bloqueado(chave: str, max_falhas: int = MAX_FALHAS) -> tuple[bool, int]:
+    """Retorna (bloqueado, segundos_restantes).
+
+    `max_falhas` permite tetos por contexto: o padrão (5) protege o login;
+    contadores auxiliares (ex.: totp_pend:{ip} — passo "TOTP obrigatório" do
+    fluxo em 2 etapas) usam teto maior para não punir uso legítimo."""
     agora = datetime.now(timezone.utc)
     corte = agora - timedelta(seconds=JANELA_SEGUNDOS)
     recentes = [t for t in _falhas.get(chave, []) if t > corte]
-    if len(recentes) >= MAX_FALHAS:
+    if len(recentes) >= max_falhas:
         mais_antiga = min(recentes)
         restante = int((mais_antiga + timedelta(seconds=BLOQUEIO_SEGUNDOS)
                         - agora).total_seconds())
@@ -77,6 +81,67 @@ def esta_bloqueado(chave: str) -> tuple[bool, int]:
 
 def limpar_falhas(chave: str) -> None:
     _falhas.pop(chave, None)
+
+
+# ── Política de senha forte (definição de senha NOVA) ────────────────────────
+# Aplicada em TODOS os pontos que DEFINEM uma senha nova (troca autenticada e
+# reset por e-mail — ver routers/auth.py; e criação de usuário em routers/
+# users.py, que deve importar este validador). NUNCA é chamada na verificação
+# de login: senhas legadas curtas continuam válidas para ENTRAR — a política só
+# incide quando o usuário DEFINE uma senha nova, sem trancar quem já tem senha
+# fraca antiga. Levanta ValueError com mensagem clara; o router traduz p/ 400.
+SENHA_MIN_LEN = 10
+
+# Senhas óbvias/triviais reprovadas mesmo quando satisfazem letra+dígito+
+# especial (comparação por .strip().lower()). Inclui variações que PASSAM na
+# regra de complexidade mas são notoriamente comuns (ex.: "senha@1234").
+_SENHAS_TRIVIAIS = frozenset({
+    "12345678", "123456789", "1234567890", "12345678910",
+    "senha", "senha123", "senha1234", "senha@123", "senha@1234", "senha123!",
+    "password", "password1", "password123", "password@123", "password!",
+    "qwerty", "qwerty123", "qwertyuiop", "admin", "admin123", "admin@123",
+    "abc123", "abcd1234", "mudar123", "mudar@123", "trocar123", "trocar@123",
+    "iloveyou", "1q2w3e4r", "1qaz2wsx", "0000000000", "1111111111",
+})
+
+
+def validar_forca_senha(senha: str, email: str | None = None) -> None:
+    """Valida a força de uma senha NOVA. Levanta ValueError se for fraca.
+
+    Regras (todas obrigatórias):
+      • comprimento >= SENHA_MIN_LEN (10);
+      • ao menos uma letra;
+      • ao menos um dígito;
+      • ao menos um caractere especial (não alfanumérico e não espaço);
+      • não constar da lista de senhas triviais/óbvias;
+      • não ser igual ao e-mail (nem à parte local antes do @).
+
+    Só valida a DEFINIÇÃO de senha nova — nunca o login, para não trancar
+    quem já tem senha curta legada.
+    """
+    senha = senha or ""
+    if len(senha) < SENHA_MIN_LEN:
+        raise ValueError(
+            f"A senha deve ter ao menos {SENHA_MIN_LEN} caracteres."
+        )
+    if not any(c.isalpha() for c in senha):
+        raise ValueError("A senha deve conter ao menos uma letra.")
+    if not any(c.isdigit() for c in senha):
+        raise ValueError("A senha deve conter ao menos um número.")
+    if not any((not c.isalnum()) and (not c.isspace()) for c in senha):
+        raise ValueError(
+            "A senha deve conter ao menos um caractere especial (ex.: ! @ # $ %)."
+        )
+    senha_norm = senha.strip().lower()
+    if senha_norm in _SENHAS_TRIVIAIS:
+        raise ValueError(
+            "Senha muito comum/previsível. Escolha uma combinação menos óbvia."
+        )
+    if email:
+        email_norm = email.strip().lower()
+        local = email_norm.split("@", 1)[0]
+        if senha_norm == email_norm or (local and senha_norm == local):
+            raise ValueError("A senha não pode ser igual ao seu e-mail.")
 
 
 # ── Email via Gmail (SMTP TLS 587) ───────────────────────────────────────────
@@ -185,6 +250,12 @@ async def confirmar_reset(db: AsyncSession, token_raw: str, nova_senha: str) -> 
     )).scalar_one_or_none()
     if not user:
         return False
+
+    # Política de senha forte no reset (mesma regra da troca autenticada).
+    # Levanta ValueError → o router /redefinir-senha traduz para 400 com msg
+    # clara. Validamos ANTES de marcar o token usado / aplicar a senha: uma
+    # senha fraca NÃO consome o token — o usuário reenvia com uma senha válida.
+    validar_forca_senha(nova_senha, user.email)
 
     user.hashed_password     = get_password_hash(nova_senha)
     user.must_change_password = False

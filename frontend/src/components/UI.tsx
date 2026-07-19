@@ -6,18 +6,39 @@ import {
   ArrowUp,
   Bot,
   CheckCircle2,
+  Clock,
+  Eye,
+  FileClock,
   FileText,
   ChevronDown,
   Filter,
   Inbox,
   Info,
   Loader2,
+  PauseCircle,
+  PenLine,
+  PlusCircle,
+  ScanSearch,
   Search,
+  Send,
+  ShieldAlert,
+  ShieldCheck,
   SlidersHorizontal,
   X,
+  XCircle,
 } from "lucide-react";
 
-type Tone = "slate" | "blue" | "green" | "amber" | "red" | "purple";
+type Tone =
+  | "slate"
+  | "blue"
+  | "green"
+  | "amber"
+  | "orange"
+  | "red"
+  | "purple"
+  | "violet"
+  | "teal"
+  | "ouro";
 type ButtonVariant = "primary" | "secondary" | "ghost" | "danger" | "ai";
 
 const toneClasses: Record<Tone, string> = {
@@ -25,20 +46,52 @@ const toneClasses: Record<Tone, string> = {
   blue: "bg-primary-50 text-primary-700 ring-primary-200",
   green: "bg-success-50 text-success-700 ring-success-200",
   amber: "bg-warn-50 text-warn-700 ring-warn-200",
+  // Laranja/violeta/verde-azulado usam a paleta padrão do Tailwind (default
+  // preservado porque tailwind.config estende, não substitui, `colors`) para
+  // dar tons próprios aos status do Command Center sem inventar novos tokens.
+  orange: "bg-orange-50 text-orange-700 ring-orange-200",
   red: "bg-danger-50 text-danger-700 ring-danger-200",
   purple: "bg-ai-50 text-ai-700 ring-ai-200",
+  violet: "bg-violet-50 text-violet-700 ring-violet-200",
+  teal: "bg-teal-50 text-teal-700 ring-teal-200",
+  // Ouro institucional — apenas destaque pontual (nunca tom padrão)
+  ouro: "bg-ouro-palha text-ouro-profundo ring-ouro-claro/60",
 };
 
+// Barra SUPERIOR de 3px do KPI card (idioma Verdelimp) na cor do
+// indicador — mapeada nos tokens de cor EXISTENTES do EJC. Desenhada via
+// ::before (mesmo padrão dos KPI cards do dashboard em site-system.css)
+// em vez de border-top: as regras globais de `.card` fora de @layer
+// (site-system.css `border: 1px solid`, `.ejc-modern-scope :where(.card)`
+// com border-color !important e `.dark .card` em index.css) vêm depois na
+// cascata e atropelariam utilities `border-t-*` nos dois temas.
+const toneBarClasses: Record<Tone, string> = {
+  slate: "before:bg-slate-400",
+  blue: "before:bg-primary-400",
+  green: "before:bg-success-500",
+  amber: "before:bg-warn-500",
+  orange: "before:bg-orange-500",
+  red: "before:bg-danger-500",
+  purple: "before:bg-ai-500",
+  violet: "before:bg-violet-500",
+  teal: "before:bg-teal-500",
+  ouro: "before:bg-ouro-claro",
+};
+
+// Botões no idioma flat/compacto (padrão Verdelimp, cores EJC): primary
+// em ouro CHAPADO #8F7117 (texto branco 4,6:1+ AA, sem gradiente/sombra),
+// secundário NEUTRO (branco com borda 1px), ghost terciário.
+// Foco com ring dourado acessível.
 const buttonClasses: Record<ButtonVariant, string> = {
   primary:
-    "bg-primary-600 text-white shadow-sm hover:bg-primary-700 active:bg-primary-800 focus:ring-primary-500/40",
+    "bg-ouro text-white hover:bg-ouro-profundo active:bg-ouro-profundo focus:ring-ouro/40",
   secondary:
-    "bg-white text-slate-700 border border-slate-200 hover:bg-slate-50 hover:border-slate-300 focus:ring-primary-500/40",
+    "border border-gray-300 bg-white text-slate-700 hover:bg-slate-50 active:bg-slate-100 focus:ring-ouro/30 dark:border-white/[0.14] dark:bg-white/[0.07] dark:text-slate-200 dark:hover:bg-white/[0.12]",
   ghost:
-    "bg-transparent text-slate-600 hover:bg-slate-100 focus:ring-slate-400/40",
+    "bg-transparent text-slate-600 hover:bg-slate-900/[0.05] focus:ring-ouro/30 dark:text-slate-300 dark:hover:bg-white/[0.06]",
   danger:
     "bg-danger-600 text-white hover:bg-danger-700 focus:ring-danger-500/40",
-  ai: "bg-ai-600 text-white shadow-sm hover:bg-ai-500 active:bg-ai-700 focus:ring-ai-500/40",
+  ai: "bg-ai-600 text-white hover:bg-ai-500 active:bg-ai-700 focus:ring-ai-500/40",
 };
 
 export function cn(...classes: Array<string | false | null | undefined>) {
@@ -60,15 +113,15 @@ export function Button({
 }) {
   const sizeClass = {
     sm: "h-8 px-3 text-xs",
-    md: "h-10 px-4 text-sm",
-    lg: "h-11 px-5 text-sm",
-    icon: "h-10 w-10 p-0",
+    md: "h-9 px-4 text-[13px]",
+    lg: "h-10 px-5 text-sm",
+    icon: "h-9 w-9 p-0",
   }[size];
   return (
     <button
       {...props}
       className={cn(
-        "inline-flex items-center justify-center gap-2 rounded-xl font-medium transition-all duration-150 ease-out active:scale-[.98]",
+        "inline-flex items-center justify-center gap-2 rounded-lg font-bold transition-all duration-150 ease-out active:scale-[.98]",
         "focus:outline-none focus-visible:ring-2 disabled:cursor-not-allowed disabled:opacity-50",
         sizeClass,
         buttonClasses[variant],
@@ -148,21 +201,50 @@ export function Badge({
   );
 }
 
-const STATUS_TONE: Record<string, Tone> = {
+type StatusIcon = typeof CheckCircle2;
+
+// Normaliza um status vindo do backend/telas para uma chave estável:
+// minúsculas, sem acento, com `_`/`-`/espaços colapsados. Assim
+// "Em Revisão", "em_revisao" e "em-revisao" caem na mesma entrada.
+function normalizeStatus(value: string): string {
+  return value
+    .toLowerCase()
+    .normalize("NFD")
+    .replace(/\p{Diacritic}/gu, "")
+    .replace(/[_-]+/g, " ")
+    .replace(/\s+/g, " ")
+    .trim();
+}
+
+// Vocabulário canônico de status do EJC Command Center (cor + ÍCONE + texto —
+// nunca só cor, cumprindo WCAG 2.2). Sinônimos legados apontam para a mesma
+// entrada para não quebrar as telas que já emitem esses valores.
+const STATUS_REGISTRY: Record<string, { tone: Tone; icon: StatusIcon; label: string }> = {
+  novo: { tone: "blue", icon: PlusCircle, label: "Novo" },
+  "em analise": { tone: "purple", icon: ScanSearch, label: "Em análise" },
+  triagem: { tone: "purple", icon: ScanSearch, label: "Em análise" },
+  "aguardando cliente": { tone: "amber", icon: Clock, label: "Aguardando cliente" },
+  "aguardando documento": { tone: "orange", icon: FileClock, label: "Aguardando documento" },
+  "em producao": { tone: "blue", icon: PenLine, label: "Em produção" },
+  "em revisao": { tone: "violet", icon: Eye, label: "Em revisão" },
+  protocolado: { tone: "teal", icon: Send, label: "Protocolado" },
+  concluido: { tone: "green", icon: CheckCircle2, label: "Concluído" },
+  suspenso: { tone: "slate", icon: PauseCircle, label: "Suspenso" },
+  critico: { tone: "red", icon: AlertTriangle, label: "Crítico" },
+};
+
+// Tons dos status legados que ainda NÃO fazem parte do vocabulário canônico —
+// preservam exatamente a aparência anterior (cor + rótulo, sem ícone).
+const LEGACY_STATUS_TONE: Record<string, Tone> = {
   ativo: "green",
   aberto: "green",
-  concluido: "green",
   aprovada: "green",
   pago: "green",
-  triagem: "amber",
   pendente: "amber",
-  em_revisao: "amber",
-  suspenso: "amber",
   vencido: "red",
   atrasado: "red",
   cancelado: "red",
   rejeitado: "red",
-  critico: "red",
   ia: "purple",
   rascunho: "slate",
   arquivado: "slate",
@@ -170,10 +252,44 @@ const STATUS_TONE: Record<string, Tone> = {
 };
 
 export function StatusBadge({ value }: { value?: string | null }) {
-  const label = value || "sem status";
+  if (!value) return <Badge tone="slate">sem status</Badge>;
+  const key = normalizeStatus(value);
+  const meta = STATUS_REGISTRY[key];
+  if (meta) {
+    const Icon = meta.icon;
+    return (
+      <Badge tone={meta.tone} className="gap-1">
+        <Icon className="h-3 w-3 shrink-0" aria-hidden="true" />
+        {meta.label}
+      </Badge>
+    );
+  }
   return (
-    <Badge tone={STATUS_TONE[label] || "slate"}>
-      {label.replace(/_/g, " ")}
+    <Badge tone={LEGACY_STATUS_TONE[key] || "slate"}>
+      {value.replace(/_/g, " ")}
+    </Badge>
+  );
+}
+
+// Grau de risco do caso (baixo/médio/alto/crítico) com cor + ícone + texto.
+const RISK_REGISTRY: Record<string, { tone: Tone; icon: StatusIcon; label: string }> = {
+  baixo: { tone: "green", icon: ShieldCheck, label: "Risco baixo" },
+  medio: { tone: "amber", icon: ShieldAlert, label: "Risco médio" },
+  alto: { tone: "orange", icon: ShieldAlert, label: "Risco alto" },
+  critico: { tone: "red", icon: ShieldAlert, label: "Risco crítico" },
+};
+
+export function RiskBadge({ value }: { value?: string | null }) {
+  if (!value) return <Badge tone="slate">Risco —</Badge>;
+  const meta = RISK_REGISTRY[normalizeStatus(value)];
+  if (!meta) {
+    return <Badge tone="slate">Risco {value.replace(/_/g, " ")}</Badge>;
+  }
+  const Icon = meta.icon;
+  return (
+    <Badge tone={meta.tone} className="gap-1">
+      <Icon className="h-3 w-3 shrink-0" aria-hidden="true" />
+      {meta.label}
     </Badge>
   );
 }
@@ -253,7 +369,7 @@ export function FilterBar({
   onClear?: () => void;
 }) {
   return (
-    <div className="flex flex-wrap items-center gap-2 rounded-xl border border-slate-200 bg-white p-3">
+    <div className="flex flex-wrap items-center gap-2 rounded-xl border border-black/[0.05] bg-white p-3 shadow-sm">
       <div className="flex items-center gap-2 text-xs font-medium text-slate-500">
         <SlidersHorizontal className="h-4 w-4" />
         Filtros
@@ -288,12 +404,14 @@ export function PageHeader({
   return (
     <div className="mb-6 flex flex-col gap-4 sm:flex-row sm:items-end sm:justify-between">
       <div className="min-w-0">
-        {eyebrow && <div className="eyebrow mb-2">{eyebrow}</div>}
-        <h1 className="text-2xl font-semibold tracking-tight text-slate-950 md:text-3xl">
+        {eyebrow && <div className="eyebrow mb-1.5">{eyebrow}</div>}
+        {/* Título denso (~20px/700) na cor escura da marca + filete ouro */}
+        <h1 className="text-xl font-bold tracking-tight text-primary-900">
           {title}
         </h1>
+        <div className="mt-1.5 h-0.5 w-10 rounded-full bg-ouro-claro" />
         {subtitle && (
-          <p className="mt-2 max-w-3xl text-sm text-slate-500">{subtitle}</p>
+          <p className="mt-1.5 max-w-3xl text-sm text-slate-500">{subtitle}</p>
         )}
       </div>
       {actions && (
@@ -321,11 +439,19 @@ export function StatCard({
   trend?: "up" | "down";
 }) {
   return (
-    <Card className="p-5">
+    <Card
+      className={cn(
+        "relative overflow-hidden rounded-[10px] p-4",
+        "before:absolute before:inset-x-0 before:top-0 before:h-[3px] before:content-['']",
+        toneBarClasses[tone],
+      )}
+    >
       <div className="flex items-start justify-between gap-3">
         <div>
-          <p className="text-xs font-medium text-slate-400">{label}</p>
-          <div className="mt-2 text-3xl font-semibold tracking-tight text-slate-950 tabular-nums">
+          <p className="text-[10px] font-semibold uppercase tracking-wide text-slate-500">
+            {label}
+          </p>
+          <div className="mt-1.5 text-xl font-bold tracking-tight text-slate-950 tabular-nums">
             {value}
           </div>
           {subtitle && (
@@ -335,7 +461,7 @@ export function StatCard({
         {icon && (
           <div
             className={cn(
-              "rounded-xl p-2.5 ring-1 ring-inset",
+              "rounded-lg p-2 ring-1 ring-inset",
               toneClasses[tone],
             )}
           >
@@ -398,7 +524,7 @@ export function Table({
   return (
     <div
       className={cn(
-        "overflow-hidden rounded-xl border border-slate-200 bg-white",
+        "overflow-hidden rounded-xl border border-black/[0.05] bg-white shadow-sm",
         className,
       )}
     >
@@ -479,18 +605,20 @@ export function Tabs({
   value: string;
   onChange: (value: string) => void;
 }) {
+  // Segmentado tonal SEM borda; aba ativa em branco elevado com
+  // indicador dourado FINO (filete 2px) — dourado como acento cirúrgico.
   return (
-    <div className="flex gap-1 overflow-x-auto rounded-xl border border-slate-200 bg-white p-1">
+    <div className="flex gap-1 overflow-x-auto rounded-xl bg-slate-900/[0.04] p-1 dark:bg-white/[0.06]">
       {items.map((item) => (
         <button
           key={item.value}
           type="button"
           onClick={() => onChange(item.value)}
           className={cn(
-            "flex h-9 shrink-0 items-center gap-2 rounded-lg px-3 text-sm font-medium transition-all",
+            "relative flex h-9 shrink-0 items-center gap-2 rounded-lg px-3 text-sm font-medium transition-all",
             value === item.value
-              ? "bg-primary-600 text-white shadow-sm"
-              : "text-slate-600 hover:bg-slate-100",
+              ? "bg-white text-ouro-profundo shadow-sm after:absolute after:inset-x-3 after:bottom-1 after:h-0.5 after:rounded-full after:bg-ouro-claro dark:bg-white/[0.1] dark:text-[#E5CE7F]"
+              : "text-slate-600 hover:bg-slate-900/[0.04] dark:text-slate-300 dark:hover:bg-white/[0.05]",
           )}
         >
           {item.icon}
@@ -510,11 +638,11 @@ export function Dropdown({
 }) {
   return (
     <details className="relative">
-      <summary className="flex h-10 cursor-pointer list-none items-center gap-2 rounded-lg border border-slate-200 bg-white px-3 text-sm font-medium text-slate-700 hover:bg-slate-50">
+      <summary className="flex h-10 cursor-pointer list-none items-center gap-2 rounded-lg bg-slate-900/[0.05] px-3 text-sm font-medium text-slate-700 hover:bg-slate-900/[0.09] dark:bg-white/[0.07] dark:text-slate-200 dark:hover:bg-white/[0.12]">
         {label}
         <ChevronDown className="h-4 w-4 text-slate-400" />
       </summary>
-      <div className="absolute right-0 z-40 mt-2 min-w-48 rounded-xl border border-slate-200 bg-white p-2 shadow-lg">
+      <div className="absolute right-0 z-40 mt-2 min-w-48 rounded-xl border border-slate-200 bg-white p-2 shadow-md">
         {children}
       </div>
     </details>
@@ -531,7 +659,7 @@ export function Tooltip({
   return (
     <span className="group relative inline-flex">
       {children}
-      <span className="pointer-events-none absolute bottom-full left-1/2 z-50 mb-2 hidden -translate-x-1/2 whitespace-nowrap rounded-md bg-slate-950 px-2 py-1 text-xs text-white shadow-lg group-hover:block">
+      <span className="pointer-events-none absolute bottom-full left-1/2 z-50 mb-2 hidden -translate-x-1/2 whitespace-nowrap rounded-md bg-slate-950 px-2 py-1 text-xs text-white shadow-md group-hover:block">
         {label}
       </span>
     </span>
@@ -595,12 +723,12 @@ export function Modal({
         role="dialog"
         aria-modal="true"
         className={cn(
-          "w-full max-h-[90vh] overflow-auto rounded-2xl border border-slate-200 bg-white shadow-2xl animate-pop",
+          "w-full max-h-[90vh] overflow-auto rounded-2xl border border-slate-200 bg-white shadow-float animate-pop",
           sizeClass,
         )}
         onClick={(e) => e.stopPropagation()}
       >
-        <div className="sticky top-0 z-10 flex items-center justify-between border-b border-slate-100 bg-white/95 px-5 py-4 backdrop-blur">
+        <div className="sticky top-0 z-10 flex items-center justify-between border-b border-slate-100 bg-white px-5 py-4">
           <h2 className="text-base font-semibold text-slate-950">{title}</h2>
           <Button
             type="button"
@@ -613,7 +741,7 @@ export function Modal({
         </div>
         <div className="p-5">{children}</div>
         {footer && (
-          <div className="sticky bottom-0 z-10 flex items-center justify-end gap-2 border-t border-slate-100 bg-white/95 px-5 py-4 backdrop-blur">
+          <div className="sticky bottom-0 z-10 flex items-center justify-end gap-2 border-t border-slate-100 bg-white px-5 py-4">
             {footer}
           </div>
         )}
@@ -769,14 +897,14 @@ export function Drawer({
   if (!open) return null;
   return (
     <div
-      className="fixed inset-0 z-50 animate-fade-in bg-slate-950/55 backdrop-blur-sm"
+      className="fixed inset-0 z-50 animate-fade-in bg-slate-950/45"
       onClick={onClose}
     >
       <aside
         role="dialog"
         aria-modal="true"
         className={cn(
-          "absolute inset-y-0 right-0 flex w-full flex-col border-l border-slate-200 bg-white shadow-2xl animate-slide-in-right",
+          "absolute inset-y-0 right-0 flex w-full flex-col border-l border-slate-200 bg-white shadow-float animate-slide-in-right",
           drawerWidthClasses[width],
         )}
         onClick={(e) => e.stopPropagation()}
@@ -874,16 +1002,9 @@ export function Alert({
   );
 }
 
-export function Skeleton({ className }: { className?: string }) {
-  return (
-    <div
-      className={cn(
-        "animate-pulse rounded-lg bg-slate-200/70",
-        className || "h-4 w-full",
-      )}
-    />
-  );
-}
+// Skeletons de carregamento (pulse) — implementação em components/base/.
+// Re-exportados aqui para manter o ponto único de import das páginas.
+export { Skeleton, SkeletonList, SkeletonCard } from "./base/Skeleton";
 
 export function EmptyState({
   title = "Nada encontrado",
@@ -910,20 +1031,146 @@ export function EmptyState({
   );
 }
 
+/**
+ * Estado de ERRO de carregamento — par do <EmptyState /> para quando a
+ * requisição falha (em vez de simplesmente não ter dados). Oferece uma ação
+ * de "tentar novamente" para não deixar o usuário sem saída.
+ */
+export function ErrorState({
+  title = "Não foi possível carregar",
+  message = "Ocorreu um erro ao buscar estes dados. Tente novamente em instantes.",
+  icon: Icon = AlertCircle,
+  onRetry,
+  retryLabel = "Tentar novamente",
+}: {
+  title?: string;
+  message?: string;
+  icon?: typeof AlertCircle;
+  onRetry?: () => void;
+  retryLabel?: string;
+}) {
+  return (
+    <div
+      role="alert"
+      className="flex flex-col items-center justify-center rounded-xl border border-dashed border-danger-200 bg-danger-50/40 px-6 py-12 text-center"
+    >
+      <div className="mb-3 flex h-12 w-12 items-center justify-center rounded-xl bg-danger-100 text-danger-600">
+        <Icon className="h-6 w-6" />
+      </div>
+      <h3 className="text-sm font-semibold text-slate-900">{title}</h3>
+      {message && (
+        <p className="mt-1 max-w-md text-sm text-slate-500">{message}</p>
+      )}
+      {onRetry && (
+        <div className="mt-4">
+          <Button variant="secondary" onClick={onRetry}>
+            {retryLabel}
+          </Button>
+        </div>
+      )}
+    </div>
+  );
+}
+
+/**
+ * Empty state didático. API aditiva — os usos legados com `message`/`icon`
+ * continuam válidos; os novos podem explicar o vazio e oferecer uma saída.
+ *
+ * @example legado
+ * <Empty message="Nenhum caso encontrado" />
+ *
+ * @example didático
+ * <Empty
+ *   titulo="Nenhum caso ainda"
+ *   descricao="Cadastre o primeiro caso para acompanhar prazos e honorários."
+ *   acao={<Button onClick={abrirWizard}>Novo caso</Button>}
+ * />
+ */
 export function Empty({
   message,
   icon: Icon = Inbox,
+  titulo,
+  descricao,
+  acao,
 }: {
-  message: string;
+  /** Legado — vira o título quando `titulo` não é informado. */
+  message?: string;
   icon?: typeof Inbox;
+  /** Título curto do estado vazio (tem precedência sobre `message`). */
+  titulo?: string;
+  /** Texto explicativo: por que está vazio e o que fazer a seguir. */
+  descricao?: string;
+  /** Ação de saída (ex.: <Button> ou <Link>) exibida abaixo do texto. */
+  acao?: ReactNode;
 }) {
-  return <EmptyState title={message} icon={Icon} />;
+  return (
+    <EmptyState
+      title={titulo ?? message ?? "Nada encontrado"}
+      message={descricao}
+      icon={Icon}
+      action={acao}
+    />
+  );
 }
 
 export function Spinner() {
   return (
     <div className="flex items-center justify-center p-12">
-      <Loader2 className="h-8 w-8 animate-spin text-primary-600" />
+      <Loader2 className="h-8 w-8 animate-spin text-ouro" />
+    </div>
+  );
+}
+
+// Barra shimmer branco+ouro (grafite no `.dark`) — reutilizada pelas células
+// do SkeletonTable. Decorativa: `aria-hidden` (quem expõe o estado de
+// carregamento é o container com role="status"). A classe `.ejc-skeleton`
+// (index.css) traz o brilho dourado sutil.
+function SkeletonBar({ className }: { className?: string }) {
+  return <div aria-hidden="true" className={cn("ejc-skeleton", className)} />;
+}
+
+/**
+ * SkeletonTable — placeholder de carregamento no FORMATO de uma tabela,
+ * dentro do mesmo container `.card` das listas core (Casos, Clientes).
+ * Mostra `rows` linhas × `cols` células com shimmer branco+ouro (grafite no
+ * tema escuro) enquanto os dados chegam — evita o "salto" de layout do
+ * <Spinner />. Acessível: `role="status"` + `aria-busy` no container (com
+ * rótulo sr-only); células individuais `aria-hidden`.
+ */
+export function SkeletonTable({
+  rows = 6,
+  cols = 5,
+}: {
+  rows?: number;
+  cols?: number;
+}) {
+  return (
+    <div
+      className="card overflow-hidden"
+      role="status"
+      aria-busy="true"
+      aria-live="polite"
+    >
+      <span className="sr-only">Carregando…</span>
+      {/* Cabeçalho */}
+      <div className="flex gap-4 border-b border-bronze-pale/40 bg-bronze-50/50 px-4 py-3">
+        {Array.from({ length: cols }).map((_, i) => (
+          <SkeletonBar key={i} className="h-3 flex-1" />
+        ))}
+      </div>
+      {/* Linhas */}
+      <div className="divide-y divide-bronze-pale/40">
+        {Array.from({ length: rows }).map((_, r) => (
+          <div key={r} className="flex items-center gap-4 px-4 py-3.5">
+            {Array.from({ length: cols }).map((_, c) => (
+              <SkeletonBar
+                key={c}
+                className={cn("h-4 flex-1", c === 0 && "max-w-[7rem]")}
+              />
+            ))}
+          </div>
+        ))}
+      </div>
     </div>
   );
 }
@@ -991,6 +1238,103 @@ export function ConfidenceBadge({ value }: { value?: number | null }) {
       <CheckCircle2 className="h-3 w-3" />
       {score == null ? "confianca pendente" : `${score}% confianca`}
     </Badge>
+  );
+}
+
+// Ciclo de validação humana de uma saída de IA. Torna EXPLÍCITO o grau de
+// confiança editorial — nenhuma conclusão de IA deve parecer um fato já
+// confirmado (requisito central do diagnóstico do Command Center).
+const VALIDATION_REGISTRY: Record<string, { tone: Tone; icon: StatusIcon; label: string }> = {
+  "nao revisado": { tone: "slate", icon: Clock, label: "Não revisado" },
+  "em revisao": { tone: "amber", icon: Eye, label: "Em revisão" },
+  validado: { tone: "green", icon: CheckCircle2, label: "Validado" },
+  rejeitado: { tone: "red", icon: XCircle, label: "Rejeitado" },
+  "parcialmente validado": {
+    tone: "amber",
+    icon: ShieldAlert,
+    label: "Parcialmente validado",
+  },
+};
+
+export function HumanValidationStatus({ value }: { value?: string | null }) {
+  const meta = VALIDATION_REGISTRY[normalizeStatus(value || "nao revisado")];
+  const resolved = meta ?? VALIDATION_REGISTRY["nao revisado"];
+  const Icon = resolved.icon;
+  return (
+    <Badge tone={resolved.tone} className="gap-1">
+      <Icon className="h-3 w-3 shrink-0" aria-hidden="true" />
+      {resolved.label}
+    </Badge>
+  );
+}
+
+// Citação de fonte usada por uma resposta de IA (documento, legislação ou
+// precedente). Vira link quando há `href`; caso contrário, chip estático.
+export function SourceCitation({
+  tipo,
+  titulo,
+  referencia,
+  href,
+}: {
+  tipo?: string;
+  titulo: string;
+  referencia?: string;
+  href?: string;
+}) {
+  const inner = (
+    <span className="inline-flex max-w-full items-center gap-1.5 rounded-lg border border-slate-200 bg-slate-50 px-2 py-1 text-xs text-slate-600">
+      <FileText className="h-3.5 w-3.5 shrink-0 text-slate-400" />
+      {tipo && <span className="font-medium text-slate-500">{tipo}:</span>}
+      <span className="truncate">{titulo}</span>
+      {referencia && <span className="shrink-0 text-slate-400">· {referencia}</span>}
+    </span>
+  );
+  return href ? (
+    <a
+      href={href}
+      target="_blank"
+      rel="noreferrer"
+      className="inline-flex max-w-full hover:opacity-80"
+    >
+      {inner}
+    </a>
+  ) : (
+    inner
+  );
+}
+
+// Legenda que enquadra a leitura de uma saída de IA: separa o que consta nos
+// documentos, o que é inferência do modelo e o que ainda não foi confirmado.
+// Reforça, no ponto de consumo, que a IA pode misturar as três coisas.
+export function AIFactualityLegend({ className }: { className?: string }) {
+  const items: Array<{ tone: Tone; icon: StatusIcon; label: string }> = [
+    { tone: "green", icon: CheckCircle2, label: "Consta nos documentos" },
+    { tone: "purple", icon: Bot, label: "Inferência da IA" },
+    { tone: "amber", icon: AlertTriangle, label: "Não confirmado / lacuna" },
+  ];
+  return (
+    <div
+      className={cn(
+        "rounded-lg border border-slate-200 bg-slate-50/70 px-3 py-2",
+        className,
+      )}
+    >
+      <div className="flex flex-wrap items-center gap-2">
+        {items.map((item) => {
+          const Icon = item.icon;
+          return (
+            <Badge key={item.label} tone={item.tone} className="gap-1">
+              <Icon className="h-3 w-3 shrink-0" aria-hidden="true" />
+              {item.label}
+            </Badge>
+          );
+        })}
+      </div>
+      <p className="mt-1.5 text-[11px] leading-4 text-slate-500">
+        A IA pode misturar fatos, inferências e lacunas. Valide cada ponto nas
+        fontes antes de usar — a validação profissional continua obrigatória.
+      </p>
+    </div>
   );
 }
 

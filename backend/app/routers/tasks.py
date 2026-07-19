@@ -14,10 +14,12 @@ from app.core.database import get_db
 from app.core.security import get_current_user
 from app.models.user import User
 from app.models.task import Task, TaskStatus
+from app.models.atendimento import Atendimento
 from app.models.case import Case
 from app.models.notification import Notification
 from app.schemas.common import MsgResponse
 from app.core.ownership import verificar_acesso_caso, is_gestao
+from app.modules.auditoria.middleware import registrar_acao
 
 router = APIRouter(prefix="/tasks", tags=["Tarefas"])
 
@@ -116,14 +118,49 @@ async def atualizar(
     if t.case_id:
         await verificar_acesso_caso(db, cu, t.case_id)
     mud = payload.model_dump(exclude_unset=True)
+    novo_status = None
     if "status" in mud:
         if mud["status"] not in [s.value for s in TaskStatus]:
             raise HTTPException(status_code=422, detail="Status inválido")
-        if mud["status"] == "concluida" and t.status != TaskStatus.concluida:
+        novo_status = TaskStatus(mud.pop("status"))
+        if novo_status == TaskStatus.concluida and t.status != TaskStatus.concluida:
             t.concluida_em = datetime.now(timezone.utc)
+        elif novo_status != TaskStatus.concluida:
+            t.concluida_em = None
+        t.status = novo_status
     for k, v in mud.items():
         setattr(t, k, v)
+
+    # Se a tarefa nasceu de uma solicitação de cliente, a conclusão (ou
+    # reabertura) deve aparecer na mesma linha do tempo, sem dupla digitação.
+    atendimento = (await db.execute(
+        select(Atendimento).where(Atendimento.task_id == t.id)
+    )).scalar_one_or_none()
+    if atendimento is not None and novo_status is not None:
+        concluida = novo_status == TaskStatus.concluida
+        atendimento.solicitacao_atendida = concluida
+        atendimento.atendida_em = t.concluida_em if concluida else None
+        atendimento.atendida_por_id = cu.id if concluida else None
+        atendimento.solicitacao_alerta_nivel = "concluido" if concluida else None
+        atendimento.updated_at = datetime.now(timezone.utc)
+
     await db.commit()
+
+    if atendimento is not None and novo_status is not None:
+        role = cu.role.value if hasattr(cu.role, "value") else str(cu.role)
+        await registrar_acao(
+            db,
+            cu.id,
+            "atualizar",
+            "atendimentos",
+            atendimento.id,
+            (
+                "Solicitação sincronizada pela tarefa vinculada: "
+                f"status {novo_status.value}"
+            ),
+            user_role=role,
+            dados_depois={"solicitacao_atendida": atendimento.solicitacao_atendida},
+        )
     return {"detail": "Tarefa atualizada"}
 
 
@@ -141,5 +178,29 @@ async def remover(
     if t.case_id:
         await verificar_acesso_caso(db, cu, t.case_id)
     t.deleted_at = datetime.now(timezone.utc)
+
+    # Mantém a solicitação e seu histórico, mas remove a referência para uma
+    # tarefa que deixou de existir operacionalmente.
+    atendimento = (await db.execute(
+        select(Atendimento).where(Atendimento.task_id == t.id)
+    )).scalar_one_or_none()
+    if atendimento is not None:
+        atendimento.task_id = None
+        atendimento.solicitacao_alerta_nivel = None
+        atendimento.updated_at = datetime.now(timezone.utc)
+
     await db.commit()
+
+    if atendimento is not None:
+        role = cu.role.value if hasattr(cu.role, "value") else str(cu.role)
+        await registrar_acao(
+            db,
+            cu.id,
+            "atualizar",
+            "atendimentos",
+            atendimento.id,
+            "Tarefa vinculada removida; solicitação mantida na linha do tempo",
+            user_role=role,
+            dados_depois={"tarefa_vinculada": False},
+        )
     return MsgResponse(detail="Tarefa removida")

@@ -1,7 +1,7 @@
 import { useState, useEffect, useCallback } from "react";
 import { RefreshCw, Check, AlertCircle, Calendar, Repeat } from "lucide-react";
 import api from "../lib/api";
-import { PageHeader } from "../components/UI";
+import { Spinner, ErrorState } from "../components/UI";
 
 interface Despesa {
   id: string;
@@ -35,6 +35,7 @@ function fmtR$(v: number) {
 export default function DespesasRecorrentes() {
   const [recorrentes, setRecorrentes] = useState<Despesa[]>([]);
   const [loading, setLoading] = useState(true);
+  const [error, setError] = useState(false);
   const [gerando, setGerando] = useState(false);
   const [msg, setMsg] = useState<string | null>(null);
   const [targetComp, setTargetComp] = useState(() => {
@@ -45,6 +46,7 @@ export default function DespesasRecorrentes() {
 
   const load = useCallback(async () => {
     setLoading(true);
+    setError(false);
     try {
       const res = await api.get("/v1/despesas", {
         params: { recorrente: true },
@@ -54,6 +56,8 @@ export default function DespesasRecorrentes() {
           (d: Despesa & { recorrente: boolean }) => d.recorrente,
         ),
       );
+    } catch {
+      setError(true);
     } finally {
       setLoading(false);
     }
@@ -94,21 +98,19 @@ export default function DespesasRecorrentes() {
   const total = recorrentes.reduce((s, d) => s + d.valor, 0);
 
   return (
-    <div className="p-6 max-w-4xl mx-auto space-y-5">
-      <PageHeader
-        eyebrow="Financeiro"
-        title="Despesas Recorrentes"
-        subtitle="Geração automática de lançamentos mensais"
-      />
+    <div className="space-y-5">
+      {/* Cabeçalho fica no FinanceiroWorkspace. A competência-alvo abaixo é
+          intencional e local: é o mês de DESTINO da geração de lançamentos
+          (padrão: próximo mês), não o filtro de visualização compartilhado. */}
 
       {/* Action card */}
-      <div className="bg-white rounded-xl border border-slate-200 p-5">
+      <div className="card p-5">
         <h2 className="font-semibold text-slate-800 mb-3 flex items-center gap-2">
           <Repeat className="w-4 h-4 text-primary-500" />
           Gerar lançamentos para novo mês
         </h2>
         <div className="flex items-center gap-4">
-          <div className="flex items-center gap-2 border border-slate-200 rounded-lg px-3 py-2">
+          <div className="input flex w-auto items-center gap-2">
             <Calendar className="w-4 h-4 text-slate-400" />
             <input
               type="month"
@@ -149,7 +151,7 @@ export default function DespesasRecorrentes() {
       </div>
 
       {/* Summary */}
-      <div className="bg-slate-50 rounded-xl border border-slate-200 p-4 flex items-center justify-between">
+      <div className="rounded-xl bg-slate-900/[0.04] p-4 flex items-center justify-between dark:bg-white/[0.06]">
         <span className="text-sm text-slate-600">
           {recorrentes.length} despesas recorrentes cadastradas
         </span>
@@ -160,9 +162,14 @@ export default function DespesasRecorrentes() {
 
       {/* List */}
       {loading ? (
-        <div className="text-center py-10 text-slate-400">Carregando...</div>
+        <Spinner />
+      ) : error ? (
+        <ErrorState
+          message="Não foi possível carregar as despesas recorrentes. Tente novamente."
+          onRetry={load}
+        />
       ) : (
-        <div className="bg-white rounded-xl border border-slate-200 overflow-hidden">
+        <div className="card overflow-hidden">
           <table className="w-full text-sm">
             <thead className="bg-slate-50 text-slate-500 text-xs uppercase tracking-wider">
               <tr>

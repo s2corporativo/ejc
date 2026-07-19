@@ -303,7 +303,6 @@ def analisar_texto(texto: str) -> list[dict]:
     # 2. Recursos superiores (REsp 1.737.428/SP etc.).
     for m in _RE_RECURSO.finditer(texto):
         classe = m.group(1)
-        classe_norm = classe.upper().replace("ARESP", "AREsp")
         num = re.sub(r"\D", "", m.group(2))
         ctx = _extrair_contexto(_contexto(texto, m.start(), m.end()))
         cu = classe.upper()
@@ -387,7 +386,13 @@ async def _confirmar_datajud(numero_fmt: str) -> tuple[dict | None, str]:
         info = await asyncio.wait_for(
             datajud_service.consultar_processo(numero_fmt), timeout=DATAJUD_TIMEOUT_S)
     except Exception as e:  # timeout, rede, HTTP — vira aviso, nunca erro
-        logger.warning("DataJud indisponível p/ %s: %s", numero_fmt, e)
+        from app.services.datajud_service import DataJudDesabilitadoError
+        if isinstance(e, DataJudDesabilitadoError):
+            # Integração desligada é estado esperado, não indisponibilidade.
+            return None, "nao_localizado"
+        # Sem número de processo no log (PII/segredo de justiça — mesma regra
+        # dos demais logs do DataJud nesta governança).
+        logger.warning("DataJud indisponível: %s", type(e).__name__)
         return None, "erro"
     if info:
         return info, "confirmado"
