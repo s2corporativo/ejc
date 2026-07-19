@@ -59,6 +59,7 @@ from app.routers import consumidor_monitor
 from app.routers import conteudo
 from app.routers import contratos_societarios
 from app.routers import conversao_caso
+from app.routers import credential_vault  # Cofre de Credenciais (superadmin)
 from app.routers import curadoria_renomada
 from app.routers import dashboard
 from app.routers import data_room
@@ -318,6 +319,7 @@ app.include_router(consumidor_monitor.router, prefix=API)
 app.include_router(conteudo.router, prefix=API)
 app.include_router(contratos_societarios.router, prefix=API)
 app.include_router(conversao_caso.router, prefix=API)
+app.include_router(credential_vault.router, prefix=API)  # cofre de credenciais (superadmin)
 app.include_router(curadoria_renomada.router, prefix=API)
 app.include_router(dashboard.router, prefix=API)
 app.include_router(data_room.router, prefix=API)
