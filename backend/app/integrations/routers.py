@@ -39,6 +39,7 @@ from app.core.rate_limit import limiter
 from app.core.security import get_current_user
 from app.models.audit_log import criar_audit_log
 from app.models.user import User
+from app.services.datajud_service import _SEG_TR_ALIAS
 
 from app.integrations.brasilapi_client import BrasilApiClient, BrasilApiError
 from app.integrations.datajud_client import (
@@ -62,6 +63,17 @@ brasilapi_router = APIRouter(prefix="/integracoes/brasilapi", tags=["integracoes
 _datajud = DataJudClient(api_key=get_settings().DATAJUD_API_KEY or None)
 _djen = DjenComunicaClient()
 _brasilapi = BrasilApiClient()
+
+# Review Codex (PR #305): os 5 aliases de TRIBUNAL_ALIASES cobriam uma fração
+# dos tribunais. Completa o mapa sigla → alias a partir do mapeamento auditado
+# do serviço interno (Res. CNJ 65/2008 — todos os TJs, TRTs, TRFs, STJ e TST);
+# o alias embute a própria sigla ("api_publica_tjmg" → "TJMG"). As entradas da
+# spec (TRIBUNAL_ALIASES) têm precedência.
+_ALIAS_POR_SIGLA: dict = {
+    alias.removeprefix("api_publica_").upper(): alias
+    for alias in _SEG_TR_ALIAS.values()
+}
+_ALIAS_POR_SIGLA.update(TRIBUNAL_ALIASES)
 
 # Erros de integração mapeados para 502 com detail genérico (o detalhe do
 # upstream fica no log). ValueError cobre 200 com corpo não-JSON (WAF/
@@ -105,10 +117,12 @@ async def consultar_processo_datajud(
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
-    alias = TRIBUNAL_ALIASES.get(tribunal.upper())
+    alias = _ALIAS_POR_SIGLA.get(tribunal.upper())
     if not alias:
         raise HTTPException(
-            400, f"Tribunal '{tribunal}' não mapeado em TRIBUNAL_ALIASES"
+            400,
+            f"Tribunal '{tribunal}' não mapeado — use a sigla oficial "
+            "(ex.: TJMG, TJSP, TRT3, TRF1, STJ, TST).",
         )
     numero = _somente_digitos(numero_processo, 20, "Número de processo (CNJ)")
     try:

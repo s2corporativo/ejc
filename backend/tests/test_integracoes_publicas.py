@@ -177,6 +177,36 @@ async def _get(app: FastAPI, path: str) -> httpx.Response:
         return await c.get(path)
 
 
+def test_mapa_de_tribunais_cobre_todos_os_aliases_do_servico():
+    """Regressão (review Codex PR #305): o endpoint deve aceitar QUALQUER
+    tribunal mapeado pelo serviço interno (todos TJs/TRTs/TRFs + STJ/TST),
+    não só os 5 exemplos da spec."""
+    m = integ_routers._ALIAS_POR_SIGLA
+    assert m["TJSP"] == "api_publica_tjsp"
+    assert m["TJRJ"] == "api_publica_tjrj"
+    assert m["STJ"] == "api_publica_stj"
+    assert m["TST"] == "api_publica_tst"
+    assert len(m) >= 55  # 27 TJs + 24 TRTs + TRFs + superiores
+    for sigla, alias in TRIBUNAL_ALIASES.items():
+        assert m[sigla] == alias  # entradas da spec preservadas
+
+
+async def test_router_datajud_aceita_tribunal_fora_da_spec(monkeypatch):
+    visto = {}
+
+    async def _ok(numero, alias):
+        visto["alias"] = alias
+        return {"hits": {"hits": []}}
+
+    monkeypatch.setattr(integ_routers._datajud, "consultar_processo", _ok)
+    resp = await _get(
+        _mini_app(),
+        "/api/integracoes/datajud/processos/tjsp/0000001-02.2024.8.26.0100",
+    )
+    assert resp.status_code == 200
+    assert visto["alias"] == "api_publica_tjsp"
+
+
 async def test_router_datajud_tribunal_nao_mapeado_400():
     resp = await _get(_mini_app(), "/api/integracoes/datajud/processos/XX/123")
     assert resp.status_code == 400
