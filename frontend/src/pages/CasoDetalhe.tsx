@@ -960,8 +960,9 @@ function TabResumo({ caso }: { caso: Case }) {
           <div className="space-y-3">
             <p className="text-xs text-slate-500">
               Ao encerrar, o conhecimento do caso vira ativo institucional:{" "}
-              <b>precedente na base de conhecimento</b> + <b>memória institucional</b> +{" "}
-              <b>tese no banco</b>. Tudo como rascunho revisável (OAB).
+              <b>precedente na base de conhecimento</b> +{" "}
+              <b>memória institucional</b> + <b>tese no banco</b>. Tudo como
+              rascunho revisável (OAB).
             </p>
             <div>
               <label className="label">Resultado</label>
