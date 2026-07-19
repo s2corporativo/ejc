@@ -301,7 +301,7 @@ export default function CaseCommandDock({ caseId }: { caseId: string }) {
                     className="inline-flex items-center gap-2 rounded-full bg-slate-100 px-3 py-1.5 text-xs text-slate-700"
                   >
                     {area.principal && <Badge tone="ouro">Principal</Badge>}
-                    {labels.get(area.area) || area.area.replaceAll("_", " ")}
+                    {labels.get(area.area) || area.area.split("_").join(" ")}
                     {!area.principal && (
                       <button
                         type="button"
