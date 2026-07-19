@@ -1,9 +1,5 @@
 import { describe, expect, it } from "vitest";
-import {
-  formatarDataEvento,
-  ordenarIndicadores,
-} from "../CaseHealthWidget";
-
+import { formatarDataEvento, ordenarIndicadores } from "../CaseHealthWidget";
 
 describe("CaseHealthWidget — regras puras", () => {
   it("ordena indicadores por severidade operacional", () => {
