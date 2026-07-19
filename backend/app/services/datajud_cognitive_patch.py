@@ -102,13 +102,20 @@ async def _consultar_processo_exato(numero_cnj: str) -> dict | None:
 
 
 async def _alimentar_sem_quebrar(db, case) -> None:
-    """Feed best-effort: falha cognitiva não apaga andamento já coletado."""
+    """Executa o feed em SAVEPOINT, sem arriscar a coleta transacional.
+
+    ``begin_nested`` força o flush das movimentações antes do savepoint. Assim,
+    se a construção de documentos/chunks falhar, apenas o RAG é revertido; o
+    andamento oficial continua disponível para o advogado e pode ser reindexado
+    pelo backfill posterior.
+    """
     try:
         from app.services.datajud_cognitive_feed import alimentar_caso
-        await alimentar_caso(db, case, embutir_vetores=False)
+        async with db.begin_nested():
+            await alimentar_caso(db, case, embutir_vetores=False)
     except Exception as exc:
         logger.warning(
-            "Movimentos persistidos, mas alimentação cognitiva falhou para caso %s: %s",
+            "Movimentos preservados, mas alimentação cognitiva falhou para caso %s: %s",
             getattr(case, "numero_interno", None) or getattr(case, "id", "?"),
             f"{type(exc).__name__}: {str(exc)[:180]}",
         )
@@ -194,7 +201,7 @@ def _registrar_subrouter() -> None:
 
 
 async def _job_feed_datajud() -> None:
-    """Backfill incremental horário; os órfãos são vetorizados no job das :20."""
+    """Varredura diária de segurança para casos legados/arquivados."""
     try:
         from app.core.database import AsyncSessionLocal
         from app.services.datajud_cognitive_feed import alimentar_lote
@@ -210,13 +217,13 @@ async def _job_feed_datajud() -> None:
 
 
 def _registrar_job() -> None:
-    """Agenda às :10; o auto-reembed nativo roda às :20."""
+    """Backfill diário 03:10; o auto-reembed nativo roda às :20."""
     from app.services import scheduler
 
     s = scheduler.get_scheduler()
     s.add_job(
         _job_feed_datajud,
-        CronTrigger(minute=10),
+        CronTrigger(hour=3, minute=10),
         id="datajud_cognitive_feed",
         replace_existing=True,
         max_instances=1,
