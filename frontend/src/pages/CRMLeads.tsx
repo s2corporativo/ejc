@@ -9,8 +9,9 @@ import {
   User,
 } from "lucide-react";
 import api from "../lib/api";
+import { toast } from "../components/Toast";
 import { soDigitos } from "../utils/phone";
-import { Modal, Button, PageHeader, Spinner } from "../components/UI";
+import { Modal, Button, PageHeader, Spinner, ErrorState } from "../components/UI";
 import { asList } from "../lib/list";
 
 interface Lead {
@@ -90,6 +91,7 @@ const EMPTY_FORM: FormState = {
 export default function CRMLeads() {
   const [leads, setLeads] = useState<Lead[]>([]);
   const [loading, setLoading] = useState(true);
+  const [error, setError] = useState(false);
   const [showForm, setShowForm] = useState(false);
   const [form, setForm] = useState<FormState>({ ...EMPTY_FORM });
   const [dragId, setDragId] = useState<string | null>(null);
@@ -98,12 +100,14 @@ export default function CRMLeads() {
 
   const load = useCallback(async () => {
     setLoading(true);
+    setError(false);
     try {
       const res = await api.get("/clients/?page_size=500&status=lead");
       const all: Lead[] = asList<Lead>(res.data);
       setLeads(all);
     } catch {
       setLeads([]);
+      setError(true);
     } finally {
       setLoading(false);
     }
@@ -114,19 +118,23 @@ export default function CRMLeads() {
   }, [load]);
 
   async function save() {
-    await api.post("/clients/", {
-      nome: form.nome,
-      telefone: form.telefone || undefined,
-      email: form.email || undefined,
-      area_interesse: form.area_interesse || undefined,
-      origem_lead: form.origem_lead || undefined,
-      observacoes: form.observacoes || undefined,
-      status: "lead",
-      etapa_funil: "lead",
-    });
-    setShowForm(false);
-    setForm({ ...EMPTY_FORM });
-    load();
+    try {
+      await api.post("/clients/", {
+        nome: form.nome,
+        telefone: form.telefone || undefined,
+        email: form.email || undefined,
+        area_interesse: form.area_interesse || undefined,
+        origem_lead: form.origem_lead || undefined,
+        observacoes: form.observacoes || undefined,
+        status: "lead",
+        etapa_funil: "lead",
+      });
+      setShowForm(false);
+      setForm({ ...EMPTY_FORM });
+      load();
+    } catch (e: any) {
+      toast.error(e?.response?.data?.detail || "Falha ao salvar o lead");
+    }
   }
 
   async function mover(leadId: string, novaEtapa: string) {
@@ -142,7 +150,11 @@ export default function CRMLeads() {
         ...extraPayload,
       });
       if (novaEtapa === "convertido") load(); // reload to remove from leads list
-    } catch {
+    } catch (e: any) {
+      toast.error(
+        e?.response?.data?.detail ||
+          "Falha ao mover o lead. A etapa anterior foi restaurada.",
+      );
       load();
     }
   }
@@ -180,6 +192,13 @@ export default function CRMLeads() {
       {loading ? (
         <div className="flex-1 flex items-center justify-center">
           <Spinner />
+        </div>
+      ) : error ? (
+        <div className="flex-1 flex items-center justify-center px-6 pb-6">
+          <ErrorState
+            message="Não foi possível carregar os leads do funil."
+            onRetry={load}
+          />
         </div>
       ) : (
         <div className="flex-1 overflow-x-auto px-6 pb-6">
@@ -320,7 +339,7 @@ export default function CRMLeads() {
           onClick={() => setSelectedLead(null)}
         >
           <div
-            className="bg-white h-full w-96 shadow-2xl overflow-y-auto"
+            className="bg-white h-full w-96 border-l border-slate-200 shadow-float overflow-y-auto"
             onClick={(e) => e.stopPropagation()}
           >
             <div className="p-5 border-b border-slate-100 flex items-center justify-between">

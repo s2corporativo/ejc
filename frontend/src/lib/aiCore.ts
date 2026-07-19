@@ -16,6 +16,12 @@ export interface AIFonte {
 export interface AICoreResponse {
   conteudo: string;
   agente: string;
+  agente_coordenador?: string;
+  agente_especialista?: string;
+  skill_pipeline?: string[];
+  skills_nativas?: string[];
+  ramo_juridico?: string | null;
+  modulo_ejc?: string | null;
   task_type: string;
   modelo: string;
   provider: string;
@@ -34,6 +40,9 @@ export interface AICoreResponse {
 
 export interface AIChatRequest {
   mensagem: string;
+  domain?: string;
+  module_key?: string;
+  surface?: string;
   case_id?: string;
   nivel_inteligencia?: string;
 }
@@ -46,6 +55,8 @@ export interface AITaskRequest {
   document_id?: string;
   process_id?: string;
   params?: Record<string, unknown>;
+  module_key?: string;
+  surface?: string;
   usar_rag?: boolean;
 }
 
@@ -53,6 +64,8 @@ export interface AIAnalyzeRequest {
   domain: string;
   mensagem: string;
   case_id?: string;
+  module_key?: string;
+  surface?: string;
 }
 
 export interface AIGenerateRequest {
@@ -60,12 +73,16 @@ export interface AIGenerateRequest {
   mensagem: string;
   case_id?: string;
   params?: Record<string, unknown>;
+  module_key?: string;
+  surface?: string;
 }
 
 export interface AIReportRequest {
   domain: string;
   mensagem?: string;
   case_id?: string;
+  module_key?: string;
+  surface?: string;
 }
 
 export async function aiChat(req: AIChatRequest): Promise<AICoreResponse> {
@@ -109,5 +126,10 @@ export async function aiAgents(): Promise<Record<string, unknown>> {
 
 export async function aiSkills(): Promise<Record<string, unknown>> {
   const { data } = await api.get("/ai/core/skills");
+  return data;
+}
+
+export async function aiNativeSkillCoverage(): Promise<Record<string, unknown>> {
+  const { data } = await api.get("/ai/core/native-skills/coverage");
   return data;
 }

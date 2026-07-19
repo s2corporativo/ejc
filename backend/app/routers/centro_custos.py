@@ -2,6 +2,7 @@
 # Centro de Custos por Processo — lucro real, receitas e despesas por caso.
 # Soft-delete arquitetural: lançamentos financeiros nunca são apagados
 # fisicamente (deleted_at + auditoria).
+from decimal import Decimal, ROUND_HALF_UP
 from uuid import uuid4
 from datetime import date as _date, datetime, timezone
 from typing import Optional
@@ -19,6 +20,14 @@ from app.models.centro_custo import CentroCusto, CentroCustoTipo, CentroCustoCat
 from app.models.audit_log import criar_audit_log
 
 router = APIRouter(prefix="/centro-custos", tags=["Centro de Custos"])
+
+_Q2 = Decimal("0.01")
+
+
+def _money(v) -> Decimal:
+    """Coage numérico (Decimal de coluna Numeric, int, float, str, None) para
+    Decimal com 2 casas (ROUND_HALF_UP). Lucro/totais ficam Decimal ponta a ponta."""
+    return Decimal(str(v or 0)).quantize(_Q2, ROUND_HALF_UP)
 
 
 # ── Schemas ───────────────────────────────────────────────────────────────────
@@ -141,8 +150,8 @@ async def resumo_caso(
         ).where(CentroCusto.case_id == case_id, CentroCusto.deleted_at.is_(None))
     )).one()
 
-    total_r = float(row.total_receitas)
-    total_d = float(row.total_despesas)
+    total_r = _money(row.total_receitas)
+    total_d = _money(row.total_despesas)
 
     # Por categoria
     rows_cat = (await db.execute(
@@ -160,13 +169,13 @@ async def resumo_caso(
         "case_id": case_id,
         "total_receitas": total_r,
         "total_despesas": total_d,
-        "lucro_bruto":    round(total_r - total_d, 2),
-        "pendente_pagar": float(row.pendente_pagar),
+        "lucro_bruto":    _money(total_r - total_d),
+        "pendente_pagar": _money(row.pendente_pagar),
         "por_categoria": [
             {
                 "categoria": r.categoria.value if hasattr(r.categoria, "value") else r.categoria,
                 "tipo": r.tipo.value if hasattr(r.tipo, "value") else r.tipo,
-                "total": float(r.total),
+                "total": _money(r.total),
             }
             for r in rows_cat
         ],
@@ -201,8 +210,8 @@ async def consolidado_geral(
         ).where(CentroCusto.deleted_at.is_(None))
     )).one()
 
-    total_r = float(row.total_receitas)
-    total_d = float(row.total_despesas)
+    total_r = _money(row.total_receitas)
+    total_d = _money(row.total_despesas)
 
     # Por caso — top 10 mais rentáveis
     rows_caso = (await db.execute(
@@ -229,15 +238,15 @@ async def consolidado_geral(
         "global": {
             "total_receitas":  total_r,
             "total_despesas":  total_d,
-            "lucro_bruto":     round(total_r - total_d, 2),
-            "pendente_pagar":  float(row.pendente_pagar),
+            "lucro_bruto":     _money(total_r - total_d),
+            "pendente_pagar":  _money(row.pendente_pagar),
         },
         "top_casos": [
             {
                 "case_id":    r.case_id,
-                "receitas":   float(r.receitas),
-                "despesas":   float(r.despesas),
-                "lucro":      round(float(r.receitas) - float(r.despesas), 2),
+                "receitas":   _money(r.receitas),
+                "despesas":   _money(r.despesas),
+                "lucro":      _money(_money(r.receitas) - _money(r.despesas)),
             }
             for r in rows_caso
         ],

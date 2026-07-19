@@ -32,6 +32,26 @@ class Settings(BaseSettings):
     ACCESS_TOKEN_EXPIRE_HOURS: int = 2
     REFRESH_TOKEN_EXPIRE_DAYS: int = 7
 
+    # ── 2FA (TOTP) — enforcement organizacional por papel ─────────────────
+    # CSV de papéis (UserRole: superadmin, admin, socio, advogado,
+    # advogado_auxiliar, financeiro, estagiario, secretaria, cliente_externo)
+    # que DEVEM usar 2FA (TOTP). Default VAZIO = ninguém obrigado → o
+    # comportamento atual (2FA opt-in) é 100% preservado.
+    # Quando um papel está listado (comparação case-insensitive):
+    #   (a) /auth/login sinaliza `precisa_configurar_2fa=true` no payload
+    #       enquanto o usuário desse papel ainda não tiver TOTP ativo — para o
+    #       frontend orientar a configuração. NÃO bloqueia o login (enforcement
+    #       SEM lockout: não há coluna/migration nova e não se tranca ninguém);
+    #   (b) POST /auth/totp/desativar RECUSA (403) desativar o 2FA de um usuário
+    #       cujo papel é obrigado — ele não pode se auto-desproteger.
+    # Ex. em produção (definir no .env, NÃO versionado):
+    #   REQUIRE_2FA_ROLES=superadmin,admin,socio
+    REQUIRE_2FA_ROLES: str = ""
+
+    @property
+    def require_2fa_roles_list(self) -> List[str]:
+        return [r.strip().lower() for r in self.REQUIRE_2FA_ROLES.split(",") if r.strip()]
+
     # ── Criptografia de PII em repouso (LGPD, achado C6 / Bloco 6a) ────────
     # Chave Fernet (32 bytes url-safe base64) para cpf/cnpj cifrados. Default
     # vazio de propósito — mesmo padrão do SECRET_KEY: obrigatória em produção
@@ -65,7 +85,24 @@ class Settings(BaseSettings):
     GROQ_API_KEY: str = ""
     GROQ_MODEL: str = "llama-3.3-70b-versatile"   # 128k (llama3-70b-8192 descomissionado pelo Groq)
     GROQ_TIMEOUT: int = 60               # segundos
+    # Transcrição de áudio/vídeo é uma operação EXTERNA distinta do chat:
+    # nasce desligada, exige confirmação por requisição e respeita o
+    # kill-switch AI_EXTERNAL_PROVIDERS_ALLOWED.
+    AUDIO_TRANSCRIPTION_ENABLED: bool = False
+    AUDIO_TRANSCRIPTION_MAX_MB: int = 25
+    AUDIO_TRANSCRIPTION_TIMEOUT: int = 180
+    # Gates organizacionais: só marcar True após habilitar Zero Data Retention
+    # na conta Groq e documentar DPA/transferência internacional com o DPO.
+    GROQ_ZDR_VERIFIED: bool = False
+    AUDIO_TRANSCRIPTION_DPA_APPROVED: bool = False
+    GROQ_TRANSCRIPTION_MODEL: str = "whisper-large-v3"
     AI_ENABLED: bool = True
+
+    # Documento grande: leitura em blocos + síntese, sem truncamento silencioso.
+    # O teto é propositalmente explícito para respeitar TPM/contexto do provedor.
+    AI_LONG_DOCUMENT_MAX_CHARS: int = 120_000
+    AI_LONG_DOCUMENT_CHUNK_CHARS: int = 16_000
+    AI_LONG_DOCUMENT_MAX_CHUNKS: int = 12
 
     # ── Ficha de Triagem pré-peça (gate de qualidade) ────────────────────
     # True = POST /pecas/gerar com case_id EXIGE ficha de triagem CONFIRMADA
@@ -97,6 +134,20 @@ class Settings(BaseSettings):
     # Qualquer max_tokens acima disto é rebaixado no provider.
     ANTHROPIC_MAX_TOKENS: int = 8000
 
+    # ── IA — Maritaca (Sabiá) — provider BRASILEIRO, OpenAI-compatible ─────
+    # PLUGÁVEL: nasce DESLIGADO (MARITACA_ENABLED=false) → sistema idêntico ao
+    # atual. Provider EXTERNO ao VPS → passa pela MESMA barreira LGPD
+    # (pseudonimização). Chave definida APENAS no .env (nunca aqui).
+    # Soberania de dados: os modelos "-br-sp" (ex.: "sabia-4-br-sp",
+    # "sabiazinho-4-br-sp") processam 100% em território nacional (+30% de
+    # custo) — caminho recomendado no jurídico, a ativar com DPA assinado.
+    MARITACA_ENABLED: bool = False
+    MARITACA_API_KEY: str = ""
+    MARITACA_BASE_URL: str = "https://chat.maritaca.ai/api"
+    MARITACA_MODEL: str = "sabia-4"            # qualidade/generalista (128k)
+    MARITACA_MODEL_RAPIDO: str = "sabiazinho-4"  # rápido/barato
+    MARITACA_TIMEOUT: int = 90
+
     # ── IA — Núcleo Único (policy central de provedores) ──────────────────
     # False = só Ollama local (soberania total): nenhum dado sai do VPS,
     # mesmo sanitizado. Anthropic/Groq ficam inelegíveis na cadeia.
@@ -110,10 +161,15 @@ class Settings(BaseSettings):
     # Gate anti-alucinação de citações (Fase 4 — citation_gate.py):
     #   "bloquear"  → saída de IA com citação bloqueante (suspeita de alucinação,
     #                 menção genérica ou julgado sem tribunal+data) NÃO pode ser
-    #                 aprovada no HITL sem override justificado do revisor;
-    #   "marcar"    → relatório de citações anexado/exposto ao revisor (default);
+    #                 aprovada no HITL sem override JUSTIFICADO e AUDITADO do
+    #                 revisor (default — advogados já foram punidos por citar
+    #                 acórdão falso; apenas SINALIZAR não basta, tem de barrar);
+    #   "marcar"    → relatório de citações apenas anexado/exposto ao revisor,
+    #                 SEM impedir a aprovação (modo permissivo/legado);
     #   "desligado" → verificação de citações não roda nos fluxos de IA.
-    CITACOES_POLITICA: str = "marcar"
+    # Valor inválido/typo cai no modo SEGURO "bloquear" (ver politica_citacoes()):
+    # um erro de config não pode rebaixar silenciosamente o gate antialucinação.
+    CITACOES_POLITICA: str = "bloquear"
     # ── Modo Duas IAs (Fase 5 — validação adversarial) ────────────────────
     # True = peças de alta complexidade geradas pelo Núcleo de IA recebem uma
     # SEGUNDA passada por uma IA Crítica/Adversarial (advogado da parte
@@ -168,6 +224,32 @@ class Settings(BaseSettings):
     ROTEAMENTO_LIMIAR_MEDIO: int = 3
     ROTEAMENTO_LIMIAR_PESADO: int = 6
 
+    # ── MÓDULO AGÊNTICO DE IA (loop de tool-use, igual ao Claude Code) ────
+    # ATIVADO por default (decisão do titular, 2026-07-18): a IA opera como
+    # agente (decide → chama ferramenta → lê resultado → decide), reusando o
+    # núcleo e TODOS os guardrails (barreira LGPD, RBAC, AILog, gate de
+    # citações, HITL). Nesta fase só provedores com tool-use (Anthropic).
+    # Desligar num ambiente específico: AI_AGENT_ENABLED=false no .env.
+    AI_AGENT_ENABLED: bool = True
+    # Teto de PASSOS do loop (nunca infinito).
+    AI_AGENT_MAX_STEPS: int = 8
+    # Teto de TOKENS acumulados (input+output de TODOS os turnos) por execução do
+    # agente. O budget conta o input de CADA turno — que cresce a cada passo,
+    # pois o histórico inteiro é reenviado — somado ao output. Um teto baixo
+    # (16000 antigo) matava o agente no passo 2-3 antes de esgotar max_steps
+    # (achado M3). Elevado para comportar AI_AGENT_MAX_STEPS turnos com folga
+    # (piso real de saída por turno × passos + input acumulado). Ajuste fino via
+    # .env; o teto DURO por chamada continua em ANTHROPIC_MAX_TOKENS.
+    AI_AGENT_MAX_TOKENS: int = 120000
+    # Teto de CUSTO (R$) por execução do agente (Sugestão 2). Acumula o custo
+    # estimado de cada turno (ai_cost.estimar_custo_brl); ao exceder, o loop
+    # encerra com aviso (igual ao teto de tokens). Default conservador.
+    AI_AGENT_MAX_CUSTO_BRL: float = 2.00
+    # TTL (segundos) do estado retomável de HITL no Redis (achado H1). O estado
+    # contém a transcrição em ESPAÇO REAL (PII) — fica no VPS (Redis interno),
+    # com TTL curto e NUNCA é logado. Curto para minimizar a janela de retenção.
+    AI_AGENT_HITL_TTL_SEGUNDOS: int = 900
+
     # ── Fase 6 — Observabilidade de IA (Langfuse SELF-HOSTED) ─────────────
     # Langfuse é SELF-HOSTED (docker-compose, perfil "observability"): dados
     # jurídicos NÃO saem do ambiente. NUNCA apontar para cloud.langfuse.com.
@@ -208,6 +290,8 @@ class Settings(BaseSettings):
     DATAJUD_API_KEY: str = ""
     # Host oficial da API Pública (POST /{alias_tribunal}/_search).
     DATAJUD_BASE_URL: str = "https://api-publica.datajud.cnj.jus.br"
+    # Timeout por requisição. O CNJ pode responder lentamente em horários de pico.
+    DATAJUD_TIMEOUT_SECONDS: float = 25.0
 
     # ── Infosimples — consultas PAGAS a sites públicos (TJMG, Receita…) ──
     # Agregador comercial (https://infosimples.com/consultas/): cada consulta
@@ -237,11 +321,13 @@ class Settings(BaseSettings):
     TRANSPARENCIA_BASE_URL: str = "https://api.portaldatransparencia.gov.br/api-de-dados"
 
     # ── PNCP — contratações públicas (consulta pública, sem chave) — GATED ──
-    # Portal Nacional de Contratações Públicas (Lei 14.133/2021). API pública,
-    # sem chave/segredo. Opt-in, desligada por padrão. Ver services/pncp_service.
-    PNCP_ENABLED: bool = False
+    # Portal Nacional de Contratações Públicas (Lei 14.133/2021). A API de
+    # CONSULTA é pública e sem chave; por isso fica ligada por padrão. O EJC não
+    # implementa as APIs de manutenção, que exigem credenciamento de órgão.
+    PNCP_ENABLED: bool = True
     # Host oficial (default fixo anti-SSRF; a URL nunca vem de input do usuário).
     PNCP_BASE_URL: str = "https://pncp.gov.br/api/consulta/v1"
+    PNCP_TIMEOUT_SECONDS: float = 25.0
 
     # ── NFS-e — emissão fiscal via provedor (Nuvem Fiscal) — GATED ──────
     # Nasce DESLIGADO e em HOMOLOGAÇÃO: nunca emite nota real sem ativação
@@ -322,6 +408,121 @@ class Settings(BaseSettings):
     EMBEDDINGS_PROVIDER: str = "local"  # local | http
     EMBEDDINGS_API_URL: str = "http://embeddings:8010/embed"
     EMBEDDINGS_TIMEOUT: int = 120
+    # Modelo e dimensão do embedding. O default precisa constar em
+    # TextEmbedding.list_supported_models() da versão PINADA do fastembed;
+    # caso contrário a migration de dimensão deixa o RAG sem vetores e sem
+    # possibilidade de reconstrução. multilingual-e5-large é 1024d,
+    # multilíngue e suportado nativamente pelo fastembed 0.8.0.
+    # A coluna knowledge_chunks.embedding é
+    # vector(EMBEDDINGS_DIM); TROCAR A DIMENSÃO exige a migration 096 + REINDEX
+    # (scripts.reembedar_chunks_orfaos). Revertível por env (voltar a
+    # sentence-transformers/paraphrase-multilingual-mpnet-base-v2 + 768 exige a
+    # migration de downgrade + reindex). ⚠️ EMBEDDINGS_DIM DEVE casar com a coluna.
+    EMBEDDINGS_MODEL: str = "intfloat/multilingual-e5-large"
+    EMBEDDINGS_DIM: int = 1024
+    # Auto-reindex do RAG (O-2): job periódico do scheduler reembeda chunks órfãos
+    # (embedding IS NULL) — assim a troca de modelo/dimensão (migration 096) se
+    # AUTO-CURA sem passo manual no deploy. No-op rápido quando não há órfãos.
+    # O script manual (scripts.reembedar_chunks_orfaos) segue como fallback.
+    RAG_AUTO_REEMBED_ENABLED: bool = True
+    RAG_AUTO_REEMBED_BATCH: int = 20
+
+    # ── Reranking (cross-encoder) do RAG — Fase 1 auditoria IA 2026-07-17 ─
+    # Reordena os candidatos do retrieval híbrido (pgvector cosine + RRF pg_trgm)
+    # por relevância consulta↔trecho com um cross-encoder LOCAL (fastembed, sem
+    # torch; não sai do VPS). Recupera um POOL maior (RAG_RERANK_POOL_*) e devolve
+    # só os melhores após rerank — maior ganho de precisão de contexto do RAG.
+    # Fail-safe (ver reranker.py): fastembed/modelo ausente ou qualquer erro →
+    # mantém a ordem RRF, sem exceção. O único cross-encoder multilíngue listado
+    # pelo fastembed pinado tem licença CC-BY-NC-4.0, incompatível com uso
+    # empresarial. Por isso o rerank fica DESLIGADO por padrão até existir um
+    # modelo multilíngue com licença comercialmente compatível e eval em pt-BR.
+    # BAAI/bge-reranker-base permanece como opção técnica suportada (MIT), mas
+    # não deve ser ativado sem medir qualidade no corpus jurídico em português.
+    RAG_RERANK_ENABLED: bool = False
+    RAG_RERANK_MODEL: str = "BAAI/bge-reranker-base"
+    RAG_RERANK_POOL_MULT: int = 5     # pool de candidatos = limite × MULT
+    RAG_RERANK_POOL_MIN: int = 20     # piso de candidatos antes do rerank
+
+    # ── Ajuste fino do retrieval RAG (auditoria IA 2026-07-17) ───────────────
+    # Limiar de similaridade de cosseno da busca vetorial (pgvector): chunks com
+    # similaridade < RAG_MIN_SIM são descartados (dist > 1-RAG_MIN_SIM). Antes era
+    # hardcoded (0.55); agora é calibrável por um eval set sem tocar código.
+    RAG_MIN_SIM: float = 0.55
+    # HyDE (Hypothetical Document Embeddings): gera uma "resposta hipotética"
+    # curta e barata e a EMBUTE na busca vetorial — melhora o recall quando o
+    # vocabulário do caso novo difere do registrado. Fail-safe: erro/timeout →
+    # usa a consulta original. Default OFF (liga após medir; +1 chamada barata/busca).
+    RAG_HYDE_ENABLED: bool = False
+    # Perna lexical FULL-TEXT (tsvector 'portuguese', BM25-like) no híbrido RRF,
+    # além do pg_trgm — melhor para termos raros/citações exatas (art./súmula/nº
+    # CNJ). Usa o índice GIN pré-existente ix_knowledge_chunks_conteudo_fts
+    # (migration 001) — não requer migration nova. Fail-safe: erro → só
+    # semântico+trigram. Default OFF até validar em produção.
+    RAG_FTS_ENABLED: bool = False
+    # Grounding de citações (auditoria IA 2026-07-17, O-5): além do citation_check
+    # contra a base interna, o validador confere as citações com o verificador
+    # rigoroso. As checagens são LOCAIS (dígito verificador do nº CNJ, faixa de
+    # súmula, formato → detecta citação alucinada) e não fazem rede — por isso o
+    # grounding vem LIGADO por default (valor imediato, zero latência). Aditivo e
+    # fail-safe (erro → alerta, nunca derruba).
+    AI_LIVE_GROUNDING_ENABLED: bool = True
+    # Confirmação de nº CNJ no DataJud (CNJ) — a ÚNICA parte que faz REDE externa
+    # (latência/rate limit). Separada e OFF por default: ligue após validar a
+    # conectividade DataJud no ambiente. O grounding local acima independe disto.
+    AI_GROUNDING_DATAJUD_ENABLED: bool = False
+
+    # ── RAG de MODELOS na geração de peças (Bíblia de Conhecimento) ───────
+    # Recupera os modelos de peça (categoria "modelo_documento_juridico") como
+    # REFERÊNCIA de estrutura/tese na montagem final (Etapa 7). Gated e fail-safe:
+    # OFF ou qualquer falha/vazio degrada para o comportamento atual (peça gerada
+    # sem modelos), NUNCA propaga erro. Query dedicada com filtro por categoria
+    # para os modelos não serem afogados por legislação/jurisprudência no top-k.
+    PECAS_RAG_MODELOS_ENABLED: bool = True
+    PECAS_RAG_MODELOS_TOPK: int = 3
+
+    # ── Laço de AUTO-CRÍTICA na geração de peças (P2 — auditoria IA) ──────
+    # True = após a redação final do pipeline de peças (Etapa 7), a IA
+    # Crítica/Adversarial (Modo Duas IAs) avalia a minuta e, havendo
+    # apontamentos ACIONÁVEIS, UMA rodada extra de revisão devolve a crítica
+    # ao modelo redator (task_type="elaboracao_peca", base anti-alucinação;
+    # a crítica entra DELIMITADA como DADO — nunca instrução de sistema).
+    # A versão revisada também passa pelo gate de citações e permanece
+    # rascunho HITL. Opt-in e fail-safe: default False = pipeline IDÊNTICO ao
+    # atual; qualquer falha na crítica/revisão entrega a versão original.
+    PECAS_AUTOCRITICA_ENABLED: bool = False
+
+    # ── Pesquisa jurisprudencial DECOMPOSTA no pipeline de peças (FASE 3) ─
+    # True = quando o caso tem Matriz de Teses montada (migração 102), a etapa
+    # de jurisprudência do peca_service recebe ADICIONALMENTE o bloco
+    # estruturado por questão (precedentes VERIFICADOS favoráveis/contrários,
+    # ver matriz_teses_service.bloco_pesquisa_estruturada) em vez de só o blob
+    # único do RAG. Aditivo e fail-safe: default False = pipeline BYTE-IDÊNTICO
+    # ao atual; qualquer falha/matriz ausente degrada para o comportamento atual.
+    PECAS_PESQUISA_QUESTOES_ENABLED: bool = False
+
+    # ── Governança/curadoria na RECUPERAÇÃO RAG (gate fail-closed) ───────
+    # Auditoria RAG: os campos de curadoria (confidence_level/rag_status) vivem
+    # em knowledge_docs.extra (JSONB) mas NÃO eram usados no WHERE das buscas.
+    # O gate exclui SEMPRE docs explicitamente bloqueados/recusados/pendentes
+    # e, por padrão seguro, exige rag_status='aprovado' em TODA recuperação.
+    # Acervo legado sem decisão de curadoria fica em quarentena até reconciliação;
+    # disponibilidade nunca prevalece sobre fundamentação jurídica não validada.
+    RAG_EXIGIR_APROVADO: bool = True
+    # Quarentena das súmulas: mesmo após a reconstrução do seed (cada verbete
+    # reconferido individualmente contra fonte oficial — ver DATA_CONFERENCIA
+    # em sumulas_ingestion.py), este filtro continua ligado por padrão como
+    # rede de segurança: só deixa passar doc de súmula com extra.conferido=true
+    # (gravado pelo próprio seed corrigido). Protege contra reintrodução de
+    # conteúdo não conferido por outra via (ingestão manual futura, por ex.).
+    RAG_SUMULAS_QUARENTENA: bool = True
+    # Ingestão do seed de súmulas (sumulas_ingestion.py) — RECONSTRUÍDO na
+    # auditoria RAG: os 27 verbetes foram reconferidos individualmente contra
+    # fonte oficial (STF/STJ/TST). Súmulas cancelada/suspensa são marcadas e
+    # NÃO entram no RAG buscável (só ficam em `teses` como histórico). Padrão
+    # True — desligue (False) só se precisar suspender a ingestão rapidamente
+    # sem reverter código (o endpoint responde 423 quando False).
+    RAG_SUMULAS_SEED_ENABLED: bool = True
 
     # ── Web Push (alertas no celular via PWA) ────────────────────────────
     # Gerar chaves: python scripts/gen_vapid.py (uma vez no deploy)
@@ -375,6 +576,8 @@ class Settings(BaseSettings):
 
     # ── Sentry — rastreamento de erros em produção ────────────────────────
     SENTRY_DSN: str = ""            # deixar vazio para desabilitar
+    SENTRY_ENVIRONMENT: str = "production"   # tag de ambiente nos eventos
+    SENTRY_TRACES_SAMPLE_RATE: float = 0.0   # 0.0 = performance tracing off
 
     # ── Governança de custo de IA ─────────────────────────────────────────
     # Alerta de gasto no painel de Governança da IA: se o custo estimado de IA
@@ -498,11 +701,37 @@ class Settings(BaseSettings):
     LOG_LEVEL: str = "INFO"
 
     # ── Escritório (LGPD — identificação do controlador de dados) ─────────
+    # FONTE ÚNICA DE VERDADE dos dados FIXOS do escritório, consumida por todos
+    # os geradores de documento (documental.py, templates_documentos.py,
+    # pdf_service.py, docx_service.py). OAB/ENDERECO/CEP nascem VAZIOS de
+    # propósito: são preenchidos no .env do escritório. Quando vazios, os
+    # helpers abaixo devolvem um placeholder EXPLÍCITO e visível — o documento
+    # nunca sai com string vazia silenciosa nem com dado inventado.
     ESCRITORIO_NOME: str = "De Paula Teixeira Sociedade de Advogados"
     ESCRITORIO_CNPJ: str = "32.491.468/0001-12"
     ESCRITORIO_CIDADE: str = "Betim"
     ESCRITORIO_ESTADO: str = "MG"
     ESCRITORIO_EMAIL: str = "contato@depaulateixeira.adv.br"
+    ESCRITORIO_OAB: str = ""
+    ESCRITORIO_ENDERECO: str = ""
+    ESCRITORIO_CEP: str = ""
+
+    @staticmethod
+    def _ou_placeholder(valor: str, rotulo: str) -> str:
+        """Valor da setting, ou um placeholder EXPLÍCITO quando ainda não
+        preenchido no .env — visível no documento para sinalizar a pendência
+        (nunca string vazia, que passaria despercebida)."""
+        limpo = (valor or "").strip()
+        return limpo or f"[{rotulo} - preencher em .env]"
+
+    def escritorio_oab(self) -> str:
+        return self._ou_placeholder(self.ESCRITORIO_OAB, "OAB/MG nº ___")
+
+    def escritorio_endereco(self) -> str:
+        return self._ou_placeholder(self.ESCRITORIO_ENDERECO, "endereço do escritório")
+
+    def escritorio_cep(self) -> str:
+        return self._ou_placeholder(self.ESCRITORIO_CEP, "CEP")
 
     @model_validator(mode="after")
     def _validar_seguranca_producao(self):

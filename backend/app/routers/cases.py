@@ -22,6 +22,9 @@ from app.services.case_intel import triagem_caso, aprendizado_encerramento
 from app.services.case_automacao import automacao_caso
 from app.services import event_bus
 from app.services.documental import gerar_documentos_iniciais
+# Mesmo vocabulário/contrato de poderes do kit documental (fonte única do
+# schema de procuração conservadora).
+from app.routers.kit_documental import KitDocumentalIn, _req_advogado as _req_advogado_kit
 from app.models.case_parte import CaseParte
 from app.models.caso_area import CasoArea
 from app.models.deadline import Deadline, DeadlineTipo, DeadlineStatus
@@ -520,20 +523,38 @@ async def excluir(
 
 
 # ── ETAPA 5 — Geração documental automática ───────────────────────────────────
-@router.post("/{case_id}/gerar-documentos")
+# Paridade de gates com o kit documental (POST /cases/{id}/kit-documental):
+# procuração/contrato são ATO JURÍDICO → advogado+ (_req_advogado do kit) e
+# mesmo rate limit "kit-documental" (5/min) — sem isso qualquer autenticado
+# geraria procuração com poderes especiais por aqui.
+@router.post("/{case_id}/gerar-documentos",
+             dependencies=[Depends(rate_limit("kit-documental", 5))])
 async def gerar_documentos(
     case_id: str,
+    payload: Optional[KitDocumentalIn] = None,
     db: AsyncSession = Depends(get_db),
-    cu: User = Depends(get_current_user),
+    cu: User = Depends(_req_advogado_kit),
 ):
     """Gera as minutas iniciais do caso (procuração, contrato de honorários,
-    relatório inicial) preenchidas com os dados do cliente/caso. Rascunhos."""
+    relatório inicial) preenchidas com os dados do cliente/caso. Rascunhos.
+
+    Procuração com DEFAULT CONSERVADOR (ad_judicia), mesmo contrato/vocabulário
+    do kit documental (POST /cases/{id}/kit-documental): poderes do art. 105 do
+    CPC só com ``tipo_poderes="ad_judicia_et_extra"`` (ou ``"especiais"``)
+    marcado explicitamente no corpo da requisição.
+    """
     q = select(Case).where(Case.id == case_id, Case.deleted_at.is_(None))
     q = _filtro_visibilidade(q, cu)
     c = (await db.execute(q)).scalar_one_or_none()
     if not c:
         raise HTTPException(status_code=404, detail="Caso não encontrado")
-    docs = await gerar_documentos_iniciais(case_id, cu.id)
+    p = payload or KitDocumentalIn()
+    docs = await gerar_documentos_iniciais(
+        case_id, cu.id,
+        tipo_poderes=p.tipo_poderes,
+        permite_substabelecimento=p.permite_substabelecimento,
+        poderes_especiais=p.poderes_especiais,
+    )
     await criar_audit_log(db, cu.id, cu.role.value, "GERAR_DOCS", "cases", case_id)
     await db.commit()
     return {
@@ -629,10 +650,33 @@ async def assistente_estrategico_caso(
     # LGPD: sanitiza PII (nomes de partes, nº do processo, CPF/CNPJ) antes de
     # enviar à IA — a análise estratégica não precisa dos dados reais.
     from app.services.sanitizer import sanitizar_pii
-    contexto, _ = sanitizar_pii(contexto, [p.nome for p in partes if p.nome])
-    demanda_limpa, _ = sanitizar_pii(demanda)
+    contexto, pii_ctx = sanitizar_pii(contexto, [p.nome for p in partes if p.nome])
+    demanda_limpa, pii_dem = sanitizar_pii(demanda)
 
-    return await ai_gateway.processar_demanda(demanda_limpa, contexto, tipo="juridico_profundo")
+    res = await ai_gateway.processar_demanda(demanda_limpa, contexto, tipo="juridico_profundo")
+
+    # Auditoria obrigatória (LGPD/OAB): TODA chamada de IA precisa de rastro em
+    # ai_logs. Este endpoint passa pelo shim legado (core.ai_brain →
+    # ai_gateway.chat), que antes NÃO gravava AILog (furo de compliance #4a). A
+    # gravação é ADITIVA: não altera a resposta nem o comportamento do modelo —
+    # só registra o que já foi enviado/recebido (prompt já sanitizado acima +
+    # modelo real devolvido pelo shim). Loga apenas em sucesso, mesma semântica
+    # dos endpoints de IA já auditados (ai.py::assistente_estrategico e
+    # diplomacia_v3::dossie_pressao só gravam quando a IA respondeu). Se a
+    # gravação falhar, o erro PROPAGA (registrar_ai_log) — rastro é obrigatório;
+    # não introduzimos try/except que engula a falha de auditoria.
+    if res.get("status") == "sucesso":
+        from app.services.ai_guard import registrar_ai_log
+        from app.models.ai_log import AITipoUso
+        await registrar_ai_log(
+            db, user_id=cu.id, tipo_uso=AITipoUso.analise_caso, case_id=case_id,
+            prompt_sanitizado=f"{contexto}\n\n[DEMANDA]\n{demanda_limpa}",
+            pii_removida=bool(pii_ctx or pii_dem),
+            resposta=res.get("resposta"),
+            modelo=res.get("modelo_utilizado"),
+        )
+
+    return res
 
 
 # ═══ DataJud: sincronização de movimentos oficiais ═══
@@ -743,7 +787,13 @@ async def encerrar_caso(
             conteudo=corpo,
             chave_origem=f"caso:{case.id}",
             fonte=f"caso:{case.id}",
-            extra={"area": area_str, "resultado": payload.resultado},
+            extra={
+                "area": area_str,
+                "resultado": payload.resultado,
+                "rag_status": "aprovado",
+                "human_reviewed": True,
+                "approved_by": str(cu.id),
+            },
         )
 
     db.add(CaseMovimento(

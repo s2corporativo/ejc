@@ -1,19 +1,29 @@
 import { useEffect, useState } from "react";
 import api from "../lib/api";
-import { PageHeader, Spinner, Modal, Empty, ConfirmModal } from "../components/UI";
+import {
+  PageHeader,
+  Spinner,
+  Modal,
+  Empty,
+  ErrorState,
+  ConfirmModal,
+} from "../components/UI";
 
 export default function Wiki() {
   const [paginas, setPaginas] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
+  const [error, setError] = useState(false);
   const [sel, setSel] = useState<any>(null);
   const [edit, setEdit] = useState<any>(null);
   const [pendenteExcluir, setPendenteExcluir] = useState<string | null>(null);
 
   const carregar = () => {
     setLoading(true);
+    setError(false);
     api
       .get("/wiki")
       .then((r) => setPaginas(r.data || []))
+      .catch(() => setError(true))
       .finally(() => setLoading(false));
   };
   useEffect(() => {
@@ -52,6 +62,16 @@ export default function Wiki() {
     return (
       <div className="flex justify-center py-20">
         <Spinner />
+      </div>
+    );
+
+  if (error)
+    return (
+      <div className="py-20">
+        <ErrorState
+          message="Não foi possível carregar a wiki interna. Tente novamente."
+          onRetry={carregar}
+        />
       </div>
     );
 

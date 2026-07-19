@@ -15,7 +15,7 @@ import {
   Target,
 } from "lucide-react";
 import api from "../lib/api";
-import { PageHeader, Spinner, fmtDate } from "../components/UI";
+import { PageHeader, Spinner, ErrorState, fmtDate } from "../components/UI";
 
 // ─── Tipos ────────────────────────────────────────────────────────────────────
 interface Tese {
@@ -302,6 +302,7 @@ export default function Biblioteca() {
   const [teses, setTeses] = useState<Tese[]>([]);
   const [memorias, setMemorias] = useState<Memoria[]>([]);
   const [loading, setLoading] = useState(false);
+  const [erro, setErro] = useState(false);
   const [teseSelecionada, setTeseSelecionada] = useState<Tese | null>(null);
   const [stats, setStats] = useState({
     teses: 0,
@@ -311,6 +312,7 @@ export default function Biblioteca() {
 
   const carregarTeses = useCallback(async () => {
     setLoading(true);
+    setErro(false);
     try {
       if (busca.trim().length >= 3) {
         const { data } = await api.get("/teses/busca-avancada", {
@@ -328,6 +330,8 @@ export default function Biblioteca() {
         });
         setTeses(data.teses ?? []);
       }
+    } catch {
+      setErro(true);
     } finally {
       setLoading(false);
     }
@@ -335,6 +339,7 @@ export default function Biblioteca() {
 
   const carregarMemorias = useCallback(async () => {
     setLoading(true);
+    setErro(false);
     try {
       const params: Record<string, string> = { limit: "30" };
       if (busca.trim()) params.q = busca;
@@ -346,10 +351,17 @@ export default function Biblioteca() {
           m.resultado === "favoravel",
       );
       setMemorias(estrategias);
+    } catch {
+      setErro(true);
     } finally {
       setLoading(false);
     }
   }, [busca, area]);
+
+  const recarregar = useCallback(() => {
+    if (aba === "teses") carregarTeses();
+    else carregarMemorias();
+  }, [aba, carregarTeses, carregarMemorias]);
 
   useEffect(() => {
     if (aba === "teses") carregarTeses();
@@ -491,6 +503,11 @@ export default function Biblioteca() {
       {/* Conteúdo */}
       {loading ? (
         <Spinner />
+      ) : erro ? (
+        <ErrorState
+          message="Não foi possível carregar a biblioteca de estratégias. Verifique sua conexão e tente novamente."
+          onRetry={recarregar}
+        />
       ) : aba === "teses" ? (
         <div className="space-y-2">
           {teses.length === 0 && (

@@ -70,6 +70,22 @@ def _extrair_variaveis(conteudo: str) -> list[str]:
 def _pode_editar(user: User) -> bool:
     return ROLE_LEVEL.get(user.role.value, 0) >= ROLE_LEVEL["advogado"]
 
+# ── Clamp de task_type (P0.1) ─────────────────────────────────────────────────
+# req.task_type é INPUT LIVRE do request. Não confiamos nele: só passa ao
+# gateway se pertencer ao vocabulário conhecido (TASK_ROUTING + TASK_ALIASES);
+# qualquer outro valor cai no default seguro. O default preserva o roteamento
+# atual (o gateway já usa TASK_ROUTING["analise_juridica"] como fallback) e a
+# barreira anti-alucinação NÃO depende do task_type neste endpoint —
+# garantir_identidade injeta a base canônica INCONDICIONALMENTE no system.
+_TASK_TYPE_DEFAULT = "analise_juridica"
+
+def _clamp_task_type(task_type: str | None) -> str:
+    from app.services.ai_gateway import TASK_ALIASES, TASK_ROUTING
+    t = (task_type or "").strip().lower()
+    if t in TASK_ROUTING or t in TASK_ALIASES:
+        return t
+    return _TASK_TYPE_DEFAULT
+
 def _out(p: PromptJuridico) -> dict:
     return {
         "id": p.id, "titulo": p.titulo,
@@ -244,10 +260,14 @@ async def executar_prompt(
     # do gateway (aplicar_base) não teria onde/quando agir. Injeta identidade OAB.
     messages = garantir_identidade([{"role": "user", "content": conteudo_sanitizado}])
 
+    # task_type do request é livre — clampa ao vocabulário conhecido do gateway
+    # (allowlist), caindo no default seguro para qualquer valor arbitrário.
+    task_type = _clamp_task_type(req.task_type)
+
     try:
         resp = await gw_chat(
             messages=messages,
-            task_type=req.task_type,
+            task_type=task_type,
             temperature=req.temperature,
             max_tokens=req.max_tokens,
         )

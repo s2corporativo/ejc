@@ -49,15 +49,27 @@ TASK_ALIASES = {
 
 NIVEL_INTELIGENCIA_PROMPTS = {
     "padrao": "Responda com objetividade, precisao e foco pratico.",
+    # Raciocinio estruturado pelo metodo FIRAC (auditoria IA 2026-07-17, O-3):
+    # forca a decomposicao juridica e amarra cada premissa a uma fonte verificavel
+    # (casa com o gate de citacoes anti-alucinacao).
     "alto": (
-        "Ative raciocinio juridico senior: decomponha o problema em fatos, direito, prova, "
-        "risco e estrategia; identifique lacunas, contradicoes, teses alternativas e providencias; "
-        "nao invente fontes."
+        "Ative raciocinio juridico senior e estruture pelo metodo FIRAC: "
+        "(1) FATOS relevantes, separando fato de inferencia e apontando lacunas; "
+        "(2) QUESTAO juridica central; "
+        "(3) REGRA aplicavel, citando o dispositivo/sumula/precedente que a sustenta "
+        "(NUNCA invente fonte; sem certeza, escreva 'verificar fonte'); "
+        "(4) APLICACAO da regra aos fatos, com teses alternativas e contra-argumentos; "
+        "(5) CONCLUSAO com nivel de confianca e providencias. "
+        "Identifique contradicoes e o que ainda depende de decisao humana."
     ),
     "maximo": (
-        "Ative modo de inteligencia maxima: faca leitura adversarial, teste hipoteses concorrentes, "
-        "analise preliminares, merito, prova, quantum, acordo e risco; entregue conclusoes verificaveis, "
-        "separando fato, inferencia, lacuna e decisao humana pendente. Nao revele cadeia de pensamento."
+        "Ative modo de inteligencia maxima: leitura adversarial e teste de hipoteses "
+        "concorrentes, estruturando pelo metodo FIRAC (fato / questao / regra-com-fonte / "
+        "aplicacao / conclusao). Analise preliminares, merito, prova, quantum, acordo e risco; "
+        "para CADA premissa juridica cite o dispositivo/sumula/precedente ou marque "
+        "'verificar fonte' (nunca invente). Separe explicitamente FATO, INFERENCIA, LACUNA e "
+        "DECISAO HUMANA PENDENTE, e entregue conclusoes verificaveis com nivel de confianca. "
+        "Nao revele a cadeia de pensamento — entregue apenas o resultado estruturado."
     ),
 }
 
@@ -90,14 +102,17 @@ TASK_ROUTING: dict[str, list[tuple[str, str | None]]] = {
     "elaboracao_peca": [
         ("ollama",    None),  # OLLAMA_MODEL_PETICAO
         ("anthropic", None),  # ANTHROPIC_MODEL_COMPLEXO
+        ("maritaca",  None),  # MARITACA_MODEL (só se ENABLED+chave; redação PT-BR)
         ("groq",      None),
     ],
     "resumo": [
         ("ollama", None),    # OLLAMA_MODEL_RESUMO
+        ("maritaca", None),  # MARITACA_MODEL_RAPIDO (só se ENABLED+chave)
         ("groq",   None),
     ],
     "chat_rapido": [
         ("ollama", None),    # OLLAMA_MODEL_CHAT
+        ("maritaca", None),  # MARITACA_MODEL_RAPIDO (só se ENABLED+chave)
         ("groq",   None),
     ],
     "analise_contrato": [
@@ -132,7 +147,7 @@ TASK_ROUTING: dict[str, list[tuple[str, str | None]]] = {
 }
 
 # Provedores que processam dados FORA do VPS → barreira LGPD obrigatória.
-_PROVIDERS_EXTERNOS = {"anthropic", "groq"}
+_PROVIDERS_EXTERNOS = {"anthropic", "groq", "maritaca"}
 
 _OLLAMA_MODEL_BY_TASK = {
     "analise_juridica": lambda: settings.OLLAMA_MODEL_ANALISE,
@@ -458,20 +473,113 @@ async def chat(
     )
 
 
+async def transcrever_audio(
+    *,
+    file_bytes: bytes,
+    filename: str,
+    language: str = "pt",
+    confirmacao_envio_externo: bool = False,
+) -> dict:
+    """Ponto único para transcrição de mídia em provedor externo.
+
+    Diferentemente de texto, o áudio bruto não pode ser pseudonimizado antes da
+    transcrição. Por isso o recurso nasce desligado, exige confirmação em cada
+    requisição e respeita o kill-switch global de provedores externos. O arquivo
+    não é persistido nem enviado à observabilidade por este fluxo.
+    """
+    if not confirmacao_envio_externo:
+        raise PermissionError(
+            "Confirme o envio temporário da mídia ao provedor externo para transcrição."
+        )
+    if not settings.AI_ENABLED or not settings.AUDIO_TRANSCRIPTION_ENABLED:
+        raise RuntimeError(
+            "Transcrição de mídia desabilitada. Ative AUDIO_TRANSCRIPTION_ENABLED após validação de privacidade."
+        )
+    if not settings.AI_EXTERNAL_PROVIDERS_ALLOWED:
+        raise RuntimeError(
+            "Provedores externos estão desabilitados pela política de soberania de dados."
+        )
+    if not settings.GROQ_ZDR_VERIFIED:
+        raise RuntimeError(
+            "Transcrição bloqueada: confirme Zero Data Retention nos Data Controls do Groq e marque GROQ_ZDR_VERIFIED."
+        )
+    if not settings.AUDIO_TRANSCRIPTION_DPA_APPROVED:
+        raise RuntimeError(
+            "Transcrição bloqueada: aprove e documente DPA/transferência internacional antes de marcar AUDIO_TRANSCRIPTION_DPA_APPROVED."
+        )
+    if not settings.GROQ_API_KEY:
+        raise RuntimeError("GROQ_API_KEY não configurada para transcrição.")
+    if not file_bytes:
+        raise ValueError("Mídia vazia.")
+    limite = settings.AUDIO_TRANSCRIPTION_MAX_MB * 1024 * 1024
+    if len(file_bytes) > limite:
+        raise ValueError(
+            f"Mídia excede o limite configurado de {settings.AUDIO_TRANSCRIPTION_MAX_MB} MB."
+        )
+    language = (language or "pt").strip().lower()
+    if language not in {"pt", "en", "es"}:
+        raise ValueError("Idioma não suportado. Use pt, en ou es.")
+
+    from app.services.providers import groq_provider
+
+    try:
+        texto, metadata = await groq_provider.transcrever(
+            file_bytes,
+            filename,
+            language=language,
+            model=settings.GROQ_TRANSCRIPTION_MODEL,
+            timeout=settings.AUDIO_TRANSCRIPTION_TIMEOUT,
+        )
+    except (ValueError, PermissionError):
+        raise
+    except Exception as exc:
+        logger.warning(
+            "[Gateway] transcrição Groq falhou: %s", type(exc).__name__
+        )
+        raise RuntimeError(
+            "Não foi possível transcrever a mídia no provedor configurado."
+        ) from exc
+
+    logger.info(
+        "[Gateway] mídia transcrita por groq/%s (%d bytes; conteúdo não registrado)",
+        metadata.get("model"),
+        len(file_bytes),
+    )
+    return {"texto": texto, **metadata}
+
+
 async def health() -> dict:
     """Retorna status de saúde de cada provedor."""
-    from app.services.providers import groq_provider, ollama_provider, anthropic_provider
+    from app.services.providers import groq_provider, ollama_provider, anthropic_provider, maritaca_provider
     groq_ok   = await groq_provider.health()   if settings.GROQ_API_KEY else False
     ollama_ok = await ollama_provider.health() if settings.OLLAMA_ENABLED else False
     anthropic_ok = await anthropic_provider.health()
+    maritaca_ok = await maritaca_provider.health() if settings.MARITACA_ENABLED else False
     modelos_ollama = await ollama_provider.modelos_disponiveis() if settings.OLLAMA_ENABLED else []
 
     return {
         "groq":      {"disponivel": groq_ok, "modelo": settings.GROQ_MODEL},
         "ollama":    {"disponivel": ollama_ok, "modelos": modelos_ollama},
         "anthropic": {"disponivel": anthropic_ok, "modelo": settings.ANTHROPIC_MODEL_RAPIDO},
+        "maritaca":  {"disponivel": maritaca_ok, "modelo": settings.MARITACA_MODEL},
         "provider_mode": settings.AI_PROVIDER,
     }
+
+
+# ── Disponibilidade por CONFIGURAÇÃO (leve — sem chamada de rede) ─────────────
+# Usado por GET /api/ia/status e pelos payloads degradados: responde "existe ao
+# menos um provedor configurado/habilitado?" olhando apenas settings, ao
+# contrário de health(), que bate em cada provedor.
+
+def provedores_configurados() -> list[str]:
+    """Provedores elegíveis pela configuração atual (mesmas regras da cadeia)."""
+    return [p for p in ("ollama", "anthropic", "groq", "maritaca")
+            if _provider_elegivel(p)]
+
+
+def ia_disponivel() -> bool:
+    """True se a IA está habilitada E há ao menos um provedor configurado."""
+    return bool(settings.AI_ENABLED) and bool(provedores_configurados())
 
 
 # ── Helpers internos ──────────────────────────────────────────────────────────
@@ -487,6 +595,11 @@ def _provider_elegivel(provider: str) -> bool:
         )
     if provider == "groq":
         return bool(settings.GROQ_API_KEY and settings.AI_EXTERNAL_PROVIDERS_ALLOWED)
+    if provider == "maritaca":
+        return bool(
+            settings.MARITACA_ENABLED and settings.MARITACA_API_KEY
+            and settings.AI_EXTERNAL_PROVIDERS_ALLOWED
+        )
     return False
 
 
@@ -510,6 +623,11 @@ def _resolver_modelo(provider: str, task_type: str, model_override: str | None) 
     if provider == "anthropic":
         # Tarefas roteadas para Anthropic aqui são as complexas → modelo COMPLEXO.
         return settings.ANTHROPIC_MODEL_COMPLEXO or settings.ANTHROPIC_MODEL_RAPIDO
+    if provider == "maritaca":
+        # Redação/volume por default; tarefas simples → modelo rápido/barato.
+        if task_type in ("resumo", "chat_rapido", "triagem"):
+            return settings.MARITACA_MODEL_RAPIDO or settings.MARITACA_MODEL
+        return settings.MARITACA_MODEL or settings.MARITACA_MODEL_RAPIDO
     return None  # groq: default do provedor
 
 
@@ -666,6 +784,9 @@ async def _chamar_provedor(
     elif provider == "anthropic":
         from app.services.providers import anthropic_provider
         return await anthropic_provider.chat(messages, model, temperature, max_tokens)
+    elif provider == "maritaca":
+        from app.services.providers import maritaca_provider
+        return await maritaca_provider.chat(messages, model, temperature, max_tokens)
     else:  # groq
         from app.services.providers import groq_provider
         return await groq_provider.chat(messages, model, temperature, max_tokens)
@@ -689,7 +810,8 @@ async def executar_tarefa_ia(tarefa, mensagem: str, case_id: str | None = None,
                              contexto_rag: list[str] | None = None,
                              user_id: str | None = None, db=None,
                              nivel_inteligencia: str = "alto",
-                             entidades: dict[str, list[str]] | None = None) -> dict:
+                             entidades: dict[str, list[str]] | None = None,
+                             modo_sanitizacao=None) -> dict:
     """Entrada do MÓDULO IA por tarefa. Resultado SEMPRE rascunho (HITL/OAB).
 
     Auditoria 2026-07-04 (P1-1/P2-1): este caminho aplica as MESMAS regras do
@@ -703,10 +825,15 @@ async def executar_tarefa_ia(tarefa, mensagem: str, case_id: str | None = None,
     EXTERNO_PSEUDONIMIZADO/EXTRACAO_LOCAL pseudonimizam (reversível) e reidratam
     a resposta; MASCARAMENTO mantém o mascaramento irreversível legado. O `mapa`
     de reidratação vive só em memória; AILog/Langfuse recebem versão PSEUDONIMIZADA."""
-    from app.services.ai.sanitization_policy import ModoSanitizacao, modo_para_task
+    from app.services.ai.sanitization_policy import (
+        ModoSanitizacao, modo_para_task, reforcar_sigilo,
+    )
     from app.services.system_prompts import SYSTEM_PROMPTS, get_configuracao
     tarefa_label = str(getattr(tarefa, "value", tarefa))
-    modo_sanitizacao = modo_para_task(tarefa_label)
+    # S1: o modo da TAREFA é reforçado (nunca rebaixado) pelo sigilo da ÁREA do
+    # caso quando o chamador (ex.: tool de escrita do agente) o informa — assim o
+    # roteamento por TarefaIA não ignora um caso LOCAL_COMPLETO.
+    modo_sanitizacao = reforcar_sigilo(modo_para_task(tarefa_label), modo_sanitizacao)
     cfg = get_configuracao(tarefa)
     system_prompt = SYSTEM_PROMPTS.get(cfg.prompt_key, SYSTEM_PROMPTS["default"])
     if contexto_rag:
@@ -830,4 +957,207 @@ async def executar_tarefa_ia(tarefa, mensagem: str, case_id: str | None = None,
         "tarefa": getattr(tarefa, "value", str(tarefa)),
         "is_rascunho": True, "requer_revisao": True,
         "tokens_usados": inp + out, "custo_estimado_brl": custo,
+    }
+
+
+# ══════════════════════════════════════════════════════════════════════════════
+# MÓDULO AGÊNTICO DE IA — turno de tool-use com a MESMA barreira LGPD (fonte
+# única). O histórico agêntico (loop.py) vive em ESPAÇO REAL (PII real); AQUI,
+# a CADA turno, pseudonimizamos a lista INTEIRA de mensagens (text/tool_use/
+# tool_result) com o MESMO conjunto `entidades` (marcadores CONSISTENTES) e
+# reidratamos a saída localmente — espelha o modelo por-chamada de
+# _chamar_com_barreira. NÃO cria barreira nova: reusa _preparar_mensagens_externo
+# e pseudonymizer.reidratar. O `mapa` (PII real) vive só nesta chamada.
+# ══════════════════════════════════════════════════════════════════════════════
+def _coletar_slots_recursivo(valor, slots: list[tuple]) -> None:
+    """Adiciona (container, chave) para CADA folha STRING de `valor`, descendo
+    RECURSIVAMENTE por dict/list aninhados (achado S2 — defense-in-depth: uma
+    tool com parâmetro object/array não pode escapar da barreira LGPD por ter a
+    PII num nível interno). `container[chave]` é sempre a string mutável."""
+    if isinstance(valor, dict):
+        for k, v in valor.items():
+            if isinstance(v, str):
+                slots.append((valor, k))
+            elif isinstance(v, (dict, list)):
+                _coletar_slots_recursivo(v, slots)
+    elif isinstance(valor, list):
+        for i, v in enumerate(valor):
+            if isinstance(v, str):
+                slots.append((valor, i))
+            elif isinstance(v, (dict, list)):
+                _coletar_slots_recursivo(v, slots)
+
+
+def _reidratar_recursivo(valor, mapa: dict) -> None:
+    """Reidrata IN-PLACE toda folha STRING de `valor` (dict/list aninhados),
+    espelhando _coletar_slots_recursivo (achado S2)."""
+    from app.services.ai.pseudonymizer import reidratar
+    if isinstance(valor, dict):
+        for k, v in valor.items():
+            if isinstance(v, str):
+                valor[k] = reidratar(v, mapa)
+            elif isinstance(v, (dict, list)):
+                _reidratar_recursivo(v, mapa)
+    elif isinstance(valor, list):
+        for i, v in enumerate(valor):
+            if isinstance(v, str):
+                valor[i] = reidratar(v, mapa)
+            elif isinstance(v, (dict, list)):
+                _reidratar_recursivo(v, mapa)
+
+
+def _slots_de_texto(messages: list[dict]) -> list[tuple]:
+    """Referências mutáveis (container, chave) a CADA campo de texto das mensagens
+    agênticas, em ordem determinística: content str; blocos text; valores STRING
+    de input de tool_use (INCLUSIVE aninhados em object/array); e content de
+    tool_result (str ou blocos text). Trabalha sobre a lista passada (espera-se
+    uma deep copy)."""
+    slots: list[tuple] = []
+    for m in messages:
+        content = m.get("content")
+        if isinstance(content, str):
+            slots.append((m, "content"))
+        elif isinstance(content, list):
+            for bloco in content:
+                if not isinstance(bloco, dict):
+                    continue
+                tipo = bloco.get("type")
+                if tipo == "text" and isinstance(bloco.get("text"), str):
+                    slots.append((bloco, "text"))
+                elif tipo == "tool_use":
+                    # S2: desce recursivamente pelo input (dict/list aninhados),
+                    # não só nas strings de 1º nível.
+                    _coletar_slots_recursivo(bloco.get("input"), slots)
+                elif tipo == "tool_result":
+                    rc = bloco.get("content")
+                    if isinstance(rc, str):
+                        slots.append((bloco, "content"))
+                    elif isinstance(rc, list):
+                        for sub in rc:
+                            if (isinstance(sub, dict) and sub.get("type") == "text"
+                                    and isinstance(sub.get("text"), str)):
+                                slots.append((sub, "text"))
+    return slots
+
+
+def _pseudonimizar_agentico(messages, modo, entidades=None):
+    """Barreira LGPD para o histórico AGÊNTICO (content estruturado). EXTRAI todos
+    os campos de texto num flat [{role:"user", content:<texto>}], chama a MESMA
+    primitiva da barreira (_preparar_mensagens_externo → (flat_limpos, residual,
+    mapa)) e REESCREVE os textos limpos numa cópia PROFUNDA das mensagens.
+
+    Retorna (messages_envio | None, residual, mapa). Se `residual` não-vazio o
+    provider externo NÃO deve ser chamado (messages_envio=None)."""
+    import copy
+    msgs = copy.deepcopy(messages)
+    slots = _slots_de_texto(msgs)
+    flat = [{"role": "user", "content": cont[chave]} for (cont, chave) in slots]
+    flat_limpos, residual, mapa = _preparar_mensagens_externo(flat, modo, entidades)
+    if residual:
+        return None, residual, mapa
+    for (cont, chave), limpo in zip(slots, flat_limpos):
+        cont[chave] = limpo.get("content", "")
+    return msgs, residual, mapa
+
+
+async def chat_agentico(
+    messages: list[dict],
+    tools: list[dict],
+    task_type: str = "estrategia",
+    max_tokens: int = 4096,
+    entidades: dict[str, list[str]] | None = None,
+    modo_sanitizacao=None,
+) -> dict:
+    """UM turno do loop agêntico (tool-use) com a MESMA barreira LGPD do chat().
+
+    - Aplica legal_base.aplicar_base (identidade/base do escritório) no início.
+    - `modo_sanitizacao` (achado S1): quando fornecido, é o modo de sanitização a
+      aplicar na BARREIRA — derivado da ÁREA/sigilo REAL do caso pelo chamador
+      (loop.rodar_agente). `task_type` continua governando o roteamento de
+      MODELO. Sem ele, cai em modo_para_task(task_type) (retrocompatível).
+    - Resolve a cadeia via _resolver_cadeia mas, nesta fase, só provedores com
+      tool-use (anthropic). LOCAL_COMPLETO sem provider local → bloqueio SEGURO
+      (RuntimeError claro).
+    - Pseudonimiza a LISTA INTEIRA (text/tool_use/tool_result) com as MESMAS
+      primitivas da barreira (_pseudonimizar_agentico → _preparar_mensagens_externo);
+      residual → _ProviderPulado (não chama o provider).
+    - Chama anthropic_provider.chat_tools e REIDRATA localmente TANTO o `text`
+      QUANTO cada valor string de tool_calls[i].input (RECURSIVO, S2; o `mapa` só
+      em memória).
+
+    Retorna {"text","tool_calls","stop_reason","usage","provider","model",
+             "text_para_log"}. `text_para_log` é PSEUDONIMIZADO (vai ao AILog;
+    nunca PII reidratada)."""
+    from app.services.ai.sanitization_policy import ModoSanitizacao, modo_para_task
+
+    task_type_original = task_type
+    task_type = _normalizar_task_type(task_type)
+    # S1: o modo vem do sigilo REAL do caso (área) quando o chamador o informa;
+    # senão, do task_type. Nunca deriva o sigilo só do rótulo de roteamento.
+    if modo_sanitizacao is None:
+        modo_sanitizacao = modo_para_task(task_type_original)
+
+    # Identidade/base do escritório (BASE_PROMPT/16 regras) no system do agente.
+    messages = legal_base.aplicar_base(messages, task_type)
+
+    # Cadeia: reusa a resolução/elegibilidade e FILTRA para providers com
+    # tool-use (só anthropic nesta fase).
+    provider_force = settings.AI_PROVIDER if settings.AI_PROVIDER != "auto" else None
+    cadeia = _resolver_cadeia(task_type, provider_force, None)
+    if modo_sanitizacao == ModoSanitizacao.LOCAL_COMPLETO:
+        # Sigilo reforçado: nunca sai do VPS. Não há provider LOCAL com tool-use
+        # nesta fase → bloqueio seguro (o conteúdo nunca é enviado).
+        cadeia = _restringir_cadeia_local_completo(cadeia, modo_sanitizacao, task_type_original)
+        if not cadeia:
+            raise RuntimeError(_MSG_BLOQUEIO_LOCAL_COMPLETO)
+    cadeia_tools = [(p, m) for (p, m) in cadeia if p == "anthropic"]
+    # Se AI_PROVIDER forçou um provider sem tool-use, mas o Anthropic está
+    # elegível, ainda o usamos (única opção agêntica) — desde que não seja
+    # LOCAL_COMPLETO (já tratado acima).
+    if (not cadeia_tools and modo_sanitizacao != ModoSanitizacao.LOCAL_COMPLETO
+            and _provider_elegivel("anthropic")):
+        cadeia_tools = [("anthropic", _resolver_modelo("anthropic", task_type, None))]
+    if not cadeia_tools or not _provider_elegivel("anthropic"):
+        raise RuntimeError(
+            "Módulo agêntico requer um provedor com suporte a tool-use (Anthropic) "
+            "elegível — verifique ANTHROPIC_ENABLED, ANTHROPIC_API_KEY e "
+            "AI_EXTERNAL_PROVIDERS_ALLOWED."
+        )
+    provider, model = cadeia_tools[0]
+
+    # ── Barreira LGPD (fonte única) — pseudonimiza tudo que vai ao externo ──
+    mapa = None
+    messages_envio = messages
+    if provider in _PROVIDERS_EXTERNOS and settings.AI_REQUIRE_SANITIZATION_FOR_EXTERNAL:
+        messages_envio, residual, mapa = _pseudonimizar_agentico(
+            messages, modo_sanitizacao, entidades
+        )
+        if residual:
+            # Espelha _chamar_com_barreira: PII residual → provider NÃO é chamado.
+            raise _ProviderPulado(residual)
+
+    from app.services.providers import anthropic_provider
+    resp = await anthropic_provider.chat_tools(messages_envio, model, max_tokens, tools)
+
+    # ── Reidratação LOCAL: text + cada valor string de tool_calls[i].input ──
+    text = resp.get("text", "") or ""
+    text_para_log = text  # versão PSEUDONIMIZADA (sem PII real) → AILog/observabilidade
+    tool_calls = resp.get("tool_calls", []) or []
+    if mapa:
+        from app.services.ai.pseudonymizer import reidratar
+        text = reidratar(text, mapa)
+        # S2: reidrata RECURSIVAMENTE o input (dict/list aninhados), não só as
+        # strings de 1º nível — espelha _coletar_slots_recursivo da barreira.
+        for tc in tool_calls:
+            _reidratar_recursivo(tc.get("input"), mapa)
+
+    usage = resp.get("usage", {}) or {}
+    return {
+        "text": text,
+        "text_para_log": text_para_log,
+        "tool_calls": tool_calls,
+        "stop_reason": resp.get("stop_reason"),
+        "usage": usage,
+        "provider": provider,
+        "model": usage.get("model", model),
     }

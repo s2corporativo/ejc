@@ -184,7 +184,12 @@ const empresarial: RamoConfig = {
       campos: [
         {
           nome: "valor_faturamento_br",
-          label: "Faturamento grupo no Brasil (R$)",
+          label: "Faturamento do 1º grupo no Brasil (R$)",
+          tipo: "number",
+        },
+        {
+          nome: "valor_faturamento_outro_grupo",
+          label: "Faturamento do 2º grupo envolvido (R$)",
           tipo: "number",
         },
         {

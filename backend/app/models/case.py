@@ -17,8 +17,8 @@ class CaseArea(str, enum.Enum):
     previdenciario = "previdenciario"
     empresarial   = "empresarial"
     tributario    = "tributario"
-    # Ramos adicionais alinhados ao frontend (ramosConfig.ts) e à tabela
-    # canônica `areas` — migration 083 (ALTER TYPE casearea ADD VALUE).
+    # Ramos adicionais alinhados ao frontend e à tabela canônica `areas`
+    # (migration 083).
     administrativo = "administrativo"
     bancario      = "bancario"
     imobiliario   = "imobiliario"
@@ -26,6 +26,17 @@ class CaseArea(str, enum.Enum):
     constitucional = "constitucional"
     digital_lgpd  = "digital_lgpd"
     transito      = "transito"
+    # Expansão canônica para áreas já utilizadas pelos fluxos do EJC
+    # (migration 094).
+    saude         = "saude"
+    medico        = "medico"
+    agrario       = "agrario"
+    agronegocio   = "agronegocio"
+    eleitoral     = "eleitoral"
+    internacional = "internacional"
+    contratual    = "contratual"
+    societario    = "societario"
+    licitacoes    = "licitacoes"
 
 
 class CaseStatus(str, enum.Enum):
@@ -79,7 +90,7 @@ class Case(Base):
     drive_folder_id = Column(String(128), nullable=True)  # subpasta do caso no Google Drive
     parte_contraria = Column(String(255), nullable=True)
     valor_causa = Column(Numeric(14, 2), nullable=True)
-    
+
     # Auditoria e Sincronização (DataJud/PJe)
     last_synced_at = Column(DateTime(timezone=True), nullable=True)
     sync_pending   = Column(Boolean, default=False)

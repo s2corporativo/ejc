@@ -202,6 +202,22 @@ def _montar_prompt(dados: dict, rag: list[dict]) -> str:
     return "\n".join(linhas)
 
 
+async def ler_ultimo_dossie(
+    db:      AsyncSession,
+    case_id: str,
+) -> Optional[DossieEstrategico]:
+    """LEITOR PURO (achado S3/M2) — retorna a ÚLTIMA versão persistida do dossiê
+    do caso, SEM regenerar nada: nenhuma chamada de IA, nenhuma escrita, nenhum
+    AILog. É o que uma tool de LEITURA do agente deve usar (efeito colateral
+    zero). Retorna None se o caso ainda não tem dossiê."""
+    return (await db.execute(
+        select(DossieEstrategico)
+        .where(DossieEstrategico.case_id == case_id)
+        .order_by(DossieEstrategico.versao.desc())
+        .limit(1)
+    )).scalar_one_or_none()
+
+
 async def gerar_dossie(
     db:      AsyncSession,
     case_id: str,

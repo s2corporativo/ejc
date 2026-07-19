@@ -53,10 +53,20 @@ class ContractStats:
 
 def _iter_frontend_files(front_src: str):
     for root, dirs, files in os.walk(front_src):
-        dirs[:] = [d for d in dirs if d not in ("node_modules", "dist", ".vite")]
+        dirs[:] = [
+            d
+            for d in dirs
+            if d not in ("node_modules", "dist", ".vite", "__tests__", "__mocks__")
+        ]
         for f in files:
-            if f.endswith((".ts", ".tsx")) and not f.endswith(".d.ts"):
-                yield os.path.join(root, f)
+            if not f.endswith((".ts", ".tsx")) or f.endswith(".d.ts"):
+                continue
+            # Arquivos de teste do frontend contêm fixtures/mocks com paths
+            # fictícios (ex.: endpoint: "/cases/caso-1/...") que não são call
+            # sites de produção — fora do contrato.
+            if f.endswith((".test.ts", ".test.tsx", ".spec.ts", ".spec.tsx")):
+                continue
+            yield os.path.join(root, f)
 
 
 # api.get(...), apiClient.post<T>(...), axios.delete(...), http.put(...)

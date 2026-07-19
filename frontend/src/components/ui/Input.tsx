@@ -19,7 +19,7 @@ export function Input({ label, hint, error, leftIcon, rightSlot, className, id, 
         {leftIcon && <span className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-slate-400">{leftIcon}</span>}
         <input
           id={id}
-          className={cn("input h-10", leftIcon && "pl-9", rightSlot && "pr-10", error && "ring-2 ring-danger-500/20", className)}
+          className={cn("input h-9", !!leftIcon && "pl-9", !!rightSlot && "pr-10", error && "ring-2 ring-danger-500/20", className)}
           {...props}
         />
         {rightSlot && <span className="absolute right-3 top-1/2 -translate-y-1/2">{rightSlot}</span>}
@@ -37,7 +37,7 @@ export function Select({ label, hint, error, leftIcon, className, children, ...p
       {label && <span className="label mb-0">{label}</span>}
       <span className="relative block">
         {leftIcon && <span className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-slate-400">{leftIcon}</span>}
-        <select className={cn("select input h-10 appearance-none", leftIcon && "pl-9", error && "ring-2 ring-danger-500/20", className)} {...props}>
+        <select className={cn("select input h-9 appearance-none", !!leftIcon && "pl-9", error && "ring-2 ring-danger-500/20", className)} {...props}>
           {children}
         </select>
       </span>

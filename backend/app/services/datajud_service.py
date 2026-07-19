@@ -24,19 +24,26 @@ from datetime import datetime, timezone
 from uuid import uuid4
 
 import httpx
-from tenacity import (
-    retry, stop_after_attempt, wait_exponential, retry_if_exception_type,
-)
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
+from tenacity import (
+    retry,
+    retry_if_exception,
+    stop_after_attempt,
+    wait_exponential,
+)
 
 from app.core.config import get_settings
 from app.models.case import Case, CaseMovimento
 
 logger = logging.getLogger("ejc.datajud")
+
+# Compat: consumidores externos (ex.: crawler_precedentes) leem flags via
+# `datajud_service.settings` — manter o alias de módulo apontando para o
+# singleton cacheado. Internamente as funções usam get_settings() direto.
 settings = get_settings()
 
-# Fallback histórico; a fonte de verdade é settings.DATAJUD_BASE_URL.
+# Fallback histórico; a fonte de verdade é get_settings().DATAJUD_BASE_URL.
 BASE = "https://api-publica.datajud.cnj.jus.br"
 
 
@@ -48,40 +55,118 @@ class TribunalNaoMapeadoError(ValueError):
     """Número CNJ válido, mas o tribunal (segmento J.TR) não tem alias mapeado."""
 
 
-# Chamada de rede com retry exponencial (2 retries) para erros transitórios.
-# Mensagens de erro do httpx contêm URL/status, nunca headers — a API key
-# (enviada só no header Authorization) não vaza em log nem em exceção.
+def _erro_datajud_transitorio(exc: BaseException) -> bool:
+    """Retry apenas quando repetir pode resolver: transporte, 429 ou 5xx.
+
+    Erros 4xx de contrato/autenticação não são repetidos: isso evita multiplicar
+    carga e esconder configuração inválida atrás de três tentativas inúteis.
+    """
+    if isinstance(exc, httpx.TransportError):
+        return True
+    if isinstance(exc, httpx.HTTPStatusError) and exc.response is not None:
+        status = exc.response.status_code
+        return status == 429 or status >= 500
+    return False
+
+
 @retry(
     stop=stop_after_attempt(3),
     wait=wait_exponential(multiplier=0.5, min=0.5, max=4),
-    retry=retry_if_exception_type((httpx.TransportError, httpx.HTTPStatusError)),
+    retry=retry_if_exception(_erro_datajud_transitorio),
     reraise=True,
 )
 async def _datajud_search(alias: str, payload: dict, headers: dict) -> dict:
-    base = (get_settings().DATAJUD_BASE_URL or BASE).rstrip("/")
-    async with httpx.AsyncClient(timeout=20) as c:
-        r = await c.post(f"{base}/{alias}/_search", json=payload, headers=headers)
-        r.raise_for_status()
-        return r.json()
+    s = get_settings()
+    base = (s.DATAJUD_BASE_URL or BASE).rstrip("/")
+    async with httpx.AsyncClient(timeout=s.DATAJUD_TIMEOUT_SECONDS) as client:
+        response = await client.post(
+            f"{base}/{alias}/_search", json=payload, headers=headers
+        )
+        response.raise_for_status()
+        return response.json()
 
 
 # Segmento J.TR do número CNJ (NNNNNNN-DD.AAAA.J.TR.OOOO) → alias do endpoint.
-# Principais tribunais; demais aliases seguem o padrão api_publica_<sigla>
-# (lista completa na wiki oficial) e podem ser adicionados sob demanda.
+# Tabela de códigos J/TR: Resolução CNJ nº 65/2008 (numeração única) — cruzada
+# e confirmada contra as entradas já existentes (TJMG=8.13, TJSP=8.26,
+# TJRJ=8.19 batem exatamente com a tabela oficial). Cobertura ampliada
+# (auditoria RAG) para TODOS os TJs e TRTs — antes só 3 TJs e 1 TRT tinham
+# alias mapeado, o que limitava a consulta de andamentos (DataJud) a uma
+# fração pequena da Justiça Estadual/Trabalhista.
+#   J=8 Justiça Estadual/DF | J=5 Justiça do Trabalho | J=4 Justiça Federal
+#   J=3 STJ | J=1 STF (numeração própria, não mapeada aqui — ver nota abaixo)
 _SEG_TR_ALIAS = {
+    # ── Justiça Estadual (J=8) — todos os 26 estados + DF ──────────────────
+    ("8", "01"): "api_publica_tjac",
+    ("8", "02"): "api_publica_tjal",
+    ("8", "03"): "api_publica_tjap",
+    ("8", "04"): "api_publica_tjam",
+    ("8", "05"): "api_publica_tjba",
+    ("8", "06"): "api_publica_tjce",
+    ("8", "07"): "api_publica_tjdft",  # Distrito Federal e Territórios
+    ("8", "08"): "api_publica_tjes",
+    ("8", "09"): "api_publica_tjgo",
+    ("8", "10"): "api_publica_tjma",
+    ("8", "11"): "api_publica_tjmt",
+    ("8", "12"): "api_publica_tjms",
     ("8", "13"): "api_publica_tjmg",   # Justiça Estadual MG
-    ("8", "26"): "api_publica_tjsp",   # Justiça Estadual SP
+    ("8", "14"): "api_publica_tjpa",
+    ("8", "15"): "api_publica_tjpb",
+    ("8", "16"): "api_publica_tjpr",
+    ("8", "17"): "api_publica_tjpe",
+    ("8", "18"): "api_publica_tjpi",
     ("8", "19"): "api_publica_tjrj",   # Justiça Estadual RJ
+    ("8", "20"): "api_publica_tjrn",
+    ("8", "21"): "api_publica_tjrs",
+    ("8", "22"): "api_publica_tjro",
+    ("8", "23"): "api_publica_tjrr",
+    ("8", "24"): "api_publica_tjsc",
+    ("8", "25"): "api_publica_tjse",
+    ("8", "26"): "api_publica_tjsp",   # Justiça Estadual SP
+    ("8", "27"): "api_publica_tjto",
+    # ── Justiça do Trabalho (J=5) — TST + todas as 24 regiões ──────────────
     ("5", "00"): "api_publica_tst",    # TST (TR=00 no segmento trabalhista)
+    ("5", "01"): "api_publica_trt1",
+    ("5", "02"): "api_publica_trt2",
     ("5", "03"): "api_publica_trt3",   # Justiça do Trabalho 3ª Região (MG)
+    ("5", "04"): "api_publica_trt4",
+    ("5", "05"): "api_publica_trt5",
+    ("5", "06"): "api_publica_trt6",
+    ("5", "07"): "api_publica_trt7",
+    ("5", "08"): "api_publica_trt8",
+    ("5", "09"): "api_publica_trt9",
+    ("5", "10"): "api_publica_trt10",
+    ("5", "11"): "api_publica_trt11",
+    ("5", "12"): "api_publica_trt12",
+    ("5", "13"): "api_publica_trt13",
+    ("5", "14"): "api_publica_trt14",
+    ("5", "15"): "api_publica_trt15",
+    ("5", "16"): "api_publica_trt16",
+    ("5", "17"): "api_publica_trt17",
+    ("5", "18"): "api_publica_trt18",
+    ("5", "19"): "api_publica_trt19",
+    ("5", "20"): "api_publica_trt20",
+    ("5", "21"): "api_publica_trt21",
+    ("5", "22"): "api_publica_trt22",
+    ("5", "23"): "api_publica_trt23",
+    ("5", "24"): "api_publica_trt24",
+    # ── Justiça Federal (J=4) — todos os 6 TRFs ─────────────────────────────
     ("4", "01"): "api_publica_trf1",   # Justiça Federal 1ª Região
     ("4", "02"): "api_publica_trf2",
     ("4", "03"): "api_publica_trf3",
     ("4", "04"): "api_publica_trf4",
     ("4", "05"): "api_publica_trf5",
     ("4", "06"): "api_publica_trf6",   # TRF6 (MG, criado em 2022)
+    # ── STJ (J=3) ────────────────────────────────────────────────────────────
     ("3", "00"): "api_publica_stj",    # STJ
 }
+# NOTA: STF (J=1) não foi incluído — sua numeração de processos não segue o
+# mesmo padrão J.TR de tribunal regional/regional (é o topo da hierarquia,
+# sem "regiões"), e o DataJud também não fornece texto integral de acórdãos
+# (só metadados de movimentação) — não resolve o gap de INGESTÃO DE
+# JURISPRUDÊNCIA (STF/TCU/CARF) apontado na auditoria, apenas o de consulta
+# de andamento processual. Ver auditoria RAG para o roadmap de conectores de
+# jurisprudência propriamente ditos (texto integral/ementas).
 
 
 def alias_do_numero(numero_cnj: str) -> str | None:
@@ -106,18 +191,27 @@ def _hash_mov(data: str, descricao: str) -> str:
 
 
 async def consultar_processo(numero_cnj: str) -> dict | None:
-    """Consulta o DataJud. Retorna dict com movimentos ou None."""
-    if not settings.DATAJUD_ENABLED or not settings.DATAJUD_API_KEY:
-        return None
+    """Consulta o DataJud; ausência é None e falha de integração propaga.
+
+    Não confunde flag/chave ausente, 401/403, rate limit ou indisponibilidade
+    com "processo não encontrado". O router traduz cada classe para 503/502.
+    """
+    s = get_settings()
+    if not s.DATAJUD_ENABLED or not s.DATAJUD_API_KEY:
+        raise DataJudDesabilitadoError(
+            "Integração DataJud desativada ou sem chave configurada "
+            "(DATAJUD_ENABLED/DATAJUD_API_KEY)."
+        )
     alias = _alias_do_numero(numero_cnj)
     if not alias:
-        logger.info(f"Tribunal não mapeado p/ {numero_cnj}")
-        return None
+        raise TribunalNaoMapeadoError(
+            "Tribunal não mapeado para consulta ao DataJud."
+        )
 
     n = re.sub(r"\D", "", numero_cnj)
     payload = {"query": {"match": {"numeroProcesso": n}}, "size": 1}
     headers = {
-        "Authorization": f"APIKey {settings.DATAJUD_API_KEY}",
+        "Authorization": f"APIKey {s.DATAJUD_API_KEY}",
         "Content-Type": "application/json",
     }
     try:
@@ -137,9 +231,19 @@ async def consultar_processo(numero_cnj: str) -> dict | None:
             "orgao": (src.get("orgaoJulgador") or {}).get("nome"),
             "movimentos": movs,
         }
-    except Exception as e:
-        logger.warning(f"DataJud falhou p/ {numero_cnj} (após retries): {e}")
-        return None
+    except (httpx.HTTPError, ValueError, KeyError, TypeError) as exc:
+        # Nunca registrar número do processo, payload, corpo ou header.
+        status = (
+            exc.response.status_code
+            if isinstance(exc, httpx.HTTPStatusError)
+            and exc.response is not None
+            else None
+        )
+        logger.warning(
+            "DataJud falhou após retries (tipo=%s status=%s)",
+            type(exc).__name__, status,
+        )
+        raise
 
 
 # ── Etapa 13 — consulta normalizada de andamentos (router /andamentos) ───────
@@ -168,8 +272,7 @@ async def consultar_movimentos(
     if not alias:
         raise TribunalNaoMapeadoError(
             "Tribunal não mapeado para consulta ao DataJud (segmento J.TR do "
-            "número CNJ fora do mapa suportado: TJMG/TJSP/TJRJ, TRF1-6, "
-            "TRT3, TST, STJ)."
+            "número CNJ fora do mapa atualmente suportado)."
         )
 
     n = re.sub(r"\D", "", numero_cnj or "")

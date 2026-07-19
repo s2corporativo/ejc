@@ -14,8 +14,10 @@ import {
   PageHeader,
   StatusBadge,
   Badge,
+  Button,
   Modal,
   Empty,
+  ErrorState,
   Spinner,
   fmtDate,
 } from "../components/UI";
@@ -35,13 +37,15 @@ export default function Prazos() {
   const [calc, setCalc] = useState<any>({ dias: 15, dias_uteis: true });
   const [calcResp, setCalcResp] = useState<any>(null);
   const [salvando, setSalvando] = useState(false);
+  const [error, setError] = useState(false);
 
   // Modo Caso: `?caso=` na URL vence; sem query, o caso ativo preenche.
   // GET /deadlines/ já aceita case_id (link /prazos?caso= da jornada).
   const { casoFiltro, casoFiltroNome, removerFiltro } = useCasoFiltro();
 
-  const load = () =>
-    api
+  const load = () => {
+    setError(false);
+    return api
       .get("/deadlines/", {
         params: {
           status: statusF || undefined,
@@ -49,7 +53,9 @@ export default function Prazos() {
           page_size: 100,
         },
       })
-      .then((r) => setData(r.data));
+      .then((r) => setData(r.data))
+      .catch(() => setError(true));
+  };
   useEffect(() => {
     load();
   }, [statusF, casoFiltro]);
@@ -169,10 +175,27 @@ export default function Prazos() {
         )}
       </div>
 
-      {!data ? (
+      {error ? (
+        <ErrorState
+          message="Não foi possível carregar os prazos. Tente novamente."
+          onRetry={load}
+        />
+      ) : !data ? (
         <Spinner />
       ) : !Array.isArray(data.data) || data.data.length === 0 ? (
-        <Empty message="Nenhum prazo nesta categoria" />
+        <Empty
+          titulo="Nenhum prazo nesta categoria"
+          descricao="Prazos processuais e compromissos com data aparecem aqui. Cadastre um prazo para acompanhar vencimentos e confirmações de ciência."
+          acao={
+            <Button
+              variant="primary"
+              icon={<Plus size={16} />}
+              onClick={() => setModal(true)}
+            >
+              Cadastrar um prazo
+            </Button>
+          }
+        />
       ) : (
         <div className="space-y-2">
           {(Array.isArray(data.data) ? data.data : []).map((d: any) => (
@@ -261,7 +284,7 @@ export default function Prazos() {
       >
         <div className="space-y-4">
           <div>
-            <label className="label">Data da intimação/ciência</label>
+            <label className="label">Data da intimação/ciência (dd/mm/aaaa)</label>
             <input
               type="date"
               className="input"
@@ -347,7 +370,7 @@ export default function Prazos() {
             />
           </div>
           <div>
-            <label className="label">Data da intimação</label>
+            <label className="label">Data da intimação (dd/mm/aaaa)</label>
             <input
               type="date"
               className="input"
@@ -382,7 +405,7 @@ export default function Prazos() {
             </select>
           </div>
           <div>
-            <label className="label">OU data fatal direta</label>
+            <label className="label">OU data fatal direta (dd/mm/aaaa)</label>
             <input
               type="date"
               className="input"

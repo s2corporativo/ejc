@@ -2,25 +2,36 @@
 Templates de formatação para documentos jurídicos profissionais.
 Padrão: De Paula Teixeira Advogados Associados — Betim/MG.
 Todos os documentos gerados pela IA usam estes templates como base estrutural.
+
+Os dados FIXOS do escritório (nome, CNPJ, OAB, endereço, CEP, cidade, email)
+vêm da FONTE ÚNICA em app.core.config (settings ESCRITORIO_*). Quando OAB/
+endereço/CEP ainda não foram preenchidos no .env, os helpers das settings
+devolvem um placeholder EXPLÍCITO — nunca "A PREENCHER" mudo nem dado inventado.
 """
 
+from app.core.config import get_settings
+
+_settings = get_settings()
+
 DADOS_ESCRITORIO = {
-    "nome": "De Paula Teixeira Advogados Associados",
-    "cnpj": "A PREENCHER",
-    "oab_registro": "A PREENCHER",
-    "endereco": "A PREENCHER",
-    "cep": "A PREENCHER",
-    "cidade": "Betim",
-    "estado": "MG",
-    "telefone": "A PREENCHER",
-    "email": "A PREENCHER",
-    "site": "A PREENCHER",
+    "nome": _settings.ESCRITORIO_NOME,
+    "cnpj": _settings.ESCRITORIO_CNPJ,
+    "oab_registro": _settings.escritorio_oab(),
+    "endereco": _settings.escritorio_endereco(),
+    "cep": _settings.escritorio_cep(),
+    "cidade": _settings.ESCRITORIO_CIDADE,
+    "estado": _settings.ESCRITORIO_ESTADO,
+    "telefone": "[telefone - preencher]",
+    "email": _settings.ESCRITORIO_EMAIL,
+    "site": "[site - preencher]",
 }
 
+# OAB individual de cada advogado não é dado do escritório (setting única): fica
+# como placeholder explícito até ser informado no cadastro do profissional.
 ADVOGADOS = {
-    "clovis": {"nome": "Dr. Clovis José Soares", "oab": "A PREENCHER", "cargo": "Sócio Administrador"},
-    "guilherme": {"nome": "Guilherme de Paula", "oab": "A PREENCHER", "cargo": "Sócio"},
-    "joao_pedro": {"nome": "João Pedro Teixeira", "oab": "A PREENCHER", "cargo": "Sócio"},
+    "clovis": {"nome": "Dr. Clovis José Soares", "oab": "[OAB/MG - preencher]", "cargo": "Sócio Administrador"},
+    "guilherme": {"nome": "Guilherme de Paula", "oab": "[OAB/MG - preencher]", "cargo": "Sócio"},
+    "joao_pedro": {"nome": "João Pedro Teixeira", "oab": "[OAB/MG - preencher]", "cargo": "Sócio"},
 }
 
 TIMBRADO = """

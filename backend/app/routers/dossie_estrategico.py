@@ -96,7 +96,7 @@ async def obter_atual(
     if not _pode_ver(cu):
         raise HTTPException(403)
     # IDOR: conteúdo estratégico sensível — restringe a quem atua no caso (ou gestão).
-    case = await verificar_acesso_caso(db, cu, case_id)
+    await verificar_acesso_caso(db, cu, case_id)
     # Preferência: aprovado mais recente
     dossie = (await db.execute(
         select(DossieEstrategico)

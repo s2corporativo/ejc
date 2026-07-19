@@ -28,6 +28,7 @@ from app.core.security import (
 from app.models.audit_log import criar_audit_log
 from app.models.user import RefreshToken, User
 from app.schemas.auth import UserCreate, UserResponse, UserUpdate
+from app.services.security_service import validar_forca_senha
 from app.schemas.common import MsgResponse
 
 settings = get_settings()
@@ -292,6 +293,12 @@ async def criar(
         raise HTTPException(status_code=409, detail="Email já cadastrado")
 
     _validar_atribuicao_role(cu, payload.role)
+    # Política de senha forte também na criação de usuário (fecha o último ponto
+    # de definição de senha; troca e reset já validam via validar_forca_senha).
+    try:
+        validar_forca_senha(payload.password, payload.email)
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
     user = User(
         id=str(uuid4()),
         email=payload.email.lower(),

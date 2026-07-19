@@ -11,7 +11,7 @@ import {
   Modal,
   Empty,
   EmptyState,
-  Spinner,
+  SkeletonTable,
   fmtDate,
   Alert,
   Badge,
@@ -172,9 +172,21 @@ export default function Clientes() {
           }
         />
       ) : !data ? (
-        <Spinner />
+        <SkeletonTable rows={6} cols={6} />
       ) : data.data.length === 0 ? (
-        <Empty message="Nenhum cliente encontrado" />
+        <Empty
+          titulo="Nenhum cliente cadastrado"
+          descricao="O cadastro de clientes centraliza contatos, documentos e casos de cada pessoa ou empresa. Cadastre o primeiro para vinculá-lo aos casos."
+          acao={
+            <Button
+              variant="primary"
+              icon={<Plus size={16} />}
+              onClick={() => setModal(true)}
+            >
+              Cadastrar um cliente
+            </Button>
+          }
+        />
       ) : (
         <div className="card overflow-x-auto">
           <table className="w-full text-sm">
@@ -183,6 +195,7 @@ export default function Clientes() {
                 <th className="px-4 py-3">Nome / Razão</th>
                 <th className="px-4 py-3">Tipo</th>
                 <th className="px-4 py-3">CPF / CNPJ</th>
+                <th className="px-4 py-3 text-right">Ações</th>
                 <th className="px-4 py-3">Contato</th>
                 <th className="px-4 py-3">Status</th>
                 <th className="px-4 py-3">Desde</th>
@@ -209,7 +222,7 @@ export default function Clientes() {
                       className="text-bronze hover:text-bronze-dark px-1.5 font-medium text-xs"
                       onClick={(e) => {
                         e.stopPropagation();
-                        window.location.href = `/clientes/${c.id}/dossie`;
+                        window.location.href = `/clientes/${c.id}`;
                       }}
                     >
                       📋

@@ -37,7 +37,15 @@ _EQUIPE = ["superadmin", "admin", "socio", "advogado", "advogado_auxiliar", "est
 _ADM    = ["superadmin", "admin", "socio"]
 _CENT   = Decimal("0.01")
 
-router = APIRouter(tags=["Ramos Jurídicos"])
+# ── Tetos do depósito recursal trabalhista (CLT art. 899 §§1º-4º) ─────────────
+# ATENÇÃO — ATUALIZAÇÃO ANUAL OBRIGATÓRIA: o TST reajusta estes tetos pelo IPCA-E
+# e publica novo Ato de GP (jan/ago de cada ano). Valores abaixo = 2026
+# (Ato TST GP 323/2025 — referência). Conferir a portaria vigente na data do
+# recurso antes de usar em produção; NÃO deixar defasar.
+TETO_DEPOSITO_RO = 12_127.64   # Recurso Ordinário
+TETO_DEPOSITO_RR = 24_255.28   # Recurso de Revista (dobro do RO)
+
+router = APIRouter(tags=["Áreas de Atuação"])
 
 
 # ════════════════════════════════════════════════════════════════════════════
@@ -220,21 +228,67 @@ async def emp_prazos_rj(
 
 @router.get("/empresarial/ferramentas/verificar-cade")
 async def emp_cade(valor_faturamento_br: float, valor_operacao: float,
+                   valor_faturamento_outro_grupo: Optional[float] = None,
                    cu: User = Depends(require_roles(_EQUIPE))):
     """
-    Verifica obrigatoriedade de notificação ao CADE.
-    Lei 12.529/2011 art. 88: um dos grupos com fat. ≥ R$750M e outro ≥ R$75M no Brasil.
+    Verifica obrigatoriedade de notificação ao CADE (controle de concentrações).
+    Lei 12.529/2011 art. 88, I e II (patamares atualizados pela Portaria Interminis-
+    terial MJ/MF 994/2012): a notificação é OBRIGATÓRIA quando, cumulativamente,
+    um grupo econômico envolvido faturou ≥ R$ 750 mi E OUTRO grupo ≥ R$ 75 mi no
+    Brasil, no ano anterior. São dois limiares CUMULATIVOS — não basta um só grupo.
+    Os limiares NÃO são posicionais: basta UM dos grupos atingir R$ 750 mi e o
+    OUTRO atingir R$ 75 mi, independentemente de qual valor foi informado em qual
+    campo (avaliação por max/min dos dois faturamentos).
+    - valor_faturamento_br: faturamento de um dos grupos envolvidos.
+    - valor_faturamento_outro_grupo: faturamento do segundo grupo envolvido.
+      Retrocompatível: se não informado, não há como confirmar o inciso II. Nesse
+      caso NÃO devolvemos um falso "não obrigatória" — sinalizamos pendência de
+      dado (pendente_dado=True, notificacao_obrigatoria=None).
     """
-    limiar_a = 750_000_000.00
-    limiar_b = 75_000_000.00
-    obrigatorio = valor_faturamento_br >= limiar_a
+    limiar_grupo_maior = 750_000_000.00   # art. 88, I (atualizado p/ R$ 750 mi)
+    limiar_grupo_menor = 75_000_000.00    # art. 88, II (atualizado p/ R$ 75 mi)
+    segundo_informado = valor_faturamento_outro_grupo is not None
+
+    if not segundo_informado:
+        # Sem o faturamento do 2º grupo é impossível confirmar o inciso II. Em vez
+        # de um falso negativo, devolvemos estado pendente (retrocompat. c/ API).
+        return {
+            "faturamento_informado": valor_faturamento_br,
+            "faturamento_outro_grupo": None,
+            "valor_operacao": valor_operacao,
+            "grupo_maior_atinge_750mi": valor_faturamento_br >= limiar_grupo_maior,
+            "grupo_menor_atinge_75mi": None,
+            "segundo_grupo_informado": False,
+            "pendente_dado": True,
+            "notificacao_obrigatoria": None,
+            "prazo_notificacao": None,
+            "taxa_cade_estimada": "N/A",
+            "base": "Lei 12.529/2011 art. 88, I e II c/c Portaria Interm. MJ/MF 994/2012; §2º (prazo).",
+            "aviso": ("MINUTA. Informe o faturamento do 2º grupo envolvido para avaliar o "
+                      "art. 88 (limiar de R$ 75 mi do inciso II). Análise de enquadramento "
+                      "deve ser confirmada por especialista antitruste."),
+        }
+
+    # Cumulativos mas NÃO posicionais: um grupo ≥ 750 mi E outro ≥ 75 mi (art. 88,
+    # I e II), avaliando por max/min dos dois faturamentos informados.
+    maior = max(valor_faturamento_br, valor_faturamento_outro_grupo)
+    menor = min(valor_faturamento_br, valor_faturamento_outro_grupo)
+    grupo_maior_atinge = maior >= limiar_grupo_maior
+    grupo_menor_atinge = menor >= limiar_grupo_menor
+    obrigatorio = grupo_maior_atinge and grupo_menor_atinge
     return {
         "faturamento_informado": valor_faturamento_br,
+        "faturamento_outro_grupo": valor_faturamento_outro_grupo,
         "valor_operacao": valor_operacao,
+        "grupo_maior_atinge_750mi": grupo_maior_atinge,
+        "grupo_menor_atinge_75mi": grupo_menor_atinge,
+        "segundo_grupo_informado": True,
+        "pendente_dado": False,
         "notificacao_obrigatoria": obrigatorio,
         "prazo_notificacao": "30 dias (art. 88 §2º Lei 12.529/11)" if obrigatorio else None,
+        # Taxa (TFPP) hardcoded — conferir tabela CADE vigente; sujeita a reajuste.
         "taxa_cade_estimada": "R$ 85.000 (tabela CADE 2026)" if obrigatorio else "N/A",
-        "base": "Lei 12.529/2011 art. 88 caput e §2º",
+        "base": "Lei 12.529/2011 art. 88, I e II c/c Portaria Interm. MJ/MF 994/2012; §2º (prazo).",
         "aviso": "MINUTA. Análise de enquadramento deve ser confirmada por especialista antitruste.",
     }
 
@@ -340,9 +394,11 @@ async def civ_alimentos(salario_devedor: float, percentual: float,
                         filhos: int = 1, cu: User = Depends(require_roles(_EQUIPE))):
     """
     Estimativa de alimentos proporcionais ao salário.
-    Padrão STJ: 1/3 do salário para 1 filho; valores variam per case.
-    Base: CC art. 1.694 §1º; Lei 5.478/68; Súm. STJ 277 (alimentos provisionais).
-    MINUTA — cálculo de apoio, o juiz fixa.
+    Não existe percentual jurisprudencial fixo: o valor depende das necessidades
+    do alimentando, dos recursos do alimentante e das circunstâncias provadas.
+    Base: CC art. 1.694 §1º e Lei 5.478/68. A Súmula 277/STJ trata apenas do
+    termo inicial na investigação de paternidade e não fundamenta percentual.
+    MINUTA — cálculo aritmético de apoio a partir do percentual informado.
     """
     valor = round(salario_devedor * (percentual / 100), 2)
     sm = _sm_vigente()
@@ -353,8 +409,9 @@ async def civ_alimentos(salario_devedor: float, percentual: float,
         "valor_mensal": valor,
         "em_sm": round(valor / sm, 2),
         "base": "CC art. 1.694 §1º + Lei 5.478/68",
-        "referencia": "Padrão STJ: 1/3 a 30% p/ 1 filho (varia p/ caso)",
-        "aviso": "MINUTA de estimativa. O magistrado fixa com base no binômio necessidade/possibilidade.",
+        "referencia": "Percentual informado pelo usuário; não há tabela ou padrão fixo do STJ.",
+        "aviso": ("MINUTA de estimativa. Validar necessidades, recursos e circunstâncias "
+                  "do caso; o magistrado fixa o valor a partir da prova."),
     }
 
 
@@ -537,7 +594,8 @@ async def pen_prescricao(
     elif pena_maxima_anos > 2:   prazo = 8
     elif pena_maxima_anos > 1:   prazo = 4
     else:                        prazo = 3
-    data_prescricao = date(data_fato.year + prazo, data_fato.month, data_fato.day)
+    # _add_anos_data trata 29/02 (ValueError em ano não bissexto → 28/02).
+    data_prescricao = _add_anos_data(data_fato, prazo)
     prescrito = date.today() > data_prescricao
     return {
         "pena_maxima_anos": pena_maxima_anos,
@@ -674,20 +732,23 @@ async def trab_deposito(
 ):
     """
     Calcula depósito recursal para Recurso Ordinário e Recurso de Revista.
-    Tabela TST publicada anualmente. Valores 2026 (Ato TST GP 323/2025 — referência).
+    Metodologia (CLT art. 899 §1º): o depósito recursal corresponde ao VALOR DA
+    CONDENAÇÃO, limitado ao teto legal do recurso — NÃO a um percentual dela.
+    Se a condenação < teto, recolhe-se o valor da condenação; se ≥ teto, recolhe-se
+    o teto. Tetos 2026 (Ato TST GP 323/2025 — referência, atualização anual).
     MINUTA — confirmar teto vigente na data do recurso.
     """
-    # Tetos vigentes 2026 (referência — confirmar portaria TST do ano)
-    teto_ro  = 12_127.64   # RO
-    teto_rr  = 24_255.28   # RR (dobro do RO)
-    dep_ro  = min(valor_condenacao * 0.50, teto_ro)   # 50% até o teto, prática usual
-    dep_rr  = min(valor_condenacao * 0.50, teto_rr)
+    # Depósito = condenação limitada ao teto do recurso (art. 899 §1º).
+    # Entre 1x e 2x o teto, recolher só metade tornaria o recurso DESERTO.
+    dep_ro  = min(valor_condenacao, TETO_DEPOSITO_RO)
+    dep_rr  = min(valor_condenacao, TETO_DEPOSITO_RR)
     return {
         "valor_condenacao": valor_condenacao,
         "deposito_ro": round(dep_ro, 2),
         "deposito_rr": round(dep_rr, 2),
-        "teto_ro_2026": teto_ro,
-        "teto_rr_2026": teto_rr,
+        "teto_ro_2026": TETO_DEPOSITO_RO,
+        "teto_rr_2026": TETO_DEPOSITO_RR,
+        "metodologia": "Recolhimento = valor da condenação, limitado ao teto do recurso (CLT art. 899 §1º). Não é percentual da condenação.",
         "base": "CLT art. 899 §§1º-4º + Ato TST GP (atualização anual IPCA-E)",
         "aviso": "MINUTA. Confirmar teto vigente na data do recurso. Empresas em recuperação judicial têm tratamento específico.",
     }

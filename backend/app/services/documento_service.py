@@ -16,6 +16,7 @@ import logging
 import re
 from typing import Optional
 
+from app.core.taxonomia import AREAS_ANALISE_DOCUMENTAL, SENTINELA_OUTRO, normalizar_area
 from app.schemas.document_intake import (
     CampoExtraido, CasoExtraido, ClienteExtraido, DocumentoIntakeResult,
     ParteExtraida, PedidoExtraido, PrazoExtraido, RiscoExtraido, TeseSugerida,
@@ -58,7 +59,7 @@ ESQUEMA = """Responda APENAS com um JSON válido nesta forma exata (use null qua
   "data_documento": {"valor": null, "trecho_origem": null, "confianca": 0.0}
  }
 }
-- "area" deve ser uma de: civil, trabalhista, consumidor, familia, ambiental, criminal, previdenciario, empresarial, tributario.
+- "area" deve ser uma de: __AREAS_ANALISE__.
 - "complexidade" deve ser: baixa, media ou alta.
 - "prazos": inclua um item SOMENTE para cada prazo/data fatal EXPLÍCITO no documento
   (ex.: prazo de contestação, recurso, audiência, prescrição). "termo_final" = a
@@ -70,6 +71,12 @@ ESQUEMA = """Responda APENAS com um JSON válido nesta forma exata (use null qua
   "trecho_origem" = citação LITERAL e CURTA (máx. 15 palavras) copiada do
   documento onde o valor aparece (null se o campo não constar) e
   "confianca" = número entre 0 e 1. NUNCA parafraseie o trecho_origem."""
+
+# Vocabulário de área do extrator: subconjunto restrito (9 áreas originais)
+# DERIVADO da fonte única app/core/taxonomia.AREAS_ANALISE_DOCUMENTAL. Áreas
+# canônicas fora do subconjunto não são adivinhadas aqui — o enquadramento
+# explícito está em taxonomia.MAPA_CANONICO_PARA_ANALISE.
+ESQUEMA = ESQUEMA.replace("__AREAS_ANALISE__", ", ".join(AREAS_ANALISE_DOCUMENTAL))
 
 SYSTEM = (
     "Você é um analista jurídico sênior brasileiro especializado em leitura e triagem de peças "
@@ -282,8 +289,15 @@ def _montar_intake_result(
         if valor_causa is None and llm.get("valor_causa_estimado") not in (None, ""):
             valor_causa = CampoExtraido(valor=llm.get("valor_causa_estimado"))
 
+        # Área: normaliza grafias/aliases para o canônico (taxonomia). Contrato:
+        # `area` é SEMPRE canônica — texto da IA fora do vocabulário vira a
+        # sentinela "outro" e o bruto fica em `area_bruta` para o revisor
+        # humano decidir (nunca chutar área juridicamente diversa).
+        area_bruta = _txt(classif.get("area"))
+        area_canonica = normalizar_area(area_bruta) if area_bruta else None
         caso = CasoExtraido(
-            area=_txt(classif.get("area")),
+            area=(area_canonica or (SENTINELA_OUTRO if area_bruta else None)),
+            area_bruta=(None if area_canonica else (area_bruta or None)),
             subramo=_txt(classif.get("subarea")),
             numero_cnj=numero_cnj,
             orgao=_txt(ident.get("comarca")),

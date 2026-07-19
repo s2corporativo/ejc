@@ -3,7 +3,13 @@ import { Link } from "react-router-dom";
 import api from "../lib/api";
 import { asList } from "../lib/list";
 import { toast } from "../components/Toast";
-import { EmptyState, PageHeader, Spinner, Badge } from "../components/UI";
+import {
+  EmptyState,
+  ErrorState,
+  PageHeader,
+  Spinner,
+  Badge,
+} from "../components/UI";
 import type {
   DiarioOficialKeyword as Keyword,
   DiarioOficialAlerta as Alerta,
@@ -34,6 +40,8 @@ export default function DiarioOficial() {
   const [novaKeyword, setNovaKeyword] = useState("");
   const [loadingAlertas, setLoadingAlertas] = useState(true);
   const [loadingKeywords, setLoadingKeywords] = useState(true);
+  const [errorAlertas, setErrorAlertas] = useState(false);
+  const [errorKeywords, setErrorKeywords] = useState(false);
   const [addingKeyword, setAddingKeyword] = useState(false);
   const [marcandoLido, setMarcandoLido] = useState<string | null>(null);
 
@@ -56,6 +64,7 @@ export default function DiarioOficial() {
 
   const fetchAlertas = useCallback(async () => {
     setLoadingAlertas(true);
+    setErrorAlertas(false);
     try {
       const params: Record<string, string | number> = { limite: 50 };
       if (filtro === "nao-lidos") params.lido = "false";
@@ -63,6 +72,7 @@ export default function DiarioOficial() {
       setAlertas(asList<Alerta>(res.data));
     } catch {
       setAlertas([]);
+      setErrorAlertas(true);
     } finally {
       setLoadingAlertas(false);
     }
@@ -70,11 +80,13 @@ export default function DiarioOficial() {
 
   const fetchKeywords = useCallback(async () => {
     setLoadingKeywords(true);
+    setErrorKeywords(false);
     try {
       const res = await api.get("/diario-oficial/keywords");
       setKeywords(asList<Keyword>(res.data));
     } catch {
       setKeywords([]);
+      setErrorKeywords(true);
     } finally {
       setLoadingKeywords(false);
     }
@@ -175,6 +187,11 @@ export default function DiarioOficial() {
           <div className="flex justify-center py-12">
             <Spinner />
           </div>
+        ) : errorAlertas ? (
+          <ErrorState
+            message="Não foi possível carregar os alertas do Diário Oficial. Tente novamente."
+            onRetry={fetchAlertas}
+          />
         ) : alertas.length === 0 ? (
           <EmptyState
             title="Nenhum alerta encontrado"
@@ -294,6 +311,11 @@ export default function DiarioOficial() {
           <div className="flex justify-center py-6">
             <Spinner />
           </div>
+        ) : errorKeywords ? (
+          <ErrorState
+            message="Não foi possível carregar as palavras-chave monitoradas. Tente novamente."
+            onRetry={fetchKeywords}
+          />
         ) : keywords.length === 0 ? (
           <p className="text-gray-400 text-sm text-center py-6">
             Nenhuma palavra-chave cadastrada.

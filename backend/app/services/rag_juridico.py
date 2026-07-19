@@ -5,14 +5,12 @@ Implementa busca semântica, ingestão de DataJud/Jurisprudências.ai e Match de
 import logging
 from fastapi import HTTPException
 from app.core.ai_brain import ai_brain
-from app.core.public_apis import api_client
 
 logger = logging.getLogger("rag_juridico")
 
 class RAGJuridico:
     def __init__(self):
         self.ai = ai_brain
-        self.apis = api_client
 
     async def ingestao_jurisprudencia(self, tribunal: str, tema: str):
         """

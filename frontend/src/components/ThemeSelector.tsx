@@ -37,7 +37,7 @@ export default function ThemeSelector({
   return (
     <div
       className={cn(
-        "rounded-2xl border border-black/[0.05] bg-white/90 p-1.5 shadow-sm backdrop-blur dark:border-white/10 dark:bg-white/[0.04]",
+        "rounded-xl border border-slate-200 bg-white p-1.5 dark:border-white/10 dark:bg-white/[0.04]",
         className,
       )}
       role="radiogroup"

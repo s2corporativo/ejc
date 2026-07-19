@@ -3,7 +3,7 @@ import { toast } from "../components/Toast";
 import { Plus, UserX } from "lucide-react";
 import api from "../lib/api";
 import type { User } from "../types";
-import { PageHeader, Modal, Empty, Spinner } from "../components/UI";
+import { PageHeader, Modal, Empty, Spinner, ErrorState } from "../components/UI";
 
 const ROLES = [
   "admin",
@@ -17,15 +17,18 @@ const ROLES = [
 
 export default function Usuarios() {
   const [data, setData] = useState<any>(null);
+  const [erro, setErro] = useState(false);
   const [modal, setModal] = useState(false);
   const [form, setForm] = useState<any>({ role: "advogado" });
   const [salvando, setSalvando] = useState(false);
 
-  const load = () =>
-    api
+  const load = () => {
+    setErro(false);
+    return api
       .get("/users/")
       .then((r) => setData(r.data))
-      .catch(() => setData({ data: [] }));
+      .catch(() => setErro(true));
+  };
   useEffect(() => {
     load();
   }, []);
@@ -70,7 +73,12 @@ export default function Usuarios() {
         }
       />
 
-      {!data ? (
+      {erro ? (
+        <ErrorState
+          message="Não foi possível carregar os usuários. Tente novamente."
+          onRetry={load}
+        />
+      ) : !data ? (
         <Spinner />
       ) : data.data.length === 0 ? (
         <Empty message="Nenhum usuário" />

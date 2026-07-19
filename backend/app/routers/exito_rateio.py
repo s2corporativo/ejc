@@ -3,6 +3,7 @@
    GET  /api/v1/honorarios-exito/{fee_id}/rateio  → preview não-destrutivo
    POST /api/v1/honorarios-exito/{fee_id}/rateio  → gera saque (partner_withdrawal) do titular
 """
+from decimal import Decimal, ROUND_HALF_UP
 from uuid import uuid4
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -12,6 +13,20 @@ from app.core.security import get_current_user, ROLE_LEVEL
 from app.models.user import User
 
 router = APIRouter(prefix="/honorarios-exito", tags=["Rateio de Êxito"])
+
+_Q2 = Decimal("0.01")
+
+# Split do êxito líquido (após despesas) entre titular do caso e escritório.
+# Regra EJC atual: 50% titular / 50% escritório. Parametrizado (constante nomeada)
+# para remover o número mágico; o restante (1 - PERCENTUAL_TITULAR) fica com o
+# escritório. Não exposto na API por ora.
+PERCENTUAL_TITULAR = Decimal("0.50")
+
+
+def _money(v) -> Decimal:
+    """Coage numérico (Decimal de coluna Numeric, int, float, str, None) para
+    Decimal com 2 casas (ROUND_HALF_UP)."""
+    return Decimal(str(v or 0)).quantize(_Q2, ROUND_HALF_UP)
 
 
 def _is_gestor(u: User) -> bool:
@@ -33,7 +48,7 @@ async def _calcular(fee_id: str, db: AsyncSession) -> dict:
     if fee["tipo"] != "exito":
         raise HTTPException(422, "Rateio aplicável apenas a honorários de êxito")
 
-    bruto = float(fee["valor"] or 0)
+    bruto = _money(fee["valor"])
 
     # Custo do caso UNIFICADO: despesas pagas do centro de custos + custas/despesas lançadas em fees.
     # (corrige: antes somava receitas+despesas; agora só tipo despesa, e inclui fees custas_despesas)
@@ -46,11 +61,12 @@ async def _calcular(fee_id: str, db: AsyncSession) -> dict:
              WHERE case_id = :cid AND deleted_at IS NULL AND tipo = 'custas_despesas' AND status = 'pago')
         AS total
     """), {"cid": fee["case_id"]})).scalar()
-    despesas = float(desp or 0)
+    despesas = _money(desp)
 
-    liquido = round(max(bruto - despesas, 0), 2)
-    titular_share = round(liquido * 0.5, 2)
-    escritorio_share = round(liquido - titular_share, 2)
+    liquido = _money(max(bruto - despesas, Decimal("0")))
+    titular_share = _money(liquido * PERCENTUAL_TITULAR)
+    escritorio_share = _money(liquido - titular_share)
+    pct_titular = int((PERCENTUAL_TITULAR * 100).to_integral_value())
 
     # Titular é sócio?
     partner = None
@@ -69,9 +85,9 @@ async def _calcular(fee_id: str, db: AsyncSession) -> dict:
             "user_id": fee["advogado_responsavel_id"],
             "partner_id": partner,
             "valor": titular_share,
-            "percentual": 50,
+            "percentual": pct_titular,
         },
-        "escritorio": {"valor": escritorio_share, "percentual": 50},
+        "escritorio": {"valor": escritorio_share, "percentual": 100 - pct_titular},
         "pago": fee["status"] == "pago",
     }
 

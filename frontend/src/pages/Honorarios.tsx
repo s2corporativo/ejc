@@ -2,6 +2,7 @@ import { exportCsv } from "../utils/exportCsv";
 import { toast } from "../components/Toast";
 import { exportPdf } from "../utils/exportPdf";
 import { useEffect, useState } from "react";
+import { useSearchParams } from "react-router-dom";
 import {
   Plus,
   DollarSign,
@@ -15,20 +16,29 @@ import api from "../lib/api";
 import { asList } from "../lib/list";
 import type { Fee, Client, Paged } from "../types";
 import {
-  PageHeader,
   StatusBadge,
   Modal,
   Empty,
+  ErrorState,
   Spinner,
   fmtDate,
   fmtMoney,
 } from "../components/UI";
 
+const STATUS_VALIDOS = ["pendente", "atrasado", "pago"];
+
 export default function Honorarios() {
   const [data, setData] = useState<Paged<Fee> | null>(null);
   const [resumo, setResumo] = useState<any>(null);
   const [clientes, setClientes] = useState<Client[]>([]);
-  const [statusF, setStatusF] = useState("");
+  const [searchParams] = useSearchParams();
+  // Filtro inicial pode vir do drill-down do dashboard (?status=pendente).
+  // Obs.: o endpoint /fees/ não aceita competência — esta aba ignora o
+  // filtro de competência compartilhado do FinanceiroWorkspace.
+  const [statusF, setStatusF] = useState(() => {
+    const s = searchParams.get("status");
+    return s && STATUS_VALIDOS.includes(s) ? s : "";
+  });
   const [modal, setModal] = useState(false);
   const [pagModal, setPagModal] = useState<Fee | null>(null);
   const [form, setForm] = useState<any>({ tipo: "fixo" });
@@ -47,20 +57,27 @@ export default function Honorarios() {
   const [pixRes, setPixRes] = useState<any>(null);
   const [pixQr, setPixQr] = useState("");
   const [rateioLoading, setRateioLoading] = useState(false);
+  const [error, setError] = useState(false);
 
   const load = () => {
+    setError(false);
     api
       .get("/fees/", {
         params: { status: statusF || undefined, page_size: 50 },
       })
-      .then((r) => setData(r.data));
-    api.get("/fees/resumo").then((r) => setResumo(r.data));
+      .then((r) => setData(r.data))
+      .catch(() => setError(true));
+    api
+      .get("/fees/resumo")
+      .then((r) => setResumo(r.data))
+      .catch(() => {});
   };
   useEffect(() => {
     load();
     api
       .get("/clients/", { params: { page_size: 100 } })
-      .then((r) => setClientes(asList<Client>(r.data)));
+      .then((r) => setClientes(asList<Client>(r.data)))
+      .catch(() => setClientes([]));
   }, [statusF]);
 
   const salvar = async () => {
@@ -154,60 +171,48 @@ export default function Honorarios() {
 
   return (
     <div>
-      <PageHeader
-        title="Honorários"
-        subtitle="Financeiro do escritório"
-        actions={
-          <div className="flex gap-2 items-center">
-            <button
-              onClick={() => {
-                const rows = (data?.data ?? []).map((f) => ({
-                  descricao: f.descricao,
-                  tipo: f.tipo,
-                  valor: f.valor,
-                  vencimento: f.data_vencimento,
-                  status: f.status,
-                  cliente: (f as any).client_nome ?? "",
-                }));
-                exportCsv(rows as any, "honorarios.csv");
-              }}
-              className="btn-secondary px-3 py-1.5 text-xs"
-            >
-              <Download size={13} /> CSV
-            </button>
-            <button
-              onClick={() => {
-                const rows = (data?.data ?? []).map((f) => [
-                  f.descricao,
-                  f.tipo,
-                  String(f.valor ?? ""),
-                  f.data_vencimento ?? "",
-                  f.status,
-                  (f as any).client_nome ?? "",
-                ]);
-                exportPdf(
-                  "Honorários",
-                  [
-                    "Descrição",
-                    "Tipo",
-                    "Valor",
-                    "Vencimento",
-                    "Status",
-                    "Cliente",
-                  ],
-                  rows,
-                );
-              }}
-              className="btn-secondary px-3 py-1.5 text-xs"
-            >
-              <FileType2 size={13} /> PDF
-            </button>
-            <button className="btn-gold" onClick={() => setModal(true)}>
-              <Plus size={16} /> Novo lançamento
-            </button>
-          </div>
-        }
-      />
+      {/* Cabeçalho fica no FinanceiroWorkspace; aqui apenas as ações da aba. */}
+      <div className="flex gap-2 items-center justify-end flex-wrap mb-4">
+        <button
+          onClick={() => {
+            const rows = (data?.data ?? []).map((f) => ({
+              descricao: f.descricao,
+              tipo: f.tipo,
+              valor: f.valor,
+              vencimento: f.data_vencimento,
+              status: f.status,
+              cliente: (f as any).client_nome ?? "",
+            }));
+            exportCsv(rows as any, "honorarios.csv");
+          }}
+          className="btn-secondary px-3 py-1.5 text-xs"
+        >
+          <Download size={13} /> CSV
+        </button>
+        <button
+          onClick={() => {
+            const rows = (data?.data ?? []).map((f) => [
+              f.descricao,
+              f.tipo,
+              String(f.valor ?? ""),
+              f.data_vencimento ?? "",
+              f.status,
+              (f as any).client_nome ?? "",
+            ]);
+            exportPdf(
+              "Honorários",
+              ["Descrição", "Tipo", "Valor", "Vencimento", "Status", "Cliente"],
+              rows,
+            );
+          }}
+          className="btn-secondary px-3 py-1.5 text-xs"
+        >
+          <FileType2 size={13} /> PDF
+        </button>
+        <button className="btn-gold" onClick={() => setModal(true)}>
+          <Plus size={16} /> Novo lançamento
+        </button>
+      </div>
 
       {resumo && (
         <div className="grid grid-cols-3 gap-4 mb-6">
@@ -250,7 +255,12 @@ export default function Honorarios() {
         ))}
       </div>
 
-      {!data ? (
+      {error ? (
+        <ErrorState
+          message="Não foi possível carregar os honorários. Tente novamente."
+          onRetry={load}
+        />
+      ) : !data ? (
         <Spinner />
       ) : data.data.length === 0 ? (
         <Empty message="Nenhum lançamento" />
@@ -453,6 +463,10 @@ export default function Honorarios() {
         </div>
       </Modal>
 
+      {/* REGRA FIXA: percentual 50/50 hardcoded no backend
+          (backend/app/routers/exito_rateio.py). Não há endpoint de
+          configuração societária para esse rateio — se um dia existir,
+          carregar o percentual da API em vez do texto fixo. */}
       <Modal
         open={!!rateioModal}
         onClose={() => setRateioModal(null)}

@@ -47,6 +47,47 @@ def validar_cnpj(cnpj: str) -> bool:
     return True
 
 
+# ── CNJ (número único de processo — Res. CNJ 65/2008) ─────────────────────────
+# O cálculo do dígito verificador (módulo 97 / ISO 7064) NÃO é reimplementado
+# aqui: reutilizamos a ÚNICA implementação canônica do projeto,
+# app/services/verificador_jurisprudencia.py::validar_dv_cnj (já usada pelo
+# verificador de jurisprudência), para não haver duas versões que possam
+# divergir. Import no topo do módulo é seguro — aquele módulo só depende de
+# stdlib (asyncio/logging/re/unicodedata), sem risco de ciclo.
+from app.services.verificador_jurisprudencia import validar_dv_cnj  # noqa: E402
+
+# Máscara canônica NNNNNNN-DD.AAAA.J.TR.OOOO (20 dígitos com separadores).
+_RE_CNJ_MASCARA = re.compile(r"^\d{7}-\d{2}\.\d{4}\.\d\.\d{2}\.\d{4}$")
+
+
+def normalizar_cnj(numero: str) -> str:
+    """Só os 20 dígitos do número CNJ (aceita com ou sem máscara)."""
+    return _digitos(numero)
+
+
+def validar_cnj(numero: str) -> bool:
+    """Valida um número único de processo (CNJ, Res. CNJ 65/2008).
+
+    Aceita COM máscara (``NNNNNNN-DD.AAAA.J.TR.OOOO``) ou só dígitos (20).
+    Confere o formato (20 dígitos) e o dígito verificador pelo módulo 97
+    (ISO 7064), delegando o cálculo do DV a
+    ``verificador_jurisprudencia.validar_dv_cnj`` (fonte única da regra).
+    Vazio/``None`` NÃO é validado aqui (retorna ``False``); quem chama decide
+    se ausência de número é aceitável.
+    """
+    if not numero:
+        return False
+    bruto = numero.strip()
+    # Tolerante à máscara: aceita apenas dois formatos — só-dígitos (20) ou a
+    # máscara canônica. Isso evita aceitar pontuação arbitrária como válida.
+    if not (bruto.isdigit() or _RE_CNJ_MASCARA.match(bruto)):
+        return False
+    n = _digitos(bruto)
+    if len(n) != 20:
+        return False
+    return validar_dv_cnj(n)
+
+
 async def _get_json(url: str) -> dict | list | None:
     """GET com timeout curto; None para status != 200 (indireção única —
     testes mockam aqui, sem rede)."""
@@ -92,8 +133,11 @@ async def consultar_cep(cep: str) -> dict | None:
             if data:
                 return data
         except Exception as exc:
-            logger.warning("consultar_cep: fonte %s falhou (%s) — tentando a "
-                           "próxima", fonte.__name__, exc)
+            # Não registrar URL/CEP nem a mensagem do cliente HTTP.
+            logger.warning(
+                "consultar_cep: fonte %s falhou (tipo=%s) — tentando a próxima",
+                fonte.__name__, type(exc).__name__,
+            )
     return None
 
 
@@ -174,6 +218,9 @@ async def consultar_cnpj(cnpj: str) -> dict | None:
             if data:
                 return data
         except Exception as exc:
-            logger.warning("consultar_cnpj: fonte %s falhou (%s) — tentando a "
-                           "próxima", fonte.__name__, exc)
+            # Exceções httpx incluem a URL; a URL contém o CNPJ consultado.
+            logger.warning(
+                "consultar_cnpj: fonte %s falhou (tipo=%s) — tentando a próxima",
+                fonte.__name__, type(exc).__name__,
+            )
     return None

@@ -44,7 +44,7 @@ function BrandIntro({ className }: { className?: string }) {
   }
   return (
     <video
-      className={`w-[460px] max-w-full rounded-3xl shadow-card ${className || ""}`}
+      className={`w-[460px] max-w-full rounded-xl shadow-card ${className || ""}`}
       autoPlay
       muted
       playsInline
@@ -148,7 +148,6 @@ export default function LoginModern() {
       <div className="brand-watermark opacity-[0.05]" aria-hidden="true" />
       <div className="relative z-10 grid min-h-screen lg:grid-cols-[1fr_460px]">
         <section className="relative hidden flex-col justify-between overflow-hidden p-10 text-slate-900 lg:flex">
-          <div className="pointer-events-none absolute inset-0 bg-[radial-gradient(circle_at_35%_45%,rgba(201,162,39,.10),transparent_30rem),radial-gradient(circle_at_90%_90%,rgba(216,185,78,.12),transparent_26rem)]" />
           <div className="relative flex items-center gap-3">
             {/* Vinheta da marca — toca uma vez e congela na logomarca */}
             <BrandIntro />
@@ -159,15 +158,15 @@ export default function LoginModern() {
               <Sparkles className="h-3.5 w-3.5" />
               Plataforma jurídica empresarial
             </div>
-            <h1 className="max-w-xl text-5xl font-semibold leading-tight tracking-tight text-slate-950">
+            <h1 className="max-w-xl text-2xl font-bold leading-snug tracking-tight text-slate-950">
               Gestão jurídica com controle, produtividade e IA revisável.
             </h1>
-            <p className="mt-5 max-w-xl text-base leading-7 text-slate-500">
+            <p className="mt-3 max-w-xl text-sm leading-6 text-slate-500">
               Centralize casos, clientes, prazos, documentos, financeiro e
               produção jurídica em um ambiente seguro para operação
               profissional.
             </p>
-            <div className="mt-8 grid max-w-xl grid-cols-3 gap-3">
+            <div className="mt-4 grid max-w-xl grid-cols-3 gap-3">
               {[
                 ["Prazos", "Alertas críticos"],
                 ["Financeiro", "Honorários e receitas"],
@@ -175,7 +174,7 @@ export default function LoginModern() {
               ].map(([title, desc]) => (
                 <div
                   key={title}
-                  className="rounded-2xl bg-white p-4 shadow-card"
+                  className="rounded-xl border border-border bg-white p-3"
                 >
                   <div className="text-sm font-semibold text-slate-950">
                     {title}
@@ -202,8 +201,8 @@ export default function LoginModern() {
               />
             </div>
 
-            {/* Card limpo SEM borda — profundidade só por sombra difusa */}
-            <div className="rounded-2xl bg-white p-8 shadow-[0_1px_2px_rgba(16,24,40,.04),0_18px_50px_rgba(16,24,40,.1)]">
+            {/* Card de login flat: borda 1px + sombra mínima (idioma Verdelimp) */}
+            <div className="rounded-xl border border-border bg-white p-6 shadow-card">
               <div className="mb-7">
                 <div className="mb-3 flex h-11 w-11 items-center justify-center rounded-xl bg-ouro-palha text-ouro-profundo">
                   {requiresTotp ? (
@@ -244,7 +243,13 @@ export default function LoginModern() {
                 </div>
               )}
 
-              <div className="space-y-4">
+              <form
+                className="space-y-4"
+                onSubmit={(e) => {
+                  e.preventDefault();
+                  void submit();
+                }}
+              >
                 <div>
                   <label className="label">E-mail</label>
                   <input
@@ -255,7 +260,6 @@ export default function LoginModern() {
                     disabled={requiresTotp}
                     placeholder="seu@escritorio.adv.br"
                     onChange={(e) => setEmail(e.target.value)}
-                    onKeyDown={(e) => e.key === "Enter" && submit()}
                   />
                 </div>
                 <div>
@@ -267,7 +271,6 @@ export default function LoginModern() {
                     disabled={requiresTotp}
                     placeholder="********"
                     onChange={(e) => setPassword(e.target.value)}
-                    onKeyDown={(e) => e.key === "Enter" && submit()}
                   />
                 </div>
                 {requiresTotp && (
@@ -284,14 +287,13 @@ export default function LoginModern() {
                       onChange={(e) =>
                         setTotpCode(e.target.value.replace(/\D/g, ""))
                       }
-                      onKeyDown={(e) => e.key === "Enter" && submit()}
                     />
                   </div>
                 )}
                 <button
+                  type="submit"
                   className="btn-primary h-11 w-full"
                   disabled={loading}
-                  onClick={submit}
                 >
                   {loading ? (
                     "Validando..."
@@ -315,16 +317,19 @@ export default function LoginModern() {
                     Voltar e alterar credenciais
                   </button>
                 ) : (
-                  <div className="text-center">
+                  <div className="space-y-2 text-center">
                     <Link
                       to="/recuperar-senha"
                       className="text-xs font-medium text-primary-600 transition-colors hover:text-primary-700"
                     >
                       Esqueci minha senha
                     </Link>
+                    <p className="text-xs text-slate-400">
+                      Não tem acesso? Solicite ao administrador do escritório.
+                    </p>
                   </div>
                 )}
-              </div>
+              </form>
             </div>
             <p className="mt-6 text-center text-[11px] tracking-wide text-slate-400">
               De Paula Teixeira Sociedade de Advogados

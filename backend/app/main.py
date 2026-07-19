@@ -46,6 +46,7 @@ from app.routers import backup_admin
 from app.routers import bank_analysis
 from app.routers import calculadoras
 from app.routers import calendar_feed
+from app.routers import case_intelligence
 from app.routers import case_partes
 from app.routers import cases
 from app.routers import caso_areas
@@ -69,6 +70,7 @@ from app.routers import diagnostico
 from app.routers import diario_oficial
 from app.routers import diplomacia_v3
 from app.routers import documento_ia
+from app.routers import raio_x
 from app.routers import documents
 from app.routers import dossie_cliente
 from app.routers import dossie_estrategico
@@ -83,6 +85,7 @@ from app.routers import financeiro_consolidado
 from app.routers import gestao_societaria
 from app.routers import honorarios_calc
 from app.routers import ia_adversarial
+from app.routers import ia_agente
 from app.routers import ia_citacoes
 from app.routers import ia_defensiva
 from app.routers import ia_especializada
@@ -109,14 +112,18 @@ from app.routers import triagem_entrevista
 from app.routers import ficha_triagem
 from app.routers import jurisprudencia_interna
 from app.routers import kanban
+from app.routers import kit_documental
 from app.routers import legal_docs
+from app.routers import matriz_teses
 from app.routers import memoria_institucional
 from app.routers import mensagens
 from app.routers import module_help
+from app.routers import motor_peca
 from app.routers import movimentos
 from app.routers import noticias
 from app.routers import notifications
 from app.routers import novos_modulos
+from app.routers import orquestrador
 from app.routers import observabilidade
 from app.routers import office_contracts
 from app.routers import partner_withdrawals
@@ -175,6 +182,7 @@ from app.routers import webhooks
 from app.routers import whatsapp
 from app.routers import wiki
 from app.routers import workflow
+from app.integrations import routers as integracoes
 
 
 # Ativa a arquitetura orientada a eventos (P1): importar registra os @on subscribers.
@@ -187,20 +195,12 @@ from app.core.logging_config import setup_logging
 setup_logging(json_logs=settings.LOG_JSON, level=settings.LOG_LEVEL)
 logger = logging.getLogger("ejc")
 
-# ── Sentry (desabilitado se SENTRY_DSN vazio) ─────────────────────────────────
-if settings.SENTRY_DSN:
-    import sentry_sdk
-    from sentry_sdk.integrations.fastapi import FastApiIntegration
-    from sentry_sdk.integrations.sqlalchemy import SqlalchemyIntegration
-    sentry_sdk.init(
-        dsn=settings.SENTRY_DSN,
-        environment=settings.APP_ENV,
-        traces_sample_rate=0.1,       # 10% das transações para performance
-        profiles_sample_rate=0.05,
-        integrations=[FastApiIntegration(), SqlalchemyIntegration()],
-        send_default_pii=False,       # LGPD: sem PII nos eventos Sentry
-    )
-    logger.info("[EJC] Sentry inicializado")
+# ── Observabilidade: Sentry gated (no-op sem SENTRY_DSN) ──────────────────────
+# init_sentry() é defensivo: sem SENTRY_DSN é no-op e nunca levanta exceção,
+# então o boot fica idêntico ao de hoje. Com DSN, aplica scrub LGPD (before_send)
+# e send_default_pii=False. Ver app/core/observability.py.
+from app.core.observability import app_version, init_sentry, uptime_seconds
+init_sentry()
 
 
 @asynccontextmanager
@@ -288,6 +288,7 @@ app.include_router(backup_admin.router, prefix=API)
 app.include_router(bank_analysis.router, prefix=API)
 app.include_router(calculadoras.router, prefix=API)
 app.include_router(calendar_feed.router, prefix=API)
+app.include_router(case_intelligence.router, prefix=API)
 app.include_router(case_partes.router, prefix=API)
 app.include_router(cases.router, prefix=API)
 app.include_router(caso_areas.router, prefix=API)
@@ -310,6 +311,7 @@ app.include_router(despesas.router, prefix=API)
 app.include_router(diario_oficial.router, prefix=API)
 app.include_router(diplomacia_v3.router, prefix=API)
 app.include_router(documento_ia.router, prefix=API)
+app.include_router(raio_x.router, prefix=API)
 app.include_router(documents.router, prefix=API)
 app.include_router(dossie_cliente.router, prefix=API)
 app.include_router(dossie_estrategico.router, prefix=API)
@@ -324,12 +326,14 @@ app.include_router(financeiro_consolidado.router, prefix=API)
 app.include_router(gestao_societaria.router, prefix=API)
 app.include_router(honorarios_calc.router, prefix=API)
 app.include_router(ia_adversarial.router, prefix=API)
+app.include_router(ia_agente.router, prefix=API)
 app.include_router(ia_citacoes.router, prefix=API)
 app.include_router(ia_defensiva.router, prefix=API)
 app.include_router(ia_especializada.router, prefix=API)
 app.include_router(ia_extra.router, prefix=API)  # Bloco 1 (Etapa 4): router antes não montado → 8 chamadas frontend em 404
 app.include_router(ia_governanca.router, prefix=API)
 app.include_router(ia_saude.router, prefix=API)
+app.include_router(ia_saude.router_status, prefix=API)  # GET /api/ia/status
 app.include_router(indice_risco.router, prefix=API)
 app.include_router(indices.router, prefix=API)  # Índices oficiais BCB (SGS + Olinda) — Bloco 1 das APIs públicas
 app.include_router(infosimples_receita.router, prefix=API)
@@ -346,7 +350,10 @@ app.include_router(juris_import.router, prefix=API)
 app.include_router(jurisprudencia_externa.router, prefix=API)
 app.include_router(jurisprudencia_interna.router, prefix=API)
 app.include_router(kanban.router, prefix=API)
+app.include_router(kit_documental.router, prefix=API)  # POST /api/cases/{id}/kit-documental (P0.3)
 app.include_router(legal_docs.router, prefix=API)
+app.include_router(matriz_teses.router, prefix=API)  # FASE 3 Orquestrador — Matriz de Teses (migração 102)
+app.include_router(orquestrador.router, prefix=API)  # FASE 5 Orquestrador — máquina de estados do caso
 app.include_router(memoria_institucional.router, prefix=API)
 app.include_router(honorarios_oab.router, prefix=API)  # frontend: /api/honorarios-oab/estimar (EstimadorHonorarios)
 app.include_router(intake.router, prefix=API)  # frontend: /api/intake/casos/{id}/analise-completa (IntakeAnalise)
@@ -354,6 +361,7 @@ app.include_router(triagem_entrevista.router, prefix=API)  # frontend: /api/tria
 app.include_router(ficha_triagem.router, prefix=API)  # frontend: /api/triagem/ficha (Ficha de Triagem pré-peça — gate de geração)
 app.include_router(mensagens.router, prefix=API)
 app.include_router(module_help.router, prefix=API)  # frontend: /api/module-help/* (HelpButton)
+app.include_router(motor_peca.router, prefix=API)  # P1: Motor de Peça — /api/cases/{id}/motor-peca/*
 app.include_router(movimentos.router, prefix=API)
 app.include_router(noticias.router, prefix=API)
 app.include_router(notifications.router, prefix=API)
@@ -417,17 +425,25 @@ app.include_router(webhooks.router, prefix=API)
 app.include_router(whatsapp.router, prefix=API)
 app.include_router(wiki.router, prefix=API)
 app.include_router(workflow.router, prefix=API)
+# Integrações externas públicas (app/integrations/) — Conecta gov.br fica de
+# fora até existirem credenciais reais (credenciamento institucional pendente).
+app.include_router(integracoes.datajud_router, prefix=API)
+app.include_router(integracoes.djen_router, prefix=API)
+app.include_router(integracoes.brasilapi_router, prefix=API)
 
 
 
-# ── Health check (público — usado pelo Docker healthcheck) ────────────────────
+# ── Health check / LIVENESS (público — Docker healthcheck + UptimeRobot) ──────
+# Contrato: SEMPRE HTTP 200 enquanto o processo respira (não depende de I/O
+# externo). scripts/post_deploy_check.sh e o monitor externo dependem disso.
+# Dependências (DB, migrations) são checadas em /api/health/ready.
 @app.get("/api/health")
 async def health():
-    db_ok = await check_db()
     return {
-        "status": "ok" if db_ok else "degraded",
-        "version": "3.0.0",
-        "database": db_ok,
+        "status": "ok",
+        "version": app_version(),
+        "uptime_seconds": uptime_seconds(),
+        "environment": settings.APP_ENV,
     }
 
 
@@ -438,8 +454,20 @@ async def health():
 # passava despercebido). Redis/embeddings são informativos (não derrubam o 200).
 @app.get("/api/health/ready")
 async def readiness():
+    import asyncio
+
     settings = get_settings()
-    db_ok = await check_db()
+
+    # DB com timeout curto: nunca prende o monitor; o context manager de
+    # check_db() fecha a conexão mesmo em timeout (não vaza conexão).
+    try:
+        db_ok = await asyncio.wait_for(check_db(), timeout=3.0)
+    except Exception:
+        db_ok = False
+
+    # Migrations: True/False se determinável, None = indeterminado (informativo).
+    from app.core.observability import check_migrations_head
+    migrations_ok = await check_migrations_head()
 
     # Redis só é checado quando alguma feature depende dele; senão, "não usado".
     redis_ok = None
@@ -449,11 +477,13 @@ async def readiness():
 
     from app.services.embedding_service import disponivel as _emb_disponivel
     checks = {
-        "database": db_ok,          # crítico
+        "database": db_ok,          # crítico (bloqueia readiness)
+        "migrations": migrations_ok,  # crítico se determinável (None = ignora)
         "redis": redis_ok,          # informativo (None = não utilizado)
         "embeddings": _emb_disponivel(),  # informativo
     }
-    pronto = db_ok                  # só o DB é bloqueante para "ready"
+    # Bloqueantes: DB e (migrations quando puder ser confirmada como desatualizada).
+    pronto = db_ok and (migrations_ok is not False)
     return JSONResponse(
         status_code=200 if pronto else 503,
         content={"status": "ready" if pronto else "not_ready", "checks": checks},

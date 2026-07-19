@@ -14,19 +14,14 @@ from __future__ import annotations
 from datetime import date, timedelta
 from functools import lru_cache
 
+from app.services import calendario_tribunal as _cal
+
 
 # ── Feriados nacionais FIXOS (dia, mês) ───────────────────────────────────────
-FERIADOS_FIXOS: set[tuple[int, int]] = {
-    (1, 1),    # Confraternização Universal
-    (21, 4),   # Tiradentes
-    (1, 5),    # Dia do Trabalho
-    (7, 9),    # Independência
-    (12, 10),  # N. Sra. Aparecida
-    (2, 11),   # Finados
-    (15, 11),  # Proclamação da República
-    (20, 11),  # Consciência Negra (Lei 14.759/2023)
-    (25, 12),  # Natal
-}
+# Centralizados no calendário versionado (calendario_tribunal.FERIADOS_NACIONAIS,
+# cada registro com fonte e vigência). Mesmo conjunto de sempre — o alias é
+# mantido aqui por retrocompatibilidade de import.
+FERIADOS_FIXOS: set[tuple[int, int]] = _cal.feriados_fixos_nacionais()
 
 # Feriados forenses adicionais (recesso 20/12 a 06/01 — suspensão CPC art. 220)
 RECESSO_FORENSE = [(d, 12) for d in range(20, 32)] + [(d, 1) for d in range(1, 7)]
@@ -164,25 +159,42 @@ def eh_feriado(d: date, incluir_recesso: bool = False) -> bool:
     return False
 
 
-def eh_dia_util(d: date, forense: bool = True, tribunal: str | None = None) -> bool:
-    """Dia útil = não é fim de semana, feriado nem dia suspenso pelo tribunal."""
+def eh_dia_util(d: date, forense: bool = True, tribunal: str | None = None,
+                aplicar_recesso: bool = False) -> bool:
+    """Dia útil = não é fim de semana, feriado nem dia suspenso pelo tribunal.
+
+    aplicar_recesso=True considera TODA a janela do recesso do CPC art. 220
+    (20/12 a 20/01, inclusive) como não útil — para PRAZOS PROCESSUAIS em dias
+    úteis (não usar em prazos decadenciais/corridos administrativos). O default
+    False preserva o comportamento histórico (recesso parcial 20/12–06/01 via
+    RECESSO_FORENSE quando forense=True).
+    """
     if d.weekday() >= 5:        # 5=sábado, 6=domingo
         return False
-    if _suspenso(d, tribunal):  # suspensão específica do tribunal (portaria)
+    if _suspenso(d, tribunal):  # suspensão específica do tribunal (portaria/banco)
+        return False
+    if aplicar_recesso and _cal.em_recesso_art220(d):
+        return False
+    if tribunal and (d in _cal.datas_feriados_locais(tribunal)
+                     or d in _cal.datas_suspensoes_tribunal(tribunal)):
+        # Calendário versionado em código (curadoria) — vazio por padrão,
+        # logo sem dados locais o comportamento é idêntico ao anterior.
         return False
     return not eh_feriado(d, incluir_recesso=forense)
 
 
-def proximo_dia_util(d: date, forense: bool = True, tribunal: str | None = None) -> date:
+def proximo_dia_util(d: date, forense: bool = True, tribunal: str | None = None,
+                     aplicar_recesso: bool = False) -> date:
     """Retorna a própria data se útil; senão, o próximo dia útil."""
-    while not eh_dia_util(d, forense, tribunal):
+    while not eh_dia_util(d, forense, tribunal, aplicar_recesso):
         d += timedelta(days=1)
     return d
 
 
-def dia_util_anterior(d: date, forense: bool = True, tribunal: str | None = None) -> date:
+def dia_util_anterior(d: date, forense: bool = True, tribunal: str | None = None,
+                      aplicar_recesso: bool = False) -> date:
     """Retorna a própria data se útil; senão, o dia útil anterior."""
-    while not eh_dia_util(d, forense, tribunal):
+    while not eh_dia_util(d, forense, tribunal, aplicar_recesso):
         d -= timedelta(days=1)
     return d
 
@@ -190,11 +202,17 @@ def dia_util_anterior(d: date, forense: bool = True, tribunal: str | None = None
 # ── Cálculo de prazos ─────────────────────────────────────────────────────────
 
 def prazo_dias_uteis(data_inicio: date, dias: int, tribunal: str | None = None,
-                     em_dobro: bool = False) -> date:
+                     em_dobro: bool = False, aplicar_recesso: bool = False) -> date:
     """
     Prazo processual em dias ÚTEIS (CPC art. 219 / CLT art. 775).
     Exclui o dia do início; conta apenas dias úteis forenses.
     Se `tribunal` for informado, desconsidera também os dias suspensos por ele.
+
+    aplicar_recesso=True aplica a suspensão INTEGRAL do recesso do CPC art. 220
+    (20/12 a 20/01, inclusive; equivalente CLT art. 775-A) à contagem — usar em
+    PRAZOS PROCESSUAIS. O default False mantém o comportamento histórico
+    (retrocompatibilidade) e NUNCA deve mudar: prazos decadenciais e corridos
+    administrativos não se suspendem no recesso.
 
     em_dobro=True DOBRA a quantidade de dias — prazo em dobro do CPC:
       • art. 180 — Ministério Público;
@@ -212,7 +230,8 @@ def prazo_dias_uteis(data_inicio: date, dias: int, tribunal: str | None = None,
     contados = 0
     while contados < dias:
         atual += timedelta(days=1)
-        if eh_dia_util(atual, forense=True, tribunal=tribunal):
+        if eh_dia_util(atual, forense=True, tribunal=tribunal,
+                       aplicar_recesso=aplicar_recesso):
             contados += 1
     return atual
 

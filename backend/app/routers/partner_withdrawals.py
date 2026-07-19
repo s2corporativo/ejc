@@ -1,4 +1,5 @@
 """Partner withdrawals with approval workflow"""
+from decimal import Decimal, ROUND_HALF_UP
 from fastapi import APIRouter, Body, Depends, HTTPException
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import text
@@ -9,6 +10,14 @@ from app.core.security import get_current_user
 router = APIRouter(prefix="/v1/partner-withdrawals", tags=["partner-withdrawals"])
 
 PRIVILEGED = {"superadmin", "socio"}
+
+_Q2 = Decimal("0.01")
+
+
+def _money(v) -> Decimal:
+    """Coage numérico (Decimal de coluna Numeric, int, float, str, None) para
+    Decimal com 2 casas (ROUND_HALF_UP). Dinheiro fica Decimal ponta a ponta."""
+    return Decimal(str(v or 0)).quantize(_Q2, ROUND_HALF_UP)
 
 
 @router.get("")
@@ -61,17 +70,17 @@ async def create_withdrawal(
     # Corrige bug: net_value/partner_share ficavam NULL e status sem default ->
     # retirada manual nascia inaprovavel. Retirada manual: o socio recebe o
     # liquido da propria retirada (gross - despesas do caso).
-    gross = float(body.get("gross_value") or 0)
-    expenses = float(body.get("case_expenses") or 0)
-    net = round(gross - expenses, 2)
+    gross = _money(body.get("gross_value"))
+    expenses = _money(body.get("case_expenses"))
+    net = _money(gross - expenses)
     result = await db.execute(
         text("""INSERT INTO partner_withdrawals (partner_id, gross_value, case_expenses, net_value, partner_share, description, period_reference, status)
              VALUES (:partner_id, :gross_value, :case_expenses, :net_value, :partner_share, :description, :period_reference, 'pendente')
              RETURNING id, partner_id, gross_value, case_expenses, net_value, partner_share, description, period_reference, status, created_at"""),
         {
             "partner_id": partner_id,
-            "gross_value": body.get("gross_value"),
-            "case_expenses": body.get("case_expenses", 0),
+            "gross_value": gross,
+            "case_expenses": expenses,
             "net_value": net,
             "partner_share": net,
             "description": body.get("description"),

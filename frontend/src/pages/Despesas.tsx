@@ -1,14 +1,16 @@
 import { useState, useEffect, useCallback } from "react";
+import { useSearchParams } from "react-router-dom";
 import { Plus, Check, Trash2, RefreshCw, Filter, Download } from "lucide-react";
 import api from "../lib/api";
 import { toast } from "../components/Toast";
 import {
   Modal,
   Button,
-  PageHeader,
   fmtDate,
   Spinner,
   Empty,
+  ErrorState,
+  StatusBadge,
   ConfirmModal,
 } from "../components/UI";
 
@@ -52,12 +54,6 @@ const CAT_LABEL: Record<string, string> = {
   outro: "Outros",
 };
 
-const STATUS_COLOR: Record<string, string> = {
-  pendente: "bg-yellow-100 text-yellow-700",
-  pago: "bg-success-100 text-success-700",
-  cancelado: "bg-slate-100 text-slate-500",
-};
-
 function fmtR$(v: number) {
   return (v ?? 0).toLocaleString("pt-BR", {
     style: "currency",
@@ -91,21 +87,30 @@ const EMPTY_FORM: FormState = {
   competencia: "",
 };
 
-export default function Despesas() {
+const STATUS_VALIDOS = ["pendente", "pago", "cancelado"];
+
+export default function Despesas({
+  competencia,
+}: {
+  /** Competência (AAAA-MM) — controlada pelo FinanceiroWorkspace. */
+  competencia?: string;
+}) {
   const [items, setItems] = useState<Despesa[]>([]);
   const [loading, setLoading] = useState(true);
+  const [error, setError] = useState(false);
   const [showForm, setShowForm] = useState(false);
   const [editId, setEditId] = useState<string | null>(null);
   const [form, setForm] = useState<FormState>({ ...EMPTY_FORM });
   const [pendenteExcluir, setPendenteExcluir] = useState<string | null>(null);
+  const [searchParams] = useSearchParams();
 
-  // filters
+  // filters (status inicial pode vir do drill-down do dashboard: ?status=pendente)
   const [filterCat, setFilterCat] = useState("");
-  const [filterStatus, setFilterStatus] = useState("");
-  const [filterComp, setFilterComp] = useState(() => {
-    const now = new Date();
-    return `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}`;
+  const [filterStatus, setFilterStatus] = useState(() => {
+    const s = searchParams.get("status");
+    return s && STATUS_VALIDOS.includes(s) ? s : "";
   });
+  const filterComp = competencia ?? "";
 
   async function exportCSV() {
     try {
@@ -129,6 +134,7 @@ export default function Despesas() {
 
   const load = useCallback(async () => {
     setLoading(true);
+    setError(false);
     try {
       const params: Record<string, string> = {};
       if (filterCat) params.categoria = filterCat;
@@ -136,6 +142,8 @@ export default function Despesas() {
       if (filterComp) params.competencia = filterComp;
       const res = await api.get("/v1/despesas", { params });
       setItems(res.data ?? []);
+    } catch {
+      setError(true);
     } finally {
       setLoading(false);
     }
@@ -177,21 +185,31 @@ export default function Despesas() {
       competencia: form.competencia || undefined,
       recorrencia: form.recorrente ? form.recorrencia : undefined,
     };
-    if (editId) {
-      await api.patch(`/v1/despesas/${editId}`, payload);
-    } else {
-      await api.post("/v1/despesas", payload);
+    try {
+      if (editId) {
+        await api.patch(`/v1/despesas/${editId}`, payload);
+      } else {
+        await api.post("/v1/despesas", payload);
+      }
+      setShowForm(false);
+      load();
+    } catch (e: any) {
+      toast.error(e?.response?.data?.detail || "Erro ao salvar a despesa");
     }
-    setShowForm(false);
-    load();
   }
 
   async function marcarPago(id: string) {
-    await api.patch(`/v1/despesas/${id}`, {
-      status: "pago",
-      pago_em: new Date().toISOString().split("T")[0],
-    });
-    load();
+    try {
+      await api.patch(`/v1/despesas/${id}`, {
+        status: "pago",
+        pago_em: new Date().toISOString().split("T")[0],
+      });
+      load();
+    } catch (e: any) {
+      toast.error(
+        e?.response?.data?.detail || "Erro ao marcar a despesa como paga",
+      );
+    }
   }
 
   function remove(id: string) {
@@ -200,9 +218,13 @@ export default function Despesas() {
 
   async function confirmarExclusao() {
     if (!pendenteExcluir) return;
-    await api.delete(`/v1/despesas/${pendenteExcluir}`);
-    setPendenteExcluir(null);
-    load();
+    try {
+      await api.delete(`/v1/despesas/${pendenteExcluir}`);
+      setPendenteExcluir(null);
+      load();
+    } catch (e: any) {
+      toast.error(e?.response?.data?.detail || "Erro ao excluir a despesa");
+    }
   }
 
   const totalPendente = items
@@ -213,22 +235,17 @@ export default function Despesas() {
     .reduce((s, i) => s + i.valor, 0);
 
   return (
-    <div className="p-6 max-w-6xl mx-auto space-y-5">
-      <PageHeader
-        eyebrow="Financeiro"
-        title="Despesas do Escritório"
-        subtitle="Controle de custos fixos e variáveis"
-        actions={
-          <>
-            <button onClick={exportCSV} className="btn-secondary text-sm">
-              <Download className="w-4 h-4" /> CSV
-            </button>
-            <button onClick={openNew} className="btn-primary">
-              <Plus className="w-4 h-4" /> Nova Despesa
-            </button>
-          </>
-        }
-      />
+    <div className="space-y-5">
+      {/* Cabeçalho fica no FinanceiroWorkspace (título + competência única);
+          aqui apenas as ações da aba. */}
+      <div className="flex items-center justify-end gap-2 flex-wrap">
+        <button onClick={exportCSV} className="btn-secondary text-sm">
+          <Download className="w-4 h-4" /> CSV
+        </button>
+        <button onClick={openNew} className="btn-primary">
+          <Plus className="w-4 h-4" /> Nova Despesa
+        </button>
+      </div>
 
       {/* Summary cards */}
       <div className="grid grid-cols-3 gap-4">
@@ -279,12 +296,7 @@ export default function Despesas() {
           <option value="pago">Pago</option>
           <option value="cancelado">Cancelado</option>
         </select>
-        <input
-          type="month"
-          className="input w-auto py-1.5"
-          value={filterComp}
-          onChange={(e) => setFilterComp(e.target.value)}
-        />
+        {/* Competência vem do filtro único no topo do FinanceiroWorkspace. */}
         <Button
           onClick={load}
           variant="ghost"
@@ -300,6 +312,11 @@ export default function Despesas() {
       {/* Table */}
       {loading ? (
         <Spinner />
+      ) : error ? (
+        <ErrorState
+          message="Não foi possível carregar as despesas. Tente novamente."
+          onRetry={load}
+        />
       ) : items.length === 0 ? (
         <Empty message="Nenhuma despesa encontrada" />
       ) : (
@@ -344,11 +361,7 @@ export default function Despesas() {
                     {fmtDate(d.vencimento)}
                   </td>
                   <td className="px-4 py-3">
-                    <span
-                      className={`px-2 py-0.5 rounded-full text-xs font-medium ${STATUS_COLOR[d.status] ?? "bg-slate-100 text-slate-500"}`}
-                    >
-                      {d.status}
-                    </span>
+                    <StatusBadge value={d.status} />
                   </td>
                   <td
                     className="px-4 py-3"

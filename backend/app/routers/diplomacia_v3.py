@@ -10,7 +10,10 @@ P1 (2026-07-05):
 - POST /dossie-pressao materializa gerar_dossie_pressao (antes string fixa):
   gateway central de IA + AILog (registrar_ai_log) + saída rascunho (HITL).
 """
+from typing import Annotated, Optional
+
 from fastapi import APIRouter, Depends, HTTPException
+from pydantic import BaseModel, Field, StringConstraints
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.database import get_db
@@ -103,7 +106,46 @@ async def dossie_pressao(
     }
 
 
-@router.post("/analisar-magistrado")
-async def analisar_magistrado(payload: dict, cu: User = Depends(get_current_user)):
-    decisoes = payload.get("decisoes", [])
-    return await sentimento_ia.analisar_tendencia(decisoes)
+class AnalisarMagistradoRequest(BaseModel):
+    """Payload VALIDADO (Pydantic → 422 em entrada malformada, nunca 500).
+
+    Tetos defensivos: 50 decisões × 4.000 chars ≈ 200k chars — acima disso é
+    abuso de tokens no gateway de IA, não uso legítimo (o prompt do shim usa
+    um recorte das decisões)."""
+
+    decisoes: list[Annotated[str, StringConstraints(max_length=4000)]] = Field(
+        default_factory=list, max_length=50,
+    )
+    case_id: Optional[str] = Field(None, max_length=64)
+
+
+@router.post("/analisar-magistrado", dependencies=[Depends(rate_limit("analisar-magistrado", 10))])
+async def analisar_magistrado(
+    req: AnalisarMagistradoRequest,
+    db: AsyncSession = Depends(get_db),
+    cu: User = Depends(get_current_user),
+):
+    """Análise de tendência do magistrado via shim ai_brain (sentimento_ia).
+    Auditoria: rastro obrigatório em ai_logs (HITL/LGPD) — mesmo padrão de
+    dossie_pressao acima. Contrato de resposta inalterado (str)."""
+    from app.services.ai_guard import registrar_ai_log
+    from app.models.ai_log import AITipoUso
+    from app.services.sanitizer import sanitizar_pii
+
+    decisoes = req.decisoes
+
+    case_id = req.case_id
+    if case_id:
+        await verificar_acesso_caso(db, cu, case_id)
+
+    resultado = await sentimento_ia.analisar_tendencia(decisoes)
+
+    # Prompt logado já sanitizado (o shim ai_brain aplica a mesma sanitização
+    # antes do envio ao gateway central) — nunca grava PII bruta no AILog.
+    prompt_limpo, houve_pii = sanitizar_pii("\n".join(decisoes[:10]))
+    await registrar_ai_log(
+        db, user_id=cu.id, tipo_uso=AITipoUso.analise_caso, case_id=case_id,
+        prompt_sanitizado=prompt_limpo, pii_removida=houve_pii,
+        resposta=resultado,
+    )
+    return resultado

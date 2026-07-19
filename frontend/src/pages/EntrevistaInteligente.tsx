@@ -20,6 +20,7 @@ import { toast } from "../components/Toast";
 import CaseBreadcrumb from "../components/CaseBreadcrumb";
 import { useCaseContext } from "../stores/caseContext";
 import {
+  AIFactualityLegend,
   AISurface,
   Badge,
   Button,
@@ -283,6 +284,7 @@ export default function EntrevistaInteligente() {
             />
           ) : (
             <div className={cn(loading && "opacity-50 transition-opacity")}>
+              <AIFactualityLegend className="mb-4" />
               <PainelItem
                 icon={Scale}
                 label="Área do Direito"

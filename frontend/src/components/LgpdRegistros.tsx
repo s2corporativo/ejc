@@ -23,7 +23,7 @@ import {
 } from "lucide-react";
 import api from "../lib/api";
 import { toast } from "./Toast";
-import { Modal, Spinner, Empty, ConfirmModal } from "./UI";
+import { Modal, Spinner, Empty, ErrorState, ConfirmModal } from "./UI";
 import type { Client } from "../types";
 import { asList } from "../lib/list";
 
@@ -126,6 +126,7 @@ export default function LgpdRegistros() {
 
   // Dados do ROPA
   const [lista, setLista] = useState<RegistroTratamento[] | null>(null);
+  const [erroLista, setErroLista] = useState(false);
   const [resumo, setResumo] = useState<Resumo | null>(null);
   const [expandido, setExpandido] = useState<number | null>(null);
 
@@ -155,10 +156,14 @@ export default function LgpdRegistros() {
       return;
     }
     setLista(null);
+    setErroLista(false);
     api
       .get("/lgpd/registros", { params: { client_id: clientId } })
       .then((r) => setLista(asList<RegistroTratamento>(r.data)))
-      .catch(() => setLista([]));
+      .catch(() => {
+        setErroLista(true);
+        setLista([]);
+      });
     api
       .get(`/lgpd/registros/${clientId}/resumo`)
       .then((r) => setResumo(r.data))
@@ -424,7 +429,12 @@ export default function LgpdRegistros() {
           )}
 
           {/* Tabela do ROPA */}
-          {lista === null ? (
+          {erroLista ? (
+            <ErrorState
+              message="Não foi possível carregar o registro de operações (ROPA). Tente novamente."
+              onRetry={carregar}
+            />
+          ) : lista === null ? (
             <Spinner />
           ) : lista.length === 0 ? (
             <Empty message="Nenhuma operação de tratamento registrada para este cliente" />

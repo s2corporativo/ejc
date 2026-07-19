@@ -17,6 +17,8 @@ import {
   BarChart3,
 } from "lucide-react";
 import api from "../lib/api";
+import { mensagemErroIA, ROTULO_IA_NAO_ATIVADA } from "../lib/iaErro";
+import { useIaStatus } from "../lib/iaStatus";
 import { Button } from "./UI";
 
 interface Parte {
@@ -162,6 +164,7 @@ export default function AnaliseEstrategica({
   const [loading, setLoading] = useState(false);
   const [textDoc, setTextDoc] = useState("");
   const [mostrarInput, setMostrarInput] = useState(false);
+  const { disponivel: iaDisponivel } = useIaStatus();
 
   async function executarAnalise() {
     setLoading(true);
@@ -172,9 +175,10 @@ export default function AnaliseEstrategica({
       setAnalise(res.data);
     } catch (e: any) {
       setAnalise({
-        erro:
-          e?.response?.data?.detail ||
-          "Erro ao analisar caso. Verifique os dados cadastrados.",
+        erro: mensagemErroIA(
+          e,
+          "Não foi possível analisar o caso. Verifique os dados cadastrados ou procure o administrador.",
+        ),
       });
     } finally {
       setLoading(false);
@@ -191,7 +195,7 @@ export default function AnaliseEstrategica({
       {/* Header */}
       <div className="flex items-center justify-between">
         <div className="flex items-center gap-3">
-          <div className="w-10 h-10 rounded-xl bg-gradient-to-br from-ai-500 to-ai-600 flex items-center justify-center shadow-md">
+          <div className="w-10 h-10 rounded-xl bg-ai-600 flex items-center justify-center">
             <Brain className="w-5 h-5 text-white" />
           </div>
           <div>
@@ -236,24 +240,31 @@ export default function AnaliseEstrategica({
               className="input h-28 resize-none"
             />
           )}
-          <Button
-            variant="ai"
-            onClick={executarAnalise}
-            disabled={loading}
-            className="w-full py-3 rounded-xl shadow-md"
+          <span
+            className="block"
+            title={iaDisponivel ? undefined : ROTULO_IA_NAO_ATIVADA}
           >
-            {loading ? (
-              <>
-                <div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin" />
-                Analisando caso...
-              </>
-            ) : (
-              <>
-                <Zap className="w-4 h-4" />
-                Executar Análise Estratégica
-              </>
-            )}
-          </Button>
+            <Button
+              variant="ai"
+              onClick={executarAnalise}
+              disabled={loading || !iaDisponivel}
+              className="w-full py-3 rounded-xl shadow-md"
+            >
+              {!iaDisponivel ? (
+                "IA não ativada — procure o administrador"
+              ) : loading ? (
+                <>
+                  <div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin" />
+                  Analisando caso...
+                </>
+              ) : (
+                <>
+                  <Zap className="w-4 h-4" />
+                  Executar Análise Estratégica
+                </>
+              )}
+            </Button>
+          </span>
           <p className="text-xs text-slate-400 text-center">
             A IA analisará todos os dados do caso e produzirá um parecer
             estratégico completo
@@ -478,7 +489,7 @@ export default function AnaliseEstrategica({
                 {analise.teses_campeas.map((t, i) => (
                   <div
                     key={i}
-                    className="card p-4 bg-gradient-to-br from-white to-success-50"
+                    className="card p-4 border-success-200 hover:border-success-200"
                   >
                     <div className="flex items-start justify-between mb-2">
                       <h4 className="font-semibold text-slate-800 text-sm pr-2">
@@ -512,8 +523,8 @@ export default function AnaliseEstrategica({
               icon={<BarChart3 className="w-4 h-4 text-primary-500" />}
             >
               <div className="grid grid-cols-2 gap-3 mb-3">
-                <div className="bg-gradient-to-br from-primary-50 to-ai-50 rounded-xl p-4 border border-primary-100 text-center">
-                  <div className="text-3xl font-bold text-primary-600 mb-1">
+                <div className="bg-primary-50 rounded-xl p-4 border border-primary-100 text-center">
+                  <div className="text-xl font-bold text-primary-600 mb-1">
                     {analise.jurimetria.chance_sucesso_percent ?? "—"}%
                   </div>
                   <div className="text-xs text-slate-500">Chance de Êxito</div>
@@ -526,8 +537,8 @@ export default function AnaliseEstrategica({
                     />
                   </div>
                 </div>
-                <div className="bg-gradient-to-br from-ai-50 to-ai-50 rounded-xl p-4 border border-ai-100 text-center">
-                  <div className="text-3xl font-bold text-ai-600 mb-1">
+                <div className="bg-ai-50 rounded-xl p-4 border border-ai-100 text-center">
+                  <div className="text-xl font-bold text-ai-600 mb-1">
                     {analise.jurimetria.tempo_estimado_meses ?? "—"}
                   </div>
                   <div className="text-xs text-slate-500">Meses estimados</div>
@@ -645,7 +656,7 @@ export default function AnaliseEstrategica({
 
           {/* Observações Finais */}
           {analise.observacoes_finais && (
-            <div className="bg-gradient-to-br from-slate-800 to-slate-900 rounded-xl p-5 text-white">
+            <div className="bg-slate-900 rounded-xl p-4 text-white">
               <div className="flex items-center gap-2 mb-3">
                 <Flag className="w-4 h-4 text-yellow-400" />
                 <span className="font-semibold text-sm">

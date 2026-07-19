@@ -218,7 +218,7 @@ export default function GuiaEmpresarial() {
               <a href="#analise-documento" className={linkCls}>
                 Análise IA de contrato empresarial ↑
               </a>
-              <Link to="/office-contracts" className={linkCls}>
+              <Link to="/financeiro?tab=contratos" className={linkCls}>
                 Contratos com alertas de vencimento →
               </Link>
             </>

@@ -62,32 +62,33 @@ async def seed_admin() -> None:
 
 
 async def _rodar_seed_sync(nome: str, fn) -> None:
-    """Roda um seed SÍNCRONO (psycopg2) fora do event loop. Não-fatal: uma
-    falha é registrada mas não aborta os demais seeds nem o deploy."""
+    """Roda seed síncrono fora do event loop sem interromper os demais."""
     try:
         await asyncio.to_thread(fn)
-    except (Exception, SystemExit) as e:  # noqa: BLE001 — seed best-effort:
-        # os seeds síncronos chamam sys.exit(1) em má-configuração (URL vazia),
-        # que é SystemExit (BaseException) e escaparia de `except Exception`,
-        # abortando o bootstrap. Capturamos ambos para honrar o "não-fatal".
-        print(f"[seed] AVISO: seed '{nome}' falhou (não-fatal): {e}")
+    except (Exception, SystemExit) as exc:  # noqa: BLE001 — seed best-effort
+        print(f"[seed] AVISO: seed '{nome}' falhou (não-fatal): {exc}")
 
 
 async def main() -> None:
     await seed_admin()
-    # Catálogo de tipos de documento (item 4.3): a tabela document_types_master
-    # é criada VAZIA pela migration 062 e nunca era populada no bootstrap, então
-    # a classificação automática de documentos falhava com "rode o seed". O seed
-    # já existe e é idempotente (por tipo_key) — basta rodá-lo a cada deploy.
+
     from app.seeds.redesign_seed import seed as seed_document_types
+
     await _rodar_seed_sync("document_types_master", seed_document_types)
-    # Skills/Ferramentas de IA (item 5.6): a tabela ejc_skills também nascia
-    # vazia, deixando o seletor de "Ferramenta" em Ferramentas de IA sem opções.
-    # Seeds idempotentes (por name); ferramentas dependem das skills, nesta ordem.
+
     from app.seeds.skills_seed import seed_skills_sync
     from app.seeds.skills_ferramentas_seed import seed as seed_skills_ferramentas
+    from app.seeds.skills_workflows_seed import seed as seed_skills_workflows
+    from app.seeds.skills_expansion_seed import seed as seed_skills_expansion
+    from app.seeds.skills_contextual_areas_seed import seed as seed_skills_contextual_areas
+    from app.seeds.skills_native_ejc_seed import seed as seed_skills_native_ejc
+
     await _rodar_seed_sync("ejc_skills", seed_skills_sync)
     await _rodar_seed_sync("ejc_skills_ferramentas", seed_skills_ferramentas)
+    await _rodar_seed_sync("ejc_skills_workflows", seed_skills_workflows)
+    await _rodar_seed_sync("ejc_skills_expansion", seed_skills_expansion)
+    await _rodar_seed_sync("ejc_skills_contextual_areas", seed_skills_contextual_areas)
+    await _rodar_seed_sync("ejc_skills_native_ejc", seed_skills_native_ejc)
     print("[seed] concluído.")
 
 

@@ -1,7 +1,7 @@
 import { useState, useEffect, useCallback } from "react";
 import { RefreshCw, Check, AlertCircle, Calendar, Repeat } from "lucide-react";
 import api from "../lib/api";
-import { PageHeader, Spinner } from "../components/UI";
+import { Spinner, ErrorState } from "../components/UI";
 
 interface Despesa {
   id: string;
@@ -35,6 +35,7 @@ function fmtR$(v: number) {
 export default function DespesasRecorrentes() {
   const [recorrentes, setRecorrentes] = useState<Despesa[]>([]);
   const [loading, setLoading] = useState(true);
+  const [error, setError] = useState(false);
   const [gerando, setGerando] = useState(false);
   const [msg, setMsg] = useState<string | null>(null);
   const [targetComp, setTargetComp] = useState(() => {
@@ -45,6 +46,7 @@ export default function DespesasRecorrentes() {
 
   const load = useCallback(async () => {
     setLoading(true);
+    setError(false);
     try {
       const res = await api.get("/v1/despesas", {
         params: { recorrente: true },
@@ -54,6 +56,8 @@ export default function DespesasRecorrentes() {
           (d: Despesa & { recorrente: boolean }) => d.recorrente,
         ),
       );
+    } catch {
+      setError(true);
     } finally {
       setLoading(false);
     }
@@ -94,12 +98,10 @@ export default function DespesasRecorrentes() {
   const total = recorrentes.reduce((s, d) => s + d.valor, 0);
 
   return (
-    <div className="p-6 max-w-4xl mx-auto space-y-5">
-      <PageHeader
-        eyebrow="Financeiro"
-        title="Despesas Recorrentes"
-        subtitle="Geração automática de lançamentos mensais"
-      />
+    <div className="space-y-5">
+      {/* Cabeçalho fica no FinanceiroWorkspace. A competência-alvo abaixo é
+          intencional e local: é o mês de DESTINO da geração de lançamentos
+          (padrão: próximo mês), não o filtro de visualização compartilhado. */}
 
       {/* Action card */}
       <div className="card p-5">
@@ -161,6 +163,11 @@ export default function DespesasRecorrentes() {
       {/* List */}
       {loading ? (
         <Spinner />
+      ) : error ? (
+        <ErrorState
+          message="Não foi possível carregar as despesas recorrentes. Tente novamente."
+          onRetry={load}
+        />
       ) : (
         <div className="card overflow-hidden">
           <table className="w-full text-sm">

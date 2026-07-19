@@ -9,6 +9,9 @@ from sqlalchemy import text
 from app.core.database import get_db
 from app.core.security import get_current_user, ROLE_LEVEL
 from app.models.user import User
+# Piso de amostra único do escritório (=5): reutilizado para não inventar taxa
+# com n<5 (mesmo padrão de honestidade estatística de veredito_ia/jurimetria).
+from app.services.jurimetria import MIN_AMOSTRA
 
 
 def _req_staff(cu: User = Depends(get_current_user)) -> User:
@@ -105,17 +108,60 @@ async def ext_benchmarks(tribunal: Optional[str] = None,
 async def predicao_provimento(classe: str = Query(""), tribunal: str = Query(""),
                               dias_estimados: int = Query(0),
                               db: AsyncSession = Depends(get_db), cu: User = Depends(_req_socio)):
-    """Predição por taxa histórica de êxito (heurística interna, não ML)."""
+    """Predição por taxa histórica de êxito (heurística interna, não ML).
+
+    Duas garantias de honestidade estatística (auditoria IA 2026-07-18):
+
+    * PISO DE AMOSTRA (MIN_AMOSTRA=5): com `total < MIN_AMOSTRA` a
+      probabilidade é `None` e o cálculo NÃO é feito — devolver percentual com
+      n<5 é estatística inventada e viola o padrão OAB do escritório (mesmo
+      espírito de core/veredito_ia.py).
+    * CLASSE NÃO FILTRADA: a base interna (tabela `cases`) não tem coluna de
+      classe processual (TPU). O percentual é a TAXA GLOBAL DO TRIBUNAL. A
+      `classe` digitada é apenas ecoada (`classe_filtrada=False`) para o
+      usuário nunca supor que a taxa é específica daquela classe.
+    """
     total, por_resultado = await _por_resultado(db, tribunal or None)
-    favoraveis = sum(r["total"] for r in por_resultado if r["resultado_raw"] in ("exito_total", "exito_parcial", "acordo"))
-    prob = round(favoraveis / total * 100, 1) if total else None
+    favoraveis = sum(r["total"] for r in por_resultado
+                     if r["resultado_raw"] in ("exito_total", "exito_parcial", "acordo"))
+
+    # Escopo real do percentual: global do tribunal (ou geral), classe fora do filtro.
+    escopo_classe = ("taxa global do tribunal (classe não filtrada)" if tribunal
+                     else "taxa global da base (tribunal e classe não filtrados)")
+
+    if total < MIN_AMOSTRA:
+        return {
+            "classe": classe, "tribunal": tribunal,
+            "classe_filtrada": False,
+            "amostra": total,
+            "probabilidade_provimento": None,
+            "metodo": "amostra insuficiente",
+            "confianca": "insuficiente",
+            "dias_estimados": dias_estimados or None,
+            "fonte": "base interna",
+            "aviso": (
+                f"Amostra de {total} caso(s) encerrado(s) — abaixo de {MIN_AMOSTRA}. "
+                "Probabilidade NÃO informada: estatística inventada (n<5) viola o "
+                "padrão OAB do escritório."
+            ),
+        }
+
+    prob = round(favoraveis / total * 100, 1)
     return {
         "classe": classe, "tribunal": tribunal,
+        "classe_filtrada": False,
         "amostra": total,
         "probabilidade_provimento": prob,
-        "metodo": "taxa histórica interna" if total else "amostra insuficiente",
+        "metodo": f"taxa histórica interna — {escopo_classe}",
         "confianca": "baixa" if total < 10 else "média" if total < 50 else "alta",
         "dias_estimados": dias_estimados or None,
+        "fonte": "base interna",
+        "aviso": (
+            f"Percentual é a {escopo_classe}: a base interna não filtra por classe "
+            f"processual (TPU); a classe informada ('{classe}') não entrou no cálculo."
+            if classe else
+            f"Percentual é a {escopo_classe}."
+        ),
     }
 
 

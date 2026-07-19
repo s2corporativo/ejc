@@ -1,15 +1,18 @@
-import { useEffect, useState } from "react";
+import { useEffect, useState, useCallback } from "react";
 import Markdown from "../components/Markdown";
 import { Sparkles, FileText, History, Eye, ShieldCheck } from "lucide-react";
 import api from "../lib/api";
 import {
   EmptyState,
+  ErrorState,
   PageHeader,
   Spinner,
   fmtDate,
   StatusBadge,
 } from "../components/UI";
 import { asList } from "../lib/list";
+import { mensagemErroIA, ROTULO_IA_NAO_ATIVADA } from "../lib/iaErro";
+import { MENSAGEM_IA_NAO_ATIVADA, useIaStatus } from "../lib/iaStatus";
 
 const AREAS = [
   "civil",
@@ -26,6 +29,7 @@ const AREAS = [
 type Tab = "analise" | "resumo" | "validacao" | "logs";
 
 export default function IA() {
+  const { disponivel: iaDisponivel, mensagem: iaMensagem } = useIaStatus();
   const [tab, setTab] = useState<Tab>("analise");
   const [fatos, setFatos] = useState("");
   const [area, setArea] = useState("civil");
@@ -40,17 +44,29 @@ export default function IA() {
   const [resp, setResp] = useState<any>(null);
   const [loading, setLoading] = useState(false);
   const [logs, setLogs] = useState<any[]>([]);
+  const [loadingLogs, setLoadingLogs] = useState(false);
+  const [logsError, setLogsError] = useState(false);
   const [caseId, setCaseId] = useState("");
   const [casos, setCasos] = useState<any[]>([]);
   const [dossie, setDossie] = useState<string | null>(null);
   const [loadingDossie, setLoadingDossie] = useState(false);
 
+  const carregarLogs = useCallback(async () => {
+    setLoadingLogs(true);
+    setLogsError(false);
+    try {
+      const r = await api.get("/ai/logs", { params: { page_size: 30 } });
+      setLogs(asList(r.data));
+    } catch {
+      setLogsError(true);
+    } finally {
+      setLoadingLogs(false);
+    }
+  }, []);
+
   useEffect(() => {
-    if (tab === "logs")
-      api
-        .get("/ai/logs", { params: { page_size: 30 } })
-        .then((r) => setLogs(asList(r.data)));
-  }, [tab]);
+    if (tab === "logs") carregarLogs();
+  }, [tab, carregarLogs]);
 
   useEffect(() => {
     api
@@ -90,7 +106,7 @@ export default function IA() {
       });
       setResp(data);
     } catch (e: any) {
-      setResp({ erro: e.response?.data?.detail || "Falha" });
+      setResp({ erro: mensagemErroIA(e) });
     } finally {
       setLoading(false);
     }
@@ -106,7 +122,7 @@ export default function IA() {
       });
       setResp(data);
     } catch (e: any) {
-      setResp({ erro: e.response?.data?.detail || "Falha" });
+      setResp({ erro: mensagemErroIA(e) });
     } finally {
       setLoading(false);
     }
@@ -131,7 +147,7 @@ export default function IA() {
       });
       setResp(data);
     } catch (e: any) {
-      setResp({ erro: e.response?.data?.detail || "Falha" });
+      setResp({ erro: mensagemErroIA(e) });
     } finally {
       setLoading(false);
     }
@@ -148,15 +164,21 @@ export default function IA() {
     { k: "analise", label: "Análise de caso", icon: Sparkles },
     { k: "resumo", label: "Resumo", icon: FileText },
     { k: "validacao", label: "Validação jurídica", icon: ShieldCheck },
-    { k: "logs", label: "Histórico / HITL", icon: History },
+    { k: "logs", label: "Histórico / Revisões", icon: History },
   ] as const;
 
   return (
     <div>
       <PageHeader
         title="IA Jurídica"
-        subtitle="RAG semântico · dados sanitizados · rascunhos com revisão humana obrigatória"
+        subtitle="Busca na base de conhecimento · dados sanitizados · rascunhos com revisão humana obrigatória"
       />
+
+      {!iaDisponivel && (
+        <div className="mb-4 rounded-lg border border-warn-200 bg-warn-50 px-4 py-3 text-sm text-warn-800">
+          {iaMensagem || MENSAGEM_IA_NAO_ATIVADA}
+        </div>
+      )}
 
       <div className="flex flex-wrap gap-2 mb-5">
         {tabs.map(({ k, label, icon: Icon }) => (
@@ -250,10 +272,16 @@ export default function IA() {
           </div>
           <button
             className="btn-gold"
-            disabled={loading || fatos.length < 30}
+            disabled={loading || fatos.length < 30 || !iaDisponivel}
+            title={iaDisponivel ? undefined : ROTULO_IA_NAO_ATIVADA}
             onClick={analisar}
           >
-            <Sparkles size={15} /> {loading ? "Analisando..." : "Sugerir teses"}
+            <Sparkles size={15} />{" "}
+            {!iaDisponivel
+              ? "IA não ativada"
+              : loading
+                ? "Analisando..."
+                : "Sugerir teses"}
           </button>
         </div>
       )}
@@ -270,10 +298,16 @@ export default function IA() {
           </div>
           <button
             className="btn-gold"
-            disabled={loading || docTexto.length < 50}
+            disabled={loading || docTexto.length < 50 || !iaDisponivel}
+            title={iaDisponivel ? undefined : ROTULO_IA_NAO_ATIVADA}
             onClick={resumir}
           >
-            <FileText size={15} /> {loading ? "Resumindo..." : "Resumir"}
+            <FileText size={15} />{" "}
+            {!iaDisponivel
+              ? "IA não ativada"
+              : loading
+                ? "Resumindo..."
+                : "Resumir"}
           </button>
         </div>
       )}
@@ -360,17 +394,30 @@ export default function IA() {
           </div>
           <button
             className="btn-gold"
-            disabled={loading || rascunhoValidacao.length < 100}
+            disabled={loading || rascunhoValidacao.length < 100 || !iaDisponivel}
+            title={iaDisponivel ? undefined : ROTULO_IA_NAO_ATIVADA}
             onClick={validarRascunho}
           >
             <ShieldCheck size={15} />{" "}
-            {loading ? "Validando..." : "Validar antes de finalizar"}
+            {!iaDisponivel
+              ? "IA não ativada"
+              : loading
+                ? "Validando..."
+                : "Validar antes de finalizar"}
           </button>
         </div>
       )}
 
-      {tab === "logs" && (
-        <div className="space-y-2">
+      {tab === "logs" &&
+        (loadingLogs ? (
+          <Spinner />
+        ) : logsError ? (
+          <ErrorState
+            message="Não foi possível carregar o histórico de uso da IA."
+            onRetry={carregarLogs}
+          />
+        ) : (
+          <div className="space-y-2">
           {logs.map((l) => (
             <div key={l.id} className="card p-4">
               <div className="flex flex-wrap items-center gap-3 mb-2">
@@ -422,8 +469,8 @@ export default function IA() {
           {logs.length === 0 && (
             <EmptyState title="Nenhum uso de IA registrado" />
           )}
-        </div>
-      )}
+          </div>
+        ))}
 
       {loading && <Spinner />}
       {resp?.erro && (

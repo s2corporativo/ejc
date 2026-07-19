@@ -1,9 +1,13 @@
 # ── app/services/juris_import/base.py ────────────────────────────────────────
 # Contrato comum dos conectores de importação de jurisprudência (APIs oficiais).
 #
-# Cada módulo de fonte (lexml.py, stj.py, ...) expõe:
+# Cada módulo de fonte (lexml.py, stj.py, tjmg.py, ...) expõe:
 #     async def buscar(consulta: str, tribunal: str | None = None,
-#                      limite: int = 20) -> list[JulgadoNormalizado]
+#                      limite: int = 20, ano: int | None = None,
+#                      ) -> list[JulgadoNormalizado]
+# `ano` é filtro CLIENT-SIDE pela data do julgado (ver no_ano) — fontes que
+# suportam janela de data server-side (ex.: TJMG) também a aplicam, mas o
+# filtro client-side é sempre a garantia final.
 #
 # Regras do pacote:
 #   • Somente APIs/serviços PÚBLICOS e DOCUMENTADOS (sem scraping de HTML).
@@ -56,6 +60,17 @@ class JulgadoNormalizado(BaseModel):
         return list(dict.fromkeys(
             [self.chave_dedup(), self.chave_canonica(), *self.chaves_extras]
         ))
+
+
+def no_ano(data: str | None, ano: int | None) -> bool:
+    """True se a data (ISO AAAA-MM-DD, ou qualquer string iniciada pelo ano)
+    cair no `ano`. Regras: ano=None → sempre True (sem filtro); ano definido e
+    data ausente/ilegível → False (sem data comprovada, o julgado NÃO entra em
+    uma importação filtrada por ano — filtro client-side conservador)."""
+    if ano is None:
+        return True
+    m = re.match(r"\s*(\d{4})", data or "")
+    return bool(m) and int(m.group(1)) == ano
 
 
 def normalizar_termos(consulta: str) -> list[str]:

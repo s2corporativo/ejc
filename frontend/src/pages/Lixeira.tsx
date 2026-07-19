@@ -2,7 +2,7 @@ import { useEffect, useState } from "react";
 import { Trash2, RotateCcw } from "lucide-react";
 import api from "../lib/api";
 import { asList } from "../lib/list";
-import { PageHeader } from "../components/UI";
+import { ErrorState, PageHeader } from "../components/UI";
 
 const ENTIDADES = [
   ["clients", "Clientes"],
@@ -19,9 +19,15 @@ const ENTIDADES = [
 export default function Lixeira() {
   const [ent, setEnt] = useState("clients");
   const [rows, setRows] = useState<any[]>([]);
+  const [error, setError] = useState(false);
 
-  const load = () =>
-    api.get(`/trash/?entidade=${ent}`).then((r) => setRows(asList(r.data)));
+  const load = () => {
+    setError(false);
+    return api
+      .get(`/trash/?entidade=${ent}`)
+      .then((r) => setRows(asList(r.data)))
+      .catch(() => setError(true));
+  };
   useEffect(() => {
     load();
   }, [ent]);
@@ -50,30 +56,39 @@ export default function Lixeira() {
         ))}
       </div>
       <div className="card divide-y divide-slate-100">
-        {rows.length === 0 && (
+        {error && (
+          <div className="p-4">
+            <ErrorState
+              message="Não foi possível carregar a lixeira. Tente novamente."
+              onRetry={load}
+            />
+          </div>
+        )}
+        {!error && rows.length === 0 && (
           <div className="p-10 text-center text-slate-400">
             <Trash2 className="mx-auto mb-2" /> Lixeira vazia
           </div>
         )}
-        {rows.map((r) => (
-          <div
-            key={r.id}
-            className="p-4 flex items-center justify-between gap-3"
-          >
-            <div>
-              <div className="text-sm font-medium">{r.rotulo}</div>
-              <div className="text-xs text-slate-400">
-                Excluído em {new Date(r.excluido_em).toLocaleString("pt-BR")}
-              </div>
-            </div>
-            <button
-              className="btn-primary text-xs"
-              onClick={() => restaurar(r.id)}
+        {!error &&
+          rows.map((r) => (
+            <div
+              key={r.id}
+              className="p-4 flex items-center justify-between gap-3"
             >
-              <RotateCcw size={13} /> Restaurar
-            </button>
-          </div>
-        ))}
+              <div>
+                <div className="text-sm font-medium">{r.rotulo}</div>
+                <div className="text-xs text-slate-400">
+                  Excluído em {new Date(r.excluido_em).toLocaleString("pt-BR")}
+                </div>
+              </div>
+              <button
+                className="btn-primary text-xs"
+                onClick={() => restaurar(r.id)}
+              >
+                <RotateCcw size={13} /> Restaurar
+              </button>
+            </div>
+          ))}
       </div>
     </div>
   );

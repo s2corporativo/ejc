@@ -1,27 +1,22 @@
-/* Camada visual SaaS/site global: menos contorno, mais profundidade, respiro e hierarquia. */
+/* Camada visual flat/compacta: cards brancos com borda 1px visível,
+   sombra mínima e sem elevação no hover (idioma Verdelimp, cores EJC). */
 .card,
 .section-card {
-  border: 0;
-  background: rgba(255, 255, 255, 0.96);
-  box-shadow:
-    0 1px 2px rgba(15, 23, 42, 0.04),
-    0 18px 48px rgba(15, 23, 42, 0.08);
+  border: 1px solid var(--ejc-border);
+  background: #ffffff;
+  box-shadow: 0 1px 2px rgba(15, 23, 42, 0.04);
 }
 
 .card:hover {
-  border-color: transparent;
-  box-shadow:
-    0 2px 6px rgba(15, 23, 42, 0.05),
-    0 24px 64px rgba(15, 23, 42, 0.12);
-  transform: translateY(-1px);
+  box-shadow: 0 1px 2px rgba(15, 23, 42, 0.04);
+  transform: none;
 }
 
 .dark .card,
 .dark .section-card {
   background: var(--ejc-card);
-  box-shadow:
-    0 1px 2px rgba(0, 0, 0, 0.28),
-    0 20px 56px rgba(0, 0, 0, 0.42);
+  border-color: var(--ejc-border);
+  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.28);
 }
 
 .input,
@@ -58,8 +53,7 @@
   outline: none;
   box-shadow:
     inset 0 0 0 1px rgba(212, 175, 55, 0.72),
-    0 0 0 4px rgba(212, 175, 55, 0.16),
-    0 10px 28px rgba(15, 23, 42, 0.08);
+    0 0 0 3px rgba(212, 175, 55, 0.16);
 }
 
 .dark .input,
@@ -74,33 +68,27 @@
     0 1px 2px rgba(0, 0, 0, 0.22);
 }
 
+/* Canvas flat: sem véus/radiais decorativos — o fundo é o próprio
+   canvas (var(--ejc-bg)), idioma compacto Verdelimp. */
 .surface-soft,
 .ejc-modern-scope {
-  background:
-    radial-gradient(circle at top left, rgba(212, 175, 55, 0.08), transparent 24rem),
-    linear-gradient(180deg, rgba(255, 255, 255, 0.68), rgba(255, 255, 255, 0));
+  background: transparent;
 }
 
 .dark .surface-soft,
 .dark .ejc-modern-scope {
-  background:
-    radial-gradient(circle at top left, rgba(212, 175, 55, 0.08), transparent 24rem),
-    linear-gradient(180deg, rgba(255, 245, 230, 0.04), rgba(255, 245, 230, 0));
+  background: transparent;
 }
 
 .ejc-modern-scope :where(.bg-white.border, .bg-white.shadow, .bg-white.shadow-sm, .bg-white.shadow-md, .bg-white.rounded-xl, .bg-white.rounded-2xl):not(input):not(select):not(textarea):not(button),
 .ejc-modern-scope :where(.card, .section-card) {
-  border-color: transparent !important;
-  box-shadow:
-    0 18px 45px rgba(15, 23, 42, 0.055),
-    0 1px 2px rgba(15, 23, 42, 0.04) !important;
+  border-color: var(--ejc-border) !important;
+  box-shadow: 0 1px 2px rgba(15, 23, 42, 0.04) !important;
 }
 
 .ejc-modern-scope :where(.bg-white.border, .bg-white.shadow, .bg-white.shadow-sm, .bg-white.shadow-md, .bg-white.rounded-xl, .bg-white.rounded-2xl):not(input):not(select):not(textarea):not(button):hover,
 .ejc-modern-scope :where(.card, .section-card):hover {
-  box-shadow:
-    0 24px 64px rgba(15, 23, 42, 0.11),
-    0 1px 2px rgba(15, 23, 42, 0.04) !important;
+  box-shadow: 0 1px 2px rgba(15, 23, 42, 0.04) !important;
 }
 
 .ejc-modern-scope :where(h1, h2, h3) {
@@ -116,21 +104,29 @@
   border-spacing: 0;
 }
 
+/* Faixa clara da marca no thead (ouro palha) + texto escuro da marca */
 .ejc-modern-scope :where(thead th) {
-  background: #f8fafc;
-  color: #64748b;
-  font-size: 0.72rem;
-  font-weight: 750;
-  letter-spacing: 0.06em;
+  background: #f7f1dc;
+  border-bottom: 1px solid rgba(212, 175, 55, 0.22);
+  color: #3b2f0b;
+  font-size: 0.7rem;
+  font-weight: 700;
+  letter-spacing: 0.08em;
   text-transform: uppercase;
+  font-variant-numeric: tabular-nums;
 }
 
 .ejc-modern-scope :where(tbody tr) {
   transition: background-color 0.15s ease;
 }
 
+.ejc-modern-scope :where(tbody td) {
+  border-top: 1px solid rgba(166, 124, 82, 0.1);
+  font-variant-numeric: tabular-nums;
+}
+
 .ejc-modern-scope :where(tbody tr:hover) {
-  background: rgba(250, 247, 240, 0.75);
+  background: rgba(212, 175, 55, 0.06);
 }
 
 /* Dashboard premium: camada escopada sobre a estrutura atual do Dashboard.
@@ -138,86 +134,69 @@
 .ejc-modern-scope > div > .space-y-6 > .flex.flex-col.gap-4:first-child {
   position: relative;
   overflow: hidden;
-  border-radius: 2rem;
-  padding: 1.35rem;
-  background:
-    radial-gradient(circle at 10% 15%, rgba(212, 175, 55, 0.22), transparent 18rem),
-    linear-gradient(135deg, rgba(59, 47, 11, 0.98), rgba(111, 87, 17, 0.94) 58%, rgba(143, 113, 23, 0.95));
-  color: #fff;
-  box-shadow:
-    0 1px 2px rgba(15, 23, 42, 0.08),
-    0 28px 80px rgba(59, 47, 11, 0.22);
-}
-
-.ejc-modern-scope > div > .space-y-6 > .flex.flex-col.gap-4:first-child::after {
-  content: "";
-  position: absolute;
-  inset: auto -8rem -11rem auto;
-  width: 24rem;
-  height: 24rem;
-  border-radius: 999px;
-  background: rgba(212, 175, 55, 0.16);
-  filter: blur(12px);
-  pointer-events: none;
+  border-radius: 0.75rem;
+  padding: 1.1rem 1.25rem;
+  background: #ffffff;
+  color: #0f172a;
+  border: 1px solid rgb(226 232 240);
+  box-shadow: 0 1px 2px rgba(15, 23, 42, 0.04);
 }
 
 .ejc-modern-scope > div > .space-y-6 > .flex.flex-col.gap-4:first-child .eyebrow {
-  color: rgba(229, 206, 127, 0.92);
+  color: #8a6d2f;
 }
 
 .ejc-modern-scope > div > .space-y-6 > .flex.flex-col.gap-4:first-child h1 {
-  color: #fff;
-  font-size: clamp(1.75rem, 3vw, 2.8rem);
-  letter-spacing: -0.04em;
+  /* Título denso na cor escura da marca (idioma compacto) */
+  color: #3b2f0b;
+  font-size: 1.35rem;
+  font-weight: 700;
+  letter-spacing: -0.02em;
 }
 
 .ejc-modern-scope > div > .space-y-6 > .flex.flex-col.gap-4:first-child p {
-  color: rgba(255, 245, 230, 0.76);
+  color: rgb(100 116 139);
 }
 
 .ejc-modern-scope > div > .space-y-6 > .flex.flex-col.gap-4:first-child .btn-primary {
   background: #d4af37;
   color: #3b2f0b;
-  box-shadow: 0 16px 34px rgba(212, 175, 55, 0.28);
+  box-shadow: none;
 }
 
 .ejc-modern-scope > div > .space-y-6 > .flex.flex-col.gap-4:first-child .btn-secondary {
-  border-color: rgba(255, 245, 230, 0.18);
-  background: rgba(255, 255, 255, 0.1);
-  color: #fff;
-  backdrop-filter: blur(12px);
+  border-color: rgb(226 232 240);
+  background: #ffffff;
+  color: rgb(51 65 85);
 }
 
 .ejc-modern-scope > div > .space-y-6 > .flex.flex-col.gap-4:first-child .btn-secondary:hover {
-  background: rgba(255, 255, 255, 0.16);
+  background: rgb(248 250 252);
 }
 
+/* KPI cards no idioma Verdelimp: branco flat, borda 1px, raio 10px e
+   borda SUPERIOR de 3px na cor do indicador (dourado da marca). */
 .ejc-modern-scope > div > .space-y-6 > .grid[class*="xl:grid-cols-4"] > .card {
   position: relative;
   overflow: hidden;
-  min-height: 9rem;
-  border: 0;
-  background:
-    linear-gradient(180deg, rgba(255, 255, 255, 0.98), rgba(255, 255, 255, 0.91)),
-    radial-gradient(circle at top right, rgba(212, 175, 55, 0.16), transparent 14rem);
-  box-shadow:
-    0 1px 2px rgba(15, 23, 42, 0.04),
-    0 24px 64px rgba(15, 23, 42, 0.095);
+  min-height: 7.5rem;
+  border: 1px solid var(--ejc-border);
+  border-radius: 10px;
+  background: #ffffff;
+  box-shadow: 0 1px 2px rgba(15, 23, 42, 0.04);
 }
 
 .ejc-modern-scope > div > .space-y-6 > .grid[class*="xl:grid-cols-4"] > .card::before {
   content: "";
   position: absolute;
-  inset: 0 auto 0 0;
-  width: 4px;
-  background: linear-gradient(180deg, #d4af37, rgba(201, 162, 39, 0.18));
+  inset: 0 0 auto 0;
+  height: 3px;
+  background: #d4af37;
 }
 
 .ejc-modern-scope > div > .space-y-6 > .grid[class*="xl:grid-cols-4"] > .card:hover {
-  transform: translateY(-2px);
-  box-shadow:
-    0 2px 6px rgba(15, 23, 42, 0.05),
-    0 32px 78px rgba(15, 23, 42, 0.13);
+  transform: none;
+  box-shadow: 0 1px 2px rgba(15, 23, 42, 0.04);
 }
 
 .ejc-modern-scope > div > .space-y-6 > .grid[class*="xl:grid-cols-4"] > .card p:first-child {
@@ -227,14 +206,13 @@
 }
 
 .ejc-modern-scope > div > .space-y-6 .section-card {
-  border: 0;
-  background: rgba(255, 255, 255, 0.94);
-  backdrop-filter: blur(10px);
+  border: 1px solid var(--ejc-border);
+  background: #ffffff;
 }
 
 .ejc-modern-scope > div > .space-y-6 .section-card > div:first-child {
   border-bottom-color: rgba(212, 175, 55, 0.12);
-  background: linear-gradient(90deg, rgba(250, 247, 240, 0.8), rgba(255, 255, 255, 0));
+  background: rgba(250, 247, 240, 0.8);
 }
 
 .ejc-modern-scope > div > .space-y-6 .section-card h2 {
@@ -243,12 +221,31 @@
 }
 
 .dark .ejc-modern-scope > div > .space-y-6 > .flex.flex-col.gap-4:first-child {
-  background:
-    radial-gradient(circle at 10% 15%, rgba(212, 175, 55, 0.18), transparent 18rem),
-    linear-gradient(135deg, #1b1506, #2a2108 58%, #55420d);
-  box-shadow:
-    0 1px 2px rgba(0, 0, 0, 0.28),
-    0 28px 80px rgba(0, 0, 0, 0.46);
+  /* Cartão flat no escuro (sem gradiente/blob), hairline dourado */
+  background: var(--ejc-card);
+  border-color: rgba(212, 175, 55, 0.2);
+  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.28);
+}
+
+/* Textos e botão secundário do hero — no claro ficaram tinta escura
+   (h1 #0F172A, eyebrow #8A6D2F, p slate) e botão branco, incondicionais;
+   no grafite precisam de creme/ouro para legibilidade (AA). */
+.dark .ejc-modern-scope > div > .space-y-6 > .flex.flex-col.gap-4:first-child .eyebrow {
+  color: #e5ce7f;
+}
+.dark .ejc-modern-scope > div > .space-y-6 > .flex.flex-col.gap-4:first-child h1 {
+  color: #f6efe1;
+}
+.dark .ejc-modern-scope > div > .space-y-6 > .flex.flex-col.gap-4:first-child p {
+  color: rgba(232, 224, 211, 0.82);
+}
+.dark .ejc-modern-scope > div > .space-y-6 > .flex.flex-col.gap-4:first-child .btn-secondary {
+  border-color: rgba(255, 245, 230, 0.14);
+  background: rgba(255, 245, 230, 0.08);
+  color: #e8e0d3;
+}
+.dark .ejc-modern-scope > div > .space-y-6 > .flex.flex-col.gap-4:first-child .btn-secondary:hover {
+  background: rgba(255, 245, 230, 0.14);
 }
 
 .dark .ejc-modern-scope > div > .space-y-6 > .grid[class*="xl:grid-cols-4"] > .card,
@@ -258,7 +255,7 @@
 
 .dark .ejc-modern-scope > div > .space-y-6 .section-card > div:first-child {
   border-bottom-color: rgba(255, 245, 230, 0.08);
-  background: linear-gradient(90deg, rgba(255, 245, 230, 0.04), rgba(255, 245, 230, 0));
+  background: rgba(255, 245, 230, 0.04);
 }
 
 /* Pré-visualização de peças jurídicas em Visual Law.
@@ -547,4 +544,41 @@
     print-color-adjust: exact;
     -webkit-print-color-adjust: exact;
   }
+}
+
+/* ── Modo privacidade (reuniões/compartilhamento de tela) ────────────────────
+   Ativado pelo botão de olho no header (Layout.tsx), que aplica a classe
+   `ejc-privacy-mode` no <html>. Borra apenas o conteúdo principal — header e
+   sidebar continuam utilizáveis para desligar o modo. */
+.ejc-privacy-mode main.ejc-modern-scope {
+  filter: blur(10px);
+  pointer-events: none;
+  user-select: none;
+}
+
+/* O aviso vive no <body> (fora da subárvore com filter) — um ::after dentro
+   do elemento borrado herdaria o blur do ancestral, sem como desfazê-lo. */
+/* Impressão com o modo ativo: mantém o blur (falha na direção segura — nada
+   legível sai no papel), mas remove o selo fixo, que se repetiria estampado
+   em todas as páginas. */
+@media print {
+  .ejc-privacy-mode body::after {
+    content: none;
+  }
+}
+
+.ejc-privacy-mode body::after {
+  content: "Conteúdo ocultado pelo modo privacidade";
+  position: fixed;
+  inset: 50% auto auto 50%;
+  z-index: 80;
+  transform: translate(-50%, -50%);
+  padding: 0.9rem 1.1rem;
+  border: 1px solid rgba(184, 137, 39, 0.35);
+  border-radius: 14px;
+  color: #111827;
+  background: rgba(255, 255, 255, 0.96);
+  box-shadow: 0 16px 40px rgba(15, 23, 42, 0.18);
+  font-size: 0.82rem;
+  font-weight: 700;
 }

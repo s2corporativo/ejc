@@ -1,8 +1,17 @@
 import { lazy, Suspense, useEffect } from "react";
-import { BrowserRouter, Navigate, Route, Routes } from "react-router-dom";
+import {
+  BrowserRouter,
+  Navigate,
+  Route,
+  Routes,
+  useParams,
+} from "react-router-dom";
 import { ToastContainer } from "./components/Toast";
 import { Spinner } from "./components/UI";
 import ErrorBoundary from "./components/ErrorBoundary";
+import EntradaUniversalGlobal from "./components/EntradaUniversalGlobal";
+import FlowEnhancements from "./components/FlowEnhancements";
+import LegacyClientListAdapter from "./components/LegacyClientListAdapter";
 import Layout from "./components/Layout";
 import PortalLayout from "./components/PortalLayout";
 import {
@@ -28,10 +37,17 @@ const PortalAssinaturas = lazy(
   () => import("./pages/portal/PortalAssinaturas"),
 );
 const PortalMensagens = lazy(() => import("./pages/portal/PortalMensagens"));
-const PortalDocumentos = lazy(
-  () => import("./pages/portal/PortalDocumentos"),
-);
+const PortalDocumentos = lazy(() => import("./pages/portal/PortalDocumentos"));
 const NotFound = lazy(() => import("./pages/NotFound"));
+
+// Alias antigo /clientes/:clientId/dossie removido de STAFF_ROUTES; como
+// LEGACY_REDIRECTS só suporta caminhos estáticos, o segmento dinâmico
+// precisa desse redirect dedicado para não virar 404 para quem tinha
+// a URL salva.
+function ClienteDossieRedirect() {
+  const { clientId } = useParams();
+  return <Navigate to={`/clientes/${clientId}`} replace />;
+}
 
 function RouteFallback() {
   return (
@@ -88,14 +104,26 @@ export default function App() {
               element={
                 <Protected>
                   <StaffOnly>
-                    <Layout />
+                    <>
+                      <Layout />
+                      <EntradaUniversalGlobal />
+                      <FlowEnhancements />
+                    </>
                   </StaffOnly>
                 </Protected>
               }
             >
               {STAFF_ROUTES.map((module) => {
                 const Component = module.component;
-                const content = <Component />;
+                const moduleContent = <Component />;
+                const content =
+                  module.key === "clientes" ? (
+                    <LegacyClientListAdapter>
+                      {moduleContent}
+                    </LegacyClientListAdapter>
+                  ) : (
+                    moduleContent
+                  );
                 return (
                   <Route
                     key={module.key}
@@ -118,6 +146,11 @@ export default function App() {
                   element={<Navigate to={redirect.to} replace />}
                 />
               ))}
+
+              <Route
+                path="/clientes/:clientId/dossie"
+                element={<ClienteDossieRedirect />}
+              />
             </Route>
 
             <Route path="*" element={<NotFound />} />

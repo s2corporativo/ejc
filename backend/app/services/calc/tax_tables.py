@@ -127,11 +127,9 @@ def irrf(
 
     def _imposto(base: Decimal) -> tuple[Decimal, Decimal, Decimal]:
         base = max(base, Decimal("0"))
-        anterior = Decimal("0")
         for limite, aliq, ded in tabela["faixas"]:
             if limite is None or base <= limite:
                 return _q(base * aliq - ded), aliq, ded
-            anterior = limite
         return Decimal("0"), Decimal("0"), Decimal("0")
 
     imp_legal, aliq_l, ded_l = _imposto(base_legal)
