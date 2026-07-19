@@ -38,6 +38,11 @@ from app.models.case import Case, CaseMovimento
 
 logger = logging.getLogger("ejc.datajud")
 
+# Compat: consumidores externos (ex.: crawler_precedentes) leem flags via
+# `datajud_service.settings` — manter o alias de módulo apontando para o
+# singleton cacheado. Internamente as funções usam get_settings() direto.
+settings = get_settings()
+
 # Fallback histórico; a fonte de verdade é get_settings().DATAJUD_BASE_URL.
 BASE = "https://api-publica.datajud.cnj.jus.br"
 
