@@ -1,27 +1,31 @@
+"""Compatibilidade do antigo Banco de Teses v4.
+
+A URL `/teses-v4` permanece temporariamente, mas toda nova leitura e escrita usa
+a tabela canônica `teses`. `teses_juridicas_v4` fica somente como origem do
+backfill da migração 110 até o expurgo controlado.
 """
-Módulo de Banco de Teses Jurídicas Estruturado - EJC v4.0 (Seção 3.122).
-Cadastro, ranking de desempenho e reaproveitamento inteligente de teses.
-"""
+from __future__ import annotations
+
 import logging
-from uuid import uuid4
-from typing import List, Optional
-from fastapi import APIRouter, Depends, HTTPException, Query
-from sqlalchemy import Column, String, Text, Float, DateTime, func, select, Boolean
-from sqlalchemy.ext.asyncio import AsyncSession
+from datetime import datetime
+from typing import Optional
+
+from fastapi import APIRouter, Depends, HTTPException, Query, Response
 from pydantic import BaseModel
+from sqlalchemy import Boolean, Column, DateTime, Float, String, Text, func
+from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.database import Base, get_db
-from app.core.security import get_current_user, require_roles, ROLE_LEVEL
-from app.models.user import User
 from app.core.rate_limit import rate_limit
+from app.core.security import ROLE_LEVEL, get_current_user
+from app.models.user import User
+
+logger = logging.getLogger(__name__)
 
 
-def _is_staff(user: User) -> bool:
-    role = user.role.value if hasattr(user.role, "value") else str(user.role)
-    return ROLE_LEVEL.get(role, 0) >= ROLE_LEVEL["estagiario"]
-
-# Model ORM
 class TeseJuridica(Base):
+    """Modelo legado somente para metadata/backfill; não recebe novas escritas."""
+
     __tablename__ = "teses_juridicas_v4"
     id = Column(String(36), primary_key=True)
     titulo = Column(String(255), nullable=False)
@@ -35,7 +39,7 @@ class TeseJuridica(Base):
     vencedora = Column(Boolean, default=False)
     created_at = Column(DateTime(timezone=True), server_default=func.now())
 
-# Schemas
+
 class TeseCreate(BaseModel):
     titulo: str
     descricao: str
@@ -45,83 +49,151 @@ class TeseCreate(BaseModel):
     tribunal: Optional[str] = None
     magistrado: Optional[str] = None
 
+
 class TeseResponse(TeseCreate):
     id: str
     taxa_sucesso: float
     vencedora: bool
 
-logger = logging.getLogger(__name__)
-router = APIRouter(prefix="/teses-v4", tags=["Banco de Teses Jurídicas"])
 
-@router.post("/", response_model=TeseResponse, status_code=201,
-             dependencies=[Depends(require_roles(["admin", "socio", "advogado"]))])
-async def criar_tese(payload: TeseCreate, db: AsyncSession = Depends(get_db)):
-    t = TeseJuridica(id=str(uuid4()), **payload.model_dump())
-    db.add(t)
-    await db.commit()
-    await db.refresh(t)
-    return t
+router = APIRouter(
+    prefix="/teses-v4",
+    tags=["Banco de Teses — compatibilidade"],
+    deprecated=True,
+)
 
-@router.get("/", response_model=List[TeseResponse])
+
+def _is_staff(user: User) -> bool:
+    role = user.role.value if hasattr(user.role, "value") else str(user.role)
+    return ROLE_LEVEL.get(role, 0) >= ROLE_LEVEL["estagiario"]
+
+
+def _headers(response: Response) -> None:
+    response.headers["Deprecation"] = "true"
+    response.headers["Link"] = '</api/v1/teses>; rel="successor-version"'
+
+
+def _compat(item: dict) -> dict:
+    return {
+        "id": item["id"],
+        "titulo": item["titulo"],
+        "descricao": item["descricao"],
+        "fundamentacao": item.get("fundamentacao") or "",
+        "jurisprudencia": item.get("jurisprudencia"),
+        "area_juridica": item.get("area_juridica") or "",
+        "tribunal": item.get("tribunal"),
+        "magistrado": item.get("magistrado"),
+        "taxa_sucesso": float(item.get("taxa_sucesso") or 0),
+        "vencedora": int(item.get("vezes_venceu") or 0) > 0,
+    }
+
+
+@router.post("/", response_model=TeseResponse, status_code=201, deprecated=True)
+async def criar_tese(
+    payload: TeseCreate,
+    response: Response,
+    db: AsyncSession = Depends(get_db),
+    cu: User = Depends(get_current_user),
+):
+    from app.routers.teses import TeseIn, criar_tese as criar_tese_canonica
+
+    item = await criar_tese_canonica(
+        TeseIn(
+            titulo=payload.titulo,
+            descricao=payload.descricao,
+            fundamentacao=payload.fundamentacao,
+            jurisprudencia=payload.jurisprudencia,
+            area_juridica=payload.area_juridica,
+            tribunal=payload.tribunal,
+            magistrado=payload.magistrado,
+            observacoes="Criada pela rota de compatibilidade /teses-v4.",
+        ),
+        db=db,
+        cu=cu,
+    )
+    _headers(response)
+    return _compat(item)
+
+
+@router.get("/", response_model=list[TeseResponse], deprecated=True)
 async def listar_teses(
+    response: Response,
     area: Optional[str] = None,
     vencedoras: bool = False,
     db: AsyncSession = Depends(get_db),
     cu: User = Depends(get_current_user),
 ):
-    # Banco de teses do escritório: leitura restrita a staff (estagiário+).
     if not _is_staff(cu):
         raise HTTPException(403, "Acesso restrito")
-    q = select(TeseJuridica)
-    if area:
-        q = q.where(TeseJuridica.area_juridica == area)
-    if vencedoras:
-        q = q.where(TeseJuridica.vencedora == True)
-    
-    q = q.order_by(TeseJuridica.taxa_sucesso.desc())
-    res = await db.execute(q)
-    return res.scalars().all()
+    from app.routers.teses import listar_teses as listar_teses_canonicas
 
-@router.get("/sugestao-ia", dependencies=[Depends(rate_limit("teses-sugestao-ia", 15))])
+    page = await listar_teses_canonicas(
+        area=area,
+        status="ativa",
+        tipo=None,
+        tribunal=None,
+        busca=None,
+        order_by="taxa_sucesso",
+        page=1,
+        per_page=100,
+        db=db,
+        cu=cu,
+    )
+    items = page["items"]
+    if vencedoras:
+        items = [item for item in items if int(item.get("vezes_venceu") or 0) > 0]
+    _headers(response)
+    return [_compat(item) for item in items]
+
+
+@router.get(
+    "/sugestao-ia",
+    dependencies=[Depends(rate_limit("teses-sugestao-ia", 15))],
+    deprecated=True,
+)
 async def sugerir_teses_ia(
+    response: Response,
     contexto: str = Query(..., min_length=3, max_length=12000),
     db: AsyncSession = Depends(get_db),
     cu: User = Depends(get_current_user),
 ):
-    """Sugestão de teses pela IA integrada ao RAG (Seção 3.136).
-
-    Consolidado: gateway CENTRAL (app.services.ai_gateway) + sanitização LGPD
-    com abort em PII residual + AILog obrigatório (auditoria HITL).
-    """
-    from app.services import ai_gateway as gateway_central
-    from app.services.ai_guard import sanitizar_ou_abortar, registrar_ai_log
     from app.models.ai_log import AITipoUso
+    from app.routers.teses import listar_teses as listar_teses_canonicas
+    from app.services import ai_gateway as gateway_central
+    from app.services.ai_guard import registrar_ai_log, sanitizar_ou_abortar
 
-    # Dispara IA sobre o banco de teses: restrito a staff (estagiário+).
     if not _is_staff(cu):
         raise HTTPException(403, "Acesso restrito")
-
     contexto_limpo, pii = sanitizar_ou_abortar(contexto)
-
-    # Lista as teses reais do banco (listar_teses) e usa as 5 primeiras como
-    # contexto para a IA. NÃO é busca vetorial/RAG — é listagem direta no DB.
-    teses_existentes = await listar_teses(db=db, cu=cu)
-    contexto_teses = "\n".join([f"- {t.titulo}: {t.descricao}" for t in teses_existentes[:5]])
-
+    page = await listar_teses_canonicas(
+        area=None,
+        status="ativa",
+        tipo=None,
+        tribunal=None,
+        busca=None,
+        order_by="taxa_sucesso",
+        page=1,
+        per_page=5,
+        db=db,
+        cu=cu,
+    )
+    contexto_teses = "\n".join(
+        f"- {item['titulo']}: {item['descricao']}" for item in page["items"]
+    )
     prompt = (
         f"Com base no contexto do caso: {contexto_limpo}\n\n"
         f"E nestas teses do escritório:\n{contexto_teses}\n\n"
-        "Sugira a melhor estratégia e novas teses. Não invente julgados/artigos; "
+        "Sugira a melhor estratégia e novas teses. Não invente julgados ou artigos; "
         "não prometa resultado. Toda sugestão é rascunho sob revisão do advogado."
     )
     try:
-        resp = await gateway_central.chat(
+        result = await gateway_central.chat(
             [{"role": "user", "content": prompt}],
             task_type="analise_juridica",
         )
-    except Exception:
-        logger.exception("Falha na chamada de IA (teses v4)")
-        raise HTTPException(502, "IA indisponível no momento")
+    except Exception as exc:
+        logger.exception("Falha na sugestão de teses pela rota de compatibilidade")
+        raise HTTPException(502, "IA indisponível no momento") from exc
 
     log_id = await registrar_ai_log(
         db,
@@ -130,17 +202,16 @@ async def sugerir_teses_ia(
         case_id=None,
         prompt_sanitizado=prompt,
         pii_removida=pii,
-        resposta=resp.texto,
-        modelo=f"{resp.provedor}/{resp.modelo}",
-        tokens_input=resp.input_tokens,
-        tokens_output=resp.output_tokens,
+        resposta=result.texto,
+        modelo=f"{result.provedor}/{result.modelo}",
+        tokens_input=result.input_tokens,
+        tokens_output=result.output_tokens,
     )
-
-    # Shape legado do processar_demanda preservado + campos de auditoria.
+    _headers(response)
     return {
-        "modelo_utilizado": f"{resp.provedor}/{resp.modelo}",
+        "modelo_utilizado": f"{result.provedor}/{result.modelo}",
         "tipo_demanda": "juridico_profundo",
-        "resposta": resp.texto,
+        "resposta": result.texto,
         "status": "sucesso",
         "log_id": log_id,
         "is_rascunho": True,
