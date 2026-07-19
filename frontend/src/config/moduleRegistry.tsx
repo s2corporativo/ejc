@@ -579,7 +579,10 @@ export const STAFF_ROUTES: ModuleRoute[] = [
     group: "Pesquisar & IA",
     icon: BookOpen,
     component: KnowledgeHub,
-    showInNav: true,
+    // CONSOLIDAÇÃO 2026-07: coberto pela Inteligência (aba Conhecimento);
+    // rota ativa para links diretos/favoritos — mesmo padrão de
+    // prazos/tarefas/intimações/suspensões (status "hidden", fora do menu).
+    status: "hidden",
     order: 20,
     helpKey: "conhecimento",
     sensitive: true,

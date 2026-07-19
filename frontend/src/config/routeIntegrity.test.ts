@@ -39,7 +39,7 @@ export const PORTAL_APP_ROUTES = [
 // no map genérico.
 export const DYNAMIC_LEGACY_APP_ROUTES = [
   "/clientes/:clientId/dossie", // alias removido de STAFF_ROUTES; redireciona para /clientes/:clientId
-  "/ramos/:slug", // alias legado; redireciona para /areas-de-atuacao/:slug
+  "/ramos/:slug", // alias legado de /areas-de-atuacao/:slug; AreaAtuacaoLegacyRedirect
 ] as const;
 
 // Literais relativos esperados DENTRO do bloco /portal do App.tsx.
