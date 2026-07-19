@@ -47,15 +47,25 @@ jobs:
           fetch-depth: 1
 
       - name: Validate Python runtime
-        run: |
-          python3 --version
+        run: python3 --version
 
       - name: Test inventory pipeline
+        shell: bash
         run: |
+          set -o pipefail
           python3 -m unittest \
             scripts.tests.test_generate_architecture_inventory \
             scripts.tests.test_refine_architecture_inventory \
-            -v
+            -v 2>&1 | tee architecture-test.log
+
+      - name: Publish test diagnostic
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: architecture-test-log
+          path: architecture-test.log
+          if-no-files-found: warn
+          retention-days: 7
 
       - name: Generate raw inventory
         run: |
@@ -70,8 +80,7 @@ jobs:
             --check
 
       - name: Publish summary
-        run: |
-          cat "$RUNNER_TEMP/ejc-architecture-inventory/README.md" >> "$GITHUB_STEP_SUMMARY"
+        run: cat "$RUNNER_TEMP/ejc-architecture-inventory/README.md" >> "$GITHUB_STEP_SUMMARY"
 
       - name: Upload complete inventory
         uses: actions/upload-artifact@v7
