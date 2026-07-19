@@ -1,0 +1,26 @@
+{
+  "_o_que_e": "TEMPLATE de UM caso-teste do gold set de RAG/RETRIEVAL. O gold set real vive em gold_set.jsonl — UMA linha JSON por caso. Para peças, use gold_set_pecas.template.json.",
+  "_regras_de_curadoria": [
+    "NUNCA inclua PII real: pseudonimize nomes, CPF/CNPJ, número de processo e valores identificáveis.",
+    "NUNCA invente fonte: expected_titulos e expected_citacoes devem conter apenas referências reais, conferidas em fonte oficial.",
+    "expected_titulos casa por substring normalizada.",
+    "Meta: 50-150 casos reais proporcionais ao volume de cada área.",
+    "Comece com 15-20 casos das áreas de maior volume."
+  ],
+  "id": "identificador único e estável, ex.: trab-001",
+  "area": "trabalhista | consumidor | civel | previdenciario | tributario | familia | empresarial",
+  "query": "pergunta jurídica pseudonimizada, sem PII",
+  "expected_titulos": [
+    "títulos ou trechos estáveis dos documentos que o retrieval deveria trazer"
+  ],
+  "expected_categorias": [
+    "legislacao | sumula_stf | sumula_stj | sumula_tst | jurisprudencia | precedente_interno | doutrina"
+  ],
+  "expected_citacoes": [
+    "citações reais e conferidas em fonte oficial"
+  ],
+  "categorias": [
+    "filtro opcional de categorias durante a avaliação"
+  ],
+  "notes": "observação opcional do curador"
+}
