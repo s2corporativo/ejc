@@ -64,13 +64,10 @@ function routeMatches(routePath: string, pathname: string): boolean {
 }
 
 describe("integridade App.tsx ↔ moduleRegistry", () => {
-  it(
-    "monta TODAS as rotas do registry via STAFF_ROUTES.map (nenhum módulo fica órfão)",
-    () => {
-      expect(appSrc).toMatch(/STAFF_ROUTES\.map\(/);
-      expect(appSrc).toMatch(/path=\{module\.path\}/);
-    },
-  );
+  it("monta TODAS as rotas do registry via STAFF_ROUTES.map (nenhum módulo fica órfão)", () => {
+    expect(appSrc).toMatch(/STAFF_ROUTES\.map\(/);
+    expect(appSrc).toMatch(/path=\{module\.path\}/);
+  });
 
   it("monta TODOS os aliases legados via LEGACY_REDIRECTS.map", () => {
     expect(appSrc).toMatch(/LEGACY_REDIRECTS\.map\(/);
@@ -118,19 +115,16 @@ describe("integridade App.tsx ↔ moduleRegistry", () => {
     }
   });
 
-  it(
-    "todo LEGACY_REDIRECT aponta para uma rota registrada (sem redirect morto)",
-    () => {
-      for (const redirect of LEGACY_REDIRECTS) {
-        const pathname = redirect.to.split("?")[0] || "/";
-        const alvoExiste = STAFF_ROUTES.some((m) =>
-          routeMatches(m.path, pathname),
-        );
-        expect(
-          alvoExiste,
-          `redirect ${redirect.from} → ${redirect.to} aponta para rota inexistente`,
-        ).toBe(true);
-      }
-    },
-  );
+  it("todo LEGACY_REDIRECT aponta para uma rota registrada (sem redirect morto)", () => {
+    for (const redirect of LEGACY_REDIRECTS) {
+      const pathname = redirect.to.split("?")[0] || "/";
+      const alvoExiste = STAFF_ROUTES.some((m) =>
+        routeMatches(m.path, pathname),
+      );
+      expect(
+        alvoExiste,
+        `redirect ${redirect.from} → ${redirect.to} aponta para rota inexistente`,
+      ).toBe(true);
+    }
+  });
 });
