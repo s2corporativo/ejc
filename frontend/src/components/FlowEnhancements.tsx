@@ -3,6 +3,7 @@ import { useLocation, useNavigate } from "react-router-dom";
 import type { AxiosResponse, InternalAxiosRequestConfig } from "axios";
 import api from "../lib/api";
 import CaseCommandDock from "./CaseCommandDock";
+import CaseHealthWidget from "./CaseHealthWidget";
 
 const CREATED_CASE_KEY = "ejc_created_case_journey";
 const CREATED_CASE_TTL_MS = 60_000;
@@ -58,8 +59,7 @@ export function deveInjetarCaso(
 ): string | null {
   const metodo = String(config.method || "get").toLowerCase();
   if (metodo !== "post") return null;
-  if (!CONTEXTUAL_CREATE_ENDPOINTS.has(normalizarEndpoint(config.url)))
-    return null;
+  if (!CONTEXTUAL_CREATE_ENDPOINTS.has(normalizarEndpoint(config.url))) return null;
   if (
     !config.data ||
     typeof config.data !== "object" ||
@@ -104,15 +104,11 @@ function salvarMarcador(id: string) {
 }
 
 /**
- * Extensões transversais ainda não existentes na implementação nativa:
- * - guarda o caso recém-criado e continua para a Jornada quando o fluxo legado
- *   voltar à lista;
- * - injeta `case_id` em prazo/tarefa/evento criados a partir de `?caso=`;
- * - redireciona rotas consolidadas para o workspace canônico;
- * - mostra a central simples do caso na rota exata `/casos/:id`.
- *
- * O filtro `?tipo=` e os atalhos do Dashboard são nativos desde o PR #292 e
- * não são interceptados aqui.
+ * Extensões transversais do fluxo do caso:
+ * - continua a jornada após criação;
+ * - injeta `case_id` em atividades contextuais;
+ * - redireciona aliases consolidados;
+ * - mostra ações rápidas e saúde operacional na rota exata `/casos/:id`.
  */
 export default function FlowEnhancements() {
   const location = useLocation();
@@ -172,5 +168,11 @@ export default function FlowEnhancements() {
     return caseIdSeguro(match?.[1]);
   }, [location.pathname]);
 
-  return caseId ? <CaseCommandDock caseId={caseId} /> : null;
+  if (!caseId) return null;
+  return (
+    <>
+      <CaseHealthWidget caseId={caseId} />
+      <CaseCommandDock caseId={caseId} />
+    </>
+  );
 }
