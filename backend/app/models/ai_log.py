@@ -1,6 +1,8 @@
 # ── app/models/ai_log.py ─────────────────────────────────────────────────────
-# Registro de TODO uso de IA (Groq). LGPD + OAB compliance.
+# Registro de TODO uso de IA. LGPD + OAB compliance.
 # prompt_sanitizado = o que foi enviado (SEM PII); status HITL rastreado.
+# resposta/critica_adversarial = versão PSEUDONIMIZADA para auditoria: o texto
+# reidratado com PII real é devolvido ao fluxo jurídico, mas não fica no log.
 from __future__ import annotations
 from sqlalchemy import Column, String, DateTime, Enum as SAEnum, func, Text, Boolean, Integer, Numeric, ForeignKey
 from sqlalchemy.orm import relationship, validates
@@ -29,6 +31,31 @@ def normalizar_modelo_ia(modelo: str | None) -> str | None:
     return m
 
 
+def pseudonimizar_texto_auditoria(valor: str | None) -> str | None:
+    """Remove PII estrutural e nomes prováveis antes do INSERT/UPDATE do log.
+
+    Defesa na última camada: alcança tanto o caminho canônico (`ai_guard`) quanto
+    writers legados que ainda instanciam `AILog` diretamente. O mapa reversível
+    gerado pelo pseudonimizador é descartado imediatamente; portanto, o banco
+    guarda apenas marcadores ([CPF_1], [PESSOA_1]...), nunca o valor real.
+    Falha inesperada degrada para mascaramento irreversível estrutural — jamais
+    persiste silenciosamente o texto bruto por causa de erro do NER.
+    """
+    if valor is None:
+        return None
+    texto = str(valor)
+    if not texto:
+        return texto
+    try:
+        from app.services.ai.pseudonymizer import pseudonimizar
+        limpo, _mapa = pseudonimizar(texto)
+        return limpo
+    except Exception:
+        from app.services.sanitizer import sanitizar_pii
+        limpo, _ = sanitizar_pii(texto)
+        return limpo
+
+
 class AIStatusHITL(str, enum.Enum):
     gerado    = "gerado"        # IA respondeu, ninguém revisou
     revisado  = "revisado"      # humano revisou
@@ -52,7 +79,7 @@ class AILog(Base):
     case_id = Column(String(36), ForeignKey("cases.id", ondelete="SET NULL"), nullable=True, index=True)
 
     tipo_uso = Column(SAEnum(AITipoUso), nullable=False)
-    modelo   = Column(String(50), nullable=False)   # ex: llama3-70b-8192
+    modelo   = Column(String(50), nullable=False)
 
     # LGPD: registramos apenas o prompt SANITIZADO (sem PII)
     prompt_sanitizado  = Column(Text, nullable=False)
@@ -67,7 +94,7 @@ class AILog(Base):
     fontes_rag         = Column(Text, nullable=True)     # chunks usados (rastreabilidade)
     tokens_input       = Column(Integer, nullable=True)
     tokens_output      = Column(Integer, nullable=True)
-    # Custo estimado da chamada em R$ (0 p/ Ollama local; calculado p/ Groq)
+    # Custo estimado da chamada em R$ (0 p/ Ollama local; calculado p/ externos)
     custo_estimado     = Column(Numeric(12, 6), nullable=True)
 
     # HITL
@@ -86,6 +113,9 @@ class AILog(Base):
 
     @validates("modelo")
     def _normalizar_modelo(self, key, value):
-        # BUG-22: canoniza o nome do modelo em qualquer INSERT (todos os
-        # write paths passam por aqui — ai_gateway/ai_service/peca_service/etc.).
+        # BUG-22: canoniza o nome do modelo em qualquer INSERT.
         return normalizar_modelo_ia(value)
+
+    @validates("resposta", "critica_adversarial")
+    def _pseudonimizar_saida(self, key, value):
+        return pseudonimizar_texto_auditoria(value)
