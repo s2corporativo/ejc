@@ -9,6 +9,7 @@ from fastapi import Request, Response
 from fastapi.responses import JSONResponse
 import jwt
 from jwt.exceptions import InvalidTokenError as JWTError
+from sqlalchemy import select
 from starlette.middleware.base import BaseHTTPMiddleware
 
 from app.core.config import get_settings
@@ -57,6 +58,37 @@ def _is_publica(path: str) -> bool:
     return any(_path_casa_prefixo_publico(path, p) for p in PREFIXOS_PUBLICOS)
 
 
+async def _precisa_configurar_2fa(payload: dict) -> bool:
+    """Consulta o estado real do usuário e aplica a política por papel.
+
+    A checagem em banco impede que tokens antigos, refresh ou clientes que
+    ignorem a flag do login contornem o enforcement. Falha de banco é fail-closed
+    para papéis obrigados, preservando apenas as rotas de configuração/logout.
+    """
+    role = str(payload.get("role") or "").strip().lower()
+    if role not in settings.require_2fa_roles_list:
+        return False
+    user_id = payload.get("sub")
+    if not user_id:
+        return True
+    try:
+        from app.core.database import AsyncSessionLocal
+        from app.models.user import User
+
+        async with AsyncSessionLocal() as db:
+            enabled = await db.scalar(
+                select(User.totp_enabled).where(
+                    User.id == user_id,
+                    User.is_active == True,
+                    User.deleted_at.is_(None),
+                )
+            )
+        return enabled is not True
+    except Exception:
+        logger.exception("Falha ao validar enforcement de 2FA para user=%s", user_id)
+        return True
+
+
 class AuthMiddleware(BaseHTTPMiddleware):
     """Valida JWT e aplica gates de senha, 2FA e isolamento do portal."""
 
@@ -90,8 +122,7 @@ class AuthMiddleware(BaseHTTPMiddleware):
                 content={"detail": "Token inválido ou expirado"},
             )
 
-        # A troca de senha tem precedência sobre a configuração de 2FA. Ao
-        # concluir a troca, o endpoint emite novo token ainda restrito ao 2FA.
+        # A troca de senha tem precedência sobre a configuração de 2FA.
         if payload.get("pwd_change_required"):
             liberados = ("/api/auth/alterar-senha", "/api/auth/logout")
             if not any(_path_casa_prefixo_publico(path, p) for p in liberados):
@@ -103,9 +134,8 @@ class AuthMiddleware(BaseHTTPMiddleware):
                     },
                 )
 
-        # Sessão restrita para papel que exige 2FA e ainda não confirmou TOTP.
-        # Permite somente configurar/verificar o autenticador e encerrar sessão.
-        if payload.get("two_factor_setup_required"):
+        # Enforcement duro de 2FA, baseado no banco e não apenas em flag visual.
+        if await _precisa_configurar_2fa(payload):
             liberados_2fa = (
                 "/api/auth/totp/setup",
                 "/api/auth/totp/verificar",
