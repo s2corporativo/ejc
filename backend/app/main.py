@@ -22,6 +22,7 @@ from app.core.config import get_settings
 from app.core.log_sanitizer import safe_exception_log, sanitize_log_value
 from app.core.database import check_db
 from app.core.auth_middleware import AuthMiddleware
+from app.core.api_version_middleware import APIVersionCompatibilityMiddleware
 from app.services.scheduler import start_scheduler, stop_scheduler
 from app.core.rate_limit import limiter
 from slowapi import _rate_limit_exceeded_handler
@@ -182,6 +183,7 @@ from app.routers import visual_law
 from app.routers import whatsapp
 from app.routers import wiki
 from app.routers import workflow
+from app.routers import architecture
 from app.integrations import routers as integracoes
 
 
@@ -266,6 +268,7 @@ app.add_exception_handler(RateLimitExceeded, _rate_limit_exceeded_handler)
 
 # ── Middlewares (ordem importa: CORS por fora, Auth por dentro) ───────────────
 app.add_middleware(AuthMiddleware)          # ← P0-1 CORRIGIDO: registrado!
+app.add_middleware(APIVersionCompatibilityMiddleware)
 
 # Item 1.1 — captura o IP real por requisição num ContextVar para que TODO
 # evento de auditoria (não só LOGIN) grave o IP de origem. Puro-ASGI (roda na
@@ -442,6 +445,7 @@ app.include_router(visual_law.router, prefix=API)
 app.include_router(whatsapp.router, prefix=API)
 app.include_router(wiki.router, prefix=API)
 app.include_router(workflow.router, prefix=API)
+app.include_router(architecture.router, prefix=API)
 # Integrações externas públicas (app/integrations/) — Conecta gov.br fica de
 # fora até existirem credenciais reais (credenciamento institucional pendente).
 app.include_router(integracoes.datajud_router, prefix=API)

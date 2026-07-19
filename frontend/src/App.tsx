@@ -49,6 +49,11 @@ function ClienteDossieRedirect() {
   return <Navigate to={`/clientes/${clientId}`} replace />;
 }
 
+function AreaAtuacaoLegacyRedirect() {
+  const { slug } = useParams();
+  return <Navigate to={`/areas-de-atuacao/${slug}`} replace />;
+}
+
 function RouteFallback() {
   return (
     <div className="min-h-screen grid place-items-center bg-canvas">
@@ -150,6 +155,10 @@ export default function App() {
               <Route
                 path="/clientes/:clientId/dossie"
                 element={<ClienteDossieRedirect />}
+              />
+              <Route
+                path="/ramos/:slug"
+                element={<AreaAtuacaoLegacyRedirect />}
               />
             </Route>
 
