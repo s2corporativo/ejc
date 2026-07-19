@@ -47,14 +47,34 @@ def test_ailog_pseudonimiza_resposta_e_critica_no_write_path():
         prompt_sanitizado="consulta limpa",
         resposta=(
             "A cliente Maria da Silva, CPF 123.456.789-09, "
-            "deve revisar o documento."
+            "deve revisar o processo 0000001-02.2020.8.13.0000."
         ),
         critica_adversarial="A testemunha João de Souza confirmou o fato.",
     )
     assert "123.456.789-09" not in (log.resposta or "")
     assert "Maria da Silva" not in (log.resposta or "")
+    assert "0000001-02.2020.8.13.0000" not in (log.resposta or "")
     assert "João de Souza" not in (log.critica_adversarial or "")
     assert "[CPF_" in (log.resposta or "")
+    assert "[PROCESSO_" in (log.resposta or "")
+
+
+def test_ailog_preserva_cnj_quando_e_referencia_jurisprudencial_auditavel():
+    from app.models.ai_log import AILog, AITipoUso
+
+    cnj = "0000002-03.2021.8.26.0001"
+    log = AILog(
+        id="log-citacao",
+        user_id="user-fake",
+        tipo_uso=AITipoUso.consulta_rag,
+        modelo="claude-sonnet",
+        prompt_sanitizado="consulta limpa",
+        resposta=(
+            f"Conforme acórdão do TJSP no processo {cnj}, julgado em 15/04/2024, "
+            "a tese exige análise do caso concreto."
+        ),
+    )
+    assert cnj in (log.resposta or "")
 
 
 def test_ailog_legado_tem_defaults_de_id_e_modelo():
@@ -66,11 +86,9 @@ def test_ailog_legado_tem_defaults_de_id_e_modelo():
         prompt_sanitizado="evento legado",
         resposta="resposta sem dados pessoais",
     )
-    # Defaults SQLAlchemy são aplicados no flush; sua presença no mapper impede
-    # o INSERT inválido que antes era engolido por diversos try/except legados.
     assert AILog.__table__.c.id.default is not None
     assert AILog.__table__.c.modelo.default is not None
-    assert log.modelo is None  # ainda não houve flush; comportamento esperado
+    assert log.modelo is None
 
 
 @pytest.mark.asyncio
