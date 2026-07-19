@@ -1,15 +1,14 @@
 # ── app/services/ai_core_hardening_patch.py ──────────────────────────────────
-"""Hardening aditivo do AI Gateway carregado no startup.
+"""Hardening aditivo do núcleo de IA/RAG carregado no startup.
 
-O gateway possui inúmeros call sites legados que importaram ``chat`` por
-referência. Alterar apenas o símbolo público não alcançaria esses chamadores.
-Este instalador corrige a primitiva interna ``_resolver_cadeia`` — consultada em
-runtime por qualquer referência de ``chat`` — para que um kill-switch ou falta
-de credencial nunca seja contornado por fallback sintético ao Groq.
+Duas correções transitórias de compatibilidade:
+1. resolução de provedores fail-closed para todos os aliases legados de `chat`;
+2. resolução server-side do escopo de precedentes de encerramento cuja chave
+   canônica é `caso:<id>`, fluxo legado que não passava client_id ao RAG.
 
-É patch transitório e pequeno. A convergência definitiva deve mover a resolução
-para um registro único de provedores, eliminando a duplicação entre
-``AIProviderPolicy`` e ``ai_gateway``.
+As duas correções operam em primitivas consultadas em runtime, alcançando call
+sites que importaram funções antes do startup. A convergência definitiva deve
+eliminar os patches ao centralizar provider registry e contratos de ingestão.
 """
 from __future__ import annotations
 
@@ -19,15 +18,10 @@ logger = logging.getLogger("ejc.ai.core.hardening")
 _INSTALADO = False
 
 
-def instalar() -> None:
-    global _INSTALADO
-    if _INSTALADO:
-        return
-
+def _instalar_resolver_provedores() -> None:
     from app.services import ai_gateway
 
     if getattr(ai_gateway, "_ejc_fail_closed_resolver_installed", False):
-        _INSTALADO = True
         return
 
     original = ai_gateway._resolver_cadeia
@@ -46,11 +40,6 @@ def instalar() -> None:
             provider_preferido,
             model_preferido,
         )
-        # O legado sintetizava [("groq", ...)] quando nenhum candidato era
-        # elegível. Isso podia ignorar AI_EXTERNAL_PROVIDERS_ALLOWED=false e
-        # tentar rede externa mesmo com o kill-switch acionado. Filtrar aqui é
-        # a última defesa comum a TODOS os call sites, inclusive referências
-        # antigas de `chat` importadas antes do startup patch.
         seguros = [
             (provider, model)
             for provider, model in cadeia
@@ -66,5 +55,50 @@ def instalar() -> None:
 
     ai_gateway._resolver_cadeia = resolver_fail_closed
     ai_gateway._ejc_fail_closed_resolver_installed = True
+
+
+def _instalar_resolucao_escopo_rag() -> None:
+    """Compatibiliza o encerramento legado sem aceitar escopo do cliente.
+
+    `cases.encerrar_caso` usa chave `caso:<uuid>` e import local da função; a
+    identidade do caso é, portanto, verificável no servidor. Somente esse padrão
+    canônico pode ser auto-resolvido. Qualquer outra categoria/chave sem client_id
+    continua bloqueada pelo write gate de `ingestion_service`.
+    """
+    from app.services import ingestion_service
+
+    if getattr(ingestion_service, "_ejc_scope_resolver_installed", False):
+        return
+
+    original = ingestion_service.upsert_documento
+
+    async def upsert_com_escopo_canonico(db, **kwargs):
+        categoria = kwargs.get("categoria")
+        client_id = kwargs.get("client_id")
+        chave = str(kwargs.get("chave_origem") or "")
+        if categoria == "precedente_interno" and not client_id and chave.startswith("caso:"):
+            case_id = chave.removeprefix("caso:").strip()
+            if case_id:
+                from app.models.case import Case
+                case = await db.get(Case, case_id)
+                if case is not None and case.deleted_at is None and case.client_id:
+                    kwargs["client_id"] = str(case.client_id)
+                    kwargs["case_id"] = str(case.id)
+                    logger.info(
+                        "Escopo RAG resolvido pelo caso canônico %s para precedente interno",
+                        getattr(case, "numero_interno", None) or case.id,
+                    )
+        return await original(db, **kwargs)
+
+    ingestion_service.upsert_documento = upsert_com_escopo_canonico
+    ingestion_service._ejc_scope_resolver_installed = True
+
+
+def instalar() -> None:
+    global _INSTALADO
+    if _INSTALADO:
+        return
+    _instalar_resolver_provedores()
+    _instalar_resolucao_escopo_rag()
     _INSTALADO = True
-    logger.info("AI Gateway protegido por resolução fail-closed de provedores")
+    logger.info("Hardening do núcleo de IA/RAG instalado")
