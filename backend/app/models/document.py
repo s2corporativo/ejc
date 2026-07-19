@@ -49,3 +49,12 @@ class Document(Base):
 
     case   = relationship("Case",   back_populates="documents")
     client = relationship("Client", back_populates="documents")
+
+    @property
+    def nome_arquivo(self) -> str:
+        """Alias semântico somente de leitura; a coluna física permanece `filename`.
+
+        Evita divergência entre serviços em português e integrações antigas sem
+        duplicar informação nem criar nova coluna no banco.
+        """
+        return self.filename
