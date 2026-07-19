@@ -21,6 +21,12 @@ branch_labels = None
 depends_on = None
 
 _MARCADOR = "[MIG109_DATAJUD_INFORMATIVO]"
+_MENSAGEM = (
+    f"{_MARCADOR} Cancelado automaticamente: DataJud é fonte de "
+    "metadados e não comprova intimação, publicação ou termo "
+    "inicial. Recrie/confirme o prazo somente após conferência "
+    "no DJEN ou sistema judicial autenticado."
+)
 
 
 def upgrade() -> None:
@@ -33,10 +39,7 @@ def upgrade() -> None:
                observacoes = CONCAT_WS(
                    E'\n',
                    NULLIF(observacoes, ''),
-                   '{_MARCADOR} Cancelado automaticamente: DataJud é fonte de '
-                   'metadados e não comprova intimação, publicação ou termo '
-                   'inicial. Recrie/confirme o prazo somente após conferência '
-                   'no DJEN ou sistema judicial autenticado.'
+                   '{_MENSAGEM}'
                ),
                updated_at = NOW()
          WHERE status = 'pendente'
@@ -58,12 +61,14 @@ def downgrade() -> None:
         f"""
         UPDATE deadlines
            SET status = 'pendente',
-               observacoes = REPLACE(
-                   COALESCE(observacoes, ''),
-                   E'\n{_MARCADOR} Cancelado automaticamente: DataJud é fonte de '
-                   'metadados e não comprova intimação, publicação ou termo '
-                   'inicial. Recrie/confirme o prazo somente após conferência '
-                   'no DJEN ou sistema judicial autenticado.',
+               observacoes = NULLIF(
+                   BTRIM(
+                       REPLACE(
+                           REPLACE(COALESCE(observacoes, ''), E'\n{_MENSAGEM}', ''),
+                           '{_MENSAGEM}',
+                           ''
+                       )
+                   ),
                    ''
                ),
                updated_at = NOW()
