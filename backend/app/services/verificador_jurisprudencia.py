@@ -386,7 +386,13 @@ async def _confirmar_datajud(numero_fmt: str) -> tuple[dict | None, str]:
         info = await asyncio.wait_for(
             datajud_service.consultar_processo(numero_fmt), timeout=DATAJUD_TIMEOUT_S)
     except Exception as e:  # timeout, rede, HTTP — vira aviso, nunca erro
-        logger.warning("DataJud indisponível p/ %s: %s", numero_fmt, e)
+        from app.services.datajud_service import DataJudDesabilitadoError
+        if isinstance(e, DataJudDesabilitadoError):
+            # Integração desligada é estado esperado, não indisponibilidade.
+            return None, "nao_localizado"
+        # Sem número de processo no log (PII/segredo de justiça — mesma regra
+        # dos demais logs do DataJud nesta governança).
+        logger.warning("DataJud indisponível: %s", type(e).__name__)
         return None, "erro"
     if info:
         return info, "confirmado"

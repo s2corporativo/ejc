@@ -24,6 +24,7 @@ from app.models.document import Document, DocConfidencialidade
 from app.models.client import Client
 from app.models.case import Case
 from app.models.redesign import DocumentTypeMaster
+from app.models.legal_doc import LegalDoc
 from app.models.audit_log import criar_audit_log
 from app.core.ownership import verificar_acesso_caso, is_gestao
 from app.schemas.common import MsgResponse
@@ -609,6 +610,29 @@ async def download(
     )
 
 
+async def _bloquear_comprovante_protocolo(db: AsyncSession, doc_id: str, acao: str):
+    """M2 (TOCTOU): documento referenciado em legal_docs.protocolo_comprovante_doc_id
+    é PROVA DE TEMPESTIVIDADE — a validação do PATCH /legal-docs/{id}/protocolo
+    (mesmo caso, não excluído) valia só no instante do registro. Mover de caso ou
+    excluir o documento DEPOIS quebrava a prova silenciosamente. 409 com a peça
+    que referencia; remova/troque o comprovante na peça antes."""
+    ref = (await db.execute(
+        select(LegalDoc).where(
+            LegalDoc.protocolo_comprovante_doc_id == doc_id,
+            LegalDoc.deleted_at.is_(None),
+        ).limit(1)
+    )).scalar_one_or_none()
+    if ref:
+        raise HTTPException(
+            status_code=409,
+            detail=(
+                f"Documento é comprovante de protocolo da peça '{ref.titulo}' "
+                f"(id {ref.id}) e não pode ser {acao}. Atualize o comprovante "
+                "na peça (PATCH /legal-docs/{id}/protocolo) antes."
+            ),
+        )
+
+
 @router.delete("/{doc_id}", response_model=MsgResponse)
 async def remover(
     doc_id: str,
@@ -624,6 +648,8 @@ async def remover(
         raise HTTPException(status_code=404, detail="Documento não encontrado")
     # Ownership (IDOR): só quem tem o caso pode remover o documento dele.
     await _verificar_acesso_documento(db, cu, d)
+    # M2: comprovante de protocolo referenciado em peça não pode ser excluído.
+    await _bloquear_comprovante_protocolo(db, doc_id, "excluído")
     d.deleted_at = datetime.now(timezone.utc)
     await criar_audit_log(db, cu.id, cu.role.value, "DELETE", "documents", doc_id)
     await db.commit()
@@ -722,6 +748,9 @@ async def atualizar_metadados(
             d.tipo = novo_tipo
 
     if "case_id" in campos and campos["case_id"] != d.case_id:
+        # M2: mover de caso (ou desvincular) documento que é comprovante de
+        # protocolo quebraria a validação N3 feita em /legal-docs/{id}/protocolo.
+        await _bloquear_comprovante_protocolo(db, doc_id, "movido de caso")
         novo_case_id = campos["case_id"]
         if novo_case_id:
             # 404 se inexistente/deletado + gate de escrita no caso destino

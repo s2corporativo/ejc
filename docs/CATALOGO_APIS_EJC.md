@@ -41,12 +41,13 @@ credencial/flag · 🔧 integrado, desligado por flag (sem credencial necessári
 | **DataJud / CNJ** (API Pública) | Consulta de movimentações processuais por número CNJ em qualquer tribunal; sync automático dos casos dos clientes; base dos andamentos | Grátis — chave **pública** divulgada pelo CNJ na wiki do DataJud | 🔑 `services/datajud_service.py` + `services/datajud_sync_service.py` (retry, alias por tribunal). Default `DATAJUD_ENABLED=False`, `DATAJUD_API_KEY=""` | Colar a chave pública em `DATAJUD_API_KEY` e ligar `DATAJUD_ENABLED=true` (e opcionalmente `DATAJUD_SYNC_ENABLED=true`) |
 | **Portal da Transparência (CGU)** — CEIS/CNEP/CEPIM | **Due diligence da parte contrária**: sanções por CNPJ (inidoneidade, Lei Anticorrupção, impedimento de convênio) | Grátis — token emitido por cadastro de e-mail no portal | 🔑 `services/transparencia_service.py` (3 bases, cache diário, retenção LGPD 7 dias). Default `TRANSPARENCIA_ENABLED=False`, `TRANSPARENCIA_API_KEY=""`. Probe ao vivo: 401 estruturado — **falta só o token** | Pedir o token gratuito por e-mail, colar em `TRANSPARENCIA_API_KEY` e ligar `TRANSPARENCIA_ENABLED=true` |
 | **DJEN / Comunica CNJ** | Captura de intimações/publicações por OAB; vincula ao caso, cria movimento e alerta (o advogado define o prazo — decisão HITL) | Grátis, sem auth | 🔧 `services/djen_service.py`. Default `DJEN_INGEST_ENABLED=False`; exige `DJEN_OABS_MONITORADAS`. WAF bloqueia runner GitHub — rodar da VPS | Ligar `DJEN_INGEST_ENABLED=true` e cadastrar as OABs monitoradas |
-| **PNCP — Contratações Públicas** (Lei 14.133/2021) | Consulta pública de contratações por data/UF/município/modalidade (contexto de direito administrativo) | Grátis, sem chave | 🔧 `services/pncp_service.py` (cache por dia+filtros). Default `PNCP_ENABLED=False` | Ligar `PNCP_ENABLED=true` |
+| **PNCP — Contratações Públicas** (Lei 14.133/2021) | Consulta pública de contratações por data/UF/município/modalidade (contexto de direito administrativo) | Grátis, sem chave | ✅ `services/pncp_service.py` (cache, filtros validados, timeout/retry). Default `PNCP_ENABLED=True` | Nada — consulta já ativa; APIs de manutenção ficam fora de escopo |
 | **Jurisprudência TJMG** (crawler) | Precedentes do tribunal da casa na base de conhecimento | Grátis (portal público, sem API — crawler) | 🔧 `TJMG_INGEST_ENABLED=False` por default; mudanças no portal podem exigir manutenção | Ligar `TJMG_INGEST_ENABLED=true` |
 
-Obs.: `core/public_apis.py` mantém um cliente experimental extra (SELIC último
-valor, ReceitaWS CNPJ, STF) usado por `services/rag_juridico.py` — a fonte
-canônica de índices é `indices_service.py` e a de CNPJ é `validators_service.py`.
+Obs.: o cliente experimental duplicado `core/public_apis.py` foi removido.
+A fonte canônica de índices é `indices_service.py`; CEP/CNPJ usam
+`validators_service.py`; jurisprudência entra somente por conectores reais e
+fontes verificáveis, nunca por endpoint ilustrativo.
 
 ### 1.2 Públicas gratuitas ainda NÃO integradas (📋 sugestão futura — ordem de valor)
 
@@ -117,7 +118,7 @@ Cartórios (CENSEC, e-Notariado, CRC), **ONR/Registro de Imóveis** (advogado us
 1. **Já ativos por default** — BCB SGS/Olinda (`indices_service.py`), feriados BrasilAPI (`feriados_service.py`), CEP/CNPJ (`validators_service.py`): nada a fazer.
 2. **DataJud/CNJ** — colar a chave pública gratuita no `.env` e ligar as flags: consulta processual + sync de andamentos imediato, custo zero.
 3. **Portal da Transparência** — pedir o token gratuito por e-mail e ligar: due diligence de sanções por CNPJ.
-4. **DJEN + PNCP + TJMG** — só ligar as flags (sem credencial): intimações por OAB, contratações públicas e precedentes do TJMG.
+4. **DJEN + TJMG** — ligar as flags após validar na VPS; o **PNCP consulta já fica ativo por padrão**.
 5. **Novas integrações gratuitas** (seção 1.2) — começar por IBGE (dupla checagem de índices), Câmara/Senado/ALMG (Radar Regulatório) e TCU/STJ/ANPD/Normas RFB (base de conhecimento).
 6. **Pagas/credenciamento** (seção 2) — apenas quando houver demanda: Infosimples (conector pronto, falta token pago) e ofício do MNI eproc-TJMG (Portaria 1720/2025, sem custo por consulta após credenciado).
 

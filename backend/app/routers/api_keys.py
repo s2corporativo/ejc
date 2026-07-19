@@ -2,6 +2,9 @@
 # Administração de chaves de API de serviço (Fase 2 IA/RAG).
 # Protegido pelo auth JWT existente e restrito a admin/superadmin.
 # A chave em claro é retornada UMA única vez, na criação.
+# NÃO confundir com routers/credential_vault.py: api_keys emite chaves QUE O
+# EJC FORNECE a integradores consumirem nossa API; o cofre (/cofre-credenciais)
+# guarda segredos QUE O EJC USA em serviços externos (DataJud, Groq, SMTP…).
 from __future__ import annotations
 
 from datetime import datetime, timezone

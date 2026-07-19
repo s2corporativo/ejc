@@ -10,7 +10,7 @@ from typing import Optional
 
 from fastapi import APIRouter, Depends, HTTPException
 from fastapi.responses import StreamingResponse, Response
-from pydantic import BaseModel, Field
+from pydantic import AliasChoices, BaseModel, Field
 from sqlalchemy import select, or_
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -131,7 +131,12 @@ class DocxExportPayload(BaseModel):
     exibido no cabeçalho abaixo do nome do escritório.
     """
     titulo: str = Field(..., min_length=1, max_length=255)
-    conteudo_md: str = Field(..., min_length=1)
+    # Aceita tanto "conteudo_md" (nome canônico) quanto o intuitivo "conteudo"
+    # — evita 422 para quem chama a API pelo nome mais óbvio.
+    conteudo_md: str = Field(
+        ..., min_length=1,
+        validation_alias=AliasChoices("conteudo_md", "conteudo"),
+    )
     meta: Optional[dict] = None
 
 

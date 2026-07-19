@@ -50,11 +50,16 @@ class _FakeDB:
     def __init__(self, resultados):
         self._res = list(resultados)
         self.executed: list[tuple[str, dict | None]] = []
+        self.added: list = []
         self.commits = 0
 
     async def execute(self, stmt, params=None):
         self.executed.append((str(stmt), params))
         return _Rows(self._res.pop(0) if self._res else [])
+
+    def add(self, obj):
+        # criar_audit_log (B1) registra via db.add — sem execute.
+        self.added.append(obj)
 
     async def commit(self):
         self.commits += 1
@@ -131,14 +136,21 @@ async def test_patch_agenda_aceita_responsavel_id():
     from app.routers.agenda_eventos import EventoPatch, atualizar
 
     # 1º execute: SELECT (sem caso → sem gate de ownership);
-    # 2º execute: UPDATE.
-    db = _FakeDB([[_ROW_EVENTO], []])
+    # 2º execute: SELECT users (B3 — novo responsável precisa existir);
+    # 3º execute: UPDATE. Auditoria da transferência (B1) via db.add.
+    db = _FakeDB([[_ROW_EVENTO], [("1",)], []])
     out = await atualizar("e1", EventoPatch(responsavel_id="u7"), db=db, cu=_gestor())
 
     assert out == {"ok": True, "conflito_agenda": []}
-    upd_sql, upd_params = db.executed[1]
+    val_sql, val_params = db.executed[1]
+    assert "FROM users" in val_sql and val_params["rid"] == "u7"
+    upd_sql, upd_params = db.executed[2]
     assert "responsavel_id = :responsavel_id" in upd_sql
     assert upd_params["responsavel_id"] == "u7"
+    # B1: transferência auditada (AuditLog adicionado na mesma transação).
+    assert len(db.added) == 1
+    assert db.added[0].acao == "UPDATE" and db.added[0].entidade == "agenda_eventos"
+    assert "u7" in db.added[0].detalhes
     assert db.commits == 1
 
 

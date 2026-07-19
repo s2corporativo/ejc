@@ -39,6 +39,10 @@ class ImportarJurisRequest(BaseModel):
     consulta: str = Field(..., min_length=3, max_length=300)
     tribunal: Optional[str] = Field(None, max_length=20)
     limite: int = Field(20, ge=1, le=100)
+    # Filtro OPCIONAL de ano do julgamento (client-side nos conectores +
+    # garantia final na ingestão) — contrato aditivo, clientes antigos seguem
+    # funcionando sem enviar o campo.
+    ano: Optional[int] = Field(None, ge=1900, le=2100)
 
 
 @router.post(
@@ -65,6 +69,7 @@ async def importar_jurisprudencia(
         executar_importacao, job_id, fonte, req.consulta.strip(),
         (req.tribunal or "").strip() or None, req.limite,
         cu.id, getattr(cu.role, "value", str(cu.role)),
+        ano=req.ano,
     )
     return {
         "job_id": job_id,

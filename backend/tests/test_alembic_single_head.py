@@ -5,7 +5,7 @@ from alembic.script import ScriptDirectory
 
 
 BACKEND_DIR = Path(__file__).resolve().parents[1]
-HEAD_REVISION = "107_scheduler_heartbeat"
+HEAD_REVISION = "108_credential_vault"
 MERGE_REVISION = "104_merge_entrada_orquestrador"
 EXPECTED_PARENTS = {
     "101_entrada_universal_documentos",

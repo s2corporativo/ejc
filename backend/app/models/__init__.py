@@ -84,3 +84,4 @@ from app.models import redesign            # noqa
 from app.models.system_module_setting import SystemModuleSetting  # noqa
 from app.models.nfse import NotaFiscalServico, NFSeStatus  # noqa
 from app.models.scheduler_heartbeat import SchedulerHeartbeat  # noqa
+from app.models.integration_credential import IntegrationCredential  # noqa  (Cofre de Credenciais — migração 108)

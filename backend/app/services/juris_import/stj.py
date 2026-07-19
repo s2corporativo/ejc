@@ -23,7 +23,7 @@ from app.services.ingestion_service import fetch
 # Reuso do ingestor agendado (contrato/campos já validados em produção):
 from app.services.ingestors.stj import CKAN, ORGAOS, _monta_conteudo
 from app.services.juris_import.base import (
-    JulgadoNormalizado, normalizar_termos, texto_normalizado,
+    JulgadoNormalizado, no_ano, normalizar_termos, texto_normalizado,
 )
 
 logger = logging.getLogger("ejc.juris_import.stj")
@@ -71,8 +71,15 @@ def normalizar_registro(rec: dict, url_fonte: str) -> JulgadoNormalizado | None:
 
 async def buscar(
     consulta: str, tribunal: str | None = None, limite: int = 20,
+    ano: int | None = None,
 ) -> list[JulgadoNormalizado]:
-    """Busca temática nos espelhos de acórdãos mais recentes do STJ."""
+    """Busca temática nos espelhos de acórdãos mais recentes do STJ.
+
+    `ano`: filtro CLIENT-SIDE pela data da decisão (no_ano). Limitação da
+    fonte: este conector varre apenas o LOTE MENSAL MAIS RECENTE de cada
+    órgão — o filtro por ano é útil sobretudo para o ano CORRENTE (ex.:
+    2026); anos antigos exigiriam varrer o histórico CKAN (fora do escopo
+    da busca on-demand, teto defensivo)."""
     trib = (tribunal or "").strip().upper()
     if trib and trib != "STJ":
         return []                      # fonte cobre apenas o STJ
@@ -103,6 +110,8 @@ async def buscar(
             j = normalizar_registro(rec, rec_json["url"])
             if j is None or j.chave_dedup() in vistos:
                 continue
+            if not no_ano(j.data, ano):
+                continue                     # filtro client-side de ano
             vistos.add(j.chave_dedup())
             resultados.append(j)
             if len(resultados) >= limite:

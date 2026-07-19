@@ -243,7 +243,13 @@ export default function LoginModern() {
                 </div>
               )}
 
-              <div className="space-y-4">
+              <form
+                className="space-y-4"
+                onSubmit={(e) => {
+                  e.preventDefault();
+                  void submit();
+                }}
+              >
                 <div>
                   <label className="label">E-mail</label>
                   <input
@@ -254,7 +260,6 @@ export default function LoginModern() {
                     disabled={requiresTotp}
                     placeholder="seu@escritorio.adv.br"
                     onChange={(e) => setEmail(e.target.value)}
-                    onKeyDown={(e) => e.key === "Enter" && submit()}
                   />
                 </div>
                 <div>
@@ -266,7 +271,6 @@ export default function LoginModern() {
                     disabled={requiresTotp}
                     placeholder="********"
                     onChange={(e) => setPassword(e.target.value)}
-                    onKeyDown={(e) => e.key === "Enter" && submit()}
                   />
                 </div>
                 {requiresTotp && (
@@ -283,14 +287,13 @@ export default function LoginModern() {
                       onChange={(e) =>
                         setTotpCode(e.target.value.replace(/\D/g, ""))
                       }
-                      onKeyDown={(e) => e.key === "Enter" && submit()}
                     />
                   </div>
                 )}
                 <button
+                  type="submit"
                   className="btn-primary h-11 w-full"
                   disabled={loading}
-                  onClick={submit}
                 >
                   {loading ? (
                     "Validando..."
@@ -326,7 +329,7 @@ export default function LoginModern() {
                     </p>
                   </div>
                 )}
-              </div>
+              </form>
             </div>
             <p className="mt-6 text-center text-[11px] tracking-wide text-slate-400">
               De Paula Teixeira Sociedade de Advogados

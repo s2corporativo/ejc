@@ -1,6 +1,7 @@
 # ── app/routers/utils.py ─────────────────────────────────────────────────────
-# Utilidades de cadastro: consulta CEP (ViaCEP) e CNPJ (BrasilAPI).
+# Utilidades de cadastro: CEP/CNPJ com fallback público e rate limit.
 from fastapi import APIRouter, Depends, HTTPException
+from app.core.rate_limit import rate_limit
 from app.core.security import get_current_user
 from app.models.user import User
 from app.services.validators_service import (
@@ -10,7 +11,10 @@ from app.services.validators_service import (
 router = APIRouter(prefix="/utils", tags=["Utilidades"])
 
 
-@router.get("/cep/{cep}")
+@router.get(
+    "/cep/{cep}",
+    dependencies=[Depends(rate_limit("utils_cep", 30))],
+)
 async def cep(cep: str, cu: User = Depends(get_current_user)):
     data = await consultar_cep(cep)
     if not data:
@@ -18,7 +22,10 @@ async def cep(cep: str, cu: User = Depends(get_current_user)):
     return data
 
 
-@router.get("/cnpj/{cnpj}")
+@router.get(
+    "/cnpj/{cnpj}",
+    dependencies=[Depends(rate_limit("utils_cnpj", 6))],
+)
 async def cnpj(cnpj: str, cu: User = Depends(get_current_user)):
     if not validar_cnpj(cnpj):
         raise HTTPException(status_code=422, detail="CNPJ inválido (dígito verificador)")

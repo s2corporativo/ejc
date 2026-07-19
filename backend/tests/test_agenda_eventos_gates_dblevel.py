@@ -1,9 +1,11 @@
 """Agenda de eventos — gates de visibilidade e de responsável (re-auditoria).
 
 Contrato coberto (espelha o gate de escrita M-S2 do PATCH/DELETE):
-  - N1 GET /agenda-eventos/: evento COM caso é agenda de trabalho compartilhada
-    (visível a todo interno); evento SEM caso é PESSOAL e só aparece para
-    criador, responsável ou gestão — advogado alheio NÃO enxerga.
+  - N1+M1 GET /agenda-eventos/: evento SEM caso é PESSOAL e só aparece para
+    criador, responsável ou gestão; evento COM caso segue o padrão EXISTS de
+    atividades.py — só responsável do evento, advogado responsável/auxiliar do
+    caso ou gestão. Advogado alheio NÃO enxerga nem o pessoal nem o de caso
+    alheio (antes todo evento com case_id vazava p/ qualquer interno).
   - N2a POST /agenda-eventos/: criar evento com responsavel_id de OUTRO usuário
     exige gestão (403 p/ advogado); responsavel_id próprio/ausente continua
     livre; gestão cria para qualquer um.
@@ -27,7 +29,7 @@ from fastapi import HTTPException
 from sqlalchemy import text
 
 from app.routers.agenda_eventos import (
-    listar, criar, atualizar, EventoIn, EventoPatch,
+    listar, criar, atualizar, remover, EventoIn, EventoPatch,
 )
 
 pytestmark = pytest.mark.skipif(
@@ -114,9 +116,9 @@ def _ids(out) -> set[str]:
     return {r["id"] for r in out["data"]}
 
 
-# ── N1: GET não expõe evento pessoal alheio ─────────────────────────────────────
+# ── N1+M1: GET não expõe evento pessoal alheio NEM evento de caso alheio ────────
 
-async def test_listar_nao_expoe_evento_pessoal_alheio():
+async def test_listar_nao_expoe_evento_pessoal_nem_de_caso_alheio():
     from app.core.database import AsyncSessionLocal
     async with AsyncSessionLocal() as db:
         dono = await _criar_user(db, "advogado")
@@ -129,23 +131,30 @@ async def test_listar_nao_expoe_evento_pessoal_alheio():
             db, resp=dono, data_evento=d, titulo="Consulta médica pessoal")
         de_caso = await _inserir_evento(
             db, resp=dono, data_evento=d, case_id=caso, titulo="Audiência do caso")
+        # Evento do MESMO caso alheio, mas cujo responsável é "outro" — visível
+        # a ele pela regra do responsável do EVENTO (padrão atividades.py).
+        de_caso_resp_outro = await _inserir_evento(
+            db, resp=outro, created_by=dono, data_evento=d, case_id=caso,
+            titulo="Diligência delegada")
         await db.commit()
         try:
             u_dono = await _carregar_user(db, dono)
             u_outro = await _carregar_user(db, outro)
             u_socio = await _carregar_user(db, socio)
 
-            # Criador/responsável vê o próprio pessoal + o de caso.
+            # Advogado do caso vê o próprio pessoal + os eventos do caso.
             vistos_dono = _ids(await listar(page_size=500, db=db, cu=u_dono))
-            assert {pessoal, de_caso} <= vistos_dono
+            assert {pessoal, de_caso, de_caso_resp_outro} <= vistos_dono
             # Gestão vê tudo.
             vistos_socio = _ids(await listar(page_size=500, db=db, cu=u_socio))
-            assert {pessoal, de_caso} <= vistos_socio
-            # Advogado alheio: vê o evento COM caso (agenda compartilhada),
-            # mas o evento pessoal de outro usuário NÃO aparece.
+            assert {pessoal, de_caso, de_caso_resp_outro} <= vistos_socio
+            # M1: advogado alheio ao caso NÃO vê o evento do caso (antes vazava
+            # titulo/local/caso_titulo — contradizia atividades.py) nem o
+            # pessoal de outro usuário; vê apenas o evento em que é responsável.
             vistos_outro = _ids(await listar(page_size=500, db=db, cu=u_outro))
-            assert de_caso in vistos_outro
+            assert de_caso not in vistos_outro
             assert pessoal not in vistos_outro
+            assert de_caso_resp_outro in vistos_outro
         finally:
             await _limpar(db, user_ids=[dono, outro, socio],
                           case_ids=[caso], client_ids=[cli])
@@ -245,3 +254,77 @@ async def test_conflito_de_agenda_alheia_e_censurado_para_nao_gestao():
             assert out2["conflito_agenda"][0]["local"] == "Clínica X"
         finally:
             await _limpar(db, user_ids=[criador, outro, socio])
+
+
+# ── B1: auditoria de transferência e DELETE ─────────────────────────────────────
+
+async def _audits(db, evento_id: str) -> list[dict]:
+    rows = (await db.execute(text(
+        "SELECT acao, detalhes FROM audit_logs "
+        "WHERE entidade = 'agenda_eventos' AND registro_id = :rid "
+        "ORDER BY created_at"
+    ), {"rid": evento_id})).mappings().all()
+    return [dict(r) for r in rows]
+
+
+async def test_transferencia_e_delete_geram_audit_log():
+    from app.core.database import AsyncSessionLocal
+    async with AsyncSessionLocal() as db:
+        adv = await _criar_user(db, "advogado")
+        outro = await _criar_user(db, "advogado")
+        socio = await _criar_user(db, "socio")
+        d = date.today() + timedelta(days=9)
+        evt = await _inserir_evento(db, resp=adv, data_evento=d, titulo="Auditável")
+        await db.commit()
+        try:
+            u_adv = await _carregar_user(db, adv)
+            u_socio = await _carregar_user(db, socio)
+
+            # PATCH sem troca de responsável NÃO audita (só a transferência).
+            assert (await atualizar(evt, EventoPatch(titulo="Renomeado"),
+                                    db=db, cu=u_adv))["ok"]
+            assert await _audits(db, evt) == []
+            # Transferência (gestão → terceiro) audita antigo → novo.
+            assert (await atualizar(evt, EventoPatch(responsavel_id=outro),
+                                    db=db, cu=u_socio))["ok"]
+            logs = await _audits(db, evt)
+            assert [l["acao"] for l in logs] == ["UPDATE"]
+            assert adv in logs[0]["detalhes"] and outro in logs[0]["detalhes"]
+            # DELETE (soft) audita.
+            assert (await remover(evt, db=db, cu=u_socio))["ok"]
+            logs = await _audits(db, evt)
+            assert [l["acao"] for l in logs] == ["UPDATE", "DELETE"]
+        finally:
+            await _limpar(db, user_ids=[adv, outro, socio])
+
+
+# ── B3: responsavel_id precisa existir em users ─────────────────────────────────
+
+async def test_responsavel_inexistente_recusado_422():
+    from app.core.database import AsyncSessionLocal
+    async with AsyncSessionLocal() as db:
+        socio = await _criar_user(db, "socio")
+        d = date.today() + timedelta(days=10)
+        evt = await _inserir_evento(db, resp=socio, data_evento=d, titulo="Meu")
+        await db.commit()
+        fantasma = str(uuid4())
+        try:
+            u_socio = await _carregar_user(db, socio)
+
+            # POST com responsavel_id fantasma → 422 claro (antes: evento órfão).
+            with pytest.raises(HTTPException) as exc:
+                await criar(EventoIn(titulo="Órfão", data_evento=d,
+                                     responsavel_id=fantasma), db=db, cu=u_socio)
+            assert exc.value.status_code == 422
+            assert "usuário não encontrado" in exc.value.detail
+            # PATCH transferindo p/ fantasma → 422 e evento intacto.
+            with pytest.raises(HTTPException) as exc:
+                await atualizar(evt, EventoPatch(responsavel_id=fantasma),
+                                db=db, cu=u_socio)
+            assert exc.value.status_code == 422
+            resp_atual = (await db.execute(text(
+                "SELECT responsavel_id FROM agenda_eventos WHERE id = :id"
+            ), {"id": evt})).scalar()
+            assert resp_atual == socio
+        finally:
+            await _limpar(db, user_ids=[socio])

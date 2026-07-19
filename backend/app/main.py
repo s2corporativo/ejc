@@ -59,6 +59,7 @@ from app.routers import consumidor_monitor
 from app.routers import conteudo
 from app.routers import contratos_societarios
 from app.routers import conversao_caso
+from app.routers import credential_vault  # Cofre de Credenciais (superadmin)
 from app.routers import curadoria_renomada
 from app.routers import dashboard
 from app.routers import data_room
@@ -224,6 +225,23 @@ async def lifespan(app: FastAPI):
         logger.warning("[EJC] Suspensões não carregadas", extra=safe_exception_log(e))
         n_susp = 0
     logger.info(f"[EJC] Suspensões de tribunal carregadas: {n_susp} dia(s)")
+    # Cofre de Credenciais (PR-2): aplica o overlay das credenciais ativas
+    # sobre o SINGLETON get_settings() (mutação in-place — nunca cache_clear).
+    # Falha do overlay NÃO pode derrubar o boot: loga alto e segue com o .env.
+    try:
+        from app.core.database import AsyncSessionLocal
+        from app.services import credential_vault_service
+        async with AsyncSessionLocal() as db_cofre:
+            campos_cofre = await credential_vault_service.aplicar_overlay(db_cofre)
+        logger.info(
+            f"[EJC] Cofre de credenciais: overlay aplicado em "
+            f"{len(campos_cofre)} campo(s)"
+        )
+    except Exception as e:
+        logger.error(
+            "[EJC] Overlay do cofre de credenciais FALHOU — mantendo valores "
+            "do .env", extra=safe_exception_log(e),
+        )
     if settings.ENABLE_SCHEDULER:
         start_scheduler()
     logger.info(f"[EJC] v3.0 iniciado — ambiente: {settings.APP_ENV}")
@@ -301,6 +319,7 @@ app.include_router(consumidor_monitor.router, prefix=API)
 app.include_router(conteudo.router, prefix=API)
 app.include_router(contratos_societarios.router, prefix=API)
 app.include_router(conversao_caso.router, prefix=API)
+app.include_router(credential_vault.router, prefix=API)  # cofre de credenciais (superadmin)
 app.include_router(curadoria_renomada.router, prefix=API)
 app.include_router(dashboard.router, prefix=API)
 app.include_router(data_room.router, prefix=API)

@@ -626,6 +626,17 @@ async def registrar_protocolo(
     d.protocolado_em = payload.protocolado_em or datetime.now(timezone.utc)
     comprovante = (payload.protocolo_comprovante_doc_id or "").strip()
     if comprovante:
+        # B4: peça SEM caso não pode receber comprovante — sem case_id a regra
+        # "documento do MESMO caso" degenera (doc solto ⇔ peça solta) e qualquer
+        # documento avulso viraria "prova" de protocolo.
+        if not d.case_id:
+            raise HTTPException(
+                status_code=422,
+                detail=(
+                    "Comprovante inválido: a peça precisa estar vinculada a um "
+                    "caso para receber comprovante de protocolo"
+                ),
+            )
         # N3: o comprovante referenciado deve EXISTIR, não estar excluído e
         # pertencer ao MESMO caso da peça — antes qualquer string era aceita
         # (id órfão ou documento de caso alheio virava "prova" de protocolo).
@@ -644,11 +655,18 @@ async def registrar_protocolo(
                 status_code=422,
                 detail="Comprovante inválido: o documento não pertence ao caso desta peça",
             )
+    comprovante_antigo = d.protocolo_comprovante_doc_id
     d.protocolo_comprovante_doc_id = comprovante or None
 
+    # B2: a trilha registra também comprovante antigo→novo e protocolado_em —
+    # sem isso a troca da prova de tempestividade era invisível na auditoria.
     await criar_audit_log(
         db, cu.id, cu.role.value, "PROTOCOLO_REGISTRADO", "legal_docs", doc_id,
-        detalhes=f"numero={numero} tribunal={d.protocolo_tribunal or '-'}",
+        detalhes=(
+            f"numero={numero} tribunal={d.protocolo_tribunal or '-'} "
+            f"protocolado_em={d.protocolado_em.isoformat()} "
+            f"comprovante={comprovante_antigo or '-'}→{d.protocolo_comprovante_doc_id or '-'}"
+        ),
     )
     await db.commit()
     await db.refresh(d)
