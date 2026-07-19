@@ -2,12 +2,11 @@
 
 A URL `/teses-v4` permanece temporariamente, mas toda nova leitura e escrita usa
 a tabela canônica `teses`. `teses_juridicas_v4` fica somente como origem do
-backfill da migração 110 até o expurgo controlado.
+backfill da migração 111 até o expurgo controlado.
 """
 from __future__ import annotations
 
 import logging
-from datetime import datetime
 from typing import Optional
 
 from fastapi import APIRouter, Depends, HTTPException, Query, Response
