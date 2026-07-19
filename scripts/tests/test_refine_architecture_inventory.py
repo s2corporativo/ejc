@@ -32,8 +32,19 @@ class RefineArchitectureInventoryTest(unittest.TestCase):
             services = root / "backend/app/services"
             pages = root / "frontend/src/pages"
             config = root / "config"
-            for directory in (routers, models, services, pages, config):
+            scripts = root / "scripts"
+            for directory in (routers, models, services, pages, config, scripts):
                 directory.mkdir(parents=True, exist_ok=True)
+
+            # O refinador carrega o gerador a partir da raiz que está sendo
+            # inventariada. A fixture deve reproduzir esse contrato, em vez de
+            # depender acidentalmente do checkout real do teste.
+            (scripts / "generate_architecture_inventory.py").write_text(
+                (ROOT_SCRIPTS / "generate_architecture_inventory.py").read_text(
+                    encoding="utf-8"
+                ),
+                encoding="utf-8",
+            )
 
             (root / "backend/app/main.py").write_text(
                 "from app.routers import parent\n"
@@ -86,23 +97,49 @@ class RefineArchitectureInventoryTest(unittest.TestCase):
             output = root / "inventory"
             GENERATOR.generate(root, output)
             manifest = REFINER.refine(root, output)
-            payload = json.loads((output / "architecture_inventory.json").read_text(encoding="utf-8"))
+            payload = json.loads(
+                (output / "architecture_inventory.json").read_text(encoding="utf-8")
+            )
             items = payload["items"]
 
-            child = next(item for item in items if item["kind"] == "router" and item["path"].endswith("child.py"))
-            alias = next(item for item in items if item["kind"] == "router" and item["path"].endswith("api_keys.py"))
-            init_module = next(item for item in items if item["path"].endswith("routers/__init__.py") and item["line"] is None)
+            child = next(
+                item
+                for item in items
+                if item["kind"] == "router" and item["path"].endswith("child.py")
+            )
+            alias = next(
+                item
+                for item in items
+                if item["kind"] == "router"
+                and item["path"].endswith("api_keys.py")
+            )
+            init_module = next(
+                item
+                for item in items
+                if item["path"].endswith("routers/__init__.py")
+                and item["line"] is None
+            )
             self.assertTrue(child["mounted"])
             self.assertTrue(alias["mounted"])
             self.assertEqual(init_module["kind"], "python_module")
-            self.assertEqual(manifest["unmounted_routers"], 3)  # case + duas versões data_room não montadas
+            self.assertEqual(
+                manifest["unmounted_routers"], 3
+            )  # case + duas versões data_room não montadas
 
-            duplicates = json.loads((output / "duplicate_families.json").read_text(encoding="utf-8"))
+            duplicates = json.loads(
+                (output / "duplicate_families.json").read_text(encoding="utf-8")
+            )
             all_paths = [path for paths in duplicates.values() for path in paths]
             self.assertIn("backend/app/routers/data_room.py", all_paths)
             self.assertIn("backend/app/routers/data_room_v4.py", all_paths)
-            case_groups = [paths for paths in duplicates.values() if any(path.endswith("/case.py") for path in paths)]
-            self.assertFalse(case_groups, "model e router do mesmo domínio não são duplicidade")
+            case_groups = [
+                paths
+                for paths in duplicates.values()
+                if any(path.endswith("/case.py") for path in paths)
+            ]
+            self.assertFalse(
+                case_groups, "model e router do mesmo domínio não são duplicidade"
+            )
 
 
 if __name__ == "__main__":
