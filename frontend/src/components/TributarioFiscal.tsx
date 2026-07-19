@@ -370,11 +370,11 @@ export default function TributarioFiscal() {
       {res && (
         <div className="mt-5 space-y-3">
           {/* Hero — total estimado */}
-          <div className="rounded-2xl border-2 border-gold bg-gold-50 p-5">
+          <div className="rounded-xl border border-gold bg-gold-50 p-4">
             <div className="text-xs font-bold text-gold-700 uppercase tracking-wide">
               Total estimado de créditos recuperáveis
             </div>
-            <div className="text-3xl font-bold text-navy mt-1">
+            <div className="text-xl font-bold text-navy mt-1">
               {fmtBRL(res.total_estimado)}
             </div>
             <div className="mt-2 flex flex-wrap items-center gap-x-4 gap-y-1 text-xs text-slate-600">

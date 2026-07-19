@@ -159,3 +159,19 @@ def test_campo_deterministico_traz_trecho_origem():
     assert r.cliente.cpf.valor == "987.654.321-00"
     assert r.cliente.cpf.trecho_origem == "987.654.321-00"
     assert r.cliente.cpf.confianca == 1.0
+
+
+def test_area_fora_do_canonico_vira_outro_com_bruto_preservado():
+    """Contrato (auditoria item 6): caso.area é SEMPRE canônica — texto da IA
+    fora da taxonomia vira 'outro' e o bruto fica em caso.area_bruta."""
+    llm = _llm_valido()
+    llm["classificacao"]["area"] = "direito dos drones"
+    r = _montar_intake_result(llm, _DADOS_ESTRUTURADOS_VAZIO)
+    assert r.caso.area == "outro"
+    assert r.caso.area_bruta == "direito dos drones"
+
+
+def test_area_canonica_nao_carrega_area_bruta():
+    r = _montar_intake_result(_llm_valido(), _DADOS_ESTRUTURADOS_VAZIO)
+    assert r.caso.area == "civil"
+    assert r.caso.area_bruta is None

@@ -20,7 +20,12 @@
     --ejc-bronze: #6f5711;
     --ejc-gold: #c9a227;
     --ejc-gold-soft: #f7f1dc;
-    --ejc-shadow-soft: 0 4px 18px rgba(24, 16, 8, 0.05);
+    /* Sombra em camadas (ambiente + luz suave) — profundidade "flutuante"
+       de alto padrão, quente, discreta. */
+    --ejc-shadow-soft:
+      0 1px 2px rgba(24, 16, 8, 0.04),
+      0 6px 16px -4px rgba(24, 16, 8, 0.05),
+      0 22px 44px -16px rgba(24, 16, 8, 0.07);
     /* Sidebar off-black quente sofisticado (ouro profundo da logomarca) */
     --ejc-sidebar-top: #201a0f;
     --ejc-sidebar-bottom: #2f260f;
@@ -46,7 +51,10 @@
     --ejc-border: rgba(255, 245, 230, 0.08);
     --ejc-legal: #d6cec2;
     --ejc-gold-soft: rgba(212, 175, 55, 0.12);
-    --ejc-shadow-soft: 0 8px 30px rgba(0, 0, 0, 0.45);
+    --ejc-shadow-soft:
+      0 1px 2px rgba(0, 0, 0, 0.3),
+      0 8px 22px -6px rgba(0, 0, 0, 0.42),
+      0 26px 50px -18px rgba(0, 0, 0, 0.55);
     --ejc-sidebar-top: #191509;
     --ejc-sidebar-bottom: #251d0c;
     /* No escuro o ouro near-black some sobre o card — troca com o creme */
@@ -126,75 +134,71 @@
 }
 
 @layer components {
-  /* ── Card — branco flutuante, SEM borda dura: hairline quase invisível
-        + sombra difusa (profundidade só por elevação) ── */
+  /* ── Card — idioma flat/compacto: branco com borda 1px visível
+        (token border) e raio 12px; sombra mínima, sem elevação ── */
   .card {
-    @apply rounded-2xl border border-black/[0.05] bg-white;
-    box-shadow: var(--ejc-shadow-soft);
-    transition:
-      border-color 0.15s ease-out,
-      box-shadow 0.15s ease-out,
-      transform 0.15s ease-out;
+    @apply rounded-xl border border-border bg-white;
+    box-shadow: 0 1px 2px rgba(15, 23, 42, 0.04);
+    transition: border-color 0.15s ease-out;
   }
   .card:hover {
-    box-shadow:
-      0 2px 4px rgba(16, 24, 40, 0.04),
-      0 12px 36px rgba(16, 24, 40, 0.1);
+    border-color: rgba(166, 124, 82, 0.28);
   }
 
   .section-card {
-    @apply rounded-2xl border border-black/[0.05] bg-white;
-    box-shadow: var(--ejc-shadow-soft);
+    @apply rounded-xl border border-border bg-white;
+    box-shadow: 0 1px 2px rgba(15, 23, 42, 0.04);
   }
 
   /* ── Buttons ──────────────────────────────────────────────── */
-  /* ── Botões SEM BORDA (regra global do DS): primary preenchido em
-        gradiente ouro→ouro profundo, secundário TONAL (fundo levíssimo,
-        sem outline), ghost para ações terciárias. Profundidade apenas
-        por sombra suave; foco acessível com ring dourado. ── */
+  /* ── Botões no idioma flat/compacto: cor CHAPADA (sem gradiente),
+        raio 8px, padding 8×16, peso 700, fonte 13px. Variantes:
+        primário (ouro chapado + texto branco), neutro (branco com
+        borda), ghost terciário, perigo. Foco com ring dourado. ── */
   .btn {
-    @apply inline-flex items-center justify-center gap-2 rounded-xl border-0 px-4 py-2 text-sm font-medium
+    @apply inline-flex items-center justify-center gap-2 rounded-lg border-0 px-4 py-2 text-[13px] font-bold
            transition-all duration-150 ease-out active:scale-[.98]
            focus:outline-none focus-visible:ring-2 focus-visible:ring-ouro/40
            disabled:opacity-50 disabled:cursor-not-allowed select-none;
   }
-  /* Primário — gradiente sutil ouro #8F7117 → ouro profundo #6F5711
-     (texto branco 4,6:1+, AA); hover aprofunda cor e sombra. */
+  /* Primário — ouro #8F7117 CHAPADO (texto branco 4,6:1+, AA);
+     hover aprofunda para ouro profundo #6F5711. */
   .btn-primary,
   .btn-gold {
-    @apply btn text-white shadow-gold hover:shadow-gold-hover;
-    background-image: linear-gradient(180deg, #8f7117 0%, #6f5711 100%);
+    @apply btn text-white;
+    background-color: #8f7117;
   }
   .btn-primary:hover,
   .btn-gold:hover,
   .btn-primary:active,
   .btn-gold:active {
-    background-image: linear-gradient(180deg, #7d6414 0%, #5e4a0e 100%);
+    background-color: #6f5711;
   }
   .btn-ghost {
     @apply btn bg-transparent hover:bg-slate-900/[0.05] active:bg-slate-900/[0.09] text-slate-700;
   }
+  /* Neutro — branco com borda 1px (idioma Verdelimp) */
   .btn-secondary,
   .btn-outline {
-    @apply btn bg-slate-900/[0.05] hover:bg-slate-900/[0.09] active:bg-slate-900/[0.12] text-slate-700;
+    @apply btn border border-gray-300 bg-white hover:bg-slate-50 active:bg-slate-100 text-slate-700;
   }
   .btn-danger {
-    @apply btn bg-red-600 hover:bg-red-700 active:bg-red-800 text-white hover:shadow-md focus-visible:ring-red-500/40;
+    @apply btn bg-red-600 hover:bg-red-700 active:bg-red-800 text-white focus-visible:ring-red-500/40;
   }
 
   /* Botão de ícone do header — tonal, sem borda */
   .icon-btn {
-    @apply flex h-10 w-10 items-center justify-center rounded-xl border-0 bg-slate-900/[0.04] text-slate-500 transition-colors hover:bg-slate-900/[0.08] hover:text-slate-700;
+    @apply flex h-10 w-10 items-center justify-center rounded-lg border-0 bg-slate-900/[0.04] text-slate-500 transition-colors hover:bg-slate-900/[0.08] hover:text-slate-700;
   }
 
-  /* ── Form inputs ──────────────────────────────────────────── */
+  /* ── Form inputs — compactos: raio 8px, padding ~7×10, fonte 13 ── */
   .input {
-    @apply w-full rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm text-slate-900
+    @apply w-full rounded-lg border border-gray-300 bg-white px-2.5 py-1.5 text-[13px] text-slate-900
            placeholder:text-slate-400 transition-all duration-150
            focus:border-ouro-claro focus:outline-none focus:ring-2 focus:ring-ouro-claro/30;
   }
   .label {
-    @apply block text-xs font-medium text-gray-600 mb-1;
+    @apply block text-[11px] font-semibold text-gray-600 mb-1;
   }
 
   /* ── Badges ───────────────────────────────────────────────── */
@@ -227,11 +231,13 @@
   .table thead tr {
     @apply border-b border-slate-100;
   }
+  /* Cabeçalho na faixa clara da marca (ouro palha) com texto na cor
+     escura da marca — idioma Verdelimp de thead, cores EJC. */
   .table th {
-    @apply bg-white px-4 py-3 text-left text-[11px] font-semibold uppercase tracking-wider text-slate-400 first:rounded-tl-xl last:rounded-tr-xl;
+    @apply bg-ouro-palha px-3 py-2 text-left text-[11px] font-bold uppercase tracking-wider text-primary-900 first:rounded-tl-xl last:rounded-tr-xl;
   }
   .table td {
-    @apply border-t border-slate-100 px-4 py-4 text-slate-700;
+    @apply border-t border-slate-100 px-3 py-2.5 text-slate-700;
   }
   .table tbody tr {
     @apply transition-colors hover:bg-slate-50;
@@ -239,9 +245,9 @@
 
   /* ── Modal ────────────────────────────────────────────────── */
   .modal-backdrop {
+    /* Véu escurecido simples (idioma Verdelimp) — sem blur decorativo */
     @apply fixed inset-0 z-50 flex items-center justify-center p-4;
-    background: rgba(15, 23, 42, 0.55);
-    backdrop-filter: blur(4px);
+    background: rgba(15, 23, 42, 0.45);
   }
 
   /* O conteúdo das páginas vive num wrapper `relative z-10` (Layout), então
@@ -330,48 +336,60 @@
     }
   }
 
-  /* ── Sidebar ouro-escura (gradiente — igual nos 2 temas) ── */
+  /* ── Sidebar clara (branca) — igual nos 2 temas ── */
   .sidebar-bronze {
-    background: linear-gradient(
-      180deg,
-      var(--ejc-sidebar-top) 0%,
-      var(--ejc-sidebar-bottom) 100%
-    );
+    background: #ffffff;
+    border-right: 1px solid rgb(226 232 240); /* slate-200 */
   }
   .sidebar-nav-item {
     position: relative;
-    color: rgba(255, 245, 230, 0.72);
+    /* Recorta o filete ativo (::before, reto e 100% da altura) nos cantos
+       arredondados (rounded-lg) do item. */
+    overflow: hidden;
+    color: rgb(51 65 85); /* slate-700 */
   }
   .sidebar-nav-item:hover {
-    background: rgba(201, 162, 39, 0.16);
-    color: #f5edd2;
+    background: rgba(201, 162, 39, 0.12);
+    color: rgb(15 23 42); /* slate-900 */
   }
   .sidebar-nav-item.is-active {
-    background: rgba(201, 162, 39, 0.2);
-    color: #e5ce7f;
+    background: rgba(201, 162, 39, 0.16);
+    color: #8a6d2f; /* ouro escuro, legível no branco */
   }
+  /* Item ativo com "borderLeft" de 3px em toda a altura (idioma
+     Verdelimp), na cor de acento atual do EJC (dourado #D4AF37). */
   .sidebar-nav-item.is-active::before {
     content: "";
     position: absolute;
     left: 0;
-    top: 20%;
-    height: 60%;
+    top: 0;
+    height: 100%;
     width: 3px;
-    border-radius: 999px;
+    border-radius: 0;
     background: #d4af37;
   }
+  /* Ícones do menu em dourado ouro — acento elegante sobre o fundo branco. */
+  .sidebar-nav-item svg {
+    color: #b08a50;
+  }
+  .sidebar-nav-item:hover svg {
+    color: #8a6d2f;
+  }
+  .sidebar-nav-item.is-active svg {
+    color: #8a6d2f;
+  }
   .sidebar-group-label {
-    color: rgba(255, 245, 230, 0.45);
+    color: rgb(100 116 139); /* slate-500 */
   }
   .sidebar-group-label:hover {
-    color: rgba(255, 245, 230, 0.7);
+    color: rgb(51 65 85); /* slate-700 */
   }
   .sidebar-tree {
-    border-color: rgba(255, 245, 230, 0.14);
+    border-color: rgb(226 232 240); /* slate-200 */
   }
   .sidebar-count {
-    background: rgba(212, 175, 55, 0.18);
-    color: #e5ce7f;
+    background: rgba(212, 175, 55, 0.16);
+    color: #8a6d2f;
   }
 
   /* Tile da logomarca (header) — logo-hd.png tem fundo TRANSPARENTE:
@@ -505,6 +523,53 @@
   animation: pulse-soft 2s ease-in-out infinite;
 }
 
+/* ── Skeleton (placeholder de carregamento) ──────────────────
+   Alto padrão branco+ouro: bloco neutro quente no claro / grafite no
+   escuro (.dark), com um brilho dourado SUTIL varrendo a superfície.
+   Só apresentação — usado no lugar do <Spinner/> das listas core. */
+@keyframes ejc-shimmer {
+  100% {
+    transform: translateX(100%);
+  }
+}
+.ejc-skeleton {
+  position: relative;
+  overflow: hidden;
+  border-radius: 0.5rem;
+  background-color: #f1ece1; /* off-white quente (canvas/parchment) */
+}
+.ejc-skeleton::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  transform: translateX(-100%);
+  background: linear-gradient(
+    90deg,
+    rgba(255, 255, 255, 0) 0%,
+    rgba(255, 255, 255, 0.7) 45%,
+    rgba(201, 162, 39, 0.12) 55%,
+    rgba(255, 255, 255, 0) 100%
+  );
+  animation: ejc-shimmer 1.8s ease-in-out infinite;
+}
+.dark .ejc-skeleton {
+  background-color: #2a2e37; /* grafite */
+}
+.dark .ejc-skeleton::after {
+  background: linear-gradient(
+    90deg,
+    rgba(255, 255, 255, 0) 0%,
+    rgba(255, 255, 255, 0.06) 45%,
+    rgba(201, 162, 39, 0.08) 55%,
+    rgba(255, 255, 255, 0) 100%
+  );
+}
+@media (prefers-reduced-motion: reduce) {
+  .ejc-skeleton::after {
+    animation: none;
+  }
+}
+
 /* Modernizacao sistemica escopada: aplica acabamento premium nas telas antigas
    sem alterar componentes, handlers, endpoints ou regras de negocio. */
 .ejc-modern-scope {
@@ -516,8 +581,11 @@
   min-width: 0;
 }
 
+/* Título de página denso: ~20px/700 na cor escura da marca */
 .ejc-modern-scope h1 {
-  color: #0f172a;
+  color: #3b2f0b;
+  font-size: 1.35rem;
+  font-weight: 700;
   letter-spacing: 0;
 }
 
@@ -546,9 +614,7 @@
 .ejc-modern-scope
   .bg-white.rounded-2xl:not(input):not(select):not(textarea):not(button) {
   border-color: #e5e7eb !important;
-  box-shadow:
-    0 18px 45px rgba(15, 23, 42, 0.055),
-    0 1px 2px rgba(15, 23, 42, 0.04) !important;
+  box-shadow: 0 1px 2px rgba(15, 23, 42, 0.04) !important;
 }
 
 .ejc-modern-scope .rounded-2xl {
@@ -564,7 +630,9 @@
   input:not([type="checkbox"]):not([type="radio"]):not([type="range"]),
 .ejc-modern-scope select,
 .ejc-modern-scope textarea {
-  min-height: 2.5rem;
+  min-height: 2.25rem;
+  border-radius: 8px;
+  font-size: 13px;
   border: 1px solid #e5e7eb;
   background: #fff;
   color: #111827;
@@ -598,21 +666,44 @@
   border-spacing: 0;
 }
 
+/* Cabeçalho de tabela no idioma Verdelimp: faixa clara da marca (ouro
+   palha #F7F1DC) com rótulos na cor escura da marca (#3B2F0B). */
 .ejc-modern-scope thead th {
-  background: #f8fafc;
-  color: #64748b;
-  font-size: 0.72rem;
-  font-weight: 750;
-  letter-spacing: 0.06em;
+  background: #f7f1dc;
+  border-bottom: 1px solid rgba(212, 175, 55, 0.22);
+  color: #3b2f0b;
+  font-size: 0.7rem;
+  font-weight: 700;
+  letter-spacing: 0.08em;
   text-transform: uppercase;
+  font-variant-numeric: tabular-nums;
 }
 
 .ejc-modern-scope tbody tr {
   transition: background-color 0.15s ease;
 }
 
+/* Linhas com hairline quente; números/valores/datas em tabular-nums. */
+.ejc-modern-scope tbody td {
+  border-top: 1px solid rgba(166, 124, 82, 0.1);
+  font-variant-numeric: tabular-nums;
+}
+
 .ejc-modern-scope tbody tr:hover {
-  background: rgba(250, 247, 240, 0.75);
+  background: rgba(212, 175, 55, 0.06);
+}
+
+/* Listas core (Casos, Clientes, Documentos e afins) usam `.card.overflow-x-auto`:
+   cabeçalho fixo ao rolar e linhas mais confortáveis, sem borda dura. */
+.ejc-modern-scope .card.overflow-x-auto thead th {
+  position: sticky;
+  top: 0;
+  z-index: 1;
+}
+
+.ejc-modern-scope .card.overflow-x-auto tbody td {
+  padding-top: 0.85rem;
+  padding-bottom: 0.85rem;
 }
 
 .ejc-modern-scope .btn,
@@ -621,13 +712,13 @@
 }
 
 .ejc-modern-scope .btn-primary {
-  /* Ouro institucional em gradiente sutil (ouro → ouro profundo) */
-  background-image: linear-gradient(180deg, #8f7117 0%, #6f5711 100%);
-  box-shadow: 0 10px 24px rgba(111, 87, 17, 0.24);
+  /* Ouro institucional CHAPADO (flat, sem gradiente nem sombra) */
+  background-color: #8f7117;
+  box-shadow: none;
 }
 
 .ejc-modern-scope .btn-primary:hover {
-  background-image: linear-gradient(180deg, #7d6414 0%, #5e4a0e 100%);
+  background-color: #6f5711;
 }
 
 .ejc-modern-scope .badge,
@@ -638,10 +729,9 @@
 
 .ejc-modern-scope .bg-slate-100.p-1.rounded-xl,
 .ejc-modern-scope .bg-gray-100.p-1.rounded-xl {
+  /* Superfície chapada (idioma Verdelimp) — sem glass/blur */
   border: 1px solid #e5e7eb;
-  background: rgba(255, 255, 255, 0.78) !important;
-  box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.55);
-  backdrop-filter: blur(12px);
+  background: #ffffff !important;
 }
 
 .ejc-modern-scope .bg-slate-100.p-1.rounded-xl button,
@@ -688,19 +778,21 @@
   }
 
   .toolbar-surface {
-    @apply flex flex-wrap items-center gap-2 rounded-xl border border-slate-200 bg-white/90 p-3 shadow-sm;
-    backdrop-filter: blur(14px);
+    @apply flex flex-wrap items-center gap-2 rounded-xl border border-slate-200 bg-white p-2.5 shadow-sm;
   }
 
-  /* KPI card — glassmorphism sutil sobre o canvas off-white */
+  /* KPI card — flat: branco, borda 1px, raio 10px e borda SUPERIOR de
+     3px na cor do indicador (defina via border-top-color no uso). */
   .stat-card {
-    @apply rounded-2xl border border-white/50 bg-white/75 p-4 backdrop-blur-sm;
-    box-shadow: var(--ejc-shadow-soft);
+    @apply rounded-[10px] border border-border bg-white p-4;
+    border-top-width: 3px;
+    border-top-color: #d4af37;
+    box-shadow: 0 1px 2px rgba(16, 24, 40, 0.04);
   }
 
   .legal-surface {
-    @apply rounded-2xl border border-slate-200/60 bg-white;
-    box-shadow: var(--ejc-shadow-soft);
+    @apply rounded-xl border border-slate-200/60 bg-white;
+    box-shadow: 0 1px 2px rgba(16, 24, 40, 0.04);
   }
 
   .ai-surface {
@@ -712,14 +804,10 @@
   }
 
   .ai-surface-header {
+    /* Faixa chapada (idioma flat — sem gradiente decorativo) */
     @apply flex flex-wrap items-center justify-between gap-3 border-b px-5 py-4;
     border-color: rgba(247, 146, 86, 0.2);
-    background: linear-gradient(
-      90deg,
-      rgba(247, 146, 86, 0.1),
-      rgba(201, 162, 39, 0.06),
-      transparent
-    );
+    background: rgba(247, 146, 86, 0.08);
   }
 
   .status-dot {
@@ -903,14 +991,9 @@
   }
 
   .brand-accent-line {
-    background: linear-gradient(
-      90deg,
-      var(--ejc-gold),
-      rgba(216, 185, 78, 0.35),
-      transparent
-    );
+    /* Hairline dourado chapado (sem fade decorativo) */
+    background: rgba(216, 185, 78, 0.45);
   }
-
   .card:hover,
   .section-card:hover,
   .legal-surface:hover {
@@ -972,7 +1055,6 @@
 .dark .section-card:hover,
 .dark .legal-surface:hover {
   border-color: rgba(212, 175, 55, 0.32);
-  box-shadow: 0 12px 36px rgba(0, 0, 0, 0.55);
 }
 .dark .stat-card {
   background: rgba(28, 23, 18, 0.75);
@@ -994,6 +1076,9 @@
 .dark .btn-secondary,
 .dark .btn-outline {
   background: rgba(255, 245, 230, 0.07);
+  /* Redefine a borda cinza-clara do tema claro (border-gray-300) — mesmo
+     translúcido branco do variant secondary do Button (dark:border-white/[0.14]). */
+  border-color: rgba(255, 255, 255, 0.14);
   color: #d6cec2;
 }
 .dark .btn-secondary:hover,
@@ -1016,13 +1101,13 @@
 }
 .dark .btn-primary,
 .dark .btn-gold {
-  /* mesmo gradiente ouro→profundo: identidade única nos dois temas
+  /* mesmo ouro chapado: identidade única nos dois temas
      (texto branco sobre #8F7117 = 4,6:1 AA) */
-  background-image: linear-gradient(180deg, #8f7117 0%, #6f5711 100%);
+  background-color: #8f7117;
 }
 .dark .btn-primary:hover,
 .dark .btn-gold:hover {
-  background-image: linear-gradient(180deg, #9c7c1a 0%, #7d6414 100%);
+  background-color: #9c7c1a;
 }
 .dark .input,
 .dark .ejc-modern-scope .input,
@@ -1061,7 +1146,13 @@
 }
 .dark .table tbody tr:hover,
 .dark .ejc-modern-scope tbody tr:hover {
-  background: rgba(255, 245, 230, 0.04);
+  /* hover dourado leve (paridade com o claro rgba(212,175,55,0.06)) */
+  background: rgba(212, 175, 55, 0.08);
+}
+/* Hairline das linhas em creme translúcido (mesmo tom do --ejc-border),
+   mais limpo/legível no grafite que o bronze quente herdado do claro. */
+.dark .ejc-modern-scope tbody td {
+  border-color: rgba(255, 245, 230, 0.07);
 }
 
 /* ── 2e. Badges / acentos ──────────────────────────────────── */
@@ -1107,6 +1198,52 @@
   color: #e5ce7f;
 }
 
+/* ── 2e-bis. Sidebar no ESCURO — grafite quente + ouro ──────────
+   No claro a `.sidebar-bronze` (em @layer components) virou branca;
+   estas regras SÃO deslayerizadas (vencem a camada, além da maior
+   especificidade por `.dark`). Grafite quente #17130B→#221B0F, texto
+   creme, hover/ativo em ouro, ícones dourados e filete dourado ativo. */
+.dark .sidebar-bronze {
+  /* Fundo CHAPADO (idioma Verdelimp: sem gradiente), grafite quente atual */
+  background: #17130b;
+  border-right: 1px solid rgba(255, 245, 230, 0.08);
+}
+.dark .sidebar-nav-item {
+  color: #cfc6b8; /* creme, ~9:1 sobre o grafite (AA) */
+}
+.dark .sidebar-nav-item:hover {
+  background: rgba(212, 175, 55, 0.14);
+  color: #f2ece1;
+}
+.dark .sidebar-nav-item.is-active {
+  background: rgba(212, 175, 55, 0.18);
+  color: #e5ce7f; /* ouro claro, legível no grafite */
+}
+.dark .sidebar-nav-item.is-active::before {
+  background: #d4af37; /* filete dourado mantido */
+}
+/* Ícones do menu em ouro — acento sobre o grafite. */
+.dark .sidebar-nav-item svg {
+  color: #c9a24a;
+}
+.dark .sidebar-nav-item:hover svg,
+.dark .sidebar-nav-item.is-active svg {
+  color: #e5ce7f;
+}
+.dark .sidebar-group-label {
+  color: #a89e8f; /* --ejc-muted */
+}
+.dark .sidebar-group-label:hover {
+  color: #d6cec2;
+}
+.dark .sidebar-tree {
+  border-color: rgba(255, 245, 230, 0.08);
+}
+.dark .sidebar-count {
+  background: rgba(212, 175, 55, 0.18);
+  color: #e5ce7f;
+}
+
 /* ── 2f. Superfícies especiais ─────────────────────────────── */
 .dark .ai-surface {
   background: var(--ejc-card);
@@ -1115,12 +1252,7 @@
 }
 .dark .ai-surface-header {
   border-color: rgba(247, 146, 86, 0.2);
-  background: linear-gradient(
-    90deg,
-    rgba(247, 146, 86, 0.12),
-    rgba(212, 175, 55, 0.06),
-    transparent
-  );
+  background: rgba(247, 146, 86, 0.09);
 }
 .dark .visual-law-document {
   background: var(--ejc-card);

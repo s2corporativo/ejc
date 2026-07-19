@@ -1,5 +1,5 @@
 import { useEffect, useState, useRef, useCallback } from "react";
-import { Send, MessageCircle, RefreshCw } from "lucide-react";
+import { Send, MessageCircle, RefreshCw, Check, CheckCheck } from "lucide-react";
 import api from "../../lib/api";
 import { toast } from "../../components/Toast";
 import { EmptyState } from "../../components/UI";
@@ -95,6 +95,7 @@ export default function PortalMensagens() {
         <EmptyState
           icon={MessageCircle}
           title="Nenhum processo ativo para enviar mensagens"
+          message="Quando o escritório cadastrar um processo para você, o canal de mensagens será aberto aqui."
         />
       ) : (
         <>
@@ -108,6 +109,7 @@ export default function PortalMensagens() {
               {casos.map((c) => (
                 <option key={c.id} value={c.id}>
                   {c.titulo}
+                  {c.numero_processo ? ` — ${c.numero_processo}` : ""}
                 </option>
               ))}
             </select>
@@ -158,9 +160,25 @@ export default function PortalMensagens() {
                       )}
                       <p className="leading-relaxed">{m.mensagem}</p>
                       <p
-                        className={`text-[10px] mt-1 ${m.autor_tipo === "cliente" ? "text-primary-200" : "text-slate-400"}`}
+                        className={`text-[10px] mt-1 flex items-center gap-1 ${m.autor_tipo === "cliente" ? "text-primary-200 justify-end" : "text-slate-400"}`}
                       >
                         {fmtTime(m.created_at)}
+                        {m.autor_tipo === "cliente" &&
+                          (m.lida ? (
+                            <span
+                              className="inline-flex items-center gap-0.5"
+                              title="Lida pelo escritório"
+                            >
+                              <CheckCheck className="w-3 h-3" /> Lida
+                            </span>
+                          ) : (
+                            <span
+                              className="inline-flex items-center gap-0.5"
+                              title="Enviada — ainda não lida pelo escritório"
+                            >
+                              <Check className="w-3 h-3" /> Enviada
+                            </span>
+                          ))}
                       </p>
                     </div>
                   </div>

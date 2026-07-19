@@ -284,7 +284,7 @@ export default function Prazos() {
       >
         <div className="space-y-4">
           <div>
-            <label className="label">Data da intimação/ciência</label>
+            <label className="label">Data da intimação/ciência (dd/mm/aaaa)</label>
             <input
               type="date"
               className="input"
@@ -370,7 +370,7 @@ export default function Prazos() {
             />
           </div>
           <div>
-            <label className="label">Data da intimação</label>
+            <label className="label">Data da intimação (dd/mm/aaaa)</label>
             <input
               type="date"
               className="input"
@@ -405,7 +405,7 @@ export default function Prazos() {
             </select>
           </div>
           <div>
-            <label className="label">OU data fatal direta</label>
+            <label className="label">OU data fatal direta (dd/mm/aaaa)</label>
             <input
               type="date"
               className="input"

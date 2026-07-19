@@ -1,11 +1,14 @@
 import { useState, useEffect, useCallback, useMemo } from "react";
-import { useSearchParams } from "react-router-dom";
+import { useSearchParams, Link } from "react-router-dom";
 import { PageHeader, Spinner, Empty, EmptyState, ErrorState } from "../components/UI";
 import { toast } from "../components/Toast";
 import {
   Calendar,
+  CalendarClock,
+  ChevronDown,
   Clock,
   CheckCircle,
+  ExternalLink,
   Filter,
   List,
   LayoutGrid,
@@ -15,8 +18,12 @@ import {
   Pause,
   ClipboardList,
   Users,
+  UserPlus,
+  User as UserIcon,
   MapPin,
   Plus,
+  AlertTriangle,
+  X,
 } from "lucide-react";
 import api from "../lib/api";
 import { asList } from "../lib/list";
@@ -32,15 +39,91 @@ type ItemType =
   | "compromisso"
   | "diligencia";
 
+const ITEM_TYPES: readonly ItemType[] = [
+  "prazo",
+  "tarefa",
+  "suspensao",
+  "intimacao",
+  "audiencia",
+  "reuniao",
+  "compromisso",
+  "diligencia",
+];
+
+export function isItemType(value: string | null): value is ItemType {
+  return ITEM_TYPES.includes(value as ItemType);
+}
+
+/** Fonte (router de backend) que serve o item — decide quais ações existem. */
+type Fonte = "prazo" | "tarefa" | "agenda" | "intimacao" | "suspensao";
+
+/** Evento colidente devolvido por POST/PATCH /agenda-eventos/ no campo
+ *  `conflito_agenda` (double-booking: AVISA, não bloqueia). */
+interface ConflitoEvento {
+  id: string;
+  titulo: string;
+  tipo?: string | null;
+  data_evento?: string | null;
+  hora?: string | null;
+  local?: string | null;
+}
+
+/** Extrai a lista de conflitos da resposta do backend com segurança. */
+function extrairConflitos(data: unknown): ConflitoEvento[] {
+  const lista = (data as { conflito_agenda?: unknown } | null)?.conflito_agenda;
+  return Array.isArray(lista) ? (lista as ConflitoEvento[]) : [];
+}
+
 export type ActivityView = "lista" | "calendario" | "timeline" | "kanban";
 
 export function isActivityView(value: string | null): value is ActivityView {
   return ["lista", "calendario", "timeline", "kanban"].includes(value ?? "");
 }
 
+/** Situações REAIS existentes nos modelos do backend:
+ *  - deadlines: pendente | concluido | vencido | cancelado
+ *  - tasks: a_fazer | fazendo | concluida
+ *  - agenda_eventos: pendente | concluido
+ *  - intimações (DJEN): pendente | tratada
+ *  - suspensões: sem status (informativas)
+ */
+export type Situacao = "nao_tratado" | "em_execucao" | "concluido" | "cancelado";
+
+/** Colunas do kanban / filtro de situação: cancelado NÃO tem coluna própria —
+ *  agrupa com concluído, mas mantém rótulo/estilo distintos (badge neutra). */
+export type SituacaoColuna = Exclude<Situacao, "cancelado">;
+
+export function situacaoDe(status?: string | null): Situacao {
+  const s = (status ?? "").toLowerCase();
+  if (s === "cancelado") return "cancelado"; // NÃO é concluído — rótulo próprio
+  if (["concluido", "concluida", "tratada"].includes(s)) return "concluido";
+  if (s === "fazendo") return "em_execucao";
+  return "nao_tratado"; // pendente, a_fazer, vencido, sem status
+}
+
+/** Agrupamento para coluna do kanban e filtro (cancelado → junto de concluído). */
+export function situacaoColunaDe(status?: string | null): SituacaoColuna {
+  const s = situacaoDe(status);
+  return s === "cancelado" ? "concluido" : s;
+}
+
+/** A view vw_atividades devolve tipo 'agenda' para eventos; o subtipo real
+ *  (reuniao/audiencia/diligencia/compromisso) vem de /agenda-eventos/. */
+export function mapAgendaTipo(tipo?: string | null): ItemType {
+  if (
+    tipo === "reuniao" ||
+    tipo === "audiencia" ||
+    tipo === "diligencia" ||
+    tipo === "compromisso"
+  )
+    return tipo;
+  return "compromisso"; // 'outro' e desconhecidos
+}
+
 interface Activity {
   id: string;
   tipo: ItemType;
+  fonte: Fonte;
   titulo: string;
   descricao?: string;
   date: string;
@@ -49,6 +132,17 @@ interface Activity {
   status: string;
   case_id?: string;
   caso_titulo?: string;
+  responsavel_id?: string;
+  prioridade?: string;
+  hora?: string;
+  local?: string;
+  origem: string;
+}
+
+interface Responsavel {
+  id: string;
+  nome: string;
+  role?: string;
 }
 
 function fmtDate(d: string) {
@@ -76,6 +170,12 @@ const URGENCIA_COLOR: Record<string, string> = {
   normal: "text-slate-600 bg-white border-slate-200",
 };
 
+const PRIO_COLOR: Record<string, string> = {
+  alta: "bg-danger-100 text-danger-700",
+  media: "bg-warn-100 text-warn-700",
+  baixa: "bg-slate-100 text-slate-500",
+};
+
 const TIPO_CONFIG: Record<
   ItemType,
   { label: string; icon: React.ElementType; color: string }
@@ -94,44 +194,193 @@ const TIPO_CONFIG: Record<
   diligencia: { label: "Diligência", icon: MapPin, color: "text-success-600" },
 };
 
-function ActivityRow({ item }: { item: Activity }) {
-  const cfg = TIPO_CONFIG[item.tipo];
+const SITUACAO_CONFIG: { key: SituacaoColuna; label: string; cor: string }[] = [
+  { key: "nao_tratado", label: "Não tratado", cor: "bg-slate-400" },
+  { key: "em_execucao", label: "Em execução", cor: "bg-primary-500" },
+  { key: "concluido", label: "Concluído", cor: "bg-success-500" },
+];
+
+function tipoCfg(tipo: ItemType) {
+  return TIPO_CONFIG[tipo] ?? TIPO_CONFIG.compromisso;
+}
+
+function apiErro(e: unknown, fallback: string): string {
+  const detail = (e as { response?: { data?: { detail?: unknown } } })?.response
+    ?.data?.detail;
+  return typeof detail === "string" ? detail : fallback;
+}
+
+/** Metadados extras exibidos quando os endpoints já os fornecem. */
+function ActivityMeta({
+  item,
+  nomeDe,
+}: {
+  item: Activity;
+  nomeDe: (id?: string) => string | undefined;
+}) {
+  const resp = nomeDe(item.responsavel_id);
+  return (
+    <div className="flex flex-wrap items-center gap-x-3 gap-y-0.5 mt-1">
+      {item.caso_titulo &&
+        (item.case_id ? (
+          <Link
+            to={`/casos/${item.case_id}`}
+            className="text-xs text-primary-600 hover:underline truncate max-w-[220px]"
+            title="Abrir caso"
+          >
+            {item.caso_titulo}
+          </Link>
+        ) : (
+          <span className="text-xs text-slate-400 truncate max-w-[220px]">
+            {item.caso_titulo}
+          </span>
+        ))}
+      {resp && (
+        <span className="inline-flex items-center gap-1 text-xs text-slate-500">
+          <UserIcon className="w-3 h-3" /> {resp}
+        </span>
+      )}
+      {item.prioridade && (
+        <span
+          className={`text-[10px] font-semibold px-1.5 py-0.5 rounded ${PRIO_COLOR[item.prioridade] ?? PRIO_COLOR.baixa}`}
+        >
+          {item.prioridade}
+        </span>
+      )}
+      {(item.hora || item.local) && (
+        <span className="text-xs text-slate-400 truncate">
+          {[item.hora, item.local].filter(Boolean).join(" · ")}
+        </span>
+      )}
+      <span className="text-[10px] text-slate-400 uppercase tracking-wide">
+        {item.origem}
+      </span>
+    </div>
+  );
+}
+
+function ActivityRow({
+  item,
+  nomeDe,
+  onConcluir,
+  onReagendar,
+  onAtribuir,
+  podeAtribuir,
+}: {
+  item: Activity;
+  nomeDe: (id?: string) => string | undefined;
+  onConcluir: (item: Activity) => void;
+  onReagendar: (item: Activity) => void;
+  onAtribuir: (item: Activity) => void;
+  podeAtribuir: boolean;
+}) {
+  const cfg = tipoCfg(item.tipo);
   const Icon = cfg.icon;
   const urg = item.urgencia ?? "normal";
+  const situ = situacaoDe(item.status);
+  // Cancelado também é estado final: sem destaque de urgência nem ação de
+  // concluir — mas com badge própria (neutra), não o selo verde "Concluído".
+  const finalizado = situ === "concluido" || situ === "cancelado";
+  const podeConcluir =
+    !finalizado &&
+    ["prazo", "tarefa", "agenda", "intimacao"].includes(item.fonte);
+  const podeReagendar = ["prazo", "tarefa", "agenda"].includes(item.fonte);
+  const btn =
+    "p-1.5 rounded-lg text-slate-400 hover:text-slate-700 hover:bg-slate-100 transition-colors";
   return (
     <div
-      className={`flex items-start gap-3 px-4 py-3 border-b border-slate-100 hover:bg-slate-50/60 transition-colors last:border-0 ${urg === "vencido" ? "bg-danger-50/30" : urg === "critico" ? "bg-orange-50/20" : ""}`}
+      className={`flex items-start gap-3 px-4 py-3 border-b border-slate-100 hover:bg-slate-50/60 transition-colors last:border-0 ${urg === "vencido" && !finalizado ? "bg-danger-50/30" : urg === "critico" && !finalizado ? "bg-orange-50/20" : ""}`}
     >
       <div className={`mt-0.5 flex-shrink-0 ${cfg.color}`}>
         <Icon className="w-4 h-4" />
       </div>
       <div className="flex-1 min-w-0">
         <div className="flex items-start justify-between gap-2">
-          <p className="text-sm text-slate-800 font-medium leading-snug">
+          <p
+            className={`text-sm font-medium leading-snug ${finalizado ? "text-slate-400 line-through" : "text-slate-800"}`}
+          >
             {item.titulo}
           </p>
           <div className="flex items-center gap-2 flex-shrink-0">
-            <span
-              className={`text-[11px] font-semibold px-2 py-0.5 rounded-full border ${URGENCIA_COLOR[urg]}`}
-            >
-              {fmtRelative(item.dias_restantes)}
-            </span>
+            {situ === "concluido" ? (
+              <span className="text-[11px] font-semibold px-2 py-0.5 rounded-full border text-success-700 bg-success-50 border-success-200">
+                Concluído
+              </span>
+            ) : situ === "cancelado" ? (
+              <span className="text-[11px] font-semibold px-2 py-0.5 rounded-full border text-slate-500 bg-slate-50 border-slate-200">
+                Cancelado
+              </span>
+            ) : (
+              <span
+                className={`text-[11px] font-semibold px-2 py-0.5 rounded-full border ${URGENCIA_COLOR[urg]}`}
+              >
+                {fmtRelative(item.dias_restantes)}
+              </span>
+            )}
             <span className="text-[10px] text-slate-400 uppercase font-medium">
               {cfg.label}
             </span>
           </div>
         </div>
-        {item.caso_titulo && (
-          <p className="text-xs text-slate-400 mt-0.5 truncate">
-            {item.caso_titulo}
-          </p>
-        )}
+        <ActivityMeta item={item} nomeDe={nomeDe} />
         {item.descricao && (
           <p className="text-xs text-slate-500 mt-0.5 truncate">
             {item.descricao}
           </p>
         )}
-        <p className="text-[10px] text-slate-400 mt-1">{fmtDate(item.date)}</p>
+        <div className="flex items-center justify-between mt-1">
+          <p className="text-[10px] text-slate-400">{fmtDate(item.date)}</p>
+          <div className="flex items-center gap-0.5">
+            {item.case_id && (
+              <Link
+                to={`/casos/${item.case_id}`}
+                className={btn}
+                title="Abrir caso"
+                aria-label="Abrir caso"
+              >
+                <ExternalLink className="w-3.5 h-3.5" />
+              </Link>
+            )}
+            {podeReagendar && (
+              <button
+                onClick={() => onReagendar(item)}
+                className={btn}
+                title="Reagendar"
+                aria-label="Reagendar"
+              >
+                <CalendarClock className="w-3.5 h-3.5" />
+              </button>
+            )}
+            {podeAtribuir && ["prazo", "tarefa"].includes(item.fonte) && (
+              <button
+                onClick={() => onAtribuir(item)}
+                className={btn}
+                title="Atribuir responsável"
+                aria-label="Atribuir responsável"
+              >
+                <UserPlus className="w-3.5 h-3.5" />
+              </button>
+            )}
+            {podeConcluir && (
+              <button
+                onClick={() => onConcluir(item)}
+                className={`${btn} hover:text-success-700`}
+                title={
+                  item.fonte === "intimacao"
+                    ? "Confirmar (marcar como tratada)"
+                    : "Concluir"
+                }
+                aria-label={
+                  item.fonte === "intimacao"
+                    ? "Confirmar intimação"
+                    : "Concluir"
+                }
+              >
+                <CheckCircle className="w-3.5 h-3.5" />
+              </button>
+            )}
+          </div>
+        </div>
       </div>
     </div>
   );
@@ -339,11 +588,11 @@ function TimelineView({ items }: { items: Activity[] }) {
             </div>
             <div className="space-y-2">
               {g.itens.map((item) => {
-                const cfg = TIPO_CONFIG[item.tipo];
+                const cfg = tipoCfg(item.tipo);
                 const Icon = cfg.icon;
                 return (
                   <div
-                    key={`${item.tipo}-${item.id}`}
+                    key={`${item.fonte}-${item.id}`}
                     className="flex items-start gap-2.5 bg-slate-50/60 rounded-lg px-3 py-2"
                   >
                     <Icon
@@ -373,61 +622,107 @@ function TimelineView({ items }: { items: Activity[] }) {
   );
 }
 
-function KanbanAtividades({ items }: { items: Activity[] }) {
-  const tipos: ItemType[] = [
-    "prazo",
-    "audiencia",
-    "tarefa",
-    "reuniao",
-    "compromisso",
-    "diligencia",
-    "suspensao",
-    "intimacao",
-  ];
-  const cols = tipos
-    .map((t) => ({
-      tipo: t,
-      cfg: TIPO_CONFIG[t],
-      itens: items.filter((i) => i.tipo === t),
-    }))
-    .filter((col) => col.itens.length > 0);
+/** Kanban por SITUAÇÃO (não tratado | em execução | concluído) — os únicos
+ *  estados que existem de fato nos modelos. Arrastar um cartão muda o status
+ *  no backend quando o tipo suporta a transição. */
+function KanbanAtividades({
+  items,
+  nomeDe,
+  onMove,
+}: {
+  items: Activity[];
+  nomeDe: (id?: string) => string | undefined;
+  onMove: (item: Activity, alvo: Situacao) => void;
+}) {
+  const [drag, setDrag] = useState<string | null>(null);
   if (items.length === 0) {
     return <Empty message="Nada na agenda" />;
   }
   return (
     <div className="flex gap-3 overflow-x-auto pb-3">
-      {cols.map(({ tipo, cfg, itens }) => {
-        const Icon = cfg.icon;
+      {SITUACAO_CONFIG.map(({ key, label, cor }) => {
+        // Cancelado divide a coluna "Concluído", mas com badge própria no cartão.
+        const itens = items.filter((i) => situacaoColunaDe(i.status) === key);
         return (
-          <div key={tipo} className="flex-shrink-0 w-64 bg-slate-50 rounded-xl">
+          <div
+            key={key}
+            className="flex-shrink-0 w-72 bg-slate-50 rounded-xl"
+            onDragOver={(e) => e.preventDefault()}
+            onDrop={() => {
+              const item = items.find((i) => `${i.fonte}-${i.id}` === drag);
+              setDrag(null);
+              if (item && situacaoColunaDe(item.status) !== key)
+                onMove(item, key);
+            }}
+          >
             <div className="px-3 py-2.5 flex items-center gap-2 border-b border-slate-200">
-              <Icon className={`w-4 h-4 ${cfg.color}`} />
+              <span className={`w-2.5 h-2.5 rounded-full ${cor}`} />
               <span className="text-sm font-semibold text-slate-700">
-                {cfg.label}
+                {label}
               </span>
               <span className="ml-auto text-[11px] text-slate-400 bg-slate-900/[0.05] rounded-full px-1.5 dark:bg-white/[0.07]">
                 {itens.length}
               </span>
             </div>
             <div className="p-2 space-y-2 max-h-[60vh] overflow-y-auto">
-              {itens.map((it) => (
-                <div
-                  key={`${it.tipo}-${it.id}`}
-                  className={`bg-white rounded-lg border p-2.5 ${it.urgencia === "vencido" ? "border-danger-200" : "border-slate-200"}`}
-                >
-                  <p className="text-sm text-slate-700">{it.titulo}</p>
-                  {it.caso_titulo && (
-                    <p className="text-xs text-slate-400 mt-0.5 truncate">
-                      {it.caso_titulo}
-                    </p>
-                  )}
-                  <p
-                    className={`text-[11px] mt-1 ${it.urgencia === "vencido" ? "text-danger-600 font-semibold" : "text-slate-400"}`}
+              {itens.map((it) => {
+                const cfg = tipoCfg(it.tipo);
+                const Icon = cfg.icon;
+                const resp = nomeDe(it.responsavel_id);
+                return (
+                  <div
+                    key={`${it.fonte}-${it.id}`}
+                    draggable
+                    onDragStart={() => setDrag(`${it.fonte}-${it.id}`)}
+                    className={`bg-white rounded-lg border p-2.5 cursor-grab active:cursor-grabbing ${it.urgencia === "vencido" && key !== "concluido" ? "border-danger-200" : "border-slate-200"}`}
                   >
-                    {fmtRelative(it.dias_restantes)}
-                  </p>
-                </div>
-              ))}
+                    <div className="flex items-center gap-1.5 mb-1">
+                      <Icon className={`w-3.5 h-3.5 ${cfg.color}`} />
+                      <span className="text-[10px] text-slate-400 uppercase font-medium">
+                        {cfg.label}
+                      </span>
+                      {situacaoDe(it.status) === "cancelado" && (
+                        <span className="text-[10px] font-semibold px-1.5 py-0.5 rounded border border-slate-200 bg-slate-50 text-slate-500">
+                          Cancelado
+                        </span>
+                      )}
+                      {it.prioridade && (
+                        <span
+                          className={`ml-auto text-[10px] font-semibold px-1.5 py-0.5 rounded ${PRIO_COLOR[it.prioridade] ?? PRIO_COLOR.baixa}`}
+                        >
+                          {it.prioridade}
+                        </span>
+                      )}
+                    </div>
+                    <p className="text-sm text-slate-700">{it.titulo}</p>
+                    {it.caso_titulo &&
+                      (it.case_id ? (
+                        <Link
+                          to={`/casos/${it.case_id}`}
+                          className="text-xs text-primary-600 hover:underline truncate block mt-0.5"
+                        >
+                          {it.caso_titulo}
+                        </Link>
+                      ) : (
+                        <p className="text-xs text-slate-400 mt-0.5 truncate">
+                          {it.caso_titulo}
+                        </p>
+                      ))}
+                    <div className="flex items-center justify-between mt-1">
+                      <p
+                        className={`text-[11px] ${it.urgencia === "vencido" && key !== "concluido" ? "text-danger-600 font-semibold" : "text-slate-400"}`}
+                      >
+                        {fmtRelative(it.dias_restantes)}
+                      </p>
+                      {resp && (
+                        <span className="text-[10px] text-slate-400 inline-flex items-center gap-0.5">
+                          <UserIcon className="w-3 h-3" /> {resp.split(" ")[0]}
+                        </span>
+                      )}
+                    </div>
+                  </div>
+                );
+              })}
             </div>
           </div>
         );
@@ -435,6 +730,30 @@ function KanbanAtividades({ items }: { items: Activity[] }) {
     </div>
   );
 }
+
+const NOVO_OPCOES: {
+  key: string;
+  label: string;
+  categoria: "prazo" | "tarefa" | "agenda";
+  tipo?: string;
+}[] = [
+  { key: "prazo", label: "Novo prazo", categoria: "prazo" },
+  { key: "tarefa", label: "Nova tarefa", categoria: "tarefa" },
+  { key: "audiencia", label: "Audiência", categoria: "agenda", tipo: "audiencia" },
+  { key: "reuniao", label: "Reunião", categoria: "agenda", tipo: "reuniao" },
+  {
+    key: "compromisso",
+    label: "Compromisso",
+    categoria: "agenda",
+    tipo: "compromisso",
+  },
+  {
+    key: "diligencia",
+    label: "Diligência",
+    categoria: "agenda",
+    tipo: "diligencia",
+  },
+];
 
 export default function CentralAtividades() {
   const [searchParams, setSearchParams] = useSearchParams();
@@ -445,34 +764,101 @@ export default function CentralAtividades() {
     params.set("view", next);
     setSearchParams(params, { replace: true });
   };
+  const rawTipo = searchParams.get("tipo");
+  const filterTipo: ItemType | "todos" = isItemType(rawTipo)
+    ? rawTipo
+    : "todos";
+  const setFilterTipo = (next: ItemType | "todos") => {
+    const params = new URLSearchParams(searchParams);
+    if (next === "todos") params.delete("tipo");
+    else params.set("tipo", next);
+    setSearchParams(params, { replace: true });
+  };
 
   const [items, setItems] = useState<Activity[]>([]);
+  const [responsaveis, setResponsaveis] = useState<Responsavel[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(false);
   const [modal, setModal] = useState(false);
-  const [form, setForm] = useState<any>({ tipo: "reuniao", data_evento: "" });
-  const [filterTipo, setFilterTipo] = useState<ItemType | "todos">("todos");
+  const [menuNovo, setMenuNovo] = useState(false);
+  const [form, setForm] = useState<any>({
+    categoria: "agenda",
+    tipo: "reuniao",
+    data: "",
+  });
+  const [reag, setReag] = useState<{ item: Activity; data: string } | null>(
+    null,
+  );
+  const [atrib, setAtrib] = useState<{
+    item: Activity;
+    responsavel_id: string;
+  } | null>(null);
+  // Conflito de horário devolvido ao criar/editar evento — aviso não silencioso.
+  const [conflitos, setConflitos] = useState<ConflitoEvento[]>([]);
   const [filterUrgencia, setFilterUrgencia] = useState<string>("todos");
+  const [filterSituacao, setFilterSituacao] = useState<SituacaoColuna | "todos">(
+    "todos",
+  );
 
   const load = useCallback(async () => {
     setLoading(true);
     setError(false);
     try {
-      const r = await api.get("/atividades", {
-        params: { apenas_pendentes: false },
+      // Fonte primária: GET /atividades (vw_atividades) — já entrega
+      // responsavel_id, prioridade e subtipo por item, para TODOS os itens
+      // visíveis (sem o corte de responsável do /deadlines/ nem o limite de
+      // página do /agenda-eventos/). Único enriquecimento restante:
+      // hora/local dos eventos de agenda, que a view não expõe. É
+      // best-effort: se falhar, a central continua funcionando com o feed.
+      const [ativ, agendaR] = await Promise.allSettled([
+        api.get("/atividades", { params: { apenas_pendentes: false } }),
+        api.get("/agenda-eventos/", { params: { page_size: 500 } }),
+      ]);
+      if (ativ.status !== "fulfilled") {
+        setError(true);
+        return;
+      }
+      const agendaMap: Record<string, any> = {};
+      if (agendaR.status === "fulfilled")
+        asList(agendaR.value.data).forEach((a: any) => (agendaMap[a.id] = a));
+
+      const all: Activity[] = asList(ativ.value.data).map((a: any) => {
+        const bruto: string = a.tipo;
+        const fonte: Fonte =
+          bruto === "agenda" ? "agenda" : (bruto as Fonte);
+        const evento = fonte === "agenda" ? agendaMap[a.id] : undefined;
+        const origem =
+          fonte === "prazo"
+            ? "Prazos"
+            : fonte === "tarefa"
+              ? "Tarefas"
+              : fonte === "agenda"
+                ? "Agenda"
+                : fonte === "intimacao"
+                  ? "DJEN"
+                  : "Tribunais";
+        return {
+          id: a.id,
+          tipo:
+            fonte === "agenda"
+              ? mapAgendaTipo(a.subtipo ?? evento?.tipo)
+              : (bruto as ItemType),
+          fonte,
+          titulo: a.titulo,
+          descricao: a.descricao,
+          date: a.date,
+          dias_restantes: a.dias_restantes ?? undefined,
+          urgencia: a.urgencia ?? "normal",
+          status: a.status,
+          case_id: a.case_id,
+          caso_titulo: a.caso_titulo,
+          responsavel_id: a.responsavel_id ?? undefined,
+          prioridade: a.prioridade ?? undefined,
+          hora: evento?.hora ?? undefined,
+          local: evento?.local ?? undefined,
+          origem,
+        };
       });
-      const all: Activity[] = asList(r.data).map((a: any) => ({
-        id: a.id,
-        tipo: a.tipo as ItemType,
-        titulo: a.titulo,
-        descricao: a.descricao,
-        date: a.date,
-        dias_restantes: a.dias_restantes ?? undefined,
-        urgencia: a.urgencia ?? "normal",
-        status: a.status,
-        case_id: a.case_id,
-        caso_titulo: a.caso_titulo,
-      }));
       setItems(all);
     } catch {
       setError(true);
@@ -485,17 +871,223 @@ export default function CentralAtividades() {
     load();
   }, [load]);
 
-  const salvarEvento = async () => {
-    if (!form.titulo?.trim() || !form.data_evento) {
-      toast.error("Título e data são obrigatórios");
+  useEffect(() => {
+    // Lista de equipe para atribuir/exibir responsável. Sem permissão (403)
+    // a central apenas oculta o recurso de atribuição.
+    api
+      .get("/atendimentos/responsaveis")
+      .then((r) => setResponsaveis(asList(r.data)))
+      .catch(() => setResponsaveis([]));
+  }, []);
+
+  const nomeDe = useCallback(
+    (id?: string) => responsaveis.find((u) => u.id === id)?.nome,
+    [responsaveis],
+  );
+
+  // ── Ações diretas ──────────────────────────────────────────────────────────
+  const concluir = async (item: Activity) => {
+    try {
+      if (item.fonte === "prazo")
+        await api.patch(`/deadlines/${item.id}`, { status: "concluido" });
+      else if (item.fonte === "tarefa")
+        await api.patch(`/tasks/${item.id}`, { status: "concluida" });
+      else if (item.fonte === "agenda")
+        await api.patch(`/agenda-eventos/${item.id}`, { concluido: true });
+      else if (item.fonte === "intimacao")
+        await api.post(`/intimacoes/${item.id}/processar`);
+      else {
+        toast.info("Suspensões são informativas — nada a concluir");
+        return;
+      }
+      toast.success(
+        item.fonte === "intimacao"
+          ? "Intimação marcada como tratada"
+          : "Item concluído",
+      );
+      load();
+    } catch (e) {
+      toast.error(apiErro(e, "Erro ao concluir o item"));
+    }
+  };
+
+  // Double-booking: o evento JÁ foi criado/editado (a política é AVISAR, não
+  // bloquear). O aviso não pode ser silencioso → toast + banner persistente.
+  const avisarConflitos = (lista: ConflitoEvento[]) => {
+    setConflitos(lista);
+    if (lista.length) {
+      const resumo = lista
+        .map((c) => `“${c.titulo}”${c.hora ? ` às ${c.hora}` : ""}`)
+        .join("; ");
+      toast.error(
+        `Evento salvo, mas há conflito de horário com ${lista.length} ` +
+          `evento(s): ${resumo}`,
+      );
+    }
+  };
+
+  const salvarReagendamento = async () => {
+    if (!reag) return;
+    if (!reag.data) {
+      toast.error("Informe a nova data");
+      return;
+    }
+    const { item } = reag;
+    try {
+      let conflitoResp: ConflitoEvento[] = [];
+      if (item.fonte === "prazo")
+        await api.patch(`/deadlines/${item.id}`, { data_prazo: reag.data });
+      else if (item.fonte === "tarefa")
+        await api.patch(`/tasks/${item.id}`, { data_limite: reag.data });
+      else if (item.fonte === "agenda") {
+        const { data } = await api.patch(`/agenda-eventos/${item.id}`, {
+          data_evento: reag.data,
+        });
+        conflitoResp = extrairConflitos(data);
+      } else {
+        toast.error("Este tipo de item não permite reagendamento");
+        return;
+      }
+      toast.success("Data atualizada");
+      setReag(null);
+      avisarConflitos(conflitoResp);
+      load();
+    } catch (e) {
+      toast.error(apiErro(e, "Erro ao reagendar"));
+    }
+  };
+
+  const salvarAtribuicao = async () => {
+    if (!atrib) return;
+    if (!atrib.responsavel_id) {
+      toast.error("Escolha o responsável");
+      return;
+    }
+    const { item } = atrib;
+    try {
+      if (item.fonte === "prazo")
+        await api.patch(`/deadlines/${item.id}`, {
+          responsavel_id: atrib.responsavel_id,
+        });
+      else if (item.fonte === "tarefa")
+        await api.patch(`/tasks/${item.id}`, {
+          responsavel_id: atrib.responsavel_id,
+        });
+      else {
+        toast.error("Este tipo de item não permite atribuição");
+        return;
+      }
+      toast.success("Responsável atribuído");
+      setAtrib(null);
+      load();
+    } catch (e) {
+      toast.error(apiErro(e, "Erro ao atribuir responsável"));
+    }
+  };
+
+  const moverSituacao = async (item: Activity, alvo: Situacao) => {
+    try {
+      if (item.fonte === "tarefa") {
+        const status =
+          alvo === "concluido"
+            ? "concluida"
+            : alvo === "em_execucao"
+              ? "fazendo"
+              : "a_fazer";
+        await api.patch(`/tasks/${item.id}`, { status });
+      } else if (alvo === "em_execucao") {
+        toast.info("O estado «Em execução» só existe para tarefas");
+        return;
+      } else if (item.fonte === "prazo") {
+        await api.patch(`/deadlines/${item.id}`, {
+          status: alvo === "concluido" ? "concluido" : "pendente",
+        });
+      } else if (item.fonte === "agenda") {
+        await api.patch(`/agenda-eventos/${item.id}`, {
+          concluido: alvo === "concluido",
+        });
+      } else if (item.fonte === "intimacao") {
+        if (alvo === "concluido") {
+          await api.post(`/intimacoes/${item.id}/processar`);
+        } else {
+          toast.info("Intimação tratada não pode voltar a pendente por aqui");
+          return;
+        }
+      } else {
+        toast.info("Suspensões são informativas — sem situação");
+        return;
+      }
+      toast.success("Situação atualizada");
+      load();
+    } catch (e) {
+      toast.error(apiErro(e, "Erro ao mover o item"));
+    }
+  };
+
+  const abrirNovo = (opcao: (typeof NOVO_OPCOES)[number]) => {
+    setMenuNovo(false);
+    setForm({
+      categoria: opcao.categoria,
+      tipo: opcao.tipo ?? "reuniao",
+      prioridade: "media",
+      data: "",
+    });
+    setModal(true);
+  };
+
+  const salvarNovo = async () => {
+    if (!form.titulo?.trim()) {
+      toast.error("Título é obrigatório");
       return;
     }
     try {
-      await api.post("/agenda-eventos/", form);
+      if (form.categoria === "prazo") {
+        if (!form.data) {
+          toast.error("Data do prazo é obrigatória");
+          return;
+        }
+        await api.post("/deadlines/", {
+          titulo: form.titulo,
+          data_prazo: form.data,
+          prioridade: form.prioridade || "media",
+          descricao: form.descricao || undefined,
+          responsavel_id: form.responsavel_id || undefined,
+        });
+        toast.success("Prazo criado");
+      } else if (form.categoria === "tarefa") {
+        await api.post("/tasks/", {
+          titulo: form.titulo,
+          prioridade: form.prioridade || "media",
+          data_limite: form.data || undefined,
+          descricao: form.descricao || undefined,
+          responsavel_id: form.responsavel_id || undefined,
+        });
+        toast.success("Tarefa criada");
+      } else {
+        if (!form.data) {
+          toast.error("Data do evento é obrigatória");
+          return;
+        }
+        const { data } = await api.post("/agenda-eventos/", {
+          titulo: form.titulo,
+          tipo: form.tipo,
+          data_evento: form.data,
+          hora: form.hora || undefined,
+          local: form.local || undefined,
+          descricao: form.descricao || undefined,
+        });
+        const conf = extrairConflitos(data);
+        if (conf.length) {
+          avisarConflitos(conf);
+        } else {
+          setConflitos([]); // limpa aviso obsoleto de um salvamento anterior
+          toast.success("Evento criado");
+        }
+      }
       setModal(false);
       load();
-    } catch (e: any) {
-      toast.error(e.response?.data?.detail || "Erro ao salvar evento");
+    } catch (e) {
+      toast.error(apiErro(e, "Erro ao salvar"));
     }
   };
 
@@ -503,21 +1095,38 @@ export default function CentralAtividades() {
     if (filterTipo !== "todos" && item.tipo !== filterTipo) return false;
     if (filterUrgencia !== "todos" && item.urgencia !== filterUrgencia)
       return false;
+    // Filtro agrupa cancelado com concluído (badge distingue na listagem).
+    if (
+      filterSituacao !== "todos" &&
+      situacaoColunaDe(item.status) !== filterSituacao
+    )
+      return false;
     return true;
   });
 
+  // Cancelado também não conta como pendente nas estatísticas de urgência.
+  const pendentes = items.filter(
+    (i) => situacaoColunaDe(i.status) !== "concluido",
+  );
   const stats = {
-    vencido: items.filter((i) => i.urgencia === "vencido").length,
-    critico: items.filter((i) => i.urgencia === "critico").length,
-    atencao: items.filter((i) => i.urgencia === "atencao").length,
-    normal: items.filter((i) => i.urgencia === "normal").length,
+    vencido: pendentes.filter((i) => i.urgencia === "vencido").length,
+    critico: pendentes.filter((i) => i.urgencia === "critico").length,
+    atencao: pendentes.filter((i) => i.urgencia === "atencao").length,
+    normal: pendentes.filter((i) => i.urgencia === "normal").length,
   };
+
+  const tituloModal =
+    form.categoria === "prazo"
+      ? "Novo prazo"
+      : form.categoria === "tarefa"
+        ? "Nova tarefa"
+        : "Novo evento de agenda";
 
   return (
     <div className="p-6 max-w-5xl mx-auto">
       <PageHeader
-        title="Central de Atividades"
-        subtitle="Prazos, tarefas, suspensões e intimações em uma única tela"
+        title="Agenda e Prazos"
+        subtitle="Prazos, tarefas, audiências, compromissos e intimações em uma única tela"
         actions={
           <>
             <button
@@ -552,18 +1161,89 @@ export default function CentralAtividades() {
             >
               <LayoutGrid className="w-4 h-4" />
             </button>
-            <button
-              onClick={() => {
-                setForm({ tipo: "reuniao", data_evento: "" });
-                setModal(true);
-              }}
-              className="flex items-center gap-1 px-3 py-2 bg-success-600 text-white rounded-lg text-sm hover:bg-success-700"
-            >
-              <Plus className="w-4 h-4" /> Novo evento
-            </button>
+            <div className="relative">
+              <button
+                onClick={() => setMenuNovo((v) => !v)}
+                aria-haspopup="menu"
+                aria-expanded={menuNovo}
+                className="flex items-center gap-1 px-3 py-2 bg-success-600 text-white rounded-lg text-sm hover:bg-success-700"
+              >
+                <Plus className="w-4 h-4" /> Novo{" "}
+                <ChevronDown className="w-3.5 h-3.5" />
+              </button>
+              {menuNovo && (
+                <>
+                  <div
+                    className="fixed inset-0 z-10"
+                    onClick={() => setMenuNovo(false)}
+                  />
+                  <div
+                    role="menu"
+                    className="absolute right-0 mt-1 z-20 w-44 bg-white border border-slate-200 rounded-xl shadow-md py-1 dark:bg-slate-800 dark:border-slate-700"
+                  >
+                    {NOVO_OPCOES.map((op) => (
+                      <button
+                        key={op.key}
+                        role="menuitem"
+                        onClick={() => abrirNovo(op)}
+                        className="w-full text-left px-3 py-2 text-sm text-slate-700 hover:bg-slate-50 dark:text-slate-200 dark:hover:bg-slate-700"
+                      >
+                        {op.label}
+                      </button>
+                    ))}
+                  </div>
+                </>
+              )}
+            </div>
           </>
         }
       />
+
+      {/* Aviso de double-booking — não silencioso. O evento já foi criado/
+          editado (política do backend: AVISA, não bloqueia). */}
+      {conflitos.length > 0 && (
+        <div
+          role="alert"
+          className="mb-5 rounded-xl border border-warn-200 bg-warn-50 px-4 py-3"
+        >
+          <div className="flex items-start gap-2">
+            <AlertTriangle className="w-4 h-4 mt-0.5 shrink-0 text-warn-600" />
+            <div className="flex-1 min-w-0">
+              <p className="text-sm font-semibold text-warn-800">
+                Conflito de horário na agenda
+              </p>
+              <p className="text-xs text-warn-700 mt-0.5">
+                O evento foi salvo, mas coincide com {conflitos.length}{" "}
+                compromisso(s) do mesmo responsável no mesmo horário:
+              </p>
+              <ul className="mt-2 space-y-1">
+                {conflitos.map((c) => (
+                  <li
+                    key={c.id}
+                    className="flex items-center gap-2 text-xs text-warn-800"
+                  >
+                    <Clock className="w-3.5 h-3.5 shrink-0 text-warn-600" />
+                    <span className="font-medium truncate">{c.titulo}</span>
+                    {c.hora && <span className="text-warn-700">· {c.hora}</span>}
+                    {c.local && (
+                      <span className="text-warn-600 truncate">
+                        · {c.local}
+                      </span>
+                    )}
+                  </li>
+                ))}
+              </ul>
+            </div>
+            <button
+              onClick={() => setConflitos([])}
+              aria-label="Dispensar aviso de conflito"
+              className="p-1 -m-1 text-warn-600 hover:text-warn-800 shrink-0"
+            >
+              <X className="w-4 h-4" />
+            </button>
+          </div>
+        </div>
+      )}
 
       <div className="grid grid-cols-4 gap-3 mb-5">
         {[
@@ -603,7 +1283,7 @@ export default function CentralAtividades() {
         ))}
       </div>
 
-      <div className="flex gap-2 mb-4 flex-wrap">
+      <div className="flex gap-2 mb-2 flex-wrap">
         <div className="flex items-center gap-1 text-xs text-slate-500 mr-1">
           <Filter className="w-3.5 h-3.5" /> Tipo:
         </div>
@@ -630,6 +1310,26 @@ export default function CentralAtividades() {
         ))}
       </div>
 
+      <div className="flex gap-2 mb-4 flex-wrap items-center">
+        <div className="flex items-center gap-1 text-xs text-slate-500 mr-1">
+          <Filter className="w-3.5 h-3.5" /> Situação:
+        </div>
+        {(
+          [
+            { key: "todos", label: "Todas" },
+            ...SITUACAO_CONFIG.map(({ key, label }) => ({ key, label })),
+          ] as { key: SituacaoColuna | "todos"; label: string }[]
+        ).map(({ key, label }) => (
+          <button
+            key={key}
+            onClick={() => setFilterSituacao(key)}
+            className={`px-3 py-1.5 rounded-lg text-xs font-medium transition-colors ${filterSituacao === key ? "bg-navy text-white" : "bg-slate-900/[0.05] text-slate-600 hover:bg-slate-900/[0.09] dark:bg-white/[0.07] dark:text-slate-300"}`}
+          >
+            {label}
+          </button>
+        ))}
+      </div>
+
       {loading ? (
         <Spinner />
       ) : error ? (
@@ -650,13 +1350,29 @@ export default function CentralAtividades() {
             </div>
             <div className="overflow-y-auto max-h-80">
               {filtered.slice(0, 20).map((item) => (
-                <ActivityRow key={`${item.tipo}-${item.id}`} item={item} />
+                <ActivityRow
+                  key={`${item.fonte}-${item.id}`}
+                  item={item}
+                  nomeDe={nomeDe}
+                  onConcluir={concluir}
+                  onReagendar={(it) =>
+                    setReag({ item: it, data: it.date?.slice(0, 10) ?? "" })
+                  }
+                  onAtribuir={(it) =>
+                    setAtrib({ item: it, responsavel_id: it.responsavel_id ?? "" })
+                  }
+                  podeAtribuir={responsaveis.length > 0}
+                />
               ))}
             </div>
           </div>
         </div>
       ) : view === "kanban" ? (
-        <KanbanAtividades items={filtered} />
+        <KanbanAtividades
+          items={filtered}
+          nomeDe={nomeDe}
+          onMove={moverSituacao}
+        />
       ) : view === "timeline" ? (
         <TimelineView items={filtered} />
       ) : (
@@ -673,17 +1389,26 @@ export default function CentralAtividades() {
             </div>
           ) : (
             filtered.map((item) => (
-              <ActivityRow key={`${item.tipo}-${item.id}`} item={item} />
+              <ActivityRow
+                key={`${item.fonte}-${item.id}`}
+                item={item}
+                nomeDe={nomeDe}
+                onConcluir={concluir}
+                onReagendar={(it) =>
+                  setReag({ item: it, data: it.date?.slice(0, 10) ?? "" })
+                }
+                onAtribuir={(it) =>
+                  setAtrib({ item: it, responsavel_id: it.responsavel_id ?? "" })
+                }
+                podeAtribuir={responsaveis.length > 0}
+              />
             ))
           )}
         </div>
       )}
 
-      <Modal
-        open={modal}
-        onClose={() => setModal(false)}
-        title="Novo evento de agenda"
-      >
+      {/* ── Novo prazo / tarefa / evento (formulário adaptado ao tipo) ── */}
+      <Modal open={modal} onClose={() => setModal(false)} title={tituloModal}>
         <div className="space-y-3">
           <input
             className="input w-full text-sm"
@@ -692,40 +1417,79 @@ export default function CentralAtividades() {
             onChange={(e) => setForm({ ...form, titulo: e.target.value })}
           />
           <div className="grid grid-cols-2 gap-2">
-            <select
-              className="input text-sm"
-              value={form.tipo}
-              onChange={(e) => setForm({ ...form, tipo: e.target.value })}
-            >
-              <option value="reuniao">Reunião</option>
-              <option value="compromisso">Compromisso</option>
-              <option value="diligencia">Diligência</option>
-              <option value="audiencia">Audiência</option>
-              <option value="outro">Outro</option>
-            </select>
+            {form.categoria === "agenda" ? (
+              <select
+                className="input text-sm"
+                value={form.tipo}
+                onChange={(e) => setForm({ ...form, tipo: e.target.value })}
+              >
+                <option value="reuniao">Reunião</option>
+                <option value="compromisso">Compromisso</option>
+                <option value="diligencia">Diligência</option>
+                <option value="audiencia">Audiência</option>
+                <option value="outro">Outro</option>
+              </select>
+            ) : (
+              <select
+                className="input text-sm"
+                value={form.prioridade ?? "media"}
+                onChange={(e) =>
+                  setForm({ ...form, prioridade: e.target.value })
+                }
+              >
+                <option value="baixa">Prioridade baixa</option>
+                <option value="media">Prioridade média</option>
+                <option value="alta">Prioridade alta</option>
+              </select>
+            )}
             <input
               type="date"
               className="input text-sm"
-              value={form.data_evento}
-              onChange={(e) =>
-                setForm({ ...form, data_evento: e.target.value })
+              title="Formato: dd/mm/aaaa"
+              aria-label={
+                form.categoria === "prazo"
+                  ? "Data do prazo (dd/mm/aaaa)"
+                  : form.categoria === "tarefa"
+                    ? "Data limite (dd/mm/aaaa)"
+                    : "Data do evento (dd/mm/aaaa)"
               }
+              value={form.data ?? ""}
+              onChange={(e) => setForm({ ...form, data: e.target.value })}
             />
           </div>
-          <div className="grid grid-cols-2 gap-2">
-            <input
-              className="input text-sm"
-              placeholder="Hora (ex: 14:30)"
-              value={form.hora ?? ""}
-              onChange={(e) => setForm({ ...form, hora: e.target.value })}
-            />
-            <input
-              className="input text-sm"
-              placeholder="Local"
-              value={form.local ?? ""}
-              onChange={(e) => setForm({ ...form, local: e.target.value })}
-            />
-          </div>
+          {form.categoria === "agenda" ? (
+            <div className="grid grid-cols-2 gap-2">
+              <input
+                className="input text-sm"
+                placeholder="Hora (ex: 14:30)"
+                value={form.hora ?? ""}
+                onChange={(e) => setForm({ ...form, hora: e.target.value })}
+              />
+              <input
+                className="input text-sm"
+                placeholder="Local"
+                value={form.local ?? ""}
+                onChange={(e) => setForm({ ...form, local: e.target.value })}
+              />
+            </div>
+          ) : (
+            responsaveis.length > 0 && (
+              <select
+                className="input w-full text-sm"
+                value={form.responsavel_id ?? ""}
+                onChange={(e) =>
+                  setForm({ ...form, responsavel_id: e.target.value })
+                }
+              >
+                <option value="">Responsável (eu mesmo)</option>
+                {responsaveis.map((u) => (
+                  <option key={u.id} value={u.id}>
+                    {u.nome}
+                  </option>
+                ))}
+              </select>
+            )
+          )}
           <textarea
             className="input w-full text-sm"
             rows={2}
@@ -738,7 +1502,7 @@ export default function CentralAtividades() {
               Cancelar
             </button>
             <button
-              onClick={salvarEvento}
+              onClick={salvarNovo}
               className="px-4 py-2 bg-success-600 text-white text-sm rounded-lg hover:bg-success-700"
             >
               Salvar
@@ -746,6 +1510,83 @@ export default function CentralAtividades() {
           </div>
         </div>
       </Modal>
+
+      {/* ── Reagendar ── */}
+      <Modal
+        open={reag !== null}
+        onClose={() => setReag(null)}
+        title="Reagendar"
+      >
+        {reag && (
+          <div className="space-y-3">
+            <p className="text-sm text-slate-600 truncate">
+              {reag.item.titulo}
+            </p>
+            <input
+              type="date"
+              className="input w-full text-sm"
+              title="Formato: dd/mm/aaaa"
+              aria-label="Nova data (dd/mm/aaaa)"
+              value={reag.data}
+              onChange={(e) => setReag({ ...reag, data: e.target.value })}
+            />
+            <div className="flex gap-2 justify-end">
+              <button onClick={() => setReag(null)} className="btn-ghost">
+                Cancelar
+              </button>
+              <button
+                onClick={salvarReagendamento}
+                className="px-4 py-2 bg-success-600 text-white text-sm rounded-lg hover:bg-success-700"
+              >
+                Salvar
+              </button>
+            </div>
+          </div>
+        )}
+      </Modal>
+
+      {/* ── Atribuir responsável ── */}
+      <Modal
+        open={atrib !== null}
+        onClose={() => setAtrib(null)}
+        title="Atribuir responsável"
+      >
+        {atrib && (
+          <div className="space-y-3">
+            <p className="text-sm text-slate-600 truncate">
+              {atrib.item.titulo}
+            </p>
+            <select
+              className="input w-full text-sm"
+              aria-label="Responsável"
+              value={atrib.responsavel_id}
+              onChange={(e) =>
+                setAtrib({ ...atrib, responsavel_id: e.target.value })
+              }
+            >
+              <option value="">Selecione…</option>
+              {responsaveis.map((u) => (
+                <option key={u.id} value={u.id}>
+                  {u.nome}
+                  {u.role ? ` (${u.role})` : ""}
+                </option>
+              ))}
+            </select>
+            <div className="flex gap-2 justify-end">
+              <button onClick={() => setAtrib(null)} className="btn-ghost">
+                Cancelar
+              </button>
+              <button
+                onClick={salvarAtribuicao}
+                className="px-4 py-2 bg-success-600 text-white text-sm rounded-lg hover:bg-success-700"
+              >
+                Salvar
+              </button>
+            </div>
+          </div>
+        )}
+      </Modal>
     </div>
   );
 }
+

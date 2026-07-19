@@ -20,34 +20,42 @@ from sqlalchemy import text
 
 async def _existe_sumula(db, num: str, orgao: str) -> str | None:
     """Lookup exato por chave_origem (ingestão nova) + fallback por título."""
-    keys = [f"sumula:{orgao}:{num}"] if orgao else \
-           [f"sumula:{t}:{num}" for t in ("STF", "STJ", "TST")]
+    from app.services.ai_service import _filtros_gate_rag
+    orgao_norm = (orgao or "").strip().lower()
+    keys = [f"sumula:{orgao_norm}:{num}"] if orgao_norm else \
+           [f"sumula:{t}:{num}" for t in ("stf", "stj", "tst")]
     row = (await db.execute(text(
-        "SELECT titulo FROM knowledge_docs "
-        "WHERE deleted_at IS NULL AND chave_origem = ANY(:k) LIMIT 1"
+        "SELECT kd.titulo FROM knowledge_docs kd "
+        "WHERE kd.deleted_at IS NULL AND kd.vigente = TRUE "
+        "AND kd.chave_origem = ANY(:k) " + _filtros_gate_rag(False) + " LIMIT 1"
     ), {"k": keys})).first()
     if row:
         return row[0]
     # Fallback p/ docs de formato antigo: título "Súmula N ..." (boundary via ' %')
     params = {"t": f"Súmula {num} %"}
     cond = ""
-    if orgao:
-        cond = " AND titulo ILIKE :org"
-        params["org"] = f"%{orgao}%"
+    if orgao_norm:
+        cond = " AND kd.tribunal = :org"
+        params["org"] = orgao_norm.upper()
     row = (await db.execute(text(
-        "SELECT titulo FROM knowledge_docs WHERE deleted_at IS NULL "
-        "AND categoria LIKE 'sumula%' AND titulo ILIKE :t" + cond + " LIMIT 1"
+        "SELECT kd.titulo FROM knowledge_docs kd WHERE kd.deleted_at IS NULL "
+        "AND kd.vigente = TRUE AND (kd.categoria LIKE 'sumula%' "
+        "OR kd.chave_origem LIKE 'sumula:%') AND kd.titulo ILIKE :t" + cond + " " +
+        _filtros_gate_rag(False) + " LIMIT 1"
     ), params)).first()
     return row[0] if row else None
 
 
 async def _existe_artigo(db, num: str) -> str | None:
     """Procura o artigo no conteúdo da legislação ingerida (códigos no RAG)."""
+    from app.services.ai_service import _filtros_gate_rag
     row = (await db.execute(text(
         "SELECT kd.titulo FROM knowledge_chunks kc "
         "JOIN knowledge_docs kd ON kd.id = kc.doc_id "
-        "WHERE kd.deleted_at IS NULL AND kd.categoria = 'legislacao' "
-        "AND (kc.conteudo ILIKE :a1 OR kc.conteudo ILIKE :a2) LIMIT 1"
+        "WHERE kd.deleted_at IS NULL AND kd.vigente = TRUE "
+        "AND kd.categoria LIKE 'legislacao%' "
+        "AND (kc.conteudo ILIKE :a1 OR kc.conteudo ILIKE :a2) " +
+        _filtros_gate_rag(False) + " LIMIT 1"
     ), {"a1": f"%Art. {num} %", "a2": f"%Art. {num}º%"})).first()
     return row[0] if row else None
 

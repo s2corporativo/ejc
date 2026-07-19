@@ -21,6 +21,17 @@ _PRECOS_ANTHROPIC_USD_MM: dict[str, dict[str, float]] = {
     "claude-opus-4-8":           {"input": 5.00, "output": 25.00},
 }
 
+# Preços Maritaca (Sabiá) — R$ por 1M tokens (já em BRL; doc oficial 2026).
+# Variantes "-br-sp" (inferência 100% em território nacional) = +30%.
+_PRECOS_MARITACA_BRL_MM: dict[str, dict[str, float]] = {
+    "sabia-4-thinking":        {"input": 5.00, "output": 40.00},
+    "sabia-4":                 {"input": 5.00, "output": 20.00},
+    "sabiazinho-4":            {"input": 1.00, "output": 4.00},
+    "sabia-4-thinking-br-sp":  {"input": 6.50, "output": 52.00},
+    "sabia-4-br-sp":           {"input": 6.50, "output": 26.00},
+    "sabiazinho-4-br-sp":      {"input": 1.30, "output": 5.20},
+}
+
 
 def estimar_custo_brl(
     provedor: str,
@@ -47,4 +58,9 @@ def estimar_custo_brl(
         usd = (ti * Decimal(str(p["input"])) + to * Decimal(str(p["output"]))) / Decimal(1_000_000)
         cotacao = Decimal(str(os.getenv("USD_BRL_RATE", "5.70")))
         return (usd * cotacao).quantize(Decimal("0.000001"))
+    if provedor == "maritaca":
+        # Preços já em BRL (doc oficial); modelo desconhecido → 0.
+        p = _PRECOS_MARITACA_BRL_MM.get(modelo or "", {"input": 0.0, "output": 0.0})
+        custo = (ti * Decimal(str(p["input"])) + to * Decimal(str(p["output"]))) / Decimal(1_000_000)
+        return custo.quantize(Decimal("0.000001"))
     return Decimal("0")

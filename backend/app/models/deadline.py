@@ -41,6 +41,11 @@ class Deadline(Base):
     data_prazo     = Column(Date, nullable=False, index=True)   # data fatal
     data_intimacao = Column(Date, nullable=True)
     data_conclusao = Column(DateTime(timezone=True), nullable=True)
+    # Auditoria: id do usuário que deu baixa no prazo (par de data_conclusao).
+    # String(36) sem FK, espelhando a coluna audit-actor `ciencia_confirmada_por`
+    # desta mesma tabela — registra QUEM concluiu sem impor RESTRICT na exclusão
+    # de usuários. Preenchimento é responsabilidade de routers/deadlines.py.
+    concluido_por  = Column(String(36), nullable=True)
     base_legal     = Column(String(255), nullable=True)         # ex: "CPC art. 335"
 
     # Confirmação de ciência (audit LGPD)

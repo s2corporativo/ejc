@@ -6,6 +6,7 @@ from app.models.case import Case, CaseMovimento, CaseArea, CaseStatus, CaseFase,
 from app.models.process import Process
 from app.models.deadline import Deadline, DeadlineTipo, DeadlineStatus, DeadlinePrioridade
 from app.models.document import Document, DocConfidencialidade
+from app.models.document_intake import DocumentIntakeBatch, DocumentIntakeItem
 from app.models.raio_x import RaioXAnalise, RaioXDocumento
 from app.models.legal_doc import LegalDoc, PecaTipo, PecaStatus
 from app.models.fee import Fee, FeePayment, FeeTipo, FeeStatus
@@ -32,7 +33,7 @@ __all__ = [
     "Case", "CaseMovimento", "CaseArea", "CaseStatus", "CaseFase", "CasePrioridade",
     "Process",
     "Deadline", "DeadlineTipo", "DeadlineStatus", "DeadlinePrioridade",
-    "Document", "DocConfidencialidade",
+    "Document", "DocConfidencialidade", "DocumentIntakeBatch", "DocumentIntakeItem",
     "RaioXAnalise", "RaioXDocumento",
     "LegalDoc", "PecaTipo", "PecaStatus",
     "Fee", "FeePayment", "FeeTipo", "FeeStatus",
@@ -58,6 +59,9 @@ from app.models.suspensao import SuspensaoTribunal  # noqa
 from app.models import ai_skill            # noqa
 from app.models import atendimento         # noqa
 from app.models import bank_analysis       # noqa
+from app.models import case_intelligence   # noqa  (snapshot versionado da inteligência do caso — migração 101)
+from app.models import matriz_teses        # noqa  (Matriz de Teses estruturada — FASE 3, migração 102)
+from app.models import fee_proposal        # noqa  (Proposta de honorários versionada — FASE 4, migração 103)
 from app.models import case_parte          # noqa
 from app.models import caso_area           # noqa
 from app.models import centro_custo        # noqa
@@ -69,13 +73,13 @@ from app.models import dossie_estrategico  # noqa
 from app.models import jurisprudencia_interna  # noqa
 from app.models import prompt_juridico     # noqa
 from app.models import socio               # noqa
-from app.models import sociedade_cliente   # noqa  (sociedades de CLIENTES — vertical Empresarial, migração 071)
+from app.models import sociedade_cliente   # noqa
 from app.models import tese                # noqa
-from app.models import prova               # noqa  (Gestão de Provas por caso — migração 073)
-from app.models import ficha_triagem       # noqa  (Ficha de Triagem pré-peça — migração 089)
-from app.models import solicitacao_documento  # noqa  (Solicitação de documentos ao cliente — migração 084)
+from app.models import prova               # noqa
+from app.models import ficha_triagem       # noqa
+from app.models import solicitacao_documento  # noqa
 from app.models import wiki                # noqa
 from app.models import workflow            # noqa
-from app.models import redesign            # noqa  (module_help, area_modulos_mapping, document_types_master, tabela_oab_honorarios — migração 057)
+from app.models import redesign            # noqa
 from app.models.system_module_setting import SystemModuleSetting  # noqa
-from app.models.nfse import NotaFiscalServico, NFSeStatus  # noqa  (NFS-e — emissão fiscal gated, migração 085)
+from app.models.nfse import NotaFiscalServico, NFSeStatus  # noqa

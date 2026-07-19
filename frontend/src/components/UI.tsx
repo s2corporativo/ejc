@@ -58,20 +58,40 @@ const toneClasses: Record<Tone, string> = {
   ouro: "bg-ouro-palha text-ouro-profundo ring-ouro-claro/60",
 };
 
-// Botões SEM BORDA (regra global do DS "De Paula Teixeira"): primary em
-// gradiente ouro #8F7117 → ouro profundo #6F5711 (texto branco 4,6:1+ AA),
-// secundário TONAL (fundo levíssimo, sem outline), ghost terciário.
-// Profundidade só por sombra suave; foco com ring dourado acessível.
+// Barra SUPERIOR de 3px do KPI card (idioma Verdelimp) na cor do
+// indicador — mapeada nos tokens de cor EXISTENTES do EJC. Desenhada via
+// ::before (mesmo padrão dos KPI cards do dashboard em site-system.css)
+// em vez de border-top: as regras globais de `.card` fora de @layer
+// (site-system.css `border: 1px solid`, `.ejc-modern-scope :where(.card)`
+// com border-color !important e `.dark .card` em index.css) vêm depois na
+// cascata e atropelariam utilities `border-t-*` nos dois temas.
+const toneBarClasses: Record<Tone, string> = {
+  slate: "before:bg-slate-400",
+  blue: "before:bg-primary-400",
+  green: "before:bg-success-500",
+  amber: "before:bg-warn-500",
+  orange: "before:bg-orange-500",
+  red: "before:bg-danger-500",
+  purple: "before:bg-ai-500",
+  violet: "before:bg-violet-500",
+  teal: "before:bg-teal-500",
+  ouro: "before:bg-ouro-claro",
+};
+
+// Botões no idioma flat/compacto (padrão Verdelimp, cores EJC): primary
+// em ouro CHAPADO #8F7117 (texto branco 4,6:1+ AA, sem gradiente/sombra),
+// secundário NEUTRO (branco com borda 1px), ghost terciário.
+// Foco com ring dourado acessível.
 const buttonClasses: Record<ButtonVariant, string> = {
   primary:
-    "bg-gradient-to-b from-ouro to-ouro-profundo text-white shadow-gold hover:from-ouro-profundo hover:to-ouro-profundo hover:shadow-gold-hover focus:ring-ouro/40",
+    "bg-ouro text-white hover:bg-ouro-profundo active:bg-ouro-profundo focus:ring-ouro/40",
   secondary:
-    "bg-slate-900/[0.05] text-slate-700 hover:bg-slate-900/[0.09] active:bg-slate-900/[0.12] focus:ring-ouro/30 dark:bg-white/[0.07] dark:text-slate-200 dark:hover:bg-white/[0.12]",
+    "border border-gray-300 bg-white text-slate-700 hover:bg-slate-50 active:bg-slate-100 focus:ring-ouro/30 dark:border-white/[0.14] dark:bg-white/[0.07] dark:text-slate-200 dark:hover:bg-white/[0.12]",
   ghost:
     "bg-transparent text-slate-600 hover:bg-slate-900/[0.05] focus:ring-ouro/30 dark:text-slate-300 dark:hover:bg-white/[0.06]",
   danger:
-    "bg-danger-600 text-white hover:bg-danger-700 hover:shadow-md focus:ring-danger-500/40",
-  ai: "bg-ai-600 text-white shadow-sm hover:bg-ai-500 active:bg-ai-700 hover:shadow-md focus:ring-ai-500/40",
+    "bg-danger-600 text-white hover:bg-danger-700 focus:ring-danger-500/40",
+  ai: "bg-ai-600 text-white hover:bg-ai-500 active:bg-ai-700 focus:ring-ai-500/40",
 };
 
 export function cn(...classes: Array<string | false | null | undefined>) {
@@ -93,15 +113,15 @@ export function Button({
 }) {
   const sizeClass = {
     sm: "h-8 px-3 text-xs",
-    md: "h-10 px-4 text-sm",
-    lg: "h-11 px-5 text-sm",
-    icon: "h-10 w-10 p-0",
+    md: "h-9 px-4 text-[13px]",
+    lg: "h-10 px-5 text-sm",
+    icon: "h-9 w-9 p-0",
   }[size];
   return (
     <button
       {...props}
       className={cn(
-        "inline-flex items-center justify-center gap-2 rounded-xl font-medium transition-all duration-150 ease-out active:scale-[.98]",
+        "inline-flex items-center justify-center gap-2 rounded-lg font-bold transition-all duration-150 ease-out active:scale-[.98]",
         "focus:outline-none focus-visible:ring-2 disabled:cursor-not-allowed disabled:opacity-50",
         sizeClass,
         buttonClasses[variant],
@@ -384,14 +404,14 @@ export function PageHeader({
   return (
     <div className="mb-6 flex flex-col gap-4 sm:flex-row sm:items-end sm:justify-between">
       <div className="min-w-0">
-        {eyebrow && <div className="eyebrow mb-2">{eyebrow}</div>}
-        {/* Serifa institucional + filete ouro: identidade Visual Law, com moderação */}
-        <h1 className="font-serif text-2xl font-semibold tracking-tight text-slate-950 md:text-3xl">
+        {eyebrow && <div className="eyebrow mb-1.5">{eyebrow}</div>}
+        {/* Título denso (~20px/700) na cor escura da marca + filete ouro */}
+        <h1 className="text-xl font-bold tracking-tight text-primary-900">
           {title}
         </h1>
-        <div className="mt-2 h-0.5 w-10 rounded-full bg-ouro-claro" />
+        <div className="mt-1.5 h-0.5 w-10 rounded-full bg-ouro-claro" />
         {subtitle && (
-          <p className="mt-2 max-w-3xl text-sm text-slate-500">{subtitle}</p>
+          <p className="mt-1.5 max-w-3xl text-sm text-slate-500">{subtitle}</p>
         )}
       </div>
       {actions && (
@@ -419,11 +439,19 @@ export function StatCard({
   trend?: "up" | "down";
 }) {
   return (
-    <Card className="p-5">
+    <Card
+      className={cn(
+        "relative overflow-hidden rounded-[10px] p-4",
+        "before:absolute before:inset-x-0 before:top-0 before:h-[3px] before:content-['']",
+        toneBarClasses[tone],
+      )}
+    >
       <div className="flex items-start justify-between gap-3">
         <div>
-          <p className="text-xs font-medium text-slate-400">{label}</p>
-          <div className="mt-2 text-3xl font-semibold tracking-tight text-slate-950 tabular-nums">
+          <p className="text-[10px] font-semibold uppercase tracking-wide text-slate-500">
+            {label}
+          </p>
+          <div className="mt-1.5 text-xl font-bold tracking-tight text-slate-950 tabular-nums">
             {value}
           </div>
           {subtitle && (
@@ -433,7 +461,7 @@ export function StatCard({
         {icon && (
           <div
             className={cn(
-              "rounded-xl p-2.5 ring-1 ring-inset",
+              "rounded-lg p-2 ring-1 ring-inset",
               toneClasses[tone],
             )}
           >
@@ -614,7 +642,7 @@ export function Dropdown({
         {label}
         <ChevronDown className="h-4 w-4 text-slate-400" />
       </summary>
-      <div className="absolute right-0 z-40 mt-2 min-w-48 rounded-xl border border-slate-200 bg-white p-2 shadow-lg">
+      <div className="absolute right-0 z-40 mt-2 min-w-48 rounded-xl border border-slate-200 bg-white p-2 shadow-md">
         {children}
       </div>
     </details>
@@ -631,7 +659,7 @@ export function Tooltip({
   return (
     <span className="group relative inline-flex">
       {children}
-      <span className="pointer-events-none absolute bottom-full left-1/2 z-50 mb-2 hidden -translate-x-1/2 whitespace-nowrap rounded-md bg-slate-950 px-2 py-1 text-xs text-white shadow-lg group-hover:block">
+      <span className="pointer-events-none absolute bottom-full left-1/2 z-50 mb-2 hidden -translate-x-1/2 whitespace-nowrap rounded-md bg-slate-950 px-2 py-1 text-xs text-white shadow-md group-hover:block">
         {label}
       </span>
     </span>
@@ -695,12 +723,12 @@ export function Modal({
         role="dialog"
         aria-modal="true"
         className={cn(
-          "w-full max-h-[90vh] overflow-auto rounded-2xl border border-slate-200 bg-white shadow-2xl animate-pop",
+          "w-full max-h-[90vh] overflow-auto rounded-2xl border border-slate-200 bg-white shadow-float animate-pop",
           sizeClass,
         )}
         onClick={(e) => e.stopPropagation()}
       >
-        <div className="sticky top-0 z-10 flex items-center justify-between border-b border-slate-100 bg-white/95 px-5 py-4 backdrop-blur">
+        <div className="sticky top-0 z-10 flex items-center justify-between border-b border-slate-100 bg-white px-5 py-4">
           <h2 className="text-base font-semibold text-slate-950">{title}</h2>
           <Button
             type="button"
@@ -713,7 +741,7 @@ export function Modal({
         </div>
         <div className="p-5">{children}</div>
         {footer && (
-          <div className="sticky bottom-0 z-10 flex items-center justify-end gap-2 border-t border-slate-100 bg-white/95 px-5 py-4 backdrop-blur">
+          <div className="sticky bottom-0 z-10 flex items-center justify-end gap-2 border-t border-slate-100 bg-white px-5 py-4">
             {footer}
           </div>
         )}
@@ -869,14 +897,14 @@ export function Drawer({
   if (!open) return null;
   return (
     <div
-      className="fixed inset-0 z-50 animate-fade-in bg-slate-950/55 backdrop-blur-sm"
+      className="fixed inset-0 z-50 animate-fade-in bg-slate-950/45"
       onClick={onClose}
     >
       <aside
         role="dialog"
         aria-modal="true"
         className={cn(
-          "absolute inset-y-0 right-0 flex w-full flex-col border-l border-slate-200 bg-white shadow-2xl animate-slide-in-right",
+          "absolute inset-y-0 right-0 flex w-full flex-col border-l border-slate-200 bg-white shadow-float animate-slide-in-right",
           drawerWidthClasses[width],
         )}
         onClick={(e) => e.stopPropagation()}
@@ -1089,6 +1117,60 @@ export function Spinner() {
   return (
     <div className="flex items-center justify-center p-12">
       <Loader2 className="h-8 w-8 animate-spin text-ouro" />
+    </div>
+  );
+}
+
+// Barra shimmer branco+ouro (grafite no `.dark`) — reutilizada pelas células
+// do SkeletonTable. Decorativa: `aria-hidden` (quem expõe o estado de
+// carregamento é o container com role="status"). A classe `.ejc-skeleton`
+// (index.css) traz o brilho dourado sutil.
+function SkeletonBar({ className }: { className?: string }) {
+  return <div aria-hidden="true" className={cn("ejc-skeleton", className)} />;
+}
+
+/**
+ * SkeletonTable — placeholder de carregamento no FORMATO de uma tabela,
+ * dentro do mesmo container `.card` das listas core (Casos, Clientes).
+ * Mostra `rows` linhas × `cols` células com shimmer branco+ouro (grafite no
+ * tema escuro) enquanto os dados chegam — evita o "salto" de layout do
+ * <Spinner />. Acessível: `role="status"` + `aria-busy` no container (com
+ * rótulo sr-only); células individuais `aria-hidden`.
+ */
+export function SkeletonTable({
+  rows = 6,
+  cols = 5,
+}: {
+  rows?: number;
+  cols?: number;
+}) {
+  return (
+    <div
+      className="card overflow-hidden"
+      role="status"
+      aria-busy="true"
+      aria-live="polite"
+    >
+      <span className="sr-only">Carregando…</span>
+      {/* Cabeçalho */}
+      <div className="flex gap-4 border-b border-bronze-pale/40 bg-bronze-50/50 px-4 py-3">
+        {Array.from({ length: cols }).map((_, i) => (
+          <SkeletonBar key={i} className="h-3 flex-1" />
+        ))}
+      </div>
+      {/* Linhas */}
+      <div className="divide-y divide-bronze-pale/40">
+        {Array.from({ length: rows }).map((_, r) => (
+          <div key={r} className="flex items-center gap-4 px-4 py-3.5">
+            {Array.from({ length: cols }).map((_, c) => (
+              <SkeletonBar
+                key={c}
+                className={cn("h-4 flex-1", c === 0 && "max-w-[7rem]")}
+              />
+            ))}
+          </div>
+        ))}
+      </div>
     </div>
   );
 }

@@ -16,6 +16,7 @@ from app.core.config import get_settings
 from app.services.sanitizer import sanitizar_pii, validar_sem_pii
 from app.services.case_context import montar_dossie
 from app.services.ai_gateway import chat as gw_chat, GatewayResponse
+from app.services.legal_base import BASE_ESTRUTURADA
 from app.models.ai_log import AILog, AITipoUso, AIStatusHITL
 
 logger = logging.getLogger(__name__)
@@ -80,15 +81,15 @@ _FILTRO_VIGENTE_RAG = "AND (kd.vigente = TRUE OR :incl_hist)"
 # Os campos de curadoria (confidence_level/rag_status) vivem em
 # knowledge_docs.extra (JSONB). Este gate FAIL-CLOSED é aplicado a TODAS as
 # consultas de recuperação: um documento explicitamente bloqueado/recusado/
-# reprovado/pendente NUNCA entra no prompt. NÃO exige aprovação por padrão
-# (não esvazia o acervo legado nunca curado) — ver RAG_EXIGIR_APROVADO.
+# reprovado/pendente NUNCA entra no prompt. Por padrão, exige aprovação
+# explícita; o acervo legado sem curadoria fica em quarentena.
 _FILTRO_GATE_RAG = (
     "AND NOT ("
     "COALESCE(kd.extra->>'confidence_level','') = 'bloqueado' "
     "OR COALESCE(kd.extra->>'rag_status','') IN "
     "('bloqueado','recusado','reprovado','pendente'))"
 )
-# Regime estrito opcional: quando RAG_EXIGIR_APROVADO=true, só documentos
+# Regime estrito (default): quando RAG_EXIGIR_APROVADO=true, só documentos
 # explicitamente aprovados entram na recuperação.
 _FILTRO_APROVADO_RAG = "AND COALESCE(kd.extra->>'rag_status','') = 'aprovado'"
 # Quarentena de súmulas: o seed foi reconstruído e cada verbete reconferido
@@ -127,8 +128,20 @@ def _filtros_gate_rag(incluir_ficticio: bool = False) -> str:
 # RAG-04: limiar mínimo de similaridade na busca semântica — evita que matches
 # fracos/irrelevantes entrem como "fonte" e poluam o contexto da IA (risco de
 # alucinação). Similaridade = 1 - distância de cosseno. min_sim 0.55 → max_dist 0.45.
-_RAG_MIN_SIM = 0.55
-_RAG_MAX_DIST = 1.0 - _RAG_MIN_SIM
+# Limiar de similaridade da busca vetorial — agora CONFIGURÁVEL (RAG_MIN_SIM;
+# auditoria IA 2026-07-17, achado A-2); antes hardcoded em 0.55. Calibrável por
+# um eval set sem tocar código. Distância de cosseno = 1 - similaridade.
+_RAG_MIN_SIM_DEFAULT = 0.55
+
+
+def _rag_max_dist() -> float:
+    """Distância máxima de cosseno aceita na busca vetorial, derivada de
+    RAG_MIN_SIM (fallback 0.55). Clamp defensivo em [0, 2]."""
+    try:
+        sim = float(settings.RAG_MIN_SIM)
+    except Exception:
+        sim = _RAG_MIN_SIM_DEFAULT
+    return max(0.0, min(2.0, 1.0 - sim))
 
 # Confiança do documento (curadoria de governança — ia_governanca._conf):
 # vive em knowledge_docs.extra (JSONB), chave canônica "confidence_level"
@@ -179,7 +192,7 @@ async def _fundir_lexical(db, consulta, semanticos, limite, categorias, scope_cl
             filtro = "AND kd.categoria = ANY(:cats)"
             params["cats"] = categorias
         sql = _text(f"""
-            SELECT kc.id, kc.conteudo, kd.titulo, kd.categoria, kd.fonte,
+            SELECT kc.id, kc.doc_id, kc.conteudo, kd.titulo, kd.categoria, kd.fonte, kd.versao,
                    {_SQL_CONFIANCA},
                    similarity(kc.conteudo, :q) AS sim
             FROM knowledge_chunks kc
@@ -198,17 +211,91 @@ async def _fundir_lexical(db, consulta, semanticos, limite, categorias, scope_cl
             cid = r.id
             fusion[cid] = fusion.get(cid, 0.0) + 1.0 / (K + rank + 1)
             if cid not in meta:
-                meta[cid] = {"chunk_id": r.id, "conteudo": r.conteudo, "titulo": r.titulo,
+                meta[cid] = {"chunk_id": r.id, "doc_id": r.doc_id, "conteudo": r.conteudo,
+                             "titulo": r.titulo,
                              "categoria": r.categoria, "fonte": r.fonte,
-                             "confianca": r.confianca, "score": round(float(r.sim), 4)}
+                             "confianca": r.confianca,
+                             "versao": getattr(r, "versao", None),
+                             "score": round(float(r.sim), 4)}
     except Exception as _e:
         logger.warning(f"Fusao lexical (RRF) falhou, mantendo semantico: {_e}")
         return semanticos
+    # A-3 (auditoria IA 2026-07-17): perna FULL-TEXT (tsvector 'portuguese',
+    # BM25-like) — melhor para termos raros/citações exatas (art./súmula/nº CNJ).
+    # Aditiva ao RRF; OFF por default. Usa o índice GIN pré-existente
+    # ix_knowledge_chunks_conteudo_fts (migration 001) — sem migration nova.
+    # Falha isolada não afeta as pernas semântica/trigram.
+    if getattr(settings, "RAG_FTS_ENABLED", False):
+        try:
+            params_f = {"q": consulta[:300], "lim": max(limite * 3, 12),
+                        "restr_cats": _RESTRICTED_CATS, "scope_cli": scope_client_id or "",
+                        "incl_hist": incluir_historico}
+            filtro_f = ""
+            if categorias:
+                filtro_f = "AND kd.categoria = ANY(:cats)"
+                params_f["cats"] = categorias
+            sql_f = _text(f"""
+                SELECT kc.id, kc.doc_id, kc.conteudo, kd.titulo, kd.categoria, kd.fonte, kd.versao,
+                       {_SQL_CONFIANCA},
+                       ts_rank_cd(to_tsvector('portuguese', kc.conteudo),
+                                  plainto_tsquery('portuguese', :q)) AS rank
+                FROM knowledge_chunks kc
+                JOIN knowledge_docs kd ON kd.id = kc.doc_id
+                WHERE kd.deleted_at IS NULL
+                  AND to_tsvector('portuguese', kc.conteudo)
+                      @@ plainto_tsquery('portuguese', :q)
+                  {filtro_f}
+                  {_FILTRO_ESCOPO_RAG}
+                  {_FILTRO_VIGENTE_RAG}
+                  {_filtros_gate_rag(incluir_ficticio)}
+                ORDER BY rank DESC
+                LIMIT :lim
+            """)
+            rows_f = await db.execute(sql_f, params_f)
+            for rank, r in enumerate(rows_f):
+                cid = r.id
+                fusion[cid] = fusion.get(cid, 0.0) + 1.0 / (K + rank + 1)
+                if cid not in meta:
+                    meta[cid] = {"chunk_id": r.id, "doc_id": r.doc_id, "conteudo": r.conteudo,
+                                 "titulo": r.titulo,
+                                 "categoria": r.categoria, "fonte": r.fonte,
+                                 "confianca": r.confianca,
+                                 "versao": getattr(r, "versao", None),
+                                 "score": round(float(r.rank), 4)}
+        except Exception as _ef:
+            logger.warning(f"Fusao FTS (RRF) falhou, ignorando esta perna: {_ef}")
     ordenados = sorted(fusion.items(), key=lambda kv: kv[1], reverse=True)
     saida = []
     for cid, _s in ordenados[:limite]:
         item = dict(meta[cid]); item["rrf"] = round(_s, 5); saida.append(item)
     return saida
+
+
+async def _hyde_expandir(consulta: str) -> str:
+    """HyDE (auditoria IA 2026-07-17, O-6): gera uma 'resposta hipotética' curta e
+    a concatena à consulta para EMBUTIR na busca VETORIAL — melhora o recall quando
+    o vocabulário do caso novo difere do registrado. Só afeta a perna densa; a
+    perna lexical continua com a consulta REAL. OFF por default (RAG_HYDE_ENABLED).
+    Fail-safe: desligado/erro/timeout/vazio → devolve a consulta original."""
+    if not getattr(settings, "RAG_HYDE_ENABLED", False) or not (consulta or "").strip():
+        return consulta
+    try:
+        resp = await gw_chat(
+            [{"role": "system", "content": (
+                "Voce e um assistente juridico. Escreva UM paragrafo curto (max. 3 frases) "
+                "que responderia hipoteticamente a consulta, no vocabulario tecnico-juridico "
+                "brasileiro (dispositivos, teses, termos). NAO invente numero de processo, "
+                "sumula ou lei especificos — use linguagem doutrinaria generica.")},
+             {"role": "user", "content": consulta[:1000]}],
+            task_type="resumo",              # tier leve/barato
+            temperature=0.3, max_tokens=256, nivel_inteligencia="padrao",
+        )
+        hipotese = (getattr(resp, "texto", "") or "").strip()
+        return f"{consulta}\n{hipotese}" if hipotese else consulta
+    except Exception as e:  # HyDE nunca quebra a busca
+        logger.warning("HyDE indisponivel (usando consulta original): %s", str(e)[:150])
+        return consulta
+
 
 async def buscar_contexto_rag(
     db: AsyncSession, consulta: str, limite: int = 6,
@@ -244,6 +331,14 @@ async def buscar_contexto_rag(
     # Usa distância de cosseno (operador <=> do pgvector). Cai no textual se
     # indisponível ou em erro. Esta é a busca "por significado" — encontra
     # precedentes mesmo quando o vocabulário do caso novo difere do registrado.
+    # Reranking (Fase 1 — auditoria IA): recupera um POOL maior de candidatos e
+    # reordena com um cross-encoder antes de cortar em `limite`. Desligado ou
+    # indisponível → pool = limite e a ordem RRF é mantida (degradação graciosa;
+    # ver ai/reranker.py). rerank(...) sempre devolve no máximo `limite` itens.
+    from app.services.ai import reranker as _reranker
+    _rerank_on = _reranker.disponivel()
+    _n_pool = _reranker.tamanho_pool(limite) if _rerank_on else limite
+
     from app.services.embedding_service import disponivel as _emb_on, gerar_embeddings
     if not _emb_on():
         # Degradação AUDÍVEL: sem embeddings a busca vira ILIKE puro (recall
@@ -257,11 +352,13 @@ async def buscar_contexto_rag(
                 "recall reduzido. Habilite embeddings em produção."
             )
     if _emb_on():
-        # modo="query": protocolo E5 — consultas levam prefixo "query: "
-        vetores = await gerar_embeddings([consulta], modo="query")
+        # HyDE (O-6, OFF por default): enriquece SÓ a query densa; a lexical usa
+        # a consulta real. modo="query": prefixo E5 só se o modelo for E5.
+        consulta_emb = await _hyde_expandir(consulta)
+        vetores = await gerar_embeddings([consulta_emb], modo="query")
         if vetores:
             vec = vetores[0]
-            params_v: dict = {"vec": str(vec), "lim": limite, "max_dist": _RAG_MAX_DIST,
+            params_v: dict = {"vec": str(vec), "lim": _n_pool, "max_dist": _rag_max_dist(),
                               "restr_cats": _RESTRICTED_CATS, "scope_cli": scope_client_id or "",
                               "incl_hist": incluir_historico}
             filtro_cat_v = ""
@@ -269,7 +366,7 @@ async def buscar_contexto_rag(
                 filtro_cat_v = "AND kd.categoria = ANY(:cats)"
                 params_v["cats"] = categorias
             sql_v = text(f"""
-                SELECT kc.id, kc.conteudo, kd.titulo, kd.categoria, kd.fonte,
+                SELECT kc.id, kc.doc_id, kc.conteudo, kd.titulo, kd.categoria, kd.fonte, kd.versao,
                        {_SQL_CONFIANCA},
                        (kc.embedding <=> :vec) AS dist
                 FROM knowledge_chunks kc
@@ -296,23 +393,28 @@ async def buscar_contexto_rag(
             try:
                 rows_v = await db.execute(sql_v, params_v)
                 resultados = [
-                    {"chunk_id": r.id, "conteudo": r.conteudo, "titulo": r.titulo,
+                    {"chunk_id": r.id, "doc_id": r.doc_id, "conteudo": r.conteudo,
+                     "titulo": r.titulo,
                      "categoria": r.categoria, "fonte": r.fonte,
                      "confianca": r.confianca,
+                     "versao": getattr(r, "versao", None),
                      "score": round(1 - r.dist, 4)}   # cosine similarity
                     for r in rows_v
                 ]
                 if resultados:
-                    return await _fundir_lexical(db, consulta, resultados, limite, categorias,
-                                                 scope_client_id, incluir_historico,
-                                                 incluir_ficticio)
+                    # Funde a perna lexical (RRF) sobre o POOL, depois reranqueia
+                    # e corta em `limite` (rerank off → devolve o RRF[:limite]).
+                    fundidos = await _fundir_lexical(db, consulta, resultados, _n_pool, categorias,
+                                                     scope_client_id, incluir_historico,
+                                                     incluir_ficticio)
+                    return await _reranker.rerank(consulta, fundidos, limite)
                 # Sem vetores gravados ainda → cai no textual abaixo
             except Exception as e:
                 logger.warning(f"Busca vetorial falhou, usando textual: {e}")
 
     # Tentativa 1: busca textual nos chunks (funciona sem embeddings)
     termos = [t for t in consulta.replace(",", " ").split() if len(t) >= 3][:8]
-    params: dict = {"lim": limite}
+    params: dict = {"lim": _n_pool}
     cond_termos = ""
     if termos:
         partes = []
@@ -334,7 +436,7 @@ async def buscar_contexto_rag(
     params["incl_hist"] = incluir_historico
 
     sql = text(f"""
-        SELECT kc.id, kc.conteudo, kd.titulo, kd.categoria, kd.fonte,
+        SELECT kc.id, kc.doc_id, kc.conteudo, kd.titulo, kd.categoria, kd.fonte, kd.versao,
                {_SQL_CONFIANCA}
         FROM knowledge_chunks kc
         JOIN knowledge_docs kd ON kd.id = kc.doc_id
@@ -348,14 +450,17 @@ async def buscar_contexto_rag(
     """)
     try:
         rows = await db.execute(sql, params)
-        return [
+        res_txt = [
             {
-                "chunk_id": r.id, "conteudo": r.conteudo,
+                "chunk_id": r.id, "doc_id": r.doc_id, "conteudo": r.conteudo,
                 "titulo": r.titulo, "categoria": r.categoria, "fonte": r.fonte,
                 "confianca": r.confianca,
+                "versao": getattr(r, "versao", None),
             }
             for r in rows
         ]
+        # Reranqueia também o fallback textual (rerank off → res_txt[:limite]).
+        return await _reranker.rerank(consulta, res_txt, limite)
     except Exception as e:
         logger.warning(f"RAG search falhou: {e}")
         return []
@@ -578,9 +683,14 @@ async def resumir_documento(
     texto_limpo, houve_pii = sanitizar_pii(texto_documento[:12000])
 
     try:
+        # FASE 1b (MAPA §5 Passo 2): task de PROSA coberto pela base central
+        # ("resumo" NÃO recebe aplicar_base — legal_base._TASKS_COM_BASE).
+        # "chat_rapido" mantém o tier leve (ollama chat → maritaca rápido →
+        # groq) e garante a barreira anti-alucinação central. A regra inline
+        # de SYSTEM_RESUMO_DOC é preservada (mudança aditiva).
         resposta, resp = await _gateway_text(
             SYSTEM_RESUMO_DOC, texto_limpo,
-            task_type="resumo", temperature=0.1, max_tokens=1200, nivel="alto",
+            task_type="chat_rapido", temperature=0.1, max_tokens=1200, nivel="alto",
         )
     except Exception as e:
         return {"erro": f"Falha na IA: {str(e)[:200]}"}
@@ -589,7 +699,9 @@ async def resumir_documento(
         id=str(uuid4()), user_id=user_id, case_id=case_id,
         tipo_uso=AITipoUso.resumo_documento, modelo=_modelo_log(resp),
         prompt_sanitizado=texto_limpo[:8000], pii_removida=houve_pii,
-        resposta=resposta, status_hitl=AIStatusHITL.gerado,
+        resposta=resposta,
+        tokens_input=_tokens_input(resp), tokens_output=_tokens_output(resp),
+        status_hitl=AIStatusHITL.gerado,
     )
     db.add(log)
     await db.commit()
@@ -630,8 +742,11 @@ async def extrair_prazos_ia(
     texto_limpo, houve_pii = sanitizar_pii(texto[:12000])
 
     try:
+        # Fluxo JSON com task fora de _TASKS_COM_BASE ("resumo" — por design):
+        # PREPENDE BASE_ESTRUTURADA no system (padrão peca_service/ia_extra
+        # sugestao-honorarios) — barreira anti-alucinação sem quebrar o parse.
         resposta, resp = await _gateway_text(
-            SYSTEM_EXTRACAO_PRAZOS, texto_limpo,
+            BASE_ESTRUTURADA + "\n\n" + SYSTEM_EXTRACAO_PRAZOS, texto_limpo,
             task_type="resumo", temperature=0.0, max_tokens=1500, nivel="alto",
         )
     except Exception as e:
@@ -965,9 +1080,18 @@ async def analisar_contrato(
         )
     system = SYSTEM_COMPARACAO_CONTRATOS if comparacao else SYSTEM_ANALISE_CONTRATO
     try:
+        # FASE 1b (MAPA §5 Passo 2): "analise_contrato" está no TASK_ROUTING mas
+        # FORA de legal_base._TASKS_COM_BASE (sem base central). A saída aqui é
+        # PROSA (relatório de auditoria de minuta contratual) → task coberto
+        # "auditoria_peca" (mesma cadeia anthropic/groq; ollama muda de
+        # OLLAMA_MODEL_CONTRATO p/ OLLAMA_MODEL_PETICAO — revisão textual).
+        # Não ampliamos _TASKS_COM_BASE com "analise_contrato" porque o
+        # BankForensicsAgent (ai/core/orchestrator.py) usa esse task para saída
+        # ESTRUTURADA — injetar a base de prosa lá arriscaria o parse.
+        # As REGRAS INVIOLÁVEIS inline dos prompts são preservadas (aditivo).
         conteudo, resp = await _gateway_text(
             system, user_msg,
-            task_type="analise_contrato", temperature=0.15,
+            task_type="auditoria_peca", temperature=0.15,
             max_tokens=3200 if comparacao else 2800, nivel="alto",
         )
         await _log_ai(db, user_id, "outro", user_msg[:4000], conteudo,

@@ -13,10 +13,46 @@ import {
   Archive,
   ArchiveRestore,
   Trash2,
+  AlertTriangle,
+  RotateCw,
 } from "lucide-react";
-import api, { aplicarExtracao } from "../lib/api";
+import api, { aplicarExtracao, vincularLoteAoCaso } from "../lib/api";
 import { asList } from "../lib/list";
-import type { AplicarExtracaoResult, ExtracaoPayload } from "../lib/api";
+import { areaLabel, useAreas } from "../lib/areas";
+import type {
+  AplicarExtracaoResult,
+  ExtracaoPayload,
+  VincularLoteResult,
+} from "../lib/api";
+
+/**
+ * O vínculo de lote pode retornar 200 com `conflitos` (itens que apontam para
+ * documento de outro caso sem arquivo clonável — ex.: ausente/externo). Isso
+ * NÃO é sucesso pleno: avisa o usuário quais documentos ficaram de fora e onde
+ * resolvê-los, em vez de seguir em silêncio.
+ */
+function avisarConflitosDeVinculo(vinc: VincularLoteResult) {
+  const conflitos = vinc?.conflitos ?? [];
+  if (conflitos.length === 0) return;
+  const nomes = conflitos
+    .slice(0, 3)
+    .map((c) => c.filename)
+    .join(", ");
+  const extra = conflitos.length > 3 ? ` e mais ${conflitos.length - 3}` : "";
+  toast.error(
+    `${conflitos.length} documento(s) do lote não puderam ser vinculados ao caso ` +
+      `(${nomes}${extra}). Eles permanecem na Entrada Universal/GED de origem — ` +
+      `verifique e anexe manualmente pelo caso.`,
+  );
+}
+import {
+  carregarRascunho,
+  salvarRascunho,
+  atualizarRascunho,
+  limparRascunho,
+  snapshotForm,
+  type IntakeRascunho,
+} from "../lib/intakeRascunho";
 import type { Case, Client, Paged, User } from "../types";
 import {
   PageHeader,
@@ -27,7 +63,7 @@ import {
   Textarea,
   Empty,
   EmptyState,
-  Spinner,
+  SkeletonTable,
   Button,
   fmtDate,
 } from "../components/UI";
@@ -43,29 +79,8 @@ import {
 import Kanban from "./Kanban";
 import { List } from "lucide-react";
 
-// Enum CaseArea do backend (app/models/case.py). Valor = chave; rótulo em PT-BR.
-const AREAS = [
-  "civil",
-  "trabalhista",
-  "consumidor",
-  "familia",
-  "ambiental",
-  "criminal",
-  "previdenciario",
-  "empresarial",
-  "tributario",
-];
-const AREA_LABELS: Record<string, string> = {
-  civil: "Cível",
-  trabalhista: "Trabalhista",
-  consumidor: "Consumidor",
-  familia: "Família",
-  ambiental: "Ambiental",
-  criminal: "Criminal",
-  previdenciario: "Previdenciário",
-  empresarial: "Empresarial",
-  tributario: "Tributário",
-};
+// Taxonomia canônica de áreas: GET /areas via useAreas(), com fallback
+// completo do enum CaseArea (25 áreas) em lib/areas.ts.
 
 const CASE_TYPES = [
   { k: "judicial", l: "Judicial", icon: Gavel },
@@ -190,7 +205,98 @@ const PRESCRICAO: {
   },
 ];
 
+// Upload do documento importado para a GED, vinculado ao caso. Reutilizado no
+// fluxo normal de criação e no retry de recuperação (reanexar) — sem recriar.
+async function anexarDocumento(
+  caseId: string,
+  clientId: string | undefined,
+  arquivo: File,
+  tituloDoc: string,
+  tipoDoc?: string,
+): Promise<void> {
+  const fd = new FormData();
+  fd.append("file", arquivo);
+  fd.append("titulo", tituloDoc);
+  if (tipoDoc) fd.append("tipo", tipoDoc);
+  fd.append("case_id", caseId);
+  if (clientId) fd.append("client_id", clientId);
+  await api.post("/documents/upload", fd, {
+    headers: { "Content-Type": "multipart/form-data" },
+  });
+}
+
+interface ResumoRevisao {
+  principais: { label: string; valor: string }[];
+  aplicar: { label: string; valor: string }[];
+  ausentes: string[];
+  alertas: string[];
+}
+
+const txtResumo = (v: unknown): string => (v == null ? "" : String(v).trim());
+
+// Resumo de revisão 100% client-side (form + _extracao) — NÃO chama o backend.
+// Alimenta o passo "Revisar dados" ANTES de confirmar a criação do caso, para
+// que nada seja gravado sem a conferência do advogado (fluxograma documental).
+function montarResumoRevisao(
+  form: Record<string, any>,
+  clienteLabel: string,
+): ResumoRevisao {
+  const ex = (form?._extracao || {}) as Record<string, any>;
+  const partes = (ex.partes || {}) as Record<string, any>;
+  const classificacao = (ex.classificacao || {}) as Record<string, any>;
+
+  const principais = [
+    { label: "Título", valor: txtResumo(form?.titulo) || "—" },
+    { label: "Cliente", valor: clienteLabel || "—" },
+    {
+      label: "Área",
+      valor: areaLabel(form?.area) || txtResumo(form?.area) || "—",
+    },
+    { label: "Tipo", valor: CASE_TYPE_LABEL[form?.case_type] || "—" },
+    { label: "Nº do processo", valor: txtResumo(form?.numero_processo) || "—" },
+  ];
+
+  const aplicar: { label: string; valor: string }[] = [];
+  const push = (label: string, valor: unknown) => {
+    const s = txtResumo(valor);
+    if (s) aplicar.push({ label, valor: s });
+  };
+  push("Autor (parte)", partes.autor);
+  push("Réu / parte contrária", partes.reu || form?.parte_contraria);
+  push("Subárea", classificacao.subarea);
+  push("Rito", classificacao.rito);
+  push("Fase", classificacao.fase);
+  push("Tribunal", form?.tribunal);
+  push("Comarca", form?.comarca);
+  push("Vara", form?.vara);
+  if (txtResumo(form?.valor_causa))
+    push("Valor da causa", `R$ ${form.valor_causa}`);
+
+  const ausentes: string[] = [];
+  if (!txtResumo(form?.titulo)) ausentes.push("Título");
+  if (!txtResumo(form?.numero_processo)) ausentes.push("Número do processo");
+  if (!txtResumo(form?.parte_contraria) && !txtResumo(partes.reu))
+    ausentes.push("Parte contrária");
+  if (!txtResumo(form?.valor_causa)) ausentes.push("Valor da causa");
+
+  const alertas: string[] = [];
+  if (
+    txtResumo(form?.tipo_acao_prescricao) &&
+    txtResumo(form?.data_fato_prescricao)
+  ) {
+    alertas.push(
+      "Prazo prescricional/decadencial será calculado na criação — confira suspensões e interrupções (CC arts. 197–204).",
+    );
+  }
+  const etapas = classificacao?.jornada?.proximas_etapas;
+  if (Array.isArray(etapas) && etapas.length) {
+    alertas.push(`Próximas etapas sugeridas pela IA: ${etapas.join(" → ")}.`);
+  }
+  return { principais, aplicar, ausentes, alertas };
+}
+
 export default function Casos() {
+  const areas = useAreas();
   const [data, setData] = useState<Paged<Case> | null>(null);
   const [clientes, setClientes] = useState<Client[]>([]);
   const [advogados, setAdvogados] = useState<User[]>([]);
@@ -237,13 +343,37 @@ export default function Casos() {
     result: AplicarExtracaoResult;
   } | null>(null);
   const [aplicando, setAplicando] = useState(false);
+  // Rascunho recuperável do intake documental (localStorage): banner de retomada
+  // ao reabrir, e recuperação SEM recriar quando o caso já foi criado mas o
+  // anexo do documento falhou.
+  const [rascunhoSalvo, setRascunhoSalvo] = useState<IntakeRascunho | null>(null);
+  const [pendencia, setPendencia] = useState<{
+    caseId: string;
+    caseTitulo: string;
+    /** Ausente quando o vínculo é por lote (os arquivos já estão no servidor). */
+    arquivo?: File;
+    tituloDoc: string;
+    tipoDoc?: string;
+    clientId?: string;
+    /** Lote da Entrada Universal a vincular (substitui o re-upload do arquivo). */
+    batchId?: string;
+  } | null>(null);
+  const [reanexando, setReanexando] = useState(false);
+  // Passo de revisão (client-side) antes de confirmar a criação do caso.
+  const [revisao, setRevisao] = useState<ResumoRevisao | null>(null);
   const [erro, setErro] = useState(false);
   // Guarda de sequência: só a resposta mais recente aplica setData (evita que
   // a resposta antiga de uma busca/filtro com debounce sobrescreva a nova).
   const seq = useRef(0);
 
   useEffect(() => {
-    if (novoCasoModo === "documento") setModal(true);
+    if (novoCasoModo === "documento") {
+      setModal(true);
+      // Ao (re)abrir o intake, oferece retomar um cadastro por documento não
+      // finalizado (banner) e zera qualquer pendência de anexo obsoleta.
+      setRascunhoSalvo(carregarRascunho());
+      setPendencia(null);
+    }
   }, [novoCasoModo]);
 
   const fecharCadastroCompleto = () => {
@@ -342,6 +472,30 @@ export default function Casos() {
     return () => clearTimeout(t);
   }, [search, areaF, advogadoF, arquivoF]);
 
+  // Passo 3 do fluxograma documental: abre a REVISÃO antes de qualquer escrita.
+  // Só depois de "Confirmar criação" é que salvar() cria o caso e anexa o doc.
+  const abrirRevisao = () => {
+    if (!form._arquivo_original) {
+      toast.error(
+        "Envie e analise o documento do cliente antes de criar o caso.",
+      );
+      return;
+    }
+    const cand = form._cliente_candidato;
+    const temCandidato = !!(cand && (cand.nome || cand.cpf || cand.cnpj));
+    if (!form.titulo || (!form.client_id && !temCandidato)) {
+      toast.error("Título e cliente são obrigatórios (ou importe um documento).");
+      return;
+    }
+    const selecionado = clientes.find((c) => c.id === form.client_id);
+    const clienteLabel =
+      selecionado?.nome ||
+      (selecionado as any)?.razao_social ||
+      cand?.nome ||
+      "";
+    setRevisao(montarResumoRevisao(form, clienteLabel));
+  };
+
   const salvar = async () => {
     if (novoCasoModo === "documento" && !form._arquivo_original) {
       toast.error(
@@ -358,6 +512,28 @@ export default function Casos() {
       return;
     }
     setSalvando(true);
+    // Metadados do intake documental capturados ANTES de qualquer escrita.
+    const extracao = form._extracao as ExtracaoPayload | undefined;
+    const arquivoOriginal = form._arquivo_original as File | undefined;
+    const tipoDoc = form._tipo_documento as string | undefined;
+    // Lote da Entrada Universal: quando presente, TODOS os arquivos já estão no
+    // GED (órfãos) e o vínculo em lote substitui o re-upload do 1º arquivo.
+    const batchId =
+      (form._entrada_universal_batch_id as string | undefined) ||
+      (typeof extracao?.batch_id === "string" ? extracao.batch_id : undefined);
+    // Rascunho recuperável: persistido ANTES de criar. Se qualquer passo falhar
+    // (ou a aba fechar), o trabalho analisado não se perde. Limpo só no sucesso.
+    if (arquivoOriginal) {
+      salvarRascunho({
+        form: snapshotForm(form),
+        extracao: extracao ?? null,
+        arquivoNome: arquivoOriginal.name,
+        arquivoTipo: tipoDoc ?? null,
+        clientId: form.client_id || null,
+        caseId: null,
+        uploadFeito: false,
+      });
+    }
     try {
       let clientId = form.client_id;
       // Importação inteligente: cria/vincula cliente por CPF/CNPJ (dedup no backend)
@@ -373,21 +549,54 @@ export default function Casos() {
       }
       payload.client_id = clientId;
       const { data: novo } = await api.post("/cases/", payload);
-      // Captura a extração antes de limpar o form (será materializada abaixo).
-      const extracao = form._extracao as ExtracaoPayload | undefined;
-      // Item 4.2: captura o arquivo importado (e metadados) ANTES do reset do
-      // form, para persisti-lo na GED vinculado ao caso recém-criado.
-      const arquivoOriginal = form._arquivo_original as File | undefined;
-      const tipoDoc = form._tipo_documento as string | undefined;
       const tituloDoc =
         (payload.titulo as string) || novo?.titulo || "Documento importado";
-      setModal(false);
-      nav("/casos", { replace: true });
-      setForm({ area: "civil", prioridade: "media", case_type: "judicial" });
-      load();
-      // Materialização EXPLÍCITA: primeiro um preview (dry_run) do que SERIA
-      // aplicado; o usuário confirma ("Aplicar ao caso") ou pula. Erros são
-      // visíveis (nunca engolidos) — o caso já foi criado.
+      if (arquivoOriginal)
+        atualizarRascunho({ caseId: novo?.id ?? null, clientId });
+
+      // VINCULA/ANEXA os documentos ANTES de navegar: uma falha não deixa mais
+      // o usuário numa lista com um caso órfão dos seus documentos de origem.
+      if ((batchId || arquivoOriginal) && novo?.id) {
+        try {
+          if (batchId) {
+            // Entrada Universal: vincula TODOS os arquivos do lote ao caso (e
+            // ao cliente) de uma vez — sem re-upload nem duplicata do 1º arquivo.
+            const vinc = await vincularLoteAoCaso(batchId, novo.id);
+            avisarConflitosDeVinculo(vinc);
+          } else if (arquivoOriginal) {
+            await anexarDocumento(
+              novo.id,
+              clientId,
+              arquivoOriginal,
+              tituloDoc,
+              tipoDoc,
+            );
+          }
+          atualizarRascunho({ uploadFeito: true });
+        } catch (e: any) {
+          // Caso criado, vínculo/anexo falhou: NÃO navega nem silencia. Oferece
+          // retomada (retry) sem recriar o caso (ele permanece em triagem).
+          setPendencia({
+            caseId: novo.id,
+            caseTitulo: novo.titulo || tituloDoc,
+            arquivo: arquivoOriginal,
+            tituloDoc,
+            tipoDoc,
+            clientId,
+            batchId,
+          });
+          toast.error(
+            e.response?.data?.detail ||
+              (batchId
+                ? "O caso foi criado, mas os documentos importados não foram vinculados. Tente novamente abaixo — o caso não será duplicado."
+                : "O caso foi criado, mas o documento não foi anexado. Tente novamente abaixo — o caso não será duplicado."),
+          );
+          return;
+        }
+      }
+
+      // Materialização EXPLÍCITA (preview dry_run) — agora DEPOIS do anexo.
+      // O usuário confirma ("Aplicar ao caso") ou pula; erros são visíveis.
       if (extracao && novo?.id) {
         try {
           const result = await aplicarExtracao(novo.id, extracao, {
@@ -406,32 +615,85 @@ export default function Casos() {
           );
         }
       }
-      // Item 4.2: persiste o PDF/arquivo da Importação Inteligente na GED,
-      // vinculado ao caso (mesmo endpoint do upload manual). Antes, o arquivo
-      // era só analisado e descartado → aba Documentos ficava vazia.
-      if (arquivoOriginal && novo?.id) {
-        try {
-          const fd = new FormData();
-          fd.append("file", arquivoOriginal);
-          fd.append("titulo", tituloDoc);
-          if (tipoDoc) fd.append("tipo", tipoDoc);
-          fd.append("case_id", novo.id);
-          if (clientId) fd.append("client_id", clientId);
-          await api.post("/documents/upload", fd, {
-            headers: { "Content-Type": "multipart/form-data" },
-          });
-        } catch (e: any) {
-          toast.error(
-            e.response?.data?.detail ||
-              "Caso criado, mas não foi possível anexar o documento importado.",
-          );
-        }
-      }
+
+      // Sucesso: o rascunho não é mais necessário; fecha e navega.
+      limparRascunho();
+      setPendencia(null);
+      setRascunhoSalvo(null);
+      setModal(false);
+      nav("/casos", { replace: true });
+      setForm({ area: "civil", prioridade: "media", case_type: "judicial" });
+      load();
     } catch (e: any) {
+      // Falha antes/na criação do caso: o caso NÃO foi criado; o rascunho (se
+      // documental) permanece para retomada.
       toast.error(e.response?.data?.detail || "Erro ao salvar");
     } finally {
       setSalvando(false);
     }
+  };
+
+  // Retry do vínculo/anexo quando o caso JÁ existe (pendência) — nunca recria o caso.
+  const reanexarDocumento = async () => {
+    if (!pendencia) return;
+    setReanexando(true);
+    try {
+      if (pendencia.batchId) {
+        // Vínculo em lote (idempotente): religa TODOS os arquivos ao caso.
+        const vinc = await vincularLoteAoCaso(pendencia.batchId, pendencia.caseId);
+        avisarConflitosDeVinculo(vinc);
+      } else if (pendencia.arquivo) {
+        await anexarDocumento(
+          pendencia.caseId,
+          pendencia.clientId,
+          pendencia.arquivo,
+          pendencia.tituloDoc,
+          pendencia.tipoDoc,
+        );
+      } else {
+        toast.error(
+          "O arquivo original não está mais disponível nesta sessão. Anexe-o pelo caso na GED.",
+        );
+        return;
+      }
+      atualizarRascunho({ uploadFeito: true });
+      limparRascunho();
+      toast.success(
+        pendencia.batchId
+          ? "Documentos importados vinculados ao caso."
+          : "Documento anexado ao caso.",
+      );
+      setPendencia(null);
+      setRascunhoSalvo(null);
+      setModal(false);
+      nav("/casos", { replace: true });
+      setForm({ area: "civil", prioridade: "media", case_type: "judicial" });
+      load();
+    } catch (e: any) {
+      toast.error(
+        e.response?.data?.detail ||
+          "Ainda não foi possível anexar. Tente de novo ou conclua sem o documento.",
+      );
+    } finally {
+      setReanexando(false);
+    }
+  };
+
+  // Conclui deixando o caso sem o documento (escolha EXPLÍCITA do usuário).
+  const concluirSemDocumento = () => {
+    limparRascunho();
+    setPendencia(null);
+    setRascunhoSalvo(null);
+    setModal(false);
+    nav("/casos", { replace: true });
+    setForm({ area: "civil", prioridade: "media", case_type: "judicial" });
+    load();
+  };
+
+  // Descarta o rascunho de retomada (banner) sem afetar nenhum caso.
+  const descartarRascunho = () => {
+    limparRascunho();
+    setRascunhoSalvo(null);
   };
 
   // Aplica de fato (dry_run=false) o que foi mostrado no preview.
@@ -537,9 +799,9 @@ export default function Casos() {
               onChange={(e) => setAreaF(e.target.value)}
             >
               <option value="">Todas as áreas</option>
-              {AREAS.map((a) => (
-                <option key={a} value={a}>
-                  {AREA_LABELS[a] || a}
+              {areas.map((a) => (
+                <option key={a.slug} value={a.slug}>
+                  {a.nome}
                 </option>
               ))}
             </select>
@@ -617,7 +879,10 @@ export default function Casos() {
               }
             />
           ) : !data ? (
-            <Spinner />
+            <SkeletonTable
+              rows={6}
+              cols={arquivoF === "arquivados" || podeExcluir ? 8 : 7}
+            />
           ) : data.data.length === 0 ? (
             arquivoF === "arquivados" ? (
               <Empty
@@ -680,7 +945,7 @@ export default function Casos() {
                         </Link>
                       </td>
                       <td className="px-4 py-3 text-sm text-slate-500 capitalize">
-                        {AREA_LABELS[(c as any).area] || c.area}
+                        {areaLabel((c as any).area) || c.area}
                       </td>
                       <td className="px-4 py-3">
                         <span
@@ -771,6 +1036,76 @@ export default function Casos() {
             Prefiro cadastrar sem IA
           </Button>
         </div>
+        {pendencia && (
+          <div className="mb-5 rounded-xl border border-warn-200 bg-warn-100 px-4 py-3">
+            <div className="flex items-start gap-2">
+              <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0 text-warn-700" />
+              <div className="min-w-0 flex-1">
+                <p className="text-sm font-semibold text-warn-800">
+                  O caso “{pendencia.caseTitulo}” foi criado, mas{" "}
+                  {pendencia.batchId
+                    ? "os documentos importados não foram vinculados."
+                    : "o documento não foi anexado."}
+                </p>
+                <p className="mt-1 text-xs leading-5 text-warn-700">
+                  Nada foi perdido: o caso está salvo (em triagem)
+                  {pendencia.batchId
+                    ? " e os arquivos do lote importado continuam no servidor. Tente vincular de novo — nenhum arquivo será duplicado."
+                    : ` e o documento “${pendencia.arquivo?.name ?? pendencia.tituloDoc}” continua aqui. Tente anexar de novo — o caso não será duplicado.`}
+                </p>
+                <div className="mt-3 flex flex-wrap gap-2">
+                  <Button
+                    size="sm"
+                    variant="primary"
+                    icon={<RotateCw className="h-3.5 w-3.5" />}
+                    onClick={reanexarDocumento}
+                    disabled={reanexando}
+                  >
+                    {reanexando
+                      ? pendencia.batchId
+                        ? "Vinculando..."
+                        : "Anexando..."
+                      : pendencia.batchId
+                        ? "Tentar vincular novamente"
+                        : "Tentar anexar novamente"}
+                  </Button>
+                  <Button
+                    size="sm"
+                    variant="secondary"
+                    onClick={concluirSemDocumento}
+                    disabled={reanexando}
+                  >
+                    Concluir sem o documento
+                  </Button>
+                </div>
+              </div>
+            </div>
+          </div>
+        )}
+        {!pendencia && rascunhoSalvo && (
+          <div className="mb-5 rounded-xl border border-primary-200 bg-primary-50 px-4 py-3">
+            <div className="flex items-start gap-2">
+              <FileUp className="mt-0.5 h-4 w-4 shrink-0 text-primary-600" />
+              <div className="min-w-0 flex-1">
+                <p className="text-sm font-semibold text-primary-800">
+                  Cadastro por documento não finalizado
+                </p>
+                <p className="mt-1 text-xs leading-5 text-primary-700">
+                  {rascunhoSalvo.arquivoNome
+                    ? `Havia um cadastro em andamento com o documento “${rascunhoSalvo.arquivoNome}”. `
+                    : "Havia um cadastro por documento em andamento. "}
+                  Reenvie o documento abaixo para retomar, ou descarte este
+                  rascunho.
+                </p>
+                <div className="mt-3">
+                  <Button size="sm" variant="ghost" onClick={descartarRascunho}>
+                    Descartar rascunho
+                  </Button>
+                </div>
+              </div>
+            </div>
+          </div>
+        )}
         <ImportarDocumento
           onPrefill={(p) => setForm((f: any) => ({ ...f, ...p }))}
         />
@@ -834,9 +1169,9 @@ export default function Casos() {
               value={form.area}
               onChange={(e) => setForm({ ...form, area: e.target.value })}
             >
-              {AREAS.map((a) => (
-                <option key={a} value={a}>
-                  {AREA_LABELS[a] || a}
+              {areas.map((a) => (
+                <option key={a.slug} value={a.slug}>
+                  {a.nome}
                 </option>
               ))}
             </select>
@@ -1030,10 +1365,115 @@ export default function Casos() {
           </div>
         </div>
         <div className="flex justify-end mt-5">
-          <button className="btn-primary" disabled={salvando} onClick={salvar}>
-            {salvando ? "Criando caso..." : "Criar caso e revisar jornada"}
+          <button
+            className="btn-primary"
+            disabled={salvando}
+            onClick={abrirRevisao}
+          >
+            {salvando ? "Criando caso..." : "Revisar e criar o caso"}
           </button>
         </div>
+      </Modal>
+
+      {/* Passo de REVISÃO — o que será criado/aplicado, antes de qualquer
+          escrita no backend. "Confirmar" dispara a criação (salvar). */}
+      <Modal
+        open={!!revisao}
+        onClose={() => setRevisao(null)}
+        title="Revisar antes de criar o caso"
+        footer={
+          <>
+            <button
+              className="btn-ghost"
+              disabled={salvando}
+              onClick={() => setRevisao(null)}
+            >
+              Voltar e editar
+            </button>
+            <button
+              className="btn-primary"
+              disabled={salvando}
+              onClick={() => {
+                setRevisao(null);
+                salvar();
+              }}
+            >
+              {salvando ? "Criando caso..." : "Confirmar criação"}
+            </button>
+          </>
+        }
+      >
+        {revisao && (
+          <div className="space-y-5 text-sm">
+            <p className="text-xs leading-5 text-slate-500">
+              Confira o que será criado. Nada é gravado até você confirmar — ao
+              confirmar, o caso é criado, o documento é anexado e os dados
+              extraídos abaixo são aplicados.
+            </p>
+            <section>
+              <p className="mb-2 text-[11px] font-bold uppercase tracking-wide text-slate-400">
+                Caso
+              </p>
+              <dl className="grid gap-x-4 gap-y-1.5 sm:grid-cols-2">
+                {revisao.principais.map((it) => (
+                  <div
+                    key={it.label}
+                    className="flex justify-between gap-3 border-b border-slate-100 py-1"
+                  >
+                    <dt className="text-slate-500">{it.label}</dt>
+                    <dd className="text-right font-medium text-slate-800">
+                      {it.valor}
+                    </dd>
+                  </div>
+                ))}
+              </dl>
+            </section>
+            {revisao.aplicar.length > 0 && (
+              <section>
+                <p className="mb-2 text-[11px] font-bold uppercase tracking-wide text-slate-400">
+                  Dados extraídos que serão aplicados
+                </p>
+                <ul className="space-y-1">
+                  {revisao.aplicar.map((it) => (
+                    <li
+                      key={it.label}
+                      className="flex justify-between gap-3 border-b border-slate-100 py-1"
+                    >
+                      <span className="text-slate-500">{it.label}</span>
+                      <span className="text-right font-medium text-slate-800">
+                        {it.valor}
+                      </span>
+                    </li>
+                  ))}
+                </ul>
+              </section>
+            )}
+            {revisao.ausentes.length > 0 && (
+              <section className="rounded-xl border border-slate-200 bg-slate-50 px-4 py-3">
+                <p className="text-xs font-semibold text-slate-700">
+                  Informação ausente — você pode completar agora ou depois
+                </p>
+                <p className="mt-1 text-xs text-slate-500">
+                  {revisao.ausentes.join(" · ")}
+                </p>
+              </section>
+            )}
+            {revisao.alertas.length > 0 && (
+              <section className="rounded-xl border border-warn-200 bg-warn-100 px-4 py-3">
+                <div className="flex items-start gap-2">
+                  <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0 text-warn-700" />
+                  <div className="space-y-1">
+                    {revisao.alertas.map((a, i) => (
+                      <p key={i} className="text-xs leading-5 text-warn-800">
+                        {a}
+                      </p>
+                    ))}
+                  </div>
+                </div>
+              </section>
+            )}
+          </div>
+        )}
       </Modal>
 
       {/* Preview EXPLÍCITO da materialização da extração de IA (dry_run).

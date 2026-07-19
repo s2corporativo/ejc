@@ -1,9 +1,11 @@
 // ── Portal do Cliente: documentos solicitados pelo escritório ──
 import { useCallback, useEffect, useRef, useState } from "react";
+import { Link } from "react-router-dom";
 import {
   CheckCircle,
   FileText,
   FileUp,
+  FolderOpen,
   Paperclip,
   RefreshCw,
 } from "lucide-react";
@@ -32,6 +34,13 @@ interface Solicitacao {
   itens: ItemSolicitado[];
 }
 
+interface DocMeu {
+  id: string;
+  titulo: string;
+  filename?: string | null;
+  created_at?: string | null;
+}
+
 const ST: Record<string, [string, string, string]> = {
   pendente: ["Pendente", "text-warn-600", "bg-warn-50"],
   parcial: ["Parcialmente atendida", "text-primary-600", "bg-primary-50"],
@@ -49,6 +58,7 @@ function fmtDate(d?: string | null) {
 
 export default function PortalDocumentos() {
   const [rows, setRows] = useState<Solicitacao[]>([]);
+  const [meusDocs, setMeusDocs] = useState<DocMeu[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(false);
   const [uploadingId, setUploadingId] = useState<string | null>(null);
@@ -59,8 +69,15 @@ export default function PortalDocumentos() {
     setLoading(true);
     setError(false);
     try {
-      const r = await api.get("/portal/solicitacoes-documentos");
-      setRows(asList<Solicitacao>(r.data));
+      const [sol, docs] = await Promise.allSettled([
+        api.get("/portal/solicitacoes-documentos"),
+        api.get("/portal/documentos"),
+      ]);
+      if (sol.status === "fulfilled")
+        setRows(asList<Solicitacao>(sol.value.data));
+      else throw sol.reason;
+      if (docs.status === "fulfilled")
+        setMeusDocs(asList<DocMeu>(docs.value.data));
     } catch {
       setError(true);
     } finally {
@@ -133,7 +150,8 @@ export default function PortalDocumentos() {
       ) : rows.length === 0 ? (
         <EmptyState
           icon={FileText}
-          title="Nenhum documento solicitado no momento."
+          title="Nenhum documento pendente"
+          message="Você está em dia — quando o escritório solicitar um documento para os seus processos, ele aparecerá aqui."
         />
       ) : (
         rows.map((s) => {
@@ -184,21 +202,38 @@ export default function PortalDocumentos() {
                         </p>
                       )}
                       {it.status === "enviado" && (
-                        <p className="text-xs text-slate-500 mt-1 flex items-center gap-1">
-                          <Paperclip className="w-3 h-3 flex-shrink-0" />
-                          <span className="truncate">{it.filename}</span>
-                          {it.enviado_em && (
-                            <span className="text-slate-400 flex-shrink-0">
-                              · {fmtDate(it.enviado_em)}
-                            </span>
-                          )}
-                        </p>
+                        <>
+                          <p className="text-xs text-slate-500 mt-1 flex items-center gap-1">
+                            <Paperclip className="w-3 h-3 flex-shrink-0" />
+                            <span className="truncate">{it.filename}</span>
+                            {it.enviado_em && (
+                              <span className="text-slate-400 flex-shrink-0">
+                                · enviado em {fmtDate(it.enviado_em)}
+                              </span>
+                            )}
+                          </p>
+                          <p className="text-[11px] text-slate-400 mt-1">
+                            Precisa substituir este arquivo? Avise o escritório
+                            pelas{" "}
+                            <Link
+                              to="/portal/mensagens"
+                              className="text-primary-600 hover:underline"
+                            >
+                              Mensagens
+                            </Link>
+                            .
+                          </p>
+                        </>
                       )}
                     </div>
                     <div className="flex-shrink-0">
                       {it.status === "enviado" ? (
-                        <span className="inline-flex items-center gap-1.5 text-xs font-medium px-2.5 py-1 rounded-full text-success-600 bg-success-50">
-                          <CheckCircle className="w-3.5 h-3.5" /> Enviado
+                        <span
+                          className="inline-flex items-center gap-1.5 text-xs font-medium px-2.5 py-1 rounded-full text-success-600 bg-success-50"
+                          title="O arquivo foi recebido e o advogado responsável já foi avisado."
+                        >
+                          <CheckCircle className="w-3.5 h-3.5" /> Recebido pelo
+                          escritório
                         </span>
                       ) : (
                         <button
@@ -225,6 +260,53 @@ export default function PortalDocumentos() {
             </div>
           );
         })
+      )}
+
+      {/* Documentos do cliente já arquivados no escritório (GED) — inclui os
+          enviados pelo portal, confirmando o recebimento/arquivamento. */}
+      {!loading && !error && (
+        <div className="card overflow-hidden">
+          <div className="px-5 py-4 border-b border-slate-100 flex items-center gap-2">
+            <FolderOpen className="w-4 h-4 text-slate-400" />
+            <h2 className="font-semibold text-slate-700">
+              Meus documentos no escritório
+            </h2>
+          </div>
+          {meusDocs.length === 0 ? (
+            <p className="p-6 text-center text-sm text-slate-400">
+              Nenhum documento arquivado ainda. Os documentos que você enviar
+              (ou que o escritório liberar) aparecerão aqui.
+            </p>
+          ) : (
+            <div className="divide-y divide-slate-100">
+              {meusDocs.map((d) => (
+                <div
+                  key={d.id}
+                  className="px-5 py-3 flex items-center justify-between gap-4"
+                >
+                  <div className="min-w-0 flex items-center gap-3">
+                    <FileText className="w-4 h-4 text-slate-300 flex-shrink-0" />
+                    <div className="min-w-0">
+                      <p className="text-sm font-medium text-slate-800 truncate">
+                        {d.titulo}
+                      </p>
+                      {d.filename && (
+                        <p className="text-xs text-slate-400 truncate">
+                          {d.filename}
+                        </p>
+                      )}
+                    </div>
+                  </div>
+                  {d.created_at && (
+                    <span className="text-xs text-slate-400 flex-shrink-0">
+                      Arquivado em {fmtDate(d.created_at)}
+                    </span>
+                  )}
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
       )}
     </div>
   );

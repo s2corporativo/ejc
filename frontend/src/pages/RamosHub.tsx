@@ -26,8 +26,10 @@ import {
   UploadCloud,
   Users,
   Vote,
+  Wrench,
 } from "lucide-react";
 import api from "../lib/api";
+import { RAMOS } from "./ramos/ramosConfig";
 import {
   Badge,
   Button,
@@ -39,6 +41,16 @@ import {
   PageHeader,
   PageTitle,
 } from "../components/ui";
+
+// Área (taxonomia de casos) → slug do hub de ferramentas em /ramos/<slug>.
+// A maioria coincide; "civil" e "criminal" têm hubs com nome próprio.
+const AREA_PARA_HUB: Record<string, string> = { civil: "civel", criminal: "penal" };
+
+/** Caminho do hub do ramo para uma área, ou null quando não há hub. */
+function hubDoRamo(areaSlug: string): string | null {
+  const slug = AREA_PARA_HUB[areaSlug] ?? areaSlug;
+  return RAMOS[slug] ? `/ramos/${slug}` : null;
+}
 
 type Area = {
   slug: string;
@@ -57,127 +69,127 @@ const VISUAL: Record<string, AreaVisual> = {
   empresarial: {
     icon: Building2,
     description: "Sociedades, contratos empresariais, recuperação e governança",
-    tone: "from-primary-900/10 to-primary-900/0 text-primary-800",
+    tone: "bg-primary-900 text-primary-800 dark:bg-primary-400",
   },
   societario: {
     icon: Network,
     description: "Constituição, alterações, sócios, governança e reorganizações",
-    tone: "from-indigo-500/10 to-indigo-500/0 text-indigo-700",
+    tone: "bg-indigo-500 text-indigo-700",
   },
   contratual: {
     icon: FileSignature,
     description: "Elaboração, revisão, obrigações, riscos e inadimplemento",
-    tone: "from-slate-700/10 to-slate-700/0 text-slate-700",
+    tone: "bg-slate-700 text-slate-700 dark:bg-slate-400",
   },
   civil: {
     icon: Scale,
     description: "Obrigações, responsabilidade civil, danos e procedimentos comuns",
-    tone: "from-slate-900/10 to-slate-900/0 text-slate-800",
+    tone: "bg-slate-900 text-slate-800 dark:bg-slate-400",
   },
   criminal: {
     icon: Shield,
     description: "Defesa criminal, inquéritos, cautelares e recursos",
-    tone: "from-danger-500/10 to-danger-500/0 text-danger-700",
+    tone: "bg-danger-500 text-danger-700",
   },
   trabalhista: {
     icon: HardHat,
     description: "Vínculo, verbas, audiência, recursos, liquidação e execução",
-    tone: "from-yellow-500/10 to-yellow-500/0 text-yellow-700",
+    tone: "bg-yellow-500 text-yellow-700",
   },
   administrativo: {
     icon: Landmark,
     description: "Atos administrativos, servidores, sanções e processos públicos",
-    tone: "from-ouro/10 to-ouro/0 text-ouro-profundo",
+    tone: "bg-ouro text-ouro-profundo",
   },
   licitacoes: {
     icon: FileCheck2,
     description: "Editais, propostas, contratos, sanções e reequilíbrio econômico",
-    tone: "from-amber-500/10 to-amber-500/0 text-amber-700",
+    tone: "bg-amber-500 text-amber-700",
   },
   bancario: {
     icon: Banknote,
     description: "Contratos bancários, CET, juros, cobranças e superendividamento",
-    tone: "from-success-500/10 to-success-500/0 text-success-700",
+    tone: "bg-success-500 text-success-700",
   },
   tributario: {
     icon: Receipt,
     description: "Autos, lançamentos, execução fiscal, defesas e planejamento",
-    tone: "from-orange-500/10 to-orange-500/0 text-orange-700",
+    tone: "bg-orange-500 text-orange-700",
   },
   ambiental: {
     icon: Leaf,
     description: "Licenciamento, autos, embargos, laudos e responsabilidades conexas",
-    tone: "from-green-500/10 to-green-500/0 text-green-700",
+    tone: "bg-green-500 text-green-700",
   },
   agrario: {
     icon: Sprout,
     description: "Posse rural, contratos agrários, regularização e conflitos fundiários",
-    tone: "from-lime-600/10 to-lime-600/0 text-lime-700",
+    tone: "bg-lime-600 text-lime-700",
   },
   agronegocio: {
     icon: BriefcaseBusiness,
     description: "Operações rurais, cadeias produtivas, crédito e contratos do agro",
-    tone: "from-emerald-600/10 to-emerald-600/0 text-emerald-700",
+    tone: "bg-emerald-600 text-emerald-700",
   },
   consumidor: {
     icon: Users,
     description: "Cobranças, vícios, serviços, negativação e responsabilidade do fornecedor",
-    tone: "from-teal-500/10 to-teal-500/0 text-teal-700",
+    tone: "bg-teal-500 text-teal-700",
   },
   familia: {
     icon: Baby,
     description: "Divórcio, união estável, guarda, convivência e alimentos",
-    tone: "from-rose-500/10 to-rose-500/0 text-rose-700",
+    tone: "bg-rose-500 text-rose-700",
   },
   sucessoes: {
     icon: BookOpenCheck,
     description: "Inventário, testamento, herdeiros, bens e partilha",
-    tone: "from-violet-500/10 to-violet-500/0 text-violet-700",
+    tone: "bg-violet-500 text-violet-700",
   },
   imobiliario: {
     icon: Home,
     description: "Locação, compra e venda, posse, usucapião e incorporação",
-    tone: "from-stone-500/10 to-stone-500/0 text-stone-700",
+    tone: "bg-stone-500 text-stone-700",
   },
   previdenciario: {
     icon: Shield,
     description: "INSS, benefícios, CNIS, PPP, perícias e revisões",
-    tone: "from-slate-500/10 to-slate-500/0 text-slate-700",
+    tone: "bg-slate-500 text-slate-700",
   },
   saude: {
     icon: HeartPulse,
     description: "Planos de saúde, SUS, tratamentos, negativas e tutelas urgentes",
-    tone: "from-pink-500/10 to-pink-500/0 text-pink-700",
+    tone: "bg-pink-500 text-pink-700",
   },
   medico: {
     icon: Stethoscope,
     description: "Responsabilidade médica, prontuários, consentimento e perícia",
-    tone: "from-cyan-500/10 to-cyan-500/0 text-cyan-700",
+    tone: "bg-cyan-500 text-cyan-700",
   },
   digital_lgpd: {
     icon: Database,
     description: "LGPD, incidentes, contratos digitais, provas e governança de dados",
-    tone: "from-sky-600/10 to-sky-600/0 text-sky-700",
+    tone: "bg-sky-600 text-sky-700",
   },
   transito: {
     icon: Car,
     description: "Multas, defesa prévia, JARI, CETRAN, suspensão e cassação",
-    tone: "from-blue-600/10 to-blue-600/0 text-blue-700",
+    tone: "bg-blue-600 text-blue-700",
   },
   constitucional: {
     icon: Scale,
     description: "Questões constitucionais, controle, repercussão geral e STF",
-    tone: "from-purple-600/10 to-purple-600/0 text-purple-700",
+    tone: "bg-purple-600 text-purple-700",
   },
   eleitoral: {
     icon: Vote,
     description: "Eleições, candidaturas, propaganda, contas e contencioso eleitoral",
-    tone: "from-fuchsia-600/10 to-fuchsia-600/0 text-fuchsia-700",
+    tone: "bg-fuchsia-600 text-fuchsia-700",
   },
   internacional: {
     icon: Globe,
     description: "Contratos internacionais, cooperação, tratados e comércio exterior",
-    tone: "from-primary-900/10 to-primary-900/0 text-primary-800",
+    tone: "bg-primary-900 text-primary-800 dark:bg-primary-400",
   },
 };
 
@@ -231,11 +243,11 @@ export default function RamosHub() {
   );
 
   return (
-    <Page className="surface-soft min-h-full px-6 py-8">
-      <div className="mx-auto max-w-7xl space-y-8">
-        <PageHeader className="rounded-[2rem] bg-white/70 p-6 shadow-[0_18px_60px_rgba(15,23,42,0.08)] backdrop-blur dark:bg-white/[0.03]">
+    <Page className="min-h-full px-6 py-6">
+      <div className="mx-auto max-w-7xl space-y-4">
+        <PageHeader className="rounded-xl border border-slate-200 bg-white p-4 dark:border-white/10 dark:bg-white/[0.03]">
           <div>
-            <Badge variant="gold" className="mb-3 gap-1">
+            <Badge variant="gold" className="mb-2 gap-1">
               <Handshake className="h-3 w-3" /> Especializações da Central de Casos
             </Badge>
             <PageTitle>Áreas de Atuação</PageTitle>
@@ -256,28 +268,48 @@ export default function RamosHub() {
             const visual = VISUAL[area.slug] || {
               icon: Scale,
               description: "Casos, documentos, jornadas e ferramentas pertinentes à área",
-              tone: "from-slate-500/10 to-slate-500/0 text-slate-700",
+              tone: "bg-slate-500 text-slate-700",
             };
             const Icon = visual.icon;
+            const hub = hubDoRamo(area.slug);
+            // Cor de texto do tom (segundo token) — pinta o ícone no chip flat.
+            const toneText = visual.tone.split(" ").find((c) => c.startsWith("text-")) || "";
+            // Card flat no idioma Verdelimp: borda 1px, raio 10px e barra
+            // superior de 3px chapada na cor da área (sem gradiente nem hover
+            // flutuante). Barra como faixa absoluta — o .card:hover repinta
+            // border-color e apagaria um border-top colorido.
             return (
-              <Card key={area.slug} className="group relative h-full overflow-hidden p-5 transition duration-200 hover:-translate-y-1 hover:shadow-[0_26px_70px_rgba(15,23,42,0.14)]">
-                <div className={`absolute inset-x-0 top-0 h-24 bg-gradient-to-b ${visual.tone}`} />
-                <div className="relative flex h-full flex-col gap-5">
+              <Card key={area.slug} padded={false} className="group relative h-full overflow-hidden rounded-[10px] p-4">
+                <div className={`absolute inset-x-0 top-0 h-[3px] ${visual.tone}`} aria-hidden="true" />
+                <div className="relative flex h-full flex-col gap-3">
                   <div className="flex items-start justify-between gap-3">
-                    <div className="grid h-11 w-11 place-items-center rounded-2xl bg-white/85 shadow-[0_10px_30px_rgba(15,23,42,0.08)] ring-1 ring-black/5 dark:bg-white/10">
+                    <div className={`grid h-10 w-10 place-items-center rounded-lg border border-slate-200 bg-slate-50 dark:border-white/10 dark:bg-white/10 ${toneText} dark:text-slate-200`}>
                       <Icon className="h-5 w-5" aria-hidden="true" />
                     </div>
                     <span className="rounded-full bg-slate-950/5 px-2.5 py-1 text-[10px] font-semibold uppercase tracking-[0.16em] text-slate-500 dark:bg-white/10 dark:text-slate-300">Área</span>
                   </div>
-                  <div className="space-y-2">
-                    <h2 className="text-base font-semibold text-slate-950 dark:text-slate-50">{area.nome}</h2>
-                    <p className="text-sm leading-6 text-slate-500 dark:text-slate-300">{visual.description}</p>
+                  <div className="space-y-1">
+                    <h2 className="text-[15px] font-bold text-slate-950 dark:text-slate-50">{area.nome}</h2>
+                    <p className="text-[13px] leading-5 text-slate-500 dark:text-slate-300">{visual.description}</p>
                   </div>
-                  <div className="mt-auto grid grid-cols-2 gap-2 pt-2">
-                    <Button variant="secondary" size="sm" onClick={() => navigate(`/casos?area=${encodeURIComponent(area.slug)}`)}>Ver casos</Button>
-                    <Button size="sm" onClick={() => navigate(`/casos/novo?modo=documento&area=${encodeURIComponent(area.slug)}`)}>
-                      <UploadCloud className="h-3.5 w-3.5" /> Importar
-                    </Button>
+                  <div className="mt-auto space-y-2 pt-2">
+                    {/* Ação primária: abre o hub do ramo (calculadoras, guias
+                        e súmulas) — antes só alcançável digitando a URL. */}
+                    {hub && (
+                      <Button
+                        size="sm"
+                        className="w-full"
+                        onClick={() => navigate(hub)}
+                      >
+                        <Wrench className="h-3.5 w-3.5" /> Abrir ferramentas do ramo
+                      </Button>
+                    )}
+                    <div className="grid grid-cols-2 gap-2">
+                      <Button variant="secondary" size="sm" onClick={() => navigate(`/casos?area=${encodeURIComponent(area.slug)}`)}>Ver casos</Button>
+                      <Button variant="secondary" size="sm" onClick={() => navigate(`/casos/novo?modo=documento&area=${encodeURIComponent(area.slug)}`)}>
+                        <UploadCloud className="h-3.5 w-3.5" /> Importar
+                      </Button>
+                    </div>
                   </div>
                 </div>
               </Card>

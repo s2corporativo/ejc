@@ -6,6 +6,7 @@
 # Jobs:
 #  06:55 — Briefing matinal por advogado (personalizado)
 #  07:00 — Morning Brief WhatsApp (consolidado do dia)
+#  07:10 — Marca prazos pendentes já vencidos (status='vencido') + alerta único
 #  07:15 — Alertas de prazos (7d/3d/1d)
 #  07:30 — SLA de etapas BPM (workflow) — vencidos + vésperas
 #  07:45 — SLA de solicitações registradas em atendimentos
@@ -127,6 +128,81 @@ async def _morning_brief():
         logger.info(f"[Brief] {prazos_3d} prazos 3d, {amb_criticas} amb críticas")
     except Exception as e:
         logger.error(f"[Scheduler] morning_brief: {e}")
+
+
+async def _marcar_prazos_vencidos():
+    """Marca prazos PENDENTES já vencidos (data_prazo < hoje) como
+    status='vencido' e dispara UMA notificação de "prazo vencido" ao
+    responsável. Roda 07:10, ANTES de `_alertar_prazos` (07:15).
+
+    Por que existia o bug: nada escrevia status='vencido', então a aba
+    "Vencidos" do frontend ficava sempre vazia e prazos já vencidos (ou criados
+    depois do horário do alerta) nunca eram alertados — `_alertar_prazos` só
+    cobre faixas com data_prazo >= hoje.
+
+    Idempotência SEM coluna nova: o SELECT só pega status='pendente' e o UPDATE
+    é condicional (WHERE status='pendente'), então a TRANSIÇÃO pendente→vencido
+    acontece uma única vez — na 2ª execução o prazo já é 'vencido' e sai do
+    filtro, logo o alerta NÃO se repete todo dia. Prazos concluídos/cancelados
+    ficam fora do filtro e nunca são tocados.
+
+    Isolamento por item (padrão de `_alertar_prazos`): commit por linha; a falha
+    de um destinatário é logada, sofre rollback e não aborta o lote. Limite
+    conhecido: `notificar()` COMMITA internamente ao gravar o sino
+    (criar_notificacao_interna), persistindo junto o UPDATE pendente→vencido;
+    se a falha ocorrer DEPOIS desse commit interno (ex.: canal externo), o
+    rollback não desfaz a transição e o alerta NÃO é retentado amanhã — só
+    falhas ANTES do primeiro commit preservam status='pendente' p/ retentativa.
+    """
+    from app.core.database import AsyncSessionLocal
+    from app.services.notification_service import notificar
+
+    try:
+        async with AsyncSessionLocal() as db:
+            hoje = date.today()
+            rows = await db.execute(text("""
+                SELECT d.id, d.titulo, d.data_prazo, d.responsavel_id, u.email, u.phone
+                FROM deadlines d
+                LEFT JOIN users u ON u.id = d.responsavel_id
+                WHERE d.status='pendente' AND d.deleted_at IS NULL
+                  AND d.data_prazo < :hoje
+            """), {"hoje": hoje})
+            for r in rows:
+                try:
+                    # Transição atômica pendente→vencido (WHERE status='pendente'
+                    # é a guarda de idempotência: 2ª passada não reencontra a linha).
+                    await db.execute(text("""
+                        UPDATE deadlines SET status='vencido', updated_at=now()
+                        WHERE id=:id AND status='pendente'
+                    """), {"id": r.id})
+                    if r.responsavel_id:
+                        venc = r.data_prazo.strftime('%d/%m/%Y')
+                        dias_atraso = (hoje - r.data_prazo).days
+                        # Dispatch unificado (prazo = mandatório): sino sempre,
+                        # canais externos conforme preferência/quiet hours.
+                        await notificar(
+                            db, r.responsavel_id,
+                            "🔴 Prazo VENCIDO",
+                            f"{r.titulo} venceu em {venc} (há {dias_atraso} dia(s))",
+                            tipo="prazo", link="/prazos",
+                            email=r.email or None,
+                            telefone=r.phone or None,
+                            email_assunto=f"[EJC] Prazo VENCIDO: {r.titulo}",
+                            email_corpo=(
+                                f"<p>O prazo <b>{r.titulo}</b> venceu em "
+                                f"<b>{venc}</b> (há {dias_atraso} dia(s)) e seguia "
+                                f"pendente.</p>"
+                                f"<p>Acesse o EJC para regularizar o quanto antes.</p>"
+                            ),
+                        )
+                    await db.commit()
+                except Exception as e:
+                    await db.rollback()
+                    logger.error(
+                        f"[Scheduler] marcar_prazos_vencidos falhou p/ deadline {r.id}: {e}"
+                    )
+    except Exception as e:
+        logger.error(f"[Scheduler] marcar_prazos_vencidos: {e}")
 
 
 async def _alertar_prazos():
@@ -258,6 +334,93 @@ async def _alertar_ambiental():
                     continue
     except Exception as e:
         logger.error(f"[Scheduler] alertar_ambiental: {e}")
+
+
+async def _alertar_audiencias_agenda():
+    """Lembrete de AUDIÊNCIAS lançadas na agenda (`agenda_eventos`, tipo='audiencia').
+
+    Gap coberto (auditoria): `_alertar_prazos` só varre `deadlines`; audiências
+    postas na agenda nunca disparavam lembrete. Alerta o responsável quando
+    faltam exatamente 3, 1 ou 0 dias para a audiência (sino sempre — 'audiencia'
+    é tipo mandatório; e-mail/WhatsApp conforme preferência/quiet hours).
+
+    Dedup SEM migration (não há coluna de flag em agenda_eventos e o gate proíbe
+    criar migration):
+      1. Gatilho por dias EXATOS {3,1,0}: como o job roda 1x/dia, cada audiência
+         cruza cada limiar num único run — no máximo um alerta por limiar.
+      2. Reforço via modelo `Notification` (padrão de `_alertar_ambiental`): se já
+         existe alerta idêntico (mesmo destinatário/tipo/link/mensagem) nas
+         últimas ~20h, não reenvia — protege contra restart do container ou
+         múltiplos disparos no mesmo dia.
+    Isolamento por item: a falha num evento é logada e o lote continua.
+    """
+    from datetime import datetime, timezone
+    from app.core.database import AsyncSessionLocal
+    from app.models.notification import Notification
+    from app.services.notification_service import notificar
+    try:
+        async with AsyncSessionLocal() as db:
+            hoje = date.today()
+            corte = datetime.now(timezone.utc) - timedelta(hours=20)
+            for dias in (3, 1, 0):
+                alvo = hoje + timedelta(days=dias)
+                rows = await db.execute(text("""
+                    SELECT e.id, e.titulo, e.data_evento, e.hora, e.local,
+                           e.responsavel_id, u.email, u.phone
+                    FROM agenda_eventos e
+                    LEFT JOIN users u ON u.id = e.responsavel_id
+                    WHERE e.tipo = 'audiencia' AND e.concluido = false
+                      AND e.deleted_at IS NULL
+                      AND e.data_evento = :alvo
+                      AND e.responsavel_id IS NOT NULL
+                """), {"alvo": alvo})
+                for r in rows:
+                    try:
+                        quando = "hoje" if dias == 0 else f"em {dias} dia(s)"
+                        hora_txt = f" às {r.hora}" if r.hora else ""
+                        local_txt = f" — {r.local}" if r.local else ""
+                        data_fmt = r.data_evento.strftime('%d/%m/%Y')
+                        mensagem = (
+                            f"Audiência {quando}: {r.titulo} "
+                            f"({data_fmt}{hora_txt}){local_txt}"
+                        )
+                        ja_notificado = await db.scalar(
+                            select(Notification.id).where(
+                                Notification.user_id == r.responsavel_id,
+                                Notification.tipo == "audiencia",
+                                Notification.link == "/atividades",
+                                Notification.mensagem == mensagem,
+                                Notification.created_at >= corte,
+                            ).limit(1)
+                        )
+                        if ja_notificado:
+                            continue
+                        await notificar(
+                            db, r.responsavel_id,
+                            f"⚖️ Audiência {quando}",
+                            mensagem,
+                            tipo="audiencia", link="/atividades",
+                            email=r.email or None,
+                            telefone=r.phone or None,
+                            email_assunto=f"[EJC] Audiência {quando}: {r.titulo}",
+                            email_corpo=(
+                                f"<p>Audiência <b>{r.titulo}</b> {quando} "
+                                f"(<b>{data_fmt}</b>{hora_txt}).{local_txt}</p>"
+                                f"<p>Acesse a Central de Atividades no EJC.</p>"
+                            ),
+                        )
+                    except Exception as e:
+                        # Rollback por item (padrão de _marcar_prazos_vencidos):
+                        # sem ele, a sessão fica em PendingRollbackError e os
+                        # eventos seguintes do lote falhariam em cascata.
+                        await db.rollback()
+                        logger.error(
+                            "[Scheduler] alertar_audiencias_agenda falhou p/ "
+                            f"evento {getattr(r, 'id', '?')}: {e}"
+                        )
+                        continue
+    except Exception as e:
+        logger.error(f"[Scheduler] alertar_audiencias_agenda: {e}")
 
 
 async def _alertar_prescricao():
@@ -953,6 +1116,25 @@ async def _purgar_logs_ia():
 
 # ── Start/Stop ────────────────────────────────────────────────────────────────
 
+async def _reembedar_rag_orfaos():
+    """Auto-reindex do RAG (auditoria IA 2026-07-17, O-2): reembeda chunks órfãos
+    (embedding IS NULL) para que a troca de modelo/dimensão do embedding
+    (migration 096) se AUTO-CURE, sem exigir o script manual no deploy. Gate
+    RAG_AUTO_REEMBED_ENABLED (default True). No-op rápido quando não há órfãos;
+    fail-safe (erro vira warning e é retentado na próxima execução)."""
+    if not getattr(settings, "RAG_AUTO_REEMBED_ENABLED", True):
+        return
+    try:
+        from app.services.embedding_service import disponivel as _emb_on
+        if not _emb_on():
+            logger.info("[Scheduler] auto-reembed pulado: embeddings indisponíveis")
+            return
+        from scripts.reembedar_chunks_orfaos import reembedar
+        await reembedar(batch_size=int(getattr(settings, "RAG_AUTO_REEMBED_BATCH", 20)))
+    except Exception as e:  # nunca derruba o scheduler
+        logger.warning("[Scheduler] auto-reembed falhou (será retentado): %s", str(e)[:200])
+
+
 def start_scheduler():
     """Inicia jobs APENAS se ENABLE_SCHEDULER=true (evita duplicação)."""
     if not settings.ENABLE_SCHEDULER:
@@ -963,7 +1145,9 @@ def start_scheduler():
         return
 
     s.add_job(_morning_brief,       CronTrigger(hour=7,  minute=0),  id="brief",       replace_existing=True)
+    s.add_job(_marcar_prazos_vencidos, CronTrigger(hour=7, minute=10), id="prazos_vencidos", replace_existing=True)
     s.add_job(_alertar_prazos,      CronTrigger(hour=7,  minute=15), id="prazos",      replace_existing=True)
+    s.add_job(_alertar_audiencias_agenda, CronTrigger(hour=7, minute=20), id="audiencias_agenda", replace_existing=True)
     s.add_job(_verificar_sla_workflows, CronTrigger(hour=7, minute=30), id="workflow_sla", replace_existing=True)
     s.add_job(_alertar_solicitacoes_clientes, CronTrigger(hour=7, minute=45), id="solicitacoes_clientes", replace_existing=True)
     s.add_job(_briefing_matinal_advogado, CronTrigger(hour=6, minute=55), id="briefing_adv", replace_existing=True)
@@ -983,6 +1167,11 @@ def start_scheduler():
     s.add_job(job_ingestao_planalto, CronTrigger(day_of_week="sun", hour=3), id="ing_planalto", replace_existing=True)
     s.add_job(job_ingestao_stj,      CronTrigger(day_of_week="sat", hour=3), id="ing_stj",      replace_existing=True)
     s.add_job(_purgar_logs_ia,    CronTrigger(day_of_week="sun", hour=2),  id="purga_ia",   replace_existing=True)
+    # Auto-reindex do RAG (O-2): reembeda chunks órfãos de hora em hora (:20).
+    # Self-heal da troca de embedding (migration 096) sem passo manual. No-op
+    # quando não há órfãos; max_instances=1 evita sobreposição na 1ª carga grande.
+    s.add_job(_reembedar_rag_orfaos, CronTrigger(minute=20), id="reembed_rag_orfaos",
+              replace_existing=True, max_instances=1, coalesce=True)
     s.add_job(_purgar_dados_lgpd, CronTrigger(day_of_week="sun", hour=2, minute=30), id="purga_lgpd", replace_existing=True)
     s.add_job(job_ingestao_camara,   CronTrigger(hour=4, minute=0),          id="ing_camara",   replace_existing=True)
     s.add_job(job_ingestao_senado,   CronTrigger(hour=4, minute=20),         id="ing_senado",   replace_existing=True)
@@ -1201,7 +1390,6 @@ async def _alertar_contratos():
     from app.services.notification_service import criar_notificacao_interna
     try:
         async with AsyncSessionLocal() as db:
-            hoje = date.today()
             rows = (await db.execute(text("""
                 SELECT c.id, c.titulo, c.data_fim,
                        COALESCE(c.created_by, cs.advogado_responsavel_id) AS responsavel_id
@@ -1289,7 +1477,6 @@ async def _auditoria_processos():
             hoje = date.today()
             limite_30 = hoje - timedelta(days=30)
             limite_60 = hoje - timedelta(days=60)
-            limite_90 = hoje - timedelta(days=90)
 
             # 1. Casos sem movimentação DataJud há 30+ dias
             rows_mov = (await db.execute(text("""

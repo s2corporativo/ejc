@@ -28,9 +28,9 @@ export default function PortalLayout() {
   const { user } = useAuth();
   return (
     <div className="ejc-modern-scope min-h-screen bg-canvas">
-      {/* Header claro premium: superfície branca, hairline dourada sutil,
+      {/* Header claro flat: superfície branca opaca com borda 1px,
           logo transparente maior e abas com filete dourado fino. */}
-      <header className="border-b border-black/[0.05] bg-white/95 shadow-sm backdrop-blur-xl">
+      <header className="border-b border-slate-200 bg-white">
         <div className="max-w-4xl mx-auto px-4 py-3 flex items-center justify-between">
           <div className="flex items-center gap-3">
             <img

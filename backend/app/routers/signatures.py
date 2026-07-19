@@ -148,7 +148,12 @@ async def listar(
             "client_id": s.client_id,
             "signatarios": [_signatario(u, s)
                             for u in por_cliente.get(s.client_id, [])],
-            "status": s.status.value, "hash": s.hash_sha256[:16] + "…",
+            "status": s.status.value,
+            # `hash` abreviado mantido por compatibilidade; `hash_completo`
+            # permite conferência de integridade. Sem risco novo: para
+            # cliente_externo a query já filtra por client_id acima.
+            "hash": s.hash_sha256[:16] + "…",
+            "hash_completo": s.hash_sha256,
             "assinado_em": s.assinado_em, "created_at": s.created_at,
         })
     return {"data": out}

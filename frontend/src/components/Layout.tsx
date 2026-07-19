@@ -27,6 +27,9 @@ import {
 import CaseContextBar from "./CaseContextBar";
 import CommandPalette from "./CommandPalette";
 import HelpButton from "./HelpButton";
+import IaStatusBanner from "./IaStatusBanner";
+import { useIaStatus } from "../lib/iaStatus";
+import { ROTULO_IA_NAO_ATIVADA } from "../lib/iaErro";
 import OnboardingTour from "./OnboardingTour";
 import ModuleLifecycleGate from "./ModuleLifecycleGate";
 import { useModuleLifecycleStore } from "../stores/moduleLifecycle";
@@ -39,6 +42,7 @@ import { THEME_LABELS, useThemeStore } from "../stores/theme";
 import { useAuth } from "../stores/auth";
 import { usePreferencesStore } from "../stores/preferences";
 import {
+  ROLES,
   getHelpModuleKey,
   getNavigationModules,
   type ModuleRoute,
@@ -54,7 +58,11 @@ const BRAND_LOGO = "/brand/logo-hd.png";
 
 export default function Layout() {
   const { theme, cycleTheme } = useThemeStore();
+  const { disponivel: iaDisponivel } = useIaStatus();
   const user = useAuth((state) => state.user);
+  const canCreateCase = Boolean(
+    user?.role && (ROLES.clientes as readonly string[]).includes(user.role),
+  );
   const lifecycleSettings = useModuleLifecycleStore(
     (state) => state.settings,
   );
@@ -187,8 +195,8 @@ export default function Layout() {
         title={collapsed ? undefined : description}
         className={({ isActive }) =>
           cn(
-            "sidebar-nav-item group flex items-center gap-3 rounded-xl px-3 text-sm font-medium transition-all duration-150",
-            collapsed ? "h-10 justify-center px-0" : "py-2",
+            "sidebar-nav-item group flex items-center gap-2.5 rounded-lg px-3 text-[13px] font-medium transition-all duration-150",
+            collapsed ? "h-9 justify-center px-0" : "py-1.5",
             isActive && "is-active",
           )
         }
@@ -198,7 +206,7 @@ export default function Layout() {
           <span className="min-w-0 flex-1">
             <span className="block truncate leading-tight">{label}</span>
             {description && (
-              <span className="mt-0.5 block line-clamp-1 text-[11px] font-normal leading-tight text-[rgba(255,245,230,0.5)]">
+              <span className="mt-0.5 block line-clamp-1 text-[11px] font-normal leading-tight text-slate-400">
                 {description}
               </span>
             )}
@@ -223,7 +231,7 @@ export default function Layout() {
       <div className="brand-watermark" aria-hidden="true" />
       <CommandPalette />
 
-      <header className="fixed inset-x-0 top-0 z-50 border-b border-slate-200/60 bg-white/90 backdrop-blur-xl">
+      <header className="fixed inset-x-0 top-0 z-50 border-b border-slate-200 bg-white">
         <div className="flex h-16 items-center gap-3 px-3 md:px-6">
           <button
             type="button"
@@ -267,7 +275,8 @@ export default function Layout() {
               (/casos/novo) com dois modos de entrada (analisar documento |
               cadastro manual), selecionados por query param `modo` — sem
               criar rota nova. */}
-          <div ref={novoCasoRef} className="relative hidden lg:inline-flex">
+          {canCreateCase && (
+          <div ref={novoCasoRef} className="relative inline-flex">
             <Button
               type="button"
               size="md"
@@ -275,9 +284,10 @@ export default function Layout() {
               onClick={() => setNovoCasoOpen((value) => !value)}
               aria-haspopup="menu"
               aria-expanded={novoCasoOpen}
+              aria-label="Novo caso"
             >
-              Novo caso
-              <ChevronDown className="h-4 w-4" />
+              <span className="hidden lg:inline">Novo caso</span>
+              <ChevronDown className="hidden h-4 w-4 lg:block" />
             </Button>
             {novoCasoOpen && (
               <div
@@ -320,6 +330,7 @@ export default function Layout() {
               </div>
             )}
           </div>
+          )}
 
           <HelpButton moduleKey={moduleKey} />
 
@@ -355,7 +366,7 @@ export default function Layout() {
             </button>
 
             {notifOpen && (
-              <div className="absolute right-0 mt-2 w-80 overflow-hidden rounded-xl border border-black/[0.05] bg-white shadow-xl">
+              <div className="absolute right-0 mt-2 w-80 overflow-hidden rounded-xl border border-slate-200 bg-white shadow-md">
                 <div className="flex items-center justify-between border-b border-slate-100 px-4 py-3">
                   <div className="text-sm font-semibold text-slate-950">
                     Notificações
@@ -412,7 +423,7 @@ export default function Layout() {
       {menuOpen && (
         <button
           type="button"
-          className="fixed inset-0 z-30 bg-slate-950/45 backdrop-blur-sm md:hidden"
+          className="fixed inset-0 z-30 bg-slate-950/45 md:hidden"
           aria-label="Fechar menu"
           onClick={() => setMenuOpen(false)}
         />
@@ -433,17 +444,17 @@ export default function Layout() {
         >
           {!collapsed && (
             <div className="min-w-0 flex-1">
-              <div className="truncate text-[11px] font-semibold uppercase tracking-[0.18em] text-[#E5CE7F]">
+              <div className="truncate text-[11px] font-semibold uppercase tracking-[0.18em] text-[#8a6d2f]">
                 De Paula Teixeira
               </div>
-              <div className="mt-0.5 truncate text-[10px] text-[rgba(255,245,230,0.5)]">
+              <div className="mt-0.5 truncate text-[10px] text-slate-400">
                 Sociedade de Advogados
               </div>
             </div>
           )}
           <button
             type="button"
-            className="hidden rounded-lg p-1.5 text-[rgba(255,245,230,0.55)] hover:bg-[rgba(166,124,82,0.2)] hover:text-[#F5EDD2] md:block"
+            className="hidden rounded-lg p-1.5 text-slate-400 hover:bg-slate-100 hover:text-slate-700 md:block"
             onClick={() => setSidebarCollapsed(!collapsed)}
             aria-label={collapsed ? "Expandir menu" : "Recolher menu"}
           >
@@ -455,7 +466,7 @@ export default function Layout() {
           </button>
           <button
             type="button"
-            className="rounded-lg p-1.5 text-[rgba(255,245,230,0.55)] hover:bg-[rgba(166,124,82,0.2)] hover:text-[#F5EDD2] md:hidden"
+            className="rounded-lg p-1.5 text-slate-400 hover:bg-slate-100 hover:text-slate-700 md:hidden"
             onClick={() => setMenuOpen(false)}
             aria-label="Fechar menu"
           >
@@ -544,43 +555,45 @@ export default function Layout() {
             ))}
         </nav>
 
-        <div className="border-t border-[rgba(255,245,230,0.12)] p-3">
+        <div className="border-t border-slate-200 p-3">
           {!collapsed && (
-            <div className="mb-2 flex items-center gap-2.5 rounded-xl bg-[rgba(255,245,230,0.06)] px-3 py-2.5 ring-1 ring-inset ring-[rgba(255,245,230,0.1)]">
+            <div className="mb-2 flex items-center gap-2.5 rounded-xl bg-slate-50 px-3 py-2.5 ring-1 ring-inset ring-slate-200">
               <ShieldCheck className="h-4 w-4 shrink-0 text-[#D4AF37]" />
               <div className="min-w-0">
-                <div className="truncate text-[11px] font-semibold text-[#F5EDD2]">
+                <div className="truncate text-[11px] font-semibold text-slate-700">
                   Seguro &amp; Conforme
                 </div>
-                <div className="truncate text-[10px] text-[rgba(255,245,230,0.55)]">
+                <div className="truncate text-[10px] text-slate-400">
                   Dados protegidos — LGPD
                 </div>
               </div>
             </div>
           )}
-          <div
+          <Link
+            to="/configuracoes"
+            title="Abrir preferências"
             className={cn(
-              "flex items-center gap-3 rounded-xl bg-[rgba(255,245,230,0.06)] p-2",
+              "flex items-center gap-3 rounded-xl bg-slate-50 p-2",
               collapsed && "justify-center",
             )}
           >
             <UserAvatar user={user} size="md" />
             {!collapsed && (
               <div className="min-w-0 flex-1">
-                <div className="truncate text-xs font-semibold text-[#F5EDD2]">
+                <div className="truncate text-xs font-semibold text-slate-700">
                   {user?.full_name || "Usuário"}
                 </div>
-                <div className="truncate text-[11px] capitalize text-[rgba(255,245,230,0.55)]">
+                <div className="truncate text-[11px] capitalize text-slate-400">
                   {user?.role || ""}
                 </div>
               </div>
             )}
-          </div>
+          </Link>
           <button
             type="button"
             onClick={logout}
             className={cn(
-              "mt-2 flex h-10 w-full items-center gap-3 rounded-xl px-3 text-sm font-medium text-[rgba(255,245,230,0.65)] transition-colors hover:bg-danger-600/25 hover:text-[#F8B9BC]",
+              "mt-2 flex h-10 w-full items-center gap-3 rounded-xl px-3 text-sm font-medium text-slate-500 transition-colors hover:bg-danger-600/10 hover:text-danger-600",
               collapsed && "justify-center px-0",
             )}
             aria-label="Sair"
@@ -597,6 +610,8 @@ export default function Layout() {
           contentMargin,
         )}
       >
+        {/* Aviso global: IA não ativada nesta instalação (dispensável). */}
+        <IaStatusBanner />
         {/* Modo Caso: faixa fina de contexto do caso ativo (discreta). */}
         <CaseContextBar />
         <main className="ejc-modern-scope flex-1 px-4 py-5 md:px-7 md:py-7">
@@ -609,13 +624,26 @@ export default function Layout() {
       </div>
 
       <OnboardingTour />
-      <Link
-        to="/inteligencia?tab=assistente"
-        className="fixed bottom-5 right-5 z-30 hidden h-12 w-12 items-center justify-center rounded-2xl bg-ai-600 text-white shadow-lg shadow-ai-600/25 hover:bg-ai-700 md:flex"
-        aria-label="Assistente IA"
-      >
-        <Bot className="h-5 w-5" />
-      </Link>
+      {iaDisponivel ? (
+        <Link
+          to="/inteligencia?tab=assistente"
+          className="fixed bottom-5 right-5 z-30 hidden h-12 w-12 items-center justify-center rounded-xl bg-ai-600 text-white shadow-md hover:bg-ai-700 md:flex"
+          aria-label="Assistente IA"
+        >
+          <Bot className="h-5 w-5" />
+        </Link>
+      ) : (
+        <button
+          type="button"
+          disabled
+          title={ROTULO_IA_NAO_ATIVADA}
+          aria-label={`Assistente IA — ${ROTULO_IA_NAO_ATIVADA}`}
+          className="fixed bottom-5 right-5 z-30 hidden h-12 w-12 cursor-not-allowed items-center justify-center rounded-xl bg-slate-300 text-white shadow-md md:flex dark:bg-slate-700"
+        >
+          <Bot className="h-5 w-5" />
+        </button>
+      )}
     </div>
   );
 }
+

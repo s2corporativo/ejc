@@ -11,7 +11,7 @@ import {
   Modal,
   Empty,
   EmptyState,
-  Spinner,
+  SkeletonTable,
   fmtDate,
   Alert,
   Badge,
@@ -172,7 +172,7 @@ export default function Clientes() {
           }
         />
       ) : !data ? (
-        <Spinner />
+        <SkeletonTable rows={6} cols={6} />
       ) : data.data.length === 0 ? (
         <Empty
           titulo="Nenhum cliente cadastrado"

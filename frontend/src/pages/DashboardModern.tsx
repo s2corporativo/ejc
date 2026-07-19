@@ -4,34 +4,24 @@ import {
   AlertTriangle,
   ArrowRight,
   BarChart3,
-  Bell,
   Bot,
   Briefcase,
   CalendarClock,
   CheckCircle2,
   ChevronDown,
   Clock,
-  DollarSign,
-  FileSignature,
   FileText,
   FileUp,
-  FolderOpen,
   Gavel,
-  GitBranch,
   Headset,
   ListChecks,
   MessageSquare,
-  Newspaper,
   PenLine,
   Scale,
   ScanSearch,
-  ScrollText,
-  ShieldAlert,
   ShieldCheck,
   Sparkles,
   Users,
-  Wallet,
-  X,
 } from "lucide-react";
 import api from "../lib/api";
 import { asList } from "../lib/list";
@@ -55,8 +45,22 @@ import {
   fmtMoney,
 } from "../components/UI";
 
-const FINANCE_ROLES = new Set(["superadmin", "admin", "socio", "financeiro"]);
 const MANAGER_ROLES = new Set(["superadmin", "admin", "socio"]);
+const CASE_CREATOR_ROLES = new Set([
+  "superadmin",
+  "admin",
+  "socio",
+  "advogado",
+  "secretaria",
+]);
+const LEGAL_ROLES = new Set([
+  "superadmin",
+  "admin",
+  "socio",
+  "advogado",
+  "advogado_auxiliar",
+  "estagiario",
+]);
 const CRM_ROLES = new Set([
   "superadmin",
   "admin",
@@ -78,6 +82,38 @@ const PRIORITY_CHIP_TONE: Record<"red" | "amber" | "blue", string> = {
   red: "bg-danger-50 text-danger-700 ring-danger-200 hover:bg-danger-100",
   amber: "bg-warn-50 text-warn-700 ring-warn-200 hover:bg-warn-100",
   blue: "bg-primary-50 text-primary-700 ring-primary-200 hover:bg-primary-100",
+};
+
+// Tons do destaque "Próxima ação recomendada" (wrap + selo + CTA + textos).
+const NEXT_ACTION_TONE: Record<
+  "red" | "amber",
+  {
+    wrap: string;
+    badge: string;
+    cta: string;
+    eyebrow: string;
+    title: string;
+    desc: string;
+  }
+> = {
+  red: {
+    wrap: "border-danger-200 bg-danger-50 dark:border-danger-500/25 dark:bg-danger-500/10",
+    badge:
+      "bg-danger-100 text-danger-700 ring-danger-200 dark:bg-danger-500/15 dark:text-danger-200 dark:ring-danger-500/30",
+    cta: "bg-danger-600 text-white hover:bg-danger-700",
+    eyebrow: "text-danger-700 dark:text-danger-300",
+    title: "text-danger-900 dark:text-danger-100",
+    desc: "text-danger-700 dark:text-danger-300/80",
+  },
+  amber: {
+    wrap: "border-warn-200 bg-warn-50 dark:border-warn-500/25 dark:bg-warn-500/10",
+    badge:
+      "bg-warn-100 text-warn-700 ring-warn-200 dark:bg-warn-500/15 dark:text-warn-200 dark:ring-warn-500/30",
+    cta: "bg-warn-600 text-white hover:bg-warn-700",
+    eyebrow: "text-warn-700 dark:text-warn-300",
+    title: "text-warn-900 dark:text-warn-100",
+    desc: "text-warn-700 dark:text-warn-300/80",
+  },
 };
 
 const AREA_TONES: Record<string, string> = {
@@ -124,8 +160,8 @@ function DeadlineBars({
               className={cn(
                 "w-full rounded-lg transition-all duration-300",
                 index === 0 && point.value > 0
-                  ? "bg-gradient-to-t from-danger-600 to-danger-400"
-                  : "bg-gradient-to-t from-primary-800 via-primary-600 to-primary-400",
+                  ? "bg-danger-500"
+                  : "bg-primary-600",
               )}
               style={{ height: `${Math.max(8, (point.value / max) * 100)}%` }}
               aria-label={`${point.label}: ${point.value} prazo(s)`}
@@ -147,33 +183,24 @@ export default function DashboardModern() {
   const [prazos, setPrazos] = useState<any[]>([]);
   const [movimentos, setMovimentos] = useState<any[]>([]);
   const [casos, setCasos] = useState<any[]>([]);
-  // Blocos incorporados dos antigos DashboardIA e FinanceiroDashboard.
+  // Bloco incorporado do antigo DashboardIA.
   const [iaSaude, setIaSaude] = useState<any>(null);
-  const [consolidado, setConsolidado] = useState<any>(null);
   const [solicitacoes, setSolicitacoes] = useState<any>(null);
   const [loading, setLoading] = useState(true);
-  // Card "Comece aqui" (first-run): guiado por flag local, dismissível.
-  const [comeceAqui, setComeceAqui] = useState(
-    () => !localStorage.getItem("ejc_comece_aqui_done"),
-  );
-  const dispensarComeceAqui = () => {
-    localStorage.setItem("ejc_comece_aqui_done", "1");
-    setComeceAqui(false);
-  };
-  // "Gestão do escritório": widgets analíticos/gerenciais e financeiros,
-  // recolhidos por padrão para priorizar o operacional do dia do advogado.
+  // "Gestão do escritório": widgets analíticos/gerenciais, recolhidos por
+  // padrão para priorizar o operacional do dia do advogado.
   const [gestaoOpen, setGestaoOpen] = useState(false);
+  const [moreActionsOpen, setMoreActionsOpen] = useState(false);
 
   const currentUser = user as any;
   const firstName = currentUser?.full_name?.split(" ")[0] || "Dr.";
-  const canSeeFinance = FINANCE_ROLES.has(currentUser?.role || "");
   const isManager = MANAGER_ROLES.has(currentUser?.role || "");
   const canSeeCRM = CRM_ROLES.has(currentUser?.role || "");
+  const canCreateCase = CASE_CREATOR_ROLES.has(currentUser?.role || "");
+  const canUseLegalAI = LEGAL_ROLES.has(currentUser?.role || "");
 
   useEffect(() => {
     setLoading(true);
-    const now = new Date();
-    const competencia = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}`;
     Promise.allSettled([
       api.get("/dashboard/"),
       // /jurimetria/overview é restrito a sócio+ (403 para advogado/financeiro/
@@ -189,24 +216,12 @@ export default function DashboardModern() {
       isManager
         ? api.get("/ia-saude/dashboard?dias=30")
         : Promise.reject(new Error("sem permissão de gestão")),
-      canSeeFinance
-        ? api.get(`/financeiro/consolidado?competencia=${competencia}`)
-        : Promise.reject(new Error("sem permissão financeira")),
       canSeeCRM
         ? api.get("/atendimentos/solicitacoes-resumo")
         : Promise.reject(new Error("sem permissão de CRM")),
     ])
       .then(
-        ([
-          dash,
-          juri,
-          deadlines,
-          movements,
-          cases,
-          ia,
-          fin,
-          solicitacoesReq,
-        ]) => {
+        ([dash, juri, deadlines, movements, cases, ia, solicitacoesReq]) => {
           if (dash.status === "fulfilled") setDashboard(dash.value.data);
           if (juri.status === "fulfilled") setJurimetria(juri.value.data);
           if (deadlines.status === "fulfilled")
@@ -215,13 +230,12 @@ export default function DashboardModern() {
             setMovimentos(asList(movements.value.data));
           if (cases.status === "fulfilled") setCasos(asList(cases.value.data));
           if (ia.status === "fulfilled") setIaSaude(ia.value.data);
-          if (fin.status === "fulfilled") setConsolidado(fin.value.data);
           if (solicitacoesReq.status === "fulfilled")
             setSolicitacoes(solicitacoesReq.value.data);
         },
       )
       .finally(() => setLoading(false));
-  }, [canSeeCRM, canSeeFinance, isManager]);
+  }, [canSeeCRM, isManager]);
 
   const criticalDeadlines = prazos.filter(
     (deadline) => (deadline.dias_restantes ?? 99) <= 3,
@@ -295,39 +309,67 @@ export default function DashboardModern() {
     jurimetria?.taxa_sucesso_geral != null
       ? Math.round(jurimetria.taxa_sucesso_geral * 100)
       : null;
-  const pendingFees =
-    dashboard?.financeiro?.pendente ??
-    dashboard?.financeiro?.honorarios_pendentes;
-  const monthlyRevenue =
-    dashboard?.financeiro?.honorarios_mes ?? dashboard?.financeiro?.receita_mes;
 
-  // As 4 ações principais do Command Center (documento IA · manual · Raio-X ·
-  // atendimento) vêm primeiro como `primary`; as demais seguem como atalhos.
-  const quickActions = [
-    {
-      to: NOVO_CASO_DOCUMENTO_PATH,
-      label: "Novo caso por documento",
-      icon: FileUp,
-      primary: true,
-    },
-    {
-      to: NOVO_CASO_MANUAL_PATH,
-      label: "Novo caso manual",
-      icon: PenLine,
-      primary: true,
-    },
-    { to: "/raio-x", label: "Analisar processo externo", icon: ScanSearch, primary: true },
-    {
-      to: "/atividades?tab=relacionamento",
-      label: "Registrar atendimento",
-      icon: Headset,
-      primary: true,
-    },
-    { to: "/clientes", label: "Novo cliente", icon: Users },
-    { to: "/pecas", label: "Gerar peça", icon: FileText },
-    { to: "/inteligencia", label: "Analisar com IA", icon: Sparkles },
-    { to: "/ramos", label: "Áreas de Atuação", icon: Scale },
+  // No máximo quatro ações primárias por perfil. Atalhos secundários ficam
+  // recolhidos em "Mais ações" para reduzir escolhas simultâneas e impedir
+  // navegação para recursos que o perfil não pode executar.
+  const primaryActions = [
+    ...(canCreateCase
+      ? [
+          {
+            to: NOVO_CASO_DOCUMENTO_PATH,
+            label: "Novo caso por documento",
+            icon: FileUp,
+          },
+          {
+            to: NOVO_CASO_MANUAL_PATH,
+            label: "Novo caso manual",
+            icon: PenLine,
+          },
+        ]
+      : []),
+    ...(canUseLegalAI
+      ? [
+          {
+            to: "/raio-x",
+            label: "Analisar processo externo",
+            icon: ScanSearch,
+          },
+        ]
+      : []),
+    ...(canSeeCRM
+      ? [
+          {
+            to: "/atividades?tab=relacionamento",
+            label: "Registrar atendimento",
+            icon: Headset,
+          },
+        ]
+      : []),
+  ].slice(0, 4);
+
+  const secondaryActions = [
+    ...(canCreateCase
+      ? [{ to: "/clientes", label: "Novo cliente", icon: Users }]
+      : []),
+    ...(canUseLegalAI
+      ? [
+          { to: "/pecas", label: "Gerar peça", icon: FileText },
+          { to: "/inteligencia", label: "Analisar com IA", icon: Sparkles },
+          { to: "/ramos", label: "Áreas de Atuação", icon: Scale },
+        ]
+      : []),
   ];
+
+  const visiblePrimaryActions = primaryActions.length
+    ? primaryActions
+    : [
+        {
+          to: "/atividades",
+          label: "Abrir agenda e prazos",
+          icon: CalendarClock,
+        },
+      ];
 
   // Faixa "Prioridades de hoje": o que exige atenção AGORA, como atalhos.
   // Usa dados já carregados; só mostra o que tem contagem > 0. `clientes
@@ -344,7 +386,7 @@ export default function DashboardModern() {
       key: "prazos",
       count: criticalDeadlines.length,
       label: "prazos críticos",
-      to: "/prazos",
+      to: "/atividades?tipo=prazo",
       tone: "red",
       icon: AlertTriangle,
     },
@@ -371,102 +413,81 @@ export default function DashboardModern() {
   ];
   const activePriorities = priorityItems.filter((item) => item.count > 0);
 
+  // "Próxima ação recomendada": UM único item, o mais urgente, derivado só de
+  // dados já carregados. Prioridade: prazo crítico/vencido → prazo de hoje →
+  // cliente aguardando resposta → nada (estado calmo). Sem fonte, retorna null.
+  type NextAction = {
+    tone: "red" | "amber";
+    icon: typeof AlertTriangle;
+    eyebrow: string;
+    title: string;
+    desc: string;
+    cta: string;
+    to: string;
+  };
+  const nextAction = useMemo<NextAction | null>(() => {
+    // 1) Prazo crítico/vencido (inclui "vence hoje"), o de menor folga.
+    const critical = [...prazos]
+      .filter((deadline) => (deadline.dias_restantes ?? 99) <= 3)
+      .sort(
+        (a, b) => (a.dias_restantes ?? 99) - (b.dias_restantes ?? 99),
+      )[0];
+    if (critical) {
+      const days = critical.dias_restantes ?? 0;
+      return {
+        tone: "red",
+        icon: AlertTriangle,
+        eyebrow:
+          days < 0
+            ? "Prazo vencido"
+            : days === 0
+              ? "Prazo vence hoje"
+              : `Prazo crítico · ${days} dia(s)`,
+        title: critical.titulo || "Prazo sem título",
+        desc: critical.case_title
+          ? `${critical.case_title} — vence ${fmtDate(critical.data_prazo)}. Confirme a ciência e registre a providência.`
+          : `Vence ${fmtDate(critical.data_prazo)}. Confirme a ciência e registre a providência.`,
+        cta: "Ver e confirmar",
+        to: "/atividades?tipo=prazo",
+      };
+    }
+    // 2) Cliente aguardando resposta (só quem enxerga o CRM).
+    if (canSeeCRM && Number(solicitacoes?.pendentes ?? 0) > 0) {
+      const pending = Number(solicitacoes?.pendentes ?? 0);
+      const late = Number(solicitacoes?.atrasadas ?? 0);
+      return {
+        tone: "amber",
+        icon: MessageSquare,
+        eyebrow: late > 0 ? `${late} atrasada(s)` : "Cliente aguardando",
+        title: `${pending} solicitação(ões) de cliente pendente(s)`,
+        desc:
+          late > 0
+            ? "Abra a linha do tempo prioritária, responda e registre o atendimento."
+            : "Responda e registre o atendimento na linha do tempo prioritária.",
+        cta: "Responder",
+        to: solicitacoes?.destaque?.client_id
+          ? `/clientes/${solicitacoes.destaque.client_id}?tab=atendimentos`
+          : "/atividades?tab=relacionamento",
+      };
+    }
+    // 3) Nada urgente → estado calmo (renderizado no JSX).
+    return null;
+  }, [prazos, canSeeCRM, solicitacoes]);
+  const NextActionIcon = nextAction?.icon;
+
   return (
-    <div className="space-y-6">
+    <div className="space-y-4">
       <PageHeader
-        eyebrow="Painel executivo"
+        eyebrow="Meu dia"
         title={`Bom trabalho, ${firstName}`}
-        subtitle="Visão consolidada da operação jurídica, com foco em prazos, carteira, produtividade e segurança decisória."
+        subtitle="Prioridades, agenda e casos recentes para trabalhar com tranquilidade."
         actions={<ThemeSelector className="w-full sm:min-w-[330px]" />}
       />
-
-      {/* Card "Comece aqui" — first-run guiado (3 passos), dismissível. */}
-      {comeceAqui && (
-        <section
-          aria-label="Comece por aqui"
-          className="relative overflow-hidden rounded-2xl border border-ouro/30 bg-gradient-to-br from-ouro-palha/70 via-white to-white p-5 shadow-sm dark:border-ouro/20 dark:from-white/[0.05] dark:via-white/[0.02] dark:to-transparent"
-        >
-          <button
-            type="button"
-            onClick={dispensarComeceAqui}
-            aria-label="Dispensar guia de primeiros passos"
-            className="absolute right-3 top-3 rounded-lg p-1.5 text-slate-400 transition-colors hover:bg-slate-900/[0.05] hover:text-slate-600 dark:hover:bg-white/10"
-          >
-            <X className="h-4 w-4" />
-          </button>
-
-          <div className="mb-1 flex flex-wrap items-center gap-2">
-            <Sparkles className="h-4 w-4 text-ouro" />
-            <h2 className="text-sm font-semibold text-slate-900 dark:text-slate-100">
-              Comece por aqui
-            </h2>
-            <Badge tone="ouro">Primeiros passos</Badge>
-          </div>
-          <p className="mb-4 max-w-2xl text-sm text-slate-600 dark:text-slate-300">
-            Três passos para se ambientar no EJC. Você pode dispensar quando
-            quiser.
-          </p>
-
-          <div className="grid gap-3 sm:grid-cols-3">
-            {[
-              {
-                n: 1,
-                to: "/casos/novo",
-                label: "Criar seu primeiro caso",
-                desc: "Cadastro guiado: cliente e dados básicos do caso.",
-                icon: Gavel,
-              },
-              {
-                n: 2,
-                to: "/prazos",
-                label: "Cadastrar um prazo",
-                desc: "Acompanhe vencimentos e confirmações de ciência.",
-                icon: CalendarClock,
-              },
-              {
-                n: 3,
-                to: "/pecas",
-                label: "Gerar uma peça",
-                desc: "Produza documentos com apoio da IA e revisão humana.",
-                icon: FileText,
-              },
-            ].map(({ n, to, label, desc, icon: Icon }) => (
-              <Link
-                key={to}
-                to={to}
-                className="group flex flex-col gap-2 rounded-xl border border-black/[0.05] bg-white p-4 transition-all hover:border-ouro/40 hover:shadow-sm dark:border-white/10 dark:bg-white/[0.03]"
-              >
-                <div className="flex items-center gap-2">
-                  <span className="flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-ouro/15 text-xs font-semibold text-ouro-profundo dark:text-ouro-claro">
-                    {n}
-                  </span>
-                  <Icon className="h-4 w-4 text-ouro" />
-                </div>
-                <div>
-                  <div className="flex items-center gap-1 text-sm font-semibold text-slate-900 dark:text-slate-100">
-                    {label}
-                    <ArrowRight className="h-3.5 w-3.5 text-slate-400 transition group-hover:translate-x-0.5" />
-                  </div>
-                  <p className="mt-0.5 text-xs text-slate-500 dark:text-slate-400">
-                    {desc}
-                  </p>
-                </div>
-              </Link>
-            ))}
-          </div>
-
-          <div className="mt-4">
-            <Button variant="ghost" size="sm" onClick={dispensarComeceAqui}>
-              Dispensar
-            </Button>
-          </div>
-        </section>
-      )}
 
       {/* ===================== MEU DIA ===================== */}
       {/* Prioridade operacional do advogado: ações, pendências, agenda e
           casos recentes. KPIs/indicadores gerenciais saem do topo. */}
-      <section aria-label="Meu dia" className="space-y-6">
+      <section aria-label="Meu dia" className="space-y-4">
         <div className="flex flex-wrap items-center gap-2">
           <span className="flex h-7 w-7 items-center justify-center rounded-lg bg-ouro/15 text-ouro">
             <CalendarClock className="h-4 w-4" />
@@ -479,55 +500,106 @@ export default function DashboardModern() {
           </span>
         </div>
 
-      {/* Faixa hero sépia→bronze com filete dourado no topo (sem borda) */}
-      <section className="relative overflow-hidden rounded-2xl bg-gradient-to-br from-[#211913] via-[#2E241A] to-[#5E4A0E] p-5 text-white shadow-lg before:absolute before:inset-x-0 before:top-0 before:h-0.5 before:bg-gradient-to-r before:from-ouro-claro before:via-ouro-claro/40 before:to-transparent dark:from-[#17110c] dark:via-[#241c14] dark:to-[#4a3a10] md:p-6">
-        <div className="flex flex-col gap-5 xl:flex-row xl:items-center xl:justify-between">
-          <div className="max-w-2xl">
-            <div className="mb-2 flex flex-wrap items-center gap-2">
-              {/* tone="ouro" (pill clara + texto ouro-profundo) — as classes
-                  extras bg-white/10 + text-primary-100 disputavam com o tone
-                  padrão slate e o badge ficava ilegível no fundo sépia. */}
-              <Badge tone="ouro">Operação segura</Badge>
-              <span className="inline-flex items-center gap-1.5 text-xs text-primary-100/80">
-                <ShieldCheck className="h-3.5 w-3.5" />
-                Auditoria e LGPD preservadas
+      {/* Próxima ação recomendada — UM item, o mais urgente, derivado dos
+          dados já carregados (prazo crítico/vencido → cliente aguardando).
+          Sem nada urgente, mostra o estado calmo com atalho para a agenda. */}
+      {!loading &&
+        (nextAction ? (
+          <Link
+            to={nextAction.to}
+            aria-label={`Próxima ação recomendada: ${nextAction.title}`}
+            className={cn(
+              "group flex flex-col gap-4 rounded-xl border p-4 transition sm:flex-row sm:items-center sm:justify-between",
+              NEXT_ACTION_TONE[nextAction.tone].wrap,
+            )}
+          >
+            <div className="flex items-start gap-4">
+              <span
+                className={cn(
+                  "shrink-0 rounded-xl p-3 ring-1 ring-inset",
+                  NEXT_ACTION_TONE[nextAction.tone].badge,
+                )}
+              >
+                {NextActionIcon && <NextActionIcon className="h-6 w-6" />}
               </span>
-            </div>
-            {/* !text-white: o seletor global `.ejc-modern-scope h2` (index.css)
-                pinta headings de #111827 e vencia o utilitário text-white,
-                deixando o título ilegível sobre o gradiente sépia escuro. */}
-            <h2 className="text-xl font-semibold !text-white md:text-2xl">
-              Decida o que precisa de atenção agora
-            </h2>
-            <p className="mt-2 text-sm leading-6 text-primary-100/80">
-              O painel prioriza riscos, vencimentos e movimentações sem
-              substituir a validação profissional do advogado.
-            </p>
-          </div>
-          <div className="flex flex-wrap gap-2">
-            {quickActions.map(({ to, label, icon: Icon, primary }) => (
-              <Link key={label} to={to}>
-                <Button
-                  variant={primary ? "secondary" : "ghost"}
-                  icon={<Icon className="h-4 w-4" />}
-                  className={
-                    primary
-                      ? "bg-white text-ouro-profundo shadow-md hover:bg-ouro-palha dark:bg-white dark:text-ouro-profundo dark:hover:bg-ouro-palha"
-                      : "text-white hover:bg-white/10 dark:text-white dark:hover:bg-white/10"
-                  }
+              <div className="min-w-0">
+                <div className="flex flex-wrap items-center gap-2">
+                  <span
+                    className={cn(
+                      "text-[11px] font-semibold uppercase tracking-[0.16em]",
+                      NEXT_ACTION_TONE[nextAction.tone].eyebrow,
+                    )}
+                  >
+                    {nextAction.eyebrow}
+                  </span>
+                  <Badge tone="ouro">Próxima ação recomendada</Badge>
+                </div>
+                <h3
+                  className={cn(
+                    "mt-1 truncate text-lg font-semibold",
+                    NEXT_ACTION_TONE[nextAction.tone].title,
+                  )}
                 >
-                  {label}
-                </Button>
-              </Link>
-            ))}
-          </div>
-        </div>
-      </section>
+                  {nextAction.title}
+                </h3>
+                <p
+                  className={cn(
+                    "mt-1 text-sm leading-6",
+                    NEXT_ACTION_TONE[nextAction.tone].desc,
+                  )}
+                >
+                  {nextAction.desc}
+                </p>
+              </div>
+            </div>
+            <span
+              className={cn(
+                "inline-flex shrink-0 items-center justify-center gap-2 rounded-lg px-4 py-2 text-[13px] font-bold transition",
+                NEXT_ACTION_TONE[nextAction.tone].cta,
+              )}
+            >
+              {nextAction.cta}
+              <ArrowRight className="h-4 w-4 transition group-hover:translate-x-1" />
+            </span>
+          </Link>
+        ) : (
+          <Link
+            to="/atividades"
+            aria-label="Nada urgente para agora — ver agenda"
+            className="group flex items-center justify-between gap-4 rounded-xl border border-success-100 bg-success-50 p-4 transition dark:border-success-500/20 dark:bg-success-500/10"
+          >
+            <div className="flex items-center gap-4">
+              <span className="shrink-0 rounded-xl bg-success-100 p-3 text-success-700 ring-1 ring-inset ring-success-200 dark:bg-success-500/15 dark:text-success-300">
+                <CheckCircle2 className="h-6 w-6" />
+              </span>
+              <div className="min-w-0">
+                <div className="flex flex-wrap items-center gap-2">
+                  <span className="text-[11px] font-semibold uppercase tracking-[0.16em] text-success-700 dark:text-success-300">
+                    Tudo sob controle
+                  </span>
+                  <Badge tone="ouro">Próxima ação recomendada</Badge>
+                </div>
+                <h3 className="mt-1 text-lg font-semibold text-success-800 dark:text-success-200">
+                  Nada urgente para agora
+                </h3>
+                <p className="mt-1 text-sm leading-6 text-success-700 dark:text-success-300/80">
+                  Nenhum prazo crítico ou cliente aguardando. Aproveite para
+                  revisar a agenda com calma.
+                </p>
+              </div>
+            </div>
+            <span className="inline-flex shrink-0 items-center gap-2 text-sm font-semibold text-success-700 dark:text-success-300">
+              Ver agenda
+              <ArrowRight className="h-4 w-4 transition group-hover:translate-x-1" />
+            </span>
+          </Link>
+        ))}
 
-      {/* Faixa "Prioridades de hoje" — o que exige atenção agora, com atalho. */}
+      {/* Faixa "Prioridades de hoje" — o que exige atenção agora, com atalho.
+          Vem ANTES do painel de ações: "o que preciso resolver?" primeiro. */}
       <section
         aria-label="Prioridades de hoje"
-        className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm dark:border-white/10 dark:bg-white/[0.03]"
+        className="rounded-xl border border-slate-200 bg-white p-4 dark:border-white/10 dark:bg-white/[0.03]"
       >
         <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
           <div className="flex shrink-0 items-center gap-2 text-[11px] font-semibold uppercase tracking-[0.16em] text-slate-500">
@@ -570,33 +642,121 @@ export default function DashboardModern() {
         </div>
       </section>
 
-      <Link
-        to="/raio-x"
-        className="group flex flex-col gap-4 rounded-2xl bg-gradient-to-r from-primary-950 via-primary-900 to-ai-900 p-5 text-white shadow-lg transition hover:-translate-y-0.5 hover:shadow-xl sm:flex-row sm:items-center sm:justify-between"
-      >
-        <div className="flex items-start gap-4">
-          <span className="rounded-2xl bg-white/10 p-3 ring-1 ring-inset ring-white/15">
-            <ScanSearch className="h-6 w-6" />
-          </span>
-          <div>
-            <div className="flex flex-wrap items-center gap-2">
-              <h2 className="font-serif text-xl font-semibold">
-                Analisar antes de cadastrar
-              </h2>
-              <Badge tone="blue">Raio-X preliminar</Badge>
+      {/* Painel de AÇÕES — vem DEPOIS das prioridades: resolvido o urgente,
+          "o que quero iniciar?". Mantém as 4 ações principais do Command
+          Center (documento IA · manual · Raio-X · atendimento). */}
+      <section className="relative overflow-hidden rounded-xl border border-slate-200 bg-white p-4 before:absolute before:inset-x-0 before:top-0 before:h-[3px] before:bg-ouro-claro dark:border-white/10 dark:bg-white/[0.03] md:p-5">
+        <div className="flex flex-col gap-5 xl:flex-row xl:items-center xl:justify-between">
+          <div className="max-w-2xl">
+            <div className="mb-2 flex flex-wrap items-center gap-2">
+              {/* tone="ouro" (pill clara + texto ouro-profundo) — as classes
+                  extras bg-white/10 + text-primary-100 disputavam com o tone
+                  padrão slate e o badge ficava ilegível no fundo sépia. */}
+              <Badge tone="ouro">Operação segura</Badge>
+              <span className="inline-flex items-center gap-1.5 text-xs text-slate-500">
+                <ShieldCheck className="h-3.5 w-3.5" />
+                Auditoria e LGPD preservadas
+              </span>
             </div>
-            <p className="mt-1 max-w-3xl text-sm leading-6 text-primary-100/80">
-              Envie documentos externos, confira o diagnóstico e só transforme
-              em caso após a decisão humana. A análise não altera a carteira nem
-              os indicadores oficiais.
+            {/* !text-white: o seletor global `.ejc-modern-scope h2` (index.css)
+                pinta headings de #111827 e vencia o utilitário text-white,
+                deixando o título ilegível sobre o gradiente sépia escuro. */}
+            <h2 className="text-lg font-bold text-slate-900 dark:!text-slate-100">
+              Inicie uma nova frente de trabalho
+            </h2>
+            <p className="mt-2 text-sm leading-6 text-slate-500">
+              Resolvidas as prioridades acima, escolha a ação principal. Tudo
+              com trilha de auditoria e sem substituir a validação profissional
+              do advogado.
             </p>
           </div>
+          <div className="flex flex-col items-start gap-2 xl:items-end">
+            <div className="flex flex-wrap gap-2 xl:justify-end">
+              {visiblePrimaryActions.map(({ to, label, icon: Icon }) => (
+                <Link key={label} to={to}>
+                  <Button
+                    variant="primary"
+                    icon={<Icon className="h-4 w-4" />}
+                    className="shadow-sm"
+                  >
+                    {label}
+                  </Button>
+                </Link>
+              ))}
+            </div>
+            {secondaryActions.length > 0 && (
+              <div className="flex flex-wrap items-center gap-2 xl:justify-end">
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  onClick={() => setMoreActionsOpen((open) => !open)}
+                  aria-expanded={moreActionsOpen}
+                  aria-controls="acoes-secundarias-dashboard"
+                  className="text-slate-700 hover:bg-slate-100 dark:text-slate-200 dark:hover:bg-white/10"
+                >
+                  Mais ações
+                  <ChevronDown
+                    className={cn(
+                      "ml-1 h-4 w-4 transition-transform",
+                      moreActionsOpen && "rotate-180",
+                    )}
+                    aria-hidden="true"
+                  />
+                </Button>
+                {moreActionsOpen && (
+                  <div
+                    id="acoes-secundarias-dashboard"
+                    className="flex flex-wrap gap-2"
+                  >
+                    {secondaryActions.map(({ to, label, icon: Icon }) => (
+                      <Link key={label} to={to}>
+                        <Button
+                          variant="ghost"
+                          size="sm"
+                          icon={<Icon className="h-4 w-4" />}
+                          className="text-slate-700 hover:bg-slate-100 dark:text-slate-200 dark:hover:bg-white/10"
+                        >
+                          {label}
+                        </Button>
+                      </Link>
+                    ))}
+                  </div>
+                )}
+              </div>
+            )}
+          </div>
         </div>
-        <span className="inline-flex shrink-0 items-center gap-2 text-sm font-semibold text-ouro-claro">
-          Abrir Raio-X
-          <ArrowRight className="h-4 w-4 transition group-hover:translate-x-1" />
-        </span>
-      </Link>
+      </section>
+
+      {canUseLegalAI && (
+        <Link
+          to="/raio-x"
+          className="group flex flex-col gap-4 rounded-xl border border-slate-200 bg-white p-4 transition sm:flex-row sm:items-center sm:justify-between dark:border-white/10 dark:bg-white/[0.03]"
+        >
+          <div className="flex items-start gap-4">
+            <span className="rounded-xl bg-ouro/10 p-3 text-ouro-profundo ring-1 ring-inset ring-ouro/20 dark:text-ouro-claro">
+              <ScanSearch className="h-6 w-6" />
+            </span>
+            <div>
+              <div className="flex flex-wrap items-center gap-2">
+                <h2 className="text-[15px] font-bold">
+                  Analisar antes de cadastrar
+                </h2>
+                <Badge tone="blue">Raio-X preliminar</Badge>
+              </div>
+              <p className="mt-1 max-w-3xl text-sm leading-6 text-slate-500">
+                Envie documentos externos, confira o diagnóstico e só transforme
+                em caso após a decisão humana. A análise não altera a carteira nem
+                os indicadores oficiais.
+              </p>
+            </div>
+          </div>
+          <span className="inline-flex shrink-0 items-center gap-2 text-sm font-semibold text-ouro-profundo dark:text-ouro-claro">
+            Abrir Raio-X
+            <ArrowRight className="h-4 w-4 transition group-hover:translate-x-1" />
+          </span>
+        </Link>
+      )}
 
       <div className="grid gap-5 xl:grid-cols-[1.25fr_0.75fr]">
         <SectionCard
@@ -691,7 +851,7 @@ export default function DashboardModern() {
                     : "/clientes"
                 }
                 className={cn(
-                  "block rounded-xl border p-4",
+                  "group block rounded-xl border p-4",
                   solicitacoes?.atrasadas
                     ? "border-danger-100 bg-danger-50 dark:border-danger-500/20 dark:bg-danger-500/10"
                     : "border-primary-100 bg-primary-50 dark:border-primary-500/20 dark:bg-primary-500/10",
@@ -730,13 +890,24 @@ export default function DashboardModern() {
                         ? `${solicitacoes.atrasadas} atrasada(s); abra a linha do tempo prioritária.`
                         : "Acompanhe prazo, responsável e confirmação de atendimento."}
                     </p>
+                    <span
+                      className={cn(
+                        "mt-2 inline-flex items-center gap-1 text-xs font-semibold",
+                        solicitacoes?.atrasadas
+                          ? "text-danger-700 dark:text-danger-300"
+                          : "text-primary-700 dark:text-primary-300",
+                      )}
+                    >
+                      Ver e responder
+                      <ArrowRight className="h-3.5 w-3.5 transition group-hover:translate-x-0.5" />
+                    </span>
                   </div>
                 </div>
               </Link>
             )}
             <Link
-              to="/prazos"
-              className="block rounded-xl border border-danger-100 bg-danger-50 p-4 dark:border-danger-500/20 dark:bg-danger-500/10"
+              to="/atividades?tipo=prazo"
+              className="group block rounded-xl border border-danger-100 bg-danger-50 p-4 dark:border-danger-500/20 dark:bg-danger-500/10"
             >
               <div className="flex items-start gap-3">
                 <AlertTriangle className="mt-0.5 h-4 w-4 text-danger-600 dark:text-danger-300" />
@@ -748,12 +919,16 @@ export default function DashboardModern() {
                     Priorize vencimentos em até três dias e registre a
                     providência adotada.
                   </p>
+                  <span className="mt-2 inline-flex items-center gap-1 text-xs font-semibold text-danger-700 dark:text-danger-300">
+                    Ver e confirmar
+                    <ArrowRight className="h-3.5 w-3.5 transition group-hover:translate-x-0.5" />
+                  </span>
                 </div>
               </div>
             </Link>
             <Link
               to="/inteligencia"
-              className="block rounded-xl border border-ai-100 bg-ai-50 p-4 dark:border-ai-500/20 dark:bg-ai-500/10"
+              className="group block rounded-xl border border-ai-100 bg-ai-50 p-4 dark:border-ai-500/20 dark:bg-ai-500/10"
             >
               <div className="flex items-start gap-3">
                 <Bot className="mt-0.5 h-4 w-4 text-ai-700 dark:text-ai-300" />
@@ -765,6 +940,10 @@ export default function DashboardModern() {
                     Rascunhos e análises exigem conferência das fontes e revisão
                     humana antes do uso.
                   </p>
+                  <span className="mt-2 inline-flex items-center gap-1 text-xs font-semibold text-ai-800 dark:text-ai-300">
+                    Abrir IA jurídica
+                    <ArrowRight className="h-3.5 w-3.5 transition group-hover:translate-x-0.5" />
+                  </span>
                 </div>
               </div>
             </Link>
@@ -878,115 +1057,25 @@ export default function DashboardModern() {
         </SectionCard>
       </div>
 
-      <div className="grid gap-5 xl:grid-cols-[0.9fr_1.1fr]">
-        <SectionCard
-          title="Atalhos operacionais"
-          subtitle="Módulos consolidados fora do menu principal — tudo a um clique."
-        >
-          <div className="grid gap-3 sm:grid-cols-2">
-            {[
-              { to: "/pecas", label: "Produção jurídica", icon: FileText },
-              {
-                to: "/documentos",
-                label: "Gestão documental",
-                icon: FolderOpen,
-              },
-              { to: "/assinaturas", label: "Assinaturas", icon: FileSignature },
-              { to: "/checklists", label: "Checklists", icon: ListChecks },
-              { to: "/workflow", label: "Workflows", icon: GitBranch },
-              { to: "/crm-leads", label: "Funil de Leads", icon: Users },
-              { to: "/datajud", label: "Consulta DataJud", icon: Scale },
-              {
-                to: "/diario-oficial",
-                label: "Diário Oficial",
-                icon: ScrollText,
-              },
-              {
-                to: "/radar-regulatorio",
-                label: "Radar Regulatório",
-                icon: Bell,
-              },
-              {
-                to: "/compliance/radar",
-                label: "Radar de Compliance",
-                icon: ShieldAlert,
-              },
-              { to: "/noticias", label: "Notícias Jurídicas", icon: Newspaper },
-              {
-                to: "/inteligencia?tab=jurimetria",
-                label: "Jurimetria",
-                icon: Sparkles,
-              },
-            ].map(({ to, label, icon: Icon }) => (
-              <Link
-                key={to}
-                to={to}
-                className="group flex items-center gap-3 rounded-xl border border-black/[0.05] bg-white p-4 text-sm font-semibold text-slate-700 transition-all hover:border-primary-200 hover:bg-primary-50 dark:border-white/10 dark:bg-white/[0.03] dark:text-slate-200 dark:hover:bg-white/[0.06]"
-              >
-                <div className="rounded-lg bg-primary-50 p-2 text-primary-700 dark:bg-primary-400/10 dark:text-primary-300">
-                  <Icon className="h-5 w-5" />
-                </div>
-                <span className="min-w-0 flex-1">{label}</span>
-                <ArrowRight className="h-4 w-4 text-slate-400" />
-              </Link>
-            ))}
-          </div>
-          {isManager && (
-            <>
-              <div className="mt-4 mb-2 text-[10px] font-semibold uppercase tracking-wider text-slate-400">
-                Administração
-              </div>
-              <div className="grid gap-3 sm:grid-cols-2">
-                {[
-                  {
-                    to: "/produtividade",
-                    label: "Produtividade",
-                    icon: BarChart3,
-                  },
-                  {
-                    to: "/ia-governanca",
-                    label: "Governança da IA",
-                    icon: Sparkles,
-                  },
-                  { to: "/auditoria", label: "Auditoria", icon: ShieldCheck },
-                  {
-                    to: "/mapa-modulos",
-                    label: "Mapa de Módulos",
-                    icon: GitBranch,
-                  },
-                  { to: "/lixeira", label: "Lixeira", icon: FolderOpen },
-                ].map(({ to, label, icon: Icon }) => (
-                  <Link
-                    key={to}
-                    to={to}
-                    className="group flex items-center gap-3 rounded-xl border border-black/[0.05] bg-white p-3 text-sm font-medium text-slate-600 transition-all hover:border-primary-200 hover:bg-primary-50 dark:border-white/10 dark:bg-white/[0.03] dark:text-slate-300 dark:hover:bg-white/[0.06]"
-                  >
-                    <Icon className="h-4 w-4 text-slate-400" />
-                    <span className="min-w-0 flex-1">{label}</span>
-                    <ArrowRight className="h-3.5 w-3.5 text-slate-400" />
-                  </Link>
-                ))}
-              </div>
-            </>
-          )}
-        </SectionCard>
-        <NoticiasCard />
-      </div>
+      {/* A grade extensa de atalhos para módulos foi removida — "Mais
+          Ferramentas" no menu cumpre esse papel. */}
+      <NoticiasCard />
       </section>
 
       {/* ================= GESTÃO DO ESCRITÓRIO ================= */}
-      {/* Widgets analíticos/gerenciais e financeiros, recolhidos por padrão.
-          Blocos financeiros seguem restritos a canSeeFinance (RBAC intacto). */}
+      {/* Widgets analíticos/gerenciais, recolhidos por padrão. Dados
+          financeiros ficam concentrados no módulo Financeiro. */}
+      {isManager && (
       <section
         aria-label="Gestão do escritório"
-        className="rounded-2xl border border-slate-200 bg-white shadow-sm dark:border-white/10 dark:bg-white/[0.03]"
+        className="rounded-xl border border-slate-200 bg-white dark:border-white/10 dark:bg-white/[0.03]"
       >
         <button
           type="button"
           onClick={() => setGestaoOpen((open) => !open)}
           aria-expanded={gestaoOpen}
           aria-controls="gestao-escritorio-conteudo"
-          className="flex w-full items-center justify-between gap-3 rounded-2xl px-4 py-4 text-left transition-colors hover:bg-slate-50 dark:hover:bg-white/[0.04]"
+          className="flex w-full items-center justify-between gap-3 rounded-xl px-4 py-3 text-left transition-colors hover:bg-slate-50 dark:hover:bg-white/[0.04]"
         >
           <span className="flex min-w-0 items-center gap-2">
             <span className="flex h-7 w-7 shrink-0 items-center justify-center rounded-lg bg-primary-50 text-primary-700 dark:bg-primary-400/10 dark:text-primary-300">
@@ -996,7 +1085,7 @@ export default function DashboardModern() {
               Gestão do escritório
             </span>
             <span className="hidden text-sm text-slate-500 dark:text-slate-400 sm:inline">
-              Indicadores, gráficos, jurimetria, saúde da IA e financeiro
+              Indicadores, gráficos, jurimetria e saúde da IA
             </span>
           </span>
           <ChevronDown
@@ -1037,50 +1126,18 @@ export default function DashboardModern() {
           tone={criticalDeadlines.length ? "red" : "amber"}
           trend={criticalDeadlines.length ? "down" : undefined}
         />
-        {canSeeFinance ? (
-          <StatCard
-            label="Receita do mês"
-            value={
-              typeof monthlyRevenue === "number"
-                ? fmtMoney(monthlyRevenue)
-                : "—"
-            }
-            subtitle="Honorários recebidos"
-            icon={<DollarSign className="h-5 w-5" />}
-            tone="green"
-          />
-        ) : (
-          <StatCard
-            label="Movimentações"
-            value={movimentos.length}
-            subtitle="Atividades recentes"
-            icon={<Gavel className="h-5 w-5" />}
-            tone="green"
-          />
-        )}
         <StatCard
-          label={canSeeFinance ? "A receber" : "Taxa de êxito"}
-          value={
-            canSeeFinance
-              ? typeof pendingFees === "number"
-                ? fmtMoney(pendingFees)
-                : "—"
-              : successRate != null
-                ? `${successRate}%`
-                : "—"
-          }
-          subtitle={
-            canSeeFinance
-              ? "Honorários pendentes"
-              : "Base jurimétrica disponível"
-          }
-          icon={
-            canSeeFinance ? (
-              <Wallet className="h-5 w-5" />
-            ) : (
-              <BarChart3 className="h-5 w-5" />
-            )
-          }
+          label="Movimentações"
+          value={movimentos.length}
+          subtitle="Atividades recentes"
+          icon={<Gavel className="h-5 w-5" />}
+          tone="green"
+        />
+        <StatCard
+          label="Taxa de êxito"
+          value={successRate != null ? `${successRate}%` : "—"}
+          subtitle="Base jurimétrica disponível"
+          icon={<BarChart3 className="h-5 w-5" />}
           tone="amber"
         />
         {canSeeCRM && (
@@ -1104,7 +1161,7 @@ export default function DashboardModern() {
           subtitle="Distribuição temporal dos compromissos pendentes."
           actions={
             <Link
-              to="/prazos"
+              to="/atividades?tipo=prazo"
               className="text-sm font-medium text-primary-600 hover:text-primary-700 dark:text-primary-300"
             >
               Ver prazos
@@ -1164,12 +1221,7 @@ export default function DashboardModern() {
         </SectionCard>
       </div>
 
-      <div
-        className={cn(
-          "grid gap-5",
-          canSeeFinance ? "xl:grid-cols-3" : "xl:grid-cols-2",
-        )}
-      >
+      <div className="grid gap-5 xl:grid-cols-2">
         <SectionCard
           title="Casos ativos por fase"
           subtitle="Andamento da carteira em cada etapa."
@@ -1267,74 +1319,14 @@ export default function DashboardModern() {
           </SectionCard>
         )}
 
-        {canSeeFinance && (
-          <SectionCard
-            title="Recebíveis do mês"
-            subtitle="Situação dos honorários na competência atual."
-            actions={
-              <Link
-                to="/financeiro"
-                className="text-sm font-medium text-primary-600 hover:text-primary-700 dark:text-primary-300"
-              >
-                Abrir financeiro
-              </Link>
-            }
-          >
-            {consolidado ? (
-              <div className="space-y-3">
-                {[
-                  {
-                    label: "Recebido no mês",
-                    value: consolidado?.receitas?.recebido_mes,
-                    tone: "text-success-600 dark:text-success-300",
-                  },
-                  {
-                    label: "A receber (pendente)",
-                    value: consolidado?.receitas?.a_receber,
-                    tone: "text-warn-600 dark:text-warn-300",
-                  },
-                  {
-                    label: "Atrasado",
-                    value: consolidado?.receitas?.atrasado,
-                    tone: "text-danger-600 dark:text-danger-300",
-                  },
-                  {
-                    label: "Caixa do período",
-                    value: consolidado?.caixa_periodo,
-                    tone:
-                      (consolidado?.caixa_periodo ?? 0) >= 0
-                        ? "text-success-600 dark:text-success-300"
-                        : "text-danger-600 dark:text-danger-300",
-                  },
-                ].map(({ label, value, tone }) => (
-                  <div
-                    key={label}
-                    className="flex items-center justify-between border-b border-slate-100 py-2 text-sm last:border-0 dark:border-white/[0.07]"
-                  >
-                    <span className="text-slate-600 dark:text-slate-300">
-                      {label}
-                    </span>
-                    <span className={cn("font-semibold tabular-nums", tone)}>
-                      {fmtMoney(value ?? 0)}
-                    </span>
-                  </div>
-                ))}
-              </div>
-            ) : (
-              <EmptyState
-                title="Consolidado indisponível"
-                message="Abra o financeiro para conferir a competência."
-                icon={Wallet}
-              />
-            )}
-          </SectionCard>
-        )}
       </div>
 
           </div>
         )}
       </section>
+      )}
 
     </div>
   );
 }
+

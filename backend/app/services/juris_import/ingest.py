@@ -86,7 +86,8 @@ async def importar_julgados(
                     # Campos lidos por _fonte_juris_validada (gate de peças):
                     "numero_processo": _numero_canonico(j),
                     "fonte_validada": True,
-                    "rag_status": "disponivel",
+                    "rag_status": "aprovado",
+                    "tipo_fonte": "jurisprudencia_oficial",
                     # Metadados de citação (tribunal+número+data+url):
                     "numero_bruto": j.numero,
                     "data_julgamento": j.data,
