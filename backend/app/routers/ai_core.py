@@ -228,6 +228,7 @@ async def core_status(cu: User = Depends(get_current_user)):
             "ollama": bool(s.OLLAMA_ENABLED),
             "anthropic": bool(s.ANTHROPIC_ENABLED and s.ANTHROPIC_API_KEY),
             "groq": bool(s.GROQ_API_KEY),
+            "maritaca": bool(s.MARITACA_ENABLED and s.MARITACA_API_KEY),
         },
         "policy": {
             "externos_permitidos": bool(s.AI_EXTERNAL_PROVIDERS_ALLOWED),
