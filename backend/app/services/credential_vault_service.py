@@ -413,6 +413,60 @@ async def aplicar_overlay(db) -> list[str]:
     return aplicados
 
 
+# ── Rotação da chave-mestra (PR-6) ───────────────────────────────────────────
+
+async def rotacionar_todas(
+    db, *, dry_run: bool = False, user_id: str | None = None,
+) -> tuple[int, int]:
+    """Re-encripta com a chave PRIMÁRIA atual toda linha do cofre que ainda
+    guarda ciphertext — ATIVAS e HISTÓRICAS (`valor_encrypted` não-nulo).
+
+    Uso operacional: rotação da chave-mestra. Depois que o operador faz o
+    PREPEND da chave nova em VAULT_MASTER_KEYS (a antiga segue no CSV e ainda
+    decifra o legado), este helper roda `vault_crypto.rotacionar` (MultiFernet.
+    rotate: decifra com QUALQUER chave do CSV, recifra com a primária) em cada
+    token e persiste. Só depois disso o operador remove a chave antiga do CSV.
+    Ver scripts/vault_rotate_master_key.py e docs/RUNBOOK_COFRE_CREDENCIAIS.md.
+
+    * Idempotente: um token já cifrado com a primária sai recifrado por ela
+      mesma — o valor DECIFRADO nunca muda (roundtrip preservado). Rodar de
+      novo não corrompe nada.
+    * NÃO zera nem cria linhas: só reescreve `valor_encrypted` in-place. Não
+      mexe em versão/ativo/last4/updated_at — o claro é idêntico, então o
+      worker não precisa ressincronizar.
+    * NUNCA loga nem retorna valores; auditoria COFRE_ROTATE_MASTER sem segredo
+      (uma entrada por execução efetiva).
+
+    `dry_run=True` só CONTA as linhas candidatas (nada é gravado, sem commit).
+
+    Retorna (rotacionadas, total): `total` = linhas com ciphertext; em dry-run
+    `rotacionadas` é 0 (nada foi reescrito) e `total` é quantas SERIAM."""
+    res = await db.execute(
+        select(IntegrationCredential).where(
+            IntegrationCredential.valor_encrypted.is_not(None)
+        )
+    )
+    linhas = res.scalars().all()
+    total = len(linhas)
+    if dry_run:
+        return (0, total)
+
+    rotacionadas = 0
+    for c in linhas:
+        # rotacionar() falha ALTO (ValueError) se nenhuma chave do CSV decifra
+        # o token — melhor abortar a rotação do que gravar lixo por cima.
+        c.valor_encrypted = vault_crypto.rotacionar(c.valor_encrypted)
+        rotacionadas += 1
+
+    await criar_audit_log(
+        db, user_id, None, acao="COFRE_ROTATE_MASTER", entidade=ENTIDADE_AUDIT,
+        registro_id=None,
+        detalhes=f"rotacionadas={rotacionadas} total={total}",
+    )
+    await db.commit()
+    return (rotacionadas, total)
+
+
 # ── Import assistido do .env (base do PR-6) ──────────────────────────────────
 
 async def importar_do_env(db, user_id: str | None) -> list[dict[str, str]]:
