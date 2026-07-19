@@ -1,0 +1,6 @@
+{
+  "providers": ["anthropic", "maritaca"],
+  "k": 6,
+  "judge": true,
+  "observacao": "fallbacks são excluídos das métricas principais"
+}
