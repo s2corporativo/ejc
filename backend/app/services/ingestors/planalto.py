@@ -274,16 +274,18 @@ async def _rechunk_pendente(db: AsyncSession, chave_origem: str) -> bool:
     nunca re-chunkaria; forçamos UMA nova versão por-artigo (migração única)."""
     from app.models.rag import KnowledgeDoc
 
-    doc = (await db.execute(
-        select(KnowledgeDoc.extra).where(
+    # Seleciona (id, extra) — não só extra — para distinguir "sem doc vigente"
+    # de "doc vigente com extra NULL" (este último PRECISA de re-chunk).
+    linha = (await db.execute(
+        select(KnowledgeDoc.id, KnowledgeDoc.extra).where(
             KnowledgeDoc.chave_origem == chave_origem,
             KnowledgeDoc.deleted_at.is_(None),
             KnowledgeDoc.vigente.is_(True),
         )
-    )).scalar_one_or_none()
-    if doc is None:                    # sem doc vigente → upsert normal ("novo")
+    )).one_or_none()
+    if linha is None:                  # sem doc vigente → upsert normal ("novo")
         return False
-    return (doc or {}).get("divisao") != "por_artigo"
+    return (linha.extra or {}).get("divisao") != "por_artigo"
 
 
 async def ingerir_diploma(
