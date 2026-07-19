@@ -12,12 +12,19 @@ from typing import Any, Iterable
 
 from fastapi import FastAPI
 from fastapi.openapi.utils import get_openapi
+from fastapi.routing import APIRoute
 
 _INSTALL_FLAG = "_ejc_route_introspection_installed"
 
 
 def flatten_routes(routes: Iterable[Any]) -> list[Any]:
-    """Expande wrappers lazy e preserva rotas tradicionais."""
+    """Expande wrappers lazy e preserva rotas tradicionais.
+
+    No FastAPI novo, os itens expandidos são contextos efetivos. Eles carregam
+    o caminho, método, endpoint e dependências já combinados com todos os
+    prefixes/includes, enquanto ``original_route`` aponta para o APIRoute de
+    origem. Consumidores não devem exigir o tipo concreto antigo.
+    """
     flattened: list[Any] = []
     for route in routes:
         effective_contexts = getattr(route, "effective_route_contexts", None)
@@ -26,6 +33,13 @@ def flatten_routes(routes: Iterable[Any]) -> list[Any]:
         else:
             flattened.append(route)
     return flattened
+
+
+def is_api_route(route: Any) -> bool:
+    """Reconhece APIRoute clássico e contexto efetivo de APIRoute lazy."""
+    if isinstance(route, APIRoute):
+        return True
+    return isinstance(getattr(route, "original_route", None), APIRoute)
 
 
 def _flat_routes(app: FastAPI) -> list[Any]:
