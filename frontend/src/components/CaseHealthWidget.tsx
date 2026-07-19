@@ -61,9 +61,8 @@ const SEVERITY_LABELS: Record<HealthIndicator["severity"], string> = {
 };
 
 function detalheErro(error: unknown): string {
-  const detail = (
-    error as { response?: { data?: { detail?: unknown } } }
-  )?.response?.data?.detail;
+  const detail = (error as { response?: { data?: { detail?: unknown } } })
+    ?.response?.data?.detail;
   return typeof detail === "string" && detail
     ? detail
     : "Não foi possível carregar a saúde operacional do caso.";
@@ -87,9 +86,7 @@ export function ordenarIndicadores(
     medium: 2,
     low: 1,
   };
-  return [...indicators].sort(
-    (a, b) => rank[b.severity] - rank[a.severity],
-  );
+  return [...indicators].sort((a, b) => rank[b.severity] - rank[a.severity]);
 }
 
 export default function CaseHealthWidget({ caseId }: { caseId: string }) {
@@ -190,7 +187,8 @@ export default function CaseHealthWidget({ caseId }: { caseId: string }) {
                       Situação operacional
                     </h3>
                     <p className="mt-1 text-sm text-slate-500">
-                      Última atividade: {formatarDataEvento(health.last_activity_at)} ·{" "}
+                      Última atividade:{" "}
+                      {formatarDataEvento(health.last_activity_at)} ·{" "}
                       {health.inactive_days} dia(s) de inatividade
                     </p>
                   </div>
@@ -204,21 +202,31 @@ export default function CaseHealthWidget({ caseId }: { caseId: string }) {
                   </Button>
                 </div>
                 <div className="mt-4 flex flex-wrap gap-2">
-                  <Badge>Processos ativos: {health.metrics.active_processes || 0}</Badge>
-                  <Badge>Tarefas pendentes: {health.metrics.pending_tasks || 0}</Badge>
-                  <Badge>Prazos vencidos: {health.metrics.overdue_deadlines || 0}</Badge>
                   <Badge>
-                    Retornos vencidos: {health.metrics.overdue_client_requests || 0}
+                    Processos ativos: {health.metrics.active_processes || 0}
+                  </Badge>
+                  <Badge>
+                    Tarefas pendentes: {health.metrics.pending_tasks || 0}
+                  </Badge>
+                  <Badge>
+                    Prazos vencidos: {health.metrics.overdue_deadlines || 0}
+                  </Badge>
+                  <Badge>
+                    Retornos vencidos:{" "}
+                    {health.metrics.overdue_client_requests || 0}
                   </Badge>
                 </div>
               </div>
             </section>
 
             <section>
-              <h3 className="font-semibold text-slate-950">Pendências e ações</h3>
+              <h3 className="font-semibold text-slate-950">
+                Pendências e ações
+              </h3>
               {indicators.length === 0 ? (
                 <div className="mt-3 rounded-xl border border-slate-200 bg-slate-50 p-4 text-sm text-slate-600">
-                  Nenhuma pendência automática foi identificada pelos critérios atuais.
+                  Nenhuma pendência automática foi identificada pelos critérios
+                  atuais.
                 </div>
               ) : (
                 <div className="mt-3 space-y-3">
@@ -249,7 +257,9 @@ export default function CaseHealthWidget({ caseId }: { caseId: string }) {
 
             <section>
               <div className="flex items-center justify-between gap-3">
-                <h3 className="font-semibold text-slate-950">Eventos recentes</h3>
+                <h3 className="font-semibold text-slate-950">
+                  Eventos recentes
+                </h3>
                 {timeline?.truncated && (
                   <span className="text-xs text-amber-700">
                     Visualização parcial; consulte a linha do tempo completa.
