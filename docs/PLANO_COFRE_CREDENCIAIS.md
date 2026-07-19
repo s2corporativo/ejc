@@ -1,6 +1,9 @@
 # Plano — Cofre de Credenciais do EJC
 
-Status: **PR-1 (fundação) implementado** — deploy inerte, sem rotas.
+Status: **PR-1..PR-6 concluídos** — cofre completo em produção (fundação,
+serviço + overlay, API, testadores, frontend, import do `.env` + rotação da
+chave-mestra + runbook). Runbook operacional em
+`docs/RUNBOOK_COFRE_CREDENCIAIS.md`.
 Plano produzido em 19/07/2026 (agente Plan) e transcrito/expandido aqui.
 
 ## 1. Problema
@@ -126,11 +129,11 @@ retrocompatível `credential_state`.
 | PR | Escopo | Estado |
 |---|---|---|
 | PR-1 | Fundação: `VAULT_MASTER_KEYS` + validators, `vault_crypto`, modelo + migration 108, `credential_registry`, testes. **Deploy inerte** (nada lê a tabela). | **feito** |
-| PR-2 | `credential_service` + overlay no singleton + ressincronização do worker Celery. | pendente |
-| PR-3 | Router `/cofre-credenciais` + step-up + auditoria `COFRE_*`. | pendente |
-| PR-4 | Testadores por integração + `credential_state` no integration_status. | pendente |
-| PR-5 | Frontend: aba Credenciais em Configurações (espelha `IntegrationHealthPanel`). | pendente |
-| PR-6 | Import do `.env` → cofre, rotação de mestra assistida, runbook. | pendente |
+| PR-2 | `credential_vault_service` + overlay no singleton + ressincronização do worker Celery. | **feito** |
+| PR-3 | Router `/cofre-credenciais` + step-up + auditoria `COFRE_*` + `POST /importar-env`. | **feito** |
+| PR-4 | Testadores por integração + `credential_state` no integration_status. | **feito** |
+| PR-5 | Frontend: aba Credenciais em Configurações (espelha `IntegrationHealthPanel`). | **feito** |
+| PR-6 | Rotação da chave-mestra assistida (`scripts/vault_rotate_master_key.py` + `rotacionar_todas`) e runbook operacional (`docs/RUNBOOK_COFRE_CREDENCIAIS.md`). Import do `.env` já entregue no PR-3. | **feito** |
 
 ## 5. Riscos e mitigações
 
