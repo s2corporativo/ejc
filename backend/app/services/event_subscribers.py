@@ -1,5 +1,18 @@
 """
-event_subscribers.py — Subscribers do barramento de eventos.
+event_subscribers.py — Subscribers do barramento de eventos (ativação da
+arquitetura orientada a eventos do EJC).
+
+Importado em main.py por efeito colateral: ao importar, os decorators @on
+registram os handlers no event_bus. Cada subscriber é ISOLADO (o event_bus já
+captura exceções e nunca derruba o request) e ADITIVO — não duplica fluxos
+diretos já existentes (triagem, notificações de prazo, kanban, etc.).
+
+Eventos hoje emitidos pelo sistema:
+  caso.criado       (cases.criar)
+  caso.atualizado   (cases.atualizar)
+  caso.encerrado    (cases.encerrar_caso)
+  movimento.criado  (cases.criar_movimento)
+  documento.importado (cases.aplicar_extracao)
 """
 from __future__ import annotations
 import logging
@@ -16,6 +29,7 @@ def _patch_precedentes_router() -> None:
     try:
         from app.routers import jurisprudencia_externa
         from app.routers import precedentes_jurisprudencia
+
         jurisprudencia_externa.router.include_router(precedentes_jurisprudencia.router)
         logger.info("Router de precedentes multifonte registrado")
     except Exception as exc:  # pragma: no cover
@@ -26,6 +40,7 @@ def _patch_advogado_estilo_router() -> None:
     try:
         from app.routers import peca_geracao
         from app.routers import advogado_estilo
+
         peca_geracao.router.include_router(advogado_estilo.router)
         logger.info("Router de aprendizado de estilo registrado")
     except Exception as exc:  # pragma: no cover
@@ -33,6 +48,7 @@ def _patch_advogado_estilo_router() -> None:
 
 
 def _patch_documents_background_analysis() -> None:
+    """Substitui o hook legado de análise documental por versão sem corte."""
     try:
         from app.routers import documents as documents_router
     except Exception as exc:  # pragma: no cover
@@ -54,6 +70,7 @@ def _patch_documents_background_analysis() -> None:
                     {"id": case_id},
                 )
                 caso = row.fetchone()
+
                 resultado = await analisar_caso(
                     titulo=(caso.titulo if caso else "") or "",
                     area=(caso.area if caso else "") or "",
@@ -63,10 +80,11 @@ def _patch_documents_background_analysis() -> None:
                     case_id=case_id,
                     db=db,
                 )
+
                 fontes = None
                 if isinstance(resultado, dict) and resultado.get("_fontes_rag"):
                     fontes = _json.dumps(resultado["_fontes_rag"], ensure_ascii=False)[:2000]
-                db.add(AILog(
+                log = AILog(
                     id=str(_uuid4()),
                     user_id=user_id,
                     case_id=case_id,
@@ -76,7 +94,8 @@ def _patch_documents_background_analysis() -> None:
                     resposta=_json.dumps(resultado, ensure_ascii=False)[:8000],
                     fontes_rag=fontes,
                     status_hitl=AIStatusHITL.gerado,
-                ))
+                )
+                db.add(log)
                 await db.commit()
         except Exception as exc:
             logger.warning("Hook analise doc sem corte falhou: %s", exc)
@@ -86,6 +105,7 @@ def _patch_documents_background_analysis() -> None:
 
 
 def _install_ai_core_hardening() -> None:
+    """Ativa gates críticos; falha no patch impede boot inseguro."""
     try:
         from app.services.ai_core_hardening_patch import instalar
         instalar()
@@ -99,7 +119,7 @@ def _install_ai_core_hardening() -> None:
 
 
 def _install_datajud_cognitive_feed() -> None:
-    """Ativa DataJud → RAG nativo; falha não impede o restante do EJC."""
+    """Ativa DataJud → RAG nativo sem tornar o conector requisito de boot."""
     try:
         from app.services.datajud_cognitive_patch import instalar
         instalar()
@@ -125,6 +145,7 @@ async def _traduzir_andamento(db, entidade_id, payload):
 
 @on("movimento.criado")
 async def _notificar_cliente_movimento(db, entidade_id, payload):
+    """Avisa o cliente com mensagem genérica, sem teor ou estratégia."""
     tipo = (payload or {}).get("tipo", "")
     if tipo not in _TIPOS_PUBLICOS_CLIENTE:
         return
@@ -137,6 +158,7 @@ async def _notificar_cliente_movimento(db, entidade_id, payload):
     caso = await db.get(Case, entidade_id)
     if caso is None or not caso.client_id:
         return
+
     res = await db.execute(
         select(User).where(
             User.client_id == caso.client_id,
@@ -148,6 +170,7 @@ async def _notificar_cliente_movimento(db, entidade_id, payload):
     usuarios_cliente = res.scalars().all()
     if not usuarios_cliente:
         return
+
     ref = f" (caso {caso.numero_interno})" if caso.numero_interno else ""
     for user in usuarios_cliente:
         await criar_notificacao_interna(
