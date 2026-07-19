@@ -6,7 +6,8 @@ from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select
 from app.core.database import get_db
-from app.core.security import get_current_user
+from app.core.rate_limit import rate_limit
+from app.core.security import get_current_user, require_roles
 from app.core.ownership import verificar_acesso_caso
 from app.services import datajud_service
 from app.models.case import Case
@@ -15,12 +16,18 @@ log = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/v1/datajud", tags=["datajud"])
 
+# [B4] Proxy de consulta CNJ arbitrária → piso advogado+ (espelha pncp._ADVOGADO_MAIS).
+_ADVOGADO_MAIS = require_roles(["advogado"])
 
-@router.get("/process/{numero_cnj}")
+
+@router.get(
+    "/process/{numero_cnj}",
+    dependencies=[Depends(rate_limit("datajud_process", 20))],  # [B4] anti-abuso
+)
 async def lookup_process(
     numero_cnj: str,
     db: AsyncSession = Depends(get_db),
-    current_user=Depends(get_current_user),
+    current_user=Depends(_ADVOGADO_MAIS),
 ):
     """Busca processo pelo número CNJ"""
     try:

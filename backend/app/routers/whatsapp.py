@@ -1,6 +1,7 @@
 """WhatsApp via Evolution API — proxy endpoints"""
 from fastapi import APIRouter, Body, Depends, HTTPException, Query
 from app.core.security import get_current_user
+from app.core.ownership import is_gestao
 from app.models.user import User
 import httpx
 import logging
@@ -20,6 +21,14 @@ _PODE_ENVIAR = frozenset(
 def _exigir_envio(cu: User = Depends(get_current_user)) -> User:
     if cu.role.value not in _PODE_ENVIAR:
         raise HTTPException(403, "Sem permissão para enviar WhatsApp do escritório")
+    return cu
+
+
+def _exigir_gestao(cu: User = Depends(get_current_user)) -> User:
+    # [A7] QR de pareamento controla a SESSÃO do WhatsApp do escritório (quem
+    # escaneia assume a conta) → restrito a gestão (socio+), não a qualquer staff.
+    if not is_gestao(cu):
+        raise HTTPException(403, "Pareamento do WhatsApp restrito à gestão")
     return cu
 
 router = APIRouter(prefix="/v1/whatsapp", tags=["whatsapp"])
@@ -53,7 +62,7 @@ async def _evo_post(path: str, body: dict, use_instance_key=False):
 
 
 @router.get("/status")
-async def get_status(current_user=Depends(get_current_user)):
+async def get_status(current_user=Depends(_exigir_envio)):
     """Retorna status da instância WhatsApp"""
     try:
         status_code, data = await _evo_get(f"/instance/connectionState/{INSTANCE}", use_instance_key=True)
@@ -64,7 +73,7 @@ async def get_status(current_user=Depends(get_current_user)):
 
 
 @router.get("/qrcode")
-async def get_qrcode(current_user=Depends(get_current_user)):
+async def get_qrcode(current_user=Depends(_exigir_gestao)):
     """Retorna QR Code para conectar o WhatsApp"""
     try:
         status_code, data = await _evo_get(f"/instance/connect/{INSTANCE}", use_instance_key=True)
@@ -106,7 +115,7 @@ async def send_message(
 @router.get("/chats")
 async def list_chats(
     limit: int = Query(20, ge=1, le=100),
-    current_user=Depends(get_current_user),
+    current_user=Depends(_exigir_envio),
 ):
     """Lista conversas recentes"""
     try:
@@ -123,7 +132,7 @@ async def list_chats(
 @router.post("/messages")
 async def get_messages(
     body: dict = Body(...),
-    current_user=Depends(get_current_user),
+    current_user=Depends(_exigir_envio),
 ):
     """Busca mensagens de uma conversa"""
     phone = body.get("phone", "").replace("+", "").replace(" ", "").replace("-", "")

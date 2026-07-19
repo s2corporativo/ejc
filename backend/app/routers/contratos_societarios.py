@@ -7,12 +7,15 @@ from typing import Optional
 
 from fastapi import APIRouter, Depends, HTTPException, Query
 from pydantic import BaseModel, Field
-from sqlalchemy import select, func, or_
+from sqlalchemy import select, func, or_, and_
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.database import get_db
 from app.core.security import get_current_user, ROLE_LEVEL
+from app.core.ownership import verificar_acesso_caso, is_gestao
 from app.models.user import User
+from app.models.case import Case
+from app.models.client import Client
 from app.models.contrato_societario import (
     ContratoSocietario, ContratoHistorico,
     StatusContrato, TipoContrato,
@@ -76,6 +79,86 @@ class TransicaoReq(BaseModel):
 def _pode_editar(u: User) -> bool:
     return ROLE_LEVEL.get(u.role.value, 0) >= ROLE_LEVEL["advogado"]
 
+
+def _ids_casos_do_usuario(cu: User):
+    """Casos em que o usuário é responsável/auxiliar (espelha fees/clients)."""
+    return (
+        select(Case.id).where(
+            Case.deleted_at.is_(None),
+            or_(
+                Case.advogado_responsavel_id == cu.id,
+                Case.advogado_auxiliar_id == cu.id,
+            ),
+        ).scalar_subquery()
+    )
+
+
+def _ids_clientes_do_usuario(cu: User):
+    """Clientes da carteira do usuário: onde é responsável OU tem caso próprio
+    vinculado (mesma regra de titularidade de clients._filtro_visibilidade_cliente)."""
+    casos_com_cliente = select(Case.client_id).where(
+        Case.client_id.is_not(None),
+        Case.deleted_at.is_(None),
+        or_(
+            Case.advogado_responsavel_id == cu.id,
+            Case.advogado_auxiliar_id == cu.id,
+        ),
+    )
+    return (
+        select(Client.id).where(
+            Client.deleted_at.is_(None),
+            or_(
+                Client.responsavel_id == cu.id,
+                Client.id.in_(casos_com_cliente),
+            ),
+        ).scalar_subquery()
+    )
+
+
+def _filtro_escopo_contratos(q, cu: User):
+    """[A5] Escopo de titularidade por DEFAULT p/ não-gestão: só contratos de
+    casos/clientes próprios, ou contratos SEM vínculo (legado/institucional).
+    Gestão (socio+) vê tudo. Espelha fees._filtro_fees_lista + clients."""
+    if is_gestao(cu):
+        return q
+    return q.where(
+        or_(
+            ContratoSocietario.case_id.in_(_ids_casos_do_usuario(cu)),
+            ContratoSocietario.client_id.in_(_ids_clientes_do_usuario(cu)),
+            and_(
+                ContratoSocietario.case_id.is_(None),
+                ContratoSocietario.client_id.is_(None),
+            ),
+        )
+    )
+
+
+async def _gate_contrato(db: AsyncSession, cu: User, c: ContratoSocietario) -> ContratoSocietario:
+    """[A5] Gate de titularidade row-level (detalhe/escrita/transição). Sem isto,
+    qualquer advogado operava contratos de casos/clientes alheios pelo id (IDOR).
+    Gestão passa; caso→verificar_acesso_caso; cliente→_pode_ver_cliente; contrato
+    SEM vínculo → liberado a advogado+ (legado). 404 se não visível."""
+    if is_gestao(cu):
+        return c
+    if c.case_id:
+        try:
+            await verificar_acesso_caso(db, cu, c.case_id)
+            return c
+        except HTTPException:
+            raise HTTPException(404)
+    if c.client_id:
+        from app.routers.clients import _pode_ver_cliente
+        cli = (await db.execute(
+            select(Client).where(
+                Client.id == c.client_id, Client.deleted_at.is_(None)
+            )
+        )).scalar_one_or_none()
+        if cli is not None and await _pode_ver_cliente(cu, cli, db):
+            return c
+        raise HTTPException(404)
+    return c
+
+
 def _out(c: ContratoSocietario) -> dict:
     return {
         "id": c.id, "titulo": c.titulo,
@@ -109,6 +192,7 @@ async def listar_contratos(
     if not _pode_editar(cu):
         raise HTTPException(403)
     q = select(ContratoSocietario).where(ContratoSocietario.deleted_at.is_(None))
+    q = _filtro_escopo_contratos(q, cu)  # [A5] titularidade por caso/cliente
     if status:
         q = q.where(ContratoSocietario.status == status)
     if tipo:
@@ -136,6 +220,20 @@ async def criar_contrato(
 ):
     if not _pode_editar(cu):
         raise HTTPException(403)
+    # [A5] Titularidade na CRIAÇÃO: não deixar advogado atrelar contrato a caso/
+    # cliente de outra carteira (verificar_acesso_caso / _pode_ver_cliente).
+    if not is_gestao(cu):
+        if req.case_id:
+            await verificar_acesso_caso(db, cu, req.case_id)  # 403/404
+        if req.client_id:
+            from app.routers.clients import _pode_ver_cliente
+            cli = (await db.execute(
+                select(Client).where(
+                    Client.id == req.client_id, Client.deleted_at.is_(None)
+                )
+            )).scalar_one_or_none()
+            if cli is None or not await _pode_ver_cliente(cu, cli, db):
+                raise HTTPException(404, "Cliente não encontrado")
     c = ContratoSocietario(id=str(uuid4()), created_by=cu.id, **req.model_dump())
     db.add(c)
     await db.commit()
@@ -159,6 +257,7 @@ async def obter_contrato(
     )).scalar_one_or_none()
     if not c:
         raise HTTPException(404)
+    await _gate_contrato(db, cu, c)  # [A5] titularidade (404 se alheio)
     historico = (await db.execute(
         select(ContratoHistorico).where(ContratoHistorico.contrato_id == contrato_id)
         .order_by(ContratoHistorico.alterado_em.desc())
@@ -191,6 +290,7 @@ async def atualizar_contrato(
     )).scalar_one_or_none()
     if not c:
         raise HTTPException(404)
+    await _gate_contrato(db, cu, c)  # [A5] titularidade (404 se alheio)
     for campo, valor in req.model_dump(exclude_none=True).items():
         setattr(c, campo, valor)
     c.updated_at = datetime.now(timezone.utc)
@@ -216,6 +316,7 @@ async def transicionar_status(
     )).scalar_one_or_none()
     if not c:
         raise HTTPException(404)
+    await _gate_contrato(db, cu, c)  # [A5] titularidade (404 se alheio)
 
     status_atual = c.status.value if hasattr(c.status, "value") else c.status
     novo = req.novo_status.value if hasattr(req.novo_status, "value") else req.novo_status
