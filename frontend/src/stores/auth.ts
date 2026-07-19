@@ -1,6 +1,7 @@
 import { create } from "zustand";
 import api, { getAccessToken } from "../lib/api";
 import { RASCUNHO_KEY } from "../lib/intakeRascunho";
+import { limparCadastroManual } from "./cadastroManual";
 import type { User } from "../types";
 
 export type AuthStatus = "initializing" | "authenticated" | "unauthenticated";
@@ -91,6 +92,7 @@ export const useAuth = create<AuthState>((set, get) => ({
       if (responseStatus === 401 || responseStatus === 403) {
         localStorage.removeItem("ejc_access");
         localStorage.removeItem(RASCUNHO_KEY);
+        limparCadastroManual();
         persistUser(null);
         set({ user: null, status: "unauthenticated" });
         return;

@@ -200,6 +200,8 @@ async def upsert_documento(
     case_id: str | None = None,
     confianca: str | None = None,
     embutir_vetores: bool = True,
+    chunks: list[str] | None = None,
+    forcar_nova_versao: bool = False,
 ) -> str:
     """Insere/atualiza um documento na base de conhecimento, com VERSIONAMENTO
     (migration 068) — nunca sobrescreve o conteúdo de uma versão anterior.
@@ -217,6 +219,17 @@ async def upsert_documento(
           re-vetorizados.
     - Documento novo → cria doc (versao=1, vigente=True) + chunks (+ embeddings
       se disponíveis).
+    - `chunks` (opcional): chunks PRÉ-COMPUTADOS pelo chamador quando a divisão
+      semântica importa (ex.: legislação dividida por artigo em
+      scripts/seed_legislacao.py). Default None → chunking genérico por tamanho
+      (chunk_texto). O dedup/hash continua sendo sobre `conteudo` normalizado,
+      então a idempotência não muda.
+    - `forcar_nova_versao=True` (opt-in): ignora o atalho "inalterado" de
+      conteúdo idêntico e cria uma NOVA VERSÃO mesmo com o mesmo hash. Uso:
+      migração de estratégia de chunking (ex.: legislação re-chunkada por
+      artigo — ingestors/planalto._rechunk_pendente), onde o `conteudo` não
+      mudou mas os chunks precisam ser regravados. O versionamento preserva a
+      versão antiga como histórico, como em qualquer atualização.
     """
     conteudo = normalizar(conteudo)
     if len(conteudo) < 50:
@@ -243,7 +256,7 @@ async def upsert_documento(
     # re-seed a cada deploy re-vetorizar TODO o corpus (~400 docs, minutos em
     # silêncio) e estourar o timeout do SSH. Após o 1º seed completo, os deploys
     # seguintes passam por aqui de imediato.
-    if existente and existente.hash_conteudo == h:
+    if existente and existente.hash_conteudo == h and not forcar_nova_versao:
         # Conteúdo igual não cria versão, mas a curadoria/metadados podem ter
         # evoluído (ex.: seed oficial corrige `conferido`/`rag_status`). Sem
         # este merge, reexecutar um seed corrigido jamais tirava o registro
@@ -262,7 +275,12 @@ async def upsert_documento(
         existente.atualizado_em = agora
         return "inalterado"
 
-    chunks = chunk_texto(conteudo)
+    if chunks is None:
+        chunks = chunk_texto(conteudo)
+    else:
+        chunks = [normalizar(c) for c in chunks if c and c.strip()]
+        if not chunks:
+            chunks = chunk_texto(conteudo)
     # `embutir_vetores=False` → vetorização adiada (fica "pendente"; o chamador
     # agenda a indexação em background — ex.: lote da API pública, que não pode
     # bloquear a resposta embedando até ~100 documentos inline).
@@ -273,7 +291,7 @@ async def upsert_documento(
     status_novo = "indexado" if vetores else "pendente"
 
     if existente:
-        if existente.hash_conteudo == h:
+        if existente.hash_conteudo == h and not forcar_nova_versao:
             return "inalterado"
         # Conteúdo mudou → NOVA VERSÃO. A versão antiga vira histórico
         # (vigente=False), seus chunks NÃO são tocados.

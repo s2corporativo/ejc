@@ -32,7 +32,7 @@ from app.models.rag import KnowledgeDoc
 from app.services.ingestion_service import (
     marcar_execucao, registrar_fonte, upsert_documento,
 )
-from app.services.juris_import.base import JulgadoNormalizado
+from app.services.juris_import.base import JulgadoNormalizado, no_ano
 from app.services.verificador_jurisprudencia import formatar_cnj
 
 logger = logging.getLogger("ejc.juris_import")
@@ -48,14 +48,23 @@ def _numero_canonico(j: JulgadoNormalizado) -> str:
 
 async def importar_julgados(
     db: AsyncSession, julgados: list[JulgadoNormalizado], *, fonte_slug: str,
+    ano: int | None = None,
 ) -> dict:
     """Grava julgados no RAG + base de citações validadas, com dedup.
 
-    Retorna {"importados": int, "duplicados": int, "erros": int}.
-    Commit POR JULGADO após cada upsert bem-sucedido (limite ≤ 100 — custo ok):
-    o rollback de um item com erro nunca descarta itens já contados, e erro em
-    um julgado não aborta os demais.
+    Retorna {"importados": int, "duplicados": int, "erros": int} — e, quando
+    `ano` é informado, também "fora_do_ano" (julgados barrados pelo filtro).
+    `ano` é a GARANTIA FINAL client-side (base.no_ano): os conectores já
+    filtram na busca, mas nada fora do ano solicitado chega ao RAG mesmo que
+    um conector deixe passar. Commit POR JULGADO após cada upsert bem-sucedido
+    (limite ≤ 100 — custo ok): o rollback de um item com erro nunca descarta
+    itens já contados, e erro em um julgado não aborta os demais.
     """
+    fora_do_ano = 0
+    if ano is not None:
+        aceitos = [j for j in julgados if no_ano(j.data, ano)]
+        fora_do_ano = len(julgados) - len(aceitos)
+        julgados = aceitos
     importados = duplicados = erros = 0
     for j in julgados:
         try:
@@ -108,7 +117,10 @@ async def importar_julgados(
             logger.warning("[juris_import:%s] falha em %s: %s: %s",
                            fonte_slug, j.numero, type(e).__name__, e)
             await db.rollback()  # afeta só o item corrente (já commitados a salvo)
-    return {"importados": importados, "duplicados": duplicados, "erros": erros}
+    resumo = {"importados": importados, "duplicados": duplicados, "erros": erros}
+    if ano is not None:      # chave condicional — contrato antigo inalterado
+        resumo["fora_do_ano"] = fora_do_ano
+    return resumo
 
 
 # ── Jobs em background com status consultável ────────────────────────────────
@@ -131,6 +143,7 @@ def status_job(job_id: str) -> dict | None:
 async def executar_importacao(
     job_id: str, fonte: str, consulta: str, tribunal: str | None,
     limite: int, user_id: str | None, user_role: str | None,
+    ano: int | None = None,
 ) -> None:
     """Corpo do BackgroundTask: busca na fonte, ingere, audita e marca status.
 
@@ -144,6 +157,7 @@ async def executar_importacao(
     registrar_job(job_id, {
         "job_id": job_id, "status": "executando", "fonte": fonte,
         "consulta": consulta, "tribunal": tribunal, "limite": limite,
+        "ano": ano,
         "user_id": user_id,   # ownership: GET /status só para o dono (ou admin)
         "iniciado_em": datetime.now(timezone.utc).isoformat(),
     })
@@ -152,11 +166,13 @@ async def executar_importacao(
     total = 0
     try:
         info = FONTES[fonte]
-        julgados = await info["buscar"](consulta, tribunal=tribunal, limite=limite)
+        julgados = await info["buscar"](
+            consulta, tribunal=tribunal, limite=limite, ano=ano)
         total = len(julgados)
         async with AsyncSessionLocal() as db:
             await registrar_fonte(db, slug, info["descricao"], CATEGORIA_RAG)
-            resumo = await importar_julgados(db, julgados, fonte_slug=slug)
+            resumo = await importar_julgados(
+                db, julgados, fonte_slug=slug, ano=ano)
             await criar_audit_log(
                 db, user_id, user_role,
                 acao="IMPORTACAO_JURISPRUDENCIA",
@@ -164,7 +180,7 @@ async def executar_importacao(
                 registro_id=job_id,
                 detalhes=json.dumps({
                     "fonte": fonte, "consulta": consulta[:200],
-                    "tribunal": tribunal, "limite": limite,
+                    "tribunal": tribunal, "limite": limite, "ano": ano,
                     "encontrados": total, **resumo,
                 }, ensure_ascii=False),
             )
@@ -193,6 +209,7 @@ async def executar_importacao(
         "job_id": job_id,
         "status": "erro" if erro else "concluido",
         "fonte": fonte, "consulta": consulta, "tribunal": tribunal,
+        "ano": ano,
         "user_id": user_id,
         "encontrados": total, "resumo": resumo, "erro": erro,
         "finalizado_em": datetime.now(timezone.utc).isoformat(),
