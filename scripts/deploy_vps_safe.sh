@@ -114,6 +114,13 @@ else
   log "Seeds nao executados. Use RUN_SEEDS=1 para ingerir o corpus da Biblia (situacoes + modelos + Volume III)."
 fi
 
+# Política permanente: todo documento vigente da Base de Conhecimento deve estar
+# aprovado para uso pela IA. O reparo é idempotente e também completa embeddings
+# ausentes; falha aqui interrompe o deploy para não publicar uma inteligência
+# jurídica com acervo silenciosamente indisponível.
+log "Aprovando e indexando pendencias da Base de Conhecimento"
+docker compose exec -T backend python -m scripts.reparar_conhecimento_rag --batch-size 50
+
 log "Subindo frontend"
 docker rm -f ejc_frontend >/dev/null 2>&1 || true
 docker compose up -d --no-deps frontend
