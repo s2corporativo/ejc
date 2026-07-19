@@ -19,11 +19,8 @@ from app.core.config import get_settings
 
 settings = get_settings()
 
-# ── Crypto ────────────────────────────────────────────────────────────────────
-# bcrypt puro (passlib descontinuado e incompatível com bcrypt>=4.1)
 bearer_scheme = HTTPBearer(auto_error=False)
 
-# ── Hierarquia de perfis (nível numérico = poder) ─────────────────────────────
 ROLE_LEVEL: dict[str, int] = {
     "superadmin":    9,
     "admin":         8,
@@ -38,17 +35,12 @@ ROLE_LEVEL: dict[str, int] = {
 
 
 def requer_advogado(cu, detail: str = "Acesso restrito a advogados") -> None:
-    """Gate compartilhado (fonte única): atos jurídicos exigem advogado+.
-
-    Aceita User ORM ou objeto com .role (enum ou string). Levanta 403 quando o
-    nível do papel é inferior a ROLE_LEVEL["advogado"]. Reusado pelos gates de
-    kit documental, honorários, matriz de teses e orquestrador (defesa em
-    profundidade — nunca enfraquecer)."""
+    """Gate compartilhado (fonte única): atos jurídicos exigem advogado+."""
     role = getattr(getattr(cu, "role", None), "value", None) or str(getattr(cu, "role", "") or "")
     if ROLE_LEVEL.get(role, 0) < ROLE_LEVEL["advogado"]:
         raise HTTPException(status_code=403, detail=detail)
 
-# ── Permissões explícitas por perfil (SEM duplicação — bug v2 corrigido) ──────
+
 ROLES_PERMISSOES: dict[str, list[str]] = {
     "superadmin": ["*"],
     "admin": [
@@ -57,7 +49,6 @@ ROLES_PERMISSOES: dict[str, list[str]] = {
         "legal_docs", "honorarios", "ambiental", "ia", "dashboard",
         "relatorios", "notificacoes",
     ],
-    # CORREÇÃO: "socio" tinha entrada duplicada com ["*"] — removida
     "socio": [
         "clientes", "casos", "prazos", "tarefas", "documentos",
         "legal_docs", "honorarios", "ambiental", "ia", "dashboard",
@@ -91,27 +82,39 @@ def has_permission(role: str, permission: str) -> bool:
     return "*" in perms or permission in perms
 
 
-# ── Hash de senha ─────────────────────────────────────────────────────────────
 def verify_password(plain: str, hashed: str) -> bool:
-    # bcrypt limita a 72 bytes — truncar é o comportamento padrão da lib
     try:
         return bcrypt.checkpw(plain.encode("utf-8", errors="replace")[:72], hashed.encode())
     except Exception:
         return False
 
+
 def get_password_hash(password: str) -> str:
     return bcrypt.hashpw(password.encode()[:72], bcrypt.gensalt(rounds=12)).decode()
 
 
-# ── JWT tokens ────────────────────────────────────────────────────────────────
-def create_access_token(user_id: str, role: str,
-                        must_change_password: bool = False) -> str:
+def create_access_token(
+    user_id: str,
+    role: str,
+    must_change_password: bool = False,
+    two_factor_setup_required: bool = False,
+) -> str:
+    """Emite access token com claims restritivos fail-closed.
+
+    `two_factor_setup_required` cria uma sessão limitada exclusivamente ao fluxo
+    de configuração do autenticador e logout. O middleware aplica o bloqueio.
+    """
     expire = datetime.now(timezone.utc) + timedelta(
         hours=settings.ACCESS_TOKEN_EXPIRE_HOURS
     )
     payload = {
         "sub": user_id,
         **({"pwd_change_required": True} if must_change_password else {}),
+        **(
+            {"two_factor_setup_required": True}
+            if two_factor_setup_required
+            else {}
+        ),
         "role": role,
         "type": "access",
         "exp": expire,
@@ -121,10 +124,7 @@ def create_access_token(user_id: str, role: str,
 
 
 def create_refresh_token(user_id: str) -> tuple[str, str]:
-    """
-    Cria refresh token com JTI único (revogável).
-    Retorna (token_jwt, jti) — jti deve ser salvo no banco.
-    """
+    """Cria refresh token com JTI único e retorna (token, jti)."""
     jti = str(uuid4())
     expire = datetime.now(timezone.utc) + timedelta(
         days=settings.REFRESH_TOKEN_EXPIRE_DAYS
@@ -149,18 +149,15 @@ def decode_token(token: str) -> Optional[dict]:
         return None
 
 
-# ── Dependency: usuário autenticado atual ─────────────────────────────────────
-from app.core.database import get_db   # import local para evitar circular
+from app.core.database import get_db
+
 
 async def get_current_user(
     credentials: Annotated[Optional[HTTPAuthorizationCredentials], Depends(bearer_scheme)],
     db: AsyncSession = Depends(get_db),
 ):
-    """
-    Extrai e valida o JWT do header Authorization: Bearer <token>.
-    Retorna o objeto User autenticado ou lança 401.
-    """
-    from app.models.user import User   # import local evita circular
+    """Extrai e valida o JWT e retorna o usuário ativo."""
+    from app.models.user import User
 
     exc = HTTPException(
         status_code=status.HTTP_401_UNAUTHORIZED,
@@ -194,14 +191,12 @@ async def get_current_user(
 
 
 def require_roles(allowed: List[str]):
-    """
-    Dependency factory: exige que o usuário tenha um dos perfis listados,
-    ou nível hierárquico suficiente.
-    """
+    """Dependency factory: exige papel listado ou nível hierárquico suficiente."""
     async def checker(current_user=Depends(get_current_user)):
-        if current_user.role not in allowed:
-            user_level = ROLE_LEVEL.get(current_user.role, 0)
-            min_level  = min(ROLE_LEVEL.get(r, 0) for r in allowed)
+        role = getattr(current_user.role, "value", current_user.role)
+        if role not in allowed:
+            user_level = ROLE_LEVEL.get(role, 0)
+            min_level = min(ROLE_LEVEL.get(r, 0) for r in allowed)
             if user_level < min_level:
                 raise HTTPException(
                     status_code=status.HTTP_403_FORBIDDEN,
@@ -213,6 +208,7 @@ def require_roles(allowed: List[str]):
 
 def require_admin(cu=Depends(get_current_user)):
     """Shortcut: exige admin ou superior."""
-    if ROLE_LEVEL.get(cu.role, 0) < ROLE_LEVEL["admin"]:
+    role = getattr(cu.role, "value", cu.role)
+    if ROLE_LEVEL.get(role, 0) < ROLE_LEVEL["admin"]:
         raise HTTPException(status_code=403, detail="Acesso restrito a administradores")
     return cu
