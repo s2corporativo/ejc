@@ -10,7 +10,11 @@
 #   • RAG       → ai_service.buscar_contexto_rag (base de conhecimento, com fontes).
 # Tudo truncado para caber no orçamento de prompt.
 from __future__ import annotations
+
+import logging
 from dataclasses import dataclass, field
+
+logger = logging.getLogger("ejc.ai.core.context")
 
 # Orçamentos de caracteres por bloco (prompt enxuto e previsível).
 _MAX_DOSSIE = 8000
@@ -102,6 +106,7 @@ async def montar_contexto(
     if db is None:
         return ctx
     blocos: list[str] = []
+    scope_client_id: str | None = None
 
     # ── Caso (dossiê sanitizado) ─────────────────────────────────────────────
     if case_id:
@@ -110,6 +115,14 @@ async def montar_contexto(
         if dossie:
             blocos.append(_trunca(dossie.get("texto", ""), _MAX_DOSSIE))
             ctx.nomes_proteger = dossie.get("nomes_proteger") or []
+            # O RAG restrito é client-scoped. Sem este escopo, o filtro
+            # fail-closed exclui justamente precedentes internos, peças e
+            # comunicações do próprio cliente, deixando o Núcleo Único sem a
+            # memória institucional que deveria utilizar. Acesso ao caso já foi
+            # provado pelo orchestrator; ainda assim, a resolução consulta apenas
+            # caso ativo e nunca aceita client_id vindo do frontend.
+            from app.services.ai_service import _escopo_cliente_do_caso
+            scope_client_id = await _escopo_cliente_do_caso(db, case_id)
         else:
             ctx.avisos.append("Caso não encontrado — contexto do caso omitido.")
 
@@ -168,10 +181,18 @@ async def montar_contexto(
     if usar_rag or exige_fonte:
         from app.services.ai_service import buscar_contexto_rag
         try:
-            ctx.fontes = await buscar_contexto_rag(db, mensagem, limite=_LIMITE_RAG)
-        except Exception:
+            ctx.fontes = await buscar_contexto_rag(
+                db,
+                mensagem,
+                limite=_LIMITE_RAG,
+                scope_client_id=scope_client_id,
+            )
+        except Exception as exc:
             ctx.fontes = []
             ctx.avisos.append("Busca RAG indisponível — resposta sem base interna.")
+            # Observabilidade segura: registra apenas a classe, nunca consulta,
+            # contexto ou detalhe de banco que possa conter PII.
+            logger.warning("Busca RAG do context builder falhou: %s", type(exc).__name__)
         if ctx.fontes:
             linhas = ["[FONTES — BASE DE CONHECIMENTO INTERNA]"]
             for i, f in enumerate(ctx.fontes, 1):

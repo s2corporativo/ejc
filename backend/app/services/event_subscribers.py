@@ -21,66 +21,41 @@ from app.services.event_bus import on
 
 logger = logging.getLogger("ejc.event_subscribers")
 
-# Tipos de andamento que valem tradução automática em linguagem simples.
 _TRADUZ_TIPOS = {"intimacao", "decisao", "peticao", "audiencia", "movimento"}
-
-# Tipos "públicos" que o cliente pode ser avisado (sem 'peticao', que é
-# estratégia/produção interna, e sem 'ia'/notas internas).
 _TIPOS_PUBLICOS_CLIENTE = {"intimacao", "decisao", "audiencia", "movimento"}
 
 
 def _patch_precedentes_router() -> None:
-    """Registra subrouter de precedentes sem reescrever o router grande.
-
-    O `main.py` já inclui `jurisprudencia_externa.router` em `/api`. Ao anexar o
-    subrouter aqui, antes do include principal, o endpoint fica disponível em:
-    `/api/jurisprudencia-externa/precedentes/buscar`.
-    """
     try:
         from app.routers import jurisprudencia_externa
         from app.routers import precedentes_jurisprudencia
 
         jurisprudencia_externa.router.include_router(precedentes_jurisprudencia.router)
         logger.info("Router de precedentes multifonte registrado")
-    except Exception as exc:  # pragma: no cover - import defensivo no startup
+    except Exception as exc:  # pragma: no cover
         logger.warning("Router de precedentes multifonte indisponível: %s", exc)
 
 
 def _patch_advogado_estilo_router() -> None:
-    """Registra endpoint de aprendizado de estilo sob /api/pecas.
-
-    O `main.py` já inclui `peca_geracao.router` em `/api`. Ao anexar o subrouter
-    aqui, o endpoint fica disponível em `/api/pecas/advogado-estilo/me` sem
-    reescrever o main.py.
-    """
     try:
         from app.routers import peca_geracao
         from app.routers import advogado_estilo
 
         peca_geracao.router.include_router(advogado_estilo.router)
         logger.info("Router de aprendizado de estilo registrado")
-    except Exception as exc:  # pragma: no cover - import defensivo no startup
+    except Exception as exc:  # pragma: no cover
         logger.warning("Router de aprendizado de estilo indisponível: %s", exc)
 
 
 def _patch_documents_background_analysis() -> None:
-    """Substitui o hook legado de análise documental por versão sem corte.
-
-    Correção P1: o router de documentos mantinha compatibilidade legada no hook
-    de background e enviava apenas o prefixo do OCR para `analisar_caso`. Aqui o
-    hook é substituído, no carregamento do app, por uma implementação equivalente
-    que entrega o OCR completo ao pipeline moderno. O `analisar_caso` já monta
-    dossiê documental para textos longos, então o envio completo não sobrecarrega
-    o prompt e evita perda de fatos, pedidos, provas, prazos e teses.
-    """
+    """Substitui o hook legado de análise documental por versão sem corte."""
     try:
         from app.routers import documents as documents_router
-    except Exception as exc:  # pragma: no cover - import defensivo no startup
+    except Exception as exc:  # pragma: no cover
         logger.warning("Patch do hook documental indisponível: %s", exc)
         return
 
     async def _analisar_doc_bg_sem_corte(case_id: str, ocr_text: str, doc_id: str, user_id: str) -> None:
-        """Dispara análise estratégica usando OCR completo, sem truncamento."""
         try:
             from app.services.analise_estrategica import analisar_caso
             from app.core.database import AsyncSessionLocal
@@ -129,15 +104,28 @@ def _patch_documents_background_analysis() -> None:
     logger.info("Hook de análise documental ajustado para OCR completo")
 
 
+def _install_ai_core_hardening() -> None:
+    """Ativa gates críticos; falha no patch impede boot inseguro."""
+    try:
+        from app.services.ai_core_hardening_patch import instalar
+        instalar()
+    except Exception as exc:
+        logger.critical(
+            "Hardening crítico do núcleo de IA/RAG não pôde ser instalado: %s",
+            exc,
+            exc_info=True,
+        )
+        raise RuntimeError("Hardening crítico do núcleo de IA/RAG indisponível") from exc
+
+
 _patch_precedentes_router()
 _patch_advogado_estilo_router()
 _patch_documents_background_analysis()
+_install_ai_core_hardening()
 
 
 @on("movimento.criado")
 async def _traduzir_andamento(db, entidade_id, payload):
-    """Ao registrar um andamento oficial, gera o resumo em linguagem simples (IA).
-    Notas internas e itens 'ia' são ignorados (não precisam de tradução)."""
     tipo = (payload or {}).get("tipo", "")
     if tipo not in _TRADUZ_TIPOS:
         return
@@ -147,13 +135,7 @@ async def _traduzir_andamento(db, entidade_id, payload):
 
 @on("movimento.criado")
 async def _notificar_cliente_movimento(db, entidade_id, payload):
-    """Avisa o cliente (portal) quando há um novo andamento público no caso.
-
-    LGPD/segurança: a notificação é GENÉRICA por design. NUNCA carrega teor do
-    andamento, PII, estratégia ou conteúdo interno — apenas um aviso de que houve
-    atualização, com a referência mínima do número interno do caso (quando houver).
-    Notas internas e itens 'ia'/'peticao' são ignorados.
-    """
+    """Avisa o cliente com mensagem genérica, sem teor ou estratégia."""
     tipo = (payload or {}).get("tipo", "")
     if tipo not in _TIPOS_PUBLICOS_CLIENTE:
         return
@@ -192,8 +174,6 @@ async def _notificar_cliente_movimento(db, entidade_id, payload):
 
 @on("caso.encerrado")
 async def _log_encerramento(db, entidade_id, payload):
-    """Trilha leve de encerramento (o aprendizado institucional já roda em
-    background no handler; aqui só registramos o evento de domínio)."""
     logger.info(
         f"[evento] caso.encerrado {entidade_id} "
         f"resultado={(payload or {}).get('resultado')}"

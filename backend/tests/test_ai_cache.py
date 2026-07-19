@@ -1,7 +1,7 @@
-"""Cache de resposta do AI Gateway (IA-04 Fase 5) — chave e opt-in.
+"""Cache de resposta do AI Gateway — chave, opt-in e proteção LGPD.
 
-Testes sem Redis: validam a estabilidade da chave e que o cache é NO-OP quando
-desligado (default), garantindo zero mudança de comportamento fora do opt-in.
+Testes sem Redis: validam estabilidade da chave, NO-OP quando desligado e o gate
+que impede persistir respostas reidratadas com PII real.
 """
 from app.services import ai_cache
 
@@ -14,7 +14,8 @@ def test_chave_estavel_para_mesma_requisicao():
     a = ai_cache.chave("analise_caso", _msgs(), temperature=0.1, max_tokens=100)
     b = ai_cache.chave("analise_caso", _msgs(), temperature=0.1, max_tokens=100)
     assert a == b
-    assert a.startswith("ai:resp:")
+    # analise_caso usa pseudonimização reversível → nunca persiste resposta.
+    assert a.startswith("ai:nocache:")
 
 
 def test_chave_independe_da_ordem_dos_params():
@@ -25,14 +26,22 @@ def test_chave_independe_da_ordem_dos_params():
 
 def test_chave_muda_com_mensagem_task_ou_param():
     base = ai_cache.chave("t", _msgs("a"), temperature=0.1)
-    assert ai_cache.chave("t", _msgs("b"), temperature=0.1) != base   # mensagem
-    assert ai_cache.chave("outra", _msgs("a"), temperature=0.1) != base  # task
-    assert ai_cache.chave("t", _msgs("a"), temperature=0.9) != base   # param
+    assert ai_cache.chave("t", _msgs("b"), temperature=0.1) != base
+    assert ai_cache.chave("outra", _msgs("a"), temperature=0.1) != base
+    assert ai_cache.chave("t", _msgs("a"), temperature=0.9) != base
 
 
-def test_desligado_por_default_e_no_op(monkeypatch):
-    # Com o cache desligado (default), habilitado() é False e obter() não toca
-    # Redis — retorna None sem exigir conexão.
+def test_tarefa_local_completo_pode_usar_cache(monkeypatch):
+    from app.services.ai.sanitization_policy import ModoSanitizacao
+    monkeypatch.setattr(
+        "app.services.ai.sanitization_policy.modo_para_task",
+        lambda _task: ModoSanitizacao.LOCAL_COMPLETO,
+    )
+    k = ai_cache.chave("sigilo_local", _msgs())
+    assert k.startswith("ai:resp:")
+
+
+def test_desligado_por_default_e_no_op():
     assert ai_cache.habilitado() is False
 
 
@@ -41,14 +50,35 @@ async def test_obter_desligado_retorna_none_sem_redis():
     assert valor is None
 
 
+async def test_nocache_nao_abre_redis_mesmo_se_flag_ligada(monkeypatch):
+    chamado = False
+
+    async def _nao_abrir():
+        nonlocal chamado
+        chamado = True
+        raise AssertionError("Redis não deve ser aberto para resposta reidratável")
+
+    monkeypatch.setattr(ai_cache, "habilitado", lambda: True)
+    monkeypatch.setattr(ai_cache, "_cliente", _nao_abrir)
+    chave = ai_cache.chave("analise_caso", _msgs("CPF 123.456.789-09"))
+    assert await ai_cache.obter(chave) is None
+    await ai_cache.gravar(chave, {"texto": "PII real"})
+    assert chamado is False
+
+
 async def test_cache_hit_zera_tokens_e_custo(monkeypatch):
-    # Um hit não gastou provedor: tokens/custo devem vir zerados (evita dupla
-    # contagem no AILog/dashboards), com cache_hit=True e o texto cacheado.
+    # Simula tarefa explicitamente LOCAL_COMPLETO/cacheável para exercitar o hit.
     from app.services import ai_gateway
     from app.services import ai_cache as _c
+    from app.services.ai.sanitization_policy import ModoSanitizacao
+
+    monkeypatch.setattr(
+        "app.services.ai.sanitization_policy.modo_para_task",
+        lambda _task: ModoSanitizacao.LOCAL_COMPLETO,
+    )
 
     async def _fake_obter(_key):
-        return {"texto": "resposta cacheada", "modelo": "m", "provedor": "groq",
+        return {"texto": "resposta cacheada", "modelo": "m", "provedor": "ollama",
                 "input_tokens": 500, "output_tokens": 800, "custo_estimado_brl": 1.23}
 
     monkeypatch.setattr(_c, "obter", _fake_obter)

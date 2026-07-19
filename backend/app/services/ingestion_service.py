@@ -5,16 +5,15 @@
 #     fetch (httpx async + retry/backoff)
 #       → normaliza (texto limpo)
 #       → chunk (por tamanho, com overlap)
-#       → embeddings locais (all-E5 768d, opcional)
+#       → embeddings locais (multilingual-e5-large 1024d, opcional)
 #       → UPSERT idempotente em knowledge_docs/knowledge_chunks
 #       → registra execução em fontes_ingestao (auditável)
 #
 # Princípio: jobs diários NÃO podem duplicar documentos. A deduplicação é por
-# `chave_origem` (URN LexML, nº CNJ, código da norma...). Se o conteúdo não
-# mudou (mesmo hash), o documento é deixado intacto (não re-embeda). Se mudou,
-# NÃO sobrescreve: a versão antiga é preservada como histórico (vigente=False,
-# chunks intactos) e uma nova versão é criada (migration 068). Tudo respeitando
-# soft-delete.
+# `client_id + chave_origem`: conteúdo público/global usa client_id NULL e segue
+# globalmente único; conteúdo restrito pode reutilizar a mesma chave em clientes
+# diferentes sem colisão ou sobrescrita cruzada. Se o conteúdo mudou, a versão
+# antiga é preservada como histórico (vigente=False, chunks intactos).
 from __future__ import annotations
 
 import asyncio
@@ -32,6 +31,17 @@ from app.models.rag import KnowledgeDoc, KnowledgeChunk, FonteIngestao
 from app.services.embedding_service import gerar_embeddings
 
 logger = logging.getLogger("ejc.ingestao")
+
+# Categorias derivadas de casos/clientes nunca podem nascer em escopo global.
+# Mantida aqui para o WRITE path ser fail-closed, independentemente do filtro de
+# recuperação em ai_service. Categoria pública não listada continua global.
+_CATEGORIAS_RESTRITAS = {
+    "peca_interna",
+    "peca_escritorio",
+    "precedente_interno",
+    "comunicacao_processual",
+    "andamento_processual",
+}
 
 # User-Agent realista — portais públicos rejeitam clientes anônimos/bots.
 _UA = (
@@ -63,7 +73,7 @@ def _validar_sem_ssrf(u: str) -> None:
 
 
 async def _request_validado(c: httpx.AsyncClient, method: str, url: str,
-                            params, json, hdrs) -> httpx.Response:
+                             params, json, hdrs) -> httpx.Response:
     """Faz a request seguindo redirects MANUALMENTE e revalidando cada salto
     contra SSRF (o cliente é criado com follow_redirects=False)."""
     _validar_sem_ssrf(url)
@@ -182,6 +192,19 @@ def _sha1(s: str) -> str:
     return hashlib.sha1(s.encode("utf-8")).hexdigest()
 
 
+def _filtro_escopo_cliente(client_id: str | None):
+    """Predicado SQLAlchemy que reproduz a unicidade do banco.
+
+    Conteúdo global (client_id=None) não pode capturar um documento restrito com
+    a mesma chave. Conteúdo restrito só enxerga a versão vigente do próprio
+    cliente. O case_id permanece metadado/subescopo operacional, mas a chave é
+    única por cliente para manter a API de status determinística.
+    """
+    if client_id is None:
+        return KnowledgeDoc.client_id.is_(None)
+    return KnowledgeDoc.client_id == client_id
+
+
 # ══════════════════════════════════════════════════════════════════════════
 # UPSERT idempotente de documento no RAG
 # ══════════════════════════════════════════════════════════════════════════
@@ -203,40 +226,28 @@ async def upsert_documento(
     chunks: list[str] | None = None,
     forcar_nova_versao: bool = False,
 ) -> str:
-    """Insere/atualiza um documento na base de conhecimento, com VERSIONAMENTO
-    (migration 068) — nunca sobrescreve o conteúdo de uma versão anterior.
+    """Insere/atualiza um documento com versionamento e isolamento por cliente.
 
     Retorna: "novo" | "atualizado" | "inalterado".
 
-    - Dedup por `chave_origem` (obrigatória aqui), olhando apenas a versão
-      VIGENTE (`vigente=True`). Se já existe:
-        • conteúdo idêntico (mesmo hash) → "inalterado" (não toca nos vetores).
-        • conteúdo diferente → NÃO apaga a versão antiga. Marca-a
-          `vigente=False` (seus chunks continuam intactos, preservando o
-          histórico para auditoria/citações antigas) e cria um NOVO
-          `KnowledgeDoc` com `versao = anterior.versao + 1` e
-          `versao_anterior_id = anterior.id`, com seus próprios chunks
-          re-vetorizados.
-    - Documento novo → cria doc (versao=1, vigente=True) + chunks (+ embeddings
-      se disponíveis).
-    - `chunks` (opcional): chunks PRÉ-COMPUTADOS pelo chamador quando a divisão
-      semântica importa (ex.: legislação dividida por artigo em
-      scripts/seed_legislacao.py). Default None → chunking genérico por tamanho
-      (chunk_texto). O dedup/hash continua sendo sobre `conteudo` normalizado,
-      então a idempotência não muda.
-    - `forcar_nova_versao=True` (opt-in): ignora o atalho "inalterado" de
-      conteúdo idêntico e cria uma NOVA VERSÃO mesmo com o mesmo hash. Uso:
-      migração de estratégia de chunking (ex.: legislação re-chunkada por
-      artigo — ingestors/planalto._rechunk_pendente), onde o `conteudo` não
-      mudou mas os chunks precisam ser regravados. O versionamento preserva a
-      versão antiga como histórico, como em qualquer atualização.
+    Dedup canônico: `(client_id, chave_origem, vigente=true)`. Assim, a mesma
+    chave externa pode existir em clientes diferentes sem que um tenant atualize,
+    desative ou reutilize chunks de outro. Documentos públicos usam client_id
+    NULL e seguem globalmente únicos.
     """
     conteudo = normalizar(conteudo)
     if len(conteudo) < 50:
         return "inalterado"   # conteúdo irrelevante — ignora silenciosamente
+    if categoria in _CATEGORIAS_RESTRITAS and not client_id:
+        raise ValueError(
+            f"Categoria RAG restrita '{categoria}' exige client_id; "
+            "ingestão global bloqueada por isolamento LGPD."
+        )
+    if not (chave_origem or "").strip():
+        raise ValueError("chave_origem é obrigatória para ingestão idempotente")
+
     # Gate de confiança (governança de IA): grava no extra JSONB a chave
-    # canônica lida por ia_governanca._conf (vocabulário alta|media|baixa|
-    # bloqueado). Sem confianca explícita, a busca assume "media".
+    # canônica lida por ia_governanca._conf.
     if confianca:
         extra = {**(extra or {}), "confidence_level": confianca}
     h = _sha1(conteudo)
@@ -245,23 +256,14 @@ async def upsert_documento(
     existente = (await db.execute(
         select(KnowledgeDoc).where(
             KnowledgeDoc.chave_origem == chave_origem,
+            _filtro_escopo_cliente(client_id),
             KnowledgeDoc.deleted_at.is_(None),
             KnowledgeDoc.vigente.is_(True),
         )
     )).scalar_one_or_none()
 
-    # Atalho ANTES de vetorizar: documento vigente com conteúdo idêntico (mesmo
-    # hash) → "inalterado", sem tocar nos vetores. `gerar_embeddings` é caro
-    # (segundos por doc na CPU); embedar aqui e só depois descartar fazia o
-    # re-seed a cada deploy re-vetorizar TODO o corpus (~400 docs, minutos em
-    # silêncio) e estourar o timeout do SSH. Após o 1º seed completo, os deploys
-    # seguintes passam por aqui de imediato.
+    # Atalho ANTES de vetorizar: documento vigente com conteúdo idêntico.
     if existente and existente.hash_conteudo == h and not forcar_nova_versao:
-        # Conteúdo igual não cria versão, mas a curadoria/metadados podem ter
-        # evoluído (ex.: seed oficial corrige `conferido`/`rag_status`). Sem
-        # este merge, reexecutar um seed corrigido jamais tirava o registro
-        # legado da quarentena. Uma aprovação já concedida não é rebaixada para
-        # pendente só porque o mesmo arquivo foi reenviado manualmente.
         if extra:
             anterior = dict(existente.extra or {})
             mesclado = {**anterior, **extra}
@@ -272,6 +274,8 @@ async def upsert_documento(
         existente.categoria = categoria
         existente.fonte = fonte
         existente.tribunal = tribunal
+        existente.client_id = client_id
+        existente.case_id = case_id
         existente.atualizado_em = agora
         return "inalterado"
 
@@ -281,24 +285,13 @@ async def upsert_documento(
         chunks = [normalizar(c) for c in chunks if c and c.strip()]
         if not chunks:
             chunks = chunk_texto(conteudo)
-    # `embutir_vetores=False` → vetorização adiada (fica "pendente"; o chamador
-    # agenda a indexação em background — ex.: lote da API pública, que não pode
-    # bloquear a resposta embedando até ~100 documentos inline).
+    # embutir_vetores=False → vetorização adiada.
     vetores = await gerar_embeddings(chunks) if embutir_vetores else None
-    # BUG-04: status coerente com o resultado real da vetorização.
-    # 'indexado' só quando os chunks foram efetivamente embedados; senão 'pendente'
-    # (embeddings desligados/indisponíveis) — nunca fica 'pendente' com vetor pronto.
     status_novo = "indexado" if vetores else "pendente"
 
     if existente:
-        if existente.hash_conteudo == h and not forcar_nova_versao:
-            return "inalterado"
-        # Conteúdo mudou → NOVA VERSÃO. A versão antiga vira histórico
-        # (vigente=False), seus chunks NÃO são tocados.
+        # Conteúdo mudou → NOVA VERSÃO. A versão antiga vira histórico.
         existente.vigente = False
-        # flush do UPDATE antes do INSERT: índice único parcial exige que a
-        # versão anterior saia de vigente=true primeiro (senão o INSERT da nova
-        # versão vigente colide com a antiga na mesma chave_origem).
         await db.flush()
         doc_id = str(uuid4())
         db.add(KnowledgeDoc(

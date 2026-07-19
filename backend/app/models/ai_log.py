@@ -1,27 +1,34 @@
 # ── app/models/ai_log.py ─────────────────────────────────────────────────────
-# Registro de TODO uso de IA (Groq). LGPD + OAB compliance.
-# prompt_sanitizado = o que foi enviado (SEM PII); status HITL rastreado.
 from __future__ import annotations
+
+import enum
+import re
+from uuid import uuid4
+
 from sqlalchemy import Column, String, DateTime, Enum as SAEnum, func, Text, Boolean, Integer, Numeric, ForeignKey
 from sqlalchemy.orm import relationship, validates
+
 from app.core.database import Base
-import enum
+
+_TRIBUNAL_REF = re.compile(
+    r"\b(STF|STJ|TST|TSE|STM|CNJ|TJ[A-Z]{2}|TRF[1-6]|TRT\d{1,2}|TRE[-/]?[A-Z]{2})\b",
+    re.I,
+)
+_DATA_REF = re.compile(r"\b(?:\d{1,2}[/.-]\d{1,2}[/.-]\d{4}|\d{4}-\d{2}-\d{2})\b")
+_TERMO_REF = re.compile(
+    r"\b(ac[oó]rd[aã]o|julgad[oa]|precedente|REsp|AREsp|AgInt|AgRg|RHC|HC|MS|ADI|ADPF|tema)\b",
+    re.I,
+)
 
 
-# BUG-22: nome do modelo canônico. O gateway às vezes gravava o modelo sem o
-# prefixo do provedor (ex.: "llama-3.3-70b-versatile") e às vezes com
-# ("groq/llama-3.3-70b-versatile"). Normalizamos no WRITE path (validador do ORM)
-# para que TODO ai_log persista sempre a forma canônica com provedor.
 def normalizar_modelo_ia(modelo: str | None) -> str | None:
     if not modelo:
         return modelo
     m = modelo.strip()
     if not m:
         return m
-    # Já tem provedor (contém "/") → mantém como está.
     if "/" in m:
         return m
-    # Sem provedor: modelos Groq/Llama e Claude recebem o prefixo canônico.
     if m.lower().startswith("llama"):
         return f"groq/{m}"
     if m.lower().startswith("claude"):
@@ -29,56 +36,95 @@ def normalizar_modelo_ia(modelo: str | None) -> str | None:
     return m
 
 
+def _proteger_cnj_jurisprudencial(texto: str) -> tuple[str, dict[str, str]]:
+    """Protege temporariamente somente referência jurisprudencial completa.
+
+    O CNJ permanece no AILog apenas quando a janela próxima contém, de forma
+    cumulativa, tribunal reconhecível, marcador de precedente/acórdão e data.
+    Essa combinação é necessária ao gate de citações e reduz drasticamente a
+    chance de preservar o número do processo do próprio cliente.
+    """
+    from app.services.sanitizer import _PATTERNS
+
+    processo_re = next(pattern for pattern, placeholder in _PATTERNS if placeholder == "[PROCESSO]")
+    refs: dict[str, str] = {}
+
+    def repl(match: re.Match) -> str:
+        ini = max(0, match.start() - 220)
+        fim = min(len(texto), match.end() + 220)
+        janela = texto[ini:fim]
+        if (
+            _TRIBUNAL_REF.search(janela)
+            and _TERMO_REF.search(janela)
+            and _DATA_REF.search(janela)
+        ):
+            token = f"[[REF_JULGADO_{len(refs) + 1:03d}]]"
+            refs[token] = match.group(0)
+            return token
+        return match.group(0)
+
+    return processo_re.sub(repl, texto), refs
+
+
+def pseudonimizar_texto_auditoria(valor: str | None) -> str | None:
+    """Pseudonimiza PII persistida sem destruir citação jurídica verificável."""
+    if valor is None:
+        return None
+    texto = str(valor)
+    if not texto:
+        return texto
+    protegido, refs = _proteger_cnj_jurisprudencial(texto)
+    try:
+        from app.services.ai.pseudonymizer import pseudonimizar
+        limpo, _ = pseudonimizar(protegido)
+    except Exception:
+        from app.services.sanitizer import sanitizar_pii
+        limpo, _ = sanitizar_pii(protegido)
+    for token, cnj in refs.items():
+        limpo = limpo.replace(token, cnj)
+    return limpo
+
+
 class AIStatusHITL(str, enum.Enum):
-    gerado    = "gerado"        # IA respondeu, ninguém revisou
-    revisado  = "revisado"      # humano revisou
-    aplicado  = "aplicado"      # advogado aplicou ao caso/peça
+    gerado = "gerado"
+    revisado = "revisado"
+    aplicado = "aplicado"
     descartado = "descartado"
 
 
 class AITipoUso(str, enum.Enum):
-    analise_caso    = "analise_caso"      # sugestão de teses
-    redacao_peca    = "redacao_peca"
-    consulta_rag    = "consulta_rag"
+    analise_caso = "analise_caso"
+    redacao_peca = "redacao_peca"
+    consulta_rag = "consulta_rag"
     resumo_documento = "resumo_documento"
-    outro           = "outro"
+    outro = "outro"
 
 
 class AILog(Base):
     __tablename__ = "ai_logs"
 
-    id      = Column(String(36), primary_key=True)
+    id = Column(String(36), primary_key=True, default=lambda: str(uuid4()))
     user_id = Column(String(36), ForeignKey("users.id"), nullable=False, index=True)
     case_id = Column(String(36), ForeignKey("cases.id", ondelete="SET NULL"), nullable=True, index=True)
 
     tipo_uso = Column(SAEnum(AITipoUso), nullable=False)
-    modelo   = Column(String(50), nullable=False)   # ex: llama3-70b-8192
+    modelo = Column(String(50), nullable=False, default="nao_informado")
 
-    # LGPD: registramos apenas o prompt SANITIZADO (sem PII)
-    prompt_sanitizado  = Column(Text, nullable=False)
-    pii_removida       = Column(Boolean, default=False)  # flag: houve remoção?
-    resposta           = Column(Text, nullable=True)
-    # MODO DUAS IAS (Fase 5 / migration 070): relatório da IA Crítica/Adversarial.
-    # Campo DEDICADO — a crítica NÃO vive mais dentro de `resposta`. Isso mantém
-    # a jurisprudência ESPECULATIVA da crítica ("verificar fonte") fora do gate
-    # de aprovação HITL (que varre só `resposta`) e fora da ingestão RAG (que
-    # destila só `resposta`). O revisor vê a crítica por este campo.
+    prompt_sanitizado = Column(Text, nullable=False)
+    pii_removida = Column(Boolean, default=False)
+    resposta = Column(Text, nullable=True)
     critica_adversarial = Column(Text, nullable=True)
-    fontes_rag         = Column(Text, nullable=True)     # chunks usados (rastreabilidade)
-    tokens_input       = Column(Integer, nullable=True)
-    tokens_output      = Column(Integer, nullable=True)
-    # Custo estimado da chamada em R$ (0 p/ Ollama local; calculado p/ Groq)
-    custo_estimado     = Column(Numeric(12, 6), nullable=True)
+    fontes_rag = Column(Text, nullable=True)
+    tokens_input = Column(Integer, nullable=True)
+    tokens_output = Column(Integer, nullable=True)
+    custo_estimado = Column(Numeric(12, 6), nullable=True)
 
-    # HITL
-    status_hitl  = Column(SAEnum(AIStatusHITL), nullable=False, default=AIStatusHITL.gerado, index=True)
+    status_hitl = Column(SAEnum(AIStatusHITL), nullable=False, default=AIStatusHITL.gerado, index=True)
     revisado_por = Column(String(36), nullable=True)
-    revisado_em  = Column(DateTime(timezone=True), nullable=True)
+    revisado_em = Column(DateTime(timezone=True), nullable=True)
 
-    # Feedback do usuário sobre a resposta (feature #4 / migration 066):
-    # 'util' | 'nao_util' | None (sem feedback).
-    feedback     = Column(String(20), nullable=True)
-    feedback_em  = Column(DateTime(timezone=True), nullable=True)
+    feedback = Column(String(20), nullable=True)
+    feedback_em = Column(DateTime(timezone=True), nullable=True)
 
     created_at = Column(DateTime(timezone=True), server_default=func.now(), index=True)
 
@@ -86,6 +132,8 @@ class AILog(Base):
 
     @validates("modelo")
     def _normalizar_modelo(self, key, value):
-        # BUG-22: canoniza o nome do modelo em qualquer INSERT (todos os
-        # write paths passam por aqui — ai_gateway/ai_service/peca_service/etc.).
         return normalizar_modelo_ia(value)
+
+    @validates("resposta", "critica_adversarial")
+    def _pseudonimizar_saida(self, key, value):
+        return pseudonimizar_texto_auditoria(value)
