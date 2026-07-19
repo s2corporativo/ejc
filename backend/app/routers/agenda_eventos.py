@@ -5,12 +5,13 @@ from uuid import uuid4
 from datetime import date
 from typing import Optional
 from fastapi import APIRouter, Depends, HTTPException, Query
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import text
 from app.core.database import get_db
 from app.core.security import get_current_user
-from app.core.ownership import is_gestao, verificar_acesso_caso
+from app.core.ownership import is_gestao, role_str, verificar_acesso_caso
+from app.models.audit_log import criar_audit_log
 from app.models.user import User
 
 router = APIRouter(prefix="/agenda-eventos", tags=["Agenda de Eventos"])
@@ -19,10 +20,12 @@ TIPOS_VALIDOS = {"reuniao", "compromisso", "diligencia", "audiencia", "outro"}
 
 
 class EventoIn(BaseModel):
-    titulo: str
+    # B3: max_length espelha o VARCHAR do schema (titulo 255, hora 10) —
+    # sem isso o INSERT estourava em DataError 500 em vez de 422 claro.
+    titulo: str = Field(max_length=255)
     tipo: str = "compromisso"
     data_evento: date
-    hora: Optional[str] = None
+    hora: Optional[str] = Field(None, max_length=10)
     local: Optional[str] = None
     descricao: Optional[str] = None
     case_id: Optional[str] = None
@@ -30,14 +33,24 @@ class EventoIn(BaseModel):
 
 
 class EventoPatch(BaseModel):
-    titulo: Optional[str] = None
+    titulo: Optional[str] = Field(None, max_length=255)
     tipo: Optional[str] = None
     data_evento: Optional[date] = None
-    hora: Optional[str] = None
+    hora: Optional[str] = Field(None, max_length=10)
     local: Optional[str] = None
     descricao: Optional[str] = None
     concluido: Optional[bool] = None
     responsavel_id: Optional[str] = None
+
+
+async def _validar_responsavel(db: AsyncSession, responsavel_id: str) -> None:
+    """B3: responsavel_id informado deve apontar p/ usuário REAL — antes
+    qualquer string virava responsável (evento órfão, invisível p/ todos)."""
+    row = (await db.execute(
+        text("SELECT 1 FROM users WHERE id = :rid"), {"rid": responsavel_id}
+    )).first()
+    if row is None:
+        raise HTTPException(422, "responsavel_id inválido: usuário não encontrado")
 
 
 async def _buscar_conflitos(
@@ -92,14 +105,22 @@ async def listar(
     db: AsyncSession = Depends(get_db),
     cu: User = Depends(get_current_user),
 ):
-    # N1 (leitura): espelha o gate de escrita do PATCH/DELETE (M-S2) — evento
-    # COM caso é agenda de trabalho compartilhada (visível a todo interno);
-    # evento SEM caso é PESSOAL e só aparece p/ criador, responsável ou gestão.
+    # N1 (leitura) + M1: evento SEM caso é PESSOAL e só aparece p/ criador,
+    # responsável ou gestão; evento COM caso segue o MESMO padrão EXISTS de
+    # atividades.py — responsável pelo evento OU advogado (responsável/auxiliar)
+    # do caso OU gestão. Antes, todo evento com case_id vazava titulo/descricao/
+    # local/caso_titulo p/ qualquer interno, contradizendo a Central de
+    # Atividades, que esconde a mesma atividade.
     filtro_pessoal = ""
     params: dict = {"ps": page_size}
     if not is_gestao(cu):
-        filtro_pessoal = (" AND (e.case_id IS NOT NULL"
-                          " OR e.created_by = :uid OR e.responsavel_id = :uid)")
+        filtro_pessoal = """ AND (
+            (e.case_id IS NULL AND (e.created_by = :uid OR e.responsavel_id = :uid))
+            OR (e.case_id IS NOT NULL AND (e.responsavel_id = :uid OR EXISTS (
+                SELECT 1 FROM cases cc WHERE cc.id = e.case_id
+                  AND (cc.advogado_responsavel_id = :uid OR cc.advogado_auxiliar_id = :uid)
+            )))
+        )"""
         params["uid"] = cu.id
     rows = (await db.execute(text(f"""
         SELECT e.id, e.titulo, e.tipo, e.data_evento, e.hora, e.local, e.descricao,
@@ -129,6 +150,10 @@ async def criar(
     # gate, qualquer interno populava (e sondava, via conflito) agenda alheia.
     if resp != cu.id and not is_gestao(cu):
         raise HTTPException(403, "Só a gestão pode criar evento para outro responsável")
+    # B3: valida a existência do responsável DEPOIS do gate de gestão — não vira
+    # oráculo de ids de usuário p/ quem nem poderia transferir.
+    if resp != cu.id:
+        await _validar_responsavel(db, resp)
     # Double-booking: AVISA, não bloqueia (decisão: o padrão menos disruptivo é
     # criar e devolver `conflito_agenda` no corpo — nunca silencia, nunca perde
     # o evento). A checagem é feita ANTES do INSERT para o novo evento não
@@ -175,12 +200,24 @@ async def atualizar(
             and body.responsavel_id not in (cu.id, row["responsavel_id"])
             and not is_gestao(cu)):
         raise HTTPException(403, "Só a gestão pode transferir o evento para outro responsável")
+    # B3: novo responsável precisa existir (mesma regra do criar).
+    if (body.responsavel_id is not None
+            and body.responsavel_id not in (cu.id, row["responsavel_id"])):
+        await _validar_responsavel(db, body.responsavel_id)
     updates = {k: v for k, v in body.model_dump(exclude_unset=True).items() if v is not None}
     if not updates:
         return {"ok": True}
     set_clause = ", ".join(f"{k} = :{k}" for k in updates)
     updates["eid"] = evento_id
     await db.execute(text(f"UPDATE agenda_eventos SET {set_clause}, updated_at = now() WHERE id = :eid"), updates)
+    # B1: transferência de responsável é operação sensível — trilha de auditoria
+    # (mesmo padrão de legal_docs: criar_audit_log + commit na mesma transação).
+    if (body.responsavel_id is not None
+            and body.responsavel_id != row["responsavel_id"]):
+        await criar_audit_log(
+            db, cu.id, role_str(cu), "UPDATE", "agenda_eventos", evento_id,
+            detalhes=f"responsavel: {row['responsavel_id']} → {body.responsavel_id}",
+        )
     await db.commit()
     # Double-booking na edição: mesma política do criar (avisa, não bloqueia).
     # Valores efetivos = patch quando presente, senão o valor atual. Evento que
@@ -219,5 +256,7 @@ async def remover(
         # Evento pessoal (sem caso — M-S2): mesma regra do PATCH.
         raise HTTPException(403, "Sem permissão para este evento")
     await db.execute(text("UPDATE agenda_eventos SET deleted_at = now() WHERE id = :eid"), {"eid": evento_id})
+    # B1: soft-delete audita quem removeu o quê (padrão legal_docs.remover).
+    await criar_audit_log(db, cu.id, role_str(cu), "DELETE", "agenda_eventos", evento_id)
     await db.commit()
     return {"ok": True}

@@ -13,7 +13,10 @@ sem depender de Postgres:
   - os gates da máquina de estados: papel mínimo advogado (403) e peça em
     status pós-aprovação — aprovada/final/protocolada (422 caso contrário);
   - a validação do comprovante (N3): protocolo_comprovante_doc_id deve apontar
-    p/ Document existente, não excluído e do MESMO caso da peça (422 senão).
+    p/ Document existente, não excluído e do MESMO caso da peça (422 senão);
+  - B4: peça SEM case_id não aceita comprovante (422) — doc solto não é prova;
+  - B3: protocolado_em no futuro é rejeitado no schema (422);
+  - B2: o audit-log registra comprovante antigo→novo e protocolado_em.
 
 Fakes no padrão de test_correcoes_go_live.py. Dados 100% fictícios.
 """
@@ -160,19 +163,27 @@ def _audits(db: _FakeDB):
 # ── 3. Endpoint PATCH /legal-docs/{id}/protocolo ──────────────────────────────
 
 def test_protocolo_registra_e_audita():
-    # 2ª consulta: validação N3 do comprovante — Document vivo do MESMO caso
-    # (peça sem caso ⇔ documento sem caso).
+    # 2ª consulta: validação N3 do comprovante — Document vivo do MESMO caso.
+    # (B4: comprovante agora EXIGE peça com caso — ownership liberado no fake.)
+    async def _permite(*a, **k):
+        return None
+
     db = _FakeDB(results=[
-        _Res(one=_peca()),
-        _Res(one=SimpleNamespace(id="doc-99", case_id=None, deleted_at=None)),
+        _Res(one=_peca(case_id="caso-1")),
+        _Res(one=SimpleNamespace(id="doc-99", case_id="caso-1", deleted_at=None)),
     ])
-    client = _montar(db)
-    r = client.patch("/legal-docs/peca-1/protocolo", json={
-        "numero_protocolo": "  0801234-56.2026.8.13.0024  ",
-        "protocolo_tribunal": "TJMG",
-        "protocolado_em": "2026-07-18T12:00:00+00:00",
-        "protocolo_comprovante_doc_id": "doc-99",
-    })
+    orig = legal_docs_router.verificar_acesso_caso
+    legal_docs_router.verificar_acesso_caso = _permite
+    try:
+        client = _montar(db)
+        r = client.patch("/legal-docs/peca-1/protocolo", json={
+            "numero_protocolo": "  0801234-56.2026.8.13.0024  ",
+            "protocolo_tribunal": "TJMG",
+            "protocolado_em": "2026-07-18T12:00:00+00:00",
+            "protocolo_comprovante_doc_id": "doc-99",
+        })
+    finally:
+        legal_docs_router.verificar_acesso_caso = orig
     assert r.status_code == 200, r.text
     body = r.json()
     # Número normalizado (trim) e demais campos gravados + retornados na peça.
@@ -184,6 +195,9 @@ def test_protocolo_registra_e_audita():
     logs = _audits(db)
     assert len(logs) == 1 and logs[0].acao == "PROTOCOLO_REGISTRADO"
     assert logs[0].entidade == "legal_docs" and logs[0].registro_id == "peca-1"
+    # B2: trilha registra comprovante antigo→novo e a data do protocolo.
+    assert "comprovante=-→doc-99" in logs[0].detalhes
+    assert "protocolado_em=2026-07-18T12:00:00" in logs[0].detalhes
     assert db.committed == 1
 
 
@@ -298,6 +312,46 @@ def test_protocolo_comprovante_de_caso_alheio_422():
     assert r.status_code == 422
     assert "não pertence ao caso" in r.json()["detail"]
     assert not _audits(db) and db.committed == 0
+
+
+def test_protocolo_comprovante_em_peca_sem_caso_422():
+    """B4: peça sem case_id não pode receber comprovante — documento solto
+    não é prova de tempestividade de peça solta (antes: doc sem caso passava)."""
+    db = _FakeDB(results=[_Res(one=_peca(case_id=None))])
+    client = _montar(db)
+    r = client.patch("/legal-docs/peca-1/protocolo", json={
+        "numero_protocolo": "PROTO-1",
+        "protocolo_comprovante_doc_id": "doc-solto",
+    })
+    assert r.status_code == 422
+    assert "vinculada a um caso" in r.json()["detail"]
+    assert not _audits(db) and db.committed == 0
+
+
+def test_protocolo_sem_comprovante_em_peca_sem_caso_segue_aceito():
+    """B4 não regride o fluxo básico: peça sem caso ainda registra número/
+    tribunal/data — só o COMPROVANTE exige vínculo com caso."""
+    db = _FakeDB(results=[_Res(one=_peca(case_id=None))])
+    client = _montar(db)
+    r = client.patch("/legal-docs/peca-1/protocolo", json={
+        "numero_protocolo": "PROTO-1",
+    })
+    assert r.status_code == 200, r.text
+    assert r.json()["protocolo_comprovante_doc_id"] is None
+
+
+def test_protocolado_em_no_futuro_422():
+    """B3: data de protocolo no futuro falsificaria a prova de tempestividade —
+    rejeitada no schema (Pydantic 422) antes de tocar o banco."""
+    db = _FakeDB(results=[_Res(one=_peca())])
+    client = _montar(db)
+    r = client.patch("/legal-docs/peca-1/protocolo", json={
+        "numero_protocolo": "PROTO-1",
+        "protocolado_em": "2099-01-01T00:00:00+00:00",
+    })
+    assert r.status_code == 422
+    assert "futuro" in r.text
+    assert db.committed == 0 and not _audits(db)
 
 
 def test_protocolo_comprovante_do_mesmo_caso_aceito():
