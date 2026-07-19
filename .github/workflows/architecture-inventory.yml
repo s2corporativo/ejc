@@ -1,0 +1,82 @@
+name: Architecture Inventory — Phase 0
+
+on:
+  workflow_dispatch:
+  push:
+    branches:
+      - agent/organizacao-padronizacao-rotas-fluxos
+    paths:
+      - "scripts/generate_architecture_inventory.py"
+      - "scripts/refine_architecture_inventory.py"
+      - "scripts/tests/test_generate_architecture_inventory.py"
+      - "scripts/tests/test_refine_architecture_inventory.py"
+      - "config/architecture_inventory_overrides.json"
+      - "backend/app/**"
+      - "backend/alembic/versions/**"
+      - "frontend/src/**"
+      - ".github/workflows/architecture-inventory.yml"
+  pull_request:
+    paths:
+      - "scripts/generate_architecture_inventory.py"
+      - "scripts/refine_architecture_inventory.py"
+      - "scripts/tests/test_generate_architecture_inventory.py"
+      - "scripts/tests/test_refine_architecture_inventory.py"
+      - "config/architecture_inventory_overrides.json"
+      - "backend/app/**"
+      - "backend/alembic/versions/**"
+      - "frontend/src/**"
+      - ".github/workflows/architecture-inventory.yml"
+
+permissions:
+  contents: read
+
+concurrency:
+  group: architecture-inventory-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  inventory:
+    name: Generate complete architecture inventory
+    runs-on: [self-hosted, ejc-vps]
+    timeout-minutes: 10
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7
+        with:
+          fetch-depth: 1
+
+      - name: Validate Python runtime
+        run: |
+          python3 --version
+
+      - name: Test inventory pipeline
+        run: |
+          python3 -m unittest \
+            scripts.tests.test_generate_architecture_inventory \
+            scripts.tests.test_refine_architecture_inventory \
+            -v
+
+      - name: Generate raw inventory
+        run: |
+          python3 scripts/generate_architecture_inventory.py \
+            --output "$RUNNER_TEMP/ejc-architecture-inventory" \
+            --check
+
+      - name: Refine mounts and duplicate families
+        run: |
+          python3 scripts/refine_architecture_inventory.py \
+            --output "$RUNNER_TEMP/ejc-architecture-inventory" \
+            --check
+
+      - name: Publish summary
+        run: |
+          cat "$RUNNER_TEMP/ejc-architecture-inventory/README.md" >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Upload complete inventory
+        uses: actions/upload-artifact@v7
+        with:
+          name: ejc-architecture-inventory
+          path: ${{ runner.temp }}/ejc-architecture-inventory
+          if-no-files-found: error
+          retention-days: 30

@@ -1,0 +1,310 @@
+{
+  "schema_version": 1,
+  "notes": [
+    "As regras são avaliadas na ordem declarada; a primeira correspondência prevalece.",
+    "Regras de rota sempre devem informar kind=frontend_route para não contaminar outras entidades do mesmo arquivo.",
+    "Excluir após migração nunca autoriza exclusão direta: exige telemetria, consumidores, migração e rollback.",
+    "As classificações abaixo tratam arquitetura e fluxo, não atestam defeito funcional isoladamente."
+  ],
+  "rules": [
+    {
+      "kind": "frontend_route",
+      "route": "/knowledge-hub",
+      "classification": "redirecionar",
+      "confidence": "alta",
+      "rationale": "Fluxo já consolidado em /inteligencia?tab=pesquisa; manter somente compatibilidade histórica."
+    },
+    {
+      "kind": "frontend_route",
+      "route": "/prazos",
+      "classification": "redirecionar",
+      "confidence": "alta",
+      "rationale": "Funcionalidade consolidada na Central /atividades com filtro de prazo; preservar alias para favoritos."
+    },
+    {
+      "kind": "frontend_route",
+      "route": "/tarefas",
+      "classification": "redirecionar",
+      "confidence": "alta",
+      "rationale": "Funcionalidade consolidada na Central /atividades com filtro de tarefa; preservar alias para favoritos."
+    },
+    {
+      "kind": "frontend_route",
+      "route": "/intimacoes",
+      "classification": "redirecionar",
+      "confidence": "alta",
+      "rationale": "Funcionalidade consolidada na Central /atividades com filtro de intimação; preservar alias para favoritos."
+    },
+    {
+      "kind": "frontend_route",
+      "route": "/suspensoes",
+      "classification": "redirecionar",
+      "confidence": "alta",
+      "rationale": "Funcionalidade consolidada na Central /atividades; preservar alias para links históricos."
+    },
+    {
+      "kind": "frontend_route",
+      "route": "/casos/:id/jornada",
+      "classification": "consolidar",
+      "confidence": "alta",
+      "rationale": "A Jornada já reutiliza o Orquestrador oficial; manter um único estado e uma única implementação."
+    },
+    {
+      "kind": "page",
+      "path": "frontend/src/pages/RamosHub.tsx",
+      "classification": "renomear",
+      "confidence": "alta",
+      "rationale": "Substituir o vocabulário legado Ramos por Áreas de Atuação, preservando a rota histórica durante a migração."
+    },
+    {
+      "kind": "page",
+      "path": "frontend/src/pages/ramos/RamoBase.tsx",
+      "classification": "renomear",
+      "confidence": "alta",
+      "rationale": "Adequar nomes internos ao vocabulário canônico Área de Atuação/Núcleo Jurídico."
+    },
+    {
+      "kind": "frontend_function",
+      "path": "frontend/src/pages/ramos/ramosConfig.ts",
+      "classification": "renomear",
+      "confidence": "alta",
+      "rationale": "Renomear configuração e símbolos de ramos para áreas de atuação, com aliases temporários."
+    },
+    {
+      "kind": "page",
+      "path": "frontend/src/pages/KnowledgeHub.tsx",
+      "classification": "excluir após migração",
+      "confidence": "alta",
+      "rationale": "Página histórica substituída pelo workspace canônico de Pesquisa e IA; remover após confirmar ausência de imports e deep-links."
+    },
+    {
+      "path": "frontend/src/components/LegacyClientListAdapter.tsx",
+      "classification": "excluir após migração",
+      "confidence": "alta",
+      "rationale": "Adaptador transitório; incorporar a correção semântica diretamente em Clientes.tsx e remover após testes."
+    },
+    {
+      "path": "frontend/src/pages/Login.tsx",
+      "classification": "excluir após migração",
+      "confidence": "alta",
+      "rationale": "App.tsx utiliza LoginModern; versão antiga só pode permanecer enquanto houver import residual comprovado."
+    },
+    {
+      "path": "frontend/src/components/DashboardModernLuxury.tsx",
+      "classification": "excluir após migração",
+      "confidence": "média",
+      "rationale": "Componente histórico identificado como órfão; confirmar consumidores antes da remoção."
+    },
+    {
+      "kind": "page",
+      "path": "frontend/src/pages/Whatsapp.tsx",
+      "classification": "desativar",
+      "confidence": "média",
+      "rationale": "Tela placeholder histórica não deve ser exposta; preservar apenas os fluxos reais da Evolution API."
+    },
+    {
+      "kind": "page",
+      "path": "frontend/src/pages/CasoDetalhe.tsx",
+      "classification": "corrigir",
+      "confidence": "alta",
+      "rationale": "Página crítica e excessivamente acoplada; decompor por abas e domínios sem alterar contratos."
+    },
+    {
+      "kind": "frontend_function",
+      "path": "frontend/src/config/moduleRegistry.tsx",
+      "classification": "corrigir",
+      "confidence": "alta",
+      "rationale": "Separar gradualmente catálogo, rotas, navegação, RBAC e aliases, mantendo uma fonte canônica."
+    },
+    {
+      "kind": "python_module",
+      "path": "backend/app/main.py",
+      "classification": "corrigir",
+      "confidence": "alta",
+      "rationale": "Ponto de entrada concentra mais de cem imports e mounts; migrar gradualmente para registro modular auditável."
+    },
+    {
+      "kind": "class",
+      "path": "backend/app/models/case.py",
+      "name": "CaseArea",
+      "classification": "renomear",
+      "confidence": "alta",
+      "rationale": "Adequar a entidade ao vocabulário canônico Área de Atuação, mantendo compatibilidade de enum durante a migração."
+    },
+    {
+      "kind": "table",
+      "path": "backend/app/models/case.py",
+      "name": "cases",
+      "classification": "corrigir",
+      "confidence": "alta",
+      "rationale": "A entidade Caso permanece, mas os campos processuais legados achatados precisam migrar para processes."
+    },
+    {
+      "kind": "model_file",
+      "path": "backend/app/models/case.py",
+      "classification": "corrigir",
+      "confidence": "alta",
+      "rationale": "Remover dependência funcional dos campos legados de processo após backfill e compatibilidade controlada."
+    },
+    {
+      "kind": "model_file",
+      "path": "backend/app/models/process.py",
+      "classification": "manter",
+      "confidence": "alta",
+      "rationale": "Entidade canônica Processo com relação 1 Caso:N Processos."
+    },
+    {
+      "kind": "router",
+      "path": "backend/app/routers/processes.py",
+      "classification": "corrigir",
+      "confidence": "alta",
+      "rationale": "Manter endpoints e contrato, migrando SQL cru para service/repository e schemas canônicos."
+    },
+    {
+      "kind": "service",
+      "path": "backend/app/services/processo_service.py",
+      "classification": "corrigir",
+      "confidence": "alta",
+      "rationale": "Unificar regras de Processo no service canônico e eliminar duplicidade entre router e SQL cru."
+    },
+    {
+      "kind": "router",
+      "path": "backend/app/routers/ramos.py",
+      "classification": "corrigir",
+      "confidence": "alta",
+      "rationale": "Router de grande superfície; separar por área jurídica mantendo contratos e catálogo canônico."
+    },
+    {
+      "kind": "service",
+      "path": "backend/app/services/ai_gateway.py",
+      "classification": "manter",
+      "confidence": "alta",
+      "rationale": "Gateway canônico de provedores e roteamento da IA."
+    },
+    {
+      "path": "backend/app/services/ai/core/*",
+      "classification": "manter",
+      "confidence": "alta",
+      "rationale": "Núcleo canônico da inteligência jurídica."
+    },
+    {
+      "kind": "router",
+      "path": "backend/app/routers/ai_core.py",
+      "classification": "manter",
+      "confidence": "alta",
+      "rationale": "Fachada canônica do núcleo de IA."
+    },
+    {
+      "kind": "router",
+      "path": "backend/app/routers/ia_governanca.py",
+      "classification": "manter",
+      "confidence": "alta",
+      "rationale": "Governança, custos, fontes e guardrails possuem responsabilidade própria."
+    },
+    {
+      "kind": "router",
+      "path": "backend/app/routers/ai*.py",
+      "classification": "consolidar",
+      "confidence": "média",
+      "rationale": "Múltiplas fachadas AI exigem catálogo único de tarefas, payloads, HITL, auditoria e fallback."
+    },
+    {
+      "kind": "router",
+      "path": "backend/app/routers/ia_*.py",
+      "classification": "consolidar",
+      "confidence": "média",
+      "rationale": "Rotas especializadas devem compartilhar schemas e políticas do núcleo canônico."
+    },
+    {
+      "kind": "router",
+      "path": "backend/app/routers/data_room.py",
+      "classification": "consolidar",
+      "confidence": "alta",
+      "rationale": "Coexiste com data_room_v4; definir implementação canônica e camada de compatibilidade."
+    },
+    {
+      "kind": "router",
+      "path": "backend/app/routers/data_room_v4.py",
+      "classification": "consolidar",
+      "confidence": "alta",
+      "rationale": "Coexiste com data_room; incorporar recursos válidos em uma única API versionada."
+    },
+    {
+      "kind": "router",
+      "path": "backend/app/routers/teses.py",
+      "classification": "consolidar",
+      "confidence": "alta",
+      "rationale": "Coexiste com teses_v4 e Matriz de Teses; exige modelo e endpoints canônicos."
+    },
+    {
+      "kind": "router",
+      "path": "backend/app/routers/teses_v4.py",
+      "classification": "consolidar",
+      "confidence": "alta",
+      "rationale": "Versão paralela deve migrar para contrato único de teses."
+    },
+    {
+      "kind": "router",
+      "path": "backend/app/routers/sala_de_guerra.py",
+      "classification": "consolidar",
+      "confidence": "alta",
+      "rationale": "Coexiste com sala_de_guerra_v3; preservar uma única experiência estratégica por caso."
+    },
+    {
+      "kind": "router",
+      "path": "backend/app/routers/sala_de_guerra_v3.py",
+      "classification": "consolidar",
+      "confidence": "alta",
+      "rationale": "Versão paralela deve ser absorvida pela fachada canônica da estratégia do caso."
+    },
+    {
+      "kind": "router",
+      "path": "backend/app/routers/intelligence_v3.py",
+      "classification": "consolidar",
+      "confidence": "alta",
+      "rationale": "Recursos válidos devem convergir para Pesquisa e IA e para o núcleo canônico."
+    },
+    {
+      "kind": "router",
+      "path": "backend/app/routers/peca_geracao.py",
+      "classification": "consolidar",
+      "confidence": "alta",
+      "rationale": "Sobreposição com legal_docs, motor_peca e peca_geracao_router; definir máquina de estados única."
+    },
+    {
+      "kind": "router",
+      "path": "backend/app/routers/peca_geracao_router.py",
+      "classification": "consolidar",
+      "confidence": "alta",
+      "rationale": "Sobreposição com legal_docs, motor_peca e peca_geracao; manter compatibilidade durante migração."
+    },
+    {
+      "kind": "router",
+      "path": "backend/app/routers/legal_docs.py",
+      "classification": "manter",
+      "confidence": "alta",
+      "rationale": "Entidade e trilha canônica de peças/documentos jurídicos, devendo absorver fluxos paralelos."
+    },
+    {
+      "kind": "router",
+      "path": "backend/app/routers/credential_vault.py",
+      "classification": "manter",
+      "confidence": "alta",
+      "rationale": "Cofre de credenciais endurecido, com RBAC, step-up, auditoria e rotação."
+    },
+    {
+      "kind": "service",
+      "path": "backend/app/services/credential_vault_service.py",
+      "classification": "manter",
+      "confidence": "alta",
+      "rationale": "Serviço canônico do cofre de credenciais."
+    },
+    {
+      "kind": "router",
+      "path": "backend/app/routers/assistente.py",
+      "classification": "desativar",
+      "confidence": "média",
+      "rationale": "Router histórico identificado como desconectado; confirmar inexistência de consumidores antes de excluir."
+    }
+  ]
+}
