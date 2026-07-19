@@ -1,3 +1,4 @@
+from app.core.fastapi_compat import flatten_routes
 from app.routers import novos_modulos
 from app.routers.defesas_revisoes_pacote_seguro import planejar_pacote
 
@@ -51,10 +52,14 @@ def test_pacote_com_ressalvas_ainda_libera_fluxo_com_alerta_humano():
 
 
 def test_rota_pacote_existe_so_na_implementacao_segura():
-    """A rota legada foi REMOVIDA do router avançado — a versão segura é a
-    única (sem depender da ordem de include para sombrear rota insegura)."""
+    """A rota legada foi removida e a implementação segura é a única.
+
+    ``include_router`` é lazy no FastAPI atual; o coletor expande o wrapper antes
+    de validar caminho, método e módulo do endpoint, preservando a garantia.
+    """
     rotas = [
-        route for route in novos_modulos.router.routes
+        route
+        for route in flatten_routes(novos_modulos.router.routes)
         if getattr(route, "path", None) == "/defesas-revisoes/avancado/pacote"
         and "POST" in getattr(route, "methods", set())
     ]
