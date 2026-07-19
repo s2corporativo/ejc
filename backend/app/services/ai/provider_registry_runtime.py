@@ -19,7 +19,7 @@ def instalar() -> None:
         return
 
     from app.services import ai_gateway, ai_skill_service
-    from app.services.ai import adversarial, provider_policy
+    from app.services.ai import adversarial, provider_metrics_runtime, provider_policy
 
     ai_gateway._PROVIDERS_EXTERNOS = PROVIDERS_EXTERNOS
     ai_gateway._PROVIDERS_SUPORTADOS = PROVIDERS_SUPORTADOS
@@ -31,6 +31,11 @@ def instalar() -> None:
 
     adversarial._PROVIDERS_CONHECIDOS = PROVIDERS_SUPORTADOS
     ai_skill_service._ENGINE_PROVIDER = {p: p for p in PROVIDERS_SUPORTADOS}
+
+    # Instrumenta as primitivas consultadas em runtime pelo gateway. Assim também
+    # alcança call sites que importaram `chat` antes do startup, sem duplicar o
+    # núcleo de IA nem armazenar prompt/resposta na telemetria.
+    provider_metrics_runtime.instalar(ai_gateway)
 
     _INSTALADO = True
     logger.info("ProviderRegistry único conectado ao runtime")
