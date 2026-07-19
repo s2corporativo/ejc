@@ -30,9 +30,10 @@ def test_teses_v4_is_only_a_compatibility_adapter():
     assert "successor-version" in source
 
 
-def test_backfill_is_idempotent_and_non_destructive():
-    source = _read("../alembic/versions/110_consolidar_dataroom_teses_v4.py")
-    assert 'down_revision = "109_rag_scope_cliente"' in source
+def test_backfill_is_idempotent_non_destructive_and_single_head():
+    source = _read("../alembic/versions/111_consolidar_dataroom_teses_v4.py")
+    assert 'revision = "111_consolidar_v4"' in source
+    assert 'down_revision = "110_datajud_cognitive_feed"' in source
     assert "to_regclass('public.dataroom_salas')" in source
     assert "to_regclass('public.teses_juridicas_v4')" in source
     assert "NOT EXISTS" in source
