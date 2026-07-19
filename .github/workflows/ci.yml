@@ -1,14 +1,14 @@
 name: CI
 
-# Roda automaticamente em cada push e em cada Pull Request.
-# Se QUALQUER teste ou build falhar, o GitHub bloqueia o merge/deploy.
-# Objetivo: nada quebrado chega na produção do escritório.
+# Executa automaticamente em cada push para main e em cada Pull Request.
+# Todos os controles abaixo são bloqueantes: teste, build, lint, formatação ou
+# vulnerabilidade alta impedem homologação. Para eficácia jurídica/operacional,
+# os checks deste workflow e do "EJC Release Gate" devem ser obrigatórios na
+# proteção da branch main.
 
-# CI no runner SELF-HOSTED (2026-07-17): roda no VPS do escritório em vez da nuvem
-# do GitHub → Actions minutes = 0 (custo zero), mantendo os checks de PR.
-# ⚠️ Requer o runner registrado ANTES (scripts/setup-selfhosted-runner.sh); sem
-# runner online os checks ficam "aguardando runner". Ver docs/RUNNER_SELFHOSTED.md.
-# (Para voltar à nuvem paga: runs-on: ubuntu-latest.)
+# CI no runner SELF-HOSTED: roda no VPS do escritório, mantendo checks auditáveis
+# sem consumo de minutos hospedados. Requer o runner registrado e online com os
+# labels `self-hosted` e `ejc-vps` (docs/RUNNER_SELFHOSTED.md).
 on:
   pull_request:
   push:
@@ -90,12 +90,10 @@ jobs:
             -c "CREATE EXTENSION IF NOT EXISTS pg_trgm;" \
             -c "CREATE EXTENSION IF NOT EXISTS pgcrypto;"
 
-      - name: Lint (ruff)
-        continue-on-error: true
+      - name: Lint bloqueante (ruff)
         run: python -m ruff check app
 
-      - name: Scan de vulnerabilidades (pip-audit)
-        continue-on-error: true
+      - name: Auditoria bloqueante de dependências Python (pip-audit)
         run: |
           python -m pip install pip-audit
           pip-audit -r requirements.txt --desc
@@ -157,7 +155,7 @@ jobs:
         run: python -m app.eval.agent_trajectory --min-tool 1.0 --max-violacoes-hitl 0
 
   frontend-build:
-    name: Frontend — typecheck + build (tsc + vite)
+    name: Frontend — testes + typecheck + build
     runs-on: [self-hosted, ejc-vps]
     timeout-minutes: 25
     defaults:
@@ -176,8 +174,7 @@ jobs:
       - name: Instalar dependências
         run: npm ci
 
-      - name: Checar formatação (prettier)
-        continue-on-error: true
+      - name: Formatação bloqueante (prettier)
         run: npm run format:check
 
       - name: Testes (Vitest com resumo compacto)
@@ -205,8 +202,7 @@ jobs:
           if-no-files-found: warn
           retention-days: 7
 
-      - name: Scan de vulnerabilidades (npm audit)
-        continue-on-error: true
+      - name: Auditoria bloqueante de dependências Node (alto/crítico)
         run: npm audit --audit-level=high
 
       - name: Typecheck + build
