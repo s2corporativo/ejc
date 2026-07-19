@@ -1,0 +1,61 @@
+name: Apply FastAPI Compatibility to Main
+
+on:
+  push:
+    branches:
+      - chore/ejc-10-10-release-governance
+
+permissions:
+  contents: write
+
+concurrency:
+  group: apply-fastapi-compat-main-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  patch:
+    if: ${{ !contains(github.event.head_commit.message, '[fastapi-main-patched]') }}
+    runs-on: [self-hosted, ejc-vps]
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          ref: chore/ejc-10-10-release-governance
+
+      - name: Conectar EJCFastAPI ao ponto de entrada
+        shell: bash
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+
+          path = Path("backend/app/main.py")
+          text = path.read_text(encoding="utf-8")
+
+          import_line = "from app.core.fastapi_compat import EJCFastAPI\n"
+          anchor = "from app.core.api_version_middleware import APIVersionCompatibilityMiddleware\n"
+          if import_line not in text:
+              if anchor not in text:
+                  raise SystemExit("âncora de importação não encontrada")
+              text = text.replace(anchor, anchor + import_line, 1)
+
+          old = "app = FastAPI("
+          new = "app = EJCFastAPI("
+          if old in text:
+              text = text.replace(old, new, 1)
+          elif new not in text:
+              raise SystemExit("instanciação FastAPI não encontrada")
+
+          path.write_text(text, encoding="utf-8")
+          PY
+
+      - name: Publicar patch para validação integral
+        shell: bash
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add backend/app/main.py
+          if git diff --cached --quiet; then
+            exit 0
+          fi
+          git commit -m "fix(api): ativar introspecção compatível no app [fastapi-main-patched]"
+          git push origin HEAD:chore/ejc-10-10-release-governance
