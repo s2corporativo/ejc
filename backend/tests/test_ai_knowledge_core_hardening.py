@@ -7,8 +7,6 @@ import pytest
 
 
 async def test_gateway_fail_closed_nao_contorna_kill_switch(monkeypatch):
-    # Importar app instala o patch na primitiva interna usada por todos os aliases
-    # de chat, inclusive os importados antes do startup.
     from app.main import app  # noqa: F401
     from app.core.config import get_settings
     from app.services import ai_gateway
@@ -59,6 +57,22 @@ def test_ailog_pseudonimiza_resposta_e_critica_no_write_path():
     assert "[CPF_" in (log.resposta or "")
 
 
+def test_ailog_legado_tem_defaults_de_id_e_modelo():
+    from app.models.ai_log import AILog, AITipoUso
+
+    log = AILog(
+        user_id="user-fake",
+        tipo_uso=AITipoUso.outro,
+        prompt_sanitizado="evento legado",
+        resposta="resposta sem dados pessoais",
+    )
+    # Defaults SQLAlchemy são aplicados no flush; sua presença no mapper impede
+    # o INSERT inválido que antes era engolido por diversos try/except legados.
+    assert AILog.__table__.c.id.default is not None
+    assert AILog.__table__.c.modelo.default is not None
+    assert log.modelo is None  # ainda não houve flush; comportamento esperado
+
+
 @pytest.mark.asyncio
 async def test_context_builder_repassa_escopo_do_cliente_ao_rag(monkeypatch):
     from app.services.ai.core import context_builder
@@ -93,7 +107,17 @@ async def test_context_builder_repassa_escopo_do_cliente_ao_rag(monkeypatch):
     assert "Dossiê sanitizado" in ctx.texto
 
 
-def test_categoria_restrita_sem_cliente_e_bloqueada():
-    from app.services.ingestion_service import _CATEGORIAS_RESTRITAS
-    assert "precedente_interno" in _CATEGORIAS_RESTRITAS
-    assert "comunicacao_processual" in _CATEGORIAS_RESTRITAS
+@pytest.mark.asyncio
+async def test_categoria_restrita_sem_cliente_e_bloqueada():
+    from app.services.ingestion_service import upsert_documento
+
+    with pytest.raises(ValueError, match="exige client_id"):
+        await upsert_documento(
+            object(),
+            titulo="Precedente sem escopo",
+            categoria="precedente_interno",
+            conteudo="Conteúdo jurídico restrito suficientemente longo para o teste. " * 2,
+            chave_origem="precedente:sem-escopo",
+            client_id=None,
+            embutir_vetores=False,
+        )
