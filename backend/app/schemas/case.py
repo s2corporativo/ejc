@@ -125,6 +125,30 @@ class CaseUpdate(BaseModel):
             raise ValueError(f"fase inválida: use um de {sorted(validos)}")
         return v
 
+    @field_validator("status")
+    @classmethod
+    def _status_valido(cls, v: Optional[str]) -> Optional[str]:
+        # Case.status é SAEnum(CaseStatus) — mesma classe de 500 que fase.
+        if v is None or str(v).strip() == "":
+            return v
+        from app.models.case import CaseStatus
+        validos = {m.value for m in CaseStatus}
+        if v not in validos:
+            raise ValueError(f"status inválido: use um de {sorted(validos)}")
+        return v
+
+    @field_validator("prioridade")
+    @classmethod
+    def _prioridade_valida(cls, v: Optional[str]) -> Optional[str]:
+        # Case.prioridade é SAEnum(CasePrioridade) — mesma classe de 500.
+        if v is None or str(v).strip() == "":
+            return v
+        from app.models.case import CasePrioridade
+        validos = {m.value for m in CasePrioridade}
+        if v not in validos:
+            raise ValueError(f"prioridade inválida: use um de {sorted(validos)}")
+        return v
+
 class ProcessoPrincipalSchema(BaseModel):
     """Snapshot do processo principal (is_principal=True) — fonte canonica."""
     id: str
