@@ -6,6 +6,7 @@ import pytest
 from pydantic import ValidationError
 
 from app.schemas.process import ProcessCreate, ProcessUpdate
+from app.services.processo_service import _legacy_text
 
 
 def test_process_schema_accepts_administrative_identifier():
@@ -40,6 +41,13 @@ def test_process_update_preserves_unset_fields():
     assert payload.model_dump(exclude_unset=True) == {"status": "suspenso"}
 
 
+def test_legacy_adapter_only_truncates_the_compatibility_copy():
+    original = "TRIBUNAL-CANONICO-COM-NOME-COMPLETO"
+    assert _legacy_text(original, 20) == original[:20]
+    assert original == "TRIBUNAL-CANONICO-COM-NOME-COMPLETO"
+    assert _legacy_text(None, 20) is None
+
+
 def test_router_does_not_embed_sql_rules():
     source = (
         Path(__file__).parents[1] / "app/routers/processes.py"
@@ -62,7 +70,10 @@ def test_service_preserves_legacy_accessors_and_write_through():
     assert "async def numero_processo_efetivo" in source
     assert "async def obter_processo" in source
     assert "_sync_case_legacy" in source
+    assert "_clear_case_legacy" in source
+    assert "_legacy_text(process.tribunal, 20)" in source
     assert "Use a ação específica de arquivamento" in source
+    assert "informe is_principal=false" in source
 
 
 def test_repository_is_the_only_process_persistence_layer_in_wave2():
@@ -73,3 +84,12 @@ def test_repository_is_the_only_process_persistence_layer_in_wave2():
     assert "async def list_for_case" in repository
     assert "async def principal" in repository
     assert "async def clear_principal" in repository
+    assert "async def lock_case" in repository
+    assert ".with_for_update()" in repository
+
+
+def test_all_mutations_use_the_same_case_lock():
+    source = (
+        Path(__file__).parents[1] / "app/services/processo_service.py"
+    ).read_text(encoding="utf-8")
+    assert source.count("await process_repository.lock_case") == 6
