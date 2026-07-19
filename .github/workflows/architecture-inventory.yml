@@ -28,47 +28,13 @@ on:
       - ".github/workflows/architecture-inventory.yml"
 
 permissions:
-  contents: write
+  contents: read
 
 concurrency:
   group: architecture-inventory-${{ github.ref }}
   cancel-in-progress: true
 
 jobs:
-  format-2fa-flow:
-    if: github.event_name == 'pull_request' && github.head_ref == 'fix/2fa-enforcement-hard'
-    name: Format 2FA flow with project Prettier
-    runs-on: [self-hosted, ejc-vps]
-    timeout-minutes: 10
-    steps:
-      - name: Checkout branch
-        uses: actions/checkout@v7
-        with:
-          ref: ${{ github.head_ref }}
-          fetch-depth: 0
-      - name: Instalar Node 20
-        uses: actions/setup-node@v5
-        with:
-          node-version: 20
-          cache: npm
-          cache-dependency-path: frontend/package-lock.json
-      - name: Formatar arquivos apontados pelo gate
-        working-directory: frontend
-        run: |
-          npm ci
-          npx prettier --write src/config/routeIntegrity.test.ts src/pages/TrocarSenha.tsx
-      - name: Publicar formatação
-        run: |
-          if git diff --quiet; then
-            echo "Arquivos já formatados"
-            exit 0
-          fi
-          git config user.name "ejc-ci-bot"
-          git config user.email "ejc-ci-bot@users.noreply.github.com"
-          git add frontend/src/config/routeIntegrity.test.ts frontend/src/pages/TrocarSenha.tsx
-          git commit -m "style(frontend): formatar fluxo obrigatório de 2FA"
-          git push origin HEAD:${{ github.head_ref }}
-
   inventory:
     name: Generate complete architecture inventory
     runs-on: [self-hosted, ejc-vps]
