@@ -222,6 +222,97 @@ async def revogar(db, provider_key: str, field_key: str, user_id: str | None) ->
     return _meta(linha)
 
 
+# ── Teste de conexão (PR-4) ───────────────────────────────────────────────────
+
+# Domínio de last_test_status (models/integration_credential.py) — o mesmo
+# vocabulário devolvido por credential_testers. Validado aqui antes de gravar.
+_STATUS_TESTE_VALIDOS = frozenset({
+    "configurada", "ausente", "invalida", "expirada", "sem_permissao",
+    "indisponivel",
+})
+_LEN_DETALHE_MAX = 500
+
+# Severidade para agregar o estado de um provider com MÚLTIPLOS campos ativos
+# (o teste é por CONEXÃO → mesmo resultado em todas as linhas; se divergirem,
+# o pior estado prevalece para o painel).
+_SEVERIDADE_TESTE = {
+    "configurada": 0, "indisponivel": 1, "ausente": 2,
+    "sem_permissao": 3, "expirada": 4, "invalida": 5,
+}
+
+
+async def registrar_teste(
+    db, provider_key: str, status: str, detalhe: str | None,
+    *, user_id: str | None = None,
+) -> dict[str, Any]:
+    """Persiste o resultado do teste de conexão nas linhas ATIVAS do provider.
+
+    O teste é por CONEXÃO (provider), então grava o MESMO last_test_at/status/
+    detail em todas as linhas ativas do provider (ex.: smtp = SMTP_USER +
+    SMTP_PASSWORD). NUNCA toca no valor cifrado. `detalhe` é truncado e nunca
+    contém segredo (o testador já garante isso). Auditoria COFRE_TEST sem valor.
+
+    Retorna metadados do teste (nunca o valor)."""
+    if status not in _STATUS_TESTE_VALIDOS:
+        raise ValueError(f"Estado de teste inválido: '{status}'.")
+    if not credential_registry.campos_do_provider(provider_key):
+        raise ValueError(
+            f"Provider '{provider_key}' não existe no catálogo de credenciais."
+        )
+    det = (detalhe or "")[:_LEN_DETALHE_MAX]
+    agora = _agora()
+
+    res = await db.execute(
+        select(IntegrationCredential).where(
+            IntegrationCredential.provider_key == provider_key,
+            IntegrationCredential.ativo.is_(True),
+        )
+    )
+    linhas = res.scalars().all()
+    for c in linhas:
+        c.last_test_at = agora
+        c.last_test_status = status
+        c.last_test_detail = det
+
+    await criar_audit_log(
+        db, user_id, None, acao="COFRE_TEST", entidade=ENTIDADE_AUDIT,
+        registro_id=None,
+        detalhes=f"{provider_key} status={status} campos={len(linhas)}",
+    )
+    await db.commit()
+    return {
+        "provider_key": provider_key,
+        "estado": status,
+        "detalhe": det,
+        "last_test_at": agora,
+        "campos_atualizados": len(linhas),
+    }
+
+
+async def estados_credenciais(db) -> dict[str, str]:
+    """{provider_key: last_test_status} das linhas ATIVAS já testadas.
+
+    Base do `credential_state` do integration_status (consumido por PR-5). Um
+    provider com vários campos ativos é reduzido ao estado MAIS severo."""
+    res = await db.execute(
+        select(
+            IntegrationCredential.provider_key,
+            IntegrationCredential.last_test_status,
+        ).where(
+            IntegrationCredential.ativo.is_(True),
+            IntegrationCredential.last_test_status.is_not(None),
+        )
+    )
+    out: dict[str, str] = {}
+    for provider_key, estado in res.all():
+        if not estado:
+            continue
+        atual = out.get(provider_key)
+        if atual is None or _SEVERIDADE_TESTE.get(estado, 0) > _SEVERIDADE_TESTE.get(atual, 0):
+            out[provider_key] = estado
+    return out
+
+
 # ── Leitura (metadados) ───────────────────────────────────────────────────────
 
 async def listar(db) -> list[dict[str, Any]]:

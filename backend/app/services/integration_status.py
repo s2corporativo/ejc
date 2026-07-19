@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from dataclasses import asdict, dataclass
+from dataclasses import asdict, dataclass, replace
 from datetime import datetime, timezone
 from typing import Any
 
@@ -17,6 +17,66 @@ class IntegrationStatus:
     status: str
     detail: str
     mode: str | None = None
+    # PR-4 (Cofre): último resultado do teste de conexão da credencial vigente,
+    # no vocabulário do cofre (configurada|ausente|invalida|expirada|
+    # sem_permissao|indisponivel). None = sem teste registrado (default → o
+    # contrato histórico status ∈ disabled|attention|ready não muda).
+    credential_state: str | None = None
+
+
+# ── Refinamento pelo teste do Cofre (PR-4) ────────────────────────────────────
+# `key` do painel → provider_key do credential_registry. Só os itens mapeados
+# ganham credential_state; os demais permanecem intactos (retrocompatível).
+_ITEM_PROVIDER = {
+    "anthropic": "anthropic",
+    "groq": "groq",
+    "maritaca": "maritaca",
+    "datajud": "datajud",
+    "transparencia": "transparencia",
+    "infosimples": "infosimples",
+    "email": "smtp",
+    "whatsapp": "whatsapp_zapi",
+    "push": "push_vapid",
+    "langfuse": "langfuse",
+}
+
+# Estados do cofre que rebaixam um item "ready" para "attention" (dentro do
+# contrato existente — nunca inventa estado novo no campo `status`).
+_CRED_ATENCAO = frozenset({
+    "ausente", "invalida", "expirada", "sem_permissao", "indisponivel",
+})
+
+_DETALHE_POR_ESTADO = {
+    "invalida": "Último teste do cofre: credencial inválida.",
+    "expirada": "Último teste do cofre: credencial expirada.",
+    "sem_permissao": "Último teste do cofre: sem permissão (403).",
+    "indisponivel": "Último teste do cofre: serviço indisponível no teste.",
+    "ausente": "Último teste do cofre: credencial ausente.",
+}
+
+
+def _aplicar_estados_credencial(
+    items: list[IntegrationStatus], credential_states: dict[str, str],
+) -> list[IntegrationStatus]:
+    """Anexa credential_state a cada item mapeado e, se o item estava `ready`
+    mas o teste do cofre falhou, rebaixa `status` para `attention` (traduzindo o
+    resultado do cofre para os consumidores atuais SEM sair do contrato)."""
+    saida: list[IntegrationStatus] = []
+    for it in items:
+        provider = _ITEM_PROVIDER.get(it.key)
+        estado = credential_states.get(provider) if provider else None
+        if not estado:
+            saida.append(it)
+            continue
+        novo_status = it.status
+        novo_detail = it.detail
+        if it.status == "ready" and estado in _CRED_ATENCAO:
+            novo_status = "attention"
+            novo_detail = _DETALHE_POR_ESTADO.get(estado, it.detail)
+        saida.append(replace(
+            it, status=novo_status, detail=novo_detail, credential_state=estado,
+        ))
+    return saida
 
 
 def _status(
@@ -52,8 +112,16 @@ def _status(
     )
 
 
-def build_integration_status(settings: Settings) -> dict[str, Any]:
-    """Retorna apenas metadados seguros; nunca retorna segredo ou valor sensível."""
+def build_integration_status(
+    settings: Settings, credential_states: dict[str, str] | None = None,
+) -> dict[str, Any]:
+    """Retorna apenas metadados seguros; nunca retorna segredo ou valor sensível.
+
+    `credential_states` (opcional, PR-4): {provider_key: last_test_status} do
+    cofre (credential_vault_service.estados_credenciais). Quando fornecido, cada
+    item ganha `credential_state` e um item `ready` cujo teste falhou é rebaixado
+    para `attention`. Omitido (default) → comportamento e contrato idênticos ao
+    histórico (os consumidores atuais chamam sem esse argumento)."""
     items = [
         _status(
             key="ai_core",
@@ -274,6 +342,8 @@ def build_integration_status(settings: Settings) -> dict[str, Any]:
             mode=f"retenção local {settings.BACKUP_RETENTION_DAYS} dias",
         ),
     ]
+    if credential_states:
+        items = _aplicar_estados_credencial(items, credential_states)
     counts = {
         "total": len(items),
         "ready": sum(item.status == "ready" for item in items),
