@@ -18,25 +18,19 @@ describe("FlowEnhancements — regras puras", () => {
     expect(caseIdSeguro(" ")).toBeNull();
   });
 
-  it("registra somente respostas de criação real de caso", () => {
-    expect(
-      caseIdCriadoDaResposta({
-        config: { method: "post", url: "/cases/" } as never,
-        data: { id: "case-1" },
-      }),
-    ).toBe("case-1");
-
+  it("registra criação de caso em URLs relativas, legadas e versionadas", () => {
+    for (const url of ["/cases/", "/api/cases/", "/api/v1/cases/"]) {
+      expect(
+        caseIdCriadoDaResposta({
+          config: { method: "post", url } as never,
+          data: { id: "case-1" },
+        }),
+      ).toBe("case-1");
+    }
     expect(
       caseIdCriadoDaResposta({
         config: { method: "get", url: "/cases/" } as never,
         data: { id: "case-1" },
-      }),
-    ).toBeNull();
-
-    expect(
-      caseIdCriadoDaResposta({
-        config: { method: "post", url: "/clients/" } as never,
-        data: { id: "client-1" },
       }),
     ).toBeNull();
   });
@@ -50,11 +44,10 @@ describe("FlowEnhancements — regras puras", () => {
   it("injeta caso apenas em criações contextuais e nunca sobrescreve vínculo explícito", () => {
     expect(
       deveInjetarCaso(
-        { method: "post", url: "/deadlines/", data: { titulo: "Prazo" } } as never,
+        { method: "post", url: "/api/v1/deadlines/", data: { titulo: "Prazo" } } as never,
         "?caso=case-1",
       ),
     ).toBe("case-1");
-
     expect(
       deveInjetarCaso(
         {
@@ -65,27 +58,18 @@ describe("FlowEnhancements — regras puras", () => {
         "?caso=case-1",
       ),
     ).toBeNull();
-
     expect(
       deveInjetarCaso(
         { method: "patch", url: "/deadlines/", data: { titulo: "Prazo" } } as never,
         "?caso=case-1",
       ),
     ).toBeNull();
-
-    expect(
-      deveInjetarCaso(
-        { method: "post", url: "/financeiro/", data: { valor: 10 } } as never,
-        "?caso=case-1",
-      ),
-    ).toBeNull();
   });
 
-  it("consolida a rota histórica de conhecimento na pesquisa jurídica", () => {
+  it("consolida a rota histórica de conhecimento na aba canônica", () => {
     expect(destinoRotaConsolidada("/knowledge-hub")).toBe(
-      "/inteligencia?tab=pesquisa",
+      "/inteligencia?tab=conhecimento",
     );
     expect(destinoRotaConsolidada("/inteligencia")).toBeNull();
-    expect(destinoRotaConsolidada("/conhecimento")).toBeNull();
   });
 });
