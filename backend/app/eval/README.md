@@ -14,6 +14,13 @@ Sem régua, toda melhoria é aposta.
 
 ## 1. Monte o gold set
 
+> 📋 **Curadoria passo a passo (para o escritório, sem código):**
+> [`GUIA_CURADORIA_GOLD_SET.md`](GUIA_CURADORIA_GOLD_SET.md) — como começar pequeno,
+> checklists de pseudonimização (LGPD) e de conferência de fonte (anti-alucinação),
+> tipos de peça válidos e como validar/medir. Campos de cada caso:
+> [`gold_set.template.json`](gold_set.template.json) (RAG) e
+> [`gold_set_pecas.template.json`](gold_set_pecas.template.json) (peças).
+
 Copie `gold_set.example.jsonl` para `gold_set.jsonl` e cresça para **50–150 casos
 reais** (pseudonimizados), cobrindo as áreas de atuação. Cada linha é um JSON:
 
@@ -21,7 +28,7 @@ reais** (pseudonimizados), cobrindo as áreas de atuação. Cada linha é um JSO
 {"id": "trab-001", "area": "trabalhista",
  "query": "prazo prescricional para verbas rescisórias",
  "expected_titulos": ["CLT art. 11", "Súmula 308 TST"],
- "expected_categorias": ["legislacao", "sumula"],
+ "expected_categorias": ["legislacao", "sumula_tst"],
  "expected_citacoes": ["Súmula 308 do TST"],
  "notes": "referência humana"}
 ```

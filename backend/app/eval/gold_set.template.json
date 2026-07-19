@@ -1,0 +1,26 @@
+{
+  "_o_que_e": "TEMPLATE de UM caso-teste do gold set de RAG/RETRIEVAL (avaliação de buscar_contexto_rag — hit@k, precision@k, recall@k, MRR e, com --full/--judge, alucinação de citações e groundedness). O gold set real vive em gold_set.jsonl — UMA linha JSON por caso, no formato deste template (SEM os campos _*, que são só documentação). Para o gold set de PEÇAS use gold_set_pecas.template.json.",
+  "_regras_de_curadoria": [
+    "NUNCA inclua PII real na query: pseudonimize nomes, CPF/CNPJ, nº de processo e valores identificáveis ANTES de gravar (LGPD). A query deve ser a PERGUNTA jurídica, não os dados do caso.",
+    "NUNCA invente fonte: em expected_titulos/expected_citacoes liste apenas referências REAIS que existam na base de conhecimento e conferidas na fonte oficial.",
+    "expected_titulos casa por SUBSTRING normalizada (minúsculo, sem acento): 'CLT art. 11' casa com o título 'CLT - Art. 11 (Prescrição)'. Use o trecho estável do título como aparece na base.",
+    "Meta: 50-150 casos reais cobrindo as áreas de atuação do escritório, proporcionais ao volume real de cada área.",
+    "Comece pequeno: 15-20 casos das 2-3 áreas de maior volume já dão sinal de baseline. Cresça a partir daí."
+  ],
+  "id": "(obrigatório) identificador único e estável, ex.: trab-001, cons-014",
+  "area": "(obrigatório) área do direito, ex.: trabalhista | consumidor | civel | previdenciario | tributario | familia | empresarial",
+  "query": "(obrigatório) a PERGUNTA jurídica como o usuário a faria ao sistema — pseudonimizada, sem PII. Ex.: 'prazo prescricional para reclamar verbas rescisórias na Justiça do Trabalho'",
+  "expected_titulos": [
+    "(obrigatório, lista não vazia) títulos dos documentos da base que o retrieval DEVERIA trazer para responder bem. Casa por substring normalizada. Ex.: 'CLT art. 11', 'Súmula 308 TST'"
+  ],
+  "expected_categorias": [
+    "(opcional, lista) categorias esperadas dos documentos, entre: legislacao | sumula_stf | sumula_stj | sumula_tst | jurisprudencia | precedente_interno | doutrina"
+  ],
+  "expected_citacoes": [
+    "(opcional, lista) citações que uma boa resposta deveria conter — REAIS, conferidas na fonte oficial (usadas na medição de alucinação com --full). Ex.: 'Súmula 308 do TST', 'art. 26 do CDC'"
+  ],
+  "categorias": [
+    "(opcional, lista) restringe a busca a estas categorias durante a avaliação (mesmo parâmetro de buscar_contexto_rag). Deixe ausente para buscar em toda a base."
+  ],
+  "notes": "(opcional) observação do curador — referência humana, não avaliada. Ex.: fundamento legal, pegadinha da questão."
+}
