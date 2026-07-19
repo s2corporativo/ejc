@@ -7,6 +7,7 @@ on:
       - agent/organizacao-padronizacao-rotas-fluxos
     paths:
       - "scripts/generate_architecture_inventory.py"
+      - "scripts/tests/test_generate_architecture_inventory.py"
       - "config/architecture_inventory_overrides.json"
       - "backend/app/**"
       - "backend/alembic/versions/**"
@@ -15,6 +16,7 @@ on:
   pull_request:
     paths:
       - "scripts/generate_architecture_inventory.py"
+      - "scripts/tests/test_generate_architecture_inventory.py"
       - "config/architecture_inventory_overrides.json"
       - "backend/app/**"
       - "backend/alembic/versions/**"
@@ -43,6 +45,10 @@ jobs:
       - name: Validate Python runtime
         run: |
           python3 --version
+
+      - name: Test inventory generator
+        run: |
+          python3 -m unittest scripts.tests.test_generate_architecture_inventory -v
 
       - name: Generate inventory and enforce classification gate
         run: |
