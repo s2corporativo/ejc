@@ -39,9 +39,7 @@ const PortalAssinaturas = lazy(
 );
 const PortalMensagens = lazy(() => import("./pages/portal/PortalMensagens"));
 const PortalDocumentos = lazy(() => import("./pages/portal/PortalDocumentos"));
-const PainelProvedoresIA = lazy(
-  () => import("./pages/PainelProvedoresIA"),
-);
+const PainelProvedoresIA = lazy(() => import("./pages/PainelProvedoresIA"));
 const NotFound = lazy(() => import("./pages/NotFound"));
 
 // Alias antigo /clientes/:clientId/dossie removido de STAFF_ROUTES; como

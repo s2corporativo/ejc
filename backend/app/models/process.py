@@ -22,6 +22,11 @@ from app.core.database import Base
 
 class Process(Base):
     __tablename__ = "processes"
+    # `updated_at` usa expressão SQL em `onupdate`. Sem eager_defaults, o
+    # SQLAlchemy expira o atributo após o UPDATE e a serialização Pydantic tenta
+    # fazer IO implícito fora de `greenlet_spawn`, causando MissingGreenlet no
+    # AsyncSession. PostgreSQL devolve os defaults no próprio flush/RETURNING.
+    __mapper_args__ = {"eager_defaults": True}
 
     id = Column(String(36), primary_key=True)
     case_id = Column(String(36), ForeignKey("cases.id"), nullable=False, index=True)

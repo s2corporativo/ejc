@@ -98,16 +98,18 @@ const brl = (valor?: number | null, casas = 4) =>
     maximumFractionDigits: casas,
   });
 
-const inteiro = (valor?: number | null) =>
-  (valor ?? 0).toLocaleString("pt-BR");
+const inteiro = (valor?: number | null) => (valor ?? 0).toLocaleString("pt-BR");
 
 const dataHora = (valor?: string | null) =>
   valor ? new Date(valor).toLocaleString("pt-BR") : "—";
 
 const nomeProvider = (provider: string) =>
-  ({ anthropic: "Anthropic", maritaca: "Maritaca", groq: "Groq", ollama: "Ollama" })[
-    provider
-  ] || provider;
+  ({
+    anthropic: "Anthropic",
+    maritaca: "Maritaca",
+    groq: "Groq",
+    ollama: "Ollama",
+  })[provider] || provider;
 
 function StatusBadge({ status }: { status: string }) {
   const classes: Record<string, string> = {
@@ -151,8 +153,12 @@ function Kpi({
           <p className="text-xs font-medium uppercase tracking-wide text-slate-400">
             {label}
           </p>
-          <p className="mt-1 text-2xl font-serif text-navy dark:text-white">{value}</p>
-          <p className="mt-1 text-xs text-slate-500 dark:text-slate-300">{hint}</p>
+          <p className="mt-1 text-2xl font-serif text-navy dark:text-white">
+            {value}
+          </p>
+          <p className="mt-1 text-xs text-slate-500 dark:text-slate-300">
+            {hint}
+          </p>
         </div>
         <span className="grid h-10 w-10 shrink-0 place-items-center rounded-xl bg-primary-50 text-primary-700 dark:bg-white/10 dark:text-primary-200">
           <Icon className="h-5 w-5" />
@@ -203,7 +209,9 @@ export default function PainelProvedoresIA() {
   }, [autoRefresh, carregar]);
 
   const falhasRecentes = useMemo(
-    () => data?.eventos_recentes.filter((evento) => evento.status !== "sucesso") || [],
+    () =>
+      data?.eventos_recentes.filter((evento) => evento.status !== "sucesso") ||
+      [],
     [data],
   );
 
@@ -225,7 +233,10 @@ export default function PainelProvedoresIA() {
         subtitle="Operação, desempenho, custo, consumo e fallback de Anthropic, Maritaca, Groq e Ollama"
         actions={
           <div className="flex flex-wrap items-center gap-2">
-            <button className="btn-secondary" onClick={() => navigate("/ia-governanca")}>
+            <button
+              className="btn-secondary"
+              onClick={() => navigate("/ia-governanca")}
+            >
               <ArrowLeft className="h-4 w-4" /> Voltar
             </button>
             <select
@@ -244,7 +255,9 @@ export default function PainelProvedoresIA() {
               onClick={() => void carregar(true)}
               disabled={refreshing}
             >
-              <RefreshCw className={`h-4 w-4 ${refreshing ? "animate-spin" : ""}`} />
+              <RefreshCw
+                className={`h-4 w-4 ${refreshing ? "animate-spin" : ""}`}
+              />
               Atualizar
             </button>
           </div>
@@ -256,10 +269,12 @@ export default function PainelProvedoresIA() {
           <div className="flex gap-3">
             <AlertTriangle className="mt-0.5 h-5 w-5 text-warn-600" />
             <div>
-              <h3 className="font-semibold text-ink">Histórico ainda indisponível</h3>
+              <h3 className="font-semibold text-ink">
+                Histórico ainda indisponível
+              </h3>
               <p className="mt-1 text-sm text-slate-600 dark:text-slate-300">
-                A migration 111 precisa ser aplicada. A operação da IA continua ativa,
-                mas as novas métricas ainda não podem ser consultadas.
+                A migration 111 precisa ser aplicada. A operação da IA continua
+                ativa, mas as novas métricas ainda não podem ser consultadas.
               </p>
             </div>
           </div>
@@ -269,13 +284,21 @@ export default function PainelProvedoresIA() {
       <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
         <Kpi
           label="Taxa de sucesso"
-          value={resumo?.taxa_sucesso_pct != null ? `${resumo.taxa_sucesso_pct}%` : "—"}
+          value={
+            resumo?.taxa_sucesso_pct != null
+              ? `${resumo.taxa_sucesso_pct}%`
+              : "—"
+          }
           hint={`${inteiro(resumo?.sucessos)} sucessos em ${inteiro(resumo?.tentativas)} tentativas`}
           icon={CheckCircle2}
         />
         <Kpi
           label="Latência média"
-          value={resumo?.latencia_media_ms != null ? `${inteiro(resumo.latencia_media_ms)} ms` : "—"}
+          value={
+            resumo?.latencia_media_ms != null
+              ? `${inteiro(resumo.latencia_media_ms)} ms`
+              : "—"
+          }
           hint="Somente chamadas concluídas"
           icon={Clock3}
         />
@@ -297,14 +320,17 @@ export default function PainelProvedoresIA() {
         <div className="card overflow-hidden">
           <div className="flex flex-wrap items-center justify-between gap-3 border-b border-slate-100 p-4 dark:border-white/10">
             <div>
-              <h2 className="font-semibold text-ink">Comparativo por provedor</h2>
+              <h2 className="font-semibold text-ink">
+                Comparativo por provedor
+              </h2>
               <p className="text-sm text-slate-500 dark:text-slate-300">
                 Métricas reais das tentativas feitas pelo gateway único.
               </p>
             </div>
             {data?.comparacao?.melhor_equilibrio && (
               <span className="inline-flex items-center gap-1 rounded-full bg-success-50 px-3 py-1 text-xs font-medium text-success-700 ring-1 ring-success-200">
-                <Sparkles className="h-3.5 w-3.5" /> Melhor equilíbrio: {nomeProvider(data.comparacao.melhor_equilibrio)}
+                <Sparkles className="h-3.5 w-3.5" /> Melhor equilíbrio:{" "}
+                {nomeProvider(data.comparacao.melhor_equilibrio)}
               </span>
             )}
           </div>
@@ -340,27 +366,40 @@ export default function PainelProvedoresIA() {
                             )}
                           </div>
                           <div className="max-w-64 truncate text-xs text-slate-400">
-                            {provider.modelo_configurado || "Modelo não informado"}
+                            {provider.modelo_configurado ||
+                              "Modelo não informado"}
                           </div>
                         </div>
                       </div>
                     </td>
-                    <td className="px-4 py-3"><StatusBadge status={provider.status} /></td>
+                    <td className="px-4 py-3">
+                      <StatusBadge status={provider.status} />
+                    </td>
                     <td className="px-4 py-3 text-right font-medium">
-                      {provider.taxa_sucesso_pct != null ? `${provider.taxa_sucesso_pct}%` : "—"}
+                      {provider.taxa_sucesso_pct != null
+                        ? `${provider.taxa_sucesso_pct}%`
+                        : "—"}
                       <div className="text-xs font-normal text-slate-400">
                         {provider.sucessos}/{provider.tentativas}
                       </div>
                     </td>
                     <td className="px-4 py-3 text-right">
-                      {provider.latencia_media_ms != null ? `${inteiro(provider.latencia_media_ms)} ms` : "—"}
+                      {provider.latencia_media_ms != null
+                        ? `${inteiro(provider.latencia_media_ms)} ms`
+                        : "—"}
                     </td>
-                    <td className="px-4 py-3 text-right">{inteiro(provider.tentativas)}</td>
-                    <td className="px-4 py-3 text-right">{inteiro(provider.fallbacks_concluidos)}</td>
+                    <td className="px-4 py-3 text-right">
+                      {inteiro(provider.tentativas)}
+                    </td>
+                    <td className="px-4 py-3 text-right">
+                      {inteiro(provider.fallbacks_concluidos)}
+                    </td>
                     <td className="px-4 py-3 text-right">
                       {inteiro(provider.tokens_input + provider.tokens_output)}
                     </td>
-                    <td className="px-4 py-3 text-right">{brl(provider.custo_brl)}</td>
+                    <td className="px-4 py-3 text-right">
+                      {brl(provider.custo_brl)}
+                    </td>
                   </tr>
                 ))}
               </tbody>
@@ -377,17 +416,26 @@ export default function PainelProvedoresIA() {
             <dl className="mt-4 space-y-3 text-sm">
               <div className="flex justify-between gap-3">
                 <dt className="text-slate-500">IA habilitada</dt>
-                <dd className="font-medium">{data?.configuracao.ia_habilitada ? "Sim" : "Não"}</dd>
+                <dd className="font-medium">
+                  {data?.configuracao.ia_habilitada ? "Sim" : "Não"}
+                </dd>
               </div>
               <div className="flex justify-between gap-3">
                 <dt className="text-slate-500">Provedores externos</dt>
-                <dd className="font-medium">{data?.configuracao.externos_permitidos ? "Permitidos" : "Bloqueados"}</dd>
+                <dd className="font-medium">
+                  {data?.configuracao.externos_permitidos
+                    ? "Permitidos"
+                    : "Bloqueados"}
+                </dd>
               </div>
               <div>
                 <dt className="text-slate-500">Ordem de prioridade</dt>
                 <dd className="mt-2 flex flex-wrap gap-1">
                   {data?.configuracao.prioridade.map((provider, index) => (
-                    <span key={provider} className="rounded-full bg-slate-100 px-2 py-1 text-xs dark:bg-white/10">
+                    <span
+                      key={provider}
+                      className="rounded-full bg-slate-100 px-2 py-1 text-xs dark:bg-white/10"
+                    >
                       {index + 1}. {nomeProvider(provider)}
                     </span>
                   ))}
@@ -409,7 +457,9 @@ export default function PainelProvedoresIA() {
           <label className="card flex cursor-pointer items-center justify-between gap-3 p-4">
             <div>
               <div className="font-medium text-ink">Atualização automática</div>
-              <div className="text-xs text-slate-500">Recarrega a cada 30 segundos</div>
+              <div className="text-xs text-slate-500">
+                Recarrega a cada 30 segundos
+              </div>
             </div>
             <input
               type="checkbox"
@@ -424,8 +474,12 @@ export default function PainelProvedoresIA() {
       <div className="grid gap-4 xl:grid-cols-2">
         <div className="card overflow-hidden">
           <div className="border-b border-slate-100 p-4 dark:border-white/10">
-            <h2 className="font-semibold text-ink">Desempenho por tipo de tarefa</h2>
-            <p className="text-sm text-slate-500">Top 60 combinações no período.</p>
+            <h2 className="font-semibold text-ink">
+              Desempenho por tipo de tarefa
+            </h2>
+            <p className="text-sm text-slate-500">
+              Top 60 combinações no período.
+            </p>
           </div>
           <div className="max-h-[420px] overflow-auto">
             <table className="w-full text-sm">
@@ -443,13 +497,30 @@ export default function PainelProvedoresIA() {
                   <tr key={`${item.task_type}-${item.provider}`}>
                     <td className="px-4 py-3">{item.task_type}</td>
                     <td className="px-4 py-3">{nomeProvider(item.provider)}</td>
-                    <td className="px-4 py-3 text-right">{item.taxa_sucesso_pct != null ? `${item.taxa_sucesso_pct}%` : "—"}</td>
-                    <td className="px-4 py-3 text-right">{item.latencia_media_ms != null ? `${inteiro(item.latencia_media_ms)} ms` : "—"}</td>
-                    <td className="px-4 py-3 text-right">{brl(item.custo_brl)}</td>
+                    <td className="px-4 py-3 text-right">
+                      {item.taxa_sucesso_pct != null
+                        ? `${item.taxa_sucesso_pct}%`
+                        : "—"}
+                    </td>
+                    <td className="px-4 py-3 text-right">
+                      {item.latencia_media_ms != null
+                        ? `${inteiro(item.latencia_media_ms)} ms`
+                        : "—"}
+                    </td>
+                    <td className="px-4 py-3 text-right">
+                      {brl(item.custo_brl)}
+                    </td>
                   </tr>
                 ))}
                 {!data?.por_tarefa.length && (
-                  <tr><td colSpan={5} className="px-4 py-8 text-center text-slate-400">Sem dados no período.</td></tr>
+                  <tr>
+                    <td
+                      colSpan={5}
+                      className="px-4 py-8 text-center text-slate-400"
+                    >
+                      Sem dados no período.
+                    </td>
+                  </tr>
                 )}
               </tbody>
             </table>
@@ -459,8 +530,12 @@ export default function PainelProvedoresIA() {
         <div className="card overflow-hidden">
           <div className="flex items-center justify-between border-b border-slate-100 p-4 dark:border-white/10">
             <div>
-              <h2 className="font-semibold text-ink">Falhas e motivos de fallback</h2>
-              <p className="text-sm text-slate-500">Somente classes de erro seguras, sem conteúdo da requisição.</p>
+              <h2 className="font-semibold text-ink">
+                Falhas e motivos de fallback
+              </h2>
+              <p className="text-sm text-slate-500">
+                Somente classes de erro seguras, sem conteúdo da requisição.
+              </p>
             </div>
             <span className="rounded-full bg-danger-50 px-2 py-1 text-xs font-medium text-danger-700">
               {falhasRecentes.length} recentes
@@ -480,13 +555,20 @@ export default function PainelProvedoresIA() {
                       <div className="font-medium text-ink">
                         {nomeProvider(evento.provider)} · {evento.task_type}
                       </div>
-                      <time className="text-xs text-slate-400">{dataHora(evento.created_at)}</time>
+                      <time className="text-xs text-slate-400">
+                        {dataHora(evento.created_at)}
+                      </time>
                     </div>
                     <p className="mt-1 text-sm text-slate-600 dark:text-slate-300">
-                      {evento.fallback_reason || evento.error_type || "Falha técnica sem detalhe"}
+                      {evento.fallback_reason ||
+                        evento.error_type ||
+                        "Falha técnica sem detalhe"}
                     </p>
                     <p className="mt-1 text-xs text-slate-400">
-                      {inteiro(evento.duration_ms)} ms{evento.http_status ? ` · HTTP ${evento.http_status}` : ""}
+                      {inteiro(evento.duration_ms)} ms
+                      {evento.http_status
+                        ? ` · HTTP ${evento.http_status}`
+                        : ""}
                     </p>
                   </div>
                 </div>
@@ -502,8 +584,11 @@ export default function PainelProvedoresIA() {
       </div>
 
       <div className="card p-4 text-xs text-slate-500 dark:text-slate-300">
-        <strong>Critério comparativo:</strong> {data?.comparacao.criterio}. {data?.observacao}
-        <span className="ml-2">Atualizado em {dataHora(data?.atualizado_em)}.</span>
+        <strong>Critério comparativo:</strong> {data?.comparacao.criterio}.{" "}
+        {data?.observacao}
+        <span className="ml-2">
+          Atualizado em {dataHora(data?.atualizado_em)}.
+        </span>
       </div>
     </div>
   );
