@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import {
+  canonicalizarSalaDeGuerraUrl,
   caseIdCriadoDaResposta,
   caseIdSeguro,
   casoContextualDaUrl,
@@ -112,6 +113,56 @@ describe("FlowEnhancements — regras puras", () => {
         "?caso=case-1",
       ),
     ).toBeNull();
+  });
+
+  it("migra apenas as operações contextuais da Sala de Guerra para o caso aberto", () => {
+    const tela = "/casos/case-1/sala-de-guerra";
+    expect(
+      canonicalizarSalaDeGuerraUrl(
+        "/sala-de-guerra-v3/war-room/simular",
+        tela,
+      ),
+    ).toBe("/cases/case-1/sala-de-guerra/simular-contestacao");
+    expect(
+      canonicalizarSalaDeGuerraUrl(
+        "/api/v1/sala-de-guerra-v3/visual-law/case-1",
+        tela,
+      ),
+    ).toBe("/cases/case-1/sala-de-guerra/visual-law");
+    expect(
+      canonicalizarSalaDeGuerraUrl(
+        "/sala-de-guerra-v3/visual-law/case-1/download",
+        tela,
+      ),
+    ).toBe("/cases/case-1/sala-de-guerra/visual-law/download");
+  });
+
+  it("não reescreve Sentinela, outro caso ou chamada fora do workspace", () => {
+    const tela = "/casos/case-1/sala-de-guerra";
+    expect(
+      canonicalizarSalaDeGuerraUrl(
+        "/sala-de-guerra-v3/sentinela/auditoria",
+        tela,
+      ),
+    ).toBe("/sala-de-guerra-v3/sentinela/auditoria");
+    expect(
+      canonicalizarSalaDeGuerraUrl(
+        "/sala-de-guerra-v3/visual-law/case-2",
+        tela,
+      ),
+    ).toBe("/sala-de-guerra-v3/visual-law/case-2");
+    expect(
+      canonicalizarSalaDeGuerraUrl(
+        "/sala-de-guerra-v3/war-room/simular",
+        "/inteligencia",
+      ),
+    ).toBe("/sala-de-guerra-v3/war-room/simular");
+    expect(
+      canonicalizarSalaDeGuerraUrl(
+        "/sala-de-guerra-v3/war-room/simular",
+        "/casos/../../segredo/sala-de-guerra",
+      ),
+    ).toBe("/sala-de-guerra-v3/war-room/simular");
   });
 
   it("consolida a rota histórica de conhecimento na aba canônica", () => {
