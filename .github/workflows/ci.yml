@@ -53,6 +53,10 @@ jobs:
     steps:
       - uses: actions/checkout@v7
 
+      - name: Validar sintaxe dos scripts críticos de produção
+        working-directory: .
+        run: bash -n scripts/backup/ativar_backup.sh scripts/deploy_vps_safe.sh
+
       - name: Instalar Python 3.11
         uses: actions/setup-python@v6
         with:
