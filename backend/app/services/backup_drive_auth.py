@@ -38,24 +38,52 @@ def auth_mode() -> str:
 
 
 def auth_status() -> dict[str, Any]:
-    """Retorna somente presença/modo das credenciais, sem valores secretos."""
-    dedicated = {
-        "oauth_user_file_configurado": bool(_env("BACKUP_GOOGLE_DRIVE_OAUTH_USER_FILE")),
-        "oauth_user_json_configurado": bool(_env("BACKUP_GOOGLE_DRIVE_OAUTH_USER_JSON")),
-        "oauth_refresh_token_configurado": bool(
-            _env("BACKUP_GOOGLE_DRIVE_OAUTH_REFRESH_TOKEN")
-        ),
-        "service_account_file_configurado": bool(
-            _env("BACKUP_GOOGLE_DRIVE_SERVICE_ACCOUNT_FILE")
-        ),
-        "service_account_json_configurado": bool(
-            _env("BACKUP_GOOGLE_DRIVE_SERVICE_ACCOUNT_JSON")
-        ),
-    }
+    """Retorna somente presença/completude, sem valores secretos."""
+    oauth_user_file = bool(_env("BACKUP_GOOGLE_DRIVE_OAUTH_USER_FILE"))
+    oauth_user_json = bool(_env("BACKUP_GOOGLE_DRIVE_OAUTH_USER_JSON"))
+    oauth_client_id = bool(_env("BACKUP_GOOGLE_DRIVE_OAUTH_CLIENT_ID"))
+    oauth_client_secret = bool(_env("BACKUP_GOOGLE_DRIVE_OAUTH_CLIENT_SECRET"))
+    oauth_refresh_token = bool(_env("BACKUP_GOOGLE_DRIVE_OAUTH_REFRESH_TOKEN"))
+    service_account_file = bool(
+        _env("BACKUP_GOOGLE_DRIVE_SERVICE_ACCOUNT_FILE")
+    )
+    service_account_json = bool(
+        _env("BACKUP_GOOGLE_DRIVE_SERVICE_ACCOUNT_JSON")
+    )
+    oauth_trio_completo = oauth_client_id and oauth_client_secret and oauth_refresh_token
+    credencial_dedicada = any(
+        (
+            service_account_file,
+            service_account_json,
+            oauth_user_file,
+            oauth_user_json,
+            oauth_trio_completo,
+        )
+    )
+    if service_account_json:
+        source = "service_account_json"
+    elif service_account_file:
+        source = "service_account_file"
+    elif oauth_user_json:
+        source = "oauth_user_json"
+    elif oauth_user_file:
+        source = "oauth_user_file"
+    elif oauth_trio_completo:
+        source = "oauth_refresh_token"
+    else:
+        source = "none"
     return {
         "auth_mode": auth_mode(),
-        "credencial_dedicada_configurada": any(dedicated.values()),
-        **dedicated,
+        "credential_source": source,
+        "credencial_dedicada_configurada": credencial_dedicada,
+        "oauth_user_file_configurado": oauth_user_file,
+        "oauth_user_json_configurado": oauth_user_json,
+        "oauth_client_id_configurado": oauth_client_id,
+        "oauth_client_secret_configurado": oauth_client_secret,
+        "oauth_refresh_token_configurado": oauth_refresh_token,
+        "oauth_trio_completo": oauth_trio_completo,
+        "service_account_file_configurado": service_account_file,
+        "service_account_json_configurado": service_account_json,
     }
 
 
