@@ -31,3 +31,8 @@ cases.router.include_router(case_timeline.router)
 from app.routers import dashboard, dashboard_operational  # noqa: E402
 
 dashboard.router.include_router(dashboard_operational.router)
+
+# Governança das tarefas é introspecção do Núcleo Único, não um novo executor.
+from app.routers import ai_core, ai_task_policies  # noqa: E402
+
+ai_core.router.include_router(ai_task_policies.router)
