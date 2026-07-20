@@ -78,7 +78,7 @@ jinja2==3.1.6  # core/document_template_engine.py (import direto). Antes vinha
                # por transitividade do fastapi 0.111 "gordo"; o 0.115 (slim)
                # não a arrasta mais — dependência direta declarada aqui.
 weasyprint==69.0
-pydyf==0.11.0
+pydyf==0.12.1
 reportlab==4.2.0  # relatorio_visual_law.py, visual_law_templates.py
 
 # AI/RAG
