@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import pytest
 
-from app.services import backup_drive_auth
+from app.services import backup_drive_auth, backup_service
 
 
 _BACKUP_ENV = (
@@ -85,3 +85,38 @@ def test_auth_status_nao_expoe_valores_secretos(monkeypatch):
     assert status["credencial_dedicada_configurada"] is True
     assert status["service_account_json_configurado"] is True
     assert "SEGREDO-NUNCA-RETORNAR" not in str(status)
+
+
+def test_status_service_account_fail_closed_nao_herda_rag(monkeypatch):
+    monkeypatch.setattr(
+        backup_drive_auth,
+        "auth_status",
+        lambda: {
+            "auth_mode": "service_account",
+            "credencial_dedicada_configurada": False,
+        },
+    )
+    from app.services import google_drive_service
+
+    monkeypatch.setattr(
+        google_drive_service,
+        "auth_status",
+        lambda: pytest.fail("modo exclusivo não deve consultar GOOGLE_DRIVE_*"),
+    )
+    status = backup_service.configuracao_status()
+    assert status["auth_mode"] == "service_account"
+    assert status["credencial_drive_configurada"] is False
+
+
+def test_status_auto_reconhece_credencial_dedicada(monkeypatch):
+    monkeypatch.setattr(
+        backup_drive_auth,
+        "auth_status",
+        lambda: {
+            "auth_mode": "auto",
+            "credencial_dedicada_configurada": True,
+        },
+    )
+    status = backup_service.configuracao_status()
+    assert status["credencial_dedicada_configurada"] is True
+    assert status["credencial_drive_configurada"] is True
