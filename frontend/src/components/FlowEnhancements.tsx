@@ -3,6 +3,7 @@ import { useLocation, useNavigate } from "react-router-dom";
 import type { AxiosResponse, InternalAxiosRequestConfig } from "axios";
 import api from "../lib/api";
 import CaseCommandDock from "./CaseCommandDock";
+import CaseHealthWidget from "./CaseHealthWidget";
 
 const CREATED_CASE_KEY = "ejc_created_case_journey";
 const CREATED_CASE_TTL_MS = 60_000;
@@ -72,14 +73,6 @@ export function deveInjetarCaso(
   return casoContextualDaUrl(search);
 }
 
-/**
- * Migração transitória das duas operações contextuais ainda emitidas pela tela
- * legada da Sala de Guerra. A Sentinela continua global em `/sala-de-guerra-v3`.
- *
- * A conversão só ocorre quando a tela atual é exatamente o workspace do mesmo
- * caso. Isso evita reescrever chamadas avulsas ou permitir que um identificador
- * presente na URL da requisição substitua silenciosamente o caso aberto.
- */
 export function canonicalizarSalaDeGuerraUrl(
   url: string | undefined,
   pathname: string,
@@ -95,7 +88,6 @@ export function canonicalizarSalaDeGuerraUrl(
   if (endpoint === "/sala-de-guerra-v3/war-room/simular") {
     return `/cases/${caseId}/sala-de-guerra/simular-contestacao`;
   }
-
   const visualLaw = endpoint.match(
     /^\/sala-de-guerra-v3\/visual-law\/([a-zA-Z0-9-]+)(\/download)?$/,
   );
@@ -134,18 +126,6 @@ function salvarMarcador(id: string) {
   );
 }
 
-/**
- * Extensões transversais ainda não existentes na implementação nativa:
- * - guarda o caso recém-criado e continua para a Jornada quando o fluxo legado
- *   voltar à lista;
- * - injeta `case_id` em prazo/tarefa/evento criados a partir de `?caso=`;
- * - migra operações contextuais da Sala de Guerra para o workspace canônico;
- * - redireciona rotas consolidadas para o workspace canônico;
- * - mostra a central simples do caso na rota exata `/casos/:id`.
- *
- * O filtro `?tipo=` e os atalhos do Dashboard são nativos desde o PR #292 e
- * não são interceptados aqui.
- */
 export default function FlowEnhancements() {
   const location = useLocation();
   const navigate = useNavigate();
@@ -193,13 +173,11 @@ export default function FlowEnhancements() {
   useEffect(() => {
     const marker = lerMarcador();
     if (!marker) return;
-
     if (location.pathname === "/casos") {
       sessionStorage.removeItem(CREATED_CASE_KEY);
       navigate(`/casos/${marker.id}/jornada`, { replace: true });
       return;
     }
-
     if (location.pathname.startsWith(`/casos/${marker.id}`)) {
       sessionStorage.removeItem(CREATED_CASE_KEY);
     }
@@ -210,5 +188,11 @@ export default function FlowEnhancements() {
     return caseIdSeguro(match?.[1]);
   }, [location.pathname]);
 
-  return caseId ? <CaseCommandDock caseId={caseId} /> : null;
+  if (!caseId) return null;
+  return (
+    <>
+      <CaseHealthWidget caseId={caseId} />
+      <CaseCommandDock caseId={caseId} />
+    </>
+  );
 }
