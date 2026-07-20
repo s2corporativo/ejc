@@ -46,6 +46,20 @@ export const PORTFOLIO_LEVEL_TONE: Record<
   healthy: "green",
 };
 
+const PORTFOLIO_ALLOWED_ROLES = new Set([
+  "superadmin",
+  "admin",
+  "socio",
+  "advogado",
+  "advogado_auxiliar",
+  "estagiario",
+  "secretaria",
+]);
+
+export function podeVerSaudeCarteira(role?: string | null): boolean {
+  return Boolean(role && PORTFOLIO_ALLOWED_ROLES.has(role));
+}
+
 export function principalMotivo(item: PortfolioCase): string {
   return (
     item.indicators?.[0]?.message ||
