@@ -87,7 +87,7 @@ reportlab==4.2.0  # relatorio_visual_law.py, visual_law_templates.py
 # embedding_service + pgvector diretos; langfuse não depende de langchain em
 # runtime). Elimina a exposição às CVE-2024-8309 (SQLi) e CVE-2024-7774 (path
 # traversal) do langchain-community 0.2.x. Validado: suíte completa verde sem eles.
-anthropic==0.113.0  # providers/anthropic_provider.py (ai_gateway)
+anthropic==0.117.0  # providers/anthropic_provider.py (ai_gateway)
 fastembed==0.8.0  # PINADO (auditoria P2): versao flutuante = supply chain risk
 numpy==1.26.4
 # Ingestão de fontes HTML no RAG (services/ingestors/planalto.py: BeautifulSoup
