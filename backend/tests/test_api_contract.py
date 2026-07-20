@@ -1,21 +1,23 @@
 """Contrato HTTP frontend↔backend: toda chamada estática do frontend deve
-casar uma rota REAL do app montado (já com o prefixo /api).
+casar uma rota REAL do app montado.
 
-Guarda de regressão da auditoria Graphify (2026-07-04): 11 bugs de 404 em
-produção nasceram de paths do frontend divergindo das rotas do FastAPI
-(prefixo /v1 fantasma, routers nunca montados). Este teste é a versão
-executável daquela verificação — falha o CI antes do merge se o drift voltar.
+O cliente usa o contrato público /api/v1; os routers permanecem montados em
+/api e o middleware versionador reescreve o prefixo antes do dispatch.
 """
 import pytest
 
-from app.utils.api_contract import check_frontend_contract
+from app.utils.api_contract import (
+    _CALL_RE,
+    _final_url,
+    _internal_api_url,
+    check_frontend_contract,
+)
 
 
 def test_frontend_calls_batem_com_rotas_reais():
     unmatched, stats = check_frontend_contract()
     if stats.files == 0:
         pytest.skip("frontend/src ausente neste checkout — nada a verificar")
-    # Sanidade: o extrator precisa ter enxergado rotas e chamadas.
     assert stats.routes > 300, f"poucas rotas extraídas ({stats.routes})"
     assert stats.calls > 50, f"poucas chamadas extraídas ({stats.calls})"
     if unmatched:
@@ -31,12 +33,20 @@ def test_frontend_calls_batem_com_rotas_reais():
         )
 
 
-def test_extrator_reconhece_chamada_encadeada_multilinha():
-    """Regressão: o prettier quebra chamadas longas em `api\n  .get<T>(...)` e
-    a regex antiga exigia `api.` colado — as rotas Visual Law passaram sem
-    rota no backend justamente por esse ponto cego (404 silencioso em prod)."""
-    from app.utils.api_contract import _CALL_RE
+def test_cliente_axios_resolve_no_prefixo_publico_versionado():
+    assert _final_url(True, "/cases") == "/api/v1/cases"
+    assert _final_url(True, "/auth/refresh") == "/api/v1/auth/refresh"
 
+
+def test_prefixo_publico_versionado_equivale_ao_path_interno_exato():
+    assert _internal_api_url("/api/v1") == "/api"
+    assert _internal_api_url("/api/v1/auth/refresh") == "/api/auth/refresh"
+    assert _internal_api_url("/api/v10/auth/refresh") == "/api/v10/auth/refresh"
+    assert _internal_api_url("/api/auth/refresh") == "/api/auth/refresh"
+
+
+def test_extrator_reconhece_chamada_encadeada_multilinha():
+    """O prettier pode quebrar `api.get` em múltiplas linhas."""
     src = (
         "const r = await api\n"
         "  .get<TimelineResponse>(\n"

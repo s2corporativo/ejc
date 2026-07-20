@@ -1,16 +1,18 @@
 """
 api_contract.py — verificador de contrato HTTP frontend↔backend.
 
-Motivação (auditoria Graphify 2026-07-04): 9 bugs de 404 em produção nasceram
-de paths hardcoded no frontend que divergiam das rotas reais do FastAPI
-(docstrings anunciavam `/api/v1/...`, mas os prefixes não tinham `/v1`). Este
-módulo é a versão executável e reutilizável daquela verificação: extrai as
-rotas REAIS do app montado (já com o prefixo `/api`) e todas as chamadas HTTP
-estáticas do frontend, e reporta as que não casam.
+Motivação (auditoria Graphify 2026-07-04): bugs de 404 em produção nasceram
+de paths hardcoded no frontend que divergiam das rotas reais do FastAPI.
+Este módulo extrai as rotas REAIS do app montado e todas as chamadas HTTP
+estáticas do frontend, reportando as que não casam.
+
+Desde a Onda 1, o contrato público canônico é /api/v1, enquanto os routers
+continuam montados internamente em /api e o middleware de compatibilidade faz
+a reescrita. O verificador modela essa equivalência explicitamente; assim ele
+não gera falso positivo e também não mascara uma rota realmente inexistente.
 
 Uso: `check_frontend_contract()` retorna (unmatched, stats). O teste
-`tests/test_api_contract.py` falha se `unmatched` não estiver vazio, travando
-o drift no CI antes do merge.
+`tests/test_api_contract.py` falha se `unmatched` não estiver vazio.
 """
 from __future__ import annotations
 
@@ -18,17 +20,15 @@ import os
 import re
 from dataclasses import dataclass, field
 
-# baseURL do axios no frontend (frontend/src/lib/api.ts) — toda chamada `api.*`
-# é resolvida como este prefixo + o path informado.
-AXIOS_BASE_URL = "/api"
+# baseURL real do cliente axios em frontend/src/lib/api.ts.
+AXIOS_BASE_URL = "/api/v1"
 
 # Chamadas cujo path NÃO é estaticamente resolvível (segmento inteiro vindo de
 # variável) ou que batem em serviço externo — não são drift de contrato.
-# Mantido curto e explícito; cada entrada é uma justificativa auditável.
 ALLOWLIST_SUBSTR: tuple[str, ...] = (
-    "${API",        # base configurável por env
-    "http://",      # URL absoluta externa
-    "https://",     # URL absoluta externa
+    "${API",
+    "http://",
+    "https://",
 )
 
 
@@ -61,25 +61,18 @@ def _iter_frontend_files(front_src: str):
         for f in files:
             if not f.endswith((".ts", ".tsx")) or f.endswith(".d.ts"):
                 continue
-            # Arquivos de teste do frontend contêm fixtures/mocks com paths
-            # fictícios (ex.: endpoint: "/cases/caso-1/...") que não são call
-            # sites de produção — fora do contrato.
             if f.endswith((".test.ts", ".test.tsx", ".spec.ts", ".spec.tsx")):
                 continue
             yield os.path.join(root, f)
 
 
 # api.get(...), apiClient.post<T>(...), axios.delete(...), http.put(...)
-# Grupo 1 = cliente: `api`/`apiClient` têm baseURL "/api"; `axios`/`http` crus
-# trazem o path já absoluto (não recebem o prefixo).
 _CALL_RE = re.compile(
     r"\b(api|apiClient|axios|http)\s*\.\s*(get|post|put|patch|delete)\s*"
     r"(?:<[^>]*>)?\(\s*([`'\"])(.*?)\3",
     re.S,
 )
 _BASEURL_CLIENTS = {"api", "apiClient"}
-# fetch("/api/...", { method: "POST", ... }) — captura o path e uma janela das
-# opções logo após, para inferir o método (default GET quando ausente).
 _FETCH_RE = re.compile(
     r"\bfetch\s*\(\s*([`'\"])(/api/[^`'\"]*?)\1\s*(?:,\s*\{(.{0,200}?)\})?",
     re.S,
@@ -88,20 +81,29 @@ _FETCH_METHOD_RE = re.compile(r"method\s*:\s*[`'\"](\w+)", re.S)
 
 
 def _final_url(prefix_is_axios: bool, raw: str) -> str | None:
-    """Resolve a URL final que o navegador chamaria. Retorna None se o path
-    não começar de forma resolvível (variável no início)."""
-    # normaliza interpolações `${...}` para um placeholder de 1 segmento
+    """Resolve a URL final que o navegador chamaria."""
     norm = re.sub(r"\$\{[^}]*\}", "\x00", raw)
     norm = norm.split("?")[0].split("#")[0]
     if prefix_is_axios:
         if not norm.startswith("/"):
-            return None  # path relativo/dinâmico não resolvível
-        norm = AXIOS_BASE_URL + norm
-    else:
-        if not norm.startswith("/"):
             return None
-    norm = norm.rstrip("/") or "/"
-    return norm
+        norm = AXIOS_BASE_URL + norm
+    elif not norm.startswith("/"):
+        return None
+    return norm.rstrip("/") or "/"
+
+
+def _internal_api_url(path: str) -> str:
+    """Converte o contrato público /api/v1 para o path interno dos routers.
+
+    A função espelha APIVersionCompatibilityMiddleware sem liberar aliases
+    arbitrários: somente o prefixo exato /api/v1 é convertido para /api.
+    """
+    if path == "/api/v1":
+        return "/api"
+    if path.startswith("/api/v1/"):
+        return "/api" + path[len("/api/v1") :]
+    return path
 
 
 def _collect_calls(front_src: str) -> tuple[list[CallSite], int, int]:
@@ -141,11 +143,8 @@ def _collect_calls(front_src: str) -> tuple[list[CallSite], int, int]:
 
 
 def _route_samples():
-    """Amostra concreta de cada rota REAL do app montado: (method, sample_path),
-    com {param} substituído por um valor fixo. A chamada do frontend é comparada
-    como regex contra estas amostras, de modo que um segmento dinâmico da chamada
-    (`${action}`) casa um literal da rota (/approve) — dispatch dinâmico válido."""
-    from app.main import app  # import tardio: evita custo quando não usado
+    """Amostra concreta de cada rota REAL do app montado."""
+    from app.main import app
 
     samples: list[tuple[str, str]] = []
     for r in app.routes:
@@ -163,11 +162,13 @@ def check_frontend_contract(front_src: str | None = None) -> tuple[list[CallSite
     """Retorna (chamadas_sem_rota, stats). Lista vazia = contrato íntegro."""
     if front_src is None:
         here = os.path.dirname(os.path.abspath(__file__))
-        front_src = os.path.abspath(os.path.join(here, "..", "..", "..", "frontend", "src"))
+        front_src = os.path.abspath(
+            os.path.join(here, "..", "..", "..", "frontend", "src")
+        )
 
     stats = ContractStats()
     if not os.path.isdir(front_src):
-        return [], stats  # sem frontend no checkout → nada a verificar
+        return [], stats
 
     samples = _route_samples()
     stats.routes = len(samples)
@@ -177,11 +178,15 @@ def check_frontend_contract(front_src: str | None = None) -> tuple[list[CallSite
     stats.files = nfiles
 
     for c in calls:
-        # A chamada (com \x00 = segmento dinâmico) vira regex; casa contra a
-        # amostra concreta da rota (\x01 = valor de path param). Segmento
-        # dinâmico da chamada [^/]+ casa tanto o \x01 quanto um literal de rota.
+        # Rotas FastAPI estão montadas em /api; chamadas do cliente canônico
+        # chegam em /api/v1 e são reescritas pelo middleware antes do dispatch.
+        comparable_url = _internal_api_url(c.final_url)
         call_rx = re.compile(
-            "^" + "[^/]+".join(re.escape(p) for p in c.final_url.split("\x00")) + "/?$"
+            "^"
+            + "[^/]+".join(
+                re.escape(p) for p in comparable_url.split("\x00")
+            )
+            + "/?$"
         )
         matched = any(
             meth == c.method and call_rx.match(sample)
