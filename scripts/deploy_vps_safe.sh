@@ -105,24 +105,29 @@ fi
 log "Atualizando worker"
 docker compose up -d --no-deps worker
 
-# Backup diário offsite é requisito de produção, não opção documental. O helper
-# garante o .env, recria o backend (restart não recarrega env_file), confirma o
-# scheduler e executa uma prova integral quando não houver sucesso recente.
+# Backup diário offsite é requisito de produção (continuidade / gate G7), não
+# opção documental. O helper garante o .env, recria o backend (restart não
+# recarrega env_file), confirma o scheduler e executa uma prova integral.
 #
-# NÃO-FATAL por padrão: uma falha na PROVA do backup (ex.: credencial/escopo do
-# Google Drive) NÃO deve derrubar um deploy de app saudável nem disparar
-# rollback — o backup pré-deploy (pg_dump acima) já rodou e o app foi atualizado.
-# A falha é sinalizada em ALTO. Para voltar a bloquear/rolar-back o deploy quando
-# a prova falhar, exporte BACKUP_PROVA_BLOQUEANTE=1.
+# ESTRITO por PADRÃO: se a PROVA do backup falhar, o deploy ABORTA (rollback) —
+# o requisito de continuidade permanece o default e nenhuma release "esconde"
+# uma falha de backup. A falha da prova pode ter causa-raiz EXTERNA (credencial/
+# escopo do Google Drive, ex.: invalid_scope) — rastreada na issue #378.
+#
+# CONTINGÊNCIA EXPLÍCITA (opt-in, NÃO-certificada): exportar
+# BACKUP_PROVA_CONTINGENCIA=1 permite que um app SAUDÁVEL siga no ar mesmo com a
+# prova de backup falhando — com AVISO CRÍTICO e marcando a release como NÃO
+# CERTIFICADA (não satisfaz o gate G7 de continuidade). É decisão consciente do
+# operador, não o comportamento silencioso padrão.
 if [ "$ENSURE_DAILY_BACKUP" = "1" ]; then
   log "Garantindo backup diário cifrado no Google Drive"
   if bash scripts/backup/ativar_backup.sh; then
     log "Backup diário no Drive comprovado."
-  elif [ "${BACKUP_PROVA_BLOQUEANTE:-0}" = "1" ]; then
-    log "ERRO: prova do backup falhou e BACKUP_PROVA_BLOQUEANTE=1 — abortando deploy (rollback)."
-    false
+  elif [ "${BACKUP_PROVA_CONTINGENCIA:-0}" = "1" ]; then
+    log "AVISO CRÍTICO / RELEASE NÃO CERTIFICADA: a PROVA do backup diário no Drive FALHOU e BACKUP_PROVA_CONTINGENCIA=1 — o deploy do app segue por CONTINGÊNCIA consciente. Continuidade NÃO garantida (gate G7 não satisfeito). Verifique credencial/escopo do Google Drive (escopo de ESCRITA https://www.googleapis.com/auth/drive) e a issue #378."
   else
-    log "AVISO CRÍTICO: a PROVA do backup diário no Drive FALHOU — verifique a credencial/escopo do Google Drive (escopo de ESCRITA https://www.googleapis.com/auth/drive). O app foi atualizado normalmente; o backup automático precisa de correção. Veja os detalhes acima."
+    log "ERRO: a PROVA do backup diário no Drive FALHOU — abortando o deploy (rollback). Backup é requisito de continuidade (gate G7). Causa-raiz provável: credencial/escopo do Google Drive (issue #378). Para prosseguir por CONTINGÊNCIA consciente (release NÃO certificada), reexecute com BACKUP_PROVA_CONTINGENCIA=1."
+    false
   fi
 else
   log "AVISO CRÍTICO: ENSURE_DAILY_BACKUP=0 — garantia de backup diário foi ignorada por contingência."
