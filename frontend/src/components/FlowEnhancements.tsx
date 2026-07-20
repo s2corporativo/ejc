@@ -72,6 +72,37 @@ export function deveInjetarCaso(
   return casoContextualDaUrl(search);
 }
 
+/**
+ * Migração transitória das duas operações contextuais ainda emitidas pela tela
+ * legada da Sala de Guerra. A Sentinela continua global em `/sala-de-guerra-v3`.
+ *
+ * A conversão só ocorre quando a tela atual é exatamente o workspace do mesmo
+ * caso. Isso evita reescrever chamadas avulsas ou permitir que um identificador
+ * presente na URL da requisição substitua silenciosamente o caso aberto.
+ */
+export function canonicalizarSalaDeGuerraUrl(
+  url: string | undefined,
+  pathname: string,
+): string | undefined {
+  if (!url) return url;
+  const routeMatch = pathname.match(
+    /^\/casos\/([a-zA-Z0-9-]+)\/sala-de-guerra\/?$/,
+  );
+  const caseId = caseIdSeguro(routeMatch?.[1]);
+  if (!caseId) return url;
+
+  const endpoint = normalizarEndpoint(url);
+  if (endpoint === "/sala-de-guerra-v3/war-room/simular") {
+    return `/cases/${caseId}/sala-de-guerra/simular-contestacao`;
+  }
+
+  const visualLaw = endpoint.match(
+    /^\/sala-de-guerra-v3\/visual-law\/([a-zA-Z0-9-]+)(\/download)?$/,
+  );
+  if (!visualLaw || caseIdSeguro(visualLaw[1]) !== caseId) return url;
+  return `/cases/${caseId}/sala-de-guerra/visual-law${visualLaw[2] || ""}`;
+}
+
 export function destinoRotaConsolidada(pathname: string): string | null {
   return pathname === "/knowledge-hub"
     ? "/inteligencia?tab=conhecimento"
@@ -108,6 +139,7 @@ function salvarMarcador(id: string) {
  * - guarda o caso recém-criado e continua para a Jornada quando o fluxo legado
  *   voltar à lista;
  * - injeta `case_id` em prazo/tarefa/evento criados a partir de `?caso=`;
+ * - migra operações contextuais da Sala de Guerra para o workspace canônico;
  * - redireciona rotas consolidadas para o workspace canônico;
  * - mostra a central simples do caso na rota exata `/casos/:id`.
  *
@@ -118,13 +150,19 @@ export default function FlowEnhancements() {
   const location = useLocation();
   const navigate = useNavigate();
   const searchRef = useRef(location.search);
+  const pathnameRef = useRef(location.pathname);
 
   useEffect(() => {
     searchRef.current = location.search;
-  }, [location.search]);
+    pathnameRef.current = location.pathname;
+  }, [location.pathname, location.search]);
 
   useEffect(() => {
     const requestInterceptor = api.interceptors.request.use((config) => {
+      config.url = canonicalizarSalaDeGuerraUrl(
+        config.url,
+        pathnameRef.current,
+      );
       const caseId = deveInjetarCaso(config, searchRef.current);
       if (caseId) {
         config.data = {
