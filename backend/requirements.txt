@@ -89,7 +89,7 @@ reportlab==4.2.0  # relatorio_visual_law.py, visual_law_templates.py
 # traversal) do langchain-community 0.2.x. Validado: suíte completa verde sem eles.
 anthropic==0.113.0  # providers/anthropic_provider.py (ai_gateway)
 fastembed==0.8.0  # PINADO (auditoria P2): versao flutuante = supply chain risk
-numpy==1.26.4
+numpy==2.5.1
 # Ingestão de fontes HTML no RAG (services/ingestors/planalto.py: BeautifulSoup
 # + parser "lxml"). Sem estes, o job de ingestão do Planalto (scheduler, dom 03h)
 # estourava ModuleNotFoundError silenciosamente e os códigos federais nunca
