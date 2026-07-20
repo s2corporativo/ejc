@@ -5,11 +5,9 @@
 # - O dump do Postgres carrega PII (clientes, processos): TODO artefato é
 #   cifrado com Fernet (BACKUP_ENCRYPTION_KEY) ANTES de sair do VPS. Perder a
 #   chave = perder os backups — ela deve ser guardada fora do servidor.
-# - Reusa as credenciais Google já cadastradas para a curadoria de conhecimento
-#   (google_drive_service._build_credentials) — nenhum fluxo novo de auth. O
-#   client do RAG é somente-leitura; aqui re-escopamos para escrita, portanto o
-#   consentimento/compartilhamento do Google precisa permitir escrita na pasta
-#   BACKUP_DRIVE_FOLDER_ID (senão o upload falha com 403 e o alerta dispara).
+# - Usa identidade Google exclusiva do backup quando configurada
+#   (BACKUP_GOOGLE_DRIVE_*), preservando o escopo somente leitura do RAG.
+#   O modo legado herdado permanece explícito para compatibilidade.
 # - Rotação apaga SÓ arquivos com o prefixo do EJC (ejc_backup_) na pasta.
 # - Segredos (chave, senha do banco) nunca vão para log/erro/estado.
 from __future__ import annotations
@@ -39,10 +37,6 @@ settings = get_settings()
 # Prefixo do EJC nos artefatos enviados ao Drive — a rotação NUNCA toca
 # arquivos fora deste prefixo (a pasta pode conter outros documentos).
 PREFIXO_BACKUP = "ejc_backup_"
-# Escrita exige escopo amplo: drive.file só alcança arquivos criados pelo
-# próprio app, e a pasta de backup foi criada pelo usuário no Drive dele.
-DRIVE_WRITE_SCOPE = "https://www.googleapis.com/auth/drive"
-
 # Guard de processo: um backup por vez (pg_dump + upload podem levar minutos).
 # Flag booleana testada-e-setada SINCRONAMENTE (sem await entre teste e set) no
 # início de executar_backup — imune ao TOCTOU de check + `async with Lock`.
@@ -66,17 +60,32 @@ def hora_backup_utc() -> tuple[int, int]:
     return 5, 0
 
 
-def configuracao_status() -> dict[str, bool]:
-    """Booleans de configuração (sem expor nenhum segredo)."""
-    from app.services import google_drive_service as gdrive
+def configuracao_status() -> dict[str, bool | str]:
+    """Configuração operacional sem expor qualquer segredo."""
+    from app.services import backup_drive_auth
 
-    auth = gdrive.auth_status()
-    credencial_drive = any(v for k, v in auth.items() if k != "auth_mode")
+    auth = backup_drive_auth.auth_status()
+    dedicada = bool(auth["credencial_dedicada_configurada"])
+    # Em auto/inherit, GOOGLE_DRIVE_* continua aceito por compatibilidade.
+    herdada_permitida = auth["auth_mode"] in {"auto", "inherit"}
+    if herdada_permitida and not dedicada:
+        from app.services import google_drive_service as gdrive
+
+        inherited = gdrive.auth_status()
+        credencial_drive = any(
+            bool(value)
+            for key, value in inherited.items()
+            if key != "auth_mode"
+        )
+    else:
+        credencial_drive = dedicada
     return {
         "enabled": bool(settings.BACKUP_ENABLED),
         "chave_configurada": bool((settings.BACKUP_ENCRYPTION_KEY or "").strip()),
         "pasta_configurada": bool((settings.BACKUP_DRIVE_FOLDER_ID or "").strip()),
         "credencial_drive_configurada": credencial_drive,
+        "credencial_dedicada_configurada": dedicada,
+        "auth_mode": str(auth["auth_mode"]),
         "pg_dump_disponivel": shutil.which("pg_dump") is not None,
     }
 
@@ -206,38 +215,12 @@ def _tar_uploads_para(destino: str) -> int:
     return os.path.getsize(destino)
 
 
-# ── Google Drive (reuso das credenciais da curadoria de conhecimento) ────────
+# ── Google Drive (identidade de escrita isolada do RAG) ──────────────────────
 
 def _drive_client_escrita():
-    """Client Drive com escopo de ESCRITA, reusando o cadastro existente.
+    from app.services import backup_drive_auth
 
-    Reusa google_drive_service._build_credentials() (mesmos env vars/fluxo do
-    PR #205); só o escopo muda, porque o client do RAG é readonly por desenho.
-    """
-    from google.oauth2 import credentials as user_credentials
-    from google.oauth2 import service_account
-    from googleapiclient.discovery import build
-
-    from app.services import google_drive_service as gdrive
-
-    creds = gdrive._build_credentials()
-    if isinstance(creds, service_account.Credentials):
-        creds = creds.with_scopes([DRIVE_WRITE_SCOPE])
-    else:
-        # OAuth de usuário: reconstrói com o escopo de escrita a partir do
-        # MESMO refresh_token/client cadastrados (sem novo consentimento se o
-        # grant original já incluir escrita; senão o refresh/upload falha e o
-        # erro sobe para o alerta).
-        creds = user_credentials.Credentials(
-            token=None,
-            refresh_token=getattr(creds, "refresh_token", None),
-            token_uri=getattr(creds, "token_uri", None) or gdrive.GOOGLE_TOKEN_URI,
-            client_id=getattr(creds, "client_id", None),
-            client_secret=getattr(creds, "client_secret", None),
-            scopes=[DRIVE_WRITE_SCOPE],
-        )
-        creds = gdrive._refresh_if_needed(creds)
-    return build("drive", "v3", credentials=creds, cache_discovery=False)
+    return backup_drive_auth.build_client()
 
 
 def _upload_drive_sync(service, caminho: str, nome: str, folder_id: str) -> dict[str, Any]:
@@ -510,7 +493,7 @@ async def executar_backup(
                 else:
                     avisos.append(f"UPLOAD_DIR inexistente: {settings.UPLOAD_DIR}")
 
-                # 4) Upload ao Drive (credenciais reusadas da curadoria).
+                # 4) Upload ao Drive (identidade de escrita exclusiva quando configurada).
                 service = await asyncio.to_thread(_drive_client_escrita)
                 for art in artefatos:
                     enviado = await asyncio.to_thread(
