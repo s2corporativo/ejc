@@ -1,0 +1,64 @@
+name: Temporary document upload RBAC patch
+
+on:
+  pull_request:
+    branches:
+      - fix/document-upload-avulso-rbac-20260720
+
+permissions:
+  contents: write
+
+jobs:
+  patch:
+    if: github.actor != 'github-actions[bot]'
+    runs-on: [self-hosted, ejc-vps]
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          ref: ${{ github.event.pull_request.head.ref }}
+          repository: ${{ github.event.pull_request.head.repo.full_name }}
+          fetch-depth: 0
+
+      - name: Aplicar endurecimento e teste
+        shell: bash
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+
+          path = Path('backend/app/routers/documents.py')
+          text = path.read_text(encoding='utf-8')
+
+          anchor_helper = '''def _pode_acessar_confidencial(user: User, conf: str) -> bool:\n    """Cofre: restrito+ exige perfil socio ou superior."""\n    if conf in ("restrito", "confidencial", "segredo_justica"):\n        return ROLE_LEVEL.get(user.role.value, 0) >= ROLE_LEVEL["socio"]\n    return True\n\n\nasync def _verificar_acesso_cliente_sem_caso(\n'''
+          replacement_helper = '''def _pode_acessar_confidencial(user: User, conf: str) -> bool:\n    """Cofre: restrito+ exige perfil socio ou superior."""\n    if conf in ("restrito", "confidencial", "segredo_justica"):\n        return ROLE_LEVEL.get(user.role.value, 0) >= ROLE_LEVEL["socio"]\n    return True\n\n\ndef _validar_upload_avulso(user: User) -> None:\n    """Endpoint interno: cliente externo deve usar o fluxo controlado do Portal."""\n    if user.role.value == "cliente_externo":\n        raise HTTPException(\n            status_code=403,\n            detail="Upload avulso indisponível para cliente externo",\n        )\n\n\nasync def _verificar_acesso_cliente_sem_caso(\n'''
+          if anchor_helper not in text:
+              raise SystemExit('âncora do helper não encontrada')
+          text = text.replace(anchor_helper, replacement_helper, 1)
+
+          anchor_route = '''        await _verificar_acesso_cliente_sem_caso(db, cu, client_id)\n\n    # #29: confidencialidade chega como string livre do form; validar contra o\n'''
+          replacement_route = '''        await _verificar_acesso_cliente_sem_caso(db, cu, client_id)\n    else:\n        _validar_upload_avulso(cu)\n\n    # #29: confidencialidade chega como string livre do form; validar contra o\n'''
+          if anchor_route not in text:
+              raise SystemExit('âncora do upload não encontrada')
+          text = text.replace(anchor_route, replacement_route, 1)
+          path.write_text(text, encoding='utf-8')
+
+          test_path = Path('backend/tests/test_documents_upload_avulso_rbac.py')
+          test_path.write_text('''from types import SimpleNamespace\n\nimport pytest\nfrom fastapi import HTTPException\n\nfrom app.routers.documents import _validar_upload_avulso\n\n\ndef _user(role: str):\n    return SimpleNamespace(role=SimpleNamespace(value=role))\n\n\n@pytest.mark.parametrize(\n    "role",\n    [\n        "superadmin",\n        "admin",\n        "socio",\n        "advogado",\n        "advogado_auxiliar",\n        "secretaria",\n        "financeiro",\n        "estagiario",\n    ],\n)\ndef test_upload_avulso_permite_perfis_internos(role):\n    assert _validar_upload_avulso(_user(role)) is None\n\n\ndef test_upload_avulso_bloqueia_cliente_externo():\n    with pytest.raises(HTTPException) as exc:\n        _validar_upload_avulso(_user("cliente_externo"))\n\n    assert exc.value.status_code == 403\n    assert "cliente externo" in exc.value.detail.lower()\n''', encoding='utf-8')
+
+          for transient in (
+              Path('.github/workflows/temp_document_upload_patch.yml'),
+              Path('.tmp-trigger-doc-upload-patch'),
+          ):
+              if transient.exists():
+                  transient.unlink()
+          PY
+
+      - name: Commitar patch
+        shell: bash
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add -A
+          git diff --cached --quiet && exit 0
+          git commit -m "fix(security): bloquear upload avulso para cliente externo"
+          git push origin HEAD:${{ github.event.pull_request.head.ref }}
