@@ -5,6 +5,9 @@ APP_DIR="${APP_DIR:-/opt/ejc}"
 DOMAIN="${EJC_DOMAIN:-ejc.depaulateixeira.adv.br}"
 RUN_MIGRATIONS="${RUN_MIGRATIONS:-0}"
 RUN_SEEDS="${RUN_SEEDS:-0}"
+# Política de produção: todo deploy garante configuração efetiva e prova recente
+# do backup cifrado no Google Drive. Use 0 somente em contingência declarada.
+ENSURE_DAILY_BACKUP="${ENSURE_DAILY_BACKUP:-1}"
 
 cd "$APP_DIR"
 
@@ -101,6 +104,16 @@ fi
 # O worker usa a mesma imagem do backend e precisa ser recriado a cada deploy.
 log "Atualizando worker"
 docker compose up -d --no-deps worker
+
+# Backup diário offsite é requisito de produção, não opção documental. O helper
+# garante o .env, recria o backend (restart não recarrega env_file), confirma o
+# scheduler e executa uma prova integral quando não houver sucesso recente.
+if [ "$ENSURE_DAILY_BACKUP" = "1" ]; then
+  log "Garantindo backup diário cifrado no Google Drive"
+  bash scripts/backup/ativar_backup.sh
+else
+  log "AVISO CRÍTICO: ENSURE_DAILY_BACKUP=0 — garantia de backup diário foi ignorada por contingência."
+fi
 
 # Seed do corpus RAG da "Bíblia de Conhecimento EJC" — idempotente e não fatal.
 if [ "$RUN_SEEDS" = "1" ]; then
