@@ -98,7 +98,7 @@ beautifulsoup4==4.12.3
 lxml==6.1.1
 
 # Streaming, jobs, observability
-sse-starlette==2.1.0
+sse-starlette==3.4.5
 APScheduler==3.10.4
 celery[redis]==5.4.0  # fila assíncrona (Fase 3A) — worker no docker-compose
 redis==5.0.7          # broker/backend do Celery + ping de disponibilidade (dispatcher)
