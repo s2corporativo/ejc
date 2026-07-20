@@ -56,7 +56,7 @@ py-vapid==1.9.2
 aiofiles==23.2.1
 python-magic-bin==0.4.14; platform_system == "Windows"
 python-magic==0.4.27; platform_system != "Windows"
-PyMuPDF==1.24.5
+PyMuPDF==1.28.0
 pypdf==6.14.2
 # Pin explícito da dependência de pdfplumber: versões anteriores permitiam
 # desserialização insegura de CMaps e parsing malicioso de PDFs. O pdfplumber
