@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import {
   detalheErroCarteira,
   ordenarCarteira,
+  podeVerSaudeCarteira,
   principalMotivo,
   type PortfolioCase,
 } from "../portfolioHealthModel";
@@ -62,6 +63,23 @@ describe("PortfolioHealthWidget — regras puras", () => {
     expect(current.metrics.actionable_tasks).toBe(0);
     expect("health_score" in current).toBe(false);
     expect("pending_tasks" in current.metrics).toBe(false);
+  });
+
+  it("espelha os perfis do endpoint e oculta os demais", () => {
+    for (const role of [
+      "superadmin",
+      "admin",
+      "socio",
+      "advogado",
+      "advogado_auxiliar",
+      "estagiario",
+      "secretaria",
+    ]) {
+      expect(podeVerSaudeCarteira(role)).toBe(true);
+    }
+    expect(podeVerSaudeCarteira("financeiro")).toBe(false);
+    expect(podeVerSaudeCarteira("cliente_externo")).toBe(false);
+    expect(podeVerSaudeCarteira(null)).toBe(false);
   });
 
   it("preserva detalhe textual do backend", () => {
