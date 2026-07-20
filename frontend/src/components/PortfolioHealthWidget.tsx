@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState } from "react";
 import { Activity, AlertTriangle, RefreshCw } from "lucide-react";
 import api from "../lib/api";
+import { useAuth } from "../stores/auth";
 import { toast } from "./Toast";
 import { Button, EmptyState, Modal, Spinner } from "./UI";
 import PortfolioHealthList from "./PortfolioHealthList";
@@ -9,7 +10,18 @@ import {
   detalheErroCarteira,
 } from "./portfolioHealthModel";
 
+const ALLOWED_ROLES = new Set([
+  "superadmin",
+  "admin",
+  "socio",
+  "advogado",
+  "advogado_auxiliar",
+  "estagiario",
+  "secretaria",
+]);
+
 export default function PortfolioHealthWidget() {
+  const role = useAuth((state) => state.user?.role);
   const [open, setOpen] = useState(false);
   const [loading, setLoading] = useState(false);
   const [data, setData] = useState<PortfolioResponse | null>(null);
@@ -37,6 +49,8 @@ export default function PortfolioHealthWidget() {
   useEffect(() => {
     if (open) void carregar();
   }, [open]);
+
+  if (!role || !ALLOWED_ROLES.has(role)) return null;
 
   return (
     <>
