@@ -108,9 +108,22 @@ docker compose up -d --no-deps worker
 # Backup diário offsite é requisito de produção, não opção documental. O helper
 # garante o .env, recria o backend (restart não recarrega env_file), confirma o
 # scheduler e executa uma prova integral quando não houver sucesso recente.
+#
+# NÃO-FATAL por padrão: uma falha na PROVA do backup (ex.: credencial/escopo do
+# Google Drive) NÃO deve derrubar um deploy de app saudável nem disparar
+# rollback — o backup pré-deploy (pg_dump acima) já rodou e o app foi atualizado.
+# A falha é sinalizada em ALTO. Para voltar a bloquear/rolar-back o deploy quando
+# a prova falhar, exporte BACKUP_PROVA_BLOQUEANTE=1.
 if [ "$ENSURE_DAILY_BACKUP" = "1" ]; then
   log "Garantindo backup diário cifrado no Google Drive"
-  bash scripts/backup/ativar_backup.sh
+  if bash scripts/backup/ativar_backup.sh; then
+    log "Backup diário no Drive comprovado."
+  elif [ "${BACKUP_PROVA_BLOQUEANTE:-0}" = "1" ]; then
+    log "ERRO: prova do backup falhou e BACKUP_PROVA_BLOQUEANTE=1 — abortando deploy (rollback)."
+    false
+  else
+    log "AVISO CRÍTICO: a PROVA do backup diário no Drive FALHOU — verifique a credencial/escopo do Google Drive (escopo de ESCRITA https://www.googleapis.com/auth/drive). O app foi atualizado normalmente; o backup automático precisa de correção. Veja os detalhes acima."
+  fi
 else
   log "AVISO CRÍTICO: ENSURE_DAILY_BACKUP=0 — garantia de backup diário foi ignorada por contingência."
 fi
