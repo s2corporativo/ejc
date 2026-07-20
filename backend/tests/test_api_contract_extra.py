@@ -26,6 +26,7 @@ from app.utils.api_contract import (
     ALLOWLIST_SUBSTR,
     _collect_calls,  # noqa: F401  (documenta a relação; não usado direto)
     _final_url,
+    _internal_api_url,
     _iter_frontend_files,
     _route_samples,
 )
@@ -46,7 +47,7 @@ _AUTHFETCH_RE = re.compile(
 _METHOD_RE = re.compile(r"method\s*:\s*[`'\"](\w+)", re.S)
 
 # endpoint: "/x"  |  endpoint={`/x/${id}`}  — consumidos via api.<verbo>(cfg.endpoint),
-# logo recebem o baseURL /api do axios. Aceita ", ' e ` nas duas formas.
+# logo recebem o baseURL /api/v1 do axios. Aceita ", ' e ` nas duas formas.
 _ENDPOINT_RE = re.compile(
     r"\bendpoint\s*[:=]\s*\{?\s*([`'\"])(/.*?)\1",
 )
@@ -83,7 +84,7 @@ def _coletar_extras(front_src: str):
             raw = m.group(2)
             if any(s in raw for s in ALLOWLIST_SUBSTR):
                 continue
-            final = _final_url(True, raw)  # consumido por api.* → baseURL /api
+            final = _final_url(True, raw)  # consumido por api.* → baseURL /api/v1
             if final:
                 # método desconhecido no ponto de declaração (o consumidor
                 # decide GET/POST) → casa contra qualquer método da rota.
@@ -100,10 +101,17 @@ def _coletar_extras(front_src: str):
 
 
 def _casa_rota(final_url: str, method: str | None, samples) -> bool:
-    """Mesma semântica do check principal: \x00 (segmento dinâmico da chamada)
-    vira [^/]+ e casa contra a amostra concreta da rota."""
+    """Casa a chamada pública com a rota interna efetivamente montada.
+
+    O cliente Axios usa `/api/v1`, mas o FastAPI continua montado em `/api` e o
+    middleware converte apenas o prefixo canônico antes do dispatch. O verificador
+    extra deve espelhar a mesma equivalência do verificador principal.
+    """
+    comparable_url = _internal_api_url(final_url)
     rx = re.compile(
-        "^" + "[^/]+".join(re.escape(p) for p in final_url.split("\x00")) + "/?$"
+        "^"
+        + "[^/]+".join(re.escape(p) for p in comparable_url.split("\x00"))
+        + "/?$"
     )
     return any(
         (method is None or meth == method) and rx.match(sample)
@@ -157,3 +165,11 @@ def test_extrator_extra_reconhece_endpoint_prop_e_config():
     cfg = 'endpoint: "/civel/ferramentas/calculo-dano-moral",'
     assert _ENDPOINT_RE.search(prop).group(2) == "/documents/?case_id=${id}"
     assert _ENDPOINT_RE.search(cfg).group(2) == "/civel/ferramentas/calculo-dano-moral"
+
+
+def test_extrator_extra_normaliza_contrato_publico_v1():
+    final = _final_url(True, "/documents/?case_id=${id}")
+    assert final == "/api/v1/documents"
+    assert _casa_rota(final, None, [("GET", "/api/documents")])
+    # O alias deve ser exato: /api/v10 não pode ser aceito como /api/v1.
+    assert not _casa_rota("/api/v10/documents", None, [("GET", "/api/documents")])
