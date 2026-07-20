@@ -35,15 +35,23 @@ async def operational_health(
     now = datetime.now(timezone.utc)
     today = now.date()
 
+    # As mesmas fontes e os mesmos fallbacks são usados pela visão agregada da
+    # carteira. Isso garante paridade de inatividade e score entre Dashboard e
+    # diagnóstico individual, inclusive para registros históricos sem updated_at.
     last_values = [
-        case.updated_at,
+        case.updated_at or case.created_at,
         await db.scalar(
-            select(func.max(CaseMovimento.data_evento)).where(
-                CaseMovimento.case_id == case_id
-            )
+            select(
+                func.max(
+                    func.coalesce(
+                        CaseMovimento.data_evento,
+                        CaseMovimento.created_at,
+                    )
+                )
+            ).where(CaseMovimento.case_id == case_id)
         ),
         await db.scalar(
-            select(func.max(Document.updated_at)).where(
+            select(func.max(func.coalesce(Document.updated_at, Document.created_at))).where(
                 Document.case_id == case_id,
                 Document.deleted_at.is_(None),
             )
@@ -54,19 +62,21 @@ async def operational_health(
             )
         ),
         await db.scalar(
-            select(func.max(Task.updated_at)).where(
+            select(func.max(func.coalesce(Task.updated_at, Task.created_at))).where(
                 Task.case_id == case_id,
                 Task.deleted_at.is_(None),
             )
         ),
         await db.scalar(
-            select(func.max(Process.updated_at)).where(
+            select(func.max(func.coalesce(Process.updated_at, Process.created_at))).where(
                 Process.case_id == case_id,
                 Process.deleted_at.is_(None),
             )
         ),
         await db.scalar(
-            select(func.max(LegalDoc.updated_at)).where(
+            select(
+                func.max(func.coalesce(LegalDoc.updated_at, LegalDoc.created_at))
+            ).where(
                 LegalDoc.case_id == case_id,
                 LegalDoc.deleted_at.is_(None),
             )
