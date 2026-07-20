@@ -1,203 +1,320 @@
-# Rotina de Backup Diário do EJC no Google Drive
+# Rotina de Backup Diário Cifrado do EJC no Google Drive
 
-Rotina que, **todo dia automaticamente**, salva no Google Drive uma cópia
-**cifrada** de:
+**Status:** código implementado; ativação e prova real dependem da credencial do
+ambiente e são rastreadas na issue #378.
 
-1. **O sistema inteiro** — banco PostgreSQL via `pg_dump -Fc` (casos, clientes,
-   prazos, honorários, usuários e os **metadados** de todos os documentos).
-2. **Todos os documentos gerados e enviados** — o diretório `UPLOAD_DIR`
-   (`/app/uploads`) inteiro, que é onde o EJC grava **peças, minutas, PDFs
-   gerados, provas, anexos, assinaturas e documentos do portal do cliente**
-   (`pdf_service`, `legal_docs`, `portal_documentos`, `provas`,
-   `anexos_service`, `signatures`, `visual_law_files`).
+A rotina salva diariamente:
 
-Companion: `RUNBOOK_BACKUP.md` (caminho alternativo via script + cron no VPS) e
-a skill `gestor-backup-recuperacao`.
+1. o banco PostgreSQL em formato customizado `pg_dump -Fc`;
+2. todo o `UPLOAD_DIR`, incluindo peças, provas, PDFs, assinaturas e documentos
+   enviados pelo Portal;
+3. ambos cifrados com Fernet antes de sair da VPS.
 
-> **A rotina já existe no código** (`backend/app/services/backup_service.py`,
-> agendada pelo scheduler). Este runbook é o passo-a-passo para **ativá-la e
-> operá-la**. Nada aqui expõe segredos.
+O backup somente é considerado operacional depois de uma restauração integral
+em ambiente descartável. Upload sem restauração comprovada não conclui o gate
+G7 do EJC.
 
 ---
 
-## 1. O que a rotina faz (e por que é segura)
+## 1. Arquitetura e controles
 
-| Item | Comportamento |
+| Controle | Implementação |
 |---|---|
-| **Quando roda** | Diariamente às `BACKUP_HORA_UTC` (default **05:00 UTC**), via scheduler do backend. Gate: `BACKUP_ENABLED=true`. |
-| **O que salva** | `pg_dump -Fc` do banco **+** `tar.gz` do `UPLOAD_DIR` (documentos gerados/enviados). |
-| **Criptografia (LGPD)** | Todo artefato é cifrado com **Fernet** (`BACKUP_ENCRYPTION_KEY`) **antes** de sair do VPS. O dump carrega PII — sem a chave o backup não sobe. |
-| **Onde salva** | Pasta do Google Drive `BACKUP_DRIVE_FOLDER_ID`, arquivos com prefixo `ejc_backup_…​.enc`. Reusa as credenciais Google já cadastradas para a curadoria de conhecimento (RAG), reescopadas para escrita. |
-| **Retenção/rotação** | Mantém `BACKUP_RETENCAO_DIAS` (default **14**) dias. A rotação **só** apaga arquivos com o prefixo `ejc_backup_` — nunca toca outros arquivos da pasta. |
-| **Concorrência** | Um backup por vez (guard síncrono). Um disparo em corrida retorna “em execução” sem duplicar. |
-| **Falha** | Dump vazio/corrompido, erro de upload ou 403 do Drive disparam alerta e ficam registrados no `/admin/backup/status`. |
+| Agendamento | Scheduler do backend, diariamente em `BACKUP_HORA_UTC`. |
+| Opt-in | A rotina só agenda com `BACKUP_ENABLED=true`. |
+| Banco | `pg_dump -Fc`, com timeout e limite de tamanho configuráveis. |
+| Documentos | `tar.gz` de todo o `UPLOAD_DIR`. |
+| Criptografia | Fernet com `BACKUP_ENCRYPTION_KEY`, antes do upload. |
+| Autenticação Drive | Identidade exclusiva `BACKUP_GOOGLE_DRIVE_*`; recomendado `service_account`. |
+| Retenção | Remove somente arquivos do EJC além de `BACKUP_RETENCAO_DIAS`. |
+| Concorrência | Um ciclo por vez; execuções simultâneas não duplicam o backup. |
+| Telemetria | Estado em `/admin/backup/status` e alerta de falha. |
+| Restauração | Manual, verificável e nunca executada pelo scheduler. |
 
-Limites de tamanho (protegem RAM/tempo): `BACKUP_UPLOADS_MAX_MB` (512),
-`BACKUP_DB_MAX_MB` (2048), `BACKUP_PG_DUMP_TIMEOUT` (600s).
+O RAG permanece com credencial somente leitura. O backup não deve ampliar essa
+credencial para escrita.
 
----
+### Nomes exatos dos artefatos
 
-## 2. Ativar a rotina (uma vez, no VPS de produção)
+Cada ciclo usa o mesmo timestamp UTC nos dois arquivos:
 
-Os valores abaixo vão no **`.env` do VPS** (nunca no repositório). Ver
-`.env.example`.
+```text
+ejc_backup_AAAAmmddTHHMMSSZ_db.dump.enc
+ejc_backup_AAAAmmddTHHMMSSZ_uploads.tar.gz.enc
+```
 
-1. **Gerar a chave de criptografia** (guarde-a FORA do servidor — perder a chave
-   = perder os backups):
-   ```bash
-   python3 -c 'from cryptography.fernet import Fernet; print(Fernet.generate_key().decode())'
-   ```
-2. **Criar a pasta no Google Drive** onde os backups vão morar e copiar o ID da
-   pasta (o trecho final da URL `…/folders/<ID>`). A conta Google cadastrada
-   precisa de permissão de **escrita** nessa pasta.
-3. **Preencher o `.env`**:
-   ```env
-   BACKUP_ENABLED=true
-   BACKUP_ENCRYPTION_KEY=<a chave gerada no passo 1>
-   BACKUP_DRIVE_FOLDER_ID=<o ID da pasta do passo 2>
-   # opcionais (têm default):
-   BACKUP_HORA_UTC=05:00
-   BACKUP_RETENCAO_DIAS=14
-   ```
-4. **Reiniciar o backend** para o scheduler reagendar:
-   ```bash
-   docker compose restart backend
-   ```
-5. **Validar a configuração** (logado como admin/superadmin):
-   ```
-   GET /admin/backup/status
-   ```
-   Confira `configuracao.enabled/chave_configurada/pasta_configurada/`
-   `credencial_drive_configurada/pg_dump_disponivel` — todos **true**.
-6. **Testar com um backup manual** (não espera o horário, mas exige chave+pasta):
-   ```
-   POST /admin/backup/executar      → 202 (roda em background)
-   ```
-   Acompanhe em `GET /admin/backup/status` até `em_execucao=false` e confirme na
-   pasta do Drive um arquivo `ejc_backup_<data>…_db.enc` e outro `…_uploads.enc`
-   com tamanho > 0.
-
-Pronto: a partir daí a rotina roda sozinha todo dia no horário configurado.
+O par deve ter timestamp idêntico. Misturar banco e uploads de ciclos
+diferentes invalida a prova.
 
 ---
 
-## 3. Confirmar que os documentos gerados entram no backup
+## 2. Variáveis obrigatórias
 
-Os documentos gerados **não** vão para o banco — só os metadados vão. Os arquivos
-vivem em `UPLOAD_DIR` (`/app/uploads`, volume Docker `uploads_data`). A rotina
-empacota esse diretório **inteiro**, então cobre automaticamente qualquer módulo
-novo que salve arquivo ali. Checagem rápida no VPS:
+As variáveis ficam no cofre ou no `.env` da VPS. Nunca devem entrar no
+repositório, issues, logs ou histórico do shell.
+
+```env
+BACKUP_ENABLED=true
+BACKUP_ENCRYPTION_KEY=<chave-fernet-exclusiva>
+BACKUP_DRIVE_FOLDER_ID=<id-da-pasta>
+BACKUP_GOOGLE_DRIVE_AUTH_MODE=service_account
+BACKUP_GOOGLE_DRIVE_SERVICE_ACCOUNT_FILE=/run/secrets/ejc-backup-drive.json
+```
+
+Alternativamente, o JSON da service account pode ser fornecido por
+`BACKUP_GOOGLE_DRIVE_SERVICE_ACCOUNT_JSON`, desde que injetado pelo cofre de
+segredos.
+
+Variáveis operacionais com valores padrão:
+
+```env
+BACKUP_HORA_UTC=05:00
+BACKUP_RETENCAO_DIAS=14
+BACKUP_UPLOADS_MAX_MB=512
+BACKUP_DB_MAX_MB=2048
+BACKUP_PG_DUMP_TIMEOUT=600
+UPLOAD_DIR=/app/uploads
+```
+
+### Gerar a chave Fernet
+
+Gere uma única vez e custodie uma cópia fora da VPS:
+
+```bash
+python3 -c 'from cryptography.fernet import Fernet; print(Fernet.generate_key().decode())'
+```
+
+Perder a chave torna os artefatos irrecuperáveis. Expor a chave compromete todo
+o histórico de backups produzido com ela.
+
+---
+
+## 3. Preparar a service account
+
+1. Criar uma service account exclusiva para backup.
+2. Guardar o JSON somente no cofre/ambiente da VPS.
+3. Compartilhar apenas a pasta `BACKUP_DRIVE_FOLDER_ID` com o e-mail da service
+   account como **Editor**.
+4. Montar o arquivo no container backend como somente leitura.
+5. Reiniciar o backend para recarregar a configuração.
+
+Não reutilize a credencial OAuth `drive.readonly` da base de conhecimento. Um
+refresh token concedido somente para leitura falha com `invalid_scope` quando
+reconstruído para escrita.
+
+---
+
+## 4. Ativação e diagnóstico
+
+### Recarregar o backend
+
+```bash
+docker compose restart backend
+```
+
+### Diagnóstico local
+
+```bash
+bash scripts/backup/diagnostico_backup.sh
+```
+
+O diagnóstico não deve imprimir chaves, senha do banco ou JSON da service
+account.
+
+### Estado administrativo
+
+Com perfil `admin` ou `superadmin`:
+
+```text
+GET /admin/backup/status
+```
+
+Confirme:
+
+- `enabled=true`;
+- `chave_configurada=true`;
+- `pasta_configurada=true`;
+- `credencial_drive_configurada=true`;
+- `credencial_dedicada_configurada=true`;
+- `auth_mode=service_account`;
+- `pg_dump_disponivel=true`.
+
+### Disparo manual
+
+```text
+POST /admin/backup/executar
+```
+
+Resposta esperada: HTTP 202. Acompanhe o status até `em_execucao=false` e
+confirme `ultimo_resultado.last_status` como `sucesso` ou `parcial` devidamente
+justificado.
+
+Na pasta do Drive devem existir os dois arquivos `.enc`, com o mesmo timestamp
+e tamanho maior que zero.
+
+---
+
+## 5. Verificação da cobertura dos documentos
+
+Os arquivos físicos não estão dentro do `pg_dump`. Eles vivem em `UPLOAD_DIR`.
+Antes e depois do backup, registre apenas quantidade e tamanho, sem listar nomes
+sensíveis em evidência pública:
 
 ```bash
 docker exec ejc_backend sh -c 'du -sh /app/uploads && find /app/uploads -type f | wc -l'
 ```
 
-Se um módulo passar a gravar documentos **fora** de `/app/uploads`, esse caminho
-**não** será coberto — mantenha todo storage de arquivos sob `UPLOAD_DIR`.
+Todo módulo que gerar arquivo persistente deve gravá-lo sob `UPLOAD_DIR`. Um
+caminho externo exige inclusão explícita na política de backup.
 
 ---
 
-## 4. Aviso por e-mail quando o backup falhar (nativo — recomendado)
+## 6. Verificação criptográfica sem restauração
 
-**Já existe no EJC** (`backup_service._alertar_falha`): quando o backup diário
-roda e falha, o sistema notifica automaticamente o(s) **admin/superadmin** por
-**sino + e-mail** (assunto `[EJC] Backup automático FALHOU`). Roda no VPS junto
-com o backup — **não depende de conector externo nem de agente de IA**. Para
-ligar o canal de e-mail:
+Baixe do Drive o par com o mesmo timestamp para um diretório restrito. Defina a
+chave pelo ambiente ou por arquivo de chave com permissão somente leitura.
 
-1. Configurar o envio no `.env` do VPS:
-   ```env
-   EMAIL_ENABLED=true
-   SMTP_HOST=smtp.gmail.com
-   SMTP_PORT=587
-   SMTP_USER=<conta de envio>
-   SMTP_PASSWORD=<senha de app>
-   ```
-2. Garantir um usuário **admin/superadmin ativo com e-mail** (ex.:
-   `adm@vetmg.com.br`) — é para ele que o alerta vai.
+### Chave no ambiente
 
-Teste: em ambiente de teste, force uma falha controlada (ex.:
-`BACKUP_DRIVE_FOLDER_ID` inválido) e confirme o recebimento do e-mail; reverta.
-
-> **Cobre “o backup rodou e falhou”.** Não cobre “o backup nem chegou a rodar”
-> (backend caído). Para isso, adicione um monitor da idade do último backup:
-> consulte `GET /admin/backup/status` (`ultimo_resultado`) e alerte se passar de
-> 25h — ver skills `arquiteto-notificacoes` /
-> `arquiteto-monitoramento-observabilidade`. Uma camada extra opcional, que
-> confere direto na pasta do Drive, está no Apêndice A.
-
----
-
-## 5. Restauração (disaster recovery — nunca automática)
-
-Restaurar é destrutivo e manual. Resumo (detalhe em `RUNBOOK_BACKUP.md`):
-
-1. Baixar do Drive o par `ejc_backup_<data>…_db.enc` + `…_uploads.enc`.
-2. **Decifrar** com a `BACKUP_ENCRYPTION_KEY` (a mesma usada no backup).
-3. `pg_restore` do dump no banco e extrair o `tar.gz` dos uploads em
-   `/app/uploads`.
-4. Se o dump for de schema anterior, rodar `alembic upgrade head`.
-
-Teste a restauração periodicamente num banco descartável — backup que nunca foi
-restaurado não é backup, é esperança.
-
----
-
-## Apêndice A — Prompt da rotina de verificação diária (opcional, camada extra)
-
-Camada **opcional**, além do alerta nativo da seção 4. Confere direto na pasta
-do Drive se o backup do dia chegou. **Exige o conector Google Drive anexado à
-rotina** — crie-a pela **UI de rotinas do claude.ai** (que permite anexar o
-conector); rotinas criadas por outros meios podem rodar **sem** o conector e só
-reportarão “Drive indisponível”. Ela **não** faz o backup — apenas verifica e
-escala falhas.
-
-```
-Você é o operador de backup do EJC. Tarefa diária: confirmar que existe um
-backup ÍNTEGRO de HOJE no Google Drive, cobrindo o sistema (banco) e os
-documentos gerados (UPLOAD_DIR). Não reimplemente backup — verifique e, só se
-faltar, dispare e reporte.
-
-1. Leia GET /admin/backup/status (autenticado admin/superadmin). Se algum
-   booleano de configuracao for false → é FALHA DE CONFIGURAÇÃO: não dispare,
-   reporte qual booleano está false e escale.
-2. Confirme na pasta do Drive (BACKUP_DRIVE_FOLDER_ID) os arquivos
-   "ejc_backup_" de hoje: um de banco (_db.enc) e um de uploads (_uploads.enc),
-   ambos com tamanho > 0. O status deve indicar dump verificado.
-3. Se NÃO houver backup íntegro de hoje e a config estiver completa e não houver
-   execução em andamento: dispare POST /admin/backup/executar (202) e faça
-   polling do status até em_execucao=false; reconfirme os arquivos no Drive.
-4. Verifique a retenção (BACKUP_RETENCAO_DIAS): antigos além da janela removidos,
-   recentes preservados. Tamanho muito abaixo dos dias anteriores é suspeito —
-   registre observação.
-5. Reporte SEMPRE (Status OK|FALHA|CONFIG_INCOMPLETA|EM_EXECUCAO; data/hora UTC;
-   banco presente/íntegro/tamanho; uploads presente/tamanho; arquivos no Drive
-   sim/não; retenção; ações tomadas). Em falha, escale ao canal de alerta.
-
-REGRAS DURAS: nunca imprima segredos (BACKUP_ENCRYPTION_KEY, senha do banco,
-credenciais Google, .env) — só booleanos "*_configurada" e nomes/tamanhos/datas.
-Nunca desligue a criptografia. Nunca apague na pasta do Drive nada sem o prefixo
-"ejc_backup_". Nunca restaure banco/uploads nesta rotina (é manual). Se a falha
-exigir mudança de infra/config, pare e escale para um humano.
+```bash
+export BACKUP_ENCRYPTION_KEY='<chave-custodiada>'
+python3 scripts/backup/validar_restauracao_cifrada.py \
+  ./ejc_backup_20260720T210000Z_db.dump.enc \
+  ./ejc_backup_20260720T210000Z_uploads.tar.gz.enc \
+  --json-output ./evidencias/manifest-restauracao.json
+unset BACKUP_ENCRYPTION_KEY
 ```
 
-## Apêndice B — Variáveis (`.env` / `.env.example`)
+### Chave em arquivo montado
 
-`BACKUP_ENABLED`, `BACKUP_ENCRYPTION_KEY`, `BACKUP_DRIVE_FOLDER_ID`,
-`BACKUP_HORA_UTC`, `BACKUP_RETENCAO_DIAS`, `BACKUP_UPLOADS_MAX_MB`,
-`BACKUP_DB_MAX_MB`, `BACKUP_PG_DUMP_TIMEOUT`, `UPLOAD_DIR`. Segredos nunca
-aparecem em log/relatório — só os booleanos `*_configurada`.
+```bash
+python3 scripts/backup/validar_restauracao_cifrada.py \
+  ./ejc_backup_20260720T210000Z_db.dump.enc \
+  ./ejc_backup_20260720T210000Z_uploads.tar.gz.enc \
+  --key-file /run/secrets/ejc-backup-fernet.key \
+  --json-output ./evidencias/manifest-restauracao.json
+```
 
+O modo padrão:
 
-## Credencial exclusiva de escrita
+- verifica se os artefatos pertencem ao mesmo ciclo;
+- decifra em diretório temporário;
+- valida o dump com `pg_restore --list`;
+- rejeita traversal, links e tipos especiais no `tar.gz`;
+- calcula hashes e contagens;
+- remove automaticamente os arquivos em claro;
+- nunca inclui chave ou senha no manifesto.
 
-O backup não deve ampliar a credencial somente leitura usada pelo RAG. Em
-produção, configure `BACKUP_GOOGLE_DRIVE_AUTH_MODE=service_account` e uma
-das variáveis `BACKUP_GOOGLE_DRIVE_SERVICE_ACCOUNT_JSON` ou
-`BACKUP_GOOGLE_DRIVE_SERVICE_ACCOUNT_FILE`. Compartilhe somente a pasta
-`BACKUP_DRIVE_FOLDER_ID` com o e-mail da conta de serviço no papel **Editor**.
+---
 
-O modo `inherit` existe apenas para compatibilidade. Um refresh token emitido
-somente com `drive.readonly` continuará falhando com `invalid_scope` quando
-reconstruído para escrita; nesse caso, reautorize com escrita ou migre para a
-conta de serviço exclusiva.
+## 7. Prova de restauração em banco descartável
+
+Crie previamente um banco vazio cujo nome contenha `test`, `teste`, `homolog`,
+`restore`, `restauracao` ou `dr`. O utilitário recusa:
+
+- nomes que não aparentem ambiente descartável;
+- alvo físico igual a `DATABASE_URL_SYNC` ou `DATABASE_URL`, mesmo com usuário
+  diferente;
+- senha na linha de comando.
+
+Configure a URL somente no ambiente:
+
+```bash
+export RESTORE_TEST_DATABASE_URL='postgresql://usuario:senha@host:5432/ejc_restore_test'
+export BACKUP_ENCRYPTION_KEY='<chave-custodiada>'
+mkdir -p /tmp/ejc-restore-uploads
+
+python3 scripts/backup/validar_restauracao_cifrada.py \
+  ./ejc_backup_20260720T210000Z_db.dump.enc \
+  ./ejc_backup_20260720T210000Z_uploads.tar.gz.enc \
+  --restore-test \
+  --uploads-output-dir /tmp/ejc-restore-uploads \
+  --json-output ./evidencias/manifest-restauracao-real.json
+
+unset RESTORE_TEST_DATABASE_URL
+unset BACKUP_ENCRYPTION_KEY
+```
+
+A prova somente é aprovada quando o manifesto indicar:
+
+- `status=restaurado_em_ambiente_descartavel`;
+- objetos reconhecidos pelo `pg_restore`;
+- tabelas no schema `public`;
+- quantidade de uploads restaurados;
+- hashes dos artefatos cifrados e decifrados;
+- nenhum segredo.
+
+Depois, inicialize uma instância de homologação sobre a cópia, execute migrations
+quando necessário e valide login e consulta de dados fictícios. Registre tempo
+total para definir RTO e a idade do backup para definir RPO.
+
+---
+
+## 8. Disaster recovery real
+
+A recuperação de produção exige decisão humana, janela de indisponibilidade e
+backup de segurança do estado atual.
+
+Primeiro valide o par conforme as seções 6 e 7. Depois, para gerar arquivos em
+claro deliberadamente:
+
+```bash
+mkdir -p /secure/ejc-restore
+chmod 700 /secure/ejc-restore
+export BACKUP_ENCRYPTION_KEY='<chave-custodiada>'
+
+python3 scripts/backup/validar_restauracao_cifrada.py \
+  ./ejc_backup_20260720T210000Z_db.dump.enc \
+  ./ejc_backup_20260720T210000Z_uploads.tar.gz.enc \
+  --export-clear-dir /secure/ejc-restore \
+  --json-output ./evidencias/manifest-exportacao.json
+
+unset BACKUP_ENCRYPTION_KEY
+```
+
+O diretório recebe `db.dump` e `uploads.tar.gz` com permissões restritas. Só
+então execute a restauração guiada existente:
+
+```bash
+bash scripts/backup/restaurar_backup.sh \
+  /secure/ejc-restore/db.dump \
+  /secure/ejc-restore/uploads.tar.gz
+```
+
+O script solicita confirmação explícita do banco. Após validar a aplicação,
+apague os artefatos em claro e o diretório temporário por procedimento seguro.
+Nunca mantenha dump com PII em pasta compartilhada ou sem criptografia.
+
+---
+
+## 9. Alertas e monitoramento
+
+Falhas do ciclo são registradas e notificadas ao primeiro admin/superadmin ativo
+com e-mail quando o canal estiver configurado.
+
+O monitor externo deve alertar quando:
+
+- o último backup ultrapassar 25 horas;
+- o status for `erro`;
+- qualquer booleano de configuração obrigatório for falso;
+- apenas um dos dois artefatos existir;
+- houver redução anormal de tamanho ou contagem;
+- a restauração periódica estiver vencida.
+
+O monitor nunca deve executar restauração automaticamente.
+
+---
+
+## 10. Critério de encerramento da issue #378
+
+A issue somente pode ser encerrada quando houver evidência sanitizada de:
+
+1. upload dos dois artefatos cifrados;
+2. hashes e tamanhos registrados;
+3. decifragem com a chave custodiada;
+4. `pg_restore` em banco descartável;
+5. restauração e amostragem dos uploads;
+6. aplicação de homologação iniciada sobre a cópia;
+7. RPO e RTO aprovados;
+8. descarte seguro dos arquivos em claro;
+9. nenhum segredo exposto.
