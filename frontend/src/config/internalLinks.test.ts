@@ -27,6 +27,7 @@ const APP_LITERAL_ROUTES = [
   "/portal/assinaturas",
   "/portal/mensagens",
   "/portal/documentos",
+  "/ia-governanca/provedores",
 ];
 
 const KNOWN_ROUTES: string[] = [
@@ -66,7 +67,7 @@ const LINK_PATTERNS: RegExp[] = [
   /\bnavigate\(\s*"([^"]+)"/g, // navigate("/x")
   /\bnavigate\(\s*'([^']+)'/g,
   /\bnavigate\(\s*`([^`]+)`/g, // navigate(`/x/${id}`)
-  /\bhref="(\/[^"]*)"/g, // <a href="/x">
+  /\bhref="(\/[^\"]*)"/g, // <a href="/x">
   /\bhref=\{`(\/[^`]*)`\}/g,
 ];
 
