@@ -4,6 +4,7 @@ import type { AxiosResponse, InternalAxiosRequestConfig } from "axios";
 import api from "../lib/api";
 import CaseCommandDock from "./CaseCommandDock";
 import CaseHealthWidget from "./CaseHealthWidget";
+import PortfolioHealthWidget from "./PortfolioHealthWidget";
 
 const CREATED_CASE_KEY = "ejc_created_case_journey";
 const CREATED_CASE_TTL_MS = 60_000;
@@ -188,6 +189,7 @@ export default function FlowEnhancements() {
     return caseIdSeguro(match?.[1]);
   }, [location.pathname]);
 
+  if (location.pathname === "/") return <PortfolioHealthWidget />;
   if (!caseId) return null;
   return (
     <>
