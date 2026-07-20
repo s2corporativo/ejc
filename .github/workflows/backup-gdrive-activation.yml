@@ -37,7 +37,7 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 5
     steps:
-      - uses: actions/checkout@v7
+      - uses: actions/checkout@v6
       - name: Sintaxe Bash
         run: bash -n scripts/backup/ativar_backup.sh scripts/deploy_vps_safe.sh
 
@@ -53,7 +53,7 @@ jobs:
       VPS_USER: ${{ secrets.VPS_USER }}
       VPS_PORT: ${{ secrets.VPS_PORT }}
     steps:
-      - uses: actions/checkout@v7
+      - uses: actions/checkout@v6
 
       - name: Validar credenciais do VPS
         env:
