@@ -12,7 +12,7 @@ python-multipart==0.0.31
 # Database
 asyncpg==0.29.0
 sqlalchemy[asyncio]==2.0.30
-alembic==1.13.1
+alembic==1.18.5
 pgvector==0.3.2
 psycopg2-binary==2.9.9  # driver SYNC exigido por alembic/env.py — ausente causava
                          # falha de "alembic upgrade head" em instalação limpa (Etapa 6D)
