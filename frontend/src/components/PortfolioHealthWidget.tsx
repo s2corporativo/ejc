@@ -8,17 +8,8 @@ import PortfolioHealthList from "./PortfolioHealthList";
 import {
   type PortfolioResponse,
   detalheErroCarteira,
+  podeVerSaudeCarteira,
 } from "./portfolioHealthModel";
-
-const ALLOWED_ROLES = new Set([
-  "superadmin",
-  "admin",
-  "socio",
-  "advogado",
-  "advogado_auxiliar",
-  "estagiario",
-  "secretaria",
-]);
 
 export default function PortfolioHealthWidget() {
   const role = useAuth((state) => state.user?.role);
@@ -50,7 +41,7 @@ export default function PortfolioHealthWidget() {
     if (open) void carregar();
   }, [open]);
 
-  if (!role || !ALLOWED_ROLES.has(role)) return null;
+  if (!podeVerSaudeCarteira(role)) return null;
 
   return (
     <>
