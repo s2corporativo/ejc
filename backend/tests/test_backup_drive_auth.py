@@ -84,7 +84,18 @@ def test_auth_status_nao_expoe_valores_secretos(monkeypatch):
     status = backup_drive_auth.auth_status()
     assert status["credencial_dedicada_configurada"] is True
     assert status["service_account_json_configurado"] is True
+    assert status["credential_source"] == "service_account_json"
     assert "SEGREDO-NUNCA-RETORNAR" not in str(status)
+
+
+def test_oauth_parcial_nao_e_considerado_credencial_valida(monkeypatch):
+    _clear(monkeypatch)
+    monkeypatch.setenv("BACKUP_GOOGLE_DRIVE_OAUTH_REFRESH_TOKEN", "token-parcial")
+    status = backup_drive_auth.auth_status()
+    assert status["oauth_refresh_token_configurado"] is True
+    assert status["oauth_trio_completo"] is False
+    assert status["credencial_dedicada_configurada"] is False
+    assert status["credential_source"] == "none"
 
 
 def test_status_service_account_fail_closed_nao_herda_rag(monkeypatch):
