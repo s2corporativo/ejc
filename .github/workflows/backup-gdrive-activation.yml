@@ -1,0 +1,110 @@
+# ── EJC — garantia operacional do backup diário no Google Drive ───────────────
+#
+# Motivo: o CI principal usa runner self-hosted no VPS. Se esse runner estiver
+# offline, a própria correção do backup ficaria impedida de chegar ao servidor.
+# Este workflow estreito usa runner hospedado apenas para:
+#   • validar o shell no PR;
+#   • após merge na main, copiar SOMENTE o ativador de backup;
+#   • executá-lo no VPS, exigindo prova integral de banco + uploads no Drive.
+#
+# Não faz deploy da aplicação, não lê/imprime .env e não transfere segredos do VPS.
+name: Backup Google Drive — ativar e comprovar
+
+on:
+  pull_request:
+    paths:
+      - "scripts/backup/ativar_backup.sh"
+      - "scripts/deploy_vps_safe.sh"
+      - ".github/workflows/backup-gdrive-activation.yml"
+  push:
+    branches: [main]
+    paths:
+      - "scripts/backup/ativar_backup.sh"
+      - "scripts/deploy_vps_safe.sh"
+      - ".github/workflows/backup-gdrive-activation.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: backup-gdrive-production
+  cancel-in-progress: false
+
+jobs:
+  validar:
+    name: Validar scripts de backup
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v7
+      - name: Sintaxe Bash
+        run: bash -n scripts/backup/ativar_backup.sh scripts/deploy_vps_safe.sh
+
+  ativar-producao:
+    name: Ativar e comprovar no VPS
+    if: github.event_name == 'push' || github.event_name == 'workflow_dispatch'
+    needs: validar
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    env:
+      SSHPASS: ${{ secrets.VPS_PASSWORD }}
+      VPS_HOST: ${{ secrets.VPS_HOST }}
+      VPS_USER: ${{ secrets.VPS_USER }}
+      VPS_PORT: ${{ secrets.VPS_PORT }}
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: Validar credenciais do VPS
+        env:
+          VPS_SSH_KEY: ${{ secrets.VPS_SSH_KEY }}
+        run: |
+          faltando=""
+          [ -n "$VPS_HOST" ] || faltando="$faltando VPS_HOST"
+          [ -n "$VPS_USER" ] || faltando="$faltando VPS_USER"
+          if [ -z "$VPS_SSH_KEY" ] && [ -z "$SSHPASS" ]; then
+            faltando="$faltando (VPS_SSH_KEY ou VPS_PASSWORD)"
+          fi
+          if [ -n "$faltando" ]; then
+            echo "::error::Secrets ausentes:$faltando"
+            exit 1
+          fi
+
+      - name: Preparar SSH
+        env:
+          VPS_SSH_KEY: ${{ secrets.VPS_SSH_KEY }}
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y -qq sshpass rsync
+          PORT="${VPS_PORT:-22}"
+          mkdir -p ~/.ssh && chmod 700 ~/.ssh
+          KEEPALIVE="-o ServerAliveInterval=30 -o ServerAliveCountMax=20"
+          if [ -n "$VPS_SSH_KEY" ]; then
+            printf '%s\n' "$VPS_SSH_KEY" > ~/.ssh/deploy_key
+            chmod 600 ~/.ssh/deploy_key
+            echo "RSH=ssh -i $HOME/.ssh/deploy_key -o IdentitiesOnly=yes ${KEEPALIVE} -o StrictHostKeyChecking=accept-new -p ${PORT}" >> "$GITHUB_ENV"
+          else
+            echo "RSH=sshpass -e ssh -o PreferredAuthentications=password,keyboard-interactive ${KEEPALIVE} -o StrictHostKeyChecking=accept-new -p ${PORT}" >> "$GITHUB_ENV"
+          fi
+
+      - name: Testar conexão SSH
+        run: ${RSH} "${VPS_USER}@${VPS_HOST}" "test -d /opt/ejc && test -f /opt/ejc/.env"
+
+      - name: Instalar ativador no VPS
+        run: |
+          ${RSH} "${VPS_USER}@${VPS_HOST}" "mkdir -p /opt/ejc/scripts/backup"
+          rsync -az -e "${RSH}" \
+            scripts/backup/ativar_backup.sh \
+            "${VPS_USER}@${VPS_HOST}:/opt/ejc/scripts/backup/ativar_backup.sh"
+          ${RSH} "${VPS_USER}@${VPS_HOST}" \
+            "chmod 700 /opt/ejc/scripts/backup/ativar_backup.sh"
+
+      - name: Ativar e executar prova integral
+        run: |
+          ${RSH} "${VPS_USER}@${VPS_HOST}" \
+            "cd /opt/ejc && FORCE_BACKUP_TEST=1 bash scripts/backup/ativar_backup.sh"
+
+      - name: Confirmar aplicação saudável
+        run: |
+          curl -fsS -o /dev/null -w "EJC /api/health → HTTP %{http_code}\n" \
+            https://ejc.depaulateixeira.adv.br/api/health
