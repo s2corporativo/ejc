@@ -139,6 +139,7 @@ node run.js "" "HASH=`$(docker exec ejc_backend python3 -c \"import os; from pas
 - Drift de `bank_analyses`, `bank_transactions`, `bank_abusive_charges` **resolvido**:
   criadas por `053_reconcile_schema` (`CREATE TABLE IF NOT EXISTS`), na cadeia até o
   head — um `alembic upgrade head` limpo já as cria. Sem pendência de schema.
+  <!-- teste temporário de proteção da branch main -->
 
 ---
 
