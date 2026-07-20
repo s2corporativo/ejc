@@ -26,3 +26,8 @@ sala_de_guerra.router.include_router(sala_de_guerra_facade.router)
 from app.routers import case_timeline, cases  # noqa: E402
 
 cases.router.include_router(case_timeline.router)
+
+# A saúde agregada é sub-recurso do Dashboard já montado no main.py.
+from app.routers import dashboard, dashboard_operational  # noqa: E402
+
+dashboard.router.include_router(dashboard_operational.router)
