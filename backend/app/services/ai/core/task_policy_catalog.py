@@ -6,8 +6,9 @@ transversais auditáveis sobre as fontes já existentes.
 """
 from __future__ import annotations
 
+import re
 from dataclasses import asdict, dataclass
-from typing import Literal
+from typing import Literal, cast
 
 from fastapi import HTTPException
 
@@ -66,8 +67,16 @@ class TaskPolicy:
         return asdict(self)
 
 
+def _snake_agent_name(name: str) -> str:
+    stem = name.removesuffix("Agent")
+    return re.sub(r"(?<!^)(?=[A-Z])", "_", stem).lower()
+
+
 def _canonical_task(agent: AgenteInterno) -> str:
-    return _CANONICAL_BY_AGENT.get(agent.nome, agent.tarefa_padrao.value)
+    # Mapeia os domínios transversais para nomes públicos estáveis. Para cada
+    # especialista jurídico não listado, usa o próprio nome do agente em snake
+    # case, garantindo unicidade sem duplicar a taxonomia do intent classifier.
+    return _CANONICAL_BY_AGENT.get(agent.nome, _snake_agent_name(agent.nome))
 
 
 def _sensitivity(agent_name: str) -> Sensitivity:
@@ -123,11 +132,8 @@ def effective_intelligence(
             "Nível de inteligência inválido. Use: padrao, alto ou maximo.",
         )
     minimum = policy.minimum_intelligence
-    return (
-        minimum
-        if _LEVEL_RANK[value] < _LEVEL_RANK[minimum]
-        else value  # type: ignore[return-value]
-    )
+    effective = minimum if _LEVEL_RANK[value] < _LEVEL_RANK[minimum] else value
+    return cast(IntelligenceLevel, effective)
 
 
 def effective_rag(requested: bool, policy: TaskPolicy) -> bool:
