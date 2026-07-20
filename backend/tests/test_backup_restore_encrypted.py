@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import importlib.util
 import io
-import os
+import sys
 import tarfile
 from pathlib import Path
 from types import ModuleType
@@ -20,9 +20,11 @@ SCRIPT = (
 
 
 def _load_module() -> ModuleType:
-    spec = importlib.util.spec_from_file_location("validar_restauracao_cifrada", SCRIPT)
+    module_name = "validar_restauracao_cifrada"
+    spec = importlib.util.spec_from_file_location(module_name, SCRIPT)
     assert spec and spec.loader
     module = importlib.util.module_from_spec(spec)
+    sys.modules[module_name] = module
     spec.loader.exec_module(module)
     return module
 
@@ -45,7 +47,10 @@ def _write_tar(path: Path, name: str, *, symlink: bool = False) -> None:
         archive.addfile(info, io.BytesIO(payload))
 
 
-def test_validate_pair_accepts_same_timestamp(tmp_path: Path, restore_module: ModuleType):
+def test_validate_pair_accepts_same_timestamp(
+    tmp_path: Path,
+    restore_module: ModuleType,
+):
     db = tmp_path / "ejc_backup_20260720T210000Z_db.dump.enc"
     uploads = tmp_path / "ejc_backup_20260720T210000Z_uploads.tar.gz.enc"
     db.write_bytes(b"db")
@@ -54,17 +59,26 @@ def test_validate_pair_accepts_same_timestamp(tmp_path: Path, restore_module: Mo
     assert restore_module.validate_pair(db, uploads) == "20260720T210000Z"
 
 
-def test_validate_pair_rejects_mixed_runs(tmp_path: Path, restore_module: ModuleType):
+def test_validate_pair_rejects_mixed_runs(
+    tmp_path: Path,
+    restore_module: ModuleType,
+):
     db = tmp_path / "ejc_backup_20260720T210000Z_db.dump.enc"
     uploads = tmp_path / "ejc_backup_20260720T220000Z_uploads.tar.gz.enc"
     db.write_bytes(b"db")
     uploads.write_bytes(b"uploads")
 
-    with pytest.raises(restore_module.RestoreValidationError, match="execuções diferentes"):
+    with pytest.raises(
+        restore_module.RestoreValidationError,
+        match="execuções diferentes",
+    ):
         restore_module.validate_pair(db, uploads)
 
 
-def test_decrypt_artifact_roundtrip(tmp_path: Path, restore_module: ModuleType):
+def test_decrypt_artifact_roundtrip(
+    tmp_path: Path,
+    restore_module: ModuleType,
+):
     key = Fernet.generate_key()
     clear = b"conteudo sensivel ficticio"
     encrypted = tmp_path / "ejc_backup_20260720T210000Z_db.dump.enc"
@@ -75,11 +89,17 @@ def test_decrypt_artifact_roundtrip(tmp_path: Path, restore_module: ModuleType):
     assert decrypted.read_bytes() == clear
 
 
-def test_decrypt_artifact_rejects_wrong_key(tmp_path: Path, restore_module: ModuleType):
+def test_decrypt_artifact_rejects_wrong_key(
+    tmp_path: Path,
+    restore_module: ModuleType,
+):
     encrypted = tmp_path / "ejc_backup_20260720T210000Z_db.dump.enc"
     encrypted.write_bytes(Fernet(Fernet.generate_key()).encrypt(b"dump"))
 
-    with pytest.raises(restore_module.RestoreValidationError, match="chave incorreta"):
+    with pytest.raises(
+        restore_module.RestoreValidationError,
+        match="chave incorreta",
+    ):
         restore_module.decrypt_artifact(
             encrypted,
             tmp_path / "db.dump",
@@ -111,7 +131,10 @@ def test_inspect_uploads_accepts_only_uploads_root(
     safe = tmp_path / "safe.tar.gz"
     _write_tar(safe, "uploads/2026/07/documento.pdf")
 
-    assert restore_module.inspect_uploads_tar(safe) == (1, len(b"arquivo de teste"))
+    assert restore_module.inspect_uploads_tar(safe) == (
+        1,
+        len(b"arquivo de teste"),
+    )
 
 
 @pytest.mark.parametrize(
@@ -143,7 +166,10 @@ def test_disposable_database_guard(
     monkeypatch.setenv("DATABASE_URL_SYNC", production)
 
     prod_target = restore_module.parse_database_url(production)
-    with pytest.raises(restore_module.RestoreValidationError, match="não parece descartável"):
+    with pytest.raises(
+        restore_module.RestoreValidationError,
+        match="não parece descartável",
+    ):
         restore_module.ensure_disposable_target(prod_target)
 
     test_target = restore_module.parse_database_url(
@@ -181,10 +207,12 @@ def test_missing_key_error_does_not_echo_environment(
     monkeypatch: pytest.MonkeyPatch,
     restore_module: ModuleType,
 ):
+    sentinel = "postgresql://nao-expor:segredo@host/ejc"
     monkeypatch.delenv("BACKUP_ENCRYPTION_KEY", raising=False)
+    monkeypatch.setenv("DATABASE_URL", sentinel)
 
     with pytest.raises(restore_module.RestoreValidationError) as exc:
         restore_module.load_fernet_key()
 
     assert "BACKUP_ENCRYPTION_KEY" in str(exc.value)
-    assert os.environ.get("DATABASE_URL", "") not in str(exc.value)
+    assert sentinel not in str(exc.value)
