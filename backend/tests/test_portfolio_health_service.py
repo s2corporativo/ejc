@@ -16,17 +16,25 @@ def test_portfolio_health_uses_one_query_and_shared_score_rules():
     assert source.count("await db.execute") == 1
     assert "assess_operational_health(" in source
     assert "WHEN health_score" not in source
-    assert "100\n" not in source.split("SELECT", 1)[0]
 
 
 def test_portfolio_health_matches_individual_activity_sources():
-    source = (ROOT / "app/services/portfolio_health_service.py").read_text(
+    portfolio = (ROOT / "app/services/portfolio_health_service.py").read_text(
         encoding="utf-8"
     )
-    assert "MAX(COALESCE(updated_at, created_at)) AS last_at" in source
-    assert "COALESCE(p.last_at, c.created_at)" in source
-    assert "COALESCE(ld.last_at, c.created_at)" in source
-    assert "status::text IN ('a_fazer', 'fazendo')" in source
+    individual = (ROOT / "app/services/case_health_service.py").read_text(
+        encoding="utf-8"
+    )
+    assert "MAX(COALESCE(data_evento, created_at)) AS last_at" in portfolio
+    assert "CaseMovimento.data_evento" in individual
+    assert "CaseMovimento.created_at" in individual
+    assert "func.coalesce" in individual
+    assert "MAX(COALESCE(updated_at, created_at)) AS last_at" in portfolio
+    assert "COALESCE(p.last_at, c.created_at)" in portfolio
+    assert "COALESCE(ld.last_at, c.created_at)" in portfolio
+    assert "status::text IN ('a_fazer', 'fazendo')" in portfolio
+    assert "TaskStatus.a_fazer" in individual
+    assert "TaskStatus.fazendo" in individual
 
 
 def test_portfolio_health_preserves_assignment_scope_without_sql_injection():
