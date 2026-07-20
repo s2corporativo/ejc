@@ -43,7 +43,9 @@ fi
 
 get_env_var() {
     local k="$1"
-    grep -E "^${k}=" "$ENV_FILE" 2>/dev/null | tail -1 | cut -d= -f2- | tr -d '"'"'"'\r'
+    # Variável ausente é situação normal na primeira ativação. O `|| true` evita
+    # que grep=1 encerre o script por causa de `set -euo pipefail`.
+    grep -E "^${k}=" "$ENV_FILE" 2>/dev/null | tail -1 | cut -d= -f2- | tr -d '"'"'"'\r' || true
 }
 
 ENV_BACKED_UP=0
