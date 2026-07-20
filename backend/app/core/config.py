@@ -611,8 +611,9 @@ class Settings(BaseSettings):
     BACKUP_DIR: str = "/app/backups"  # diretório local de dumps dentro do container postgres
     BACKUP_RETENTION_DAYS: int = 7  # dumps locais mais antigos que isto são apagados na rotação
     # (b) Backup diário cifrado → Google Drive (services/backup_service.py).
-    # Reusa as credenciais Google da curadoria de conhecimento (GOOGLE_DRIVE_*)
-    # — nenhum fluxo novo de auth. Opt-in: default False mantém tudo desligado.
+    # Prefere identidade exclusiva BACKUP_GOOGLE_DRIVE_* com escrita. O modo
+    # herdado GOOGLE_DRIVE_* existe apenas para compatibilidade explícita.
+    # Opt-in: default False mantém tudo desligado.
     BACKUP_ENABLED: bool = False
     # Chave Fernet EXCLUSIVA do backup (não reusar PII_ENCRYPTION_KEY — a
     # rotação de uma não pode invalidar a outra). Default vazio de propósito:

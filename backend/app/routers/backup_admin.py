@@ -35,7 +35,7 @@ async def executar_backup_manual(
     """Dispara um backup manual em background e retorna 202 imediatamente.
 
     Decisão: o disparo manual NÃO exige BACKUP_ENABLED=true — a flag governa
-    só o agendamento diário. Chave de criptografia e pasta do Drive continuam
+    só o agendamento diário. Chave, pasta e credencial de escrita continuam
     obrigatórias (o artefato nunca sai do VPS sem cifrar — LGPD).
     """
     cfg = backup_service.configuracao_status()
@@ -45,6 +45,15 @@ async def executar_backup_manual(
             detail=(
                 "Backup não configurado: defina BACKUP_ENCRYPTION_KEY e "
                 "BACKUP_DRIVE_FOLDER_ID no .env (ver .env.example)."
+            ),
+        )
+    if not cfg["credencial_drive_configurada"]:
+        raise HTTPException(
+            status_code=503,
+            detail=(
+                "Credencial de escrita do backup não configurada. Use "
+                "BACKUP_GOOGLE_DRIVE_AUTH_MODE=service_account e configure "
+                "BACKUP_GOOGLE_DRIVE_SERVICE_ACCOUNT_JSON ou FILE."
             ),
         )
     # 409 best-effort para UX — o guard AUTORITATIVO é a flag síncrona dentro
@@ -57,7 +66,10 @@ async def executar_backup_manual(
     await criar_audit_log(
         db, user_id=cu.id, user_role=role,
         acao="CREATE", entidade="backup",
-        detalhes="Backup manual disparado via /admin/backup/executar",
+        detalhes=(
+            "Backup manual disparado via /admin/backup/executar; "
+            f"auth_mode={cfg['auth_mode']}"
+        ),
     )
     await db.commit()
 
@@ -79,8 +91,7 @@ async def status_backup(
     db: AsyncSession = Depends(get_db),
     cu: User = Depends(require_roles(["superadmin", "admin"])),
 ):
-    """Último resultado + próximo agendamento + booleans de configuração.
-    Nunca retorna valores de segredos — apenas *_configurada booleans."""
+    """Último resultado + próximo agendamento + configuração não sensível."""
     estado = await backup_service.obter_estado(db)
     return {
         "configuracao": backup_service.configuracao_status(),

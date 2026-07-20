@@ -187,3 +187,17 @@ exigir mudança de infra/config, pare e escale para um humano.
 `BACKUP_HORA_UTC`, `BACKUP_RETENCAO_DIAS`, `BACKUP_UPLOADS_MAX_MB`,
 `BACKUP_DB_MAX_MB`, `BACKUP_PG_DUMP_TIMEOUT`, `UPLOAD_DIR`. Segredos nunca
 aparecem em log/relatório — só os booleanos `*_configurada`.
+
+
+## Credencial exclusiva de escrita
+
+O backup não deve ampliar a credencial somente leitura usada pelo RAG. Em
+produção, configure `BACKUP_GOOGLE_DRIVE_AUTH_MODE=service_account` e uma
+das variáveis `BACKUP_GOOGLE_DRIVE_SERVICE_ACCOUNT_JSON` ou
+`BACKUP_GOOGLE_DRIVE_SERVICE_ACCOUNT_FILE`. Compartilhe somente a pasta
+`BACKUP_DRIVE_FOLDER_ID` com o e-mail da conta de serviço no papel **Editor**.
+
+O modo `inherit` existe apenas para compatibilidade. Um refresh token emitido
+somente com `drive.readonly` continuará falhando com `invalid_scope` quando
+reconstruído para escrita; nesse caso, reautorize com escrita ou migre para a
+conta de serviço exclusiva.
