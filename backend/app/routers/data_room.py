@@ -44,7 +44,7 @@ class AdicionarArquivoReq(BaseModel):
 
 
 class GerarLinkReq(BaseModel):
-    descricao: Optional[str] = Field(default=None, max_length=500)
+    descricao: Optional[str] = Field(default=None, max_length=200)
     expira_horas: int = Field(72, ge=1, le=8760)
     max_acessos: Optional[int] = Field(default=None, ge=1, le=10000)
 
