@@ -11,6 +11,7 @@
 # chamando o nome conhecido sem duplicar a implementação.
 set -euo pipefail
 
+APP_DIR="${APP_DIR:-/opt/ejc}"
 APP_CONTAINER="${APP_CONTAINER:-ejc_backend}"
 
 if ! command -v docker >/dev/null 2>&1; then
@@ -18,15 +19,26 @@ if ! command -v docker >/dev/null 2>&1; then
   exit 2
 fi
 
-if ! docker ps --format '{{.Names}}' | grep -qx "$APP_CONTAINER"; then
-  echo "[backup] Container $APP_CONTAINER não está em execução." >&2
-  exit 2
+# O programa é enviado por STDIN, sem chave, senha ou token no argv. Quando o
+# backend está saudável, reutiliza o container. Em recuperação de crash-loop ou
+# container parado, usa um container efêmero da imagem anterior com o mesmo
+# env_file e volumes; assim o deploy corretivo não perde a prova pré-deploy.
+if docker ps --format '{{.Names}}' | grep -qx "$APP_CONTAINER"; then
+  runner=(docker exec -i "$APP_CONTAINER" python -)
+else
+  [ -d "$APP_DIR" ] || {
+    echo "[backup] APP_DIR inexistente: $APP_DIR" >&2
+    exit 2
+  }
+  cd "$APP_DIR"
+  docker compose config >/dev/null
+  runner=(docker compose run --rm --no-deps -T backend python -)
+  echo "[backup] Backend parado; executando serviço cifrado em container efêmero." >&2
 fi
 
-# O programa é enviado por STDIN, sem chave, senha ou token no argv. O container
-# carrega as configurações do próprio ambiente. Status parcial também bloqueia o
-# deploy: a prova pré-deploy precisa conter banco E uploads.
-docker exec -i "$APP_CONTAINER" python - <<'PY'
+# Status parcial também bloqueia o deploy: a prova pré-deploy precisa conter
+# banco E uploads.
+"${runner[@]}" <<'PY'
 from __future__ import annotations
 
 import asyncio
