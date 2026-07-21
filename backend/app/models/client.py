@@ -129,17 +129,17 @@ class Client(Base):
     # Fonte da verdade = cpf_enc/cnpj_enc (Fernet). Decifra só quando o valor em
     # claro é realmente necessário (resposta de API a quem tem acesso, geração
     # de peça/nota, export). Busca/dedup/conflito NÃO usam isto — usam o hash.
-    # Import local: mantém o model livre de dependência de serviço no topo e
-    # evita qualquer ciclo de import (mesmo padrão dos routers).
+    # Resiliência: como o ClientResponse decifra CADA registro de uma listagem,
+    # uma única linha com cpf_enc/cnpj_enc indecifrável (chave rotacionada ou
+    # ciphertext corrompido) NÃO pode derrubar a listagem/busca/export inteira —
+    # ver _decifrar_para_exibicao (degrada só a linha afetada).
     @property
     def cpf_plain(self) -> str | None:
-        from app.services.pii_crypto import decrypt
-        return decrypt(self.cpf_enc)
+        return _decifrar_para_exibicao(self.cpf_enc)
 
     @property
     def cnpj_plain(self) -> str | None:
-        from app.services.pii_crypto import decrypt
-        return decrypt(self.cnpj_enc)
+        return _decifrar_para_exibicao(self.cnpj_enc)
 
     @property
     def documento_plain(self) -> str | None:
@@ -149,3 +149,24 @@ class Client(Base):
 
     def __repr__(self):
         return f"<Client {self.nome_exibicao} [{self.tipo}]>"
+
+
+# ── Decifra resiliente para EXIBIÇÃO em lote ──────────────────────────────────
+# Sentinela devolvida quando cpf_enc/cnpj_enc não decifra (InvalidToken: chave
+# rotacionada ou ciphertext corrompido/adulterado). decrypt() levanta ValueError
+# de propósito (não mascara valor errado); mas no caminho de EXIBIÇÃO EM LOTE
+# (ClientResponse decifra cada registro de uma listagem/busca/export) propagar
+# esse erro faria uma única linha ruim retornar 500 na página inteira. Aqui
+# priorizamos disponibilidade: degrada só a linha afetada, com um marcador
+# VISÍVEL (não silencioso) para a corrupção não passar despercebida.
+PII_INDECIFRAVEL = "[documento indisponível]"
+
+
+def _decifrar_para_exibicao(ciphertext: str | None) -> str | None:
+    # Import local (mesmo motivo das properties): evita dependência de serviço no
+    # topo do model e qualquer ciclo de import.
+    from app.services.pii_crypto import decrypt
+    try:
+        return decrypt(ciphertext)
+    except ValueError:
+        return PII_INDECIFRAVEL
