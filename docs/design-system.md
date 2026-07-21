@@ -1,90 +1,75 @@
 # EJC — Design System
 
-**Versão:** Fase 2 do redesign (2026-07-03)
-**Fontes da verdade:** `frontend/tailwind.config.js` (tokens), `frontend/src/index.css` (classes utilitárias), `frontend/src/components/UI.tsx` (componentes).
+**Versão:** Legal Tech Premium (2026-07-21)  
+**Fontes da verdade:** `frontend/tailwind.config.js` (tokens), `frontend/src/index.css` (classes utilitárias) e `frontend/src/components/UI.tsx` (componentes).
 
 ---
 
-## 1. Paleta de cores
+## 1. Direção visual e paleta
 
-### 1.1 Marca — `primary` (bronze)
+O EJC usa interface operacional clara, moderna e sóbria:
 
-Cor de ação e identidade (substituiu o remap legado de `blue`). Ações primárias usam **`primary-600`**.
+- fundo principal branco;
+- superfícies secundárias em `#F7F9FC`;
+- azul-marinho para hierarquia institucional;
+- azul elétrico para ações e navegação;
+- violeta exclusivamente para IA;
+- cores de status apenas quando comunicam estado real;
+- logomarca centralizada no menu lateral;
+- cards brancos, borda fina e sombras discretas.
 
-| Token | Hex | Papel |
-|---|---|---|
-| `primary-50` | `#FAF5EF` | Fundos suaves de destaque (hover de linha, chips) |
-| `primary-100` | `#F0E4D2` | Fundo de seleção (`::selection`) |
-| `primary-200` | `#E2CBA8` | Rings/bordas de badges bronze |
-| `primary-300` | `#CBA877` | Bordas de foco decorativas |
-| `primary-400` | `#B98A3C` | Acentos gráficos |
-| `primary-500` | `#A6792F` | Acentos gráficos |
-| `primary-600` / `DEFAULT` | `#8C6A33` | **Botões e ações primárias** |
-| `primary-700` | `#6E5228` | Hover de ação, texto de eyebrow |
-| `primary-800`–`950` | `#5A431F`→`#2A1F0C` | Texto sobre fundos claros bronze |
-
-### 1.2 Auxiliares de marca — `bronze` e `gold`
+### 1.1 Primária — `primary`
 
 | Token | Hex | Papel |
 |---|---|---|
-| `bronze` (DEFAULT) | `#8C6A33` | Alias da marca em componentes legados |
-| `bronze-dark` | `#6E5228` | Hover |
-| `bronze-deep` | `#5A431F` | Texto escuro bronze |
-| `bronze-medium` | `#9A7742` | Acentos |
-| `bronze-light` | `#C6A158` | Detalhes dourados |
-| `bronze-pale` | `#E8D6AE` | Bordas suaves |
-| `bronze-50` / `bronze-30` | `#FAF5EF` / `#FDF9F5` | Fundos marfim |
-| `gold` (DEFAULT) | `#C6A158` | Destaques premium (`.btn-gold` usa amber) |
-| `gold-dark` / `gold-light` | `#9A7742` / `#DBC084` | Variações |
-| `gold-700` / `gold-600` / `gold-50` | `#6E5228` / `#8C6A33` / `#FAF5EF` | Escala de apoio |
+| `primary-50` | `#EFF6FF` | Seleção e hover suave |
+| `primary-100` | `#DBEAFE` | Destaque leve |
+| `primary-300` | `#93C5FD` | Bordas e gráficos |
+| `primary-500` | `#3B82F6` | Acento gráfico |
+| `primary-600` | `#2563EB` | Ação principal e item ativo |
+| `primary-700` | `#1D4ED8` | Hover de ação |
+| `primary-900` | `#0B1F3A` | Texto institucional |
+| `primary-950` | `#071426` | Alto contraste |
 
-### 1.3 IA — `ai` (petróleo/teal)
+### 1.2 Inteligência artificial — `ai`
 
-Toda superfície, botão ou badge relacionado a IA usa `ai-*` (substituiu o remap de `violet`/`purple`). Diferencia visualmente o que é gerado por IA (rascunho sujeito a revisão humana — OAB Prov. 205/2021).
+`ai-*` é reservado a conteúdo, ações, alertas e superfícies que sejam efetivamente produzidos ou controlados pela IA.
 
 | Token | Hex | Papel |
 |---|---|---|
-| `ai-50` / `ai-100` | `#ECF4F3` / `#D2E7E4` | Fundo de superfícies de IA (`AISurface`, `IANotice`) |
-| `ai-200` / `ai-300` | `#A8D0CB` / `#73B0A9` | Bordas/rings de IA |
-| `ai-400` / `ai-500` | `#459089` / `#2F7A72` | Acentos |
-| `ai-600` / `DEFAULT` | `#266761` | **Botão `variant="ai"`, ícone do bot** |
-| `ai-700`–`950` | `#1F534E`→`#0B201E` | Texto sobre fundo claro de IA |
+| `ai-50` | `#F5F3FF` | Fundo de superfície de IA |
+| `ai-100` | `#EDE9FE` | Destaque leve |
+| `ai-300` | `#C4B5FD` | Bordas e gráficos |
+| `ai-500` | `#8B5CF6` | Acento |
+| `ai-600` | `#7C3AED` | Botão e ícone principal |
+| `ai-700` | `#6D28D9` | Hover |
+| `ai-900` | `#4C1D95` | Texto de alto contraste |
 
-### 1.4 Sidebar / Navy (slate escuro)
+Triagem humana, revisão, área trabalhista ou séries genéricas de gráfico não usam `ai-*`.
 
-| Token | Hex | Papel |
-|---|---|---|
-| `sidebar` (DEFAULT) | `#0F172A` | Fundo da sidebar |
-| `sidebar-light` | `#1E293B` | Blocos elevados na sidebar |
-| `sidebar-hover` | `#172033` | Hover de item de menu |
-| `sidebar-active` | `#0B111F` | Item ativo |
-| `navy` (DEFAULT/900) | `#0F172A` | Títulos serif legados (`text-navy-800` etc.) |
-| `navy-950` | `#020617` | Fundo mais escuro |
-| `navy-800`/`700`/`600` | `#1E293B`/`#334155`/`#475569` | Texto escuro |
-| `navy-100`/`50` | `#F1F5F9`/`#F8FAFC` | Fundos claros |
-
-### 1.5 Status
-
-Escalas completas 50–950 no padrão Tailwind (mesmos hex de emerald/amber/red/sky):
-
-| Família | DEFAULT | Papel |
-|---|---|---|
-| `success` | `#10b981` | Concluído, pago, favorável, aprovado |
-| `warn` (alias `warning`) | `#f59e0b` | Pendente, em revisão, atenção, prazo próximo |
-| `danger` (alias `error`) | `#ef4444` | Vencido, atrasado, crítico, exclusão |
-| `info` | `#0ea5e9` | Informação neutra, acordo, dicas |
-
-### 1.6 Semânticas de superfície
+### 1.3 Superfícies
 
 | Token | Hex | Papel |
 |---|---|---|
-| `canvas` | `#f7f8fa` | Fundo geral da aplicação |
-| `parchment` | `#F1F5F9` | Fundo alternativo (blocos) |
-| `ink` / `ink-light` | `#111827` / `#374151` | Texto principal / secundário |
-| `muted` | `#6b7280` | Texto de apoio, metadados |
-| `border` | `#e5e7eb` | Bordas padrão |
+| `canvas` | `#FFFFFF` | Fundo principal |
+| `parchment` | `#F7F9FC` | Fundo secundário |
+| `border` | `#E5EAF0` | Bordas |
+| `muted` | `#667085` | Texto secundário |
+| `ink` | `#172033` | Texto principal |
 
-Neutros do dia a dia: escala `slate` nativa do Tailwind (texto `slate-950/900/600/500`, bordas `slate-200/100`, fundos `slate-50`).
+### 1.4 Status
+
+- `success`: concluído, aprovado ou pago;
+- `warn`: pendência ou atenção;
+- `danger`: crítico, vencido ou erro;
+- `info`: informação neutra;
+- `ai`: apenas IA.
+
+Nunca comunique estado somente por cor: use também texto e, quando útil, ícone.
+
+### 1.5 Legados
+
+Os tokens `ouro`, `gold` e `bronze` permanecem durante a migração para evitar regressão. `ouro` é alias visual do azul operacional. `gold` continua disponível para pré-visualizações institucionais/Visual Law, não para a navegação diária.
 
 ---
 
