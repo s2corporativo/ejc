@@ -3,7 +3,7 @@
 Cobre o vazamento residual identificado após o hardening A4:
 - listagem geral sem escopo;
 - criação vinculada a caso/cliente alheio;
-- sala avulsa acessível por toda a equipe;
+- preservação do contrato das salas institucionais sem vínculo;
 - rota legado v4 sem segregação de carteira.
 """
 from __future__ import annotations
@@ -103,12 +103,12 @@ def test_filtro_rooms_gestao_nao_restringe():
     assert _filtro_escopo_rooms(q, _user("socio")) is q
 
 
-def test_filtro_rooms_advogado_exige_caso_cliente_ou_autoria():
+def test_filtro_rooms_advogado_exige_ownership_nos_vinculos():
     q = _filtro_escopo_rooms(select(DataRoom), _user("advogado"))
     sql = _sql(q)
     assert "cases.id" in sql
     assert "clients.id" in sql
-    assert "created_by" in sql
+    assert "created_by" not in sql
 
 
 @pytest.mark.asyncio
@@ -125,29 +125,17 @@ async def test_listagem_aplica_escopo_antes_da_paginacao():
     sql = " || ".join(_sql(stmt) for stmt in db.executed)
     assert "cases.id" in sql
     assert "clients.id" in sql
-    assert "created_by" in sql
+    assert "created_by" not in sql
 
 
 @pytest.mark.asyncio
-async def test_gate_room_avulsa_de_outro_criador_retorna_404():
+async def test_gate_room_institucional_sem_vinculo_passa():
+    """Sala sem caso/cliente permanece compartilhada para triagem institucional."""
     room = DataRoom(
         id="r1",
         case_id=None,
         client_id=None,
         created_by="outro",
-    )
-    with pytest.raises(HTTPException) as exc:
-        await _gate_room(_DB(), _user("advogado", "u1"), room)
-    assert exc.value.status_code == 404
-
-
-@pytest.mark.asyncio
-async def test_gate_room_avulsa_do_criador_passa():
-    room = DataRoom(
-        id="r1",
-        case_id=None,
-        client_id=None,
-        created_by="u1",
     )
     assert await _gate_room(
         _DB(),
