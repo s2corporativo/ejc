@@ -250,9 +250,11 @@ class Settings(BaseSettings):
     # Provedor preferido por TIER de complexidade (o roteador só PROPÕE; se
     # inelegível, o gateway ignora e usa a cadeia normal por prioridade).
     ROTEAMENTO_PROVIDER_LEVE: str = "groq"       # rápido/barato p/ tarefas leves
-    # médio = anthropic (Haiku, ANTHROPIC_MODEL_RAPIDO): o stack de produção
-    # não sobe ollama (compose: OLLAMA_ENABLED=false) — apontar o tier médio
-    # para provider morto só gerava tentativa-e-fallback a cada tarefa.
+    # médio = anthropic: o stack de produção não sobe ollama (compose:
+    # OLLAMA_ENABLED=false) — apontar o tier médio para provider morto só gerava
+    # tentativa-e-fallback a cada tarefa. O MODELO do tier médio é COMPLEXO
+    # (Opus), NÃO Haiku — ver model_router._model_do_provider (anti-rebaixamento
+    # P1: só o tier LEVE usa o modelo rápido).
     ROTEAMENTO_PROVIDER_MEDIO: str = "anthropic"
     ROTEAMENTO_PROVIDER_PESADO: str = "anthropic"  # modelo forte p/ raciocínio
     # Limiares (score inteiro) que separam os tiers leve|medio|pesado.

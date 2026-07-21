@@ -108,10 +108,14 @@ async def seed_sumulas() -> dict:
 
 
 async def _legislacao_ja_semeada() -> bool:
-    """True se já existe QUALQUER documento de legislação vigente (existence-guard).
+    """True se o corpus do PLANALTO (chave `planalto:<slug>`) já existe (guard).
 
-    Corpus parcial (raro — timeout no meio do 1º boot) é completado depois pelo
-    job semanal `ing_planalto` e pelo passo de deploy, então basta count>0.
+    Chaveado no PREFIXO da chave_origem do Planalto — NÃO na categoria genérica
+    'legislacao', que também abriga ANPD/RFB (conhecimento_ingest): um banco só
+    com ANPD faria o guard pular indevidamente o corpus FEDERAL que este seed
+    deve garantir. Corpus parcial (raro — timeout no meio do 1º boot) é
+    completado depois pelo job semanal `ing_planalto` e pelo passo de deploy,
+    então basta count>0.
     """
     from app.core.database import AsyncSessionLocal
     from app.models.rag import KnowledgeDoc
@@ -120,7 +124,7 @@ async def _legislacao_ja_semeada() -> bool:
     async with AsyncSessionLocal() as db:
         n = int((await db.execute(
             select(func.count()).select_from(KnowledgeDoc).where(
-                KnowledgeDoc.categoria == pl.CATEGORIA,
+                KnowledgeDoc.chave_origem.like(pl.PREFIXO_CHAVE + "%"),
                 KnowledgeDoc.vigente.is_(True),
                 KnowledgeDoc.deleted_at.is_(None),
             )
@@ -180,7 +184,8 @@ async def seed_base_juridica(
     nem aborta o boot.
 
     incluir_legislacao=None → decide por env EJC_SEED_LEGISLACAO_BOOT (default
-    ligado). timeout_legislacao=None → env EJC_SEED_LEGISLACAO_TIMEOUT_S
+    DESLIGADO no boot; a legislação é garantida no passo de deploy).
+    timeout_legislacao=None → env EJC_SEED_LEGISLACAO_TIMEOUT_S
     (default _TIMEOUT_BOOT_DEFAULT).
     """
     resumo: dict = {}
@@ -194,7 +199,12 @@ async def seed_base_juridica(
 
     # 2) Legislação — REDE, opcional/existence-guarded/bounded.
     if incluir_legislacao is None:
-        incluir_legislacao = _env_bool("EJC_SEED_LEGISLACAO_BOOT", True)
+        # Default OFF no boot (adere ao padrão do repo: rede/integração externa
+        # nasce desligada — CLAUDE.md). Súmulas (offline) entram SEMPRE; a
+        # legislação do Planalto (REDE) é garantida no passo de DEPLOY
+        # (deploy_vps_safe.sh, após o health-check). EJC_SEED_LEGISLACAO_BOOT=1
+        # semeia a legislação já no boot de um ambiente sem deploy.
+        incluir_legislacao = _env_bool("EJC_SEED_LEGISLACAO_BOOT", False)
     if incluir_legislacao:
         if timeout_legislacao is None:
             timeout_legislacao = int(

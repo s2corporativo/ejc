@@ -985,11 +985,15 @@ async def executar_tarefa_ia(tarefa, mensagem: str, case_id: str | None = None,
             "texto": texto, "modelo": f"{provedor_usado}/{modelo_real}",
             "provedor": provedor_usado,
         })
-    # Fallback NÃO silencioso: se a resposta NÃO veio do provedor primário
-    # (cfg.provider), sinaliza a degradação (ex.: Anthropic/Opus → Groq) com o
-    # motivo PII-safe. Consumidores atuais (AiResponse com extra="ignore",
-    # dict.get em escrita.py/run_eval.py) ignoram chaves extras — aditivo/seguro.
-    fallback_ativado = provedor_usado != cfg.provider
+    # Fallback NÃO silencioso: se a resposta NÃO veio do PRIMEIRO provedor
+    # REALMENTE tentado (cadeia[0], já restrita por LOCAL_COMPLETO), sinaliza a
+    # degradação (ex.: Anthropic/Opus → Groq) com o motivo PII-safe. Usa
+    # cadeia[0] e NÃO cfg.provider: no modo LOCAL_COMPLETO os externos são
+    # removidos e o Ollama vira o primário LEGÍTIMO — comparar com cfg.provider
+    # marcaria um "fallback" FALSO. Espelha o critério posicional do chat().
+    # Consumidores (AiResponse extra="ignore"; dict.get em escrita.py/
+    # run_eval.py) ignoram chaves extras — aditivo/seguro.
+    fallback_ativado = provedor_usado != cadeia[0][0]
     return {
         "conteudo": texto, "modelo": f"{provedor_usado}/{modelo_real}", "provider": provedor_usado,
         "nivel_inteligencia": nivel_inteligencia,

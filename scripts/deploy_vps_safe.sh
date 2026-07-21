@@ -132,10 +132,11 @@ fi
 # nao-fatal. Roda DEPOIS do health-check (backend ja respondeu) — por isso pode
 # fazer rede sem risco para a janela de boot — e ANTES do reparar_conhecimento_rag
 # abaixo, que aprova e vetoriza os chunks pendentes. O boot (seed_all) ja semeia
-# as sumulas em todo start; aqui garantimos tambem a legislacao no deploy.
+# as sumulas em todo start; aqui garantimos tambem a legislacao no deploy
+# (existence-guarded pela chave planalto:<slug>: baixa uma vez, pula se ja presente).
 if [ "$RUN_SEEDS" = "1" ]; then
   log "RUN_SEEDS=1: semeando base juridica real (sumulas + legislacao, nao-fatal)"
-  if docker compose exec -T backend python -m app.seeds.base_juridica_seed --incluir-legislacao --forcar-legislacao; then
+  if docker compose exec -T backend python -m app.seeds.base_juridica_seed --incluir-legislacao; then
     log "Seed da base juridica real concluido."
   else
     log "AVISO: seed da base juridica real falhou (nao-fatal) — deploy segue; as sumulas do boot ja atendem o RAG. Rode manualmente: docker compose exec backend bash scripts/popular_base_conhecimento.sh"
