@@ -36,6 +36,7 @@ from app.routers import anexos
 from app.routers import ai_skills
 from app.routers import ai_tools
 from app.routers import analise_bancaria
+from app.routers import analise_caso_ia
 from app.routers import analytics
 from app.routers import andamentos
 from app.routers import areas
@@ -297,6 +298,7 @@ app.include_router(anexos.router, prefix=API)
 app.include_router(ai_skills.router, prefix=API)
 app.include_router(ai_tools.router, prefix=API)
 app.include_router(analise_bancaria.router, prefix=API)
+app.include_router(analise_caso_ia.router, prefix=API)
 app.include_router(analytics.router, prefix=API)
 app.include_router(andamentos.router, prefix=API)
 app.include_router(areas.router, prefix=API)

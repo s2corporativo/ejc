@@ -94,6 +94,7 @@ const DossieCliente = lazy(() => import("../pages/DossieCliente"));
 const Casos = lazy(() => import("../pages/Casos"));
 const CasoDetalhe = lazy(() => import("../pages/CasoDetalhe"));
 const RaioXProcesso = lazy(() => import("../pages/RaioXProcesso"));
+const AnaliseCasoIA = lazy(() => import("../pages/AnaliseCasoIA"));
 const SalaDeGuerra = lazy(() => import("../pages/SalaDeGuerra"));
 const EntrevistaInteligente = lazy(
   () => import("../pages/EntrevistaInteligente"),
@@ -569,6 +570,23 @@ export const STAFF_ROUTES: ModuleRoute[] = [
     sensitive: true,
     usesAI: true,
     backendPrefixes: ["/api/ai", "/api/ai/core", "/api/ai/skills"],
+  },
+  {
+    key: "analise-caso-ia",
+    path: "/analise-caso-ia",
+    label: "Análise de Caso IA",
+    description:
+      "Chat multi-turno com IA no papel de advogado sênior: documentos, texto colado ou caso vinculado.",
+    group: "Pesquisar & IA",
+    icon: Scale,
+    component: AnaliseCasoIA,
+    roles: ROLES.juridico,
+    showInNav: true,
+    order: 15,
+    helpKey: "inteligencia",
+    sensitive: true,
+    usesAI: true,
+    backendPrefixes: ["/api/analise-caso-ia"],
   },
   {
     key: "knowledge-hub",
