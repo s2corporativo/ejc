@@ -52,13 +52,16 @@ elif ! docker exec "$APP_CONTAINER" sh -c "test -d $UPLOADS_DIR_CONTAINER"; then
 else
     echo "[$(date)] Backup dos uploads ($UPLOADS_DIR_CONTAINER)..."
     # O diretório está VIVO durante o backup: um upload/remoção concorrente faz o
-    # GNU tar sair com rc=1 ("file changed as we read it") mesmo com o arquivo
-    # gerado íntegro. Só rc>=2 é erro real. --ignore-failed-read tolera arquivos
-    # removidos no meio; o stderr NÃO é mais silenciado, para o log diagnosticar.
+    # GNU tar sair com rc=1 ("file changed/removed as we read it") mesmo com o
+    # arquivo gerado íntegro — isso é tolerável. Já um arquivo ILEGÍVEL
+    # (permissão/I/O) sai com rc>=2 e DEVE falhar: marcar um backup PARCIAL como
+    # OK seria perda silenciosa. Por isso NÃO usamos --ignore-failed-read (que
+    # mascararia o arquivo ilegível como sucesso); --warning=no-file-changed só
+    # corta o ruído do log, e o stderr real segue visível para diagnóstico.
     # (Bug anterior: `2>/dev/null` + `if tar` tratava o rc=1 como falha total e
     # apagava um backup de uploads válido — daí o "falha no backup dos uploads".)
     set +e
-    docker exec "$APP_CONTAINER" tar --ignore-failed-read --warning=no-file-changed \
+    docker exec "$APP_CONTAINER" tar --warning=no-file-changed \
         -czf - -C "$UPLOADS_DIR_CONTAINER" . > "$UPLOADS_FILE"
     tar_rc=$?
     set -e
