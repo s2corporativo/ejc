@@ -210,7 +210,8 @@ export default function ClientServiceTimeline({
 
   const load = useCallback(
     async (targetPage = 1, append = false) => {
-      append ? setLoadingMore(true) : setLoading(true);
+      if (append) setLoadingMore(true);
+      else setLoading(true);
       try {
         const response = await api.get<TimelineResponse>("/atendimentos", {
           params: {

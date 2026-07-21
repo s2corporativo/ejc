@@ -64,6 +64,11 @@ class _FakeClient:
 def sink(monkeypatch):
     box = {}
     monkeypatch.setattr(ap, "_get_client", lambda: _FakeClient(box))
+    # ap.chat() aborta cedo se ANTHROPIC_ENABLED=false. Estes testes exercitam a
+    # MONTAGEM do request (temperature/thinking/cache), não a política de
+    # habilitação — então fixamos a flag para o provider ser hermético e imune a
+    # um .env/env de dev com Anthropic OFF (mesma blindagem do conftest.py).
+    monkeypatch.setattr(get_settings(), "ANTHROPIC_ENABLED", True)
     return box
 
 
