@@ -38,7 +38,7 @@ def test_collects_distinct_strong_passwords_without_echoing():
 
 
 def test_rejects_reused_password():
-    repeated = "Senha@Temporaria9"
+    repeated = "R3petida@Forte!"
     values = [
         repeated,
         repeated,
