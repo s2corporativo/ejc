@@ -4,6 +4,10 @@ set -euo pipefail
 APP_DIR="${APP_DIR:-/opt/ejc}"
 DOMAIN="${EJC_DOMAIN:-ejc.depaulateixeira.adv.br}"
 RUN_MIGRATIONS="${RUN_MIGRATIONS:-0}"
+# Rollback automático restaura a imagem anterior, não o schema do banco. Portanto,
+# migration durante deploy só é permitida quando revisada como retrocompatível
+# com a versão anterior da aplicação (expand/contract, sem DROP/rename imediato).
+MIGRATIONS_BACKWARD_COMPATIBLE="${MIGRATIONS_BACKWARD_COMPATIBLE:-0}"
 RUN_SEEDS="${RUN_SEEDS:-0}"
 # Política de produção: todo deploy garante configuração efetiva e prova recente
 # do backup cifrado no Google Drive. Use 0 somente em contingência declarada.
@@ -30,7 +34,9 @@ cleanup_rollback_tags() {
 }
 
 rollback() {
-  log "Deploy falhou. Iniciando rollback seguro."
+  local original_rc=$?
+  trap - ERR
+  log "Deploy falhou (rc=${original_rc}). Iniciando rollback seguro."
   if [ -n "${OLD_BACKEND_TAG:-}" ]; then
     docker tag "$OLD_BACKEND_TAG" ejc-backend:latest || true
   elif [ -n "${OLD_BACKEND_IMAGE:-}" ]; then
@@ -43,16 +49,31 @@ rollback() {
   fi
   docker compose up -d --no-deps backend worker frontend || true
   sleep 8
-  bash "$APP_DIR/scripts/post_deploy_check.sh" || true
-  exit 1
+  if bash "$APP_DIR/scripts/post_deploy_check.sh"; then
+    log "Rollback confirmado pelo post-deploy check."
+  else
+    log "ERRO CRÍTICO: rollback executado, mas o post-deploy check falhou."
+  fi
+  exit "$original_rc"
 }
+
+# Esta validação ocorre antes do trap: uma política rejeitada não deve fingir que
+# houve deploy e rollback. A migration precisa ser declarada retrocompatível no PR.
+if [ "$RUN_MIGRATIONS" = "1" ] && [ "$MIGRATIONS_BACKWARD_COMPATIBLE" != "1" ]; then
+  cat >&2 <<'EOF'
+RUN_MIGRATIONS=1 foi solicitado sem MIGRATIONS_BACKWARD_COMPATIBLE=1.
+O rollback automático restaura imagens, mas não desfaz schema. Revise a migration
+como expand/contract retrocompatível e só então habilite os dois flags.
+EOF
+  exit 2
+fi
 
 trap rollback ERR
 
 log "EJC deploy seguro iniciado para ${DOMAIN}"
 
 [ -f .env ] || { echo "Arquivo .env ausente em ${APP_DIR}" >&2; exit 1; }
-docker compose config >/tmp/ejc_compose_config_$(timestamp).txt
+docker compose config >"/tmp/ejc_compose_config_$(timestamp).txt"
 
 OLD_BACKEND_IMAGE="$(docker inspect -f '{{.Image}}' ejc_backend 2>/dev/null || true)"
 OLD_FRONTEND_IMAGE="$(docker inspect -f '{{.Image}}' ejc_frontend 2>/dev/null || true)"
@@ -95,10 +116,10 @@ done
 [ "$backend_ok" = "1" ] || { log "Backend não respondeu em 60s"; exit 1; }
 
 if [ "$RUN_MIGRATIONS" = "1" ]; then
-  log "RUN_MIGRATIONS=1: aplicando Alembic"
+  log "Aplicando Alembic (migration declarada retrocompatível)"
   docker compose exec -T backend alembic upgrade head
 else
-  log "Migrations nao executadas. Use RUN_MIGRATIONS=1 apenas quando houver migracao revisada."
+  log "Migrations não executadas. Use RUN_MIGRATIONS=1 e MIGRATIONS_BACKWARD_COMPATIBLE=1 após revisão."
 fi
 
 # O worker usa a mesma imagem do backend e precisa ser recriado a cada deploy.
@@ -112,26 +133,25 @@ if [ "$ENSURE_DAILY_BACKUP" = "1" ]; then
   log "Garantindo backup diário cifrado no Google Drive"
   bash scripts/backup/ativar_backup.sh
 else
-  log "AVISO CRÍTICO: ENSURE_DAILY_BACKUP=0 — garantia de backup diário foi ignorada por contingência."
+  log "AVISO CRÍTICO: ENSURE_DAILY_BACKUP=0 — garantia de backup diário ignorada por contingência."
 fi
 
 # Seed do corpus RAG da "Bíblia de Conhecimento EJC" — idempotente e não fatal.
 if [ "$RUN_SEEDS" = "1" ]; then
-  log "RUN_SEEDS=1: aplicando seed da Biblia de Conhecimento EJC (nao-fatal)"
+  log "RUN_SEEDS=1: aplicando seed da Bíblia de Conhecimento EJC (não-fatal)"
   if docker compose exec -T backend python scripts/seed_biblia_ejc.py; then
-    log "Seed da Biblia concluido."
+    log "Seed da Bíblia concluído."
   else
-    log "AVISO: seed da Biblia falhou (nao-fatal) — deploy segue; app opera sem o corpus. Rode manualmente: docker compose exec backend python scripts/seed_biblia_ejc.py"
+    log "AVISO: seed da Bíblia falhou (não-fatal); o app segue sem o corpus."
   fi
 else
-  log "Seeds nao executados. Use RUN_SEEDS=1 para ingerir o corpus da Biblia (situacoes + modelos + Volume III)."
+  log "Seeds não executados. Use RUN_SEEDS=1 para ingerir o corpus."
 fi
 
 # Política permanente: todo documento vigente da Base de Conhecimento deve estar
-# aprovado para uso pela IA. O reparo é idempotente e também completa embeddings
-# ausentes; falha aqui interrompe o deploy para não publicar uma inteligência
-# jurídica com acervo silenciosamente indisponível.
-log "Aprovando e indexando pendencias da Base de Conhecimento"
+# aprovado para uso pela IA. Falha interrompe o deploy para não publicar uma
+# inteligência jurídica com acervo silenciosamente indisponível.
+log "Aprovando e indexando pendências da Base de Conhecimento"
 docker compose exec -T backend python -m scripts.reparar_conhecimento_rag --batch-size 50
 
 log "Subindo frontend"
@@ -143,4 +163,4 @@ EJC_DOMAIN="$DOMAIN" bash scripts/post_deploy_check.sh
 
 trap - ERR
 cleanup_rollback_tags
-log "Deploy seguro concluido com sucesso."
+log "Deploy seguro concluído com sucesso."
