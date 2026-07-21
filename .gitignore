@@ -1,69 +1,59 @@
-# ── Segredos / ambiente ──────────────────────────────────────────────
+```
+# Environment variables
 .env
-*.env
-**/.env
-!.env.example
-!**/.env.example
-vps-tools/.env
-.env.bak*
-.env.save
-**/.env.bak*
-**/.env.save
+.env.local
+.env.*
 
-# Chaves e credenciais
-*.pem
-*.key
-*.p12
-*.pfx
-*-service-account*.json
-credentials*.json
-
-# ── Dependências / builds ────────────────────────────────────────────
-node_modules/
-**/node_modules/
-backend/.venv/
-backend/.venv-codex/
-**/.venv*/
+# Dependencies
 __pycache__/
-**/__pycache__/
 *.pyc
-.pytest_cache/
-.mypy_cache/
-.ruff_cache/
-frontend/dist/
+*.pyo
+*.pyd
+.Python
+venv/
+.venv/
+env/
+ENV/
+
+# Build artifacts
+build/
 dist/
+*.egg
+*.egg-info/
+*.so
+*.dylib
+*.dll
+*.exe
+*.out
+*.o
+*.obj
 
-# ── Artefatos / backups / resíduos (não versionar) ───────────────────
-*.tgz
-*.tar.gz
-*.zip
-*.dump
-*.sql
-*.sql.gz
+# Testing
+.coverage
+coverage/
+htmlcov/
+.nyc_output/
+.pytest_cache/
+.hypothesis/
+
+# Logs
 *.log
-uploads/
-backups/
-frontend/tests/__out__/
-_QUARENTENA/
-vps-tools/generated/
-_session_componentes_bronze/
 
-# ── Backups locais de arquivos ───────────────────────────────────────
-*.bak
-*.bak.*
-*.old
-*.orig
+# OS generated files
+.DS_Store
+.DS_Store?
+._*
+.Spotlight-V100
+.Trashes
+ehthumbs.db
+Thumbs.db
+*.swp
+*.swo
 
-# temporários de deploy (auditoria 01/07)
-vps-tools/_*
-
-# graphify — grafo de conhecimento local (regenerável, não versionar)
-graphify-out/
-
-# Worktrees efêmeros de subagentes (Claude Code)
-.claude/worktrees/
-.claude/launch.json
-frontend/.claude/
-
-# Segredos aplicados direto na VPS (OAuth Google Drive etc.) — nunca versionar
-secrets/
+# IDE specific
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+```
