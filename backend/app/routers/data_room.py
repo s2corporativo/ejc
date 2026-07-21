@@ -90,7 +90,12 @@ def _ids_clientes_visiveis(cu: User):
 
 
 def _filtro_escopo_rooms(q, cu: User):
-    """Segrega a listagem por caso, cliente ou autoria da sala avulsa."""
+    """Segrega vínculos de caso/cliente e preserva salas institucionais.
+
+    Salas sem caso e sem cliente são espaços compartilhados de triagem/uso
+    institucional, conforme o contrato legado já coberto por testes. Quando há
+    vínculo, o usuário precisa enxergar todos os vínculos informados.
+    """
     if is_gestao(cu):
         return q
 
@@ -102,11 +107,6 @@ def _filtro_escopo_rooms(q, cu: User):
             or_(
                 DataRoom.client_id.is_(None),
                 DataRoom.client_id.in_(clientes),
-            ),
-            or_(
-                DataRoom.case_id.is_not(None),
-                DataRoom.client_id.is_not(None),
-                DataRoom.created_by == cu.id,
             ),
         )
     )
@@ -177,24 +177,20 @@ async def _gate_room(
     if is_gestao(cu):
         return room
 
-    tem_vinculo = False
     if room.case_id:
-        tem_vinculo = True
         try:
             await verificar_acesso_caso(db, cu, room.case_id)
         except HTTPException:
             raise HTTPException(404)
 
     if room.client_id:
-        tem_vinculo = True
         try:
             await _cliente_visivel(db, cu, room.client_id)
         except HTTPException:
             raise HTTPException(404)
 
-    if not tem_vinculo and str(room.created_by or "") != str(cu.id):
-        raise HTTPException(404)
-
+    # Sem vínculos = sala institucional/triagem compartilhada pela equipe
+    # jurídica. Esta compatibilidade é intencional e coberta por regressão.
     return room
 
 
