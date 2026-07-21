@@ -45,17 +45,31 @@ enviar_drive "$DB_FILE" "ejc_db_*.sql.gz"
 # ── 2. Uploads / GED (arquivos enviados pelos usuários) ───────────────────────
 # Sem isto, um pg_dump não recupera os DOCUMENTOS em disco (só os metadados).
 UPLOADS_FILE="${BACKUP_DIR}/ejc_uploads_${DATE}.tar.gz"
-if docker exec "$APP_CONTAINER" sh -c "test -d $UPLOADS_DIR_CONTAINER" 2>/dev/null; then
+if ! docker ps --format '{{.Names}}' | grep -qx "$APP_CONTAINER"; then
+    echo "[$(date)] AVISO: $APP_CONTAINER não está rodando — uploads NÃO salvos nesta rodada"
+elif ! docker exec "$APP_CONTAINER" sh -c "test -d $UPLOADS_DIR_CONTAINER"; then
+    echo "[$(date)] $APP_CONTAINER sem $UPLOADS_DIR_CONTAINER — pulando uploads"
+else
     echo "[$(date)] Backup dos uploads ($UPLOADS_DIR_CONTAINER)..."
-    if docker exec "$APP_CONTAINER" tar czf - -C "$UPLOADS_DIR_CONTAINER" . > "$UPLOADS_FILE" 2>/dev/null; then
-        echo "[$(date)] Uploads salvos: $UPLOADS_FILE ($(du -sh "$UPLOADS_FILE" | cut -f1))"
+    # O diretório está VIVO durante o backup: um upload/remoção concorrente faz o
+    # GNU tar sair com rc=1 ("file changed as we read it") mesmo com o arquivo
+    # gerado íntegro. Só rc>=2 é erro real. --ignore-failed-read tolera arquivos
+    # removidos no meio; o stderr NÃO é mais silenciado, para o log diagnosticar.
+    # (Bug anterior: `2>/dev/null` + `if tar` tratava o rc=1 como falha total e
+    # apagava um backup de uploads válido — daí o "falha no backup dos uploads".)
+    set +e
+    docker exec "$APP_CONTAINER" tar --ignore-failed-read --warning=no-file-changed \
+        -czf - -C "$UPLOADS_DIR_CONTAINER" . > "$UPLOADS_FILE"
+    tar_rc=$?
+    set -e
+    if [ "$tar_rc" -le 1 ] && [ -s "$UPLOADS_FILE" ]; then
+        aviso=""; [ "$tar_rc" -eq 1 ] && aviso=" (aviso: arquivos mudaram durante a leitura)"
+        echo "[$(date)] Uploads salvos: $UPLOADS_FILE ($(du -sh "$UPLOADS_FILE" | cut -f1))${aviso}"
         enviar_drive "$UPLOADS_FILE" "ejc_uploads_*.tar.gz"
     else
-        echo "[$(date)] AVISO: falha no backup dos uploads"
+        echo "[$(date)] AVISO: falha no backup dos uploads (tar rc=${tar_rc})"
         rm -f "$UPLOADS_FILE"
     fi
-else
-    echo "[$(date)] $APP_CONTAINER sem $UPLOADS_DIR_CONTAINER — pulando uploads"
 fi
 
 # ── 3. Rotação local (banco + uploads) ────────────────────────────────────────
