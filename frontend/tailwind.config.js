@@ -103,11 +103,13 @@ export default {
          * claro #C9A227 = só filete/realce gráfico, nunca texto;
          * palha #F7F1DC = fundo suave (badges, quadros).
          */
+        // Alias legado para telas ainda não migradas. Visual Law usa
+        // gold/tokens próprios; a interface operacional usa azul.
         ouro: {
-          profundo: "#6F5711",
-          DEFAULT: "#8F7117",
-          claro: "#C9A227",
-          palha: "#F7F1DC",
+          profundo: "#1D4ED8",
+          DEFAULT: "#2563EB",
+          claro: "#60A5FA",
+          palha: "#EFF6FF",
         },
         ink: {
           DEFAULT: "#111827",
