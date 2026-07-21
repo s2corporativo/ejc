@@ -54,8 +54,10 @@ run_case() {
 run_case 0 0
 run_case 1 1
 
-# Guardas estáticos: o wrapper nunca deve voltar a gerar/enviar PII em claro.
-if grep -Eq '\brclone\b|pg_dump[[:space:]].*\|[[:space:]]*gzip|ejc_db_.*sql\.gz|ejc_uploads_.*tar\.gz' \
+# Guardas estáticos: somente padrões executáveis são proibidos; comentários que
+# documentam a remoção do fluxo antigo não geram falso positivo.
+if grep -Eq \
+  '^[[:space:]]*rclone[[:space:]]|pg_dump[[:space:]].*\|[[:space:]]*gzip|ejc_db_.*sql\.gz|ejc_uploads_.*tar\.gz' \
   "$ROOT/scripts/backup.sh"; then
   fail "padrão de backup legado em claro reapareceu"
 fi
