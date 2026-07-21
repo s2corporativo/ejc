@@ -18,6 +18,10 @@ concurrency:
 
 jobs:
   apply:
+    # workflow_dispatch usa a branch selecionada. Nunca permitir que o token do
+    # Actions escreva diretamente na main, evento que não dispara outro push
+    # workflow e contornaria a trilha de proveniência.
+    if: github.ref_name != 'main'
     name: Apply canonical contracts and compatible routes
     runs-on: [self-hosted, ejc-vps]
     timeout-minutes: 15
@@ -27,6 +31,14 @@ jobs:
         uses: actions/checkout@v7
         with:
           fetch-depth: 0
+
+      - name: Validar branch de destino
+        shell: bash
+        run: |
+          case "${GITHUB_REF_NAME}" in
+            agent/ejc-refatoracao-integral) ;;
+            *) echo "Branch não autorizada para escrita automática: ${GITHUB_REF_NAME}" >&2; exit 2 ;;
+          esac
 
       - name: Apply deterministic codemod
         run: python3 scripts/apply_architecture_refactor_wave1.py
@@ -58,4 +70,4 @@ jobs:
           git config user.name "EJC Architecture Bot"
           git config user.email "actions@users.noreply.github.com"
           git commit -m "feat(arquitetura): aplicar contratos e rotas canônicas da onda 1"
-          git push origin HEAD:${GITHUB_REF_NAME}
+          git push origin "HEAD:${GITHUB_REF_NAME}"
