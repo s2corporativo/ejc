@@ -49,7 +49,7 @@ async def verificar_conflito(
     )
 
     def _doc(c) -> Optional[str]:
-        return c.cpf or c.cnpj
+        return c.documento_plain
 
     def _nome(c) -> str:
         return c.nome or c.razao_social or "N/D"

@@ -24,11 +24,13 @@ def pode_ver_todos(user: User) -> bool:
 async def _checklist(db: AsyncSession, client: Client, hoje: date) -> dict:
     """Monta o checklist de onboarding de um cliente a partir dos dados reais."""
     # 1) cadastro básico conforme tipo
+    # Cutover C6/LGPD: presença do documento verificada pelo campo cifrado
+    # (cpf_enc/cnpj_enc) — não há mais coluna em texto puro.
     if client.tipo == ClientTipo.PJ:
-        cadastro_ok = bool((client.razao_social or "").strip() and (client.cnpj or "").strip())
+        cadastro_ok = bool((client.razao_social or "").strip() and client.cnpj_enc)
         cadastro_det = "Razão social e CNPJ" + ("" if cadastro_ok else " — incompletos")
     else:
-        cadastro_ok = bool((client.nome or "").strip() and (client.cpf or "").strip())
+        cadastro_ok = bool((client.nome or "").strip() and client.cpf_enc)
         cadastro_det = "Nome e CPF" + ("" if cadastro_ok else " — incompletos")
 
     # 2) contato

@@ -442,7 +442,7 @@ async def montar_checklist(
     else:
         if not (client.nome or client.razao_social):
             faltas.append("nome/razão social")
-        if not (client.cpf or client.cnpj):
+        if not (client.cpf_enc or client.cnpj_enc):
             faltas.append("CPF/CNPJ")
     itens.append({
         "key": "qualificacao_cliente",

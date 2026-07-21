@@ -18,16 +18,18 @@ _settings = get_settings()
 
 
 def _qualificacao(c: Client) -> str:
-    if (getattr(c, "tipo", "") or "").lower() in ("pj", "juridica", "pessoa_juridica") or c.cnpj:
+    # Cutover C6/LGPD: documento vive só cifrado — presença via cnpj_enc, valor
+    # em claro via cnpj_plain/cpf_plain (decifrado para a peça).
+    if (getattr(c, "tipo", "") or "").lower() in ("pj", "juridica", "pessoa_juridica") or c.cnpj_enc:
         return (
             f"{c.razao_social or c.nome}, pessoa juridica inscrita no CNPJ sob o no "
-            f"{c.cnpj or '[CNPJ]'}, com sede em "
+            f"{c.cnpj_plain or '[CNPJ]'}, com sede em "
             f"{c.logradouro or '[endereco]'}, {c.numero or ''} {c.complemento or ''}, "
             f"{c.bairro or ''}, {c.cidade or '[cidade]'}/{c.estado or 'MG'}, CEP {c.cep or '[CEP]'}"
         )
     return (
         f"{c.nome}, {c.profissao or '[profissao]'}, inscrito(a) no CPF sob o no "
-        f"{c.cpf or '[CPF]'}, residente em {c.logradouro or '[endereco]'}, "
+        f"{c.cpf_plain or '[CPF]'}, residente em {c.logradouro or '[endereco]'}, "
         f"{c.numero or ''} {c.complemento or ''}, {c.bairro or ''}, "
         f"{c.cidade or '[cidade]'}/{c.estado or 'MG'}, CEP {c.cep or '[CEP]'}"
     )

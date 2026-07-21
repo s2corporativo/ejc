@@ -49,12 +49,18 @@ async def _criar_user(db, role: str = "advogado") -> str:
 
 async def _criar_cliente(db, nome: str, *, responsavel_id: str | None = None,
                          cpf: str | None = None) -> str:
+    # Cutover C6/LGPD: sem coluna cpf em texto puro — grava cifrado + hash. O
+    # resolver/checar-conflito acham o cliente pelo cpf_hash.
+    from app.services.pii_crypto import normalizar_documento, encrypt, hash_documento
     cid = str(uuid4())
+    cpf_n = normalizar_documento(cpf)
     await db.execute(
-        text("INSERT INTO clients (id, tipo, nome, email, status, responsavel_id, cpf) "
-             "VALUES (:id, 'PF', :nome, :email, 'ativo', :resp, :cpf)"),
+        text("INSERT INTO clients (id, tipo, nome, email, status, responsavel_id, "
+             "cpf_enc, cpf_hash) "
+             "VALUES (:id, 'PF', :nome, :email, 'ativo', :resp, :cpf_enc, :cpf_hash)"),
         {"id": cid, "nome": nome, "email": f"{cid[:8]}@teste.local",
-         "resp": responsavel_id, "cpf": cpf},
+         "resp": responsavel_id, "cpf_enc": encrypt(cpf_n),
+         "cpf_hash": hash_documento(cpf_n)},
     )
     return cid
 

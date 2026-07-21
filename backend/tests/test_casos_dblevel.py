@@ -25,12 +25,14 @@ pytestmark = pytest.mark.skipif(
 
 
 async def _criar_cliente(db, client_id):
+    # Cutover C6/LGPD: sem coluna cpf em texto puro. Este teste não usa o
+    # documento — insere só o cadastro mínimo.
     await db.execute(
         text(
-            "INSERT INTO clients (id, tipo, nome, cpf, email, status) "
-            "VALUES (:id, 'PF', 'Cliente Caso R2', :cpf, :email, 'ativo')"
+            "INSERT INTO clients (id, tipo, nome, email, status) "
+            "VALUES (:id, 'PF', 'Cliente Caso R2', :email, 'ativo')"
         ),
-        {"id": client_id, "cpf": f"cpf-{client_id[:8]}", "email": f"{client_id[:8]}@teste.local"},
+        {"id": client_id, "email": f"{client_id[:8]}@teste.local"},
     )
 
 

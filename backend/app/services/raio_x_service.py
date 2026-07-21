@@ -333,7 +333,7 @@ async def preview_conversao(
             )
         ).scalars().all()
         clientes = [
-            {"id": client.id, "nome": client.nome_exibicao, "cpf": bool(client.cpf), "cnpj": bool(client.cnpj)}
+            {"id": client.id, "nome": client.nome_exibicao, "cpf": bool(client.cpf_enc), "cnpj": bool(client.cnpj_enc)}
             for client in rows
         ]
 
@@ -370,17 +370,24 @@ async def _resolver_cliente(db: AsyncSession, payload: RaioXConverterRequest, us
 
     digits_cpf = re.sub(r"\D", "", req.cpf or "")[:11] or None
     digits_cnpj = re.sub(r"\D", "", req.cnpj or "")[:14] or None
+
+    from app.services.pii_crypto import encrypt, hash_documento
+
+    # Dedup por índice cego (cutover C6/LGPD): sem cpf/cnpj em texto puro,
+    # casa pelo hash HMAC do documento normalizado.
     existing = None
     if digits_cpf:
         existing = (
             await db.execute(
-                select(Client).where(Client.cpf == digits_cpf, Client.deleted_at.is_(None))
+                select(Client).where(Client.cpf_hash == hash_documento(digits_cpf),
+                                     Client.deleted_at.is_(None))
             )
         ).scalar_one_or_none()
     if not existing and digits_cnpj:
         existing = (
             await db.execute(
-                select(Client).where(Client.cnpj == digits_cnpj, Client.deleted_at.is_(None))
+                select(Client).where(Client.cnpj_hash == hash_documento(digits_cnpj),
+                                     Client.deleted_at.is_(None))
             )
         ).scalar_one_or_none()
     if existing:
@@ -388,16 +395,13 @@ async def _resolver_cliente(db: AsyncSession, payload: RaioXConverterRequest, us
     if not (req.nome or digits_cpf or digits_cnpj):
         raise ValueError("Informe os dados mínimos do novo cliente")
 
-    from app.services.pii_crypto import encrypt, hash_documento
-
     tipo = ClientTipo.PJ if digits_cnpj else ClientTipo.PF
     client = Client(
         id=str(uuid4()),
         tipo=tipo,
         nome=req.nome if tipo == ClientTipo.PF else None,
         razao_social=req.nome if tipo == ClientTipo.PJ else None,
-        cpf=digits_cpf if tipo == ClientTipo.PF else None,
-        cnpj=digits_cnpj if tipo == ClientTipo.PJ else None,
+        # Cutover C6/LGPD: grava só cifrado + hash (nunca texto puro).
         cpf_enc=encrypt(digits_cpf) if digits_cpf else None,
         cnpj_enc=encrypt(digits_cnpj) if digits_cnpj else None,
         cpf_hash=hash_documento(digits_cpf) if digits_cpf else None,

@@ -122,42 +122,38 @@ async def busca_global(
             )
 
         if cu.role.value in _CLIENTES:
-            conds_cli = []
             try:
                 blind_index = hash_documento(digitos)
             except RuntimeError:
                 blind_index = None
+            # Cutover C6/LGPD: busca de cliente por documento é feita SOMENTE
+            # pelo índice cego (HMAC) — não há mais cpf/cnpj em texto puro no
+            # banco. Igualdade exata (CPF/CNPJ completo). Sem PII_HASH_KEY
+            # (blind_index None) não há como casar documento → pula clientes.
             if blind_index:
-                conds_cli.append(
+                cond_cli = (
                     Client.cpf_hash == blind_index
                     if len(digitos) == 11
                     else Client.cnpj_hash == blind_index
                 )
-            # Compatibilidade controlada enquanto o plaintext legado existir:
-            # apenas igualdade exata, nunca LIKE parcial.
-            conds_cli.append(
-                _so_digitos(Client.cpf) == digitos
-                if len(digitos) == 11
-                else _so_digitos(Client.cnpj) == digitos
-            )
-            client_query = (
-                select(Client)
-                .where(Client.deleted_at.is_(None), or_(*conds_cli))
-                .order_by(Client.updated_at.desc())
-            )
-            for client in (
-                await db.execute(client_query.limit(limit))
-            ).scalars().all():
-                documento = client.cpf or client.cnpj
-                out.append(
-                    {
-                        "tipo": "cliente",
-                        "id": client.id,
-                        "titulo": client.nome or client.razao_social or "—",
-                        "subtitulo": _mascarar_documento(documento),
-                        "link": "/clientes",
-                    }
+                client_query = (
+                    select(Client)
+                    .where(Client.deleted_at.is_(None), cond_cli)
+                    .order_by(Client.updated_at.desc())
                 )
+                for client in (
+                    await db.execute(client_query.limit(limit))
+                ).scalars().all():
+                    documento = client.documento_plain
+                    out.append(
+                        {
+                            "tipo": "cliente",
+                            "id": client.id,
+                            "titulo": client.nome or client.razao_social or "—",
+                            "subtitulo": _mascarar_documento(documento),
+                            "link": "/clientes",
+                        }
+                    )
 
         parte_query = _escopo_casos(
             select(CaseParte, Case)
@@ -263,7 +259,7 @@ async def busca_global(
                     "tipo": "cliente",
                     "id": client.id,
                     "titulo": client.nome or client.razao_social or "—",
-                    "subtitulo": _mascarar_documento(client.cpf or client.cnpj),
+                    "subtitulo": _mascarar_documento(client.documento_plain),
                     "link": "/clientes",
                 }
             )

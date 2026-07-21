@@ -30,19 +30,20 @@ class ClientOrigem(str, enum.Enum):
 class Client(Base):
     __tablename__ = "clients"
 
-    # Unicidade de cpf/cnpj é imposta por ÍNDICE ÚNICO PARCIAL (migration 075):
-    # só entre registros ATIVOS (deleted_at IS NULL). Por isso as colunas abaixo
-    # NÃO usam unique=True — isso permitiria recadastro após soft-delete.
+    # Unicidade/dedup de cpf/cnpj é imposta EXCLUSIVAMENTE pelos índices cegos
+    # de hash abaixo (ux_clients_*_hash). As colunas cpf/cnpj em TEXTO PURO e os
+    # índices parciais sobre elas (uq_clients_cpf_active/uq_clients_cnpj_active,
+    # migration 075) foram REMOVIDOS no cutover C6/LGPD (migration 112): CPF/CNPJ
+    # não existem mais em claro no banco — só cifrados (cpf_enc/cnpj_enc) e
+    # hasheados (cpf_hash/cnpj_hash). A leitura em claro é sob demanda via as
+    # propriedades cpf_plain/cnpj_plain (decrypt).
     __table_args__ = (
-        Index("uq_clients_cpf_active", "cpf", unique=True,
-              postgresql_where=text("deleted_at IS NULL")),
-        Index("uq_clients_cnpj_active", "cnpj", unique=True,
-              postgresql_where=text("deleted_at IS NULL")),
         # #11/#12: dedup por HMAC (migration 061), com o predicado corrigido na
         # 079 para EXCLUIR soft-deleted (antes só `cpf_hash IS NOT NULL`, o que
         # impedia recadastrar o mesmo CPF após soft-delete que a 075 habilitou).
         # Declarados no ORM para o autogenerate NÃO emitir DROP INDEX destes
-        # únicos parciais (perderia a unicidade de dedup).
+        # únicos parciais (perderia a unicidade de dedup). Pós-migration 112,
+        # são a ÚNICA garantia de unicidade de documento entre clientes ativos.
         Index("ux_clients_cpf_hash", "cpf_hash", unique=True,
               postgresql_where=text("cpf_hash IS NOT NULL AND deleted_at IS NULL")),
         Index("ux_clients_cnpj_hash", "cnpj_hash", unique=True,
@@ -54,20 +55,20 @@ class Client(Base):
 
     # Campos PF
     nome           = Column(String(255), nullable=True, index=True)
-    cpf            = Column(String(14),  nullable=True, index=True)  # unicidade via índice parcial (ver __table_args__)
     data_nascimento = Column(Date, nullable=True)
     profissao      = Column(String(100), nullable=True)
 
     # Campos PJ
     razao_social   = Column(String(255), nullable=True)
-    cnpj           = Column(String(18),  nullable=True, index=True)  # unicidade via índice parcial (ver __table_args__)
     nome_fantasia  = Column(String(255), nullable=True)
 
-    # Criptografia de PII em repouso (LGPD, achado C6 / migration 061). Fase de
-    # transição: cpf/cnpj acima seguem em texto puro para não quebrar leitura
-    # existente; os campos abaixo são preenchidos em PARALELO a partir de
-    # agora (dual-write) nos cadastros novos. Backfill dos já existentes é
-    # manual e separado (scripts/backfill_pii_encryption.py) — nunca automático.
+    # Criptografia de PII em repouso (LGPD, achado C6 / migration 061). CUTOVER
+    # concluído na migration 112: as colunas cpf/cnpj em TEXTO PURO foram
+    # DROPADAS — a criptografia deixou de ser cosmética. cpf/cnpj passam a
+    # existir SOMENTE cifrados (cpf_enc/cnpj_enc, Fernet) e hasheados
+    # (cpf_hash/cnpj_hash, HMAC). Toda leitura em claro é sob demanda via as
+    # propriedades cpf_plain/cnpj_plain (decrypt); busca/dedup/conflito usam o
+    # hash. NÃO reintroduzir coluna de documento em texto puro.
     cpf_enc        = Column(Text, nullable=True)   # ciphertext Fernet, não indexável
     cnpj_enc       = Column(Text, nullable=True)
     # Índice declarado em __table_args__ (único parcial ux_clients_*_hash) — sem
@@ -123,6 +124,28 @@ class Client(Base):
     @property
     def nome_exibicao(self) -> str:
         return self.nome or self.razao_social or "Cliente sem nome"
+
+    # ── Leitura em claro de CPF/CNPJ sob demanda (cutover C6/LGPD) ───────────
+    # Fonte da verdade = cpf_enc/cnpj_enc (Fernet). Decifra só quando o valor em
+    # claro é realmente necessário (resposta de API a quem tem acesso, geração
+    # de peça/nota, export). Busca/dedup/conflito NÃO usam isto — usam o hash.
+    # Import local: mantém o model livre de dependência de serviço no topo e
+    # evita qualquer ciclo de import (mesmo padrão dos routers).
+    @property
+    def cpf_plain(self) -> str | None:
+        from app.services.pii_crypto import decrypt
+        return decrypt(self.cpf_enc)
+
+    @property
+    def cnpj_plain(self) -> str | None:
+        from app.services.pii_crypto import decrypt
+        return decrypt(self.cnpj_enc)
+
+    @property
+    def documento_plain(self) -> str | None:
+        """CPF (PF) ou CNPJ (PJ) em claro — conveniência para os sites que antes
+        faziam `c.cpf or c.cnpj`. PF-first, espelhando o comportamento legado."""
+        return self.cpf_plain or self.cnpj_plain
 
     def __repr__(self):
         return f"<Client {self.nome_exibicao} [{self.tipo}]>"

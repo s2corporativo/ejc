@@ -72,7 +72,9 @@ def _user(role: UserRole = UserRole.advogado, uid: str = "u1") -> User:
 
 
 def _cli() -> Client:
-    return Client(id="cli1", nome="Joao da Silva", cpf="00000000000")
+    # Cutover C6/LGPD: sem coluna cpf — a proposta de honorários não usa o
+    # documento, então o cadastro mínimo basta.
+    return Client(id="cli1", nome="Joao da Silva")
 
 
 def _case(**kw) -> Case:

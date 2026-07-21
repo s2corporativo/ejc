@@ -76,7 +76,7 @@ async def _computar_checklist(db: AsyncSession, case: Case) -> tuple[list[dict],
     else:
         if not (client.nome or client.razao_social):
             faltas.append("nome/razão social")
-        if not (client.cpf or client.cnpj):
+        if not (client.cpf_enc or client.cnpj_enc):
             faltas.append("CPF/CNPJ")
         end_faltas = [rotulo for rotulo, valor in (
             ("logradouro", client.logradouro), ("número", client.numero),
@@ -209,8 +209,8 @@ async def _computar_checklist(db: AsyncSession, case: Case) -> tuple[list[dict],
         resultado = await detectar_conflito(
             db,
             nome=(client.nome or client.razao_social) if client else None,
-            cpf=client.cpf if client else None,
-            cnpj=client.cnpj if client else None,
+            cpf=client.cpf_plain if client else None,
+            cnpj=client.cnpj_plain if client else None,
             parte_contraria=case.parte_contraria,
             ignorar_client_id=case.client_id,
         )

@@ -147,7 +147,7 @@ async def gerar_peca(
 
     ctx = {
         "cliente_nome": client.nome or client.razao_social or "—",
-        "cliente_cpf_cnpj": client.cpf or client.cnpj or "—",
+        "cliente_cpf_cnpj": client.documento_plain or "—",
         "cliente_endereco": endereco,
         "numero_processo": case.numero_processo or "—",
         "parte_contraria": case.parte_contraria or "—",

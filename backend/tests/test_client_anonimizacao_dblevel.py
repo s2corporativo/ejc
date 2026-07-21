@@ -18,12 +18,17 @@ pytestmark = pytest.mark.skipif(
 
 
 async def _criar_cliente(db, client_id, nome="Cliente Teste Esquecimento"):
+    # Cutover C6/LGPD: documento vive cifrado (cpf_enc) + hash (cpf_hash). A
+    # anonimização (art. 17) tem de zerar AMBOS — o teste verifica cpf_enc.
+    from app.services.pii_crypto import encrypt, hash_documento
+    cpf = "39053344705"
     await db.execute(
         text(
-            "INSERT INTO clients (id, tipo, nome, cpf, email, status) "
-            "VALUES (:id, 'PF', :nome, :cpf, :email, 'ativo')"
+            "INSERT INTO clients (id, tipo, nome, cpf_enc, cpf_hash, email, status) "
+            "VALUES (:id, 'PF', :nome, :cpf_enc, :cpf_hash, :email, 'ativo')"
         ),
-        {"id": client_id, "nome": nome, "cpf": f"cpf-{client_id[:8]}", "email": f"{client_id[:8]}@teste.local"},
+        {"id": client_id, "nome": nome, "cpf_enc": encrypt(cpf),
+         "cpf_hash": hash_documento(cpf), "email": f"{client_id[:8]}@teste.local"},
     )
 
 
@@ -93,10 +98,11 @@ async def test_anonimiza_cliente_sem_bloqueio():
             assert resultado["bloqueios_ignorados"] is None
 
             row = (await db.execute(
-                text("SELECT nome, cpf, email, anonimizado_em FROM clients WHERE id = :id"),
+                text("SELECT nome, cpf_enc, cpf_hash, email, anonimizado_em FROM clients WHERE id = :id"),
                 {"id": client_id},
             )).mappings().first()
-            assert row["cpf"] is None
+            assert row["cpf_enc"] is None
+            assert row["cpf_hash"] is None
             assert row["email"] is None
             assert row["nome"] == "[ANONIMIZADO — LGPD ART. 17]"
             assert row["anonimizado_em"] is not None
@@ -124,11 +130,11 @@ async def test_bloqueia_com_caso_ativo_salvo_forcar():
                 await anonimizar_cliente(db, client_id, executor, "socio")
             assert exc.value.status_code == 409
 
-            # Cliente NÃO foi tocado — dado real preservado até resolver o bloqueio.
+            # Cliente NÃO foi tocado — dado real (cifrado) preservado até resolver o bloqueio.
             row = (await db.execute(
-                text("SELECT cpf, anonimizado_em FROM clients WHERE id = :id"), {"id": client_id}
+                text("SELECT cpf_enc, anonimizado_em FROM clients WHERE id = :id"), {"id": client_id}
             )).mappings().first()
-            assert row["cpf"] is not None
+            assert row["cpf_enc"] is not None
             assert row["anonimizado_em"] is None
 
             # forcar=True passa por cima do bloqueio, mas registra isso.
