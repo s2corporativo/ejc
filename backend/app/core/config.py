@@ -135,13 +135,12 @@ class Settings(BaseSettings):
     ANTHROPIC_MAX_TOKENS: int = 8000
 
     # ── IA — Maritaca (Sabiá) — provider BRASILEIRO, OpenAI-compatible ─────
-    # PLUGÁVEL: nasce DESLIGADO (MARITACA_ENABLED=false) → sistema idêntico ao
-    # atual. Provider EXTERNO ao VPS → passa pela MESMA barreira LGPD
-    # (pseudonimização). Chave definida APENAS no .env (nunca aqui).
-    # Soberania de dados: os modelos "-br-sp" (ex.: "sabia-4-br-sp",
-    # "sabiazinho-4-br-sp") processam 100% em território nacional (+30% de
-    # custo) — caminho recomendado no jurídico, a ativar com DPA assinado.
-    MARITACA_ENABLED: bool = False
+    # ATIVADO PARA PROCESSOS JURÍDICOS COMPLEXOS: provider nacional com
+    # soberania de dados (modelos -br-sp processam 100% no Brasil).
+    # Recomendado para tarefas jurídicas sensíveis (elaboracao_peca, estrategia,
+    # auditoria_peca) por compreender melhor o contexto jurídico brasileiro.
+    # Chave definida APENAS no .env (nunca aqui).
+    MARITACA_ENABLED: bool = True
     MARITACA_API_KEY: str = ""
     MARITACA_BASE_URL: str = "https://chat.maritaca.ai/api"
     MARITACA_MODEL: str = "sabia-4"            # qualidade/generalista (128k)
@@ -185,7 +184,8 @@ class Settings(BaseSettings):
     DUAS_IAS_TASK_TYPES: str = "elaboracao_peca,auditoria_peca"
     # Ordem de preferência entre provedores ELEGÍVEIS (csv). A policy ainda
     # filtra por habilitação/chave e prioriza Anthropic em tarefas complexas.
-    AI_PROVIDER_PRIORITY: str = "ollama,anthropic,groq"
+    # Maritaca adicionada como provider preferencial para PT-BR jurídico.
+    AI_PROVIDER_PRIORITY: str = "ollama,maritaca,anthropic,groq"
     # ── Níveis de sanitização de PII por tipo de tarefa (LGPD art. 33/46) ─────
     # JSON OPCIONAL (string) mapeando task_type → modo de sanitização, que
     # SOBREPÕE o default de app/services/ai/sanitization_policy.py. Modos:

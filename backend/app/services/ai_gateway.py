@@ -101,8 +101,8 @@ TASK_ROUTING: dict[str, list[tuple[str, str | None]]] = {
     ],
     "elaboracao_peca": [
         ("ollama",    None),  # OLLAMA_MODEL_PETICAO
+        ("maritaca",  None),  # MARITACA_MODEL (provider BR para redação jurídica PT-BR)
         ("anthropic", None),  # ANTHROPIC_MODEL_COMPLEXO
-        ("maritaca",  None),  # MARITACA_MODEL (só se ENABLED+chave; redação PT-BR)
         ("groq",      None),
     ],
     "resumo": [
@@ -117,30 +117,35 @@ TASK_ROUTING: dict[str, list[tuple[str, str | None]]] = {
     ],
     "analise_contrato": [
         ("ollama",    None),  # OLLAMA_MODEL_CONTRATO
+        ("maritaca",  None),  # MARITACA_MODEL (provider BR para contratos)
         ("anthropic", None),
         ("groq",      None),
     ],
     "estrategia": [
         ("ollama",    None),  # OLLAMA_MODEL_ANALISE (raciocínio profundo)
+        ("maritaca",  None),  # MARITACA_MODEL (provider BR para estratégia jurídica)
         ("anthropic", None),
         ("groq",      None),
     ],
     "auditoria_peca": [
         ("ollama",    None),  # OLLAMA_MODEL_PETICAO
+        ("maritaca",  None),  # MARITACA_MODEL (provider BR para auditoria)
         ("anthropic", None),
         ("groq",      None),
     ],
     "jurimetria": [
         ("ollama",    None),  # OLLAMA_MODEL_ANALISE
+        ("maritaca",  None),  # MARITACA_MODEL (provider BR para jurimetria)
         ("anthropic", None),
         ("groq",      None),
     ],
     # Fase 5 — Modo Duas IAs: crítica adversarial de peça (leitura como
     # advogado da parte contrária/magistrado). Tarefa COMPLEXA: inclui
-    # Anthropic. O chamador (services/ai/adversarial.py) ainda prefere
+    # Anthropic/Maritaca. O chamador (services/ai/adversarial.py) ainda prefere
     # provider DIFERENTE do que gerou a peça via provider_override.
     "critica_adversarial": [
         ("ollama",    None),  # OLLAMA_MODEL_ANALISE (raciocínio crítico)
+        ("maritaca",  None),  # MARITACA_MODEL (provider BR para crítica jurídica)
         ("anthropic", None),
         ("groq",      None),
     ],
