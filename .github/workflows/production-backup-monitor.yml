@@ -1,0 +1,158 @@
+name: Production Backup Monitor
+
+on:
+  schedule:
+    - cron: "30 8 * * *"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  issues: write
+
+concurrency:
+  group: production-backup-monitor
+  cancel-in-progress: false
+
+jobs:
+  monitor:
+    name: Produção — saúde do backup diário
+    runs-on: [self-hosted, ejc-vps]
+    timeout-minutes: 10
+    env:
+      APP_CONTAINER: ejc_backend
+      BACKUP_MAX_AGE_HOURS: "30"
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: Diagnóstico de configuração e containers
+        id: diagnostic
+        shell: bash
+        run: |
+          set +e
+          ENV_FILE=/opt/ejc/.env \
+          APP_CONTAINER="$APP_CONTAINER" \
+          bash scripts/backup/diagnostico_backup.sh \
+            > backup-production-diagnostic.log 2>&1
+          rc=$?
+          set -e
+          echo "exit_code=$rc" >> "$GITHUB_OUTPUT"
+          cat backup-production-diagnostic.log
+
+      - name: Verificar recência, status e artefatos
+        id: health
+        shell: bash
+        run: |
+          set +e
+          docker exec -i \
+            -e BACKUP_MAX_AGE_HOURS="$BACKUP_MAX_AGE_HOURS" \
+            "$APP_CONTAINER" python - \
+            < scripts/backup/check_backup_health.py \
+            > backup-production-health.json \
+            2> backup-production-health.stderr
+          rc=$?
+          set -e
+          if [ ! -s backup-production-health.json ]; then
+            printf '{"ok":false,"problemas":["sonda não produziu saída; veja stderr"]}\n' \
+              > backup-production-health.json
+          fi
+          echo "exit_code=$rc" >> "$GITHUB_OUTPUT"
+          cat backup-production-health.json
+          cat backup-production-health.stderr >&2 || true
+
+      - name: Anexar evidências sem segredos
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: production-backup-health
+          path: |
+            backup-production-diagnostic.log
+            backup-production-health.json
+            backup-production-health.stderr
+          if-no-files-found: warn
+          retention-days: 30
+
+      - name: Abrir ou encerrar incidente automático
+        if: always()
+        uses: actions/github-script@v8
+        env:
+          DIAGNOSTIC_RC: ${{ steps.diagnostic.outputs.exit_code }}
+          HEALTH_RC: ${{ steps.health.outputs.exit_code }}
+        with:
+          script: |
+            const fs = require('fs');
+            const owner = context.repo.owner;
+            const repo = context.repo.repo;
+            const marker = '<!-- ejc-production-backup-health -->';
+            const title = '[Continuidade] Backup de produção sem comprovação íntegra';
+            const diagnosticRc = Number(process.env.DIAGNOSTIC_RC || 1);
+            const healthRc = Number(process.env.HEALTH_RC || 1);
+            const failed = diagnosticRc !== 0 || healthRc !== 0;
+
+            const read = (path) => {
+              try { return fs.readFileSync(path, 'utf8').trim(); }
+              catch { return ''; }
+            };
+            const healthRaw = read('backup-production-health.json');
+            let health = {};
+            try { health = JSON.parse(healthRaw || '{}'); } catch {}
+            const problems = Array.isArray(health.problemas)
+              ? health.problemas.map(String)
+              : ['resultado da sonda inválido'];
+
+            const issues = await github.paginate(github.rest.issues.listForRepo, {
+              owner,
+              repo,
+              state: 'open',
+              per_page: 100,
+            });
+            const existing = issues.find((issue) =>
+              !issue.pull_request && (issue.body || '').includes(marker)
+            );
+            const runUrl = `${context.serverUrl}/${owner}/${repo}/actions/runs/${context.runId}`;
+
+            if (failed) {
+              const body = [
+                marker,
+                '## Incidente automático de continuidade',
+                '',
+                `- Diagnóstico rc: \`${diagnosticRc}\``,
+                `- Sonda rc: \`${healthRc}\``,
+                `- Último status: \`${health.last_status ?? 'indisponível'}\``,
+                `- Última execução: \`${health.last_run_at ?? 'indisponível'}\``,
+                `- Idade observada: \`${health.age_hours ?? 'indisponível'}h\``,
+                `- Problemas: ${problems.join('; ')}`,
+                `- Evidência: ${runUrl}`,
+                '',
+                'O workflow não executa reparo automático porque isso poderia sobrescrever evidências ou mascarar perda de dados. O incidente permanece aberto até uma verificação posterior saudável.',
+              ].join('\n');
+
+              if (existing) {
+                await github.rest.issues.createComment({
+                  owner,
+                  repo,
+                  issue_number: existing.number,
+                  body,
+                });
+              } else {
+                await github.rest.issues.create({ owner, repo, title, body });
+              }
+              core.setFailed(problems.join('; '));
+              return;
+            }
+
+            if (existing) {
+              await github.rest.issues.createComment({
+                owner,
+                repo,
+                issue_number: existing.number,
+                body: `Recuperação automática comprovada em ${runUrl}. O monitor voltou a encontrar configuração, recência e os dois artefatos obrigatórios.`,
+              });
+              await github.rest.issues.update({
+                owner,
+                repo,
+                issue_number: existing.number,
+                state: 'closed',
+                state_reason: 'completed',
+              });
+            }
+            core.info('Backup de produção comprovado como íntegro e recente.');
