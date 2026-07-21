@@ -11,18 +11,22 @@ on:
       - "scripts/backup.sh"
       - "scripts/backup/ativar_backup.sh"
       - "scripts/deploy_vps_safe.sh"
+      - "scripts/check_migration_compatibility.py"
       - "scripts/tests/test_backup_wrapper.sh"
       - "scripts/tests/test_deploy_rollback.sh"
       - ".github/workflows/backup-gdrive-activation.yml"
+      - ".github/workflows/deploy-vps.yml"
   push:
     branches: [main]
     paths:
       - "scripts/backup.sh"
       - "scripts/backup/ativar_backup.sh"
       - "scripts/deploy_vps_safe.sh"
+      - "scripts/check_migration_compatibility.py"
       - "scripts/tests/test_backup_wrapper.sh"
       - "scripts/tests/test_deploy_rollback.sh"
       - ".github/workflows/backup-gdrive-activation.yml"
+      - ".github/workflows/deploy-vps.yml"
   workflow_dispatch:
 
 permissions:
@@ -43,7 +47,7 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v7
 
-      - name: Sintaxe Bash
+      - name: Sintaxe e compilação
         run: |
           bash -n \
             scripts/backup.sh \
@@ -51,6 +55,7 @@ jobs:
             scripts/deploy_vps_safe.sh \
             scripts/tests/test_backup_wrapper.sh \
             scripts/tests/test_deploy_rollback.sh
+          python3 -m py_compile scripts/check_migration_compatibility.py
 
       - name: Provar wrapper cifrado
         run: bash scripts/tests/test_backup_wrapper.sh
@@ -72,13 +77,17 @@ jobs:
         run: |
           test -d /opt/ejc
           test -f /opt/ejc/.env
-          docker ps --format '{{.Names}}' | grep -qx ejc_backend
+          docker ps --format '{{.Names}}' | grep -qx ejc_db
+          cd /opt/ejc
+          docker compose config >/dev/null
 
       - name: Instalar wrappers revisados
         run: |
           sudo install -d -m 755 /opt/ejc/scripts/backup
-          sudo install -m 700 scripts/backup.sh /opt/ejc/scripts/backup.sh
-          sudo install -m 700 \
+          # Scripts não contêm segredos; 755 permite que o runner não-root execute
+          # a ativação instalada, enquanto o .env continua protegido e excluído.
+          sudo install -m 755 scripts/backup.sh /opt/ejc/scripts/backup.sh
+          sudo install -m 755 \
             scripts/backup/ativar_backup.sh \
             /opt/ejc/scripts/backup/ativar_backup.sh
 
