@@ -2,8 +2,8 @@ name: EJC Release Gate
 
 # Gate P0 no runner SELF-HOSTED: executa automaticamente em todo PR e em cada
 # atualização da main, além de permitir execução manual. O objetivo é impedir
-# que conflitos, segredos, CORS inseguro, resíduos críticos ou rollback quebrado
-# avancem sem evidência auditável.
+# que conflitos, segredos, CORS inseguro, resíduos críticos, backup em claro ou
+# rollback quebrado avancem sem evidência auditável.
 on:
   pull_request:
   push:
@@ -61,6 +61,12 @@ jobs:
 
           exit "${status}"
 
+      - name: Provar backup canônico cifrado
+        shell: bash
+        run: |
+          chmod +x scripts/tests/test_backup_wrapper.sh
+          bash scripts/tests/test_backup_wrapper.sh | tee backup-wrapper-test.log
+
       - name: Provar política de migration e rollback de imagens
         shell: bash
         run: |
@@ -74,6 +80,7 @@ jobs:
           name: p0-guard-log
           path: |
             ci_guard.log
+            backup-wrapper-test.log
             deploy-rollback-test.log
           if-no-files-found: warn
           retention-days: 7
