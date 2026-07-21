@@ -9,6 +9,7 @@ import {
   Gavel,
   ChevronDown,
   CalendarPlus,
+  RotateCcw,
   LogOut,
   Monitor,
   Moon,
@@ -111,7 +112,7 @@ export default function SecurityMenu({ user }: { user: any }) {
 
   const copiarIcs = async () => {
     try {
-      const { data } = await api.get("/users/me/calendar-url");
+      const { data } = await api.get("/calendar/me/url");
       if (!data?.url) {
         toast.error("Feed de calendário indisponível para esta conta.");
         return;
@@ -122,6 +123,22 @@ export default function SecurityMenu({ user }: { user: any }) {
       );
     } catch {
       toast.error("Não foi possível gerar o link do calendário.");
+    }
+  };
+
+  const rotacionarIcs = async () => {
+    try {
+      const { data } = await api.post("/calendar/me/rotate");
+      if (!data?.url) {
+        toast.error("O novo link do calendário não foi retornado.");
+        return;
+      }
+      await navigator.clipboard.writeText(data.url);
+      toast.success(
+        "Link anterior revogado. O novo link foi copiado para a área de transferência.",
+      );
+    } catch {
+      toast.error("Não foi possível revogar o link do calendário.");
     }
   };
 
@@ -209,7 +226,16 @@ export default function SecurityMenu({ user }: { user: any }) {
               setOpen(false);
             }}
           >
-            <CalendarPlus size={15} /> Calendário (Google/Outlook)
+            <CalendarPlus size={15} /> Copiar link do calendário
+          </button>
+          <button
+            className="menu-item"
+            onClick={() => {
+              void rotacionarIcs();
+              setOpen(false);
+            }}
+          >
+            <RotateCcw size={15} /> Revogar e gerar novo link
           </button>
           <button
             className="menu-item"
