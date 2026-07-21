@@ -29,8 +29,10 @@ permissions:
   contents: read
 
 concurrency:
-  group: backup-gdrive-production
-  cancel-in-progress: false
+  group: backup-gdrive-${{ github.ref }}
+  # Atualizações do mesmo PR tornam a validação anterior obsoleta. Já uma prova
+  # de produção na main nunca é cancelada no meio do backup/upload.
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 jobs:
   validar:
