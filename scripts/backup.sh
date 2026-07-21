@@ -3,6 +3,11 @@
 # Cron: 0 2 * * * /opt/ejc/scripts/backup.sh >> /var/log/ejc_backup.log 2>&1
 set -euo pipefail
 
+# Fuso do Brasil nos nomes de arquivo e nos logs (auditoria/rastreabilidade):
+# antes usava o fuso do servidor (CEST na VPS), o que confundia a leitura dos
+# horários. Afeta só a formatação de datas — não o mtime nem a retenção.
+export TZ="America/Sao_Paulo"
+
 BACKUP_DIR="/opt/ejc/backups"
 DB_CONTAINER="ejc_db"
 APP_CONTAINER="ejc_backend"
@@ -33,6 +38,14 @@ enviar_drive() {
     else
         echo "[$(date)] rclone não configurado — apenas backup local"
     fi
+}
+
+# Emite um objeto JSON {nome,bytes,sha256} para um artefato (ou nada se ausente).
+_manifest_artefato() {
+    local f="$1"
+    [ -f "$f" ] || return 1
+    printf '{"nome":"%s","bytes":%s,"sha256":"%s"}' \
+        "$(basename "$f")" "$(stat -c%s "$f")" "$(sha256sum "$f" | cut -d' ' -f1)"
 }
 
 # ── 1. Banco PostgreSQL ───────────────────────────────────────────────────────
@@ -75,7 +88,27 @@ else
     fi
 fi
 
-# ── 3. Rotação local (banco + uploads) ────────────────────────────────────────
-find "$BACKUP_DIR" -name "ejc_db_*.sql.gz"      -mtime +${RETENTION_DAYS} -delete
-find "$BACKUP_DIR" -name "ejc_uploads_*.tar.gz" -mtime +${RETENTION_DAYS} -delete
+# ── 3. Manifesto do ciclo (nome, tamanho, sha256, horário) ────────────────────
+# Prova de auditoria: o que foi gerado, quão grande e com qual hash. O par
+# banco+uploads compartilha o mesmo ${DATE}; o manifesto amarra os dois.
+MANIFEST_FILE="${BACKUP_DIR}/ejc_manifest_${DATE}.json"
+arts="$(_manifest_artefato "$DB_FILE")"
+if [ -f "$UPLOADS_FILE" ]; then
+    arts="${arts},$(_manifest_artefato "$UPLOADS_FILE")"
+fi
+cat > "$MANIFEST_FILE" <<JSON
+{
+  "ciclo": "${DATE}",
+  "gerado_em_brt": "$(date '+%Y-%m-%d %H:%M:%S %Z')",
+  "gerado_em_utc": "$(date -u '+%Y-%m-%dT%H:%M:%SZ')",
+  "artefatos": [${arts}]
+}
+JSON
+echo "[$(date)] Manifesto: $MANIFEST_FILE"
+enviar_drive "$MANIFEST_FILE" "ejc_manifest_*.json"
+
+# ── 4. Rotação local (banco + uploads + manifesto) ────────────────────────────
+find "$BACKUP_DIR" -name "ejc_db_*.sql.gz"       -mtime +${RETENTION_DAYS} -delete
+find "$BACKUP_DIR" -name "ejc_uploads_*.tar.gz"  -mtime +${RETENTION_DAYS} -delete
+find "$BACKUP_DIR" -name "ejc_manifest_*.json"   -mtime +${RETENTION_DAYS} -delete
 echo "[$(date)] Retidos localmente — banco: $(ls -1 "${BACKUP_DIR}"/ejc_db_*.sql.gz 2>/dev/null | wc -l), uploads: $(ls -1 "${BACKUP_DIR}"/ejc_uploads_*.tar.gz 2>/dev/null | wc -l)"
