@@ -1,33 +1,15 @@
-# ── Deploy automático do EJC no VPS ───────────────────────────────────────────
-# Disparo: automático, quando o workflow "CI" conclui com SUCESSO na main (ou
-# seja, só depois que pytest + typecheck/build passaram no commit que chegou à
-# main) — ou manual (workflow_dispatch), a partir de qualquer branch/ref.
-# Fluxo: probe de autenticação SSH → sync do código para /opt/ejc via rsync →
-# scripts/deploy_vps_safe.sh (backup → build → health-check → rollback em falha).
+# Deploy automático do EJC no runner instalado na própria VPS.
 #
-# Secrets (Settings → Secrets and variables → Actions):
-#   VPS_HOST      — IP ou hostname do VPS (obrigatório)
-#   VPS_USER      — usuário SSH (obrigatório; ex.: root)
-#   VPS_SSH_KEY   — chave PRIVADA OpenSSH (recomendado; tem prioridade)
-#   VPS_PASSWORD  — senha SSH (alternativa à chave)
-#   VPS_PORT      — opcional (default 22)
-#
-# Segurança: o rsync NUNCA toca .env, uploads/, backups/ do servidor e não usa
-# --delete. Migrations: o deploy AUTOMÁTICO (workflow_run pós-CI) SEMPRE aplica
-# (alembic upgrade head) — com backup antes e rollback se o health-check falhar;
-# evita subir código na frente do schema. O disparo manual respeita o input
-# run_migrations.
+# O workflow não usa SSH, senha, chave privada ou rsync remoto. Após a CI verde
+# da main, o runner local classifica somente as migrations PENDENTES, sincroniza
+# o checkout para /opt/ejc e chama o deploy seguro com os flags calculados.
 name: Deploy VPS
 
 on:
   workflow_dispatch:
     inputs:
-      run_migrations:
-        description: "Rodar migrations Alembic (apenas com migração revisada)"
-        type: boolean
-        default: false
       run_seeds:
-        description: "Rodar seed do corpus RAG da Bíblia (situações + modelos + Volume III)"
+        description: "Reingerir o corpus RAG após o deploy"
         type: boolean
         default: false
   workflow_run:
@@ -35,108 +17,121 @@ on:
     types: [completed]
     branches: [main]
 
+permissions:
+  contents: read
+
 concurrency:
   group: deploy-vps
   cancel-in-progress: false
 
-env:
-  SSHPASS: ${{ secrets.VPS_PASSWORD }}
-  VPS_HOST: ${{ secrets.VPS_HOST }}
-  VPS_USER: ${{ secrets.VPS_USER }}
-  VPS_PORT: ${{ secrets.VPS_PORT }}
-
 jobs:
   deploy:
-    # No disparo automático (workflow_run), só prossegue se a CI concluiu com
-    # sucesso — CI falhou/cancelada nunca deploya. workflow_dispatch sempre roda.
     if: >-
       github.event_name == 'workflow_dispatch' ||
       github.event.workflow_run.conclusion == 'success'
-    runs-on: ubuntu-latest
-    timeout-minutes: 30
+    runs-on: [self-hosted, ejc-vps]
+    timeout-minutes: 40
+    env:
+      TARGET_SHA: ${{ github.event.workflow_run.head_sha || github.sha }}
+      RUN_SEEDS: ${{ (github.event_name == 'workflow_run' || inputs.run_seeds) && '1' || '0' }}
     steps:
-      - uses: actions/checkout@v6
+      - name: Checkout exato do commit aprovado
+        uses: actions/checkout@v7
         with:
-          ref: ${{ github.event.workflow_run.head_sha || github.ref }}
+          ref: ${{ env.TARGET_SHA }}
+          fetch-depth: 0
 
-      - name: Validar secrets
-        env:
-          VPS_SSH_KEY: ${{ secrets.VPS_SSH_KEY }}
+      - name: Validar runtime e instalação de produção
         run: |
-          faltando=""
-          [ -n "$VPS_HOST" ] || faltando="$faltando VPS_HOST"
-          [ -n "$VPS_USER" ] || faltando="$faltando VPS_USER"
-          if [ -z "$VPS_SSH_KEY" ] && [ -z "$SSHPASS" ]; then
-            faltando="$faltando (VPS_SSH_KEY ou VPS_PASSWORD)"
+          test -d /opt/ejc
+          test -f /opt/ejc/.env
+          docker ps --format '{{.Names}}' | grep -qx ejc_db
+          command -v python3 >/dev/null
+          if ! command -v rsync >/dev/null; then
+            sudo apt-get update -qq
+            sudo apt-get install -y -qq rsync
           fi
-          if [ -n "$faltando" ]; then
-            echo "::error::Secrets ausentes:$faltando — crie em Settings → Secrets and variables → Actions."
+
+      - name: Classificar migrations pendentes
+        id: migrations
+        shell: bash
+        run: |
+          set -euo pipefail
+          current_revision="$({
+            docker exec ejc_db sh -lc \
+              'psql -U "$POSTGRES_USER" -d "$POSTGRES_DB" -Atq -c "SELECT version_num FROM alembic_version LIMIT 1"'
+          } | tr -d '\r' | tail -n 1)"
+          if [ -z "$current_revision" ]; then
+            echo "::error::Não foi possível determinar a revisão Alembic em produção."
+            exit 2
+          fi
+
+          set +e
+          python3 scripts/check_migration_compatibility.py \
+            --versions-dir backend/alembic/versions \
+            --current-revision "$current_revision" \
+            --output migration-policy.json
+          policy_rc=$?
+          set -e
+          cat migration-policy.json
+          if [ "$policy_rc" -eq 2 ]; then
+            echo "::error::Grafo Alembic inválido ou revisão atual desconhecida."
+            exit 2
+          fi
+          if [ "$policy_rc" -eq 1 ]; then
+            echo "::error::Migration pendente não é expand-only; deploy automático bloqueado."
             exit 1
           fi
 
-      - name: Instalar sshpass e rsync
-        run: sudo apt-get update -qq && sudo apt-get install -y -qq sshpass rsync
-
-      - name: Preparar autenticação SSH (chave tem prioridade sobre senha)
-        env:
-          VPS_SSH_KEY: ${{ secrets.VPS_SSH_KEY }}
-        run: |
-          PORT="${VPS_PORT:-22}"
-          mkdir -p ~/.ssh && chmod 700 ~/.ssh
-          # ServerAliveInterval/CountMax: mantêm a sessão viva durante operações
-          # longas e SILENCIOSAS no VPS (o seed do RAG vetoriza ~400 docs na CPU
-          # e fica minutos sem produzir output) — sem isto o SSH caía com
-          # "Broken pipe" e o deploy inteiro falhava no meio do seed. 30s x 20 =
-          # tolera ~10 min de silêncio.
-          KEEPALIVE="-o ServerAliveInterval=30 -o ServerAliveCountMax=20"
-          if [ -n "$VPS_SSH_KEY" ]; then
-            printf '%s\n' "$VPS_SSH_KEY" > ~/.ssh/deploy_key
-            chmod 600 ~/.ssh/deploy_key
-            echo "RSH=ssh -i $HOME/.ssh/deploy_key -o IdentitiesOnly=yes ${KEEPALIVE} -o StrictHostKeyChecking=accept-new -p ${PORT}" >> "$GITHUB_ENV"
-            echo "Autenticação: chave SSH"
+          pending_count="$(python3 -c 'import json; print(json.load(open("migration-policy.json"))["pending_count"])')"
+          if [ "$pending_count" -gt 0 ]; then
+            echo "run_migrations=1" >> "$GITHUB_OUTPUT"
+            echo "backward_compatible=1" >> "$GITHUB_OUTPUT"
           else
-            echo "RSH=sshpass -e ssh -o PreferredAuthentications=password,keyboard-interactive ${KEEPALIVE} -o StrictHostKeyChecking=accept-new -p ${PORT}" >> "$GITHUB_ENV"
-            echo "Autenticação: senha (sshpass)"
+            echo "run_migrations=0" >> "$GITHUB_OUTPUT"
+            echo "backward_compatible=0" >> "$GITHUB_OUTPUT"
           fi
+          echo "current_revision=$current_revision" >> "$GITHUB_OUTPUT"
+          echo "pending_count=$pending_count" >> "$GITHUB_OUTPUT"
 
-      - name: Testar conexão SSH (probe)
-        run: |
-          if ! ${RSH} "${VPS_USER}@${VPS_HOST}" "echo 'SSH ok:' \$(hostname)"; then
-            echo "::error::Autenticação SSH recusada pelo VPS. Verifique: (1) VPS_USER e VPS_PASSWORD exatos — sem espaço ou quebra de linha ao colar o secret; (2) se o sshd do VPS permite senha (PasswordAuthentication yes e PermitRootLogin yes em /etc/ssh/sshd_config) — se o servidor for só-chave, crie o secret VPS_SSH_KEY com a chave privada; (3) VPS_HOST/VPS_PORT corretos."
-            exit 1
-          fi
+      - name: Anexar decisão de migration
+        uses: actions/upload-artifact@v7
+        with:
+          name: deploy-migration-policy
+          path: migration-policy.json
+          if-no-files-found: error
+          retention-days: 30
 
-      - name: Sincronizar código para /opt/ejc
+      - name: Sincronizar checkout aprovado para /opt/ejc
         run: |
-          rsync -az --stats \
-            -e "${RSH}" \
+          sudo rsync -a --delete \
             --exclude '.git/' \
             --exclude '.env' --exclude '**/.env' --exclude '*.env' \
+            --exclude '.deployed_sha' \
             --exclude 'uploads/' --exclude 'backups/' \
-            --exclude 'node_modules/' --exclude 'graphify-out/' \
-            --exclude 'vps-tools/' \
-            ./ "${VPS_USER}@${VPS_HOST}:/opt/ejc/"
+            --exclude 'node_modules/' --exclude 'frontend/dist/' \
+            --exclude 'graphify-out/' --exclude 'vps-tools/' \
+            ./ /opt/ejc/
 
-      - name: Deploy seguro (backup → build → health-check → rollback em falha)
+      - name: Deploy seguro com política calculada
         env:
-          # Deploy automático (workflow_run pós-CI) SEMPRE aplica as migrations —
-          # senão o código sobe na frente do schema e quebra em produção (ex.:
-          # peça grava colunas/tabela que a migration ainda não criou). É seguro:
-          # deploy_vps_safe.sh faz backup ANTES e rollback se o health-check
-          # falhar, e as migrations do EJC são aditivas/idempotentes. O disparo
-          # manual (workflow_dispatch) continua respeitando o input run_migrations.
-          RUN_MIGRATIONS: ${{ (github.event_name == 'workflow_run' || inputs.run_migrations) && '1' || '0' }}
-          # Seed do corpus RAG da Bíblia (idempotente e NÃO-FATAL no script): o
-          # deploy automático pós-CI SEMPRE reingere (dedup por chave_origem —
-          # reexecutar não duplica; novas edições do corpus, como o Volume III,
-          # entram como versões). O disparo manual respeita o input run_seeds.
-          RUN_SEEDS: ${{ (github.event_name == 'workflow_run' || inputs.run_seeds) && '1' || '0' }}
+          RUN_MIGRATIONS: ${{ steps.migrations.outputs.run_migrations }}
+          MIGRATIONS_BACKWARD_COMPATIBLE: ${{ steps.migrations.outputs.backward_compatible }}
         run: |
-          ${RSH} "${VPS_USER}@${VPS_HOST}" \
-            "cd /opt/ejc && RUN_MIGRATIONS=${RUN_MIGRATIONS} RUN_SEEDS=${RUN_SEEDS} bash scripts/deploy_vps_safe.sh"
+          cd /opt/ejc
+          RUN_MIGRATIONS="$RUN_MIGRATIONS" \
+          MIGRATIONS_BACKWARD_COMPATIBLE="$MIGRATIONS_BACKWARD_COMPATIBLE" \
+          RUN_SEEDS="$RUN_SEEDS" \
+          bash scripts/deploy_vps_safe.sh
+
+      - name: Registrar versão implantada
+        run: |
+          printf '%s\n' "$TARGET_SHA" | sudo tee /opt/ejc/.deployed_sha >/dev/null
+          sudo chmod 644 /opt/ejc/.deployed_sha
 
       - name: Verificação pública pós-deploy
         run: |
-          sleep 5
-          curl -fsS -o /dev/null -w "https://ejc.depaulateixeira.adv.br/api/health → HTTP %{http_code}\n" \
+          curl -fsS http://127.0.0.1:8000/api/health >/dev/null
+          curl -fsS -o /dev/null -w \
+            "https://ejc.depaulateixeira.adv.br/api/health → HTTP %{http_code}\n" \
             https://ejc.depaulateixeira.adv.br/api/health
