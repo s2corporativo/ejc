@@ -285,7 +285,7 @@ export default function AnaliseCasoIA() {
   // existente GET /cases). Falha silenciosa: o vínculo de caso é opcional.
   useEffect(() => {
     api
-      .get("/cases/", { params: { page_size: 200, arquivo: false } })
+      .get("/cases/", { params: { page_size: 200 } })
       .then(({ data }) => setCasos(asList<Case>(data)))
       .catch(() => setCasos([]));
   }, []);

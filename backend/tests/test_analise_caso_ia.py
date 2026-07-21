@@ -8,8 +8,9 @@ exercitada de verdade. NENHUMA chamada real de IA acontece: ai_gateway.chat e
 citation_gate.validar_citacoes são monkeypatchados.
 
 Cobre: criar sessão, listar, fluxo de mensagem (grava AILog + mensagem assistant
-rascunho + emite SSE), ownership (403 em sessão de outro usuário) e bloqueio de
-cliente_externo.
+rascunho + emite SSE), ownership (403 em sessão de outro usuário), bloqueio de
+papéis fora do allowlist jurídico (cliente_externo, financeiro, secretaria) e
+reexecução do acesso ao caso na LEITURA de sessão vinculada (FIX C).
 """
 from __future__ import annotations
 
@@ -204,16 +205,37 @@ def test_ownership_404_sessao_de_outro_usuario(ambiente):
     assert client.get("/analise-caso-ia/sessoes").json() == []
 
 
-# ── Bloqueio de cliente_externo (defesa em profundidade) ──────────────────────
-def test_cliente_externo_bloqueado(ambiente):
+# ── Bloqueio de papéis fora do allowlist jurídico (defesa em profundidade) ────
+# FIX B: além de cliente_externo, financeiro e secretaria também são barrados
+# (espelha ROLES.juridico da rota no frontend).
+@pytest.mark.parametrize("role", [
+    UserRole.cliente_externo,
+    UserRole.financeiro,
+    UserRole.secretaria,
+])
+def test_papel_fora_do_juridico_bloqueado(ambiente, role):
     client, estado, _Session = ambiente
-    estado["user"] = _FakeUser(uid="cli-1", role=UserRole.cliente_externo)
+    estado["user"] = _FakeUser(uid=f"u-{role.value}", role=role)
 
     r = client.post("/analise-caso-ia/sessoes", json={})
     assert r.status_code == 403, r.text
 
     r = client.get("/analise-caso-ia/sessoes")
     assert r.status_code == 403, r.text
+
+
+# ── Papéis DENTRO do allowlist jurídico passam (advogado_auxiliar, estagiario) ─
+@pytest.mark.parametrize("role", [
+    UserRole.advogado_auxiliar,
+    UserRole.estagiario,
+])
+def test_papel_juridico_autorizado(ambiente, role):
+    client, estado, _Session = ambiente
+    estado["user"] = _FakeUser(uid=f"u-{role.value}", role=role)
+
+    r = client.post("/analise-caso-ia/sessoes", json={})
+    assert r.status_code == 201, r.text
+    assert client.get("/analise-caso-ia/sessoes").status_code == 200
 
 
 # ── Anexo de documento com OCR (mock do extrator) ─────────────────────────────
@@ -258,3 +280,58 @@ def test_anexar_documento_ocr_vazio_422(ambiente, monkeypatch):
         files={"file": ("vazio.pdf", b"%PDF-1.4", "application/pdf")},
     )
     assert r.status_code == 422, r.text
+
+
+# ── FIX C: acesso ao caso vinculado reexecutado na LEITURA da thread ──────────
+def test_leitura_reexecuta_acesso_ao_caso_vinculado(ambiente, monkeypatch):
+    """Sessão atada a um caso: se o acesso ao caso é revogado (reatribuição/
+    soft-delete), a LEITURA da thread (obter_sessao) passa a retornar 403 e o
+    preview some da listagem — mas a sessão permanece listada (gerenciável)."""
+    from datetime import datetime, timezone
+
+    from fastapi import HTTPException
+
+    client, _estado, Session = ambiente  # user default = user-A (advogado)
+
+    async def _seed():
+        async with Session() as db:
+            db.add(AnaliseCasoSessao(
+                id="sess-caso", user_id="user-A", case_id="caso-X",
+                titulo="Minha análise", nivel="alto",
+            ))
+            db.add(AnaliseCasoMensagem(
+                id="m1", sessao_id="sess-caso", papel="user",
+                conteudo="Conteúdo sensível derivado do caso", is_rascunho=False,
+                created_at=datetime.now(timezone.utc),
+            ))
+            await db.commit()
+
+    _run(_seed())
+
+    controle = {"nega": False}
+
+    async def _fake_acesso(db, cu, case_id):
+        if controle["nega"]:
+            raise HTTPException(status_code=403, detail="Sem permissão para este caso")
+        return None
+
+    monkeypatch.setattr(analise_caso_ia, "verificar_acesso_caso", _fake_acesso)
+
+    # Com acesso ao caso: leitura OK e preview presente.
+    r = client.get("/analise-caso-ia/sessoes/sess-caso")
+    assert r.status_code == 200, r.text
+    lista = client.get("/analise-caso-ia/sessoes").json()
+    assert len(lista) == 1
+    assert lista[0]["ultima_mensagem_preview"] is not None
+
+    # Acesso REVOGADO: leitura bloqueada (403) e preview zerado, mas a sessão
+    # continua na listagem (título é do próprio usuário, segue gerenciável).
+    controle["nega"] = True
+    r = client.get("/analise-caso-ia/sessoes/sess-caso")
+    assert r.status_code == 403, r.text
+
+    lista = client.get("/analise-caso-ia/sessoes").json()
+    assert len(lista) == 1
+    assert lista[0]["id"] == "sess-caso"
+    assert lista[0]["total_mensagens"] == 1
+    assert lista[0]["ultima_mensagem_preview"] is None

@@ -12,8 +12,10 @@ Regras de segurança (CLAUDE.md — não negociar):
     `ai_guard.registrar_ai_log` OBRIGATÓRIO por resposta (erro propaga).
   • `citation_gate.validar_citacoes` sobre a resposta, anexado ao SSE. Cada
     resposta assistant nasce rascunho (is_rascunho=True) — HITL preservado.
-  • Rota protegida: usuário autenticado + gate de staff (cliente_externo é
-    barrado). Sessão com case_id → `verificar_acesso_caso`.
+  • Rota protegida: usuário autenticado + allowlist jurídico (financeiro,
+    secretaria e cliente_externo barrados; espelha ROLES.juridico do frontend).
+    Sessão com case_id → `verificar_acesso_caso`, reexecutado também na LEITURA
+    da thread (não só nas escritas).
   • `rate_limit` no endpoint de mensagem (custo de IA).
 """
 from __future__ import annotations
@@ -43,7 +45,7 @@ from app.core.config import get_settings
 from app.core.database import get_db
 from app.core.ownership import verificar_acesso_caso
 from app.core.rate_limit import rate_limit
-from app.core.security import ROLE_LEVEL, get_current_user
+from app.core.security import get_current_user
 from app.models.ai_log import AITipoUso
 from app.models.analise_caso_ia import AnaliseCasoMensagem, AnaliseCasoSessao
 from app.models.user import User
@@ -136,17 +138,26 @@ class SessaoDetalhe(SessaoOut):
     mensagens: list[MensagemOut]
 
 
-# ── Gate de acesso (staff; bloqueia cliente_externo) ──────────────────────────
+# ── Gate de acesso (allowlist jurídico; espelha ROLES.juridico do frontend) ───
+# Conjunto EXATO de papéis autorizados a usar a Análise de Caso IA — idêntico ao
+# allowlist da rota no frontend (moduleRegistry / canRoleAccessPath). Exclui
+# financeiro, secretaria e cliente_externo, que não fazem análise jurídica.
+_ROLES_JURIDICO = frozenset({
+    "superadmin", "admin", "socio", "advogado", "advogado_auxiliar", "estagiario",
+})
+
+
 def _role_str(cu: User) -> str:
     r = getattr(cu, "role", None)
     return r.value if hasattr(r, "value") else str(r)
 
 
-async def usuario_staff(cu: User = Depends(get_current_user)) -> User:
-    """Defesa em profundidade: além do AuthMiddleware, barra cliente_externo no
-    próprio endpoint (nível de staff exige acima de cliente_externo)."""
-    if ROLE_LEVEL.get(_role_str(cu), 0) <= ROLE_LEVEL["cliente_externo"]:
-        raise HTTPException(status_code=403, detail="Acesso restrito à equipe do escritório")
+async def usuario_juridico(cu: User = Depends(get_current_user)) -> User:
+    """Defesa em profundidade: além do AuthMiddleware, restringe o endpoint ao
+    allowlist jurídico (mesmo conjunto da rota no frontend). Barra financeiro,
+    secretaria e cliente_externo com 403."""
+    if _role_str(cu) not in _ROLES_JURIDICO:
+        raise HTTPException(status_code=403, detail="Acesso restrito à equipe jurídica")
     return cu
 
 
@@ -167,15 +178,26 @@ def _to_mensagem_out(m: AnaliseCasoMensagem) -> MensagemOut:
     )
 
 
-async def _carregar_sessao(db: AsyncSession, sessao_id: str, cu: User) -> AnaliseCasoSessao:
+async def _carregar_sessao(
+    db: AsyncSession, sessao_id: str, cu: User, checar_caso: bool = False,
+) -> AnaliseCasoSessao:
     """Carrega a sessão e impõe ownership (só o próprio user_id). Retorna 404
     tanto quando a sessão não existe QUANTO quando pertence a outro usuário —
-    o mesmo status nos dois casos não vaza a existência de sessões alheias."""
+    o mesmo status nos dois casos não vaza a existência de sessões alheias.
+
+    Quando `checar_caso=True` e a sessão está vinculada a um caso, reexecuta o
+    gate canônico `verificar_acesso_caso` (levanta 403/404 se o acesso ao caso
+    foi revogado por reatribuição/soft-delete). A thread é conteúdo derivado do
+    caso — a leitura que expõe mensagens deve passar por esse gate; PATCH/DELETE
+    (que só mexem em título/arquivamento do próprio usuário) usam o default
+    False para o dono ainda conseguir gerenciar a sessão."""
     s = (await db.execute(
         select(AnaliseCasoSessao).where(AnaliseCasoSessao.id == sessao_id)
     )).scalar_one_or_none()
     if s is None or s.user_id != cu.id:
         raise HTTPException(status_code=404, detail="Sessão não encontrada")
+    if checar_caso and s.case_id:
+        await verificar_acesso_caso(db, cu, s.case_id)
     return s
 
 
@@ -255,7 +277,7 @@ def _sse(event: str, data: dict) -> str:
 async def criar_sessao(
     body: SessaoCriar,
     db: AsyncSession = Depends(get_db),
-    cu: User = Depends(usuario_staff),
+    cu: User = Depends(usuario_juridico),
 ):
     nivel = (body.nivel or "alto").strip().lower()
     if nivel not in _NIVEIS_VALIDOS:
@@ -283,7 +305,7 @@ async def criar_sessao(
 async def listar_sessoes(
     arquivadas: bool = False,
     db: AsyncSession = Depends(get_db),
-    cu: User = Depends(usuario_staff),
+    cu: User = Depends(usuario_juridico),
 ):
     sessoes = (await db.execute(
         select(AnaliseCasoSessao)
@@ -309,6 +331,15 @@ async def listar_sessoes(
         preview = None
         if ultima is not None:
             preview = " ".join((ultima.conteudo or "").split())[:140]
+        # Se o acesso ao caso vinculado foi revogado (reatribuição/soft-delete),
+        # NÃO expõe o preview (conteúdo derivado do caso), mas mantém a sessão na
+        # listagem — o título é do próprio usuário e ela segue gerenciável
+        # (renomear/arquivar/apagar).
+        if s.case_id:
+            try:
+                await verificar_acesso_caso(db, cu, s.case_id)
+            except HTTPException:
+                preview = None
         resumos.append(SessaoResumo(
             **_to_sessao_out(s).model_dump(),
             total_mensagens=int(total or 0),
@@ -322,9 +353,11 @@ async def listar_sessoes(
 async def obter_sessao(
     sessao_id: str,
     db: AsyncSession = Depends(get_db),
-    cu: User = Depends(usuario_staff),
+    cu: User = Depends(usuario_juridico),
 ):
-    sessao = await _carregar_sessao(db, sessao_id, cu)
+    # checar_caso=True: a leitura expõe as mensagens (conteúdo derivado do caso),
+    # então reexecuta o gate de acesso ao caso vinculado (403/404 se revogado).
+    sessao = await _carregar_sessao(db, sessao_id, cu, checar_caso=True)
     mensagens = (await db.execute(
         select(AnaliseCasoMensagem)
         .where(AnaliseCasoMensagem.sessao_id == sessao.id)
@@ -341,7 +374,7 @@ async def atualizar_sessao(
     sessao_id: str,
     body: SessaoPatch,
     db: AsyncSession = Depends(get_db),
-    cu: User = Depends(usuario_staff),
+    cu: User = Depends(usuario_juridico),
 ):
     sessao = await _carregar_sessao(db, sessao_id, cu)
     if body.titulo is not None:
@@ -360,7 +393,7 @@ async def atualizar_sessao(
 async def apagar_sessao(
     sessao_id: str,
     db: AsyncSession = Depends(get_db),
-    cu: User = Depends(usuario_staff),
+    cu: User = Depends(usuario_juridico),
 ):
     sessao = await _carregar_sessao(db, sessao_id, cu)
     await db.delete(sessao)   # cascade delete-orphan apaga as mensagens
@@ -377,7 +410,7 @@ async def anexar_documento(
     sessao_id: str,
     file: UploadFile = File(...),
     db: AsyncSession = Depends(get_db),
-    cu: User = Depends(usuario_staff),
+    cu: User = Depends(usuario_juridico),
 ):
     sessao = await _carregar_sessao(db, sessao_id, cu)
     if sessao.case_id:
@@ -463,7 +496,7 @@ async def enviar_mensagem(
     sessao_id: str,
     body: MensagemEnviar,
     db: AsyncSession = Depends(get_db),
-    cu: User = Depends(usuario_staff),
+    cu: User = Depends(usuario_juridico),
 ):
     # ── Pré-stream: ownership + acesso ao caso + criação da mensagem do usuário.
     # (Erros aqui viram HTTP real 403/404, não evento SSE.)
