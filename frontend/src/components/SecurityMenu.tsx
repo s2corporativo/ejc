@@ -12,6 +12,7 @@ import {
   LogOut,
   Monitor,
   Moon,
+  RotateCcw,
   Sun,
   Trash2,
 } from "lucide-react";
@@ -111,7 +112,7 @@ export default function SecurityMenu({ user }: { user: any }) {
 
   const copiarIcs = async () => {
     try {
-      const { data } = await api.get("/users/me/calendar-url");
+      const { data } = await api.get("/calendar/me/url");
       if (!data?.url) {
         toast.error("Feed de calendário indisponível para esta conta.");
         return;
@@ -122,6 +123,18 @@ export default function SecurityMenu({ user }: { user: any }) {
       );
     } catch {
       toast.error("Não foi possível gerar o link do calendário.");
+    }
+  };
+
+  const revogarIcs = async () => {
+    try {
+      const { data } = await api.post("/calendar/me/rotate");
+      await navigator.clipboard.writeText(data.url);
+      toast.success(
+        "Link anterior revogado. A nova URL foi copiada; atualize-a no seu calendário.",
+      );
+    } catch {
+      toast.error("Não foi possível revogar o link do calendário.");
     }
   };
 
@@ -143,10 +156,6 @@ export default function SecurityMenu({ user }: { user: any }) {
         <ChevronDown size={14} className="text-slate-400" />
       </button>
 
-      {/* Input oculto acionado apenas pelo item "Trocar foto de perfil".
-          aria-hidden + tabIndex=-1 tiram-no do fluxo de foco/acessibilidade:
-          por ser o primeiro input do DOM, automação e leitores de tela
-          podiam atingi-lo por engano (achado A11y da auditoria). */}
       <input
         ref={fileRef}
         type="file"
@@ -209,7 +218,16 @@ export default function SecurityMenu({ user }: { user: any }) {
               setOpen(false);
             }}
           >
-            <CalendarPlus size={15} /> Calendário (Google/Outlook)
+            <CalendarPlus size={15} /> Copiar link do calendário
+          </button>
+          <button
+            className="menu-item"
+            onClick={() => {
+              void revogarIcs();
+              setOpen(false);
+            }}
+          >
+            <RotateCcw size={15} /> Revogar e gerar novo link
           </button>
           <button
             className="menu-item"
