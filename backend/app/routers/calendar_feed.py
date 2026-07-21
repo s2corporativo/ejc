@@ -56,6 +56,19 @@ async def _versao_feed(db: AsyncSession, user_id: str) -> int:
     return int(version or 1)
 
 
+async def obter_url_calendario(
+    db: AsyncSession,
+    user_id: str,
+) -> dict[str, object]:
+    """Fonte única da URL vigente, reutilizada pela rota canônica e legado."""
+    version = await _versao_feed(db, user_id)
+    return {
+        "url": _url_calendario(user_id, version),
+        "version": version,
+        "revogavel": True,
+    }
+
+
 def _ics_escape(value: str) -> str:
     return (
         (value or "")
@@ -85,12 +98,7 @@ async def minha_url_calendario_revogavel(
     cu: User = Depends(get_current_user),
 ):
     """Retorna o link vigente sem expor a chave usada para assiná-lo."""
-    version = await _versao_feed(db, cu.id)
-    return {
-        "url": _url_calendario(cu.id, version),
-        "version": version,
-        "revogavel": True,
-    }
+    return await obter_url_calendario(db, cu.id)
 
 
 @router.post("/me/rotate")
