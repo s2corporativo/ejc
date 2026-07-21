@@ -8,15 +8,15 @@
     /* SaaS tech premium "De Paula Teixeira": base branca/off-white QUENTE
        (#FFFFFF / #FAF9F6), dourado como acento cirúrgico (ouro #C9A227 /
        ouro profundo #8F7117 / bronze #6F5711 / sépia #4A3A26 — logo-hd) */
-    --ejc-bg: #faf9f6;
+    --ejc-bg: #ffffff;
     --ejc-card: #ffffff;
     --ejc-elev: #ffffff;
-    --ejc-ink: #0f172a;
-    --ejc-muted: #8a94a6;
-    --ejc-border: #ece8e0;
-    --ejc-legal: #1e293b;
-    --ejc-action: #8f7117;
-    --ejc-ai: #f79256;
+    --ejc-ink: #172033;
+    --ejc-muted: #667085;
+    --ejc-border: #e5eaf0;
+    --ejc-legal: #0b1f3a;
+    --ejc-action: #2563eb;
+    --ejc-ai: #7c3aed;
     --ejc-bronze: #6f5711;
     --ejc-gold: #c9a227;
     --ejc-gold-soft: #f7f1dc;
@@ -96,7 +96,7 @@
   /* Focus ring dourado consistente para navegação por teclado */
   :focus-visible {
     outline: none;
-    box-shadow: 0 0 0 2px rgba(201, 162, 39, 0.7);
+    box-shadow: 0 0 0 2px rgba(37, 99, 235, 0.55);
     border-radius: 6px;
   }
 
@@ -140,7 +140,7 @@
     transition: border-color 0.15s ease-out;
   }
   .card:hover {
-    border-color: rgba(166, 124, 82, 0.28);
+    border-color: rgba(37, 99, 235, 0.24);
   }
 
   .section-card {
@@ -156,19 +156,23 @@
   .btn {
     @apply inline-flex items-center justify-center gap-2 rounded-lg border-0 px-4 py-2 text-[13px] font-bold
            transition-all duration-150 ease-out active:scale-[.98]
-           focus:outline-none focus-visible:ring-2 focus-visible:ring-ouro/40
+           focus:outline-none focus-visible:ring-2 focus-visible:ring-primary-500/40
            disabled:opacity-50 disabled:cursor-not-allowed select-none;
   }
   /* Primário — ouro #8F7117 CHAPADO (texto branco 4,6:1+, AA);
      hover aprofunda para ouro profundo #6F5711. */
-  .btn-primary,
+  .btn-primary {
+    @apply btn bg-primary-600 text-white;
+  }
+  .btn-primary:hover,
+  .btn-primary:active {
+    @apply bg-primary-700;
+  }
   .btn-gold {
     @apply btn text-white;
     background-color: #8f7117;
   }
-  .btn-primary:hover,
   .btn-gold:hover,
-  .btn-primary:active,
   .btn-gold:active {
     background-color: #6f5711;
   }
@@ -193,7 +197,7 @@
   .input {
     @apply w-full rounded-lg border border-gray-300 bg-white px-2.5 py-1.5 text-[13px] text-slate-900
            placeholder:text-slate-400 transition-all duration-150
-           focus:border-ouro-claro focus:outline-none focus:ring-2 focus:ring-ouro-claro/30;
+           focus:border-primary-500 focus:outline-none focus:ring-2 focus:ring-primary-500/25;
   }
   .label {
     @apply block text-[11px] font-semibold text-gray-600 mb-1;
@@ -232,7 +236,7 @@
   /* Cabeçalho na faixa clara da marca (ouro palha) com texto na cor
      escura da marca — idioma Verdelimp de thead, cores EJC. */
   .table th {
-    @apply bg-ouro-palha px-3 py-2 text-left text-[11px] font-bold uppercase tracking-wider text-primary-900 first:rounded-tl-xl last:rounded-tr-xl;
+    @apply bg-primary-50 px-3 py-2 text-left text-[11px] font-bold uppercase tracking-wider text-primary-900 first:rounded-tl-xl last:rounded-tr-xl;
   }
   .table td {
     @apply border-t border-slate-100 px-3 py-2.5 text-slate-700;
@@ -259,7 +263,7 @@
   /* ── Eyebrow / section label ──────────────────────────────── */
   .eyebrow {
     /* Ouro Profundo #6F5711 — 6,9:1 sobre branco (AA), filete institucional */
-    @apply text-[10px] font-bold uppercase tracking-[0.22em] text-ouro-profundo;
+    @apply text-[10px] font-bold uppercase tracking-[0.22em] text-primary-700;
   }
 
   .hero-blue {
@@ -270,8 +274,8 @@
         rgba(255, 255, 255, 0.12),
         transparent 18rem
       ),
-      linear-gradient(135deg, #3b2f0b 0%, #6f5711 55%, #8f7117 100%);
-    box-shadow: 0 18px 45px rgba(59, 47, 11, 0.28);
+      linear-gradient(135deg, #0b1f3a 0%, #1d4ed8 55%, #2563eb 100%);
+    box-shadow: 0 18px 45px rgba(37, 99, 235, 0.18);
   }
 
   /* ── Degradê OURO metálico (destaques de marca: heros, painéis) ──
@@ -353,12 +357,12 @@
     color: rgb(51 65 85); /* slate-700 */
   }
   .sidebar-nav-item:hover {
-    background: rgba(201, 162, 39, 0.12);
+    background: #f8fafc;
     color: rgb(15 23 42); /* slate-900 */
   }
   .sidebar-nav-item.is-active {
-    background: rgba(201, 162, 39, 0.16);
-    color: #8a6d2f; /* ouro escuro, legível no branco */
+    background: #eff6ff;
+    color: #2563eb;
   }
   /* Item ativo com "borderLeft" de 3px em toda a altura (idioma
      Verdelimp), na cor de acento atual do EJC (dourado #D4AF37). */
@@ -370,17 +374,17 @@
     height: 100%;
     width: 3px;
     border-radius: 0;
-    background: #d4af37;
+    background: #2563eb;
   }
   /* Ícones do menu em dourado ouro — acento elegante sobre o fundo branco. */
   .sidebar-nav-item svg {
-    color: #b08a50;
+    color: #667085;
   }
   .sidebar-nav-item:hover svg {
-    color: #8a6d2f;
+    color: #2563eb;
   }
   .sidebar-nav-item.is-active svg {
-    color: #8a6d2f;
+    color: #2563eb;
   }
   .sidebar-group-label {
     color: rgb(100 116 139); /* slate-500 */
@@ -392,8 +396,8 @@
     border-color: rgb(226 232 240); /* slate-200 */
   }
   .sidebar-count {
-    background: rgba(212, 175, 55, 0.16);
-    color: #8a6d2f;
+    background: #dbeafe;
+    color: #2563eb;
   }
 
   /* Tile da logomarca (header) — logo-hd.png tem fundo TRANSPARENTE:
@@ -415,11 +419,7 @@
     z-index: 0;
     pointer-events: none;
     user-select: none;
-    background-image: url("/brand/logo-hd.png");
-    background-repeat: no-repeat;
-    background-position: center;
-    background-size: min(56vw, 760px);
-    opacity: 0.035;
+    display: none;
   }
 
   /* ── Page header ──────────────────────────────────────────── */
