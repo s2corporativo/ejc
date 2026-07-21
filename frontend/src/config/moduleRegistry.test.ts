@@ -87,7 +87,7 @@ describe("moduleRegistry", () => {
     expect(map.get("/dashboard")).toBe("/");
   });
 
-  it("mantém o menu enxuto e o modo essencial com 7 destinos", () => {
+  it("mantém o menu enxuto e o modo essencial por perfil", () => {
     for (const role of ["superadmin", "admin", "socio", "advogado"]) {
       expect(getProductionNavigation(role).length).toBeLessThanOrEqual(17);
       expect(
