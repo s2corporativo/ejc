@@ -2,8 +2,8 @@ name: EJC Release Gate
 
 # Gate P0 no runner SELF-HOSTED: executa automaticamente em todo PR e em cada
 # atualização da main, além de permitir execução manual. O objetivo é impedir
-# que conflitos, segredos, CORS inseguro ou resíduos críticos avancem sem
-# evidência auditável.
+# que conflitos, segredos, CORS inseguro, resíduos críticos ou rollback quebrado
+# avancem sem evidência auditável.
 on:
   pull_request:
   push:
@@ -24,7 +24,7 @@ jobs:
     timeout-minutes: 10
     steps:
       - name: Checkout
-        uses: actions/checkout@v6
+        uses: actions/checkout@v7
         with:
           fetch-depth: 1
 
@@ -61,12 +61,21 @@ jobs:
 
           exit "${status}"
 
+      - name: Provar política de migration e rollback de imagens
+        shell: bash
+        run: |
+          chmod +x scripts/tests/test_deploy_rollback.sh
+          bash scripts/tests/test_deploy_rollback.sh | tee deploy-rollback-test.log
+
       - name: Publicar diagnóstico P0
         if: always()
         uses: actions/upload-artifact@v7
         with:
           name: p0-guard-log
-          path: ci_guard.log
+          path: |
+            ci_guard.log
+            deploy-rollback-test.log
+          if-no-files-found: warn
           retention-days: 7
 
   # Os gates P1 permanecem no ci.yml para evitar duplicidade de tempo de runner:
