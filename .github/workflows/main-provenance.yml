@@ -1,5 +1,8 @@
 name: Main Provenance Audit
 
+# Controle DETECTIVO complementar. A barreira primária é a ruleset da branch
+# main, que exige checks e conversas resolvidas. Este workflow registra a origem
+# de cada atualização aceita; ele não substitui proteção externa/administrativa.
 on:
   push:
     branches: [main]
@@ -9,10 +12,6 @@ permissions:
   contents: read
   pull-requests: read
   issues: write
-
-concurrency:
-  group: main-provenance-${{ github.ref }}
-  cancel-in-progress: false
 
 jobs:
   verify-main-origin:
@@ -37,8 +36,13 @@ jobs:
                 commit_sha: sha,
                 per_page: 100,
               });
+              // `merged_at` isolado aceita "indirect merge" causado por push do
+              // head do PR. Exigir o merge_commit_sha igual ao commit publicado
+              // comprova que a atualização veio da operação de merge do GitHub.
               associated = response.data.filter((pr) =>
-                pr.merged_at && pr.base?.ref === 'main'
+                pr.merged_at &&
+                pr.base?.ref === 'main' &&
+                pr.merge_commit_sha === sha
               );
               if (associated.length > 0) break;
               if (attempt < 5) {
@@ -49,7 +53,9 @@ jobs:
             const validPrs = associated.map((pr) => `#${pr.number}`).join(', ');
             const reasons = [];
             if (forced) reasons.push('force-push detectado');
-            if (associated.length === 0) reasons.push('commit sem Pull Request mesclado associado');
+            if (associated.length === 0) {
+              reasons.push('commit sem merge_commit_sha de Pull Request aprovado para main');
+            }
 
             await core.summary
               .addHeading('Proveniência da branch main')
