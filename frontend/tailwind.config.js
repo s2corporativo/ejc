@@ -25,46 +25,42 @@ export default {
          * apenas os VALORES foram repintados (marrom → ouro).
          */
 
-        // Sidebar — gradiente ouro-escuro (ver .sidebar-bronze no CSS)
+        // Sidebar clara: o menu usa branco, slate e realce azul.
         sidebar: {
-          DEFAULT: "#3B2F0B",
-          light: "#55420D",
-          hover: "rgba(201,162,39,0.16)",
-          active: "rgba(201,162,39,0.20)",
+          DEFAULT: "#FFFFFF",
+          light: "#F8FAFC",
+          hover: "#EFF6FF",
+          active: "#DBEAFE",
         },
-        // Primária — escala OURO (ação/marca)
+        // Primária — azul institucional / elétrico.
         primary: {
-          DEFAULT: "#A6842A",
-          50: "#FBF8EC",
-          100: "#F7F1DC",
-          200: "#EFE3B4",
-          300: "#E5CE7F",
-          400: "#D4AF37",
-          // 500 calibrado: 3,5:1 sobre branco — só UI/ícone, nunca
-          // texto pequeno sobre branco (para texto use 600+)
-          500: "#A6842A",
-          // 600 calibrado p/ WCAG AA: 4,6:1 sobre branco (texto-acento
-          // ouro; #C9A227 puro = 2,4:1 falharia em texto pequeno)
-          600: "#8F7117",
-          700: "#6F5711",
-          800: "#55420D",
-          900: "#3B2F0B",
-          950: "#251D06",
+          DEFAULT: "#2563EB",
+          50: "#EFF6FF",
+          100: "#DBEAFE",
+          200: "#BFDBFE",
+          300: "#93C5FD",
+          400: "#60A5FA",
+          500: "#3B82F6",
+          600: "#2563EB",
+          700: "#1D4ED8",
+          800: "#1E40AF",
+          900: "#0B1F3A",
+          950: "#071426",
         },
-        // IA — laranja quente (superfícies de inteligência / acento)
+        // IA — violeta reservado a superfícies e ações de inteligência.
         ai: {
-          DEFAULT: "#ED7D3A",
-          50: "#FFF6EF",
-          100: "#FFEBDB",
-          200: "#FED7B5",
-          300: "#FCB985",
-          400: "#F79256",
-          500: "#F0813F",
-          600: "#ED7D3A",
-          700: "#C75F24",
-          800: "#9E4B1E",
-          900: "#7F3E1C",
-          950: "#451E0B",
+          DEFAULT: "#7C3AED",
+          50: "#F5F3FF",
+          100: "#EDE9FE",
+          200: "#DDD6FE",
+          300: "#C4B5FD",
+          400: "#A78BFA",
+          500: "#8B5CF6",
+          600: "#7C3AED",
+          700: "#6D28D9",
+          800: "#5B21B6",
+          900: "#4C1D95",
+          950: "#2E1065",
         },
         // navy — slate escuro (legado)
         navy: {
@@ -119,10 +115,10 @@ export default {
         },
         // Canvas branco/off-white QUENTE (pedido do dono: base branca,
         // nada de cinza pesado) + hairline quente quase invisível.
-        canvas: "#FAF9F6",
-        parchment: "#F5F3EE",
-        muted: "#8A94A6",
-        border: "#ECE8E0",
+        canvas: "#FFFFFF",
+        parchment: "#F7F9FC",
+        muted: "#667085",
+        border: "#E5EAF0",
         // Status — success=mint (#0CA678), danger/error=soft-red (#E03131),
         // warn/warning=amarelo quente (#FFD166), info=sky (inalterado)
         success: {
