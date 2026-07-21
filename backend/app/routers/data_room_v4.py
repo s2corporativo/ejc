@@ -76,7 +76,6 @@ async def _validar_cliente_v4(
     if is_gestao(cu):
         return
     if not client_id:
-        # Sala legado sem client_id ficaria institucional e visível sem ownership.
         raise HTTPException(
             422,
             "Na rota legado, informe um cliente da sua carteira",
@@ -128,7 +127,6 @@ async def criar_sala(
     await db.refresh(sala)
 
     response.headers["Deprecation"] = "true"
-    response.headers["Sunset"] = "Wed, 30 Sep 2026 23:59:59 GMT"
     response.headers["Link"] = '</api/data-rooms>; rel="successor-version"'
     return sala
 
@@ -148,7 +146,6 @@ async def listar_salas(
 
     q = select(DataRoomSala)
     if not is_gestao(cu):
-        # Não expõe salas sem cliente nem salas de clientes alheios.
         q = q.where(
             DataRoomSala.client_id.is_not(None),
             DataRoomSala.client_id.in_(_ids_clientes_visiveis(cu)),
@@ -156,7 +153,6 @@ async def listar_salas(
     q = q.order_by(DataRoomSala.created_at.desc())
 
     response.headers["Deprecation"] = "true"
-    response.headers["Sunset"] = "Wed, 30 Sep 2026 23:59:59 GMT"
     response.headers["Link"] = '</api/data-rooms>; rel="successor-version"'
     res = await db.execute(q)
     return res.scalars().all()
