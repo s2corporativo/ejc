@@ -53,9 +53,13 @@ describe("moduleRegistry", () => {
   it("destaca Raio-X e Financeiro apenas para os perfis autorizados", () => {
     const advogado = getProductionNavigation("advogado");
     const socio = getProductionNavigation("socio");
-    expect(advogado.find((item) => item.path === "/raio-x")?.essential).toBe(true);
+    expect(
+      advogado.find((item) => item.path === "/raio-x")?.essential,
+    ).toBe(true);
     expect(advogado.some((item) => item.path === "/financeiro")).toBe(false);
-    expect(socio.find((item) => item.path === "/financeiro")?.essential).toBe(true);
+    expect(
+      socio.find((item) => item.path === "/financeiro")?.essential,
+    ).toBe(true);
   });
 
   it("mantém preferências pessoais acessíveis a qualquer usuário interno", () => {
