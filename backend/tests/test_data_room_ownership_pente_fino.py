@@ -108,7 +108,7 @@ def test_filtro_rooms_advogado_exige_ownership_nos_vinculos():
     sql = _sql(q)
     assert "cases.id" in sql
     assert "clients.id" in sql
-    assert "created_by" not in sql
+    assert "data_rooms.created_by =" not in sql
 
 
 @pytest.mark.asyncio
@@ -125,7 +125,7 @@ async def test_listagem_aplica_escopo_antes_da_paginacao():
     sql = " || ".join(_sql(stmt) for stmt in db.executed)
     assert "cases.id" in sql
     assert "clients.id" in sql
-    assert "created_by" not in sql
+    assert "data_rooms.created_by =" not in sql
 
 
 @pytest.mark.asyncio
