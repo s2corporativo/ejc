@@ -1,0 +1,12 @@
+# Proprietário técnico padrão do repositório EJC.
+# A exigência de aprovação depende da proteção administrativa da branch main.
+* @s2corporativo
+
+# Áreas sensíveis — mantidas explícitas para auditoria e revisão direcionada.
+/backend/app/core/ @s2corporativo
+/backend/app/models/ @s2corporativo
+/backend/app/routers/ @s2corporativo
+/backend/alembic/ @s2corporativo
+/.github/workflows/ @s2corporativo
+/scripts/backup/ @s2corporativo
+/deploy/ @s2corporativo
