@@ -83,9 +83,8 @@ async def anonimizar_cliente(
     cliente.nome = _MARCADOR if cliente.nome else cliente.nome
     cliente.razao_social = _MARCADOR if cliente.razao_social else cliente.razao_social
     cliente.nome_fantasia = None
-    cliente.cpf = None
-    cliente.cnpj = None
-    # Bloco 6a: limpa também os campos cifrados/hash — senão a anonimização
+    # Cutover C6/LGPD: cpf/cnpj em texto puro não existem mais (dropados na
+    # migration 112). Limpa os campos cifrados/hash — senão a anonimização
     # ficaria incompleta (cpf_enc ainda decifrável, cpf_hash ainda comparável).
     cliente.cpf_enc = None
     cliente.cnpj_enc = None

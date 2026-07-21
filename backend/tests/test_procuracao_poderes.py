@@ -7,7 +7,9 @@ from app.services.documental import _procuracao, _clausula_poderes
 
 
 def _cli() -> Client:
-    return Client(id="cli1", nome="Joao da Silva", cpf="00000000000")
+    # Cutover C6/LGPD: documento vive cifrado; a qualificação decifra (cpf_plain).
+    from app.services.pii_crypto import encrypt
+    return Client(id="cli1", nome="Joao da Silva", cpf_enc=encrypt("00000000000"))
 
 
 def _case() -> Case:

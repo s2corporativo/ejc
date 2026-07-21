@@ -122,7 +122,9 @@ def _fee():
 
 
 def _cliente():
-    return Client(id="c1", nome="Fulano da Silva", cpf="52998224725",
+    # Cutover C6/LGPD: documento vive cifrado; o tomador da NFSe decifra sob demanda.
+    from app.services.pii_crypto import encrypt
+    return Client(id="c1", nome="Fulano da Silva", cpf_enc=encrypt("52998224725"),
                   estado="MG", cep="32600-000")
 
 

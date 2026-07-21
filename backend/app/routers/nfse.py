@@ -185,9 +185,10 @@ def _nota_dict(n: NotaFiscalServico) -> dict:
 def _tomador_de(cliente: Client | None, override: TomadorIn | None) -> NFSeTomador:
     """Monta o tomador do body (override) ou do cadastro do cliente.
 
-    Os campos de documento do cliente podem estar apenas cifrados (cpf_enc/
-    cnpj_enc) — nesses casos o cadastro não expõe o número em claro e o
-    tomador precisa ser informado no body (documento é obrigatório na DPS).
+    Cutover C6/LGPD: o documento do cliente vive só cifrado (cpf_enc/cnpj_enc);
+    é decifrado sob demanda aqui (cnpj_plain/cpf_plain) para a DPS, que exige o
+    número. PJ-first (o tomador PJ usa CNPJ). Se o cadastro não tiver documento,
+    o `tomador` precisa vir no body.
     """
     if override is not None:
         return NFSeTomador(**override.model_dump())
@@ -196,7 +197,7 @@ def _tomador_de(cliente: Client | None, override: TomadorIn | None) -> NFSeTomad
             status_code=422,
             detail="Sem tomador: informe o objeto `tomador` no body.",
         )
-    documento = (cliente.cnpj or cliente.cpf or "").strip()
+    documento = (cliente.cnpj_plain or cliente.cpf_plain or "").strip()
     nome = (cliente.razao_social or cliente.nome or "").strip()
     if not documento or not nome:
         raise HTTPException(

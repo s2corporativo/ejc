@@ -28,7 +28,7 @@ from app.core.security import (
 from app.models.audit_log import criar_audit_log
 from app.models.user import RefreshToken, User
 from app.schemas.auth import UserCreate, UserResponse, UserUpdate
-from app.services.security_service import validar_forca_senha
+from app.services.security_service import obter_ip_real, validar_forca_senha
 from app.schemas.common import MsgResponse
 
 settings = get_settings()
@@ -180,7 +180,7 @@ async def revogar_outras_sessoes(
         "users",
         cu.id,
         detalhes=f"outras_sessoes={quantidade}",
-        ip=request.client.host if request.client else None,
+        ip=obter_ip_real(request),
     )
     await db.commit()
     return {"detail": "Outras sessões revogadas.", "revoked": quantidade}
@@ -220,7 +220,7 @@ async def revogar_sessao(
         "users",
         cu.id,
         detalhes=f"session_id={row.id}",
-        ip=request.client.host if request.client else None,
+        ip=obter_ip_real(request),
     )
     await db.commit()
     return {"detail": "Sessão revogada."}

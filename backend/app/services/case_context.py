@@ -191,7 +191,7 @@ async def montar_dossie(
 
     # Cliente (tipo, sem expor documento — sanitizador depois mascara nomes)
     if cliente:
-        tipo_cli = "PJ" if (cliente.razao_social or cliente.cnpj) else "PF"
+        tipo_cli = "PJ" if (cliente.razao_social or cliente.cnpj_enc) else "PF"
         L.append("")
         L.append(f"[CLIENTE] Tipo {tipo_cli}"
                  + (f" · {cliente.cidade}/{cliente.estado}" if cliente.cidade else ""))

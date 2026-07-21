@@ -539,8 +539,10 @@ async def test_motivacao_ia_desligada_sem_chamada(monkeypatch):
 @pytest.mark.asyncio
 async def test_montar_checklist_pronto_e_bloqueado():
     case = _fake_case()
+    # Cutover C6/LGPD: montar_checklist verifica presença do documento pelo
+    # campo cifrado (cpf_enc/cnpj_enc), não mais texto puro.
     cliente_ok = SimpleNamespace(nome="Cliente", razao_social=None,
-                                 cpf="x", cnpj=None)
+                                 cpf_enc="x", cnpj_enc=None)
     # pronto: cliente ok, 1 procuração, texto suficiente
     db = _FakeDB(results=[cliente_ok, 1])
     itens, pronto = await mps.montar_checklist(db, case, "contestacao", TEXTO_LONGO)

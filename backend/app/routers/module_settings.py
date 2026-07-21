@@ -11,6 +11,7 @@ from app.core.database import get_db
 from app.core.security import require_admin, require_roles
 from app.models.audit_log import criar_audit_log
 from app.models.system_module_setting import SystemModuleSetting
+from app.services.security_service import obter_ip_real
 from app.models.user import User
 from app.schemas.system_module_settings import (
     SystemModuleSettingList,
@@ -128,7 +129,7 @@ async def salvar_module_setting(
             f"enabled={payload.enabled};menu_visible={payload.menu_visible};"
             f"status={payload.status};replacement={payload.replacement_route or '-'}"
         ),
-        ip=request.client.host if request.client else None,
+        ip=obter_ip_real(request),
     )
     await db.commit()
     await db.refresh(row)
@@ -162,7 +163,7 @@ async def remover_module_setting(
         "system_module_settings",
         module_key,
         detalhes="Override removido; manifesto frontend volta a ser o padrão.",
-        ip=request.client.host if request.client else None,
+        ip=obter_ip_real(request),
     )
     await db.commit()
     return {"detail": "Override removido."}

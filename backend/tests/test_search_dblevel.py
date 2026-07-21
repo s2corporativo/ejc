@@ -49,12 +49,21 @@ async def _criar_user(db, role: str = "socio") -> str:
 
 async def _criar_cliente(db, nome: str, cpf: str | None = None,
                          cnpj: str | None = None) -> str:
+    # Cutover C6/LGPD: sem colunas cpf/cnpj em texto puro — grava só cifrado +
+    # hash (o mesmo que o cadastro real faz). Busca por documento casa via hash.
+    from app.services.pii_crypto import normalizar_documento, encrypt, hash_documento
     cid = str(uuid4())
+    cpf_n = normalizar_documento(cpf)
+    cnpj_n = normalizar_documento(cnpj)
     await db.execute(
-        text("INSERT INTO clients (id, tipo, nome, cpf, cnpj, email, status) "
-             "VALUES (:id, :tipo, :nome, :cpf, :cnpj, :email, 'ativo')"),
+        text("INSERT INTO clients (id, tipo, nome, cpf_enc, cpf_hash, "
+             "cnpj_enc, cnpj_hash, email, status) "
+             "VALUES (:id, :tipo, :nome, :cpf_enc, :cpf_hash, "
+             ":cnpj_enc, :cnpj_hash, :email, 'ativo')"),
         {"id": cid, "tipo": "PJ" if cnpj else "PF", "nome": nome,
-         "cpf": cpf, "cnpj": cnpj, "email": f"{cid[:8]}@teste.local"},
+         "cpf_enc": encrypt(cpf_n), "cpf_hash": hash_documento(cpf_n),
+         "cnpj_enc": encrypt(cnpj_n), "cnpj_hash": hash_documento(cnpj_n),
+         "email": f"{cid[:8]}@teste.local"},
     )
     return cid
 
@@ -243,8 +252,10 @@ async def test_cpf_hash_exato_encontra_cliente_sem_plaintext():
     async with AsyncSessionLocal() as db:
         uid = await _criar_user(db, "socio")
         cli = await _criar_cliente(db, f"Cliente Hash {tok}")
+        # Cliente com hash SEM enc (edge: sem valor a decifrar) — prova que a
+        # busca acha pelo índice cego mas o subtítulo fica vazio (nada a exibir).
         await db.execute(
-            text("UPDATE clients SET cpf = NULL, cpf_hash = :h WHERE id = :id"),
+            text("UPDATE clients SET cpf_hash = :h WHERE id = :id"),
             {"h": hash_documento(cpf), "id": cli})
         await db.commit()
         cu = await _carregar_user(db, uid)

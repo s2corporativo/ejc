@@ -6,7 +6,7 @@ from alembic.script import ScriptDirectory
 
 BACKEND_DIR = Path(__file__).resolve().parents[1]
 # Atualizar este identificador no mesmo PR que adicionar uma nova migration.
-HEAD_REVISION = "111_ai_provider_metrics"
+HEAD_REVISION = "112_client_pii_drop_plaintext"
 MERGE_REVISION = "104_merge_entrada_orquestrador"
 EXPECTED_PARENTS = {
     "101_entrada_universal_documentos",
@@ -37,5 +37,11 @@ def test_datajud_encadeia_apos_escopo_rag():
 
 
 def test_metricas_provedores_encadeiam_apos_datajud():
-    revision = _script_directory().get_revision(HEAD_REVISION)
+    revision = _script_directory().get_revision("111_ai_provider_metrics")
     assert revision.down_revision == "110_datajud_cognitive_feed"
+
+
+def test_cutover_pii_encadeia_apos_metricas_provedores():
+    # 112 (drop do CPF/CNPJ plaintext) é o novo head e encadeia após 111.
+    revision = _script_directory().get_revision(HEAD_REVISION)
+    assert revision.down_revision == "111_ai_provider_metrics"

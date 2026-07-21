@@ -1,6 +1,6 @@
 # ── app/schemas/client.py ────────────────────────────────────────────────────
 from __future__ import annotations
-from pydantic import BaseModel, field_validator
+from pydantic import AliasChoices, BaseModel, Field, field_validator
 from typing import Optional
 from datetime import datetime, date
 
@@ -136,6 +136,16 @@ class ClientResponse(ClientBase):
     area_interesse: Optional[str] = None
     responsavel_id: Optional[str] = None
     created_at: datetime
+    # Cutover C6/LGPD: as colunas cpf/cnpj em texto puro não existem mais no
+    # model. Ao serializar a partir do ORM (from_attributes), lê as propriedades
+    # cpf_plain/cnpj_plain (decrypt de cpf_enc/cnpj_enc) — NUNCA o ciphertext.
+    # AliasChoices mantém compatibilidade caso um dia seja validado de um dict
+    # com a chave "cpf"/"cnpj".
+    cpf: Optional[str] = Field(
+        default=None, validation_alias=AliasChoices("cpf_plain", "cpf"))
+    cnpj: Optional[str] = Field(
+        default=None, validation_alias=AliasChoices("cnpj_plain", "cnpj"))
+
     class Config:
         from_attributes = True
 

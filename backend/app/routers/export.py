@@ -51,8 +51,10 @@ async def export_clientes(db: AsyncSession = Depends(get_db),
         select(Client).where(Client.deleted_at.is_(None))
         .order_by(Client.created_at.desc())
     )).scalars().all()
+    # Documento decifrado sob demanda (cutover C6/LGPD): não há mais texto puro
+    # no banco — o CSV para o staff do CRM exibe o valor em claro como antes.
     linhas = [[c.nome or c.razao_social or "", c.tipo.value,
-               c.cpf or c.cnpj or "", c.email or "", c.telefone or "",
+               c.documento_plain or "", c.email or "", c.telefone or "",
                str(c.status.value)] for c in rows]
     return _csv("clientes.csv",
                 ["Nome", "Tipo", "Documento", "Email", "Telefone", "Status"], linhas)

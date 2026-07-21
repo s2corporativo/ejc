@@ -134,18 +134,23 @@ async def resolver_cliente(
     Cliente criado fica marcado para revisao (OAB)."""
     import re as _re
     from app.models.client import ClientTipo, ClientStatus, ClientOrigem
+    from app.services.pii_crypto import encrypt as _pii_encrypt, hash_documento as _pii_hash
     cpf = (_re.sub(r"\D", "", req.cpf) if req.cpf else "")[:11] or None
     cnpj = (_re.sub(r"\D", "", req.cnpj) if req.cnpj else "")[:14] or None
     nome = (req.nome or "").strip()[:255]
 
+    # Dedup por ÍNDICE CEGO (cutover C6/LGPD): não há mais coluna cpf/cnpj em
+    # texto puro para comparar — casa pelo hash HMAC do documento normalizado.
     existente = None
     if cpf:
         existente = (await db.execute(
-            select(Client).where(Client.cpf == cpf, Client.deleted_at.is_(None))
+            select(Client).where(Client.cpf_hash == _pii_hash(cpf),
+                                 Client.deleted_at.is_(None))
         )).scalar_one_or_none()
     if not existente and cnpj:
         existente = (await db.execute(
-            select(Client).where(Client.cnpj == cnpj, Client.deleted_at.is_(None))
+            select(Client).where(Client.cnpj_hash == _pii_hash(cnpj),
+                                 Client.deleted_at.is_(None))
         )).scalar_one_or_none()
     if existente:
         # Sigilo interno (LGPD/EOAB): não vazar id/nome de cliente de OUTRA
@@ -161,16 +166,13 @@ async def resolver_cliente(
         raise HTTPException(status_code=422, detail="Sem dados para identificar o cliente")
 
     tipo = ClientTipo.PJ if cnpj else ClientTipo.PF
-    from app.services.pii_crypto import encrypt as _pii_encrypt, hash_documento as _pii_hash
     novo = Client(
         id=str(uuid4()),
         tipo=tipo,
         nome=nome if tipo == ClientTipo.PF else None,
         razao_social=nome if tipo == ClientTipo.PJ else None,
-        cpf=cpf if tipo == ClientTipo.PF else None,
-        cnpj=cnpj if tipo == ClientTipo.PJ else None,
-        # Bloco 6a (LGPD): dual-write, mesma lógica de criar(). cpf/cnpj aqui
-        # já chegam normalizados (regex \D acima).
+        # Cutover C6/LGPD: grava SOMENTE cifrado + hash (sem texto puro). cpf/cnpj
+        # aqui já chegam normalizados (regex \D acima).
         cpf_enc=_pii_encrypt(cpf) if tipo == ClientTipo.PF else None,
         cnpj_enc=_pii_encrypt(cnpj) if tipo == ClientTipo.PJ else None,
         cpf_hash=_pii_hash(cpf) if tipo == ClientTipo.PF else None,
@@ -403,17 +405,17 @@ async def listar(
     # (CPF/CNPJ) também fica restrito e não permite descobrir cliente alheio.
     q = _filtro_visibilidade_cliente(q, cu)
     if search:
+        # Busca parcial (ILIKE) só por nome/razão social. Cutover C6/LGPD: a
+        # busca parcial por CPF/CNPJ foi REMOVIDA — sem plaintext no banco, o
+        # ILIKE por documento é impossível por natureza (cifra real ≠ substring).
+        # Documento agora casa APENAS por igualdade exata via índice cego (HMAC):
+        # o termo precisa ser um CPF (11) ou CNPJ (14) completo. O hash é
+        # normalizado (só dígitos), então "123.456.789-09" e "12345678909"
+        # convergem — preservando o dedup do Novo Caso.
         condicoes = [
             Client.nome.ilike(f"%{search}%"),
             Client.razao_social.ilike(f"%{search}%"),
-            Client.cpf.ilike(f"%{search}%"),
-            Client.cnpj.ilike(f"%{search}%"),
         ]
-        # Busca por documento via índice cego: o plaintext de cpf/cnpj é
-        # gravado como digitado (com ou sem máscara), então o ilike não casa
-        # "12345678909" com "123.456.789-09" — o dedup do Novo Caso quebrava
-        # e o POST subsequente colidia no UNIQUE do hash (409 sem saída).
-        # O hash HMAC é normalizado (só dígitos), igual ao checar-conflito.
         from app.services.pii_crypto import normalizar_documento, hash_documento
         dig = normalizar_documento(search)
         if dig and len(dig) == 11:
@@ -465,21 +467,23 @@ async def criar(
         cpf=payload.cpf, cnpj=payload.cnpj,
     )
 
+    # Cutover C6/LGPD: cpf/cnpj deixaram de ser colunas do model. Extrai os
+    # valores do payload e persiste SOMENTE cifrado (cpf_enc/cnpj_enc) + índice
+    # cego (cpf_hash/cnpj_hash) — nunca em texto puro.
+    dados = payload.model_dump()
+    cpf_in = dados.pop("cpf", None)
+    cnpj_in = dados.pop("cnpj", None)
     c = Client(
         id=str(uuid4()), responsavel_id=cu.id,
-        **payload.model_dump(),
+        **dados,
     )
     # CRM: lead entra no funil sempre com etapa preenchida — o board agrupa
     # por etapa_funil e o GET /clients/?status=lead precisa devolvê-la.
     if c.status == ClientStatus.lead.value and not c.etapa_funil:
         c.etapa_funil = "lead"
-    # Bloco 6a (LGPD): dual-write — popula cpf_enc/cnpj_enc/cpf_hash/cnpj_hash
-    # em PARALELO ao cpf/cnpj em texto puro (que segue sendo o valor lido pelo
-    # resto do sistema nesta fase de transição). Backfill dos clientes já
-    # existentes é manual e separado, nunca automático.
     from app.services.pii_crypto import normalizar_documento, encrypt as _pii_encrypt, hash_documento as _pii_hash
-    cpf_norm = normalizar_documento(c.cpf)
-    cnpj_norm = normalizar_documento(c.cnpj)
+    cpf_norm = normalizar_documento(cpf_in)
+    cnpj_norm = normalizar_documento(cnpj_in)
     c.cpf_enc = _pii_encrypt(cpf_norm)
     c.cnpj_enc = _pii_encrypt(cnpj_norm)
     c.cpf_hash = _pii_hash(cpf_norm)
@@ -612,26 +616,34 @@ async def atualizar(
 
     mudancas = payload.model_dump(exclude_unset=True)
 
-    # Se CPF/CNPJ mudou: revalida dígito verificador e regrava os campos LGPD
-    # (cpf_enc/cnpj_enc/cpf_hash/cnpj_hash) — mesmos helpers do criar().
-    if "cpf" in mudancas or "cnpj" in mudancas:
+    # Cutover C6/LGPD: cpf/cnpj não são mais colunas do model. Extrai antes do
+    # setattr genérico e regrava SOMENTE cifrado + hash do campo alterado.
+    cpf_alterado = "cpf" in mudancas
+    cnpj_alterado = "cnpj" in mudancas
+    cpf_in = mudancas.pop("cpf", None)
+    cnpj_in = mudancas.pop("cnpj", None)
+
+    # Se CPF/CNPJ mudou: revalida dígito verificador antes de cifrar.
+    if cpf_alterado or cnpj_alterado:
         from app.services.validators_service import validar_cpf as _vcpf, validar_cnpj as _vcnpj
-        if mudancas.get("cpf") and not _vcpf(mudancas["cpf"]):
+        if cpf_in and not _vcpf(cpf_in):
             raise HTTPException(status_code=422, detail="CPF inválido (dígito verificador)")
-        if mudancas.get("cnpj") and not _vcnpj(mudancas["cnpj"]):
+        if cnpj_in and not _vcnpj(cnpj_in):
             raise HTTPException(status_code=422, detail="CNPJ inválido (dígito verificador)")
 
     for k, v in mudancas.items():
         setattr(c, k, v)
 
-    if "cpf" in mudancas or "cnpj" in mudancas:
+    if cpf_alterado or cnpj_alterado:
         from app.services.pii_crypto import normalizar_documento, encrypt as _pii_encrypt, hash_documento as _pii_hash
-        cpf_norm = normalizar_documento(c.cpf)
-        cnpj_norm = normalizar_documento(c.cnpj)
-        c.cpf_enc = _pii_encrypt(cpf_norm)
-        c.cnpj_enc = _pii_encrypt(cnpj_norm)
-        c.cpf_hash = _pii_hash(cpf_norm)
-        c.cnpj_hash = _pii_hash(cnpj_norm)
+        if cpf_alterado:
+            cpf_norm = normalizar_documento(cpf_in)
+            c.cpf_enc = _pii_encrypt(cpf_norm)
+            c.cpf_hash = _pii_hash(cpf_norm)
+        if cnpj_alterado:
+            cnpj_norm = normalizar_documento(cnpj_in)
+            c.cnpj_enc = _pii_encrypt(cnpj_norm)
+            c.cnpj_hash = _pii_hash(cnpj_norm)
 
     await criar_audit_log(db, cu.id, cu.role.value, "UPDATE", "clients", client_id)
     try:
@@ -781,7 +793,7 @@ async def relatorio_lgpd(
     dados = {
         "cliente": {
             "nome": c.nome or c.razao_social, "tipo": c.tipo.value,
-            "documento": c.cpf or c.cnpj or "—",
+            "documento": c.documento_plain or "—",
             "email": c.email, "telefone": c.telefone or c.whatsapp,
             "endereco": ", ".join(filter(None, [c.logradouro, c.numero,
                                   c.bairro, c.cidade, c.estado])) or "—",
@@ -846,7 +858,7 @@ async def dados_lgpd_json(
     payload = {
         "titular": {
             "nome": c.nome or c.razao_social, "tipo": c.tipo.value,
-            "cpf": c.cpf, "cnpj": c.cnpj, "email": c.email,
+            "cpf": c.cpf_plain, "cnpj": c.cnpj_plain, "email": c.email,
             "telefone": c.telefone, "whatsapp": c.whatsapp,
             "cadastrado_em": c.created_at.isoformat() if c.created_at else None,
         },

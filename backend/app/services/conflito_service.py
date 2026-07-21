@@ -16,18 +16,11 @@
 from __future__ import annotations
 from typing import Optional
 
-from sqlalchemy import select, or_, func
+from sqlalchemy import select, or_
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models.client import Client
 from app.models.case import Case, CaseStatus
-
-
-def _col_doc_normalizada(coluna):
-    """Expressão SQL que normaliza uma coluna de documento (remove . - /) para
-    comparar com o documento já normalizado — casa tanto valores gravados em
-    texto puro formatado quanto sem formatação."""
-    return func.replace(func.replace(func.replace(coluna, ".", ""), "-", ""), "/", "")
 
 
 async def _clientes_por_documentos(
@@ -39,11 +32,11 @@ async def _clientes_por_documentos(
 ) -> list[Client]:
     """Clientes ATIVOS cujo CPF ou CNPJ casa com algum documento informado.
 
-    Hash-aware (Bloco 6a): casa o texto puro (clientes ainda não migrados,
-    normalizando os dois lados) E o hash determinístico (clientes já com PII
-    cifrada — cpf/cnpj em texto puro NULL). Nenhum dos dois lados sozinho cobre
-    os dois estados da transição; a checagem ética (EOAB) não pode ter
-    falso-negativo aqui."""
+    Cutover C6/LGPD: não há mais cpf/cnpj em texto puro para comparar — o
+    matching é feito EXCLUSIVAMENTE pelo índice cego determinístico (HMAC do
+    documento normalizado). Igualdade exata: a checagem ética (EOAB) exige o
+    documento COMPLETO, então falso-negativo por documento parcial é esperado
+    (o cruzamento por nome cobre o resto)."""
     from app.services.pii_crypto import normalizar_documento, hash_documento
 
     conds = []
@@ -51,8 +44,6 @@ async def _clientes_por_documentos(
         norm = normalizar_documento(doc)
         if not norm:
             continue
-        conds.append(_col_doc_normalizada(Client.cpf) == norm)
-        conds.append(_col_doc_normalizada(Client.cnpj) == norm)
         h = hash_documento(norm)
         conds.append(Client.cpf_hash == h)
         conds.append(Client.cnpj_hash == h)
@@ -140,7 +131,7 @@ async def detectar_conflito(
         achados.append({
             "tipo": "cliente_existente",
             "id": c.id, "nome": c.nome or c.razao_social,
-            "documento": c.cpf or c.cnpj,
+            "documento": c.documento_plain,
         })
 
     # 2. Nome do novo cliente / parte contrária aparece como parte contrária de
@@ -162,7 +153,7 @@ async def detectar_conflito(
         achados.append({
             "tipo": "CONFLITO_parte_contraria_eh_cliente",
             "id": c.id, "nome": c.nome or c.razao_social,
-            "documento": c.cpf or c.cnpj,
+            "documento": c.documento_plain,
         })
 
     conflito_grave = any("CONFLITO" in a["tipo"] for a in achados)

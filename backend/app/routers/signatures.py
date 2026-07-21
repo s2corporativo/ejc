@@ -21,6 +21,7 @@ from app.models.document import Document
 from app.models.signature import SignatureRequest, SignatureStatus
 from app.models.notification import Notification
 from app.models.audit_log import criar_audit_log
+from app.services.security_service import obter_ip_real
 
 router = APIRouter(prefix="/signatures", tags=["Assinatura Eletrônica"])
 
@@ -185,7 +186,9 @@ async def assinar(
     sr.status = SignatureStatus.assinado
     sr.assinado_em = datetime.now(timezone.utc)
     sr.assinado_por_user = cu.id
-    sr.ip = request.client.host if request.client else None
+    # IP real do signatário (último salto do X-Forwarded-For), não o loopback do
+    # proxy Nginx — este IP é evidência probatória da assinatura (MP 2.200-2).
+    sr.ip = obter_ip_real(request)
     sr.user_agent = (request.headers.get("user-agent") or "")[:300]
 
     await criar_audit_log(
