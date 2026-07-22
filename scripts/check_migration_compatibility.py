@@ -1,19 +1,39 @@
 #!/usr/bin/env python3
-"""Classifica migrations Alembic pendentes para deploy com rollback de imagem.
+"""Classifica migrations Alembic para deploy com rollback de imagens.
 
-O rollback automático restaura containers/imagens, não o schema. Por isso o
-classificador aprova automaticamente apenas mudanças *expand-only* compatíveis
-com a versão anterior da aplicação. Somente ``upgrade()`` é analisado;
-``downgrade()`` não participa da decisão de implantação.
+O rollback automático restaura containers, não o schema. O classificador aprova
+somente operações expand-only ou backfills aditivos explicitamente declarados,
+com SQL literal, targets allowlisted e idempotência verificável. ``downgrade()``
+não participa da decisão de implantação.
 """
 from __future__ import annotations
 
 import argparse
 import ast
 import json
+import re
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Iterable
+
+
+ADDITIVE_DATA_BACKFILL = "additive_data_backfill"
+_FORBIDDEN_SQL = {
+    "ALTER",
+    "CALL",
+    "COPY",
+    "CREATE",
+    "DELETE",
+    "DROP",
+    "GRANT",
+    "LOCK",
+    "MERGE",
+    "REVOKE",
+    "SET",
+    "TRUNCATE",
+    "UPDATE",
+    "VACUUM",
+}
 
 
 @dataclass(frozen=True)
@@ -36,10 +56,9 @@ def _assignment(tree: ast.Module, name: str):
     for item in tree.body:
         if isinstance(item, (ast.Assign, ast.AnnAssign)):
             targets = item.targets if isinstance(item, ast.Assign) else [item.target]
-            value = item.value
             for target in targets:
                 if isinstance(target, ast.Name) and target.id == name:
-                    return _literal(value)
+                    return _literal(item.value)
     return None
 
 
@@ -72,7 +91,6 @@ def _load_revisions(directory: Path) -> dict[str, Revision]:
 
     if not revisions:
         raise RuntimeError("nenhuma migration Alembic encontrada")
-
     for item in revisions.values():
         for parent in item.down_revisions:
             if parent not in revisions:
@@ -120,7 +138,6 @@ def _linear_pending_path(
             )
         cursor = next_items[0]
         pending.append(revisions[cursor])
-
     return head, pending
 
 
@@ -173,12 +190,7 @@ def _column_is_expand_only(call: ast.Call) -> tuple[bool, str]:
 
 
 def _static_upgrade_shape_findings(upgrade: ast.FunctionDef) -> list[str]:
-    """Exige operações Alembic diretas e declarativas no corpo de upgrade().
-
-    Condicionais, laços, assignments, context managers, chamadas de helpers e
-    aliases de ``op`` são bloqueados. Sem esta restrição, uma função auxiliar
-    poderia esconder SQL destrutivo fora da análise das chamadas ``op.*``.
-    """
+    """Exige operações ``op.*`` diretas no corpo de ``upgrade()``."""
     findings: list[str] = []
     for statement in upgrade.body:
         line = getattr(statement, "lineno", 0)
@@ -189,7 +201,7 @@ def _static_upgrade_shape_findings(upgrade: ast.FunctionDef) -> list[str]:
             and isinstance(statement.value, ast.Constant)
             and isinstance(statement.value.value, str)
         ):
-            continue  # docstring da função
+            continue
         if isinstance(statement, ast.Expr) and isinstance(statement.value, ast.Call):
             if _op_call_name(statement.value) is None:
                 findings.append(
@@ -203,13 +215,87 @@ def _static_upgrade_shape_findings(upgrade: ast.FunctionDef) -> list[str]:
     return findings
 
 
-def _classify(revision: Revision) -> list[str]:
+def _declared_backfill_targets(tree: ast.Module) -> tuple[str, ...] | None:
+    raw = _assignment(tree, "data_backfill_targets")
+    if not isinstance(raw, (tuple, list)) or not raw:
+        return None
+    if not all(isinstance(item, str) and re.fullmatch(r"[a-z_][a-z0-9_]*", item) for item in raw):
+        return None
+    if len(set(raw)) != len(raw):
+        return None
+    return tuple(raw)
+
+
+def _strip_sql_comments(sql: str) -> str:
+    sql = re.sub(r"/\*.*?\*/", " ", sql, flags=re.DOTALL)
+    return re.sub(r"--[^\n]*", " ", sql)
+
+
+def _safe_backfill_sql_findings(
+    call: ast.Call,
+    declared_targets: tuple[str, ...] | None,
+) -> tuple[list[str], set[str]]:
+    line = getattr(call, "lineno", 0)
+    findings: list[str] = []
+    used_targets: set[str] = set()
+    if declared_targets is None:
+        return [f"linha {line}: data_backfill_targets ausente ou inválido"], used_targets
+    if len(call.args) != 1 or call.keywords:
+        return [f"linha {line}: backfill exige um único argumento SQL literal"], used_targets
+    sql = _literal(call.args[0])
+    if not isinstance(sql, str) or not sql.strip():
+        return [f"linha {line}: SQL de backfill não é string literal"], used_targets
+
+    cleaned = _strip_sql_comments(sql)
+    upper = cleaned.upper()
+    forbidden = sorted(
+        keyword
+        for keyword in _FORBIDDEN_SQL
+        if re.search(rf"\b{keyword}\b", upper)
+    )
+    if forbidden:
+        findings.append(
+            f"linha {line}: SQL aditivo contém verbo proibido: {', '.join(forbidden)}"
+        )
+
+    inserts = re.findall(
+        r"\bINSERT\s+INTO\s+(?:PUBLIC\.)?([A-Z_][A-Z0-9_]*)\b",
+        upper,
+    )
+    if not inserts:
+        findings.append(f"linha {line}: backfill sem INSERT INTO verificável")
+    used_targets = {target.lower() for target in inserts}
+    undeclared = used_targets - set(declared_targets)
+    if undeclared:
+        findings.append(
+            f"linha {line}: target fora da allowlist: {', '.join(sorted(undeclared))}"
+        )
+    if "SELECT" not in upper:
+        findings.append(f"linha {line}: backfill deve usar INSERT ... SELECT")
+    if "NOT EXISTS" not in upper and not re.search(
+        r"\bON\s+CONFLICT\b.*?\bDO\s+NOTHING\b",
+        upper,
+        flags=re.DOTALL,
+    ):
+        findings.append(
+            f"linha {line}: backfill sem prova estática de idempotência"
+        )
+    return findings, used_targets
+
+
+def _classify(revision: Revision) -> tuple[list[str], str]:
     tree = ast.parse(
         revision.path.read_text(encoding="utf-8"),
         filename=str(revision.path),
     )
     upgrade = _upgrade_function(tree, revision.path)
     findings = _static_upgrade_shape_findings(upgrade)
+    policy = _assignment(tree, "deployment_policy")
+    policy_name = policy if isinstance(policy, str) else "expand_only"
+    declared_targets = _declared_backfill_targets(tree)
+    used_backfill_targets: set[str] = set()
+    backfill_execute_count = 0
+
     allowed = {
         "create_table",
         "create_index",
@@ -224,7 +310,6 @@ def _classify(revision: Revision) -> list[str]:
         "drop_constraint",
         "alter_column",
         "rename_table",
-        "execute",
         "batch_alter_table",
         "create_unique_constraint",
         "get_bind",
@@ -245,7 +330,18 @@ def _classify(revision: Revision) -> list[str]:
         if op_name is None:
             continue
 
-        if op_name == "add_column":
+        if op_name == "execute":
+            if policy != ADDITIVE_DATA_BACKFILL:
+                findings.append(f"linha {line}: op.execute exige revisão")
+                continue
+            backfill_execute_count += 1
+            sql_findings, targets = _safe_backfill_sql_findings(
+                node,
+                declared_targets,
+            )
+            findings.extend(sql_findings)
+            used_backfill_targets.update(targets)
+        elif op_name == "add_column":
             ok, reason = _column_is_expand_only(node)
             if not ok:
                 findings.append(f"linha {line}: {reason}")
@@ -259,7 +355,21 @@ def _classify(revision: Revision) -> list[str]:
         elif op_name not in allowed:
             findings.append(f"linha {line}: op.{op_name} não está na allowlist")
 
-    return findings
+    if policy is not None and policy != ADDITIVE_DATA_BACKFILL:
+        findings.append(f"deployment_policy desconhecida: {policy!r}")
+    if policy == ADDITIVE_DATA_BACKFILL:
+        if not backfill_execute_count:
+            findings.append("backfill declarado sem op.execute")
+        if declared_targets is None:
+            findings.append("data_backfill_targets ausente ou inválido")
+        elif used_backfill_targets != set(declared_targets):
+            missing = set(declared_targets) - used_backfill_targets
+            if missing:
+                findings.append(
+                    "targets declarados sem INSERT correspondente: "
+                    + ", ".join(sorted(missing))
+                )
+    return findings, policy_name
 
 
 def evaluate(directory: Path, current_revision: str) -> dict[str, object]:
@@ -267,11 +377,12 @@ def evaluate(directory: Path, current_revision: str) -> dict[str, object]:
     target, pending = _linear_pending_path(revisions, current_revision)
     migrations: list[dict[str, object]] = []
     for revision in pending:
-        reasons = _classify(revision)
+        reasons, policy = _classify(revision)
         migrations.append(
             {
                 "revision": revision.revision,
                 "file": revision.path.name,
+                "policy": policy,
                 "compatible": not reasons,
                 "reasons": reasons,
             }
