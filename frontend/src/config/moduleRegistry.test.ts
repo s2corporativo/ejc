@@ -50,6 +50,18 @@ describe("moduleRegistry", () => {
     expect(canRoleAccessPath("estagiario", "/financeiro")).toBe(false);
   });
 
+  it("destaca Raio-X e Financeiro apenas para os perfis autorizados", () => {
+    const advogado = getProductionNavigation("advogado");
+    const socio = getProductionNavigation("socio");
+    expect(advogado.find((item) => item.path === "/raio-x")?.essential).toBe(
+      true,
+    );
+    expect(advogado.some((item) => item.path === "/financeiro")).toBe(false);
+    expect(socio.find((item) => item.path === "/financeiro")?.essential).toBe(
+      true,
+    );
+  });
+
   it("mantém preferências pessoais acessíveis a qualquer usuário interno", () => {
     expect(canRoleAccessPath("advogado", "/configuracoes")).toBe(true);
     expect(canRoleAccessPath("admin", "/configuracoes")).toBe(true);
@@ -79,7 +91,7 @@ describe("moduleRegistry", () => {
     expect(map.get("/dashboard")).toBe("/");
   });
 
-  it("mantém o menu enxuto e o modo essencial com 7 destinos", () => {
+  it("mantém o menu enxuto e o modo essencial por perfil", () => {
     for (const role of ["superadmin", "admin", "socio", "advogado"]) {
       expect(getProductionNavigation(role).length).toBeLessThanOrEqual(17);
       expect(
@@ -93,6 +105,7 @@ describe("moduleRegistry", () => {
       .map((m) => m.path);
     expect(essenciais).toEqual([
       "/",
+      "/raio-x",
       "/casos",
       "/atividades",
       "/clientes",

@@ -38,6 +38,7 @@ type Tone =
   | "purple"
   | "violet"
   | "teal"
+  | "ai"
   | "ouro";
 type ButtonVariant = "primary" | "secondary" | "ghost" | "danger" | "ai";
 
@@ -51,9 +52,11 @@ const toneClasses: Record<Tone, string> = {
   // dar tons próprios aos status do Command Center sem inventar novos tokens.
   orange: "bg-orange-50 text-orange-700 ring-orange-200",
   red: "bg-danger-50 text-danger-700 ring-danger-200",
-  purple: "bg-ai-50 text-ai-700 ring-ai-200",
-  violet: "bg-violet-50 text-violet-700 ring-violet-200",
+  // Roxo/violeta legados são neutros informativos; `ai` é exclusivo da IA.
+  purple: "bg-info-50 text-info-700 ring-info-200",
+  violet: "bg-info-50 text-info-700 ring-info-200",
   teal: "bg-teal-50 text-teal-700 ring-teal-200",
+  ai: "bg-ai-50 text-ai-700 ring-ai-200",
   // Ouro institucional — apenas destaque pontual (nunca tom padrão)
   ouro: "bg-ouro-palha text-ouro-profundo ring-ouro-claro/60",
 };
@@ -72,9 +75,10 @@ const toneBarClasses: Record<Tone, string> = {
   amber: "before:bg-warn-500",
   orange: "before:bg-orange-500",
   red: "before:bg-danger-500",
-  purple: "before:bg-ai-500",
-  violet: "before:bg-violet-500",
+  purple: "before:bg-info-500",
+  violet: "before:bg-info-500",
   teal: "before:bg-teal-500",
+  ai: "before:bg-ai-500",
   ouro: "before:bg-ouro-claro",
 };
 
@@ -84,11 +88,11 @@ const toneBarClasses: Record<Tone, string> = {
 // Foco com ring dourado acessível.
 const buttonClasses: Record<ButtonVariant, string> = {
   primary:
-    "bg-ouro text-white hover:bg-ouro-profundo active:bg-ouro-profundo focus:ring-ouro/40",
+    "bg-primary-600 text-white hover:bg-primary-700 active:bg-primary-800 focus:ring-primary-500/40",
   secondary:
-    "border border-gray-300 bg-white text-slate-700 hover:bg-slate-50 active:bg-slate-100 focus:ring-ouro/30 dark:border-white/[0.14] dark:bg-white/[0.07] dark:text-slate-200 dark:hover:bg-white/[0.12]",
+    "border border-gray-300 bg-white text-slate-700 hover:bg-slate-50 active:bg-slate-100 focus:ring-primary-500/30 dark:border-white/[0.14] dark:bg-white/[0.07] dark:text-slate-200 dark:hover:bg-white/[0.12]",
   ghost:
-    "bg-transparent text-slate-600 hover:bg-slate-900/[0.05] focus:ring-ouro/30 dark:text-slate-300 dark:hover:bg-white/[0.06]",
+    "bg-transparent text-slate-600 hover:bg-slate-900/[0.05] focus:ring-primary-500/30 dark:text-slate-300 dark:hover:bg-white/[0.06]",
   danger:
     "bg-danger-600 text-white hover:bg-danger-700 focus:ring-danger-500/40",
   ai: "bg-ai-600 text-white hover:bg-ai-500 active:bg-ai-700 focus:ring-ai-500/40",
@@ -224,8 +228,8 @@ const STATUS_REGISTRY: Record<
   { tone: Tone; icon: StatusIcon; label: string }
 > = {
   novo: { tone: "blue", icon: PlusCircle, label: "Novo" },
-  "em analise": { tone: "purple", icon: ScanSearch, label: "Em análise" },
-  triagem: { tone: "purple", icon: ScanSearch, label: "Em análise" },
+  "em analise": { tone: "blue", icon: ScanSearch, label: "Em análise" },
+  triagem: { tone: "blue", icon: ScanSearch, label: "Em análise" },
   "aguardando cliente": {
     tone: "amber",
     icon: Clock,
@@ -237,7 +241,7 @@ const STATUS_REGISTRY: Record<
     label: "Aguardando documento",
   },
   "em producao": { tone: "blue", icon: PenLine, label: "Em produção" },
-  "em revisao": { tone: "violet", icon: Eye, label: "Em revisão" },
+  "em revisao": { tone: "blue", icon: Eye, label: "Em revisão" },
   protocolado: { tone: "teal", icon: Send, label: "Protocolado" },
   concluido: { tone: "green", icon: CheckCircle2, label: "Concluído" },
   suspenso: { tone: "slate", icon: PauseCircle, label: "Suspenso" },
@@ -256,7 +260,7 @@ const LEGACY_STATUS_TONE: Record<string, Tone> = {
   atrasado: "red",
   cancelado: "red",
   rejeitado: "red",
-  ia: "purple",
+  ia: "ai",
   rascunho: "slate",
   arquivado: "slate",
   encerrado: "slate",
