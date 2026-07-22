@@ -1,6 +1,16 @@
 name: Temporary 2FA Disable Remediation
 
 on:
+  pull_request:
+    types: [opened, synchronize, reopened]
+    paths:
+      - .github/workflows/temporary-disable-2fa-remediation.yml
+      - backend/app/core/config.py
+      - backend/app/core/auth_middleware.py
+      - backend/app/routers/auth.py
+      - backend/tests/test_2fa_temporarily_disabled.py
+      - docs/SECURITY_2FA_TEMPORARY_DISABLE.md
+      - .env.example
   push:
     branches:
       - main
@@ -12,20 +22,23 @@ permissions:
   contents: write
 
 concurrency:
-  group: temporary-disable-2fa-remediation
+  group: temporary-disable-2fa-remediation-${{ github.ref }}
   cancel-in-progress: false
 
 jobs:
   prepare-reviewed-change:
+    if: >-
+      github.event_name != 'pull_request' ||
+      github.event.pull_request.head.repo.full_name == github.repository
     runs-on: ubuntu-latest
     timeout-minutes: 20
 
     steps:
-      - name: Checkout main
+      - name: Checkout target branch
         uses: actions/checkout@v7
         with:
           fetch-depth: 0
-          ref: main
+          ref: ${{ github.event_name == 'pull_request' && github.head_ref || 'main' }}
 
       - name: Configure Git identity
         run: |
@@ -36,6 +49,11 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
+          if grep -q "TWO_FACTOR_AUTH_ENABLED" backend/app/core/config.py; then
+            echo "Kill switch já aplicado; execução idempotente."
+            exit 0
+          fi
+
           python - <<'PY'
           from pathlib import Path
 
@@ -178,19 +196,23 @@ ser reavaliada antes do go-live definitivo.
           )
           PY
 
-      - name: Validate patched sources
-        run: |
-          python -m compileall -q backend/app backend/tests/test_2fa_temporarily_disabled.py
-          grep -R "TWO_FACTOR_AUTH_ENABLED" -n backend/app .env.example backend/tests/test_2fa_temporarily_disabled.py
-
-      - name: Create remediation branch
+      - name: Validate and persist reviewed change
+        shell: bash
         run: |
           set -euo pipefail
-          BRANCH="codex/temporary-disable-2fa"
-          git checkout -B "$BRANCH"
+          python -m compileall -q backend/app backend/tests/test_2fa_temporarily_disabled.py
+          grep -R "TWO_FACTOR_AUTH_ENABLED" -n \
+            backend/app .env.example backend/tests/test_2fa_temporarily_disabled.py
+
+          if git diff --quiet; then
+            echo "Nenhuma alteração pendente."
+            exit 0
+          fi
+
+          TARGET_BRANCH="${GITHUB_HEAD_REF:-codex/temporary-disable-2fa}"
           git add backend/app/core/config.py backend/app/routers/auth.py \
             backend/app/core/auth_middleware.py .env.example \
             backend/tests/test_2fa_temporarily_disabled.py \
             docs/SECURITY_2FA_TEMPORARY_DISABLE.md
           git commit -m "security(auth): desativar 2FA temporariamente com kill switch"
-          git push --force-with-lease origin "$BRANCH"
+          git push origin "HEAD:${TARGET_BRANCH}"
