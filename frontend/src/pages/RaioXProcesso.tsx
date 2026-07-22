@@ -1517,7 +1517,8 @@ export default function RaioXProcesso() {
                           onClick={() => void openConversion()}
                           disabled={!STATUS_CONVERTIVEIS.has(selected.status)}
                         >
-                          <FolderInput className="h-4 w-4" /> Transformar em caso
+                          <FolderInput className="h-4 w-4" /> Transformar em
+                          caso
                         </Button>
                         {!STATUS_CONVERTIVEIS.has(selected.status) && (
                           <p className="rounded-lg bg-amber-50 p-3 text-xs text-amber-700 dark:bg-amber-500/[0.08] dark:text-amber-300">
