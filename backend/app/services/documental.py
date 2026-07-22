@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from datetime import date, datetime, timezone
+from datetime import date, datetime, timedelta, timezone
 from uuid import uuid4
 
 from app.core.config import get_settings
@@ -169,9 +169,10 @@ def _procuracao(
     #
     # OUTORGADO FIXO: o modelo oficial do escritório é SEMPRE outorgado ao
     # sócio-titular (_OUTORGADO_SOCIO), independentemente do advogado responsável
-    # pelo caso — por isso o parâmetro `adv` NÃO alimenta mais o outorgado (fica
-    # na assinatura para compatibilidade das chamadas existentes). A CIDADE de
-    # assinatura é a sede do escritório e a DATA agora é a corrente (por extenso).
+    # pelo caso — por isso o parâmetro `adv` NÃO é mais usado no corpo (mantido só
+    # por compatibilidade da assinatura dos call-sites; o outorgado é fixo e a
+    # única assinatura no rodapé é a do OUTORGANTE/cliente). A CIDADE de assinatura
+    # é a sede do escritório e a DATA é a corrente por extenso (fuso de Brasília).
     tipo = (tipo_poderes or "ad_judicia").strip().lower()
     titulo, corpo_poderes = _clausula_poderes(tipo_poderes, permite_substabelecimento, poderes_especiais)
 
@@ -204,7 +205,7 @@ def _procuracao(
         "PODERES: Pelo presente instrumento, o(a) outorgante nomeia e constitui seu(sua) "
         "bastante procurador(a) o(a) advogado(a) acima, "
         + corpo_poderes + alvo + ".\n\n"
-        f"{_settings.ESCRITORIO_CIDADE}/{_settings.ESCRITORIO_ESTADO}, {_data_extenso(date.today())}.\n\n"
+        f"{_settings.ESCRITORIO_CIDADE}/{_settings.ESCRITORIO_ESTADO}, {_data_extenso(datetime.now(timezone(timedelta(hours=-3))).date())}.\n\n"
         "______________________________________\n"
         f"{cli.razao_social or cli.nome}"
     )

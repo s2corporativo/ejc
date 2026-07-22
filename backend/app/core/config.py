@@ -784,7 +784,7 @@ class Settings(BaseSettings):
     ESCRITORIO_CIDADE: str = "Betim"
     ESCRITORIO_ESTADO: str = "MG"
     ESCRITORIO_EMAIL: str = "contato@depaulateixeira.adv.br"
-    ESCRITORIO_OAB: str = "251174/MG"
+    ESCRITORIO_OAB: str = "251174"   # só o número; o rótulo "OAB/MG " já é aposto pelos consumidores (timbre PDF/DOCX)
     ESCRITORIO_ENDERECO: str = "Av. Gov. Valadares nº 851, sala 405, Centro, Betim"
     ESCRITORIO_CEP: str = ""
 

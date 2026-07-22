@@ -11,6 +11,7 @@ import {
 import api from "../lib/api";
 import { asList } from "../lib/list";
 import { useAreas } from "../lib/areas";
+import { useAuth } from "../stores/auth";
 import { toast } from "./Toast";
 import { Badge, Button, Modal, Spinner } from "./UI";
 import type { CasoHonorariosInput, Client } from "../types";
@@ -46,6 +47,16 @@ const HONORARIOS_VAZIO = {
   observacoes: "",
 };
 
+// Definir honorários é ATO DE ADVOGADO+: espelha o piso do backend
+// (requer_advogado / ROLE_LEVEL["advogado"]=6). Só estes papéis veem a seção;
+// secretaria, estagiário, financeiro e advogado_auxiliar ficam abaixo do piso.
+const PAPEIS_HONORARIOS = new Set([
+  "advogado",
+  "socio",
+  "admin",
+  "superadmin",
+]);
+
 /**
  * Wizard "Novo Caso" em 2 passos: (1) localizar/deduplicar o cliente por
  * CPF/CNPJ — vinculando um existente ou criando um mínimo — e (2) dados
@@ -68,6 +79,11 @@ export default function NovoCasoWizard({
   const nav = useNavigate();
   const [passo, setPasso] = useState<1 | 2>(1);
   const areas = useAreas();
+  // Gate advogado+: só advogado/sócio/admin/superadmin podem semear a proposta
+  // de honorários (o backend retorna 403 para papéis abaixo de advogado).
+  const podeDefinirHonorarios = PAPEIS_HONORARIOS.has(
+    useAuth((s) => s.user?.role) ?? "",
+  );
 
   // ── Passo 1 — cliente ──
   const [doc, setDoc] = useState("");
@@ -228,16 +244,22 @@ export default function NovoCasoWizard({
       for (const [k, v] of Object.entries(caso)) {
         if (v !== "") payload[k] = v;
       }
-      // Honorários (opcional/aditivo): só entra no corpo se algum dos 4
-      // campos foi preenchido. Quando presente, envia os 4 nomes do
-      // contrato com null nos vazios (o backend preenche o contrato).
+      // Honorários (opcional/aditivo): só entra no corpo se houver DADO
+      // FINANCEIRO (valor, % de êxito ou forma de pagamento). Envia os 4 nomes
+      // do contrato com null nos vazios (o backend preenche o contrato).
+      // Obs-only NÃO é enviado: o backend ignora `honorarios` sem financeiro e
+      // a observação se perderia silenciosamente.
       const hono: CasoHonorariosInput = {
         valor_contratual: parseNum(honorarios.valor_contratual),
         percentual_exito: parseNum(honorarios.percentual_exito),
         forma_pagamento: parseTxt(honorarios.forma_pagamento),
         observacoes: parseTxt(honorarios.observacoes),
       };
-      if (Object.values(hono).some((val) => val !== null)) {
+      const temDadoFinanceiro =
+        hono.valor_contratual !== null ||
+        hono.percentual_exito !== null ||
+        hono.forma_pagamento !== null;
+      if (temDadoFinanceiro) {
         payload.honorarios = hono;
       }
       const { data: novo } = await api.post("/cases/", payload);
@@ -566,7 +588,12 @@ export default function NovoCasoWizard({
               />
             </div>
 
-            {/* Honorários (opcional) — bloco colapsável e discreto. */}
+            {/* Honorários (opcional) — bloco colapsável e discreto.
+                Definir honorários é ato de advogado+: a seção só é renderizada
+                para advogado/sócio/admin/superadmin (espelha requer_advogado no
+                backend). Para papéis abaixo, o estado fica vazio e nada é
+                enviado. */}
+            {podeDefinirHonorarios && (
             <div className="sm:col-span-2">
               <button
                 type="button"
@@ -661,6 +688,7 @@ export default function NovoCasoWizard({
                 </div>
               )}
             </div>
+            )}
           </div>
 
           <div className="mt-5 flex justify-between">

@@ -585,6 +585,33 @@ async def test_seed_honorarios_cadastro_mapeia_campos_e_aprova():
     assert db.commits == 0
 
 
+async def test_seed_honorarios_exige_advogado_bloqueia_papel_inferior():
+    """RBAC: semear uma proposta APROVADA é ato de advogado+ (mesmo gate do
+    fluxo interativo). Papel abaixo de advogado + dado financeiro → 403 (não
+    escala); advogado+ passa; obs-only não aciona o gate (nada é criado)."""
+    from fastapi import HTTPException
+    from app.schemas.case import HonorariosCreate
+    from app.services.fee_proposal_service import seed_proposta_honorarios_cadastro
+
+    hon = HonorariosCreate(valor_contratual=5000.0)
+    # secretaria (nível abaixo de advogado) tentando semear proposta → 403
+    with pytest.raises(HTTPException) as ei:
+        await seed_proposta_honorarios_cadastro(
+            _FakeDB([None, None]), "case1", _user(UserRole.secretaria), hon)
+    assert ei.value.status_code == 403
+
+    # advogado passa: cria a proposta aprovada
+    p = await seed_proposta_honorarios_cadastro(
+        _FakeDB([None, None]), "case1", _user(UserRole.advogado), hon)
+    assert p is not None and p.status == "aprovada"
+
+    # só observações (sem dado financeiro): retorna None ANTES do gate — uma
+    # secretaria pode abrir o caso; simplesmente nenhuma proposta é semeada.
+    so_obs = HonorariosCreate(observacoes="apenas uma nota")
+    assert await seed_proposta_honorarios_cadastro(
+        _FakeDB([None]), "case1", _user(UserRole.secretaria), so_obs) is None
+
+
 async def test_seed_honorarios_preenche_contrato_do_kit():
     """(b) Caso COM honorários → contrato do kit sai PREENCHIDO (valor/êxito/forma),
     não placeholders — reusando o pipeline da FASE 4 sem tocá-lo."""

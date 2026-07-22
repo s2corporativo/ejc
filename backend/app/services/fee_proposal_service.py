@@ -451,6 +451,15 @@ async def seed_proposta_honorarios_cadastro(db, case_id: str, user: User,
     if existente is not None:
         return existente
 
+    # AUTORIZAÇÃO: semear uma proposta APROVADA é ATO DE ADVOGADO+ — o MESMO gate
+    # do fluxo interativo (criar_proposta/aprovar via _req_advogado_service).
+    # Sem isto, cases.criar() (acessível a papéis abaixo de advogado —
+    # secretaria/estagiário/financeiro) deixaria esses papéis "aprovar"
+    # honorários pelo cadastro (escalação de privilégio) e atribuiria
+    # aprovado_por a quem não pode aprovar. Só barra quando há proposta NOVA a
+    # criar (dado financeiro presente e sem vigente); 403 → o caso não é criado.
+    _req_advogado_service(user)
+
     faixas: dict = {}
     if valor is not None:
         faixas["recomendado"] = {
