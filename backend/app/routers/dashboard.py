@@ -178,6 +178,23 @@ async def dashboard(
     return resposta
 
 
+@router.get("/pendencias-operacionais")
+async def pendencias_operacionais(
+    db: AsyncSession = Depends(get_db),
+    cu: User = Depends(require_roles(["secretaria"])),
+):
+    """Central diária por pendência, sempre escopada ao usuário.
+
+    Não inclui valores financeiros e deixa explícito que saúde operacional não
+    é probabilidade jurídica.
+    """
+    from app.services.case_operational_dashboard import (
+        operational_pending_summary,
+    )
+
+    return await operational_pending_summary(db, cu)
+
+
 # ═══ Relatório Gerencial Mensal (PDF) ═══
 from fastapi import Query as _Q, HTTPException as _HTTPExc
 from fastapi.responses import Response as _R
