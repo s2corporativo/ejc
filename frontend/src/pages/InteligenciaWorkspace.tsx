@@ -73,6 +73,19 @@ const LEGACY_TABS: Record<string, { tab: Tab; sub?: string }> = {
   conteudo: { tab: "pesquisa" },
 };
 
+/**
+ * Fonte de verdade dos deep-links de aba do workspace: aceita uma aba real
+ * (TABS) ou um alias legado (LEGACY_TABS). Usada pelos testes de integridade
+ * de rota para validar os LEGACY_REDIRECTS `/inteligencia?tab=...`.
+ */
+export function isInteligenciaTab(value: string | null): boolean {
+  if (!value) return false;
+  return (
+    TABS.some((item) => item.k === value) ||
+    Object.prototype.hasOwnProperty.call(LEGACY_TABS, value)
+  );
+}
+
 export default function InteligenciaWorkspace() {
   const user = useAuth((state) => state.user);
   const { disponivel: iaDisponivel, mensagem: iaMensagem } = useIaStatus();
