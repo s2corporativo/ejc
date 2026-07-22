@@ -14,6 +14,12 @@ down_revision = "113_calendar_feed_revocation"
 branch_labels = None
 depends_on = None
 
+# Consumido por scripts/check_migration_compatibility.py. A declaração não é um
+# bypass: o classificador ainda exige SQL literal, INSERT ... SELECT, target
+# allowlisted, idempotência estática e ausência de verbos destrutivos.
+deployment_policy = "additive_data_backfill"
+data_backfill_targets = ("data_rooms", "teses")
+
 
 def upgrade() -> None:
     # Data Room v4 -> data_rooms. `publica` não é migrado como acesso aberto:
