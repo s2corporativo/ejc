@@ -177,10 +177,11 @@ def test_modelo_oficial_cabecalho_outorgado_fixo_outorgante_e_alineas():
     assert "levantar depositos judiciais" in texto                             # (f)
     assert "substabelecer este mandato, com ou sem reserva de poderes" in texto  # (j)
 
-    # Fecho: Betim/MG + data corrente por extenso
-    from datetime import date
+    # Fecho: Betim/MG + data corrente por extenso no mesmo fuso de Brasília usado
+    # pela geração da procuração. Evita falha falsa quando o runner está em UTC.
+    from datetime import datetime, timedelta, timezone
     from app.services.documental import _MESES_PT
-    hoje = date.today()
+    hoje = datetime.now(timezone(timedelta(hours=-3))).date()
     assert f"Betim/MG, {hoje.day} de {_MESES_PT[hoje.month - 1]} de {hoje.year}." in texto
 
 

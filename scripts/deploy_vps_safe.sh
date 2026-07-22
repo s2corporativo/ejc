@@ -4,9 +4,8 @@ set -euo pipefail
 APP_DIR="${APP_DIR:-/opt/ejc}"
 DOMAIN="${EJC_DOMAIN:-ejc.depaulateixeira.adv.br}"
 RUN_MIGRATIONS="${RUN_MIGRATIONS:-0}"
+MIGRATIONS_BACKWARD_COMPATIBLE="${MIGRATIONS_BACKWARD_COMPATIBLE:-0}"
 RUN_SEEDS="${RUN_SEEDS:-0}"
-# Política de produção: todo deploy garante configuração efetiva e prova recente
-# do backup cifrado no Google Drive. Use 0 somente em contingência declarada.
 ENSURE_DAILY_BACKUP="${ENSURE_DAILY_BACKUP:-1}"
 
 cd "$APP_DIR"
@@ -16,74 +15,122 @@ log() { echo "[$(date '+%F %T')] $*"; }
 
 ROLLBACK_SUFFIX="$(timestamp)"
 OLD_BACKEND_IMAGE=""
+OLD_WORKER_IMAGE=""
 OLD_FRONTEND_IMAGE=""
+OLD_BACKEND_REF=""
+OLD_WORKER_REF=""
+OLD_FRONTEND_REF=""
 OLD_BACKEND_TAG=""
+OLD_WORKER_TAG=""
 OLD_FRONTEND_TAG=""
+DEPLOY_MUTATED=0
 
 cleanup_rollback_tags() {
-  if [ -n "${OLD_BACKEND_TAG:-}" ]; then
-    docker image rm "$OLD_BACKEND_TAG" >/dev/null 2>&1 || true
-  fi
-  if [ -n "${OLD_FRONTEND_TAG:-}" ]; then
-    docker image rm "$OLD_FRONTEND_TAG" >/dev/null 2>&1 || true
+  for tag in "${OLD_BACKEND_TAG:-}" "${OLD_WORKER_TAG:-}" "${OLD_FRONTEND_TAG:-}"; do
+    if [ -n "$tag" ]; then
+      docker image rm "$tag" >/dev/null 2>&1 || true
+    fi
+  done
+}
+
+_restore_image() {
+  local immutable_tag="$1" image_id="$2" target_ref="$3" label="$4"
+  if [ -n "$immutable_tag" ] && [ -n "$target_ref" ]; then
+    docker tag "$immutable_tag" "$target_ref"
+  elif [ -n "$image_id" ] && [ -n "$target_ref" ]; then
+    docker tag "$image_id" "$target_ref"
+  else
+    log "ERRO CRÍTICO: imagem ou referência anterior de ${label} indisponível."
   fi
 }
 
 rollback() {
-  log "Deploy falhou. Iniciando rollback seguro."
-  if [ -n "${OLD_BACKEND_TAG:-}" ]; then
-    docker tag "$OLD_BACKEND_TAG" ejc-backend:latest || true
-  elif [ -n "${OLD_BACKEND_IMAGE:-}" ]; then
-    docker tag "$OLD_BACKEND_IMAGE" ejc-backend:latest || true
+  local original_rc=$?
+  trap - ERR
+  set +e
+
+  if [ "$DEPLOY_MUTATED" != "1" ]; then
+    log "Falha antes de qualquer mutação do runtime (rc=${original_rc}); aplicação anterior permanece intacta."
+    cleanup_rollback_tags
+    exit "$original_rc"
   fi
-  if [ -n "${OLD_FRONTEND_TAG:-}" ]; then
-    docker tag "$OLD_FRONTEND_TAG" ejc-frontend:latest || true
-  elif [ -n "${OLD_FRONTEND_IMAGE:-}" ]; then
-    docker tag "$OLD_FRONTEND_IMAGE" ejc-frontend:latest || true
-  fi
-  docker compose up -d --no-deps backend worker frontend || true
+
+  log "Deploy falhou (rc=${original_rc}). Restaurando backend, worker e frontend."
+  _restore_image "$OLD_BACKEND_TAG" "$OLD_BACKEND_IMAGE" "$OLD_BACKEND_REF" "backend"
+  _restore_image "$OLD_WORKER_TAG" "$OLD_WORKER_IMAGE" "$OLD_WORKER_REF" "worker"
+  _restore_image "$OLD_FRONTEND_TAG" "$OLD_FRONTEND_IMAGE" "$OLD_FRONTEND_REF" "frontend"
+
+  RUN_MIGRATIONS=0 docker compose up -d --no-deps --force-recreate \
+    backend worker frontend
   sleep 8
-  bash "$APP_DIR/scripts/post_deploy_check.sh" || true
-  exit 1
+  if bash "$APP_DIR/scripts/post_deploy_check.sh"; then
+    log "Rollback confirmado pelo post-deploy check."
+  else
+    log "ERRO CRÍTICO: imagens anteriores restauradas, mas o post-deploy check falhou."
+  fi
+  log "Tags de rollback preservadas para investigação: ${OLD_BACKEND_TAG:-sem-backend-tag} ${OLD_WORKER_TAG:-sem-worker-tag} ${OLD_FRONTEND_TAG:-sem-frontend-tag}"
+  exit "$original_rc"
 }
 
-trap rollback ERR
+if [ "$RUN_MIGRATIONS" = "1" ] && [ "$MIGRATIONS_BACKWARD_COMPATIBLE" != "1" ]; then
+  cat >&2 <<'EOF'
+RUN_MIGRATIONS=1 foi solicitado sem MIGRATIONS_BACKWARD_COMPATIBLE=1.
+O rollback restaura imagens, não schema. Reestruture a migration em expand/contract
+ou submeta uma janela de manutenção específica; o deploy automático foi bloqueado.
+EOF
+  exit 2
+fi
 
 log "EJC deploy seguro iniciado para ${DOMAIN}"
-
 [ -f .env ] || { echo "Arquivo .env ausente em ${APP_DIR}" >&2; exit 1; }
-docker compose config >/tmp/ejc_compose_config_$(timestamp).txt
+docker compose config >"/tmp/ejc_compose_config_$(timestamp).txt"
 
 OLD_BACKEND_IMAGE="$(docker inspect -f '{{.Image}}' ejc_backend 2>/dev/null || true)"
+OLD_WORKER_IMAGE="$(docker inspect -f '{{.Image}}' ejc_worker 2>/dev/null || true)"
 OLD_FRONTEND_IMAGE="$(docker inspect -f '{{.Image}}' ejc_frontend 2>/dev/null || true)"
-log "Imagem backend anterior: ${OLD_BACKEND_IMAGE:-indisponivel}"
-log "Imagem frontend anterior: ${OLD_FRONTEND_IMAGE:-indisponivel}"
+OLD_BACKEND_REF="$(docker inspect -f '{{.Config.Image}}' ejc_backend 2>/dev/null || true)"
+OLD_WORKER_REF="$(docker inspect -f '{{.Config.Image}}' ejc_worker 2>/dev/null || true)"
+OLD_FRONTEND_REF="$(docker inspect -f '{{.Config.Image}}' ejc_frontend 2>/dev/null || true)"
+log "Imagem backend anterior: ${OLD_BACKEND_IMAGE:-indisponível} (${OLD_BACKEND_REF:-sem-ref})"
+log "Imagem worker anterior: ${OLD_WORKER_IMAGE:-indisponível} (${OLD_WORKER_REF:-sem-ref})"
+log "Imagem frontend anterior: ${OLD_FRONTEND_IMAGE:-indisponível} (${OLD_FRONTEND_REF:-sem-ref})"
 
-# Preserva tags imutáveis antes do build. Sem isso, o Docker pode remover a
-# imagem anterior quando a tag :latest é substituída, inviabilizando o rollback.
 if [ -n "$OLD_BACKEND_IMAGE" ]; then
   OLD_BACKEND_TAG="ejc-backend:rollback-${ROLLBACK_SUFFIX}"
   docker tag "$OLD_BACKEND_IMAGE" "$OLD_BACKEND_TAG"
+fi
+if [ -n "$OLD_WORKER_IMAGE" ]; then
+  OLD_WORKER_TAG="ejc-worker:rollback-${ROLLBACK_SUFFIX}"
+  docker tag "$OLD_WORKER_IMAGE" "$OLD_WORKER_TAG"
 fi
 if [ -n "$OLD_FRONTEND_IMAGE" ]; then
   OLD_FRONTEND_TAG="ejc-frontend:rollback-${ROLLBACK_SUFFIX}"
   docker tag "$OLD_FRONTEND_IMAGE" "$OLD_FRONTEND_TAG"
 fi
 
-log "Backup antes do deploy"
+trap rollback ERR
+
+log "Gerando backup pré-deploy integral e cifrado"
 bash scripts/backup.sh
 
-# O frontend é compilado primeiro. Assim, uma falha de TypeScript não substitui
-# a imagem do backend em produção e evita versão mista entre API e interface.
+DEPLOY_MUTATED=1
 log "Build frontend"
 docker compose build frontend
-log "Build backend"
+log "Build backend e worker"
 docker compose build backend worker
 
-log "Subindo backend"
-docker compose up -d --no-deps backend
-# Boot frio pós-build leva mais que 10s: espera até 60s (12 x 5s) antes de
-# declarar falha.
+# Expand/contract: a aplicação antiga atende enquanto a imagem nova executa a
+# migration em container efêmero. O schema expandido permanece compatível com o
+# backend/worker anteriores se for necessário restaurar as imagens.
+if [ "$RUN_MIGRATIONS" = "1" ]; then
+  log "Aplicando migration expand-only antes da troca da API"
+  docker compose run --rm --no-deps -T backend alembic upgrade head
+else
+  log "Nenhuma migration pendente; schema preservado."
+fi
+
+log "Subindo backend novo sem migration automática no entrypoint"
+RUN_MIGRATIONS=0 docker compose up -d --no-deps --force-recreate backend
 backend_ok=0
 for _ in $(seq 1 12); do
   sleep 5
@@ -94,71 +141,44 @@ for _ in $(seq 1 12); do
 done
 [ "$backend_ok" = "1" ] || { log "Backend não respondeu em 60s"; exit 1; }
 
-if [ "$RUN_MIGRATIONS" = "1" ]; then
-  log "RUN_MIGRATIONS=1: aplicando Alembic"
-  docker compose exec -T backend alembic upgrade head
-else
-  log "Migrations nao executadas. Use RUN_MIGRATIONS=1 apenas quando houver migracao revisada."
-fi
-
-# O worker usa a mesma imagem do backend e precisa ser recriado a cada deploy.
 log "Atualizando worker"
-docker compose up -d --no-deps worker
+RUN_MIGRATIONS=0 docker compose up -d --no-deps --force-recreate worker
 
-# Backup diário offsite é requisito de produção, não opção documental. O helper
-# garante o .env, recria o backend (restart não recarrega env_file), confirma o
-# scheduler e executa uma prova integral quando não houver sucesso recente.
 if [ "$ENSURE_DAILY_BACKUP" = "1" ]; then
-  log "Garantindo backup diário cifrado no Google Drive"
+  log "Garantindo agendamento e prova recente do backup cifrado"
   bash scripts/backup/ativar_backup.sh
 else
-  log "AVISO CRÍTICO: ENSURE_DAILY_BACKUP=0 — garantia de backup diário foi ignorada por contingência."
+  log "AVISO CRÍTICO: ENSURE_DAILY_BACKUP=0 — garantia diária ignorada por contingência."
 fi
 
-# Seed do corpus RAG da "Bíblia de Conhecimento EJC" — idempotente e não fatal.
 if [ "$RUN_SEEDS" = "1" ]; then
-  log "RUN_SEEDS=1: aplicando seed da Biblia de Conhecimento EJC (nao-fatal)"
+  log "Aplicando seed da Bíblia de Conhecimento EJC (não fatal)"
   if docker compose exec -T backend python scripts/seed_biblia_ejc.py; then
-    log "Seed da Biblia concluido."
+    log "Seed da Bíblia concluído."
   else
-    log "AVISO: seed da Biblia falhou (nao-fatal) — deploy segue; app opera sem o corpus. Rode manualmente: docker compose exec backend python scripts/seed_biblia_ejc.py"
+    log "AVISO: seed da Bíblia falhou; execução manual será necessária."
   fi
-else
-  log "Seeds nao executados. Use RUN_SEEDS=1 para ingerir o corpus da Biblia (situacoes + modelos + Volume III)."
-fi
 
-# Base de conhecimento juridica REAL (P0 — auditoria da Central de IA): sumulas
-# conferidas (offline) + legislacao federal do Planalto (rede), idempotente e
-# nao-fatal. Roda DEPOIS do health-check (backend ja respondeu) — por isso pode
-# fazer rede sem risco para a janela de boot — e ANTES do reparar_conhecimento_rag
-# abaixo, que aprova e vetoriza os chunks pendentes. O boot (seed_all) ja semeia
-# as sumulas em todo start; aqui garantimos tambem a legislacao no deploy
-# (existence-guarded pela chave planalto:<slug>: baixa uma vez, pula se ja presente).
-if [ "$RUN_SEEDS" = "1" ]; then
-  log "RUN_SEEDS=1: semeando base juridica real (sumulas + legislacao, nao-fatal)"
+  log "Semeando base jurídica real (não fatal)"
   if docker compose exec -T backend python -m app.seeds.base_juridica_seed --incluir-legislacao; then
-    log "Seed da base juridica real concluido."
+    log "Seed da base jurídica real concluído."
   else
-    log "AVISO: seed da base juridica real falhou (nao-fatal) — deploy segue; as sumulas do boot ja atendem o RAG. Rode manualmente: docker compose exec backend bash scripts/popular_base_conhecimento.sh"
+    log "AVISO: seed da base jurídica real falhou; súmulas de boot permanecem disponíveis."
   fi
 else
-  log "Base juridica real nao semeada neste deploy (RUN_SEEDS!=1). O boot ja semeia sumulas; use RUN_SEEDS=1 para incluir a legislacao."
+  log "Seeds não executados neste deploy."
 fi
 
-# Política permanente: todo documento vigente da Base de Conhecimento deve estar
-# aprovado para uso pela IA. O reparo é idempotente e também completa embeddings
-# ausentes; falha aqui interrompe o deploy para não publicar uma inteligência
-# jurídica com acervo silenciosamente indisponível.
-log "Aprovando e indexando pendencias da Base de Conhecimento"
+log "Aprovando e indexando pendências da Base de Conhecimento"
 docker compose exec -T backend python -m scripts.reparar_conhecimento_rag --batch-size 50
 
 log "Subindo frontend"
 docker rm -f ejc_frontend >/dev/null 2>&1 || true
-docker compose up -d --no-deps frontend
+RUN_MIGRATIONS=0 docker compose up -d --no-deps --force-recreate frontend
 
 sleep 8
 EJC_DOMAIN="$DOMAIN" bash scripts/post_deploy_check.sh
 
 trap - ERR
 cleanup_rollback_tags
-log "Deploy seguro concluido com sucesso."
+log "Deploy seguro concluído com sucesso."

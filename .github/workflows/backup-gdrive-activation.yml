@@ -1,129 +1,91 @@
-# ── EJC — garantia operacional do backup diário no Google Drive ───────────────
+# EJC — validação e prova manual do backup diário cifrado no Google Drive.
 #
-# Este workflow é propositalmente independente do runner self-hosted e de actions
-# reutilizáveis. Usa apenas o runner hospedado + API oficial do GitHub para:
-#   • validar os scripts no PR;
-#   • após merge na main, copiar SOMENTE o ativador de backup ao VPS;
-#   • executá-lo exigindo prova integral de banco + uploads no Drive.
-#
-# Não faz deploy da aplicação, não lê/imprime .env e não transfere segredos do VPS.
-name: Backup Google Drive — ativar e comprovar
+# Em Pull Request, executa somente testes determinísticos. A prova em produção é
+# deliberadamente manual e limitada à main: o deploy automático já gera backup
+# pré-deploy, portanto um gatilho adicional por push poderia iniciar duas cópias
+# simultâneas e degradar banco, CPU e Drive.
+name: Backup Google Drive — validar e comprovar
 
 on:
   pull_request:
     paths:
+      - "scripts/backup.sh"
       - "scripts/backup/ativar_backup.sh"
       - "scripts/deploy_vps_safe.sh"
+      - "scripts/check_migration_compatibility.py"
+      - "scripts/tests/test_backup_wrapper.sh"
+      - "scripts/tests/test_deploy_rollback.sh"
+      - "backend/tests/test_migration_compatibility_gate.py"
       - ".github/workflows/backup-gdrive-activation.yml"
-  push:
-    branches: [main]
-    paths:
-      - "scripts/backup/ativar_backup.sh"
-      - "scripts/deploy_vps_safe.sh"
-      - ".github/workflows/backup-gdrive-activation.yml"
+      - ".github/workflows/deploy-vps.yml"
   workflow_dispatch:
 
 permissions:
   contents: read
 
 concurrency:
-  group: backup-gdrive-production
-  cancel-in-progress: false
+  group: backup-gdrive-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 jobs:
   validar:
-    name: Validar scripts de backup
-    # Runner self-hosted (mesmo do ci.yml): este job é só um `bash -n` e não deve
-    # depender de minutos GitHub-hosted — quando esgotam, o job falha na largada
-    # (sem runner atribuído, ~2s) e trava o check em PRs que tocam estes scripts.
+    name: Validar backup, migration e rollback
     runs-on: [self-hosted, ejc-vps]
-    timeout-minutes: 5
-    env:
-      GH_TOKEN: ${{ github.token }}
+    timeout-minutes: 12
     steps:
-      - name: Obter o commit pela API oficial
-        run: |
-          mkdir -p source
-          curl -fsSL \
-            -H "Authorization: Bearer ${GH_TOKEN}" \
-            -H "X-GitHub-Api-Version: 2022-11-28" \
-            "https://api.github.com/repos/${GITHUB_REPOSITORY}/tarball/${GITHUB_SHA}" \
-            | tar -xz -C source --strip-components=1
-      - name: Sintaxe Bash
-        run: bash -n source/scripts/backup/ativar_backup.sh source/scripts/deploy_vps_safe.sh
+      - uses: actions/checkout@v7
 
-  ativar-producao:
-    name: Ativar e comprovar no VPS
-    if: github.event_name == 'push' || github.event_name == 'workflow_dispatch'
+      - name: Sintaxe e compilação
+        run: |
+          bash -n \
+            scripts/backup.sh \
+            scripts/backup/ativar_backup.sh \
+            scripts/deploy_vps_safe.sh \
+            scripts/tests/test_backup_wrapper.sh \
+            scripts/tests/test_deploy_rollback.sh
+          python3 -m py_compile scripts/check_migration_compatibility.py
+
+      - name: Provar wrapper cifrado
+        run: bash scripts/tests/test_backup_wrapper.sh
+
+      - name: Provar migration anterior à troca e rollback
+        run: bash scripts/tests/test_deploy_rollback.sh
+
+  comprovar-producao:
+    name: Executar prova integral cifrada na VPS
+    if: github.event_name == 'workflow_dispatch' && github.ref_name == 'main'
     needs: validar
-    runs-on: ubuntu-latest
-    timeout-minutes: 20
-    env:
-      GH_TOKEN: ${{ github.token }}
-      SSHPASS: ${{ secrets.VPS_PASSWORD }}
-      VPS_HOST: ${{ secrets.VPS_HOST }}
-      VPS_USER: ${{ secrets.VPS_USER }}
-      VPS_PORT: ${{ secrets.VPS_PORT }}
+    runs-on: [self-hosted, ejc-vps]
+    timeout-minutes: 30
     steps:
-      - name: Obter o commit pela API oficial
-        run: |
-          mkdir -p source
-          curl -fsSL \
-            -H "Authorization: Bearer ${GH_TOKEN}" \
-            -H "X-GitHub-Api-Version: 2022-11-28" \
-            "https://api.github.com/repos/${GITHUB_REPOSITORY}/tarball/${GITHUB_SHA}" \
-            | tar -xz -C source --strip-components=1
+      - uses: actions/checkout@v7
+        with:
+          ref: main
 
-      - name: Validar credenciais do VPS
-        env:
-          VPS_SSH_KEY: ${{ secrets.VPS_SSH_KEY }}
+      - name: Validar instalação EJC
         run: |
-          faltando=""
-          [ -n "$VPS_HOST" ] || faltando="$faltando VPS_HOST"
-          [ -n "$VPS_USER" ] || faltando="$faltando VPS_USER"
-          if [ -z "$VPS_SSH_KEY" ] && [ -z "$SSHPASS" ]; then
-            faltando="$faltando (VPS_SSH_KEY ou VPS_PASSWORD)"
-          fi
-          if [ -n "$faltando" ]; then
-            echo "::error::Secrets ausentes:$faltando"
-            exit 1
-          fi
+          test -d /opt/ejc
+          test -f /opt/ejc/.env
+          docker ps --format '{{.Names}}' | grep -qx ejc_db
+          cd /opt/ejc
+          docker compose config >/dev/null
 
-      - name: Preparar SSH
-        env:
-          VPS_SSH_KEY: ${{ secrets.VPS_SSH_KEY }}
+      - name: Instalar wrappers revisados
         run: |
-          sudo apt-get update -qq
-          sudo apt-get install -y -qq sshpass rsync
-          PORT="${VPS_PORT:-22}"
-          mkdir -p ~/.ssh && chmod 700 ~/.ssh
-          KEEPALIVE="-o ServerAliveInterval=30 -o ServerAliveCountMax=20"
-          if [ -n "$VPS_SSH_KEY" ]; then
-            printf '%s\n' "$VPS_SSH_KEY" > ~/.ssh/deploy_key
-            chmod 600 ~/.ssh/deploy_key
-            echo "RSH=ssh -i $HOME/.ssh/deploy_key -o IdentitiesOnly=yes ${KEEPALIVE} -o StrictHostKeyChecking=accept-new -p ${PORT}" >> "$GITHUB_ENV"
-          else
-            echo "RSH=sshpass -e ssh -o PreferredAuthentications=password,keyboard-interactive ${KEEPALIVE} -o StrictHostKeyChecking=accept-new -p ${PORT}" >> "$GITHUB_ENV"
-          fi
+          sudo install -d -m 755 /opt/ejc/scripts/backup
+          sudo install -m 755 scripts/backup.sh /opt/ejc/scripts/backup.sh
+          sudo install -m 755 \
+            scripts/backup/ativar_backup.sh \
+            /opt/ejc/scripts/backup/ativar_backup.sh
 
-      - name: Testar conexão SSH
-        run: ${RSH} "${VPS_USER}@${VPS_HOST}" "test -d /opt/ejc && test -f /opt/ejc/.env"
-
-      - name: Instalar ativador no VPS
+      - name: Ativar e executar prova integral cifrada
         run: |
-          ${RSH} "${VPS_USER}@${VPS_HOST}" "mkdir -p /opt/ejc/scripts/backup"
-          rsync -az -e "${RSH}" \
-            source/scripts/backup/ativar_backup.sh \
-            "${VPS_USER}@${VPS_HOST}:/opt/ejc/scripts/backup/ativar_backup.sh"
-          ${RSH} "${VPS_USER}@${VPS_HOST}" \
-            "chmod 700 /opt/ejc/scripts/backup/ativar_backup.sh"
-
-      - name: Ativar e executar prova integral
-        run: |
-          ${RSH} "${VPS_USER}@${VPS_HOST}" \
-            "cd /opt/ejc && FORCE_BACKUP_TEST=1 bash scripts/backup/ativar_backup.sh"
+          cd /opt/ejc
+          FORCE_BACKUP_TEST=1 bash scripts/backup/ativar_backup.sh
 
       - name: Confirmar aplicação saudável
         run: |
-          curl -fsS -o /dev/null -w "EJC /api/health → HTTP %{http_code}\n" \
+          curl -fsS http://127.0.0.1:8000/api/health >/dev/null
+          curl -fsS -o /dev/null -w \
+            "EJC público /api/health → HTTP %{http_code}\n" \
             https://ejc.depaulateixeira.adv.br/api/health
