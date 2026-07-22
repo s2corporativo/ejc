@@ -203,20 +203,21 @@ NIVEL_LABELS = {"baixo": "Baixo", "moderado": "Moderado",
                 "elevado": "Elevado", "critico": "Crítico"}
 
 
-def derivar_probabilidade(risco: Optional[str],
-                          score: Optional[int] = None) -> tuple[str, str]:
-    """(probabilidade, fonte). Prioriza o risco cadastrado no caso; sem risco,
-    deriva do score do case_health (>=80 remoto · >=50 possível · senão
-    provável). Sem score informado, assume pior caso (conservador)."""
+def derivar_probabilidade(
+    risco: Optional[str],
+    score: Optional[int] = None,
+) -> tuple[Optional[str], str]:
+    """Retorna probabilidade CPC 25 somente quando cadastrada explicitamente.
+
+    O parâmetro score permanece no contrato por compatibilidade de chamada, mas
+    é deliberadamente ignorado: saúde operacional não é chance de êxito nem
+    probabilidade de perda. Sem classificação humana, a matriz fica sem posição.
+    """
+    del score
     r = (risco or "").strip().lower()
     if r in _RISCO_PARA_PROB:
         return _RISCO_PARA_PROB[r], "risco_cadastrado"
-    s = score if score is not None else 0
-    if s >= 80:
-        return "remoto", "score_saude"
-    if s >= 50:
-        return "possivel", "score_saude"
-    return "provavel", "score_saude"
+    return None, "nao_classificada"
 
 
 def classificar_impacto(valor_causa: Optional[float]) -> str:
