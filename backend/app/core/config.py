@@ -401,10 +401,13 @@ class Settings(BaseSettings):
     # ── DJEN / API Comunica CNJ (Res. CNJ 569/2024) — ingestão RAG ───────
     # Ingestor diário de comunicações processuais (intimações/publicações)
     # por OAB monitorada. A retenção da API é limitada — o RAG do EJC é o
-    # arquivo histórico permanente. Desligado por padrão (opt-in no .env).
-    DJEN_INGEST_ENABLED: bool = False
+    # arquivo histórico permanente. LIGADO por decisão do titular (fonte pública
+    # CNJ, sem autenticação); desligue com DJEN_INGEST_ENABLED=false.
+    DJEN_INGEST_ENABLED: bool = True
     # CSV "numero/UF" — ex.: "12345/MG,67890/MG". Vazio = ingestor no-op.
-    DJEN_OABS_MONITORADAS: str = ""
+    # Default = OAB do sócio João Pedro Rodrigues Teixeira (OAB/MG 251.174);
+    # acrescente as OABs dos demais advogados separadas por vírgula.
+    DJEN_OABS_MONITORADAS: str = "251174/MG"
     # Janela incremental (dias para trás) de cada coleta diária. 2 dias dá
     # margem para atraso de disponibilização sem reprocessar demais (o upsert
     # é idempotente por chave_origem, então sobreposição é inofensiva).
