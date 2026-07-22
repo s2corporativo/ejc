@@ -13,7 +13,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.config import get_settings
 from app.core.database import AsyncSessionLocal, get_db
-from app.core.rate_limit import consumir
+from app.core.rate_limit import consumir, rate_limit
 from app.core.security import get_current_user
 from app.models.audit_log import criar_audit_log
 from app.models.calendar_feed_credential import CalendarFeedCredential
@@ -101,7 +101,10 @@ async def minha_url_calendario_revogavel(
     return await obter_url_calendario(db, cu.id)
 
 
-@router.post("/me/rotate")
+@router.post(
+    "/me/rotate",
+    dependencies=[Depends(rate_limit("calendar-ics-rotate", 5))],
+)
 async def rotacionar_url_calendario(
     request: Request,
     db: AsyncSession = Depends(get_db),
