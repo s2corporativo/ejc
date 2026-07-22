@@ -37,7 +37,7 @@ concurrency:
 jobs:
   inventory:
     name: Generate complete architecture inventory
-    runs-on: [self-hosted, ejc-vps]
+    runs-on: ubuntu-latest
     timeout-minutes: 10
 
     steps:
