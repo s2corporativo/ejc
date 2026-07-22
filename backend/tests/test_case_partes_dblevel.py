@@ -127,21 +127,29 @@ async def test_listar_partes_respeita_ownership():
                           user_ids=[resp_adv, outro_adv, socio], client_ids=[cli])
 
 
-async def test_listar_partes_salvaguarda_caso_sem_responsavel():
-    """Caso legado sem responsável NEM auxiliar segue legível por qualquer
-    usuário interno (anti-lockout de verificar_acesso_caso)."""
+async def test_listar_partes_caso_sem_responsavel_so_gestao():
+    """Caso sem responsável NEM auxiliar: o anti-lockout agora é a GESTÃO
+    (socio+), não "qualquer usuário interno". Hardening 2026-07: caso órfão
+    não vaza sub-recursos (PII das partes) a perfis não-gestão — quem destrava
+    é a gestão, que pode assumir/reatribuir o caso (ownership.py)."""
     from app.core.database import AsyncSessionLocal
     from app.routers.case_partes import listar_partes
 
     tok = f"Zzq{uuid4().hex[:6]}"
     async with AsyncSessionLocal() as db:
         adv = await _criar_user(db, "advogado")
+        socio = await _criar_user(db, "socio")
         cli = await _criar_cliente(db, f"Cliente Legado {tok}")
         caso = await _criar_caso(db, cli, f"Caso legado {tok}", resp_id=None)
         await _criar_parte(db, caso, f"Parte Legada {tok}")
         await db.commit()
         try:
-            partes = await listar_partes(caso, db, await _carregar_user(db, adv))
+            # Gestão continua acessando (sem lockout): pode assumir/reatribuir.
+            partes = await listar_partes(caso, db, await _carregar_user(db, socio))
             assert [p["nome"] for p in partes] == [f"Parte Legada {tok}"]
+            # Advogado SEM vínculo não acessa caso órfão → 403 (não vaza PII).
+            with pytest.raises(HTTPException) as exc:
+                await listar_partes(caso, db, await _carregar_user(db, adv))
+            assert exc.value.status_code == 403
         finally:
-            await _limpar(db, case_ids=[caso], user_ids=[adv], client_ids=[cli])
+            await _limpar(db, case_ids=[caso], user_ids=[adv, socio], client_ids=[cli])
