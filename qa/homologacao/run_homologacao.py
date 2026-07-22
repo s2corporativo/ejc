@@ -407,10 +407,15 @@ class Executor:
             executaveis = [
                 passo for passo in resultado.passos if passo.status != BLOQUEADO
             ]
-            if not resultado.passos or not executaveis:
+            capacidades_ausentes = (
+                set(cenario.get("requisitos", [])) - self.caps
+            )
+            if capacidades_ausentes or not resultado.passos or not executaveis:
                 resultado.status = BLOQUEADO
             elif any(passo.status == FALHA for passo in executaveis):
                 resultado.status = FALHA
+            elif any(passo.status == BLOQUEADO for passo in resultado.passos):
+                resultado.status = BLOQUEADO
             else:
                 resultado.status = PASS
             resultados.append(resultado)

@@ -210,6 +210,44 @@ async def criar(
     if not client:
         raise HTTPException(status_code=422, detail="Cliente não encontrado")
 
+    # Idempotência concorrente: o mesmo cliente e número processual não
+    # podem criar dois casos ativos. O advisory lock serializa requisições
+    # simultâneas; a comparação normaliza CNJ mascarado e texto administrativo.
+    if payload.numero_processo:
+        from app.services.validators_service import normalizar_cnj
+
+        numero = payload.numero_processo.strip()
+        digitos_cnj = normalizar_cnj(numero)
+        numero_chave = digitos_cnj if len(digitos_cnj) == 20 else numero.casefold()
+        await db.execute(
+            text("SELECT pg_advisory_xact_lock(hashtext(:chave))"),
+            {"chave": f"case_duplicate:{payload.client_id}:{numero_chave}"},
+        )
+        if len(digitos_cnj) == 20:
+            numero_igual = (
+                sqlfunc.regexp_replace(Case.numero_processo, r"\D", "", "g")
+                == digitos_cnj
+            )
+        else:
+            numero_igual = (
+                sqlfunc.lower(sqlfunc.trim(Case.numero_processo))
+                == numero.casefold()
+            )
+        caso_existente = (
+            await db.execute(
+                select(Case.id).where(
+                    Case.client_id == payload.client_id,
+                    Case.deleted_at.is_(None),
+                    numero_igual,
+                ).limit(1)
+            )
+        ).scalar_one_or_none()
+        if caso_existente:
+            raise HTTPException(
+                status_code=409,
+                detail="Já existe caso ativo para este cliente e número processual",
+            )
+
     # `honorarios` (FASE 2) NÃO é coluna de Case — vira proposta vigente abaixo.
     data = payload.model_dump(exclude={"data_fato_prescricao", "honorarios"})
     c = Case(
