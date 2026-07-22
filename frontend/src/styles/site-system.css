@@ -41,7 +41,7 @@
 .ejc-modern-scope select:hover,
 .ejc-modern-scope textarea:hover {
   box-shadow:
-    inset 0 0 0 1px rgba(201, 162, 39, 0.45),
+    inset 0 0 0 1px rgba(37, 99, 235, 0.45),
     0 4px 14px rgba(15, 23, 42, 0.05);
 }
 
@@ -55,8 +55,8 @@
   border-color: transparent;
   outline: none;
   box-shadow:
-    inset 0 0 0 1px rgba(212, 175, 55, 0.72),
-    0 0 0 3px rgba(212, 175, 55, 0.16);
+    inset 0 0 0 1px rgba(37, 99, 235, 0.72),
+    0 0 0 3px rgba(37, 99, 235, 0.16);
 }
 
 .dark .input,
@@ -127,9 +127,9 @@
 
 /* Faixa clara da marca no thead (ouro palha) + texto escuro da marca */
 .ejc-modern-scope :where(thead th) {
-  background: #f7f1dc;
-  border-bottom: 1px solid rgba(212, 175, 55, 0.22);
-  color: #3b2f0b;
+  background: #f7f9fc;
+  border-bottom: 1px solid rgba(37, 99, 235, 0.22);
+  color: #0b1f3a;
   font-size: 0.7rem;
   font-weight: 700;
   letter-spacing: 0.08em;
@@ -142,12 +142,12 @@
 }
 
 .ejc-modern-scope :where(tbody td) {
-  border-top: 1px solid rgba(166, 124, 82, 0.1);
+  border-top: 1px solid rgba(37, 99, 235, 0.1);
   font-variant-numeric: tabular-nums;
 }
 
 .ejc-modern-scope :where(tbody tr:hover) {
-  background: rgba(212, 175, 55, 0.06);
+  background: rgba(37, 99, 235, 0.06);
 }
 
 /* Dashboard premium: camada escopada sobre a estrutura atual do Dashboard.
@@ -168,12 +168,12 @@
   > .space-y-6
   > .flex.flex-col.gap-4:first-child
   .eyebrow {
-  color: #8a6d2f;
+  color: #2563eb;
 }
 
 .ejc-modern-scope > div > .space-y-6 > .flex.flex-col.gap-4:first-child h1 {
   /* Título denso na cor escura da marca (idioma compacto) */
-  color: #3b2f0b;
+  color: #0b1f3a;
   font-size: 1.35rem;
   font-weight: 700;
   letter-spacing: -0.02em;
@@ -188,8 +188,8 @@
   > .space-y-6
   > .flex.flex-col.gap-4:first-child
   .btn-primary {
-  background: #d4af37;
-  color: #3b2f0b;
+  background: #2563eb;
+  color: #ffffff;
   box-shadow: none;
 }
 
@@ -232,7 +232,7 @@
   position: absolute;
   inset: 0 0 auto 0;
   height: 3px;
-  background: #d4af37;
+  background: #2563eb;
 }
 
 .ejc-modern-scope
@@ -261,7 +261,7 @@
 }
 
 .ejc-modern-scope > div > .space-y-6 .section-card > div:first-child {
-  border-bottom-color: rgba(212, 175, 55, 0.12);
+  border-bottom-color: rgba(37, 99, 235, 0.12);
   background: rgba(250, 247, 240, 0.8);
 }
 
@@ -273,12 +273,12 @@
 .dark .ejc-modern-scope > div > .space-y-6 > .flex.flex-col.gap-4:first-child {
   /* Cartão flat no escuro (sem gradiente/blob), hairline dourado */
   background: var(--ejc-card);
-  border-color: rgba(212, 175, 55, 0.2);
+  border-color: rgba(37, 99, 235, 0.2);
   box-shadow: 0 1px 2px rgba(0, 0, 0, 0.28);
 }
 
 /* Textos e botão secundário do hero — no claro ficaram tinta escura
-   (h1 #0F172A, eyebrow #8A6D2F, p slate) e botão branco, incondicionais;
+   (h1 #0F172A, eyebrow #2563eb, p slate) e botão branco, incondicionais;
    no grafite precisam de creme/ouro para legibilidade (AA). */
 .dark
   .ejc-modern-scope
@@ -286,7 +286,7 @@
   > .space-y-6
   > .flex.flex-col.gap-4:first-child
   .eyebrow {
-  color: #e5ce7f;
+  color: #93c5fd;
 }
 .dark
   .ejc-modern-scope

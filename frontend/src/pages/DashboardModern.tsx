@@ -42,7 +42,6 @@ import {
   StatusBadge,
   cn,
   fmtDate,
-  fmtMoney,
 } from "../components/UI";
 
 const MANAGER_ROLES = new Set(["superadmin", "admin", "socio"]);
@@ -118,7 +117,7 @@ const NEXT_ACTION_TONE: Record<
 
 const AREA_TONES: Record<string, string> = {
   civil: "bg-primary-500",
-  trabalhista: "bg-ai-500",
+  trabalhista: "bg-info-500",
   consumidor: "bg-warn-500",
   familia: "bg-primary-300",
   ambiental: "bg-success-500",
@@ -487,7 +486,7 @@ export default function DashboardModern() {
           casos recentes. KPIs/indicadores gerenciais saem do topo. */}
       <section aria-label="Meu dia" className="space-y-4">
         <div className="flex flex-wrap items-center gap-2">
-          <span className="flex h-7 w-7 items-center justify-center rounded-lg bg-ouro/15 text-ouro">
+          <span className="flex h-7 w-7 items-center justify-center rounded-lg bg-primary-50 text-primary-600">
             <CalendarClock className="h-4 w-4" />
           </span>
           <h2 className="text-base font-semibold text-slate-900 dark:text-slate-100">
@@ -530,7 +529,7 @@ export default function DashboardModern() {
                     >
                       {nextAction.eyebrow}
                     </span>
-                    <Badge tone="ouro">Próxima ação recomendada</Badge>
+                    <Badge tone="blue">Próxima ação recomendada</Badge>
                   </div>
                   <h3
                     className={cn(
@@ -575,7 +574,7 @@ export default function DashboardModern() {
                     <span className="text-[11px] font-semibold uppercase tracking-[0.16em] text-success-700 dark:text-success-300">
                       Tudo sob controle
                     </span>
-                    <Badge tone="ouro">Próxima ação recomendada</Badge>
+                    <Badge tone="blue">Próxima ação recomendada</Badge>
                   </div>
                   <h3 className="mt-1 text-lg font-semibold text-success-800 dark:text-success-200">
                     Nada urgente para agora
@@ -650,10 +649,10 @@ export default function DashboardModern() {
           <div className="flex flex-col gap-5 xl:flex-row xl:items-center xl:justify-between">
             <div className="max-w-2xl">
               <div className="mb-2 flex flex-wrap items-center gap-2">
-                {/* tone="ouro" (pill clara + texto ouro-profundo) — as classes
+                {/* tone="blue" (pill clara + texto ouro-profundo) — as classes
                   extras bg-white/10 + text-primary-100 disputavam com o tone
                   padrão slate e o badge ficava ilegível no fundo sépia. */}
-                <Badge tone="ouro">Operação segura</Badge>
+                <Badge tone="blue">Operação segura</Badge>
                 <span className="inline-flex items-center gap-1.5 text-xs text-slate-500">
                   <ShieldCheck className="h-3.5 w-3.5" />
                   Auditoria e LGPD preservadas
@@ -1213,7 +1212,7 @@ export default function DashboardModern() {
                                     "bg-primary-700",
                                     "bg-primary-500",
                                     "bg-primary-300",
-                                    "bg-ai-500",
+                                    "bg-slate-500",
                                     "bg-success-500",
                                     "bg-warn-500",
                                   ][index],
@@ -1297,10 +1296,6 @@ export default function DashboardModern() {
                           {
                             label: "Chamadas",
                             value: iaSaude.total_chamadas ?? 0,
-                          },
-                          {
-                            label: "Custo (R$)",
-                            value: fmtMoney(iaSaude.custo_total_brl),
                           },
                           {
                             label: "Aproveitamento",
