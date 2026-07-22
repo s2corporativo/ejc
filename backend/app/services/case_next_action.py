@@ -46,6 +46,14 @@ def _aware(value: datetime) -> datetime:
     return value if value.tzinfo is not None else value.replace(tzinfo=timezone.utc)
 
 
+async def _lock_case(db: AsyncSession, case_id: str) -> None:
+    """Serializa mutações mesmo quando ainda não existe ação/dispensa."""
+
+    await db.execute(
+        select(Case.id).where(Case.id == case_id).with_for_update()
+    )
+
+
 async def current_action(
     db: AsyncSession,
     case_id: str,
@@ -275,6 +283,7 @@ async def set_next_action(
     if case.status not in OPEN_STATUSES:
         raise HTTPException(409, "Caso encerrado/arquivado não recebe próxima ação")
 
+    await _lock_case(db, case.id)
     owner = await _validate_owner(db, case, actor, payload.owner_id)
     await _validate_origin(db, case.id, payload.origin_type, payload.origin_id)
 
@@ -338,6 +347,7 @@ async def complete_next_action(
     actor: User,
     payload: CaseNextActionComplete,
 ) -> dict:
+    await _lock_case(db, case.id)
     action = await current_action(db, case.id, lock=True)
     if action is None:
         raise HTTPException(409, "O caso não possui próxima ação atual")
@@ -439,6 +449,7 @@ async def waive_next_action(
     if case.status not in OPEN_STATUSES:
         raise HTTPException(409, "Caso encerrado/arquivado não recebe exceção")
 
+    await _lock_case(db, case.id)
     now = _utcnow()
     action = await current_action(db, case.id, lock=True)
     if action is not None:
