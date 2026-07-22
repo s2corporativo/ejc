@@ -36,7 +36,7 @@ PARTNERS: tuple[PartnerSpec, ...] = (
     PartnerSpec("clovis", "Clovis Soares", "soares@depaulateixeira.adv.br"),
     PartnerSpec(
         "joao",
-        "João Pedro Teixiera",
+        "João Pedro Teixeira",
         "teixeira@depaulateixeira.adv.br",
     ),
     PartnerSpec(
@@ -88,7 +88,13 @@ async def _find_by_email(db, email: str, *, lock: bool = False) -> User | None:
 def _validate_existing(user: User, partner: PartnerSpec) -> None:
     if user.deleted_at is not None:
         raise ProvisioningConflict(
-            f"A conta {partner.email} está desativada; não será reativada automaticamente."
+            f"A conta {partner.email} está excluída logicamente; "
+            "não será restaurada automaticamente."
+        )
+    if not user.is_active:
+        raise ProvisioningConflict(
+            f"A conta {partner.email} está administrativamente inativa; "
+            "não será reativada automaticamente."
         )
     if user.full_name.strip().casefold() != partner.full_name.strip().casefold():
         raise ProvisioningConflict(
@@ -122,7 +128,6 @@ async def provision_partners(
 
                     before_role = getattr(user.role, "value", str(user.role))
                     user.role = UserRole.superadmin
-                    user.is_active = True
                     await criar_audit_log(
                         db,
                         None,
