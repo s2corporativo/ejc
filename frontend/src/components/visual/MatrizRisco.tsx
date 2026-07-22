@@ -264,7 +264,8 @@ export default function MatrizRisco({ caseId }: { caseId: string }) {
               {FONTE_PROB[data.probabilidade.fonte] ?? data.probabilidade.fonte}
               {data.probabilidade.nivel && (
                 <span className="capitalize text-slate-400">
-                  {" "}({data.probabilidade.nivel})
+                  {" "}
+                  ({data.probabilidade.nivel})
                 </span>
               )}
             </p>
