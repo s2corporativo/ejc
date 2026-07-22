@@ -5,6 +5,7 @@ import {
   casoContextualDaUrl,
   destinoRotaConsolidada,
   deveInjetarCaso,
+  podeVerSaudeCarteira,
 } from "../FlowEnhancements";
 
 describe("FlowEnhancements — regras puras", () => {
@@ -120,5 +121,21 @@ describe("FlowEnhancements — regras puras", () => {
     );
     expect(destinoRotaConsolidada("/inteligencia")).toBeNull();
     expect(destinoRotaConsolidada("/conhecimento")).toBeNull();
+  });
+
+  it("mostra saúde da carteira somente a perfis com acesso a casos", () => {
+    for (const role of [
+      "superadmin",
+      "admin",
+      "socio",
+      "advogado",
+      "advogado_auxiliar",
+      "estagiario",
+    ]) {
+      expect(podeVerSaudeCarteira(role)).toBe(true);
+    }
+    for (const role of ["secretaria", "financeiro", "cliente_externo", null]) {
+      expect(podeVerSaudeCarteira(role)).toBe(false);
+    }
   });
 });
