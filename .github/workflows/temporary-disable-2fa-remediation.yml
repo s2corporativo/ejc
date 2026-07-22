@@ -1,0 +1,196 @@
+name: Temporary 2FA Disable Remediation
+
+on:
+  push:
+    branches:
+      - main
+    paths:
+      - .github/workflows/temporary-disable-2fa-remediation.yml
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency:
+  group: temporary-disable-2fa-remediation
+  cancel-in-progress: false
+
+jobs:
+  prepare-reviewed-change:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+
+    steps:
+      - name: Checkout main
+        uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+          ref: main
+
+      - name: Configure Git identity
+        run: |
+          git config user.name "EJC Engineering Bot"
+          git config user.email "actions@users.noreply.github.com"
+
+      - name: Apply reversible 2FA kill switch
+        shell: bash
+        run: |
+          set -euo pipefail
+          python - <<'PY'
+          from pathlib import Path
+
+          def replace_once(path: str, old: str, new: str) -> None:
+              file = Path(path)
+              text = file.read_text(encoding="utf-8")
+              count = text.count(old)
+              if count != 1:
+                  raise SystemExit(
+                      f"Expected exactly one match in {path}, found {count}: {old!r}"
+                  )
+              file.write_text(text.replace(old, new, 1), encoding="utf-8")
+
+          replace_once(
+              "backend/app/core/config.py",
+              '    REQUIRE_2FA_ROLES: str = "superadmin,admin,socio"\n'
+              '    TWO_FACTOR_SETUP_TOKEN_EXPIRE_MINUTES: int = 15\n\n'
+              '    @property\n'
+              '    def require_2fa_roles_list(self) -> List[str]:\n'
+              '        return [r.strip().lower() for r in self.REQUIRE_2FA_ROLES.split(",") if r.strip()]\n',
+              '    # Kill switch temporário e reversível. False desativa tanto a exigência\n'
+              '    # organizacional quanto a validação TOTP no login, sem apagar segredos\n'
+              '    # previamente cadastrados. Reativação: definir true no ambiente.\n'
+              '    TWO_FACTOR_AUTH_ENABLED: bool = False\n'
+              '    REQUIRE_2FA_ROLES: str = "superadmin,admin,socio"\n'
+              '    TWO_FACTOR_SETUP_TOKEN_EXPIRE_MINUTES: int = 15\n\n'
+              '    @property\n'
+              '    def require_2fa_roles_list(self) -> List[str]:\n'
+              '        if not self.TWO_FACTOR_AUTH_ENABLED:\n'
+              '            return []\n'
+              '        return [r.strip().lower() for r in self.REQUIRE_2FA_ROLES.split(",") if r.strip()]\n',
+          )
+
+          replace_once(
+              "backend/app/routers/auth.py",
+              '    if not role_value:\n'
+              '        return False\n'
+              '    return role_value.strip().lower() in settings.require_2fa_roles_list\n',
+              '    if not settings.TWO_FACTOR_AUTH_ENABLED or not role_value:\n'
+              '        return False\n'
+              '    return role_value.strip().lower() in settings.require_2fa_roles_list\n',
+          )
+
+          replace_once(
+              "backend/app/routers/auth.py",
+              '    # ── 3. TOTP (se habilitado) ──────────────────────────────────────\n'
+              '    if user.totp_enabled:\n',
+              '    # ── 3. TOTP (se habilitado globalmente e pelo usuário) ───────────\n'
+              '    if settings.TWO_FACTOR_AUTH_ENABLED and user.totp_enabled:\n',
+          )
+
+          replace_once(
+              "backend/app/core/auth_middleware.py",
+              '        if payload.get("two_factor_setup_required") and not payload.get(\n'
+              '            "pwd_change_required"\n'
+              '        ):\n',
+              '        if (\n'
+              '            settings.TWO_FACTOR_AUTH_ENABLED\n'
+              '            and payload.get("two_factor_setup_required")\n'
+              '            and not payload.get("pwd_change_required")\n'
+              '        ):\n',
+          )
+
+          replace_once(
+              ".env.example",
+              'ACCESS_TOKEN_EXPIRE_HOURS=2\n',
+              'ACCESS_TOKEN_EXPIRE_HOURS=2\n'
+              '# 2FA temporariamente desativado. Para reativar, defina true e mantenha\n'
+              '# os papéis obrigatórios no CSV abaixo. Segredos TOTP existentes não são apagados.\n'
+              'TWO_FACTOR_AUTH_ENABLED=false\n'
+              'REQUIRE_2FA_ROLES=superadmin,admin,socio\n',
+          )
+
+          test_content = '''"""Regressão do kill switch temporário de 2FA."""
+
+from app.core.config import Settings
+from app.routers import auth
+
+
+def test_2fa_desativado_por_default():
+    cfg = Settings(_env_file=None)
+    assert cfg.TWO_FACTOR_AUTH_ENABLED is False
+    assert cfg.require_2fa_roles_list == []
+
+
+def test_papel_nao_exige_2fa_quando_kill_switch_desligado(monkeypatch):
+    cfg = Settings(
+        _env_file=None,
+        TWO_FACTOR_AUTH_ENABLED=False,
+        REQUIRE_2FA_ROLES="superadmin,admin,socio",
+    )
+    monkeypatch.setattr(auth, "settings", cfg)
+    assert auth._papel_exige_2fa("superadmin") is False
+
+
+def test_reativacao_preserva_politica_por_papel(monkeypatch):
+    cfg = Settings(
+        _env_file=None,
+        TWO_FACTOR_AUTH_ENABLED=True,
+        REQUIRE_2FA_ROLES="superadmin,socio",
+    )
+    monkeypatch.setattr(auth, "settings", cfg)
+    assert auth._papel_exige_2fa("superadmin") is True
+    assert auth._papel_exige_2fa("advogado") is False
+'''
+          Path("backend/tests/test_2fa_temporarily_disabled.py").write_text(
+              test_content,
+              encoding="utf-8",
+          )
+
+          documentation = '''# Desativação temporária do 2FA
+
+## Estado
+
+O 2FA está temporariamente desativado por `TWO_FACTOR_AUTH_ENABLED=false`.
+A desativação alcança login, renovação de sessão e o gate do middleware.
+
+## Preservação de dados
+
+Nenhum segredo TOTP é apagado e nenhuma migration é necessária. Contas que
+já possuíam autenticador configurado poderão voltar a utilizá-lo quando o
+kill switch for reativado.
+
+## Reativação
+
+1. Definir `TWO_FACTOR_AUTH_ENABLED=true` no ambiente de produção.
+2. Revisar `REQUIRE_2FA_ROLES`.
+3. Reiniciar o backend.
+4. Executar os testes de autenticação e homologar login/refresh/logout.
+
+## Risco aceito
+
+Enquanto desativado, a proteção depende de senha forte, rate limit, rotação
+de refresh token, detecção de replay e trilha de auditoria. A decisão deve
+ser reavaliada antes do go-live definitivo.
+'''
+          Path("docs/SECURITY_2FA_TEMPORARY_DISABLE.md").write_text(
+              documentation,
+              encoding="utf-8",
+          )
+          PY
+
+      - name: Validate patched sources
+        run: |
+          python -m compileall -q backend/app backend/tests/test_2fa_temporarily_disabled.py
+          grep -R "TWO_FACTOR_AUTH_ENABLED" -n backend/app .env.example backend/tests/test_2fa_temporarily_disabled.py
+
+      - name: Create remediation branch
+        run: |
+          set -euo pipefail
+          BRANCH="codex/temporary-disable-2fa"
+          git checkout -B "$BRANCH"
+          git add backend/app/core/config.py backend/app/routers/auth.py \
+            backend/app/core/auth_middleware.py .env.example \
+            backend/tests/test_2fa_temporarily_disabled.py \
+            docs/SECURITY_2FA_TEMPORARY_DISABLE.md
+          git commit -m "security(auth): desativar 2FA temporariamente com kill switch"
+          git push --force-with-lease origin "$BRANCH"
