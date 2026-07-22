@@ -33,6 +33,12 @@ interface NextActionWaiver {
   expires_at: string;
 }
 
+interface AssignableUser {
+  id: string;
+  full_name: string;
+  role: string;
+}
+
 interface OperationalView {
   case_id: string;
   estado_operacional:
@@ -194,6 +200,7 @@ export default function CaseNextActionPanel({
   const { user } = useAuth();
   const defaultOwnerId = responsibleId || user?.id || "";
   const [view, setView] = useState<OperationalView | null>(null);
+  const [assignees, setAssignees] = useState<AssignableUser[]>([]);
   const [loading, setLoading] = useState(true);
   const [submitting, setSubmitting] = useState(false);
   const [mode, setMode] = useState<FormMode>(null);
@@ -216,6 +223,16 @@ export default function CaseNextActionPanel({
         "/cases/" + caseId + "/proxima-acao",
       );
       setView(data);
+      if (canWrite) {
+        try {
+          const response = await api.get<{ data: AssignableUser[] }>(
+            "/cases/" + caseId + "/proxima-acao/responsaveis",
+          );
+          setAssignees(response.data.data || []);
+        } catch {
+          setAssignees([]);
+        }
+      }
     } catch (error) {
       toast.error(
         errorMessage(error, "Não foi possível carregar a próxima ação."),
@@ -223,7 +240,7 @@ export default function CaseNextActionPanel({
     } finally {
       setLoading(false);
     }
-  }, [caseId]);
+  }, [canWrite, caseId]);
 
   useEffect(() => {
     void load();
@@ -523,6 +540,33 @@ export default function CaseNextActionPanel({
                 maxLength={255}
                 placeholder="Ex.: Revisar contestação e enviar para aprovação"
               />
+            </label>
+            <label className="md:col-span-2">
+              <span className="mb-1 block text-xs font-medium text-slate-700">
+                Responsável
+              </span>
+              <select
+                value={draft.ownerId}
+                onChange={(event) =>
+                  setDraft((current) => ({
+                    ...current,
+                    ownerId: event.target.value,
+                  }))
+                }
+                className="input w-full"
+                disabled={assignees.length === 0}
+              >
+                {!draft.ownerId && <option value="">Selecione</option>}
+                {draft.ownerId &&
+                  !assignees.some((item) => item.id === draft.ownerId) && (
+                    <option value={draft.ownerId}>Responsável atual</option>
+                  )}
+                {assignees.map((item) => (
+                  <option key={item.id} value={item.id}>
+                    {item.full_name} — {item.role.replace(/_/g, " ")}
+                  </option>
+                ))}
+              </select>
             </label>
             <label>
               <span className="mb-1 block text-xs font-medium text-slate-700">
