@@ -56,8 +56,8 @@ export interface MatrizCelula {
 
 export interface MatrizRiscoResponse {
   probabilidade: {
-    nivel: NivelProbabilidade;
-    fonte: "risco_cadastrado" | "score_saude";
+    nivel: NivelProbabilidade | null;
+    fonte: "risco_cadastrado" | "nao_classificada";
   };
   impacto: {
     nivel: NivelImpacto;
@@ -70,7 +70,7 @@ export interface MatrizRiscoResponse {
     y: number;
     nivel: NivelQuadrante;
     tratamento_contabil: TratamentoContabil;
-  };
+  } | null;
   /** 3 linhas (impacto) × 3 colunas (probabilidade) */
   matriz: MatrizCelula[][];
 }
