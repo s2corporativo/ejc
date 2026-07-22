@@ -24,6 +24,7 @@ import pytest
 from sqlalchemy import text
 
 from scripts.avaliar_rag_precisao import QUESTOES, avaliar
+from app.eval import retrieval_juridico_eval as gold_eval
 from app.services.sumulas_ingestion import SUMULAS_SEED, _titulo, ingerir_sumulas_seed
 
 pytestmark = pytest.mark.skipif(
@@ -82,5 +83,42 @@ async def test_hit_rate_e_mrr_acima_do_piso_de_regressao(monkeypatch):
             assert resultado["mrr"] >= 0.12, (
                 f"MRR caiu para {resultado['mrr']:.3f} (piso 0.12) — "
                 f"possível regressão na recuperação RAG.")
+        finally:
+            await _limpar(db)
+
+
+async def test_gold_set_juridico_hit_rate_e_mrr_acima_do_piso(monkeypatch):
+    """Regressão do RAG contra o gold set jurídico VERSIONADO
+    (app/eval/gold_set_retrieval_juridico.jsonl), avaliado por
+    retrieval_juridico_eval. Mesmo piso conservador do gabarito de súmulas
+    (Hit@5>=30% / MRR>=0.12), abaixo do baseline observado.
+
+    O gold set é misto (súmulas + lei seca do planalto). Aqui só semeamos as
+    súmulas (determinístico/offline); os itens de lei viram SKIP pelo gate de
+    presença — o piso mede retrieval, não seed faltando. Rodar o CLI contra um
+    banco de produção (com o planalto semeado) pontua também as leis."""
+    from app.core.database import AsyncSessionLocal
+    from app.core.config import get_settings
+
+    monkeypatch.setattr(get_settings(), "RAG_SUMULAS_SEED_ENABLED", True)
+
+    async with AsyncSessionLocal() as db:
+        await _limpar(db)
+        try:
+            resumo = await ingerir_sumulas_seed(db)
+            assert resumo["indexadas_rag"] > 0, "seed não indexou nada no RAG — harness não mede nada"
+
+            resultado = await gold_eval.avaliar(db, k=5)
+
+            # As 16 súmulas do gold set precisam estar presentes/pontuadas; as 3
+            # leis são puladas (planalto não é semeado em CI) e não distorcem o piso.
+            assert resultado["avaliados"] >= 10, (
+                f"gold set pontuou só {resultado['avaliados']} itens — súmulas não "
+                f"semeadas? Detalhes: {resultado['detalhes']}")
+            assert resultado["hit_rate"] >= 0.30, (
+                f"Hit@5={resultado['hit_rate']:.1%} (piso 30%) sobre {resultado['avaliados']} "
+                f"itens — possível regressão na recuperação RAG. Detalhes: {resultado['detalhes']}")
+            assert resultado["mrr"] >= 0.12, (
+                f"MRR={resultado['mrr']:.3f} (piso 0.12) — possível regressão na recuperação RAG.")
         finally:
             await _limpar(db)

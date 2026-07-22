@@ -82,11 +82,23 @@ Uma variável por vez, sempre medindo.
 
 ## 5. CI (regressão)
 
-Adicione ao pipeline um job que roda o gold set e barra queda:
+Dois níveis, já embarcados:
 
-```bash
-python -m app.eval.run_eval --gold app/eval/gold_set.jsonl --k 6 --min-recall 0.7
-```
+- **Genérico (quando o gold set real existir)** — adicione um job que roda o
+  gold set curado pelo escritório e barra queda:
+
+  ```bash
+  python -m app.eval.run_eval --gold app/eval/gold_set.jsonl --k 6 --min-recall 0.7
+  ```
+
+- **Jurídico versionado (JÁ pronto, sem esperar curadoria)** — o gold set
+  `gold_set_retrieval_juridico.jsonl` (seção 8) roda contra fontes REAIS já
+  semeáveis e tem piso de regressão em teste automatizado
+  (`tests/test_rag_avaliacao_precisao_dblevel.py`, `RUN_DB_TESTS=1`). Manual:
+
+  ```bash
+  python -m app.eval.retrieval_juridico_eval --k 5 --min-hit 0.30 --min-mrr 0.12
+  ```
 
 > Ferramentas externas complementares: **RAGAS** / **DeepEval** (faithfulness,
 > context precision/recall), **promptfoo** (comparar prompts/modelos), e os
@@ -160,3 +172,74 @@ python -m app.eval.run_eval --gold app/eval/gold_set.jsonl --k 6
 O CI (`.github/workflows/ci.yml`, job `eval-smoke`) roda `--smoke` +
 `agent_trajectory` em modo não bloqueante; torna-se gate bloqueante quando o gold
 set real existir e o baseline estiver estabelecido.
+
+## 8. Gold set jurídico de RETRIEVAL (versionado, pronto para CI)
+
+Enquanto o gold set das seções 1–2 (50–150 casos reais pseudonimizados) é
+curado pelo escritório, este pacote embarca um gold set **versionado e já
+utilizável** focado só em RETRIEVAL:
+
+- **Arquivo**: `gold_set_retrieval_juridico.jsonl` (19 itens).
+- **Harness**: `retrieval_juridico_eval.py` — reusa o loader/normalização do
+  `run_eval` e a semeadura determinística de `ingerir_sumulas_seed`.
+- **Métricas**: Hit@k e MRR sobre os itens **pontuados**.
+
+### Anti-invenção: só ALVO de retrieval, nada de opinião
+
+Cada item é `{consulta, chave/título/categoria esperados no retrieval}` — a
+"resposta esperada" é **qual documento deve ser recuperado**, jamais uma tese
+inventada. Toda referência é REAL e sua proveniência está no próprio item
+(campo `proveniencia`):
+
+| Fonte (`fonte_seed`) | Itens | Proveniência | Alvo casado por |
+|---|---|---|---|
+| `sumulas_seed` | 16 súmulas STJ/TST/STF, todas `situacao=ativa` | `SUMULAS_SEED` (`app/services/sumulas_ingestion.py`), verbetes reconferidos em 2026-07-18 contra STJ/TST/STF | título exato `Súmula … nº N` + `chave_origem` `sumula:<trib>:<n>` |
+| `planalto_catalogo` | 3 diplomas (CDC, CLT, CC) | `planalto.CATALOGO` (`app/services/ingestors/planalto.py`), slug/URL oficiais | título do diploma + `chave_origem` `planalto:<slug>` |
+
+Os alvos (título/chave/categoria) são **derivados das constantes de seed** —
+não digitados à mão — então nunca divergem do que os seeders gravam. O teste
+offline `tests/test_gold_set_retrieval_juridico.py` (roda no CI normal, sem
+banco) revalida essa consistência e **falha** se alguém marcar uma súmula como
+superada/cancelada ou renomear um título sob o gold set.
+
+### Gate de presença (por que a lei "some" no CI)
+
+Súmulas são semeadas offline/determinístico; a lei seca do planalto é ingerida
+por download de `planalto.gov.br` (bloqueado no CI/dev). Itens cujo alvo **não
+está semeado e vigente** viram **SKIP** — nunca MISS —, para o piso medir
+qualidade de retrieval, não seed faltando. Contra um banco de produção (planalto
+semeado) os 3 itens de lei também pontuam.
+
+### Como rodar
+
+```bash
+# Requer Postgres+pgvector com migrations aplicadas.
+export RUN_DB_TESTS=1                      # habilita os testes db-level
+export DATABASE_URL=postgresql+asyncpg://... # banco a avaliar
+
+# CLI (semeie as súmulas antes, se o banco estiver vazio):
+python -m app.eval.retrieval_juridico_eval --k 5
+python -m app.eval.retrieval_juridico_eval --k 5 --min-hit 0.30 --min-mrr 0.12  # gate
+python -m app.eval.retrieval_juridico_eval --incluir-ausentes                   # não pula lei
+python -m app.eval.retrieval_juridico_eval --out baseline.json                  # p/ diff
+
+# Na VPS, dentro do container (súmulas já semeadas no boot):
+docker exec -it ejc_backend python -m app.eval.retrieval_juridico_eval --k 5
+
+# Regressão automatizada (semeia súmulas e afere o piso sozinho):
+RUN_DB_TESTS=1 pytest tests/test_rag_avaliacao_precisao_dblevel.py -q
+```
+
+Sem `RUN_DB_TESTS`/Postgres os testes db-level **pulam** (skip), por design; o
+teste de integridade offline e o `--smoke` continuam rodando.
+
+### Como interpretar / piso de regressão
+
+- **Hit@5** — fração de consultas em que o documento certo aparece no top-5.
+- **MRR** — média de 1/posição do alvo (penaliza rank pior mesmo acertando).
+- **Piso**: `Hit@5 ≥ 30%` e `MRR ≥ 0.12` — o MESMO piso conservador já validado
+  para o gabarito de súmulas (baseline textual observado ≈ 47,6% / 0,202 com
+  embeddings desligados). Fica ABAIXO do baseline de propósito: o objetivo é
+  pegar QUEDA REAL de qualidade (novo filtro/chunker/query/modelo), não flutuação
+  de rank por 1–2 posições. Suba o piso conforme o baseline subir (embeddings
+  ligados, reranker, FTS).
