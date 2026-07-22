@@ -2,6 +2,7 @@ import { useEffect, useMemo, useRef } from "react";
 import { useLocation, useNavigate } from "react-router-dom";
 import type { AxiosResponse, InternalAxiosRequestConfig } from "axios";
 import api from "../lib/api";
+import { useAuth } from "../stores/auth";
 import CaseCommandDock from "./CaseCommandDock";
 import CaseHealthWidget from "./CaseHealthWidget";
 import PortfolioHealthWidget from "./PortfolioHealthWidget";
@@ -15,6 +16,14 @@ const CONTEXTUAL_CREATE_ENDPOINTS = new Set([
   "/tasks",
   "/agenda-eventos/",
   "/agenda-eventos",
+]);
+const PORTFOLIO_HEALTH_ROLES = new Set([
+  "superadmin",
+  "admin",
+  "socio",
+  "advogado",
+  "advogado_auxiliar",
+  "estagiario",
 ]);
 
 interface CreatedCaseMarker {
@@ -30,6 +39,10 @@ function normalizarEndpoint(url?: string): string {
   } catch {
     return url.split("?")[0] || "";
   }
+}
+
+export function podeVerSaudeCarteira(role: unknown): boolean {
+  return PORTFOLIO_HEALTH_ROLES.has(String(role || ""));
 }
 
 export function caseIdSeguro(value: string | null | undefined): string | null {
@@ -108,6 +121,7 @@ function salvarMarcador(id: string) {
 export default function FlowEnhancements() {
   const location = useLocation();
   const navigate = useNavigate();
+  const user = useAuth((state) => state.user);
   const searchRef = useRef(location.search);
 
   useEffect(() => {
@@ -163,7 +177,9 @@ export default function FlowEnhancements() {
     return caseIdSeguro(match?.[1]);
   }, [location.pathname]);
 
-  if (location.pathname === "/") return <PortfolioHealthWidget />;
+  if (location.pathname === "/") {
+    return podeVerSaudeCarteira(user?.role) ? <PortfolioHealthWidget /> : null;
+  }
   if (!caseId) return null;
   return (
     <>
