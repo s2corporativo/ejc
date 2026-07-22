@@ -14,11 +14,18 @@ down_revision = "113_calendar_feed_revocation"
 branch_labels = None
 depends_on = None
 
+# Consumido por scripts/check_migration_compatibility.py. A declaração não é um
+# bypass: o classificador ainda exige SQL literal, INSERT ... SELECT, target
+# allowlisted, idempotência estática e ausência de verbos destrutivos.
 deployment_policy = "additive_data_backfill"
 data_backfill_targets = ("data_rooms", "teses")
 
 
 def upgrade() -> None:
+    # Data Room v4 -> data_rooms. `publica` não é migrado como acesso aberto:
+    # o modelo canônico exige links revogáveis, auditáveis e com expiração.
+    # Referências órfãs de cliente são preservadas apenas como evidência textual;
+    # gravar o UUID inexistente violaria a FK e interromperia todo o deploy.
     op.execute(
         r"""
         DO $$
@@ -75,6 +82,8 @@ def upgrade() -> None:
         """
     )
 
+    # Teses v4 -> teses. Métricas legadas são preservadas; `vencedora` vira
+    # uma ocorrência de uso/êxito para manter a taxa sem fabricar histórico.
     op.execute(
         r"""
         DO $$
@@ -132,4 +141,6 @@ def upgrade() -> None:
 
 
 def downgrade() -> None:
+    # Não remove registros canônicos: após o upgrade eles podem ter sido
+    # revisados, vinculados ou utilizados. As fontes v4 continuam intactas.
     pass
