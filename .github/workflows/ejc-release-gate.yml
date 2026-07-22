@@ -17,7 +17,7 @@ concurrency:
 
 jobs:
   p0-guard:
-    name: P0 guard — conflitos, segredos e continuidade
+    name: P0 guard — conflitos e segredos
     runs-on: [self-hosted, ejc-vps]
     timeout-minutes: 15
     steps:
