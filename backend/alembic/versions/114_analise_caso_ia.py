@@ -1,4 +1,4 @@
-"""113 — Módulo Análise de Caso IA (chat conversacional multi-turno).
+"""114 — Módulo Análise de Caso IA (chat conversacional multi-turno).
 
 Cria as duas tabelas do módulo:
 
@@ -10,15 +10,21 @@ Cria as duas tabelas do módulo:
 Escrita À MÃO (não autogenerate): ~30 tabelas do EJC só existem em SQL bruto,
 então nunca se confia no autogenerate cego para o schema completo (CLAUDE.md).
 
-Revision ID: 113_analise_caso_ia
+Revision ID: 114_analise_caso_ia
 Revises: 112_client_pii_drop_plaintext
 Create Date: 2026-07-21
+
+Renumerada de 113 → 114 para eliminar colisão Alembic com PRs concorrentes que
+também propuseram a revisão 113. Ordem canônica (issue #411): #401 ICS=113,
+#405 Análise de Caso IA=114, #408=115. O down_revision permanece no head
+integrado atual (112); o re-point para 113 ocorre no merge, conforme a ordem
+efetiva de integração.
 """
 from alembic import op
 import sqlalchemy as sa
 
 
-revision = "113_analise_caso_ia"
+revision = "114_analise_caso_ia"
 down_revision = "112_client_pii_drop_plaintext"
 branch_labels = None
 depends_on = None

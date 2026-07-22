@@ -6,7 +6,7 @@ from alembic.script import ScriptDirectory
 
 BACKEND_DIR = Path(__file__).resolve().parents[1]
 # Atualizar este identificador no mesmo PR que adicionar uma nova migration.
-HEAD_REVISION = "113_analise_caso_ia"
+HEAD_REVISION = "114_analise_caso_ia"
 MERGE_REVISION = "104_merge_entrada_orquestrador"
 EXPECTED_PARENTS = {
     "101_entrada_universal_documentos",
@@ -48,6 +48,7 @@ def test_cutover_pii_encadeia_apos_metricas_provedores():
 
 
 def test_analise_caso_ia_encadeia_apos_cutover_pii():
-    # 113 (módulo Análise de Caso IA) é o novo head e encadeia após 112.
+    # 114 (módulo Análise de Caso IA) é o novo head e encadeia após 112.
+    # Renumerada de 113 → 114 (colisão com #401/#408; ordem canônica na issue #411).
     revision = _script_directory().get_revision(HEAD_REVISION)
     assert revision.down_revision == "112_client_pii_drop_plaintext"
