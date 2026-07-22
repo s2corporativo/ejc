@@ -1,12 +1,19 @@
 import { useState } from "react";
 import { useNavigate } from "react-router-dom";
-import { Briefcase, Link2, Search, UserPlus } from "lucide-react";
+import {
+  Briefcase,
+  ChevronDown,
+  Link2,
+  Search,
+  UserPlus,
+  Wallet,
+} from "lucide-react";
 import api from "../lib/api";
 import { asList } from "../lib/list";
 import { useAreas } from "../lib/areas";
 import { toast } from "./Toast";
 import { Badge, Button, Modal, Spinner } from "./UI";
-import type { Client } from "../types";
+import type { CasoHonorariosInput, Client } from "../types";
 
 // Taxonomia canônica de áreas: GET /areas via useAreas() (lib/areas.ts),
 // com fallback completo do enum CaseArea (25 áreas).
@@ -17,6 +24,27 @@ const CASE_TYPES: { k: string; l: string }[] = [
 ];
 
 const soDigitos = (v: string) => v.replace(/\D/g, "");
+
+// Campo numérico opcional de honorários: "" → null; valor não-finito → null.
+const parseNum = (v: string): number | null => {
+  const t = v.trim();
+  if (t === "") return null;
+  const n = Number(t);
+  return Number.isFinite(n) ? n : null;
+};
+
+// Campo texto opcional de honorários: "" → null (trim aplicado).
+const parseTxt = (v: string): string | null => {
+  const t = v.trim();
+  return t === "" ? null : t;
+};
+
+const HONORARIOS_VAZIO = {
+  valor_contratual: "",
+  percentual_exito: "",
+  forma_pagamento: "",
+  observacoes: "",
+};
 
 /**
  * Wizard "Novo Caso" em 2 passos: (1) localizar/deduplicar o cliente por
@@ -66,6 +94,13 @@ export default function NovoCasoWizard({
   const [criandoCaso, setCriandoCaso] = useState(false);
   // Erro inline do campo título (validação junto ao campo, além do toast).
   const [tituloErro, setTituloErro] = useState<string | null>(null);
+  // ── Passo 2 — honorários (OPCIONAL) ──
+  // Bloco colapsável: se algum campo for preenchido, vai como objeto
+  // `honorarios` no POST /cases/ e alimenta o contrato gerado; se tudo
+  // vazio, o campo é omitido do payload.
+  const [honorariosAberto, setHonorariosAberto] = useState(false);
+  const [honorarios, setHonorarios] =
+    useState<Record<string, string>>(HONORARIOS_VAZIO);
   // Busca por nome pode trazer homônimos que NÃO são o cliente: sem esta
   // saída, o usuário ficava preso (o form de criação só abria com 0 achados).
   const [cadastrarNovo, setCadastrarNovo] = useState(false);
@@ -86,6 +121,8 @@ export default function NovoCasoWizard({
     setCadastrarNovo(false);
     setNovoCliente({ nome: "", email: "", telefone: "" });
     setTituloErro(null);
+    setHonorariosAberto(false);
+    setHonorarios(HONORARIOS_VAZIO);
     setCaso({
       titulo: "",
       area: "civil",
@@ -190,6 +227,18 @@ export default function NovoCasoWizard({
       const payload: Record<string, unknown> = { client_id: cliente.id };
       for (const [k, v] of Object.entries(caso)) {
         if (v !== "") payload[k] = v;
+      }
+      // Honorários (opcional/aditivo): só entra no corpo se algum dos 4
+      // campos foi preenchido. Quando presente, envia os 4 nomes do
+      // contrato com null nos vazios (o backend preenche o contrato).
+      const hono: CasoHonorariosInput = {
+        valor_contratual: parseNum(honorarios.valor_contratual),
+        percentual_exito: parseNum(honorarios.percentual_exito),
+        forma_pagamento: parseTxt(honorarios.forma_pagamento),
+        observacoes: parseTxt(honorarios.observacoes),
+      };
+      if (Object.values(hono).some((val) => val !== null)) {
+        payload.honorarios = hono;
       }
       const { data: novo } = await api.post("/cases/", payload);
       toast.success("Caso criado — acompanhe a jornada.");
@@ -515,6 +564,102 @@ export default function NovoCasoWizard({
                   setCaso({ ...caso, descricao_fatos: e.target.value })
                 }
               />
+            </div>
+
+            {/* Honorários (opcional) — bloco colapsável e discreto. */}
+            <div className="sm:col-span-2">
+              <button
+                type="button"
+                className="flex w-full items-center justify-between rounded-xl border border-slate-200 bg-slate-50 px-4 py-3 text-left transition hover:bg-slate-100"
+                aria-expanded={honorariosAberto}
+                onClick={() => setHonorariosAberto((v) => !v)}
+              >
+                <span className="flex items-center gap-2 text-sm font-medium text-slate-700">
+                  <Wallet className="h-4 w-4 text-slate-400" />
+                  Honorários (opcional)
+                </span>
+                <ChevronDown
+                  className={`h-4 w-4 text-slate-400 transition-transform ${
+                    honorariosAberto ? "rotate-180" : ""
+                  }`}
+                />
+              </button>
+
+              {honorariosAberto && (
+                <div className="mt-3 grid gap-4 rounded-xl border border-slate-100 bg-white p-4 sm:grid-cols-2">
+                  <p className="text-xs leading-5 text-slate-500 sm:col-span-2">
+                    Preencher é opcional. Se informado, o contrato de prestação
+                    de serviços gerado automaticamente já sai preenchido; se
+                    deixado em branco, o caso abre sem honorários e o contrato
+                    nasce com lacunas.
+                  </p>
+                  <div>
+                    <label className="label">Valor contratual (R$)</label>
+                    <input
+                      className="input"
+                      type="number"
+                      min="0"
+                      step="0.01"
+                      inputMode="decimal"
+                      placeholder="Ex.: 3000.00"
+                      value={honorarios.valor_contratual}
+                      onChange={(e) =>
+                        setHonorarios({
+                          ...honorarios,
+                          valor_contratual: e.target.value,
+                        })
+                      }
+                    />
+                  </div>
+                  <div>
+                    <label className="label">% de êxito</label>
+                    <input
+                      className="input"
+                      type="number"
+                      min="0"
+                      max="100"
+                      step="0.5"
+                      inputMode="decimal"
+                      placeholder="Ex.: 30"
+                      value={honorarios.percentual_exito}
+                      onChange={(e) =>
+                        setHonorarios({
+                          ...honorarios,
+                          percentual_exito: e.target.value,
+                        })
+                      }
+                    />
+                  </div>
+                  <div className="sm:col-span-2">
+                    <label className="label">Forma de pagamento</label>
+                    <input
+                      className="input"
+                      placeholder="Ex.: à vista, 3x, conforme cláusula"
+                      value={honorarios.forma_pagamento}
+                      onChange={(e) =>
+                        setHonorarios({
+                          ...honorarios,
+                          forma_pagamento: e.target.value,
+                        })
+                      }
+                    />
+                  </div>
+                  <div className="sm:col-span-2">
+                    <label className="label">Observações</label>
+                    <textarea
+                      className="input min-h-[70px]"
+                      placeholder="Condições, parcelamento, cláusulas específicas..."
+                      value={honorarios.observacoes}
+                      onChange={(e) =>
+                        setHonorarios({
+                          ...honorarios,
+                          observacoes: e.target.value,
+                        })
+                      }
+                    />
+                  </div>
+                </div>
+              )}
             </div>
           </div>
 

@@ -428,3 +428,89 @@ async def test_abertura_de_caso_agenda_gerar_documentos_iniciais_auto():
                  if t[0] is cases_router.gerar_documentos_iniciais_auto), None)
     assert task is not None, "criar() deve agendar gerar_documentos_iniciais_auto"
     assert task[1] == (case_obj.id, "u1")   # (case_id, user_id do criador)
+
+
+# ── FASE 2: honorários do cadastro na abertura do caso ───────────────────────
+
+def test_casecreate_aceita_honorarios_e_sem_honorarios():
+    """(a) CaseCreate aceita o objeto `honorarios` (4 campos) e também sem ele."""
+    from app.schemas.case import CaseCreate, HonorariosCreate
+
+    # Sem honorários (legado) → None.
+    c0 = CaseCreate(titulo="Guarda", area="familia", client_id="cli1")
+    assert c0.honorarios is None
+
+    # Com honorários — contrato de campos ESTÁVEL (não renomear).
+    c1 = CaseCreate(titulo="Guarda", area="familia", client_id="cli1",
+                    honorarios={"valor_contratual": 10000.0, "percentual_exito": 20.0,
+                                "forma_pagamento": "à vista", "observacoes": "obs"})
+    assert isinstance(c1.honorarios, HonorariosCreate)
+    assert c1.honorarios.valor_contratual == 10000.0
+    assert c1.honorarios.percentual_exito == 20.0
+    assert c1.honorarios.forma_pagamento == "à vista"
+    assert c1.honorarios.observacoes == "obs"
+
+    # Todos opcionais: objeto vazio é válido (contrato seguirá com placeholders).
+    assert CaseCreate(titulo="G", area="familia", client_id="cli1",
+                      honorarios={}).honorarios.valor_contratual is None
+
+    # Valores inválidos → 422 na entrada (nunca 500 no INSERT).
+    with pytest.raises(ValidationError):
+        CaseCreate(titulo="G", area="familia", client_id="cli1",
+                   honorarios={"valor_contratual": -1})
+    with pytest.raises(ValidationError):
+        CaseCreate(titulo="G", area="familia", client_id="cli1",
+                   honorarios={"percentual_exito": 150})
+
+
+async def test_criar_caso_com_honorarios_semeia_proposta_aprovada_antes_do_kit():
+    """(b)/ordem: POST /cases com `honorarios` cria a proposta APROVADA na MESMA
+    transação do caso (1 commit) — existe ANTES do background do kit, que é
+    agendado para rodar depois e encontrá-la."""
+    from app.models.fee_proposal import FeeProposal
+    from app.routers import cases as cases_router
+    from app.schemas.case import CaseCreate
+
+    cu = _user(UserRole.advogado, "u1")
+    payload = CaseCreate(
+        titulo="Guarda dos Filhos", area="familia", client_id="cli1",
+        honorarios={"valor_contratual": 12000.0, "percentual_exito": 25.0,
+                    "forma_pagamento": "3x", "observacoes": "obs"},
+    )
+    # execute #1 cliente; #2 advisory lock; #3 numero_interno; então o seed:
+    # #4 proposta_aprovada_vigente (idempotência → None); #5 max(versao) → None.
+    db = _FakeDB([_cli(), None, None, None, None])
+    bg = _FakeBackground()
+
+    await cases_router.criar(payload=payload, background=bg, db=db, cu=cu)
+
+    props = [o for o in db.added if isinstance(o, FeeProposal)]
+    assert len(props) == 1
+    p = props[0]
+    assert p.status == "aprovada" and p.versao == 1
+    assert p.faixas["recomendado"]["valor"] == 12000.0
+    assert p.exito_percentual == 25.0
+    assert p.parcelamento == {"descricao": "3x"}
+    assert p.justificativa == "obs"
+    # Atômico: uma única transação (caso + proposta) commitada antes do kit.
+    assert db.commits == 1
+    assert any(t[0] is cases_router.gerar_documentos_iniciais_auto for t in bg.tasks)
+
+
+async def test_criar_caso_sem_honorarios_nao_semeia_proposta():
+    """(c) Sem `honorarios`, criar() não semeia proposta (nenhum execute extra) —
+    o contrato do kit seguirá com placeholders, como hoje."""
+    from app.models.fee_proposal import FeeProposal
+    from app.routers import cases as cases_router
+    from app.schemas.case import CaseCreate
+
+    cu = _user(UserRole.advogado, "u1")
+    payload = CaseCreate(titulo="Guarda", area="familia", client_id="cli1")
+    db = _FakeDB([_cli(), None, None])   # exatamente os 3 executes legados
+    bg = _FakeBackground()
+
+    await cases_router.criar(payload=payload, background=bg, db=db, cu=cu)
+
+    assert [o for o in db.added if isinstance(o, FeeProposal)] == []
+    assert db._resultados == []          # nenhum execute a mais consumido
+    assert db.commits == 1
