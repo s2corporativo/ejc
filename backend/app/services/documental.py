@@ -20,6 +20,14 @@ _settings = get_settings()
 # da procuração é SEMPRE outorgado ao sócio-titular, INDEPENDENTEMENTE do
 # advogado responsável pelo caso (que, quando preciso, atua por
 # substabelecimento). Dado institucional fixo (não é PII de cliente).
+#
+# Fonte cruzada: OAB/endereço/e-mail espelham ESCRITORIO_OAB/ESCRITORIO_ENDERECO/
+# ESCRITORIO_EMAIL (config.py) — mantidos em sincronia MANUAL aqui, de propósito.
+# A grafia canônica da procuração diverge dos settings e os testes de texto exato
+# (test_procuracao_poderes/test_documento_marca_ia) a fixam: OAB pontuada
+# "251.174" (setting = "251174", sem ponto) e endereço em ASCII "no 851" (setting
+# usa "nº"). Só é o NOME do sócio que é dado novo. NÃO derivar de settings sem
+# reconciliar essa formatação — a derivação ingênua quebraria os testes.
 _OUTORGADO_SOCIO = (
     "JOAO PEDRO RODRIGUES TEIXEIRA, brasileiro, advogado, OAB/MG no 251.174, "
     "com endereco profissional na Av. Gov. Valadares no 851, sala 405, Centro, "
