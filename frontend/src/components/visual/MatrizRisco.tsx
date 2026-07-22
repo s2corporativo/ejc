@@ -61,7 +61,7 @@ const TRATAMENTO: Record<
 
 const FONTE_PROB: Record<string, string> = {
   risco_cadastrado: "Risco cadastrado manualmente no caso",
-  score_saude: "Regra interna sobre o score de saúde do caso",
+  nao_classificada: "Probabilidade ainda não classificada pelo advogado",
 };
 
 const EIXO_X = ["Remoto", "Possível", "Provável"];
@@ -100,13 +100,27 @@ export default function MatrizRisco({ caseId }: { caseId: string }) {
   }
 
   const indefinido = data.impacto.nivel === "indefinido";
-  const tratamento = TRATAMENTO[data.quadrante.tratamento_contabil];
+  const semClassificacao =
+    data.probabilidade.nivel == null || data.quadrante == null;
+  const tratamento = data.quadrante
+    ? TRATAMENTO[data.quadrante.tratamento_contabil]
+    : null;
 
   return (
     <SectionCard
       title="Matriz de risco (Probabilidade × Impacto)"
       subtitle="Classificação visual do contingenciamento conforme CPC 25"
     >
+      {semClassificacao && (
+        <Alert
+          variant="warning"
+          title="Probabilidade não classificada"
+          className="mb-4"
+        >
+          O índice operacional de saúde não é uma chance de êxito ou de perda.
+          Classifique o risco juridicamente no caso para posicioná-lo na matriz.
+        </Alert>
+      )}
       {indefinido && (
         <Alert variant="warning" title="Impacto indefinido" className="mb-4">
           O caso não possui valor da causa cadastrado — sem ele o impacto
@@ -138,8 +152,9 @@ export default function MatrizRisco({ caseId }: { caseId: string }) {
                       : NIVEL_CELULA.baixo;
                     const marcado =
                       !indefinido &&
-                      data.quadrante.x === x &&
-                      data.quadrante.y === y;
+                      !semClassificacao &&
+                      data.quadrante?.x === x &&
+                      data.quadrante?.y === y;
                     return (
                       <div
                         key={x}
@@ -222,9 +237,13 @@ export default function MatrizRisco({ caseId }: { caseId: string }) {
               Classificação
             </p>
             <div className="mt-1.5 flex items-center gap-2">
-              <Badge tone={NIVEL_BADGE[data.quadrante.nivel]}>
-                {LABEL_QUADRANTE[data.quadrante.nivel]}
-              </Badge>
+              {data.quadrante ? (
+                <Badge tone={NIVEL_BADGE[data.quadrante.nivel]}>
+                  {LABEL_QUADRANTE[data.quadrante.nivel]}
+                </Badge>
+              ) : (
+                <Badge tone="blue">Não classificada</Badge>
+              )}
             </div>
           </div>
           <div>
@@ -242,10 +261,12 @@ export default function MatrizRisco({ caseId }: { caseId: string }) {
               Fonte da probabilidade
             </p>
             <p className="mt-1 text-sm text-slate-600">
-              {FONTE_PROB[data.probabilidade.fonte] ?? data.probabilidade.fonte}{" "}
-              <span className="capitalize text-slate-400">
-                ({data.probabilidade.nivel})
-              </span>
+              {FONTE_PROB[data.probabilidade.fonte] ?? data.probabilidade.fonte}
+              {data.probabilidade.nivel && (
+                <span className="capitalize text-slate-400">
+                  {" "}({data.probabilidade.nivel})
+                </span>
+              )}
             </p>
             <p className="mt-1 text-xs italic text-slate-400">
               Estimativa por regras internas do sistema — não é uma predição
@@ -256,12 +277,20 @@ export default function MatrizRisco({ caseId }: { caseId: string }) {
             <p className="text-[11px] font-semibold uppercase tracking-wide text-slate-400">
               Tratamento contábil (CPC 25)
             </p>
-            <p className="mt-1 text-sm font-semibold text-slate-800">
-              {tratamento.titulo}
-            </p>
-            <p className="mt-0.5 text-xs leading-relaxed text-slate-500">
-              {tratamento.texto}
-            </p>
+            {tratamento ? (
+              <>
+                <p className="mt-1 text-sm font-semibold text-slate-800">
+                  {tratamento.titulo}
+                </p>
+                <p className="mt-0.5 text-xs leading-relaxed text-slate-500">
+                  {tratamento.texto}
+                </p>
+              </>
+            ) : (
+              <p className="mt-1 text-xs leading-relaxed text-slate-500">
+                Disponível após a classificação humana da probabilidade.
+              </p>
+            )}
           </div>
         </div>
       </div>
