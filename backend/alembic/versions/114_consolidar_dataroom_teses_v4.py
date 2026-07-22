@@ -24,6 +24,8 @@ data_backfill_targets = ("data_rooms", "teses")
 def upgrade() -> None:
     # Data Room v4 -> data_rooms. `publica` não é migrado como acesso aberto:
     # o modelo canônico exige links revogáveis, auditáveis e com expiração.
+    # Referências órfãs de cliente são preservadas apenas como evidência textual;
+    # gravar o UUID inexistente violaria a FK e interromperia todo o deploy.
     op.execute(
         r"""
         DO $$
@@ -50,22 +52,28 @@ def upgrade() -> None:
                             WHEN COALESCE(src.publica, false)
                             THEN 'A sala era marcada como pública; gere um link canônico para novo acesso.'
                             ELSE NULL
+                        END,
+                        CASE
+                            WHEN src.client_id IS NOT NULL AND cli.id IS NULL
+                            THEN 'Vínculo histórico com cliente inexistente: ' || src.client_id
+                            ELSE NULL
                         END
                     ),
                     NULL,
-                    src.client_id,
+                    CASE WHEN cli.id IS NOT NULL THEN src.client_id ELSE NULL END,
                     NULL,
                     COALESCE(src.created_at, now()),
                     now(),
                     NULL
                 FROM dataroom_salas src
+                LEFT JOIN clients cli ON cli.id = src.client_id
                 WHERE NOT EXISTS (
                     SELECT 1
                     FROM data_rooms dst
                     WHERE dst.id = src.id
                        OR (
                             lower(trim(dst.nome)) = lower(trim(LEFT(src.nome, 200)))
-                            AND COALESCE(dst.client_id, '') = COALESCE(src.client_id, '')
+                            AND COALESCE(dst.client_id, '') = COALESCE(cli.id, '')
                             AND dst.deleted_at IS NULL
                        )
                 );
