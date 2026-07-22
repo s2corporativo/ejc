@@ -62,8 +62,35 @@ class _FakeDB:
     async def commit(self):
         self.commits += 1
 
+    async def refresh(self, obj):
+        pass
+
     async def rollback(self):
         pass
+
+
+class _FakeSessionCtx:
+    """Faz um _FakeDB posar de `async with AsyncSessionLocal() as db` (usado
+    para exercitar background tasks que abrem a própria sessão)."""
+
+    def __init__(self, db: _FakeDB):
+        self._db = db
+
+    async def __aenter__(self):
+        return self._db
+
+    async def __aexit__(self, *exc):
+        return False
+
+
+class _FakeBackground:
+    """BackgroundTasks fake: registra (fn, args, kwargs) de cada add_task."""
+
+    def __init__(self):
+        self.tasks: list = []
+
+    def add_task(self, fn, *args, **kwargs):
+        self.tasks.append((fn, args, kwargs))
 
 
 def _user(role: UserRole, uid: str = "u1") -> User:
@@ -316,3 +343,88 @@ def test_gerar_documentos_endpoint_tem_rate_limit_na_rota():
     rotas = [r for r in app.routes
              if getattr(r, "path", "").endswith("/cases/{case_id}/gerar-documentos")]
     assert rotas and rotas[0].dependencies   # Depends(rate_limit("kit-documental", 5))
+
+
+# ── Gatilho AUTOMÁTICO na abertura do caso (gerar_documentos_iniciais_auto) ───
+
+async def test_auto_wrapper_gera_kit_poderes_gerais_e_nao_cria_registro_formal(monkeypatch):
+    # (b)/(d): o wrapper de background gera o kit (procuração + contrato +
+    # checklist) com a POLÍTICA CENTRAL de PODERES GERAIS (ad_judicia_et_extra),
+    # tudo RASCUNHO/HITL, e NÃO cria o registro formal Procuracao.
+    from app.services import case_automacao
+
+    case = _case(advogado_responsavel_id="u1")
+    # Fresh: dedup vazio → itens OAB → proposta None (contrato com placeholders)
+    db = _FakeDB([[], [_item_oab()], None],
+                 gets={("Case", "case1"): case, ("Client", "cli1"): _cli(),
+                       ("User", "u1"): _user(UserRole.advogado, "u1")})
+    monkeypatch.setattr(case_automacao, "AsyncSessionLocal", lambda: _FakeSessionCtx(db))
+
+    await case_automacao.gerar_documentos_iniciais_auto("case1", "u1")
+
+    docs = [o for o in db.added if isinstance(o, LegalDoc)]
+    assert {d.tipo_peca for d in docs} == {PecaTipo.procuracao, PecaTipo.contrato, PecaTipo.outro}
+    assert all(d.status == PecaStatus.rascunho for d in docs)
+    assert all(d.human_reviewed is False and d.ai_generated is True for d in docs)  # gate HITL
+    proc = next(d for d in docs if d.tipo_peca == PecaTipo.procuracao)
+    # (d) política central: PODERES GERAIS + OUTORGADO fixo (sócio-titular)
+    assert "AD JUDICIA ET EXTRA - PODERES GERAIS" in proc.conteudo
+    assert "JOAO PEDRO RODRIGUES TEIXEIRA" in proc.conteudo
+    # Item 6: NENHUM registro formal Procuracao no fluxo automático (só a minuta)
+    assert [o for o in db.added if isinstance(o, Procuracao)] == []
+    assert db.commits == 1
+
+
+async def test_auto_wrapper_idempotente_reusa_ja_existia(monkeypatch):
+    # (b) idempotência: reprocessar não duplica — o dedup encontra os 3 rascunhos
+    # e devolve ja_existia (nada é criado/auditado/commitado).
+    from app.services import case_automacao
+
+    case = _case(advogado_responsavel_id="u1")
+    db = _FakeDB([_kit_existente(case)],
+                 gets={("Case", "case1"): case, ("Client", "cli1"): _cli(),
+                       ("User", "u1"): _user(UserRole.advogado, "u1")})
+    monkeypatch.setattr(case_automacao, "AsyncSessionLocal", lambda: _FakeSessionCtx(db))
+
+    await case_automacao.gerar_documentos_iniciais_auto("case1", "u1")
+
+    # Guarda anti-falso-positivo: o dedup REALMENTE rodou (fila consumida) e, ainda
+    # assim, nada foi criado/commitado — é o caminho ja_existia, não um erro engolido.
+    assert db._resultados == []
+    assert [o for o in db.added if isinstance(o, LegalDoc)] == []
+    assert db.commits == 0
+
+
+async def test_auto_wrapper_sem_cliente_nao_derruba(monkeypatch):
+    # Fail-safe: caso sem cliente não gera kit nem levanta exceção.
+    from app.services import case_automacao
+
+    case = _case(client_id=None, advogado_responsavel_id="u1")
+    db = _FakeDB([], gets={("Case", "case1"): case,
+                           ("User", "u1"): _user(UserRole.advogado, "u1")})
+    monkeypatch.setattr(case_automacao, "AsyncSessionLocal", lambda: _FakeSessionCtx(db))
+
+    await case_automacao.gerar_documentos_iniciais_auto("case1", "u1")
+    assert db.added == [] and db.commits == 0
+
+
+async def test_abertura_de_caso_agenda_gerar_documentos_iniciais_auto():
+    # (a): POST /cases (criar) agenda o gatilho em BACKGROUND com (case_id, user_id).
+    from app.routers import cases as cases_router
+    from app.schemas.case import CaseCreate
+
+    cu = _user(UserRole.advogado, "u1")
+    payload = CaseCreate(titulo="Guarda dos Filhos", area="familia", client_id="cli1")
+    # execute #1: validação do cliente (scalar_one_or_none); #2: advisory lock;
+    # #3: SELECT numero_interno (scalar → None = primeiro do ano).
+    db = _FakeDB([_cli(), None, None])
+    bg = _FakeBackground()
+
+    ret = await cases_router.criar(payload=payload, background=bg, db=db, cu=cu)
+
+    case_obj = next(o for o in db.added if isinstance(o, Case))
+    assert ret is case_obj
+    task = next((t for t in bg.tasks
+                 if t[0] is cases_router.gerar_documentos_iniciais_auto), None)
+    assert task is not None, "criar() deve agendar gerar_documentos_iniciais_auto"
+    assert task[1] == (case_obj.id, "u1")   # (case_id, user_id do criador)

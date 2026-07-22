@@ -774,17 +774,18 @@ class Settings(BaseSettings):
     # ── Escritório (LGPD — identificação do controlador de dados) ─────────
     # FONTE ÚNICA DE VERDADE dos dados FIXOS do escritório, consumida por todos
     # os geradores de documento (documental.py, templates_documentos.py,
-    # pdf_service.py, docx_service.py). OAB/ENDERECO/CEP nascem VAZIOS de
-    # propósito: são preenchidos no .env do escritório. Quando vazios, os
-    # helpers abaixo devolvem um placeholder EXPLÍCITO e visível — o documento
-    # nunca sai com string vazia silenciosa nem com dado inventado.
+    # pdf_service.py, docx_service.py). OAB/ENDERECO trazem o DADO INSTITUCIONAL
+    # do escritório como default (sobreponível pelo .env de cada instalação);
+    # CEP nasce VAZIO de propósito. Quando vazios, os helpers abaixo devolvem um
+    # placeholder EXPLÍCITO e visível — o documento nunca sai com string vazia
+    # silenciosa nem com dado inventado.
     ESCRITORIO_NOME: str = "De Paula Teixeira Sociedade de Advogados"
     ESCRITORIO_CNPJ: str = "32.491.468/0001-12"
     ESCRITORIO_CIDADE: str = "Betim"
     ESCRITORIO_ESTADO: str = "MG"
     ESCRITORIO_EMAIL: str = "contato@depaulateixeira.adv.br"
-    ESCRITORIO_OAB: str = ""
-    ESCRITORIO_ENDERECO: str = ""
+    ESCRITORIO_OAB: str = "251174/MG"
+    ESCRITORIO_ENDERECO: str = "Av. Gov. Valadares nº 851, sala 405, Centro, Betim"
     ESCRITORIO_CEP: str = ""
 
     @staticmethod

@@ -7,6 +7,8 @@ from uuid import uuid4
 from sqlalchemy import select, text
 from app.core.database import AsyncSessionLocal
 from app.models.case import Case
+from app.models.client import Client
+from app.models.user import User
 from app.models.checklist import (
     ChecklistTemplate, ChecklistTemplateItem, CaseChecklist, CaseChecklistItem,
 )
@@ -104,3 +106,58 @@ async def automacao_caso(case_id: str) -> None:
             logger.info(f"[automacao_caso] caso {case_id} automatizado (kanban + checklist)")
     except Exception as e:
         logger.warning(f"[automacao_caso] falha no caso {case_id}: {e}")
+
+
+async def gerar_documentos_iniciais_auto(case_id: str, user_id: str | None = None) -> None:
+    """Gatilho AUTOMÁTICO do kit documental inicial na ABERTURA do caso.
+
+    Mesmo molde de ``automacao_caso``: roda em BackgroundTask, abre a própria
+    ``AsyncSessionLocal`` e é FAIL-SAFE (try/except que NUNCA derruba a criação
+    do caso). REUSA a idempotência pronta de ``geracao_documental.gerar_kit_inicial``
+    — se os rascunhos do kit já existem para o caso, nada é duplicado
+    (ja_existia=True); regeneração só é explícita (forcar_novo).
+
+    Política central: procuração com PODERES GERAIS
+    (``tipo_poderes="ad_judicia_et_extra"``), o modelo oficial do escritório.
+    Tudo nasce RASCUNHO/ai_generated=True → gate HITL (revisão humana
+    obrigatória). NÃO cria o registro formal ``Procuracao``: a minuta é apenas
+    LegalDoc; a outorga formal continua exclusiva de routers/procuracoes.py.
+    O contrato sai preenchido quando há proposta de honorários aprovada; sem
+    proposta, com placeholders de revisão (comportamento atual preservado).
+    """
+    try:
+        # Import tardio: evita custo/ciclo no boot do router e mantém o gatilho
+        # tão degradável quanto o restante das integrações opt-in.
+        from app.services import geracao_documental
+
+        async with AsyncSessionLocal() as db:
+            case = await db.get(Case, case_id)
+            if not case or case.deleted_at is not None:
+                return
+            cli = await db.get(Client, case.client_id) if case.client_id else None
+            if not cli:
+                logger.warning(
+                    f"[gerar_documentos_iniciais_auto] caso {case_id} sem cliente — kit ignorado"
+                )
+                return
+            # "Autor" do kit (created_by + papel na auditoria): quem criou o caso
+            # ou, na falta, o advogado responsável. Precisa ser um User real.
+            cu = await db.get(User, user_id) if user_id else None
+            if cu is None and case.advogado_responsavel_id:
+                cu = await db.get(User, case.advogado_responsavel_id)
+            if cu is None:
+                logger.warning(
+                    f"[gerar_documentos_iniciais_auto] caso {case_id} sem usuario para autoria — kit ignorado"
+                )
+                return
+
+            res = await geracao_documental.gerar_kit_inicial(
+                db, case, cli, cu, tipo_poderes="ad_judicia_et_extra",
+            )
+            logger.info(
+                f"[gerar_documentos_iniciais_auto] caso {case_id}: "
+                f"kit {'reaproveitado' if res.get('ja_existia') else 'gerado'} "
+                f"(ja_existia={res.get('ja_existia')})"
+            )
+    except Exception as e:
+        logger.warning(f"[gerar_documentos_iniciais_auto] falha no caso {case_id}: {e}")

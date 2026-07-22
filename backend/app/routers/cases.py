@@ -19,7 +19,7 @@ from app.models.client import Client
 from app.models.audit_log import criar_audit_log
 from app.services.deadline_calculator import calcular_prescricao
 from app.services.case_intel import triagem_caso, aprendizado_encerramento
-from app.services.case_automacao import automacao_caso
+from app.services.case_automacao import automacao_caso, gerar_documentos_iniciais_auto
 from app.services import event_bus
 from app.services.documental import gerar_documentos_iniciais
 # Mesmo vocabulário/contrato de poderes do kit documental (fonte única do
@@ -239,6 +239,13 @@ async def criar(
     # Roda em background; preenche tese/pontos (se vazios) sem travar a resposta.
     background.add_task(automacao_caso, c.id)
     background.add_task(triagem_caso, c.id)
+    # Kit documental inicial (procuração PODERES GERAIS + contrato) gerado em
+    # BACKGROUND: o titular pediu geração automática na abertura de cada caso, sem
+    # bloquear a resposta do POST. É idempotente e fail-safe (reusa
+    # geracao_documental.gerar_kit_inicial via case_automacao). Engate feito só
+    # aqui em criar() para a v1 — a conversão de lead poderia assinar
+    # "caso.criado" no event_bus, mas o gatilho central da abertura é este.
+    background.add_task(gerar_documentos_iniciais_auto, c.id, getattr(cu, "id", None))
     background.add_task(event_bus.emitir_caso_criado, c.id, getattr(cu, 'id', None))
     return c
 

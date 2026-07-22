@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from datetime import datetime, timezone
+from datetime import date, datetime, timezone
 from uuid import uuid4
 
 from app.core.config import get_settings
@@ -16,6 +16,31 @@ from app.utils.format import formatar_brl
 _MARCA = aviso_minuta_automatica() + "\n\n"
 _settings = get_settings()
 
+# OUTORGADO FIXO da procuração — sócio-titular do escritório. O modelo oficial
+# da procuração é SEMPRE outorgado ao sócio-titular, INDEPENDENTEMENTE do
+# advogado responsável pelo caso (que, quando preciso, atua por
+# substabelecimento). Dado institucional fixo (não é PII de cliente).
+_OUTORGADO_SOCIO = (
+    "JOAO PEDRO RODRIGUES TEIXEIRA, brasileiro, advogado, OAB/MG no 251.174, "
+    "com endereco profissional na Av. Gov. Valadares no 851, sala 405, Centro, "
+    "Betim/MG, e-mail contato@depaulateixeira.adv.br"
+)
+
+# Cabeçalho oficial (timbre textual) da procuração do escritório.
+_CABECALHO_ESCRITORIO = "DE PAULA TEIXEIRA - SOCIEDADE DE ADVOGADOS"
+
+_MESES_PT = (
+    "janeiro", "fevereiro", "marco", "abril", "maio", "junho",
+    "julho", "agosto", "setembro", "outubro", "novembro", "dezembro",
+)
+
+
+def _data_extenso(d: date) -> str:
+    """Data corrente por extenso em pt-BR (ex.: '22 de julho de 2026'). Usa o
+    datetime normal do Python (permitido no service; a proibição de Date.now()
+    é um padrão de front-end, não do backend)."""
+    return f"{d.day} de {_MESES_PT[d.month - 1]} de {d.year}"
+
 
 def _qualificacao(c: Client) -> str:
     # Cutover C6/LGPD: documento vive só cifrado — presença via cnpj_enc, valor
@@ -27,8 +52,12 @@ def _qualificacao(c: Client) -> str:
             f"{c.logradouro or '[endereco]'}, {c.numero or ''} {c.complemento or ''}, "
             f"{c.bairro or ''}, {c.cidade or '[cidade]'}/{c.estado or 'MG'}, CEP {c.cep or '[CEP]'}"
         )
+    # Nacionalidade da PF na qualificação do outorgante. O model Client ainda não
+    # possui a coluna (esta fase NÃO exige migration) — sem o campo, assume o
+    # default "brasileiro(a)". Quando a coluna existir e vier preenchida, é usada.
+    nacionalidade = (getattr(c, "nacionalidade", "") or "").strip() or "brasileiro(a)"
     return (
-        f"{c.nome}, {c.profissao or '[profissao]'}, inscrito(a) no CPF sob o no "
+        f"{c.nome}, {nacionalidade}, {c.profissao or '[profissao]'}, inscrito(a) no CPF sob o no "
         f"{c.cpf_plain or '[CPF]'}, residente em {c.logradouro or '[endereco]'}, "
         f"{c.numero or ''} {c.complemento or ''}, {c.bairro or ''}, "
         f"{c.cidade or '[cidade]'}/{c.estado or 'MG'}, CEP {c.cep or '[CEP]'}"
@@ -65,11 +94,38 @@ def _clausula_poderes(
 
     if tipo == "ad_judicia_et_extra":
         titulo = "PROCURACAO AD JUDICIA ET EXTRA"
+        # Poderes gerais (modelo oficial do escritório) detalhados em alíneas
+        # (a)-(j). A alínea (j) — substabelecimento — SÓ entra quando o cadastro
+        # autoriza (permite_substabelecimento), preservando o gate independente
+        # do art. 105 que o restante das alíneas materializa.
+        alineas = [
+            "(a) propor as acoes e medidas cabiveis, inclusive tutelas de urgencia e "
+            "cautelares, defender o(a) outorgante nas contrarias e acompanhar os feitos "
+            "em todas as instancias e graus de jurisdicao ate o transito em julgado",
+            "(b) confessar, reconhecer a procedencia do pedido, transigir, celebrar "
+            "acordos judiciais e extrajudiciais, fixar condicoes de pagamento e assinar "
+            "os respectivos termos",
+            "(c) desistir de recursos, renunciar ao direito sobre que se funda a acao "
+            "(art. 105 do CPC) e praticar os demais atos de disposicao processual",
+            "(d) receber citacoes, intimacoes e notificacoes, inclusive eletronicas "
+            "(PJe, e-Proc e demais sistemas)",
+            "(e) requerer os beneficios da Justica Gratuita (Lei 1.060/50; art. 98 do CPC)",
+            "(f) receber valores, dar quitacao, levantar depositos judiciais e assinar "
+            "requerimentos de alvara",
+            "(g) obter certidoes e informacoes junto a cartorios, juntas comerciais, "
+            "DETRAN, Receita Federal, INSS, FGTS e demais orgaos",
+            "(h) representar o(a) outorgante em audiencias de conciliacao, mediacao, "
+            "instrucao e julgamento",
+            "(i) assinar peticoes, memoriais e documentos",
+        ]
+        if permite_substabelecimento:
+            alineas.append(
+                "(j) substabelecer este mandato, com ou sem reserva de poderes"
+            )
         corpo = (
-            "a quem confere os poderes da clausula ad judicia et extra, para o foro "
-            "em geral, em qualquer Juizo, Instancia ou Tribunal, podendo propor as "
-            "acoes competentes e defender o(a) outorgante nas contrarias, bem como os "
-            "poderes especiais para " + _PODERES_ESPECIAIS_105 + substab
+            "a quem confere os poderes da clausula ad judicia et extra, para o foro em "
+            "geral, em qualquer Juizo, Instancia ou Tribunal, e ainda os seguintes "
+            "poderes especiais: " + "; ".join(alineas)
         )
     elif tipo == "especiais":
         titulo = "PROCURACAO COM PODERES ESPECIAIS"
@@ -111,11 +167,25 @@ def _procuracao(
     # omissao) foi DESCONTINUADO: quem precisar do escopo amplo deve pedir
     # explicitamente (parametros do endpoint gerar-documentos / kit).
     #
-    # Dados FIXOS do escritório vêm das settings (fonte única). Quando ainda não
-    # preenchidos no .env, os helpers devolvem placeholder EXPLÍCITO e visível.
-    # A CIDADE de assinatura é a sede do escritório; a DATA depende do caso e
-    # permanece como placeholder de revisão.
+    # OUTORGADO FIXO: o modelo oficial do escritório é SEMPRE outorgado ao
+    # sócio-titular (_OUTORGADO_SOCIO), independentemente do advogado responsável
+    # pelo caso — por isso o parâmetro `adv` NÃO alimenta mais o outorgado (fica
+    # na assinatura para compatibilidade das chamadas existentes). A CIDADE de
+    # assinatura é a sede do escritório e a DATA agora é a corrente (por extenso).
+    tipo = (tipo_poderes or "ad_judicia").strip().lower()
     titulo, corpo_poderes = _clausula_poderes(tipo_poderes, permite_substabelecimento, poderes_especiais)
+
+    # Cabeçalho oficial: no modelo de PODERES GERAIS (ad_judicia_et_extra) sai o
+    # timbre completo; nos demais tipos, o timbre do escritório + o título do
+    # instrumento (mantém "PROCURACAO AD JUDICIA"/"...ESPECIAIS" visível).
+    if tipo == "ad_judicia_et_extra":
+        cabecalho = (
+            _CABECALHO_ESCRITORIO + "\n"
+            "PROCURACAO\n"
+            "AD JUDICIA ET EXTRA - PODERES GERAIS"
+        )
+    else:
+        cabecalho = _CABECALHO_ESCRITORIO + "\n" + titulo
 
     if case is not None:
         alvo = (
@@ -128,14 +198,13 @@ def _procuracao(
         alvo = ""
 
     texto = _MARCA + (
-        titulo + "\n\n"
+        cabecalho + "\n\n"
         f"OUTORGANTE: {_qualificacao(cli)}.\n\n"
-        f"OUTORGADO(A): {adv}, advogado(a) inscrito(a) na OAB/MG sob o no {_settings.escritorio_oab()}, "
-        f"integrante de {_settings.ESCRITORIO_NOME}, com escritorio em {_settings.escritorio_endereco()}.\n\n"
+        f"OUTORGADO: {_OUTORGADO_SOCIO}.\n\n"
         "PODERES: Pelo presente instrumento, o(a) outorgante nomeia e constitui seu(sua) "
         "bastante procurador(a) o(a) advogado(a) acima, "
         + corpo_poderes + alvo + ".\n\n"
-        f"{_settings.ESCRITORIO_CIDADE}/{_settings.ESCRITORIO_ESTADO}, [data].\n\n"
+        f"{_settings.ESCRITORIO_CIDADE}/{_settings.ESCRITORIO_ESTADO}, {_data_extenso(date.today())}.\n\n"
         "______________________________________\n"
         f"{cli.razao_social or cli.nome}"
     )
