@@ -11,7 +11,7 @@ from datetime import datetime, timedelta, timezone
 from uuid import uuid4
 
 from fastapi import HTTPException
-from sqlalchemy import select
+from sqlalchemy import func as sqlfunc, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.config import get_settings
@@ -19,9 +19,9 @@ from app.core.ownership import is_gestao
 from app.models.audit_log import criar_audit_log
 from app.models.case import Case, CaseMovimento, CaseStatus
 from app.models.case_next_action import CaseNextAction, CaseNextActionWaiver
-from app.models.deadline import Deadline
+from app.models.deadline import Deadline, DeadlineStatus
 from app.models.document import Document
-from app.models.task import Task
+from app.models.task import Task, TaskStatus
 from app.models.user import User, UserRole
 from app.schemas.case_next_action import (
     CaseNextActionComplete,
@@ -479,6 +479,92 @@ async def waive_next_action(
     )
     await db.commit()
     return await operational_view(db, case)
+
+
+async def closure_issues(db: AsyncSession, case: Case) -> list[dict]:
+    """Obrigações que precisam ser resolvidas antes do encerramento/arquivo."""
+
+    issues: list[dict] = []
+    action = await current_action(db, case.id)
+    if action is not None:
+        issues.append(
+            {
+                "codigo": "proxima_acao_aberta",
+                "detalhe": f"Concluir a próxima ação: {action.title}",
+            }
+        )
+
+    deadline_rows = (
+        await db.execute(
+            select(Deadline.status, sqlfunc.count(Deadline.id))
+            .where(
+                Deadline.case_id == case.id,
+                Deadline.deleted_at.is_(None),
+                Deadline.status.in_(
+                    [DeadlineStatus.pendente, DeadlineStatus.vencido]
+                ),
+            )
+            .group_by(Deadline.status)
+        )
+    ).all()
+    deadline_counts = {
+        status.value if hasattr(status, "value") else str(status): count
+        for status, count in deadline_rows
+    }
+    deadline_total = sum(deadline_counts.values())
+    if deadline_total:
+        issues.append(
+            {
+                "codigo": "prazos_abertos",
+                "detalhe": (
+                    f"Resolver {deadline_total} prazo(s) pendente(s) ou vencido(s)"
+                ),
+                "quantidade": deadline_total,
+            }
+        )
+
+    unconfirmed_deadlines = (
+        await db.execute(
+            select(sqlfunc.count(Deadline.id)).where(
+                Deadline.case_id == case.id,
+                Deadline.deleted_at.is_(None),
+                Deadline.confirmado.is_(False),
+                Deadline.status.notin_(
+                    [DeadlineStatus.concluido, DeadlineStatus.cancelado]
+                ),
+            )
+        )
+    ).scalar_one()
+    if unconfirmed_deadlines:
+        issues.append(
+            {
+                "codigo": "prazos_sem_confirmacao",
+                "detalhe": (
+                    f"Confirmar ou cancelar {unconfirmed_deadlines} prazo(s) "
+                    "extraído(s)"
+                ),
+                "quantidade": unconfirmed_deadlines,
+            }
+        )
+
+    open_tasks = (
+        await db.execute(
+            select(sqlfunc.count(Task.id)).where(
+                Task.case_id == case.id,
+                Task.deleted_at.is_(None),
+                Task.status != TaskStatus.concluida,
+            )
+        )
+    ).scalar_one()
+    if open_tasks:
+        issues.append(
+            {
+                "codigo": "tarefas_abertas",
+                "detalhe": f"Concluir {open_tasks} tarefa(s) aberta(s)",
+                "quantidade": open_tasks,
+            }
+        )
+    return issues
 
 
 async def readiness_issues(db: AsyncSession, case: Case) -> list[dict]:
