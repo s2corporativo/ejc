@@ -21,6 +21,10 @@ from app.routers.ia_governanca import _fonte_oficial
     "https://stf.jus.br/pauta",
     "https://cnj.jus.br/a",
     "https://fonaje.amb.com.br/enunciados",
+    # Federador oficial LexML (Senado) — face da federação RAG. As URLs de
+    # consulta/URN geradas pelo ingestor lexml precisam passar nesta allowlist.
+    "https://www.lexml.gov.br/busca/pesquisa?palavras=x&tipo=legislacao",
+    "https://lexml.gov.br/urn/urn:lex:br;minas.gerais:assembleia.legislativa",
 ])
 def test_dominios_oficiais_aceitos(url):
     assert _fonte_oficial(url) is True
@@ -32,6 +36,7 @@ def test_dominios_oficiais_aceitos(url):
     "https://evil.com/tjmg.jus.br",
     # domínio de fachada com o oficial como prefixo do host
     "https://tjmg.jus.br.evil.net/",
+    "https://lexml.gov.br.evil.net/urn/x",
     # userinfo com '@' — hostname real é evil.com
     "https://tjmg.jus.br@evil.com/",
     # http não é aceito (exige https)

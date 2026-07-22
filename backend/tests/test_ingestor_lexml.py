@@ -9,7 +9,11 @@ mockado, mesma estratégia do test_ingestor_tjmg):
    INVARIANTE DE SEGURANÇA (legislação NÃO entra em 'legislacao%' — não afrouxa o
    citation gate), metadados/confiança, dedup intra-execução e tolerância a erro.
 4) Gate do scheduler: job_ingestao_lexml é no-op com LEXML_INGEST_ENABLED=False
-   (default) e executa quando ligado; add_job registrado no start_scheduler.
+   e executa quando ligado (o gate é LIGADO por default=True); add_job
+   registrado no start_scheduler.
+5) Federação EXPLÍCITA por jurisdição (ALMG/MG-estadual, Betim-municipal, TRT-3,
+   TRF-6, juizados): presença no catálogo, URN/consulta bem-formadas e na
+   allowlist oficial, categoria correta por esfera, e wiring no ingerir().
 """
 from __future__ import annotations
 
@@ -253,3 +257,152 @@ def test_job_lexml_registrado_no_scheduler():
     from app.services import scheduler as sch
     src = inspect.getsource(sch.start_scheduler)
     assert "job_ingestao_lexml" in src and "ing_lexml" in src
+
+
+# ── 5. Federação EXPLÍCITA por jurisdição ─────────────────────────────────────
+
+_SLUGS_ESPERADOS = {
+    "mg_estadual_almg", "betim_municipal",
+    "trt3_jurisprudencia", "trf6_jurisprudencia", "juizados_especiais",
+}
+
+
+def test_jurisdicoes_federadas_cobrem_alvos_e_tipos():
+    por_slug = {j.slug: j for j in lexml.JURISDICOES_FEDERADAS}
+    assert _SLUGS_ESPERADOS <= set(por_slug)
+    # Legislação estadual/municipal são face 'legislacao'; tribunais/juizados
+    # são face 'jurisprudencia'.
+    assert por_slug["mg_estadual_almg"].tipo == "legislacao"
+    assert por_slug["betim_municipal"].tipo == "legislacao"
+    assert por_slug["trt3_jurisprudencia"].tipo == "jurisprudencia"
+    assert por_slug["trf6_jurisprudencia"].tipo == "jurisprudencia"
+    assert por_slug["juizados_especiais"].tipo == "jurisprudencia"
+    # Betim é MUNICIPAL: a localidade carrega o município no esquema URN LexML.
+    assert por_slug["betim_municipal"].localidade == "minas.gerais;betim"
+    assert por_slug["mg_estadual_almg"].localidade == "minas.gerais"
+
+
+def test_urn_prefixo_bem_formada_por_jurisdicao():
+    for j in lexml.JURISDICOES_FEDERADAS:
+        urn = lexml.urn_prefixo(j)
+        assert lexml._urn_bem_formada(urn), urn
+        assert urn.startswith("urn:lex:br;minas.gerais")
+    por_slug = {j.slug: j for j in lexml.JURISDICOES_FEDERADAS}
+    assert lexml.urn_prefixo(por_slug["betim_municipal"]) == \
+        "urn:lex:br;minas.gerais;betim:camara.municipal"
+    assert lexml.urn_prefixo(por_slug["mg_estadual_almg"]) == \
+        "urn:lex:br;minas.gerais:assembleia.legislativa"
+    assert lexml.urn_prefixo(por_slug["trt3_jurisprudencia"]) == \
+        "urn:lex:br;minas.gerais:tribunal.regional.trabalho.regiao.3"
+    # URN malformada é rejeitada (não é URL; validada por forma)
+    assert not lexml._urn_bem_formada("urn:lex:br")
+    assert not lexml._urn_bem_formada("http://lexml.gov.br/x")
+
+
+def test_categoria_de_gravacao_por_esfera():
+    for j in lexml.JURISDICOES_FEDERADAS:
+        cat = lexml._CATEGORIA[j.tipo]
+        if j.tipo == "legislacao":
+            # INVARIANTE DE SEGURANÇA: legislação federada NUNCA em 'legislacao%'
+            assert cat == "referencia_legislativa"
+            assert not cat.startswith("legislacao")
+        else:
+            assert cat == "jurisprudencia"
+
+
+def test_consulta_url_e_urn_passam_pela_allowlist_oficial():
+    from app.routers.ia_governanca import _fonte_oficial
+    for j in lexml.JURISDICOES_FEDERADAS:
+        url = lexml.consulta_url(j.consulta, j.tipo)
+        assert _fonte_oficial(url) is True, url        # lexml.gov.br é oficial
+    # o helper interno do ingestor delega para a MESMA allowlist canônica
+    assert lexml._url_oficial("https://www.lexml.gov.br/busca/pesquisa?palavras=x") is True
+    assert lexml._url_oficial("https://jusbrasil.com.br/x") is False
+    assert lexml._url_oficial("") is False
+
+
+def test_plano_federacao_inclui_jurisdicoes_e_temas(monkeypatch):
+    s = get_settings()
+    monkeypatch.setattr(s, "LEXML_INGEST_TEMAS", "tema1", raising=False)
+    plano = lexml._plano_federacao(s)
+    # jurisdições explícitas entram com objeto JurisdicaoLexML e seu tipo único
+    jurs = [(c, t, j) for (c, t, j) in plano if j is not None]
+    slugs = {j.slug for (_, _, j) in jurs}
+    assert _SLUGS_ESPERADOS <= slugs
+    # tema genérico entra nos DOIS tipos, sem jurisdição
+    temas = [(c, t) for (c, t, j) in plano if j is None]
+    assert ("tema1", "legislacao") in temas and ("tema1", "jurisprudencia") in temas
+
+
+# Item que buscar_lexml devolveria para a consulta explícita do TRT-3.
+_TRT3 = next(j for j in lexml.JURISDICOES_FEDERADAS if j.slug == "trt3_jurisprudencia")
+_ALMG = next(j for j in lexml.JURISDICOES_FEDERADAS if j.slug == "mg_estadual_almg")
+JUR_TRT3_ITEM = {
+    "titulo": "TRT-3 — adicional de insalubridade",
+    "ementa": "ADICIONAL DE INSALUBRIDADE. Perícia. Base de cálculo. Devido o "
+              "adicional em grau médio com reflexos nas verbas rescisórias.",
+    "tribunal": "TRT-3", "relator": "Des. Ciclano",
+    "numero_acordao": "tribunal.regional.trabalho.regiao.3;ac;9999",
+    "data_julgamento": "2025-04-01", "fonte": "LexML",
+    "link_original": "https://www.lexml.gov.br/urn/z", "area_juridica": "Trabalhista",
+}
+LEG_ALMG_ITEM = {
+    "titulo": "Lei Estadual MG 99.999/2021 — carreira do servidor",
+    "ementa": "Institui plano de carreira dos servidores do Estado de Minas "
+              "Gerais e estabelece regras de progressão e vencimentos.",
+    "tribunal": "", "relator": "Assembleia Legislativa de Minas Gerais",
+    "numero_acordao": "minas.gerais:lei;99.999;2021", "data_julgamento": "2021-02-02",
+    "fonte": "LexML",
+    # link NÃO-oficial de propósito: deve ser rejeitado e cair p/ a URL de consulta
+    "link_original": "https://jusbrasil.com.br/lei-mg", "area_juridica": "Administrativo",
+}
+
+
+async def test_ingerir_federa_jurisdicoes_explicitas(monkeypatch):
+    ups: list[dict] = []
+    # Só as consultas das jurisdições ALMG e TRT-3 retornam itens; nenhum tema.
+    por_tipo = {
+        (_TRT3.consulta, "jurisprudencia"): [JUR_TRT3_ITEM],
+        (_ALMG.consulta, "legislacao"): [LEG_ALMG_ITEM],
+    }
+    _prepara(monkeypatch, temas="", por_tipo=por_tipo, upserts=ups)
+    novos, total = await lexml.ingerir(_FakeDB())
+    assert (novos, total) == (2, 2)
+
+    por_chave = {u["chave_origem"]: u for u in ups}
+    trt3 = por_chave["lexml:jur:tribunal.regional.trabalho.regiao.3;ac;9999"]
+    almg = por_chave["lexml:leg:minas.gerais:lei;99.999;2021"]
+
+    # Categorias corretas por esfera (invariante de segurança preservado)
+    assert almg["categoria"] == "referencia_legislativa"
+    assert not almg["categoria"].startswith("legislacao")
+    assert trt3["categoria"] == "jurisprudencia"
+
+    # Metadados da federação explícita
+    assert trt3["extra"]["jurisdicao"] == "trt3_jurisprudencia"
+    assert trt3["extra"]["esfera"] == "trabalhista"
+    assert trt3["extra"]["urn_lex_prefixo"] == \
+        "urn:lex:br;minas.gerais:tribunal.regional.trabalho.regiao.3"
+    assert almg["extra"]["jurisdicao"] == "mg_estadual_almg"
+    assert almg["extra"]["urn_lex_prefixo"] == \
+        "urn:lex:br;minas.gerais:assembleia.legislativa"
+
+    # 'fonte' GRAVADA sempre passa a allowlist oficial:
+    from app.routers.ia_governanca import _fonte_oficial
+    assert _fonte_oficial(trt3["fonte"]) is True         # link_original oficial (lexml.gov.br)
+    assert trt3["fonte"] == "https://www.lexml.gov.br/urn/z"
+    # link não-oficial do ALMG é descartado → cai p/ a URL de consulta do federador
+    assert _fonte_oficial(almg["fonte"]) is True
+    assert almg["fonte"].startswith("https://www.lexml.gov.br/busca/pesquisa")
+
+
+async def test_ingerir_temas_ainda_rodam_com_jurisdicoes_ativas(monkeypatch):
+    # As jurisdições explícitas NÃO desligam a varredura por tema: com um tema
+    # override e itens só nele, o resultado é o mesmo do comportamento anterior.
+    ups: list[dict] = []
+    chamadas = _prepara(monkeypatch, upserts=ups)   # temas='tema1', itens padrão
+    novos, total = await lexml.ingerir(_FakeDB())
+    assert (novos, total) == (3, 3)                  # LEG + 2 JUR do tema1
+    # o plano também consultou as jurisdições explícitas (mesmo sem itens)
+    assert (_TRT3.consulta, "jurisprudencia") in chamadas
+    assert (_ALMG.consulta, "legislacao") in chamadas

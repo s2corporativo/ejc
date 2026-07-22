@@ -1215,8 +1215,9 @@ def start_scheduler():
     # (sáb 04h30) — crawler de jurisprudência estadual MG por temas curados.
     s.add_job(job_ingestao_tjmg,     CronTrigger(day_of_week="sat", hour=4, minute=30), id="ing_tjmg", replace_existing=True)
     # LexML (federador oficial) → RAG: gate interno LEXML_INGEST_ENABLED
-    # (default False). Semanal (sáb 05h) — federa legislação estadual (ALMG)/
-    # municipal (Betim) e jurisprudência de TJ/TRT/TRF/TST/STJ/STF por temas.
+    # (default True — ligado; desligar com LEXML_INGEST_ENABLED=false). Semanal
+    # (sáb 05h) — federa legislação estadual (ALMG)/municipal (Betim) e
+    # jurisprudência de TJ/TRT-3/TRF-6/TST/STJ/STF/juizados por jurisdição+tema.
     s.add_job(job_ingestao_lexml,    CronTrigger(day_of_week="sat", hour=5, minute=0), id="ing_lexml", replace_existing=True)
     # Conhecimento oficial (ANPD + Normas RFB) → RAG: gate interno
     # CONHECIMENTO_INGEST_ENABLED (default True). Semanal, DOMINGO 03h00 UTC
@@ -1831,10 +1832,11 @@ async def job_ingestao_lexml():
     """Sábado 05h00 — federação LexML (legislação + jurisprudência) → RAG por
     temas/autoridades curados do escritório.
 
-    Gate: LEXML_INGEST_ENABLED (default False — opt-in no .env). É o VEÍCULO que
-    amplia o volume de fontes estaduais (ALMG), municipais (Betim) e de
-    tribunais (TJMG/TRT-3/TRF-6/TRF-1/TST/STJ/STF/JEC) numa fonte pública só,
-    via o caminho provado jurisprudencia_externa.buscar_lexml. Best-effort: se o
+    Gate: LEXML_INGEST_ENABLED (default True — ligado; desligar com
+    LEXML_INGEST_ENABLED=false no .env). É o VEÍCULO que amplia o volume de
+    fontes estaduais (ALMG), municipais (Betim) e de tribunais
+    (TJMG/TRT-3/TRF-6/TRF-1/TST/STJ/STF/JEC) numa fonte pública só, via o
+    caminho provado jurisprudencia_externa.buscar_lexml. Best-effort: se o
     LexML ficar indisponível, a fonte 'lexml' é marcada 'erro'/'parcial' no
     painel, sem derrubar o scheduler.
     """
