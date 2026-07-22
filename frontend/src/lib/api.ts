@@ -3,6 +3,7 @@
 // vive num cookie httpOnly (ejc_refresh) setado/lido pelo backend — por isso
 // TODAS as chamadas usam withCredentials para o navegador enviar o cookie.
 import axios from "axios";
+import { toast } from "../components/Toast";
 import type { AuthTokens, Deadline } from "../types";
 
 export const API_BASE_URL = "/api/v1";
@@ -82,6 +83,21 @@ api.interceptors.response.use(
       window.location.pathname !== "/configurar-2fa"
     ) {
       window.location.href = "/configurar-2fa";
+      return Promise.reject(error);
+    }
+
+    // 403 "comum" de RBAC: o backend recusou por falta de permissão, sem as
+    // flags especiais tratadas acima (troca de senha / 2FA). Avisa o usuário
+    // uma única vez com um toast padronizado e rejeita normalmente, para o
+    // chamador seguir seu próprio tratamento de erro. Requisições de
+    // autenticação ficam de fora (a tela de login trata seus próprios erros).
+    if (
+      error.response?.status === 403 &&
+      !error.response?.data?.must_change_password &&
+      !needsTwoFactorSetup &&
+      !isAuthenticationRequest
+    ) {
+      toast.error("Sem permissão para esta ação");
       return Promise.reject(error);
     }
 

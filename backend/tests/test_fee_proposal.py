@@ -521,8 +521,10 @@ async def test_kit_usa_proposta_aprovada_vigente():
     aprovada = _proposta(status="aprovada", aprovado_por="u1",
                          aprovado_em=datetime.now(timezone.utc))
     # execute #1: caso; #2: dedup do kit ([] = não existe); #3: itens OAB;
-    # #4: proposta aprovada vigente
-    db = _FakeDB([_case(), [], [_item_oab()], aprovada],
+    # #4: proposta aprovada vigente. O caso tem o próprio advogado como
+    # responsável (u1) para passar o gate verificar_acesso_caso — pós-hardening,
+    # caso órfão só é acessível à gestão; este teste é sobre o kit, não ownership.
+    db = _FakeDB([_case(advogado_responsavel_id="u1"), [], [_item_oab()], aprovada],
                  gets={("Client", "cli1"): _cli()})
     out = await gerar_kit_documental(case_id="case1", payload=None,
                                      db=db, cu=_user(UserRole.advogado))
@@ -541,7 +543,9 @@ async def test_kit_usa_proposta_aprovada_vigente():
 async def test_kit_sem_proposta_mantem_comportamento_atual():
     from app.routers.kit_documental import gerar_kit_documental
 
-    db = _FakeDB([_case(), [], [_item_oab()], None],
+    # Responsável = o próprio advogado (u1): passa o gate pós-hardening (caso
+    # órfão agora é só-gestão). Foco do teste é o placeholder sem proposta.
+    db = _FakeDB([_case(advogado_responsavel_id="u1"), [], [_item_oab()], None],
                  gets={("Client", "cli1"): _cli()})
     out = await gerar_kit_documental(case_id="case1", payload=None,
                                      db=db, cu=_user(UserRole.advogado))

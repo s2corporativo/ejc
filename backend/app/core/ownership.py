@@ -43,8 +43,11 @@ async def verificar_acesso_caso(db: AsyncSession, cu: User, case_id: str) -> Cas
     - 404 se o caso não existe / soft-deleted.
     - Gestão (socio+) sempre passa.
     - Equipe passa se for responsável OU auxiliar do caso.
-    - SALVAGUARDA anti-lockout: caso sem responsável NEM auxiliar (ambos NULL)
-      → liberado p/ qualquer usuário interno (dados legados/triagem).
+    - Caso ÓRFÃO (sem responsável NEM auxiliar): acessível SÓ à gestão (socio+),
+      que já passou acima; perfis baixos (estagiário/secretaria/advogado sem
+      vínculo) recebem 403. Hardening — antes um caso órfão liberava qualquer
+      usuário interno (brecha). A gestão é o escape-hatch legítimo (assume/
+      reatribui o caso), então não há lockout real.
     - 403 caso contrário.
 
     cliente_externo já é barrado pelo AuthMiddleware fora de
@@ -61,7 +64,11 @@ async def verificar_acesso_caso(db: AsyncSession, cu: User, case_id: str) -> Cas
         return case
     if cu.id in (case.advogado_responsavel_id, case.advogado_auxiliar_id):
         return case
-    if case.advogado_responsavel_id is None and case.advogado_auxiliar_id is None:
-        return case
-
+    # Caso ÓRFÃO (sem responsável NEM auxiliar): ANTES era liberado a QUALQUER
+    # usuário interno (salvaguarda anti-lockout p/ dados legados/triagem) —
+    # brecha de segurança: estagiário/secretaria/advogado sem vínculo acessavam
+    # sub-recursos de um caso sem dono. Agora um caso órfão só passa pela gestão
+    # (is_gestao, verificado acima), que é o escape-hatch legítimo (pode assumir/
+    # reatribuir o caso). Perfis baixos caem no 403 abaixo. Casos COM responsável
+    # seguem inalterados (o vínculo acima decide).
     raise HTTPException(status_code=403, detail="Sem permissão para este caso")

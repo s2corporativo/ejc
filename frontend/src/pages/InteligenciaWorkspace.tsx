@@ -47,13 +47,25 @@ const TABS = [
       { k: "ferramentas", label: "Ferramentas especializadas", icon: Wrench },
     ],
   },
-  { k: "pesquisa", label: "Pesquisar e validar fontes", icon: Library },
   { k: "jurimetria", label: "Analisar dados e resultados", icon: Scale },
+  // CONSOLIDAÇÃO CONHECIMENTO 2026-07: superfície canônica única de
+  // Conhecimento. "Pesquisar e validar fontes" (ConteudoJuridico, aberto a
+  // toda a equipe jurídica) e "Administrar base de conhecimento"
+  // (ConhecimentoGovernado, restrito a gestores) passaram a ser sub-abas
+  // desta aba — antes eram as abas separadas `pesquisa` e `conhecimento`.
   {
     k: "conhecimento",
-    label: "Administrar base de conhecimento",
+    label: "Conhecimento jurídico",
     icon: BookOpen,
-    roles: GESTORES,
+    subs: [
+      { k: "pesquisa", label: "Pesquisar e validar fontes", icon: Library },
+      {
+        k: "curadoria",
+        label: "Administrar base de conhecimento",
+        icon: BookOpen,
+        roles: GESTORES,
+      },
+    ],
   },
   {
     k: "saude",
@@ -70,8 +82,24 @@ const LEGACY_TABS: Record<string, { tab: Tab; sub?: string }> = {
   agente: { tab: "assistente", sub: "agente" },
   ia: { tab: "producao", sub: "analise" },
   ferramentas: { tab: "producao", sub: "ferramentas" },
-  conteudo: { tab: "pesquisa" },
+  // A antiga aba `pesquisa` e o alias `conteudo` agora resolvem para a
+  // sub-aba de pesquisa dentro da aba canônica Conhecimento.
+  conteudo: { tab: "conhecimento", sub: "pesquisa" },
+  pesquisa: { tab: "conhecimento", sub: "pesquisa" },
 };
+
+/**
+ * Fonte de verdade dos deep-links de aba do workspace: aceita uma aba real
+ * (TABS) ou um alias legado (LEGACY_TABS). Usada pelos testes de integridade
+ * de rota para validar os LEGACY_REDIRECTS `/inteligencia?tab=...`.
+ */
+export function isInteligenciaTab(value: string | null): boolean {
+  if (!value) return false;
+  return (
+    TABS.some((item) => item.k === value) ||
+    Object.prototype.hasOwnProperty.call(LEGACY_TABS, value)
+  );
+}
 
 export default function InteligenciaWorkspace() {
   const user = useAuth((state) => state.user);
@@ -98,13 +126,20 @@ export default function InteligenciaWorkspace() {
     : availableTabs[0].k;
 
   const tabDef = TABS.find((item) => item.k === tab);
-  const subs = tabDef && "subs" in tabDef ? tabDef.subs : undefined;
+  const allSubs = tabDef && "subs" in tabDef ? tabDef.subs : undefined;
+  // Sub-abas podem ter RBAC próprio (ex.: "curadoria" só para gestores);
+  // filtramos pelo papel do usuário preservando o mesmo acesso de antes.
+  const subs = allSubs?.filter((item) => {
+    const roles = (item as { roles?: readonly string[] }).roles;
+    return !roles || Boolean(user?.role && roles.includes(user.role));
+  });
   const rawSub = legacy?.sub ?? searchParams.get("sub");
-  const sub = subs
-    ? subs.some((item) => item.k === rawSub)
-      ? (rawSub as string)
-      : subs[0].k
-    : null;
+  const sub =
+    subs && subs.length > 0
+      ? subs.some((item) => item.k === rawSub)
+        ? (rawSub as string)
+        : subs[0].k
+      : null;
 
   const selectTab = (next: Tab) => {
     const params = new URLSearchParams(searchParams);
@@ -165,7 +200,7 @@ export default function InteligenciaWorkspace() {
         </div>
       </div>
 
-      {subs && (
+      {subs && subs.length > 0 && (
         <div className="overflow-x-auto">
           <div className="flex w-fit gap-1 rounded-lg border border-slate-200 bg-slate-50/80 p-1">
             {subs.map(({ k, label, icon: Icon }) => (
@@ -191,9 +226,11 @@ export default function InteligenciaWorkspace() {
           {tab === "assistente" && sub === "rapido" && <AssistenteIA />}
           {tab === "producao" && sub === "analise" && <IA />}
           {tab === "producao" && sub === "ferramentas" && <FerramentasIA />}
-          {tab === "pesquisa" && <ConteudoJuridico />}
           {tab === "jurimetria" && <Jurimetria />}
-          {tab === "conhecimento" && <ConhecimentoGovernado />}
+          {tab === "conhecimento" && sub === "pesquisa" && <ConteudoJuridico />}
+          {tab === "conhecimento" && sub === "curadoria" && (
+            <ConhecimentoGovernado />
+          )}
           {tab === "saude" && <DashboardIA />}
         </ErrorBoundary>
       </div>

@@ -84,7 +84,10 @@ class Client(Base):
     # Endereço
     cep            = Column(String(9),   nullable=True)
     logradouro     = Column(String(255), nullable=True)
-    numero         = Column(String(10),  nullable=True)
+    # BANCO É FONTE DA VERDADE: a migration 001 cria numero como VARCHAR(20); o
+    # ORM declarava String(10) (drift) — alinhado a String(20) para o
+    # autogenerate não propor um ALTER COLUMN ... TYPE espúrio (que truncaria).
+    numero         = Column(String(20),  nullable=True)
     complemento    = Column(String(100), nullable=True)
     bairro         = Column(String(100), nullable=True)
     cidade         = Column(String(100), nullable=True, default="Betim")

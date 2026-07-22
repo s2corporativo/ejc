@@ -1,0 +1,1012 @@
+import { useEffect, useState } from "react";
+import { Link, useNavigate } from "react-router-dom";
+import { Sparkles, RefreshCw, ArchiveRestore } from "lucide-react";
+import { toast } from "../../components/Toast";
+import api from "../../lib/api";
+import { asList } from "../../lib/list";
+import { areaLabel, useAreas } from "../../lib/areas";
+import { mensagemErroIA, ROTULO_IA_NAO_ATIVADA } from "../../lib/iaErro";
+import { useIaStatus } from "../../lib/iaStatus";
+import IntakeAnalise from "../../components/IntakeAnalise";
+import ConversaoChecklist from "../../components/ConversaoChecklist";
+import type { Case } from "../../types";
+import {
+  StatusBadge,
+  PriorityBadge,
+  RiskBadge,
+  Spinner,
+  fmtDate,
+  fmtMoney,
+  Modal,
+  ConfirmModal,
+  Alert,
+  Textarea,
+  FieldLabel,
+} from "../../components/UI";
+import { useAuth } from "../../stores/auth";
+
+interface PendenciaExclusao {
+  tipo: string;
+  id: string | number;
+  descricao: string;
+}
+
+function detalheErro(e: unknown, fallback: string): string {
+  const detail = (e as { response?: { data?: { detail?: unknown } } })?.response
+    ?.data?.detail;
+  if (typeof detail === "string") return detail;
+  if (
+    detail &&
+    typeof detail === "object" &&
+    typeof (detail as { mensagem?: unknown }).mensagem === "string"
+  ) {
+    return (detail as { mensagem: string }).mensagem;
+  }
+  return fallback;
+}
+
+function ExtratoCaso({ caso }: { caso: Case }) {
+  const { user } = useAuth();
+  const [open, setOpen] = useState(false);
+  const [data, setData] = useState<any>(null);
+  const [erro, setErro] = useState("");
+  const fmt = (v: number) =>
+    (v ?? 0).toLocaleString("pt-BR", { style: "currency", currency: "BRL" });
+  const abrir = async () => {
+    setOpen(true);
+    if (!data) {
+      setErro("");
+      try {
+        const r = await api.get(`/extratos/detalhado/${caso.id}`);
+        setData(r.data);
+      } catch (e: any) {
+        setErro(
+          e?.response?.data?.detail || "Falha ao carregar o extrato do caso.",
+        );
+      }
+    }
+  };
+  if (
+    !["superadmin", "admin", "socio", "advogado"].includes(user?.role || "")
+  ) {
+    return null;
+  }
+
+  return (
+    <>
+      <button onClick={abrir} className="btn-secondary flex items-center gap-1">
+        📊 Extrato do caso
+      </button>
+      <Modal
+        open={open}
+        onClose={() => setOpen(false)}
+        title="Extrato financeiro do caso"
+      >
+        {erro ? (
+          <div className="py-8 text-center text-danger-600 text-sm">{erro}</div>
+        ) : !data ? (
+          <Spinner />
+        ) : (
+          <div className="space-y-4">
+            <div className="grid grid-cols-2 gap-3">
+              {[
+                ["Entradas", data.resumo?.entradas, "text-success-600"],
+                ["A receber", data.resumo?.a_receber, "text-warn-600"],
+                ["Saídas (custos)", data.resumo?.saidas, "text-danger-600"],
+                [
+                  "Saldo",
+                  data.resumo?.saldo,
+                  (data.resumo?.saldo ?? 0) >= 0
+                    ? "text-success-700"
+                    : "text-danger-700",
+                ],
+              ].map(([l, v, cls]: any) => (
+                <div key={l} className="bg-slate-50 rounded-lg p-3">
+                  <p className="text-xs text-slate-500">{l}</p>
+                  <p className={`text-base font-bold ${cls}`}>
+                    {fmt(Number(v))}
+                  </p>
+                </div>
+              ))}
+            </div>
+            {(data.honorarios ?? []).length > 0 && (
+              <div>
+                <p className="text-xs font-semibold text-slate-500 uppercase mb-1">
+                  Honorários
+                </p>
+                <div className="max-h-40 overflow-y-auto divide-y divide-slate-100">
+                  {data.honorarios.map((h: any, i: number) => (
+                    <div
+                      key={i}
+                      className="flex justify-between text-xs py-1.5"
+                    >
+                      <span className="text-slate-600 capitalize">
+                        {h.tipo?.replace(/_/g, " ")} · {h.status}
+                      </span>
+                      <span className="font-medium">{fmt(h.valor)}</span>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
+          </div>
+        )}
+      </Modal>
+    </>
+  );
+}
+
+function AreasCaso({ caso }: { caso: Case }) {
+  const catalogoAreas = useAreas();
+  const [areas, setAreas] = useState<any[]>([]);
+  const [add, setAdd] = useState("");
+  const load = () =>
+    api
+      .get(`/cases/${caso.id}/areas`)
+      .then((r) => setAreas(r.data?.areas ?? []))
+      .catch(() => {});
+  useEffect(() => {
+    load(); /* eslint-disable-next-line */
+  }, [caso.id]);
+  const adicionar = async () => {
+    if (!add) return;
+    await api.post(`/cases/${caso.id}/areas`, { area: add });
+    setAdd("");
+    load();
+  };
+  const remover = async (a: string) => {
+    if (!confirm("Remover esta área do caso?")) return;
+    try {
+      await api.delete(`/cases/${caso.id}/areas/${a}`);
+      load();
+    } catch (e: any) {
+      toast.error(e.response?.data?.detail || "Erro ao remover área");
+    }
+  };
+  const disponiveis = catalogoAreas.filter(
+    (item) => !areas.some((a) => a.area === item.slug),
+  );
+  return (
+    <div className="card p-4">
+      <h3 className="font-semibold mb-2 text-sm text-slate-500 uppercase tracking-wide">
+        Áreas do caso
+      </h3>
+      <div className="flex flex-wrap gap-2 items-center">
+        {areas.map((a) => (
+          <span
+            key={a.area}
+            className={`inline-flex items-center gap-1 text-xs px-2.5 py-1 rounded-full ${a.principal ? "bg-navy text-white" : "bg-slate-100 text-slate-600"}`}
+          >
+            {a.principal && "★ "}
+            {areaLabel(a.area)}
+            {!a.principal && (
+              <button
+                onClick={() => remover(a.area)}
+                className="ml-1 opacity-60 hover:opacity-100"
+              >
+                ×
+              </button>
+            )}
+          </span>
+        ))}
+        {disponiveis.length > 0 && (
+          <span className="inline-flex items-center gap-1">
+            <select
+              value={add}
+              onChange={(e) => setAdd(e.target.value)}
+              className="input text-xs px-2 py-1"
+            >
+              <option value="">+ área relacionada</option>
+              {disponiveis.map((item) => (
+                <option key={item.slug} value={item.slug}>
+                  {item.nome}
+                </option>
+              ))}
+            </select>
+            {add && (
+              <button
+                onClick={adicionar}
+                className="text-xs bg-bronze text-white px-2 py-1 rounded-lg"
+              >
+                Add
+              </button>
+            )}
+          </span>
+        )}
+      </div>
+    </div>
+  );
+}
+
+export default function TabResumo({ caso }: { caso: Case }) {
+  const { disponivel: iaDisponivel } = useIaStatus();
+  const navigate = useNavigate();
+  const { user } = useAuth();
+  const [iaModal, setIaModal] = useState(false);
+  const [iaResp, setIaResp] = useState<any>(null);
+  const [iaLoading, setIaLoading] = useState(false);
+  const [syncing, setSyncing] = useState(false);
+  const [movs, setMovs] = useState<any[]>([]);
+  const [novoMov, setNovoMov] = useState("");
+  const [encModal, setEncModal] = useState(false);
+  const [encLoading, setEncLoading] = useState(false);
+  const [reabrindo, setReabrindo] = useState(false);
+  const [enc, setEnc] = useState({
+    resultado: "exito_total",
+    motivo_resultado: "",
+    provas_determinantes: "",
+    licoes_aprendidas: "",
+    alimentar_rag: true,
+  });
+  const [gerando, setGerando] = useState(false);
+  const [honModal, setHonModal] = useState(false);
+  const [honLoading, setHonLoading] = useState(false);
+  const [honDesc, setHonDesc] = useState("");
+  const [honResp, setHonResp] = useState<any>(null);
+  // R2 — arquivar / excluir
+  const [arqModal, setArqModal] = useState(false);
+  const [arqLoading, setArqLoading] = useState(false);
+  const [delModal, setDelModal] = useState(false);
+  const [delLoading, setDelLoading] = useState(false);
+  const [delMotivo, setDelMotivo] = useState("");
+  const [pendencias, setPendencias] = useState<PendenciaExclusao[] | null>(
+    null,
+  );
+  // Exclusão restrita a administração/sócios (soft delete → Lixeira)
+  const podeExcluir = ["superadmin", "admin", "socio"].includes(
+    user?.role || "",
+  );
+
+  const arquivar = async () => {
+    setArqLoading(true);
+    try {
+      await api.post(`/cases/${caso.id}/arquivar`);
+      toast.success("Caso arquivado.");
+      window.location.reload();
+    } catch (e) {
+      toast.error(detalheErro(e, "Falha ao arquivar o caso"));
+      setArqLoading(false);
+    }
+  };
+
+  const desarquivar = async () => {
+    setArqLoading(true);
+    try {
+      await api.post(`/cases/${caso.id}/desarquivar`);
+      toast.success("Caso desarquivado.");
+      window.location.reload();
+    } catch (e) {
+      toast.error(detalheErro(e, "Falha ao desarquivar o caso"));
+      setArqLoading(false);
+    }
+  };
+
+  const excluir = async () => {
+    const motivo = delMotivo.trim();
+    if (motivo.length < 5) {
+      toast.error("Informe o motivo da exclusão (mínimo 5 caracteres).");
+      return;
+    }
+    setDelLoading(true);
+    setPendencias(null);
+    try {
+      await api.delete(`/cases/${caso.id}`, { data: { motivo } });
+      toast.success("Caso excluído — enviado para a Lixeira.");
+      navigate("/casos");
+    } catch (e: any) {
+      const detail =
+        e?.response?.status === 422 ? e?.response?.data?.detail : null;
+      if (
+        detail &&
+        Array.isArray(detail.pendencias) &&
+        detail.pendencias.length
+      ) {
+        setPendencias(detail.pendencias as PendenciaExclusao[]);
+      } else {
+        toast.error(detalheErro(e, "Falha ao excluir o caso"));
+      }
+    } finally {
+      setDelLoading(false);
+    }
+  };
+
+  useEffect(() => {
+    api
+      .get(`/cases/${caso.id}/movimentos`)
+      .then((r) => setMovs(asList(r.data)))
+      .catch(() => {});
+  }, [caso.id]);
+
+  const encerrar = async () => {
+    setEncLoading(true);
+    try {
+      await api.post(`/cases/${caso.id}/encerrar`, enc);
+      setEncModal(false);
+      toast.success(
+        "Caso encerrado. Conhecimento registrado na base institucional (precedente + memória + tese).",
+      );
+      window.location.reload();
+    } catch (e: any) {
+      toast.error(e.response?.data?.detail || "Falha ao encerrar");
+    } finally {
+      setEncLoading(false);
+    }
+  };
+
+  const reabrir = async () => {
+    setReabrindo(true);
+    try {
+      if (caso.status === "arquivado") {
+        await api.post(`/cases/${caso.id}/desarquivar`);
+        toast.success("Caso desarquivado.");
+      } else {
+        await api.patch(`/cases/${caso.id}`, { status: "ativo" });
+        toast.success("Caso reaberto.");
+      }
+      window.location.reload();
+    } catch (e: any) {
+      toast.error(e.response?.data?.detail || "Falha ao reabrir caso");
+    } finally {
+      setReabrindo(false);
+    }
+  };
+
+  const gerarDocs = async () => {
+    setGerando(true);
+    try {
+      const { data } = await api.post(`/cases/${caso.id}/gerar-documentos`);
+      toast.success(
+        `${data.gerados?.length || 0} minuta(s) gerada(s): Procuração, Contrato de Honorários e Relatório Inicial. Veja na aba Documentos do caso.`,
+      );
+    } catch (e: any) {
+      toast.error(e.response?.data?.detail || "Falha ao gerar documentos");
+    } finally {
+      setGerando(false);
+    }
+  };
+  const sugerirHonorarios = async () => {
+    setHonLoading(true);
+    setHonResp(null);
+    try {
+      const { data } = await api.post("/ai/sugestao-honorarios", {
+        area: caso.area,
+        descricao: honDesc || caso.titulo,
+        valor_causa: caso.valor_causa || undefined,
+      });
+      setHonResp(data);
+    } catch (e: any) {
+      setHonResp({
+        erro: mensagemErroIA(e, "Não foi possível sugerir honorários."),
+      });
+    } finally {
+      setHonLoading(false);
+    }
+  };
+
+  const analisarIA = async () => {
+    setIaModal(true);
+    setIaLoading(true);
+    setIaResp(null);
+    try {
+      const { data } = await api.post("/ai/analisar-caso", {
+        descricao_fatos: caso.descricao_fatos,
+        area: caso.area,
+        case_id: caso.id,
+        nomes_proteger: [caso.parte_contraria].filter(Boolean),
+      });
+      setIaResp(data);
+    } catch (e: any) {
+      setIaResp({
+        erro: mensagemErroIA(e, "Não foi possível gerar a análise."),
+      });
+    } finally {
+      setIaLoading(false);
+    }
+  };
+
+  const addMov = async () => {
+    if (!novoMov.trim()) return;
+    await api.post(`/cases/${caso.id}/movimentos`, {
+      tipo: "nota",
+      descricao: novoMov,
+    });
+    setNovoMov("");
+    api
+      .get(`/cases/${caso.id}/movimentos`)
+      .then((r) => setMovs(asList(r.data)))
+      .catch(() => {});
+  };
+
+  const syncDataJud = async () => {
+    if (!caso.processo_principal?.numero_cnj) {
+      toast.error("Adicione um processo com número CNJ antes de sincronizar.");
+      return;
+    }
+    setSyncing(true);
+    try {
+      const { data } = await api.post(`/cases/${caso.id}/sincronizar-processo`);
+      toast.success(data.detail || "Dados sincronizados com DataJud.");
+    } catch (e: any) {
+      toast.error(e.response?.data?.detail || "Falha ao sincronizar");
+    } finally {
+      setSyncing(false);
+    }
+  };
+
+  // #R8 — conversão em judicial passa pelo checklist bloqueante (ConversaoChecklist)
+  const [convModal, setConvModal] = useState(false);
+
+  const casoEncerrado =
+    caso.status === "encerrado" || caso.status === "arquivado";
+
+  return (
+    <div className="space-y-5">
+      {casoEncerrado && (
+        <div className="flex flex-wrap items-center justify-between gap-3 rounded-lg border border-amber-200 bg-amber-50 px-4 py-3">
+          <p className="text-sm text-amber-800">
+            Este caso está{" "}
+            <strong>
+              {caso.status === "arquivado" ? "arquivado" : "encerrado"}
+            </strong>
+            . Edições e novos lançamentos estão bloqueados enquanto ele não for
+            reaberto.
+          </p>
+          <button
+            onClick={reabrir}
+            disabled={reabrindo}
+            className="btn-secondary flex items-center gap-1 whitespace-nowrap border-amber-300 text-amber-800"
+          >
+            {caso.status === "arquivado" ? (
+              <ArchiveRestore
+                size={14}
+                className={reabrindo ? "animate-spin" : ""}
+              />
+            ) : (
+              <RefreshCw
+                size={14}
+                className={reabrindo ? "animate-spin" : ""}
+              />
+            )}
+            {reabrindo
+              ? "Reabrindo..."
+              : caso.status === "arquivado"
+                ? "Desarquivar caso"
+                : "Reabrir caso"}
+          </button>
+        </div>
+      )}
+      <div className="flex gap-2 flex-wrap">
+        <button
+          onClick={analisarIA}
+          disabled={!iaDisponivel}
+          title={iaDisponivel ? undefined : ROTULO_IA_NAO_ATIVADA}
+          className="btn-primary flex items-center gap-1 disabled:cursor-not-allowed disabled:opacity-50"
+        >
+          <Sparkles size={14} />{" "}
+          {iaDisponivel ? "Análise IA" : "IA não ativada"}
+        </button>
+        <button
+          onClick={syncDataJud}
+          disabled={syncing}
+          className="btn-secondary flex items-center gap-1"
+        >
+          <RefreshCw size={14} className={syncing ? "animate-spin" : ""} />
+          {syncing ? "Consultando..." : "Sincronizar DataJud"}
+        </button>
+        <button
+          onClick={gerarDocs}
+          disabled={gerando}
+          className="btn-secondary flex items-center gap-1"
+        >
+          📄 {gerando ? "Gerando..." : "Gerar documentos"}
+        </button>
+        <button
+          onClick={() => {
+            setHonDesc(caso.titulo);
+            setHonResp(null);
+            setHonModal(true);
+          }}
+          className="btn-secondary flex items-center gap-1"
+        >
+          💰 Honorários (OAB)
+        </button>
+        <Link
+          to={`/raio-x?case_id=${caso.id}`}
+          className="btn-secondary flex items-center gap-1 text-primary-700"
+        >
+          🔎 Raio-X do processo
+        </Link>
+        <button
+          onClick={() => navigate(`/casos/${caso.id}/sala-de-guerra`)}
+          className="btn-secondary flex items-center gap-1"
+        >
+          ⚔️ Sala de Guerra
+        </button>
+        <button
+          onClick={() => navigate(`/casos/${caso.id}/jornada`)}
+          className="btn-secondary flex items-center gap-1"
+        >
+          🧭 Jornada do caso
+        </button>
+        <button
+          onClick={() => navigate(`/casos/${caso.id}/entrevista`)}
+          className="btn-secondary flex items-center gap-1"
+        >
+          🎤 Entrevista inteligente
+        </button>
+        <Link
+          to={`/pecas?caso=${caso.id}`}
+          className="btn-secondary flex items-center gap-1"
+        >
+          📝 Peças do caso
+        </Link>
+        <ExtratoCaso caso={caso} />
+        {(caso as any).case_type === "extrajudicial" &&
+          !(caso as any).linked_judicial_case_id && (
+            <button
+              onClick={() => setConvModal(true)}
+              className="btn-secondary flex items-center gap-1 text-primary-700 border-primary-200"
+            >
+              ⚖️ Converter em processo judicial
+            </button>
+          )}
+        {(caso as any).linked_judicial_case_id && (
+          <button
+            onClick={() =>
+              navigate(`/casos/${(caso as any).linked_judicial_case_id}`)
+            }
+            className="btn-secondary flex items-center gap-1 text-primary-700 border-primary-200"
+          >
+            🔗 Ver caso vinculado
+          </button>
+        )}
+        <div
+          className="basis-full mt-2 rounded-xl border border-slate-200 bg-slate-50 p-3"
+          aria-label="Encerramento e administração do caso"
+        >
+          <div className="mb-2 text-xs font-semibold uppercase tracking-wide text-slate-500">
+            Encerramento e administração
+          </div>
+          <div className="flex flex-wrap gap-2">
+            {caso.status !== "encerrado" && caso.status !== "arquivado" && (
+              <button
+                onClick={() => setEncModal(true)}
+                className="btn-secondary flex items-center gap-1"
+              >
+                ✓ Encerrar caso
+              </button>
+            )}
+            {caso.status !== "arquivado" ? (
+              <button
+                onClick={() => setArqModal(true)}
+                className="btn-secondary flex items-center gap-1"
+              >
+                🗄️ Arquivar
+              </button>
+            ) : (
+              <button
+                onClick={desarquivar}
+                disabled={arqLoading}
+                className="btn-secondary flex items-center gap-1"
+              >
+                🗄️ {arqLoading ? "Desarquivando..." : "Desarquivar"}
+              </button>
+            )}
+            {podeExcluir && (
+              <button
+                onClick={() => {
+                  setDelMotivo("");
+                  setPendencias(null);
+                  setDelModal(true);
+                }}
+                className="btn-secondary flex items-center gap-1 text-danger-600 border-danger-200 hover:bg-danger-50"
+              >
+                🗑️ Excluir
+              </button>
+            )}
+          </div>
+        </div>
+      </div>
+
+      <AreasCaso caso={caso} />
+
+      <div className="grid lg:grid-cols-2 gap-5">
+        <div className="card p-5">
+          <h3 className="font-semibold mb-3 text-sm text-slate-500 uppercase tracking-wide">
+            Dados do Processo
+          </h3>
+          <div className="grid grid-cols-2 gap-y-2 gap-x-4 text-sm">
+            <div>
+              <span className="text-slate-400">Área:</span>{" "}
+              <span className="capitalize ml-1">{caso.area}</span>
+            </div>
+            <div>
+              <span className="text-slate-400">Status:</span>{" "}
+              <StatusBadge value={caso.status} />
+            </div>
+            <div>
+              <span className="text-slate-400">Fase:</span>{" "}
+              <span className="capitalize ml-1">
+                {caso.fase?.replace(/_/g, " ")}
+              </span>
+            </div>
+            <div className="flex items-center gap-1.5">
+              <span className="text-slate-400">Prioridade:</span>{" "}
+              <PriorityBadge value={caso.prioridade} />
+            </div>
+            {(caso.risco_nivel || caso.risco) && (
+              <div className="flex items-center gap-1.5">
+                <span className="text-slate-400">Risco:</span>{" "}
+                <RiskBadge value={caso.risco_nivel || caso.risco} />
+              </div>
+            )}
+            <div>
+              <span className="text-slate-400">Parte contrária:</span>{" "}
+              <span className="ml-1">{caso.parte_contraria || "—"}</span>
+            </div>
+            {["superadmin", "admin", "socio", "advogado"].includes(
+              user?.role || "",
+            ) && (
+              <div>
+                <span className="text-slate-400">Valor:</span>{" "}
+                <span className="ml-1">{fmtMoney(caso.valor_causa)}</span>
+              </div>
+            )}
+            {caso.comarca && (
+              <div>
+                <span className="text-slate-400">Comarca/Vara:</span>{" "}
+                <span className="ml-1">
+                  {caso.comarca} {caso.vara && `· ${caso.vara}`}
+                </span>
+              </div>
+            )}
+            {caso.data_prescricao && (
+              <div className="text-danger-700 font-medium">
+                <span className="text-slate-400">Prescrição:</span>{" "}
+                <span className="ml-1">{fmtDate(caso.data_prescricao)}</span>
+              </div>
+            )}
+          </div>
+        </div>
+
+        <div className="card p-5">
+          <h3 className="font-semibold mb-3 text-sm text-slate-500 uppercase tracking-wide">
+            Timeline Recente
+          </h3>
+          <div className="text-sm text-slate-400 mb-2">
+            <input
+              value={novoMov}
+              onChange={(e) => setNovoMov(e.target.value)}
+              onKeyDown={(e) => e.key === "Enter" && addMov()}
+              placeholder="Nova anotação... (Enter para salvar)"
+              className="input w-full text-xs"
+            />
+          </div>
+          <div className="max-h-40 overflow-auto divide-y divide-slate-100">
+            {movs.map((e) => (
+              <div key={e.id} className="py-1.5 flex justify-between text-xs">
+                <span className="text-slate-600">{e.descricao}</span>
+                <span className="text-slate-400 ml-2 shrink-0">
+                  {fmtDate(e.created_at)}
+                </span>
+              </div>
+            ))}
+          </div>
+        </div>
+      </div>
+
+      {caso.descricao_fatos && (
+        <div className="card p-5">
+          <h3 className="font-semibold mb-2 text-sm text-slate-500">
+            Descrição dos Fatos
+          </h3>
+          <p className="text-sm text-slate-700 leading-relaxed">
+            {caso.descricao_fatos}
+          </p>
+        </div>
+      )}
+
+      {/* Intake — Análise Completa (IA): área, teses, estratégia, honorários e módulos */}
+      <IntakeAnalise caseId={caso.id} />
+
+      {(caso as any).tese_principal && (
+        <div className="grid lg:grid-cols-2 gap-5">
+          {(caso as any).tese_principal && (
+            <div className="card p-5">
+              <h3 className="font-semibold mb-2 text-sm text-green-600">
+                Pontos Fortes
+              </h3>
+              <p className="text-sm text-slate-700">
+                {(caso as any).pontos_fortes}
+              </p>
+            </div>
+          )}
+          {(caso as any).pontos_fracos && (
+            <div className="card p-5">
+              <h3 className="font-semibold mb-2 text-sm text-danger-600">
+                Pontos de Atenção
+              </h3>
+              <p className="text-sm text-slate-700">
+                {(caso as any).pontos_fracos}
+              </p>
+            </div>
+          )}
+        </div>
+      )}
+
+      {iaModal && (
+        <Modal
+          open={iaModal}
+          onClose={() => setIaModal(false)}
+          title="Análise de IA — EJC Núcleo Cognitivo"
+        >
+          {iaLoading ? (
+            <div className="flex justify-center py-8">
+              <Spinner />
+            </div>
+          ) : iaResp?.erro ? (
+            <p className="text-danger-600">{iaResp.erro}</p>
+          ) : (
+            <div className="space-y-3 text-sm">
+              {iaResp?.analise && (
+                <p className="text-slate-700 leading-relaxed">
+                  {iaResp.analise}
+                </p>
+              )}
+              {iaResp?.pontos_fortes?.length > 0 && (
+                <div>
+                  <p className="font-semibold text-green-700 mb-1">
+                    Pontos Fortes
+                  </p>
+                  <ul className="list-disc pl-4 space-y-0.5">
+                    {iaResp.pontos_fortes.map((p: string, i: number) => (
+                      <li key={i}>{p}</li>
+                    ))}
+                  </ul>
+                </div>
+              )}
+              {iaResp?.pontos_fracos?.length > 0 && (
+                <div>
+                  <p className="font-semibold text-danger-700 mb-1">
+                    Pontos de Atenção
+                  </p>
+                  <ul className="list-disc pl-4 space-y-0.5">
+                    {iaResp.pontos_fracos.map((p: string, i: number) => (
+                      <li key={i}>{p}</li>
+                    ))}
+                  </ul>
+                </div>
+              )}
+              <p className="text-xs text-warn-600 border-t pt-2">
+                ⚠️ Rascunho gerado por IA — revisão humana obrigatória (OAB)
+              </p>
+            </div>
+          )}
+        </Modal>
+      )}
+
+      {encModal && (
+        <Modal
+          open={encModal}
+          onClose={() => setEncModal(false)}
+          title="Encerrar caso — Pós-Mortem"
+        >
+          <div className="space-y-3">
+            <p className="text-xs text-slate-500">
+              Ao encerrar, o conhecimento do caso vira ativo institucional:{" "}
+              <b>precedente na base de conhecimento</b> +{" "}
+              <b>memória institucional</b> + <b>tese no banco</b>. Tudo como
+              rascunho revisável (OAB).
+            </p>
+            <div>
+              <label className="label">Resultado</label>
+              <select
+                className="input w-full"
+                value={enc.resultado}
+                onChange={(e) => setEnc({ ...enc, resultado: e.target.value })}
+              >
+                <option value="exito_total">Êxito total</option>
+                <option value="exito_parcial">Êxito parcial</option>
+                <option value="acordo">Acordo</option>
+                <option value="improcedente">Improcedente</option>
+              </select>
+            </div>
+            <div>
+              <label className="label">Motivo do resultado</label>
+              <textarea
+                rows={2}
+                className="input w-full"
+                value={enc.motivo_resultado}
+                onChange={(e) =>
+                  setEnc({ ...enc, motivo_resultado: e.target.value })
+                }
+              />
+            </div>
+            <div>
+              <label className="label">Provas determinantes</label>
+              <textarea
+                rows={2}
+                className="input w-full"
+                value={enc.provas_determinantes}
+                onChange={(e) =>
+                  setEnc({ ...enc, provas_determinantes: e.target.value })
+                }
+              />
+            </div>
+            <div>
+              <label className="label">Lições aprendidas</label>
+              <textarea
+                rows={2}
+                className="input w-full"
+                value={enc.licoes_aprendidas}
+                onChange={(e) =>
+                  setEnc({ ...enc, licoes_aprendidas: e.target.value })
+                }
+              />
+            </div>
+            <label className="flex items-center gap-2 text-sm text-slate-600">
+              <input
+                type="checkbox"
+                checked={enc.alimentar_rag}
+                onChange={(e) =>
+                  setEnc({ ...enc, alimentar_rag: e.target.checked })
+                }
+              />
+              Alimentar a base de conhecimento
+            </label>
+            <button
+              onClick={encerrar}
+              disabled={encLoading}
+              className="btn-primary w-full"
+            >
+              {encLoading ? "Encerrando..." : "Confirmar encerramento"}
+            </button>
+          </div>
+        </Modal>
+      )}
+
+      {honModal && (
+        <Modal
+          open={honModal}
+          onClose={() => setHonModal(false)}
+          title="Sugestão de honorários — Tabela OAB/MG"
+        >
+          <div className="space-y-3">
+            <div>
+              <label className="label">Serviço / ato</label>
+              <input
+                className="input w-full"
+                value={honDesc}
+                onChange={(e) => setHonDesc(e.target.value)}
+              />
+            </div>
+            <p className="text-xs text-slate-400">
+              Área: <span className="capitalize">{caso.area}</span> · Valor da
+              causa: {fmtMoney(caso.valor_causa)}
+            </p>
+            <button
+              onClick={sugerirHonorarios}
+              disabled={honLoading}
+              className="btn-primary w-full"
+            >
+              {honLoading ? "Consultando a tabela…" : "Sugerir honorários"}
+            </button>
+            {honResp?.erro && (
+              <p className="text-sm text-danger-600">{honResp.erro}</p>
+            )}
+            {honResp?.sugestao && (
+              <div className="text-sm space-y-1.5 border-t border-bronze-pale pt-3">
+                <div>
+                  <span className="text-slate-400">Mínimo OAB:</span>{" "}
+                  <b className="text-navy">
+                    {honResp.sugestao.honorario_minimo_oab}
+                  </b>
+                </div>
+                <div>
+                  <span className="text-slate-400">Recomendado:</span>{" "}
+                  <b className="text-navy">
+                    {honResp.sugestao.honorario_recomendado}
+                  </b>
+                </div>
+                <div>
+                  <span className="text-slate-400">Êxito:</span>{" "}
+                  <b className="text-navy">
+                    {honResp.sugestao.percentual_exito}
+                  </b>
+                </div>
+                {honResp.sugestao.fundamento && (
+                  <p className="text-xs text-slate-500">
+                    {honResp.sugestao.fundamento}
+                  </p>
+                )}
+                <p className="text-xs text-warn-600">{honResp.aviso}</p>
+              </div>
+            )}
+          </div>
+        </Modal>
+      )}
+
+      {/* R2 — Arquivar (confirmação simples) */}
+      <ConfirmModal
+        open={arqModal}
+        onClose={() => setArqModal(false)}
+        onConfirm={arquivar}
+        variant="primary"
+        title="Arquivar caso"
+        message="O caso sai das listagens ativas, mas nada é apagado. Ele fica disponível na aba Arquivados e pode ser desarquivado a qualquer momento."
+        confirmLabel="Arquivar"
+        loading={arqLoading}
+      />
+
+      {/* R2 — Excluir (confirmação forte: digitar EXCLUIR + motivo ≥ 5 chars) */}
+      <ConfirmModal
+        open={delModal}
+        onClose={() => {
+          setDelModal(false);
+          setPendencias(null);
+        }}
+        onConfirm={excluir}
+        variant="danger"
+        title="Excluir caso"
+        message={`Esta ação envia o caso "${caso.titulo}" para a Lixeira e fica registrada na Auditoria com o motivo informado.`}
+        typeToConfirm="EXCLUIR"
+        confirmLabel="Excluir caso"
+        loading={delLoading}
+      >
+        <div className="mt-3">
+          <FieldLabel required>
+            Motivo da exclusão (mínimo 5 caracteres)
+          </FieldLabel>
+          <Textarea
+            value={delMotivo}
+            onChange={(e) => setDelMotivo(e.target.value)}
+            rows={3}
+            placeholder="Ex.: caso duplicado, cadastro de teste..."
+          />
+        </div>
+        {pendencias && pendencias.length > 0 && (
+          <Alert
+            variant="danger"
+            title="Pendências impedem a exclusão"
+            className="mt-3"
+          >
+            <ul className="mt-1 list-disc space-y-0.5 pl-4">
+              {pendencias.map((p, i) => (
+                <li key={`${p.tipo}-${p.id ?? i}`}>
+                  <span className="capitalize">
+                    {String(p.tipo).replace(/_/g, " ")}
+                  </span>
+                  {p.descricao ? ` — ${p.descricao}` : ""}
+                </li>
+              ))}
+            </ul>
+            <button
+              type="button"
+              onClick={() => {
+                setDelModal(false);
+                setPendencias(null);
+                arquivar();
+              }}
+              disabled={arqLoading}
+              className="btn-secondary mt-3 flex items-center gap-1 text-xs"
+            >
+              🗄️ Arquivar em vez disso
+            </button>
+          </Alert>
+        )}
+      </ConfirmModal>
+
+      {/* #R8 — Checklist bloqueante de conversão extrajudicial → judicial */}
+      <ConversaoChecklist
+        caseId={caso.id}
+        open={convModal}
+        onClose={() => setConvModal(false)}
+        onSuccess={() => {
+          setTimeout(() => {
+            window.location.assign(`/casos/${caso.id}?tab=processos`);
+          }, 700);
+        }}
+      />
+    </div>
+  );
+}

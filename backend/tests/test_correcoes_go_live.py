@@ -174,7 +174,11 @@ def test_refresh_token_de_duas_rotacoes_atras_pune_mesmo_na_janela():
     assert any(l.acao == "REFRESH_REUSE" for l in _audits(db))
 
 
-def test_refresh_rotacao_grava_metadados_de_graca():
+def test_refresh_rotacao_grava_metadados_de_graca(monkeypatch):
+    # Isola do enforcement organizacional de 2FA: com "advogado" agora no default
+    # de REQUIRE_2FA_ROLES, o /auth/refresh entra no ramo de 2FA (lê totp_enabled,
+    # ausente no fake). Este teste é sobre rotação de refresh, não 2FA.
+    monkeypatch.setattr(auth_router.settings, "REQUIRE_2FA_ROLES", "")
     token, _ = create_refresh_token("u1")
     user = types.SimpleNamespace(
         id="u1", role=types.SimpleNamespace(value="advogado"),
@@ -263,7 +267,12 @@ def test_recifragem_oportunista_tolera_falha_de_encrypt(monkeypatch):
 
 # ── 4. /auth/totp/desativar — bloqueio com chave própria ─────────────────────
 
-def test_totp_desativar_bloqueia_na_6a_sem_trancar_login_da_vitima():
+def test_totp_desativar_bloqueia_na_6a_sem_trancar_login_da_vitima(monkeypatch):
+    # "advogado" agora é 2FA-obrigado por default → /auth/totp/desativar
+    # devolveria 403 (papel obrigado) ANTES do fluxo anti-brute-force que este
+    # teste exercita. O bloqueio de papel é coberto em test_seguranca_senha_2fa;
+    # aqui isolamos do enforcement organizacional.
+    monkeypatch.setattr(auth_router.settings, "REQUIRE_2FA_ROLES", "")
     from app.services.security_service import esta_bloqueado
 
     secret = pyotp.random_base32()
@@ -292,7 +301,10 @@ def test_totp_desativar_bloqueia_na_6a_sem_trancar_login_da_vitima():
     assert r.status_code == 200
 
 
-def test_totp_desativar_codigo_correto_desativa_e_limpa_contador():
+def test_totp_desativar_codigo_correto_desativa_e_limpa_contador(monkeypatch):
+    # Isola do enforcement de 2FA por papel (advogado agora obrigado por default):
+    # o foco é o contador anti-brute-force do desativar, não o bloqueio de papel.
+    monkeypatch.setattr(auth_router.settings, "REQUIRE_2FA_ROLES", "")
     secret = pyotp.random_base32()
     user = _user_totp(pii_crypto.encrypt(secret), email="ok-desativa@teste.com")
     access = create_access_token("u1", "advogado")

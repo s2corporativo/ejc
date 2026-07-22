@@ -158,7 +158,10 @@ def test_refresh_expirado_naturalmente_nao_pune():
     assert db.committed == 0 and not _audits(db)
 
 
-def test_refresh_valido_rotaciona_normalmente():
+def test_refresh_valido_rotaciona_normalmente(monkeypatch):
+    # "advogado" entrou no default de REQUIRE_2FA_ROLES; sem isto o /auth/refresh
+    # tocaria o ramo de 2FA (totp_enabled, ausente no fake). Teste é sobre rotação.
+    monkeypatch.setattr(auth_router.settings, "REQUIRE_2FA_ROLES", "")
     token, _ = create_refresh_token("u1")
     user = types.SimpleNamespace(
         id="u1", role=types.SimpleNamespace(value="advogado"),
