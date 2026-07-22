@@ -80,6 +80,33 @@ if [ "${EJC_SEED:-0}" = "1" ]; then
     -w '\n[HTTP %{http_code}]\n'
 fi
 
+# ── Verificação: a busca no RAG retorna resultados? (GET /api/rag/buscar) ─────
+# Prova que o pipeline governado de recuperação está devolvendo documentos. A
+# ingestão de fontes/jurisprudência é em BACKGROUND — logo após o disparo os
+# números ainda são pequenos e crescem com o tempo; o seed do escritório (se
+# EJC_SEED=1) já é síncrono e aparece de imediato.
+VQ="${EJC_VERIFY_QUERY:-responsabilidade civil dano moral}"
+echo
+echo "→ verificando a busca no RAG: q=\"$VQ\" ..."
+sleep 3
+curl -sS -G "$BASE/api/rag/buscar" \
+  --data-urlencode "q=$VQ" --data-urlencode "limite=5" \
+  -H "Authorization: Bearer $TOKEN" | python3 -c '
+import sys, json
+try:
+    d = json.load(sys.stdin)
+except Exception:
+    print("  (resposta não-JSON — verifique manualmente)"); sys.exit(0)
+res = d.get("resultados") or []
+print(f"  modo={d.get(\"modo\")}  pipeline={d.get(\"pipeline\")}  resultados={len(res)}")
+for r in res[:5]:
+    titulo = str(r.get("titulo") or "")[:70]
+    cat = r.get("categoria") or ""
+    print(f"    - [{cat}] {titulo}")
+if not res:
+    print("  (0 por ora — normal logo após o disparo; a ingestão continua em background.)")
+'
+
 echo
 echo "✓ ingestão agendada em background (HTTP 202)."
 echo "  Acompanhe pela tabela fontes_ingestao (painel de fontes): última"
