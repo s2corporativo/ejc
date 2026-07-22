@@ -163,7 +163,11 @@ def test_alterar_senha_nova_fraca_400():
     assert "número" in r.json()["detail"].lower()
 
 
-def test_alterar_senha_nova_forte_200():
+def test_alterar_senha_nova_forte_200(monkeypatch):
+    # "advogado" agora é 2FA-obrigado por default; o /auth/alterar-senha passou a
+    # tocar o ramo de 2FA (totp_enabled, ausente no fake). Este teste é sobre a
+    # política de senha forte, não 2FA — isola do enforcement organizacional.
+    monkeypatch.setattr(auth_router.settings, "REQUIRE_2FA_ROLES", "")
     user = _user_troca()
     app, db = _montar(user=user)
     client = TestClient(app)

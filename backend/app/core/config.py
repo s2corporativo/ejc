@@ -35,8 +35,11 @@ class Settings(BaseSettings):
     # ── 2FA (TOTP) — enforcement organizacional por papel ─────────────────
     # CSV de papéis (UserRole: superadmin, admin, socio, advogado,
     # advogado_auxiliar, financeiro, estagiario, secretaria, cliente_externo)
-    # que DEVEM usar 2FA (TOTP). Default VAZIO = ninguém obrigado → o
-    # comportamento atual (2FA opt-in) é 100% preservado.
+    # que DEVEM usar 2FA (TOTP). Default inclui a GESTÃO e os ADVOGADOS
+    # (superadmin,admin,socio,advogado,advogado_auxiliar): quem pratica atos
+    # jurídicos e acessa dados sensíveis de casos/clientes é obrigado a 2FA.
+    # Enforcement SEM lockout (ver abaixo) — endurecer o default não tranca
+    # ninguém; só passa a orientar a configuração e a impedir a auto-desproteção.
     # Quando um papel está listado (comparação case-insensitive):
     #   (a) /auth/login sinaliza `precisa_configurar_2fa=true` no payload
     #       enquanto o usuário desse papel ainda não tiver TOTP ativo — para o
@@ -44,9 +47,9 @@ class Settings(BaseSettings):
     #       SEM lockout: não há coluna/migration nova e não se tranca ninguém);
     #   (b) POST /auth/totp/desativar RECUSA (403) desativar o 2FA de um usuário
     #       cujo papel é obrigado — ele não pode se auto-desproteger.
-    # Ex. em produção (definir no .env, NÃO versionado):
+    # Override por ambiente (definir no .env, NÃO versionado), ex. só gestão:
     #   REQUIRE_2FA_ROLES=superadmin,admin,socio
-    REQUIRE_2FA_ROLES: str = "superadmin,admin,socio"
+    REQUIRE_2FA_ROLES: str = "superadmin,admin,socio,advogado,advogado_auxiliar"
     TWO_FACTOR_SETUP_TOKEN_EXPIRE_MINUTES: int = 15
 
     @property
