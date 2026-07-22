@@ -50,6 +50,7 @@ from app.routers import calendar_feed
 from app.routers import case_intelligence
 from app.routers import case_partes
 from app.routers import cases
+from app.routers import case_next_actions
 from app.routers import caso_areas
 from app.routers import centro_custos
 from app.routers import cerebro
@@ -311,6 +312,7 @@ app.include_router(calendar_feed.router, prefix=API)
 app.include_router(case_intelligence.router, prefix=API)
 app.include_router(case_partes.router, prefix=API)
 app.include_router(cases.router, prefix=API)
+app.include_router(case_next_actions.router, prefix=API)
 app.include_router(caso_areas.router, prefix=API)
 app.include_router(centro_custos.router, prefix=API)
 app.include_router(cerebro.router, prefix=API)
