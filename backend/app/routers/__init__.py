@@ -11,6 +11,8 @@ from app.routers import google_drive_knowledge  # noqa: F401
 from app.routers import (  # noqa: E402
     case_timeline,
     cases,
+    dashboard,
+    dashboard_operational,
     defesas_revisoes,
     defesas_revisoes_avancado,
     defesas_revisoes_pacote_seguro,
@@ -41,3 +43,6 @@ sala_de_guerra.router.include_router(sala_de_guerra_facade.router)
 # Timeline e saúde são projeções de leitura sobre entidades existentes; o router
 # de casos continua sendo o ponto canônico de ownership e URL.
 cases.router.include_router(case_timeline.router)
+
+# A saúde da carteira reutiliza o prefixo /dashboard já montado pelo main.py.
+dashboard.router.include_router(dashboard_operational.router)
