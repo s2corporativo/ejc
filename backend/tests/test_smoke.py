@@ -28,7 +28,8 @@ def test_alembic_cadeia_integra():
     revs = [r.revision for r in script.walk_revisions()]
     assert revs[-1] == "001_inicial"
     assert "048_processes" in revs
-    assert "049_totp_2fa" in revs and "050_novos_modulos" in revs
+    # 2FA/TOTP desativado — migração 049_totp_2fa mantida para histórico
+    assert "050_novos_modulos" in revs
     assert "059_archiving_cases_processes" in revs
     assert "060_client_anonimizacao" in revs
     assert "061_client_pii_encriptado" in revs

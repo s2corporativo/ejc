@@ -1,56 +1,72 @@
-# ── Segredos / ambiente ──────────────────────────────────────────────
-.env
-*.env
-**/.env
-!.env.example
-!**/.env.example
-vps-tools/.env
-
-# Chaves e credenciais
-*.pem
-*.key
-*.p12
-*.pfx
-*-service-account*.json
-credentials*.json
-
-# ── Dependências / builds ────────────────────────────────────────────
+```
+# Dependencies
 node_modules/
-**/node_modules/
-backend/.venv/
-backend/.venv-codex/
-**/.venv*/
+
+# Python
 __pycache__/
-**/__pycache__/
 *.pyc
+*.pyo
+*.pyd
+.Python
+env/
+venv/
+.venv/
+.ENV
+.ENV.local
+
+# Build outputs
+dist/
+build/
+*.egg-info/
+
+# Logs
+*.log
+
+# Environment specific
+.env
+.env.local
+.env.*
+
+# Editors
+.vscode/
+.idea/
+*.swp
+*.swo
+*.tmp
+
+# OS generated
+.DS_Store
+Thumbs.db
+
+# Testing
+.coverage
+htmlcov/
+.coverage.*
+.cache
 .pytest_cache/
 .mypy_cache/
-.ruff_cache/
-frontend/dist/
-dist/
 
-# ── Artefatos / backups / resíduos (não versionar) ───────────────────
-*.tgz
-*.tar.gz
+# Compressed files
 *.zip
-*.dump
-*.sql
-*.sql.gz
-*.log
-uploads/
-backups/
-frontend/tests/__out__/
-_QUARENTENA/
-vps-tools/generated/
-_session_componentes_bronze/
-
-# ── Backups locais de arquivos ───────────────────────────────────────
-*.bak
-*.old
-*.orig
-
-# temporários de deploy (auditoria 01/07)
-vps-tools/_*
-
-# graphify — grafo de conhecimento local (regenerável, não versionar)
-graphify-out/
+*.gz
+*.tar
+*.tgz
+*.bz2
+*.xz
+*.7z
+*.rar
+*.zst
+*.lz4
+*.lzh
+*.cab
+*.arj
+*.rpm
+*.deb
+*.Z
+*.lz
+*.lzo
+*.tar.gz
+*.tar.bz2
+*.tar.xz
+*.tar.zst
+```

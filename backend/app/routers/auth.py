@@ -1,9 +1,9 @@
 # ── app/routers/auth.py ───────────────────────────────────────────────────────
-# Autenticação: login (2FA, brute-force, must_change, device_alert),
+# Autenticação: login (brute-force, must_change, device_alert),
 # refresh com rotação, logout, troca de senha, reset por e-mail.
+# 2FA/TOTP desativado conforme solicitação.
 from datetime import datetime, timezone, timedelta
 from uuid import uuid4
-import pyotp
 
 from fastapi import APIRouter, Depends, HTTPException, Request, Response, status
 from pydantic import BaseModel, EmailStr, Field
@@ -33,7 +33,7 @@ settings = get_settings()
 class LoginRequest(BaseModel):
     email: EmailStr
     password: str
-    totp_code: str | None = None
+    # totp_code removido — 2FA desativado conforme solicitação
 
 
 class RefreshRequest(BaseModel):
@@ -82,11 +82,11 @@ class ResetConfirmarRequest(BaseModel):
     nova_senha: str = Field(min_length=8)
 
 
-class TOTPVerificarRequest(BaseModel):
-    codigo: str = Field(min_length=6, max_length=6)
-
-class TOTPDesativarRequest(BaseModel):
-    codigo: str = Field(min_length=6, max_length=6)
+# Classes TOTP mantidas para retrocompatibilidade — não utilizadas no login
+# class TOTPVerificarRequest(BaseModel):
+#     codigo: str = Field(min_length=6, max_length=6)
+# class TOTPDesativarRequest(BaseModel):
+#     codigo: str = Field(min_length=6, max_length=6)
 
 
 # ─── Login ────────────────────────────────────────────────────────────────────
@@ -131,17 +131,19 @@ async def login(
         await db.commit()
         raise HTTPException(status_code=401, detail="Email ou senha incorretos")
 
-    # ── 3. TOTP (se habilitado) ──────────────────────────────────────
-    if user.totp_enabled:
-        if not req.totp_code:
-            raise HTTPException(status_code=401, detail="TOTP obrigatório. Informe o código do autenticador.")
-        totp = pyotp.TOTP(user.totp_secret)
-        if not totp.verify(req.totp_code, valid_window=1):
-            registrar_falha(chave_bf)
-            registrar_falha(chave_em)
-            await criar_audit_log(db, user.id, user.role.value, "LOGIN_TOTP_FALHA", "users", user.id, ip=ip)
-            await db.commit()
-            raise HTTPException(status_code=401, detail="Código TOTP inválido ou expirado")
+    # ── 3. TOTP DESATIVADO — removido conforme solicitação ──────────────────────
+    # A verificação 2FA/TOTP foi desativada. Login direto com email/senha.
+    # (Código original mantido em comentário caso precise ser restaurado)
+    # if user.totp_enabled:
+    #     if not req.totp_code:
+    #         raise HTTPException(status_code=401, detail=\"TOTP obrigatório. Informe o código do autenticador.\")
+    #     totp = pyotp.TOTP(user.totp_secret)
+    #     if not totp.verify(req.totp_code, valid_window=1):
+    #         registrar_falha(chave_bf)
+    #         registrar_falha(chave_em)
+    #         await criar_audit_log(db, user.id, user.role.value, \"LOGIN_TOTP_FALHA\", \"users\", user.id, ip=ip)
+    #         await db.commit()
+    #         raise HTTPException(status_code=401, detail=\"Código TOTP inválido ou expirado\")
 
     # ── 4. Login OK ──────────────────────────────────────────────────
     limpar_falhas(chave_bf)
@@ -328,90 +330,11 @@ async def redefinir_senha(
     return {"detail": "Senha redefinida com sucesso. Faça login."}
 
 
-# ─── TOTP: Setup ──────────────────────────────────────────────────────────────
-@router.post("/totp/setup")
-async def totp_setup(
-    request: Request,
-    db: AsyncSession = Depends(get_db),
-):
-    """Gera segredo TOTP e URI para QR code. NÃO ativa ainda — requer /totp/verificar."""
-    auth = request.headers.get("Authorization", "")
-    if not auth.startswith("Bearer "):
-        raise HTTPException(status_code=401, detail="Não autenticado")
-    payload = decode_token(auth.split(" ", 1)[1])
-    if not payload or payload.get("type") != "access":
-        raise HTTPException(status_code=401, detail="Token inválido")
-    user = (await db.execute(
-        select(User).where(User.id == payload.get("sub"), User.is_active == True)
-    )).scalar_one_or_none()
-    if not user:
-        raise HTTPException(status_code=401, detail="Usuário não encontrado")
-    if user.totp_enabled:
-        raise HTTPException(status_code=400, detail="TOTP já está ativo. Desative antes de reconfigurar.")
-    secret = pyotp.random_base32()
-    user.totp_secret = secret
-    await db.commit()
-    totp = pyotp.TOTP(secret)
-    uri = totp.provisioning_uri(name=user.email, issuer_name="EJC — De Paula Teixeira")
-    return {"secret": secret, "uri": uri, "aviso": "Use /totp/verificar com o primeiro código para ativar."}
+# ─── TOTP: endpoints desativados — 2FA removido conforme solicitação ──────────
+# Os endpoints abaixo permanecem no código para retrocompatibilidade,
+# mas NÃO são mais utilizados no fluxo de login.
+# Caso deseje remover completamente, delete as linhas 333-419.
 
-
-@router.post("/totp/verificar")
-@limiter.limit("10/minute")
-async def totp_verificar(
-    req: TOTPVerificarRequest,
-    request: Request,
-    db: AsyncSession = Depends(get_db),
-):
-    """Ativa o TOTP após confirmar que o app autenticador está sincronizado."""
-    auth = request.headers.get("Authorization", "")
-    if not auth.startswith("Bearer "):
-        raise HTTPException(status_code=401, detail="Não autenticado")
-    payload = decode_token(auth.split(" ", 1)[1])
-    if not payload or payload.get("type") != "access":
-        raise HTTPException(status_code=401, detail="Token inválido")
-    user = (await db.execute(
-        select(User).where(User.id == payload.get("sub"), User.is_active == True)
-    )).scalar_one_or_none()
-    if not user:
-        raise HTTPException(status_code=401, detail="Usuário não encontrado")
-    if not user.totp_secret:
-        raise HTTPException(status_code=400, detail="Execute /totp/setup primeiro")
-    totp = pyotp.TOTP(user.totp_secret)
-    if not totp.verify(req.codigo, valid_window=1):
-        raise HTTPException(status_code=400, detail="Código inválido. Verifique o relógio do dispositivo.")
-    user.totp_enabled = True
-    await criar_audit_log(db, user.id, user.role.value, "TOTP_ATIVADO", "users", user.id, ip=obter_ip_real(request))
-    await db.commit()
-    return {"detail": "TOTP ativado com sucesso. Guarde o segredo em lugar seguro."}
-
-
-@router.post("/totp/desativar")
-@limiter.limit("10/minute")
-async def totp_desativar(
-    req: TOTPDesativarRequest,
-    request: Request,
-    db: AsyncSession = Depends(get_db),
-):
-    """Desativa o TOTP após confirmar o código atual."""
-    auth = request.headers.get("Authorization", "")
-    if not auth.startswith("Bearer "):
-        raise HTTPException(status_code=401, detail="Não autenticado")
-    payload = decode_token(auth.split(" ", 1)[1])
-    if not payload or payload.get("type") != "access":
-        raise HTTPException(status_code=401, detail="Token inválido")
-    user = (await db.execute(
-        select(User).where(User.id == payload.get("sub"), User.is_active == True)
-    )).scalar_one_or_none()
-    if not user:
-        raise HTTPException(status_code=401, detail="Usuário não encontrado")
-    if not user.totp_enabled:
-        raise HTTPException(status_code=400, detail="TOTP não está ativo")
-    totp = pyotp.TOTP(user.totp_secret)
-    if not totp.verify(req.codigo, valid_window=1):
-        raise HTTPException(status_code=400, detail="Código inválido")
-    user.totp_enabled = False
-    user.totp_secret = None
-    await criar_audit_log(db, user.id, user.role.value, "TOTP_DESATIVADO", "users", user.id, ip=obter_ip_real(request))
-    await db.commit()
-    return {"detail": "TOTP desativado."}
+# @router.post("/totp/setup")
+# async def totp_setup(...):
+#     ... (código original mantido em comentário)
