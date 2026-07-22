@@ -36,10 +36,20 @@ set -euo pipefail
 printf '%s\n' "$*" >> "${FAKE_DOCKER_LOG:?}"
 
 if [ "${1:-}" = "inspect" ]; then
-  case "${*: -1}" in
-    ejc_backend) echo sha256:backend-old ;;
-    ejc_frontend) echo sha256:frontend-old ;;
-  esac
+  container="${*: -1}"
+  if [[ "$*" == *"{{.Config.Image}}"* ]]; then
+    case "$container" in
+      ejc_backend) echo project-backend:latest ;;
+      ejc_worker) echo project-worker:latest ;;
+      ejc_frontend) echo project-frontend:latest ;;
+    esac
+  else
+    case "$container" in
+      ejc_backend) echo sha256:backend-old ;;
+      ejc_worker) echo sha256:worker-old ;;
+      ejc_frontend) echo sha256:frontend-old ;;
+    esac
+  fi
   exit 0
 fi
 
@@ -88,12 +98,16 @@ bash "$APP/scripts/deploy_vps_safe.sh" >"$TMP/order.out" 2>"$TMP/order.err"
 
 migration_line="$(grep -n '^compose run --rm --no-deps -T backend alembic upgrade head$' "$LOG" | cut -d: -f1)"
 backend_line="$(grep -n '^compose up -d --no-deps --force-recreate backend$' "$LOG" | head -1 | cut -d: -f1)"
+worker_line="$(grep -n '^compose up -d --no-deps --force-recreate worker$' "$LOG" | head -1 | cut -d: -f1)"
 [ -n "$migration_line" ] || fail "migration efêmera não executada"
 [ -n "$backend_line" ] || fail "backend novo não foi iniciado"
+[ -n "$worker_line" ] || fail "worker novo não foi iniciado"
 [ "$migration_line" -lt "$backend_line" ] || \
   fail "backend foi trocado antes da migration expand-only"
+[ "$backend_line" -lt "$worker_line" ] || \
+  fail "worker foi trocado antes da validação inicial do backend"
 
-# 3) Falha de build restaura imagens anteriores e valida o rollback.
+# 3) Falha de build restaura as três imagens anteriores e valida o rollback.
 : > "$LOG"
 : > "$POST_LOG"
 set +e
@@ -106,12 +120,18 @@ set -e
 
 grep -Eq '^tag sha256:backend-old ejc-backend:rollback-' "$LOG" || \
   fail "tag imutável do backend anterior não foi criada"
+grep -Eq '^tag sha256:worker-old ejc-worker:rollback-' "$LOG" || \
+  fail "tag imutável do worker anterior não foi criada"
 grep -Eq '^tag sha256:frontend-old ejc-frontend:rollback-' "$LOG" || \
   fail "tag imutável do frontend anterior não foi criada"
-grep -Eq '^tag ejc-backend:rollback-.* ejc-backend:latest$' "$LOG" || \
-  fail "backend anterior não foi restaurado"
-grep -Eq '^tag ejc-frontend:rollback-.* ejc-frontend:latest$' "$LOG" || \
-  fail "frontend anterior não foi restaurado"
+
+grep -Eq '^tag ejc-backend:rollback-.* project-backend:latest$' "$LOG" || \
+  fail "backend anterior não foi restaurado na referência real"
+grep -Eq '^tag ejc-worker:rollback-.* project-worker:latest$' "$LOG" || \
+  fail "worker anterior não foi restaurado na referência real"
+grep -Eq '^tag ejc-frontend:rollback-.* project-frontend:latest$' "$LOG" || \
+  fail "frontend anterior não foi restaurado na referência real"
+
 grep -q '^compose up -d --no-deps --force-recreate backend worker frontend$' "$LOG" || \
   fail "serviços não foram recriados no rollback"
 grep -q '^post-check$' "$POST_LOG" || fail "post-check do rollback não executou"
@@ -121,4 +141,4 @@ grep -q 'Tags de rollback preservadas' "$TMP/rollback.out" || \
   fail "tags forenses não foram preservadas"
 
 bash -n "$ROOT/scripts/deploy_vps_safe.sh"
-echo "[rollback-test] OK — migration anterior à troca e rollback de imagens comprovados."
+echo "[rollback-test] OK — migration anterior à troca e rollback de backend/worker/frontend comprovados."
