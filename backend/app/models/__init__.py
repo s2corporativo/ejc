@@ -86,3 +86,8 @@ from app.models.system_module_setting import SystemModuleSetting  # noqa
 from app.models.nfse import NotaFiscalServico, NFSeStatus  # noqa
 from app.models.scheduler_heartbeat import SchedulerHeartbeat  # noqa
 from app.models.integration_credential import IntegrationCredential  # noqa  (Cofre de Credenciais — migração 108)
+
+# Registra a política runtime que suprime temporariamente a exigência de TOTP sem
+# alterar os valores persistidos. A importação é deliberadamente tardia para
+# evitar ciclo durante a definição de User.
+from app.core import two_factor_policy as _two_factor_policy  # noqa: F401,E402
