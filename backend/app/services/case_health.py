@@ -20,6 +20,11 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.core.ownership import pode_ver_todos
 from app.models.user import User
 from app.models.case import Case, CaseStatus, CaseMovimento
+from app.services.case_next_action import (
+    current_action,
+    current_waiver,
+    derive_operational_state,
+)
 from app.models.deadline import Deadline, DeadlineStatus
 from app.models.fee import Fee, FeeStatus
 from app.models.procuracao import Procuracao
@@ -53,6 +58,8 @@ async def calcular_score_caso(db: AsyncSession, case: Case, hoje: date | None = 
     score = 100
     fatores: list[dict] = []
     fechado = case.status in FECHADOS
+    next_action = await current_action(db, case.id) if not fechado else None
+    waiver = await current_waiver(db, case.id, now=agora) if not fechado else None
 
     # Dias sem movimentação — calculado UMA vez, para todo status (fechado
     # incluso), e devolvido no resultado (evita query duplicada nos routers
@@ -69,6 +76,52 @@ async def calcular_score_caso(db: AsyncSession, case: Case, hoje: date | None = 
         dias_parado = (agora - referencia).days
 
     if not fechado:
+        # Responsabilidade operacional: nenhum fator representa chance de êxito.
+        if not case.advogado_responsavel_id:
+            score -= 20
+            fatores.append({
+                "fator": "sem_responsavel",
+                "impacto": -20,
+                "detalhe": "Caso ativo sem advogado responsável",
+            })
+
+        if next_action is None and waiver is None:
+            score -= 20
+            fatores.append({
+                "fator": "sem_proxima_acao",
+                "impacto": -20,
+                "detalhe": "Caso ativo sem próxima ação ou exceção vigente",
+            })
+        elif waiver is not None:
+            score -= 5
+            fatores.append({
+                "fator": "excecao_proxima_acao",
+                "impacto": -5,
+                "detalhe": (
+                    "Caso temporariamente sem próxima ação até "
+                    f"{waiver.expires_at.isoformat()}"
+                ),
+            })
+        elif next_action is not None:
+            due_at = next_action.due_at
+            if due_at.tzinfo is None:
+                due_at = due_at.replace(tzinfo=timezone.utc)
+            if due_at < agora:
+                score -= 20
+                fatores.append({
+                    "fator": "proxima_acao_vencida",
+                    "impacto": -20,
+                    "detalhe": f"Próxima ação vencida: {next_action.title}",
+                })
+            if next_action.blocked:
+                score -= 10
+                fatores.append({
+                    "fator": "proxima_acao_bloqueada",
+                    "impacto": -10,
+                    "detalhe": next_action.blocked_reason
+                    or "Próxima ação bloqueada",
+                })
+
         # 1) Prazos vencidos (vencido explícito OU pendente com data passada)
         venc = (await db.execute(
             select(func.count()).select_from(Deadline).where(
@@ -143,6 +196,33 @@ async def calcular_score_caso(db: AsyncSession, case: Case, hoje: date | None = 
         "fatores": fatores,
         "saudavel": not fatores,
         "dias_parado": dias_parado,   # aditivo — consumidores existentes ignoram
+        "natureza_indice": "operacional",
+        "nao_representa_probabilidade_exito": True,
+        "estado_operacional": derive_operational_state(
+            case, next_action, waiver, now=agora
+        ),
+        "proxima_acao": (
+            {
+                "id": next_action.id,
+                "titulo": next_action.title,
+                "responsavel_id": next_action.owner_id,
+                "data_esperada": next_action.due_at.isoformat(),
+                "urgencia": next_action.urgency,
+                "bloqueada": next_action.blocked,
+                "aguardando": next_action.waiting_on,
+            }
+            if next_action is not None
+            else None
+        ),
+        "excecao_proxima_acao": (
+            {
+                "id": waiver.id,
+                "motivo": waiver.reason,
+                "expira_em": waiver.expires_at.isoformat(),
+            }
+            if waiver is not None
+            else None
+        ),
     }
 
 
