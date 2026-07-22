@@ -38,6 +38,15 @@ def _write(
     )
 
 
+def _base(tmp_path: Path) -> None:
+    _write(
+        tmp_path / "001.py",
+        "001",
+        None,
+        'op.create_table("base", sa.Column("id", sa.String()))',
+    )
+
+
 def test_create_table_e_coluna_nullable_sao_expand_only(tmp_path: Path):
     _write(
         tmp_path / "001.py",
@@ -60,12 +69,7 @@ def test_create_table_e_coluna_nullable_sao_expand_only(tmp_path: Path):
 
 
 def test_downgrade_destrutivo_nao_contamina_classificacao_do_upgrade(tmp_path: Path):
-    _write(
-        tmp_path / "001.py",
-        "001",
-        None,
-        'op.create_table("base", sa.Column("id", sa.String()))',
-    )
+    _base(tmp_path)
     _write(
         tmp_path / "002.py",
         "002",
@@ -76,17 +80,12 @@ def test_downgrade_destrutivo_nao_contamina_classificacao_do_upgrade(tmp_path: P
     assert evaluate(tmp_path, "001")["compatible"] is True
 
 
-def test_drop_execute_e_bind_execute_exigem_revisao(tmp_path: Path):
-    _write(
-        tmp_path / "001.py",
-        "001",
-        None,
-        'op.create_table("base", sa.Column("id", sa.String()))',
-    )
+def test_drop_execute_e_exec_driver_sql_exigem_revisao(tmp_path: Path):
+    _base(tmp_path)
     _write(tmp_path / "002.py", "002", "001", 'op.drop_column("base", "legado")')
     result = evaluate(tmp_path, "001")
     assert result["compatible"] is False
-    assert "drop_column" in result["migrations"][0]["reasons"][0]
+    assert any("drop_column" in reason for reason in result["migrations"][0]["reasons"])
 
     _write(
         tmp_path / "002.py",
@@ -98,14 +97,51 @@ def test_drop_execute_e_bind_execute_exigem_revisao(tmp_path: Path):
     assert result["compatible"] is False
     assert any("execute" in reason for reason in result["migrations"][0]["reasons"])
 
+    _write(
+        tmp_path / "002.py",
+        "002",
+        "001",
+        'op.get_bind().exec_driver_sql("DROP TABLE base")',
+    )
+    result = evaluate(tmp_path, "001")
+    assert result["compatible"] is False
+    assert any(
+        "exec_driver_sql" in reason
+        for reason in result["migrations"][0]["reasons"]
+    )
+
+
+def test_helper_local_e_fluxo_dinamico_nao_contornam_gate(tmp_path: Path):
+    _base(tmp_path)
+    (tmp_path / "002.py").write_text(
+        "from alembic import op\n"
+        "revision = '002'\n"
+        "down_revision = '001'\n"
+        "def _oculto():\n"
+        "    op.drop_table('base')\n"
+        "def upgrade():\n"
+        "    _oculto()\n"
+        "def downgrade():\n"
+        "    pass\n",
+        encoding="utf-8",
+    )
+    result = evaluate(tmp_path, "001")
+    assert result["compatible"] is False
+    assert any("fora de op.*" in reason for reason in result["migrations"][0]["reasons"])
+
+    _write(
+        tmp_path / "002.py",
+        "002",
+        "001",
+        'if True:\n        op.create_table("nova", sa.Column("id", sa.String()))',
+    )
+    result = evaluate(tmp_path, "001")
+    assert result["compatible"] is False
+    assert any("If" in reason for reason in result["migrations"][0]["reasons"])
+
 
 def test_not_null_sem_default_e_indice_unique_nao_sao_aprovados(tmp_path: Path):
-    _write(
-        tmp_path / "001.py",
-        "001",
-        None,
-        'op.create_table("base", sa.Column("id", sa.String()))',
-    )
+    _base(tmp_path)
     _write(
         tmp_path / "002.py",
         "002",
@@ -127,13 +163,8 @@ def test_not_null_sem_default_e_indice_unique_nao_sao_aprovados(tmp_path: Path):
     assert any("UNIQUE" in reason for reason in result["migrations"][0]["reasons"])
 
 
-def test_not_null_com_server_default_e_aprovado(tmp_path: Path):
-    _write(
-        tmp_path / "001.py",
-        "001",
-        None,
-        'op.create_table("base", sa.Column("id", sa.String()))',
-    )
+def test_not_null_com_server_default_estatico_e_aprovado(tmp_path: Path):
+    _base(tmp_path)
     _write(
         tmp_path / "002.py",
         "002",
@@ -145,12 +176,7 @@ def test_not_null_com_server_default_e_aprovado(tmp_path: Path):
 
 
 def test_revision_atual_no_head_nao_tem_pendencia(tmp_path: Path):
-    _write(
-        tmp_path / "001.py",
-        "001",
-        None,
-        'op.create_table("base", sa.Column("id", sa.String()))',
-    )
+    _base(tmp_path)
     result = evaluate(tmp_path, "001")
     assert result["compatible"] is True
     assert result["pending_count"] == 0
