@@ -50,12 +50,7 @@ const HONORARIOS_VAZIO = {
 // Definir honorários é ATO DE ADVOGADO+: espelha o piso do backend
 // (requer_advogado / ROLE_LEVEL["advogado"]=6). Só estes papéis veem a seção;
 // secretaria, estagiário, financeiro e advogado_auxiliar ficam abaixo do piso.
-const PAPEIS_HONORARIOS = new Set([
-  "advogado",
-  "socio",
-  "admin",
-  "superadmin",
-]);
+const PAPEIS_HONORARIOS = new Set(["advogado", "socio", "admin", "superadmin"]);
 
 /**
  * Wizard "Novo Caso" em 2 passos: (1) localizar/deduplicar o cliente por
@@ -594,100 +589,100 @@ export default function NovoCasoWizard({
                 backend). Para papéis abaixo, o estado fica vazio e nada é
                 enviado. */}
             {podeDefinirHonorarios && (
-            <div className="sm:col-span-2">
-              <button
-                type="button"
-                className="flex w-full items-center justify-between rounded-xl border border-slate-200 bg-slate-50 px-4 py-3 text-left transition hover:bg-slate-100"
-                aria-expanded={honorariosAberto}
-                onClick={() => setHonorariosAberto((v) => !v)}
-              >
-                <span className="flex items-center gap-2 text-sm font-medium text-slate-700">
-                  <Wallet className="h-4 w-4 text-slate-400" />
-                  Honorários (opcional)
-                </span>
-                <ChevronDown
-                  className={`h-4 w-4 text-slate-400 transition-transform ${
-                    honorariosAberto ? "rotate-180" : ""
-                  }`}
-                />
-              </button>
+              <div className="sm:col-span-2">
+                <button
+                  type="button"
+                  className="flex w-full items-center justify-between rounded-xl border border-slate-200 bg-slate-50 px-4 py-3 text-left transition hover:bg-slate-100"
+                  aria-expanded={honorariosAberto}
+                  onClick={() => setHonorariosAberto((v) => !v)}
+                >
+                  <span className="flex items-center gap-2 text-sm font-medium text-slate-700">
+                    <Wallet className="h-4 w-4 text-slate-400" />
+                    Honorários (opcional)
+                  </span>
+                  <ChevronDown
+                    className={`h-4 w-4 text-slate-400 transition-transform ${
+                      honorariosAberto ? "rotate-180" : ""
+                    }`}
+                  />
+                </button>
 
-              {honorariosAberto && (
-                <div className="mt-3 grid gap-4 rounded-xl border border-slate-100 bg-white p-4 sm:grid-cols-2">
-                  <p className="text-xs leading-5 text-slate-500 sm:col-span-2">
-                    Preencher é opcional. Se informado, o contrato de prestação
-                    de serviços gerado automaticamente já sai preenchido; se
-                    deixado em branco, o caso abre sem honorários e o contrato
-                    nasce com lacunas.
-                  </p>
-                  <div>
-                    <label className="label">Valor contratual (R$)</label>
-                    <input
-                      className="input"
-                      type="number"
-                      min="0"
-                      step="0.01"
-                      inputMode="decimal"
-                      placeholder="Ex.: 3000.00"
-                      value={honorarios.valor_contratual}
-                      onChange={(e) =>
-                        setHonorarios({
-                          ...honorarios,
-                          valor_contratual: e.target.value,
-                        })
-                      }
-                    />
+                {honorariosAberto && (
+                  <div className="mt-3 grid gap-4 rounded-xl border border-slate-100 bg-white p-4 sm:grid-cols-2">
+                    <p className="text-xs leading-5 text-slate-500 sm:col-span-2">
+                      Preencher é opcional. Se informado, o contrato de
+                      prestação de serviços gerado automaticamente já sai
+                      preenchido; se deixado em branco, o caso abre sem
+                      honorários e o contrato nasce com lacunas.
+                    </p>
+                    <div>
+                      <label className="label">Valor contratual (R$)</label>
+                      <input
+                        className="input"
+                        type="number"
+                        min="0"
+                        step="0.01"
+                        inputMode="decimal"
+                        placeholder="Ex.: 3000.00"
+                        value={honorarios.valor_contratual}
+                        onChange={(e) =>
+                          setHonorarios({
+                            ...honorarios,
+                            valor_contratual: e.target.value,
+                          })
+                        }
+                      />
+                    </div>
+                    <div>
+                      <label className="label">% de êxito</label>
+                      <input
+                        className="input"
+                        type="number"
+                        min="0"
+                        max="100"
+                        step="0.5"
+                        inputMode="decimal"
+                        placeholder="Ex.: 30"
+                        value={honorarios.percentual_exito}
+                        onChange={(e) =>
+                          setHonorarios({
+                            ...honorarios,
+                            percentual_exito: e.target.value,
+                          })
+                        }
+                      />
+                    </div>
+                    <div className="sm:col-span-2">
+                      <label className="label">Forma de pagamento</label>
+                      <input
+                        className="input"
+                        placeholder="Ex.: à vista, 3x, conforme cláusula"
+                        value={honorarios.forma_pagamento}
+                        onChange={(e) =>
+                          setHonorarios({
+                            ...honorarios,
+                            forma_pagamento: e.target.value,
+                          })
+                        }
+                      />
+                    </div>
+                    <div className="sm:col-span-2">
+                      <label className="label">Observações</label>
+                      <textarea
+                        className="input min-h-[70px]"
+                        placeholder="Condições, parcelamento, cláusulas específicas..."
+                        value={honorarios.observacoes}
+                        onChange={(e) =>
+                          setHonorarios({
+                            ...honorarios,
+                            observacoes: e.target.value,
+                          })
+                        }
+                      />
+                    </div>
                   </div>
-                  <div>
-                    <label className="label">% de êxito</label>
-                    <input
-                      className="input"
-                      type="number"
-                      min="0"
-                      max="100"
-                      step="0.5"
-                      inputMode="decimal"
-                      placeholder="Ex.: 30"
-                      value={honorarios.percentual_exito}
-                      onChange={(e) =>
-                        setHonorarios({
-                          ...honorarios,
-                          percentual_exito: e.target.value,
-                        })
-                      }
-                    />
-                  </div>
-                  <div className="sm:col-span-2">
-                    <label className="label">Forma de pagamento</label>
-                    <input
-                      className="input"
-                      placeholder="Ex.: à vista, 3x, conforme cláusula"
-                      value={honorarios.forma_pagamento}
-                      onChange={(e) =>
-                        setHonorarios({
-                          ...honorarios,
-                          forma_pagamento: e.target.value,
-                        })
-                      }
-                    />
-                  </div>
-                  <div className="sm:col-span-2">
-                    <label className="label">Observações</label>
-                    <textarea
-                      className="input min-h-[70px]"
-                      placeholder="Condições, parcelamento, cláusulas específicas..."
-                      value={honorarios.observacoes}
-                      onChange={(e) =>
-                        setHonorarios({
-                          ...honorarios,
-                          observacoes: e.target.value,
-                        })
-                      }
-                    />
-                  </div>
-                </div>
-              )}
-            </div>
+                )}
+              </div>
             )}
           </div>
 
