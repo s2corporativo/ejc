@@ -79,6 +79,11 @@ CATALOGO: list[dict] = [
      "url": "https://www.planalto.gov.br/ccivil_03/leis/l6938.htm"},
     # ── Ampliação de volume 2026 — diplomas federais core das áreas do escritório
     # (todas URLs COMPILADAS/oficiais do planalto.gov.br, mesmos padrões acima).
+    # NOTA OPERACIONAL: estas URLs seguem os padrões já comprovados das entradas
+    # acima, mas NÃO puderam ser verificadas ao vivo no ambiente de dev (o proxy
+    # de egresso bloqueia planalto.gov.br). Após o deploy, confira em
+    # /ia-governanca/fontes que cada slug ingeriu (status ok, não "erro"); uma URL
+    # incorreta falha graciosamente (nunca fabrica texto) — basta corrigi-la aqui.
     # Bloco processual/administrativo
     {"slug": "l14133", "titulo": "Lei de Licitações e Contratos Administrativos (Lei 14.133/2021)", "area": "administrativo",
      "url": "https://www.planalto.gov.br/ccivil_03/_ato2019-2022/2021/lei/l14133.htm"},
