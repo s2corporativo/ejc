@@ -396,9 +396,7 @@ export default function DashboardModern() {
   }> = [
     {
       key: "acoes-vencidas",
-      count: Number(
-        operational?.contagens?.proximas_acoes_vencidas ?? 0,
-      ),
+      count: Number(operational?.contagens?.proximas_acoes_vencidas ?? 0),
       label: "próximas ações vencidas",
       to: "/casos",
       tone: "red",
@@ -422,9 +420,7 @@ export default function DashboardModern() {
     },
     {
       key: "intimacoes",
-      count: Number(
-        operational?.contagens?.intimacoes_nao_analisadas ?? 0,
-      ),
+      count: Number(operational?.contagens?.intimacoes_nao_analisadas ?? 0),
       label: "intimações não analisadas",
       to: "/intimacoes",
       tone: "blue",
@@ -527,8 +523,7 @@ export default function DashboardModern() {
         icon: ListChecks,
         eyebrow: "Caso sem próxima ação",
         title: missingCase.titulo,
-        desc:
-          "Defina responsável, providência, data esperada e origem da obrigação.",
+        desc: "Defina responsável, providência, data esperada e origem da obrigação.",
         cta: "Organizar caso",
         to: `/casos/${missingCase.id}`,
       };
