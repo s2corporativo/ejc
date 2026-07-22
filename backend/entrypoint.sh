@@ -47,5 +47,8 @@ esac
 echo "[entrypoint] Semeando usuário admin (idempotente)..."
 python seeds/seed_all.py
 
+echo "[entrypoint] Semeando sócios advogados do escritório (idempotente)..."
+python seeds/seed_socios_advogados.py
+
 echo "[entrypoint] Iniciando uvicorn..."
 exec uvicorn app.main:app --host 0.0.0.0 --port 8000 --proxy-headers
