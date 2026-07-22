@@ -2,7 +2,10 @@ import { useEffect, useMemo, useRef } from "react";
 import { useLocation, useNavigate } from "react-router-dom";
 import type { AxiosResponse, InternalAxiosRequestConfig } from "axios";
 import api from "../lib/api";
+import { useAuth } from "../stores/auth";
 import CaseCommandDock from "./CaseCommandDock";
+import CaseHealthWidget from "./CaseHealthWidget";
+import PortfolioHealthWidget from "./PortfolioHealthWidget";
 
 const CREATED_CASE_KEY = "ejc_created_case_journey";
 const CREATED_CASE_TTL_MS = 60_000;
@@ -13,6 +16,14 @@ const CONTEXTUAL_CREATE_ENDPOINTS = new Set([
   "/tasks",
   "/agenda-eventos/",
   "/agenda-eventos",
+]);
+const PORTFOLIO_HEALTH_ROLES = new Set([
+  "superadmin",
+  "admin",
+  "socio",
+  "advogado",
+  "advogado_auxiliar",
+  "estagiario",
 ]);
 
 interface CreatedCaseMarker {
@@ -28,6 +39,10 @@ function normalizarEndpoint(url?: string): string {
   } catch {
     return url.split("?")[0] || "";
   }
+}
+
+export function podeVerSaudeCarteira(role: unknown): boolean {
+  return PORTFOLIO_HEALTH_ROLES.has(String(role || ""));
 }
 
 export function caseIdSeguro(value: string | null | undefined): string | null {
@@ -58,8 +73,7 @@ export function deveInjetarCaso(
 ): string | null {
   const metodo = String(config.method || "get").toLowerCase();
   if (metodo !== "post") return null;
-  if (!CONTEXTUAL_CREATE_ENDPOINTS.has(normalizarEndpoint(config.url)))
-    return null;
+  if (!CONTEXTUAL_CREATE_ENDPOINTS.has(normalizarEndpoint(config.url))) return null;
   if (
     !config.data ||
     typeof config.data !== "object" ||
@@ -103,20 +117,11 @@ function salvarMarcador(id: string) {
   );
 }
 
-/**
- * Extensões transversais ainda não existentes na implementação nativa:
- * - guarda o caso recém-criado e continua para a Jornada quando o fluxo legado
- *   voltar à lista;
- * - injeta `case_id` em prazo/tarefa/evento criados a partir de `?caso=`;
- * - redireciona rotas consolidadas para o workspace canônico;
- * - mostra a central simples do caso na rota exata `/casos/:id`.
- *
- * O filtro `?tipo=` e os atalhos do Dashboard são nativos desde o PR #292 e
- * não são interceptados aqui.
- */
+/** Extensões transversais da jornada e dos painéis operacionais. */
 export default function FlowEnhancements() {
   const location = useLocation();
   const navigate = useNavigate();
+  const user = useAuth((state) => state.user);
   const searchRef = useRef(location.search);
 
   useEffect(() => {
@@ -172,5 +177,14 @@ export default function FlowEnhancements() {
     return caseIdSeguro(match?.[1]);
   }, [location.pathname]);
 
-  return caseId ? <CaseCommandDock caseId={caseId} /> : null;
+  if (location.pathname === "/") {
+    return podeVerSaudeCarteira(user?.role) ? <PortfolioHealthWidget /> : null;
+  }
+  if (!caseId) return null;
+  return (
+    <>
+      <CaseHealthWidget caseId={caseId} />
+      <CaseCommandDock caseId={caseId} />
+    </>
+  );
 }
