@@ -156,15 +156,24 @@ class Settings(BaseSettings):
     # PLUGÁVEL: nasce DESLIGADO (MARITACA_ENABLED=false) → sistema idêntico ao
     # atual. Provider EXTERNO ao VPS → passa pela MESMA barreira LGPD
     # (pseudonimização). Chave definida APENAS no .env (nunca aqui).
-    # Soberania de dados: os modelos "-br-sp" (ex.: "sabia-4-br-sp",
-    # "sabiazinho-4-br-sp") processam 100% em território nacional (+30% de
-    # custo) — caminho recomendado no jurídico, a ativar com DPA assinado.
+    # Soberania de dados NÃO é o default e NÃO é automática: depende de DUAS
+    # coisas juntas — (1) configurar MARITACA_MODEL/MARITACA_MODEL_RAPIDO nas
+    # variantes "-br-sp" (ex.: "sabia-4-br-sp", "sabiazinho-4-br-sp"), que
+    # processam 100% em território nacional (+30% de custo); e (2) ligar o guarda
+    # MARITACA_EXIGIR_SOBERANIA=true, que passa a EXIGIR essas variantes no boot.
+    # Os defaults abaixo ("sabia-4"/"sabiazinho-4") NÃO são soberanos.
     MARITACA_ENABLED: bool = False
     MARITACA_API_KEY: str = ""
     MARITACA_BASE_URL: str = "https://chat.maritaca.ai/api"
     MARITACA_MODEL: str = "sabia-4"            # qualidade/generalista (128k)
     MARITACA_MODEL_RAPIDO: str = "sabiazinho-4"  # rápido/barato
     MARITACA_TIMEOUT: int = 90
+    # Guarda de soberania (opt-in, default OFF → comportamento atual inalterado).
+    # True + MARITACA_ENABLED=true → o boot EXIGE que MARITACA_MODEL e
+    # MARITACA_MODEL_RAPIDO terminem em "-br-sp" (processamento em território
+    # nacional); caso contrário FALHA o boot. Espelha os gates conscientes
+    # GROQ_ZDR_VERIFIED/AUDIO_TRANSCRIPTION_DPA_APPROVED.
+    MARITACA_EXIGIR_SOBERANIA: bool = False
 
     # ── IA — Núcleo Único (policy central de provedores) ──────────────────
     # False = só Ollama local (soberania total): nenhum dado sai do VPS,
@@ -174,6 +183,12 @@ class Settings(BaseSettings):
     # por sanitizar_pii + validar_sem_pii; PII residual bloqueia o envio (LGPD).
     # NUNCA desligar em produção sem parecer do encarregado de dados.
     AI_REQUIRE_SANITIZATION_FOR_EXTERNAL: bool = True
+    # Exceção CONSCIENTE e AUDITÁVEL ao guarda de boot: em produção, se algum
+    # provider externo for elegível E AI_REQUIRE_SANITIZATION_FOR_EXTERNAL=false,
+    # o boot FALHA — a menos que esta flag seja explicitamente True (parecer do
+    # encarregado de dados registrado). Default False = comportamento seguro;
+    # espelha GROQ_ZDR_VERIFIED/AUDIO_TRANSCRIPTION_DPA_APPROVED.
+    AI_ACCEPT_EXTERNAL_WITHOUT_SANITIZATION: bool = False
     # True = toda saída de IA é rascunho com revisão humana obrigatória (OAB).
     AI_REQUIRE_HITL: bool = True
     # Gate anti-alucinação de citações (Fase 4 — citation_gate.py):
@@ -188,6 +203,13 @@ class Settings(BaseSettings):
     # Valor inválido/typo cai no modo SEGURO "bloquear" (ver politica_citacoes()):
     # um erro de config não pode rebaixar silenciosamente o gate antialucinação.
     CITACOES_POLITICA: str = "bloquear"
+    # Modo ESTRITO do gate (opt-in, default OFF). Com False (atual), uma súmula
+    # ou artigo CITADO mas AUSENTE da base curada fica só "identificada" (não
+    # bloqueia) — o gate barra erro estrutural, não invenção plausível. Com True,
+    # súmula/artigo citado e NÃO encontrado na base vira BLOQUEANTE (trata a
+    # ausência como suspeita). Ligue SÓ quando a base de conhecimento estiver
+    # abrangente (senão gera falso-positivo em citação real ainda não ingerida).
+    CITACOES_MODO_ESTRITO: bool = False
     # ── Modo Duas IAs (Fase 5 — validação adversarial) ────────────────────
     # True = peças de alta complexidade geradas pelo Núcleo de IA recebem uma
     # SEGUNDA passada por uma IA Crítica/Adversarial (advogado da parte
@@ -235,9 +257,11 @@ class Settings(BaseSettings):
     # Provedor preferido por TIER de complexidade (o roteador só PROPÕE; se
     # inelegível, o gateway ignora e usa a cadeia normal por prioridade).
     ROTEAMENTO_PROVIDER_LEVE: str = "groq"       # rápido/barato p/ tarefas leves
-    # médio = anthropic (Haiku, ANTHROPIC_MODEL_RAPIDO): o stack de produção
-    # não sobe ollama (compose: OLLAMA_ENABLED=false) — apontar o tier médio
-    # para provider morto só gerava tentativa-e-fallback a cada tarefa.
+    # médio = anthropic: o stack de produção não sobe ollama (compose:
+    # OLLAMA_ENABLED=false) — apontar o tier médio para provider morto só gerava
+    # tentativa-e-fallback a cada tarefa. O MODELO do tier médio é COMPLEXO
+    # (Opus), NÃO Haiku — ver model_router._model_do_provider (anti-rebaixamento
+    # P1: só o tier LEVE usa o modelo rápido).
     ROTEAMENTO_PROVIDER_MEDIO: str = "anthropic"
     ROTEAMENTO_PROVIDER_PESADO: str = "anthropic"  # modelo forte p/ raciocínio
     # Limiares (score inteiro) que separam os tiers leve|medio|pesado.
@@ -377,10 +401,13 @@ class Settings(BaseSettings):
     # ── DJEN / API Comunica CNJ (Res. CNJ 569/2024) — ingestão RAG ───────
     # Ingestor diário de comunicações processuais (intimações/publicações)
     # por OAB monitorada. A retenção da API é limitada — o RAG do EJC é o
-    # arquivo histórico permanente. Desligado por padrão (opt-in no .env).
-    DJEN_INGEST_ENABLED: bool = False
+    # arquivo histórico permanente. LIGADO por decisão do titular (fonte pública
+    # CNJ, sem autenticação); desligue com DJEN_INGEST_ENABLED=false.
+    DJEN_INGEST_ENABLED: bool = True
     # CSV "numero/UF" — ex.: "12345/MG,67890/MG". Vazio = ingestor no-op.
-    DJEN_OABS_MONITORADAS: str = ""
+    # Default = OAB do sócio João Pedro Rodrigues Teixeira (OAB/MG 251.174);
+    # acrescente as OABs dos demais advogados separadas por vírgula.
+    DJEN_OABS_MONITORADAS: str = "251174/MG"
     # Janela incremental (dias para trás) de cada coleta diária. 2 dias dá
     # margem para atraso de disponibilização sem reprocessar demais (o upsert
     # é idempotente por chave_origem, então sobreposição é inofensiva).
@@ -392,9 +419,10 @@ class Settings(BaseSettings):
     # curada de temas do escritório, em janela de datas, e ingere as ementas
     # no RAG (dedup idempotente por chave_origem). Scraping é frágil por
     # natureza — se o HTML mudar ou o TJMG bloquear, o job marca 'erro' em
-    # fontes_ingestao SEM derrubar o scheduler. Desligado por padrão (opt-in
-    # no .env); validar contra o site real antes de ativar em produção.
-    TJMG_INGEST_ENABLED: bool = False
+    # fontes_ingestao SEM derrubar o scheduler. LIGADO por decisão do titular; o
+    # scraper é frágil — acompanhe /ia-governanca/fontes (se marcar 'erro', o
+    # LexML federado já cobre o TJMG). Desligue com TJMG_INGEST_ENABLED=false.
+    TJMG_INGEST_ENABLED: bool = True
     # CSV de temas de busca. Vazio = usa a lista padrão (áreas do escritório,
     # ver services/ingestors/tjmg.py::TEMAS_PADRAO).
     TJMG_INGEST_TEMAS: str = ""
@@ -418,6 +446,27 @@ class Settings(BaseSettings):
     # padrão do ramo tributário (services/conhecimento_ingest/normas_rfb.py::
     # TERMOS_PADRAO — Solução de Consulta ISS, IRPF, Simples Nacional...).
     NORMAS_RFB_TERMOS: str = ""
+
+    # ── LexML — federador oficial (legislação + jurisprudência) → RAG ────
+    # O LexML.gov.br (Rede de Informação Legislativa e Jurídica, mantida pelo
+    # Senado) federa NUMA ÚNICA FONTE: legislação federal/ESTADUAL (ALMG)/
+    # MUNICIPAL (Betim) e jurisprudência de TJ/TRT/TRF/TST/STJ/STF. O ingestor
+    # (services/ingestors/lexml.py) varre um catálogo de temas/autoridades do
+    # escritório e usa o caminho PROVADO jurisprudencia_externa.buscar_lexml
+    # (API pública, keyword-based) para tipo='legislacao' E 'jurisprudencia'.
+    # É o veículo que amplia o VOLUME estadual/municipal/tribunais sem scraper
+    # dedicado por portal. LIGADO por decisão do titular (fonte pública gratuita,
+    # inbound de dado público, degrada graciosamente); best-effort e idempotente
+    # por chave_origem (lexml:<tipo>:<urn|hash>) como os demais. Requer
+    # ENABLE_SCHEDULER=true no worker. Desligue com LEXML_INGEST_ENABLED=false.
+    LEXML_INGEST_ENABLED: bool = True
+    # CSV de temas/autoridades de busca. Vazio = lista padrão (áreas do
+    # escritório + autoridades-alvo, ver services/ingestors/lexml.py::TEMAS_PADRAO).
+    LEXML_INGEST_TEMAS: str = ""
+    # Teto de itens por tema/tipo/execução (controle de volume e de carga na
+    # API pública do LexML). Sobreposição entre execuções é inofensiva (upsert
+    # idempotente por chave_origem).
+    LEXML_INGEST_MAX_POR_TEMA: int = 20
 
     # ── Embeddings locais/remotos (busca semântica RAG) ─────────────────
     # local = fastembed (ONNX, sem torch) no mesmo processo; http = serviço interno separado.
@@ -725,17 +774,18 @@ class Settings(BaseSettings):
     # ── Escritório (LGPD — identificação do controlador de dados) ─────────
     # FONTE ÚNICA DE VERDADE dos dados FIXOS do escritório, consumida por todos
     # os geradores de documento (documental.py, templates_documentos.py,
-    # pdf_service.py, docx_service.py). OAB/ENDERECO/CEP nascem VAZIOS de
-    # propósito: são preenchidos no .env do escritório. Quando vazios, os
-    # helpers abaixo devolvem um placeholder EXPLÍCITO e visível — o documento
-    # nunca sai com string vazia silenciosa nem com dado inventado.
+    # pdf_service.py, docx_service.py). OAB/ENDERECO trazem o DADO INSTITUCIONAL
+    # do escritório como default (sobreponível pelo .env de cada instalação);
+    # CEP nasce VAZIO de propósito. Quando vazios, os helpers abaixo devolvem um
+    # placeholder EXPLÍCITO e visível — o documento nunca sai com string vazia
+    # silenciosa nem com dado inventado.
     ESCRITORIO_NOME: str = "De Paula Teixeira Sociedade de Advogados"
     ESCRITORIO_CNPJ: str = "32.491.468/0001-12"
     ESCRITORIO_CIDADE: str = "Betim"
     ESCRITORIO_ESTADO: str = "MG"
     ESCRITORIO_EMAIL: str = "contato@depaulateixeira.adv.br"
-    ESCRITORIO_OAB: str = ""
-    ESCRITORIO_ENDERECO: str = ""
+    ESCRITORIO_OAB: str = "251174"   # só o número; o rótulo "OAB/MG " já é aposto pelos consumidores (timbre PDF/DOCX)
+    ESCRITORIO_ENDERECO: str = "Av. Gov. Valadares nº 851, sala 405, Centro, Betim"
     ESCRITORIO_CEP: str = ""
 
     @staticmethod
@@ -885,6 +935,48 @@ class Settings(BaseSettings):
                         "CSV precisa ser uma chave Fernet (32 bytes url-safe "
                         "base64)."
                     ) from e
+            # ── LGPD — sanitização OBRIGATÓRIA se há provider externo elegível ──
+            # Se QUALQUER provider externo (Anthropic/Groq/Maritaca) estiver
+            # elegível (chave + habilitação + kill-switch AI_EXTERNAL_PROVIDERS_
+            # ALLOWED) e a sanitização final estiver DESLIGADA, dados pessoais
+            # poderiam seguir em claro ao provedor fora do VPS (art. 33/46). Falha
+            # no BOOT, a menos que haja override consciente e auditável.
+            externo_elegivel = bool(self.AI_EXTERNAL_PROVIDERS_ALLOWED and (
+                (self.ANTHROPIC_ENABLED and self.ANTHROPIC_API_KEY)
+                or self.GROQ_API_KEY
+                or (self.MARITACA_ENABLED and self.MARITACA_API_KEY)
+            ))
+            if (externo_elegivel
+                    and not self.AI_REQUIRE_SANITIZATION_FOR_EXTERNAL
+                    and not self.AI_ACCEPT_EXTERNAL_WITHOUT_SANITIZATION):
+                raise ValueError(
+                    "AI_REQUIRE_SANITIZATION_FOR_EXTERNAL=false com provider "
+                    "externo elegível (Anthropic/Groq/Maritaca) em produção: "
+                    "dados pessoais poderiam ir em claro a provedor fora do VPS "
+                    "(LGPD art. 33/46). Mantenha "
+                    "AI_REQUIRE_SANITIZATION_FOR_EXTERNAL=true; se houver parecer "
+                    "do encarregado de dados para a exceção, defina explicitamente "
+                    "AI_ACCEPT_EXTERNAL_WITHOUT_SANITIZATION=true no .env."
+                )
+            # ── Soberania Maritaca (opt-in) — exige modelos "-br-sp" ──────────
+            # Só valida quando o modo soberania está LIGADO e o provider ativo.
+            if self.MARITACA_EXIGIR_SOBERANIA and self.MARITACA_ENABLED:
+                nao_soberanos = [
+                    nome for nome, valor in (
+                        ("MARITACA_MODEL", self.MARITACA_MODEL),
+                        ("MARITACA_MODEL_RAPIDO", self.MARITACA_MODEL_RAPIDO),
+                    )
+                    if not (valor or "").strip().endswith("-br-sp")
+                ]
+                if nao_soberanos:
+                    raise ValueError(
+                        "MARITACA_EXIGIR_SOBERANIA=true exige processamento em "
+                        "território nacional: "
+                        f"{' e '.join(nao_soberanos)} deve(m) usar as variantes "
+                        "'-br-sp' (ex.: sabia-4-br-sp, sabiazinho-4-br-sp). "
+                        "Ajuste os modelos no .env ou desligue "
+                        "MARITACA_EXIGIR_SOBERANIA."
+                    )
         elif not self.SECRET_KEY:
             # Desenvolvimento: gera chave efêmera para não travar o ambiente local.
             self.SECRET_KEY = secrets.token_urlsafe(64)

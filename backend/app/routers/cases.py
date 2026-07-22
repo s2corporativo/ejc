@@ -19,7 +19,8 @@ from app.models.client import Client
 from app.models.audit_log import criar_audit_log
 from app.services.deadline_calculator import calcular_prescricao
 from app.services.case_intel import triagem_caso, aprendizado_encerramento
-from app.services.case_automacao import automacao_caso
+from app.services.case_automacao import automacao_caso, gerar_documentos_iniciais_auto
+from app.services.fee_proposal_service import seed_proposta_honorarios_cadastro
 from app.services import event_bus
 from app.services.documental import gerar_documentos_iniciais
 # Mesmo vocabulário/contrato de poderes do kit documental (fonte única do
@@ -209,7 +210,8 @@ async def criar(
     if not client:
         raise HTTPException(status_code=422, detail="Cliente não encontrado")
 
-    data = payload.model_dump(exclude={"data_fato_prescricao"})
+    # `honorarios` (FASE 2) NÃO é coluna de Case — vira proposta vigente abaixo.
+    data = payload.model_dump(exclude={"data_fato_prescricao", "honorarios"})
     c = Case(
         id=str(uuid4()),
         numero_interno=await _proximo_numero_interno(db),
@@ -233,12 +235,27 @@ async def criar(
         descricao=f"Caso aberto por {cu.full_name}", created_by=cu.id,
     ))
     await criar_audit_log(db, cu.id, cu.role.value, "CREATE", "cases", c.id)
+    # FASE 2: honorários do cadastro → proposta de honorários já vigente, na
+    # MESMA transação do caso (atômico) e ANTES do background do kit. Assim o
+    # gerar_documentos_iniciais_auto (que abre nova sessão após este commit)
+    # encontra a proposta aprovada e o CONTRATO do kit sai preenchido. Sem
+    # honorários (ou sem dado financeiro) → nada é semeado e o contrato mantém
+    # os placeholders de revisão (comportamento legado). Idempotente.
+    if payload.honorarios is not None:
+        await seed_proposta_honorarios_cadastro(db, c.id, cu, payload.honorarios)
     await db.commit()
     await db.refresh(c)
     # NÚCLEO COGNITIVO — ETAPA 1: triagem jurídica automática (IA invisível).
     # Roda em background; preenche tese/pontos (se vazios) sem travar a resposta.
     background.add_task(automacao_caso, c.id)
     background.add_task(triagem_caso, c.id)
+    # Kit documental inicial (procuração PODERES GERAIS + contrato) gerado em
+    # BACKGROUND: o titular pediu geração automática na abertura de cada caso, sem
+    # bloquear a resposta do POST. É idempotente e fail-safe (reusa
+    # geracao_documental.gerar_kit_inicial via case_automacao). Engate feito só
+    # aqui em criar() para a v1 — a conversão de lead poderia assinar
+    # "caso.criado" no event_bus, mas o gatilho central da abertura é este.
+    background.add_task(gerar_documentos_iniciais_auto, c.id, getattr(cu, "id", None))
     background.add_task(event_bus.emitir_caso_criado, c.id, getattr(cu, 'id', None))
     return c
 

@@ -307,32 +307,57 @@ def _limpar_html(s: str) -> str:
 
 # ── Helpers ──────────────────────────────────────────────────────────────────
 
-_TRIBUNAL_MAP = {
-    "tjmg": "TJMG", "tjsp": "TJSP", "trt3": "TRT-3", "trt-3": "TRT-3",
-    "stj": "STJ", "stf": "STF", "trf6": "TRF-6", "trf-6": "TRF-6",
-    "tst": "TST",
+# Mapa de siglas → nome canônico. Cobre as jurisdições-alvo do escritório
+# (Betim/MG): TJMG estadual, TRT-3 trabalhista, TRF-1/TRF-6 federal, superiores
+# (STJ/STF/TST/TSE/STM) e os 24 TRTs / 6 TRFs (federação LexML pode retornar
+# julgados de qualquer região). Cada TRT/TRF entra em duas grafias — "trt3" e
+# "trt-3" — porque a inferência é textual sobre link+título do registro.
+_TRIBUNAL_MAP: dict[str, str] = {
+    "tjmg": "TJMG", "tjsp": "TJSP",
+    "stj": "STJ", "stf": "STF", "tst": "TST", "tse": "TSE", "stm": "STM",
 }
+for _n in range(1, 25):                    # Tribunais Regionais do Trabalho (1..24)
+    _TRIBUNAL_MAP[f"trt{_n}"] = f"TRT-{_n}"
+    _TRIBUNAL_MAP[f"trt-{_n}"] = f"TRT-{_n}"
+for _n in range(1, 7):                      # Tribunais Regionais Federais (1..6)
+    _TRIBUNAL_MAP[f"trf{_n}"] = f"TRF-{_n}"
+    _TRIBUNAL_MAP[f"trf-{_n}"] = f"TRF-{_n}"
+_TRIBUNAL_MAP["trt"] = "TRT"                # fallback só p/ sigla isolada (regex boundary)
+_TRIBUNAL_MAP["trf"] = "TRF"
+
 
 def _inferir_tribunal(texto: str) -> str:
+    """Infere o tribunal a partir de texto livre (link/título).
+
+    Casamento por FRONTEIRA (não substring simples): a sigla não pode ser
+    precedida por letra/dígito nem seguida de dígito. Isso evita que "trt1"
+    case dentro de "trt10"/"trt-15" (o número seguinte quebra a fronteira) e que
+    o fallback genérico "trt" engula "trt3" (após "trt" vem um dígito). Assim a
+    ordem do dict deixa de importar para a desambiguação numérica.
+    """
     t = texto.lower()
     for k, v in _TRIBUNAL_MAP.items():
-        if k in t:
+        if re.search(rf"(?<![a-z0-9]){re.escape(k)}(?![0-9])", t):
             return v
     return "TJMG"  # default para buscas locais
 
 
 _AREA_MAP = [
-    (["trabalhista", "clt", "rescisão", "horas extras", "jst", "trt"], "Trabalhista"),
+    (["trabalhista", "clt", "rescisão", "horas extras", "jst", "trt",
+      "verbas rescisórias", "vínculo empregatício", "justa causa"], "Trabalhista"),
     (["consumidor", "cdc", "fornecedor", "negativação", "serasa", "spc"], "Consumidor"),
     (["penal", "crime", "réu", "absolvição", "condenação", "habeas corpus"], "Penal"),
     (["família", "alimentos", "guarda", "divórcio", "partilha"], "Família"),
-    (["previdenciário", "inss", "benefício", "aposentadoria", "bpc"], "Previdenciário"),
-    (["tributário", "icms", "iss", "irpf", "auto de infração", "fisco"], "Tributário"),
+    (["previdenciário", "inss", "benefício", "aposentadoria", "bpc",
+      "auxílio-doença", "loas"], "Previdenciário"),
+    (["tributário", "icms", "iss", "irpf", "auto de infração", "fisco",
+      "execução fiscal"], "Tributário"),
     (["ambiental", "ibama", "licença", "app", "car", "poluição"], "Ambiental"),
     (["imobiliário", "locação", "usucapião", "matrícula", "financiamento"], "Imobiliário"),
     (["bancário", "juros", "revisional", "cet", "anatocismo"], "Bancário"),
     (["empresarial", "societário", "recuperação judicial", "falência"], "Empresarial"),
-    (["administrativo", "improbidade", "contrato público", "servidor"], "Administrativo"),
+    (["administrativo", "improbidade", "contrato público", "servidor",
+      "licitação", "concurso público"], "Administrativo"),
     (["trânsito", "multa", "cnh", "cetran", "jari"], "Trânsito"),
     (["saúde", "plano de saúde", "ans", "médico", "hospital"], "Saúde"),
     (["digital", "lgpd", "dados pessoais", "privacidade"], "Digital/LGPD"),

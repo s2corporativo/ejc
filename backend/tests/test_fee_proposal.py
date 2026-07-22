@@ -549,3 +549,138 @@ async def test_kit_sem_proposta_mantem_comportamento_atual():
     assert contrato["proposta_aprovada"] is None
     assert "R$ [____]" in contrato["conteudo"]        # placeholders preservados
     assert "LGPD" not in contrato["conteudo"]
+
+
+# ── FASE 2: honorários do CADASTRO → proposta vigente → contrato preenchido ──
+
+async def test_seed_honorarios_cadastro_mapeia_campos_e_aprova():
+    """Contrato de campos do frontend → FeeProposal aprovada (mapeamento fiel)."""
+    from app.schemas.case import HonorariosCreate
+    from app.services.fee_proposal_service import (
+        proposta_para_contrato, seed_proposta_honorarios_cadastro,
+    )
+
+    hon = HonorariosCreate(valor_contratual=12000.0, percentual_exito=25.0,
+                           forma_pagamento="3x sem juros", observacoes="cliente antigo")
+    # execute #1: proposta_aprovada_vigente (idempotência) → None;
+    # execute #2: max(versao) do caso → None (primeira versão).
+    db = _FakeDB([None, None])
+    p = await seed_proposta_honorarios_cadastro(db, "case1", _user(), hon)
+
+    assert p.status == "aprovada" and p.versao == 1
+    assert p.origem_tabela is None                       # origem = cadastro, não OAB
+    assert p.faixas["recomendado"]["valor"] == 12000.0   # → cláusula 2 (valor)
+    assert p.exito_percentual == 25.0                    # → cláusula 3 (êxito)
+    assert p.parcelamento == {"descricao": "3x sem juros"}  # → forma de pagamento
+    assert p.justificativa == "cliente antigo"           # observações registradas
+    assert p.aprovado_por == "u1" and p.aprovado_em is not None
+    # Ponte contrato: os 4 campos aparecem no que o contrato consome.
+    params = proposta_para_contrato(p)
+    assert params["valor"] == 12000.0
+    assert params["exito_percentual"] == 25.0
+    assert "3x sem juros" in params["forma_pagamento"]
+    # Auditoria criada; NÃO commitou — cases.criar commita na txn do caso.
+    audits = [o for o in db.added if isinstance(o, AuditLog)]
+    assert any(a.acao == "CREATE" and a.entidade == "fee_proposals" for a in audits)
+    assert db.commits == 0
+
+
+async def test_seed_honorarios_exige_advogado_bloqueia_papel_inferior():
+    """RBAC: semear uma proposta APROVADA é ato de advogado+ (mesmo gate do
+    fluxo interativo). Papel abaixo de advogado + dado financeiro → 403 (não
+    escala); advogado+ passa; obs-only não aciona o gate (nada é criado)."""
+    from fastapi import HTTPException
+    from app.schemas.case import HonorariosCreate
+    from app.services.fee_proposal_service import seed_proposta_honorarios_cadastro
+
+    hon = HonorariosCreate(valor_contratual=5000.0)
+    # secretaria (nível abaixo de advogado) tentando semear proposta → 403
+    with pytest.raises(HTTPException) as ei:
+        await seed_proposta_honorarios_cadastro(
+            _FakeDB([None, None]), "case1", _user(UserRole.secretaria), hon)
+    assert ei.value.status_code == 403
+
+    # advogado passa: cria a proposta aprovada
+    p = await seed_proposta_honorarios_cadastro(
+        _FakeDB([None, None]), "case1", _user(UserRole.advogado), hon)
+    assert p is not None and p.status == "aprovada"
+
+    # só observações (sem dado financeiro): retorna None ANTES do gate — uma
+    # secretaria pode abrir o caso; simplesmente nenhuma proposta é semeada.
+    so_obs = HonorariosCreate(observacoes="apenas uma nota")
+    assert await seed_proposta_honorarios_cadastro(
+        _FakeDB([None]), "case1", _user(UserRole.secretaria), so_obs) is None
+
+
+async def test_seed_honorarios_preenche_contrato_do_kit():
+    """(b) Caso COM honorários → contrato do kit sai PREENCHIDO (valor/êxito/forma),
+    não placeholders — reusando o pipeline da FASE 4 sem tocá-lo."""
+    from app.schemas.case import HonorariosCreate
+    from app.services.fee_proposal_service import seed_proposta_honorarios_cadastro
+    from app.services.geracao_documental import gerar_kit_inicial
+
+    hon = HonorariosCreate(valor_contratual=12000.0, percentual_exito=25.0,
+                           forma_pagamento="3x sem juros")
+    p = await seed_proposta_honorarios_cadastro(_FakeDB([None, None]), "case1",
+                                                _user(), hon)
+
+    # gerar_kit_inicial: execute #1 dedup ([] = não existe); #2 itens OAB;
+    # #3 proposta_aprovada_vigente → a semeada acima.
+    db = _FakeDB([[], [_item_oab()], p])
+    out = await gerar_kit_inicial(db, _case(), _cli(), _user())
+
+    conteudo = out["contrato"]["conteudo"]
+    assert "R$ 12.000,00" in conteudo                    # valor do cadastro
+    assert "R$ [____]" not in conteudo                   # sem placeholder de valor
+    assert "25% sobre o proveito economico" in conteudo  # êxito
+    assert "3x sem juros" in conteudo                    # forma de pagamento
+    assert "LGPD" in conteudo                            # cláusulas fixas completas
+    assert out["contrato"]["proposta_aprovada"]["valor"] == 12000.0
+
+
+async def test_seed_sem_dado_financeiro_nao_cria_proposta():
+    """(c) Sem honorários (ou só observações) → nada é criado; o contrato do kit
+    mantém os placeholders legados. Comportamento legado preservado."""
+    from app.schemas.case import HonorariosCreate
+    from app.services.fee_proposal_service import seed_proposta_honorarios_cadastro
+
+    # honorarios None → None (nenhum execute).
+    assert await seed_proposta_honorarios_cadastro(_FakeDB([]), "case1", _user(), None) is None
+    # Só observações (sem valor/êxito/forma) → None, nada persistido.
+    db = _FakeDB([])
+    out = await seed_proposta_honorarios_cadastro(
+        db, "case1", _user(), HonorariosCreate(observacoes="apenas uma nota"))
+    assert out is None
+    assert db.added == [] and db.commits == 0
+
+
+async def test_seed_idempotente_nao_duplica_proposta_aprovada():
+    """(d) Reprocessar não duplica: já havendo proposta aprovada vigente, o seed
+    devolve a existente sem criar nova nem auditar."""
+    from app.schemas.case import HonorariosCreate
+    from app.services.fee_proposal_service import seed_proposta_honorarios_cadastro
+
+    ja = _proposta(status="aprovada")
+    db = _FakeDB([ja])   # execute #1: proposta_aprovada_vigente → existente
+    out = await seed_proposta_honorarios_cadastro(
+        db, "case1", _user(), HonorariosCreate(valor_contratual=9999.0))
+    assert out is ja
+    assert [o for o in db.added if isinstance(o, FeeProposal)] == []
+    assert db.commits == 0
+
+
+async def test_seed_exito_sem_valor_preenche_exito_mantem_placeholder_valor():
+    """Acordo só-êxito: sem valor_contratual, cláusula 3 preenche o êxito e a
+    cláusula 2 mantém 'R$ [____]' (nunca inventa valor)."""
+    from app.schemas.case import HonorariosCreate
+    from app.services.fee_proposal_service import (
+        proposta_para_contrato, seed_proposta_honorarios_cadastro,
+    )
+
+    p = await seed_proposta_honorarios_cadastro(
+        _FakeDB([None, None]), "case1", _user(),
+        HonorariosCreate(percentual_exito=20.0))
+    assert p.faixas == {}                       # sem faixa recomendado → sem valor
+    params = proposta_para_contrato(p)
+    assert params["valor"] is None
+    assert params["exito_percentual"] == 20.0

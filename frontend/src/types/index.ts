@@ -74,6 +74,19 @@ export interface Case {
   kanban_position?: number;
   processo_principal?: ProcessoPrincipal;
 }
+/**
+ * Mini-formulário OPCIONAL de honorários enviado na abertura do caso
+ * (objeto `honorarios` no POST /cases/). Quando informado, alimenta o
+ * contrato de prestação de serviços gerado automaticamente; se omitido,
+ * o caso abre sem honorários e o contrato nasce com lacunas. Todos os
+ * campos são opcionais (number | null / string | null).
+ */
+export interface CasoHonorariosInput {
+  valor_contratual: number | null;
+  percentual_exito: number | null;
+  forma_pagamento: string | null;
+  observacoes: string | null;
+}
 export interface Deadline {
   id: string;
   titulo: string;

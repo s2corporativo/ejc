@@ -453,6 +453,49 @@ class TestExecutarTarefaIAModos:
         assert CPF_FAKE not in str(registrado.get("resposta", ""))
         assert registrado.get("pii_removida") is True
 
+    async def test_fallback_local_antes_de_externo(self, s, monkeypatch):
+        """P1b (LGPD): na cadeia própria de executar_tarefa_ia o LOCAL (Ollama)
+        é tentado ANTES do externo (Groq). ANALISE_CASO tem cfg.provider=anthropic
+        → cadeia [anthropic, ollama, groq]. Todos falhando, a ORDEM de tentativa
+        prova o local-antes-de-externo (antes era groq antes de ollama)."""
+        from app.services import ai_gateway
+        from app.services.system_prompts import TarefaIA
+
+        monkeypatch.setattr(s, "OLLAMA_ENABLED", True)
+        ordem: list[str] = []
+
+        async def _fake_provedor(provider, model, messages, temperature, max_tokens):
+            ordem.append(provider)
+            raise RuntimeError("provedor caiu")
+
+        monkeypatch.setattr(ai_gateway, "_chamar_provedor", _fake_provedor)
+        with pytest.raises(RuntimeError):
+            await ai_gateway.executar_tarefa_ia(TarefaIA.ANALISE_CASO, "texto limpo")
+        assert "ollama" in ordem and "groq" in ordem
+        assert ordem.index("ollama") < ordem.index("groq")   # local antes do externo
+
+    async def test_fallback_nao_silencioso_no_dict(self, s, monkeypatch):
+        """P1b: degradação Opus/Anthropic → outro provedor NÃO é silenciosa — o
+        dict de retorno carrega fallback_ativado/fallback_motivo (PII-safe)."""
+        from app.services import ai_gateway
+        from app.services.system_prompts import TarefaIA
+
+        monkeypatch.setattr(s, "OLLAMA_ENABLED", True)
+        chamadas: list[str] = []
+
+        async def _fake_provedor(provider, model, messages, temperature, max_tokens):
+            chamadas.append(provider)
+            if provider == "anthropic":           # primário falha
+                raise RuntimeError("primario indisponivel")
+            return "rascunho", {"model": model or provider, "input_tokens": 1, "output_tokens": 1}
+
+        monkeypatch.setattr(ai_gateway, "_chamar_provedor", _fake_provedor)
+        out = await ai_gateway.executar_tarefa_ia(TarefaIA.ANALISE_CASO, "texto limpo")
+        # Respondeu por um provedor de fallback (ollama, local), não o primário.
+        assert out["provider"] != "anthropic"
+        assert out["fallback_ativado"] is True
+        assert out["fallback_motivo"] and out["fallback_motivo"].startswith("anthropic:")
+
 
 # ══════════════════════════════════════════════════════════════════════════════
 # 3. _resolver_cadeia

@@ -140,3 +140,69 @@ def test_minuta_sem_caso_usa_foro_restrito():
     )
     assert "Comarca de Sete Lagoas/MG" in texto
     assert "substabelecer" not in texto.lower()
+
+
+# ── Modelo OFICIAL da procuração (poderes gerais = ad_judicia_et_extra) ────────
+
+def test_modelo_oficial_cabecalho_outorgado_fixo_outorgante_e_alineas():
+    # (c): cabeçalho oficial + OUTORGADO fixo (João/OAB 251.174) + OUTORGANTE com
+    # nacionalidade default e CPF DECIFRADO do cliente + alíneas (a)-(j) + fecho.
+    texto = _procuracao(
+        _case(), _cli(), "Dra. Fulana",
+        tipo_poderes="ad_judicia_et_extra", permite_substabelecimento=True,
+    )
+
+    # Cabeçalho oficial do escritório
+    assert "DE PAULA TEIXEIRA - SOCIEDADE DE ADVOGADOS" in texto
+    assert "AD JUDICIA ET EXTRA - PODERES GERAIS" in texto
+
+    # OUTORGADO FIXO = sócio-titular, independente do `adv` passado na chamada
+    assert "JOAO PEDRO RODRIGUES TEIXEIRA" in texto
+    assert "OAB/MG no 251.174" in texto
+    assert "Dra. Fulana" not in texto
+
+    # OUTORGANTE = cliente do caso, nacionalidade default "brasileiro(a)" + CPF
+    # decifrado (cpf_plain), nunca o ciphertext.
+    assert "OUTORGANTE: Joao da Silva, brasileiro(a)," in texto
+    assert "00000000000" in texto
+
+    # Alíneas (a)-(j) presentes
+    for alinea in ("(a)", "(b)", "(c)", "(d)", "(e)", "(f)", "(g)", "(h)", "(i)", "(j)"):
+        assert alinea in texto, f"falta a alinea {alinea}"
+    # Âncoras de conteúdo do modelo
+    assert "tutelas de urgencia" in texto                                       # (a)
+    assert "renunciar ao direito sobre que se funda a acao (art. 105 do CPC)" in texto  # (c)
+    assert "PJe, e-Proc" in texto                                               # (d)
+    assert "Justica Gratuita" in texto                                          # (e)
+    assert "levantar depositos judiciais" in texto                             # (f)
+    assert "substabelecer este mandato, com ou sem reserva de poderes" in texto  # (j)
+
+    # Fecho: Betim/MG + data corrente por extenso
+    from datetime import date
+    from app.services.documental import _MESES_PT
+    hoje = date.today()
+    assert f"Betim/MG, {hoje.day} de {_MESES_PT[hoje.month - 1]} de {hoje.year}." in texto
+
+
+def test_modelo_oficial_sem_substab_omite_alinea_j_mas_mantem_art_105():
+    texto = _procuracao(
+        _case(), _cli(), "Dra. Fulana",
+        tipo_poderes="ad_judicia_et_extra", permite_substabelecimento=False,
+    )
+    assert "(i)" in texto
+    assert "(j)" not in texto
+    assert "substabelecer" not in texto.lower()
+    # As demais alíneas (inclusive o art. 105 na alínea c) continuam presentes
+    assert "renunciar" in texto.lower()
+
+
+def test_qualificacao_pj_nao_recebe_nacionalidade_de_pf():
+    # A nacionalidade default entra só na qualificação PF; PJ segue com CNPJ.
+    from app.services.pii_crypto import encrypt
+    from app.services.documental import _qualificacao
+    pj = Client(id="pj1", tipo="PJ", razao_social="ACME LTDA",
+                cnpj_enc=encrypt("00000000000191"))
+    q = _qualificacao(pj)
+    assert "ACME LTDA" in q
+    assert "brasileiro(a)" not in q
+    assert "00000000000191" in q

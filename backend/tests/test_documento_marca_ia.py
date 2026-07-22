@@ -87,6 +87,8 @@ def test_docx_timbre_traz_oab_e_endereco_do_escritorio():
 
 
 def test_procuracao_usa_dados_do_escritorio_e_remove_placeholders_legados():
+    from datetime import date
+
     from app.models.case import Case
     from app.models.client import Client
     from app.services.documental import _procuracao
@@ -94,17 +96,24 @@ def test_procuracao_usa_dados_do_escritorio_e_remove_placeholders_legados():
     s = get_settings()
     case = Case(titulo="Cobranca X", numero_processo=None)
     cli = Client(nome="Fulano de Tal")
+    # OUTORGADO agora é FIXO (sócio-titular): o `adv` passado NÃO alimenta mais o
+    # outorgado — o modelo oficial é sempre outorgado ao sócio.
     texto = _procuracao(case, cli, "Dra. Beltrana")
 
-    # Dados FIXOS agora vêm das settings (nome + cidade/UF de assinatura).
-    assert s.ESCRITORIO_NOME in texto
+    # Cabeçalho oficial (timbre textual) + cidade/UF de assinatura das settings.
+    assert "DE PAULA TEIXEIRA - SOCIEDADE DE ADVOGADOS" in texto
     assert f"{s.ESCRITORIO_CIDADE}/{s.ESCRITORIO_ESTADO}," in texto
+    # OUTORGADO FIXO: sócio-titular com OAB/MG 251.174 — não o `adv` da chamada.
+    assert "JOAO PEDRO RODRIGUES TEIXEIRA" in texto
+    assert "251.174" in texto
+    assert "Dra. Beltrana" not in texto
     # Placeholders legados de dado FIXO NÃO escapam mais para o documento.
     assert "[OAB/MG no ____]" not in texto
     assert "[endereco do escritorio]" not in texto
     assert "[Cidade]/MG" not in texto
-    # A DATA depende do caso e permanece placeholder de revisão.
-    assert "[data]" in texto
+    # A DATA agora é a corrente (por extenso) — o placeholder [data] some.
+    assert "[data]" not in texto
+    assert str(date.today().year) in texto
 
 
 def _abrir_docx(dados: bytes):

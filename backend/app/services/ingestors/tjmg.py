@@ -35,20 +35,49 @@ from app.services.jurisprudencia_externa import buscar_tjmg
 logger = logging.getLogger("ejc.ingestao.tjmg")
 
 # Temas de busca padrão — áreas de atuação do escritório (Betim/MG).
-# Sobrescrevível via TJMG_INGEST_TEMAS (.env, CSV).
+# Sobrescrevível via TJMG_INGEST_TEMAS (.env, CSV). Cobre cível, consumidor,
+# imobiliário, família, trabalhista, tributário, administrativo, penal,
+# previdenciário, empresarial e ambiental — cada tema vira uma varredura da
+# base de acórdãos (teto TJMG_INGEST_MAX_POR_TEMA por tema/execução).
 TEMAS_PADRAO = [
+    # Cível / responsabilidade / consumidor / bancário
     "dano moral",
     "responsabilidade civil",
+    "negativação indevida cadastro de inadimplentes",
     "plano de saúde negativa de cobertura",
     "revisional contrato bancário juros",
     "direito do consumidor inversão do ônus",
+    # Imobiliário / registral
     "rescisão contratual imobiliário",
     "usucapião",
+    "despejo locação de imóvel",
+    # Família / sucessões
     "guarda e alimentos",
-    "improbidade administrativa",
-    "execução fiscal prescrição",
-    "acidente de trânsito indenização",
+    "divórcio partilha de bens",
+    "união estável reconhecimento e dissolução",
+    "inventário e partilha herança",
+    # Trabalhista (câmaras cíveis — relação de trabalho residual)
     "relação de emprego vínculo empregatício",
+    # Tributário / administrativo
+    "execução fiscal prescrição",
+    "certidão de dívida ativa nulidade",
+    "improbidade administrativa",
+    "servidor público reajuste vantagens",
+    # Trânsito
+    "acidente de trânsito indenização",
+    # Penal
+    "tráfico de drogas dosimetria da pena",
+    "furto e roubo prescrição da pretensão punitiva",
+    "violência doméstica Lei Maria da Penha",
+    # Previdenciário / assistencial
+    "benefício previdenciário aposentadoria",
+    "auxílio-doença restabelecimento INSS",
+    # Empresarial
+    "recuperação judicial e falência",
+    "duplicata título de crédito execução",
+    # Ambiental
+    "dano ambiental reparação",
+    "auto de infração ambiental multa",
 ]
 
 

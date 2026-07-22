@@ -45,6 +45,43 @@ def _validar_numero_processo_cnj(v: Optional[str]) -> Optional[str]:
     return v
 
 
+class HonorariosCreate(BaseModel):
+    """FASE 2 — honorários informados na ABERTURA do caso (objeto OPCIONAL).
+
+    Contrato de campos ESTÁVEL com o frontend — NÃO renomear os 4 campos:
+      • valor_contratual — honorários contratuais fixos, em R$.
+      • percentual_exito — % de êxito sobre o proveito econômico (0 a 100).
+      • forma_pagamento  — texto livre (ex.: "à vista", "3x", "conforme cláusula").
+      • observacoes      — anotações do advogado sobre os honorários.
+
+    TODOS opcionais: o caso pode abrir sem honorários. Sem este objeto (ou sem
+    nenhum valor financeiro), o contrato do kit nasce com placeholders de
+    revisão, exatamente como hoje. Quando há dado financeiro, os honorários são
+    persistidos como proposta de honorários já vigente e o CONTRATO do kit sai
+    preenchido (fee_proposal_service.seed_proposta_honorarios_cadastro).
+    """
+    valor_contratual: Optional[float] = None
+    percentual_exito: Optional[float] = None
+    forma_pagamento: Optional[str] = Field(default=None, max_length=500)
+    observacoes: Optional[str] = Field(default=None, max_length=2000)
+
+    @field_validator("valor_contratual")
+    @classmethod
+    def _valor_nao_negativo(cls, v: Optional[float]) -> Optional[float]:
+        if v is not None and v < 0:
+            raise ValueError("valor_contratual não pode ser negativo")
+        return v
+
+    @field_validator("percentual_exito")
+    @classmethod
+    def _exito_faixa(cls, v: Optional[float]) -> Optional[float]:
+        # Percentual de êxito entre 0 e 100 — evita valor absurdo e o overflow
+        # da coluna Numeric(5,2) de fee_proposals.exito_percentual (→ 500).
+        if v is not None and not (0 <= v <= 100):
+            raise ValueError("percentual_exito deve estar entre 0 e 100")
+        return v
+
+
 class CaseCreate(BaseModel):
     titulo: str
     area: str
@@ -63,6 +100,8 @@ class CaseCreate(BaseModel):
     case_type: Optional[str] = "judicial"
     extrajudicial_type: Optional[str] = None
     has_judicial_process: Optional[bool] = False
+    # FASE 2 (opcional): honorários do cadastro → contrato do kit preenchido.
+    honorarios: Optional[HonorariosCreate] = None
 
     @field_validator("area")
     @classmethod

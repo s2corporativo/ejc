@@ -20,11 +20,12 @@ from pydantic import ValidationError
 
 from app.models.audit_log import AuditLog
 from app.services.citation_gate import (
-    MAX_CITACOES_POR_VERIFICACAO, aplicar_gate_hitl,
-    sanitizar_justificativa_override, validar_citacoes,
+    MAX_CITACOES_POR_VERIFICACAO, aplicar_gate_hitl, avaliar_bloqueantes,
+    modo_estrito_citacoes, sanitizar_justificativa_override, validar_citacoes,
 )
 from tests.test_citation_gate import (
-    _CU, _DBHITL, _DBVazio, _FakeLog, _forca_politica, TEXTO_SUSPEITO,
+    _CU, _DBConfirma, _DBHITL, _DBVazio, _FakeLog, _forca_politica,
+    TEXTO_SUMULA_OK, TEXTO_SUSPEITO,
 )
 
 # Resposta de IA Defensiva (marcador exigido por _is_ia_defensiva_log) com
@@ -225,3 +226,131 @@ async def test_relatorio_citacoes_indisponivel_da_503(monkeypatch):
     with pytest.raises(HTTPException) as exc:
         await citacoes_do_log("log-1", db=_DBHITL(log), cu=_CU())
     assert exc.value.status_code == 503
+
+
+# ── A-1: MODO ESTRITO — súmula/artigo AUSENTE da base vira bloqueante ────────
+# No modo legado (OFF), citação plausível-mas-inexistente (súmula em faixa /
+# artigo não estrutural) fica "identificada" e NÃO bloqueia. No modo estrito
+# (ON), a AUSÊNCIA na base curada escala a bloqueio. Presença ("verificada")
+# nunca bloqueia; ausência estrutural ("suspeita") já bloqueia nos dois modos.
+
+# Súmula em FAIXA plausível (500 ≤ teto STJ 676) → passa no check estrutural e,
+# ausente da base (_DBVazio), cai em "identificada" (não é "suspeita").
+TEXTO_SUMULA_PLAUSIVEL_AUSENTE = "Aplica-se a Súmula 500 do STJ ao caso concreto."
+# Artigo estruturalmente válido, porém ausente da base → "identificada".
+TEXTO_ARTIGO_AUSENTE = "Nos termos do art. 999 do CDC, o pedido procede."
+
+
+def _forca_modo_estrito(monkeypatch, valor: bool):
+    from app.core.config import get_settings
+    monkeypatch.setattr(get_settings(), "CITACOES_MODO_ESTRITO", valor)
+
+
+# ── Unidade: avaliar_bloqueantes com flag explícita (determinístico) ─────────
+
+def test_avaliar_bloqueantes_modo_estrito_off_ignora_sumula_artigo_ausentes():
+    # (b) legado preservado: identificada de súmula/artigo NÃO bloqueia (OFF).
+    rel = {"citacoes": [
+        {"status": "identificada", "tipo": "sumula", "citacao": "Súmula 500 STJ"},
+        {"status": "identificada", "tipo": "artigo", "citacao": "art. 999 CDC"},
+    ]}
+    assert avaliar_bloqueantes(rel, modo_estrito=False) == []
+
+
+def test_avaliar_bloqueantes_modo_estrito_on_bloqueia_sumula_artigo_ausentes():
+    # (a) modo estrito: a ausência (identificada) de súmula/artigo bloqueia.
+    rel = {"citacoes": [
+        {"status": "identificada", "tipo": "sumula", "citacao": "Súmula 500 STJ"},
+        {"status": "identificada", "tipo": "artigo", "citacao": "art. 999 CDC"},
+    ]}
+    bloq = avaliar_bloqueantes(rel, modo_estrito=True)
+    assert {b["tipo"] for b in bloq} == {"sumula", "artigo"}
+    assert all("modo estrito" in b["motivo"].lower() for b in bloq)
+
+
+def test_avaliar_bloqueantes_modo_estrito_on_nao_bloqueia_verificadas():
+    # (c) presença na base ("verificada") NUNCA bloqueia — nem no modo estrito.
+    rel = {"citacoes": [
+        {"status": "verificada", "tipo": "sumula", "citacao": "Súmula 7 STJ"},
+        {"status": "verificada", "tipo": "artigo", "citacao": "art. 5 CF"},
+    ]}
+    assert avaliar_bloqueantes(rel, modo_estrito=True) == []
+
+
+def test_avaliar_bloqueantes_modo_estrito_nao_afrouxa_suspeita_e_generica():
+    # Nenhum bloqueio legado é afrouxado: suspeita e generica bloqueiam nos
+    # dois modos; julgado identificado sem tribunal+data idem.
+    rel = {"citacoes": [
+        {"status": "suspeita", "tipo": "sumula", "citacao": "Súmula 9999",
+         "aviso": "fora de faixa"},
+        {"status": "generica", "tipo": "generica", "citacao": "jurisprudência"},
+        {"status": "identificada", "tipo": "recurso", "citacao": "REsp 1"},
+    ]}
+    for estrito in (False, True):
+        tipos = {b["tipo"] for b in avaliar_bloqueantes(rel, modo_estrito=estrito)}
+        assert tipos == {"sumula", "generica", "recurso"}
+
+
+# ── Ponta a ponta: validar_citacoes lendo a flag CITACOES_MODO_ESTRITO ───────
+
+async def test_validar_citacoes_estrito_off_sumula_ausente_nao_bloqueia(monkeypatch):
+    _forca_modo_estrito(monkeypatch, False)
+    r = await validar_citacoes(
+        _DBVazio(), TEXTO_SUMULA_PLAUSIVEL_AUSENTE, politica="bloquear")
+    assert r.bloqueia_aprovacao is False
+    assert r.bloqueantes == []
+    # segue contando como não verificada (base não confirmou), só não bloqueia
+    assert r.nao_verificadas >= 1
+
+
+async def test_validar_citacoes_estrito_on_sumula_ausente_bloqueia(monkeypatch):
+    _forca_modo_estrito(monkeypatch, True)
+    r = await validar_citacoes(
+        _DBVazio(), TEXTO_SUMULA_PLAUSIVEL_AUSENTE, politica="bloquear")
+    assert r.bloqueia_aprovacao is True
+    assert any(b.tipo == "sumula" and "modo estrito" in b.motivo.lower()
+               for b in r.bloqueantes)
+
+
+async def test_validar_citacoes_estrito_off_artigo_ausente_nao_bloqueia(monkeypatch):
+    _forca_modo_estrito(monkeypatch, False)
+    r = await validar_citacoes(
+        _DBVazio(), TEXTO_ARTIGO_AUSENTE, politica="bloquear")
+    assert r.bloqueia_aprovacao is False
+    assert r.bloqueantes == []
+
+
+async def test_validar_citacoes_estrito_on_artigo_ausente_bloqueia(monkeypatch):
+    _forca_modo_estrito(monkeypatch, True)
+    r = await validar_citacoes(
+        _DBVazio(), TEXTO_ARTIGO_AUSENTE, politica="bloquear")
+    assert r.bloqueia_aprovacao is True
+    assert any(b.tipo == "artigo" and "modo estrito" in b.motivo.lower()
+               for b in r.bloqueantes)
+
+
+async def test_validar_citacoes_estrito_on_sumula_verificada_nao_bloqueia(monkeypatch):
+    # (c) ponta a ponta: súmula PRESENTE na base é "verificada" e não bloqueia,
+    # mesmo com o modo estrito ligado — só a ausência vira bloqueio.
+    _forca_modo_estrito(monkeypatch, True)
+    r = await validar_citacoes(_DBConfirma(), TEXTO_SUMULA_OK, politica="bloquear")
+    assert r.verificadas >= 1
+    assert r.bloqueia_aprovacao is False
+    assert r.bloqueantes == []
+
+
+async def test_validar_citacoes_estrito_on_em_marcar_lista_mas_nao_bloqueia(monkeypatch):
+    # A política ainda governa o BLOQUEIO: em "marcar", os bloqueantes do modo
+    # estrito são expostos ao revisor, mas não impedem a aprovação.
+    _forca_modo_estrito(monkeypatch, True)
+    r = await validar_citacoes(
+        _DBVazio(), TEXTO_SUMULA_PLAUSIVEL_AUSENTE, politica="marcar")
+    assert r.bloqueia_aprovacao is False
+    assert any(b.tipo == "sumula" for b in r.bloqueantes)
+
+
+def test_modo_estrito_citacoes_le_flag(monkeypatch):
+    _forca_modo_estrito(monkeypatch, True)
+    assert modo_estrito_citacoes() is True
+    _forca_modo_estrito(monkeypatch, False)
+    assert modo_estrito_citacoes() is False

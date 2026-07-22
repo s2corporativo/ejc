@@ -275,11 +275,9 @@ async def test_ingerir_tolerante_a_resposta_malformada(monkeypatch):
 
 # ── 5. Gate no scheduler ─────────────────────────────────────────────────────
 
-async def test_job_djen_gate_desligado_por_padrao(monkeypatch):
+async def test_job_djen_gate_off_e_on(monkeypatch):
     from app.services import scheduler as sch
     import app.services.ingestion_service as ing
-
-    assert get_settings().DJEN_INGEST_ENABLED is False   # default seguro
 
     execucoes = []
 
@@ -288,9 +286,13 @@ async def test_job_djen_gate_desligado_por_padrao(monkeypatch):
         return (0, 0)
 
     monkeypatch.setattr(ing, "executar_ingestao", fake_exec)
+
+    # Gate OFF (explícito — independe do default): job é no-op.
+    monkeypatch.setattr(get_settings(), "DJEN_INGEST_ENABLED", False)
     await sch.job_ingestao_djen()
     assert execucoes == []                               # no-op com gate off
 
+    # Gate ON (default do titular): job executa a ingestão.
     monkeypatch.setattr(get_settings(), "DJEN_INGEST_ENABLED", True)
     await sch.job_ingestao_djen()
     assert execucoes == ["djen"]
