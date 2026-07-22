@@ -220,13 +220,13 @@ export default function CaseNextActionPanel({
     setLoading(true);
     try {
       const { data } = await api.get<OperationalView>(
-        "/cases/" + caseId + "/proxima-acao",
+        `/cases/${caseId}/proxima-acao`,
       );
       setView(data);
       if (canWrite) {
         try {
           const response = await api.get<{ data: AssignableUser[] }>(
-            "/cases/" + caseId + "/proxima-acao/responsaveis",
+            `/cases/${caseId}/proxima-acao/responsaveis`,
           );
           setAssignees(response.data.data || []);
         } catch {
@@ -283,7 +283,7 @@ export default function CaseNextActionPanel({
     setSubmitting(true);
     try {
       const { data } = await api.put<OperationalView>(
-        "/cases/" + caseId + "/proxima-acao",
+        `/cases/${caseId}/proxima-acao`,
         actionPayload(draft),
       );
       setView(data);
@@ -307,7 +307,7 @@ export default function CaseNextActionPanel({
     setSubmitting(true);
     try {
       const { data } = await api.post<OperationalView>(
-        "/cases/" + caseId + "/proxima-acao/concluir",
+        `/cases/${caseId}/proxima-acao/concluir`,
         {
           completion_note: completionNote.trim() || null,
           replacement: actionPayload(draft),
@@ -334,7 +334,7 @@ export default function CaseNextActionPanel({
     setSubmitting(true);
     try {
       const { data } = await api.post<OperationalView>(
-        "/cases/" + caseId + "/proxima-acao/concluir",
+        `/cases/${caseId}/proxima-acao/concluir`,
         { completion_note: completionNote.trim() || null },
       );
       setView(data);
@@ -360,7 +360,7 @@ export default function CaseNextActionPanel({
     setSubmitting(true);
     try {
       const { data } = await api.post<OperationalView>(
-        "/cases/" + caseId + "/proxima-acao/dispensar",
+        `/cases/${caseId}/proxima-acao/dispensar`,
         {
           reason: waiverReason.trim(),
           expires_at: expiresAt.toISOString(),
