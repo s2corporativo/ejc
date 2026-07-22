@@ -8,7 +8,7 @@ from app.core.database import get_db
 from app.core.ownership import verificar_acesso_caso
 from app.core.security import get_current_user
 from app.models.user import User
-from app.services import case_timeline_service
+from app.services import case_timeline_visibility_service
 
 # Incluído dentro de `cases.router`, cujo prefixo é /cases.
 router = APIRouter(prefix="/{case_id}", tags=["Casos — Linha do Tempo"])
@@ -23,10 +23,11 @@ async def case_timeline(
     db: AsyncSession = Depends(get_db),
     cu: User = Depends(get_current_user),
 ):
-    """Retorna eventos de todas as entidades do caso em ordem cronológica."""
+    """Retorna eventos visíveis do caso em ordem cronológica."""
     await verificar_acesso_caso(db, cu, case_id)
-    return await case_timeline_service.timeline(
+    return await case_timeline_visibility_service.timeline(
         db,
+        cu,
         case_id,
         page=page,
         per_page=per_page,
@@ -41,10 +42,11 @@ async def case_operational_health(
     db: AsyncSession = Depends(get_db),
     cu: User = Depends(get_current_user),
 ):
-    """Aponta inatividade, prazos, solicitações e pendências de produção."""
+    """Aponta inatividade, prazos, solicitações e pendências visíveis."""
     await verificar_acesso_caso(db, cu, case_id)
-    result = await case_timeline_service.operational_health(
+    result = await case_timeline_visibility_service.operational_health(
         db,
+        cu,
         case_id,
         stale_days=stale_days,
     )
