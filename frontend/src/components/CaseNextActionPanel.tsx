@@ -170,7 +170,8 @@ function validateDraft(draft: ActionDraft): string | null {
   if (draft.title.trim().length < 3) {
     return "Descreva a próxima ação com pelo menos 3 caracteres.";
   }
-  if (!draft.ownerId) return "Defina o responsável do caso antes da próxima ação.";
+  if (!draft.ownerId)
+    return "Defina o responsável do caso antes da próxima ação.";
   const dueAt = new Date(draft.dueAt);
   if (Number.isNaN(dueAt.getTime()) || dueAt <= new Date()) {
     return "A data esperada deve estar no futuro.";
@@ -216,7 +217,9 @@ export default function CaseNextActionPanel({
       );
       setView(data);
     } catch (error) {
-      toast.error(errorMessage(error, "Não foi possível carregar a próxima ação."));
+      toast.error(
+        errorMessage(error, "Não foi possível carregar a próxima ação."),
+      );
     } finally {
       setLoading(false);
     }
@@ -270,7 +273,9 @@ export default function CaseNextActionPanel({
       closeForm();
       toast.success("Próxima ação registrada e incluída na linha do tempo.");
     } catch (error) {
-      toast.error(errorMessage(error, "Não foi possível salvar a próxima ação."));
+      toast.error(
+        errorMessage(error, "Não foi possível salvar a próxima ação."),
+      );
     } finally {
       setSubmitting(false);
     }
@@ -348,7 +353,9 @@ export default function CaseNextActionPanel({
       closeForm();
       toast.success("Dispensa temporária registrada com auditoria.");
     } catch (error) {
-      toast.error(errorMessage(error, "Não foi possível registrar a dispensa."));
+      toast.error(
+        errorMessage(error, "Não foi possível registrar a dispensa."),
+      );
     } finally {
       setSubmitting(false);
     }
@@ -376,7 +383,9 @@ export default function CaseNextActionPanel({
         <div>
           <div className="flex flex-wrap items-center gap-2">
             <CalendarClock size={18} className="text-blue-600" />
-            <h3 className="font-semibold text-slate-900">Próxima ação do caso</h3>
+            <h3 className="font-semibold text-slate-900">
+              Próxima ação do caso
+            </h3>
             <span className="rounded-full border border-blue-200 bg-blue-50 px-2 py-0.5 text-xs font-medium text-blue-700">
               {STATE_LABELS[view.estado_operacional]}
             </span>
@@ -387,12 +396,18 @@ export default function CaseNextActionPanel({
         </div>
         {canWrite && mode === null && (
           <div className="flex flex-wrap gap-2">
-            <button onClick={startAction} className="btn-secondary flex items-center gap-1">
+            <button
+              onClick={startAction}
+              className="btn-secondary flex items-center gap-1"
+            >
               <Pencil size={14} />
               {action ? "Editar" : "Definir próxima ação"}
             </button>
             {action && (
-              <button onClick={startReplacement} className="btn-primary flex items-center gap-1">
+              <button
+                onClick={startReplacement}
+                className="btn-primary flex items-center gap-1"
+              >
                 <CheckCircle2 size={14} />
                 Concluir e criar seguinte
               </button>
@@ -451,8 +466,8 @@ export default function CaseNextActionPanel({
           <p className="font-medium">Exceção temporária vigente</p>
           <p className="mt-1">{view.waiver.reason}</p>
           <p className="mt-2 text-xs">
-            Válida até {fmtDateTime(view.waiver.expires_at)}. Depois disso, o caso
-            volta automaticamente à fila de pendências.
+            Válida até {fmtDateTime(view.waiver.expires_at)}. Depois disso, o
+            caso volta automaticamente à fila de pendências.
           </p>
         </div>
       ) : (
@@ -499,7 +514,10 @@ export default function CaseNextActionPanel({
               <input
                 value={draft.title}
                 onChange={(event) =>
-                  setDraft((current) => ({ ...current, title: event.target.value }))
+                  setDraft((current) => ({
+                    ...current,
+                    title: event.target.value,
+                  }))
                 }
                 className="input w-full"
                 maxLength={255}
@@ -514,7 +532,10 @@ export default function CaseNextActionPanel({
                 type="datetime-local"
                 value={draft.dueAt}
                 onChange={(event) =>
-                  setDraft((current) => ({ ...current, dueAt: event.target.value }))
+                  setDraft((current) => ({
+                    ...current,
+                    dueAt: event.target.value,
+                  }))
                 }
                 className="input w-full"
               />
@@ -611,20 +632,22 @@ export default function CaseNextActionPanel({
           )}
 
           <div className="flex flex-wrap justify-end gap-2">
-            <button onClick={closeForm} disabled={submitting} className="btn-secondary">
+            <button
+              onClick={closeForm}
+              disabled={submitting}
+              className="btn-secondary"
+            >
               Cancelar
             </button>
-            {mode === "replacement" &&
-              action &&
-              !view.enforcement_enabled && (
-                <button
-                  onClick={completeWithoutReplacement}
-                  disabled={submitting}
-                  className="btn-secondary text-amber-800"
-                >
-                  Concluir sem seguinte
-                </button>
-              )}
+            {mode === "replacement" && action && !view.enforcement_enabled && (
+              <button
+                onClick={completeWithoutReplacement}
+                disabled={submitting}
+                className="btn-secondary text-amber-800"
+              >
+                Concluir sem seguinte
+              </button>
+            )}
             <button
               onClick={
                 mode === "replacement" ? completeWithReplacement : saveAction
@@ -646,8 +669,8 @@ export default function CaseNextActionPanel({
               Dispensa temporária de próxima ação
             </h4>
             <p className="mt-1 text-xs text-amber-800">
-              Use apenas quando não houver providência concreta. A justificativa,
-              validade e autor ficam auditados.
+              Use apenas quando não houver providência concreta. A
+              justificativa, validade e autor ficam auditados.
             </p>
           </div>
           <label className="block">
@@ -674,7 +697,11 @@ export default function CaseNextActionPanel({
             />
           </label>
           <div className="flex justify-end gap-2">
-            <button onClick={closeForm} disabled={submitting} className="btn-secondary">
+            <button
+              onClick={closeForm}
+              disabled={submitting}
+              className="btn-secondary"
+            >
               Cancelar
             </button>
             <button
