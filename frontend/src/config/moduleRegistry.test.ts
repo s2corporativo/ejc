@@ -124,7 +124,6 @@ describe("moduleRegistry", () => {
       "/legado/intimacoes",
       "/legado/tarefas",
       "/legado/suspensoes",
-      "/legado/knowledge-hub",
       "/crm-leads",
       "/assinaturas",
       "/workflow",
