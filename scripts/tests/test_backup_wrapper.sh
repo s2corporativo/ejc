@@ -7,6 +7,7 @@ trap 'rm -rf "$TMP"' EXIT
 BIN="$TMP/bin"
 LOG="$TMP/docker.log"
 APP="$TMP/app"
+ACTIVATOR="$ROOT/scripts/backup/ativar_backup.sh"
 mkdir -p "$BIN" "$APP"
 : > "$APP/docker-compose.yml"
 
@@ -94,5 +95,20 @@ if grep -Eq \
   fail "padrão de backup legado em claro reapareceu"
 fi
 
-bash -n "$ROOT/scripts/backup.sh"
-echo "[backup-wrapper-test] OK — backup cifrado exige identidade dedicada e funciona com backend saudável ou parado."
+# O ativador é fail-closed: nada de chave gerada na VPS, pasta embutida,
+# credencial herdada ou despejo de logs potencialmente sensíveis na Action.
+grep -q 'BACKUP_ENCRYPTION_KEY ausente' "$ACTIVATOR" || \
+  fail "ativador não exige chave previamente custodiada"
+grep -q 'credencial_dedicada_configurada' "$ACTIVATOR" || \
+  fail "ativador não valida identidade dedicada no processo efetivo"
+grep -q 'AUTH_MODE.*inherit\|auth_mode.*inherit' "$ACTIVATOR" || \
+  fail "ativador não bloqueia inherit"
+if grep -q 'Fernet.generate_key\|1HBh66E4NfZtz3V_Zdln7N_g2iFSoOE9c\|docker logs' "$ACTIVATOR"; then
+  fail "ativador voltou a gerar segredo, embutir pasta ou publicar logs"
+fi
+if grep -q 'result.get("erro")\|drive_file_id' "$ACTIVATOR"; then
+  fail "ativador publica erro operacional ou identificador do Drive"
+fi
+
+bash -n "$ROOT/scripts/backup.sh" "$ACTIVATOR"
+echo "[backup-wrapper-test] OK — backup e ativação exigem criptografia e identidade dedicada, sem fallback inseguro."
