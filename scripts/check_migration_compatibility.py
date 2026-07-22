@@ -160,7 +160,11 @@ def _column_is_expand_only(call: ast.Call) -> tuple[bool, str]:
     column = call.args[1]
     nullable = _keyword_literal(column, "nullable")
     server_default_present = any(
-        keyword.arg == "server_default" and _literal(keyword.value) is not None
+        keyword.arg == "server_default"
+        and not (
+            isinstance(keyword.value, ast.Constant)
+            and keyword.value.value is None
+        )
         for keyword in column.keywords
     )
     if nullable is False and not server_default_present:
@@ -202,8 +206,6 @@ def _classify(revision: Revision) -> list[str]:
         op_name = _op_call_name(node)
         attr_name = _attribute_call_name(node)
 
-        # bind.execute()/connection.execute() e equivalentes: qualquer SQL ou
-        # backfill manual exige revisão humana, mesmo sem op.execute().
         if op_name is None and attr_name == "execute":
             findings.append(f"linha {line}: chamada .execute exige revisão")
             continue
