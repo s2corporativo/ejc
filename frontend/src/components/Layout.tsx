@@ -243,7 +243,6 @@ export default function Layout() {
 
   return (
     <div className="min-h-screen bg-canvas text-slate-900">
-      <div className="brand-watermark" aria-hidden="true" />
       {/* Palette desmontado sob privacidade: a busca global lista partes/
           CPF/processos e renderiza fora da área borrada. */}
       {!privacyMode && <CommandPalette />}
@@ -261,7 +260,7 @@ export default function Layout() {
 
           <Link
             to="/"
-            className="flex shrink-0 items-center px-1"
+            className="flex shrink-0 items-center px-1 md:hidden"
             aria-label="De Paula Teixeira - EJC"
           >
             <img
@@ -275,7 +274,7 @@ export default function Layout() {
             <button
               type="button"
               onClick={() => window.dispatchEvent(new Event("ejc-open-search"))}
-              className="flex h-10 w-full max-w-xl items-center gap-3 rounded-full bg-slate-900/[0.04] px-4 text-left text-sm text-slate-500 transition-all duration-150 hover:bg-ouro-palha/70 dark:bg-white/[0.06] dark:text-slate-400 dark:hover:bg-white/[0.09]"
+              className="flex h-10 w-full max-w-xl items-center gap-3 rounded-full bg-slate-900/[0.04] px-4 text-left text-sm text-slate-500 transition-all duration-150 hover:bg-primary-50 dark:bg-white/[0.06] dark:text-slate-400 dark:hover:bg-white/[0.09]"
             >
               <Search className="h-4 w-4 shrink-0" />
               <span className="hidden truncate sm:inline">
@@ -361,7 +360,7 @@ export default function Layout() {
             }
             className={cn(
               "icon-btn hidden sm:flex",
-              privacyMode && "bg-ouro-palha/70 text-ouro-profundo",
+              privacyMode && "bg-primary-50 text-primary-700",
             )}
             aria-pressed={privacyMode}
             aria-label={
@@ -402,7 +401,7 @@ export default function Layout() {
             >
               <Bell className="h-4 w-4" />
               {notifCount > 0 && (
-                <span className="absolute -right-1 -top-1 flex h-5 min-w-5 items-center justify-center rounded-full bg-ouro px-1 text-[10px] font-semibold text-white ring-2 ring-white">
+                <span className="absolute -right-1 -top-1 flex h-5 min-w-5 items-center justify-center rounded-full bg-danger-600 px-1 text-[10px] font-semibold text-white ring-2 ring-white">
                   {notifCount}
                 </span>
               )}
@@ -481,23 +480,27 @@ export default function Layout() {
       >
         <div
           className={cn(
-            "flex items-center gap-2 px-4 pb-3 pt-4",
-            collapsed && "justify-center px-2",
+            "relative flex min-h-20 items-center justify-center border-b border-slate-200 px-3",
+            collapsed && "px-2",
           )}
         >
-          {!collapsed && (
-            <div className="min-w-0 flex-1">
-              <div className="truncate text-[11px] font-semibold uppercase tracking-[0.18em] text-[#8a6d2f]">
-                De Paula Teixeira
-              </div>
-              <div className="mt-0.5 truncate text-[10px] text-slate-400">
-                Sociedade de Advogados
-              </div>
-            </div>
-          )}
+          <Link
+            to="/"
+            className="flex min-w-0 flex-1 justify-center"
+            aria-label="Ir para o início do EJC"
+          >
+            <img
+              src={BRAND_LOGO}
+              alt="De Paula Teixeira Sociedade de Advogados"
+              className={cn(
+                "brand-logo-img w-auto object-contain",
+                collapsed ? "h-8 max-w-12" : "h-14 max-w-[220px]",
+              )}
+            />
+          </Link>
           <button
             type="button"
-            className="hidden rounded-lg p-1.5 text-slate-400 hover:bg-slate-100 hover:text-slate-700 md:block"
+            className="absolute right-2 hidden rounded-lg p-1.5 text-slate-400 hover:bg-slate-100 hover:text-slate-700 md:block"
             onClick={() => setSidebarCollapsed(!collapsed)}
             aria-label={collapsed ? "Expandir menu" : "Recolher menu"}
           >
@@ -509,14 +512,13 @@ export default function Layout() {
           </button>
           <button
             type="button"
-            className="rounded-lg p-1.5 text-slate-400 hover:bg-slate-100 hover:text-slate-700 md:hidden"
+            className="absolute right-2 rounded-lg p-1.5 text-slate-400 hover:bg-slate-100 hover:text-slate-700 md:hidden"
             onClick={() => setMenuOpen(false)}
             aria-label="Fechar menu"
           >
             <X className="h-4 w-4" />
           </button>
         </div>
-        <div className="brand-accent-line mx-4 h-px" aria-hidden="true" />
 
         <nav className="flex-1 overflow-y-auto px-3 py-4 scrollbar-thin">
           {/* Essenciais — dia a dia do advogado, sempre visíveis no topo. */}
