@@ -83,6 +83,13 @@ async def _rl_feed_ics(request: Request) -> None:
     await consumir("calendar_ics_public_feed", f"ip:{obter_ip_real(request)}", 60)
 
 
+def _headers_credencial(response: Response) -> None:
+    """Impede cache de respostas JSON que contêm a URL assinada do calendário."""
+    response.headers["Cache-Control"] = "private, no-store, max-age=0"
+    response.headers["Pragma"] = "no-cache"
+    response.headers["X-Content-Type-Options"] = "nosniff"
+
+
 def _headers_ics() -> dict[str, str]:
     return {
         "Cache-Control": "private, no-store, max-age=0",
@@ -94,10 +101,12 @@ def _headers_ics() -> dict[str, str]:
 
 @router.get("/me/url")
 async def minha_url_calendario_revogavel(
+    response: Response,
     db: AsyncSession = Depends(get_db),
     cu: User = Depends(get_current_user),
 ):
     """Retorna o link vigente sem expor a chave usada para assiná-lo."""
+    _headers_credencial(response)
     return await obter_url_calendario(db, cu.id)
 
 
@@ -107,6 +116,7 @@ async def minha_url_calendario_revogavel(
 )
 async def rotacionar_url_calendario(
     request: Request,
+    response: Response,
     db: AsyncSession = Depends(get_db),
     cu: User = Depends(get_current_user),
 ):
@@ -141,6 +151,7 @@ async def rotacionar_url_calendario(
         ip=obter_ip_real(request),
     )
     await db.commit()
+    _headers_credencial(response)
     return {
         "url": _url_calendario(cu.id, version),
         "version": version,
