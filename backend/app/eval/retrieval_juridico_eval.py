@@ -151,9 +151,8 @@ async def _main(args) -> int:
     imprimir_relatorio(resultado)
     if args.out:
         with open(args.out, "w", encoding="utf-8") as fh:
-            json.dump({k: v for k, v in resultado.items() if k != "detalhes"} |
-                      {"detalhes": resultado["detalhes"]}, fh,
-                      ensure_ascii=False, indent=2)
+            # `resultado` já tem "detalhes" como última chave — dump direto.
+            json.dump(resultado, fh, ensure_ascii=False, indent=2)
         print(f"resultados → {args.out}")
     rc = 0
     if resultado["avaliados"] == 0:
