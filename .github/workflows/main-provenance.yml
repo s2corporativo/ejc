@@ -1,0 +1,117 @@
+name: Main Provenance Audit
+
+# Controle DETECTIVO complementar. A barreira primária continua sendo a
+# proteção administrativa/ruleset da branch main. Este workflow registra e
+# sinaliza atualizações que não correspondam ao merge commit de um PR destinado
+# à main; ele não consegue impedir push direto nem sobreviver à própria remoção.
+on:
+  push:
+    branches: [main]
+
+permissions:
+  contents: read
+  pull-requests: read
+  issues: write
+
+concurrency:
+  group: main-provenance-audit
+  cancel-in-progress: false
+
+jobs:
+  verify-main-origin:
+    name: Governança — comprovar origem da atualização da main
+    runs-on: [self-hosted, ejc-vps]
+    timeout-minutes: 5
+    steps:
+      - name: Validar PR associado e detectar force-push
+        uses: actions/github-script@v8
+        with:
+          script: |
+            const owner = context.repo.owner;
+            const repo = context.repo.repo;
+            const sha = context.sha;
+            const forced = Boolean(context.payload.forced);
+
+            let associated = [];
+            for (let attempt = 1; attempt <= 6; attempt += 1) {
+              const response = await github.rest.repos.listPullRequestsAssociatedWithCommit({
+                owner,
+                repo,
+                commit_sha: sha,
+                per_page: 100,
+              });
+
+              // `merged_at` isolado aceita indirect merge causado por push do
+              // head do PR. O merge_commit_sha igual ao SHA publicado comprova
+              // que o commit veio da operação de merge registrada pelo GitHub.
+              associated = response.data.filter((pr) =>
+                Boolean(pr.merged_at) &&
+                pr.base?.ref === 'main' &&
+                pr.merge_commit_sha === sha
+              );
+
+              if (associated.length > 0) break;
+              if (attempt < 6) {
+                await new Promise((resolve) => setTimeout(resolve, 5000));
+              }
+            }
+
+            const validPrs = associated.map((pr) => `#${pr.number}`).join(', ');
+            const reasons = [];
+            if (forced) reasons.push('force-push detectado');
+            if (associated.length === 0) {
+              reasons.push('commit sem merge_commit_sha de Pull Request destinado à main');
+            }
+
+            await core.summary
+              .addHeading('Proveniência da branch main')
+              .addRaw(`Commit: ${sha}\n`)
+              .addRaw(`Force-push: ${forced ? 'sim' : 'não'}\n`)
+              .addRaw(`PRs associados: ${validPrs || 'nenhum'}\n`)
+              .addRaw('Controle: detectivo; não substitui ruleset/branch protection.\n')
+              .write();
+
+            if (reasons.length === 0) {
+              core.info(`Atualização rastreável por ${validPrs}.`);
+              return;
+            }
+
+            const marker = '<!-- ejc-main-provenance-incident -->';
+            const title = '[Governança] Atualização não rastreável da branch main';
+            const body = [
+              marker,
+              '## Incidente automático de governança',
+              '',
+              `- Commit: \`${sha}\``,
+              `- Evento: \`${context.eventName}\``,
+              `- Autor informado: \`${context.actor}\``,
+              `- Motivos: ${reasons.join('; ')}`,
+              `- Workflow: ${context.serverUrl}/${owner}/${repo}/actions/runs/${context.runId}`,
+              '',
+              'A atualização deve ser revisada, vinculada a justificativa e, quando necessário, revertida por Pull Request.',
+              '',
+              '> Limite: este detector vive no próprio repositório e pode ser removido por uma atualização não protegida. A proteção administrativa da `main` permanece obrigatória.',
+            ].join('\n');
+
+            const openIssues = await github.paginate(github.rest.issues.listForRepo, {
+              owner,
+              repo,
+              state: 'open',
+              per_page: 100,
+            });
+            const existing = openIssues.find((issue) =>
+              !issue.pull_request && (issue.body || '').includes(marker)
+            );
+
+            if (existing) {
+              await github.rest.issues.createComment({
+                owner,
+                repo,
+                issue_number: existing.number,
+                body,
+              });
+            } else {
+              await github.rest.issues.create({ owner, repo, title, body });
+            }
+
+            core.setFailed(reasons.join('; '));

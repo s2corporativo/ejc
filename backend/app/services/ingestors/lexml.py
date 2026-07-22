@@ -37,6 +37,9 @@ from __future__ import annotations
 
 import hashlib
 import logging
+import re
+from dataclasses import dataclass
+from urllib.parse import urlencode
 
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -45,6 +48,11 @@ from app.services.ingestion_service import upsert_documento
 from app.services.jurisprudencia_externa import buscar_lexml
 
 logger = logging.getLogger("ejc.ingestao.lexml")
+
+# Endpoint público de consulta do federador LexML (mesma base que
+# jurisprudencia_externa.buscar_lexml usa). Toda URL que este ingestor GERA
+# aponta para cá; validada contra a allowlist oficial antes de gravar.
+LEXML_CONSULTA_BASE = "https://www.lexml.gov.br/busca/pesquisa"
 
 # Categorias RAG por tipo LexML. Ver nota de GOVERNANÇA no topo: legislação
 # federada é "referencia_legislativa" (NÃO 'legislacao%') para não afrouxar o
@@ -104,6 +112,113 @@ def _temas(cfg) -> list[str]:
     return TEMAS_PADRAO
 
 
+# ══════════════════════════════════════════════════════════════════════════
+# Federação EXPLÍCITA por jurisdição (esfera/localidade/autoridade no esquema
+# URN LexML). Enquanto TEMAS_PADRAO varre ÁREAS por palavra-chave nos dois
+# tipos, este catálogo mira JURISDIÇÕES nominais que antes só apareciam por
+# tema genérico — legislação estadual de MG (ALMG), municipal de Betim, e
+# jurisprudência de TRT-3/TRF-6/juizados. Cada jurisdição declara sua
+# localidade/autoridade no padrão URN LexML (urn:lex:br;<localidade>:<autoridade>),
+# de onde derivam (a) uma consulta explícita para buscar_lexml e (b) um prefixo
+# URN bem-formado gravado no metadado. Roda sob o MESMO gate LEXML_INGEST_ENABLED
+# (via ingerir); nao introduz flag nova.
+# ══════════════════════════════════════════════════════════════════════════
+@dataclass(frozen=True)
+class JurisdicaoLexML:
+    slug: str          # id estável (metadado/dedup)
+    rotulo: str        # rótulo humano
+    tipo: str          # 'legislacao' | 'jurisprudencia' → define a categoria RAG
+    esfera: str        # federal | estadual | municipal | trabalhista | juizado_especial
+    localidade: str    # localidade no URN LexML (ex.: 'minas.gerais', 'minas.gerais;betim')
+    autoridade: str    # autoridade no URN LexML (ex.: 'assembleia.legislativa')
+    consulta: str      # palavras-chave explícitas para buscar_lexml
+
+
+JURISDICOES_FEDERADAS: list[JurisdicaoLexML] = [
+    # ── Legislação ESTADUAL de Minas Gerais (ALMG) → referencia_legislativa ──
+    JurisdicaoLexML(
+        slug="mg_estadual_almg", tipo="legislacao", esfera="estadual",
+        rotulo="Legislação estadual de Minas Gerais (ALMG)",
+        localidade="minas.gerais", autoridade="assembleia.legislativa",
+        consulta="Minas Gerais lei estadual ALMG assembleia legislativa",
+    ),
+    # ── Legislação MUNICIPAL de Betim/MG → referencia_legislativa ──
+    JurisdicaoLexML(
+        slug="betim_municipal", tipo="legislacao", esfera="municipal",
+        rotulo="Legislação municipal de Betim/MG",
+        localidade="minas.gerais;betim", autoridade="camara.municipal",
+        consulta="Betim Minas Gerais lei municipal câmara municipal",
+    ),
+    # ── Jurisprudência TRT-3 (trabalhista MG) → jurisprudencia ──
+    JurisdicaoLexML(
+        slug="trt3_jurisprudencia", tipo="jurisprudencia", esfera="trabalhista",
+        rotulo="Jurisprudência TRT-3 (Tribunal Regional do Trabalho da 3ª Região)",
+        localidade="minas.gerais", autoridade="tribunal.regional.trabalho.regiao.3",
+        consulta="TRT-3 Tribunal Regional do Trabalho 3 regiao acordao Minas Gerais",
+    ),
+    # ── Jurisprudência TRF-6 (federal MG) → jurisprudencia ──
+    JurisdicaoLexML(
+        slug="trf6_jurisprudencia", tipo="jurisprudencia", esfera="federal",
+        rotulo="Jurisprudência TRF-6 (Tribunal Regional Federal da 6ª Região)",
+        localidade="minas.gerais", autoridade="tribunal.regional.federal.regiao.6",
+        consulta="TRF-6 Tribunal Regional Federal 6 regiao acordao Minas Gerais",
+    ),
+    # ── Jurisprudência dos JUIZADOS ESPECIAIS (JEC/JEF, turmas recursais) ──
+    JurisdicaoLexML(
+        slug="juizados_especiais", tipo="jurisprudencia", esfera="juizado_especial",
+        rotulo="Juizados especiais (JEC/JEF) — turmas recursais",
+        localidade="minas.gerais", autoridade="turma.recursal",
+        consulta="juizado especial civel federal turma recursal enunciado acordao",
+    ),
+]
+
+
+# URN LexML bem-formada: urn:lex:br(;localidade)*:autoridade (minúsculas,
+# dígitos, ponto e hífen). NÃO é URL (não tem esquema/host), então é validada
+# por forma, não pela allowlist de domínio.
+_URN_RE = re.compile(r"^urn:lex:br(;[a-z0-9.\-]+)+:[a-z0-9.\-]+$")
+
+
+def urn_prefixo(j: JurisdicaoLexML) -> str:
+    """Prefixo URN LexML da jurisdição: urn:lex:br;<localidade>:<autoridade>."""
+    return f"urn:lex:br;{j.localidade}:{j.autoridade}"
+
+
+def _urn_bem_formada(urn: str) -> bool:
+    return bool(_URN_RE.match(urn or ""))
+
+
+def consulta_url(consulta: str, tipo: str) -> str:
+    """URL de consulta pública no federador LexML (domínio oficial lexml.gov.br).
+    Toda URL GERADA por este ingestor sai daqui e passa a allowlist oficial."""
+    return f"{LEXML_CONSULTA_BASE}?" + urlencode({"palavras": consulta, "tipo": tipo})
+
+
+def _url_oficial(url: str | None) -> bool:
+    """Valida a URL contra a allowlist canônica de domínios oficiais — a MESMA
+    função exercida por test_urls_nao_oficiais_ou_burla_rejeitadas
+    (ia_governanca._fonte_oficial: https + hostname exato, à prova de bypass).
+    Import tardio para não criar ciclo serviço↔router no carregamento do módulo.
+    Fonte única de verdade do controle: não duplicamos a lista de domínios aqui."""
+    from app.routers.ia_governanca import _fonte_oficial
+    return _fonte_oficial(url)
+
+
+def _plano_federacao(cfg) -> list[tuple[str, str, JurisdicaoLexML | None]]:
+    """Constrói o plano de federação como itens (consulta, tipo, jurisdicao):
+    (a) jurisdições EXPLÍCITAS (JURISDICOES_FEDERADAS), cada uma no seu tipo;
+    (b) temas genéricos (_temas), varridos nos DOIS tipos.
+    Um único laço em ingerir() consome o plano — dedup por chave_origem cobre
+    qualquer sobreposição entre as duas faces."""
+    plano: list[tuple[str, str, JurisdicaoLexML | None]] = []
+    for j in JURISDICOES_FEDERADAS:
+        plano.append((j.consulta, j.tipo, j))
+    for tema in _temas(cfg):
+        for tipo in TIPOS:
+            plano.append((tema, tipo, None))
+    return plano
+
+
 def _chave(item: dict, tipo: str) -> str:
     """Chave de dedup idempotente, namespaced por tipo (leg/jur) para que um
     mesmo URN não colida entre a face legislação e a face jurisprudência.
@@ -140,77 +255,97 @@ def _monta_conteudo(item: dict, tipo: str) -> str:
 
 
 async def ingerir(db: AsyncSession) -> tuple[int, int]:
-    """Varre o catálogo de temas no LexML (tipo='legislacao' e 'jurisprudencia')
-    e ingere os registros no RAG. Retorna (novos, total_processados) — assinatura
-    exigida por `ingestion_service.executar_ingestao`.
+    """Executa a federação LexML → RAG a partir do plano (jurisdições explícitas
+    + temas genéricos, cada consulta no seu tipo). Retorna (novos,
+    total_processados) — assinatura exigida por `ingestion_service.executar_ingestao`.
 
-    Best-effort: erro de rede/fonte num tema/tipo é logado e pulado (nunca
-    derruba a execução). Commit por item + dedup intra-execução por chave_origem.
+    Governança: legislação → categoria 'referencia_legislativa' (NUNCA 'legislacao%',
+    p/ não afrouxar o citation gate); jurisprudência → 'jurisprudencia'. Toda URL
+    GRAVADA passa a allowlist oficial (_url_oficial); URN da jurisdição é validada
+    por forma. Best-effort: erro de rede/fonte numa consulta é logado e pulado
+    (nunca derruba a execução). Commit por item + dedup intra-execução por chave.
     """
     cfg = get_settings()
-    temas = _temas(cfg)
     max_item = int(getattr(cfg, "LEXML_INGEST_MAX_POR_TEMA", 20) or 20)
 
     novos = total = 0
-    vistas: set[str] = set()   # dedup intra-execução (mesmo registro em 2 temas/tipos)
+    vistas: set[str] = set()   # dedup intra-execução (mesmo registro em 2 consultas)
 
-    for tema in temas:
-        for tipo in TIPOS:
+    for consulta, tipo, jur in _plano_federacao(cfg):
+        try:
+            itens = await buscar_lexml(consulta, tipo=tipo, por_pagina=max_item)
+        except Exception as e:   # rede/XML — nunca derruba a execução inteira
+            logger.warning("LexML %s %r: %s: %s", tipo, consulta, type(e).__name__, e)
+            continue
+
+        categoria = _CATEGORIA[tipo]
+        # URL de consulta oficial (federador) — sempre passa a allowlist; é o
+        # fallback de 'fonte' quando o item não traz link_original oficial.
+        url_consulta = consulta_url(consulta, tipo)
+        urn_jur = urn_prefixo(jur) if jur else None
+        n_consulta = 0
+        for it in itens:
+            ementa = it.get("ementa") or ""
+            if len(ementa) < 50:
+                continue   # sem valor semântico
+            chave = _chave(it, tipo)
+            if chave in vistas:
+                continue
+            vistas.add(chave)
+
+            # Defesa em profundidade: só grava como 'fonte' uma URL de domínio
+            # oficial. O link do item entra se for oficial; senão, cai para a URL
+            # de consulta do federador (também oficial). Nunca persiste link solto.
+            link = it.get("link_original") or ""
+            fonte = link if _url_oficial(link) else url_consulta
+
             try:
-                itens = await buscar_lexml(tema, tipo=tipo, por_pagina=max_item)
-            except Exception as e:   # rede/XML — nunca derruba a execução inteira
-                logger.warning("LexML %s %r: %s: %s", tipo, tema, type(e).__name__, e)
+                res = await upsert_documento(
+                    db,
+                    titulo=(it.get("titulo") or f"LexML {tipo}")[:500],
+                    categoria=categoria,
+                    conteudo=_monta_conteudo(it, tipo),
+                    chave_origem=chave,
+                    fonte=fonte,
+                    # tribunal só na face jurisprudência (metadado do julgado)
+                    tribunal=(it.get("tribunal") or None) if tipo == "jurisprudencia" else None,
+                    extra={
+                        "tipo_lexml": tipo,
+                        "tribunal": it.get("tribunal") if tipo == "jurisprudencia" else None,
+                        "relator": it.get("relator"),
+                        "data": it.get("data_julgamento"),
+                        "area_juridica": it.get("area_juridica"),
+                        "link": it.get("link_original"),
+                        "urn": it.get("numero_acordao"),
+                        "tema_busca": consulta,
+                        "consulta_lexml": url_consulta,
+                        # Metadados da federação EXPLÍCITA (None p/ temas genéricos)
+                        "jurisdicao": jur.slug if jur else None,
+                        "esfera": jur.esfera if jur else None,
+                        "localidade": jur.localidade if jur else None,
+                        "autoridade": jur.autoridade if jur else None,
+                        "urn_lex_prefixo": urn_jur,
+                        "origem": "lexml",
+                        "rag_status": "aprovado",
+                        "tipo_fonte": _TIPO_FONTE[tipo],
+                    },
+                    confianca="alta",   # federador oficial (Senado/LexML)
+                )
+                # Commit por item: métricas contam só o persistido; um erro
+                # isolado dá rollback APENAS do item falho.
+                await db.commit()
+            except Exception as e:
+                await db.rollback()
+                logger.warning("LexML upsert %r: %s: %s", chave, type(e).__name__, e)
                 continue
 
-            categoria = _CATEGORIA[tipo]
-            n_tema = 0
-            for it in itens:
-                ementa = it.get("ementa") or ""
-                if len(ementa) < 50:
-                    continue   # sem valor semântico
-                chave = _chave(it, tipo)
-                if chave in vistas:
-                    continue
-                vistas.add(chave)
+            total += 1
+            if res in ("novo", "atualizado"):
+                novos += 1
+                n_consulta += 1
 
-                try:
-                    res = await upsert_documento(
-                        db,
-                        titulo=(it.get("titulo") or f"LexML {tipo}")[:500],
-                        categoria=categoria,
-                        conteudo=_monta_conteudo(it, tipo),
-                        chave_origem=chave,
-                        fonte=it.get("link_original") or "LexML.gov.br (federador oficial)",
-                        # tribunal só na face jurisprudência (metadado do julgado)
-                        tribunal=(it.get("tribunal") or None) if tipo == "jurisprudencia" else None,
-                        extra={
-                            "tipo_lexml": tipo,
-                            "tribunal": it.get("tribunal") if tipo == "jurisprudencia" else None,
-                            "relator": it.get("relator"),
-                            "data": it.get("data_julgamento"),
-                            "area_juridica": it.get("area_juridica"),
-                            "link": it.get("link_original"),
-                            "urn": it.get("numero_acordao"),
-                            "tema_busca": tema,
-                            "origem": "lexml",
-                            "rag_status": "aprovado",
-                            "tipo_fonte": _TIPO_FONTE[tipo],
-                        },
-                        confianca="alta",   # federador oficial (Senado/LexML)
-                    )
-                    # Commit por item: métricas contam só o persistido; um erro
-                    # isolado dá rollback APENAS do item falho.
-                    await db.commit()
-                except Exception as e:
-                    await db.rollback()
-                    logger.warning("LexML upsert %r: %s: %s", chave, type(e).__name__, e)
-                    continue
-
-                total += 1
-                if res in ("novo", "atualizado"):
-                    novos += 1
-                    n_tema += 1
-
-            logger.info("LexML %s %r: %d novos / %d itens", tipo, tema, n_tema, len(itens))
+        alvo = jur.slug if jur else "tema"
+        logger.info("LexML %s %r [%s]: %d novos / %d itens",
+                    tipo, consulta, alvo, n_consulta, len(itens))
 
     return novos, total

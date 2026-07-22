@@ -1,0 +1,173 @@
+name: Production Backup Monitor
+
+on:
+  schedule:
+    # Backup padrão: 05:00 UTC. A sonda roda 3h30 depois e aceita até 30h
+    # desde o último sucesso para absorver indisponibilidade breve do Drive.
+    - cron: "30 8 * * *"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  issues: write
+
+concurrency:
+  group: production-backup-monitor
+  cancel-in-progress: false
+
+jobs:
+  monitor:
+    name: Produção — saúde do backup diário
+    runs-on: [self-hosted, ejc-vps]
+    timeout-minutes: 10
+    env:
+      APP_CONTAINER: ejc_backend
+      BACKUP_MAX_AGE_HOURS: "30"
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: Verificar configuração, recência, status e artefatos
+        id: health
+        shell: bash
+        run: |
+          raw_result="$(mktemp)"
+          trap 'rm -f "$raw_result"' EXIT
+          rc=1
+
+          set +e
+          if ! docker inspect -f '{{.State.Running}}' "$APP_CONTAINER" 2>/dev/null \
+            | grep -qx true; then
+            printf '%s\n' \
+              '{"ok":false,"problemas":["container do backend indisponível"]}' \
+              > backup-production-health.json
+          else
+            docker exec -i \
+              -e BACKUP_MAX_AGE_HOURS="$BACKUP_MAX_AGE_HOURS" \
+              "$APP_CONTAINER" python - \
+              < scripts/backup/check_backup_health.py \
+              > "$raw_result" \
+              2>/dev/null
+            rc=$?
+
+            python3 - "$raw_result" <<'PY'
+          import json
+          import sys
+
+          with open(sys.argv[1], encoding="utf-8") as stream:
+              value = json.load(stream)
+          if not isinstance(value, dict):
+              raise SystemExit("resultado não é objeto JSON")
+          PY
+            json_rc=$?
+            if [ "$json_rc" -eq 0 ]; then
+              cp "$raw_result" backup-production-health.json
+            else
+              printf '%s\n' \
+                '{"ok":false,"problemas":["sonda não produziu JSON sanitizado válido"]}' \
+                > backup-production-health.json
+              rc=1
+            fi
+          fi
+          set -e
+
+          if [ ! -s backup-production-health.json ]; then
+            printf '%s\n' \
+              '{"ok":false,"problemas":["sonda não produziu resultado sanitizado"]}' \
+              > backup-production-health.json
+            rc=1
+          fi
+
+          python3 -m json.tool backup-production-health.json >/dev/null
+          echo "exit_code=$rc" >> "$GITHUB_OUTPUT"
+          cat backup-production-health.json
+
+      - name: Anexar evidência sanitizada
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: production-backup-health
+          path: backup-production-health.json
+          if-no-files-found: error
+          retention-days: 30
+
+      - name: Abrir ou encerrar incidente automático
+        if: always()
+        uses: actions/github-script@v8
+        env:
+          HEALTH_RC: ${{ steps.health.outputs.exit_code }}
+        with:
+          script: |
+            const fs = require('fs');
+            const owner = context.repo.owner;
+            const repo = context.repo.repo;
+            const marker = '<!-- ejc-production-backup-health -->';
+            const title = '[Continuidade] Backup de produção sem comprovação íntegra';
+            const healthRc = Number(process.env.HEALTH_RC || 1);
+
+            let health = {};
+            try {
+              health = JSON.parse(fs.readFileSync('backup-production-health.json', 'utf8'));
+            } catch {
+              health = { ok: false, problemas: ['resultado sanitizado inválido'] };
+            }
+            const problems = Array.isArray(health.problemas)
+              ? health.problemas.map(String)
+              : ['resultado da sonda inválido'];
+            const failed = healthRc !== 0 || health.ok !== true;
+
+            const issues = await github.paginate(github.rest.issues.listForRepo, {
+              owner,
+              repo,
+              state: 'open',
+              per_page: 100,
+            });
+            const existing = issues.find((issue) =>
+              !issue.pull_request && (issue.body || '').includes(marker)
+            );
+            const runUrl = `${context.serverUrl}/${owner}/${repo}/actions/runs/${context.runId}`;
+
+            if (failed) {
+              const body = [
+                marker,
+                '## Incidente automático de continuidade',
+                '',
+                `- Sonda rc: \`${healthRc}\``,
+                `- Último status: \`${health.last_status ?? 'indisponível'}\``,
+                `- Última execução: \`${health.last_run_at ?? 'indisponível'}\``,
+                `- Idade observada: \`${health.age_hours ?? 'indisponível'}h\``,
+                `- Problemas: ${problems.join('; ')}`,
+                `- Evidência sanitizada: ${runUrl}`,
+                '',
+                'O monitor não executa reparo automático: uma intervenção poderia sobrescrever evidências ou mascarar perda de dados. O incidente permanece aberto até uma verificação posterior saudável.',
+              ].join('\n');
+
+              if (existing) {
+                await github.rest.issues.createComment({
+                  owner,
+                  repo,
+                  issue_number: existing.number,
+                  body,
+                });
+              } else {
+                await github.rest.issues.create({ owner, repo, title, body });
+              }
+              core.setFailed(problems.join('; '));
+              return;
+            }
+
+            if (existing) {
+              await github.rest.issues.createComment({
+                owner,
+                repo,
+                issue_number: existing.number,
+                body: `Recuperação comprovada em ${runUrl}. O monitor voltou a encontrar credencial dedicada, configuração, recência e os dois artefatos cifrados obrigatórios.`,
+              });
+              await github.rest.issues.update({
+                owner,
+                repo,
+                issue_number: existing.number,
+                state: 'closed',
+                state_reason: 'completed',
+              });
+            }
+            core.info('Backup de produção comprovado como íntegro, segregado e recente.');

@@ -20,7 +20,11 @@ def test_claim_de_configuracao_2fa_tem_prazo_curto():
     assert payload["exp"] - payload["iat"] <= 901
 
 
-def test_claim_de_configuracao_2fa_bloqueia_rotas_de_negocio():
+def test_claim_de_configuracao_2fa_bloqueia_rotas_de_negocio(monkeypatch):
+    # Este teste valida o comportamento de enforcement quando o 2FA estiver
+    # reativado. O estado operacional padrão do EJC é temporariamente desligado.
+    monkeypatch.setenv("TWO_FACTOR_AUTH_ENABLED", "true")
+
     app = FastAPI()
     app.add_middleware(AuthMiddleware)
 

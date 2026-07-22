@@ -159,6 +159,11 @@ _OFICIAL_DOMAINS = (
     "stj.jus.br",
     "stf.jus.br",
     "fonaje.amb.com.br",
+    # Federador oficial LexML (mantido pelo Senado): é a face pública por onde a
+    # federação RAG (legislacao estadual/municipal + jurisprudencia de tribunais)
+    # emite suas URLs de consulta/URN. Sem ele, as URLs geradas pelo ingestor
+    # lexml nao passariam nesta allowlist. Dominio oficial .gov.br do Senado.
+    "lexml.gov.br",
 )
 
 
