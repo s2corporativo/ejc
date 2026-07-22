@@ -172,13 +172,44 @@ def _column_is_expand_only(call: ast.Call) -> tuple[bool, str]:
     return True, ""
 
 
+def _static_upgrade_shape_findings(upgrade: ast.FunctionDef) -> list[str]:
+    """Exige operações Alembic diretas e declarativas no corpo de upgrade().
+
+    Condicionais, laços, assignments, context managers, chamadas de helpers e
+    aliases de ``op`` são bloqueados. Sem esta restrição, uma função auxiliar
+    poderia esconder SQL destrutivo fora da análise das chamadas ``op.*``.
+    """
+    findings: list[str] = []
+    for statement in upgrade.body:
+        line = getattr(statement, "lineno", 0)
+        if isinstance(statement, ast.Pass):
+            continue
+        if (
+            isinstance(statement, ast.Expr)
+            and isinstance(statement.value, ast.Constant)
+            and isinstance(statement.value.value, str)
+        ):
+            continue  # docstring da função
+        if isinstance(statement, ast.Expr) and isinstance(statement.value, ast.Call):
+            if _op_call_name(statement.value) is None:
+                findings.append(
+                    f"linha {line}: chamada fora de op.* exige revisão humana"
+                )
+            continue
+        findings.append(
+            f"linha {line}: estrutura dinâmica {type(statement).__name__} "
+            "exige revisão humana"
+        )
+    return findings
+
+
 def _classify(revision: Revision) -> list[str]:
     tree = ast.parse(
         revision.path.read_text(encoding="utf-8"),
         filename=str(revision.path),
     )
     upgrade = _upgrade_function(tree, revision.path)
-    findings: list[str] = []
+    findings = _static_upgrade_shape_findings(upgrade)
     allowed = {
         "create_table",
         "create_index",
@@ -206,8 +237,10 @@ def _classify(revision: Revision) -> list[str]:
         op_name = _op_call_name(node)
         attr_name = _attribute_call_name(node)
 
-        if op_name is None and attr_name == "execute":
-            findings.append(f"linha {line}: chamada .execute exige revisão")
+        if op_name is None and attr_name in {"execute", "exec_driver_sql"}:
+            findings.append(
+                f"linha {line}: chamada .{attr_name} exige revisão humana"
+            )
             continue
         if op_name is None:
             continue
