@@ -18,8 +18,11 @@ logger = logging.getLogger("ejc.ingestao.senado")
 
 API = "https://legis.senado.leg.br/dadosabertos/materia/pesquisa/lista.json"
 
-# Tipos relevantes no Senado (PLS = Projeto de Lei do Senado, histórico).
-SIGLAS = ["PL", "PEC", "PLP", "PLS"]
+# Tipos relevantes no Senado (PLS = Projeto de Lei do Senado, histórico; MPV =
+# Medida Provisória, também tramita no Congresso via Senado). A coleta é ampla
+# por TIPO (todas as matérias do ano de cada sigla) — não temática —, então já
+# cobre todas as áreas do escritório sem precisar de filtro por assunto.
+SIGLAS = ["PL", "PEC", "PLP", "PLS", "MPV"]
 MAX_POR_SIGLA = 200
 
 

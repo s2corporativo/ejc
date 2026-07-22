@@ -121,6 +121,30 @@ CATALOGO: list[dict] = [
      "url": "https://www.planalto.gov.br/ccivil_03/leis/l8906.htm"},
     {"slug": "ctb", "titulo": "Código de Trânsito Brasileiro (Lei 9.503/1997)", "area": "transito",
      "url": "https://www.planalto.gov.br/ccivil_03/leis/l9503compilado.htm"},
+    # ── Ampliação 2026-07 — federação de fontes (complementa a busca LexML de
+    # legislação estadual/municipal com mais lei seca federal core das áreas do
+    # escritório). MESMA NOTA OPERACIONAL do bloco acima: URLs seguem os padrões
+    # comprovados do planalto.gov.br mas NÃO foram verificadas ao vivo aqui (o
+    # proxy bloqueia planalto.gov.br) — conferir em /ia-governanca/fontes após
+    # o deploy (status ok, não "erro"); URL incorreta falha graciosamente.
+    # Servidor público federal (l8112cons.htm — mesmo padrão "cons" de l8213cons).
+    {"slug": "l8112", "titulo": "Regime Jurídico dos Servidores Públicos Federais (Lei 8.112/1990)", "area": "administrativo",
+     "url": "https://www.planalto.gov.br/ccivil_03/leis/l8112cons.htm"},
+    # Estatuto do Idoso (Lei 10.741/2003 — pasta /leis/2003/, grafia com ponto).
+    {"slug": "idoso", "titulo": "Estatuto da Pessoa Idosa (Lei 10.741/2003)", "area": "civil",
+     "url": "https://www.planalto.gov.br/ccivil_03/leis/2003/l10.741.htm"},
+    # Lei da Ação Civil Pública / tutela coletiva (Lei 7.347/1985).
+    {"slug": "lacp", "titulo": "Lei da Ação Civil Pública (Lei 7.347/1985)", "area": "processual_civil",
+     "url": "https://www.planalto.gov.br/ccivil_03/leis/l7347orig.htm"},
+    # Processo Administrativo no âmbito da Administração Federal (Lei 9.784/1999).
+    {"slug": "l9784", "titulo": "Lei do Processo Administrativo Federal (Lei 9.784/1999)", "area": "administrativo",
+     "url": "https://www.planalto.gov.br/ccivil_03/leis/l9784.htm"},
+    # Lei de Acesso à Informação (Lei 12.527/2011).
+    {"slug": "lai", "titulo": "Lei de Acesso à Informação (Lei 12.527/2011)", "area": "administrativo",
+     "url": "https://www.planalto.gov.br/ccivil_03/_ato2011-2014/2011/lei/l12527.htm"},
+    # Controle concentrado de constitucionalidade — ADI/ADC (Lei 9.868/1999).
+    {"slug": "l9868", "titulo": "Lei da ADI e ADC (Lei 9.868/1999)", "area": "constitucional",
+     "url": "https://www.planalto.gov.br/ccivil_03/leis/l9868.htm"},
 ]
 
 

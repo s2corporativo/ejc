@@ -443,6 +443,25 @@ class Settings(BaseSettings):
     # TERMOS_PADRAO — Solução de Consulta ISS, IRPF, Simples Nacional...).
     NORMAS_RFB_TERMOS: str = ""
 
+    # ── LexML — federador oficial (legislação + jurisprudência) → RAG ────
+    # O LexML.gov.br (Rede de Informação Legislativa e Jurídica, mantida pelo
+    # Senado) federa NUMA ÚNICA FONTE: legislação federal/ESTADUAL (ALMG)/
+    # MUNICIPAL (Betim) e jurisprudência de TJ/TRT/TRF/TST/STJ/STF. O ingestor
+    # (services/ingestors/lexml.py) varre um catálogo de temas/autoridades do
+    # escritório e usa o caminho PROVADO jurisprudencia_externa.buscar_lexml
+    # (API pública, keyword-based) para tipo='legislacao' E 'jurisprudencia'.
+    # É o veículo que amplia o VOLUME estadual/municipal/tribunais sem scraper
+    # dedicado por portal. Desligado por padrão (opt-in no .env); best-effort e
+    # idempotente por chave_origem (lexml:<tipo>:<urn|hash>) como os demais.
+    LEXML_INGEST_ENABLED: bool = False
+    # CSV de temas/autoridades de busca. Vazio = lista padrão (áreas do
+    # escritório + autoridades-alvo, ver services/ingestors/lexml.py::TEMAS_PADRAO).
+    LEXML_INGEST_TEMAS: str = ""
+    # Teto de itens por tema/tipo/execução (controle de volume e de carga na
+    # API pública do LexML). Sobreposição entre execuções é inofensiva (upsert
+    # idempotente por chave_origem).
+    LEXML_INGEST_MAX_POR_TEMA: int = 20
+
     # ── Embeddings locais/remotos (busca semântica RAG) ─────────────────
     # local = fastembed (ONNX, sem torch) no mesmo processo; http = serviço interno separado.
     # Default True: fastembed é dependência pinada (requirements.txt) e o

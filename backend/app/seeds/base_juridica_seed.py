@@ -54,6 +54,9 @@ precisa ativar aqui, só ligar os ingestores oficiais opt-in já existentes:
     `djen.py` (gate DJEN_INGEST_ENABLED, default OFF),
     `tjmg.py` (gate TJMG_INGEST_ENABLED, default OFF) e a busca LexML em
     `app/services/jurisprudencia_externa.py`.
+  • Federação estadual (ALMG)/municipal (Betim)/tribunais numa fonte só:
+    `app/services/ingestors/lexml.py` (ing_lexml, sáb 05h, gate
+    LEXML_INGEST_ENABLED, default OFF) — legislação + jurisprudência via LexML.
   Para trazer volume: ligue os flags de env correspondentes (default OFF nos
   de jurisprudência) e amplie o CATALOGO/temas do respectivo ingestor. Todos
   escrevem via `upsert_documento` (mesma dedup por chave), então rodar seed +

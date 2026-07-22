@@ -214,6 +214,16 @@ def build_integration_status(
             mode=f"janela {settings.TJMG_INGEST_JANELA_DIAS} dias",
         ),
         _status(
+            key="lexml",
+            label="Federação LexML (legislação + jurisprudência)",
+            group="Jurídico",
+            enabled=settings.LEXML_INGEST_ENABLED,
+            configured=True,
+            ready_detail=("Federa legislação estadual (ALMG)/municipal (Betim) e "
+                          "jurisprudência de TJ/TRT/TRF/TST/STJ/STF por temas."),
+            mode=f"até {settings.LEXML_INGEST_MAX_POR_TEMA} itens/tema",
+        ),
+        _status(
             key="transparencia",
             label="Portal da Transparência / CGU",
             group="Jurídico",
