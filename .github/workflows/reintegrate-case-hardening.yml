@@ -1,0 +1,143 @@
+name: Reintegrar pacote de casos com hardening
+
+on:
+  push:
+    branches:
+      - codex/reintegrate-case-stack-pr-20260722
+    paths:
+      - .github/workflows/reintegrate-case-hardening.yml
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  patch:
+    name: Aplicar correções de segurança e UX
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: codex/reintegrate-case-stack-pr-20260722
+          fetch-depth: 0
+
+      - name: Aplicar patches atômicos
+        shell: bash
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+
+          def replace_once(path: str, old: str, new: str) -> None:
+              file = Path(path)
+              text = file.read_text(encoding="utf-8")
+              if new in text:
+                  return
+              count = text.count(old)
+              if count != 1:
+                  raise SystemExit(f"{path}: marcador esperado uma vez, encontrado {count}")
+              file.write_text(text.replace(old, new, 1), encoding="utf-8")
+
+          service = "backend/app/services/case_timeline_service.py"
+          replace_once(
+              service,
+              "from sqlalchemy.ext.asyncio import AsyncSession\n\nfrom app.models.atendimento import Atendimento",
+              "from sqlalchemy.ext.asyncio import AsyncSession\n\nfrom app.core.security import ROLE_LEVEL\nfrom app.models.atendimento import Atendimento",
+          )
+          replace_once(
+              service,
+              "from app.models.document import Document",
+              "from app.models.document import DocConfidencialidade, Document",
+          )
+          replace_once(
+              service,
+              "from app.models.task import Task, TaskStatus\n",
+              "from app.models.task import Task, TaskStatus\nfrom app.models.user import User\n",
+          )
+          replace_once(
+              service,
+              "async def timeline(\n    db: AsyncSession,\n    case_id: str,\n    *,",
+              "async def timeline(\n    db: AsyncSession,\n    case_id: str,\n    user: User,\n    *,",
+          )
+          replace_once(
+              service,
+              '''    documents = (\n        await db.execute(\n            select(Document)\n            .where(Document.case_id == case_id, Document.deleted_at.is_(None))\n            .order_by(Document.created_at.desc())\n            .limit(source_limit)\n        )\n    ).scalars().all()''',
+              '''    document_query = select(Document).where(\n        Document.case_id == case_id,\n        Document.deleted_at.is_(None),\n    )\n    role = _value(getattr(user, "role", None))\n    if ROLE_LEVEL.get(str(role), 0) < ROLE_LEVEL["socio"]:\n        document_query = document_query.where(\n            Document.confidencialidade.notin_(\n                [\n                    DocConfidencialidade.restrito,\n                    DocConfidencialidade.confidencial,\n                    DocConfidencialidade.segredo_justica,\n                ]\n            )\n        )\n    documents = (\n        await db.execute(\n            document_query.order_by(Document.created_at.desc()).limit(source_limit)\n        )\n    ).scalars().all()''',
+          )
+
+          replace_once(
+              "backend/app/routers/case_timeline.py",
+              "        case_id,\n        page=page,",
+              "        case_id,\n        user=cu,\n        page=page,",
+          )
+
+          test_path = Path("backend/tests/test_case_timeline_service.py")
+          tests = test_path.read_text(encoding="utf-8")
+          marker = "def test_timeline_filters_confidential_documents_before_pagination():"
+          if marker not in tests:
+              tests += '''\n\ndef test_timeline_filters_confidential_documents_before_pagination():\n    service = (ROOT / "app/services/case_timeline_service.py").read_text(\n        encoding="utf-8"\n    )\n    router = (ROOT / "app/routers/case_timeline.py").read_text(encoding="utf-8")\n    assert "Document.confidencialidade.notin_" in service\n    assert 'ROLE_LEVEL.get(str(role), 0) < ROLE_LEVEL["socio"]' in service\n    assert "DocConfidencialidade.segredo_justica" in service\n    assert "document_query.order_by" in service\n    assert "user=cu" in router\n'''
+              test_path.write_text(tests, encoding="utf-8")
+
+          replace_once(
+              "frontend/src/components/CaseHealthWidget.tsx",
+              'className="fixed bottom-6 right-48 z-30 inline-flex items-center gap-2 rounded-xl border border-slate-200 bg-white px-4 py-3 text-sm font-semibold text-slate-800 shadow-md transition hover:bg-slate-50 focus:outline-none focus:ring-2 focus:ring-primary-400 focus:ring-offset-2"',
+              'className="fixed bottom-20 right-4 z-30 inline-flex items-center gap-2 rounded-xl border border-slate-200 bg-white px-4 py-3 text-sm font-semibold text-slate-800 shadow-md transition hover:bg-slate-50 focus:outline-none focus:ring-2 focus:ring-primary-400 focus:ring-offset-2 sm:bottom-6 sm:right-48"',
+          )
+
+          sala = "frontend/src/pages/SalaDeGuerra.tsx"
+          replace_once(
+              sala,
+              'api.post("/sala-de-guerra-v3/war-room/simular", {',
+              'api.post(`/cases/${caseId}/sala-de-guerra/simular-contestacao`, {',
+          )
+          replace_once(
+              sala,
+              'api.post(`/sala-de-guerra-v3/visual-law/${caseId}`, {})',
+              'api.post(`/cases/${caseId}/sala-de-guerra/visual-law`, {})',
+          )
+
+          facade_test = Path("backend/tests/test_sala_guerra_facade.py")
+          facade_tests = facade_test.read_text(encoding="utf-8")
+          route_marker = "def test_frontend_consumes_case_canonical_routes():"
+          if route_marker not in facade_tests:
+              facade_tests += '''\n\ndef test_frontend_consumes_case_canonical_routes():\n    source = (ROOT.parent / "frontend/src/pages/SalaDeGuerra.tsx").read_text(\n        encoding="utf-8"\n    )\n    assert "`/cases/${caseId}/sala-de-guerra/simular-contestacao`" in source\n    assert "`/cases/${caseId}/sala-de-guerra/visual-law`" in source\n    assert 'api.post("/sala-de-guerra-v3/war-room/simular"' not in source\n    assert "`/sala-de-guerra-v3/visual-law/${caseId}`" not in source\n'''
+              facade_test.write_text(facade_tests, encoding="utf-8")
+
+          Path("backend/tests/test_case_health_frontend_contract.py").write_text(
+              '''from pathlib import Path\n\n\nROOT = Path(__file__).resolve().parents[2]\n\n\ndef test_case_health_button_is_mobile_safe():\n    source = (ROOT / "frontend/src/components/CaseHealthWidget.tsx").read_text(\n        encoding="utf-8"\n    )\n    assert "bottom-20 right-4" in source\n    assert "sm:bottom-6 sm:right-48" in source\n    assert "fixed bottom-6 right-48" not in source\n''',
+              encoding="utf-8",
+          )
+          PY
+
+      - name: Validar sintaxe e contratos estáticos
+        shell: bash
+        run: |
+          python -m compileall -q \
+            backend/app/services/case_timeline_service.py \
+            backend/app/routers/case_timeline.py \
+            backend/tests/test_case_timeline_service.py \
+            backend/tests/test_sala_guerra_facade.py \
+            backend/tests/test_case_health_frontend_contract.py
+          grep -F 'Document.confidencialidade.notin_' backend/app/services/case_timeline_service.py
+          grep -F 'user=cu' backend/app/routers/case_timeline.py
+          grep -F 'bottom-20 right-4' frontend/src/components/CaseHealthWidget.tsx
+          grep -F '/cases/${caseId}/sala-de-guerra/simular-contestacao' frontend/src/pages/SalaDeGuerra.tsx
+          grep -F '/cases/${caseId}/sala-de-guerra/visual-law' frontend/src/pages/SalaDeGuerra.tsx
+
+      - name: Remover automação temporária e registrar correções
+        shell: bash
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git rm .github/workflows/reintegrate-case-hardening.yml
+          git add \
+            backend/app/services/case_timeline_service.py \
+            backend/app/routers/case_timeline.py \
+            backend/tests/test_case_timeline_service.py \
+            backend/tests/test_sala_guerra_facade.py \
+            backend/tests/test_case_health_frontend_contract.py \
+            frontend/src/components/CaseHealthWidget.tsx \
+            frontend/src/pages/SalaDeGuerra.tsx
+          git diff --cached --check
+          git commit -m "fix(casos): proteger timeline e concluir migração canônica"
+          git push origin HEAD:codex/reintegrate-case-stack-pr-20260722
