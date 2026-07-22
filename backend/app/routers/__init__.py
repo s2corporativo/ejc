@@ -15,6 +15,8 @@ from app.routers import (  # noqa: E402
     entrada_universal,
     entrada_universal_vinculo,
     novos_modulos,
+    sala_de_guerra,
+    sala_de_guerra_facade,
 )
 
 # A restrição do advogado_auxiliar (não gera pacote executivo nem encaminha
@@ -29,3 +31,7 @@ novos_modulos.router.include_router(defesas_revisoes.router)
 # implementação legada foi removida do router avançado — sem sombreamento).
 novos_modulos.router.include_router(defesas_revisoes_pacote_seguro.router)
 novos_modulos.router.include_router(defesas_revisoes_avancado.router)
+
+# As capacidades avançadas passam a existir no contexto do caso sem duplicar
+# as implementações históricas, que permanecem ativas durante a transição.
+sala_de_guerra.router.include_router(sala_de_guerra_facade.router)
