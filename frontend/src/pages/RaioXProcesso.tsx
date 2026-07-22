@@ -179,6 +179,16 @@ const CONVERSION_ROLES = new Set([
   "advogado_auxiliar",
 ]);
 
+// Estados em que o backend (raio_x.py::converter) aceita transformar o Raio-X
+// em caso. O fluxo padrão termina em "aguardando_conferencia"; exigir só
+// "analise_concluida" (estado que o back nunca persiste) deixava o botão
+// eternamente inerte — o usuário clicava e nada acontecia.
+const STATUS_CONVERTIVEIS = new Set([
+  "aguardando_conferencia",
+  "em_analise",
+  "analise_concluida",
+]);
+
 const humanize = (value: string) =>
   value.replace(/_/g, " ").replace(/\b\w/g, (char) => char.toUpperCase());
 
@@ -1501,13 +1511,23 @@ export default function RaioXProcesso() {
                     selected &&
                     !selected.convertido_case_id &&
                     canConvert && (
-                      <Button
-                        className="w-full"
-                        onClick={() => void openConversion()}
-                        disabled={selected.status !== "analise_concluida"}
-                      >
-                        <FolderInput className="h-4 w-4" /> Transformar em caso
-                      </Button>
+                      <>
+                        <Button
+                          className="w-full"
+                          onClick={() => void openConversion()}
+                          disabled={!STATUS_CONVERTIVEIS.has(selected.status)}
+                        >
+                          <FolderInput className="h-4 w-4" /> Transformar em caso
+                        </Button>
+                        {!STATUS_CONVERTIVEIS.has(selected.status) && (
+                          <p className="rounded-lg bg-amber-50 p-3 text-xs text-amber-700 dark:bg-amber-500/[0.08] dark:text-amber-300">
+                            A conversão libera quando a análise está conferível
+                            (status atual: {humanize(selected.status)}). Conclua
+                            o processamento e a conferência do Raio-X antes de
+                            transformar em caso.
+                          </p>
+                        )}
+                      </>
                     )}
                   {!contextual &&
                     selected &&
