@@ -69,6 +69,19 @@ async def _rodar_seed_sync(nome: str, fn) -> None:
         print(f"[seed] AVISO: seed '{nome}' falhou (não-fatal): {exc}")
 
 
+async def _rodar_seed_async(nome: str, coro_fn) -> None:
+    """Roda um seed ASSÍNCRONO best-effort (usa o engine async do app).
+
+    Mesmo contrato de `_rodar_seed_sync`: uma falha NUNCA aborta o bootstrap
+    (o entrypoint roda `seed_all` com `set -e`, então um seed que propague
+    exceção derrubaria o boot inteiro).
+    """
+    try:
+        await coro_fn()
+    except (Exception, SystemExit) as exc:  # noqa: BLE001 — seed best-effort
+        print(f"[seed] AVISO: seed '{nome}' falhou (não-fatal): {exc}")
+
+
 async def main() -> None:
     await seed_admin()
 
@@ -89,6 +102,16 @@ async def main() -> None:
     await _rodar_seed_sync("ejc_skills_expansion", seed_skills_expansion)
     await _rodar_seed_sync("ejc_skills_contextual_areas", seed_skills_contextual_areas)
     await _rodar_seed_sync("ejc_skills_native_ejc", seed_skills_native_ejc)
+
+    # Base de conhecimento jurídica REAL (P0 — auditoria da Central de IA): sem
+    # isto o RAG de um ambiente recém-provisionado fica sem fonte real e a IA
+    # cai no conhecimento paramétrico. Súmulas conferidas (OFFLINE) semeiam
+    # SEMPRE; a legislação do Planalto (REDE) é existence-guarded + bounded por
+    # timeout p/ nunca estourar a janela de health-check do deploy. Idempotente
+    # e best-effort — ver app/seeds/base_juridica_seed.py.
+    from app.seeds.base_juridica_seed import seed_base_juridica
+
+    await _rodar_seed_async("base_juridica_real", seed_base_juridica)
     print("[seed] concluído.")
 
 

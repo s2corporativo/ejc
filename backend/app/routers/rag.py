@@ -560,9 +560,26 @@ async def ingest_fontes_oficiais(
     # executar_ingest_conhecimento nunca levanta (try/except por fonte) e abre
     # as próprias sessões — seguro como BackgroundTask pós-resposta.
     background_tasks.add_task(executar_ingest_conhecimento)
+
+    # Federação LexML (legislação estadual/municipal + jurisprudência de
+    # tribunais): opt-in. Só enfileira se o gate estiver LIGADO — mantém o
+    # princípio "nada roda por default". executar_ingestao abre a própria sessão
+    # e isola falhas (registra a fonte 'lexml' no painel), seguro pós-resposta.
+    from app.core.config import get_settings
+    fontes = list(FONTES_SLUGS)
+    if get_settings().LEXML_INGEST_ENABLED:
+        from app.services.ingestion_service import executar_ingestao
+        from app.services.ingestors import lexml
+        background_tasks.add_task(
+            executar_ingestao, "lexml",
+            "Federação LexML (legislação + jurisprudência)", "jurisprudencia",
+            lexml.ingerir,
+        )
+        fontes.append("lexml")
+
     return {
         "detail": "Ingestão de fontes oficiais agendada em background.",
-        "fontes": FONTES_SLUGS,
+        "fontes": fontes,
         "acompanhamento": ("Painel de fontes de ingestão (fontes_ingestao): "
                            "última execução, status e contagens por fonte."),
     }

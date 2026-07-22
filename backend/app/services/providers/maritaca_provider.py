@@ -10,8 +10,11 @@
 # PLUGÁVEL: MARITACA_ENABLED=false (default) => provider inelegível no gateway,
 # comportamento do sistema idêntico ao atual. Provider EXTERNO ao VPS =>
 # entra em _PROVIDERS_EXTERNOS no ai_gateway => passa pela MESMA barreira LGPD
-# (pseudonimização). Soberania de dados: os modelos "-br-sp" processam 100%
-# em território nacional (a ativar com DPA — decisão do titular).
+# (pseudonimização). Soberania de dados NÃO é o default nem automática: exige
+# DUAS coisas juntas — configurar MARITACA_MODEL/MARITACA_MODEL_RAPIDO nas
+# variantes "-br-sp" (processam 100% em território nacional) E ligar o guarda de
+# boot MARITACA_EXIGIR_SOBERANIA=true (config.py), com DPA — decisão do titular.
+# Os defaults "sabia-4"/"sabiazinho-4" NÃO são soberanos.
 from __future__ import annotations
 import json
 import logging

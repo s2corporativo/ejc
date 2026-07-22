@@ -9,8 +9,11 @@
 # (kill-switch de soberania, chave, ENABLED), a barreira PII e o fallback. Se o
 # provedor proposto for inelegível, o gateway o ignora e usa a cadeia normal.
 #
-# Desligado por padrão (ROTEAMENTO_INTELIGENTE_ENABLED=false) → o gateway usa a
-# lógica atual por task_type intacta.
+# LIGADO por padrão (ROTEAMENTO_INTELIGENTE_ENABLED=true) — ver config.py. Com
+# ROTEAMENTO_INTELIGENTE_ENABLED=false via .env, o gateway usa a lógica por
+# task_type intacta. O roteador nunca REBAIXA o modelo Anthropic abaixo do que
+# o mapa por-tarefa do gateway (_ANTHROPIC_MODEL_BY_TASK) determina: tarefa
+# jurídica séria (tier médio/pesado) sempre parte do modelo COMPLEXO (Opus).
 from __future__ import annotations
 
 import re
@@ -34,6 +37,11 @@ _PESO_TASK: dict[str, int] = {
     "elaboracao_peca": 5,
     "estrategia": 6,
     "critica_adversarial": 6,
+    # 'criminal' é gateway_task PRÓPRIO do orchestrator (TarefaIA.CRIMINAL →
+    # _TAREFA_PARA_GATEWAY) e NÃO existe no TASK_ROUTING nem tinha peso aqui:
+    # caía no default 4 → tier médio → (antes da correção P1) Anthropic Haiku.
+    # Área criminal é séria e sensível → tier pesado (Opus), jamais Haiku.
+    "criminal": 6,
 }
 
 # Detecção barata de citações jurídicas (nº CNJ, artigos, súmulas, REsp/RE/HC).
@@ -123,17 +131,27 @@ def _provider_do_tier(tier: str) -> str:
 
 
 def _model_do_provider(provider: str, tier: str) -> str | None:
-    """Modelo sugerido. Anthropic e Maritaca diferenciam por tier (rápido vs
-    completo); ollama/groq resolvem o modelo default por tarefa no gateway."""
+    """Modelo sugerido. Anthropic e Maritaca diferenciam por tier; ollama/groq
+    resolvem o modelo default por tarefa no gateway.
+
+    Anthropic (correção P1 anti-rebaixamento): SÓ o tier LEVE usa RAPIDO (Haiku).
+    Tier MÉDIO e PESADO usam COMPLEXO (Opus) — antes o médio caía em Haiku,
+    rebaixando tarefas jurídicas sérias (analise_contrato/auditoria_peca/
+    jurimetria, ou analise_juridica/elaboracao_peca com input curto). Toda tarefa
+    séria tem peso >=3 → nunca é "leve"; assim o tier é um proxy fiel da
+    seriedade e o roteador nunca propõe modelo abaixo de _ANTHROPIC_MODEL_BY_TASK
+    (que também é COMPLEXO para essas tarefas)."""
     s = get_settings()
     if provider == "anthropic":
-        return s.ANTHROPIC_MODEL_COMPLEXO if tier == "pesado" else s.ANTHROPIC_MODEL_RAPIDO
+        return s.ANTHROPIC_MODEL_RAPIDO if tier == "leve" else s.ANTHROPIC_MODEL_COMPLEXO
     if provider == "maritaca":
-        # Fallback cruzado (espelha _resolver_modelo do gateway): um dos dois
-        # settings vazio não propõe modelo "" no preview/roteamento.
-        if tier == "pesado":
-            return s.MARITACA_MODEL or s.MARITACA_MODEL_RAPIDO
-        return s.MARITACA_MODEL_RAPIDO or s.MARITACA_MODEL
+        # Anti-rebaixamento (espelha a regra do anthropic): só o tier LEVE usa o
+        # modelo rápido; médio e pesado usam o de qualidade — não rebaixa tarefa
+        # jurídica séria no caminho soberano/Sabiá. Fallback cruzado (um dos dois
+        # settings vazio) evita propor modelo "" no preview/roteamento.
+        if tier == "leve":
+            return s.MARITACA_MODEL_RAPIDO or s.MARITACA_MODEL
+        return s.MARITACA_MODEL or s.MARITACA_MODEL_RAPIDO
     return None
 
 

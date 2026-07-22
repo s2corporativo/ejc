@@ -1214,6 +1214,10 @@ def start_scheduler():
     # TJMG → RAG: gate interno TJMG_INGEST_ENABLED (default False). Semanal
     # (sáb 04h30) — crawler de jurisprudência estadual MG por temas curados.
     s.add_job(job_ingestao_tjmg,     CronTrigger(day_of_week="sat", hour=4, minute=30), id="ing_tjmg", replace_existing=True)
+    # LexML (federador oficial) → RAG: gate interno LEXML_INGEST_ENABLED
+    # (default False). Semanal (sáb 05h) — federa legislação estadual (ALMG)/
+    # municipal (Betim) e jurisprudência de TJ/TRT/TRF/TST/STJ/STF por temas.
+    s.add_job(job_ingestao_lexml,    CronTrigger(day_of_week="sat", hour=5, minute=0), id="ing_lexml", replace_existing=True)
     # Conhecimento oficial (ANPD + Normas RFB) → RAG: gate interno
     # CONHECIMENTO_INGEST_ENABLED (default True). Semanal, DOMINGO 03h00 UTC
     # (trigger declara a própria timezone — o scheduler roda em America/Sao_Paulo).
@@ -1820,6 +1824,29 @@ async def job_ingestao_tjmg():
     await executar_ingestao(
         "tjmg", "Jurisprudência TJMG (crawler — base de acórdãos)",
         "jurisprudencia", tjmg.ingerir,
+    )
+
+
+async def job_ingestao_lexml():
+    """Sábado 05h00 — federação LexML (legislação + jurisprudência) → RAG por
+    temas/autoridades curados do escritório.
+
+    Gate: LEXML_INGEST_ENABLED (default False — opt-in no .env). É o VEÍCULO que
+    amplia o volume de fontes estaduais (ALMG), municipais (Betim) e de
+    tribunais (TJMG/TRT-3/TRF-6/TRF-1/TST/STJ/STF/JEC) numa fonte pública só,
+    via o caminho provado jurisprudencia_externa.buscar_lexml. Best-effort: se o
+    LexML ficar indisponível, a fonte 'lexml' é marcada 'erro'/'parcial' no
+    painel, sem derrubar o scheduler.
+    """
+    from app.core.config import get_settings as _gs
+    if not _gs().LEXML_INGEST_ENABLED:
+        logger.info("[Ingestao:lexml] desabilitado (LEXML_INGEST_ENABLED=false)")
+        return
+    from app.services.ingestion_service import executar_ingestao
+    from app.services.ingestors import lexml
+    await executar_ingestao(
+        "lexml", "Federação LexML (legislação + jurisprudência)",
+        "jurisprudencia", lexml.ingerir,
     )
 
 

@@ -398,3 +398,102 @@ def proposta_para_contrato(p: FeeProposal) -> dict:
         "exito_percentual": float(p.exito_percentual) if p.exito_percentual is not None else None,
         "despesas_criterio": (p.despesas_criterio or "").strip() or None,
     }
+
+
+# ── FASE 2: honorários do CADASTRO do caso → proposta vigente ─────────────────
+
+async def seed_proposta_honorarios_cadastro(db, case_id: str, user: User,
+                                             honorarios) -> FeeProposal | None:
+    """Semeia uma proposta de honorários JÁ APROVADA/vigente a partir dos
+    HONORÁRIOS informados na ABERTURA do caso (schemas.case.HonorariosCreate).
+
+    Por que "aprovada" e não rascunho: o pipeline da FASE 4 (gerar_kit_inicial →
+    proposta_aprovada_vigente → proposta_para_contrato → _contrato_honorarios)
+    só preenche o contrato a partir de proposta APROVADA. Os valores aqui NÃO
+    vêm de sugestão/LLM: foram digitados pelo advogado no formulário de abertura
+    (o ato humano é o próprio preenchimento pelo usuário autenticado da equipe
+    jurídica) — por isso reaproveitamos o registro APROVADO como fonte do
+    contrato. O DOCUMENTO segue nascendo RASCUNHO com gate HITL: aqui só
+    semeamos os DADOS de honorários; nenhuma etapa do fluxo de aprovação
+    interativo (routers/honorarios_oab.py) é contornada.
+
+    Mapeamento do contrato de campos do frontend → FeeProposal → contrato:
+      • valor_contratual → faixas.recomendado.valor  (proposta_para_contrato usa
+        "recomendado", com fallback "minimo_etico").
+      • percentual_exito → exito_percentual           (cláusula 3 do contrato).
+      • forma_pagamento  → parcelamento.descricao      (_forma_pagamento verbatim).
+      • observacoes      → justificativa               (registrada; não altera o
+        texto do contrato).
+
+    Sem objeto (``honorarios is None``) ou SEM qualquer dado financeiro
+    (só ``observacoes``) → devolve None e NADA é criado: o contrato mantém os
+    placeholders legados.
+
+    IDEMPOTENTE: se já houver proposta APROVADA vigente do caso, devolve-a sem
+    criar/auditar (reabertura/reprocesso não duplica). NÃO faz commit — o caller
+    (cases.criar) commita na MESMA transação do caso, garantindo que a proposta
+    exista ANTES do background task do kit. `origem_tabela=None` sinaliza que a
+    origem é o cadastro (não a Tabela OAB/MG).
+    """
+    if honorarios is None:
+        return None
+    valor = getattr(honorarios, "valor_contratual", None)
+    exito = getattr(honorarios, "percentual_exito", None)
+    forma = (getattr(honorarios, "forma_pagamento", None) or "").strip() or None
+    obs = (getattr(honorarios, "observacoes", None) or "").strip() or None
+    # `observacoes` sozinho NÃO justifica uma proposta — sem dado financeiro o
+    # contrato deve seguir com placeholders (comportamento legado preservado).
+    if valor is None and exito is None and forma is None:
+        return None
+
+    # Idempotência: nunca duplica a proposta aprovada do caso.
+    existente = await proposta_aprovada_vigente(db, case_id)
+    if existente is not None:
+        return existente
+
+    # AUTORIZAÇÃO: semear uma proposta APROVADA é ATO DE ADVOGADO+ — o MESMO gate
+    # do fluxo interativo (criar_proposta/aprovar via _req_advogado_service).
+    # Sem isto, cases.criar() (acessível a papéis abaixo de advogado —
+    # secretaria/estagiário/financeiro) deixaria esses papéis "aprovar"
+    # honorários pelo cadastro (escalação de privilégio) e atribuiria
+    # aprovado_por a quem não pode aprovar. Só barra quando há proposta NOVA a
+    # criar (dado financeiro presente e sem vigente); 403 → o caso não é criado.
+    _req_advogado_service(user)
+
+    faixas: dict = {}
+    if valor is not None:
+        faixas["recomendado"] = {
+            "valor": round(float(valor), 2),
+            "memoria_calculo": ("Honorarios contratuais informados no cadastro do "
+                                "caso na abertura — valor definido pelo advogado."),
+        }
+    parcelamento = {"descricao": forma} if forma else None
+
+    ultima = (await db.execute(
+        select(func.max(FeeProposal.versao)).where(FeeProposal.case_id == case_id)
+    )).scalar()
+    agora = datetime.now(timezone.utc)
+    p = FeeProposal(
+        id=str(uuid4()),
+        case_id=case_id,
+        versao=int(ultima or 0) + 1,
+        status="aprovada",
+        origem_tabela=None,          # honorários do cadastro (não da tabela OAB)
+        faixas=faixas,
+        exito_percentual=exito,
+        parcelamento=parcelamento,
+        despesas_criterio=None,
+        justificativa=obs,
+        criado_por=getattr(user, "id", None),
+        criado_em=agora,
+        aprovado_por=getattr(user, "id", None),
+        aprovado_em=agora,
+    )
+    db.add(p)
+    await criar_audit_log(
+        db, getattr(user, "id", None), _role_str(user), "CREATE", "fee_proposals", p.id,
+        detalhes=(f"Proposta de honorarios v{p.versao} (aprovada) gerada dos "
+                  f"honorarios do cadastro na abertura do caso {case_id}"),
+        dados_depois=proposta_out(p),
+    )
+    return p

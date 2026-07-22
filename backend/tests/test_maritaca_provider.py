@@ -158,7 +158,9 @@ def test_roteamento_inteligente_promove_maritaca(monkeypatch, habilitado):
 def test_model_router_diferencia_tier_maritaca(habilitado):
     from app.services.ai.model_router import _model_do_provider
     assert _model_do_provider("maritaca", "pesado") == "sabia-4"
-    assert _model_do_provider("maritaca", "medio") == "sabiazinho-4"
+    # médio NÃO rebaixa (anti-rebaixamento P1, espelha o anthropic): usa o modelo
+    # de qualidade, não o rápido.
+    assert _model_do_provider("maritaca", "medio") == "sabia-4"
     assert _model_do_provider("maritaca", "leve") == "sabiazinho-4"
 
 

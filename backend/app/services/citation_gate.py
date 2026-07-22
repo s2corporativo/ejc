@@ -22,6 +22,11 @@ validação estrutural CNJ/súmula). Este módulo NÃO re-extrai nada — apenas
      confirmação de inteiro teor é responsabilidade do revisor (OAB) —
      bloquear todo julgado não confirmável externamente inviabilizaria o
      HITL, já que a base local só confirma súmulas/artigos por lookup exato.
+     MODO ESTRITO (opt-in, flag CITACOES_MODO_ESTRITO, default OFF): uma
+     SÚMULA ou ARTIGO citado mas AUSENTE da base curada — que no modo legado
+     fica em `identificada` e NÃO bloqueia — passa a BLOQUEAR (a ausência é
+     tratada como suspeita de invenção plausível). É bloqueio ADITIVO: nada
+     do modo legado é afrouxado, e súmula/artigo `verificada` nunca bloqueia.
   3. Expõe `validar_citacoes(db, texto) -> RelatorioCitacoes` (validação sob
      demanda via POST /ia/validar-citacoes e gate do HITL).
 
@@ -48,6 +53,15 @@ _POLITICAS_VALIDAS = {POLITICA_BLOQUEAR, POLITICA_MARCAR, POLITICA_DESLIGADO}
 
 # Tipos de citação que referenciam JULGADO (exigem tribunal+data verificáveis).
 _TIPOS_JULGADO = {"processo_cnj", "recurso"}
+
+# Tipos confirmáveis por lookup EXATO na base curada (súmulas/artigos): quando
+# CITADOS mas AUSENTES da base, o verificador os deixa em status "identificada"
+# (não-bloqueante no modo legado). No MODO ESTRITO essa ausência vira bloqueio
+# (ver avaliar_bloqueantes / modo_estrito_citacoes). Para estes tipos,
+# "identificada" equivale exatamente a "não encontrado na base" — status
+# "verificada" (encontrado) e "suspeita" (fora de faixa/formato) seguem por
+# outros ramos e NUNCA passam por aqui.
+_TIPOS_CONFIRMAVEIS_BASE = {"sumula", "artigo"}
 
 # ── Limites de custo e de auditoria do gate ─────────────────────────────────
 # Teto de citações processadas por verificação (cada súmula/artigo custa um
@@ -79,6 +93,19 @@ def politica_citacoes() -> str:
     return val
 
 
+def modo_estrito_citacoes() -> bool:
+    """Modo estrito do gate antialucinação (flag CITACOES_MODO_ESTRITO).
+
+    OFF (default): comportamento legado — súmula/artigo CITADO mas ausente da
+    base curada fica só "identificada" e NÃO bloqueia (o gate barra erro
+    estrutural, não invenção plausível). ON: essa ausência vira BLOQUEANTE
+    (ver avaliar_bloqueantes). Só ADICIONA bloqueio; nunca afrouxa os já
+    existentes. Ligue apenas com a base de conhecimento abrangente, senão gera
+    falso-positivo em citação real ainda não ingerida (ver .env.example).
+    """
+    return bool(get_settings().CITACOES_MODO_ESTRITO)
+
+
 class CitacaoBloqueante(BaseModel):
     citacao: str
     tipo: str
@@ -105,12 +132,23 @@ class RelatorioCitacoes(BaseModel):
     relatorio: dict | None = None
 
 
-def avaliar_bloqueantes(relatorio: dict) -> list[dict]:
+def avaliar_bloqueantes(
+    relatorio: dict, *, modo_estrito: bool | None = None,
+) -> list[dict]:
     """Citações do relatório que impedem aprovação na política 'bloquear'.
 
     Retorna dicts {citacao, tipo, status, motivo} (ver critérios no docstring
     do módulo). Função pura/síncrona para reuso no response_validator.
+
+    `modo_estrito`: None (default) lê a flag CITACOES_MODO_ESTRITO; True/False
+    força o modo (usado em testes). No modo estrito, uma súmula/artigo CITADO
+    mas AUSENTE da base curada (status "identificada" — ou seja, o lookup exato
+    retornou não-encontrado) passa a BLOQUEAR. Isso apenas ADICIONA bloqueio;
+    nenhum bloqueio legado é afrouxado. Súmula/artigo "verificada" (encontrado)
+    nunca entra neste ramo, então nunca bloqueia por esta regra.
     """
+    if modo_estrito is None:
+        modo_estrito = modo_estrito_citacoes()
     bloqueantes: list[dict] = []
     for c in relatorio.get("citacoes") or []:
         status, tipo = c.get("status"), c.get("tipo")
@@ -127,6 +165,16 @@ def avaliar_bloqueantes(relatorio: dict) -> list[dict]:
                 motivo = ("julgado citado sem " + " e ".join(faltas) +
                           " verificáveis no contexto — exija processo, "
                           "tribunal e data de julgamento/publicação")
+        elif (modo_estrito and status == "identificada"
+              and tipo in _TIPOS_CONFIRMAVEIS_BASE):
+            # A-1 (modo estrito): para súmula/artigo, "identificada" significa
+            # citado + lookup exato NÃO encontrou na base curada — isto é,
+            # referência plausível mas potencialmente inexistente. Sob modo
+            # estrito escalamos essa ausência a bloqueio (equivale a suspeita).
+            rotulo = "Súmula" if tipo == "sumula" else "Artigo"
+            motivo = (f"{rotulo} citado(a) não encontrado(a) na base curada — "
+                      "modo estrito (CITACOES_MODO_ESTRITO): confirme a "
+                      "existência na fonte oficial ou remova a citação.")
         if motivo:
             bloqueantes.append({
                 "citacao": c.get("citacao") or c.get("trecho") or "",

@@ -127,6 +127,24 @@ else
   log "Seeds nao executados. Use RUN_SEEDS=1 para ingerir o corpus da Biblia (situacoes + modelos + Volume III)."
 fi
 
+# Base de conhecimento juridica REAL (P0 — auditoria da Central de IA): sumulas
+# conferidas (offline) + legislacao federal do Planalto (rede), idempotente e
+# nao-fatal. Roda DEPOIS do health-check (backend ja respondeu) — por isso pode
+# fazer rede sem risco para a janela de boot — e ANTES do reparar_conhecimento_rag
+# abaixo, que aprova e vetoriza os chunks pendentes. O boot (seed_all) ja semeia
+# as sumulas em todo start; aqui garantimos tambem a legislacao no deploy
+# (existence-guarded pela chave planalto:<slug>: baixa uma vez, pula se ja presente).
+if [ "$RUN_SEEDS" = "1" ]; then
+  log "RUN_SEEDS=1: semeando base juridica real (sumulas + legislacao, nao-fatal)"
+  if docker compose exec -T backend python -m app.seeds.base_juridica_seed --incluir-legislacao; then
+    log "Seed da base juridica real concluido."
+  else
+    log "AVISO: seed da base juridica real falhou (nao-fatal) — deploy segue; as sumulas do boot ja atendem o RAG. Rode manualmente: docker compose exec backend bash scripts/popular_base_conhecimento.sh"
+  fi
+else
+  log "Base juridica real nao semeada neste deploy (RUN_SEEDS!=1). O boot ja semeia sumulas; use RUN_SEEDS=1 para incluir a legislacao."
+fi
+
 # Política permanente: todo documento vigente da Base de Conhecimento deve estar
 # aprovado para uso pela IA. O reparo é idempotente e também completa embeddings
 # ausentes; falha aqui interrompe o deploy para não publicar uma inteligência

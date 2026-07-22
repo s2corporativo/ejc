@@ -598,12 +598,20 @@ async def test_endpoint_audita_e_agenda_background(monkeypatch):
         def add_task(self, fn, *a, **k):
             self.tasks.append(fn)
 
+    from app.core.config import get_settings
+    # A federação LexML nasce LIGADA (decisão do titular): o endpoint passa a
+    # incluir 'lexml' em `fontes` e a agendar sua task. Fixamos o gate
+    # explicitamente para o teste independer do valor default vigente.
+    monkeypatch.setattr(get_settings(), "LEXML_INGEST_ENABLED", True)
+
     bg = _BG()
     cu = SimpleNamespace(id="u1", role="socio")
     resp = await rag_router.ingest_fontes_oficiais(bg, db=_FakeDB(), cu=cu)
 
-    assert resp["fontes"] == ["anpd", "normas_rfb"]
+    assert resp["fontes"] == ["anpd", "normas_rfb", "lexml"]
     assert "background" in resp["detail"]
-    assert bg.tasks == [ci.executar_ingest_conhecimento]  # roda em background
+    # conhecimento_ingest sempre agendado; com o gate on, a task do lexml também.
+    assert ci.executar_ingest_conhecimento in bg.tasks
+    assert len(bg.tasks) == 2                              # conhecimento + lexml
     assert audits and audits[0]["acao"] == "INGESTAO_FONTES_OFICIAIS"
     assert audits[0]["user_id"] == "u1"

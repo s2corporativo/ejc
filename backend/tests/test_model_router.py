@@ -97,6 +97,29 @@ def test_anthropic_leve_usa_rapido(monkeypatch):
     assert d.model == "claude-haiku-4-5-20251001"  # leve → RAPIDO
 
 
+def test_anthropic_medio_nao_rebaixa_para_haiku(monkeypatch):
+    # Correção P1 (anti-rebaixamento): tarefa jurídica séria em tier MÉDIO com
+    # provider Anthropic NÃO pode cair em Haiku. ANTES o roteador rebaixava
+    # médio→RAPIDO, contradizendo _ANTHROPIC_MODEL_BY_TASK (que é COMPLEXO para
+    # analise_contrato/auditoria_peca/jurimetria).
+    _cfg(monkeypatch, ROTEAMENTO_PROVIDER_MEDIO="anthropic")
+    d = mr.escolher_modelo("analise_contrato", "contrato pequeno")
+    assert d.tier == "medio"
+    assert d.provider == "anthropic"
+    assert d.model == "claude-opus-4-8"  # médio → COMPLEXO (não rebaixa)
+
+
+def test_criminal_e_tarefa_pesada_opus(monkeypatch):
+    # P1.2: 'criminal' é gateway_task próprio do orchestrator (TarefaIA.CRIMINAL)
+    # e não existe no TASK_ROUTING; sem peso caía no default 4 → médio. Agora tem
+    # peso 6 → tier pesado → Anthropic Opus, jamais Haiku.
+    _cfg(monkeypatch, ROTEAMENTO_PROVIDER_PESADO="anthropic")
+    d = mr.escolher_modelo("criminal", "réu denunciado")
+    assert d.tier == "pesado"
+    assert d.provider == "anthropic"
+    assert d.model == "claude-opus-4-8"
+
+
 # ── calcular_score é puro/testável ────────────────────────────────────────────
 
 def test_calcular_score_retorna_motivos():

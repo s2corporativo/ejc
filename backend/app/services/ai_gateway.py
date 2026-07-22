@@ -4,7 +4,9 @@
 # PRINCÍPIO: Nenhuma tela acessa diretamente um modelo. Tudo passa por aqui.
 #
 # Fluxo:
-#   Frontend → Backend Router → AI Gateway → Provedor adequado (Ollama/Groq)
+#   Frontend → Backend Router → AI Gateway → Provedor adequado
+#   (Ollama local · Anthropic/Claude p/ tarefa jurídica pesada · Maritaca/Sabiá
+#    PT-BR · Groq último recurso)
 #
 # Roteamento por tipo de tarefa (ver TASK_ROUTING): cada tarefa lista os
 # provedores candidatos; a ordem final vem de AI_PROVIDER_PRIORITY filtrada
@@ -340,7 +342,14 @@ async def chat(
         try:
             from app.services.ai.model_router import escolher_modelo
             texto_entrada = "\n".join(m.get("content", "") or "" for m in messages)
-            decisao = escolher_modelo(task_type, texto_entrada)
+            # Sinal de contexto de caso (best-effort): quando o chamador passa
+            # `entidades` (nomes do caso a pseudonimizar), o conteúdo está
+            # ATRELADO a um caso — o orchestrator só as monta a partir de
+            # entidades_do_caso/nomes_proteger. Não temos aqui case_id/RAG cru,
+            # então NÃO inventamos: apenas sinalizamos tem_contexto_caso para o
+            # score (+1). Sem entidades → contexto None (comportamento anterior).
+            contexto_roteamento = {"tem_contexto_caso": True} if entidades else None
+            decisao = escolher_modelo(task_type, texto_entrada, contexto=contexto_roteamento)
             provider_preferido, model_preferido = decisao.provider, decisao.model
             roteamento_tier, roteamento_score = decisao.tier, decisao.score
             logger.info("[Gateway] roteamento inteligente → %s", decisao.motivo)
@@ -864,14 +873,19 @@ async def executar_tarefa_ia(tarefa, mensagem: str, case_id: str | None = None,
             "nivel_inteligencia": nivel_inteligencia, "tarefa": tarefa_label,
             "is_rascunho": True, "requer_revisao": True,
             "tokens_usados": 0, "custo_estimado_brl": 0.0, "cache_hit": True,
+            "fallback_ativado": False, "fallback_motivo": None,
         }
 
-    # Cadeia: provedor da tarefa → Groq (custo ~zero) → Ollama (local).
+    # Cadeia: provedor da tarefa → Ollama (LOCAL) → Groq (externo).
+    # LGPD (minimização de transferência internacional, art. 33/46): o LOCAL vem
+    # ANTES do externo — se o provedor primário cair, tentamos o Ollama local
+    # antes de mandar dados (ainda que sanitizados) ao Groq nos EUA. Espelha a
+    # cadeia por task_type do chat() (ollama→…→groq), que já respeita essa ordem.
     cadeia: list[tuple[str, str | None]] = [(cfg.provider, cfg.model)]
-    if cfg.provider != "groq":
-        cadeia.append(("groq", None))
     if settings.OLLAMA_ENABLED and cfg.provider != "ollama":
         cadeia.append(("ollama", None))
+    if cfg.provider != "groq":
+        cadeia.append(("groq", None))
 
     # ── Modo 1 (LOCAL_COMPLETO) — sigilo reforçado: nunca sai do VPS. Remove
     # externos; sem provedor local ELEGÍVEL → bloqueio SEGURO (externo nunca é
@@ -889,6 +903,11 @@ async def executar_tarefa_ia(tarefa, mensagem: str, case_id: str | None = None,
     texto = usage = provedor_usado = None
     ultimo_erro = "nenhum provedor elegível"
     bloqueado_por_pii = False
+    # Motivo da PRIMEIRA degradação (por que abandonamos o provedor primário).
+    # Capturado uma única vez (o primeiro provedor da cadeia É cfg.provider) e
+    # SEMPRE PII-safe (classe do erro / rótulo — nunca str(e) cru, que pode
+    # carregar PII do provedor). Espelha o fallback_motivo do chat().
+    fallback_motivo: str | None = None
     # Log LGPD: por padrão o prompt cru; no modo reversível será o PSEUDONIMIZADO.
     resposta_log = None
     prompt_log = mensagem[:8000]
@@ -896,6 +915,8 @@ async def executar_tarefa_ia(tarefa, mensagem: str, case_id: str | None = None,
     for provider, model in cadeia:
         if not _provider_elegivel(provider):
             ultimo_erro = f"{provider} inelegível (habilitação/chave/soberania)"
+            if fallback_motivo is None:
+                fallback_motivo = f"{provider}: inelegível (habilitação/chave/soberania)"
             continue
         try:
             # #39: barreira LGPD + chamada + reidratação — fonte única (idem chat).
@@ -906,11 +927,22 @@ async def executar_tarefa_ia(tarefa, mensagem: str, case_id: str | None = None,
         except _ProviderPulado as _pulado:
             bloqueado_por_pii = True
             ultimo_erro = f"PII residual ({', '.join(_pulado.residual)}) bloqueou provider externo"
+            if fallback_motivo is None:
+                # Não ecoa as CATEGORIAS residuais no motivo exposto (só no log).
+                fallback_motivo = f"{provider}: bloqueado por PII residual (LGPD)"
             logger.warning(f"[Gateway] {provider} pulado em executar_tarefa_ia — "
                            f"PII residual ({', '.join(_pulado.residual)}) após sanitização (LGPD).")
             continue
         except Exception as e:
-            ultimo_erro = str(e)[:120]
+            ultimo_erro = str(e)[:120]  # trilha INTERNA (logger) — pode ter PII
+            if fallback_motivo is None:
+                # Só a CLASSE do erro (+ status HTTP) no motivo exposto — PII-safe.
+                _status = getattr(e, "status_code", None) or getattr(
+                    getattr(e, "response", None), "status_code", None
+                )
+                fallback_motivo = f"{provider}: " + type(e).__name__ + (
+                    f" (HTTP {_status})" if _status else ""
+                )
             logger.warning(f"[Gateway] {provider} falhou em executar_tarefa_ia; "
                            f"tentando próximo: {ultimo_erro}")
             continue
@@ -953,12 +985,23 @@ async def executar_tarefa_ia(tarefa, mensagem: str, case_id: str | None = None,
             "texto": texto, "modelo": f"{provedor_usado}/{modelo_real}",
             "provedor": provedor_usado,
         })
+    # Fallback NÃO silencioso: se a resposta NÃO veio do PRIMEIRO provedor
+    # REALMENTE tentado (cadeia[0], já restrita por LOCAL_COMPLETO), sinaliza a
+    # degradação (ex.: Anthropic/Opus → Groq) com o motivo PII-safe. Usa
+    # cadeia[0] e NÃO cfg.provider: no modo LOCAL_COMPLETO os externos são
+    # removidos e o Ollama vira o primário LEGÍTIMO — comparar com cfg.provider
+    # marcaria um "fallback" FALSO. Espelha o critério posicional do chat().
+    # Consumidores (AiResponse extra="ignore"; dict.get em escrita.py/
+    # run_eval.py) ignoram chaves extras — aditivo/seguro.
+    fallback_ativado = provedor_usado != cadeia[0][0]
     return {
         "conteudo": texto, "modelo": f"{provedor_usado}/{modelo_real}", "provider": provedor_usado,
         "nivel_inteligencia": nivel_inteligencia,
         "tarefa": getattr(tarefa, "value", str(tarefa)),
         "is_rascunho": True, "requer_revisao": True,
         "tokens_usados": inp + out, "custo_estimado_brl": custo,
+        "fallback_ativado": fallback_ativado,
+        "fallback_motivo": fallback_motivo if fallback_ativado else None,
     }
 
 

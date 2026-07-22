@@ -33,7 +33,10 @@ concurrency:
 jobs:
   validar:
     name: Validar scripts de backup
-    runs-on: ubuntu-latest
+    # Runner self-hosted (mesmo do ci.yml): este job é só um `bash -n` e não deve
+    # depender de minutos GitHub-hosted — quando esgotam, o job falha na largada
+    # (sem runner atribuído, ~2s) e trava o check em PRs que tocam estes scripts.
+    runs-on: [self-hosted, ejc-vps]
     timeout-minutes: 5
     env:
       GH_TOKEN: ${{ github.token }}
