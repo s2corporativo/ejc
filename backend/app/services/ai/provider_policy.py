@@ -13,6 +13,7 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 
 from app.core.config import get_settings
+from app.services.ai.provider_registry import provider_elegivel
 from app.services.sanitizer import sanitizar_pii, validar_sem_pii
 
 # Provedores que processam dados FORA do VPS (LGPD: exigem sanitização).
@@ -45,22 +46,12 @@ class AIProviderPolicy:
 
     @staticmethod
     def _elegivel(provider: str) -> bool:
-        s = get_settings()
-        if provider == "ollama":
-            return bool(s.OLLAMA_ENABLED)
-        if provider == "anthropic":
-            return bool(
-                s.ANTHROPIC_ENABLED and s.ANTHROPIC_API_KEY
-                and s.AI_EXTERNAL_PROVIDERS_ALLOWED
-            )
-        if provider == "groq":
-            return bool(s.GROQ_API_KEY and s.AI_EXTERNAL_PROVIDERS_ALLOWED)
-        if provider == "maritaca":
-            return bool(
-                s.MARITACA_ENABLED and s.MARITACA_API_KEY
-                and s.AI_EXTERNAL_PROVIDERS_ALLOWED
-            )
-        return False
+        """Elegibilidade por provedor — DELEGA à FONTE ÚNICA
+        ``provider_registry.provider_elegivel`` (habilitação + credencial +
+        kill-switch). Mantido como staticmethod porque
+        ``provider_registry_runtime.instalar()`` o reatribui à MESMA função e
+        ``avaliar()`` o consulta internamente via ``self._elegivel``."""
+        return provider_elegivel(provider)
 
     @staticmethod
     def _ordem_prioridade() -> list[str]:

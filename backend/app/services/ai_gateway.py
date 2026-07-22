@@ -26,6 +26,7 @@ from datetime import datetime, timezone
 
 from app.core.config import get_settings
 from app.services import legal_base
+from app.services.ai.provider_registry import provider_elegivel as _provider_elegivel_fonte
 from app.services.ai_cost import estimar_custo_brl
 
 logger = logging.getLogger("ejc.ai.gateway")
@@ -596,22 +597,13 @@ def ia_disponivel() -> bool:
 # ── Helpers internos ──────────────────────────────────────────────────────────
 
 def _provider_elegivel(provider: str) -> bool:
-    """Elegibilidade por provedor (mesmas regras da AIProviderPolicy)."""
-    if provider == "ollama":
-        return bool(settings.OLLAMA_ENABLED)
-    if provider == "anthropic":
-        return bool(
-            settings.ANTHROPIC_ENABLED and settings.ANTHROPIC_API_KEY
-            and settings.AI_EXTERNAL_PROVIDERS_ALLOWED
-        )
-    if provider == "groq":
-        return bool(settings.GROQ_API_KEY and settings.AI_EXTERNAL_PROVIDERS_ALLOWED)
-    if provider == "maritaca":
-        return bool(
-            settings.MARITACA_ENABLED and settings.MARITACA_API_KEY
-            and settings.AI_EXTERNAL_PROVIDERS_ALLOWED
-        )
-    return False
+    """Elegibilidade por provedor — DELEGA à FONTE ÚNICA
+    ``app.services.ai.provider_registry.provider_elegivel`` (habilitação +
+    credencial + kill-switch por provedor). Mantido como símbolo do módulo
+    porque ``provider_registry_runtime.instalar()`` e vários testes referenciam
+    ``ai_gateway._provider_elegivel``; após a delegação a reatribuição de runtime
+    passa a apontar para a MESMA função (idempotente e inofensiva)."""
+    return _provider_elegivel_fonte(provider)
 
 
 def _ordenar_por_prioridade(providers: list[str]) -> list[str]:
