@@ -1,0 +1,744 @@
+{
+  "generated_at": "2026-07-22T18:46:32.090093+00:00",
+  "base_url": "http://127.0.0.1:8000",
+  "resumo": {
+    "PASS": 13,
+    "FALHA": 0,
+    "BLOQUEADO": 2
+  },
+  "cenarios": [
+    {
+      "id": "H01",
+      "titulo": "Login, 2FA e sessão",
+      "dimensao": "Segurança / Acesso",
+      "status": "PASS",
+      "manual": "Confirmar no navegador: 2FA obrigatório para superadmin/admin/socio; troca de senha forçada no primeiro acesso; expiração/refresh de sessão.",
+      "passos": [
+        {
+          "nome": "sessao_valida_me",
+          "tipo": "happy",
+          "actor": "staff",
+          "method": "GET",
+          "path": "/api/users/me",
+          "status": "PASS",
+          "status_code": 200,
+          "expected": [
+            200
+          ],
+          "elapsed_ms": 10,
+          "detail": ""
+        },
+        {
+          "nome": "login_senha_incorreta",
+          "tipo": "negativo",
+          "actor": "anon",
+          "method": "POST",
+          "path": "/api/auth/login",
+          "status": "PASS",
+          "status_code": 401,
+          "expected": [
+            401
+          ],
+          "elapsed_ms": 9,
+          "detail": ""
+        },
+        {
+          "nome": "me_sem_token",
+          "tipo": "negativo",
+          "actor": "anon",
+          "method": "GET",
+          "path": "/api/users/me",
+          "status": "PASS",
+          "status_code": 401,
+          "expected": [
+            401
+          ],
+          "elapsed_ms": 1,
+          "detail": ""
+        },
+        {
+          "nome": "2fa_obrigatorio_setup_endpoint",
+          "tipo": "resiliencia",
+          "actor": "anon",
+          "method": "POST",
+          "path": "/api/auth/totp/setup",
+          "status": "PASS",
+          "status_code": 401,
+          "expected": [
+            401,
+            403,
+            422
+          ],
+          "elapsed_ms": 1,
+          "detail": ""
+        }
+      ]
+    },
+    {
+      "id": "H02",
+      "titulo": "Cliente, conflito e carteira",
+      "dimensao": "Cadastro / LGPD",
+      "status": "PASS",
+      "manual": "Conflito de interesses e segregação de carteira entre advogados: validar matriz completa no navegador.",
+      "passos": [
+        {
+          "nome": "criar_cliente_pf",
+          "tipo": "happy",
+          "actor": "staff",
+          "method": "POST",
+          "path": "/api/clients/",
+          "status": "PASS",
+          "status_code": 409,
+          "expected": [
+            201,
+            409,
+            422
+          ],
+          "elapsed_ms": 12,
+          "detail": ""
+        },
+        {
+          "nome": "listar_clientes",
+          "tipo": "happy",
+          "actor": "staff",
+          "method": "GET",
+          "path": "/api/clients/",
+          "status": "PASS",
+          "status_code": 200,
+          "expected": [
+            200
+          ],
+          "elapsed_ms": 7,
+          "detail": ""
+        },
+        {
+          "nome": "idempotencia_cpf",
+          "tipo": "idempotencia",
+          "actor": "staff",
+          "method": "POST",
+          "path": "/api/clients/",
+          "status": "PASS",
+          "status_code": 409,
+          "expected": [
+            409,
+            422
+          ],
+          "elapsed_ms": 12,
+          "detail": ""
+        },
+        {
+          "nome": "portal_nao_le_clientes",
+          "tipo": "negativo",
+          "actor": "portal",
+          "method": "GET",
+          "path": "/api/clients/",
+          "status": "PASS",
+          "status_code": 403,
+          "expected": [
+            403
+          ],
+          "elapsed_ms": 1,
+          "detail": ""
+        },
+        {
+          "nome": "anon_nao_le_clientes",
+          "tipo": "negativo",
+          "actor": "anon",
+          "method": "GET",
+          "path": "/api/clients/",
+          "status": "PASS",
+          "status_code": 401,
+          "expected": [
+            401
+          ],
+          "elapsed_ms": 1,
+          "detail": ""
+        }
+      ]
+    },
+    {
+      "id": "H03",
+      "titulo": "Documento → caso assistido",
+      "dimensao": "IA / Intake",
+      "status": "PASS",
+      "manual": "Retomada após falha da extração e NÃO-duplicidade de caso ao reprocessar o mesmo documento (idempotência do intake).",
+      "passos": [
+        {
+          "nome": "upload_documento",
+          "tipo": "happy",
+          "actor": "staff",
+          "method": "POST",
+          "path": "/api/documents/upload",
+          "status": "PASS",
+          "status_code": 201,
+          "expected": [
+            201
+          ],
+          "elapsed_ms": 13,
+          "detail": ""
+        },
+        {
+          "nome": "classificar_por_ia",
+          "tipo": "resiliencia",
+          "actor": "staff",
+          "method": "POST",
+          "path": "/api/documents/{document_id}/classificar",
+          "status": "BLOQUEADO",
+          "status_code": null,
+          "expected": [
+            200,
+            422,
+            503
+          ],
+          "elapsed_ms": null,
+          "detail": "capacidade ausente: ai"
+        },
+        {
+          "nome": "portal_nao_le_documentos",
+          "tipo": "negativo",
+          "actor": "portal",
+          "method": "GET",
+          "path": "/api/documents",
+          "status": "PASS",
+          "status_code": 403,
+          "expected": [
+            403
+          ],
+          "elapsed_ms": 1,
+          "detail": ""
+        }
+      ]
+    },
+    {
+      "id": "H04",
+      "titulo": "Cadastro manual (sem IA)",
+      "dimensao": "Operacional",
+      "status": "PASS",
+      "manual": "",
+      "passos": [
+        {
+          "nome": "criar_caso_manual",
+          "tipo": "happy",
+          "actor": "staff",
+          "method": "POST",
+          "path": "/api/cases/",
+          "status": "PASS",
+          "status_code": 422,
+          "expected": [
+            200,
+            201,
+            422
+          ],
+          "elapsed_ms": 5,
+          "detail": ""
+        },
+        {
+          "nome": "idempotencia_numero_processo",
+          "tipo": "idempotencia",
+          "actor": "staff",
+          "method": "POST",
+          "path": "/api/cases/",
+          "status": "PASS",
+          "status_code": 422,
+          "expected": [
+            200,
+            201,
+            409,
+            422
+          ],
+          "elapsed_ms": 4,
+          "detail": ""
+        },
+        {
+          "nome": "portal_nao_cria_caso",
+          "tipo": "negativo",
+          "actor": "portal",
+          "method": "GET",
+          "path": "/api/cases",
+          "status": "PASS",
+          "status_code": 403,
+          "expected": [
+            403
+          ],
+          "elapsed_ms": 1,
+          "detail": ""
+        }
+      ]
+    },
+    {
+      "id": "H05",
+      "titulo": "Processo principal e acessórios",
+      "dimensao": "Processual",
+      "status": "PASS",
+      "manual": "Drift Case×Process (campos legados) e vínculo principal↔acessórios: validar consolidação no navegador.",
+      "passos": [
+        {
+          "nome": "listar_processos",
+          "tipo": "happy",
+          "actor": "staff",
+          "method": "GET",
+          "path": "/api/processes",
+          "status": "PASS",
+          "status_code": 404,
+          "expected": [
+            200,
+            404
+          ],
+          "elapsed_ms": 7,
+          "detail": ""
+        },
+        {
+          "nome": "portal_nao_le_processos",
+          "tipo": "negativo",
+          "actor": "portal",
+          "method": "GET",
+          "path": "/api/processes",
+          "status": "PASS",
+          "status_code": 403,
+          "expected": [
+            403
+          ],
+          "elapsed_ms": 1,
+          "detail": ""
+        }
+      ]
+    },
+    {
+      "id": "H06",
+      "titulo": "Intimação, prazo, tarefa, agenda",
+      "dimensao": "Prazos / Agenda",
+      "status": "PASS",
+      "manual": "Integração 'próxima ação' e saúde operacional do caso (gap conhecido do relatório).",
+      "passos": [
+        {
+          "nome": "listar_prazos",
+          "tipo": "happy",
+          "actor": "staff",
+          "method": "GET",
+          "path": "/api/deadlines/",
+          "status": "PASS",
+          "status_code": 200,
+          "expected": [
+            200,
+            404
+          ],
+          "elapsed_ms": 7,
+          "detail": ""
+        },
+        {
+          "nome": "listar_intimacoes",
+          "tipo": "happy",
+          "actor": "staff",
+          "method": "GET",
+          "path": "/api/intimacoes/",
+          "status": "PASS",
+          "status_code": 200,
+          "expected": [
+            200,
+            404
+          ],
+          "elapsed_ms": 6,
+          "detail": ""
+        },
+        {
+          "nome": "listar_tarefas",
+          "tipo": "happy",
+          "actor": "staff",
+          "method": "GET",
+          "path": "/api/tasks/",
+          "status": "PASS",
+          "status_code": 200,
+          "expected": [
+            200,
+            404
+          ],
+          "elapsed_ms": 6,
+          "detail": ""
+        },
+        {
+          "nome": "portal_nao_le_prazos",
+          "tipo": "negativo",
+          "actor": "portal",
+          "method": "GET",
+          "path": "/api/deadlines",
+          "status": "PASS",
+          "status_code": 403,
+          "expected": [
+            403
+          ],
+          "elapsed_ms": 1,
+          "detail": ""
+        }
+      ]
+    },
+    {
+      "id": "H07",
+      "titulo": "Prova, estratégia, tese, peça",
+      "dimensao": "IA jurídica / Protocolo",
+      "status": "PASS",
+      "manual": "Gate anti-alucinação de citações e qualidade jurídica por área (benchmark real, não --smoke). Peça NÃO sai pronta para protocolo sem base validada — comportamento correto.",
+      "passos": [
+        {
+          "nome": "listar_templates",
+          "tipo": "happy",
+          "actor": "staff",
+          "method": "GET",
+          "path": "/api/templates/",
+          "status": "PASS",
+          "status_code": 200,
+          "expected": [
+            200,
+            404
+          ],
+          "elapsed_ms": 8,
+          "detail": ""
+        },
+        {
+          "nome": "gerar_peca_ia",
+          "tipo": "resiliencia",
+          "actor": "staff",
+          "method": "GET",
+          "path": "/api/ia-saude/status",
+          "status": "BLOQUEADO",
+          "status_code": null,
+          "expected": [
+            200,
+            404,
+            503
+          ],
+          "elapsed_ms": null,
+          "detail": "capacidade ausente: ai"
+        },
+        {
+          "nome": "portal_nao_usa_rag",
+          "tipo": "negativo",
+          "actor": "portal",
+          "method": "GET",
+          "path": "/api/rag/buscar",
+          "status": "PASS",
+          "status_code": 403,
+          "expected": [
+            403
+          ],
+          "elapsed_ms": 1,
+          "detail": ""
+        }
+      ]
+    },
+    {
+      "id": "H08",
+      "titulo": "Audiência e atendimento",
+      "dimensao": "Relacionamento",
+      "status": "PASS",
+      "manual": "Continuidade ata → providências → timeline do caso.",
+      "passos": [
+        {
+          "nome": "listar_atendimentos",
+          "tipo": "happy",
+          "actor": "staff",
+          "method": "GET",
+          "path": "/api/atendimentos/",
+          "status": "PASS",
+          "status_code": 200,
+          "expected": [
+            200,
+            404
+          ],
+          "elapsed_ms": 13,
+          "detail": ""
+        },
+        {
+          "nome": "portal_nao_le_atendimentos_internos",
+          "tipo": "negativo",
+          "actor": "portal",
+          "method": "GET",
+          "path": "/api/atendimentos",
+          "status": "PASS",
+          "status_code": 403,
+          "expected": [
+            403
+          ],
+          "elapsed_ms": 1,
+          "detail": ""
+        }
+      ]
+    },
+    {
+      "id": "H09",
+      "titulo": "Honorários e pagamentos",
+      "dimensao": "Financeiro",
+      "status": "PASS",
+      "manual": "Parcelas, conciliação e cancelamento sem duplicar lançamento (idempotência da baixa).",
+      "passos": [
+        {
+          "nome": "listar_honorarios",
+          "tipo": "happy",
+          "actor": "staff",
+          "method": "GET",
+          "path": "/api/fees/",
+          "status": "PASS",
+          "status_code": 200,
+          "expected": [
+            200
+          ],
+          "elapsed_ms": 6,
+          "detail": ""
+        },
+        {
+          "nome": "portal_ve_proprio_financeiro",
+          "tipo": "happy",
+          "actor": "portal",
+          "method": "GET",
+          "path": "/api/portal/financeiro",
+          "status": "PASS",
+          "status_code": 200,
+          "expected": [
+            200
+          ],
+          "elapsed_ms": 6,
+          "detail": ""
+        },
+        {
+          "nome": "portal_nao_le_fees_globais",
+          "tipo": "negativo",
+          "actor": "portal",
+          "method": "GET",
+          "path": "/api/fees",
+          "status": "PASS",
+          "status_code": 403,
+          "expected": [
+            403
+          ],
+          "elapsed_ms": 1,
+          "detail": ""
+        }
+      ]
+    },
+    {
+      "id": "H10",
+      "titulo": "Raio-X e conversão",
+      "dimensao": "IA / Pré-caso",
+      "status": "PASS",
+      "manual": "",
+      "passos": [
+        {
+          "nome": "raio_x_disponivel",
+          "tipo": "happy",
+          "actor": "staff",
+          "method": "GET",
+          "path": "/api/raio-x/",
+          "status": "PASS",
+          "status_code": 200,
+          "expected": [
+            200,
+            404
+          ],
+          "elapsed_ms": 7,
+          "detail": ""
+        },
+        {
+          "nome": "conversao_sem_duplicar",
+          "tipo": "idempotencia",
+          "actor": "staff",
+          "method": "GET",
+          "path": "/api/ia-saude/status",
+          "status": "BLOQUEADO",
+          "status_code": null,
+          "expected": [
+            200,
+            404,
+            503
+          ],
+          "elapsed_ms": null,
+          "detail": "capacidade ausente: ai"
+        },
+        {
+          "nome": "portal_nao_usa_raio_x",
+          "tipo": "negativo",
+          "actor": "portal",
+          "method": "GET",
+          "path": "/api/raio-x/",
+          "status": "PASS",
+          "status_code": 403,
+          "expected": [
+            403
+          ],
+          "elapsed_ms": 1,
+          "detail": ""
+        }
+      ]
+    },
+    {
+      "id": "H11",
+      "titulo": "DataJud e impacto cognitivo",
+      "dimensao": "Integração externa",
+      "status": "PASS",
+      "manual": "Indisponibilidade da fonte, dedup de andamentos e impacto cognitivo controlado (nunca prazo fatal automático).",
+      "passos": [
+        {
+          "nome": "datajud_degrada_gracioso",
+          "tipo": "resiliencia",
+          "actor": "staff",
+          "method": "GET",
+          "path": "/api/datajud/health",
+          "status": "PASS",
+          "status_code": 404,
+          "expected": [
+            200,
+            404,
+            405,
+            503
+          ],
+          "elapsed_ms": 6,
+          "detail": ""
+        },
+        {
+          "nome": "portal_nao_usa_datajud",
+          "tipo": "negativo",
+          "actor": "portal",
+          "method": "GET",
+          "path": "/api/datajud/health",
+          "status": "PASS",
+          "status_code": 403,
+          "expected": [
+            403
+          ],
+          "elapsed_ms": 1,
+          "detail": ""
+        }
+      ]
+    },
+    {
+      "id": "H12",
+      "titulo": "Portal do cliente (IDOR/segregação)",
+      "dimensao": "Segurança / Portal",
+      "status": "PASS",
+      "manual": "",
+      "passos": [
+        {
+          "nome": "portal_ve_proprios_casos",
+          "tipo": "happy",
+          "actor": "portal",
+          "method": "GET",
+          "path": "/api/portal/meus-casos",
+          "status": "PASS",
+          "status_code": 200,
+          "expected": [
+            200
+          ],
+          "elapsed_ms": 5,
+          "detail": ""
+        },
+        {
+          "nome": "portal_bloqueado_em_cases",
+          "tipo": "negativo",
+          "actor": "portal",
+          "method": "GET",
+          "path": "/api/cases",
+          "status": "PASS",
+          "status_code": 403,
+          "expected": [
+            403
+          ],
+          "elapsed_ms": 1,
+          "detail": ""
+        },
+        {
+          "nome": "portal_bloqueado_em_clients",
+          "tipo": "negativo",
+          "actor": "portal",
+          "method": "GET",
+          "path": "/api/clients",
+          "status": "PASS",
+          "status_code": 403,
+          "expected": [
+            403
+          ],
+          "elapsed_ms": 1,
+          "detail": ""
+        },
+        {
+          "nome": "anon_nao_entra_no_portal",
+          "tipo": "negativo",
+          "actor": "anon",
+          "method": "GET",
+          "path": "/api/portal/meus-casos",
+          "status": "PASS",
+          "status_code": 401,
+          "expected": [
+            401
+          ],
+          "elapsed_ms": 1,
+          "detail": ""
+        }
+      ]
+    },
+    {
+      "id": "H13",
+      "titulo": "Backup e restauração",
+      "dimensao": "Continuidade",
+      "status": "BLOQUEADO",
+      "manual": "NÃO exercitável por HTTP. Rodar o RUNBOOK_ROTINA_BACKUP_DIARIA_GDRIVE.md ponta a ponta: pg_dump+uploads cifrados → Google Drive → download → descriptografia → pg_restore → boot restaurado; medir RPO/RTO. scripts/backup.sh + restore.",
+      "passos": []
+    },
+    {
+      "id": "H14",
+      "titulo": "Deploy e rollback",
+      "dimensao": "Continuidade",
+      "status": "BLOQUEADO",
+      "manual": "NÃO exercitável por HTTP. Validar scripts/deploy_vps_safe.sh (backup→build→health-poll→migrations→rollback automático) e um rollback REAL: código antigo × banco migrado × arquivos persistidos. RUNBOOK_DEPLOY_FASES_1-3.md.",
+      "passos": []
+    },
+    {
+      "id": "H15",
+      "titulo": "Usabilidade e desempenho",
+      "dimensao": "UX / Performance",
+      "status": "PASS",
+      "manual": "Usabilidade formal (fluxos jurídicos no navegador) e desempenho sob carga: validação manual/observabilidade.",
+      "passos": [
+        {
+          "nome": "health_rapido",
+          "tipo": "happy",
+          "actor": "anon",
+          "method": "GET",
+          "path": "/api/health",
+          "status": "PASS",
+          "status_code": 200,
+          "expected": [
+            200
+          ],
+          "elapsed_ms": 4,
+          "detail": ""
+        },
+        {
+          "nome": "listagem_clientes_rapida",
+          "tipo": "happy",
+          "actor": "staff",
+          "method": "GET",
+          "path": "/api/clients/",
+          "status": "PASS",
+          "status_code": 200,
+          "expected": [
+            200
+          ],
+          "elapsed_ms": 7,
+          "detail": ""
+        },
+        {
+          "nome": "protegido_rejeita_rapido",
+          "tipo": "negativo",
+          "actor": "anon",
+          "method": "GET",
+          "path": "/api/clients/",
+          "status": "PASS",
+          "status_code": 401,
+          "expected": [
+            401
+          ],
+          "elapsed_ms": 1,
+          "detail": ""
+        }
+      ]
+    }
+  ]
+}
