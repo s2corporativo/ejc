@@ -1,4 +1,4 @@
-# ── app/core/auth_middleware.py ───────────────────────────────────────────────
+# ── app/core/auth_middleware.py ────────────────────────────────────────────────
 # Middleware GLOBAL de autenticação JWT.
 from __future__ import annotations
 
@@ -65,6 +65,19 @@ def _is_publica(path: str) -> bool:
     return any(_path_casa_prefixo_publico(path, p) for p in PREFIXOS_PUBLICOS)
 
 
+def _totp_management_temporarily_disabled(path: str) -> bool:
+    """Bloqueia alteração de TOTP enquanto a política global estiver desligada.
+
+    O login deixa de exigir o segundo fator, mas os endpoints de setup, ativação
+    e desativação não podem sobrescrever ou apagar o segredo preservado durante
+    a janela temporária. A normalização cobre igualmente rotas `/api/v1`.
+    """
+    path = _api_path_interno(path)
+    return not two_factor_enabled() and _path_casa_prefixo_publico(
+        path, "/api/auth/totp"
+    )
+
+
 class AuthMiddleware(BaseHTTPMiddleware):
     """Valida JWT globalmente e aplica isolamento adicional do portal."""
 
@@ -108,6 +121,18 @@ class AuthMiddleware(BaseHTTPMiddleware):
                         "must_change_password": True,
                     },
                 )
+
+        if _totp_management_temporarily_disabled(path):
+            return JSONResponse(
+                status_code=409,
+                content={
+                    "detail": (
+                        "A configuração do 2FA está temporariamente suspensa. "
+                        "O autenticador já cadastrado foi preservado."
+                    ),
+                    "two_factor_temporarily_disabled": True,
+                },
+            )
 
         # Tokens emitidos antes da desativação podem conter o claim abaixo. A
         # política global tem precedência, evitando que sessões antigas permaneçam
