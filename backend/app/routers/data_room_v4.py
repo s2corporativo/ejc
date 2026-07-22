@@ -1,28 +1,26 @@
-"""
-Módulo legado de Data Room Jurídico Corporativo (v4).
+"""Compatibilidade temporária do antigo Data Room v4.
 
-Mantido temporariamente por compatibilidade enquanto os dados são consolidados
-em /api/data-rooms. A superfície legado recebe os mesmos controles de carteira
-do domínio canônico e não pode ser usada para contornar ownership.
+A URL `/data-room-v4` permanece para favoritos e integrações históricas, mas
+toda nova leitura e escrita é executada pelo domínio canônico `data_rooms`.
+A tabela `dataroom_salas` fica somente como origem histórica do backfill da
+migration 114, sem receber novas gravações.
 """
 from __future__ import annotations
 
-from datetime import datetime, timedelta, timezone
-from typing import List, Optional
-from uuid import uuid4
+from datetime import datetime
+from typing import Optional
 
-from fastapi import APIRouter, Depends, HTTPException, Response
+from fastapi import APIRouter, Depends, Response
 from pydantic import BaseModel, ConfigDict, Field
-from sqlalchemy import Boolean, Column, DateTime, String, Text, func, select
+from sqlalchemy import Boolean, Column, DateTime, String, Text, func
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.database import Base, get_db
-from app.core.ownership import is_gestao
-from app.core.security import ROLE_LEVEL, get_current_user
-from app.models.client import Client
+from app.core.security import get_current_user
 from app.models.user import User
 
 
+# Mantido no metadata até exclusão física posterior a telemetria e homologação.
 class DataRoomSala(Base):
     __tablename__ = "dataroom_salas"
 
@@ -36,7 +34,7 @@ class DataRoomSala(Base):
 
 
 class SalaCreate(BaseModel):
-    nome: str = Field(min_length=3, max_length=255)
+    nome: str = Field(min_length=3, max_length=200)
     descricao: Optional[str] = Field(default=None, max_length=4000)
     client_id: Optional[str] = None
     expira_dias: Optional[int] = Field(default=30, ge=1, le=365)
@@ -52,52 +50,29 @@ class SalaResponse(BaseModel):
 
 router = APIRouter(
     prefix="/data-room-v4",
-    tags=["Data Room Jurídico — legado"],
+    tags=["Data Room Jurídico — compatibilidade"],
+    deprecated=True,
 )
 
 
-def _pode_editar(cu: User) -> bool:
-    return ROLE_LEVEL.get(cu.role.value, 0) >= ROLE_LEVEL["advogado"]
+def _headers_deprecacao(response: Response) -> None:
+    response.headers["Deprecation"] = "true"
+    response.headers["Link"] = '</api/data-rooms>; rel="successor-version"'
 
 
-def _ids_clientes_visiveis(cu: User):
-    """Reusa a regra canônica de carteira sem duplicar a política."""
-    from app.routers.data_room import _ids_clientes_visiveis as _canonico
-
-    return _canonico(cu)
-
-
-async def _validar_cliente_v4(
-    db: AsyncSession,
-    cu: User,
-    client_id: str | None,
-) -> None:
-    """Impede criação de sala legado para cliente de outra carteira."""
-    if is_gestao(cu):
-        return
-    if not client_id:
-        raise HTTPException(
-            422,
-            "Na rota legado, informe um cliente da sua carteira",
-        )
-
-    from app.routers.clients import _pode_ver_cliente
-
-    cli = (
-        await db.execute(
-            select(Client).where(
-                Client.id == client_id,
-                Client.deleted_at.is_(None),
-            )
-        )
-    ).scalar_one_or_none()
-    if cli is None or not await _pode_ver_cliente(cu, cli, db):
-        raise HTTPException(404, "Cliente não encontrado")
+def _compat(room: dict) -> dict:
+    return {
+        "id": room["id"],
+        "nome": room["nome"],
+        # A expiração agora pertence ao link externo, não à sala canônica.
+        "expira_em": None,
+    }
 
 
 @router.post(
     "/",
     response_model=SalaResponse,
+    status_code=201,
     deprecated=True,
 )
 async def criar_sala(
@@ -106,34 +81,33 @@ async def criar_sala(
     db: AsyncSession = Depends(get_db),
     cu: User = Depends(get_current_user),
 ):
-    if not _pode_editar(cu):
-        raise HTTPException(403, "Sem permissão para criar data rooms")
+    """Cria a sala no domínio canônico, sem dupla escrita na tabela v4."""
+    from app.routers.data_room import DataRoomIn, criar_data_room
 
-    await _validar_cliente_v4(db, cu, payload.client_id)
-    expira = (
-        datetime.now(timezone.utc) + timedelta(days=payload.expira_dias)
-        if payload.expira_dias
-        else None
-    )
-    sala = DataRoomSala(
-        id=str(uuid4()),
-        nome=payload.nome,
-        descricao=payload.descricao,
-        client_id=payload.client_id,
-        expira_em=expira,
-    )
-    db.add(sala)
-    await db.commit()
-    await db.refresh(sala)
+    descricao = payload.descricao
+    if payload.expira_dias:
+        aviso = (
+            f"Prazo solicitado na API v4: {payload.expira_dias} dia(s). "
+            "No domínio canônico, a expiração é definida no link externo."
+        )
+        descricao = f"{descricao}\n{aviso}" if descricao else aviso
 
-    response.headers["Deprecation"] = "true"
-    response.headers["Link"] = '</api/data-rooms>; rel="successor-version"'
-    return sala
+    room = await criar_data_room(
+        DataRoomIn(
+            nome=payload.nome,
+            descricao=descricao,
+            client_id=payload.client_id,
+        ),
+        db=db,
+        cu=cu,
+    )
+    _headers_deprecacao(response)
+    return _compat(room)
 
 
 @router.get(
     "/",
-    response_model=List[SalaResponse],
+    response_model=list[SalaResponse],
     deprecated=True,
 )
 async def listar_salas(
@@ -141,18 +115,16 @@ async def listar_salas(
     db: AsyncSession = Depends(get_db),
     cu: User = Depends(get_current_user),
 ):
-    if not _pode_editar(cu):
-        raise HTTPException(403, "Sem permissão para listar data rooms")
+    """Lista somente salas canônicas visíveis pelas regras centrais de carteira."""
+    from app.routers.data_room import listar_data_rooms
 
-    q = select(DataRoomSala)
-    if not is_gestao(cu):
-        q = q.where(
-            DataRoomSala.client_id.is_not(None),
-            DataRoomSala.client_id.in_(_ids_clientes_visiveis(cu)),
-        )
-    q = q.order_by(DataRoomSala.created_at.desc())
-
-    response.headers["Deprecation"] = "true"
-    response.headers["Link"] = '</api/data-rooms>; rel="successor-version"'
-    res = await db.execute(q)
-    return res.scalars().all()
+    page = await listar_data_rooms(
+        case_id=None,
+        client_id=None,
+        page=1,
+        per_page=50,
+        db=db,
+        cu=cu,
+    )
+    _headers_deprecacao(response)
+    return [_compat(room) for room in page["items"]]
