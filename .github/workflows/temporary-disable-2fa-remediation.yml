@@ -109,54 +109,71 @@ jobs:
               'REQUIRE_2FA_ROLES=superadmin,admin,socio\n',
           )
 
+          test_content = '''"""Regressão do kill switch temporário de 2FA."""
+
+from app.core.config import Settings
+from app.routers import auth
+
+
+def test_2fa_desativado_por_default():
+    cfg = Settings(_env_file=None)
+    assert cfg.TWO_FACTOR_AUTH_ENABLED is False
+    assert cfg.require_2fa_roles_list == []
+
+
+def test_papel_nao_exige_2fa_quando_kill_switch_desligado(monkeypatch):
+    cfg = Settings(
+        _env_file=None,
+        TWO_FACTOR_AUTH_ENABLED=False,
+        REQUIRE_2FA_ROLES="superadmin,admin,socio",
+    )
+    monkeypatch.setattr(auth, "settings", cfg)
+    assert auth._papel_exige_2fa("superadmin") is False
+
+
+def test_reativacao_preserva_politica_por_papel(monkeypatch):
+    cfg = Settings(
+        _env_file=None,
+        TWO_FACTOR_AUTH_ENABLED=True,
+        REQUIRE_2FA_ROLES="superadmin,socio",
+    )
+    monkeypatch.setattr(auth, "settings", cfg)
+    assert auth._papel_exige_2fa("superadmin") is True
+    assert auth._papel_exige_2fa("advogado") is False
+'''
           Path("backend/tests/test_2fa_temporarily_disabled.py").write_text(
-              '''"""Regressão do kill switch temporário de 2FA."""\n\n'
-              'from app.core.config import Settings\n'
-              'from app.routers import auth\n\n\n'
-              'def test_2fa_desativado_por_default():\n'
-              '    cfg = Settings(_env_file=None)\n'
-              '    assert cfg.TWO_FACTOR_AUTH_ENABLED is False\n'
-              '    assert cfg.require_2fa_roles_list == []\n\n\n'
-              'def test_papel_nao_exige_2fa_quando_kill_switch_desligado(monkeypatch):\n'
-              '    cfg = Settings(\n'
-              '        _env_file=None,\n'
-              '        TWO_FACTOR_AUTH_ENABLED=False,\n'
-              '        REQUIRE_2FA_ROLES="superadmin,admin,socio",\n'
-              '    )\n'
-              '    monkeypatch.setattr(auth, "settings", cfg)\n'
-              '    assert auth._papel_exige_2fa("superadmin") is False\n\n\n'
-              'def test_reativacao_preserva_politica_por_papel(monkeypatch):\n'
-              '    cfg = Settings(\n'
-              '        _env_file=None,\n'
-              '        TWO_FACTOR_AUTH_ENABLED=True,\n'
-              '        REQUIRE_2FA_ROLES="superadmin,socio",\n'
-              '    )\n'
-              '    monkeypatch.setattr(auth, "settings", cfg)\n'
-              '    assert auth._papel_exige_2fa("superadmin") is True\n'
-              '    assert auth._papel_exige_2fa("advogado") is False\n'
-              ''',
+              test_content,
               encoding="utf-8",
           )
 
+          documentation = '''# Desativação temporária do 2FA
+
+## Estado
+
+O 2FA está temporariamente desativado por `TWO_FACTOR_AUTH_ENABLED=false`.
+A desativação alcança login, renovação de sessão e o gate do middleware.
+
+## Preservação de dados
+
+Nenhum segredo TOTP é apagado e nenhuma migration é necessária. Contas que
+já possuíam autenticador configurado poderão voltar a utilizá-lo quando o
+kill switch for reativado.
+
+## Reativação
+
+1. Definir `TWO_FACTOR_AUTH_ENABLED=true` no ambiente de produção.
+2. Revisar `REQUIRE_2FA_ROLES`.
+3. Reiniciar o backend.
+4. Executar os testes de autenticação e homologar login/refresh/logout.
+
+## Risco aceito
+
+Enquanto desativado, a proteção depende de senha forte, rate limit, rotação
+de refresh token, detecção de replay e trilha de auditoria. A decisão deve
+ser reavaliada antes do go-live definitivo.
+'''
           Path("docs/SECURITY_2FA_TEMPORARY_DISABLE.md").write_text(
-              '''# Desativação temporária do 2FA\n\n'
-              '## Estado\n\n'
-              'O 2FA está temporariamente desativado por `TWO_FACTOR_AUTH_ENABLED=false`.\n'
-              'A desativação alcança login, renovação de sessão e o gate do middleware.\n\n'
-              '## Preservação de dados\n\n'
-              'Nenhum segredo TOTP é apagado e nenhuma migration é necessária. Contas que\n'
-              'já possuíam autenticador configurado poderão voltar a utilizá-lo quando o\n'
-              'kill switch for reativado.\n\n'
-              '## Reativação\n\n'
-              '1. Definir `TWO_FACTOR_AUTH_ENABLED=true` no ambiente de produção.\n'
-              '2. Revisar `REQUIRE_2FA_ROLES`.\n'
-              '3. Reiniciar o backend.\n'
-              '4. Executar os testes de autenticação e homologar login/refresh/logout.\n\n'
-              '## Risco aceito\n\n'
-              'Enquanto desativado, a proteção depende de senha forte, rate limit, rotação\n'
-              'de refresh token, detecção de replay e trilha de auditoria. A decisão deve\n'
-              'ser reavaliada antes do go-live definitivo.\n'
-              ''',
+              documentation,
               encoding="utf-8",
           )
           PY
