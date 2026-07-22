@@ -203,6 +203,13 @@ class Settings(BaseSettings):
     # Valor inválido/typo cai no modo SEGURO "bloquear" (ver politica_citacoes()):
     # um erro de config não pode rebaixar silenciosamente o gate antialucinação.
     CITACOES_POLITICA: str = "bloquear"
+    # Modo ESTRITO do gate (opt-in, default OFF). Com False (atual), uma súmula
+    # ou artigo CITADO mas AUSENTE da base curada fica só "identificada" (não
+    # bloqueia) — o gate barra erro estrutural, não invenção plausível. Com True,
+    # súmula/artigo citado e NÃO encontrado na base vira BLOQUEANTE (trata a
+    # ausência como suspeita). Ligue SÓ quando a base de conhecimento estiver
+    # abrangente (senão gera falso-positivo em citação real ainda não ingerida).
+    CITACOES_MODO_ESTRITO: bool = False
     # ── Modo Duas IAs (Fase 5 — validação adversarial) ────────────────────
     # True = peças de alta complexidade geradas pelo Núcleo de IA recebem uma
     # SEGUNDA passada por uma IA Crítica/Adversarial (advogado da parte

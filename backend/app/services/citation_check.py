@@ -2,8 +2,12 @@
 citation_check.py — Verificador anti-alucinação de citações (#46).
 
 Extrai súmulas e artigos citados num texto (peça/parecer gerado por IA) e
-confirma CADA UM contra o RAG (base oficial já ingerida: ~1.500 súmulas STF/STJ/TST
-+ códigos). Citações NÃO confirmadas são sinalizadas para verificação manual (OAB).
+confirma CADA UM contra o RAG (base oficial ingerida: súmulas conferidas
+STF/STJ/TST + legislação federal do Planalto; o VOLUME depende dos seeds e dos
+ingestores habilitados — ver base_juridica_seed.py e os ingestores opt-in em
+services/ingestors/). Citações NÃO confirmadas são sinalizadas para verificação
+manual (OAB); com CITACOES_MODO_ESTRITO=true, súmula/artigo ausente da base
+passa a BLOQUEAR.
 
 VERIFICAÇÃO = lookup EXATO (chave_origem / título), não busca semântica — porque
 verificar existência exige precisão, não similaridade. 100% local (sem IA externa).

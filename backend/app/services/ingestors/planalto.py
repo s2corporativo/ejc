@@ -77,6 +77,45 @@ CATALOGO: list[dict] = [
      "url": "https://www.planalto.gov.br/ccivil_03/leis/l9605.htm"},
     {"slug": "pnma", "titulo": "Política Nacional do Meio Ambiente (Lei 6.938/1981)", "area": "ambiental",
      "url": "https://www.planalto.gov.br/ccivil_03/leis/l6938.htm"},
+    # ── Ampliação de volume 2026 — diplomas federais core das áreas do escritório
+    # (todas URLs COMPILADAS/oficiais do planalto.gov.br, mesmos padrões acima).
+    # Bloco processual/administrativo
+    {"slug": "l14133", "titulo": "Lei de Licitações e Contratos Administrativos (Lei 14.133/2021)", "area": "administrativo",
+     "url": "https://www.planalto.gov.br/ccivil_03/_ato2019-2022/2021/lei/l14133.htm"},
+    {"slug": "l8429", "titulo": "Lei de Improbidade Administrativa (Lei 8.429/1992)", "area": "administrativo",
+     "url": "https://www.planalto.gov.br/ccivil_03/leis/l8429.htm"},
+    {"slug": "l12846", "titulo": "Lei Anticorrupção (Lei 12.846/2013)", "area": "administrativo",
+     "url": "https://www.planalto.gov.br/ccivil_03/_ato2011-2014/2013/lei/l12846.htm"},
+    {"slug": "l12016", "titulo": "Lei do Mandado de Segurança (Lei 12.016/2009)", "area": "processual_civil",
+     "url": "https://www.planalto.gov.br/ccivil_03/_ato2007-2010/2009/lei/l12016.htm"},
+    # Bloco cível/família
+    {"slug": "lindb", "titulo": "Lei de Introdução às Normas do Direito Brasileiro (DL 4.657/1942)", "area": "civil",
+     "url": "https://www.planalto.gov.br/ccivil_03/decreto-lei/del4657compilado.htm"},
+    {"slug": "l8245", "titulo": "Lei de Locações / Inquilinato (Lei 8.245/1991)", "area": "civil",
+     "url": "https://www.planalto.gov.br/ccivil_03/leis/l8245.htm"},
+    {"slug": "l13146", "titulo": "Estatuto da Pessoa com Deficiência (Lei 13.146/2015)", "area": "civil",
+     "url": "https://www.planalto.gov.br/ccivil_03/_ato2015-2018/2015/lei/l13146.htm"},
+    {"slug": "l5478", "titulo": "Lei de Alimentos (Lei 5.478/1968)", "area": "familia",
+     "url": "https://www.planalto.gov.br/ccivil_03/leis/l5478.htm"},
+    # Bloco penal
+    {"slug": "maria_penha", "titulo": "Lei Maria da Penha (Lei 11.340/2006)", "area": "penal",
+     "url": "https://www.planalto.gov.br/ccivil_03/_ato2004-2006/2006/lei/l11340.htm"},
+    {"slug": "l11343", "titulo": "Lei de Drogas (Lei 11.343/2006)", "area": "penal",
+     "url": "https://www.planalto.gov.br/ccivil_03/_ato2004-2006/2006/lei/l11343.htm"},
+    {"slug": "lep", "titulo": "Lei de Execução Penal (Lei 7.210/1984)", "area": "penal",
+     "url": "https://www.planalto.gov.br/ccivil_03/leis/l7210.htm"},
+    # Bloco empresarial/previdenciário
+    {"slug": "l11101", "titulo": "Lei de Recuperação Judicial e Falências (Lei 11.101/2005)", "area": "empresarial",
+     "url": "https://www.planalto.gov.br/ccivil_03/_ato2004-2006/2005/lei/l11101.htm"},
+    {"slug": "lcp123", "titulo": "Estatuto Nacional da ME e EPP / Simples Nacional (LC 123/2006)", "area": "empresarial",
+     "url": "https://www.planalto.gov.br/ccivil_03/leis/lcp/lcp123.htm"},
+    {"slug": "l8213", "titulo": "Planos de Benefícios da Previdência Social (Lei 8.213/1991)", "area": "previdenciario",
+     "url": "https://www.planalto.gov.br/ccivil_03/leis/l8213cons.htm"},
+    # Bloco advocacia/trânsito
+    {"slug": "l8906", "titulo": "Estatuto da Advocacia e da OAB (Lei 8.906/1994)", "area": "administrativo",
+     "url": "https://www.planalto.gov.br/ccivil_03/leis/l8906.htm"},
+    {"slug": "ctb", "titulo": "Código de Trânsito Brasileiro (Lei 9.503/1997)", "area": "transito",
+     "url": "https://www.planalto.gov.br/ccivil_03/leis/l9503compilado.htm"},
 ]
 
 

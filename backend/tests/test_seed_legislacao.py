@@ -191,9 +191,13 @@ def test_artigos_curtos_agrupados_enumeram_todos_no_header():
 def test_catalogo_unificado_planalto_sem_duplicatas():
     slugs = [l["slug"] for l in CATALOGO]
     assert len(slugs) == len(set(slugs))
-    # 9 códigos legados do ingestor (chaves de produção) + 5 leis novas do seed
+    # 14 originais (9 chaves de produção do ingestor + 5 leis do seed) + 16
+    # diplomas core adicionados no follow-up de ampliação de volume da base.
     assert {"cf88", "cc", "cpc", "clt", "cdc", "cp", "cpp", "eca", "ctn",
-            "l9099", "lgpd", "cflo", "lca", "pnma"} == set(slugs)
+            "l9099", "lgpd", "cflo", "lca", "pnma",
+            "l14133", "l8429", "l12846", "l12016", "lindb", "l8245", "l13146",
+            "l5478", "maria_penha", "l11343", "lep", "l11101", "lcp123",
+            "l8213", "l8906", "ctb"} == set(slugs)
     for lei in CATALOGO:
         assert lei["url"].startswith("https://www.planalto.gov.br/ccivil_03/"), lei["slug"]
         assert lei["titulo"] and lei["area"], lei["slug"]
