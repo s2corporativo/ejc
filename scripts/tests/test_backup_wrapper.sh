@@ -60,8 +60,18 @@ run_case() {
   [ "$rc" -eq "$expected" ] || fail "rc=$rc, esperado $expected"
   grep -q '^ps --format {{.Names}}$' "$LOG" || fail "container não foi verificado"
   grep -q "$expected_command" "$LOG" || fail "runner esperado não foi chamado"
-  grep -q 'from app.services.backup_service import executar_backup' "$TMP/stdin.py" || \
-    fail "wrapper não delegou ao backup_service"
+  grep -q 'from app.services import backup_service' "$TMP/stdin.py" || \
+    fail "wrapper não delegou ao módulo canônico backup_service"
+  grep -q 'configuracao_status' "$TMP/stdin.py" || \
+    fail "configuração não é validada antes do backup"
+  grep -q 'credencial_dedicada_configurada' "$TMP/stdin.py" || \
+    fail "identidade dedicada não é obrigatória"
+  grep -q 'auth_mode == "inherit"' "$TMP/stdin.py" || \
+    fail "modo inherit não é bloqueado"
+  config_line="$(grep -n 'configuracao_status' "$TMP/stdin.py" | head -1 | cut -d: -f1)"
+  execute_line="$(grep -n 'executar_backup' "$TMP/stdin.py" | head -1 | cut -d: -f1)"
+  [ "$config_line" -lt "$execute_line" ] || \
+    fail "backup é iniciado antes do gate de configuração"
   grep -q 'status.*sucesso' "$TMP/stdin.py" || fail "status integral não é exigido"
   grep -q '_db.dump.enc' "$TMP/stdin.py" || fail "artefato do banco não é exigido"
   grep -q '_uploads.tar.gz.enc' "$TMP/stdin.py" || fail "artefato de uploads não é exigido"
@@ -85,4 +95,4 @@ if grep -Eq \
 fi
 
 bash -n "$ROOT/scripts/backup.sh"
-echo "[backup-wrapper-test] OK — serviço cifrado funciona com backend saudável ou parado."
+echo "[backup-wrapper-test] OK — backup cifrado exige identidade dedicada e funciona com backend saudável ou parado."
