@@ -14,10 +14,19 @@ import json
 import os
 from typing import Any
 
-from google.auth.transport.requests import Request
-from google.oauth2 import credentials as user_credentials
-from google.oauth2 import service_account
-from googleapiclient.discovery import build
+# google-api-python-client é SDK opcional (backup no Drive = opt-in, default OFF).
+# Import resiliente (mesmo padrão de google_drive_service.py) para não derrubar o
+# import de app.main quando a lib estiver ausente; build_credentials() falha
+# graciosamente só quando efetivamente chamado sem o SDK instalado.
+try:
+    from google.auth.transport.requests import Request
+    from google.oauth2 import credentials as user_credentials
+    from google.oauth2 import service_account
+    from googleapiclient.discovery import build
+    _GOOGLE_SDK_OK = True
+except ImportError:  # pragma: no cover
+    Request = user_credentials = service_account = build = None  # type: ignore
+    _GOOGLE_SDK_OK = False
 
 DRIVE_WRITE_SCOPE = "https://www.googleapis.com/auth/drive"
 GOOGLE_TOKEN_URI = "https://oauth2.googleapis.com/token"
@@ -178,6 +187,11 @@ def build_credentials():
     ``service_account`` e ``oauth`` são fail-closed: não caem para outra fonte.
     ``inherit`` preserva deliberadamente o comportamento legado.
     """
+    if not _GOOGLE_SDK_OK:
+        raise RuntimeError(
+            "google-api-python-client não instalado. "
+            "Execute: pip install google-api-python-client"
+        )
     mode = auth_mode()
     if mode in {"auto", "service_account"}:
         creds = _service_account_dedicated()

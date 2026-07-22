@@ -18,12 +18,23 @@ from dataclasses import dataclass
 from datetime import datetime, timezone
 from typing import Any
 
-from google.auth.transport.requests import Request
-from google.oauth2 import credentials as user_credentials
-from google.oauth2 import service_account
-from googleapiclient.discovery import build
-from googleapiclient.errors import HttpError
-from googleapiclient.http import MediaIoBaseDownload
+# google-api-python-client é SDK opcional (integração Drive = opt-in, default OFF).
+# Mantém-se importável mesmo ausente (mesmo espírito do try/except de
+# app/services/dossie_service.py) — quem exige o SDK é get_drive_client(), que
+# falha graciosamente só quando efetivamente chamado sem a lib instalada.
+try:
+    from google.auth.transport.requests import Request
+    from google.oauth2 import credentials as user_credentials
+    from google.oauth2 import service_account
+    from googleapiclient.discovery import build
+    from googleapiclient.errors import HttpError
+    from googleapiclient.http import MediaIoBaseDownload
+    _GOOGLE_SDK_OK = True
+except ImportError:  # pragma: no cover
+    Request = user_credentials = service_account = build = MediaIoBaseDownload = None  # type: ignore
+    HttpError = Exception  # type: ignore  # placeholder: bloco except só é alcançável com o SDK presente
+    _GOOGLE_SDK_OK = False
+
 from sqlalchemy import text as sqltext
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -265,6 +276,11 @@ def _build_credentials():
 
 
 def get_drive_client():
+    if not _GOOGLE_SDK_OK:
+        raise RuntimeError(
+            "google-api-python-client não instalado. "
+            "Execute: pip install google-api-python-client"
+        )
     creds = _build_credentials()
     return build("drive", "v3", credentials=creds, cache_discovery=False)
 

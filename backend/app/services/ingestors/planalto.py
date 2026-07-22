@@ -31,7 +31,9 @@ import logging
 import re
 from pathlib import Path
 
-from bs4 import BeautifulSoup
+# bs4/lxml são SDKs opcionais (ingestão HTML do Planalto = job opt-in do
+# scheduler). Import lazy dentro de extrair_texto_planalto() — mesmo padrão do
+# import de `normalizar` logo abaixo — para não derrubar o import de app.main.
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -191,6 +193,11 @@ def extrair_texto_planalto(html: str) -> str:
     - Remove linhas de navegação conhecidas; NÃO reescreve o texto legal.
     """
     from app.services.ingestion_service import normalizar
+
+    try:
+        from bs4 import BeautifulSoup
+    except ImportError:
+        raise RuntimeError("beautifulsoup4/lxml não instalados. Execute: pip install beautifulsoup4 lxml")
 
     soup = BeautifulSoup(html, "lxml")
     for tag in soup(["script", "style"]):

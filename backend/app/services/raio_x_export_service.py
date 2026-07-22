@@ -5,10 +5,10 @@ import io
 import json
 from typing import Any
 
-from docx import Document as DocxDocument
-from docx.enum.text import WD_ALIGN_PARAGRAPH
-from docx.shared import Pt
-from fpdf import FPDF
+# python-docx e fpdf2 são SDKs opcionais (default OFF, degradam graciosamente):
+# o import fica lazy dentro das funções que geram os arquivos — mesmo padrão de
+# app/services/docx_service.py — para que a AUSÊNCIA da lib não derrube o import
+# de app.main. A falha, quando ocorre, é só na chamada efetiva de exportação.
 
 
 def _text(value: Any) -> str:
@@ -29,6 +29,13 @@ def _items(report: dict[str, Any], key: str) -> list[Any]:
 
 
 def gerar_docx(titulo: str, report: dict[str, Any]) -> bytes:
+    try:
+        from docx import Document as DocxDocument
+        from docx.enum.text import WD_ALIGN_PARAGRAPH
+        from docx.shared import Pt
+    except ImportError:
+        raise RuntimeError("python-docx não instalado. Execute: pip install python-docx")
+
     document = DocxDocument()
     styles = document.styles
     styles["Normal"].font.name = "Arial"
@@ -84,24 +91,28 @@ def gerar_docx(titulo: str, report: dict[str, Any]) -> bytes:
     return output.getvalue()
 
 
-class _Pdf(FPDF):
-    def header(self):
-        self.set_font("Helvetica", "B", 13)
-        self.cell(0, 8, "RAIO-X DO PROCESSO", align="C", new_x="LMARGIN", new_y="NEXT")
-        self.ln(2)
-
-    def footer(self):
-        self.set_y(-14)
-        self.set_font("Helvetica", size=8)
-        self.cell(0, 8, f"EJC · página {self.page_no()}", align="C")
-
-
 def _pdf_text(value: Any) -> str:
     # Fontes core do FPDF não suportam todos os caracteres; substituição segura.
     return _text(value).encode("latin-1", "replace").decode("latin-1")
 
 
 def gerar_pdf(titulo: str, report: dict[str, Any]) -> bytes:
+    try:
+        from fpdf import FPDF
+    except ImportError:
+        raise RuntimeError("fpdf2 não instalado. Execute: pip install fpdf2")
+
+    class _Pdf(FPDF):
+        def header(self):
+            self.set_font("Helvetica", "B", 13)
+            self.cell(0, 8, "RAIO-X DO PROCESSO", align="C", new_x="LMARGIN", new_y="NEXT")
+            self.ln(2)
+
+        def footer(self):
+            self.set_y(-14)
+            self.set_font("Helvetica", size=8)
+            self.cell(0, 8, f"EJC · página {self.page_no()}", align="C")
+
     pdf = _Pdf()
     pdf.set_auto_page_break(auto=True, margin=16)
     pdf.add_page()
