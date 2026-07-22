@@ -3,9 +3,7 @@
 #
 # O fluxo legado de pg_dump/tar + rclone em claro foi removido. Banco, uploads e
 # documentos contêm PII e não podem sair da VPS nem permanecer em retenção local
-# sem criptografia. A implementação canônica vive em backup_service.py: gera o
-# dump e o pacote de uploads, cifra ambos com Fernet antes do envio, usa a
-# credencial de backup e persiste estado/auditoria.
+# sem criptografia. A implementação canônica vive em backup_service.py.
 set -euo pipefail
 
 APP_DIR="${APP_DIR:-/opt/ejc}"
@@ -40,7 +38,7 @@ import asyncio
 import json
 
 from app.core.database import AsyncSessionLocal
-from app.services.backup_service import executar_backup
+from app.services import backup_service
 
 
 def _safe_artifact(item: dict) -> dict:
@@ -52,8 +50,39 @@ def _safe_artifact(item: dict) -> dict:
 
 
 async def main() -> int:
+    config = backup_service.configuracao_status()
+    auth_mode = str(config.get("auth_mode") or "")
+    problems: list[str] = []
+    required = {
+        "enabled": "agendamento desabilitado",
+        "chave_configurada": "chave de criptografia ausente",
+        "pasta_configurada": "pasta de destino ausente",
+        "credencial_dedicada_configurada": "credencial exclusiva ausente",
+        "pg_dump_disponivel": "pg_dump indisponível",
+    }
+    for field, message in required.items():
+        if not bool(config.get(field)):
+            problems.append(message)
+    if auth_mode == "inherit":
+        problems.append("modo inherit não atende à segregação de credenciais")
+
+    if problems:
+        print(
+            json.dumps(
+                {
+                    "ok": False,
+                    "status": "configuracao_insegura",
+                    "problemas": problems,
+                    "auth_mode": auth_mode or "indisponível",
+                },
+                ensure_ascii=False,
+                sort_keys=True,
+            )
+        )
+        return 1
+
     async with AsyncSessionLocal() as db:
-        result = await executar_backup(
+        result = await backup_service.executar_backup(
             db,
             origem="pre_deploy",
             usuario_id=None,
@@ -75,6 +104,8 @@ async def main() -> int:
         "duracao_segundos": result.get("duracao_segundos"),
         "banco_cifrado": has_db,
         "uploads_cifrados": has_uploads,
+        "credencial_dedicada": True,
+        "auth_mode": auth_mode,
     }
     print(json.dumps(safe, ensure_ascii=False, sort_keys=True))
     return 0 if complete else 1
