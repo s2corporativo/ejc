@@ -20,9 +20,7 @@ concurrency:
 jobs:
   p0-guard:
     name: P0 guard — conflitos e segredos
-    # Exceção transitória exclusivamente para o PR de remediação do 2FA quando
-    # o runner privado estiver indisponível. Demais branches continuam em ejc-vps.
-    runs-on: ${{ github.head_ref == 'codex/apply-temporary-2fa-disable-20260722' && 'ubuntu-latest' || 'ejc-vps' }}
+    runs-on: [self-hosted, ejc-vps]
     timeout-minutes: 10
     steps:
       - name: Checkout
