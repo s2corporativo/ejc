@@ -14,7 +14,7 @@ on:
       - "backend/app/**"
       - "backend/alembic/versions/**"
       - "frontend/src/**"
-      - ".github/workflows/architecture-inventory.yml"
+      - ".github/workflows/**"
   pull_request:
     paths:
       - "scripts/generate_architecture_inventory.py"
@@ -25,7 +25,7 @@ on:
       - "backend/app/**"
       - "backend/alembic/versions/**"
       - "frontend/src/**"
-      - ".github/workflows/architecture-inventory.yml"
+      - ".github/workflows/**"
 
 permissions:
   contents: read
