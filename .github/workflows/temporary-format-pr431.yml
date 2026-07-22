@@ -1,5 +1,6 @@
 name: Temporary Format PR 431
 
+# One-shot trigger: this workflow deletes itself after formatting the target file.
 on:
   push:
     branches:
