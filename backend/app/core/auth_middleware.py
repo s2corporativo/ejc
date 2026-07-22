@@ -12,6 +12,7 @@ from jwt.exceptions import InvalidTokenError as JWTError
 from starlette.middleware.base import BaseHTTPMiddleware
 
 from app.core.config import get_settings
+from app.core.two_factor_policy import two_factor_enabled
 
 logger = logging.getLogger(__name__)
 settings = get_settings()
@@ -108,8 +109,13 @@ class AuthMiddleware(BaseHTTPMiddleware):
                     },
                 )
 
-        if payload.get("two_factor_setup_required") and not payload.get(
-            "pwd_change_required"
+        # Tokens emitidos antes da desativação podem conter o claim abaixo. A
+        # política global tem precedência, evitando que sessões antigas permaneçam
+        # presas na tela de setup enquanto o 2FA estiver temporariamente desligado.
+        if (
+            two_factor_enabled()
+            and payload.get("two_factor_setup_required")
+            and not payload.get("pwd_change_required")
         ):
             liberados_2fa = (
                 "/api/auth/totp/setup",
