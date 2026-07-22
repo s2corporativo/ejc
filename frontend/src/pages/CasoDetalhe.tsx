@@ -33,6 +33,7 @@ import ProvasCaso from "../components/ProvasCaso";
 import DossieEstrategicoCaso from "../components/DossieEstrategicoCaso";
 import OrquestradorPanel from "../components/OrquestradorPanel";
 import CaseBreadcrumb from "../components/CaseBreadcrumb";
+import CaseNextActionPanel from "../components/CaseNextActionPanel";
 import { ConsultaProfundaTJMG } from "../components/Infosimples";
 import type { Case } from "../types";
 import {
@@ -641,6 +642,11 @@ function TabResumo({ caso }: { caso: Case }) {
           </button>
         </div>
       )}
+      <CaseNextActionPanel
+        caseId={caso.id}
+        responsibleId={caso.advogado_responsavel_id}
+        closed={casoEncerrado}
+      />
       <div className="flex gap-2 flex-wrap">
         <button
           onClick={analisarIA}
