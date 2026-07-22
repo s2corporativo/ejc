@@ -90,16 +90,14 @@ async def matriz_risco(
     db: AsyncSession = Depends(get_db),
     cu: User = Depends(get_current_user),
 ):
-    """Matriz Probabilidade × Impacto: probabilidade do risco cadastrado (ou
-    derivada do score de saúde), impacto do valor da causa, quadrante com
-    tratamento contábil conforme CPC 25. Determinístico, sem IA."""
-    case = await _obter_caso_visivel(db, cu, case_id)
+    """Matriz Probabilidade × Impacto conforme CPC 25.
 
-    # Score de saúde só é calculado quando necessário (risco não cadastrado)
-    score = None
-    if (case.risco or "").strip().lower() not in ("baixo", "medio", "alto"):
-        score = (await calcular_score_caso(db, case))["score"]
-    probabilidade, fonte = vl.derivar_probabilidade(case.risco, score)
+    A probabilidade só é posicionada quando o risco foi classificado
+    explicitamente. O índice de saúde operacional nunca é convertido em chance
+    de perda ou êxito.
+    """
+    case = await _obter_caso_visivel(db, cu, case_id)
+    probabilidade, fonte = vl.derivar_probabilidade(case.risco)
 
     valor_causa = float(case.valor_causa) if case.valor_causa is not None else None
     impacto = vl.classificar_impacto(valor_causa)
@@ -108,7 +106,11 @@ async def matriz_risco(
         "case_id": case_id,
         "probabilidade": {"nivel": probabilidade, "fonte": fonte},
         "impacto": {"nivel": impacto, "valor_causa": valor_causa},
-        "quadrante": vl.montar_quadrante(probabilidade, impacto),
+        "quadrante": (
+            vl.montar_quadrante(probabilidade, impacto)
+            if probabilidade is not None
+            else None
+        ),
         "matriz": vl.montar_matriz(),
     }
 
