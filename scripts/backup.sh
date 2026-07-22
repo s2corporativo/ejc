@@ -1,114 +1,115 @@
-#!/bin/bash
-# EJC — Backup diário: PostgreSQL + uploads/GED + envio ao Google Drive.
-# Cron: 0 2 * * * /opt/ejc/scripts/backup.sh >> /var/log/ejc_backup.log 2>&1
+#!/usr/bin/env bash
+# EJC — wrapper operacional do backup nativo cifrado.
+#
+# O fluxo legado de pg_dump/tar + rclone em claro foi removido. Banco, uploads e
+# documentos contêm PII e não podem sair da VPS nem permanecer em retenção local
+# sem criptografia. A implementação canônica vive em backup_service.py.
 set -euo pipefail
 
-# Fuso do Brasil nos nomes de arquivo e nos logs (auditoria/rastreabilidade):
-# antes usava o fuso do servidor (CEST na VPS), o que confundia a leitura dos
-# horários. Afeta só a formatação de datas — não o mtime nem a retenção.
-export TZ="America/Sao_Paulo"
+APP_DIR="${APP_DIR:-/opt/ejc}"
+APP_CONTAINER="${APP_CONTAINER:-ejc_backend}"
 
-BACKUP_DIR="/opt/ejc/backups"
-DB_CONTAINER="ejc_db"
-APP_CONTAINER="ejc_backend"
-DB_NAME="ejc_db"
-DB_USER="ejc_user"
-UPLOADS_DIR_CONTAINER="/app/uploads"
-RETENTION_DAYS=30
-RETENTION_DRIVE_DAYS=90
-DRIVE_REMOTE="gdrive"
-DRIVE_FOLDER="EJC-Backups"
-DATE=$(date +%Y%m%d_%H%M%S)
+if ! command -v docker >/dev/null 2>&1; then
+  echo "[backup] Docker não encontrado." >&2
+  exit 2
+fi
 
-mkdir -p "$BACKUP_DIR"
-
-# Envia um arquivo ao Google Drive e rotaciona os antigos do mesmo prefixo.
-#   $1 = arquivo local ; $2 = glob de retenção (ex.: 'ejc_db_*.sql.gz')
-enviar_drive() {
-    local f="$1" glob="$2"
-    if command -v rclone &>/dev/null && [ -f "/root/.config/rclone/rclone.conf" ]; then
-        echo "[$(date)] Enviando $(basename "$f") para Drive ($DRIVE_REMOTE:$DRIVE_FOLDER)..."
-        if rclone copy "$f" "$DRIVE_REMOTE:$DRIVE_FOLDER/" --stats-one-line 2>&1; then
-            echo "[$(date)] Upload OK → Drive:$DRIVE_FOLDER/$(basename "$f")"
-            rclone delete "$DRIVE_REMOTE:$DRIVE_FOLDER/" \
-                --min-age "${RETENTION_DRIVE_DAYS}d" --include "$glob" 2>/dev/null || true
-        else
-            echo "[$(date)] AVISO: falha no upload de $(basename "$f") — cópia local mantida"
-        fi
-    else
-        echo "[$(date)] rclone não configurado — apenas backup local"
-    fi
-}
-
-# Emite um objeto JSON {nome,bytes,sha256} para um artefato (ou nada se ausente).
-_manifest_artefato() {
-    local f="$1"
-    [ -f "$f" ] || return 1
-    printf '{"nome":"%s","bytes":%s,"sha256":"%s"}' \
-        "$(basename "$f")" "$(stat -c%s "$f")" "$(sha256sum "$f" | cut -d' ' -f1)"
-}
-
-# ── 1. Banco PostgreSQL ───────────────────────────────────────────────────────
-DB_FILE="${BACKUP_DIR}/ejc_db_${DATE}.sql.gz"
-echo "[$(date)] Backup do banco..."
-docker exec "$DB_CONTAINER" pg_dump -U "$DB_USER" "$DB_NAME" | gzip > "$DB_FILE"
-echo "[$(date)] Banco salvo: $DB_FILE ($(du -sh "$DB_FILE" | cut -f1))"
-enviar_drive "$DB_FILE" "ejc_db_*.sql.gz"
-
-# ── 2. Uploads / GED (arquivos enviados pelos usuários) ───────────────────────
-# Sem isto, um pg_dump não recupera os DOCUMENTOS em disco (só os metadados).
-UPLOADS_FILE="${BACKUP_DIR}/ejc_uploads_${DATE}.tar.gz"
-if ! docker ps --format '{{.Names}}' | grep -qx "$APP_CONTAINER"; then
-    echo "[$(date)] AVISO: $APP_CONTAINER não está rodando — uploads NÃO salvos nesta rodada"
-elif ! docker exec "$APP_CONTAINER" sh -c "test -d $UPLOADS_DIR_CONTAINER"; then
-    echo "[$(date)] $APP_CONTAINER sem $UPLOADS_DIR_CONTAINER — pulando uploads"
+# O programa é enviado por STDIN: chave, senha e tokens nunca entram no argv.
+# Com a API saudável, reutiliza-se a imagem em produção. Em crash-loop/container
+# parado, usa-se um container efêmero da imagem anterior, com o mesmo env_file e
+# volumes, para que um deploy corretivo ainda tenha prova pré-deploy.
+if docker ps --format '{{.Names}}' | grep -qx "$APP_CONTAINER"; then
+  runner=(docker exec -i "$APP_CONTAINER" python -)
 else
-    echo "[$(date)] Backup dos uploads ($UPLOADS_DIR_CONTAINER)..."
-    # O diretório está VIVO durante o backup: um upload/remoção concorrente faz o
-    # GNU tar sair com rc=1 ("file changed/removed as we read it") mesmo com o
-    # arquivo gerado íntegro — isso é tolerável. Já um arquivo ILEGÍVEL
-    # (permissão/I/O) sai com rc>=2 e DEVE falhar: marcar um backup PARCIAL como
-    # OK seria perda silenciosa. Por isso NÃO usamos --ignore-failed-read (que
-    # mascararia o arquivo ilegível como sucesso); --warning=no-file-changed só
-    # corta o ruído do log, e o stderr real segue visível para diagnóstico.
-    # (Bug anterior: `2>/dev/null` + `if tar` tratava o rc=1 como falha total e
-    # apagava um backup de uploads válido — daí o "falha no backup dos uploads".)
-    set +e
-    docker exec "$APP_CONTAINER" tar --warning=no-file-changed \
-        -czf - -C "$UPLOADS_DIR_CONTAINER" . > "$UPLOADS_FILE"
-    tar_rc=$?
-    set -e
-    if [ "$tar_rc" -le 1 ] && [ -s "$UPLOADS_FILE" ]; then
-        aviso=""; [ "$tar_rc" -eq 1 ] && aviso=" (aviso: arquivos mudaram durante a leitura)"
-        echo "[$(date)] Uploads salvos: $UPLOADS_FILE ($(du -sh "$UPLOADS_FILE" | cut -f1))${aviso}"
-        enviar_drive "$UPLOADS_FILE" "ejc_uploads_*.tar.gz"
-    else
-        echo "[$(date)] AVISO: falha no backup dos uploads (tar rc=${tar_rc})"
-        rm -f "$UPLOADS_FILE"
-    fi
+  [ -d "$APP_DIR" ] || {
+    echo "[backup] APP_DIR inexistente: $APP_DIR" >&2
+    exit 2
+  }
+  cd "$APP_DIR"
+  docker compose config >/dev/null
+  runner=(docker compose run --rm --no-deps -T backend python -)
+  echo "[backup] Backend parado; usando imagem anterior em container efêmero." >&2
 fi
 
-# ── 3. Manifesto do ciclo (nome, tamanho, sha256, horário) ────────────────────
-# Prova de auditoria: o que foi gerado, quão grande e com qual hash. O par
-# banco+uploads compartilha o mesmo ${DATE}; o manifesto amarra os dois.
-MANIFEST_FILE="${BACKUP_DIR}/ejc_manifest_${DATE}.json"
-arts="$(_manifest_artefato "$DB_FILE")"
-if [ -f "$UPLOADS_FILE" ]; then
-    arts="${arts},$(_manifest_artefato "$UPLOADS_FILE")"
-fi
-cat > "$MANIFEST_FILE" <<JSON
-{
-  "ciclo": "${DATE}",
-  "gerado_em_brt": "$(date '+%Y-%m-%d %H:%M:%S %Z')",
-  "gerado_em_utc": "$(date -u '+%Y-%m-%dT%H:%M:%SZ')",
-  "artefatos": [${arts}]
-}
-JSON
-echo "[$(date)] Manifesto: $MANIFEST_FILE"
-enviar_drive "$MANIFEST_FILE" "ejc_manifest_*.json"
+"${runner[@]}" <<'PY'
+from __future__ import annotations
 
-# ── 4. Rotação local (banco + uploads + manifesto) ────────────────────────────
-find "$BACKUP_DIR" -name "ejc_db_*.sql.gz"       -mtime +${RETENTION_DAYS} -delete
-find "$BACKUP_DIR" -name "ejc_uploads_*.tar.gz"  -mtime +${RETENTION_DAYS} -delete
-find "$BACKUP_DIR" -name "ejc_manifest_*.json"   -mtime +${RETENTION_DAYS} -delete
-echo "[$(date)] Retidos localmente — banco: $(ls -1 "${BACKUP_DIR}"/ejc_db_*.sql.gz 2>/dev/null | wc -l), uploads: $(ls -1 "${BACKUP_DIR}"/ejc_uploads_*.tar.gz 2>/dev/null | wc -l)"
+import asyncio
+import json
+
+from app.core.database import AsyncSessionLocal
+from app.services import backup_service
+
+
+def _safe_artifact(item: dict) -> dict:
+    return {
+        "nome": item.get("nome"),
+        "bytes_original": item.get("bytes_original"),
+        "bytes_cifrado": item.get("bytes_cifrado"),
+    }
+
+
+async def main() -> int:
+    config = backup_service.configuracao_status()
+    auth_mode = str(config.get("auth_mode") or "")
+    problems: list[str] = []
+    required = {
+        "enabled": "agendamento desabilitado",
+        "chave_configurada": "chave de criptografia ausente",
+        "pasta_configurada": "pasta de destino ausente",
+        "credencial_dedicada_configurada": "credencial exclusiva ausente",
+        "pg_dump_disponivel": "pg_dump indisponível",
+    }
+    for field, message in required.items():
+        if not bool(config.get(field)):
+            problems.append(message)
+    if auth_mode == "inherit":
+        problems.append("modo inherit não atende à segregação de credenciais")
+
+    if problems:
+        print(
+            json.dumps(
+                {
+                    "ok": False,
+                    "status": "configuracao_insegura",
+                    "problemas": problems,
+                    "auth_mode": auth_mode or "indisponível",
+                },
+                ensure_ascii=False,
+                sort_keys=True,
+            )
+        )
+        return 1
+
+    async with AsyncSessionLocal() as db:
+        result = await backup_service.executar_backup(
+            db,
+            origem="pre_deploy",
+            usuario_id=None,
+            usuario_role="sistema",
+        )
+
+    artifacts = [_safe_artifact(item) for item in (result.get("artefatos") or [])]
+    names = [str(item.get("nome") or "") for item in artifacts]
+    has_db = any(name.endswith("_db.dump.enc") for name in names)
+    has_uploads = any(name.endswith("_uploads.tar.gz.enc") for name in names)
+    complete = result.get("status") == "sucesso" and has_db and has_uploads
+
+    safe = {
+        "ok": complete,
+        "status": result.get("status"),
+        "origem": result.get("origem"),
+        "avisos": result.get("avisos") or [],
+        "artefatos": artifacts,
+        "duracao_segundos": result.get("duracao_segundos"),
+        "banco_cifrado": has_db,
+        "uploads_cifrados": has_uploads,
+        "credencial_dedicada": True,
+        "auth_mode": auth_mode,
+    }
+    print(json.dumps(safe, ensure_ascii=False, sort_keys=True))
+    return 0 if complete else 1
+
+
+raise SystemExit(asyncio.run(main()))
+PY

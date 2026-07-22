@@ -1,9 +1,7 @@
 name: EJC Release Gate
 
-# Gate P0 no runner SELF-HOSTED: executa automaticamente em todo PR e em cada
-# atualização da main, além de permitir execução manual. O objetivo é impedir
-# que conflitos, segredos, CORS inseguro ou resíduos críticos avancem sem
-# evidência auditável.
+# Gate P0 no runner SELF-HOSTED. Impede conflitos, segredos, CORS inseguro,
+# resíduos críticos, reintrodução de backup em claro e rollback não comprovado.
 on:
   pull_request:
   push:
@@ -19,12 +17,12 @@ concurrency:
 
 jobs:
   p0-guard:
-    name: P0 guard — conflitos e segredos
+    name: P0 guard — conflitos, segredos e continuidade
     runs-on: [self-hosted, ejc-vps]
-    timeout-minutes: 10
+    timeout-minutes: 15
     steps:
       - name: Checkout
-        uses: actions/checkout@v6
+        uses: actions/checkout@v7
         with:
           fetch-depth: 1
 
@@ -33,7 +31,6 @@ jobs:
         run: |
           set +e
           : > ci_guard.log
-
           {
             echo "[EJC CI] Iniciando diagnóstico P0"
             echo "repository=${GITHUB_REPOSITORY}"
@@ -45,10 +42,8 @@ jobs:
             echo "[EJC CI] Executando scripts/ci_guard.sh"
             bash scripts/ci_guard.sh
           } > ci_guard.log 2>&1
-
           status=$?
           cat ci_guard.log
-
           {
             echo "## EJC Release Gate — P0"
             echo
@@ -58,17 +53,31 @@ jobs:
             tail -n 180 ci_guard.log
             echo '```'
           } >> "${GITHUB_STEP_SUMMARY}"
-
           exit "${status}"
 
-      - name: Publicar diagnóstico P0
+      - name: Provar wrapper canônico cifrado
+        shell: bash
+        run: |
+          bash scripts/tests/test_backup_wrapper.sh \
+            | tee backup-wrapper-test.log
+
+      - name: Provar migration expand-only e rollback de imagens
+        shell: bash
+        run: |
+          bash scripts/tests/test_deploy_rollback.sh \
+            | tee deploy-rollback-test.log
+
+      - name: Publicar diagnósticos P0
         if: always()
         uses: actions/upload-artifact@v7
         with:
           name: p0-guard-log
-          path: ci_guard.log
+          path: |
+            ci_guard.log
+            backup-wrapper-test.log
+            deploy-rollback-test.log
+          if-no-files-found: warn
           retention-days: 7
 
-  # Os gates P1 permanecem no ci.yml para evitar duplicidade de tempo de runner:
-  # backend completo com PostgreSQL/pgvector, evals offline, frontend, lint,
-  # auditorias de dependências, typecheck, testes e build.
+  # Os gates P1 permanecem no ci.yml: backend completo com PostgreSQL/pgvector,
+  # evals offline, frontend, lint, auditorias, typecheck, testes e build.
