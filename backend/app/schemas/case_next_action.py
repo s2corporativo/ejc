@@ -41,7 +41,10 @@ class CaseNextActionCreate(BaseModel):
     @field_validator("due_at")
     @classmethod
     def _due_at_com_fuso(cls, value: datetime) -> datetime:
-        return _datetime_com_fuso(value, "due_at")
+        value = _datetime_com_fuso(value, "due_at")
+        if value <= datetime.now(timezone.utc):
+            raise ValueError("due_at deve estar no futuro")
+        return value
 
     @model_validator(mode="after")
     def _coerencia(self):
