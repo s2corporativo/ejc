@@ -18,9 +18,8 @@ _ALLOWED = {
     "advogado",
     "advogado_auxiliar",
     "estagiario",
-    "secretaria",
 }
-_OFFICE_SCOPE = {"superadmin", "admin", "socio", "secretaria"}
+_OFFICE_SCOPE = {"superadmin", "admin", "socio"}
 
 
 @router.get("/operational-health")
