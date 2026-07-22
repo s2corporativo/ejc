@@ -108,8 +108,10 @@ class AuthMiddleware(BaseHTTPMiddleware):
                     },
                 )
 
-        if payload.get("two_factor_setup_required") and not payload.get(
-            "pwd_change_required"
+        if (
+            settings.TWO_FACTOR_AUTH_ENABLED
+            and payload.get("two_factor_setup_required")
+            and not payload.get("pwd_change_required")
         ):
             liberados_2fa = (
                 "/api/auth/totp/setup",

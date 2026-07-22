@@ -236,6 +236,8 @@ def test_login_require_2fa_vazio_nao_sinaliza(monkeypatch):
 
 
 def test_login_require_2fa_papel_exigido_sem_totp_sinaliza(monkeypatch):
+    # Enforcement por papel só vale com o kill switch ligado (2FA reativado).
+    monkeypatch.setattr(auth_router.settings, "TWO_FACTOR_AUTH_ENABLED", True)
     monkeypatch.setattr(auth_router.settings, "REQUIRE_2FA_ROLES", "admin,socio")
     user = _user_login(role_value="admin", totp_enabled=False)
     app, _ = _montar(user=user)
@@ -253,6 +255,8 @@ def test_login_require_2fa_papel_exigido_sem_totp_sinaliza(monkeypatch):
 # 5. 2FA por papel — desativar recusa (403) para papel obrigado
 # ─────────────────────────────────────────────────────────────────────────────
 def test_totp_desativar_papel_exigido_403(monkeypatch):
+    # Enforcement por papel só vale com o kill switch ligado (2FA reativado).
+    monkeypatch.setattr(auth_router.settings, "TWO_FACTOR_AUTH_ENABLED", True)
     monkeypatch.setattr(auth_router.settings, "REQUIRE_2FA_ROLES", "admin")
     user = types.SimpleNamespace(
         id="u1", email="admin@teste.com",

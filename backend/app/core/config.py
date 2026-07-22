@@ -46,11 +46,17 @@ class Settings(BaseSettings):
     #       cujo papel é obrigado — ele não pode se auto-desproteger.
     # Ex. em produção (definir no .env, NÃO versionado):
     #   REQUIRE_2FA_ROLES=superadmin,admin,socio
+    # Kill switch temporário e reversível. False desativa tanto a exigência
+    # organizacional quanto a validação TOTP no login, sem apagar segredos
+    # previamente cadastrados. Reativação: definir true no ambiente.
+    TWO_FACTOR_AUTH_ENABLED: bool = False
     REQUIRE_2FA_ROLES: str = "superadmin,admin,socio"
     TWO_FACTOR_SETUP_TOKEN_EXPIRE_MINUTES: int = 15
 
     @property
     def require_2fa_roles_list(self) -> List[str]:
+        if not self.TWO_FACTOR_AUTH_ENABLED:
+            return []
         return [r.strip().lower() for r in self.REQUIRE_2FA_ROLES.split(",") if r.strip()]
 
     # ── Criptografia de PII em repouso (LGPD, achado C6 / Bloco 6a) ────────

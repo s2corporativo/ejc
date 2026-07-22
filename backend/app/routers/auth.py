@@ -53,7 +53,7 @@ def _papel_exige_2fa(role_value: str | None) -> bool:
     """True se o papel do usuário está na allowlist REQUIRE_2FA_ROLES (2FA
     obrigatório por política organizacional). Default (setting vazia) ⇒ sempre
     False → o comportamento atual (2FA opt-in) fica intacto."""
-    if not role_value:
+    if not settings.TWO_FACTOR_AUTH_ENABLED or not role_value:
         return False
     return role_value.strip().lower() in settings.require_2fa_roles_list
 
@@ -215,8 +215,8 @@ async def login(
         await db.commit()
         raise HTTPException(status_code=401, detail="Email ou senha incorretos")
 
-    # ── 3. TOTP (se habilitado) ──────────────────────────────────────
-    if user.totp_enabled:
+    # ── 3. TOTP (se habilitado globalmente e pelo usuário) ───────────
+    if settings.TWO_FACTOR_AUTH_ENABLED and user.totp_enabled:
         if not req.totp_code:
             # O fluxo 2 etapas do frontend SEMPRE passa por aqui em cada login
             # TOTP legítimo — este passo NÃO consome o orçamento principal

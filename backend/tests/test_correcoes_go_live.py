@@ -225,9 +225,10 @@ def _user_totp(secret_armazenado: str, email="totp3@teste.com"):
     )
 
 
-def test_login_totp_segredo_cifrado_com_outra_chave_401_nao_500():
+def test_login_totp_segredo_cifrado_com_outra_chave_401_nao_500(monkeypatch):
     from cryptography.fernet import Fernet
 
+    monkeypatch.setattr(auth_router.settings, "TWO_FACTOR_AUTH_ENABLED", True)
     secret = pyotp.random_base32()
     outra_chave = Fernet(Fernet.generate_key())
     user = _user_totp(outra_chave.encrypt(secret.encode()).decode())

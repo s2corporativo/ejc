@@ -20,7 +20,12 @@ def test_claim_de_configuracao_2fa_tem_prazo_curto():
     assert payload["exp"] - payload["iat"] <= 901
 
 
-def test_claim_de_configuracao_2fa_bloqueia_rotas_de_negocio():
+def test_claim_de_configuracao_2fa_bloqueia_rotas_de_negocio(monkeypatch):
+    # O gate do middleware só bloqueia com o kill switch ligado (2FA reativado).
+    from app.core import auth_middleware
+
+    monkeypatch.setattr(auth_middleware.settings, "TWO_FACTOR_AUTH_ENABLED", True)
+
     app = FastAPI()
     app.add_middleware(AuthMiddleware)
 

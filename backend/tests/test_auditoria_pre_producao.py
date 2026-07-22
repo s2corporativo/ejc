@@ -212,7 +212,8 @@ def _login(client, ip, code=None, email="totp@teste.com"):
     return client.post("/auth/login", json=payload, headers=_hdr(ip))
 
 
-def test_login_totp_com_segredo_cifrado():
+def test_login_totp_com_segredo_cifrado(monkeypatch):
+    monkeypatch.setattr(auth_router.settings, "TWO_FACTOR_AUTH_ENABLED", True)
     secret = pyotp.random_base32()
     user = _user_totp(pii_crypto.encrypt(secret))
     db = _FakeDB(results=[user, user])   # credenciais + verificar_novo_dispositivo
@@ -222,7 +223,8 @@ def test_login_totp_com_segredo_cifrado():
     assert r.json()["access_token"]
 
 
-def test_login_totp_legado_em_claro_funciona_e_recifra():
+def test_login_totp_legado_em_claro_funciona_e_recifra(monkeypatch):
+    monkeypatch.setattr(auth_router.settings, "TWO_FACTOR_AUTH_ENABLED", True)
     secret = pyotp.random_base32()
     user = _user_totp(secret)            # legado: em claro no "banco"
     db = _FakeDB(results=[user, user])
@@ -235,7 +237,8 @@ def test_login_totp_legado_em_claro_funciona_e_recifra():
     assert pii_crypto.decrypt(user.totp_secret) == secret
 
 
-def test_login_totp_codigo_invalido_401():
+def test_login_totp_codigo_invalido_401(monkeypatch):
+    monkeypatch.setattr(auth_router.settings, "TWO_FACTOR_AUTH_ENABLED", True)
     secret = pyotp.random_base32()
     user = _user_totp(pii_crypto.encrypt(secret))
     db = _FakeDB(results=[user])
@@ -251,9 +254,10 @@ def test_login_totp_codigo_invalido_401():
 # Contador separado totp_pend:{ip} (teto 20/15min) ainda limita a sondagem de
 # senhas válidas, e o audit LOGIN_TOTP_PENDENTE preserva a trilha.
 
-def test_login_sem_codigo_totp_nao_consome_orcamento_principal():
+def test_login_sem_codigo_totp_nao_consome_orcamento_principal(monkeypatch):
     from app.services.security_service import esta_bloqueado, registrar_falha
 
+    monkeypatch.setattr(auth_router.settings, "TWO_FACTOR_AUTH_ENABLED", True)
     secret = pyotp.random_base32()
     user = _user_totp(pii_crypto.encrypt(secret))
     user.email = "totp-bf@teste.com"
@@ -282,10 +286,11 @@ def test_login_sem_codigo_totp_nao_consome_orcamento_principal():
     assert esta_bloqueado(f"ip:{ip}") == (False, 0)
 
 
-def test_login_totp_codigo_errado_continua_no_orcamento_principal():
+def test_login_totp_codigo_errado_continua_no_orcamento_principal(monkeypatch):
     """Código TOTP ERRADO (≠ passo pendente) segue contando em ip:/em:."""
     from app.services.security_service import esta_bloqueado
 
+    monkeypatch.setattr(auth_router.settings, "TWO_FACTOR_AUTH_ENABLED", True)
     secret = pyotp.random_base32()
     user = _user_totp(pii_crypto.encrypt(secret))
     user.email = "totp-errado@teste.com"
