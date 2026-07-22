@@ -15,7 +15,7 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.config import get_settings
-from app.core.ownership import pode_ver_todos
+from app.core.ownership import is_gestao
 from app.models.audit_log import criar_audit_log
 from app.models.case import Case, CaseMovimento, CaseStatus
 from app.models.case_next_action import CaseNextAction, CaseNextActionWaiver
@@ -163,7 +163,7 @@ async def _validate_owner(
             detail="Responsável deve ser um usuário interno ativo",
         )
 
-    if not pode_ver_todos(actor):
+    if not is_gestao(actor):
         allowed = {
             actor.id,
             case.advogado_responsavel_id,
@@ -275,7 +275,7 @@ async def set_next_action(
     if case.status not in OPEN_STATUSES:
         raise HTTPException(409, "Caso encerrado/arquivado não recebe próxima ação")
 
-    await _validate_owner(db, case, actor, payload.owner_id)
+    owner = await _validate_owner(db, case, actor, payload.owner_id)
     await _validate_origin(db, case.id, payload.origin_type, payload.origin_id)
 
     now = _utcnow()
@@ -308,7 +308,7 @@ async def set_next_action(
             case.id,
             actor.id,
             "proxima_acao",
-            f"Próxima ação definida: {action.title} — responsável {action.owner_id}",
+            f"Próxima ação definida: {action.title} — responsável {owner.full_name}",
         )
     )
     await criar_audit_log(
@@ -356,8 +356,11 @@ async def complete_next_action(
             ),
         )
 
+    replacement_owner = None
     if payload.replacement is not None:
-        await _validate_owner(db, case, actor, payload.replacement.owner_id)
+        replacement_owner = await _validate_owner(
+            db, case, actor, payload.replacement.owner_id
+        )
         await _validate_origin(
             db,
             case.id,
@@ -366,6 +369,11 @@ async def complete_next_action(
         )
 
     now = _utcnow()
+    prior_waiver = await open_waiver(db, case.id, lock=True)
+    if prior_waiver is not None:
+        prior_waiver.revoked_at = now
+        prior_waiver.revoked_by = actor.id
+
     _complete(action, actor.id, payload.completion_note, now=now)
     db.add(
         _timeline(
@@ -386,14 +394,13 @@ async def complete_next_action(
                 case.id,
                 actor.id,
                 "proxima_acao",
-                f"Nova próxima ação: {replacement.title}",
+                (
+                    f"Nova próxima ação: {replacement.title} — responsável "
+                    f"{replacement_owner.full_name}"
+                ),
             )
         )
     elif payload.waiver is not None:
-        prior_waiver = await open_waiver(db, case.id, lock=True)
-        if prior_waiver is not None:
-            prior_waiver.revoked_at = now
-            prior_waiver.revoked_by = actor.id
         waiver = _new_waiver(case.id, actor.id, payload.waiver)
         db.add(waiver)
         db.add(
