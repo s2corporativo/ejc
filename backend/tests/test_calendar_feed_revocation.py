@@ -5,7 +5,7 @@ import inspect
 from types import SimpleNamespace
 
 import pytest
-from fastapi import Request
+from fastapi import Request, Response
 
 from app.routers import calendar_feed
 
@@ -79,26 +79,30 @@ async def test_versao_ausente_equivale_a_legado_v1():
 
 
 @pytest.mark.asyncio
-async def test_url_autenticada_usa_versao_persistida(monkeypatch):
+async def test_url_autenticada_usa_versao_persistida_e_nao_aceita_cache(monkeypatch):
     monkeypatch.setattr(
         calendar_feed.settings,
         "FRONTEND_URL",
         "https://ejc.exemplo.test/",
     )
-    response = await calendar_feed.minha_url_calendario_revogavel(
+    http_response = Response()
+    payload = await calendar_feed.minha_url_calendario_revogavel(
+        response=http_response,
         db=_DB(4),
         cu=_user(),
     )
-    assert response["version"] == 4
-    assert response["revogavel"] is True
-    assert response["url"].startswith(
+    assert payload["version"] == 4
+    assert payload["revogavel"] is True
+    assert payload["url"].startswith(
         "https://ejc.exemplo.test/api/calendar/user-1/"
     )
-    assert response["url"].endswith(".ics")
+    assert payload["url"].endswith(".ics")
+    assert "no-store" in http_response.headers["Cache-Control"]
+    assert http_response.headers["X-Content-Type-Options"] == "nosniff"
 
 
 @pytest.mark.asyncio
-async def test_rotacao_incrementa_e_grava_auditoria(monkeypatch):
+async def test_rotacao_incrementa_audita_e_nao_aceita_cache(monkeypatch):
     auditorias = []
 
     async def _audit(*args, **kwargs):
@@ -111,18 +115,22 @@ async def test_rotacao_incrementa_e_grava_auditoria(monkeypatch):
         "https://ejc.exemplo.test",
     )
     db = _DB(7)
-    response = await calendar_feed.rotacionar_url_calendario(
+    http_response = Response()
+    payload = await calendar_feed.rotacionar_url_calendario(
         request=_request(),
+        response=http_response,
         db=db,
         cu=_user(),
     )
 
-    assert response["version"] == 7
-    assert response["revogado"] is True
+    assert payload["version"] == 7
+    assert payload["revogado"] is True
     assert db.commits == 1
     assert len(db.executed) == 1
     assert auditorias and auditorias[0][0][3] == "ROTATE_ICS"
     assert "version=7" in auditorias[0][1]["detalhes"]
+    assert "no-store" in http_response.headers["Cache-Control"]
+    assert http_response.headers["X-Content-Type-Options"] == "nosniff"
 
 
 def test_headers_do_feed_impedem_cache():
