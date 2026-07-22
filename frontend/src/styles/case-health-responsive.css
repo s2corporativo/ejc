@@ -1,0 +1,11 @@
+/* Correção responsiva do acionador contextual de saúde do caso.
+ * O seletor por aria-label mantém o ajuste isolado até a consolidação da
+ * composição de botões flutuantes do workspace.
+ */
+@media (max-width: 639px) {
+  button[aria-label="Abrir saúde operacional do caso"] {
+    right: 1rem !important;
+    bottom: 5rem !important;
+    max-width: calc(100vw - 2rem);
+  }
+}
