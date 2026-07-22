@@ -1,5 +1,6 @@
 # ── app/routers/dashboard.py ─────────────────────────────────────────────────
 # Dashboard executivo — KPIs do escritório em uma chamada.
+# RECOMENDAÇÃO 1: Dashboard como Central de Ação
 import logging
 import time
 from datetime import date, timedelta
@@ -11,6 +12,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.core.database import get_db
 from app.core.security import get_current_user
 from app.models.user import User
+from app.services.pending_items_service import get_pending_service
 
 logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/dashboard", tags=["Dashboard"])
@@ -172,6 +174,48 @@ async def dashboard(
     }
     _cache_set(cache_key, resposta)
     return resposta
+
+
+# ═══ Central de Ações e Pendências (RECOMENDAÇÃO 1) ═══
+@router.get("/acoes-pendentes")
+async def acoes_pendinges(
+    db: AsyncSession = Depends(get_db),
+    cu: User = Depends(get_current_user),
+):
+    """
+    RECOMENDAÇÃO 1: Dashboard como Central de Ação
+    
+    Retorna TODAS as pendências organizadas por categoria:
+    - prazos (vencidos, críticos, próximos)
+    - intimações não analisadas
+    - tarefas vencidas
+    - casos sem próxima ação
+    - documentos pendentes do cliente
+    - peças aguardando revisão
+    - propostas/contratos aguardando aceite
+    - cobranças vencidas
+    - erros de integração
+    - análises de IA aguardando validação
+    - casos ativos sem movimentação
+    - atendimentos sem retorno
+    
+    Cada item inclui link direto para ação, evitando navegação por múltiplos módulos.
+    """
+    service = get_pending_service(db, cu)
+    return await service.get_all_pending_items()
+
+
+@router.get("/acoes-pendentes/resumo")
+async def acoes_pendinges_resumo(
+    db: AsyncSession = Depends(get_db),
+    cu: User = Depends(get_current_user),
+):
+    """
+    Retorna apenas o resumo das pendências (contagens por categoria).
+    Útil para cards do dashboard sem carregar todos os detalhes.
+    """
+    service = get_pending_service(db, cu)
+    return await service.get_pending_summary()
 
 
 # ═══ Relatório Gerencial Mensal (PDF) ═══

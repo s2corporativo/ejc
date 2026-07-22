@@ -1,69 +1,66 @@
-# ── Segredos / ambiente ──────────────────────────────────────────────
-.env
-*.env
-**/.env
-!.env.example
-!**/.env.example
-vps-tools/.env
-.env.bak*
-.env.save
-**/.env.bak*
-**/.env.save
-
-# Chaves e credenciais
-*.pem
-*.key
-*.p12
-*.pfx
-*-service-account*.json
-credentials*.json
-
-# ── Dependências / builds ────────────────────────────────────────────
-node_modules/
-**/node_modules/
-backend/.venv/
-backend/.venv-codex/
-**/.venv*/
+```
+# Python
 __pycache__/
-**/__pycache__/
-*.pyc
-.pytest_cache/
-.mypy_cache/
-.ruff_cache/
-frontend/dist/
+*.py[cod]
+*$py.class
+*.so
+.Python
+build/
+develop-eggs/
 dist/
+downloads/
+eggs/
+.eggs/
+lib/
+lib64/
+parts/
+sdist/
+var/
+wheels/
+*.egg-info/
+.installed.cfg
+*.egg
 
-# ── Artefatos / backups / resíduos (não versionar) ───────────────────
-*.tgz
-*.tar.gz
-*.zip
-*.dump
-*.sql
-*.sql.gz
+# Virtual environments
+venv/
+ENV/
+env.bak/
+.venv/
+
+# IDE
+.vscode/
+.idea/
+
+# Database
+*.sqlite
+*.db
+
+# Environment
+.env
+.env.local
+*.env*
+
+# Logs
 *.log
-uploads/
-backups/
-frontend/tests/__out__/
-_QUARENTENA/
-vps-tools/generated/
-_session_componentes_bronze/
 
-# ── Backups locais de arquivos ───────────────────────────────────────
-*.bak
-*.bak.*
-*.old
-*.orig
+# Alembic
+alembic/versions/*.py
 
-# temporários de deploy (auditoria 01/07)
-vps-tools/_*
+# Coverage
+.coverage
+htmlcov/
+.coverage.*
+.cache
 
-# graphify — grafo de conhecimento local (regenerável, não versionar)
-graphify-out/
+# Pytest
+.pytest_cache/
 
-# Worktrees efêmeros de subagentes (Claude Code)
-.claude/worktrees/
-.claude/launch.json
-frontend/.claude/
+# MyPy
+.mypy_cache/
 
-# Segredos aplicados direto na VPS (OAuth Google Drive etc.) — nunca versionar
-secrets/
+# Temporary files
+*.tmp
+*~
+.DS_Store
+Thumbs.db
+```

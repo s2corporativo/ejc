@@ -65,6 +65,8 @@ class User(Base):
     audit_logs           = relationship("AuditLog", back_populates="user")
     ai_logs              = relationship("AILog",    foreign_keys="AILog.user_id", back_populates="user")
     legal_docs_revisados = relationship("LegalDoc", foreign_keys="LegalDoc.revisor_id", back_populates="revisor")
+    # Nova relação: ações atribuídas como próxima ação em casos
+    assigned_actions     = relationship("Case", foreign_keys="Case.responsavel_proxima_acao_id", back_populates="responsavel_proxima_acao")
 
     def __repr__(self):
         return f"<User {self.email} [{self.role}]>"

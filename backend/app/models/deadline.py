@@ -79,9 +79,28 @@ class Deadline(Base):
         String(36), ForeignKey("documents.id"), nullable=True, index=True
     )
 
+    # =========================================================================
+    # RECOMENDAÇÃO 5: Motor de prazos com "prova do cálculo"
+    # =========================================================================
+    evento_origem = Column(String(255), nullable=True)  # Evento que originou o prazo (ex: "Intimação para réplica")
+    documento_origem_id = Column(String(36), ForeignKey("documents.id"), nullable=True, index=True)
+    data_ciencia = Column(Date, nullable=True)  # Data da ciência oficial
+    regra_legal_aplicada = Column(String(255), nullable=True)  # Ex: "CPC art. 335, 15 dias úteis"
+    forma_contagem = Column(String(50), nullable=True)  # "dias_uteis" | "dias_corridos"
+    calendario_utilizado = Column(String(100), nullable=True)  # Ex: "TJSP", "Justiça Federal"
+    feriados_suspensoes = Column(Text, nullable=True)  # JSON ou texto descrevendo feriados/suspensões considerados
+    termo_inicial = Column(Date, nullable=True)  # Data de início da contagem
+    termo_final = Column(Date, nullable=True)    # Data final calculada
+    calculado_por = Column(String(36), nullable=True)  # ID do usuário que calculou
+    conferido_por = Column(String(36), nullable=True)  # ID do usuário que conferiu (dupla validação)
+    alteracoes = Column(Text, nullable=True)  # Histórico de alterações (JSON)
+    cancelamento_justificativa = Column(Text, nullable=True)  # Justificativa se cancelado
+    # =========================================================================
+
     created_at = Column(DateTime(timezone=True), server_default=func.now())
     updated_at = Column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now())
     deleted_at = Column(DateTime(timezone=True), nullable=True)
 
     case        = relationship("Case", back_populates="deadlines")
     responsavel = relationship("User", foreign_keys=[responsavel_id], back_populates="deadlines")
+    documento_origem = relationship("Document", foreign_keys=[documento_origem_id])

@@ -63,6 +63,25 @@ class CasePrioridade(str, enum.Enum):
     critica = "critica"
 
 
+# ============================================================================
+# RECOMENDAÇÃO 2: Estados operacionais padronizados para casos ativos
+# ============================================================================
+class CaseOperationalStatus(str, enum.Enum):
+    """
+    Estados operacionais padronizados para casos ativos.
+    Evita que usuários escrevam livremente o status.
+    """
+    onboarding = "onboarding"              # Caso recém-criado, em onboarding
+    planejamento = "planejamento"          # Em planejamento estratégico
+    aguardando_cliente = "aguardando_cliente"  # Aguardando ação/documento do cliente
+    aguardando_terceiro = "aguardando_terceiro"  # Aguardando terceiro (tribunal, órgão público)
+    em_andamento = "em_andamento"          # Caso em andamento normal
+    providencia_urgente = "providencia_urgente"  # Requer ação urgente
+    negociacao = "negociacao"              # Em fase de negociação
+    encerramento = "encerramento"          # Em fase de encerramento
+    encerrado = "encerrado"                # Caso encerrado
+
+
 class Case(Base):
     __tablename__ = "cases"
 
@@ -76,11 +95,33 @@ class Case(Base):
     id        = Column(String(36), primary_key=True)
     numero_interno = Column(String(20), index=True)  # DPT-2026-0001
     titulo    = Column(String(255), nullable=False)
-    area      = Column(SAEnum(CaseArea), nullable=False, index=True)
+    area      = Column(SAEnum(CaseArea), nullable=False, default=CaseArea.civil, index=True)
     status    = Column(SAEnum(CaseStatus), nullable=False, default=CaseStatus.triagem, index=True)
     fase      = Column(SAEnum(CaseFase), nullable=False, default=CaseFase.pre_processual)
     prioridade = Column(SAEnum(CasePrioridade), nullable=False, default=CasePrioridade.media)
     risco     = Column(String(20), nullable=True)   # baixo | medio | alto
+    
+    # =========================================================================
+    # RECOMENDAÇÃO 2: Próxima ação obrigatória em todo caso ativo
+    # =========================================================================
+    operacional_status = Column(
+        SAEnum(CaseOperationalStatus),
+        nullable=True,
+        default=CaseOperationalStatus.onboarding,
+        index=True
+    )
+    proxima_acao = Column(Text, nullable=True)  # Descrição da próxima ação necessária
+    responsavel_proxima_acao_id = Column(
+        String(36), ForeignKey("users.id"), nullable=True, index=True
+    )
+    data_esperada_proxima_acao = Column(DateTime(timezone=True), nullable=True)
+    urgencia_proxima_acao = Column(
+        SAEnum(CasePrioridade), nullable=True
+    )  # baixa, media, alta, critica
+    bloqueio_descricao = Column(Text, nullable=True)  # Se há bloqueio, descrevê-lo
+    documento_origem_acao = Column(String(36), ForeignKey("documents.id"), nullable=True)
+    evento_origem_acao = Column(String(36), ForeignKey("case_movimentos.id"), nullable=True)
+    # =========================================================================
 
     # Processo judicial
     numero_processo = Column(String(30), nullable=True, index=True)
@@ -155,22 +196,74 @@ class Case(Base):
     trabalhista_esp = relationship("TrabalhistaCase",  back_populates="case", uselist=False)
     admin_esp     = relationship("AdminCase",          back_populates="case", uselist=False)
     bancario      = relationship("BancarioCase",       back_populates="case", uselist=False)
+    
+    # Relacionamentos das novas fields de próxima ação
+    responsavel_proxima_acao = relationship(
+        "User", foreign_keys=[responsavel_proxima_acao_id], back_populates="assigned_actions"
+    )
+    doc_origem_acao = relationship("Document", foreign_keys=[documento_origem_acao])
+    evento_origem = relationship("CaseMovimento", foreign_keys=[evento_origem_acao])
+
+
+class CaseMovimentoTipo(str, enum.Enum):
+    """Tipos padronizados de eventos na timeline do caso."""
+    peticao = "peticao"
+    decisao = "decisao"
+    audiencia = "audiencia"
+    nota = "nota"
+    intimacao = "intimacao"
+    ia = "ia"
+    documento_recebido = "documento_recebido"
+    ligacao = "ligacao"
+    mensagem = "mensagem"
+    pagamento = "pagamento"
+    mudanca_responsavel = "mudanca_responsavel"
+    aprovacao = "aprovacao"
+    rejeicao = "rejeicao"
 
 
 class CaseMovimento(Base):
-    """Timeline do caso: petições, decisões, audiências, notas."""
+    """
+    Timeline unificada do caso: registro central de todos os acontecimentos.
+    
+    RECOMENDAÇÃO 4: Linha do tempo verdadeiramente única
+    Reúne atendimento, ligação, mensagem, documento recebido, movimentação processual,
+    prazo, tarefa, audiência, decisão, peça produzida, pagamento, mudança de responsável,
+    análise da IA, aprovação ou rejeição humana.
+    """
     __tablename__ = "case_movimentos"
 
     id      = Column(String(36), primary_key=True)
     case_id = Column(String(36), ForeignKey("cases.id"), nullable=False, index=True)
-    tipo    = Column(String(30), nullable=False)   # peticao|decisao|audiencia|nota|intimacao|ia
+    tipo    = Column(SAEnum(CaseMovimentoTipo), nullable=False, default=CaseMovimentoTipo.nota)
     descricao = Column(Text, nullable=False)
-    data_evento = Column(DateTime(timezone=True), server_default=func.now())
-    created_by  = Column(String(36), nullable=True)
+    data_evento = Column(DateTime(timezone=True), server_default=func.now(), index=True)
+    created_by  = Column(String(36), nullable=True, index=True)
     created_at  = Column(DateTime(timezone=True), server_default=func.now())
     resumo_ia   = Column(Text, nullable=True)   # andamento traduzido p/ linguagem simples (IA, rascunho)
+    
+    # =========================================================================
+    # RECOMENDAÇÃO 4: Registro completo do evento para auditoria
+    # =========================================================================
+    autor_nome = Column(String(255), nullable=True)  # Nome do autor (snapshot)
+    origem = Column(String(50), nullable=True)       # Origem: manual, datajud, integracao, ia, etc.
+    caso_relacionado_id = Column(String(36), ForeignKey("cases.id"), nullable=True)  # Para eventos que ligam dois casos
+    informacao_anterior = Column(Text, nullable=True)  # Valor anterior (para mudanças de estado)
+    informacao_posterior = Column(Text, nullable=True)  # Valor posterior (para mudanças de estado)
+    # =========================================================================
+    
+    # Relacionamentos com entidades que podem ter originado este movimento
+    deadline_id = Column(String(36), ForeignKey("deadlines.id"), nullable=True, index=True)
+    document_id = Column(String(36), ForeignKey("documents.id"), nullable=True, index=True)
+    task_id = Column(String(36), ForeignKey("tasks.id"), nullable=True, index=True)
+    atendimento_id = Column(String(36), ForeignKey("atendimentos.id"), nullable=True, index=True)
 
-    case = relationship("Case", back_populates="movimentos")
+    case = relationship("Case", back_populates="movimentos", foreign_keys=[case_id])
+    caso_relacionado = relationship("Case", foreign_keys=[caso_relacionado_id])
+    deadline = relationship("Deadline", foreign_keys=[deadline_id])
+    document = relationship("Document", foreign_keys=[document_id])
+    task = relationship("Task", foreign_keys=[task_id])
+    atendimento = relationship("Atendimento", foreign_keys=[atendimento_id])
 
 
 # Registro dos models ORM dos satélites (tabelas já existiam, sem model até P1).
