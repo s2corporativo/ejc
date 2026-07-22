@@ -128,6 +128,12 @@ class Settings(BaseSettings):
     # case_id) nunca é gateada. Desligar só com aval do responsável do fluxo.
     FICHA_TRIAGEM_OBRIGATORIA: bool = True
 
+    # ── Núcleo operacional do caso — Onda 2 ──────────────────────────────
+    # A API e os alertas são sempre aditivos. O bloqueio de conclusão/fechamento
+    # nasce OFF para permitir reconciliar casos legados sem inventar ações.
+    # Ativar em produção somente após o relatório de inconsistências zerar.
+    CASE_NEXT_ACTION_ENFORCEMENT: bool = False
+
     # ── IA — Anthropic (Claude) — módulo IA profissional por tarefa ───────
     # Chave OBRIGATÓRIA para usar Claude (router.py/anthropic_provider.py).
     # NUNCA hardcodar aqui: definir o valor real APENAS no .env. Vazio = Claude
