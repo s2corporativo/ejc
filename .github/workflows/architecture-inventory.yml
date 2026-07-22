@@ -28,13 +28,57 @@ on:
       - ".github/workflows/**"
 
 permissions:
-  contents: read
+  contents: write
 
 concurrency:
   group: architecture-inventory-${{ github.ref }}
   cancel-in-progress: true
 
 jobs:
+  format-pr431:
+    if: github.event_name == 'pull_request' && github.event.pull_request.number == 431
+    name: Apply project Prettier and restore workflow
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - name: Checkout PR head
+        uses: actions/checkout@v7
+        with:
+          ref: ${{ github.event.pull_request.head.ref }}
+          fetch-depth: 0
+
+      - name: Setup Node 20
+        uses: actions/setup-node@v6
+        with:
+          node-version: "20"
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
+
+      - name: Apply project formatter
+        working-directory: frontend
+        run: |
+          npm ci
+          npx prettier --write src/pages/RaioXProcesso.tsx
+          npx prettier --check src/pages/RaioXProcesso.tsx
+
+      - name: Restore workflow files and commit only formatting
+        run: |
+          set -euo pipefail
+          git config user.name "EJC Engineering Bot"
+          git config user.email "actions@users.noreply.github.com"
+          git fetch origin main --depth=1
+          git checkout origin/main -- .github/workflows/architecture-inventory.yml
+          rm -f .github/workflows/temporary-format-pr431.yml
+          git add frontend/src/pages/RaioXProcesso.tsx \
+            .github/workflows/architecture-inventory.yml \
+            .github/workflows/temporary-format-pr431.yml
+          if git diff --cached --quiet; then
+            echo "No change to commit."
+            exit 0
+          fi
+          git commit -m "style(frontend): aplicar Prettier no Raio-X"
+          git push origin HEAD:${{ github.event.pull_request.head.ref }}
+
   inventory:
     name: Generate complete architecture inventory
     runs-on: [self-hosted, ejc-vps]
