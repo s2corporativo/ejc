@@ -27,14 +27,16 @@ def test_portfolio_health_preserves_assignment_scope():
     assert '"scope": "office" if scope_all else "assigned"' in source
 
 
-def test_dashboard_endpoint_has_explicit_allowed_roles():
+def test_dashboard_endpoint_has_explicit_allowed_roles_without_scope_expansion():
     source = (ROOT / "app/routers/dashboard_operational.py").read_text(
         encoding="utf-8"
     )
     assert '"financeiro"' not in source
     assert '"cliente_externo"' not in source
-    assert '"secretaria"' in source
-    assert '"socio"' in source
+    assert '"secretaria"' not in source
+    assert '_OFFICE_SCOPE = {"superadmin", "admin", "socio"}' in source
+    assert '"advogado_auxiliar"' in source
+    assert '"estagiario"' in source
     assert '@router.get("/operational-health")' in source
 
 
