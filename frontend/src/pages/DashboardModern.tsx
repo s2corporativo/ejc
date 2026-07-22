@@ -178,6 +178,7 @@ function DeadlineBars({
 export default function DashboardModern() {
   const { user } = useAuth();
   const [dashboard, setDashboard] = useState<any>(null);
+  const [operational, setOperational] = useState<any>(null);
   const [jurimetria, setJurimetria] = useState<any>(null);
   const [prazos, setPrazos] = useState<any[]>([]);
   const [movimentos, setMovimentos] = useState<any[]>([]);
@@ -202,6 +203,7 @@ export default function DashboardModern() {
     setLoading(true);
     Promise.allSettled([
       api.get("/dashboard/"),
+      api.get("/dashboard/pendencias-operacionais"),
       // /jurimetria/overview é restrito a sócio+ (403 para advogado/financeiro/
       // estagiário): sem o gate, o widget dispararia um 403 a cada carga.
       isManager
@@ -220,8 +222,19 @@ export default function DashboardModern() {
         : Promise.reject(new Error("sem permissão de CRM")),
     ])
       .then(
-        ([dash, juri, deadlines, movements, cases, ia, solicitacoesReq]) => {
+        ([
+          dash,
+          operationalReq,
+          juri,
+          deadlines,
+          movements,
+          cases,
+          ia,
+          solicitacoesReq,
+        ]) => {
           if (dash.status === "fulfilled") setDashboard(dash.value.data);
+          if (operationalReq.status === "fulfilled")
+            setOperational(operationalReq.value.data);
           if (juri.status === "fulfilled") setJurimetria(juri.value.data);
           if (deadlines.status === "fulfilled")
             setPrazos(asList(deadlines.value.data));
@@ -382,6 +395,66 @@ export default function DashboardModern() {
     icon: typeof AlertTriangle;
   }> = [
     {
+      key: "acoes-vencidas",
+      count: Number(
+        operational?.contagens?.proximas_acoes_vencidas ?? 0,
+      ),
+      label: "próximas ações vencidas",
+      to: "/casos",
+      tone: "red",
+      icon: AlertTriangle,
+    },
+    {
+      key: "sem-acao",
+      count: Number(operational?.contagens?.casos_sem_proxima_acao ?? 0),
+      label: "casos sem próxima ação",
+      to: "/casos",
+      tone: "amber",
+      icon: ListChecks,
+    },
+    {
+      key: "prazos-sem-conferencia",
+      count: Number(operational?.contagens?.prazos_sem_conferencia ?? 0),
+      label: "prazos sem conferência",
+      to: "/atividades?tipo=prazo",
+      tone: "red",
+      icon: ShieldCheck,
+    },
+    {
+      key: "intimacoes",
+      count: Number(
+        operational?.contagens?.intimacoes_nao_analisadas ?? 0,
+      ),
+      label: "intimações não analisadas",
+      to: "/intimacoes",
+      tone: "blue",
+      icon: Gavel,
+    },
+    {
+      key: "tarefas-vencidas",
+      count: Number(operational?.contagens?.tarefas_vencidas ?? 0),
+      label: "tarefas vencidas",
+      to: "/atividades?tipo=tarefa",
+      tone: "amber",
+      icon: ListChecks,
+    },
+    {
+      key: "pecas-revisao",
+      count: Number(operational?.contagens?.pecas_em_revisao ?? 0),
+      label: "peças em revisão",
+      to: "/pecas",
+      tone: "blue",
+      icon: FileText,
+    },
+    {
+      key: "documentos-aguardados",
+      count: Number(operational?.contagens?.documentos_aguardados ?? 0),
+      label: "documentos aguardados",
+      to: "/documentos",
+      tone: "amber",
+      icon: FileText,
+    },
+    {
       key: "prazos",
       count: criticalDeadlines.length,
       label: "prazos críticos",
@@ -425,7 +498,43 @@ export default function DashboardModern() {
     to: string;
   };
   const nextAction = useMemo<NextAction | null>(() => {
-    // 1) Prazo crítico/vencido (inclui "vence hoje"), o de menor folga.
+    // 1) Próxima ação canônica do caso, priorizada no backend com RBAC.
+    const operationalHighlight = operational?.destaque;
+    if (operationalHighlight) {
+      const dueAt = new Date(operationalHighlight.due_at);
+      const overdue = dueAt.getTime() < Date.now();
+      return {
+        tone: overdue ? "red" : "amber",
+        icon: ListChecks,
+        eyebrow: overdue
+          ? "Próxima ação vencida"
+          : operationalHighlight.blocked
+            ? "Próxima ação bloqueada"
+            : "Próxima ação do caso",
+        title: operationalHighlight.title,
+        desc: `${operationalHighlight.case_title} — responsável definido, prazo ${fmtDate(
+          operationalHighlight.due_at,
+        )}.`,
+        cta: "Abrir caso",
+        to: `/casos/${operationalHighlight.case_id}`,
+      };
+    }
+
+    const missingCase = operational?.casos_sem_proxima_acao?.[0];
+    if (missingCase) {
+      return {
+        tone: "amber",
+        icon: ListChecks,
+        eyebrow: "Caso sem próxima ação",
+        title: missingCase.titulo,
+        desc:
+          "Defina responsável, providência, data esperada e origem da obrigação.",
+        cta: "Organizar caso",
+        to: `/casos/${missingCase.id}`,
+      };
+    }
+
+    // 2) Prazo crítico/vencido (inclui "vence hoje"), o de menor folga.
     const critical = [...prazos]
       .filter((deadline) => (deadline.dias_restantes ?? 99) <= 3)
       .sort((a, b) => (a.dias_restantes ?? 99) - (b.dias_restantes ?? 99))[0];
@@ -448,7 +557,7 @@ export default function DashboardModern() {
         to: "/atividades?tipo=prazo",
       };
     }
-    // 2) Cliente aguardando resposta (só quem enxerga o CRM).
+    // 3) Cliente aguardando resposta (só quem enxerga o CRM).
     if (canSeeCRM && Number(solicitacoes?.pendentes ?? 0) > 0) {
       const pending = Number(solicitacoes?.pendentes ?? 0);
       const late = Number(solicitacoes?.atrasadas ?? 0);
@@ -469,7 +578,7 @@ export default function DashboardModern() {
     }
     // 3) Nada urgente → estado calmo (renderizado no JSX).
     return null;
-  }, [prazos, canSeeCRM, solicitacoes]);
+  }, [operational, prazos, canSeeCRM, solicitacoes]);
   const NextActionIcon = nextAction?.icon;
 
   return (
