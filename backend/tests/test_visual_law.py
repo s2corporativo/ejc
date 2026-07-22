@@ -80,14 +80,11 @@ def test_dias_parado_desde_datas_injetadas():
     ("baixo", None, "remoto", "risco_cadastrado"),
     ("medio", None, "possivel", "risco_cadastrado"),
     ("alto", None, "provavel", "risco_cadastrado"),
-    ("ALTO", 90, "provavel", "risco_cadastrado"),   # risco vence o score
-    (None, 85, "remoto", "score_saude"),
-    (None, 80, "remoto", "score_saude"),
-    (None, 79, "possivel", "score_saude"),
-    (None, 50, "possivel", "score_saude"),
-    (None, 49, "provavel", "score_saude"),
-    (None, None, "provavel", "score_saude"),        # sem nada → pior caso
-    ("invalido", 85, "remoto", "score_saude"),
+    ("ALTO", 90, "provavel", "risco_cadastrado"),
+    (None, 85, None, "nao_classificada"),
+    (None, 50, None, "nao_classificada"),
+    (None, None, None, "nao_classificada"),
+    ("invalido", 85, None, "nao_classificada"),
 ])
 def test_derivar_probabilidade(risco, score, esperado, fonte):
     assert vl.derivar_probabilidade(risco, score) == (esperado, fonte)
