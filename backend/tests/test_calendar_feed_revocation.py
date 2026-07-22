@@ -1,6 +1,7 @@
 """Regressão de revogação individual do feed ICS."""
 from __future__ import annotations
 
+import inspect
 from types import SimpleNamespace
 
 import pytest
@@ -128,3 +129,8 @@ def test_headers_do_feed_impedem_cache():
     headers = calendar_feed._headers_ics()
     assert "no-store" in headers["Cache-Control"]
     assert headers["X-Content-Type-Options"] == "nosniff"
+
+
+def test_rotacao_tem_rate_limit_por_usuario():
+    source = inspect.getsource(calendar_feed)
+    assert 'rate_limit("calendar-ics-rotate", 5)' in source
