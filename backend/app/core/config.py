@@ -416,9 +416,10 @@ class Settings(BaseSettings):
     # curada de temas do escritório, em janela de datas, e ingere as ementas
     # no RAG (dedup idempotente por chave_origem). Scraping é frágil por
     # natureza — se o HTML mudar ou o TJMG bloquear, o job marca 'erro' em
-    # fontes_ingestao SEM derrubar o scheduler. Desligado por padrão (opt-in
-    # no .env); validar contra o site real antes de ativar em produção.
-    TJMG_INGEST_ENABLED: bool = False
+    # fontes_ingestao SEM derrubar o scheduler. LIGADO por decisão do titular; o
+    # scraper é frágil — acompanhe /ia-governanca/fontes (se marcar 'erro', o
+    # LexML federado já cobre o TJMG). Desligue com TJMG_INGEST_ENABLED=false.
+    TJMG_INGEST_ENABLED: bool = True
     # CSV de temas de busca. Vazio = usa a lista padrão (áreas do escritório,
     # ver services/ingestors/tjmg.py::TEMAS_PADRAO).
     TJMG_INGEST_TEMAS: str = ""
@@ -451,9 +452,11 @@ class Settings(BaseSettings):
     # escritório e usa o caminho PROVADO jurisprudencia_externa.buscar_lexml
     # (API pública, keyword-based) para tipo='legislacao' E 'jurisprudencia'.
     # É o veículo que amplia o VOLUME estadual/municipal/tribunais sem scraper
-    # dedicado por portal. Desligado por padrão (opt-in no .env); best-effort e
-    # idempotente por chave_origem (lexml:<tipo>:<urn|hash>) como os demais.
-    LEXML_INGEST_ENABLED: bool = False
+    # dedicado por portal. LIGADO por decisão do titular (fonte pública gratuita,
+    # inbound de dado público, degrada graciosamente); best-effort e idempotente
+    # por chave_origem (lexml:<tipo>:<urn|hash>) como os demais. Requer
+    # ENABLE_SCHEDULER=true no worker. Desligue com LEXML_INGEST_ENABLED=false.
+    LEXML_INGEST_ENABLED: bool = True
     # CSV de temas/autoridades de busca. Vazio = lista padrão (áreas do
     # escritório + autoridades-alvo, ver services/ingestors/lexml.py::TEMAS_PADRAO).
     LEXML_INGEST_TEMAS: str = ""
