@@ -54,6 +54,11 @@ Súmulas (STJ/TST/STF) e a legislação federal inicial também são semeadas no
 Ambos exigem papel **superadmin/admin/socio** e são rate-limited. Rodam em
 background (idempotentes — reexecutar não duplica; dedup por `chave_origem`).
 
+> **Atalho:** `scripts/ingestao_rag.sh` faz os passos 1-2 abaixo (login +
+> disparo). Ex.: `EJC_EMAIL=admin@dominio ./scripts/ingestao_rag.sh`
+> (com `EJC_SEED=1` inclui o passo 3). A senha é solicitada sem eco; nada é
+> hardcoded.
+
 ### Passo 1 — autenticar (obter access token)
 
 ```bash
