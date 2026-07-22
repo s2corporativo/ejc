@@ -11,6 +11,7 @@ from sqlalchemy import select, or_, func as sqlfunc, text
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.database import get_db
+from app.core.config import get_settings
 from app.core.rate_limit import rate_limit
 from app.core.security import get_current_user, require_roles, ROLE_LEVEL
 from app.models.user import User
@@ -20,6 +21,7 @@ from app.models.audit_log import criar_audit_log
 from app.services.deadline_calculator import calcular_prescricao
 from app.services.case_intel import triagem_caso, aprendizado_encerramento
 from app.services.case_automacao import automacao_caso
+from app.services.case_next_action import closure_issues
 from app.services import event_bus
 from app.services.documental import gerar_documentos_iniciais
 # Mesmo vocabulário/contrato de poderes do kit documental (fonte única do
@@ -40,7 +42,13 @@ from app.schemas.common import MsgResponse
 from pydantic import BaseModel, Field
 
 router = APIRouter(prefix="/cases", tags=["Casos"])
+settings = get_settings()
 _ARQUIVAMENTO_ROLES = ["superadmin", "admin", "socio", "advogado"]
+
+
+def _closure_error(issues: list[dict]) -> str:
+    details = "; ".join(item["detalhe"] for item in issues)
+    return f"Encerramento bloqueado: {details}"
 
 
 async def _proximo_numero_interno(db: AsyncSession) -> str:
@@ -278,6 +286,25 @@ async def atualizar(
         raise HTTPException(status_code=404, detail="Caso não encontrado")
 
     mudancas = payload.model_dump(exclude_unset=True)
+    requested_status = mudancas.get("status")
+    requested_status_value = (
+        requested_status.value
+        if hasattr(requested_status, "value")
+        else requested_status
+    )
+    if (
+        settings.CASE_NEXT_ACTION_ENFORCEMENT
+        and requested_status_value in ("encerrado", "arquivado")
+    ):
+        fluxo = "encerrar" if requested_status_value == "encerrado" else "arquivar"
+        raise HTTPException(
+            status_code=409,
+            detail=(
+                f"Use o fluxo /cases/{case_id}/{fluxo}; alteração direta de "
+                "status terminal está bloqueada"
+            ),
+        )
+
     for k, v in mudancas.items():
         setattr(c, k, v)
     if mudancas.get("status") == "encerrado":
@@ -367,6 +394,11 @@ async def arquivar_caso(
         raise HTTPException(status_code=404, detail="Caso não encontrado")
     if c.status == CaseStatus.arquivado:
         raise HTTPException(status_code=409, detail="Caso já arquivado")
+
+    if settings.CASE_NEXT_ACTION_ENFORCEMENT:
+        issues = await closure_issues(db, c)
+        if issues:
+            raise HTTPException(status_code=422, detail=_closure_error(issues))
 
     c.status = CaseStatus.arquivado
     c.archived_at = datetime.now(timezone.utc)
@@ -748,6 +780,11 @@ async def encerrar_caso(
         raise HTTPException(status_code=404, detail="Caso não encontrado")
     if case.status in (CaseStatus.encerrado, CaseStatus.arquivado):
         raise HTTPException(status_code=409, detail="Caso já encerrado")
+
+    if settings.CASE_NEXT_ACTION_ENFORCEMENT:
+        issues = await closure_issues(db, case)
+        if issues:
+            raise HTTPException(status_code=422, detail=_closure_error(issues))
 
     case.status = CaseStatus.encerrado
     case.data_encerramento = datetime.now(timezone.utc)
