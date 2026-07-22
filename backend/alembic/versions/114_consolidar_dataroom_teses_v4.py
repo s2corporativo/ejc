@@ -14,16 +14,11 @@ down_revision = "113_calendar_feed_revocation"
 branch_labels = None
 depends_on = None
 
-# Consumido por scripts/check_migration_compatibility.py. A declaração não é um
-# bypass: o classificador ainda exige SQL literal, INSERT ... SELECT, target
-# allowlisted, idempotência estática e ausência de verbos destrutivos.
 deployment_policy = "additive_data_backfill"
 data_backfill_targets = ("data_rooms", "teses")
 
 
 def upgrade() -> None:
-    # Data Room v4 -> data_rooms. `publica` não é migrado como acesso aberto:
-    # o modelo canônico exige links revogáveis, auditáveis e com expiração.
     op.execute(
         r"""
         DO $$
@@ -50,22 +45,28 @@ def upgrade() -> None:
                             WHEN COALESCE(src.publica, false)
                             THEN 'A sala era marcada como pública; gere um link canônico para novo acesso.'
                             ELSE NULL
+                        END,
+                        CASE
+                            WHEN src.client_id IS NOT NULL AND cli.id IS NULL
+                            THEN 'Vínculo histórico com cliente inexistente: ' || src.client_id
+                            ELSE NULL
                         END
                     ),
                     NULL,
-                    src.client_id,
+                    CASE WHEN cli.id IS NOT NULL THEN src.client_id ELSE NULL END,
                     NULL,
                     COALESCE(src.created_at, now()),
                     now(),
                     NULL
                 FROM dataroom_salas src
+                LEFT JOIN clients cli ON cli.id = src.client_id
                 WHERE NOT EXISTS (
                     SELECT 1
                     FROM data_rooms dst
                     WHERE dst.id = src.id
                        OR (
                             lower(trim(dst.nome)) = lower(trim(LEFT(src.nome, 200)))
-                            AND COALESCE(dst.client_id, '') = COALESCE(src.client_id, '')
+                            AND COALESCE(dst.client_id, '') = COALESCE(cli.id, '')
                             AND dst.deleted_at IS NULL
                        )
                 );
@@ -74,8 +75,6 @@ def upgrade() -> None:
         """
     )
 
-    # Teses v4 -> teses. Métricas legadas são preservadas; `vencedora` vira
-    # uma ocorrência de uso/êxito para manter a taxa sem fabricar histórico.
     op.execute(
         r"""
         DO $$
@@ -133,6 +132,4 @@ def upgrade() -> None:
 
 
 def downgrade() -> None:
-    # Não remove registros canônicos: após o upgrade eles podem ter sido
-    # revisados, vinculados ou utilizados. As fontes v4 continuam intactas.
     pass
