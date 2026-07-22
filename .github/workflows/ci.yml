@@ -5,10 +5,9 @@ name: CI
 # vulnerabilidade alta impedem homologação. Para eficácia jurídica/operacional,
 # os checks deste workflow e do "EJC Release Gate" devem ser obrigatórios na
 # proteção da branch main.
-
-# CI no runner SELF-HOSTED: roda no VPS do escritório, mantendo checks auditáveis
-# sem consumo de minutos hospedados. Requer o runner registrado e online com os
-# labels `self-hosted` e `ejc-vps` (docs/RUNNER_SELFHOSTED.md).
+#
+# Os gates abaixo não usam dados nem segredos de produção. A execução em runner
+# hospedado evita que a indisponibilidade da VPS paralise a governança de merge.
 on:
   pull_request:
   push:
@@ -25,7 +24,7 @@ concurrency:
 jobs:
   db-validation:
     name: Backend — suíte completa + schema/RAG (Postgres pgvector)
-    runs-on: [self-hosted, ejc-vps]
+    runs-on: ubuntu-latest
     timeout-minutes: 30
     defaults:
       run:
@@ -153,7 +152,7 @@ jobs:
 
   eval-smoke:
     name: Eval — smoke dos gold sets (offline, bloqueante)
-    runs-on: [self-hosted, ejc-vps]
+    runs-on: ubuntu-latest
     timeout-minutes: 15
     defaults:
       run:
@@ -181,7 +180,7 @@ jobs:
 
   frontend-build:
     name: Frontend — testes + typecheck + build
-    runs-on: [self-hosted, ejc-vps]
+    runs-on: ubuntu-latest
     timeout-minutes: 25
     defaults:
       run:
