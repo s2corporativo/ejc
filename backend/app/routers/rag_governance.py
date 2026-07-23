@@ -169,6 +169,59 @@ async def atualizar_governanca_documento(
     return {"detail": "Governança do documento atualizada", "documento": details}
 
 
+class RevisaoRequest(BaseModel):
+    aprovado: bool = Field(description="True para aprovar, False para rejeitar")
+
+
+@router.post("/docs/{doc_id}/revisar")
+async def revisar_documento_conhecimento(
+    doc_id: str,
+    payload: RevisaoRequest,
+    db: AsyncSession = Depends(get_db),
+    cu: User = Depends(require_roles(GOVERNANCE_ROLES)),
+):
+    """Revisão manual de documento de conhecimento (G6).
+
+    Marca documento como revisado (aprovado ou rejeitado). Documentos aprovados
+    entram na base ativa do RAG; rejeitados ficam marcados mas são excluídos do
+    retrieval por padrão.
+    """
+    doc = (
+        await db.execute(
+            select(KnowledgeDoc).where(
+                KnowledgeDoc.id == doc_id,
+                KnowledgeDoc.deleted_at.is_(None),
+            )
+        )
+    ).scalar_one_or_none()
+    if not doc:
+        raise HTTPException(status_code=404, detail="Documento não encontrado")
+
+    doc.revisado = payload.aprovado
+    doc.revisado_por = str(cu.id)
+    doc.revisado_em = datetime.now(timezone.utc)
+
+    from app.models.audit_log import criar_audit_log
+
+    role = getattr(cu.role, "value", str(cu.role))
+    await criar_audit_log(
+        db,
+        user_id=cu.id,
+        user_role=role,
+        acao="REVISAO_CONHECIMENTO",
+        entidade="knowledge_docs",
+        registro_id=doc.id,
+        detalhes=f"Documento {'aprovado' if payload.aprovado else 'rejeitado'} pelo revisor",
+    )
+    await db.commit()
+
+    return {
+        "detail": f"Documento {'aprovado' if payload.aprovado else 'rejeitado'}",
+        "revisado": doc.revisado,
+        "revisado_em": doc.revisado_em.isoformat() if doc.revisado_em else None,
+    }
+
+
 @router.post("/docs/{doc_id}/testar")
 async def testar_conhecimento_documento(
     doc_id: str,

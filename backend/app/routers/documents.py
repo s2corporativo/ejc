@@ -148,7 +148,7 @@ async def _analisar_doc_bg(case_id: str, ocr_text: str, doc_id: str, user_id: st
     try:
         from app.services.analise_estrategica import analisar_caso
         from app.core.database import AsyncSessionLocal
-        from app.models.ai_log import AILog, AITipoUso, AIStatusHITL
+        from app.models.ai_log import AILog, AITipoUso, AIStatusHITL, classificar_risco_ia
         from sqlalchemy import text as _sql
         from uuid import uuid4 as _uuid4
         import json as _json
@@ -182,6 +182,7 @@ async def _analisar_doc_bg(case_id: str, ocr_text: str, doc_id: str, user_id: st
                 prompt_sanitizado=f"[auto] analise estrategica do documento {doc_id}",
                 resposta=_json.dumps(resultado, ensure_ascii=False)[:8000],
                 fontes_rag=fontes,
+                risco_ia=classificar_risco_ia("analise_juridica"),
                 status_hitl=AIStatusHITL.gerado,
             )
             db.add(log)
@@ -424,6 +425,25 @@ async def upload(
         confidencialidade=conf_enum, ocr_text=ocr_text,
         case_id=case_id, client_id=client_id, uploaded_by=cu.id,
     )
+
+    # G3 — Versionamento: se já existe documento com mesmo título no mesmo caso,
+    # cria nova versão em vez de documento independente.
+    if case_id:
+        existente = (await db.execute(
+            select(Document).where(
+                Document.titulo == titulo,
+                Document.case_id == case_id,
+                Document.deleted_at.is_(None),
+            ).order_by(Document.versao.desc()).limit(1)
+        )).scalar_one_or_none()
+        if existente:
+            grupo = existente.versao_grupo_id or existente.id
+            d.versao = (existente.versao or 1) + 1
+            d.versao_grupo_id = grupo
+            d.versao_anterior_id = existente.id
+        else:
+            d.versao_grupo_id = doc_id
+
     db.add(d)
     await criar_audit_log(
         db, cu.id, cu.role.value, "UPLOAD", "documents", doc_id,

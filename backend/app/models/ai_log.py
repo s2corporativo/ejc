@@ -126,6 +126,43 @@ class AITipoUso(str, enum.Enum):
     outro = "outro"
 
 
+class AIRiscoIA(str, enum.Enum):
+    baixo_risco = "baixo_risco"
+    medio_risco = "medio_risco"
+    alto_risco = "alto_risco"
+
+
+# Aliases de task_type → tarefa normalizada (espelho de ai_gateway.TASK_ALIASES
+# para evitar import circular).
+_TASK_ALIASES_LOCAIS: dict[str, str] = {
+    "redacao_peca": "elaboracao_peca",
+    "redacao_juridica": "elaboracao_peca",
+    "peca_juridica": "elaboracao_peca",
+    "analise_caso": "estrategia",
+    "pesquisa_juridica": "analise_juridica",
+    "rag_query": "analise_juridica",
+}
+
+# Mapeamento task_type → risco_ia padrão. Routers podem sobrescrever.
+_RISCO_POR_TAREFA: dict[str, AIRiscoIA] = {
+    "elaboracao_peca": AIRiscoIA.alto_risco,
+    "analise_caso": AIRiscoIA.medio_risco,
+    "estrategia": AIRiscoIA.medio_risco,
+    "analise_juridica": AIRiscoIA.medio_risco,
+    "resumo": AIRiscoIA.baixo_risco,
+    "resumo_documento": AIRiscoIA.baixo_risco,
+    "consulta_rag": AIRiscoIA.baixo_risco,
+}
+
+
+def classificar_risco_ia(task_type: str | None = None) -> AIRiscoIA | None:
+    """Classifica o risco de uma interação de IA com base no tipo de tarefa."""
+    if not task_type:
+        return None
+    normalizado = _TASK_ALIASES_LOCAIS.get(task_type, task_type)
+    return _RISCO_POR_TAREFA.get(normalizado, AIRiscoIA.medio_risco)
+
+
 class AILog(Base):
     __tablename__ = "ai_logs"
 
@@ -144,6 +181,7 @@ class AILog(Base):
     tokens_input = Column(Integer, nullable=True)
     tokens_output = Column(Integer, nullable=True)
     custo_estimado = Column(Numeric(12, 6), nullable=True)
+    risco_ia = Column(SAEnum(AIRiscoIA), nullable=True, index=True)
 
     status_hitl = Column(SAEnum(AIStatusHITL), nullable=False, default=AIStatusHITL.gerado, index=True)
     revisado_por = Column(String(36), nullable=True)

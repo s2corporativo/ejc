@@ -706,6 +706,22 @@ export default function TabResumo({ caso }: { caso: Case }) {
         </div>
       )}
 
+      {caso.proxima_acao && (
+        <div className="card p-5 border-l-4 border-primary-400">
+          <h3 className="font-semibold mb-2 text-sm text-primary-600">
+            Próxima Ação
+          </h3>
+          <p className="text-sm text-slate-700 leading-relaxed">
+            {caso.proxima_acao}
+          </p>
+          {caso.proxima_acao_prazo && (
+            <p className="mt-1 text-xs text-slate-500">
+              Prazo: {fmtDate(caso.proxima_acao_prazo)}
+            </p>
+          )}
+        </div>
+      )}
+
       {/* Intake — Análise Completa (IA): área, teses, estratégia, honorários e módulos */}
       <IntakeAnalise caseId={caso.id} />
 

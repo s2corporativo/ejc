@@ -101,6 +101,7 @@ export default function NovoCasoWizard({
     numero_processo: "",
     valor_causa: "",
     descricao_fatos: "",
+    proxima_acao: "",
   });
   const [criandoCaso, setCriandoCaso] = useState(false);
   // Erro inline do campo título (validação junto ao campo, além do toast).
@@ -142,6 +143,7 @@ export default function NovoCasoWizard({
       numero_processo: "",
       valor_causa: "",
       descricao_fatos: "",
+      proxima_acao: "",
     });
   };
 
@@ -230,6 +232,10 @@ export default function NovoCasoWizard({
       // o toast sozinho aparecia longe do formulário (usabilidade §3.8).
       setTituloErro("Informe o título do caso.");
       toast.error("Informe o título do caso.");
+      return;
+    }
+    if (!caso.proxima_acao.trim()) {
+      toast.error("Informe a próxima ação — é obrigatória para casos ativos.");
       return;
     }
     setCriandoCaso(true);
@@ -581,6 +587,21 @@ export default function NovoCasoWizard({
                   setCaso({ ...caso, descricao_fatos: e.target.value })
                 }
               />
+            </div>
+            <div className="sm:col-span-2">
+              <label className="label">Próxima ação *</label>
+              <input
+                className="input"
+                placeholder="Ex.: Protocolar contestação, Agendar reunião, Entrar em contato com perito"
+                value={caso.proxima_acao}
+                onChange={(e) =>
+                  setCaso({ ...caso, proxima_acao: e.target.value })
+                }
+              />
+              <p className="mt-1 text-xs text-slate-400">
+                O que precisa ser feito agora neste caso? Obrigatório para casos
+                ativos.
+              </p>
             </div>
 
             {/* Honorários (opcional) — bloco colapsável e discreto.

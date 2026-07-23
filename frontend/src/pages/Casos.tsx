@@ -489,6 +489,10 @@ export default function Casos() {
       );
       return;
     }
+    if (!form.proxima_acao?.trim()) {
+      toast.error("Informe a próxima ação — é obrigatória para casos ativos.");
+      return;
+    }
     const selecionado = clientes.find((c) => c.id === form.client_id);
     const clienteLabel =
       selecionado?.nome ||
@@ -511,6 +515,10 @@ export default function Casos() {
       toast.error(
         "Título e cliente são obrigatórios (ou importe um documento)",
       );
+      return;
+    }
+    if (!form.proxima_acao?.trim()) {
+      toast.error("Informe a próxima ação — é obrigatória para casos ativos.");
       return;
     }
     setSalvando(true);
@@ -1376,6 +1384,21 @@ export default function Casos() {
                 setForm({ ...form, descricao_fatos: e.target.value })
               }
             />
+          </div>
+          <div className="sm:col-span-2">
+            <label className="label">Próxima ação *</label>
+            <input
+              className="input"
+              placeholder="Ex.: Protocolar contestação, Agendar reunião"
+              value={form.proxima_acao || ""}
+              onChange={(e) =>
+                setForm({ ...form, proxima_acao: e.target.value })
+              }
+            />
+            <p className="mt-1 text-xs text-slate-400">
+              O que precisa ser feito agora neste caso? Obrigatório para casos
+              ativos.
+            </p>
           </div>
         </div>
         <div className="flex justify-end mt-5">

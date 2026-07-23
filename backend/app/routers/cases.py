@@ -43,6 +43,23 @@ from pydantic import BaseModel, Field
 router = APIRouter(prefix="/cases", tags=["Casos"])
 _ARQUIVAMENTO_ROLES = ["superadmin", "admin", "socio", "advogado"]
 
+# Status que exigem proxima_acao preenchido (G1 — caso sempre tem "o que fazer agora").
+_STATUS_EXIGE_PROXIMA_ACAO = {"triagem", "ativo", "suspenso", "acordo"}
+
+
+def _validar_proxima_acao(payload, status_atual: str | None = None):
+    """G1: valida que casos ativos têm proxima_acao definido.
+
+    Chamado no criar() e no atualizar(). Não bloqueia encerramento/arquivamento.
+    """
+    status = (getattr(payload, "status", None) or status_atual or "triagem")
+    proxima = getattr(payload, "proxima_acao", None)
+    if status in _STATUS_EXIGE_PROXIMA_ACAO and not proxima:
+        raise HTTPException(
+            status_code=422,
+            detail="Campo 'proxima_acao' é obrigatório para casos com status triagem/ativo/suspenso/acordo",
+        )
+
 
 async def _proximo_numero_interno(db: AsyncSession) -> str:
     """Numeração automática DPT-2026-0001 (sequencial por ano).
@@ -201,6 +218,9 @@ async def criar(
             detail="Título inválido — resposta de IA não parseada",
         )
 
+    # G1: casos ativos devem ter proxima_acao
+    _validar_proxima_acao(payload)
+
     # Validar cliente
     client = (await db.execute(
         select(Client).where(
@@ -333,6 +353,16 @@ async def atualizar(
         raise HTTPException(status_code=404, detail="Caso não encontrado")
 
     mudancas = payload.model_dump(exclude_unset=True)
+
+    # G1: valida proxima_acao — se o caso é/será ativo, exige campo
+    status_novo = mudancas.get("status", c.status.value if c.status else None)
+    proxima_nova = mudancas.get("proxima_acao", c.proxima_acao)
+    if status_novo in _STATUS_EXIGE_PROXIMA_ACAO and not proxima_nova:
+        raise HTTPException(
+            status_code=422,
+            detail="Campo 'proxima_acao' é obrigatório para casos com status triagem/ativo/suspenso/acordo",
+        )
+
     for k, v in mudancas.items():
         setattr(c, k, v)
     if mudancas.get("status") == "encerrado":
@@ -1313,13 +1343,14 @@ async def analisar_caso_ia(
     )
 
     try:
-        from app.models.ai_log import AILog, AITipoUso, AIStatusHITL
+        from app.models.ai_log import AILog, AITipoUso, AIStatusHITL, classificar_risco_ia
         log = AILog(
             user_id=current_user.id,
             case_id=case_id,
             tipo_uso=AITipoUso.analise_caso,
             prompt_sanitizado='analise_estrategica_completa',
             resposta=_json.dumps(analise, ensure_ascii=False)[:10000],
+            risco_ia=classificar_risco_ia("analise_juridica"),
             status_hitl=AIStatusHITL.gerado,
             pii_removida=True,
         )

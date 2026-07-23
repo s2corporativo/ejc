@@ -290,7 +290,7 @@ _MAPA_PECAS: dict[str, dict[str, list[str]]] = {
     },
     "transito_administrativo": {"*": ["defesa_administrativa", "recurso_administrativo"]},
     "ambiental_administrativo": {"*": ["defesa_administrativa_ambiental", "recurso_administrativo"]},
-    "licitacao_administrativo": {"*": ["defesa_administrativa", "recurso_administrativo"]},
+    # licitacao_administrativo removido — licitações desativadas no EJC
     # Criminal: peças típicas (resposta à acusação etc.) ainda não estão no
     # catálogo determinístico — o motor NÃO inventa; exige seleção manual.
     "jecrim": {"*": []},

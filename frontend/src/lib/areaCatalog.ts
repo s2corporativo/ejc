@@ -26,7 +26,6 @@ export const AREAS_FALLBACK: AreaDireito[] = [
   { slug: "internacional", nome: "Internacional" },
   { slug: "contratual", nome: "Contratual" },
   { slug: "societario", nome: "Societário" },
-  { slug: "licitacoes", nome: "Licitações" },
 ];
 
 const LABELS: Record<string, string> = Object.fromEntries(

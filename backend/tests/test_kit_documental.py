@@ -419,7 +419,8 @@ async def test_abertura_de_caso_agenda_gerar_documentos_iniciais_auto():
     from app.schemas.case import CaseCreate
 
     cu = _user(UserRole.advogado, "u1")
-    payload = CaseCreate(titulo="Guarda dos Filhos", area="familia", client_id="cli1")
+    payload = CaseCreate(titulo="Guarda dos Filhos", area="familia", client_id="cli1",
+                         proxima_acao="Definir estratégia de guarda")
     # execute #1: validação do cliente (scalar_one_or_none); #2: advisory lock;
     # #3: SELECT numero_interno (scalar → None = primeiro do ano).
     db = _FakeDB([_cli(), None, None])
@@ -479,6 +480,7 @@ async def test_criar_caso_com_honorarios_semeia_proposta_aprovada_antes_do_kit()
     cu = _user(UserRole.advogado, "u1")
     payload = CaseCreate(
         titulo="Guarda dos Filhos", area="familia", client_id="cli1",
+        proxima_acao="Definir estratégia de guarda",
         honorarios={"valor_contratual": 12000.0, "percentual_exito": 25.0,
                     "forma_pagamento": "3x", "observacoes": "obs"},
     )
@@ -510,7 +512,8 @@ async def test_criar_caso_sem_honorarios_nao_semeia_proposta():
     from app.schemas.case import CaseCreate
 
     cu = _user(UserRole.advogado, "u1")
-    payload = CaseCreate(titulo="Guarda", area="familia", client_id="cli1")
+    payload = CaseCreate(titulo="Guarda", area="familia", client_id="cli1",
+                         proxima_acao="Aguardar documentos do cliente")
     db = _FakeDB([_cli(), None, None])   # exatamente os 3 executes legados
     bg = _FakeBackground()
 

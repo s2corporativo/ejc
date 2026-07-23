@@ -156,6 +156,7 @@ type CasoForm = {
   client_id: string;
   prioridade: string;
   case_type: string;
+  proxima_acao: string;
   numero_processo: string;
   tribunal: string;
   comarca: string;
@@ -180,6 +181,7 @@ const CASO_VAZIO: CasoForm = {
   client_id: "",
   prioridade: "media",
   case_type: "judicial",
+  proxima_acao: "",
   numero_processo: "",
   tribunal: "",
   comarca: "",
@@ -445,6 +447,10 @@ export default function CadastroManual() {
       setErroCaso("Selecione a área do caso.");
       return;
     }
+    if (!formCaso.proxima_acao.trim()) {
+      setErroCaso("Informe a próxima ação — é obrigatória para casos ativos.");
+      return;
+    }
     const clienteNovo = formCaso.criar_cliente
       ? {
           tipo: formCaso.novo_tipo,
@@ -475,6 +481,7 @@ export default function CadastroManual() {
       client_id: clienteNovo ? "" : formCaso.client_id,
       prioridade: formCaso.prioridade,
       case_type: formCaso.case_type,
+      proxima_acao: formCaso.proxima_acao,
       numero_processo: formCaso.numero_processo,
       tribunal: formCaso.tribunal,
       comarca: formCaso.comarca,
@@ -1063,6 +1070,19 @@ export default function CadastroManual() {
                 value={formCaso.descricao_fatos}
                 onChange={(e) => mudarCaso({ descricao_fatos: e.target.value })}
               />
+            </div>
+            <div className="sm:col-span-2 lg:col-span-3">
+              <label className="label">Próxima ação *</label>
+              <input
+                className="input"
+                placeholder="Ex.: Protocolar contestação, Agendar reunião"
+                value={formCaso.proxima_acao}
+                onChange={(e) => mudarCaso({ proxima_acao: e.target.value })}
+              />
+              <p className="mt-1 text-xs text-slate-400">
+                O que precisa ser feito agora neste caso? Obrigatório para casos
+                ativos.
+              </p>
             </div>
           </div>
 

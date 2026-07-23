@@ -94,7 +94,6 @@ STANDARD_AREAS: dict[str, tuple[str, ...]] = {
     "Imobiliário": ("imobili", "usucapiao", "locacao", "condominio"),
     "Bancário": ("bancari", "banco", "financiamento", "juros remuneratorios"),
     "Digital/LGPD": ("lgpd", "dados pessoais", "digital", "anpd"),
-    "Licitações e Contratos": ("licit", "pregao", "pncp", "contrato administrativo"),
 }
 
 COVERAGE_DIMENSIONS = ("legislacao", "sumulas", "jurisprudencia", "modelos", "doutrina")

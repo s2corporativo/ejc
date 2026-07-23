@@ -39,6 +39,13 @@ class Document(Base):
     client_id = Column(String(36), ForeignKey("clients.id"), nullable=True, index=True)
     uploaded_by = Column(String(36), nullable=True)
 
+    # Versionamento (G3): histórico de revisões do mesmo documento.
+    # versao_grupo_id agrupa todas as versões de um mesmo documento original.
+    # versao é o número sequencial (1, 2, 3...); documento vigente = último criado.
+    versao             = Column(Integer, nullable=False, server_default="1")
+    versao_grupo_id    = Column(String(36), nullable=True, index=True)
+    versao_anterior_id = Column(String(36), ForeignKey("documents.id", ondelete="SET NULL"), nullable=True)
+
     # Google Drive (quando o doc vive no Drive, não no volume local)
     drive_file_id = Column(String(128), nullable=True, index=True)
     drive_link    = Column(String(500), nullable=True)

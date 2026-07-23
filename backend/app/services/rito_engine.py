@@ -111,16 +111,7 @@ _RULES: tuple[RitoRule, ...] = (
         ("auditar auto", "verificar competência", "obter laudo", "preparar defesa ou recurso", "avaliar riscos civil e penal conexos"),
         "administrativa",
     ),
-    RitoRule(
-        "licitacao_administrativo",
-        "Processo de Licitação ou Contrato Administrativo",
-        "administrativo",
-        ("pregao eletronico", "edital de licitacao", "ata de registro de precos", "contrato administrativo", "nota de empenho", "sancao administrativa"),
-        ("análise do instrumento", "pedido de esclarecimento ou impugnação", "proposta e habilitação", "recurso", "contratação", "execução", "fiscalização", "defesa em sanção", "reequilíbrio ou cobrança", "encerramento"),
-        ("Lei 14.133/2021", "edital, contrato e regulamento do órgão"),
-        ("extrair obrigações e prazos", "auditar sanção", "avaliar reequilíbrio", "preparar defesa administrativa"),
-        "administrativa",
-    ),
+    # licitacao_administrativo removido — licitações desativadas no EJC
     RitoRule(
         "trabalhista_conhecimento",
         "Procedimento Trabalhista de Conhecimento",

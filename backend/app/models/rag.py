@@ -3,12 +3,20 @@
 # Dimensão do embedding = EMBEDDINGS_DIM (default 1024 = multilingual-e5-large); casa com a
 # coluna vector(EMBEDDINGS_DIM) da migration 096. Configurável por env.
 from __future__ import annotations
-from sqlalchemy import Column, String, DateTime, func, Text, Integer, ForeignKey, Boolean
+import enum
+from sqlalchemy import Column, String, DateTime, func, Text, Integer, ForeignKey, Boolean, Enum as SAEnum
 from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.orm import relationship
 from pgvector.sqlalchemy import Vector
 from app.core.database import Base
 from app.core.config import get_settings
+
+
+class BaseRag(str, enum.Enum):
+    """As 3 bases de conhecimento RAG (G4 — separação explícita)."""
+    publica = "publica"          # legislação, súmulas, jurisprudência, doutrina
+    escritorio = "escritorio"    # peças e precedentes internos do escritório
+    caso = "caso"                # documentos vinculados a um caso específico
 
 
 class KnowledgeDoc(Base):
@@ -23,6 +31,10 @@ class KnowledgeDoc(Base):
     fonte     = Column(String(255), nullable=True)   # URL ou referência oficial
     tribunal  = Column(String(20),  nullable=True)
     extra     = Column(JSONB, nullable=True)
+
+    # G4 — Base explícita (publica | escritorio | caso). Derivado de client_id/case_id
+    # mas mantido como campo explícito para filtragem eficiente e visibilidade na UI.
+    base_rag  = Column(SAEnum(BaseRag), nullable=False, server_default="publica", index=True)
 
     # Isolamento por cliente/caso (Fase 3B / migration 055): conteúdo RESTRITO
     # (peças/precedentes internos) só é recuperável no escopo do próprio cliente.
@@ -49,6 +61,13 @@ class KnowledgeDoc(Base):
     vigente            = Column(Boolean, nullable=False, server_default="true", index=True)
     versao_anterior_id = Column(String(36), ForeignKey("knowledge_docs.id", ondelete="SET NULL"),
                                 nullable=True)
+
+    # Revisão manual (G6 — migration 117): controle de aprovação antes de
+    # entrar na base ativa do RAG. docs pendentes de revisão podem ser
+    # excluídos do retrieval por um flag no serviço de busca.
+    revisado   = Column(Boolean, nullable=False, server_default="false", index=True)
+    revisado_por = Column(String(36), nullable=True)
+    revisado_em  = Column(DateTime(timezone=True), nullable=True)
 
     created_at = Column(DateTime(timezone=True), server_default=func.now())
     deleted_at = Column(DateTime(timezone=True), nullable=True)
