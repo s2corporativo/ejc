@@ -73,7 +73,9 @@ export function deveInjetarCaso(
 ): string | null {
   const metodo = String(config.method || "get").toLowerCase();
   if (metodo !== "post") return null;
-  if (!CONTEXTUAL_CREATE_ENDPOINTS.has(normalizarEndpoint(config.url))) return null;
+  if (!CONTEXTUAL_CREATE_ENDPOINTS.has(normalizarEndpoint(config.url))) {
+    return null;
+  }
   if (
     !config.data ||
     typeof config.data !== "object" ||
