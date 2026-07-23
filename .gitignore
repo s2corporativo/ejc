@@ -1,69 +1,61 @@
-# ── Segredos / ambiente ──────────────────────────────────────────────
-.env
-*.env
-**/.env
-!.env.example
-!**/.env.example
-vps-tools/.env
-.env.bak*
-.env.save
-**/.env.bak*
-**/.env.save
-
-# Chaves e credenciais
-*.pem
-*.key
-*.p12
-*.pfx
-*-service-account*.json
-credentials*.json
-
-# ── Dependências / builds ────────────────────────────────────────────
+```
+# Dependencies
 node_modules/
-**/node_modules/
-backend/.venv/
-backend/.venv-codex/
-**/.venv*/
+venv/
+.venv/
 __pycache__/
-**/__pycache__/
-*.pyc
-.pytest_cache/
 .mypy_cache/
-.ruff_cache/
-frontend/dist/
+.pytest_cache/
+
+# Build artifacts
 dist/
+build/
+target/
 
-# ── Artefatos / backups / resíduos (não versionar) ───────────────────
-*.tgz
-*.tar.gz
-*.zip
-*.dump
-*.sql
-*.sql.gz
+# Environment
+.env
+.env.local
+*.env.*
+
+# Editors
+.vscode/
+.idea/
+
+# Logs and temp files
 *.log
-uploads/
-backups/
-frontend/tests/__out__/
-_QUARENTENA/
-vps-tools/generated/
-_session_componentes_bronze/
+*.tmp
+*.swp
 
-# ── Backups locais de arquivos ───────────────────────────────────────
-*.bak
-*.bak.*
-*.old
-*.orig
+# OS
+.DS_Store
+Thumbs.db
 
-# temporários de deploy (auditoria 01/07)
-vps-tools/_*
+# Coverage
+coverage/
+htmlcov/
+.coverage
 
-# graphify — grafo de conhecimento local (regenerável, não versionar)
-graphify-out/
-
-# Worktrees efêmeros de subagentes (Claude Code)
-.claude/worktrees/
-.claude/launch.json
-frontend/.claude/
-
-# Segredos aplicados direto na VPS (OAuth Google Drive etc.) — nunca versionar
-secrets/
+# Compressed files
+*.zip
+*.gz
+*.tar
+*.tgz
+*.bz2
+*.xz
+*.7z
+*.rar
+*.zst
+*.lz4
+*.lzh
+*.cab
+*.arj
+*.rpm
+*.deb
+*.Z
+*.lz
+*.lzo
+*.tar.gz
+*.tar.bz2
+*.tar.xz
+*.tar.zst
+```

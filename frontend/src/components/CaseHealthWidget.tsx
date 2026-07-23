@@ -61,9 +61,8 @@ const SEVERITY_LABELS: Record<HealthIndicator["severity"], string> = {
 };
 
 function detalheErro(error: unknown): string {
-  const detail = (
-    error as { response?: { data?: { detail?: unknown } } }
-  )?.response?.data?.detail;
+  const detail = (error as { response?: { data?: { detail?: unknown } } })
+    ?.response?.data?.detail;
   return typeof detail === "string" && detail
     ? detail
     : "Não foi possível carregar a saúde operacional do caso.";
@@ -87,9 +86,7 @@ export function ordenarIndicadores(
     medium: 2,
     low: 1,
   };
-  return [...indicators].sort(
-    (a, b) => rank[b.severity] - rank[a.severity],
-  );
+  return [...indicators].sort((a, b) => rank[b.severity] - rank[a.severity]);
 }
 
 export default function CaseHealthWidget({ caseId }: { caseId: string }) {

@@ -75,7 +75,8 @@ export function principalMotivo(item: PortfolioCase): string {
 
 export function ordenarCarteira(items: PortfolioCase[]): PortfolioCase[] {
   return [...items].sort((a, b) => {
-    if (a.health_score !== b.health_score) return a.health_score - b.health_score;
+    if (a.health_score !== b.health_score)
+      return a.health_score - b.health_score;
     if (a.overdue_deadlines !== b.overdue_deadlines) {
       return b.overdue_deadlines - a.overdue_deadlines;
     }
@@ -84,9 +85,8 @@ export function ordenarCarteira(items: PortfolioCase[]): PortfolioCase[] {
 }
 
 function detalheErro(error: unknown): string {
-  const detail = (
-    error as { response?: { data?: { detail?: unknown } } }
-  )?.response?.data?.detail;
+  const detail = (error as { response?: { data?: { detail?: unknown } } })
+    ?.response?.data?.detail;
   return typeof detail === "string" && detail
     ? detail
     : "Não foi possível carregar a saúde operacional da carteira.";
@@ -101,9 +101,8 @@ export default function PortfolioHealthWidget() {
   const items = useMemo(() => ordenarCarteira(data?.items || []), [data]);
   const riskCount = useMemo(
     () =>
-      items.filter((item) =>
-        ["critical", "risk"].includes(item.health_level),
-      ).length,
+      items.filter((item) => ["critical", "risk"].includes(item.health_level))
+        .length,
     [items],
   );
 
@@ -204,7 +203,8 @@ export default function PortfolioHealthWidget() {
                       <div className="min-w-0 flex-1">
                         <div className="flex flex-wrap items-center gap-2">
                           <Badge tone={LEVEL_TONE[item.health_level]}>
-                            {LEVEL_LABELS[item.health_level]} · {item.health_score}
+                            {LEVEL_LABELS[item.health_level]} ·{" "}
+                            {item.health_score}
                           </Badge>
                           <span className="text-xs text-slate-500">
                             {item.numero_interno || item.id}

@@ -1,8 +1,9 @@
 # EJC 10/10 — Critérios objetivos de certificação
 
 **Status atual:** NÃO CERTIFICADO 10/10  
-**Data-base:** 20/07/2026  
-**Fase atual:** código estabilizado; governança administrativa, continuidade real e homologação operacional ainda pendentes.  
+**Data-base:** 2026-07-23  
+**SHA de referência:** 30e94b8e6e4c0e3d82a004385a0bd8e1e588a543  
+**Fase atual:** PR #439 em revisão (CI frontend falhando), backup #441 bloqueado por credencial, proteção da main pendente.  
 **Regra:** o EJC somente pode receber a classificação 10/10 quando todos os gates abaixo estiverem comprovados por evidência automatizada e homologação humana.
 
 ## 1. Princípio de certificação
@@ -53,6 +54,13 @@ A classificação 10/10 não decorre da quantidade de módulos. Ela exige, cumul
 - `EJC Release Gate` e `Architecture Inventory`: **verdes**.
 
 ### Não integrado
+
+**PR #439 — Sala de Guerra, timeline e saúde operacional:**
+- Estado: aberto, draft, 24 commits, mergeável
+- CI: Backend ✅, Eval ✅, Frontend ❌ (Prettier/typecheck)
+- Ações necessárias: corrigir falha do CI frontend, converter para ready for review
+- Base: `30e94b8e6e4c0e3d82a004385a0bd8e1e588a543`
+- Head: `aaab36e1ed38a9d721d325ccb0aab3fe5a251f99`
 
 As seguintes ondas ainda precisam ser reaplicadas semanticamente sobre a `main` vigente, uma por PR e com revalidação integral:
 
