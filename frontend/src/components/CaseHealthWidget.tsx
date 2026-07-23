@@ -190,7 +190,9 @@ export default function CaseHealthWidget({ caseId }: { caseId: string }) {
                       Situação operacional
                     </h3>
                     <p className="mt-1 text-sm text-slate-500">
-                      {`Última atividade: ${formatarDataEvento(health.last_activity_at)} · ${health.inactive_days} dia(s) de inatividade`}
+                      {`Última atividade: ${formatarDataEvento(
+                        health.last_activity_at,
+                      )} · ${health.inactive_days} dia(s) de inatividade`}
                     </p>
                   </div>
                   <Button
