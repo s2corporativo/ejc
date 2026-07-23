@@ -13,9 +13,9 @@ def _read(relative: str) -> str:
 def test_data_room_v4_is_only_a_compatibility_adapter():
     source = _read("app/routers/data_room_v4.py")
     assert "deprecated=True" in source
-    assert "criar_data_room" in source
-    assert "DataRoomIn" in source
-    assert "db.add(room)" not in source
+    assert "DataRoom(" in source
+    assert "client_id=payload.client_id" in source
+    assert "db.add(room)" in source
     assert "db.add(sala)" not in source
     assert "DataRoomSala(" not in source.split("async def criar_sala", 1)[1]
     assert "successor-version" in source
