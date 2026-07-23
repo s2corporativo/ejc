@@ -190,10 +190,7 @@ export default function CaseHealthWidget({ caseId }: { caseId: string }) {
                       Situação operacional
                     </h3>
                     <p className="mt-1 text-sm text-slate-500">
-                      Última atividade: {formatarDataEvento(
-                        health.last_activity_at,
-                      )}{" "}
-                      · {health.inactive_days} dia(s) de inatividade
+                      {`Última atividade: ${formatarDataEvento(health.last_activity_at)} · ${health.inactive_days} dia(s) de inatividade`}
                     </p>
                   </div>
                   <Button
@@ -207,16 +204,16 @@ export default function CaseHealthWidget({ caseId }: { caseId: string }) {
                 </div>
                 <div className="mt-4 flex flex-wrap gap-2">
                   <Badge>
-                    Processos ativos: {health.metrics.active_processes || 0}
+                    {`Processos ativos: ${health.metrics.active_processes || 0}`}
                   </Badge>
                   <Badge>
-                    Tarefas pendentes: {health.metrics.pending_tasks || 0}
+                    {`Tarefas pendentes: ${health.metrics.pending_tasks || 0}`}
                   </Badge>
                   <Badge>
-                    Prazos vencidos: {health.metrics.overdue_deadlines || 0}
+                    {`Prazos vencidos: ${health.metrics.overdue_deadlines || 0}`}
                   </Badge>
                   <Badge>
-                    Retornos vencidos: {health.metrics.overdue_client_requests || 0}
+                    {`Retornos vencidos: ${health.metrics.overdue_client_requests || 0}`}
                   </Badge>
                 </div>
               </div>
