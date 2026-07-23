@@ -4,7 +4,6 @@ import {
   ordenarIndicadores,
 } from "../CaseHealthWidget";
 
-
 describe("CaseHealthWidget — regras puras", () => {
   it("ordena indicadores por severidade operacional", () => {
     const result = ordenarIndicadores([
