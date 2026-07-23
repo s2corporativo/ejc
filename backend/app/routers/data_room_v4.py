@@ -9,6 +9,7 @@ from __future__ import annotations
 
 from datetime import datetime
 from typing import Optional
+from uuid import uuid4
 
 from fastapi import APIRouter, Depends, HTTPException, Response
 from pydantic import BaseModel, ConfigDict, Field
@@ -129,13 +130,11 @@ async def criar_sala(
     db: AsyncSession = Depends(get_db),
     cu: User = Depends(get_current_user),
 ):
-    """Cria a sala no domínio canônico, sem dupla escrita na tabela v4."""
+    """Cria diretamente no modelo canônico, sem dupla escrita na tabela v4."""
     if not _pode_editar(cu):
         raise HTTPException(403, "Sem permissão para criar data rooms")
 
     await _validar_cliente_v4(db, cu, payload.client_id)
-
-    from app.routers.data_room import DataRoomIn, criar_data_room
 
     descricao = payload.descricao
     if payload.expira_dias:
@@ -145,15 +144,17 @@ async def criar_sala(
         )
         descricao = f"{descricao}\n{aviso}" if descricao else aviso
 
-    room = await criar_data_room(
-        DataRoomIn(
-            nome=payload.nome,
-            descricao=descricao,
-            client_id=payload.client_id,
-        ),
-        db=db,
-        cu=cu,
+    room = DataRoom(
+        id=str(uuid4()),
+        nome=payload.nome,
+        descricao=descricao,
+        client_id=payload.client_id,
+        case_id=None,
+        created_by=cu.id,
     )
+    db.add(room)
+    await db.commit()
+    await db.refresh(room)
     _headers_deprecacao(response)
     return _compat(room)
 
