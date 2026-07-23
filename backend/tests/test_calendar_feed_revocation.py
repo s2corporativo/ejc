@@ -142,3 +142,5 @@ def test_headers_do_feed_impedem_cache():
 def test_rotacao_tem_rate_limit_por_usuario():
     source = inspect.getsource(calendar_feed)
     assert 'rate_limit("calendar-ics-rotate", 5)' in source
+
+# Revalidação contra a base consolidada da main após os PRs #438 e #431.
