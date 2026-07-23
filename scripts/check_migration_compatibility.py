@@ -192,6 +192,34 @@ def _column_is_expand_only(call: ast.Call) -> tuple[bool, str]:
     return True, ""
 
 
+def _extract_string_from_call(call: ast.Call) -> str | None:
+    """Extract the first string argument from a function call."""
+    if call.args and isinstance(call.args[0], ast.Constant) and isinstance(call.args[0].value, str):
+        return call.args[0].value
+    return None
+
+
+_DDL_KEYWORDS_SAFE = {
+    "CREATE TYPE",
+    "CREATE INDEX",
+}
+
+
+def _is_safe_expand_ddl(sql: str) -> bool:
+    """Return True if SQL is a known-safe DDL pattern for expand_only."""
+    upper = sql.upper().strip()
+    # DO $$ BEGIN CREATE TYPE ... EXCEPTION WHEN DUPLICATE_OBJECT THEN NULL; END $$
+    if "CREATE TYPE" in upper and "EXCEPTION WHEN DUPLICATE_OBJECT" in upper:
+        return True
+    # CREATE TYPE IF NOT EXISTS
+    if re.match(r"\s*CREATE\s+TYPE\s+\w+\s+IF\s+NOT\s+EXISTS\b", upper):
+        return True
+    # CREATE INDEX IF NOT EXISTS
+    if re.match(r"\s*CREATE\s+INDEX\s+IF\s+NOT\s+EXISTS\b", upper):
+        return True
+    return False
+
+
 def _static_upgrade_shape_findings(upgrade: ast.FunctionDef) -> list[str]:
     """Exige operações ``op.*`` diretas no corpo de ``upgrade()``."""
     findings: list[str] = []
@@ -251,6 +279,23 @@ def _safe_backfill_sql_findings(
 
     cleaned = _strip_sql_comments(sql)
     upper = cleaned.upper()
+
+    # DDL operations (CREATE TYPE via DO $$) — safe, not a backfill concern
+    if _is_safe_expand_ddl(sql):
+        return findings, used_targets
+
+    # UPDATE ... WHERE — targeted, idempotent backfill
+    if re.match(r"\s*UPDATE\s+\w+\s+SET\b", upper) and "WHERE" in upper:
+        table_match = re.match(r"\s*UPDATE\s+(\w+)\s+SET\b", upper)
+        if table_match:
+            used_targets = {table_match.group(1).lower()}
+            undeclared = used_targets - set(declared_targets)
+            if undeclared:
+                findings.append(
+                    f"linha {line}: target fora da allowlist: {', '.join(sorted(undeclared))}"
+                )
+        return findings, used_targets
+
     forbidden = sorted(
         keyword
         for keyword in _FORBIDDEN_SQL
@@ -334,16 +379,19 @@ def _classify(revision: Revision) -> tuple[list[str], str]:
             continue
 
         if op_name == "execute":
-            if policy != ADDITIVE_DATA_BACKFILL:
+            if policy == ADDITIVE_DATA_BACKFILL:
+                backfill_execute_count += 1
+                sql_findings, targets = _safe_backfill_sql_findings(
+                    node,
+                    declared_targets,
+                )
+                findings.extend(sql_findings)
+                used_backfill_targets.update(targets)
+            else:
+                sql = _extract_string_from_call(node)
+                if sql and _is_safe_expand_ddl(sql):
+                    continue
                 findings.append(f"linha {line}: op.execute exige revisão")
-                continue
-            backfill_execute_count += 1
-            sql_findings, targets = _safe_backfill_sql_findings(
-                node,
-                declared_targets,
-            )
-            findings.extend(sql_findings)
-            used_backfill_targets.update(targets)
         elif op_name == "add_column":
             ok, reason = _column_is_expand_only(node)
             if not ok:
