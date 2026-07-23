@@ -64,7 +64,7 @@ _ALIASES: dict[str, str] = {
     "comercial": "empresarial",          # direito comercial → empresarial (CC/2002)
     "sucessao": "sucessoes",
     "das_sucessoes": "sucessoes",
-    # licitacao/licitacoes removidos — desativados no EJC
+    "licitacao": "licitacoes",
     # direito digital / proteção de dados
     "lgpd": "digital_lgpd",
     "digital": "digital_lgpd",
@@ -191,7 +191,7 @@ MAPA_CANONICO_PARA_TRIAGEM: dict[str, str] = {
     "agronegocio": SENTINELA_OUTRO,
     "eleitoral": SENTINELA_OUTRO,
     "internacional": SENTINELA_OUTRO,
-    "licitacoes": SENTINELA_OUTRO,
+    "licitacoes": "administrativo",
 }
 
 # ── (c) Gerador de peças — peca_service.AREAS_DIREITO ────────────────────────
@@ -225,7 +225,7 @@ MAPA_CANONICO_PARA_PECA: dict[str, Optional[str]] = {
     "agronegocio": None,
     "eleitoral": None,
     "internacional": None,
-    "licitacoes": None,
+    "licitacoes": "administrativo",
 }
 
 # ── Sanidade (falha no import — nunca em runtime silencioso) ─────────────────

@@ -77,6 +77,7 @@ function normalize(raw: string): string | null {
   p = p.split("?")[0].split("#")[0];
   if (!p.startsWith("/")) return null; // relativo: resolvido pelo router no contexto
   if (p.startsWith("//") || p.startsWith("/api/") || p === "/api") return null; // externo / contrato HTTP (coberto no backend)
+  if (p.startsWith("/analytics/")) return null; // endpoints de dados, não rotas de navegação
   p = p.replace(/\/+$/, "") || "/";
   return p;
 }

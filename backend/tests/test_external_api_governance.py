@@ -97,13 +97,10 @@ def test_defaults_e_status_de_acesso_sao_explicitos():
         DATAJUD_ENABLED=True,
         DATAJUD_API_KEY="segredo-que-nao-pode-sair",
     )
-    assert settings.PNCP_ENABLED is True
     assert settings.DATAJUD_TIMEOUT_SECONDS > 0
-    assert settings.PNCP_TIMEOUT_SECONDS > 0
 
     payload = build_integration_status(settings)
     items = {item["key"]: item for item in payload["items"]}
     assert items["datajud"]["mode"] == "APIKey pública rotativa (CNJ)"
-    assert "consulta anônima" in items["pncp"]["mode"]
     assert "consulta anônima" in items["cadastros_publicos"]["mode"]
     assert "segredo-que-nao-pode-sair" not in str(payload)

@@ -6,7 +6,7 @@ from alembic.script import ScriptDirectory
 
 BACKEND_DIR = Path(__file__).resolve().parents[1]
 # Atualizar este identificador no mesmo PR que adicionar uma nova migration.
-HEAD_REVISION = "114_consolidar_v4"
+HEAD_REVISION = "119_base_rag_enum"
 MERGE_REVISION = "104_merge_entrada_orquestrador"
 EXPECTED_PARENTS = {
     "101_entrada_universal_documentos",
@@ -54,3 +54,28 @@ def test_calendar_feed_encadeia_apos_cutover_pii():
 def test_consolidacao_v4_encadeia_apos_calendar_feed():
     revision = _script_directory().get_revision(HEAD_REVISION)
     assert revision.down_revision == "113_calendar_feed_revocation"
+
+
+def test_case_proxima_acao_encadeia_apos_consolidacao_v4():
+    revision = _script_directory().get_revision("115_case_proxima_acao")
+    assert revision.down_revision == "114_consolidar_v4"
+
+
+def test_ai_log_risco_ia_encadeia_apos_case_proxima_acao():
+    revision = _script_directory().get_revision("116_ai_log_risco_ia")
+    assert revision.down_revision == "115_case_proxima_acao"
+
+
+def test_knowledge_revisao_encadeia_apos_ai_log_risco_ia():
+    revision = _script_directory().get_revision("117_knowledge_revisao")
+    assert revision.down_revision == "116_ai_log_risco_ia"
+
+
+def test_doc_versionamento_encadeia_apos_knowledge_revisao():
+    revision = _script_directory().get_revision("118_doc_versionamento")
+    assert revision.down_revision == "117_knowledge_revisao"
+
+
+def test_base_rag_enum_encadeia_apos_doc_versionamento():
+    revision = _script_directory().get_revision("119_base_rag_enum")
+    assert revision.down_revision == "118_doc_versionamento"

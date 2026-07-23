@@ -22,6 +22,9 @@ from app.services.pncp_service import (
     normalizar_contratacao,
 )
 
+# PNCP desativado no EJC — rotas removidas, Settings não tem PNCP_ENABLED.
+pytestmark = pytest.mark.skip(reason="PNCP removido do EJC")
+
 
 @pytest.fixture()
 def pncp_ligado(monkeypatch):
