@@ -158,7 +158,7 @@ MAPA_CANONICO_PARA_ANALISE: dict[str, Optional[str]] = {
     "agronegocio": None,
     "eleitoral": None,
     "internacional": None,
-    # licitacoes removido — desativado no EJC
+    "licitacoes": None,              # desativado no EJC; preservado no enum por compat de DB
 }
 
 # ── (b) Triagem automática — case_intel.py ───────────────────────────────────
@@ -181,7 +181,6 @@ MAPA_CANONICO_PARA_TRIAGEM: dict[str, str] = {
     "imobiliario": "civil",
     "contratual": "civil",
     "societario": "empresarial",
-    # licitacoes removido — desativado no EJC
     # juridicamente ambíguos → sentinela (decisão fica com o advogado)
     "constitucional": SENTINELA_OUTRO,
     "digital_lgpd": SENTINELA_OUTRO,
@@ -192,6 +191,7 @@ MAPA_CANONICO_PARA_TRIAGEM: dict[str, str] = {
     "agronegocio": SENTINELA_OUTRO,
     "eleitoral": SENTINELA_OUTRO,
     "internacional": SENTINELA_OUTRO,
+    "licitacoes": SENTINELA_OUTRO,
 }
 
 # ── (c) Gerador de peças — peca_service.AREAS_DIREITO ────────────────────────
@@ -218,7 +218,6 @@ MAPA_CANONICO_PARA_PECA: dict[str, Optional[str]] = {
     # sub-ramos com correspondência SEGURA
     "contratual": "civil",
     "societario": "empresarial",
-    # licitacoes removido — desativado no EJC
     # juridicamente ambíguos → None (pipeline exige escolha humana da área)
     "saude": None,
     "medico": None,
@@ -226,6 +225,7 @@ MAPA_CANONICO_PARA_PECA: dict[str, Optional[str]] = {
     "agronegocio": None,
     "eleitoral": None,
     "internacional": None,
+    "licitacoes": None,
 }
 
 # ── Sanidade (falha no import — nunca em runtime silencioso) ─────────────────
