@@ -52,7 +52,7 @@ def test_calendar_feed_encadeia_apos_cutover_pii():
 
 
 def test_consolidacao_v4_encadeia_apos_calendar_feed():
-    revision = _script_directory().get_revision(HEAD_REVISION)
+    revision = _script_directory().get_revision("114_consolidar_v4")
     assert revision.down_revision == "113_calendar_feed_revocation"
 
 
@@ -62,13 +62,13 @@ def test_case_proxima_acao_encadeia_apos_consolidacao_v4():
 
 
 def test_ai_log_risco_ia_encadeia_apos_case_proxima_acao():
-    revision = _script_directory().get_revision("116_ai_log_risco_ia")
+    revision = _script_directory().get_revision("116_risco_ia")
     assert revision.down_revision == "115_case_proxima_acao"
 
 
 def test_knowledge_revisao_encadeia_apos_ai_log_risco_ia():
     revision = _script_directory().get_revision("117_knowledge_revisao")
-    assert revision.down_revision == "116_ai_log_risco_ia"
+    assert revision.down_revision == "116_risco_ia"
 
 
 def test_doc_versionamento_encadeia_apos_knowledge_revisao():

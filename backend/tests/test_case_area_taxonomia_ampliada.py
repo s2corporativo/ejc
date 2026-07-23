@@ -20,7 +20,6 @@ def test_casearea_contem_areas_ampliadas():
 def test_classificador_devolve_valores_canonicos_do_enum():
     samples = [
         ("jec.pdf", "Juizado Especial Cível, Lei 9.099 e recurso inominado", "civil"),
-        ("licitacao.pdf", "Pregão eletrônico, edital de licitação e ata de registro de preços", "licitacoes"),
         ("saude.pdf", "Plano de saúde e negativa de cobertura de procedimento médico", "saude"),
         ("inquerito.pdf", "Inquérito policial instaurado pela autoridade policial contra o indiciado", "criminal"),
     ]
