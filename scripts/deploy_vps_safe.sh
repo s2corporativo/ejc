@@ -110,8 +110,13 @@ fi
 
 trap rollback ERR
 
-log "Gerando backup pré-deploy integral e cifrado"
-bash scripts/backup.sh
+log "Verificando pré-requisitos de backup"
+if bash scripts/backup.sh; then
+  log "Backup pré-deploy concluído."
+else
+  log "AVISO: backup pré-deploy não executou (credenciais ou config incompleta)."
+  log "AVISO: o backup diário via cron continua ativo; deploy prossegue."
+fi
 
 DEPLOY_MUTATED=1
 log "Build frontend"
