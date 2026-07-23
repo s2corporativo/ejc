@@ -231,15 +231,7 @@ def build_integration_status(
             configured=bool(settings.TRANSPARENCIA_API_KEY),
             ready_detail="Consulta de sanções (CEIS/CNEP/CEPIM) habilitada com chave gratuita presente.",
         ),
-        _status(
-            key="pncp",
-            label="PNCP — Contratações Públicas",
-            group="Jurídico",
-            enabled=settings.PNCP_ENABLED,
-            configured=True,
-            ready_detail="Consulta pública habilitada; API sem chave/segredo.",
-            mode="consulta anônima; manutenção não implementada",
-        ),
+        # PNCP removido — licitações desativadas no EJC
         _status(
             key="indices_bcb",
             label="Índices BCB (SGS + Olinda)",

@@ -142,6 +142,7 @@ async def listar_logs(
         "data": [
             {"id": l.id, "tipo_uso": l.tipo_uso.value, "modelo": l.modelo,
              "status_hitl": l.status_hitl.value, "pii_removida": l.pii_removida,
+             "risco_ia": l.risco_ia.value if l.risco_ia else None,
              "case_id": l.case_id, "created_at": l.created_at,
              "resposta": l.resposta,
              # Campo dedicado (migration 070): crítica adversarial p/ o revisor
@@ -541,7 +542,7 @@ async def assistente_estrategico(
     from app.services.ai_service import buscar_contexto_rag
     from app.services.sanitizer import sanitizar_pii
     from app.services.ai_gateway import chat as gw_chat
-    from app.models.ai_log import AILog, AITipoUso, AIStatusHITL
+    from app.models.ai_log import AILog, AITipoUso, AIStatusHITL, classificar_risco_ia
     from uuid import uuid4
 
     dossie = await montar_dossie(db, case_id, incluir_pecas=True, sanitizar=True)
@@ -604,6 +605,7 @@ async def assistente_estrategico(
         fontes_rag="; ".join(f["chunk_id"] for f in fontes) if fontes else None,
         tokens_input=resp.input_tokens,
         tokens_output=resp.output_tokens,
+        risco_ia=classificar_risco_ia(task),
         status_hitl=AIStatusHITL.gerado,
     )
     db.add(log)
@@ -657,7 +659,7 @@ async def dual_ia(
 
     from app.services.ai_gateway import chat as gw_chat
     from app.services.sanitizer import sanitizar_pii
-    from app.models.ai_log import AILog, AITipoUso, AIStatusHITL
+    from app.models.ai_log import AILog, AITipoUso, AIStatusHITL, classificar_risco_ia
     from uuid import uuid4
 
     dossie = await montar_dossie(db, case_id, incluir_pecas=False, sanitizar=True)
@@ -724,6 +726,7 @@ async def dual_ia(
             prompt_sanitizado=instrucao_limpa[:2000],
             pii_removida=houve_pii,
             resposta=resposta_txt,
+            risco_ia=classificar_risco_ia(task),
             status_hitl=AIStatusHITL.gerado,
         )
         db.add(log)
@@ -818,7 +821,7 @@ async def motor_estrategia(
 
     from app.services.ai_gateway import chat as gw_chat
     from app.services.ai_service import buscar_contexto_rag
-    from app.models.ai_log import AILog, AITipoUso, AIStatusHITL
+    from app.models.ai_log import AILog, AITipoUso, AIStatusHITL, classificar_risco_ia
     from uuid import uuid4
 
     dossie = await montar_dossie(db, case_id, incluir_pecas=False, sanitizar=True)
@@ -884,6 +887,7 @@ REGRAS:
         prompt_sanitizado=user_msg[:4000],
         pii_removida=houve_pii,
         resposta=resp.texto,
+        risco_ia=classificar_risco_ia("analise_juridica"),
         status_hitl=AIStatusHITL.gerado,
     )
     db.add(log)

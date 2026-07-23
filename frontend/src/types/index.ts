@@ -57,6 +57,8 @@ export interface Case {
   client_id: string;
   advogado_responsavel_id?: string;
   descricao_fatos?: string;
+  proxima_acao?: string;
+  proxima_acao_prazo?: string;
   tese_principal?: string;
   pontos_fortes?: string;
   pontos_fracos?: string;

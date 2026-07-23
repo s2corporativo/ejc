@@ -55,7 +55,7 @@ _AREA_RULES: tuple[tuple[str, tuple[str, ...]], ...] = (
     ("tributario", ("tributario", "tributário", "fiscal", "imposto", "tributo", "carf", "icms", "iss", "pis", "cofins")),
     ("bancario", ("bancario", "bancário", "juros", "financiamento", "emprestimo", "empréstimo", "contrato bancario")),
     ("ambiental", ("ambiental", "meio ambiente", "ibama", "semad", "copam", "prada")),
-    ("administrativo", ("administrativo", "licitacao", "licitação", "pregao", "pregão", "tcu", "contratacao publica")),
+    ("administrativo", ("administrativo", "tcu", "contratacao publica")),
     ("civil", ("civil", "consumidor", "contrato", "indenizacao", "indenização", "obrigacao", "obrigação")),
 )
 

@@ -9,10 +9,8 @@ import {
   Car,
   ClipboardPen,
   Database,
-  FileCheck2,
   FileSignature,
   Globe,
-  Handshake,
   HardHat,
   HeartPulse,
   Home,
@@ -37,13 +35,8 @@ import {
   Badge,
   Button,
   Card,
-  Page,
-  PageActions,
-  PageDescription,
-  PageGrid,
   PageHeader,
-  PageTitle,
-} from "../components/ui";
+} from "../components/UI";
 
 // Área (taxonomia de casos) → slug do hub de ferramentas em /ramos/<slug>.
 // A maioria coincide; "civil" e "criminal" têm hubs com nome próprio.
@@ -109,12 +102,6 @@ const VISUAL: Record<string, AreaVisual> = {
     description:
       "Atos administrativos, servidores, sanções e processos públicos",
     tone: "bg-ouro text-ouro-profundo",
-  },
-  licitacoes: {
-    icon: FileCheck2,
-    description:
-      "Editais, propostas, contratos, sanções e reequilíbrio econômico",
-    tone: "bg-amber-500 text-amber-700",
   },
   bancario: {
     icon: Banknote,
@@ -219,7 +206,6 @@ const FALLBACK_AREAS: Area[] = [
   ["criminal", "Direito Penal"],
   ["trabalhista", "Direito Trabalhista"],
   ["administrativo", "Direito Administrativo"],
-  ["licitacoes", "Licitações e Contratos Administrativos"],
   ["bancario", "Direito Bancário"],
   ["tributario", "Direito Tributário"],
   ["ambiental", "Direito Ambiental"],
@@ -269,42 +255,33 @@ export default function RamosHub() {
   );
 
   return (
-    <Page className="min-h-full px-6 py-6">
+    <div className="min-h-full px-6 py-6">
       <div className="mx-auto max-w-7xl space-y-4">
-        <PageHeader className="rounded-xl border border-slate-200 bg-white p-4 dark:border-white/10 dark:bg-white/[0.03]">
-          <div>
-            <Badge variant="gold" className="mb-2 gap-1">
-              <Handshake className="h-3 w-3" /> Especializações da Central de
-              Casos
-            </Badge>
-            <PageTitle>Áreas de Atuação</PageTitle>
-            <PageDescription>
-              As áreas funcionam como filtros e perfis de jornada. Selecione uma
-              área para consultar os casos correspondentes ou iniciar uma
-              importação inteligente.
-            </PageDescription>
-          </div>
-          <PageActions>
-            {/* Fluxo 100% manual (sem IA, com fila offline) — a rota é podada
-                do menu lateral; este é o ponto de acesso visível. */}
-            {podeCadastroManual && (
-              <Button
-                variant="secondary"
-                onClick={() => navigate("/cadastro-manual")}
-              >
-                <ClipboardPen className="h-4 w-4" /> Cadastro manual
+        <PageHeader
+          title="Áreas de Atuação"
+          subtitle="As áreas funcionam como filtros e perfis de jornada. Selecione uma área para consultar os casos correspondentes ou iniciar uma importação inteligente."
+          eyebrow="Especializações da Central de Casos"
+          actions={
+            <>
+              {podeCadastroManual && (
+                <Button
+                  variant="secondary"
+                  onClick={() => navigate("/cadastro-manual")}
+                >
+                  <ClipboardPen className="h-4 w-4" /> Cadastro manual
+                </Button>
+              )}
+              <Button variant="secondary" onClick={() => navigate("/casos")}>
+                Todos os casos
               </Button>
-            )}
-            <Button variant="secondary" onClick={() => navigate("/casos")}>
-              Todos os casos
-            </Button>
-            <Button onClick={() => navigate("/casos/novo?modo=documento")}>
-              <UploadCloud className="h-4 w-4" /> Importar documento
-            </Button>
-          </PageActions>
-        </PageHeader>
+              <Button onClick={() => navigate("/casos/novo?modo=documento")}>
+                <UploadCloud className="h-4 w-4" /> Importar documento
+              </Button>
+            </>
+          }
+        />
 
-        <PageGrid className="grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
+        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4">
           {ordered.map((area) => {
             const visual = VISUAL[area.slug] || {
               icon: Scale,
@@ -314,17 +291,11 @@ export default function RamosHub() {
             };
             const Icon = visual.icon;
             const hub = hubDoRamo(area.slug);
-            // Cor de texto do tom (segundo token) — pinta o ícone no chip flat.
             const toneText =
               visual.tone.split(" ").find((c) => c.startsWith("text-")) || "";
-            // Card flat no idioma Verdelimp: borda 1px, raio 10px e barra
-            // superior de 3px chapada na cor da área (sem gradiente nem hover
-            // flutuante). Barra como faixa absoluta — o .card:hover repinta
-            // border-color e apagaria um border-top colorido.
             return (
               <Card
                 key={area.slug}
-                padded={false}
                 className="group relative h-full overflow-hidden rounded-[10px] p-4"
               >
                 <div
@@ -392,8 +363,8 @@ export default function RamosHub() {
               </Card>
             );
           })}
-        </PageGrid>
+        </div>
       </div>
-    </Page>
+    </div>
   );
 }

@@ -294,10 +294,14 @@ async def upsert_documento(
         existente.vigente = False
         await db.flush()
         doc_id = str(uuid4())
+        # G4 — base_rag derivada de client_id/case_id
+        from app.models.rag import BaseRag
+        base = BaseRag.caso if case_id else (BaseRag.escritorio if client_id else BaseRag.publica)
         db.add(KnowledgeDoc(
             id=doc_id, titulo=titulo, categoria=categoria,
             fonte=fonte, tribunal=tribunal, extra=extra,
             client_id=client_id, case_id=case_id,
+            base_rag=base,
             chave_origem=chave_origem, hash_conteudo=h, atualizado_em=agora,
             status_indexacao=status_novo,
             versao=existente.versao + 1,
@@ -308,10 +312,13 @@ async def upsert_documento(
         resultado = "atualizado"
     else:
         doc_id = str(uuid4())
+        from app.models.rag import BaseRag
+        base = BaseRag.caso if case_id else (BaseRag.escritorio if client_id else BaseRag.publica)
         db.add(KnowledgeDoc(
             id=doc_id, titulo=titulo, categoria=categoria,
             fonte=fonte, tribunal=tribunal, extra=extra,
             client_id=client_id, case_id=case_id,
+            base_rag=base,
             chave_origem=chave_origem, hash_conteudo=h, atualizado_em=agora,
             status_indexacao=status_novo,
         ))

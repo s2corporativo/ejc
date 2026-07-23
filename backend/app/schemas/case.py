@@ -87,6 +87,8 @@ class CaseCreate(BaseModel):
     area: str
     client_id: str
     prioridade: str = "media"
+    proxima_acao: Optional[str] = None
+    proxima_acao_prazo: Optional[datetime] = None
     numero_processo: Optional[str] = None
     tribunal: Optional[str] = None
     comarca: Optional[str] = None
@@ -127,6 +129,8 @@ class CaseUpdate(BaseModel):
     fase: Optional[str] = None
     prioridade: Optional[str] = None
     risco: Optional[str] = None
+    proxima_acao: Optional[str] = None
+    proxima_acao_prazo: Optional[datetime] = None
     numero_processo: Optional[str] = None
     tribunal: Optional[str] = None
     comarca: Optional[str] = None
@@ -212,6 +216,8 @@ class CaseResponse(BaseModel):
     fase: str
     prioridade: str
     risco: Optional[str] = None
+    proxima_acao: Optional[str] = None
+    proxima_acao_prazo: Optional[datetime] = None
     numero_processo: Optional[str] = None
     tribunal: Optional[str] = None
     parte_contraria: Optional[str] = None

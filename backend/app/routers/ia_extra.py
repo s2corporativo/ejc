@@ -22,7 +22,7 @@ from app.core.database import get_db
 from app.core.config import get_settings
 from app.core.security import get_current_user
 from app.models.user import User
-from app.models.ai_log import AILog, AITipoUso, AIStatusHITL
+from app.models.ai_log import AILog, AITipoUso, AIStatusHITL, classificar_risco_ia
 from app.services.ai_service import (
     buscar_contexto_rag, _modelo_log, _tokens_input, _tokens_output,
 )
@@ -48,7 +48,7 @@ async def _ia(system: str, user: str, task_type: str = "analise_juridica", tempe
     return resp.texto, resp
 
 
-async def _log(db, user_id, tipo, case_id, prompt, pii, resposta, resp=None):
+async def _log(db, user_id, tipo, case_id, prompt, pii, resposta, resp=None, task_type=None):
     # FASE 1b: o AILog registra o provedor/modelo REAL devolvido pelo gateway
     # (antes: settings.GROQ_MODEL hardcoded) e os tokens reais — mesma
     # rastreabilidade HITL do ai_service (_modelo_log/_tokens_*). Fallback
@@ -60,6 +60,7 @@ async def _log(db, user_id, tipo, case_id, prompt, pii, resposta, resp=None):
         pii_removida=pii, resposta=resposta,
         tokens_input=_tokens_input(resp) if resp is not None else None,
         tokens_output=_tokens_output(resp) if resp is not None else None,
+        risco_ia=classificar_risco_ia(task_type),
         status_hitl=AIStatusHITL.gerado,
     )
     db.add(log); await db.commit()
@@ -94,7 +95,7 @@ async def traduzir_andamento(body: TraduzirIn, db: AsyncSession = Depends(get_db
     except Exception:
         logger.exception("Falha na chamada de IA")
         raise HTTPException(502, "Falha ao processar a solicitação de IA")
-    log_id = await _log(db, cu.id, AITipoUso.outro, body.case_id, limpo, pii, resposta, resp)
+    log_id = await _log(db, cu.id, AITipoUso.outro, body.case_id, limpo, pii, resposta, resp, task_type="chat_rapido")
     return {"ai_log_id": log_id, "resposta": resposta,
             "aviso": "⚠️ Texto gerado por IA — revise antes de enviar ao cliente."}
 
@@ -126,7 +127,7 @@ async def resumir_texto(body: ResumirIn, db: AsyncSession = Depends(get_db),
     except Exception:
         logger.exception("Falha na chamada de IA")
         raise HTTPException(502, "Falha ao processar a solicitação de IA")
-    log_id = await _log(db, cu.id, AITipoUso.resumo_documento, body.case_id, limpo, pii, resposta, resp)
+    log_id = await _log(db, cu.id, AITipoUso.resumo_documento, body.case_id, limpo, pii, resposta, resp, task_type="resumo_documento")
     return {"ai_log_id": log_id, "resposta": resposta,
             "aviso": "⚠️ Resumo gerado por IA — confira com o original."}
 
@@ -176,7 +177,7 @@ async def gerar_minuta(body: MinutaIn, db: AsyncSession = Depends(get_db),
     except Exception:
         logger.exception("Falha na chamada de IA")
         raise HTTPException(502, "Falha ao processar a solicitação de IA")
-    log_id = await _log(db, cu.id, AITipoUso.redacao_peca, body.case_id, user, pii, resposta, resp)
+    log_id = await _log(db, cu.id, AITipoUso.redacao_peca, body.case_id, user, pii, resposta, resp, task_type="elaboracao_peca")
     return {"ai_log_id": log_id, "resposta": resposta,
             "fontes": [{"titulo": c.get("titulo"), "categoria": c.get("categoria")} for c in contexto],
             "aviso": "⚠️ RASCUNHO gerado por IA — revisão humana obrigatória (OAB)."}
@@ -214,7 +215,7 @@ async def pesquisar(body: PesquisaIn, db: AsyncSession = Depends(get_db),
     except Exception:
         logger.exception("Falha na chamada de IA")
         raise HTTPException(502, "Falha ao processar a solicitação de IA")
-    log_id = await _log(db, cu.id, AITipoUso.consulta_rag, None, user, pii, resposta, resp)
+    log_id = await _log(db, cu.id, AITipoUso.consulta_rag, None, user, pii, resposta, resp, task_type="estrategia")
     return {"ai_log_id": log_id, "resposta": resposta,
             "fontes": [{"titulo": c.get("titulo"), "categoria": c.get("categoria")} for c in contexto],
             "aviso": "⚠️ Resposta gerada por IA — confira as fontes antes de usar em peça ou orientar o cliente."}
@@ -272,7 +273,7 @@ async def sugestao_honorarios(body: HonorariosIn, db: AsyncSession = Depends(get
     except Exception:
         logger.exception("Falha na chamada de IA")
         raise HTTPException(502, "Falha ao processar a solicitação de IA")
-    log_id = await _log(db, cu.id, AITipoUso.outro, None, user, pii, bruto, resp)
+    log_id = await _log(db, cu.id, AITipoUso.outro, None, user, pii, bruto, resp, task_type="analise_juridica")
     return {
         "ai_log_id": log_id,
         "sugestao": _pj(bruto) or {"texto": bruto},

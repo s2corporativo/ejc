@@ -107,6 +107,10 @@ class Case(Base):
     kanban_position     = Column(Integer, nullable=True)
     linked_judicial_case_id = Column(String(36), nullable=True)
 
+    # Próxima ação obrigatória (G1 — caso sempre tem "o que fazer agora")
+    proxima_acao      = Column(Text, nullable=True)
+    proxima_acao_prazo = Column(DateTime(timezone=True), nullable=True)
+
     # Estratégia (área restrita por perfil)
     descricao_fatos = Column(Text, nullable=True)
     tese_principal  = Column(Text, nullable=True)

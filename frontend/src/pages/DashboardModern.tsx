@@ -185,6 +185,7 @@ export default function DashboardModern() {
   // Bloco incorporado do antigo DashboardIA.
   const [iaSaude, setIaSaude] = useState<any>(null);
   const [solicitacoes, setSolicitacoes] = useState<any>(null);
+  const [casosSaude, setCasosSaude] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
   // "Gestão do escritório": widgets analíticos/gerenciais, recolhidos por
   // padrão para priorizar o operacional do dia do advogado.
@@ -218,9 +219,13 @@ export default function DashboardModern() {
       canSeeCRM
         ? api.get("/atendimentos/solicitacoes-resumo")
         : Promise.reject(new Error("sem permissão de CRM")),
+      // G5 — índice de saúde dos casos (piores primeiro)
+      isManager
+        ? api.get("/analytics/case-health", { params: { limit: 5, apenas_abertos: true } })
+        : Promise.reject(new Error("sem permissão")),
     ])
       .then(
-        ([dash, juri, deadlines, movements, cases, ia, solicitacoesReq]) => {
+        ([dash, juri, deadlines, movements, cases, ia, solicitacoesReq, healthReq]) => {
           if (dash.status === "fulfilled") setDashboard(dash.value.data);
           if (juri.status === "fulfilled") setJurimetria(juri.value.data);
           if (deadlines.status === "fulfilled")
@@ -231,6 +236,9 @@ export default function DashboardModern() {
           if (ia.status === "fulfilled") setIaSaude(ia.value.data);
           if (solicitacoesReq.status === "fulfilled")
             setSolicitacoes(solicitacoesReq.value.data);
+          // G5 — caso health ranking
+          if (healthReq && healthReq.status === "fulfilled")
+            setCasosSaude(asList(healthReq.value.data));
         },
       )
       .finally(() => setLoading(false));
@@ -1276,6 +1284,55 @@ export default function DashboardModern() {
                     </div>
                   )}
                 </SectionCard>
+
+                {isManager && casosSaude.length > 0 && (
+                  <SectionCard
+                    title="Saúde dos Casos"
+                    subtitle="Casos que precisam de atenção."
+                    actions={
+                      <Link
+                        to="/analytics/case-health"
+                        className="text-sm font-medium text-primary-600 hover:text-primary-700 dark:text-primary-300"
+                      >
+                        Ver todos
+                      </Link>
+                    }
+                  >
+                    <div className="space-y-2">
+                      {casosSaude.map((c: any) => {
+                        const score = c.score ?? 0;
+                        const classificacao = c.classificacao ?? "saudavel";
+                        const cor =
+                          classificacao === "critico"
+                            ? "text-danger-600 bg-danger-50"
+                            : classificacao === "risco"
+                              ? "text-warning-600 bg-warning-50"
+                              : classificacao === "atencao"
+                                ? "text-amber-600 bg-amber-50"
+                                : "text-success-600 bg-success-50";
+                        return (
+                          <Link
+                            key={c.case_id ?? c.id}
+                            to={`/casos/${c.case_id ?? c.id}`}
+                            className="flex items-center justify-between rounded-lg border border-black/[0.04] px-3 py-2 hover:bg-slate-50 dark:border-white/5 dark:hover:bg-white/[0.03]"
+                          >
+                            <div className="min-w-0 flex-1">
+                              <div className="truncate text-sm font-medium text-slate-800 dark:text-slate-200">
+                                {c.titulo || "Sem título"}
+                              </div>
+                              <div className="text-xs text-slate-400">
+                                {c.numero_interno || ""}
+                              </div>
+                            </div>
+                            <span className={`ml-2 shrink-0 rounded-full px-2 py-0.5 text-xs font-bold ${cor}`}>
+                              {score}
+                            </span>
+                          </Link>
+                        );
+                      })}
+                    </div>
+                  </SectionCard>
+                )}
 
                 {isManager && (
                   <SectionCard

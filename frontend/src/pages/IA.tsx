@@ -432,6 +432,15 @@ export default function IA() {
                       PII removida
                     </span>
                   )}
+                  {l.risco_ia && (
+                    <span className={`badge text-xs ${
+                      l.risco_ia === "alto_risco" ? "bg-danger-100 text-danger-700" :
+                      l.risco_ia === "medio_risco" ? "bg-warning-100 text-warning-700" :
+                      "bg-success-100 text-success-700"
+                    }`}>
+                      {l.risco_ia.replace(/_/g, " ")}
+                    </span>
+                  )}
                   <span className="text-xs text-slate-400 ml-auto">
                     {fmtDate(l.created_at)}
                   </span>

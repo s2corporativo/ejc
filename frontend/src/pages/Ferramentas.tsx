@@ -6,19 +6,14 @@ import {
   LayoutGrid,
   Search,
   ShieldCheck,
-  Sparkles,
   Star,
 } from "lucide-react";
 import {
   Badge,
   Button,
   Card,
-  Page,
-  PageDescription,
-  PageGrid,
   PageHeader,
-  PageTitle,
-} from "../components/ui";
+} from "../components/UI";
 import { EmptyState } from "../components/UI";
 import { cn } from "../lib/cn";
 import DefesasRevisoesPanel from "../components/DefesasRevisoesPanel";
@@ -134,20 +129,13 @@ export default function Ferramentas() {
   };
 
   return (
-    <Page className="min-h-full px-6 py-6">
+    <div className="min-h-full px-6 py-6">
       <div className="mx-auto max-w-7xl space-y-4">
-        <PageHeader className="rounded-xl border border-slate-200 bg-white p-4 dark:border-white/10 dark:bg-white/[0.03]">
-          <div>
-            <Badge variant="gold" className="mb-2 gap-1">
-              <Sparkles className="h-3 w-3" /> Catálogo de ferramentas
-            </Badge>
-            <PageTitle>Mais Ferramentas</PageTitle>
-            <PageDescription>
-              Recursos complementares organizados por finalidade. A rotina
-              principal continua dentro do caso e da Jornada.
-            </PageDescription>
-          </div>
-        </PageHeader>
+        <PageHeader
+          title="Mais Ferramentas"
+          subtitle="Recursos complementares organizados por finalidade. A rotina principal continua dentro do caso e da Jornada."
+          eyebrow="Catálogo de ferramentas"
+        />
 
         <div className="relative max-w-xl">
           <Search className="absolute left-3 top-3 h-4 w-4 text-slate-400" />
@@ -170,7 +158,7 @@ export default function Ferramentas() {
                 className="group w-full text-left"
                 aria-expanded={defesasOpen}
               >
-                <Card padded={false} className="flex items-start gap-4 p-4">
+                <Card className="flex items-start gap-4 p-4">
                   <span className="grid h-11 w-11 shrink-0 place-items-center rounded-lg border border-primary-100 bg-primary-50 text-primary-700 dark:border-white/10 dark:bg-white/10 dark:text-primary-200">
                     <ShieldCheck className="h-6 w-6" />
                   </span>
@@ -218,7 +206,7 @@ export default function Ferramentas() {
               </p>
             </div>
 
-            <PageGrid className="grid-cols-1 sm:grid-cols-2 lg:grid-cols-3">
+            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
               {group.modules.map((module) => {
                 const Icon = module.icon;
                 const favorito = favoritos.has(module.key);
@@ -229,7 +217,6 @@ export default function Ferramentas() {
                       className="h-full w-full text-left outline-none"
                     >
                       <Card
-                        padded={false}
                         className="flex h-full items-start gap-3 p-4"
                       >
                         <div className="grid h-10 w-10 shrink-0 place-items-center rounded-lg border border-primary-100 bg-primary-50 text-primary-700 dark:border-white/10 dark:bg-white/10 dark:text-primary-200">
@@ -273,7 +260,7 @@ export default function Ferramentas() {
                   </div>
                 );
               })}
-            </PageGrid>
+            </div>
           </section>
         ))}
 
@@ -293,6 +280,6 @@ export default function Ferramentas() {
           />
         )}
       </div>
-    </Page>
+    </div>
   );
 }

@@ -368,14 +368,7 @@ class Settings(BaseSettings):
     # Host oficial (default fixo anti-SSRF; a URL nunca vem de input do usuário).
     TRANSPARENCIA_BASE_URL: str = "https://api.portaldatransparencia.gov.br/api-de-dados"
 
-    # ── PNCP — contratações públicas (consulta pública, sem chave) — GATED ──
-    # Portal Nacional de Contratações Públicas (Lei 14.133/2021). A API de
-    # CONSULTA é pública e sem chave; por isso fica ligada por padrão. O EJC não
-    # implementa as APIs de manutenção, que exigem credenciamento de órgão.
-    PNCP_ENABLED: bool = True
-    # Host oficial (default fixo anti-SSRF; a URL nunca vem de input do usuário).
-    PNCP_BASE_URL: str = "https://pncp.gov.br/api/consulta/v1"
-    PNCP_TIMEOUT_SECONDS: float = 25.0
+    # PNCP removido — licitações desativadas no EJC
 
     # ── NFS-e — emissão fiscal via provedor (Nuvem Fiscal) — GATED ──────
     # Nasce DESLIGADO e em HOMOLOGAÇÃO: nunca emite nota real sem ativação

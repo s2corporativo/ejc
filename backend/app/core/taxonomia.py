@@ -64,8 +64,7 @@ _ALIASES: dict[str, str] = {
     "comercial": "empresarial",          # direito comercial → empresarial (CC/2002)
     "sucessao": "sucessoes",
     "das_sucessoes": "sucessoes",
-    "licitacao": "licitacoes",
-    "licitacoes_e_contratos": "licitacoes",
+    # licitacao/licitacoes removidos — desativados no EJC
     # direito digital / proteção de dados
     "lgpd": "digital_lgpd",
     "digital": "digital_lgpd",
@@ -159,7 +158,7 @@ MAPA_CANONICO_PARA_ANALISE: dict[str, Optional[str]] = {
     "agronegocio": None,
     "eleitoral": None,
     "internacional": None,
-    "licitacoes": None,            # é direito administrativo (fora das 9)
+    # licitacoes removido — desativado no EJC
 }
 
 # ── (b) Triagem automática — case_intel.py ───────────────────────────────────
@@ -182,7 +181,7 @@ MAPA_CANONICO_PARA_TRIAGEM: dict[str, str] = {
     "imobiliario": "civil",
     "contratual": "civil",
     "societario": "empresarial",
-    "licitacoes": "administrativo",   # licitações é direito administrativo
+    # licitacoes removido — desativado no EJC
     # juridicamente ambíguos → sentinela (decisão fica com o advogado)
     "constitucional": SENTINELA_OUTRO,
     "digital_lgpd": SENTINELA_OUTRO,
@@ -219,7 +218,7 @@ MAPA_CANONICO_PARA_PECA: dict[str, Optional[str]] = {
     # sub-ramos com correspondência SEGURA
     "contratual": "civil",
     "societario": "empresarial",
-    "licitacoes": "administrativo",
+    # licitacoes removido — desativado no EJC
     # juridicamente ambíguos → None (pipeline exige escolha humana da área)
     "saude": None,
     "medico": None,

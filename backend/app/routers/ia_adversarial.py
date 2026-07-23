@@ -73,7 +73,7 @@ async def critica_adversarial_endpoint(
 
     # Trilha de auditoria (padrão do projeto: todo uso de IA gera AILog).
     if critica.disponivel:
-        from app.models.ai_log import AILog, AIStatusHITL, AITipoUso
+        from app.models.ai_log import AILog, AIStatusHITL, AITipoUso, classificar_risco_ia
         from app.services.sanitizer import sanitizar_pii
         prompt_log, pii = sanitizar_pii(req.texto_peca)
         db.add(AILog(
@@ -86,6 +86,7 @@ async def critica_adversarial_endpoint(
             resposta=critica.relatorio,
             tokens_input=critica.tokens_input,
             tokens_output=critica.tokens_output,
+            risco_ia=classificar_risco_ia("elaboracao_peca"),
             status_hitl=AIStatusHITL.gerado,
         ))
         await db.commit()
