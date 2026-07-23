@@ -75,7 +75,9 @@ export function principalMotivo(item: PortfolioCase): string {
 
 export function ordenarCarteira(items: PortfolioCase[]): PortfolioCase[] {
   return [...items].sort((a, b) => {
-    if (a.health_score !== b.health_score) return a.health_score - b.health_score;
+    if (a.health_score !== b.health_score) {
+      return a.health_score - b.health_score;
+    }
     if (a.overdue_deadlines !== b.overdue_deadlines) {
       return b.overdue_deadlines - a.overdue_deadlines;
     }
@@ -100,7 +102,10 @@ export default function PortfolioHealthWidget() {
 
   const items = useMemo(() => ordenarCarteira(data?.items || []), [data]);
   const riskCount = useMemo(
-    () => items.filter((item) => ["critical", "risk"].includes(item.health_level)).length,
+    () =>
+      items.filter((item) =>
+        ["critical", "risk"].includes(item.health_level),
+      ).length,
     [items],
   );
 
@@ -166,8 +171,9 @@ export default function PortfolioHealthWidget() {
                   {riskCount} caso(s) em risco ou situação crítica
                 </p>
                 <p className="mt-1 text-sm text-slate-500">
-                  Escopo: {data.scope === "office" ? "escritório" : "casos atribuídos"} ·
-                  inatividade considerada após {data.stale_days} dias
+                  Escopo:{" "}
+                  {data.scope === "office" ? "escritório" : "casos atribuídos"}
+                  {" · "}inatividade considerada após {data.stale_days} dias
                 </p>
               </div>
               <Button
@@ -218,14 +224,17 @@ export default function PortfolioHealthWidget() {
                       <div className="text-right text-xs text-slate-500">
                         <p>{item.area}</p>
                         <p className="mt-1">
-                          {item.advogado_responsavel || "Sem responsável principal"}
+                          {item.advogado_responsavel ||
+                            "Sem responsável principal"}
                         </p>
                       </div>
                     </div>
                     <div className="mt-3 flex flex-wrap gap-2 text-xs text-slate-500">
                       <span>Tarefas: {item.pending_tasks}</span>
                       <span>Prazos vencidos: {item.overdue_deadlines}</span>
-                      <span>Próximos 3 dias: {item.deadlines_next_3_days}</span>
+                      <span>
+                        Próximos 3 dias: {item.deadlines_next_3_days}
+                      </span>
                       <span>Inatividade: {item.inactive_days} dia(s)</span>
                     </div>
                   </button>
