@@ -32,7 +32,7 @@ def test_teses_v4_is_only_a_compatibility_adapter():
 
 
 def test_backfill_is_idempotent_and_non_destructive():
-    source = _read("../alembic/versions/114_consolidar_dataroom_teses_v4.py")
+    source = _read("alembic/versions/114_consolidar_dataroom_teses_v4.py")
     assert 'down_revision = "113_calendar_feed_revocation"' in source
     assert 'deployment_policy = "additive_data_backfill"' in source
     assert 'data_backfill_targets = ("data_rooms", "teses")' in source
@@ -45,7 +45,7 @@ def test_backfill_is_idempotent_and_non_destructive():
 
 
 def test_orphan_legacy_client_does_not_break_data_room_backfill():
-    source = _read("../alembic/versions/114_consolidar_dataroom_teses_v4.py")
+    source = _read("alembic/versions/114_consolidar_dataroom_teses_v4.py")
     assert "LEFT JOIN clients cli ON cli.id = src.client_id" in source
     assert "CASE WHEN cli.id IS NOT NULL THEN src.client_id ELSE NULL END" in source
     assert "Vínculo histórico com cliente inexistente" in source
