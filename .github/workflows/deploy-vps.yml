@@ -125,6 +125,9 @@ jobs:
             --exclude 'vps-tools/' --exclude '*.log' \
             ./ /opt/ejc/
 
+      - name: Garantir permissão de leitura do .env
+        run: sudo chmod 644 /opt/ejc/.env
+
       - name: Deploy seguro com política calculada
         env:
           RUN_MIGRATIONS: ${{ steps.migrations.outputs.run_migrations }}
