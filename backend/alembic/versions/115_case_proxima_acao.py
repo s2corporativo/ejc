@@ -26,14 +26,15 @@ def upgrade() -> None:
         nullable=True,
     ))
     # Índice parcial: casos ATIVOS com próxima ação pendente (dashboard query).
-    op.execute(
-        r"""
-        CREATE INDEX IF NOT EXISTS ix_cases_proxima_acao_pendente
-        ON cases (proxima_acao_prazo)
-        WHERE deleted_at IS NULL
-          AND status IN ('triagem', 'ativo', 'suspenso', 'acordo')
-          AND proxima_acao IS NOT NULL
-        """
+    op.create_index(
+        "ix_cases_proxima_acao_pendente",
+        "cases",
+        ["proxima_acao_prazo"],
+        postgresql_where=sa.text(
+            "deleted_at IS NULL"
+            " AND status IN ('triagem', 'ativo', 'suspenso', 'acordo')"
+            " AND proxima_acao IS NOT NULL"
+        ),
     )
 
 

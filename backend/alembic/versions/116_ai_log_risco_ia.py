@@ -14,11 +14,20 @@ depends_on = None
 
 
 def upgrade() -> None:
-    risco_enum = sa.Enum("baixo_risco", "medio_risco", "alto_risco", name="airiscoia")
-    risco_enum.create(op.get_bind(), checkfirst=True)
+    op.execute(
+        "DO $$ BEGIN"
+        " CREATE TYPE airiscoia AS ENUM ('baixo_risco', 'medio_risco', 'alto_risco');"
+        " EXCEPTION WHEN duplicate_object THEN NULL;"
+        " END $$;"
+    )
     op.add_column(
         "ai_logs",
-        sa.Column("risco_ia", risco_enum, nullable=True),
+        sa.Column(
+            "risco_ia",
+            sa.Enum("baixo_risco", "medio_risco", "alto_risco",
+                     name="airiscoia", create_type=False),
+            nullable=True,
+        ),
     )
     op.create_index("ix_ai_logs_risco_ia", "ai_logs", ["risco_ia"])
 
