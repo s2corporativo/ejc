@@ -9,14 +9,18 @@ from __future__ import annotations
 
 from datetime import datetime
 from typing import Optional
+from uuid import uuid4
 
-from fastapi import APIRouter, Depends, Response
+from fastapi import APIRouter, Depends, HTTPException, Response
 from pydantic import BaseModel, ConfigDict, Field
-from sqlalchemy import Boolean, Column, DateTime, String, Text, func
+from sqlalchemy import Boolean, Column, DateTime, String, Text, func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.database import Base, get_db
-from app.core.security import get_current_user
+from app.core.ownership import is_gestao
+from app.core.security import ROLE_LEVEL, get_current_user
+from app.models.client import Client
+from app.models.data_room import DataRoom
 from app.models.user import User
 
 
@@ -55,15 +59,60 @@ router = APIRouter(
 )
 
 
+def _pode_editar(cu: User) -> bool:
+    return ROLE_LEVEL.get(cu.role.value, 0) >= ROLE_LEVEL["advogado"]
+
+
+def _ids_clientes_visiveis(cu: User):
+    """Reusa a regra canônica de carteira sem duplicar a política."""
+    from app.routers.data_room import _ids_clientes_visiveis as _canonico
+
+    return _canonico(cu)
+
+
+async def _validar_cliente_v4(
+    db: AsyncSession,
+    cu: User,
+    client_id: str | None,
+) -> None:
+    """Preserva a política restritiva da rota legado durante a transição."""
+    if is_gestao(cu):
+        return
+    if not client_id:
+        raise HTTPException(
+            422,
+            "Na rota legado, informe um cliente da sua carteira",
+        )
+
+    from app.routers.clients import _pode_ver_cliente
+
+    cli = (
+        await db.execute(
+            select(Client).where(
+                Client.id == client_id,
+                Client.deleted_at.is_(None),
+            )
+        )
+    ).scalar_one_or_none()
+    if cli is None or not await _pode_ver_cliente(cu, cli, db):
+        raise HTTPException(404, "Cliente não encontrado")
+
+
 def _headers_deprecacao(response: Response) -> None:
     response.headers["Deprecation"] = "true"
     response.headers["Link"] = '</api/data-rooms>; rel="successor-version"'
 
 
-def _compat(room: dict) -> dict:
+def _compat(room: DataRoom | dict) -> dict:
+    if isinstance(room, dict):
+        room_id = room["id"]
+        nome = room["nome"]
+    else:
+        room_id = room.id
+        nome = room.nome
     return {
-        "id": room["id"],
-        "nome": room["nome"],
+        "id": room_id,
+        "nome": nome,
         # A expiração agora pertence ao link externo, não à sala canônica.
         "expira_em": None,
     }
@@ -81,8 +130,11 @@ async def criar_sala(
     db: AsyncSession = Depends(get_db),
     cu: User = Depends(get_current_user),
 ):
-    """Cria a sala no domínio canônico, sem dupla escrita na tabela v4."""
-    from app.routers.data_room import DataRoomIn, criar_data_room
+    """Cria diretamente no modelo canônico, sem dupla escrita na tabela v4."""
+    if not _pode_editar(cu):
+        raise HTTPException(403, "Sem permissão para criar data rooms")
+
+    await _validar_cliente_v4(db, cu, payload.client_id)
 
     descricao = payload.descricao
     if payload.expira_dias:
@@ -92,15 +144,17 @@ async def criar_sala(
         )
         descricao = f"{descricao}\n{aviso}" if descricao else aviso
 
-    room = await criar_data_room(
-        DataRoomIn(
-            nome=payload.nome,
-            descricao=descricao,
-            client_id=payload.client_id,
-        ),
-        db=db,
-        cu=cu,
+    room = DataRoom(
+        id=str(uuid4()),
+        nome=payload.nome,
+        descricao=descricao,
+        client_id=payload.client_id,
+        case_id=None,
+        created_by=cu.id,
     )
+    db.add(room)
+    await db.commit()
+    await db.refresh(room)
     _headers_deprecacao(response)
     return _compat(room)
 
@@ -115,16 +169,18 @@ async def listar_salas(
     db: AsyncSession = Depends(get_db),
     cu: User = Depends(get_current_user),
 ):
-    """Lista somente salas canônicas visíveis pelas regras centrais de carteira."""
-    from app.routers.data_room import listar_data_rooms
+    """Lista salas canônicas preservando a restrição histórica da rota v4."""
+    if not _pode_editar(cu):
+        raise HTTPException(403, "Sem permissão para listar data rooms")
 
-    page = await listar_data_rooms(
-        case_id=None,
-        client_id=None,
-        page=1,
-        per_page=50,
-        db=db,
-        cu=cu,
-    )
+    q = select(DataRoom).where(DataRoom.deleted_at.is_(None))
+    if not is_gestao(cu):
+        q = q.where(
+            DataRoom.client_id.is_not(None),
+            DataRoom.client_id.in_(_ids_clientes_visiveis(cu)),
+        )
+    q = q.order_by(DataRoom.created_at.desc())
+
+    res = await db.execute(q)
     _headers_deprecacao(response)
-    return [_compat(room) for room in page["items"]]
+    return [_compat(room) for room in res.scalars().all()]
