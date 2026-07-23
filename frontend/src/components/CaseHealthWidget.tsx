@@ -190,7 +190,7 @@ export default function CaseHealthWidget({ caseId }: { caseId: string }) {
                       Situação operacional
                     </h3>
                     <p className="mt-1 text-sm text-slate-500">
-                      Última atividade:{" ""}{formatarDataEvento(
+                      Última atividade: {formatarDataEvento(
                         health.last_activity_at,
                       )}{" "}
                       · {health.inactive_days} dia(s) de inatividade
@@ -216,7 +216,7 @@ export default function CaseHealthWidget({ caseId }: { caseId: string }) {
                     Prazos vencidos: {health.metrics.overdue_deadlines || 0}
                   </Badge>
                   <Badge>
-                    Retornos vencidos:{" ""}{health.metrics.overdue_client_requests || 0}
+                    Retornos vencidos: {health.metrics.overdue_client_requests || 0}
                   </Badge>
                 </div>
               </div>
