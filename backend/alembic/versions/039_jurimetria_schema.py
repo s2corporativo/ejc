@@ -1,4 +1,4 @@
-﻿"""039 â€” Jurimetria: schema completo para coleta e anÃ¡lise de decisÃµes pÃºblicas.
+"""039 â€” Jurimetria: schema completo para coleta e anÃ¡lise de decisÃµes pÃºblicas.
 
 Tabelas criadas nesta migration:
   jur_tribunais          â€” cadastro dos tribunais monitorados
