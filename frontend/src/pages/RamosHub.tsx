@@ -31,12 +31,7 @@ import api from "../lib/api";
 import { ROLES } from "../config/moduleRegistry";
 import { useAuth } from "../stores/auth";
 import { RAMOS } from "./ramos/ramosConfig";
-import {
-  Badge,
-  Button,
-  Card,
-  PageHeader,
-} from "../components/UI";
+import { Badge, Button, Card, PageHeader } from "../components/UI";
 
 // Área (taxonomia de casos) → slug do hub de ferramentas em /ramos/<slug>.
 // A maioria coincide; "civil" e "criminal" têm hubs com nome próprio.

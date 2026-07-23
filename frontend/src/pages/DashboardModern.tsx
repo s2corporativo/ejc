@@ -221,11 +221,22 @@ export default function DashboardModern() {
         : Promise.reject(new Error("sem permissão de CRM")),
       // G5 — índice de saúde dos casos (piores primeiro)
       isManager
-        ? api.get("/analytics/case-health", { params: { limit: 5, apenas_abertos: true } })
+        ? api.get("/analytics/case-health", {
+            params: { limit: 5, apenas_abertos: true },
+          })
         : Promise.reject(new Error("sem permissão")),
     ])
       .then(
-        ([dash, juri, deadlines, movements, cases, ia, solicitacoesReq, healthReq]) => {
+        ([
+          dash,
+          juri,
+          deadlines,
+          movements,
+          cases,
+          ia,
+          solicitacoesReq,
+          healthReq,
+        ]) => {
           if (dash.status === "fulfilled") setDashboard(dash.value.data);
           if (juri.status === "fulfilled") setJurimetria(juri.value.data);
           if (deadlines.status === "fulfilled")
@@ -1324,7 +1335,9 @@ export default function DashboardModern() {
                                 {c.numero_interno || ""}
                               </div>
                             </div>
-                            <span className={`ml-2 shrink-0 rounded-full px-2 py-0.5 text-xs font-bold ${cor}`}>
+                            <span
+                              className={`ml-2 shrink-0 rounded-full px-2 py-0.5 text-xs font-bold ${cor}`}
+                            >
                               {score}
                             </span>
                           </Link>

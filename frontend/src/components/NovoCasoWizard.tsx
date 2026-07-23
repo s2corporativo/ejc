@@ -599,7 +599,8 @@ export default function NovoCasoWizard({
                 }
               />
               <p className="mt-1 text-xs text-slate-400">
-                O que precisa ser feito agora neste caso? Obrigatório para casos ativos.
+                O que precisa ser feito agora neste caso? Obrigatório para casos
+                ativos.
               </p>
             </div>
 
