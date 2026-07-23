@@ -1,35 +1,32 @@
 {
-  "total": 5493,
-  "by_kind": {
-    "class": 492,
-    "component": 90,
-    "endpoint": 810,
-    "frontend_function": 1221,
-    "frontend_route": 58,
-    "function": 2098,
-    "model_file": 58,
-    "page": 85,
-    "python_module": 87,
-    "router": 163,
-    "service": 233,
-    "table": 98
-  },
   "by_classification": {
-    "consolidar": 180,
-    "corrigir": 208,
-    "desativar": 0,
-    "excluir após migração": 22,
-    "manter": 5053,
-    "redirecionar": 5,
+    "consolidar": 329,
+    "corrigir": 167,
+    "desativar": 51,
+    "excluir após migração": 12,
+    "manter": 5225,
     "renomear": 25
   },
-  "needs_review": 4858,
-  "mounted_routers": 162,
-  "unmounted_routers": 1,
-  "source_fingerprint": "151548336fdf253a08998b0c8fd60de840ccf8b40c70cc4d304ac2994db2cf94",
-  "refined": true,
+  "by_kind": {
+    "class": 508,
+    "component": 90,
+    "endpoint": 823,
+    "frontend_function": 1241,
+    "frontend_route": 57,
+    "function": 2328,
+    "model_file": 60,
+    "page": 96,
+    "python_module": 95,
+    "router": 168,
+    "service": 243,
+    "table": 100
+  },
   "gate": {
     "all_items_classified": true,
     "invalid_item_ids": []
-  }
+  },
+  "needs_review": 5209,
+  "source_fingerprint": "9d17be1cd5fc6dbd6b819c9d5c695d86cf0141ea4e96b6b42e6232e48389e0bf",
+  "total": 5809,
+  "unmounted_routers": 14
 }

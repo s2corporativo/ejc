@@ -1,26 +1,271 @@
 {
-  "page:frontend/src/pages:dashboard": [
+  "ai": [
+    "backend/app/routers/ai.py",
+    "backend/app/services/ai_service.py"
+  ],
+  "ai_skill": [
+    "backend/app/models/ai_skill.py",
+    "backend/app/services/ai_skill_service.py"
+  ],
+  "anexos": [
+    "backend/app/routers/anexos.py",
+    "backend/app/services/anexos_service.py"
+  ],
+  "bank_analysis": [
+    "backend/app/models/bank_analysis.py",
+    "backend/app/routers/bank_analysis.py"
+  ],
+  "base": [
+    "backend/app/services/conhecimento_ingest/base.py",
+    "backend/app/services/juris_import/base.py",
+    "backend/app/services/nfse/base.py",
+    "backend/app/services/system_prompts/base.py"
+  ],
+  "case_intelligence": [
+    "backend/app/models/case_intelligence.py",
+    "backend/app/routers/case_intelligence.py",
+    "backend/app/services/case_intelligence_service.py"
+  ],
+  "checklists": [
+    "backend/app/routers/checklists.py",
+    "frontend/src/pages/Checklists.tsx"
+  ],
+  "credential_vault": [
+    "backend/app/routers/credential_vault.py",
+    "backend/app/services/credential_vault_service.py"
+  ],
+  "dashboard": [
+    "backend/app/routers/dashboard.py",
+    "backend/app/services/dashboard_service.py",
     "frontend/src/pages/Dashboard.tsx",
     "frontend/src/pages/DashboardModern.tsx"
   ],
-  "router:backend/app/routers:data_room": [
+  "data_room": [
+    "backend/app/models/data_room.py",
     "backend/app/routers/data_room.py",
     "backend/app/routers/data_room_v4.py"
   ],
-  "router:backend/app/routers:peca_geracao": [
+  "datajud": [
+    "backend/app/routers/datajud.py",
+    "backend/app/services/datajud_service.py"
+  ],
+  "despesas": [
+    "backend/app/routers/despesas.py",
+    "frontend/src/pages/Despesas.tsx"
+  ],
+  "diagnostico": [
+    "backend/app/routers/diagnostico.py",
+    "backend/app/services/diagnostico_service.py"
+  ],
+  "diario_oficial": [
+    "backend/app/models/diario_oficial.py",
+    "backend/app/routers/diario_oficial.py",
+    "backend/app/services/diario_oficial_service.py"
+  ],
+  "djen": [
+    "backend/app/models/djen.py",
+    "backend/app/services/djen_service.py",
+    "backend/app/services/ingestors/djen.py"
+  ],
+  "document_intake": [
+    "backend/app/models/document_intake.py",
+    "backend/app/services/document_intake_service.py"
+  ],
+  "dossie_estrategico": [
+    "backend/app/models/dossie_estrategico.py",
+    "backend/app/routers/dossie_estrategico.py"
+  ],
+  "entrada_universal": [
+    "backend/app/routers/entrada_universal.py",
+    "backend/app/services/entrada_universal_service.py"
+  ],
+  "environmental": [
+    "backend/app/models/environmental.py",
+    "backend/app/routers/environmental.py"
+  ],
+  "fee_proposal": [
+    "backend/app/models/fee_proposal.py",
+    "backend/app/services/fee_proposal_service.py"
+  ],
+  "ficha_triagem": [
+    "backend/app/models/ficha_triagem.py",
+    "backend/app/routers/ficha_triagem.py",
+    "backend/app/services/ficha_triagem_service.py"
+  ],
+  "google_drive": [
+    "backend/app/services/google_drive.py",
+    "backend/app/services/google_drive_service.py"
+  ],
+  "honorarios": [
+    "backend/app/services/system_prompts/honorarios.py",
+    "frontend/src/pages/Honorarios.tsx"
+  ],
+  "honorarios_oab": [
+    "backend/app/routers/honorarios_oab.py",
+    "backend/app/services/honorarios_oab.py"
+  ],
+  "ia_defensiva": [
+    "backend/app/routers/ia_defensiva.py",
+    "backend/app/services/ia_defensiva_service.py"
+  ],
+  "indices": [
+    "backend/app/routers/indices.py",
+    "backend/app/services/indices_service.py"
+  ],
+  "infosimples": [
+    "backend/app/services/infosimples_service.py",
+    "frontend/src/components/Infosimples.tsx"
+  ],
+  "init": [
+    "backend/app/models/__init__.py",
+    "backend/app/routers/__init__.py",
+    "backend/app/services/__init__.py",
+    "backend/app/services/ai/__init__.py",
+    "backend/app/services/ai/agent/__init__.py",
+    "backend/app/services/ai/agent/tools/__init__.py",
+    "backend/app/services/ai/core/__init__.py",
+    "backend/app/services/ambiental/__init__.py",
+    "backend/app/services/calc/__init__.py",
+    "backend/app/services/conhecimento_ingest/__init__.py",
+    "backend/app/services/fiscal/__init__.py",
+    "backend/app/services/ingestors/__init__.py",
+    "backend/app/services/juris_import/__init__.py",
+    "backend/app/services/nfse/__init__.py",
+    "backend/app/services/observability/__init__.py",
+    "backend/app/services/providers/__init__.py",
+    "backend/app/services/system_prompts/__init__.py"
+  ],
+  "intimacoes": [
+    "backend/app/routers/intimacoes.py",
+    "frontend/src/pages/Intimacoes.tsx"
+  ],
+  "jurimetria": [
+    "backend/app/routers/jurimetria.py",
+    "backend/app/services/jurimetria.py",
+    "frontend/src/pages/Jurimetria.tsx"
+  ],
+  "jurisprudencia_externa": [
+    "backend/app/routers/jurisprudencia_externa.py",
+    "backend/app/services/jurisprudencia_externa.py"
+  ],
+  "jurisprudencia_interna": [
+    "backend/app/models/jurisprudencia_interna.py",
+    "backend/app/routers/jurisprudencia_interna.py"
+  ],
+  "kanban": [
+    "backend/app/routers/kanban.py",
+    "frontend/src/pages/Kanban.tsx"
+  ],
+  "lexml": [
+    "backend/app/services/ingestors/lexml.py",
+    "backend/app/services/juris_import/lexml.py"
+  ],
+  "matriz_teses": [
+    "backend/app/models/matriz_teses.py",
+    "backend/app/routers/matriz_teses.py",
+    "backend/app/services/matriz_teses_service.py"
+  ],
+  "motor_peca": [
+    "backend/app/routers/motor_peca.py",
+    "backend/app/services/motor_peca_service.py"
+  ],
+  "nfse": [
+    "backend/app/models/nfse.py",
+    "backend/app/routers/nfse.py"
+  ],
+  "noticias": [
+    "backend/app/routers/noticias.py",
+    "frontend/src/pages/Noticias.tsx"
+  ],
+  "notification": [
+    "backend/app/models/notification.py",
+    "backend/app/services/notification_service.py"
+  ],
+  "peca_geracao": [
     "backend/app/routers/peca_geracao.py",
     "backend/app/routers/peca_geracao_router.py"
   ],
-  "router:backend/app/routers:sala_de_guerra": [
+  "pncp": [
+    "backend/app/routers/pncp.py",
+    "backend/app/services/pncp_service.py"
+  ],
+  "prazos": [
+    "backend/app/services/system_prompts/prazos.py",
+    "frontend/src/pages/Prazos.tsx"
+  ],
+  "previdenciario_beneficio": [
+    "backend/app/routers/previdenciario_beneficio.py",
+    "backend/app/services/calc/previdenciario_beneficio.py"
+  ],
+  "produtividade": [
+    "backend/app/routers/produtividade.py",
+    "frontend/src/pages/Produtividade.tsx"
+  ],
+  "prompts": [
+    "backend/app/routers/prompts.py",
+    "frontend/src/pages/Prompts.tsx"
+  ],
+  "radar_legislativo": [
+    "backend/app/routers/radar_legislativo.py",
+    "backend/app/services/radar_legislativo.py"
+  ],
+  "rag": [
+    "backend/app/models/rag.py",
+    "backend/app/routers/rag.py"
+  ],
+  "raio_x": [
+    "backend/app/models/raio_x.py",
+    "backend/app/routers/raio_x.py",
+    "backend/app/services/raio_x_service.py"
+  ],
+  "sala_de_guerra": [
     "backend/app/routers/sala_de_guerra.py",
     "backend/app/routers/sala_de_guerra_v3.py"
   ],
-  "router:backend/app/routers:teses": [
+  "solicitacao_documento": [
+    "backend/app/models/solicitacao_documento.py",
+    "backend/app/services/solicitacao_documento_service.py"
+  ],
+  "stj": [
+    "backend/app/services/ingestors/stj.py",
+    "backend/app/services/juris_import/stj.py"
+  ],
+  "suspensoes": [
+    "backend/app/routers/suspensoes.py",
+    "frontend/src/pages/Suspensoes.tsx"
+  ],
+  "teses": [
     "backend/app/routers/teses.py",
     "backend/app/routers/teses_v4.py"
   ],
-  "service:backend/app/services:google_drive": [
-    "backend/app/services/google_drive.py",
-    "backend/app/services/google_drive_service.py"
+  "tjmg": [
+    "backend/app/services/ingestors/tjmg.py",
+    "backend/app/services/juris_import/tjmg.py"
+  ],
+  "trabalhista": [
+    "backend/app/services/calc/trabalhista.py",
+    "backend/app/services/system_prompts/trabalhista.py"
+  ],
+  "transparencia": [
+    "backend/app/routers/transparencia.py",
+    "backend/app/services/transparencia_service.py"
+  ],
+  "validador_juridico": [
+    "backend/app/routers/validador_juridico.py",
+    "backend/app/services/validador_juridico_service.py"
+  ],
+  "visual_law": [
+    "backend/app/routers/visual_law.py",
+    "backend/app/services/visual_law.py"
+  ],
+  "wiki": [
+    "backend/app/models/wiki.py",
+    "backend/app/routers/wiki.py",
+    "frontend/src/pages/Wiki.tsx"
+  ],
+  "workflow": [
+    "backend/app/models/workflow.py",
+    "backend/app/routers/workflow.py",
+    "frontend/src/pages/Workflow.tsx"
   ]
 }
