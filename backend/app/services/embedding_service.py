@@ -28,6 +28,16 @@ settings = get_settings()
 MODEL_NAME = settings.EMBEDDINGS_MODEL or "intfloat/multilingual-e5-large"
 EMBED_DIM  = int(settings.EMBEDDINGS_DIM or 1024)
 
+# Pooling FIXO por REPRODUTIBILIDADE do RAG. Os modelos E5 (intfloat/*-e5-*) são
+# treinados com pooling por MÉDIA (mean) das últimas hidden states — NÃO CLS. O
+# fastembed PINADO (==0.8.0, ver requirements.txt) já aplica o pooling correto
+# embutido no registro ONNX do modelo; explicitamos aqui para que uma futura
+# troca de versão/modelo seja avaliada contra esta premissa — o e5 chegou a
+# mudar de CLS→média entre versões upstream, alterando os vetores e a ordenação
+# do retrieval. Não é um parâmetro que reconfigure o encode (o fastembed 0.8.0
+# não expõe pooling na TextEmbedding); é o CONTRATO documentado que o pin garante.
+POOLING_ESPERADO = "mean"  # E5 = média; trocar de modelo exige reavaliar isto
+
 _model = None
 _model_lock = threading.Lock()
 _DISPONIVEL: bool | None = None
@@ -82,7 +92,10 @@ def _get_model():
                 from fastembed import TextEmbedding
                 logger.info(f"Carregando {MODEL_NAME} (primeira vez — download ~2,3 GB)...")
                 _model = TextEmbedding(model_name=MODEL_NAME)
-                logger.info(f"[Embeddings] {MODEL_NAME} carregado ({EMBED_DIM}d)")
+                logger.info(
+                    f"[Embeddings] {MODEL_NAME} carregado "
+                    f"({EMBED_DIM}d, pooling={POOLING_ESPERADO}, fastembed pinado)"
+                )
     return _model
 
 

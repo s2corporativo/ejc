@@ -104,9 +104,14 @@ def _cli() -> Client:
 
 
 def _case(**kw) -> Case:
+    # Responsável = "u1" (o mesmo uid do _user default): o advogado que gera o
+    # kit é o dono do caso — happy-path autorizado e realista. Necessário após o
+    # hardening do gate: caso ÓRFÃO (sem responsável) só é acessível à gestão, e
+    # estes testes exercitam a geração do kit, não o gate de ownership. Passe
+    # advogado_responsavel_id=None explicitamente se precisar de um caso órfão.
     base = dict(id="case1", titulo="Guarda dos Filhos", client_id="cli1",
                 area="familia", numero_processo=None, numero_interno="DPT-2026-0001",
-                advogado_responsavel_id=None, advogado_auxiliar_id=None,
+                advogado_responsavel_id="u1", advogado_auxiliar_id=None,
                 deleted_at=None)
     base.update(kw)
     return Case(**base)

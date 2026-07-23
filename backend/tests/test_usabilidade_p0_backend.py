@@ -199,7 +199,11 @@ def test_recuperar_senha_com_smtp_mantem_resposta_neutra(monkeypatch):
 
 # ── 4) Alterar senha mantém a sessão (novos tokens) ───────────────────────────
 
-def test_alterar_senha_retorna_tokens_e_limpa_claim():
+def test_alterar_senha_retorna_tokens_e_limpa_claim(monkeypatch):
+    # "advogado" entrou no default de REQUIRE_2FA_ROLES → /auth/alterar-senha
+    # tocaria o ramo de 2FA (totp_enabled, ausente no fake). Teste é sobre o
+    # contrato de tokens/claim, não 2FA.
+    monkeypatch.setattr(auth_router.settings, "REQUIRE_2FA_ROLES", "")
     user = types.SimpleNamespace(
         id="u-troca", role=types.SimpleNamespace(value="advogado"),
         full_name="Dr. Teste",

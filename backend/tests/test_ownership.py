@@ -61,9 +61,16 @@ async def test_auxiliar_passa():
     assert await verificar_acesso_caso(_FakeDB(case), _user(UserRole.advogado, "u1"), "c1") is case
 
 
-async def test_caso_sem_dono_anti_lockout():
+async def test_caso_sem_dono_so_gestao_acessa():
+    # Hardening (auditoria de melhoria): caso ÓRFÃO (sem responsável NEM
+    # auxiliar) NÃO libera mais qualquer usuário interno. Só a gestão (socio+)
+    # acessa — ela é o escape-hatch legítimo (assume/reatribui o caso); perfis
+    # baixos passam a receber 403.
     case = Case(id="c1", advogado_responsavel_id=None, advogado_auxiliar_id=None)
-    assert await verificar_acesso_caso(_FakeDB(case), _user(UserRole.estagiario, "u1"), "c1") is case
+    assert await verificar_acesso_caso(_FakeDB(case), _user(UserRole.socio, "u1"), "c1") is case
+    with pytest.raises(HTTPException) as exc:
+        await verificar_acesso_caso(_FakeDB(case), _user(UserRole.estagiario, "u1"), "c1")
+    assert exc.value.status_code == 403
 
 
 async def test_estranho_403():

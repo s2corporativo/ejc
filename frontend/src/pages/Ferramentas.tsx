@@ -34,7 +34,10 @@ const CATEGORIES: { title: string; description: string; keys: string[] }[] = [
   {
     title: "Inteligência e conhecimento",
     description: "Bases de conteúdo e apoio à produção jurídica.",
-    keys: ["biblioteca", "memoria", "wiki", "prompts"],
+    // CONSOLIDAÇÃO CONHECIMENTO 2026-07: Biblioteca, Memória Institucional e
+    // Wiki foram unificadas na aba "Conhecimento" da Inteligência (item fixo
+    // do menu principal). Restam aqui apenas os prompts operacionais.
+    keys: ["prompts"],
   },
   {
     title: "Compliance e governança",

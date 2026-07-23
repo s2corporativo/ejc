@@ -11,6 +11,25 @@ import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { describe, expect, it } from "vitest";
 import { LEGACY_REDIRECTS, STAFF_ROUTES } from "./moduleRegistry";
+import { isFinanceTab } from "../pages/FinanceiroWorkspace";
+import { isInteligenciaTab } from "../pages/InteligenciaWorkspace";
+import { isCentralTab } from "../pages/Central";
+import { isActivityView } from "../pages/CentralAtividades";
+
+// Fonte de verdade das abas/visões navegáveis por deep-link (?tab=/?view=) dos
+// workspaces com sub-navegação por query param. Um LEGACY_REDIRECT que aponte
+// para uma dessas rotas é validado contra o predicado REAL da respectiva tela —
+// foi a ausência disso que deixou o `/nfse → /financeiro?tab=nfse` quebrado
+// passar batido (a aba `nfse` nem existia no FinanceiroWorkspace).
+type DeepLinkValidators = {
+  tab?: (value: string | null) => boolean;
+  view?: (value: string | null) => boolean;
+};
+const WORKSPACE_DEEP_LINKS: Record<string, DeepLinkValidators> = {
+  "/financeiro": { tab: isFinanceTab },
+  "/inteligencia": { tab: isInteligenciaTab },
+  "/atividades": { tab: isCentralTab, view: isActivityView },
+};
 
 const SRC_DIR = join(dirname(fileURLToPath(import.meta.url)), "..");
 const appSrc = readFileSync(join(SRC_DIR, "App.tsx"), "utf-8");
@@ -131,6 +150,30 @@ describe("integridade App.tsx ↔ moduleRegistry", () => {
         alvoExiste,
         `redirect ${redirect.from} → ${redirect.to} aponta para rota inexistente`,
       ).toBe(true);
+    }
+  });
+
+  it("todo redirect com ?tab=/?view= cai numa aba REAL do workspace de destino", () => {
+    for (const redirect of LEGACY_REDIRECTS) {
+      const [pathname, query] = redirect.to.split("?");
+      if (!query) continue; // redirect sem sub-navegação por query
+      const validators = WORKSPACE_DEEP_LINKS[pathname || "/"];
+      if (!validators) continue; // destino sem abas por query param registradas
+      const params = new URLSearchParams(query);
+      const tab = params.get("tab");
+      if (tab !== null) {
+        expect(
+          validators.tab?.(tab) ?? false,
+          `redirect ${redirect.from} → ${redirect.to} usa a aba inexistente "${tab}" em ${pathname}`,
+        ).toBe(true);
+      }
+      const view = params.get("view");
+      if (view !== null) {
+        expect(
+          validators.view?.(view) ?? false,
+          `redirect ${redirect.from} → ${redirect.to} usa a visão inexistente "${view}" em ${pathname}`,
+        ).toBe(true);
+      }
     }
   });
 });

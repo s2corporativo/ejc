@@ -113,12 +113,11 @@ const InteligenciaWorkspace = lazy(
   () => import("../pages/InteligenciaWorkspace"),
 );
 const GovernancaIA = lazy(() => import("../pages/GovernancaIA"));
-const KnowledgeHub = lazy(() => import("../pages/KnowledgeHub"));
-const Biblioteca = lazy(() => import("../pages/Biblioteca"));
-const MemoriaInstitucional = lazy(
-  () => import("../pages/MemoriaInstitucional"),
-);
-const Wiki = lazy(() => import("../pages/Wiki"));
+// CONSOLIDAÇÃO CONHECIMENTO 2026-07: as superfícies KnowledgeHub, Biblioteca,
+// MemoriaInstitucional e Wiki foram unificadas na aba canônica
+// "Conhecimento" da Inteligência (/inteligencia?tab=conhecimento). As rotas
+// viraram LEGACY_REDIRECTS; os arquivos de página seguem no repositório para
+// rollback/histórico, mas não são mais roteados.
 const DataJudBusca = lazy(() => import("../pages/DataJudBusca"));
 const DiarioOficial = lazy(() => import("../pages/DiarioOficial"));
 const RadarRegulatorio = lazy(() => import("../pages/RadarRegulatorio"));
@@ -572,63 +571,6 @@ export const STAFF_ROUTES: ModuleRoute[] = [
     backendPrefixes: ["/api/ai", "/api/ai/core", "/api/ai/skills"],
   },
   {
-    key: "knowledge-hub",
-    path: "/legado/knowledge-hub",
-    label: "Conhecimento Jurídico",
-    description:
-      "Busca unificada na base de conhecimento, teses, jurisprudência e memória.",
-    group: "Pesquisar & IA",
-    icon: BookOpen,
-    component: KnowledgeHub,
-    // CONSOLIDAÇÃO 2026-07: coberto pela Inteligência (aba Conhecimento);
-    // rota ativa para links diretos/favoritos — mesmo padrão de
-    // prazos/tarefas/intimações/suspensões (status "hidden", fora do menu).
-    status: "hidden",
-    order: 20,
-    helpKey: "conhecimento",
-    sensitive: true,
-    usesAI: true,
-    backendPrefixes: ["/api/rag", "/api/teses", "/api/jurisprudencias"],
-  },
-  {
-    key: "biblioteca",
-    path: "/biblioteca",
-    label: "Biblioteca Jurídica",
-    description: "Teses, peças de referência e memória institucional.",
-    group: "Pesquisar & IA",
-    icon: BookOpen,
-    component: Biblioteca,
-    helpKey: "conhecimento",
-    status: "hidden",
-    sensitive: true,
-    usesAI: true,
-  },
-  {
-    key: "memoria",
-    path: "/memoria",
-    label: "Memória Institucional",
-    description: "Resultados, aprendizados e precedentes internos.",
-    group: "Pesquisar & IA",
-    icon: BookOpen,
-    component: MemoriaInstitucional,
-    helpKey: "conhecimento",
-    status: "hidden",
-    sensitive: true,
-    usesAI: true,
-  },
-  {
-    key: "wiki",
-    path: "/wiki",
-    label: "Wiki",
-    description: "Conteúdo interno de apoio operacional.",
-    group: "Pesquisar & IA",
-    icon: BookOpen,
-    component: Wiki,
-    helpKey: "conhecimento",
-    status: "hidden",
-    sensitive: true,
-  },
-  {
     key: "prompts",
     path: "/prompts",
     label: "Prompts Operacionais",
@@ -1021,6 +963,32 @@ export const LEGACY_REDIRECTS: LegacyRedirect[] = [
     to: "/inteligencia?tab=conhecimento",
     reason:
       "Curadoria da base de conhecimento foi incorporada ao workspace de Inteligência Jurídica.",
+  },
+  // CONSOLIDAÇÃO CONHECIMENTO 2026-07: as quatro superfícies redundantes
+  // (Conhecimento Jurídico/KnowledgeHub, Biblioteca, Memória Institucional e
+  // Wiki) foram unificadas na aba canônica "Conhecimento" da Inteligência.
+  {
+    from: "/legado/knowledge-hub",
+    to: "/inteligencia?tab=conhecimento",
+    reason:
+      "Conhecimento Jurídico (KnowledgeHub) foi unificado na aba Conhecimento da Inteligência.",
+  },
+  {
+    from: "/biblioteca",
+    to: "/inteligencia?tab=conhecimento",
+    reason:
+      "Biblioteca Jurídica foi unificada na aba Conhecimento da Inteligência.",
+  },
+  {
+    from: "/memoria",
+    to: "/inteligencia?tab=conhecimento",
+    reason:
+      "Memória Institucional foi unificada na aba Conhecimento da Inteligência.",
+  },
+  {
+    from: "/wiki",
+    to: "/inteligencia?tab=conhecimento",
+    reason: "Wiki foi unificada na aba Conhecimento da Inteligência.",
   },
 ];
 

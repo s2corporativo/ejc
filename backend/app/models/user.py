@@ -21,9 +21,14 @@ class UserRole(str, enum.Enum):
 class User(Base):
     __tablename__ = "users"
 
-    # Unicidade de email é imposta por ÍNDICE ÚNICO PARCIAL (migration 075):
-    # só entre usuários ATIVOS (deleted_at IS NULL), permitindo recadastrar um
-    # e-mail liberado por soft-delete. Por isso email NÃO usa unique=True.
+    # Unicidade de email é imposta pelo ÍNDICE ÚNICO PARCIAL uq_users_email_active
+    # (migration 075): só entre usuários ATIVOS (deleted_at IS NULL), permitindo
+    # recadastrar um e-mail liberado por soft-delete. Por isso email NÃO usa
+    # unique=True — o índice UNIQUE CHEIO da migration 058 (uq_users_email) foi
+    # DROPADO pela 075, que o substituiu por este parcial. BANCO É FONTE DA
+    # VERDADE: reintroduzir unique=True aqui recriaria divergência (o autogenerate
+    # proporia um UNIQUE que o banco real não tem). O `index=True` da coluna mapeia
+    # o índice NÃO-único ix_users_email, que segue existindo no banco.
     __table_args__ = (
         Index("uq_users_email_active", "email", unique=True,
               postgresql_where=text("deleted_at IS NULL")),
@@ -51,7 +56,12 @@ class User(Base):
     # cabe e é re-cifrado oportunisticamente no uso (routers/auth.py).
     totp_secret        = Column(String(255), nullable=True)
     totp_enabled       = Column(Boolean, default=False, nullable=False)
-    is_active      = Column(Boolean, default=True, nullable=False)
+    # BANCO É FONTE DA VERDADE: a migration 001 cria is_active SEM NOT NULL
+    # (só server_default 'true'), então a coluna PERMITE NULL no banco real. O
+    # ORM declarava nullable=False (drift) — alinhado a nullable=True para o
+    # autogenerate não propor um ALTER COLUMN ... SET NOT NULL espúrio. O
+    # default=True continua preenchendo os inserts feitos pelo app.
+    is_active      = Column(Boolean, default=True, nullable=True)
 
     created_at     = Column(DateTime(timezone=True), server_default=func.now())
     updated_at     = Column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now())
@@ -81,7 +91,12 @@ class RefreshToken(Base):
     user_id    = Column(String(36), ForeignKey("users.id"), nullable=False, index=True)
     jti        = Column(String(36), unique=True, nullable=False)  # JWT ID único
     expires_at = Column(DateTime(timezone=True), nullable=False)
-    revoked    = Column(Boolean, default=False, nullable=False)
+    # BANCO É FONTE DA VERDADE: a migration 001 cria revoked SEM NOT NULL (só
+    # server_default 'false') — a coluna PERMITE NULL no banco real. O ORM
+    # declarava nullable=False (drift); alinhado a nullable=True para o
+    # autogenerate não emitir SET NOT NULL espúrio. O default=False segue
+    # cobrindo os inserts do app.
+    revoked    = Column(Boolean, default=False, nullable=True)
     # Janela de graça anti-corrida multi-aba (migr. 088): quando a rotação
     # revoga este token, grava QUANDO (revoked_at) e POR QUAL jti ele foi
     # substituído (replaced_by_jti). Reuso do token da ÚLTIMA rotação dentro
