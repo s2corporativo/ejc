@@ -97,10 +97,6 @@ def _load_revisions(directory: Path) -> dict[str, Revision]:
                 raise RuntimeError(
                     f"down_revision inexistente: {item.revision} -> {parent}"
                 )
-        if len(item.down_revisions) > 1:
-            raise RuntimeError(
-                f"merge revision exige revisão humana: {item.revision}"
-            )
     return revisions
 
 
@@ -138,6 +134,13 @@ def _linear_pending_path(
             )
         cursor = next_items[0]
         pending.append(revisions[cursor])
+
+    for item in pending:
+        if len(item.down_revisions) > 1:
+            raise RuntimeError(
+                f"merge revision exige revisão humana: {item.revision}"
+            )
+
     return head, pending
 
 
