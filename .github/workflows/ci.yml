@@ -199,6 +199,17 @@ jobs:
       - name: Instalar dependências
         run: npm ci
 
+      - name: Gerar saída formatada da timeline (temporário)
+        run: npx prettier --write src/components/visual/LinhaDoTempoProcessual.tsx
+
+      - name: Exportar timeline formatada (temporário)
+        uses: actions/upload-artifact@v7
+        with:
+          name: fase1-timeline-formatada
+          path: frontend/src/components/visual/LinhaDoTempoProcessual.tsx
+          if-no-files-found: error
+          retention-days: 1
+
       - name: Formatação bloqueante (prettier)
         run: |
           set -o pipefail
