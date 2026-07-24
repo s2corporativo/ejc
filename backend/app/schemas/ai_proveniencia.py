@@ -171,14 +171,14 @@ class ProvenienciaJuridica(BaseModel):
 
 
 class ResumoConfiabilidadeFontes(BaseModel):
-    total: int = 0
-    confirmadas: int = 0
-    pendentes: int = 0
-    nao_localizadas: int = 0
-    possivelmente_desatualizadas: int = 0
-    identificacao_insuficiente: int = 0
-    inferencias_ia: int = 0
-    bloqueantes: int = 0
+    total: int = Field(default=0, ge=0)
+    confirmadas: int = Field(default=0, ge=0)
+    pendentes: int = Field(default=0, ge=0)
+    nao_localizadas: int = Field(default=0, ge=0)
+    possivelmente_desatualizadas: int = Field(default=0, ge=0)
+    identificacao_insuficiente: int = Field(default=0, ge=0)
+    inferencias_ia: int = Field(default=0, ge=0)
+    bloqueantes: int = Field(default=0, ge=0)
 
 
 class RespostaJuridicaRastreavel(BaseModel):
@@ -197,7 +197,44 @@ class RespostaJuridicaRastreavel(BaseModel):
     registro_aprovacao_id: str | None = Field(default=None, max_length=100)
 
     @model_validator(mode="after")
-    def validar_aprovacao_auditavel(self) -> "RespostaJuridicaRastreavel":
+    def validar_resumo_e_aprovacao(self) -> "RespostaJuridicaRastreavel":
+        contagens = {
+            "total": len(self.fontes),
+            "confirmadas": 0,
+            "pendentes": 0,
+            "nao_localizadas": 0,
+            "possivelmente_desatualizadas": 0,
+            "identificacao_insuficiente": 0,
+            "inferencias_ia": 0,
+            "bloqueantes": 0,
+        }
+        bloqueantes = {
+            StatusConferenciaFonte.NAO_LOCALIZADA,
+            StatusConferenciaFonte.POSSIVELMENTE_DESATUALIZADA,
+            StatusConferenciaFonte.IDENTIFICACAO_INSUFICIENTE,
+        }
+        for fonte in self.fontes:
+            if fonte.inferencia_ia:
+                contagens["inferencias_ia"] += 1
+            match fonte.status_conferencia:
+                case StatusConferenciaFonte.CONFIRMADA:
+                    contagens["confirmadas"] += 1
+                case StatusConferenciaFonte.PENDENTE_CONFERENCIA:
+                    contagens["pendentes"] += 1
+                case StatusConferenciaFonte.NAO_LOCALIZADA:
+                    contagens["nao_localizadas"] += 1
+                case StatusConferenciaFonte.POSSIVELMENTE_DESATUALIZADA:
+                    contagens["possivelmente_desatualizadas"] += 1
+                case StatusConferenciaFonte.IDENTIFICACAO_INSUFICIENTE:
+                    contagens["identificacao_insuficiente"] += 1
+            if fonte.status_conferencia in bloqueantes:
+                contagens["bloqueantes"] += 1
+
+        if self.resumo_fontes.model_dump() != contagens:
+            raise ValueError(
+                "Resumo de confiabilidade divergente das fontes informadas"
+            )
+
         if not self.aprovado_humano:
             return self
         if not (
