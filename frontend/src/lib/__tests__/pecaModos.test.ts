@@ -60,6 +60,23 @@ const metaValida = {
   endpoint_redacao: "/api/pecas/gerar",
 };
 
+const preparacaoValida = {
+  modo: "livre",
+  case_id: null,
+  tipo_peca: "contestacao",
+  area_direito: "civil",
+  pronto_para_redacao: true,
+  exige_aprovacao: false,
+  bloqueios: [],
+  alertas: [],
+  documentos_considerados: [],
+  molde: null,
+  campos_estruturados: {},
+  etapas: [],
+  instrucoes_pipeline: "Impugnar especificamente os fatos.",
+  checklist_revisao: [],
+};
+
 describe("pecaModos", () => {
   beforeEach(() => {
     get.mockReset();
@@ -141,23 +158,7 @@ describe("pecaModos", () => {
   });
 
   it("envia a preparação ao endpoint que não redige a peça", async () => {
-    const resposta = {
-      modo: "livre",
-      case_id: null,
-      tipo_peca: "contestacao",
-      area_direito: "civil",
-      pronto_para_redacao: true,
-      exige_aprovacao: false,
-      bloqueios: [],
-      alertas: [],
-      documentos_considerados: [],
-      molde: null,
-      campos_estruturados: {},
-      etapas: [],
-      instrucoes_pipeline: "Impugnar especificamente os fatos.",
-      checklist_revisao: [],
-    };
-    post.mockResolvedValue({ data: resposta });
+    post.mockResolvedValue({ data: preparacaoValida });
 
     const resultado = await prepararModoPeca({
       modo: "livre",
@@ -173,5 +174,54 @@ describe("pecaModos", () => {
       instrucao_livre: "Impugnar especificamente os fatos.",
     });
     expect(resultado.pronto_para_redacao).toBe(true);
+  });
+
+  it("recusa preparação pronta com bloqueios ativos", async () => {
+    post.mockResolvedValue({
+      data: {
+        ...preparacaoValida,
+        bloqueios: ["Aprovação pendente."],
+      },
+    });
+
+    await expect(
+      prepararModoPeca({
+        modo: "livre",
+        tipo_peca: "contestacao",
+        area_direito: "civil",
+      }),
+    ).rejects.toThrow("modo pronto com bloqueios ativos");
+  });
+
+  it("recusa Modo Agente pronto sem caso vinculado", async () => {
+    post.mockResolvedValue({
+      data: {
+        ...preparacaoValida,
+        modo: "agente",
+        case_id: null,
+        exige_aprovacao: true,
+      },
+    });
+
+    await expect(
+      prepararModoPeca({
+        modo: "agente",
+        tipo_peca: "contestacao",
+        area_direito: "civil",
+      }),
+    ).rejects.toThrow("caso e aprovação obrigatórios");
+  });
+
+  it("recusa resposta sem listas obrigatórias", async () => {
+    const { alertas: _alertas, ...incompleta } = preparacaoValida;
+    post.mockResolvedValue({ data: incompleta });
+
+    await expect(
+      prepararModoPeca({
+        modo: "livre",
+        tipo_peca: "contestacao",
+        area_direito: "civil",
+      }),
+    ).rejects.toThrow("Listas obrigatórias ausentes");
   });
 });
