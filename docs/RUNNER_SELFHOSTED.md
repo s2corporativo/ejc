@@ -1,68 +1,127 @@
-# Runner self-hosted — CI do GitHub de graça (roda no seu VPS)
+# Runner self-hosted — CI do EJC na VPS
 
-Mantém os **checks de PR do GitHub** (a UI bonita, o gate de merge), mas a
-computação passa a ser do **seu VPS** → **GitHub Actions minutes = 0**. Roda a
-mesma `ci.yml` de antes.
+Mantém os checks de Pull Request do GitHub, mas executa a computação no VPS do
+escritório. Os workflows continuam definidos no repositório e usam os labels
+`self-hosted` e `ejc-vps`.
 
-> Repo **privado** → seguro para self-hosted (só colaboradores disparam
-> workflows). O aviso do GitHub sobre self-hosted vale para repos **públicos**
-> (PRs de forks executariam código arbitrário) — não é o seu caso.
+> O repositório é privado. Ainda assim, qualquer workflow executado no runner
+> deve ser tratado como código com acesso ao host. Preserve branch protection,
+> revisão de PR e mínimo privilégio.
 
-## Passo a passo (uma vez)
+## Instalação ou recuperação controlada
 
-### 1. Pegue o token de registro
-No GitHub: **repo `s2corporativo/ejc` → Settings → Actions → Runners →
-“New self-hosted runner” → Linux**. Copie o token que aparece no comando
-`./config.sh … --token XXXXXXXX` (é curto, ~1h — use logo).
+### 1. Obter token temporário
 
-### 2. Rode o instalador no VPS (como root)
+No GitHub: **Settings → Actions → Runners → New self-hosted runner → Linux**.
+Copie o token de registro e use-o imediatamente. Não publique o token em issue,
+commit, chat, documentação ou log.
+
+### 2. Executar o instalador na VPS
+
 ```bash
 cd /caminho/do/ejc
 git pull
-sudo RUNNER_TOKEN="XXXXXXXX" scripts/setup-selfhosted-runner.sh
+sudo RUNNER_TOKEN='<TOKEN_TEMPORARIO>' scripts/setup-selfhosted-runner.sh
 ```
-O script faz tudo: instala as dependências nativas do CI (postgresql-client,
-libmagic, poppler, tesseract, pango/cairo…), garante **Docker** (para o service
-container `pgvector/pgvector:pg16`) e **Node 20**, cria um usuário `ghrunner`,
-baixa e registra o runner e o instala como **serviço systemd** (sobe no boot,
-reinicia sozinho).
 
-Verifique que ficou **online**: GitHub → Settings → Actions → Runners (deve
-aparecer `ejc-vps` verde), ou no VPS:
+O instalador é idempotente e executa, nesta ordem:
+
+1. instala dependências nativas, Docker, Node e `rsync`;
+2. cria ou atualiza o usuário `ghrunner`;
+3. para e desinstala o serviço anterior;
+4. remove o registro anterior ou limpa apenas credenciais locais inconsistentes;
+5. registra novamente o runner com o mesmo nome;
+6. instala e inicia o serviço systemd;
+7. aguarda o serviço ficar realmente ativo;
+8. imprime diagnóstico local se o serviço não iniciar.
+
+O script não deve afirmar sucesso apenas porque `svc.sh start` foi chamado.
+
+### 3. Confirmar saúde
+
+No GitHub, o runner `ejc-vps` deve aparecer **online** e **ocioso**.
+
+Na VPS:
+
 ```bash
-( cd /opt/actions-runner && sudo ./svc.sh status )
+cd /opt/actions-runner
+sudo ./svc.sh status
+sudo systemctl list-units 'actions.runner.*' --all
+sudo journalctl -u 'actions.runner.*' -n 200 --no-pager
 ```
 
-### 3. Mergeie este PR
-Os workflows (`ci.yml`, `ejc-release-gate.yml`) já vêm apontados para
-`runs-on: [self-hosted, ejc-vps]` e com os gatilhos de push/PR restaurados.
-**Mergeie só DEPOIS do runner aparecer online** — senão os checks ficam
-“aguardando runner”. Depois de mergeado, todo push/PR roda o CI **no seu VPS**,
-sem custo.
+Valide também os recursos necessários:
 
-## Operação
+```bash
+free -h
+df -h
+docker info >/dev/null && echo 'Docker OK'
+command -v node npm rsync psql
+```
 
-- **Ver o runner:** `( cd /opt/actions-runner && sudo ./svc.sh status )`
-- **Logs:** `sudo journalctl -u actions.runner.* -f`
-- **Parar/começar:** `sudo ./svc.sh stop` / `sudo ./svc.sh start`
-- **Atualizar o agente:** rode o instalador de novo (idempotente, usa `--replace`).
+## Recuperação rápida de serviço parado
 
-## Recursos do VPS
+Quando o runner ainda estiver registrado e apenas o serviço estiver parado:
 
-O CI sobe um Postgres efêmero (container) e roda a suíte + build do frontend.
-Precisa de folga de CPU/RAM e disco durante a execução. Se o VPS for apertado,
-rode o CI **fora do horário** ou use o **CI local sob demanda**
-(`scripts/ci-local.sh`, ver `docs/CI_SEM_GITHUB.md`) em vez do runner.
+```bash
+cd /opt/actions-runner
+sudo ./svc.sh stop || true
+sudo ./svc.sh start
+sudo ./svc.sh status
+```
 
-## Reverter
+Se continuar offline, não apague arquivos nem tokens manualmente. Obtenha um
+novo token temporário e reexecute o instalador idempotente.
 
-- **Voltar para a nuvem paga do GitHub:** troque `runs-on: [self-hosted, ejc-vps]`
-  por `runs-on: ubuntu-latest` nos dois workflows (e garanta billing do Actions).
-- **Desligar o CI na nuvem de novo (só local):** volte os gatilhos para
-  `on: workflow_dispatch` (ver `docs/CI_SEM_GITHUB.md`).
-- **Remover o runner do VPS:**
-  ```bash
-  ( cd /opt/actions-runner && sudo ./svc.sh stop && sudo ./svc.sh uninstall )
-  sudo -u ghrunner bash -c 'cd /opt/actions-runner && ./config.sh remove --token <TOKEN_DE_REMOCAO>'
-  ```
-  (o token de remoção sai no mesmo painel Settings → Actions → Runners.)
+## Diagnóstico de jobs aguardando runner
+
+Se os checks permanecerem em **queued** ou **waiting for runner**:
+
+1. confirme se `ejc-vps` aparece online no painel do GitHub;
+2. confira `journalctl` e espaço em disco;
+3. confirme que não existe job antigo preso;
+4. valide Docker, memória e acesso ao diretório de trabalho;
+5. reexecute o instalador com token novo somente se necessário.
+
+Não faça merge de PR com gates obrigatórios pendentes apenas porque o runner
+está offline.
+
+## Recursos da VPS
+
+O CI pode executar simultaneamente:
+
+- PostgreSQL 16 com pgvector em container efêmero;
+- suíte completa do backend;
+- auditoria de dependências;
+- testes e build do frontend;
+- Playwright/Chromium;
+- prova de backup e restauração.
+
+Monitore CPU, memória e disco. Quando não houver capacidade suficiente, use o
+CI local sob demanda descrito em `docs/CI_SEM_GITHUB.md` até a normalização.
+
+## Teste de regressão do instalador
+
+```bash
+bash scripts/tests/test_selfhosted_runner_setup.sh
+```
+
+O teste valida sintaxe, dependências, ordem de recuperação e prova de saúde sem
+instalar um runner real ou exigir token.
+
+## Reversão
+
+- Para voltar ao GitHub-hosted, altere conscientemente `runs-on` para
+  `ubuntu-latest` e confirme billing/disponibilidade.
+- Para operar apenas com CI local, use o procedimento de
+  `docs/CI_SEM_GITHUB.md`.
+- Para remover o runner da VPS:
+
+```bash
+cd /opt/actions-runner
+sudo ./svc.sh stop
+sudo ./svc.sh uninstall
+```
+
+Depois remova o registro no painel do GitHub ou use um token temporário de
+remoção diretamente na VPS. Nunca versione esse token.
