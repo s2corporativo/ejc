@@ -33,7 +33,18 @@ function validarMeta(data: unknown): PecaModosMetaResponse {
   ) {
     throw new Error("O catálogo não contém os quatro modos controlados.");
   }
-  if (!Array.isArray(meta.tipos) || !Array.isArray(meta.areas)) {
+
+  const agente = meta.modos.find((modo) => modo.value === "agente");
+  if (agente?.exige_caso !== true || agente.exige_aprovacao !== true) {
+    throw new Error("O Modo Agente não confirmou seus bloqueios obrigatórios.");
+  }
+
+  if (
+    !Array.isArray(meta.tipos) ||
+    !meta.tipos.length ||
+    !Array.isArray(meta.areas) ||
+    !meta.areas.length
+  ) {
     throw new Error("Tipos ou áreas ausentes no catálogo dos modos.");
   }
 
