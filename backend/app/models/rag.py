@@ -85,6 +85,7 @@ class KnowledgeChunk(Base):
     doc_id      = Column(String(36), ForeignKey("knowledge_docs.id", ondelete="CASCADE"),
                          nullable=False, index=True)
     chunk_index = Column(Integer, nullable=False)
+    pagina      = Column(Integer, nullable=True)   # página original do PDF (1-indexed); None para ingestion
     conteudo    = Column(Text, nullable=False)
     embedding   = Column(Vector(get_settings().EMBEDDINGS_DIM), nullable=True)  # dim configurável (O-2); casa com migration 096 (default 1024)
 

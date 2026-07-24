@@ -230,6 +230,7 @@ def extrair_texto_pdf(raw: bytes) -> dict:
         "paginas": total,
         "paginas_ocr": paginas_ocr,
         "ocr_disponivel": tem_ocr,
+        "por_pagina": [{"pagina": i + 1, "texto": p} for i, p in enumerate(partes)],
     }
 
 

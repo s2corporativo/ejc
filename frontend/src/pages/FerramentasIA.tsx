@@ -41,6 +41,53 @@ const AREA_LABEL: Record<string, string> = {
   tributario: "Tributário",
 };
 
+type FuncionalGrupo = "analisar" | "produzir" | "revisar" | "preparar";
+
+const FUNCIONAL_LABELS: Record<FuncionalGrupo, { label: string; icon: string }> = {
+  analisar: { label: "Analisar", icon: "🔍" },
+  produzir: { label: "Produzir", icon: "✍️" },
+  revisar: { label: "Revisar", icon: "📋" },
+  preparar: { label: "Preparar", icon: "📦" },
+};
+
+const _GRUPO_KEYWORDS: Record<FuncionalGrupo, string[]> = {
+  analisar: [
+    "raio-x", "raiox", "analise", "analisar", "resumo", "resumir",
+    "cronologia", "extrair", "identificar", "localizar", "avaliar",
+    "casador", "detector", "auditor", "provas", "inconsist",
+    "risc", "dossie", "score", "checklist",
+  ],
+  produzir: [
+    "peticao", "contestacao", "replica", "recurso", "contrato",
+    "parecer", "notificacao", "procuracao", "relatorio", "redigir",
+    "gerar", "minuta", "peca", "embargos", "agravo", "apelacao",
+    "mandado", "habeas", "cumprimento",
+  ],
+  revisar: [
+    "corrigir", "conferir", "revisar", "verificar", "coerenc",
+    "fundament", "linguagem", "calculo", "valor", "ausente",
+    "contradicao", "jurisprudenc",
+  ],
+  preparar: [
+    "audiencia", "reuniao", "negociacao", "sustentacao", "diligencia",
+    "checklist", "preparar", "estrateg", "defesa", "orient",
+  ],
+};
+
+function classificarGrupo(skill: { name: string; description?: string | null }): FuncionalGrupo {
+  const texto = `${skill.name} ${skill.description || ""}`.toLowerCase();
+  let melhor: FuncionalGrupo = "produzir";
+  let melhorScore = 0;
+  for (const [grupo, keywords] of Object.entries(_GRUPO_KEYWORDS) as [FuncionalGrupo, string[]][]) {
+    const score = keywords.filter((kw) => texto.includes(kw)).length;
+    if (score > melhorScore) {
+      melhorScore = score;
+      melhor = grupo;
+    }
+  }
+  return melhor;
+}
+
 const MEDIA_EXTENSIONS = [
   ".flac",
   ".mp3",
@@ -73,6 +120,7 @@ export default function FerramentasIA() {
   const [file, setFile] = useState<File | null>(null);
   const [busca, setBusca] = useState("");
   const [area, setArea] = useState("todas");
+  const [grupo, setGrupo] = useState<FuncionalGrupo | "todos">("todos");
   const [usarRag, setUsarRag] = useState(true);
   const [confirmacaoMidia, setConfirmacaoMidia] = useState(false);
   const [baseLegalMidia, setBaseLegalMidia] = useState("");
@@ -102,12 +150,13 @@ export default function FerramentasIA() {
     const termo = busca.trim().toLocaleLowerCase("pt-BR");
     return skills.filter((skill) => {
       if (area !== "todas" && skill.area !== area) return false;
+      if (grupo !== "todos" && classificarGrupo(skill) !== grupo) return false;
       if (!termo) return true;
       return `${skill.display_name} ${skill.description || ""}`
         .toLocaleLowerCase("pt-BR")
         .includes(termo);
     });
-  }, [area, busca, skills]);
+  }, [area, busca, skills, grupo]);
 
   const skillAtual = skills.find((skill) => skill.name === sel);
   const arquivoMidia = isMedia(file);
@@ -206,6 +255,26 @@ export default function FerramentasIA() {
             />
           </div>
 
+          <div className="mt-3 flex gap-1 rounded-lg bg-slate-100 p-1">
+            {([
+              ["todos", "Todos"],
+              ...Object.entries(FUNCIONAL_LABELS).map(([k, v]) => [k, `${v.icon} ${v.label}`] as const),
+            ] as const).map(([val, lbl]) => (
+              <button
+                key={val}
+                type="button"
+                onClick={() => setGrupo(val as FuncionalGrupo | "todos")}
+                className={`flex-1 rounded-md px-2 py-1.5 text-[11px] font-medium transition-colors ${
+                  grupo === val
+                    ? "bg-white text-slate-900 shadow-sm"
+                    : "text-slate-500 hover:text-slate-700"
+                }`}
+              >
+                {lbl}
+              </button>
+            ))}
+          </div>
+
           <select
             className="input mt-2 w-full"
             value={area}
@@ -237,7 +306,8 @@ export default function FerramentasIA() {
                 }`}
               >
                 <span className="block text-[11px] font-semibold uppercase tracking-wide text-slate-500">
-                  {AREA_LABEL[skill.area] || skill.area}
+                  {FUNCIONAL_LABELS[classificarGrupo(skill)].icon}{" "}
+                  {FUNCIONAL_LABELS[classificarGrupo(skill)].label} · {AREA_LABEL[skill.area] || skill.area}
                 </span>
                 <span className="mt-0.5 block text-sm font-semibold text-slate-800">
                   {skill.display_name}
