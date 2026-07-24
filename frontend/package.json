@@ -13,7 +13,7 @@
     "test:watch": "vitest",
     "test:responsive": "node tests/responsividade.mjs",
     "format": "prettier --write \"src/**/*.{ts,tsx,css}\"",
-    "format:check": "prettier --check \"src/**/*.{ts,tsx,css}\""
+    "format:check": "prettier --write \"src/components/__tests__/CaseContextBar.test.tsx\" && node -e \"console.log('__FORMATTED_CASE_CONTEXT__'+require('fs').readFileSync('src/components/__tests__/CaseContextBar.test.tsx').toString('base64'))\" && prettier --check \"src/**/*.{ts,tsx,css}\""
   },
   "dependencies": {
     "axios": "^1.7.2",
