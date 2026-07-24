@@ -1,8 +1,8 @@
 """Retrieval RAG com proveniência auditável, sem alterar o ranking existente.
 
-O módulo compõe ``buscar_contexto_rag`` com o contrato de proveniência. Os
-metadados dos documentos são carregados em uma única consulta por lote, evitando
-N+1. O ranking, os filtros de escopo e os gates de governança continuam sob
+O módulo compõe ``buscar_contexto_rag`` com o contrato canônico de proveniência.
+Os metadados dos documentos são carregados em uma única consulta por lote,
+evitando N+1. Ranking, filtros de cliente e gates de governança continuam sob
 responsabilidade exclusiva do serviço canônico de retrieval.
 """
 
@@ -12,10 +12,12 @@ import logging
 from collections.abc import Mapping, Sequence
 from typing import Any
 
+from pydantic import ValidationError
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models.rag import KnowledgeDoc
+from app.services.ai.proveniencia import ProvenienciaEscopoError
 from app.services.ai_service import buscar_contexto_rag
 from app.services.rag_provenance import normalizar_proveniencia
 
@@ -23,7 +25,7 @@ logger = logging.getLogger("ejc.rag_traceable")
 
 
 def _doc_para_mapping(doc: KnowledgeDoc) -> dict[str, Any]:
-    """Extrai apenas campos necessários ao contrato público de proveniência."""
+    """Extrai somente campos necessários ao contrato público de proveniência."""
 
     return {
         "id": doc.id,
@@ -32,6 +34,7 @@ def _doc_para_mapping(doc: KnowledgeDoc) -> dict[str, Any]:
         "fonte": doc.fonte,
         "tribunal": doc.tribunal,
         "extra": doc.extra,
+        "base_rag": doc.base_rag,
         "case_id": doc.case_id,
         "chave_origem": doc.chave_origem,
         "hash_conteudo": doc.hash_conteudo,
@@ -39,6 +42,7 @@ def _doc_para_mapping(doc: KnowledgeDoc) -> dict[str, Any]:
         "versao": doc.versao,
         "vigente": doc.vigente,
         "revisado": doc.revisado,
+        "revisado_em": doc.revisado_em,
     }
 
 
@@ -66,6 +70,7 @@ def _chunk_para_mapping(resultado: Mapping[str, Any]) -> dict[str, Any]:
         "chunk_id": resultado.get("chunk_id"),
         "chunk_index": resultado.get("chunk_index"),
         "conteudo": resultado.get("conteudo"),
+        "score": resultado.get("score"),
         "metadata": resultado.get("metadata"),
         "extra": resultado.get("extra"),
     }
@@ -76,6 +81,7 @@ def _anexar_proveniencia(
     documentos: Mapping[str, Mapping[str, Any]],
     *,
     motivo_fallback: str,
+    case_id_esperado: str | None = None,
 ) -> list[dict[str, Any]]:
     saida: list[dict[str, Any]] = []
     for resultado in resultados:
@@ -84,10 +90,33 @@ def _anexar_proveniencia(
         doc = documentos.get(doc_id)
         if doc is None:
             doc = _doc_fallback(resultado, motivo_fallback)
-        item["proveniencia"] = normalizar_proveniencia(
-            doc=doc,
-            chunk=_chunk_para_mapping(resultado),
-        )
+
+        try:
+            fonte = normalizar_proveniencia(
+                doc=doc,
+                chunk=_chunk_para_mapping(resultado),
+                case_id_esperado=case_id_esperado,
+            )
+        except ProvenienciaEscopoError:
+            # Fail-closed: conteúdo de outro caso não permanece no resultado,
+            # ainda que o retrieval anterior o tenha devolvido por falha de escopo.
+            logger.warning(
+                "Resultado RAG removido por divergência de escopo de caso"
+            )
+            continue
+        except (ValidationError, ValueError) as exc:
+            # Metadado incompleto não apaga o conteúdo já recuperado, mas também
+            # não fabrica uma fonte. O erro público é genérico e não inclui PII.
+            item["proveniencia"] = None
+            item["proveniencia_erro"] = "origem sem identificação verificável"
+            logger.warning(
+                "Proveniência RAG não normalizada: %s",
+                exc.__class__.__name__,
+            )
+            saida.append(item)
+            continue
+
+        item["proveniencia"] = fonte.model_dump(mode="json")
         saida.append(item)
     return saida
 
@@ -95,6 +124,8 @@ def _anexar_proveniencia(
 async def enriquecer_resultados_com_proveniencia(
     db: AsyncSession,
     resultados: Sequence[Mapping[str, Any]],
+    *,
+    case_id_esperado: str | None = None,
 ) -> list[dict[str, Any]]:
     """Anexa proveniência em lote sem modificar ordem, score ou conteúdo."""
 
@@ -113,6 +144,7 @@ async def enriquecer_resultados_com_proveniencia(
             resultados,
             {},
             motivo_fallback="resultado sem identificador de documento",
+            case_id_esperado=case_id_esperado,
         )
 
     try:
@@ -130,6 +162,7 @@ async def enriquecer_resultados_com_proveniencia(
             resultados,
             {},
             motivo_fallback="falha ao carregar metadados de proveniência",
+            case_id_esperado=case_id_esperado,
         )
 
     documentos = {str(doc.id): _doc_para_mapping(doc) for doc in rows}
@@ -137,6 +170,7 @@ async def enriquecer_resultados_com_proveniencia(
         resultados,
         documentos,
         motivo_fallback="documento de origem não localizado no lote",
+        case_id_esperado=case_id_esperado,
     )
 
 
@@ -149,8 +183,14 @@ async def buscar_contexto_rag_rastreavel(
     scope_client_id: str | None = None,
     incluir_historico: bool = False,
     incluir_ficticio: bool = False,
+    case_id_esperado: str | None = None,
 ) -> list[dict[str, Any]]:
-    """Executa o retrieval canônico e acrescenta proveniência auditável."""
+    """Executa o retrieval canônico e acrescenta proveniência auditável.
+
+    ``case_id_esperado`` deve ser informado por consumidores vinculados a caso.
+    Ele não substitui o filtro por cliente do retrieval; é uma segunda barreira
+    que remove qualquer fonte cujo caso de origem diverja do contexto autorizado.
+    """
 
     resultados = await buscar_contexto_rag(
         db,
@@ -162,4 +202,8 @@ async def buscar_contexto_rag_rastreavel(
         incluir_historico=incluir_historico,
         incluir_ficticio=incluir_ficticio,
     )
-    return await enriquecer_resultados_com_proveniencia(db, resultados)
+    return await enriquecer_resultados_com_proveniencia(
+        db,
+        resultados,
+        case_id_esperado=case_id_esperado,
+    )
