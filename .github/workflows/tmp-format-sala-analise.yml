@@ -33,9 +33,13 @@ jobs:
       - name: Aplicar integrador
         shell: bash
         run: |
-          set -euo pipefail
+          set -o pipefail
           git show origin/feat/sala-analise-juridica:scripts/integrate_sala_v2.py > /tmp/integrate_sala_v2.py
-          python /tmp/integrate_sala_v2.py
+          python /tmp/integrate_sala_v2.py 2>&1 | tee integrator.log
+          status=${PIPESTATUS[0]}
+          if [ "$status" -ne 0 ]; then
+            exit "$status"
+          fi
           rm -f .github/workflows/tmp-integrate-sala-v2.yml
       - name: Instalar dependências do frontend
         working-directory: frontend
@@ -50,12 +54,14 @@ jobs:
         run: |
           set -o pipefail
           npm run build 2>&1 | tee ../sala-build.log
-      - name: Publicar diagnóstico do build
+      - name: Publicar diagnósticos
         if: always()
         uses: actions/upload-artifact@v7
         with:
-          name: sala-build-diagnostico
-          path: sala-build.log
+          name: sala-analise-diagnostico
+          path: |
+            integrator.log
+            sala-build.log
           if-no-files-found: warn
           retention-days: 2
       - name: Persistir integração na branch v2
