@@ -9,7 +9,8 @@ export interface TimelineFase {
   status: FaseStatus;
 }
 
-export type CategoriaEvento = "movimento" | "prazo" | "documento" | "honorario";
+export type CategoriaEvento =
+  "movimento" | "prazo" | "documento" | "honorario" | "atividade";
 
 export interface TimelineEvento {
   data: string;
