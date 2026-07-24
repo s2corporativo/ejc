@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from datetime import UTC, datetime
 from types import SimpleNamespace
 
 import pytest
@@ -36,7 +37,7 @@ class _FakeDB:
         return _Result(self.rows)
 
 
-def _doc(doc_id="doc-1"):
+def _doc(doc_id="doc-1", case_id="caso-1"):
     return SimpleNamespace(
         id=doc_id,
         titulo="Contestação modelo",
@@ -47,14 +48,16 @@ def _doc(doc_id="doc-1"):
             "rag_status": "aprovado",
             "proveniencia": {"pagina": 4, "processo_origem": "proc-123"},
         },
+        base_rag=SimpleNamespace(value="caso"),
         client_id="cliente-nao-expor",
-        case_id="caso-1",
+        case_id=case_id,
         chave_origem="manual:doc-1",
         hash_conteudo="abc123",
         atualizado_em=None,
         versao=2,
         vigente=True,
         revisado=True,
+        revisado_em=datetime.now(UTC),
     )
 
 
@@ -79,14 +82,17 @@ async def test_enriquece_lote_com_uma_unica_consulta_e_preserva_ordem():
     saida = await rag_traceable.enriquecer_resultados_com_proveniencia(
         db,
         resultados,
+        case_id_esperado="caso-1",
     )
 
     assert db.calls == 1
     assert [item["chunk_id"] for item in saida] == ["chunk-2", "chunk-1"]
     assert [item["score"] for item in saida] == [0.81, 0.79]
-    assert saida[0]["proveniencia"]["status_fonte"] == "confirmada"
+    assert saida[0]["proveniencia"]["status_conferencia"] == "confirmada"
+    assert saida[0]["proveniencia"]["nivel_confidencialidade"] == "confidencial"
     assert saida[0]["proveniencia"]["pagina"] == 4
     assert saida[0]["proveniencia"]["processo_origem"] == "proc-123"
+    assert saida[0]["proveniencia"]["confianca_extracao"] == 0.81
     assert "client_id" not in saida[0]["proveniencia"]
 
 
@@ -110,9 +116,24 @@ async def test_documento_ausente_recebe_estado_fail_safe():
     assert db.calls == 1
     assert saida[0]["score"] == 0.7
     assert (
-        saida[0]["proveniencia"]["status_fonte"]
+        saida[0]["proveniencia"]["status_conferencia"]
         == "identificacao_insuficiente"
     )
+    assert saida[0]["proveniencia"]["confianca_extracao"] == 0.7
+
+
+@pytest.mark.asyncio
+async def test_resultado_sem_identificador_nao_fabrica_proveniencia():
+    db = _FakeDB()
+
+    saida = await rag_traceable.enriquecer_resultados_com_proveniencia(
+        db,
+        [{"conteudo": "Trecho sem origem verificável", "score": 0.5}],
+    )
+
+    assert db.calls == 0
+    assert saida[0]["proveniencia"] is None
+    assert saida[0]["proveniencia_erro"] == "origem sem identificação verificável"
 
 
 @pytest.mark.asyncio
@@ -135,21 +156,52 @@ async def test_falha_no_enriquecimento_nao_derruba_retrieval():
 
     assert db.calls == 1
     assert saida[0]["score"] == 0.9
-    assert saida[0]["proveniencia"]["status_fonte"] in {
-        "identificacao_insuficiente",
-        "pendente_conferencia",
-    }
+    assert (
+        saida[0]["proveniencia"]["status_conferencia"]
+        == "identificacao_insuficiente"
+    )
 
 
 @pytest.mark.asyncio
-async def test_wrapper_repassa_filtros_ao_retrieval_canonico(monkeypatch):
-    chamadas = []
+async def test_fonte_de_outro_caso_e_removida_do_resultado():
+    db = _FakeDB(rows=[_doc(case_id="caso-2")])
+
+    saida = await rag_traceable.enriquecer_resultados_com_proveniencia(
+        db,
+        [
+            {
+                "chunk_id": "chunk-1",
+                "doc_id": "doc-1",
+                "conteudo": "Conteúdo que não pode vazar",
+                "score": 0.9,
+            }
+        ],
+        case_id_esperado="caso-1",
+    )
+
+    assert db.calls == 1
+    assert saida == []
+
+
+@pytest.mark.asyncio
+async def test_wrapper_repassa_filtros_e_case_id_ao_enriquecimento(monkeypatch):
+    chamadas_busca = []
+    chamadas_enriquecimento = []
 
     async def _buscar(db, consulta, **kwargs):
-        chamadas.append((db, consulta, kwargs))
+        chamadas_busca.append((db, consulta, kwargs))
+        return [{"chunk_id": "chunk-1", "doc_id": "doc-1"}]
+
+    async def _enriquecer(db, resultados, **kwargs):
+        chamadas_enriquecimento.append((db, resultados, kwargs))
         return []
 
     monkeypatch.setattr(rag_traceable, "buscar_contexto_rag", _buscar)
+    monkeypatch.setattr(
+        rag_traceable,
+        "enriquecer_resultados_com_proveniencia",
+        _enriquecer,
+    )
     db = _FakeDB()
 
     saida = await rag_traceable.buscar_contexto_rag_rastreavel(
@@ -161,10 +213,11 @@ async def test_wrapper_repassa_filtros_ao_retrieval_canonico(monkeypatch):
         scope_client_id="cliente-1",
         incluir_historico=True,
         incluir_ficticio=False,
+        case_id_esperado="caso-1",
     )
 
     assert saida == []
-    assert chamadas == [
+    assert chamadas_busca == [
         (
             db,
             "responsabilidade civil",
@@ -178,4 +231,10 @@ async def test_wrapper_repassa_filtros_ao_retrieval_canonico(monkeypatch):
             },
         )
     ]
-    assert db.calls == 0
+    assert chamadas_enriquecimento == [
+        (
+            db,
+            [{"chunk_id": "chunk-1", "doc_id": "doc-1"}],
+            {"case_id_esperado": "caso-1"},
+        )
+    ]
