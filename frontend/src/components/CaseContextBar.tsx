@@ -9,12 +9,21 @@ import {
   WalletCards,
   X,
 } from "lucide-react";
+import type { LucideIcon } from "lucide-react";
 import { useCaseContext } from "../stores/caseContext";
 
 // Rotas /casos/:id/* ativam o modo caso; /casos/novo é o wizard (não é caso).
 const CASE_ROUTE = /^\/casos\/([^/]+)/;
 
-const CASE_NAV = [
+interface CaseNavItem {
+  label: string;
+  tab: string;
+  icon: LucideIcon;
+  aliases: string[];
+  routeAliases?: string[];
+}
+
+const CASE_NAV: CaseNavItem[] = [
   {
     label: "Visão",
     tab: "resumo",
@@ -58,7 +67,7 @@ const CASE_NAV = [
     icon: WalletCards,
     aliases: ["financeiro", "custos", "liquidez"],
   },
-] as const;
+];
 
 /**
  * Faixa persistente do "Modo Caso".
@@ -127,7 +136,7 @@ export default function CaseContextBar() {
         >
           {CASE_NAV.map((item) => {
             const Icon = item.icon;
-            const ativaPorTab = item.aliases.includes(tabAtiva as never);
+            const ativaPorTab = item.aliases.includes(tabAtiva);
             const ativaPorRota = item.routeAliases?.some((rota) =>
               pathname.startsWith(`${baseCaso}${rota}`),
             );
