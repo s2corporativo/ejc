@@ -226,6 +226,7 @@ def _extrair_json(texto: str) -> dict[str, Any] | None:
 
 
 def _normalizar_estado(novo: Any, anterior: dict[str, Any]) -> dict[str, Any]:
+    """Normaliza a saída e impede que resposta parcial apague estado já validável."""
     if not isinstance(novo, dict):
         novo = {}
     saida: dict[str, Any] = {
@@ -236,10 +237,57 @@ def _normalizar_estado(novo: Any, anterior: dict[str, Any]) -> dict[str, Any]:
     for key in _ALLOWED_STATE_KEYS:
         value = novo.get(key, anterior.get(key))
         if key in {"visao_julgador", "sintese_atual"}:
-            saida[key] = str(value or "")
-        else:
-            saida[key] = _lista(value)[:120]
+            saida[key] = str(value or anterior.get(key) or "")
+            continue
+        items = _lista(value)
+        # Uma resposta parcial com [] não pode apagar fatos/provas anteriores.
+        # Exclusões devem ser expressas por classificação "superado" e manter a
+        # trilha histórica, não por desaparecimento silencioso do item.
+        if not items and anterior.get(key):
+            items = _lista(anterior.get(key))
+        saida[key] = items[:120]
     return saida
+
+
+def _maior_nivel_risco(riscos: list[Any]) -> str | None:
+    pesos = {"baixo": 1, "moderado": 2, "alto": 3, "critico": 4}
+    maior: tuple[int, str] | None = None
+    for item in riscos:
+        nivel = str(item.get("nivel") if isinstance(item, dict) else "").lower()
+        if nivel in pesos and (maior is None or pesos[nivel] > maior[0]):
+            maior = (pesos[nivel], nivel)
+    return maior[1] if maior else None
+
+
+def _sincronizar_relatorio_para_conversao(
+    analise: RaioXAnalise,
+    estado: dict[str, Any],
+) -> None:
+    """Projeta o estado conversacional no contrato legado de conversão.
+
+    O relatório documental original permanece preservado; estes campos são uma
+    visão consolidada, sempre marcada como rascunho, para que a conversão já
+    existente transporte síntese, tarefas, fatos, provas e riscos sem criar um
+    segundo serviço de abertura de caso.
+    """
+    report = dict(analise.relatorio or {})
+    report["sintese_executiva_revisada"] = estado.get("sintese_atual")
+    report["sintese_executiva"] = estado.get("sintese_atual") or report.get("sintese_executiva")
+    report["fatos_provas"] = _lista(estado.get("fatos"))
+    report["provas"] = _lista(estado.get("provas"))
+    report["contradicoes"] = _lista(estado.get("contradicoes"))
+    report["riscos"] = _lista(estado.get("riscos"))
+    report["documentos_pendentes"] = _lista(estado.get("documentos_pendentes"))
+    report["proximos_passos"] = _lista(estado.get("proximos_passos"))
+    report["teses"] = _lista(estado.get("tese_favoravel"))
+    report["tese_adversa"] = _lista(estado.get("tese_adversa"))
+    report["visao_julgador"] = estado.get("visao_julgador")
+    report["questoes_juridicas"] = _lista(estado.get("questoes_juridicas"))
+    report["risco_nivel"] = _maior_nivel_risco(report["riscos"]) or report.get("risco_nivel")
+    report["estado_sala_analise_versao"] = estado.get("versao")
+    report["estado_sala_analise_atualizado_em"] = estado.get("atualizado_em")
+    report["revisao_humana_obrigatoria"] = True
+    analise.relatorio = report
 
 
 def _usage(resp: Any, key: str) -> int | None:
@@ -302,6 +350,7 @@ async def processar_mensagem(
         resposta = str(parsed.get("resposta_markdown") or "Análise atualizada.")
         estado = _normalizar_estado(parsed.get("estado"), estado_anterior)
     else:
+        logger.warning("Gateway devolveu resposta não estruturada para a Sala de Análise")
         resposta = texto or "Não foi possível estruturar a resposta da IA."
         estado = _normalizar_estado({}, estado_anterior)
 
@@ -309,6 +358,7 @@ async def processar_mensagem(
     provedor = getattr(resp, "provedor", None)
     if provedor:
         modelo = f"{provedor}/{modelo}"
+    ids_fontes = [str(item.get("chunk_id")) for item in fontes if item.get("chunk_id")]
     log = AILog(
         id=str(uuid4()),
         user_id=user_id,
@@ -318,7 +368,7 @@ async def processar_mensagem(
         prompt_sanitizado=prompt_limpo[:8000],
         pii_removida=houve_pii,
         resposta=resposta,
-        fontes_rag="; ".join(str(item.get("chunk_id")) for item in fontes) or None,
+        fontes_rag="; ".join(ids_fontes) or None,
         tokens_input=_usage(resp, "prompt_tokens"),
         tokens_output=_usage(resp, "completion_tokens"),
         risco_ia=AIRiscoIA.medio_risco,
@@ -349,6 +399,7 @@ async def processar_mensagem(
     ])
     analise.conversa = conversa[-100:]
     analise.estado_analise = estado
+    _sincronizar_relatorio_para_conversao(analise, estado)
     analise.status = "em_analise" if analise.status == "novo" else analise.status
     if modo == "consolidar":
         analise.ultima_consolidacao_em = datetime.now(timezone.utc)
