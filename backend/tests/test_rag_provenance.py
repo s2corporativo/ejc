@@ -1,3 +1,6 @@
+import pytest
+
+from app.services.ai.proveniencia import ProvenienciaEscopoError
 from app.services.rag_provenance import (
     StatusFonte,
     avaliar_status_fonte,
@@ -5,20 +8,42 @@ from app.services.rag_provenance import (
 )
 
 
-def test_fonte_aprovada_e_revisada_e_confirmada():
+def test_fonte_aprovada_com_data_de_verificacao_e_confirmada():
     doc = {
         "id": "doc-1",
         "titulo": "Código de Processo Civil",
         "fonte": "https://www.planalto.gov.br/cpc",
+        "base_rag": "publica",
         "vigente": True,
         "revisado": True,
-        "extra": {"rag_status": "aprovado"},
+        "extra": {
+            "rag_status": "aprovado",
+            "proveniencia": {
+                "tipo_fonte": "fonte_oficial",
+                "data_verificacao": "2026-07-23T12:00:00+00:00",
+            },
+        },
     }
 
     status, motivos = avaliar_status_fonte(doc)
 
     assert status is StatusFonte.CONFIRMADA
     assert motivos == ["documento aprovado, revisado ou conferido"]
+
+
+def test_fonte_revisada_sem_data_de_verificacao_fica_pendente():
+    doc = {
+        "id": "doc-1",
+        "titulo": "Parecer revisado",
+        "fonte": "parecer.docx",
+        "revisado": True,
+        "extra": {"rag_status": "aprovado"},
+    }
+
+    status, motivos = avaliar_status_fonte(doc)
+
+    assert status is StatusFonte.PENDENTE_CONFERENCIA
+    assert "confirmação sem data de verificação" in motivos
 
 
 def test_fonte_nao_vigente_nao_pode_ser_promovida_a_confirmada():
@@ -30,7 +55,10 @@ def test_fonte_nao_vigente_nao_pode_ser_promovida_a_confirmada():
         "revisado": True,
         "extra": {
             "rag_status": "aprovado",
-            "proveniencia": {"status_fonte": "confirmada"},
+            "proveniencia": {
+                "status_conferencia": "confirmada",
+                "data_verificacao": "2026-07-23T12:00:00+00:00",
+            },
         },
     }
 
@@ -53,10 +81,10 @@ def test_fonte_explicitamente_nao_localizada_permanece_bloqueada():
 
 
 def test_fonte_sem_identificacao_e_marcada_como_insuficiente():
-    status, motivos = avaliar_status_fonte({"id": "doc-4", "extra": {}})
+    status, motivos = avaliar_status_fonte({"extra": {}})
 
     assert status is StatusFonte.IDENTIFICACAO_INSUFICIENTE
-    assert "faltam título" in motivos[0]
+    assert "faltam documento" in motivos[0]
 
 
 def test_fonte_identificada_sem_revisao_fica_pendente():
@@ -74,13 +102,14 @@ def test_fonte_identificada_sem_revisao_fica_pendente():
     assert status is StatusFonte.PENDENTE_CONFERENCIA
 
 
-def test_normalizacao_expoe_proveniencia_sem_client_id():
+def test_normalizacao_retorna_contrato_canonico_sem_client_id():
     doc = {
         "id": "doc-6",
         "titulo": "Contestação modelo",
         "categoria": "precedente_interno",
         "fonte": "/arquivos/modelos/contestacao.docx",
         "chave_origem": "modelo:contestacao:1",
+        "base_rag": "caso",
         "case_id": "case-1",
         "client_id": "client-secreto",
         "versao": 2,
@@ -91,6 +120,7 @@ def test_normalizacao_expoe_proveniencia_sem_client_id():
             "rag_status": "aprovado",
             "proveniencia": {
                 "data_documento": "2026-07-01",
+                "data_verificacao": "2026-07-23T12:00:00+00:00",
                 "processo_origem": "0000000-00.2026.8.13.0000",
             },
         },
@@ -100,16 +130,108 @@ def test_normalizacao_expoe_proveniencia_sem_client_id():
         "chunk_index": 3,
         "conteudo": "Trecho jurídico relevante com fundamentação e pedidos.",
         "metadata": {"pagina": 12},
+        "score": 0.93,
     }
 
-    resultado = normalizar_proveniencia(doc=doc, chunk=chunk, limite_trecho=20)
+    resultado = normalizar_proveniencia(
+        doc=doc,
+        chunk=chunk,
+        limite_trecho=20,
+        case_id_esperado="case-1",
+    )
 
-    assert resultado["documento_id"] == "doc-6"
-    assert resultado["chunk_id"] == "chunk-1"
-    assert resultado["nome_arquivo"] == "contestacao.docx"
-    assert resultado["pagina"] == 12
-    assert resultado["case_id"] == "case-1"
-    assert resultado["processo_origem"] == "0000000-00.2026.8.13.0000"
-    assert resultado["status_fonte"] == "confirmada"
-    assert resultado["trecho"].endswith("…")
-    assert "client_id" not in resultado
+    assert resultado.documento_id == "doc-6"
+    assert resultado.metadados["chunk_id"] == "chunk-1"
+    assert resultado.metadados["base_rag"] == "caso"
+    assert resultado.nome_arquivo == "contestacao.docx"
+    assert resultado.pagina == 12
+    assert resultado.case_id == "case-1"
+    assert resultado.processo_origem == "0000000-00.2026.8.13.0000"
+    assert resultado.status_conferencia is StatusFonte.CONFIRMADA
+    assert resultado.nivel_confidencialidade.value == "confidencial"
+    assert resultado.trecho and resultado.trecho.endswith("…")
+    assert resultado.versao_documento == "2"
+    assert resultado.confianca_extracao == 0.93
+    assert "client_id" not in resultado.model_dump()
+
+
+def test_base_publica_deriva_fonte_publica():
+    resultado = normalizar_proveniencia(
+        doc={
+            "id": "doc-7",
+            "titulo": "Lei federal",
+            "base_rag": "publica",
+        }
+    )
+
+    assert resultado.nivel_confidencialidade.value == "publica"
+
+
+def test_base_caso_nao_pode_ser_rebaixada_para_publica():
+    resultado = normalizar_proveniencia(
+        doc={
+            "id": "doc-8",
+            "titulo": "Documento do processo",
+            "base_rag": "caso",
+            "case_id": "case-1",
+            "extra": {
+                "proveniencia": {"nivel_confidencialidade": "publica"}
+            },
+        },
+        case_id_esperado="case-1",
+    )
+
+    assert resultado.nivel_confidencialidade.value == "confidencial"
+
+
+def test_classificacao_explicita_mais_restritiva_e_preservada():
+    resultado = normalizar_proveniencia(
+        doc={
+            "id": "doc-9",
+            "titulo": "Parecer reservado",
+            "base_rag": "escritorio",
+            "extra": {
+                "proveniencia": {"nivel_confidencialidade": "restrita"}
+            },
+        }
+    )
+
+    assert resultado.nivel_confidencialidade.value == "restrita"
+
+
+def test_atualizacao_do_registro_nao_vira_data_do_documento():
+    resultado = normalizar_proveniencia(
+        doc={
+            "id": "doc-10",
+            "titulo": "Documento sem data explícita",
+            "atualizado_em": "2026-07-23T12:00:00+00:00",
+            "extra": {},
+        }
+    )
+
+    assert resultado.data_documento is None
+    assert resultado.metadados["atualizado_em"] == (
+        "2026-07-23T12:00:00+00:00"
+    )
+
+
+def test_confianca_do_retrieval_e_limitada_ao_contrato():
+    resultado = normalizar_proveniencia(
+        doc={"id": "doc-11", "titulo": "Documento"},
+        chunk={"score": 1.7},
+    )
+
+    assert resultado.confianca_extracao == 1.0
+
+
+def test_normalizacao_rejeita_fonte_de_outro_caso():
+    doc = {
+        "id": "doc-12",
+        "titulo": "Documento de outro processo",
+        "case_id": "case-2",
+        "base_rag": "caso",
+        "extra": {},
+    }
+
+    with pytest.raises(ProvenienciaEscopoError):
+        normalizar_proveniencia(doc=doc, case_id_esperado="case-1")
