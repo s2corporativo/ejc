@@ -51,6 +51,7 @@ const timesheet = {
   horas_a_faturar: 1.5,
 };
 
+// Contrato: o timesheet enriquece a cronologia, mas nunca derruba os eventos jurídicos.
 describe("LinhaDoTempoProcessual", () => {
   beforeEach(() => {
     get.mockReset();
