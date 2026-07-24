@@ -5,12 +5,20 @@ from types import SimpleNamespace
 import pytest
 from fastapi import HTTPException
 
-from app.routers import peca_modos
+from app.routers import peca_geracao, peca_modos
 from app.schemas.peca_workflow import ModoProducao, ProducaoModoRequest
 
 
 def _user(role: str = "estagiario"):
     return SimpleNamespace(id="user-1", role=SimpleNamespace(value=role))
+
+
+def test_subrotas_registradas_sem_duplicar_endpoint_de_geracao():
+    caminhos = [route.path for route in peca_geracao.router.routes]
+
+    assert caminhos.count("/pecas/gerar") == 1
+    assert caminhos.count("/pecas/modos/meta") == 1
+    assert caminhos.count("/pecas/modos/preparar") == 1
 
 
 @pytest.mark.asyncio
