@@ -59,8 +59,10 @@ describe("LinhaDoTempoProcessual", () => {
 
   it("consolida movimentos processuais e atividades do timesheet", async () => {
     get.mockImplementation((url: string) => {
-      if (url.includes("/visual-law/")) return Promise.resolve({ data: timeline });
-      if (url.includes("/timesheet/")) return Promise.resolve({ data: timesheet });
+      if (url.includes("/visual-law/"))
+        return Promise.resolve({ data: timeline });
+      if (url.includes("/timesheet/"))
+        return Promise.resolve({ data: timesheet });
       return Promise.reject(new Error("endpoint inesperado"));
     });
 
@@ -75,8 +77,10 @@ describe("LinhaDoTempoProcessual", () => {
 
   it("mantém a timeline jurídica disponível quando o timesheet falha", async () => {
     get.mockImplementation((url: string) => {
-      if (url.includes("/visual-law/")) return Promise.resolve({ data: timeline });
-      if (url.includes("/timesheet/")) return Promise.reject(new Error("offline"));
+      if (url.includes("/visual-law/"))
+        return Promise.resolve({ data: timeline });
+      if (url.includes("/timesheet/"))
+        return Promise.reject(new Error("offline"));
       return Promise.reject(new Error("endpoint inesperado"));
     });
 
