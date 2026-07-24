@@ -46,8 +46,15 @@ const metaValida = {
       exige_aprovacao: true,
     },
   ],
-  tipos: [],
-  areas: [],
+  tipos: [
+    {
+      value: "contestacao",
+      label: "Contestação",
+      grupo: "defesas",
+      campos_guiados: ["fatos_impugnados", "pedidos"],
+    },
+  ],
+  areas: [{ value: "civil", label: "Civil" }],
   limites: { documentos_considerados: 100 },
   hitl_obrigatorio: true,
   endpoint_redacao: "/api/pecas/gerar",
@@ -70,6 +77,10 @@ describe("pecaModos", () => {
       "guiado",
       "molde",
       "agente",
+    ]);
+    expect(meta.tipos[0].campos_guiados).toEqual([
+      "fatos_impugnados",
+      "pedidos",
     ]);
     expect(ENDPOINT_REDACAO_CANONICO).toBe("/api/pecas/gerar");
   });
@@ -101,6 +112,31 @@ describe("pecaModos", () => {
 
     await expect(obterPecaModosMeta()).rejects.toThrow(
       "quatro modos controlados",
+    );
+  });
+
+  it("recusa Agente sem caso e aprovação obrigatórios", async () => {
+    get.mockResolvedValue({
+      data: {
+        ...metaValida,
+        modos: metaValida.modos.map((modo) =>
+          modo.value === "agente"
+            ? { ...modo, exige_aprovacao: false }
+            : modo,
+        ),
+      },
+    });
+
+    await expect(obterPecaModosMeta()).rejects.toThrow(
+      "bloqueios obrigatórios",
+    );
+  });
+
+  it("recusa catálogo sem tipos ou áreas utilizáveis", async () => {
+    get.mockResolvedValue({ data: { ...metaValida, tipos: [] } });
+
+    await expect(obterPecaModosMeta()).rejects.toThrow(
+      "Tipos ou áreas ausentes",
     );
   });
 
