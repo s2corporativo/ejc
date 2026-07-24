@@ -1,11 +1,13 @@
-// ── Visual Law: Linha do tempo processual ────────────────────────────────────
+// ── Visual Law: Linha do tempo unificada do caso ─────────────────────────────
 // Stepper de fases + banner de estagnação + timeline vertical filtrável +
-// próximos passos estimados. Consome GET /visual-law/casos/{id}/timeline.
+// próximos passos estimados. Consolida a timeline processual com o timesheet,
+// sem alterar os endpoints existentes nem criar dependência entre módulos.
 import { useEffect, useState } from "react";
 import {
   AlertTriangle,
   CalendarClock,
   Check,
+  Clock3,
   FileText,
   Gavel,
   Lightbulb,
@@ -21,9 +23,26 @@ import type {
   VisualLawTimeline,
 } from "../../types/visualLaw";
 
+interface TimesheetEntry {
+  id: string;
+  data: string;
+  minutos: number;
+  descricao: string;
+  faturavel: boolean;
+  faturada: boolean;
+  user_id?: string;
+}
+
+interface TimesheetResponse {
+  data: TimesheetEntry[];
+  total_horas: number;
+  horas_a_faturar: number;
+}
+
 const CATEGORIAS: Array<{
   key: CategoriaEvento;
   label: string;
+  singular: string;
   chip: string;
   chipAtivo: string;
   dot: string;
@@ -32,6 +51,7 @@ const CATEGORIAS: Array<{
   {
     key: "movimento",
     label: "Movimentos",
+    singular: "Movimento",
     chip: "border-primary-200 text-primary-700 hover:bg-primary-50",
     chipAtivo: "bg-primary-600 border-primary-600 text-white",
     dot: "border-primary-400 bg-primary-50 text-primary-600",
@@ -40,6 +60,7 @@ const CATEGORIAS: Array<{
   {
     key: "prazo",
     label: "Prazos",
+    singular: "Prazo",
     chip: "border-danger-200 text-danger-700 hover:bg-danger-50",
     chipAtivo: "bg-danger-600 border-danger-600 text-white",
     dot: "border-danger-400 bg-danger-50 text-danger-600",
@@ -48,6 +69,7 @@ const CATEGORIAS: Array<{
   {
     key: "documento",
     label: "Documentos",
+    singular: "Documento",
     chip: "border-ai-200 text-ai-700 hover:bg-ai-50",
     chipAtivo: "bg-ai-600 border-ai-600 text-white",
     dot: "border-ai-400 bg-ai-50 text-ai-600",
@@ -56,15 +78,51 @@ const CATEGORIAS: Array<{
   {
     key: "honorario",
     label: "Honorários",
+    singular: "Honorário",
     chip: "border-success-200 text-success-700 hover:bg-success-50",
     chipAtivo: "bg-success-600 border-success-600 text-white",
     dot: "border-success-400 bg-success-50 text-success-600",
     icone: <Wallet className="h-3 w-3" />,
   },
+  {
+    key: "atividade",
+    label: "Atividades",
+    singular: "Atividade",
+    chip: "border-sky-200 text-sky-700 hover:bg-sky-50",
+    chipAtivo: "bg-sky-600 border-sky-600 text-white",
+    dot: "border-sky-400 bg-sky-50 text-sky-600",
+    icone: <Clock3 className="h-3 w-3" />,
+  },
 ];
 
 const LIMITE_INICIAL = 30;
 const DESCRICAO_CURTA = 160;
+
+function ordenarEventos(eventos: TimelineEvento[]): TimelineEvento[] {
+  return [...eventos].sort((a, b) => {
+    const dataA = Date.parse(a.data);
+    const dataB = Date.parse(b.data);
+    if (Number.isNaN(dataA) && Number.isNaN(dataB)) return 0;
+    if (Number.isNaN(dataA)) return 1;
+    if (Number.isNaN(dataB)) return -1;
+    return dataB - dataA;
+  });
+}
+
+function eventoTimesheet(entry: TimesheetEntry): TimelineEvento {
+  const horas = Math.max(0, Number(entry.minutos || 0)) / 60;
+  const situacao = entry.faturavel
+    ? entry.faturada
+      ? "faturada"
+      : "faturável pendente"
+    : "não faturável";
+  return {
+    data: entry.data,
+    categoria: "atividade",
+    tipo: "timesheet",
+    descricao: `${entry.descricao} · ${horas.toFixed(1)}h · ${situacao}`,
+  };
+}
 
 function EventoItem({ evento }: { evento: TimelineEvento }) {
   const [expandido, setExpandido] = useState(false);
@@ -88,7 +146,7 @@ function EventoItem({ evento }: { evento: TimelineEvento }) {
       <div className="card min-w-0 flex-1 p-3">
         <div className="flex flex-wrap items-start justify-between gap-x-2 gap-y-1">
           <span className="text-xs font-semibold uppercase tracking-wide text-slate-400">
-            {cat.label.replace(/s$/, "")}
+            {cat.singular}
             {evento.tipo ? ` · ${evento.tipo.replace(/_/g, " ")}` : ""}
           </span>
           <span className="shrink-0 text-xs text-slate-400">
@@ -116,6 +174,11 @@ export default function LinhaDoTempoProcessual({ caseId }: { caseId: string }) {
   const [data, setData] = useState<VisualLawTimeline | null>(null);
   const [carregando, setCarregando] = useState(true);
   const [erro, setErro] = useState(false);
+  const [timesheetIndisponivel, setTimesheetIndisponivel] = useState(false);
+  const [resumoHoras, setResumoHoras] = useState<{
+    total: number;
+    pendentes: number;
+  } | null>(null);
   const [filtros, setFiltros] = useState<CategoriaEvento[]>([]);
   const [limite, setLimite] = useState(LIMITE_INICIAL);
 
@@ -123,19 +186,43 @@ export default function LinhaDoTempoProcessual({ caseId }: { caseId: string }) {
     let ativo = true;
     setCarregando(true);
     setErro(false);
-    api
-      .get<VisualLawTimeline>(`/visual-law/casos/${caseId}/timeline`)
-      .then((r) => {
-        if (ativo) setData(r.data);
-      })
-      .catch(() => {
+    setTimesheetIndisponivel(false);
+    setResumoHoras(null);
+
+    Promise.allSettled([
+      api.get<VisualLawTimeline>(`/visual-law/casos/${caseId}/timeline`),
+      api.get<TimesheetResponse>(`/timesheet/casos/${caseId}`),
+    ])
+      .then(([timelineResult, timesheetResult]) => {
         if (!ativo) return;
-        setErro(true);
-        toast.error("Falha ao carregar a linha do tempo do processo");
+        if (timelineResult.status === "rejected") {
+          setErro(true);
+          toast.error("Falha ao carregar a linha do tempo do caso");
+          return;
+        }
+
+        const timeline = timelineResult.value.data;
+        let atividades: TimelineEvento[] = [];
+        if (timesheetResult.status === "fulfilled") {
+          const timesheet = timesheetResult.value.data;
+          atividades = (timesheet.data || []).map(eventoTimesheet);
+          setResumoHoras({
+            total: Number(timesheet.total_horas || 0),
+            pendentes: Number(timesheet.horas_a_faturar || 0),
+          });
+        } else {
+          setTimesheetIndisponivel(true);
+        }
+
+        setData({
+          ...timeline,
+          eventos: ordenarEventos([...(timeline.eventos || []), ...atividades]),
+        });
       })
       .finally(() => {
         if (ativo) setCarregando(false);
       });
+
     return () => {
       ativo = false;
     };
@@ -250,9 +337,19 @@ export default function LinhaDoTempoProcessual({ caseId }: { caseId: string }) {
       {/* Linha do tempo vertical de eventos */}
       <div>
         <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
-          <h3 className="text-sm font-semibold uppercase text-slate-500">
-            Eventos do processo
-          </h3>
+          <div>
+            <h3 className="text-sm font-semibold uppercase text-slate-500">
+              Eventos do caso
+            </h3>
+            {resumoHoras && (
+              <p className="mt-1 text-xs text-slate-400">
+                {resumoHoras.total.toFixed(1)}h registradas
+                {resumoHoras.pendentes > 0
+                  ? ` · ${resumoHoras.pendentes.toFixed(1)}h a faturar`
+                  : " · sem horas pendentes de faturamento"}
+              </p>
+            )}
+          </div>
           <div className="flex flex-wrap gap-1.5">
             {CATEGORIAS.map((cat) => {
               const ativo = filtros.includes(cat.key);
@@ -274,12 +371,18 @@ export default function LinhaDoTempoProcessual({ caseId }: { caseId: string }) {
             })}
           </div>
         </div>
+        {timesheetIndisponivel && (
+          <div className="mb-3 rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-800">
+            As atividades de horas não puderam ser incorporadas agora. Os
+            eventos jurídicos permanecem disponíveis.
+          </div>
+        )}
         {eventosFiltrados.length === 0 ? (
           <Empty
             message={
               filtros.length > 0
                 ? "Nenhum evento nas categorias selecionadas"
-                : "Nenhum evento registrado neste processo"
+                : "Nenhum evento registrado neste caso"
             }
           />
         ) : (
@@ -288,7 +391,7 @@ export default function LinhaDoTempoProcessual({ caseId }: { caseId: string }) {
             <div className="space-y-3">
               {eventosVisiveis.map((evento, i) => (
                 <EventoItem
-                  key={`${evento.data}-${evento.categoria}-${i}`}
+                  key={`${evento.data}-${evento.categoria}-${evento.tipo}-${i}`}
                   evento={evento}
                 />
               ))}
