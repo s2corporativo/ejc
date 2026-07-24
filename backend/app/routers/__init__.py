@@ -15,6 +15,8 @@ from app.routers import (  # noqa: E402
     entrada_universal,
     entrada_universal_vinculo,
     novos_modulos,
+    peca_geracao,
+    peca_modos,
 )
 
 # A restrição do advogado_auxiliar (não gera pacote executivo nem encaminha
@@ -29,3 +31,7 @@ novos_modulos.router.include_router(defesas_revisoes.router)
 # implementação legada foi removida do router avançado — sem sombreamento).
 novos_modulos.router.include_router(defesas_revisoes_pacote_seguro.router)
 novos_modulos.router.include_router(defesas_revisoes_avancado.router)
+
+# Os modos Livre/Guiado/Molde/Agente apenas preparam o pipeline. A redação
+# permanece no router canônico /pecas/gerar, incluído pelo main.py.
+peca_geracao.router.include_router(peca_modos.router)
