@@ -216,10 +216,7 @@ export default function LinhaDoTempoProcessual({ caseId }: { caseId: string }) {
 
         setData({
           ...timeline,
-          eventos: ordenarEventos([
-            ...(timeline.eventos || []),
-            ...atividades,
-          ]),
+          eventos: ordenarEventos([...(timeline.eventos || []), ...atividades]),
         });
       })
       .finally(() => {
@@ -376,8 +373,8 @@ export default function LinhaDoTempoProcessual({ caseId }: { caseId: string }) {
         </div>
         {timesheetIndisponivel && (
           <div className="mb-3 rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-800">
-            As atividades de horas não puderam ser incorporadas agora. Os eventos
-            jurídicos permanecem disponíveis.
+            As atividades de horas não puderam ser incorporadas agora. Os
+            eventos jurídicos permanecem disponíveis.
           </div>
         )}
         {eventosFiltrados.length === 0 ? (
