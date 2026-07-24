@@ -256,7 +256,11 @@ def _maior_nivel_risco(riscos: list[Any]) -> str | None:
         nivel = str(item.get("nivel") if isinstance(item, dict) else "").lower()
         if nivel in pesos and (maior is None or pesos[nivel] > maior[0]):
             maior = (pesos[nivel], nivel)
-    return maior[1] if maior else None
+    if maior is None:
+        return None
+    # O contrato legado de conversão usa "elevado", enquanto a Sala adota
+    # vocabulário jurídico mais natural ("alto"). A ponte mantém compatibilidade.
+    return "elevado" if maior[1] == "alto" else maior[1]
 
 
 def _sincronizar_relatorio_para_conversao(
