@@ -419,7 +419,11 @@ export default function SalaAnaliseJuridica() {
       {error && (
         <div className="flex items-start justify-between rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-800">
           <span>{error}</span>
-          <button onClick={() => setError(null)} aria-label="Fechar">
+          <button
+            type="button"
+            onClick={() => setError(null)}
+            aria-label="Fechar"
+          >
             <X size={16} />
           </button>
         </div>
@@ -588,9 +592,11 @@ export default function SalaAnaliseJuridica() {
               <footer className="border-t border-slate-200 bg-white p-4">
                 <div className="mx-auto flex max-w-3xl items-end gap-2 rounded-2xl border border-slate-300 bg-white p-2 shadow-sm focus-within:border-slate-500">
                   <button
+                    type="button"
                     className="rounded-xl p-2 text-slate-500 hover:bg-slate-100"
                     onClick={() => fileRef.current?.click()}
                     title="Anexar provas"
+                    aria-label="Anexar provas"
                   >
                     <Paperclip size={19} />
                   </button>
@@ -611,6 +617,7 @@ export default function SalaAnaliseJuridica() {
                     onClick={() => void sendMessage()}
                     disabled={!prompt.trim() || busy}
                     title="Enviar"
+                    aria-label="Enviar mensagem"
                   >
                     <Send size={17} />
                   </button>
@@ -936,12 +943,15 @@ function Modal({
       onMouseDown={onClose}
     >
       <div
+        role="dialog"
+        aria-modal="true"
+        aria-label={title}
         className={`max-h-[90vh] w-full overflow-y-auto rounded-2xl bg-white p-5 shadow-2xl ${wide ? "max-w-3xl" : "max-w-lg"}`}
         onMouseDown={(e) => e.stopPropagation()}
       >
         <div className="mb-4 flex items-center justify-between">
           <h2 className="text-lg font-semibold">{title}</h2>
-          <button onClick={onClose}>
+          <button type="button" onClick={onClose} aria-label="Fechar">
             <X size={20} />
           </button>
         </div>
