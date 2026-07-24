@@ -26,7 +26,7 @@ jobs:
           rm -f .github/workflows/tmp-integrate-sala-v2.yml
           cd frontend
           npm ci
-          npx prettier --write src/pages/SalaAnaliseJuridica.tsx src/config/moduleRegistry.tsx
+          npx prettier --write src/pages/SalaAnaliseJuridica.tsx src/config/moduleRegistry.tsx src/config/moduleRegistry.test.ts
       - name: Validar build
         id: build
         working-directory: frontend
@@ -49,7 +49,7 @@ jobs:
           set -euo pipefail
           git config user.name 'EJC Automation'
           git config user.email 'actions@ejc.local'
-          git add frontend/src/pages/SalaAnaliseJuridica.tsx frontend/src/config/moduleRegistry.tsx .github/workflows/tmp-integrate-sala-v2.yml
+          git add frontend/src/pages/SalaAnaliseJuridica.tsx frontend/src/config/moduleRegistry.tsx frontend/src/config/moduleRegistry.test.ts .github/workflows/tmp-integrate-sala-v2.yml
           if git diff --cached --quiet; then
             echo 'Integração já aplicada'
             exit 0
