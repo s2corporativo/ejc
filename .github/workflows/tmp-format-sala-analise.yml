@@ -8,7 +8,7 @@ permissions:
 
 jobs:
   integrate-v2:
-    runs-on: ubuntu-latest
+    runs-on: [self-hosted, ejc-vps]
     steps:
       - uses: actions/checkout@v7
         with:
