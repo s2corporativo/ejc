@@ -37,6 +37,11 @@ class RaioXAnalise(Base):
     revisao_humana = Column(JSONB, nullable=False, default=dict)
     alertas_conflito = Column(JSONB, nullable=False, default=list)
     custo_ia = Column(JSONB, nullable=False, default=dict)
+    # Memória própria da Sala de Análise Jurídica. Mantém a conversa separada da
+    # revisão humana e o estado consolidado separado do relatório documental.
+    conversa = Column(JSONB, nullable=False, default=list)
+    estado_analise = Column(JSONB, nullable=False, default=dict)
+    ultima_consolidacao_em = Column(DateTime(timezone=True), nullable=True)
     created_by = Column(String(36), ForeignKey("users.id"), nullable=False, index=True)
     retention_until = Column(DateTime(timezone=True), nullable=True)
     converted_at = Column(DateTime(timezone=True), nullable=True)
