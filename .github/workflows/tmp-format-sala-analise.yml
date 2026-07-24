@@ -35,7 +35,7 @@ jobs:
         run: |
           set -o pipefail
           git show origin/feat/sala-analise-juridica:scripts/integrate_sala_v2.py > /tmp/integrate_sala_v2.py
-          python /tmp/integrate_sala_v2.py 2>&1 | tee integrator.log
+          python3 /tmp/integrate_sala_v2.py 2>&1 | tee integrator.log
           status=${PIPESTATUS[0]}
           if [ "$status" -ne 0 ]; then
             exit "$status"
