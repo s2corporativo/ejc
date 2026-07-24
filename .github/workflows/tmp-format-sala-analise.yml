@@ -22,9 +22,11 @@ jobs:
       - name: Formatar arquivo
         working-directory: frontend
         run: npx prettier --write src/pages/SalaAnaliseJuridica.tsx
-      - name: Publicar arquivo formatado
+      - name: Publicar arquivos de integracao
         uses: actions/upload-artifact@v7
         with:
-          name: sala-analise-formatada
-          path: frontend/src/pages/SalaAnaliseJuridica.tsx
+          name: sala-analise-integracao
+          path: |
+            frontend/src/pages/SalaAnaliseJuridica.tsx
+            frontend/src/config/moduleRegistry.tsx
           retention-days: 1
