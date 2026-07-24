@@ -71,10 +71,10 @@ jobs:
           set -euo pipefail
           git config user.name 'EJC Automation'
           git config user.email 'actions@ejc.local'
-          git add frontend/src/pages/SalaAnaliseJuridica.tsx frontend/src/config/moduleRegistry.tsx frontend/src/config/moduleRegistry.test.ts .github/workflows/tmp-integrate-sala-v2.yml
+          git add frontend/src/pages/SalaAnaliseJuridica.tsx frontend/src/config/moduleRegistry.tsx frontend/src/config/moduleRegistry.test.ts
           if git diff --cached --quiet; then
             echo 'Integração já aplicada'
             exit 0
           fi
-          git commit -m 'feat: adicionar Sala de Análise Jurídica como módulo independente'
+          git commit -m 'fix: reforçar acessibilidade da Sala de Análise Jurídica'
           git push origin HEAD:feat/sala-analise-juridica-v2
