@@ -50,7 +50,7 @@ def _montar(user=None):
 
 def test_meta_retorna_modos_e_tipos():
     cli = _montar()
-    r = cli.get("/meta")
+    r = cli.get("/pecas/modos/meta")
     assert r.status_code == 200
     body = r.json()
     assert "modos" in body
@@ -61,7 +61,7 @@ def test_meta_retorna_modos_e_tipos():
 
 def test_meta_tipos_contem_campos_guiados():
     cli = _montar()
-    r = cli.get("/meta")
+    r = cli.get("/pecas/modos/meta")
     body = r.json()
     peticao = next(t for t in body["tipos"] if t["value"] == "peticao_inicial")
     assert "partes" in peticao["campos_guiados"]
@@ -70,7 +70,7 @@ def test_meta_tipos_contem_campos_guiados():
 
 def test_meta_bloqueia_cliente_externo():
     cli = _montar(_FakeClienteExterno())
-    r = cli.get("/meta")
+    r = cli.get("/pecas/modos/meta")
     assert r.status_code == 403
 
 
@@ -79,7 +79,7 @@ def test_meta_bloqueia_cliente_externo():
 
 def test_livre_sem_case_id():
     cli = _montar()
-    r = cli.post("/preparar", json={
+    r = cli.post("/pecas/modos/preparar", json={
         "modo": "livre",
         "tipo_peca": "contestacao",
         "area_direito": "civil",
@@ -96,7 +96,7 @@ def test_livre_sem_case_id():
 
 def test_estagiario_pode_acessar():
     cli = _montar(_FakeEstagiario())
-    r = cli.post("/preparar", json={
+    r = cli.post("/pecas/modos/preparar", json={
         "modo": "livre",
         "tipo_peca": "peticao_inicial",
         "area_direito": "trabalhista",
@@ -110,7 +110,7 @@ def test_estagiario_pode_acessar():
 
 def test_guiado_campos_completos():
     cli = _montar()
-    r = cli.post("/preparar", json={
+    r = cli.post("/pecas/modos/preparar", json={
         "modo": "guiado",
         "tipo_peca": "peticao_inicial",
         "area_direito": "civil",
@@ -131,7 +131,7 @@ def test_guiado_campos_completos():
 
 def test_guiado_campos_ausentes_bloqueia():
     cli = _montar()
-    r = cli.post("/preparar", json={
+    r = cli.post("/pecas/modos/preparar", json={
         "modo": "guiado",
         "tipo_peca": "peticao_inicial",
         "area_direito": "civil",
@@ -148,7 +148,7 @@ def test_guiado_campos_ausentes_bloqueia():
 
 def test_molde_exige_versao_e_hash():
     cli = _montar()
-    r = cli.post("/preparar", json={
+    r = cli.post("/pecas/modos/preparar", json={
         "modo": "molde",
         "tipo_peca": "peticao_inicial",
         "area_direito": "civil",
@@ -167,7 +167,7 @@ def test_molde_exige_versao_e_hash():
 
 def test_molde_sem_versao_bloqueia():
     cli = _montar()
-    r = cli.post("/preparar", json={
+    r = cli.post("/pecas/modos/preparar", json={
         "modo": "molde",
         "tipo_peca": "peticao_inicial",
         "area_direito": "civil",
@@ -187,7 +187,7 @@ def test_molde_sem_versao_bloqueia():
 
 def test_agente_exige_case_id_e_docs_e_aprovacao():
     cli = _montar()
-    r = cli.post("/preparar", json={
+    r = cli.post("/pecas/modos/preparar", json={
         "modo": "agente",
         "tipo_peca": "peticao_inicial",
         "area_direito": "civil",
@@ -205,7 +205,7 @@ def test_agente_exige_case_id_e_docs_e_aprovacao():
 
 def test_modo_invalido_rejeitado():
     cli = _montar()
-    r = cli.post("/preparar", json={
+    r = cli.post("/pecas/modos/preparar", json={
         "modo": "desconhecido",
         "tipo_peca": "peticao_inicial",
         "area_direito": "civil",
@@ -215,7 +215,7 @@ def test_modo_invalido_rejeitado():
 
 def test_tipo_invalido_rejeitado():
     cli = _montar()
-    r = cli.post("/preparar", json={
+    r = cli.post("/pecas/modos/preparar", json={
         "modo": "livre",
         "tipo_peca": "tipo_que_nao_existe",
         "area_direito": "civil",
@@ -226,7 +226,7 @@ def test_tipo_invalido_rejeitado():
 
 def test_area_invalida_rejeitada():
     cli = _montar()
-    r = cli.post("/preparar", json={
+    r = cli.post("/pecas/modos/preparar", json={
         "modo": "livre",
         "tipo_peca": "peticao_inicial",
         "area_direito": "area_que_nao_existe",
@@ -237,7 +237,7 @@ def test_area_invalida_rejeitada():
 
 def test_cliente_externo_bloqueado_no_preparar():
     cli = _montar(_FakeClienteExterno())
-    r = cli.post("/preparar", json={
+    r = cli.post("/pecas/modos/preparar", json={
         "modo": "livre",
         "tipo_peca": "peticao_inicial",
         "area_direito": "civil",
@@ -252,7 +252,7 @@ def test_cliente_externo_bloqueado_no_preparar():
 @patch("app.routers.peca_modos.verificar_acesso_caso")
 def test_case_id_aciona_verificar_acesso(mock_acesso):
     cli = _montar()
-    r = cli.post("/preparar", json={
+    r = cli.post("/pecas/modos/preparar", json={
         "modo": "livre",
         "case_id": "case-123",
         "tipo_peca": "peticao_inicial",
