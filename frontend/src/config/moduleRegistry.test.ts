@@ -50,16 +50,25 @@ describe("moduleRegistry", () => {
     expect(canRoleAccessPath("estagiario", "/financeiro")).toBe(false);
   });
 
-  it("destaca Raio-X e Financeiro apenas para os perfis autorizados", () => {
+  it("destaca Sala de Análise e Financeiro apenas para os perfis autorizados", () => {
     const advogado = getProductionNavigation("advogado");
     const socio = getProductionNavigation("socio");
-    expect(advogado.find((item) => item.path === "/raio-x")?.essential).toBe(
-      true,
-    );
+    expect(
+      advogado.find((item) => item.path === "/sala-analise")?.essential,
+    ).toBe(true);
     expect(advogado.some((item) => item.path === "/financeiro")).toBe(false);
     expect(socio.find((item) => item.path === "/financeiro")?.essential).toBe(
       true,
     );
+  });
+
+  it("mantém o Raio-X acessível sem duplicar a entrada da Sala no menu", () => {
+    const advogado = getProductionNavigation("advogado");
+    const raioX = STAFF_ROUTES.find((item) => item.path === "/raio-x");
+    expect(canRoleAccessPath("advogado", "/raio-x")).toBe(true);
+    expect(raioX?.showInNav).toBe(false);
+    expect(advogado.some((item) => item.path === "/raio-x")).toBe(false);
+    expect(advogado.some((item) => item.path === "/sala-analise")).toBe(true);
   });
 
   it("mantém preferências pessoais acessíveis a qualquer usuário interno", () => {
@@ -105,12 +114,12 @@ describe("moduleRegistry", () => {
       .map((m) => m.path);
     expect(essenciais).toEqual([
       "/",
-      "/raio-x",
       "/casos",
       "/atividades",
       "/clientes",
       "/documentos",
       "/pecas",
+      "/sala-analise",
       "/inteligencia",
     ]);
     expect(advogado).not.toContain("/casos/novo");
