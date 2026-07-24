@@ -1,4 +1,4 @@
-"""Contratos HTTP do Raio-X do Processo."""
+"""Contratos HTTP do Raio-X do Processo e da Sala de Análise Jurídica."""
 from __future__ import annotations
 
 from typing import Any, Literal, Optional
@@ -11,6 +11,17 @@ STATUS_RAIO_X = {
     "documentos_pendentes", "analise_concluida", "nao_convertido",
     "convertido_em_caso", "descartado", "arquivado",
 }
+
+MODO_SALA_ANALISE = Literal[
+    "conversar",
+    "organizar_fatos",
+    "detectar_contradicoes",
+    "avaliar_provas",
+    "simular_defesa",
+    "julgar",
+    "listar_pendencias",
+    "consolidar",
+]
 
 
 class RaioXCreate(BaseModel):
@@ -40,6 +51,15 @@ class RaioXUpdate(BaseModel):
         if value is not None and value not in STATUS_RAIO_X:
             raise ValueError(f"Status inválido: {value}")
         return value
+
+
+class SalaAnaliseMensagemRequest(BaseModel):
+    mensagem: str = Field(min_length=1, max_length=12000)
+    modo: MODO_SALA_ANALISE = "conversar"
+
+
+class SalaAnaliseConsolidarRequest(BaseModel):
+    instrucao_adicional: Optional[str] = Field(None, max_length=4000)
 
 
 class ClienteConversao(BaseModel):
