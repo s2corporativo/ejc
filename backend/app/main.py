@@ -131,6 +131,7 @@ from app.routers import office_contracts
 from app.routers import partner_withdrawals
 from app.routers import peca_geracao
 from app.routers import peca_geracao_router
+from app.routers import peca_modos
 from app.routers import pending_items
 from app.routers import pix
 from app.routers import portal
@@ -392,6 +393,7 @@ app.include_router(office_contracts.router, prefix=API)
 app.include_router(partner_withdrawals.router, prefix=API)
 app.include_router(peca_geracao.router, prefix=API)
 app.include_router(peca_geracao_router.router, prefix=API)
+app.include_router(peca_modos.router, prefix=API)
 app.include_router(pending_items.router, prefix=API)
 app.include_router(pix.router, prefix=API)
 app.include_router(portal.router, prefix=API)
