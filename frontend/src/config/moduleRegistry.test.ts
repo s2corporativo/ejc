@@ -50,12 +50,12 @@ describe("moduleRegistry", () => {
     expect(canRoleAccessPath("estagiario", "/financeiro")).toBe(false);
   });
 
-  it("destaca Raio-X e Financeiro apenas para os perfis autorizados", () => {
+  it("destaca Sala de Análise e Financeiro apenas para os perfis autorizados", () => {
     const advogado = getProductionNavigation("advogado");
     const socio = getProductionNavigation("socio");
-    expect(advogado.find((item) => item.path === "/raio-x")?.essential).toBe(
-      true,
-    );
+    expect(
+      advogado.find((item) => item.path === "/sala-analise")?.essential,
+    ).toBe(true);
     expect(advogado.some((item) => item.path === "/financeiro")).toBe(false);
     expect(socio.find((item) => item.path === "/financeiro")?.essential).toBe(
       true,
@@ -105,7 +105,7 @@ describe("moduleRegistry", () => {
       .map((m) => m.path);
     expect(essenciais).toEqual([
       "/",
-      "/raio-x",
+      "/sala-analise",
       "/casos",
       "/atividades",
       "/clientes",

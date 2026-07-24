@@ -94,6 +94,7 @@ const DossieCliente = lazy(() => import("../pages/DossieCliente"));
 const Casos = lazy(() => import("../pages/Casos"));
 const CasoDetalhe = lazy(() => import("../pages/CasoDetalhe"));
 const RaioXProcesso = lazy(() => import("../pages/RaioXProcesso"));
+const SalaAnaliseJuridica = lazy(() => import("../pages/SalaAnaliseJuridica"));
 const SalaDeGuerra = lazy(() => import("../pages/SalaDeGuerra"));
 const EntrevistaInteligente = lazy(
   () => import("../pages/EntrevistaInteligente"),
@@ -264,6 +265,24 @@ export const STAFF_ROUTES: ModuleRoute[] = [
     sensitive: true,
   },
   {
+    key: "sala-analise-juridica",
+    path: "/sala-analise",
+    label: "Sala de Análise Jurídica",
+    description:
+      "Conversa jurídica preliminar com provas, contradições, riscos e conversão validada em caso.",
+    group: "Pesquisar & IA",
+    icon: Sparkles,
+    component: SalaAnaliseJuridica,
+    roles: ROLES.juridico,
+    showInNav: true,
+    essential: true,
+    order: 5,
+    helpKey: "inteligencia",
+    usesAI: true,
+    sensitive: true,
+    backendPrefixes: ["/api/raio-x", "/api/ai"],
+  },
+  {
     key: "raio-x-processo",
     path: "/raio-x",
     label: "Triagem e Raio-X",
@@ -273,8 +292,8 @@ export const STAFF_ROUTES: ModuleRoute[] = [
     icon: ScanSearch,
     component: RaioXProcesso,
     roles: ROLES.juridico,
-    showInNav: true,
-    essential: true,
+    showInNav: false,
+    essential: false,
     order: 15,
     helpKey: "inteligencia",
     usesAI: true,
