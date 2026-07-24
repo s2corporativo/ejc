@@ -40,17 +40,6 @@ export interface TimelineAtendimentosResult {
   resumo: ResumoAtendimentosCaso;
 }
 
-const TIPO_LABEL: Record<AtendimentoTipo, string> = {
-  reuniao_presencial: "Reunião presencial",
-  reuniao_virtual: "Reunião virtual",
-  ligacao: "Ligação",
-  email: "E-mail",
-  whatsapp: "WhatsApp",
-  protocolo: "Protocolo",
-  visita: "Visita",
-  outros: "Atendimento",
-};
-
 function textoSeguro(value?: string | null, limite = 500): string | null {
   const limpo = (value || "").replace(/\s+/g, " ").trim();
   if (!limpo) return null;
