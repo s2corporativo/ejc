@@ -73,9 +73,7 @@ describe("CaseContextBar", () => {
           .getAttribute("aria-current"),
       ).toBe("page");
       expect(
-        screen
-          .getByRole("link", { name: "Visão" })
-          .getAttribute("aria-current"),
+        screen.getByRole("link", { name: "Visão" }).getAttribute("aria-current"),
       ).toBeNull();
       await waitFor(() => expect(mocks.ativar).toHaveBeenCalledWith("case-1"));
     },
