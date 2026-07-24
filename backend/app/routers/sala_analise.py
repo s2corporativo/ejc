@@ -60,8 +60,10 @@ async def obter_sala(
     analise = await _obter(db, analise_id, user)
     if not analise.estado_analise:
         analise.estado_analise = estado_inicial(analise)
+        # Não refrescar a entidade depois do commit: o refresh expiraria a relação
+        # documentos já carregada por selectinload e poderia provocar lazy-load
+        # assíncrono durante a serialização.
         await db.commit()
-        await db.refresh(analise)
     return serializar_sala(analise)
 
 
