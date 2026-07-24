@@ -9,7 +9,12 @@ export interface TimelineFase {
   status: FaseStatus;
 }
 
-export type CategoriaEvento = "movimento" | "prazo" | "documento" | "honorario";
+export type CategoriaEvento =
+  | "movimento"
+  | "prazo"
+  | "documento"
+  | "honorario"
+  | "atividade";
 
 export interface TimelineEvento {
   data: string;
@@ -47,7 +52,7 @@ export type NivelProbabilidade = "remoto" | "possivel" | "provavel";
 export type NivelImpacto = "baixo" | "medio" | "alto" | "indefinido";
 export type NivelQuadrante = "baixo" | "moderado" | "elevado" | "critico";
 export type TratamentoContabil =
-  "provisionar" | "divulgar_em_nota" | "nao_divulgar";
+  | "provisionar" | "divulgar_em_nota" | "nao_divulgar";
 
 export interface MatrizCelula {
   nivel: string;
