@@ -6,6 +6,10 @@ on:
 permissions:
   contents: write
 
+concurrency:
+  group: sala-analise-integracao-${{ github.ref }}
+  cancel-in-progress: true
+
 jobs:
   integrate-v2:
     runs-on: [self-hosted, ejc-vps]
