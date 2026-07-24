@@ -18,7 +18,9 @@ from app.schemas.ai_proveniencia import (
     StatusConferenciaFonte,
     TipoFonteJuridica,
 )
-from app.services.ai.proveniencia import normalizar_proveniencia as normalizar_fonte_canonica
+from app.services.ai.proveniencia import (
+    normalizar_proveniencia as normalizar_fonte_canonica,
+)
 
 # Alias transitório para consumidores do adaptador anterior. Não define outro
 # enum: ambos os nomes apontam para o contrato canônico.
@@ -65,6 +67,12 @@ def _datetime(value: Any) -> datetime | None:
         return datetime.fromisoformat(texto.replace("Z", "+00:00"))
     except ValueError:
         return None
+
+
+def _confianca(value: Any) -> float | None:
+    if isinstance(value, bool) or not isinstance(value, (int, float)):
+        return None
+    return min(max(float(value), 0.0), 1.0)
 
 
 def _url_http(value: Any) -> str | None:
@@ -161,7 +169,11 @@ def avaliar_status_fonte(
         return StatusConferenciaFonte.IDENTIFICACAO_INSUFICIENTE, motivos
 
     tipo_fonte = _tipo_fonte(doc, prov)
-    autoridade = _primeiro(prov.get("autoridade"), prov.get("issuer"), extra.get("autoridade"))
+    autoridade = _primeiro(
+        prov.get("autoridade"),
+        prov.get("issuer"),
+        extra.get("autoridade"),
+    )
     if tipo_fonte is TipoFonteJuridica.FONTE_OFICIAL and not (
         _url_http(fonte) or autoridade
     ):
@@ -251,7 +263,6 @@ def normalizar_proveniencia(
         _primeiro(
             prov.get("data_documento"),
             extra.get("data_documento"),
-            doc.get("atualizado_em"),
         )
     )
     data_verificacao = _data_verificacao(doc, extra, prov)
@@ -269,10 +280,13 @@ def normalizar_proveniencia(
         "categoria": doc.get("categoria"),
         "tribunal": doc.get("tribunal"),
         "revisado": doc.get("revisado"),
+        "atualizado_em": doc.get("atualizado_em"),
         "motivos_status": motivos,
         "tipo_fonte_declarado": tipo_declarado.value,
     }
-    metadados = {chave: valor for chave, valor in metadados.items() if valor is not None}
+    metadados = {
+        chave: valor for chave, valor in metadados.items() if valor is not None
+    }
 
     fonte_canonica = ProvenienciaJuridica(
         tipo_fonte=tipo_fonte,
@@ -292,11 +306,7 @@ def normalizar_proveniencia(
         url_oficial=url_oficial,
         autoridade=str(autoridade) if autoridade else None,
         vigente=doc.get("vigente") if isinstance(doc.get("vigente"), bool) else None,
-        confianca_extracao=(
-            chunk_map.get("score")
-            if isinstance(chunk_map.get("score"), (int, float))
-            else None
-        ),
+        confianca_extracao=_confianca(chunk_map.get("score")),
         inferencia_ia=False,
         metadados=metadados,
     )
