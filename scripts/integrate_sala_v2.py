@@ -27,6 +27,10 @@ s = s.replace(
     "nomes_proteger: [],",
     "nomes_proteger: selected.potencial_cliente ? [selected.potencial_cliente] : [],",
 )
+s = s.replace(
+    "const report = selected?.relatorio || {};",
+    "const report: Relatorio = selected?.relatorio ?? {};",
+)
 page.write_text(s)
 
 registry = Path("frontend/src/config/moduleRegistry.tsx")
@@ -66,4 +70,29 @@ if 'key: "sala-analise-juridica"' not in r:
     if route_anchor not in r:
         raise SystemExit("Âncora da rota Raio-X não encontrada")
     r = r.replace(route_anchor, route + route_anchor, 1)
+
+old_start = r.find(route_anchor)
+if old_start < 0:
+    raise SystemExit("Bloco do Raio-X não encontrado")
+old_end = r.find("\n  },", old_start)
+if old_end < 0:
+    raise SystemExit("Fim do bloco do Raio-X não encontrado")
+old_end += len("\n  },")
+old_block = r[old_start:old_end]
+old_block = old_block.replace("showInNav: true", "showInNav: false", 1)
+old_block = old_block.replace("essential: true", "essential: false", 1)
+r = r[:old_start] + old_block + r[old_end:]
 registry.write_text(r)
+
+test = Path("frontend/src/config/moduleRegistry.test.ts")
+t = test.read_text()
+t = t.replace(
+    'it("destaca Raio-X e Financeiro apenas para os perfis autorizados", () => {',
+    'it("destaca Sala de Análise e Financeiro apenas para os perfis autorizados", () => {',
+)
+t = t.replace(
+    'expect(advogado.find((item) => item.path === "/raio-x")?.essential).toBe(',
+    'expect(\n      advogado.find((item) => item.path === "/sala-analise")?.essential,\n    ).toBe(',
+)
+t = t.replace('      "/raio-x",', '      "/sala-analise",')
+test.write_text(t)
