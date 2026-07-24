@@ -91,9 +91,8 @@ def test_normalizar_estado_nao_apaga_fatos_por_array_vazio_da_ia():
     assert estado["fatos"] == anterior["fatos"]
 
 
-def test_estado_conversacional_e_projetado_no_relatorio_legado_de_conversao():
-    analise = _analise({"sintese_executiva": "versão documental original"})
-    estado = {
+def _estado_para_conversao(riscos):
+    return {
         "versao": 4,
         "atualizado_em": "2026-07-24T12:00:00+00:00",
         "sintese_atual": "síntese consolidada pelo advogado",
@@ -101,16 +100,21 @@ def test_estado_conversacional_e_projetado_no_relatorio_legado_de_conversao():
         "provas": [{"texto": "boletim", "forca": "media"}],
         "contradicoes": [{"texto": "GO-020 x DF-345", "impacto": "critico"}],
         "questoes_juridicas": [{"texto": "legitimidade", "status": "pendente"}],
-        "riscos": [
-            {"texto": "réu incorreto", "nivel": "critico"},
-            {"texto": "dano moral fraco", "nivel": "moderado"},
-        ],
+        "riscos": riscos,
         "documentos_pendentes": [{"texto": "laudo", "criticidade": "alta"}],
         "proximos_passos": [{"texto": "solicitar certidão", "prioridade": "imediata"}],
         "tese_favoravel": ["erro de sinalização"],
         "tese_adversa": ["culpa concorrente"],
         "visao_julgador": "necessária instrução",
     }
+
+
+def test_estado_conversacional_e_projetado_no_relatorio_legado_de_conversao():
+    analise = _analise({"sintese_executiva": "versão documental original"})
+    estado = _estado_para_conversao([
+        {"texto": "réu incorreto", "nivel": "critico"},
+        {"texto": "dano moral fraco", "nivel": "moderado"},
+    ])
 
     _sincronizar_relatorio_para_conversao(analise, estado)
 
@@ -119,3 +123,14 @@ def test_estado_conversacional_e_projetado_no_relatorio_legado_de_conversao():
     assert analise.relatorio["proximos_passos"] == estado["proximos_passos"]
     assert analise.relatorio["risco_nivel"] == "critico"
     assert analise.relatorio["revisao_humana_obrigatoria"] is True
+
+
+def test_risco_alto_da_sala_e_convertido_para_vocabulario_legado_elevado():
+    analise = _analise({})
+    estado = _estado_para_conversao([
+        {"texto": "nexo ainda pendente", "nivel": "alto"},
+    ])
+
+    _sincronizar_relatorio_para_conversao(analise, estado)
+
+    assert analise.relatorio["risco_nivel"] == "elevado"
