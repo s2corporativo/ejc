@@ -216,7 +216,10 @@ export default function LinhaDoTempoProcessual({ caseId }: { caseId: string }) {
 
         setData({
           ...timeline,
-          eventos: ordenarEventos([...(timeline.eventos || []), ...atividades]),
+          eventos: ordenarEventos([
+            ...(timeline.eventos || []),
+            ...atividades,
+          ]),
         });
       })
       .finally(() => {
