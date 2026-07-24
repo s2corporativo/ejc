@@ -31,6 +31,9 @@ _CHAVES_LEGADAS = {
     "processo": "processo_origem",
     "source_type": "tipo_fonte",
     "citation_status": "status_conferencia",
+    "confidentiality": "nivel_confidencialidade",
+    "confidentiality_level": "nivel_confidencialidade",
+    "privacy_level": "nivel_confidencialidade",
     "verified_at": "data_verificacao",
     "document_date": "data_documento",
     "document_version": "versao_documento",
@@ -110,6 +113,12 @@ def normalizar_proveniencia(
 
 
 def _chave_deduplicacao(fonte: ProvenienciaJuridica) -> tuple[Any, ...]:
+    """Deduplica somente fontes semanticamente idênticas.
+
+    Status, confidencialidade e marca de inferência integram a chave para que um
+    registro restritivo nunca seja ocultado por outro mais permissivo.
+    """
+
     return (
         fonte.hash_fonte,
         fonte.documento_id,
@@ -118,6 +127,9 @@ def _chave_deduplicacao(fonte: ProvenienciaJuridica) -> tuple[Any, ...]:
         fonte.trecho,
         fonte.url_oficial,
         fonte.case_id,
+        fonte.status_conferencia,
+        fonte.nivel_confidencialidade,
+        fonte.inferencia_ia,
     )
 
 
