@@ -97,7 +97,7 @@ async def test_enriquece_lote_com_uma_unica_consulta_e_preserva_ordem():
 
 
 @pytest.mark.asyncio
-async def test_documento_ausente_recebe_estado_fail_safe():
+async def test_documento_ausente_recebe_estado_fail_safe_fora_de_caso():
     db = _FakeDB(rows=[])
 
     saida = await rag_traceable.enriquecer_resultados_com_proveniencia(
@@ -123,6 +123,28 @@ async def test_documento_ausente_recebe_estado_fail_safe():
 
 
 @pytest.mark.asyncio
+async def test_documento_ausente_e_removido_quando_ha_caso_esperado():
+    db = _FakeDB(rows=[])
+
+    saida = await rag_traceable.enriquecer_resultados_com_proveniencia(
+        db,
+        [
+            {
+                "chunk_id": "chunk-1",
+                "doc_id": "doc-ausente",
+                "titulo": "Fonte sem escopo recarregado",
+                "conteudo": "Trecho que não pode permanecer sem validar o caso",
+                "score": 0.7,
+            }
+        ],
+        case_id_esperado="caso-1",
+    )
+
+    assert db.calls == 1
+    assert saida == []
+
+
+@pytest.mark.asyncio
 async def test_resultado_sem_identificador_nao_fabrica_proveniencia():
     db = _FakeDB()
 
@@ -137,7 +159,7 @@ async def test_resultado_sem_identificador_nao_fabrica_proveniencia():
 
 
 @pytest.mark.asyncio
-async def test_falha_no_enriquecimento_nao_derruba_retrieval():
+async def test_falha_no_enriquecimento_nao_derruba_retrieval_fora_de_caso():
     db = _FakeDB(error=RuntimeError("banco indisponível"))
     resultados = [
         {
@@ -160,6 +182,28 @@ async def test_falha_no_enriquecimento_nao_derruba_retrieval():
         saida[0]["proveniencia"]["status_conferencia"]
         == "identificacao_insuficiente"
     )
+
+
+@pytest.mark.asyncio
+async def test_falha_no_enriquecimento_remove_resultado_em_contexto_de_caso():
+    db = _FakeDB(error=RuntimeError("banco indisponível"))
+
+    saida = await rag_traceable.enriquecer_resultados_com_proveniencia(
+        db,
+        [
+            {
+                "chunk_id": "chunk-1",
+                "doc_id": "doc-1",
+                "titulo": "Documento",
+                "conteudo": "Trecho",
+                "score": 0.9,
+            }
+        ],
+        case_id_esperado="caso-1",
+    )
+
+    assert db.calls == 1
+    assert saida == []
 
 
 @pytest.mark.asyncio
