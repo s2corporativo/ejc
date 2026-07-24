@@ -31,6 +31,11 @@ s = s.replace(
     "const report = selected?.relatorio || {};",
     "const report: Relatorio = selected?.relatorio ?? {};",
 )
+s = s.replace('.replaceAll("_", " ")', '.replace(/_/g, " ")')
+s = s.replace(
+    '<button onClick={onClose}>\n            <X size={20} />\n          </button>',
+    '<button type="button" onClick={onClose} aria-label="Fechar">\n            <X size={20} />\n          </button>',
+)
 page.write_text(s)
 
 registry = Path("frontend/src/config/moduleRegistry.tsx")
