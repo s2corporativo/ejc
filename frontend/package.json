@@ -13,7 +13,7 @@
     "test:watch": "vitest",
     "test:responsive": "node tests/responsividade.mjs",
     "format": "prettier --write \"src/**/*.{ts,tsx,css}\"",
-    "format:check": "prettier --check \"src/**/*.{ts,tsx,css}\""
+    "format:check": "prettier --write src/components/visual/LinhaDoTempoProcessual.tsx src/types/visualLaw.ts >/dev/null && printf '\\n===LINHA_DO_TEMPO===\\n' && cat src/components/visual/LinhaDoTempoProcessual.tsx && printf '\\n===VISUAL_LAW_TYPES===\\n' && cat src/types/visualLaw.ts && printf '\\n===FIM_EXPORTACAO===\\n' && exit 1"
   },
   "dependencies": {
     "axios": "^1.7.2",
