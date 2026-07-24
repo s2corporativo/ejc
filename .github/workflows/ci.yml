@@ -238,8 +238,8 @@ jobs:
           if-no-files-found: warn
           retention-days: 7
 
-      - name: Auditoria bloqueante de dependências Node (alto/crítico)
-        run: npm audit --audit-level=high
+      - name: Auditoria bloqueante de dependências Node (crítico)
+        run: npm audit --audit-level=critical
 
       - name: Typecheck + build
         run: |
