@@ -20,6 +20,7 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
+          echo "Integração da Sala de Análise Jurídica iniciada"
           git fetch origin feat/sala-analise-juridica
           git show origin/feat/sala-analise-juridica:frontend/src/pages/SalaAnaliseJuridica.tsx > frontend/src/pages/SalaAnaliseJuridica.tsx
           python - <<'PY'
