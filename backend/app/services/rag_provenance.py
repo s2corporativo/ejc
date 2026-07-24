@@ -14,6 +14,7 @@ from typing import Any, Mapping
 from urllib.parse import urlparse
 
 from app.schemas.ai_proveniencia import (
+    NivelConfidencialidadeFonte,
     ProvenienciaJuridica,
     StatusConferenciaFonte,
     TipoFonteJuridica,
@@ -27,7 +28,19 @@ from app.services.ai.proveniencia import (
 StatusFonte = StatusConferenciaFonte
 
 _STATUS_VALIDOS = {status.value for status in StatusConferenciaFonte}
-_STATUS_VIGENCIA_CRITICA = {"revogada", "superada", "desatualizada", "nao_vigente"}
+_STATUS_VIGENCIA_CRITICA = {
+    "revogada",
+    "superada",
+    "desatualizada",
+    "nao_vigente",
+}
+_ORDEM_CONFIDENCIALIDADE = {
+    NivelConfidencialidadeFonte.PUBLICA: 0,
+    NivelConfidencialidadeFonte.INTERNA: 1,
+    NivelConfidencialidadeFonte.CONFIDENCIAL: 2,
+    NivelConfidencialidadeFonte.RESTRITA: 3,
+    NivelConfidencialidadeFonte.SEGREDO_JUSTICA: 4,
+}
 
 
 def _mapping(value: Any) -> Mapping[str, Any]:
@@ -83,7 +96,11 @@ def _url_http(value: Any) -> str | None:
     return texto if parsed.scheme in {"http", "https"} else None
 
 
-def _nome_arquivo(fonte: Any, titulo: Any, proveniencia: Mapping[str, Any]) -> str | None:
+def _nome_arquivo(
+    fonte: Any,
+    titulo: Any,
+    proveniencia: Mapping[str, Any],
+) -> str | None:
     explicito = _primeiro(
         proveniencia.get("nome_arquivo"),
         proveniencia.get("filename"),
@@ -103,7 +120,10 @@ def _nome_arquivo(fonte: Any, titulo: Any, proveniencia: Mapping[str, Any]) -> s
     return str(titulo) if titulo else None
 
 
-def _tipo_fonte(doc: Mapping[str, Any], prov: Mapping[str, Any]) -> TipoFonteJuridica:
+def _tipo_fonte(
+    doc: Mapping[str, Any],
+    prov: Mapping[str, Any],
+) -> TipoFonteJuridica:
     declarado = _enum_texto(
         _primeiro(prov.get("tipo_fonte"), prov.get("source_type"))
     )
@@ -115,6 +135,44 @@ def _tipo_fonte(doc: Mapping[str, Any], prov: Mapping[str, Any]) -> TipoFonteJur
     if doc.get("case_id"):
         return TipoFonteJuridica.DOCUMENTO_CASO
     return TipoFonteJuridica.OUTRA
+
+
+def _confidencialidade(
+    doc: Mapping[str, Any],
+    extra: Mapping[str, Any],
+    prov: Mapping[str, Any],
+) -> NivelConfidencialidadeFonte:
+    """Deriva o nível sem permitir rebaixamento do escopo RAG."""
+
+    base_rag = _enum_texto(doc.get("base_rag"))
+    if base_rag == "publica":
+        derivada = NivelConfidencialidadeFonte.PUBLICA
+    elif base_rag == "caso" or doc.get("case_id"):
+        derivada = NivelConfidencialidadeFonte.CONFIDENCIAL
+    else:
+        # ``escritorio`` e bases antigas sem classificação nunca nascem públicas.
+        derivada = NivelConfidencialidadeFonte.INTERNA
+
+    declarado = _enum_texto(
+        _primeiro(
+            prov.get("nivel_confidencialidade"),
+            prov.get("confidentiality"),
+            prov.get("confidentiality_level"),
+            extra.get("nivel_confidencialidade"),
+        )
+    )
+    if not declarado:
+        return derivada
+
+    try:
+        explicita = NivelConfidencialidadeFonte(declarado)
+    except ValueError:
+        return derivada
+
+    return max(
+        (derivada, explicita),
+        key=lambda nivel: _ORDEM_CONFIDENCIALIDADE[nivel],
+    )
 
 
 def _data_verificacao(
@@ -152,7 +210,9 @@ def avaliar_status_fonte(
         motivos.append("documento marcado como não vigente, revogado ou superado")
         return StatusConferenciaFonte.POSSIVELMENTE_DESATUALIZADA, motivos
 
-    if prov.get("fonte_localizada") is False or _bool(prov.get("nao_localizada")):
+    if prov.get("fonte_localizada") is False or _bool(
+        prov.get("nao_localizada")
+    ):
         motivos.append("a origem declarada não foi localizada")
         return StatusConferenciaFonte.NAO_LOCALIZADA, motivos
 
@@ -266,8 +326,11 @@ def normalizar_proveniencia(
         )
     )
     data_verificacao = _data_verificacao(doc, extra, prov)
+    nivel_confidencialidade = _confidencialidade(doc, extra, prov)
 
-    conteudo = str(_primeiro(chunk_map.get("conteudo"), chunk_map.get("trecho"), ""))
+    conteudo = str(
+        _primeiro(chunk_map.get("conteudo"), chunk_map.get("trecho"), "")
+    )
     trecho = conteudo.strip()
     if limite_trecho >= 0 and len(trecho) > limite_trecho:
         trecho = f"{trecho[:limite_trecho].rstrip()}…"
@@ -279,6 +342,7 @@ def normalizar_proveniencia(
         "chave_origem": doc.get("chave_origem"),
         "categoria": doc.get("categoria"),
         "tribunal": doc.get("tribunal"),
+        "base_rag": _enum_texto(doc.get("base_rag")) or None,
         "revisado": doc.get("revisado"),
         "atualizado_em": doc.get("atualizado_em"),
         "motivos_status": motivos,
@@ -291,6 +355,7 @@ def normalizar_proveniencia(
     fonte_canonica = ProvenienciaJuridica(
         tipo_fonte=tipo_fonte,
         status_conferencia=status,
+        nivel_confidencialidade=nivel_confidencialidade,
         nome_arquivo=_nome_arquivo(fonte, doc.get("titulo"), prov),
         documento_id=str(doc.get("id")) if doc.get("id") is not None else None,
         pagina=pagina,
