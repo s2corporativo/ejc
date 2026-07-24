@@ -91,8 +91,10 @@ export default function CaseContextBar() {
 
   if (!caso) return null;
 
-  const tabAtiva = new URLSearchParams(search).get("tab") || "resumo";
   const baseCaso = `/casos/${caso.id}`;
+  const rotaRaizDoCaso = pathname === baseCaso || pathname === `${baseCaso}/`;
+  const tabAtiva =
+    new URLSearchParams(search).get("tab") || (rotaRaizDoCaso ? "resumo" : "");
 
   return (
     <div className="border-b border-primary-200/60 bg-primary-50/95">
