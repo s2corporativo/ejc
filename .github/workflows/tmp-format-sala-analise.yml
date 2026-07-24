@@ -16,10 +16,8 @@ jobs:
           node-version: 20
           cache: npm
           cache-dependency-path: frontend/package-lock.json
-      - name: Integrar módulo independente e validar build
+      - name: Preparar módulo independente
         shell: bash
-        env:
-          GH_TOKEN: ${{ github.token }}
         run: |
           set -euo pipefail
           git fetch origin feat/sala-analise-juridica
@@ -29,8 +27,26 @@ jobs:
           cd frontend
           npm ci
           npx prettier --write src/pages/SalaAnaliseJuridica.tsx src/config/moduleRegistry.tsx
-          npm run build
-          cd ..
+      - name: Validar build
+        id: build
+        working-directory: frontend
+        shell: bash
+        run: |
+          set -o pipefail
+          npm run build 2>&1 | tee ../sala-build.log
+      - name: Publicar diagnóstico do build
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: sala-build-diagnostico
+          path: sala-build.log
+          if-no-files-found: warn
+          retention-days: 2
+      - name: Persistir integração na branch v2
+        if: success()
+        shell: bash
+        run: |
+          set -euo pipefail
           git config user.name 'EJC Automation'
           git config user.email 'actions@ejc.local'
           git add frontend/src/pages/SalaAnaliseJuridica.tsx frontend/src/config/moduleRegistry.tsx .github/workflows/tmp-integrate-sala-v2.yml
