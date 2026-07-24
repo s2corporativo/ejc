@@ -6,14 +6,17 @@ on:
       - feat/fase-1-timeline-unificada
 
 permissions:
-  contents: read
+  contents: write
 
 jobs:
-  format-export:
+  format-and-commit:
     runs-on: ubuntu-latest
     steps:
-      - name: Checkout
+      - name: Checkout branch
         uses: actions/checkout@v4
+        with:
+          ref: feat/fase-1-timeline-unificada
+          fetch-depth: 0
 
       - name: Setup Node
         uses: actions/setup-node@v4
@@ -34,13 +37,21 @@ jobs:
             src/components/visual/__tests__/LinhaDoTempoProcessual.test.tsx \
             src/types/visualLaw.ts
 
-      - name: Export formatted files
-        uses: actions/upload-artifact@v4
-        with:
-          name: fase1-prettier-output
-          path: |
-            frontend/src/components/visual/LinhaDoTempoProcessual.tsx
-            frontend/src/components/visual/__tests__/LinhaDoTempoProcessual.test.tsx
+      - name: Commit formatted output when needed
+        run: |
+          if git diff --quiet -- \
+            frontend/src/components/visual/LinhaDoTempoProcessual.tsx \
+            frontend/src/components/visual/__tests__/LinhaDoTempoProcessual.test.tsx \
+            frontend/src/types/visualLaw.ts; then
+            echo "Prettier não encontrou alterações."
+            exit 0
+          fi
+
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add \
+            frontend/src/components/visual/LinhaDoTempoProcessual.tsx \
+            frontend/src/components/visual/__tests__/LinhaDoTempoProcessual.test.tsx \
             frontend/src/types/visualLaw.ts
-          if-no-files-found: error
-          retention-days: 1
+          git commit -m "style(fase 1): aplicar Prettier"
+          git push origin HEAD:feat/fase-1-timeline-unificada
