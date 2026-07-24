@@ -1,11 +1,65 @@
 # ── Contrato canônico de proveniência para respostas e artefatos de IA ────────
 from __future__ import annotations
 
+from collections.abc import Mapping
 from datetime import datetime
 from enum import Enum
 from typing import Any
 
-from pydantic import BaseModel, ConfigDict, Field, model_validator
+from pydantic import (
+    BaseModel,
+    ConfigDict,
+    Field,
+    field_validator,
+    model_validator,
+)
+
+
+_CHAVES_METADADOS_PROIBIDAS = {
+    "client_id",
+    "tenant_id",
+    "user_id",
+    "owner_id",
+    "cpf",
+    "cnpj",
+    "rg",
+    "email",
+    "telefone",
+    "phone",
+    "address",
+    "endereco",
+}
+_FRAGMENTOS_SEGREDO = (
+    "token",
+    "secret",
+    "senha",
+    "password",
+    "api_key",
+    "apikey",
+    "authorization",
+    "cookie",
+)
+
+
+def _chave_metadado_sensivel(chave: Any) -> bool:
+    normalizada = str(chave).strip().lower()
+    return normalizada in _CHAVES_METADADOS_PROIBIDAS or any(
+        fragmento in normalizada for fragmento in _FRAGMENTOS_SEGREDO
+    )
+
+
+def _sanitizar_metadados(value: Any) -> Any:
+    """Remove identificadores pessoais e segredos de estruturas aninhadas."""
+
+    if isinstance(value, Mapping):
+        return {
+            str(chave): _sanitizar_metadados(item)
+            for chave, item in value.items()
+            if not _chave_metadado_sensivel(chave)
+        }
+    if isinstance(value, (list, tuple)):
+        return [_sanitizar_metadados(item) for item in value]
+    return value
 
 
 class StatusConferenciaFonte(str, Enum):
@@ -64,6 +118,12 @@ class ProvenienciaJuridica(BaseModel):
     inferencia_ia: bool = False
     metadados: dict[str, Any] = Field(default_factory=dict)
 
+    @field_validator("metadados", mode="before")
+    @classmethod
+    def minimizar_metadados(cls, value: Any) -> dict[str, Any]:
+        sanitizado = _sanitizar_metadados(value or {})
+        return sanitizado if isinstance(sanitizado, dict) else {}
+
     @model_validator(mode="after")
     def validar_rastreabilidade_minima(self) -> "ProvenienciaJuridica":
         identificadores = (
@@ -99,7 +159,10 @@ class ProvenienciaJuridica(BaseModel):
                 raise ValueError(
                     "Fonte confirmada deve registrar data_verificacao"
                 )
-            if self.tipo_fonte == TipoFonteJuridica.FONTE_OFICIAL and self.vigente is None:
+            if (
+                self.tipo_fonte == TipoFonteJuridica.FONTE_OFICIAL
+                and self.vigente is None
+            ):
                 raise ValueError(
                     "Fonte oficial confirmada deve informar o estado de vigência"
                 )
@@ -129,3 +192,24 @@ class RespostaJuridicaRastreavel(BaseModel):
     resumo_fontes: ResumoConfiabilidadeFontes
     pontos_validacao_humana: list[str] = Field(default_factory=list)
     aprovado_humano: bool = False
+    aprovado_por: str | None = Field(default=None, max_length=100)
+    aprovado_em: datetime | None = None
+    registro_aprovacao_id: str | None = Field(default=None, max_length=100)
+
+    @model_validator(mode="after")
+    def validar_aprovacao_auditavel(self) -> "RespostaJuridicaRastreavel":
+        if not self.aprovado_humano:
+            return self
+        if not (
+            self.aprovado_por
+            and self.aprovado_em
+            and self.registro_aprovacao_id
+        ):
+            raise ValueError(
+                "Aprovação humana exige responsável, data e registro de auditoria"
+            )
+        if self.resumo_fontes.bloqueantes:
+            raise ValueError(
+                "Resposta com fonte bloqueante não pode ser marcada como aprovada"
+            )
+        return self
