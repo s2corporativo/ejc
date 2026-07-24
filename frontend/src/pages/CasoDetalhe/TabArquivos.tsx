@@ -81,7 +81,11 @@ function ListaRemota({
   }, [endpoint]);
 
   if (loading) return <Spinner />;
-  if (erro) return <Empty message={`Não foi possível carregar ${titulo.toLowerCase()}`} />;
+  if (erro) {
+    return (
+      <Empty message={`Não foi possível carregar ${titulo.toLowerCase()}`} />
+    );
+  }
 
   return (
     <div className="space-y-4">
@@ -110,7 +114,7 @@ export default function TabArquivos({
         return (
           <ListaRemota
             titulo="Documentos"
-            endpoint={`/documents/?case_id=${caseId}`}
+            endpoint={`/documents/?case_id=${encodeURIComponent(caseId)}`}
             empty="Nenhum documento vinculado a este caso"
             renderItem={(documento) => (
               <button
@@ -144,7 +148,7 @@ export default function TabArquivos({
         return (
           <ListaRemota
             titulo="Contratos"
-            endpoint={`/contratos?case_id=${caseId}`}
+            endpoint={`/contratos?case_id=${encodeURIComponent(caseId)}`}
             empty="Nenhum contrato vinculado"
             renderItem={(contrato) => (
               <div className="card flex items-center justify-between p-3 text-sm">
@@ -159,10 +163,15 @@ export default function TabArquivos({
           />
         );
       case "procuracoes":
+        if (!clientId?.trim()) {
+          return (
+            <Empty message="O cliente do caso não foi identificado. As procurações não serão consultadas." />
+          );
+        }
         return (
           <ListaRemota
             titulo="Procurações"
-            endpoint={`/procuracoes/?client_id=${encodeURIComponent(clientId ?? "")}`}
+            endpoint={`/procuracoes/?client_id=${encodeURIComponent(clientId)}`}
             empty="Nenhuma procuração do cliente"
             renderItem={(procuracao) => (
               <div className="card flex items-center justify-between p-3 text-sm">
