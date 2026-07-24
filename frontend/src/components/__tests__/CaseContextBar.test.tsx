@@ -40,42 +40,37 @@ describe("CaseContextBar", () => {
   it("expõe cinco destinos canônicos do workspace do caso", () => {
     renderBar("/casos/case-1?tab=documentos");
 
-    expect(screen.getByRole("link", { name: "Visão" })).toHaveAttribute(
-      "href",
-      "/casos/case-1?tab=resumo",
-    );
-    expect(screen.getByRole("link", { name: "Atividades" })).toHaveAttribute(
-      "href",
-      "/casos/case-1?tab=timeline",
-    );
-    expect(screen.getByRole("link", { name: "Arquivos" })).toHaveAttribute(
-      "href",
-      "/casos/case-1?tab=documentos",
-    );
-    expect(screen.getByRole("link", { name: "Estratégia" })).toHaveAttribute(
-      "href",
-      "/casos/case-1?tab=teses",
-    );
-    expect(screen.getByRole("link", { name: "Financeiro" })).toHaveAttribute(
-      "href",
-      "/casos/case-1?tab=financeiro",
-    );
-    expect(screen.getByRole("link", { name: "Arquivos" })).toHaveAttribute(
-      "aria-current",
-      "page",
-    );
+    expect(
+      screen.getByRole("link", { name: "Visão" }).getAttribute("href"),
+    ).toBe("/casos/case-1?tab=resumo");
+    expect(
+      screen.getByRole("link", { name: "Atividades" }).getAttribute("href"),
+    ).toBe("/casos/case-1?tab=timeline");
+    expect(
+      screen.getByRole("link", { name: "Arquivos" }).getAttribute("href"),
+    ).toBe("/casos/case-1?tab=documentos");
+    expect(
+      screen.getByRole("link", { name: "Estratégia" }).getAttribute("href"),
+    ).toBe("/casos/case-1?tab=teses");
+    expect(
+      screen.getByRole("link", { name: "Financeiro" }).getAttribute("href"),
+    ).toBe("/casos/case-1?tab=financeiro");
+    expect(
+      screen.getByRole("link", { name: "Arquivos" }).getAttribute("aria-current"),
+    ).toBe("page");
   });
 
   it("marca somente Estratégia como ativa na rota irmã Sala de Guerra", async () => {
     renderBar("/casos/case-1/sala-de-guerra");
 
-    expect(screen.getByRole("link", { name: "Estratégia" })).toHaveAttribute(
-      "aria-current",
-      "page",
-    );
-    expect(screen.getByRole("link", { name: "Visão" })).not.toHaveAttribute(
-      "aria-current",
-    );
+    expect(
+      screen
+        .getByRole("link", { name: "Estratégia" })
+        .getAttribute("aria-current"),
+    ).toBe("page");
+    expect(
+      screen.getByRole("link", { name: "Visão" }).getAttribute("aria-current"),
+    ).toBeNull();
     await waitFor(() => expect(mocks.ativar).toHaveBeenCalledWith("case-1"));
   });
 
