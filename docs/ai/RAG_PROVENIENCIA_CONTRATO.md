@@ -21,6 +21,8 @@ mapeamento específico do corpus RAG.
 8. Fonte oficial confirmada também exige estado de vigência.
 9. Scores de retrieval são limitados ao intervalo `0..1` antes de preencher
    `confianca_extracao`.
+10. A classificação de sigilo nunca pode ser menos restritiva que o escopo
+    definido em `base_rag`.
 
 ## Estados de conferência
 
@@ -35,6 +37,24 @@ O adaptador utiliza diretamente `StatusConferenciaFonte`:
 A ordem é fail-safe. Não vigência e fonte não localizada prevalecem sobre qualquer
 marcação anterior de revisão.
 
+## Confidencialidade derivada
+
+O campo existente `knowledge_docs.base_rag` é a fonte mínima de classificação:
+
+| `base_rag` | Confidencialidade mínima |
+|---|---|
+| `publica` | `publica` |
+| `escritorio` | `interna` |
+| `caso` | `confidencial` |
+
+Quando `case_id` existe, a classificação mínima também é `confidencial`, mesmo em
+registro legado sem `base_rag`. Uma classificação explícita em
+`extra["proveniencia"]["nivel_confidencialidade"]` pode aumentar o sigilo para
+`restrita` ou `segredo_justica`, mas nunca rebaixá-lo para `publica`.
+
+Essa derivação não substitui autorização, RBAC, filtro por cliente/caso ou
+segregação física/lógica do corpus.
+
 ## Mapeamento principal
 
 | Origem RAG | Campo canônico |
@@ -45,6 +65,7 @@ marcação anterior de revisão.
 | metadado real do chunk | `pagina` |
 | conteúdo recuperado | `trecho` |
 | `case_id` | `case_id` |
+| `base_rag` + sigilo explícito | `nivel_confidencialidade` |
 | data explicitamente declarada | `data_documento` |
 | data de revisão/conferência | `data_verificacao` |
 | `versao` | `versao_documento` |
@@ -58,6 +79,7 @@ Campos específicos do RAG ficam em `metadados`, incluindo:
 - `chave_origem`;
 - `categoria`;
 - `tribunal`;
+- `base_rag`;
 - `revisado`;
 - `atualizado_em`;
 - motivos da classificação.
@@ -70,6 +92,7 @@ Metadados adicionais podem permanecer em `extra["proveniencia"]`, sem migration:
 {
   "proveniencia": {
     "tipo_fonte": "fonte_oficial",
+    "nivel_confidencialidade": "publica",
     "nome_arquivo": "acordao.pdf",
     "pagina": 8,
     "data_documento": "2026-06-20",
