@@ -1,16 +1,14 @@
 name: Temporary Format Sala Analise
 
 on:
-  push:
-    branches:
-      - feat/sala-analise-juridica
+  pull_request:
 
 permissions:
   contents: read
 
 jobs:
   format:
-    runs-on: self-hosted
+    runs-on: [self-hosted, ejc-vps]
     steps:
       - uses: actions/checkout@v7
       - uses: actions/setup-node@v6
