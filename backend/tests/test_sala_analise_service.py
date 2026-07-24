@@ -3,6 +3,7 @@ from types import SimpleNamespace
 from app.services.sala_analise_service import (
     _extrair_json,
     _normalizar_estado,
+    _sincronizar_relatorio_para_conversao,
     estado_inicial,
 )
 
@@ -57,10 +58,64 @@ def test_normalizar_estado_preserva_chaves_anteriores_e_limita_campos():
         "tese_adversa": [],
         "visao_julgador": "pendente",
     }
-    estado = _normalizar_estado({"riscos": [{"texto": "risco novo"}], "campo_injetado": "x"}, anterior)
+    estado = _normalizar_estado(
+        {"riscos": [{"texto": "risco novo"}], "campo_injetado": "x"},
+        anterior,
+    )
 
     assert estado["versao"] == 3
     assert estado["fatos"] == anterior["fatos"]
     assert estado["riscos"] == [{"texto": "risco novo"}]
     assert "campo_injetado" not in estado
     assert estado["revisao_humana_obrigatoria"] is True
+
+
+def test_normalizar_estado_nao_apaga_fatos_por_array_vazio_da_ia():
+    anterior = {
+        "versao": 1,
+        "sintese_atual": "síntese",
+        "fatos": [{"texto": "fato confirmado", "classificacao": "comprovado"}],
+        "provas": [],
+        "contradicoes": [],
+        "questoes_juridicas": [],
+        "riscos": [],
+        "documentos_pendentes": [],
+        "proximos_passos": [],
+        "tese_favoravel": [],
+        "tese_adversa": [],
+        "visao_julgador": "pendente",
+    }
+
+    estado = _normalizar_estado({"fatos": []}, anterior)
+
+    assert estado["fatos"] == anterior["fatos"]
+
+
+def test_estado_conversacional_e_projetado_no_relatorio_legado_de_conversao():
+    analise = _analise({"sintese_executiva": "versão documental original"})
+    estado = {
+        "versao": 4,
+        "atualizado_em": "2026-07-24T12:00:00+00:00",
+        "sintese_atual": "síntese consolidada pelo advogado",
+        "fatos": [{"texto": "local DF-345", "classificacao": "comprovado"}],
+        "provas": [{"texto": "boletim", "forca": "media"}],
+        "contradicoes": [{"texto": "GO-020 x DF-345", "impacto": "critico"}],
+        "questoes_juridicas": [{"texto": "legitimidade", "status": "pendente"}],
+        "riscos": [
+            {"texto": "réu incorreto", "nivel": "critico"},
+            {"texto": "dano moral fraco", "nivel": "moderado"},
+        ],
+        "documentos_pendentes": [{"texto": "laudo", "criticidade": "alta"}],
+        "proximos_passos": [{"texto": "solicitar certidão", "prioridade": "imediata"}],
+        "tese_favoravel": ["erro de sinalização"],
+        "tese_adversa": ["culpa concorrente"],
+        "visao_julgador": "necessária instrução",
+    }
+
+    _sincronizar_relatorio_para_conversao(analise, estado)
+
+    assert analise.relatorio["sintese_executiva"] == "síntese consolidada pelo advogado"
+    assert analise.relatorio["fatos_provas"] == estado["fatos"]
+    assert analise.relatorio["proximos_passos"] == estado["proximos_passos"]
+    assert analise.relatorio["risco_nivel"] == "critico"
+    assert analise.relatorio["revisao_humana_obrigatoria"] is True
