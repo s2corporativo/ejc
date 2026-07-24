@@ -7,6 +7,7 @@ from app.schemas.ai_proveniencia import (
     ProvenienciaJuridica,
     RespostaJuridicaRastreavel,
     ResumoConfiabilidadeFontes,
+    StatusConferenciaFonte,
     TipoFonteJuridica,
 )
 
@@ -59,10 +60,36 @@ def test_aprovacao_humana_exige_evidencia_de_auditoria() -> None:
     assert resposta.registro_aprovacao_id == "audit-1"
 
 
+def test_resumo_falsificado_e_rejeitado() -> None:
+    fonte = ProvenienciaJuridica(
+        tipo_fonte=TipoFonteJuridica.OUTRA,
+        nome_arquivo="fonte-nao-localizada.pdf",
+        status_conferencia=StatusConferenciaFonte.NAO_LOCALIZADA,
+    )
+
+    with pytest.raises(ValidationError):
+        RespostaJuridicaRastreavel(
+            conteudo="Resposta com resumo manual divergente.",
+            fontes=[fonte],
+            resumo_fontes=ResumoConfiabilidadeFontes(
+                total=1,
+                confirmadas=1,
+                bloqueantes=0,
+            ),
+        )
+
+
 def test_fonte_bloqueante_impede_marcacao_como_aprovada() -> None:
+    fonte = ProvenienciaJuridica(
+        tipo_fonte=TipoFonteJuridica.OUTRA,
+        nome_arquivo="fonte-nao-localizada.pdf",
+        status_conferencia=StatusConferenciaFonte.NAO_LOCALIZADA,
+    )
+
     with pytest.raises(ValidationError):
         RespostaJuridicaRastreavel(
             conteudo="Resposta que ainda depende de conferência.",
+            fontes=[fonte],
             resumo_fontes=ResumoConfiabilidadeFontes(
                 total=1,
                 nao_localizadas=1,
