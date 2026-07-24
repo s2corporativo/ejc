@@ -1,0 +1,46 @@
+name: Temporary Format Phase 1
+
+on:
+  push:
+    branches:
+      - feat/fase-1-timeline-unificada
+
+permissions:
+  contents: read
+
+jobs:
+  format-export:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
+
+      - name: Install frontend dependencies
+        working-directory: frontend
+        run: npm ci
+
+      - name: Format Phase 1 files
+        working-directory: frontend
+        run: |
+          npx prettier --write \
+            src/components/visual/LinhaDoTempoProcessual.tsx \
+            src/components/visual/__tests__/LinhaDoTempoProcessual.test.tsx \
+            src/types/visualLaw.ts
+
+      - name: Export formatted files
+        uses: actions/upload-artifact@v4
+        with:
+          name: fase1-prettier-output
+          path: |
+            frontend/src/components/visual/LinhaDoTempoProcessual.tsx
+            frontend/src/components/visual/__tests__/LinhaDoTempoProcessual.test.tsx
+            frontend/src/types/visualLaw.ts
+          if-no-files-found: error
+          retention-days: 1
