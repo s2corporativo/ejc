@@ -43,7 +43,10 @@ const AREA_LABEL: Record<string, string> = {
 
 type FuncionalGrupo = "analisar" | "produzir" | "revisar" | "preparar";
 
-const FUNCIONAL_LABELS: Record<FuncionalGrupo, { label: string; icon: string }> = {
+const FUNCIONAL_LABELS: Record<
+  FuncionalGrupo,
+  { label: string; icon: string }
+> = {
   analisar: { label: "Analisar", icon: "🔍" },
   produzir: { label: "Produzir", icon: "✍️" },
   revisar: { label: "Revisar", icon: "📋" },
@@ -52,33 +55,87 @@ const FUNCIONAL_LABELS: Record<FuncionalGrupo, { label: string; icon: string }> 
 
 const _GRUPO_KEYWORDS: Record<FuncionalGrupo, string[]> = {
   analisar: [
-    "raio-x", "raiox", "analise", "analisar", "resumo", "resumir",
-    "cronologia", "extrair", "identificar", "localizar", "avaliar",
-    "casador", "detector", "auditor", "provas", "inconsist",
-    "risc", "dossie", "score", "checklist",
+    "raio-x",
+    "raiox",
+    "analise",
+    "analisar",
+    "resumo",
+    "resumir",
+    "cronologia",
+    "extrair",
+    "identificar",
+    "localizar",
+    "avaliar",
+    "casador",
+    "detector",
+    "auditor",
+    "provas",
+    "inconsist",
+    "risc",
+    "dossie",
+    "score",
+    "checklist",
   ],
   produzir: [
-    "peticao", "contestacao", "replica", "recurso", "contrato",
-    "parecer", "notificacao", "procuracao", "relatorio", "redigir",
-    "gerar", "minuta", "peca", "embargos", "agravo", "apelacao",
-    "mandado", "habeas", "cumprimento",
+    "peticao",
+    "contestacao",
+    "replica",
+    "recurso",
+    "contrato",
+    "parecer",
+    "notificacao",
+    "procuracao",
+    "relatorio",
+    "redigir",
+    "gerar",
+    "minuta",
+    "peca",
+    "embargos",
+    "agravo",
+    "apelacao",
+    "mandado",
+    "habeas",
+    "cumprimento",
   ],
   revisar: [
-    "corrigir", "conferir", "revisar", "verificar", "coerenc",
-    "fundament", "linguagem", "calculo", "valor", "ausente",
-    "contradicao", "jurisprudenc",
+    "corrigir",
+    "conferir",
+    "revisar",
+    "verificar",
+    "coerenc",
+    "fundament",
+    "linguagem",
+    "calculo",
+    "valor",
+    "ausente",
+    "contradicao",
+    "jurisprudenc",
   ],
   preparar: [
-    "audiencia", "reuniao", "negociacao", "sustentacao", "diligencia",
-    "checklist", "preparar", "estrateg", "defesa", "orient",
+    "audiencia",
+    "reuniao",
+    "negociacao",
+    "sustentacao",
+    "diligencia",
+    "checklist",
+    "preparar",
+    "estrateg",
+    "defesa",
+    "orient",
   ],
 };
 
-function classificarGrupo(skill: { name: string; description?: string | null }): FuncionalGrupo {
+function classificarGrupo(skill: {
+  name: string;
+  description?: string | null;
+}): FuncionalGrupo {
   const texto = `${skill.name} ${skill.description || ""}`.toLowerCase();
   let melhor: FuncionalGrupo = "produzir";
   let melhorScore = 0;
-  for (const [grupo, keywords] of Object.entries(_GRUPO_KEYWORDS) as [FuncionalGrupo, string[]][]) {
+  for (const [grupo, keywords] of Object.entries(_GRUPO_KEYWORDS) as [
+    FuncionalGrupo,
+    string[],
+  ][]) {
     const score = keywords.filter((kw) => texto.includes(kw)).length;
     if (score > melhorScore) {
       melhorScore = score;
@@ -256,10 +313,14 @@ export default function FerramentasIA() {
           </div>
 
           <div className="mt-3 flex gap-1 rounded-lg bg-slate-100 p-1">
-            {([
-              ["todos", "Todos"],
-              ...Object.entries(FUNCIONAL_LABELS).map(([k, v]) => [k, `${v.icon} ${v.label}`] as const),
-            ] as const).map(([val, lbl]) => (
+            {(
+              [
+                ["todos", "Todos"],
+                ...Object.entries(FUNCIONAL_LABELS).map(
+                  ([k, v]) => [k, `${v.icon} ${v.label}`] as const,
+                ),
+              ] as const
+            ).map(([val, lbl]) => (
               <button
                 key={val}
                 type="button"
@@ -307,7 +368,8 @@ export default function FerramentasIA() {
               >
                 <span className="block text-[11px] font-semibold uppercase tracking-wide text-slate-500">
                   {FUNCIONAL_LABELS[classificarGrupo(skill)].icon}{" "}
-                  {FUNCIONAL_LABELS[classificarGrupo(skill)].label} · {AREA_LABEL[skill.area] || skill.area}
+                  {FUNCIONAL_LABELS[classificarGrupo(skill)].label} ·{" "}
+                  {AREA_LABEL[skill.area] || skill.area}
                 </span>
                 <span className="mt-0.5 block text-sm font-semibold text-slate-800">
                   {skill.display_name}

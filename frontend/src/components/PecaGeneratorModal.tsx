@@ -538,7 +538,9 @@ export default function PecaGeneratorModal({
     const instrucoesComModo = [
       instrucoes || null,
       `[modo_producao=${modo}]`,
-      isGuiado ? `[campos_guiados=${Object.keys(respostasGuiadas).filter((k) => (respostasGuiadas[k] || "").trim()).length}]` : null,
+      isGuiado
+        ? `[campos_guiados=${Object.keys(respostasGuiadas).filter((k) => (respostasGuiadas[k] || "").trim()).length}]`
+        : null,
     ]
       .filter(Boolean)
       .join(" | ");
@@ -776,10 +778,30 @@ export default function PecaGeneratorModal({
                 <div className="flex gap-1 rounded-xl bg-slate-100 p-1">
                   {(
                     [
-                      { id: "livre", label: "Livre", icon: <PenLine size={14} />, desc: "Campos abertos" },
-                      { id: "guiado", label: "Guiado", icon: <ListOrdered size={14} />, desc: "Passo a passo" },
-                      { id: "molde", label: "Molde", icon: <CopyPlus size={14} />, desc: "Espelhar peça" },
-                      { id: "agente", label: "Agente", icon: <Bot size={14} />, desc: "10 etapas" },
+                      {
+                        id: "livre",
+                        label: "Livre",
+                        icon: <PenLine size={14} />,
+                        desc: "Campos abertos",
+                      },
+                      {
+                        id: "guiado",
+                        label: "Guiado",
+                        icon: <ListOrdered size={14} />,
+                        desc: "Passo a passo",
+                      },
+                      {
+                        id: "molde",
+                        label: "Molde",
+                        icon: <CopyPlus size={14} />,
+                        desc: "Espelhar peça",
+                      },
+                      {
+                        id: "agente",
+                        label: "Agente",
+                        icon: <Bot size={14} />,
+                        desc: "10 etapas",
+                      },
                     ] as const
                   ).map((m) => (
                     <button
@@ -799,10 +821,18 @@ export default function PecaGeneratorModal({
                   ))}
                 </div>
                 <p className="text-[11px] text-slate-400 mt-1.5">
-                  {modo === "livre" && "Preencha os campos livremente — a IA interpreta sua redação."},
-                  {modo === "guiado" && "Formulário estruturado por tipo de peça — cada campo alimenta uma etapa específica."},
-                  {modo === "molde" && "Selecione uma peça existente como modelo para espelhar estrutura e estilo."},
-                  {modo === "agente" && "Pipeline completo com 10 etapas — o agente executa busca, análise e síntese autonomamente."},
+                  {modo === "livre" &&
+                    "Preencha os campos livremente — a IA interpreta sua redação."}
+                  ,
+                  {modo === "guiado" &&
+                    "Formulário estruturado por tipo de peça — cada campo alimenta uma etapa específica."}
+                  ,
+                  {modo === "molde" &&
+                    "Selecione uma peça existente como modelo para espelhar estrutura e estilo."}
+                  ,
+                  {modo === "agente" &&
+                    "Pipeline completo com 10 etapas — o agente executa busca, análise e síntese autonomamente."}
+                  ,
                 </p>
               </div>
 
@@ -846,8 +876,8 @@ export default function PecaGeneratorModal({
                 <div className="rounded-xl border border-dashed border-slate-300 bg-slate-50 px-4 py-6 text-center text-sm text-slate-500">
                   <CopyPlus size={24} className="mx-auto mb-2 text-slate-400" />
                   <p>
-                    Selecione uma peça existente no passo seguinte para usar como
-                    modelo. A IA manterá a estrutura e estilo do molde.
+                    Selecione uma peça existente no passo seguinte para usar
+                    como modelo. A IA manterá a estrutura e estilo do molde.
                   </p>
                 </div>
               ) : modo === "agente" ? (
@@ -855,12 +885,12 @@ export default function PecaGeneratorModal({
                   <Bot size={24} className="mx-auto mb-2 text-ai-400" />
                   <p>
                     O agente executará 10 etapas automaticamente: Extração →
-                    Classificação → Tese → Precedentes → Fundamentação →
-                    Pedidos → Estrutura → Redação → Revisão → Versão Final.
+                    Classificação → Tese → Precedentes → Fundamentação → Pedidos
+                    → Estrutura → Redação → Revisão → Versão Final.
                   </p>
                   <p className="mt-1 text-xs text-ai-500">
-                    Preencha os campos abaixo com as informações básicas — o agente
-                    irá expandir e enriquecer cada seção.
+                    Preencha os campos abaixo com as informações básicas — o
+                    agente irá expandir e enriquecer cada seção.
                   </p>
                 </div>
               ) : null}
@@ -869,7 +899,8 @@ export default function PecaGeneratorModal({
                 <>
                   <div>
                     <label className="block text-xs font-medium text-slate-600 mb-1">
-                      Descrição dos fatos <span className="text-danger-400">*</span>
+                      Descrição dos fatos{" "}
+                      <span className="text-danger-400">*</span>
                       <span className="text-slate-400 font-normal ml-1">
                         mín. 50 caracteres
                       </span>
@@ -983,7 +1014,13 @@ export default function PecaGeneratorModal({
                 <p className="text-xs text-slate-400">
                   {tipoLabel(tipoPeca)} · {areaLabel(areaDireito)}
                   <span className="ml-2 inline-flex items-center rounded-md bg-ai-50 px-1.5 py-0.5 text-[10px] font-medium text-ai-700 ring-1 ring-inset ring-ai-200">
-                    {modo === "livre" ? "Livre" : modo === "guiado" ? "Guiado" : modo === "molde" ? "Molde" : "Agente"}
+                    {modo === "livre"
+                      ? "Livre"
+                      : modo === "guiado"
+                        ? "Guiado"
+                        : modo === "molde"
+                          ? "Molde"
+                          : "Agente"}
                   </span>
                 </p>
               </div>
@@ -1082,7 +1119,14 @@ export default function PecaGeneratorModal({
                       </Badge>
                     )}
                     <span className="inline-flex items-center rounded-md bg-ai-50 px-1.5 py-0.5 text-[10px] font-medium text-ai-700 ring-1 ring-inset ring-ai-200">
-                      Modo: {modo === "livre" ? "Livre" : modo === "guiado" ? "Guiado" : modo === "molde" ? "Molde" : "Agente"}
+                      Modo:{" "}
+                      {modo === "livre"
+                        ? "Livre"
+                        : modo === "guiado"
+                          ? "Guiado"
+                          : modo === "molde"
+                            ? "Molde"
+                            : "Agente"}
                     </span>
                   </div>
                   <div className="text-xs text-green-600">

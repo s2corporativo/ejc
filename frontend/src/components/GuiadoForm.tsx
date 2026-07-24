@@ -2,36 +2,80 @@ import { useMemo } from "react";
 
 /** Campos guiados por tipo de peça — fonte: peca_workflow_service._CAMPOS_GUIADOS */
 const CAMPOS_GUIADOS: Record<string, string[]> = {
-  peticao_inicial: ["partes", "fatos", "pretensao", "competencia", "provas", "pedidos"],
-  contestacao: [
-    "autor", "reu", "pretensao_autor", "fatos_impugnados",
-    "preliminares", "provas_defesa", "prescricao_decadencia",
-    "possibilidade_acordo", "pedidos",
+  peticao_inicial: [
+    "partes",
+    "fatos",
+    "pretensao",
+    "competencia",
+    "provas",
+    "pedidos",
   ],
-  replica: ["sintese_contestacao", "preliminares_impugnadas", "fatos_novos", "provas", "pedidos"],
+  contestacao: [
+    "autor",
+    "reu",
+    "pretensao_autor",
+    "fatos_impugnados",
+    "preliminares",
+    "provas_defesa",
+    "prescricao_decadencia",
+    "possibilidade_acordo",
+    "pedidos",
+  ],
+  replica: [
+    "sintese_contestacao",
+    "preliminares_impugnadas",
+    "fatos_novos",
+    "provas",
+    "pedidos",
+  ],
   apelacao: [
-    "decisao_recorrida", "capitulos_impugnados", "tempestividade",
-    "preparo_gratuidade", "razoes_reforma_anulacao", "pedidos",
+    "decisao_recorrida",
+    "capitulos_impugnados",
+    "tempestividade",
+    "preparo_gratuidade",
+    "razoes_reforma_anulacao",
+    "pedidos",
   ],
   agravo: [
-    "decisao_agravada", "cabimento", "tempestividade",
-    "urgencia_recursal", "razoes_reforma", "pedidos",
+    "decisao_agravada",
+    "cabimento",
+    "tempestividade",
+    "urgencia_recursal",
+    "razoes_reforma",
+    "pedidos",
   ],
   recurso_ordinario: [
-    "sentenca_recorrida", "capitulos_impugnados", "tempestividade",
-    "preparo", "razoes_reforma", "pedidos",
+    "sentenca_recorrida",
+    "capitulos_impugnados",
+    "tempestividade",
+    "preparo",
+    "razoes_reforma",
+    "pedidos",
   ],
   contrato: [
-    "partes", "objeto", "obrigacoes", "valores_pagamento",
-    "prazo_vigencia", "rescisao", "foro",
+    "partes",
+    "objeto",
+    "obrigacoes",
+    "valores_pagamento",
+    "prazo_vigencia",
+    "rescisao",
+    "foro",
   ],
   notificacao: [
-    "notificante", "notificado", "fatos", "obrigacao_exigida",
-    "prazo_cumprimento", "consequencias_inadimplemento",
+    "notificante",
+    "notificado",
+    "fatos",
+    "obrigacao_exigida",
+    "prazo_cumprimento",
+    "consequencias_inadimplemento",
   ],
   parecer: [
-    "consulente", "quesitos", "fatos_documentos", "premissas",
-    "riscos", "conclusao_solicitada",
+    "consulente",
+    "quesitos",
+    "fatos_documentos",
+    "premissas",
+    "riscos",
+    "conclusao_solicitada",
   ],
 };
 const FALLBACK_CAMPOS = ["partes", "fatos", "provas", "pedidos"];
@@ -94,7 +138,8 @@ const CAMPO_PLACEHOLDER: Record<string, string> = {
   autor: "Nome completo ou Razão Social do autor",
   reu: "Nome completo ou Razão Social do réu",
   preliminares: "Ex.: Incompetência, ilegitimidade, carência da ação...",
-  prescricao_decadencia: "Prazo prescricional, termo inicial, causa interruptiva...",
+  prescricao_decadencia:
+    "Prazo prescricional, termo inicial, causa interruptiva...",
   decisao_recorrida: "Ementa ou resumo da decisão atacada...",
   capitulos_impugnados: "Quais pontos da sentença são combatidos...",
   objeto: "Objeto principal do contrato...",
@@ -119,14 +164,21 @@ export default function GuiadoForm({ tipoPeca, respostas, onChange }: Props) {
     [tipoPeca],
   );
 
-  const preenchidos = campos.filter((c) => (respostas[c] || "").trim().length > 0);
-  const progresso = campos.length > 0 ? Math.round((preenchidos.length / campos.length) * 100) : 0;
+  const preenchidos = campos.filter(
+    (c) => (respostas[c] || "").trim().length > 0,
+  );
+  const progresso =
+    campos.length > 0
+      ? Math.round((preenchidos.length / campos.length) * 100)
+      : 0;
 
   return (
     <div className="space-y-3">
       <div className="flex items-center justify-between text-xs text-slate-500">
         <span>Formulário guiado — {campos.length} campos</span>
-        <span className={progresso === 100 ? "font-semibold text-green-600" : ""}>
+        <span
+          className={progresso === 100 ? "font-semibold text-green-600" : ""}
+        >
           {preenchidos.length}/{campos.length} preenchidos
         </span>
       </div>
@@ -144,7 +196,9 @@ export default function GuiadoForm({ tipoPeca, respostas, onChange }: Props) {
         <div key={campo}>
           <label className="label text-xs">
             {CAMPO_LABEL[campo] || campo.replace(/_/g, " ")}
-            {(campo === "fatos" || campo === "pedidos" || campo === "pretensao") && (
+            {(campo === "fatos" ||
+              campo === "pedidos" ||
+              campo === "pretensao") && (
               <span className="ml-1 text-danger-500">*</span>
             )}
           </label>
@@ -153,14 +207,18 @@ export default function GuiadoForm({ tipoPeca, respostas, onChange }: Props) {
             className="input w-full text-sm"
             value={respostas[campo] || ""}
             onChange={(e) => onChange(campo, e.target.value)}
-            placeholder={CAMPO_PLACEHOLDER[campo] || `Informe ${campo.replace(/_/g, " ")}...`}
+            placeholder={
+              CAMPO_PLACEHOLDER[campo] ||
+              `Informe ${campo.replace(/_/g, " ")}...`
+            }
           />
         </div>
       ))}
 
       {progresso < 100 && (
         <p className="text-[11px] text-amber-600">
-          Campos obrigatórios marcados com * devem ser preenchidos antes de gerar a peça no modo guiado.
+          Campos obrigatórios marcados com * devem ser preenchidos antes de
+          gerar a peça no modo guiado.
         </p>
       )}
     </div>
