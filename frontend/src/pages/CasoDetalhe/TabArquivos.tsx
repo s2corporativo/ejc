@@ -31,15 +31,19 @@ interface ListaRemotaProps {
 
 async function baixarDocumento(docId: string, filename: string) {
   try {
-    const response = await api.get(`/documents/${docId}/download`, {
-      responseType: "blob",
-    });
+    const response = await api.get(
+      `/documents/${encodeURIComponent(docId)}/download`,
+      { responseType: "blob" },
+    );
     const url = URL.createObjectURL(response.data);
     const anchor = document.createElement("a");
     anchor.href = url;
     anchor.download = filename || "documento";
+    anchor.hidden = true;
+    document.body.appendChild(anchor);
     anchor.click();
-    URL.revokeObjectURL(url);
+    anchor.remove();
+    window.setTimeout(() => URL.revokeObjectURL(url), 0);
   } catch {
     toast.error("Não foi possível baixar o documento.");
   }
@@ -108,13 +112,15 @@ export default function TabArquivos({
   secaoAtiva,
   onSecaoChange,
 }: TabArquivosProps) {
+  const caseIdSeguro = encodeURIComponent(caseId);
+
   const renderConteudo = () => {
     switch (secaoAtiva) {
       case "documentos":
         return (
           <ListaRemota
             titulo="Documentos"
-            endpoint={`/documents/?case_id=${encodeURIComponent(caseId)}`}
+            endpoint={`/documents/?case_id=${caseIdSeguro}`}
             empty="Nenhum documento vinculado a este caso"
             renderItem={(documento) => (
               <button
@@ -148,7 +154,7 @@ export default function TabArquivos({
         return (
           <ListaRemota
             titulo="Contratos"
-            endpoint={`/contratos?case_id=${encodeURIComponent(caseId)}`}
+            endpoint={`/contratos?case_id=${caseIdSeguro}`}
             empty="Nenhum contrato vinculado"
             renderItem={(contrato) => (
               <div className="card flex items-center justify-between p-3 text-sm">
@@ -201,7 +207,7 @@ export default function TabArquivos({
         </div>
         {secaoAtiva === "documentos" && (
           <Link
-            to={`/documentos?caso=${caseId}`}
+            to={`/documentos?caso=${caseIdSeguro}`}
             className="btn-secondary self-start text-xs"
           >
             Anexar documento
