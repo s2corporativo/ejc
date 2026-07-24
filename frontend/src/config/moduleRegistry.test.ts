@@ -62,6 +62,15 @@ describe("moduleRegistry", () => {
     );
   });
 
+  it("mantém o Raio-X acessível sem duplicar a entrada da Sala no menu", () => {
+    const advogado = getProductionNavigation("advogado");
+    const raioX = STAFF_ROUTES.find((item) => item.path === "/raio-x");
+    expect(canRoleAccessPath("advogado", "/raio-x")).toBe(true);
+    expect(raioX?.showInNav).toBe(false);
+    expect(advogado.some((item) => item.path === "/raio-x")).toBe(false);
+    expect(advogado.some((item) => item.path === "/sala-analise")).toBe(true);
+  });
+
   it("mantém preferências pessoais acessíveis a qualquer usuário interno", () => {
     expect(canRoleAccessPath("advogado", "/configuracoes")).toBe(true);
     expect(canRoleAccessPath("admin", "/configuracoes")).toBe(true);
