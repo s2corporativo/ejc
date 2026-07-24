@@ -188,6 +188,44 @@ def chunk_texto(
     return chunks
 
 
+def chunk_texto_com_paginas(
+    paginas: list[dict], tamanho: int = CHUNK_TAMANHO, overlap: int = CHUNK_OVERLAP
+) -> list[tuple[str, int]]:
+    """Divide texto por página em chunks com rastreabilidade de página.
+
+    Cada item de ``paginas`` deve ter {"pagina": int, "texto": str}.
+    Retorna lista de (chunk_texto, pagina_numero) preservando a origem.
+    """
+    resultado: list[tuple[str, int]] = []
+    for pag in paginas:
+        num = pag.get("pagina", 0)
+        txt = normalizar(pag.get("texto", ""))
+        if not txt:
+            continue
+        if len(txt) <= tamanho:
+            resultado.append((txt, num))
+            continue
+        ini = 0
+        n = len(txt)
+        while ini < n:
+            fim = min(ini + tamanho, n)
+            if fim < n:
+                janela = txt[ini:fim]
+                corte = max(
+                    janela.rfind(". "), janela.rfind(".\n"),
+                    janela.rfind("\n\n"), janela.rfind("; "),
+                )
+                if corte > tamanho * 0.5:
+                    fim = ini + corte + 1
+            trecho = txt[ini:fim].strip()
+            if trecho:
+                resultado.append((trecho, num))
+            if fim >= n:
+                break
+            ini = max(fim - overlap, ini + 1)
+    return resultado
+
+
 def _sha1(s: str) -> str:
     return hashlib.sha1(s.encode("utf-8")).hexdigest()
 
@@ -224,6 +262,7 @@ async def upsert_documento(
     confianca: str | None = None,
     embutir_vetores: bool = True,
     chunks: list[str] | None = None,
+    paginas: list[dict] | None = None,
     forcar_nova_versao: bool = False,
 ) -> str:
     """Insere/atualiza um documento com versionamento e isolamento por cliente.
@@ -279,14 +318,18 @@ async def upsert_documento(
         existente.atualizado_em = agora
         return "inalterado"
 
-    if chunks is None:
-        chunks = chunk_texto(conteudo)
-    else:
+    if chunks is not None:
         chunks = [normalizar(c) for c in chunks if c and c.strip()]
         if not chunks:
             chunks = chunk_texto(conteudo)
-    # embutir_vetores=False → vetorização adiada.
-    vetores = await gerar_embeddings(chunks) if embutir_vetores else None
+        chunks_com_pagina = [(c, None) for c in chunks]
+    elif paginas:
+        chunks_com_pagina = chunk_texto_com_paginas(paginas)
+    else:
+        chunks_com_pagina = [(c, None) for c in chunk_texto(conteudo)]
+
+    textos = [c[0] for c in chunks_com_pagina]
+    vetores = await gerar_embeddings(textos) if embutir_vetores else None
     status_novo = "indexado" if vetores else "pendente"
 
     if existente:
@@ -325,10 +368,11 @@ async def upsert_documento(
         await db.flush()   # FK: doc antes dos chunks
         resultado = "novo"
 
-    for i, c in enumerate(chunks):
+    for i, (c, pagina) in enumerate(chunks_com_pagina):
         db.add(KnowledgeChunk(
             id=str(uuid4()), doc_id=doc_id, chunk_index=i, conteudo=c,
             embedding=vetores[i] if vetores else None,
+            pagina=pagina,
         ))
     return resultado
 

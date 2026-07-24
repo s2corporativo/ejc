@@ -19,7 +19,11 @@ import {
   ChevronUp,
   ShieldAlert,
   ShieldCheck,
+  PenLine,
+  CopyPlus,
+  Bot,
 } from "lucide-react";
+import GuiadoForm from "./GuiadoForm";
 
 // Catálogo de peças e áreas vem de GET /pecas/meta (fonte única no backend).
 // O modal não espelha mais essas listas manualmente — busca no mount.
@@ -393,6 +397,12 @@ export default function PecaGeneratorModal({
   const [pedidos, setPedidos] = useState("");
   const [instrucoes, setInstrucoes] = useState("");
   const [nomesProteger, setNomesProteger] = useState("");
+  const [modo, setModo] = useState<"livre" | "guiado" | "molde" | "agente">(
+    "livre",
+  );
+  const [respostasGuiadas, setRespostasGuiadas] = useState<
+    Record<string, string>
+  >({});
 
   // Catálogo (/pecas/meta): parte do fallback e é substituído ao carregar.
   const [tipos, setTipos] = useState<TipoMeta[]>(TIPOS_FALLBACK);
@@ -449,6 +459,8 @@ export default function PecaGeneratorModal({
     setCopiado(false);
     setExpandidos(new Set());
     setVerificacao(null);
+    setModo("livre");
+    setRespostasGuiadas({});
   };
 
   const fechar = () => {
@@ -490,12 +502,31 @@ export default function PecaGeneratorModal({
   };
 
   const gerar = useCallback(async () => {
-    if (!fatos.trim() || fatos.trim().length < 50) {
-      toast.error("Descreva os fatos com pelo menos 50 caracteres.");
+    const isGuiado = modo === "guiado";
+    const effectiveFatos = isGuiado
+      ? Object.entries(respostasGuiadas)
+          .filter(([k, v]) => v.trim().length > 0)
+          .map(([k, v]) => `${k.replace(/_/g, " ")}: ${v}`)
+          .join("\n\n")
+      : fatos;
+    const effectivePedidos = isGuiado
+      ? respostasGuiadas["pedidos"] || pedidos
+      : pedidos;
+
+    if (!effectiveFatos.trim() || effectiveFatos.trim().length < 50) {
+      toast.error(
+        isGuiado
+          ? "Preencha pelo menos o campo 'fatos' no formulário guiado."
+          : "Descreva os fatos com pelo menos 50 caracteres.",
+      );
       return;
     }
-    if (!pedidos.trim() || pedidos.trim().length < 10) {
-      toast.error("Informe os pedidos.");
+    if (!effectivePedidos.trim() || effectivePedidos.trim().length < 10) {
+      toast.error(
+        isGuiado
+          ? "Preencha o campo 'pedidos' no formulário guiado."
+          : "Informe os pedidos.",
+      );
       return;
     }
 
@@ -504,19 +535,29 @@ export default function PecaGeneratorModal({
     setDocumento("");
     abortRef.current = new AbortController();
 
+    const instrucoesComModo = [
+      instrucoes || null,
+      `[modo_producao=${modo}]`,
+      isGuiado
+        ? `[campos_guiados=${Object.keys(respostasGuiadas).filter((k) => (respostasGuiadas[k] || "").trim()).length}]`
+        : null,
+    ]
+      .filter(Boolean)
+      .join(" | ");
+
     const body = JSON.stringify({
       tipo_peca: tipoPeca,
       area_direito: areaDireito,
       nivel_complexidade: nivelComplexidade,
       flags_teses: Array.from(flagsTeses),
-      descricao_fatos: fatos,
-      pedidos,
+      descricao_fatos: effectiveFatos,
+      pedidos: effectivePedidos,
       nomes_proteger: nomesProteger
         .split(",")
         .map((s) => s.trim())
         .filter(Boolean),
       case_id: caseId ?? null,
-      instrucoes_adicionais: instrucoes || null,
+      instrucoes_adicionais: instrucoesComModo || null,
     });
 
     try {
@@ -604,6 +645,8 @@ export default function PecaGeneratorModal({
       setFase("erro");
     }
   }, [
+    modo,
+    respostasGuiadas,
     tipoPeca,
     areaDireito,
     nivelComplexidade,
@@ -728,6 +771,71 @@ export default function PecaGeneratorModal({
                 </select>
               </div>
 
+              <div>
+                <label className="block text-xs font-medium text-slate-600 mb-2">
+                  Modo de produção
+                </label>
+                <div className="flex gap-1 rounded-xl bg-slate-100 p-1">
+                  {(
+                    [
+                      {
+                        id: "livre",
+                        label: "Livre",
+                        icon: <PenLine size={14} />,
+                        desc: "Campos abertos",
+                      },
+                      {
+                        id: "guiado",
+                        label: "Guiado",
+                        icon: <ListOrdered size={14} />,
+                        desc: "Passo a passo",
+                      },
+                      {
+                        id: "molde",
+                        label: "Molde",
+                        icon: <CopyPlus size={14} />,
+                        desc: "Espelhar peça",
+                      },
+                      {
+                        id: "agente",
+                        label: "Agente",
+                        icon: <Bot size={14} />,
+                        desc: "10 etapas",
+                      },
+                    ] as const
+                  ).map((m) => (
+                    <button
+                      key={m.id}
+                      type="button"
+                      onClick={() => setModo(m.id)}
+                      className={`flex-1 flex items-center justify-center gap-1.5 rounded-lg px-3 py-2 text-xs font-medium transition-all ${
+                        modo === m.id
+                          ? "bg-white text-ai-700 shadow-sm"
+                          : "text-slate-500 hover:text-slate-700"
+                      }`}
+                      title={m.desc}
+                    >
+                      {m.icon}
+                      {m.label}
+                    </button>
+                  ))}
+                </div>
+                <p className="text-[11px] text-slate-400 mt-1.5">
+                  {modo === "livre" &&
+                    "Preencha os campos livremente — a IA interpreta sua redação."}
+                  ,
+                  {modo === "guiado" &&
+                    "Formulário estruturado por tipo de peça — cada campo alimenta uma etapa específica."}
+                  ,
+                  {modo === "molde" &&
+                    "Selecione uma peça existente como modelo para espelhar estrutura e estilo."}
+                  ,
+                  {modo === "agente" &&
+                    "Pipeline completo com 10 etapas — o agente executa busca, análise e síntese autonomamente."}
+                  ,
+                </p>
+              </div>
+
               <fieldset className="border border-slate-100 rounded-xl px-4 py-3">
                 <legend className="text-xs font-medium text-slate-600 px-1">
                   Teses condicionais (opcional)
@@ -755,67 +863,136 @@ export default function PecaGeneratorModal({
                 </div>
               </fieldset>
 
-              <div>
-                <label className="block text-xs font-medium text-slate-600 mb-1">
-                  Descrição dos fatos <span className="text-danger-400">*</span>
-                  <span className="text-slate-400 font-normal ml-1">
-                    mín. 50 caracteres
-                  </span>
-                </label>
-                <textarea
-                  value={fatos}
-                  onChange={(e) => setFatos(e.target.value)}
-                  placeholder="Descreva os fatos de forma detalhada. A IA usa esta descrição como base para todas as 7 etapas do pipeline..."
-                  rows={5}
-                  className="input resize-none"
+              {/* ── CAMPOS POR MODO ── */}
+              {modo === "guiado" ? (
+                <GuiadoForm
+                  tipoPeca={tipoPeca}
+                  respostas={respostasGuiadas}
+                  onChange={(campo, valor) =>
+                    setRespostasGuiadas((prev) => ({ ...prev, [campo]: valor }))
+                  }
                 />
-                <div className="text-right text-xs text-slate-400 mt-0.5">
-                  {fatos.length} caracteres
+              ) : modo === "molde" ? (
+                <div className="rounded-xl border border-dashed border-slate-300 bg-slate-50 px-4 py-6 text-center text-sm text-slate-500">
+                  <CopyPlus size={24} className="mx-auto mb-2 text-slate-400" />
+                  <p>
+                    Selecione uma peça existente no passo seguinte para usar
+                    como modelo. A IA manterá a estrutura e estilo do molde.
+                  </p>
                 </div>
-              </div>
+              ) : modo === "agente" ? (
+                <div className="rounded-xl border border-dashed border-ai-200 bg-ai-50 px-4 py-6 text-center text-sm text-ai-700">
+                  <Bot size={24} className="mx-auto mb-2 text-ai-400" />
+                  <p>
+                    O agente executará 10 etapas automaticamente: Extração →
+                    Classificação → Tese → Precedentes → Fundamentação → Pedidos
+                    → Estrutura → Redação → Revisão → Versão Final.
+                  </p>
+                  <p className="mt-1 text-xs text-ai-500">
+                    Preencha os campos abaixo com as informações básicas — o
+                    agente irá expandir e enriquecer cada seção.
+                  </p>
+                </div>
+              ) : null}
 
-              <div>
-                <label className="block text-xs font-medium text-slate-600 mb-1">
-                  Pedidos <span className="text-danger-400">*</span>
-                </label>
-                <textarea
-                  value={pedidos}
-                  onChange={(e) => setPedidos(e.target.value)}
-                  placeholder="Liste os pedidos principais e subsidiários..."
-                  rows={3}
-                  className="input resize-none"
-                />
-              </div>
+              {modo !== "guiado" && (
+                <>
+                  <div>
+                    <label className="block text-xs font-medium text-slate-600 mb-1">
+                      Descrição dos fatos{" "}
+                      <span className="text-danger-400">*</span>
+                      <span className="text-slate-400 font-normal ml-1">
+                        mín. 50 caracteres
+                      </span>
+                    </label>
+                    <textarea
+                      value={fatos}
+                      onChange={(e) => setFatos(e.target.value)}
+                      placeholder="Descreva os fatos de forma detalhada. A IA usa esta descrição como base para todas as 7 etapas do pipeline..."
+                      rows={5}
+                      className="input resize-none"
+                    />
+                    <div className="text-right text-xs text-slate-400 mt-0.5">
+                      {fatos.length} caracteres
+                    </div>
+                  </div>
 
-              <div className="grid grid-cols-2 gap-3">
-                <div>
-                  <label className="block text-xs font-medium text-slate-600 mb-1">
-                    Nomes a proteger (LGPD)
-                    <span className="text-slate-400 font-normal ml-1">
-                      separados por vírgula
-                    </span>
-                  </label>
-                  <input
-                    type="text"
-                    value={nomesProteger}
-                    onChange={(e) => setNomesProteger(e.target.value)}
-                    placeholder="João Silva, Maria Costa..."
-                    className="input"
-                  />
+                  <div>
+                    <label className="block text-xs font-medium text-slate-600 mb-1">
+                      Pedidos <span className="text-danger-400">*</span>
+                    </label>
+                    <textarea
+                      value={pedidos}
+                      onChange={(e) => setPedidos(e.target.value)}
+                      placeholder="Liste os pedidos principais e subsidiários..."
+                      rows={3}
+                      className="input resize-none"
+                    />
+                  </div>
+
+                  <div className="grid grid-cols-2 gap-3">
+                    <div>
+                      <label className="block text-xs font-medium text-slate-600 mb-1">
+                        Nomes a proteger (LGPD)
+                        <span className="text-slate-400 font-normal ml-1">
+                          separados por vírgula
+                        </span>
+                      </label>
+                      <input
+                        type="text"
+                        value={nomesProteger}
+                        onChange={(e) => setNomesProteger(e.target.value)}
+                        placeholder="João Silva, Maria Costa..."
+                        className="input"
+                      />
+                    </div>
+                    <div>
+                      <label className="block text-xs font-medium text-slate-600 mb-1">
+                        Instruções adicionais
+                      </label>
+                      <input
+                        type="text"
+                        value={instrucoes}
+                        onChange={(e) => setInstrucoes(e.target.value)}
+                        placeholder="Ex: incluir pedido liminar..."
+                        className="input"
+                      />
+                    </div>
+                  </div>
+                </>
+              )}
+
+              {modo === "guiado" && (
+                <div className="grid grid-cols-2 gap-3">
+                  <div>
+                    <label className="block text-xs font-medium text-slate-600 mb-1">
+                      Nomes a proteger (LGPD)
+                      <span className="text-slate-400 font-normal ml-1">
+                        separados por vírgula
+                      </span>
+                    </label>
+                    <input
+                      type="text"
+                      value={nomesProteger}
+                      onChange={(e) => setNomesProteger(e.target.value)}
+                      placeholder="João Silva, Maria Costa..."
+                      className="input"
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-xs font-medium text-slate-600 mb-1">
+                      Instruções adicionais
+                    </label>
+                    <input
+                      type="text"
+                      value={instrucoes}
+                      onChange={(e) => setInstrucoes(e.target.value)}
+                      placeholder="Ex: incluir pedido liminar..."
+                      className="input"
+                    />
+                  </div>
                 </div>
-                <div>
-                  <label className="block text-xs font-medium text-slate-600 mb-1">
-                    Instruções adicionais
-                  </label>
-                  <input
-                    type="text"
-                    value={instrucoes}
-                    onChange={(e) => setInstrucoes(e.target.value)}
-                    placeholder="Ex: incluir pedido liminar..."
-                    className="input"
-                  />
-                </div>
-              </div>
+              )}
 
               <div className="bg-warn-50 border border-warn-200 rounded-lg px-4 py-3 text-xs text-warn-800">
                 <strong>⚠️ RASCUNHO:</strong> toda peça gerada por IA exige
@@ -836,6 +1013,15 @@ export default function PecaGeneratorModal({
                 </h3>
                 <p className="text-xs text-slate-400">
                   {tipoLabel(tipoPeca)} · {areaLabel(areaDireito)}
+                  <span className="ml-2 inline-flex items-center rounded-md bg-ai-50 px-1.5 py-0.5 text-[10px] font-medium text-ai-700 ring-1 ring-inset ring-ai-200">
+                    {modo === "livre"
+                      ? "Livre"
+                      : modo === "guiado"
+                        ? "Guiado"
+                        : modo === "molde"
+                          ? "Molde"
+                          : "Agente"}
+                  </span>
                 </p>
               </div>
 
@@ -932,6 +1118,16 @@ export default function PecaGeneratorModal({
                         {codigoPeca}
                       </Badge>
                     )}
+                    <span className="inline-flex items-center rounded-md bg-ai-50 px-1.5 py-0.5 text-[10px] font-medium text-ai-700 ring-1 ring-inset ring-ai-200">
+                      Modo:{" "}
+                      {modo === "livre"
+                        ? "Livre"
+                        : modo === "guiado"
+                          ? "Guiado"
+                          : modo === "molde"
+                            ? "Molde"
+                            : "Agente"}
+                    </span>
                   </div>
                   <div className="text-xs text-green-600">
                     Log ID: {aiLogId} · Aguarda revisão HITL

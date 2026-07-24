@@ -107,6 +107,7 @@ def _chave_ingestao_manual(*, actor_id: str, titulo: str, categoria: str,
 async def _ingerir_texto(db, background_tasks, titulo, categoria, conteudo,
                          fonte=None, tribunal=None, confianca: str = "media",
                          extra_doc: Optional[dict] = None,
+                         paginas: Optional[list[dict]] = None,
                          actor_id: str = ""):
     """Núcleo de ingestão reutilizado por /ingest, /ingest-pdf e /ingest-url.
 
@@ -137,7 +138,7 @@ async def _ingerir_texto(db, background_tasks, titulo, categoria, conteudo,
     resultado = await upsert_documento(
         db, titulo=titulo, categoria=categoria, conteudo=conteudo,
         chave_origem=chave, fonte=fonte, tribunal=tribunal, extra=extra,
-        confianca=confianca, embutir_vetores=False,
+        confianca=confianca, embutir_vetores=False, paginas=paginas,
     )
     doc = (await db.execute(select(KnowledgeDoc).where(
         KnowledgeDoc.chave_origem == chave,
@@ -197,6 +198,7 @@ async def ingerir_pdf(
             "ocr": {"paginas": res["paginas"], "paginas_ocr": res["paginas_ocr"],
                     "ocr_disponivel": res["ocr_disponivel"]},
         },
+        paginas=res.get("por_pagina"),
         actor_id=str(cu.id),
     )
 

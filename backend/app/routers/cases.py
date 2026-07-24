@@ -339,6 +339,83 @@ async def detalhe(
     return result
 
 
+@router.get("/{case_id}/resumo")
+async def resumo_caso(
+    case_id: str,
+    db: AsyncSession = Depends(get_db),
+    cu: User = Depends(get_current_user),
+):
+    """Resumo agregado de todas as entidades vinculadas ao caso.
+
+    Retorna contadores e dados-chave de cada domínio em um único payload,
+    evitando N chamadas separadas no frontend (CasoDetalhe tabs).
+    """
+    c = await verificar_acesso_caso(db, cu, case_id)
+
+    # Contagens paralelas via COUNTs
+    counts = {}
+    for label, model_class, fk_col in [
+        ("processos", __import__("app.models.process", fromlist=["Process"]).Process, "case_id"),
+        ("prazos", Deadline, "case_id"),
+        ("documentos", __import__("app.models.document", fromlist=["Document"]).Document, "case_id"),
+        ("pecas", __import__("app.models.legal_doc", fromlist=["LegalDoc"]).LegalDoc, "case_id"),
+        ("honorarios", __import__("app.models.fee", fromlist=["Fee"]).Fee, "case_id"),
+        ("tarefas", __import__("app.models.task", fromlist=["Task"]).Task, "case_id"),
+        ("partes", CaseParte, "case_id"),
+        ("areas", CasoArea, "case_id"),
+        ("checklists", __import__("app.models.checklist", fromlist=["CaseChecklist"]).CaseChecklist, "case_id"),
+        ("movimentos", CaseMovimento, "case_id"),
+        ("provas", __import__("app.models.prova", fromlist=["Prova"]).Prova, "case_id"),
+        ("teses_vinculadas", __import__("app.models.tese", fromlist=["TeseCasoLink"]).TeseCasoLink, "case_id"),
+    ]:
+        try:
+            col = getattr(model_class, fk_col, None)
+            if col is not None:
+                q = select(sqlfunc.count()).select_from(model_class).where(
+                    col == case_id, model_class.deleted_at.is_(None)
+                    if hasattr(model_class, "deleted_at") else True
+                )
+                counts[label] = (await db.execute(q)).scalar() or 0
+            else:
+                counts[label] = 0
+        except Exception:
+            counts[label] = 0
+
+    # Honorários: total financeiro
+    try:
+        q_valor = select(sqlfunc.coalesce(sqlfunc.sum(
+            __import__("app.models.fee", fromlist=["Fee"]).Fee.valor
+        ), 0)).where(
+            __import__("app.models.fee", fromlist=["Fee"]).Fee.case_id == case_id
+        )
+        counts["honorarios_valor_total"] = float((await db.execute(q_valor)).scalar() or 0)
+    except Exception:
+        counts["honorarios_valor_total"] = 0.0
+
+    # Prazos pendentes
+    try:
+        q_pend = select(sqlfunc.count()).select_from(Deadline).where(
+            Deadline.case_id == case_id,
+            DeadlineStatus(Deadline.status) == DeadlineStatus.pendente,
+        )
+        counts["prazos_pendentes"] = (await db.execute(q_pend)).scalar() or 0
+    except Exception:
+        counts["prazos_pendentes"] = 0
+
+    return {
+        "case_id": case_id,
+        "titulo": c.titulo,
+        "status": c.status.value if c.status else None,
+        "fase": c.fase.value if hasattr(c, "fase") and c.fase else None,
+        "area": c.area,
+        "prioridade": c.prioridade.value if hasattr(c, "prioridade") and c.prioridade else None,
+        "advogado_responsavel_id": c.advogado_responsavel_id,
+        "proxima_acao": c.proxima_acao,
+        "proxima_acao_prazo": str(c.proxima_acao_prazo) if c.proxima_acao_prazo else None,
+        "contadores": counts,
+    }
+
+
 @router.patch("/{case_id}", response_model=CaseDetail)
 async def atualizar(
     case_id: str, payload: CaseUpdate,
