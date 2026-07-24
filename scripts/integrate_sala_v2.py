@@ -33,8 +33,24 @@ s = s.replace(
 )
 s = s.replace('.replaceAll("_", " ")', '.replace(/_/g, " ")')
 s = s.replace(
-    '<button onClick={onClose}>\n            <X size={20} />\n          </button>',
-    '<button type="button" onClick={onClose} aria-label="Fechar">\n            <X size={20} />\n          </button>',
+    '<button onClick={() => setError(null)} aria-label="Fechar">',
+    '<button type="button" onClick={() => setError(null)} aria-label="Fechar">',
+)
+s = s.replace(
+    '<button className="rounded-xl p-2 text-slate-500 hover:bg-slate-100" onClick={() => fileRef.current?.click()} title="Anexar provas">',
+    '<button type="button" className="rounded-xl p-2 text-slate-500 hover:bg-slate-100" onClick={() => fileRef.current?.click()} title="Anexar provas" aria-label="Anexar provas">',
+)
+s = s.replace(
+    'disabled={!prompt.trim() || busy}\n                    title="Enviar"',
+    'disabled={!prompt.trim() || busy}\n                    title="Enviar"\n                    aria-label="Enviar mensagem"',
+)
+s = s.replace(
+    '<button onClick={onClose}><X size={20} /></button>',
+    '<button type="button" onClick={onClose} aria-label="Fechar"><X size={20} /></button>',
+)
+s = s.replace(
+    'className={`max-h-[90vh] w-full overflow-y-auto rounded-2xl bg-white p-5 shadow-2xl ${wide ? "max-w-3xl" : "max-w-lg"}`} onMouseDown={(e) => e.stopPropagation()}',
+    'role="dialog" aria-modal="true" aria-label={title} className={`max-h-[90vh] w-full overflow-y-auto rounded-2xl bg-white p-5 shadow-2xl ${wide ? "max-w-3xl" : "max-w-lg"}`} onMouseDown={(e) => e.stopPropagation()}',
 )
 page.write_text(s)
 
