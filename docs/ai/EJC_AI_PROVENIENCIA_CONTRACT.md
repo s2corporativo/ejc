@@ -19,6 +19,8 @@ produção de peças, revisão e Modo Molde.
 8. Fonte sem classificação explícita nasce como `interna`, nunca como pública.
 9. Fonte em segredo de justiça exige `case_id` verificável.
 10. Registros conflitantes de status ou confidencialidade não são deduplicados.
+11. Metadados de proveniência não transportam identificadores pessoais ou segredos.
+12. Aprovação humana só é válida com responsável, data e registro de auditoria.
 
 ## Estados de conferência
 
@@ -72,7 +74,21 @@ Quando disponíveis, também devem ser preservados:
 - vigência;
 - confiança da extração;
 - nível de confidencialidade;
-- metadados do chunk ou indexador.
+- metadados técnicos do chunk ou indexador.
+
+## Minimização LGPD
+
+O campo `metadados` é sanitizado recursivamente. Chaves conhecidas de dados
+pessoais, escopo interno e credenciais são removidas, inclusive em listas e
+objetos aninhados. Exemplos:
+
+- `client_id`, `tenant_id`, `user_id` e `owner_id`;
+- CPF, CNPJ, RG, telefone, e-mail e endereço;
+- token, secret, senha, password, API key, authorization e cookie.
+
+O normalizador preserva apenas metadados técnicos necessários à auditoria, como
+`chunk_id`, índice, categoria, tribunal e motivos da classificação. O texto
+integral do documento não deve ser copiado para `metadados`.
 
 ## Compatibilidade
 
@@ -88,8 +104,8 @@ O normalizador aceita chaves legadas comuns, como:
 - `privacy_level`;
 - `verified_at`.
 
-Campos desconhecidos não são descartados: permanecem em `metadados` para
-auditoria.
+Campos desconhecidos não sensíveis permanecem em `metadados` para auditoria.
+Campos pessoais ou secretos são descartados pelo contrato.
 
 ## Deduplicação
 
@@ -97,6 +113,19 @@ A deduplicação só remove fontes semanticamente idênticas. Status de conferê
 confidencialidade e marca de inferência integram a chave. Assim, uma versão
 `restrita` ou `nao_localizada` nunca é ocultada por outra mais permissiva da
 mesma página ou trecho.
+
+## Aprovação humana auditável
+
+`aprovado_humano` nasce como `false`. Para assumir `true`, o envelope deve
+informar simultaneamente:
+
+- `aprovado_por`;
+- `aprovado_em`;
+- `registro_aprovacao_id` vinculado à auditoria do EJC;
+- zero fontes bloqueantes no resumo de confiabilidade.
+
+A ausência de qualquer evidência invalida o envelope. A aprovação do plano ou da
+estrutura não equivale à aprovação da peça final.
 
 ## Integração incremental
 
@@ -116,13 +145,14 @@ cada router.
 ## Segurança e LGPD
 
 - não registrar texto integral de documentos em logs;
-- não expor dados pessoais em métricas;
+- não expor dados pessoais em métricas ou proveniência;
 - aplicar autorização e filtro de caso antes da recuperação;
 - preservar classificação de confidencialidade;
 - registrar aprovação humana em trilha própria já existente;
 - não usar peças nominadas em fine-tuning bruto;
 - não rebaixar sigilo por deduplicação ou fallback;
-- não tratar confidencialidade como autorização de acesso.
+- não tratar confidencialidade como autorização de acesso;
+- não aceitar aprovação sem evidência de auditoria.
 
 ## Rollback
 
