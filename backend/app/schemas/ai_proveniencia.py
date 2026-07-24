@@ -43,6 +43,10 @@ class ProvenienciaJuridica(BaseModel):
     status_conferencia: StatusConferenciaFonte = (
         StatusConferenciaFonte.PENDENTE_CONFERENCIA
     )
+    # Fail-safe: fonte sem classificação explícita nunca nasce pública.
+    nivel_confidencialidade: NivelConfidencialidadeFonte = (
+        NivelConfidencialidadeFonte.INTERNA
+    )
     nome_arquivo: str | None = Field(default=None, max_length=500)
     documento_id: str | None = Field(default=None, max_length=100)
     pagina: int | None = Field(default=None, ge=1)
@@ -79,6 +83,15 @@ class ProvenienciaJuridica(BaseModel):
         ):
             raise ValueError(
                 "Fonte oficial deve informar url_oficial ou autoridade emissora"
+            )
+
+        if (
+            self.nivel_confidencialidade
+            == NivelConfidencialidadeFonte.SEGREDO_JUSTICA
+            and not self.case_id
+        ):
+            raise ValueError(
+                "Fonte em segredo de justiça deve possuir case_id verificável"
             )
 
         if self.status_conferencia == StatusConferenciaFonte.CONFIRMADA:
