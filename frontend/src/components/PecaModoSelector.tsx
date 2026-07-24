@@ -53,15 +53,15 @@ export default function PecaModoSelector({
               onClick={() => onChange(modo.value)}
               className={`rounded-xl border p-3 text-left transition ${
                 ativo
-                  ? "border-primary-500 bg-primary-50 ring-1 ring-primary-200"
-                  : "border-slate-200 bg-white hover:border-primary-300 hover:bg-slate-50"
+                  ? "border-ai-500 bg-ai-50 ring-1 ring-ai-200"
+                  : "border-slate-200 bg-white hover:border-ai-300 hover:bg-ai-50/40"
               } disabled:cursor-not-allowed disabled:opacity-55`}
             >
               <div className="flex items-start gap-3">
                 <span
                   className={`mt-0.5 rounded-lg p-2 ${
                     ativo
-                      ? "bg-primary-100 text-primary-700"
+                      ? "bg-ai-100 text-ai-700"
                       : "bg-slate-100 text-slate-500"
                   }`}
                   aria-hidden="true"
@@ -79,7 +79,7 @@ export default function PecaModoSelector({
 
                   <span className="mt-2 flex flex-wrap gap-1.5">
                     {modo.exige_aprovacao && (
-                      <span className="inline-flex items-center gap-1 rounded-full bg-amber-50 px-2 py-0.5 text-[11px] font-medium text-amber-700">
+                      <span className="inline-flex items-center gap-1 rounded-full bg-warn-50 px-2 py-0.5 text-[11px] font-medium text-warn-700">
                         <ShieldCheck className="h-3 w-3" aria-hidden="true" />
                         Aprovação antes da redação
                       </span>
