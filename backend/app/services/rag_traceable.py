@@ -88,6 +88,14 @@ def _anexar_proveniencia(
         item = dict(resultado)
         doc_id = str(resultado.get("doc_id") or "")
         doc = documentos.get(doc_id)
+        if doc is None and case_id_esperado:
+            # Em contexto de caso, a indisponibilidade dos metadados impede
+            # comprovar o escopo. Manter o trecho seria aceitar possível
+            # vazamento cruzado; portanto o resultado é removido.
+            logger.warning(
+                "Resultado RAG removido por ausência de escopo verificável"
+            )
+            continue
         if doc is None:
             doc = _doc_fallback(resultado, motivo_fallback)
 
@@ -105,8 +113,8 @@ def _anexar_proveniencia(
             )
             continue
         except (ValidationError, ValueError) as exc:
-            # Metadado incompleto não apaga o conteúdo já recuperado, mas também
-            # não fabrica uma fonte. O erro público é genérico e não inclui PII.
+            # Metadado incompleto não apaga o conteúdo já recuperado fora de caso,
+            # mas também não fabrica uma fonte. O erro público não inclui PII.
             item["proveniencia"] = None
             item["proveniencia_erro"] = "origem sem identificação verificável"
             logger.warning(
@@ -153,7 +161,7 @@ async def enriquecer_resultados_com_proveniencia(
                 select(KnowledgeDoc).where(KnowledgeDoc.id.in_(doc_ids))
             )
         ).scalars().all()
-    except Exception as exc:  # enriquecimento nunca derruba o retrieval já concluído
+    except Exception as exc:  # enriquecimento nunca derruba retrieval fora de caso
         logger.warning(
             "Proveniência indisponível; mantendo resultados RAG: %s",
             exc.__class__.__name__,
