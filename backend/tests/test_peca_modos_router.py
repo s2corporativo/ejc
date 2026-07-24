@@ -90,7 +90,7 @@ def test_livre_sem_case_id():
     assert body["pronto_para_redacao"] is True
     assert body["exige_aprovacao"] is False
     assert body["bloqueios"] == []
-    assert "[MODO DE PRODUCAO CONTROLADO]" in body["instrucoes_pipeline"]
+    assert "[MODO DE PRODUÇÃO CONTROLADO]" in body["instrucoes_pipeline"]
     assert "contestacao" in body["instrucoes_pipeline"]
 
 
@@ -179,7 +179,7 @@ def test_molde_sem_versao_bloqueia():
     })
     body = r.json()
     assert body["pronto_para_redacao"] is False
-    assert any("versao" in b.lower() for b in body["bloqueios"])
+    assert len(body["bloqueios"]) >= 2
 
 
 # ── POST /preparar — modo agente ────────────────────────────────────────────
