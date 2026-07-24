@@ -114,12 +114,12 @@ describe("moduleRegistry", () => {
       .map((m) => m.path);
     expect(essenciais).toEqual([
       "/",
-      "/sala-analise",
       "/casos",
       "/atividades",
       "/clientes",
       "/documentos",
       "/pecas",
+      "/sala-analise",
       "/inteligencia",
     ]);
     expect(advogado).not.toContain("/casos/novo");
