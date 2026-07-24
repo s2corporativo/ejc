@@ -67,6 +67,12 @@ jobs:
           bash scripts/tests/test_deploy_rollback.sh \
             | tee deploy-rollback-test.log
 
+      - name: Provar recuperação idempotente do runner
+        shell: bash
+        run: |
+          bash scripts/tests/test_selfhosted_runner_setup.sh \
+            | tee runner-setup-test.log
+
       - name: Publicar diagnósticos P0
         if: always()
         uses: actions/upload-artifact@v7
@@ -76,6 +82,7 @@ jobs:
             ci_guard.log
             backup-wrapper-test.log
             deploy-rollback-test.log
+            runner-setup-test.log
           if-no-files-found: warn
           retention-days: 7
 
