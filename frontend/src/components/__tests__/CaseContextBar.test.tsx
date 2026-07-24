@@ -56,23 +56,30 @@ describe("CaseContextBar", () => {
       screen.getByRole("link", { name: "Financeiro" }).getAttribute("href"),
     ).toBe("/casos/case-1?tab=financeiro");
     expect(
-      screen.getByRole("link", { name: "Arquivos" }).getAttribute("aria-current"),
-    ).toBe("page");
-  });
-
-  it("marca somente Estratégia como ativa na rota irmã Sala de Guerra", async () => {
-    renderBar("/casos/case-1/sala-de-guerra");
-
-    expect(
       screen
-        .getByRole("link", { name: "Estratégia" })
+        .getByRole("link", { name: "Arquivos" })
         .getAttribute("aria-current"),
     ).toBe("page");
-    expect(
-      screen.getByRole("link", { name: "Visão" }).getAttribute("aria-current"),
-    ).toBeNull();
-    await waitFor(() => expect(mocks.ativar).toHaveBeenCalledWith("case-1"));
   });
+
+  it(
+    "marca somente Estratégia como ativa na rota irmã Sala de Guerra",
+    async () => {
+      renderBar("/casos/case-1/sala-de-guerra");
+
+      expect(
+        screen
+          .getByRole("link", { name: "Estratégia" })
+          .getAttribute("aria-current"),
+      ).toBe("page");
+      expect(
+        screen
+          .getByRole("link", { name: "Visão" })
+          .getAttribute("aria-current"),
+      ).toBeNull();
+      await waitFor(() => expect(mocks.ativar).toHaveBeenCalledWith("case-1"));
+    },
+  );
 
   it("mantém a saída explícita do modo caso", () => {
     renderBar("/casos/case-1");
