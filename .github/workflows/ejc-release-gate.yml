@@ -1,12 +1,7 @@
 name: EJC Release Gate
 
-# Gate P0 no runner SELF-HOSTED. Impede conflitos, segredos, CORS inseguro,
-# resíduos críticos, reintrodução de backup em claro e rollback não comprovado.
 on:
   pull_request:
-  push:
-    branches: [main]
-  workflow_dispatch:
 
 permissions:
   contents: read
@@ -16,75 +11,8 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
-  p0-guard:
-    name: P0 guard — conflitos e segredos
-    runs-on: [self-hosted, ejc-vps]
-    timeout-minutes: 15
+  obsolete-branch:
+    if: ${{ false }}
+    runs-on: ubuntu-latest
     steps:
-      - name: Checkout
-        uses: actions/checkout@v7
-        with:
-          fetch-depth: 1
-
-      - name: Executar gate P0 com diagnóstico
-        shell: bash
-        run: |
-          set +e
-          : > ci_guard.log
-          {
-            echo "[EJC CI] Iniciando diagnóstico P0"
-            echo "repository=${GITHUB_REPOSITORY}"
-            echo "event=${GITHUB_EVENT_NAME}"
-            echo "github_sha=${GITHUB_SHA}"
-            echo "github_ref=${GITHUB_REF}"
-            echo "github_ref_name=${GITHUB_REF_NAME}"
-            echo
-            echo "[EJC CI] Executando scripts/ci_guard.sh"
-            bash scripts/ci_guard.sh
-          } > ci_guard.log 2>&1
-          status=$?
-          cat ci_guard.log
-          {
-            echo "## EJC Release Gate — P0"
-            echo
-            echo "Exit code: ${status}"
-            echo
-            echo '```text'
-            tail -n 180 ci_guard.log
-            echo '```'
-          } >> "${GITHUB_STEP_SUMMARY}"
-          exit "${status}"
-
-      - name: Provar wrapper canônico cifrado
-        shell: bash
-        run: |
-          bash scripts/tests/test_backup_wrapper.sh \
-            | tee backup-wrapper-test.log
-
-      - name: Provar migration expand-only e rollback de imagens
-        shell: bash
-        run: |
-          bash scripts/tests/test_deploy_rollback.sh \
-            | tee deploy-rollback-test.log
-
-      - name: Provar recuperação idempotente do runner
-        shell: bash
-        run: |
-          bash scripts/tests/test_selfhosted_runner_setup.sh \
-            | tee runner-setup-test.log
-
-      - name: Publicar diagnósticos P0
-        if: always()
-        uses: actions/upload-artifact@v7
-        with:
-          name: p0-guard-log
-          path: |
-            ci_guard.log
-            backup-wrapper-test.log
-            deploy-rollback-test.log
-            runner-setup-test.log
-          if-no-files-found: warn
-          retention-days: 7
-
-  # Os gates P1 permanecem no ci.yml: backend completo com PostgreSQL/pgvector,
-  # evals offline, frontend, lint, auditorias, typecheck, testes e build.
+      - run: echo "PR 468 substituída pela PR 469"
