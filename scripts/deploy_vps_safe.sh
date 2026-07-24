@@ -151,7 +151,12 @@ RUN_MIGRATIONS=0 docker compose up -d --no-deps --force-recreate worker
 
 if [ "$ENSURE_DAILY_BACKUP" = "1" ]; then
   log "Garantindo agendamento e prova recente do backup cifrado"
-  bash scripts/backup/ativar_backup.sh
+  if bash scripts/backup/ativar_backup.sh; then
+    log "Backup diário verificado com sucesso."
+  else
+    log "AVISO: ativação/verificação do backup diário falhou; deploy não será revertido."
+    log "AVISO: investigue as credenciais BACKUP_GOOGLE_DRIVE_* no .env da VPS."
+  fi
 else
   log "AVISO CRÍTICO: ENSURE_DAILY_BACKUP=0 — garantia diária ignorada por contingência."
 fi
