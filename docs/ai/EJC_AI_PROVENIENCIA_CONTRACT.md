@@ -2,7 +2,10 @@
 
 ## Objetivo
 
-Padronizar a origem das afirmações utilizadas pela IA do EJC sem criar novo provider, banco vetorial ou custo recorrente. O contrato é aditivo e deve ser aplicado progressivamente aos fluxos existentes de RAG, leitor de autos, produção de peças, revisão e Modo Molde.
+Padronizar a origem das afirmações utilizadas pela IA do EJC sem criar novo
+provider, banco vetorial ou custo recorrente. O contrato é aditivo e deve ser
+aplicado progressivamente aos fluxos existentes de RAG, leitor de autos,
+produção de peças, revisão e Modo Molde.
 
 ## Princípios
 
@@ -13,6 +16,9 @@ Padronizar a origem das afirmações utilizadas pela IA do EJC sem criar novo pr
 5. Inferência da IA deve ser distinguida de fato extraído.
 6. Resposta com fonte bloqueante permanece não aprovada até revisão humana.
 7. Nenhum conteúdo é liberado automaticamente para protocolo.
+8. Fonte sem classificação explícita nasce como `interna`, nunca como pública.
+9. Fonte em segredo de justiça exige `case_id` verificável.
+10. Registros conflitantes de status ou confidencialidade não são deduplicados.
 
 ## Estados de conferência
 
@@ -33,6 +39,18 @@ Os três últimos estados são bloqueantes para uso jurídico sem revisão human
 - jurisprudência validada;
 - doutrina autorizada;
 - outra.
+
+## Níveis de confidencialidade
+
+- `publica`;
+- `interna`;
+- `confidencial`;
+- `restrita`;
+- `segredo_justica`.
+
+O padrão é `interna`. A classificação pública deve ser explícita. O nível de
+confidencialidade é metadado de governança e não substitui RBAC, filtro de caso,
+restrições documentais ou segregação por cliente.
 
 ## Metadados mínimos
 
@@ -58,7 +76,27 @@ Quando disponíveis, também devem ser preservados:
 
 ## Compatibilidade
 
-O normalizador aceita chaves legadas comuns, como `filename`, `page`, `excerpt`, `source_type`, `citation_status` e `verified_at`. Campos desconhecidos não são descartados: permanecem em `metadados` para auditoria.
+O normalizador aceita chaves legadas comuns, como:
+
+- `filename`;
+- `page`;
+- `excerpt`;
+- `source_type`;
+- `citation_status`;
+- `confidentiality`;
+- `confidentiality_level`;
+- `privacy_level`;
+- `verified_at`.
+
+Campos desconhecidos não são descartados: permanecem em `metadados` para
+auditoria.
+
+## Deduplicação
+
+A deduplicação só remove fontes semanticamente idênticas. Status de conferência,
+confidencialidade e marca de inferência integram a chave. Assim, uma versão
+`restrita` ou `nao_localizada` nunca é ocultada por outra mais permissiva da
+mesma página ou trecho.
 
 ## Integração incremental
 
@@ -72,7 +110,8 @@ Ordem recomendada:
 6. catálogo de ferramentas;
 7. relatórios ao cliente.
 
-A integração deve ocorrer no service central de IA, nunca individualmente em cada router.
+A integração deve ocorrer no service central de IA, nunca individualmente em
+cada router.
 
 ## Segurança e LGPD
 
@@ -81,8 +120,11 @@ A integração deve ocorrer no service central de IA, nunca individualmente em c
 - aplicar autorização e filtro de caso antes da recuperação;
 - preservar classificação de confidencialidade;
 - registrar aprovação humana em trilha própria já existente;
-- não usar peças nominadas em fine-tuning bruto.
+- não usar peças nominadas em fine-tuning bruto;
+- não rebaixar sigilo por deduplicação ou fallback;
+- não tratar confidencialidade como autorização de acesso.
 
 ## Rollback
 
-Os arquivos são aditivos e não criam migration. O rollback consiste em reverter o PR. Nenhum dado persistido é alterado.
+Os arquivos são aditivos e não criam migration. O rollback consiste em reverter
+o PR. Nenhum dado persistido é alterado.

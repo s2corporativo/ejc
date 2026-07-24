@@ -4,6 +4,7 @@ import pytest
 from pydantic import ValidationError
 
 from app.schemas.ai_proveniencia import (
+    NivelConfidencialidadeFonte,
     ProvenienciaJuridica,
     StatusConferenciaFonte,
     TipoFonteJuridica,
@@ -25,6 +26,7 @@ def test_normaliza_metadados_legados_sem_perder_extras() -> None:
             "page": 4,
             "excerpt": "Trecho utilizado pela análise.",
             "case_id": "case-1",
+            "confidentiality": "restrita",
             "extraction_confidence": 0.93,
             "chunk_id": "chunk-7",
         },
@@ -34,8 +36,36 @@ def test_normaliza_metadados_legados_sem_perder_extras() -> None:
     assert fonte.nome_arquivo == "contestacao.pdf"
     assert fonte.documento_id == "doc-1"
     assert fonte.pagina == 4
+    assert fonte.nivel_confidencialidade is NivelConfidencialidadeFonte.RESTRITA
     assert fonte.confianca_extracao == 0.93
     assert fonte.metadados == {"chunk_id": "chunk-7"}
+
+
+def test_confidencialidade_padrao_e_interna() -> None:
+    fonte = ProvenienciaJuridica(
+        tipo_fonte=TipoFonteJuridica.OUTRA,
+        nome_arquivo="referencia.pdf",
+    )
+
+    assert fonte.nivel_confidencialidade is NivelConfidencialidadeFonte.INTERNA
+
+
+def test_segredo_justica_exige_case_id_verificavel() -> None:
+    with pytest.raises(ValidationError):
+        ProvenienciaJuridica(
+            tipo_fonte=TipoFonteJuridica.DOCUMENTO_CASO,
+            nome_arquivo="autos.pdf",
+            nivel_confidencialidade=NivelConfidencialidadeFonte.SEGREDO_JUSTICA,
+        )
+
+    fonte = ProvenienciaJuridica(
+        tipo_fonte=TipoFonteJuridica.DOCUMENTO_CASO,
+        nome_arquivo="autos.pdf",
+        case_id="case-1",
+        nivel_confidencialidade=NivelConfidencialidadeFonte.SEGREDO_JUSTICA,
+    )
+
+    assert fonte.case_id == "case-1"
 
 
 def test_rejeita_fonte_de_outro_caso() -> None:
@@ -66,6 +96,7 @@ def test_fonte_oficial_confirmada_exige_vigencia_e_data() -> None:
         ProvenienciaJuridica(
             tipo_fonte=TipoFonteJuridica.FONTE_OFICIAL,
             status_conferencia=StatusConferenciaFonte.CONFIRMADA,
+            nivel_confidencialidade=NivelConfidencialidadeFonte.PUBLICA,
             url_oficial="https://fonte.oficial/ato",
             autoridade="Órgão oficial",
         )
@@ -73,6 +104,7 @@ def test_fonte_oficial_confirmada_exige_vigencia_e_data() -> None:
     fonte = ProvenienciaJuridica(
         tipo_fonte=TipoFonteJuridica.FONTE_OFICIAL,
         status_conferencia=StatusConferenciaFonte.CONFIRMADA,
+        nivel_confidencialidade=NivelConfidencialidadeFonte.PUBLICA,
         url_oficial="https://fonte.oficial/ato",
         autoridade="Órgão oficial",
         vigente=True,
@@ -111,6 +143,43 @@ def test_deduplica_fontes_sem_ocultar_status_bloqueante() -> None:
     assert resposta.resumo_fontes.bloqueantes == 1
     assert resposta.aprovado_humano is False
     assert resposta.pontos_validacao_humana
+
+
+def test_nao_deduplica_conflito_de_status_ou_confidencialidade() -> None:
+    base = {
+        "tipo_fonte": "documento_caso",
+        "documento_id": "doc-1",
+        "nome_arquivo": "inicial.pdf",
+        "pagina": 2,
+        "trecho": "Pedido principal.",
+        "case_id": "case-1",
+    }
+    confirmada = {
+        **base,
+        "status_conferencia": "confirmada",
+        "nivel_confidencialidade": "interna",
+        "data_verificacao": datetime.now(UTC),
+    }
+    bloqueante = {
+        **base,
+        "status_conferencia": "nao_localizada",
+        "nivel_confidencialidade": "restrita",
+    }
+
+    fontes = normalizar_lote_proveniencia(
+        [confirmada, bloqueante],
+        case_id_esperado="case-1",
+    )
+
+    assert len(fontes) == 2
+    resposta = construir_resposta_rastreavel(
+        conteudo="Rascunho sujeito a revisão.",
+        fontes=fontes,
+        case_id="case-1",
+    )
+    assert resposta.resumo_fontes.confirmadas == 1
+    assert resposta.resumo_fontes.nao_localizadas == 1
+    assert resposta.resumo_fontes.bloqueantes == 1
 
 
 def test_resposta_preserva_inferencia_separada_da_fonte() -> None:
