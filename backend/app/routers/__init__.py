@@ -15,6 +15,8 @@ from app.routers import (  # noqa: E402
     entrada_universal,
     entrada_universal_vinculo,
     novos_modulos,
+    raio_x,
+    sala_analise,
 )
 
 # A restrição do advogado_auxiliar (não gera pacote executivo nem encaminha
@@ -29,3 +31,8 @@ novos_modulos.router.include_router(defesas_revisoes.router)
 # implementação legada foi removida do router avançado — sem sombreamento).
 novos_modulos.router.include_router(defesas_revisoes_pacote_seguro.router)
 novos_modulos.router.include_router(defesas_revisoes_avancado.router)
+
+# A Sala de Análise Jurídica evolui o Raio-X existente. Compartilha o prefixo
+# /raio-x, o RBAC, os documentos e a conversão em caso — sem criar módulo ou
+# gateway paralelo.
+raio_x.router.include_router(sala_analise.router)
