@@ -13,6 +13,7 @@ def test_fonte_aprovada_com_data_de_verificacao_e_confirmada():
         "id": "doc-1",
         "titulo": "Código de Processo Civil",
         "fonte": "https://www.planalto.gov.br/cpc",
+        "base_rag": "publica",
         "vigente": True,
         "revisado": True,
         "extra": {
@@ -108,6 +109,7 @@ def test_normalizacao_retorna_contrato_canonico_sem_client_id():
         "categoria": "precedente_interno",
         "fonte": "/arquivos/modelos/contestacao.docx",
         "chave_origem": "modelo:contestacao:1",
+        "base_rag": "caso",
         "case_id": "case-1",
         "client_id": "client-secreto",
         "versao": 2,
@@ -140,22 +142,94 @@ def test_normalizacao_retorna_contrato_canonico_sem_client_id():
 
     assert resultado.documento_id == "doc-6"
     assert resultado.metadados["chunk_id"] == "chunk-1"
+    assert resultado.metadados["base_rag"] == "caso"
     assert resultado.nome_arquivo == "contestacao.docx"
     assert resultado.pagina == 12
     assert resultado.case_id == "case-1"
     assert resultado.processo_origem == "0000000-00.2026.8.13.0000"
     assert resultado.status_conferencia is StatusFonte.CONFIRMADA
+    assert resultado.nivel_confidencialidade.value == "confidencial"
     assert resultado.trecho and resultado.trecho.endswith("…")
     assert resultado.versao_documento == "2"
     assert resultado.confianca_extracao == 0.93
     assert "client_id" not in resultado.model_dump()
 
 
+def test_base_publica_deriva_fonte_publica():
+    resultado = normalizar_proveniencia(
+        doc={
+            "id": "doc-7",
+            "titulo": "Lei federal",
+            "base_rag": "publica",
+        }
+    )
+
+    assert resultado.nivel_confidencialidade.value == "publica"
+
+
+def test_base_caso_nao_pode_ser_rebaixada_para_publica():
+    resultado = normalizar_proveniencia(
+        doc={
+            "id": "doc-8",
+            "titulo": "Documento do processo",
+            "base_rag": "caso",
+            "case_id": "case-1",
+            "extra": {
+                "proveniencia": {"nivel_confidencialidade": "publica"}
+            },
+        },
+        case_id_esperado="case-1",
+    )
+
+    assert resultado.nivel_confidencialidade.value == "confidencial"
+
+
+def test_classificacao_explicita_mais_restritiva_e_preservada():
+    resultado = normalizar_proveniencia(
+        doc={
+            "id": "doc-9",
+            "titulo": "Parecer reservado",
+            "base_rag": "escritorio",
+            "extra": {
+                "proveniencia": {"nivel_confidencialidade": "restrita"}
+            },
+        }
+    )
+
+    assert resultado.nivel_confidencialidade.value == "restrita"
+
+
+def test_atualizacao_do_registro_nao_vira_data_do_documento():
+    resultado = normalizar_proveniencia(
+        doc={
+            "id": "doc-10",
+            "titulo": "Documento sem data explícita",
+            "atualizado_em": "2026-07-23T12:00:00+00:00",
+            "extra": {},
+        }
+    )
+
+    assert resultado.data_documento is None
+    assert resultado.metadados["atualizado_em"] == (
+        "2026-07-23T12:00:00+00:00"
+    )
+
+
+def test_confianca_do_retrieval_e_limitada_ao_contrato():
+    resultado = normalizar_proveniencia(
+        doc={"id": "doc-11", "titulo": "Documento"},
+        chunk={"score": 1.7},
+    )
+
+    assert resultado.confianca_extracao == 1.0
+
+
 def test_normalizacao_rejeita_fonte_de_outro_caso():
     doc = {
-        "id": "doc-7",
+        "id": "doc-12",
         "titulo": "Documento de outro processo",
         "case_id": "case-2",
+        "base_rag": "caso",
         "extra": {},
     }
 
