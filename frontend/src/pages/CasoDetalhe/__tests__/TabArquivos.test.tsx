@@ -30,12 +30,13 @@ import TabArquivos from "../TabArquivos";
 function renderPainel(
   secaoAtiva: "documentos" | "provas" | "contratos" | "procuracoes",
   onSecaoChange = vi.fn(),
+  clientId: string | null = "cliente 1",
 ) {
   return render(
     <MemoryRouter>
       <TabArquivos
         caseId="case-1"
-        clientId="cliente 1"
+        clientId={clientId}
         secaoAtiva={secaoAtiva}
         onSecaoChange={onSecaoChange}
       />
@@ -96,5 +97,14 @@ describe("TabArquivos", () => {
     expect(mocks.get).toHaveBeenCalledWith(
       "/procuracoes/?client_id=cliente%201",
     );
+  });
+
+  it("não consulta procurações quando o cliente do caso está ausente", () => {
+    renderPainel("procuracoes", vi.fn(), null);
+
+    expect(
+      screen.getByText(/cliente do caso não foi identificado/i),
+    ).toBeTruthy();
+    expect(mocks.get).not.toHaveBeenCalled();
   });
 });
