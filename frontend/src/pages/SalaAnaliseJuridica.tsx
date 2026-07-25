@@ -28,6 +28,7 @@ import {
   X,
 } from "lucide-react";
 import api from "../lib/api";
+import { classificarDocumento } from "../utils/documento";
 import Markdown from "../components/Markdown";
 import { Badge, Button, EmptyState, PageHeader } from "../components/UI";
 
@@ -496,7 +497,13 @@ export default function SalaAnaliseJuridica() {
     setError(null);
     try {
       const documentIds = (selected.documentos || []).map((doc) => doc.id);
-      const digits = conversion.clientDocument.replace(/\D/g, "").slice(0, 14);
+      // P0-473: classificar e validar DV ANTES do envio — nunca truncar.
+      const documento = classificarDocumento(conversion.clientDocument);
+      if (conversion.clientMode === "novo" && documento.tipo === "erro") {
+        setError(documento.mensagem);
+        setBusy(false);
+        return;
+      }
       const payload = {
         cliente:
           conversion.clientMode === "existente"
@@ -504,8 +511,8 @@ export default function SalaAnaliseJuridica() {
             : {
                 modo: "novo",
                 nome: conversion.clientName,
-                cpf: digits.length > 0 && digits.length <= 11 ? digits : null,
-                cnpj: digits.length > 11 ? digits : null,
+                cpf: documento.tipo === "cpf" ? documento.cpf : null,
+                cnpj: documento.tipo === "cnpj" ? documento.cnpj : null,
               },
         caso: {
           titulo: conversion.caseTitle,

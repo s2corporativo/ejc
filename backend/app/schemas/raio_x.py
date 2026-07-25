@@ -59,17 +59,34 @@ class ClienteConversao(BaseModel):
 
         A interface antiga enviava qualquer documento pelo campo ``cpf``. Quando
         houver 12 a 14 dígitos e ``cnpj`` estiver vazio, o valor é promovido para
-        CNPJ. A validação de dígitos permanece no domínio de Clientes.
+        CNPJ. Comprimento fora de 11/14 ou dígito verificador inválido é ERRO
+        explícito — nunca truncamento silencioso (P0-473).
         """
+        from app.services.validators_service import validar_cnpj, validar_cpf
+
         if not isinstance(data, dict):
             return data
         result = dict(data)
         cpf = re.sub(r"\D", "", str(result.get("cpf") or ""))
         cnpj = re.sub(r"\D", "", str(result.get("cnpj") or ""))
         if not cnpj and len(cpf) > 11:
-            cnpj, cpf = cpf[:14], ""
-        result["cpf"] = cpf[:11] or None
-        result["cnpj"] = cnpj[:14] or None
+            cnpj, cpf = cpf, ""
+        if cpf:
+            if len(cpf) != 11:
+                raise ValueError(
+                    f"CPF deve ter 11 dígitos (recebido: {len(cpf)})"
+                )
+            if not validar_cpf(cpf):
+                raise ValueError("CPF com dígito verificador inválido")
+        if cnpj:
+            if len(cnpj) != 14:
+                raise ValueError(
+                    f"CNPJ deve ter 14 dígitos (recebido: {len(cnpj)})"
+                )
+            if not validar_cnpj(cnpj):
+                raise ValueError("CNPJ com dígito verificador inválido")
+        result["cpf"] = cpf or None
+        result["cnpj"] = cnpj or None
         if isinstance(result.get("client_id"), str):
             result["client_id"] = result["client_id"].strip() or None
         if isinstance(result.get("nome"), str):
