@@ -166,6 +166,10 @@ class Settings(BaseSettings):
     AI_WEB_SEARCH_ENABLED: bool = False
     # Máximo de buscas por chamada (max_uses do tool web_search).
     AI_WEB_SEARCH_MAX_USES: int = 3
+    # Preço da busca web Anthropic (server tool web_search), cobrado À PARTE dos
+    # tokens: US$ 10,00 por 1.000 buscas (tabela oficial Anthropic). Entra no
+    # custo estimado (AILog/governança/alerta de budget) via ai_cost.
+    AI_WEB_SEARCH_CUSTO_USD_POR_1000: float = 10.0
 
     # ── IA — Maritaca (Sabiá) — provider BRASILEIRO, OpenAI-compatible ─────
     # PLUGÁVEL: nasce DESLIGADO (MARITACA_ENABLED=false) → sistema idêntico ao

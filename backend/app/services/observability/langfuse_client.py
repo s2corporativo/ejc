@@ -172,6 +172,7 @@ def montar_metadata(
     tier: str | None = None,
     roteamento_score: int | None = None,
     web_search_requests: int | None = None,
+    web_search_fontes: list | None = None,
 ) -> dict:
     """Metadata PURO (sem PII) — testável sem SDK. Só campos operacionais."""
     meta = {
@@ -188,8 +189,10 @@ def montar_metadata(
         "erro": erro,
         "tier": tier,
         "roteamento_score": roteamento_score,
-        # Nº de buscas web (verificação ativa) executadas na chamada.
+        # Nº de buscas web (verificação ativa) executadas na chamada + fontes
+        # consultadas (URLs públicas — sem PII).
         "web_search_requests": web_search_requests,
+        "web_search_fontes": web_search_fontes,
     }
     return {k: v for k, v in meta.items() if v is not None}
 

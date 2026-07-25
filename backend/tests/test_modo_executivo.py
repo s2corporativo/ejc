@@ -43,9 +43,10 @@ class _Usage:
 
 
 class _Resp:
-    def __init__(self, blocos):
+    def __init__(self, blocos, stop_reason="end_turn"):
         self.content = blocos
         self.usage = _Usage()
+        self.stop_reason = stop_reason
 
 
 class _FakeMessages:
@@ -233,6 +234,161 @@ async def test_web_search_conta_buscas_no_usage(monkeypatch):
     )
     assert texto == "com base na busca..."
     assert usage["web_search_requests"] == 1
+
+
+# ── Review PR #481 — item 1: custo da busca web (cobrado à parte) ────────────
+
+def test_custo_busca_web_brl(monkeypatch):
+    from decimal import Decimal
+    from app.services.ai_cost import custo_busca_web_brl
+    monkeypatch.setenv("USD_BRL_RATE", "5.00")
+    assert custo_busca_web_brl(0) == Decimal("0")
+    assert custo_busca_web_brl(None) == Decimal("0")
+    # 3 buscas × US$10/1000 × R$5,00 = R$0,15
+    assert float(custo_busca_web_brl(3)) == pytest.approx(0.15)
+
+
+async def test_chat_soma_custo_da_busca_no_custo_estimado(monkeypatch):
+    """Gateway chat(): custo_estimado_brl = tokens + busca web — é este valor
+    que persiste no AILog e alimenta governança/alerta de budget."""
+    monkeypatch.setenv("USD_BRL_RATE", "5.00")
+
+    async def _fake_barreira(provider, model, messages, modo, entidades,
+                             temperature, max_tokens):
+        usage = {
+            "model": "claude-opus-4-8", "input_tokens": 0, "output_tokens": 0,
+            "web_search_requests": 2,
+            "web_search_fontes": [{"titulo": "STJ", "url": "https://stj.jus.br/x"}],
+        }
+        return "texto", "texto", usage, messages, False
+
+    monkeypatch.setattr(g, "_chamar_com_barreira", _fake_barreira)
+    monkeypatch.setattr(
+        g, "_resolver_cadeia", lambda *a, **k: [("anthropic", "claude-opus-4-8")]
+    )
+    resp = await g.chat([{"role": "user", "content": "pergunta"}],
+                        task_type="analise_juridica")
+    # 0 tokens → custo é só a busca: 2 × US$10/1000 × R$5,00 = R$0,10
+    assert resp.custo_estimado_brl == pytest.approx(0.10)
+    assert resp.web_search_requests == 2
+    assert resp.web_search_fontes == [{"titulo": "STJ", "url": "https://stj.jus.br/x"}]
+
+
+# ── Review PR #481 — item 2: citações estruturadas da busca ──────────────────
+
+class _Citacao:
+    def __init__(self, url, title):
+        self.url = url
+        self.title = title
+
+
+async def test_fontes_da_busca_renderizadas_e_no_usage(monkeypatch):
+    """Citations dos blocos text NÃO são descartadas: viram seção 'Fontes
+    consultadas (busca web):' no texto e lista estruturada no usage (→ AILog)."""
+    box: dict = {}
+    bloco_texto = _Bloco("text", "Aplicável o CDC (Súmula 297/STJ).")
+    bloco_texto.citations = [
+        _Citacao("https://stj.jus.br/sumula-297", "Súmula 297 do STJ"),
+        _Citacao("https://stj.jus.br/sumula-297", "Súmula 297 do STJ"),  # dup
+    ]
+    blocos = [_Bloco("server_tool_use", name="web_search"), bloco_texto]
+    monkeypatch.setattr(
+        ap, "_get_client", lambda: _FakeClient(_FakeMessages(box, blocos))
+    )
+    monkeypatch.setattr(get_settings(), "ANTHROPIC_ENABLED", True)
+    monkeypatch.setattr(get_settings(), "AI_WEB_SEARCH_ENABLED", True)
+    texto, usage = await ap.chat(
+        messages=[{"role": "user", "content": "fatos"}],
+        model="claude-opus-4-8", temperature=0.1, max_tokens=1000,
+    )
+    assert "Fontes consultadas (busca web):" in texto
+    assert "- Súmula 297 do STJ — https://stj.jus.br/sumula-297" in texto
+    # dedupe por URL: uma única fonte estruturada no usage
+    assert usage["web_search_fontes"] == [
+        {"titulo": "Súmula 297 do STJ", "url": "https://stj.jus.br/sumula-297"}
+    ]
+
+
+def test_fontes_rag_busca_web_para_ailog():
+    linha = g._fontes_rag_busca_web(
+        2, [{"titulo": "Planalto", "url": "https://planalto.gov.br/cdc"}], "anthropic"
+    )
+    assert "[busca_web] 2 consulta(s)" in linha
+    assert "https://planalto.gov.br/cdc" in linha
+    assert g._fontes_rag_busca_web(0, [], "anthropic") is None
+
+
+# ── Review PR #481 — item 3: executivo ignorado em tarefas JSON ──────────────
+
+def test_executivo_ignorado_em_tarefa_de_saida_estruturada():
+    """Tarefas com 'SAÍDA OBRIGATÓRIA — JSON' (triagem/prazos/honorarios) são
+    mutuamente exclusivas com o formato de prosa do modo executivo: o modo é
+    IGNORADO (com aviso em log) e o parse downstream nunca quebra."""
+    msgs = [{"role": "system", "content": "PROMPT_TRIAGEM (JSON)"},
+            {"role": "user", "content": "relato"}]
+    for tarefa_json in ("triagem", "prazos", "honorarios"):
+        assert g._aplicar_nivel(msgs, "executivo", task_label=tarefa_json) == msgs
+    # Tarefa de prosa → modo aplicado normalmente
+    out = g._aplicar_nivel(msgs, "executivo", task_label="analise_juridica")
+    assert "MODO EXECUTIVO" in out[0]["content"]
+    # Níveis de raciocínio (alto/maximo) NÃO são afetados pela restrição
+    out_alto = g._aplicar_nivel(msgs, "alto", task_label="triagem")
+    assert len(out_alto) == 3
+
+
+# ── Review PR #481 — item 4: pause_turn com teto de continuações ─────────────
+
+class _FakeMessagesPause(_FakeMessages):
+    """Devolve stop_reason=pause_turn nas N primeiras chamadas; depois termina."""
+
+    def __init__(self, sink, pausas):
+        super().__init__(sink)
+        self._pausas = pausas
+
+    def create(self, **kwargs):
+        self._sink.setdefault("chamadas", []).append(kwargs)
+        if self._pausas > 0:
+            self._pausas -= 1
+            return _Resp([_Bloco("text", "parte ")], stop_reason="pause_turn")
+        return _Resp([_Bloco("text", "final")])
+
+
+async def test_pause_turn_continua_ate_stop_terminal(monkeypatch):
+    box: dict = {}
+    monkeypatch.setattr(
+        ap, "_get_client", lambda: _FakeClient(_FakeMessagesPause(box, pausas=2))
+    )
+    monkeypatch.setattr(get_settings(), "ANTHROPIC_ENABLED", True)
+    texto, usage = await ap.chat(
+        messages=[{"role": "user", "content": "fatos"}],
+        model="claude-opus-4-8", temperature=0.1, max_tokens=1000,
+    )
+    # 1 chamada inicial + 2 continuações; texto das partes concatenado
+    assert len(box["chamadas"]) == 3
+    assert texto == "parte parte final"
+    assert "interrompida" not in texto
+    # continuação reenvia o turno pausado como assistant
+    assert box["chamadas"][1]["messages"][-1]["role"] == "assistant"
+    # tokens somados entre as continuações (3 × 100 / 3 × 800)
+    assert usage["input_tokens"] == 300
+    assert usage["output_tokens"] == 2400
+
+
+async def test_pause_turn_degrada_gracioso_no_teto(monkeypatch):
+    """Sempre pause_turn → 1 inicial + 3 continuações (teto) e degradação
+    graciosa: usa o parcial acumulado + aviso, sem levantar erro."""
+    box: dict = {}
+    monkeypatch.setattr(
+        ap, "_get_client", lambda: _FakeClient(_FakeMessagesPause(box, pausas=99))
+    )
+    monkeypatch.setattr(get_settings(), "ANTHROPIC_ENABLED", True)
+    texto, _ = await ap.chat(
+        messages=[{"role": "user", "content": "fatos"}],
+        model="claude-opus-4-8", temperature=0.1, max_tokens=1000,
+    )
+    assert len(box["chamadas"]) == 1 + ap._MAX_CONTINUACOES_PAUSE_TURN
+    assert texto.startswith("parte parte parte parte")
+    assert "Busca web interrompida no limite de continuações" in texto
 
 
 async def test_web_search_nao_entra_no_caminho_agentico(sink, monkeypatch):

@@ -64,3 +64,19 @@ def estimar_custo_brl(
         custo = (ti * Decimal(str(p["input"])) + to * Decimal(str(p["output"]))) / Decimal(1_000_000)
         return custo.quantize(Decimal("0.000001"))
     return Decimal("0")
+
+
+def custo_busca_web_brl(n_buscas: int | None) -> Decimal:
+    """Custo da busca web Anthropic (server tool web_search) em R$ (Decimal).
+
+    A Anthropic cobra a busca À PARTE dos tokens: AI_WEB_SEARCH_CUSTO_USD_POR_1000
+    (US$ por 1.000 buscas — tabela oficial: US$ 10,00/1.000) × USD_BRL_RATE.
+    0/None buscas → 0. Nunca levanta exceção. O gateway soma este valor ao custo
+    de tokens nos DOIS caminhos (chat e executar_tarefa_ia), então o AILog e os
+    totais de governança/alerta de budget já o incluem."""
+    n = int(n_buscas or 0)
+    if n <= 0:
+        return Decimal("0")
+    usd = Decimal(n) * Decimal(str(settings.AI_WEB_SEARCH_CUSTO_USD_POR_1000)) / Decimal(1000)
+    cotacao = Decimal(str(os.getenv("USD_BRL_RATE", "5.70")))
+    return (usd * cotacao).quantize(Decimal("0.000001"))
