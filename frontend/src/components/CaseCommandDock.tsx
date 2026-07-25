@@ -1,21 +1,16 @@
 import { useEffect, useMemo, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import {
-  Briefcase,
-  CalendarClock,
   FileText,
   FileUp,
-  FolderOpen,
   Gavel,
-  GitBranch,
   LayoutGrid,
   Scale,
-  Sparkles,
   Trash2,
-  Wallet,
   X,
 } from "lucide-react";
 import api from "../lib/api";
+import { CASE_NAV_SECTIONS } from "../config/caseNav";
 import { useAreas } from "../lib/areas";
 import { toast } from "./Toast";
 import { Badge, Button, EmptyState, Modal } from "./UI";
@@ -165,50 +160,16 @@ export default function CaseCommandDock({ caseId }: { caseId: string }) {
     setAreaNova("");
   };
 
-  const actions = [
-    {
-      label: "Jornada e próxima ação",
-      description: "Estado, bloqueios e providência recomendada.",
-      icon: GitBranch,
-      to: `/casos/${caseId}?tab=orquestrador`,
-    },
-    {
-      label: "Visão do caso",
-      description: "Dados principais, cliente, responsáveis e situação.",
-      icon: Briefcase,
-      to: `/casos/${caseId}?tab=resumo`,
-    },
-    {
-      label: "Andamentos",
-      description: "Linha do tempo, movimentos, prazos e audiências.",
-      icon: CalendarClock,
-      to: `/casos/${caseId}?tab=timeline`,
-    },
-    {
-      label: "Documentos e provas",
-      description: "Arquivo contextual do caso.",
-      icon: FolderOpen,
-      to: `/casos/${caseId}?tab=documentos`,
-    },
-    {
-      label: "Estratégia",
-      description: "Teses, riscos, precedentes e decisão jurídica.",
-      icon: Sparkles,
-      to: `/casos/${caseId}?tab=teses`,
-    },
-    {
-      label: "Peças",
-      description: "Produção, revisão do advogado e aprovação.",
-      icon: FileText,
-      to: `/pecas?caso=${caseId}`,
-    },
-    {
-      label: "Financeiro",
-      description: "Honorários, custos e liquidez do caso.",
-      icon: Wallet,
-      to: `/casos/${caseId}?tab=financeiro`,
-    },
-  ];
+  // Fase 1 (plano de simplificação): os destinos de navegação são EXATAMENTE
+  // os cinco canônicos de config/caseNav.ts — os mesmos rótulos da barra
+  // (CaseContextBar) e da página do caso (CasoDetalhe). "Peças" deixou de ser
+  // um sexto destino: é ação de produção, junto de Áreas e Anexar documento.
+  const actions = CASE_NAV_SECTIONS.map((secao) => ({
+    label: secao.label,
+    description: secao.descricao,
+    icon: secao.icon,
+    to: `/casos/${caseId}?tab=${secao.tab}`,
+  }));
 
   return (
     <>
@@ -258,13 +219,20 @@ export default function CaseCommandDock({ caseId }: { caseId: string }) {
               ))}
             </div>
 
-            <div className="grid gap-2 sm:grid-cols-2">
+            <div className="grid gap-2 sm:grid-cols-3">
               <Button
                 variant="secondary"
                 onClick={() => setView("areas")}
                 icon={<Scale className="h-4 w-4" />}
               >
                 Áreas do caso
+              </Button>
+              <Button
+                variant="secondary"
+                onClick={() => abrirDestino(`/pecas?caso=${caseId}`)}
+                icon={<FileText className="h-4 w-4" />}
+              >
+                Peças do caso
               </Button>
               <Button
                 variant="primary"

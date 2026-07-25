@@ -1,32 +1,27 @@
-import { describe, expect, it, vi } from "vitest";
+import { describe, expect, it } from "vitest";
 import { render, screen } from "@testing-library/react";
-import { MemoryRouter, Route, Routes } from "react-router-dom";
-
-vi.mock("../../components/CaseBreadcrumb", () => ({
-  default: () => <div>TRILHA_DO_CASO</div>,
-}));
-
-vi.mock("../../components/OrquestradorPanel", () => ({
-  default: ({ caseId }: { caseId: string }) => (
-    <div>ORQUESTRADOR_OFICIAL:{caseId}</div>
-  ),
-}));
+import { MemoryRouter, Route, Routes, useLocation } from "react-router-dom";
 
 import JornadaCaso from "../JornadaCaso";
 
-describe("JornadaCaso — fonte única no Orquestrador", () => {
-  it("reutiliza o painel oficial com o id do caso e preserva o deep-link", () => {
+function DestinoProbe() {
+  const { pathname, search } = useLocation();
+  return <div>DESTINO:{`${pathname}${search}`}</div>;
+}
+
+describe("JornadaCaso — rota histórica redireciona para a Visão do caso", () => {
+  it("responde ao deep-link /casos/:id/jornada redirecionando para ?tab=resumo", () => {
     render(
       <MemoryRouter initialEntries={["/casos/case-1/jornada"]}>
         <Routes>
           <Route path="/casos/:id/jornada" element={<JornadaCaso />} />
+          <Route path="/casos/:id" element={<DestinoProbe />} />
         </Routes>
       </MemoryRouter>,
     );
 
-    expect(screen.getByText("ORQUESTRADOR_OFICIAL:case-1")).toBeTruthy();
-    expect(screen.getByText("Jornada do Caso")).toBeTruthy();
-    const link = screen.getByRole("link", { name: /Abrir no caso/ });
-    expect(link.getAttribute("href")).toBe("/casos/case-1?tab=orquestrador");
+    // Fase 1: a jornada vive embutida na Visão (aba resumo) — a rota antiga
+    // não quebra favoritos, apenas leva ao destino novo.
+    expect(screen.getByText("DESTINO:/casos/case-1?tab=resumo")).toBeTruthy();
   });
 });

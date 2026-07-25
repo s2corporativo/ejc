@@ -522,12 +522,8 @@ export default function TabResumo({ caso }: { caso: Case }) {
         >
           ⚔️ Sala de Guerra
         </button>
-        <button
-          onClick={() => navigate(`/casos/${caso.id}/jornada`)}
-          className="btn-secondary flex items-center gap-1"
-        >
-          🧭 Jornada do caso
-        </button>
+        {/* Fase 1: o botão "Jornada do caso" saiu daqui — a jornada agora vive
+            embutida na própria Visão (painel do orquestrador acima). */}
         <button
           onClick={() => navigate(`/casos/${caso.id}/entrevista`)}
           className="btn-secondary flex items-center gap-1"
