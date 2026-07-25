@@ -41,7 +41,9 @@ export function validarCnpj(cnpj: string): boolean {
  * 11 dígitos = CPF; 14 = CNPJ; vazio é permitido (documento opcional);
  * qualquer outro comprimento ou DV inválido retorna erro — nunca truncar.
  */
-export function classificarDocumento(valor: string):
+export function classificarDocumento(
+  valor: string,
+):
   | { tipo: "vazio"; cpf: null; cnpj: null }
   | { tipo: "cpf"; cpf: string; cnpj: null }
   | { tipo: "cnpj"; cpf: null; cnpj: string }
@@ -55,7 +57,10 @@ export function classificarDocumento(valor: string):
   }
   if (d.length === 14) {
     if (!validarCnpj(d))
-      return { tipo: "erro", mensagem: "CNPJ com dígito verificador inválido." };
+      return {
+        tipo: "erro",
+        mensagem: "CNPJ com dígito verificador inválido.",
+      };
     return { tipo: "cnpj", cpf: null, cnpj: d };
   }
   return {

@@ -1,9 +1,5 @@
 import { describe, expect, it } from "vitest";
-import {
-  classificarDocumento,
-  validarCnpj,
-  validarCpf,
-} from "./documento";
+import { classificarDocumento, validarCnpj, validarCpf } from "./documento";
 
 describe("validarCpf", () => {
   it("aceita CPF válido com e sem máscara", () => {
