@@ -4,10 +4,14 @@ on:
   workflow_dispatch:
   push:
     branches:
-      - agent/organizacao-padronizacao-rotas-fluxos
+      - main
     paths:
+      - "README.md"
+      - "docs/**/*.md"
+      - "scripts/check_documentation_consistency.py"
       - "scripts/generate_architecture_inventory.py"
       - "scripts/refine_architecture_inventory.py"
+      - "scripts/tests/test_check_documentation_consistency.py"
       - "scripts/tests/test_generate_architecture_inventory.py"
       - "scripts/tests/test_refine_architecture_inventory.py"
       - "config/architecture_inventory_overrides.json"
@@ -17,8 +21,12 @@ on:
       - ".github/workflows/**"
   pull_request:
     paths:
+      - "README.md"
+      - "docs/**/*.md"
+      - "scripts/check_documentation_consistency.py"
       - "scripts/generate_architecture_inventory.py"
       - "scripts/refine_architecture_inventory.py"
+      - "scripts/tests/test_check_documentation_consistency.py"
       - "scripts/tests/test_generate_architecture_inventory.py"
       - "scripts/tests/test_refine_architecture_inventory.py"
       - "config/architecture_inventory_overrides.json"
@@ -49,11 +57,12 @@ jobs:
       - name: Validate Python runtime
         run: python3 --version
 
-      - name: Test inventory pipeline
+      - name: Test inventory and documentation gates
         shell: bash
         run: |
           set -o pipefail
           python3 -m unittest \
+            scripts.tests.test_check_documentation_consistency \
             scripts.tests.test_generate_architecture_inventory \
             scripts.tests.test_refine_architecture_inventory \
             -v 2>&1 | tee architecture-test.log
@@ -66,6 +75,9 @@ jobs:
           path: architecture-test.log
           if-no-files-found: warn
           retention-days: 7
+
+      - name: Validate canonical documentation
+        run: python3 scripts/check_documentation_consistency.py
 
       - name: Generate raw inventory
         run: |
