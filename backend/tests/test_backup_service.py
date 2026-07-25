@@ -156,12 +156,9 @@ async def test_executar_backup_falha_sem_chave(monkeypatch):
     assert "BACKUP_ENCRYPTION_KEY" in (resultado["erro"] or "")
 
 
-async def test_executar_backup_falha_sem_pasta(monkeypatch):
-    monkeypatch.setattr(backup_service.settings, "BACKUP_ENCRYPTION_KEY", CHAVE)
-    monkeypatch.setattr(backup_service.settings, "BACKUP_DRIVE_FOLDER_ID", "")
-    resultado = await backup_service.executar_backup(_FakeDB(), origem="manual")
-    assert resultado["status"] == "erro"
-    assert "BACKUP_DRIVE_FOLDER_ID" in (resultado["erro"] or "")
+# Nota: pasta do Drive ausente deixou de ser falha total — virou falha de
+# OFFSITE (status "parcial" com prova local, ou "erro" quando
+# BACKUP_OFFSITE_OBRIGATORIO=true). Casos cobertos em test_backup_offsite.py.
 
 
 def test_pg_dump_ausente_erro_cita_dependencia(monkeypatch):

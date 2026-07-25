@@ -36,6 +36,7 @@ from __future__ import annotations
 
 import asyncio
 import json
+import sys
 
 from app.core.database import AsyncSessionLocal
 from app.services import backup_service
@@ -52,19 +53,38 @@ def _safe_artifact(item: dict) -> dict:
 async def main() -> int:
     config = backup_service.configuracao_status()
     auth_mode = str(config.get("auth_mode") or "")
+    destino = str(config.get("destino") or "gdrive")
+    offsite_obrigatorio = bool(config.get("offsite_obrigatorio"))
+
+    # Gate LOCAL: sem isto não existe prova cifrada — bloqueia SEMPRE.
     problems: list[str] = []
-    required = {
+    required_local = {
         "enabled": "agendamento desabilitado",
         "chave_configurada": "chave de criptografia ausente",
-        "pasta_configurada": "pasta de destino ausente",
-        "credencial_dedicada_configurada": "credencial exclusiva ausente",
         "pg_dump_disponivel": "pg_dump indisponível",
     }
-    for field, message in required.items():
+    for field, message in required_local.items():
         if not bool(config.get(field)):
             problems.append(message)
-    if auth_mode == "inherit":
-        problems.append("modo inherit não atende à segregação de credenciais")
+
+    # Gate OFFSITE: só bloqueia com BACKUP_OFFSITE_OBRIGATORIO=true; caso
+    # contrário problemas de destino viram aviso (a prova local sustenta o
+    # deploy) e a execução abaixo registra a falha offsite como "parcial".
+    offsite_problems: list[str] = []
+    if destino == "rclone":
+        if not bool(config.get("rclone_remote_configurado")):
+            offsite_problems.append("remote rclone ausente (BACKUP_RCLONE_REMOTE)")
+        if not bool(config.get("rclone_disponivel")):
+            offsite_problems.append("binário rclone indisponível")
+    else:
+        if not bool(config.get("pasta_configurada")):
+            offsite_problems.append("pasta de destino ausente")
+        if not bool(config.get("credencial_dedicada_configurada")):
+            offsite_problems.append("credencial exclusiva ausente")
+        if auth_mode == "inherit":
+            offsite_problems.append("modo inherit não atende à segregação de credenciais")
+    if offsite_obrigatorio:
+        problems.extend(offsite_problems)
 
     if problems:
         print(
@@ -74,6 +94,7 @@ async def main() -> int:
                     "status": "configuracao_insegura",
                     "problemas": problems,
                     "auth_mode": auth_mode or "indisponível",
+                    "destino": destino,
                 },
                 ensure_ascii=False,
                 sort_keys=True,
@@ -93,7 +114,13 @@ async def main() -> int:
     names = [str(item.get("nome") or "") for item in artifacts]
     has_db = any(name.endswith("_db.dump.enc") for name in names)
     has_uploads = any(name.endswith("_uploads.tar.gz.enc") for name in names)
-    complete = result.get("status") == "sucesso" and has_db and has_uploads
+    local_ok = bool(result.get("local_ok")) and has_db and has_uploads
+    offsite_ok = bool(result.get("offsite_ok"))
+    offsite_erro = str(result.get("offsite_erro") or "") or None
+    # Gate do deploy: exige a prova LOCAL completa (banco + uploads cifrados)
+    # e respeita o resultado do serviço ("parcial" por offsite falho continua
+    # ok=True quando BACKUP_OFFSITE_OBRIGATORIO=false).
+    complete = bool(result.get("ok")) and local_ok
 
     safe = {
         "ok": complete,
@@ -104,9 +131,20 @@ async def main() -> int:
         "duracao_segundos": result.get("duracao_segundos"),
         "banco_cifrado": has_db,
         "uploads_cifrados": has_uploads,
-        "credencial_dedicada": True,
+        "credencial_dedicada": bool(config.get("credencial_dedicada_configurada")),
         "auth_mode": auth_mode,
+        "destino": destino,
+        "local_ok": local_ok,
+        "offsite_ok": offsite_ok,
+        "offsite_erro": offsite_erro,
     }
+    if complete and not offsite_ok:
+        print(
+            f"AVISO GRAVE: backup offsite falhou (destino {destino}): "
+            f"{offsite_erro or 'erro não informado'} — deploy prossegue com "
+            "prova local; corrija o destino offsite",
+            file=sys.stderr,
+        )
     print(json.dumps(safe, ensure_ascii=False, sort_keys=True))
     return 0 if complete else 1
 
