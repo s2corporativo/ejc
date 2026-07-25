@@ -1,5 +1,5 @@
 # ── app/services/backup_service.py ───────────────────────────────────────────
-# Backup diário automatizado → Google Drive.
+# Backup diário automatizado → offsite (Google Drive ou remote rclone).
 #
 # Desenho de segurança (LGPD):
 # - O dump do Postgres carrega PII (clientes, processos): TODO artefato é
@@ -10,6 +10,9 @@
 #   O modo legado herdado permanece explícito para compatibilidade.
 # - Rotação apaga SÓ arquivos com o prefixo do EJC (ejc_backup_) na pasta.
 # - Segredos (chave, senha do banco) nunca vão para log/erro/estado.
+# - Destino offsite flexível (BACKUP_DESTINO=gdrive|rclone): a fase LOCAL
+#   (pg_dump + tar + Fernet) é a prova mínima; falha do envio offsite vira
+#   status "parcial" (ok=True) quando BACKUP_OFFSITE_OBRIGATORIO=false.
 from __future__ import annotations
 
 import asyncio
@@ -87,6 +90,11 @@ def configuracao_status() -> dict[str, bool | str]:
         "credencial_dedicada_configurada": dedicada,
         "auth_mode": str(auth["auth_mode"]),
         "pg_dump_disponivel": shutil.which("pg_dump") is not None,
+        # Destino offsite flexível (gdrive|rclone) e sua obrigatoriedade.
+        "destino": (settings.BACKUP_DESTINO or "gdrive").strip().lower(),
+        "rclone_remote_configurado": bool((settings.BACKUP_RCLONE_REMOTE or "").strip()),
+        "rclone_disponivel": shutil.which("rclone") is not None,
+        "offsite_obrigatorio": bool(settings.BACKUP_OFFSITE_OBRIGATORIO),
     }
 
 
@@ -237,6 +245,33 @@ def _upload_drive_sync(service, caminho: str, nome: str, folder_id: str) -> dict
     ).execute()
 
 
+def _upload_rclone_sync(caminho: str, nome: str, remote: str) -> None:
+    """Envia UM artefato já cifrado via `rclone copyto` (BACKUP_DESTINO=rclone).
+
+    Bloqueante — chamar via asyncio.to_thread. O conteúdo já é Fernet, então
+    nada sai em claro; mesmo assim o caminho temporário local é redigido do
+    stderr antes de virar mensagem de erro (nunca logar caminhos de artefato).
+    """
+    if shutil.which("rclone") is None:
+        raise RuntimeError(
+            "Binário rclone não encontrado no ambiente. Instale com: "
+            "curl https://rclone.org/install.sh | sudo bash — e configure o "
+            "remote com `rclone config` (ver runbook do backup)."
+        )
+    destino = f"{remote.rstrip('/')}/{nome}"
+    r = subprocess.run(
+        # "--" impede que um remote iniciado em "-" seja lido como flag (auditoria PR #480).
+        ["rclone", "copyto", "--", caminho, destino],
+        timeout=settings.BACKUP_RCLONE_TIMEOUT,
+        capture_output=True, text=True,
+    )
+    if r.returncode != 0:
+        stderr = (r.stderr or "").replace(caminho, "<artefato>").strip()
+        raise RuntimeError(
+            f"rclone copyto retornou código {r.returncode}: {stderr[:300]}"
+        )
+
+
 def _listar_backups_sync(service, folder_id: str) -> list[dict[str, Any]]:
     """Lista arquivos da pasta com o prefixo do EJC (paginado)."""
     itens: list[dict[str, Any]] = []
@@ -309,6 +344,12 @@ async def _ensure_state_table(db: AsyncSession) -> None:
             updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
         )
     """))
+    # Evolução idempotente do estado (mesmo precedente do CREATE acima — sem
+    # migration Alembic): registra se o envio OFFSITE do último ciclo ocorreu.
+    await db.execute(sqltext(
+        "ALTER TABLE backup_drive_state "
+        "ADD COLUMN IF NOT EXISTS offsite_ok BOOLEAN NULL"
+    ))
 
 
 async def _persistir_estado(db: AsyncSession, resultado: dict[str, Any]) -> None:
@@ -317,10 +358,10 @@ async def _persistir_estado(db: AsyncSession, resultado: dict[str, Any]) -> None
         await db.execute(sqltext("""
             INSERT INTO backup_drive_state (
                 id, last_run_at, last_status, last_error, last_origem,
-                duracao_segundos, detalhes, updated_at
+                duracao_segundos, detalhes, offsite_ok, updated_at
             ) VALUES (
                 1, NOW(), :status, :erro, :origem,
-                :duracao, CAST(:detalhes AS JSONB), NOW()
+                :duracao, CAST(:detalhes AS JSONB), :offsite_ok, NOW()
             )
             ON CONFLICT (id) DO UPDATE SET
                 last_run_at = EXCLUDED.last_run_at,
@@ -329,6 +370,7 @@ async def _persistir_estado(db: AsyncSession, resultado: dict[str, Any]) -> None
                 last_origem = EXCLUDED.last_origem,
                 duracao_segundos = EXCLUDED.duracao_segundos,
                 detalhes = EXCLUDED.detalhes,
+                offsite_ok = EXCLUDED.offsite_ok,
                 updated_at = NOW()
         """), {
             "status": resultado.get("status"),
@@ -336,6 +378,7 @@ async def _persistir_estado(db: AsyncSession, resultado: dict[str, Any]) -> None
             "origem": resultado.get("origem"),
             "duracao": resultado.get("duracao_segundos"),
             "detalhes": json.dumps(resultado.get("artefatos") or []),
+            "offsite_ok": resultado.get("offsite_ok"),
         })
         await db.commit()
     except Exception as exc:  # estado é telemetria — nunca derruba o backup
@@ -346,7 +389,7 @@ async def obter_estado(db: AsyncSession) -> dict[str, Any] | None:
     await _ensure_state_table(db)
     row = (await db.execute(sqltext(
         "SELECT last_run_at, last_status, last_error, last_origem, "
-        "duracao_segundos, detalhes, updated_at "
+        "duracao_segundos, detalhes, offsite_ok, updated_at "
         "FROM backup_drive_state WHERE id = 1"
     ))).mappings().first()
     return dict(row) if row else None
@@ -423,16 +466,21 @@ async def executar_backup(
         artefatos: list[dict[str, Any]] = []
         avisos: list[str] = []
         status, erro = "sucesso", None
+        # Semântica separada: local_ok = artefatos cifrados gerados (prova
+        # mínima); offsite_ok = envio ao destino externo concluído.
+        local_ok = False
+        offsite_ok = False
+        offsite_erro: str | None = None
+        destino = (settings.BACKUP_DESTINO or "gdrive").strip().lower()
 
         try:
-            # Gates de configuração — falham cedo com mensagem acionável.
+            # Gates de configuração LOCAL — falham cedo com mensagem acionável.
             fernet_chave = (settings.BACKUP_ENCRYPTION_KEY or "").strip()
             _fernet()  # valida presença/formato da chave
-            folder_id = (settings.BACKUP_DRIVE_FOLDER_ID or "").strip()
-            if not folder_id:
+            if destino not in {"gdrive", "rclone"}:
                 raise RuntimeError(
-                    "BACKUP_DRIVE_FOLDER_ID não configurado — defina o ID da "
-                    "pasta do Google Drive que receberá os backups."
+                    f"BACKUP_DESTINO inválido: {destino!r} — use 'gdrive' "
+                    "(Google Drive) ou 'rclone' (remote rclone, ex.: OneDrive)."
                 )
 
             with tempfile.TemporaryDirectory(prefix="ejc_backup_") as tmp:
@@ -493,19 +541,66 @@ async def executar_backup(
                 else:
                     avisos.append(f"UPLOAD_DIR inexistente: {settings.UPLOAD_DIR}")
 
-                # 4) Upload ao Drive (identidade de escrita exclusiva quando configurada).
-                service = await asyncio.to_thread(_drive_client_escrita)
-                for art in artefatos:
-                    enviado = await asyncio.to_thread(
-                        _upload_drive_sync, service, art["caminho"], art["nome"], folder_id
-                    )
-                    art["drive_file_id"] = enviado.get("id")
-                    art.pop("caminho", None)
+                # Artefatos cifrados prontos no disco = prova LOCAL do backup.
+                local_ok = True
 
-                # 5) Rotação: mantém BACKUP_RETENCAO_DIAS dias (só prefixo EJC).
-                removidos = await asyncio.to_thread(
-                    _rotacionar_sync, service, folder_id, settings.BACKUP_RETENCAO_DIAS
-                )
+                # 4) Envio OFFSITE — Google Drive (fluxo original) ou rclone
+                #    (ex.: OneDrive). Falha aqui NÃO invalida a prova local:
+                #    com BACKUP_OFFSITE_OBRIGATORIO=false vira status
+                #    "parcial" com aviso grave (deploy segue com a prova
+                #    local); com true, propaga e o backup inteiro falha.
+                removidos = 0
+                try:
+                    if destino == "rclone":
+                        remote = (settings.BACKUP_RCLONE_REMOTE or "").strip()
+                        if not remote:
+                            raise RuntimeError(
+                                "BACKUP_RCLONE_REMOTE não configurado — defina "
+                                "o remote rclone de destino (ex.: "
+                                "onedrive:EJC-Backups)."
+                            )
+                        for art in artefatos:
+                            await asyncio.to_thread(
+                                _upload_rclone_sync, art["caminho"], art["nome"], remote,
+                            )
+                            art.pop("caminho", None)
+                        # Retenção no remote rclone é gerida fora do ciclo
+                        # (ver runbook) — nada é apagado automaticamente aqui.
+                    else:
+                        folder_id = (settings.BACKUP_DRIVE_FOLDER_ID or "").strip()
+                        if not folder_id:
+                            raise RuntimeError(
+                                "BACKUP_DRIVE_FOLDER_ID não configurado — defina o ID da "
+                                "pasta do Google Drive que receberá os backups."
+                            )
+                        # Identidade de escrita exclusiva quando configurada.
+                        service = await asyncio.to_thread(_drive_client_escrita)
+                        for art in artefatos:
+                            enviado = await asyncio.to_thread(
+                                _upload_drive_sync, service, art["caminho"], art["nome"], folder_id
+                            )
+                            art["drive_file_id"] = enviado.get("id")
+                            art.pop("caminho", None)
+
+                        # 5) Rotação: mantém BACKUP_RETENCAO_DIAS dias (só prefixo EJC).
+                        removidos = await asyncio.to_thread(
+                            _rotacionar_sync, service, folder_id, settings.BACKUP_RETENCAO_DIAS
+                        )
+                    offsite_ok = True
+                except Exception as exc:
+                    if settings.BACKUP_OFFSITE_OBRIGATORIO:
+                        raise
+                    offsite_erro = f"{type(exc).__name__}: {str(exc)[:400]}"
+                    avisos.append(
+                        f"AVISO GRAVE: backup offsite falhou (destino {destino}): "
+                        f"{offsite_erro} — prova local cifrada gerada; corrija o "
+                        "destino offsite"
+                    )
+                    logger.error(
+                        "[Backup] offsite falhou (destino=%s): %s — artefatos "
+                        "locais cifrados seguem como prova do ciclo",
+                        destino, offsite_erro,
+                    )
 
             if avisos:
                 status = "parcial"
@@ -525,6 +620,10 @@ async def executar_backup(
             "origem": origem,
             "erro": erro,
             "avisos": avisos,
+            "destino": destino,
+            "local_ok": local_ok,
+            "offsite_ok": offsite_ok,
+            "offsite_erro": offsite_erro,
             "artefatos": [
                 {k: v for k, v in a.items() if k != "caminho"} for a in artefatos
             ],
@@ -535,8 +634,10 @@ async def executar_backup(
 
         # Log estruturado do resultado (sucesso e falha).
         logger.info(
-            "[Backup] status=%s origem=%s duracao=%.1fs artefatos=%d erro=%s",
-            status, origem, duracao, len(resultado["artefatos"]), erro or "-",
+            "[Backup] status=%s origem=%s destino=%s duracao=%.1fs artefatos=%d "
+            "local_ok=%s offsite_ok=%s erro=%s",
+            status, origem, destino, duracao, len(resultado["artefatos"]),
+            local_ok, offsite_ok, erro or "-",
         )
 
         # Estado + auditoria + alerta — todos fail-safe.
