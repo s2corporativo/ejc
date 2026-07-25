@@ -96,9 +96,10 @@ async def test_destino_rclone_chama_subprocess_com_args_corretos(monkeypatch, tm
     for chamada in chamadas:
         cmd = chamada["cmd"]
         assert cmd[0] == "rclone" and cmd[1] == "copyto"
-        assert cmd[3].startswith("onedrive:EJC-Backups/ejc_backup_")
+        assert cmd[2] == "--"  # remote iniciado em "-" nunca vira flag
+        assert cmd[4].startswith("onedrive:EJC-Backups/ejc_backup_")
         assert chamada["timeout"] == 123
-    destinos = [c["cmd"][3] for c in chamadas]
+    destinos = [c["cmd"][4] for c in chamadas]
     assert any(d.endswith("_db.dump.enc") for d in destinos)
     assert any(d.endswith("_uploads.tar.gz.enc") for d in destinos)
     # Segredo nunca vaza no payload (vai para log/estado/status).
