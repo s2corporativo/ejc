@@ -63,6 +63,54 @@ def _get_client():
     return _client
 
 
+def _system_param(system: str):
+    """Bloco system para a API. Com AI_PROMPT_CACHING_ENABLED (default True),
+    envia como bloco com cache_control ephemeral (prompt caching: leituras
+    repetidas do mesmo prefixo custam ~10%; prefixos curtos apenas não cacheiam,
+    sem erro). Desligado → string pura (formato aceito por qualquer modelo)."""
+    if get_settings().AI_PROMPT_CACHING_ENABLED:
+        return [{
+            "type": "text",
+            "text": system,
+            "cache_control": {"type": "ephemeral"},
+        }]
+    return system
+
+
+def _web_search_tool() -> dict | None:
+    """Tool server-side de busca web (verificação ativa) — opt-in via
+    AI_WEB_SEARCH_ENABLED (default OFF, padrão de integrações do repo).
+
+    LGPD: este provider é invocado EXCLUSIVAMENTE pelo ai_gateway
+    (_chamar_com_barreira → _chamar_provedor), DEPOIS da barreira de
+    pseudonimização/sanitização (_preparar_mensagens_externo). Portanto qualquer
+    query que o modelo derive das mensagens para a busca já está sem PII — o
+    tool nunca vê conteúdo cru."""
+    s = get_settings()
+    if not s.AI_WEB_SEARCH_ENABLED:
+        return None
+    return {
+        "type": "web_search_20250305",
+        "name": "web_search",
+        "max_uses": max(1, int(s.AI_WEB_SEARCH_MAX_USES)),
+    }
+
+
+def _contar_buscas_web(resp) -> int:
+    """Quantas buscas web o modelo executou nesta resposta (0 sem o tool).
+    Preferimos o contador oficial usage.server_tool_use.web_search_requests;
+    fallback: conta blocos server_tool_use com name=web_search."""
+    stu = getattr(getattr(resp, "usage", None), "server_tool_use", None)
+    buscas = getattr(stu, "web_search_requests", None)
+    if buscas is None:
+        buscas = sum(
+            1 for b in (getattr(resp, "content", None) or [])
+            if getattr(b, "type", "") == "server_tool_use"
+            and getattr(b, "name", "") == "web_search"
+        )
+    return int(buscas or 0)
+
+
 def _split_system(messages: list[dict]) -> tuple[str, list[dict]]:
     """Separa mensagens 'system' (Anthropic usa param próprio) das demais."""
     system_parts, conv = [], []
@@ -105,14 +153,16 @@ async def chat(messages: list[dict], model: str | None,
         client = _get_client()
         kwargs = dict(model=mdl, messages=conv)
         if system:
-            # Prompt caching: bloco system com cache_control — leituras repetidas
-            # do mesmo prefixo (system prompt + base legal + RAG do caso) custam
-            # ~10% do preço. Prefixos curtos apenas não cacheiam (sem erro).
-            kwargs["system"] = [{
-                "type": "text",
-                "text": system,
-                "cache_control": {"type": "ephemeral"},
-            }]
+            # Prompt caching (AI_PROMPT_CACHING_ENABLED): bloco system com
+            # cache_control — leituras repetidas do mesmo prefixo (system prompt
+            # + base legal + RAG do caso) custam ~10% do preço.
+            kwargs["system"] = _system_param(system)
+        # Busca web (verificação ativa, opt-in): as `messages` recebidas aqui já
+        # passaram pela barreira LGPD do gateway (pseudonimização/sanitização em
+        # _chamar_com_barreira) — ver docstring de _web_search_tool.
+        tool_busca = _web_search_tool()
+        if tool_busca:
+            kwargs["tools"] = [tool_busca]
         if _is_modern(mdl):
             effort = (get_settings().ANTHROPIC_EFFORT or "high").lower()
             # O thinking adaptativo consome o MESMO budget de max_tokens da
@@ -138,6 +188,19 @@ async def chat(messages: list[dict], model: str | None,
             # Mensagem CURTA e segura: tipo + status. Sem corpo, sem stack,
             # sem chave. `from None` corta a cadeia de exceção original.
             status = getattr(e, "status_code", None)
+            # Degradação graciosa da busca web: se a API rejeitou a requisição
+            # COM o tool (400 — modelo/conta sem suporte ao web_search), repete
+            # a MESMA chamada sem tools em vez de falhar a resposta.
+            if tool_busca and status == 400:
+                kwargs.pop("tools", None)
+                try:
+                    return client.messages.create(**kwargs)
+                except anthropic.APIError as e2:
+                    status2 = getattr(e2, "status_code", None)
+                    raise RuntimeError(
+                        f"Anthropic API falhou ({type(e2).__name__}"
+                        + (f", HTTP {status2}" if status2 else "") + ")"
+                    ) from None
             raise RuntimeError(
                 f"Anthropic API falhou ({type(e).__name__}"
                 + (f", HTTP {status}" if status else "") + ")"
@@ -159,6 +222,9 @@ async def chat(messages: list[dict], model: str | None,
         # Transparência de custo do prompt caching (leitura ≈ 10% do preço).
         "cache_read_input_tokens": getattr(u, "cache_read_input_tokens", None),
         "cache_creation_input_tokens": getattr(u, "cache_creation_input_tokens", None),
+        # Nº de buscas web executadas (0 quando o tool está OFF/não usado) —
+        # o gateway registra este metadado em AILog/observabilidade.
+        "web_search_requests": _contar_buscas_web(resp),
     }
     return texto, usage
 
@@ -197,13 +263,14 @@ async def chat_tools(messages: list[dict], model: str | None,
     def _call():
         import anthropic  # import tardio (mesmo padrão do _get_client)
         client = _get_client()
+        # NOTA: o tool de busca web NÃO é anexado aqui — o loop agêntico
+        # (services/ai/agent/loop.py) gerencia sua própria lista de tools e
+        # executa cada tool_call localmente; um server-side tool intercalado
+        # mudaria o contrato do loop. Busca web opt-in vale só para chat().
         kwargs = dict(model=mdl, messages=conv, tools=tools)
         if system:
-            kwargs["system"] = [{
-                "type": "text",
-                "text": system,
-                "cache_control": {"type": "ephemeral"},
-            }]
+            # Prompt caching condicionado a AI_PROMPT_CACHING_ENABLED (idem chat()).
+            kwargs["system"] = _system_param(system)
         if _is_modern(mdl):
             effort = (get_settings().ANTHROPIC_EFFORT or "high").lower()
             # Achado M3: NÃO forçar o piso de 8192 no caminho de TOOL-USE. Ao

@@ -27,6 +27,9 @@ from datetime import datetime, timezone
 from app.core.config import get_settings
 from app.services import legal_base
 from app.services.ai_cost import estimar_custo_brl
+# Import direto do submódulo (sem passar pelo __init__ do pacote): modo_executivo
+# não tem imports próprios → zero risco de ciclo no import do gateway.
+from app.services.system_prompts.modo_executivo import PROMPT_MODO_EXECUTIVO
 
 logger = logging.getLogger("ejc.ai.gateway")
 settings = get_settings()
@@ -69,6 +72,11 @@ NIVEL_INTELIGENCIA_PROMPTS = {
         "DECISAO HUMANA PENDENTE, e entregue conclusoes verificaveis com nivel de confianca. "
         "Nao revele a cadeia de pensamento — entregue apenas o resultado estruturado."
     ),
+    # Modo Executivo (system_prompts/modo_executivo.py): estilo de resposta de
+    # advogado sênior (método A→E + formato executivo em 3 blocos). COMPÕE com o
+    # prompt por área existente — _aplicar_nivel apenas PREPENDA a mensagem
+    # system extra; nada substitui os SYSTEM_PROMPTS por área.
+    "executivo": PROMPT_MODO_EXECUTIVO,
 }
 
 
@@ -201,6 +209,9 @@ class GatewayResponse:
     roteamento_score: int | None = None
     # True quando a resposta veio do cache (dedup de requisição idêntica).
     cache_hit: bool = False
+    # Nº de buscas web (verificação ativa) executadas pelo provedor nesta
+    # chamada (0 = tool desligado/não usado). Metadado de auditoria.
+    web_search_requests: int = 0
     timestamp: str = field(
         default_factory=lambda: datetime.now(timezone.utc).isoformat()
     )
@@ -395,6 +406,14 @@ async def chat(
             modelo_real = usage.get("model", model or "")
             inp = usage.get("input_tokens")
             out = usage.get("output_tokens")
+            # Metadado de auditoria: nº de buscas web (verificação ativa) que o
+            # provedor executou — registrado no log e na observabilidade.
+            buscas_web = int(usage.get("web_search_requests") or 0)
+            if buscas_web:
+                logger.info(
+                    "[Gateway] %s → %s usou busca web (%d consulta(s))",
+                    task_type, provider, buscas_web,
+                )
             # Custo pela fonte ÚNICA (ai_cost): ciente do PROVEDOR real — Groq
             # não fica mais zerado (bug anterior: só havia preço Anthropic aqui).
             custo_brl = float(estimar_custo_brl(provider, inp or 0, out or 0, modelo_real))
@@ -411,6 +430,7 @@ async def chat(
                 custo_estimado_brl=custo_brl,
                 roteamento_tier=roteamento_tier,
                 roteamento_score=roteamento_score,
+                web_search_requests=buscas_web,
             )
             if fallback_ativado:
                 logger.warning(
@@ -432,6 +452,7 @@ async def chat(
                     fallback_ativado=fallback_ativado, fallback_motivo=fallback_motivo,
                     custo_estimado_brl=custo_brl, sucesso=True,
                     tier=roteamento_tier, roteamento_score=roteamento_score,
+                    web_search_requests=buscas_web,
                 ),
             )
             _lf.flush()
@@ -964,6 +985,8 @@ async def executar_tarefa_ia(tarefa, mensagem: str, case_id: str | None = None,
     inp = usage.get("input_tokens") or 0
     out = usage.get("output_tokens") or 0
     modelo_real = usage.get("model", cfg.model or "")
+    # Nº de buscas web (verificação ativa) executadas pelo provedor (0 = OFF).
+    buscas_web = int(usage.get("web_search_requests") or 0)
     # Fonte única (ai_cost), ciente do provedor: Groq deixa de reportar 0.0.
     custo = float(estimar_custo_brl(provedor_usado, inp, out, modelo_real))
     if db is not None and user_id:
@@ -976,6 +999,13 @@ async def executar_tarefa_ia(tarefa, mensagem: str, case_id: str | None = None,
             db, user_id=user_id, tipo_uso=_tipo_uso(tarefa), case_id=case_id,
             prompt_sanitizado=prompt_log, pii_removida=pii_removida_log,
             resposta=resposta_log, modelo=f"{provedor_usado}/{modelo_real}",
+            # Auditoria da verificação ativa: registra no AILog (fontes_rag,
+            # campo de fontes já existente — sem migration) que a resposta usou
+            # busca web e quantas consultas foram feitas.
+            fontes_rag=(
+                f"[busca_web] {buscas_web} consulta(s) via web_search ({provedor_usado})"
+                if buscas_web else None
+            ),
             tokens_input=inp, tokens_output=out, custo_estimado=custo,
         )
     # #40: cacheia só sucesso e SEM PII reidratada — no modo reversível o `texto`
@@ -1002,6 +1032,8 @@ async def executar_tarefa_ia(tarefa, mensagem: str, case_id: str | None = None,
         "tokens_usados": inp + out, "custo_estimado_brl": custo,
         "fallback_ativado": fallback_ativado,
         "fallback_motivo": fallback_motivo if fallback_ativado else None,
+        # Metadado de auditoria (aditivo — consumidores ignoram chaves extras).
+        "web_search_requests": buscas_web,
     }
 
 
