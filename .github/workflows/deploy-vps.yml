@@ -37,6 +37,7 @@ jobs:
     env:
       TARGET_SHA: ${{ github.event.workflow_run.head_sha || github.sha }}
       RUN_SEEDS: ${{ (github.event_name == 'workflow_run' || inputs.run_seeds) && '1' || '0' }}
+      REQUIRE_PREDEPLOY_BACKUP: "1"
     steps:
       - name: Checkout exato do commit aprovado
         uses: actions/checkout@v7
@@ -138,6 +139,7 @@ jobs:
           RUN_MIGRATIONS="$RUN_MIGRATIONS" \
           MIGRATIONS_BACKWARD_COMPATIBLE="$MIGRATIONS_BACKWARD_COMPATIBLE" \
           RUN_SEEDS="$RUN_SEEDS" \
+          REQUIRE_PREDEPLOY_BACKUP="$REQUIRE_PREDEPLOY_BACKUP" \
           bash scripts/deploy_vps_safe.sh
 
       - name: Registrar versão implantada
@@ -162,4 +164,5 @@ jobs:
             echo "- Revisão anterior: \`${{ steps.migrations.outputs.current_revision }}\`"
             echo "- Migrations pendentes: \`${{ steps.migrations.outputs.pending_count }}\`"
             echo "- Seeds: \`$RUN_SEEDS\`"
+            echo "- Backup pré-deploy obrigatório: \`$REQUIRE_PREDEPLOY_BACKUP\`"
           } >> "$GITHUB_STEP_SUMMARY"
