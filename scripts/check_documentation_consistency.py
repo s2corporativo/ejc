@@ -3,7 +3,8 @@
 
 O gate é deliberadamente determinístico e não acessa rede. Ele verifica somente
 as fontes operacionais canônicas, evitando que documentos históricos arquivados
-bloqueiem a CI por links intencionalmente antigos.
+bloqueiem a CI por links intencionalmente antigos. Os nomes dos workflows são
+comparados com os checks obrigatórios usados pela proteção da branch principal.
 """
 from __future__ import annotations
 
