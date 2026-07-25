@@ -25,6 +25,14 @@ vi.mock("./Toast", () => ({
   toast: { success: vi.fn(), error: vi.fn(), info: vi.fn() },
 }));
 
+// Modo leitura por role (review PR #483): o painel lê o usuário do store.
+const authState = vi.hoisted(() => ({
+  user: { role: "advogado" } as { role: string } | null,
+}));
+vi.mock("../stores/auth", () => ({
+  useAuth: () => authState,
+}));
+
 import OrquestradorPanel from "./OrquestradorPanel";
 
 const visao: OrquestradorVisao = {
@@ -101,6 +109,7 @@ describe("OrquestradorPanel", () => {
   afterEach(() => cleanup());
 
   beforeEach(() => {
+    authState.user = { role: "advogado" };
     visaoOrquestrador.mockReset();
     avancarOrquestrador.mockReset();
     visaoOrquestrador.mockResolvedValue(visao);
@@ -170,6 +179,53 @@ describe("OrquestradorPanel", () => {
     });
     // Recarrega a visão depois da transição.
     await waitFor(() => expect(visaoOrquestrador).toHaveBeenCalledTimes(2));
+  });
+
+  it("caso encerrado/arquivado: ações desabilitadas com tooltip de reabertura", async () => {
+    for (const status of ["encerrado", "arquivado"]) {
+      render(
+        <MemoryRouter>
+          <OrquestradorPanel caseId="caso-1" casoStatus={status} />
+        </MemoryRouter>,
+      );
+
+      // Informação continua visível (próximo passo e jornada)...
+      expect(
+        (await screen.findAllByText(/Revisar e aprovar o snapshot/)).length,
+      ).toBeGreaterThan(0);
+      // ...mas a execução fica bloqueada até a reabertura do caso.
+      const botao = screen.getAllByRole("button", {
+        name: "Executar",
+      })[0] as HTMLButtonElement;
+      expect(botao.disabled).toBe(true);
+      expect(botao.getAttribute("title")).toBe(
+        "Reabra o caso para executar ações",
+      );
+      cleanup();
+    }
+  });
+
+  it("role abaixo de advogado: modo leitura — informação visível, execução não", async () => {
+    for (const role of ["advogado_auxiliar", "estagiario", "secretaria"]) {
+      authState.user = { role };
+      render(
+        <MemoryRouter>
+          <OrquestradorPanel caseId="caso-1" />
+        </MemoryRouter>,
+      );
+
+      expect(
+        (await screen.findAllByText(/Revisar e aprovar o snapshot/)).length,
+      ).toBeGreaterThan(0);
+      const botao = screen.getAllByRole("button", {
+        name: "Executar",
+      })[0] as HTMLButtonElement;
+      expect(botao.disabled).toBe(true);
+      expect(botao.getAttribute("title")).toBe(
+        "Ação disponível para advogados",
+      );
+      cleanup();
+    }
   });
 
   it("exibe o detalhe estruturado de um 422 do /avancar", async () => {

@@ -62,7 +62,7 @@ import TabRisco from "./CasoDetalhe/TabRisco";
 import TabScore from "./CasoDetalhe/TabScore";
 import TabPartes from "./CasoDetalhe/TabPartes";
 import TabFerramentas from "./CasoDetalhe/TabFerramentas";
-import TabResumo from "./CasoDetalhe/TabResumo";
+import TabResumo, { AvisoCasoEncerrado } from "./CasoDetalhe/TabResumo";
 import IaDefensivaCaso from "./CasoDetalhe/IaDefensivaCaso";
 import TabMemoria from "./CasoDetalhe/TabMemoria";
 import TabProcessos from "./CasoDetalhe/TabProcessos";
@@ -882,8 +882,14 @@ function TabTesesSugeridas({ caseId }: { caseId: string }) {
 // Fase 1 — "Dados do caso" numa linha recolhível: o conteúdo clássico do
 // Resumo (TabResumo, com todas as ações) permanece integral, mas recolhido
 // para que a próxima ação do orquestrador domine a Visão sem clique adicional.
-function DadosDoCasoRecolhivel({ caso }: { caso: Case }) {
-  const [aberto, setAberto] = useState(false);
+function DadosDoCasoRecolhivel({
+  caso,
+  abertoInicial = false,
+}: {
+  caso: Case;
+  abertoInicial?: boolean;
+}) {
+  const [aberto, setAberto] = useState(abertoInicial);
   const numeroProcesso =
     caso.processo_principal?.numero_cnj ?? (caso as any).numero_processo;
   return (
@@ -912,7 +918,8 @@ function DadosDoCasoRecolhivel({ caso }: { caso: Case }) {
       </button>
       {aberto && (
         <div className="border-t border-slate-100 p-4">
-          <TabResumo caso={caso} />
+          {/* O aviso de encerramento já aparece no topo da Visão. */}
+          <TabResumo caso={caso} ocultarAvisoEncerramento />
         </div>
       )}
     </div>
@@ -958,16 +965,22 @@ export default function CasoDetalhe() {
   const renderTab = () => {
     if (!id) return null;
     switch (activeTab) {
-      case "resumo":
+      case "resumo": {
         // Fase 1 — o caso abre com a próxima ação: o painel do orquestrador
         // (próximo passo, ações disponíveis, pendências e jornada embutida)
         // vem primeiro; os dados do caso ficam numa linha recolhível abaixo.
+        // Caso encerrado/arquivado: aviso + controle de reabertura em destaque
+        // no topo, painel em modo leitura e "Dados do caso" já aberto.
+        const casoBloqueado =
+          caso.status === "encerrado" || caso.status === "arquivado";
         return (
           <div className="space-y-5">
-            <OrquestradorPanel caseId={id} />
-            <DadosDoCasoRecolhivel caso={caso} />
+            {casoBloqueado && <AvisoCasoEncerrado caso={caso} />}
+            <OrquestradorPanel caseId={id} casoStatus={caso.status} />
+            <DadosDoCasoRecolhivel caso={caso} abertoInicial={casoBloqueado} />
           </div>
         );
+      }
       case "processos":
         return <TabProcessos caseId={id} />;
       case "timeline":
