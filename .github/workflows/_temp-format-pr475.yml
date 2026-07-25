@@ -1,23 +1,20 @@
 name: Temp Format PR 475
 
 on:
-  push:
-    branches:
-      - fix/p0-sala-conversao-seguranca-20260725
+  pull_request:
+    paths:
+      - frontend/src/pages/SalaAnaliseJuridica.tsx
+      - .github/workflows/_temp-format-pr475.yml
 
 permissions:
-  contents: write
+  contents: read
 
 jobs:
-  format:
-    if: github.actor != 'github-actions[bot]'
+  format-artifact:
     runs-on: ubuntu-latest
     timeout-minutes: 10
     steps:
       - uses: actions/checkout@v7
-        with:
-          ref: fix/p0-sala-conversao-seguranca-20260725
-          fetch-depth: 0
       - uses: actions/setup-node@v6
         with:
           node-version: '20'
@@ -28,11 +25,10 @@ jobs:
         run: |
           npm ci
           npx prettier --write src/pages/SalaAnaliseJuridica.tsx
-      - name: Remover executor temporário e publicar correção
-        run: |
-          git rm .github/workflows/_temp-format-pr475.yml
-          git config user.name 'github-actions[bot]'
-          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
-          git add frontend/src/pages/SalaAnaliseJuridica.tsx
-          git commit -m 'style(frontend): aplicar Prettier na Sala de Análise'
-          git push origin HEAD:fix/p0-sala-conversao-seguranca-20260725
+      - name: Publicar arquivo formatado
+        uses: actions/upload-artifact@v7
+        with:
+          name: sala-analise-prettier
+          path: frontend/src/pages/SalaAnaliseJuridica.tsx
+          if-no-files-found: error
+          retention-days: 1
