@@ -1,9 +1,9 @@
 """Regras determinísticas, conversão e trilha humana do Raio-X.
 
-O serviço não inventa conclusão jurídica: informações sem origem suficiente
-ficam marcadas para conferência. A IA é usada pelo pipeline documental já
-existente; aqui consolidamos a saída, enriquecemos a análise e congelamos a
-versão revisada quando ela é convertida em caso oficial.
+O serviço não inventa conclusão jurídica. Informações sem origem suficiente
+permanecem marcadas para conferência. A conversão é transacional, respeita a
+segregação de carteira e transporta a inteligência preliminar para um snapshot
+versionado do caso oficial.
 """
 from __future__ import annotations
 
@@ -18,9 +18,15 @@ from fastapi import HTTPException
 from sqlalchemy import or_, select, text
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.core.client_ownership import (
+    obter_cliente_autorizado,
+    pode_ver_caso_resumido,
+    pode_ver_cliente,
+)
 from app.core.config import get_settings
 from app.models.audit_log import criar_audit_log
 from app.models.case import Case, CaseArea, CaseFase, CasePrioridade, CaseStatus
+from app.models.case_intelligence import CaseIntelligenceSnapshot
 from app.models.client import Client, ClientOrigem, ClientStatus, ClientTipo
 from app.models.deadline import Deadline, DeadlinePrioridade, DeadlineStatus, DeadlineTipo
 from app.models.document import DocConfidencialidade, Document
@@ -28,7 +34,15 @@ from app.models.raio_x import RaioXAnalise, RaioXDocumento
 from app.models.task import Task, TaskStatus
 from app.models.user import User
 from app.schemas.raio_x import RaioXConverterRequest
-from app.services.raio_x_enrichment import data_iso, enriquecer_relatorio, lista, normalizar, unicos, valor
+from app.services.case_intelligence_service import compactar_payload
+from app.services.raio_x_enrichment import (
+    data_iso,
+    enriquecer_relatorio,
+    lista,
+    normalizar,
+    unicos,
+    valor,
+)
 
 settings = get_settings()
 _CONVERSION_ROLES = {"superadmin", "admin", "socio", "advogado", "advogado_auxiliar"}
@@ -228,19 +242,44 @@ async def _proximo_numero_interno(db: AsyncSession) -> str:
     return f"DPT-{ano}-{seq:04d}"
 
 
+async def _usuario_escopo(
+    db: AsyncSession,
+    analise: RaioXAnalise,
+    user: User | None,
+) -> User | None:
+    if user is not None:
+        return user
+    if not analise.created_by:
+        return None
+    return (
+        await db.execute(select(User).where(User.id == analise.created_by))
+    ).scalar_one_or_none()
+
+
+def _alerta_protegido(tipo: str, mensagem: str) -> dict[str, Any]:
+    return {
+        "tipo": tipo,
+        "nome": "Correspondência protegida na base do escritório",
+        "mensagem": mensagem,
+        "protegido": True,
+        "confirmado": False,
+    }
+
+
 async def _detectar_conflitos(
     db: AsyncSession,
     analise: RaioXAnalise,
     payload: RaioXConverterRequest | None = None,
+    user: User | None = None,
 ) -> list[dict[str, Any]]:
-    """Localiza correspondências que exigem revisão, sem concluir conflito ético."""
+    """Cruza a base inteira por dever ético sem expor outra carteira."""
     report = analise.relatorio or {}
     potential = normalizar(
         (payload.cliente.nome if payload and payload.cliente.nome else None)
         or analise.potencial_cliente
         or (report.get("identificacao") or {}).get("cliente_potencial")
     )
-    names = []
+    names: list[str] = []
     for item in report.get("partes") or []:
         name = _nome_item(item)
         if len(name) >= 3 and normalizar(name) != potential:
@@ -270,30 +309,64 @@ async def _detectar_conflitos(
         )
     ).scalars().all()
 
-    alerts: list[dict[str, Any]] = list(analise.alertas_conflito or [])
+    scope_user = await _usuario_escopo(db, analise, user)
+    alerts: list[dict[str, Any]] = []
+    # Não reaproveitar alertas antigos sem revalidar a visibilidade: registros
+    # persistidos por versões anteriores podem conter ids/nomes transcarteira.
     for client in clients:
-        alerts.append({
-            "tipo": "parte_corresponde_a_cliente",
-            "nome": client.nome_exibicao,
-            "client_id": client.id,
-            "mensagem": "Parte do documento possui nome semelhante a cliente atual ou anterior. Revisar conflito sem revelar dados protegidos.",
-            "confirmado": False,
-        })
+        visible = bool(scope_user and await pode_ver_cliente(db, scope_user, client))
+        if visible:
+            alerts.append({
+                "tipo": "parte_corresponde_a_cliente",
+                "nome": client.nome_exibicao,
+                "client_id": client.id,
+                "mensagem": "Parte do documento possui nome semelhante a cliente atual ou anterior. Revisar conflito sem revelar dados além da carteira autorizada.",
+                "protegido": False,
+                "confirmado": False,
+            })
+        else:
+            alerts.append(_alerta_protegido(
+                "parte_corresponde_a_cliente_protegido",
+                "Foi encontrada correspondência em carteira protegida. Solicite revisão de conflito à gestão antes de prosseguir.",
+            ))
+
     for case in cases:
-        alerts.append({
-            "tipo": "parte_corresponde_a_parte_contraria",
-            "nome": case.parte_contraria,
-            "case_id": case.id,
-            "mensagem": "Parte do documento possui nome semelhante a parte contrária de caso cadastrado. Revisar conflito e grupo econômico.",
-            "confirmado": False,
-        })
-    return _unicos(alerts)
+        visible = bool(scope_user and pode_ver_caso_resumido(scope_user, case))
+        if visible:
+            alerts.append({
+                "tipo": "parte_corresponde_a_parte_contraria",
+                "nome": case.parte_contraria,
+                "case_id": case.id,
+                "mensagem": "Parte do documento possui nome semelhante a parte contrária de caso acessível. Revisar conflito e grupo econômico.",
+                "protegido": False,
+                "confirmado": False,
+            })
+        else:
+            alerts.append(_alerta_protegido(
+                "parte_corresponde_a_caso_protegido",
+                "Foi encontrada correspondência em caso protegido. Solicite revisão de conflito à gestão antes de prosseguir.",
+            ))
+
+    # Deduplicação segura sem depender de ids protegidos.
+    unique: list[dict[str, Any]] = []
+    seen: set[tuple[str, str, str]] = set()
+    for alert in alerts:
+        key = (
+            str(alert.get("tipo") or ""),
+            str(alert.get("nome") or ""),
+            str(alert.get("mensagem") or ""),
+        )
+        if key not in seen:
+            seen.add(key)
+            unique.append(alert)
+    return unique
 
 
 async def preview_conversao(
     db: AsyncSession,
     analise: RaioXAnalise,
     payload: RaioXConverterRequest | None = None,
+    user: User | None = None,
 ) -> dict[str, Any]:
     relatorio = analise.relatorio or {}
     identificacao = relatorio.get("identificacao") or {}
@@ -306,20 +379,32 @@ async def preview_conversao(
     if payload and payload.cliente.nome:
         nomes.append(payload.cliente.nome)
     nomes = [item.strip() for item in nomes if isinstance(item, str) and item.strip()]
+    scope_user = await _usuario_escopo(db, analise, user)
 
-    casos = []
+    casos: list[dict[str, Any]] = []
     if numero:
         rows = (
             await db.execute(
                 select(Case).where(Case.numero_processo == numero, Case.deleted_at.is_(None))
             )
         ).scalars().all()
-        casos = [
-            {"id": case.id, "titulo": case.titulo, "numero_processo": case.numero_processo}
-            for case in rows
-        ]
+        for case in rows:
+            if scope_user and pode_ver_caso_resumido(scope_user, case):
+                casos.append({
+                    "id": case.id,
+                    "titulo": case.titulo,
+                    "numero_processo": case.numero_processo,
+                    "protegido": False,
+                })
+            else:
+                casos.append({
+                    "id": None,
+                    "titulo": "Caso protegido na base do escritório",
+                    "numero_processo": None,
+                    "protegido": True,
+                })
 
-    clientes = []
+    clientes: list[dict[str, Any]] = []
     if nomes:
         conditions = [
             or_(Client.nome.ilike(f"%{name}%"), Client.razao_social.ilike(f"%{name}%"))
@@ -332,12 +417,27 @@ async def preview_conversao(
                 .limit(10)
             )
         ).scalars().all()
-        clientes = [
-            {"id": client.id, "nome": client.nome_exibicao, "cpf": bool(client.cpf_enc), "cnpj": bool(client.cnpj_enc)}
-            for client in rows
-        ]
+        for client in rows:
+            if scope_user and await pode_ver_cliente(db, scope_user, client):
+                clientes.append({
+                    "id": client.id,
+                    "nome": client.nome_exibicao,
+                    "cpf": bool(client.cpf_enc),
+                    "cnpj": bool(client.cnpj_enc),
+                    "protegido": False,
+                })
+            else:
+                # A existência influencia o bloqueio ético/deduplicação, mas UUID,
+                # nome e tipo documental não são expostos à carteira não autorizada.
+                clientes.append({
+                    "id": None,
+                    "nome": "Cliente protegido na base do escritório",
+                    "cpf": False,
+                    "cnpj": False,
+                    "protegido": True,
+                })
 
-    conflict_alerts = await _detectar_conflitos(db, analise, payload)
+    conflict_alerts = await _detectar_conflitos(db, analise, payload, scope_user)
     return {
         "analise_id": analise.id,
         "casos_possivelmente_duplicados": casos,
@@ -359,38 +459,37 @@ async def preview_conversao(
 async def _resolver_cliente(db: AsyncSession, payload: RaioXConverterRequest, user: User) -> Client:
     req = payload.cliente
     if req.modo == "existente":
-        client = (
-            await db.execute(
-                select(Client).where(Client.id == req.client_id, Client.deleted_at.is_(None))
-            )
-        ).scalar_one_or_none()
-        if not client:
-            raise ValueError("Cliente selecionado não existe")
-        return client
+        return await obter_cliente_autorizado(db, user, req.client_id)
 
     digits_cpf = re.sub(r"\D", "", req.cpf or "")[:11] or None
     digits_cnpj = re.sub(r"\D", "", req.cnpj or "")[:14] or None
 
     from app.services.pii_crypto import encrypt, hash_documento
 
-    # Dedup por índice cego (cutover C6/LGPD): sem cpf/cnpj em texto puro,
-    # casa pelo hash HMAC do documento normalizado.
     existing = None
     if digits_cpf:
         existing = (
             await db.execute(
-                select(Client).where(Client.cpf_hash == hash_documento(digits_cpf),
-                                     Client.deleted_at.is_(None))
+                select(Client).where(
+                    Client.cpf_hash == hash_documento(digits_cpf),
+                    Client.deleted_at.is_(None),
+                )
             )
         ).scalar_one_or_none()
     if not existing and digits_cnpj:
         existing = (
             await db.execute(
-                select(Client).where(Client.cnpj_hash == hash_documento(digits_cnpj),
-                                     Client.deleted_at.is_(None))
+                select(Client).where(
+                    Client.cnpj_hash == hash_documento(digits_cnpj),
+                    Client.deleted_at.is_(None),
+                )
             )
         ).scalar_one_or_none()
     if existing:
+        if not await pode_ver_cliente(db, user, existing):
+            # Não criar duplicata e não confirmar que o documento pertence a
+            # outra carteira. O 404 segue o contrato canônico do CRM.
+            raise HTTPException(status_code=404, detail="Cliente não encontrado")
         return existing
     if not (req.nome or digits_cpf or digits_cnpj):
         raise ValueError("Informe os dados mínimos do novo cliente")
@@ -401,7 +500,6 @@ async def _resolver_cliente(db: AsyncSession, payload: RaioXConverterRequest, us
         tipo=tipo,
         nome=req.nome if tipo == ClientTipo.PF else None,
         razao_social=req.nome if tipo == ClientTipo.PJ else None,
-        # Cutover C6/LGPD: grava só cifrado + hash (nunca texto puro).
         cpf_enc=encrypt(digits_cpf) if digits_cpf else None,
         cnpj_enc=encrypt(digits_cnpj) if digits_cnpj else None,
         cpf_hash=hash_documento(digits_cpf) if digits_cpf else None,
@@ -414,11 +512,24 @@ async def _resolver_cliente(db: AsyncSession, payload: RaioXConverterRequest, us
         observacoes="Criado por conversão confirmada do Raio-X preliminar; revisar dados.",
     )
     db.add(client)
-    await criar_audit_log(db, user.id, _role(user), "CREATE_AUTO", "clients", client.id, detalhes="Conversão do Raio-X")
+    await criar_audit_log(
+        db,
+        user.id,
+        _role(user),
+        "CREATE_AUTO",
+        "clients",
+        client.id,
+        detalhes="Conversão do Raio-X",
+    )
     return client
 
 
-def _copiar_documento(documento: RaioXDocumento, case: Case, client: Client, user: User) -> tuple[Document, Path]:
+def _copiar_documento(
+    documento: RaioXDocumento,
+    case: Case,
+    client: Client,
+    user: User,
+) -> tuple[Document, Path]:
     source = Path(settings.UPLOAD_DIR) / documento.filepath
     if not source.exists() or not source.is_file():
         raise ValueError(f"Arquivo físico indisponível para transferência: {documento.nome_original}")
@@ -465,6 +576,50 @@ def _risco_case(level: str | None) -> str | None:
     }.get(str(level or "").lower())
 
 
+def _snapshot_payload(
+    analise: RaioXAnalise,
+    report: dict[str, Any],
+    payload: RaioXConverterRequest,
+) -> dict[str, Any]:
+    fontes = []
+    for item in report.get("fontes") or []:
+        if isinstance(item, dict):
+            fontes.append({
+                "documento_id": item.get("documento_id"),
+                "arquivo": item.get("arquivo"),
+                "hash": item.get("hash"),
+                "pagina": item.get("pagina"),
+            })
+    data = {
+        "area": payload.caso.area,
+        "fatos": report.get("sintese_executiva"),
+        "fatos_provas": report.get("fatos_provas") or [],
+        "cronologia": report.get("cronologia") or [],
+        "contradicoes": report.get("contradicoes") or [],
+        "teses": {
+            "principal": None,
+            "secundarias": report.get("teses") or [],
+        },
+        "riscos": report.get("riscos") or [],
+        "provas": report.get("provas") or [],
+        "pedidos": report.get("pedidos") or [],
+        "prazos_projetados": report.get("prazos_potenciais") or [],
+        "checklist": {
+            "itens": report.get("documentos_pendentes") or [],
+            "pronto": not bool(report.get("documentos_pendentes")),
+        },
+        "fontes": fontes,
+        "proximos_passos": report.get("proximos_passos") or [],
+        "raio_x_analise_id": analise.id,
+        "confianca_global": report.get("confianca_global"),
+        "revisao_humana_obrigatoria": True,
+    }
+    return compactar_payload(
+        data,
+        descartaveis=("cronologia", "fatos_provas", "provas"),
+    )
+
+
 async def converter_em_caso(
     db: AsyncSession,
     analise: RaioXAnalise,
@@ -476,14 +631,14 @@ async def converter_em_caso(
             status_code=403,
             detail="Seu perfil pode analisar documentos, mas não possui autorização para criar casos oficiais.",
         )
-
-    preview = await preview_conversao(db, analise, payload)
-    if preview["casos_possivelmente_duplicados"] and not payload.duplicate_confirmed:
-        raise ValueError("Há caso possivelmente duplicado; confirme conscientemente para continuar")
-    if preview["alertas_conflito"] and not payload.conflict_confirmed:
-        raise ValueError("Há alerta de conflito; confirme a revisão para continuar")
     if analise.convertido_case_id:
         return {"case_id": analise.convertido_case_id, "ja_convertido": True}
+
+    preview = await preview_conversao(db, analise, payload, user=user)
+    if preview["casos_possivelmente_duplicados"] and not payload.duplicate_confirmed:
+        raise ValueError("Há caso possivelmente duplicado; confira os achados antes de continuar")
+    if preview["alertas_conflito"] and not payload.conflict_confirmed:
+        raise ValueError("Há alerta de conflito; confirme a revisão antes de continuar")
 
     ids_disponiveis = {documento.id for documento in analise.documentos}
     ids_solicitados = set(payload.documento_ids)
@@ -527,6 +682,21 @@ async def converter_em_caso(
         observacoes=f"Originado do Raio-X preliminar {analise.id}. Relatório preservado na origem.",
     )
     db.add(case)
+
+    snapshot = CaseIntelligenceSnapshot(
+        id=str(uuid4()),
+        case_id=case.id,
+        versao=1,
+        origem="raio_x",
+        payload=_snapshot_payload(analise, report, payload),
+        resumo=str(report.get("sintese_executiva") or "")[:2000] or None,
+        ai_log_ids=[],
+        criado_por=user.id,
+        congelado=False,
+        aprovado_por=None,
+        aprovado_em=None,
+    )
+    db.add(snapshot)
 
     official_documents: list[str] = []
     copied_paths: list[Path] = []
@@ -594,10 +764,11 @@ async def converter_em_caso(
             "CONVERT",
             "raio_x_analises",
             analise.id,
-            detalhes=f"Raio-X convertido no caso {case.id}",
+            detalhes=f"Raio-X convertido no caso {case.id} com snapshot {snapshot.id}",
             dados_depois={
                 "case_id": case.id,
                 "client_id": client.id,
+                "snapshot_id": snapshot.id,
                 "documentos": official_documents,
                 "prazos": created_deadlines,
                 "tarefas": created_tasks,
@@ -618,11 +789,12 @@ async def converter_em_caso(
     return {
         "case_id": case.id,
         "client_id": client.id,
+        "snapshot_id": snapshot.id,
         "ja_convertido": False,
         "documentos_transferidos": official_documents,
         "prazos_criados": created_deadlines,
         "tarefas_criadas": created_tasks,
         "risco_nivel": report.get("risco_nivel"),
         "prazo_urgente": urgent,
-        "aviso": "Caso criado em triagem. Prazos importados permanecem não confirmados.",
+        "aviso": "Caso criado em triagem. A inteligência do Raio-X foi preservada em snapshot não aprovado; prazos importados permanecem não confirmados.",
     }
